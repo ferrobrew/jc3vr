@@ -35,7 +35,7 @@ use crate::{
         },
         weapons::{grip_watch, heft::HeftClass},
     },
-    status::{Health, Line},
+    status::{Health, Line, Text, prose, text},
 };
 
 pub(super) fn rigid_grip() -> Line {
@@ -55,7 +55,7 @@ pub(super) fn flip_watch() -> Line {
     let watch = grip_watch::status();
     let flips: u64 = watch.flips.iter().sum();
     let sweeps: u64 = watch.sweeps.iter().sum();
-    let detail = format_smolstr!("{flips} FLIPS, {sweeps} SWEEPS");
+    let detail = text!(flips.to_string(), " flips, ", sweeps.to_string(), " sweeps");
     if flips > 0 {
         Line::failed(detail)
     } else {
@@ -79,7 +79,7 @@ pub(super) fn callback() -> Line {
 
 pub(super) fn callback_fires() -> Line {
     let status = physics::callback_status();
-    let detail = format_smolstr!("{} FIRES", status.fires);
+    let detail = text!(status.fires.to_string(), " fires");
     match status.fires {
         0 if status.registered => Line::waiting(detail),
         0 => Line::off(detail),
@@ -97,9 +97,14 @@ pub(super) fn right_body() -> Line {
 
 pub(super) fn body_errors() -> Line {
     let status = physics::status();
-    let made = format_smolstr!("{} MADE, {} GONE", status.created, status.destroyed);
+    let made = text!(
+        status.created.to_string(),
+        " made, ",
+        status.destroyed.to_string(),
+        " gone"
+    );
     match status.last_error {
-        Some(error) => Line::failed("SEE LOG").with_note(error),
+        Some(error) => Line::failed(prose("See log")).with_note(error),
         None => Line::ok(made),
     }
 }
@@ -115,9 +120,9 @@ pub(super) fn contact_events() -> Line {
     let listening = physics::callback_status().listening;
     let status = physics::status();
     let hands = hands_label(listening);
-    let detail = format_smolstr!("{hands}, {} CONTACTS", status.contacts);
+    let detail = text!(hands, ", ", status.contacts.to_string(), " contacts");
     if status.dropped_contacts > 0 {
-        Line::failed(format_smolstr!("{} DROPPED", status.dropped_contacts))
+        Line::failed(text!(status.dropped_contacts.to_string(), " dropped"))
     } else if listening.contains(&true) {
         Line::ok(detail)
     } else {
@@ -132,10 +137,11 @@ pub(super) fn collider_view() -> Line {
 pub(super) fn blows() -> Line {
     let status = physics::status();
     match status.last_blow {
-        Some(blow) => Line::ok(format_smolstr!(
-            "{}, LAST {:.0} NS",
-            status.blows,
-            blow.impulse_ns
+        Some(blow) => Line::ok(text!(
+            status.blows.to_string(),
+            ", last ",
+            format!("{:.0}", blow.impulse_ns),
+            " Ns"
         )),
         None => Line::ok(format_smolstr!("{}", status.blows)),
     }
@@ -150,9 +156,9 @@ pub(super) fn joints() -> Line {
         return Line::off("");
     }
     let joined = physics::status().hands.map(|hand| hand.joint.is_some());
-    Line::ok(format_smolstr!(
-        "{} ACTIVE, {}",
-        joined.iter().filter(|&&joined| joined).count(),
+    Line::ok(text!(
+        joined.iter().filter(|&&joined| joined).count().to_string(),
+        " active, ",
         hands_label(joined)
     ))
 }
@@ -165,9 +171,9 @@ pub(super) fn stick_velocity() -> Line {
     // which it is while the page is shown.
     let status = locomotion::status();
     match status.velocity {
-        Some(velocity) => Line::ok(format_smolstr!("{:.1} M/S", velocity.length())),
-        None if status.at.is_some() => Line::waiting("NOT DRIVING"),
-        None => Line::waiting("NOT ON FOOT YET"),
+        Some(velocity) => Line::ok(text!(format!("{:.1}", velocity.length()), " m/s")),
+        None if status.at.is_some() => Line::waiting(prose("Not driving")),
+        None => Line::waiting(prose("Not on foot yet")),
     }
 }
 
@@ -183,9 +189,9 @@ pub(super) fn act_watchdog() -> Line {
         return Line::off("");
     }
     let status = acts::status();
-    let trips = format_smolstr!("{} TRIPS", status.releases);
+    let trips = text!(status.releases.to_string(), " trips");
     if status.released {
-        Line::waiting(format_smolstr!("OPEN, {trips}"))
+        Line::waiting(text!("Open, ", trips))
     } else {
         Line::ok(trips)
     }
@@ -203,9 +209,9 @@ pub(super) fn neutral_head() -> Line {
         return Line::off("");
     }
     match anchor::status().neutral {
-        Some(neutral) => Line::ok(format_smolstr!("EYES {:.2} M", neutral.eyes.y))
+        Some(neutral) => Line::ok(text!("Eyes ", format!("{:.2}", neutral.eyes.y), " m"))
             .with_note(format!("head {:.2} m", neutral.head.y)),
-        None => Line::waiting("NOT MEASURED"),
+        None => Line::waiting(prose("Not measured")),
     }
 }
 
@@ -216,7 +222,7 @@ pub(super) fn procedural_mode() -> Line {
 
 pub(super) fn pass_through() -> Line {
     if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::PassThrough {
-        return Line::off("NOT IN TEST");
+        return Line::off(prose("Not in test"));
     }
     pass_through_line(procedural::published_status().round_trip)
 }
@@ -240,9 +246,9 @@ pub(super) fn stance() -> Line {
         return Line::off("");
     }
     if procedural::published_status().stance_measured {
-        Line::ok("MEASURED")
+        Line::ok(prose("Measured"))
     } else {
-        Line::waiting("STAND STILL")
+        Line::waiting(prose("Stand still"))
     }
 }
 
@@ -262,12 +268,15 @@ pub(super) fn twist_bones() -> Line {
 /// The twist bones found and the largest twist they carried on the last pass.
 fn twist_line(status: &TwistStatus) -> Line {
     match status.bones {
-        None => Line::waiting("NOT READ"),
-        Some((0, _)) => Line::failed("NONE FOUND"),
+        None => Line::waiting(prose("Not read")),
+        Some((0, _)) => Line::failed(prose("None found")),
         Some((bones, segments)) => {
-            let detail = format_smolstr!(
-                "{bones} ON {segments}, {:.0}°",
-                status.largest_twist.to_degrees()
+            let detail = text!(
+                bones.to_string(),
+                " on ",
+                segments.to_string(),
+                ", ",
+                format!("{:.0}°", status.largest_twist.to_degrees())
             );
             if status.wrote {
                 Line::ok(detail)
@@ -298,14 +307,14 @@ pub(super) fn lower_inputs() -> Line {
 const PASS_THROUGH_TOLERANCE: (f32, f32) = (0.001, 0.1);
 
 fn rigid_grip_line(pinned: [Option<bool>; 2], pins: u64) -> Line {
-    let pins = format_smolstr!("{pins} PINS");
+    let pins = text!(pins.to_string(), " pins");
     let hands = |want: bool| pinned.map(|pinned| pinned == Some(want));
     if hands(true).contains(&true) {
-        Line::ok(format_smolstr!("{}, {pins}", hands_label(hands(true))))
+        Line::ok(text!(hands_label(hands(true)), ", ", pins))
     } else if hands(false).contains(&true) {
-        Line::waiting(format_smolstr!("{} NOT PINNED", hands_label(hands(false))))
+        Line::waiting(text!(hands_label(hands(false)), " not pinned"))
     } else {
-        Line::waiting("NO GUN").with_note(pins.to_string())
+        Line::waiting(prose("No gun")).with_note(pins)
     }
 }
 
@@ -314,18 +323,18 @@ fn canonical_grip_line(reads: [Option<GripRead>; 2]) -> Line {
         .iter()
         .zip(Hand::BOTH)
         .find_map(|(read, hand)| match read {
-            Some(GripRead::BonesUnresolved) => Some((hand, "BONES MISSING")),
-            Some(GripRead::DegenerateBindPose) => Some((hand, "BAD BIND POSE")),
+            Some(GripRead::BonesUnresolved) => Some((hand, prose("bones missing"))),
+            Some(GripRead::DegenerateBindPose) => Some((hand, prose("bad bind pose"))),
             Some(GripRead::Read) | None => None,
         });
     if let Some((hand, reason)) = failed {
-        return Line::failed(format_smolstr!("{} {reason}", hand_letter(hand)));
+        return Line::failed(text!(hand_letter(hand), " ", reason));
     }
     let read = reads.map(|read| read == Some(GripRead::Read));
     if read.contains(&true) {
-        Line::ok(format_smolstr!("{} READ", hands_label(read)))
+        Line::ok(text!(hands_label(read), " read"))
     } else {
-        Line::waiting("NO GUN YET")
+        Line::waiting(prose("No gun yet"))
     }
 }
 
@@ -333,19 +342,21 @@ fn canonical_grip_line(reads: [Option<GripRead>; 2]) -> Line {
 /// A diagnostic for whether the bind-pose grip is the pose the aiming clips hold each kind of gun
 /// in, which is unverified; it shows numbers rather than a verdict.
 fn animated_deviation_line(by_class: [Option<f32>; 4]) -> Line {
-    let mut detail = SmolStr::default();
+    let mut detail = Text::default();
     for (class, deviation) in HeftClass::ALL.iter().zip(by_class) {
         let Some(deviation) = deviation else {
             continue;
         };
         let separator = if detail.is_empty() { "" } else { ", " };
-        detail = format_smolstr!(
-            "{detail}{separator}{} {deviation:.0}°",
-            class.label().to_uppercase()
-        );
+        detail.push(text!(
+            separator,
+            prose(class.label()),
+            " ",
+            format!("{deviation:.0}°")
+        ));
     }
     if detail.is_empty() {
-        Line::waiting("NO GUN YET")
+        Line::waiting(prose("No gun yet"))
     } else {
         Line::ok(detail)
     }
@@ -354,17 +365,17 @@ fn animated_deviation_line(by_class: [Option<f32>; 4]) -> Line {
 fn callback_line(enabled: bool, status: CallbackStatus) -> Line {
     if !status.registered {
         return if enabled {
-            Line::waiting("NOT REGISTERED")
+            Line::waiting(prose("Not registered"))
         } else {
             Line::off("")
         };
     }
     if status.firing_thread == 0 {
-        Line::waiting("NOT FIRED")
+        Line::waiting(prose("Not fired"))
     } else if status.firing_thread == status.game_thread {
-        Line::ok("GAME THREAD")
+        Line::ok(prose("Game thread"))
     } else {
-        Line::ok(format_smolstr!("THREAD {}", status.firing_thread))
+        Line::ok(text!("Thread ", status.firing_thread.to_string()))
     }
 }
 
@@ -392,20 +403,23 @@ fn gun_body_line(enabled: bool, status: Option<GunBodyStatus>, contacts: u64) ->
         return Line::off("");
     }
     let Some(gun) = status else {
-        return Line::waiting("NO GUN BODY");
+        return Line::waiting(prose("No gun body"));
     };
     let joints = match (gun.holder_joint, gun.brace_joint) {
-        (Some(_), Some(_)) => "HELD+BRACED",
-        (Some(_), None) => "HELD",
-        (None, _) => return Line::failed("NOT JOINED"),
+        (Some(_), Some(_)) => prose("held+braced"),
+        (Some(_), None) => prose("held"),
+        (None, _) => return Line::failed(prose("Not joined")),
     };
     if !gun.in_world {
-        return Line::failed("NOT IN WORLD");
+        return Line::failed(prose("Not in world"));
     }
-    Line::ok(format_smolstr!(
-        "#{} {:.1} KG, {joints}, {contacts} HITS",
-        gun.body_id,
-        gun.mass_kg
+    Line::ok(text!(
+        format!("#{} {:.1}", gun.body_id, gun.mass_kg),
+        " kg, ",
+        joints,
+        ", ",
+        contacts.to_string(),
+        " hits"
     ))
     .with_note(format!(
         "mass from {}, {:.0} mm and {:.1} degrees off its seat",
@@ -425,17 +439,22 @@ fn body_line(enabled: bool, status: &HandBodyStatus) -> Line {
         .body_id
         .map_or(SmolStr::default(), |id| format_smolstr!(" #{id}"));
     match status.phase {
-        BodyPhase::Acting => Line::ok(format_smolstr!("IN WORLD{id}")),
-        BodyPhase::Parked => Line::ok(format_smolstr!("PARKED{id}")),
-        BodyPhase::Absent if enabled => Line::waiting("NO BODY"),
+        BodyPhase::Acting => Line::ok(text!("In world", id)),
+        BodyPhase::Parked => Line::ok(text!("Parked", id)),
+        BodyPhase::Absent if enabled => Line::waiting(prose("No body")),
         BodyPhase::Absent => Line::off(""),
     }
 }
 
 fn act_filter_line(status: ActFilterStatus) -> Line {
-    let detail = format_smolstr!("{} DROP, {} SWAP", status.dropped, status.replaced);
+    let detail = text!(
+        status.dropped.to_string(),
+        " drop, ",
+        status.replaced.to_string(),
+        " swap"
+    );
     if status.refused > 0 {
-        Line::ok(format_smolstr!("{detail}, {} REF", status.refused))
+        Line::ok(text!(detail, ", ", status.refused.to_string(), " ref"))
             .with_note(format!("{} swaps refused", status.refused))
     } else {
         Line::ok(detail)
@@ -444,33 +463,34 @@ fn act_filter_line(status: ActFilterStatus) -> Line {
 
 fn steady_view_line(status: &AnchorStatus) -> Line {
     if status.weight >= 1.0 {
-        Line::ok("ENGAGED")
+        Line::ok(prose("Engaged"))
     } else if status.weight > 0.0 {
-        Line::ok(format_smolstr!("BLENDING {:.0}%", status.weight * 100.0))
+        Line::ok(text!("Blending ", format!("{:.0}%", status.weight * 100.0)))
     } else if status.eligible && status.neutral.is_none() {
         if status.capture_progress > 0.0 {
-            Line::waiting(format_smolstr!(
-                "MEASURING {:.1} S",
-                status.capture_progress
+            Line::waiting(text!(
+                "Measuring ",
+                format!("{:.1}", status.capture_progress),
+                " s"
             ))
         } else {
-            Line::waiting("STAND STILL")
+            Line::waiting(prose("Stand still"))
         }
     } else if status.eligible {
-        Line::waiting("READY")
+        Line::waiting(prose("Ready"))
     } else {
-        Line::ok("IDLE")
+        Line::ok(prose("Idle"))
     }
 }
 
 fn procedural_mode_line(mode: ProceduralMode, status: &ProceduralStatus, now: Instant) -> Line {
     let label = match mode {
         ProceduralMode::Off => return Line::off(""),
-        ProceduralMode::PassThrough => "TEST",
-        ProceduralMode::Full => "FULL BODY",
+        ProceduralMode::PassThrough => prose("Test"),
+        ProceduralMode::Full => prose("Full body"),
     };
     if let Some(error) = status.rig_error {
-        return Line::failed("RIG, SEE LOG").with_note(error.to_string());
+        return Line::failed(prose("Rig, see log")).with_note(error.to_string());
     }
     // Whether the gate has run in this mode, however long ago: it does not run while the game is
     // paused, which it is while the page is shown.
@@ -479,15 +499,20 @@ fn procedural_mode_line(mode: ProceduralMode, status: &ProceduralStatus, now: In
             "last gate {:.1} s ago",
             now.saturating_duration_since(at).as_secs_f32()
         )),
-        _ => Line::waiting(format_smolstr!("{label} IDLE")),
+        _ => Line::waiting(text!(label, " idle")),
     }
 }
 
 fn pass_through_line(round_trip: Option<(f32, f32)>) -> Line {
     let Some((metres, degrees)) = round_trip else {
-        return Line::waiting("NOT MEASURED");
+        return Line::waiting(prose("Not measured"));
     };
-    let detail = format_smolstr!("{:.1} MM, {degrees:.2} DEG", metres * 1000.0);
+    let detail = text!(
+        format!("{:.1}", metres * 1000.0),
+        " mm, ",
+        format!("{degrees:.2}"),
+        " deg"
+    );
     let (max_m, max_deg) = PASS_THROUGH_TOLERANCE;
     if metres <= max_m && degrees <= max_deg {
         Line::ok(detail)
@@ -497,30 +522,30 @@ fn pass_through_line(round_trip: Option<(f32, f32)>) -> Line {
 }
 
 fn hand_over_line(case: Case) -> Line {
-    let word = match case {
-        Case::NotInHeadset => "NO HEADSET",
-        Case::SwitchedOff => "SWITCHED OFF",
-        Case::NotInGameplay => "NOT IN GAMEPLAY",
-        Case::Sequence => "SEQUENCE",
-        Case::Dead => "DEAD",
-        Case::Ragdoll => "RAGDOLL",
-        Case::GettingUp => "GETTING UP",
-        Case::Seated => "SEATED",
-        Case::StuntStanding => "ON A ROOF",
-        Case::Vehicle => "VEHICLE",
-        Case::Traversal => "TRAVERSAL",
-        Case::LedgeClimb => "LEDGE CLIMB",
-        Case::Swimming => "SWIMMING",
-        Case::Wingsuit => "WINGSUIT",
-        Case::Parachute => "PARACHUTE",
-        Case::Flight => "FALLING",
-        Case::HitReaction => "HIT REACTION",
-        Case::HandClimb => "HAND CLIMB",
-        Case::Jump => "JUMP",
-        Case::AuthoredMotion => "AUTHORED MOTION",
-        Case::NoMovementTask => "NO MOVE TASK",
-        Case::OnFoot => "ON FOOT",
-    };
+    let word = prose(match case {
+        Case::NotInHeadset => "No headset",
+        Case::SwitchedOff => "Switched off",
+        Case::NotInGameplay => "Not in gameplay",
+        Case::Sequence => "Sequence",
+        Case::Dead => "Dead",
+        Case::Ragdoll => "Ragdoll",
+        Case::GettingUp => "Getting up",
+        Case::Seated => "Seated",
+        Case::StuntStanding => "On a roof",
+        Case::Vehicle => "Vehicle",
+        Case::Traversal => "Traversal",
+        Case::LedgeClimb => "Ledge climb",
+        Case::Swimming => "Swimming",
+        Case::Wingsuit => "Wingsuit",
+        Case::Parachute => "Parachute",
+        Case::Flight => "Falling",
+        Case::HitReaction => "Hit reaction",
+        Case::HandClimb => "Hand climb",
+        Case::Jump => "Jump",
+        Case::AuthoredMotion => "Authored motion",
+        Case::NoMovementTask => "No move task",
+        Case::OnFoot => "On foot",
+    });
     // The animation has the body in every case but on foot, which is what the hand-over is for.
     let health = match case {
         Case::OnFoot => Health::Ok,
@@ -532,24 +557,26 @@ fn hand_over_line(case: Case) -> Line {
 /// The lower body's pose: what the legs are doing on foot, and the kneel's side and weight.
 fn lower_body_line(case: Case, lower: &LowerStatus) -> Line {
     if case != Case::OnFoot {
-        return Line::waiting("NOT ON FOOT");
+        return Line::waiting(prose("Not on foot"));
     }
     match lower.pose {
-        LowerPose::Stand => Line::ok("STAND"),
-        LowerPose::Crouch => Line::ok("CROUCH"),
-        LowerPose::Kneel => Line::ok(format_smolstr!(
-            "KNEEL {}, {:.0}%",
+        LowerPose::Stand => Line::ok(prose("Stand")),
+        LowerPose::Crouch => Line::ok(prose("Crouch")),
+        LowerPose::Kneel => Line::ok(text!(
+            "Kneel ",
             lower.kneel_side.map_or("?", side_letter),
-            lower.kneel_weight * 100.0
+            ", ",
+            format!("{:.0}%", lower.kneel_weight * 100.0)
         )),
-        LowerPose::Sit => Line::ok(format_smolstr!(
-            "SIT {}, {:.0}%",
-            match lower.sit_legs {
-                Some(SitLegs::Crossed) => "CROSSED",
-                Some(SitLegs::KneesUp) => "KNEES UP",
+        LowerPose::Sit => Line::ok(text!(
+            "Sit ",
+            prose(match lower.sit_legs {
+                Some(SitLegs::Crossed) => "crossed",
+                Some(SitLegs::KneesUp) => "knees up",
                 None => "?",
-            },
-            lower.sit_weight * 100.0
+            }),
+            ", ",
+            format!("{:.0}%", lower.sit_weight * 100.0)
         )),
     }
 }
@@ -559,15 +586,22 @@ fn lower_body_line(case: Case, lower: &LowerStatus) -> Line {
 /// whether the body is told to move, the player plays seated, or the stick stood the body up and a
 /// sit waits for the head to rise.
 fn lower_inputs_line(lower: &LowerStatus, crouch: f32) -> Line {
-    let moving = if lower.moving { ", MOVING" } else { "" };
-    let seated = if lower.standing_play { "" } else { ", SEATED" };
-    let disarmed = if lower.sit_armed { "" } else { ", RISE TO SIT" };
-    Line::ok(format_smolstr!(
-        "HIPS {:.2} M, FLOOR {:.2} M, CROUCH {:.2}, STILL {:.1} S{moving}{seated}{disarmed}",
-        lower.wanted_hips_m,
-        lower.floor_m,
-        crouch,
-        lower.still_s
+    let moving = prose(if lower.moving { ", moving" } else { "" });
+    let seated = prose(if lower.standing_play { "" } else { ", seated" });
+    let disarmed = prose(if lower.sit_armed { "" } else { ", rise to sit" });
+    Line::ok(text!(
+        "Hips ",
+        format!("{:.2}", lower.wanted_hips_m),
+        " m, floor ",
+        format!("{:.2}", lower.floor_m),
+        " m, crouch ",
+        format!("{crouch:.2}"),
+        ", still ",
+        format!("{:.1}", lower.still_s),
+        " s",
+        moving,
+        seated,
+        disarmed
     ))
     .with_note(format!(
         "head speed {:.2} m/s, sit weight {:.2}",
@@ -583,23 +617,23 @@ fn side_letter(side: Side) -> &'static str {
 }
 
 fn ground_line(tally: GroundTally) -> Line {
-    let detail = format_smolstr!("{}/{} HIT", tally.hits, tally.casts);
+    let detail = text!(format!("{}/{}", tally.hits, tally.casts), " hit");
     if tally.errors > 0 {
-        Line::failed(format_smolstr!("{} ERR, {detail}", tally.errors))
+        Line::failed(text!(tally.errors.to_string(), " err, ", detail))
     } else if tally.casts == 0 {
-        Line::waiting("NO CASTS")
+        Line::waiting(prose("No casts"))
     } else {
         Line::ok(detail)
     }
 }
 
 /// The hands a per-hand flag is set for: `L`, `R`, `L+R`, or `NONE`.
-fn hands_label(set: [bool; 2]) -> &'static str {
+fn hands_label(set: [bool; 2]) -> Text {
     match set {
-        [true, true] => "L+R",
-        [true, false] => "L",
-        [false, true] => "R",
-        [false, false] => "NONE",
+        [true, true] => Text::from("L+R"),
+        [true, false] => Text::from("L"),
+        [false, true] => Text::from("R"),
+        [false, false] => prose("none"),
     }
 }
 
@@ -614,26 +648,30 @@ fn hand_letter(hand: Hand) -> &'static str {
 /// read, or the bodies drawn and those the budget left out.
 fn collider_view_line(status: &ColliderViewStatus) -> Line {
     if !status.enabled {
-        return Line::off("CTRL+NUMPAD 0 SHOWS IT");
+        return Line::off(prose("Ctrl+Numpad 0 shows it"));
     }
     if let Some(error) = &status.last_error
         && status.reads == 0
     {
-        return Line::failed("SEE LOG").with_note(error.clone());
+        return Line::failed(prose("See log")).with_note(error.clone());
     }
     if !status.registered || status.reads == 0 {
-        return Line::waiting("NO PHYSICS STEP YET");
+        return Line::waiting(prose("No physics step yet"));
     }
-    let detail = format_smolstr!(
-        "{} OF {} BODIES, {} PRIMITIVES",
-        status.drawn.bodies,
-        status.in_range,
-        status.primitives
+    let detail = text!(
+        status.drawn.bodies.to_string(),
+        " of ",
+        status.in_range.to_string(),
+        " bodies, ",
+        status.primitives.to_string(),
+        " primitives"
     );
     if status.drawn.dropped > 0 {
-        Line::ok(format_smolstr!(
-            "{detail}, {} OVER BUDGET",
-            status.drawn.dropped
+        Line::ok(text!(
+            detail,
+            ", ",
+            status.drawn.dropped.to_string(),
+            " over budget"
         ))
     } else {
         Line::ok(detail)
@@ -700,6 +738,10 @@ mod tests {
         assert_eq!(
             gun_body_line(true, Some(gun), 3).text(),
             "OK, #812 4.0 KG, HELD+BRACED, 3 HITS"
+        );
+        assert_eq!(
+            gun_body_line(true, Some(gun), 3).display_detail,
+            "#812 4.0 kg, held+braced, 3 hits"
         );
         let one_hand = GunBodyStatus {
             brace_joint: None,

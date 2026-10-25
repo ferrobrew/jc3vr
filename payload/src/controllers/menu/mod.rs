@@ -15,7 +15,7 @@ pub(crate) mod comfort;
 pub(crate) mod controls;
 pub(crate) mod display;
 
-use crate::config::{Config, SaveStatus};
+use crate::config::Config;
 
 /// A [`Toggle`](crate::pause_menu::model::page::Toggle) over the `bool` at a place in [`Config`].
 macro_rules! config_toggle {
@@ -125,15 +125,6 @@ fn with_config<R>(f: impl FnOnce(&mut Config) -> R) -> R {
 #[cfg(test)]
 fn edit_with(f: impl FnOnce(&mut Config)) {
     tests::TEST_CONFIG.with_borrow_mut(f);
-}
-
-pub(crate) fn save_status_label(status: SaveStatus) -> &'static str {
-    match status {
-        SaveStatus::UpToDate => "UP TO DATE",
-        SaveStatus::Pending => "SAVING",
-        SaveStatus::Failed => "FAILED, SEE LOG",
-        SaveStatus::Unavailable => "NOT SAVED",
-    }
 }
 
 #[cfg(test)]

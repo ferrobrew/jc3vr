@@ -1,11 +1,9 @@
 //! The status rows for what the hands feel and hear: the haptic cues sent and how the mixer
 //! folded them together, and the impact sounds the hands made.
 
-use smol_str::format_smolstr;
-
 use crate::{
     controllers::{haptics, menu::read_config, physical_hands::sounds},
-    status::Line,
+    status::{Line, text},
 };
 
 pub(super) fn haptic_cues() -> Line {
@@ -13,11 +11,13 @@ pub(super) fn haptic_cues() -> Line {
         return Line::off("");
     }
     let status = haptics::status();
-    let detail = format_smolstr!(
-        "{} SENT, {} MASKED, {} LIMITED",
-        status.total_sent(),
-        status.mix.masked,
-        status.mix.limited
+    let detail = text!(
+        status.total_sent().to_string(),
+        " sent, ",
+        status.mix.masked.to_string(),
+        " masked, ",
+        status.mix.limited.to_string(),
+        " limited"
     );
     if status.total_sent() == 0 {
         Line::waiting(detail)
@@ -31,11 +31,13 @@ pub(super) fn impact_sounds() -> Line {
         return Line::off("");
     }
     let status = sounds::status();
-    let detail = format_smolstr!(
-        "{} PLAYED, {} HELD BACK, {} SILENT",
-        status.played,
-        status.limited,
-        status.silent
+    let detail = text!(
+        status.played.to_string(),
+        " played, ",
+        status.limited.to_string(),
+        " held back, ",
+        status.silent.to_string(),
+        " silent"
     );
     if status.played == 0 {
         Line::waiting(detail)

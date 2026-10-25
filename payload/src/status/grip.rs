@@ -1,8 +1,6 @@
 //! The status rows for the grip model: what each hand's squeeze would take or holds, and
 //! the markers.
 
-use smol_str::{SmolStr, format_smolstr};
-
 use crate::{
     controllers::{
         frame::Hand,
@@ -12,7 +10,7 @@ use crate::{
         },
         menu::read_config,
     },
-    status::{Health, Line},
+    status::{Health, Line, prose, text},
 };
 
 pub(super) fn left_grip() -> Line {
@@ -31,37 +29,36 @@ pub(super) fn markers() -> Line {
 /// What `hand`'s grip is doing, and what a squeeze would take.
 fn grip_line(status: &GrabStatus, hand: Hand) -> Line {
     if !status.live {
-        return Line::waiting("NOT ACTING");
+        return Line::waiting(prose("Not acting"));
     }
     let hand = status.hands[hand.index()];
     let chosen = hand.chosen.map(|(volume, distance)| {
-        format_smolstr!(
-            "{} AT {:.0} MM",
-            volume.label().to_uppercase(),
-            distance * 1000.0
+        text!(
+            prose(volume.label()),
+            " at ",
+            format!("{:.0}", distance * 1000.0),
+            " mm"
         )
     });
-    let detail: SmolStr = match (hand.latch, chosen) {
-        (GripLatch::Grab(volume), _) => format_smolstr!("HOLDS {}", volume.label().to_uppercase()),
-        (GripLatch::Default, _) => "SQUEEZED FOR A GAME ACTION".into(),
-        (GripLatch::Fist { .. }, Some(chosen)) => {
-            format_smolstr!("FIST, SLOW DOWN TO TAKE {chosen}")
-        }
-        (GripLatch::Fist { .. }, None) => "FIST, NOTHING IN REACH".into(),
-        (GripLatch::Open, Some(chosen)) => format_smolstr!("SQUEEZE TAKES {chosen}"),
-        (GripLatch::Open, None) => format_smolstr!("NOTHING IN REACH OF {}", status.targets),
+    let detail = match (hand.latch, chosen) {
+        (GripLatch::Grab(volume), _) => text!("Holds ", prose(volume.label())),
+        (GripLatch::Default, _) => prose("Squeezed for a game action"),
+        (GripLatch::Fist { .. }, Some(chosen)) => text!("Fist, slow down to take ", chosen),
+        (GripLatch::Fist { .. }, None) => prose("Fist, nothing in reach"),
+        (GripLatch::Open, Some(chosen)) => text!("Squeeze takes ", chosen),
+        (GripLatch::Open, None) => text!("Nothing in reach of ", status.targets.to_string()),
     };
     Line::new(Health::Ok, detail).with_note(format!("{} targets in reach", hand.in_reach))
 }
 
 fn markers_line(on: bool, status: &GrabStatus) -> Line {
     if !on {
-        return Line::off("SWITCH ON IN VR: CONTROLS (GRIP MARKERS)");
+        return Line::off(prose("Switch on in VR: controls (grip markers)"));
     }
     if !status.live {
-        return Line::waiting("NOT ACTING");
+        return Line::waiting(prose("Not acting"));
     }
-    Line::ok(format_smolstr!("{} TARGETS", status.targets))
+    Line::ok(text!(status.targets.to_string(), " targets"))
         .with_note(format!("{} grabs taken", status.grabs))
 }
 

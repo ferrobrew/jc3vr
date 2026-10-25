@@ -2,7 +2,6 @@
 //! came there, and why the last thing the hands tried with a weapon was refused.
 
 use jc3gi::character::inventory::WeaponSlot;
-use smol_str::{SmolStr, format_smolstr};
 
 use crate::{
     controllers::{
@@ -20,7 +19,7 @@ use crate::{
             },
         },
     },
-    status::Line,
+    status::{Line, Text, prose, text},
 };
 
 pub(super) fn left_hand() -> Line {
@@ -50,37 +49,47 @@ fn action(hand: Hand) -> Line {
     }
     let status = reload::status();
     if status.weapons.iter().all(Option::is_none) {
-        return Line::waiting("NO WEAPON RELOADED BY HAND");
+        return Line::waiting(prose("No weapon reloaded by hand"));
     }
     let Some(weapon) = status.weapons[hand.index()] else {
-        return Line::ok("NO GUN");
+        return Line::ok(prose("No gun"));
     };
     let Some(travel) = weapon.action else {
-        return Line::ok("NOTHING TO WORK");
+        return Line::ok(prose("Nothing to work"));
     };
     let kind = weapon.plan.action;
-    let chamber = match weapon.chamber {
-        Chamber::Empty => "CHAMBER EMPTY",
-        Chamber::Chambered => "CHAMBERED",
-    };
+    let chamber = prose(match weapon.chamber {
+        Chamber::Empty => "chamber empty",
+        Chamber::Chambered => "chambered",
+    });
     let place = if travel.locked_back {
-        "LOCKED BACK".into()
+        prose("locked back")
     } else if kind == ActionKind::Bolt && travel.lift > 0.0 {
-        format_smolstr!(
-            "UP {:.0}%, BACK {:.0}%",
-            travel.lift * 100.0,
-            travel.position * 100.0
+        text!(
+            "up ",
+            format!("{:.0}%", travel.lift * 100.0),
+            ", back ",
+            format!("{:.0}%", travel.position * 100.0)
         )
     } else if travel.position > 0.0 {
-        format_smolstr!("BACK {:.0}%", travel.position * 100.0)
+        text!("back ", format!("{:.0}%", travel.position * 100.0))
     } else {
-        SmolStr::new("HOME")
+        prose("home")
     };
-    Line::ok(format_smolstr!(
-        "{}: {place}{}, {chamber}, {} WORKED",
-        kind.label().to_uppercase(),
-        if travel.grip.is_some() { ", HELD" } else { "" },
-        status.counts.racks
+    Line::ok(text!(
+        prose(kind.label()),
+        ": ",
+        place,
+        if travel.grip.is_some() {
+            prose(", held")
+        } else {
+            Text::default()
+        },
+        ", ",
+        chamber,
+        ", ",
+        status.counts.racks.to_string(),
+        " worked"
     ))
 }
 
@@ -110,20 +119,25 @@ fn hand_on_gun(hand: Hand) -> Line {
     });
     let Some(on) = status.hands[hand.index()] else {
         if status.unread {
-            return Line::failed("GUN'S SHAPE NOT READ");
+            return Line::failed(prose("Gun's shape not read"));
         }
-        return Line::waiting("NOT ON A GUN");
+        return Line::waiting(prose("Not on a gun"));
     };
     let role = match on.role {
-        HandRole::Carrying => "CARRYING, CANNOT FIRE".to_owned(),
-        role => role.label().to_uppercase(),
+        HandRole::Carrying => prose("carrying, cannot fire"),
+        role => prose(role.label()),
     };
-    let line = Line::ok(format_smolstr!(
-        "{}, {role}, {} CARRIES, {} BRACES, {} GRIPS TAKEN",
-        on.region.label().to_uppercase(),
-        status.carries,
-        status.braces,
-        status.grips_taken
+    let line = Line::ok(text!(
+        prose(on.region.label()),
+        ", ",
+        role,
+        ", ",
+        status.carries.to_string(),
+        " carries, ",
+        status.braces.to_string(),
+        " braces, ",
+        status.grips_taken.to_string(),
+        " grips taken"
     ));
     match shape {
         Some(shape) => line.with_note(shape),
@@ -139,23 +153,23 @@ pub(super) fn armed() -> Line {
         return Line::off("");
     }
     let armed = armed::status();
-    let held: Vec<String> = Hand::BOTH
+    let held: Vec<Text> = Hand::BOTH
         .into_iter()
         .filter_map(|hand| {
             let a = armed[hand.index()]?;
-            Some(format!(
-                "{} IN {}, {}/{}",
-                slot_label(a.slot).to_uppercase(),
-                hand.label().to_uppercase(),
-                a.magazine.0,
-                a.magazine.1
+            Some(text!(
+                prose(slot_label(a.slot)),
+                " in ",
+                prose(hand.label()),
+                ", ",
+                format!("{}/{}", a.magazine.0, a.magazine.1)
             ))
         })
         .collect();
     if held.is_empty() {
-        Line::ok("NONE")
+        Line::ok(prose("None"))
     } else {
-        Line::ok(SmolStr::new(held.join("; ")))
+        Line::ok(Text::join(held, "; "))
     }
 }
 
@@ -166,27 +180,32 @@ pub(super) fn docks() -> Line {
     }) {
         return Line::off("");
     }
-    Line::ok(format_smolstr!(
-        "{} ON THEIR WEAPONS",
-        weapons::status().docks_followed
+    Line::ok(text!(
+        weapons::status().docks_followed.to_string(),
+        " on their weapons"
     ))
 }
 
 pub(super) fn right_grip() -> Line {
     match grip::right_grip_read() {
-        None => Line::waiting("NO GUN IN THE RIGHT HAND YET"),
-        Some(read) => Line::ok(format_smolstr!(
-            "{}, OWN {:.0} DEG FROM MIRRORED",
-            if read.mirrored { "MIRRORED" } else { "OWN" },
-            read.angle_deg
+        None => Line::waiting(prose("No gun in the right hand yet")),
+        Some(read) => Line::ok(text!(
+            if read.mirrored {
+                prose("Mirrored")
+            } else {
+                prose("Own")
+            },
+            ", own ",
+            format!("{:.0}", read.angle_deg),
+            " deg from mirrored"
         )),
     }
 }
 
 pub(super) fn last_refusal() -> Line {
     match hold::last_refusal() {
-        Some(refusal) => Line::ok(SmolStr::new(refusal.to_uppercase())),
-        None => Line::ok("NONE"),
+        Some(refusal) => Line::ok(Text::pair(refusal.to_uppercase(), refusal)),
+        None => Line::ok(prose("None")),
     }
 }
 
@@ -195,10 +214,11 @@ pub(super) fn takes() -> Line {
         return Line::off("");
     }
     let take = hold::status().take;
-    Line::ok(format_smolstr!(
-        "{} IN HANDS NEAR, {} TAKEN",
-        take.held_targets,
-        take.steals
+    Line::ok(text!(
+        take.held_targets.to_string(),
+        " in hands near, ",
+        take.steals.to_string(),
+        " taken"
     ))
 }
 
@@ -207,11 +227,13 @@ pub(super) fn racks() -> Line {
         return Line::off("");
     }
     let take = hold::status().take;
-    Line::ok(format_smolstr!(
-        "{} NEAR, {} TAKEN, {} COPIES",
-        take.rack_targets,
-        take.rack_takes,
-        take.rack_copies
+    Line::ok(text!(
+        take.rack_targets.to_string(),
+        " near, ",
+        take.rack_takes.to_string(),
+        " taken, ",
+        take.rack_copies.to_string(),
+        " copies"
     ))
 }
 
@@ -225,12 +247,8 @@ fn hand(hand: Hand) -> Line {
     let origin = hold::status().origin;
     let beside = armed::status()[hand.index()].map(|a| (hand, a.slot));
     match in_hand(hand, wielded, origin, beside) {
-        Some((slot, how)) => Line::ok(format_smolstr!(
-            "{}, {}",
-            slot_label(slot).to_uppercase(),
-            how.label()
-        )),
-        None => Line::ok("EMPTY"),
+        Some((slot, how)) => Line::ok(text!(prose(slot_label(slot)), ", ", prose(how.label()))),
+        None => Line::ok(prose("Empty")),
     }
 }
 
@@ -254,13 +272,13 @@ enum HowHeld {
 impl HowHeld {
     const fn label(self) -> &'static str {
         match self {
-            HowHeld::Docked => "DOCKED",
-            HowHeld::PickedUp => "PICKED UP",
-            HowHeld::Stolen => "STOLEN",
-            HowHeld::Rack => "RACK",
-            HowHeld::Snatched => "SNATCHED",
-            HowHeld::Game => "GAME'S DRAW",
-            HowHeld::Beside => "BESIDE THE WIELDED",
+            HowHeld::Docked => "docked",
+            HowHeld::PickedUp => "picked up",
+            HowHeld::Stolen => "stolen",
+            HowHeld::Rack => "rack",
+            HowHeld::Snatched => "snatched",
+            HowHeld::Game => "game's draw",
+            HowHeld::Beside => "beside the wielded",
         }
     }
 }

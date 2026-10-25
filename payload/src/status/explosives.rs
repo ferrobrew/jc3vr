@@ -2,14 +2,12 @@
 //! grenade's pin, the live grenades within reach of a catch, the C4 pressed on, and the magazines
 //! in the world), and for aiming a long gun down its sights.
 
-use smol_str::format_smolstr;
-
 use crate::{
     controllers::{
         menu::read_config,
         weapons::{ads, c4, collide, grenade, reload::loose},
     },
-    status::Line,
+    status::{Line, Text, prose, text},
 };
 
 pub(super) fn gun_against_walls() -> Line {
@@ -18,22 +16,28 @@ pub(super) fn gun_against_walls() -> Line {
     }
     let s = collide::status();
     if !s.weapon() {
-        return Line::waiting("NO LONG GUN MEASURED");
+        return Line::waiting(prose("No long gun measured"));
     }
     let touching = s.hands.iter().find(|h| h.touching);
-    Line::ok(format_smolstr!(
-        "{}, {} CONTACTS{}",
+    let turned = touching.map_or_else(Text::default, |h| {
+        text!(
+            ", turned ",
+            format!("{:.0}", h.turn_deg),
+            " deg, pulled back ",
+            format!("{:.0}", h.retract_m * 100.0),
+            " cm"
+        )
+    });
+    Line::ok(text!(
         if touching.is_some() {
-            "AGAINST A WALL"
+            prose("Against a wall")
         } else {
-            "CLEAR"
+            prose("Clear")
         },
-        s.contacts,
-        touching.map_or(String::new(), |h| format!(
-            ", TURNED {:.0} DEG, PULLED BACK {:.0} CM",
-            h.turn_deg,
-            h.retract_m * 100.0
-        ))
+        ", ",
+        s.contacts.to_string(),
+        " contacts",
+        turned
     ))
 }
 
@@ -43,20 +47,28 @@ pub(super) fn down_the_sights() -> Line {
     }
     let s = ads::status();
     if !s.weapon {
-        return Line::waiting("NO LONG GUN MEASURED");
+        return Line::waiting(prose("No long gun measured"));
     }
-    Line::ok(format_smolstr!(
-        "{}{}, SIGHTED {}, SHOULDERED {}, WELDED {}{}",
-        if s.scoped { "SCOPED" } else { "IRON SIGHTS" },
-        s.raised.map_or(String::new(), |h| format!(
-            " IN THE {} HAND",
-            h.label().to_uppercase()
-        )),
-        s.sighted,
-        s.shouldered,
-        s.welded,
-        s.eye_offset_m
-            .map_or(String::new(), |m| format!(", EYE {:.1} CM OFF", m * 100.0))
+    let raised = s.raised.map_or_else(Text::default, |h| {
+        text!(" in the ", prose(h.label()), " hand")
+    });
+    let eye = s.eye_offset_m.map_or_else(Text::default, |m| {
+        text!(", eye ", format!("{:.1}", m * 100.0), " cm off")
+    });
+    Line::ok(text!(
+        if s.scoped {
+            prose("Scoped")
+        } else {
+            prose("Iron sights")
+        },
+        raised,
+        ", sighted ",
+        s.sighted.to_string(),
+        ", shouldered ",
+        s.shouldered.to_string(),
+        ", welded ",
+        s.welded.to_string(),
+        eye
     ))
 }
 
@@ -68,11 +80,13 @@ pub(super) fn magazines() -> Line {
         return Line::off("");
     }
     let c = loose::counts();
-    Line::ok(format_smolstr!(
-        "{} IN THE WORLD, {} PICKED UP, {} SEATED",
-        c.in_world,
-        c.picked_up,
-        c.seated
+    Line::ok(text!(
+        c.in_world.to_string(),
+        " in the world, ",
+        c.picked_up.to_string(),
+        " picked up, ",
+        c.seated.to_string(),
+        " seated"
     ))
 }
 
@@ -81,15 +95,17 @@ pub(super) fn c4_by_hand() -> Line {
         return Line::off("");
     }
     let status = c4::status();
-    Line::ok(format_smolstr!(
-        "{} THROWN, {} PRESSED ON, {} ON OBJECTS{}",
-        status.thrown - status.stuck.min(status.thrown),
-        status.stuck,
-        status.stuck_on_objects,
+    Line::ok(text!(
+        (status.thrown - status.stuck.min(status.thrown)).to_string(),
+        " thrown, ",
+        status.stuck.to_string(),
+        " pressed on, ",
+        status.stuck_on_objects.to_string(),
+        " on objects",
         if read_config(|c| c.controllers.weapons.c4.stick.enabled) {
-            ""
+            Text::default()
         } else {
-            ", PRESSING OFF"
+            prose(", pressing off")
         }
     ))
 }
@@ -101,17 +117,18 @@ pub(super) fn grenade_pin() -> Line {
         return Line::off("");
     }
     let status = grenade::status();
-    Line::ok(format_smolstr!(
-        "{}, {} PULLED{}",
-        status
-            .pin
-            .map_or("NO GRENADE IN HAND", |p| p.label())
-            .to_uppercase(),
-        status.pins_pulled,
-        status.last_puller.map_or(String::new(), |p| format!(
-            ", LAST BY {}",
-            p.label().to_uppercase()
-        ))
+    let pin = status
+        .pin
+        .map_or_else(|| prose("No grenade in hand"), |p| prose(p.label()));
+    let last = status
+        .last_puller
+        .map_or_else(Text::default, |p| text!(", last by ", prose(p.label())));
+    Line::ok(text!(
+        pin,
+        ", ",
+        status.pins_pulled.to_string(),
+        " pulled",
+        last
     ))
 }
 
@@ -123,15 +140,18 @@ pub(super) fn live_grenades() -> Line {
     }
     let status = grenade::status();
     let c = status.catch;
-    Line::ok(format_smolstr!(
-        "{} LIVE, {} IN REACH, {} CAUGHT, {} THROWN ON{}",
-        c.tracked,
-        c.in_reach,
-        c.caught,
-        c.thrown,
-        status.caught_hand.map_or(String::new(), |h| format!(
-            ", ONE IN THE {} HAND",
-            h.label().to_uppercase()
-        ))
+    let caught = status.caught_hand.map_or_else(Text::default, |h| {
+        text!(", one in the ", prose(h.label()), " hand")
+    });
+    Line::ok(text!(
+        c.tracked.to_string(),
+        " live, ",
+        c.in_reach.to_string(),
+        " in reach, ",
+        c.caught.to_string(),
+        " caught, ",
+        c.thrown.to_string(),
+        " thrown on",
+        caught
     ))
 }

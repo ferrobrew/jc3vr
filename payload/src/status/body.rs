@@ -6,8 +6,6 @@
 
 use std::time::{Duration, Instant};
 
-use smol_str::format_smolstr;
-
 use crate::{
     controllers::{
         body::{
@@ -17,7 +15,7 @@ use crate::{
         menu::read_config,
         presentation::{self, PresentationStatus},
     },
-    status::Line,
+    status::{Line, prose, text},
 };
 
 pub(super) fn seated_torso() -> Line {
@@ -37,7 +35,7 @@ pub(super) fn seated_torso() -> Line {
 /// the player's head.
 fn seated_line(status: &ProceduralStatus) -> Line {
     if status.case != Case::Seated {
-        return Line::waiting("NOT SEATED").with_note(status.case.label());
+        return Line::waiting(prose("Not seated")).with_note(status.case.label());
     }
     torso_on_hips_line(status)
 }
@@ -45,10 +43,11 @@ fn seated_line(status: &ProceduralStatus) -> Line {
 /// The torso on the animation's hips: its weight and the neck's error, at full weight and posed on
 /// the hips once the hand-over has finished.
 fn torso_on_hips_line(status: &ProceduralStatus) -> Line {
-    let detail = format_smolstr!(
-        "{:.0}%, NECK {:.0} CM",
-        status.weight * 100.0,
-        status.neck_error_m * 100.0
+    let detail = text!(
+        format!("{:.0}%", status.weight * 100.0),
+        ", neck ",
+        format!("{:.0}", status.neck_error_m * 100.0),
+        " cm"
     );
     if status.on_animated_hips && status.weight >= 1.0 && !status.switch_fading {
         Line::ok(detail)
@@ -73,15 +72,15 @@ pub(super) fn wingsuit_arms() -> Line {
 /// The wingsuit's arms: their weight and the hands they queued targets for.
 fn wings_line(status: &ProceduralStatus) -> Line {
     if status.case != Case::Wingsuit {
-        return Line::waiting("NOT IN THE WINGSUIT").with_note(status.case.label());
+        return Line::waiting(prose("Not in the wingsuit")).with_note(status.case.label());
     }
-    let hands = match status.wing_queued {
-        [true, true] => "BOTH HANDS",
-        [true, false] => "LEFT HAND",
-        [false, true] => "RIGHT HAND",
-        [false, false] => "NO HANDS",
-    };
-    let detail = format_smolstr!("{:.0}%, {hands}", status.wing_weight * 100.0);
+    let hands = prose(match status.wing_queued {
+        [true, true] => "both hands",
+        [true, false] => "left hand",
+        [false, true] => "right hand",
+        [false, false] => "no hands",
+    });
+    let detail = text!(format!("{:.0}%", status.wing_weight * 100.0), ", ", hands);
     if status.wing_queued == [true, true] && status.wing_weight >= 1.0 {
         Line::ok(detail)
     } else {
@@ -106,12 +105,12 @@ pub(super) fn parachute_body() -> Line {
 /// brake.
 fn parachute_line(status: &ProceduralStatus) -> Line {
     if status.case != Case::Parachute {
-        return Line::waiting("NOT UNDER THE CANOPY").with_note(status.case.label());
+        return Line::waiting(prose("Not under the canopy")).with_note(status.case.label());
     }
-    let detail = format_smolstr!(
-        "{:.0}%, FLARE {:.0}%",
-        status.weight * 100.0,
-        status.flare * 100.0
+    let detail = text!(
+        format!("{:.0}%", status.weight * 100.0),
+        ", flare ",
+        format!("{:.0}%", status.flare * 100.0)
     );
     if status.on_animated_hips
         && status.weight >= 1.0
@@ -136,7 +135,7 @@ pub(super) fn swim_torso() -> Line {
     }
     let status = procedural::published_status();
     if status.case != Case::Swimming {
-        return Line::waiting("NOT SWIMMING").with_note(status.case.label());
+        return Line::waiting(prose("Not swimming")).with_note(status.case.label());
     }
     torso_on_hips_line(&status)
 }
@@ -157,14 +156,14 @@ pub(super) fn roof_torso() -> Line {
 /// The torso standing in a vehicle's stunt area.
 fn roof_line(status: &ProceduralStatus) -> Line {
     if status.case != Case::StuntStanding {
-        return Line::waiting("NOT ON A ROOF").with_note(status.case.label());
+        return Line::waiting(prose("Not on a roof")).with_note(status.case.label());
     }
     torso_on_hips_line(status)
 }
 
 pub(super) fn body_mirror() -> Line {
     if !read_config(|c| c.controllers.overlay.body_mirror) {
-        return Line::off("SWITCH ON IN DEBUG UI")
+        return Line::off(prose("Switch on in debug UI"))
             .with_note("the Controllers tab's overlay section, Body mirror");
     }
     mirror_line(&mirror::status(), Instant::now())
@@ -174,16 +173,16 @@ pub(super) fn body_mirror() -> Line {
 /// a mirror that drew before the menu opened still reads as drawing.
 fn mirror_line(status: &MirrorStatus, now: Instant) -> Line {
     match (status.bones, status.at) {
-        (Some(0), _) => Line::failed("NO BONES FOUND"),
+        (Some(0), _) => Line::failed(prose("No bones found")),
         (Some(bones), Some(at)) => {
-            let detail = format_smolstr!("{bones} BONES");
+            let detail = text!(bones.to_string(), " bones");
             if now.saturating_duration_since(at) < MIRROR_STALE {
                 Line::ok(detail)
             } else {
                 Line::waiting(detail).with_note("not drawn since the menu opened or the pass ran")
             }
         }
-        _ => Line::waiting("NOT DRAWN YET"),
+        _ => Line::waiting(prose("Not drawn yet")),
     }
 }
 
@@ -202,15 +201,16 @@ pub(super) fn render_rate_body() -> Line {
 /// were.
 fn presentation_line(status: &PresentationStatus) -> Line {
     if let Some(error) = &status.rig_error {
-        return Line::failed("NO RIG").with_note(error.to_string());
+        return Line::failed(prose("No rig")).with_note(error.to_string());
     }
     if !status.measured {
-        return Line::waiting(status.idle.label().to_uppercase());
+        return Line::waiting(prose(status.idle.label()));
     }
-    Line::ok(format_smolstr!(
-        "{} DRAWS, {:.3} MS",
-        status.draws,
-        status.mean_cost_us / 1000.0
+    Line::ok(text!(
+        status.draws.to_string(),
+        " draws, ",
+        format!("{:.3}", status.mean_cost_us / 1000.0),
+        " ms"
     ))
     .with_note(format!(
         "now {}, last frame {:.3} ms, peak {:.3} ms, {} ticks",

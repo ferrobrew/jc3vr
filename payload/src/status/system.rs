@@ -8,16 +8,13 @@ use smol_str::format_smolstr;
 
 use crate::{
     config::{self, SaveStatus},
-    controllers::{
-        frame::Hand,
-        menu::{read_config, save_status_label},
-    },
+    controllers::{frame::Hand, menu::read_config},
     frame_timing::{self, FramePercentiles},
     hud::{
         atlas,
         world_markers::{self, DistanceSource},
     },
-    status::Line,
+    status::{Line, Text, prose, text},
     vr::{
         self, DirectArm, DirectStatus, PublishedStatus, ResolutionStatus,
         input::{self as vr_input, ActionsOrigin, InputStatus, layout, restart, self_check},
@@ -59,7 +56,7 @@ pub(super) fn input_actions() -> Line {
 pub(super) fn layout_fingerprint() -> Line {
     let status = vr_input::status();
     let Some(hand) = status.suggested_for else {
-        return Line::waiting("NOT ATTACHED");
+        return Line::waiting(prose("Not attached"));
     };
     let fingerprint = format_smolstr!("{:016X}", fingerprint(hand));
     let short = &fingerprint[..8];
@@ -76,11 +73,17 @@ pub(super) fn layout_fingerprint() -> Line {
 pub(super) fn self_check() -> Line {
     let status = self_check::status();
     match (status.report.is_some(), status.problems) {
-        (false, _) => Line::waiting("NOT RUN"),
-        (true, 0) => Line::ok(format_smolstr!("PASSED, {} CHECKED", status.findings.len())),
-        (true, problems) => Line::failed(format_smolstr!(
-            "{problems} OF {} ONE-SIDED",
-            status.findings.len()
+        (false, _) => Line::waiting(prose("Not run")),
+        (true, 0) => Line::ok(text!(
+            "Passed, ",
+            status.findings.len().to_string(),
+            " checked"
+        )),
+        (true, problems) => Line::failed(text!(
+            problems.to_string(),
+            " of ",
+            status.findings.len().to_string(),
+            " one-sided"
         )),
     }
 }
@@ -91,9 +94,9 @@ pub(super) fn atlas() -> Line {
     }
     let status = atlas::status();
     if status.move_failures > 0 || status.restore_failures > 0 {
-        return Line::failed(format_smolstr!(
-            "{} FAILS, SEE LOG",
-            status.move_failures + status.restore_failures
+        return Line::failed(text!(
+            (status.move_failures + status.restore_failures).to_string(),
+            " fails, see log"
         ))
         .with_note(format!(
             "{} moves and {} restores failed",
@@ -101,23 +104,23 @@ pub(super) fn atlas() -> Line {
         ));
     }
     let Some(frame) = status.frame else {
-        return Line::waiting("NO FRAME");
+        return Line::waiting(prose("No frame"));
     };
     let parts = [
-        (frame.ammo.is_some(), "AMMO"),
-        (frame.heat.is_some(), "HEAT"),
-        (frame.cross.is_some(), "CROSS"),
-        (frame.tether.is_some(), "TETHER"),
+        (frame.ammo.is_some(), "ammo"),
+        (frame.heat.is_some(), "heat"),
+        (frame.cross.is_some(), "cross"),
+        (frame.tether.is_some(), "tether"),
     ];
-    let found: Vec<&str> = parts
+    let found: Vec<Text> = parts
         .iter()
         .filter(|(found, _)| *found)
-        .map(|(_, name)| *name)
+        .map(|(_, name)| prose(name))
         .collect();
     if found.is_empty() {
-        Line::waiting("NONE FOUND")
+        Line::waiting(prose("None found"))
     } else {
-        Line::ok(found.join(" "))
+        Line::ok(Text::join(found, " "))
     }
 }
 
@@ -126,13 +129,14 @@ pub(super) fn world_markers() -> Line {
         return Line::off("");
     }
     match world_markers::status() {
-        Some(status) if status.skipped > 0 => Line::ok(format_smolstr!(
-            "{} PLACED, {} LEFT",
-            status.markers.len(),
-            status.skipped
+        Some(status) if status.skipped > 0 => Line::ok(text!(
+            status.markers.len().to_string(),
+            " placed, ",
+            status.skipped.to_string(),
+            " left"
         )),
-        Some(status) => Line::ok(format_smolstr!("{} PLACED", status.markers.len())),
-        None => Line::waiting("NOT DRAWING"),
+        Some(status) => Line::ok(text!(status.markers.len().to_string(), " placed")),
+        None => Line::waiting(prose("Not drawing")),
     }
 }
 
@@ -142,7 +146,7 @@ pub(super) fn marker_depth() -> Line {
         return Line::off("");
     }
     let Some(status) = world_markers::status() else {
-        return Line::waiting("NOT DRAWING");
+        return Line::waiting(prose("Not drawing"));
     };
     let count = |source| {
         status
@@ -151,83 +155,84 @@ pub(super) fn marker_depth() -> Line {
             .filter(|marker| marker.source == source)
             .count()
     };
-    Line::ok(format_smolstr!(
-        "{} DEPTH, {} RAY, {} PT",
-        count(DistanceSource::Depth),
-        count(DistanceSource::Ray),
-        count(DistanceSource::Point)
+    Line::ok(text!(
+        count(DistanceSource::Depth).to_string(),
+        " depth, ",
+        count(DistanceSource::Ray).to_string(),
+        " ray, ",
+        count(DistanceSource::Point).to_string(),
+        " pt"
     ))
 }
 
 fn settings_line(status: SaveStatus) -> Line {
-    let label = save_status_label(status);
     match status {
-        SaveStatus::UpToDate | SaveStatus::Pending => Line::ok(label),
-        SaveStatus::Failed => Line::failed("SEE LOG"),
-        SaveStatus::Unavailable => Line::off(label),
+        SaveStatus::UpToDate => Line::ok(prose("Up to date")),
+        SaveStatus::Pending => Line::ok(prose("Saving")),
+        SaveStatus::Failed => Line::failed(prose("See log")),
+        SaveStatus::Unavailable => Line::off(prose("Not saved")),
     }
 }
 
 fn session_line(status: PublishedStatus, rendering: bool) -> Line {
     let state = status.session_state.map(session_state_label);
     if rendering {
-        return Line::ok(state.unwrap_or("RENDERING"));
+        return Line::ok(state.unwrap_or_else(|| prose("Rendering")));
     }
     if status.runtime_up {
-        Line::waiting(state.unwrap_or("NO STATE"))
+        Line::waiting(state.unwrap_or_else(|| prose("No state")))
     } else if status.bring_up_failed {
-        Line::failed("RETRYING, SEE LOG")
+        Line::failed(prose("Retrying, see log"))
     } else {
-        Line::waiting("STARTING")
+        Line::waiting(prose("Starting"))
     }
 }
 
-fn session_state_label(state: xr::SessionState) -> &'static str {
-    match state {
-        xr::SessionState::IDLE => "IDLE",
-        xr::SessionState::READY => "READY",
-        xr::SessionState::SYNCHRONIZED => "SYNCHRONIZED",
-        xr::SessionState::VISIBLE => "VISIBLE",
-        xr::SessionState::FOCUSED => "FOCUSED",
-        xr::SessionState::STOPPING => "STOPPING",
-        xr::SessionState::LOSS_PENDING => "LOSS PENDING",
-        xr::SessionState::EXITING => "EXITING",
-        _ => "UNKNOWN STATE",
-    }
+fn session_state_label(state: xr::SessionState) -> Text {
+    prose(match state {
+        xr::SessionState::IDLE => "Idle",
+        xr::SessionState::READY => "Ready",
+        xr::SessionState::SYNCHRONIZED => "Synchronized",
+        xr::SessionState::VISIBLE => "Visible",
+        xr::SessionState::FOCUSED => "Focused",
+        xr::SessionState::STOPPING => "Stopping",
+        xr::SessionState::LOSS_PENDING => "Loss pending",
+        xr::SessionState::EXITING => "Exiting",
+        _ => "Unknown state",
+    })
 }
 
 fn direct_blit_line(status: DirectStatus) -> Line {
     match status.arm {
-        None => Line::waiting("NO FRAME YET"),
+        None => Line::waiting(prose("No frame yet")),
         Some(DirectArm::Armed) => match (status.direct_eyes, status.back_buffer_readable) {
-            (2, _) => Line::ok("BOTH EYES"),
-            (_, Some(false)) => Line::off("BUFFER UNREADABLE"),
-            (eyes, _) => Line::waiting(format_smolstr!("{eyes} OF 2 EYES")),
+            (2, _) => Line::ok(prose("Both eyes")),
+            (_, Some(false)) => Line::off(prose("Buffer unreadable")),
+            (eyes, _) => Line::waiting(text!(eyes.to_string(), " of 2 eyes")),
         },
         Some(DirectArm::ConfigOff) => Line::off(""),
-        Some(DirectArm::GaveUp) => Line::failed("SEE LOG"),
-        Some(DirectArm::AcquireFailed) => Line::waiting("ACQUIRE FAILED"),
-        Some(DirectArm::NotArmed) => Line::off("SINGLE-PASS OR MONO"),
+        Some(DirectArm::GaveUp) => Line::failed(prose("See log")),
+        Some(DirectArm::AcquireFailed) => Line::waiting(prose("Acquire failed")),
+        Some(DirectArm::NotArmed) => Line::off(prose("Single-pass or mono")),
     }
 }
 
 fn frame_time_line(percentiles: Option<FramePercentiles>) -> Line {
     match percentiles {
-        Some(p) => Line::ok(format_smolstr!(
-            "{:.1}/{:.1} MS P50/P95",
-            p.p50_ms,
-            p.p95_ms
+        Some(p) => Line::ok(text!(
+            format!("{:.1}/{:.1}", p.p50_ms, p.p95_ms),
+            " ms P50/P95"
         )),
-        None => Line::waiting("MEASURING"),
+        None => Line::waiting(prose("Measuring")),
     }
 }
 
 fn render_size_line(native: bool, status: ResolutionStatus) -> Line {
-    let size = |(w, h): (u32, u32)| format_smolstr!("{w}X{h}");
+    let size = |(w, h): (u32, u32)| text!(w.to_string(), "x", h.to_string());
     match (status.target, status.engine) {
-        (_, None) => Line::waiting("NO ENGINE"),
+        (_, None) => Line::waiting(prose("No engine")),
         (Some(target), Some(engine)) if target == engine => Line::ok(size(engine)),
-        (Some(target), Some(_)) => Line::waiting(format_smolstr!("TO {}", size(target))),
+        (Some(target), Some(_)) => Line::waiting(text!("To ", size(target))),
         (None, Some(engine)) if native => Line::waiting(size(engine)),
         (None, Some(engine)) => Line::off(size(engine)),
     }
@@ -235,19 +240,19 @@ fn render_size_line(native: bool, status: ResolutionStatus) -> Line {
 
 fn input_line(status: &InputStatus, configured: Hand) -> Line {
     match restart::reason(status, configured) {
-        Some(reason) if reason.blocks_input() => return Line::failed("RESTART THE GAME"),
-        Some(_) => return Line::ok("RESTART FOR HAND"),
+        Some(reason) if reason.blocks_input() => return Line::failed(prose("Restart the game")),
+        Some(_) => return Line::ok(prose("Restart for hand")),
         None => {}
     }
     if status.error.is_some() {
-        return Line::failed("SEE LOG");
+        return Line::failed(prose("See log"));
     }
     match status.origin {
-        Some(ActionsOrigin::Created) if status.attached => Line::ok("CREATED"),
+        Some(ActionsOrigin::Created) if status.attached => Line::ok(prose("Created")),
         Some(ActionsOrigin::RewrappedAndAttached | ActionsOrigin::Rewrapped) if status.attached => {
-            Line::ok("REUSED")
+            Line::ok(prose("Reused"))
         }
-        _ => Line::waiting("NOT ATTACHED"),
+        _ => Line::waiting(prose("Not attached")),
     }
 }
 
@@ -318,6 +323,10 @@ mod tests {
             p95_ms: 13.94,
         };
         assert_eq!(frame_time_line(Some(p)).text(), "OK, 11.1/13.9 MS P50/P95");
+        assert_eq!(
+            frame_time_line(Some(p)).display_detail,
+            "11.1/13.9 ms P50/P95"
+        );
         assert_eq!(frame_time_line(None).health, Health::Waiting);
     }
 

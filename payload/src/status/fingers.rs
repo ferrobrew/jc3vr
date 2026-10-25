@@ -1,14 +1,12 @@
 //! The status rows for the fingers: each hand's grip pose and what declared it.
 
-use smol_str::{SmolStr, format_smolstr};
-
 use crate::{
     controllers::{
-        fingers::{self, HandFingersStatus, target::GripMode},
+        fingers::{self, HandFingersStatus, grip::GripSource, target::GripMode},
         frame::Hand,
         menu::read_config,
     },
-    status::Line,
+    status::{Line, Text, prose, text},
 };
 
 pub(super) fn left_grip() -> Line {
@@ -29,42 +27,48 @@ fn grip(hand: Hand) -> Line {
 
 fn grip_line(curls: bool, poses: bool, status: &HandFingersStatus) -> Line {
     if !curls {
-        return Line::off("FINGER CURLS OFF");
+        return Line::off(prose("Finger curls off"));
     }
     if status.unresolved {
-        return Line::failed("FINGER BONES NOT FOUND");
+        return Line::failed(prose("Finger bones not found"));
     }
     if status.source.is_none() {
-        return Line::waiting("HAND NOT DRIVEN");
+        return Line::waiting(prose("Hand not driven"));
     }
     let Some(grip) = status.grip else {
         return if poses {
-            Line::ok("HOLDS NOTHING")
+            Line::ok(prose("Holds nothing"))
         } else {
-            Line::off("GRIP POSES OFF")
+            Line::off(prose("Grip poses off"))
         };
     };
-    let what = format_smolstr!(
-        "{} FROM {}",
-        grip.pose.label().to_ascii_uppercase(),
-        grip.source.label().to_ascii_uppercase()
-    );
-    let detail: SmolStr = match grip.mode {
+    let source = match grip.source {
+        GripSource::C4 => prose("C4"),
+        source => prose(source.label()),
+    };
+    let what = text!(prose(grip.pose.label()), " from ", source);
+    let detail = match grip.mode {
         GripMode::Posed | GripMode::Releasing => {
             let fitted = if grip.fitted > 0 {
-                format_smolstr!(", {} FITTED", grip.fitted)
+                text!(", ", grip.fitted.to_string(), " fitted")
             } else {
-                SmolStr::default()
+                Text::default()
             };
             let releasing = if grip.mode == GripMode::Releasing {
-                ", LETTING GO"
+                prose(", letting go")
             } else {
-                ""
+                Text::default()
             };
-            format_smolstr!("{what}, {:.0}%{fitted}{releasing}", grip.share * 100.0)
+            text!(
+                what,
+                ", ",
+                format!("{:.0}%", grip.share * 100.0),
+                fitted,
+                releasing
+            )
         }
-        GripMode::GameGrip => format_smolstr!("{what}, GAME'S GRIP"),
-        GripMode::PosesOff => format_smolstr!("{what}, POSES OFF"),
+        GripMode::GameGrip => text!(what, ", game's grip"),
+        GripMode::PosesOff => text!(what, ", poses off"),
     };
     Line::ok(detail)
 }
@@ -73,9 +77,7 @@ fn grip_line(curls: bool, poses: bool, status: &HandFingersStatus) -> Line {
 mod tests {
     use super::*;
     use crate::controllers::fingers::{
-        curl::CurlSource,
-        grip::{GripSource, catalogue::GripPose},
-        target::GripReport,
+        curl::CurlSource, grip::catalogue::GripPose, target::GripReport,
     };
 
     fn driven() -> HandFingersStatus {
@@ -100,6 +102,23 @@ mod tests {
             grip_line(true, true, &status).text(),
             "OK, WRAP FROM LOOSE OBJECT, 80%, 4 FITTED"
         );
+    }
+
+    #[test]
+    fn the_games_grip_keeps_c4_and_the_legacy_spelling() {
+        let status = HandFingersStatus {
+            grip: Some(GripReport {
+                source: GripSource::C4,
+                pose: GripPose::ChargePinch,
+                share: 0.0,
+                fitted: 0,
+                mode: GripMode::GameGrip,
+            }),
+            ..driven()
+        };
+        let line = grip_line(true, true, &status);
+        assert_eq!(line.text(), "OK, CHARGE PINCH FROM C4, GAME'S GRIP");
+        assert_eq!(line.display_detail, "charge pinch from C4, game's grip");
     }
 
     #[test]

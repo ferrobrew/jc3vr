@@ -1,6 +1,5 @@
-//! The Status tab: every status row ([`crate::status`]), read each frame, for confirming at a glance
-//! that each of the mod's systems is live and healthy, and a button that logs the same summary. The
-//! rows keep the labels the scenario runner's status-row probes name them by.
+//! The Status tab shows authored display labels and status text from [`crate::status`].
+//! The summary button logs the separate legacy text used by logs and scenario probes.
 
 use egui::{Color32, RichText, Ui};
 
@@ -18,11 +17,12 @@ pub fn egui_debug_status(ui: &mut Ui) {
     // The rows read the configuration, so no configuration lock is held while they are read.
     let sections: Vec<_> = status::read_all().collect();
     egui::ScrollArea::vertical().show(ui, |ui| {
-        for (title, rows) in sections {
+        for (id, title, rows) in sections {
             egui::CollapsingHeader::new(title)
+                .id_salt(id)
                 .default_open(true)
                 .show(ui, |ui| {
-                    egui::Grid::new(title).striped(true).show(ui, |ui| {
+                    egui::Grid::new(id).striped(true).show(ui, |ui| {
                         for (label, line) in rows {
                             row(ui, label, &line);
                         }
@@ -35,13 +35,13 @@ pub fn egui_debug_status(ui: &mut Ui) {
 fn row(ui: &mut Ui, label: &str, line: &Line) {
     ui.label(label);
     ui.label(
-        RichText::new(line.health.word())
+        RichText::new(line.health.display_word())
             .strong()
             .color(health_color(ui, line.health)),
     );
-    let detail = ui.label(line.detail.as_str());
-    if let Some(note) = &line.note {
-        detail.on_hover_text(note);
+    let detail = ui.label(line.display_detail.as_str());
+    if let Some(note) = &line.display_note {
+        detail.on_hover_text(note.as_str());
     }
     ui.end_row();
 }

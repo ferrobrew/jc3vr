@@ -11,7 +11,7 @@ use crate::{
         snatch::{self, SnatchStatus},
     },
     grapple::physical::{self, GrapplePhase, GrappleStatus},
-    status::Line,
+    status::{Line, Text, prose, text},
 };
 
 pub(super) fn state() -> Line {
@@ -43,7 +43,12 @@ pub(super) fn swing() -> Line {
     if !(hold || pump) {
         return Line::off("");
     }
-    let detail = format_smolstr!("{} SWINGS, {} PUMPED", status.swings, status.pumps);
+    let detail = text!(
+        status.swings.to_string(),
+        " swings, ",
+        status.pumps.to_string(),
+        " pumped"
+    );
     if status.swings == 0 {
         Line::waiting(detail)
     } else {
@@ -69,18 +74,26 @@ fn snatch_line(enabled: bool, status: &SnatchStatus) -> Line {
         return Line::off("");
     }
     if !status.live {
-        return Line::waiting("NO HAND INPUT");
+        return Line::waiting(prose("No hand input"));
     }
     let target = match (status.target, status.unoffered) {
-        (Some(target), _) => format_smolstr!("{}, {:.1} M", target.kind, target.distance_m),
-        (None, Some(why)) => format_smolstr!("{why}"),
-        (None, None) => "NO TARGET".into(),
+        (Some(target), _) => text!(
+            snatch_kind(target.kind),
+            ", ",
+            format!("{:.1}", target.distance_m),
+            " m"
+        ),
+        (None, Some(why)) => snatch_reason(why),
+        (None, None) => prose("No target"),
     };
-    let line = Line::ok(format_smolstr!(
-        "{}, {target}, {} TAKEN OF {}",
-        status.phase,
-        status.taken,
-        status.fired
+    let line = Line::ok(text!(
+        snatch_phase(status.phase),
+        ", ",
+        target,
+        ", ",
+        status.taken.to_string(),
+        " taken of ",
+        status.fired.to_string()
     ));
     match &status.last_refusal {
         Some(refusal) => line.with_note(format!("last: {refusal}")),
@@ -90,20 +103,35 @@ fn snatch_line(enabled: bool, status: &SnatchStatus) -> Line {
 
 fn state_line(status: &GrappleStatus) -> Line {
     if !status.live {
-        return Line::waiting("NO HAND INPUT");
+        return Line::waiting(prose("No hand input"));
     }
-    Line::ok(status.phase.label())
+    let display = match status.phase {
+        GrapplePhase::Inactive => "Inactive",
+        GrapplePhase::Firing => "Firing",
+        GrapplePhase::InFlight => "In flight",
+        GrapplePhase::Attached => "Attached",
+        GrapplePhase::ReelingIn => "Reeling in",
+        GrapplePhase::Hanging => "Hanging",
+        GrapplePhase::ReeledIn => "Reeled in",
+        GrapplePhase::ScriptedWire => "Scripted wire",
+    };
+    Line::ok(Text::pair(status.phase.label(), display))
 }
 
 fn target_line(status: &GrappleStatus) -> Line {
     match status.target {
-        Some(target) => Line::ok(format_smolstr!(
-            "{}, {:.1} M",
-            if target.object { "OBJECT" } else { "SURFACE" },
-            target.distance_m
+        Some(target) => Line::ok(text!(
+            if target.object {
+                prose("Object")
+            } else {
+                prose("Surface")
+            },
+            ", ",
+            format!("{:.1}", target.distance_m),
+            " m"
         )),
-        None if status.phase == GrapplePhase::InFlight => Line::waiting("IN FLIGHT"),
-        None => Line::ok("NONE"),
+        None if status.phase == GrapplePhase::InFlight => Line::waiting(prose("In flight")),
+        None => Line::ok(prose("None")),
     }
 }
 
@@ -111,11 +139,23 @@ fn reel_line(enabled: bool, status: &GrappleStatus) -> Line {
     if !enabled {
         return Line::off("");
     }
-    let counts = format_smolstr!("{} REELS, {} BOOSTS", status.reels, status.boosts);
+    let counts = text!(
+        status.reels.to_string(),
+        " reels, ",
+        status.boosts.to_string(),
+        " boosts"
+    );
     match status.reel_scale {
-        Some(scale) => Line::ok(format_smolstr!(
-            "{scale:.2}X{}, {counts}",
-            if status.boosted { " BOOSTED" } else { "" }
+        Some(scale) => Line::ok(text!(
+            format!("{scale:.2}"),
+            "x",
+            if status.boosted {
+                prose(" boosted")
+            } else {
+                Text::default()
+            },
+            ", ",
+            counts
         )),
         None if status.reels == 0 => Line::waiting(counts),
         None => Line::ok(counts),
@@ -123,23 +163,63 @@ fn reel_line(enabled: bool, status: &GrappleStatus) -> Line {
 }
 
 fn tethers_line(enabled: bool, status: &GrappleStatus) -> Line {
-    let count = format_smolstr!("{} ATTACHED", status.tethers);
+    let count = text!(status.tethers.to_string(), " attached");
     if !enabled {
         return Line::off(count);
     }
-    let pull = match status.retract {
-        Some(value) => format_smolstr!(", PULL {value:.2}"),
-        None => "".into(),
-    };
+    let pull = status.retract.map_or_else(Text::default, |value| {
+        text!(", pull ", format!("{value:.2}"))
+    });
     let squeeze = if status.squeezing {
-        format_smolstr!(", TENSION {:.2}", status.tension)
+        text!(", tension ", format!("{:.2}", status.tension))
     } else {
-        "".into()
+        Text::default()
     };
-    Line::ok(format_smolstr!(
-        "{count}{pull}{squeeze}, {} PULLS",
-        status.retracts
+    Line::ok(text!(
+        count,
+        pull,
+        squeeze,
+        ", ",
+        status.retracts.to_string(),
+        " pulls"
     ))
+}
+
+fn snatch_phase(phase: &str) -> Text {
+    let display = match phase {
+        "IDLE" => "Idle",
+        "ARMED" => "Armed",
+        "FREEING" => "Freeing",
+        "HOOK OUT" => "Hook out",
+        "PULLING" => "Pulling",
+        other => other,
+    };
+    Text::pair(phase, display)
+}
+
+fn snatch_kind(kind: &str) -> Text {
+    let display = match kind {
+        "WEAPON ON THE GROUND" => "weapon on the ground",
+        "WEAPON IN HANDS" => "weapon in hands",
+        "HOLSTERED WEAPON" => "holstered weapon",
+        "OBJECT" => "object",
+        "CAR DOOR" => "car door",
+        other => other,
+    };
+    Text::pair(kind, display)
+}
+
+fn snatch_reason(reason: &str) -> Text {
+    let display = match reason {
+        "NOT ON FOOT" => "not on foot",
+        "HAND NOT EMPTY" => "hand not empty",
+        "GRAPPLE BUTTON HELD" => "grapple button held",
+        "NO HOOK" => "no hook",
+        "LINE OUT" => "line out",
+        "HOOK BUSY" => "hook busy",
+        other => other,
+    };
+    Text::pair(reason, display)
 }
 
 #[cfg(test)]
