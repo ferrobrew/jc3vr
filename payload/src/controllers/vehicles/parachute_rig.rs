@@ -192,3 +192,7 @@ mod tests {
         assert_eq!(unplaced(Some(([false, false], now)), stale), [false; 2]);
     }
 }
+
+#[cfg(test)]
+#[path = "parachute_native_model.rs"]
+mod native_rest_model;
