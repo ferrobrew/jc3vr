@@ -18,6 +18,8 @@
 //! are read on the input tick from the guns' last placement, in the world, and carried into the
 //! cockpit frame the volumes live in ([`cockpit_frames`]).
 
+use std::time::Instant;
+
 use glam::{Mat4, Vec3};
 use jc3gi::{
     character::character::Character,
@@ -35,6 +37,7 @@ use crate::{
             grab::{self, GrabRules, SocketMove},
         },
         weapons::{
+            docks::attachments::{Attachment, Missing, Occupancy, Placement, PoseSource, Sample},
             hold::{act, armed, steal},
             inventory::{
                 carry,
@@ -45,6 +48,14 @@ use crate::{
     },
     headpose,
 };
+
+pub(crate) mod attachments;
+
+/// The last input-thread socket observation, carried with the current character transform.
+/// No weapon or joint is read by this consumer.
+pub(crate) fn attachment_sample(owner: usize, character: Mat4, now: Instant) -> Option<Sample> {
+    ATTACHMENTS.lock().as_ref()?.in_world(owner, character, now)
+}
 
 /// What a socket's volume is for.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -86,36 +97,97 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
     let snapshot = inputs.snapshot;
     let to_world = Mat4::from(owner.m_WorldMatrixT1);
     let docked = unsafe { socket_weapons(owner, snapshot) };
-    let mut grips = GRIPS.lock();
-    let mut out = Vec::new();
-    let mut seen = Vec::new();
-    for &(socket, weapon) in &docked {
-        let object = weapon as *const WeaponBase as ObjectKey;
-        let Some(point) = (unsafe { grip_point(weapon) }) else {
-            continue;
-        };
-        if let Some(bone) = unsafe { bone_world(owner, to_world, socket) }
-            && let Some(local) = grip_on_bone(bone, point)
-        {
-            grips.retain(|g| !(g.object == object && g.socket == socket));
-            grips.push(DockGrip {
-                object,
-                socket,
-                local,
-            });
+    let bones = Socket::ALL.map(|socket| {
+        if snapshot.body.has(socket) || snapshot.docked(socket).is_some() {
+            unsafe { bone_world(owner, to_world, socket) }
+        } else {
+            None
         }
-        seen.push(object);
-        for hand in Hand::BOTH {
-            let draws = inputs.free[hand.index()]
-                && grab::grab(snapshot, hand, socket, inputs.rules)
-                    == Ok(SocketMove::Draw { socket, hand });
-            if draws {
-                out.push(SocketPoint {
-                    socket,
-                    hand,
-                    point,
-                    usage: SocketUse::Draw,
-                });
+    });
+    let mut grips = GRIPS.lock();
+    let mut sample = Sample {
+        owner: owner as *const Character as usize,
+        at: Instant::now(),
+        character: to_world,
+        attachments: Vec::new(),
+    };
+    let mut seen = Vec::new();
+    let observed = docked.iter().map(|(socket, _)| *socket).chain(
+        Socket::ALL
+            .into_iter()
+            .filter(|socket| !docked.iter().any(|(seen, _)| seen == socket)),
+    );
+    for socket in observed {
+        let occupant = snapshot.docked(socket);
+        if occupant.is_none() && !snapshot.body.has(socket) {
+            continue;
+        }
+        let occupancy = occupant.map_or(Occupancy::Empty, |item| Occupancy::Occupied {
+            object: item.binding.address().map(|address| address.get()),
+        });
+        let (source, pose) = if let Some(&(_, weapon)) = docked.iter().find(|(s, _)| *s == socket) {
+            let object = weapon as *const WeaponBase as ObjectKey;
+            let point = unsafe { grip_point(weapon) };
+            if let Some(point) = point {
+                if let Some(bone) = bones[socket.index()]
+                    && let Some(local) = grip_on_bone(bone, point)
+                {
+                    grips.retain(|g| !(g.object == object && g.socket == socket));
+                    grips.push(DockGrip {
+                        object,
+                        socket,
+                        local,
+                    });
+                }
+                seen.push(object);
+            }
+            attachments::socket_pose(
+                to_world,
+                bones[socket.index()],
+                Placement::Visible {
+                    object,
+                    grip: point,
+                },
+            )
+        } else if let Occupancy::Occupied { object, .. } = occupancy {
+            (
+                PoseSource::UnavailableWeapon { object },
+                Err(Missing::Weapon),
+            )
+        } else {
+            attachments::socket_pose(
+                to_world,
+                bones[socket.index()],
+                Placement::Free {
+                    object: None,
+                    remembered: None,
+                    native: false,
+                    offset: inputs.offsets.of(socket),
+                },
+            )
+        };
+        let attachment = Attachment {
+            socket,
+            hand: None,
+            usage: None,
+            occupancy,
+            item: occupant.map(|item| item.id),
+            source,
+            pose,
+        };
+        sample.attachments.push(attachment);
+        if matches!(source, PoseSource::VisibleGrip { .. }) {
+            for hand in Hand::BOTH {
+                let draws = inputs.free[hand.index()]
+                    && grab::grab(snapshot, hand, socket, inputs.rules)
+                        == Ok(SocketMove::Draw { socket, hand });
+                if draws {
+                    sample.attachments.push(Attachment {
+                        hand: Some(hand),
+                        usage: Some(SocketUse::Draw),
+                        ..attachment
+                    });
+                }
             }
         }
     }
@@ -137,25 +209,51 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
             } else {
                 continue;
             };
-            let on_it = docked.iter().find(|(s, _)| *s == socket);
-            let point = match on_it {
-                Some(&(_, weapon)) => unsafe { grip_point(weapon) },
-                None => unsafe {
-                    dock_point(owner, to_world, socket, object, &grips, inputs.offsets)
-                },
+            let Some(base) = sample
+                .attachments
+                .iter()
+                .find(|a| a.socket == socket)
+                .copied()
+            else {
+                continue;
             };
-            if let Some(point) = point {
-                out.push(SocketPoint {
-                    socket,
-                    hand,
-                    point,
-                    usage,
-                });
-            }
+            let (source, pose) = if matches!(base.source, PoseSource::VisibleGrip { .. }) {
+                (base.source, base.pose)
+            } else {
+                let remembered = grips
+                    .iter()
+                    .find(|g| g.object == object && g.socket == socket)
+                    .map(|g| g.local);
+                // SAFETY: the table holds the weapon in a hand, and a slot or the carry set
+                // keeps it alive, as for the existing dockability read.
+                let native = unsafe { (object as *const WeaponBase).as_ref() }
+                    .and_then(|weapon| unsafe { slot_of(weapon) })
+                    .is_some_and(|slot| socket.is_native(slot));
+                attachments::socket_pose(
+                    to_world,
+                    bones[socket.index()],
+                    Placement::Free {
+                        object: Some(object),
+                        remembered,
+                        native,
+                        offset: inputs.offsets.of(socket),
+                    },
+                )
+            };
+            sample.attachments.push(Attachment {
+                hand: Some(hand),
+                usage: Some(usage),
+                source,
+                pose,
+                ..base
+            });
         }
     }
     grips.retain(|g| seen.contains(&g.object));
-    out
+    drop(grips);
+    let points = sample.points();
+    *ATTACHMENTS.lock() = Some(sample);
+    points
 }
 
 /// The weapons the table has on the body's sockets that are seen there: each one live (a slot or
@@ -247,36 +345,8 @@ unsafe fn bone_world(owner: &Character, to_world: Mat4, socket: Socket) -> Optio
     bone.is_finite().then_some(bone)
 }
 
-/// Where the grip of the weapon at `object` would be on the free `socket`, in the world: where it
-/// was on the socket's bone when last seen there, or else at the bone, moved by the socket's offset
-/// when the game does not dock the weapon's slot there.
-unsafe fn dock_point(
-    owner: &Character,
-    to_world: Mat4,
-    socket: Socket,
-    object: ObjectKey,
-    grips: &[DockGrip],
-    offsets: &Offsets,
-) -> Option<Vec3> {
-    let bone = unsafe { bone_world(owner, to_world, socket) }?;
-    if let Some(grip) = grips
-        .iter()
-        .find(|g| g.object == object && g.socket == socket)
-    {
-        return Some(bone.transform_point3(grip.local)).filter(|p| p.is_finite());
-    }
-    // SAFETY: the table holds the weapon in a hand, and a slot or the carry set keeps it alive.
-    let native = unsafe { (object as *const WeaponBase).as_ref() }
-        .and_then(|weapon| unsafe { slot_of(weapon) })
-        .is_some_and(|slot| socket.is_native(slot));
-    let offset = if native {
-        Vec3::ZERO
-    } else {
-        to_world.transform_vector3(offsets.of(socket))
-    };
-    let point = bone.w_axis.truncate() + offset;
-    point.is_finite().then_some(point)
-}
+/// Copied observations only; the mirror never keeps or dereferences an engine object.
+static ATTACHMENTS: Mutex<Option<Sample>> = Mutex::new(None);
 
 #[cfg(test)]
 mod tests {

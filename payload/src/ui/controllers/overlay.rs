@@ -4,6 +4,7 @@
 use egui::Ui;
 
 use crate::controllers::{
+    body::mirror,
     config::{GunReadout, OverlayConfig},
     overlay::{OverlayStatus, primitive::Source},
 };
@@ -23,6 +24,18 @@ pub(super) fn overlay_readout(ui: &mut Ui, status: &OverlayStatus) {
     if let Some(error) = &status.error {
         ui.colored_label(egui::Color32::LIGHT_RED, error);
     }
+    let attachments = mirror::attachment_status();
+    ui.label(format!(
+        "Last mirror attachment pass: sockets current {}; {} markers, {} offers, {} occupied, {} missing poses; pouches current {}, {} missing or hidden models.",
+        attachments.sockets_current,
+        attachments.socket_markers,
+        attachments.socket_offers,
+        attachments.occupied_sockets,
+        attachments.sockets_missing,
+        attachments.pouches_current,
+        attachments.pouches_missing,
+    ));
+    ui.small("Attachment counts describe the mirror's last pass, not a live draw or engine-ownership guarantee.");
 }
 
 pub(super) fn overlay_settings(ui: &mut Ui, o: &mut OverlayConfig) {

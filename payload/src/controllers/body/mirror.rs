@@ -31,6 +31,13 @@ use crate::{
             primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
             store,
         },
+        weapons::{
+            docks::{
+                self, SocketUse,
+                attachments::{Occupancy, PoseSource, Sample},
+            },
+            pouch_models::{self, attachments::Sample as PouchSample},
+        },
     },
     headpose,
 };
@@ -43,6 +50,25 @@ pub struct MirrorStatus {
     pub bones: Option<usize>,
     /// How many primitives the last pass submitted.
     pub primitives: usize,
+}
+
+/// Whether the mirror has current copied attachment observations on its last pass.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct AttachmentStatus {
+    pub at: Option<Instant>,
+    pub sockets_current: bool,
+    /// Socket observations without a pose, counted once per socket.
+    pub sockets_missing: usize,
+    pub socket_markers: usize,
+    pub socket_offers: usize,
+    pub occupied_sockets: usize,
+    pub pouches_current: bool,
+    /// Offered pouches whose model is missing or hidden.
+    pub pouches_missing: usize,
+}
+
+pub fn attachment_status() -> AttachmentStatus {
+    *ATTACHMENT_STATUS.lock()
 }
 
 /// The last pass's status. A leaf lock, so any thread may read it.
@@ -60,10 +86,11 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     let Some(character) = (unsafe { character.as_ref() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };
-    let (enabled, distance) = Config::lock_query(|c| {
+    let (enabled, distance, show_attachments) = Config::lock_query(|c| {
         (
             c.controllers.overlay.body_mirror,
             c.controllers.overlay.body_mirror_distance_m,
+            c.controllers.weapons.holsters.enabled && c.controllers.weapons.holsters.follow_docks,
         )
     });
     if !enabled {
@@ -99,12 +126,70 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         head,
         &mut primitives,
     );
+    let now = Instant::now();
+    let attachments = if show_attachments {
+        docks::attachment_sample(character as *const Character as usize, world, now)
+    } else {
+        None
+    };
+    if let Some(sample) = &attachments {
+        attachment_markers(sample, plane, head, &mut primitives);
+    }
+    let attachments_missing = attachments.as_ref().map_or(0, |sample| {
+        sample
+            .attachments
+            .iter()
+            .filter(|attachment| {
+                attachment.hand.is_none()
+                    && (attachment.pose.is_err()
+                        || sample
+                            .attachments
+                            .iter()
+                            .any(|offer| offer.socket == attachment.socket && offer.pose.is_err()))
+            })
+            .count()
+    });
+    let pouches = pouch_models::attachment_sample(character as *const Character as usize, now);
+    if let Some(sample) = &pouches {
+        pouch_markers(sample, world, plane, head, &mut primitives);
+    }
+    let pouches_missing = pouches.as_ref().map_or(0, |sample| {
+        sample
+            .attachments
+            .iter()
+            .filter(|attachment| attachment.side.is_some() && !attachment.visible)
+            .count()
+    });
     let submitted = primitives.len();
     store::submit(Source::BodyMirror, &mut primitives, TTL);
     *STATUS.lock() = MirrorStatus {
-        at: Some(Instant::now()),
+        at: Some(now),
         bones: Some(found),
         primitives: submitted,
+    };
+    *ATTACHMENT_STATUS.lock() = AttachmentStatus {
+        at: Some(now),
+        sockets_current: attachments.is_some(),
+        sockets_missing: attachments_missing,
+        socket_markers: attachments
+            .as_ref()
+            .map_or(0, |sample| sample.markers().count()),
+        socket_offers: attachments.as_ref().map_or(0, |sample| {
+            sample
+                .attachments
+                .iter()
+                .filter(|attachment| attachment.hand.is_some())
+                .count()
+        }),
+        occupied_sockets: attachments.as_ref().map_or(0, |sample| {
+            sample
+                .attachments
+                .iter()
+                .filter(|attachment| attachment.hand.is_none() && attachment.item.is_some())
+                .count()
+        }),
+        pouches_current: pouches.is_some(),
+        pouches_missing,
     };
 }
 
@@ -284,6 +369,73 @@ const LEFT: Rgba = [0.3, 0.6, 1.0, 0.9];
 const RIGHT: Rgba = [1.0, 0.55, 0.25, 0.9];
 const TARGET: Rgba = [0.3, 1.0, 0.4, 0.9];
 const FRAME: Rgba = [0.7, 0.7, 0.8, 0.5];
+const OCCUPIED: Rgba = [0.9, 0.7, 0.2, 0.9];
+const EMPTY: Rgba = [0.4, 0.8, 0.8, 0.7];
+const NO_FIT: Rgba = [1.0, 0.2, 0.2, 0.9];
+const ATTACHMENT_RING_M: f32 = 0.10;
+const ATTACHMENT_AXIS_M: f32 = 0.08;
+
+/// Draw only copied observations, at the same pose the docking consumer uses.
+pub(crate) fn attachment_markers(
+    sample: &Sample,
+    plane: Plane,
+    head: Vec3,
+    out: &mut Vec<Primitive>,
+) {
+    for attachment in sample.markers() {
+        let Ok(pose) = attachment.pose else {
+            continue;
+        };
+        let color = if attachment.usage == Some(SocketUse::NoFit) {
+            NO_FIT
+        } else if attachment.hand.is_none()
+            && matches!(attachment.source, PoseSource::OffsetBone { object: None })
+        {
+            FRAME
+        } else {
+            match attachment.occupancy {
+                Occupancy::Empty => EMPTY,
+                Occupancy::Occupied { .. } => OCCUPIED,
+            }
+        };
+        let at = |point| Anchor::Head(plane.reflect(point) - head);
+        out.push(ring(at(pose.position), ATTACHMENT_RING_M, color));
+        out.push(line(
+            at(pose.position),
+            at(pose.position + pose.orientation * Vec3::NEG_Z * ATTACHMENT_AXIS_M),
+            BONE_WIDTH,
+            color,
+        ));
+    }
+}
+
+/// Draw the copied pouch center and its visible model origin without reading the model instance.
+pub(crate) fn pouch_markers(
+    sample: &PouchSample,
+    character: Mat4,
+    plane: Plane,
+    head: Vec3,
+    out: &mut Vec<Primitive>,
+) {
+    if !character.is_finite() || character.determinant().abs() <= 1.0e-6 {
+        return;
+    }
+    for attachment in &sample.attachments {
+        let Ok(pouch) = attachment.pouch else {
+            continue;
+        };
+        let at = |point| Anchor::Head(plane.reflect(character.transform_point3(point)) - head);
+        let color = if attachment.visible { EMPTY } else { NO_FIT };
+        out.push(ring(at(pouch.position), ATTACHMENT_RING_M, color));
+        if attachment.visible
+            && let Ok(local) = attachment.local
+        {
+            let origin = local.w_axis.truncate();
+            out.push(ring(at(origin), TARGET_RING_M, TARGET));
+            out.push(line(at(pouch.position), at(origin), BONE_WIDTH, color));
+        }
+    }
+}
 
 fn line(from: Anchor, to: Anchor, width: f32, color: Rgba) -> Primitive {
     Primitive::Line {
@@ -373,6 +525,17 @@ static STATUS: Mutex<MirrorStatus> = Mutex::new(MirrorStatus {
     at: None,
     bones: None,
     primitives: 0,
+});
+
+static ATTACHMENT_STATUS: Mutex<AttachmentStatus> = Mutex::new(AttachmentStatus {
+    at: None,
+    sockets_current: false,
+    sockets_missing: 0,
+    socket_markers: 0,
+    socket_offers: 0,
+    occupied_sockets: 0,
+    pouches_current: false,
+    pouches_missing: 0,
 });
 
 #[cfg(test)]

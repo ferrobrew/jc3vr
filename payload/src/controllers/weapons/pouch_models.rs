@@ -21,7 +21,10 @@
 //! released outside gameplay, when its source model changes (another gun's magazine), and when the
 //! payload unloads.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::Instant,
+};
 
 use glam::{EulerRot, Mat4, Quat, Vec3};
 use jc3gi::{
@@ -43,10 +46,20 @@ use crate::{
         weapons::{
             config::{ModelPlacement, PouchModelsConfig},
             engine,
+            pouch_models::attachments::{Sample, placement},
         },
     },
     hooks,
 };
+
+pub(crate) mod attachments;
+
+/// Current copied placements only; the mirror never reads a source model or weapon.
+pub(crate) fn attachment_sample(owner: usize, now: Instant) -> Option<Sample> {
+    let state = STATE.lock();
+    let sample = state.attachments.as_ref()?;
+    sample.current(owner, now).then(|| sample.clone())
+}
 
 /// What a pouch holds, drawn on it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -162,17 +175,18 @@ pub(crate) unsafe fn input_tick(
         return;
     };
     ensure_cleanup();
+    let mut attachments = Sample {
+        owner: owner as *const Character as usize,
+        at: Instant::now(),
+        attachments: Vec::new(),
+    };
     for prop in Prop::ALL {
         let wanted = shown.iter().find(|s| s.prop == prop);
         let model = wanted.and_then(|s| unsafe { source_model(owner, prop, s.weapon) });
-        let local = wanted.and_then(|s| {
-            let pouch = Mat4::from_rotation_translation(
-                frames.cockpit_rotation_to_model(s.pouch.orientation),
-                frames.cockpit_to_model(s.pouch.position),
-            );
-            let local = pouch * on_pouch(&prop.placement(config), s.side);
-            local.is_finite().then_some(local)
-        });
+        // SAFETY: source_model returns a live borrowed model under this input tick's contract.
+        let source = model.map(|model| unsafe { (*model).px } as usize);
+        let mut attachment = placement(prop, wanted, source, &frames, &prop.placement(config));
+        let local = attachment.local.ok();
         let slot = &mut state.slots[prop.index()];
         let created = match (model, local) {
             (Some(model), Some(local)) => unsafe {
@@ -186,7 +200,10 @@ pub(crate) unsafe fn input_tick(
         let visible = slot.visible;
         state.status.created += u64::from(created);
         state.status.shown[prop.index()] = visible;
+        attachment.visible = visible;
+        attachments.attachments.push(attachment);
     }
+    state.attachments = Some(attachments);
 }
 
 /// Draw the pouches' models at the frame's interpolation fraction `dtf`. Called once per rendered
@@ -330,6 +347,7 @@ impl Slot {
 struct State {
     slots: [Slot; 3],
     status: PouchModelsStatus,
+    attachments: Option<Sample>,
 }
 
 impl State {
@@ -341,6 +359,7 @@ impl State {
             unsafe { slot.release() };
         }
         self.status.shown = [false; 3];
+        self.attachments = None;
     }
 }
 
@@ -356,6 +375,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         created: 0,
         drawn: 0,
     },
+    attachments: None,
 });
 
 static CLEANUP_REGISTERED: AtomicBool = AtomicBool::new(false);
