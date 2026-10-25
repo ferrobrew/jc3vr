@@ -20,6 +20,8 @@
 
 pub mod collision;
 pub mod config;
+#[cfg(test)]
+pub(crate) mod estimate;
 pub mod frames;
 pub mod lean;
 pub mod legs;
