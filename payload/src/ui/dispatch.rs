@@ -4,6 +4,9 @@
 #[path = "dispatch/director_tests.rs"]
 mod director_tests;
 #[cfg(test)]
+#[path = "dispatch/environment_tests.rs"]
+mod environment_tests;
+#[cfg(test)]
 #[path = "dispatch/tests.rs"]
 mod tests;
 #[cfg(test)]
@@ -119,6 +122,7 @@ pub(crate) fn feature(
             director::safety_status(ui)
         }
         FeatureRoute::Environment if section == FeatureSection::Controls => environment::render(ui),
+        FeatureRoute::Environment if section == FeatureSection::Status => environment::status(ui),
         FeatureRoute::Engine => game::feature(ui, id, section),
         _ => {
             ui.label(match section {
