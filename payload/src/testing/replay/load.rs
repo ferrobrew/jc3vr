@@ -21,6 +21,8 @@ pub(crate) struct Loaded {
     pub(crate) times: Vec<u64>,
     /// Whether the recorded semantic states index this build's actions, so they can be published.
     pub(crate) semantic: bool,
+    /// Ordered history exists and indexes this build's semantic schema.
+    pub(crate) input_available: bool,
     /// What differs between the recording and this build or its settings.
     pub(crate) warnings: Vec<String>,
 }
@@ -54,18 +56,55 @@ fn load(path: &Path, expected: Expected) -> Result<Loaded, ReplayError> {
         path: path.to_owned(),
         error,
     })?;
+    prepare(path, recording, expected)
+}
+
+fn prepare(path: &Path, recording: Recording, expected: Expected) -> Result<Loaded, ReplayError> {
     if recording.frames.is_empty() {
         return Err(ReplayError::Empty {
             path: path.to_owned(),
         });
     }
-    let (semantic, warnings) = check(&recording, expected);
+    if recording
+        .frames
+        .windows(2)
+        .any(|pair| pair[0].time_ns > pair[1].time_ns)
+        || recording
+            .input
+            .windows(2)
+            .any(|pair| pair[0].capture_time_ns > pair[1].capture_time_ns)
+    {
+        return Err(ReplayError::Decode {
+            path: path.to_owned(),
+            error: format::DecodeError {
+                offset: 0,
+                kind: tracking_format::DecodeErrorKind::InvalidValue {
+                    field: "recording capture time order",
+                    value: 0,
+                },
+            },
+        });
+    }
+    let (semantic, mut warnings) = check(&recording, expected);
+    let input_available = recording.version >= 2
+        && !recording.input.is_empty()
+        && semantic
+        && recording.input.iter().all(|entry| match &entry.record {
+            tracking_format::input::InputRecord::Group(group) => {
+                group.action_schema == expected.action_schema
+            }
+            tracking_format::input::InputRecord::Discontinuity { .. } => true,
+        });
+    if !input_available {
+        warnings.push("the recording has no compatible ordered input history; snapshots replay without ordered input evidence".to_owned());
+    }
     let times = recording.frames.iter().map(|f| f.time_ns).collect();
     Ok(Loaded {
         path: path.to_owned(),
         recording,
         times,
         semantic,
+        input_available,
         warnings,
     })
 }
@@ -198,9 +237,84 @@ mod tests {
                 }),
                 recenters: Vec::new(),
             }],
+            input: Vec::new(),
+            version: 1,
             truncated: false,
             skipped_records: 0,
         }
+    }
+
+    fn wire_load(recording: Recording) -> Result<Loaded, ReplayError> {
+        let mut bytes = format::encode_input_preamble(&recording.header);
+        for entry in &recording.input {
+            bytes.extend(tracking_format::encode_input(entry).unwrap());
+        }
+        for frame in &recording.frames {
+            bytes.extend(format::encode_frame(frame));
+        }
+        prepare(
+            Path::new("fixture.tracking"),
+            format::decode(&bytes).unwrap(),
+            EXPECTED,
+        )
+    }
+
+    #[test]
+    fn loader_rejects_backward_frame_and_input_capture_times_after_wire_decode() {
+        let mut frames = recording(SemanticSet::Global.actions().len());
+        frames.frames[0].time_ns = 20;
+        let mut second = frames.frames[0].clone();
+        second.time_ns = 10;
+        frames.frames.push(second);
+        assert!(matches!(wire_load(frames), Err(ReplayError::Decode { .. })));
+        let mut input = recording(SemanticSet::Global.actions().len());
+        input.input = [20, 10]
+            .map(|capture_time_ns| tracking_format::input::CapturedInput {
+                capture_time_ns,
+                frame_sequence: None,
+                record: tracking_format::input::InputRecord::Discontinuity {
+                    reason: tracking_format::input::DiscontinuityReason::Unavailable,
+                    discarded: 0,
+                },
+            })
+            .to_vec();
+        assert!(matches!(wire_load(input), Err(ReplayError::Decode { .. })));
+    }
+
+    #[test]
+    fn incompatible_group_schema_keeps_snapshots_but_marks_history_unavailable() {
+        let mut recording = recording(SemanticSet::Global.actions().len());
+        recording.input.push(tracking_format::input::CapturedInput {
+            capture_time_ns: 0,
+            frame_sequence: Some(1),
+            record: tracking_format::input::InputRecord::Group(
+                tracking_format::input::InputGroup {
+                    stamp: tracking_format::input::InputStamp {
+                        epoch: 1,
+                        clock: tracking_format::input::ClockDomain::HostMonotonic,
+                        time_ns: 1,
+                        sync: 1,
+                        sequence: 1,
+                    },
+                    order: tracking_format::input::GroupOrder::UnorderedSync,
+                    source_generation: 1,
+                    binding_generation: 1,
+                    action_schema: EXPECTED.action_schema + 1,
+                    context: 0,
+                    focused: true,
+                    samples: Vec::new(),
+                },
+            ),
+        });
+        let loaded = wire_load(recording).unwrap();
+        assert!(loaded.semantic);
+        assert!(!loaded.input_available);
+        assert!(
+            loaded
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("no compatible ordered input history"))
+        );
     }
 
     #[test]

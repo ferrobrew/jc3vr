@@ -618,10 +618,11 @@ pub fn take_edges() -> Edges {
 /// Publish a frame: fold its button transitions into the edge latch and make it the latest. The
 /// caller leaves [`ControllerFrame::sequence`] and [`ControllerFrame::published_at`] to this
 /// function, which stamps them.
-pub(crate) fn publish(frame: ControllerFrame) {
+pub(crate) fn publish(frame: ControllerFrame) -> (u64, Instant) {
     let mut slot = SLOT.lock();
     let frame = slot.publish(frame, Instant::now());
     motion::record(frame);
+    (frame.sequence, frame.published_at)
 }
 
 /// Drop the latest frame and any untaken edges: the controllers are disabled, the session is gone,
@@ -693,6 +694,30 @@ mod tests {
             s.set(b, true);
         }
         s
+    }
+
+    #[test]
+    fn publication_identity_advances_even_when_display_time_does_not() {
+        let now = Instant::now();
+        let mut slot = Slot {
+            frame: None,
+            edges: Edges::default(),
+            sequence: 40,
+        };
+        let frame = ControllerFrame {
+            sequence: 0,
+            display_time_ns: 90,
+            published_at: now,
+            focused: true,
+            action_set: ActionSetKind::OnFoot,
+            hands: Default::default(),
+        };
+        let first = slot.publish(frame.clone(), now).clone();
+        let second = slot.publish(frame, now + Duration::from_nanos(1));
+        assert_eq!(first.sequence, 41);
+        assert_eq!(second.sequence, 42);
+        assert_eq!(first.display_time_ns, second.display_time_ns);
+        assert_eq!(second.published_at, now + Duration::from_nanos(1));
     }
 
     #[test]

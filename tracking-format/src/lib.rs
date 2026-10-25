@@ -13,7 +13,9 @@
 //! 2. The format version, a `u16` ([`VERSION`]).
 //! 3. The header's length, a `u32`, then the [`Header`].
 //! 4. Records until the end of the file, each a tag byte, a `u32` payload length, and the payload.
-//!    The one tag is [`TAG_FRAME`], a [`Frame`].
+//!    [`TAG_FRAME`] carries a [`Frame`]; [`TAG_INPUT`] carries independently versioned input history.
+//!    Version 2 keeps the version 1 frame/header layouts. Version 1 reads return no input history
+//!    and cannot reproduce within-sync order, source interpretation, or logical input timing.
 //!
 //! A reader skips a record whose tag it does not know, so a later version can add records that an
 //! older build passes over. A file whose last record is cut short (the game stopped while the
@@ -26,6 +28,8 @@
 //! on the frame it took effect in.
 
 mod codec;
+pub mod input;
+mod input_codec;
 pub mod model;
 mod wire;
 
@@ -41,14 +45,18 @@ use crate::{
 /// The file extension of a tracking recording.
 pub const EXTENSION: &str = "jc3trk";
 
-/// The format version this build writes and the newest it reads.
-pub const VERSION: u16 = 1;
+/// The newest supported format version. Snapshot-only writers retain version 1.
+pub const VERSION: u16 = 2;
 
 /// A whole recording, as read back.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Recording {
     pub header: Header,
     pub frames: Vec<Frame>,
+    /// Ordered input records, absent in legacy snapshots. No order is inferred from frame order.
+    pub input: Vec<input::CapturedInput>,
+    /// The decoded container version; version 1 cannot reproduce ordered input decisions.
+    pub version: u16,
     /// Whether the last record was cut short and left out.
     pub truncated: bool,
     /// How many records of a kind this build does not know were skipped.
@@ -164,13 +172,22 @@ pub struct RecenterEvent {
 /// The tag of a [`Frame`] record.
 pub const TAG_FRAME: u8 = 1;
 
-/// The bytes a file starts with: the magic, the version, and the header.
+/// A snapshot-only preamble. Existing writers remain v1 until they also capture input history.
 pub fn encode_preamble(header: &Header) -> Vec<u8> {
+    preamble(header, 1)
+}
+
+/// A version 2 preamble for writers that include the independent input-record sequence.
+pub fn encode_input_preamble(header: &Header) -> Vec<u8> {
+    preamble(header, VERSION)
+}
+
+fn preamble(header: &Header, version: u16) -> Vec<u8> {
     let mut payload = Encoder::default();
     codec::header(&mut payload, header);
     let mut out = Encoder::default();
     out.bytes.extend_from_slice(&MAGIC);
-    out.u16(VERSION);
+    out.u16(version);
     out.u32(payload.bytes.len() as u32);
     out.bytes.extend_from_slice(&payload.bytes);
     out.bytes
@@ -185,6 +202,31 @@ pub fn encode_frame(frame: &Frame) -> Vec<u8> {
     out.u32(payload.bytes.len() as u32);
     out.bytes.extend_from_slice(&payload.bytes);
     out.bytes
+}
+
+/// The independent input-history record tag. The frame payload remains byte-compatible with v1.
+pub const TAG_INPUT: u8 = 2;
+
+/// Encode one bounded input record. Invalid producers do not silently truncate paths or routes.
+pub fn encode_input(captured: &input::CapturedInput) -> Result<Vec<u8>, DecodeError> {
+    if let input::InputRecord::Group(group) = &captured.record
+        && !group.is_bounded()
+    {
+        return Err(DecodeError {
+            offset: 0,
+            kind: DecodeErrorKind::InvalidValue {
+                field: "input group bounds",
+                value: group.samples.len() as u64,
+            },
+        });
+    }
+    let mut payload = Encoder::default();
+    input_codec::encode(&mut payload, captured);
+    let mut out = Encoder::default();
+    out.u8(TAG_INPUT);
+    out.u32(payload.bytes.len() as u32);
+    out.bytes.extend_from_slice(&payload.bytes);
+    Ok(out.bytes)
 }
 
 /// Read a whole file.
@@ -214,6 +256,7 @@ pub fn decode(bytes: &[u8]) -> Result<Recording, DecodeError> {
     header_reader.finish("header")?;
 
     let mut frames = Vec::new();
+    let mut input = Vec::new();
     let mut truncated = false;
     let mut skipped_records = 0;
     while !reader.is_empty() {
@@ -225,6 +268,12 @@ pub fn decode(bytes: &[u8]) -> Result<Recording, DecodeError> {
         }
         let tag = reader.u8()?;
         let len = reader.u32()? as usize;
+        if version >= 2 && tag == TAG_INPUT && len > input::MAX_INPUT_PAYLOAD {
+            return Err(reader.error(DecodeErrorKind::InvalidValue {
+                field: "input payload length",
+                value: len as u64,
+            }));
+        }
         if reader.remaining() < len {
             truncated = true;
             break;
@@ -235,12 +284,18 @@ pub fn decode(bytes: &[u8]) -> Result<Recording, DecodeError> {
                 frames.push(codec::read_frame(&mut record)?);
                 record.finish("frame")?;
             }
+            TAG_INPUT if version >= 2 => {
+                input.push(input_codec::decode(&mut record)?);
+                record.finish("input")?;
+            }
             _ => skipped_records += 1,
         }
     }
     Ok(Recording {
         header,
         frames,
+        input,
+        version,
         truncated,
         skipped_records,
     })

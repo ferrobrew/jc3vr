@@ -85,6 +85,7 @@ struct SetActions {
 pub(crate) struct State<T> {
     pub(crate) value: T,
     pub(crate) active: bool,
+    pub(crate) change: tracking_format::input::RuntimeChange,
 }
 
 impl Actions {
@@ -247,34 +248,37 @@ impl Actions {
             .with_context(|| format!("reading {}", input.name()))
     }
 
-    /// The state of action `index` of the semantic `set` on `hand`.
-    pub(crate) fn semantic_state(
+    /// Read the semantic value and its runtime change metadata in the same query.
+    pub(crate) fn semantic_observation(
         &self,
         session: &xr::Session<xr::D3D11>,
         set: SemanticSet,
         index: usize,
         hand: Hand,
-    ) -> anyhow::Result<ActionState> {
+    ) -> anyhow::Result<(ActionState, tracking_format::input::RuntimeChange)> {
         let def = set.actions()[index];
         let action = self.semantic[set.index()].actions[index];
         let read = match def.kind {
             ActionKind::Bool => self
                 .read_bool(session, action, hand)
-                .map(|s| (ActionValue::Bool(s.value), s.active)),
+                .map(|s| (ActionValue::Bool(s.value), s.active, s.change)),
             ActionKind::Float => self
                 .read_float(session, action, hand)
-                .map(|s| (ActionValue::Float(s.value), s.active)),
+                .map(|s| (ActionValue::Float(s.value), s.active, s.change)),
             ActionKind::Vec2 => self
                 .read_vec2(session, action, hand)
-                .map(|s| (ActionValue::Vec2(s.value), s.active)),
+                .map(|s| (ActionValue::Vec2(s.value), s.active, s.change)),
         };
-        let (value, active) =
+        let (value, active, change) =
             read.with_context(|| format!("reading {}.{}", set.name(), def.name))?;
-        Ok(ActionState {
-            value,
-            active,
-            down: false,
-        })
+        Ok((
+            ActionState {
+                value,
+                active,
+                down: false,
+            },
+            change,
+        ))
     }
 
     /// Every action of `set` with its name, in stash order.
@@ -520,6 +524,10 @@ impl Actions {
         Ok(State {
             value: out.current_state.into(),
             active: out.is_active.into(),
+            change: tracking_format::input::RuntimeChange {
+                changed_since_sync: out.changed_since_last_sync.into(),
+                last_change_time_ns: out.last_change_time.as_nanos(),
+            },
         })
     }
 
@@ -546,6 +554,10 @@ impl Actions {
         Ok(State {
             value: out.current_state,
             active: out.is_active.into(),
+            change: tracking_format::input::RuntimeChange {
+                changed_since_sync: out.changed_since_last_sync.into(),
+                last_change_time_ns: out.last_change_time.as_nanos(),
+            },
         })
     }
 
@@ -572,6 +584,10 @@ impl Actions {
         Ok(State {
             value: Vec2::new(out.current_state.x, out.current_state.y),
             active: out.is_active.into(),
+            change: tracking_format::input::RuntimeChange {
+                changed_since_sync: out.changed_since_last_sync.into(),
+                last_change_time_ns: out.last_change_time.as_nanos(),
+            },
         })
     }
 

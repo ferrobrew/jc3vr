@@ -31,6 +31,8 @@ use crate::{
 pub(crate) struct Recording {
     pub(crate) header: Header,
     pub(crate) frames: Vec<Frame>,
+    pub(crate) input: Vec<tracking_format::input::CapturedInput>,
+    pub(crate) version: u16,
     /// Whether the last record was cut short and left out.
     pub(crate) truncated: bool,
     /// How many records of a kind this build does not know were skipped.
@@ -146,9 +148,15 @@ pub(crate) struct RecenterEvent {
     pub(crate) turn: Quat,
 }
 
-/// The bytes a file starts with: the magic, the version, and the header.
+/// The legacy snapshot-only preamble used by compatibility fixtures.
+#[cfg(test)]
 pub(crate) fn encode_preamble(header: &Header) -> Vec<u8> {
     tracking_format::encode_preamble(&convert::header_to_file(header))
+}
+
+/// The input-capturing recorder opts into the version 2 container.
+pub(crate) fn encode_input_preamble(header: &Header) -> Vec<u8> {
+    tracking_format::encode_input_preamble(&convert::header_to_file(header))
 }
 
 /// One frame's record.

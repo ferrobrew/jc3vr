@@ -9,6 +9,7 @@ use std::{ptr, sync::atomic::Ordering, time::Instant};
 use glam::{Quat, Vec3};
 use openxr as xr;
 use openxr::sys;
+use tracking_format::input::{DiscontinuityReason, InputRoute, RouteSample, ValueBits};
 
 use crate::{
     controllers::{
@@ -23,15 +24,19 @@ use crate::{
     vr::{
         input::{
             PROFILES_DIRTY, STATUS,
-            actions::SetId,
+            actions::{SetId, State},
             active_action_set,
             layout::{BoolInput, FloatInput, HandsAction, Vec2Input},
             replay,
             self_check::CheckFrame,
             semantic::{
                 SemanticSet,
-                frame::{self as semantic_frame, ActionState, SemanticFrame, SetState},
+                frame::{
+                    self as semantic_frame, ActionState, ActionValue, SemanticFrame, SetState,
+                },
+                history,
             },
+            sources,
             state::InputState,
         },
         recenter::Baseline,
@@ -51,6 +56,7 @@ impl InputState {
         cfg: &ControllersConfig,
     ) {
         if !cfg.enabled {
+            history::interrupt(DiscontinuityReason::Unavailable);
             frame::clear();
             semantic_frame::clear();
             haptics::clear();
@@ -64,14 +70,25 @@ impl InputState {
             Ok(focused) => focused,
             Err(e) => {
                 self.note_failure(&e);
+                history::interrupt(DiscontinuityReason::Unavailable);
                 frame::clear();
                 semantic_frame::clear();
                 return;
             }
         };
+        let observed_at = history::observation_time();
         if self.refresh_profiles(session) {
             self.sources.mark_stale();
         }
+        self.sources.update(
+            session,
+            &self.actions,
+            &[
+                SetId::Hands,
+                SetId::Semantic(SemanticSet::Global),
+                SetId::Semantic(SemanticSet::of(mode)),
+            ],
+        );
 
         // A replay's recorded frames stand in for the sampled ones. The actions are still synced,
         // which keeps the session's input healthy, and the haptics still reach the controllers.
@@ -83,6 +100,7 @@ impl InputState {
             return;
         }
 
+        replay::reset_on_handback(&mut self.previous_buttons);
         let sampling = Sampling {
             session,
             local,
@@ -92,8 +110,36 @@ impl InputState {
         };
         let mut hands: [HandFrame; 2] = Default::default();
         let mut first_error = None;
+        let generation = sources::observation_generation(self.profiles, self.dominant);
+        let mut observed = Vec::new();
+        let mut raw = [State::<bool>::default(); 3];
+        for (index, (hand, input)) in [
+            (Hand::Left, BoolInput::ThumbstickClick),
+            (Hand::Right, BoolInput::ThumbstickClick),
+            (Hand::Right, BoolInput::BClick),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            match self.actions.bool_state(session, input, hand) {
+                Ok(state) => {
+                    raw[index] = state;
+                    observed.push(RouteSample {
+                        route: InputRoute::Raw(index as u8),
+                        value: ValueBits::Bool(state.value),
+                        active: state.active,
+                        down: state.value,
+                        change: Some(state.change),
+                        sources: sources::observation_sources(SetId::Hands, input.name()),
+                    });
+                }
+                Err(error) => {
+                    first_error.get_or_insert(error);
+                }
+            }
+        }
         for hand in Hand::BOTH {
-            match self.sample_hand(&sampling, hand) {
+            match self.sample_hand(&sampling, hand, &raw) {
                 Ok((frame, joints_error)) => {
                     hands[hand.index()] = frame;
                     if let Some(e) = joints_error {
@@ -117,11 +163,23 @@ impl InputState {
         };
         scheme::tick(&frame, cfg);
 
-        let semantic = SemanticFrame {
+        let mut semantic = SemanticFrame {
             published_at: Instant::now(),
             action_set: mode,
-            global: self.read_set(session, SemanticSet::Global, cfg, &mut first_error),
-            mode: self.read_set(session, SemanticSet::of(mode), cfg, &mut first_error),
+            global: self.read_set(
+                session,
+                SemanticSet::Global,
+                cfg,
+                &mut first_error,
+                &mut observed,
+            ),
+            mode: self.read_set(
+                session,
+                SemanticSet::of(mode),
+                cfg,
+                &mut first_error,
+                &mut observed,
+            ),
         };
         if cfg.input.self_check {
             self.self_check.update(&CheckFrame {
@@ -136,17 +194,20 @@ impl InputState {
                 config: &cfg.input,
             });
         }
-        self.sources.update(
-            session,
-            &self.actions,
-            &[
-                SetId::Hands,
-                SetId::Semantic(SemanticSet::Global),
-                SetId::Semantic(SemanticSet::of(mode)),
-            ],
-        );
-        frame::publish(frame);
+        let (frame_sequence, published_at) = frame::publish(frame);
+        semantic.published_at = published_at;
         semantic_frame::publish(semantic);
+        history::publish_observation(
+            history::LiveSample {
+                samples: observed,
+                context: mode.index() as u64,
+                focused,
+                generation,
+                observed_at,
+                frame_sequence,
+            },
+            first_error.is_none(),
+        );
 
         if let Err(e) = self.flush_haptics(session, cfg) {
             first_error.get_or_insert(e);
@@ -166,6 +227,7 @@ impl InputState {
         set: SemanticSet,
         cfg: &ControllersConfig,
         first_error: &mut Option<anyhow::Error>,
+        observed: &mut Vec<RouteSample>,
     ) -> SetState {
         let previous = semantic_frame::previous_down(set);
         let rules = Hand::BOTH.map(|hand| cfg.input.press_rules(self.profiles[hand.index()], hand));
@@ -175,12 +237,13 @@ impl InputState {
             .enumerate()
             .map(|(index, def)| {
                 Hand::BOTH.map(|hand| {
-                    let mut state = self
+                    let (mut state, change) = self
                         .actions
-                        .semantic_state(session, set, index, hand)
+                        .semantic_observation(session, set, index, hand)
+                        .map(|(state, change)| (state, Some(change)))
                         .unwrap_or_else(|e| {
                             first_error.get_or_insert(e);
-                            ActionState::rest(def.kind)
+                            (ActionState::rest(def.kind), None)
                         });
                     let was_down = previous
                         .as_ref()
@@ -193,6 +256,24 @@ impl InputState {
                         &rules[hand.index()],
                         was_down,
                     );
+                    observed.push(RouteSample {
+                        route: InputRoute::Semantic {
+                            set: set.index() as u8,
+                            action: index as u16,
+                            hand: hand.index() as u8,
+                        },
+                        value: match state.value {
+                            ActionValue::Bool(value) => ValueBits::Bool(value),
+                            ActionValue::Float(value) => ValueBits::Float(value.to_bits()),
+                            ActionValue::Vec2(value) => {
+                                ValueBits::Vec2([value.x.to_bits(), value.y.to_bits()])
+                            }
+                        },
+                        active: state.active,
+                        down: state.down,
+                        change,
+                        sources: sources::observation_sources(SetId::Semantic(set), def.name),
+                    });
                     state
                 })
             })
@@ -232,6 +313,7 @@ impl InputState {
         &self,
         sampling: &Sampling,
         hand: Hand,
+        raw: &[State<bool>; 3],
     ) -> anyhow::Result<(HandFrame, Option<anyhow::Error>)> {
         let Sampling {
             session,
@@ -243,7 +325,11 @@ impl InputState {
         let actions = &self.actions;
         let mut active = false;
         let mut read_bool = |input| -> anyhow::Result<bool> {
-            let state = actions.bool_state(session, input, hand)?;
+            let state = match input {
+                BoolInput::ThumbstickClick => raw[hand.index()],
+                BoolInput::BClick if hand == Hand::Right => raw[2],
+                _ => actions.bool_state(session, input, hand)?,
+            };
             active |= state.active;
             Ok(state.value)
         };

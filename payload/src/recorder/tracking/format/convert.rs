@@ -125,12 +125,16 @@ pub(super) fn recording_from_file(recording: file::Recording) -> Recording {
     let file::Recording {
         header,
         frames,
+        input,
+        version,
         truncated,
         skipped_records,
     } = recording;
     Recording {
         header: header_from_file(header),
         frames: frames.into_iter().map(frame_from_file).collect(),
+        input,
+        version,
         truncated,
         skipped_records,
     }

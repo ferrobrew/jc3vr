@@ -30,9 +30,10 @@ use std::{
 use openxr as xr;
 use openxr::sys;
 use parking_lot::Mutex;
+use tracking_format::input::{MAX_SOURCE_PATH, MAX_SOURCES, SourceQuery};
 
 use crate::{
-    controllers::frame::Hand,
+    controllers::frame::{Hand, InteractionProfile},
     vr::input::{
         actions::{Actions, SetId},
         layout::hand_path,
@@ -60,6 +61,55 @@ pub(crate) struct BoundSource {
 pub(crate) struct ActionSources {
     pub(crate) name: &'static str,
     pub(crate) sources: Result<Vec<BoundSource>, String>,
+    observation: SourceQuery,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum QueryFailureKind {
+    Enumeration,
+    PathConversion,
+    Limit,
+    RetryExhausted,
+}
+
+#[derive(Debug)]
+struct QueryFailure {
+    kind: QueryFailureKind,
+    diagnostic: String,
+}
+
+impl QueryFailure {
+    fn observation(&self) -> SourceQuery {
+        match self.kind {
+            QueryFailureKind::Limit => SourceQuery::LimitExceeded,
+            QueryFailureKind::Enumeration
+            | QueryFailureKind::PathConversion
+            | QueryFailureKind::RetryExhausted => SourceQuery::Failed,
+        }
+    }
+}
+
+impl ActionSources {
+    fn from_query(name: &'static str, result: Result<Vec<BoundSource>, QueryFailure>) -> Self {
+        match result {
+            Ok(sources) => Self {
+                name,
+                observation: SourceQuery::Paths(
+                    sources
+                        .iter()
+                        .map(|source| source.path.clone())
+                        .collect::<Vec<_>>()
+                        .into(),
+                ),
+                sources: Ok(sources),
+            },
+            Err(error) => Self {
+                name,
+                observation: error.observation(),
+                sources: Err(error.diagnostic),
+            },
+        }
+    }
 }
 
 /// The sources of every action of one set.
@@ -95,6 +145,91 @@ pub(crate) fn table_generation() -> u64 {
     TABLE.lock().generation
 }
 
+/// A cached query's exact paths, including successful emptiness and explicit bounded failure.
+pub(crate) fn observation_sources(set: SetId, name: &str) -> SourceQuery {
+    OBSERVATION_SOURCES.lock().query(set, name)
+}
+
+#[derive(Default)]
+struct ObservationSources {
+    revision: u64,
+    entries: Vec<(SetId, &'static str, SourceQuery)>,
+}
+
+static OBSERVATION_SOURCES: Mutex<ObservationSources> = Mutex::new(ObservationSources {
+    revision: 0,
+    entries: Vec::new(),
+});
+
+fn refresh_observation_sources(cache: &[SetSources]) {
+    OBSERVATION_SOURCES.lock().refresh(cache);
+}
+
+impl ObservationSources {
+    fn query(&self, set: SetId, name: &str) -> SourceQuery {
+        self.entries
+            .iter()
+            .find(|entry| entry.0 == set && entry.1 == name)
+            .map_or(SourceQuery::NotEnumerated, |entry| entry.2.clone())
+    }
+
+    fn refresh(&mut self, cache: &[SetSources]) {
+        let entries = cache
+            .iter()
+            .flat_map(|entry| {
+                entry
+                    .actions
+                    .iter()
+                    .map(move |action| (entry.set, action.name, action.observation.clone()))
+            })
+            .collect::<Vec<_>>();
+        if self.entries != entries {
+            self.revision = self
+                .revision
+                .checked_add(1)
+                .expect("input: source revision exhausted");
+            self.entries = entries;
+        }
+    }
+}
+
+/// An interpretation generation, not the summary's glyph/localization generation. Same-profile
+/// rebinding remains undetectable until enumeration; this cache is not a validation authority.
+pub(crate) fn observation_generation(profiles: [InteractionProfile; 2], dominant: Hand) -> u64 {
+    let revision = OBSERVATION_SOURCES.lock().revision;
+    advance_interpretation(
+        &mut INTERPRETATION.lock(),
+        Interpretation {
+            profiles,
+            dominant,
+            revision,
+        },
+    )
+}
+
+fn advance_interpretation(
+    published: &mut (u64, Option<Interpretation>),
+    key: Interpretation,
+) -> u64 {
+    if published.1.as_ref() != Some(&key) {
+        published.0 = published
+            .0
+            .checked_add(1)
+            .expect("input: interpretation generation exhausted");
+        published.1 = Some(key);
+    }
+    published.0
+}
+
+#[derive(PartialEq)]
+struct Interpretation {
+    profiles: [InteractionProfile; 2],
+    dominant: Hand,
+    revision: u64,
+}
+
+static INTERPRETATION: Mutex<(u64, Option<Interpretation>)> = Mutex::new((0, None));
+
 /// Note that the debug UI is showing the sources, so the frame keeps them all fresh.
 pub(crate) fn note_viewed() {
     *VIEWED_AT.lock() = Some(Instant::now());
@@ -114,6 +249,7 @@ pub(crate) fn request_refresh() {
 /// Drop the cache: the session's actions are gone.
 pub(crate) fn clear() {
     CACHE.lock().clear();
+    refresh_observation_sources(&[]);
     *ENUMERATED.lock() = [const { None }; SemanticSet::ALL.len()];
     publish_table(SourceTable::default());
 }
@@ -123,28 +259,66 @@ pub(crate) fn query_action(
     session: &xr::Session<xr::D3D11>,
     action: sys::Action,
 ) -> Result<Vec<BoundSource>, String> {
-    let paths = enumerate(session, action).map_err(|e| format!("enumerating: {e}"))?;
-    let instance = session.instance();
+    query_action_typed(session, action).map_err(|error| error.diagnostic)
+}
+
+fn query_action_typed(
+    session: &xr::Session<xr::D3D11>,
+    action: sys::Action,
+) -> Result<Vec<BoundSource>, QueryFailure> {
+    let paths = enumerate(session, action)?;
     let flags =
         xr::InputSourceLocalizedNameFlags::USER_PATH | xr::InputSourceLocalizedNameFlags::COMPONENT;
-    Ok(paths
+    identify_sources(
+        paths,
+        |source| {
+            session
+                .instance()
+                .path_to_string(source)
+                .map_err(|error| error.to_string())
+        },
+        |source| {
+            session
+                .input_source_localized_name(source, flags)
+                .map_err(|error| error.to_string())
+        },
+    )
+}
+
+fn identify_sources<T: Copy>(
+    paths: Vec<T>,
+    mut identify: impl FnMut(T) -> Result<String, String>,
+    mut localize: impl FnMut(T) -> Result<String, String>,
+) -> Result<Vec<BoundSource>, QueryFailure> {
+    if paths.len() > MAX_SOURCES {
+        return Err(QueryFailure {
+            kind: QueryFailureKind::Limit,
+            diagnostic: "sources: source count exceeds the capture bound".to_owned(),
+        });
+    }
+    paths
         .into_iter()
         .map(|source| {
-            let path = instance
-                .path_to_string(source)
-                .unwrap_or_else(|e| format!("<unnamed: {e}>"));
+            let path = identify(source).map_err(|error| QueryFailure {
+                kind: QueryFailureKind::PathConversion,
+                diagnostic: format!("sources: path identification: {error}"),
+            })?;
+            if path.len() > MAX_SOURCE_PATH {
+                return Err(QueryFailure {
+                    kind: QueryFailureKind::Limit,
+                    diagnostic: "sources: source path exceeds the capture bound".to_owned(),
+                });
+            }
             let hand = Hand::BOTH
                 .into_iter()
-                .find(|&h| path.starts_with(&format!("{}/", hand_path(h))));
-            BoundSource {
-                localized: session
-                    .input_source_localized_name(source, flags)
-                    .map_err(|e| e.to_string()),
+                .find(|&hand| path.starts_with(&format!("{}/", hand_path(hand))));
+            Ok(BoundSource {
                 path,
                 hand,
-            }
+                localized: localize(source),
+            })
         })
-        .collect())
+        .collect()
 }
 
 /// When the cache is refreshed. Owned by the input state, driven from the frame's update.
@@ -209,9 +383,8 @@ impl SourcesRefresh {
                 actions: actions
                     .set_actions(set)
                     .into_iter()
-                    .map(|(name, action)| ActionSources {
-                        name,
-                        sources: query_action(session, action),
+                    .map(|(name, action)| {
+                        ActionSources::from_query(name, query_action_typed(session, action))
                     })
                     .collect(),
             });
@@ -243,6 +416,7 @@ impl SourcesRefresh {
         }
         cache.sort_by_key(|c| SetId::all().position(|s| s == c.set));
         let table = source_table(&cache);
+        refresh_observation_sources(&cache);
         drop(cache);
         publish_table(table);
     }
@@ -332,38 +506,82 @@ fn publish_table(table: SourceTable) {
 }
 
 /// `xrEnumerateBoundSourcesForAction`, with the two-call idiom.
-fn enumerate(session: &xr::Session<xr::D3D11>, action: sys::Action) -> xr::Result<Vec<xr::Path>> {
+fn enumerate(
+    session: &xr::Session<xr::D3D11>,
+    action: sys::Action,
+) -> Result<Vec<xr::Path>, QueryFailure> {
     let info = sys::BoundSourcesForActionEnumerateInfo {
         ty: sys::BoundSourcesForActionEnumerateInfo::TYPE,
         next: ptr::null(),
         action,
     };
     let fp = session.instance().fp().enumerate_bound_sources_for_action;
-    loop {
-        let mut count = 0u32;
-        // SAFETY: a zero capacity with a null buffer asks for the count.
-        let result = unsafe { fp(session.as_raw(), &info, 0, &mut count, ptr::null_mut()) };
-        if result.into_raw() < 0 {
-            return Err(result);
+    enumerate_with(|buffer| {
+        let mut count = 0;
+        let capacity = buffer.len() as u32;
+        let pointer = if buffer.is_empty() {
+            ptr::null_mut()
+        } else {
+            buffer.as_mut_ptr()
+        };
+        // SAFETY: the buffer has the advertised capacity and remains live for the call.
+        let result = unsafe { fp(session.as_raw(), &info, capacity, &mut count, pointer) };
+        (result, count)
+    })
+}
+
+fn enumerate_with(
+    mut query: impl FnMut(&mut [xr::Path]) -> (sys::Result, u32),
+) -> Result<Vec<xr::Path>, QueryFailure> {
+    for _ in 0..3 {
+        let (result, count) = query(&mut []);
+        enumeration_result(result)?;
+        check_count(count)?;
+        if count == 0 {
+            return Ok(Vec::new());
         }
         let mut paths = vec![xr::Path::NULL; count as usize];
-        // SAFETY: `paths` holds `count` elements, the capacity passed.
-        let result = unsafe {
-            fp(
-                session.as_raw(),
-                &info,
-                count,
-                &mut count,
-                paths.as_mut_ptr(),
-            )
-        };
+        let (result, written) = query(&mut paths);
+        check_count(written)?;
         if result == sys::Result::ERROR_SIZE_INSUFFICIENT {
             continue;
         }
-        if result.into_raw() < 0 {
-            return Err(result);
+        enumeration_result(result)?;
+        if written as usize > paths.len() {
+            continue;
         }
-        paths.truncate(count as usize);
+        paths.truncate(written as usize);
         return Ok(paths);
     }
+    Err(QueryFailure {
+        kind: QueryFailureKind::RetryExhausted,
+        diagnostic: "sources: enumeration retry bound exhausted".to_owned(),
+    })
 }
+
+fn enumeration_result(result: sys::Result) -> Result<(), QueryFailure> {
+    if result.into_raw() >= 0 {
+        return Ok(());
+    }
+    Err(QueryFailure {
+        kind: if result == sys::Result::ERROR_LIMIT_REACHED {
+            QueryFailureKind::Limit
+        } else {
+            QueryFailureKind::Enumeration
+        },
+        diagnostic: format!("sources: enumeration: {result}"),
+    })
+}
+
+fn check_count(count: u32) -> Result<(), QueryFailure> {
+    if count as usize <= MAX_SOURCES {
+        return Ok(());
+    }
+    Err(QueryFailure {
+        kind: QueryFailureKind::Limit,
+        diagnostic: "sources: source count exceeds the capture bound".to_owned(),
+    })
+}
+
+#[cfg(test)]
+mod tests;

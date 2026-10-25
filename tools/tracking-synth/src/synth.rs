@@ -121,6 +121,8 @@ pub fn recording(
     Ok(Recording {
         header: header(script, schema),
         frames,
+        input: Vec::new(),
+        version: 1,
         truncated: false,
         skipped_records: 0,
     })

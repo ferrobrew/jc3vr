@@ -1,9 +1,8 @@
-//! The tracking recorder's writer thread: appends the encoded records to the recording's file, so
-//! the game thread never waits on the disk.
+//! The tracking recorder's bounded writer queue and nonblocking completion reporting.
 
 use std::{
     fs::File,
-    io::{BufWriter, Write as _},
+    io::{BufWriter, Write},
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -11,20 +10,24 @@ use std::{
         mpsc::{self, Receiver, SyncSender, TrySendError},
     },
     thread::JoinHandle,
-    time::{Duration, Instant},
 };
 
 use parking_lot::Mutex;
+use tracking_format::input::{CapturedInput, DiscontinuityReason, InputRecord};
 
-/// Why the writer could not be started.
+/// A frame and all input records captured beside it occupy one queue slot.
+pub(crate) struct CaptureBatch {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) capture_time_ns: u64,
+    pub(crate) input_groups: u64,
+}
+
 #[derive(Debug)]
 pub(crate) enum WriterError {
-    /// The recording's file could not be created or its preamble written.
     Create {
         path: PathBuf,
         error: std::io::Error,
     },
-    /// The thread could not be spawned.
     Spawn(std::io::Error),
 }
 
@@ -32,49 +35,72 @@ impl std::fmt::Display for WriterError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             WriterError::Create { path, error } => {
-                write!(f, "could not create {}: {error}", path.display())
+                write!(f, "writer: could not create {}: {error}", path.display())
             }
-            WriterError::Spawn(error) => write!(f, "could not spawn the writer thread: {error}"),
+            WriterError::Spawn(error) => write!(f, "writer: could not spawn the thread: {error}"),
         }
     }
 }
 
 impl std::error::Error for WriterError {}
 
-/// The result of queueing a record.
 pub(crate) enum SendOutcome {
     Queued,
-    /// The queue is full; the record is dropped.
     Full,
-    /// The writer has failed with this message; the recording should stop.
     Failed(String),
 }
 
-/// The writer thread's handle.
+/// Completion proves the thread has exited. An I/O error or panic does not make unmapping unsafe.
+#[derive(Debug)]
+pub(crate) struct Completion {
+    pub(crate) bytes: u64,
+    pub(crate) error: Option<String>,
+}
+
+/// The owner retains the join handle until a nonblocking poll confirms thread termination.
 pub(crate) struct Writer {
     sender: Option<SyncSender<Vec<u8>>>,
-    handle: Option<JoinHandle<()>>,
+    handle: Option<Owner>,
     shared: Arc<Shared>,
+    pending_loss: Option<Loss>,
+}
+
+#[cfg(test)]
+pub(super) type ControlledCompletion = Arc<Mutex<Option<Completion>>>;
+
+enum Owner {
+    Thread(JoinHandle<Result<(), String>>),
+    #[cfg(test)]
+    Controlled(ControlledCompletion),
+}
+
+impl Owner {
+    fn is_finished(&self) -> bool {
+        match self {
+            Self::Thread(handle) => handle.is_finished(),
+            #[cfg(test)]
+            Self::Controlled(result) => result.lock().is_some(),
+        }
+    }
 }
 
 impl Writer {
-    /// Create the file at `path`, write `preamble` to it, and spawn the thread that appends the
-    /// records sent to it.
     pub(crate) fn spawn(path: &Path, preamble: &[u8]) -> Result<Self, WriterError> {
-        let create = |path: &Path| -> std::io::Result<BufWriter<File>> {
+        let create = || -> std::io::Result<BufWriter<File>> {
             let mut file = BufWriter::new(File::create_new(path)?);
             file.write_all(preamble)?;
             Ok(file)
         };
-        let file = create(path).map_err(|error| WriterError::Create {
+        let file = create().map_err(|error| WriterError::Create {
             path: path.to_owned(),
             error,
         })?;
+        Self::spawn_sink(file, preamble.len() as u64)
+    }
+
+    fn spawn_sink(file: impl Sink + Send + 'static, bytes: u64) -> Result<Self, WriterError> {
         let (sender, receiver) = mpsc::sync_channel(QUEUE_DEPTH);
-        let shared = Arc::new(Shared {
-            error: Mutex::new(None),
-            bytes: AtomicU64::new(preamble.len() as u64),
-        });
+        let shared = Arc::new(Shared::new(bytes));
         let thread_shared = Arc::clone(&shared);
         let handle = std::thread::Builder::new()
             .name("jc3vr-tracking-writer".to_owned())
@@ -82,14 +108,42 @@ impl Writer {
             .map_err(WriterError::Spawn)?;
         Ok(Self {
             sender: Some(sender),
-            handle: Some(handle),
+            handle: Some(Owner::Thread(handle)),
             shared,
+            pending_loss: None,
         })
     }
 
-    /// Queue a record without blocking.
-    pub(crate) fn send(&self, record: Vec<u8>) -> SendOutcome {
-        if let Some(error) = self.shared.error.lock().clone() {
+    /// Queue an atomic capture without blocking. Loss precedes the next accepted batch or is
+    /// written after the accepted queue drains when recording stops first.
+    pub(crate) fn send(&mut self, mut batch: CaptureBatch) -> SendOutcome {
+        if batch.bytes.len() > MAX_BATCH_BYTES {
+            return SendOutcome::Failed(format!(
+                "tracking capture batch exceeds the {MAX_BATCH_BYTES}-byte bound"
+            ));
+        }
+        if let Some(loss) = self.pending_loss {
+            let mut prefix = encode_loss(loss);
+            prefix.append(&mut batch.bytes);
+            batch.bytes = prefix;
+        }
+        let outcome = self.send_bytes(batch.bytes);
+        match outcome {
+            SendOutcome::Queued => self.pending_loss = None,
+            SendOutcome::Full => {
+                let loss = self.pending_loss.get_or_insert(Loss {
+                    time_ns: batch.capture_time_ns,
+                    groups: 0,
+                });
+                loss.groups = loss.groups.saturating_add(batch.input_groups);
+            }
+            SendOutcome::Failed(_) => {}
+        }
+        outcome
+    }
+
+    fn send_bytes(&self, record: Vec<u8>) -> SendOutcome {
+        if let Some(error) = self.error() {
             return SendOutcome::Failed(error);
         }
         let Some(sender) = self.sender.as_ref() else {
@@ -104,69 +158,156 @@ impl Writer {
         }
     }
 
-    /// How many bytes the file holds so far.
+    /// Encoded bytes accepted by the buffered sink, including the preamble. A flush error can
+    /// leave fewer durable bytes on disk.
     pub(crate) fn bytes_written(&self) -> u64 {
         self.shared.bytes.load(Ordering::Relaxed)
     }
 
-    /// The error the writer stopped on, if any.
     pub(crate) fn error(&self) -> Option<String> {
         self.shared.error.lock().clone()
     }
 
-    /// Close the queue: the thread writes what it has, flushes, and exits.
+    pub(crate) fn is_finished(&self) -> bool {
+        self.handle.as_ref().is_some_and(Owner::is_finished)
+    }
+
     pub(crate) fn finish(&mut self) {
+        if let Some(loss) = self.pending_loss.take() {
+            *self.shared.final_loss.lock() = Some(loss);
+        }
         self.sender = None;
     }
 
-    /// Wait for the thread to exit, up to `budget`. Returns whether it did.
-    pub(crate) fn join(mut self, budget: Duration) -> bool {
-        self.finish();
-        let Some(handle) = self.handle.take() else {
-            return true;
-        };
-        let deadline = Instant::now() + budget;
-        while !handle.is_finished() {
-            if Instant::now() >= deadline {
-                tracing::error!(
-                    "recorder: tracking: the writer did not finish within {} s; leaving the \
-                     payload mapped rather than unmapping under a live thread",
-                    budget.as_secs()
-                );
-                return false;
-            }
-            std::thread::sleep(Duration::from_millis(10));
+    /// Never waits for a running thread and never consumes its owner on a pending result.
+    pub(crate) fn poll_completion(&mut self) -> Option<Completion> {
+        if !self.is_finished() {
+            return None;
         }
-        let _ = handle.join();
-        true
+        match self
+            .handle
+            .take()
+            .expect("tracking writer: finished handle")
+        {
+            Owner::Thread(handle) => Some(completion(handle.join(), self.bytes_written())),
+            #[cfg(test)]
+            Owner::Controlled(result) => result.lock().take(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn controlled() -> (Self, ControlledCompletion) {
+        let result = Arc::new(Mutex::new(None));
+        (
+            Self {
+                sender: None,
+                handle: Some(Owner::Controlled(Arc::clone(&result))),
+                shared: Arc::new(Shared::new(0)),
+                pending_loss: None,
+            },
+            result,
+        )
     }
 }
 
-/// How many records may wait for the writer before the game thread drops them. A record is about
-/// a kilobyte, three with the hand joints, so this is under a megabyte and a few seconds.
-const QUEUE_DEPTH: usize = 512;
+fn completion(result: std::thread::Result<Result<(), String>>, bytes: u64) -> Completion {
+    let error = match result {
+        Ok(Ok(())) => None,
+        Ok(Err(error)) => Some(error),
+        Err(_) => Some("tracking writer: the writer thread panicked".to_owned()),
+    };
+    Completion { bytes, error }
+}
+
+const QUEUE_DEPTH: usize = 32;
+pub(super) const MAX_BATCH_BYTES: usize = 2 * 1024 * 1024;
+
+#[derive(Copy, Clone)]
+struct Loss {
+    time_ns: u64,
+    groups: u64,
+}
+
+fn encode_loss(loss: Loss) -> Vec<u8> {
+    tracking_format::encode_input(&CapturedInput {
+        capture_time_ns: loss.time_ns,
+        frame_sequence: None,
+        record: InputRecord::Discontinuity {
+            reason: DiscontinuityReason::Overflow,
+            discarded: loss.groups,
+        },
+    })
+    .expect("tracking writer: fixed loss record is bounded")
+}
 
 struct Shared {
     error: Mutex<Option<String>>,
     bytes: AtomicU64,
+    final_loss: Mutex<Option<Loss>>,
 }
 
-fn run(mut file: BufWriter<File>, receiver: &Receiver<Vec<u8>>, shared: &Shared) {
-    for record in receiver {
-        if let Err(e) = file.write_all(&record) {
-            fail(shared, &format!("could not write a record: {e}"));
-            return;
+impl Shared {
+    fn new(bytes: u64) -> Self {
+        Self {
+            error: Mutex::new(None),
+            bytes: AtomicU64::new(bytes),
+            final_loss: Mutex::new(None),
         }
-        shared
-            .bytes
-            .fetch_add(record.len() as u64, Ordering::Relaxed);
-    }
-    if let Err(e) = file.flush().and_then(|()| file.get_ref().sync_all()) {
-        fail(shared, &format!("could not flush the recording: {e}"));
     }
 }
 
-fn fail(shared: &Shared, message: &str) {
-    tracing::error!("recorder: tracking: writer: {message}");
-    *shared.error.lock() = Some(message.to_owned());
+trait Sink: Write {
+    fn sync(&mut self) -> std::io::Result<()>;
 }
+
+impl Sink for BufWriter<File> {
+    fn sync(&mut self) -> std::io::Result<()> {
+        self.get_ref().sync_all()
+    }
+}
+
+fn run(mut file: impl Sink, receiver: &Receiver<Vec<u8>>, shared: &Shared) -> Result<(), String> {
+    let result = drain(&mut file, receiver, shared);
+    if let Err(message) = &result {
+        tracing::error!("recorder: tracking: writer: {message}");
+        *shared.error.lock() = Some(message.clone());
+    }
+    result
+}
+
+fn drain(
+    file: &mut impl Sink,
+    receiver: &Receiver<Vec<u8>>,
+    shared: &Shared,
+) -> Result<(), String> {
+    for record in receiver {
+        write_record(file, &record, shared)
+            .map_err(|e| format!("tracking writer: record write: {e}"))?;
+    }
+    if let Some(loss) = shared.final_loss.lock().take() {
+        write_record(file, &encode_loss(loss), shared)
+            .map_err(|e| format!("tracking writer: final input loss write: {e}"))?;
+    }
+    file.flush()
+        .map_err(|e| format!("tracking writer: flush: {e}"))?;
+    file.sync()
+        .map_err(|e| format!("tracking writer: sync: {e}"))
+}
+
+fn write_record(file: &mut impl Sink, mut bytes: &[u8], shared: &Shared) -> std::io::Result<()> {
+    while !bytes.is_empty() {
+        match file.write(bytes) {
+            Ok(0) => return Err(std::io::ErrorKind::WriteZero.into()),
+            Ok(count) => {
+                shared.bytes.fetch_add(count as u64, Ordering::Relaxed);
+                bytes = &bytes[count..];
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests;

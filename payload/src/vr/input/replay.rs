@@ -5,12 +5,15 @@
 //! seeing each. The publish stamps the sequence and the publish time; the display time is the
 //! recording's own clock, which the hands' motion history spaces the frames by.
 
-use std::time::Instant;
+use std::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::Instant,
+};
 
 use crate::{
     controllers::{
         config::ControllersConfig,
-        frame::{self, ControllerFrame},
+        frame::{self, ButtonSet, ControllerFrame},
         scheme,
     },
     testing::replay,
@@ -25,6 +28,7 @@ pub(crate) fn publish_replayed(cfg: &ControllersConfig) -> bool {
     if !replay::is_driving() {
         return false;
     }
+    WAS_DRIVING.store(true, Ordering::Relaxed);
     let Some(frames) = replay::take_frames() else {
         // Nothing came due since the last frame; the last frame published still stands.
         return true;
@@ -51,10 +55,10 @@ pub(crate) fn publish_replayed(cfg: &ControllersConfig) -> bool {
             hands: controllers.hands,
         };
         scheme::tick(&published, cfg);
-        frame::publish(published);
+        let (_, published_at) = frame::publish(published);
         match recorded.semantic {
             Some(semantic) => semantic_frame::publish(SemanticFrame {
-                published_at: now,
+                published_at,
                 action_set: semantic.action_set,
                 global: semantic.global,
                 mode: semantic.mode,
@@ -63,4 +67,56 @@ pub(crate) fn publish_replayed(cfg: &ControllersConfig) -> bool {
         }
     }
     true
+}
+
+/// Discard the live sampler's pre-replay hysteresis baseline once on handback.
+pub(crate) fn reset_on_handback(previous: &mut [ButtonSet; 2]) {
+    reset_handback(&WAS_DRIVING, previous);
+}
+
+fn reset_handback(was_driving: &AtomicBool, previous: &mut [ButtonSet; 2]) {
+    if was_driving.swap(false, Ordering::Relaxed) {
+        *previous = [ButtonSet::EMPTY; 2];
+    }
+}
+
+static WAS_DRIVING: AtomicBool = AtomicBool::new(false);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::controllers::frame::{
+        Button, GripPress, HandInputs, PressRules, PressThresholds, derive_buttons,
+    };
+
+    #[test]
+    fn handback_discards_stale_hysteresis_once_per_playback() {
+        let driving = AtomicBool::new(false);
+        let thresholds = PressThresholds {
+            press: 0.7,
+            release: 0.5,
+        };
+        let rules = PressRules {
+            trigger: thresholds,
+            grip: GripPress::Value(thresholds),
+            trackpad: thresholds,
+        };
+        let mut held = ButtonSet::EMPTY;
+        held.set(Button::TriggerPress, true);
+        let inputs = HandInputs {
+            trigger: 0.6,
+            ..HandInputs::default()
+        };
+        assert!(derive_buttons(&inputs, held, &rules).contains(Button::TriggerPress));
+        for _ in 0..2 {
+            let mut previous = [held; 2];
+            driving.store(true, Ordering::Relaxed);
+            reset_handback(&driving, &mut previous);
+            assert_eq!(previous, [ButtonSet::EMPTY; 2]);
+            assert!(!derive_buttons(&inputs, previous[0], &rules).contains(Button::TriggerPress));
+            previous = [held; 2];
+            reset_handback(&driving, &mut previous);
+            assert_eq!(previous, [held; 2]);
+        }
+    }
 }

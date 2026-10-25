@@ -28,6 +28,7 @@
 pub(crate) mod bound;
 pub(crate) mod defaults;
 pub(crate) mod frame;
+pub(crate) mod history;
 pub(crate) mod vocabulary;
 
 #[cfg(test)]

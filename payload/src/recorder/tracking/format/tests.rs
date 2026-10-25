@@ -206,6 +206,8 @@ fn a_recording_reads_back_as_written() {
         Recording {
             header: header(),
             frames: frames.to_vec(),
+            input: Vec::new(),
+            version: 1,
             truncated: false,
             skipped_records: 0,
         }
@@ -300,6 +302,23 @@ fn a_record_with_unread_bytes_is_an_error() {
             extra: 2
         }
     );
+}
+
+#[test]
+fn versioned_input_wire_survives_payload_conversion() {
+    let mut bytes = tracking_format::encode_input_preamble(&convert::header_to_file(&header()));
+    let record = tracking_format::input::CapturedInput {
+        capture_time_ns: 12,
+        frame_sequence: None,
+        record: tracking_format::input::InputRecord::Discontinuity {
+            reason: tracking_format::input::DiscontinuityReason::LegacyOrderAbsent,
+            discarded: 7,
+        },
+    };
+    bytes.extend(tracking_format::encode_input(&record).unwrap());
+    let recording = decode(&bytes).unwrap();
+    assert_eq!(recording.version, VERSION);
+    assert_eq!(recording.input, vec![record]);
 }
 
 #[test]

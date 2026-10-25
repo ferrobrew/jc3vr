@@ -27,6 +27,7 @@ use std::{
 };
 
 use parking_lot::Mutex;
+use tracking_format::input::{CapturedInput, InputRecord};
 
 use crate::{
     config::Config,
@@ -36,9 +37,15 @@ use crate::{
             ControllerSample, EyeSample, Frame, HeadSample, Header, RecenterEvent, SemanticSample,
             SessionSample, StartMarker,
         },
-        writer::{SendOutcome, Writer},
+        writer::{CaptureBatch, SendOutcome, Writer},
     },
-    vr::{input::semantic::frame as semantic_frame, stage},
+    vr::{
+        input::semantic::{
+            frame as semantic_frame,
+            history::{self, Publication},
+        },
+        stage,
+    },
 };
 
 /// What the frame loop knows about a frame's views when it hands it to [`capture`].
@@ -63,6 +70,7 @@ pub(crate) struct TrackingStatus {
     pub(crate) frames: u32,
     /// Frames dropped because the writer fell behind.
     pub(crate) dropped: u32,
+    /// Encoded bytes accepted by the buffered sink; a flush error can prevent durability.
     pub(crate) bytes: u64,
     /// How long the current or last recording ran.
     pub(crate) duration: Duration,
@@ -84,6 +92,9 @@ pub(crate) enum StartError {
     /// The session folder's `tracking` directory could not be created.
     Folder(std::io::Error),
     Writer(writer::WriterError),
+    /// The bounded owner set is full of writers that have not exited.
+    WritersBusy,
+    ShuttingDown,
 }
 
 impl std::fmt::Display for StartError {
@@ -98,6 +109,8 @@ impl std::fmt::Display for StartError {
                 write!(f, "could not create the session's tracking folder: {e}")
             }
             StartError::Writer(e) => write!(f, "{e}"),
+            StartError::WritersBusy => write!(f, "previous recording writers are still finishing"),
+            StartError::ShuttingDown => write!(f, "the recorder is shutting down"),
         }
     }
 }
@@ -130,7 +143,8 @@ pub(crate) fn is_recording() -> bool {
 
 /// The recorder's state.
 pub(crate) fn status() -> TrackingStatus {
-    let state = STATE.lock();
+    let mut state = STATE.lock();
+    state.reap();
     let mut status = state.status.clone();
     status.recording = is_recording();
     status.frames = FRAMES.load(Ordering::Relaxed);
@@ -144,17 +158,21 @@ pub(crate) fn status() -> TrackingStatus {
 
 /// Service a start or stop request. Game thread, once per frame, outside the VR runtime lock.
 pub(crate) fn frame_tick() {
+    STATE.lock().reap();
     match REQUEST.swap(REQUEST_NONE, Ordering::Relaxed) {
         REQUEST_START => start(),
         REQUEST_STOP => stop(),
         _ => {}
     }
     // A writer that failed on its own is noticed here even on a frame no sample reaches it.
-    let failed = STATE
-        .lock()
-        .active
-        .as_ref()
-        .and_then(|active| active.writer.error());
+    let failed = STATE.lock().active.as_ref().and_then(|active| {
+        active.writer.error().or_else(|| {
+            active
+                .writer
+                .is_finished()
+                .then(|| "tracking writer: the writer thread exited while recording".to_owned())
+        })
+    });
     if let Some(error) = failed {
         fail(&error);
     }
@@ -164,27 +182,23 @@ pub(crate) fn frame_tick() {
 /// the views are located and the controllers are sampled; it takes only leaf locks. A no-op
 /// unless recording.
 pub(crate) fn capture(sample: CaptureSample) {
+    let publications = history::take_capture();
     if !is_recording() {
         return;
     }
-    let controllers = controller_frame::latest().map(|frame| ControllerSample {
-        focused: frame.focused,
-        action_set: frame.action_set,
-        hands: frame.hands,
-    });
-    let semantic = semantic_frame::latest().map(|frame| SemanticSample {
-        action_set: frame.action_set,
-        global: frame.global,
-        mode: frame.mode,
-    });
+    let captured_at = Instant::now();
+    let controllers = controller_frame::latest();
+    let semantic = semantic_frame::latest();
     let session_state = crate::vr::published_status().session_state;
     let stage = stage::stage();
     let mut state = STATE.lock();
     let Some(active) = state.active.as_mut() else {
         return;
     };
+    let input = capture_publications(publications, active.started);
+    let (controllers, semantic) = matching_snapshots(controllers, semantic, &input);
     let frame = Frame {
-        time_ns: u64::try_from(active.started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+        time_ns: nanos_since(captured_at, active.started),
         display_time_ns: sample.display_time_ns,
         session: SessionSample {
             state: session_state,
@@ -193,18 +207,36 @@ pub(crate) fn capture(sample: CaptureSample) {
         },
         head: sample.eyes.map(|eyes| HeadSample { eyes }),
         stage,
-        controllers: controllers.map(|mut c| {
+        controllers: controllers.map(|controller| {
+            let mut hands = controller.hands.clone();
             if !active.hand_joints {
-                for hand in &mut c.hands {
+                for hand in &mut hands {
                     hand.joints = None;
                 }
             }
-            c
+            ControllerSample {
+                focused: controller.focused,
+                action_set: controller.action_set,
+                hands,
+            }
         }),
-        semantic,
+        semantic: semantic.map(|semantic| SemanticSample {
+            action_set: semantic.action_set,
+            global: semantic.global,
+            mode: semantic.mode,
+        }),
         recenters: std::mem::take(&mut active.recenters),
     };
-    match active.writer.send(format::encode_frame(&frame)) {
+    let batch = match encode_capture(&frame, &input) {
+        Ok(batch) => batch,
+        Err(error) => {
+            let error = error.to_string();
+            drop(state);
+            fail(&error);
+            return;
+        }
+    };
+    match active.writer.send(batch) {
         SendOutcome::Queued => {
             FRAMES.fetch_add(1, Ordering::Relaxed);
         }
@@ -218,6 +250,84 @@ pub(crate) fn capture(sample: CaptureSample) {
     }
 }
 
+fn matching_snapshots(
+    controllers: Option<controller_frame::ControllerFrame>,
+    semantic: Option<semantic_frame::SemanticFrame>,
+    input: &[CapturedInput],
+) -> (
+    Option<controller_frame::ControllerFrame>,
+    Option<semantic_frame::SemanticFrame>,
+) {
+    let controllers = controllers.filter(|frame| {
+        input
+            .iter()
+            .any(|entry| entry.frame_sequence == Some(frame.sequence))
+    });
+    let semantic = semantic.filter(|semantic| {
+        controllers
+            .as_ref()
+            .is_some_and(|frame| frame.published_at == semantic.published_at)
+    });
+    (controllers, semantic)
+}
+
+fn capture_publications(publications: Vec<Publication>, started: Instant) -> Vec<CapturedInput> {
+    publications
+        .into_iter()
+        .filter(|entry| entry.observed_at >= started)
+        .map(|entry| CapturedInput {
+            capture_time_ns: nanos_since(entry.observed_at, started),
+            frame_sequence: entry.frame_sequence,
+            record: entry.record,
+        })
+        .collect()
+}
+
+fn nanos_since(at: Instant, origin: Instant) -> u64 {
+    u64::try_from(at.saturating_duration_since(origin).as_nanos()).unwrap_or(u64::MAX)
+}
+
+fn encode_capture(
+    frame: &Frame,
+    input: &[CapturedInput],
+) -> Result<CaptureBatch, format::DecodeError> {
+    let mut bytes = Vec::new();
+    let mut input_groups = 0u64;
+    for entry in input {
+        input_groups = input_groups.saturating_add(match &entry.record {
+            InputRecord::Group(_) => 1,
+            InputRecord::Discontinuity { discarded, .. } => *discarded,
+        });
+        let encoded = tracking_format::encode_input(entry)?;
+        if bytes.len().saturating_add(encoded.len()) > writer::MAX_BATCH_BYTES {
+            return Err(format::DecodeError {
+                offset: 0,
+                kind: tracking_format::DecodeErrorKind::InvalidValue {
+                    field: "capture batch byte bound",
+                    value: bytes.len().saturating_add(encoded.len()) as u64,
+                },
+            });
+        }
+        bytes.extend(encoded);
+    }
+    let encoded_frame = format::encode_frame(frame);
+    if bytes.len().saturating_add(encoded_frame.len()) > writer::MAX_BATCH_BYTES {
+        return Err(format::DecodeError {
+            offset: 0,
+            kind: tracking_format::DecodeErrorKind::InvalidValue {
+                field: "capture batch byte bound",
+                value: bytes.len().saturating_add(encoded_frame.len()) as u64,
+            },
+        });
+    }
+    bytes.extend(encoded_frame);
+    Ok(CaptureBatch {
+        bytes,
+        capture_time_ns: frame.time_ns,
+        input_groups,
+    })
+}
+
 /// Note a recenter of the cockpit baseline, recorded on the next frame. Game thread.
 pub(crate) fn note_recenter(event: RecenterEvent) {
     if !is_recording() {
@@ -228,17 +338,18 @@ pub(crate) fn note_recenter(event: RecenterEvent) {
     }
 }
 
-/// Stop the recording and wait for the writer to exit, for eject. Returns whether the writer is
-/// confirmed stopped; `false` means the payload must stay mapped.
+/// Close every writer without waiting on disk. The eject caller must pin the payload when any
+/// retained owner is still running. I/O failure after termination does not prevent unmapping.
 #[must_use = "a writer that did not finish means the payload must stay mapped"]
 pub(crate) fn shutdown() -> bool {
-    stop();
-    let writer = STATE.lock().finishing.take();
-    writer.is_none_or(|writer| writer.join(SHUTDOWN_BUDGET))
+    let mut state = STATE.lock();
+    REQUEST.store(REQUEST_NONE, Ordering::Relaxed);
+    RECORDING.store(false, Ordering::Relaxed);
+    state.shutdown()
 }
 
-/// How long eject waits for the writer to drain.
-const SHUTDOWN_BUDGET: Duration = Duration::from_secs(10);
+/// Includes the active writer. Saturation refuses a start rather than discarding an owner.
+const MAX_WRITERS: usize = 2;
 
 /// How close to a director bookmark the player must stand for the start marker to name it.
 const BOOKMARK_RADIUS_M: f32 = 2.0;
@@ -254,22 +365,89 @@ static DROPPED: AtomicU32 = AtomicU32::new(0);
 
 struct State {
     active: Option<Active>,
-    /// The writer of the last recording, kept so eject can wait for its drain.
-    finishing: Option<Writer>,
+    finishing: Vec<Finishing>,
+    shutting_down: bool,
     status: TrackingStatus,
+}
+
+struct Finishing {
+    writer: Writer,
+    path: PathBuf,
 }
 
 struct Active {
     writer: Writer,
+    path: PathBuf,
     started: Instant,
     hand_joints: bool,
     /// Recenters since the last recorded frame.
     recenters: Vec<RecenterEvent>,
 }
 
+impl State {
+    fn shutdown(&mut self) -> bool {
+        self.shutting_down = true;
+        self.stop_active();
+        self.reap();
+        self.finishing.is_empty()
+    }
+
+    fn can_start(&mut self) -> Result<(), StartError> {
+        self.reap();
+        if self.shutting_down {
+            return Err(StartError::ShuttingDown);
+        }
+        if self.finishing.len() + usize::from(self.active.is_some()) >= MAX_WRITERS {
+            return Err(StartError::WritersBusy);
+        }
+        Ok(())
+    }
+
+    fn stop_active(&mut self) {
+        let Some(mut active) = self.active.take() else {
+            return;
+        };
+        self.status.bytes = active.writer.bytes_written();
+        self.status.duration = active.started.elapsed();
+        active.writer.finish();
+        self.finishing.push(Finishing {
+            writer: active.writer,
+            path: active.path,
+        });
+    }
+
+    fn reap(&mut self) {
+        let mut index = 0;
+        while index < self.finishing.len() {
+            let writer = &mut self.finishing[index];
+            if let Some(completion) = writer.writer.poll_completion() {
+                if let Some(error) = &completion.error {
+                    tracing::error!(path = %writer.path.display(), "recorder: tracking: {error}");
+                }
+                if self.status.path.as_ref() == Some(&writer.path) {
+                    self.status.bytes = completion.bytes;
+                    if completion.error.is_some() {
+                        self.status.error = completion.error;
+                    }
+                }
+                self.finishing.swap_remove(index);
+            } else {
+                if self.status.path.as_ref() == Some(&writer.path) {
+                    self.status.bytes = writer.writer.bytes_written();
+                    if let Some(error) = writer.writer.error() {
+                        self.status.error = Some(error);
+                    }
+                }
+                index += 1;
+            }
+        }
+    }
+}
+
 static STATE: Mutex<State> = Mutex::new(State {
     active: None,
-    finishing: None,
+    finishing: Vec::new(),
+    shutting_down: false,
     status: TrackingStatus {
         recording: false,
         path: None,
@@ -337,11 +515,14 @@ fn begin() -> Result<PathBuf, StartError> {
         .ok_or(StartError::NoSessionFolder)?
         .map_err(StartError::Folder)?;
     let path = folder.join(format!("{stamp}.{}", format::EXTENSION));
-    let writer =
-        Writer::spawn(&path, &format::encode_preamble(&header)).map_err(StartError::Writer)?;
     let mut state = STATE.lock();
+    state.can_start()?;
+    let writer = Writer::spawn(&path, &format::encode_input_preamble(&header))
+        .map_err(StartError::Writer)?;
+    discard_before_start();
     state.active = Some(Active {
         writer,
+        path: path.clone(),
         started: Instant::now(),
         hand_joints,
         recenters: Vec::new(),
@@ -359,22 +540,16 @@ fn begin() -> Result<PathBuf, StartError> {
     Ok(path)
 }
 
+fn discard_before_start() {
+    let _ = history::take_capture();
+}
+
 fn stop() {
     let mut state = STATE.lock();
-    let Some(mut active) = state.active.take() else {
-        return;
-    };
+    state.stop_active();
+    state.reap();
     RECORDING.store(false, Ordering::Relaxed);
-    state.status.bytes = active.writer.bytes_written();
-    state.status.duration = active.started.elapsed();
-    active.writer.finish();
-    let unfinished = state.finishing.replace(active.writer);
     drop(state);
-    // Two recordings stopped in quick succession: wait for the older one here rather than drop a
-    // handle to a thread that may still be writing.
-    if let Some(writer) = unfinished {
-        let _ = writer.join(SHUTDOWN_BUDGET);
-    }
     tracing::info!(
         frames = FRAMES.load(Ordering::Relaxed),
         dropped = DROPPED.load(Ordering::Relaxed),
@@ -384,6 +559,274 @@ fn stop() {
 
 fn fail(error: &str) {
     tracing::error!("recorder: tracking: {error}; stopping");
-    stop();
     STATE.lock().status.error = Some(error.to_owned());
+    stop();
+}
+
+#[cfg(test)]
+fn assert_active_failure_transition(completion: writer::Completion) {
+    let _serial = history::TEST_LOCK.lock();
+    let expected_bytes = completion.bytes;
+    let expected_error = completion.error.clone();
+    let path = PathBuf::from("failed-active.tracking");
+    let (writer, completed) = Writer::controlled();
+    *completed.lock() = Some(completion);
+    let previous = {
+        let mut state = STATE.lock();
+        std::mem::replace(
+            &mut *state,
+            State {
+                active: Some(Active {
+                    writer,
+                    path: path.clone(),
+                    started: Instant::now(),
+                    hand_joints: false,
+                    recenters: Vec::new(),
+                }),
+                finishing: Vec::new(),
+                shutting_down: false,
+                status: TrackingStatus {
+                    path: Some(path.clone()),
+                    ..TrackingStatus::default()
+                },
+            },
+        )
+    };
+    let previous_recording = RECORDING.swap(true, Ordering::Relaxed);
+    let previous_request = REQUEST.swap(REQUEST_NONE, Ordering::Relaxed);
+    frame_tick();
+    let observed = status();
+    let (active, finishing) = {
+        let mut state = STATE.lock();
+        let active = state.active.is_some();
+        let finishing = state.finishing.len();
+        *state = previous;
+        (active, finishing)
+    };
+    RECORDING.store(previous_recording, Ordering::Relaxed);
+    REQUEST.store(previous_request, Ordering::Relaxed);
+    assert!(!active);
+    assert_eq!(finishing, 0);
+    assert!(!observed.recording);
+    assert_eq!(observed.path, Some(path));
+    assert_eq!(observed.bytes, expected_bytes);
+    assert_eq!(observed.error, expected_error);
+}
+
+#[cfg(test)]
+mod tests {
+    use tracking_format::input::DiscontinuityReason;
+
+    use super::*;
+    use crate::{controllers::frame::Hand, vr::stage::StageInfo};
+
+    fn local_state() -> State {
+        State {
+            active: None,
+            finishing: Vec::new(),
+            shutting_down: false,
+            status: TrackingStatus::default(),
+        }
+    }
+
+    fn activate(state: &mut State, writer: Writer, name: &str) {
+        state.can_start().unwrap();
+        let path = PathBuf::from(name);
+        state.status = TrackingStatus {
+            path: Some(path.clone()),
+            ..TrackingStatus::default()
+        };
+        state.active = Some(Active {
+            writer,
+            path,
+            started: Instant::now(),
+            hand_joints: false,
+            recenters: Vec::new(),
+        });
+    }
+
+    #[test]
+    fn rapid_stops_retain_all_pending_owners_and_refuse_a_saturated_start() {
+        let mut state = local_state();
+        let (a, complete_a) = Writer::controlled();
+        let (b, complete_b) = Writer::controlled();
+        activate(&mut state, a, "a.tracking");
+        state.stop_active();
+        activate(&mut state, b, "b.tracking");
+        state.stop_active();
+        assert_eq!(state.finishing.len(), MAX_WRITERS);
+        assert!(matches!(state.can_start(), Err(StartError::WritersBusy)));
+        *complete_b.lock() = Some(writer::Completion {
+            bytes: 22,
+            error: Some("tracking writer: sync: fixture".into()),
+        });
+        state.reap();
+        assert_eq!(state.finishing.len(), 1);
+        assert_eq!(state.status.path, Some(PathBuf::from("b.tracking")));
+        assert_eq!(state.status.bytes, 22);
+        assert!(state.status.error.as_ref().unwrap().contains("sync"));
+        assert!(!state.shutdown());
+        assert_eq!(state.finishing[0].path, PathBuf::from("a.tracking"));
+        assert!(matches!(state.can_start(), Err(StartError::ShuttingDown)));
+        *complete_a.lock() = Some(writer::Completion {
+            bytes: 11,
+            error: Some("tracking writer: record write: older".into()),
+        });
+        assert!(state.shutdown());
+        assert!(state.finishing.is_empty());
+        assert_eq!(state.status.bytes, 22);
+        assert!(state.status.error.as_ref().unwrap().contains("sync"));
+    }
+
+    #[test]
+    fn completion_frees_capacity_and_updates_the_matching_stopped_recording() {
+        let mut state = local_state();
+        let (a, complete_a) = Writer::controlled();
+        activate(&mut state, a, "a.tracking");
+        state.stop_active();
+        state.reap();
+        assert_eq!(state.status.bytes, 0);
+        *complete_a.lock() = Some(writer::Completion {
+            bytes: 100,
+            error: None,
+        });
+        state.can_start().unwrap();
+        assert!(state.finishing.is_empty());
+        assert_eq!(state.status.bytes, 100);
+        assert!(state.status.error.is_none());
+        assert!(state.shutdown());
+    }
+
+    #[test]
+    fn actual_idle_capture_and_start_boundary_drain_pending_publications() {
+        let _serial = history::TEST_LOCK.lock();
+        history::take_capture();
+        history::interrupt(DiscontinuityReason::Unavailable);
+        capture(CaptureSample {
+            display_time_ns: 90,
+            should_render: true,
+            head_tracked: false,
+            eyes: None,
+        });
+        assert!(history::take_capture().is_empty());
+        history::interrupt(DiscontinuityReason::Unavailable);
+        discard_before_start();
+        assert!(history::take_capture().is_empty());
+    }
+
+    #[test]
+    fn snapshot_matching_requires_publication_identity_even_with_equal_display_times() {
+        let now = Instant::now();
+        let frame = controller_frame::ControllerFrame {
+            sequence: 11,
+            display_time_ns: 90,
+            published_at: now,
+            focused: true,
+            action_set: controller_frame::ActionSetKind::OnFoot,
+            hands: Default::default(),
+        };
+        let set = |set| semantic_frame::SetState {
+            set,
+            actions: Vec::new(),
+        };
+        let semantic = semantic_frame::SemanticFrame {
+            published_at: now,
+            action_set: frame.action_set,
+            global: set(crate::vr::input::semantic::SemanticSet::Global),
+            mode: set(crate::vr::input::semantic::SemanticSet::OnFoot),
+        };
+        let input = [CapturedInput {
+            capture_time_ns: 1,
+            frame_sequence: Some(12),
+            record: InputRecord::Discontinuity {
+                reason: DiscontinuityReason::Unavailable,
+                discarded: 0,
+            },
+        }];
+        let (raw, actions) =
+            matching_snapshots(Some(frame.clone()), Some(semantic.clone()), &input);
+        assert!(raw.is_none());
+        assert!(actions.is_none());
+        let current = controller_frame::ControllerFrame {
+            sequence: 12,
+            ..frame
+        };
+        assert_eq!(current.display_time_ns, 90);
+        let (raw, actions) =
+            matching_snapshots(Some(current.clone()), Some(semantic.clone()), &input);
+        assert_eq!(raw.unwrap().sequence, 12);
+        assert!(actions.is_some());
+        let stale = semantic_frame::SemanticFrame {
+            published_at: now - Duration::from_nanos(1),
+            ..semantic
+        };
+        let (raw, actions) = matching_snapshots(Some(current), Some(stale), &input);
+        assert!(raw.is_some());
+        assert!(actions.is_none());
+    }
+
+    #[test]
+    fn capture_wire_preserves_exact_publication_time_and_missing_associations() {
+        let started = Instant::now();
+        let record = InputRecord::Discontinuity {
+            reason: DiscontinuityReason::Unavailable,
+            discarded: 0,
+        };
+        let publications = vec![
+            Publication {
+                observed_at: started - Duration::from_nanos(1),
+                frame_sequence: Some(1),
+                record: record.clone(),
+            },
+            Publication {
+                observed_at: started + Duration::from_nanos(7),
+                frame_sequence: Some(12),
+                record: record.clone(),
+            },
+            Publication {
+                observed_at: started + Duration::from_nanos(9),
+                frame_sequence: None,
+                record,
+            },
+        ];
+        let captured = capture_publications(publications, started);
+        assert_eq!(captured.len(), 2);
+        assert_eq!(captured[0].capture_time_ns, 7);
+        assert_eq!(captured[0].frame_sequence, Some(12));
+        assert_eq!(captured[1].capture_time_ns, 9);
+        assert_eq!(captured[1].frame_sequence, None);
+        let frame = Frame {
+            time_ns: 15,
+            display_time_ns: 90,
+            session: SessionSample {
+                state: None,
+                should_render: true,
+                head_tracked: false,
+            },
+            head: None,
+            stage: StageInfo::default(),
+            controllers: None,
+            semantic: None,
+            recenters: Vec::new(),
+        };
+        let batch = encode_capture(&frame, &captured).unwrap();
+        let header = Header {
+            build: "fixture".into(),
+            recorded_at: "fixture".into(),
+            action_schema: 4,
+            start: StartMarker {
+                transform: [0.0; 16],
+                bookmark: None,
+            },
+            dominant_hand: Hand::Right,
+            world_scale: 1.0,
+            time_scale: 1.0,
+        };
+        let mut bytes = format::encode_input_preamble(&header);
+        bytes.extend(batch.bytes);
+        let decoded = format::decode(&bytes).unwrap();
+        assert_eq!(decoded.version, 2);
+        assert_eq!(decoded.input, captured);
+        assert_eq!(decoded.frames, vec![frame]);
+    }
 }
