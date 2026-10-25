@@ -25,6 +25,7 @@ use crate::{
     stereo::STEREO_STATE,
 };
 
+pub(crate) mod authored;
 pub(crate) mod config;
 pub mod height;
 pub(crate) use config::CameraConfig;

@@ -22,6 +22,10 @@ use crate::{
 };
 
 pub(crate) fn head_view(ui: &mut egui::Ui) {
+    ui.label(format!(
+        "Authored sequence camera: {:?}.",
+        hooks::camera::authored::status()
+    ));
     let mut cfg = config::edit();
     let cs = &mut cfg.camera;
     ui.checkbox(&mut cs.enabled, "Enabled");
