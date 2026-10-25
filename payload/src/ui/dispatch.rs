@@ -3,6 +3,9 @@
 #[cfg(test)]
 #[path = "dispatch/tests.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "dispatch/visualizations_tests.rs"]
+mod visualizations_tests;
 
 use egui::Ui;
 

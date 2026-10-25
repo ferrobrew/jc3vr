@@ -120,14 +120,16 @@ pub(crate) fn controls(ui: &mut Ui, snapshot: &Snapshot, feature: Option<Feature
     ui.add(egui::TextEdit::singleline(&mut filter).hint_text("Filter names or groups"));
     ui.ctx()
         .data_mut(|data| data.insert_temp(id, filter.clone()));
-    let summary = snapshot.summary();
-    ui.label(format!(
-        "Inventory: {}. {} blocked; {} draw unverified.",
-        summary.label(),
-        summary.blocked,
-        summary.draw_unverified
-    ));
-    ui.small("Requested switches include view contents. Active drawing needs a current draw sample; retained primitive counts do not prove it.");
+    if feature.is_none() {
+        let summary = snapshot.summary();
+        ui.label(format!(
+            "Inventory: {}. {} blocked; {} draw unverified.",
+            summary.label(),
+            summary.blocked,
+            summary.draw_unverified
+        ));
+        ui.small("Requested switches include view contents. Active drawing needs a current draw sample; retained primitive counts do not prove it.");
+    }
     let mut edits = Vec::new();
     egui::ScrollArea::vertical()
         .id_salt(("visualization-switches", feature))
@@ -145,21 +147,20 @@ pub(crate) fn controls(ui: &mut Ui, snapshot: &Snapshot, feature: Option<Feature
                     previous_group = Some(group);
                 }
                 ui.push_id(entry.id, |ui| {
-                    let mut requested = entry.id.requested(&snapshot.config);
-                    if ui.checkbox(&mut requested, entry.label).changed() {
-                        edits.push(Edit::Switch(entry.id, requested));
-                    }
+                    switch_control(ui, snapshot, entry, &mut edits);
                     ui.small(snapshot.state(entry.id).label());
                     if let ViewState::Blocked(blocker) = snapshot.state(entry.id) {
                         unblock_control(ui, blocker, &mut edits);
                     }
                 });
             }
-            ui.separator();
-            ui.collapsing("Shared overlay settings", |ui| shared_settings(ui, snapshot, &mut edits));
-            ui.separator();
-            temporary_controls(ui, snapshot);
-            ui.small("Preview, HUD, sight/scope, and performance tools remain in their existing feature editors. Opening this drawer does not activate their capture or scan work.");
+            if feature.is_none() {
+                ui.separator();
+                ui.collapsing("Shared overlay settings", |ui| shared_settings(ui, snapshot, &mut edits));
+                ui.separator();
+                temporary_controls(ui, snapshot);
+                ui.small("Preview, HUD, sight/scope, and performance tools remain in their existing feature editors. Opening this drawer does not activate their capture or scan work.");
+            }
         });
     if !edits.is_empty() {
         apply_edits(&mut config::edit(), &edits);
@@ -524,6 +525,13 @@ enum Edit {
     RelativeDepthTolerance(f32),
     MinimumLineWidth(f32),
     XrayAlpha(f32),
+}
+
+fn switch_control(ui: &mut Ui, snapshot: &Snapshot, entry: &Entry, edits: &mut Vec<Edit>) {
+    let mut requested = entry.id.requested(&snapshot.config);
+    if ui.checkbox(&mut requested, entry.label).changed() {
+        edits.push(Edit::Switch(entry.id, requested));
+    }
 }
 
 fn unblock_control(ui: &mut Ui, blocker: Blocker, edits: &mut Vec<Edit>) {

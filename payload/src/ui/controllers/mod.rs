@@ -59,7 +59,10 @@ use crate::{
         weapons::inventory as controller_inventory,
     },
     hud::{pointer, summary_panel},
-    ui::catalog::{FeatureId, FeatureSection},
+    ui::{
+        catalog::{FeatureId, FeatureSection},
+        visualizations,
+    },
     vr::input::{self as vr_input, ActionsOrigin},
 };
 
@@ -310,10 +313,18 @@ fn status(ui: &mut Ui, id: FeatureId) {
 }
 
 fn visualizations(ui: &mut Ui, id: FeatureId) {
-    let grab = controller_physical_hands::grab_view::status();
-    let collider = controller_physical_hands::collider_view::status();
-    let overlay = controller_overlay::status();
+    if !matches!(
+        id,
+        FeatureId::RootWalls | FeatureId::PhysicalHands | FeatureId::Grapple
+    ) {
+        ui.label("Shared overlay switches: Body root and walls > Visualizations. Grab and collider views: Physical hands and held objects > Visualizations.");
+        return;
+    }
+    let snapshot = visualizations::snapshot();
+    visualizations::controls(ui, &snapshot, Some(id));
     if id == FeatureId::PhysicalHands {
+        let grab = controller_physical_hands::grab_view::status();
+        let collider = controller_physical_hands::collider_view::status();
         grab_view::grab_view_readout(ui, &grab);
         collider_view::collider_view_readout(ui, &collider);
         let mut cfg = config::edit();
@@ -323,10 +334,9 @@ fn visualizations(ui: &mut Ui, id: FeatureId) {
             &mut cfg.controllers.physical_hands.collider_view,
         );
     } else if id == FeatureId::RootWalls {
+        let overlay = controller_overlay::status();
         overlay::overlay_readout(ui, &overlay);
         overlay::overlay_settings(ui, &mut config::edit().controllers.overlay);
-    } else {
-        ui.label("Shared overlay switches: Body root and walls > Visualizations. Grab and collider views: Physical hands and held objects > Visualizations.");
     }
 }
 

@@ -71,7 +71,6 @@ pub(super) fn collider_view_readout(ui: &mut Ui, status: &ColliderViewStatus) {
 }
 
 pub(super) fn collider_view_settings(ui: &mut Ui, v: &mut ColliderViewConfig) {
-    ui.checkbox(&mut v.enabled, "Draw the physics colliders near the player");
     ui.add_enabled_ui(v.enabled, |ui| {
         ui.add(egui::Slider::new(&mut v.radius_m, 0.5..=50.0).text("Radius (m)"));
         ui.add(egui::Slider::new(&mut v.max_bodies, 1..=512).text("Most bodies"));

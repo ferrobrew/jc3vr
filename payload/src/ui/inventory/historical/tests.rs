@@ -22,13 +22,79 @@ fn frozen_baseline_has_reviewed_current_source_targets() {
         1405
     );
     assert_eq!(mapping.assignments.len(), 1405);
-    assert_eq!(mapping.consolidations.len(), 4);
+    assert_eq!(mapping.consolidations.len(), 5);
     assert!(baseline.source_sha256.values().all(|hash| hash.len() == 64));
     let sources: Vec<_> = source_files().copied().collect();
     let issues = parity(&baseline, &mapping, &sources);
     assert!(
         issues.is_empty(),
         "historical UI source parity: {issues:#?}"
+    );
+}
+
+#[test]
+fn canonical_visualization_aliases_require_exact_targets_and_explicit_approval() {
+    let (baseline, mut mapping) = fixtures();
+    let sources: Vec<_> = source_files().copied().collect();
+    let id = "canonical-visualization-switches";
+    let group = mapping
+        .consolidations
+        .iter()
+        .find(|group| group.id == id)
+        .unwrap();
+    assert_eq!(group.old_ids.len(), 13);
+    let index = mapping
+        .assignments
+        .iter()
+        .position(|row| row.consolidation.as_deref() == Some(id))
+        .unwrap();
+    let original = mapping.assignments[index].clone();
+    assert_eq!(
+        original.semantic.call,
+        "checkbox ( & mut requested , entry . label )"
+    );
+    assert_eq!(
+        original.semantic.bindings,
+        ["let mut requested = entry . id . requested ( & snapshot . config ) ;"]
+    );
+    assert_eq!(
+        original.semantic.effect,
+        ". changed ( ) { edits . push ( Edit : : Switch ( entry . id , requested ) ) ; }"
+    );
+    assert!(parity(&baseline, &mapping, &sources).is_empty());
+
+    mapping.assignments.remove(index);
+    assert!(parity(&baseline, &mapping, &sources).iter().any(|issue| {
+        matches!(issue, Issue::MissingAssignment(old_id) if old_id == &original.old_id)
+    }));
+    mapping.assignments.insert(index, original.clone());
+    mapping.assignments[index].consolidation = None;
+    assert!(
+        parity(&baseline, &mapping, &sources)
+            .iter()
+            .any(|issue| { matches!(issue, Issue::UnapprovedConsolidation(_)) })
+    );
+    mapping.assignments[index] = original.clone();
+    mapping.assignments[index].semantic.effect = ". changed ( ) { edits . clear ( ) ; }".to_owned();
+    assert!(parity(&baseline, &mapping, &sources).iter().any(|issue| {
+        matches!(issue, Issue::MissingTarget(old_id) if old_id == &original.old_id)
+    }));
+    mapping.assignments[index] = original;
+    let duplicate_index = mapping
+        .assignments
+        .iter()
+        .position(|row| row.consolidation.is_none())
+        .unwrap();
+    mapping.assignments[duplicate_index].path = mapping.assignments[index].path.clone();
+    mapping.assignments[duplicate_index].kind = mapping.assignments[index].kind.clone();
+    mapping.assignments[duplicate_index].semantic = mapping.assignments[index].semantic.clone();
+    mapping.assignments[duplicate_index].occurrence = 1;
+    mapping.assignments[duplicate_index].expected_matches = 1;
+    mapping.assignments[duplicate_index].owners = mapping.assignments[index].owners.clone();
+    assert!(
+        parity(&baseline, &mapping, &sources)
+            .iter()
+            .any(|issue| { matches!(issue, Issue::UnapprovedConsolidation(_)) })
     );
 }
 
@@ -308,7 +374,7 @@ fn extra_matching_current_owner_is_not_silently_selected() {
 
 const ORIGINAL: &str = "fn old() { let c = &mut cfg.controllers; ui.checkbox(&mut c.enabled, \"Enabled\"); if ui.button(\"Capture\").clicked() { sink::capture(); } }";
 const BASELINE_FINGERPRINT: u64 = 0x9b6099490bea7ce7;
-const MAPPING_FINGERPRINT: u64 = 0x4919210693aa27c7;
+const MAPPING_FINGERPRINT: u64 = 0x5f8a88528a7a335e;
 
 fn source(text: &'static str) -> SourceFile {
     SourceFile {

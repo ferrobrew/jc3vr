@@ -43,19 +43,6 @@ pub(super) fn overlay_settings(ui: &mut Ui, o: &mut OverlayConfig) {
             ui.selectable_value(&mut o.gun_readout, GunReadout::Dot, "Dot");
             ui.selectable_value(&mut o.gun_readout, GunReadout::Laser, "Laser");
         });
-        ui.checkbox(&mut o.grapple_highlight, "Grapple target highlight");
-        ui.checkbox(&mut o.grapple_beam, "Grapple beam");
-        ui.checkbox(&mut o.ghost_hands, "Ghost hands")
-            .on_hover_text("Show the controller's hand while the animation owns it.");
-        ui.checkbox(&mut o.markers, "Grip markers").on_hover_text(
-            "Mark everything the hands can take, coloured by kind, with what each squeeze would \
-             take highlighted.",
-        );
-        ui.checkbox(&mut o.debug_gizmos, "Controller gizmos");
-        ui.checkbox(&mut o.body_mirror, "Body mirror").on_hover_text(
-            "Draw Rico's skeleton reflected in a mirror ahead of him, with rings at the head and \
-             wrist targets, for checking that his body lines up with yours.",
-        );
         ui.add_enabled(
             o.body_mirror,
             egui::Slider::new(&mut o.body_mirror_distance_m, 0.5..=4.0)
