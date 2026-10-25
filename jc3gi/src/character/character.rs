@@ -288,10 +288,8 @@ impl AnimationController {
             f(self as *const Self as _, index, matrix)
         }
     }
-    pub const UpdateAnimationsTime_ADDRESS: usize = 0x1404794D0;
-    /// Advances the playback clocks of the controller's time-updatable blenders by `dt` (via
-    /// `CPoseProducer::UpdateBlendersTimeInRange`) without recomputing the pose. Runs each SIM frame
-    /// in the character's animation pass, before [`UpdateAnimations`](crate::character::character::AnimationController::UpdateAnimations).
+    pub const UpdateAnimationsTime_ADDRESS: usize = 0x14043FC50;
+    /// Advances the producer's blender times by `dt` through `CPoseProducer::UpdateBlendersTimeInRange` without recomputing the pose. Returns without producer work when the controller is not initialized. The character's animation callback uses this as a time-only alternative to [`UpdateAnimations`](crate::character::character::AnimationController::UpdateAnimations).
     pub unsafe fn UpdateAnimationsTime(&mut self, dt: f32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
@@ -300,11 +298,8 @@ impl AnimationController {
             f(self as *mut Self as _, dt)
         }
     }
-    pub const UpdateAnimations_ADDRESS: usize = 0x14077E200;
-    /// Recomputes the controller's pose from its pose producers: advances each blender's clock by
-    /// `dt` (`CPoseProducer::Update` -> `CBlender::UpdateTime`) and samples and blends the active
-    /// clips into the model-space pose over `num_of_bones` bones. Runs each SIM frame in the
-    /// character's animation pass. A `dt` of `0` holds the animation clocks, producing a static pose.
+    pub const UpdateAnimations_ADDRESS: usize = 0x14043FC80;
+    /// Updates [`m_PoseProducer`](crate::character::character::AnimationController::m_PoseProducer) synchronously through [`PoseProducer::Update`](crate::animation::pose_producer::PoseProducer::Update), forwarding `dt` and the selected `num_of_bones`. Returns without producer work when the controller is not initialized. The character's animation callback selects this pose-update path or the time-only [`UpdateAnimationsTime`](crate::character::character::AnimationController::UpdateAnimationsTime) path; it can also return without either operation.
     pub unsafe fn UpdateAnimations(&mut self, dt: f32, num_of_bones: i32) {
         unsafe {
             let f: unsafe extern "system" fn(
@@ -664,6 +659,16 @@ impl Character {
             f(self as *mut Self as _, data)
         }
     }
+    pub const ClearAnimationModifiers_ADDRESS: usize = 0x14077E200;
+    /// Clears frame-bound animation modifiers on each non-null rule system in [`AnimatedModel::m_RuleSystems`](crate::character::character::AnimatedModel::m_RuleSystems) of [`m_AnimatedModel`](crate::character::character::Character::m_AnimatedModel).
+    pub unsafe fn ClearAnimationModifiers(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::ClearAnimationModifiers_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
     pub const IsInVehicleAttachState_ADDRESS: usize = 0x14077F080;
     /// Whether the character is attached to a vehicle (riding, or in the mount/dismount
     /// transitions), read from the animation rule system's current state. The state machine
@@ -783,7 +788,7 @@ impl Character {
     pub const UpdatePassFinalizePose_Parallel_ADDRESS: usize = 0x1407F9B10;
     /// The character's SIM-phase pose-finalization pass. Eligibility checks can return before any finalization work. An eligible pass runs the current states' tasks registered in the [`FINALIZE_POSE_STATE_TASK_RANGE`](crate::character::character::Character::FINALIZE_POSE_STATE_TASK_RANGE) through [`UpdateStateTasksInRange`](crate::character::character::Character::UpdateStateTasksInRange), including the aim, look-at, grapple-fire arm, and weapon off-hand IK tasks.
     ///
-    /// It then places attachments and drives the [`HumanIK`](crate::character::character::Character::m_HIK) solve: the `MAIN` body pass, gated on [`HumanIK::HasTargets`](crate::animation::ik::HumanIK::HasTargets) and run through [`UpdateIKForTargets`](crate::character::character::Character::UpdateIKForTargets), followed by [`UpdateSecondaryHandIKPass`](crate::character::character::Character::UpdateSecondaryHandIKPass). It then computes the model-space pose (`CalculateModelSpacePose`) and calls [`UpdatePropEffects`](crate::character::character::Character::UpdatePropEffects). Blackboard keys written by the finalize state tasks are written after entry. Entry alone does not establish that the animation job has completed or that the pose is newly produced; the caller's job synchronization is not mapped.
+    /// It then places attachments and drives the [`HumanIK`](crate::character::character::Character::m_HIK) solve: the `MAIN` body pass, gated on [`HumanIK::HasTargets`](crate::animation::ik::HumanIK::HasTargets) and run through [`UpdateIKForTargets`](crate::character::character::Character::UpdateIKForTargets), followed by [`UpdateSecondaryHandIKPass`](crate::character::character::Character::UpdateSecondaryHandIKPass). It then computes the model-space pose (`CalculateModelSpacePose`) and calls [`UpdatePropEffects`](crate::character::character::Character::UpdatePropEffects). Blackboard keys written by the finalize state tasks are written after entry. Entry alone does not establish that an eligible animation update produced a new pose for this invocation.
     pub unsafe fn UpdatePassFinalizePose_Parallel(
         &mut self,
         context: *mut ::std::ffi::c_void,

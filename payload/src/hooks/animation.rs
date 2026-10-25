@@ -1,11 +1,14 @@
-//! Animation hooks: freeze Rico's idle breathing.
+//! Animation hooks: hold clip time to suppress Rico's idle breathing.
 //!
-//! While the local player stands in the base idle state (`S_IDLE`), the idle clip keeps advancing,
-//! producing the subtle breathing/sway. With the head driven by the HMD and the body meant to hold
-//! the player's pose, that motion reads as the body drifting on its own (issue #33). These hooks zero
-//! the animation-clock advance for the local player's controller while it is in `S_IDLE`, holding the
-//! pose static; every other state (and every other character) runs at normal speed. The periodic
-//! idle *fidget* is handled separately in `crate::hooks::input::locomotion`.
+//! With the head driven by the HMD, the base idle clip's breathing and sway can move the body
+//! independently of the player's tracked pose (issue #33). These hooks pass zero delta time to
+//! `AnimationController::UpdateAnimationsTime` and `AnimationController::UpdateAnimations` while
+//! suppression is enabled and the local player's active body rule state is the on-foot `S_IDLE`.
+//! The engine selects between time-only advancement and synchronous pose evaluation. Each hook
+//! still forwards its native call; holding clip time does not freeze graph state, blend weights, IK,
+//! or the full pose.
+//! Every other state and character receives the original delta time. The periodic idle fidget is
+//! handled separately in `crate::hooks::input::locomotion`.
 
 use std::sync::LazyLock;
 
@@ -28,8 +31,8 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&UPDATE_ANIMATIONS_BINDER)
 }
 
-/// Advance the controller's animation clocks -- but hold them (`dt = 0`) while the local player is in
-/// the base idle state, freezing the idle breathing.
+/// Hold clip time on the controller's time-only path when idle breathing suppression applies.
+/// The native call and its initialized guard remain in place.
 #[detour(
     address = jc3gi::character::character::AnimationController::UpdateAnimationsTime_ADDRESS
 )]
@@ -42,9 +45,9 @@ fn update_animations_time(controller: *mut AnimationController, dt: f32) {
     UPDATE_ANIMATIONS_TIME.get().unwrap().call(controller, dt);
 }
 
-/// Recompute the controller's pose -- with `dt = 0` while the local player is in the base idle state,
-/// so the pose is resampled at a held clock (`CPoseProducer::Update` also advances the clock) instead
-/// of drifting.
+/// Hold clip time during synchronous pose evaluation when idle breathing suppression applies.
+/// `PoseProducer::Update` still evaluates the selected bones; graph, blend, and IK changes can
+/// still change the pose.
 #[detour(
     address = jc3gi::character::character::AnimationController::UpdateAnimations_ADDRESS
 )]
@@ -60,22 +63,34 @@ fn update_animations(controller: *mut AnimationController, dt: f32, num_of_bones
         .call(controller, dt, num_of_bones);
 }
 
-/// Whether this controller belongs to the local player, that player is standing in `S_IDLE`, and the
-/// breathing suppression is enabled. The controller identity is checked first so a non-player update
-/// costs only a pointer compare (no config lock, no state walk).
+/// Whether this controller belongs to the local player, that player's body rule state is the
+/// on-foot `S_IDLE`, and breathing suppression is enabled. Controller identity is checked before
+/// the config lock and state walk.
 unsafe fn should_freeze(controller: *mut AnimationController) -> bool {
     unsafe {
         let Some(player) = Character::GetLocalPlayerCharacter().as_ref() else {
             return false;
         };
-        if !std::ptr::eq(
-            player.m_AnimatedModel.m_AnimationController as *const AnimationController,
-            controller,
-        ) {
-            return false;
-        }
-        Config::lock_query(|c| c.movement.suppress_idle_breathing)
-            && active_state_type_id(player) == Some(*S_IDLE_TYPE_ID)
+        idle_breathing_suppressed(
+            std::ptr::eq(
+                player.m_AnimatedModel.m_AnimationController as *const AnimationController,
+                controller,
+            ),
+            || Config::lock_query(|c| c.movement.suppress_idle_breathing),
+            || (active_state_type_id(player), *S_IDLE_TYPE_ID),
+        )
+    }
+}
+
+/// Lazy reads preserve the non-local and disabled fast paths without native calls in policy tests.
+fn idle_breathing_suppressed(
+    is_local_controller: bool,
+    enabled: impl FnOnce() -> bool,
+    state_ids: impl FnOnce() -> (Option<u32>, u32),
+) -> bool {
+    is_local_controller && enabled() && {
+        let (active_state, idle_state) = state_ids();
+        active_state == Some(idle_state)
     }
 }
 
@@ -98,5 +113,77 @@ pub(crate) unsafe fn active_state_type_id(character: &Character) -> Option<u32> 
                 .m_HashID
                 .m_Hash,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use super::*;
+
+    #[test]
+    fn local_on_foot_idle_holds_clip_time_when_enabled() {
+        for idle_state in [0, u32::MAX] {
+            assert!(idle_breathing_suppressed(
+                true,
+                || true,
+                || (Some(idle_state), idle_state),
+            ));
+        }
+    }
+
+    #[test]
+    fn disabled_suppression_skips_the_state_read() {
+        assert!(!idle_breathing_suppressed(
+            true,
+            || false,
+            || panic!("disabled suppression must not read the state"),
+        ));
+    }
+
+    #[test]
+    fn other_body_rule_states_leave_clip_time_running() {
+        for idle_state in [0_u32, u32::MAX] {
+            assert!(!idle_breathing_suppressed(
+                true,
+                || true,
+                || (Some(idle_state.wrapping_add(1)), idle_state),
+            ));
+        }
+    }
+
+    #[test]
+    fn a_missing_body_rule_state_leaves_clip_time_running() {
+        assert!(!idle_breathing_suppressed(
+            true,
+            || true,
+            || (None, u32::MAX),
+        ));
+    }
+
+    #[test]
+    fn a_non_local_controller_skips_config_and_state_reads() {
+        assert!(!idle_breathing_suppressed(
+            false,
+            || panic!("another controller must not read the config"),
+            || panic!("another controller must not read the state"),
+        ));
+    }
+
+    #[test]
+    fn the_enabled_setting_is_read_before_the_state() {
+        let config_read = Cell::new(false);
+        assert!(idle_breathing_suppressed(
+            true,
+            || {
+                config_read.set(true);
+                true
+            },
+            || {
+                assert!(config_read.get());
+                (Some(17), 17)
+            },
+        ));
     }
 }

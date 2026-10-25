@@ -132,13 +132,7 @@ impl std::convert::AsMut<AnimationInstance> for AnimationInstance {
 pub struct Blender {}
 impl Blender {
     pub const UpdatePose_ADDRESS: usize = 0x141E6BE10;
-    /// Samples the blender's clips and blends them over `reference_pose` into `pose_out`, both
-    /// `num_bones` local-space transforms, and likewise the float slots from `reference_floats` into
-    /// `float_slots_out` (`num_float_slots` each). Where the clips' total weight on a bone is below
-    /// the skeleton's reference-pose threshold, the reference fills in. `normal_blend_pose_out` is
-    /// non-null only for the first layer, which also copies its result there (the pose producer's
-    /// pre-additive pose). It writes nothing but its outputs. Called by the pose job on a worker
-    /// thread, once per layer that has samplers (see [`PoseProducer`](crate::animation::pose_producer::PoseProducer)).
+    /// Samples the blender's clips and blends them over `reference_pose` into `pose_out`, both `num_bones` local-space transforms, and likewise the float slots from `reference_floats` into `float_slots_out` (`num_float_slots` each). Where the clips' total weight on a bone is below the skeleton's reference-pose threshold, the reference fills in. `normal_blend_pose_out` is non-null only for the first layer, which also copies its result there (the pose producer's pre-additive pose). It writes nothing but its outputs. [`PoseProducer::UpdateBlendersPoseInRange`](crate::animation::pose_producer::PoseProducer::UpdateBlendersPoseInRange) calls it during synchronous updates and pose-job execution.
     pub unsafe fn UpdatePose(
         &mut self,
         pose_out: *mut crate::animation::pose_producer::QsTransform,
@@ -173,8 +167,7 @@ impl Blender {
         }
     }
     pub const HasSamplers_ADDRESS: usize = 0x141E6B1C0;
-    /// Whether the blender has any animation controls; the pose job skips a later layer's blender
-    /// without them.
+    /// Whether the blender has any animation controls. [`PoseProducer::UpdateBlendersPoseInRange`](crate::animation::pose_producer::PoseProducer::UpdateBlendersPoseInRange) skips a later layer's blender without them.
     pub unsafe fn HasSamplers(&mut self) -> bool {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) -> bool = ::std::mem::transmute(
@@ -225,32 +218,16 @@ impl std::convert::AsMut<Blender> for Blender {
     }
 }
 #[repr(C, align(8))]
-/// A pose producer (`CPoseProducer`): owns an animated model's blenders and the `T0`/`T1` poses
-/// the skinning palette is built from.
+/// A pose producer (`CPoseProducer`): owns an animated model's blenders and the `T0`/`T1` poses the skinning palette is built from.
 ///
-/// The pose job (`CPoseProducer::UpdateBlendersPoseInRange`) builds the local-space pose layer by
-/// layer: the first blender samples over the skeleton's reference pose, and each later blender that
-/// has samplers runs [`Blender::UpdatePose`](crate::animation::pose_producer::Blender::UpdatePose) with the previous blender's output as its reference
-/// pose, so a partial layer overlays the pose below it by its clips' per-bone weights and an
-/// additive layer adds onto it. A blender without samplers is skipped, leaving the pose below it
-/// unchanged. The blenders are added in the order of the animation controller's body parts
-/// ([`AnimationController::m_BodyParts`](crate::character::character::AnimationController::m_BodyParts)),
-/// one per layer.
+/// [`UpdateBlendersPoseInRange`](crate::animation::pose_producer::PoseProducer::UpdateBlendersPoseInRange) builds the local-space pose layer by layer. The first blender samples over the skeleton's reference pose. Each later blender that has samplers runs [`Blender::UpdatePose`](crate::animation::pose_producer::Blender::UpdatePose) with the previous blender's output as its reference pose, so a partial layer overlays the pose below it by its clips' per-bone weights, and an additive layer adds onto it. A later blender without samplers is skipped, leaving the pose below it unchanged. The blenders are added in the order of the animation controller's body parts ([`AnimationController::m_BodyParts`](crate::character::character::AnimationController::m_BodyParts)), one per layer.
 ///
-/// The two poses are a tick-spaced pair. Kicking the pose job (`CPoseProducer::KickUpdateJob`)
-/// swaps them and queues `PoseUpdate_fragment` on a CPU fragment worker, so the pose the job
-/// writes this tick is the buffer that held the tick before last, and the previous
-/// tick's result (with every change made to it after the job, the HumanIK solve and joint writes
-/// included) becomes [`m_PoseT0`](crate::animation::pose_producer::PoseProducer::m_PoseT0) untouched. The skinning job blends `T0` to `T1`.
+/// The poses are reused buffers. [`Update`](crate::animation::pose_producer::PoseProducer::Update) exchanges their pointers before synchronously evaluating [`m_PoseT1`](crate::animation::pose_producer::PoseProducer::m_PoseT1). The asynchronous pose-job path (`CPoseProducer::KickUpdateJob`) also exchanges them before queuing `PoseUpdate_fragment` on a CPU fragment worker. [`m_PoseT0`](crate::animation::pose_producer::PoseProducer::m_PoseT0) receives the previously current pose, including changes made before the exchange, such as HumanIK results and joint writes. The skinning job blends `T0` to `T1`.
 pub struct PoseProducer {
     _field_0: [u8; 32],
-    /// The previous tick's pose.
+    /// The previously current pose after the latest buffer exchange. [`Update`](crate::animation::pose_producer::PoseProducer::Update) exchanges this pointer with [`m_PoseT1`](crate::animation::pose_producer::PoseProducer::m_PoseT1) before evaluating the new current output.
     pub m_PoseT0: *mut crate::animation::skeleton::HkaPose,
-    /// The current tick's pose: the one the pose job writes, and the one the animation controller's
-    /// joint accessors
-    /// ([`AnimationController::GetJoint`](crate::character::character::AnimationController::GetJoint) and
-    /// [`SetJoint`](crate::character::character::AnimationController::SetJoint)) read and write in model
-    /// space.
+    /// The current pose buffer. [`UpdateBlendersPoseInRange`](crate::animation::pose_producer::PoseProducer::UpdateBlendersPoseInRange) writes its selected local transforms and float slots. The animation controller's joint accessors ([`AnimationController::GetJoint`](crate::character::character::AnimationController::GetJoint) and [`SetJoint`](crate::character::character::AnimationController::SetJoint)) read and write it in model space.
     pub m_PoseT1: *mut crate::animation::skeleton::HkaPose,
 }
 fn _PoseProducer_size_check() {
@@ -260,6 +237,34 @@ fn _PoseProducer_size_check() {
     unreachable!()
 }
 impl PoseProducer {
+    pub const Update_ADDRESS: usize = 0x141E6A9A0;
+    /// Exchanges [`m_PoseT0`](crate::animation::pose_producer::PoseProducer::m_PoseT0) and [`m_PoseT1`](crate::animation::pose_producer::PoseProducer::m_PoseT1), advances each blender's time by `dt`, and synchronously evaluates all blenders through [`UpdateBlendersPoseInRange`](crate::animation::pose_producer::PoseProducer::UpdateBlendersPoseInRange) for `num_bones`. The selected local transforms and float slots are copied into the current pose before this call returns. The blender range is captured before the time updates.
+    pub unsafe fn Update(&mut self, dt: f32, num_bones: i32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, dt: f32, num_bones: i32) = ::std::mem::transmute(
+                Self::Update_ADDRESS,
+            );
+            f(self as *mut Self as _, dt, num_bones)
+        }
+    }
+    pub const UpdateBlendersPoseInRange_ADDRESS: usize = 0x141E6A090;
+    /// Synchronously evaluates a blender range for `num_bones` local transforms and the skeleton's float slots. Clamps `to_blender` to the current blender count and returns without producing output when `from_blender` exceeds that end. A start at the first blender samples it over the skeleton's reference pose before the later-layer loop. A later start initializes the temporary output from the current [`m_PoseT1`](crate::animation::pose_producer::PoseProducer::m_PoseT1). The loop applies blenders below the clamped end. Copies the selected local transforms and float slots into the current pose, then frees the temporaries before returning. This operation does not exchange the pose pointers.
+    pub unsafe fn UpdateBlendersPoseInRange(
+        &mut self,
+        from_blender: i32,
+        to_blender: i32,
+        num_bones: i32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                from_blender: i32,
+                to_blender: i32,
+                num_bones: i32,
+            ) = ::std::mem::transmute(Self::UpdateBlendersPoseInRange_ADDRESS);
+            f(self as *mut Self as _, from_blender, to_blender, num_bones)
+        }
+    }
     pub const GetJoint_ADDRESS: usize = 0x141E693D0;
     /// Copies bone `index` from the current [`m_PoseT1`](crate::animation::pose_producer::PoseProducer::m_PoseT1) into `result` in model space and returns `result`. A dirty model-space transform is calculated lazily before the complete joint is copied.
     ///

@@ -1,6 +1,6 @@
 # Animation layers and the pose job
 
-A character's animation is a stack of layers, each a state machine with its own clips, blended into one local-space pose by a job on a worker thread. This doc covers how the layers are built and named, how the pose job combines them, what keeps running when a layer's pose is left out, and the state tasks the pose-finalization pass runs after its entry, the weapon off-hand grip among them. Related: [animation-graph.md](animation-graph.md) (the state machine format and what the graphs do with the weapon), [idle-stance.md](idle-stance.md) (the animation modifiers that pick the base layer's clips), [humanik.md](humanik.md) (the IK passes), and [skeleton.md](skeleton.md) (the pose store).
+A character's animation is a stack of layers, each with a state machine and clips, blended into a local-space pose by the pose producer. The character's animation callback includes synchronous pose evaluation and an alternate time-only path. Producer-level asynchronous jobs are a separate mechanism. Rule systems, state tasks, and IK also contribute to the final pose. Related: [animation-graph.md](animation-graph.md) (the state machine format and weapon animation), [idle-stance.md](idle-stance.md) (the animation modifiers that select the base layer's clips), [humanik.md](humanik.md) (the IK passes), and [skeleton.md](skeleton.md) (the pose store).
 
 ## The layers
 
@@ -19,13 +19,19 @@ Each layer is one rule system, [`AnimatedModel::m_RuleSystems`](https://ferrobre
 
 ## The pose job
 
-The pose producer ([`PoseProducer`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::pose_producer::PoseProducer)) builds the local-space pose in `CPoseProducer::UpdateBlendersPoseInRange`, on a worker thread:
+`Character::UpdatePassAnimations_Parallel` selects between pose evaluation through [`AnimationController::UpdateAnimations`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::AnimationController##func-UpdateAnimations) and time-only advancement through [`AnimationController::UpdateAnimationsTime`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::AnimationController##func-UpdateAnimationsTime). These are alternate paths, not consecutive phases required for every animation update. Both controller functions return without producer work when the controller is not initialized. The callback also has eligibility checks that can skip animation work, and it selects the bone count passed to pose evaluation according to the character's level of detail.
+
+`AnimationController::UpdateAnimations` forwards the delta time and selected bone count to [`PoseProducer::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::pose_producer::PoseProducer##func-Update). That call exchanges the previous and current pose buffers, advances blender times, and calls [`PoseProducer::UpdateBlendersPoseInRange`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::pose_producer::PoseProducer##func-UpdateBlendersPoseInRange) synchronously. The range operation blends into temporary transform and float buffers, copies the selected transforms and float slots into the current pose, frees the temporary buffers, and returns. The pose copy completes before the controller call returns. This path does not submit a deferred producer job. It does not establish that every later pose-finalization invocation has a fresh full-skeleton pose.
+
+`AnimationController::UpdateAnimationsTime` forwards the delta time to the producer's blender-time range operation over all blenders. It does not evaluate or copy the local-space pose. Zero delta time holds clip-time advancement on either controller path; rule-state changes, blend-weight changes, IK, and other pose writers can still change the final pose.
+
+The pose range operation combines the layers in order:
 
 1. The first blender samples its clips over the skeleton's reference pose ([`Blender::UpdatePose`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::pose_producer::Blender##func-UpdatePose)) and also writes its result as the pre-additive pose.
-2. Each later blender for which [`Blender::HasSamplers`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::pose_producer::Blender##func-HasSamplers) holds runs `UpdatePose` with the previous output as its reference pose and a fresh buffer as its output. A partial layer's clips carry per-bone weights, so it overlays only the bones it animates, and where its total weight falls below the skeleton's reference threshold the reference shows through. An additive layer adds onto the reference.
+2. Each later blender for which [`Blender::HasSamplers`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::pose_producer::Blender##func-HasSamplers) holds runs `Blender::UpdatePose` with the previous output as its reference pose and a fresh buffer as its output. A partial layer's clips carry per-bone weights, so it overlays only the bones it animates, and where its total weight falls below the skeleton's reference threshold the reference shows through. An additive layer adds onto the reference.
 3. A blender without samplers is skipped, and the pose below it passes on unchanged.
 
-`UpdatePose` writes nothing but its outputs. A layer whose blend is replaced by a copy of its reference pose and floats therefore leaves the pose exactly as a layer without samplers does.
+`Blender::UpdatePose` writes only its outputs. Copying a layer's reference transforms and float slots to its output therefore has the same pose result as skipping a layer without samplers.
 
 ## What a layer does besides its pose
 
