@@ -1,8 +1,20 @@
-use std::sync::OnceLock;
+use std::sync::{
+    Arc, OnceLock,
+    atomic::{AtomicBool, Ordering},
+};
 
 use jc3gi::game::GameState;
 use parking_lot::{Mutex, MutexGuard};
 use re_utilities::{ThreadSuspender, hook_library::HookLibrary};
+
+use crate::{
+    controllers::weapons::reload,
+    lifecycle::{
+        self, DeferReason, ParticipantId, Preparation, PrepareOutcome, PreparedParticipant,
+        ShutdownParticipant,
+    },
+    thread_role::{self, ThreadRole},
+};
 
 pub mod animation;
 pub mod camera;
@@ -35,7 +47,23 @@ struct HookState {
 unsafe impl Send for HookState {}
 unsafe impl Sync for HookState {}
 
+/// The mailbox remains closed until an adapter proves entry exclusion through hook removal.
+///
+/// HookLibrary does not supply exclusion. ThreadSuspender snapshots threads, ignores suspension
+/// failures, and does not drain an original call already inside the callback. The game pre-update
+/// role alone does not exclude an unexpected worker entry. No safe activation adapter exists yet.
+#[allow(dead_code)]
+pub(crate) fn activate_magazine_executor() -> Result<(), DeferReason> {
+    Err(DeferReason::HookEntryExclusionUnproven)
+}
+
 pub(super) fn install() {
+    if let Err(error) =
+        lifecycle::register_participant(ParticipantId::MagazineExecutor, Arc::new(MagazineShutdown))
+    {
+        tracing::error!(%error, "hook installation refused without shutdown preparation");
+        return;
+    }
     let mut patcher = re_utilities::Patcher::new();
     let hook_library = ThreadSuspender::for_block(|| {
         let library = HookLibrary::new()
@@ -70,17 +98,27 @@ pub(super) fn install() {
     });
 }
 
-pub(super) fn uninstall() {
+pub(super) fn uninstall() -> bool {
+    if !crate::is_shutting_down() {
+        tracing::error!("hook removal refused before shutdown commit");
+        return false;
+    }
     // The single-pass COM-vtable detours inline-patch the DXVK functions to jump into payload code
     // and are managed outside the HookLibrary, so tear them down explicitly before the DLL unloads --
     // otherwise the dangling jumps crash the game on the next D3D call.
     crate::stereo::single_pass::uninstall_com_detours();
-    let state = HOOK_STATE.get().unwrap();
-    let _ = ThreadSuspender::for_block(|| {
+    let Some(state) = HOOK_STATE.get() else {
+        tracing::error!("hook removal: installation state is unavailable");
+        return false;
+    };
+    if let Err(error) = ThreadSuspender::for_block(|| {
         Ok(state
             .hook_library
             .set_enabled(&mut state.patcher.lock(), false)?)
-    });
+    }) {
+        tracing::error!(?error, "hook removal failed; the image must remain mapped");
+        return false;
+    }
 
     // `HookLibrary::set_enabled(false)` unpatches only the addresses it owns. Everything applied
     // through [`patcher`] shares the same `Patcher` but belongs to no hook library -- the
@@ -99,8 +137,64 @@ pub(super) fn uninstall() {
         &mut *state.patcher.lock(),
         re_utilities::Patcher::new(),
     ));
+    true
 }
+
+struct MagazineShutdown;
+
+impl ShutdownParticipant for MagazineShutdown {
+    fn prepare(&self, preparation: Preparation) -> PrepareOutcome<Box<dyn PreparedParticipant>> {
+        if thread_role::current() != ThreadRole::Game {
+            return PrepareOutcome::Deferred(DeferReason::ParticipantBusy(
+                ParticipantId::MagazineExecutor,
+            ));
+        }
+        // This cancels only extraction. It must not stand down other gameplay during a retry.
+        reload::cancel_extraction_on_standdown();
+        match magazine_preparation(
+            reload::serial::stop_and_drain(),
+            MAGAZINE_BINDER_INSTALLED.load(Ordering::Acquire),
+        ) {
+            PrepareOutcome::Ready(()) => {
+                PrepareOutcome::Ready(Box::new(InactiveMagazine { preparation }))
+            }
+            PrepareOutcome::Deferred(reason) => PrepareOutcome::Deferred(reason),
+            PrepareOutcome::Failed(error) => PrepareOutcome::Failed(error),
+        }
+    }
+}
+
+fn magazine_preparation(drained: bool, binder_installed: bool) -> PrepareOutcome<()> {
+    if !drained {
+        PrepareOutcome::Deferred(DeferReason::MagazineBusy)
+    } else if binder_installed {
+        PrepareOutcome::Deferred(DeferReason::HookEntryExclusionUnproven)
+    } else {
+        PrepareOutcome::Ready(())
+    }
+}
+
+struct InactiveMagazine {
+    preparation: Preparation,
+}
+
+impl PreparedParticipant for InactiveMagazine {
+    fn validate(&self, preparation: Preparation) -> bool {
+        self.preparation == preparation
+            && !MAGAZINE_BINDER_INSTALLED.load(Ordering::Acquire)
+            && reload::serial::stop_and_drain()
+    }
+
+    fn commit(&mut self) {}
+}
+
+// This remains false because activation is blocked, and the character library omits the binder.
+// A future installer must publish installation before enabling it, even when acceptance is closed.
+static MAGAZINE_BINDER_INSTALLED: AtomicBool = AtomicBool::new(false);
 
 pub(super) fn patcher() -> Option<MutexGuard<'static, re_utilities::Patcher>> {
     HOOK_STATE.get().map(|state| state.patcher.lock())
 }
+
+#[cfg(test)]
+mod lifecycle_tests;

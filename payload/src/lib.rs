@@ -170,7 +170,12 @@ fn shutdown_startup() {
     std::thread::sleep(std::time::Duration::from_millis(100));
 
     tracing::info!("Uninstalling hooks");
-    hooks::uninstall();
+    if !hooks::uninstall() {
+        // Cleanup has already committed. Retention here is fatal containment, not live deferral.
+        module::pin();
+        tracing::error!("shutdown: hook removal is incomplete; ejection is blocked");
+        return;
+    }
 
     // Wait to ensure we're clear of the blast radius of the hooks
     std::thread::sleep(std::time::Duration::from_millis(100));
@@ -231,13 +236,11 @@ fn shutdown_from_game() {
     EguiState::uninstall();
 }
 
-/// Whether shutdown/eject has begun. Read by subsystems that must quiesce the moment F5 is pressed --
-/// notably the VR frame loop: after [`shutdown_from_game`] tears the OpenXR runtime down (persisting
-/// the instance/session handles for the next injection), the game thread keeps ticking, and an
-/// ungated `vr::update` re-acquires those persisted handles and rebuilds the swapchain, racing the
-/// hook uninstall in [`shutdown_startup`] -- the crash on uninject.
+/// Whether irreversible shutdown has committed. A pending request leaves this false so gameplay,
+/// input, and the VR runtime continue while reversible participants defer preparation.
+/// After commit, the frame loop must not recreate the runtime during hook removal.
 pub(crate) fn is_shutting_down() -> bool {
-    SHUTTING_DOWN.load(Ordering::Relaxed)
+    SHUTTING_DOWN.load(Ordering::Acquire)
 }
 
 static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
@@ -248,15 +251,24 @@ static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 /// the stamp is how a stale payload is caught at a glance.
 pub const BUILD_STAMP: &str = env!("jc3vr_build_stamp");
 
-/// Request that we shut down and exit
-fn shutdown() {
-    if SHUTTING_DOWN.swap(true, Ordering::SeqCst) {
-        return;
-    }
-
-    tracing::info!("Shutting down");
+/// Run only after lifecycle preparation commits on the game pre-update entry.
+fn commit_shutdown() {
+    tracing::info!("Shutdown preparation committed; tearing down");
     shutdown_from_game();
     std::thread::spawn(shutdown_startup);
+}
+
+fn contain_fatal_failure() {
+    let first_failure = lifecycle::mark_fatal();
+    module::pin();
+    if first_failure {
+        tracing::error!(
+            "payload failure: safe gameplay continuation is unverified; cleanup and ejection are \
+             blocked, and the game must be restarted"
+        );
+    } else if is_shutting_down() {
+        tracing::error!("shutdown failure: teardown is incomplete; the game must be restarted");
+    }
 }
 
 /// Whether any surface will draw this frame's egui output: the VR floating panel, the desktop
@@ -272,20 +284,28 @@ fn debug_ui_visible(panel_active: bool) -> bool {
 }
 
 fn update() {
-    if let Err(e) = initialize_from_game() {
-        tracing::error!("Failed to initialize in game thread, shutting down: {e:?}");
-        shutdown();
+    if is_shutting_down() || lifecycle::is_fatal() {
         return;
     }
-
     let panic = std::panic::catch_unwind(|| {
+        if let Err(error) = initialize_from_game() {
+            tracing::error!(
+                ?error,
+                "game-thread initialization failed; ejection is not proven safe"
+            );
+            contain_fatal_failure();
+            return;
+        }
         // Close the previous real frame's puffin scopes and open the next; the frame scope itself
         // is opened by `game_update` right after this returns. Once per real frame, main thread.
         #[cfg(feature = "profiler")]
         profiler::new_frame();
 
         if util::is_pressed(VK_F5) {
-            shutdown();
+            lifecycle::request_shutdown();
+        }
+        if lifecycle::advance_shutdown(&SHUTTING_DOWN) {
+            commit_shutdown();
             return;
         }
 
@@ -374,7 +394,10 @@ fn update() {
             .downcast_ref::<String>()
             .cloned()
             .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string()));
-        tracing::error!("Panic in update, shutting down: {panic_msg:?}");
-        shutdown();
+        tracing::error!(
+            ?panic_msg,
+            "panic in update; safe continuation and ejection are unverified"
+        );
+        contain_fatal_failure();
     }
 }
