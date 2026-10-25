@@ -1269,6 +1269,21 @@ impl Character {
             f(self as *mut Self as _, context)
         }
     }
+    pub const UpdatePassPostPhysics_Serial_ADDRESS: usize = 0x1407FCEB0;
+    /// The character's registered serial post-physics update. Performs post-physics state work,
+    /// then polls the character's message port to dispatch animation track messages.
+    pub unsafe fn UpdatePassPostPhysics_Serial(
+        &mut self,
+        context: *mut crate::game::GameObjectUpdateContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                context: *mut crate::game::GameObjectUpdateContext,
+            ) = ::std::mem::transmute(Self::UpdatePassPostPhysics_Serial_ADDRESS);
+            f(self as *mut Self as _, context)
+        }
+    }
     pub const IsStuntTraversing_ADDRESS: usize = 0x14077EF60;
     /// Whether the body rule system is in one of the four stunt-position traversal states
     /// (`S_STUNT_FWD`, `S_STUNT_RIGHT`, `S_STUNT_LEFT`, `S_STUNT_BWD`).
