@@ -99,6 +99,82 @@ fn canonical_visualization_aliases_require_exact_targets_and_explicit_approval()
 }
 
 #[test]
+fn reviewed_pause_checkbox_formatting_retains_the_exact_setting_target() {
+    let id = "payload/src/ui/hud.rs::pause_menu_ui::Setting::8445de68197d53bd::1";
+    let (mut baseline, mut mapping) = fixtures();
+    let old = baseline.controls.iter().find(|old| old.id == id).unwrap();
+    let current = mapping
+        .assignments
+        .iter()
+        .find(|row| row.old_id == id)
+        .unwrap();
+    assert_eq!(old.path, "payload/src/ui/hud.rs");
+    assert_eq!(current.path, old.path);
+    assert_eq!(old.kind, "Setting");
+    assert_eq!(current.kind, old.kind);
+    assert_eq!(
+        old.semantic.call,
+        "checkbox ( & mut cfg . pause_menu . enabled , \"VR pages in the pause menu\" , )"
+    );
+    assert_eq!(
+        current.semantic.call,
+        "checkbox ( & mut cfg . pause_menu . enabled , \"VR pages in the pause menu\" )"
+    );
+    assert_eq!(
+        current.semantic.call,
+        old.semantic.call.strip_suffix(", )").unwrap().to_owned() + ")"
+    );
+    assert_eq!(
+        old.semantic.bindings,
+        ["let mut cfg = config : : edit ( ) ;"]
+    );
+    assert_eq!(current.semantic.bindings, old.semantic.bindings);
+    assert!(old.semantic.effect.is_empty());
+    assert_eq!(current.semantic.effect, old.semantic.effect);
+    assert_eq!(
+        current.owners,
+        [Owner {
+            feature: "Hud".to_owned(),
+            section: Section::Controls,
+        }]
+    );
+    assert_eq!(current.occurrence, 1);
+    assert_eq!(current.expected_matches, 1);
+    assert!(current.consolidation.is_none());
+    let current_semantic = current.semantic.clone();
+    baseline.controls.retain(|old| old.id == id);
+    mapping.assignments.retain(|row| row.old_id == id);
+    mapping.consolidations.clear();
+    let hud = include_str!("../../hud.rs");
+    let hud_source = SourceFile {
+        path: "payload/src/ui/hud.rs",
+        text: hud,
+        surface: Surface::Debug,
+        destinations: &[FeatureId::Hud],
+    };
+    assert_eq!(
+        witnesses(hud)
+            .iter()
+            .filter(|(kind, semantic)| kind == "Setting" && semantic == &current_semantic)
+            .count(),
+        1
+    );
+    assert!(parity(&baseline, &mapping, &[hud_source]).is_empty());
+    let changed = "fn controls() { let mut cfg = config::edit(); ui.checkbox(&mut cfg.pause_menu.other, \"VR pages in the pause menu\"); }";
+    assert_eq!(
+        parity(
+            &baseline,
+            &mapping,
+            &[SourceFile {
+                text: changed,
+                ..hud_source
+            }],
+        ),
+        vec![Issue::MissingTarget(id.to_owned())]
+    );
+}
+
+#[test]
 fn reviewed_turn_choices_allow_only_the_equivalent_radio_setting() {
     let (baseline, mapping) = fixtures();
     for fingerprint in ["84fa260ad8330072", "2e4d621e225b242a"] {
@@ -374,7 +450,7 @@ fn extra_matching_current_owner_is_not_silently_selected() {
 
 const ORIGINAL: &str = "fn old() { let c = &mut cfg.controllers; ui.checkbox(&mut c.enabled, \"Enabled\"); if ui.button(\"Capture\").clicked() { sink::capture(); } }";
 const BASELINE_FINGERPRINT: u64 = 0x9b6099490bea7ce7;
-const MAPPING_FINGERPRINT: u64 = 0x5f8a88528a7a335e;
+const MAPPING_FINGERPRINT: u64 = 0xe45fcdbe4919e6c2;
 
 fn source(text: &'static str) -> SourceFile {
     SourceFile {

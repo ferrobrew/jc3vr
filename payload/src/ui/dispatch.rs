@@ -7,6 +7,9 @@ mod director_tests;
 #[path = "dispatch/environment_tests.rs"]
 mod environment_tests;
 #[cfg(test)]
+#[path = "dispatch/hud_tests.rs"]
+mod hud_tests;
+#[cfg(test)]
 #[path = "dispatch/tests.rs"]
 mod tests;
 #[cfg(test)]
@@ -104,6 +107,7 @@ pub(crate) fn feature(
         FeatureRoute::Hud if section == FeatureSection::Controls => {
             with_renderer(ui, renderer, hud::egui_debug_hud)
         }
+        FeatureRoute::Hud if section == FeatureSection::Status => hud::status(ui),
         FeatureRoute::Previews if section == FeatureSection::Visualizations => {
             with_renderer(ui, renderer, previews::egui_debug_previews)
         }

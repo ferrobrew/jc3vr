@@ -1,5 +1,4 @@
-//! egui debug UI: the HUD tab. Controls the HUD redirect, the floating-quad placement and follow
-//! parameters, and a preview of the redirected HUD texture.
+//! HUD controls, renderer-backed texture previews, and renderer-free published status readouts.
 
 use parking_lot::Mutex;
 
@@ -20,9 +19,12 @@ static HUD_PREVIEW_WIDTH: Mutex<f32> = Mutex::new(512.0);
 static SCALEFORM_CLIP_PATH: Mutex<String> = Mutex::new(String::new());
 
 pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer) {
-    // Live dynamic-distance readout, taken before the CONFIG lock (HUD_STATE and CONFIG are
-    // never nested in the draw path, but keeping them disjoint here avoids the question).
-    let depth_status = HUD_STATE.lock().depth_status();
+    let live_distance = HUD_STATE.lock().depth_status().map(|status| {
+        let distance = status
+            .smoothed
+            .map_or("-".to_string(), |d| format!("{d:.2} m"));
+        format!("Last applied distance: {distance}. The policy readout is in Live status.")
+    });
 
     // Redirect toggle and the quad placement/follow parameters. The CONFIG lock is scoped to this
     // block and dropped before HUD_STATE is locked for the preview.
@@ -164,42 +166,6 @@ pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer
             );
             if cfg.hud.depth_shift.enabled {
                 ui.indent("hud_depth_shift", |ui| {
-                    match depth_status {
-                        Some(status) => {
-                            let state = if status.near_engaged { "near" } else { "base" };
-                            let distance = status
-                                .smoothed
-                                .map_or("-".to_string(), |d| format!("{d:.2} m"));
-                            match status.stats {
-                                // The histogram statistics only exist while that policy runs.
-                                Some(stats) if cfg.hud.depth_shift.use_depth_histogram => {
-                                    ui.label(format!(
-                                        "Live: {state} at {distance} (near {:.0}%, p{:.2} m)",
-                                        stats.near_occupancy * 100.0,
-                                        stats.percentile_depth,
-                                    ));
-                                }
-                                _ if cfg.hud.depth_shift.use_depth_histogram => {
-                                    ui.label(format!(
-                                        "Live: {state} at {distance} (no depth samples yet)"
-                                    ));
-                                }
-                                _ => {
-                                    ui.label(format!(
-                                        "Live: {state} at {distance} ({})",
-                                        if status.near_engaged {
-                                            "in a vehicle"
-                                        } else {
-                                            "not in a vehicle"
-                                        },
-                                    ));
-                                }
-                            }
-                        }
-                        None => {
-                            ui.label("Live: not sampled yet");
-                        }
-                    }
                     ui.checkbox(
                         &mut cfg.hud.depth_shift.use_depth_histogram,
                         "EXPERIMENTAL: drive from the depth histogram instead of the vehicle \
@@ -257,6 +223,11 @@ pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer
                     ui.add(
                         egui::Slider::new(&mut cfg.hud.distance, 0.3..=10.0)
                             .text("Base distance (m)"),
+                    )
+                    .on_hover_text(
+                        live_distance
+                            .as_deref()
+                            .unwrap_or("Live distance has not been sampled yet."),
                     );
                     ui.add(egui::Slider::new(&mut cfg.hud.panel_scale, 0.2..=3.0).text("Size (x)"));
                     ui.add(
@@ -381,7 +352,59 @@ pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer
     pause_menu_ui(ui);
 }
 
-/// The world-marker prototype's settings, its live readout, and the atlas viewport probe.
+pub(crate) fn status(ui: &mut egui::Ui) {
+    let depth_status = HUD_STATE.lock().depth_status();
+    let use_depth_histogram =
+        config::Config::lock_query(|cfg| cfg.hud.depth_shift.use_depth_histogram);
+    ui.heading("Dynamic distance");
+    match depth_status {
+        Some(status) => {
+            let state = if status.near_engaged { "near" } else { "base" };
+            let distance = status
+                .smoothed
+                .map_or("-".to_string(), |d| format!("{d:.2} m"));
+            match status.stats {
+                // The histogram statistics only exist while that policy runs.
+                Some(stats) if use_depth_histogram => {
+                    ui.label(format!(
+                        "Live: {state} at {distance} (near {:.0}%, p{:.2} m)",
+                        stats.near_occupancy * 100.0,
+                        stats.percentile_depth,
+                    ));
+                }
+                _ if use_depth_histogram => {
+                    ui.label(format!(
+                        "Live: {state} at {distance} (no depth samples yet)"
+                    ));
+                }
+                _ => {
+                    ui.label(format!(
+                        "Live: {state} at {distance} ({})",
+                        if status.near_engaged {
+                            "in a vehicle"
+                        } else {
+                            "not in a vehicle"
+                        },
+                    ));
+                }
+            }
+        }
+        None => {
+            ui.label("Live: not sampled yet");
+        }
+    }
+    ui.separator();
+    ui.heading("World markers");
+    world_markers_status_ui(ui);
+    ui.separator();
+    ui.heading("HUD atlas");
+    atlas_status_ui(ui);
+    ui.separator();
+    ui.heading("Pause menu");
+    ui.label(format!("State: {:?}", crate::pause_menu::state()));
+}
+
+/// The world-marker prototype's settings and its experimental safe-area probe.
 fn world_markers_ui(ui: &mut egui::Ui) {
     ui.collapsing("World markers (prototype)", |ui| {
         {
@@ -451,59 +474,7 @@ fn world_markers_ui(ui: &mut egui::Ui) {
         }
 
         ui.separator();
-        match crate::hud::world_markers::status() {
-            None => {
-                ui.label("Not drawing (off, outside gameplay, or the panel is off).");
-            }
-            Some(status) => {
-                ui.label(format!(
-                    "Layout snapshot {:?}, displayed {} ({}); {} markers, {} past the cap;                      labelled POI {}",
-                    status.layout_snapshot,
-                    status.displayed_snapshot,
-                    if status.layout_matched {
-                        "matched"
-                    } else {
-                        "newest layout"
-                    },
-                    status.markers.len(),
-                    status.skipped,
-                    status.labelled_id,
-                ));
-                ui.label(format!(
-                    "Stage {:.0}x{:.0}, HUD texture {}x{}",
-                    status.stage.x, status.stage.y, status.texture.0, status.texture.1
-                ));
-                egui::Grid::new("world_markers_grid")
-                    .striped(true)
-                    .show(ui, |ui| {
-                        for header in [
-                            "id", "world", "origin", "texels", "true", "drawn", "by", "from",
-                        ] {
-                            ui.label(header);
-                        }
-                        ui.end_row();
-                        for m in &status.markers {
-                            ui.label(m.id.to_string());
-                            ui.label(format!(
-                                "{:.1}, {:.1}, {:.1}",
-                                m.world.x, m.world.y, m.world.z
-                            ));
-                            ui.label(format!("{:.0}, {:.0}", m.origin.x, m.origin.y));
-                            ui.label(format!(
-                                "{}..{} x {}..{}",
-                                m.rect.0, m.rect.2, m.rect.1, m.rect.3
-                            ));
-                            ui.label(format!("{:.1} m", m.true_distance));
-                            ui.label(format!("{:.1} m", m.drawn_distance));
-                            ui.label(format!("{:?}", m.source));
-                            ui.label(if m.in_cell { "cell" } else { "panel" });
-                            ui.end_row();
-                        }
-                    });
-            }
-        }
-
-        ui.separator();
+        // The probe stays beside its experimental control because no published snapshot owns it.
         // SAFETY: plain reads of the live UI manager's fields for display.
         let probe = unsafe {
             jc3gi::ui::ui_manager::UIManager::get().map(|m| {
@@ -542,242 +513,285 @@ fn world_markers_ui(ui: &mut egui::Ui) {
     });
 }
 
-/// The HUD atlas's settings (the hand and wrist readouts with it), and its live readout.
+fn world_markers_status_ui(ui: &mut egui::Ui) {
+    match crate::hud::world_markers::status() {
+        None => {
+            ui.label("Not drawing (off, outside gameplay, or the panel is off).");
+        }
+        Some(status) => {
+            ui.label(format!(
+                "Layout snapshot {:?}, displayed {} ({}); {} markers, {} past the cap; \
+                 labelled POI {}",
+                status.layout_snapshot,
+                status.displayed_snapshot,
+                if status.layout_matched {
+                    "matched"
+                } else {
+                    "newest layout"
+                },
+                status.markers.len(),
+                status.skipped,
+                status.labelled_id,
+            ));
+            ui.label(format!(
+                "Stage {:.0}x{:.0}, HUD texture {}x{}",
+                status.stage.x, status.stage.y, status.texture.0, status.texture.1
+            ));
+            egui::Grid::new("world_markers_grid")
+                .striped(true)
+                .show(ui, |ui| {
+                    for header in [
+                        "id", "world", "origin", "texels", "true", "drawn", "by", "from",
+                    ] {
+                        ui.label(header);
+                    }
+                    ui.end_row();
+                    for m in &status.markers {
+                        ui.label(m.id.to_string());
+                        ui.label(format!(
+                            "{:.1}, {:.1}, {:.1}",
+                            m.world.x, m.world.y, m.world.z
+                        ));
+                        ui.label(format!("{:.0}, {:.0}", m.origin.x, m.origin.y));
+                        ui.label(format!(
+                            "{}..{} x {}..{}",
+                            m.rect.0, m.rect.2, m.rect.1, m.rect.3
+                        ));
+                        ui.label(format!("{:.1} m", m.true_distance));
+                        ui.label(format!("{:.1} m", m.drawn_distance));
+                        ui.label(format!("{:?}", m.source));
+                        ui.label(if m.in_cell { "cell" } else { "panel" });
+                        ui.end_row();
+                    }
+                });
+        }
+    }
+}
+
+/// The HUD atlas's settings, including the hand and wrist readouts.
 fn atlas_ui(ui: &mut egui::Ui) {
     ui.collapsing(
         "HUD atlas: hand ammunition, wrist status, marker cells",
         |ui| {
-            {
-                let mut cfg = config::edit();
-                let a = &mut cfg.hud.atlas;
-                ui.checkbox(
+            let mut cfg = config::edit();
+            let a = &mut cfg.hud.atlas;
+            ui.checkbox(
                 &mut a.enabled,
                 "Move HUD parts into cells above and below the stage, and draw them on their own \
                  quads",
             );
-                ui.add(
-                    egui::Slider::new(&mut a.gutter_px, 0.0..=24.0).text("Cell gutter (stage px)"),
-                );
-                ui.checkbox(
-                    &mut a.markers,
-                    "Move the world markers into cells (otherwise they are cropped from the panel)",
-                );
-                ui.separator();
-                ui.checkbox(&mut a.ammo.enabled, "Weapon readout above the gun hand");
-                ui.indent("atlas_ammo", |ui| {
-                    extents_ui(ui, &mut a.ammo.extents, "atlas_ammo_extents");
-                    ui.add(
-                        egui::Slider::new(&mut a.ammo.max_scale, 0.1..=1.0).text("Largest scale"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut a.ammo.clearance_m, 0.0..=0.3)
-                            .text("Lower edge above the grip (m)"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut a.ammo.pull_m, 0.0..=0.2)
-                            .text("Pull toward the head (m)"),
-                    );
-                    ui.add(egui::Slider::new(&mut a.ammo.width_m, 0.03..=0.3).text("Width (m)"));
-                    ui.add(
-                        egui::Slider::new(&mut a.ammo.follow_halflife_s, 0.0..=0.3)
-                            .text("Follow halflife (s)"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut a.ammo.linger_s, 0.0..=5.0)
-                            .text("Linger after the gun leaves the hand (s)"),
-                    );
-                });
-                ui.separator();
-                ui.checkbox(
-                    &mut a.cross.enabled,
-                    "Weapon selection cross at the hand steering the weapon wheel",
-                );
-                ui.indent("atlas_cross", |ui| {
-                    ui.add(
-                        egui::Slider::new(&mut a.cross.margin_px, 0.0..=60.0)
-                            .text("Margin around its extent (clip px)"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut a.cross.max_scale, 0.1..=1.0).text("Largest scale"),
-                    );
-                    ui.add(egui::Slider::new(&mut a.cross.width_m, 0.05..=0.5).text("Width (m)"));
-                    ui.add(
-                        egui::Slider::new(&mut a.cross.pull_m, 0.0..=0.3)
-                            .text("Pull from the hand toward the head (m)"),
-                    );
-                });
-                ui.separator();
-                ui.checkbox(
-                    &mut a.tether.enabled,
-                    "Tether readout above the off-hand's forearm",
-                );
-                ui.indent("atlas_tether", |ui| {
-                    extents_ui(ui, &mut a.tether.extents, "atlas_tether_extents");
-                    ui.add(
-                        egui::Slider::new(&mut a.tether.max_scale, 0.1..=1.0).text("Largest scale"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut a.tether.back_m, 0.0..=0.3)
-                            .text("Back along the forearm from the wrist (m)"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut a.tether.clearance_m, 0.0..=0.2)
-                            .text("Lower edge above the forearm (m)"),
-                    );
-                    ui.add(egui::Slider::new(&mut a.tether.width_m, 0.03..=0.3).text("Width (m)"));
-                    ui.add(
-                        egui::Slider::new(&mut a.tether.follow_halflife_s, 0.0..=0.3)
-                            .text("Follow halflife (s)"),
-                    );
-                });
-                ui.separator();
-                let w = &mut a.wrist;
-                ui.checkbox(
-                    &mut w.enabled,
-                    "Health and heat on the inside of the off-hand's wrist",
-                );
-                ui.indent("atlas_wrist", |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("Shows");
-                        for (value, label) in [
-                            (
-                                WristVisibility::Auto,
-                                "on a glance, low health, damage, or heat",
-                            ),
-                            (WristVisibility::Glance, "on a glance"),
-                            (WristVisibility::Always, "always"),
-                        ] {
-                            ui.radio_value(&mut w.visibility, value, label);
-                        }
-                    });
-                    ui.checkbox(&mut w.health, "Health bar");
-                    ui.checkbox(&mut w.heat, "Heat readout");
-                    extents_ui(ui, &mut w.heat_extents, "atlas_heat_extents");
-                    ui.add(
-                        egui::Slider::new(&mut w.heat_max_scale, 0.1..=1.0)
-                            .text("Largest heat scale"),
-                    );
-                    vec3_ui(
-                        ui,
-                        &mut w.offset_m,
-                        "Offset in the grip, +X out of the palm (m)",
-                        0.3,
-                    );
-                    ui.add(egui::Slider::new(&mut w.width_m, 0.03..=0.2).text("Width (m)"));
-                    ui.add(
-                        egui::Slider::new(&mut w.bar_aspect, 2.0..=20.0).text("Health bar aspect"),
-                    );
-                    ui.add(egui::Slider::new(&mut w.low_health, 0.0..=1.0).text("Low health"));
-                    ui.add(
-                        egui::Slider::new(&mut w.after_damage_s, 0.0..=15.0)
-                            .text("Show after damage (s)"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut w.glance.view_cone_deg, 5.0..=60.0)
-                            .text("Glance view cone (deg)"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut w.glance.facing_deg, 5.0..=90.0)
-                            .text("Glance facing (deg)"),
-                    );
-                    ui.add(egui::Slider::new(&mut w.fade_s, 0.0..=1.0).text("Fade (s)"));
-                });
-            }
-
+            ui.add(egui::Slider::new(&mut a.gutter_px, 0.0..=24.0).text("Cell gutter (stage px)"));
+            ui.checkbox(
+                &mut a.markers,
+                "Move the world markers into cells (otherwise they are cropped from the panel)",
+            );
             ui.separator();
-            let status = crate::hud::atlas::status();
-            ui.label(format!(
-                "Moves {}, restores {}, move failures {}, restore failures {}, drift {}",
-                status.moves,
-                status.restores,
-                status.move_failures,
-                status.restore_failures,
-                status.drift,
-            ));
-            match &status.frame {
-                None => {
-                    ui.label(
-                        "Not drawing (off, outside gameplay, or the stage layout is not applied).",
-                    );
-                }
-                Some(frame) => {
-                    ui.label(format!(
-                        "Layout snapshot {}, displayed {} ({}); HUD texture {}x{}",
-                        frame.snapshot,
-                        frame.displayed_snapshot,
-                        if frame.matched {
-                            "matched"
-                        } else {
-                            "newest layout"
-                        },
-                        frame.texture.0,
-                        frame.texture.1,
-                    ));
-                    let band = frame.layout.bands[0];
-                    ui.label(format!(
-                        "Bands {:.0}x{:.0} stage px above and below the stage; {} marker cells, \
-                     label cell {}",
-                        band.size.x,
-                        band.size.y,
-                        frame.layout.markers.len(),
-                        if frame.layout.label.is_some() {
-                            "placed"
-                        } else {
-                            "none"
-                        },
-                    ));
-                    for (name, cell) in [
-                        ("Weapon readout", frame.ammo),
-                        ("Heat readout", frame.heat),
-                        ("Selection cross", frame.cross),
-                        ("Tether readout", frame.tether),
+            ui.checkbox(&mut a.ammo.enabled, "Weapon readout above the gun hand");
+            ui.indent("atlas_ammo", |ui| {
+                extents_ui(ui, &mut a.ammo.extents, "atlas_ammo_extents");
+                ui.add(egui::Slider::new(&mut a.ammo.max_scale, 0.1..=1.0).text("Largest scale"));
+                ui.add(
+                    egui::Slider::new(&mut a.ammo.clearance_m, 0.0..=0.3)
+                        .text("Lower edge above the grip (m)"),
+                );
+                ui.add(
+                    egui::Slider::new(&mut a.ammo.pull_m, 0.0..=0.2)
+                        .text("Pull toward the head (m)"),
+                );
+                ui.add(egui::Slider::new(&mut a.ammo.width_m, 0.03..=0.3).text("Width (m)"));
+                ui.add(
+                    egui::Slider::new(&mut a.ammo.follow_halflife_s, 0.0..=0.3)
+                        .text("Follow halflife (s)"),
+                );
+                ui.add(
+                    egui::Slider::new(&mut a.ammo.linger_s, 0.0..=5.0)
+                        .text("Linger after the gun leaves the hand (s)"),
+                );
+            });
+            ui.separator();
+            ui.checkbox(
+                &mut a.cross.enabled,
+                "Weapon selection cross at the hand steering the weapon wheel",
+            );
+            ui.indent("atlas_cross", |ui| {
+                ui.add(
+                    egui::Slider::new(&mut a.cross.margin_px, 0.0..=60.0)
+                        .text("Margin around its extent (clip px)"),
+                );
+                ui.add(egui::Slider::new(&mut a.cross.max_scale, 0.1..=1.0).text("Largest scale"));
+                ui.add(egui::Slider::new(&mut a.cross.width_m, 0.05..=0.5).text("Width (m)"));
+                ui.add(
+                    egui::Slider::new(&mut a.cross.pull_m, 0.0..=0.3)
+                        .text("Pull from the hand toward the head (m)"),
+                );
+            });
+            ui.separator();
+            ui.checkbox(
+                &mut a.tether.enabled,
+                "Tether readout above the off-hand's forearm",
+            );
+            ui.indent("atlas_tether", |ui| {
+                extents_ui(ui, &mut a.tether.extents, "atlas_tether_extents");
+                ui.add(egui::Slider::new(&mut a.tether.max_scale, 0.1..=1.0).text("Largest scale"));
+                ui.add(
+                    egui::Slider::new(&mut a.tether.back_m, 0.0..=0.3)
+                        .text("Back along the forearm from the wrist (m)"),
+                );
+                ui.add(
+                    egui::Slider::new(&mut a.tether.clearance_m, 0.0..=0.2)
+                        .text("Lower edge above the forearm (m)"),
+                );
+                ui.add(egui::Slider::new(&mut a.tether.width_m, 0.03..=0.3).text("Width (m)"));
+                ui.add(
+                    egui::Slider::new(&mut a.tether.follow_halflife_s, 0.0..=0.3)
+                        .text("Follow halflife (s)"),
+                );
+            });
+            ui.separator();
+            let w = &mut a.wrist;
+            ui.checkbox(
+                &mut w.enabled,
+                "Health and heat on the inside of the off-hand's wrist",
+            );
+            ui.indent("atlas_wrist", |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Shows");
+                    for (value, label) in [
+                        (
+                            WristVisibility::Auto,
+                            "on a glance, low health, damage, or heat",
+                        ),
+                        (WristVisibility::Glance, "on a glance"),
+                        (WristVisibility::Always, "always"),
                     ] {
-                        ui.label(match cell {
-                            Some(cell) => format!(
-                                "{name}: cell ({:.0}, {:.0}) {:.0}x{:.0} at scale {:.2}",
-                                cell.rect.min.x,
-                                cell.rect.min.y,
-                                cell.rect.size.x,
-                                cell.rect.size.y,
-                                cell.scale,
-                            ),
-                            None => format!("{name}: not moved"),
-                        });
+                        ui.radio_value(&mut w.visibility, value, label);
                     }
-                }
-            }
-            let anchored = crate::hud::anchored::status();
+                });
+                ui.checkbox(&mut w.health, "Health bar");
+                ui.checkbox(&mut w.heat, "Heat readout");
+                extents_ui(ui, &mut w.heat_extents, "atlas_heat_extents");
+                ui.add(
+                    egui::Slider::new(&mut w.heat_max_scale, 0.1..=1.0).text("Largest heat scale"),
+                );
+                vec3_ui(
+                    ui,
+                    &mut w.offset_m,
+                    "Offset in the grip, +X out of the palm (m)",
+                    0.3,
+                );
+                ui.add(egui::Slider::new(&mut w.width_m, 0.03..=0.2).text("Width (m)"));
+                ui.add(egui::Slider::new(&mut w.bar_aspect, 2.0..=20.0).text("Health bar aspect"));
+                ui.add(egui::Slider::new(&mut w.low_health, 0.0..=1.0).text("Low health"));
+                ui.add(
+                    egui::Slider::new(&mut w.after_damage_s, 0.0..=15.0)
+                        .text("Show after damage (s)"),
+                );
+                ui.add(
+                    egui::Slider::new(&mut w.glance.view_cone_deg, 5.0..=60.0)
+                        .text("Glance view cone (deg)"),
+                );
+                ui.add(
+                    egui::Slider::new(&mut w.glance.facing_deg, 5.0..=90.0)
+                        .text("Glance facing (deg)"),
+                );
+                ui.add(egui::Slider::new(&mut w.fade_s, 0.0..=1.0).text("Fade (s)"));
+            });
+        },
+    );
+}
+
+fn atlas_status_ui(ui: &mut egui::Ui) {
+    let status = crate::hud::atlas::status();
+    ui.label(format!(
+        "Moves {}, restores {}, move failures {}, restore failures {}, drift {}",
+        status.moves, status.restores, status.move_failures, status.restore_failures, status.drift,
+    ));
+    match &status.frame {
+        None => {
+            ui.label("Not drawing (off, outside gameplay, or the stage layout is not applied).");
+        }
+        Some(frame) => {
             ui.label(format!(
-            "Weapon readout on {}; health {}; heat level {}; wrist {:.0}% (glance {}, attention \
-             {}, heat {})",
-            anchored
-                .ammo_hand
-                .map_or("no hand".to_owned(), |hand| format!("{hand:?}")),
-            anchored.health.map_or("not sampled".to_owned(), |(health, trail)| format!(
+                "Layout snapshot {}, displayed {} ({}); HUD texture {}x{}",
+                frame.snapshot,
+                frame.displayed_snapshot,
+                if frame.matched {
+                    "matched"
+                } else {
+                    "newest layout"
+                },
+                frame.texture.0,
+                frame.texture.1,
+            ));
+            let band = frame.layout.bands[0];
+            ui.label(format!(
+                "Bands {:.0}x{:.0} stage px above and below the stage; {} marker cells, \
+                 label cell {}",
+                band.size.x,
+                band.size.y,
+                frame.layout.markers.len(),
+                if frame.layout.label.is_some() {
+                    "placed"
+                } else {
+                    "none"
+                },
+            ));
+            for (name, cell) in [
+                ("Weapon readout", frame.ammo),
+                ("Heat readout", frame.heat),
+                ("Selection cross", frame.cross),
+                ("Tether readout", frame.tether),
+            ] {
+                ui.label(match cell {
+                    Some(cell) => format!(
+                        "{name}: cell ({:.0}, {:.0}) {:.0}x{:.0} at scale {:.2}",
+                        cell.rect.min.x,
+                        cell.rect.min.y,
+                        cell.rect.size.x,
+                        cell.rect.size.y,
+                        cell.scale,
+                    ),
+                    None => format!("{name}: not moved"),
+                });
+            }
+        }
+    }
+    let anchored = crate::hud::anchored::status();
+    ui.label(format!(
+        "Weapon readout on {}; health {}; heat level {}; wrist {:.0}% (glance {}, attention \
+         {}, heat {})",
+        anchored
+            .ammo_hand
+            .map_or("no hand".to_owned(), |hand| format!("{hand:?}")),
+        anchored
+            .health
+            .map_or("not sampled".to_owned(), |(health, trail)| format!(
                 "{:.0}% (trail {:.0}%)",
                 health * 100.0,
                 trail * 100.0
             )),
-            anchored.heat_level,
-            anchored.wrist_alpha * 100.0,
-            anchored.glance,
-            anchored.attention,
-            if anchored.heat_drawn { "drawn" } else { "not drawn" },
-        ));
-            ui.label(match anchored.cross_alpha {
-                Some(alpha) => format!(
-                    "Selection cross at the steering hand, {:.0}%",
-                    alpha * 100.0
-                ),
-                None => "Selection cross not drawn at a hand".to_owned(),
-            });
-            ui.label(if anchored.tether_drawn {
-                "Tether readout above the forearm"
-            } else {
-                "Tether readout not drawn"
-            });
+        anchored.heat_level,
+        anchored.wrist_alpha * 100.0,
+        anchored.glance,
+        anchored.attention,
+        if anchored.heat_drawn {
+            "drawn"
+        } else {
+            "not drawn"
         },
-    );
+    ));
+    ui.label(match anchored.cross_alpha {
+        Some(alpha) => format!(
+            "Selection cross at the steering hand, {:.0}%",
+            alpha * 100.0
+        ),
+        None => "Selection cross not drawn at a hand".to_owned(),
+    });
+    ui.label(if anchored.tether_drawn {
+        "Tether readout above the forearm"
+    } else {
+        "Tether readout not drawn"
+    });
 }
 
 /// Sliders for a part's extents around its clip's origin.
@@ -805,21 +819,15 @@ fn vec3_ui(ui: &mut egui::Ui, value: &mut glam::Vec3, label: &str, range: f32) {
     });
 }
 
-/// The VR menu's toggle and its current state.
+/// The VR menu's toggle.
 fn pause_menu_ui(ui: &mut egui::Ui) {
     ui.collapsing("Pause menu", |ui| {
-        {
-            let mut cfg = config::edit();
-            ui.checkbox(
-                &mut cfg.pause_menu.enabled,
-                "VR pages in the pause menu",
-            )
+        let mut cfg = config::edit();
+        ui.checkbox(&mut cfg.pause_menu.enabled, "VR pages in the pause menu")
             .on_hover_text(
                 "Adds a VR entry below Options in the pause menu, opening the game's own settings \
-                 screen with a tab per VR page. Takes effect the next time the pause menu opens.",
+             screen with a tab per VR page. Takes effect the next time the pause menu opens.",
             );
-        }
-        ui.label(format!("State: {:?}", crate::pause_menu::state()));
     });
 }
 
