@@ -22,7 +22,9 @@ use crate::{
         weapons::{
             ads,
             begin::place::{CHARGE_MARK_M, Place, held_foregrip, mark_size},
-            c4, collide,
+            c4,
+            capabilities::{Capabilities, gun_hands_now, tracked_hands, trigger_claims},
+            collide,
             config::HolstersConfig,
             docks::{self, SocketInputs, SocketPoint, SocketUse},
             engine::{self, HeldWeapon},
@@ -54,11 +56,12 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         return TickStart::default();
     };
     let gameplay = gameplay(mode);
+    let capabilities = Capabilities::of(mode);
     let holding = config.weapons.hold;
     // SAFETY: the input tick runs on the main thread outside the world update.
     let ticked = unsafe {
         engine::local_player().map_or(Ticked::default(), |owner| {
-            armed::show_magazines(Some(owner), gameplay && holding.magazine_pips);
+            armed::show_magazines(Some(owner), capabilities.reload && holding.magazine_pips);
             // The table lands the wielded weapon in a hand first; the hold then follows it there.
             let wielded = hold::wielded(owner);
             let arrival = inventory::input_tick(
@@ -80,7 +83,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 .filter_map(|h| guns[h.index()])
                 .find(|w| weapon.is_none_or(|wielded| wielded.address != w.address));
             // The guns the hands hold, for their bodies.
-            guns::publish(if gameplay {
+            guns::publish(if capabilities.support {
                 guns::read_holds([
                     weapon.map(|w| (w.address, w.class)),
                     beside.map(|w| (w.address, w.class)),
@@ -94,7 +97,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             let free = Hand::BOTH.map(|h| !table_hands[h.index()] && !gun_hands[h.index()]);
             let sockets = snapshot
                 .as_ref()
-                .filter(|_| gameplay && config.weapons.holsters.enabled)
+                .filter(|_| capabilities.dock && config.weapons.holsters.enabled)
                 .map_or_else(Vec::new, |snapshot| {
                     docks::socket_points(
                         owner,
@@ -112,7 +115,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 Some(snapshot)
                     if config.weapons.regions.enabled
                         && config.weapons.holsters.enabled
-                        && gameplay =>
+                        && capabilities.dock =>
                 {
                     region_engine::docked_long_guns(owner, snapshot, config.acting_hand())
                 }
@@ -140,7 +143,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let guns = ticked.guns;
     heft::observe(Hand::BOTH.map(|hand| {
         guns[hand.index()]
-            .filter(|_| gameplay)
+            .filter(|_| capabilities.support)
             .map(|w| heft::HeftTarget {
                 hand,
                 class: w.class,
@@ -152,11 +155,11 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let free = Hand::BOTH.map(|h| {
         !gun_hands[h.index()] && !armed_hands[h.index()] && !ticked.table_hands[h.index()]
     });
-    let held = weapon
-        .filter(|w| hold::owned_holder(w.address).is_some())
-        .map(|w| w.wielded.hands)
-        .or(armed_hands.contains(&true).then_some([false; 2]))
-        .map(|hands| Hand::BOTH.map(|h| hands[h.index()] || armed_hands[h.index()]));
+    let claims = trigger_claims(capabilities, gun_hands_now(), tracked_hands());
+    let held = claims
+        .iter()
+        .any(|claim| claim.reserved)
+        .then(|| claims.map(|claim| claim.reserved));
 
     let mut state = STATE.lock();
     let holder = weapon.and_then(|w| w.holder);
@@ -166,7 +169,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     // Each hand's long gun is measured on its own wrist.
     let geometries = Hand::BOTH.map(|hand| {
         guns[hand.index()]
-            .filter(|w| w.two_handed && gameplay)
+            .filter(|w| w.two_handed && capabilities.support)
             .and_then(|w| state.geometry_for(hand, &w, &config, active.world_scale))
     });
     let geometry = weapon
@@ -174,7 +177,8 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         .and_then(|hand| geometries[hand.index()]);
     // The gun held in one hand while the other is free, wielded or armed: everything the free hand
     // does to it (the handover, and on a long gun the foregrip and a touch along it) acts on it.
-    let lone = engine::lone_gun(guns, free).filter(|_| gameplay);
+    let lone =
+        engine::lone_gun(guns, free).filter(|_| capabilities.transfer || capabilities.support);
     let braced = lone.filter(|w| w.two_handed);
     let braced_geometry = braced
         .and_then(|w| w.holder)
@@ -190,7 +194,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     });
     regions::observe(&Observed {
         guns: guns.map(|g| {
-            g.filter(|w| regions_config.enabled && gameplay && w.two_handed)
+            g.filter(|w| regions_config.enabled && capabilities.support && w.two_handed)
                 .map(|w| w.address)
         }),
         lone: long.map(|w| (w.address, shape)),
@@ -241,7 +245,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let empty_handed = config.weapons.holsters.long_guns_dominant
         && gun_hands == [false; 2]
         && ticked.table_hands == [false; 2];
-    if gameplay {
+    if capabilities.dock {
         let (mut draws, others) = socket_candidates(&ticked, &active, body.as_ref(), &config);
         state.status.docks_followed = if config.weapons.holsters.follow_docks {
             draws.len()
@@ -275,7 +279,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         }
     }
     state.docked_touch = [None; 2];
-    if gameplay {
+    if capabilities.dock {
         let mut docked = docked_candidates(&mut state, &ticked, &active, free, &regions_config);
         volumes::reserve_long_guns(&mut docked, config.acting_hand(), empty_handed);
         targets.extend(docked.iter().map(|c| place.touch(c)));
@@ -316,7 +320,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         config: &config,
         body: body.as_ref(),
         gun_side,
-        gameplay,
+        gameplay: capabilities.reload,
     });
     for c in &reload_candidates {
         match (c.volume, c.hand) {
@@ -324,7 +328,9 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 targets.extend(place.pouch(c, pouches.reach_margin_m));
             }
             // The action is on the gun in the other hand.
-            (GrabVolume::WeaponAction, Some(hand)) => targets.push(place.on_hand(c, hand.other())),
+            (GrabVolume::WeaponAction | GrabVolume::InsertedMagazine, Some(hand)) => {
+                targets.push(place.on_hand(c, hand.other()));
+            }
             _ => targets.push(place.world(c)),
         }
     }
@@ -333,8 +339,14 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         .and_then(|c| docks::cockpit_frames(&active, c));
     let shown = body
         .as_ref()
-        .filter(|_| gameplay)
-        .map_or_else(Vec::new, |body| shown_props(body, &config, gun_side));
+        .filter(|_| capabilities.reload)
+        .map_or_else(Vec::new, |body| {
+            let mut shown = shown_props(body, &config, gun_side);
+            if !gameplay {
+                shown.retain(|prop| matches!(prop.prop, Prop::Magazine));
+            }
+            shown
+        });
     // SAFETY: the input tick runs on the main thread outside the world update.
     unsafe { pouch_models::input_tick(&pouches.models, frames, &shown) };
     if let Some((gun_hand, mouth, radius)) = reload::well(&config.weapons.reload) {
@@ -366,8 +378,9 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     // A hand holding something of its own braces nothing and takes nothing from the other hand, so
     // only the lone gun's free hand does.
     let foregrip_hand = braced.and_then(|w| w.holder).map(Hand::other);
-    let handover_allowed =
-        holding.handover && lone.is_some_and(|w| hold::owned_holder(w.address).is_some());
+    let handover_allowed = capabilities.transfer
+        && holding.handover
+        && lone.is_some_and(|w| hold::owned_holder(w.address).is_some());
     let on_gun = match (long, braced_geometry, shape) {
         (Some(w), Some(g), Some(shape)) => w.holder.and_then(|holder| {
             Some(GunOnHand {
@@ -391,18 +404,15 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             match (touch, holder) {
                 (Some((touch, centre)), Some(holder)) if touch.hit.region == GunRegion::Grip => {
                     if handover_allowed {
-                        targets.push(
-                            place.on_hand(
-                                &Candidate {
-                                    volume: GrabVolume::Handle,
-                                    centre,
-                                    radius: gun_volume_radius(touch.hit.distance)
-                                        .max(holding.handle_radius_m),
-                                    hand: Some(touch.hand),
-                                },
-                                holder,
-                            ),
-                        );
+                        targets.push(place.on_hand(
+                            &Candidate {
+                                volume: GrabVolume::Handle,
+                                centre,
+                                radius: gun_volume_radius(touch.hit.distance),
+                                hand: Some(touch.hand),
+                            },
+                            holder,
+                        ));
                     }
                 }
                 (Some((touch, centre)), Some(holder)) if config.weapons.foregrip.enabled => {
@@ -447,27 +457,42 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                     holder,
                 ));
             }
-            if handover_allowed
-                && let Some(w) = lone
-                && let Some(holder) = hold::owned_holder(w.address)
-                && let Some(grip) = weighted_hands(&active)[holder.index()]
-            {
-                targets.push(place.on_hand(
-                    &Candidate {
-                        volume: GrabVolume::Handle,
-                        centre: grip.grip.position,
-                        radius: holding.handle_radius_m,
-                        hand: Some(holder.other()),
-                    },
+        }
+    }
+    if handover_allowed
+        && hold.is_none()
+        && let Some(w) = lone
+        && let Some(holder) = hold::owned_holder(w.address)
+        && let Some(current) = weighted_hands(&active)[holder.index()]
+    {
+        // SAFETY: The owned held weapon is read on the main thread outside the world update.
+        let grip = unsafe {
+            hold::take::measured_handle_point(w.address, holder, &current, active.world_scale)
+        }
+        .unwrap_or(current.grip.position);
+        if let Some(candidate) =
+            hold::world::broad_handover_candidate(hold::world::HandoverPolicy {
+                allowed: handover_allowed,
+                engaged_foregrip: hold.is_some(),
+                guns,
+                offer: hold::world::Handover {
                     holder,
-                ));
-            }
+                    grip,
+                    radius: holding.handle_radius_m,
+                    free,
+                    points: active.hands.map(|hand| hand.map(|hand| hand.grip.position)),
+                    contact: state.touch.as_ref().map(|touch| touch.hit.region),
+                },
+            })
+        {
+            targets.push(place.on_hand(&candidate, holder));
         }
     }
 
     // The weapon handling's own view of where each hand is, for the release's docking, the heft,
     // and the cue on entering a socket.
     let grips = grab::tick::hand_grips(&active);
+    reload::prioritize_extraction(&mut targets, grips);
     let resolved = grab::resolve::resolve(&targets, grips);
     let volumes = resolved.map(|r| r.chosen.map(|c| c.volume));
     let closing_on_foregrip = hold.is_none()
@@ -776,9 +801,8 @@ fn socket_radius(socket: Socket, holsters: &HolstersConfig) -> f32 {
     }
 }
 
-/// Whether the weapon handling acts in `mode`: on the ground and under the parachute or in a fall,
-/// where the grips are free. In vehicles and the wingsuit the grips fire their weapons, and
-/// swimming holds no weapon.
+/// Whether the explosive pouches and world-weapon pickup act in `mode`. Held-gun interactions use
+/// [`Capabilities`] independently, including in the wingsuit, vehicle seats, and swimming.
 pub(super) fn gameplay(mode: Mode) -> bool {
     matches!(
         mode,
@@ -804,7 +828,7 @@ pub(super) fn weighted_hands(active: &ActiveHands) -> [Option<CockpitHand>; 2] {
 
 /// The wielded weapon as the hold has it: every gun in the holding hand, which holds the weapon.
 /// The table follows on the next placement; this is the hold's current layout.
-fn with_holder(mut weapon: HeldWeapon, holder: Option<Hand>) -> HeldWeapon {
+pub(super) fn with_holder(mut weapon: HeldWeapon, holder: Option<Hand>) -> HeldWeapon {
     if let Some(holder) = holder.filter(|_| hold::owned_holder(weapon.address).is_some())
         && weapon.wielded.hands.contains(&true)
     {

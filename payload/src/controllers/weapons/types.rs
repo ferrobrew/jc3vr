@@ -17,8 +17,9 @@ use crate::controllers::{
 pub struct TickStart {
     /// The weapon handling's grip targets.
     pub targets: Vec<GripTarget>,
-    /// The hands holding a gun of the wielded weapon while the hold puts it in either hand,
-    /// indexed by [`Hand::index`]: a hand's trigger fires the gun it holds, and only that hand's.
+    /// The physical hands reserving a trigger for a held gun, indexed by [`Hand::index`]. A hand
+    /// on a firing grip can fire; a support or carry hand reserves its trigger without firing. The
+    /// unsplit native pair reserves both hands and retains the game's alternating fire input.
     pub held: Option<[bool; 2]>,
 }
 

@@ -62,6 +62,7 @@ pub mod ads;
 mod begin;
 pub mod c4;
 mod camera_kick;
+pub(crate) mod capabilities;
 pub mod collide;
 pub mod config;
 pub mod docks;
@@ -140,7 +141,7 @@ mod tests {
     };
 
     #[test]
-    fn the_grips_are_free_only_on_foot_and_under_the_parachute() {
+    fn explosive_pouches_and_world_pickup_keep_their_existing_modes() {
         assert!(gameplay(Mode::OnFoot(OnFootVariant::Ground)));
         assert!(gameplay(Mode::Airborne(AirborneVariant::Parachute)));
         assert!(!gameplay(Mode::Airborne(AirborneVariant::Wingsuit)));

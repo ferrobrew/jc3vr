@@ -29,8 +29,11 @@ use crate::{
             grab::{self, GrabRules, Release, SocketMove, SocketRefusal},
             live,
         },
+        mode,
         weapons::{
+            begin::with_holder,
             c4,
+            capabilities::{Capabilities, gun_hands_now, tracked_hands, trigger_claims},
             dual_wield::single,
             engine,
             foregrip::{self, GripGeometry, Inputs, Transition, TwoHandedWeapon},
@@ -73,6 +76,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     } = *inputs;
     let config = Config::lock_query(|c| c.controllers);
     let active = hands::active_hands_raw();
+    let capabilities = Capabilities::of(mode::current().mode);
     let now = Instant::now();
     // The fingers opening lets a grenade or a charge go, not the grip's press relaxing.
     let values = frame::with_latest(|f| {
@@ -109,7 +113,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         .find(|(g, _)| **g == Some(GrabVolume::Foregrip))
         .map(|(_, hand)| hand);
     let two_handed = lone
-        .filter(|(w, _)| w.two_handed && gameplay)
+        .filter(|(w, _)| w.two_handed && capabilities.support)
         .and_then(|(w, geometry)| {
             Some(TwoHandedWeapon {
                 holder: w.holder?,
@@ -208,7 +212,9 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             GrabVolume::GrenadePouch => GrabOutcome::Pouch,
             GrabVolume::GrenadePin => GrabOutcome::Pin,
             GrabVolume::LiveGrenade => GrabOutcome::Catch,
-            GrabVolume::MagazinePouch | GrabVolume::WorldMagazine => GrabOutcome::Magazine,
+            GrabVolume::MagazinePouch
+            | GrabVolume::WorldMagazine
+            | GrabVolume::InsertedMagazine => GrabOutcome::Magazine,
             GrabVolume::WeaponAction => GrabOutcome::Action,
             GrabVolume::C4Pouch => GrabOutcome::C4,
             GrabVolume::WorldWeapon => {
@@ -261,7 +267,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         });
     }
     let released = hold::act::release_tick(grips.map(ButtonControl::held));
-    if config.weapons.hold.grip_to_hold && gameplay {
+    if config.weapons.hold.grip_to_hold && capabilities.release && active.is_some() {
         for hand in Hand::BOTH.into_iter().filter(|h| released[h.index()]) {
             let gun = lone.map(|(w, _)| w);
             release(hand, gun, active.as_ref(), world_scale, &config);
@@ -340,6 +346,17 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         },
         &config,
     );
+    // SAFETY: actions have completed on the input thread, outside the world update.
+    let current = unsafe { engine::local_player().and_then(|owner| engine::held_weapon(owner)) }
+        .map(|weapon| with_holder(weapon, hold::owned_holder(weapon.address)));
+    let gun_hands = current.map_or([false; 2], |weapon| {
+        if weapon.wielded.slot == WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE {
+            [false; 2]
+        } else {
+            weapon.wielded.hands
+        }
+    });
+    let armed_hands = Hand::BOTH.map(|hand| armed::in_hand(hand).is_some());
     // A gun the reload holds cannot fire. The dual-wield split keeps a held pistol's trigger from
     // the game itself, so the fire input is held back only when no drawn gun may fire.
     let reload_blocks = gun_hands.contains(&true)
@@ -349,11 +366,18 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
 
     // Only a hand on the grip fires the gun.
     let carries = regions::carries();
-    let carried = weapon.and_then(|(w, _)| regions::carrying(w.address));
-    let holder = weapon.and_then(|(w, _)| w.holder);
+    let carried = current.and_then(|weapon| regions::carrying(weapon.address));
+    let holder = current.and_then(|weapon| weapon.holder);
     let docking = hold::act::docking();
+    let gun_roles = gun_hands_now();
+    let ready = if active.is_some() {
+        tracked_hands()
+    } else {
+        [false; 2]
+    };
+    let claims = trigger_claims(capabilities, gun_roles, ready);
     tick::publish_fire(hand_fire(&HandFire {
-        gameplay,
+        allowed: claims.map(|claim| claim.fire),
         triggers: &triggers,
         holder,
         carrying: carries.map(|c| c.is_some()),
@@ -366,9 +390,13 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         || explosive_holds_fire(explosive, gun_hands, armed_hands)
         || carried.is_some()
         || holder.is_some_and(|h| docking[h.index()])
-        || primary_trigger_idle(weapon.map(|(w, _)| w), &triggers)
-        || (config.weapons.block_fire_during_actions
-            && weapon_action_running(weapon.and_then(|(w, _)| w.holder).unwrap_or(gun_side)));
+        || primary_trigger_idle(current, &triggers)
+        || primary_action_blocked(
+            holder,
+            Hand::BOTH.map(|hand| {
+                config.weapons.block_fire_during_actions && weapon_action_running(hand)
+            }),
+        );
     if fire_blocked {
         hold_fire_back(desired);
     }
@@ -529,7 +557,7 @@ pub(super) fn primary_trigger_idle(
 
 /// What decides each hand's own fire input.
 pub(super) struct HandFire<'a> {
-    pub gameplay: bool,
+    pub allowed: [bool; 2],
     pub triggers: &'a [ButtonControl; 2],
     /// The hand holding the wielded weapon.
     pub holder: Option<Hand>,
@@ -543,18 +571,22 @@ pub(super) struct HandFire<'a> {
     pub action_running: [bool; 2],
 }
 
-/// Each hand's own fire input, by [`Hand::index`]: its trigger pulled in gameplay while nothing
-/// holds its gun back. The true reload's hold on a gun and the shooting permission are checked at
+/// Each hand's own fire input, by [`Hand::index`]: its trigger pulled with permission for that
+/// hand's firing grip while nothing holds its gun back. The true reload and shooting permission are checked at
 /// the gun's update.
 pub(super) fn hand_fire(f: &HandFire) -> [bool; 2] {
     Hand::BOTH.map(|hand| {
         let wielding = f.holder == Some(hand);
-        f.gameplay
+        f.allowed[hand.index()]
             && f.triggers[hand.index()].held()
             && !f.carrying[hand.index()]
             && !f.docking[hand.index()]
-            && !(wielding && f.action_running[hand.index()])
+            && !(wielding && primary_action_blocked(f.holder, f.action_running))
     })
+}
+
+fn primary_action_blocked(holder: Option<Hand>, action_running: [bool; 2]) -> bool {
+    holder.is_some_and(|hand| action_running[hand.index()])
 }
 
 /// Drop the fire inputs from the tables' output.
@@ -701,7 +733,7 @@ mod tests {
         };
         let triggers = [pulled(true), pulled(true)];
         let free = HandFire {
-            gameplay: true,
+            allowed: [true; 2],
             triggers: &triggers,
             holder: Some(Hand::Right),
             carrying: [false; 2],
@@ -726,7 +758,7 @@ mod tests {
         );
         assert_eq!(
             hand_fire(&HandFire {
-                gameplay: false,
+                allowed: [false; 2],
                 ..free
             }),
             [false, false]
@@ -739,6 +771,46 @@ mod tests {
             }),
             [false, true]
         );
+    }
+
+    #[test]
+    fn current_primary_holder_owns_the_action_block_after_same_tick_moves() {
+        let source = include_str!("finish.rs");
+        let compact: String = source.split_whitespace().collect();
+        assert!(compact.contains(
+            "letcurrent=unsafe{engine::local_player().and_then(|owner|engine::held_weapon(owner))}"
+        ));
+        assert!(source.contains("primary_trigger_idle(current, &triggers)"));
+        let triggers = [ButtonControl {
+            down: true,
+            ..Default::default()
+        }; 2];
+        for current in Hand::BOTH {
+            let old = current.other();
+            let running = Hand::BOTH.map(|hand| hand == current);
+            let fire = HandFire {
+                allowed: [true; 2],
+                triggers: &triggers,
+                holder: Some(current),
+                carrying: [false; 2],
+                docking: [false; 2],
+                action_running: running,
+            };
+            assert!(
+                !hand_fire(&fire)[current.index()],
+                "the new primary remains held by its action"
+            );
+            assert!(
+                hand_fire(&fire)[old.index()],
+                "the previous holder's other gun is independent"
+            );
+            assert!(primary_action_blocked(Some(current), running));
+            assert!(!primary_action_blocked(Some(old), running));
+            assert!(
+                !primary_action_blocked(None, running),
+                "dropping the primary removes its action block"
+            );
+        }
     }
 
     #[test]

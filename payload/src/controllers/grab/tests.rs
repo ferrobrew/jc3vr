@@ -251,6 +251,7 @@ fn every_kind() -> Vec<GrabVolume> {
         GrabVolume::GrenadePouch,
         GrabVolume::MagazinePouch,
         GrabVolume::WeaponAction,
+        GrabVolume::InsertedMagazine,
         GrabVolume::MagazineWell,
         GrabVolume::C4Pouch,
         GrabVolume::ChargeSurface,
@@ -287,6 +288,7 @@ fn every_kind() -> Vec<GrabVolume> {
             | GrabVolume::GrenadePouch
             | GrabVolume::MagazinePouch
             | GrabVolume::WeaponAction
+            | GrabVolume::InsertedMagazine
             | GrabVolume::MagazineWell
             | GrabVolume::C4Pouch
             | GrabVolume::ChargeSurface

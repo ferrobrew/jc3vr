@@ -63,6 +63,8 @@ pub enum GrabVolume {
     /// The held gun's slide, charging handle, or bolt, for the hand without a gun, while its
     /// chamber waits on the action.
     WeaponAction,
+    /// The inserted detachable magazine, removed by an offhand grip and outward pull.
+    InsertedMagazine,
     /// The held gun's magazine well, while the other hand holds a round for it: the round goes in
     /// as the hand brings it there, so the well is marked but never taken by a squeeze.
     MagazineWell,
@@ -120,6 +122,7 @@ impl GrabVolume {
             GrabVolume::GrenadePouch => "grenade pouch",
             GrabVolume::MagazinePouch => "reload pouch",
             GrabVolume::WeaponAction => "weapon action",
+            GrabVolume::InsertedMagazine => "inserted magazine",
             GrabVolume::MagazineWell => "magazine well",
             GrabVolume::C4Pouch => "C4 pouch",
             GrabVolume::ChargeSurface => "surface for the charge",
@@ -153,6 +156,7 @@ impl GrabVolume {
             GrabVolume::Foregrip
             | GrabVolume::Handle
             | GrabVolume::WeaponAction
+            | GrabVolume::InsertedMagazine
             | GrabVolume::MagazineWell
             | GrabVolume::WorldWeapon
             | GrabVolume::Snatch(RemoteKind::Weapon)
@@ -183,6 +187,7 @@ impl GrabVolume {
             | GrabVolume::GrenadePouch
             | GrabVolume::MagazinePouch
             | GrabVolume::WeaponAction
+            | GrabVolume::InsertedMagazine
             | GrabVolume::MagazineWell
             | GrabVolume::C4Pouch
             | GrabVolume::ChargeSurface
