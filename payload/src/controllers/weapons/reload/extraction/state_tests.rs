@@ -97,6 +97,7 @@ fn tick(pull: f32, rounds: i32) -> Tick {
         ..Pose::IDENTITY
     };
     Tick {
+        sequence: Some(7),
         weapons: [
             Some(WeaponTick {
                 address: 1,

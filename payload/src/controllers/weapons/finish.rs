@@ -33,7 +33,9 @@ use crate::{
         weapons::{
             begin::with_holder,
             c4,
-            capabilities::{Capabilities, gun_hands_now, tracked_hands, trigger_claims},
+            capabilities::{
+                Capabilities, gun_hands_now, gun_owners_now, tracked_hands, trigger_claims,
+            },
             dual_wield::single,
             engine,
             foregrip::{self, GripGeometry, Inputs, Transition, TwoHandedWeapon},
@@ -66,7 +68,10 @@ pub(crate) struct FinishInputs {
 /// The second half of the weapon handling's input tick: act on the tick's grabs, run the grenade
 /// throw and the reload, and hold the fire inputs back during a weapon action. `desired` is the
 /// tables' output, which the grenade throw adds to and the fire hold-back trims.
-pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
+pub(crate) fn finish_tick(
+    inputs: &FinishInputs,
+    desired: &mut Vec<Desired>,
+) -> Option<reload::BeltEligibility> {
     let FinishInputs {
         grabs,
         grips,
@@ -78,6 +83,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     let active = hands::active_hands_raw();
     let capabilities = Capabilities::of(mode::current().mode);
     let now = Instant::now();
+    let source_guns = gun_owners_now();
     // The fingers opening lets a grenade or a charge go, not the grip's press relaxing.
     let values = frame::with_latest(|f| {
         Hand::BOTH.map(|h| {
@@ -336,7 +342,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         },
         &config,
     );
-    let reload_held = reload::finish_tick(
+    let reload_finish = reload::finish_tick(
         &reload::FinishInputs {
             grabs,
             grips,
@@ -362,7 +368,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     let reload_blocks = gun_hands.contains(&true)
         && Hand::BOTH
             .iter()
-            .all(|h| !gun_hands[h.index()] || reload_held[h.index()]);
+            .all(|h| !gun_hands[h.index()] || reload_finish.held[h.index()]);
 
     // Only a hand on the grip fires the gun.
     let carries = regions::carries();
@@ -412,6 +418,9 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     state.status.events.extend(events);
     let excess = state.status.events.len().saturating_sub(MAX_EVENTS);
     state.status.events.drain(..excess);
+    drop(state);
+    let sequence = frame::with_latest(|frame| frame.sequence)?;
+    reload_finish.belt_eligibility(sequence, &config, source_guns, gun_owners_now())
 }
 
 /// The target of the weapon handling's last tick that `fits` and that `hand` is nearest among those

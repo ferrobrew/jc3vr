@@ -61,13 +61,17 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    bindings::controls::ButtonControl,
+    bindings::{
+        controls::ButtonControl,
+        tables::describe::{Control, Effect, Gesture, ModAction, Row},
+    },
     body::rig::frames::Frames,
     config::ControllersConfig,
     frame::{Hand, Pose},
     grab::{Candidate, GrabVolume, GripTarget},
     hands::{ActiveHands, pose::CockpitHand},
     weapons::{
+        capabilities::{GunHand, GunOwner},
         docks,
         engine::HeldWeapon,
         reload::{
@@ -299,19 +303,23 @@ pub(super) struct FinishInputs {
 }
 
 /// The second half of the reload's input tick: eject, load, push, and work the action, and decide
-/// which guns may fire. Returns the hands whose guns may not fire.
-pub(super) fn finish_tick(inputs: &FinishInputs, config: &ControllersConfig) -> [bool; 2] {
+/// which guns may fire. The copied finish facts are consumed after weapon ownership settles.
+pub(super) fn finish_tick(inputs: &FinishInputs, config: &ControllersConfig) -> FinishResult {
     let reload = &config.weapons.reload;
     let mut state = STATE.lock();
     let Some(tick) = state.tick else {
         state.stand_down();
         drop(state);
         gate::publish(None);
-        return [false; 2];
+        return FinishResult {
+            held: [false; 2],
+            belt: None,
+        };
     };
     let held = state.step(&tick, inputs, config);
     state.status.fire_held = held;
     state.status.active = true;
+    let belt = state.belt_finish(&tick);
     drop(state);
     let weapons = Hand::BOTH.map(|hand| tick.gun(hand).map(|(weapon, _)| weapon));
     gate::publish(Some(gate::Published {
@@ -324,7 +332,147 @@ pub(super) fn finish_tick(inputs: &FinishInputs, config: &ControllersConfig) -> 
         }),
         held,
     }));
-    held
+    FinishResult {
+        held,
+        belt: Some(belt),
+    }
+}
+
+/// The reload's fire hold and copied post-step belt facts, not its persistent debug readout.
+pub(super) struct FinishResult {
+    pub held: [bool; 2],
+    belt: Option<BeltFinish>,
+}
+
+/// A same-input-tick offer for the dominant hand's exact belt reload motion.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct BeltEligibility {
+    sequence: u64,
+    hand: Hand,
+    guns: [Option<GunOwner>; 2],
+}
+
+impl BeltEligibility {
+    /// Final claims and hand readiness can revoke the offer without another engine query.
+    pub(crate) fn row(
+        self,
+        sequence: u64,
+        dominant: Hand,
+        guns: [Option<GunOwner>; 2],
+        ready: [bool; 2],
+    ) -> Option<Row> {
+        (self.sequence == sequence
+            && self.hand == dominant
+            && self.guns == guns
+            && ready[self.hand.index()])
+        .then_some(Row {
+            control: Control::Motion(self.hand),
+            gesture: Gesture::Press,
+            effect: Effect::Mod(ModAction::BeltReload),
+        })
+    }
+}
+
+/// The reload owner's final read, after all weapon actions, while matching gun claims prove life.
+impl FinishResult {
+    pub(super) fn belt_eligibility(
+        self,
+        sequence: u64,
+        config: &ControllersConfig,
+        source_guns: [Option<GunOwner>; 2],
+        guns: [Option<GunOwner>; 2],
+    ) -> Option<BeltEligibility> {
+        let finish = self.belt?;
+        finish.eligibility_with(sequence, config, source_guns, guns, |address| {
+            // SAFETY: the matching current firing grip or native pair owns this tick's weapon.
+            let weapon =
+                unsafe { (address as *const jc3gi::equipment::weapon::WeaponBase).as_ref() }?;
+            let reading = unsafe { engine::read(weapon) };
+            if reading.exempt {
+                return None;
+            }
+            Some((reading, unsafe { engine::reserve(weapon) }))
+        })
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+struct BeltFinish {
+    sequence: Option<u64>,
+    hand: Hand,
+    weapon: Option<usize>,
+    gate: BeltGate,
+    well: bool,
+    pouch: bool,
+}
+
+impl BeltFinish {
+    fn eligibility_with(
+        self,
+        sequence: u64,
+        config: &ControllersConfig,
+        source_guns: [Option<GunOwner>; 2],
+        guns: [Option<GunOwner>; 2],
+        mut read: impl FnMut(usize) -> Option<(Reading, i32)>,
+    ) -> Option<BeltEligibility> {
+        if source_guns != guns {
+            return None;
+        }
+        let address = self.weapon?;
+        let current = guns[self.hand.index()]?;
+        if !config.weapons.reload.enabled
+            || self.sequence != Some(sequence)
+            || self.hand != config.acting_hand()
+            || current.weapon != address
+            || !matches!(current.role, GunHand::Grip | GunHand::NativePair(_))
+            || !self.well
+            || !self.pouch
+        {
+            return None;
+        }
+        let (reading, reserve) = read(address)?;
+        let gate = BeltGate {
+            has_ammo: reading.unlimited || reserve > 0,
+            can_belt: reading.out || reading.magazine < reading.capacity,
+            ..self.gate
+        };
+        gate.allows(&config.weapons.reload)
+            .then_some(BeltEligibility {
+                sequence,
+                hand: self.hand,
+                guns,
+            })
+    }
+}
+
+/// The exact non-motion gate shared by belt execution and its current offer.
+#[derive(Debug, Copy, Clone)]
+struct BeltGate {
+    holding: bool,
+    extracting: bool,
+    blocked: bool,
+    since_draw_s: f32,
+    has_ammo: bool,
+    can_belt: bool,
+}
+
+impl BeltGate {
+    fn allows(self, reload: &ReloadConfig) -> bool {
+        reload.belt.enabled
+            && !self.holding
+            && !self.extracting
+            && !self.blocked
+            && self.since_draw_s >= reload.belt.after_draw_s
+            && self.has_ammo
+            && self.can_belt
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn eligible_belt_for_test(
+    config: &ControllersConfig,
+) -> (BeltEligibility, [Option<GunOwner>; 2]) {
+    steps::eligible_belt_for_test(config)
 }
 
 /// Cancel only physical magazine manipulation on a mode boundary. Other weapon holds remain.
@@ -428,6 +576,7 @@ const MAX_EVENTS: usize = 8;
 /// One input tick's view of the hands' guns.
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct Tick {
+    sequence: Option<u64>,
     /// The weapons the reload acts on, in the order of [`BeginInputs::weapons`]. A weapon the
     /// reload leaves to the game is not among them.
     weapons: [Option<WeaponTick>; 2],

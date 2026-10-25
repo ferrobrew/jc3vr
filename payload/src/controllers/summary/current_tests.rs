@@ -99,6 +99,42 @@ fn text(summary: &CurrentSummary) -> String {
 }
 
 #[test]
+fn current_belt_reload_keeps_only_its_physical_motion_source() {
+    for hand in Hand::BOTH {
+        let ctx = context(hand);
+        let table = sources(&[(OnFootAction::Reload, &["/user/hand/right/input/b/click"])]);
+        let row = Row {
+            control: Control::Motion(hand),
+            gesture: Gesture::Press,
+            effect: Effect::Mod(ModAction::BeltReload),
+        };
+        let mut snapshot = snapshot([true; 2], [TriggerUse::Reserved; 2]);
+        assert!(!text(&resolved(&ctx, &table, &snapshot, &[])).contains("Belt Pouch"));
+        snapshot.mechanics = vec![row];
+        let summary = resolved(&ctx, &table, &snapshot, &[]);
+        let hint = summary.cells[hand.index()]
+            .iter()
+            .find(|hint| hint.text.contains("Belt Pouch"))
+            .unwrap();
+        assert_eq!(hint.text, "Push the Gun onto the Belt Pouch: Reload");
+        assert_eq!(
+            hint.sources,
+            vec![Source {
+                control: Control::Motion(hand),
+                name: None,
+            }]
+        );
+        assert!(hint.prefix.is_none());
+        assert!(!text(&summary).contains("Native reload"));
+        snapshot.routing.ready[hand.index()] = false;
+        assert!(!text(&resolved(&ctx, &table, &snapshot, &[])).contains("Belt Pouch"));
+        snapshot.routing.ready = [true; 2];
+        snapshot.mechanics.clear();
+        assert!(!text(&resolved(&ctx, &table, &snapshot, &[])).contains("Belt Pouch"));
+    }
+}
+
+#[test]
 fn named_source_index_churn_preserves_wrist_revision_arc_page_and_dwell() {
     let make_table = |earlier_move: bool, jump_path: &str, jump_name: &str| {
         let mut actions = vec![Some(Vec::new()); OnFootAction::ALL.len()];

@@ -6,7 +6,7 @@ use jc3gi::equipment::weapon::WeaponBase;
 
 use crate::controllers::{
     config::ControllersConfig,
-    frame::{Hand, Pose},
+    frame::{self, Hand, Pose},
     grab::{Candidate, GrabVolume},
     hands::{ActiveHands, ik},
     haptics::{self, Event},
@@ -17,7 +17,8 @@ use crate::controllers::{
         foregrip::set_pump_slide,
         regions::{action_back, action_volume},
         reload::{
-            FinishInputs, GunTick, MAX_EVENTS, State, Tick, WeaponReadout, WeaponTick,
+            BeltFinish, BeltGate, FinishInputs, GunTick, MAX_EVENTS, State, Tick, WeaponReadout,
+            WeaponTick,
             action::locks_back,
             belt::{BeltPush, PushInputs},
             chamber::{self, ActionKind, Chamber},
@@ -168,6 +169,7 @@ impl State {
             return None;
         }
         Some(Tick {
+            sequence: frame::with_latest(|frame| frame.sequence),
             weapons: read,
             dominant: config.acting_hand(),
             guns,
@@ -638,11 +640,7 @@ impl State {
                 self.belts[i] = BeltPush::new();
                 continue;
             }
-            let holding_for_it = self.status.insert_hands.is_some_and(|(_, g)| g == hand);
-            let eligible = reload.belt.enabled
-                && !holding_for_it
-                && self.since_draw_s >= reload.belt.after_draw_s
-                && target.is_some_and(|(weapon, _)| weapon.has_ammo() && self.can_belt(weapon));
+            let eligible = self.belt_gate(tick, hand).allows(reload);
             let inputs = well
                 .zip(self.pouch)
                 .map(|(w, (centre, radius))| PushInputs {
@@ -677,6 +675,31 @@ impl State {
                 record.travels[gun.entry()].close();
                 haptics::play(hand, Event::BeltSeat);
             }
+        }
+    }
+
+    pub(super) fn belt_finish(&self, tick: &Tick) -> BeltFinish {
+        let hand = tick.dominant;
+        BeltFinish {
+            sequence: tick.sequence,
+            hand,
+            weapon: tick.gun(hand).map(|(weapon, _)| weapon.address),
+            gate: self.belt_gate(tick, hand),
+            well: tick.gun(hand).is_some_and(|(_, gun)| gun.well.is_some()),
+            pouch: self.pouch.is_some(),
+        }
+    }
+
+    fn belt_gate(&self, tick: &Tick, hand: Hand) -> BeltGate {
+        BeltGate {
+            holding: self.status.insert_hands.is_some_and(|(_, gun)| gun == hand),
+            extracting: self.extraction_hand() == Some(hand.other()),
+            blocked: self.extraction_blocks_belt[hand.index()],
+            since_draw_s: self.since_draw_s,
+            has_ammo: tick.gun(hand).is_some_and(|(weapon, _)| weapon.has_ammo()),
+            can_belt: tick
+                .gun(hand)
+                .is_some_and(|(weapon, _)| self.can_belt(weapon)),
         }
     }
 
@@ -801,6 +824,11 @@ unsafe fn weapon_tick(
     })
 }
 
+#[cfg(test)]
+pub(super) use belt_tests::eligible_belt_for_test;
+
+#[cfg(test)]
+mod belt_tests;
 #[cfg(test)]
 mod insertion_tests;
 

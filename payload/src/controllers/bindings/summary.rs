@@ -32,7 +32,7 @@ use crate::controllers::{
     weapons::{
         self,
         capabilities::{GunHand, GunOwner},
-        reload::{ReloadStatus, config::ReloadButton},
+        reload::{BeltEligibility, ReloadStatus, config::ReloadButton},
     },
 };
 
@@ -59,6 +59,8 @@ impl BeforeFinish {
 }
 
 pub(super) struct Refresh<'a> {
+    pub sequence: u64,
+    pub belt_reload: Option<BeltEligibility>,
     pub config: &'a ControllersConfig,
     pub owners: [Owner; 2],
     pub ready: [bool; 2],
@@ -76,14 +78,35 @@ pub(super) fn capture(input: Refresh<'_>) -> Eligibility {
     let reload = current_reload(guns);
     let fire = fire_ready(input.ready, input.config, guns);
     let reload_permissions = read_reload_permissions(input.config);
+    capture_current(
+        input,
+        BeforeFinish {
+            guns,
+            reload,
+            foregrip: foregrip_owner(),
+            grenade: weapons::grenade::throwing_hand(),
+            c4: weapons::c4::throwing_hand(),
+        },
+        fire,
+        reload_permissions,
+    )
+}
+
+fn capture_current(
+    input: Refresh<'_>,
+    current: BeforeFinish,
+    fire: [bool; 2],
+    reload_permissions: ReloadPermissions,
+) -> Eligibility {
+    let guns = current.guns;
+    let reload = current.reload;
     let chosen = retained_choices(
         input.chosen,
         input.grabs,
         input.before.guns != guns,
         reload_changed(&input.before.reload, &reload),
-        input.before.foregrip != foregrip_owner(),
-        input.before.grenade != weapons::grenade::throwing_hand()
-            || input.before.c4 != weapons::c4::throwing_hand(),
+        input.before.foregrip != current.foregrip,
+        input.before.grenade != current.grenade || input.before.c4 != current.c4,
     );
     let fires_guns = tables::triggers_fire_hand_weapons(input.owners[0].mode);
     let mut actions = Vec::new();
@@ -98,6 +121,16 @@ pub(super) fn capture(input: Refresh<'_>) -> Eligibility {
         ]);
     }
     let mut mechanics = tables::describe::flight_mechanics(input.flight);
+    if let Some(row) = input.belt_reload.and_then(|belt| {
+        belt.row(
+            input.sequence,
+            input.config.acting_hand(),
+            guns,
+            input.ready,
+        )
+    }) {
+        mechanics.push(row);
+    }
     if let Some(hand) = input.yank {
         mechanics.push(Row {
             control: Control::Motion(hand),
@@ -361,6 +394,9 @@ fn fire_permission(input: FirePermission) -> [bool; 2] {
         }
     })
 }
+
+#[cfg(test)]
+mod capture_tests;
 
 #[cfg(test)]
 mod tests {

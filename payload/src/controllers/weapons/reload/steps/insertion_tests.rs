@@ -64,7 +64,7 @@ impl MagazineInsertion for FakeMagazine {
     }
 }
 
-fn state(stage: InsertStage) -> State {
+pub(super) fn state(stage: InsertStage) -> State {
     let status = ReloadStatus {
         insert_hands: Some((Hand::Left, Hand::Right)),
         insertion: insert::Insertion {
@@ -105,7 +105,7 @@ fn state(stage: InsertStage) -> State {
     }
 }
 
-fn tick(seating: bool, config: &ControllersConfig) -> Tick {
+pub(super) fn tick(seating: bool, config: &ControllersConfig) -> Tick {
     let grip = Pose::IDENTITY;
     let top = insert::held_round(
         grip.position,
@@ -124,6 +124,7 @@ fn tick(seating: bool, config: &ControllersConfig) -> Tick {
         axis: top.axis,
     };
     Tick {
+        sequence: Some(7),
         weapons: [
             Some(WeaponTick {
                 address: 1,

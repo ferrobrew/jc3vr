@@ -571,6 +571,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     );
     let summary_before = summary::BeforeFinish::capture();
     let mut trigger_changed = [false; 2];
+    let mut belt_reload = None;
     if !in_menu {
         let finish = weapons::FinishInputs {
             grabs: grabs_for(step.grabs, Consumer::Weapons),
@@ -579,7 +580,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             reload_button: reload_button(&semantic_input),
             dt,
         };
-        weapons::finish_tick(&finish, &mut step.desired);
+        belt_reload = weapons::finish_tick(&finish, &mut step.desired);
         let after = weapons::capabilities::gun_owners_now().map(|gun| TriggerOwner {
             mode: detection.mode,
             gun: gun.filter(|_| gun_triggers),
@@ -688,6 +689,8 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         trigger_changed,
     );
     let eligibility = summary::capture(summary::Refresh {
+        sequence: frame.sequence,
+        belt_reload,
         config: &config,
         owners: final_owners,
         ready: Hand::BOTH.map(|hand| !in_menu && state.recovery.ready(hand)),

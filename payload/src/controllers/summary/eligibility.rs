@@ -141,6 +141,11 @@ pub(crate) fn resolve(rows: &[Row], snapshot: &Eligibility) -> EligibilityReport
 }
 
 fn mechanic_routing(row: &Row, routing: CurrentRouting) -> bool {
+    if row.effect == Effect::Mod(ModAction::BeltReload) {
+        return matches!(row.control, Control::Motion(_))
+            && row.gesture == Gesture::Press
+            && routing.allows(row.control, row.gesture);
+    }
     if matches!(
         row.effect,
         Effect::Mod(ModAction::GestureDeploy | ModAction::GestureClose | ModAction::GestureBrake)
@@ -174,6 +179,60 @@ fn mode_wide(action: Action) -> bool {
 mod tests {
     use super::*;
     use crate::controllers::summary::current::TriggerUse;
+
+    #[test]
+    fn belt_rows_require_the_exact_current_physical_motion_and_ready_hand() {
+        for hand in Hand::BOTH {
+            let row = Row {
+                control: Control::Motion(hand),
+                gesture: Gesture::Press,
+                effect: Effect::Mod(ModAction::BeltReload),
+            };
+            let mut snapshot = Eligibility {
+                routing: CurrentRouting {
+                    ready: [true; 2],
+                    triggers: [TriggerUse::Reserved; 2],
+                },
+                ..Default::default()
+            };
+            let rows = std::slice::from_ref(&row);
+            assert!(resolve(rows, &snapshot).context.usable.is_empty());
+            for wrong in [
+                Row {
+                    control: Control::B(hand),
+                    ..row.clone()
+                },
+                Row {
+                    control: Control::EitherMotion,
+                    ..row.clone()
+                },
+                Row {
+                    gesture: Gesture::Hold,
+                    ..row.clone()
+                },
+                Row {
+                    effect: Effect::Mod(ModAction::FlickEject),
+                    ..row.clone()
+                },
+                Row {
+                    control: Control::Motion(hand.other()),
+                    ..row.clone()
+                },
+            ] {
+                snapshot.mechanics = vec![wrong];
+                assert!(!resolve(rows, &snapshot).context.usable.contains(&row));
+            }
+            snapshot.mechanics = vec![row.clone()];
+            assert_eq!(resolve(rows, &snapshot).context.usable, vec![row.clone()]);
+            snapshot.routing.ready[hand.other().index()] = false;
+            assert_eq!(resolve(&[], &snapshot).context.usable, vec![row.clone()]);
+            snapshot.routing.ready[hand.index()] = false;
+            assert!(resolve(rows, &snapshot).context.usable.is_empty());
+            snapshot.mechanics.clear();
+            snapshot.routing.ready = [true; 2];
+            assert!(resolve(rows, &snapshot).context.usable.is_empty());
+        }
+    }
 
     #[test]
     fn flight_rows_require_exact_mechanic_identity_and_both_ready_hands() {
