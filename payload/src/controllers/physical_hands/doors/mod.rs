@@ -36,6 +36,7 @@ use crate::controllers::physical_hands::{
     contact::SurfaceHit,
     doors::{acquisition::PanelBody, engine::DoorError, geometry::pull},
     grasp::{Reach, TargetKind},
+    pickup::diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
 };
 
 /// A door a hand can take.
@@ -68,6 +69,24 @@ pub(crate) unsafe fn reach(
     palm: Vec3,
     reach_m: f32,
     config: &DoorsConfig,
+) -> Option<Reach> {
+    // SAFETY: forwarded from the caller; the bounded output is discarded for remote reach.
+    unsafe { observed_reach(object, body, hit, palm, reach_m, config, &mut Scan::new()) }
+}
+
+/// The same production door reach, with a bounded copy of its evaluated panel refusals.
+///
+/// # Safety
+///
+/// The game thread, outside the physics step; the hit identifies a live body this tick.
+pub(crate) unsafe fn observed_reach(
+    object: NonZeroUsize,
+    body: u32,
+    hit: &SurfaceHit,
+    palm: Vec3,
+    reach_m: f32,
+    config: &DoorsConfig,
+    scan: &mut Scan,
 ) -> Option<Reach> {
     if !config.enabled {
         return None;
@@ -102,10 +121,25 @@ pub(crate) unsafe fn reach(
     doors
         .iter()
         .filter_map(|d| {
-            let acquired = match acquisition::panel(d, palm, reach_m, config.handle_share, origin) {
-                Ok(acquired) => acquired,
-                Err(_) => return None,
-            };
+            let acquired = acquisition::observed_panel(
+                d,
+                palm,
+                reach_m,
+                config.handle_share,
+                origin,
+                ScanEntry {
+                    branch: Branch::DoorPanel,
+                    object: Some(vehicle),
+                    body: Some(body),
+                    door: Some((vehicle, d.slot, d.part_index)),
+                    point: None,
+                    distance: None,
+                    mass_kg: None,
+                    result: ScanResult::Offered,
+                },
+                scan,
+            )
+            .ok()?;
             let target = DoorTarget {
                 vehicle,
                 vehicle_body: Some(body),

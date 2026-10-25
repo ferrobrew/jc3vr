@@ -218,6 +218,7 @@ unsafe fn run(owner: &Character, dt: f32) {
     let mut climb_reaches = [None; 2];
     let mut touches = Vec::new();
     let mut reach_notes = [Vec::new(), Vec::new()];
+    let mut interaction_scans = [pickup::diagnostics::scan::Scan::new(); 2];
     // The grab view's record of the reach, only while it is on.
     let viewing = grab_view::recording(&config);
     let mut rays = [Vec::new(), Vec::new()];
@@ -294,8 +295,11 @@ unsafe fn run(owner: &Character, dt: f32) {
                         standing_on,
                         &reach_tuning,
                         &mut |from, to| cast(from, to, &reach_options),
-                        &mut reach_notes[i],
-                        viewing.then(|| &mut rays[i]),
+                        pickup::ReachObservations {
+                            notes: &mut reach_notes[i],
+                            rays: viewing.then(|| &mut rays[i]),
+                            scan: &mut interaction_scans[i],
+                        },
                     )
                 }
             } else {
@@ -309,11 +313,15 @@ unsafe fn run(owner: &Character, dt: f32) {
                     active.world_scale,
                     &config.doors,
                     &mut |from, to| cast(from, to, &reach_options),
-                    &mut reach_notes[i],
-                    viewing.then(|| &mut handles[i]),
+                    doors::scan::HandleObservations {
+                        notes: &mut reach_notes[i],
+                        handles: viewing.then(|| &mut handles[i]),
+                        scan: &mut interaction_scans[i],
+                    },
                 )
             };
             let reach = grasp::nearest(reach.into_iter().chain(door));
+            interaction_scans[i].selected = reach;
             if climb_on {
                 // The palm in the rig: its tracking-space place turned and scaled as the world
                 // palm is, but not carried by the head's world position, which the climb moves.
@@ -401,8 +409,11 @@ unsafe fn run(owner: &Character, dt: f32) {
                     standing_on,
                     &reach_tuning,
                     &mut |from, to| cast(from, to, &reach_options),
-                    &mut reach_notes[i],
-                    viewing.then(|| &mut rays[i]),
+                    pickup::ReachObservations {
+                        notes: &mut reach_notes[i],
+                        rays: viewing.then(|| &mut rays[i]),
+                        scan: &mut interaction_scans[i],
+                    },
                 )
             }
         } else {
@@ -416,11 +427,15 @@ unsafe fn run(owner: &Character, dt: f32) {
                 active.world_scale,
                 &config.doors,
                 &mut |from, to| cast(from, to, &reach_options),
-                &mut reach_notes[i],
-                viewing.then(|| &mut handles[i]),
+                doors::scan::HandleObservations {
+                    notes: &mut reach_notes[i],
+                    handles: viewing.then(|| &mut handles[i]),
+                    scan: &mut interaction_scans[i],
+                },
             )
         };
         let reach = grasp::nearest(reach.into_iter().chain(door));
+        interaction_scans[i].selected = reach;
         hand_status[i] = HandStatus {
             acting: true,
             palm: Some(palm),
@@ -507,6 +522,7 @@ unsafe fn run(owner: &Character, dt: f32) {
     }
     state.status.idle = None;
     state.status.hands = hand_status;
+    state.pickup.scans = interaction_scans;
     state.status.push = push;
     state.status.casts = casts;
     state.reach_notes = reach_notes;

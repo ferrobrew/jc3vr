@@ -18,6 +18,7 @@ use crate::controllers::{
         physics::HoldTarget,
         pickup::{
             HeldReport,
+            diagnostics::{self, ConsumerResult, DriveRecord},
             grips::{keep_latch, keep_regrip, keep_seize, shove_on_release},
             state::{Held, HeldKind, PickupState, Request},
         },
@@ -146,6 +147,7 @@ pub(crate) unsafe fn tick(
         let i = hand.index();
         match state.requests[i].take() {
             Some(Request::Release) => {
+                state.evidence_holds[i] = None;
                 if state.latches[i].take().is_some() {
                     outcome.released[i] = true;
                 }
@@ -171,8 +173,16 @@ pub(crate) unsafe fn tick(
                     outcome.released[i] = true;
                 }
             }
-            Some(Request::Grab(reach)) => 'grab: {
+            Some(request @ (Request::Grab(_) | Request::ObservedGrab(_))) => 'grab: {
+                let (reach, evidence) = request.grab().expect("grab request");
+                state.evidence_holds[i] = None;
+                let record = |result| {
+                    if let Some(key) = evidence {
+                        diagnostics::consumed(hand, key, result);
+                    }
+                };
                 let Some(palm) = palms[i] else {
+                    record(ConsumerResult::NoPalm);
                     break 'grab;
                 };
                 if let TargetKind::Door(door) = reach.kind {
@@ -188,11 +198,14 @@ pub(crate) unsafe fn tick(
                                     part = door.part_index,
                                     "physical hands: doors: a hand gripped a latched door"
                                 );
+                                record(ConsumerResult::LatchAccepted);
+                                state.evidence_holds[i] = evidence;
                                 state.latches[i] = Some(latch);
                                 outcome.taken[i] = true;
                                 outcome.door_grips += 1;
                             }
                             None => {
+                                record(ConsumerResult::LatchRefused);
                                 outcome.refuse(
                                     hand,
                                     reach.point,
@@ -216,11 +229,14 @@ pub(crate) unsafe fn tick(
                                 seated = target.seated.is_some(),
                                 "physical hands: characters: a hand took hold of a character"
                             );
+                            record(ConsumerResult::CharacterAccepted);
+                            state.evidence_holds[i] = evidence;
                             state.seizes[i] = Some(seize);
                             outcome.taken[i] = true;
                             outcome.character_grips += 1;
                         }
                         None => {
+                            record(ConsumerResult::CharacterRefused);
                             outcome.refuse(
                                 hand,
                                 reach.point,
@@ -232,41 +248,22 @@ pub(crate) unsafe fn tick(
                     break 'grab;
                 }
                 // SAFETY: forwarded from the caller.
-                match unsafe { bodies::read(reach.body, reach.object) } {
-                    Ok(body) => match body
-                        .mass_kg
-                        .filter(|&m| grasp::can_take(&reach.kind, m, config))
-                    {
-                        Some(mass_kg) => {
-                            state.held[i] = Some(Held {
-                                object: reach.object,
-                                body: reach.body,
-                                grip: Grip::of(palm.pose, body.pose, reach.point),
-                                mass_kg,
-                                joined: joints.join[i],
-                                kind: HeldKind::of(&reach.kind),
-                            });
-                            outcome.taken[i] = true;
-                            if matches!(reach.kind, TargetKind::Articulated { .. }) {
-                                tracing::info!(
-                                    hand = hand.label(),
-                                    body = reach.body,
-                                    mass_kg,
-                                    joined = joints.join[i],
-                                    "physical hands: a hand took hold of an articulated object"
-                                );
-                                outcome.articulated_grips += 1;
-                            }
-                        }
-                        None => {
-                            outcome.refuse(
-                                hand,
-                                reach.point,
-                                "physical hands: pickup: the body is fixed or too heavy".to_owned(),
-                            );
-                        }
+                let body = unsafe { bodies::read(reach.body, reach.object) };
+                let result = take_body(
+                    state,
+                    BodyGrab {
+                        hand,
+                        reach,
+                        palm,
+                        joined: joints.join[i],
                     },
-                    Err(e) => outcome.refuse(hand, reach.point, e.to_string()),
+                    body,
+                    config,
+                    &mut outcome,
+                );
+                record(result);
+                if matches!(result, ConsumerResult::BodyAccepted { .. }) {
+                    state.evidence_holds[i] = evidence;
                 }
             }
             None => {}
@@ -312,6 +309,13 @@ pub(crate) unsafe fn tick(
         };
         // SAFETY: forwarded from the caller.
         unsafe { keep_latch(state, hand, palms[i], &joints, unlatch_pull_m, &mut outcome) };
+        if state.held[i].is_none()
+            && state.latches[i].is_none()
+            && state.seizes[i].is_none()
+            && state.regrips[i].is_none()
+        {
+            state.evidence_holds[i] = None;
+        }
     }
 
     // Drive each carried body once, from every hand that carries it; a joined hold is only
@@ -369,6 +373,19 @@ pub(crate) unsafe fn tick(
                     twist,
                     joined: true,
                 });
+                record_drive(
+                    state,
+                    k,
+                    &held,
+                    DriveRecord {
+                        object: held.object.get(),
+                        body: held.body,
+                        before: body,
+                        commanded: None,
+                        result: None,
+                        report: outcome.reports[k],
+                    },
+                );
                 continue;
             }
             let mut target = holder.grip.target(palm.pose);
@@ -395,7 +412,25 @@ pub(crate) unsafe fn tick(
         }
         let solution = hold::solve(&body.rigid(), holds, dt, &HoldTuning::of(config));
         // SAFETY: forwarded from the caller.
-        if let Err(e) = unsafe { bodies::drive(held.body, held.object, solution.velocities) } {
+        let result = unsafe { bodies::drive(held.body, held.object, solution.velocities) };
+        if let Err(e) = result {
+            for (k, hold) in holds.iter().enumerate() {
+                if hold.is_some() {
+                    record_drive(
+                        state,
+                        k,
+                        &held,
+                        DriveRecord {
+                            object: held.object.get(),
+                            body: held.body,
+                            before: body,
+                            commanded: Some(solution.velocities),
+                            result: Some(result),
+                            report: None,
+                        },
+                    );
+                }
+            }
             lose(state, &held, &mut outcome, e.to_string());
             continue;
         }
@@ -415,9 +450,94 @@ pub(crate) unsafe fn tick(
                 twist: solution.torque_loads[k],
                 joined: false,
             });
+            record_drive(
+                state,
+                k,
+                &held,
+                DriveRecord {
+                    object: held.object.get(),
+                    body: held.body,
+                    before: body,
+                    commanded: Some(solution.velocities),
+                    result: Some(result),
+                    report: outcome.reports[k],
+                },
+            );
         }
     }
     outcome
+}
+
+pub(super) struct BodyGrab {
+    pub hand: Hand,
+    pub reach: Reach,
+    pub palm: PalmMotion,
+    pub joined: bool,
+}
+
+pub(super) fn take_body(
+    state: &mut PickupState,
+    grab: BodyGrab,
+    body: Result<bodies::BodyState, bodies::BodyError>,
+    config: &PickupConfig,
+    outcome: &mut TickOutcome,
+) -> ConsumerResult {
+    let BodyGrab {
+        hand,
+        reach,
+        palm,
+        joined,
+    } = grab;
+    let i = hand.index();
+    match body {
+        Ok(body) => match body
+            .mass_kg
+            .filter(|&m| grasp::can_take(&reach.kind, m, config))
+        {
+            Some(mass_kg) => {
+                state.held[i] = Some(Held {
+                    object: reach.object,
+                    body: reach.body,
+                    grip: Grip::of(palm.pose, body.pose, reach.point),
+                    mass_kg,
+                    joined,
+                    kind: HeldKind::of(&reach.kind),
+                });
+                outcome.taken[i] = true;
+                if matches!(reach.kind, TargetKind::Articulated { .. }) {
+                    tracing::info!(
+                        hand = hand.label(),
+                        body = reach.body,
+                        mass_kg,
+                        joined,
+                        "physical hands: a hand took hold of an articulated object"
+                    );
+                    outcome.articulated_grips += 1;
+                }
+                ConsumerResult::BodyAccepted { joined }
+            }
+            None => {
+                outcome.refuse(
+                    hand,
+                    reach.point,
+                    "physical hands: pickup: the body is fixed or too heavy".to_owned(),
+                );
+                ConsumerResult::FixedOrTooHeavy
+            }
+        },
+        Err(e) => {
+            outcome.refuse(hand, reach.point, e.to_string());
+            ConsumerResult::BodyRefused(e)
+        }
+    }
+}
+
+fn record_drive(state: &PickupState, index: usize, held: &Held, drive: DriveRecord) {
+    if let Some(key) = state.evidence_holds[index]
+        .filter(|key| key.target.object == held.object && key.target.body == held.body)
+    {
+        diagnostics::driven(Hand::BOTH[index], key, drive);
+    }
 }
 
 /// Let go of `held` from the palm `palm`, and return the throw's speed: the grab point leaves with

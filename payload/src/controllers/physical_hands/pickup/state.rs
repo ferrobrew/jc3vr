@@ -11,6 +11,7 @@ use crate::controllers::{
         characters::{Regrip, Seize},
         doors::Latch,
         grasp::{Grip, Reach, TargetKind},
+        pickup::diagnostics::{self, ConsumerResult, RequestKey, scan::Scan},
     },
 };
 
@@ -27,6 +28,9 @@ pub(crate) struct PickupState {
     /// The hands that yanked a seated character, for the input tick to click the vehicle entry.
     pub(crate) hijack_clicks: [bool; 2],
     pub(crate) requests: [Option<Request>; 2],
+    /// The accepted local request whose hold the simulation still observes.
+    pub(crate) evidence_holds: [Option<RequestKey>; 2],
+    pub(crate) scans: [Scan; 2],
     /// When the input tick last acted on the grips.
     pub(crate) input_at: Option<Instant>,
 }
@@ -40,6 +44,8 @@ impl PickupState {
             regrips: [None; 2],
             hijack_clicks: [false; 2],
             requests: [None; 2],
+            evidence_holds: [None; 2],
+            scans: [Scan::new(); 2],
             input_at: None,
         }
     }
@@ -96,11 +102,28 @@ impl PickupState {
 
     /// Let go of everything without throwing, and forget the requests.
     pub(crate) fn drop_all(&mut self) {
+        for hand in Hand::BOTH {
+            self.replace_request(hand, None, ConsumerResult::Cleared);
+        }
+        self.evidence_holds = [None; 2];
         self.held = [None; 2];
         self.latches = [None; 2];
         self.seizes = [None; 2];
         self.regrips = [None; 2];
         self.requests = [None; 2];
+    }
+
+    /// Preserve the queue's existing replacement semantics and record a displaced local request.
+    pub(crate) fn replace_request(
+        &mut self,
+        hand: Hand,
+        request: Option<Request>,
+        displaced: ConsumerResult,
+    ) {
+        if let Some(Request::ObservedGrab(key)) = self.requests[hand.index()] {
+            diagnostics::consumed(hand, key, displaced);
+        }
+        self.requests[hand.index()] = request;
     }
 }
 
@@ -159,5 +182,17 @@ impl HeldKind {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) enum Request {
     Grab(Reach),
+    /// A local pickup with the exact input observation that queued it.
+    ObservedGrab(RequestKey),
     Release,
+}
+
+impl Request {
+    pub(crate) fn grab(self) -> Option<(Reach, Option<RequestKey>)> {
+        match self {
+            Self::Grab(reach) => Some((reach, None)),
+            Self::ObservedGrab(key) => Some((key.target, Some(key))),
+            Self::Release => None,
+        }
+    }
 }

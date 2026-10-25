@@ -14,7 +14,15 @@ use crate::controllers::physical_hands::{
     grab_view::model::{RayOutcome, ReachRay},
     grasp::{self, Reach, TargetKind},
     palm::PalmBox,
+    pickup::diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
 };
+
+/// The existing reach readouts and a bounded copy of its evaluated branches.
+pub(crate) struct ReachObservations<'a> {
+    pub notes: &'a mut Vec<String>,
+    pub rays: Option<&'a mut Vec<ReachRay>>,
+    pub scan: &'a mut Scan,
+}
 
 /// What a hand's reach takes, and how far it reaches.
 #[derive(Copy, Clone)]
@@ -56,9 +64,14 @@ pub(crate) unsafe fn reach(
     standing_on: Option<u32>,
     tuning: &ReachTuning,
     cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
-    notes: &mut Vec<String>,
-    mut rays: Option<&mut Vec<ReachRay>>,
+    observations: ReachObservations<'_>,
 ) -> Option<Reach> {
+    let ReachObservations {
+        notes,
+        mut rays,
+        scan,
+    } = observations;
+    scan.ray_ran = true;
     let origin = palm.point(Vec3::new(0.0, 1.0, 0.0));
     let length = (tuning.pickup.reach_m * tuning.world_scale).max(0.0) + 2.0 * palm.half_extents.y;
     let ends = REACH_DIRECTIONS
@@ -70,15 +83,35 @@ pub(crate) unsafe fn reach(
     let hits = ends
         .into_iter()
         .enumerate()
-        .filter_map(|(k, to)| cast(origin, to).map(|hit| (Some(k), hit)))
-        .chain(press.map(|hit| (None, hit)));
+        .map(|(k, to)| (Some(k), to, cast(origin, to)))
+        .chain(press.map(|hit| (None, hit.position, Some(hit))));
     let mut judged = Judged {
         seen: Vec::new(),
         reaches: Vec::new(),
         notes,
+        scan,
+        branch: Branch::Ray,
     };
-    for (ray, hit) in hits {
+    for (ray, to, hit) in hits {
+        let Some(hit) = hit else {
+            judged.scan.push(ScanEntry {
+                branch: Branch::Ray,
+                object: None,
+                body: None,
+                door: None,
+                point: Some(to),
+                distance: None,
+                mass_kg: None,
+                result: ScanResult::Missed,
+            });
+            continue;
+        };
         let before = judged.reaches.len();
+        judged.branch = if ray.is_some() {
+            Branch::Ray
+        } else {
+            Branch::Press
+        };
         // SAFETY: forwarded from the caller; the hit was found this tick.
         unsafe { judge(&hit, palm, standing_on, tuning, &mut judged) };
         if let (Some(k), Some(rays)) = (ray, rays.as_deref_mut())
@@ -88,7 +121,9 @@ pub(crate) unsafe fn reach(
             recorded.outcome = RayOutcome::of(true, judged.reaches.len() > before);
         }
     }
-    grasp::nearest(judged.reaches)
+    let selected = grasp::nearest(judged.reaches);
+    judged.scan.ray_selected = selected;
+    selected
 }
 
 /// The most notes one hand's reach keeps per tick.
@@ -101,6 +136,8 @@ struct Judged<'a> {
     /// The hits a hand takes.
     reaches: Vec<Reach>,
     notes: &'a mut Vec<String>,
+    scan: &'a mut Scan,
+    branch: Branch,
 }
 
 /// Judge one of the reach's hits: add it to `judged`'s reaches when a hand takes it, and note what
@@ -138,6 +175,16 @@ unsafe fn judge(
         }
     };
     let distance = hit.position.distance(palm.centre);
+    let mut entry = ScanEntry {
+        branch: judged.branch,
+        object,
+        body: Some(body),
+        door: None,
+        point: Some(hit.position),
+        distance: Some(distance),
+        mass_kg: None,
+        result: ScanResult::Offered,
+    };
     let at = format!(
         "body {body} at {:.0} mm",
         distance / world_scale.max(1e-3) * 1000.0
@@ -158,8 +205,12 @@ unsafe fn judge(
                 note(format!("a character, {at}: in reach"));
                 judged.reaches.push(reach);
             }
-            None => note(format!("a character, {at}: not one a hand takes here")),
+            None => {
+                entry.result = ScanResult::CharacterUnavailable;
+                note(format!("a character, {at}: not one a hand takes here"));
+            }
         }
+        judged.scan.push(entry);
         return;
     }
     let Surface::Solid {
@@ -167,6 +218,8 @@ unsafe fn judge(
         body,
     } = hit.surface
     else {
+        entry.result = ScanResult::StaticWorld;
+        judged.scan.push(entry);
         note(format!("the static world, {at}: climbed, not taken"));
         return;
     };
@@ -176,20 +229,27 @@ unsafe fn judge(
     // player may stand on the vehicle whose door they open.
     // SAFETY: forwarded from the caller; the hit was found this tick.
     if let Some(door) = unsafe {
-        doors::reach(
+        doors::observed_reach(
             object,
             body,
             hit,
             palm.centre,
             door_config.reach_m * world_scale,
             door_config,
+            judged.scan,
         )
     } {
         note(format!("{what}, {at}: a door in reach"));
+        if let TargetKind::Door(target) = door.kind {
+            entry.door = Some((target.vehicle, target.slot, target.part_index));
+        }
+        judged.scan.push(entry);
         judged.reaches.push(door);
         return;
     }
     if standing_on == Some(body) {
+        entry.result = ScanResult::StandingOn;
+        judged.scan.push(entry);
         note(format!("{what}, {at}: the player stands on it"));
         return;
     }
@@ -206,19 +266,28 @@ unsafe fn judge(
         (Some(articulated), _) => articulated,
         (None, Ok(kind)) => kind,
         (None, Err(why)) => {
+            entry.result = ScanResult::Unclassified(why);
+            judged.scan.push(entry);
             note(format!("{what}, {at}: not taken, {why}"));
             return;
         }
     };
+    entry.mass_kg = match kind {
+        TargetKind::Prop { mass_kg } | TargetKind::Articulated { mass_kg } => Some(mass_kg),
+        _ => None,
+    };
     if let TargetKind::Prop { mass_kg } = kind
         && !grasp::can_hold(mass_kg, config)
     {
+        entry.result = ScanResult::TooHeavy;
+        judged.scan.push(entry);
         note(format!(
             "{what}, {at}: not taken, {mass_kg:.0} kg is over the {:.0} kg a hand takes",
             config.max_mass_kg
         ));
         return;
     }
+    judged.scan.push(entry);
     note(format!("{what}, {at}: in reach"));
     judged.reaches.push(Reach {
         object,

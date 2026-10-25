@@ -32,6 +32,7 @@ use crate::controllers::{
         },
         grab_view::model::{HandleOutcome, HandleSeen},
         grasp::{Reach, TargetKind},
+        pickup::diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
     },
 };
 
@@ -68,6 +69,13 @@ pub(crate) unsafe fn near(palms: &[Vec3], world_scale: f32) -> Vec<NonZeroUsize>
     out
 }
 
+/// The existing handle readouts and a bounded copy of its evaluated branches.
+pub(crate) struct HandleObservations<'a> {
+    pub notes: &'a mut Vec<String>,
+    pub handles: Option<&'a mut Vec<HandleSeen>>,
+    pub scan: &'a mut Scan,
+}
+
 /// The nearest door handle of `vehicles` a palm at `palm` is within the handle reach of, at the VR
 /// world scale `world_scale`, with `cast` returning the first hit between two points. What each
 /// door near the palm was goes into `notes`, and each handle near it, with how it stood to the
@@ -83,9 +91,14 @@ pub(crate) unsafe fn handle_reach(
     world_scale: f32,
     config: &DoorsConfig,
     cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
-    notes: &mut Vec<String>,
-    mut handles: Option<&mut Vec<HandleSeen>>,
+    observations: HandleObservations<'_>,
 ) -> Option<Reach> {
+    let HandleObservations {
+        notes,
+        mut handles,
+        scan,
+    } = observations;
+    scan.handles_ran = true;
     if let Some(handles) = handles.as_deref_mut() {
         handles.clear();
     }
@@ -107,6 +120,16 @@ pub(crate) unsafe fn handle_reach(
         let doors = unsafe { engine::doors(vehicle) };
         unsafe { log_sources(vehicle, &doors) };
         for door in doors {
+            let mut entry = ScanEntry {
+                branch: Branch::DoorHandle,
+                object: Some(vehicle),
+                body: door.body.map(|(_, body)| body),
+                door: Some((vehicle, door.slot, door.part_index)),
+                point: None,
+                distance: None,
+                mass_kg: None,
+                result: ScanResult::Offered,
+            };
             let what = format!(
                 "vehicle {:#x} {} door{}",
                 vehicle.get(),
@@ -114,11 +137,15 @@ pub(crate) unsafe fn handle_reach(
                 if door.latched { " (shut)" } else { " (open)" }
             );
             let Some(door_box) = door.door_box else {
+                entry.result = ScanResult::NoBox;
+                scan.push(entry);
                 note(notes, format!("{what}: no model box to find its handle on"));
                 continue;
             };
-            let entry = door.part_hash.and_then(table::lookup);
-            let Some(handle) = door_handle(&door_box, kind_of(door.slot), entry) else {
+            let table_entry = door.part_hash.and_then(table::lookup);
+            let Some(handle) = door_handle(&door_box, kind_of(door.slot), table_entry) else {
+                entry.result = ScanResult::NoHandle;
+                scan.push(entry);
                 note(
                     notes,
                     format!("{what}: its box has no faces to find its handle on"),
@@ -126,8 +153,12 @@ pub(crate) unsafe fn handle_reach(
                 continue;
             };
             let distance = palm.distance(handle.point);
+            entry.point = Some(handle.point);
+            entry.distance = Some(distance);
             let mm = |d: f32| d / scale * 1000.0;
             if distance > reach_m {
+                entry.result = ScanResult::OutOfReach;
+                scan.push(entry);
                 if distance <= NOTED_M * scale {
                     seen(handle.point, HandleOutcome::OutOfReach);
                     note(
@@ -144,6 +175,8 @@ pub(crate) unsafe fn handle_reach(
             let Some((object, body, vehicle_body)) =
                 (unsafe { holdable(vehicle, &door, handle.point, handle.normal, palm, cast) })
             else {
+                entry.result = ScanResult::NoBody;
+                scan.push(entry);
                 seen(handle.point, HandleOutcome::NoBody);
                 note(
                     notes,
@@ -154,6 +187,9 @@ pub(crate) unsafe fn handle_reach(
                 );
                 continue;
             };
+            entry.object = Some(object);
+            entry.body = Some(body);
+            scan.push(entry);
             seen(handle.point, HandleOutcome::InReach);
             note(
                 notes,
@@ -183,6 +219,7 @@ pub(crate) unsafe fn handle_reach(
             }
         }
     }
+    scan.handle_selected = best;
     best
 }
 

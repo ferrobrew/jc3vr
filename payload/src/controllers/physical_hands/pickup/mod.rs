@@ -31,6 +31,7 @@
 //! a hand could take, and [`tick`] the simulation tick that drives it; [`grips`] holds the grips a
 //! hand keeps on what it cannot simply carry.
 
+pub(crate) mod diagnostics;
 mod grips;
 mod reach;
 mod state;
@@ -38,11 +39,12 @@ mod tick;
 
 use std::time::Instant;
 
+use diagnostics::{ConsumerResult, InputConsumer, InputContext};
 use glam::Vec3;
 use jc3gi::{
     equipment::weapon::WeaponBase, input::input_action_map::Action, vehicle::vehicle::DoorSlot,
 };
-pub(super) use reach::{REACH_DIRECTIONS, ReachTuning, reach};
+pub(super) use reach::{REACH_DIRECTIONS, ReachObservations, ReachTuning, reach};
 use state::{Held, HeldKind};
 pub(super) use state::{PickupState, Request};
 pub(super) use tick::{JointInputs, TickInputs, TickOutcome, tick};
@@ -129,7 +131,11 @@ pub struct PickupStatus {
 /// Act on the input tick's pickup grabs and grip releases: a grab of a weapon clicks the game's
 /// use-item action into `desired`, a grab of an object asks the next simulation tick to take hold
 /// of it, and a released grip asks it to let go. Called from the input tick after the tables.
-pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
+pub(crate) fn finish_tick(
+    inputs: &FinishInputs,
+    desired: &mut Vec<Desired>,
+    context: &InputContext,
+) {
     let mut state = STATE.lock();
     state.pickup.input_at = Some(Instant::now());
     let fresh = state.fresh(Instant::now());
@@ -150,22 +156,39 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     }
     for hand in Hand::BOTH {
         let i = hand.index();
+        let observation = context.hands[i];
         if !inputs.grips[i].held() {
+            diagnostics::input_consumer(hand, observation, InputConsumer::GripOpen);
             if state.pickup.held[i].is_some()
-                || matches!(state.pickup.requests[i], Some(Request::Grab(_)))
+                || state.pickup.requests[i].is_some_and(|request| request.grab().is_some())
             {
-                state.pickup.requests[i] = Some(Request::Release);
+                state.pickup.replace_request(
+                    hand,
+                    Some(Request::Release),
+                    ConsumerResult::Replaced,
+                );
             }
             continue;
         }
         if !matches!(inputs.grabs[i], Some(GrabVolume::Pickup(_))) {
+            diagnostics::input_consumer(hand, observation, InputConsumer::NotPickup);
             continue;
         }
         let Some(reach) = state.status.hands[i].reach.filter(|_| fresh) else {
+            diagnostics::input_consumer(
+                hand,
+                observation,
+                if fresh {
+                    InputConsumer::NoReach
+                } else {
+                    InputConsumer::StaleReach
+                },
+            );
             continue;
         };
         match reach.kind {
             TargetKind::Weapon => {
+                diagnostics::input_consumer(hand, observation, InputConsumer::WeaponPath);
                 weapons.push((hand, reach));
                 state.status.pickup.weapons += 1;
                 pulses.push(hand);
@@ -174,7 +197,12 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             | TargetKind::Articulated { .. }
             | TargetKind::Door(_)
             | TargetKind::Character(_) => {
-                state.pickup.requests[i] = Some(Request::Grab(reach));
+                let key = diagnostics::queued(hand, observation, reach);
+                state.pickup.replace_request(
+                    hand,
+                    Some(Request::ObservedGrab(key)),
+                    ConsumerResult::Replaced,
+                );
             }
         }
     }

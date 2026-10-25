@@ -4,7 +4,10 @@ use std::num::NonZeroUsize;
 
 use glam::Vec3;
 
-use crate::controllers::physical_hands::doors::{engine::DoorRead, geometry::DoorReach};
+use crate::controllers::physical_hands::{
+    doors::{engine::DoorRead, geometry::DoorReach},
+    pickup::diagnostics::scan::{Scan, ScanEntry, ScanResult},
+};
 
 /// The body offered by a reached panel.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -62,6 +65,29 @@ pub(crate) fn panel(
     })
 }
 
+/// Apply the production panel rules and retain their exact result.
+pub(crate) fn observed_panel(
+    door: &DoorRead,
+    palm: Vec3,
+    reach_m: f32,
+    handle_share: f32,
+    vehicle_origin: Vec3,
+    mut entry: ScanEntry,
+    scan: &mut Scan,
+) -> Result<PanelAcquisition, PanelRefusal> {
+    let result = panel(door, palm, reach_m, handle_share, vehicle_origin);
+    match result {
+        Ok(acquired) => {
+            entry.point = Some(acquired.reach.point);
+            entry.distance = Some(acquired.reach.distance);
+            entry.result = ScanResult::Offered;
+        }
+        Err(refusal) => entry.result = ScanResult::PanelRefused(refusal),
+    }
+    scan.push(entry);
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use glam::Mat4;
@@ -84,6 +110,42 @@ mod tests {
             body: (!latched).then_some((NonZeroUsize::new(8).unwrap(), 3)),
             part_hash: None,
         }
+    }
+
+    #[test]
+    fn observed_panel_retains_the_exact_production_acquisition_result() {
+        let door = door(true);
+        let mut scan = Scan::new();
+        let entry = ScanEntry {
+            branch:
+                crate::controllers::physical_hands::pickup::diagnostics::scan::Branch::DoorPanel,
+            object: NonZeroUsize::new(8),
+            body: Some(3),
+            door: Some((NonZeroUsize::new(8).unwrap(), door.slot, door.part_index)),
+            point: None,
+            distance: None,
+            mass_kg: None,
+            result: ScanResult::Offered,
+        };
+        let refused = observed_panel(&door, Vec3::ZERO, 0.1, 0.7, Vec3::ZERO, entry, &mut scan);
+        assert_eq!(refused, Err(PanelRefusal::HandleRequired));
+        assert_eq!(
+            scan.entries[0].unwrap().result,
+            ScanResult::PanelRefused(PanelRefusal::HandleRequired)
+        );
+        let accepted = observed_panel(
+            &door,
+            Vec3::new(0.1, 1.0, 1.0),
+            0.1,
+            0.7,
+            Vec3::ZERO,
+            entry,
+            &mut scan,
+        )
+        .unwrap();
+        assert_eq!(scan.entries[1].unwrap().result, ScanResult::Offered);
+        assert_eq!(scan.entries[1].unwrap().point, Some(accepted.reach.point));
+        assert_eq!(scan.entries[1].unwrap().door, entry.door);
     }
 
     #[test]

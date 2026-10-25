@@ -188,6 +188,16 @@ The palms' settings are `physical_hands` in the controller settings, under "Phys
 
 The collider view ([collider-view.md](collider-view.md), `physical_hands.collider_view`, Ctrl+Numpad0) draws the hand bodies with every other body near the player: their boxes and capsules, their joints, and the contacts they start.
 
+### Interaction evidence
+
+`controllers::physical_hands::pickup::diagnostics::status()` returns copied, bounded evidence for both hands. Each hand retains its latest input observation, its last grip press, and four queued-request records. Each input observation holds at most eight resolver candidates and twelve scan entries, with omitted and evicted counts. The readout is a leaf slot. Its writers do not format or log while the physical-hand or bindings guards are held. A consumer copies the slot, then formats the returned values after the call.
+
+The input caller passes the captured `ControllerFrame::sequence`, the actual resolver result, the grip controls, the latches, and the routed grabs. The provider copies each hand's scan under the same physical-hand state guard as its target. The scan retains the actual ray, press, door-panel, and door-handle branches, their offered or refused results, and the ray, handle, and combined selected reaches. Target and request records retain the observed object/body identity, and door reaches also retain the vehicle, slot, and part through `DoorTarget`. A missing scan or provider identity means unavailable evidence, not an observed absence. Scan entries are evaluated candidates, not proof that a particular candidate became the provider's target; the selected reaches and resolver indices preserve that distinction.
+
+Each queued local request carries the input sequence, a per-hand grip episode, a request ordinal, and the exact reach read by the pickup finisher. The simulation consumer records its actual no-palm, latch, character, body, or mass-check result against that key. Queue replacement and stale-input clearing retain their own results. Remote grabs do not inherit a local request's key. Request ordinal and grip episode distinguish multiple operations using the same controller publication. No timestamp is used as identity.
+
+An accepted carried hold can retain the existing body snapshot, the solver's requested velocities, the existing drive call's result, and the hold report. A joined hold retains the body snapshot and report without a commanded velocity. These records add no engine reads, force changes, or post-step observations. A successful drive call does not prove that the body lifted, and a later velocity difference does not identify another writer. No overwrite conclusion is recorded.
+
 ## Unverified in the headset
 
 - That the callback fires once per simulation tick, on the game thread, and that the bodies are created with the weapons layer in the player's system group (the readout's filter word against the player's group).

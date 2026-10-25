@@ -113,19 +113,21 @@ pub fn losers(reaches: &[Reach], chosen: Reach) -> Vec<(Reach, Lost)> {
     reaches
         .iter()
         .filter(|r| r.index != chosen.index)
-        .map(|r| {
-            let lost = if r.tier == Tier::Touch {
-                Lost::Touch
-            } else if r.tier == Tier::Remote && chosen.tier != Tier::Remote {
-                Lost::Remote
-            } else if r.tier > chosen.tier {
-                Lost::Fallback
-            } else {
-                Lost::Farther(r.distance - chosen.distance)
-            };
-            (*r, lost)
-        })
+        .map(|r| (*r, lost_to(*r, chosen)))
         .collect()
+}
+
+/// Why a reached candidate lost to the resolver's actual chosen candidate.
+pub(crate) fn lost_to(reach: Reach, chosen: Reach) -> Lost {
+    if reach.tier == Tier::Touch {
+        Lost::Touch
+    } else if reach.tier == Tier::Remote && chosen.tier != Tier::Remote {
+        Lost::Remote
+    } else if reach.tier > chosen.tier {
+        Lost::Fallback
+    } else {
+        Lost::Farther(reach.distance - chosen.distance)
+    }
 }
 
 /// The socket something a hand holds docks in when its grip opens: of the targets `hand`, with its

@@ -387,9 +387,11 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     let active = hands::active_hands_raw();
     let mut provided = Provided::targets(start.targets);
     provided.extend(Provided::targets(vehicle.targets));
+    let mut interaction_scans = [None; 2];
     if !in_menu {
         provided.extend(physical_hands::targets(
             active.as_ref().map_or(1.0, |a| a.world_scale),
+            &mut interaction_scans,
         ));
     }
     let profiles = Hand::BOTH.map(|hand| frame.hand(hand).profile);
@@ -557,6 +559,16 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     if step.sight_capture {
         sights::tuning::request_capture();
     }
+    let interaction_context = physical_hands::pickup::diagnostics::input(
+        frame.sequence,
+        &targets,
+        physical_hands::pickup::diagnostics::InputState {
+            grips: controls.hands.map(|h| h.grip),
+            latches: state.bindings.grip_latches(),
+            grabs: step.grabs,
+        },
+        interaction_scans,
+    );
     let summary_before = summary::BeforeFinish::capture();
     let mut trigger_changed = [false; 2];
     if !in_menu {
@@ -601,6 +613,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
                 ..finish
             },
             &mut step.desired,
+            &interaction_context,
         );
         if let Some(value) = physical_grapple.retract {
             step.desired.push(Desired {

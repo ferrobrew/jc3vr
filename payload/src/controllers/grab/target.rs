@@ -24,6 +24,8 @@ pub struct GripTarget {
     pub held_by: Option<Hand>,
     /// How its marker is drawn.
     pub mark: Mark,
+    /// The physical provider's already-observed target, when supplied. Diagnostic only.
+    pub(crate) observed: Option<crate::controllers::physical_hands::grasp::Reach>,
 }
 
 impl GripTarget {
@@ -43,6 +45,7 @@ impl GripTarget {
             reach: TargetReach::Sphere { centre, radius },
             held_by: None,
             mark,
+            observed: None,
         }
     }
 
@@ -55,6 +58,7 @@ impl GripTarget {
             reach: TargetReach::Measured { distance },
             held_by: None,
             mark,
+            observed: None,
         }
     }
 

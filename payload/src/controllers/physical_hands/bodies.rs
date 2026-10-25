@@ -110,7 +110,7 @@ pub(super) unsafe fn classify(object: NonZeroUsize, body: u32) -> Result<TargetK
 
 /// Why a reached object is no loose object for a hand.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(super) enum Unclassified {
+pub(crate) enum Unclassified {
     /// A weapon in this state (raw), not lying dropped in the world.
     WeaponNotDropped(i32),
     /// The reached body cannot be read as a loose one: static, keyframed, or gone.

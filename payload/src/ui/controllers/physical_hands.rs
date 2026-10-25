@@ -12,6 +12,7 @@ use crate::{
             config::{PickupConfig, ShoveConfig},
             doors::{self, DoorsConfig},
             grasp::TargetKind,
+            pickup::diagnostics,
             sounds::{ImpactSoundsConfig, SoundsStatus},
             vault::{VaultConfig, VaultStatus},
         },
@@ -20,6 +21,30 @@ use crate::{
 };
 
 pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) {
+    ui.collapsing("Grip acquisition evidence (read-only)", |ui| {
+        let evidence = diagnostics::status();
+        ui.small("Retained observations identify acquisition stages. Missing provider data is not a scan miss. Drive commands and write results are not post-step motion or proof of an overwrite.");
+        for hand in Hand::BOTH {
+            let observed = &evidence.hands[hand.index()];
+            ui.collapsing(format!("{} hand", hand.label()), |ui| {
+                ui.label(format!("Evicted request records: {}.", observed.evicted));
+                ui.collapsing("Latest input and scan", |ui| {
+                    ui.monospace(format!("{:#?}", observed.latest));
+                });
+                ui.collapsing("Last grip press", |ui| {
+                    ui.monospace(format!("{:#?}", observed.last_press));
+                });
+                for request in observed.requests.iter().flatten() {
+                    ui.collapsing(format!(
+                        "Request {}: sample {}, grip episode {}",
+                        request.key.request, request.key.sequence, request.key.episode,
+                    ), |ui| {
+                        ui.monospace(format!("{request:#?}"));
+                    });
+                }
+            });
+        }
+    });
     match status.idle {
         Some(idle) => ui.label(format!("Idle: {}", idle.label())),
         None => ui.label(format!(

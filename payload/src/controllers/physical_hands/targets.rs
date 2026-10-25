@@ -16,6 +16,7 @@ use crate::{
         physical_hands::{
             STATE, climb,
             grasp::{Reach, TargetKind},
+            pickup::diagnostics::scan::Scan,
             stunt,
         },
     },
@@ -23,7 +24,8 @@ use crate::{
 
 /// The physical hands' targets for this input tick, with the reach's notes for each hand, at the VR
 /// world scale `world_scale`.
-pub(crate) fn targets(world_scale: f32) -> Provided {
+pub(crate) fn targets(world_scale: f32, scans: &mut [Option<Scan>; 2]) -> Provided {
+    *scans = [None; 2];
     let config = Config::lock_query(|c| c.controllers.physical_hands);
     let scale = world_scale.max(1e-3);
     let mut out = Provided::default();
@@ -42,6 +44,7 @@ pub(crate) fn targets(world_scale: f32) -> Provided {
             if !config.pickup.enabled {
                 continue;
             }
+            scans[i] = Some(state.pickup.scans[i]);
             let status = &state.status.hands[i];
             if let (Some(held), Some(kind)) = (status.held, state.pickup.held_kind(hand)) {
                 out.targets.push(
@@ -99,12 +102,14 @@ fn reach_target(hand: Hand, reach: &Reach, scale: f32) -> GripTarget {
         Some(normal) => mark.on_surface(normal),
         None => mark,
     };
-    GripTarget::measured(
+    let mut target = GripTarget::measured(
         GrabVolume::Pickup(kind_of(&reach.kind)),
         hand,
         reach.distance / scale,
         mark,
-    )
+    );
+    target.observed = Some(*reach);
+    target
 }
 
 /// The kind of target a reach's object is.
