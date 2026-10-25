@@ -46,6 +46,39 @@ pub(crate) fn replay_feature(ui: &mut egui::Ui) {
         .show(ui, signals_ui);
 }
 
+pub(crate) fn replay_status(ui: &mut egui::Ui) {
+    let status = replay::status();
+    ui.label(match status.phase {
+        Phase::Idle => "idle".to_owned(),
+        Phase::Loading => "loading".to_owned(),
+        Phase::Teleporting => "teleporting to the start".to_owned(),
+        Phase::Playing => format!(
+            "playing frame {} of {}, {:.1} s",
+            status.frame,
+            status.frames,
+            status.elapsed.as_secs_f32()
+        ),
+    });
+    for warning in &status.warnings {
+        ui.colored_label(Color32::YELLOW, warning);
+    }
+    match &status.last {
+        Some(ReplayOutcome::Completed { frames, duration }) => {
+            ui.label(format!(
+                "Last replay: {frames} frames in {:.1} s",
+                duration.as_secs_f32()
+            ));
+        }
+        Some(ReplayOutcome::Stopped) => {
+            ui.label("Last replay: stopped");
+        }
+        Some(ReplayOutcome::Failed(error)) => {
+            ui.colored_label(Color32::LIGHT_RED, error.to_string());
+        }
+        None => {}
+    }
+}
+
 fn recording_ui(ui: &mut egui::Ui) {
     let status = tracking::status();
     ui.horizontal(|ui| {
@@ -151,36 +184,7 @@ fn replay_ui(ui: &mut egui::Ui) {
         } else if ui.button("Stop").clicked() {
             replay::stop();
         }
-        ui.label(match status.phase {
-            Phase::Idle => "idle".to_owned(),
-            Phase::Loading => "loading".to_owned(),
-            Phase::Teleporting => "teleporting to the start".to_owned(),
-            Phase::Playing => format!(
-                "playing frame {} of {}, {:.1} s",
-                status.frame,
-                status.frames,
-                status.elapsed.as_secs_f32()
-            ),
-        });
     });
-    for warning in &status.warnings {
-        ui.colored_label(Color32::YELLOW, warning);
-    }
-    match &status.last {
-        Some(ReplayOutcome::Completed { frames, duration }) => {
-            ui.label(format!(
-                "Last replay: {frames} frames in {:.1} s",
-                duration.as_secs_f32()
-            ));
-        }
-        Some(ReplayOutcome::Stopped) => {
-            ui.label("Last replay: stopped");
-        }
-        Some(ReplayOutcome::Failed(error)) => {
-            ui.colored_label(Color32::LIGHT_RED, error.to_string());
-        }
-        None => {}
-    }
     ui.label(
         "Plays the recording's head and controllers in place of the headset's, with or without a \
          session. Ctrl+Numpad* replays the last recording or stops.",

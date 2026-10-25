@@ -10,6 +10,9 @@ mod environment_tests;
 #[path = "dispatch/hud_tests.rs"]
 mod hud_tests;
 #[cfg(test)]
+#[path = "dispatch/replay_tests.rs"]
+mod replay_tests;
+#[cfg(test)]
 #[path = "dispatch/tests.rs"]
 mod tests;
 #[cfg(test)]
@@ -122,6 +125,7 @@ pub(crate) fn feature(
             testing::tracking_feature(ui)
         }
         FeatureRoute::Replay if section == FeatureSection::Controls => testing::replay_feature(ui),
+        FeatureRoute::Replay if section == FeatureSection::Status => testing::replay_status(ui),
         FeatureRoute::Director if section == FeatureSection::Controls => director::feature(ui, id),
         FeatureRoute::Director
             if id == FeatureId::DirectorSafety && section == FeatureSection::Status =>
