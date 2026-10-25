@@ -236,6 +236,14 @@ impl PfxBreakable {
     /// on its hinge; otherwise the part breaks off. A part already hanging by its constraint
     /// ([`PartInstance::IsConstraintActive`](crate::vehicle::parts::PartInstance::IsConstraintActive)) is left alone with `keep_constraint`, and broken off
     /// without it. Runs synchronously on the calling thread, outside the physics step.
+    /// On successful vehicle-part creation, `CVehicle::SpawnPhysicalPart` retains the new
+    /// object in the vehicle's part collection and stores a weak reference in the matching
+    /// [`DoorInfo`](crate::vehicle::vehicle::DoorInfo), setting its state to
+    /// [`DOOR_OPEN`](crate::vehicle::vehicle::DoorState::DOOR_OPEN) before returning. This publication
+    /// precedes constraint cloning and the loosened event; it does not depend on that event.
+    /// The part then disables its merged world-collision and raycast shapes in favor of its
+    /// newly created bodies. No door animation starts unless the door controller processes
+    /// a pending opening or closing request.
     pub unsafe fn EnablePart(
         &mut self,
         part: *mut crate::vehicle::parts::PartInstance,

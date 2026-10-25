@@ -73,6 +73,10 @@ pub struct DoorInfo {
     /// The state the controller moves the door to on its next update, or
     /// [`DoorState::DOOR_CLOSED`](crate::vehicle::vehicle::DoorState::DOOR_CLOSED) when nothing is pending.
     pub m_PendingState: crate::vehicle::vehicle::DoorState,
+    /// The current state. Successful `CVehicle::SpawnPhysicalPart` stores the spawned door
+    /// object's weak reference in this entry and sets this to [`DoorState::DOOR_OPEN`](crate::vehicle::vehicle::DoorState::DOOR_OPEN)
+    /// before the part's loosened event. The next post-simulation update replaces it with
+    /// an opening or closing state only when a matching pending request starts an animation.
     pub m_State: crate::vehicle::vehicle::DoorState,
     pub m_DoorSlot: crate::vehicle::vehicle::DoorSlot,
     _field_c: [u8; 4],
