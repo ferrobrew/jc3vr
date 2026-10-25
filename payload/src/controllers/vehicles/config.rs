@@ -37,6 +37,8 @@ pub struct VehiclesConfig {
     pub physical: PhysicalControlsConfig,
     /// The arm-pose steering of the wingsuit.
     pub arm_steering: ArmSteeringConfig,
+    /// Fresh-pose wingsuit deployment, bilateral withdrawal, and palms-forward braking.
+    pub wingsuit_gestures: WingsuitGesturesConfig,
     /// The parachute's handles, grabbed and pulled to steer and brake.
     pub parachute_handles: ParachuteHandlesConfig,
     /// The driver's view moved per vehicle to a standard place behind the wheel.
@@ -52,6 +54,7 @@ impl VehiclesConfig {
             mounted: MountedConfig::new(),
             physical: PhysicalControlsConfig::new(),
             arm_steering: ArmSteeringConfig::new(),
+            wingsuit_gestures: WingsuitGesturesConfig::new(),
             parachute_handles: ParachuteHandlesConfig::new(),
             driving_view: DrivingViewConfig::new(),
         }
@@ -485,6 +488,91 @@ impl LeverAxis {
             LeverAxis::Vertical => Vec3::Y,
             LeverAxis::ForeAft => Vec3::NEG_Z,
         }
+    }
+}
+
+/// The bilateral wingsuit gestures. Distances are shares of the calibrated arm span.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WingsuitGesturesConfig {
+    pub enabled: bool,
+    /// Each wrist's minimum outward distance from its own shoulder for a flight pose.
+    pub flight_lateral_span: f32,
+    /// Maximum arm angle away from the outward horizontal direction for a fresh flight pose.
+    pub flight_angle_deg: f32,
+    /// Each wrist must be this close laterally before withdrawal qualifies.
+    pub withdraw_lateral_span: f32,
+    /// Each wrist qualifies as withdrawn when lowered this far below its shoulder.
+    pub withdraw_lowered_span: f32,
+    /// A tucked wrist also qualifies within this shoulder distance, without lowering the arm.
+    pub withdraw_reach_span: f32,
+    /// The lateral margin that keeps an active brake from flickering near its spread threshold.
+    pub pose_hysteresis_span: f32,
+    /// Maximum angle between each palm normal and the torso's forward direction to enter braking.
+    pub brake_angle_deg: f32,
+    /// Additional palm angle allowed while braking.
+    pub brake_hysteresis_deg: f32,
+    /// Palm-forward alignment below this releases reserved pitch after braking.
+    pub pitch_release_alignment: f32,
+    pub neutral_dwell_s: f32,
+    pub flight_dwell_s: f32,
+    pub close_dwell_s: f32,
+    pub brake_dwell_s: f32,
+    /// A larger pose-time gap invalidates all pending gestures.
+    pub max_sample_gap_s: f32,
+}
+
+impl WingsuitGesturesConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            flight_lateral_span: 0.23,
+            flight_angle_deg: 35.0,
+            withdraw_lateral_span: 0.10,
+            withdraw_lowered_span: 0.18,
+            withdraw_reach_span: 0.24,
+            pose_hysteresis_span: 0.03,
+            brake_angle_deg: 35.0,
+            brake_hysteresis_deg: 12.0,
+            pitch_release_alignment: 0.25,
+            neutral_dwell_s: 0.12,
+            flight_dwell_s: 0.20,
+            close_dwell_s: 0.30,
+            brake_dwell_s: 0.12,
+            max_sample_gap_s: 0.20,
+        }
+    }
+
+    /// Whether the tuning is finite, bounded, and keeps withdrawal outside the flight deadzone.
+    /// Invalid saved tuning disables gesture output rather than clamping a toggle threshold.
+    pub fn valid(&self) -> bool {
+        let bounded = |value: f32, low, high| value.is_finite() && (low..=high).contains(&value);
+        bounded(self.flight_lateral_span, 0.15, 0.40)
+            && bounded(self.flight_angle_deg, 15.0, 60.0)
+            && bounded(self.withdraw_lateral_span, 0.0, 0.18)
+            && bounded(self.withdraw_lowered_span, 0.10, 0.35)
+            && bounded(self.withdraw_reach_span, 0.10, 0.35)
+            && bounded(self.pose_hysteresis_span, 0.01, 0.08)
+            && self.withdraw_lateral_span + self.pose_hysteresis_span < self.flight_lateral_span
+            && bounded(self.brake_angle_deg, 15.0, 60.0)
+            && bounded(self.brake_hysteresis_deg, 2.0, 20.0)
+            && self.brake_angle_deg + self.brake_hysteresis_deg <= 80.0
+            && bounded(self.pitch_release_alignment, 0.0, 0.40)
+            && self.pitch_release_alignment
+                < (self.brake_angle_deg + self.brake_hysteresis_deg)
+                    .to_radians()
+                    .cos()
+            && bounded(self.neutral_dwell_s, 0.05, 0.50)
+            && bounded(self.flight_dwell_s, 0.10, 1.0)
+            && bounded(self.close_dwell_s, 0.15, 1.0)
+            && bounded(self.brake_dwell_s, 0.05, 0.50)
+            && bounded(self.max_sample_gap_s, 0.05, 0.50)
+    }
+}
+
+impl Default for WingsuitGesturesConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

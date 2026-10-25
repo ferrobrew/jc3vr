@@ -151,6 +151,7 @@ impl InputState {
     }
 
     fn clear_published() {
+        crate::vr::input::flight_pose::unavailable();
         frame::clear();
         semantic::frame::clear();
         sources::clear();

@@ -26,6 +26,7 @@ use crate::{
             PROFILES_DIRTY, STATUS,
             actions::{SetId, State},
             active_action_set,
+            flight_pose::{self, PendingHead},
             layout::{BoolInput, FloatInput, HandsAction, Vec2Input},
             replay,
             self_check::CheckFrame,
@@ -54,8 +55,10 @@ impl InputState {
         time: xr::Time,
         baseline: Option<Baseline>,
         cfg: &ControllersConfig,
+        flight_head: Option<PendingHead>,
     ) {
         if !cfg.enabled {
+            flight_pose::unavailable();
             history::interrupt(DiscontinuityReason::Unavailable);
             frame::clear();
             semantic_frame::clear();
@@ -70,6 +73,7 @@ impl InputState {
             Ok(focused) => focused,
             Err(e) => {
                 self.note_failure(&e);
+                flight_pose::unavailable();
                 history::interrupt(DiscontinuityReason::Unavailable);
                 frame::clear();
                 semantic_frame::clear();
@@ -93,6 +97,7 @@ impl InputState {
         // A replay's recorded frames stand in for the sampled ones. The actions are still synced,
         // which keeps the session's input healthy, and the haptics still reach the controllers.
         if replay::publish_replayed(cfg) {
+            flight_pose::unavailable();
             match self.flush_haptics(session, cfg) {
                 Ok(()) => self.note_success(),
                 Err(e) => self.note_failure(&e),
@@ -194,7 +199,17 @@ impl InputState {
                 config: &cfg.input,
             });
         }
+        let flight_controllers = flight_head
+            .as_ref()
+            .filter(|_| first_error.is_none())
+            .map(|_| frame.clone());
         let (frame_sequence, published_at) = frame::publish(frame);
+        match (flight_head, flight_controllers) {
+            (Some(head), Some(controllers)) => {
+                flight_pose::complete(head, controllers, (frame_sequence, published_at));
+            }
+            _ => flight_pose::unavailable(),
+        }
         semantic.published_at = published_at;
         semantic_frame::publish(semantic);
         history::publish_observation(

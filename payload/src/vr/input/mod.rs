@@ -59,6 +59,7 @@
 //! publication.
 
 pub(crate) mod actions;
+pub(crate) mod flight_pose;
 pub(crate) mod layout;
 mod replay;
 pub mod restart;

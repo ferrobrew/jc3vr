@@ -71,6 +71,7 @@ mod types;
 pub mod wheel;
 pub mod wheel_render;
 mod wing_guide;
+pub(crate) mod wingsuit_gestures;
 
 use re_utilities::hook_library::HookLibrary;
 

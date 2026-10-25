@@ -10,7 +10,11 @@ use parking_lot::Mutex;
 use crate::{
     config::Config,
     recorder::tracking::format::RecenterEvent,
-    vr::{is_running, state::lock_state},
+    vr::{
+        input::flight_pose::{self, EpochChange},
+        is_running,
+        state::lock_state,
+    },
 };
 
 /// Recenter the cockpit: re-base the stored baseline from the latest located VIEW-space pose, taking
@@ -98,6 +102,7 @@ fn recenter_as(kind: RecenterKind, cause: RecenterCause) {
                 (RecenterKind::YawAndHeight, Some(previous)) => fresh.keeping_horizontal(previous),
                 _ => fresh,
             });
+            flight_pose::source_changed(EpochChange::Recenter);
             drop(state);
             // The cockpit frame turns by the yaw change: new frame from old.
             let turn = previous.map_or(glam::Quat::IDENTITY, |p| fresh.yaw.conjugate() * p.yaw);
@@ -115,6 +120,7 @@ fn recenter_as(kind: RecenterKind, cause: RecenterCause) {
 /// which the recorded poses already carry. Game thread, at the top of the frame, like a live
 /// recenter.
 pub(crate) fn apply_replayed_recenter(kind: RecenterKind, cause: RecenterCause, turn: glam::Quat) {
+    flight_pose::source_changed(EpochChange::Recenter);
     rebased(kind, cause, turn);
     tracing::info!(target: "vr", ?kind, ?cause, "replayed a recenter of the cockpit baseline");
 }
@@ -181,6 +187,7 @@ fn service_follow_bank() {
             yaw: glam::Quat::IDENTITY,
         });
         baseline.yaw = (baseline.yaw * rotation).normalize();
+        flight_pose::source_changed(EpochChange::FollowBank);
     }
     // The cockpit frame turns by the inverse: new frame from old.
     let turn = rotation.conjugate();

@@ -14,7 +14,9 @@ use crate::{
     controllers::frame as controller_frame,
     frame_timing::{self, Slot},
     vr::{
-        Fov, FreezeMode, OffAxisProjection, VIEW_TYPE, VrConfig, pose_control,
+        Fov, FreezeMode, OffAxisProjection, VIEW_TYPE, VrConfig,
+        input::flight_pose::{self, LocatedHead},
+        pose_control,
         recenter::mid_pose,
         replay, stage,
         state::{VrState, lock_state},
@@ -43,6 +45,7 @@ pub fn frame_begin() -> Option<FrameContext> {
     // No controller frame is sampled on either early return, so the last one published must not
     // keep standing for the controllers' state.
     if !guard.is_running() {
+        flight_pose::unavailable();
         controller_frame::clear();
         return None;
     }
@@ -63,6 +66,7 @@ pub fn frame_begin() -> Option<FrameContext> {
             })
         }
         Err(e) => {
+            flight_pose::unavailable();
             controller_frame::clear();
             let count = FRAME_BEGIN_FAIL_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
             // This runs once a frame, so a session state that fails `wait_frame`/`begin_frame`
@@ -233,6 +237,7 @@ impl VrState {
     /// Begin a frame and locate the per-eye views, re-based into the cockpit frame. Updates the
     /// latest head pose (for [`crate::vr::recenter`]) from the mid-eye pose.
     fn begin_frame(&mut self, cfg: &VrConfig) -> anyhow::Result<FrameData> {
+        flight_pose::unavailable();
         let _timing = frame_timing::scope(Slot::VrBeginFrame);
         let session = self
             .session
@@ -283,6 +288,7 @@ impl VrState {
         let mut head_pose = None;
         let mut head_tracked = false;
         let mut located = false;
+        let mut flight_head = None;
         if frame_state.should_render {
             let (view_flags, views) = session
                 .handle
@@ -338,9 +344,15 @@ impl VrState {
                         ),
                     };
                 }
+                flight_head = Some(LocatedHead {
+                    eyes: eyes.map(|eye| eye.pose),
+                    flags: view_flags,
+                    display_time_ns: frame_state.predicted_display_time.as_nanos(),
+                });
                 located = true;
             }
         }
+        let flight_head = flight_pose::begin_located(flight_head);
         if located {
             replay::replace_located_head(&mut eyes);
         }
@@ -370,7 +382,10 @@ impl VrState {
                 frame_state.predicted_display_time,
                 self.baseline,
                 &controllers,
+                flight_head,
             );
+        } else {
+            flight_pose::unavailable();
         }
 
         // After the controllers, so the frame records what the input update published.

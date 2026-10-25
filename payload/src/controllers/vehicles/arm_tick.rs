@@ -34,6 +34,7 @@ pub(super) fn arm_tick(
     desired: &mut Vec<Desired>,
     last: Option<Option<Vec2>>,
     aiming: bool,
+    reserve_brake_pitch: bool,
 ) -> Option<ArmReadout> {
     let config = &active.config.vehicles.arm_steering;
     if !arms_act(mode, &active.config) {
@@ -61,7 +62,8 @@ pub(super) fn arm_tick(
     let pose = arm::arm_pose(hands, &body);
     let held = last.flatten();
     let engaged = held.is_some();
-    let arms = arm::hold_while_aiming(arm::steer(&pose, config, engaged), held, aiming);
+    let fresh = arm::reserve_brake_pitch(arm::steer(&pose, config, engaged), reserve_brake_pitch);
+    let arms = arm::hold_while_aiming(fresh, held, aiming);
     let stick = controls.off().stick;
     let written = arm::combine(stick, arms);
     write_move(desired, written);

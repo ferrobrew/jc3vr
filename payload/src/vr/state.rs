@@ -29,7 +29,10 @@ use crate::{
         VIEW_TYPE, VrConfig, blit,
         eye_resolution::scaled_eye_size,
         foveation,
-        input::{self, InputState},
+        input::{
+            self, InputState,
+            flight_pose::{self, EpochChange},
+        },
         loader::{LoaderUnavailable, load_entry},
         mirror,
         persist::{
@@ -662,6 +665,7 @@ impl VrState {
             input::clear_stash();
         }
         self.system = None;
+        flight_pose::source_changed(EpochChange::RuntimeReset);
         self.baseline = None;
         self.latest_head_pose = None;
         stage::clear();

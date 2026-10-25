@@ -158,6 +158,11 @@ pub fn hold_while_aiming(fresh: Option<Vec2>, held: Option<Vec2>, aiming: bool) 
     if aiming { held } else { fresh }
 }
 
+/// Reserve the pitch motion for braking while retaining the bilateral bank and stick fallback.
+pub fn reserve_brake_pitch(arms: Option<Vec2>, reserve: bool) -> Option<Vec2> {
+    arms.map(|value| if reserve { value.with_y(0.0) } else { value })
+}
+
 /// Combine the stick with the arms: their sum, each axis limited to `-1..=1`.
 pub fn combine(stick: Vec2, arms: Option<Vec2>) -> Vec2 {
     (stick + arms.unwrap_or(Vec2::ZERO)).clamp(Vec2::NEG_ONE, Vec2::ONE)

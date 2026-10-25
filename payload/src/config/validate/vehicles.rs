@@ -10,6 +10,11 @@ use crate::{
 
 /// Check the vehicle settings. Paths are relative to `controllers.vehicles`.
 pub(super) fn vehicles(v: &VehiclesConfig) -> Result<(), Invalid> {
+    if !v.wingsuit_gestures.valid() {
+        return Err(Invalid(
+            "vehicles.wingsuit_gestures must have finite, bounded, consistent thresholds".into(),
+        ));
+    }
     positive("vehicles.mounted.min_lever_m", v.mounted.min_lever_m, 10.0)?;
     physical_wheel(&v.physical.wheel)?;
     vec3(
@@ -197,4 +202,19 @@ fn lever(name: &str, position: Vec3, travel: f32, detent: f32) -> Result<(), Inv
     vec3(name, position, 10.0)?;
     positive(&format!("{name}.travel_m"), travel, 10.0)?;
     range(&format!("{name}.detent"), detent, 0.0, 1.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{config::validate::controllers, controllers::config::ControllersConfig};
+
+    #[test]
+    fn invalid_wingsuit_thresholds_reach_the_controller_validator() {
+        let mut config = ControllersConfig::default();
+        assert!(controllers(&config).is_ok());
+        config.vehicles.wingsuit_gestures.enabled = false;
+        config.vehicles.wingsuit_gestures.brake_angle_deg = f32::NAN;
+        let error = controllers(&config).unwrap_err();
+        assert!(error.0.starts_with("vehicles.wingsuit_gestures "));
+    }
 }
