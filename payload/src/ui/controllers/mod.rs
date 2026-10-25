@@ -261,8 +261,8 @@ fn status(ui: &mut Ui, id: FeatureId) {
         FeatureId::Inventory => {
             inventory::inventory_readout(
                 ui,
-                &controller_inventory::status(),
-                &controller_inventory::restore::status(),
+                controller_inventory::peek_status(),
+                controller_inventory::restore::peek_status(),
             );
             ui.separator();
             loadout::live_readout(ui, &loadout_live::status());

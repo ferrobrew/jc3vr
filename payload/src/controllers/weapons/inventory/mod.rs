@@ -48,7 +48,13 @@ pub mod sockets;
 pub mod traversal;
 mod world;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
+    time::Instant,
+};
 
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
@@ -121,6 +127,38 @@ impl InventoryStatus {
 
 pub fn status() -> InventoryStatus {
     STATE.lock().status.clone()
+}
+
+/// Why a UI snapshot cannot be read without waiting.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum StatusUnavailable {
+    /// No owner has published a snapshot yet.
+    Uninitialized,
+    /// The publication is being replaced.
+    Busy,
+}
+
+/// The last completed inventory readout, with no engine references or owner guards.
+#[derive(Debug)]
+pub(crate) struct InventoryReadout {
+    pub status: InventoryStatus,
+    pub published_at: Instant,
+    revision: u64,
+    pub lost: lost::LostStatus,
+    pub traversal: traversal::TraversalStatus,
+    pub swim_vacates: u64,
+    pub single: single::SingleStatus,
+    /// The single pistols in `status.world`, captured with the readout.
+    pub world_singles: Vec<ObjectAddress>,
+}
+
+/// Read the last publication without acquiring the inventory owner or copying its vectors.
+pub(crate) fn peek_status() -> Result<Arc<InventoryReadout>, StatusUnavailable> {
+    let publication = UI_STATUS.try_lock().ok_or(StatusUnavailable::Busy)?;
+    publication
+        .as_ref()
+        .map(Arc::clone)
+        .ok_or(StatusUnavailable::Uninitialized)
 }
 
 /// What the weapon handling hands the inventory each input tick.
@@ -344,6 +382,7 @@ pub(crate) unsafe fn input_tick(
         .collect();
     // SAFETY: the slots were read live this tick.
     unsafe { ammo::publish(&slot_objects) };
+    publish_status();
     arrival
 }
 
@@ -381,6 +420,7 @@ unsafe fn stop(owner: &mut Character, why: &str, keep: bool) {
     }
     live::stop();
     if !active {
+        publish_status();
         return;
     }
     STATE.lock().release_all(why);
@@ -398,6 +438,7 @@ unsafe fn stop(owner: &mut Character, why: &str, keep: bool) {
         restore::clear();
         single::clear();
     }
+    publish_status();
 }
 
 /// The table runs again after a stop that kept the weapons beyond the slots: it started from the
@@ -530,11 +571,51 @@ fn on_reset() {
     if carried > 0 {
         tracing::info!(target: "controllers", carried, "inventory: released the carried weapons");
     }
+    publish_status();
 }
 
 fn count_carried_replaced() {
     STATE.lock().status.carried_replaced += 1;
+    publish_status();
 }
+
+fn publish_status() {
+    let (status, revision) = {
+        let state = STATE.lock();
+        let revision = UI_REVISION.fetch_add(1, Ordering::Relaxed);
+        (state.status.clone(), revision)
+    };
+    let world_singles = status
+        .world
+        .iter()
+        .filter(|weapon| single::is(weapon.object.get()))
+        .map(|weapon| weapon.object)
+        .collect();
+    let readout = InventoryReadout {
+        status,
+        published_at: Instant::now(),
+        revision,
+        lost: lost::status(),
+        traversal: traversal::status(),
+        swim_vacates: use_item::swim_vacates(),
+        single: single::status(),
+        world_singles,
+    };
+    let readout = Arc::new(readout);
+    let mut publication = UI_STATUS.lock();
+    if publication
+        .as_ref()
+        .is_some_and(|current| current.revision > revision)
+    {
+        return;
+    }
+    let previous = publication.replace(readout);
+    drop(publication);
+    drop(previous);
+}
+
+static UI_STATUS: Mutex<Option<Arc<InventoryReadout>>> = Mutex::new(None);
+static UI_REVISION: AtomicU64 = AtomicU64::new(0);
 
 struct State {
     world: World,
@@ -570,3 +651,60 @@ static STATE: Mutex<State> = Mutex::new(State {
         carried_replaced: 0,
     },
 });
+
+#[cfg(test)]
+mod status_tests {
+    use std::{num::NonZeroUsize, sync::mpsc, thread, time::Duration};
+
+    use super::*;
+
+    #[test]
+    fn actual_ui_query_is_owned_nonblocking_and_preserves_the_legacy_fields() {
+        let previous_publication = UI_STATUS.lock().take();
+        assert!(matches!(
+            peek_status(),
+            Err(StatusUnavailable::Uninitialized)
+        ));
+        let original = status();
+        let expected = InventoryStatus {
+            active: true,
+            owned: 3,
+            world: vec![WorldWeapon {
+                object: ObjectAddress::new(NonZeroUsize::new(1).unwrap()),
+                distance_m: Some(4.5),
+                pinned: true,
+            }],
+            carried: vec![(WeaponSlot::E_SLOT_DUAL_WIELD, Socket::Chest)],
+            with_others: 2,
+            pins: 7,
+            forgotten: 8,
+            resets: 9,
+            stashed: true,
+            carried_replaced: 10,
+        };
+        STATE.lock().status = expected.clone();
+        publish_status();
+        assert_eq!(status(), expected);
+        let first = peek_status().unwrap();
+        assert_eq!(first.status, expected);
+
+        let owner = STATE.lock();
+        let (send, receive) = mpsc::channel();
+        let query = thread::spawn(move || send.send(peek_status()).unwrap());
+        let result = receive.recv_timeout(Duration::from_secs(1));
+        drop(owner);
+        query.join().unwrap();
+        let readout = result
+            .expect("the actual UI query must not wait for STATE")
+            .unwrap();
+        assert!(Arc::ptr_eq(&first, &readout));
+        assert_eq!(readout.status, expected);
+
+        let publication = UI_STATUS.lock();
+        assert!(matches!(peek_status(), Err(StatusUnavailable::Busy)));
+        drop(publication);
+        STATE.lock().status = original;
+        *UI_STATUS.lock() = previous_publication;
+        assert_eq!(readout.status, expected);
+    }
+}

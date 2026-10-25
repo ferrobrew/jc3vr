@@ -25,7 +25,10 @@ use std::{
     ffi::c_void,
     fmt, fs, io,
     path::PathBuf,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -48,7 +51,7 @@ use crate::{
             dual_wield::single,
             hold::refs::Strong,
             inventory::{
-                carry,
+                StatusUnavailable, carry,
                 config::InventoryConfig,
                 engine::{self as inventory_engine, kind_of, weapon_of},
                 persist::{Fingerprint, RESERVES, Record, SLOTS, Sidecar},
@@ -132,10 +135,36 @@ pub struct RestoreStatus {
 }
 
 pub fn status() -> RestoreStatus {
-    let mut status = STATUS.lock().clone();
-    status.path = paths::file(SIDECAR_FILE_NAME);
-    status.spawning = PLAN.lock().spawning.len();
-    status
+    let status = STATUS.lock().clone();
+    let path = paths::file(SIDECAR_FILE_NAME);
+    let spawning = PLAN.lock().spawning.len();
+    status_with_owner_fields(status, path, spawning)
+}
+
+/// The sidecar path observed by a store or a load, without resolving it from the UI.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum PathStatus {
+    Uninitialized,
+    Unavailable,
+    Available,
+}
+
+/// The last restore readout published by an existing owner operation.
+#[derive(Debug)]
+pub(crate) struct RestoreReadout {
+    pub status: RestoreStatus,
+    pub path: PathStatus,
+    pub published_at: Instant,
+    revision: u64,
+}
+
+/// Read only the publication; never resolve a path, read a file, or acquire the restore plan.
+pub(crate) fn peek_status() -> Result<Arc<RestoreReadout>, StatusUnavailable> {
+    let publication = UI_STATUS.try_lock().ok_or(StatusUnavailable::Busy)?;
+    publication
+        .as_ref()
+        .map(Arc::clone)
+        .ok_or(StatusUnavailable::Uninitialized)
 }
 
 /// The spawn system is resetting: record the carried weapons, which the reset's release of the
@@ -150,6 +179,7 @@ pub(crate) fn on_pre_reset(records: Vec<Record>, slot_pistol_single: bool, stash
     let mut plan = PLAN.lock();
     plan.generation = plan.generation.wrapping_add(1);
     plan.spawning.clear();
+    SPAWNING.store(0, Ordering::Relaxed);
     let (records, slot_pistol_single) = match plan.checkpoint_next.take() {
         Some(checkpoint) => checkpoint,
         None => (records, slot_pistol_single),
@@ -173,6 +203,7 @@ pub(crate) fn on_pre_reset(records: Vec<Record>, slot_pistol_single: bool, stash
     std::mem::drop(plan);
     SPAWNED.lock().clear();
     TWINS.lock().clear();
+    publish_status();
 }
 
 /// The spawn system has reset: the next input tick with the player respawns the carried weapons.
@@ -231,7 +262,9 @@ pub(crate) unsafe fn on_store(save_data: *const PlayerSaveData, settings: &Inven
     };
     let fingerprint = unsafe { stored_fingerprint(character) };
     let carried = carry::records();
-    let Some(path) = paths::file(SIDECAR_FILE_NAME) else {
+    let path = paths::file(SIDECAR_FILE_NAME);
+    observe_path(path.clone());
+    let Some(path) = path else {
         return;
     };
     let count = carried.len();
@@ -283,6 +316,7 @@ pub(crate) unsafe fn on_load(save_data: *const PlayerSaveData, settings: &Invent
         character: 0,
     });
     STATUS.lock().last_load = Some(outcome);
+    publish_status();
 }
 
 /// After a reset, respawn the carried weapons; and adopt each spawned one that has come back onto
@@ -313,6 +347,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, settings: &InventoryConfi
         unsafe { request(owner, chosen.origin, chosen.records) };
     }
     unsafe { adopt(owner) };
+    publish_status();
 }
 
 /// Ask the spawn system for the second pistol of a pair of the type `tag_hash`, at the player, for
@@ -362,6 +397,7 @@ pub(crate) fn clear() {
     let mut plan = PLAN.lock();
     plan.generation = plan.generation.wrapping_add(1);
     plan.spawning.clear();
+    SPAWNING.store(0, Ordering::Relaxed);
     plan.from_load = None;
     plan.from_reset = None;
     plan.held = None;
@@ -371,6 +407,7 @@ pub(crate) fn clear() {
     std::mem::drop(plan);
     SPAWNED.lock().clear();
     TWINS.lock().clear();
+    publish_status();
 }
 
 /// A set of carried weapons waiting for the respawn.
@@ -434,6 +471,60 @@ static STATUS: Mutex<RestoreStatus> = Mutex::new(RestoreStatus {
     restored: 0,
     spawning: 0,
 });
+static UI_STATUS: Mutex<Option<Arc<RestoreReadout>>> = Mutex::new(None);
+static UI_REVISION: AtomicU64 = AtomicU64::new(0);
+static PATH_OBSERVED: AtomicBool = AtomicBool::new(false);
+static SPAWNING: AtomicUsize = AtomicUsize::new(0);
+
+fn status_with_owner_fields(
+    mut status: RestoreStatus,
+    path: Option<PathBuf>,
+    spawning: usize,
+) -> RestoreStatus {
+    status.path = path;
+    status.spawning = spawning;
+    status
+}
+
+fn observe_path(path: Option<PathBuf>) {
+    STATUS.lock().path = path;
+    PATH_OBSERVED.store(true, Ordering::Release);
+    publish_status();
+}
+
+fn publish_status() {
+    let (mut status, revision) = {
+        let status = STATUS.lock();
+        let revision = UI_REVISION.fetch_add(1, Ordering::Relaxed);
+        (status.clone(), revision)
+    };
+    let path_observed = PATH_OBSERVED.load(Ordering::Acquire);
+    status.spawning = SPAWNING.load(Ordering::Relaxed);
+    let path = if !path_observed {
+        PathStatus::Uninitialized
+    } else if status.path.is_some() {
+        PathStatus::Available
+    } else {
+        PathStatus::Unavailable
+    };
+    let readout = Arc::new(RestoreReadout {
+        status,
+        path,
+        published_at: Instant::now(),
+        revision,
+    });
+    let mut publication = UI_STATUS.lock();
+    if publication
+        .as_ref()
+        .is_some_and(|current| current.revision > revision)
+    {
+        return;
+    }
+    let previous = publication.replace(readout);
+    drop(publication);
+    drop(previous);
+}
+
 /// The writes asked for, and the newest one done, so an older write never replaces a newer one.
 static WRITE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static WRITTEN_SEQUENCE: Mutex<u64> = Mutex::new(0);
@@ -492,7 +583,9 @@ unsafe fn read_for_load(
     }) else {
         return (LoadOutcome::NoCharacter, Vec::new(), None);
     };
-    let Some(path) = paths::file(SIDECAR_FILE_NAME) else {
+    let path = paths::file(SIDECAR_FILE_NAME);
+    observe_path(path.clone());
+    let Some(path) = path else {
         return (LoadOutcome::Missing, Vec::new(), None);
     };
     let text = match fs::read_to_string(&path) {
@@ -564,6 +657,7 @@ fn write(path: PathBuf, text: String, sequence: u64, count: usize) {
             tracing::warn!(target: "controllers", error = %why, "inventory: the save sidecar was not written");
         }
     }
+    publish_status();
 }
 
 /// The set a respawn restores.
@@ -648,6 +742,7 @@ unsafe fn request(owner: &Character, origin: Origin, records: Vec<Record>) {
         });
         outcome.requested += 1;
     }
+    SPAWNING.store(plan.spawning.len(), Ordering::Relaxed);
     std::mem::drop(plan);
     tracing::info!(
         target: "controllers",
@@ -679,7 +774,9 @@ unsafe fn adopt(owner: &mut Character) {
                 .spawning
                 .iter()
                 .position(|s| s.record.tag_hash == kind.tag_hash);
-            index.map(|i| plan.spawning.remove(i).record)
+            let record = index.map(|i| plan.spawning.remove(i).record);
+            SPAWNING.store(plan.spawning.len(), Ordering::Relaxed);
+            record
         };
         let Some(record) = record else {
             continue;
@@ -744,6 +841,7 @@ unsafe fn adopt(owner: &mut Character) {
             .into_iter()
             .partition(|s| s.at.elapsed() <= SPAWN_WAIT);
         plan.spawning = waiting;
+        SPAWNING.store(plan.spawning.len(), Ordering::Relaxed);
         expired.into_iter().map(|s| s.record).collect()
     };
     if !expired.is_empty() {
@@ -788,5 +886,114 @@ unsafe extern "system" fn spawned(
         if let Some(strong) = unsafe { inventory_engine::strong_to(&*weapon) } {
             out.push((generation, strong));
         }
+    }
+}
+
+#[cfg(test)]
+mod status_tests {
+    use std::{sync::mpsc, thread};
+
+    use super::*;
+
+    #[test]
+    fn ui_query_has_no_path_resolution_file_io_or_owner_access() {
+        let source = include_str!("restore.rs");
+        let query = source
+            .split("pub(crate) fn peek_status()")
+            .nth(1)
+            .unwrap()
+            .split("\n}\n")
+            .next()
+            .unwrap();
+        assert!(query.contains("UI_STATUS.try_lock()"));
+        for forbidden in [
+            "paths::",
+            "fs::",
+            "create_dir_all",
+            "PLAN",
+            "STATUS.lock",
+            "publish_status",
+        ] {
+            assert!(
+                !query.contains(forbidden),
+                "the UI query contains {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn actual_ui_query_never_waits_for_restore_owners_or_resolves_a_path() {
+        let previous_publication = UI_STATUS.lock().take();
+        let original = STATUS.lock().clone();
+        let original_path_observed = PATH_OBSERVED.swap(false, Ordering::AcqRel);
+        let original_spawning = SPAWNING.swap(0, Ordering::Relaxed);
+        assert!(matches!(
+            peek_status(),
+            Err(StatusUnavailable::Uninitialized)
+        ));
+        assert!(!PATH_OBSERVED.load(Ordering::Acquire));
+
+        let expected = RestoreStatus {
+            path: Some(PathBuf::from("published-inventory.toml")),
+            writes: 4,
+            last_write_error: Some("inventory: sidecar: test error".to_owned()),
+            last_written: 2,
+            last_load: Some(LoadOutcome::Accepted {
+                carried: 2,
+                unknown: 1,
+            }),
+            last_respawn: Some(RespawnOutcome {
+                origin: Some(Origin::Load),
+                requested: 3,
+                restored: 1,
+                failed: 1,
+            }),
+            restored: 5,
+            spawning: 1,
+        };
+        *STATUS.lock() = expected.clone();
+        SPAWNING.store(expected.spawning, Ordering::Relaxed);
+        PATH_OBSERVED.store(true, Ordering::Release);
+        publish_status();
+        let first = peek_status().unwrap();
+        assert_eq!(first.status, expected);
+        assert_eq!(first.path, PathStatus::Available);
+        assert_eq!(
+            status_with_owner_fields(
+                STATUS.lock().clone(),
+                expected.path.clone(),
+                expected.spawning,
+            ),
+            expected,
+        );
+
+        let plan = PLAN.lock();
+        let status = STATUS.lock();
+        let (send, receive) = mpsc::channel();
+        let query = thread::spawn(move || send.send(peek_status()).unwrap());
+        let result = receive.recv_timeout(Duration::from_secs(1));
+        drop(status);
+        drop(plan);
+        query.join().unwrap();
+        let readout = result
+            .expect("the actual UI query must not wait for PLAN or STATUS")
+            .unwrap();
+        assert!(Arc::ptr_eq(&first, &readout));
+        assert_eq!(readout.status, expected);
+
+        let publication = UI_STATUS.lock();
+        assert!(matches!(peek_status(), Err(StatusUnavailable::Busy)));
+        drop(publication);
+        observe_path(None);
+        assert_eq!(peek_status().unwrap().path, PathStatus::Unavailable);
+        PATH_OBSERVED.store(false, Ordering::Release);
+        publish_status();
+        assert_eq!(peek_status().unwrap().path, PathStatus::Uninitialized);
+
+        *STATUS.lock() = original;
+        PATH_OBSERVED.store(original_path_observed, Ordering::Release);
+        SPAWNING.store(original_spawning, Ordering::Relaxed);
+        *UI_STATUS.lock() = previous_publication;
+        assert_eq!(readout.status, expected);
     }
 }
