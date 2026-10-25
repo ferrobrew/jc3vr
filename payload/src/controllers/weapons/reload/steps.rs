@@ -21,20 +21,66 @@ use crate::controllers::{
             action::locks_back,
             belt::{BeltPush, PushInputs},
             chamber::{self, ActionKind, Chamber},
-            config::{ReloadButton, ReloadConfig},
+            config::{LooseMagazineConfig, ReloadButton, ReloadConfig},
             eject::{self, FlickDetector},
             engine,
+            extraction::MagazineId,
             frames::{self, GunFrame},
             gate,
-            insert::{self, InsertEvent, InsertInputs, InsertStage, Well},
+            insert::{self, InsertEvent, InsertInputs, InsertStage, InsertionSource, Well},
             loose,
             plan::{self, LoadKind, ReloadPlan, WeaponFacts},
             records::RecordKey,
+            serial,
             travel::ActionTravel,
             wells,
         },
     },
 };
+
+trait MagazineInsertion {
+    fn held(&self) -> bool;
+    fn take(&mut self, hand: Hand, sighting: loose::Sighting) -> bool;
+    fn carry(
+        &mut self,
+        top: Vec3,
+        axis: Vec3,
+        dt: f32,
+        config: &LooseMagazineConfig,
+    ) -> loose::Operation<()>;
+    fn seat(&mut self) -> loose::Operation<i32>;
+    fn release(&mut self);
+    fn load_rounds(&mut self, weapon: usize, rounds: i32);
+}
+
+struct NativeMagazine;
+
+impl MagazineInsertion for NativeMagazine {
+    fn held(&self) -> bool {
+        loose::held().is_some()
+    }
+    fn take(&mut self, hand: Hand, sighting: loose::Sighting) -> bool {
+        loose::take(hand, sighting)
+    }
+    fn carry(
+        &mut self,
+        top: Vec3,
+        axis: Vec3,
+        dt: f32,
+        config: &LooseMagazineConfig,
+    ) -> loose::Operation<()> {
+        unsafe { loose::carry(top, axis, dt, config) }
+    }
+    fn seat(&mut self) -> loose::Operation<i32> {
+        unsafe { loose::seat() }
+    }
+    fn release(&mut self) {
+        loose::let_go();
+    }
+    fn load_rounds(&mut self, weapon: usize, rounds: i32) {
+        unsafe { engine::load_rounds(weapon, rounds) };
+    }
+}
 
 impl State {
     /// Read the hands' weapons, their plans, and their guns' frames.
@@ -97,6 +143,14 @@ impl State {
                 guns[i] = Some(GunTick {
                     weapon: slot,
                     index,
+                    // SAFETY: tick construction reads the live inventory on the input thread.
+                    magazine: unsafe {
+                        serial::capture(MagazineId {
+                            weapon: weapon.address,
+                            gun: index,
+                            holder: hand,
+                        })
+                    },
                     wrist: cockpit.wrist,
                     frame,
                     well,
@@ -177,6 +231,8 @@ impl State {
         if self.drawn != Some(drawn) {
             self.drawn = Some(drawn);
             self.since_draw_s = 0.0;
+            loose::let_go();
+            self.cancel_extraction();
             self.status.insertion.reset();
             self.status.insert_hands = None;
             self.status.work.reset();
@@ -192,6 +248,7 @@ impl State {
 
         self.ejects(tick, inputs, config);
         self.insert(tick, inputs, config);
+        self.extract(tick, inputs, reload);
         self.belt(tick, config, dt);
         self.work(tick, inputs, config);
 
@@ -239,6 +296,12 @@ impl State {
         let e = gun.entry();
         let chambering = chambering(&weapon.plan, reload);
         self.belts[hand.index()].holds_fire()
+            || self.extraction_hand() == Some(hand.other())
+            || (self
+                .status
+                .insert_hands
+                .is_some_and(|(_, target)| target == hand)
+                && loose::held().is_some())
             || (chambering && record.chambers[e] == Chamber::Empty)
             || (chambering
                 && reload.action.physical
@@ -335,11 +398,14 @@ impl State {
     ) {
         let loose = config.weapons.reload.loose.enabled;
         let ejected = !weapon.reading.out;
-        if ejected {
-            // SAFETY: main thread, outside the world update; the weapon was read this tick.
-            unsafe { engine::drop_magazine(weapon.address, gun.index, loose) };
-        }
-        if ejected {
+        let outcome = if ejected {
+            // SAFETY: this legacy path retains its existing execution boundary; physics write
+            // authority is not established by the input tick and remains a separate engine risk.
+            unsafe { engine::drop_magazine(weapon.address, gun.index, loose) }
+        } else {
+            engine::DetachOutcome::NoThrow
+        };
+        if outcome != engine::DetachOutcome::NoThrow {
             self.status.counts.ejects += 1;
             self.event(format!("{hand:?} ejected"));
             haptics::play(hand, Event::Eject);
@@ -349,7 +415,22 @@ impl State {
     /// The two-handed load: take from the pouch, carry to the well of the gun in the other hand,
     /// seat.
     fn insert(&mut self, tick: &Tick, inputs: &FinishInputs, config: &ControllersConfig) {
+        self.insert_with(tick, inputs, config, &mut NativeMagazine);
+    }
+
+    fn insert_with(
+        &mut self,
+        tick: &Tick,
+        inputs: &FinishInputs,
+        config: &ControllersConfig,
+        adapter: &mut impl MagazineInsertion,
+    ) {
         let reload = &config.weapons.reload;
+        if !reload.loose.enabled && adapter.held() {
+            adapter.release();
+            self.status.insertion.reset();
+            self.status.insert_hands = None;
+        }
         let gun_hands = tick.gun_hands();
         let loading = |taker: Hand| insert::loading_hand(gun_hands, Some(taker), tick.dominant);
         let taker = Hand::BOTH
@@ -367,8 +448,11 @@ impl State {
             });
         let mut taken = false;
         if let Some((hand, gun_hand, sighting)) = from_world {
-            loose::take(hand, sighting);
+            if !adapter.take(hand, sighting) {
+                return;
+            }
             self.status.insert_hands = Some((hand, gun_hand));
+            self.insertion_source = InsertionSource::RetainedMagazine;
             taken = true;
             self.event(format!(
                 "{hand:?} took a magazine of {} from the world",
@@ -380,6 +464,7 @@ impl State {
         {
             if tick.gun(gun_hand).is_some_and(|(w, _)| w.has_ammo()) {
                 self.status.insert_hands = Some((hand, gun_hand));
+                self.insertion_source = InsertionSource::Pouch;
                 taken = true;
                 haptics::play(hand, Event::PouchTake);
             } else {
@@ -394,7 +479,9 @@ impl State {
         let can_take = target.is_some_and(|(weapon, _)| self.can_take(weapon));
         let grip = self.grip_motion(tick, hand, inputs.dt);
         let well = target.and_then(|(_, gun)| gun.well).filter(|_| can_take);
-        let event = self.status.insertion.step(
+        let prior = self.status.insertion;
+        let before_hands = self.status.insert_hands;
+        let event = self.status.insertion.step_with_source(
             InsertInputs {
                 taken,
                 grip_held: inputs.grips[hand.index()].held(),
@@ -409,12 +496,24 @@ impl State {
                 well,
                 dt: inputs.dt,
             },
+            self.insertion_source,
             reload,
         );
+        // Taking commits ownership, so deferred work must retain its Holding state and count.
+        let before = if event == Some(InsertEvent::Taken) {
+            self.status.insertion
+        } else {
+            prior
+        };
         if self.status.insertion.stage == InsertStage::Idle {
             self.status.insert_hands = None;
         }
-        let world_magazine = loose::held().is_some();
+        let world_magazine = adapter.held();
+        if world_magazine && event == Some(InsertEvent::Dropped) {
+            adapter.release();
+            self.event("round dropped".to_owned());
+            return;
+        }
         if world_magazine
             && let Some((pose, velocity)) = grip
             && let Some(round) = insert::held_round(
@@ -427,9 +526,25 @@ impl State {
         {
             let top = world.cockpit_to_world(round.top);
             let axis = world.view * round.axis;
-            // SAFETY: main thread, outside the world update.
-            if !unsafe { loose::carry(top, axis, inputs.dt, &reload.loose) } {
-                self.event("the magazine from the world is gone".to_owned());
+            match adapter.carry(top, axis, inputs.dt, &reload.loose) {
+                loose::Operation::Ready(()) => {}
+                loose::Operation::Deferred => {
+                    if inputs.grips[hand.index()].held() {
+                        self.status.insertion = before;
+                        self.status.insert_hands = before_hands;
+                    } else {
+                        adapter.release();
+                        self.status.insertion.reset();
+                        self.status.insert_hands = None;
+                    }
+                    return;
+                }
+                loose::Operation::Gone => {
+                    adapter.release();
+                    self.status.insertion.reset();
+                    self.status.insert_hands = None;
+                    return;
+                }
             }
         }
         // A magazine part rides the hand while it is held, and hides again when it is dropped
@@ -459,20 +574,37 @@ impl State {
                 let loaded = match target {
                     // SAFETY (both): main thread, outside the world update; the weapon was read
                     // this tick.
-                    Some((weapon, gun)) => match unsafe { loose::seat() } {
-                        Some(rounds) => {
-                            unsafe { engine::load_rounds(weapon.address, rounds) };
+                    Some((weapon, gun)) if world_magazine => match adapter.seat() {
+                        loose::Operation::Ready(rounds) => {
+                            adapter.load_rounds(weapon.address, rounds);
                             if weapon.plan.action == ActionKind::None {
                                 self.records.get(weapon.key).chambers[gun.entry()] =
                                     Chamber::Chambered;
                             }
                             true
                         }
-                        None => self.load(weapon, gun),
+                        loose::Operation::Deferred => {
+                            if inputs.grips[hand.index()].held() {
+                                self.status.insertion = before;
+                                self.status.insert_hands = before_hands;
+                            } else {
+                                adapter.release();
+                                self.status.insertion.reset();
+                                self.status.insert_hands = None;
+                            }
+                            return;
+                        }
+                        loose::Operation::Gone => {
+                            adapter.release();
+                            self.status.insertion.reset();
+                            self.status.insert_hands = None;
+                            return;
+                        }
                     },
+                    Some((weapon, gun)) => self.load(weapon, gun),
                     // The gun left the hand, so a magazine from the world goes back to it.
                     None => {
-                        loose::let_go();
+                        adapter.release();
                         false
                     }
                 };
@@ -483,7 +615,7 @@ impl State {
                 }
             }
             Some(InsertEvent::Dropped) => {
-                loose::let_go();
+                adapter.release();
                 self.event("round dropped".to_owned());
             }
             _ => {}
@@ -491,7 +623,7 @@ impl State {
     }
 
     /// The belt pushes of each hand's gun.
-    fn belt(&mut self, tick: &Tick, config: &ControllersConfig, dt: f32) {
+    pub(super) fn belt(&mut self, tick: &Tick, config: &ControllersConfig, dt: f32) {
         let reload = &config.weapons.reload;
         for hand in Hand::BOTH {
             let i = hand.index();
@@ -502,6 +634,10 @@ impl State {
                 _ => Vec3::ZERO,
             };
             self.last_mouths[i] = well.map(|w| w.mouth);
+            if self.extraction_hand() == Some(hand.other()) || self.extraction_blocks_belt[i] {
+                self.belts[i] = BeltPush::new();
+                continue;
+            }
             let holding_for_it = self.status.insert_hands.is_some_and(|(_, g)| g == hand);
             let eligible = reload.belt.enabled
                 && !holding_for_it
@@ -527,7 +663,11 @@ impl State {
             // its rounds.
             if weapon.plan.load.ejects() && !weapon.reading.out {
                 // SAFETY: main thread, outside the world update; the weapon was read this tick.
-                unsafe { engine::drop_magazine(weapon.address, gun.index, reload.loose.enabled) };
+                if unsafe { engine::drop_magazine(weapon.address, gun.index, reload.loose.enabled) }
+                    == engine::DetachOutcome::NoThrow
+                {
+                    continue;
+                }
             }
             if self.load(weapon, gun) {
                 self.status.counts.belt_reloads += 1;
@@ -592,6 +732,7 @@ impl State {
         self.pouch = None;
         self.stocked_pouch = None;
         self.free = None;
+        self.cancel_extraction();
     }
 
     pub(super) fn stand_down(&mut self) {
@@ -659,6 +800,9 @@ unsafe fn weapon_tick(
         reserve: unsafe { engine::reserve(base) },
     })
 }
+
+#[cfg(test)]
+mod insertion_tests;
 
 fn pulse_both(event: Event) {
     for hand in Hand::BOTH {

@@ -51,6 +51,8 @@ pub struct ReloadConfig {
     pub action: ActionConfig,
     /// Ejected magazines that stay in the world with their rounds.
     pub loose: LooseMagazineConfig,
+    /// Grip-and-pull removal of an inserted detachable magazine.
+    pub extraction: ExtractionConfig,
 }
 
 impl ReloadConfig {
@@ -73,6 +75,7 @@ impl ReloadConfig {
             manual_action: true,
             action: ActionConfig::new(),
             loose: LooseMagazineConfig::new(),
+            extraction: ExtractionConfig::new(),
         }
     }
 }
@@ -140,6 +143,36 @@ impl LooseMagazineConfig {
 }
 
 impl Default for LooseMagazineConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Grip-and-pull removal of a detachable magazine, with no release-button latch.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ExtractionConfig {
+    pub enabled: bool,
+    /// The inserted magazine's grab radius, metres at the player's scale.
+    pub grab_radius_m: f32,
+    /// The outward hand travel required to detach the magazine, metres at the player's scale.
+    pub pull_m: f32,
+    /// How far the hand may move sideways from its acquired path, metres at the player's scale.
+    pub lateral_tolerance_m: f32,
+}
+
+impl ExtractionConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            grab_radius_m: 0.06,
+            pull_m: 0.08,
+            lateral_tolerance_m: 0.06,
+        }
+    }
+}
+
+impl Default for ExtractionConfig {
     fn default() -> Self {
         Self::new()
     }

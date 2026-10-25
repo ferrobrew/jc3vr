@@ -52,6 +52,7 @@ impl State {
             self.status
                 .insert_hands
                 .is_none_or(|(holding, _)| holding != *h)
+                && self.extraction_hand() != Some(*h)
         });
         let hold = foregrip::status().hold.filter(|h| h.engaged);
         let work_inputs = target.zip(worker).and_then(|((_, weapon, gun), worker)| {
@@ -107,6 +108,7 @@ impl State {
             self.status
                 .insert_hands
                 .is_none_or(|(holding, _)| holding != *h)
+                && self.extraction_hand() != Some(*h)
         });
         let guns = Hand::BOTH.map(|hand| {
             tick.gun(hand)

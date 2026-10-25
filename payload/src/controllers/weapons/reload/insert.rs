@@ -71,6 +71,14 @@ pub struct InsertInputs {
     pub dt: f32,
 }
 
+/// The origin determines whether an actively held round has the pouch lifetime.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub(crate) enum InsertionSource {
+    #[default]
+    Pouch,
+    RetainedMagazine,
+}
+
 /// The insertion's state and counts.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct Insertion {
@@ -97,8 +105,19 @@ impl Insertion {
         self.stage != InsertStage::Idle
     }
 
-    /// Fold one tick in.
+    /// Fold one tick in for a pouch round.
+    #[cfg(test)]
     pub fn step(&mut self, inputs: InsertInputs, config: &ReloadConfig) -> Option<InsertEvent> {
+        self.step_with_source(inputs, InsertionSource::Pouch, config)
+    }
+
+    /// Physical magazines remain held until release or tracking loss; only pouch ammunition expires.
+    pub(super) fn step_with_source(
+        &mut self,
+        inputs: InsertInputs,
+        source: InsertionSource,
+        config: &ReloadConfig,
+    ) -> Option<InsertEvent> {
         let dt = if inputs.dt.is_finite() {
             inputs.dt.max(0.0)
         } else {
@@ -114,7 +133,7 @@ impl Insertion {
                 }
             }
             InsertStage::Holding { elapsed_s } | InsertStage::Captured { elapsed_s, .. } => {
-                self.step_held(inputs, elapsed_s + dt, config)
+                self.step_held(inputs, elapsed_s + dt, source, config)
             }
         };
         match event {
@@ -133,6 +152,7 @@ impl Insertion {
         &mut self,
         inputs: InsertInputs,
         elapsed_s: f32,
+        source: InsertionSource,
         config: &ReloadConfig,
     ) -> Option<InsertEvent> {
         let captured = match self.stage {
@@ -157,7 +177,7 @@ impl Insertion {
                 },
             );
         }
-        if captured.is_none() && elapsed_s > config.timeout_s {
+        if source == InsertionSource::Pouch && captured.is_none() && elapsed_s > config.timeout_s {
             self.stage = InsertStage::Idle;
             return Some(InsertEvent::Dropped);
         }
@@ -229,6 +249,40 @@ pub fn loading_hand(gun_hands: [bool; 2], taker: Option<Hand>, dominant: Hand) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retained_magazines_keep_the_grip_beyond_pouch_and_world_lifetimes() {
+        let config = ReloadConfig::new();
+        for source in [InsertionSource::Pouch, InsertionSource::RetainedMagazine] {
+            let mut insertion = Insertion::new();
+            let mut sample = inputs(true, WELL.mouth - Vec3::Y, Vec3::ZERO);
+            insertion.step_with_source(sample, source, &config);
+            sample.taken = false;
+            sample.dt = config.timeout_s + config.loose.keep_s + 1.0;
+            let event = insertion.step_with_source(sample, source, &config);
+            match source {
+                InsertionSource::Pouch => assert_eq!(event, Some(InsertEvent::Dropped)),
+                InsertionSource::RetainedMagazine => {
+                    assert_eq!(event, None);
+                    assert!(insertion.holding());
+                    sample.grip_held = false;
+                    assert_eq!(
+                        insertion.step_with_source(sample, source, &config),
+                        Some(InsertEvent::Dropped)
+                    );
+                    sample.taken = true;
+                    sample.grip_held = true;
+                    insertion.step_with_source(sample, source, &config);
+                    sample.taken = false;
+                    sample.held = None;
+                    assert_eq!(
+                        insertion.step_with_source(sample, source, &config),
+                        Some(InsertEvent::Dropped)
+                    );
+                }
+            }
+        }
+    }
 
     const CONFIG: ReloadConfig = ReloadConfig::new();
     const WELL: Well = Well {

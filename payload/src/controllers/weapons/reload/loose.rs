@@ -3,20 +3,17 @@
 //!
 //! The game drops a gun's spare magazine prop, a rigid object, through one call
 //! ([`WeaponData::ThrowAwayMagazineObject`]): the mod's eject and the game's own reload track
-//! message both use it, for every character. A detour on it notes each prop it drops with the
-//! prop's body, the body's owner, the gun's magazine spawn tag
-//! ([`WeaponData::m_MagazineUniqueTag`], which names the magazine model, so a magazine fits every
-//! gun of the same tag), and the rounds it holds:
+//! message both use it, for every character. A reserved manual drop transfers its known carried
+//! rounds. Local automatic and empty NPC drops can reserve empty pickup records before native
+//! execution. A full store refuses manual drops unchanged, but runs automatic calls unchanged and
+//! untracked. Nonempty NPC import is blocked: native throw leaves the weapon's rounds counted,
+//! and native finite reload returns them to reserve. Copying them would duplicate ammunition.
 //!
-//! - a magazine the mod's eject drops holds the rounds the gun had, which the eject takes out of
-//!   the gun ([`EjectRounds`]), so they are neither in the gun nor returned to the reserve;
-//! - one the game's reload drops for the player holds none, since the game's reload returns the
-//!   rounds still in the gun to the reserve;
-//! - one another character's reload drops holds what that character's magazine held, which the
-//!   game never counts anywhere else (a character other than the player has unlimited
-//!   ammunition).
+//! Reservations, held items, unread results, and world records share one fixed cap. No native prop
+//! retirement is guessed. Unavailable physics preserves accounting. Losing body ownership
+//! quarantines a record; reused body ids cannot restore its authority without lifetime proof.
 //!
-//! A body still owned by the same prop proves the prop alive ([`sightings`]). While the reload
+//! While the reload
 //! wants a magazine for the held gun (its magazine is out), each noted magazine of the gun's tag
 //! within reach is a grab volume for the hand without a gun. A grip press there takes it as the
 //! round in hand, from where it lay ([`take`]): its body is carried to the hand each tick
@@ -34,7 +31,6 @@ use glam::{Quat, Vec3};
 use jc3gi::{
     character::character::Character,
     equipment::weapon::WeaponData,
-    game::GameObject,
     physics::{PfxRigidBody, PhysicsGameObject},
 };
 use parking_lot::Mutex;
@@ -47,9 +43,55 @@ use crate::{
         frame::Hand,
         grab::{Candidate, GrabVolume},
         physical_hands,
-        weapons::reload::config::LooseMagazineConfig,
+        weapons::reload::{
+            config::LooseMagazineConfig,
+            loose::records::{DropKey, Records, Token, WorldHandle},
+        },
     },
 };
+
+mod body;
+mod records;
+
+use crate::controllers::weapons::reload::loose::body::{Bodies, Carry, NativeBodies};
+
+/// Whether a held operation committed, must wait, or has no represented item.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(super) enum Operation<T> {
+    Ready(T),
+    Deferred,
+    Gone,
+}
+
+/// A failed pose read alone never proves the prop's lifetime ended.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Maintenance {
+    Live,
+    Unavailable {
+        identity_lost: bool,
+    },
+    /// Model an explicit lifetime invalidation, not a recycled body id.
+    #[cfg(test)]
+    Gone,
+}
+
+fn body_status(result: Result<(), physical_hands::BodyError>) -> Maintenance {
+    match result {
+        Ok(()) => Maintenance::Live,
+        Err(physical_hands::BodyError::NoBody | physical_hands::BodyError::Reowned) => {
+            Maintenance::Unavailable {
+                identity_lost: true,
+            }
+        }
+        Err(
+            physical_hands::BodyError::NoPhysicsWorld
+            | physical_hands::BodyError::NotDynamic
+            | physical_hands::BodyError::BadMotion,
+        ) => Maintenance::Unavailable {
+            identity_lost: false,
+        },
+    }
+}
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&THROW_AWAY_MAGAZINE_OBJECT_BINDER)
@@ -58,6 +100,8 @@ pub(super) fn hook_library() -> HookLibrary {
 /// A magazine noted in the world.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Loose {
+    /// The committed record generation; copied native fields do not establish ownership.
+    handle: WorldHandle,
     /// The prop's address, as a physics game object.
     pub object: NonZeroUsize,
     pub body: u32,
@@ -66,6 +110,35 @@ pub struct Loose {
     /// The magazine spawn tag of the gun it came from.
     pub tag: i32,
     pub rounds: i32,
+}
+
+impl Loose {
+    #[cfg(test)]
+    pub(crate) const fn test(
+        object: NonZeroUsize,
+        body: u32,
+        owner: NonZeroUsize,
+        tag: i32,
+        rounds: i32,
+    ) -> Self {
+        Self {
+            handle: WorldHandle::test(0),
+            object,
+            body,
+            owner,
+            tag,
+            rounds,
+        }
+    }
+}
+
+/// Native fields captured before the store assigns committed ownership.
+pub(super) struct Captured {
+    object: NonZeroUsize,
+    body: u32,
+    owner: NonZeroUsize,
+    tag: i32,
+    rounds: i32,
 }
 
 /// A noted magazine the input tick saw, in the cockpit frame.
@@ -90,22 +163,83 @@ pub struct LooseCounts {
     pub last_rounds: Option<i32>,
 }
 
-/// The rounds the mod's eject moves out of the gun into the magazine it drops: set on the input
-/// tick around its call to the drop, read by the drop's detour on the same thread.
-pub(super) struct EjectRounds;
+/// A reserved slot becomes the exact retained world item on a successful manual throw.
+/// Dropping the lease releases unused capacity or just unprotects the committed world record.
+pub(super) struct Retention {
+    token: Token,
+    key: DropKey,
+}
 
-impl EjectRounds {
-    /// Run `drop` with `rounds` as the dropped magazine's rounds.
-    pub(super) fn with<R>(rounds: i32, drop: impl FnOnce() -> R) -> R {
-        EJECT_ROUNDS.set(Some(rounds));
-        let result = drop();
-        EJECT_ROUNDS.set(None);
-        result
+impl Retention {
+    pub(super) fn reserve(gun: usize, spare: usize) -> Option<Self> {
+        let key = DropKey { gun, spare };
+        let token = STATE.lock().records.reserve(key)?;
+        Some(Self { token, key })
+    }
+
+    pub(super) fn matches(&self, gun: usize, spare: usize) -> bool {
+        self.key == DropKey { gun, spare } && STATE.lock().records.matches(self.token, self.key)
     }
 }
 
-/// Read every noted magazine's body, forget the ones gone or too old, and return the live ones of
-/// `tag` within `config.range_m` of `player`, carried into the cockpit frame by `frames`.
+/// Capacity refusal must occur before the supplied engine operation.
+pub(super) fn with_admission<R, T>(
+    reserve: impl FnOnce() -> Option<R>,
+    refused: T,
+    execute: impl FnOnce(&R) -> T,
+) -> T {
+    let Some(reservation) = reserve() else {
+        return refused;
+    };
+    execute(&reservation)
+}
+
+impl Drop for Retention {
+    fn drop(&mut self) {
+        STATE.lock().records.release(self.token);
+    }
+}
+
+/// Known carried rounds scoped around the reserved call, read on that same thread by its detour.
+pub(super) struct EjectRounds;
+
+impl EjectRounds {
+    /// Run `drop` only with already reserved capacity for its exact spare.
+    pub(super) fn with<R>(
+        retention: &Retention,
+        rounds: i32,
+        drop: impl FnOnce() -> R,
+    ) -> (R, Option<Loose>) {
+        let expected = ExpectedDrop {
+            key: retention.key,
+            token: retention.token,
+            rounds,
+        };
+        let previous_rounds = EJECT_ROUNDS.replace(Some(expected));
+        let previous_prop = EJECT_PROP.replace(None);
+        let result = drop();
+        let prop = EJECT_PROP.replace(previous_prop);
+        EJECT_ROUNDS.set(previous_rounds);
+        (result, prop)
+    }
+}
+
+/// Check every occupied world slot once per reload input tick, regardless of reload eligibility.
+/// Reservations are not world objects. Failed body reads preserve accounting; ownership loss
+/// quarantines pickup and seating. Only usable, unheld, unleased empty records can age out.
+///
+/// # Safety
+///
+/// The main thread, outside the world update.
+pub(super) unsafe fn maintain(config: &LooseMagazineConfig) {
+    let mut state = STATE.lock();
+    state.maintain(Instant::now(), config.keep_s, |m| {
+        body_status(unsafe { physical_hands::body_pose(m.body, m.owner) }.map(|_| ()))
+    });
+}
+
+/// Return retained world items of `tag` within `config.range_m` of `player`, in cockpit space.
+/// Maintenance checks accounting independently, even when this query is never called.
 ///
 /// # Safety
 ///
@@ -116,26 +250,25 @@ pub(super) unsafe fn sightings(
     frames: &Frames,
     config: &LooseMagazineConfig,
 ) -> Vec<Sighting> {
-    let now = Instant::now();
     let mut state = STATE.lock();
-    let held = state.held.map(|h| h.magazine.object);
+    let held = state.held.map(|h| h.magazine.handle);
+    let magazines: Vec<_> = state
+        .records
+        .magazines()
+        .filter(|m| Some(m.handle) != held && state.records.usable(*m))
+        .collect();
     let mut seen = Vec::new();
-    state.loose.retain(|(m, dropped)| {
-        if now.saturating_duration_since(*dropped).as_secs_f32() > config.keep_s {
-            return false;
-        }
-        let Ok((centre, _)) = (unsafe { physical_hands::body_pose(m.body, m.owner) }) else {
-            return false;
-        };
-        if fits(m, tag, centre, player, config.range_m) && Some(m.object) != held {
+    for magazine in magazines {
+        let result = unsafe { physical_hands::body_pose(magazine.body, magazine.owner) };
+        if let Operation::Ready((centre, _)) = state.observe(magazine, result)
+            && fits(&magazine, tag, centre, player, config.range_m)
+        {
             seen.push(Sighting {
-                magazine: *m,
+                magazine,
                 cockpit: frames.world_to_cockpit(centre),
             });
         }
-        true
-    });
-    state.counts.in_world = state.loose.len();
+    }
     state.counts.in_reach = seen.len();
     seen
 }
@@ -170,14 +303,14 @@ pub fn nearest(seen: &[Sighting], grip: Vec3, radius_m: f32) -> Option<Sighting>
 }
 
 /// Take the magazine of `sighting` into `hand` as the round in hand.
-pub(super) fn take(hand: Hand, sighting: Sighting) {
+pub(super) fn take(hand: Hand, sighting: Sighting) -> bool {
     let mut state = STATE.lock();
-    state.held = Some(Held {
-        hand,
-        magazine: sighting.magazine,
-    });
+    if !state.take(hand, sighting.magazine) {
+        return false;
+    }
     state.counts.picked_up += 1;
     tracing::info!(target: "controllers", ?hand, rounds = sighting.magazine.rounds, "reload: picked a magazine up from the world");
+    true
 }
 
 /// The magazine held as the round in hand, if it came from the world.
@@ -186,30 +319,26 @@ pub(super) fn held() -> Option<Loose> {
 }
 
 /// Carry the held magazine's body so that its top is at `top`, pointing along `axis`, world space,
-/// over `dt`. Returns false when the magazine is gone from the world, which lets it go.
+/// over `dt`. Unavailable or quarantined bodies defer while preserving held ownership.
 ///
 /// # Safety
 ///
 /// The main thread, outside the world update.
-pub(super) unsafe fn carry(top: Vec3, axis: Vec3, dt: f32, config: &LooseMagazineConfig) -> bool {
-    let Some(held) = STATE.lock().held else {
-        return false;
-    };
-    let m = held.magazine;
-    let Ok((centre, orientation)) = (unsafe { physical_hands::body_pose(m.body, m.owner) }) else {
-        let_go();
-        return false;
-    };
-    let target = top - axis.normalize_or_zero() * config.half_length_m;
-    let (linear, angular) = carry_velocities(
-        (centre, orientation),
-        (target, upright_toward(orientation, axis)),
-        dt,
-        config.max_carry_mps,
-    );
-    // A failed write leaves the magazine where its physics has it until the next tick's check.
-    let _ = unsafe { physical_hands::set_body_velocities(m.body, m.owner, linear, angular) };
-    true
+pub(super) unsafe fn carry(
+    top: Vec3,
+    axis: Vec3,
+    dt: f32,
+    config: &LooseMagazineConfig,
+) -> Operation<()> {
+    STATE.lock().carry_with(
+        Carry {
+            top,
+            axis,
+            dt,
+            config,
+        },
+        &mut NativeBodies,
+    )
 }
 
 /// Let go of the held magazine: it stays in the world where it falls.
@@ -219,27 +348,25 @@ pub(super) fn let_go() {
     }
 }
 
-/// The held magazine seated: disable its prop and forget it. Returns its rounds.
+/// Commit seating once, disable the prop, and return its rounds. Deferred leaves the hold intact.
 ///
 /// # Safety
 ///
 /// The main thread, outside the world update.
-pub(super) unsafe fn seat() -> Option<i32> {
-    let mut state = STATE.lock();
-    let held = state.held.take()?;
-    let m = held.magazine;
-    state.loose.retain(|(l, _)| l.object != m.object);
-    state.counts.seated += 1;
-    state.counts.last_rounds = Some(m.rounds);
-    drop(state);
-    // The body check proves the prop live before it is touched.
-    if unsafe { physical_hands::body_pose(m.body, m.owner) }.is_ok() {
-        let object = (m.object.get() + PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize)
-            as *mut GameObject;
-        unsafe { (*object).Enable(false) };
+pub(super) unsafe fn seat() -> Operation<i32> {
+    let result = STATE.lock().seat_with(&mut NativeBodies);
+    match result {
+        Operation::Ready(magazine) => {
+            NativeBodies.disable(magazine);
+            let mut state = STATE.lock();
+            state.counts.seated += 1;
+            state.counts.last_rounds = Some(magazine.rounds);
+            tracing::info!(target: "controllers", rounds = magazine.rounds, "reload: seated a magazine from the world");
+            Operation::Ready(magazine.rounds)
+        }
+        Operation::Deferred => Operation::Deferred,
+        Operation::Gone => Operation::Gone,
     }
-    tracing::info!(target: "controllers", hand = ?held.hand, rounds = m.rounds, "reload: seated a magazine from the world");
-    Some(m.rounds)
 }
 
 pub fn counts() -> LooseCounts {
@@ -283,11 +410,16 @@ pub fn upright_toward(orientation: Quat, axis: Vec3) -> Quat {
 /// The fastest a held magazine is turned toward the hand's pose, radians per second.
 const MAX_CARRY_TURN_RADPS: f32 = 30.0;
 
-/// The most magazines noted at once; the oldest is forgotten past it.
-const MAX_LOOSE: usize = 32;
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct ExpectedDrop {
+    key: DropKey,
+    token: Token,
+    rounds: i32,
+}
 
 thread_local! {
-    static EJECT_ROUNDS: Cell<Option<i32>> = const { Cell::new(None) };
+    static EJECT_ROUNDS: Cell<Option<ExpectedDrop>> = const { Cell::new(None) };
+    static EJECT_PROP: Cell<Option<Loose>> = const { Cell::new(None) };
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -297,13 +429,36 @@ struct Held {
 }
 
 struct State {
-    loose: Vec<(Loose, Instant)>,
+    records: Records,
     held: Option<Held>,
     counts: LooseCounts,
 }
 
+impl State {
+    fn take(&mut self, hand: Hand, magazine: Loose) -> bool {
+        if self.held.is_some() || !self.records.usable(magazine) {
+            return false;
+        }
+        self.held = Some(Held { hand, magazine });
+        true
+    }
+
+    fn maintain(&mut self, now: Instant, keep_s: f32, status: impl FnMut(Loose) -> Maintenance) {
+        self.records
+            .maintain(now, keep_s, self.held.map(|h| h.magazine.handle), status);
+        if self
+            .held
+            .is_some_and(|h| !self.records.contains(h.magazine))
+        {
+            self.held = None;
+        }
+        self.counts.in_world = self.records.magazines().count();
+        self.counts.in_reach = 0;
+    }
+}
+
 static STATE: Mutex<State> = Mutex::new(State {
-    loose: Vec::new(),
+    records: Records::new(),
     held: None,
     counts: LooseCounts {
         in_world: 0,
@@ -328,48 +483,98 @@ fn throw_away_magazine_object(
             .unwrap()
             .call(gun, character, model_name_hash)
     };
-    let enabled = Config::lock_query(|c| {
-        let reload = c.controllers.weapons.reload;
-        c.controllers.enabled && reload.enabled && reload.loose.enabled
+    let expected = EJECT_ROUNDS.get();
+    let admitted = if expected.is_none_or(|e| e.key.gun != gun as usize) {
+        // The original detour imported NPC rounds without removing them from native accounting.
+        // Only a local automatic drop or an already empty NPC magazine is proved import-safe.
+        unsafe { gun.as_ref() }.and_then(|g| {
+            let enabled = Config::lock_query(|c| c.controllers.weapons.reload.loose.enabled);
+            let local = unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter);
+            let rounds = unsafe { g.m_Owner.as_ref() }.map(|w| w.m_MagazineAmmo.max(0));
+            automatic_rounds(enabled, local, rounds).and_then(|rounds| {
+                Retention::reserve(gun as usize, g.m_MagazineObject.px as usize)
+                    .map(|lease| (lease, rounds))
+            })
+        })
+    } else {
+        None
+    };
+    let automatic = admitted.as_ref().map(|(lease, rounds)| ExpectedDrop {
+        key: lease.key,
+        token: lease.token,
+        rounds: *rounds,
     });
-    // SAFETY: the gun is live for its own call.
-    let Some(g) = (unsafe { gun.as_ref() }).filter(|_| enabled) else {
-        return original();
-    };
-    let spare = g.m_MagazineObject.px;
-    let tag = g.m_MagazineUniqueTag;
-    // SAFETY: as above; a gun's owner and the character outlive the call.
-    let game_rounds = unsafe {
-        match character.as_ref() {
-            Some(c) if c.m_IsLocalCharacter => 0,
-            _ => g.m_Owner.as_ref().map_or(0, |w| w.m_MagazineAmmo.max(0)),
-        }
-    };
-    let rounds = EJECT_ROUNDS.get().unwrap_or(game_rounds);
-    let thrown = original();
-    if thrown
-        && let Some(object) = NonZeroUsize::new(spare as usize)
-        // SAFETY: the prop is live: the drop just put it in the world and in the update.
-        && let Some((body, owner)) = unsafe { body_of(object) }
-    {
-        let mut state = STATE.lock();
-        state.loose.retain(|(l, _)| l.object != object);
-        if state.loose.len() >= MAX_LOOSE {
-            state.loose.remove(0);
-        }
-        state.loose.push((
-            Loose {
+    let (thrown, retained) = dispatch_drop(
+        expected.filter(|e| e.key.gun == gun as usize).or(automatic),
+        automatic.is_some(),
+        || {
+            // No gun reference crosses the original, which may re-enter its owner.
+            unsafe { gun.as_ref() }.map(|g| {
+                (
+                    DropKey {
+                        gun: gun as usize,
+                        spare: g.m_MagazineObject.px as usize,
+                    },
+                    g.m_MagazineUniqueTag,
+                )
+            })
+        },
+        |expected, key| STATE.lock().records.begin(expected.token, key),
+        original,
+        |expected, tag| {
+            let object = NonZeroUsize::new(expected.key.spare)?;
+            // SAFETY: the native drop just enabled this prop and put it into the update.
+            let (body, owner) = unsafe { body_of(object) }?;
+            let captured = Captured {
                 object,
                 body,
                 owner,
                 tag,
-                rounds,
-            },
-            Instant::now(),
-        ));
-        state.counts.dropped += 1;
+                rounds: expected.rounds.max(0),
+            };
+            let mut state = STATE.lock();
+            let magazine = state
+                .records
+                .commit(expected.token, captured, Instant::now())?;
+            state.counts.dropped += 1;
+            state.counts.in_world = state.records.magazines().count();
+            Some(magazine)
+        },
+    );
+    if automatic.is_none()
+        && let Some(magazine) = retained
+    {
+        EJECT_PROP.set(Some(magazine));
     }
     thrown
+}
+
+fn automatic_rounds(enabled: bool, local: bool, native_rounds: Option<i32>) -> Option<i32> {
+    (enabled && (local || native_rounds == Some(0))).then_some(0)
+}
+
+fn dispatch_drop(
+    expected: Option<ExpectedDrop>,
+    native_fallback: bool,
+    read: impl FnOnce() -> Option<(DropKey, i32)>,
+    begin: impl FnOnce(ExpectedDrop, DropKey) -> bool,
+    original: impl FnOnce() -> bool,
+    record: impl FnOnce(ExpectedDrop, i32) -> Option<Loose>,
+) -> (bool, Option<Loose>) {
+    let Some(expected) = expected else {
+        return (original(), None);
+    };
+    let Some((key, tag)) = read() else {
+        return (native_fallback && original(), None);
+    };
+    if key != expected.key {
+        return (original(), None);
+    }
+    if tag == WeaponData::NO_MAGAZINE_UNIQUE_TAG || !begin(expected, key) {
+        return (native_fallback && original(), None);
+    }
+    let thrown = original();
+    (thrown, if thrown { record(expected, tag) } else { None })
 }
 
 /// The prop's body and the body's owner.
@@ -387,6 +592,9 @@ unsafe fn body_of(object: NonZeroUsize) -> Option<(u32, NonZeroUsize)> {
 }
 
 #[cfg(test)]
+mod policy_tests;
+
+#[cfg(test)]
 mod tests {
     use std::f32::consts::FRAC_PI_2;
 
@@ -394,12 +602,46 @@ mod tests {
 
     fn magazine(tag: i32) -> Loose {
         Loose {
+            handle: WorldHandle::test(0),
             object: NonZeroUsize::new(0x1000).unwrap(),
             body: 3,
             owner: NonZeroUsize::new(0x1000).unwrap(),
             tag,
             rounds: 12,
         }
+    }
+
+    #[test]
+    fn an_eject_returns_only_its_own_prop_and_restores_nested_scopes() {
+        let outer = Loose {
+            rounds: 11,
+            ..magazine(7)
+        };
+        let inner = Loose {
+            rounds: 3,
+            ..magazine(8)
+        };
+        let a = Retention::reserve(9001, 9002).unwrap();
+        let b = Retention::reserve(9003, 9004).unwrap();
+        let (result, retained) = EjectRounds::with(&a, outer.rounds, || {
+            assert_eq!(EJECT_ROUNDS.get().unwrap().key, a.key);
+            EJECT_PROP.set(Some(outer));
+            let (inner_result, captured) = EjectRounds::with(&b, inner.rounds, || {
+                assert_eq!(EJECT_ROUNDS.get().unwrap().key, b.key);
+                EJECT_PROP.set(Some(inner));
+                true
+            });
+            assert!(inner_result);
+            assert_eq!(captured, Some(inner));
+            assert_eq!(EJECT_ROUNDS.get().unwrap().key, a.key);
+            assert_eq!(EJECT_PROP.get(), Some(outer));
+            false
+        });
+        assert!(!result);
+        assert_eq!(retained, Some(outer));
+        assert_eq!(EJECT_ROUNDS.get(), None);
+        assert_eq!(EJECT_PROP.get(), None);
+        assert_eq!(EjectRounds::with(&a, 9, || true), (true, None));
     }
 
     #[test]

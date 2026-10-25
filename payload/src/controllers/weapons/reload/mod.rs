@@ -41,6 +41,9 @@ pub mod chamber;
 pub mod config;
 pub mod eject;
 mod engine;
+#[cfg(test)]
+mod engine_tests;
+mod extraction;
 pub mod frames;
 pub(super) mod gate;
 pub mod insert;
@@ -48,6 +51,7 @@ pub mod loose;
 pub mod plan;
 mod records;
 mod render;
+pub(crate) mod serial;
 mod steps;
 pub mod travel;
 pub mod wells;
@@ -61,7 +65,7 @@ use crate::controllers::{
     body::rig::frames::Frames,
     config::ControllersConfig,
     frame::{Hand, Pose},
-    grab::{Candidate, GrabVolume},
+    grab::{Candidate, GrabVolume, GripTarget},
     hands::{ActiveHands, pose::CockpitHand},
     weapons::{
         docks,
@@ -72,8 +76,9 @@ use crate::controllers::{
             config::{ReloadButton, ReloadConfig},
             eject::{FlickDetector, TapDetector},
             engine::Reading,
+            extraction::{PendingDetach, Pull},
             frames::GunFrame,
-            insert::{Insertion, Well},
+            insert::{Insertion, InsertionSource, Well},
             plan::ReloadPlan,
             records::{RecordKey, Records, gun_entry},
             travel::ActionTravel,
@@ -187,6 +192,8 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
         gameplay,
     } = *inputs;
     let reload = &config.weapons.reload;
+    // SAFETY: bounded world-record maintenance runs on the input thread before eligibility exits.
+    unsafe { loose::maintain(&reload.loose) };
     let mut state = STATE.lock();
     if !(reload.enabled && gameplay) {
         state.clear_tick();
@@ -223,6 +230,11 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     let (seen, frames) = unsafe { loose_sightings(&tick, free, active, reload) };
     state.loose_seen = seen;
     state.frames = frames;
+    if state.frames.is_some()
+        && let Some(magazine) = state.extraction_candidate(&tick, free, reload)
+    {
+        candidates.push(magazine);
+    }
     if let Some(hand) = free {
         candidates.extend(loose::candidates(
             &state.loose_seen,
@@ -242,6 +254,22 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
         });
     state.free = free;
     candidates
+}
+
+/// Resolve direct magazine intent before ordinary nearest-target selection. A held foregrip
+/// remains held; an unheld brace or transfer target cannot steal a grip inside the magazine.
+pub(super) fn prioritize_extraction(targets: &mut Vec<GripTarget>, grips: [Option<Vec3>; 2]) {
+    let pulling = STATE.lock().extraction_hand();
+    if let Some(hand) = pulling {
+        for target in targets
+            .iter_mut()
+            .filter(|t| t.volume == GrabVolume::InsertedMagazine && t.hand == Some(hand))
+        {
+            *target = target.held(hand);
+        }
+        targets.retain(|t| !t.for_hand(hand) || t.volume == GrabVolume::InsertedMagazine);
+    }
+    extraction::prioritize(targets, grips);
 }
 
 /// The magazine pouch on a tick it has a round to give: its centre in the cockpit frame, the side
@@ -299,6 +327,12 @@ pub(super) fn finish_tick(inputs: &FinishInputs, config: &ControllersConfig) -> 
     held
 }
 
+/// Cancel only physical magazine manipulation on a mode boundary. Other weapon holds remain.
+/// The resumed input path must observe neutral grips before accepting a fresh magazine claim.
+pub(crate) fn cancel_extraction_on_standdown() {
+    STATE.lock().cancel_extraction();
+}
+
 /// Stop acting: drop any round in hand, forget the tick, and hand the weapons back to the game.
 pub(super) fn stand_down() {
     STATE.lock().stand_down();
@@ -321,8 +355,9 @@ unsafe fn loose_sightings(
     let Some((weapon, gun)) = free.and_then(|free| tick.gun(free.other())) else {
         return (Vec::new(), None);
     };
-    let wants =
-        reload.loose.enabled && weapon.plan.load == plan::LoadKind::Magazine && weapon.reading.out;
+    let wants = reload.loose.enabled
+        && weapon.plan.load == plan::LoadKind::Magazine
+        && (weapon.reading.out || reload.extraction.enabled);
     if !wants {
         return (Vec::new(), None);
     }
@@ -335,7 +370,11 @@ unsafe fn loose_sightings(
     let Some(frames) = docks::cockpit_frames(active, player) else {
         return (Vec::new(), None);
     };
-    let seen = unsafe { loose::sightings(player.w_axis.truncate(), tag, &frames, &reload.loose) };
+    let seen = if weapon.reading.out {
+        unsafe { loose::sightings(player.w_axis.truncate(), tag, &frames, &reload.loose) }
+    } else {
+        Vec::new()
+    };
     (seen, Some(frames))
 }
 
@@ -349,9 +388,14 @@ pub(super) fn well(config: &ReloadConfig) -> Option<(Hand, Vec3, f32)> {
     Some((gun_hand, well.mouth, config.capture_radius_m))
 }
 
-/// The hand holding a round, for the overlay's marker.
+/// The hand holding a round or pulling an inserted magazine, for occupancy and the overlay.
 pub(super) fn holding_hand() -> Option<Hand> {
-    STATE.lock().status.insert_hands.map(|(hand, _)| hand)
+    let state = STATE.lock();
+    state
+        .status
+        .insert_hands
+        .map(|(hand, _)| hand)
+        .or_else(|| state.extraction_hand())
 }
 
 /// The matrix to push for `part` of the weapon at `weapon` in place of `matrix`, from the late
@@ -440,6 +484,7 @@ struct GunTick {
     weapon: usize,
     /// The gun's index within its weapon.
     index: usize,
+    magazine: Option<serial::Identity>,
     wrist: Pose,
     frame: Option<GunFrame>,
     well: Option<Well>,
@@ -469,6 +514,12 @@ struct State {
     records: Records,
     /// Each gun hand's measured gun relative to its wrist, and the weapon it belongs to.
     measured: [Option<(usize, Pose)>; 2],
+    extraction: Pull,
+    pending_detach: Option<PendingDetach>,
+    detach_generation: u64,
+    extraction_blocks_belt: [bool; 2],
+    extraction_needs_neutral: [bool; 2],
+    insertion_source: InsertionSource,
     tap: TapDetector,
     flicks: [FlickDetector; 2],
     belts: [BeltPush; 2],
@@ -511,6 +562,12 @@ static STATE: Mutex<State> = Mutex::new(State {
     frames: None,
     records: Records::new(),
     measured: [None; 2],
+    extraction: Pull::new(),
+    pending_detach: None,
+    detach_generation: 0,
+    extraction_blocks_belt: [false; 2],
+    extraction_needs_neutral: [false; 2],
+    insertion_source: InsertionSource::Pouch,
     tap: TapDetector::new(),
     flicks: [FlickDetector::new(); 2],
     belts: [BeltPush::new(); 2],

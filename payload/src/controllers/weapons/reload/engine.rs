@@ -1,8 +1,9 @@
 //! The reload's engine reads, calls, and detours.
 //!
-//! The reads and calls run on the input tick, on the main thread outside the world update, and
-//! take the weapon by address so that nothing holds a borrow of it across them. The detours run on
-//! the threads that update the weapons and characters; they read only [`gate`]'s published state.
+//! Input reads use the tick's weapon addresses. Physical extraction remains unavailable because
+//! hook entry exclusion through removal is unproven. Legacy input drop callers do not establish
+//! a physics write mark. Detach calls retain raw addresses rather than owner borrows across
+//! reentrant engine calls.
 //!
 //! - [`Character::StartReloadingWieldingWeapon`]: every animated reload start, refused while the
 //!   weapon is reloaded by hand.
@@ -39,7 +40,11 @@ use crate::{
         weapons::{
             dual_wield::single,
             empty,
-            reload::{chamber::ActionKind, frames, gate, loose::EjectRounds},
+            reload::{
+                chamber::ActionKind,
+                frames, gate,
+                loose::{self, EjectRounds, Loose, Retention},
+            },
         },
     },
     hooks::character::acts::resolve_act_id,
@@ -148,32 +153,100 @@ pub unsafe fn measure_gun(
 ///
 /// # Safety
 ///
-/// `address` must be the live weapon read this tick; main thread, outside the world update.
-pub unsafe fn drop_magazine(address: usize, index: usize, loose: bool) {
-    let Some(weapon) = (unsafe { (address as *mut WeaponBase).as_mut() }) else {
-        return;
+/// `address` must be live, and the caller must hold the physics world's write mark. The legacy
+/// input callers do not establish that precondition; physical extraction does not use them.
+pub(super) unsafe fn drop_magazine(address: usize, index: usize, loose: bool) -> DetachOutcome {
+    // SAFETY: this function's contract applies to the legacy engine drop.
+    unsafe { detach_magazine(address, index, loose, None) }
+}
+
+/// The engine drop and retention are separate operations with separate accounting.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(super) enum DetachOutcome {
+    NoThrow,
+    /// The prop could not be retained; rounds remain in the weapon for native reload accounting.
+    DroppedUnretained,
+    Retained(Loose),
+}
+
+/// Physical pulls remain unavailable without a proven callback installation and removal adapter.
+pub(super) fn physical_detach_available() -> bool {
+    crate::controllers::weapons::reload::serial::available()
+}
+
+unsafe fn detach_magazine(
+    address: usize,
+    index: usize,
+    retain: bool,
+    reserved: Option<&Retention>,
+) -> DetachOutcome {
+    let weapon = address as *mut WeaponBase;
+    let Some((character, part, rounds, gun, spare)) = (unsafe { detach_inputs(weapon, index) })
+    else {
+        return DetachOutcome::NoThrow;
     };
-    let character = weapon.m_User[0] as *mut Character;
+    let execute = |retention: Option<&Retention>| {
+        if retention.is_some_and(|r| !r.matches(gun as usize, spare)) {
+            return DetachOutcome::NoThrow;
+        }
+        // No owner borrow crosses either engine call: both can re-enter the owner through old pointers.
+        let throw = || unsafe { (*gun).ThrowAwayMagazineObject(character, part) };
+        let (thrown, retained) = if let Some(retention) = retention {
+            EjectRounds::with(retention, rounds, throw)
+        } else {
+            (throw(), None)
+        };
+        finish_detach(
+            (thrown, retained),
+            || unsafe { (*gun).SpawnMagazineObject() },
+            |retained| unsafe {
+                (&raw mut (*weapon).m_WeaponIsWithoutMagazine).write(true);
+                if retained {
+                    (*weapon).SetMagazineAmmo(0);
+                }
+            },
+        )
+    };
+    if !retain {
+        execute(None)
+    } else if let Some(reserved) = reserved {
+        execute(Some(reserved))
+    } else {
+        loose::with_admission(
+            || Retention::reserve(gun as usize, spare),
+            DetachOutcome::NoThrow,
+            |reservation| execute(Some(reservation)),
+        )
+    }
+}
+
+unsafe fn detach_inputs(
+    weapon: *mut WeaponBase,
+    index: usize,
+) -> Option<(*mut Character, u32, i32, *mut WeaponData, usize)> {
+    let (character, rounds) = {
+        let base = unsafe { weapon.as_ref() }?;
+        (base.m_User[0] as *mut Character, base.m_MagazineAmmo.max(0))
+    };
     let part = unsafe { magazine_part(weapon) }
         .map_or(WeaponData::NO_MAGAZINE_MODEL_NAME_HASH, |p| p.m_NameHash);
-    // A magazine that stays in the world takes the gun's rounds with it.
-    let rounds = weapon.m_MagazineAmmo.max(0);
-    let Some(gun) = (unsafe { gun_mut(weapon, index) }) else {
-        return;
-    };
-    let mut throw = || unsafe { gun.ThrowAwayMagazineObject(character, part) };
-    let thrown = if loose {
-        EjectRounds::with(rounds, throw)
-    } else {
-        throw()
-    };
-    if thrown {
-        unsafe { gun.SpawnMagazineObject() };
+    let gun = unsafe { gun_mut(weapon, index) }? as *mut WeaponData;
+    let spare = unsafe { (*gun).m_MagazineObject.px as usize };
+    Some((character, part, rounds, gun, spare))
+}
+
+pub(super) fn finish_detach(
+    result: (bool, Option<Loose>),
+    spawn: impl FnOnce(),
+    commit: impl FnOnce(bool),
+) -> DetachOutcome {
+    let (thrown, retained) = result;
+    if !thrown {
+        return DetachOutcome::NoThrow;
     }
-    if loose && thrown {
-        unsafe { weapon.SetMagazineAmmo(0) };
-    }
-    weapon.m_WeaponIsWithoutMagazine = true;
+    spawn();
+    commit(retained.is_some());
+    retained.map_or(DetachOutcome::DroppedUnretained, DetachOutcome::Retained)
 }
 
 /// Seat a magazine of `rounds` from the world into the weapon at `address`: the rounds still

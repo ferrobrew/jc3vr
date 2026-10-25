@@ -62,6 +62,14 @@ impl BeltPush {
             self.stage = PushStage::Outside;
             return false;
         }
+        if !i.eligible {
+            self.stage = if self.stage == PushStage::Pushing {
+                PushStage::Outside
+            } else {
+                PushStage::Spent
+            };
+            return false;
+        }
         match self.stage {
             PushStage::Outside => {
                 let upright = i.axis.dot(Vec3::Y) >= config.max_tilt_deg.to_radians().cos();
