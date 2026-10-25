@@ -1,20 +1,29 @@
 //! Renderer-free checks of the production Replay status and controls routes.
 
+use std::path::PathBuf;
+
 use super::*;
 use crate::{
     config,
-    testing::replay::{self, Phase, ReplayOutcome, ReplayStatus},
+    testing::{
+        replay::{self, Phase, ReplayOutcome, ReplayStatus},
+        request,
+        scenario::{self, ScenarioStatus},
+        signals::Signal,
+    },
 };
 
 #[test]
-fn actual_replay_status_reads_the_snapshot_without_a_renderer_or_actions() {
+fn actual_replay_status_reads_replay_and_scenario_snapshots_without_a_renderer_or_actions() {
     assert_eq!(route(FeatureId::Replay), FeatureRoute::Replay);
     let status = replay::status();
     assert_eq!(status.phase, Phase::Idle);
     let before = replay_state();
     assert!(!before.active);
     assert!(!before.driving);
-    let expected = status_labels(&status);
+    let mut expected = status_labels(&status);
+    expected.push("Scenarios".to_owned());
+    expected.extend(scenario_labels(&scenario::status()));
     let save_status = config::status();
     let mut selection = NavigationState {
         feature: FeatureId::Replay,
@@ -25,7 +34,7 @@ fn actual_replay_status_reads_the_snapshot_without_a_renderer_or_actions() {
         let context = egui::Context::default();
         let labels = replay_frame(&context, &mut selection, width, Vec::new());
         assert_status_labels(&labels, &expected);
-        for (_, rect) in labels {
+        for (_, rect) in labels.into_iter().take(12) {
             for pressed in [true, false] {
                 let labels = replay_frame(
                     &context,
@@ -46,13 +55,19 @@ fn actual_replay_status_reads_the_snapshot_without_a_renderer_or_actions() {
 }
 
 #[test]
-fn actual_replay_controls_keep_the_idle_form_scenarios_and_signals_without_activation() {
+fn actual_replay_controls_keep_idle_forms_and_instructions_without_activation() {
     let status = replay::status();
     assert_eq!(status.phase, Phase::Idle);
     let before = replay_state();
     assert!(!before.active);
     assert!(!before.driving);
-    let readouts = status_labels(&status);
+    let mut readouts = status_labels(&status);
+    readouts.extend(scenario_labels(&scenario::status()));
+    let instruction = format!(
+        "Ctrl+Numpad- runs the last scenario again or stops it. A script can drop {} into the \
+         configuration directory to start and stop the tools.",
+        request::FILE_NAME
+    );
     let mut selection = NavigationState {
         feature: FeatureId::Replay,
         section: FeatureSection::Controls,
@@ -75,6 +90,7 @@ fn actual_replay_controls_keep_the_idle_form_scenarios_and_signals_without_activ
              session. Ctrl+Numpad* replays the last recording or stops.",
             "Scenarios",
             "Folder setting:",
+            instruction.as_str(),
             "Signals",
         ] {
             assert!(
@@ -93,7 +109,20 @@ fn actual_replay_controls_keep_the_idle_form_scenarios_and_signals_without_activ
                 "unexpected Replay Controls status readout: {readout}"
             );
         }
+        assert!(
+            labels
+                .iter()
+                .all(|(text, _)| !text.starts_with("Running ") && !text.starts_with("Last: ")),
+            "scenario reports belong in Replay Status"
+        );
+        assert!(
+            Signal::ALL
+                .iter()
+                .all(|signal| labels.iter().all(|(text, _)| text != signal.name())),
+            "Signals stays collapsed until its getters have a read-only snapshot seam"
+        );
         for forbidden in [
+            "Summary:",
             "Stop",
             "Start recording",
             "Stop recording",
@@ -121,6 +150,9 @@ struct ReplayState {
     status: String,
     active: bool,
     driving: bool,
+    scenario_status: String,
+    scenario_running: bool,
+    scenario_path: Option<PathBuf>,
 }
 
 fn replay_state() -> ReplayState {
@@ -135,6 +167,9 @@ fn replay_state() -> ReplayState {
         status: format!("{:?}", replay::status()),
         active: replay::is_active(),
         driving: replay::is_driving(),
+        scenario_status: format!("{:?}", scenario::status()),
+        scenario_running: scenario::is_running(),
+        scenario_path: scenario::last_path(),
     }
 }
 
@@ -163,14 +198,78 @@ fn status_labels(status: &ReplayStatus) -> Vec<String> {
     labels
 }
 
+fn scenario_labels(status: &ScenarioStatus) -> Vec<String> {
+    let mut labels = Vec::new();
+    if let Some((name, results)) = &status.running {
+        labels.push(format!("Running {name}"));
+        for result in results {
+            labels.push(
+                if result.verdict.passed {
+                    "PASS"
+                } else {
+                    "...."
+                }
+                .to_owned(),
+            );
+            labels.push(result.name.clone());
+            labels.push(result.verdict.detail.clone());
+        }
+    }
+    labels.extend(status.error.iter().cloned());
+    if let Some(report) = &status.last {
+        let total = report.results.len();
+        let passed = report.passed();
+        labels.push(match &report.aborted {
+            Some(reason) => format!("Last: {}: did not finish: {reason}", report.name),
+            None => format!(
+                "Last: {}: {passed} of {total} passed over {} frames",
+                report.name, report.frames
+            ),
+        });
+        for result in &report.results {
+            labels.push(
+                if result.verdict.passed {
+                    "PASS"
+                } else {
+                    "FAIL"
+                }
+                .to_owned(),
+            );
+            labels.push(result.name.clone());
+            labels.push(result.verdict.detail.clone());
+        }
+        if let Some(summary) = &report.summary {
+            labels.push("Summary:".to_owned());
+            labels.push(summary.display().to_string());
+        }
+    }
+    labels
+}
+
 fn assert_status_labels(labels: &[(String, egui::Rect)], expected: &[String]) {
     assert_eq!(
         labels.len(),
         expected.len(),
-        "Replay Status must contain only phase, warnings, and the last outcome"
+        "Replay Status must contain only replay and scenario snapshot readouts"
     );
     for ((text, _), expected) in labels.iter().zip(expected) {
         assert_eq!(text, expected);
+    }
+    for forbidden in [
+        "Recording:",
+        "Last",
+        "Start:",
+        "Pacing:",
+        "Replay",
+        "Run",
+        "Stop",
+        "Folder setting:",
+        "Signals",
+    ] {
+        assert!(
+            labels.iter().all(|(text, _)| text != forbidden),
+            "unexpected Replay Status control or form: {forbidden}"
+        );
     }
 }
 

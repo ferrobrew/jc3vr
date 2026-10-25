@@ -101,6 +101,9 @@ pub(crate) fn replay_status(ui: &mut egui::Ui) {
         }
         None => {}
     }
+    ui.separator();
+    ui.label("Scenarios");
+    scenarios_status(ui);
 }
 
 fn recording_ui(ui: &mut egui::Ui) {
@@ -247,13 +250,24 @@ fn scenarios_ui(ui: &mut egui::Ui) {
             ui.end_row();
         }
     });
-    if let Some((name, results)) = &status.running {
+    if running {
         ui.horizontal(|ui| {
-            ui.label(format!("Running {name}"));
             if ui.button("Stop").clicked() {
                 scenario::stop();
             }
         });
+    }
+    ui.label(format!(
+        "Ctrl+Numpad- runs the last scenario again or stops it. A script can drop {} into the \
+         configuration directory to start and stop the tools.",
+        request::FILE_NAME
+    ));
+}
+
+fn scenarios_status(ui: &mut egui::Ui) {
+    let status = scenario::status();
+    if let Some((name, results)) = &status.running {
+        ui.label(format!("Running {name}"));
         for result in results {
             verdict_line(
                 ui,
@@ -300,11 +314,6 @@ fn scenarios_ui(ui: &mut egui::Ui) {
             path_line(ui, "Summary", summary);
         }
     }
-    ui.label(format!(
-        "Ctrl+Numpad- runs the last scenario again or stops it. A script can drop {} into the \
-         configuration directory to start and stop the tools.",
-        request::FILE_NAME
-    ));
 }
 
 fn signals_ui(ui: &mut egui::Ui) {
