@@ -103,6 +103,8 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 ### body/
 
+- [camera-authored.md](mod/body/camera-authored.md) — the controlled authored-camera composition and transition contract, and the native ownership requirements that keep the adapter unavailable.
+- [attachments.md](mod/body/attachments.md) — copied socket interaction targets, native placement observations, and exact render-phase pouch markers in the body mirror.
 - [head-and-body.md](mod/body/head-and-body.md) — how head and body yaw relate in VR: coupling schemes, the headpose abstraction, the head-bone override, head hiding, and body IK.
 - [grapple-comfort.md](mod/body/grapple-comfort.md) — the grapple body-frame filter (issue #36): the hold from fire to landing, the yaw handoff, the landing-snap absorber, and the telemetry capture.
 - [swim-yaw.md](mod/body/swim-yaw.md) — the right stick owns the swim heading: the `DoRotate` target override, the forward/back-only move direction, the accumulator seeding, the turn-act suppression, and the swim heading's telemetry.
