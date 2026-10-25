@@ -17,9 +17,9 @@
 //!   the reset and from the reset's own record otherwise, and adopts each into the carry set on its
 //!   socket with its magazine as it was when its spawn comes back ([`input_tick`]).
 //!
-//! The store, the load, and the reset run on whatever thread the game runs them on, and the spawn
-//! callback on the spawn system's, so they take only this module's locks and the carry set's, one
-//! at a time, and make no engine call but the reads the game's own store and load make.
+//! The store, load, and reset run on their native callers. The spawn callback runs inline on the
+//! caller of `SpawnSystem::PreUpdate`, including reset-time service. The callback hands retained
+//! results to the input tick; the module and carry locks are taken separately.
 
 use std::{
     ffi::c_void,
@@ -340,7 +340,7 @@ pub(crate) unsafe fn request_twin(owner: &Character, tag_hash: u32) -> bool {
             SpawnSystem::FF_HIGH_PRIO_SPAWN_CHECKS,
             spawned as *const u8,
             (generation | TWIN_REQUEST) as usize as *mut u8,
-            -1,
+            u32::MAX,
         )
     };
     true
@@ -639,7 +639,7 @@ unsafe fn request(owner: &Character, origin: Origin, records: Vec<Record>) {
                 SpawnSystem::FF_HIGH_PRIO_SPAWN_CHECKS,
                 spawned as *const u8,
                 generation as usize as *mut u8,
-                -1,
+                u32::MAX,
             )
         };
         plan.spawning.push(Spawning {
@@ -759,7 +759,7 @@ unsafe fn adopt(owner: &mut Character) {
 }
 
 /// The spawn system's callback for a respawn: take a strong reference to each spawned weapon and
-/// hand it to the next input tick. Runs on the spawn system's thread.
+/// hand it to the next input tick. Runs inline on the caller of `SpawnSystem::PreUpdate`.
 unsafe extern "system" fn spawned(
     objects: *const Vector<SharedPtr<GameObject>>,
     userdata: *mut c_void,
