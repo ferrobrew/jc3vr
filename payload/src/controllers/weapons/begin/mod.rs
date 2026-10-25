@@ -16,7 +16,7 @@ use crate::{
         grab::{self, Candidate, GrabVolume, GripTarget, Mark, MarkAt, Shown},
         hands::{self, ActiveHands, CockpitHand, ik, pose as hand_pose},
         haptics::{self, Event},
-        loadout::{LoadoutSnapshot, Socket, grab::GrabRules, live},
+        loadout::{LoadoutSnapshot, grab::GrabRules, live},
         mode::{AirborneVariant, Mode, OnFootVariant},
         physical_hands::physics::guns,
         weapons::{
@@ -25,8 +25,7 @@ use crate::{
             c4,
             capabilities::{Capabilities, gun_hands_now, tracked_hands, trigger_claims},
             collide,
-            config::HolstersConfig,
-            docks::{self, SocketInputs, SocketPoint, SocketUse},
+            docks::{self, SocketInputs, SocketUse, attachments::Sample},
             engine::{self, HeldWeapon},
             foregrip, grenade, grip_watch, heft,
             hold::{self, armed},
@@ -46,11 +45,13 @@ use crate::{
 };
 
 mod place;
+mod socket_candidates;
 
 /// The first half of the weapon handling's input tick: read the weapons in the hands and return
 /// the weapon handling's grip targets. Called while the bindings inject, before the tables.
 pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let config = Config::lock_query(|c| c.controllers);
+    docks::publish_targets(None);
     let Some(active) = hands::active_hands_raw() else {
         crate::controllers::weapons::stand_down();
         return TickStart::default();
@@ -98,7 +99,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             let sockets = snapshot
                 .as_ref()
                 .filter(|_| capabilities.dock && config.weapons.holsters.enabled)
-                .map_or_else(Vec::new, |snapshot| {
+                .map(|snapshot| {
                     docks::socket_points(
                         owner,
                         &SocketInputs {
@@ -535,8 +536,8 @@ struct Ticked {
     beside: Option<HeldWeapon>,
     /// Which hands the loadout table has something in, by [`Hand::index`].
     table_hands: [bool; 2],
-    /// The sockets' grab volumes, in the world.
-    sockets: Vec<SocketPoint>,
+    /// Native socket observations and hand offers from this input tick.
+    sockets: Option<Sample>,
     /// The character's model-to-world transform.
     character: Option<Mat4>,
     /// The long guns docked on the shoulders, for a draw at any part of one.
@@ -759,46 +760,13 @@ fn socket_candidates(
     body: Option<&BodyFrame>,
     config: &ControllersConfig,
 ) -> (Vec<Candidate>, Vec<(Candidate, SocketUse)>) {
-    let Some(frames) = ticked
-        .character
-        .and_then(|c| docks::cockpit_frames(active, c))
-    else {
-        return (Vec::new(), Vec::new());
-    };
-    let holsters = &config.weapons.holsters;
-    let landmarks = body
-        .filter(|_| !holsters.follow_docks)
-        .map_or_else(Vec::new, |body| volumes::socket_landmarks(body, holsters));
-    let mut draws = Vec::new();
-    let mut others = Vec::new();
-    for point in &ticked.sockets {
-        let volume = GrabVolume::Socket(point.socket);
-        let centre = landmarks
-            .iter()
-            .find(|c| c.volume == volume)
-            .map_or_else(|| frames.world_to_cockpit(point.point), |c| c.centre);
-        let candidate = Candidate {
-            volume,
-            centre,
-            radius: socket_radius(point.socket, holsters).max(0.0),
-            hand: Some(point.hand),
-        };
-        match point.usage {
-            SocketUse::Draw => draws.push(candidate),
-            usage @ (SocketUse::Dock | SocketUse::NoFit) => others.push((candidate, usage)),
-        }
-    }
-    (draws, others)
-}
-
-/// How near a hand must come to `socket`'s volume: the hips', the shoulders', or the chest's, with
-/// the outer back taking the shoulders'.
-fn socket_radius(socket: Socket, holsters: &HolstersConfig) -> f32 {
-    match socket {
-        Socket::Hip(_) => holsters.hip.radius_m,
-        Socket::Shoulder(_) | Socket::BackOuter => holsters.shoulder.radius_m,
-        Socket::Chest => holsters.chest.radius_m,
-    }
+    socket_candidates::socket_candidates(
+        ticked.sockets.as_ref(),
+        active,
+        ticked.character,
+        body,
+        &config.weapons.holsters,
+    )
 }
 
 /// Whether the explosive pouches and world-weapon pickup act in `mode`. Held-gun interactions use

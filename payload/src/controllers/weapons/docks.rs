@@ -37,7 +37,9 @@ use crate::{
             grab::{self, GrabRules, SocketMove},
         },
         weapons::{
-            docks::attachments::{Attachment, Missing, Occupancy, Placement, PoseSource, Sample},
+            docks::attachments::{
+                Attachment, Missing, Occupancy, Placement, PoseSource, Sample, TargetPolicy,
+            },
             hold::{act, armed, steal},
             inventory::{
                 carry,
@@ -51,10 +53,15 @@ use crate::{
 
 pub(crate) mod attachments;
 
-/// The last input-thread socket observation, carried with the current character transform.
+/// The last selected input-thread targets, carried with the current character transform.
 /// No weapon or joint is read by this consumer.
 pub(crate) fn attachment_sample(owner: usize, character: Mat4, now: Instant) -> Option<Sample> {
     ATTACHMENTS.lock().as_ref()?.in_world(owner, character, now)
+}
+
+/// Publish only the sample that the socket candidate provider consumes on this input tick.
+pub(crate) fn publish_targets(sample: Option<Sample>) {
+    *ATTACHMENTS.lock() = sample;
 }
 
 /// What a socket's volume is for.
@@ -88,12 +95,12 @@ pub(crate) struct SocketInputs<'a> {
     pub offsets: &'a Offsets,
 }
 
-/// The sockets' volumes for each hand, in the world.
+/// Observe native socket poses and existing hand offers for target selection on this input tick.
 ///
 /// # Safety
 ///
 /// `owner` must be the live local player character, on the main thread outside the world update.
-pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> Vec<SocketPoint> {
+pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> Sample {
     let snapshot = inputs.snapshot;
     let to_world = Mat4::from(owner.m_WorldMatrixT1);
     let docked = unsafe { socket_weapons(owner, snapshot) };
@@ -109,6 +116,7 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
         owner: owner as *const Character as usize,
         at: Instant::now(),
         character: to_world,
+        policy: TargetPolicy::Native,
         attachments: Vec::new(),
     };
     let mut seen = Vec::new();
@@ -174,6 +182,7 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
             item: occupant.map(|item| item.id),
             source,
             pose,
+            native: None,
         };
         sample.attachments.push(attachment);
         if matches!(source, PoseSource::VisibleGrip { .. }) {
@@ -251,9 +260,7 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
     }
     grips.retain(|g| seen.contains(&g.object));
     drop(grips);
-    let points = sample.points();
-    *ATTACHMENTS.lock() = Some(sample);
-    points
+    sample
 }
 
 /// The weapons the table has on the body's sockets that are seen there: each one live (a slot or

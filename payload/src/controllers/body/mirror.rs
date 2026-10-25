@@ -156,11 +156,12 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     let Some(character) = (unsafe { character.as_ref() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };
-    let (enabled, distance, show_attachments) = Config::lock_query(|c| {
+    let (enabled, distance, show_attachments, follow_docks) = Config::lock_query(|c| {
         (
             c.controllers.overlay.body_mirror,
             c.controllers.overlay.body_mirror_distance_m,
-            c.controllers.weapons.holsters.enabled && c.controllers.weapons.holsters.follow_docks,
+            c.controllers.weapons.holsters.enabled,
+            c.controllers.weapons.holsters.follow_docks,
         )
     });
     if !enabled {
@@ -199,6 +200,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     let now = Instant::now();
     let attachments = if show_attachments {
         docks::attachment_sample(character as *const Character as usize, world, now)
+            .filter(|sample| sample.matches_policy(follow_docks))
     } else {
         None
     };
@@ -434,7 +436,7 @@ const NO_FIT: Rgba = [1.0, 0.2, 0.2, 0.9];
 const ATTACHMENT_RING_M: f32 = 0.10;
 const ATTACHMENT_AXIS_M: f32 = 0.08;
 
-/// Draw only copied observations, at the same pose the docking consumer uses.
+/// Draw copied interaction targets; landmark rings do not represent native weapon placement.
 pub(crate) fn attachment_markers(
     sample: &Sample,
     plane: Plane,
@@ -458,7 +460,12 @@ pub(crate) fn attachment_markers(
             }
         };
         let at = |point| Anchor::Head(plane.reflect(point) - head);
-        out.push(ring(at(pose.position), ATTACHMENT_RING_M, color));
+        let radius = if attachment.source == PoseSource::BodyLandmark {
+            ATTACHMENT_RING_M * 0.7
+        } else {
+            ATTACHMENT_RING_M
+        };
+        out.push(ring(at(pose.position), radius, color));
         out.push(line(
             at(pose.position),
             at(pose.position + pose.orientation * Vec3::NEG_Z * ATTACHMENT_AXIS_M),

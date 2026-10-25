@@ -15,6 +15,7 @@ fn observation(placement: Placement, bone: Option<Mat4>, occupancy: Occupancy) -
         owner: 7,
         at: Instant::now(),
         character: Mat4::IDENTITY,
+        policy: TargetPolicy::Native,
         attachments: vec![Attachment {
             socket: Socket::Shoulder(Hand::Right),
             hand: Some(Hand::Left),
@@ -23,6 +24,7 @@ fn observation(placement: Placement, bone: Option<Mat4>, occupancy: Occupancy) -
             item: None,
             source,
             pose,
+            native: None,
         }],
     }
 }
