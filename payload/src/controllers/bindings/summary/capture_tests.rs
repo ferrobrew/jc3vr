@@ -3,6 +3,7 @@ use crate::controllers::{
     mode::OnFootVariant, summary::eligibility, weapons::reload::eligible_belt_for_test,
 };
 
+mod climb;
 mod doors;
 mod parachute;
 

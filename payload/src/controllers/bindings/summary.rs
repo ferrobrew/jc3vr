@@ -178,6 +178,20 @@ fn capture_current(
                 });
             }
         }
+        if input.ready[i]
+            && chosen[i] == Some(GrabVolume::Climb)
+            && input.selected[i].is_some_and(|target| {
+                target.volume == GrabVolume::Climb
+                    && target.hand == Some(hand)
+                    && target.held_by.is_none()
+            })
+        {
+            mechanics.push(Row {
+                control: Control::Grip(hand),
+                gesture: Gesture::Press,
+                effect: Effect::Mod(ModAction::Climb),
+            });
+        }
         if doors[i]
             && input.ready[i]
             && chosen[i] == Some(GrabVolume::Pickup(PickupKind::Door))

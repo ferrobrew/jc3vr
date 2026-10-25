@@ -201,6 +201,8 @@ pub enum ModAction {
     Grenade,
     /// Take a C4 charge from its chest pouch, and throw it by letting go.
     C4,
+    /// Grip an unheld climbing surface within reach.
+    Climb,
     /// Grip an unheld latched vehicle door to open it by hand.
     OpenVehicleDoor,
     /// Push the dominant fingertip into the wrist button to detonate the placed charges.
