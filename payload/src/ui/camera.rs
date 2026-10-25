@@ -4,8 +4,16 @@ use egui::Slider;
 use jc3gi::types::math::Matrix4;
 
 use crate::{
-    config, grapple, headpose, headpose::config::VrTurnMode, hooks, hooks::character::BodyIkConfig,
-    logging, vr, vr::FreezeMode,
+    config,
+    controllers::body::rig::live_observation::{
+        self, MissingEvidence, NativeObservation, RawAvailability, Unavailable,
+    },
+    grapple, headpose,
+    headpose::config::VrTurnMode,
+    hooks,
+    hooks::character::BodyIkConfig,
+    logging, vr,
+    vr::FreezeMode,
 };
 
 pub(crate) fn head_view(ui: &mut egui::Ui) {
@@ -52,6 +60,81 @@ pub(crate) fn grapple_comfort(ui: &mut egui::Ui) {
 
 pub(crate) fn body_ik(ui: &mut egui::Ui) {
     egui_debug_body_ik(ui, &mut config::edit().body_ik);
+    ui.collapsing(
+        "Body observation evidence (read-only)",
+        body_observation_evidence,
+    );
+}
+
+fn body_observation_evidence(ui: &mut egui::Ui) {
+    let status = live_observation::status();
+    match status.raw.availability {
+        RawAvailability::Unavailable(reason) => {
+            ui.label(format!("Live tracking: {}.", unavailable_label(reason)));
+        }
+        RawAvailability::Observed { age } => {
+            ui.label(format!(
+                "Live tracking: captured {:.0} ms ago.",
+                age.as_secs_f64() * 1000.0
+            ));
+        }
+    }
+    if let Some(packet) = status.raw.packet {
+        ui.label(format!(
+            "Controller sequence: {}; predicted display time: {} ns; focused: {}.",
+            packet.sequence, packet.display_time_ns, packet.focused
+        ));
+        ui.label(format!(
+            "Head position/orientation valid: {}/{}; tracked: {}/{}. Present grips: {}/2.",
+            packet.head.position_valid,
+            packet.head.orientation_valid,
+            packet.head.position_tracked,
+            packet.head.orientation_tracked,
+            packet.grips.iter().flatten().count(),
+        ));
+    }
+    match status.native {
+        NativeObservation::Unavailable(reason) => {
+            ui.label(format!(
+                "Native pre-IK capture: {}.",
+                unavailable_label(reason)
+            ));
+        }
+        NativeObservation::Observed { age, .. } => {
+            ui.label(format!(
+                "Native pre-IK capture: captured {:.0} ms ago.",
+                age.as_secs_f64() * 1000.0
+            ));
+        }
+    }
+    ui.small("These independent captures do not form a checked body observation and do not activate body estimation or movement authority.");
+    ui.label("Missing checked-observation evidence:");
+    for missing in status.missing {
+        ui.label(match missing {
+            MissingEvidence::CompletedLedgerAndShiftPair => {
+                "Completed movement ledger and shift pair"
+            }
+            MissingEvidence::CompositionBasisPair => "Composition basis pair",
+            MissingEvidence::OwnerAtCompletion => "Transform owner at completion",
+            MissingEvidence::OriginEpoch => "Complete tracking-origin epoch",
+            MissingEvidence::CalibrationAndScaleEpochs => "Calibration and scale epochs",
+            MissingEvidence::AuthorityEpoch => "Authority epoch",
+            MissingEvidence::PreviousNativePose => "Previous native skeleton pose",
+            MissingEvidence::SupportIdentity => "Support identity",
+        });
+    }
+}
+
+fn unavailable_label(reason: Unavailable) -> &'static str {
+    match reason {
+        Unavailable::NotCaptured => "not captured",
+        Unavailable::NoLiveTracking => "no live tracking",
+        Unavailable::MixedDisplayTimes => "head and controllers have different display times",
+        Unavailable::InvalidCapture => "invalid capture",
+        Unavailable::FuturePublication => "publication time is in the future",
+        Unavailable::Stale { .. } => "capture has expired",
+        Unavailable::OriginCountersChanged => "teleport or recenter counter changed",
+    }
 }
 
 pub(crate) fn turn_advanced(ui: &mut egui::Ui) {

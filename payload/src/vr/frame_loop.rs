@@ -11,7 +11,10 @@ use parking_lot::MutexGuard;
 
 use crate::{
     config::Config,
-    controllers::frame as controller_frame,
+    controllers::{
+        body::rig::live_observation::{self, LocatedTracking},
+        frame as controller_frame,
+    },
     frame_timing::{self, Slot},
     vr::{
         Fov, FreezeMode, OffAxisProjection, VIEW_TYPE, VrConfig,
@@ -31,6 +34,7 @@ use crate::{
 /// predicted display time; call [`FrameContext::should_render`] to decide whether to render or submit
 /// an empty frame. Called from `hooks::game::game_update_render`.
 pub fn frame_begin() -> Option<FrameContext> {
+    live_observation::tracking_unavailable();
     // Acquiring the runtime lock blocks on the deferred frame tail (which holds it until it
     // submits the previous frame), so this scope measures how much of the previous frame's tail /
     // GPU work the main thread's prologue failed to overlap -- the pipelining slack still on the
@@ -289,6 +293,7 @@ impl VrState {
         let mut head_tracked = false;
         let mut located = false;
         let mut flight_head = None;
+        let mut body_head = None;
         if frame_state.should_render {
             let (view_flags, views) = session
                 .handle
@@ -349,6 +354,14 @@ impl VrState {
                     flags: view_flags,
                     display_time_ns: frame_state.predicted_display_time.as_nanos(),
                 });
+                body_head = Some(LocatedTracking {
+                    head: mid_pose(eyes[0].pose, eyes[1].pose),
+                    flags: view_flags,
+                    display_time_ns: frame_state.predicted_display_time.as_nanos(),
+                    cockpit_from_local: self.baseline.map_or(xr::Posef::IDENTITY, |baseline| {
+                        baseline.rebase(xr::Posef::IDENTITY)
+                    }),
+                });
                 located = true;
             }
         }
@@ -376,7 +389,7 @@ impl VrState {
         if let Some(input) = self.input.as_mut() {
             let controllers = Config::lock_query(|c| c.controllers);
             let _timing = frame_timing::scope(Slot::VrInput);
-            input.update(
+            let sampled = input.update(
                 &session.handle,
                 &session.local,
                 frame_state.predicted_display_time,
@@ -384,6 +397,7 @@ impl VrState {
                 &controllers,
                 flight_head,
             );
+            live_observation::publish_tracking(body_head, sampled);
         } else {
             flight_pose::unavailable();
         }

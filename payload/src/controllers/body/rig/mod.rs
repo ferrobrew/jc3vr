@@ -25,6 +25,7 @@ pub(crate) mod estimate;
 pub mod frames;
 pub mod lean;
 pub mod legs;
+pub(crate) mod live_observation;
 #[cfg(test)]
 mod observation;
 pub mod pelvis;

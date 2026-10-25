@@ -20,7 +20,13 @@ use parking_lot::Mutex;
 use crate::{
     config::Config,
     controllers::{
-        body::{procedural::torso_weight, rig},
+        body::{
+            procedural::torso_weight,
+            rig::{
+                self,
+                live_observation::{self, NativeCapture},
+            },
+        },
         frame::Hand,
         locomotion::{anchor::stabilize as stabilize_anchors, view::Neutral},
     },
@@ -234,6 +240,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         *SHOULDERS_DRIVEN.lock() = [false; 2];
         let Some(animation_controller) = character.m_AnimatedModel.m_AnimationController.as_mut()
         else {
+            live_observation::native_unavailable();
             return;
         };
 
@@ -287,6 +294,15 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         let eye_mid_model = (eye_joint(b"fLeftEye") + eye_joint(b"fRightEye")) / 2.0;
         let eye_mid_world = character_world.transform_point3(eye_mid_model);
         let eye_arm = character_rotation.inverse() * (eye_mid_world - animated_neck_world);
+        live_observation::publish_native(NativeCapture {
+            previous_root: character_world_prev,
+            current_root: character_world,
+            previous_anchor: animated_head_world_prev,
+            current_anchor: animated_head_world,
+            current_head_model: joint_translation(&head_joint),
+            current_neck_model: joint_translation(&neck_joint),
+            current_eye_mid_model: eye_mid_model,
+        });
 
         // On foot the view hangs from Rico's root rather than his animated head, so the clips' bob
         // and lurch never reach it (`controllers::locomotion::anchor`).

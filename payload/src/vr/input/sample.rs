@@ -56,7 +56,7 @@ impl InputState {
         baseline: Option<Baseline>,
         cfg: &ControllersConfig,
         flight_head: Option<PendingHead>,
-    ) {
+    ) -> Option<ControllerFrame> {
         if !cfg.enabled {
             flight_pose::unavailable();
             history::interrupt(DiscontinuityReason::Unavailable);
@@ -64,7 +64,7 @@ impl InputState {
             semantic_frame::clear();
             haptics::clear();
             self.previous_buttons = [ButtonSet::EMPTY; 2];
-            return;
+            return None;
         }
         self.sync_trackers(session, cfg.input.hand_tracking);
 
@@ -77,7 +77,7 @@ impl InputState {
                 history::interrupt(DiscontinuityReason::Unavailable);
                 frame::clear();
                 semantic_frame::clear();
-                return;
+                return None;
             }
         };
         let observed_at = history::observation_time();
@@ -102,7 +102,7 @@ impl InputState {
                 Ok(()) => self.note_success(),
                 Err(e) => self.note_failure(&e),
             }
-            return;
+            return None;
         }
 
         replay::reset_on_handback(&mut self.previous_buttons);
@@ -203,7 +203,12 @@ impl InputState {
             .as_ref()
             .filter(|_| first_error.is_none())
             .map(|_| frame.clone());
+        let mut live_controllers = first_error.is_none().then(|| frame.clone());
         let (frame_sequence, published_at) = frame::publish(frame);
+        if let Some(controllers) = live_controllers.as_mut() {
+            controllers.sequence = frame_sequence;
+            controllers.published_at = published_at;
+        }
         match (flight_head, flight_controllers) {
             (Some(head), Some(controllers)) => {
                 flight_pose::complete(head, controllers, (frame_sequence, published_at));
@@ -231,6 +236,7 @@ impl InputState {
             Some(e) => self.note_failure(&e),
             None => self.note_success(),
         }
+        live_controllers
     }
 
     /// Read every action of the semantic `set`, both hands, and derive each one's digital state
