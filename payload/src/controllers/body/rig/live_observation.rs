@@ -2,7 +2,8 @@
 //!
 //! The raw packet uses the head locate and controller publication receipt from one OpenXR frame.
 //! Native and completion captures remain independent of it; host times never join simulation sides.
-//! Missing composition and source epochs prevent construction of the checked body observation.
+//! Exact completion tokens match frame movement and shift evidence, without historical basis sides.
+//! Missing per-side ownership, native history, support, and epochs prevent a checked observation.
 
 use std::time::{Duration, Instant};
 
@@ -13,8 +14,8 @@ use parking_lot::Mutex;
 use crate::{
     controllers::{
         body::rig::root::{
-            self, CompletionSnapshot, CompletionSnapshotAvailability, CompletionUnavailable,
-            MovementCompletion,
+            self, CompletionSnapshot, CompletionSnapshotAvailability, CompletionToken,
+            CompletionUnavailable, FrameSourceSnapshot, MovementCompletion,
         },
         frame::{ControllerFrame, Pose, TrackedPose},
         roomscale::teleport,
@@ -48,6 +49,7 @@ pub(crate) struct RawPacket {
 /// The previous anchor uses the current animated head joint through the previous root.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct NativeCapture {
+    pub completion: Option<CompletionToken>,
     pub previous_root: Mat4,
     pub current_root: Mat4,
     pub previous_anchor: Vec3,
@@ -114,14 +116,43 @@ impl RawObservation {
     }
 }
 
-/// The latest native capture, never a checked body observation.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) enum NativeObservation {
+/// Native capture availability, independent of its owned record.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum NativeAvailability {
     Unavailable(Unavailable),
-    Observed {
-        capture: NativeCapture,
-        age: Duration,
-    },
+    Observed { age: Duration },
+}
+
+/// A fixed-size latest native capture, never a checked body observation.
+/// Unavailable observations omit the capture rather than retaining a previous publication.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct NativeObservation {
+    availability: NativeAvailability,
+    capture: Option<NativeCapture>,
+}
+
+impl NativeObservation {
+    fn unavailable(reason: Unavailable) -> Self {
+        Self {
+            availability: NativeAvailability::Unavailable(reason),
+            capture: None,
+        }
+    }
+
+    fn observed(capture: NativeCapture, age: Duration) -> Self {
+        Self {
+            availability: NativeAvailability::Observed { age },
+            capture: Some(capture),
+        }
+    }
+
+    pub(crate) fn availability(&self) -> NativeAvailability {
+        self.availability
+    }
+
+    pub(crate) fn capture(&self) -> Option<NativeCapture> {
+        self.capture
+    }
 }
 
 /// Diagnostic rejection of a completion snapshot, separate from movement eligibility.
@@ -170,13 +201,70 @@ impl CompletionObservation {
     }
 }
 
+/// Why the exact frame source cannot be matched to the present native completion.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum MatchUnavailable {
+    NoFrame,
+    FrameDiagnostic(Unavailable),
+    Completion(CompletionRejection),
+    Native(Unavailable),
+    MissingNativeToken,
+    DifferentCompletion,
+    InvalidFrameSource,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum FrameMatchAvailability {
+    Unavailable(MatchUnavailable),
+    Matched,
+}
+
+/// Matched identity evidence only, not historical composition sides or a checked body pair.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct MatchedFrameSource {
+    pub source: FrameSourceSnapshot,
+    pub native: NativeCapture,
+}
+
+/// Fixed-size match availability with no retained packet on rejection.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct FrameMatchObservation {
+    availability: FrameMatchAvailability,
+    matched: Option<MatchedFrameSource>,
+}
+
+impl FrameMatchObservation {
+    fn unavailable(reason: MatchUnavailable) -> Self {
+        Self {
+            availability: FrameMatchAvailability::Unavailable(reason),
+            matched: None,
+        }
+    }
+
+    fn matched(source: FrameSourceSnapshot, native: NativeCapture) -> Self {
+        Self {
+            availability: FrameMatchAvailability::Matched,
+            matched: Some(MatchedFrameSource { source, native }),
+        }
+    }
+
+    pub(crate) fn availability(self) -> FrameMatchAvailability {
+        self.availability
+    }
+
+    pub(crate) fn matched_source(self) -> Option<MatchedFrameSource> {
+        self.matched
+    }
+}
+
 /// Separate source availability and the missing checked-observation prerequisites.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct ObservationStatus {
     pub raw: RawObservation,
     pub native: NativeObservation,
     pub completion: CompletionObservation,
-    pub missing: [MissingEvidence; 8],
+    pub frame_match: FrameMatchObservation,
+    pub missing: &'static [MissingEvidence],
 }
 
 /// Publish only the sampler-owned controller frame returned with its real publication receipt.
@@ -202,7 +290,18 @@ pub(crate) fn publish_native(capture: NativeCapture) {
 
 /// Clear a previous capture when the local hook cannot read its animation controller.
 pub(crate) fn native_unavailable() {
-    SLOT.lock().native = None;
+    SLOT.lock().clear_native();
+}
+
+/// Publish the exact source returned through the current rendered cockpit composition.
+pub(crate) fn publish_composition(source: FrameSourceSnapshot) {
+    SLOT.lock()
+        .publish_composition(source, Instant::now(), OriginCounters::current());
+}
+
+/// Clear composition evidence when no live, unfrozen VR pose pair is published.
+pub(crate) fn composition_unavailable() {
+    SLOT.lock().clear_composition();
 }
 
 /// Read current diagnostic availability without reading engine pointers or composing a pose.
@@ -218,8 +317,18 @@ pub(crate) fn status() -> ObservationStatus {
 }
 
 const DIAGNOSTIC_MAX_AGE: Duration = Duration::from_millis(500);
-const MISSING: [MissingEvidence; 8] = [
+const MISSING: &[MissingEvidence] = &[
     MissingEvidence::CompletedLedgerAndShiftPair,
+    MissingEvidence::CompositionBasisPair,
+    MissingEvidence::OwnerAtCompletion,
+    MissingEvidence::OriginEpoch,
+    MissingEvidence::CalibrationAndScaleEpochs,
+    MissingEvidence::AuthorityEpoch,
+    MissingEvidence::PreviousNativePose,
+    MissingEvidence::SupportIdentity,
+];
+
+const MISSING_AFTER_MATCH: &[MissingEvidence] = &[
     MissingEvidence::CompositionBasisPair,
     MissingEvidence::OwnerAtCompletion,
     MissingEvidence::OriginEpoch,
@@ -259,9 +368,17 @@ struct NativePublication {
     origin: OriginCounters,
 }
 
+#[derive(Debug, Copy, Clone)]
+struct CompositionPublication {
+    source: FrameSourceSnapshot,
+    observed_at: Instant,
+    origin: OriginCounters,
+}
+
 struct Publisher {
     raw: Result<RawPublication, Unavailable>,
     native: Option<NativePublication>,
+    composition: Option<CompositionPublication>,
 }
 
 impl Publisher {
@@ -269,6 +386,7 @@ impl Publisher {
         Self {
             raw: Err(Unavailable::NotCaptured),
             native: None,
+            composition: None,
         }
     }
 
@@ -295,6 +413,27 @@ impl Publisher {
         });
     }
 
+    fn clear_native(&mut self) {
+        self.native = None;
+    }
+
+    fn clear_composition(&mut self) {
+        self.composition = None;
+    }
+
+    fn publish_composition(
+        &mut self,
+        source: FrameSourceSnapshot,
+        observed_at: Instant,
+        origin: OriginCounters,
+    ) {
+        self.composition = Some(CompositionPublication {
+            source,
+            observed_at,
+            origin,
+        });
+    }
+
     #[cfg(test)]
     fn read(&self, now: Instant, max_age: Duration, origin: OriginCounters) -> ObservationStatus {
         self.read_completion_status(
@@ -312,6 +451,9 @@ impl Publisher {
         origin: OriginCounters,
         completion: CompletionSnapshot,
     ) -> ObservationStatus {
+        let native = self.read_native(now, max_age, origin);
+        let completion = read_completion(completion, now, max_age);
+        let frame_match = self.read_frame_match(now, max_age, origin, completion, native);
         ObservationStatus {
             raw: match self.raw {
                 Err(reason) => RawObservation::unavailable(reason),
@@ -325,10 +467,38 @@ impl Publisher {
                     Err(reason) => RawObservation::unavailable(reason),
                 },
             },
-            native: self.read_native(now, max_age, origin),
-            completion: read_completion(completion, now, max_age),
-            missing: MISSING,
+            native,
+            completion,
+            frame_match,
+            missing: if frame_match.matched_source().is_some() {
+                MISSING_AFTER_MATCH
+            } else {
+                MISSING
+            },
         }
+    }
+
+    fn read_frame_match(
+        &self,
+        now: Instant,
+        max_age: Duration,
+        origin: OriginCounters,
+        present: CompletionObservation,
+        native: NativeObservation,
+    ) -> FrameMatchObservation {
+        let Some(publication) = self.composition else {
+            return FrameMatchObservation::unavailable(MatchUnavailable::NoFrame);
+        };
+        if let Err(reason) = age_at(
+            publication.observed_at,
+            now,
+            max_age,
+            publication.origin == origin,
+        ) {
+            return FrameMatchObservation::unavailable(MatchUnavailable::FrameDiagnostic(reason));
+        }
+        let completion = read_completion(publication.source.completion(), now, max_age);
+        match_frame_source(publication.source, completion, present, native)
     }
 
     fn read_native(
@@ -337,7 +507,7 @@ impl Publisher {
         max_age: Duration,
         origin: OriginCounters,
     ) -> NativeObservation {
-        let unavailable = NativeObservation::Unavailable;
+        let unavailable = NativeObservation::unavailable;
         let Some(publication) = self.native else {
             return unavailable(Unavailable::NotCaptured);
         };
@@ -353,11 +523,49 @@ impl Publisher {
         if !valid_capture(publication.capture) {
             return unavailable(Unavailable::InvalidCapture);
         }
-        NativeObservation::Observed {
-            capture: publication.capture,
-            age,
+        NativeObservation::observed(publication.capture, age)
+    }
+}
+
+fn match_frame_source(
+    source: FrameSourceSnapshot,
+    completion: CompletionObservation,
+    present: CompletionObservation,
+    native: NativeObservation,
+) -> FrameMatchObservation {
+    let reject = FrameMatchObservation::unavailable;
+    for observed in [completion, present] {
+        if let CompletionAvailability::Unavailable(reason) = observed.availability() {
+            return reject(MatchUnavailable::Completion(reason));
         }
     }
+    let (Some(completion), Some(present)) = (completion.completion(), present.completion()) else {
+        return reject(MatchUnavailable::InvalidFrameSource);
+    };
+    if let NativeAvailability::Unavailable(reason) = native.availability() {
+        return reject(MatchUnavailable::Native(reason));
+    }
+    let Some(capture) = native.capture() else {
+        return reject(MatchUnavailable::Native(Unavailable::InvalidCapture));
+    };
+    let Some(token) = capture.completion else {
+        return reject(MatchUnavailable::MissingNativeToken);
+    };
+    if token != completion.token() || token != present.token() {
+        return reject(MatchUnavailable::DifferentCompletion);
+    }
+    let basis = source.current_basis();
+    let shift = source.shift();
+    if source.movement() != completion.ledger.movement
+        || !unit_rotation(basis.body)
+        || !basis.world_scale.is_finite()
+        || basis.world_scale <= 0.0
+        || !shift.previous.is_finite()
+        || !shift.current.is_finite()
+    {
+        return reject(MatchUnavailable::InvalidFrameSource);
+    }
+    FrameMatchObservation::matched(source, capture)
 }
 
 fn read_completion(

@@ -33,6 +33,7 @@
 //! slides the view back at an obstruction, and publishes the gap for the next ticks.
 
 pub mod chase;
+mod completion;
 pub mod ledger;
 pub mod owner;
 pub mod pushback;
@@ -55,6 +56,14 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
+pub(crate) use crate::controllers::body::rig::root::completion::{
+    CompletionSnapshot, CompletionSnapshotAvailability, CompletionToken, CompletionUnavailable,
+    FrameSourceSnapshot, MovementCompletion,
+};
+#[cfg(test)]
+pub(crate) use crate::controllers::body::rig::root::completion::{
+    test_source, test_source_with_root,
+};
 use crate::{
     config::Config,
     controllers::{
@@ -69,9 +78,7 @@ use crate::{
                     chase::{
                         ChaseFrame, HeadVelocity, MeasureInput, Measurement, measure, to_cockpit,
                     },
-                    ledger::{
-                        CompletedMovement, LedgerCompletion, LedgerCounts, Movement, Requests,
-                    },
+                    ledger::{CompletedMovement, LedgerCounts, Movement, Requests},
                     owner::{OwnerInput, RootOwner},
                     pushback::{Pushback, PushbackInput, PushbackOutcome},
                     shift::{CockpitBasis, CockpitShift},
@@ -128,6 +135,7 @@ pub struct FrameInputs {
 pub struct FrameOutput {
     pub prev: Vec3,
     pub cur: Vec3,
+    pub(crate) source: FrameSourceSnapshot,
 }
 
 /// The frame half: fold the credited chase into the cockpit shift, measure the gap and the lean,
@@ -156,9 +164,9 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
             frame.shift.rebase_horizontal(inputs.raw);
             frame.status.teleport_rebases += 1;
         }
-    } else {
-        frame.shift.observe(&basis, completed_movement());
     }
+    let movement = SIM.lock().frame_movement(now, epoch);
+    frame.shift.observe(&basis, movement.movement());
 
     let standing =
         inputs.on_foot && inputs.posture != EffectivePosture::Seated && looks_level(inputs.head);
@@ -232,7 +240,11 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
         ..state.status
     };
     let (prev, cur) = state.shift.apply(inputs.raw);
-    FrameOutput { prev, cur }
+    FrameOutput {
+        prev,
+        cur,
+        source: movement.compose(basis, &state.shift),
+    }
 }
 
 /// Re-base the cockpit shift after the recenter baseline was re-based: a full recenter makes the
@@ -256,85 +268,23 @@ pub fn lean_allowance() -> Option<Vec2> {
     fresh_readout().map(|r| r.measurement.lean.vector)
 }
 
-/// One local pose-finalization completion, independent of render-frame and tracking identities.
-/// The ledger is captured after completion; the owner belongs only to its consumed request.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct MovementCompletion {
-    pub sequence: u64,
-    pub completed_at: Instant,
-    pub previous_root: Mat4,
-    pub current_root: Mat4,
-    pub ledger: LedgerCompletion,
-}
-
-/// Why no latest completion record is available for diagnostic inspection.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum CompletionUnavailable {
-    NotCompleted,
-    Cleared,
-    Teleported,
-    SourceUnavailable,
-    SequenceExhausted,
-}
-
-/// Availability of the latest completion, independent of its owned record.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum CompletionSnapshotAvailability {
-    Unavailable(CompletionUnavailable),
-    Completed,
-}
-
-/// A fixed-size latest completion, never a checked body pair.
-/// Unavailable snapshots omit the record rather than retaining a previous completion.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct CompletionSnapshot {
-    availability: CompletionSnapshotAvailability,
-    completion: Option<MovementCompletion>,
-}
-
-impl CompletionSnapshot {
-    pub(crate) const fn unavailable(reason: CompletionUnavailable) -> Self {
-        Self {
-            availability: CompletionSnapshotAvailability::Unavailable(reason),
-            completion: None,
-        }
-    }
-
-    pub(crate) const fn completed(completion: MovementCompletion) -> Self {
-        Self {
-            availability: CompletionSnapshotAvailability::Completed,
-            completion: Some(completion),
-        }
-    }
-
-    pub(crate) fn availability(&self) -> CompletionSnapshotAvailability {
-        self.availability
-    }
-
-    pub(crate) fn completion(&self) -> Option<MovementCompletion> {
-        self.completion
-    }
-}
-
 /// Complete the tick's request using the roots already read by the local pre-IK capture.
-/// No engine pointer is read here, and the local sequence is not a simulation-step identity.
-pub(crate) fn complete_movement(previous_root: Mat4, current_root: Mat4) {
+/// Only a publishable completion returns an identity; host time never joins sources.
+pub(crate) fn complete_movement(
+    previous_root: Mat4,
+    current_root: Mat4,
+) -> Option<CompletionToken> {
     SIM.lock().complete_movement(
         previous_root,
         current_root,
         Instant::now(),
         teleport::epoch(),
-    );
+    )
 }
 
 /// Copy the bounded completion record without reading engine pointers or frame-half state.
 pub(crate) fn completion_snapshot() -> CompletionSnapshot {
-    let sim = SIM.lock();
-    if teleport::epoch() != sim.seen_epoch {
-        CompletionSnapshot::unavailable(CompletionUnavailable::Teleported)
-    } else {
-        sim.completion
-    }
+    SIM.lock().completion_snapshot(teleport::epoch())
 }
 
 /// The root's readout, for the debug UI, the signals, and the diagnostics.
@@ -532,19 +482,6 @@ fn published_chase(now: Instant) -> Option<ChaseFrame> {
         .map(|(frame, _)| frame)
 }
 
-/// The ledger's running total, cleared first when the simulation half has gone quiet.
-fn completed_movement() -> CompletedMovement {
-    let mut sim = SIM.lock();
-    if sim
-        .status
-        .at
-        .is_none_or(|at| Instant::now().duration_since(at) > probe::STALE_AFTER)
-    {
-        sim.clear_movement(CompletionUnavailable::SourceUnavailable);
-    }
-    sim.movement.completed()
-}
-
 /// Clear the ledger and return its running total.
 fn clear_movement() -> CompletedMovement {
     let mut sim = SIM.lock();
@@ -587,43 +524,6 @@ impl Sim {
                 capsule_owned: false,
                 capsule_blocked: false,
             },
-        }
-    }
-
-    fn clear_movement(&mut self, reason: CompletionUnavailable) {
-        self.movement.clear();
-        self.completion = CompletionSnapshot::unavailable(reason);
-    }
-
-    fn complete_movement(
-        &mut self,
-        previous_root: Mat4,
-        current_root: Mat4,
-        completed_at: Instant,
-        epoch: u64,
-    ) {
-        let teleported = epoch != self.seen_epoch;
-        if teleported {
-            self.clear_movement(CompletionUnavailable::Teleported);
-        }
-        let ledger = self.movement.complete(
-            previous_root.w_axis.truncate(),
-            current_root.w_axis.truncate(),
-        );
-        let Some(sequence) = self.completion_sequence.checked_add(1) else {
-            self.completion =
-                CompletionSnapshot::unavailable(CompletionUnavailable::SequenceExhausted);
-            return;
-        };
-        self.completion_sequence = sequence;
-        if !teleported {
-            self.completion = CompletionSnapshot::completed(MovementCompletion {
-                sequence,
-                completed_at,
-                previous_root,
-                current_root,
-                ledger,
-            });
         }
     }
 }

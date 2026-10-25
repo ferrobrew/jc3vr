@@ -13,7 +13,9 @@ use jc3gi::types::math::Matrix4;
 use parking_lot::Mutex;
 
 use crate::{
-    config, grapple, headpose,
+    config,
+    controllers::body::rig::live_observation,
+    grapple, headpose,
     vr::{
         EyeView, Fov, FrameContext, FreezeMode, OffAxisProjection, VrConfig,
         config::ProjectionConvention,
@@ -108,6 +110,7 @@ pub fn cull_projection_standard() -> Option<Matrix4> {
 /// flatscreen stereo. Called when no VR frame renders this frame (session down, or `should_render`
 /// false).
 pub fn clear_render_params() {
+    live_observation::composition_unavailable();
     *RENDER_PARAMS.lock() = None;
     *CAPTURE_VIEWS.lock() = None;
     *CULL_PROJECTION.lock() = None;
@@ -245,6 +248,15 @@ fn render_frame(views: [EyeView; 2], display_time: Option<openxr::Time>, cfg: &V
         cfg.world_scale,
     );
     headpose::xr::publish_pair(prev, cur);
+    if live_composition_available(
+        display_time.is_some(),
+        cfg.freeze_mode,
+        crate::testing::replay::is_driving(),
+    ) {
+        live_observation::publish_composition(cockpit.source);
+    } else {
+        live_observation::composition_unavailable();
+    }
 
     grapple::telemetry::log_frame(&grapple::telemetry::FrameTelemetry {
         cockpit_orientation: center_orientation,
@@ -382,6 +394,15 @@ fn render_frame(views: [EyeView; 2], display_time: Option<openxr::Time>, cfg: &V
     });
 }
 
+/// A rendered HMD frame can contain replay views, so its display time does not prove live input.
+fn live_composition_available(
+    vr_frame_rendering: bool,
+    freeze_mode: FreezeMode,
+    replay_driving: bool,
+) -> bool {
+    vr_frame_rendering && freeze_mode == FreezeMode::Off && !replay_driving
+}
+
 /// Build a zero-shear (symmetric) off-axis projection that preserves the eye's horizontal and vertical
 /// FOV *extent* but re-centres the frustum, for the [`crate::stereo::config::StereoConfig::symmetrize_eye_frusta`]
 /// flicker-isolation diagnostic (issue #31). Each axis' symmetric half-extent is half the asymmetric
@@ -400,4 +421,32 @@ fn symmetric_projection(fov: openxr::Fovf, near: f32, far: f32) -> OffAxisProjec
         near,
         far,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rendered_hmd_replay_and_desktop_replay_cannot_publish_live_composition() {
+        assert!(!live_composition_available(true, FreezeMode::Off, true));
+        assert!(!live_composition_available(false, FreezeMode::Off, true));
+        assert!(live_composition_available(true, FreezeMode::Off, false));
+        assert!(!live_composition_available(false, FreezeMode::Off, false));
+    }
+
+    #[test]
+    fn either_freeze_mode_prevents_live_composition_with_or_without_replay() {
+        for freeze_mode in [FreezeMode::CockpitPose, FreezeMode::FullCamera] {
+            for replay_driving in [false, true] {
+                for vr_frame_rendering in [false, true] {
+                    assert!(!live_composition_available(
+                        vr_frame_rendering,
+                        freeze_mode,
+                        replay_driving,
+                    ));
+                }
+            }
+        }
+    }
 }

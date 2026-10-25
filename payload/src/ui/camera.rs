@@ -7,8 +7,8 @@ use crate::{
     config,
     controllers::body::rig::{
         live_observation::{
-            self, CompletionAvailability, CompletionRejection, MissingEvidence, NativeObservation,
-            RawAvailability, Unavailable,
+            self, CompletionAvailability, CompletionRejection, FrameMatchAvailability,
+            MissingEvidence, NativeAvailability, RawAvailability, Unavailable,
         },
         root::CompletionUnavailable,
     },
@@ -97,14 +97,14 @@ fn body_observation_evidence(ui: &mut egui::Ui) {
             packet.grips.iter().flatten().count(),
         ));
     }
-    match status.native {
-        NativeObservation::Unavailable(reason) => {
+    match status.native.availability() {
+        NativeAvailability::Unavailable(reason) => {
             ui.label(format!(
                 "Native pre-IK capture: {}.",
                 unavailable_label(reason)
             ));
         }
-        NativeObservation::Observed { age, .. } => {
+        NativeAvailability::Observed { age } => {
             ui.label(format!(
                 "Native pre-IK capture: captured {:.0} ms ago.",
                 age.as_secs_f64() * 1000.0
@@ -165,7 +165,33 @@ fn body_observation_evidence(ui: &mut egui::Ui) {
             }
         }
     }
-    ui.small("The completion sequence is local to this hook. Its request owner does not establish owners for both composition sides, and the completed ledger has no matched frame-half shift.");
+    match status.frame_match.availability() {
+        FrameMatchAvailability::Unavailable(reason) => {
+            ui.label(format!("Frame/completion match: unavailable ({reason:?})."));
+        }
+        FrameMatchAvailability::Matched => {
+            if let Some(matched) = status.frame_match.matched_source() {
+                let source = matched.source;
+                let movement = source.movement();
+                let shift = source.shift();
+                let basis = source.current_basis();
+                ui.label("Frame/completion match: native capture and frame source have the same local completion token.");
+                ui.label(format!(
+                    "Frame completed movement previous/current: {:?} / {:?}.",
+                    movement.previous, movement.current,
+                ));
+                ui.label(format!(
+                    "Frame shift previous/current: {:?} / {:?}.",
+                    shift.previous, shift.current,
+                ));
+                ui.label(format!(
+                    "Current reconstruction basis: {:?}; world metres per cockpit metre: {}.",
+                    basis.body, basis.world_scale,
+                ));
+            }
+        }
+    }
+    ui.small("The completion token is local to this hook. Its request owner does not establish owners for both composition sides. The single current reconstruction basis is not a historical basis pair.");
     ui.small("These independent captures do not form a checked body observation and do not activate body estimation or movement authority.");
     ui.label("Missing checked-observation evidence:");
     for missing in status.missing {

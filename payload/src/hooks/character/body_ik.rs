@@ -243,7 +243,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         let Some(animation_controller) = character.m_AnimatedModel.m_AnimationController.as_mut()
         else {
             live_observation::native_unavailable();
-            rig::root::complete_movement(character_world_prev, character_world);
+            let _ = rig::root::complete_movement(character_world_prev, character_world);
             return;
         };
 
@@ -295,7 +295,9 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         let eye_mid_model = (eye_joint(b"fLeftEye") + eye_joint(b"fRightEye")) / 2.0;
         let eye_mid_world = character_world.transform_point3(eye_mid_model);
         let eye_arm = character_rotation.inverse() * (eye_mid_world - animated_neck_world);
+        let completion = rig::root::complete_movement(character_world_prev, character_world);
         live_observation::publish_native(NativeCapture {
+            completion,
             previous_root: character_world_prev,
             current_root: character_world,
             previous_anchor: animated_head_world_prev,
@@ -304,7 +306,6 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
             current_neck_model: joint_translation(&neck_joint),
             current_eye_mid_model: eye_mid_model,
         });
-        rig::root::complete_movement(character_world_prev, character_world);
 
         // On foot the view hangs from Rico's root rather than his animated head, so the clips' bob
         // and lurch never reach it (`controllers::locomotion::anchor`).

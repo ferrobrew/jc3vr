@@ -39,7 +39,21 @@ pub struct CockpitBasis {
     pub world_scale: f32,
 }
 
+/// The exact offsets subtracted from the previous and current cockpit positions.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct ShiftPair {
+    pub previous: Vec3,
+    pub current: Vec3,
+}
+
 impl CockpitShift {
+    pub(crate) fn pair(&self) -> ShiftPair {
+        ShiftPair {
+            previous: self.prev,
+            current: self.cur,
+        }
+    }
+
     pub const fn new() -> Self {
         Self {
             prev: Vec3::ZERO,

@@ -1,11 +1,6 @@
-use glam::Vec2;
-
 use super::*;
 use crate::controllers::{
-    body::rig::root::{
-        ledger::{Movement, Requests},
-        owner::RootOwner,
-    },
+    body::rig::root::{owner::RootOwner, test_source, test_source_with_root},
     frame::ActionSetKind,
 };
 
@@ -80,7 +75,7 @@ fn independent_source_ages_do_not_create_a_temporal_pair() {
     assert!(status.raw.packet.is_some());
     assert_eq!(
         status.native,
-        NativeObservation::Unavailable(Unavailable::Stale {
+        NativeObservation::unavailable(Unavailable::Stale {
             age: Duration::from_millis(20),
         }),
     );
@@ -115,7 +110,7 @@ fn future_publications_and_changed_origin_counters_are_unavailable() {
     assert_eq!(before.raw.packet, None);
     assert_eq!(
         before.native,
-        NativeObservation::Unavailable(Unavailable::FuturePublication)
+        NativeObservation::unavailable(Unavailable::FuturePublication)
     );
 
     let changed = OriginCounters {
@@ -130,7 +125,7 @@ fn future_publications_and_changed_origin_counters_are_unavailable() {
     assert_eq!(status.raw.packet, None);
     assert_eq!(
         status.native,
-        NativeObservation::Unavailable(Unavailable::OriginCountersChanged)
+        NativeObservation::unavailable(Unavailable::OriginCountersChanged)
     );
     assert!(status.missing.contains(&MissingEvidence::OriginEpoch));
 }
@@ -147,14 +142,25 @@ fn latest_native_capture_is_owned_and_invalid_capture_does_not_reuse_the_old_one
     publisher.publish_native(invalid, now, origin());
     assert_eq!(
         publisher.read(now, Duration::ZERO, origin()).native,
-        NativeObservation::Unavailable(Unavailable::InvalidCapture),
+        NativeObservation::unavailable(Unavailable::InvalidCapture),
     );
     assert_eq!(
         held.native,
-        NativeObservation::Observed {
-            capture: first,
+        NativeObservation::observed(first, Duration::ZERO),
+    );
+    assert_eq!(held.native.capture(), Some(first));
+    assert_eq!(
+        held.native.availability(),
+        NativeAvailability::Observed {
             age: Duration::ZERO
         },
+    );
+    assert_eq!(
+        publisher
+            .read(now, Duration::ZERO, origin())
+            .native
+            .capture(),
+        None
     );
 }
 
@@ -186,7 +192,7 @@ fn repeated_status_reads_preserve_owned_raw_evidence_without_mutating_the_public
 fn completion_freshness_is_read_only_and_does_not_join_equal_host_times() {
     let now = Instant::now();
     let completion = completion(now);
-    let snapshot = CompletionSnapshot::completed(completion);
+    let snapshot = test_source(1, now).1.completion();
     let observed = read_completion(snapshot, now, Duration::ZERO);
     assert_eq!(
         observed.availability(),
@@ -220,7 +226,7 @@ fn completion_freshness_is_read_only_and_does_not_join_equal_host_times() {
     );
     assert_eq!(stale.completion(), None);
     assert_eq!(read_completion(snapshot, now, Duration::ZERO), observed);
-    assert_eq!(snapshot, CompletionSnapshot::completed(completion));
+    assert_eq!(snapshot.completion(), Some(completion));
 
     let mut publisher = Publisher::new();
     publisher.publish_native(native(), now, origin());
@@ -247,7 +253,7 @@ fn completion_freshness_is_read_only_and_does_not_join_equal_host_times() {
     assert_eq!(changed.completion, observed);
     assert_eq!(
         changed.native,
-        NativeObservation::Unavailable(Unavailable::OriginCountersChanged)
+        NativeObservation::unavailable(Unavailable::OriginCountersChanged)
     );
     assert_eq!(changed.missing, MISSING);
 }
@@ -256,11 +262,9 @@ fn completion_freshness_is_read_only_and_does_not_join_equal_host_times() {
 fn completion_replacement_and_invalidations_do_not_reuse_an_older_record() {
     let now = Instant::now();
     let first = completion(now);
-    let held = read_completion(CompletionSnapshot::completed(first), now, Duration::ZERO);
-    let mut invalid = first;
-    invalid.sequence += 1;
-    invalid.current_root = Mat4::ZERO;
-    let replaced = read_completion(CompletionSnapshot::completed(invalid), now, Duration::ZERO);
+    let held = read_completion(test_source(1, now).1.completion(), now, Duration::ZERO);
+    let invalid = test_source_with_root(2, now, Mat4::ZERO).1.completion();
+    let replaced = read_completion(invalid, now, Duration::ZERO);
     assert_eq!(
         replaced,
         CompletionObservation::unavailable(CompletionRejection::Diagnostic(
@@ -288,17 +292,212 @@ fn completion_replacement_and_invalidations_do_not_reuse_an_older_record() {
     assert_eq!(first.ledger.request.unwrap().owner, Some(RootOwner::Player));
 }
 
-fn completion(now: Instant) -> MovementCompletion {
-    let mut requests = Requests::new();
-    requests.submit_owned(Movement::new(Vec2::ZERO, Vec2::X, 1.0), RootOwner::Player);
-    let ledger = requests.complete(Vec3::ZERO, Vec3::X);
-    MovementCompletion {
-        sequence: 1,
-        completed_at: now,
-        previous_root: Mat4::IDENTITY,
-        current_root: Mat4::from_translation(Vec3::X),
-        ledger,
+#[test]
+fn production_publisher_matches_exact_identity_across_independent_times_and_repeated_frames() {
+    let completed_at = Instant::now();
+    let (token, source) = test_source(7, completed_at);
+    let native_at = completed_at + Duration::from_millis(1);
+    let frame_at = completed_at + Duration::from_millis(3);
+    let mut publisher = Publisher::new();
+    let capture = NativeCapture {
+        completion: Some(token),
+        ..native()
+    };
+    publisher.publish_native(capture, native_at, origin());
+    for frame in 0..3 {
+        let now = frame_at + Duration::from_millis(frame);
+        publisher.publish_composition(source, now, origin());
+        let status =
+            publisher.read_completion_status(now, Duration::MAX, origin(), source.completion());
+        assert_eq!(
+            status.frame_match.availability(),
+            FrameMatchAvailability::Matched
+        );
+        let matched = status.frame_match.matched_source().unwrap();
+        assert_eq!(matched.source, source);
+        assert_eq!(matched.native, capture);
+        assert_eq!(matched.source.current_basis(), source.current_basis());
+        assert_eq!(matched.source.shift(), source.shift());
+        assert_eq!(status.missing, MISSING_AFTER_MATCH);
+        assert!(
+            !status
+                .missing
+                .contains(&MissingEvidence::CompletedLedgerAndShiftPair)
+        );
+        assert!(
+            status
+                .missing
+                .contains(&MissingEvidence::CompositionBasisPair)
+        );
+        assert!(status.missing.contains(&MissingEvidence::OwnerAtCompletion));
     }
+}
+
+#[test]
+fn equal_clocks_missing_tokens_and_new_completions_do_not_match_the_held_frame() {
+    let now = Instant::now();
+    let (first, source) = test_source(1, now);
+    let (second, replacement) = test_source(2, now);
+    let mut publisher = Publisher::new();
+    publisher.publish_composition(source, now, origin());
+    publisher.publish_native(
+        NativeCapture {
+            completion: Some(second),
+            ..native()
+        },
+        now,
+        origin(),
+    );
+    let mismatch =
+        publisher.read_completion_status(now, Duration::ZERO, origin(), source.completion());
+    assert_eq!(
+        mismatch.frame_match.availability(),
+        FrameMatchAvailability::Unavailable(MatchUnavailable::DifferentCompletion)
+    );
+    assert_eq!(mismatch.frame_match.matched_source(), None);
+    publisher.publish_native(native(), now, origin());
+    let absent =
+        publisher.read_completion_status(now, Duration::ZERO, origin(), source.completion());
+    assert_eq!(
+        absent.frame_match.availability(),
+        FrameMatchAvailability::Unavailable(MatchUnavailable::MissingNativeToken)
+    );
+    publisher.publish_native(
+        NativeCapture {
+            completion: Some(first),
+            ..native()
+        },
+        now,
+        origin(),
+    );
+    let replaced =
+        publisher.read_completion_status(now, Duration::ZERO, origin(), replacement.completion());
+    assert_eq!(
+        replaced.frame_match.availability(),
+        FrameMatchAvailability::Unavailable(MatchUnavailable::DifferentCompletion)
+    );
+    publisher.publish_native(
+        NativeCapture {
+            completion: Some(second),
+            ..native()
+        },
+        now,
+        origin(),
+    );
+    publisher.publish_composition(replacement, now, origin());
+    let matched =
+        publisher.read_completion_status(now, Duration::ZERO, origin(), replacement.completion());
+    assert_eq!(
+        matched.frame_match.availability(),
+        FrameMatchAvailability::Matched
+    );
+    assert_eq!(
+        matched.frame_match.matched_source().unwrap().source,
+        replacement
+    );
+}
+
+#[test]
+fn clears_teleports_and_unavailable_sources_replace_a_previously_matched_result() {
+    let now = Instant::now();
+    let (token, source) = test_source(1, now);
+    let mut publisher = Publisher::new();
+    publisher.publish_native(
+        NativeCapture {
+            completion: Some(token),
+            ..native()
+        },
+        now,
+        origin(),
+    );
+    publisher.publish_composition(source, now, origin());
+    let held = publisher.read_completion_status(now, Duration::ZERO, origin(), source.completion());
+    assert!(held.frame_match.matched_source().is_some());
+    for reason in [
+        CompletionUnavailable::Cleared,
+        CompletionUnavailable::Teleported,
+        CompletionUnavailable::SourceUnavailable,
+        CompletionUnavailable::SequenceExhausted,
+    ] {
+        let invalid = publisher.read_completion_status(
+            now,
+            Duration::ZERO,
+            origin(),
+            CompletionSnapshot::unavailable(reason),
+        );
+        assert_eq!(
+            invalid.frame_match.availability(),
+            FrameMatchAvailability::Unavailable(MatchUnavailable::Completion(
+                CompletionRejection::Source(reason)
+            ))
+        );
+        assert_eq!(invalid.frame_match.matched_source(), None);
+        assert_eq!(invalid.missing, MISSING);
+    }
+    publisher.clear_native();
+    let missing =
+        publisher.read_completion_status(now, Duration::ZERO, origin(), source.completion());
+    assert_eq!(
+        missing.frame_match.availability(),
+        FrameMatchAvailability::Unavailable(MatchUnavailable::Native(Unavailable::NotCaptured))
+    );
+    publisher.clear_composition();
+    let no_frame =
+        publisher.read_completion_status(now, Duration::ZERO, origin(), source.completion());
+    assert_eq!(
+        no_frame.frame_match.availability(),
+        FrameMatchAvailability::Unavailable(MatchUnavailable::NoFrame)
+    );
+    assert_eq!(no_frame.frame_match.matched_source(), None);
+    assert!(held.frame_match.matched_source().is_some());
+}
+
+#[test]
+fn frame_age_and_origin_counters_reject_without_joining_sources() {
+    let now = Instant::now();
+    let (token, source) = test_source(1, now);
+    let mut publisher = Publisher::new();
+    publisher.publish_native(
+        NativeCapture {
+            completion: Some(token),
+            ..native()
+        },
+        now,
+        origin(),
+    );
+    publisher.publish_composition(source, now, origin());
+    let changed = OriginCounters {
+        recenters: 1,
+        ..origin()
+    };
+    let invalid =
+        publisher.read_completion_status(now, Duration::ZERO, changed, source.completion());
+    assert_eq!(
+        invalid.frame_match.availability(),
+        FrameMatchAvailability::Unavailable(MatchUnavailable::FrameDiagnostic(
+            Unavailable::OriginCountersChanged
+        ))
+    );
+    let later = now + Duration::from_millis(2);
+    let stale = publisher.read_completion_status(
+        later,
+        Duration::from_millis(1),
+        origin(),
+        source.completion(),
+    );
+    assert_eq!(
+        stale.frame_match.availability(),
+        FrameMatchAvailability::Unavailable(MatchUnavailable::FrameDiagnostic(
+            Unavailable::Stale {
+                age: Duration::from_millis(2)
+            }
+        ))
+    );
+    assert_eq!(stale.frame_match.matched_source(), None);
+}
+
+fn completion(now: Instant) -> MovementCompletion {
+    test_source(1, now).1.completion().completion().unwrap()
 }
 
 fn origin() -> OriginCounters {
@@ -330,6 +529,7 @@ fn controllers(now: Instant) -> ControllerFrame {
 
 fn native() -> NativeCapture {
     NativeCapture {
+        completion: None,
         previous_root: Mat4::IDENTITY,
         current_root: Mat4::from_translation(Vec3::X),
         previous_anchor: Vec3::Y,

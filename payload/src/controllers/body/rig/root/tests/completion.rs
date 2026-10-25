@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use glam::{Mat4, Vec2, Vec3};
+use glam::{Mat4, Quat, Vec2, Vec3};
 
 use crate::controllers::{
     body::rig::root::{
@@ -8,6 +8,7 @@ use crate::controllers::{
         MovementCompletion, Sim,
         ledger::{Attribution, CompletedMovement, Movement},
         owner::{self, OwnerInput, RootOwner},
+        shift::{CockpitBasis, CockpitShift, ShiftPair},
         stand_down,
     },
     roomscale::{SeatPhase, posture::EffectivePosture},
@@ -179,6 +180,123 @@ fn sequence_exhaustion_does_not_wrap_or_change_movement_completion() {
     assert!(!sim.movement.pending());
     assert_eq!(sim.movement.completed().current, Vec2::X);
     assert_eq!(sim.movement.counts().exact, 1);
+}
+
+#[test]
+fn frame_boundary_copies_token_and_totals_together_and_keeps_the_exact_final_shift() {
+    let now = Instant::now();
+    let mut sim = Sim::new();
+    sim.status.at = Some(now);
+    sim.movement
+        .submit_owned(movement(Vec2::X), RootOwner::Player);
+    let first = sim
+        .complete_movement(root(Vec3::ZERO), root(Vec3::X), now, 0)
+        .unwrap();
+    sim.movement
+        .submit_owned(movement(Vec2::Y), RootOwner::Player);
+    let second = sim
+        .complete_movement(root(Vec3::X), root(Vec3::X + Vec3::Z), now, 0)
+        .unwrap();
+    assert_ne!(first, second);
+    assert_eq!(second.sequence(), 2);
+    let boundary = sim.frame_movement(now, 0);
+    let basis = CockpitBasis {
+        body: Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+        world_scale: 2.0,
+    };
+    let mut shift = CockpitShift::new();
+    shift.observe(&basis, boundary.movement());
+    shift.slide_view(Vec3::Z * 0.25);
+    let exact_pair = shift.pair();
+    let source = boundary.compose(basis, &shift);
+    let record = source.completion().completion().unwrap();
+    assert_eq!(record.token(), second);
+    assert_eq!(source.movement(), record.ledger.movement);
+    assert_eq!(source.current_basis(), basis);
+    assert_eq!(source.shift(), exact_pair);
+    assert!((exact_pair.current - exact_pair.previous).distance(-Vec3::X * 0.5) < 1e-6);
+    let raw = Vec3::new(0.2, 1.7, -0.3);
+    let (previous, current) = shift.apply(raw);
+    assert_eq!(raw - source.shift().previous, previous);
+    assert_eq!(raw - source.shift().current, current);
+    for _ in 0..3 {
+        let repeated = sim.frame_movement(now, 0);
+        shift.observe(&basis, repeated.movement());
+        assert_eq!(repeated.compose(basis, &shift), source);
+    }
+    let third = sim
+        .complete_movement(root(Vec3::ZERO), root(Vec3::ZERO), now, 0)
+        .unwrap();
+    assert_ne!(third, second);
+    assert_eq!(source.completion().completion().unwrap().token(), second);
+    assert_eq!(source.movement().previous, Vec2::X);
+}
+
+#[test]
+fn invalidated_or_unpublishable_completions_never_return_a_token() {
+    let now = Instant::now();
+    let mut sim = Sim::new();
+    sim.status.at = Some(now);
+    assert!(
+        sim.complete_movement(root(Vec3::ZERO), root(Vec3::ZERO), now, 0)
+            .is_some()
+    );
+    for reason in [
+        CompletionUnavailable::Cleared,
+        CompletionUnavailable::SourceUnavailable,
+    ] {
+        sim.clear_movement(reason);
+        let source = sim.frame_movement(now, 0).compose(
+            CockpitBasis {
+                body: Quat::IDENTITY,
+                world_scale: 1.0,
+            },
+            &CockpitShift::new(),
+        );
+        assert_eq!(source.completion(), CompletionSnapshot::unavailable(reason));
+    }
+    assert_eq!(
+        sim.complete_movement(root(Vec3::ZERO), root(Vec3::ZERO), now, 1),
+        None
+    );
+    assert_eq!(sim.completion.completion(), None);
+    sim.seen_epoch = 1;
+    sim.completion_sequence = u64::MAX;
+    assert_eq!(
+        sim.complete_movement(root(Vec3::ZERO), root(Vec3::ZERO), now, 1),
+        None
+    );
+    assert_eq!(sim.completion.completion(), None);
+}
+
+#[test]
+fn stale_frame_boundary_clears_completion_and_settles_the_running_totals() {
+    let now = Instant::now();
+    let mut sim = Sim::new();
+    sim.status.at = Some(now);
+    sim.movement
+        .submit_owned(movement(Vec2::X), RootOwner::Player);
+    let _ = sim.complete_movement(root(Vec3::ZERO), root(Vec3::X), now, 0);
+    let boundary = sim.frame_movement(now + Duration::from_secs(1), 0);
+    let source = boundary.compose(
+        CockpitBasis {
+            body: Quat::IDENTITY,
+            world_scale: 1.0,
+        },
+        &CockpitShift::new(),
+    );
+    assert_eq!(
+        source.completion(),
+        CompletionSnapshot::unavailable(CompletionUnavailable::SourceUnavailable)
+    );
+    assert_eq!(source.movement().previous, source.movement().current);
+    assert_eq!(
+        source.shift(),
+        ShiftPair {
+            previous: Vec3::ZERO,
+            current: Vec3::ZERO
+        }
+    );
 }
 
 fn completed(sim: &Sim) -> MovementCompletion {

@@ -50,7 +50,7 @@ use crate::{
             rig::{
                 self,
                 collision::probe::{self, ProbeResult},
-                root::{self as rig_root, RootStatus, capsule_enabled},
+                root::{self as rig_root, FrameSourceSnapshot, RootStatus, capsule_enabled},
             },
         },
         config::{Posture, RoomscaleConfig},
@@ -93,6 +93,7 @@ pub struct FrameInputs {
 pub struct ComposedCockpit {
     pub prev: Vec3,
     pub cur: Vec3,
+    pub(crate) source: FrameSourceSnapshot,
 }
 
 /// The frame half: resolve the posture, remap the head height, hand the cockpit to the rig's
@@ -297,6 +298,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     ComposedCockpit {
         prev: prev + driving_view,
         cur: cur + driving_view,
+        source: root.source,
     }
 }
 
