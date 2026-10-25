@@ -28,6 +28,7 @@ pub mod legs;
 pub(crate) mod live_observation;
 #[cfg(test)]
 mod observation;
+pub(crate) mod origin_provenance;
 pub mod pelvis;
 pub mod root;
 pub mod skeleton;

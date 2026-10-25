@@ -14,7 +14,7 @@ fn raw_packet_retains_actual_receipt_and_independent_hand_validity() {
     let mut located = located();
     located.flags = xr::ViewStateFlags::POSITION_VALID;
     let mut publisher = Publisher::new();
-    publisher.publish_tracking(Some(located), Some(controllers), origin());
+    publisher.publish_tracking(Some(located), Some(controllers));
 
     let status = publisher.read(now, Duration::ZERO, origin());
     let RawAvailability::Observed { age } = status.raw.availability else {
@@ -41,17 +41,17 @@ fn raw_packet_retains_actual_receipt_and_independent_hand_validity() {
 fn mismatched_or_missing_live_source_replaces_the_previous_packet() {
     let now = Instant::now();
     let mut publisher = Publisher::new();
-    publisher.publish_tracking(Some(located()), Some(controllers(now)), origin());
+    publisher.publish_tracking(Some(located()), Some(controllers(now)));
     let mut mismatch = controllers(now);
     mismatch.display_time_ns += 1;
-    publisher.publish_tracking(Some(located()), Some(mismatch), origin());
+    publisher.publish_tracking(Some(located()), Some(mismatch));
     let mismatched = publisher.read(now, Duration::ZERO, origin()).raw;
     assert_eq!(
         mismatched.availability,
         RawAvailability::Unavailable(Unavailable::MixedDisplayTimes),
     );
     assert_eq!(mismatched.packet, None);
-    publisher.publish_tracking(Some(located()), None, origin());
+    publisher.publish_tracking(Some(located()), None);
     let missing = publisher.read(now, Duration::ZERO, origin()).raw;
     assert_eq!(
         missing.availability,
@@ -66,7 +66,7 @@ fn independent_source_ages_do_not_create_a_temporal_pair() {
     let earlier = now - Duration::from_millis(20);
     let mut publisher = Publisher::new();
     publisher.publish_native(native(), earlier, origin());
-    publisher.publish_tracking(Some(located()), Some(controllers(now)), origin());
+    publisher.publish_tracking(Some(located()), Some(controllers(now)));
     let status = publisher.read(now, Duration::from_millis(10), origin());
     assert!(matches!(
         status.raw.availability,
@@ -100,7 +100,7 @@ fn independent_source_ages_do_not_create_a_temporal_pair() {
 fn future_publications_and_changed_origin_counters_are_unavailable() {
     let now = Instant::now();
     let mut publisher = Publisher::new();
-    publisher.publish_tracking(Some(located()), Some(controllers(now)), origin());
+    publisher.publish_tracking(Some(located()), Some(controllers(now)));
     publisher.publish_native(native(), now, origin());
     let before = publisher.read(now - Duration::from_nanos(1), Duration::MAX, origin());
     assert_eq!(
@@ -120,9 +120,11 @@ fn future_publications_and_changed_origin_counters_are_unavailable() {
     let status = publisher.read(now, Duration::MAX, changed);
     assert_eq!(
         status.raw.availability,
-        RawAvailability::Unavailable(Unavailable::OriginCountersChanged)
+        RawAvailability::Observed {
+            age: Duration::ZERO
+        },
     );
-    assert_eq!(status.raw.packet, None);
+    assert!(status.raw.packet.is_some());
     assert_eq!(
         status.native,
         NativeObservation::unavailable(Unavailable::OriginCountersChanged)
@@ -168,11 +170,11 @@ fn latest_native_capture_is_owned_and_invalid_capture_does_not_reuse_the_old_one
 fn repeated_status_reads_preserve_owned_raw_evidence_without_mutating_the_publication() {
     let now = Instant::now();
     let mut publisher = Publisher::new();
-    publisher.publish_tracking(Some(located()), Some(controllers(now)), origin());
+    publisher.publish_tracking(Some(located()), Some(controllers(now)));
     let held = publisher.read(now, Duration::ZERO, origin());
     assert_eq!(publisher.read(now, Duration::ZERO, origin()), held);
 
-    publisher.publish_tracking(None, None, origin());
+    publisher.publish_tracking(None, None);
     assert_eq!(held.raw.packet.unwrap().sequence, 17);
     assert_eq!(
         held.raw.availability,
@@ -230,7 +232,7 @@ fn completion_freshness_is_read_only_and_does_not_join_equal_host_times() {
 
     let mut publisher = Publisher::new();
     publisher.publish_native(native(), now, origin());
-    publisher.publish_tracking(Some(located()), Some(controllers(now)), origin());
+    publisher.publish_tracking(Some(located()), Some(controllers(now)));
     let status = publisher.read_completion_status(now, Duration::ZERO, origin(), snapshot);
     assert_eq!(status.missing, MISSING);
     assert_eq!(status.completion, observed);
@@ -496,6 +498,96 @@ fn frame_age_and_origin_counters_reject_without_joining_sources() {
     assert_eq!(stale.frame_match.matched_source(), None);
 }
 
+#[test]
+fn tracking_origin_matches_held_sources_without_native_or_latest_global_labels() {
+    let now = Instant::now();
+    let [first, second] = crate::controllers::body::rig::origin_provenance::test_origins();
+    let mut head = located();
+    head.origin = first;
+    let mut publisher = Publisher::new();
+    publisher.publish_tracking(Some(head), Some(controllers(now)));
+    let receipt = Some(TrackingReceipt::from_frame(&controllers(now)));
+    let source = test_source(1, now).1.with_tracking_origin(first, receipt);
+    publisher.publish_composition(source, now, origin());
+    let changed_counters = OriginCounters {
+        recenters: 100,
+        teleports: 100,
+    };
+    let status = publisher.read(now, Duration::ZERO, changed_counters);
+    let OriginEvidence::Known(token) = first else {
+        panic!("the source must be known");
+    };
+    assert_eq!(
+        status.tracking_origin,
+        TrackingOriginAvailability::SameOrigin(token)
+    );
+    assert!(status.native.capture().is_none());
+    assert!(status.missing.contains(&MissingEvidence::OriginEpoch));
+    assert_eq!(
+        publisher
+            .read(now, Duration::ZERO, changed_counters)
+            .tracking_origin,
+        status.tracking_origin
+    );
+
+    publisher.publish_composition(source.with_tracking_origin(first, None), now, origin());
+    assert_eq!(
+        publisher
+            .read(now, Duration::ZERO, origin())
+            .tracking_origin,
+        TrackingOriginAvailability::DifferentTrackingPacket
+    );
+    publisher.publish_composition(source.with_tracking_origin(second, receipt), now, origin());
+    assert_eq!(
+        publisher
+            .read(now, Duration::ZERO, origin())
+            .tracking_origin,
+        TrackingOriginAvailability::DifferentOrigins
+    );
+    publisher.publish_composition(
+        source.with_tracking_origin(
+            OriginEvidence::Unavailable(OriginUnavailable::ReferenceSpacePending),
+            receipt,
+        ),
+        now,
+        origin(),
+    );
+    assert_eq!(
+        publisher
+            .read(now, Duration::ZERO, origin())
+            .tracking_origin,
+        TrackingOriginAvailability::Unavailable(OriginUnavailable::ReferenceSpacePending)
+    );
+    publisher.clear_composition();
+    assert_eq!(
+        publisher
+            .read(now, Duration::ZERO, origin())
+            .tracking_origin,
+        TrackingOriginAvailability::Unavailable(OriginUnavailable::SourceAbsent)
+    );
+}
+
+#[test]
+fn absent_origin_is_retained_as_unknown_without_dropping_raw_tracking() {
+    let now = Instant::now();
+    let mut head = located();
+    head.origin = OriginEvidence::Unavailable(OriginUnavailable::ChangedDuringAcquisition);
+    let packet = make_raw_packet(Some(head), Some(controllers(now))).unwrap();
+    assert_eq!(
+        packet.origin,
+        OriginEvidence::Unavailable(OriginUnavailable::ChangedDuringAcquisition)
+    );
+    let source = test_source(1, now).1;
+    assert_eq!(
+        source.tracking_origin(),
+        OriginEvidence::Unavailable(OriginUnavailable::SourceAbsent)
+    );
+    assert_eq!(
+        match_tracking_origins(packet.origin, source.tracking_origin()),
+        TrackingOriginAvailability::Unavailable(OriginUnavailable::ChangedDuringAcquisition)
+    );
+}
+
 fn completion(now: Instant) -> MovementCompletion {
     test_source(1, now).1.completion().completion().unwrap()
 }
@@ -513,6 +605,7 @@ fn located() -> LocatedTracking {
         flags: xr::ViewStateFlags::POSITION_VALID | xr::ViewStateFlags::ORIENTATION_VALID,
         display_time_ns: 400,
         cockpit_from_local: xr::Posef::IDENTITY,
+        origin: OriginEvidence::Unavailable(OriginUnavailable::SourceAbsent),
     }
 }
 

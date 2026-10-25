@@ -6,6 +6,7 @@ use glam::Mat4;
 
 use crate::controllers::body::rig::{
     collision::probe,
+    origin_provenance::{OriginEvidence, OriginUnavailable, TrackingReceipt},
     root::{
         Sim,
         ledger::{CompletedMovement, LedgerCompletion},
@@ -111,6 +112,8 @@ impl FrameMovementSnapshot {
             movement: self.movement,
             current_basis,
             shift: shift.pair(),
+            tracking_origin: OriginEvidence::Unavailable(OriginUnavailable::SourceAbsent),
+            tracking_receipt: None,
         }
     }
 }
@@ -123,9 +126,30 @@ pub(crate) struct FrameSourceSnapshot {
     movement: CompletedMovement,
     current_basis: CockpitBasis,
     shift: ShiftPair,
+    tracking_origin: OriginEvidence,
+    tracking_receipt: Option<TrackingReceipt>,
 }
 
 impl FrameSourceSnapshot {
+    /// Origin of live tracking acquired for this composition, not of its root/native sources.
+    pub(crate) fn tracking_origin(self) -> OriginEvidence {
+        self.tracking_origin
+    }
+
+    pub(crate) fn tracking_receipt(self) -> Option<TrackingReceipt> {
+        self.tracking_receipt
+    }
+
+    pub(crate) fn with_tracking_origin(
+        mut self,
+        origin: OriginEvidence,
+        receipt: Option<TrackingReceipt>,
+    ) -> Self {
+        self.tracking_origin = origin;
+        self.tracking_receipt = receipt;
+        self
+    }
+
     pub(crate) fn completion(self) -> CompletionSnapshot {
         self.completion
     }

@@ -9,6 +9,7 @@ use parking_lot::Mutex;
 
 use crate::{
     config::Config,
+    controllers::body::rig::origin_provenance,
     recorder::tracking::format::RecenterEvent,
     vr::{
         input::flight_pose::{self, EpochChange},
@@ -96,6 +97,7 @@ fn recenter_as(kind: RecenterKind, cause: RecenterCause) {
     let mut state = lock_state();
     match state.latest_head_pose {
         Some(pose) => {
+            let _origin_mutation = origin_provenance::changing();
             let fresh = Baseline::from_pose(pose);
             let previous = state.baseline;
             state.baseline = Some(match (kind, previous) {
@@ -178,6 +180,7 @@ fn service_follow_bank() {
     let Some(yaw) = crate::headpose::xr::pending_bank() else {
         return;
     };
+    let _origin_mutation = origin_provenance::changing();
     let rotation = glam::Quat::from_rotation_y(yaw);
     {
         let mut state = lock_state();

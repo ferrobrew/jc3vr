@@ -14,7 +14,10 @@ use parking_lot::Mutex;
 
 use crate::{
     config,
-    controllers::body::rig::live_observation,
+    controllers::body::rig::{
+        live_observation,
+        origin_provenance::{OriginEvidence, OriginUnavailable, TrackingReceipt},
+    },
     grapple, headpose,
     vr::{
         EyeView, Fov, FrameContext, FreezeMode, OffAxisProjection, VrConfig,
@@ -128,6 +131,7 @@ pub fn begin_render_frame(frame: &FrameContext, cfg: &VrConfig) {
     render_frame(
         [frame.eye_view(0), frame.eye_view(1)],
         Some(frame.predicted_display_time()),
+        frame.tracking_origin(),
         cfg,
     );
 }
@@ -136,13 +140,26 @@ pub fn begin_render_frame(frame: &FrameContext, cfg: &VrConfig) {
 /// they compose to, as [`begin_render_frame`] does, and leave the per-eye render parameters
 /// cleared, so the desktop renders the recorded head's view. See [`crate::vr::drive_replay_frame`].
 pub(super) fn begin_replay_frame(eyes: [EyeView; 2], cfg: &VrConfig) {
-    render_frame(eyes, None, cfg);
+    render_frame(
+        eyes,
+        None,
+        (
+            OriginEvidence::Unavailable(OriginUnavailable::SourceAbsent),
+            None,
+        ),
+        cfg,
+    );
 }
 
 /// The body of [`begin_render_frame`], over the frame's views. `display_time` is the VR frame's
 /// predicted display time, or `None` for a replay's views with no VR frame, which publishes the
 /// head pose only.
-fn render_frame(views: [EyeView; 2], display_time: Option<openxr::Time>, cfg: &VrConfig) {
+fn render_frame(
+    views: [EyeView; 2],
+    display_time: Option<openxr::Time>,
+    (tracking_origin, tracking_receipt): (OriginEvidence, Option<TrackingReceipt>),
+    cfg: &VrConfig,
+) {
     // Cockpit-pose freeze diagnostic: reuse the first captured pose -- eye views plus the sim-driven
     // body frame and anchor -- so the head contributes the same thing every frame, isolating
     // per-frame-input-driven artifacts (pose noise, head-bone idle animation) from intrinsic render
@@ -253,7 +270,11 @@ fn render_frame(views: [EyeView; 2], display_time: Option<openxr::Time>, cfg: &V
         cfg.freeze_mode,
         crate::testing::replay::is_driving(),
     ) {
-        live_observation::publish_composition(cockpit.source);
+        live_observation::publish_composition(
+            cockpit
+                .source
+                .with_tracking_origin(tracking_origin.finish(), tracking_receipt),
+        );
     } else {
         live_observation::composition_unavailable();
     }

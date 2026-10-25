@@ -12,7 +12,10 @@ use parking_lot::MutexGuard;
 use crate::{
     config::Config,
     controllers::{
-        body::rig::live_observation::{self, LocatedTracking},
+        body::rig::{
+            live_observation::{self, LocatedTracking},
+            origin_provenance::{self, OriginEvidence, OriginUnavailable, TrackingReceipt},
+        },
         frame as controller_frame,
     },
     frame_timing::{self, Slot},
@@ -156,6 +159,10 @@ impl FrameContext {
         self.frame.eyes[eye]
     }
 
+    pub(crate) fn tracking_origin(&self) -> (OriginEvidence, Option<TrackingReceipt>) {
+        (self.frame.tracking_origin, self.frame.tracking_receipt)
+    }
+
     /// Acquire and wait on the stereo swapchain image (created lazily on first use). Call once per
     /// frame before rendering; the two eyes are array slices of the returned image
     /// ([`eye_image`](Self::eye_image)). No-op if already acquired this frame.
@@ -232,6 +239,8 @@ struct FrameData {
     predicted_display_time: xr::Time,
     should_render: bool,
     eyes: [EyeView; 2],
+    tracking_origin: OriginEvidence,
+    tracking_receipt: Option<TrackingReceipt>,
     /// Whether the swapchain image was acquired at some point this frame (so `frame_end` knows
     /// whether a world layer can be submitted).
     image_ever_acquired: bool,
@@ -294,7 +303,13 @@ impl VrState {
         let mut located = false;
         let mut flight_head = None;
         let mut body_head = None;
+        let origin_readiness = self
+            .origin_reference_space
+            .prepare(frame_state.predicted_display_time.as_nanos());
+        let mut tracking_origin = OriginEvidence::Unavailable(OriginUnavailable::SourceAbsent);
+        let mut tracking_receipt = None;
         if frame_state.should_render {
+            tracking_origin = origin_provenance::begin(origin_readiness);
             let (view_flags, views) = session
                 .handle
                 .locate_views(
@@ -358,6 +373,7 @@ impl VrState {
                     head: mid_pose(eyes[0].pose, eyes[1].pose),
                     flags: view_flags,
                     display_time_ns: frame_state.predicted_display_time.as_nanos(),
+                    origin: tracking_origin,
                     cockpit_from_local: self.baseline.map_or(xr::Posef::IDENTITY, |baseline| {
                         baseline.rebase(xr::Posef::IDENTITY)
                     }),
@@ -397,9 +413,23 @@ impl VrState {
                 &controllers,
                 flight_head,
             );
+            tracking_receipt = sampled.as_ref().map(TrackingReceipt::from_frame);
+            tracking_origin = if sampled.is_some() {
+                tracking_origin.finish()
+            } else {
+                OriginEvidence::Unavailable(OriginUnavailable::SourceAbsent)
+            };
+            if let Some(head) = body_head.as_mut() {
+                head.origin = tracking_origin;
+            }
             live_observation::publish_tracking(body_head, sampled);
         } else {
             flight_pose::unavailable();
+            tracking_origin = OriginEvidence::Unavailable(OriginUnavailable::SourceAbsent);
+        }
+        if !located {
+            tracking_origin = OriginEvidence::Unavailable(OriginUnavailable::SourceAbsent);
+            tracking_receipt = None;
         }
 
         // After the controllers, so the frame records what the input update published.
@@ -414,6 +444,8 @@ impl VrState {
             predicted_display_time: frame_state.predicted_display_time,
             should_render: frame_state.should_render,
             eyes,
+            tracking_origin,
+            tracking_receipt,
             image_ever_acquired: false,
         })
     }

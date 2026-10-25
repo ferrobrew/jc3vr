@@ -3,6 +3,7 @@
 //! The raw packet uses the head locate and controller publication receipt from one OpenXR frame.
 //! Native and completion captures remain independent of it; host times never join simulation sides.
 //! Exact completion tokens match frame movement and shift evidence, without historical basis sides.
+//! Tracking-origin evidence covers only the acquired live packet through its exact frame receipt.
 //! Missing per-side ownership, native history, support, and epochs prevent a checked observation.
 
 use std::time::{Duration, Instant};
@@ -13,9 +14,12 @@ use parking_lot::Mutex;
 
 use crate::{
     controllers::{
-        body::rig::root::{
-            self, CompletionSnapshot, CompletionSnapshotAvailability, CompletionToken,
-            CompletionUnavailable, FrameSourceSnapshot, MovementCompletion,
+        body::rig::{
+            origin_provenance::{OriginEvidence, OriginToken, OriginUnavailable, TrackingReceipt},
+            root::{
+                self, CompletionSnapshot, CompletionSnapshotAvailability, CompletionToken,
+                CompletionUnavailable, FrameSourceSnapshot, MovementCompletion,
+            },
         },
         frame::{ControllerFrame, Pose, TrackedPose},
         roomscale::teleport,
@@ -30,6 +34,7 @@ pub(crate) struct LocatedTracking {
     pub flags: xr::ViewStateFlags,
     pub display_time_ns: i64,
     pub cockpit_from_local: xr::Posef,
+    pub origin: OriginEvidence,
 }
 
 /// Raw cockpit-space poses with the controller publisher's actual sequence and host time.
@@ -43,6 +48,7 @@ pub(crate) struct RawPacket {
     pub display_time_ns: i64,
     pub published_at: Instant,
     pub cockpit_from_local: Pose,
+    pub origin: OriginEvidence,
 }
 
 /// Values read together before the local character's procedural IK writes.
@@ -257,6 +263,15 @@ impl FrameMatchObservation {
     }
 }
 
+/// Origin eligibility for live tracking through composition only. Native/root history is separate.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum TrackingOriginAvailability {
+    Unavailable(OriginUnavailable),
+    DifferentOrigins,
+    DifferentTrackingPacket,
+    SameOrigin(OriginToken),
+}
+
 /// Separate source availability and the missing checked-observation prerequisites.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct ObservationStatus {
@@ -264,6 +279,7 @@ pub(crate) struct ObservationStatus {
     pub native: NativeObservation,
     pub completion: CompletionObservation,
     pub frame_match: FrameMatchObservation,
+    pub tracking_origin: TrackingOriginAvailability,
     pub missing: &'static [MissingEvidence],
 }
 
@@ -273,8 +289,7 @@ pub(crate) fn publish_tracking(
     located: Option<LocatedTracking>,
     controllers: Option<ControllerFrame>,
 ) {
-    SLOT.lock()
-        .publish_tracking(located, controllers, OriginCounters::current());
+    SLOT.lock().publish_tracking(located, controllers);
 }
 
 /// Clear tracking before acquisition, including every early return and locate failure.
@@ -358,7 +373,6 @@ impl OriginCounters {
 #[derive(Debug, Copy, Clone)]
 struct RawPublication {
     packet: RawPacket,
-    origin: OriginCounters,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -394,10 +408,8 @@ impl Publisher {
         &mut self,
         located: Option<LocatedTracking>,
         controllers: Option<ControllerFrame>,
-        origin: OriginCounters,
     ) {
-        self.raw =
-            make_raw_packet(located, controllers).map(|packet| RawPublication { packet, origin });
+        self.raw = make_raw_packet(located, controllers).map(|packet| RawPublication { packet });
     }
 
     fn publish_native(
@@ -457,25 +469,48 @@ impl Publisher {
         ObservationStatus {
             raw: match self.raw {
                 Err(reason) => RawObservation::unavailable(reason),
-                Ok(publication) => match age_at(
-                    publication.packet.published_at,
-                    now,
-                    max_age,
-                    publication.origin == origin,
-                ) {
-                    Ok(age) => RawObservation::observed(publication.packet, age),
-                    Err(reason) => RawObservation::unavailable(reason),
-                },
+                Ok(publication) => {
+                    match age_at(publication.packet.published_at, now, max_age, true) {
+                        Ok(age) => RawObservation::observed(publication.packet, age),
+                        Err(reason) => RawObservation::unavailable(reason),
+                    }
+                }
             },
             native,
             completion,
             frame_match,
+            tracking_origin: self.read_tracking_origin(now, max_age),
             missing: if frame_match.matched_source().is_some() {
                 MISSING_AFTER_MATCH
             } else {
                 MISSING
             },
         }
+    }
+
+    fn read_tracking_origin(&self, now: Instant, max_age: Duration) -> TrackingOriginAvailability {
+        let absent = TrackingOriginAvailability::Unavailable(OriginUnavailable::SourceAbsent);
+        let (Ok(raw), Some(composition)) = (self.raw, self.composition) else {
+            return absent;
+        };
+        if age_at(raw.packet.published_at, now, max_age, true).is_err()
+            || age_at(composition.observed_at, now, max_age, true).is_err()
+        {
+            return TrackingOriginAvailability::Unavailable(OriginUnavailable::DiagnosticExpired);
+        }
+        let origin =
+            match_tracking_origins(raw.packet.origin, composition.source.tracking_origin());
+        if matches!(origin, TrackingOriginAvailability::SameOrigin(_)) {
+            let receipt = TrackingReceipt::from_receipt(
+                raw.packet.sequence,
+                raw.packet.display_time_ns,
+                raw.packet.published_at,
+            );
+            if composition.source.tracking_receipt() != Some(receipt) {
+                return TrackingOriginAvailability::DifferentTrackingPacket;
+            }
+        }
+        origin
     }
 
     fn read_frame_match(
@@ -524,6 +559,21 @@ impl Publisher {
             return unavailable(Unavailable::InvalidCapture);
         }
         NativeObservation::observed(publication.capture, age)
+    }
+}
+
+fn match_tracking_origins(
+    raw: OriginEvidence,
+    composition: OriginEvidence,
+) -> TrackingOriginAvailability {
+    match (raw, composition) {
+        (OriginEvidence::Unavailable(reason), _) | (_, OriginEvidence::Unavailable(reason)) => {
+            TrackingOriginAvailability::Unavailable(reason)
+        }
+        (OriginEvidence::Known(raw), OriginEvidence::Known(composition)) if raw == composition => {
+            TrackingOriginAvailability::SameOrigin(raw)
+        }
+        _ => TrackingOriginAvailability::DifferentOrigins,
     }
 }
 
@@ -638,6 +688,7 @@ fn make_raw_packet(
         display_time_ns: controllers.display_time_ns,
         published_at: controllers.published_at,
         cockpit_from_local: pose_from_xr(located.cockpit_from_local),
+        origin: located.origin,
     };
     if packet.sequence == 0
         || !valid_pose(packet.cockpit_from_local)

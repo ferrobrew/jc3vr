@@ -15,6 +15,8 @@ use detours_macro::detour;
 use jc3gi::{camera::game_camera_manager::GameCameraManager, types::math::Matrix4};
 use re_utilities::hook_library::HookLibrary;
 
+use crate::controllers::body::rig::origin_provenance;
+
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&RESET_CAMERA_BINDER)
 }
@@ -31,6 +33,7 @@ pub fn warps() -> u64 {
 
 /// Count a teleport the distance test found.
 pub(crate) fn record_warp() {
+    let _origin_mutation = origin_provenance::changing();
     WARPS.fetch_add(1, Ordering::Relaxed);
     EPOCH.fetch_add(1, Ordering::Relaxed);
     tracing::debug!(target: "controllers", "roomscale: the body warped without a camera reset");
@@ -41,6 +44,7 @@ static WARPS: AtomicU64 = AtomicU64::new(0);
 
 #[detour(address = jc3gi::camera::game_camera_manager::GameCameraManager::ResetCamera_ADDRESS)]
 fn reset_camera(manager: *mut GameCameraManager, transform: *const Matrix4) {
+    let _origin_mutation = origin_provenance::changing();
     RESET_CAMERA.get().unwrap().call(manager, transform);
     EPOCH.fetch_add(1, Ordering::Relaxed);
     tracing::debug!(target: "controllers", "roomscale: the game reset the camera for a teleport");

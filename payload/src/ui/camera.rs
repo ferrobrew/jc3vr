@@ -8,7 +8,8 @@ use crate::{
     controllers::body::rig::{
         live_observation::{
             self, CompletionAvailability, CompletionRejection, FrameMatchAvailability,
-            MissingEvidence, NativeAvailability, RawAvailability, Unavailable,
+            MissingEvidence, NativeAvailability, RawAvailability, TrackingOriginAvailability,
+            Unavailable,
         },
         root::CompletionUnavailable,
     },
@@ -191,6 +192,23 @@ fn body_observation_evidence(ui: &mut egui::Ui) {
             }
         }
     }
+    match status.tracking_origin {
+        TrackingOriginAvailability::SameOrigin(_) => {
+            ui.label("Live tracking acquisition through composition: the held origin and exact controller receipt match.");
+        }
+        TrackingOriginAvailability::Unavailable(reason) => {
+            ui.label(format!(
+                "Live tracking acquisition through composition: unavailable ({reason:?})."
+            ));
+        }
+        TrackingOriginAvailability::DifferentOrigins => {
+            ui.label("Live tracking acquisition through composition: origin generations differ.");
+        }
+        TrackingOriginAvailability::DifferentTrackingPacket => {
+            ui.label("Live tracking acquisition through composition: controller receipts differ.");
+        }
+    }
+    ui.small("This tracking-origin evidence does not identify the independently captured root/native historical sides. Their complete origin epoch remains missing.");
     ui.small("The completion token is local to this hook. Its request owner does not establish owners for both composition sides. The single current reconstruction basis is not a historical basis pair.");
     ui.small("These independent captures do not form a checked body observation and do not activate body estimation or movement authority.");
     ui.label("Missing checked-observation evidence:");

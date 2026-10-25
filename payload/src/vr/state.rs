@@ -21,7 +21,10 @@ use windows::{
 
 use crate::{
     config::Config,
-    controllers::frame as controller_frame,
+    controllers::{
+        body::rig::origin_provenance::{self, ReferenceSpaceChanges},
+        frame as controller_frame,
+    },
     frame_timing::{self, Slot},
     hooks::graphics_engine::graphics_engine,
     thread_role::{self, ThreadRole},
@@ -302,6 +305,7 @@ pub(super) struct VrState {
     last_attempt: Option<Instant>,
     /// The recenter baseline (cockpit frame). `None` until first recenter.
     pub(super) baseline: Option<Baseline>,
+    pub(super) origin_reference_space: ReferenceSpaceChanges,
     /// The latest located head pose in LOCAL space, for [`crate::vr::recenter`]. `None` until a frame
     /// locates.
     pub(super) latest_head_pose: Option<xr::Posef>,
@@ -323,6 +327,7 @@ impl VrState {
             input: None,
             last_attempt: None,
             baseline: None,
+            origin_reference_space: ReferenceSpaceChanges::new(),
             latest_head_pose: None,
             recommended_view: None,
             runtime_name: None,
@@ -462,6 +467,8 @@ impl VrState {
             props.runtime_name.to_string()
         });
 
+        let _origin_mutation = origin_provenance::changing();
+        self.origin_reference_space = ReferenceSpaceChanges::new();
         self.instance = Some(instance);
         self.system = Some(system);
         self.blend_mode = blend_mode;
@@ -496,17 +503,36 @@ impl VrState {
                     input::mark_profiles_dirty();
                     continue;
                 }
-                Ok(Some(xr::Event::ReferenceSpaceChangePending(_))) => {
-                    stage::mark_bounds_dirty();
+                Ok(Some(xr::Event::ReferenceSpaceChangePending(e))) => {
+                    let matches_session = self
+                        .session
+                        .as_ref()
+                        .is_some_and(|session| session.handle.as_raw() == e.session());
+                    let space = e.reference_space_type();
+                    self.origin_reference_space.note_event(
+                        matches_session,
+                        space,
+                        e.change_time().as_nanos(),
+                    );
+                    if matches_session
+                        && matches!(
+                            space,
+                            xr::ReferenceSpaceType::LOCAL | xr::ReferenceSpaceType::STAGE
+                        )
+                    {
+                        stage::mark_bounds_dirty();
+                    }
                     continue;
                 }
                 Ok(Some(xr::Event::EventsLost(e))) => {
+                    self.origin_reference_space.events_unknown();
                     tracing::warn!(target: "vr", "lost {} OpenXR events", e.lost_event_count());
                     continue;
                 }
                 Ok(Some(_)) => continue,
                 Ok(None) => break,
                 Err(e) => {
+                    self.origin_reference_space.events_unknown();
                     tracing::warn!(target: "vr", "poll_event failed: {e}");
                     break;
                 }
@@ -622,6 +648,7 @@ impl VrState {
     /// budget. When not set, end and destroy everything and clear the stashes so a later bring-up
     /// starts fresh (used when VR is genuinely stopped: `vr.enabled` off, or a lost session).
     fn teardown(&mut self, persist: bool) {
+        let _origin_mutation = origin_provenance::changing();
         // Drain the GPU first, and release the flip block, so the game's own present path resumes
         // against an idle pipeline rather than deadlocking in a timestamp-query readback (see
         // `blit::drain_gpu`); the swapchain is destroyed either way (persisting keeps only the
@@ -667,6 +694,7 @@ impl VrState {
         self.system = None;
         flight_pose::source_changed(EpochChange::RuntimeReset);
         self.baseline = None;
+        self.origin_reference_space = ReferenceSpaceChanges::new();
         self.latest_head_pose = None;
         stage::clear();
         self.recommended_view = None;
