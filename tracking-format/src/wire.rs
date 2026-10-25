@@ -30,6 +30,12 @@ pub enum DecodeErrorKind {
     InvalidUtf8 { field: &'static str },
     /// A record whose payload holds bytes beyond the fields it declares.
     TrailingBytes { record: &'static str, extra: usize },
+    /// A complete chunk does not match its metadata and stored-byte checksum.
+    ChunkChecksum,
+    /// A bounded LZ4 block cannot be decompressed into its announced output.
+    ChunkDecompression,
+    /// The allocator cannot provide the validated decompression buffer.
+    Allocation,
 }
 
 impl fmt::Display for DecodeError {
@@ -58,6 +64,9 @@ impl fmt::Display for DecodeErrorKind {
             DecodeErrorKind::TrailingBytes { record, extra } => {
                 write!(f, "a {record} record has {extra} unread bytes")
             }
+            DecodeErrorKind::ChunkChecksum => write!(f, "the chunk checksum does not match"),
+            DecodeErrorKind::ChunkDecompression => write!(f, "the bounded LZ4 block is invalid"),
+            DecodeErrorKind::Allocation => write!(f, "the chunk output buffer cannot be allocated"),
         }
     }
 }

@@ -317,8 +317,29 @@ fn versioned_input_wire_survives_payload_conversion() {
     };
     bytes.extend(tracking_format::encode_input(&record).unwrap());
     let recording = decode(&bytes).unwrap();
-    assert_eq!(recording.version, VERSION);
+    assert_eq!(recording.version, 2);
     assert_eq!(recording.input, vec![record]);
+}
+
+#[test]
+fn version3_chunk_wire_survives_payload_conversion() {
+    let record = tracking_format::input::CapturedInput {
+        capture_time_ns: 12,
+        frame_sequence: None,
+        record: tracking_format::input::InputRecord::Discontinuity {
+            reason: tracking_format::input::DiscontinuityReason::Unavailable,
+            discarded: 7,
+        },
+    };
+    let mut inner = tracking_format::encode_input(&record).unwrap();
+    let encoded_frame = encode_frame(&full_frame());
+    inner.extend(&encoded_frame);
+    let mut bytes = encode_chunked_preamble(&header());
+    bytes.extend(tracking_format::encode_chunk(&inner).unwrap());
+    let recording = decode(&bytes).unwrap();
+    assert_eq!(recording.version, 3);
+    assert_eq!(recording.input, vec![record]);
+    assert_eq!(encode_frame(&recording.frames[0]), encoded_frame);
 }
 
 #[test]

@@ -25,6 +25,39 @@ fn the_defaults_round_trip() {
 }
 
 #[test]
+fn recording_compression_requires_explicit_opt_in_in_old_and_current_settings() {
+    let defaults = Config::new();
+    assert!(!defaults.testing.record_compression);
+    assert!(defaults.testing.enabled);
+    assert!(defaults.testing.record_hand_joints);
+
+    let mut old: Table = toml::from_str(&toml::to_string(&defaults).unwrap()).unwrap();
+    old.get_mut("testing")
+        .unwrap()
+        .as_table_mut()
+        .unwrap()
+        .remove("record_compression");
+    let Loaded { config, report } = load(old);
+    assert_eq!(
+        report.defaulted,
+        vec!["testing.record_compression".to_owned()]
+    );
+    assert!(report.ignored.is_empty());
+    assert!(report.reset.is_empty());
+    assert!(!config.testing.record_compression);
+    assert!(config.testing.enabled);
+    assert!(config.testing.record_hand_joints);
+
+    let mut opted_in = defaults;
+    opted_in.testing.record_compression = true;
+    let Loaded { config, report } = parse(&toml::to_string(&opted_in).unwrap()).unwrap();
+    assert_eq!(report, LoadReport::default());
+    assert!(config.testing.record_compression);
+    assert!(config.testing.enabled);
+    assert!(config.testing.record_hand_joints);
+}
+
+#[test]
 fn changed_settings_round_trip() {
     let mut original = Config::new();
     // Options whose default is `None`, set: the defaults leave the key out, the file has it.

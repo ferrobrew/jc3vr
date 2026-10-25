@@ -10,6 +10,7 @@ publish = false
 
 [dependencies]
 glam = { workspace = true }
+lz4_flex = { version = "=0.13.1", default-features = false, features = ["std", "safe-encode", "safe-decode"] }
 # The session state's type only: the payload's `openxr` re-exports the same type from this crate,
 # so a recorded state needs no conversion.
 openxr-sys = "0.13"

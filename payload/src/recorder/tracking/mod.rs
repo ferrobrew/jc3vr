@@ -70,8 +70,11 @@ pub(crate) struct TrackingStatus {
     pub(crate) frames: u32,
     /// Frames dropped because the writer fell behind.
     pub(crate) dropped: u32,
-    /// Encoded bytes accepted by the buffered sink; a flush error can prevent durability.
+    /// Stored bytes accepted by the buffered sink, including the preamble. A flush error can
+    /// prevent durability. Version 3 stores chunks; version 2 stores original serialized records.
     pub(crate) bytes: u64,
+    /// Preamble and original record bytes for complete accepted batches, before compression.
+    pub(crate) logical_bytes: u64,
     /// How long the current or last recording ran.
     pub(crate) duration: Duration,
     /// Why the last recording did not start or stopped early.
@@ -151,6 +154,7 @@ pub(crate) fn status() -> TrackingStatus {
     status.dropped = DROPPED.load(Ordering::Relaxed);
     if let Some(active) = &state.active {
         status.bytes = active.writer.bytes_written();
+        status.logical_bytes = active.writer.logical_bytes_written();
         status.duration = active.started.elapsed();
     }
     status
@@ -408,6 +412,7 @@ impl State {
             return;
         };
         self.status.bytes = active.writer.bytes_written();
+        self.status.logical_bytes = active.writer.logical_bytes_written();
         self.status.duration = active.started.elapsed();
         active.writer.finish();
         self.finishing.push(Finishing {
@@ -426,6 +431,7 @@ impl State {
                 }
                 if self.status.path.as_ref() == Some(&writer.path) {
                     self.status.bytes = completion.bytes;
+                    self.status.logical_bytes = writer.writer.logical_bytes_written();
                     if completion.error.is_some() {
                         self.status.error = completion.error;
                     }
@@ -434,6 +440,7 @@ impl State {
             } else {
                 if self.status.path.as_ref() == Some(&writer.path) {
                     self.status.bytes = writer.writer.bytes_written();
+                    self.status.logical_bytes = writer.writer.logical_bytes_written();
                     if let Some(error) = writer.writer.error() {
                         self.status.error = Some(error);
                     }
@@ -454,6 +461,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         frames: 0,
         dropped: 0,
         bytes: 0,
+        logical_bytes: 0,
         duration: Duration::ZERO,
         error: None,
     },
@@ -493,14 +501,16 @@ fn begin() -> Result<PathBuf, StartError> {
         .filter(|(_, distance)| *distance <= BOOKMARK_RADIUS_M)
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(name, _)| name);
-    let (dominant_hand, world_scale, time_scale, hand_joints) = Config::lock_query(|c| {
-        (
-            c.controllers.dominant_hand,
-            c.vr.world_scale,
-            c.director.time_scale,
-            c.testing.record_hand_joints,
-        )
-    });
+    let (dominant_hand, world_scale, time_scale, hand_joints, compression) =
+        Config::lock_query(|c| {
+            (
+                c.controllers.dominant_hand,
+                c.vr.world_scale,
+                c.director.time_scale,
+                c.testing.record_hand_joints,
+                c.testing.record_compression,
+            )
+        });
     let stamp = crate::session::stamp();
     let header = Header {
         build: crate::BUILD_STAMP.to_owned(),
@@ -517,8 +527,8 @@ fn begin() -> Result<PathBuf, StartError> {
     let path = folder.join(format!("{stamp}.{}", format::EXTENSION));
     let mut state = STATE.lock();
     state.can_start()?;
-    let writer = Writer::spawn(&path, &format::encode_input_preamble(&header))
-        .map_err(StartError::Writer)?;
+    let recording_format = writer::RecordingFormat::from_compression_opt_in(compression);
+    let writer = Writer::start(&path, &header, recording_format).map_err(StartError::Writer)?;
     discard_before_start();
     state.active = Some(Active {
         writer,

@@ -16,37 +16,47 @@
 //!    [`TAG_FRAME`] carries a [`Frame`]; [`TAG_INPUT`] carries independently versioned input history.
 //!    Version 2 keeps the version 1 frame/header layouts. Version 1 reads return no input history
 //!    and cannot reproduce within-sync order, source interpretation, or logical input timing.
+//!    Version 3 stores complete serialized frame/input batches inside [`TAG_CHUNK`] records.
+//!    Each chunk independently selects raw or LZ4 block storage and verifies metadata and stored
+//!    bytes with CRC-32. The expanded records retain their original bytes and order.
 //!
-//! A reader skips a record whose tag it does not know, so a later version can add records that an
-//! older build passes over. A file whose last record is cut short (the game stopped while the
-//! writer was mid-record) reads as the records before it, marked [`Recording::truncated`]. Anything
-//! else malformed is an error: a field outside its range, or a record with unread bytes.
+//! Versions 1 and 2 skip unknown tags. Version 3 rejects unknown required tags; only unknown tags
+//! with [`OPTIONAL_TAG_BIT`] set are skippable. Chunks cannot contain chunks or required unknown
+//! records. A cut final outer record leaves all earlier records readable and marks
+//! [`Recording::truncated`]. A complete malformed chunk, unread inner bytes, a bad checksum, or a
+//! resource-budget violation is an error. [`decode_with_limits`] bounds aggregate resource use.
 //!
 //! The poses are in the cockpit frame, as the mod publishes them (the eye views and the controller
 //! spaces re-based against the recenter baseline): metres, +X right, +Y up, -Z forward. A replay
 //! therefore needs no baseline of its own. A recenter during the recording is recorded as an event
 //! on the frame it took effect in.
 
+mod chunk;
 mod codec;
 pub mod input;
 mod input_codec;
 pub mod model;
+mod read;
 mod wire;
 
 use glam::{Quat, Vec3};
 pub use openxr_sys::SessionState;
 
-pub use crate::wire::{DecodeError, DecodeErrorKind};
+pub use crate::{
+    chunk::{MAX_CHUNK_BYTES, MAX_CHUNK_RECORDS, OPTIONAL_TAG_BIT, TAG_CHUNK, encode_chunk},
+    read::{DecodeLimits, decode_with_limits},
+    wire::{DecodeError, DecodeErrorKind},
+};
 use crate::{
     model::{ActionSetKind, Hand, HandFrame, Pose, RecenterCause, RecenterKind, SetState, Stage},
-    wire::{Decoder, Encoder},
+    wire::Encoder,
 };
 
 /// The file extension of a tracking recording.
 pub const EXTENSION: &str = "jc3trk";
 
-/// The newest supported format version. Snapshot-only writers retain version 1.
-pub const VERSION: u16 = 2;
+/// The newest supported format version. Legacy preamble functions retain versions 1 and 2.
+pub const VERSION: u16 = 3;
 
 /// A whole recording, as read back.
 #[derive(Debug, Clone, PartialEq)]
@@ -179,6 +189,11 @@ pub fn encode_preamble(header: &Header) -> Vec<u8> {
 
 /// A version 2 preamble for writers that include the independent input-record sequence.
 pub fn encode_input_preamble(header: &Header) -> Vec<u8> {
+    preamble(header, 2)
+}
+
+/// A version 3 preamble. Every required outer record is an independently recoverable chunk.
+pub fn encode_chunked_preamble(header: &Header) -> Vec<u8> {
     preamble(header, VERSION)
 }
 
@@ -229,76 +244,9 @@ pub fn encode_input(captured: &input::CapturedInput) -> Result<Vec<u8>, DecodeEr
     Ok(out.bytes)
 }
 
-/// Read a whole file.
+/// Read a whole file within [`DecodeLimits::default`].
 pub fn decode(bytes: &[u8]) -> Result<Recording, DecodeError> {
-    let mut reader = Decoder::new(bytes);
-    let magic = reader.take(MAGIC.len()).map_err(|e| DecodeError {
-        kind: DecodeErrorKind::BadMagic,
-        ..e
-    })?;
-    if magic != MAGIC {
-        return Err(DecodeError {
-            offset: 0,
-            kind: DecodeErrorKind::BadMagic,
-        });
-    }
-    let version_offset = reader.offset();
-    let version = reader.u16()?;
-    if version == 0 || version > VERSION {
-        return Err(DecodeError {
-            offset: version_offset,
-            kind: DecodeErrorKind::UnsupportedVersion(version),
-        });
-    }
-    let header_len = reader.u32()? as usize;
-    let mut header_reader = reader.sub(header_len)?;
-    let header = codec::read_header(&mut header_reader)?;
-    header_reader.finish("header")?;
-
-    let mut frames = Vec::new();
-    let mut input = Vec::new();
-    let mut truncated = false;
-    let mut skipped_records = 0;
-    while !reader.is_empty() {
-        // A record whose framing or payload runs past the end of the file is the one the writer was
-        // in the middle of when it stopped.
-        if reader.remaining() < RECORD_FRAMING {
-            truncated = true;
-            break;
-        }
-        let tag = reader.u8()?;
-        let len = reader.u32()? as usize;
-        if version >= 2 && tag == TAG_INPUT && len > input::MAX_INPUT_PAYLOAD {
-            return Err(reader.error(DecodeErrorKind::InvalidValue {
-                field: "input payload length",
-                value: len as u64,
-            }));
-        }
-        if reader.remaining() < len {
-            truncated = true;
-            break;
-        }
-        let mut record = reader.sub(len)?;
-        match tag {
-            TAG_FRAME => {
-                frames.push(codec::read_frame(&mut record)?);
-                record.finish("frame")?;
-            }
-            TAG_INPUT if version >= 2 => {
-                input.push(input_codec::decode(&mut record)?);
-                record.finish("input")?;
-            }
-            _ => skipped_records += 1,
-        }
-    }
-    Ok(Recording {
-        header,
-        frames,
-        input,
-        version,
-        truncated,
-        skipped_records,
-    })
+    decode_with_limits(bytes, DecodeLimits::default())
 }
 
 /// The bytes a file starts with.

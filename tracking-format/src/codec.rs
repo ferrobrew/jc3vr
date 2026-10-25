@@ -161,6 +161,12 @@ pub(crate) fn read_frame(input: &mut Decoder) -> Result<Frame, DecodeError> {
         None
     };
     let count = input.u8()?;
+    if usize::from(count) > input.remaining() / 18 {
+        return Err(input.error(crate::DecodeErrorKind::Truncated {
+            needed: usize::from(count) * 18,
+            available: input.remaining(),
+        }));
+    }
     let mut recenters = Vec::with_capacity(usize::from(count));
     for _ in 0..count {
         let offset = input.offset();
@@ -496,6 +502,12 @@ fn read_set_state(input: &mut Decoder) -> Result<SetState, DecodeError> {
         .copied()
         .ok_or_else(|| invalid(offset, "a semantic set", index.into()))?;
     let count = input.u16()?;
+    if usize::from(count) > input.remaining() / 6 {
+        return Err(input.error(crate::DecodeErrorKind::Truncated {
+            needed: usize::from(count) * 6,
+            available: input.remaining(),
+        }));
+    }
     let mut actions = Vec::with_capacity(usize::from(count));
     for _ in 0..count {
         let mut action = || -> Result<ActionState, DecodeError> {

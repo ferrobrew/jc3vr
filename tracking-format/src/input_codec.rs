@@ -169,6 +169,12 @@ fn read_group(input: &mut Decoder) -> Result<InputGroup, DecodeError> {
     if count > MAX_ROUTES {
         return Err(invalid(input, "input route count", count as u64));
     }
+    if count > input.remaining() / 6 {
+        return Err(input.error(DecodeErrorKind::Truncated {
+            needed: count * 6,
+            available: input.remaining(),
+        }));
+    }
     let mut samples = Vec::with_capacity(count);
     for _ in 0..count {
         let route = match input.u8()? {
@@ -205,6 +211,12 @@ fn read_group(input: &mut Decoder) -> Result<InputGroup, DecodeError> {
                 let count = usize::from(input.u8()?);
                 if count > MAX_SOURCES {
                     return Err(invalid(input, "input source count", count as u64));
+                }
+                if count > input.remaining() / 2 {
+                    return Err(input.error(DecodeErrorKind::Truncated {
+                        needed: count * 2,
+                        available: input.remaining(),
+                    }));
                 }
                 let mut paths = Vec::with_capacity(count);
                 for _ in 0..count {

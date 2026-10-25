@@ -15,6 +15,34 @@ use std::{
 use parking_lot::Mutex;
 use tracking_format::input::{CapturedInput, DiscontinuityReason, InputRecord};
 
+use crate::recorder::tracking::format::{self, Header};
+
+/// The container selected once at recording start. Compression remains an explicit experiment
+/// until representative full-joint capture and sustained-I/O acceptance pass.
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum RecordingFormat {
+    #[default]
+    UncompressedV2,
+    ChunkedV3,
+}
+
+impl RecordingFormat {
+    pub(crate) fn from_compression_opt_in(enabled: bool) -> Self {
+        if enabled {
+            Self::ChunkedV3
+        } else {
+            Self::UncompressedV2
+        }
+    }
+
+    fn preamble(self, header: &Header) -> Vec<u8> {
+        match self {
+            Self::UncompressedV2 => format::encode_input_preamble(header),
+            Self::ChunkedV3 => format::encode_chunked_preamble(header),
+        }
+    }
+}
+
 /// A frame and all input records captured beside it occupy one queue slot.
 pub(crate) struct CaptureBatch {
     pub(crate) bytes: Vec<u8>,
@@ -85,22 +113,31 @@ impl Owner {
 }
 
 impl Writer {
-    pub(crate) fn spawn(path: &Path, preamble: &[u8]) -> Result<Self, WriterError> {
+    pub(crate) fn start(
+        path: &Path,
+        header: &Header,
+        format: RecordingFormat,
+    ) -> Result<Self, WriterError> {
+        let preamble = format.preamble(header);
         let create = || -> std::io::Result<BufWriter<File>> {
             let mut file = BufWriter::new(File::create_new(path)?);
-            file.write_all(preamble)?;
+            file.write_all(&preamble)?;
             Ok(file)
         };
         let file = create().map_err(|error| WriterError::Create {
             path: path.to_owned(),
             error,
         })?;
-        Self::spawn_sink(file, preamble.len() as u64)
+        Self::spawn_sink(file, preamble.len() as u64, format)
     }
 
-    fn spawn_sink(file: impl Sink + Send + 'static, bytes: u64) -> Result<Self, WriterError> {
+    fn spawn_sink(
+        file: impl Sink + Send + 'static,
+        bytes: u64,
+        format: RecordingFormat,
+    ) -> Result<Self, WriterError> {
         let (sender, receiver) = mpsc::sync_channel(QUEUE_DEPTH);
-        let shared = Arc::new(Shared::new(bytes));
+        let shared = Arc::new(Shared::new(bytes, format));
         let thread_shared = Arc::clone(&shared);
         let handle = std::thread::Builder::new()
             .name("jc3vr-tracking-writer".to_owned())
@@ -164,6 +201,12 @@ impl Writer {
         self.shared.bytes.load(Ordering::Relaxed)
     }
 
+    /// Preamble bytes plus original record bytes in fully accepted batches. Partial writes
+    /// contribute stored bytes only; neither counter claims durability before flush and sync.
+    pub(crate) fn logical_bytes_written(&self) -> u64 {
+        self.shared.logical_bytes.load(Ordering::Relaxed)
+    }
+
     pub(crate) fn error(&self) -> Option<String> {
         self.shared.error.lock().clone()
     }
@@ -202,7 +245,7 @@ impl Writer {
             Self {
                 sender: None,
                 handle: Some(Owner::Controlled(Arc::clone(&result))),
-                shared: Arc::new(Shared::new(0)),
+                shared: Arc::new(Shared::new(0, RecordingFormat::default())),
                 pending_loss: None,
             },
             result,
@@ -241,16 +284,20 @@ fn encode_loss(loss: Loss) -> Vec<u8> {
 }
 
 struct Shared {
+    format: RecordingFormat,
     error: Mutex<Option<String>>,
     bytes: AtomicU64,
+    logical_bytes: AtomicU64,
     final_loss: Mutex<Option<Loss>>,
 }
 
 impl Shared {
-    fn new(bytes: u64) -> Self {
+    fn new(bytes: u64, format: RecordingFormat) -> Self {
         Self {
+            format,
             error: Mutex::new(None),
             bytes: AtomicU64::new(bytes),
+            logical_bytes: AtomicU64::new(bytes),
             final_loss: Mutex::new(None),
         }
     }
@@ -281,17 +328,33 @@ fn drain(
     shared: &Shared,
 ) -> Result<(), String> {
     for record in receiver {
-        write_record(file, &record, shared)
-            .map_err(|e| format!("tracking writer: record write: {e}"))?;
+        write_batch(file, &record, shared)
+            .map_err(|error| format!("tracking writer: record write: {error}"))?;
     }
     if let Some(loss) = shared.final_loss.lock().take() {
-        write_record(file, &encode_loss(loss), shared)
-            .map_err(|e| format!("tracking writer: final input loss write: {e}"))?;
+        write_batch(file, &encode_loss(loss), shared)
+            .map_err(|error| format!("tracking writer: final input loss write: {error}"))?;
     }
     file.flush()
         .map_err(|e| format!("tracking writer: flush: {e}"))?;
     file.sync()
         .map_err(|e| format!("tracking writer: sync: {e}"))
+}
+
+fn write_batch(file: &mut impl Sink, records: &[u8], shared: &Shared) -> Result<(), String> {
+    let chunk;
+    let stored = match shared.format {
+        RecordingFormat::UncompressedV2 => records,
+        RecordingFormat::ChunkedV3 => {
+            chunk = tracking_format::encode_chunk(records).map_err(|error| error.to_string())?;
+            chunk.as_slice()
+        }
+    };
+    write_record(file, stored, shared).map_err(|error| error.to_string())?;
+    shared
+        .logical_bytes
+        .fetch_add(records.len() as u64, Ordering::Relaxed);
+    Ok(())
 }
 
 fn write_record(file: &mut impl Sink, mut bytes: &[u8], shared: &Shared) -> std::io::Result<()> {
