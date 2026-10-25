@@ -10,6 +10,9 @@ mod environment_tests;
 #[path = "dispatch/hud_tests.rs"]
 mod hud_tests;
 #[cfg(test)]
+#[path = "dispatch/keyboard_tests.rs"]
+mod keyboard_tests;
+#[cfg(test)]
 #[path = "dispatch/replay_tests.rs"]
 mod replay_tests;
 #[cfg(test)]
@@ -138,6 +141,11 @@ pub(crate) fn feature(
         }
         FeatureRoute::Director if id == FeatureId::Video && section == FeatureSection::Status => {
             director::video_status(ui)
+        }
+        FeatureRoute::Director
+            if id == FeatureId::Keyboard && section == FeatureSection::Status =>
+        {
+            director::keyboard_status(ui)
         }
         FeatureRoute::Environment if section == FeatureSection::Controls => environment::render(ui),
         FeatureRoute::Environment if section == FeatureSection::Status => environment::status(ui),

@@ -69,6 +69,18 @@ pub(crate) fn video_status(ui: &mut egui::Ui) {
     }
 }
 
+/// Render the effective keyboard bindings without settings or commands.
+pub(crate) fn keyboard_status(ui: &mut egui::Ui) {
+    let map = keymap::current();
+    egui::Grid::new("director_keyboard_status").show(ui, |ui| {
+        for binding in map.effective() {
+            ui.label(binding.chord.describe());
+            ui.label(binding.action.label());
+            ui.end_row();
+        }
+    });
+}
+
 fn cinematic_ui(ui: &mut egui::Ui) {
     let mut cfg = config::edit();
     ui.checkbox(
