@@ -41,6 +41,7 @@ fn _AimState_size_check() {
     unreachable!()
 }
 #[repr(C, align(8))]
+/// An animated model (`CAnimatedModel`): owns its rule systems, model-instance slots, and separately allocated [`AnimationController`](crate::character::character::AnimationController). Its constructor allocates the controller, and its destructor destroys and frees that allocation. The controller can replace its pose producer and skeleton resource without replacement of the model or controller.
 pub struct AnimatedModel {
     _field_0: [u8; 152],
     pub m_RuleSystems: crate::types::std_vector::Vector<
@@ -49,6 +50,7 @@ pub struct AnimatedModel {
         >,
     >,
     _field_b8: [u8; 192],
+    /// The model's separately allocated controller. The model destroys and frees it during destruction; the field is not a shared reference.
     pub m_AnimationController: *mut crate::character::character::AnimationController,
     _field_180: [u8; 88],
     /// The model's animation instance data (`SAnimatedModelInstanceData*`), null until the animation
@@ -124,19 +126,18 @@ impl std::convert::AsMut<AnimatedModel> for AnimatedModel {
     }
 }
 #[repr(C, align(8))]
-/// A character's animation controller (`NCharacterSystem::CAnimationControl`): the skeleton, the
-/// pose producer, and one body part per animation layer.
+/// A character's animation controller (`NCharacterSystem::CAnimationControl`): owns the skeleton resource handle and pose producer, with a body part per animation layer. [`InitSkeleton`](crate::character::character::AnimationController::InitSkeleton), [`InitControl`](crate::character::character::AnimationController::InitControl), and [`Reset`](crate::character::character::AnimationController::Reset) change that state in place; an unchanged controller address does not imply an unchanged skeleton or producer.
 pub struct AnimationController {
-    _field_0: [u8; 160],
-    /// The skeleton resource, through which [`GetBoneIndex`](crate::character::character::AnimationController::GetBoneIndex) resolves a bone by
-    /// the hash of its name.
+    _field_0: [u8; 152],
+    /// The owned skeleton resource handle (`TResourceCachePtr<CSkeleton>::m_Handle`). [`InitSkeleton`](crate::character::character::AnimationController::InitSkeleton) replaces it and releases the previous handle. The handle's resource-retention operations are not mapped.
+    pub m_SkeletonResourceHandle: *mut ::std::ffi::c_void,
+    /// The cached skeleton pointer, through which [`GetBoneIndex`](crate::character::character::AnimationController::GetBoneIndex) resolves a bone by the hash of its name. [`InitSkeleton`](crate::character::character::AnimationController::InitSkeleton) refreshes it when the acquired resource handle is non-null, but does not clear it on the empty-handle path. This cache is not an independent owning reference.
     pub m_Skeleton: *mut crate::animation::skeleton::Skeleton,
     _field_a8: [u8; 16],
-    /// The pose producer, whose [`m_PoseT1`](crate::animation::pose_producer::PoseProducer::m_PoseT1) the
-    /// joint accessors ([`GetJoint`](crate::character::character::AnimationController::GetJoint) and [`SetJoint`](crate::character::character::AnimationController::SetJoint)) read and
-    /// write.
+    /// The object pointer (`px`) of the owning `m_Skinner` shared pointer, paired with [`m_PoseProducerControlBlock`](crate::character::character::AnimationController::m_PoseProducerControlBlock). The joint accessors read and write its current [`m_PoseT1`](crate::animation::pose_producer::PoseProducer::m_PoseT1). [`InitControl`](crate::character::character::AnimationController::InitControl) replaces the owner, and [`Reset`](crate::character::character::AnimationController::Reset) clears and releases it. Reading this raw pointer does not retain the producer.
     pub m_PoseProducer: *mut crate::animation::pose_producer::PoseProducer,
-    _field_c0: [u8; 8],
+    /// The reference-count control block (`pn`) of `m_Skinner`, paired with [`m_PoseProducer`](crate::character::character::AnimationController::m_PoseProducer). These fields together are an owning [`SharedPtr<PoseProducer>`](crate::types::shared_ptr::SharedPtr), not independent pointers. Concurrent owner replacement must be excluded before reading or retaining the pair; an atomic count increment alone does not provide safe acquisition.
+    pub m_PoseProducerControlBlock: *mut ::std::ffi::c_void,
     /// The animation layers' body parts, in layer order: index *i* belongs to the layer named by
     /// [`AnimationLayer`](crate::character::character::AnimationLayer) *i*, alongside the rule system at the same index of
     /// [`AnimatedModel::m_RuleSystems`](crate::character::character::AnimatedModel::m_RuleSystems).
@@ -153,6 +154,51 @@ fn _AnimationController_size_check() {
     unreachable!()
 }
 impl AnimationController {
+    pub const InitSkeleton_ADDRESS: usize = 0x1404508E0;
+    /// Acquires the skeleton at `skeleton_path`, replaces [`m_SkeletonResourceHandle`](crate::character::character::AnimationController::m_SkeletonResourceHandle), and releases the previous handle. When the acquired handle is non-null, resolves it and writes [`m_Skeleton`](crate::character::character::AnimationController::m_Skeleton); the empty-handle path leaves that cache unchanged. The controller allocation is unchanged.
+    pub unsafe fn InitSkeleton(&mut self, skeleton_path: *const u8) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                skeleton_path: *const u8,
+            ) = ::std::mem::transmute(Self::InitSkeleton_ADDRESS);
+            f(self as *mut Self as _, skeleton_path)
+        }
+    }
+    pub const InitControl_ADDRESS: usize = 0x14047A0F0;
+    /// Creates a pose producer over [`m_SkeletonResourceHandle`](crate::character::character::AnimationController::m_SkeletonResourceHandle), adopts it into `m_Skinner`, and releases the previous producer owner. Creates the skinning palette, rebuilds the body parts from `rules` and `animation_sets`, and calculates the producer's model-space pose. The skeleton must be initialized first.
+    ///
+    /// `rules` points to `num_layers` shared rule-system references, and `animation_sets` points to the corresponding `TResourceCachePtr<CAnimationSet>` handles. Initialization replaces the producer without replacing the controller. The adopting shared-pointer reset is not a retaining acquisition operation for an already owned producer.
+    pub unsafe fn InitControl(
+        &mut self,
+        num_layers: i32,
+        rules: *mut crate::types::shared_ptr::SharedPtr<
+            crate::animation::rule_system::AnimationRuleSystem,
+        >,
+        animation_sets: *mut *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                num_layers: i32,
+                rules: *mut crate::types::shared_ptr::SharedPtr<
+                    crate::animation::rule_system::AnimationRuleSystem,
+                >,
+                animation_sets: *mut *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::InitControl_ADDRESS);
+            f(self as *mut Self as _, num_layers, rules, animation_sets)
+        }
+    }
+    pub const Reset_ADDRESS: usize = 0x1404760A0;
+    /// Clears the samplers before clearing [`m_PoseProducer`](crate::character::character::AnimationController::m_PoseProducer) and [`m_PoseProducerControlBlock`](crate::character::character::AnimationController::m_PoseProducerControlBlock), then releases the previous shared owner. The final strong release disposes the producer synchronously, and the final weak release destroys the control block. Clears the body parts and active scripts afterward. The controller allocation survives this reset.
+    pub unsafe fn Reset(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::Reset_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
     pub const GetBoneIndex_ADDRESS: usize = 0x140434E30;
     pub unsafe fn GetBoneIndex(&self, hash: u32) -> u32 {
         unsafe {
@@ -193,6 +239,7 @@ impl AnimationController {
         }
     }
     pub const GetJoint_ADDRESS: usize = 0x14043FF90;
+    /// Copies the current model-space joint at `index` through `joint` by unconditionally forwarding [`m_PoseProducer`](crate::character::character::AnimationController::m_PoseProducer) to [`PoseProducer::GetJoint`](crate::animation::pose_producer::PoseProducer::GetJoint). There is no null check, range check, or fallback joint. The producer and its current pose must be live, the index must be valid for that pose, and `joint` must point to writable aligned joint storage. The forwarded accessor can calculate dirty model-space transforms, so this call requires serialized pose access despite its const receiver.
     pub unsafe fn GetJoint(
         &self,
         index: u32,
@@ -734,18 +781,9 @@ impl Character {
         }
     }
     pub const UpdatePassFinalizePose_Parallel_ADDRESS: usize = 0x1407F9B10;
-    /// The character's SIM-phase pose-finalization pass. After the animation graph has finalized the
-    /// local pose, this first runs the current states' tasks registered in the
-    /// [`FINALIZE_POSE_STATE_TASK_RANGE`](crate::character::character::Character::FINALIZE_POSE_STATE_TASK_RANGE) through
-    /// [`UpdateStateTasksInRange`](crate::character::character::Character::UpdateStateTasksInRange) (the aim, look-at, grapple-fire
-    /// arm, and weapon off-hand IK tasks among them), then drives the [`HumanIK`](crate::character::character::Character::m_HIK) solve
-    /// (the `MAIN` body pass, gated on [`HumanIK::HasTargets`](crate::animation::ik::HumanIK::HasTargets) and run through
-    /// [`UpdateIKForTargets`](crate::character::character::Character::UpdateIKForTargets), followed by
-    /// [`UpdateSecondaryHandIKPass`](crate::character::character::Character::UpdateSecondaryHandIKPass)), then computes the
-    /// model-space pose (`CalculateModelSpacePose`), and finally calls
-    /// [`UpdatePropEffects`](crate::character::character::Character::UpdatePropEffects). Effector targets queued before this runs
-    /// are solved into the pose the same frame; blackboard keys those tasks write are written after
-    /// its entry.
+    /// The character's SIM-phase pose-finalization pass. Eligibility checks can return before any finalization work. An eligible pass runs the current states' tasks registered in the [`FINALIZE_POSE_STATE_TASK_RANGE`](crate::character::character::Character::FINALIZE_POSE_STATE_TASK_RANGE) through [`UpdateStateTasksInRange`](crate::character::character::Character::UpdateStateTasksInRange), including the aim, look-at, grapple-fire arm, and weapon off-hand IK tasks.
+    ///
+    /// It then places attachments and drives the [`HumanIK`](crate::character::character::Character::m_HIK) solve: the `MAIN` body pass, gated on [`HumanIK::HasTargets`](crate::animation::ik::HumanIK::HasTargets) and run through [`UpdateIKForTargets`](crate::character::character::Character::UpdateIKForTargets), followed by [`UpdateSecondaryHandIKPass`](crate::character::character::Character::UpdateSecondaryHandIKPass). It then computes the model-space pose (`CalculateModelSpacePose`) and calls [`UpdatePropEffects`](crate::character::character::Character::UpdatePropEffects). Blackboard keys written by the finalize state tasks are written after entry. Entry alone does not establish that the animation job has completed or that the pose is newly produced; the caller's job synchronization is not mapped.
     pub unsafe fn UpdatePassFinalizePose_Parallel(
         &mut self,
         context: *mut ::std::ffi::c_void,

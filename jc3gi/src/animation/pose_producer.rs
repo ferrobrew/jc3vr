@@ -260,6 +260,28 @@ fn _PoseProducer_size_check() {
     unreachable!()
 }
 impl PoseProducer {
+    pub const GetJoint_ADDRESS: usize = 0x141E693D0;
+    /// Copies bone `index` from the current [`m_PoseT1`](crate::animation::pose_producer::PoseProducer::m_PoseT1) into `result` in model space and returns `result`. A dirty model-space transform is calculated lazily before the complete joint is copied.
+    ///
+    /// The current pose must be live, `index` must be nonnegative and valid for its bone flags and model-space transforms, and `result` must point to writable aligned joint storage. There are no null or range guards. The lazy calculation can modify the pose caches, so the call requires serialized access to the current pose. It does not read [`m_PoseT0`](crate::animation::pose_producer::PoseProducer::m_PoseT0).
+    ///
+    /// IDA labels this address `TResourceCachePtr<CSkeleton>::operator->`; the body is the pose producer's joint accessor.
+    pub unsafe fn GetJoint(
+        &mut self,
+        result: *mut crate::character::character::Joint,
+        index: i32,
+    ) -> *mut crate::character::character::Joint {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                result: *mut crate::character::character::Joint,
+                index: i32,
+            ) -> *mut crate::character::character::Joint = ::std::mem::transmute(
+                Self::GetJoint_ADDRESS,
+            );
+            f(self as *mut Self as _, result, index)
+        }
+    }
     pub const MakeSkinningPalette_ADDRESS: usize = 0x141E69600;
     /// Queues a skinning-palette job for this producer: advances the time of any time-updatable
     /// blender, then records the skeleton's bone count, `dtf`, and the two poses into the next slot
