@@ -136,6 +136,26 @@ impl Contact {
         }
     }
 
+    /// Full contact identity includes private swing data and float component bits, not padding.
+    pub(crate) fn same_bits(self, other: Self) -> bool {
+        let same_state = match (self.state, other.state) {
+            (ContactState::Released(left), ContactState::Released(right)) => left == right,
+            (ContactState::Planted { support: left, local },
+                ContactState::Planted { support: right, local: other }) => {
+                left == right && same_pose_bits(local, other)
+            }
+            (ContactState::Swinging { support: left, progress, endpoint },
+                ContactState::Swinging { support: right, progress: other_progress, endpoint: other }) => {
+                left == right && progress.to_bits() == other_progress.to_bits()
+                    && same_pose_bits(endpoint, other)
+            }
+            _ => false,
+        };
+        same_state && same_pose_bits(self.pose, other.pose)
+            && same_pose_bits(self.from_local, other.from_local)
+            && same_pose_bits(self.target_local, other.target_local)
+    }
+
     pub(crate) fn planted(self) -> bool {
         matches!(self.state, ContactState::Planted { .. })
     }
@@ -260,6 +280,11 @@ pub(crate) fn rigid_upright(transform: Mat4) -> bool {
 
 pub(crate) fn yaw(rotation: Quat) -> f32 {
     crate::controllers::body::rig::torso::yaw_of(rotation * yaw_forward(0.0)).unwrap_or(0.0)
+}
+
+fn same_pose_bits(left: FootPose, right: FootPose) -> bool {
+    left.position.to_array().map(f32::to_bits) == right.position.to_array().map(f32::to_bits)
+        && left.rotation.to_array().map(f32::to_bits) == right.rotation.to_array().map(f32::to_bits)
 }
 
 pub(crate) const SWING_SECONDS: f32 = 0.32;

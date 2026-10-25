@@ -16,7 +16,11 @@ Raw inputs remain unchanged. Derived composition normalizes accepted near-unit r
 
 The bounded fit distributes motion across the hips, knees, ankles, and spine. Continuity and a carried heading prior choose among poses with similar tracking fit; low head height alone does not establish knee or pelvis support. Contact transitions precede final realization, and published feet match the realized ankles. Swing geometry remains support-local. Planar search directions, rate limits, and costs share the completed root frame. Failed continuing searches can hold a revalidated previous pose with explicit constraint recovery, zeroed correction rates, current residuals, and reduced authority. This is not a claim that the tracked pose is geometrically impossible.
 
-The shadow model currently accepts an injected finite horizontal support patch, not live terrain or a verified moving-platform identity. Its numerical tests cover ambiguous observations, frame transport, contact transitions, bounded recovery, and rate variation. The source work bound is finite, but measured performance and live solve-gate integration remain prerequisites to activation. The existing production behavior described below remains unchanged.
+The shadow model currently accepts an injected finite horizontal support patch, not live terrain or a verified moving-platform identity. Its numerical tests cover ambiguous observations, frame transport, contact transitions, bounded recovery, and rate variation. The existing production behavior described below remains unchanged.
+
+Each update caches repeated numerical contact fits in a fixed-size store and prepares temporal constraint intervals once per context. Reuse preserves the selected pose, full contact history, error ordering, and committed rates. Test-only reference execution compares these values bit for bit against the uncached path. `Estimator::last_work` reports executed and logical work separately, including failed searches.
+
+One paired release-mode Wine profile used 250 synthetic updates per scenario and implementation. The optimized p95 update time was 0.429 ms for neutral observations, 1.790 ms for retargeting, and 0.490 ms for recovery, compared with 1.020 ms, 4.266 ms, and 1.249 ms for the reference path. These results describe one synthetic run, not a live gameplay budget. Representative live tail measurements and solve-gate integration remain prerequisites to activation.
 
 ## Who moves the root
 

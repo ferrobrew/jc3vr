@@ -27,10 +27,12 @@ use crate::controllers::{
     frame::{Pose, TrackedPose},
 };
 
+pub(crate) mod cost;
 mod final_invariants;
-mod profile;
+pub(crate) mod profile;
 mod recovery;
 mod regressions;
+pub(crate) mod retained;
 mod trajectories;
 mod transitions;
 

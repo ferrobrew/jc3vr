@@ -1,4 +1,5 @@
 use std::{
+    cell::Cell,
     collections::BTreeMap,
     hint::black_box,
     time::{Duration, Instant},
@@ -9,9 +10,33 @@ use crate::controllers::body::rig::{
     estimate::{
         contacts::{Contact, ContactState, ReleaseReason, SWING_SECONDS},
         fit,
+        work::Work,
     },
     legs::swing::FootPose,
 };
+
+thread_local! {
+    static TIMING_ACTIVE: Cell<bool> = const { Cell::new(false) };
+}
+
+pub(crate) fn timing_active() -> bool {
+    TIMING_ACTIVE.get()
+}
+
+struct TimingGuard;
+
+impl TimingGuard {
+    fn enter() -> Self {
+        TIMING_ACTIVE.set(true);
+        Self
+    }
+}
+
+impl Drop for TimingGuard {
+    fn drop(&mut self) {
+        TIMING_ACTIVE.set(false);
+    }
+}
 
 const UPDATES: usize = 250;
 const DT: f32 = 1.0 / 90.0;
@@ -78,20 +103,27 @@ fn profile_sequence(
     mut sample_for_step: impl FnMut(u64) -> Sample,
 ) {
     let mut estimator = Estimator::new();
-    let mut metrics = ProfileMetrics::new(scenario, updates);
+    let mut reference = Estimator::new();
+    reference.set_reference_mode_for_test(true);
+    let mut metrics = ProfileMetrics::new(scenario, "optimized", updates);
+    let mut baseline_metrics = ProfileMetrics::new(scenario, "baseline", updates);
     for step in 1..=updates as u64 {
         let sample = sample_for_step(step);
         let observation = fixture.observation(sample);
         let support = fixture.support(sample.previous_step, sample.step);
-        let result = timed_update(
-            fixture,
-            &mut estimator,
-            &observation,
-            sample.dt,
-            Some(support),
-        );
+        let (result, baseline) = if step % 2 == 0 {
+            let baseline = timed_update(fixture, &mut reference, &observation, sample.dt, Some(support));
+            (timed_update(fixture, &mut estimator, &observation, sample.dt, Some(support)), baseline)
+        } else {
+            let result = timed_update(fixture, &mut estimator, &observation, sample.dt, Some(support));
+            (result, timed_update(fixture, &mut reference, &observation, sample.dt, Some(support)))
+        };
+        cost::assert_same_result(result.1, baseline.1);
+        cost::assert_same_estimator(&estimator, &reference);
         metrics.record(result);
+        baseline_metrics.record(baseline);
     }
+    baseline_metrics.report();
     metrics.report();
 }
 
@@ -104,17 +136,25 @@ fn profile_repeated(
     support: Option<crate::controllers::body::rig::estimate::Support>,
 ) {
     let observation = fixture.observation(sample);
-    let mut metrics = ProfileMetrics::new(scenario, updates);
-    for _ in 0..updates {
+    let mut metrics = ProfileMetrics::new(scenario, "optimized", updates);
+    let mut baseline_metrics = ProfileMetrics::new(scenario, "baseline", updates);
+    for sample_index in 0..updates {
         let mut estimator = baseline.clone();
-        metrics.record(timed_update(
-            fixture,
-            &mut estimator,
-            &observation,
-            sample.dt,
-            support,
-        ));
+        let mut reference = baseline.clone();
+        reference.set_reference_mode_for_test(true);
+        let (result, expected) = if sample_index % 2 == 0 {
+            let expected = timed_update(fixture, &mut reference, &observation, sample.dt, support);
+            (timed_update(fixture, &mut estimator, &observation, sample.dt, support), expected)
+        } else {
+            let result = timed_update(fixture, &mut estimator, &observation, sample.dt, support);
+            (result, timed_update(fixture, &mut reference, &observation, sample.dt, support))
+        };
+        cost::assert_same_result(result.1, expected.1);
+        cost::assert_same_estimator(&estimator, &reference);
+        metrics.record(result);
+        baseline_metrics.record(expected);
     }
+    baseline_metrics.report();
     metrics.report();
 }
 
@@ -124,7 +164,8 @@ fn timed_update(
     observation: &Observation,
     dt: f32,
     support: Option<crate::controllers::body::rig::estimate::Support>,
-) -> (u128, Result<Snapshot, EstimateError>) {
+) -> (u128, Result<Snapshot, EstimateError>, Work) {
+    let _guard = TimingGuard::enter();
     let start = Instant::now();
     let result = black_box(estimator.update(Update {
         observation,
@@ -135,7 +176,7 @@ fn timed_update(
         support,
         transition: Transition::Continue,
     }));
-    (start.elapsed().as_nanos(), result)
+    (start.elapsed().as_nanos(), result, estimator.last_work())
 }
 
 fn seeded_swinging_estimator(fixture: &Fixture, sample: Sample) -> Estimator {
@@ -157,7 +198,7 @@ fn seeded_swinging_estimator(fixture: &Fixture, sample: Sample) -> Estimator {
     estimator
 }
 
-fn seeded_recovery_estimator(fixture: &Fixture, mut sample: Sample) -> Estimator {
+pub(super) fn seeded_recovery_estimator(fixture: &Fixture, mut sample: Sample) -> Estimator {
     sample.head.position.y = 0.85;
     let mut estimator = Estimator::new();
     require_setup(
@@ -225,9 +266,24 @@ fn require_setup<T>(result: Result<T, EstimateError>, context: &str) {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct WorkCounts {
+    evaluations: usize,
+    logical: usize,
+    requests: usize,
+    searches: usize,
+    hits: usize,
+    preliminary_reuses: usize,
+    intervals: usize,
+    solves: usize,
+    error: bool,
+}
+
 struct ProfileMetrics {
     scenario: &'static str,
+    mode: &'static str,
     durations_ns: Vec<u128>,
+    work_counts: BTreeMap<WorkCounts, usize>,
     evaluations: Vec<usize>,
     evaluation_counts: BTreeMap<usize, usize>,
     errors: BTreeMap<String, usize>,
@@ -236,9 +292,11 @@ struct ProfileMetrics {
 }
 
 impl ProfileMetrics {
-    fn new(scenario: &'static str, requested_updates: usize) -> Self {
+    fn new(scenario: &'static str, mode: &'static str, requested_updates: usize) -> Self {
         Self {
             scenario,
+            mode,
+            work_counts: BTreeMap::new(),
             durations_ns: Vec::with_capacity(requested_updates),
             evaluations: Vec::with_capacity(requested_updates),
             evaluation_counts: BTreeMap::new(),
@@ -248,8 +306,19 @@ impl ProfileMetrics {
         }
     }
 
-    fn record(&mut self, (duration_ns, result): (u128, Result<Snapshot, EstimateError>)) {
+    fn record(&mut self, (duration_ns, result, work): (u128, Result<Snapshot, EstimateError>, Work)) {
         self.durations_ns.push(duration_ns);
+        *self.work_counts.entry(WorkCounts {
+            evaluations: work.evaluations,
+            logical: work.logical_evaluations,
+            requests: work.search_requests,
+            searches: work.searches,
+            hits: work.cache_hits,
+            preliminary_reuses: work.preliminary_reuses,
+            intervals: work.interval_constructions,
+            solves: work.analytic_solves,
+            error: result.is_err(),
+        }).or_default() += 1;
         match result {
             Ok(snapshot) => {
                 self.evaluations.push(snapshot.quality.evaluations);
@@ -288,8 +357,9 @@ impl ProfileMetrics {
                 as usize
         };
         eprintln!(
-            "BODY_PROFILE|scenario={}|updates={}|p50_ns={}|p95_ns={}|max_ns={}|eval_n={}|eval_min={}|eval_mean_milli={}|eval_max={}|eval_counts={:?}|errors={:?}|recovered_updates={}|swinging_updates={}",
+            "BODY_PROFILE|scenario={}|mode={}|updates={}|p50_ns={}|p95_ns={}|max_ns={}|eval_n={}|eval_min={}|eval_mean_milli={}|eval_max={}|eval_counts={:?}|errors={:?}|recovered_updates={}|swinging_updates={}|work_fields=evaluations,logical,requests,searches,hits,preliminary_reuses,intervals,solves,error|work_counts={:?}",
             self.scenario,
+            self.mode,
             self.durations_ns.len(),
             p50_ns,
             p95_ns,
@@ -302,6 +372,7 @@ impl ProfileMetrics {
             self.errors,
             self.recovered_updates,
             self.swinging_updates,
+            self.work_counts,
         );
         self.durations_ns.clear();
     }

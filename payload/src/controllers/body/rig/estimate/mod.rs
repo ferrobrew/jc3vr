@@ -8,8 +8,10 @@ mod anatomy;
 mod contacts;
 mod equivalence;
 mod fit;
+mod reuse;
 mod state;
 mod temporal;
+mod work;
 
 #[cfg(test)]
 mod tests;
@@ -149,6 +151,7 @@ pub(crate) struct Quality {
     /// Fraction of tested chest-heading offsets with an admissible stance/twist allocation.
     pub yaw_ambiguity: f32,
     pub lower_body_confidence: Confidence,
+    /// Executed trials and checks; the full logical schedule is available through `Estimator::last_work`.
     pub evaluations: usize,
     pub search: fit::SearchStatus,
     pub temporal: temporal::TemporalStatus,
@@ -239,8 +242,10 @@ impl From<ObservationError> for EstimateError {
     }
 }
 
-/// Two four-topology passes, four fixed-pose recovery checks, one realization, and twelve probes.
+/// Conservative logical schedule: two topology passes, recovery, realization, and heading probes.
 pub(crate) const MAX_EVALUATIONS: usize = 8 * fit::SEARCH_EVALUATIONS + 4 + 1 + fit::HEADING_PROBES;
+/// Both normal passes share the both-released signature within one immutable numerical context.
+pub(crate) const MAX_COMPUTED_EVALUATIONS: usize = 7 * fit::SEARCH_EVALUATIONS + 4 + 1 + fit::HEADING_PROBES;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct Temporal {

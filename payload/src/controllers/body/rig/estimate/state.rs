@@ -14,6 +14,9 @@ use crate::controllers::{
                 self, Candidate, Context, HAND_TOLERANCE, NECK_TOLERANCE, PARAMETERS, Parameters,
                 difference, horizontal,
             },
+            reuse::Fits,
+            temporal::{self, Envelope, TemporalStatus},
+            work::Work,
         },
         observation::{Observation, PairSide},
         root::owner::RootOwner,
@@ -29,6 +32,9 @@ pub(crate) struct Estimator {
     last_observation: Option<Observation>,
     last_support: Option<Support>,
     last_dt: f32,
+    last_work: Work,
+    #[cfg(test)]
+    reference_mode: bool,
 }
 
 impl Estimator {
@@ -92,7 +98,63 @@ impl Estimator {
         self.state.as_ref().map(|state| &state.snapshot)
     }
 
+    /// Work remains available on failure without changing the committed pose or input identity.
+    pub(crate) fn last_work(&self) -> Work {
+        self.last_work
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_reference_mode_for_test(&mut self, reference: bool) {
+        self.reference_mode = reference;
+    }
+
     pub(crate) fn update(&mut self, update: Update<'_>) -> Result<Snapshot, EstimateError> {
+        #[cfg(test)]
+        let mut reference = (!self.reference_mode && !crate::controllers::body::rig::estimate::tests::profile::timing_active())
+            .then(|| {
+                let mut reference = self.clone();
+                reference.reference_mode = true;
+                reference
+            });
+        #[cfg(test)]
+        let reference_update = Update { ..update };
+        let mut work = Work::default();
+        let result = self.update_counted(update, &mut work);
+        self.last_work = work;
+        #[cfg(test)]
+        if let Some(reference) = reference.as_mut() {
+            let expected = reference.update(reference_update);
+            crate::controllers::body::rig::estimate::tests::cost::assert_same_result(result, expected);
+            crate::controllers::body::rig::estimate::tests::cost::assert_same_estimator(self, reference);
+        }
+        result
+    }
+
+    #[cfg(test)]
+    pub(crate) fn assert_same_state_for_test(&self, other: &Self) {
+        match (self.state, other.state) {
+            (Some(mut left), Some(mut right)) => {
+                left.snapshot.quality.evaluations = 0;
+                right.snapshot.quality.evaluations = 0;
+                crate::controllers::body::rig::estimate::tests::cost::assert_same_snapshot(left.snapshot, right.snapshot);
+                assert_eq!(left.parameters.0.map(f32::to_bits), right.parameters.0.map(f32::to_bits));
+                assert_eq!(left.rates.map(f32::to_bits), right.rates.map(f32::to_bits));
+                assert!(left.contacts.into_iter().zip(right.contacts)
+                    .all(|(left, right)| left.same_bits(right)));
+            }
+            (None, None) => {}
+            _ => panic!("reference and optimized committed-state presence differs"),
+        }
+        assert!(crate::controllers::body::rig::estimate::tests::retained::same_observation_bits(
+            self.last_observation.as_ref(), other.last_observation.as_ref(),
+        ));
+        assert!(crate::controllers::body::rig::estimate::tests::retained::same_support_bits(
+            self.last_support, other.last_support,
+        ));
+        assert_eq!(self.last_dt.to_bits(), other.last_dt.to_bits());
+    }
+
+    fn update_counted(&mut self, update: Update<'_>, work: &mut Work) -> Result<Snapshot, EstimateError> {
         update.anatomy.validate()?;
         let observation = update.observation;
         let raw = observation.raw();
@@ -270,23 +332,31 @@ impl Estimator {
             contacts,
         };
         let mut temporal_status =
-            crate::controllers::body::rig::estimate::temporal::prepare(&mut context);
-        fit::constrain(&mut predicted, &context)?;
+            temporal::prepare_counted(&mut context, work);
+        #[cfg(not(test))]
+        let optimized = true;
+        #[cfg(test)]
+        let optimized = !self.reference_mode;
+        let prepared = Fits::new(&context, optimized, work);
+        prepared.constrain(&mut predicted, work)?;
         context.predicted = predicted;
+        // Prediction settles before the immutable numerical search context is copied.
+        let mut fits = prepared.with_prediction(predicted);
         let mut held_contacts = old
             .filter(|_| !reseed)
             .map_or(contacts, |state| state.contacts);
         for contact in &mut held_contacts {
             contact.carry(update.support, 0.0);
         }
-        let preliminary_result = fit_contacts(&mut context, contacts);
-        let (preliminary, selected_contacts, mut evaluations) = match preliminary_result {
+        let preliminary_result = fits.fit_contacts(contacts, work);
+        context.contacts = fits.last_contacts();
+        let (preliminary, selected_contacts) = match preliminary_result {
             Ok(result) => result,
             Err(EstimateError::SearchExhausted) if !reseed => {
-                let (candidate, recovered, count) =
-                    recover_constraints(&mut context, held_contacts)?;
-                temporal_status = crate::controllers::body::rig::estimate::temporal::TemporalStatus::ConstraintRecovery;
-                (candidate, recovered, 4 * fit::SEARCH_EVALUATIONS + count)
+                let (candidate, recovered, _) =
+                    recover_constraints_counted(&mut context, held_contacts, optimized, work)?;
+                temporal_status = TemporalStatus::ConstraintRecovery;
+                (candidate, recovered)
             }
             Err(error) => return Err(error),
         };
@@ -306,36 +376,38 @@ impl Estimator {
                 })
             });
         let touchdown_hips = predict_hips(preliminary, carried_hips, completed, update.dt);
-        let recovering = temporal_status == crate::controllers::body::rig::estimate::temporal::TemporalStatus::ConstraintRecovery;
+        let recovering = temporal_status == TemporalStatus::ConstraintRecovery;
         if !recovering {
-            transition_contacts(&mut contacts, preliminary, touchdown_hips, &update);
+            transition_contacts_counted(&mut contacts, preliminary, touchdown_hips, &update, work);
         }
         // Every transition, including release and lift, precedes this final fit.
         context.contacts = contacts;
-        let final_result = if recovering {
-            Ok((preliminary, contacts, 0))
+        let final_result = if recovering
+            || fits.reuse_preliminary(preliminary, selected_contacts, contacts, work)
+        {
+            Ok((preliminary, contacts))
         } else {
-            fit_contacts(&mut context, contacts)
+            let result = fits.fit_contacts(contacts, work);
+            context.contacts = fits.last_contacts();
+            result
         };
-        let (mut candidate, selected_contacts, count) = match final_result {
+        let (mut candidate, selected_contacts) = match final_result {
             Ok(result) => result,
             Err(EstimateError::SearchExhausted) if !reseed => {
-                let (candidate, recovered, count) =
-                    recover_constraints(&mut context, held_contacts)?;
-                temporal_status = crate::controllers::body::rig::estimate::temporal::TemporalStatus::ConstraintRecovery;
-                (candidate, recovered, 4 * fit::SEARCH_EVALUATIONS + count)
+                let (candidate, recovered, _) =
+                    recover_constraints_counted(&mut context, held_contacts, optimized, work)?;
+                temporal_status = TemporalStatus::ConstraintRecovery;
+                (candidate, recovered)
             }
             Err(error) => return Err(error),
         };
         contacts = selected_contacts;
-        evaluations += count;
         // The final fit either validates a tentative plant or returns its explicit relaxation.
         context.contacts = contacts;
-        candidate =
-            fit::evaluate(candidate.parameters, &context).ok_or(EstimateError::SearchExhausted)?;
-        evaluations += 1;
-        let (ambiguity, probes) = fit::ambiguity(candidate, &context);
-        evaluations += probes;
+        work.check();
+        candidate = fit::evaluate_counted(candidate.parameters, &context, work)
+            .ok_or(EstimateError::SearchExhausted)?;
+        let (ambiguity, _) = fit::ambiguity_counted(candidate, &context, work);
         rates = context.rates;
         for (axis, rate) in rates.iter_mut().enumerate() {
             *rate = difference(
@@ -344,7 +416,7 @@ impl Estimator {
                 axis,
             ) / update.dt;
             if reseed || update.transition == Transition::Recenter
-                || temporal_status == crate::controllers::body::rig::estimate::temporal::TemporalStatus::ConstraintRecovery
+                || temporal_status == TemporalStatus::ConstraintRecovery
             { *rate = 0.0; }
         }
         fit::publish_feet(&mut candidate, &mut contacts);
@@ -387,9 +459,9 @@ impl Estimator {
                 neck_residual_m: candidate.neck_error, hand_reach_residual_m: candidate.arm_errors,
                 neck_limit_residual_rad: candidate.neck_limit_error, contact_residual_m: candidate.contact_errors,
                 feasible, reduced_authority: !feasible || contacts.iter().any(|contact| !contact.planted())
-                    || temporal_status != crate::controllers::body::rig::estimate::temporal::TemporalStatus::Normal,
+                    || temporal_status != TemporalStatus::Normal,
                 yaw_confidence: Confidence::Low,
-                yaw_ambiguity: ambiguity, lower_body_confidence: Confidence::Low, evaluations,
+                yaw_ambiguity: ambiguity, lower_body_confidence: Confidence::Low, evaluations: work.evaluations,
                 search: if fit::measurement_admissible(candidate) { fit::SearchStatus::Admissible }
                     else { fit::SearchStatus::ResidualAfterBudget },
                 temporal: temporal_status,
@@ -433,33 +505,18 @@ pub(crate) fn fit_contacts(
     context: &mut Context<'_>,
     baseline: [Contact; 2],
 ) -> Result<(Candidate, [Contact; 2], usize), EstimateError> {
-    let mut best: Option<(Candidate, [Contact; 2])> = None;
-    let mut evaluations = 0;
-    for mask in [0_u8, 1, 2, 3] {
-        let trial = release_trial(baseline, mask);
-        context.contacts = trial;
-        match fit::search(context) {
-            Ok((candidate, count)) => {
-                evaluations += count;
-                if best.is_none_or(|(held, held_contacts)| {
-                    topology_better(candidate, trial, held, held_contacts)
-                }) {
-                    best = Some((candidate, trial));
-                }
-            }
-            Err(EstimateError::SearchExhausted) => evaluations += fit::SEARCH_EVALUATIONS,
-            Err(error) => return Err(error),
-        }
-        if mask == 0 && best.is_some_and(|(candidate, _)| fit::measurement_admissible(candidate)) {
-            break;
-        }
+    let mut work = Work::default();
+    let mut fits = Fits::new(context, true, &mut work);
+    let result = fits.fit_contacts(baseline, &mut work);
+    #[cfg(test)]
+    {
+        let mut expected_work = Work::default();
+        let mut reference = Fits::new(context, false, &mut expected_work);
+        let expected = reference.fit_contacts(baseline, &mut expected_work);
+        crate::controllers::body::rig::estimate::tests::cost::assert_same_debug(&result, &expected);
     }
-    if let Some((candidate, contacts)) = best {
-        context.contacts = contacts;
-        Ok((candidate, contacts, evaluations))
-    } else {
-        Err(EstimateError::SearchExhausted)
-    }
+    context.contacts = fits.last_contacts();
+    result.map(|(candidate, contacts)| (candidate, contacts, work.evaluations))
 }
 
 /// Hold the carried pose only after normal search fails; every retained contact is revalidated.
@@ -467,17 +524,28 @@ pub(crate) fn recover_constraints(
     context: &mut Context<'_>,
     baseline: [Contact; 2],
 ) -> Result<(Candidate, [Contact; 2], usize), EstimateError> {
+    recover_constraints_counted(context, baseline, true, &mut Work::default())
+}
+
+fn recover_constraints_counted(
+    context: &mut Context<'_>,
+    baseline: [Contact; 2],
+    optimized: bool,
+    work: &mut Work,
+) -> Result<(Candidate, [Contact; 2], usize), EstimateError> {
     let rates = context.rates;
     let predicted = context.predicted;
     let original_contacts = context.contacts;
     context.rates = [0.0; PARAMETERS];
     context.predicted = context.previous;
+    let envelope = optimized.then(|| Envelope::new(context, work));
     let mut best: Option<(Candidate, [Contact; 2])> = None;
     for mask in [0_u8, 1, 2, 3] {
         let trial = release_trial(baseline, mask);
         context.contacts = trial;
-        if crate::controllers::body::rig::estimate::temporal::accepts(context.previous, context)
-            && let Some(candidate) = fit::evaluate(context.previous, context)
+        work.check();
+        if temporal::accepts_counted(context.previous, context, envelope.as_ref(), work)
+            && let Some(candidate) = fit::evaluate_counted(context.previous, context, work)
             && best.is_none_or(|(held, held_contacts)| {
                 topology_better(candidate, trial, held, held_contacts)
             })
@@ -542,6 +610,16 @@ pub(crate) fn transition_contacts(
     predicted_hips: [Vec3; 2],
     update: &Update<'_>,
 ) {
+    transition_contacts_counted(contacts, candidate, predicted_hips, update, &mut Work::default());
+}
+
+fn transition_contacts_counted(
+    contacts: &mut [Contact; 2],
+    candidate: Candidate,
+    predicted_hips: [Vec3; 2],
+    update: &Update<'_>,
+    work: &mut Work,
+) {
     let Some(surface) = update.support else {
         return;
     };
@@ -577,12 +655,13 @@ pub(crate) fn transition_contacts(
         if let Some(endpoint) = surface.foothold(desired, stance.yaw, update.anatomy.ankle_height) {
             let mut predicted = candidate;
             predicted.body.hips = predicted_hips;
-            if fit::endpoint_feasible(
+            if fit::endpoint_feasible_counted(
                 predicted,
                 surface.world(endpoint),
                 contacts[1 - side].pose.position,
                 update.anatomy.character,
                 side,
+                work,
             ) {
                 if swinging {
                     contacts[side].retarget(surface, endpoint, update.dt);
@@ -592,22 +671,28 @@ pub(crate) fn transition_contacts(
             }
         }
     }
-    validate_touchdowns(contacts, candidate, update);
+    validate_touchdowns(contacts, candidate, update, work);
 }
 
-fn validate_touchdowns(contacts: &mut [Contact; 2], candidate: Candidate, update: &Update<'_>) {
+fn validate_touchdowns(
+    contacts: &mut [Contact; 2],
+    candidate: Candidate,
+    update: &Update<'_>,
+    work: &mut Work,
+) {
     let Some(surface) = update.support else {
         return;
     };
     for side in 0..2 {
         let endpoint = contacts[side].endpoint();
         let valid = surface.contains(endpoint)
-            && fit::endpoint_feasible(
+            && fit::endpoint_feasible_counted(
                 candidate,
                 surface.world(endpoint),
                 contacts[1 - side].pose.position,
                 update.anatomy.character,
                 side,
+                work,
             );
         contacts[side].touchdown(surface, valid);
     }

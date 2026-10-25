@@ -5,6 +5,7 @@ use glam::{Quat, Vec3};
 use crate::controllers::body::rig::estimate::{
     Anatomy, EstimateError,
     fit::{Context, MAX_ACCELERATION, MAX_SPEED, PARAMETERS, Parameters, difference},
+    work::Work,
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -17,7 +18,24 @@ pub(crate) enum TemporalStatus {
     ConstraintRecovery,
 }
 
+/// Cached results retain per-axis errors until the original caller requests that axis.
+pub(crate) struct Envelope {
+    intervals: [Result<(f32, f32), EstimateError>; PARAMETERS],
+}
+
+impl Envelope {
+    pub(crate) fn new(context: &Context<'_>, work: &mut Work) -> Self {
+        Self {
+            intervals: std::array::from_fn(|axis| counted_interval(axis, context, work)),
+        }
+    }
+}
+
 pub(crate) fn prepare(context: &mut Context<'_>) -> TemporalStatus {
+    prepare_counted(context, &mut Work::default())
+}
+
+pub(crate) fn prepare_counted(context: &mut Context<'_>, work: &mut Work) -> TemporalStatus {
     if !context.continuity {
         return TemporalStatus::Normal;
     }
@@ -30,7 +48,7 @@ pub(crate) fn prepare(context: &mut Context<'_>) -> TemporalStatus {
             _ => context.rates[axis],
         };
         !viable(context.previous.0[axis], rate, axis, context.anatomy)
-            || interval(axis, context).is_err()
+            || counted_interval(axis, context, work).is_err()
     });
     if invalid {
         context.rates = [0.0; PARAMETERS];
@@ -44,6 +62,15 @@ pub(crate) fn constrain(
     parameters: &mut Parameters,
     context: &Context<'_>,
 ) -> Result<(), EstimateError> {
+    constrain_counted(parameters, context, None, &mut Work::default())
+}
+
+pub(crate) fn constrain_counted(
+    parameters: &mut Parameters,
+    context: &Context<'_>,
+    envelope: Option<&Envelope>,
+    work: &mut Work,
+) -> Result<(), EstimateError> {
     let rotation = Quat::from_rotation_y(context.root_yaw);
     let mut planar = rotation.inverse()
         * Vec3::new(
@@ -51,15 +78,15 @@ pub(crate) fn constrain(
             0.0,
             parameters.0[1] - context.previous.0[1],
         );
-    let (minimum_x, maximum_x) = interval(0, context)?;
-    let (minimum_z, maximum_z) = interval(1, context)?;
+    let (minimum_x, maximum_x) = requested_interval(0, context, envelope, work)?;
+    let (minimum_z, maximum_z) = requested_interval(1, context, envelope, work)?;
     planar.x = planar.x.clamp(minimum_x, maximum_x);
     planar.z = planar.z.clamp(minimum_z, maximum_z);
     let world = rotation * planar;
     parameters.0[0] = context.previous.0[0] + world.x;
     parameters.0[1] = context.previous.0[1] + world.z;
     for axis in 2..PARAMETERS {
-        let (minimum, maximum) = interval(axis, context)?;
+        let (minimum, maximum) = requested_interval(axis, context, envelope, work)?;
         let value = context.previous.0[axis]
             + difference(parameters.0[axis], context.previous.0[axis], axis);
         parameters.0[axis] = value.clamp(minimum, maximum);
@@ -69,6 +96,15 @@ pub(crate) fn constrain(
 }
 
 pub(crate) fn accepts(parameters: Parameters, context: &Context<'_>) -> bool {
+    accepts_counted(parameters, context, None, &mut Work::default())
+}
+
+pub(crate) fn accepts_counted(
+    parameters: Parameters,
+    context: &Context<'_>,
+    envelope: Option<&Envelope>,
+    work: &mut Work,
+) -> bool {
     let planar = Quat::from_rotation_y(-context.root_yaw)
         * Vec3::new(
             parameters.0[0] - context.previous.0[0],
@@ -86,7 +122,7 @@ pub(crate) fn accepts(parameters: Parameters, context: &Context<'_>) -> bool {
             1 => planar.z,
             _ => previous + difference(parameters.0[axis], previous, axis),
         };
-        let Ok((minimum, maximum)) = interval(axis, context) else {
+        let Ok((minimum, maximum)) = requested_interval(axis, context, envelope, work) else {
             return false;
         };
         let rate = if context.continuity {
@@ -143,6 +179,27 @@ pub(crate) fn interval(axis: usize, context: &Context<'_>) -> Result<(f32, f32),
     } else {
         Err(EstimateError::EmptyTemporalIntersection { axis })
     }
+}
+
+fn requested_interval(
+    axis: usize,
+    context: &Context<'_>,
+    envelope: Option<&Envelope>,
+    work: &mut Work,
+) -> Result<(f32, f32), EstimateError> {
+    match envelope {
+        Some(envelope) => envelope.intervals[axis],
+        None => counted_interval(axis, context, work),
+    }
+}
+
+fn counted_interval(
+    axis: usize,
+    context: &Context<'_>,
+    work: &mut Work,
+) -> Result<(f32, f32), EstimateError> {
+    work.interval_constructions += 1;
+    interval(axis, context)
 }
 
 fn viable_displacement(room: f32, acceleration: f32, dt: f32) -> f32 {

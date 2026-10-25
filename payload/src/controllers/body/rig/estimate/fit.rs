@@ -10,7 +10,8 @@ use crate::controllers::{
                 Anatomy, Body, EstimateError, Stance,
                 anatomy::Segments,
                 contacts::{Contact, rest_feet, yaw},
-                temporal,
+                temporal::{self, Envelope},
+                work::Work,
             },
             torso::{wrap, yaw_forward},
         },
@@ -22,6 +23,7 @@ use crate::controllers::{
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct Parameters(pub [f32; PARAMETERS]);
 
+#[derive(Clone)]
 pub(crate) struct Context<'a> {
     pub anatomy: &'a Anatomy,
     pub neck: Vec3,
@@ -119,12 +121,28 @@ pub(crate) fn recovery_seeds(context: &Context<'_>) -> [Parameters; SEEDS] {
 }
 
 pub(crate) fn search(context: &Context<'_>) -> Result<(Candidate, usize), EstimateError> {
+    let mut work = Work::default();
+    let envelope = Envelope::new(context, &mut work);
+    let result = search_counted(context, Some(&envelope), &mut work);
+    #[cfg(test)]
+    {
+        let expected = search_counted(context, None, &mut Work::default());
+        crate::controllers::body::rig::estimate::tests::cost::assert_same_search(result, expected);
+    }
+    result.map(|candidate| (candidate, work.evaluations))
+}
+
+pub(crate) fn search_counted(
+    context: &Context<'_>,
+    envelope: Option<&Envelope>,
+    work: &mut Work,
+) -> Result<Candidate, EstimateError> {
+    work.searches += 1;
     let mut best = None;
-    let mut evaluations = 0;
     for mut seed in recovery_seeds(context) {
-        constrain(&mut seed, context)?;
-        let mut local = temporal_candidate(seed, context);
-        evaluations += 1;
+        work.check();
+        temporal::constrain_counted(&mut seed, context, envelope, work)?;
+        let mut local = temporal_candidate(seed, context, envelope, work);
         for sweep in 0..SWEEPS {
             let shrink = 0.5_f32.powi(sweep as i32 / 2);
             for axis in 0..PARAMETERS {
@@ -145,9 +163,9 @@ pub(crate) fn search(context: &Context<'_>) -> Result<(Candidate, usize), Estima
                     } else {
                         next.0[axis] += amount;
                     }
-                    constrain(&mut next, context)?;
-                    let candidate = temporal_candidate(next, context);
-                    evaluations += 1;
+                    work.check();
+                    temporal::constrain_counted(&mut next, context, envelope, work)?;
+                    let candidate = temporal_candidate(next, context, envelope, work);
                     if let Some(candidate) = candidate
                         && local.is_none_or(|held| better(candidate, held))
                     {
@@ -162,13 +180,20 @@ pub(crate) fn search(context: &Context<'_>) -> Result<(Candidate, usize), Estima
             best = Some(candidate);
         }
     }
-    best.map(|candidate| (candidate, evaluations))
-        .ok_or(EstimateError::SearchExhausted)
+    best.ok_or(EstimateError::SearchExhausted)
 }
 
 /// Probe the reported chest heading, with compensating stance/twist allocations.
 /// This finite coverage can establish ambiguity, but cannot establish uniqueness.
 pub(crate) fn ambiguity(candidate: Candidate, context: &Context<'_>) -> (f32, usize) {
+    ambiguity_counted(candidate, context, &mut Work::default())
+}
+
+pub(crate) fn ambiguity_counted(
+    candidate: Candidate,
+    context: &Context<'_>,
+    work: &mut Work,
+) -> (f32, usize) {
     let mut admissible = 0;
     for turn in [-0.7, -0.35, 0.35, 0.7] {
         let mut admitted = false;
@@ -176,7 +201,8 @@ pub(crate) fn ambiguity(candidate: Candidate, context: &Context<'_>) -> (f32, us
             let mut parameters = candidate.parameters;
             parameters.0[2] = wrap(parameters.0[2] + turn * stance_share);
             parameters.0[8] += turn * (1.0 - stance_share);
-            admitted |= evaluate(parameters, context).is_some_and(measurement_admissible);
+            work.check();
+            admitted |= evaluate_counted(parameters, context, work).is_some_and(measurement_admissible);
         }
         if admitted {
             admissible += 1;
@@ -200,6 +226,14 @@ pub(crate) fn publish_feet(candidate: &mut Candidate, contacts: &mut [Contact; 2
 }
 
 pub(crate) fn evaluate(parameters: Parameters, context: &Context<'_>) -> Option<Candidate> {
+    evaluate_counted(parameters, context, &mut Work::default())
+}
+
+pub(crate) fn evaluate_counted(
+    parameters: Parameters,
+    context: &Context<'_>,
+    work: &mut Work,
+) -> Option<Candidate> {
     let q = parameters.0;
     if q.iter().any(|v| !v.is_finite()) || !within_anatomy(parameters, context.anatomy) {
         return None;
@@ -237,7 +271,7 @@ pub(crate) fn evaluate(parameters: Parameters, context: &Context<'_>) -> Option<
         } else {
             rest[side].position
         };
-        let leg = leg(hips[side], target, forward, segments, side);
+        let leg = leg(hips[side], target, forward, segments, side, work);
         knees[side] = leg.knee;
         ankles[side] = leg.ankle;
         knee_flexion[side] = leg.knee_flexion;
@@ -440,6 +474,17 @@ pub(crate) fn endpoint_feasible(
     segments: Segments,
     side: usize,
 ) -> bool {
+    endpoint_feasible_counted(candidate, foot, other, segments, side, &mut Work::default())
+}
+
+pub(crate) fn endpoint_feasible_counted(
+    candidate: Candidate,
+    foot: crate::controllers::body::rig::legs::swing::FootPose,
+    other: Vec3,
+    segments: Segments,
+    side: usize,
+    work: &mut Work,
+) -> bool {
     let hip = candidate.body.hips[side];
     if !hip.is_finite()
         || !foot.position.is_finite()
@@ -461,7 +506,7 @@ pub(crate) fn endpoint_feasible(
     {
         return false;
     }
-    let leg = leg(hip, foot.position, yaw_forward(heading), segments, side);
+    let leg = leg(hip, foot.position, yaw_forward(heading), segments, side, work);
     full_leg_valid(&leg, hip, candidate.parameters)
         && leg.ankle.distance(foot.position) <= CONTACT_TOLERANCE
 }
@@ -493,9 +538,14 @@ pub(crate) fn horizontal(value: Vec3) -> Vec3 {
     Vec3::new(value.x, 0.0, value.z)
 }
 
-fn temporal_candidate(parameters: Parameters, context: &Context<'_>) -> Option<Candidate> {
-    temporal::accepts(parameters, context)
-        .then(|| evaluate(parameters, context))
+fn temporal_candidate(
+    parameters: Parameters,
+    context: &Context<'_>,
+    envelope: Option<&Envelope>,
+    work: &mut Work,
+) -> Option<Candidate> {
+    temporal::accepts_counted(parameters, context, envelope, work)
+        .then(|| evaluate_counted(parameters, context, work))
         .flatten()
 }
 
@@ -528,7 +578,15 @@ struct Leg {
     ankle_flexion: f32,
 }
 
-fn leg(hip: Vec3, target: Vec3, forward: Vec3, segments: Segments, side: usize) -> Leg {
+fn leg(
+    hip: Vec3,
+    target: Vec3,
+    forward: Vec3,
+    segments: Segments,
+    side: usize,
+    work: &mut Work,
+) -> Leg {
+    work.analytic_solves += 1;
     let thigh = segments.thighs[side];
     let shin = segments.shins[side];
     let upper = Vec3::NEG_Y * thigh;
