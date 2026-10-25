@@ -159,6 +159,7 @@ pub(super) static MAIN_THREAD: AtomicU32 = AtomicU32::new(0);
 
 pub(super) static STATE: Mutex<State> = Mutex::new(State {
     status: PhysicalHandsStatus {
+        human_hull: crate::controllers::physical_hands::human_hull::HumanHullStatus::UNAVAILABLE,
         idle: None,
         hands: [HandStatus {
             acting: false,

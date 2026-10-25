@@ -10,6 +10,7 @@ use crate::controllers::{
     physical_hands::{
         free_hands,
         grasp::Reach,
+        human_hull::{self, HumanHullStatus},
         palm::PalmBox,
         physics,
         pickup::{HeldReport, PickupStatus},
@@ -95,10 +96,14 @@ pub struct PhysicalHandsStatus {
     /// The last cast or engine failure.
     pub last_error: Option<String>,
     pub pickup: PickupStatus,
+    /// The human-hull adapter and clearance policy availability.
+    pub(crate) human_hull: HumanHullStatus,
 }
 
 pub fn status() -> PhysicalHandsStatus {
-    STATE.lock().status.clone()
+    let mut status = STATE.lock().status.clone();
+    status.human_hull = human_hull::status();
+    status
 }
 
 /// What the palms' last tick did for one hand: the inputs of the grip press log's summary

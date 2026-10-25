@@ -62,6 +62,7 @@ mod engine;
 pub mod grab_view;
 pub mod grasp;
 pub mod hold;
+pub(crate) mod human_hull;
 pub mod palm;
 pub mod physics;
 pub mod pickup;

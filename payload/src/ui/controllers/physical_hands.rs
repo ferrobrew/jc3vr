@@ -21,6 +21,10 @@ use crate::{
 };
 
 pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) {
+    ui.label(format!(
+        "Human-hull adapter: {:?}; clearance: {:?}.",
+        status.human_hull.adapter, status.human_hull.clearance,
+    ));
     ui.collapsing("Grip acquisition evidence", |ui| {
         let evidence = diagnostics::status();
         save_evidence_button(ui, evidence, diagnostics::export::requests());
