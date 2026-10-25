@@ -18,6 +18,8 @@
 //! the game. The file format is [`format`]; see `docs/mod/testing/recorder.md`.
 
 pub(crate) mod format;
+#[cfg(test)]
+mod query_tests;
 mod writer;
 
 use std::{
@@ -144,20 +146,21 @@ pub(crate) fn is_recording() -> bool {
     RECORDING.load(Ordering::Relaxed)
 }
 
-/// The recorder's state.
+#[cfg(test)]
+pub(crate) fn has_pending_request() -> bool {
+    REQUEST.load(Ordering::Relaxed) != REQUEST_NONE
+}
+
+/// The recorder's state after collecting completed writers.
 pub(crate) fn status() -> TrackingStatus {
     let mut state = STATE.lock();
     state.reap();
-    let mut status = state.status.clone();
-    status.recording = is_recording();
-    status.frames = FRAMES.load(Ordering::Relaxed);
-    status.dropped = DROPPED.load(Ordering::Relaxed);
-    if let Some(active) = &state.active {
-        status.bytes = active.writer.bytes_written();
-        status.logical_bytes = active.writer.logical_bytes_written();
-        status.duration = active.started.elapsed();
-    }
-    status
+    state.snapshot()
+}
+
+/// The recorder's state without polling, joining, or collecting completed writers.
+pub(crate) fn peek_status() -> TrackingStatus {
+    STATE.lock().snapshot()
 }
 
 /// Service a start or stop request. Game thread, once per frame, outside the VR runtime lock.
@@ -389,6 +392,19 @@ struct Active {
 }
 
 impl State {
+    fn snapshot(&self) -> TrackingStatus {
+        let mut status = self.status.clone();
+        status.recording = is_recording();
+        status.frames = FRAMES.load(Ordering::Relaxed);
+        status.dropped = DROPPED.load(Ordering::Relaxed);
+        if let Some(active) = &self.active {
+            status.bytes = active.writer.bytes_written();
+            status.logical_bytes = active.writer.logical_bytes_written();
+            status.duration = active.started.elapsed();
+        }
+        status
+    }
+
     fn shutdown(&mut self) -> bool {
         self.shutting_down = true;
         self.stop_active();

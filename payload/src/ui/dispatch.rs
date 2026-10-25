@@ -16,6 +16,9 @@ mod replay_tests;
 #[path = "dispatch/tests.rs"]
 mod tests;
 #[cfg(test)]
+#[path = "dispatch/tracking_tests.rs"]
+mod tracking_tests;
+#[cfg(test)]
 #[path = "dispatch/video_tests.rs"]
 mod video_tests;
 #[cfg(test)]
@@ -124,6 +127,7 @@ pub(crate) fn feature(
         FeatureRoute::Tracking if section == FeatureSection::Controls => {
             testing::tracking_feature(ui)
         }
+        FeatureRoute::Tracking if section == FeatureSection::Status => testing::tracking_status(ui),
         FeatureRoute::Replay if section == FeatureSection::Controls => testing::replay_feature(ui),
         FeatureRoute::Replay if section == FeatureSection::Status => testing::replay_status(ui),
         FeatureRoute::Director if section == FeatureSection::Controls => director::feature(ui, id),

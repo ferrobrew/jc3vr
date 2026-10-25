@@ -19,7 +19,7 @@ use crate::{
     },
 };
 
-/// Render the Testing tab body.
+/// Render the tracking recorder's controls.
 pub(crate) fn tracking_feature(ui: &mut egui::Ui) {
     {
         let mut cfg = config::edit();
@@ -32,6 +32,30 @@ pub(crate) fn tracking_feature(ui: &mut egui::Ui) {
     egui::CollapsingHeader::new("Tracking recording")
         .default_open(true)
         .show(ui, recording_ui);
+}
+
+pub(crate) fn tracking_status(ui: &mut egui::Ui) {
+    let status = tracking::peek_status();
+    ui.label(if status.recording {
+        "recording"
+    } else {
+        "stopped"
+    });
+    if status.recording || status.path.is_some() {
+        ui.label(format!(
+            "{} frames, {} dropped, {:.1} s, {} KiB",
+            status.frames,
+            status.dropped,
+            status.duration.as_secs_f32(),
+            status.bytes / 1024
+        ));
+    }
+    if let Some(path) = &status.path {
+        path_line(ui, "File", path);
+    }
+    if let Some(error) = &status.error {
+        ui.colored_label(Color32::LIGHT_RED, error);
+    }
 }
 
 pub(crate) fn replay_feature(ui: &mut egui::Ui) {
@@ -89,27 +113,7 @@ fn recording_ui(ui: &mut egui::Ui) {
         } else if ui.button("Start recording").clicked() {
             tracking::request_start();
         }
-        ui.label(if status.recording {
-            "recording"
-        } else {
-            "stopped"
-        });
     });
-    if status.recording || status.path.is_some() {
-        ui.label(format!(
-            "{} frames, {} dropped, {:.1} s, {} KiB",
-            status.frames,
-            status.dropped,
-            status.duration.as_secs_f32(),
-            status.bytes / 1024
-        ));
-    }
-    if let Some(path) = &status.path {
-        path_line(ui, "File", path);
-    }
-    if let Some(error) = &status.error {
-        ui.colored_label(Color32::LIGHT_RED, error);
-    }
     let mut cfg = config::edit();
     ui.checkbox(
         &mut cfg.testing.record_hand_joints,
