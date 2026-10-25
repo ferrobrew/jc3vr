@@ -1,12 +1,18 @@
 //! Held-gun interaction permission and physical-hand trigger ownership, independent of locomotion.
 
-use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponBase};
+use jc3gi::{
+    character::{character::Character, inventory::WeaponSlot},
+    equipment::weapon::WeaponBase,
+};
 
 use crate::controllers::{
     frame::{self, Hand},
+    hands::tiers::{self, HandTier, TierState},
     loadout::live,
     mode::{AirborneVariant, Mode, OnFootVariant},
-    weapons::{dual_wield::single, foregrip, hold::armed, inventory::engine::slot_of, regions},
+    weapons::{
+        dual_wield::single, foregrip, hold::armed, inventory::engine::slot_of, regions, reload,
+    },
 };
 
 /// The held-gun operations available in a control mode. Tracking and input ownership gate each hand.
@@ -112,6 +118,28 @@ pub(crate) fn gun_owners_now() -> [Option<GunOwner>; 2] {
         })
     });
     discover_owners(held, support.map(|hold| (hold.weapon, hold.holder.other())))
+}
+
+/// Current engine and mechanic permission for a held gun's fire hint, independent of trigger value.
+/// Runs after final ownership reconciliation on the game input thread.
+pub(crate) fn fire_ready_now(ready: [bool; 2], block_actions: bool) -> [bool; 2] {
+    // SAFETY: the input thread resolves the current local character without retaining the borrow.
+    let animation = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
+        .is_some_and(|owner| unsafe { owner.m_Inventory.GetAnimationAllowsShooting() });
+    let owners = gun_owners_now();
+    let action = tiers::status();
+    Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        ready[i]
+            && animation
+            && owners[i].is_some_and(|owner| {
+                matches!(owner.role, GunHand::Grip | GunHand::NativePair(_))
+                    && !reload::holds_fire(owner.weapon, hand)
+                    && !(block_actions
+                        && action.state == Some(TierState::WeaponAction)
+                        && action.effective[i] == HandTier::ActionRuns)
+            })
+    })
 }
 
 #[derive(Debug, Copy, Clone)]

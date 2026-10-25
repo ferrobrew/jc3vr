@@ -9,10 +9,9 @@
 //! ([`crate::hud::quad`]), as the other panels do. Nothing is drawn, and the panel's resources are
 //! not created, until it is first shown.
 //!
-//! The panel is as tall as its content: each time the summary changes, it is laid out once at the
-//! configured width and row height to measure it, and the panel's texture, and so its height on the
-//! wrist, takes the measured height. A summary too tall for the tallest panel has its rows shrunk
-//! to fit, down to the smallest readable row.
+//! The current usable hints occupy fixed physical left/right columns. Layout measures wrapped
+//! rows at a readable size and paginates overflow without shrinking. A visible-time clock cycles
+//! pages with a page indicator; no controller input is assigned to this panel.
 
 use std::{
     sync::Arc,
@@ -21,7 +20,7 @@ use std::{
 
 use anyhow::Context as _;
 use egui::{
-    Color32, FontFamily, FontId, Pos2, Rect, TextureHandle, TextureOptions, TexturesDelta, Vec2,
+    Color32, FontFamily, FontId, Pos2, Rect, TexturesDelta, Vec2,
     text::{LayoutJob, TextFormat},
 };
 use glam::Vec4;
@@ -32,14 +31,17 @@ use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 use crate::{
     config::Config,
     controllers::{
+        bindings::tables::describe::{Control, StickDir},
         frame::{self, Button, InteractionProfile, Pose},
         hands::late,
         scheme,
         summary::{
             self, Published, SummaryConfig,
-            content::{Metrics, Side, Summary, fit_row_px, metrics},
+            content::Metrics,
+            current::{CellKind, CurrentSummary, Hint},
             glance::{Glance, TrackpadPin, fade, looking, wrist_pose},
-            glyphs::{Glyph, glyphs},
+            grid::{Bounds, Grid, layout},
+            page_clock::{PageClock, PageTime},
         },
     },
     hooks,
@@ -83,9 +85,11 @@ pub struct PanelStatus {
 pub struct PanelLayout {
     /// The texture's size, pixels.
     pub size: (u32, u32),
-    /// The rows' height, pixels: the configured row height, or less where the summary is shrunk to
-    /// fit the tallest panel.
+    /// The configured readable row height, independent of the number of hints.
     pub row_px: f32,
+    /// The visible page and total, both one-based.
+    pub page: usize,
+    pub pages: usize,
 }
 
 pub fn status() -> PanelStatus {
@@ -97,6 +101,7 @@ static PANEL: Mutex<Panel> = Mutex::new(Panel::new());
 struct Panel {
     glance: Glance,
     trackpad_pin: TrackpadPin,
+    pages: PageClock,
     alpha: f32,
     last_prepare: Option<Instant>,
     corners: Option<[Vec4; 4]>,
@@ -110,6 +115,7 @@ impl Panel {
         Self {
             glance: Glance::new(),
             trackpad_pin: TrackpadPin::new(),
+            pages: PageClock::new(),
             alpha: 0.0,
             last_prepare: None,
             corners: None,
@@ -178,6 +184,9 @@ impl Panel {
                 )
             });
         let shown = active && pose.is_some() && (glance || pinned || mode_recent);
+        if !shown || published.is_none() {
+            self.pages.pause();
+        }
         self.alpha = fade(self.alpha, shown, dt, config.fade_s);
         self.status = PanelStatus {
             alpha: self.alpha,
@@ -206,7 +215,21 @@ impl Panel {
         let Some(gpu) = self.gpu.as_mut() else {
             return;
         };
-        let layout = match gpu.paint(context, device, &published, config, self.alpha) {
+        let key = LayoutKey {
+            revision: published.wrist_revision,
+            width: config.width_px,
+            row_px_bits: config.row_px.to_bits(),
+            max_height: config.max_height_px,
+        };
+        gpu.measure(&published.current, key, config.row_px);
+        let count = gpu
+            .measured
+            .as_ref()
+            .map_or(1, |(_, grid)| grid.pages.len());
+        let page = self
+            .pages
+            .step(published.wrist_revision, count, shown, shown && glance, dt);
+        let layout = match gpu.paint(context, device, &published, self.alpha, page) {
             Ok(layout) => layout,
             Err(e) => {
                 tracing::error!("controls summary panel: {e:#}");
@@ -235,16 +258,15 @@ impl Panel {
     }
 }
 
-/// The panel's egui context, renderer, glyph textures, render target, and quad pass.
+/// The panel's egui context, renderer, render target, and quad pass.
 struct Gpu {
     egui: egui::Context,
     renderer: egui_directx11::Renderer,
     quad: HudQuad,
     target: Option<HudTarget>,
-    glyphs: Vec<(Glyph, TextureHandle)>,
     started: Instant,
     /// The layout of the summary last measured, and what it was measured for.
-    measured: Option<(LayoutKey, Metrics, PanelLayout)>,
+    measured: Option<(LayoutKey, Grid)>,
     /// The texture updates of a measuring pass, which the next painted frame uploads.
     pending_textures: Option<TexturesDelta>,
 }
@@ -262,28 +284,12 @@ impl Gpu {
     fn new(device: &Device) -> anyhow::Result<Self> {
         let egui = egui::Context::default();
         egui.set_fonts(fonts());
-        let glyphs = Glyph::ALL
-            .iter()
-            .map(|&glyph| {
-                let image =
-                    image::load_from_memory_with_format(glyph.png(), image::ImageFormat::Png)
-                        .with_context(|| format!("decoding the {glyph:?} glyph"))?
-                        .to_rgba8();
-                let size = [image.width() as usize, image.height() as usize];
-                let color = egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw());
-                Ok((
-                    glyph,
-                    egui.load_texture(format!("{glyph:?}"), color, TextureOptions::LINEAR),
-                ))
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
         Ok(Self {
             renderer: egui_directx11::Renderer::new(&device.m_Device)
                 .context("creating the egui renderer")?,
             quad: HudQuad::new(device).context("creating the quad pass")?,
             egui,
             target: None,
-            glyphs,
             started: Instant::now(),
             measured: None,
             pending_textures: None,
@@ -297,23 +303,17 @@ impl Gpu {
         context: &ID3D11DeviceContext,
         device: &Device,
         published: &Published,
-        config: &SummaryConfig,
         alpha: f32,
+        page: PageTime,
     ) -> anyhow::Result<PanelLayout> {
-        let width = config.width_px.max(64);
-        let key = LayoutKey {
-            revision: published.revision,
-            width,
-            row_px_bits: config.row_px.to_bits(),
-            max_height: config.max_height_px.max(64),
+        let Some((_, grid)) = self.measured.as_ref() else {
+            anyhow::bail!("summary panel: layout is unavailable");
         };
-        let (metrics, layout) = match self.measured {
-            Some((measured, metrics, layout)) if measured == key => (metrics, layout),
-            _ => {
-                let (metrics, layout) = self.measure(&published.summary, key, config.row_px);
-                self.measured = Some((key, metrics, layout));
-                (metrics, layout)
-            }
+        let layout = PanelLayout {
+            size: grid.size,
+            row_px: grid.metrics.row_px,
+            page: page.index + 1,
+            pages: page.count,
         };
         let size = layout.size;
         if self.target.as_ref().map(HudTarget::size) != Some(size) {
@@ -325,12 +325,11 @@ impl Gpu {
             return Ok(layout);
         };
         let screen = Vec2::new(size.0 as f32, size.1 as f32);
-        let glyphs = &self.glyphs;
-        let summary = &published.summary;
+        let summary = &published.current;
         let output = self.egui.run_ui(self.input(screen), |ui| {
             let mut painter = ui.painter().clone();
             painter.set_opacity(alpha);
-            paint_summary(&painter, summary, screen, glyphs, metrics);
+            paint_summary(&painter, summary, grid, page);
         });
         let (mut output, _, _) = egui_directx11::split_output(output);
         // The measuring pass's texture updates (the font atlas, laid out there first) must reach
@@ -347,49 +346,34 @@ impl Gpu {
         Ok(layout)
     }
 
-    /// Lay `summary` out without drawing it, at `key`'s width and `row_px` rows, shrinking the rows
-    /// once if the summary is taller than `key`'s tallest panel, and return the sizes and the
-    /// texture size that holds it.
-    fn measure(
-        &mut self,
-        summary: &Summary,
-        key: LayoutKey,
-        row_px: f32,
-    ) -> (Metrics, PanelLayout) {
-        let max_height = key.max_height as f32;
-        let screen = Vec2::new(key.width as f32, max_height);
-        let glyphs = &self.glyphs;
-        let mut measured = (metrics(row_px), 0.0);
-        let output = self.egui.run_ui(self.input(screen), |ui| {
-            let mut painter = ui.painter().clone();
-            painter.set_invisible();
-            let wanted = metrics(row_px);
-            let height = paint_summary(&painter, summary, screen, glyphs, wanted);
-            let fitted = fit_row_px(height, wanted.row_px, max_height);
-            measured = if fitted < wanted.row_px {
-                let shrunk = metrics(fitted);
-                (
-                    shrunk,
-                    paint_summary(&painter, summary, screen, glyphs, shrunk),
-                )
-            } else {
-                (wanted, height)
-            };
-        });
+    /// Measure the same fixed cells that the paint pass uses, without a GPU draw.
+    fn measure(&mut self, summary: &CurrentSummary, key: LayoutKey, row_px: f32) {
+        if self
+            .measured
+            .as_ref()
+            .is_some_and(|(measured, _)| *measured == key)
+        {
+            return;
+        }
+        let mut grid = None;
+        let output = self.egui.run_ui(
+            self.input(Vec2::new(key.width as f32, key.max_height as f32)),
+            |ui| {
+                grid = Some(measure_summary(
+                    ui.painter(),
+                    summary,
+                    key.width,
+                    key.max_height,
+                    row_px,
+                ));
+            },
+        );
         let (output, _, _) = egui_directx11::split_output(output);
         match self.pending_textures.as_mut() {
             Some(pending) => pending.append(output.textures_delta),
             None => self.pending_textures = Some(output.textures_delta),
         }
-        let (metrics, height) = measured;
-        let height = (height.ceil() as u32).clamp(64, key.max_height);
-        (
-            metrics,
-            PanelLayout {
-                size: (key.width, height),
-                row_px: metrics.row_px,
-            },
-        )
+        self.measured = grid.map(|grid| (key, grid));
     }
 
     fn input(&self, screen: Vec2) -> egui::RawInput {
@@ -407,141 +391,154 @@ impl Gpu {
     }
 }
 
-/// Paint the summary over a `size` panel at the sizes `m`: the heading, then each group under its
-/// controller's glyph, each row's glyphs in a fixed column and its label beside them. Returns the
-/// height the content takes, margins included, which an invisible `painter` measures.
-fn paint_summary(
+/// The production measurement path, also used by renderer-free tests.
+fn measure_summary(
     painter: &egui::Painter,
-    summary: &Summary,
-    size: Vec2,
-    textures: &[(Glyph, TextureHandle)],
-    m: Metrics,
-) -> f32 {
-    let panel = Rect::from_min_size(Pos2::ZERO, size);
-    painter.rect_filled(panel, m.margin * 1.5, BACKGROUND);
-    let texture = |glyph: Glyph| {
-        textures
-            .iter()
-            .find(|(g, _)| *g == glyph)
-            .map(|(_, t)| t.id())
-    };
-    let full_uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
-    let image = |glyph: Glyph, min: Pos2, side: f32| {
-        if let Some(id) = texture(glyph) {
-            painter.image(
-                id,
-                Rect::from_min_size(min, Vec2::splat(side)),
-                full_uv,
-                Color32::WHITE,
-            );
-        }
-    };
+    summary: &CurrentSummary,
+    width: u32,
+    height: u32,
+    row_px: f32,
+) -> Grid {
+    layout(summary, width, height, row_px, &|hint, width, m| {
+        let galley = painter.layout_job(hint_job(hint, width, m));
+        (galley.size().y + m.margin * 0.5).max(m.row_px)
+    })
+}
 
-    let left = m.margin * 1.5;
-    let inner_width = size.x - 2.0 * left;
-    let mut y = m.margin;
-    let heading = painter.layout(
-        summary.heading.clone(),
-        FontId::new(m.heading_px * 0.55, FontFamily::Name(HEADING_FAMILY.into())),
+/// Paint one measured page. Cell geometry does not depend on handedness.
+fn paint_summary(painter: &egui::Painter, summary: &CurrentSummary, grid: &Grid, page: PageTime) {
+    let m = grid.metrics;
+    painter.rect_filled(
+        Rect::from_min_size(
+            Pos2::ZERO,
+            Vec2::new(grid.size.0 as f32, grid.size.1 as f32),
+        ),
+        m.margin,
+        BACKGROUND,
+    );
+    paint_text(
+        painter,
+        &summary.heading,
+        grid.heading,
+        m.heading_px * 0.55,
         TEXT,
-        inner_width,
     );
-    let heading_y = y + (m.heading_px - heading.size().y) * 0.5;
-    painter.galley(Pos2::new(left, heading_y), heading, TEXT);
-    y += m.heading_px;
-    painter.line_segment(
-        [
-            Pos2::new(left, y - m.margin * 0.5),
-            Pos2::new(size.x - left, y - m.margin * 0.5),
-        ],
-        (2.0, ACCENT),
-    );
-
-    let text_x = left + 2.0 * m.glyph_px + m.margin;
-    for group in &summary.groups {
-        let header = match group.side {
-            Side::Hand(hand) => vec![Glyph::controller(hand)],
-            Side::Either => vec![Glyph::ControllerLeft, Glyph::ControllerRight],
-            Side::Context => Vec::new(),
+    let Some(selected) = grid.pages.get(page.index) else {
+        return;
+    };
+    for cell in &selected.cells {
+        let title = match cell.kind {
+            CellKind::Left => "Left hand",
+            CellKind::Right => "Right hand",
+            CellKind::Available => "Available here",
+            CellKind::ViewMenu => "View and menu",
         };
-        if let Some(title) = &group.title {
-            let galley = painter.layout(
-                title.clone(),
-                FontId::new(m.group_px * 0.6, FontFamily::Name(HEADING_FAMILY.into())),
-                ACCENT,
-                inner_width,
-            );
-            let title_y = y + (m.group_px - galley.size().y) * 0.5;
-            painter.galley(Pos2::new(left, title_y), galley, ACCENT);
-        }
-        for (i, &glyph) in header.iter().enumerate() {
-            image(
-                glyph,
-                Pos2::new(left + i as f32 * m.group_px, y),
-                m.group_px,
-            );
-        }
-        y += m.group_px;
-        for line in &group.lines {
-            let mut job = LayoutJob::default();
-            job.wrap.max_width = (size.x - text_x - left).max(1.0);
-            let font = FontId::proportional(m.font_px);
-            // A control no glyph shows is named in the glyph's stead.
-            if let Some(source) = &line.source {
-                job.append(
-                    source,
-                    0.0,
-                    TextFormat {
-                        font_id: font.clone(),
-                        color: SOURCE,
-                        ..Default::default()
-                    },
-                );
-            }
-            if let Some(prefix) = &line.prefix {
-                job.append(
-                    prefix,
-                    if line.source.is_some() {
-                        m.font_px * 0.3
-                    } else {
-                        0.0
-                    },
-                    TextFormat {
-                        font_id: font.clone(),
-                        color: DIM,
-                        ..Default::default()
-                    },
-                );
-            }
-            job.append(
-                &line.text,
-                if line.prefix.is_some() || line.source.is_some() {
-                    m.font_px * 0.3
-                } else {
-                    0.0
-                },
-                TextFormat {
-                    font_id: font,
-                    color: TEXT,
-                    ..Default::default()
-                },
-            );
-            let galley = painter.layout_job(job);
-            let row = m.row_px.max(galley.size().y + m.margin * 0.5);
-            let glyph_y = y + (m.row_px - m.glyph_px) * 0.5;
-            for (i, &glyph) in glyphs(line.control).iter().enumerate() {
-                image(
-                    glyph,
-                    Pos2::new(left + i as f32 * m.glyph_px, glyph_y),
-                    m.glyph_px,
-                );
-            }
-            let text_y = y + (m.row_px - galley.size().y).max(0.0) * 0.5;
-            painter.galley(Pos2::new(text_x, text_y), galley, TEXT);
-            y += row;
+        let header = Bounds {
+            height: m.group_px,
+            ..cell.bounds
+        };
+        paint_text(painter, title, header, m.font_px, ACCENT);
+        for &(index, bounds) in &cell.rows {
+            let hint = &summary.cells[cell.kind.index()][index];
+            let galley = painter.layout_job(hint_job(hint, bounds.width, m));
+            painter.galley(Pos2::new(bounds.x, bounds.y), galley, TEXT);
         }
     }
-    y + m.margin
+    let footer = if summary.cells.iter().all(Vec::is_empty) {
+        "No usable controls here".to_owned()
+    } else if page.count > 1 {
+        format!(
+            "Page {}/{} - next in {:.0}s | Input/bindings: full reference",
+            page.index + 1,
+            page.count,
+            page.remaining_s.ceil()
+        )
+    } else {
+        "Page 1/1 | Input/bindings: full reference".to_owned()
+    };
+    paint_text(painter, &footer, grid.footer, m.font_px, DIM);
+}
+
+fn hint_job(hint: &Hint, width: f32, m: Metrics) -> LayoutJob {
+    let mut job = LayoutJob::default();
+    job.wrap.max_width = width.max(1.0);
+    let font = FontId::proportional(m.font_px);
+    let sources = hint
+        .sources
+        .iter()
+        .map(|source| {
+            source
+                .name
+                .clone()
+                .unwrap_or_else(|| control_name(source.control).to_owned())
+        })
+        .collect::<Vec<_>>()
+        .join(" / ");
+    job.append(
+        &sources,
+        0.0,
+        TextFormat {
+            font_id: font.clone(),
+            color: SOURCE,
+            ..Default::default()
+        },
+    );
+    if let Some(prefix) = &hint.prefix {
+        job.append(
+            &format!(" {prefix}"),
+            0.0,
+            TextFormat {
+                font_id: font.clone(),
+                color: DIM,
+                ..Default::default()
+            },
+        );
+    }
+    job.append(
+        &format!(" {}", hint.text),
+        0.0,
+        TextFormat {
+            font_id: font,
+            color: TEXT,
+            ..Default::default()
+        },
+    );
+    job
+}
+
+fn control_name(control: Control) -> &'static str {
+    match control {
+        Control::Trigger(_) => "Trigger",
+        Control::Grip(_) | Control::EitherGrip => "Grip",
+        Control::A(_) | Control::EitherA => "Lower button",
+        Control::B(_) | Control::EitherB => "Upper button",
+        Control::Stick(_, StickDir::Any) | Control::EitherStick(StickDir::Any) => "Stick",
+        Control::Stick(_, StickDir::Vertical) | Control::EitherStick(StickDir::Vertical) => {
+            "Stick up/down"
+        }
+        Control::Stick(_, StickDir::Horizontal) | Control::EitherStick(StickDir::Horizontal) => {
+            "Stick left/right"
+        }
+        Control::Stick(_, StickDir::Down) | Control::EitherStick(StickDir::Down) => "Stick down",
+        Control::StickClick(_) => "Stick click",
+        Control::Trackpad(_) | Control::EitherTrackpad => "Trackpad",
+        Control::Motion(_) | Control::EitherMotion => "Motion",
+        Control::BothStickClicks => "Both stick clicks",
+        Control::System => "System",
+        Control::LeftStickClickAndRightB => "Left stick click + right upper button",
+        Control::Named(..) => "",
+        Control::Unbound => "Unbound",
+    }
+}
+
+fn paint_text(painter: &egui::Painter, text: &str, bounds: Bounds, size: f32, color: Color32) {
+    let galley = painter.layout(
+        text.to_owned(),
+        FontId::proportional(size),
+        color,
+        bounds.width,
+    );
+    painter.galley(Pos2::new(bounds.x, bounds.y), galley, color);
 }
 
 /// The fonts: Libre Franklin (SIL OFL, `payload/assets/fonts/libre-franklin`), a revival of the
@@ -581,5 +578,143 @@ const TEXT: Color32 = Color32::WHITE;
 const DIM: Color32 = Color32::from_rgb(160, 160, 160);
 const BACKGROUND: Color32 = Color32::from_rgba_premultiplied(10, 12, 15, 215);
 const ACCENT: Color32 = Color32::from_rgb(200, 40, 30);
-/// The name of a control no glyph shows, in place of its glyph.
+/// The source control's compact text label.
 const SOURCE: Color32 = Color32::from_rgb(235, 200, 120);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::controllers::{frame::Hand, summary::current::Source};
+
+    #[test]
+    fn compact_source_names_preserve_stick_directions() {
+        for hand in Hand::BOTH {
+            assert_eq!(control_name(Control::Stick(hand, StickDir::Any)), "Stick");
+            assert_eq!(
+                control_name(Control::Stick(hand, StickDir::Vertical)),
+                "Stick up/down"
+            );
+            assert_eq!(
+                control_name(Control::Stick(hand, StickDir::Horizontal)),
+                "Stick left/right"
+            );
+            assert_eq!(
+                control_name(Control::Stick(hand, StickDir::Down)),
+                "Stick down"
+            );
+        }
+        assert_eq!(
+            control_name(Control::EitherStick(StickDir::Down)),
+            "Stick down"
+        );
+    }
+
+    #[test]
+    fn production_wrapped_rows_keep_font_size_and_measured_page_bounds() {
+        let context = egui::Context::default();
+        context.set_fonts(fonts());
+        let mut summary = CurrentSummary {
+            heading: "On foot".to_owned(),
+            ..Default::default()
+        };
+        summary.cells[0] = (0..5)
+            .map(|_| Hint {
+                sources: vec![Source {
+                    control: Control::A(Hand::Left),
+                    name: Some("Localized physical controller source".to_owned()),
+                }],
+                prefix: Some("Hold".to_owned()),
+                text:
+                    "A long localized action description that wraps across several readable lines"
+                        .repeat(3),
+            })
+            .collect();
+        let output = context.run_ui(egui::RawInput::default(), |ui| {
+            let grid = measure_summary(ui.painter(), &summary, 480, 400, 32.0);
+            assert_eq!(grid.metrics.row_px, 32.0);
+            assert!(grid.pages.len() > 1);
+            let mut seen = 0;
+            for (index, page) in grid.pages.iter().enumerate() {
+                for cell in &page.cells {
+                    for (row, bounds) in &cell.rows {
+                        let galley = ui.painter().layout_job(hint_job(
+                            &summary.cells[0][*row],
+                            bounds.width,
+                            grid.metrics,
+                        ));
+                        assert!(bounds.height >= galley.size().y);
+                        assert!(bounds.y + bounds.height <= grid.footer.y);
+                        seen += 1;
+                    }
+                }
+                paint_summary(
+                    ui.painter(),
+                    &summary,
+                    &grid,
+                    PageTime {
+                        index,
+                        count: grid.pages.len(),
+                        remaining_s: 8.0,
+                    },
+                );
+            }
+            assert_eq!(seen, 5);
+        });
+        assert!(!output.shapes.is_empty());
+    }
+
+    #[test]
+    fn production_measure_and_paint_keep_columns_and_expose_every_page() {
+        for count in [0usize, 1, 11] {
+            let context = egui::Context::default();
+            context.set_fonts(fonts());
+            let mut summary = CurrentSummary {
+                heading: "On foot".to_owned(),
+                ..Default::default()
+            };
+            for hand in Hand::BOTH {
+                summary.cells[hand.index()] = (0..count)
+                    .map(|index| Hint {
+                        sources: vec![Source {
+                            control: Control::Trigger(hand),
+                            name: None,
+                        }],
+                        prefix: None,
+                        text: format!("Action {index}"),
+                    })
+                    .collect();
+            }
+            let output = context.run_ui(egui::RawInput::default(), |ui| {
+                let grid = measure_summary(ui.painter(), &summary, 480, 1280, 32.0);
+                assert_eq!(grid.metrics.row_px, 32.0);
+                assert_eq!(grid.pages.len(), count.max(1).div_ceil(4));
+                let mut seen = [0; 2];
+                for (page_index, page) in grid.pages.iter().enumerate() {
+                    if let [left, right] = page.cells.as_slice() {
+                        assert!(left.bounds.x < right.bounds.x);
+                        assert_eq!(left.bounds.y, right.bounds.y);
+                        assert_eq!(left.bounds.width, right.bounds.width);
+                    }
+                    for cell in &page.cells {
+                        seen[cell.kind.index()] += cell.rows.len();
+                        for (_, row) in &cell.rows {
+                            assert!(row.y + row.height <= grid.footer.y);
+                        }
+                    }
+                    paint_summary(
+                        ui.painter(),
+                        &summary,
+                        &grid,
+                        PageTime {
+                            index: page_index,
+                            count: grid.pages.len(),
+                            remaining_s: 8.0,
+                        },
+                    );
+                }
+                assert_eq!(seen, [count, count]);
+            });
+            assert!(!output.shapes.is_empty());
+        }
+    }
+}

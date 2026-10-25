@@ -49,7 +49,9 @@ use crate::{
     controllers::{
         bindings::{
             controls::{ButtonControl, Controls},
-            grapple_button::{GrappleActions, GrappleButton, GrappleTick},
+            grapple_button::{
+                GrappleActions, GrappleButton, GrappleContext, GrapplePermissions, GrappleTick,
+            },
             hold::{Desired, MapKind, Target, Want},
             intents::{Gestures, Intents, Mask, MaskScope, SemanticInput},
             tables::{
@@ -141,6 +143,11 @@ impl Bindings {
     /// What each hand's grip press is doing, by [`Hand::index`].
     pub fn grip_latches(&self) -> [GripLatch; 2] {
         self.grips
+    }
+
+    /// Read the current grapple gesture permissions without advancing the tables.
+    pub fn grapple_permissions(&self, context: GrappleContext) -> GrapplePermissions {
+        self.grapple.current_permissions(context)
     }
 
     /// Cancel only a grapple episode attributable to a trigger whose ownership or usability changed.
@@ -559,3 +566,45 @@ fn toggle(out: &mut Vec<Desired>, action: Action) {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod grapple_permission_tests {
+    use super::*;
+
+    #[test]
+    fn grapple_permissions_forward_the_current_phase_without_advancing() {
+        let mut bindings = Bindings::new();
+        let context = GrappleContext {
+            tethers: true,
+            line: false,
+            aim_target: false,
+        };
+        for button in [
+            ButtonControl {
+                down: true,
+                pressed: true,
+                released: false,
+            },
+            ButtonControl {
+                down: false,
+                pressed: false,
+                released: true,
+            },
+        ] {
+            bindings.grapple.step(GrappleTick {
+                button,
+                context,
+                yank: false,
+                dt: 0.0,
+            });
+        }
+        let before = bindings.grapple;
+        let expected = GrapplePermissions {
+            release: true,
+            tighten: true,
+        };
+        assert_eq!(bindings.grapple_permissions(context), expected);
+        assert_eq!(bindings.grapple_permissions(context), expected);
+        assert_eq!(bindings.grapple, before);
+    }
+}

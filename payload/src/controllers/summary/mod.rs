@@ -1,5 +1,5 @@
-//! The controls summary: a panel on the off-hand wrist listing what every controller input does in
-//! the current mode, with the game's own names for its actions and the Valve Index button glyphs,
+//! The controls summary: a current-usable panel on the off-hand wrist and a separate complete
+//! binding reference, with the game's own names for actions and the runtime's actual source names,
 //! and the suppression of the game's own button hints, whose gamepad glyphs do not match the
 //! controllers. See `docs/mod/input/controls-summary.md`.
 //!
@@ -8,7 +8,7 @@
 //! - [`localise`]: resolving those through the game's localisation store, with an English
 //!   fallback;
 //! - [`content`]: the labelled rows grouped by hand, and their sizes on the panel;
-//! - [`glyphs`]: the embedded button glyphs;
+//! - the test-only glyph mapping retains asset and physical-source compatibility checks;
 //! - [`glance`]: the panel's pose on the wrist, the glance that shows it, and its fade;
 //! - [`game_hints`]: hiding the HUD's context button hints;
 //! - [`context`]: those hints relabelled for the controllers, first on the wrist while they show.
@@ -16,8 +16,8 @@
 //! The rows come from the binding tables themselves
 //! ([`crate::controllers::bindings::tables::describe`]), so the summary cannot drift from what the
 //! controllers inject, and each row's control from the sources the runtime bound its actions to
-//! ([`crate::vr::input::sources::table`]): a glyph where the source is an input the mod knows, the
-//! runtime's name for it otherwise, and "unbound" for an action bound to nothing. The input tick
+//! ([`crate::vr::input::sources::table`]): a compact control label for a known source, the runtime's
+//! name otherwise, and "unbound" in the reference for an action bound to nothing. The input tick
 //! rebuilds the summary when the mode, the table context, the enabled gestures, the game's
 //! language, or the bound sources change ([`refresh`]), resolving the strings on the game thread;
 //! the render thread draws the latest one ([`crate::hud::summary_panel`]). A rebuild asks for the
@@ -27,11 +27,16 @@
 pub mod config;
 pub mod content;
 pub mod context;
+pub(crate) mod current;
+pub(crate) mod eligibility;
 pub mod game_hints;
 pub mod glance;
-pub mod glyphs;
+#[cfg(test)]
+mod glyphs;
+pub(crate) mod grid;
 pub mod labels;
 pub mod localise;
+pub(crate) mod page_clock;
 
 use std::{
     collections::hash_map::DefaultHasher,
@@ -50,7 +55,9 @@ use crate::{
             controls::Controls,
             tables::{
                 declare::TableCtx,
-                describe::{DescribeCtx, Features, PhysicalFeatures, describe_bound},
+                describe::{
+                    DescribeCtx, Features, PhysicalFeatures, describe_bound, describe_sources,
+                },
             },
         },
         config::ControllersConfig,
@@ -59,6 +66,8 @@ use crate::{
         summary::{
             content::{Side, Summary, build, with_context},
             context::ContextHint,
+            current::{CurrentContext, CurrentSummary, project},
+            eligibility::{Eligibility, Omission},
             labels::{HOLD_KEY, ModText, Text},
         },
     },
@@ -68,9 +77,20 @@ use crate::{
 /// The latest summary, for the panel.
 #[derive(Debug, Clone)]
 pub struct Published {
+    /// The complete binding reference, including unavailable and unbound routes.
     pub summary: Arc<Summary>,
-    /// Bumped on every rebuild, so that the panel can tell a new summary from the one it drew.
+    /// The current usable wrist projection, independent of the reference inventory.
+    pub(crate) current: Arc<CurrentSummary>,
+    pub(crate) omitted: Arc<
+        Vec<(
+            crate::controllers::bindings::tables::describe::Row,
+            Omission,
+        )>,
+    >,
+    /// Bumped on every complete-reference rebuild.
     pub revision: u64,
+    /// Changes only when the projected wrist content changes.
+    pub(crate) wrist_revision: u64,
     /// When the mode last changed to one the player settles in with another heading than the last
     /// such mode's ([`shows_mode_change`]).
     pub mode_changed_at: Instant,
@@ -88,6 +108,7 @@ pub struct SummaryStatus {
     pub rows: usize,
     pub locale: Option<Locale>,
     pub revision: u64,
+    pub omitted: usize,
 }
 
 pub fn status() -> SummaryStatus {
@@ -104,6 +125,7 @@ pub fn status() -> SummaryStatus {
             .map_or(0, |p| p.summary.groups.iter().map(|g| g.lines.len()).sum()),
         locale: state.key.and_then(|k| k.locale),
         revision: state.published.as_ref().map_or(0, |p| p.revision),
+        omitted: state.published.as_ref().map_or(0, |p| p.omitted.len()),
     }
 }
 
@@ -120,6 +142,7 @@ pub(crate) fn refresh(
     controls: &Controls,
     config: &ControllersConfig,
     frame: &ControllerFrame,
+    eligibility: &Eligibility,
 ) {
     if !config.summary.enabled {
         return;
@@ -177,11 +200,17 @@ pub(crate) fn refresh(
         sources: sources::table_generation(),
         hints: hints_fingerprint(&hints),
     };
-    let previous = STATE.lock().key;
-    if previous == Some(key) {
+    let (generation, table) = sources::table();
+    let known_rows = describe_sources(&ctx, &table);
+    let report = eligibility::resolve(&known_rows, eligibility);
+    let current = &report.context;
+    let (previous, same_current) = {
+        let state = STATE.lock();
+        (state.key, state.current.as_ref() == Some(current))
+    };
+    if previous == Some(key) && same_current {
         return;
     }
-    let (generation, table) = sources::table();
     // Built outside the state lock: the render thread reads the published summary under it, and
     // the lookups take the localisation store's own lock.
     // SAFETY: as above.
@@ -210,6 +239,15 @@ pub(crate) fn refresh(
         summary,
         context_lines,
         resolve(Text::Mod(ModText::OnScreen)),
+    );
+    let wrist = project(
+        &known_rows,
+        mode,
+        current,
+        &hints,
+        &resolve,
+        &|name| table.name(name).to_owned(),
+        &description,
     );
     // A rebind within a profile raises no event, so read the sources again; the summary rebuilds
     // only if they changed.
@@ -256,9 +294,20 @@ pub(crate) fn refresh(
         Some(p) if !mode_changed => p.mode_changed_at,
         _ => Instant::now(),
     };
+    let (wrist_revision, wrist) = retain_wrist(
+        state
+            .published
+            .as_ref()
+            .map(|published| (published.wrist_revision, &published.current)),
+        wrist,
+    );
+    state.current = Some(current.clone());
     state.published = Some(Published {
         summary: Arc::new(summary),
+        current: wrist,
+        omitted: Arc::new(report.omitted),
         revision,
+        wrist_revision,
         mode_changed_at,
     });
 }
@@ -275,6 +324,19 @@ pub fn shows_mode_change(settled: Option<Text>, mode: Mode) -> (bool, Option<Tex
     }
     let heading = labels::heading(mode);
     (settled != Some(heading), Some(heading))
+}
+
+/// Preserve page identity and the shared allocation across reference-only rebuilds, including
+/// table-local named-source index changes that do not change the projected display.
+fn retain_wrist(
+    previous: Option<(u64, &Arc<CurrentSummary>)>,
+    next: CurrentSummary,
+) -> (u64, Arc<CurrentSummary>) {
+    match previous {
+        Some((revision, current)) if current.as_ref() == &next => (revision, Arc::clone(current)),
+        Some((revision, _)) => (revision + 1, Arc::new(next)),
+        None => (1, Arc::new(next)),
+    }
 }
 
 /// Whether `hints` holds a hint whose id is not in `seen`, the ids of the last read.
@@ -314,6 +376,7 @@ struct Key {
 
 struct State {
     key: Option<Key>,
+    current: Option<CurrentContext>,
     published: Option<Published>,
     /// The heading of the last mode the player settled in ([`shows_mode_change`]).
     settled: Option<Text>,
@@ -325,6 +388,7 @@ struct State {
 
 static STATE: Mutex<State> = Mutex::new(State {
     key: None,
+    current: None,
     published: None,
     settled: None,
     hints: Vec::new(),
@@ -333,11 +397,83 @@ static STATE: Mutex<State> = Mutex::new(State {
 
 #[cfg(test)]
 mod tests {
+    use jc3gi::input::input_action_map::Action;
+
     use super::*;
-    use crate::controllers::mode::{OnFootVariant, VehicleClass, VehicleSeat};
+    use crate::controllers::{
+        bindings::tables::describe::{Control, Effect, Gesture, Row},
+        frame::Hand,
+        mode::{OnFootVariant, VehicleClass, VehicleSeat},
+        summary::{
+            current::CurrentRouting,
+            page_clock::{DWELL_S, PageClock},
+        },
+    };
 
     const GROUND: Mode = Mode::OnFoot(OnFootVariant::Ground);
     const FALLING: Mode = Mode::Airborne(AirborneVariant::Falling);
+
+    #[test]
+    fn reference_and_ignored_hint_churn_preserve_wrist_page_and_dwell() {
+        let row = Row {
+            control: Control::A(Hand::Left),
+            gesture: Gesture::Press,
+            effect: Effect::Actions(vec![Action::JUMP]),
+        };
+        let current = CurrentContext {
+            usable: vec![row.clone()],
+            routing: CurrentRouting {
+                ready: [true; 2],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let resolve = |text: Text| format!("{text:?}");
+        let wrist = project(
+            std::slice::from_ref(&row),
+            GROUND,
+            &current,
+            &[],
+            &resolve,
+            &|_| String::new(),
+            &|_| None,
+        );
+        let (revision, original) = retain_wrist(None, wrist);
+        let mut clock = PageClock::new();
+        clock.step(revision, 3, true, true, 0.0);
+        let before = clock.step(revision, 3, true, true, DWELL_S + 1.0);
+        assert_eq!(before.index, 1);
+        let mut rows = vec![row];
+        rows.push(Row {
+            control: Control::Unbound,
+            gesture: Gesture::Press,
+            effect: Effect::Actions(vec![Action::RELOAD]),
+        });
+        let hint = ContextHint {
+            id: 42,
+            action: Action::SKIP_CUTSCENE,
+            hold: true,
+            description: 17,
+        };
+        let unchanged = project(
+            &rows,
+            GROUND,
+            &current,
+            &[hint],
+            &resolve,
+            &|_| String::new(),
+            &|_| Some("Unusable hint".to_owned()),
+        );
+        let (unchanged_revision, retained) = retain_wrist(Some((revision, &original)), unchanged);
+        assert_eq!(unchanged_revision, revision);
+        assert!(Arc::ptr_eq(&retained, &original));
+        assert_eq!(clock.step(unchanged_revision, 3, true, true, 0.0), before);
+        let mut changed = retained.as_ref().clone();
+        changed.heading.push_str(" changed");
+        let (changed_revision, _) = retain_wrist(Some((revision, &retained)), changed);
+        assert_eq!(changed_revision, revision + 1);
+        assert_eq!(clock.step(changed_revision, 3, true, true, 0.0).index, 0);
+    }
 
     /// Run `modes` from nothing settled, and say which changes showed the summary.
     fn shown(modes: &[Mode]) -> Vec<bool> {

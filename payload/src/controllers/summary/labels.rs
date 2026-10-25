@@ -36,6 +36,29 @@ pub enum ActionLabel {
     Hidden,
 }
 
+/// Separately permitted parts of the reload input in the current summary.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum CurrentAction {
+    NativeReload,
+    HeldHolster,
+}
+
+impl CurrentAction {
+    pub(crate) const fn text(self) -> Text {
+        match self {
+            Self::NativeReload => Text::Game("buttonhint_reload"),
+            Self::HeldHolster => Text::Game("buttonhint_holster_weapon"),
+        }
+    }
+
+    pub(crate) const fn gesture(self) -> Gesture {
+        match self {
+            Self::NativeReload => Gesture::Press,
+            Self::HeldHolster => Gesture::Hold,
+        }
+    }
+}
+
 /// The game's key for the "hold" prefix.
 pub const HOLD_KEY: &str = "buttonhint_hold";
 

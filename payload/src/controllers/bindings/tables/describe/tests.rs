@@ -31,6 +31,65 @@ fn actions_of(rows: &[Row], control: Control, gesture: Gesture) -> Vec<Action> {
 }
 
 #[test]
+fn wrist_sources_remain_unfolded_without_changing_the_complete_reference() {
+    let mut table = SourceTable::default();
+    table.insert(
+        SemanticSet::OnFoot,
+        OnFootAction::ALL.iter().map(|action| {
+            Some(if *action == OnFootAction::Jump {
+                vec![
+                    EnumeratedSource {
+                        path: "/user/hand/left/input/a/click",
+                        localized: Some("Left lower button"),
+                    },
+                    EnumeratedSource {
+                        path: "/user/hand/right/input/a/click",
+                        localized: Some("Right lower button"),
+                    },
+                ]
+            } else {
+                Vec::new()
+            })
+        }),
+    );
+    for dominant in Hand::BOTH {
+        let ctx = ctx(ON_FOOT, dominant, TableCtx::default());
+        let reference = describe_bound(&ctx, &table);
+        let folded = actions_of(&reference, Control::EitherA, Gesture::Press);
+        assert_eq!(folded, vec![JUMP, OPEN_PARACHUTE, STUNT_JUMP, BTN_A]);
+        let wrist = describe_sources(&ctx, &table);
+        assert!(!wrist.iter().any(|row| row.control == Control::EitherA));
+        let sources = table
+            .sources(SemanticSet::OnFoot, OnFootAction::Jump.id().index as usize)
+            .unwrap();
+        assert_eq!(sources.len(), Hand::BOTH.len());
+        for (hand, name) in [
+            (Hand::Left, "Left lower button"),
+            (Hand::Right, "Right lower button"),
+        ] {
+            assert_eq!(actions_of(&wrist, Control::A(hand), Gesture::Press), folded);
+            let source = sources
+                .iter()
+                .find(|source| source.hand == Some(hand))
+                .unwrap();
+            assert_eq!(table.name(source.name), name);
+            assert_eq!(
+                wrist
+                    .iter()
+                    .filter(|row| row.control == Control::A(hand) && row.gesture == Gesture::Press)
+                    .count(),
+                1
+            );
+        }
+        assert!(
+            !wrist
+                .iter()
+                .any(|row| matches!(row.control, Control::Trigger(_)))
+        );
+    }
+}
+
+#[test]
 fn every_injected_action_is_described() {
     for mode in all_modes() {
         for (dominant, table) in all_contexts() {

@@ -32,8 +32,7 @@ pub struct SummaryConfig {
     /// A row's height on the panel texture before its text wraps, pixels, which sets the text's
     /// size against the panel's width.
     pub row_px: f32,
-    /// The tallest the panel texture grows, pixels. A summary taller than this at `row_px` has its
-    /// rows shrunk to fit, down to the smallest readable row.
+    /// The page-height budget, pixels. Overflow uses more pages at the same readable row size.
     pub max_height_px: u32,
     /// The fade in and out, seconds.
     pub fade_s: f32,

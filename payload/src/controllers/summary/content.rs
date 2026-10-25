@@ -186,17 +186,6 @@ pub fn metrics(row_px: f32) -> Metrics {
     }
 }
 
-/// The row height that fits a summary measured `height` pixels tall at rows `row_px` tall into
-/// `max_height` pixels: `row_px` when it already fits, and otherwise shrunk in proportion, down to
-/// the smallest readable row, below which the summary would rather run off the bottom.
-pub fn fit_row_px(height: f32, row_px: f32, max_height: f32) -> f32 {
-    let row_px = metrics(row_px).row_px;
-    if !(height.is_finite() && max_height.is_finite()) || height <= max_height || height <= 0.0 {
-        return row_px;
-    }
-    (row_px * max_height / height).clamp(MIN_ROW_PX, row_px)
-}
-
 /// The smallest row the panel stays readable at, pixels.
 pub const MIN_ROW_PX: f32 = 20.0;
 /// The largest row worth drawing, pixels.
@@ -397,14 +386,5 @@ mod tests {
         assert_eq!(metrics(1.0).row_px, MIN_ROW_PX);
         assert_eq!(metrics(1000.0).row_px, MAX_ROW_PX);
         assert_eq!(metrics(f32::NAN).row_px, MIN_ROW_PX);
-    }
-
-    #[test]
-    fn rows_shrink_only_to_fit_the_tallest_panel() {
-        assert_eq!(fit_row_px(800.0, 32.0, 1280.0), 32.0);
-        assert_eq!(fit_row_px(2560.0, 32.0, 1280.0), 16.0f32.max(MIN_ROW_PX));
-        assert_eq!(fit_row_px(1600.0, 32.0, 1280.0), 32.0 * 0.8);
-        assert_eq!(fit_row_px(100_000.0, 32.0, 1280.0), MIN_ROW_PX);
-        assert_eq!(fit_row_px(f32::NAN, 32.0, 1280.0), 32.0);
     }
 }

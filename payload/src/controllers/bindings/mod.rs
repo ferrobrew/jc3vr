@@ -41,6 +41,7 @@ pub mod intents;
 pub(crate) mod policy_a;
 mod recovery;
 mod report;
+mod summary;
 pub mod tables;
 mod trigger_ownership;
 pub mod yank;
@@ -61,7 +62,7 @@ use crate::{
         bindings::{
             controls::{ButtonControl, Controls, yaw_of},
             grapple_button::GrappleContext,
-            hold::{ActionWrite, Desired, DevicePoll, HoldTracker, MapKind, Phase, Target, Want},
+            hold::{ActionWrite, Desired, DevicePoll, HoldTracker, MapKind, Target, Want},
             intents::SemanticInput,
             policy_a::{
                 SystemCommand,
@@ -69,6 +70,7 @@ use crate::{
             },
             recovery::{MaskEvent, MaskLog, NeutralPolicy, Recovery},
             report::{publish_recovery_status, report_writes},
+            summary::yank_armed_in,
             tables::Bindings,
             trigger_ownership::{Owner as TriggerOwner, RawTrigger, TriggerOwnership},
             yank::{Yank, YankConfig, YankDetector},
@@ -79,7 +81,7 @@ use crate::{
         hands::{self, tiers},
         haptics::{self, Event},
         mode::{self, Detection, Mode},
-        physical_hands, roomscale, scheme, snatch, summary,
+        physical_hands, roomscale, scheme, snatch,
         vehicles::{self, wheel::CockpitTransform},
         weapons,
     },
@@ -534,7 +536,6 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         &flight_tick,
         &step.desired,
     );
-    summary::refresh(detection.mode, &controls, &config, &frame);
     grab::tick::finish(&grab::tick::Finish {
         tick: &targets,
         latches: state.bindings.grip_latches(),
@@ -556,6 +557,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     if step.sight_capture {
         sights::tuning::request_capture();
     }
+    let summary_before = summary::BeforeFinish::capture();
     let mut trigger_changed = [false; 2];
     if !in_menu {
         let finish = weapons::FinishInputs {
@@ -672,6 +674,21 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         &trigger_routes,
         trigger_changed,
     );
+    let eligibility = summary::capture(summary::Refresh {
+        config: &config,
+        owners: final_owners,
+        ready: Hand::BOTH.map(|hand| !in_menu && state.recovery.ready(hand)),
+        trigger_blocked: Hand::BOTH
+            .map(|hand| trigger_blocked[hand.index()] || trigger_changed[hand.index()]),
+        chosen: Hand::BOTH.map(|hand| {
+            targets.chosen()[hand.index()].filter(|_| !controls.hands[hand.index()].grip.released)
+        }),
+        grabs: step.grabs,
+        before: &summary_before,
+        grapple: state.bindings.grapple_permissions(controls.grapple),
+        yank: (yank_armed_in(line, &detection) && grapple_held).then_some(grapple_hand),
+    });
+    crate::controllers::summary::refresh(detection.mode, &controls, &config, &frame, &eligibility);
     let writes = state.tracker.resolve(&step.desired, dt);
     // SAFETY: the input tick runs on the main thread after the device poll.
     let landings = unsafe { inject::apply(&writes) };
@@ -941,53 +958,4 @@ fn grapple_button_held(semantic: &SemanticInput, mode: Mode) -> bool {
             .filter_map(|&action| semantic.get(action))
             .any(|input| input.hands.iter().any(|h| h.button.held()))
     })
-}
-
-/// Whether a yank may fire, with `wire` whether a grapple line is live: the character is on foot or
-/// airborne, and the line is not already carrying the character. During a reel-in or a hang the
-/// grapple hand holds the line and drives the hang swing, and a pull on the line there is a swing,
-/// not a yank. The caller also needs the grapple button held.
-fn yank_armed_in(wire: bool, detection: &Detection) -> bool {
-    wire && detection.traversal.is_none()
-        && matches!(detection.mode, Mode::OnFoot(_) | Mode::Airborne(_))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::controllers::mode::{AirborneVariant, OnFootVariant, Traversal};
-
-    #[test]
-    fn the_yank_is_armed_only_on_a_free_line() {
-        let on_foot = Detection {
-            mode: Mode::OnFoot(OnFootVariant::Ground),
-            ..Default::default()
-        };
-        assert!(yank_armed_in(true, &on_foot));
-        assert!(!yank_armed_in(false, &on_foot));
-        let falling = Detection {
-            mode: Mode::Airborne(AirborneVariant::Falling),
-            ..Default::default()
-        };
-        assert!(yank_armed_in(true, &falling));
-        for traversal in [
-            Traversal::PreReel,
-            Traversal::ReelingIn,
-            Traversal::PreHang,
-            Traversal::ReeledIn,
-        ] {
-            let carried = Detection {
-                traversal: Some(traversal),
-                ..on_foot
-            };
-            assert!(!yank_armed_in(true, &carried), "{traversal:?}");
-        }
-        assert!(!yank_armed_in(
-            true,
-            &Detection {
-                mode: Mode::Ui,
-                ..on_foot
-            }
-        ));
-    }
 }

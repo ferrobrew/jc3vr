@@ -46,6 +46,15 @@ impl GrappleContext {
     }
 }
 
+/// Current eligibility of the grapple button's tether gestures.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub struct GrapplePermissions {
+    /// Tethers exist for the double tap to release.
+    pub release: bool,
+    /// A hold starts tightening, or the current hold already tightens.
+    pub tighten: bool,
+}
+
 /// One tick of the button, for [`GrappleButton::step`].
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct GrappleTick {
@@ -109,6 +118,21 @@ pub const TIGHTEN_RAMP_S: f32 = 1.0;
 impl GrappleButton {
     pub const fn new() -> Self {
         Self { phase: Phase::Idle }
+    }
+
+    /// Read the current gesture permissions without advancing the button or its timers.
+    pub fn current_permissions(&self, context: GrappleContext) -> GrapplePermissions {
+        let tighten = match self.phase {
+            Phase::Idle | Phase::TapWaiting { .. } | Phase::Pressed { .. } => {
+                context.tethers && !context.aim_target
+            }
+            Phase::Tightening { .. } => true,
+            Phase::Firing | Phase::Spent | Phase::Passing => false,
+        };
+        GrapplePermissions {
+            release: context.tethers,
+            tighten,
+        }
     }
 
     pub(crate) fn pending(&self) -> bool {
@@ -342,6 +366,159 @@ mod tests {
 
     fn fires(out: &[GrappleOutput]) -> Vec<Want> {
         out.iter().filter_map(|o| o.fire).collect()
+    }
+
+    const ACTIONS: GrappleActions = GrappleActions {
+        fire: &[Action::FIRE_GRAPPLE],
+        release: &[Action::RELEASE_GRAPPLE],
+    };
+
+    fn apply(
+        g: &mut GrappleButton,
+        button: ButtonControl,
+        context: GrappleContext,
+    ) -> GrappleOutput {
+        g.apply(tick(button, context), ACTIONS, &mut Vec::new())
+    }
+
+    fn hold(g: &mut GrappleButton, context: GrappleContext) -> GrappleOutput {
+        apply(g, PRESS, context);
+        let mut out = GrappleOutput::default();
+        for _ in 0..(TAP_S / DT).ceil() as usize + 2 {
+            out = apply(g, HELD, context);
+        }
+        out
+    }
+
+    #[test]
+    fn current_permissions_follow_idle_and_tap_waiting_context_without_advancing() {
+        for phase in [Phase::Idle, Phase::TapWaiting { waited_s: 0.1 }] {
+            let g = GrappleButton { phase };
+            for tethers in [false, true] {
+                for aim_target in [false, true] {
+                    let context = GrappleContext {
+                        tethers,
+                        aim_target,
+                        line: false,
+                    };
+                    let expected = GrapplePermissions {
+                        release: tethers,
+                        tighten: tethers && !aim_target,
+                    };
+                    assert_eq!(g.current_permissions(context), expected);
+                    assert_eq!(g.current_permissions(context), expected);
+                    assert_eq!(g.phase, phase);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn current_permissions_distinguish_a_new_tether_from_tightening() {
+        let aimed = GrappleContext {
+            aim_target: true,
+            ..TETHERS
+        };
+        for context in [TETHERS, aimed] {
+            let mut g = GrappleButton::new();
+            apply(&mut g, PRESS, context);
+            let permissions = g.current_permissions(context);
+            assert!(permissions.release);
+            assert_eq!(permissions.tighten, !context.aim_target);
+            let mut out = GrappleOutput::default();
+            for _ in 0..(TAP_S / DT).ceil() as usize + 2 {
+                out = apply(&mut g, HELD, context);
+            }
+            assert_eq!(out.tighten.is_some(), permissions.tighten);
+            assert_eq!(out.fire, context.aim_target.then_some(Want::Hold(1.0)));
+        }
+    }
+
+    #[test]
+    fn current_permissions_keep_an_active_tightening_hold_when_context_changes() {
+        let mut g = GrappleButton::new();
+        assert!(hold(&mut g, TETHERS).tighten.is_some());
+        for tethers in [true, false] {
+            let context = GrappleContext {
+                tethers,
+                aim_target: true,
+                line: false,
+            };
+            assert_eq!(
+                g.current_permissions(context),
+                GrapplePermissions {
+                    release: tethers,
+                    tighten: true,
+                }
+            );
+            assert!(apply(&mut g, HELD, context).tighten.is_some());
+        }
+    }
+
+    #[test]
+    fn current_permissions_do_not_reclassify_an_active_new_tether_hold() {
+        let mut g = GrappleButton::new();
+        let aimed = GrappleContext {
+            aim_target: true,
+            ..TETHERS
+        };
+        assert_eq!(hold(&mut g, aimed).fire, Some(Want::Hold(1.0)));
+        assert_eq!(
+            g.current_permissions(TETHERS),
+            GrapplePermissions {
+                release: true,
+                tighten: false,
+            }
+        );
+        let out = apply(&mut g, HELD, TETHERS);
+        assert_eq!(out.fire, Some(Want::Hold(1.0)));
+        assert!(out.tighten.is_none());
+    }
+
+    #[test]
+    fn current_permissions_keep_release_count_gated_independently_of_the_phase() {
+        for phase in [
+            Phase::Idle,
+            Phase::TapWaiting { waited_s: 0.1 },
+            Phase::Pressed {
+                held_s: 0.0,
+                second: false,
+            },
+            Phase::Firing,
+            Phase::Tightening { held_s: 0.0 },
+            Phase::Spent,
+            Phase::Passing,
+        ] {
+            let g = GrappleButton { phase };
+            for tethers in [false, true] {
+                assert_eq!(
+                    g.current_permissions(GrappleContext {
+                        tethers,
+                        line: true,
+                        aim_target: true,
+                    })
+                    .release,
+                    tethers
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn current_permissions_match_the_double_tap_release_count_gate() {
+        for tethers in [false, true] {
+            let mut g = GrappleButton::new();
+            apply(&mut g, PRESS, TETHERS);
+            apply(&mut g, RELEASE, TETHERS);
+            apply(&mut g, PRESS, TETHERS);
+            let context = GrappleContext {
+                tethers,
+                aim_target: true,
+                line: false,
+            };
+            let permissions = g.current_permissions(context);
+            assert_eq!(apply(&mut g, RELEASE, context).release, permissions.release);
+        }
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! The button glyphs: Kenney's Input Prompts (CC0, `payload/assets/glyphs/kenney-input-prompts`),
 //! the Valve Index set, with the grips from the same pack's Steam Frame set, since the Index set has
-//! no grip glyph. Embedded in the payload. Pure.
+//! no grip glyph. Test-only asset and physical-source mapping compatibility coverage.
 
 use crate::controllers::{
     bindings::tables::describe::{Control, StickDir},
@@ -173,5 +173,8 @@ mod tests {
             &[Glyph::StickRightHorizontal]
         );
         assert_eq!(glyphs(Control::EitherGrip).len(), 2);
+        for hand in Hand::BOTH {
+            assert_eq!(glyphs(Control::Motion(hand)), &[Glyph::controller(hand)]);
+        }
     }
 }

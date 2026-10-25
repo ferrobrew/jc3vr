@@ -327,6 +327,18 @@ pub(crate) fn describe_bound(ctx: &DescribeCtx, sources: &SourceTable) -> Vec<Ro
     )
 }
 
+/// Runtime sources without default fallbacks or cross-hand folding. Each physical source remains
+/// identifiable until the wrist applies per-hand eligibility.
+pub(crate) fn describe_sources(ctx: &DescribeCtx, sources: &SourceTable) -> Vec<Row> {
+    describe_unfolded(
+        ctx,
+        Bindings {
+            layout: |_, _| None,
+            runtime: Some(sources),
+        },
+    )
+}
+
 /// Where the description finds the inputs each action is bound to.
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Bindings<'a> {
@@ -338,6 +350,10 @@ pub(crate) struct Bindings<'a> {
 
 /// [`describe`], with the actions on the inputs `bindings` puts them on.
 pub(crate) fn describe_with(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
+    fold_hands(describe_unfolded(ctx, bindings))
+}
+
+fn describe_unfolded(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
     let mut sink = DescribeSink {
         dominant: ctx.dominant,
         yank: ctx.features.yank,
@@ -348,7 +364,7 @@ pub(crate) fn describe_with(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
     declare(&mut sink, ctx.mode, &ctx.table);
     let mut rows = sink.rows;
     rows.extend(outside_rows(ctx, bindings));
-    fold_hands(merge(rows))
+    merge(rows)
 }
 
 /// The describing [`Sink`]: records a row per input instead of resolving it.
