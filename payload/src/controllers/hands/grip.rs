@@ -64,7 +64,7 @@ use crate::{
             config::RightGrip,
             hold::{
                 act::{self, SnapStart, SnapView},
-                armed,
+                armed, take,
             },
             regions::{self, Carry, carry_offset},
         },
@@ -234,6 +234,7 @@ pub(crate) unsafe fn before_placement(
     if local == 0 || character as usize != local {
         return None;
     }
+    let generation = take::begin_handle_placement();
     let character = unsafe { character.as_ref() }?;
     let inventory = unsafe { inventory.as_ref() }?;
     if !character.m_IsLocalCharacter {
@@ -249,6 +250,7 @@ pub(crate) unsafe fn before_placement(
     let targets = ik::tick_records().current;
     let weights = tiers::weights();
     let mut placement = Placement {
+        generation,
         guns: [None; 2],
         targets: targets.map(|t| t.map(|t| (t.wrist, t.weight))),
     };
@@ -329,6 +331,23 @@ pub(crate) unsafe fn after_placement(character: *const Character, placement: Pla
         let wrist_world_rotation = (body * wrist.orientation).normalize();
         let wrist_world_position = to_world.transform_point3(wrist.position);
         let target = placement.targets[hand.index()];
+        if placed.gun == 0 {
+            // The native transform and solved wrist belong to this same completed placement.
+            unsafe {
+                take::record_handle_placement(take::HandlePlacement {
+                    generation: placement.generation,
+                    weapon: placed.weapon,
+                    primary_gun: placed.data as usize,
+                    holder: hand,
+                    wrist_world: Pose {
+                        position: wrist_world_position,
+                        orientation: wrist_world_rotation,
+                    },
+                    weight: target.map_or(0.0, |(_, weight)| weight),
+                    pinned: placed.read.pinned,
+                })
+            };
+        }
         last[hand.index()] = Some(HandGrip {
             at: now,
             weapon: placed.weapon,
@@ -350,6 +369,7 @@ pub(crate) unsafe fn after_placement(character: *const Character, placement: Pla
 /// The guns one placement covers, from [`before_placement`] to [`after_placement`].
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Placement {
+    generation: u64,
     guns: [Option<PlacedGun>; 2],
     targets: [Option<(Pose, f32)>; 2],
 }

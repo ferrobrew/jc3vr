@@ -10,12 +10,17 @@
 use std::fmt;
 
 use glam::{Mat4, Vec3};
+use jc3gi::{
+    equipment::weapon::{WeaponBase, WeaponGripHand},
+    types::math::Matrix4,
+};
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    frame::Hand,
+    aim::gun,
+    frame::{Hand, Pose},
     grab::Candidate,
-    hands::ActiveHands,
+    hands::{ActiveHands, CockpitHand},
     physical_hands::grab_view,
     weapons::{
         config::HoldConfig,
@@ -25,10 +30,13 @@ use crate::controllers::{
             pickup::TakeOptions,
             rack::{self, RackRefusal},
             steal::{self, StealRefusal},
+            take::placement::{Identity, Records, Sample},
             world::{self, TargetKind, WorldTarget},
         },
     },
 };
+
+mod placement;
 
 /// What taking weapons from the world did, for the readout.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -54,6 +62,101 @@ pub fn status() -> TakeStatus {
         rack_copies,
         ..state.status.clone()
     }
+}
+
+/// Forget the measured grips before native placement and return its capture generation.
+pub(crate) fn begin_handle_placement() -> u64 {
+    HANDLE_PLACEMENTS.lock().clear()
+}
+
+/// Invalidate captured grips when hand ownership changes, including adoption before placement.
+pub(crate) fn invalidate_handle_placements() {
+    HANDLE_PLACEMENTS.lock().clear();
+}
+
+/// The primary gun and its solved wrist immediately after native attachment placement.
+pub(crate) struct HandlePlacement {
+    pub generation: u64,
+    pub weapon: usize,
+    pub primary_gun: usize,
+    pub holder: Hand,
+    pub wrist_world: Pose,
+    pub weight: f32,
+    pub pinned: bool,
+}
+
+/// Capture the primary grip and wrist from the same native placement.
+///
+/// # Safety
+///
+/// The weapon and primary gun must remain live in the local character's post-placement pass.
+/// `wrist_world` is the solved wrist read in that pass, not a later IK target.
+pub(crate) unsafe fn record_handle_placement(input: HandlePlacement) {
+    HANDLE_PLACEMENTS
+        .lock()
+        .invalidate_hand(input.generation, input.holder);
+    let Some(base) = (unsafe { (input.weapon as *const WeaponBase).as_ref() }) else {
+        return;
+    };
+    let Some(first) = (unsafe { gun::guns(base) }).next().flatten() else {
+        return;
+    };
+    if first as *const _ as usize != input.primary_gun {
+        return;
+    }
+    let mut grip = Matrix4::from(Mat4::IDENTITY);
+    // A single gun keeps its primary grip entry when it moves to the other hand.
+    if !unsafe { base.GetGripPosition(WeaponGripHand::E_WEAPON_GRIP_HAND_RIGHT, &mut grip) } {
+        return;
+    }
+    HANDLE_PLACEMENTS.lock().capture(
+        input.generation,
+        Sample {
+            identity: Identity {
+                weapon: input.weapon,
+                primary_gun: input.primary_gun,
+                holder: input.holder,
+                state: base.m_State,
+                gun_world: Mat4::from(first.m_WorldMatrixT1),
+            },
+            wrist_world: input.wrist_world,
+            grip_world: Mat4::from(grip).w_axis.truncate(),
+            weight: input.weight,
+            pinned: input.pinned,
+        },
+    );
+}
+
+/// The captured primary grip on the current weighted wrist, only while the weapon, gun, holder,
+/// state, and native transform still match that actual placement. No record means no measurement.
+///
+/// # Safety
+///
+/// `weapon` must be live on the input thread outside the world update. `current` is its weighted
+/// drawn hand. Ownership changes must invalidate the capture before another measurement.
+pub(crate) unsafe fn measured_handle_point(
+    weapon: usize,
+    holder: Hand,
+    current: &CockpitHand,
+    world_scale: f32,
+) -> Option<Vec3> {
+    if hold::owned_holder(weapon) != Some(holder) {
+        invalidate_handle_placements();
+        return None;
+    }
+    let base = unsafe { (weapon as *const WeaponBase).as_ref() }?;
+    let first = (unsafe { gun::guns(base) }).next().flatten()?;
+    HANDLE_PLACEMENTS.lock().point(
+        Identity {
+            weapon,
+            primary_gun: first as *const _ as usize,
+            holder,
+            state: base.m_State,
+            gun_world: Mat4::from(first.m_WorldMatrixT1),
+        },
+        current.wrist,
+        world_scale,
+    )
 }
 
 /// What the weapon handling hands the take on each input tick.
@@ -84,6 +187,7 @@ pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
     );
     let mut state = STATE.lock();
     state.targets.clear();
+    state.offered.clear();
     state.status.held_targets = 0;
     state.status.rack_targets = 0;
     let Some(player) = player else {
@@ -106,12 +210,10 @@ pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
     }
     state.status.held_targets = held;
     state.status.rack_targets = state.targets.len() - held;
-    world::candidates(
-        &state.targets,
-        settings.take_radius_m,
-        inputs.free,
-        inputs.active.hands.map(|h| h.map(|h| h.grip.position)),
-    )
+    let points = inputs.active.hands.map(|h| h.map(|h| h.grip.position));
+    state.offered =
+        world::Offers::gather(&state.targets, settings.take_radius_m, inputs.free, points);
+    world::candidates(&state.targets, settings.take_radius_m, inputs.free, points)
 }
 
 /// Take the weapon `hand`'s grab of a
@@ -123,45 +225,48 @@ pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
 ///
 /// The main thread, outside the world update, after [`begin_tick`] on the same input tick.
 pub(crate) unsafe fn finish_grab(hand: Hand, inputs: &TakeInputs) -> bool {
-    let Some(point) = inputs.active.hands[hand.index()].map(|h| h.grip.position) else {
-        return false;
-    };
-    let reach = inputs.settings.take_radius_m * REACH_SLACK;
-    let target = world::chosen(&STATE.lock().targets, point, reach);
-    let result = match target {
-        None => Err(TakeRefusal::NothingInReach),
-        Some(target) => {
-            let options = TakeOptions {
-                drop_replaced: inputs.settings.drop_replaced,
-                slide_s: if inputs.settings.take_slide {
-                    inputs.settings.snap_s
-                } else {
-                    0.0
-                },
-                cause: match target.kind {
-                    TargetKind::Held { .. } => Cause::Steal,
-                    TargetKind::Rack { .. } => Cause::Rack,
-                },
-                // A gun taken from a character's hands or a rack comes into the hand at its grip.
-                touch: None,
-            };
-            match target.kind {
-                TargetKind::Held { .. } => {
-                    unsafe { steal::take(hand, &target, options) }.map_err(TakeRefusal::Steal)
-                }
-                TargetKind::Rack { .. } => {
-                    unsafe { rack::take(hand, &target, options) }.map_err(TakeRefusal::Rack)
-                }
+    let point = inputs.active.hands[hand.index()].map(|h| h.grip.position);
+    let target = STATE
+        .lock()
+        .offered
+        .take(hand, point, inputs.settings.take_radius_m);
+    let result = world::complete_offer(target, |target| {
+        let options = TakeOptions {
+            drop_replaced: inputs.settings.drop_replaced,
+            slide_s: if inputs.settings.take_slide {
+                inputs.settings.snap_s
+            } else {
+                0.0
+            },
+            cause: match target.kind {
+                TargetKind::Held { .. } => Cause::Steal,
+                TargetKind::Rack { .. } => Cause::Rack,
+            },
+            // A gun taken from a character's hands or a rack comes into the hand at its grip.
+            touch: None,
+        };
+        match target.kind {
+            TargetKind::Held { .. } => {
+                unsafe { steal::take(hand, &target, options) }.map_err(TakeRefusal::Steal)
+            }
+            TargetKind::Rack { .. } => {
+                unsafe { rack::take(hand, &target, options) }.map_err(TakeRefusal::Rack)
             }
         }
-    };
+    });
     match result {
-        Ok(_) => true,
+        Ok(Some(_)) => {
+            if let Some(target) = target {
+                STATE.lock().offered.acquired(target);
+            }
+            true
+        }
+        Ok(None) => {
+            report_refusal(hand, TakeRefusal::NothingInReach);
+            false
+        }
         Err(refusal) => {
-            tracing::info!(target: "controllers", hand = hand.label(), %refusal, "hold: no weapon taken");
-            STATE.lock().status.last_refusal = Some(refusal.to_string());
-            grab_view::refused(hand, None, &refusal.to_string());
-            hold::refused(refusal);
+            report_refusal(hand, refusal);
             false
         }
     }
@@ -169,12 +274,21 @@ pub(crate) unsafe fn finish_grab(hand: Hand, inputs: &TakeInputs) -> bool {
 
 /// Forget the targets. Called when the weapon handling stands down.
 pub(crate) fn stand_down() {
+    invalidate_handle_placements();
     steal::publish_probe(None);
     rack::stand_down();
     let mut state = STATE.lock();
     state.targets.clear();
+    state.offered.clear();
     state.status.held_targets = 0;
     state.status.rack_targets = 0;
+}
+
+fn report_refusal(hand: Hand, refusal: TakeRefusal) {
+    tracing::info!(target: "controllers", hand = hand.label(), %refusal, "hold: no weapon taken");
+    STATE.lock().status.last_refusal = Some(refusal.to_string());
+    grab_view::refused(hand, None, &refusal.to_string());
+    hold::refused(refusal);
 }
 
 /// Why a grab of a weapon in the world took nothing.
@@ -196,18 +310,19 @@ impl fmt::Display for TakeRefusal {
     }
 }
 
-/// How much further than the volumes' radius a grab still finds its target: the volumes are spheres
-/// along the gun, and the target is the segment between them.
-const REACH_SLACK: f32 = 1.5;
-
 struct State {
     /// The tick's targets, in the cockpit frame.
     targets: Vec<WorldTarget>,
+    /// The nearest target each free hand was offered, with the same boundary as its grab volume.
+    offered: world::Offers,
     status: TakeStatus,
 }
 
+static HANDLE_PLACEMENTS: Mutex<Records> = Mutex::new(Records::new());
+
 static STATE: Mutex<State> = Mutex::new(State {
     targets: Vec::new(),
+    offered: world::Offers::new(),
     status: TakeStatus {
         held_targets: 0,
         rack_targets: 0,

@@ -67,13 +67,21 @@ pub(crate) fn item_of(address: usize) -> Option<ItemId> {
 
 /// Publish `table`'s hands and its places on the body.
 pub(super) fn publish(table: &Loadout) {
-    for hand in Hand::BOTH {
-        let weapon = table
+    let weapons = Hand::BOTH.map(|hand| {
+        table
             .held(hand)
             .filter(|item| matches!(item.kind, ItemKind::Weapon(_)))
             .and_then(|item| item.binding.address())
-            .map_or(0, ObjectAddress::get);
-        HANDS[hand.index()].store(weapon, Ordering::Relaxed);
+            .map_or(0, ObjectAddress::get)
+    });
+    if Hand::BOTH
+        .into_iter()
+        .any(|hand| HANDS[hand.index()].load(Ordering::Relaxed) != weapons[hand.index()])
+    {
+        crate::controllers::weapons::hold::take::invalidate_handle_placements();
+    }
+    for hand in Hand::BOTH {
+        HANDS[hand.index()].store(weapons[hand.index()], Ordering::Relaxed);
     }
     *HELD.lock() = Hand::BOTH.map(|hand| table.held(hand).map(|item| item.kind));
     let mut places = PLACES.lock();
@@ -89,6 +97,7 @@ pub(super) fn publish(table: &Loadout) {
 
 /// Publish an empty table: the table stopped.
 pub(super) fn clear() {
+    crate::controllers::weapons::hold::take::invalidate_handle_placements();
     for hand in &HANDS {
         hand.store(0, Ordering::Relaxed);
     }

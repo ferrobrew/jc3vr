@@ -508,7 +508,8 @@ pub struct HoldConfig {
     /// Pass the held gun to the free hand with a grip press at the gun's grip. Needs
     /// `either_hand`.
     pub handover: bool,
-    /// The radius of the gun's grip volume the free hand grabs to take the gun, metres.
+    /// The radius around the gun's pistol grip for the free hand to take it, in player-scale
+    /// metres. A touch on another gun region keeps that region's action.
     pub handle_radius_m: f32,
     /// Take a weapon off the ground straight into the grabbing hand, with its magazine as it was
     /// and no pickup animation: through the loadout table while it runs, so the other hand keeps
@@ -546,7 +547,8 @@ pub struct HoldConfig {
     /// Take a weapon off a rack with a grab of it: the weapon the rack holds, or for a rack with
     /// unlimited stock a copy, goes straight into the grabbing hand. Needs `direct_pickup`.
     pub racks: bool,
-    /// The radius of the grab volumes along a gun in a character's hands or on a rack, metres.
+    /// The reach from the nearest point of a gun's grip-to-grip segment in a character's hands or
+    /// on a rack, in player-scale metres. Acquisition and completion use the same boundary.
     pub take_radius_m: f32,
     /// Slide a gun taken off the ground, out of a character's hands, or off a rack from where it
     /// was into the hand over `snap_s`, rather than have it appear there.
@@ -564,7 +566,7 @@ impl HoldConfig {
         Self {
             either_hand: true,
             handover: true,
-            handle_radius_m: 0.07,
+            handle_radius_m: 0.14,
             direct_pickup: true,
             snap_s: 0.12,
             grip_to_hold: true,
@@ -575,7 +577,7 @@ impl HoldConfig {
             magazine_pips: true,
             steal: true,
             racks: true,
-            take_radius_m: 0.1,
+            take_radius_m: 0.3,
             take_slide: true,
             per_hand_tick: true,
         }

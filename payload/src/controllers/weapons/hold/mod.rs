@@ -337,6 +337,7 @@ pub(crate) fn hand_over(hand: Hand, weapon: usize) -> bool {
 
 /// Stop owning the attach bones; the game's end-of-pass rewrite restores its own layout.
 pub(crate) fn clear() {
+    take::invalidate_handle_placements();
     ENABLED.store(false, Ordering::Relaxed);
     WIELDED.store(0, Ordering::Relaxed);
 }
