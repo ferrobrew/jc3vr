@@ -4,7 +4,7 @@
 //! Requests go through `CSpawnSystem::Spawn` with the high-priority flags, which skip the
 //! line-of-sight, proximity, and spawn-block checks; those exist to keep spawns out of the player's
 //! view, and putting something in view is the point. The spawn is asynchronous: the object appears
-//! once its entity streams in, so a request logs when it is queued and nothing more.
+//! once its entity streams in. The request state records submission, not entity completion.
 //!
 //! The picker's definitions come from the game's own spawn definition files, extracted once into
 //! `spawn_defs.json` (see `tools/spawn_defs/extract_spawn_defs.py`) and embedded, so what it
@@ -120,22 +120,45 @@ pub fn pools() -> Vec<&'static str> {
 /// The shipped definition table; regenerate with `tools/spawn_defs/extract_spawn_defs.py`.
 const SPAWN_DEFS_JSON: &str = include_str!("spawn_defs.json");
 
+/// The last request-processing result; submission does not confirm an object has spawned.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Submission {
+    NoTags,
+    TagsContainNul,
+    NoSpawnSystem,
+    Submitted,
+}
+
+/// Owned request state, independent of asynchronous entity streaming.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Status {
+    pub pending: bool,
+    pub last_submission: Option<Submission>,
+}
+
+/// Copy the request state without servicing it or querying the engine.
+pub(crate) fn status() -> Status {
+    with_state(|state| *state)
+}
+
 /// Queue a spawn of the config's tags; serviced on the next main-thread update.
 pub fn request() {
-    *PENDING.lock() = true;
+    with_state(|state| state.pending = true);
 }
 
 /// Run the queued spawn, if any. Main thread: the spawn system is game-thread data.
 pub(super) fn service_pending(cfg: &SpawnConfig) {
-    if !std::mem::take(&mut *PENDING.lock()) {
+    if !with_state(|state| std::mem::take(&mut state.pending)) {
         return;
     }
     let tags = cfg.tags.trim();
     if tags.is_empty() {
+        with_state(|state| state.last_submission = Some(Submission::NoTags));
         tracing::warn!("director: spawn dropped: no tags");
         return;
     }
     let Ok(tags_c) = std::ffi::CString::new(tags) else {
+        with_state(|state| state.last_submission = Some(Submission::TagsContainNul));
         tracing::warn!("director: spawn dropped: tags contain a NUL");
         return;
     };
@@ -143,6 +166,7 @@ pub(super) fn service_pending(cfg: &SpawnConfig) {
     // update; the tag string outlives the call.
     unsafe {
         let Some(spawn_system) = SpawnSystem::get() else {
+            with_state(|state| state.last_submission = Some(Submission::NoSpawnSystem));
             tracing::warn!("director: spawn dropped: no spawn system");
             return;
         };
@@ -163,6 +187,7 @@ pub(super) fn service_pending(cfg: &SpawnConfig) {
             std::ptr::null_mut(),
         );
     }
+    with_state(|state| state.last_submission = Some(Submission::Submitted));
 }
 
 /// The spawn transform: `distance` along the view direction from the view position, with the
@@ -197,11 +222,118 @@ pub fn placement(
     m
 }
 
-static PENDING: Mutex<bool> = Mutex::new(false);
+fn with_state<R>(operation: impl FnOnce(&mut Status) -> R) -> R {
+    #[cfg(test)]
+    if test_status::is_installed() {
+        return test_status::with_state(operation);
+    }
+    operation(&mut STATE.lock())
+}
+
+static STATE: Mutex<Status> = Mutex::new(Status {
+    pending: false,
+    last_submission: None,
+});
+
+#[cfg(test)]
+pub(crate) mod test_status {
+    use std::cell::RefCell;
+
+    use crate::director::spawn::Status;
+
+    pub(crate) struct Fixture {
+        previous: Option<Status>,
+    }
+
+    pub(crate) fn install(status: Status) -> Fixture {
+        Fixture {
+            previous: STATE.replace(Some(status)),
+        }
+    }
+
+    pub(crate) fn snapshot() -> Option<Status> {
+        STATE.with_borrow(|state| *state)
+    }
+
+    pub(crate) fn is_installed() -> bool {
+        STATE.with_borrow(Option::is_some)
+    }
+
+    pub(crate) fn with_state<R>(operation: impl FnOnce(&mut Status) -> R) -> R {
+        STATE.with_borrow_mut(|state| operation(state.as_mut().unwrap()))
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            STATE.replace(self.previous.take());
+        }
+    }
+
+    thread_local! {
+        static STATE: RefCell<Option<Status>> = const { RefCell::new(None) };
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn status_peeks_preserve_queued_and_submitted_requests() {
+        assert_eq!(test_status::snapshot(), None);
+        let initial = Status {
+            pending: false,
+            last_submission: Some(Submission::Submitted),
+        };
+        {
+            let _fixture = test_status::install(initial);
+            assert_eq!(status(), initial);
+            request();
+            let queued = Status {
+                pending: true,
+                ..initial
+            };
+            assert_eq!(status(), queued);
+            assert_eq!(status(), queued);
+            assert_eq!(test_status::snapshot(), Some(queued));
+            {
+                let nested = Status {
+                    pending: false,
+                    last_submission: Some(Submission::NoSpawnSystem),
+                };
+                let _nested = test_status::install(nested);
+                assert_eq!(status(), nested);
+            }
+            assert_eq!(status(), queued);
+        }
+        assert_eq!(test_status::snapshot(), None);
+    }
+
+    #[test]
+    fn invalid_requests_record_rejections_without_native_submission() {
+        let _fixture = test_status::install(Status {
+            pending: false,
+            last_submission: Some(Submission::Submitted),
+        });
+        for (tags, expected) in [
+            (" \t ", Submission::NoTags),
+            ("vehicle\0ground", Submission::TagsContainNul),
+        ] {
+            request();
+            let cfg = SpawnConfig {
+                tags: tags.to_owned(),
+                ..SpawnConfig::new()
+            };
+            service_pending(&cfg);
+            let processed = Status {
+                pending: false,
+                last_submission: Some(expected),
+            };
+            assert_eq!(status(), processed);
+            service_pending(&cfg);
+            assert_eq!(status(), processed);
+        }
+    }
 
     #[test]
     fn the_embedded_definition_table_parses_and_has_the_barrel() {

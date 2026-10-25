@@ -43,6 +43,39 @@ pub(crate) fn safety_status(ui: &mut egui::Ui) {
     heat_readout(ui);
 }
 
+/// Render owned teleport and spawn-request facts without settings or commands.
+pub(crate) fn spawn_status(ui: &mut egui::Ui) {
+    let position = player_position();
+    let in_flight = teleport_in_flight();
+    let bookmark_count = teleport::bookmarks().len();
+    let submission = spawn::status();
+    position_readout(ui, position);
+    ui.label(if in_flight {
+        "Teleport: queued or in flight"
+    } else {
+        "Teleport: idle"
+    });
+    ui.label(format!("Saved bookmarks: {bookmark_count}"));
+    ui.label(if submission.pending {
+        "Spawn request: queued"
+    } else {
+        "Spawn request: idle"
+    });
+    ui.label(match submission.last_submission {
+        None => "Last spawn request: none processed",
+        Some(spawn::Submission::NoTags) => "Last spawn request: not submitted (no tags)",
+        Some(spawn::Submission::TagsContainNul) => {
+            "Last spawn request: not submitted (tags contain a NUL)"
+        }
+        Some(spawn::Submission::NoSpawnSystem) => {
+            "Last spawn request: not submitted (no spawn system)"
+        }
+        Some(spawn::Submission::Submitted) => {
+            "Last spawn request: submitted; object completion is not tracked"
+        }
+    });
+}
+
 /// Render the recorder snapshot without settings or commands.
 pub(crate) fn video_status(ui: &mut egui::Ui) {
     let status = recorder::status();
@@ -243,9 +276,8 @@ struct TeleportForm {
     position: [f32; 3],
 }
 
-fn teleport_ui(ui: &mut egui::Ui) {
-    let mut form = TELEPORT_FORM.lock();
-    match teleport::player_position() {
+fn position_readout(ui: &mut egui::Ui, position: Option<[f32; 3]>) {
+    match position {
         Some(p) => {
             ui.label(format!("Player at ({:.1}, {:.1}, {:.1})", p[0], p[1], p[2]));
         }
@@ -253,6 +285,27 @@ fn teleport_ui(ui: &mut egui::Ui) {
             ui.label("Player position unavailable");
         }
     }
+}
+
+fn player_position() -> Option<[f32; 3]> {
+    #[cfg(test)]
+    if let Some(state) = test_game::teleport_live_state() {
+        return state.position;
+    }
+    teleport::player_position()
+}
+
+fn teleport_in_flight() -> bool {
+    #[cfg(test)]
+    if let Some(state) = test_game::teleport_live_state() {
+        return state.in_flight;
+    }
+    teleport::in_flight()
+}
+
+fn teleport_ui(ui: &mut egui::Ui) {
+    let mut form = TELEPORT_FORM.lock();
+    position_readout(ui, player_position());
     ui.horizontal(|ui| {
         ui.label("Mode:");
         for (mode, label, hint) in [
@@ -508,6 +561,58 @@ fn on_off(on: bool) -> &'static str {
 pub(crate) mod test_game {
     use std::cell::RefCell;
 
+    use crate::{
+        director::teleport::TeleportMode,
+        ui::director::{SPAWN_PICKER, TELEPORT_FORM},
+    };
+
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub(crate) struct TeleportState {
+        pub position: Option<[f32; 3]>,
+        pub in_flight: bool,
+    }
+
+    #[derive(Debug, PartialEq)]
+    pub(crate) struct EditorState {
+        name: String,
+        mode: TeleportMode,
+        position: [f32; 3],
+        pool: Option<&'static str>,
+        search: String,
+    }
+
+    pub(crate) struct TeleportFixture {
+        previous: Option<TeleportState>,
+    }
+
+    pub(crate) fn install_teleport(state: TeleportState) -> TeleportFixture {
+        TeleportFixture {
+            previous: TELEPORT_STATE.replace(Some(state)),
+        }
+    }
+
+    pub(crate) fn teleport_live_state() -> Option<TeleportState> {
+        TELEPORT_STATE.with_borrow(|state| *state)
+    }
+
+    pub(crate) fn editor_state() -> EditorState {
+        let form = TELEPORT_FORM.lock();
+        let picker = SPAWN_PICKER.lock();
+        EditorState {
+            name: form.name.clone(),
+            mode: form.mode,
+            position: form.position,
+            pool: picker.pool,
+            search: picker.search.clone(),
+        }
+    }
+
+    impl Drop for TeleportFixture {
+        fn drop(&mut self) {
+            TELEPORT_STATE.replace(self.previous.take());
+        }
+    }
+
     #[derive(Clone, Debug, Default, PartialEq, Eq)]
     pub(crate) struct Snapshot {
         pub actor: Option<(bool, bool)>,
@@ -558,5 +663,6 @@ pub(crate) mod test_game {
 
     thread_local! {
         static STATE: RefCell<Option<Snapshot>> = const { RefCell::new(None) };
+        static TELEPORT_STATE: RefCell<Option<TeleportState>> = const { RefCell::new(None) };
     }
 }

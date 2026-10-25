@@ -16,6 +16,9 @@ mod keyboard_tests;
 #[path = "dispatch/replay_tests.rs"]
 mod replay_tests;
 #[cfg(test)]
+#[path = "dispatch/spawn_tests.rs"]
+mod spawn_tests;
+#[cfg(test)]
 #[path = "dispatch/tests.rs"]
 mod tests;
 #[cfg(test)]
@@ -146,6 +149,11 @@ pub(crate) fn feature(
             if id == FeatureId::Keyboard && section == FeatureSection::Status =>
         {
             director::keyboard_status(ui)
+        }
+        FeatureRoute::Director
+            if id == FeatureId::DirectorSpawn && section == FeatureSection::Status =>
+        {
+            director::spawn_status(ui)
         }
         FeatureRoute::Environment if section == FeatureSection::Controls => environment::render(ui),
         FeatureRoute::Environment if section == FeatureSection::Status => environment::status(ui),
