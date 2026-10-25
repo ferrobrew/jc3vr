@@ -8,7 +8,7 @@ use parking_lot::Mutex;
 use crate::{
     config,
     director::{
-        heat, keymap, markers, safety, spawn,
+        heat as native_heat, keymap, markers, safety, spawn,
         teleport::{self, TeleportMode},
         time,
     },
@@ -35,6 +35,12 @@ pub(crate) fn feature(ui: &mut egui::Ui, id: crate::ui::catalog::FeatureId) {
         crate::ui::catalog::FeatureId::Keyboard => keymap_ui(ui),
         _ => {}
     }
+}
+
+/// Render the actor and heat-manager facts without settings or commands.
+pub(crate) fn safety_status(ui: &mut egui::Ui) {
+    safety_readout(ui);
+    heat_readout(ui);
 }
 
 fn cinematic_ui(ui: &mut egui::Ui) {
@@ -92,8 +98,10 @@ fn safety_ui(ui: &mut egui::Ui) {
         &mut d.unlimited_ammo,
         "Unlimited ammo (re-asserted every frame)",
     );
-    drop(cfg);
-    match safety::live_state() {
+}
+
+fn safety_readout(ui: &mut egui::Ui) {
+    match actor_live_state() {
         Some((god, ammo)) => {
             ui.label(format!(
                 "Live: god mode {}, unlimited ammo {}",
@@ -105,6 +113,14 @@ fn safety_ui(ui: &mut egui::Ui) {
             ui.label("Live: no player character");
         }
     }
+}
+
+fn actor_live_state() -> Option<(bool, bool)> {
+    #[cfg(test)]
+    if let Some(state) = test_game::actor_live_state() {
+        return state;
+    }
+    safety::live_state()
 }
 
 fn heat_ui(ui: &mut egui::Ui) {
@@ -133,7 +149,10 @@ fn heat_ui(ui: &mut egui::Ui) {
             }
         }
     });
-    match heat::live_state() {
+}
+
+fn heat_readout(ui: &mut egui::Ui) {
+    match heat_live_state() {
         Some((level, locked, cap)) => {
             ui.label(format!(
                 "Live: level {level}, lock {}, cap {}",
@@ -148,6 +167,28 @@ fn heat_ui(ui: &mut egui::Ui) {
         None => {
             ui.label("Live: no heat manager");
         }
+    }
+}
+
+fn heat_live_state() -> Option<(i32, bool, i32)> {
+    #[cfg(test)]
+    if let Some(state) = test_game::heat_live_state() {
+        return state;
+    }
+    native_heat::live_state()
+}
+
+mod heat {
+    use crate::ui::director::native_heat;
+    #[cfg(test)]
+    use crate::ui::director::test_game;
+
+    pub(crate) fn set_level(level: i32) {
+        #[cfg(test)]
+        if test_game::record_heat_command(level) {
+            return;
+        }
+        native_heat::set_level(level);
     }
 }
 
@@ -444,4 +485,61 @@ fn keymap_ui(ui: &mut egui::Ui) {
 
 fn on_off(on: bool) -> &'static str {
     if on { "on" } else { "off" }
+}
+
+#[cfg(test)]
+pub(crate) mod test_game {
+    use std::cell::RefCell;
+
+    #[derive(Clone, Debug, Default, PartialEq, Eq)]
+    pub(crate) struct Snapshot {
+        pub actor: Option<(bool, bool)>,
+        pub heat: Option<(i32, bool, i32)>,
+        pub heat_commands: Vec<i32>,
+    }
+
+    pub(crate) struct Fixture {
+        previous: Option<Snapshot>,
+    }
+
+    pub(crate) fn install(actor: Option<(bool, bool)>, heat: Option<(i32, bool, i32)>) -> Fixture {
+        let previous = STATE.replace(Some(Snapshot {
+            actor,
+            heat,
+            heat_commands: Vec::new(),
+        }));
+        Fixture { previous }
+    }
+
+    pub(crate) fn snapshot() -> Option<Snapshot> {
+        STATE.with_borrow(Clone::clone)
+    }
+
+    pub(crate) fn actor_live_state() -> Option<Option<(bool, bool)>> {
+        STATE.with_borrow(|state| state.as_ref().map(|state| state.actor))
+    }
+
+    pub(crate) fn heat_live_state() -> Option<Option<(i32, bool, i32)>> {
+        STATE.with_borrow(|state| state.as_ref().map(|state| state.heat))
+    }
+
+    pub(crate) fn record_heat_command(level: i32) -> bool {
+        STATE.with_borrow_mut(|state| {
+            let Some(state) = state.as_mut() else {
+                return false;
+            };
+            state.heat_commands.push(level);
+            true
+        })
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            STATE.replace(self.previous.take());
+        }
+    }
+
+    thread_local! {
+        static STATE: RefCell<Option<Snapshot>> = const { RefCell::new(None) };
+    }
 }

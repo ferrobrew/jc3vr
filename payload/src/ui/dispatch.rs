@@ -1,6 +1,9 @@
 //! Production feature routing and links to shared control owners.
 
 #[cfg(test)]
+#[path = "dispatch/director_tests.rs"]
+mod director_tests;
+#[cfg(test)]
 #[path = "dispatch/tests.rs"]
 mod tests;
 #[cfg(test)]
@@ -110,6 +113,11 @@ pub(crate) fn feature(
         }
         FeatureRoute::Replay if section == FeatureSection::Controls => testing::replay_feature(ui),
         FeatureRoute::Director if section == FeatureSection::Controls => director::feature(ui, id),
+        FeatureRoute::Director
+            if id == FeatureId::DirectorSafety && section == FeatureSection::Status =>
+        {
+            director::safety_status(ui)
+        }
         FeatureRoute::Environment if section == FeatureSection::Controls => environment::render(ui),
         FeatureRoute::Engine => game::feature(ui, id, section),
         _ => {
