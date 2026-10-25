@@ -35,17 +35,72 @@ pub(crate) struct Attachment {
     pub visible: bool,
 }
 
+/// A producer-local identity, not an engine frame number or a host-time join.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct SampleId {
+    pub owner: usize,
+    pub epoch: u64,
+    pub sequence: u64,
+}
+
 /// One bounded input-tick observation. Poses are in the character's model space.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Sample {
-    pub owner: usize,
+    pub id: SampleId,
     pub at: Instant,
+    /// The interaction sample's world transform, without render interpolation.
+    pub character: Mat4,
     pub attachments: Vec<Attachment>,
+}
+
+/// One render publication and the input observation it compares against.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct RenderSample {
+    pub id: SampleId,
+    pub input: Sample,
+    pub character: Mat4,
+    pub models: [Option<RenderedModel>; 3],
+}
+
+/// A value copied immediately after applying this matrix to the owned instance.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct RenderedModel {
+    pub model: usize,
+    pub matrix: Mat4,
+}
+
+impl RenderSample {
+    pub(crate) fn new(id: SampleId, input: &Sample, character: Mat4, now: Instant) -> Option<Self> {
+        (id.owner == input.id.owner
+            && id.epoch == input.id.epoch
+            && input.current(id.owner, now)
+            && usable(character))
+        .then(|| Self {
+            id,
+            input: input.clone(),
+            character,
+            models: [None; 3],
+        })
+    }
+
+    pub(crate) fn applied(&mut self, prop: Prop, model: usize, matrix: Mat4) {
+        self.models[prop.index()] = Some(RenderedModel { model, matrix });
+    }
+
+    pub(crate) fn displayed(&self, attachment: &Attachment) -> Option<Mat4> {
+        let model = self.models[attachment.prop.index()]?;
+        (attachment.visible
+            && attachment.model == Some(model.model)
+            && attachment.local.is_ok()
+            && usable(model.matrix))
+        .then_some(model.matrix)
+    }
 }
 
 impl Sample {
     pub(crate) fn current(&self, owner: usize, now: Instant) -> bool {
-        self.owner == owner
+        self.id.owner == owner
+            && usable(self.character)
             && now
                 .checked_duration_since(self.at)
                 .is_some_and(|age| age <= MAX_AGE)
@@ -101,6 +156,10 @@ pub(crate) fn placement(
         local,
         visible: false,
     }
+}
+
+fn usable(matrix: Mat4) -> bool {
+    matrix.is_finite() && matrix.determinant().abs() > 1.0e-6
 }
 
 fn valid_rotation(rotation: Quat) -> bool {

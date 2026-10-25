@@ -40,26 +40,19 @@ use parking_lot::Mutex;
 use crate::{
     controllers::{
         aim::gun,
-        body::rig::frames::Frames,
+        body::{mirror, rig::frames::Frames},
         frame::{Hand, Pose},
         hands::late::lerp_transform,
         weapons::{
             config::{ModelPlacement, PouchModelsConfig},
             engine,
-            pouch_models::attachments::{Sample, placement},
+            pouch_models::attachments::{RenderSample, Sample, SampleId, placement},
         },
     },
     hooks,
 };
 
 pub(crate) mod attachments;
-
-/// Current copied placements only; the mirror never reads a source model or weapon.
-pub(crate) fn attachment_sample(owner: usize, now: Instant) -> Option<Sample> {
-    let state = STATE.lock();
-    let sample = state.attachments.as_ref()?;
-    sample.current(owner, now).then(|| sample.clone())
-}
 
 /// What a pouch holds, drawn on it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -142,13 +135,13 @@ pub fn on_pouch(placement: &ModelPlacement, side: Hand) -> Mat4 {
 /// model space between the last two ticks', carried by the character's world transform between its
 /// last two ticks'.
 pub fn render_matrix(character: [Mat4; 2], local: [Mat4; 2], dtf: f32) -> Option<Mat4> {
-    let t = if dtf.is_finite() {
-        dtf.clamp(0.0, 1.0)
-    } else {
-        1.0
-    };
-    let matrix =
-        lerp_transform(character[0], character[1], t) * lerp_transform(local[0], local[1], t);
+    let matrix = render_transform(character, dtf) * render_transform(local, dtf);
+    matrix.is_finite().then_some(matrix)
+}
+
+/// The character transform shared by the render placement and its diagnostic plane.
+pub(crate) fn render_character(character: [Mat4; 2], dtf: f32) -> Option<Mat4> {
+    let matrix = render_transform(character, dtf);
     matrix.is_finite().then_some(matrix)
 }
 
@@ -175,9 +168,20 @@ pub(crate) unsafe fn input_tick(
         return;
     };
     ensure_cleanup();
+    let owner_id = owner as *const Character as usize;
+    if state.owner != Some(owner_id) {
+        unsafe { state.release_all() };
+        state.owner = Some(owner_id);
+    }
+    state.input_sequence = state.input_sequence.wrapping_add(1);
     let mut attachments = Sample {
-        owner: owner as *const Character as usize,
+        id: SampleId {
+            owner: owner_id,
+            epoch: state.epoch,
+            sequence: state.input_sequence,
+        },
         at: Instant::now(),
+        character: frames.character,
         attachments: Vec::new(),
     };
     for prop in Prop::ALL {
@@ -188,6 +192,8 @@ pub(crate) unsafe fn input_tick(
         let mut attachment = placement(prop, wanted, source, &frames, &prop.placement(config));
         let local = attachment.local.ok();
         let slot = &mut state.slots[prop.index()];
+        let previous_source = slot.model;
+        let previously_visible = slot.visible;
         let created = match (model, local) {
             (Some(model), Some(local)) => unsafe {
                 slot.show(model, local, Mat4::from(owner.m_WorldMatrixT1))
@@ -198,6 +204,9 @@ pub(crate) unsafe fn input_tick(
             }
         };
         let visible = slot.visible;
+        if previously_visible != visible || previous_source != slot.model {
+            mirror::clear_pouch_render();
+        }
         state.status.created += u64::from(created);
         state.status.shown[prop.index()] = visible;
         attachment.visible = visible;
@@ -213,19 +222,42 @@ pub(crate) unsafe fn input_tick(
 ///
 /// The game thread, outside the world update.
 pub(crate) unsafe fn render_frame(dtf: f32) {
+    mirror::clear_pouch_render();
     let mut state = STATE.lock();
-    if state.slots.iter().all(|s| !s.visible) {
+    state.render_sequence = state.render_sequence.wrapping_add(1);
+    if state.attachments.is_none() {
         return;
     }
-    let Some(owner) = (unsafe { engine::local_player() }) else {
+    let Some((owner_id, character)) = (unsafe { engine::local_player() }).map(|owner| {
+        (
+            owner as *const Character as usize,
+            [
+                Mat4::from(owner.m_WorldMatrixT0),
+                Mat4::from(owner.m_WorldMatrixT1),
+            ],
+        )
+    }) else {
+        unsafe { state.release_all() };
         return;
     };
-    let character = [
-        Mat4::from(owner.m_WorldMatrixT0),
-        Mat4::from(owner.m_WorldMatrixT1),
-    ];
+    if state.owner != Some(owner_id) {
+        unsafe { state.release_all() };
+        return;
+    }
+    let id = SampleId {
+        owner: owner_id,
+        epoch: state.epoch,
+        sequence: state.render_sequence,
+    };
+    let mut sample = state.attachments.as_ref().and_then(|input| {
+        RenderSample::new(id, input, render_character(character, dtf)?, Instant::now())
+    });
     let mut drew = false;
-    for slot in state.slots.iter().filter(|s| s.visible) {
+    for prop in Prop::ALL {
+        let slot = &state.slots[prop.index()];
+        if !slot.visible {
+            continue;
+        }
         let (Some(instance), Some(local)) = (slot.instance, slot.local) else {
             continue;
         };
@@ -234,9 +266,16 @@ pub(crate) unsafe fn render_frame(dtf: f32) {
         };
         // SAFETY: the instance is the payload's own, live until it is released on this thread.
         unsafe { (*(instance as *mut ModelInstance)).UpdateMatrix(&Matrix4::from(matrix)) };
+        if let (Some(sample), Some(model)) = (&mut sample, slot.model) {
+            sample.applied(prop, model, matrix);
+        }
         drew = true;
     }
     state.status.drawn += u64::from(drew);
+    drop(state);
+    if let Some(sample) = sample {
+        mirror::pouches_rendered(&sample);
+    }
 }
 
 /// Release every instance.
@@ -246,6 +285,15 @@ pub(crate) unsafe fn render_frame(dtf: f32) {
 /// The game thread, outside the world update.
 pub(crate) unsafe fn stand_down() {
     unsafe { STATE.lock().release_all() };
+}
+
+fn render_transform(transforms: [Mat4; 2], dtf: f32) -> Mat4 {
+    let t = if dtf.is_finite() {
+        dtf.clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    lerp_transform(transforms[0], transforms[1], t)
 }
 
 /// One prop's instance and its placements.
@@ -348,6 +396,10 @@ struct State {
     slots: [Slot; 3],
     status: PouchModelsStatus,
     attachments: Option<Sample>,
+    owner: Option<usize>,
+    epoch: u64,
+    input_sequence: u64,
+    render_sequence: u64,
 }
 
 impl State {
@@ -360,6 +412,9 @@ impl State {
         }
         self.status.shown = [false; 3];
         self.attachments = None;
+        self.owner = None;
+        self.epoch = self.epoch.wrapping_add(1);
+        mirror::clear_pouch_render();
     }
 }
 
@@ -376,6 +431,10 @@ static STATE: Mutex<State> = Mutex::new(State {
         drawn: 0,
     },
     attachments: None,
+    owner: None,
+    epoch: 0,
+    input_sequence: 0,
+    render_sequence: 0,
 });
 
 static CLEANUP_REGISTERED: AtomicBool = AtomicBool::new(false);

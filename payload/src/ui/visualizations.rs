@@ -396,6 +396,7 @@ impl TemporaryHide {
         for entry in ENTRIES {
             mask.insert(entry.id.source());
         }
+        mask.insert(Source::BodyMirrorPouches);
         mask
     }
 

@@ -396,12 +396,13 @@ fn the_inventory_maps_every_switch_to_the_exact_eight_output_sources() {
             .into_iter()
             .filter(|source| mask.contains(*source))
             .count(),
-        8
+        9
     );
     for source in Source::ALL {
         assert_eq!(
             mask.contains(source),
-            expected.iter().any(|(_, mapped)| *mapped == source)
+            source == Source::BodyMirrorPouches
+                || expected.iter().any(|(_, mapped)| *mapped == source)
         );
     }
 }
@@ -422,6 +423,7 @@ fn hide_and_restore_leave_configuration_and_intervening_edits_unchanged() {
         1
     );
     assert!(mask.contains(Source::BodyMirror));
+    assert!(mask.contains(Source::BodyMirrorPouches));
     assert!(mask.contains(Source::ColliderView));
     apply_edits(
         &mut config,

@@ -41,6 +41,8 @@ pub enum Source {
     MagazinePips,
     /// The body mirror's reflection of Rico's skeleton.
     BodyMirror,
+    /// The body mirror's render-time pouch models and copied input targets.
+    BodyMirrorPouches,
     /// The grab view: the reach rays, the lines to the grip targets, the palms' state, the refused
     /// grabs, and the candidates near the hands
     /// ([`crate::controllers::physical_hands::grab_view`]).
@@ -51,7 +53,7 @@ pub enum Source {
 }
 
 impl Source {
-    pub const COUNT: usize = 16;
+    pub const COUNT: usize = 17;
 
     /// Every source, in index order.
     pub const ALL: [Source; Source::COUNT] = [
@@ -69,6 +71,7 @@ impl Source {
         Source::PhysicalHands,
         Source::MagazinePips,
         Source::BodyMirror,
+        Source::BodyMirrorPouches,
         Source::GrabView,
         Source::ColliderView,
     ];
@@ -89,8 +92,9 @@ impl Source {
             Source::PhysicalHands => 11,
             Source::MagazinePips => 12,
             Source::BodyMirror => 13,
-            Source::GrabView => 14,
-            Source::ColliderView => 15,
+            Source::BodyMirrorPouches => 14,
+            Source::GrabView => 15,
+            Source::ColliderView => 16,
         }
     }
 
@@ -110,6 +114,7 @@ impl Source {
             Source::PhysicalHands => "physical hands",
             Source::MagazinePips => "second weapon's magazine",
             Source::BodyMirror => "body mirror",
+            Source::BodyMirrorPouches => "body mirror pouch render placement",
             Source::GrabView => "grab view",
             Source::ColliderView => "collider view",
         }

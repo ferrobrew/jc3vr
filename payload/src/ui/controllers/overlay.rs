@@ -36,6 +36,12 @@ pub(super) fn overlay_readout(ui: &mut Ui, status: &OverlayStatus) {
         attachments.pouches_missing,
     ));
     ui.small("Attachment counts describe the mirror's last pass, not a live draw or engine-ownership guarantee.");
+    let pouches = mirror::pouch_render_status();
+    ui.label(format!(
+        "Pouch render placement: {:?}; input targets: {:?}; displayed {}, targets {}, missing {}.",
+        pouches.render, pouches.input, pouches.displayed, pouches.targets, pouches.missing,
+    ));
+    ui.small("These are separate producer-local owner/epoch/sequence identities, not engine frame numbers or a timestamp-based join.");
 }
 
 pub(super) fn overlay_settings(ui: &mut Ui, o: &mut OverlayConfig) {

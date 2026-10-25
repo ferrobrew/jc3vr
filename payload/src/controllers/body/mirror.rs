@@ -36,7 +36,7 @@ use crate::{
                 self, SocketUse,
                 attachments::{Occupancy, PoseSource, Sample},
             },
-            pouch_models::{self, attachments::Sample as PouchSample},
+            pouch_models::attachments::{RenderSample as PouchRenderSample, SampleId},
         },
     },
     headpose,
@@ -62,13 +62,83 @@ pub struct AttachmentStatus {
     pub socket_markers: usize,
     pub socket_offers: usize,
     pub occupied_sockets: usize,
+    /// Availability from the separate render publication, not this solve pass.
     pub pouches_current: bool,
     /// Offered pouches whose model is missing or hidden.
     pub pouches_missing: usize,
 }
 
 pub fn attachment_status() -> AttachmentStatus {
-    *ATTACHMENT_STATUS.lock()
+    let mut status = *ATTACHMENT_STATUS.lock();
+    let render = pouch_render_status();
+    status.pouches_current = render.render.is_some();
+    status.pouches_missing = render.missing;
+    status
+}
+
+/// Identities for the last render-time comparison, separate from the skeleton's solve pass.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub(crate) struct PouchRenderStatus {
+    pub render: Option<SampleId>,
+    pub input: Option<SampleId>,
+    pub displayed: usize,
+    pub targets: usize,
+    pub missing: usize,
+}
+
+pub(crate) fn pouch_render_status() -> PouchRenderStatus {
+    let (at, status) = *POUCH_RENDER_STATUS.lock();
+    if at
+        .and_then(|at| Instant::now().checked_duration_since(at))
+        .is_some_and(|age| age <= TTL)
+    {
+        status
+    } else {
+        PouchRenderStatus::default()
+    }
+}
+
+/// A plane derived from the same render publication as the applied model matrices.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct PouchRenderContext {
+    pub id: SampleId,
+    pub plane: Plane,
+}
+
+impl PouchRenderContext {
+    pub(crate) fn new(sample: &PouchRenderSample, distance: f32) -> Option<Self> {
+        Some(Self {
+            id: sample.id,
+            plane: Plane::ahead_of(&sample.character, distance)?,
+        })
+    }
+}
+
+/// Publish only copied values after the model producer applies this render's matrices.
+pub(crate) fn pouches_rendered(sample: &PouchRenderSample) {
+    clear_pouch_render();
+    let (enabled, distance) = Config::lock_query(|c| {
+        (
+            c.controllers.overlay.body_mirror,
+            c.controllers.overlay.body_mirror_distance_m,
+        )
+    });
+    if !enabled {
+        return;
+    }
+    let Some(context) = PouchRenderContext::new(sample, distance) else {
+        return;
+    };
+    let mut primitives = Vec::new();
+    let status = pouch_render_markers(sample, context, &mut primitives);
+    store::submit(Source::BodyMirrorPouches, &mut primitives, TTL);
+    *POUCH_RENDER_STATUS.lock() = (Some(Instant::now()), status);
+}
+
+/// Clear the render source without replacing the skeleton and socket submission.
+pub(crate) fn clear_pouch_render() {
+    store::clear(Source::BodyMirrorPouches);
+    *POUCH_RENDER_STATUS.lock() = (None, PouchRenderStatus::default());
 }
 
 /// The last pass's status. A leaf lock, so any thread may read it.
@@ -149,17 +219,6 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
             })
             .count()
     });
-    let pouches = pouch_models::attachment_sample(character as *const Character as usize, now);
-    if let Some(sample) = &pouches {
-        pouch_markers(sample, world, plane, head, &mut primitives);
-    }
-    let pouches_missing = pouches.as_ref().map_or(0, |sample| {
-        sample
-            .attachments
-            .iter()
-            .filter(|attachment| attachment.side.is_some() && !attachment.visible)
-            .count()
-    });
     let submitted = primitives.len();
     store::submit(Source::BodyMirror, &mut primitives, TTL);
     *STATUS.lock() = MirrorStatus {
@@ -188,8 +247,8 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
                 .filter(|attachment| attachment.hand.is_none() && attachment.item.is_some())
                 .count()
         }),
-        pouches_current: pouches.is_some(),
-        pouches_missing,
+        pouches_current: false,
+        pouches_missing: 0,
     };
 }
 
@@ -212,7 +271,7 @@ impl Plane {
         let forward = flat(world.transform_vector3(Vec3::NEG_Z))
             .or_else(|| flat(world.transform_vector3(Vec3::Y)))?;
         let root = world.w_axis.truncate();
-        (distance.is_finite() && distance > 0.0).then(|| Plane {
+        (root.is_finite() && distance.is_finite() && distance > 0.0).then(|| Plane {
             point: root + forward * distance,
             normal: -forward,
         })
@@ -409,32 +468,52 @@ pub(crate) fn attachment_markers(
     }
 }
 
-/// Draw the copied pouch center and its visible model origin without reading the model instance.
-pub(crate) fn pouch_markers(
-    sample: &PouchSample,
-    character: Mat4,
-    plane: Plane,
-    head: Vec3,
+/// Compare the applied render matrix with the copied input target, without native reads.
+/// World anchors avoid joining the render plane to a head pose from another phase.
+pub(crate) fn pouch_render_markers(
+    sample: &PouchRenderSample,
+    context: PouchRenderContext,
     out: &mut Vec<Primitive>,
-) {
-    if !character.is_finite() || character.determinant().abs() <= 1.0e-6 {
-        return;
+) -> PouchRenderStatus {
+    if context.id != sample.id {
+        return PouchRenderStatus::default();
     }
-    for attachment in &sample.attachments {
-        let Ok(pouch) = attachment.pouch else {
-            continue;
-        };
-        let at = |point| Anchor::Head(plane.reflect(character.transform_point3(point)) - head);
-        let color = if attachment.visible { EMPTY } else { NO_FIT };
-        out.push(ring(at(pouch.position), ATTACHMENT_RING_M, color));
-        if attachment.visible
-            && let Ok(local) = attachment.local
-        {
-            let origin = local.w_axis.truncate();
+    let mut status = PouchRenderStatus {
+        render: Some(sample.id),
+        input: Some(sample.input.id),
+        ..PouchRenderStatus::default()
+    };
+    let at = |point| Anchor::World(context.plane.reflect(point));
+    for attachment in &sample.input.attachments {
+        let displayed = sample.displayed(attachment);
+        let target = attachment
+            .pouch
+            .ok()
+            .map(|pose| sample.input.character.transform_point3(pose.position))
+            .filter(|point| point.is_finite());
+        if let Some(target) = target {
+            let color = if displayed.is_some() { EMPTY } else { NO_FIT };
+            out.push(ring(at(target), ATTACHMENT_RING_M, color));
+            status.targets += 1;
+        }
+        if let Some(matrix) = displayed {
+            let origin = matrix.w_axis.truncate();
             out.push(ring(at(origin), TARGET_RING_M, TARGET));
-            out.push(line(at(pouch.position), at(origin), BONE_WIDTH, color));
+            out.push(line(
+                at(origin),
+                at(matrix.transform_point3(Vec3::NEG_Z * ATTACHMENT_AXIS_M)),
+                BONE_WIDTH,
+                TARGET,
+            ));
+            if let Some(target) = target {
+                out.push(line(at(target), at(origin), BONE_WIDTH, EMPTY));
+            }
+            status.displayed += 1;
+        } else if attachment.side.is_some() {
+            status.missing += 1;
         }
     }
+    status
 }
 
 fn line(from: Anchor, to: Anchor, width: f32, color: Rgba) -> Primitive {
@@ -526,6 +605,17 @@ static STATUS: Mutex<MirrorStatus> = Mutex::new(MirrorStatus {
     bones: None,
     primitives: 0,
 });
+
+static POUCH_RENDER_STATUS: Mutex<(Option<Instant>, PouchRenderStatus)> = Mutex::new((
+    None,
+    PouchRenderStatus {
+        render: None,
+        input: None,
+        displayed: 0,
+        targets: 0,
+        missing: 0,
+    },
+));
 
 static ATTACHMENT_STATUS: Mutex<AttachmentStatus> = Mutex::new(AttachmentStatus {
     at: None,
