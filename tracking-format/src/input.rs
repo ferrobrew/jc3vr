@@ -4,12 +4,13 @@
 //! inferred order. Runtime change times remain in their own clock domain and never become logical
 //! input time by an implicit conversion. Source paths describe possible bindings, not contributors.
 
+pub mod policy;
 pub mod replay;
 
 use std::{collections::VecDeque, sync::Arc};
 
 /// The current uncompressed input-record schema, independent of the tracking frame codec.
-pub const INPUT_VERSION: u16 = 1;
+pub const INPUT_VERSION: u16 = 2;
 pub const MAX_ROUTES: usize = 128;
 pub const MAX_SOURCES: usize = 16;
 pub const MAX_SOURCE_PATH: usize = 256;
@@ -111,6 +112,7 @@ pub enum DiscontinuityReason {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputRecord {
     Group(InputGroup),
+    Policy(policy::PolicyEvaluation),
     Discontinuity {
         reason: DiscontinuityReason,
         discarded: u64,
@@ -173,7 +175,9 @@ impl InputHistory {
     /// Append the recorded stream verbatim. Its boundaries belong to the producer, not to the
     /// playback batching. Only a local queue overflow can discard an accepted recorded prefix.
     pub fn publish(&mut self, record: InputRecord) {
-        if matches!(&record, InputRecord::Group(group) if !group.is_bounded()) {
+        if matches!(&record, InputRecord::Group(group) if !group.is_bounded())
+            || matches!(&record, InputRecord::Policy(policy) if !policy.is_valid())
+        {
             self.reject_bounds();
             return;
         }
@@ -197,14 +201,14 @@ impl InputHistory {
     pub fn interrupt(&mut self, reason: DiscontinuityReason) {
         let lost = self.pending.iter().fold(0u64, |count, record| {
             count.saturating_add(match record {
-                InputRecord::Group(_) => 1,
+                InputRecord::Group(_) | InputRecord::Policy(_) => 1,
                 InputRecord::Discontinuity { discarded, .. } => *discarded,
             })
         });
         let newly_lost = self
             .pending
             .iter()
-            .filter(|r| matches!(r, InputRecord::Group(_)))
+            .filter(|r| matches!(r, InputRecord::Group(_) | InputRecord::Policy(_)))
             .count();
         self.discarded = self.discarded.saturating_add(newly_lost as u64);
         self.pending.clear();

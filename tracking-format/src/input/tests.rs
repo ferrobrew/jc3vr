@@ -227,6 +227,139 @@ fn actual_wire_preserves_bits_sources_timing_and_discontinuities() {
 }
 
 #[test]
+fn policy_wire_preserves_effective_timing_and_accepted_decisions() {
+    use crate::input::policy::{
+        AcceptedCommand, AcceptedSingle, POLICY_A_VERSION, PolicyATiming, PolicyEvaluation,
+    };
+    let evaluation = PolicyEvaluation {
+        version: POLICY_A_VERSION,
+        stamp: group(900, 33).stamp,
+        action_schema: 4,
+        timing: Some(PolicyATiming {
+            recenter_join_ns: 100_000_000,
+            panel_join_ns: 350_000_000,
+            recenter_hold_ns: 1_000_000_000,
+        }),
+        context: 32,
+        gameplay: false,
+        singles: [
+            AcceptedSingle::Pressed,
+            AcceptedSingle::Released,
+            AcceptedSingle::Tap,
+        ],
+        single_down: [true, false, false],
+        withheld: [false, true, true],
+        command: AcceptedCommand::TogglePanel,
+        outcome: policy::PolicyOutcome::Evaluated,
+        neutral: false,
+        raw: [3, 4, 6],
+        direct: [policy::DirectDecision {
+            sources: 1 << 8,
+            acceptance: policy::DirectAcceptance::Accepted,
+        }; 4],
+        claims: 1 << 8,
+        commands: 2,
+    };
+    let records = [
+        InputRecord::Group(group(900, 33)),
+        InputRecord::Policy(evaluation),
+    ];
+    let decoded = decode(&wire(&records)).unwrap();
+    assert_eq!(
+        decoded.input,
+        records.into_iter().map(captured).collect::<Vec<_>>()
+    );
+    assert!(!decoded.truncated);
+}
+
+fn policy_record() -> InputRecord {
+    InputRecord::Policy(policy::PolicyEvaluation {
+        version: policy::POLICY_A_VERSION,
+        stamp: group(1, 1).stamp,
+        action_schema: 4,
+        timing: None,
+        context: 0,
+        gameplay: false,
+        outcome: policy::PolicyOutcome::Cancelled,
+        neutral: false,
+        singles: [policy::AcceptedSingle::None; 3],
+        single_down: [false; 3],
+        withheld: [true; 3],
+        command: policy::AcceptedCommand::None,
+        raw: [0; 3],
+        direct: Default::default(),
+        claims: 0,
+        commands: 0,
+    })
+}
+
+#[test]
+fn replay_schedules_complete_units_but_exposes_actual_missing_decisions() {
+    let first = group(1, 1);
+    let second = group(2, 2);
+    let decision = |stamp| {
+        let InputRecord::Policy(mut policy) = policy_record() else {
+            unreachable!()
+        };
+        policy.stamp = stamp;
+        InputRecord::Policy(policy)
+    };
+    let records = [
+        CapturedInput {
+            capture_time_ns: 10,
+            frame_sequence: None,
+            record: InputRecord::Group(first.clone()),
+        },
+        CapturedInput {
+            capture_time_ns: 11,
+            frame_sequence: None,
+            record: InputRecord::Group(second.clone()),
+        },
+        CapturedInput {
+            capture_time_ns: 20,
+            frame_sequence: None,
+            record: decision(first.stamp),
+        },
+        CapturedInput {
+            capture_time_ns: 30,
+            frame_sequence: None,
+            record: decision(second.stamp),
+        },
+    ];
+    let prepared = replay::PreparedInput::new(&records);
+    let mut cursor = replay::InputReplay::default();
+    assert_eq!(cursor.advance(&prepared, 10), 0..0);
+    assert_eq!(cursor.advance(&prepared, 20), 0..0);
+    assert_eq!(cursor.advance(&prepared, 29), 0..0);
+    assert_eq!(cursor.advance(&prepared, 30), 0..4);
+    assert!(cursor.finished(records.len()));
+    let mut cursor = replay::InputReplay::default();
+    let missing = replay::PreparedInput::new(&records[..1]);
+    assert_eq!(cursor.advance(&missing, 10), 0..1);
+    assert!(cursor.finished(1));
+}
+
+#[test]
+fn policy_only_and_mixed_history_loss_counts_actual_records() {
+    for mixed in [false, true] {
+        let mut history = InputHistory::default();
+        for index in 0..HISTORY_CAPACITY {
+            history.publish(if mixed && index % 2 == 0 {
+                InputRecord::Group(group(index as u64 + 1, index as u64 + 1))
+            } else {
+                policy_record()
+            });
+        }
+        history.publish(policy_record());
+        let records = history.take();
+        assert_eq!(history.discarded, HISTORY_CAPACITY as u64);
+        assert!(
+            matches!(records[0], InputRecord::Discontinuity { discarded, .. } if discarded == HISTORY_CAPACITY as u64)
+        );
+    }
+}
+
+#[test]
 fn v1_decode_has_no_fabricated_input_order() {
     let mut bytes = encode_preamble(&header());
     bytes[8..10].copy_from_slice(&1u16.to_le_bytes());
@@ -235,7 +368,8 @@ fn v1_decode_has_no_fabricated_input_order() {
     assert!(input.is_empty());
     let decoded = decode(&bytes).unwrap();
     let mut replay = replay::InputReplay::default();
-    assert_eq!(replay.advance(&decoded.input, 100), 0..0);
+    let prepared = replay::PreparedInput::new(&decoded.input);
+    assert_eq!(replay.advance(&prepared, 100), 0..0);
     assert!(replay.finished(0));
 }
 
@@ -389,11 +523,12 @@ fn replay_capture_schedule_does_not_restamp_logical_time() {
         );
     }
     let decoded = decode(&bytes).unwrap();
+    let prepared = replay::PreparedInput::new(&decoded.input);
     for deadlines in [vec![0, 10, 29, 30], vec![30]] {
         let mut cursor = replay::InputReplay::default();
         let mut actual = Vec::new();
         for deadline in deadlines {
-            let range = cursor.advance(&decoded.input, deadline);
+            let range = cursor.advance(&prepared, deadline);
             actual.extend(
                 decoded.input[range]
                     .iter()
@@ -402,7 +537,7 @@ fn replay_capture_schedule_does_not_restamp_logical_time() {
         }
         assert_eq!(actual, records);
         assert!(cursor.finished(2));
-        assert_eq!(cursor.advance(&decoded.input, u64::MAX), 2..2);
+        assert_eq!(cursor.advance(&prepared, u64::MAX), 2..2);
     }
 }
 

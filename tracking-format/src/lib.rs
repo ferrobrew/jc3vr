@@ -235,6 +235,17 @@ pub fn encode_input(captured: &input::CapturedInput) -> Result<Vec<u8>, DecodeEr
             },
         });
     }
+    if let input::InputRecord::Policy(policy) = &captured.record
+        && !policy.is_valid()
+    {
+        return Err(DecodeError {
+            offset: 0,
+            kind: DecodeErrorKind::InvalidValue {
+                field: "input policy decision",
+                value: u64::from(policy.version),
+            },
+        });
+    }
     let mut payload = Encoder::default();
     input_codec::encode(&mut payload, captured);
     let mut out = Encoder::default();

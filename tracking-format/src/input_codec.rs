@@ -1,5 +1,7 @@
 //! The independent, bounded, uncompressed input-record wire.
 
+mod policy;
+
 use crate::{
     input::{
         CapturedInput, ClockDomain, DiscontinuityReason, GroupOrder, INPUT_VERSION, InputGroup,
@@ -17,6 +19,10 @@ pub(crate) fn encode(out: &mut Encoder, captured: &CapturedInput) {
         out.u64(sequence);
     }
     match &captured.record {
+        InputRecord::Policy(evaluation) => {
+            out.u8(2);
+            policy::encode(out, evaluation);
+        }
         InputRecord::Discontinuity { reason, discarded } => {
             out.u8(1);
             out.u8(reason_tag(*reason));
@@ -99,7 +105,7 @@ pub(crate) fn encode(out: &mut Encoder, captured: &CapturedInput) {
 
 pub(crate) fn decode(input: &mut Decoder) -> Result<CapturedInput, DecodeError> {
     let version = input.u16()?;
-    if version != INPUT_VERSION {
+    if version != 1 && version != INPUT_VERSION {
         return Err(invalid(input, "input schema", u64::from(version)));
     }
     let capture_time_ns = input.u64()?;
@@ -119,6 +125,7 @@ pub(crate) fn decode(input: &mut Decoder) -> Result<CapturedInput, DecodeError> 
 fn read_record(input: &mut Decoder) -> Result<InputRecord, DecodeError> {
     match input.u8()? {
         0 => read_group(input).map(InputRecord::Group),
+        2 => policy::decode(input).map(InputRecord::Policy),
         1 => {
             let tag = input.u8()?;
             let reason = match tag {
