@@ -6,12 +6,16 @@
 //! loops remain call templates; expressions, source gates, and raw readout builders remain in
 //! the included source evidence. The scanner is lexical, not a Rust parser or a runtime census.
 
+#[cfg(test)]
 use std::collections::{HashMap, HashSet};
 
-pub(crate) use crate::ui::inventory::catalog::{FEATURES, FeatureId, FeatureSection, PageId};
+pub(crate) use crate::ui::catalog::{FEATURES, FeatureId, FeatureSection, PageId};
+#[cfg(test)]
 use crate::ui::inventory::sources::{DEBUG_SOURCES, PAUSE_SOURCES};
 
-mod catalog;
+#[cfg(test)]
+mod historical;
+#[cfg(test)]
 mod sources;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
