@@ -1,7 +1,7 @@
 use super::*;
 use crate::hooks::camera::authored::{
     composition::InvalidPair,
-    policy::{Owner, Phase, Policy},
+    policy::{HangingState, LandingState, Owner, Phase, Policy, RecoveryState},
 };
 
 #[test]
@@ -197,6 +197,78 @@ fn exact_state_capture_does_not_fabricate_a_blend_tail() {
     let tail = policy.observe(exact(3, GraphState::WingsuitIdle));
     assert_eq!(tail.owner(), Owner::NormalTracked);
     assert_eq!(tail.reason, Some(InvalidPair::MissingSample));
+}
+
+#[test]
+fn named_cases_admit_only_their_own_state_identity() {
+    for (state, case) in [
+        (GraphState::Landing(LandingState::Hard), NamedCase::Landing),
+        (
+            GraphState::Recovery(RecoveryState::GetUp),
+            NamedCase::Recovery,
+        ),
+        (GraphState::FloorPickup, NamedCase::FloorPickup),
+        (
+            GraphState::Hanging(HangingState::GrappleAttached),
+            NamedCase::Hanging,
+        ),
+    ] {
+        let mut policy = Policy::new();
+        let exact = |tick| {
+            let mut value = frame(tick, state, 0.0, 1.0);
+            value.accepted.case = case;
+            value.blend = None;
+            value.clip_time = None;
+            value
+        };
+        assert_eq!(policy.observe(exact(1)).phase, Phase::Entry);
+        assert_eq!(policy.observe(exact(2)).owner(), Owner::Authored);
+        let mut mismatched = exact(3);
+        mismatched.accepted.case = NamedCase::BoostedGroundTakeoff;
+        let decision = policy.observe(mismatched);
+        assert_eq!(decision.owner(), Owner::NormalTracked);
+        assert_eq!(decision.reason, Some(InvalidPair::AdmissionMismatch));
+    }
+}
+
+#[test]
+fn exact_motion_continuity_does_not_bridge_distinct_landing_or_hanging_states() {
+    for (first, second) in [
+        (
+            GraphState::Landing(LandingState::Hard),
+            GraphState::Landing(LandingState::FastFall),
+        ),
+        (
+            GraphState::Hanging(HangingState::GrappleAttached),
+            GraphState::Hanging(HangingState::StuntIdle),
+        ),
+    ] {
+        assert!(!first.continues(second));
+        let mut policy = Policy::new();
+        let exact = |tick, state: GraphState| {
+            let mut value = frame(tick, state, 0.0, 1.0);
+            value.accepted.case = state.named_case().unwrap();
+            value.blend = None;
+            value.clip_time = None;
+            value
+        };
+        policy.observe(exact(1, first));
+        let changed = policy.observe(exact(2, second));
+        assert_eq!(changed.owner(), Owner::NormalTracked);
+        assert_eq!(changed.reason, Some(InvalidPair::InvalidTransition));
+    }
+    assert!(
+        GraphState::Recovery(RecoveryState::PoseMatching)
+            .continues(GraphState::Recovery(RecoveryState::BlendIn))
+    );
+    assert!(
+        GraphState::Recovery(RecoveryState::BlendIn)
+            .continues(GraphState::Recovery(RecoveryState::GetUp))
+    );
+    assert!(
+        !GraphState::Recovery(RecoveryState::GetUp)
+            .continues(GraphState::Recovery(RecoveryState::PoseMatching))
+    );
 }
 
 #[test]

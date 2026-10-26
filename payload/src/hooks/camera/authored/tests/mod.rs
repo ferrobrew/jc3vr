@@ -6,7 +6,7 @@ use crate::hooks::camera::authored::{
     composition::{
         Baseline, DeltaRequest, LocalSample, RootSample, RootTreatment, Sample, Stamp, Trs,
     },
-    policy::{AcceptedCase, AcceptedRun, FinalizedBlend, Frame, GraphState},
+    policy::{AcceptedRun, FinalizedBlend, Frame, GraphState, NamedCase},
 };
 
 mod composition;
@@ -41,7 +41,7 @@ fn frame(finalized: u64, state: GraphState, clip_time: f32, weight: f32) -> Fram
     let sample = sample(finalized, Trs::IDENTITY, Trs::IDENTITY);
     Frame {
         accepted: AcceptedRun {
-            case: AcceptedCase::BoostedGroundTakeoff,
+            case: NamedCase::BoostedGroundTakeoff,
             character: 10,
             continuity: 20,
             run: 30,

@@ -1,7 +1,8 @@
 //! Selective native camera-channel following for controlled gameplay testing.
 //!
-//! Only the exact boosted ground-takeoff states admit the adapter. The native model-space
-//! channel retains its Reference hierarchy; the character world root remains in the view base.
+//! Exact named takeoff, landing, recovery, pickup, and hanging states admit the adapter.
+//! The native model-space channel retains its Reference hierarchy; the character world
+//! root remains in the view base.
 
 mod composition;
 mod native;
@@ -19,11 +20,15 @@ pub(crate) enum Status {
     WaitingForCameraTree,
     NormalTracked {
         reason: Refusal,
-        unsupported: UnsupportedCases,
     },
-    BoostedGroundTakeoff {
+    NamedCase {
+        case: policy::NamedCase,
         phase: policy::Phase,
         limitation: Limit,
+    },
+    Handback {
+        case: policy::NamedCase,
+        reason: Refusal,
     },
 }
 
@@ -34,23 +39,15 @@ pub(crate) enum Refusal {
     NoTrackedHead,
     MissingState,
     OrdinaryOrUnsupportedState,
-    PickupNotVerified,
-    HangingNotVerified,
     IdleTailWeightNotBound,
     MissingChannel,
     InvalidTransform,
-    SourceChanged,
     Policy(composition::InvalidPair),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Limit {
     ExactStatesOnlyTreeSampledNoBlendTail,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum UnsupportedCases {
-    LandingExplosionRecoveryFloorPickupHanging,
 }
 
 pub(crate) fn status() -> Status {

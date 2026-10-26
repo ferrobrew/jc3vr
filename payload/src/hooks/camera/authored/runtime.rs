@@ -1,17 +1,19 @@
-//! Owned takeoff history and one camera result shared by the tree and render hooks.
+//! Owned named-case history and one camera result shared by the tree and render hooks.
 
-use glam::{Mat4, Vec3};
+use std::time::{Duration, Instant};
+
+use glam::{Mat4, Quat, Vec3};
 use jc3gi::character::character::Character;
 use parking_lot::Mutex;
 
 use crate::hooks::camera::authored::{
-    Limit, Refusal, STATUS, Status, UnsupportedCases,
+    Limit, Refusal, STATUS, Status,
     composition::{
         Baseline, DeltaRequest, InvalidPair, LocalSample, RootSample, RootTreatment, Sample, Stamp,
         Trs, compose_view,
     },
     native::{NativeSample, Source, read, trs},
-    policy::{AcceptedCase, AcceptedRun, Frame, GraphState, Owner, Phase, Policy},
+    policy::{AcceptedRun, Frame, GraphState, NamedCase, Owner, Phase, Policy},
 };
 
 /// The ordinary camera and the tracked-only displacement on one side of the pose pair.
@@ -27,23 +29,25 @@ pub(crate) unsafe fn capture(
     views: [TrackedView; 2],
     always_use_t1: bool,
 ) -> Option<[Mat4; 2]> {
-    let native = match unsafe { read(character) } {
-        Ok(sample) => sample,
-        Err(reason) => {
-            reset(reason);
-            return None;
-        }
-    };
+    let now = Instant::now();
+    let native = unsafe { read(character) };
     let mut state = STATE.lock();
-    match state.update(native, views, always_use_t1) {
+    let result = native.and_then(|native| state.update(native, views, always_use_t1));
+    match result {
         Ok(result) => result,
         Err(reason) => {
-            state.clear();
-            *STATUS.lock() = Status::NormalTracked {
-                reason,
-                unsupported: UnsupportedCases::LandingExplosionRecoveryFloorPickupHanging,
-            };
-            None
+            if state.character == character as *const Character as u64
+                && matches!(
+                    reason,
+                    Refusal::OrdinaryOrUnsupportedState | Refusal::IdleTailWeightNotBound
+                )
+            {
+                state.release(reason, views, always_use_t1, now)
+            } else {
+                state.clear();
+                *STATUS.lock() = Status::NormalTracked { reason };
+                None
+            }
         }
     }
 }
@@ -67,10 +71,7 @@ pub(crate) fn take_normal_reset() -> bool {
 
 pub(crate) fn reset(reason: Refusal) {
     STATE.lock().clear();
-    *STATUS.lock() = Status::NormalTracked {
-        reason,
-        unsupported: UnsupportedCases::LandingExplosionRecoveryFloorPickupHanging,
-    };
+    *STATUS.lock() = Status::NormalTracked { reason };
 }
 
 #[derive(Default)]
@@ -88,7 +89,16 @@ struct Runtime {
     deltas: Option<[Mat4; 2]>,
     eye_offset: Vec3,
     selected: Option<[Mat4; 2]>,
+    correction: Option<Trs>,
+    handback: Option<Handback>,
     collapse_normal: bool,
+}
+
+#[derive(Clone, Copy)]
+struct Handback {
+    correction: Trs,
+    started: Instant,
+    case: NamedCase,
 }
 
 impl Runtime {
@@ -98,19 +108,22 @@ impl Runtime {
         views: [TrackedView; 2],
         always_use_t1: bool,
     ) -> Result<Option<[Mat4; 2]>, Refusal> {
-        if self.character != native.character || self.source != Some(native.source) {
+        let case = native
+            .state
+            .named_case()
+            .ok_or(Refusal::OrdinaryOrUnsupportedState)?;
+        if self.character != native.character
+            || self.source != Some(native.source)
+            || self
+                .graph_state
+                .is_some_and(|previous| !previous.continues(native.state))
+        {
             self.clear();
-            if native.state != GraphState::GroundInto {
-                return Err(Refusal::SourceChanged);
+            if !native.state.can_enter() {
+                return Err(Refusal::Policy(InvalidPair::InvalidTransition));
             }
             self.character = native.character;
             self.source = Some(native.source);
-            self.collapse_normal = false;
-        }
-        if self.graph_state == Some(GraphState::GroundFollowOn)
-            && native.state == GraphState::GroundInto
-        {
-            return Err(Refusal::Policy(InvalidPair::InvalidTransition));
         }
         self.graph_state = Some(native.state);
         if let Some(previous) = self.previous
@@ -124,7 +137,7 @@ impl Runtime {
             self.policy.teleport();
             return Err(Refusal::Policy(InvalidPair::Teleport));
         }
-        if self.pose_buffer != native.pose_buffer {
+        if self.previous.is_none() || self.pose_buffer != native.pose_buffer {
             self.serial = self.serial.wrapping_add(1);
             let stamp = Stamp {
                 character: native.character,
@@ -144,7 +157,7 @@ impl Runtime {
             let baseline = match self.baseline {
                 Some(baseline) => baseline,
                 None => {
-                    if native.state != GraphState::GroundInto {
+                    if !native.state.can_enter() {
                         return Err(Refusal::Policy(InvalidPair::InvalidTransition));
                     }
                     let root = native.root.matrix().map_err(Refusal::Policy)?;
@@ -161,7 +174,7 @@ impl Runtime {
             };
             let frame = Frame {
                 accepted: AcceptedRun {
-                    case: AcceptedCase::BoostedGroundTakeoff,
+                    case,
                     character: native.character,
                     continuity: self.run,
                     run: self.run,
@@ -192,7 +205,8 @@ impl Runtime {
             }
             self.previous = Some(sample);
             self.pose_buffer = native.pose_buffer;
-            *STATUS.lock() = Status::BoostedGroundTakeoff {
+            *STATUS.lock() = Status::NamedCase {
+                case,
                 phase: decision.phase,
                 limitation: Limit::ExactStatesOnlyTreeSampledNoBlendTail,
             };
@@ -213,12 +227,88 @@ impl Runtime {
         if always_use_t1 {
             result[0] = result[1];
         }
+        self.correction = Some(trs(views[1].world.inverse() * result[1])?);
+        self.handback = None;
+        self.collapse_normal = false;
         self.selected = Some(result);
-        *STATUS.lock() = Status::BoostedGroundTakeoff {
+        *STATUS.lock() = Status::NamedCase {
+            case,
             phase: Phase::Live,
             limitation: Limit::ExactStatesOnlyTreeSampledNoBlendTail,
         };
         Ok(self.selected)
+    }
+
+    fn release(
+        &mut self,
+        reason: Refusal,
+        views: [TrackedView; 2],
+        always_use_t1: bool,
+        now: Instant,
+    ) -> Option<[Mat4; 2]> {
+        if self.handback.is_none() {
+            let handback = self
+                .correction
+                .zip(self.graph_state)
+                .and_then(|(correction, state)| {
+                    state.named_case().map(|case| Handback {
+                        correction,
+                        started: now,
+                        case,
+                    })
+                });
+            if let Some(handback) = handback {
+                let character = self.character;
+                self.clear();
+                self.character = character;
+                self.handback = Some(handback);
+            } else {
+                self.clear();
+                *STATUS.lock() = Status::NormalTracked { reason };
+                return None;
+            }
+        }
+        let handback = self.handback?;
+        let remaining = 1.0
+            - (now
+                .saturating_duration_since(handback.started)
+                .as_secs_f32()
+                / HANDBACK_DURATION.as_secs_f32())
+            .min(1.0);
+        if remaining <= 0.0 {
+            self.clear();
+            *STATUS.lock() = Status::NormalTracked { reason };
+            return None;
+        }
+        let amount = remaining * remaining * (3.0 - 2.0 * remaining);
+        let correction = Trs {
+            translation: handback.correction.translation * amount,
+            rotation: Quat::IDENTITY.slerp(handback.correction.rotation, amount),
+            scale: Vec3::ONE.lerp(handback.correction.scale, amount),
+        };
+        let result = correction.matrix().ok().and_then(|correction| {
+            let mut result = views.map(|view| view.world * correction);
+            if always_use_t1 {
+                result[0] = result[1];
+            }
+            result
+                .iter()
+                .all(|matrix| trs(*matrix).is_ok())
+                .then_some(result)
+        });
+        let Some(result) = result else {
+            self.clear();
+            *STATUS.lock() = Status::NormalTracked { reason };
+            return None;
+        };
+        self.correction = Some(correction);
+        self.selected = Some(result);
+        self.collapse_normal = false;
+        *STATUS.lock() = Status::Handback {
+            case: handback.case,
+            reason,
+        };
+        self.selected
     }
 
     fn clear(&mut self) {
@@ -227,12 +317,15 @@ impl Runtime {
         self.run = self.run.wrapping_add(1);
         self.character = 0;
         self.source = None;
+        self.graph_state = None;
         self.pose_buffer = 0;
         self.baseline = None;
         self.previous = None;
         self.pair = None;
         self.deltas = None;
         self.selected = None;
+        self.correction = None;
+        self.handback = None;
     }
 }
 
@@ -259,6 +352,7 @@ fn compose_tracked(
 
 // A mod-side discontinuity limit, not a native movement threshold.
 const MAX_ROOT_STEP: f32 = 8.0;
+const HANDBACK_DURATION: Duration = Duration::from_millis(250);
 
 static STATE: Mutex<Runtime> = Mutex::new(Runtime {
     policy: Policy::new(),
@@ -274,14 +368,15 @@ static STATE: Mutex<Runtime> = Mutex::new(Runtime {
     deltas: None,
     eye_offset: Vec3::ZERO,
     selected: None,
+    correction: None,
+    handback: None,
     collapse_normal: false,
 });
 
 #[cfg(test)]
 mod tests {
-    use glam::Quat;
-
     use super::*;
+    use crate::hooks::camera::authored::policy::{HangingState, LandingState, RecoveryState};
 
     fn native(buffer: u64, state: GraphState, translation: Vec3) -> NativeSample {
         NativeSample {
@@ -349,6 +444,214 @@ mod tests {
             .unwrap();
         assert_eq!(pair, repeated);
         assert_eq!(state.serial, 2);
+    }
+
+    #[test]
+    fn every_named_family_runs_the_same_native_sample_path() {
+        for graph in [
+            GraphState::GroundInto,
+            GraphState::Landing(LandingState::Hard),
+            GraphState::Recovery(RecoveryState::GetUp),
+            GraphState::FloorPickup,
+            GraphState::Hanging(HangingState::GrappleAttached),
+        ] {
+            let mut state = Runtime::default();
+            let views = [TrackedView {
+                world: Mat4::IDENTITY,
+                tracking_translation: Vec3::ZERO,
+            }; 2];
+            assert!(
+                state
+                    .update(native(100, graph, Vec3::ZERO), views, false)
+                    .unwrap()
+                    .is_none()
+            );
+            let pair = state
+                .update(native(200, graph, Vec3::X), views, false)
+                .unwrap()
+                .unwrap();
+            assert!(pair[0].w_axis.truncate().abs_diff_eq(Vec3::ZERO, 0.0001));
+            assert!(pair[1].w_axis.truncate().abs_diff_eq(Vec3::X, 0.0001));
+        }
+    }
+
+    #[test]
+    fn identity_hanging_channel_still_has_an_active_runtime_pair() {
+        let mut state = Runtime::default();
+        let graph = GraphState::Hanging(HangingState::GrappleAttached);
+        let views = [TrackedView {
+            world: Mat4::IDENTITY,
+            tracking_translation: Vec3::ZERO,
+        }; 2];
+        state
+            .update(native(100, graph, Vec3::ZERO), views, false)
+            .unwrap();
+        assert_eq!(
+            state
+                .update(native(200, graph, Vec3::ZERO), views, false)
+                .unwrap(),
+            Some([Mat4::IDENTITY; 2])
+        );
+        assert!(state.deltas.is_some());
+    }
+
+    #[test]
+    fn clear_allows_repeated_takeoff_runs_after_the_follow_on() {
+        let mut state = Runtime::default();
+        let views = [TrackedView {
+            world: Mat4::IDENTITY,
+            tracking_translation: Vec3::ZERO,
+        }; 2];
+        for _ in 0..3 {
+            assert!(
+                state
+                    .update(
+                        native(100, GraphState::GroundInto, Vec3::ZERO),
+                        views,
+                        false
+                    )
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(
+                state
+                    .update(
+                        native(200, GraphState::GroundFollowOn, Vec3::X),
+                        views,
+                        false
+                    )
+                    .unwrap()
+                    .is_some()
+            );
+            state.clear();
+            assert_eq!(state.graph_state, None);
+        }
+    }
+
+    #[test]
+    fn new_family_and_distinct_same_family_motion_rebase_even_on_the_same_buffer() {
+        let mut state = Runtime::default();
+        let views = [TrackedView {
+            world: Mat4::IDENTITY,
+            tracking_translation: Vec3::ZERO,
+        }; 2];
+        let first = GraphState::Landing(LandingState::Hard);
+        state
+            .update(native(100, first, Vec3::ZERO), views, false)
+            .unwrap();
+        state
+            .update(native(200, first, Vec3::X), views, false)
+            .unwrap();
+        for graph in [
+            GraphState::Landing(LandingState::FastFall),
+            GraphState::FloorPickup,
+            GraphState::Hanging(HangingState::GrappleAttached),
+            GraphState::Hanging(HangingState::StuntIdle),
+        ] {
+            let previous_run = state.run;
+            assert!(
+                state
+                    .update(native(200, graph, Vec3::Y * 3.0), views, false)
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(state.run > previous_run);
+            assert_eq!(
+                state.baseline.unwrap().sample.local.transform.translation,
+                Vec3::Y * 3.0
+            );
+            let pair = state
+                .update(native(300, graph, Vec3::Y * 4.0), views, false)
+                .unwrap()
+                .unwrap();
+            assert!(pair[0].w_axis.truncate().abs_diff_eq(Vec3::ZERO, 0.0001));
+            assert!(pair[1].w_axis.truncate().abs_diff_eq(Vec3::Y, 0.0001));
+        }
+    }
+
+    #[test]
+    fn recovery_handoffs_keep_the_entry_baseline_and_reverse_order_restarts() {
+        let mut state = Runtime::default();
+        let views = [TrackedView {
+            world: Mat4::IDENTITY,
+            tracking_translation: Vec3::ZERO,
+        }; 2];
+        for (buffer, recovery) in [
+            (100, RecoveryState::PoseMatching),
+            (200, RecoveryState::BlendIn),
+            (300, RecoveryState::GetUp),
+        ] {
+            state
+                .update(
+                    native(
+                        buffer,
+                        GraphState::Recovery(recovery),
+                        Vec3::X * buffer as f32,
+                    ),
+                    views,
+                    false,
+                )
+                .unwrap();
+        }
+        assert_eq!(
+            state.baseline.unwrap().sample.local.transform.translation,
+            Vec3::X * 100.0
+        );
+        assert!(
+            state
+                .update(
+                    native(
+                        300,
+                        GraphState::Recovery(RecoveryState::PoseMatching),
+                        Vec3::ZERO
+                    ),
+                    views,
+                    false
+                )
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            state.baseline.unwrap().sample.local.transform.translation,
+            Vec3::ZERO
+        );
+    }
+
+    #[test]
+    fn handback_starts_at_the_current_correction_and_keeps_tracking_live() {
+        let mut state = Runtime::default();
+        let graph = GraphState::FloorPickup;
+        let views = [TrackedView {
+            world: Mat4::IDENTITY,
+            tracking_translation: Vec3::ZERO,
+        }; 2];
+        state
+            .update(native(100, graph, Vec3::ZERO), views, false)
+            .unwrap();
+        state
+            .update(native(200, graph, Vec3::X), views, false)
+            .unwrap();
+        let now = Instant::now();
+        let reason = Refusal::OrdinaryOrUnsupportedState;
+        let start = state.release(reason, views, false, now).unwrap();
+        assert!(start[1].w_axis.truncate().abs_diff_eq(Vec3::X, 0.0001));
+        let moving = [TrackedView {
+            world: Mat4::from_rotation_translation(Quat::from_rotation_y(0.3), Vec3::Y * 2.0),
+            tracking_translation: Vec3::Y * 2.0,
+        }; 2];
+        let middle = state
+            .release(reason, moving, false, now + HANDBACK_DURATION / 2)
+            .unwrap();
+        let expected = moving[1].world * Mat4::from_translation(Vec3::X * 0.5);
+        assert!(middle[1].abs_diff_eq(expected, 0.0001));
+        assert!(
+            state
+                .release(reason, moving, false, now + HANDBACK_DURATION)
+                .is_none()
+        );
+        assert!(state.selected.is_none());
+        assert!(state.collapse_normal);
+        assert_eq!(state.graph_state, None);
     }
 
     #[test]

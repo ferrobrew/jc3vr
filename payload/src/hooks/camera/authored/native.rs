@@ -5,7 +5,11 @@ use jc3gi::{character::character::Character, hash::hashlittle, types::math::Matr
 
 use crate::hooks::{
     animation::active_state_type_id,
-    camera::authored::{Refusal, composition::Trs, policy::GraphState},
+    camera::authored::{
+        Refusal,
+        composition::Trs,
+        policy::{GraphState, HangingState, LandingState, RecoveryState},
+    },
 };
 
 /// All native pointers are used only during capture; publication contains owned values.
@@ -95,25 +99,13 @@ fn classify(hash: Option<u32>) -> Result<GraphState, Refusal> {
 
 fn classify_with(hash: Option<u32>, name_id: impl Fn(&[u8]) -> u32) -> Result<GraphState, Refusal> {
     let hash = hash.ok_or(Refusal::MissingState)?;
-    if hash == name_id(b"S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND_INTO") {
-        Ok(GraphState::GroundInto)
-    } else if hash == name_id(b"S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND") {
-        Ok(GraphState::GroundFollowOn)
-    } else if hash == name_id(b"S_JC_WINGSUIT_IDLE") {
-        Err(Refusal::IdleTailWeightNotBound)
-    } else if hash == name_id(b"S_IDLE_PICKUP") {
-        Err(Refusal::PickupNotVerified)
-    } else if [
-        b"S_GRAPPLE_HANG".as_slice(),
-        b"S_IDLE_HANG_STUNT".as_slice(),
-    ]
-    .iter()
-    .any(|name| hash == name_id(name))
-    {
-        Err(Refusal::HangingNotVerified)
-    } else {
-        Err(Refusal::OrdinaryOrUnsupportedState)
+    if hash == name_id(b"S_JC_WINGSUIT_IDLE") {
+        return Err(Refusal::IdleTailWeightNotBound);
     }
+    EXACT_STATES
+        .iter()
+        .find_map(|(name, state)| (hash == name_id(name)).then_some(*state))
+        .ok_or(Refusal::OrdinaryOrUnsupportedState)
 }
 
 pub(super) fn trs(matrix: Mat4) -> Result<Trs, Refusal> {
@@ -138,12 +130,77 @@ pub(super) fn trs(matrix: Mat4) -> Result<Trs, Refusal> {
     Ok(value)
 }
 
+// The shipped AFSM and its explicit ASB state map supply these names.
+const EXACT_STATES: &[(&[u8], GraphState)] = &[
+    (
+        b"S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND_INTO",
+        GraphState::GroundInto,
+    ),
+    (
+        b"S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND",
+        GraphState::GroundFollowOn,
+    ),
+    (
+        b"S_LAND_FAST_FALL",
+        GraphState::Landing(LandingState::FastFall),
+    ),
+    (b"S_LAND_HARD", GraphState::Landing(LandingState::Hard)),
+    (b"S_LAND_IDLE_0", GraphState::Landing(LandingState::Idle)),
+    (
+        b"S_LAND_IDLE_90L",
+        GraphState::Landing(LandingState::IdleLeft),
+    ),
+    (
+        b"S_LAND_IDLE_90R",
+        GraphState::Landing(LandingState::IdleRight),
+    ),
+    (
+        b"S_LAND_IDLE_180L",
+        GraphState::Landing(LandingState::IdleBackLeft),
+    ),
+    (
+        b"S_LAND_IDLE_180R",
+        GraphState::Landing(LandingState::IdleBackRight),
+    ),
+    (b"S_LAND_RUN_0", GraphState::Landing(LandingState::Run)),
+    (
+        b"S_GETUP_POSEMATCHING",
+        GraphState::Recovery(RecoveryState::PoseMatching),
+    ),
+    (
+        b"S_GETUP_BLENDIN",
+        GraphState::Recovery(RecoveryState::BlendIn),
+    ),
+    (b"S_GETUP", GraphState::Recovery(RecoveryState::GetUp)),
+    (b"S_IDLE_PICKUP", GraphState::FloorPickup),
+    (
+        b"S_GRAPPLE_ATTACH_0",
+        GraphState::Hanging(HangingState::GrappleAttached),
+    ),
+    (
+        b"S_IDLE_HANG_STUNT",
+        GraphState::Hanging(HangingState::StuntIdle),
+    ),
+    (
+        b"S_IDLE_HANG_STUNT_120L",
+        GraphState::Hanging(HangingState::StuntIdleLeft),
+    ),
+    (
+        b"S_IDLE_HANG_STUNT_120R",
+        GraphState::Hanging(HangingState::StuntIdleRight),
+    ),
+    (
+        b"S_IDLE_HANG_STUNT2",
+        GraphState::Hanging(HangingState::StuntIdleAlternate),
+    ),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn classifier_admits_only_the_exact_ground_sequence() {
+    fn classifier_admits_the_exact_ground_sequence_and_rejects_ordinary_states() {
         let id = |name: &[u8]| {
             name.iter().fold(0_u32, |id, byte| {
                 id.wrapping_mul(31).wrapping_add(u32::from(*byte))
@@ -165,6 +222,13 @@ mod tests {
             b"S_IDLE".as_slice(),
             b"S_JUMP".as_slice(),
             b"S_RUN".as_slice(),
+            b"S_FULL_RAGDOLL".as_slice(),
+            b"S_CRASH_LAND_RAGDOLL".as_slice(),
+            b"S_HEAVY_WEAPON_PICKUP".as_slice(),
+            b"S_GRAPPLE_HANG".as_slice(),
+            b"S_GRAPPLE_REEL_TO_LAND".as_slice(),
+            b"S_JC_WINGSUIT_TO_LAND_SLIDE".as_slice(),
+            b"S_GETUP_UNKNOWN".as_slice(),
         ] {
             assert_eq!(
                 classify_with(Some(id(name)), id),
@@ -176,5 +240,83 @@ mod tests {
             Err(Refusal::IdleTailWeightNotBound)
         );
         assert_eq!(classify_with(None, id), Err(Refusal::MissingState));
+    }
+
+    #[test]
+    fn classifier_admits_exact_landing_recovery_pickup_and_hanging_states() {
+        let id = |name: &[u8]| {
+            name.iter().fold(0_u32, |id, byte| {
+                id.wrapping_mul(31).wrapping_add(u32::from(*byte))
+            })
+        };
+        for (name, expected) in [
+            (
+                b"S_LAND_FAST_FALL".as_slice(),
+                GraphState::Landing(LandingState::FastFall),
+            ),
+            (
+                b"S_LAND_HARD".as_slice(),
+                GraphState::Landing(LandingState::Hard),
+            ),
+            (
+                b"S_LAND_IDLE_0".as_slice(),
+                GraphState::Landing(LandingState::Idle),
+            ),
+            (
+                b"S_LAND_IDLE_90L".as_slice(),
+                GraphState::Landing(LandingState::IdleLeft),
+            ),
+            (
+                b"S_LAND_IDLE_90R".as_slice(),
+                GraphState::Landing(LandingState::IdleRight),
+            ),
+            (
+                b"S_LAND_IDLE_180L".as_slice(),
+                GraphState::Landing(LandingState::IdleBackLeft),
+            ),
+            (
+                b"S_LAND_IDLE_180R".as_slice(),
+                GraphState::Landing(LandingState::IdleBackRight),
+            ),
+            (
+                b"S_LAND_RUN_0".as_slice(),
+                GraphState::Landing(LandingState::Run),
+            ),
+            (
+                b"S_GETUP_POSEMATCHING".as_slice(),
+                GraphState::Recovery(RecoveryState::PoseMatching),
+            ),
+            (
+                b"S_GETUP_BLENDIN".as_slice(),
+                GraphState::Recovery(RecoveryState::BlendIn),
+            ),
+            (
+                b"S_GETUP".as_slice(),
+                GraphState::Recovery(RecoveryState::GetUp),
+            ),
+            (b"S_IDLE_PICKUP".as_slice(), GraphState::FloorPickup),
+            (
+                b"S_GRAPPLE_ATTACH_0".as_slice(),
+                GraphState::Hanging(HangingState::GrappleAttached),
+            ),
+            (
+                b"S_IDLE_HANG_STUNT".as_slice(),
+                GraphState::Hanging(HangingState::StuntIdle),
+            ),
+            (
+                b"S_IDLE_HANG_STUNT_120L".as_slice(),
+                GraphState::Hanging(HangingState::StuntIdleLeft),
+            ),
+            (
+                b"S_IDLE_HANG_STUNT_120R".as_slice(),
+                GraphState::Hanging(HangingState::StuntIdleRight),
+            ),
+            (
+                b"S_IDLE_HANG_STUNT2".as_slice(),
+                GraphState::Hanging(HangingState::StuntIdleAlternate),
+            ),
+        ] {
+            assert_eq!(classify_with(Some(id(name)), id), Ok(expected));
+        }
     }
 }
