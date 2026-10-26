@@ -25,7 +25,7 @@ use crate::controllers::{
     frame::Hand,
 };
 
-/// One shadow state per simulation stream. Failed corrections never mutate the committed state.
+/// One fit state per simulation stream. Failed corrections never mutate the committed state.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Estimator {
     state: Option<Temporal>,
@@ -38,6 +38,28 @@ pub(crate) struct Estimator {
 }
 
 impl Estimator {
+    pub(crate) const fn empty() -> Self {
+        Self {
+            state: None,
+            last_observation: None,
+            last_support: None,
+            last_dt: 0.0,
+            last_work: Work {
+                evaluations: 0,
+                logical_evaluations: 0,
+                search_requests: 0,
+                searches: 0,
+                cache_hits: 0,
+                preliminary_reuses: 0,
+                interval_constructions: 0,
+                analytic_solves: 0,
+            },
+            #[cfg(test)]
+            reference_mode: false,
+        }
+    }
+
+    #[cfg(test)]
     pub(crate) fn new() -> Self {
         Self::default()
     }
@@ -94,6 +116,7 @@ impl Estimator {
     }
 
     /// Read-only presentation. Repeated renders cannot integrate contacts, gait, or confidence.
+    #[cfg(test)]
     pub(crate) fn snapshot(&self) -> Option<&Snapshot> {
         self.state.as_ref().map(|state| &state.snapshot)
     }
@@ -551,6 +574,7 @@ pub(crate) fn release_trial(baseline: [Contact; 2], mask: u8) -> [Contact; 2] {
     trial
 }
 
+#[cfg(test)]
 pub(crate) fn fit_contacts(
     context: &mut Context<'_>,
     baseline: [Contact; 2],
@@ -570,6 +594,7 @@ pub(crate) fn fit_contacts(
 }
 
 /// Hold the carried pose only after normal search fails; every retained contact is revalidated.
+#[cfg(test)]
 pub(crate) fn recover_constraints(
     context: &mut Context<'_>,
     baseline: [Contact; 2],
@@ -654,6 +679,7 @@ pub(crate) fn predict_hips(
     })
 }
 
+#[cfg(test)]
 pub(crate) fn transition_contacts(
     contacts: &mut [Contact; 2],
     candidate: Candidate,

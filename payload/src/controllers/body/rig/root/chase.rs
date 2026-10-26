@@ -10,20 +10,20 @@
 //!
 //! The frame half measures the gap once per rendered frame ([`measure`]) and publishes it with the
 //! completed chase movement it had folded into the cockpit shift then ([`ChaseFrame`]). Each
-//! simulation tick takes away what the chase has completed since ([`ChaseFrame::effective_gap`]),
-//! so two ticks in one frame never chase the same gap twice, and asks for a share of what is left
-//! plus the head's own velocity ([`velocity`]). Nothing accumulates: every tick starts from the head
-//! as the latest frame saw it.
+//! simulation tick takes away what the chase has completed since ([`ChaseFrame::effective_gap`]).
+//! The test-only reference velocity combines the remaining gap with the head's velocity. Live
+//! movement uses the simulation-time body fit through the existing movement owner.
 //!
 //! Cockpit vectors are `(x, z)` in the cockpit frame (+X right, -Z forward); world vectors are
 //! world `(x, z)`.
 
 use glam::{Quat, Vec2, Vec3};
 
+#[cfg(test)]
+use crate::controllers::body::rig::{config::ChaseConfig, root::ledger::CompletedMovement};
 use crate::controllers::body::rig::{
-    config::{ChaseConfig, LeanConfig},
+    config::LeanConfig,
     lean::{Lean, lean},
-    root::ledger::CompletedMovement,
     torso::EYES_TO_NECK_PIVOT,
 };
 
@@ -60,6 +60,7 @@ impl ChaseFrame {
 /// The chase velocity for a tick of `dt` seconds, world `(x, z)`: the configured share of the
 /// effective gap per tick, plus the head's velocity weighted by the feed-forward, at most the speed
 /// limit. Zero with the chase off.
+#[cfg(test)]
 pub fn velocity(
     frame: &ChaseFrame,
     completed: CompletedMovement,

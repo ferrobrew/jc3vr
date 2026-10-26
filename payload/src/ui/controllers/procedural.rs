@@ -40,6 +40,7 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
             },
         ));
     }
+    ui.label(format!("Constrained body fit: {:?}", status.fit));
     if let Some(error) = status.rig_error {
         ui.label(format!("Not rigged: {error}"));
     }

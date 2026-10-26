@@ -98,6 +98,7 @@ use crate::{
 /// What the procedural body did at its last gate.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct ProceduralStatus {
+    pub(crate) fit: crate::controllers::body::rig::runtime::FitStatus,
     pub at: Option<Instant>,
     pub mode: ProceduralMode,
     /// The torso's weight of the procedural pose against the animation.
@@ -222,6 +223,17 @@ pub fn owns_body() -> bool {
     torso_weight() > 0.0
 }
 
+/// Whether the ordinary on-foot fit excludes independent pre-solve torso targets.
+pub(crate) fn constrained_path() -> bool {
+    if crate::controllers::body::rig::runtime::migrated_path() {
+        return true;
+    }
+    Config::lock_query(|c| c.controllers.body.procedural.mode == ProceduralMode::Full)
+        && crate::headpose::source() == crate::headpose::Source::Vr
+        && crate::hooks::in_gameplay()
+        && published_status().case == Case::OnFoot
+}
+
 /// The torso's weight of the procedural pose at the last gate, `0..=1`. The pre-solve IK that
 /// would pose the same bones (the body IK's torso) is queued while it is below one, and the gate fades the reach and pull of those targets by what is
 /// left of it ([`neutralize_owned_targets`]), so the hand-over is as gradual as the blend.
@@ -233,8 +245,10 @@ pub fn torso_weight() -> f32 {
 /// character, or its reduced level of detail): nothing wrote the procedural pose, so the pre-solve
 /// IK must not stand down for it, and the blend starts over when the gate runs again.
 pub(crate) fn gate_skipped() {
+    crate::controllers::body::rig::runtime::hand_back();
     publish_torso_weight(0.0);
     let mut state = STATE.lock();
+    state.status.fit = crate::controllers::body::rig::runtime::status();
     state.blend.reset();
     state.status.weight = 0.0;
     state.status.legs_weight = 0.0;
@@ -254,6 +268,7 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
     let wrote = unsafe { run_gate(character, dt) };
     if !wrote {
         publish_torso_weight(0.0);
+        crate::controllers::body::rig::runtime::gate_failed();
     }
     let wing_queue = {
         let mut state = STATE.lock();
@@ -320,6 +335,10 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     state.status.at = Some(now);
     state.status.mode = config.mode;
     state.arms = None;
+    if config.mode != ProceduralMode::Full {
+        crate::controllers::body::rig::runtime::hand_back();
+    }
+    state.status.fit = crate::controllers::body::rig::runtime::status();
     // Switched off, the body blends back to the animation before the gate stops acting.
     if config.mode == ProceduralMode::Off && !state.blend.weights().any() {
         state.blend.reset();
@@ -374,6 +393,10 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             } else {
                 classify(&read)
             };
+            if case != Case::OnFoot {
+                crate::controllers::body::rig::runtime::hand_back();
+                state.status.fit = crate::controllers::body::rig::runtime::status();
+            }
             let previous = state.blend.weights();
             let weights = state.blend.step(case, dt, &config);
             state.log_case(case, &weights, &config);
@@ -407,6 +430,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                 return false;
             }
             if case.anchored() {
+                crate::controllers::body::rig::runtime::hand_back();
                 let gate = AnchoredGate {
                     character,
                     animated: &animated,
@@ -426,6 +450,61 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                 return true;
             }
             state.on_hips_logged = None;
+            if case == Case::OnFoot && config.mode == ProceduralMode::Full {
+                state.reset_under_head();
+                state.status.stepping = false;
+                state.status.legs_moving = false;
+                state.status.touchdown_lead_m = None;
+                state.status.motion_lean_deg = 0.0;
+                state.status.reach_drop_m = 0.0;
+                state.status.landing_dip_m = 0.0;
+                state.status.landing_reach = 0.0;
+                state.status.air_weight = 0.0;
+                state.status.ground = GroundTally::default();
+                let fit = crate::controllers::body::rig::runtime::at_gate(
+                    crate::controllers::body::rig::runtime::GateInput {
+                        rig,
+                        player: crate::controllers::body::player(),
+                        previous_root: previous_world,
+                        root: world,
+                        head_world: query().position,
+                        view: crate::headpose::xr::body_rotation(),
+                        world_scale: scale,
+                        origin: crate::controllers::roomscale::teleport::epoch(),
+                        now,
+                        dt,
+                    },
+                );
+                state.status.fit = crate::controllers::body::rig::runtime::status();
+                let Some(fit) = fit else {
+                    state.status.weight = 0.0;
+                    state.status.legs_weight = 0.0;
+                    return false;
+                };
+                let rotation = body_relative_rotation();
+                let Some(mut solved) =
+                    solver::constrained::realize(rig, &animated, &fit, world, rotation)
+                else {
+                    crate::controllers::body::rig::runtime::realization_failed();
+                    state.status.fit = crate::controllers::body::rig::runtime::status();
+                    state.status.weight = 0.0;
+                    state.status.legs_weight = 0.0;
+                    return false;
+                };
+                let turns = unsafe { state.turn_clavicles(character, rig, &solved, dt, &config) };
+                for side in Side::BOTH {
+                    clavicles::apply(&mut solved, rig, side, turns[side.index()]);
+                }
+                let pose = animated.blend_regions(&solved, weights.legs, weights.torso);
+                unsafe { live.write(controller, &pose) };
+                finish_write(&mut state, character, &pose, &weights, &config);
+                state.status.hips_drop_m =
+                    animated.position(RigBone::Hips).y - pose.position(RigBone::Hips).y;
+                state.status.neck_error_m = fit.quality.neck_residual_m;
+                state.status.gait_phase = Some(fit.gait.phase);
+                return true;
+            }
+            crate::controllers::body::rig::runtime::hand_back();
             let velocity = root_velocity(&previous_world, &world, dt);
             let commanded = commanded_velocity(&locomotion);
             let mut caster = GroundCaster::new(character, world.w_axis.y, &config);
@@ -792,6 +871,13 @@ static PUBLISHED: Mutex<ProceduralStatus> = Mutex::new(INITIAL_STATUS);
 
 /// The status before the first gate.
 const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
+    fit: crate::controllers::body::rig::runtime::FitStatus {
+        step: 0,
+        sample: None,
+        quality: None,
+        fallback: Some(crate::controllers::body::rig::runtime::Fallback::NotUpdated),
+        evaluations: 0,
+    },
     at: None,
     mode: ProceduralMode::Off,
     weight: 0.0,

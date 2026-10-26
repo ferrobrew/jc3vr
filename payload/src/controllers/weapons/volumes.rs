@@ -248,6 +248,7 @@ pub fn magazine_pouch(
 /// The standing height of the hip joints as a fraction of the standing height: a generic
 /// anthropometric figure, which the body dimensions do not carry because it varies little between
 /// adults.
+#[cfg(test)]
 pub const HIP_HEIGHT_FRACTION: f32 = 0.53;
 
 /// How far above the hip joints the belt's front is, where the magazine pouch hangs, as a fraction

@@ -657,7 +657,7 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
     });
     sim.status.owner = Some(owner);
     match chase_frame.filter(|_| owner.chases()) {
-        Some(frame) => unsafe { chase_tick(&mut sim, character, &frame, &rig, dt, owner) },
+        Some(frame) => unsafe { chase_tick(&mut sim, character, &frame, dt, owner) },
         None => {
             // The ledger records nothing for a tick the player did not move the root on, so a climb
             // or an authored motion is never credited as chase.
@@ -703,12 +703,15 @@ unsafe fn chase_tick(
     sim: &mut Sim,
     character: &mut Character,
     frame: &ChaseFrame,
-    rig: &RigConfig,
     dt: f32,
     owner: RootOwner,
 ) {
     let completed = sim.movement.completed();
-    let chase = chase::velocity(frame, completed, dt, &rig.chase);
+    let chase = crate::controllers::body::rig::runtime::root_velocity(
+        Instant::now(),
+        dt,
+        Mat4::from(character.m_WorldMatrixT1),
+    );
     let mut wanted = Vector3 { data: [0.0; 3] };
     unsafe { character.GetWantedWorldVelocity(&mut wanted) };
     let [x, y, z] = wanted.data;

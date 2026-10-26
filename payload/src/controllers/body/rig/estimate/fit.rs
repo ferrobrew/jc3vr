@@ -120,6 +120,7 @@ pub(crate) fn recovery_seeds(context: &Context<'_>) -> [Parameters; SEEDS] {
     [context.predicted, neutral, projected, coupled]
 }
 
+#[cfg(test)]
 pub(crate) fn search(context: &Context<'_>) -> Result<(Candidate, usize), EstimateError> {
     let mut work = Work::default();
     let envelope = Envelope::new(context, &mut work);
@@ -185,6 +186,7 @@ pub(crate) fn search_counted(
 
 /// Probe the reported chest heading, with compensating stance/twist allocations.
 /// This finite coverage can establish ambiguity, but cannot establish uniqueness.
+#[cfg(test)]
 pub(crate) fn ambiguity(candidate: Candidate, context: &Context<'_>) -> (f32, usize) {
     ambiguity_counted(candidate, context, &mut Work::default())
 }
@@ -226,6 +228,7 @@ pub(crate) fn publish_feet(candidate: &mut Candidate, contacts: &mut [Contact; 2
     }
 }
 
+#[cfg(test)]
 pub(crate) fn evaluate(parameters: Parameters, context: &Context<'_>) -> Option<Candidate> {
     evaluate_counted(parameters, context, &mut Work::default())
 }
@@ -455,6 +458,7 @@ pub(crate) fn evaluate_counted(
     })
 }
 
+#[cfg(test)]
 pub(crate) fn constrain(
     parameters: &mut Parameters,
     context: &Context<'_>,
@@ -468,6 +472,7 @@ pub(crate) fn realized_separation(ankles: [Vec3; 2], heading: f32, hip_width: f3
         && (ankles[1] - ankles[0]).dot(Quat::from_rotation_y(heading) * Vec3::X) >= hip_width * 0.5
 }
 
+#[cfg(test)]
 pub(crate) fn endpoint_feasible(
     candidate: Candidate,
     foot: crate::controllers::body::rig::legs::swing::FootPose,

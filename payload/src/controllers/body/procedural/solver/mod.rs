@@ -32,6 +32,7 @@ pub mod air;
 pub mod anchored;
 pub mod arms;
 pub mod clavicles;
+pub(crate) mod constrained;
 pub mod hips;
 pub mod lower;
 pub mod pose;
@@ -263,7 +264,7 @@ pub(super) fn place_leg(
 /// Settle the clip's own shape out of `pose`: the hips' pitch and roll go entirely, keeping their
 /// turn about +Y, and the spine and the neck go [`SPINE_SETTLE`] of the way to the reference pose's
 /// shape on the hips, so a run's bob and the idle's slouch are not the body's.
-fn settle(rig: &Rig, pose: &mut RigPose) {
+pub(super) fn settle(rig: &Rig, pose: &mut RigPose) {
     let hips = *pose.get(RigBone::Hips);
     let delta = hips.rotation * rig.reference(RigBone::Hips).rotation.inverse();
     let swing = delta * yaw_part(delta).inverse();

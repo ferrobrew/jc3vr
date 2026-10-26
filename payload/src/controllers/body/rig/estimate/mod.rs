@@ -1,8 +1,8 @@
-//! Shadow-only constrained body fit over G01 observations.
+//! Bounded constrained body fitting over copied tracking and simulation observations.
 //!
-//! One simulation commit owns stance, pelvis, torso, and inferred foot contacts. Tracking validity,
-//! geometric residual, and ambiguity remain separate. No result here authorizes an engine write.
-//! The bounded search and contact transitions are described in `g03-shadow-fit.md`.
+//! One simulation commit supplies stance, pelvis, torso, and inferred foot contacts. Tracking
+//! validity, geometric residual, and ambiguity remain separate. The runtime adapter admits the
+//! result to existing pose and movement owners.
 
 mod anatomy;
 mod contacts;
@@ -24,9 +24,11 @@ use std::{
 
 use glam::{Quat, Vec3};
 
+#[cfg(test)]
+use crate::controllers::body::rig::estimate::contacts::ReleaseReason;
 pub(crate) use crate::controllers::body::rig::estimate::{
     anatomy::Anatomy,
-    contacts::{ContactState, ReleaseReason, Support},
+    contacts::{ContactState, Support},
     state::Estimator,
 };
 use crate::controllers::{
@@ -243,8 +245,10 @@ impl From<ObservationError> for EstimateError {
 }
 
 /// Conservative logical schedule: two topology passes, recovery, realization, and heading probes.
+#[cfg(test)]
 pub(crate) const MAX_EVALUATIONS: usize = 8 * fit::SEARCH_EVALUATIONS + 4 + 1 + fit::HEADING_PROBES;
 /// Both normal passes share the both-released signature within one immutable numerical context.
+#[cfg(test)]
 pub(crate) const MAX_COMPUTED_EVALUATIONS: usize =
     7 * fit::SEARCH_EVALUATIONS + 4 + 1 + fit::HEADING_PROBES;
 

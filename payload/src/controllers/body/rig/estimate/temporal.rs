@@ -31,6 +31,7 @@ impl Envelope {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn prepare(context: &mut Context<'_>) -> TemporalStatus {
     prepare_counted(context, &mut Work::default())
 }
@@ -58,6 +59,7 @@ pub(crate) fn prepare_counted(context: &mut Context<'_>, work: &mut Work) -> Tem
     }
 }
 
+#[cfg(test)]
 pub(crate) fn constrain(
     parameters: &mut Parameters,
     context: &Context<'_>,
@@ -95,6 +97,7 @@ pub(crate) fn constrain_counted(
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) fn accepts(parameters: Parameters, context: &Context<'_>) -> bool {
     accepts_counted(parameters, context, None, &mut Work::default())
 }
