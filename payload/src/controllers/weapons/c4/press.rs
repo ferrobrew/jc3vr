@@ -29,6 +29,7 @@
 use glam::Vec3;
 
 use crate::controllers::{
+    body::rig::frames::Frames,
     frame::{HAND_JOINT_COUNT, Hand, HandJoint, Pose},
     weapons::config::WristDetonatorConfig,
 };
@@ -61,6 +62,20 @@ pub fn button_face(off: Hand, grip: Pose, tuning: &WristDetonatorConfig) -> Opti
 pub fn carry(point: Vec3, from: Pose, to: Pose) -> Vec3 {
     let local = from.orientation.normalize().inverse() * (point - from.position);
     to.position + to.orientation.normalize() * local
+}
+
+/// Compose a cockpit fingertip and source grip into the world before carrying it onto a drawn hand.
+/// The local hand offset is scaled once, together with the tracked poses.
+pub(super) fn on_drawn_hand(point: Vec3, grip: Pose, drawn: Pose, frames: &Frames) -> Option<Vec3> {
+    if !frames.is_usable() {
+        return None;
+    }
+    let source = Pose {
+        position: frames.cockpit_to_world(grip.position),
+        orientation: (frames.view * grip.orientation).normalize(),
+    };
+    let point = carry(frames.cockpit_to_world(point), source, drawn);
+    point.is_finite().then_some(point)
 }
 
 /// What the fingertip is read from on one hand.
@@ -318,6 +333,49 @@ mod tests {
     /// face, out of the wrist or across it).
     fn from_direction(direction: Vec3, distance: f32) -> Vec3 {
         direction.normalize() * distance
+    }
+
+    #[test]
+    fn a_tracked_tip_is_composed_once_before_carrying_onto_the_drawn_hand() {
+        let frames = Frames {
+            head_world: Vec3::new(42.0, 9.0, -15.0),
+            head_cockpit: Vec3::new(0.0, 1.7, 0.0),
+            view: Quat::from_rotation_y(1.2),
+            world_scale: 1.4,
+            character: glam::Mat4::IDENTITY,
+        };
+        let grip = Pose {
+            position: Vec3::new(0.3, 1.2, -0.4),
+            orientation: Quat::from_rotation_x(0.3),
+        };
+        let drawn = Pose {
+            position: Vec3::new(5.0, 8.0, 2.0),
+            orientation: Quat::from_rotation_z(0.7),
+        };
+        let mut joints = [HandJoint::default(); HAND_JOINT_COUNT];
+        let local_tip = Vec3::new(0.02, 0.01, -0.13);
+        joints[INDEX_TIP_JOINT].position_valid = true;
+        joints[INDEX_TIP_JOINT].pose.position = grip.position + grip.orientation * local_tip;
+        let source = FingertipSource {
+            joints: Some(&joints),
+            aim: Pose::IDENTITY,
+            trigger_touch: true,
+        };
+        let tracked = fingertip(Hand::Right, source, &tuning());
+        let tip = on_drawn_hand(tracked, grip, drawn, &frames).unwrap();
+        let expected = drawn.position + drawn.orientation * (local_tip * frames.world_scale);
+        assert!(tip.abs_diff_eq(expected, 1.0e-5));
+        let mut detector = PressDetector::new();
+        let face = ButtonFace {
+            centre: expected,
+            normal: Vec3::Y,
+        };
+        assert!(
+            !detector
+                .step(Some(expected + Vec3::Y * 0.1), Some(face), DT, &tuning())
+                .pressed
+        );
+        assert!(detector.step(Some(tip), Some(face), DT, &tuning()).pressed);
     }
 
     #[test]

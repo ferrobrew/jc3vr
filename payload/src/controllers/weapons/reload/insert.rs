@@ -9,7 +9,7 @@
 //! it is held again. Letting go of the grip drops it, unless it is already more than half seated,
 //! which seats it.
 
-use glam::Vec3;
+use glam::{Quat, Vec3};
 
 use crate::controllers::{frame::Hand, weapons::reload::config::ReloadConfig};
 
@@ -88,6 +88,8 @@ pub struct Insertion {
     pub dropped: u64,
     /// The held top's distance from the mouth on the last tick with a round in hand, metres.
     pub distance_m: Option<f32>,
+    /// The previous held top in the well's rotating frame.
+    pub(super) previous_local_top: Option<Vec3>,
 }
 
 impl Insertion {
@@ -98,6 +100,7 @@ impl Insertion {
             seated: 0,
             dropped: 0,
             distance_m: None,
+            previous_local_top: None,
         }
     }
 
@@ -142,9 +145,15 @@ impl Insertion {
             Some(InsertEvent::Dropped) => self.dropped += 1,
             _ => {}
         }
-        if self.stage == InsertStage::Idle {
+        self.previous_local_top = if self.stage == InsertStage::Idle {
             self.distance_m = None;
-        }
+            None
+        } else {
+            inputs
+                .held
+                .zip(inputs.well)
+                .and_then(|(held, well)| relative_top(held, well).map(|(local, _, _)| local))
+        };
         event
     }
 
@@ -163,14 +172,20 @@ impl Insertion {
             self.stage = InsertStage::Idle;
             return Some(InsertEvent::Dropped);
         };
-        let offset = held.top - well.mouth;
-        let depth = offset.dot(well.axis);
-        let off_axis = (offset - well.axis * depth).length();
-        self.distance_m = Some(offset.length()).filter(|d| d.is_finite());
+        let Some((local, aligned_cos, axis)) = relative_top(held, well) else {
+            self.stage = InsertStage::Idle;
+            return Some(InsertEvent::Dropped);
+        };
+        let depth = local.y;
+        let off_axis = Vec3::new(local.x, 0.0, local.z).length();
+        let aligned = aligned_cos >= config.capture_angle_deg.to_radians().cos();
+        let slack = config.capture_radius_m * 1.5;
+        let retained = aligned && off_axis <= slack && depth >= -slack;
+        self.distance_m = Some(local.length());
         if !inputs.grip_held {
             self.stage = InsertStage::Idle;
             return Some(
-                if captured.is_some() && depth >= config.seat_depth_m * 0.5 {
+                if captured.is_some() && retained && depth >= config.seat_depth_m * 0.5 {
                     InsertEvent::Seated
                 } else {
                     InsertEvent::Dropped
@@ -183,13 +198,12 @@ impl Insertion {
         }
         match captured {
             Some(_) => {
-                let slack = config.capture_radius_m * 1.5;
-                if depth >= config.seat_depth_m {
-                    self.stage = InsertStage::Idle;
-                    Some(InsertEvent::Seated)
-                } else if off_axis > slack || depth < -slack {
+                if !retained {
                     self.stage = InsertStage::Holding { elapsed_s };
                     Some(InsertEvent::Released)
+                } else if depth >= config.seat_depth_m {
+                    self.stage = InsertStage::Idle;
+                    Some(InsertEvent::Seated)
                 } else {
                     self.stage = InsertStage::Captured {
                         elapsed_s,
@@ -199,10 +213,15 @@ impl Insertion {
                 }
             }
             None => {
-                let aligned =
-                    held.axis.dot(well.axis) >= config.capture_angle_deg.to_radians().cos();
-                let entering = held.velocity.dot(well.axis) > 0.0;
-                if offset.length() <= config.capture_radius_m && aligned && entering {
+                let entering = self.previous_local_top.map_or_else(
+                    || held.velocity.dot(axis) > 0.0,
+                    |previous| local.y > previous.y + 1.0e-5,
+                );
+                let near = local.length() <= config.capture_radius_m
+                    || self.previous_local_top.is_some_and(|previous| {
+                        swept_mouth(previous, local, config.capture_radius_m)
+                    });
+                if near && aligned && entering {
                     self.stage = InsertStage::Captured {
                         elapsed_s,
                         depth_m: depth,
@@ -216,11 +235,47 @@ impl Insertion {
         }
     }
 
+    /// Constrain the displayed round to the well while captured, keeping its measured depth.
+    pub(super) fn carried(&self, held: Held, well: Option<Well>) -> Held {
+        let (InsertStage::Captured { depth_m, .. }, Some(well)) = (self.stage, well) else {
+            return held;
+        };
+        let Some(axis) = well.axis.try_normalize() else {
+            return held;
+        };
+        Held {
+            top: well.mouth + axis * depth_m,
+            axis,
+            velocity: held.velocity,
+        }
+    }
+
     /// Drop any round in hand without counting it: the reload stopped acting.
     pub fn reset(&mut self) {
         self.stage = InsertStage::Idle;
         self.distance_m = None;
+        self.previous_local_top = None;
     }
+}
+
+fn relative_top(held: Held, well: Well) -> Option<(Vec3, f32, Vec3)> {
+    if !(held.top.is_finite() && held.velocity.is_finite() && well.mouth.is_finite()) {
+        return None;
+    }
+    let axis = well.axis.try_normalize()?;
+    let pointing = held.axis.try_normalize()?;
+    let local = Quat::from_rotation_arc(axis, Vec3::Y) * (held.top - well.mouth);
+    local
+        .is_finite()
+        .then_some((local, pointing.dot(axis), axis))
+}
+
+fn swept_mouth(previous: Vec3, current: Vec3, radius: f32) -> bool {
+    if previous.y >= 0.0 || current.y < 0.0 || current.y <= previous.y {
+        return false;
+    }
+    let at_mouth = previous.lerp(current, -previous.y / (current.y - previous.y));
+    at_mouth.length_squared() <= radius * radius
 }
 
 /// The held round of a hand whose grip is at `grip` pointing along `pointing` (the direction the
@@ -306,7 +361,13 @@ mod tests {
 
     fn take(i: &mut Insertion) {
         assert_eq!(
-            i.step(inputs(true, Vec3::ZERO, Vec3::ZERO), &CONFIG),
+            i.step(
+                InsertInputs {
+                    held: None,
+                    ..inputs(true, Vec3::ZERO, Vec3::ZERO)
+                },
+                &CONFIG
+            ),
             Some(InsertEvent::Taken)
         );
     }
@@ -406,6 +467,80 @@ mod tests {
             ..inputs(false, Vec3::ZERO, Vec3::ZERO)
         };
         assert_eq!(i.step(gone, &CONFIG), Some(InsertEvent::Dropped));
+    }
+
+    #[test]
+    fn a_swept_push_catches_and_the_display_is_constrained_before_seating() {
+        let mut insertion = Insertion::new();
+        insertion.step(
+            inputs(true, WELL.mouth - Vec3::Y * 0.12, Vec3::ZERO),
+            &CONFIG,
+        );
+        let pushed = inputs(false, WELL.mouth + Vec3::Y * 0.08, Vec3::ZERO);
+        assert_eq!(insertion.step(pushed, &CONFIG), Some(InsertEvent::Captured));
+        let shown = insertion.carried(
+            Held {
+                top: Vec3::splat(5.0),
+                axis: Vec3::X,
+                velocity: Vec3::ZERO,
+            },
+            Some(WELL),
+        );
+        assert!(shown.top.abs_diff_eq(WELL.mouth + Vec3::Y * 0.08, 1.0e-5));
+        assert_eq!(shown.axis, WELL.axis);
+        assert_eq!(insertion.step(pushed, &CONFIG), Some(InsertEvent::Seated));
+        assert_eq!(insertion.step(pushed, &CONFIG), None);
+        assert_eq!(insertion.seated, 1);
+    }
+
+    #[test]
+    fn lateral_escape_cannot_seat_even_after_full_depth_or_grip_release() {
+        for released in [false, true] {
+            let mut insertion = Insertion::new();
+            take(&mut insertion);
+            insertion.step(inputs(false, WELL.mouth, Vec3::Y), &CONFIG);
+            let mut escaped = inputs(false, WELL.mouth + Vec3::new(0.2, 0.1, 0.0), Vec3::Y);
+            escaped.grip_held = !released;
+            assert_eq!(
+                insertion.step(escaped, &CONFIG),
+                Some(if released {
+                    InsertEvent::Dropped
+                } else {
+                    InsertEvent::Released
+                }),
+            );
+            assert_eq!(insertion.seated, 0);
+        }
+    }
+
+    #[test]
+    fn relative_motion_accepts_a_moving_well_but_not_shared_transport() {
+        let top = WELL.mouth - Vec3::Y * 0.04;
+        let mut insertion = Insertion::new();
+        insertion.step(inputs(true, top, Vec3::ZERO), &CONFIG);
+        let mut shared = inputs(false, top + Vec3::Y, Vec3::Y * 20.0);
+        shared.well = Some(Well {
+            mouth: WELL.mouth + Vec3::Y,
+            ..WELL
+        });
+        assert_eq!(insertion.step(shared, &CONFIG), None);
+        let mut entering = shared;
+        entering.well.as_mut().unwrap().mouth -= Vec3::Y * 0.03;
+        assert_eq!(
+            insertion.step(entering, &CONFIG),
+            Some(InsertEvent::Captured)
+        );
+    }
+
+    #[test]
+    fn invalid_capture_geometry_drops_without_seating() {
+        let mut insertion = Insertion::new();
+        take(&mut insertion);
+        insertion.step(inputs(false, WELL.mouth, Vec3::Y), &CONFIG);
+        let mut invalid = inputs(false, WELL.mouth + Vec3::Y, Vec3::Y);
+        invalid.well.as_mut().unwrap().axis = Vec3::ZERO;
+        assert_eq!(insertion.step(invalid, &CONFIG), Some(InsertEvent::Dropped));
+        assert_eq!(insertion.seated, 0);
     }
 
     #[test]

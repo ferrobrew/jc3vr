@@ -461,7 +461,10 @@ impl State {
         } else if let Some(hand) = taker.filter(|_| !self.status.insertion.holding())
             && let Some(gun_hand) = loading(hand)
         {
-            if tick.gun(gun_hand).is_some_and(|(w, _)| w.has_ammo()) {
+            if tick
+                .gun(gun_hand)
+                .is_some_and(|(weapon, _)| weapon.has_ammo() && self.can_take(weapon))
+            {
                 self.status.insert_hands = Some((hand, gun_hand));
                 self.insertion_source = InsertionSource::Pouch;
                 taken = true;
@@ -523,6 +526,7 @@ impl State {
             )
             && let Some(world) = self.frames
         {
+            let round = self.status.insertion.carried(round, well);
             let top = world.cockpit_to_world(round.top);
             let axis = world.view * round.axis;
             match adapter.carry(top, axis, inputs.dt, &reload.loose) {
@@ -560,7 +564,7 @@ impl State {
                     engine::show_magazine_part(weapon.address, true)
                 },
                 Some(InsertEvent::Dropped) => unsafe {
-                    engine::show_magazine_part(weapon.address, false)
+                    engine::show_magazine_part(weapon.address, !weapon.reading.out)
                 },
                 _ => {}
             }
@@ -611,6 +615,9 @@ impl State {
                     self.status.counts.seats += 1;
                     self.event(format!("{gun_hand:?} seated"));
                     pulse_both(Event::MagazineSeat);
+                } else if !world_magazine && let Some((weapon, _)) = target {
+                    // SAFETY: the weapon is this tick's verified target; failed seating transfers no round.
+                    unsafe { engine::show_magazine_part(weapon.address, !weapon.reading.out) };
                 }
             }
             Some(InsertEvent::Dropped) => {
@@ -701,7 +708,7 @@ impl State {
     }
 
     /// Whether `weapon`'s gun in `gun_hand` can take a round from the hand now.
-    fn can_take(&self, weapon: &WeaponTick) -> bool {
+    pub(super) fn can_take(&self, weapon: &WeaponTick) -> bool {
         match weapon.plan.load {
             LoadKind::Magazine | LoadKind::Cylinder => weapon.reading.out,
             LoadKind::Shell | LoadKind::Rocket => weapon.reading.magazine < weapon.reading.capacity,

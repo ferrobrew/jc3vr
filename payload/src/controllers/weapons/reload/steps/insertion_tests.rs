@@ -237,6 +237,33 @@ fn world_pickup() -> (State, FakeMagazine, FinishInputs) {
 }
 
 #[test]
+fn escaped_capture_never_transfers_retained_rounds_or_changes_chamber() {
+    let config = ControllersConfig::default();
+    for release in [false, true] {
+        let mut state = state(InsertStage::Captured {
+            elapsed_s: 0.1,
+            depth_m: 0.0,
+        });
+        let mut adapter = adapter();
+        let mut escaped = tick(true, &config);
+        escaped.hands[Hand::Left.index()]
+            .as_mut()
+            .unwrap()
+            .grip
+            .position += Vec3::X * 0.2;
+        let weapon = escaped.weapons[0].unwrap();
+        let before = state.records.get(weapon.key).chambers;
+        state.insert_with(&escaped, &inputs(!release), &config, &mut adapter);
+        assert!(adapter.transfers.is_empty());
+        assert_eq!(adapter.seats, 0);
+        assert_eq!(state.status.counts.seats, 0);
+        assert_eq!(state.records.get(weapon.key).chambers, before);
+        assert_eq!(adapter.held, !release);
+        assert_eq!(adapter.releases, usize::from(release));
+    }
+}
+
+#[test]
 fn first_deferred_world_carry_recovers_and_seats_exactly_once() {
     let config = ControllersConfig::default();
     let (mut state, mut adapter, pickup) = world_pickup();

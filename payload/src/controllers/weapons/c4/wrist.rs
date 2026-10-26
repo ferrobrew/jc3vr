@@ -30,11 +30,12 @@
 
 use std::time::{Duration, Instant};
 
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 use parking_lot::Mutex;
 
 use crate::{
     controllers::{
+        body::rig::frames::Frames,
         config::ControllersConfig,
         frame::{self, Hand, Pose},
         hands::{self, late},
@@ -125,13 +126,28 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
     let tuning = &config.weapons.c4.detonator;
     let presser = inputs.presser;
     let off = presser.other();
-    // Both hands as they are drawn, or both as the tick targets them: never one of each, which
-    // are in different frames.
+    let frames = Frames {
+        head_world: headpose::query().position,
+        head_cockpit: active.head.position,
+        view: headpose::xr::body_rotation(),
+        world_scale: active.world_scale,
+        character: Mat4::IDENTITY,
+    };
+    if !frames.is_usable() {
+        stand_down();
+        return;
+    }
+    // Both rendered and fallback poses are world-space before a tracked point is carried onto them.
     let drawn = late::drawn_hands(hooks::camera::last_dtf());
     let grips = if drawn[presser.index()].is_some() && drawn[off.index()].is_some() {
         drawn.map(|hand| hand.map(|h| h.grip))
     } else {
-        active.hands.map(|hand| hand.map(|h| h.grip))
+        active.hands.map(|hand| {
+            hand.map(|h| Pose {
+                position: frames.cockpit_to_world(h.grip.position),
+                orientation: (frames.view * h.grip.orientation).normalize(),
+            })
+        })
     };
     let off_grip = grips[off.index()];
     let face = off_grip.and_then(|_| press::button_face(off, Pose::IDENTITY, tuning));
@@ -139,7 +155,7 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
         let dom = frame.hand(presser);
         let presser_grip = grips[presser.index()]?;
         let off_grip = off_grip?;
-        if !(dom.active && dom.aim.is_valid() && dom.grip.is_valid()) {
+        if !(frame.focused && dom.active && dom.grip.is_valid()) {
             return None;
         }
         let joints = dom.joints.as_ref();
@@ -149,8 +165,11 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
             trigger_touch: dom.inputs.trigger_touch,
         };
         let kind = FingertipSourceKind::from_source(source);
+        if kind == FingertipSourceKind::Estimate && !dom.aim.is_valid() {
+            return None;
+        }
         let tip = press::fingertip(presser, source, tuning);
-        let on_drawn_hand = press::carry(tip, dom.grip.pose, presser_grip);
+        let on_drawn_hand = press::on_drawn_hand(tip, dom.grip.pose, presser_grip, &frames)?;
         Some((press::carry(on_drawn_hand, off_grip, Pose::IDENTITY), kind))
     })
     .flatten();
@@ -159,6 +178,9 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
 
     let now = Instant::now();
     let mut state = STATE.lock();
+    if state.status.fingertip != tip.map(|(_, kind)| kind) {
+        state.detector = PressDetector::new();
+    }
     let reading = state
         .detector
         .step(tip.map(|(t, _)| t), face, inputs.dt, tuning);
@@ -208,11 +230,7 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
         store::clear(Source::WristDetonator);
         return;
     };
-    let body = headpose::xr::body_rotation();
-    let world_grip = match drawn[off.index()] {
-        Some(hand) => hand.grip.orientation,
-        None => active.hands[off.index()].map_or(body, |h| body * h.grip.orientation),
-    };
+    let world_grip = grips[off.index()].map_or(frames.view, |grip| grip.orientation);
     let look = Look {
         off,
         normal: (world_grip * face.normal).normalize_or(Vec3::Y),

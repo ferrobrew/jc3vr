@@ -28,7 +28,10 @@ use std::{
 
 use glam::{EulerRot, Mat4, Quat, Vec3};
 use jc3gi::{
-    character::{character::Character, inventory::WeaponSlot},
+    character::{
+        character::{Character, SafeBoneIndex},
+        inventory::WeaponSlot,
+    },
     equipment::weapon::{PlantedExplosiveWeapon, ThrownGrenadeWeapon, WeaponBase},
     graphics_engine::model_instance::{
         Model, ModelInstance, ModelInstanceFlags, ModelInstanceManager,
@@ -42,7 +45,7 @@ use crate::{
         aim::gun,
         body::{mirror, rig::frames::Frames},
         frame::{Hand, Pose},
-        hands::late::lerp_transform,
+        hands::{grip, late::lerp_transform},
         weapons::{
             config::{ModelPlacement, PouchModelsConfig},
             engine,
@@ -78,6 +81,13 @@ impl Prop {
             Prop::Grenade => 0,
             Prop::Charge => 1,
             Prop::Magazine => 2,
+        }
+    }
+
+    fn bone(self) -> SafeBoneIndex {
+        match self {
+            Self::Magazine => SafeBoneIndex::HIPS,
+            Self::Grenade | Self::Charge => SafeBoneIndex::STERNUM,
         }
     }
 
@@ -131,11 +141,32 @@ pub fn on_pouch(placement: &ModelPlacement, side: Hand) -> Mat4 {
     Mat4::from_rotation_translation(Quat::from_euler(EulerRot::XYZ, r.x, r.y, r.z), offset)
 }
 
+/// The displayed model origin in the cockpit frame, including its configured model-space offset.
+pub(crate) fn display_centre(
+    pouch: Pose,
+    placement: &ModelPlacement,
+    side: Hand,
+    scale: f32,
+) -> Vec3 {
+    pouch.position + pouch.orientation * on_pouch(placement, side).w_axis.truncate() / scale
+}
+
 /// The model's world matrix at the interpolation fraction `dtf`: its placement in the character's
 /// model space between the last two ticks', carried by the character's world transform between its
 /// last two ticks'.
 pub fn render_matrix(character: [Mat4; 2], local: [Mat4; 2], dtf: f32) -> Option<Mat4> {
     let matrix = render_transform(character, dtf) * render_transform(local, dtf);
+    matrix.is_finite().then_some(matrix)
+}
+
+/// Carry a bone-relative pouch with the current solved posture and the rendered root transform.
+pub(crate) fn bone_render_matrix(
+    character: [Mat4; 2],
+    bone: Mat4,
+    local: Mat4,
+    dtf: f32,
+) -> Option<Mat4> {
+    let matrix = render_character(character, dtf)? * bone * local;
     matrix.is_finite().then_some(matrix)
 }
 
@@ -186,9 +217,22 @@ pub(crate) unsafe fn input_tick(
     };
     for prop in Prop::ALL {
         let wanted = shown.iter().find(|s| s.prop == prop);
+        let slot = &mut state.slots[prop.index()];
+        if let Some(wanted) = wanted
+            && slot.weapon != wanted.weapon
+        {
+            unsafe { slot.release() };
+            slot.weapon = wanted.weapon;
+        }
         let model = wanted.and_then(|s| unsafe { source_model(owner, prop, s.weapon) });
-        // SAFETY: source_model returns a live borrowed model under this input tick's contract.
-        let source = model.map(|model| unsafe { (*model).px } as usize);
+        // The owned instance retains its model while an ejection temporarily removes the source prop.
+        let slot = &state.slots[prop.index()];
+        let source = offered_model(
+            wanted,
+            model.map(|model| unsafe { (*model).px } as usize),
+            slot.weapon,
+            slot.model,
+        );
         let mut attachment = placement(prop, wanted, source, &frames, &prop.placement(config));
         let local = attachment.local.ok();
         let slot = &mut state.slots[prop.index()];
@@ -198,11 +242,23 @@ pub(crate) unsafe fn input_tick(
             (Some(model), Some(local)) => unsafe {
                 slot.show(model, local, Mat4::from(owner.m_WorldMatrixT1))
             },
+            (None, Some(local)) if slot.instance.is_some() && slot.model.is_some() => {
+                unsafe { slot.place(local) };
+                false
+            }
             _ => {
                 unsafe { slot.hide() };
                 false
             }
         };
+        slot.weapon = wanted.and_then(|wanted| wanted.weapon);
+        slot.bone_local = local.and_then(|local| {
+            // SAFETY: the input thread owns this live character observation.
+            let bone = unsafe { grip::bone_model_pose(owner, prop.bone()) }?;
+            let bone = Mat4::from_rotation_translation(bone.orientation, bone.position);
+            let local = bone.inverse() * local;
+            local.is_finite().then_some(local)
+        });
         let visible = slot.visible;
         if previously_visible != visible || previous_source != slot.model {
             mirror::clear_pouch_render();
@@ -228,18 +284,15 @@ pub(crate) unsafe fn render_frame(dtf: f32) {
     if state.attachments.is_none() {
         return;
     }
-    let Some((owner_id, character)) = (unsafe { engine::local_player() }).map(|owner| {
-        (
-            owner as *const Character as usize,
-            [
-                Mat4::from(owner.m_WorldMatrixT0),
-                Mat4::from(owner.m_WorldMatrixT1),
-            ],
-        )
-    }) else {
+    let Some(owner) = (unsafe { engine::local_player() }) else {
         unsafe { state.release_all() };
         return;
     };
+    let owner_id = owner as *const Character as usize;
+    let character = [
+        Mat4::from(owner.m_WorldMatrixT0),
+        Mat4::from(owner.m_WorldMatrixT1),
+    ];
     if state.owner != Some(owner_id) {
         unsafe { state.release_all() };
         return;
@@ -261,7 +314,13 @@ pub(crate) unsafe fn render_frame(dtf: f32) {
         let (Some(instance), Some(local)) = (slot.instance, slot.local) else {
             continue;
         };
-        let Some(matrix) = render_matrix(character, local, dtf) else {
+        let bone = slot.bone_local.and_then(|local| {
+            // SAFETY: this is the live local character, observed on the render thread.
+            let bone = unsafe { grip::bone_model_pose(owner, prop.bone()) }?;
+            let bone = Mat4::from_rotation_translation(bone.orientation, bone.position);
+            bone_render_matrix(character, bone, local, dtf)
+        });
+        let Some(matrix) = bone.or_else(|| render_matrix(character, local, dtf)) else {
             continue;
         };
         // SAFETY: the instance is the payload's own, live until it is released on this thread.
@@ -287,6 +346,20 @@ pub(crate) unsafe fn stand_down() {
     unsafe { STATE.lock().release_all() };
 }
 
+fn offered_model(
+    wanted: Option<&ShownPouch>,
+    current: Option<usize>,
+    previous_weapon: Option<usize>,
+    previous_model: Option<usize>,
+) -> Option<usize> {
+    let wanted = wanted?;
+    current.or_else(|| {
+        (wanted.weapon == previous_weapon)
+            .then_some(previous_model)
+            .flatten()
+    })
+}
+
 fn render_transform(transforms: [Mat4; 2], dtf: f32) -> Mat4 {
     let t = if dtf.is_finite() {
         dtf.clamp(0.0, 1.0)
@@ -303,6 +376,8 @@ struct Slot {
     instance: Option<usize>,
     /// The model the instance was made from.
     model: Option<usize>,
+    weapon: Option<usize>,
+    bone_local: Option<Mat4>,
     visible: bool,
     /// The placement in the character's model space on the last two ticks, older first.
     local: Option<[Mat4; 2]>,
@@ -330,36 +405,39 @@ impl Slot {
             return false;
         };
         let mut created = false;
-        let instance = match self.instance {
-            Some(instance) => instance as *mut ModelInstance,
-            None => {
-                let world = Matrix4::from(character * local);
-                let made =
-                    unsafe { manager.CreateInstanceFromModel(model, &world, true, false, true) };
-                let Some(made) = (unsafe { made.as_mut() }) else {
-                    return false;
-                };
-                // The engine's own owners of a model held on a character keep it drawn whatever
-                // the camera's distance, as the explosives do.
-                made.m_Flags.remove(ModelInstanceFlags::FLAG_CLIPONDISTANCE);
-                self.instance = Some(made as *mut ModelInstance as usize);
-                self.model = Some(source);
-                self.visible = false;
-                created = true;
-                made
-            }
-        };
+        if self.instance.is_none() {
+            let world = Matrix4::from(character * local);
+            let made = unsafe { manager.CreateInstanceFromModel(model, &world, true, false, true) };
+            let Some(made) = (unsafe { made.as_mut() }) else {
+                return false;
+            };
+            // The engine's own owners of a model held on a character keep it drawn whatever
+            // the camera's distance, as the explosives do.
+            made.m_Flags.remove(ModelInstanceFlags::FLAG_CLIPONDISTANCE);
+            self.instance = Some(made as *mut ModelInstance as usize);
+            self.model = Some(source);
+            self.visible = false;
+            created = true;
+        }
+        unsafe { self.place(local) };
+        created
+    }
+
+    unsafe fn place(&mut self, local: Mat4) {
         if !self.visible {
-            unsafe { manager.ShowModelInstance(instance) };
+            let (Some(instance), Some(manager)) =
+                (self.instance, unsafe { ModelInstanceManager::get() })
+            else {
+                return;
+            };
+            unsafe { manager.ShowModelInstance(instance as *mut ModelInstance) };
             self.visible = true;
-            // ShownPouch afresh, it is drawn at its new place rather than swept from its last.
             self.local = None;
         }
         self.local = Some(match self.local {
             Some([_, last]) => [last, local],
             None => [local, local],
         });
-        created
     }
 
     /// Hide the instance, keeping it for when its pouch comes back.
@@ -375,6 +453,7 @@ impl Slot {
         }
         self.visible = false;
         self.local = None;
+        self.bone_local = None;
     }
 
     /// Release the instance.
@@ -422,6 +501,8 @@ static STATE: Mutex<State> = Mutex::new(State {
     slots: [Slot {
         instance: None,
         model: None,
+        weapon: None,
+        bone_local: None,
         visible: false,
         local: None,
     }; 3],
@@ -518,6 +599,83 @@ mod tests {
         };
         for side in Hand::BOTH {
             assert_eq!(on_pouch(&zero, side), Mat4::IDENTITY);
+        }
+    }
+
+    #[test]
+    fn the_interaction_center_matches_the_displayed_origin_at_each_world_scale() {
+        let pouch = Pose {
+            position: Vec3::new(0.2, 0.9, -0.1),
+            orientation: Quat::from_rotation_x(0.6),
+        };
+        for scale in [0.7, 1.0, 1.5] {
+            let frames = Frames {
+                head_world: Vec3::new(20.0, 4.0, -8.0),
+                head_cockpit: Vec3::Y * 1.7,
+                view: Quat::from_rotation_y(0.8),
+                world_scale: scale,
+                character: Mat4::IDENTITY,
+            };
+            for side in Hand::BOTH {
+                let shown = ShownPouch {
+                    prop: Prop::Magazine,
+                    pouch,
+                    side,
+                    weapon: Some(1),
+                };
+                let placed = placement(Prop::Magazine, Some(&shown), Some(7), &frames, &PLACEMENT);
+                let visible_origin = placed.local.unwrap().w_axis.truncate();
+                let target = display_centre(pouch, &PLACEMENT, side, scale);
+                assert!(
+                    frames
+                        .cockpit_to_world(target)
+                        .abs_diff_eq(visible_origin, 1.0e-5)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_stocked_source_gap_keeps_its_model_but_stock_loss_and_weapon_changes_do_not() {
+        let mut wanted = ShownPouch {
+            prop: Prop::Magazine,
+            pouch: Pose::IDENTITY,
+            side: Hand::Left,
+            weapon: Some(1),
+        };
+        assert_eq!(
+            offered_model(Some(&wanted), Some(7), Some(1), None),
+            Some(7)
+        );
+        assert_eq!(
+            offered_model(Some(&wanted), None, Some(1), Some(7)),
+            Some(7)
+        );
+        assert_eq!(offered_model(None, None, Some(1), Some(7)), None);
+        wanted.weapon = Some(2);
+        assert_eq!(offered_model(Some(&wanted), None, Some(1), Some(7)), None);
+        assert_eq!(
+            offered_model(Some(&wanted), Some(9), Some(1), Some(7)),
+            Some(9)
+        );
+    }
+
+    #[test]
+    fn a_pouch_follows_a_bending_bone_without_interpolating_the_posture_twice() {
+        let input_bone = Mat4::from_translation(Vec3::Y);
+        let pouch = Mat4::from_translation(Vec3::new(0.15, 1.0, -0.12));
+        let local = input_bone.inverse() * pouch;
+        let bent =
+            Mat4::from_rotation_translation(Quat::from_rotation_x(0.7), Vec3::new(0.0, 0.8, -0.2));
+        let character = [Mat4::IDENTITY, Mat4::from_translation(Vec3::X * 3.0)];
+        for fraction in [0.0, 0.5, 1.0] {
+            let shown = bone_render_matrix(character, bent, local, fraction).unwrap();
+            let expected = render_character(character, fraction).unwrap() * bent * local;
+            assert!(shown.abs_diff_eq(expected, 1.0e-5));
+            assert!(!shown.abs_diff_eq(
+                render_character(character, fraction).unwrap() * pouch,
+                1.0e-4
+            ));
         }
     }
 

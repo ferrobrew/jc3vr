@@ -75,6 +75,7 @@ use crate::controllers::{
         capabilities::{GunHand, GunOwner},
         docks,
         engine::HeldWeapon,
+        pouch_models,
         reload::{
             belt::{BeltPush, PushStage},
             chamber::{ActionWork, Chamber},
@@ -218,16 +219,46 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     let free = Hand::BOTH.into_iter().find(|h| {
         !gun_hands[h.index()] && !occupied[h.index()] && active.hands[h.index()].is_some()
     });
-    let pouch = body.map(|b| volumes::magazine_pouch(b, &config.weapons.pouches, gun_side, free));
-    // The pouch gives what the gun a round from it is for takes.
-    let loaded = insert::loading_hand(gun_hands, free, tick.dominant)
+    let loading_hand = insert::loading_hand(gun_hands, free, tick.dominant);
+    let pouch_side = loading_hand.map_or(gun_side.other(), Hand::other);
+    let pouch = body.map(|b| {
+        let pouch = volumes::magazine_pouch(
+            b,
+            &config.weapons.pouches,
+            pouch_side.other(),
+            Some(pouch_side),
+        );
+        Candidate {
+            hand: free,
+            ..pouch
+        }
+    });
+    // The displayed source stays on the loading gun's opposite side while its taker is occupied.
+    let loaded = loading_hand
         .and_then(|hand| tick.gun(hand))
         .map(|(weapon, _)| weapon);
     // A pouch with nothing to give is not offered: no round comes out of it.
     let stocked = loaded.is_some_and(WeaponTick::has_ammo);
-    if let Some(pouch) = pouch
+    let target_pouch = pouch.map(|mut pouch| {
+        if config.weapons.pouches.models.enabled
+            && let Some(body) = body
+        {
+            pouch.centre = pouch_models::display_centre(
+                Pose {
+                    position: pouch.centre,
+                    orientation: body.pelvis,
+                },
+                &config.weapons.pouches.models.magazine,
+                pouch_side,
+                tick.world_scale,
+            );
+        }
+        pouch
+    });
+    if let Some(pouch) = target_pouch
         && free.is_some()
-        && stocked
+        && loaded.is_some_and(|weapon| stocked && state.can_take(weapon))
+        && !state.status.insertion.holding()
     {
         candidates.push(pouch);
     }
@@ -251,13 +282,13 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
         ));
     }
     state.tick = Some(tick);
-    state.pouch = pouch.map(|p| (p.centre, p.radius));
+    state.pouch = target_pouch.map(|p| (p.centre, p.radius));
     state.stocked_pouch = pouch
         .zip(loaded)
         .filter(|_| stocked)
         .map(|(p, weapon)| StockedPouch {
             centre: p.centre,
-            side: free.unwrap_or(gun_side.other()),
+            side: pouch_side,
             weapon: weapon.address,
         });
     state.free = free;

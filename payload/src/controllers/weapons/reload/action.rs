@@ -3,11 +3,11 @@
 //! ([`crate::controllers::weapons::reload::chamber::ActionWork`]); the chamber a worked action
 //! loads; and the parts published for drawing.
 
-use glam::Vec3;
+use glam::{Quat, Vec3};
 
 use crate::controllers::{
     config::ControllersConfig,
-    frame::Hand,
+    frame::{Hand, Pose},
     grab::GrabVolume,
     haptics::{self, Event},
     weapons::{
@@ -17,6 +17,7 @@ use crate::controllers::{
             chamber::{self, ActionKind, Chamber, WorkEvent, WorkInputs},
             config::ReloadConfig,
             engine,
+            insert::InsertStage,
             plan::ReloadPlan,
             render,
             steps::chambering,
@@ -319,12 +320,29 @@ impl State {
             })
         });
         let held = self.status.insert_hands.and_then(|(hand, gun_hand)| {
-            let (weapon, _) = tick.gun(gun_hand)?;
+            let (weapon, gun) = tick.gun(gun_hand)?;
+            let captured = match self.status.insertion.stage {
+                InsertStage::Captured { depth_m, .. } => gun.well.map(|well| {
+                    let inverse = gun.wrist.orientation.inverse();
+                    let axis = inverse * well.axis;
+                    (
+                        gun_hand,
+                        Pose {
+                            position: inverse
+                                * (well.mouth + well.axis * depth_m - gun.wrist.position)
+                                * tick.world_scale,
+                            orientation: Quat::from_rotation_arc(Vec3::Y, axis),
+                        },
+                    )
+                }),
+                _ => None,
+            };
             Some(render::HeldPart {
                 weapon: weapon.address,
                 hand,
                 top_world_m: reload.held_top_m * tick.world_scale,
                 part_top_m: weapon.plan.part_top_m?,
+                captured,
             })
         });
         render::publish(render::Published {

@@ -20,7 +20,11 @@ use jc3gi::equipment::weapon::{
 };
 use parking_lot::Mutex;
 
-use crate::controllers::{frame::Hand, hands::late, weapons::reload::chamber::ActionKind};
+use crate::controllers::{
+    frame::{Hand, Pose},
+    hands::late,
+    weapons::reload::chamber::ActionKind,
+};
 
 /// Gun `gun`'s action part where the reload has it.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -55,6 +59,8 @@ pub(super) struct HeldPart {
     pub top_world_m: f32,
     /// How far the part's top is from its origin along its own +Y, in the model's metres.
     pub part_top_m: f32,
+    /// The captured round in its gun hand's wrist frame, in world metres.
+    pub captured: Option<(Hand, Pose)>,
 }
 
 /// What the input tick publishes for the render thread.
@@ -133,7 +139,17 @@ pub(crate) fn adjust(
     if part.m_NameHash != ModelAttachementWeaponComponent::MAGAZINE_NAME_HASH {
         return None;
     }
-    let grip = late::drawn_hands(dtf)[held.hand.index()]?.grip;
+    let drawn = late::drawn_hands(dtf);
+    if let Some((hand, local)) = held.captured {
+        let wrist = drawn[hand.index()]?.wrist;
+        let top = wrist.position + wrist.orientation * local.position;
+        let rotation = (wrist.orientation * local.orientation).normalize();
+        return Some(Mat4::from_rotation_translation(
+            rotation,
+            top - rotation * (Vec3::Y * held.part_top_m),
+        ));
+    }
+    let grip = drawn[held.hand.index()]?.grip;
     Some(held_matrix(grip.position, grip.orientation, held))
 }
 
@@ -227,6 +243,7 @@ mod tests {
             hand: Hand::Left,
             top_world_m: 0.07,
             part_top_m: 0.05,
+            captured: None,
         };
         let m = held_matrix(Vec3::ZERO, Quat::IDENTITY, held);
         let up = m.transform_vector3(Vec3::Y);
