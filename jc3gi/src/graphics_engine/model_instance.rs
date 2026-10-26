@@ -62,10 +62,13 @@ impl std::convert::AsMut<BFBCContext> for BFBCContext {
 /// mapped.
 pub struct Model {
     vftable: *const crate::graphics_engine::model_instance::ModelVftable,
+    _field_8: [u8; 28],
+    /// The hash of the model's compiled resource name.
+    pub m_Id: crate::hash::HashString,
 }
 fn _Model_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x8], Model>([0u8; 0x8]);
+        ::std::mem::transmute::<[u8; 0x28], Model>([0u8; 0x28]);
     }
     unreachable!()
 }
