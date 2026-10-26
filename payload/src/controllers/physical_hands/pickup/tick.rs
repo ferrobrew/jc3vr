@@ -190,7 +190,7 @@ pub(crate) unsafe fn tick(
                     if door.latched {
                         // SAFETY: forwarded from the caller; the door's vehicle was reached by
                         // this tick's casts.
-                        match unsafe { Latch::take(door, reach.point) } {
+                        match unsafe { Latch::take(door, reach.point, palm.pose) } {
                             Some(latch) => {
                                 tracing::info!(
                                     hand = hand.label(),
@@ -308,7 +308,7 @@ pub(crate) unsafe fn tick(
             )
         };
         // SAFETY: forwarded from the caller.
-        unsafe { keep_latch(state, hand, palms[i], &joints, unlatch_pull_m, &mut outcome) };
+        unsafe { keep_latch(state, hand, palms[i], unlatch_pull_m, &mut outcome) };
         if state.held[i].is_none()
             && state.latches[i].is_none()
             && state.seizes[i].is_none()
@@ -410,7 +410,8 @@ pub(crate) unsafe fn tick(
         if hands == 0 {
             continue;
         }
-        let solution = hold::solve(&body.rigid(), holds, dt, &HoldTuning::of(config));
+        let tuning = carry_tuning(&held, &holds, config);
+        let solution = hold::solve(&body.rigid(), holds, dt, &tuning);
         // SAFETY: forwarded from the caller.
         let result = unsafe { bodies::drive(held.body, held.object, solution.velocities) };
         if let Err(e) = result {
@@ -438,9 +439,13 @@ pub(crate) unsafe fn tick(
             let Some(hold) = hold else {
                 continue;
             };
+            if let Some(palm) = palms[k] {
+                outcome.pins[k] = Some(palm.pose.position + hold.anchor - hold.target.point);
+            }
             outcome.reports[k] = Some(HeldReport {
                 mass_kg: held.mass_kg,
-                liftable: grasp::can_lift(held.mass_kg, hands, config),
+                liftable: held.mass_kg * tuning.gravity.length()
+                    <= hands as f32 * tuning.hand_force_n,
                 shared: hands > 1,
                 centre: body.pose.centre,
                 anchor: hold.anchor,
@@ -495,13 +500,15 @@ pub(super) fn take_body(
             .filter(|&m| grasp::can_take(&reach.kind, m, config))
         {
             Some(mass_kg) => {
+                let kind = HeldKind::of(&reach.kind);
+                let joined = kind.joined(joined);
                 state.held[i] = Some(Held {
                     object: reach.object,
                     body: reach.body,
                     grip: Grip::of(palm.pose, body.pose, reach.point),
                     mass_kg,
                     joined,
-                    kind: HeldKind::of(&reach.kind),
+                    kind,
                 });
                 outcome.taken[i] = true;
                 if matches!(reach.kind, TargetKind::Articulated { .. }) {
@@ -520,7 +527,21 @@ pub(super) fn take_body(
                 outcome.refuse(
                     hand,
                     reach.point,
-                    "physical hands: pickup: the body is fixed or too heavy".to_owned(),
+                    match body.mass_kg {
+                        None => "physical hands: pickup: the reached body has no finite dynamic mass"
+                            .to_owned(),
+                        Some(mass) if !mass.is_finite() || mass <= 0.0 => {
+                            "physical hands: pickup: the reached body's mass is invalid".to_owned()
+                        }
+                        Some(mass) => format!(
+                            "physical hands: pickup: the reached body is {mass:.0} kg, above the supported {:.0} kg grip limit",
+                            if matches!(reach.kind, TargetKind::Articulated { .. }) {
+                                config.max_articulated_mass_kg
+                            } else {
+                                config.max_mass_kg
+                            },
+                        ),
+                    },
                 );
                 ConsumerResult::FixedOrTooHeavy
             }
@@ -529,6 +550,18 @@ pub(super) fn take_body(
             outcome.refuse(hand, reach.point, e.to_string());
             ConsumerResult::BodyRefused(e)
         }
+    }
+}
+
+pub(super) fn carry_tuning(
+    held: &Held,
+    holds: &[Option<HandHold>; 2],
+    config: &PickupConfig,
+) -> HoldTuning {
+    if held.kind == HeldKind::Prop {
+        HoldTuning::carrying(config, held.mass_kg, holds)
+    } else {
+        HoldTuning::of(config)
     }
 }
 

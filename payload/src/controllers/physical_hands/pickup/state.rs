@@ -159,6 +159,11 @@ pub(crate) enum HeldKind {
 }
 
 impl HeldKind {
+    /// Loose props use one carry solve for both hands, rather than fixed wrist joints.
+    pub(crate) fn joined(self, requested: bool) -> bool {
+        requested && self != Self::Prop
+    }
+
     pub(crate) fn of(kind: &TargetKind) -> Self {
         match kind {
             TargetKind::Articulated { .. } => HeldKind::Articulated,

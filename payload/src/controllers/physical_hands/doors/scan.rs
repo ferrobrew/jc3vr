@@ -116,7 +116,6 @@ pub(crate) unsafe fn handle_reach(
     let reach_m = config.handle_reach_m.max(0.0) * scale;
     let mut best: Option<Reach> = None;
     for &vehicle in vehicles {
-        let origin = unsafe { engine::vehicle_frame(vehicle) }.w_axis.truncate();
         let doors = unsafe { engine::doors(vehicle) };
         unsafe { log_sources(vehicle, &doors) };
         for door in doors {
@@ -211,7 +210,7 @@ pub(crate) unsafe fn handle_reach(
                     part_index: door.part_index,
                     slot: door.slot,
                     latched: door.latched,
-                    outward: door_box.outward(origin),
+                    outward: handle.normal,
                 }),
             };
             if best.is_none_or(|b| reach.distance < b.distance) {
@@ -294,7 +293,7 @@ unsafe fn log_sources(vehicle: NonZeroUsize, doors: &[DoorRead]) {
 }
 
 /// How a door in `slot` opens, for finding its hinge.
-fn kind_of(slot: DoorSlot) -> DoorKind {
+pub(crate) fn kind_of(slot: DoorSlot) -> DoorKind {
     match slot {
         DoorSlot::HOOD => DoorKind::Front,
         DoorSlot::TRUNK
@@ -314,8 +313,8 @@ fn kind_of(slot: DoorSlot) -> DoorKind {
 
 /// What a hand takes of `door` at its handle `point` (outer face `normal`): an open door's own body,
 /// or a latched door's vehicle and the vehicle's body under the handle, found by a cast from the
-/// palm at `palm` and, failing that, across the face at the handle. `None` when neither cast finds
-/// the vehicle there.
+/// palm at `palm` and, failing that, across the face at the handle. The native vehicle body is a
+/// fallback when the handle lies outside the collision shape; its current owner must be the vehicle.
 ///
 /// # Safety
 ///
@@ -334,19 +333,48 @@ unsafe fn holdable(
     }
     let past = point + (point - palm).normalize_or_zero() * CAST_PAST_M;
     let across = (point + normal * CAST_PAST_M, point - normal * CAST_PAST_M);
-    [(palm, past), across]
+    let body = [(palm, past), across]
         .into_iter()
         .filter_map(|(from, to)| cast(from, to))
-        .find_map(|hit| match hit.surface {
-            Surface::Solid {
-                object: Some(object),
-                body,
-            } if unsafe { engine::vehicle_of(object) } == Some(vehicle) => {
-                Some((vehicle, body, Some(body)))
-            }
-            _ => None,
-        })
+        .find_map(|hit| vehicle_hit(vehicle, &hit))
+        .or_else(|| unsafe { engine::vehicle_body(vehicle) })?;
+    Some((vehicle, body, Some(body)))
+}
+
+fn vehicle_hit(vehicle: NonZeroUsize, hit: &SurfaceHit) -> Option<u32> {
+    match hit.surface {
+        Surface::Solid {
+            object: Some(object),
+            body,
+        } if object == vehicle => Some(body),
+        _ => None,
+    }
 }
 
 /// How far past the handle the casts that find a latched door's vehicle body reach, metres.
 const CAST_PAST_M: f32 = 0.1;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_vehicle_part_cannot_prove_ownership_of_the_vehicle_body() {
+        let vehicle = NonZeroUsize::new(8).unwrap();
+        let mut hit = SurfaceHit {
+            surface: Surface::Solid {
+                object: NonZeroUsize::new(16),
+                body: 3,
+            },
+            position: Vec3::ZERO,
+            normal: Vec3::X,
+            material: None,
+        };
+        assert_eq!(vehicle_hit(vehicle, &hit), None);
+        hit.surface = Surface::Solid {
+            object: Some(vehicle),
+            body: 5,
+        };
+        assert_eq!(vehicle_hit(vehicle, &hit), Some(5));
+    }
+}

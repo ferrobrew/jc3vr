@@ -64,6 +64,37 @@ impl HoldTuning {
             gravity: Vec3::new(0.0, -config.gravity_mps2.max(0.0), 0.0),
         }
     }
+
+    /// Add bounded lift reserve for a loose prop deliberately held at two separated points.
+    /// One hand retains its configured strength; attached bodies never use this adapter.
+    pub(crate) fn carrying(
+        config: &PickupConfig,
+        mass_kg: f32,
+        holds: &[Option<HandHold>; 2],
+    ) -> Self {
+        let mut tuning = Self::of(config);
+        let [Some(left), Some(right)] = *holds else {
+            return tuning;
+        };
+        let span = left.anchor.distance(right.anchor);
+        let target_span = left.target.point.distance(right.target.point);
+        if !mass_kg.is_finite()
+            || mass_kg <= 0.0
+            || mass_kg > ASSIST_MAX_MASS_KG.min(config.max_mass_kg)
+            || !span.is_finite()
+            || !target_span.is_finite()
+            || span < ASSIST_MIN_SPAN_M
+            || target_span < ASSIST_MIN_SPAN_M
+        {
+            return tuning;
+        }
+        let weight_per_hand = mass_kg * tuning.gravity.length() * 0.5;
+        tuning.hand_force_n = tuning.hand_force_n.max(
+            (weight_per_hand * ASSIST_LIFT_RESERVE)
+                .min(tuning.hand_force_n * ASSIST_FORCE_MULTIPLIER),
+        );
+        tuning
+    }
 }
 
 /// One hand's hold on a body this tick.
@@ -255,6 +286,10 @@ pub fn keep_out(point: Vec3, space: &BodySpace) -> Vec3 {
 /// The most of its error a constraint closes in one tick: below one, so that a stiff hold settles
 /// rather than overshoots at a slow tick.
 const MAX_CORRECTION: f32 = 0.8;
+const ASSIST_MAX_MASS_KG: f32 = 150.0;
+const ASSIST_MIN_SPAN_M: f32 = 0.12;
+const ASSIST_LIFT_RESERVE: f32 = 1.25;
+const ASSIST_FORCE_MULTIPLIER: f32 = 3.0;
 /// The solver's passes over the hands.
 const ITERATIONS: usize = 8;
 /// The load from which a hold that cannot move its body starts pushing the player.
@@ -335,6 +370,52 @@ mod tests {
             step(body, last.velocities, &tuning);
         }
         last
+    }
+
+    #[test]
+    fn separated_two_hand_grips_lift_a_barrel_with_bounded_assistance() {
+        let config = PickupConfig::new();
+        let mut body = crate_body(100.0, Vec3::new(0.6, 0.9, 0.6), Vec3::ZERO, Quat::IDENTITY);
+        let ends = [Vec3::new(-0.3, 0.0, 0.0), Vec3::new(0.3, 0.0, 0.0)];
+        let goals = ends.map(|p| p + Vec3::Y * 0.3);
+        for _ in 0..180 {
+            let holds =
+                [0, 1].map(|i| Some(hold(body.pose.point(ends[i]), goals[i], Quat::IDENTITY)));
+            let tuning = HoldTuning::carrying(&config, 100.0, &holds);
+            assert!(tuning.hand_force_n <= config.hand_force_n * ASSIST_FORCE_MULTIPLIER);
+            let solution = solve(&body, holds, DT, &tuning);
+            step(&mut body, solution.velocities, &tuning);
+        }
+        assert!(body.pose.centre.y > 0.25, "{body:?}");
+        assert!(body.pose.orientation.angle_between(Quat::IDENTITY) < 0.1);
+    }
+
+    #[test]
+    fn assistance_does_not_strengthen_one_hand_near_coincident_grips_or_large_bodies() {
+        let config = PickupConfig::new();
+        let left = hold(Vec3::NEG_X * 0.3, Vec3::NEG_X * 0.3, Quat::IDENTITY);
+        let right = hold(Vec3::X * 0.3, Vec3::X * 0.3, Quat::IDENTITY);
+        let baseline = HoldTuning::of(&config);
+        assert_eq!(
+            HoldTuning::carrying(&config, 100.0, &[Some(left), None]),
+            baseline
+        );
+        assert_eq!(
+            HoldTuning::carrying(&config, 100.0, &[Some(left), Some(left)]),
+            baseline
+        );
+        assert_eq!(
+            HoldTuning::carrying(
+                &config,
+                ASSIST_MAX_MASS_KG + 1.0,
+                &[Some(left), Some(right)]
+            ),
+            baseline
+        );
+        assert_eq!(
+            HoldTuning::carrying(&config, f32::NAN, &[Some(left), Some(right)]),
+            baseline
+        );
     }
 
     #[test]

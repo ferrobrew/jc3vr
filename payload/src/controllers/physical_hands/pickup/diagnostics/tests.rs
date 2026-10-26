@@ -11,10 +11,11 @@ use crate::controllers::{
         config::PickupConfig,
         doors::DoorsConfig,
         grasp::{PalmMotion, TargetKind},
+        hold::{self, HandHold, HoldTuning},
         palm::PalmBox,
         pickup::{
             ReachObservations, ReachTuning,
-            state::{PickupState, Request},
+            state::{Held, HeldKind, PickupState, Request},
             tick::{self, BodyGrab, JointInputs, TickInputs, TickOutcome, take_body},
         },
         rigid::BodyPose,
@@ -291,10 +292,10 @@ fn real_body_consumer_acceptance_and_refusal_match_the_state_transition() {
         let mut outcome = TickOutcome::default();
         assert_eq!(
             take_body(&mut state, grab(joined), Ok(body), &config, &mut outcome),
-            ConsumerResult::BodyAccepted { joined }
+            ConsumerResult::BodyAccepted { joined: false }
         );
         assert!(outcome.taken[0]);
-        assert_eq!(state.held[0].unwrap().joined, joined);
+        assert!(!state.held[0].unwrap().joined);
     }
     for mass in [None, Some(config.max_mass_kg + 1.0)] {
         let mut state = PickupState::new();
@@ -331,6 +332,88 @@ fn real_body_consumer_acceptance_and_refusal_match_the_state_transition() {
         assert!(!state.holding(Hand::Left));
         assert_eq!(outcome.error, Some(error.to_string()));
     }
+}
+
+#[test]
+fn actual_prop_consumer_acquires_both_barrel_sides_and_only_assists_that_body() {
+    let config = PickupConfig::new();
+    let mut state = PickupState::new();
+    let mut outcome = TickOutcome::default();
+    let body = BodyState {
+        pose: BodyPose {
+            centre: Vec3::ZERO,
+            orientation: Quat::IDENTITY,
+        },
+        velocities: Velocities::default(),
+        mass_kg: Some(100.0),
+        inverse_inertia: Vec3::splat(0.1),
+    };
+    let anchors = [Vec3::NEG_X * 0.3, Vec3::X * 0.3];
+    for hand in Hand::BOTH {
+        let point = anchors[hand.index()];
+        let reach = Reach {
+            point,
+            kind: TargetKind::Prop { mass_kg: 100.0 },
+            ..target()
+        };
+        let palm = PalmMotion {
+            pose: Pose {
+                position: point,
+                orientation: Quat::IDENTITY,
+            },
+            velocity: Vec3::ZERO,
+            angular_velocity: Vec3::ZERO,
+        };
+        assert_eq!(
+            take_body(
+                &mut state,
+                BodyGrab {
+                    hand,
+                    reach,
+                    palm,
+                    joined: true
+                },
+                Ok(body),
+                &config,
+                &mut outcome
+            ),
+            ConsumerResult::BodyAccepted { joined: false }
+        );
+    }
+    assert_eq!(outcome.taken, [true; 2]);
+    let held = state.held[0].unwrap();
+    assert!(held.same(&state.held[1].unwrap()));
+    let holds = [0, 1].map(|i| {
+        let grip = state.held[i].unwrap().grip;
+        Some(HandHold {
+            anchor: grip.anchor(body.pose),
+            target: grip.target(Pose {
+                position: anchors[i] + Vec3::Y * 0.25,
+                orientation: Quat::IDENTITY,
+            }),
+            velocity: Vec3::ZERO,
+            angular_velocity: Vec3::ZERO,
+        })
+    });
+    let assisted = tick::carry_tuning(&held, &holds, &config);
+    assert!(assisted.hand_force_n > config.hand_force_n);
+    let driven = hold::solve(&body.rigid(), holds, 1.0 / 60.0, &assisted);
+    assert!(driven.velocities.linear.y > config.gravity_mps2 / 60.0);
+    for kind in [HeldKind::Articulated, HeldKind::Door, HeldKind::Ragdoll] {
+        assert_eq!(
+            tick::carry_tuning(&Held { kind, ..held }, &holds, &config),
+            HoldTuning::of(&config)
+        );
+        assert!(kind.joined(true));
+    }
+    state.held[0] = None;
+    assert_eq!(
+        tick::carry_tuning(&held, &[None, holds[1]], &config),
+        HoldTuning::of(&config)
+    );
+    state.drop_all();
+    assert_eq!(state.held, [None; 2]);
+    assert_eq!(state.requests, [None; 2]);
 }
 
 #[test]

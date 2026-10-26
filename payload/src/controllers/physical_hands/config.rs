@@ -213,7 +213,7 @@ impl PickupConfig {
     pub const fn new() -> Self {
         Self {
             enabled: true,
-            reach_m: 0.1,
+            reach_m: 0.18,
             weapons: true,
             max_mass_kg: 1500.0,
             hand_force_n: 350.0,

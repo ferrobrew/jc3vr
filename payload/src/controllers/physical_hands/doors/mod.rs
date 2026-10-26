@@ -26,17 +26,20 @@ pub mod geometry;
 pub(crate) mod scan;
 pub mod table;
 
-use std::num::NonZeroUsize;
+use std::{num::NonZeroUsize, time::Instant};
 
 pub use config::DoorsConfig;
 use glam::{Mat4, Vec3};
 use jc3gi::vehicle::vehicle::DoorSlot;
 
-use crate::controllers::physical_hands::{
-    contact::SurfaceHit,
-    doors::{acquisition::PanelBody, engine::DoorError, geometry::pull},
-    grasp::{Reach, TargetKind},
-    pickup::diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
+use crate::controllers::{
+    frame::Pose,
+    physical_hands::{
+        contact::SurfaceHit,
+        doors::{acquisition::PanelBody, engine::DoorError, geometry::pull},
+        grasp::{Reach, TargetKind},
+        pickup::diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
+    },
 };
 
 /// A door a hand can take.
@@ -193,6 +196,10 @@ pub struct Latch {
     pub grab: Vec3,
     /// Which way is out at the door, in the vehicle's frame.
     pub outward: Vec3,
+    /// The palm at acquisition, in the vehicle's frame, before its opening pull.
+    pub palm: Pose,
+    /// The first native unlatch attempt, bounding a body-publication retry.
+    pub opening_at: Option<Instant>,
 }
 
 impl Latch {
@@ -202,19 +209,53 @@ impl Latch {
     /// # Safety
     ///
     /// The game thread, outside the physics step; the door's vehicle must be live.
-    pub unsafe fn take(door: DoorTarget, point: Vec3) -> Option<Self> {
+    pub unsafe fn take(door: DoorTarget, point: Vec3, palm: Pose) -> Option<Self> {
         let vehicle_body = door.vehicle_body?;
-        let to_vehicle = unsafe { engine::vehicle_frame(door.vehicle) }.inverse();
+        if !unsafe { engine::alive(door.vehicle, vehicle_body) } {
+            return None;
+        }
+        let world = unsafe { engine::vehicle_frame(door.vehicle) };
+        Self::at(door, vehicle_body, point, palm, world)
+    }
+
+    fn at(
+        door: DoorTarget,
+        vehicle_body: u32,
+        point: Vec3,
+        palm: Pose,
+        world: Mat4,
+    ) -> Option<Self> {
+        let to_vehicle = world.inverse();
         let grab = to_vehicle.transform_point3(point);
         let outward = to_vehicle
             .transform_vector3(door.outward)
             .normalize_or_zero();
-        (grab.is_finite() && outward != Vec3::ZERO).then_some(Self {
+        let palm = Pose {
+            position: to_vehicle.transform_point3(palm.position),
+            orientation: (to_vehicle.to_scale_rotation_translation().1 * palm.orientation)
+                .normalize(),
+        };
+        (grab.is_finite()
+            && outward != Vec3::ZERO
+            && palm.position.is_finite()
+            && palm.orientation.is_finite())
+        .then_some(Self {
             door,
             vehicle_body,
             grab,
             outward,
+            palm,
+            opening_at: None,
         })
+    }
+
+    /// The acquisition palm carried by the vehicle, without absorbing the opening pull.
+    pub(crate) fn handoff_palm(&self, world: Mat4) -> Pose {
+        Pose {
+            position: world.transform_point3(self.palm.position),
+            orientation: (world.to_scale_rotation_translation().1 * self.palm.orientation)
+                .normalize(),
+        }
     }
 
     /// What the latch does this tick with the palm at `palm`, world space, the latch giving to a
@@ -223,7 +264,7 @@ impl Latch {
     /// # Safety
     ///
     /// The game thread, outside the physics step.
-    pub unsafe fn step(&self, palm: Vec3, unlatch_pull_m: f32) -> LatchStep {
+    pub unsafe fn step(&mut self, palm: Vec3, unlatch_pull_m: f32) -> LatchStep {
         let vehicle = self.door.vehicle;
         if !unsafe { engine::alive(vehicle, self.vehicle_body) } {
             return LatchStep::Lost(DoorError::VehicleGone);
@@ -236,10 +277,17 @@ impl Latch {
         match decision {
             LatchDecision::Hold(pin) => LatchStep::Pin(pin),
             LatchDecision::Give(grab) => {
+                let now = Instant::now();
+                let opening_at = *self.opening_at.get_or_insert(now);
                 // SAFETY: forwarded from the caller; the vehicle was checked alive above.
-                match unsafe { engine::unlatch(vehicle, self.door.part_index) } {
-                    Ok((object, body)) => LatchStep::Opened { object, body, grab },
-                    Err(e) => LatchStep::Lost(e),
+                let result = unsafe { engine::unlatch(vehicle, self.door.part_index) };
+                match opened_step(
+                    result,
+                    grab,
+                    now.saturating_duration_since(opening_at).as_secs_f32(),
+                ) {
+                    LatchStep::Pin(_) => LatchStep::Pin(self.handoff_palm(world).position),
+                    step => step,
                 }
             }
         }
@@ -262,6 +310,20 @@ pub enum LatchStep {
     Lost(DoorError),
 }
 
+fn opened_step(
+    result: Result<(NonZeroUsize, u32), DoorError>,
+    grab: Vec3,
+    elapsed_s: f32,
+) -> LatchStep {
+    match result {
+        Ok((object, body)) => LatchStep::Opened { object, body, grab },
+        Err(DoorError::NoLooseBody) if elapsed_s < BODY_WAIT_S => LatchStep::Pin(grab),
+        Err(error) => LatchStep::Lost(error),
+    }
+}
+
+const BODY_WAIT_S: f32 = 0.3;
+
 /// Whether a latched grip holds or gives, pure.
 #[derive(Debug, Copy, Clone, PartialEq)]
 enum LatchDecision {
@@ -272,8 +334,8 @@ enum LatchDecision {
 }
 
 /// Whether `latch` holds on a vehicle at `world` with the palm at `palm`: a door no longer latched
-/// gives at once, and a latched one once the palm has pulled `unlatch_pull_m` outward from the grab
-/// point.
+/// gives at once, and a latched one once the palm has pulled `unlatch_pull_m` outward from its
+/// acquisition position.
 fn latch_decision(
     world: Mat4,
     latch: &Latch,
@@ -282,11 +344,12 @@ fn latch_decision(
     latched: bool,
 ) -> LatchDecision {
     let grab = world.transform_point3(latch.grab);
+    let acquired_palm = latch.handoff_palm(world).position;
     let outward = world.transform_vector3(latch.outward).normalize_or_zero();
-    if !latched || pull(grab, palm, outward) >= unlatch_pull_m.max(0.0) {
+    if !latched || pull(acquired_palm, palm, outward) >= unlatch_pull_m.max(0.0) {
         LatchDecision::Give(grab)
     } else {
-        LatchDecision::Hold(grab)
+        LatchDecision::Hold(acquired_palm)
     }
 }
 
@@ -295,6 +358,7 @@ mod tests {
     use glam::Quat;
 
     use super::*;
+    use crate::controllers::physical_hands::{grasp::Grip, rigid::BodyPose};
 
     fn latch() -> Latch {
         Latch {
@@ -309,7 +373,86 @@ mod tests {
             vehicle_body: 3,
             grab: Vec3::new(-0.95, 1.0, 0.0),
             outward: Vec3::NEG_X,
+            palm: Pose {
+                position: Vec3::new(-0.95, 1.0, 0.0),
+                orientation: Quat::IDENTITY,
+            },
+            opening_at: None,
         }
+    }
+
+    #[test]
+    fn an_existing_handle_reach_gap_does_not_count_as_an_opening_pull() {
+        let mut acquired = latch();
+        acquired.palm.position += Vec3::NEG_X * 0.12;
+        assert_eq!(
+            latch_decision(
+                Mat4::IDENTITY,
+                &acquired,
+                acquired.palm.position,
+                0.05,
+                true
+            ),
+            LatchDecision::Hold(acquired.palm.position)
+        );
+        assert!(matches!(
+            latch_decision(
+                Mat4::IDENTITY,
+                &acquired,
+                acquired.palm.position + Vec3::NEG_X * 0.06,
+                0.05,
+                true
+            ),
+            LatchDecision::Give(_)
+        ));
+    }
+
+    #[test]
+    fn a_native_body_wait_is_bounded_and_a_real_unlatch_refusal_is_immediate() {
+        let grab = Vec3::X;
+        assert_eq!(
+            opened_step(Err(DoorError::NoLooseBody), grab, 0.0),
+            LatchStep::Pin(grab)
+        );
+        assert_eq!(
+            opened_step(Err(DoorError::NoLooseBody), grab, BODY_WAIT_S),
+            LatchStep::Lost(DoorError::NoLooseBody)
+        );
+        assert_eq!(
+            opened_step(Err(DoorError::StayedLatched), grab, 0.0),
+            LatchStep::Lost(DoorError::StayedLatched)
+        );
+        assert_eq!(
+            opened_step(Ok((NonZeroUsize::new(16).unwrap(), 7)), grab, 0.1),
+            LatchStep::Opened {
+                object: NonZeroUsize::new(16).unwrap(),
+                body: 7,
+                grab
+            }
+        );
+    }
+
+    #[test]
+    fn the_loose_door_handoff_retains_the_pull_after_vehicle_transport() {
+        let acquired = latch();
+        let world =
+            Mat4::from_rotation_translation(Quat::from_rotation_y(0.7), Vec3::new(8.0, 2.0, -3.0));
+        let grab = world.transform_point3(acquired.grab);
+        let palm = acquired.handoff_palm(world);
+        let body = BodyPose {
+            centre: grab + Vec3::Z * 0.3,
+            orientation: Quat::IDENTITY,
+        };
+        let grip = Grip::of(palm, body, grab);
+        let pulled = Pose {
+            position: palm.position + world.transform_vector3(Vec3::NEG_X) * 0.08,
+            ..palm
+        };
+        assert!(grip.target(pulled).point.distance(grab) > 0.079);
+        assert!(matches!(
+            latch_decision(world, &acquired, pulled.position, 0.05, true),
+            LatchDecision::Give(_)
+        ));
     }
 
     #[test]

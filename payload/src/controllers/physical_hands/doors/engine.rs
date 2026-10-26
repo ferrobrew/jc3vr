@@ -18,6 +18,7 @@ use std::{ffi::CStr, fmt, num::NonZeroUsize, ptr};
 
 use glam::{Mat4, Vec3};
 use jc3gi::{
+    physics::PfxRigidBody,
     types::math::Vector3,
     vehicle::{
         parts::{PartEventReason, PartInstance, VehiclePartGameObject},
@@ -41,6 +42,8 @@ pub enum DoorError {
     NoDoor,
     /// The part did not come loose onto its hinge.
     StayedLatched,
+    /// The hinge is active, but its owned body is not readable yet.
+    NoLooseBody,
 }
 
 impl fmt::Display for DoorError {
@@ -50,6 +53,9 @@ impl fmt::Display for DoorError {
             DoorError::NoPart => "the vehicle has no such part",
             DoorError::NoDoor => "the part is no door, or broke off",
             DoorError::StayedLatched => "the door did not come loose onto its hinge",
+            DoorError::NoLooseBody => {
+                "the door's hinge is active, but its owned body is unavailable"
+            }
         };
         write!(f, "physical hands: doors: {what}")
     }
@@ -141,6 +147,18 @@ pub(crate) unsafe fn alive(vehicle: NonZeroUsize, vehicle_body: u32) -> bool {
     (unsafe { owner_of(vehicle_body) }) == Some(vehicle)
 }
 
+/// The vehicle's native rigid body, verified against its current owner.
+///
+/// # Safety
+///
+/// The game thread, outside the physics step; `vehicle` must be a live vehicle.
+pub(crate) unsafe fn vehicle_body(vehicle: NonZeroUsize) -> Option<u32> {
+    let vehicle_ref = unsafe { &*(vehicle.get() as *const Vehicle) };
+    let pfx = unsafe { vehicle_ref.m_PfxVehicle.cast::<PfxRigidBody>().as_ref() }?;
+    let body = pfx.m_BodyId;
+    unsafe { alive(vehicle, body) }.then_some(body)
+}
+
 /// The door of `vehicle` at part index `part_index`, read now.
 ///
 /// # Safety
@@ -190,7 +208,7 @@ pub(crate) unsafe fn unlatch(
     if !unsafe { part_ref.IsConstraintActive() } {
         return Err(DoorError::StayedLatched);
     }
-    let body = unsafe { loose_body(part_ref) }.ok_or(DoorError::StayedLatched)?;
+    let body = unsafe { loose_body(part_ref) }.ok_or(DoorError::NoLooseBody)?;
     // The state the controller gives a door whose part it spawns, as an opened door's.
     unsafe {
         each_door(vehicle, |info, _, p| {

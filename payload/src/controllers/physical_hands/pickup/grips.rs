@@ -27,17 +27,19 @@ pub(super) unsafe fn keep_latch(
     state: &mut PickupState,
     hand: Hand,
     palm: Option<PalmMotion>,
-    joints: &JointInputs,
     unlatch_pull_m: f32,
     outcome: &mut TickOutcome,
 ) {
     let i = hand.index();
-    let (Some(latch), Some(palm)) = (state.latches[i], palm) else {
+    let (Some(mut latch), Some(palm)) = (state.latches[i], palm) else {
         return;
     };
     // SAFETY: forwarded from the caller.
     match unsafe { latch.step(palm.pose.position, unlatch_pull_m) } {
-        LatchStep::Pin(pin) => outcome.pins[i] = Some(pin),
+        LatchStep::Pin(pin) => {
+            state.latches[i] = Some(latch);
+            outcome.pins[i] = Some(pin);
+        }
         LatchStep::Opened { object, body, grab } => {
             state.latches[i] = None;
             // SAFETY: forwarded from the caller; the door's body was found just now.
@@ -48,23 +50,39 @@ pub(super) unsafe fn keep_latch(
                         slot = doors::slot_label(latch.door.slot),
                         part = latch.door.part_index,
                         body,
-                        joined = joints.join[i],
                         "physical hands: doors: the latch gave, and the hand holds the door"
                     );
+                    let world = unsafe { doors::engine::vehicle_frame(latch.door.vehicle) };
                     state.held[i] = Some(Held {
                         object,
                         body,
-                        grip: Grip::of(palm.pose, read.pose, grab),
+                        grip: Grip::of(latch.handoff_palm(world), read.pose, grab),
                         mass_kg: read.mass_kg.unwrap_or(f32::INFINITY),
-                        joined: joints.join[i],
+                        // A new fixed joint would retain the pre-opening relative pose and discard
+                        // the pull that undid the latch. The carry drive keeps that pull active.
+                        joined: false,
                         kind: HeldKind::Door,
                     });
                     outcome.unlatched[i] = true;
                 }
                 Err(e) => {
-                    outcome.released[i] = true;
-                    outcome.lost += 1;
-                    outcome.error = Some(e.to_string());
+                    let now = Instant::now();
+                    let opening_at = *latch.opening_at.get_or_insert(now);
+                    if matches!(
+                        e,
+                        bodies::BodyError::NoBody
+                            | bodies::BodyError::NotDynamic
+                            | bodies::BodyError::BadMotion
+                    ) && now.saturating_duration_since(opening_at).as_secs_f32() < 0.3
+                    {
+                        let world = unsafe { doors::engine::vehicle_frame(latch.door.vehicle) };
+                        state.latches[i] = Some(latch);
+                        outcome.pins[i] = Some(latch.handoff_palm(world).position);
+                    } else {
+                        outcome.released[i] = true;
+                        outcome.lost += 1;
+                        outcome.error = Some(e.to_string());
+                    }
                 }
             }
         }

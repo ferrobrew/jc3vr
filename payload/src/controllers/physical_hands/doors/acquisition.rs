@@ -5,7 +5,12 @@ use std::num::NonZeroUsize;
 use glam::Vec3;
 
 use crate::controllers::physical_hands::{
-    doors::{engine::DoorRead, geometry::DoorReach},
+    doors::{
+        engine::DoorRead,
+        geometry::{DoorReach, door_handle},
+        scan::kind_of,
+        table,
+    },
     pickup::diagnostics::scan::{Scan, ScanEntry, ScanResult},
 };
 
@@ -43,24 +48,39 @@ pub(crate) fn panel(
     vehicle_origin: Vec3,
 ) -> Result<PanelAcquisition, PanelRefusal> {
     let door_box = door.door_box.ok_or(PanelRefusal::NoBox)?;
-    let reach = door_box
+    let mut reach = door_box
         .reach(palm, reach_m)
         .ok_or(PanelRefusal::OutOfReach)?;
+    let handle = door_handle(
+        &door_box,
+        kind_of(door.slot),
+        door.part_hash.and_then(table::lookup),
+    );
     let body = match door.body {
         None if door.latched => {
-            if reach.handle >= handle_share.clamp(0.0, 1.0) {
-                PanelBody::LatchedHandle
-            } else {
+            let at_handle = handle.map_or_else(
+                || reach.handle >= handle_share.clamp(0.0, 1.0),
+                |handle| palm.distance(handle.point) <= reach_m.max(0.0),
+            );
+            if !at_handle {
                 return Err(PanelRefusal::HandleRequired);
             }
+            PanelBody::LatchedHandle
         }
         Some((object, body)) if !door.latched => PanelBody::OpenPanel { object, body },
         None => return Err(PanelRefusal::NoOpenBody),
         Some(_) => return Err(PanelRefusal::LatchedWithOwnBody),
     };
+    if door.latched
+        && let Some(handle) = handle
+    {
+        reach.point = handle.point;
+        reach.distance = palm.distance(handle.point);
+        reach.handle = 1.0;
+    }
     Ok(PanelAcquisition {
         reach,
-        outward: door_box.outward(vehicle_origin),
+        outward: handle.map_or_else(|| door_box.outward(vehicle_origin), |h| h.normal),
         body,
     })
 }
@@ -112,6 +132,23 @@ mod tests {
         }
     }
 
+    fn handle_point(door: &DoorRead) -> Vec3 {
+        door_handle(&door.door_box.unwrap(), kind_of(door.slot), None)
+            .unwrap()
+            .point
+    }
+
+    #[test]
+    fn a_far_panel_corner_is_not_a_closed_handle_candidate() {
+        let closed = door(true);
+        assert_eq!(
+            panel(&closed, Vec3::new(0.1, 1.0, 1.0), 0.1, 0.7, Vec3::ZERO),
+            Err(PanelRefusal::HandleRequired)
+        );
+        let open = door(false);
+        assert!(panel(&open, Vec3::new(0.1, 1.0, 1.0), 0.1, 0.7, Vec3::ZERO).is_ok());
+    }
+
     #[test]
     fn observed_panel_retains_the_exact_production_acquisition_result() {
         let door = door(true);
@@ -135,7 +172,7 @@ mod tests {
         );
         let accepted = observed_panel(
             &door,
-            Vec3::new(0.1, 1.0, 1.0),
+            handle_point(&door),
             0.1,
             0.7,
             Vec3::ZERO,
@@ -155,7 +192,7 @@ mod tests {
             panel(&door, Vec3::ZERO, 0.1, 0.7, Vec3::ZERO),
             Err(PanelRefusal::HandleRequired)
         );
-        let acquisition = panel(&door, Vec3::new(0.1, 1.0, 1.0), 0.1, 0.7, Vec3::ZERO).unwrap();
+        let acquisition = panel(&door, handle_point(&door), 0.1, 0.7, Vec3::ZERO).unwrap();
         assert_eq!(acquisition.reach.handle, 1.0);
         assert_eq!(acquisition.body, PanelBody::LatchedHandle);
     }

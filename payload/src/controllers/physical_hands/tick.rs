@@ -513,11 +513,13 @@ unsafe fn run(owner: &Character, dt: f32) {
             let Some(held) = hand_status[i].held.filter(|h| !h.joined) else {
                 continue;
             };
-            // The rendered hand stays on the grab point, wherever the body is.
-            let offset =
-                (held.anchor - held.target).clamp_length_max(config.pickup.break_distance_m);
-            clamp[i] = (body_rotation.inverse() * offset) / active.world_scale.max(1e-3);
-            if config.push && config.pickup.resist {
+            // Physical hand bodies follow carry pins; only nonphysical hands need this offset.
+            if !physics::drives(hand) {
+                let offset =
+                    (held.anchor - held.target).clamp_length_max(config.pickup.break_distance_m);
+                clamp[i] = (body_rotation.inverse() * offset) / active.world_scale.max(1e-3);
+            }
+            if config.push && config.pickup.resist && state.pickup.props()[i].is_none() {
                 hand_status[i].push =
                     hold::resist_push(held.anchor, held.target, held.load, &config);
             }
