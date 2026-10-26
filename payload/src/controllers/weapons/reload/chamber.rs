@@ -1,12 +1,11 @@
 //! The chamber and the action that loads it: the slide, the charging handle, the bolt, or the
 //! pump. Pure.
 //!
-//! The game has no chambered round: a gun fires while its magazine holds rounds. The chamber is
-//! the mod's: a gun that runs dry, and a bolt-action or pump-action gun after every shot (with
-//! the manual action on), has an empty chamber, and the trigger only clicks until the action is
-//! worked with rounds in the magazine. The native loaded-round total includes the round marked
-//! chambered: feeding changes readiness, not the count; extracting a live round discards one from
-//! that total. The flag owns no separate cartridge while a magazine is absent.
+//! The game fires from a native loaded-round total. The reload partitions that total into a
+//! weapon-owned chamber and magazine-owned rounds in `ammo`. Feeding transfers a magazine round
+//! to the chamber without changing the native total; a shot or live-round extraction consumes it.
+//! Removing the magazine leaves a chambered round with the weapon, able to fire once without a
+//! magazine. A dry gun, or a manually cycled bolt or pump after a shot, needs the action worked.
 //!
 //! With the physical action on, the action is a part that follows the hand through its travel
 //! ([`crate::controllers::weapons::reload::travel`]). Off, working the action ([`ActionWork`]) is a

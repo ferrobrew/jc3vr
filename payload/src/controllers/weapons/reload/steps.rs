@@ -15,11 +15,13 @@ use crate::controllers::{
         self,
         engine::HeldWeapon,
         foregrip::set_pump_slide,
+        inventory::engine::strong_to,
         regions::{action_back, action_volume},
         reload::{
             BeltFinish, BeltGate, FinishInputs, GunTick, MAX_EVENTS, State, Tick, WeaponReadout,
             WeaponTick,
             action::locks_back,
+            ammo::{self, NativeAmmo},
             belt::{BeltPush, PushInputs},
             chamber::{self, ActionKind, Chamber},
             config::{LooseMagazineConfig, ReloadButton, ReloadConfig},
@@ -158,6 +160,38 @@ impl State {
                     handle,
                 });
             }
+            if chambering(&weapon_tick.plan, &config.weapons.reload)
+                && let Some(owner) = unsafe { strong_to(base) }
+            {
+                let record = self.records.get(weapon_tick.key);
+                let mut chambers = record.chambers;
+                let mut present = [false; 2];
+                let gun_map = Hand::BOTH.map(|hand| {
+                    let gun = guns[hand.index()].filter(|gun| gun.weapon == slot)?;
+                    present[gun.entry()] = true;
+                    Some((
+                        gun.entry(),
+                        config.weapons.reload.manual_action && weapon_tick.plan.action.manual(),
+                    ))
+                });
+                for (entry, chamber) in chambers.iter_mut().enumerate() {
+                    if !present[entry] {
+                        *chamber = Chamber::Empty;
+                    }
+                }
+                let partition = ammo::observe(
+                    weapon.address,
+                    owner,
+                    base.m_User[1] as usize,
+                    NativeAmmo {
+                        total: weapon_tick.reading.magazine,
+                        out: weapon_tick.reading.out,
+                    },
+                    chambers,
+                    gun_map,
+                );
+                record.chambers = partition.chambers;
+            }
             read[slot] = Some(weapon_tick);
         }
         for hand in Hand::BOTH {
@@ -263,6 +297,7 @@ impl State {
         self.extract(tick, inputs, reload);
         self.belt(tick, config, dt);
         self.work(tick, inputs, config);
+        self.sync_owned(tick);
 
         self.last_grips = tick.hands.map(|h| h.map(|h| h.grip.position));
         self.status.weapons = Hand::BOTH.map(|hand| self.readout(tick, hand, reload));
@@ -314,12 +349,13 @@ impl State {
                 .status
                 .insert_hands
                 .is_some_and(|(_, target)| target == hand)
+                && matches!(self.status.insertion.stage, InsertStage::Captured { .. })
                 && loose::held().is_some())
             || (chambering && record.chambers[e] == Chamber::Empty)
             || (chambering
                 && reload.action.physical
                 && !record.travels[e].in_battery(&reload.action))
-            || weapon.reading.out
+            || (weapon.reading.out && (!chambering || record.chambers[e] == Chamber::Empty))
     }
 
     /// Fold each weapon's shots into its chambers.
@@ -365,6 +401,15 @@ impl State {
                 if locks_back(&weapon.plan, reload) {
                     record.travels.iter_mut().for_each(ActionTravel::lock_back);
                 }
+            }
+        }
+        self.sync_owned(tick);
+    }
+
+    fn sync_owned(&mut self, tick: &Tick) {
+        for weapon in tick.weapons.iter().flatten() {
+            if let Some(ammo) = ammo::snapshot(weapon.address) {
+                self.records.get(weapon.key).chambers = ammo.chambers;
             }
         }
     }
@@ -681,7 +726,8 @@ impl State {
                 self.status.counts.belt_reloads += 1;
                 self.event(format!("{hand:?} belt reload"));
                 let record = self.records.get(weapon.key);
-                record.chambers[gun.entry()] = Chamber::Chambered;
+                record.chambers[gun.entry()] =
+                    engine::feed_chamber(weapon.address, gun.entry()).unwrap_or(Chamber::Chambered);
                 record.travels[gun.entry()].close();
                 haptics::play(hand, Event::BeltSeat);
             }
@@ -771,6 +817,7 @@ impl State {
     }
 
     pub(super) fn stand_down(&mut self) {
+        ammo::suspend();
         loose::let_go();
         self.clear_tick();
         self.status.active = false;

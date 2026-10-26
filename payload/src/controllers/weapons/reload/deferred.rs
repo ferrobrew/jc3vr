@@ -7,7 +7,7 @@ use crate::controllers::{
     weapons::reload::{
         GunTick, State, Tick, WeaponTick,
         chamber::Chamber,
-        engine::DetachOutcome,
+        engine::{self, DetachOutcome},
         extraction::{DetachKind, DetachRequest, MagazineId},
         serial,
     },
@@ -81,7 +81,8 @@ impl State {
             {
                 self.status.counts.belt_reloads += 1;
                 let record = self.records.get(weapon.key);
-                record.chambers[gun.entry()] = Chamber::Chambered;
+                record.chambers[gun.entry()] =
+                    engine::feed_chamber(weapon.address, gun.entry()).unwrap_or(Chamber::Chambered);
                 record.travels[gun.entry()].close();
                 self.event(format!("{hand:?} belt reload"));
                 haptics::play(hand, Event::BeltSeat);

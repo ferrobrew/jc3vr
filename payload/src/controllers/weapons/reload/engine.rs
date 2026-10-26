@@ -40,7 +40,8 @@ use crate::{
             dual_wield::single,
             empty,
             reload::{
-                chamber::ActionKind,
+                ammo::{self, Ammo, NativeAmmo},
+                chamber::{ActionKind, Chamber},
                 frames, gate,
                 loose::{self, EjectRounds, Loose, Retention},
             },
@@ -187,6 +188,14 @@ unsafe fn detach_magazine(
     else {
         return DetachOutcome::NoThrow;
     };
+    let partition = ammo::change(address, |ammo| {
+        ammo.reconcile(NativeAmmo {
+            total: rounds,
+            out: false,
+        });
+        *ammo
+    });
+    let magazine_rounds = partition.map_or(rounds, |ammo| ammo.magazine);
     let execute = |retention: Option<&Retention>| {
         if retention.is_some_and(|r| !r.matches(gun as usize, spare)) {
             return DetachOutcome::NoThrow;
@@ -194,7 +203,7 @@ unsafe fn detach_magazine(
         // No owner borrow crosses either engine call: both can re-enter the owner through old pointers.
         let throw = || unsafe { (*gun).ThrowAwayMagazineObject(character, part) };
         let (thrown, retained) = if let Some(retention) = retention {
-            EjectRounds::with(retention, rounds, throw)
+            EjectRounds::with(retention, magazine_rounds, throw)
         } else {
             (throw(), None)
         };
@@ -203,7 +212,12 @@ unsafe fn detach_magazine(
             || unsafe { (*gun).SpawnMagazineObject() },
             |retained| unsafe {
                 (&raw mut (*weapon).m_WeaponIsWithoutMagazine).write(true);
-                if retained {
+                if let Some(total) = ammo::change(address, |ammo| {
+                    ammo.detach(retained);
+                    ammo.total()
+                }) {
+                    (*weapon).SetMagazineAmmo(total);
+                } else if retained {
                     (*weapon).SetMagazineAmmo(0);
                 }
             },
@@ -271,7 +285,9 @@ pub unsafe fn load_rounds(address: usize, rounds: i32) {
     } else {
         rounds.max(0)
     };
-    let leftover = weapon.m_MagazineAmmo.max(0);
+    let partition = current_ammo(weapon);
+    let chambers = partition.map_or(0, Ammo::chamber_rounds);
+    let leftover = weapon.m_MagazineAmmo.max(0) - chambers;
     let unlimited = unsafe { weapon.HasUnlimitedAmmo() };
     if leftover > 0
         && !unlimited
@@ -282,7 +298,12 @@ pub unsafe fn load_rounds(address: usize, rounds: i32) {
         let reserve = unsafe { inventory.GetAmmoCount(ammo_type) };
         unsafe { inventory.SetAmmoCount(ammo_type, reserve + leftover, true) };
     }
-    unsafe { weapon.SetMagazineAmmo(rounds) };
+    let total = ammo::change(address, |ammo| {
+        ammo.insert(rounds);
+        ammo.total()
+    })
+    .unwrap_or(rounds);
+    unsafe { weapon.SetMagazineAmmo(total) };
     weapon.m_KeepReloading = false;
     weapon.m_WeaponIsWithoutMagazine = false;
     unsafe { show_magazine(weapon) };
@@ -319,11 +340,23 @@ pub unsafe fn load_full(address: usize) -> bool {
     let Some(weapon) = (unsafe { (address as *mut WeaponBase).as_mut() }) else {
         return false;
     };
+    let partition = current_ammo(weapon);
+    let chambers = partition.map_or(0, Ammo::chamber_rounds);
+    ammo::magazine_only(address, true);
+    if let Some(partition) = partition {
+        unsafe { weapon.SetMagazineAmmo(partition.reload_start()) };
+    }
     let loaded = unsafe { weapon.Reload() };
     // The game's reload fills a single pistol to the pair's size; it holds half.
     if let Some(user) = unsafe { user_mut(weapon) } {
         unsafe { single::clamp_magazine(user, weapon) };
     }
+    let magazine = weapon.m_MagazineAmmo.max(0);
+    if chambers > 0 {
+        unsafe { weapon.SetMagazineAmmo(magazine + chambers) };
+    }
+    ammo::change(address, |ammo| ammo.reload_finish(magazine));
+    ammo::magazine_only(address, false);
     weapon.m_KeepReloading = false;
     weapon.m_WeaponIsWithoutMagazine = false;
     unsafe { show_magazine(weapon) };
@@ -341,7 +374,8 @@ pub unsafe fn load_one(address: usize) -> bool {
         return false;
     };
     let capacity = unsafe { single::magazine_size(weapon) };
-    if weapon.m_MagazineAmmo >= capacity {
+    let chambers = current_ammo(weapon).map_or(0, Ammo::chamber_rounds);
+    if weapon.m_MagazineAmmo - chambers >= capacity {
         return false;
     }
     let unlimited = unsafe { weapon.HasUnlimitedAmmo() };
@@ -356,7 +390,24 @@ pub unsafe fn load_one(address: usize) -> bool {
         unsafe { user.m_Inventory.SetAmmoCount(ammo_type, reserve - 1, true) };
     }
     weapon.m_WeaponIsWithoutMagazine = false;
+    current_ammo(weapon);
     true
+}
+
+pub(super) unsafe fn set_shot_ammo(address: usize, total: i32) {
+    if let Some(weapon) = unsafe { (address as *mut WeaponBase).as_mut() } {
+        unsafe { weapon.SetMagazineAmmo(total) };
+    }
+}
+
+fn current_ammo(weapon: &WeaponBase) -> Option<Ammo> {
+    ammo::change(weapon as *const WeaponBase as usize, |ammo| {
+        ammo.reconcile(NativeAmmo {
+            total: weapon.m_MagazineAmmo,
+            out: weapon.m_WeaponIsWithoutMagazine,
+        });
+        *ammo
+    })
 }
 
 /// Read the current loaded-round count and magazine presence after this tick's reload operations.
@@ -367,7 +418,7 @@ pub unsafe fn load_one(address: usize) -> bool {
 pub(super) unsafe fn action_ammo(address: usize) -> Option<(i32, bool)> {
     let weapon = unsafe { (address as *const WeaponBase).as_ref() }?;
     Some((
-        weapon.m_MagazineAmmo.max(0),
+        current_ammo(weapon).map_or(weapon.m_MagazineAmmo.max(0), |ammo| ammo.magazine),
         !weapon.m_WeaponIsWithoutMagazine,
     ))
 }
@@ -377,15 +428,25 @@ pub(super) unsafe fn action_ammo(address: usize) -> Option<(i32, bool)> {
 /// # Safety
 ///
 /// The weapon must be owned and live on the input thread, outside the world update.
-pub(super) unsafe fn eject_chamber_round(address: usize) -> Option<(i32, bool)> {
-    let weapon = address as *mut WeaponBase;
-    let (rounds, magazine_in) = unsafe { action_ammo(address) }?;
-    if rounds > 0 && magazine_in {
-        // ConsumeAmmo also changes burst state and can debit reserve ammunition. Extraction only
-        // discards one of the loaded rounds; SetMagazineAmmo keeps the native HUD in sync.
-        unsafe { (*weapon).SetMagazineAmmo(rounds - 1) };
-    }
+pub(super) unsafe fn eject_chamber_round(address: usize, gun: usize) -> Option<(i32, bool)> {
+    let weapon = unsafe { (address as *mut WeaponBase).as_mut() }?;
+    let partition = current_ammo(weapon);
+    let total = if partition.is_some() {
+        ammo::change(address, |ammo| {
+            ammo.eject(gun);
+            ammo.total()
+        })?
+    } else {
+        (weapon.m_MagazineAmmo - 1).max(0)
+    };
+    // ConsumeAmmo also changes burst state and can debit reserve ammunition. A rack only discards
+    // the chamber-owned round; SetMagazineAmmo keeps the native HUD in sync.
+    unsafe { weapon.SetMagazineAmmo(total) };
     unsafe { action_ammo(address) }
+}
+
+pub(super) fn feed_chamber(address: usize, gun: usize) -> Option<Chamber> {
+    ammo::change(address, |ammo| ammo.feed(gun))
 }
 
 /// Tell the weapon at `address` that its action was worked by hand: the bolt rifle's lock cleared

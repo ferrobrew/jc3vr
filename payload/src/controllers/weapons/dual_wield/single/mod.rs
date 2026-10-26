@@ -195,10 +195,12 @@ pub(crate) unsafe fn clamp_magazine(owner: &mut Character, weapon: &mut WeaponBa
     }
     let tuned = unsafe { weapon.GetMagazineSize() };
     let unlimited = unsafe { weapon.HasUnlimitedAmmo() };
-    let Some(clamped) = magazine::clamp(weapon.m_MagazineAmmo, tuned, unlimited) else {
+    let chamber =
+        crate::controllers::weapons::reload::chamber_rounds(weapon as *const WeaponBase as usize);
+    let Some(clamped) = magazine::clamp(weapon.m_MagazineAmmo - chamber, tuned, unlimited) else {
         return;
     };
-    unsafe { weapon.SetMagazineAmmo(clamped.magazine) };
+    unsafe { weapon.SetMagazineAmmo(clamped.magazine + chamber) };
     unsafe { return_rounds(owner, weapon, clamped.returned) };
     tracing::debug!(
         target: "controllers",

@@ -30,6 +30,15 @@ pub(super) trait ActionEngine {
     fn pump_hand(&self, weapon: usize) -> Option<Hand>;
     fn ammo(&mut self, weapon: usize) -> Option<(i32, bool)>;
     fn eject_round(&mut self, weapon: usize) -> Option<(i32, bool)>;
+    fn eject_gun(&mut self, weapon: usize, _gun: usize) -> Option<(i32, bool)> {
+        self.eject_round(weapon)
+    }
+    fn feed(&mut self, weapon: usize, _gun: usize) -> Chamber {
+        self.ammo(weapon)
+            .map_or(Chamber::Empty, |(rounds, magazine_in)| {
+                chamber::after_work(rounds, magazine_in)
+            })
+    }
     fn cycled(&mut self, weapon: usize, kind: ActionKind, clip: bool);
 }
 
@@ -50,7 +59,21 @@ impl ActionEngine for NativeAction {
 
     fn eject_round(&mut self, weapon: usize) -> Option<(i32, bool)> {
         // SAFETY: action work uses the current input tick's owned weapon.
-        unsafe { engine::eject_chamber_round(weapon) }
+        unsafe { engine::eject_chamber_round(weapon, 0) }
+    }
+
+    fn eject_gun(&mut self, weapon: usize, gun: usize) -> Option<(i32, bool)> {
+        // SAFETY: action work uses the current input tick's owned weapon.
+        unsafe { engine::eject_chamber_round(weapon, gun) }
+    }
+
+    fn feed(&mut self, weapon: usize, gun: usize) -> Chamber {
+        engine::feed_chamber(weapon, gun).unwrap_or_else(|| {
+            self.ammo(weapon)
+                .map_or(Chamber::Empty, |(rounds, magazine_in)| {
+                    chamber::after_work(rounds, magazine_in)
+                })
+        })
     }
 
     fn cycled(&mut self, weapon: usize, kind: ActionKind, clip: bool) {
@@ -111,15 +134,25 @@ impl State {
         });
         let event = self.status.work.step(work_inputs, &reload.action);
         match (event, target) {
-            (Some(WorkEvent::Pulled), _) => {
+            (Some(WorkEvent::Pulled), Some((_, weapon, gun))) => {
+                let record = self.records.get(weapon.key);
+                if record.chambers[gun.entry()] == Chamber::Chambered {
+                    if NativeAction
+                        .eject_gun(weapon.address, gun.entry())
+                        .is_none()
+                    {
+                        self.status.work.reset();
+                        return;
+                    }
+                    record.chambers[gun.entry()] = Chamber::Empty;
+                }
                 if let Some(worker) = worker {
                     haptics::play(worker, Event::Rack);
                 }
             }
             (Some(WorkEvent::Worked), Some((gun_hand, weapon, gun))) => {
                 let kind = weapon.plan.action;
-                let (rounds, magazine_in) = self.magazine(weapon);
-                let chamber = chamber::after_work(rounds, magazine_in);
+                let chamber = NativeAction.feed(weapon.address, gun.entry());
                 self.records.get(weapon.key).chambers[gun.entry()] = chamber;
                 self.status.counts.racks += 1;
                 self.event(format!("{} worked", kind.label()));
@@ -266,7 +299,7 @@ impl State {
         if events.rear {
             let record = self.records.get(weapon.key);
             if record.chambers[gun.entry()] == Chamber::Chambered
-                && engine.eject_round(weapon.address).is_none()
+                && engine.eject_gun(weapon.address, gun.entry()).is_none()
             {
                 record.travels[gun.entry()].pulled = false;
                 return;
@@ -292,11 +325,7 @@ impl State {
             self.event(format!("{} let go", kind.label()));
         }
         if events.cycled {
-            let chamber = engine
-                .ammo(weapon.address)
-                .map_or(Chamber::Empty, |(rounds, magazine_in)| {
-                    chamber::after_work(rounds, magazine_in)
-                });
+            let chamber = engine.feed(weapon.address, gun.entry());
             self.records.get(weapon.key).chambers[gun.entry()] = chamber;
             self.status.counts.racks += 1;
             self.event(format!("{} worked", kind.label()));
@@ -313,11 +342,6 @@ impl State {
                 "reload: the action cycled"
             );
         }
-    }
-
-    /// The rounds in `weapon`'s magazine, and whether the magazine is in.
-    fn magazine(&self, weapon: &WeaponTick) -> (i32, bool) {
-        (weapon.reading.magazine, !weapon.reading.out)
     }
 
     /// Let go of every remembered weapon's actions, leaving the parts where they are.

@@ -35,6 +35,7 @@
 //! special weapons keep the game's reload. With the reload off, every weapon does.
 
 mod action;
+mod ammo;
 pub mod belt;
 mod bones;
 pub mod chamber;
@@ -634,13 +635,35 @@ pub(crate) fn adjust_part(
 /// A shot of `weapon` from `hand` that left `magazine` rounds, from the per-shot seam on the
 /// weapon's thread.
 pub(super) fn on_shot(weapon: usize, hand: Hand, magazine: i32) {
-    gate::on_shot(weapon, hand, magazine);
+    let total = if gate::tracks(weapon, hand) {
+        ammo::on_shot(weapon, hand.index(), magazine).unwrap_or(magazine)
+    } else {
+        magazine
+    };
+    if total != magazine {
+        // SAFETY: the per-shot caller keeps this weapon live on its native update thread.
+        unsafe { engine::set_shot_ammo(weapon, total) };
+    }
+    gate::on_shot(weapon, hand, total);
 }
 
 /// Whether the gun of `weapon` in `hand` is held from firing, from the ammunition check on the
 /// weapon's thread.
 pub(super) fn holds_fire(weapon: usize, hand: Hand) -> bool {
     gate::holds_fire(weapon, hand)
+        || (gate::tracks(weapon, hand) && ammo::holds_fire(weapon, hand.index()))
+}
+
+/// Loaded rounds excluded from a single pistol's magazine-capacity clamp.
+pub(crate) fn chamber_rounds(weapon: usize) -> i32 {
+    ammo::protected_rounds(weapon)
+}
+
+/// The native ammo check may see a magazine-less weapon as loaded only for a live owned chamber.
+pub(super) fn chamber_without_magazine(weapon: usize, hand: Hand) -> bool {
+    gate::tracks(weapon, hand)
+        && !holds_fire(weapon, hand)
+        && ammo::snapshot(weapon).is_some_and(|ammo| ammo.out && ammo.chamber_rounds() > 0)
 }
 
 /// How many events the readout keeps.

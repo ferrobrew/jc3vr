@@ -104,6 +104,14 @@ pub(super) fn holds_fire(weapon: usize, hand: Hand) -> bool {
     shared.fresh().is_some_and(|p| holds(&p, weapon, hand))
 }
 
+/// Whether this hand currently publishes ownership of the weapon, before the stale timeout.
+pub(super) fn tracks(weapon: usize, hand: Hand) -> bool {
+    SHARED
+        .lock()
+        .fresh()
+        .is_some_and(|p| weapon != 0 && p.weapons[hand.index()] == weapon)
+}
+
 /// Whether the game's own cycling of `weapon`'s bolt or pump is suppressed.
 pub(super) fn manual_action(weapon: usize) -> bool {
     SHARED

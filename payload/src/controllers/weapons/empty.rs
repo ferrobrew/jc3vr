@@ -167,7 +167,7 @@ fn check_if_reload_should_be_triggered_base(
     should_try_to_fire: *mut bool,
     was_trigger_pulled: bool,
 ) {
-    let original = || {
+    let original = move || {
         CHECK_IF_RELOAD_SHOULD_BE_TRIGGERED_BASE
             .get()
             .unwrap()
@@ -179,10 +179,22 @@ fn check_if_reload_should_be_triggered_base(
         return original();
     }
     let requested = unsafe { should_try_to_fire.as_ref() }.is_some_and(|s| *s);
+    let hand = unsafe { weapon.as_ref() }.and_then(|w| unsafe { fire::gun_hand(w, gun_data) });
+    let chambered_without_magazine =
+        hand.is_some_and(|hand| reload::chamber_without_magazine(weapon as usize, hand));
+    let masked = chambered_without_magazine
+        && unsafe { weapon.as_ref() }.is_some_and(|w| w.m_WeaponIsWithoutMagazine);
+    if masked {
+        // The native check otherwise rejects the live chamber solely for its absent magazine.
+        unsafe { (*weapon).m_WeaponIsWithoutMagazine = false };
+    }
     let outer = CHECK.replace(Some(Check {
         tried_switch: false,
     }));
     original();
+    if masked {
+        unsafe { (*weapon).m_WeaponIsWithoutMagazine = true };
+    }
     let check = CHECK.replace(outer);
 
     // SAFETY: the weapon is live for the length of its update, on this thread, and `gun_data` is
