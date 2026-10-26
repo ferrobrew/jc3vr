@@ -121,36 +121,118 @@ pub(super) unsafe fn read(character: &Character) -> Result<NativeSample, Refusal
     }
 }
 
+/// The selected range and producer buffers immediately before a synchronous update.
+pub(crate) struct AnimationEvaluation {
+    controller: u64,
+    num_of_bones: i32,
+    before: ProducerBuffers,
+}
+
+/// Snapshots typed producer state without retaining native pointers across the call.
+pub(crate) unsafe fn animation_evaluation(
+    controller: &AnimationController,
+    num_of_bones: i32,
+) -> Option<AnimationEvaluation> {
+    Some(AnimationEvaluation {
+        controller: controller as *const _ as u64,
+        num_of_bones,
+        before: unsafe { producer_buffers(controller)? },
+    })
+}
+
 /// Observe only the controller supplied by the serialized animation hook.
-/// A time-only update invalidates evidence rather than relabelling an old pose.
-pub(crate) unsafe fn animation_update(controller: &AnimationController, pose_evaluated: bool) {
+/// Time-only, skipped, and camera-excluding updates invalidate the previous evidence.
+pub(crate) unsafe fn animation_update(
+    controller: &AnimationController,
+    evaluation: Option<AnimationEvaluation>,
+) {
     let address = controller as *const _ as u64;
-    if !pose_evaluated {
-        evidence::invalidate(address);
-        return;
-    }
-    if controller.m_SkeletonResourceHandle.is_null()
-        || controller.m_Skeleton.is_null()
-        || controller.m_PoseProducer.is_null()
-        || controller.m_PoseProducerControlBlock.is_null()
-    {
-        evidence::invalidate(address);
-        return;
-    }
     let result = unsafe {
-        let index = controller.GetBoneIndex(hashlittle(b"CharacterCam1") as u32);
-        source(controller, index).and_then(|source| {
-            let producer = controller
-                .m_PoseProducer
+        (|| {
+            let evaluation = evaluation.ok_or(Refusal::MissingFinalizedAnimation)?;
+            let after = producer_buffers(controller).ok_or(Refusal::MissingChannel)?;
+            if evaluation.controller != address || !evaluation.before.exchanged_with(after) {
+                return Err(Refusal::MissingFinalizedAnimation);
+            }
+            if controller.m_SkeletonResourceHandle.is_null() || controller.m_Skeleton.is_null() {
+                return Err(Refusal::MissingChannel);
+            }
+            let index = controller.GetBoneIndex(hashlittle(b"CharacterCam1") as u32);
+            let skeleton = controller
+                .m_Skeleton
                 .as_ref()
                 .ok_or(Refusal::MissingChannel)?;
+            let havok = skeleton
+                .m_HavokSkeleton
+                .as_ref()
+                .ok_or(Refusal::MissingChannel)?;
+            if index == 0
+                || index >= havok.m_Bones.size.max(0) as u32
+                || skeleton.m_BoneNameHashes.is_null()
+                || *skeleton.m_BoneNameHashes.add(index as usize)
+                    != hashlittle(b"CharacterCam1") as u32
+            {
+                return Err(Refusal::MissingChannel);
+            }
+            let source = source(controller, index)?;
+            evaluation.complete(after, source.camera_bone)?;
             let animation = animation(controller, index)?;
-            Ok((source, producer.m_PoseT1 as u64, animation))
-        })
+            Ok((source, after.current, animation))
+        })()
     };
+    publish_evaluation(address, result);
+}
+
+#[derive(Clone, Copy)]
+struct ProducerBuffers {
+    producer: u64,
+    owner: u64,
+    previous: u64,
+    current: u64,
+}
+
+impl ProducerBuffers {
+    fn exchanged_with(self, after: Self) -> bool {
+        // PoseProducer::Update exchanges the buffers only after the controller's native guard.
+        self.producer == after.producer
+            && self.owner == after.owner
+            && self.previous != self.current
+            && self.previous == after.current
+            && self.current == after.previous
+    }
+}
+
+impl AnimationEvaluation {
+    fn complete(&self, after: ProducerBuffers, camera: u32) -> Result<(), Refusal> {
+        if !self.before.exchanged_with(after)
+            || !u32::try_from(self.num_of_bones).is_ok_and(|count| camera < count)
+        {
+            return Err(Refusal::MissingFinalizedAnimation);
+        }
+        Ok(())
+    }
+}
+
+unsafe fn producer_buffers(controller: &AnimationController) -> Option<ProducerBuffers> {
+    let producer = unsafe { controller.m_PoseProducer.as_ref()? };
+    if controller.m_PoseProducerControlBlock.is_null()
+        || producer.m_PoseT0.is_null()
+        || producer.m_PoseT1.is_null()
+    {
+        return None;
+    }
+    Some(ProducerBuffers {
+        producer: controller.m_PoseProducer as u64,
+        owner: controller.m_PoseProducerControlBlock as u64,
+        previous: producer.m_PoseT0 as u64,
+        current: producer.m_PoseT1 as u64,
+    })
+}
+
+fn publish_evaluation(controller: u64, result: Result<(Source, u64, Animation), Refusal>) {
     match result {
         Ok((source, buffer, animation)) => evidence::publish(source, buffer, animation),
-        Err(_) => evidence::invalidate(address),
+        Err(_) => evidence::invalidate(controller),
     }
 }
 
@@ -411,6 +493,117 @@ const EXACT_STATES: &[(&[u8], GraphState)] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn animation_adapter_invalidates_a_range_excluding_the_camera() {
+        for count in [-1, 0, 7, 8] {
+            let (evaluation, after, source, animation) = evaluation_fixture(910, count);
+            evidence::publish(source, after.current, animation.clone());
+            let result = evaluation
+                .complete(after, source.camera_bone)
+                .map(|()| (source, after.current, animation.clone()));
+            assert!(matches!(result, Err(Refusal::MissingFinalizedAnimation)));
+            publish_evaluation(source.controller, result);
+            assert!(matches!(
+                evidence::matching(source, after.current, &animation),
+                Err(Refusal::MissingFinalizedAnimation)
+            ));
+        }
+    }
+
+    #[test]
+    fn animation_adapter_publishes_a_range_including_the_camera() {
+        let (evaluation, after, source, animation) = evaluation_fixture(911, 9);
+        evidence::publish(source, evaluation.before.current, animation.clone());
+        let previous = evidence::matching(source, evaluation.before.current, &animation)
+            .unwrap()
+            .serial;
+        let result = evaluation
+            .complete(after, source.camera_bone)
+            .map(|()| (source, after.current, animation.clone()));
+        assert!(result.is_ok());
+        publish_evaluation(source.controller, result);
+        assert!(
+            evidence::matching(source, after.current, &animation)
+                .unwrap()
+                .serial
+                > previous
+        );
+        evidence::invalidate(source.controller);
+    }
+
+    #[test]
+    fn animation_adapter_invalidates_skipped_producer_work() {
+        let (evaluation, _, source, animation) = evaluation_fixture(912, 9);
+        let after = evaluation.before;
+        evidence::publish(source, after.current, animation.clone());
+        let result = evaluation
+            .complete(after, source.camera_bone)
+            .map(|()| (source, after.current, animation.clone()));
+        assert!(matches!(result, Err(Refusal::MissingFinalizedAnimation)));
+        publish_evaluation(source.controller, result);
+        assert!(matches!(
+            evidence::matching(source, after.current, &animation),
+            Err(Refusal::MissingFinalizedAnimation)
+        ));
+    }
+
+    fn evaluation_fixture(
+        controller: u64,
+        num_of_bones: i32,
+    ) -> (AnimationEvaluation, ProducerBuffers, Source, Animation) {
+        let before = ProducerBuffers {
+            producer: controller + 1,
+            owner: controller + 2,
+            previous: controller + 3,
+            current: controller + 4,
+        };
+        let after = ProducerBuffers {
+            previous: before.current,
+            current: before.previous,
+            ..before
+        };
+        let source = Source {
+            controller,
+            producer: before.producer,
+            producer_owner: before.owner,
+            skeleton_resource: controller + 5,
+            skeleton: controller + 6,
+            driver: controller + 7,
+            rule: controller + 8,
+            blender: controller + 9,
+            camera_bone: 8,
+        };
+        let clip = Clip {
+            source: ClipSource {
+                instance: controller + 10,
+                owner: controller + 11,
+                animation: controller + 12,
+                binding: controller + 13,
+            },
+            time: 0.5,
+            duration: 1.0,
+            looping: false,
+            overflows: 0,
+            underflows: 0,
+            weight: 1.0,
+            camera_track_weight: 1.0,
+        };
+        (
+            AnimationEvaluation {
+                controller,
+                num_of_bones,
+                before,
+            },
+            after,
+            source,
+            Animation {
+                state: Some(1),
+                playing: vec![clip],
+                samplers: vec![clip],
+            },
+        )
+    }
 
     #[test]
     fn classifier_admits_the_exact_ground_sequence_and_rejects_ordinary_states() {

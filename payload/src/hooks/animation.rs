@@ -44,7 +44,7 @@ fn update_animations_time(controller: *mut AnimationController, dt: f32) {
     };
     UPDATE_ANIMATIONS_TIME.get().unwrap().call(controller, dt);
     if let Some(controller) = unsafe { controller.as_ref() } {
-        unsafe { crate::hooks::camera::authored::animation_update(controller, false) };
+        unsafe { crate::hooks::camera::authored::animation_update(controller, None) };
     }
 }
 
@@ -60,12 +60,17 @@ fn update_animations(controller: *mut AnimationController, dt: f32, num_of_bones
     } else {
         dt
     };
+    let evaluation = unsafe {
+        controller.as_ref().and_then(|controller| {
+            crate::hooks::camera::authored::animation_evaluation(controller, num_of_bones)
+        })
+    };
     UPDATE_ANIMATIONS
         .get()
         .unwrap()
         .call(controller, dt, num_of_bones);
     if let Some(controller) = unsafe { controller.as_ref() } {
-        unsafe { crate::hooks::camera::authored::animation_update(controller, true) };
+        unsafe { crate::hooks::camera::authored::animation_update(controller, evaluation) };
     }
 }
 
