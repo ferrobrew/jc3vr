@@ -10,9 +10,9 @@ pub struct TestingConfig {
     pub enabled: bool,
     /// Whether a recording keeps the tracked hand joints, which triple a frame's size.
     pub record_hand_joints: bool,
-    /// Whether the next recording uses experimental lossless chunks. Real-capture performance
-    /// acceptance is pending, so the uncompressed format remains the default.
-    #[serde(default)]
+    /// Whether recordings use lossless version 4 chunks. This defaults on; turn it off to write
+    /// uncompressed version 4 records for comparison.
+    #[serde(default = "default_record_compression")]
     pub record_compression: bool,
     /// Where the scenario files are, or empty for the `testing` folder in the configuration
     /// directory. A scenario names its recording relative to its own file.
@@ -30,12 +30,16 @@ impl TestingConfig {
         Self {
             enabled: true,
             record_hand_joints: true,
-            record_compression: false,
+            record_compression: true,
             scenario_dir: String::new(),
             request_file: true,
             teleport_timeout_s: 60.0,
         }
     }
+}
+
+fn default_record_compression() -> bool {
+    true
 }
 
 impl Default for TestingConfig {

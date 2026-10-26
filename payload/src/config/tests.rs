@@ -25,9 +25,9 @@ fn the_defaults_round_trip() {
 }
 
 #[test]
-fn recording_compression_requires_explicit_opt_in_in_old_and_current_settings() {
+fn recording_compression_defaults_on_and_explicit_false_is_preserved() {
     let defaults = Config::new();
-    assert!(!defaults.testing.record_compression);
+    assert!(defaults.testing.record_compression);
     assert!(defaults.testing.enabled);
     assert!(defaults.testing.record_hand_joints);
 
@@ -44,15 +44,15 @@ fn recording_compression_requires_explicit_opt_in_in_old_and_current_settings() 
     );
     assert!(report.ignored.is_empty());
     assert!(report.reset.is_empty());
-    assert!(!config.testing.record_compression);
+    assert!(config.testing.record_compression);
     assert!(config.testing.enabled);
     assert!(config.testing.record_hand_joints);
 
-    let mut opted_in = defaults;
-    opted_in.testing.record_compression = true;
-    let Loaded { config, report } = parse(&toml::to_string(&opted_in).unwrap()).unwrap();
+    let mut uncompressed = defaults;
+    uncompressed.testing.record_compression = false;
+    let Loaded { config, report } = parse(&toml::to_string(&uncompressed).unwrap()).unwrap();
     assert_eq!(report, LoadReport::default());
-    assert!(config.testing.record_compression);
+    assert!(!config.testing.record_compression);
     assert!(config.testing.enabled);
     assert!(config.testing.record_hand_joints);
 }

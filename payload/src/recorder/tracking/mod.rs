@@ -73,7 +73,7 @@ pub(crate) struct TrackingStatus {
     /// Frames dropped because the writer fell behind.
     pub(crate) dropped: u32,
     /// Stored bytes accepted by the buffered sink, including the preamble. A flush error can
-    /// prevent durability. The opt-in chunked writer stores chunks; the normal writer stores original records.
+    /// prevent durability. The chunked writer stores chunks; the raw writer stores original records.
     pub(crate) bytes: u64,
     /// Preamble and original record bytes for complete accepted batches, before compression.
     pub(crate) logical_bytes: u64,
@@ -543,7 +543,7 @@ fn begin() -> Result<PathBuf, StartError> {
     let path = folder.join(format!("{stamp}.{}", format::EXTENSION));
     let mut state = STATE.lock();
     state.can_start()?;
-    let recording_format = writer::RecordingFormat::from_compression_opt_in(compression);
+    let recording_format = writer::RecordingFormat::from_compression_setting(compression);
     let writer = Writer::start(&path, &header, recording_format).map_err(StartError::Writer)?;
     discard_before_start();
     state.active = Some(Active {

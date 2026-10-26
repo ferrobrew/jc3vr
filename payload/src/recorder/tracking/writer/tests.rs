@@ -145,14 +145,14 @@ fn input_batch(time: u64) -> CaptureBatch {
 }
 
 #[test]
-fn format_defaults_to_uncompressed_v4_and_compression_stays_opt_in() {
-    assert_eq!(RecordingFormat::default(), RecordingFormat::UncompressedV4);
+fn format_defaults_to_chunked_v4_and_false_selects_uncompressed_v4() {
+    assert_eq!(RecordingFormat::default(), RecordingFormat::ChunkedV4);
     assert_eq!(
-        RecordingFormat::from_compression_opt_in(false),
+        RecordingFormat::from_compression_setting(false),
         RecordingFormat::UncompressedV4
     );
     assert_eq!(
-        RecordingFormat::from_compression_opt_in(true),
+        RecordingFormat::from_compression_setting(true),
         RecordingFormat::ChunkedV4
     );
     let payload_header = crate::recorder::tracking::format::Header {

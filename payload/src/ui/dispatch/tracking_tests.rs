@@ -70,7 +70,7 @@ fn actual_tracking_controls_keep_idle_actions_settings_and_instructions_without_
             "Tracking recording",
             "Start recording",
             "Record the tracked hand joints",
-            "Use experimental lossless recording compression",
+            "Use lossless chunked recording",
             "Records the head, both controllers, their inputs, and the semantic actions each VR \
              frame, starting from where the player stands. Ctrl+Numpad/ toggles it.",
         ] {

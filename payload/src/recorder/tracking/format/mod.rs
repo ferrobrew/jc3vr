@@ -154,12 +154,12 @@ pub(crate) fn encode_preamble(header: &Header) -> Vec<u8> {
     tracking_format::encode_preamble(&convert::header_to_file(header))
 }
 
-/// The normal recorder uses the version 4 uncompressed container with input records.
+/// The uncompressed comparison option uses the version 4 container with input records.
 pub(crate) fn encode_input_preamble(header: &Header) -> Vec<u8> {
     tracking_format::encode_latest_preamble(&convert::header_to_file(header))
 }
 
-/// Controlled compression experiments store atomic capture batches in the version 4 container.
+/// Default recordings store lossless atomic capture batches in the version 4 chunked container.
 pub(crate) fn encode_chunked_preamble(header: &Header) -> Vec<u8> {
     tracking_format::encode_latest_chunked_preamble(&convert::header_to_file(header))
 }

@@ -17,17 +17,16 @@ use tracking_format::input::{CapturedInput, DiscontinuityReason, InputRecord};
 
 use crate::recorder::tracking::format::{self, Header};
 
-/// The container selected once at recording start. Compression remains an explicit experiment
-/// until representative full-joint capture and sustained-I/O acceptance pass.
+/// The container selected once at recording start.
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum RecordingFormat {
-    #[default]
     UncompressedV4,
+    #[default]
     ChunkedV4,
 }
 
 impl RecordingFormat {
-    pub(crate) fn from_compression_opt_in(enabled: bool) -> Self {
+    pub(crate) fn from_compression_setting(enabled: bool) -> Self {
         if enabled {
             Self::ChunkedV4
         } else {

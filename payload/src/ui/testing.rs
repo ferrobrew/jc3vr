@@ -125,10 +125,10 @@ fn recording_ui(ui: &mut egui::Ui) {
     .on_hover_text("They triple a frame's size, and only the finger curls read them.");
     ui.checkbox(
         &mut cfg.testing.record_compression,
-        "Use experimental lossless recording compression",
+        "Use lossless chunked recording",
     )
     .on_hover_text(
-        "Applies to the next recording. Uses version 4 chunks without dropping samples or joints. Real-capture performance acceptance is pending; uncompressed version 4 remains the default.",
+        "On by default. Applies to the next recording and stores the same full samples in lossless version 4 chunks; no joints or sample rate are dropped. Turn off for uncompressed version 4. Real-capture performance has not been benchmarked.",
     );
     ui.label(
         "Records the head, both controllers, their inputs, and the semantic actions each VR \

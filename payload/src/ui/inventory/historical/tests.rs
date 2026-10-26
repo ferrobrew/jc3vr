@@ -450,7 +450,7 @@ fn extra_matching_current_owner_is_not_silently_selected() {
 
 const ORIGINAL: &str = "fn old() { let c = &mut cfg.controllers; ui.checkbox(&mut c.enabled, \"Enabled\"); if ui.button(\"Capture\").clicked() { sink::capture(); } }";
 const BASELINE_FINGERPRINT: u64 = 0x9b6099490bea7ce7;
-const MAPPING_FINGERPRINT: u64 = 0xe45fcdbe4919e6c2;
+const MAPPING_FINGERPRINT: u64 = 0x1fe287119a34c0d6;
 
 fn source(text: &'static str) -> SourceFile {
     SourceFile {
