@@ -5,17 +5,16 @@
 
 use serde::{Deserialize, Serialize};
 
-/// The grenade's pin: a grenade from the pouch comes out with its fuse held until the pin is
-/// pulled. Acts only under the controller scheme, so it defaults on.
+/// Persisted pin preferences. Safe pouch items auto-arm on a deliberate throw, so these
+/// preferences do not create or pause a live grenade while it is held.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GrenadePinConfig {
-    /// Hold the fuse of a grenade taken from the pouch until its pin is pulled. Off, the fuse runs
-    /// from the moment the grenade is taken, as the game's own throw has it.
+    /// Retained for settings compatibility; safe grenade activation does not depend on it.
     pub enabled: bool,
-    /// The radius of the pin's grab volume around the held grenade, for the other hand, metres.
+    /// The saved pin interaction radius, metres, reserved for a non-activating pin interaction.
     pub radius_m: f32,
-    /// Let the trigger of the hand holding the grenade pull the pin, for a throw with one hand.
+    /// The saved trigger preference, reserved for a non-activating pin interaction.
     pub trigger: bool,
 }
 

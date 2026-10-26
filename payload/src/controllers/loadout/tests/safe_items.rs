@@ -1,237 +1,23 @@
-//! Test-only actor-free bindings and moves on the actual loadout table.
-//!
-//! These identities retain no resource and have no live provider or admission route.
+//! Production safe-item moves alongside the actual native loadout transitions.
 
-use std::{fmt, num::NonZeroU64};
+use std::num::NonZeroU64;
 
+use jc3gi::character::inventory::WeaponSlot;
 use pretty_assertions::assert_eq;
 
 use crate::controllers::{
     frame::Hand,
     loadout::{
-        BodyLayout, Socket,
+        BodyLayout, Event, ResetKind, Socket,
         binding::Binding,
-        item::{ItemId, ItemKind},
-        table::{Departure, Docked, Item, ItemView, Loadout, Place},
+        item::ItemKind,
+        projection::{SlotContent, project_store},
+        safe_items::{ModelLeaseId, SafeItemError},
+        table::{Departure, Loadout, Place},
         tests::fixtures::{a_pistol, check_invariants, object, take, weapon},
+        transition::{Release, Removal, RemovalWhy, TransitionError},
     },
 };
-
-/// A nonzero model identity, distinct from an object address and not a retained resource.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ModelLeaseId(NonZeroU64);
-
-impl ModelLeaseId {
-    pub const fn new(identity: NonZeroU64) -> Self {
-        Self(identity)
-    }
-}
-
-impl fmt::Display for ModelLeaseId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "model lease #{}", self.0)
-    }
-}
-
-/// An actor-free render identity and movement revision within one table lifetime.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct SafeItemBinding {
-    pub model: ModelLeaseId,
-    revision: u64,
-}
-
-impl SafeItemBinding {
-    pub const fn revision(self) -> u64 {
-        self.revision
-    }
-}
-
-/// A copied validation view, without a borrow or resource-lifetime guarantee.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct SafeItemView {
-    pub item: ItemId,
-    pub binding: SafeItemBinding,
-    pub place: Place,
-}
-
-/// Refusals leave the actor-free item's identity, location, and model binding unchanged.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum SafeItemError {
-    UnknownItem(ItemId),
-    StaleItem(ItemId),
-    NotHeld(ItemId),
-    ModelAlreadyBound { model: ModelLeaseId, item: ItemId },
-    Occupied { place: Place, item: ItemId },
-    UnsupportedHolster(Socket),
-    LooseRepresentationUnavailable,
-    RevisionExhausted,
-}
-
-impl fmt::Display for SafeItemError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "loadout safe item: {self:?}")
-    }
-}
-
-impl std::error::Error for SafeItemError {}
-
-impl Loadout {
-    /// Resolve an actor-free item from the real table, including its current hand or holster.
-    pub fn safe_item(&self, id: ItemId) -> Option<SafeItemView> {
-        self.items()
-            .find(|item| item.id == id)
-            .and_then(SafeItemView::from_item)
-    }
-
-    /// Resolve a model identity through its current table owner.
-    pub fn safe_item_for_model(&self, model: ModelLeaseId) -> Option<SafeItemView> {
-        self.items()
-            .filter_map(SafeItemView::from_item)
-            .find(|item| item.binding.model == model)
-    }
-
-    /// Admit a controlled actor-free item without a model allocation or native actor.
-    pub fn admit_safe_item(
-        &mut self,
-        model: ModelLeaseId,
-        hand: Hand,
-    ) -> Result<SafeItemView, SafeItemError> {
-        if let Some(owner) = self.safe_item_for_model(model) {
-            return Err(SafeItemError::ModelAlreadyBound {
-                model,
-                item: owner.item,
-            });
-        }
-        self.require_safe_destination(Place::Hand(hand))?;
-        let id = self.allocate();
-        let binding = SafeItemBinding { model, revision: 0 };
-        self.hands[hand.index()] = Some(Item {
-            id,
-            kind: ItemKind::Grenade,
-            binding: Binding::SafeItem(binding),
-        });
-        Ok(SafeItemView {
-            item: id,
-            binding,
-            place: Place::Hand(hand),
-        })
-    }
-
-    /// Draw, transfer, or stow the same item after checking its complete current view.
-    pub fn move_safe_item(
-        &mut self,
-        expected: SafeItemView,
-        destination: Place,
-    ) -> Result<SafeItemView, SafeItemError> {
-        let current = self
-            .safe_item(expected.item)
-            .ok_or(SafeItemError::UnknownItem(expected.item))?;
-        if current != expected {
-            return Err(SafeItemError::StaleItem(expected.item));
-        }
-        if matches!(destination, Place::World(_)) {
-            return Err(SafeItemError::LooseRepresentationUnavailable);
-        }
-        if destination == current.place {
-            return Ok(current);
-        }
-        if matches!(
-            (current.place, destination),
-            (Place::Socket(_), Place::Socket(_))
-        ) {
-            return Err(SafeItemError::NotHeld(expected.item));
-        }
-        self.require_safe_destination(destination)?;
-        let revision = current
-            .binding
-            .revision
-            .checked_add(1)
-            .ok_or(SafeItemError::RevisionExhausted)?;
-        let mut item = match current.place {
-            Place::Hand(hand) => self.hands[hand.index()].take(),
-            Place::Socket(socket) => self.sockets[socket.index()]
-                .take()
-                .map(|docked| docked.item),
-            Place::World(_) => None,
-        }
-        .ok_or(SafeItemError::StaleItem(expected.item))?;
-        let binding = SafeItemBinding {
-            revision,
-            ..current.binding
-        };
-        item.binding = Binding::SafeItem(binding);
-        match destination {
-            Place::Hand(hand) => self.hands[hand.index()] = Some(item),
-            Place::Socket(socket) => self.sockets[socket.index()] = Some(Docked { item }),
-            Place::World(_) => unreachable!("world destinations are refused before removal"),
-        }
-        Ok(SafeItemView {
-            item: current.item,
-            binding,
-            place: destination,
-        })
-    }
-
-    /// Remove a logical item and return its model identity without claiming resource cleanup.
-    pub fn retire_safe_item(
-        &mut self,
-        expected: SafeItemView,
-    ) -> Result<ModelLeaseId, SafeItemError> {
-        let current = self
-            .safe_item(expected.item)
-            .ok_or(SafeItemError::UnknownItem(expected.item))?;
-        if current != expected {
-            return Err(SafeItemError::StaleItem(expected.item));
-        }
-        match current.place {
-            Place::Hand(hand) => self.hands[hand.index()] = None,
-            Place::Socket(socket) => self.sockets[socket.index()] = None,
-            Place::World(_) => return Err(SafeItemError::LooseRepresentationUnavailable),
-        }
-        Ok(current.binding.model)
-    }
-
-    fn require_safe_destination(&self, destination: Place) -> Result<(), SafeItemError> {
-        match destination {
-            Place::Socket(socket)
-                if !self.body.has(socket) || !matches!(socket, Socket::Hip(_) | Socket::Chest) =>
-            {
-                return Err(SafeItemError::UnsupportedHolster(socket));
-            }
-            Place::World(_) => return Err(SafeItemError::LooseRepresentationUnavailable),
-            Place::Hand(_) | Place::Socket(_) => {}
-        }
-        if let Some(item) = self.items().find(|item| item.place == destination) {
-            return Err(SafeItemError::Occupied {
-                place: destination,
-                item: item.id,
-            });
-        }
-        Ok(())
-    }
-}
-
-impl Binding {
-    pub const fn safe_item(self) -> Option<SafeItemBinding> {
-        match self {
-            Binding::SafeItem(binding) => Some(binding),
-            Binding::Live(_) | Binding::Awaiting(_) => None,
-        }
-    }
-}
-
-impl SafeItemView {
-    fn from_item(item: ItemView) -> Option<Self> {
-        if item.kind != ItemKind::Grenade || matches!(item.place, Place::World(_)) {
-            return None;
-        }
-        Some(Self {
-            item: item.id,
-            binding: item.binding.safe_item()?,
-            place: item.place,
-        })
-    }
-}
 
 #[test]
 fn independent_safe_items_resolve_through_draw_transfer_and_stow() {
@@ -279,21 +65,21 @@ fn duplicate_lease_occupied_hand_and_invalid_holster_leave_the_table_unchanged()
         table.admit_safe_item(model(1), Hand::Right),
         Err(SafeItemError::ModelAlreadyBound {
             model: model(1),
-            item: first.item
+            item: first.item,
         })
     );
     assert_eq!(
         table.admit_safe_item(model(3), Hand::Right),
         Err(SafeItemError::Occupied {
             place: second.place,
-            item: second.item
+            item: second.item,
         })
     );
     assert_eq!(
         table.move_safe_item(first, second.place),
         Err(SafeItemError::Occupied {
             place: second.place,
-            item: second.item
+            item: second.item,
         })
     );
     assert_eq!(
@@ -317,7 +103,7 @@ fn safe_items_share_native_occupancy_without_rebinding_or_replacing_a_weapon() {
         table.admit_safe_item(model(1), Hand::Right),
         Err(SafeItemError::Occupied {
             place: Place::Hand(Hand::Right),
-            item: native
+            item: native,
         })
     );
     assert_eq!(table.snapshot(), before);
@@ -330,7 +116,7 @@ fn safe_items_share_native_occupancy_without_rebinding_or_replacing_a_weapon() {
         table.move_safe_item(safe, Place::Socket(Socket::Chest)),
         Err(SafeItemError::Occupied {
             place: Place::Socket(Socket::Chest),
-            item: native
+            item: native,
         })
     );
     assert_eq!(table.snapshot(), before);
@@ -379,24 +165,35 @@ fn stale_views_cannot_move_or_retire_an_item_after_it_returns_to_the_same_hand()
 }
 
 #[test]
-fn release_requires_a_loose_representation_and_retirement_invalidates_only_that_identity() {
+fn inert_drops_keep_identity_and_retirement_invalidates_only_that_identity() {
     let mut table = Loadout::new(BodyLayout::full(Hand::Right));
     let first = table.admit_safe_item(model(1), Hand::Left).unwrap();
     let second = table.admit_safe_item(model(2), Hand::Right).unwrap();
     let before = table.snapshot();
-    for departure in [Departure::Dropped, Departure::AtSpeed, Departure::Returned] {
+    for departure in [Departure::AtSpeed, Departure::Returned] {
         assert_eq!(
             table.move_safe_item(first, Place::World(departure)),
-            Err(SafeItemError::LooseRepresentationUnavailable)
+            Err(SafeItemError::UnsupportedDeparture(departure))
         );
         assert_eq!(table.snapshot(), before);
     }
-    assert_eq!(table.retire_safe_item(first), Ok(model(1)));
+    let dropped = table
+        .move_safe_item(first, Place::World(Departure::Dropped))
+        .unwrap();
+    assert_eq!(dropped.item, first.item);
+    assert_eq!(dropped.binding.model, first.binding.model);
+    assert_eq!(table.safe_item(first.item), Some(dropped));
+    assert_eq!(table.safe_item_for_model(model(1)), Some(dropped));
+    assert_eq!(table.world.len(), 0);
+    assert_eq!(table.safe_world.len(), 1);
+    assert_eq!(table.held(Hand::Left), None);
+    check_safe_items(&table);
+    assert_eq!(table.retire_safe_item(dropped), Ok(model(1)));
     assert_eq!(table.safe_item(first.item), None);
     assert_eq!(table.safe_item_for_model(model(1)), None);
     assert_eq!(table.safe_item(second.item), Some(second));
     assert_eq!(
-        table.retire_safe_item(first),
+        table.retire_safe_item(dropped),
         Err(SafeItemError::UnknownItem(first.item))
     );
     assert_eq!(
@@ -411,6 +208,54 @@ fn release_requires_a_loose_representation_and_retirement_invalidates_only_that_
     assert_eq!(table.retire_safe_item(second), Ok(model(2)));
     assert_eq!(table.safe_item_for_model(model(2)), None);
     assert_eq!(table.safe_item(replacement.item), Some(replacement));
+    check_safe_items(&table);
+}
+
+#[test]
+fn independent_world_models_share_no_occupancy_or_native_address() {
+    let mut table = Loadout::new(BodyLayout::full(Hand::Right));
+    let first = table.admit_safe_item(model(1), Hand::Left).unwrap();
+    let second = table.admit_safe_item(model(2), Hand::Right).unwrap();
+    let first = table
+        .move_safe_item(first, Place::World(Departure::Dropped))
+        .unwrap();
+    let second = table
+        .move_safe_item(second, Place::World(Departure::Dropped))
+        .unwrap();
+    assert_eq!(first.place, second.place);
+    assert_eq!(table.safe_items().count(), 2);
+    let recovered = table
+        .move_safe_item(first, Place::Hand(Hand::Right))
+        .unwrap();
+    assert_eq!(recovered.item, first.item);
+    assert_eq!(recovered.binding.model, first.binding.model);
+    assert_eq!(recovered.binding.revision(), 2);
+    let before = table.snapshot();
+    assert_eq!(
+        table.move_safe_item(second, Place::Hand(Hand::Right)),
+        Err(SafeItemError::Occupied {
+            place: recovered.place,
+            item: recovered.item,
+        })
+    );
+    assert_eq!(
+        table.retire_safe_item(first),
+        Err(SafeItemError::StaleItem(first.item))
+    );
+    assert_eq!(table.snapshot(), before);
+    let native = take(&mut table, Hand::Left, 1, weapon(a_pistol()));
+    assert_eq!(table.primary(), Some(Hand::Left));
+    let before = table.snapshot();
+    assert_eq!(
+        table.move_safe_item(second, Place::Hand(Hand::Left)),
+        Err(SafeItemError::Occupied {
+            place: Place::Hand(Hand::Left),
+            item: native,
+        })
+    );
+    assert_eq!(table.snapshot(), before);
+    assert_eq!(table.safe_item(second.item), Some(second));
+    assert_eq!(table.world.len(), 0);
     check_safe_items(&table);
 }
 
@@ -430,14 +275,16 @@ fn missing_holster_and_exhausted_revision_do_not_move_the_item() {
     let Binding::SafeItem(binding) = &mut item.binding else {
         panic!("safe binding")
     };
-    binding.revision = u64::MAX;
+    binding.exhaust_revision();
     let current = table.safe_item(first.item).unwrap();
     let before = table.snapshot();
-    assert_eq!(
-        table.move_safe_item(current, Place::Hand(Hand::Right)),
-        Err(SafeItemError::RevisionExhausted)
-    );
-    assert_eq!(table.snapshot(), before);
+    for destination in [Place::Hand(Hand::Right), Place::World(Departure::Dropped)] {
+        assert_eq!(
+            table.move_safe_item(current, destination),
+            Err(SafeItemError::RevisionExhausted)
+        );
+        assert_eq!(table.snapshot(), before);
+    }
     assert_eq!(table.move_safe_item(current, current.place), Ok(current));
     check_safe_items(&table);
 }
@@ -450,18 +297,155 @@ fn a_holstered_item_must_be_drawn_before_restowing_and_can_leave_a_removed_holst
         .move_safe_item(first, Place::Socket(Socket::Hip(Hand::Left)))
         .unwrap();
     let before = table.snapshot();
-    assert_eq!(
-        table.move_safe_item(stowed, Place::Socket(Socket::Chest)),
-        Err(SafeItemError::NotHeld(first.item))
-    );
-    assert_eq!(table.snapshot(), before);
+    for destination in [
+        Place::Socket(Socket::Chest),
+        Place::World(Departure::Dropped),
+    ] {
+        assert_eq!(
+            table.move_safe_item(stowed, destination),
+            Err(SafeItemError::NotHeld(first.item))
+        );
+        assert_eq!(table.snapshot(), before);
+    }
     table.set_body(BodyLayout::new(Hand::Right, 0, 0, false));
     let drawn = table
         .move_safe_item(stowed, Place::Hand(Hand::Right))
         .unwrap();
     assert_eq!(drawn.item, first.item);
     assert_eq!(drawn.binding.model, first.binding.model);
-    check_invariants(&table);
+    check_safe_items(&table);
+}
+
+#[test]
+fn native_table_events_cannot_bypass_checked_safe_moves_or_retirement() {
+    let mut table = Loadout::new(BodyLayout::full(Hand::Right));
+    let safe = table.admit_safe_item(model(1), Hand::Left).unwrap();
+    let before = table.snapshot();
+    for event in [
+        Event::Dock {
+            hand: Hand::Left,
+            socket: Socket::Chest,
+        },
+        Event::HandOver { from: Hand::Left },
+        Event::LetGo {
+            hand: Hand::Left,
+            release: Release::Dropped,
+        },
+        Event::Removed {
+            target: Removal::Item(safe.item),
+            why: RemovalWhy::Gone,
+        },
+    ] {
+        assert_eq!(
+            table.fold(event),
+            Err(TransitionError::SafeItemRequiresCheckedMove(safe.item))
+        );
+        assert_eq!(table.snapshot(), before);
+    }
+    let stowed = table
+        .move_safe_item(safe, Place::Socket(Socket::Chest))
+        .unwrap();
+    let before = table.snapshot();
+    assert_eq!(
+        table.draw(Socket::Chest, Hand::Right),
+        Err(TransitionError::SafeItemRequiresCheckedMove(safe.item))
+    );
+    assert_eq!(table.snapshot(), before);
+    let drawn = table
+        .move_safe_item(stowed, Place::Hand(Hand::Right))
+        .unwrap();
+    let loose = table
+        .move_safe_item(drawn, Place::World(Departure::Dropped))
+        .unwrap();
+    let before = table.snapshot();
+    assert_eq!(
+        table.remove(Removal::Item(loose.item), RemovalWhy::Gone),
+        Err(TransitionError::SafeItemRequiresCheckedMove(loose.item))
+    );
+    assert_eq!(table.snapshot(), before);
+    assert_eq!(table.retire_safe_item(loose), Ok(model(1)));
+}
+
+#[test]
+fn native_weapon_events_respect_a_safe_items_hand_and_holster() {
+    let mut table = Loadout::new(BodyLayout::full(Hand::Right));
+    let safe = table.admit_safe_item(model(1), Hand::Left).unwrap();
+    let native = take(&mut table, Hand::Right, 1, weapon(a_pistol()));
+    let before = table.snapshot();
+    assert_eq!(
+        table.hand_over(Hand::Right),
+        Err(TransitionError::HandOccupied {
+            hand: Hand::Left,
+            item: safe.item
+        })
+    );
+    assert_eq!(table.snapshot(), before);
+    let stowed = table
+        .move_safe_item(safe, Place::Socket(Socket::Chest))
+        .unwrap();
+    let before = table.snapshot();
+    assert_eq!(
+        table.dock(Hand::Right, Socket::Chest),
+        Err(TransitionError::SocketOccupied {
+            socket: Socket::Chest,
+            item: safe.item
+        })
+    );
+    assert_eq!(table.snapshot(), before);
+    assert_eq!(table.held(Hand::Right).unwrap().id, native);
+    assert_eq!(table.safe_item(safe.item), Some(stowed));
+    check_safe_items(&table);
+}
+
+#[test]
+fn resets_remove_safe_model_identities_from_every_container() {
+    for kind in ResetKind::ALL {
+        let mut table = Loadout::new(BodyLayout::full(Hand::Right));
+        let first = table.admit_safe_item(model(1), Hand::Left).unwrap();
+        let stowed = table
+            .move_safe_item(first, Place::Socket(Socket::Chest))
+            .unwrap();
+        let second = table.admit_safe_item(model(2), Hand::Left).unwrap();
+        let loose = table
+            .move_safe_item(second, Place::World(Departure::Dropped))
+            .unwrap();
+        let held = table.admit_safe_item(model(3), Hand::Right).unwrap();
+        assert!(table.begin_reset().is_empty());
+        assert_eq!(table.safe_items().count(), 3);
+        let removed = table.complete_reset(kind, &[]).unwrap();
+        assert_eq!(removed.len(), 3);
+        assert_eq!(table.safe_items().count(), 0);
+        assert!(table.safe_world.is_empty());
+        for item in [stowed, loose, held] {
+            assert_eq!(table.safe_item(item.item), None);
+            assert_eq!(
+                table.retire_safe_item(item),
+                Err(SafeItemError::UnknownItem(item.item))
+            );
+        }
+        let next = table.admit_safe_item(model(4), Hand::Right).unwrap();
+        assert!(next.item > held.item);
+        check_safe_items(&table);
+    }
+}
+
+#[test]
+fn safe_items_never_project_into_native_slots_or_weapon_caches() {
+    let mut table = Loadout::new(BodyLayout::full(Hand::Right));
+    let safe = table.admit_safe_item(model(1), Hand::Left).unwrap();
+    let native = take(&mut table, Hand::Right, 1, weapon(a_pistol()));
+    let projection = table.snapshot().projection;
+    let store = project_store(&table);
+    assert_eq!(projection.slot_of(safe.item), None);
+    assert_eq!(
+        projection.slot_of(native),
+        Some(WeaponSlot::E_SLOT_DUAL_WIELD)
+    );
+    assert_eq!(store.sidecar.len(), 1);
+    assert_eq!(store.sidecar[0].item, native);
+    assert!(projection.slots.iter().any(|slot| {
+        slot.slot == WeaponSlot::E_SLOT_HAND_GRENADE && slot.content == SlotContent::Game
+    }));
     check_safe_items(&table);
 }
 
@@ -470,6 +454,7 @@ fn model(n: u64) -> ModelLeaseId {
 }
 
 fn check_safe_items(table: &Loadout) {
+    check_invariants(table);
     let items: Vec<_> = table.items().collect();
     for (index, item) in items.iter().enumerate() {
         assert!(items[..index].iter().all(|other| other.id != item.id));
@@ -492,8 +477,10 @@ fn check_safe_items(table: &Loadout) {
         }));
         assert_eq!(table.snapshot().projection.slot_of(item.id), None);
         match safe.place {
-            Place::Hand(_) | Place::Socket(Socket::Hip(_) | Socket::Chest) => {}
-            _ => panic!("safe item outside a hand or a holster"),
+            Place::Hand(_)
+            | Place::Socket(Socket::Hip(_) | Socket::Chest)
+            | Place::World(Departure::Dropped) => {}
+            _ => panic!("safe item outside a hand, a holster, or an inert drop"),
         }
     }
 }

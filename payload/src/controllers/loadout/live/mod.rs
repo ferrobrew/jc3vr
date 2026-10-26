@@ -29,6 +29,7 @@
 mod expect;
 mod hands;
 mod published;
+mod safe;
 
 use std::{sync::Arc, time::Instant};
 
@@ -38,6 +39,7 @@ pub(crate) use crate::controllers::loadout::live::{
     expect::{Expect, Pending},
     hands::{Held, Whereabouts},
     published::{hand_of, held_kind, in_hand, item_of, place_of},
+    safe::{admit_safe_item, move_safe_item, retire_safe_item, safe_item, safe_items},
 };
 use crate::controllers::{
     frame::Hand,
@@ -54,6 +56,7 @@ use crate::controllers::{
             Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, Take, TakeSource,
         },
     },
+    weapons::grenade::safe::stand_down as stand_down_safe_items,
 };
 
 /// The live table as the readouts show it.
@@ -469,8 +472,10 @@ pub(crate) fn forgotten(objects: &[ObjectAddress]) {
 }
 
 /// Stop the table: the old inventory is off, so the game's slots are the player's weapons again.
+/// Safe activation is cancelled before the table lock; retired models are reaped by their owner.
 /// The next tick with the inventory on starts it again from the slots.
 pub(crate) fn stop() {
+    stand_down_safe_items();
     let mut live = LIVE.lock();
     if !live.started {
         return;
@@ -511,6 +516,7 @@ pub(crate) fn respawning() {
 /// The frontend reset the game's systems (the quit to the menu): whatever follows starts the table
 /// again from the slots, as a load does.
 pub(crate) fn frontend_reset() {
+    stand_down_safe_items();
     let mut live = LIVE.lock();
     live.reset.frontend = true;
     live.reset.began = true;
@@ -519,6 +525,7 @@ pub(crate) fn frontend_reset() {
 /// The spawn reset is about to replace the slots' weapons, and the inventory releases the carry
 /// set's weapons (`released`), which the reset then removes.
 pub(crate) fn reset_began(released: &[ObjectAddress]) {
+    stand_down_safe_items();
     let mut live = LIVE.lock();
     if !live.started {
         return;
@@ -545,6 +552,7 @@ pub(crate) fn reset_ended() {
 /// The game loaded the player's save data: the next input tick starts the table again from the
 /// slots the load put in the inventory.
 pub(crate) fn loaded() {
+    stand_down_safe_items();
     let mut live = LIVE.lock();
     live.reset.loaded = true;
     live.reset.completed = true;
@@ -782,28 +790,6 @@ impl Live {
     /// Fold `event`, logging what it did or why it was refused. Returns, for a store or a cache,
     /// the slots and the sidecar the game should be given.
     fn fold(&mut self, event: Event) -> Option<StoreProjection> {
-        #[cfg(test)]
-        {
-            let moved = match &event {
-                Event::Dock { hand, .. } | Event::LetGo { hand, .. } => self.table.held(*hand),
-                Event::HandOver { from } => self.table.held(*from),
-                Event::Draw { socket, .. } => self
-                    .table
-                    .items()
-                    .find(|item| item.place == Place::Socket(*socket)),
-                _ => None,
-            };
-            if moved
-                .and_then(|item| self.table.safe_item(item.id))
-                .is_some()
-            {
-                self.refusals += 1;
-                self.push(
-                    "refused: loadout safe item: native moves require the safe-item API".into(),
-                );
-                return None;
-            }
-        }
         let store = matches!(event, Event::StoreImminent);
         match self.table.fold(event) {
             Ok(folded) => {
@@ -1031,9 +1017,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::controllers::loadout::{
-        item::WeaponType, tests::controlled_safe_binding::ModelLeaseId,
-    };
+    use crate::controllers::loadout::{Departure, item::WeaponType, safe_items::ModelLeaseId};
 
     fn object(n: usize) -> ObjectAddress {
         ObjectAddress::new(NonZeroUsize::MIN.saturating_add(n * 0x10))
@@ -1146,6 +1130,48 @@ mod tests {
         assert_eq!(live.table.snapshot(), before);
         assert_eq!(live.table.safe_item(safe.item), Some(stowed));
         assert_eq!(live.refusals, 4);
+    }
+
+    #[test]
+    fn safe_hands_survive_native_observation_and_block_native_weapon_arrival() {
+        let mut live = started(&[]);
+        let left = live
+            .table
+            .admit_safe_item(ModelLeaseId::new(NonZeroU64::MIN), Hand::Left)
+            .unwrap();
+        let right = live
+            .table
+            .admit_safe_item(
+                ModelLeaseId::new(NonZeroU64::MIN.saturating_add(1)),
+                Hand::Right,
+            )
+            .unwrap();
+        let before = live.table.snapshot();
+        for others in [
+            NO_OTHERS,
+            HeldOthers {
+                hands: [Some(HeldOther {
+                    object: object(7),
+                    kind: ItemKind::Grenade,
+                    source: TakeSource::Pouch,
+                }); 2],
+                thrown: [true; 2],
+            },
+        ] {
+            live.sync_others(&others);
+            assert_eq!(live.table.snapshot(), before);
+        }
+        live.pending = Some(Pending::new(Hand::Left, Expect::Draw, Some(rifle().object)));
+        assert_eq!(live.land(held(rifle())), None);
+        assert!(live.pending.is_some());
+        assert_eq!(live.table.safe_item(left.item), Some(left));
+        assert_eq!(live.table.safe_item(right.item), Some(right));
+        live.table
+            .move_safe_item(left, Place::World(Departure::Dropped))
+            .unwrap();
+        assert_eq!(live.land(held(rifle())).unwrap().hand, Hand::Left);
+        assert_eq!(live.hand_holding(rifle().object), Some(Hand::Left));
+        assert_eq!(live.table.safe_item(right.item), Some(right));
     }
 
     #[test]

@@ -5,7 +5,8 @@
 //! the body, or the world near the player. The core is pure and tested without the game:
 //!
 //! - [`item`]: what an item is, and its identity for the session;
-//! - [`binding`]: the live object an item is bound to, the one place it meets the game;
+//! - [`binding`]: the live object or actor-free model identity an item is bound to;
+//! - [`safe_items`]: checked actor-free grenade admission, movement, and retirement;
 //! - [`socket`]: the body's sockets, the size classes they take, and where an item goes when the
 //!   player does not choose;
 //! - [`table`]: the table, whose invariants are in its types, its snapshot, and the primary hand;
@@ -31,6 +32,7 @@ mod item;
 pub mod live;
 mod projection;
 mod reset;
+pub mod safe_items;
 pub mod sandbox;
 mod socket;
 pub(crate) mod spawn_transport;
@@ -53,6 +55,8 @@ pub use item::{ItemId, ItemKind, WeaponType, slot_label};
 pub use projection::{Projection, SlotContent, StoreProjection};
 pub use reset::{CacheKind, ResetKind, SlotObject};
 pub use socket::{BodyLayout, Socket};
+#[cfg(test)]
+pub(crate) use table::Loadout;
 pub use table::{Departure, LoadoutSnapshot, Place};
 pub use transition::{
     Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, Take, TakeSource,

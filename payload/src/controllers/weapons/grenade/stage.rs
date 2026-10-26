@@ -1,15 +1,7 @@
-//! The physical throw's stages, from the grab at the pouch to the grenade leaving the hand. Pure.
+//! Shared throw releases and readouts, with a test-only model of the primed-grenade stages.
 //!
-//! Two threads drive the stages. The input tick reports the player's hand: a grab at the pouch, the
-//! grip's release with the hand's velocity, and a stand-down when the throw can no longer act
-//! ([`on_input`]). The grenade weapon's own update, on the player's post-camera pass, acts on the
-//! weapon ([`before_update`], then [`after_update`] once the weapon's update has run).
-//!
-//! The game's own facts shape the order. Priming consumes a grenade and starts its fuse, so a grenade
-//! held too long explodes in the hand, and a stand-down puts a held grenade back (the game refunds
-//! it). A primed grenade gets its physics body one update after it spawns, and a launch before that
-//! does nothing, so a release waits for the body. The weapon's update fires before it primes, so a
-//! prime and a throw are never asked of the same update: the throw waits for the next one.
+//! Safe pouch grenades use the native activation path on a deliberate release. The prime-on-grab
+//! transitions remain available only to the reference tests.
 
 use glam::Vec3;
 
@@ -29,24 +21,29 @@ pub enum Stage {
     #[default]
     Idle,
     /// A grab at the pouch asked for a grenade, which the weapon has not primed yet.
+    #[cfg(test)]
     Wanted {
         hand: Hand,
         release: Option<Release>,
     },
     /// The weapon's prime request is set for the update in progress.
+    #[cfg(test)]
     Priming {
         hand: Hand,
         release: Option<Release>,
     },
     /// A primed grenade is in the hand, its fuse running. With a release, it is thrown as soon as
     /// its physics body exists.
+    #[cfg(test)]
     Held {
         hand: Hand,
         release: Option<Release>,
     },
     /// The weapon's fire request is set for the update in progress.
+    #[cfg(test)]
     Throwing { hand: Hand, release: Release },
     /// The held grenade goes back to the inventory at the weapon's next update.
+    #[cfg(test)]
     Cancelling,
 }
 
@@ -54,37 +51,40 @@ impl Stage {
     /// The hand the throw belongs to, from the grab until the grenade leaves it.
     pub fn hand(self) -> Option<Hand> {
         match self {
+            #[cfg(test)]
             Stage::Wanted { hand, .. }
             | Stage::Priming { hand, .. }
             | Stage::Held { hand, .. }
             | Stage::Throwing { hand, .. } => Some(hand),
-            Stage::Idle | Stage::Cancelling => None,
+            Stage::Idle => None,
+            #[cfg(test)]
+            Stage::Cancelling => None,
         }
-    }
-
-    /// Whether a primed grenade is (or is about to be) in the hand, so that it follows the hand.
-    pub fn grenade_in_hand(self) -> bool {
-        matches!(
-            self,
-            Stage::Priming { .. } | Stage::Held { .. } | Stage::Throwing { .. }
-        )
     }
 
     pub fn label(self) -> &'static str {
         match self {
             Stage::Idle => "idle",
+            #[cfg(test)]
             Stage::Wanted { release: None, .. } => "grenade asked for",
+            #[cfg(test)]
             Stage::Wanted { .. } => "grenade asked for, already released",
+            #[cfg(test)]
             Stage::Priming { .. } => "priming",
+            #[cfg(test)]
             Stage::Held { release: None, .. } => "held",
+            #[cfg(test)]
             Stage::Held { .. } => "released, waiting for the grenade's physics",
+            #[cfg(test)]
             Stage::Throwing { .. } => "throwing",
+            #[cfg(test)]
             Stage::Cancelling => "putting the grenade back",
         }
     }
 }
 
 /// What the input tick reports.
+#[cfg(test)]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum InputEvent {
     /// A grip press at the grenade pouch.
@@ -97,6 +97,7 @@ pub enum InputEvent {
 }
 
 /// Why the weapon cannot prime a grenade.
+#[cfg(test)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Refusal {
     /// No grenades are left.
@@ -107,6 +108,7 @@ pub enum Refusal {
     Busy,
 }
 
+#[cfg(test)]
 impl Refusal {
     pub const fn label(self) -> &'static str {
         match self {
@@ -118,6 +120,7 @@ impl Refusal {
 }
 
 /// The grenade weapon as its update begins.
+#[cfg(test)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct WeaponView {
     /// The weapon holds a live primed grenade.
@@ -129,6 +132,7 @@ pub struct WeaponView {
 }
 
 /// What to do to the weapon before its update.
+#[cfg(test)]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum WeaponAction {
     None,
@@ -144,32 +148,43 @@ pub enum WeaponAction {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Outcome {
     /// A grenade is in the hand, its fuse running.
+    #[cfg(test)]
     Primed,
+    #[cfg(test)]
     Refused(Refusal),
     /// The game's ammunition pool had no room for another grenade.
+    #[cfg(test)]
     PoolFull,
     Thrown(Release),
     /// The held grenade is gone before its throw: its fuse ran out in the hand, or the game took
     /// it back.
+    #[cfg(test)]
     Gone,
     /// The held grenade went back to the inventory.
+    #[cfg(test)]
     Cancelled,
 }
 
 impl Outcome {
     pub fn label(self) -> String {
         match self {
+            #[cfg(test)]
             Outcome::Primed => "primed".to_owned(),
+            #[cfg(test)]
             Outcome::Refused(r) => format!("refused: {}", r.label()),
+            #[cfg(test)]
             Outcome::PoolFull => "refused: no room for another grenade".to_owned(),
             Outcome::Thrown(r) => format!("thrown at {:.1} m/s", r.velocity.length()),
+            #[cfg(test)]
             Outcome::Gone => "gone from the hand before the throw".to_owned(),
+            #[cfg(test)]
             Outcome::Cancelled => "put back".to_owned(),
         }
     }
 }
 
 /// Fold an input-tick event into the stage.
+#[cfg(test)]
 pub fn on_input(stage: Stage, event: InputEvent) -> Stage {
     match (stage, event) {
         (Stage::Idle, InputEvent::Grab(hand)) => Stage::Wanted {
@@ -213,6 +228,7 @@ pub fn on_input(stage: Stage, event: InputEvent) -> Stage {
 }
 
 /// Decide what the weapon's update is asked to do.
+#[cfg(test)]
 pub fn before_update(stage: Stage, view: WeaponView) -> (Stage, WeaponAction, Option<Outcome>) {
     match stage {
         Stage::Idle => (Stage::Idle, WeaponAction::None, None),
@@ -262,6 +278,7 @@ pub fn before_update(stage: Stage, view: WeaponView) -> (Stage, WeaponAction, Op
 
 /// Settle the stage once the weapon's update has run: `primed` is whether the weapon holds a live
 /// primed grenade now.
+#[cfg(test)]
 pub fn after_update(stage: Stage, primed: bool) -> (Stage, Option<Outcome>) {
     match stage {
         Stage::Priming { hand, release } if primed => {
@@ -380,18 +397,20 @@ mod tests {
 
     #[test]
     fn a_refused_prime_returns_to_idle() {
-        let s = on_input(Stage::Idle, InputEvent::Grab(Hand::Right));
-        let (s, action, out) = update(
-            s,
-            WeaponView {
-                primed: false,
-                physics_ready: false,
-                refusal: Some(Refusal::NoGrenades),
-            },
-        );
-        assert_eq!(action, WeaponAction::None);
-        assert_eq!(out, vec![Outcome::Refused(Refusal::NoGrenades)]);
-        assert_eq!(s, Stage::Idle);
+        for refusal in [Refusal::NoGrenades, Refusal::NotAllowed] {
+            let s = on_input(Stage::Idle, InputEvent::Grab(Hand::Right));
+            let (s, action, out) = update(
+                s,
+                WeaponView {
+                    primed: false,
+                    physics_ready: false,
+                    refusal: Some(refusal),
+                },
+            );
+            assert_eq!(action, WeaponAction::None);
+            assert_eq!(out, vec![Outcome::Refused(refusal)]);
+            assert_eq!(s, Stage::Idle);
+        }
         // The game's own throw holds a grenade: the grab leaves it alone.
         let s = on_input(Stage::Idle, InputEvent::Grab(Hand::Right));
         let (_, action, out) = update(s, view(true, true));

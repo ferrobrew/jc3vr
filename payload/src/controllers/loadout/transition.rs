@@ -381,6 +381,8 @@ pub enum TransitionError {
     },
     UnknownObject(ObjectAddress),
     UnknownItem(ItemId),
+    /// Actor-free items move and retire only through their checked views.
+    SafeItemRequiresCheckedMove(ItemId),
     /// A lost weapon must be lying in the world.
     NotInWorld {
         item: ItemId,
@@ -433,6 +435,9 @@ impl fmt::Display for TransitionError {
                 write!(f, "loadout: no item is bound to object {object}")
             }
             TransitionError::UnknownItem(item) => write!(f, "loadout: no item {item}"),
+            TransitionError::SafeItemRequiresCheckedMove(item) => {
+                write!(f, "loadout: {item} requires a checked safe-item move")
+            }
             TransitionError::NotInWorld { item, place } => {
                 write!(f, "loadout: {item} is in {place}, not lying in the world")
             }
@@ -500,9 +505,8 @@ impl Loadout {
 
     /// Dock what `hand` holds on `socket`.
     pub fn dock(&mut self, hand: Hand, socket: Socket) -> Result<Vec<Transition>, TransitionError> {
-        if self.hands[hand.index()].is_none() {
-            return Err(TransitionError::HandEmpty(hand));
-        }
+        let held = self.held(hand).ok_or(TransitionError::HandEmpty(hand))?;
+        self.require_native_item(held.id)?;
         if !self.body.has(socket) {
             return Err(TransitionError::SocketAbsent(socket));
         }
@@ -532,6 +536,12 @@ impl Loadout {
     /// Draw what is docked on `socket` into `hand`.
     pub fn draw(&mut self, socket: Socket, hand: Hand) -> Result<Vec<Transition>, TransitionError> {
         self.require_empty(hand)?;
+        let item = self.sockets[socket.index()]
+            .as_ref()
+            .ok_or(TransitionError::SocketEmpty(socket))?
+            .item
+            .id;
+        self.require_native_item(item)?;
         let docked = self.sockets[socket.index()]
             .take()
             .ok_or(TransitionError::SocketEmpty(socket))?;
@@ -546,9 +556,8 @@ impl Loadout {
     /// Hand what `from` holds to the other hand, which must be empty.
     pub fn hand_over(&mut self, from: Hand) -> Result<Vec<Transition>, TransitionError> {
         let to = from.other();
-        if self.hands[from.index()].is_none() {
-            return Err(TransitionError::HandEmpty(from));
-        }
+        let held = self.held(from).ok_or(TransitionError::HandEmpty(from))?;
+        self.require_native_item(held.id)?;
         self.require_empty(to)?;
         let item = self.hands[from.index()]
             .take()
@@ -568,6 +577,8 @@ impl Loadout {
         hand: Hand,
         release: Release,
     ) -> Result<Vec<Transition>, TransitionError> {
+        let held = self.held(hand).ok_or(TransitionError::HandEmpty(hand))?;
+        self.require_native_item(held.id)?;
         let item = self.hands[hand.index()]
             .take()
             .ok_or(TransitionError::HandEmpty(hand))?;
@@ -741,9 +752,11 @@ impl Loadout {
             Removal::Object(object) => self
                 .locate(object)
                 .ok_or(TransitionError::UnknownObject(object))?,
-            Removal::Item(item) => self
-                .locate_item(item)
-                .ok_or(TransitionError::UnknownItem(item))?,
+            Removal::Item(item) => {
+                self.require_native_item(item)?;
+                self.locate_item(item)
+                    .ok_or(TransitionError::UnknownItem(item))?
+            }
             Removal::AllWeapons => {
                 return Ok(self.remove_from_body(|item| item.kind.weapon().is_some(), cause));
             }
@@ -765,6 +778,13 @@ impl Loadout {
         self.world = kept;
         for lying in gone {
             out.push(left(&lying.item, Place::World(lying.departure), cause));
+        }
+        let (gone, kept) = std::mem::take(&mut self.safe_world)
+            .into_iter()
+            .partition(|lying| matches(&lying.item));
+        self.safe_world = kept;
+        for lying in gone {
+            out.push(left(&lying.item, Place::World(Departure::Dropped), cause));
         }
         out
     }
@@ -867,6 +887,13 @@ impl Loadout {
         transition
     }
 
+    fn require_native_item(&self, item: ItemId) -> Result<(), TransitionError> {
+        if self.safe_item(item).is_some() {
+            return Err(TransitionError::SafeItemRequiresCheckedMove(item));
+        }
+        Ok(())
+    }
+
     pub(super) fn require_empty(&self, hand: Hand) -> Result<(), TransitionError> {
         match &self.hands[hand.index()] {
             Some(item) => Err(TransitionError::HandOccupied {
@@ -931,13 +958,31 @@ impl Loadout {
                     Place::World(lying.departure),
                 )
             })
+            .or_else(|| {
+                self.safe_world
+                    .iter()
+                    .enumerate()
+                    .find(|(_, lying)| matches(&lying.item))
+                    .map(|(index, lying)| {
+                        found(
+                            Spot::SafeWorld(index),
+                            &lying.item,
+                            Place::World(Departure::Dropped),
+                        )
+                    })
+            })
     }
 
     pub(super) fn item_mut(&mut self, id: ItemId) -> Option<&mut Item> {
         let hands = self.hands.iter_mut().flatten();
         let sockets = self.sockets.iter_mut().flatten().map(|d| &mut d.item);
         let world = self.world.iter_mut().map(|l| &mut l.item);
-        hands.chain(sockets).chain(world).find(|item| item.id == id)
+        let safe_world = self.safe_world.iter_mut().map(|lying| &mut lying.item);
+        hands
+            .chain(sockets)
+            .chain(world)
+            .chain(safe_world)
+            .find(|item| item.id == id)
     }
 
     /// Take the item [`Loadout::locate`] found out of the table, with where it was.
@@ -947,6 +992,10 @@ impl Loadout {
             Spot::Socket(socket) => self.sockets[socket.index()].take().map(|d| d.item),
             Spot::World(index) if index < self.world.len() => Some(self.world.remove(index).item),
             Spot::World(_) => None,
+            Spot::SafeWorld(index) if index < self.safe_world.len() => {
+                Some(self.safe_world.remove(index).item)
+            }
+            Spot::SafeWorld(_) => None,
         };
         // A spot found and used under one borrow always holds its item; the error keeps a
         // misuse from panicking.
@@ -961,6 +1010,7 @@ pub(super) enum Spot {
     Hand(Hand),
     Socket(Socket),
     World(usize),
+    SafeWorld(usize),
 }
 
 /// An item [`Loadout::locate`] found: where it sits, and what it is.

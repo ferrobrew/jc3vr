@@ -109,3 +109,39 @@ static HANDS: [AtomicUsize; 2] = [const { AtomicUsize::new(0) }; 2];
 /// What each hand holds, of any kind, by [`Hand::index`].
 static HELD: Mutex<[Option<ItemKind>; 2]> = Mutex::new([None; 2]);
 static PLACES: Mutex<Vec<(ObjectAddress, ItemId, Place)>> = Mutex::new(Vec::new());
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroU64;
+
+    use super::*;
+    use crate::controllers::loadout::{BodyLayout, Departure, safe_items::ModelLeaseId};
+
+    #[test]
+    fn safe_item_moves_publish_hand_occupancy_without_a_native_alias() {
+        let mut table = Loadout::new(BodyLayout::full(Hand::Right));
+        let item = table
+            .admit_safe_item(ModelLeaseId::new(NonZeroU64::MIN), Hand::Left)
+            .unwrap();
+        publish(&table);
+        assert_eq!(held_kind(Hand::Left), Some(ItemKind::Grenade));
+        assert_eq!(in_hand(Hand::Left), None);
+        assert!(PLACES.lock().is_empty());
+        let item = table
+            .move_safe_item(item, Place::Hand(Hand::Right))
+            .unwrap();
+        publish(&table);
+        assert_eq!(held_kind(Hand::Left), None);
+        assert_eq!(held_kind(Hand::Right), Some(ItemKind::Grenade));
+        assert_eq!(in_hand(Hand::Right), None);
+        let item = table
+            .move_safe_item(item, Place::World(Departure::Dropped))
+            .unwrap();
+        publish(&table);
+        assert_eq!(held_kind(Hand::Right), None);
+        assert_eq!(table.retire_safe_item(item), Ok(item.binding.model));
+        publish(&table);
+        assert!(PLACES.lock().is_empty());
+        clear();
+    }
+}

@@ -7,9 +7,7 @@ use std::{fmt, num::NonZeroUsize};
 
 use jc3gi::character::inventory::WeaponSlot;
 
-use crate::controllers::loadout::item::slot_label;
-#[cfg(test)]
-use crate::controllers::loadout::tests::controlled_safe_binding::SafeItemBinding;
+use crate::controllers::loadout::{item::slot_label, safe_items::SafeItemBinding};
 
 /// A live game object's address: a weapon, a prop's rigid object, or a held grenade or charge.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -39,15 +37,14 @@ impl fmt::Display for ObjectAddress {
     }
 }
 
-/// The live object an item is bound to, or what it waits for.
+/// An item's native object, pending native binding, or actor-free model identity.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Binding {
     /// A live object.
     Live(ObjectAddress),
     /// None yet: the item waits for the game's object of its type.
     Awaiting(Awaiting),
-    /// A controlled actor-free identity used by the real-table tests.
-    #[cfg(test)]
+    /// A runtime actor-free item whose model resource is retained by its provider.
     SafeItem(SafeItemBinding),
 }
 
@@ -57,7 +54,6 @@ impl Binding {
         match self {
             Binding::Live(address) => Some(address),
             Binding::Awaiting(_) => None,
-            #[cfg(test)]
             Binding::SafeItem(_) => None,
         }
     }
@@ -73,7 +69,6 @@ impl fmt::Display for Binding {
                 slot_label(*slot)
             ),
             Binding::Awaiting(Awaiting::Respawn) => f.write_str("waiting to be spawned again"),
-            #[cfg(test)]
             Binding::SafeItem(binding) => write!(f, "safe item, {}", binding.model),
         }
     }

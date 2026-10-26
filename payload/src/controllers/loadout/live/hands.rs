@@ -109,7 +109,6 @@ pub(crate) fn other_departure(
     let held = table
         .held(hand)
         .filter(|item| item.kind.weapon().is_none())?;
-    #[cfg(test)]
     if table.safe_item(held.id).is_some() {
         return None;
     }
@@ -177,9 +176,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::controllers::loadout::{
-        socket::BodyLayout, tests::controlled_safe_binding::ModelLeaseId,
-    };
+    use crate::controllers::loadout::{safe_items::ModelLeaseId, socket::BodyLayout};
 
     fn object(n: usize) -> ObjectAddress {
         ObjectAddress::new(NonZeroUsize::MIN.saturating_add(n * 0x10))

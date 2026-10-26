@@ -200,11 +200,15 @@ pub(crate) fn finish_tick(
         let outcome = match volume {
             GrabVolume::Handle => {
                 let gun = lone.map(|(w, _)| w.address);
-                let moved = match gun {
-                    Some(w) if regions::carrying(w).is_some() => take_grip(w, hand, &grips, now),
-                    Some(w) => hold::hand_over(hand, w),
-                    None => false,
-                };
+                let moved =
+                    crate::controllers::weapons::grenade_moves::transfer(hand.other(), hand)
+                        .unwrap_or_else(|| match gun {
+                            Some(w) if regions::carrying(w).is_some() => {
+                                take_grip(w, hand, &grips, now)
+                            }
+                            Some(w) => hold::hand_over(hand, w),
+                            None => false,
+                        });
                 if moved {
                     // The hand that took the gun let go of the foregrip to take it.
                     foregrip::clear();
@@ -280,6 +284,21 @@ pub(crate) fn finish_tick(
         }
     }
 
+    let grenade_opened = Hand::BOTH.map(|hand| {
+        if opened[hand.index()] && grenade::safe::in_hand(hand).is_some() {
+            let socket = docked_at(hand, |volume| {
+                matches!(volume, GrabVolume::Socket(socket) if matches!(socket, Socket::Hip(_) | Socket::Chest))
+            }).and_then(|volume| match volume {
+                GrabVolume::Socket(socket) => Some(socket),
+                _ => None,
+            });
+            if crate::controllers::weapons::grenade_moves::stow_before_open(hand, socket) == Some(true) {
+                haptics::play(hand, Event::VolumeGrab);
+                return false;
+            }
+        }
+        opened[hand.index()]
+    });
     grenade::input_tick(
         &grenade::TickInputs {
             acting: config.weapons.grenade_throw && gameplay && active.is_some(),
@@ -297,7 +316,7 @@ pub(crate) fn finish_tick(
                 .map_or([None; 2], |a| a.hands.map(|h| h.map(|h| h.grip.position))),
             triggers,
             dominant: config.acting_hand(),
-            opened,
+            opened: grenade_opened,
             world_scale: active.as_ref().map_or(1.0, |a| a.world_scale),
             dt,
         },
@@ -318,7 +337,7 @@ pub(crate) fn finish_tick(
         !gun_hands[h.index()]
             && !armed_hands[h.index()]
             && live::held_kind(h).is_none()
-            && grenade::throwing_hand() != Some(h)
+            && !grenade::holds(h)
             && reload::holding_hand() != Some(h)
     });
     c4::input_tick(
@@ -391,9 +410,12 @@ pub(crate) fn finish_tick(
         action_running: Hand::BOTH
             .map(|h| config.weapons.block_fire_during_actions && weapon_action_running(h)),
     }));
-    let explosive = grenade::throwing_hand().or_else(c4::throwing_hand);
+    let explosive_blocked = Hand::BOTH.into_iter().any(|hand| {
+        (grenade::holds(hand) || c4::throwing_hand() == Some(hand))
+            && explosive_holds_fire(Some(hand), gun_hands, armed_hands)
+    });
     let fire_blocked = reload_blocks
-        || explosive_holds_fire(explosive, gun_hands, armed_hands)
+        || explosive_blocked
         || carried.is_some()
         || holder.is_some_and(|h| docking[h.index()])
         || primary_trigger_idle(current, &triggers)
@@ -469,7 +491,7 @@ fn declare_grips(gun_hands: [bool; 2], carries: [Option<Carry>; 2]) {
                 .share(two.weight),
         );
     }
-    if let Some(hand) = grenade::throwing_hand() {
+    for hand in Hand::BOTH.into_iter().filter(|hand| grenade::holds(*hand)) {
         grip::declare(hand, Grip::new(GripSource::Grenade));
     }
     if let Some(hand) = c4::throwing_hand() {
@@ -616,6 +638,18 @@ fn weapon_action_running(gun_hand: Hand) -> bool {
 /// empty hand, or dock the hand's weapon there. `None` for a grab that did nothing worth reporting:
 /// a free socket with nothing to put there, or no table to decide against.
 fn grab_socket(hand: Hand, socket: Socket, config: &ControllersConfig) -> Option<GrabOutcome> {
+    if let Some(moved) = crate::controllers::weapons::grenade_moves::grab_socket(hand, socket) {
+        let outcome = if moved {
+            if grenade::safe::in_hand(hand).is_some() {
+                SocketOutcome::Drew
+            } else {
+                SocketOutcome::Docked
+            }
+        } else {
+            SocketOutcome::Failed(hold::equip::DockRefusal::NotDone)
+        };
+        return Some(GrabOutcome::Socket(outcome));
+    }
     let snapshot = live::snapshot_now()?;
     let settings = &config.weapons.hold;
     let rules = GrabRules {

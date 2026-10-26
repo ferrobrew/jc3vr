@@ -5,10 +5,10 @@
 //! - an [`Item`] is a value with no copy or clone, owned by exactly one container (a hand, a
 //!   socket, or the world), so it is in exactly one place;
 //! - each hand and each socket is an `Option`, so it holds at most one item;
-//! - a socket's item is a [`Docked`], made only by [`Docked::new`], which refuses an item the
-//!   socket does not fit, so every socket holds an item of its size class or smaller;
-//! - the world holds only [`Lying`] items, made only from weapons, since a prop, a grenade, or a
-//!   charge let go of leaves the table;
+//! - a socket's item is a [`Docked`], admitted by [`Docked::new`] for weapons or by the checked
+//!   safe-item API for an actor-free grenade in a holster;
+//! - native world storage holds only [`Lying`] weapons, while [`SafeWorld`] holds inert dropped
+//!   models with no native object address;
 //! - identities come only from the table's counter, so no two items share one;
 //! - the primary hand is never stored: [`primary`] derives it from the hands each time.
 //!
@@ -24,6 +24,7 @@ use crate::controllers::{
         item::{ItemId, ItemKind},
         projection::{Projection, project},
         reset::Caches,
+        safe_items::SafeWorld,
         socket::{BodyLayout, Socket},
     },
 };
@@ -35,6 +36,7 @@ pub struct Loadout {
     pub(super) hands: [Option<Item>; 2],
     pub(super) sockets: [Option<Docked>; Socket::COUNT],
     pub(super) world: Vec<Lying>,
+    pub(super) safe_world: Vec<SafeWorld>,
     pub(super) next_id: ItemId,
     pub(super) caches: Caches,
 }
@@ -47,6 +49,7 @@ impl Loadout {
             hands: [None, None],
             sockets: [const { None }; Socket::COUNT],
             world: Vec::new(),
+            safe_world: Vec::new(),
             next_id: ItemId::FIRST,
             caches: Caches::new(),
         }
@@ -87,7 +90,11 @@ impl Loadout {
             .world
             .iter()
             .map(|lying| lying.item.view(Place::World(lying.departure)));
-        hands.chain(sockets).chain(world)
+        let safe_world = self
+            .safe_world
+            .iter()
+            .map(|lying| lying.item.view(Place::World(Departure::Dropped)));
+        hands.chain(sockets).chain(world).chain(safe_world)
     }
 
     /// The item in `hand`.
@@ -145,7 +152,7 @@ impl fmt::Display for Place {
     }
 }
 
-/// How a weapon in the world came to be there.
+/// How an item in the world came to be there.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Departure {
     /// A hand let go of it while the player moved at an ordinary pace: the player chose to leave

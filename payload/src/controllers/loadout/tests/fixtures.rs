@@ -13,7 +13,7 @@ use crate::controllers::{
         item::{ItemId, ItemKind, WeaponType},
         projection::{SLOTS, SlotContent, project},
         socket::{BodyLayout, Socket},
-        table::{ItemView, Loadout, Place, primary},
+        table::{Departure, ItemView, Loadout, Place, primary},
         transition::{Change, Take, TakeSource, Transition},
     },
 };
@@ -136,17 +136,22 @@ pub(super) fn check_invariants(table: &Loadout) {
         }
         match item.place {
             Place::Socket(socket) => {
-                let size = item.kind.weapon().map(|w| w.size());
-                assert!(
-                    size.is_some_and(|size| socket.fits(size)),
-                    "{} ({}) is on {socket}, which does not take it",
-                    item.id,
+                let fits = if item.binding.safe_item().is_some() {
+                    item.kind == ItemKind::Grenade
+                        && matches!(socket, Socket::Hip(_) | Socket::Chest)
+                } else {
                     item.kind
-                );
+                        .weapon()
+                        .is_some_and(|weapon| socket.fits(weapon.size()))
+                };
+                assert!(fits, "{} ({}) does not fit {socket}", item.id, item.kind);
             }
-            Place::World(_) => assert!(
-                item.kind.weapon().is_some(),
-                "{} lies in the world but is no weapon",
+            Place::World(departure) => assert!(
+                item.kind.weapon().is_some()
+                    || (item.kind == ItemKind::Grenade
+                        && item.binding.safe_item().is_some()
+                        && departure == Departure::Dropped),
+                "{} has no world representation",
                 item.id
             ),
             Place::Hand(_) => {}

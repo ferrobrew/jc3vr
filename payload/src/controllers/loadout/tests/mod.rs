@@ -2,12 +2,11 @@
 //! grab's decision, the take's route, the slot projection, the spawn reset and the caches, and the
 //! invariants under arbitrary sequences. The shared fixtures and the invariant check are in [`fixtures`].
 
-#[path = "safe_items.rs"]
-pub(crate) mod controlled_safe_binding;
 mod fixtures;
 mod grab;
 mod projection;
 mod properties;
 mod reset;
+mod safe_items;
 mod take;
 mod transitions;

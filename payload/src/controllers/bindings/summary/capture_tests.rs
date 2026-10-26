@@ -12,7 +12,7 @@ fn owner_state(guns: [Option<GunOwner>; 2]) -> BeforeFinish {
         guns,
         reload: ReloadStatus::default(),
         foregrip: None,
-        grenade: None,
+        grenade: [false; 2],
         c4: None,
         parachute: [None; 2],
     }

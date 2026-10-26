@@ -237,6 +237,25 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let place = Place::new(&active);
     // A held foregrip goes first, so that the bracing hand keeps it over anything as near.
     let mut targets = Vec::new();
+    if capabilities.transfer && holding.handover {
+        for holder in Hand::BOTH {
+            let taker = holder.other();
+            if grenade::safe::in_hand(holder).is_some()
+                && free[taker.index()]
+                && let Some(held) = active.hands[holder.index()]
+            {
+                targets.push(place.on_hand(
+                    &Candidate {
+                        volume: GrabVolume::Handle,
+                        centre: held.grip.position,
+                        radius: holding.handle_radius_m.max(0.0),
+                        hand: Some(taker),
+                    },
+                    holder,
+                ));
+            }
+        }
+    }
     let hold = foregrip::status().hold.filter(|h| h.engaged);
     if let Some(h) = hold
         && let Some(target) = held_foregrip(&h, &active, &config)
@@ -290,13 +309,14 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         targets.extend(docked.iter().map(|c| place.touch(c)));
     }
     if config.weapons.grenade_throw {
-        let throwing = grenade::throwing_hand().or(c4::throwing_hand());
+        let charge = c4::throwing_hand();
         // SAFETY: the input tick runs on the main thread outside the world update.
         let grenades = unsafe {
             grenade::begin_tick(
                 &grenade::BeginInputs {
                     active: &active,
-                    free: Hand::BOTH.map(|h| free[h.index()] && throwing != Some(h)),
+                    free: Hand::BOTH
+                        .map(|h| free[h.index()] && !grenade::holds(h) && charge != Some(h)),
                     acting: gameplay,
                 },
                 &config.weapons.grenade,

@@ -20,7 +20,7 @@ use crate::controllers::{
         binding::{Awaiting, Binding, ObjectAddress},
         item::{ItemId, ItemKind, WeaponType},
         projection::{BodyPlace, SlotContent, StoreProjection, project, project_store},
-        table::{Docked, Item, Loadout, Place},
+        table::{Departure, Docked, Item, Loadout, Place},
         transition::{Cause, Change, Transition, TransitionError, change, left},
     },
 };
@@ -162,8 +162,9 @@ impl Loadout {
         out
     }
 
-    /// The spawn reset is done, and the game's slots hold `slots`. The weapons in the world are
-    /// gone; each slot's new object re-binds the item that waits for that slot with the same type,
+    /// The spawn reset is done, and the game's slots hold `slots`. World weapons and safe model
+    /// identities leave the table; the resource owner reaps models after publication. Each slot's
+    /// new object re-binds the item that waits for that slot with the same type,
     /// and a new object nothing waits for goes onto the body; an item whose slot the game emptied
     /// or gave another type leaves the table. What the hands keep follows `kind`.
     pub fn complete_reset(
@@ -175,7 +176,11 @@ impl Loadout {
         let cause = Cause::Reset(kind);
         let mut out = match kind {
             ResetKind::Load => self.remove_where(|_| true, cause),
-            ResetKind::Respawn | ResetKind::Travel => self.clear_world(cause),
+            ResetKind::Respawn | ResetKind::Travel => {
+                let mut out = self.clear_world(cause);
+                out.extend(self.remove_where(|item| item.binding.safe_item().is_some(), cause));
+                out
+            }
         };
         if kind == ResetKind::Respawn {
             out.extend(self.empty_hands(cause));
@@ -381,12 +386,18 @@ impl Loadout {
         out
     }
 
-    /// Every weapon lying in the world leaves the table.
+    /// Every native weapon and inert model lying in the world leaves the table.
     fn clear_world(&mut self, cause: Cause) -> Vec<Transition> {
-        std::mem::take(&mut self.world)
+        let mut out: Vec<_> = std::mem::take(&mut self.world)
             .into_iter()
             .map(|lying| left(&lying.item, Place::World(lying.departure), cause))
-            .collect()
+            .collect();
+        out.extend(
+            std::mem::take(&mut self.safe_world)
+                .into_iter()
+                .map(|lying| left(&lying.item, Place::World(Departure::Dropped), cause)),
+        );
+        out
     }
 
     /// The item waiting for `slot`'s new object: unbound for its slot, of its type.

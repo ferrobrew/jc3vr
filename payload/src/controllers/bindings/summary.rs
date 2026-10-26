@@ -43,7 +43,7 @@ pub(super) struct BeforeFinish {
     guns: [Option<GunOwner>; 2],
     reload: ReloadStatus,
     foregrip: Option<(usize, Hand, bool)>,
-    grenade: Option<Hand>,
+    grenade: [bool; 2],
     c4: Option<Hand>,
     parachute: [Option<HandleHold>; 2],
 }
@@ -55,7 +55,7 @@ impl BeforeFinish {
             guns,
             reload: current_reload(guns),
             foregrip: foregrip_owner(),
-            grenade: weapons::grenade::throwing_hand(),
+            grenade: Hand::BOTH.map(weapons::grenade::holds),
             c4: weapons::c4::throwing_hand(),
             parachute,
         }
@@ -97,7 +97,7 @@ pub(super) fn capture(input: Refresh<'_>) -> Eligibility {
             guns,
             reload,
             foregrip: foregrip_owner(),
-            grenade: weapons::grenade::throwing_hand(),
+            grenade: Hand::BOTH.map(weapons::grenade::holds),
             c4: weapons::c4::throwing_hand(),
             parachute,
         },

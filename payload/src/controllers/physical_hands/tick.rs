@@ -646,14 +646,15 @@ pub(crate) fn free_hands() -> [bool; 2] {
         .hold
         .filter(|h| h.engaged)
         .map(|h| h.holder.other());
-    let throwing = [grenade::throwing_hand(), c4::throwing_hand()];
+    let charge = c4::throwing_hand();
     let weights = tiers::weights();
     Hand::BOTH.map(|hand| {
         let held = live::held_kind(hand).is_some_and(|kind| kind != ItemKind::Prop);
         !wielded[hand.index()]
             && !held
             && foregrip != Some(hand)
-            && !throwing.contains(&Some(hand))
+            && !grenade::holds(hand)
+            && charge != Some(hand)
             && weights[hand.index()] > 0.0
     })
 }

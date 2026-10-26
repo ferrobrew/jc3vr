@@ -40,6 +40,7 @@ use crate::{
             docks::attachments::{
                 Attachment, Missing, Occupancy, Placement, PoseSource, Sample, TargetPolicy,
             },
+            grenade,
             hold::{act, armed, steal},
             inventory::{
                 carry,
@@ -62,6 +63,20 @@ pub(crate) fn attachment_sample(owner: usize, character: Mat4, now: Instant) -> 
 /// Publish only the sample that the socket candidate provider consumes on this input tick.
 pub(crate) fn publish_targets(sample: Option<Sample>) {
     *ATTACHMENTS.lock() = sample;
+}
+
+/// The selected socket pose copied from this input tick, in world space.
+pub(crate) fn socket_world_pose(socket: Socket) -> Option<Mat4> {
+    let attachments = ATTACHMENTS.lock();
+    let sample = attachments.as_ref()?;
+    (Instant::now().checked_duration_since(sample.at)? <= attachments::MAX_AGE).then_some(())?;
+    sample
+        .attachments
+        .iter()
+        .find(|attachment| attachment.socket == socket && attachment.hand.is_none())?
+        .pose
+        .ok()
+        .map(|pose| Mat4::from_rotation_translation(pose.orientation, pose.position))
 }
 
 /// What a socket's volume is for.
@@ -133,6 +148,7 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
         let occupancy = occupant.map_or(Occupancy::Empty, |item| Occupancy::Occupied {
             object: item.binding.address().map(|address| address.get()),
         });
+        let safe_occupant = occupant.is_some_and(|item| item.binding.safe_item().is_some());
         let (source, pose) = if let Some(&(_, weapon)) = docked.iter().find(|(s, _)| *s == socket) {
             let object = weapon as *const WeaponBase as ObjectKey;
             let point = unsafe { grip_point(weapon) };
@@ -155,6 +171,17 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
                 Placement::Visible {
                     object,
                     grip: point,
+                },
+            )
+        } else if safe_occupant && matches!(socket, Socket::Hip(_) | Socket::Chest) {
+            attachments::socket_pose(
+                to_world,
+                bones[socket.index()],
+                Placement::Free {
+                    object: None,
+                    remembered: None,
+                    native: false,
+                    offset: inputs.offsets.of(socket),
                 },
             )
         } else if let Occupancy::Occupied { object, .. } = occupancy {
@@ -185,11 +212,30 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
             native: None,
         };
         sample.attachments.push(attachment);
-        if matches!(source, PoseSource::VisibleGrip { .. }) {
+        if safe_occupant
+            && matches!(socket, Socket::Hip(_) | Socket::Chest)
+            && let Ok(pose) = pose
+        {
+            grenade::safe::place_stowed(
+                socket,
+                Mat4::from_rotation_translation(pose.orientation, pose.position),
+            );
+        }
+        if matches!(source, PoseSource::VisibleGrip { .. }) || safe_occupant {
             for hand in Hand::BOTH {
                 let draws = inputs.free[hand.index()]
-                    && grab::grab(snapshot, hand, socket, inputs.rules)
-                        == Ok(SocketMove::Draw { socket, hand });
+                    && if safe_occupant {
+                        matches!(socket, Socket::Hip(_) | Socket::Chest)
+                            && snapshot.held(hand).is_none()
+                            && (inputs.rules.both_hands
+                                || snapshot
+                                    .held(hand.other())
+                                    .and_then(|item| item.kind.weapon())
+                                    .is_none())
+                    } else {
+                        grab::grab(snapshot, hand, socket, inputs.rules)
+                            == Ok(SocketMove::Draw { socket, hand })
+                    };
                 if draws {
                     sample.attachments.push(Attachment {
                         hand: Some(hand),
@@ -197,6 +243,33 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
                         ..attachment
                     });
                 }
+            }
+        }
+    }
+    for hand in Hand::BOTH {
+        if grenade::safe::in_hand(hand).is_none() {
+            continue;
+        }
+        for socket in [
+            Socket::Hip(Hand::Left),
+            Socket::Hip(Hand::Right),
+            Socket::Chest,
+        ] {
+            let Some(base) = sample
+                .attachments
+                .iter()
+                .find(|attachment| attachment.socket == socket)
+                .copied()
+            else {
+                continue;
+            };
+            if snapshot.body.has(socket) && base.occupancy == Occupancy::Empty && base.pose.is_ok()
+            {
+                sample.attachments.push(Attachment {
+                    hand: Some(hand),
+                    usage: Some(SocketUse::Dock),
+                    ..base
+                });
             }
         }
     }

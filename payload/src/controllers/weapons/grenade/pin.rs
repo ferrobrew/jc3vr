@@ -1,39 +1,37 @@
-//! The grenade's pin. Pure.
+//! Pin readout types and a test-only model of the primed-grenade fuse lifecycle.
 //!
-//! A grenade taken from the pouch comes out with its pin in: the grenade's fuse
-//! ([`Grenade::m_ShouldTickDetonationTimer`]) is held, and full, from the update that primes it.
-//! The other hand pulls the pin with a grip press at the grenade, or the holding hand's trigger
-//! does, and from the next update the fuse runs while the grenade is still in the hand: the
-//! grenade cooks. A grenade thrown with its pin in has its fuse started at the throw, so it is
-//! never a dud that lies live in the world forever.
-//!
-//! The input tick asks for the pull ([`pull`]); the grenade weapon's update, the one place the
-//! grenade is known to be live, writes the fuse ([`before_update`], [`on_primed`]).
-//!
-//! [`Grenade::m_ShouldTickDetonationTimer`]: jc3gi::equipment::explosive::Grenade::m_ShouldTickDetonationTimer
+//! Safe pouch grenades do not use this lifecycle. Their native activation starts on a deliberate
+//! release; the paused-fuse transitions remain available only to the reference tests.
 
 /// Where a held grenade's pin is.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Pin {
     /// In: the fuse is held.
+    #[cfg(test)]
     In,
     /// Pulled on the input tick; the next weapon update starts the fuse.
+    #[cfg(test)]
     Pulling,
     /// Out: the fuse runs.
+    #[cfg(test)]
     Out,
 }
 
 impl Pin {
     pub const fn label(self) -> &'static str {
         match self {
+            #[cfg(test)]
             Pin::In => "in",
+            #[cfg(test)]
             Pin::Pulling => "being pulled",
+            #[cfg(test)]
             Pin::Out => "out",
         }
     }
 }
 
 /// What to do to the held grenade's fuse.
+#[cfg(test)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum FuseWrite {
     /// Stop the fuse and fill it again.
@@ -42,26 +40,19 @@ pub enum FuseWrite {
     Run,
 }
 
-/// Who pulled the pin.
+/// The puller readout; safe pouch grenades have no pin-pull event.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Puller {
-    /// The other hand, with a grip press at the grenade.
-    OtherHand,
-    /// The holding hand's trigger.
-    Trigger,
-}
+pub enum Puller {}
 
 impl Puller {
     pub const fn label(self) -> &'static str {
-        match self {
-            Puller::OtherHand => "the other hand",
-            Puller::Trigger => "the trigger",
-        }
+        match self {}
     }
 }
 
 /// The pin of a grenade just primed: in, with its fuse held, when the pin is on; `None` when the
 /// fuse runs from the prime, as the game's own throw has it.
+#[cfg(test)]
 pub fn on_primed(enabled: bool) -> (Option<Pin>, Option<FuseWrite>) {
     if enabled {
         (Some(Pin::In), Some(FuseWrite::Hold))
@@ -71,6 +62,7 @@ pub fn on_primed(enabled: bool) -> (Option<Pin>, Option<FuseWrite>) {
 }
 
 /// Pull the pin. Returns the pin's new place and whether this pull took it out.
+#[cfg(test)]
 pub fn pull(pin: Option<Pin>) -> (Option<Pin>, bool) {
     match pin {
         Some(Pin::In) => (Some(Pin::Pulling), true),
@@ -80,6 +72,7 @@ pub fn pull(pin: Option<Pin>) -> (Option<Pin>, bool) {
 
 /// The fuse write before the grenade weapon's update: a pulled pin starts the fuse, and so does a
 /// throw with the pin still in. `throwing` is whether this update fires the grenade.
+#[cfg(test)]
 pub fn before_update(pin: Option<Pin>, throwing: bool) -> (Option<Pin>, Option<FuseWrite>) {
     match pin {
         Some(Pin::Pulling) => (Some(Pin::Out), Some(FuseWrite::Run)),
@@ -90,6 +83,7 @@ pub fn before_update(pin: Option<Pin>, throwing: bool) -> (Option<Pin>, Option<F
 
 /// Whether the pin's grab volume is placed: the pin is in, and the hand that would pull it holds
 /// nothing.
+#[cfg(test)]
 pub fn volume_placed(pin: Option<Pin>, other_hand_free: bool) -> bool {
     pin == Some(Pin::In) && other_hand_free
 }
