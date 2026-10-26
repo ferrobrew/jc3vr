@@ -240,7 +240,7 @@ pub(crate) unsafe fn finish_grab(hand: Hand, inputs: &TakeInputs) -> bool {
             },
             cause: match target.kind {
                 TargetKind::Held { .. } => Cause::Steal,
-                TargetKind::Rack { .. } => Cause::Rack,
+                TargetKind::Rack { .. } | TargetKind::RackMember { .. } => Cause::Rack,
             },
             // A gun taken from a character's hands or a rack comes into the hand at its grip.
             touch: None,
@@ -249,7 +249,7 @@ pub(crate) unsafe fn finish_grab(hand: Hand, inputs: &TakeInputs) -> bool {
             TargetKind::Held { .. } => {
                 unsafe { steal::take(hand, &target, options) }.map_err(TakeRefusal::Steal)
             }
-            TargetKind::Rack { .. } => {
+            TargetKind::Rack { .. } | TargetKind::RackMember { .. } => {
                 unsafe { rack::take(hand, &target, options) }.map_err(TakeRefusal::Rack)
             }
         }

@@ -46,7 +46,14 @@ use crate::{
         hands::ik,
         loadout::{GiveSource, Place, live, slot_label},
         weapons::{
-            hold::{equip, rack, refs::Strong},
+            hold::{
+                equip,
+                rack::{
+                    self,
+                    paired::{CopyRequest, Member},
+                },
+                refs::Strong,
+            },
             inventory::{self, engine, reconcile},
         },
     },
@@ -66,11 +73,30 @@ pub(crate) fn within_copy_start(start: impl FnOnce()) {
     COPY_START.with(|copy| copy.set(false));
 }
 
+/// Request the next native rack give for exactly one physical source member.
+pub(crate) fn within_member_start(member: Member, start: impl FnOnce()) {
+    let previous = MEMBER_START.with(|copy| copy.replace(Some(member)));
+    within_copy_start(start);
+    MEMBER_START.with(|copy| copy.set(previous));
+}
+
+/// Whether a native source request still owns the pistol callback, including a canceled request.
+pub(crate) fn member_pending() -> bool {
+    let state = STATE.lock();
+    state.records.iter().flatten().any(|r| r.member.is_some())
+        || state.queued.iter().any(|a| a.member.is_some())
+}
+
 /// Forget the gives recorded: the spawn reset owns every give made before it. Called at the reset's
 /// pre-reset event.
 pub(crate) fn on_reset() {
+    rack::paired::clear();
     let mut state = STATE.lock();
-    state.records = [None; SLOTS];
+    for record in &mut state.records {
+        if record.is_some_and(|r| r.member.is_none()) {
+            *record = None;
+        }
+    }
 }
 
 /// Hand the queued gives over and place them in the table. Called each input tick while the table
@@ -93,13 +119,22 @@ pub(crate) unsafe fn input_tick(owner: &mut Character) {
 ///
 /// The main thread, outside the world update.
 pub(crate) unsafe fn stand_down() {
+    rack::paired::clear();
     let mut state = STATE.lock();
-    state.records = [None; SLOTS];
+    for record in &mut state.records {
+        if record.is_some_and(|r| r.member.is_none()) {
+            *record = None;
+        }
+    }
     let queued = std::mem::take(&mut state.queued);
     drop(state);
     for arrival in queued {
-        let mut shared = shared_weapon(arrival.weapon);
-        unsafe { call_original(arrival.inventory, &mut shared) };
+        if arrival.member.is_some() {
+            unsafe { (*engine::weapon_of(&arrival.weapon)).Despawn() };
+        } else {
+            let mut shared = shared_weapon(arrival.weapon);
+            unsafe { call_original(arrival.inventory, &mut shared) };
+        }
     }
 }
 
@@ -111,6 +146,7 @@ const SLOTS: usize = 8;
 struct Record {
     tag_index: i32,
     source: GiveSource,
+    member: Option<CopyRequest>,
 }
 
 /// A given weapon that arrived, held until the next input tick.
@@ -119,6 +155,7 @@ struct Arrival {
     weapon: Strong,
     slot: WeaponSlot,
     source: GiveSource,
+    member: Option<CopyRequest>,
 }
 
 // SAFETY: the inventory is the local player's, reached only on the input tick while the character
@@ -139,6 +176,7 @@ thread_local! {
     /// Whether this thread is inside the local player's pickup start of a weapon with unlimited
     /// stock.
     static COPY_START: Cell<bool> = const { Cell::new(false) };
+    static MEMBER_START: Cell<Option<Member>> = const { Cell::new(None) };
 }
 
 /// Whether `inventory` is the local player's.
@@ -186,7 +224,12 @@ unsafe fn hand_over(owner: &mut Character, arrival: Arrival) {
         weapon,
         slot,
         source,
+        member,
     } = arrival;
+    if let Some(request) = member {
+        unsafe { stage_member(owner, inventory, weapon, slot, request) };
+        return;
+    }
     let object = engine::weapon_of(&weapon) as usize;
     if inventory != &raw mut owner.m_Inventory {
         let mut shared = shared_weapon(weapon);
@@ -239,6 +282,52 @@ unsafe fn hand_over(owner: &mut Character, arrival: Arrival) {
     );
 }
 
+/// Initialize a source member through the game's arrival without adopting it into the loadout.
+unsafe fn stage_member(
+    owner: &mut Character,
+    inventory: *mut Inventory,
+    weapon: Strong,
+    slot: WeaponSlot,
+    request: CopyRequest,
+) {
+    let object = engine::weapon_of(&weapon) as usize;
+    if inventory != &raw mut owner.m_Inventory || !rack::paired::waiting(request.member) {
+        unsafe { (*engine::weapon_of(&weapon)).Despawn() };
+        return;
+    }
+    let occupant = owner.m_Inventory.m_Weapons[slot as usize].px as usize;
+    if occupant != 0 && occupant != object && !unsafe { reconcile::vacate(owner, slot) } {
+        unsafe { (*engine::weapon_of(&weapon)).Despawn() };
+        tracing::warn!(target: "controllers", "rack: cannot preserve the slot occupant while staging a source member");
+        return;
+    }
+    // Keep a second reference while WeaponSpawned consumes its by-value shared pointer.
+    let Some(retained) = (unsafe { engine::strong_to(&*engine::weapon_of(&weapon)) }) else {
+        unsafe { reconcile::apply(owner) };
+        return;
+    };
+    let equipped = owner.m_Inventory.m_WeaponToSpawnEquippedWeapon;
+    owner.m_Inventory.m_WeaponToSpawnEquippedWeapon = WeaponSlot::E_NUM_WEAPON_SLOTS;
+    let mut shared = shared_weapon(weapon);
+    unsafe { call_original(inventory, &mut shared) };
+    owner.m_Inventory.m_WeaponToSpawnEquippedWeapon = if equipped == slot {
+        WeaponSlot::E_NONE
+    } else {
+        equipped
+    };
+    let initialized = owner.m_Inventory.m_Weapons[slot as usize].px as usize == object;
+    if initialized {
+        unsafe { owner.m_Inventory.RemoveWeapon(slot) };
+    }
+    unsafe { reconcile::apply(owner) };
+    if initialized {
+        unsafe { rack::paired::staged(request.member, retained) };
+    } else {
+        unsafe { (*engine::weapon_of(&retained)).Despawn() };
+        tracing::warn!(target: "controllers", "rack: the native give did not initialize its source member");
+    }
+}
+
 #[detour(address = jc3gi::character::inventory::Inventory::GivePlayerWeapon_ADDRESS)]
 fn give_player_weapon(
     inventory: *mut Inventory,
@@ -249,6 +338,9 @@ fn give_player_weapon(
     extra_ammo_to_inventory: bool,
     drop_old: bool,
 ) {
+    let member = MEMBER_START
+        .with(Cell::get)
+        .map(|member| rack::paired::copy_request(member, ammo));
     if is_local(inventory) && tracked(slot) {
         let record = table_places().then(|| Record {
             tag_index,
@@ -257,17 +349,18 @@ fn give_player_weapon(
             } else {
                 GiveSource::Game
             },
+            member,
         });
         STATE.lock().records[slot as usize] = record;
     }
     GIVE_PLAYER_WEAPON.get().unwrap().call(
         inventory,
         tag_index,
-        ammo,
+        member.map_or(ammo, |request| request.ammo),
         slot,
-        start_equipped,
-        extra_ammo_to_inventory,
-        drop_old,
+        start_equipped && member.is_none(),
+        extra_ammo_to_inventory && member.is_none(),
+        drop_old && member.is_none(),
     );
 }
 
@@ -302,7 +395,7 @@ unsafe fn queue(inventory: *mut Inventory, weapon: *mut SharedPtr<WeaponBase>) -
         return false;
     };
     state.records[slot as usize] = None;
-    if !table_places() {
+    if !table_places() && record.member.is_none() {
         return false;
     }
     let object = SharedPtr {
@@ -318,6 +411,7 @@ unsafe fn queue(inventory: *mut Inventory, weapon: *mut SharedPtr<WeaponBase>) -
         weapon: strong,
         slot,
         source: record.source,
+        member: record.member,
     });
     true
 }

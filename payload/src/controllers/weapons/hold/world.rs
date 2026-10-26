@@ -28,6 +28,12 @@ pub enum TargetKind {
     Held { character: usize },
     /// On a rack, at this weapon's address.
     Rack { weapon: usize },
+    /// One displayed gun of a paired rack, identified across cached completion.
+    RackMember {
+        weapon: usize,
+        generation: u64,
+        member: u8,
+    },
 }
 
 /// A weapon a hand can take.
@@ -134,7 +140,8 @@ impl Offers {
     /// A completed finite source cannot also be taken by the other hand from this tick's cache.
     pub(crate) fn acquired(&mut self, target: WorldTarget) {
         for offer in &mut self.hands {
-            if offer.is_some_and(|other| other.weapon == target.weapon) {
+            if offer.is_some_and(|other| other.weapon == target.weapon && other.kind == target.kind)
+            {
                 *offer = None;
             }
         }
@@ -532,6 +539,35 @@ mod tests {
         );
         offers.acquired(taken);
         assert_eq!(offers.take(Hand::Right, Some(Vec3::ZERO), 0.3), None);
+    }
+
+    #[test]
+    fn completing_one_rack_member_preserves_the_neighbours_offer() {
+        let first = target(
+            TargetKind::RackMember {
+                weapon: 3,
+                generation: 1,
+                member: 0,
+            },
+            Vec3::ZERO,
+            Vec3::ZERO,
+        );
+        let second = WorldTarget {
+            kind: TargetKind::RackMember {
+                weapon: 3,
+                generation: 1,
+                member: 1,
+            },
+            ..first
+        };
+        let mut offers = Offers::gather(&[first], 0.3, [true; 2], [Some(Vec3::ZERO); 2]);
+        offers.hands[Hand::Right.index()] = Some(second);
+        offers.acquired(first);
+        assert_eq!(offers.take(Hand::Left, Some(Vec3::ZERO), 0.3), None);
+        assert_eq!(
+            offers.take(Hand::Right, Some(Vec3::ZERO), 0.3),
+            Some(second)
+        );
     }
 
     #[test]

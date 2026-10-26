@@ -25,6 +25,8 @@
 //!   in the hand; the copy then slides into the hand from where the rack's weapon was, so it is
 //!   seen to leave the rack, and the rack's weapon fades back in a moment later, restocked.
 
+pub(crate) mod paired;
+
 use std::{
     fmt,
     time::{Duration, Instant},
@@ -95,7 +97,10 @@ pub(crate) unsafe fn targets(
 ) -> Vec<WorldTarget> {
     let mut out: Vec<WorldTarget> = Vec::new();
     unsafe {
-        walk(owner, |weapon, _| {
+        walk(owner, |weapon, alive| {
+            if paired::targets(owner, weapon, alive, &to_cockpit, &mut out) {
+                return false;
+            }
             let address = weapon as *const WeaponBase as usize;
             if out.iter().any(|t| t.weapon == address) {
                 return false;
@@ -149,6 +154,28 @@ pub(crate) unsafe fn take(
     let weapon = unsafe { &mut *(target.weapon as *mut WeaponBase) };
     if !offered_state(weapon) {
         return Err(RackRefusal::Gone);
+    }
+    if let TargetKind::RackMember {
+        weapon: source,
+        generation,
+        member,
+    } = target.kind
+    {
+        if source != target.weapon {
+            return Err(RackRefusal::Gone);
+        }
+        return unsafe {
+            paired::take(
+                owner,
+                hand,
+                paired::Member {
+                    source,
+                    generation,
+                    index: member,
+                },
+                options,
+            )
+        };
     }
     // A copy is asked of a rack with unlimited stock; anything else hands its own weapon over.
     let restocks = weapon.m_InfinitePickup && weapon.m_State == WeaponState::E_WS_WEAPON_RACK;
@@ -227,6 +254,7 @@ pub(crate) fn arrived(weapon: usize, hand: Hand) {
 /// Show the rack's weapon again once its copy has been in the hand a moment, or when the copy
 /// never came. Called every input tick.
 pub(crate) fn tick() {
+    paired::tick();
     let mut copy = COPY.lock();
     let Some(pending) = copy.as_ref() else {
         return;
@@ -251,6 +279,7 @@ pub(crate) fn tick() {
 
 /// Show the rack's weapon again and forget the copy. Called when the weapon handling stands down.
 pub(crate) fn stand_down() {
+    paired::clear();
     let pending = COPY.lock().take();
     if let Some(pending) = pending {
         pending.restore();
