@@ -1,19 +1,24 @@
 //! Retained native shape tables and bounded world-body transactions.
 
 use std::{
-    ptr::NonNull,
+    collections::HashSet,
+    ptr::{self, NonNull},
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use glam::Vec3;
 use jc3gi::{
+    character::character::Character,
+    game::GameObject,
     havok::{hkAabb, hkReferencedObject, hknpShape},
-    physics::{ProxyState, SharedPfxCharacterSettings, hknpBody, hknpWorld},
+    physics::{
+        PfxInstance, PhysicsGameObject, ProxyState, SharedPfxCharacterSettings, hknpBody, hknpWorld,
+    },
 };
 
 use crate::controllers::physical_hands::human_hull::{
     ClearanceUnavailableReason,
     geometry::{self, Bounds, GeometryError},
+    query::{self, Budget},
 };
 
 pub(super) struct NativeState {
@@ -25,6 +30,7 @@ pub(super) struct NativeState {
     pub(super) original_active: bool,
     pub(super) clearance: ClearanceUnavailableReason,
     generation: u64,
+    mutation_fault: bool,
 }
 
 // SAFETY: STATE serializes access. Shape mutations run in settings hooks or the native phase;
@@ -42,6 +48,7 @@ impl NativeState {
             original_active: false,
             clearance: ClearanceUnavailableReason::NotRequested,
             generation: 0,
+            mutation_fault: false,
         }
     }
 
@@ -56,6 +63,7 @@ impl NativeState {
     pub(super) fn shutdown_generation(&self) -> Option<u64> {
         (self.shutdown_requested
             && !self.committed
+            && !self.mutation_fault
             && self.original_active
             && self.migrated_bodies == 0
             && self.tables.iter().all(|table| !table.installed))
@@ -104,7 +112,7 @@ impl NativeState {
                 unsafe { table.release_pairs() };
                 return Err(GeometryError::InvalidGeometry);
             };
-            let (replacement, original_bounds) = match unsafe { geometry::narrow(original) } {
+            let (replacement, _) = match unsafe { geometry::narrow(original) } {
                 Ok(result) => result,
                 Err(error) => {
                     unsafe { table.release_pairs() };
@@ -116,7 +124,6 @@ impl NativeState {
                 index,
                 original,
                 replacement,
-                original_bounds,
             });
         }
         if self.enabled {
@@ -140,13 +147,73 @@ impl NativeState {
         }
     }
 
+    /// Discovers settings through every live body's typed native owner, including NPCs that
+    /// existed before hook installation. No owner pointer survives this native phase.
+    pub(super) unsafe fn discover(
+        &mut self,
+        world: &hknpWorld,
+    ) -> Result<(), ClearanceUnavailableReason> {
+        self.original_active = false;
+        self.advance_generation();
+        let bodies = unsafe { inventory(world, &self.tables)? };
+        let mut owners = HashSet::new();
+        let type_id = unsafe { Character::TYPE_ID() };
+        let settings = bodies.into_iter().filter_map(|id| {
+            let owner = unsafe { body_owner(world, id) }?;
+            if !owners.insert(owner.as_ptr() as usize) {
+                return None;
+            }
+            let object = unsafe {
+                &*owner
+                    .as_ptr()
+                    .cast::<u8>()
+                    .add(PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize)
+                    .cast::<GameObject>()
+            };
+            if !unsafe { object.IsType(type_id) } {
+                return None;
+            }
+            let character = unsafe { &*owner.as_ptr().cast::<Character>() };
+            let proxy = unsafe { character.m_PfxCharacter.px.as_ref() }?;
+            Some(
+                unsafe { proxy.m_Owner.as_mut() }
+                    .and_then(|owner| {
+                        NonNull::new(unsafe { owner.GetSharedPfxCharacterSettings() })
+                    })
+                    .ok_or(ClearanceUnavailableReason::IncompleteInventory),
+            )
+        });
+        unsafe { self.adopt_discovered(settings) }
+    }
+
+    unsafe fn adopt_discovered(
+        &mut self,
+        settings: impl IntoIterator<
+            Item = Result<NonNull<SharedPfxCharacterSettings>, ClearanceUnavailableReason>,
+        >,
+    ) -> Result<(), ClearanceUnavailableReason> {
+        for settings in settings {
+            unsafe { self.adopt(settings?) }.map_err(|error| {
+                tracing::warn!(?error, "human hull: discovered native geometry rejected");
+                ClearanceUnavailableReason::InvalidGeometry
+            })?;
+        }
+        Ok(())
+    }
+
     pub(super) unsafe fn synchronize(
         &mut self,
         world: &mut hknpWorld,
     ) -> Result<(), ClearanceUnavailableReason> {
         self.advance_generation();
         self.original_active = false;
+        if self.mutation_fault {
+            return Err(ClearanceUnavailableReason::RollbackRejected);
+        }
         let bodies = unsafe { inventory(world, &self.tables)? };
+        for table in &self.tables {
+            unsafe { table.validate_slots()? };
+        }
         let restore = self.shutdown_requested || !self.enabled;
         self.migrated_bodies = unsafe { self.count_migrated(world, &bodies) };
         if restore {
@@ -167,7 +234,11 @@ impl NativeState {
                 }
             }
         }
-        unsafe { apply(world, &changes)? };
+        if let Err(reason) = unsafe { apply(world, &changes) } {
+            self.mutation_fault = reason == ClearanceUnavailableReason::RollbackRejected;
+            self.migrated_bodies = unsafe { self.count_migrated(world, &bodies) };
+            return Err(reason);
+        }
         let bodies = unsafe { inventory(world, &self.tables)? };
         self.migrated_bodies = unsafe { self.count_migrated(world, &bodies) };
         if restore && self.migrated_bodies != 0 {
@@ -219,20 +290,16 @@ impl NativeState {
         bodies: &[u32],
     ) -> Result<(), ClearanceUnavailableReason> {
         let mut comparisons = 0usize;
+        let mut budget = Budget::new();
         for &id in bodies {
             let body = unsafe { &*world.m_bodies.add(id as usize) };
-            let Some(pair) = self
-                .tables
-                .iter()
-                .flat_map(|table| &table.pairs)
-                .find(|pair| body.m_shape == pair.replacement.as_ptr())
-            else {
+            let Some(pair) = self.replacement_pair(body.m_shape) else {
                 continue;
             };
             if body.m_broadPhaseId == hknpBody::INVALID_BROAD_PHASE_ID {
                 return Err(ClearanceUnavailableReason::PendingBody);
             }
-            let proposed = transformed_bounds(body, pair.original_bounds)?;
+            let proposed = unsafe { query::world_bounds(pair.original, &body.m_transform)? };
             for &other_id in bodies {
                 if id == other_id {
                     continue;
@@ -243,23 +310,57 @@ impl NativeState {
                 }
                 let other = unsafe { &*world.m_bodies.add(other_id as usize) };
                 if other.m_broadPhaseId == hknpBody::INVALID_BROAD_PHASE_ID {
-                    return Err(ClearanceUnavailableReason::PendingBody);
+                    let shape = NonNull::new(other.m_shape)
+                        .ok_or(ClearanceUnavailableReason::IncompleteInventory)?;
+                    let pending_bounds = unsafe { query::world_bounds(shape, &other.m_transform)? };
+                    if query::intersects(proposed, pending_bounds) {
+                        return Err(ClearanceUnavailableReason::PendingBody);
+                    }
+                    continue;
                 }
-                let mut aabb = hkAabb::default();
-                unsafe { world.getBodyAabb(other_id, &mut aabb) };
-                let target = Bounds {
-                    min: aabb.m_min.data,
-                    max: aabb.m_max.data,
+                let other_pair = self.replacement_pair(other.m_shape);
+                let (target_shape, target_bounds) = if let Some(other_pair) = other_pair {
+                    (other_pair.original, unsafe {
+                        query::world_bounds(other_pair.original, &other.m_transform)?
+                    })
+                } else {
+                    let mut aabb = hkAabb::default();
+                    unsafe { world.getBodyAabb(other_id, &mut aabb) };
+                    let bounds = Bounds {
+                        min: aabb.m_min.data,
+                        max: aabb.m_max.data,
+                    };
+                    if !query::valid_bounds(bounds) {
+                        return Err(ClearanceUnavailableReason::InvalidBounds);
+                    }
+                    (
+                        NonNull::new(other.m_shape)
+                            .ok_or(ClearanceUnavailableReason::IncompleteInventory)?,
+                        bounds,
+                    )
                 };
-                if !valid_bounds(target) {
-                    return Err(ClearanceUnavailableReason::InvalidBounds);
-                }
-                if intersects(proposed, target) {
-                    return Err(ClearanceUnavailableReason::Obstructed);
+                if query::intersects(proposed, target_bounds) {
+                    unsafe {
+                        query::check_target(
+                            pair.original,
+                            pair.replacement,
+                            &body.m_transform,
+                            target_shape,
+                            &other.m_transform,
+                            &mut budget,
+                        )?
+                    };
                 }
             }
         }
         Ok(())
+    }
+
+    fn replacement_pair(&self, shape: *const hknpShape) -> Option<&Pair> {
+        self.tables
+            .iter()
+            .flat_map(|table| &table.pairs)
+            .find(|pair| shape == pair.replacement.as_ptr())
     }
 }
 
@@ -270,6 +371,23 @@ pub(super) struct Table {
 }
 
 impl Table {
+    unsafe fn validate_slots(&self) -> Result<(), ClearanceUnavailableReason> {
+        let Some(settings) = self.settings else {
+            return Ok(());
+        };
+        for pair in &self.pairs {
+            let expected = if self.installed {
+                pair.replacement
+            } else {
+                pair.original
+            };
+            if unsafe { settings.as_ref() }.m_CapsuleShape[pair.index] != expected.as_ptr() {
+                return Err(ClearanceUnavailableReason::MutationRejected);
+            }
+        }
+        Ok(())
+    }
+
     unsafe fn set_installed(&mut self, install: bool) {
         if self.installed == install {
             return;
@@ -307,7 +425,6 @@ struct Pair {
     index: usize,
     original: NonNull<hknpShape>,
     replacement: NonNull<hknpShape>,
-    original_bounds: Bounds,
 }
 
 struct Change {
@@ -348,59 +465,49 @@ unsafe fn apply(
     world: &mut hknpWorld,
     changes: &[Change],
 ) -> Result<(), ClearanceUnavailableReason> {
+    apply_with(changes, |id, shape| {
+        unsafe { world.setBodyShape(id, shape.as_ptr().cast()) };
+        unsafe { (*world.m_bodies.add(id as usize)).m_shape == shape.as_ptr() }
+    })
+}
+
+fn apply_with(
+    changes: &[Change],
+    mut set_verified: impl FnMut(u32, NonNull<hknpShape>) -> bool,
+) -> Result<(), ClearanceUnavailableReason> {
     for (index, change) in changes.iter().enumerate() {
-        unsafe { world.setBodyShape(change.id, change.to.as_ptr().cast()) };
-        if unsafe { (*world.m_bodies.add(change.id as usize)).m_shape } != change.to.as_ptr() {
+        if !set_verified(change.id, change.to) {
+            let mut recovered = true;
             for previous in changes[..=index].iter().rev() {
-                unsafe { world.setBodyShape(previous.id, previous.from.as_ptr().cast()) };
+                recovered &= set_verified(previous.id, previous.from);
             }
-            return Err(ClearanceUnavailableReason::MutationRejected);
+            return Err(if recovered {
+                ClearanceUnavailableReason::MutationRejected
+            } else {
+                ClearanceUnavailableReason::RollbackRejected
+            });
         }
     }
     Ok(())
 }
 
-fn transformed_bounds(
-    body: &hknpBody,
-    bounds: Bounds,
-) -> Result<Bounds, ClearanceUnavailableReason> {
-    let translation = Vec3::from_array(body.m_transform.m_translation.data);
-    let mut radius = 0.0f32;
-    for bits in 0..8 {
-        let corner = Vec3::from_array(std::array::from_fn(|axis| {
-            if bits & (1 << axis) == 0 {
-                bounds.min[axis]
-            } else {
-                bounds.max[axis]
-            }
-        }));
-        radius = radius.max(corner.length());
+unsafe fn body_owner(world: &hknpWorld, id: u32) -> Option<NonNull<PhysicsGameObject>> {
+    let buffer = unsafe {
+        world
+            .m_bodyProperties
+            .getWithDefault(hknpWorld::BODY_PROPERTY_PFX_INSTANCE, ptr::null_mut())
+            .as_ref()
+    }?;
+    if id >= buffer.m_capacity || buffer.m_occupancy.is_null() || buffer.m_data.is_null() {
+        return None;
     }
-    if !translation.is_finite() || !radius.is_finite() {
-        return Err(ClearanceUnavailableReason::InvalidBounds);
+    let occupied = unsafe { *buffer.m_occupancy.add((id / 32) as usize) } & (1 << (id % 32)) != 0;
+    if !occupied {
+        return None;
     }
-    let extent = Vec3::splat(radius + RESTORE_MARGIN_M);
-    let result = Bounds {
-        min: (translation - extent).to_array(),
-        max: (translation + extent).to_array(),
-    };
-    if valid_bounds(result) {
-        Ok(result)
-    } else {
-        Err(ClearanceUnavailableReason::InvalidBounds)
-    }
-}
-
-fn valid_bounds(bounds: Bounds) -> bool {
-    (0..3).all(|axis| {
-        bounds.min[axis].is_finite()
-            && bounds.max[axis].is_finite()
-            && bounds.min[axis] <= bounds.max[axis]
-    })
-}
-
-fn intersects(a: Bounds, b: Bounds) -> bool {
-    (0..3).all(|axis| a.min[axis] <= b.max[axis] && b.min[axis] <= a.max[axis])
+    let instance =
+        unsafe { (*buffer.m_data.cast::<*const PfxInstance>().add(id as usize)).as_ref() }?;
+    NonNull::new(instance.m_GameObject.cast())
 }
 
 pub(super) unsafe fn retain(shape: NonNull<hknpShape>) {
@@ -446,7 +553,6 @@ const HUMAN_STATES: [ProxyState; 7] = [
 ];
 const MAXIMUM_BODY_INDEX: u32 = 262_144;
 const MAXIMUM_RESTORE_COMPARISONS: usize = 1_000_000;
-const RESTORE_MARGIN_M: f32 = 1.0e-3;
 
 #[cfg(test)]
 mod tests {
@@ -503,20 +609,87 @@ mod tests {
             min: [1.001, 0.5, -0.5],
             max: [2.0, 1.5, 0.5],
         };
-        assert!(intersects(proposed, touching));
-        assert!(!intersects(proposed, separate));
+        assert!(query::intersects(proposed, touching));
+        assert!(!query::intersects(
+            proposed,
+            Bounds {
+                min: [1.01, 0.5, -0.5],
+                ..separate
+            }
+        ));
     }
 
     #[test]
     fn nonfinite_or_inverted_bounds_are_not_clearance() {
-        assert!(!valid_bounds(Bounds {
+        assert!(!query::valid_bounds(Bounds {
             min: [0.0; 3],
             max: [f32::NAN; 3]
         }));
-        assert!(!valid_bounds(Bounds {
+        assert!(!query::valid_bounds(Bounds {
             min: [1.0; 3],
             max: [0.0; 3]
         }));
+    }
+
+    #[test]
+    fn rejected_body_mutation_rolls_back_every_attempted_body_in_reverse() {
+        let from = NonNull::dangling();
+        let mut target = std::mem::MaybeUninit::<hknpShape>::uninit();
+        let to = NonNull::new(target.as_mut_ptr()).unwrap();
+        let changes = [Change { id: 3, from, to }, Change { id: 8, from, to }];
+        let mut calls = Vec::new();
+        let result = apply_with(&changes, |id, shape| {
+            calls.push((id, shape));
+            !(id == 8 && shape == to)
+        });
+        assert_eq!(result, Err(ClearanceUnavailableReason::MutationRejected));
+        assert_eq!(calls, [(3, to), (8, to), (8, from), (3, from)]);
+    }
+
+    #[test]
+    fn rollback_rejection_is_distinct_and_never_approves_shutdown() {
+        let from = NonNull::dangling();
+        let mut target = std::mem::MaybeUninit::<hknpShape>::uninit();
+        let to = NonNull::new(target.as_mut_ptr()).unwrap();
+        let result = apply_with(&[Change { id: 3, from, to }], |_, _| false);
+        assert_eq!(result, Err(ClearanceUnavailableReason::RollbackRejected));
+        let mut state = NativeState::new();
+        state.request_shutdown();
+        state.original_active = true;
+        state.mutation_fault = true;
+        assert_eq!(state.shutdown_generation(), None);
+    }
+
+    #[test]
+    fn later_distinct_npc_settings_invalidate_an_earlier_restoration_receipt() {
+        let mut state = NativeState::new();
+        state.request_shutdown();
+        state.original_active = true;
+        let initial = state.shutdown_generation().unwrap();
+        let earlier_npc = NonNull::dangling();
+        let later_npc = NonNull::new(16usize as *mut SharedPfxCharacterSettings).unwrap();
+        // Pending adoption records identities without dereferencing native settings.
+        unsafe { state.adopt_discovered([Ok(earlier_npc), Ok(earlier_npc)]) }.unwrap();
+        let after_first = state.shutdown_generation().unwrap();
+        unsafe { state.adopt_discovered([Ok(earlier_npc), Ok(later_npc)]) }.unwrap();
+        assert_eq!(state.tables.len(), 2);
+        assert_ne!(state.shutdown_generation(), Some(initial));
+        assert_ne!(state.shutdown_generation(), Some(after_first));
+        let after_later = state.shutdown_generation();
+        unsafe { state.adopt(later_npc) }.unwrap();
+        assert_eq!(state.tables.len(), 2);
+        assert_eq!(state.shutdown_generation(), after_later);
+    }
+
+    #[test]
+    fn discovery_fault_is_not_a_complete_world_pass() {
+        let mut state = NativeState::new();
+        state.request_shutdown();
+        let result = unsafe {
+            state.adopt_discovered([Err(ClearanceUnavailableReason::IncompleteInventory)])
+        };
+        assert_eq!(result, Err(ClearanceUnavailableReason::IncompleteInventory));
+        assert_eq!(state.shutdown_generation(), None);
     }
 
     #[test]

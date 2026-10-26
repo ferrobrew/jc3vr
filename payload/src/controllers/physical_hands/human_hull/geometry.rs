@@ -108,8 +108,13 @@ pub(super) unsafe fn bounds(shape: NonNull<hknpShape>) -> Result<Bounds, Geometr
     Ok(bounds)
 }
 
-unsafe fn vertices<'a>(shape: NonNull<hknpShape>) -> Result<&'a [hkVector4f], GeometryError> {
+pub(super) unsafe fn vertices<'a>(
+    shape: NonNull<hknpShape>,
+) -> Result<&'a [hkVector4f], GeometryError> {
     let shape_ref = unsafe { shape.as_ref() };
+    if !shape_ref.m_convexRadius.is_finite() || shape_ref.m_convexRadius < 0.0 {
+        return Err(GeometryError::InvalidGeometry);
+    }
     if shape_ref.m_flags & hknpShape::IS_CONVEX_SHAPE == 0 {
         return Err(GeometryError::UnsupportedShape);
     }
@@ -121,7 +126,14 @@ unsafe fn vertices<'a>(shape: NonNull<hknpShape>) -> Result<&'a [hkVector4f], Ge
     let start = (array as *const _ as *const u8)
         .wrapping_add(usize::from(array.m_offset))
         .cast::<hkVector4f>();
-    Ok(unsafe { std::slice::from_raw_parts(start, usize::from(array.m_size)) })
+    let vertices = unsafe { std::slice::from_raw_parts(start, usize::from(array.m_size)) };
+    if vertices
+        .iter()
+        .any(|vertex| !vertex.data[..3].iter().all(|value| value.is_finite()))
+    {
+        return Err(GeometryError::InvalidGeometry);
+    }
+    Ok(vertices)
 }
 
 const MAXIMUM_VERTICES: u16 = 252;

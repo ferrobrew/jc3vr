@@ -8,6 +8,7 @@
 mod clearance;
 mod geometry;
 mod native;
+mod query;
 
 use std::{
     ptr::NonNull,
@@ -15,10 +16,7 @@ use std::{
 };
 
 use detours_macro::detour;
-use jc3gi::{
-    character::character::Character,
-    physics::{SharedPfxCharacterSettings, hknpWorld},
-};
+use jc3gi::physics::{SharedPfxCharacterSettings, hknpWorld};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 use windows::Win32::System::Threading::GetCurrentThreadId;
@@ -53,6 +51,10 @@ pub(crate) enum ClearanceUnavailableReason {
     BudgetExhausted,
     MutationRejected,
     InvalidGeometry,
+    UnsupportedShape,
+    QueryIncomplete,
+    QueryRejected,
+    RollbackRejected,
     WrongPhase,
 }
 
@@ -153,14 +155,8 @@ pub(crate) unsafe fn step(world: *mut hknpWorld) {
     if SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
         state.request_shutdown();
     }
-    if let Some(character) = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
-        && let Some(proxy) = unsafe { character.m_PfxCharacter.px.as_ref() }
-        && let Some(owner) = unsafe { proxy.m_Owner.as_mut() }
-        && let Some(settings) = NonNull::new(unsafe { owner.GetSharedPfxCharacterSettings() })
-        && let Err(error) = unsafe { state.adopt(settings) }
-    {
-        tracing::warn!(?error, "human hull: native geometry rejected");
-        state.clearance = ClearanceUnavailableReason::InvalidGeometry;
+    if let Err(reason) = unsafe { state.discover(&*world) } {
+        state.clearance = reason;
         return;
     }
     let result = if state.shutdown_requested {
