@@ -118,10 +118,7 @@ impl ActionTravel {
     /// Whether a held action delays ordinary gun release. A pump foregrip at home is support.
     pub fn holds_release(&self, kind: ActionKind) -> bool {
         self.grip.is_some()
-            && (kind != ActionKind::Pump
-                || self.position > 0.0
-                || self.lift > 0.0
-                || self.pulled)
+            && (kind != ActionKind::Pump || self.position > 0.0 || self.lift > 0.0 || self.pulled)
     }
 
     /// The handle's place now, with the part where it is along its travel.

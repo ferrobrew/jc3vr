@@ -167,6 +167,7 @@ impl ReleaseWatch {
     /// Fold in one input tick: `holder` is the hand holding the gun, and `grips` whether each
     /// hand's grip is held, by [`Hand::index`]. Returns the holding hand when its grip opened. A
     /// gun that left the armed hand disarms the watch.
+    #[cfg(test)]
     pub fn observe(&mut self, holder: Option<Hand>, grips: [bool; 2]) -> Option<Hand> {
         self.observe_action(holder, grips, [false; 2])
     }

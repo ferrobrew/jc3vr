@@ -34,7 +34,13 @@ fn gun_open_during_held_slide_or_bolt_releases_once_after_action_exit() {
             let mut watch = arm(hand);
             let active = held_action(kind, 0.7);
             for _ in 0..3 {
-                assert!(!watch.observe_release(hand, Some(1), grips(hand, false, true), active, None));
+                assert!(!watch.observe_release(
+                    hand,
+                    Some(1),
+                    grips(hand, false, true),
+                    active,
+                    None
+                ));
             }
             assert!(watch.observe_release(hand, Some(1), [false; 2], [false; 2], None));
             assert!(!watch.observe_release(hand, Some(1), [false; 2], [false; 2], None));
@@ -68,7 +74,13 @@ fn ownership_change_and_standdown_cancel_the_exact_weapons_deferred_release() {
     for hand in Hand::BOTH {
         for replacement in [None, Some(2)] {
             let mut watch = arm(hand);
-            assert!(!watch.observe_release(hand, Some(1), grips(hand, false, true), [true; 2], None));
+            assert!(!watch.observe_release(
+                hand,
+                Some(1),
+                grips(hand, false, true),
+                [true; 2],
+                None
+            ));
             assert!(!watch.observe_release(hand, replacement, [false; 2], [false; 2], None));
             assert!(!watch.observe_release(hand, Some(1), [false; 2], [false; 2], None));
         }

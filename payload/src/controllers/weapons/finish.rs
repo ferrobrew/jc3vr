@@ -366,7 +366,8 @@ pub(crate) fn finish_tick(
         &config,
     );
     let action_hands = reload::action_hands();
-    let release_active = config.weapons.hold.grip_to_hold && capabilities.release && active.is_some();
+    let release_active =
+        config.weapons.hold.grip_to_hold && capabilities.release && active.is_some();
     let released = if release_active {
         hold::act::release_tick(grips.map(ButtonControl::held), action_hands)
     } else {
@@ -374,10 +375,7 @@ pub(crate) fn finish_tick(
         [false; 2]
     };
     if release_active {
-        for hand in Hand::BOTH
-            .into_iter()
-            .filter(|hand| released[hand.index()])
-        {
+        for hand in Hand::BOTH.into_iter().filter(|hand| released[hand.index()]) {
             let gun = lone.map(|(weapon, _)| weapon);
             release(hand, gun, active.as_ref(), world_scale, &config);
         }
