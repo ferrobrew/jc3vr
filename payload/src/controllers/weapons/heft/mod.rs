@@ -38,7 +38,8 @@
 
 mod class;
 mod pose;
-
+#[cfg(test)]
+mod test_support;
 use std::{
     sync::OnceLock,
     time::{Duration, Instant},
@@ -49,6 +50,8 @@ use glam::{Quat, Vec2, Vec3};
 use jc3gi::equipment::weapon::WeaponBase;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
+#[cfg(test)]
+pub(crate) use test_support::TestWeight;
 
 pub use self::class::HeftClass;
 use self::pose::{Weight, clamp_angle, sway, unbraced_share};

@@ -36,7 +36,7 @@ use crate::{
         hands::reach::ArmRemap,
         physical_hands::{self, DrawTime, physics::guns},
         scheme, vehicles,
-        weapons::{ads, collide, foregrip, heft, recoil},
+        weapons::{ads, collide, recoil},
     },
     headpose, hooks,
 };
@@ -80,10 +80,10 @@ pub struct ActiveHands {
 /// The active hands, or `None` while the hands are inert: the controllers are disabled, the gamepad
 /// scheme is in effect, no VR session publishes a head pose, or no controller frame exists. While
 /// the off-hand holds a two-handed weapon's foregrip, the hands are in the two-handed pose
-/// ([`foregrip::apply`]); a long gun held in one hand sags, trails, and sways ([`heft::apply`]); a
-/// gun hand carries its recoil offset ([`recoil::apply`]); a hand on a gun whose body the hands
-/// hold takes none of the two-handed pose, the weight, the recoil offset, or the wall probe's
-/// push, since its body carries them ([`guns::physical_hands`]); a palm pressed into a surface is
+/// through the shared support and weight targets ([`guns::targets::apply`]); a long gun held in
+/// one hand sags, trails, and sways. Physical guns use the same weighted target before their
+/// residual body correction, without adding synthetic recoil or wall-probe displacement. A
+/// kinematic gun hand carries its recoil offset ([`recoil::apply`]); a palm pressed into a surface is
 /// held at it, and a hand body's hand is drawn at its body ([`physical_hands::apply`]); an
 /// anchored
 /// grapple hand holds the line ([`anchor::apply`]); and a hand on a physical vehicle control or a
@@ -103,14 +103,12 @@ fn compose_active_hands(at: DrawTime) -> Option<ActiveHands> {
     let mut active = active_hands_raw()?;
     vehicles::apply(&mut active.hands);
     let physical = guns::physical_hands();
-    let unweighted = active.hands;
-    foregrip::apply(&mut active.hands, &active.config.weapons.foregrip);
-    heft::apply(
+    guns::targets::apply(
         &mut active.hands,
         active.head.position,
+        &active.config.weapons.foregrip,
         &active.config.weapons.heft,
     );
-    keep_physical(&mut active.hands, &unweighted, physical);
     let torso = reach::torso_heading(active.head, shoulder_heading());
     let shoulders = shoulder_joints(&active.config, active.head, active.world_scale, torso);
     ads::apply(

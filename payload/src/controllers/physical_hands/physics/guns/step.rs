@@ -25,9 +25,9 @@ use crate::controllers::{
             GunBodyStatus, GunHolds, HeldGun, SHARED,
             engine::{GunError, GunSource, check_own_body, read_source},
             math::{
-                GunAxes, MAX_GRIP_SEAT_M, MassSource, carried_velocity, class_value, deviation,
-                gun_mass, intended_seat, limit, seat, seated, settled, shot_impulse, strayed,
-                turn_rad,
+                GunAxes, MAX_GRIP_SEAT_M, MassSource, brace_changed, brace_palm, carried_velocity,
+                class_value, deviation, gun_mass, intended_seat, limit, seat, seated, settled,
+                shot_impulse, strayed, turn_rad,
             },
         },
         joint::Joint,
@@ -45,8 +45,8 @@ pub(crate) struct GunSlot {
     axes: Option<GunAxes>,
     /// The joint to the holding hand's body, and the gun's seat on it.
     holder: Option<(Joint, Pose)>,
-    /// The joint to the bracing hand's body.
-    brace: Option<Joint>,
+    /// The joint to the bracing hand's body and its palm frame in the gun.
+    brace: Option<(Joint, Pose)>,
 }
 
 /// What one step's gun phase works from.
@@ -190,7 +190,7 @@ pub(crate) unsafe fn drop_hand(guns: &mut [Option<GunSlot>; 2], hand: Hand, reas
         SHARED.lock().status.destroyed += u64::from(destroyed);
     }
     if let Some(slot) = guns[hand.other().index()].as_mut()
-        && let Some(brace) = slot.brace.take()
+        && let Some((brace, _)) = slot.brace.take()
     {
         // SAFETY: forwarded from the caller.
         unsafe { end_joint(brace, hand, "brace", reason) };
@@ -422,45 +422,52 @@ unsafe fn keep(
     }
     contact::record_motion(Source::Gun(hand), gun_pose.position, gun_motion.linear);
 
-    // The bracing hand holds the gun where it took it, until it lets go or its body is put
-    // somewhere.
-    let wants_brace = input.holds.braces[off.index()] && off_body.is_some() && !placed[off.index()];
-    if let Some(brace) = slot.brace.take() {
-        // SAFETY: forwarded from the caller.
-        let keep = wants_brace && unsafe { brace.intact() };
+    let contact = input.holds.contacts[off.index()]
+        .filter(|_| input.holds.braces[off.index()] && off_body.is_some());
+    let target = contact
+        .zip(input.palms[off.index()])
+        .map(|(contact, palm)| brace_palm(gun_pose, palm, contact));
+    let local = target
+        .map(|palm| crate::controllers::physical_hands::physics::guns::math::seat(gun_pose, palm));
+    if let Some((brace, before)) = slot.brace.take() {
+        let keep = local.is_some_and(|after| !brace_changed(before, after))
+            && !placed[off.index()]
+            && unsafe { brace.intact() };
         if keep {
-            slot.brace = Some(brace);
+            slot.brace = Some((brace, before));
         } else {
-            let reason = if wants_brace {
-                "the joint went away"
-            } else {
-                "the bracing hand let go"
-            };
             // SAFETY: forwarded from the caller.
-            unsafe { end_joint(brace, off, "brace", reason) };
+            unsafe { end_joint(brace, off, "brace", "the support contact changed or ended") };
         }
     }
-    if wants_brace
-        && slot.brace.is_none()
-        && let Some(off_id) = off_body
+    if slot.brace.is_none()
+        && let (Some(off_id), Some(target), Some(local)) = (off_body, target, local)
+        && let Some(off_hand) = hands.bodies[off.index()].as_mut()
     {
-        // SAFETY: forwarded from the caller; both bodies are in the simulation.
-        match unsafe { Joint::create_between(off_id, slot.body.body_id()) } {
-            Ok(brace) => {
-                tracing::info!(
-                    hand = off.label(),
-                    constraint = brace.id(),
-                    gun_body = slot.body.body_id(),
-                    "held guns: joined the bracing hand to the gun"
-                );
-                slot.brace = Some(brace);
-            }
-            Err(e) => {
-                tracing::warn!(
-                    hand = off.label(),
-                    error = %e,
-                    "held guns: could not join the bracing hand to the gun"
-                );
+        // A fixed joint captures the bodies' present frames, not the selected region. Seat the
+        // support palm first, or an acquisition miss becomes the permanent brace offset.
+        let placed = unsafe { off_hand.place(target.position, target.orientation) }
+            .and_then(|()| unsafe { carry_with_hand(off_hand, &slot.body, &gun_motion) });
+        if placed.is_err() {
+            tally.error = Some(
+                "held guns: the support palm could not be seated on its gun region".to_owned(),
+            );
+        } else {
+            contact::mute_for(Source::Hand(off), PLACED_MUTE_STEPS);
+            // SAFETY: forwarded from the caller; both bodies are in the simulation.
+            match unsafe { Joint::create_between(off_id, slot.body.body_id()) } {
+                Ok(brace) => {
+                    tracing::info!(
+                        hand = off.label(),
+                        constraint = brace.id(),
+                        gun_body = slot.body.body_id(),
+                        "held guns: joined the bracing hand to the selected gun region"
+                    );
+                    slot.brace = Some((brace, local));
+                }
+                Err(e) => {
+                    tracing::warn!(hand = off.label(), error = %e, "held guns: could not join the bracing hand to the gun");
+                }
             }
         }
     }
@@ -474,7 +481,7 @@ unsafe fn keep(
             mass_kg: slot.mass_kg,
             mass_source: slot.mass_source,
             holder_joint,
-            brace_joint: slot.brace.as_ref().map(Joint::id),
+            brace_joint: slot.brace.as_ref().map(|(joint, _)| joint.id()),
             deviation_m: drift.position.length(),
             deviation_rad: turn_rad(drift.orientation),
             speed_mps: gun_motion.linear.length(),
@@ -497,7 +504,7 @@ unsafe fn destroy_slot(slot: GunSlot, hand: Hand, reason: &str) -> bool {
         held,
         ..
     } = slot;
-    if let Some(brace) = brace {
+    if let Some((brace, _)) = brace {
         // SAFETY: forwarded from the caller.
         unsafe { end_joint(brace, hand.other(), "brace", reason) };
     }

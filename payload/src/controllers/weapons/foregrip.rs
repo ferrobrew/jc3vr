@@ -160,14 +160,9 @@ pub fn status() -> ForegripStatus {
 /// Put the hands into the two-handed pose of the current hold, if any. `hands` are the
 /// cockpit-frame hands indexed by [`Hand::index`].
 pub fn apply(hands: &mut [Option<CockpitHand>; 2], config: &ForegripConfig) {
-    let Some(mut hold) = STATE.lock().hold else {
+    let Some(hold) = posed_hold() else {
         return;
     };
-    if let Some((weapon, back_m)) = *PUMP_SLIDE.lock()
-        && weapon == hold.weapon
-    {
-        hold.geometry.foregrip = slid_foregrip(&hold.geometry, back_m);
-    }
     let (Some(holder), Some(off)) = (
         hands[hold.holder.index()],
         hands[hold.holder.other().index()],
@@ -180,6 +175,17 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], config: &ForegripConfig) {
         hands[hold.holder.index()] = Some(pose.holder);
         hands[hold.holder.other().index()] = Some(pose.off);
     }
+}
+
+/// The current hold's placement geometry, including the pump's current travel.
+pub(crate) fn posed_hold() -> Option<Hold> {
+    let mut hold = STATE.lock().hold?;
+    if let Some((weapon, back_m)) = *PUMP_SLIDE.lock()
+        && weapon == hold.weapon
+    {
+        hold.geometry.foregrip = slid_foregrip(&hold.geometry, back_m);
+    }
+    Some(hold)
 }
 
 /// How far back along the barrel the pump of the weapon at `weapon` is, cockpit metres, or `None`
@@ -208,8 +214,10 @@ pub fn hold_pose(
     off: CockpitHand,
     config: &ForegripConfig,
 ) -> Option<TwoHandPose> {
-    if hold.region.steers() {
-        return two_hand(holder, off, &hold.geometry, hold.weight, config);
+    if hold.region.steers()
+        && let Some(pose) = two_hand(holder, off, &hold.geometry, hold.weight, config)
+    {
+        return Some(pose);
     }
     Some(TwoHandPose {
         holder,
@@ -262,7 +270,8 @@ pub fn two_hand(
     let toward_foregrip =
         (holder.wrist.orientation * (geometry.foregrip - pivot_in_wrist)).try_normalize()?;
     let span_fade = span_fade(to_off.length(), config.min_span_m);
-    let weight = weight.clamp(0.0, 1.0) * span_fade;
+    let contact_weight = weight.clamp(0.0, 1.0);
+    let steering_weight = contact_weight * span_fade;
     let full = Quat::from_rotation_arc(toward_foregrip, line);
     let (axis, wanted) = full.to_axis_angle();
     let max = config.max_turn_deg.to_radians().max(0.0);
@@ -271,10 +280,10 @@ pub fn two_hand(
         limited: wanted > max,
         span_fade,
     };
-    if weight <= 0.0 || !axis.is_finite() {
+    if contact_weight <= 0.0 || !axis.is_finite() {
         return None;
     }
-    let turn = Quat::from_axis_angle(axis, wanted.min(max) * weight);
+    let turn = Quat::from_axis_angle(axis, wanted.min(max) * steering_weight);
     let rotate = |p: Pose| Pose {
         position: pivot + turn * (p.position - pivot),
         orientation: (turn * p.orientation).normalize(),
@@ -284,7 +293,7 @@ pub fn two_hand(
         grip: rotate(holder.grip),
         aim: rotate(holder.aim),
     };
-    let off = onto_foregrip(&holder, off, geometry, weight);
+    let off = onto_foregrip(&holder, off, geometry, contact_weight);
     Some(TwoHandPose {
         holder,
         off,
@@ -610,12 +619,12 @@ mod tests {
     }
 
     #[test]
-    fn hands_too_close_keep_their_poses() {
+    fn hands_too_close_stop_steering_but_still_reach_the_selected_contact() {
         let off = Vec3::new(0.01, 0.0, -0.01);
-        assert_eq!(
-            two_hand(hand(Vec3::ZERO), hand(off), &RIFLE, 1.0, &config()),
-            None
-        );
+        let pose = two_hand(hand(Vec3::ZERO), hand(off), &RIFLE, 1.0, &config()).unwrap();
+        assert_eq!(pose.holder, hand(Vec3::ZERO));
+        assert!(close(pose.off.grip.position, RIFLE.foregrip));
+        assert_eq!(pose.turn.span_fade, 0.0);
     }
 
     #[test]
@@ -824,6 +833,65 @@ mod tests {
             &config,
         );
         assert!(close(kept.unwrap().geometry.foregrip, further));
+    }
+
+    #[test]
+    fn engaged_contact_tracks_the_selected_region_for_either_holder() {
+        for holder in Hand::BOTH {
+            for region in [
+                GunRegion::Handguard,
+                GunRegion::Barrel,
+                GunRegion::Magazine,
+                GunRegion::Stock,
+            ] {
+                let geometry = GripGeometry {
+                    foregrip: Vec3::new(
+                        -0.03,
+                        -0.08,
+                        if region == GunRegion::Stock {
+                            0.18
+                        } else {
+                            -0.25
+                        },
+                    ),
+                    ..RIFLE
+                };
+                let hold = Hold {
+                    holder,
+                    weapon: 1,
+                    geometry,
+                    region,
+                    engaged: true,
+                    weight: 1.0,
+                };
+                for frame in 0..12 {
+                    let t = frame as f32 * 0.1;
+                    let rotation = Quat::from_rotation_y(t) * Quat::from_rotation_z(t * 0.3);
+                    let origin = Vec3::new(t, 1.3, -t * 0.4);
+                    let tracked = CockpitHand {
+                        wrist: Pose {
+                            position: origin,
+                            orientation: rotation,
+                        },
+                        grip: Pose {
+                            position: origin + rotation * Vec3::new(0.01, -0.02, -0.04),
+                            orientation: rotation,
+                        },
+                        aim: Pose {
+                            position: origin,
+                            orientation: rotation,
+                        },
+                    };
+                    let off = hand(origin + rotation * Vec3::new(-0.04, -0.05, -0.19));
+                    let posed = hold_pose(&hold, tracked, off, &config()).unwrap();
+                    assert!(close(
+                        posed.off.grip.position,
+                        foregrip_point(&posed.holder, &geometry)
+                    ));
+                    assert_eq!(posed.off.wrist.orientation, off.wrist.orientation);
+                }
+            }
+        }
     }
 
     #[test]

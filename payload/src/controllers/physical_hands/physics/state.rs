@@ -282,7 +282,7 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
     if !mode_acts(mode::current()) {
         return None;
     }
-    let active = hands::active_hands_raw()?;
+    let mut active = hands::active_hands_raw()?;
     let head = headpose::query();
     let body_rotation = headpose::xr::body_rotation();
     let free = free_hands();
@@ -293,6 +293,14 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
         Hand::BOTH.map(|hand| state.pickup.carrying(hand))
     };
     let on_gun = guns::acting_hands(config);
+    if guns::enabled(config) {
+        guns::targets::apply_physical(
+            &mut active.hands,
+            active.head.position,
+            &active.config.weapons.foregrip,
+            &active.config.weapons.heft,
+        );
+    }
     let palms = Hand::BOTH.map(|hand| {
         let i = hand.index();
         let cockpit = active.hands[i].filter(|_| (free[i] && !carrying[i]) || on_gun[i])?;

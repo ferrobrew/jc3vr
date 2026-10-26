@@ -6,10 +6,54 @@ use glam::{Mat4, Quat, Vec3};
 
 use crate::controllers::{
     frame::Pose,
-    hands::pose as hand_pose,
-    physical_hands::physics::config::{GunClassValues, HeldGunsConfig},
-    weapons::heft::HeftClass,
+    hands::{CockpitHand, pose as hand_pose},
+    physical_hands::physics::{
+        config::{GunClassValues, HeldGunsConfig},
+        guns::BraceContact,
+    },
+    weapons::{foregrip::GripGeometry, heft::HeftClass},
 };
+
+/// Convert a measured support region and the tracked hand's grip-to-palm displacement into the
+/// gun's local contact. The measured gun translation is in cockpit metres; native gun-local
+/// coordinates and the physical palm offset are in game units after this conversion.
+pub fn brace_contact(
+    geometry: &GripGeometry,
+    off: &CockpitHand,
+    palm_offset_m: Vec3,
+    world_scale: f32,
+) -> Option<BraceContact> {
+    if !(world_scale.is_finite() && world_scale > 0.0) {
+        return None;
+    }
+    let point = geometry.gun.orientation.inverse()
+        * (geometry.foregrip - geometry.gun.position)
+        * world_scale;
+    let palm = off.wrist.position + off.wrist.orientation * palm_offset_m;
+    let palm_from_grip = off.wrist.orientation.inverse() * (palm - off.grip.position) * world_scale;
+    (point.is_finite() && palm_from_grip.is_finite()).then_some(BraceContact {
+        point,
+        palm_from_grip,
+    })
+}
+
+/// The support palm seated on its selected region on the actual gun body, preserving the tracked
+/// wrist's orientation. This is also the pose captured by its fixed brace joint.
+pub fn brace_palm(gun: Pose, palm: Pose, contact: BraceContact) -> Pose {
+    Pose {
+        position: gun.position
+            + gun.orientation * contact.point
+            + palm.orientation * contact.palm_from_grip,
+        orientation: palm.orientation,
+    }
+}
+
+/// Whether a brace's palm frame changed enough to remake the fixed joint. A fixed joint otherwise
+/// keeps a stale contact when the hand slides or rotates its grip around the gun.
+pub fn brace_changed(before: Pose, after: Pose) -> bool {
+    before.position.distance(after.position) > 0.002
+        || turn_rad(before.orientation.inverse() * after.orientation) > 0.01
+}
 
 /// The value of `values` for a gun of weight class `class`.
 pub fn class_value(values: &GunClassValues, class: HeftClass) -> f32 {
@@ -207,6 +251,66 @@ mod tests {
             position,
             orientation,
         }
+    }
+
+    #[test]
+    fn support_contact_uses_the_selected_region_and_scales_once() {
+        let geometry = GripGeometry {
+            foregrip: Vec3::new(-0.04, -0.06, -0.35),
+            gun: pose(Vec3::new(0.02, -0.03, -0.01), Quat::from_rotation_y(0.4)),
+            barrel: Vec3::NEG_Z,
+            sight: Vec3::Y * 0.08,
+            muzzle: Vec3::NEG_Z * 0.7,
+            native: false,
+        };
+        let off = CockpitHand {
+            wrist: pose(Vec3::new(-0.2, 0.1, -0.3), Quat::from_rotation_z(0.6)),
+            grip: pose(Vec3::new(-0.18, 0.08, -0.32), Quat::IDENTITY),
+            aim: Pose::IDENTITY,
+        };
+        let offset = Vec3::new(0.0, -0.01, -0.07);
+        let contact = brace_contact(&geometry, &off, offset, 1.7).unwrap();
+        let point = geometry.gun.position + geometry.gun.orientation * contact.point / 1.7;
+        assert!(point.abs_diff_eq(geometry.foregrip, 1e-5));
+        let palm = off.wrist.position + off.wrist.orientation * offset;
+        assert!(
+            (off.grip.position + off.wrist.orientation * contact.palm_from_grip / 1.7)
+                .abs_diff_eq(palm, 1e-5)
+        );
+        assert!(brace_contact(&geometry, &off, offset, f32::NAN).is_none());
+    }
+
+    #[test]
+    fn the_physical_support_palm_stays_on_the_gun_during_motion_and_rotation() {
+        let contact = BraceContact {
+            point: Vec3::new(-0.03, -0.05, -0.4),
+            palm_from_grip: Vec3::new(0.02, 0.01, -0.03),
+        };
+        for sign in [-1.0, 1.0] {
+            for frame in 0..24 {
+                let t = frame as f32 * 0.1;
+                let gun = pose(Vec3::new(t, 1.4 + t * 0.2, -t), Quat::from_rotation_y(t));
+                let palm = pose(Vec3::ZERO, Quat::from_rotation_z(sign * t));
+                let target = brace_palm(gun, palm, contact);
+                let grip = target.position - target.orientation * contact.palm_from_grip;
+                assert!(grip.abs_diff_eq(gun.position + gun.orientation * contact.point, 1e-5));
+                assert_eq!(target.orientation, palm.orientation);
+            }
+        }
+        let gun = pose(Vec3::Y, Quat::IDENTITY);
+        let before = seat(gun, brace_palm(gun, Pose::IDENTITY, contact));
+        let rotated = pose(Vec3::ZERO, Quat::from_rotation_x(0.2));
+        let after = seat(gun, brace_palm(gun, rotated, contact));
+        assert!(brace_changed(before, after));
+        assert!(!brace_changed(before, before));
+        let slid = BraceContact {
+            point: contact.point + Vec3::NEG_Z * 0.04,
+            ..contact
+        };
+        assert!(brace_changed(
+            before,
+            seat(gun, brace_palm(gun, Pose::IDENTITY, slid))
+        ));
     }
 
     #[test]

@@ -35,20 +35,23 @@
 //! The gun body's mass is its own body's (the weapon's pickup mass, shared between a dual-wield
 //! pair's two guns) held to its weight class's, so that a rifle does not outweigh the hand that
 //! swings it, and the hand holding it is driven with its full strength against the hand's and the
-//! gun's mass together: near-rigid in the hand, with the gun's mass felt as a slight lag in a fast
-//! swing.
+//! gun's mass together. The support and class-weight target is shared by the physical drive and
+//! the drawn reference, so the gun stays near-rigid on a hand that droops under one-handed weight
+//! and steadies with support.
 //!
 //! [`WeaponData::m_PfxInstance`]: jc3gi::equipment::weapon::WeaponData::m_PfxInstance
 
 mod engine;
 pub mod math;
 pub(super) mod step;
+pub(crate) mod targets;
 
 use std::{
     num::NonZeroUsize,
     time::{Duration, Instant},
 };
 
+use glam::Vec3;
 use parking_lot::Mutex;
 
 pub(crate) use self::engine::read_holds;
@@ -79,13 +82,23 @@ pub struct HeldGun {
     pub carry: Option<u32>,
 }
 
+/// The engaged support contact in the gun's own frame, in game units.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct BraceContact {
+    pub point: Vec3,
+    /// The displacement from the support grip to its palm, in the palm's axes.
+    pub palm_from_grip: Vec3,
+}
+
 /// The guns in the hands on one input tick, indexed by [`Hand::index`].
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct GunHolds {
     /// The gun each hand holds.
     pub guns: [Option<HeldGun>; 2],
     /// Whether each hand braces the other hand's gun on its foregrip.
     pub braces: [bool; 2],
+    /// The selected support region, indexed by the supporting hand.
+    pub contacts: [Option<BraceContact>; 2],
 }
 
 impl GunHolds {
@@ -174,8 +187,9 @@ pub(crate) fn acting_hands(config: &PhysicalHandsConfig) -> [bool; 2] {
         .map_or([false; 2], |h| h.hands())
 }
 
-/// The hands whose gun is a body on the last step, holding or bracing it through a joint: the
-/// kinematic weight, recoil, two-handed pose, and wall probe leave those hands alone.
+/// The hands whose gun is a body on the last step, holding or bracing it through a joint. Their
+/// support and weight target is shared with the physical drive; synthetic recoil and wall probes
+/// leave those hands alone.
 pub fn physical_hands() -> [bool; 2] {
     let shared = SHARED.lock();
     if !shared.stepped_lately(Instant::now()) {
@@ -259,6 +273,7 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     holds: GunHolds {
         guns: [None; 2],
         braces: [false; 2],
+        contacts: [None; 2],
     },
     published: None,
     shots: [None; 2],
@@ -298,6 +313,7 @@ mod tests {
         let one = GunHolds {
             guns: [None, Some(gun(0x1000))],
             braces: [false, false],
+            contacts: [None; 2],
         };
         assert_eq!(one.hands(), [false, true]);
         let braced = GunHolds {
@@ -309,11 +325,13 @@ mod tests {
         let alone = GunHolds {
             guns: [None, None],
             braces: [true, false],
+            contacts: [None; 2],
         };
         assert_eq!(alone.hands(), [false, false]);
         let two = GunHolds {
             guns: [Some(gun(0x1000)), Some(gun(0x2000))],
             braces: [false, false],
+            contacts: [None; 2],
         };
         assert_eq!(two.hands(), [true, true]);
     }

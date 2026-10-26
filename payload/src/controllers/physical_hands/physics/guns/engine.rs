@@ -13,13 +13,13 @@ use jc3gi::{
 use crate::controllers::{
     aim::gun,
     frame::{Hand, Pose},
-    hands::grip,
+    hands::{self, grip},
     physical_hands::{
         physics::{
             body::{half_to_f32, instance_of},
             guns::{
                 GunHolds, HeldGun,
-                math::{GunAxes, gun_axes},
+                math::{GunAxes, brace_contact, gun_axes},
             },
         },
         world::World,
@@ -62,11 +62,23 @@ pub(crate) unsafe fn read_holds(weapons: [Option<(usize, HeftClass)>; 2]) -> Gun
                 ..gun
             });
     }
-    if let Some(hold) = foregrip::status().hold.filter(|h| h.engaged) {
+    if let Some(hold) = foregrip::posed_hold().filter(|h| h.engaged) {
         let off = hold.holder.other();
         let holding =
             holds.guns[hold.holder.index()].is_some_and(|g| g.weapon.get() == hold.weapon);
-        holds.braces[off.index()] = holding && holds.guns[off.index()].is_none();
+        if holding
+            && holds.guns[off.index()].is_none()
+            && let Some(active) = hands::active_hands_raw()
+            && let Some(hand) = active.hands[off.index()]
+        {
+            holds.contacts[off.index()] = brace_contact(
+                &hold.geometry,
+                &hand,
+                active.config.physical_hands.palm_offset_m,
+                active.world_scale,
+            );
+            holds.braces[off.index()] = holds.contacts[off.index()].is_some();
+        }
     }
     holds
 }
