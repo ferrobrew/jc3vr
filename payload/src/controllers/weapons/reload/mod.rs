@@ -295,10 +295,48 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     candidates
 }
 
-/// Resolve direct magazine intent before ordinary nearest-target selection. A held foregrip
-/// remains held; an unheld brace or transfer target cannot steal a grip inside the magazine.
+/// The hands participating in the current physical action, before ordinary release routing.
+pub(super) fn action_hands() -> [bool; 2] {
+    let mut state = STATE.lock();
+    let Some(tick) = state.tick else {
+        return [false; 2];
+    };
+    let working = Hand::BOTH.into_iter().any(|hand| {
+        tick.gun(hand).is_some_and(|(weapon, gun)| {
+            state.records.get(weapon.key).travels[gun.entry()]
+                .grip
+                .is_some()
+        })
+    });
+    [working; 2]
+}
+
+/// Resolve direct magazine intent before ordinary nearest-target selection. An existing action
+/// or foregrip remains held; an unheld brace or transfer cannot steal a magazine grip.
 pub(super) fn prioritize_extraction(targets: &mut Vec<GripTarget>, grips: [Option<Vec3>; 2]) {
-    let pulling = STATE.lock().extraction_hand();
+    let (pulling, action) = {
+        let mut state = STATE.lock();
+        let action = state.tick.and_then(|tick| {
+            Hand::BOTH.into_iter().find_map(|hand| {
+                let (weapon, gun) = tick.gun(hand)?;
+                (weapon.plan.action != chamber::ActionKind::Pump
+                    && state.records.get(weapon.key).travels[gun.entry()]
+                        .grip
+                        .is_some())
+                .then_some(hand.other())
+            })
+        });
+        (state.extraction_hand(), action)
+    };
+    if let Some(hand) = action {
+        for target in targets
+            .iter_mut()
+            .filter(|t| t.volume == GrabVolume::WeaponAction && t.hand == Some(hand))
+        {
+            *target = target.held(hand);
+        }
+        targets.retain(|t| !t.for_hand(hand) || t.volume == GrabVolume::WeaponAction);
+    }
     if let Some(hand) = pulling {
         for target in targets
             .iter_mut()

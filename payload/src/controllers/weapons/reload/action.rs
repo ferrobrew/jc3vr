@@ -26,13 +26,46 @@ use crate::controllers::{
     },
 };
 
+pub(super) trait ActionEngine {
+    fn pump_hand(&self, weapon: usize) -> Option<Hand>;
+    fn ammo(&mut self, weapon: usize) -> Option<(i32, bool)>;
+    fn eject_round(&mut self, weapon: usize) -> Option<(i32, bool)>;
+    fn cycled(&mut self, weapon: usize, kind: ActionKind, clip: bool);
+}
+
+struct NativeAction;
+
+impl ActionEngine for NativeAction {
+    fn pump_hand(&self, weapon: usize) -> Option<Hand> {
+        foregrip::status()
+            .hold
+            .filter(|h| h.engaged && h.weapon == weapon)
+            .map(|h| h.holder.other())
+    }
+
+    fn ammo(&mut self, weapon: usize) -> Option<(i32, bool)> {
+        // SAFETY: action work uses the current input tick's owned weapon.
+        unsafe { engine::action_ammo(weapon) }
+    }
+
+    fn eject_round(&mut self, weapon: usize) -> Option<(i32, bool)> {
+        // SAFETY: action work uses the current input tick's owned weapon.
+        unsafe { engine::eject_chamber_round(weapon) }
+    }
+
+    fn cycled(&mut self, weapon: usize, kind: ActionKind, clip: bool) {
+        // SAFETY: action work uses the current input tick's owned weapon.
+        unsafe { engine::cycled(weapon, kind, clip) };
+    }
+}
+
 impl State {
     /// The action's work by the free hand.
     pub(super) fn work(&mut self, tick: &Tick, inputs: &FinishInputs, config: &ControllersConfig) {
         let reload = &config.weapons.reload;
         if reload.action.physical {
             self.status.work.reset();
-            self.work_travel(tick, inputs, reload);
+            self.work_travel(tick, inputs, reload, &mut NativeAction);
             self.publish_render(tick, reload);
             return;
         }
@@ -103,7 +136,13 @@ impl State {
 
     /// The physical action's work: each gun's part on its travel, with its own weapon's plan, the
     /// worked gun's taken by the free hand, or by the hand on the foregrip for a pump.
-    fn work_travel(&mut self, tick: &Tick, inputs: &FinishInputs, reload: &ReloadConfig) {
+    pub(super) fn work_travel(
+        &mut self,
+        tick: &Tick,
+        inputs: &FinishInputs,
+        reload: &ReloadConfig,
+        engine: &mut impl ActionEngine,
+    ) {
         let action = &reload.action;
         let worker = self.free.filter(|h| {
             self.status
@@ -132,7 +171,6 @@ impl State {
                 })
             })
             .or_else(|| with_gun().next());
-        let foregrip = foregrip::status().hold.filter(|h| h.engaged);
         let mut pump_slide = None;
         for gun_hand in Hand::BOTH {
             let Some((weapon, gun, record)) = guns[gun_hand.index()] else {
@@ -141,11 +179,16 @@ impl State {
             let e = gun.entry();
             let kind = weapon.plan.action;
             let travel_m = weapon.plan.travel_m / tick.world_scale;
-            let foregrip_hand = foregrip
-                .filter(|h| h.weapon == weapon.address)
-                .map(|h| h.holder.other());
-            let (rounds, magazine_in) = self.magazine(&weapon);
-            let worker = worker.filter(|_| worked == Some(gun_hand));
+            let foregrip_hand = engine.pump_hand(weapon.address);
+            let Some((rounds, magazine_in)) = engine.ammo(weapon.address) else {
+                self.records.get(weapon.key).travels[e].release();
+                continue;
+            };
+            let worker = worker.filter(|_| {
+                worked == Some(gun_hand)
+                    && self.pending_ejects[gun_hand.index()].is_none()
+                    && !self.extraction_blocks_belt[gun_hand.index()]
+            });
             let hand = worker.and_then(|w| Some(tick.hands[w.index()]?.grip.position));
             let mut travel = record.travels[e];
             let Some(geometry) = travel_geometry(&weapon.plan, &gun) else {
@@ -178,7 +221,7 @@ impl State {
                 gun_hand,
                 worker.filter(|_| travel.grip.is_some() || events.let_go),
                 events,
-                (rounds, magazine_in),
+                engine,
             );
             if kind == ActionKind::Pump && travel.position > 0.0 && pump_slide.is_none() {
                 pump_slide = Some((weapon.address, travel.position * travel_m));
@@ -196,7 +239,7 @@ impl State {
         gun_hand: Hand,
         worker: Option<Hand>,
         events: TravelEvents,
-        (rounds, magazine_in): (i32, bool),
+        engine: &mut impl ActionEngine,
     ) {
         let kind = weapon.plan.action;
         let felt = worker.unwrap_or(gun_hand);
@@ -221,6 +264,14 @@ impl State {
             haptics::play(felt, Event::ActionDetent);
         }
         if events.rear {
+            let record = self.records.get(weapon.key);
+            if record.chambers[gun.entry()] == Chamber::Chambered
+                && engine.eject_round(weapon.address).is_none()
+            {
+                record.travels[gun.entry()].pulled = false;
+                return;
+            }
+            record.chambers[gun.entry()] = Chamber::Empty;
             haptics::play(felt, Event::Rack);
             self.event(format!("{} at the rear", kind.label()));
         }
@@ -241,13 +292,16 @@ impl State {
             self.event(format!("{} let go", kind.label()));
         }
         if events.cycled {
-            let chamber = chamber::after_work(rounds, magazine_in);
+            let chamber = engine
+                .ammo(weapon.address)
+                .map_or(Chamber::Empty, |(rounds, magazine_in)| {
+                    chamber::after_work(rounds, magazine_in)
+                });
             self.records.get(weapon.key).chambers[gun.entry()] = chamber;
             self.status.counts.racks += 1;
             self.event(format!("{} worked", kind.label()));
             // The hand moved the part already, so the gun's own clip is not played over it.
-            // SAFETY: main thread, outside the world update; the weapon was read this tick.
-            unsafe { engine::cycled(weapon.address, kind, false) };
+            engine.cycled(weapon.address, kind, false);
             if chamber == Chamber::Chambered {
                 haptics::play(gun_hand, Event::Chambered);
             }

@@ -277,13 +277,6 @@ pub(crate) fn finish_tick(
         });
     }
     let released = hold::act::release_tick(grips.map(ButtonControl::held));
-    if config.weapons.hold.grip_to_hold && capabilities.release && active.is_some() {
-        for hand in Hand::BOTH.into_iter().filter(|h| released[h.index()]) {
-            let gun = lone.map(|(w, _)| w);
-            release(hand, gun, active.as_ref(), world_scale, &config);
-        }
-    }
-
     let grenade_opened = Hand::BOTH.map(|hand| {
         if opened[hand.index()] && grenade::safe::in_hand(hand).is_some() {
             let socket = docked_at(hand, |volume| {
@@ -373,6 +366,16 @@ pub(crate) fn finish_tick(
         },
         &config,
     );
+    let action_hands = reload::action_hands();
+    if config.weapons.hold.grip_to_hold && capabilities.release && active.is_some() {
+        for hand in Hand::BOTH
+            .into_iter()
+            .filter(|hand| released[hand.index()] && !action_hands[hand.index()])
+        {
+            let gun = lone.map(|(weapon, _)| weapon);
+            release(hand, gun, active.as_ref(), world_scale, &config);
+        }
+    }
     // SAFETY: actions have completed on the input thread, outside the world update.
     let current = unsafe { engine::local_player().and_then(|owner| engine::held_weapon(owner)) }
         .map(|weapon| with_holder(weapon, hold::owned_holder(weapon.address)));

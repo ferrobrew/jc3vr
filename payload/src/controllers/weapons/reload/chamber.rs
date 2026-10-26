@@ -4,7 +4,9 @@
 //! The game has no chambered round: a gun fires while its magazine holds rounds. The chamber is
 //! the mod's: a gun that runs dry, and a bolt-action or pump-action gun after every shot (with
 //! the manual action on), has an empty chamber, and the trigger only clicks until the action is
-//! worked with rounds in the magazine. A tactical reload keeps the round in the chamber.
+//! worked with rounds in the magazine. The native loaded-round total includes the round marked
+//! chambered: feeding changes readiness, not the count; extracting a live round discards one from
+//! that total. The flag owns no separate cartridge while a magazine is absent.
 //!
 //! With the physical action on, the action is a part that follows the hand through its travel
 //! ([`crate::controllers::weapons::reload::travel`]). Off, working the action ([`ActionWork`]) is a
@@ -50,6 +52,14 @@ impl ActionKind {
             ActionKind::Pump => "pump",
             ActionKind::None => "none",
         }
+    }
+
+    /// Whether a ready action supports deliberate physical extraction and feeding.
+    pub const fn ready_rack(self) -> bool {
+        matches!(
+            self,
+            ActionKind::Slide | ActionKind::Bolt | ActionKind::Pump
+        )
     }
 
     /// Whether the action cycles by hand after every shot, with the manual action on.

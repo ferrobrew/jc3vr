@@ -359,6 +359,35 @@ pub unsafe fn load_one(address: usize) -> bool {
     true
 }
 
+/// Read the current loaded-round count and magazine presence after this tick's reload operations.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub(super) unsafe fn action_ammo(address: usize) -> Option<(i32, bool)> {
+    let weapon = unsafe { (address as *const WeaponBase).as_ref() }?;
+    Some((
+        weapon.m_MagazineAmmo.max(0),
+        !weapon.m_WeaponIsWithoutMagazine,
+    ))
+}
+
+/// Discard a live round extracted by a hand-worked action, without firing or refunding it.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub(super) unsafe fn eject_chamber_round(address: usize) -> Option<(i32, bool)> {
+    let weapon = address as *mut WeaponBase;
+    let (rounds, magazine_in) = unsafe { action_ammo(address) }?;
+    if rounds > 0 && magazine_in {
+        // ConsumeAmmo also changes burst state and can debit reserve ammunition. Extraction only
+        // discards one of the loaded rounds; SetMagazineAmmo keeps the native HUD in sync.
+        unsafe { (*weapon).SetMagazineAmmo(rounds - 1) };
+    }
+    unsafe { action_ammo(address) }
+}
+
 /// Tell the weapon at `address` that its action was worked by hand: the bolt rifle's lock cleared
 /// and, with `clip`, the gun's own bolt or pump clip played.
 ///

@@ -183,6 +183,43 @@ fn direct_magazine_claim_beats_overlapping_brace_transfer_and_action() {
 }
 
 #[test]
+fn direct_action_claim_beats_unheld_brace_and_transfer_but_preserves_existing_support() {
+    for hand in Hand::BOTH {
+        let targets_for = |held| {
+            let mut support = target(GrabVolume::Foregrip, Vec3::ZERO);
+            support.hand = Some(hand);
+            if held {
+                support = support.held(hand);
+            }
+            let mut action = target(GrabVolume::WeaponAction, Vec3::X * 0.01);
+            action.hand = Some(hand);
+            let mut transfer = target(GrabVolume::Handle, Vec3::ZERO);
+            transfer.hand = Some(hand);
+            vec![support, transfer, action]
+        };
+        let grips = Hand::BOTH.map(|h| (h == hand).then_some(Vec3::ZERO));
+        let mut targets = targets_for(false);
+        prioritize(&mut targets, grips);
+        assert_eq!(
+            resolve(&targets, grips)[hand.index()]
+                .chosen
+                .unwrap()
+                .volume,
+            GrabVolume::WeaponAction
+        );
+        let mut targets = targets_for(true);
+        prioritize(&mut targets, grips);
+        assert_eq!(
+            resolve(&targets, grips)[hand.index()]
+                .chosen
+                .unwrap()
+                .volume,
+            GrabVolume::Foregrip
+        );
+    }
+}
+
+#[test]
 fn held_support_wins_and_a_missed_magazine_does_not_steal_support() {
     let support = target(GrabVolume::Foregrip, Vec3::ZERO).held(Hand::Left);
     let mut targets = vec![support, target(GrabVolume::InsertedMagazine, Vec3::ZERO)];

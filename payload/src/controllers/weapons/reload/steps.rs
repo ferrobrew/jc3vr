@@ -178,8 +178,7 @@ impl State {
         })
     }
 
-    /// The action handle's grab volume, while a gun's chamber or action waits on it and a hand is
-    /// free: the first such gun's.
+    /// The other hand's action handle, including a ready slide or bolt with physical actions on.
     pub(super) fn handle_candidate(
         &mut self,
         tick: &Tick,
@@ -188,17 +187,25 @@ impl State {
     ) -> Option<Candidate> {
         let free = free?;
         let action = &reload.action;
-        let (weapon, gun, record) = Hand::BOTH.into_iter().find_map(|hand| {
-            let (weapon, gun) = tick.gun(hand)?;
-            if !chambering(&weapon.plan, reload) || weapon.plan.action == ActionKind::Pump {
-                return None;
-            }
-            let record = *self.records.get(weapon.key);
-            let e = gun.entry();
-            (record.chambers[e] == Chamber::Empty
-                || (action.physical && !record.travels[e].in_battery(action)))
-            .then_some((weapon, gun, record))
-        })?;
+        if self.status.insertion.holding()
+            || self.extraction_hand().is_some()
+            || self.pending_ejects[free.other().index()].is_some()
+            || self.extraction_blocks_belt[free.other().index()]
+        {
+            return None;
+        }
+        let (weapon, gun) = tick.gun(free.other())?;
+        if !chambering(&weapon.plan, reload) || weapon.plan.action == ActionKind::Pump {
+            return None;
+        }
+        let record = *self.records.get(weapon.key);
+        let e = gun.entry();
+        let wanted = record.chambers[e] == Chamber::Empty
+            || (action.physical
+                && (weapon.plan.action.ready_rack() || !record.travels[e].in_battery(action)));
+        if !wanted {
+            return None;
+        }
         let (handle, rearward) = gun.handle?;
         // The handle rides the part, so a slide held back is taken where it is.
         let back = if action.physical {
@@ -832,6 +839,8 @@ unsafe fn weapon_tick(
 #[cfg(test)]
 pub(super) use belt_tests::eligible_belt_for_test;
 
+#[cfg(test)]
+mod action_tests;
 #[cfg(test)]
 mod belt_tests;
 #[cfg(test)]

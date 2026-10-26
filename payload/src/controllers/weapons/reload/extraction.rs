@@ -176,6 +176,14 @@ pub(super) fn prioritize(targets: &mut Vec<GripTarget>, grips: [Option<Vec3>; 2]
         let magazine = reachable
             .iter()
             .any(|r| r.volume == GrabVolume::InsertedMagazine);
+        let action = reachable
+            .iter()
+            .any(|r| r.volume == GrabVolume::WeaponAction);
+        if action && !magazine && !held {
+            targets.retain(|t| {
+                !t.for_hand(hand) || !matches!(t.volume, GrabVolume::Foregrip | GrabVolume::Handle)
+            });
+        }
         if magazine && !held {
             targets.retain(|t| {
                 !t.for_hand(hand)

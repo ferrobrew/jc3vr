@@ -10,15 +10,14 @@
 //! - a slide or a charging handle let go runs home on its spring, unless the slide catches at the
 //!   rear: pulled back over a magazine that is in and empty, or after the shot that emptied it
 //!   ([`ActionTravel::lock_back`]), a slide stays back until it is racked (taken and let go);
-//! - a pump stays where it is let go, and is free to move only while its chamber waits for it,
-//!   since a fired pump-action unlocks its pump;
+//! - a pump stays where it is let go, and follows its held foregrip even with a ready chamber;
 //! - a bolt is turned up about its axis before it can be pulled back, cannot be turned down until
 //!   it is home again, and stays where it is let go.
 //!
 //! The part reaching the rear of its travel is the rack; coming home after one (and, for a bolt,
-//! turning down) cycles the action, which loads the chamber from the magazine. The handle can be
-//! taken only while the chamber waits for the action or the part is out of battery, so a part left
-//! half open can always be closed.
+//! turning down) cycles the action, which loads the chamber from the magazine. Slides, bolts, and
+//! pumps can be worked while ready; a charging handle is offered only for an empty chamber or an
+//! action out of battery.
 
 use glam::Vec3;
 
@@ -217,7 +216,10 @@ impl ActionTravel {
 
     /// Whether a hand at `hand` takes the handle this tick.
     fn takes(&self, inputs: &TravelInputs, hand: Vec3, config: &ActionConfig) -> bool {
-        let wanted = inputs.needed || !self.in_battery(config) || self.locked_back;
+        let wanted = inputs.kind.ready_rack()
+            || inputs.needed
+            || !self.in_battery(config)
+            || self.locked_back;
         if !wanted {
             return false;
         }
@@ -396,7 +398,7 @@ mod tests {
     }
 
     #[test]
-    fn a_grab_away_from_the_handle_or_when_not_needed_takes_nothing() {
+    fn a_distant_handle_refuses_but_a_ready_slide_remains_grabbable() {
         let mut t = ActionTravel::new();
         let k = ActionKind::Slide;
         let e = t.step(&inputs(k, back(0.0) + Vec3::Y * 0.2, true, true), &CONFIG);
@@ -405,7 +407,7 @@ mod tests {
             needed: false,
             ..inputs(k, back(0.0), true, true)
         };
-        assert!(!t.step(&not_needed, &CONFIG).grabbed);
+        assert!(t.step(&not_needed, &CONFIG).grabbed);
     }
 
     #[test]
@@ -492,10 +494,9 @@ mod tests {
             ..inputs(k, start, false, true)
         };
         assert!(
-            !t.step(&not_needed, &CONFIG).grabbed,
-            "locked while chambered"
+            t.step(&not_needed, &CONFIG).grabbed,
+            "a ready pump can be worked"
         );
-        assert!(t.step(&inputs(k, start, false, true), &CONFIG).grabbed);
         let e = t.step(&inputs(k, start + Vec3::Z * TRAVEL, false, true), &CONFIG);
         assert!(e.rear);
         let e = t.step(
