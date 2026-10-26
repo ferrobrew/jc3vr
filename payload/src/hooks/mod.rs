@@ -150,6 +150,7 @@ pub(super) fn uninstall() -> bool {
     reload::serial::set_installed(false);
     if character::magazine::active_entries() != 0
         || crate::controllers::physical_hands::human_hull::active_entries() != 0
+        || crate::controllers::weapons::grenade::locker_active_entries() != 0
     {
         tracing::error!(
             "native callback remains active after hook removal; the image must remain mapped"

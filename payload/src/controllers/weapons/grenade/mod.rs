@@ -76,6 +76,11 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_hook_library(locker::hook_library())
 }
 
+/// Hook removal keeps the image mapped while a locker source callback remains active.
+pub(crate) fn locker_active_entries() -> usize {
+    locker::active_entries()
+}
+
 /// Observe a live world weapon during native placement or rendering for safe grenade sources.
 ///
 /// # Safety

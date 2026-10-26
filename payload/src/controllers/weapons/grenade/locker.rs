@@ -1,8 +1,11 @@
-//! Safe grenade draws from visible native grenade weapons in the world.
+//! Safe grenade draws from native weapon displays and verified static collection displays.
 //!
-//! Native state, placement, and render observations register weak weapon sources independently of
-//! pickup eligibility. The input tick locks each source briefly and reads its current visible model.
-//! Completion revalidates the same registration and model before drawing an independent safe item.
+//! Native weapons use weak references. Static displays use copied, load-time model transforms and
+//! retire before their collection is destroyed. Completion keeps each source's identity intact and
+//! draws an independent safe item without consuming the source or native ammunition.
+
+mod collection;
+mod format;
 
 use std::{
     fmt,
@@ -33,9 +36,17 @@ use crate::controllers::{
 };
 
 pub(super) fn hook_library() -> HookLibrary {
+    if !CLEANUP.swap(true, Ordering::AcqRel) {
+        crate::lifecycle::on_cleanup(|_| reset());
+    }
     HookLibrary::new()
         .with_static_binder(&WORLD_STATE_BINDER)
         .with_static_binder(&GRENADE_PLACEMENT_BINDER)
+        .with_hook_library(collection::hook_library())
+}
+
+pub(super) fn active_entries() -> usize {
+    collection::active_entries()
 }
 
 /// Note a live native grenade weapon without asking whether its ammunition can be picked up.
@@ -60,9 +71,6 @@ pub(super) unsafe fn observe(weapon: &WeaponBase) {
     drop(registry);
     if !known && let Some(registration) = registration {
         tracing::debug!(target: "controllers", weapon = key.weapon, registration, weapon_name = weapon.m_WeaponNameHash, "grenade: observed a native world display source");
-    }
-    if !CLEANUP.swap(true, Ordering::AcqRel) {
-        crate::lifecycle::on_cleanup(|_| reset());
     }
 }
 
@@ -89,7 +97,7 @@ impl fmt::Display for Refusal {
 
 impl std::error::Error for Refusal {}
 
-/// Offer only the nearest visible native grenade display to each free hand.
+/// Offer the nearest registered grenade display to each free hand.
 ///
 /// # Safety
 ///
@@ -100,7 +108,8 @@ pub(super) unsafe fn begin(
     grips: [Option<Vec3>; 2],
     to_cockpit: impl Fn(Vec3) -> Vec3,
 ) -> Vec<Candidate> {
-    let sources = unsafe { sources(owner, &to_cockpit) };
+    let mut sources = unsafe { sources(owner, &to_cockpit) };
+    collection::with_sources(&to_cockpit, |static_sources| sources.extend(static_sources));
     let offers = Hand::BOTH.map(|hand| {
         grips[hand.index()]
             .filter(|_| free[hand.index()])
@@ -135,14 +144,23 @@ pub(super) unsafe fn take(
 ) -> Result<(), Refusal> {
     let offered = OFFERS.lock()[hand.index()].take();
     let owner = unsafe { engine::local_player() }.ok_or(Refusal::SourceChanged)?;
-    let current = unsafe { sources(owner, &to_cockpit) };
-    let result = complete(offered, &current, grip, || unsafe {
-        safe::draw(hand, tuning)
-    });
+    let result = match offered.map(|source| source.identity.provider) {
+        Some(Provider::Collection { .. }) => collection::with_sources(&to_cockpit, |current| {
+            complete(offered, &current, grip, || unsafe {
+                safe::draw(hand, tuning)
+            })
+        }),
+        Some(Provider::Weapon) | None => {
+            let current = unsafe { sources(owner, &to_cockpit) };
+            complete(offered, &current, grip, || unsafe {
+                safe::draw(hand, tuning)
+            })
+        }
+    };
     if result.is_ok()
         && let Some(source) = offered
     {
-        tracing::debug!(target: "controllers", hand = hand.label(), registration = source.identity.registration, weapon = source.identity.weapon, data = source.identity.data, model = source.identity.model, "grenade: drew from a native world display source");
+        tracing::debug!(target: "controllers", hand = hand.label(), registration = source.identity.registration, provider = ?source.identity.provider, weapon = source.identity.weapon, data = source.identity.data, model = source.identity.model, "grenade: drew from a world display source");
     }
     result
 }
@@ -159,8 +177,19 @@ const MAX_MODELS_PER_WEAPON: usize = 8;
 const REACH_M: f32 = 0.18;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Provider {
+    Weapon,
+    Collection {
+        collection: usize,
+        index: usize,
+        resource: usize,
+    },
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct Identity {
     registration: u64,
+    provider: Provider,
     weapon: usize,
     control: usize,
     data: usize,
@@ -191,6 +220,7 @@ struct Registered<R> {
 
 struct Registry<R> {
     next: u64,
+    closed: bool,
     sources: Vec<Registered<R>>,
 }
 
@@ -198,11 +228,15 @@ impl<R> Registry<R> {
     const fn new() -> Self {
         Self {
             next: 1,
+            closed: false,
             sources: Vec::new(),
         }
     }
 
     fn register(&mut self, key: WeaponKey, reference: impl FnOnce() -> R) -> Option<u64> {
+        if self.closed {
+            return None;
+        }
         if let Some(index) = self.sources.iter().position(|source| source.key == key) {
             let source = self.sources.remove(index);
             let generation = source.generation;
@@ -257,6 +291,7 @@ unsafe fn sources(owner: &Character, to_cockpit: &impl Fn(Vec3) -> Vec3) -> Vec<
                 weapon,
                 Identity {
                     registration: source.generation,
+                    provider: Provider::Weapon,
                     weapon: address,
                     control: source.key.control,
                     data: 0,
@@ -273,11 +308,14 @@ unsafe fn sources(owner: &Character, to_cockpit: &impl Fn(Vec3) -> Vec3) -> Vec<
 
 fn reset() {
     clear();
-    REGISTRY.lock().sources.clear();
+    let mut registry = REGISTRY.lock();
+    registry.closed = true;
+    registry.sources.clear();
 }
 
 #[detour(address = jc3gi::equipment::weapon::WeaponBase::SetState_ADDRESS)]
 fn world_state(weapon: *mut WeaponBase, state: WeaponState, keep_out_of_world: bool) {
+    let _entry = collection::Entry::enter();
     WORLD_STATE
         .get()
         .unwrap()
@@ -289,6 +327,7 @@ fn world_state(weapon: *mut WeaponBase, state: WeaponState, keep_out_of_world: b
 
 #[detour(address = jc3gi::equipment::weapon::ThrownGrenadeWeapon::UpdateAttachmentTransforms_ADDRESS)]
 fn grenade_placement(weapon: *mut ThrownGrenadeWeapon, snow: f32, water: f32, transform_type: u32) {
+    let _entry = collection::Entry::enter();
     GRENADE_PLACEMENT
         .get()
         .unwrap()
@@ -476,6 +515,7 @@ mod tests {
     fn identity() -> Identity {
         Identity {
             registration: 1,
+            provider: Provider::Weapon,
             weapon: 2,
             control: 3,
             data: 4,
@@ -526,6 +566,11 @@ mod tests {
         assert_eq!(Arc::weak_count(&alive), MAX_SOURCES);
         registry.sources.clear();
         assert_eq!(Arc::weak_count(&alive), 0);
+        registry.closed = true;
+        assert_eq!(
+            registry.register(key, || panic!("shutdown rejects new references")),
+            None
+        );
     }
 
     #[test]
