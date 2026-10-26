@@ -138,8 +138,8 @@ pub(crate) fn status() -> FitStatus {
 }
 
 /// Consume each committed request at most once, through the existing movement ledger.
-pub(crate) fn root_velocity(now: Instant, dt: f32, current_root: Mat4) -> Vec2 {
-    STATE.lock().take_root(now, dt, current_root)
+pub(crate) fn root_velocity(now: Instant, dt: f32, current_root: Mat4, enabled: bool) -> Vec2 {
+    STATE.lock().take_root(now, dt, current_root, enabled)
 }
 
 /// The same committed chest heading and landmarks used by the live procedural pose.
@@ -354,19 +354,22 @@ impl Runtime {
             .filter(|(_, at, ..)| now >= *at && now.duration_since(*at) <= MAX_AGE)
     }
 
-    fn take_root(&mut self, now: Instant, dt: f32, root: Mat4) -> Vec2 {
+    fn take_root(&mut self, now: Instant, dt: f32, root: Mat4, enabled: bool) -> Vec2 {
         let Some((snapshot, ..)) = self.fresh(now) else {
             return Vec2::ZERO;
         };
-        if self.consumed == snapshot.provenance.current.step
-            || !snapshot.root.permitted
-            || !dt.is_finite()
-            || dt <= 0.0
-            || !root.is_finite()
-        {
+        let step = snapshot.provenance.current.step;
+        if self.consumed == step {
             return Vec2::ZERO;
         }
-        self.consumed = snapshot.provenance.current.step;
+        if !enabled {
+            self.consumed = step;
+            return Vec2::ZERO;
+        }
+        if !snapshot.root.permitted || !dt.is_finite() || dt <= 0.0 || !root.is_finite() {
+            return Vec2::ZERO;
+        }
+        self.consumed = step;
         let source_root = self.previous.expect("an accepted fit has its root").root;
         let completed = root.w_axis.truncate() - source_root.w_axis.truncate();
         let gap = snapshot.root.displacement - completed;

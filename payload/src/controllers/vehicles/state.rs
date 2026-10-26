@@ -1,12 +1,9 @@
 //! The vehicle handling's tick-to-tick state: the readout the debug UI and the status rows read,
 //! the held controls and handles, the mounted gun's hold, and the arm panel the headset reads.
 
-use std::{
-    sync::atomic::{AtomicUsize, Ordering},
-    time::Instant,
-};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
-use glam::{Quat, Vec3};
+use glam::Vec3;
 use parking_lot::Mutex;
 
 use crate::controllers::{
@@ -129,7 +126,6 @@ pub(crate) fn stand_down() {
     parachute::release_all(&mut state.handles, &mut handle_events);
     state.controls = ControlState::default();
     state.handles_on = false;
-    state.handles_torso = None;
     state.last_holds = [None; 2];
     state.last_handles = [None; 2];
     state.anchor_weights = [0.0; 2];
@@ -237,8 +233,6 @@ pub(super) struct State {
     pub(super) handles_on: bool,
     /// The handles' settings as the last tick read them, kept while a hand blends off its handle.
     pub(super) handles_config: ParachuteHandlesConfig,
-    /// The torso heading the handles last hung along, and when.
-    pub(super) handles_torso: Option<(Quat, Instant)>,
     pub(super) mounted_reference: Option<Reference>,
     pub(super) mounted_target: Option<MountedTarget>,
     /// The gun the hands last aimed and the direction they gave it, in the body frame, which it
@@ -295,7 +289,6 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     handles: HandleState::new(),
     handles_on: false,
     handles_config: ParachuteHandlesConfig::new(),
-    handles_torso: None,
     mounted_reference: None,
     mounted_target: None,
     mounted_last: None,

@@ -96,7 +96,6 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     }
     if !handles_on {
         parachute::release_all(&mut state.handles, &mut handle_events);
-        state.handles_torso = None;
     }
     // What a hand holds goes first, so that it keeps it over anything as near.
     let mut targets = Vec::new();

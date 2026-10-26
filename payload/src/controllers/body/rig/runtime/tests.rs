@@ -108,11 +108,34 @@ fn committed_fit_reaches_the_pose_consumer_and_both_consumers_share_the_step() {
     let mut accepted = runtime.accepted.unwrap();
     accepted.0.root.displacement = Vec3::new(0.08, 0.0, 0.0);
     runtime.accepted = Some(accepted);
-    let velocity = runtime.take_root(now, 1.0 / 30.0, Mat4::IDENTITY);
+    let velocity = runtime.take_root(now, 1.0 / 30.0, Mat4::IDENTITY, true);
     assert!(velocity.x > 0.0 && velocity.length() <= 1.5);
     assert_eq!(runtime.consumed, fit.provenance.current.step);
     assert_eq!(
-        runtime.take_root(now, 1.0 / 30.0, Mat4::IDENTITY),
+        runtime.take_root(now, 1.0 / 30.0, Mat4::IDENTITY, true),
+        Vec2::ZERO
+    );
+}
+
+#[test]
+fn disabled_root_consumes_fit_request_without_replaying_when_reenabled() {
+    let rig = rig();
+    let now = Instant::now();
+    let mut runtime = Runtime::default();
+    let fit = runtime
+        .commit(Some(tracking(now, 1)), input(&rig, now))
+        .unwrap();
+    let mut accepted = runtime.accepted.unwrap();
+    accepted.0.root.displacement = Vec3::new(0.08, 0.0, 0.0);
+    runtime.accepted = Some(accepted);
+
+    assert_eq!(
+        runtime.take_root(now, 1.0 / 30.0, Mat4::IDENTITY, false),
+        Vec2::ZERO
+    );
+    assert_eq!(runtime.consumed, fit.provenance.current.step);
+    assert_eq!(
+        runtime.take_root(now, 1.0 / 30.0, Mat4::IDENTITY, true),
         Vec2::ZERO
     );
 }
@@ -126,7 +149,10 @@ fn stale_or_invalid_tracking_withdraws_pose_and_root_without_mutating_inputs() {
     let original = packet.head;
     runtime.commit(Some(packet), input(&rig, now)).unwrap();
     let later = now + MAX_AGE + Duration::from_millis(1);
-    assert_eq!(runtime.take_root(later, 0.03, Mat4::IDENTITY), Vec2::ZERO);
+    assert_eq!(
+        runtime.take_root(later, 0.03, Mat4::IDENTITY, true),
+        Vec2::ZERO
+    );
     packet.sequence += 1;
     packet.head.position_valid = false;
     assert!(runtime.commit(Some(packet), input(&rig, later)).is_none());
@@ -136,7 +162,10 @@ fn stale_or_invalid_tracking_withdraws_pose_and_root_without_mutating_inputs() {
     ));
     assert!(runtime.accepted.is_none());
     assert_eq!(original.pose, packet.head.pose);
-    assert_eq!(runtime.take_root(later, 0.03, Mat4::IDENTITY), Vec2::ZERO);
+    assert_eq!(
+        runtime.take_root(later, 0.03, Mat4::IDENTITY, true),
+        Vec2::ZERO
+    );
 }
 
 #[test]
@@ -149,7 +178,10 @@ fn owner_handback_requires_a_new_commit_and_does_not_reuse_a_root_request() {
         .unwrap();
     runtime.withdraw(Fallback::Owner);
     assert!(runtime.fresh(now).is_none());
-    assert_eq!(runtime.take_root(now, 0.03, Mat4::IDENTITY), Vec2::ZERO);
+    assert_eq!(
+        runtime.take_root(now, 0.03, Mat4::IDENTITY, true),
+        Vec2::ZERO
+    );
     let later = now + Duration::from_millis(33);
     let next = runtime
         .commit(Some(tracking(later, 2)), input(&rig, later))
@@ -173,7 +205,10 @@ fn changed_dimensions_reseed_and_missing_packets_clear_authority() {
     assert_eq!(fit.provenance.transition, Transition::Reseed);
     assert!(runtime.commit(None, input(&rig, later)).is_none());
     assert_eq!(runtime.status.fallback, Some(Fallback::TrackingUnavailable));
-    assert_eq!(runtime.take_root(later, 0.03, Mat4::IDENTITY), Vec2::ZERO);
+    assert_eq!(
+        runtime.take_root(later, 0.03, Mat4::IDENTITY, true),
+        Vec2::ZERO
+    );
 }
 
 #[test]
