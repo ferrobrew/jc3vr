@@ -17,7 +17,7 @@ pub(super) struct NativeSample {
     pub character: u64,
     pub source: Source,
     pub pose_buffer: u64,
-    pub state: GraphState,
+    pub state: Result<GraphState, Refusal>,
     pub root: Trs,
     pub local: Trs,
 }
@@ -33,7 +33,6 @@ pub(super) struct Source {
 /// The tree's native attachment modifiers read these same model-space bones before this call.
 pub(super) unsafe fn read(character: &Character) -> Result<NativeSample, Refusal> {
     unsafe {
-        let state = classify(active_state_type_id(character))?;
         let controller = character
             .m_AnimatedModel
             .m_AnimationController
@@ -86,7 +85,7 @@ pub(super) unsafe fn read(character: &Character) -> Result<NativeSample, Refusal
                 camera_bone: index,
             },
             pose_buffer: producer.m_PoseT1 as u64,
-            state,
+            state: classify(active_state_type_id(character)),
             root: trs(Mat4::from(character.m_WorldMatrixT1))?,
             local: trs(Mat4::from(matrix))?,
         })

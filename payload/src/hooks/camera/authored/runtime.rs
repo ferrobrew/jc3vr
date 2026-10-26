@@ -6,14 +6,17 @@ use glam::{Mat4, Quat, Vec3};
 use jc3gi::character::character::Character;
 use parking_lot::Mutex;
 
-use crate::hooks::camera::authored::{
-    Limit, Refusal, STATUS, Status,
-    composition::{
-        Baseline, DeltaRequest, InvalidPair, LocalSample, RootSample, RootTreatment, Sample, Stamp,
-        Trs, compose_view,
+use crate::{
+    controllers::roomscale::teleport,
+    hooks::camera::authored::{
+        Limit, Refusal, STATUS, Status,
+        composition::{
+            Baseline, DeltaRequest, InvalidPair, LocalSample, RootSample, RootTreatment, Sample,
+            Stamp, Trs, compose_view,
+        },
+        native::{NativeSample, Source, read, trs},
+        policy::{AcceptedRun, Frame, GraphState, NamedCase, Owner, Phase, Policy},
     },
-    native::{NativeSample, Source, read, trs},
-    policy::{AcceptedRun, Frame, GraphState, NamedCase, Owner, Phase, Policy},
 };
 
 /// The ordinary camera and the tracked-only displacement on one side of the pose pair.
@@ -31,25 +34,9 @@ pub(crate) unsafe fn capture(
 ) -> Option<[Mat4; 2]> {
     let now = Instant::now();
     let native = unsafe { read(character) };
-    let mut state = STATE.lock();
-    let result = native.and_then(|native| state.update(native, views, always_use_t1));
-    match result {
-        Ok(result) => result,
-        Err(reason) => {
-            if state.character == character as *const Character as u64
-                && matches!(
-                    reason,
-                    Refusal::OrdinaryOrUnsupportedState | Refusal::IdleTailWeightNotBound
-                )
-            {
-                state.release(reason, views, always_use_t1, now)
-            } else {
-                state.clear();
-                *STATUS.lock() = Status::NormalTracked { reason };
-                None
-            }
-        }
-    }
+    STATE
+        .lock()
+        .capture(native, views, always_use_t1, now, teleport::epoch())
 }
 
 /// The render hook consumes the tree's result instead of resampling or applying another delta.
@@ -91,6 +78,7 @@ struct Runtime {
     selected: Option<[Mat4; 2]>,
     correction: Option<Trs>,
     handback: Option<Handback>,
+    continuity: Option<Continuity>,
     collapse_normal: bool,
 }
 
@@ -101,31 +89,96 @@ struct Handback {
     case: NamedCase,
 }
 
+#[derive(Clone, Copy)]
+struct Continuity {
+    character: u64,
+    source: Source,
+    root: Trs,
+    teleport_epoch: u64,
+}
+
 impl Runtime {
+    fn capture(
+        &mut self,
+        native: Result<NativeSample, Refusal>,
+        views: [TrackedView; 2],
+        always_use_t1: bool,
+        now: Instant,
+        teleport_epoch: u64,
+    ) -> Option<[Mat4; 2]> {
+        let result = native.and_then(|native| {
+            let continuity = Continuity {
+                character: native.character,
+                source: native.source,
+                root: native.root,
+                teleport_epoch,
+            };
+            self.validate_continuity(continuity)?;
+            let result = self.update(native, views, always_use_t1);
+            self.continuity = Some(continuity);
+            result
+        });
+        match result {
+            Ok(result) => result,
+            Err(reason)
+                if self.continuity.is_some()
+                    && matches!(
+                        reason,
+                        Refusal::OrdinaryOrUnsupportedState | Refusal::IdleTailWeightNotBound
+                    ) =>
+            {
+                self.release(reason, views, always_use_t1, now)
+            }
+            Err(reason) => {
+                self.clear();
+                *STATUS.lock() = Status::NormalTracked { reason };
+                None
+            }
+        }
+    }
+
+    fn validate_continuity(&self, current: Continuity) -> Result<(), Refusal> {
+        current.root.matrix().map_err(Refusal::Policy)?;
+        if let Some(previous) = self.continuity {
+            if previous.character != current.character {
+                return Err(Refusal::Policy(InvalidPair::CharacterChanged));
+            }
+            if previous.source != current.source {
+                return Err(Refusal::Policy(InvalidPair::SourceChanged));
+            }
+            if previous.teleport_epoch != current.teleport_epoch
+                || previous.root.translation.distance(current.root.translation) > MAX_ROOT_STEP
+            {
+                return Err(Refusal::Policy(InvalidPair::Teleport));
+            }
+        }
+        Ok(())
+    }
+
     fn update(
         &mut self,
         native: NativeSample,
         views: [TrackedView; 2],
         always_use_t1: bool,
     ) -> Result<Option<[Mat4; 2]>, Refusal> {
-        let case = native
-            .state
+        let graph_state = native.state?;
+        let case = graph_state
             .named_case()
             .ok_or(Refusal::OrdinaryOrUnsupportedState)?;
         if self.character != native.character
             || self.source != Some(native.source)
             || self
                 .graph_state
-                .is_some_and(|previous| !previous.continues(native.state))
+                .is_some_and(|previous| !previous.continues(graph_state))
         {
             self.clear();
-            if !native.state.can_enter() {
+            if !graph_state.can_enter() {
                 return Err(Refusal::Policy(InvalidPair::InvalidTransition));
             }
             self.character = native.character;
             self.source = Some(native.source);
         }
-        self.graph_state = Some(native.state);
+        self.graph_state = Some(graph_state);
         if let Some(previous) = self.previous
             && previous
                 .root
@@ -157,7 +210,7 @@ impl Runtime {
             let baseline = match self.baseline {
                 Some(baseline) => baseline,
                 None => {
-                    if !native.state.can_enter() {
+                    if !graph_state.can_enter() {
                         return Err(Refusal::Policy(InvalidPair::InvalidTransition));
                     }
                     let root = native.root.matrix().map_err(Refusal::Policy)?;
@@ -179,7 +232,7 @@ impl Runtime {
                     continuity: self.run,
                     run: self.run,
                 },
-                state: native.state,
+                state: graph_state,
                 sample,
                 baseline,
                 blend: None,
@@ -259,8 +312,10 @@ impl Runtime {
                 });
             if let Some(handback) = handback {
                 let character = self.character;
+                let continuity = self.continuity;
                 self.clear();
                 self.character = character;
+                self.continuity = continuity;
                 self.handback = Some(handback);
             } else {
                 self.clear();
@@ -326,6 +381,7 @@ impl Runtime {
         self.selected = None;
         self.correction = None;
         self.handback = None;
+        self.continuity = None;
     }
 }
 
@@ -370,6 +426,7 @@ static STATE: Mutex<Runtime> = Mutex::new(Runtime {
     selected: None,
     correction: None,
     handback: None,
+    continuity: None,
     collapse_normal: false,
 });
 
@@ -388,7 +445,7 @@ mod tests {
                 camera_bone: 50,
             },
             pose_buffer: buffer,
-            state,
+            state: Ok(state),
             root: Trs::IDENTITY,
             local: Trs {
                 translation,
@@ -652,6 +709,117 @@ mod tests {
         assert!(state.selected.is_none());
         assert!(state.collapse_normal);
         assert_eq!(state.graph_state, None);
+    }
+
+    #[test]
+    fn unsupported_exit_and_active_handback_clear_on_discontinuity() {
+        for during_handback in [false, true] {
+            for change in 0..5 {
+                let mut state = Runtime::default();
+                let views = [TrackedView {
+                    world: Mat4::IDENTITY,
+                    tracking_translation: Vec3::ZERO,
+                }; 2];
+                let now = Instant::now();
+                let epoch = 7;
+                for (buffer, translation) in [(100, Vec3::ZERO), (200, Vec3::X)] {
+                    let _ = state.capture(
+                        Ok(native(buffer, GraphState::FloorPickup, translation)),
+                        views,
+                        false,
+                        now,
+                        epoch,
+                    );
+                }
+                assert!(state.selected.is_some());
+                let mut exit = native(300, GraphState::FloorPickup, Vec3::X);
+                exit.state = Err(Refusal::OrdinaryOrUnsupportedState);
+                if during_handback {
+                    assert!(state.capture(Ok(exit), views, false, now, epoch).is_some());
+                    assert!(state.handback.is_some());
+                    assert!(state.continuity.is_some());
+                    exit = native(400, GraphState::FloorPickup, Vec3::X);
+                    exit.state = Err(Refusal::OrdinaryOrUnsupportedState);
+                }
+                let mut next_epoch = epoch;
+                match change {
+                    0 => exit.root.translation = Vec3::X * (MAX_ROOT_STEP + 1.0),
+                    1 => exit.source.producer += 1,
+                    2 => next_epoch += 1,
+                    3 => exit.root.translation.x = f32::NAN,
+                    _ => exit.character += 1,
+                }
+                assert!(
+                    state
+                        .capture(
+                            Ok(exit),
+                            views,
+                            false,
+                            now + HANDBACK_DURATION / 4,
+                            next_epoch,
+                        )
+                        .is_none()
+                );
+                assert!(state.selected.is_none());
+                assert!(state.handback.is_none());
+                assert!(state.correction.is_none());
+                assert!(state.continuity.is_none());
+                assert!(state.collapse_normal);
+            }
+        }
+    }
+
+    #[test]
+    fn handback_checks_each_new_root_and_native_read_failure() {
+        let mut state = Runtime::default();
+        let views = [TrackedView {
+            world: Mat4::IDENTITY,
+            tracking_translation: Vec3::ZERO,
+        }; 2];
+        let now = Instant::now();
+        for (buffer, translation) in [(100, Vec3::ZERO), (200, Vec3::X)] {
+            let _ = state.capture(
+                Ok(native(buffer, GraphState::FloorPickup, translation)),
+                views,
+                false,
+                now,
+                0,
+            );
+        }
+        for (step, position) in [1.0, 6.0, 11.0].into_iter().enumerate() {
+            let mut exit = native(300, GraphState::FloorPickup, Vec3::X);
+            exit.state = Err(Refusal::IdleTailWeightNotBound);
+            exit.root.translation = Vec3::X * position;
+            assert!(
+                state
+                    .capture(
+                        Ok(exit),
+                        views,
+                        false,
+                        now + Duration::from_millis(step as u64 * 10),
+                        0,
+                    )
+                    .is_some()
+            );
+            assert_eq!(
+                state.continuity.unwrap().root.translation,
+                Vec3::X * position
+            );
+        }
+        assert!(
+            state
+                .capture(
+                    Err(Refusal::MissingChannel),
+                    views,
+                    false,
+                    now + Duration::from_millis(40),
+                    0,
+                )
+                .is_none()
+        );
+        assert!(state.selected.is_none());
+        assert!(state.handback.is_none());
+        assert!(state.continuity.is_none());
     }
 
     #[test]
