@@ -91,6 +91,18 @@ pub(super) fn dictionary(name: &[u8], data: &[u8]) -> Option<Dictionary> {
         .then_some(Dictionary { count, grenades })
 }
 
+/// Qualify a live near-location using the same shipped collection paths as the stream decoder.
+pub(super) fn loaded_location(name: &[u8]) -> Option<usize> {
+    let mut collection_name = name.to_vec();
+    collection_name.extend_from_slice(b".nl");
+    supported(&collection_name)
+}
+
+/// The compiled resource path shared by stream metadata and live-model verification.
+pub(super) fn grenade_model() -> &'static [u8] {
+    GRENADE_MODEL
+}
+
 pub(super) const MAX_BYTES: usize = 64 * 1024 * 1024;
 const MAX_NAMES: usize = 16 * 1024;
 const MAX_INSTANCES: usize = 256 * 1024;
@@ -229,6 +241,28 @@ mod tests {
             }
         }
         data
+    }
+
+    #[test]
+    fn loaded_location_provenance_matches_the_stream_allowlist() {
+        for (name, count) in COLLECTIONS {
+            let base = &name[..name.len() - b".nl.mdic".len()];
+            assert_eq!(loaded_location(base), Some(count));
+            let normalized: Vec<_> = base
+                .iter()
+                .map(|byte| {
+                    if *byte == b'/' {
+                        b'\\'
+                    } else {
+                        byte.to_ascii_uppercase()
+                    }
+                })
+                .collect();
+            assert_eq!(loaded_location(&normalized), Some(count));
+        }
+        assert!(loaded_location(b"locations/another").is_none());
+        assert!(loaded_location(GRENADE_MODEL).is_none());
+        assert!(loaded_location(COLLECTION).is_none());
     }
 
     #[test]

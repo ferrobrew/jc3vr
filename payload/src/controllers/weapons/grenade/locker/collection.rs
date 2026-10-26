@@ -1,7 +1,10 @@
-//! Static grenade display snapshots captured during their owning location load.
+//! Static grenade display snapshots from live locations and their load callbacks.
 //!
-//! Native instances have no game-object weak reference. Only the load callback reads them; the
-//! registry retains copied matrices and identities, and retirement precedes native destruction.
+//! Native instances have no game-object weak reference. Game-thread discovery reads the location
+//! system's owned list; the registry retains copied matrices and identities only, and retirement
+//! precedes native destruction.
+
+mod discovery;
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
@@ -11,6 +14,7 @@ use jc3gi::{
     graphics_engine::model_instance::{
         ModelCollection, ModelInstance, ModelInstanceFlags, ModelManager,
     },
+    hash::hashlittle,
     location::Location,
     types::math::Matrix4,
 };
@@ -19,7 +23,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::weapons::grenade::locker::{
     Identity, Provider, Source,
-    format::{Dictionary, MAX_BYTES, dictionary},
+    format::{Dictionary, MAX_BYTES, dictionary, grenade_model},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -39,20 +43,34 @@ pub(super) fn active_entries() -> usize {
     ACTIVE_ENTRIES.load(Ordering::Acquire)
 }
 
-/// Keep retirement excluded until exact-source validation and the safe draw both finish.
-pub(super) fn with_sources<T>(
+/// Discover existing sources and exclude retirement through exact validation and the safe draw.
+///
+/// # Safety
+///
+/// The caller runs outside the world update on the game thread. Native location borrows stay
+/// within this call, while the registry's lock excludes collection destruction.
+pub(super) unsafe fn with_sources<T>(
     to_cockpit: &impl Fn(Vec3) -> Vec3,
     read: impl FnOnce(Vec<Source>) -> T,
 ) -> T {
-    read_sources(&REGISTRY, to_cockpit, read)
+    read_sources(
+        &REGISTRY,
+        to_cockpit,
+        || unsafe { discovery::observe() },
+        read,
+    )
 }
 
 fn read_sources<T>(
     registry: &Mutex<Registry>,
     to_cockpit: &impl Fn(Vec3) -> Vec3,
+    observe: impl FnOnce() -> Vec<Observation>,
     read: impl FnOnce(Vec<Source>) -> T,
 ) -> T {
-    let registry = registry.lock();
+    let mut registry = registry.lock();
+    if !registry.closed {
+        registry.reconcile(observe());
+    }
     let sources = registry.sources(to_cockpit);
     let result = read(sources);
     drop(registry);
@@ -67,6 +85,11 @@ struct Record {
     instance: usize,
     resource: usize,
     world: Mat4,
+}
+
+struct Observation {
+    address: usize,
+    records: Vec<Record>,
 }
 
 struct Collection {
@@ -92,6 +115,40 @@ impl Registry {
 
     fn retire(&mut self, address: usize) {
         self.collections.retain(|entry| entry.address != address);
+    }
+
+    fn reconcile(&mut self, observations: Vec<Observation>) {
+        self.collections.retain(|entry| {
+            observations
+                .iter()
+                .any(|observation| observation.address == entry.address)
+        });
+        for observation in observations {
+            self.observe(observation);
+        }
+    }
+
+    fn observe(&mut self, observation: Observation) -> Option<u64> {
+        if self.closed {
+            return None;
+        }
+        if let Some(entry) = self.collections.iter_mut().find(|entry| {
+            entry.address == observation.address
+                && entry.records.len() == observation.records.len()
+                && entry
+                    .records
+                    .iter()
+                    .zip(&observation.records)
+                    .all(|(before, after)| {
+                        before.index == after.index
+                            && before.instance == after.instance
+                            && before.resource == after.resource
+                    })
+        }) {
+            entry.records = observation.records;
+            return Some(entry.generation);
+        }
+        self.register(observation.address, observation.records)
     }
 
     fn register(&mut self, address: usize, records: Vec<Record>) -> Option<u64> {
@@ -180,15 +237,22 @@ fn load_model_collection(location: *mut Location, data: *const u8, size: u32, na
     }
     // SAFETY: no collection borrow or native instance pointer escapes this callback. Retirement
     // takes the same lock before native destruction, including while snapshots are copied.
-    let records = unsafe { capture(location.m_ModelCollection, &metadata) };
+    let Some(manager) = (unsafe { ModelManager::get() }) else {
+        return;
+    };
+    let records = unsafe { capture(location.m_ModelCollection, &metadata, manager) };
     if records.is_empty() {
         tracing::debug!(target: "controllers", collection = location.m_ModelCollection as usize, expected_instances = metadata.count, "grenade: verified static dictionary has no qualifying live display instances");
     }
-    if let Some(generation) = registry.register(location.m_ModelCollection as usize, records) {
+    if let Some(generation) = registry.observe(Observation {
+        address: location.m_ModelCollection as usize,
+        records,
+    }) {
         let entry = registry
             .collections
-            .last()
-            .expect("registration appends its collection");
+            .iter()
+            .find(|entry| entry.generation == generation)
+            .expect("observation retains its collection");
         for record in &entry.records {
             tracing::debug!(target: "controllers", collection = entry.address, registration = generation, index = record.index, model = record.instance, resource = record.resource, "grenade: observed a verified static collection display source");
         }
@@ -203,30 +267,42 @@ fn collection_destruct(collection: *mut ModelCollection) {
 }
 
 unsafe fn metadata(data: *const u8, size: u32, name: *const u8) -> Option<Dictionary> {
-    if data.is_null() || name.is_null() || size as usize > MAX_BYTES {
+    if data.is_null() || size as usize > MAX_BYTES {
+        return None;
+    }
+    let owned_name = unsafe { path(name, MAX_PATH_BYTES) }?;
+    let metadata = dictionary(&owned_name, unsafe {
+        std::slice::from_raw_parts(data, size as usize)
+    });
+    if owned_name
+        .windows(b"massos".len())
+        .any(|part| part.eq_ignore_ascii_case(b"massos"))
+    {
+        tracing::debug!(target: "controllers", resource = %String::from_utf8_lossy(&owned_name), size, qualified = metadata.is_some(), "grenade: inspected a Massos model collection dictionary");
+    }
+    metadata
+}
+
+unsafe fn path(name: *const u8, limit: usize) -> Option<Vec<u8>> {
+    if name.is_null() {
         return None;
     }
     let mut owned_name = Vec::new();
-    for index in 0..MAX_PATH_BYTES {
+    for index in 0..limit {
         let byte = unsafe { name.add(index).read() };
         if byte == 0 {
-            let metadata = dictionary(&owned_name, unsafe {
-                std::slice::from_raw_parts(data, size as usize)
-            });
-            if owned_name
-                .windows(b"massos".len())
-                .any(|part| part.eq_ignore_ascii_case(b"massos"))
-            {
-                tracing::debug!(target: "controllers", resource = %String::from_utf8_lossy(&owned_name), size, qualified = metadata.is_some(), "grenade: inspected a Massos model collection dictionary");
-            }
-            return metadata;
+            return Some(owned_name);
         }
         owned_name.push(byte);
     }
     None
 }
 
-unsafe fn capture(collection: *const ModelCollection, metadata: &Dictionary) -> Vec<Record> {
+unsafe fn capture(
+    collection: *const ModelCollection,
+    metadata: &Dictionary,
+    manager: &ModelManager,
+) -> Vec<Record> {
     let Some(collection) = (unsafe { collection.as_ref() }) else {
         return Vec::new();
     };
@@ -237,9 +313,7 @@ unsafe fn capture(collection: *const ModelCollection, metadata: &Dictionary) -> 
     {
         return Vec::new();
     }
-    let Some(manager) = (unsafe { ModelManager::get() }) else {
-        return Vec::new();
-    };
+    let grenade_hash = hashlittle(grenade_model()) as u32;
     metadata
         .grenades
         .iter()
@@ -250,6 +324,10 @@ unsafe fn capture(collection: *const ModelCollection, metadata: &Dictionary) -> 
             let instance = unsafe { *collection.m_ModelInstances.add(*index) };
             let model = unsafe { instance.as_ref() }?;
             if !visible(model) || model.m_spModel.px == manager.m_FailModel.px {
+                return None;
+            }
+            let resource = unsafe { model.m_spModel.as_ref() }?;
+            if resource.m_Id.m_Hash != grenade_hash {
                 return None;
             }
             let mut matrix = Matrix4::default();
@@ -294,6 +372,93 @@ mod tests {
                 world: Mat4::from_translation(Vec3::X * index as f32),
             })
             .into()
+    }
+
+    fn existing() -> Vec<Observation> {
+        vec![Observation {
+            address: 1,
+            records: records(),
+        }]
+    }
+
+    #[test]
+    fn already_loaded_source_bootstraps_and_retires_through_the_runtime_read_seam() {
+        let registry = Mutex::new(Registry::new());
+        let offered = read_sources(&registry, &|point| point, existing, |sources| {
+            nearest(&sources, Vec3::ZERO).unwrap()
+        });
+        let generation = offered.identity.registration;
+        assert_eq!(
+            read_sources(&registry, &|point| point, existing, |sources| {
+                assert_eq!(sources[0].identity.registration, generation);
+                complete(Some(offered), &sources, Some(Vec3::ZERO), || true)
+            }),
+            Ok(())
+        );
+        assert_eq!(
+            read_sources(&registry, &|point| point, Vec::new, |sources| {
+                complete(Some(offered), &sources, Some(Vec3::ZERO), || {
+                    panic!("a detached loaded location cannot draw")
+                })
+            }),
+            Err(Refusal::SourceChanged)
+        );
+        let replacement = read_sources(&registry, &|point| point, existing, |sources| {
+            assert_eq!(
+                complete(Some(offered), &sources, Some(Vec3::ZERO), || {
+                    panic!("a reused collection address cannot complete an old offer")
+                }),
+                Err(Refusal::SourceChanged)
+            );
+            nearest(&sources, Vec3::ZERO).unwrap()
+        });
+        assert_ne!(replacement.identity.registration, generation);
+        registry.lock().retire(1);
+        read_sources(&registry, &|point| point, existing, |sources| {
+            assert_eq!(
+                complete(Some(replacement), &sources, Some(Vec3::ZERO), || {
+                    panic!("native destruction retires even an identical replacement")
+                }),
+                Err(Refusal::SourceChanged)
+            );
+        });
+    }
+
+    #[test]
+    fn existing_observation_and_load_callback_share_identity_and_reject_replaced_models() {
+        let registry = Mutex::new(Registry::new());
+        let offered = read_sources(&registry, &|point| point, existing, |sources| {
+            nearest(&sources, Vec3::ZERO).unwrap()
+        });
+        assert_eq!(
+            registry.lock().observe(existing().remove(0)),
+            Some(offered.identity.registration)
+        );
+        let changed = || {
+            let mut observations = existing();
+            observations[0].records[0].resource += 1;
+            observations
+        };
+        assert_eq!(
+            read_sources(&registry, &|point| point, changed, |sources| {
+                complete(Some(offered), &sources, Some(Vec3::ZERO), || {
+                    panic!("replacement of the displayed model invalidates the offer")
+                })
+            }),
+            Err(Refusal::SourceChanged)
+        );
+    }
+
+    #[test]
+    fn closed_registry_does_not_read_native_ownership() {
+        let registry = Mutex::new(Registry::new());
+        registry.lock().closed = true;
+        read_sources(
+            &registry,
+            &|point| point,
+            || panic!("cleanup must prevent later native discovery"),
+            |sources| assert!(sources.is_empty()),
+        );
     }
 
     #[test]
@@ -360,13 +525,24 @@ mod tests {
         let current = registry.lock().sources(&|point| point);
         let offered = nearest(&current, Vec3::ZERO);
         assert_eq!(
-            read_sources(&registry, &|point| point, |sources| {
-                assert!(registry.try_lock().is_none());
-                complete(offered, &sources, Some(Vec3::ZERO), || {
+            read_sources(
+                &registry,
+                &|point| point,
+                || {
                     assert!(registry.try_lock().is_none());
-                    true
-                })
-            }),
+                    vec![Observation {
+                        address: 1,
+                        records: records(),
+                    }]
+                },
+                |sources| {
+                    assert!(registry.try_lock().is_none());
+                    complete(offered, &sources, Some(Vec3::ZERO), || {
+                        assert!(registry.try_lock().is_none());
+                        true
+                    })
+                },
+            ),
             Ok(())
         );
         assert!(registry.try_lock().is_some());

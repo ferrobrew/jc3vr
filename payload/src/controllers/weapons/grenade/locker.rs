@@ -1,6 +1,6 @@
 //! Safe grenade draws from native weapon displays and verified static collection displays.
 //!
-//! Native weapons use weak references. Static displays use copied, load-time model transforms and
+//! Native weapons use weak references. Static displays use copied live-location model transforms and
 //! retire before their collection is destroyed. Completion keeps each source's identity intact and
 //! draws an independent safe item without consuming the source or native ammunition.
 
@@ -109,7 +109,9 @@ pub(super) unsafe fn begin(
     to_cockpit: impl Fn(Vec3) -> Vec3,
 ) -> Vec<Candidate> {
     let mut sources = unsafe { sources(owner, &to_cockpit) };
-    collection::with_sources(&to_cockpit, |static_sources| sources.extend(static_sources));
+    unsafe {
+        collection::with_sources(&to_cockpit, |static_sources| sources.extend(static_sources));
+    }
     let offers = Hand::BOTH.map(|hand| {
         grips[hand.index()]
             .filter(|_| free[hand.index()])
@@ -145,11 +147,11 @@ pub(super) unsafe fn take(
     let offered = OFFERS.lock()[hand.index()].take();
     let owner = unsafe { engine::local_player() }.ok_or(Refusal::SourceChanged)?;
     let result = match offered.map(|source| source.identity.provider) {
-        Some(Provider::Collection { .. }) => collection::with_sources(&to_cockpit, |current| {
-            complete(offered, &current, grip, || unsafe {
-                safe::draw(hand, tuning)
+        Some(Provider::Collection { .. }) => unsafe {
+            collection::with_sources(&to_cockpit, |current| {
+                complete(offered, &current, grip, || safe::draw(hand, tuning))
             })
-        }),
+        },
         Some(Provider::Weapon) | None => {
             let current = unsafe { sources(owner, &to_cockpit) };
             complete(offered, &current, grip, || unsafe {
