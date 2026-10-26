@@ -317,6 +317,7 @@ fn native_request_uses_timestamped_hand_motion_for_both_hands_and_supported_slot
                 controller: Some(&context),
                 samples: &samples,
                 since_s: 0.9,
+                history_after_s: None,
                 point_world: rig.frame.origin,
             });
             let mut drop = observation(SampleStage::Wielded, Some((Vec3::ZERO, Vec3::ZERO)));
@@ -351,6 +352,7 @@ fn release_converts_point_motion_and_scale_once_and_rig_motion_once() {
         controller: Some(&context),
         samples: &[sample],
         since_s: 0.9,
+        history_after_s: None,
         point_world: point,
     });
     let hand_linear = rig.frame.rotation * (Vec3::X * 1.7) * 2.0;
@@ -411,6 +413,7 @@ fn missing_or_stale_tracking_releases_with_transport_not_an_old_throw_peak() {
             controller: Some(&invalid),
             samples: &samples,
             since_s: 0.0,
+            history_after_s: None,
             point_world: point,
         });
         assert_eq!(release.source, SampleSource::RigTransportOnly);
@@ -437,6 +440,7 @@ fn acquisition_bound_excludes_the_previous_items_throw_and_slow_release_stays_sl
         controller: Some(&context),
         samples: &samples,
         since_s: 0.99,
+        history_after_s: None,
         point_world: rig.frame.origin,
     });
     assert_motion(release.world, Vec3::X * 0.1, Vec3::ZERO);
@@ -472,6 +476,7 @@ fn release_uses_position_and_orientation_differences_when_runtime_omits_velociti
         controller: Some(&context),
         samples: &samples,
         since_s: 0.9,
+        history_after_s: None,
         point_world: rig.frame.origin + Vec3::X * 0.04,
     });
     assert_motion(release.world, Vec3::X * 2.0, Vec3::Y * 3.0);
@@ -504,6 +509,7 @@ fn a_missing_runtime_angular_velocity_still_moves_the_gun_point() {
         controller: Some(&context),
         samples: &samples,
         since_s: 0.9,
+        history_after_s: None,
         point_world: rig.frame.origin + lever,
     });
     assert_motion(release.world, (Vec3::Y * 2.0).cross(lever), Vec3::Y * 2.0);
@@ -513,12 +519,12 @@ fn a_missing_runtime_angular_velocity_still_moves_the_gun_point() {
 fn transport_is_finite_differenced_once_and_discontinuities_reprime_it() {
     let mut transport = ReleaseTransport::new();
     let first = release_frame();
-    assert_eq!(transport.update(Some(first), 0.02), None);
+    assert_eq!(transport.update(Some(first), 0.02, Some(0.9)), None);
     let next = ReleaseFrame {
         origin: first.origin + Vec3::X * 0.2,
         ..first
     };
-    let rig = transport.update(Some(next), 0.02).unwrap();
+    let rig = transport.update(Some(next), 0.02, Some(0.92)).unwrap();
     assert_motion(rig.motion, Vec3::X * 10.0, Vec3::ZERO);
     for reset in [
         ReleaseFrame {
@@ -541,12 +547,203 @@ fn transport_is_finite_differenced_once_and_discontinuities_reprime_it() {
     ] {
         let mut transport = ReleaseTransport {
             previous: Some(next),
+            ..ReleaseTransport::new()
         };
-        assert_eq!(transport.update(Some(reset), 0.02), None);
+        assert_eq!(transport.update(Some(reset), 0.02, Some(0.94)), None);
+        assert_eq!(transport.history_after_s(), Some(0.94));
     }
-    assert_eq!(transport.update(Some(next), 1.0), None);
-    assert_eq!(transport.update(None, 0.02), None);
-    assert_eq!(transport.update(Some(next), 0.02), None);
+    assert_eq!(transport.update(Some(next), 1.0, Some(1.94)), None);
+    assert_eq!(transport.update(None, 0.02, Some(1.96)), None);
+    assert_eq!(transport.update(Some(next), 0.02, Some(1.98)), None);
+}
+
+#[test]
+fn composed_head_shift_does_not_become_a_wrist_rotation_lever() {
+    let context = controller(Hand::Right);
+    let base = ReleaseFrame {
+        rotation: Quat::from_rotation_y(0.4),
+        scale: 1.5,
+        ..release_frame()
+    };
+    let origin = base.origin + Vec3::new(0.5, 0.2, -0.1);
+    let head_cockpit = Vec3::new(0.25, 0.1, -0.3);
+    let head_world = origin + base.rotation * (head_cockpit * base.scale);
+    let frame = base.with_composed_head(head_world, head_cockpit);
+    assert!(frame.origin.distance(origin) < 1e-4);
+    let sample = MotionSample {
+        position: Vec3::new(0.3, -0.1, -0.4),
+        orientation: Quat::from_rotation_y(0.35),
+        ..release_sample(1.0, Vec3::ZERO, Vec3::Y * 4.0)
+    };
+    let lever = sample.orientation * (Vec3::NEG_Z * 0.2);
+    let point = origin + frame.rotation * ((sample.position + lever) * frame.scale);
+    let release = estimate_release(ReleaseInput {
+        rig: Some(RigMotion {
+            frame,
+            motion: WorldMotion {
+                linear: Vec3::ZERO,
+                angular: Vec3::ZERO,
+            },
+        }),
+        controller: Some(&context),
+        samples: &[sample],
+        since_s: 0.9,
+        history_after_s: None,
+        point_world: point,
+    });
+    assert_eq!(release.source, SampleSource::TimestampedHandHistory);
+    assert_motion(
+        release.world,
+        frame.rotation * (Vec3::Y * 4.0).cross(lever) * frame.scale,
+        Vec3::Y * 4.0,
+    );
+}
+
+#[test]
+fn changing_composed_origin_transports_stationary_tracking_once() {
+    let base = release_frame();
+    let origin = base.origin + Vec3::new(0.5, 0.2, -0.1);
+    let raw_head = Vec3::new(0.2, 0.1, -0.3);
+    let previous = base.with_composed_head(origin + raw_head, raw_head);
+    let current_origin = origin + Vec3::X * 0.02;
+    let current_head = raw_head + Vec3::X * 0.1;
+    let current = ReleaseFrame {
+        rotation: Quat::from_rotation_y(0.08),
+        ..base
+    };
+    let current = current.with_composed_head(
+        current_origin + current.rotation * current_head,
+        current_head,
+    );
+    let mut transport = ReleaseTransport::new();
+    assert_eq!(transport.update(Some(previous), 0.02, Some(0.98)), None);
+    let rig = transport.update(Some(current), 0.02, Some(1.0)).unwrap();
+    assert_motion(rig.motion, Vec3::X, Vec3::Y * 4.0);
+    let sample = MotionSample {
+        position: Vec3::new(0.3, -0.1, -0.4),
+        ..release_sample(1.0, Vec3::ZERO, Vec3::ZERO)
+    };
+    let lever = current.rotation * sample.position;
+    let context = controller(Hand::Left);
+    let release = estimate_release(ReleaseInput {
+        rig: Some(rig),
+        controller: Some(&context),
+        samples: &[sample],
+        since_s: 0.9,
+        history_after_s: transport.history_after_s(),
+        point_world: current_origin + lever,
+    });
+    assert_eq!(release.source, SampleSource::TimestampedHandHistory);
+    assert_motion(
+        release.world,
+        Vec3::X + (Vec3::Y * 4.0).cross(lever),
+        Vec3::Y * 4.0,
+    );
+}
+
+#[test]
+fn second_input_tick_after_recenter_excludes_old_peak_and_coordinate_difference() {
+    for runtime_velocities in [false, true] {
+        let mut transport = ReleaseTransport::new();
+        let previous = release_frame();
+        assert_eq!(transport.update(Some(previous), 0.02, Some(0.94)), None);
+        assert!(transport.update(Some(previous), 0.02, Some(0.96)).is_some());
+        let recentered = ReleaseFrame {
+            recenters: 1,
+            ..previous
+        };
+        assert_eq!(transport.update(Some(recentered), 0.02, Some(0.98)), None);
+        assert_eq!(transport.history_after_s(), Some(0.98));
+        let rig = transport.update(Some(recentered), 0.02, Some(1.0)).unwrap();
+        assert_eq!(transport.history_after_s(), Some(0.98));
+        let sample = |time_s, position, orientation, linear, angular| MotionSample {
+            position,
+            orientation,
+            linear_velocity: runtime_velocities.then_some(linear),
+            angular_velocity: runtime_velocities.then_some(angular),
+            ..release_sample(time_s, Vec3::ZERO, Vec3::ZERO)
+        };
+        let samples = [
+            sample(
+                0.96,
+                Vec3::ZERO,
+                Quat::IDENTITY,
+                Vec3::Z * 20.0,
+                Vec3::Y * 12.0,
+            ),
+            sample(
+                0.98,
+                Vec3::ZERO,
+                Quat::IDENTITY,
+                Vec3::Z * 20.0,
+                Vec3::Y * 12.0,
+            ),
+            sample(
+                0.99,
+                Vec3::X * 0.5,
+                Quat::from_rotation_y(0.5),
+                Vec3::ZERO,
+                Vec3::ZERO,
+            ),
+            sample(
+                1.0,
+                Vec3::X * 0.5,
+                Quat::from_rotation_y(0.5),
+                Vec3::ZERO,
+                Vec3::ZERO,
+            ),
+        ];
+        let context = controller(Hand::Right);
+        let release = estimate_release(ReleaseInput {
+            rig: Some(rig),
+            controller: Some(&context),
+            samples: &samples,
+            since_s: 0.8,
+            history_after_s: transport.history_after_s(),
+            point_world: rig.frame.origin + Vec3::X * 0.5,
+        });
+        assert_eq!(release.source, SampleSource::TimestampedHandHistory);
+        assert_motion(release.world, Vec3::ZERO, Vec3::ZERO);
+        assert_eq!(release.history_age_s, Some(0.0));
+
+        let acquired_later = estimate_release(ReleaseInput {
+            rig: Some(rig),
+            controller: Some(&context),
+            samples: &[
+                release_sample(0.99, Vec3::Z * 20.0, Vec3::Y * 12.0),
+                release_sample(1.0, Vec3::X * 0.1, Vec3::ZERO),
+            ],
+            since_s: 0.995,
+            history_after_s: transport.history_after_s(),
+            point_world: rig.frame.origin,
+        });
+        assert_motion(acquired_later.world, Vec3::X * 0.1, Vec3::ZERO);
+
+        let no_current_samples = estimate_release(ReleaseInput {
+            rig: Some(rig),
+            controller: Some(&context),
+            samples: &samples[..2],
+            since_s: 0.8,
+            history_after_s: transport.history_after_s(),
+            point_world: rig.frame.origin,
+        });
+        assert_eq!(no_current_samples.source, SampleSource::RigTransportOnly);
+        assert_motion(no_current_samples.world, Vec3::ZERO, Vec3::ZERO);
+    }
+}
+
+#[test]
+fn missing_coordinate_boundary_time_waits_for_a_dated_sample() {
+    let mut transport = ReleaseTransport::new();
+    let frame = release_frame();
+    assert_eq!(transport.update(Some(frame), 0.02, None), None);
+    assert_eq!(transport.history_after_s(), Some(f64::INFINITY));
+    assert!(transport.update(Some(frame), 0.02, None).is_some());
+    assert_eq!(transport.history_after_s(), Some(f64::INFINITY));
+    assert!(transport.update(Some(frame), 0.02, Some(1.0)).is_some());
+    assert_eq!(transport.history_after_s(), Some(1.0));
+    assert!(transport.update(Some(frame), 0.02, Some(1.02)).is_some());
+    assert_eq!(transport.history_after_s(), Some(1.0));
 }
 
 #[test]
@@ -557,6 +754,7 @@ fn an_unprimed_rig_or_bad_request_never_reuses_cached_motion() {
         controller: Some(&context),
         samples: &[release_sample(1.0, Vec3::X * 40.0, Vec3::Y * 20.0)],
         since_s: 0.0,
+        history_after_s: None,
         point_world: Vec3::ZERO,
     });
     assert_eq!(release, ReleaseMotion::REST);

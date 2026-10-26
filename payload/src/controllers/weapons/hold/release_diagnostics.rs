@@ -36,31 +36,53 @@ pub(crate) struct RigMotion {
 #[derive(Debug, Copy, Clone, Default)]
 pub(crate) struct ReleaseTransport {
     previous: Option<ReleaseFrame>,
+    history_after_s: Option<f64>,
 }
 
 impl ReleaseTransport {
     pub(crate) const fn new() -> Self {
-        Self { previous: None }
+        Self {
+            previous: None,
+            history_after_s: None,
+        }
     }
 
-    pub(crate) fn update(&mut self, frame: Option<ReleaseFrame>, dt: f32) -> Option<RigMotion> {
+    /// Samples at or before the latest coordinate change cannot feed a release or a difference.
+    pub(crate) fn history_after_s(&self) -> Option<f64> {
+        self.history_after_s
+    }
+
+    pub(crate) fn update(
+        &mut self,
+        frame: Option<ReleaseFrame>,
+        dt: f32,
+        time_s: Option<f64>,
+    ) -> Option<RigMotion> {
         let previous = self.previous;
         self.previous = frame.filter(|frame| frame.valid());
-        let current = self.previous?;
-        let previous = previous?;
+        let pair = self.previous.zip(previous);
+        let Some((current, previous)) = pair else {
+            self.cut_history(time_s);
+            return None;
+        };
         if !(0.001..=MAX_RELEASE_AGE_S).contains(&dt)
             || current.teleport_epoch != previous.teleport_epoch
             || current.recenters != previous.recenters
             || (current.scale - previous.scale).abs() > 1e-4
             || current.origin.distance(previous.origin) > 5.0
         {
+            self.cut_history(time_s);
             return None;
         }
         let turn = (current.rotation * previous.rotation.inverse()).normalize();
         let turn = if turn.w < 0.0 { -turn } else { turn };
         let angle = turn.to_scaled_axis();
         if !angle.is_finite() || angle.length() > std::f32::consts::FRAC_PI_4 {
+            self.cut_history(time_s);
             return None;
+        }
+        if self.history_after_s == Some(f64::INFINITY) {
+            self.cut_history(time_s);
         }
         Some(RigMotion {
             frame: current,
@@ -70,9 +92,23 @@ impl ReleaseTransport {
             },
         })
     }
+
+    fn cut_history(&mut self, time_s: Option<f64>) {
+        self.history_after_s = Some(
+            time_s
+                .filter(|time| time.is_finite())
+                .unwrap_or(f64::INFINITY),
+        );
+    }
 }
 
 impl ReleaseFrame {
+    /// Recover the transform used by hand composition without adding HMD translation twice.
+    pub(crate) fn with_composed_head(mut self, head_world: Vec3, head_cockpit: Vec3) -> Self {
+        self.origin = head_world - self.rotation * (head_cockpit * self.scale);
+        self
+    }
+
     fn valid(self) -> bool {
         self.origin.is_finite()
             && self.rotation.is_finite()
@@ -143,7 +179,7 @@ pub(crate) fn estimate_release(input: ReleaseInput<'_>) -> ReleaseMotion {
         .samples
         .iter()
         .rev()
-        .find(|sample| sample.time_s <= release_s)
+        .find(|sample| input.accepts_time(sample.time_s, release_s))
     else {
         return fallback;
     };
@@ -155,7 +191,7 @@ pub(crate) fn estimate_release(input: ReleaseInput<'_>) -> ReleaseMotion {
         .samples
         .iter()
         .copied()
-        .filter(|sample| sample.time_s >= input.since_s && sample.time_s <= release_s)
+        .filter(|sample| input.accepts_time(sample.time_s, release_s))
         .collect::<Vec<_>>();
     for sample in &mut samples {
         sample.linear_velocity = sample
@@ -211,7 +247,18 @@ pub(crate) struct ReleaseInput<'a> {
     pub controller: Option<&'a ControllerContext>,
     pub samples: &'a [MotionSample],
     pub since_s: f64,
+    pub history_after_s: Option<f64>,
     pub point_world: Vec3,
+}
+
+impl ReleaseInput<'_> {
+    fn accepts_time(&self, time_s: f64, release_s: f64) -> bool {
+        time_s >= self.since_s
+            && time_s <= release_s
+            && self
+                .history_after_s
+                .is_none_or(|boundary| time_s > boundary)
+    }
 }
 
 pub(crate) const MAX_RELEASE_AGE_S: f32 = 0.15;

@@ -471,17 +471,22 @@ static STATE: Mutex<State> = Mutex::new(State {
 
 fn sample_release_transport(dt: f32) {
     let scale = Config::lock_query(|config| config.vr.world_scale);
-    let frame = headpose::anchor().map(|origin| ReleaseFrame {
-        origin,
-        rotation: headpose::xr::body_rotation(),
-        scale,
-        teleport_epoch: teleport::epoch(),
-        recenters: recenter_count(),
+    let frame = headpose::xr::cockpit_pose().map(|head_cockpit| {
+        let head_world = headpose::query().position;
+        ReleaseFrame {
+            origin: head_world,
+            rotation: headpose::xr::body_rotation(),
+            scale,
+            teleport_epoch: teleport::epoch(),
+            recenters: recenter_count(),
+        }
+        .with_composed_head(head_world, head_cockpit.position)
     });
+    let time_s = motion::latest_time();
     let mut state = STATE.lock();
     state.rig = state
         .transport
-        .update(frame, dt)
+        .update(frame, dt, time_s)
         .map(|rig| (Instant::now(), rig));
 }
 
@@ -495,7 +500,7 @@ unsafe fn release_motion(
         return ReleaseMotion::REST;
     };
     let point_world = Mat4::from(gun.m_WorldMatrixT1).w_axis.truncate();
-    let (rig, since_s) = {
+    let (rig, since_s, history_after_s) = {
         let state = STATE.lock();
         let rig = state
             .rig
@@ -505,7 +510,11 @@ unsafe fn release_motion(
             .then_some(watch.since_s)
             .flatten()
             .unwrap_or(f64::INFINITY);
-        (rig.map(|(_, rig)| rig), since_s)
+        (
+            rig.map(|(_, rig)| rig),
+            since_s,
+            state.transport.history_after_s(),
+        )
     };
     let samples = motion::history(hand);
     estimate_release(ReleaseInput {
@@ -513,6 +522,7 @@ unsafe fn release_motion(
         controller: diagnostic.controller.as_ref(),
         samples: &samples,
         since_s,
+        history_after_s,
         point_world,
     })
 }
