@@ -11,8 +11,11 @@ The authored-camera adapter runs when the normal tracked camera is enabled. Only
 | Recovery | `S_GETUP_POSEMATCHING`, `S_GETUP_BLENDIN`, `S_GETUP` | Ordered pose-matching, blend-in, and get-up handoffs retain entry. Reverse handoffs restart. |
 | Floor pickup | `S_IDLE_PICKUP` | The exact idle pickup establishes entry. Heavy-weapon pickup is excluded. |
 | Hanging | `S_GRAPPLE_ATTACH_0`, `S_IDLE_HANG_STUNT`, `S_IDLE_HANG_STUNT_120L`, `S_IDLE_HANG_STUNT_120R`, `S_IDLE_HANG_STUNT2` | Distinct hanging motions establish new runs. Grapple flags are not admission. |
+| Upside-down grapple | `S_GRAPPLE_PRE_UPSIDEDOWN`, `S_GRAPPLE_ATTACH_UPSIDE_DOWN` | The verified forward handoff retains entry; the reverse transition rebases. An admitted outgoing control can retain entry while the incoming control has zero camera contribution. |
 
 The shipped AFSM and explicit ASB state-to-animation records supply these names. Landing records bind idle, hard, fast-fall, and split running-landing leaves. Recovery records bind directional get-up clips across the ordered states; this identifies recovery after ragdoll, not the cause of ragdoll. Full ragdoll and crash-ragdoll are unsupported. Pickup binds the idle pickup leaf. The grapple-attach record binds reeled-in split idle leaves. The inspected reeled-in base and rifle-aim leaves have identity camera and Reference channels; an identity channel remains an active pair without manufacturing motion. Complete stunt camera curves are not independently characterized.
+
+The current shipped graph does not contain the legacy `S_GRAPPLE_HANG` name cited by the native hanging predicate. Its inverted-grapple path uses the two exact upside-down states above. Their explicit animation bindings select `rico_grpl_newhang_land.ban` and `rico_grpl_newhang_idle.ban`. The land clip animates `CharacterCam1` position and rotation; idle retains its endpoint. Both use the existing character-local, entry-relative camera composition. The legacy name remains refused rather than being admitted without a shipped channel. The recording's exact un-timestamped hanging context remains unknown, so this coverage does not establish the cause of that recorded symptom.
 
 ## Coherent native evidence
 
