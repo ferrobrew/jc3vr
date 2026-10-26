@@ -1,4 +1,17 @@
 #![cfg_attr(any(), rustfmt::skip)]
+#[repr(u32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// How an animation instance treats playback at the end of its duration.
+pub enum AnimLoopMode {
+    Loop = 0isize as _,
+    PlayOnce = 1isize as _,
+}
+fn _AnimLoopMode_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], AnimLoopMode>([0u8; 0x4]);
+    }
+    unreachable!()
+}
 #[repr(C, align(8))]
 /// One animation layer of an animation controller (`CAnimatedBodyPart`): the layer's rule system and
 /// its animation driver. Created by `CAnimationControl::AddAnimatedBodyPart`, which also adds the
@@ -26,12 +39,47 @@ impl std::convert::AsMut<AnimatedBodyPart> for AnimatedBodyPart {
     }
 }
 #[repr(C, align(8))]
+/// The binding between an animation's transform tracks and the skeleton's bones.
+pub struct AnimationBinding {
+    _field_0: [u8; 32],
+    /// Maps each animation transform track to its corresponding skeleton bone index.
+    pub m_TransformTrackToBoneIndices: crate::animation::skeleton::HkArray<i16>,
+}
+fn _AnimationBinding_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x30], AnimationBinding>([0u8; 0x30]);
+    }
+    unreachable!()
+}
+impl AnimationBinding {}
+impl std::convert::AsRef<AnimationBinding> for AnimationBinding {
+    fn as_ref(&self) -> &AnimationBinding {
+        self
+    }
+}
+impl std::convert::AsMut<AnimationBinding> for AnimationBinding {
+    fn as_mut(&mut self) -> &mut AnimationBinding {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// An animation layer's clip driver (`CAnimationDriverTransition`): follows the layer's rule system,
 /// starts and blends the clips of its current state, and owns the layer's [`Blender`](crate::animation::pose_producer::Blender). The clips it
 /// plays send the layer's track messages and answer its segment queries whether or not the blender's
 /// pose reaches the skeleton.
 pub struct AnimationDriverTransition {
-    _field_0: [u8; 216],
+    _field_0: [u8; 48],
+    /// The layer's animation rule system, which supplies the current state and transition choices.
+    pub m_RuleSystem: crate::types::shared_ptr::SharedPtr<
+        crate::animation::rule_system::AnimationRuleSystem,
+    >,
+    /// Animation instances selected by the driver for playback.
+    pub m_PlayingAnimInstances: crate::types::std_vector::Vector<
+        crate::types::shared_ptr::SharedPtr<
+            crate::animation::pose_producer::AnimationInstance,
+        >,
+    >,
+    _field_60: [u8; 120],
     /// The layer's blender, added to the pose producer when the body part is created.
     pub m_Blender: crate::types::shared_ptr::SharedPtr<
         crate::animation::pose_producer::Blender,
@@ -78,12 +126,28 @@ impl std::convert::AsMut<AnimationDriverTransition> for AnimationDriverTransitio
         self
     }
 }
-#[repr(C, align(1))]
+#[repr(C, align(8))]
 /// One playing clip (`CAnimationInstance`): a clip resource bound to a skeleton, with its
 /// playback time, weight, easing, and loop mode. A [`Blender`](crate::animation::pose_producer::Blender) samples its instances into a pose.
-/// Only its size is bound.
 pub struct AnimationInstance {
-    _field_0: [u8; 288],
+    _field_0: [u8; 16],
+    /// The animation resource handle retained by this instance.
+    pub m_Animation: *mut ::std::ffi::c_void,
+    _field_18: [u8; 8],
+    /// The playback mode selected when this instance is constructed.
+    pub m_LoopMode: crate::animation::pose_producer::AnimLoopMode,
+    _field_24: [u8; 36],
+    /// Per-transform-track weights used when the control contributes to a blended pose.
+    pub m_TransformTrackWeights: crate::animation::skeleton::HkArray<u8>,
+    _field_58: [u8; 16],
+    /// The mapping from this animation's transform tracks to skeleton bones.
+    pub m_Binding: *mut crate::animation::pose_producer::AnimationBinding,
+    _field_70: [u8; 32],
+    /// The number of positive playback-time wraps recorded by the embedded animation control.
+    pub m_OverflowCount: u32,
+    /// The number of negative playback-time wraps recorded by the embedded animation control.
+    pub m_UnderflowCount: u32,
+    _field_98: [u8; 136],
 }
 fn _AnimationInstance_size_check() {
     unsafe {
@@ -115,6 +179,36 @@ impl AnimationInstance {
             f(self as *mut Self as _, animation, skeleton, context)
         }
     }
+    pub const GetTime_ADDRESS: usize = 0x141E66EA0;
+    /// Returns the embedded animation control's current local playback time.
+    pub unsafe fn GetTime(&self) -> f32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> f32 = ::std::mem::transmute(
+                Self::GetTime_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const GetTotalWeight_ADDRESS: usize = 0x141E66F00;
+    /// Returns the embedded animation control's total playback weight.
+    pub unsafe fn GetTotalWeight(&self) -> f32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> f32 = ::std::mem::transmute(
+                Self::GetTotalWeight_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const GetDuration_ADDRESS: usize = 0x141E67B10;
+    /// Returns the duration of the animation resource retained by this instance.
+    pub unsafe fn GetDuration(&self) -> f32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> f32 = ::std::mem::transmute(
+                Self::GetDuration_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
 }
 impl std::convert::AsRef<AnimationInstance> for AnimationInstance {
     fn as_ref(&self) -> &AnimationInstance {
@@ -129,7 +223,21 @@ impl std::convert::AsMut<AnimationInstance> for AnimationInstance {
 #[repr(C, align(8))]
 /// One animation layer's sampler set (`CBlender`): wraps a Havok animated skeleton whose animation
 /// controls are the layer driver's playing clips.
-pub struct Blender {}
+pub struct Blender {
+    _field_0: [u8; 8],
+    /// Animation instances whose controls are registered with the blender's animated skeleton.
+    pub m_Samplers: crate::animation::skeleton::HkArray<
+        crate::types::shared_ptr::SharedPtr<
+            crate::animation::pose_producer::AnimationInstance,
+        >,
+    >,
+}
+fn _Blender_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x18], Blender>([0u8; 0x18]);
+    }
+    unreachable!()
+}
 impl Blender {
     pub const UpdatePose_ADDRESS: usize = 0x141E6BE10;
     /// Samples the blender's clips and blends them over `reference_pose` into `pose_out`, both `num_bones` local-space transforms, and likewise the float slots from `reference_floats` into `float_slots_out` (`num_float_slots` each). Where the clips' total weight on a bone is below the skeleton's reference-pose threshold, the reference fills in. `normal_blend_pose_out` is non-null only for the first layer, which also copies its result there (the pose producer's pre-additive pose). It writes nothing but its outputs. [`PoseProducer::UpdateBlendersPoseInRange`](crate::animation::pose_producer::PoseProducer::UpdateBlendersPoseInRange) calls it during synchronous updates and pose-job execution.

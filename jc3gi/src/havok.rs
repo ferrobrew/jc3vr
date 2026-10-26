@@ -397,6 +397,109 @@ impl std::convert::AsMut<hkVector4f> for hkVector4f {
         self
     }
 }
+#[repr(C, align(1))]
+/// GSK's simplex cache.
+pub struct hkcdGskCache {
+    pub m_vertexIds: [u8; 4],
+    pub m_dimAb: u8,
+}
+fn _hkcdGskCache_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x5], hkcdGskCache>([0u8; 0x5]);
+    }
+    unreachable!()
+}
+impl hkcdGskCache {}
+impl hkcdGskCache {
+    pub const INITIAL_DIMENSION: u8 = 65;
+}
+impl std::convert::AsRef<hkcdGskCache> for hkcdGskCache {
+    fn as_ref(&self) -> &hkcdGskCache {
+        self
+    }
+}
+impl std::convert::AsMut<hkcdGskCache> for hkcdGskCache {
+    fn as_mut(&mut self) -> &mut hkcdGskCache {
+        self
+    }
+}
+#[repr(C, align(16))]
+/// Input for the ordinary vertex-array GSK distance query. The transform maps B into A.
+pub struct hkcdGskGetClosestPointInput {
+    pub m_aTb: crate::havok::hkTransformf,
+    pub m_handlePenetration: u32,
+    _field_44: [u8; 12],
+    pub m_coreCollisionTolerance: crate::havok::hkVector4f,
+    pub m_terminationGrowthRate: f32,
+    _field_64: [u8; 12],
+}
+fn _hkcdGskGetClosestPointInput_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x70], hkcdGskGetClosestPointInput>([0u8; 0x70]);
+    }
+    unreachable!()
+}
+impl hkcdGskGetClosestPointInput {}
+impl hkcdGskGetClosestPointInput {
+    /// The ordinary-distance termination growth rate used by native callers.
+    pub const DEFAULT_TERMINATION_GROWTH_RATE: f32 = 1.4;
+    /// Enables the penetration-depth query.
+    pub const HANDLE_PENETRATION: u32 = 1;
+}
+impl std::convert::AsRef<hkcdGskGetClosestPointInput> for hkcdGskGetClosestPointInput {
+    fn as_ref(&self) -> &hkcdGskGetClosestPointInput {
+        self
+    }
+}
+impl std::convert::AsMut<hkcdGskGetClosestPointInput> for hkcdGskGetClosestPointInput {
+    fn as_mut(&mut self) -> &mut hkcdGskGetClosestPointInput {
+        self
+    }
+}
+#[repr(C, align(16))]
+/// Distance between the core shapes, normal in A, and a closest point in A. Shape convex radii
+/// are not subtracted from the distance.
+pub struct hkcdGskGetClosestPointOutput {
+    pub m_distance: crate::havok::hkVector4f,
+    pub m_normalInA: crate::havok::hkVector4f,
+    pub m_pointAinA: crate::havok::hkVector4f,
+}
+fn _hkcdGskGetClosestPointOutput_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x30], hkcdGskGetClosestPointOutput>([0u8; 0x30]);
+    }
+    unreachable!()
+}
+impl hkcdGskGetClosestPointOutput {}
+impl std::convert::AsRef<hkcdGskGetClosestPointOutput> for hkcdGskGetClosestPointOutput {
+    fn as_ref(&self) -> &hkcdGskGetClosestPointOutput {
+        self
+    }
+}
+impl std::convert::AsMut<hkcdGskGetClosestPointOutput> for hkcdGskGetClosestPointOutput {
+    fn as_mut(&mut self) -> &mut hkcdGskGetClosestPointOutput {
+        self
+    }
+}
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+/// Status returned by an ordinary GSK closest-point query.
+pub enum hkcdGskGetClosestPointStatus {
+    STATUS_OK_NOT_PENTRATING = 0isize as _,
+    STATUS_OK_PENETRATING = 1isize as _,
+    STATUS_PD_HEURISTIC_SAMPLING = 2isize as _,
+    STATUS_PD_OUT_OF_MEMORY = 3isize as _,
+    STATUS_OK_FLAG = 4isize as _,
+    STATUS_PD_DISTANCE_TOO_BIG = 5isize as _,
+    STATUS_PENETRATING = 6isize as _,
+    STATUS_PD_UNSOLVABLE = 7isize as _,
+}
+fn _hkcdGskGetClosestPointStatus_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], hkcdGskGetClosestPointStatus>([0u8; 0x4]);
+    }
+    unreachable!()
+}
 #[repr(C, align(16))]
 /// The construction info of a Havok body (`hknpBodyCinfo`), read by
 /// [`hknpWorld::createDynamicBody`](crate::physics::hknpWorld::createDynamicBody). Positions are Havok
@@ -501,6 +604,42 @@ impl hknpCapsuleShape {
         unsafe {
             let f = (&raw const (*self.vftable()).getType).read();
             f(self as *const Self as _)
+        }
+    }
+    /// Computes the world-space axis-aligned bounds of the shape.
+    pub unsafe fn calcAabb(
+        &self,
+        transform: *const crate::havok::hkTransformf,
+        out: *mut crate::havok::hkAabb,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).calcAabb).read();
+            f(self as *const Self as _, transform, out)
+        }
+    }
+    /// Returns shape keys following `previous`, up to the provided capacity.
+    pub unsafe fn getShapeKeys(
+        &self,
+        keys: *mut u32,
+        capacity: i32,
+        previous: u32,
+        config: *const crate::havok::hknpGetShapeKeysConfig,
+    ) -> i32 {
+        unsafe {
+            let f = (&raw const (*self.vftable()).getShapeKeys).read();
+            f(self as *const Self as _, keys, capacity, previous, config)
+        }
+    }
+    /// Collects the leaf shapes identified by the provided keys.
+    pub unsafe fn getLeafShapes(
+        &self,
+        keys: *const u32,
+        count: i32,
+        collector: *mut crate::havok::hknpShapeCollector,
+    ) -> i32 {
+        unsafe {
+            let f = (&raw const (*self.vftable()).getLeafShapes).read();
+            f(self as *const Self as _, keys, count, collector)
         }
     }
 }
@@ -754,6 +893,42 @@ impl hknpConvexPolytopeShape {
             f(self as *const Self as _)
         }
     }
+    /// Computes the world-space axis-aligned bounds of the shape.
+    pub unsafe fn calcAabb(
+        &self,
+        transform: *const crate::havok::hkTransformf,
+        out: *mut crate::havok::hkAabb,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).calcAabb).read();
+            f(self as *const Self as _, transform, out)
+        }
+    }
+    /// Returns shape keys following `previous`, up to the provided capacity.
+    pub unsafe fn getShapeKeys(
+        &self,
+        keys: *mut u32,
+        capacity: i32,
+        previous: u32,
+        config: *const crate::havok::hknpGetShapeKeysConfig,
+    ) -> i32 {
+        unsafe {
+            let f = (&raw const (*self.vftable()).getShapeKeys).read();
+            f(self as *const Self as _, keys, capacity, previous, config)
+        }
+    }
+    /// Collects the leaf shapes identified by the provided keys.
+    pub unsafe fn getLeafShapes(
+        &self,
+        keys: *const u32,
+        count: i32,
+        collector: *mut crate::havok::hknpShapeCollector,
+    ) -> i32 {
+        unsafe {
+            let f = (&raw const (*self.vftable()).getLeafShapes).read();
+            f(self as *const Self as _, keys, count, collector)
+        }
+    }
 }
 impl std::convert::AsRef<crate::havok::hknpConvexShape> for hknpConvexPolytopeShape {
     fn as_ref(&self) -> &crate::havok::hknpConvexShape {
@@ -848,6 +1023,42 @@ impl hknpConvexShape {
             f(self as *const Self as _)
         }
     }
+    /// Computes the world-space axis-aligned bounds of the shape.
+    pub unsafe fn calcAabb(
+        &self,
+        transform: *const crate::havok::hkTransformf,
+        out: *mut crate::havok::hkAabb,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).calcAabb).read();
+            f(self as *const Self as _, transform, out)
+        }
+    }
+    /// Returns shape keys following `previous`, up to the provided capacity.
+    pub unsafe fn getShapeKeys(
+        &self,
+        keys: *mut u32,
+        capacity: i32,
+        previous: u32,
+        config: *const crate::havok::hknpGetShapeKeysConfig,
+    ) -> i32 {
+        unsafe {
+            let f = (&raw const (*self.vftable()).getShapeKeys).read();
+            f(self as *const Self as _, keys, capacity, previous, config)
+        }
+    }
+    /// Collects the leaf shapes identified by the provided keys.
+    pub unsafe fn getLeafShapes(
+        &self,
+        keys: *const u32,
+        count: i32,
+        collector: *mut crate::havok::hknpShapeCollector,
+    ) -> i32 {
+        unsafe {
+            let f = (&raw const (*self.vftable()).getLeafShapes).read();
+            f(self as *const Self as _, keys, count, collector)
+        }
+    }
 }
 impl std::convert::AsRef<crate::havok::hknpShape> for hknpConvexShape {
     fn as_ref(&self) -> &crate::havok::hknpShape {
@@ -916,6 +1127,77 @@ impl std::convert::AsRef<hknpConvexShapeBuildConfig> for hknpConvexShapeBuildCon
 }
 impl std::convert::AsMut<hknpConvexShapeBuildConfig> for hknpConvexShapeBuildConfig {
     fn as_mut(&mut self) -> &mut hknpConvexShapeBuildConfig {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The configuration for paged shape-key enumeration. The parent path starts empty, with no mask
+/// and the most detailed geometry.
+pub struct hknpGetShapeKeysConfig {
+    pub m_parentKey: u32,
+    pub m_parentSize: i32,
+    pub m_mask: *const ::std::ffi::c_void,
+    pub m_levelOfDetail: i32,
+    _field_14: [u8; 4],
+}
+fn _hknpGetShapeKeysConfig_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x18], hknpGetShapeKeysConfig>([0u8; 0x18]);
+    }
+    unreachable!()
+}
+impl hknpGetShapeKeysConfig {}
+impl hknpGetShapeKeysConfig {
+    /// Selects the most detailed geometry.
+    pub const MOST_DETAILED: i32 = 0;
+}
+impl std::convert::AsRef<hknpGetShapeKeysConfig> for hknpGetShapeKeysConfig {
+    fn as_ref(&self) -> &hknpGetShapeKeysConfig {
+        self
+    }
+}
+impl std::convert::AsMut<hknpGetShapeKeysConfig> for hknpGetShapeKeysConfig {
+    fn as_mut(&mut self) -> &mut hknpGetShapeKeysConfig {
+        self
+    }
+}
+#[repr(C, align(16))]
+/// An in-place triangle, including its relative vertex, plane, face, and index arrays.
+pub struct hknpInplaceTriangleShape {
+    _field_0: [u8; 240],
+}
+fn _hknpInplaceTriangleShape_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xF0], hknpInplaceTriangleShape>([0u8; 0xF0]);
+    }
+    unreachable!()
+}
+impl hknpInplaceTriangleShape {
+    pub const Construct_ADDRESS: usize = 0x1414DC020;
+    /// Builds the in-place triangle with its native default radius. The object's storage remains
+    /// owned by its caller.
+    pub unsafe fn Construct(
+        &mut self,
+        finish_loaded: bool,
+    ) -> *mut crate::havok::hknpInplaceTriangleShape {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                finish_loaded: bool,
+            ) -> *mut crate::havok::hknpInplaceTriangleShape = ::std::mem::transmute(
+                Self::Construct_ADDRESS,
+            );
+            f(self as *mut Self as _, finish_loaded)
+        }
+    }
+}
+impl std::convert::AsRef<hknpInplaceTriangleShape> for hknpInplaceTriangleShape {
+    fn as_ref(&self) -> &hknpInplaceTriangleShape {
+        self
+    }
+}
+impl std::convert::AsMut<hknpInplaceTriangleShape> for hknpInplaceTriangleShape {
+    fn as_mut(&mut self) -> &mut hknpInplaceTriangleShape {
         self
     }
 }
@@ -1027,8 +1309,48 @@ impl hknpShape {
             f(self as *const Self as _)
         }
     }
+    /// Computes the world-space axis-aligned bounds of the shape.
+    pub unsafe fn calcAabb(
+        &self,
+        transform: *const crate::havok::hkTransformf,
+        out: *mut crate::havok::hkAabb,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).calcAabb).read();
+            f(self as *const Self as _, transform, out)
+        }
+    }
+    /// Returns shape keys following `previous`, up to the provided capacity.
+    pub unsafe fn getShapeKeys(
+        &self,
+        keys: *mut u32,
+        capacity: i32,
+        previous: u32,
+        config: *const crate::havok::hknpGetShapeKeysConfig,
+    ) -> i32 {
+        unsafe {
+            let f = (&raw const (*self.vftable()).getShapeKeys).read();
+            f(self as *const Self as _, keys, capacity, previous, config)
+        }
+    }
+    /// Collects the leaf shapes identified by the provided keys.
+    pub unsafe fn getLeafShapes(
+        &self,
+        keys: *const u32,
+        count: i32,
+        collector: *mut crate::havok::hknpShapeCollector,
+    ) -> i32 {
+        unsafe {
+            let f = (&raw const (*self.vftable()).getLeafShapes).read();
+            f(self as *const Self as _, keys, count, collector)
+        }
+    }
 }
 impl hknpShape {
+    /// The collector flag indicating that a leaf contains stored triangles.
+    pub const COLLECTOR_STORES_TRIANGLES: u32 = 16;
+    /// The invalid shape key returned when shape-key enumeration has no further key.
+    pub const INVALID_SHAPE_KEY: u32 = 4294967295;
     /// The [`m_flags`](crate::havok::hknpShape::m_flags) bit of a shape that is an [`hknpConvexPolytopeShape`](crate::havok::hknpConvexPolytopeShape).
     pub const IS_CONVEX_POLYTOPE_SHAPE: u16 = 2;
     /// The [`m_flags`](crate::havok::hknpShape::m_flags) bit of a shape that is an [`hknpConvexShape`](crate::havok::hknpConvexShape).
@@ -1054,15 +1376,65 @@ impl std::convert::AsMut<hknpShape> for hknpShape {
         self
     }
 }
+#[repr(C, align(16))]
+/// Storage used to collect leaf shapes. The triangle prototype is externally supplied. A reset
+/// installs the root transform and clears the prior result; leaf extraction can modify the
+/// transform, scale, and shape. Triangle batches are materialized by [`getSubshape`](crate::havok::getSubshape).
+pub struct hknpShapeCollector {
+    pub m_transformOut: crate::havok::hkTransformf,
+    pub m_scaleOut: crate::havok::hkVector4f,
+    pub m_flags: u32,
+    _field_54: [u8; 4],
+    pub m_shapeOut: *const crate::havok::hknpShape,
+    _field_60: [u8; 8],
+    pub m_triangleShapePrototype: *mut crate::havok::hknpShape,
+    _field_70: [u8; 3040],
+}
+fn _hknpShapeCollector_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xC50], hknpShapeCollector>([0u8; 0xC50]);
+    }
+    unreachable!()
+}
+impl hknpShapeCollector {
+    pub const reset_ADDRESS: usize = 0x1401D9400;
+    /// Resets the collector with a root transform and room for shape tags.
+    pub unsafe fn reset(
+        &mut self,
+        transform: *const crate::havok::hkTransformf,
+        num_shapes: i32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                transform: *const crate::havok::hkTransformf,
+                num_shapes: i32,
+            ) = ::std::mem::transmute(Self::reset_ADDRESS);
+            f(self as *mut Self as _, transform, num_shapes)
+        }
+    }
+}
+impl std::convert::AsRef<hknpShapeCollector> for hknpShapeCollector {
+    fn as_ref(&self) -> &hknpShapeCollector {
+        self
+    }
+}
+impl std::convert::AsMut<hknpShapeCollector> for hknpShapeCollector {
+    fn as_mut(&mut self) -> &mut hknpShapeCollector {
+        self
+    }
+}
 #[repr(u32)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
-/// A shape's kind (`hknpShapeType::Enum`), as [`hknpShape::getType`](crate::havok::hknpShape::getType) returns it. Only the convex
-/// kinds are bound; the compound, mesh, and height-field kinds have other values.
+/// A shape's kind (`hknpShapeType::Enum`), as [`hknpShape::getType`](crate::havok::hknpShape::getType) returns it. The bound kinds
+/// include convex shapes and the compressed mesh and height-field shapes.
 pub enum hknpShapeType {
     CONVEX = 0isize as _,
     CONVEX_POLYTOPE = 1isize as _,
     SPHERE = 2isize as _,
     CAPSULE = 3isize as _,
+    COMPRESSED_MESH = 5isize as _,
+    COMPRESSED_HEIGHT_FIELD = 10isize as _,
 }
 fn _hknpShapeType_size_check() {
     unsafe {
@@ -1082,10 +1454,45 @@ pub struct hknpShapeVftable {
     /// The shape's kind, an [`hknpShapeType`](crate::havok::hknpShapeType) value; each concrete shape class returns its own
     /// constant.
     pub getType: unsafe extern "system" fn(this: *const crate::havok::hknpShape) -> u32,
+    _vfunc_5: unsafe extern "system" fn(this: *mut crate::havok::hknpShape),
+    /// Computes the world-space axis-aligned bounds of the shape.
+    pub calcAabb: unsafe extern "system" fn(
+        this: *const crate::havok::hknpShape,
+        transform: *const crate::havok::hkTransformf,
+        out: *mut crate::havok::hkAabb,
+    ),
+    _vfunc_7: unsafe extern "system" fn(this: *mut crate::havok::hknpShape),
+    _vfunc_8: unsafe extern "system" fn(this: *mut crate::havok::hknpShape),
+    _vfunc_9: unsafe extern "system" fn(this: *mut crate::havok::hknpShape),
+    _vfunc_10: unsafe extern "system" fn(this: *mut crate::havok::hknpShape),
+    _vfunc_11: unsafe extern "system" fn(this: *mut crate::havok::hknpShape),
+    _vfunc_12: unsafe extern "system" fn(this: *mut crate::havok::hknpShape),
+    _vfunc_13: unsafe extern "system" fn(this: *mut crate::havok::hknpShape),
+    _vfunc_14: unsafe extern "system" fn(this: *mut crate::havok::hknpShape),
+    _vfunc_15: unsafe extern "system" fn(this: *mut crate::havok::hknpShape),
+    _vfunc_16: unsafe extern "system" fn(this: *mut crate::havok::hknpShape),
+    _vfunc_17: unsafe extern "system" fn(this: *mut crate::havok::hknpShape),
+    _vfunc_18: unsafe extern "system" fn(this: *mut crate::havok::hknpShape),
+    _vfunc_19: unsafe extern "system" fn(this: *mut crate::havok::hknpShape),
+    /// Returns shape keys following `previous`, up to the provided capacity.
+    pub getShapeKeys: unsafe extern "system" fn(
+        this: *const crate::havok::hknpShape,
+        keys: *mut u32,
+        capacity: i32,
+        previous: u32,
+        config: *const crate::havok::hknpGetShapeKeysConfig,
+    ) -> i32,
+    /// Collects the leaf shapes identified by the provided keys.
+    pub getLeafShapes: unsafe extern "system" fn(
+        this: *const crate::havok::hknpShape,
+        keys: *const u32,
+        count: i32,
+        collector: *mut crate::havok::hknpShapeCollector,
+    ) -> i32,
 }
 fn _hknpShapeVftable_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x28], hknpShapeVftable>([0u8; 0x28]);
+        ::std::mem::transmute::<[u8; 0xB0], hknpShapeVftable>([0u8; 0xB0]);
     }
     unreachable!()
 }
@@ -1179,5 +1586,47 @@ impl std::convert::AsRef<hkpFixedConstraintData> for hkpFixedConstraintData {
 impl std::convert::AsMut<hkpFixedConstraintData> for hkpFixedConstraintData {
     fn as_mut(&mut self) -> &mut hkpFixedConstraintData {
         self
+    }
+}
+pub const getSubshape_ADDRESS: usize = 0x140F883B0;
+/// Extracts one leaf, materializes any triangle batch into the supplied prototype, and returns
+/// the resulting shape pointer from the collector. The collector must have been reset.
+pub unsafe fn getSubshape(
+    shape: *const crate::havok::hknpShape,
+    key: u32,
+    collector: *mut crate::havok::hknpShapeCollector,
+) -> *const crate::havok::hknpShape {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            shape: *const crate::havok::hknpShape,
+            key: u32,
+            collector: *mut crate::havok::hknpShapeCollector,
+        ) -> *const crate::havok::hknpShape = ::std::mem::transmute(getSubshape_ADDRESS);
+        f(shape, key, collector)
+    }
+}
+pub const hkcdGskGetClosestPoint_ADDRESS: usize = 0x1412FC430;
+/// Computes the closest core points of the two vertex arrays, updating the simplex cache and
+/// returning a status independently of the output. The arrays contain aligned Havok vertices.
+pub unsafe fn hkcdGskGetClosestPoint(
+    vertices_a: *const crate::havok::hkVector4f,
+    count_a: i32,
+    vertices_b: *const crate::havok::hkVector4f,
+    count_b: i32,
+    input: *const crate::havok::hkcdGskGetClosestPointInput,
+    cache: *mut crate::havok::hkcdGskCache,
+    output: *mut crate::havok::hkcdGskGetClosestPointOutput,
+) -> i32 {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            vertices_a: *const crate::havok::hkVector4f,
+            count_a: i32,
+            vertices_b: *const crate::havok::hkVector4f,
+            count_b: i32,
+            input: *const crate::havok::hkcdGskGetClosestPointInput,
+            cache: *mut crate::havok::hkcdGskCache,
+            output: *mut crate::havok::hkcdGskGetClosestPointOutput,
+        ) -> i32 = ::std::mem::transmute(hkcdGskGetClosestPoint_ADDRESS);
+        f(vertices_a, count_a, vertices_b, count_b, input, cache, output)
     }
 }

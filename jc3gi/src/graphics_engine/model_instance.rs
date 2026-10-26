@@ -1,4 +1,28 @@
 #![cfg_attr(any(), rustfmt::skip)]
+#[derive(Copy, Clone)]
+#[repr(C, align(8))]
+/// An axis-aligned box (`CAABox`), stored as its least and greatest corners.
+pub struct AABox {
+    pub min: crate::types::math::Vector3,
+    pub max: crate::types::math::Vector3,
+}
+fn _AABox_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x18], AABox>([0u8; 0x18]);
+    }
+    unreachable!()
+}
+impl AABox {}
+impl std::convert::AsRef<AABox> for AABox {
+    fn as_ref(&self) -> &AABox {
+        self
+    }
+}
+impl std::convert::AsMut<AABox> for AABox {
+    fn as_mut(&mut self) -> &mut AABox {
+        self
+    }
+}
 #[repr(C, align(8))]
 /// The draw-list build context `CModelInstance::AddToRender` fills and hands to the
 /// `ForEachRb` instantiations (`CModelInstance::SAddtoRenderContext`): the target passes and the
@@ -73,9 +97,40 @@ impl std::convert::AsMut<Model> for Model {
     }
 }
 #[repr(C, align(8))]
-/// A model collection (`CModelCollection`). Opaque.
-pub struct ModelCollection {}
+/// A collection of model instances loaded together from a location resource. Its instance pointers
+/// are owned by the collection and are retired by [`Destruct`](crate::graphics_engine::model_instance::ModelCollection::Destruct); they must not outlive
+/// their entry in this collection.
+pub struct ModelCollection {
+    pub m_Vftable: *mut *mut ::std::ffi::c_void,
+    /// The number of model instances in [`m_ModelInstances`](crate::graphics_engine::model_instance::ModelCollection::m_ModelInstances).
+    pub m_NumInstances: u32,
+    _field_c: [u8; 4],
+    /// The model instances in file order.
+    pub m_ModelInstances: *mut *mut crate::graphics_engine::model_instance::ModelInstance,
+    _field_18: [u8; 8],
+    /// The broad-phase culling context shared by this collection's instances.
+    pub m_Bfbc: *mut crate::graphics_engine::model_instance::BFBCContext,
+    /// The collection's axis-aligned bounds.
+    pub m_AABB: crate::graphics_engine::model_instance::AABox,
+    _field_40: [u8; 8],
+}
+fn _ModelCollection_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x48], ModelCollection>([0u8; 0x48]);
+    }
+    unreachable!()
+}
 impl ModelCollection {
+    pub const Destruct_ADDRESS: usize = 0x140508A00;
+    /// Releases the instances and resources owned by the collection, and clears its instance array.
+    pub unsafe fn Destruct(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::Destruct_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
     pub const DoCulling_ADDRESS: usize = 0x1404E7950;
     /// The instance-level broad-phase cull: runs a BFBC frustum and distance process over the model
     /// collections against the occluder manager's main cull camera (its cached parameters from
@@ -95,6 +150,14 @@ impl ModelCollection {
             f(bfbc, cull_stat)
         }
     }
+}
+impl ModelCollection {
+    /// The stream boundary used when advancing between aligned data sections.
+    pub const FILE_ALIGNMENT: u32 = 16;
+    /// The four-byte identifier at the start of the model-collection stream.
+    pub const FILE_MAGIC: u32 = 4801613;
+    /// The stream format version accepted by the collection loader.
+    pub const FILE_VERSION: u32 = 12;
 }
 impl std::convert::AsRef<ModelCollection> for ModelCollection {
     fn as_ref(&self) -> &ModelCollection {
@@ -211,6 +274,23 @@ impl ModelInstance {
                 matrix: *const crate::types::math::Matrix4,
             ) = ::std::mem::transmute(Self::UpdateMatrix_ADDRESS);
             f(self as *mut Self as _, matrix)
+        }
+    }
+    pub const GetMatrix_ADDRESS: usize = 0x140315D60;
+    /// Returns the world transform for the current update frame through `result`, and returns the
+    /// same pointer. The transform comes from the instance's render information.
+    pub unsafe fn GetMatrix(
+        &self,
+        result: *mut crate::types::math::Matrix4,
+    ) -> *mut crate::types::math::Matrix4 {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                result: *mut crate::types::math::Matrix4,
+            ) -> *mut crate::types::math::Matrix4 = ::std::mem::transmute(
+                Self::GetMatrix_ADDRESS,
+            );
+            f(self as *const Self as _, result)
         }
     }
     pub const AddToWorld_ADDRESS: usize = 0x140319B60;

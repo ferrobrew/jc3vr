@@ -123,6 +123,7 @@ pub mod havok;
 pub mod heat_manager;
 pub mod input;
 pub mod interaction;
+pub mod location;
 pub mod memory;
 pub mod mission;
 pub mod patch_system;
