@@ -3,7 +3,10 @@ use std::num::NonZeroUsize;
 use super::*;
 use crate::controllers::{
     aim::raycast::RayHit,
-    body::{procedural::ground::terrain_foothold, rig::legs::swing::FootPose},
+    body::{
+        procedural::ground::terrain_foothold,
+        rig::{estimate::Transition, legs::swing::FootPose},
+    },
 };
 
 struct Hits {
@@ -11,6 +14,7 @@ struct Hits {
     slope: f32,
     body: Option<u32>,
     missing: bool,
+    missing_below_x: Option<f32>,
     queries: usize,
 }
 
@@ -21,6 +25,7 @@ impl Default for Hits {
             slope: 0.0,
             body: None,
             missing: false,
+            missing_below_x: None,
             queries: 0,
         }
     }
@@ -39,7 +44,7 @@ impl Terrain for Hits {
         ankle_height: f32,
     ) -> Option<FootPose> {
         self.queries += 1;
-        if self.missing {
+        if self.missing || self.missing_below_x.is_some_and(|edge| point.x < edge) {
             return None;
         }
         let hit = RayHit {
@@ -223,6 +228,82 @@ fn missing_terrain_and_future_dated_samples_release_instead_of_inventing_a_floor
             .iter()
             .all(|contact| matches!(contact, ContactState::Released(_)))
     );
+}
+
+#[test]
+fn observed_terrain_constraint_recovery_does_not_restore_a_missed_plant() {
+    let rig = rig();
+    let now = Instant::now();
+    let dt = 1.0 / 60.0;
+    let mut runtime = Runtime::default();
+    let mut terrain = Hits::default();
+    let first = commit(
+        &mut runtime,
+        &rig,
+        now,
+        1,
+        Mat4::IDENTITY,
+        Some(sample(now, 3, Mat4::IDENTITY)),
+        &mut terrain,
+    );
+    let anatomy = runtime.anatomy.unwrap();
+    let surface = Support {
+        identity: 3,
+        generation: 1,
+        previous_step: first.provenance.previous,
+        current_step: first.provenance.current,
+        previous: Mat4::IDENTITY,
+        current: Mat4::IDENTITY,
+        half_extent: Vec2::splat(f32::MAX),
+    };
+    let [left, endpoint] = runtime
+        .estimator
+        .seed_terrain_recovery_for_test(&anatomy, surface);
+    let seeded = *runtime.estimator.snapshot().unwrap();
+    let held_swing = seeded.contacts[1];
+    assert!(matches!(seeded.contacts[0], ContactState::Planted { .. }));
+    let next = now + Duration::from_secs_f32(dt);
+    let mut gate = input(&rig, next);
+    gate.dt = dt;
+    gate.head_world.y = 0.85;
+    gate.support = Some(sample(next, 3, Mat4::IDENTITY));
+    let mut tracked = tracking(next, 2);
+    tracked.head.pose.position.y -= 1.63 - 0.85;
+    terrain.missing_below_x = Some(0.1);
+    assert!(seeded.feet[0].position.x < 0.1);
+    assert!(endpoint.position.x > 0.1);
+    let recovered = runtime
+        .commit_terrain(Some(tracked), gate, &mut terrain)
+        .unwrap();
+    assert_eq!(recovered.provenance.support, Some((3, 1)));
+    assert_eq!(recovered.provenance.transition, Transition::Continue);
+    runtime.estimator.assert_constraint_recovery_for_test();
+    assert!(
+        matches!(recovered.contacts[0], ContactState::Released(_)),
+        "{recovered:?}"
+    );
+    assert_eq!(recovered.contacts[1], held_swing);
+    assert_eq!(
+        runtime.estimator.snapshot().unwrap().contacts,
+        recovered.contacts
+    );
+    let pose = realize(
+        &rig,
+        &RigPose {
+            bones: rig.reference,
+        },
+        &recovered,
+        Mat4::IDENTITY,
+        Quat::IDENTITY,
+    )
+    .unwrap();
+    assert!(pose.is_finite());
+    assert!(
+        pose.position(RigBone::LeftFoot)
+            .distance(recovered.feet[0].position)
+            < 0.01
+    );
+    assert!(pose.position(RigBone::LeftFoot).distance(left.position) > 0.01);
 }
 
 #[test]

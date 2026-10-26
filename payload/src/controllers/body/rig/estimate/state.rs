@@ -103,6 +103,86 @@ impl Estimator {
     }
 
     #[cfg(test)]
+    pub(crate) fn seed_terrain_recovery_for_test(
+        &mut self,
+        anatomy: &crate::controllers::body::rig::estimate::Anatomy,
+        surface: Support,
+    ) -> [crate::controllers::body::rig::legs::swing::FootPose; 2] {
+        use crate::controllers::body::rig::{
+            estimate::contacts::ReleaseReason, legs::swing::FootPose,
+        };
+
+        // This captured pose and rate vector exhaust normal search through coupled leg geometry.
+        let previous = Parameters([
+            0.13810518,
+            0.09052158,
+            -0.26495385,
+            -0.14843628,
+            0.3054687,
+            0.25164732,
+            0.5945355,
+            -0.061914213,
+            -0.11875844,
+        ]);
+        let rates = [
+            -1.1220028,
+            -0.6637157,
+            -1.3925027,
+            1.1028296,
+            0.57812685,
+            -0.14103055,
+            -0.09394526,
+            -0.15369011,
+            0.038065907,
+        ];
+        let left = FootPose {
+            position: Vec3::new(0.016501963, 0.030000031, 0.09752656),
+            rotation: Quat::from_xyzw(0.0, -0.12964113, 0.0, 0.991561),
+        };
+        let from = FootPose {
+            position: Vec3::new(0.35596043, 0.03, 0.15614219),
+            rotation: Quat::from_xyzw(0.0, 0.039419807, 0.0, 0.99922276),
+        };
+        let endpoint = FootPose {
+            position: Vec3::new(0.22451141, 0.03, 0.1339234),
+            rotation: Quat::from_xyzw(0.0, -0.12057862, 0.0, 0.9927038),
+        };
+        let mut right = Contact::released(from, ReleaseReason::Unreachable);
+        right.lift(surface, endpoint);
+        right.carry(Some(surface), SWING_SECONDS * 0.31250003);
+        let mut contacts = [Contact::plant(surface, left), right];
+        let context = Context {
+            anatomy,
+            neck: Vec3::new(0.0, 0.85, -0.085) + EYES_TO_NECK_PIVOT,
+            head_yaw: 0.0,
+            root_yaw: 0.0,
+            hands: [None; 2],
+            tracking_floor: Vec3::ZERO,
+            world_scale: 1.0,
+            predicted: previous,
+            previous,
+            rates,
+            dt: 1.0 / 60.0,
+            continuity: true,
+            floor_y: 0.0,
+            contacts,
+        };
+        let mut candidate = fit::evaluate(previous, &context).unwrap();
+        fit::publish_feet(&mut candidate, &mut contacts);
+        self.seed_candidate_for_test(candidate, rates, contacts);
+        [left, endpoint]
+    }
+
+    #[cfg(test)]
+    pub(crate) fn assert_constraint_recovery_for_test(&self) {
+        let snapshot = self.snapshot().expect("the fixture has committed a state");
+        assert_eq!(
+            snapshot.quality.temporal,
+            TemporalStatus::ConstraintRecovery
+        );
+    }
+
+    #[cfg(test)]
     pub(crate) fn rates_for_test(&self) -> [f32; PARAMETERS] {
         self.state
             .as_ref()
@@ -382,14 +462,18 @@ impl Estimator {
         } else {
             old.expect("a continuing estimate has a state").contacts
         };
-        for contact in &mut contacts {
+        let mut held_contacts = contacts;
+        for (contact, held) in contacts.iter_mut().zip(&mut held_contacts) {
             contact.carry(update.support, update.dt);
+            held.carry(update.support, 0.0);
             if terrain.observed()
                 && contact.planted()
                 && let Some(surface) = update.support
                 && !matches_surface(terrain, surface, contact.pose, update.anatomy.ankle_height)
             {
                 contact.lose_support();
+                // Recovery preserves swing progress but cannot retain a terrain-rejected plant.
+                held.lose_support();
             }
         }
         let tracking_floor = frames.cockpit_to_world(Vec3::ZERO);
@@ -419,12 +503,6 @@ impl Estimator {
         context.predicted = predicted;
         // Prediction settles before the immutable numerical search context is copied.
         let mut fits = prepared.with_prediction(predicted);
-        let mut held_contacts = old
-            .filter(|_| !reseed)
-            .map_or(contacts, |state| state.contacts);
-        for contact in &mut held_contacts {
-            contact.carry(update.support, 0.0);
-        }
         let mut preview = contacts;
         let mut recovery_endpoints = [None; 2];
         if terrain.observed()
