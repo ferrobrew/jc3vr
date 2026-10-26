@@ -121,7 +121,7 @@ pub enum DrawTime {
 
 /// Hold each pressed hand at the surface it presses into, in the cockpit frame, and draw each hand
 /// body's hand at its body, for `at`. Called by [`crate::controllers::hands::active_hands`] and
-/// [`crate::controllers::hands::render_active_hands`].
+/// [`crate::controllers::hands::active_hands_from_frame`].
 pub fn apply(cockpit: &mut [Option<CockpitHand>; 2], at: DrawTime) {
     let (enabled, palm_offset) = Config::lock_query(|c| {
         let p = &c.controllers.physical_hands;

@@ -1,7 +1,10 @@
 //! The frame's snapshot of the late update's inputs, the correction it derives from them, and the
 //! palette edit that carries the correction onto the skinning palette.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::{
+    sync::atomic::{AtomicU64, Ordering},
+    time::Instant,
+};
 
 use glam::{Mat4, Vec3};
 use jc3gi::{character::character::Character, graphics_engine::render_block::Matrix3x4};
@@ -9,7 +12,8 @@ use parking_lot::Mutex;
 
 use crate::{
     controllers::{
-        frame::{Hand, Pose},
+        body::rig::origin_provenance::{self, OriginEvidence},
+        frame::{self, ControllerFrame, HAND_JOINT_COUNT, Hand, HandJoint, Pose, TrackedPose},
         hands::{
             self, ActiveHands, ik,
             late::{
@@ -23,7 +27,7 @@ use crate::{
             pose as hand_pose,
             reach::{self, ReachConfig},
         },
-        physical_hands::physics,
+        physical_hands::{DrawTime, physics},
     },
     headpose,
 };
@@ -90,6 +94,72 @@ pub fn drawn_hands(dtf: f32) -> [Option<DrawnHand>; 2] {
     FRAME.lock().map_or([None; 2], |frame| {
         Hand::BOTH.map(|hand| frame.drawn(hand, dtf))
     })
+}
+
+/// Copied fingertip inputs from the controller snapshot that composed a hand.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct HandSource {
+    pub grip: TrackedPose,
+    pub aim: TrackedPose,
+    pub joints: Option<[HandJoint; HAND_JOINT_COUNT]>,
+    pub trigger_touch: bool,
+}
+
+/// The source inputs shared by both hands in one late-render snapshot.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct HandSources {
+    pub sequence: u64,
+    pub published_at: Instant,
+    pub origin: OriginEvidence,
+    pub world_scale: f32,
+    pub hands: [Option<HandSource>; 2],
+}
+
+impl HandSources {
+    pub(crate) fn from_frame(
+        frame: &ControllerFrame,
+        world_scale: f32,
+        origin: OriginEvidence,
+    ) -> Self {
+        Self {
+            sequence: frame.sequence,
+            published_at: frame.published_at,
+            origin,
+            world_scale,
+            hands: Hand::BOTH.map(|hand| {
+                let source = frame.hand(hand);
+                (frame.focused && source.active && source.grip.is_valid()).then_some(HandSource {
+                    grip: source.grip,
+                    aim: source.aim,
+                    joints: source.joints,
+                    trigger_touch: source.inputs.trigger_touch,
+                })
+            }),
+        }
+    }
+
+    /// The composition still belongs to its captured origin and a recent publication.
+    pub(crate) fn is_usable_at(self, now: Instant) -> bool {
+        self.is_usable_with_origin(now, self.origin.finish())
+    }
+
+    fn is_usable_with_origin(self, now: Instant, current: OriginEvidence) -> bool {
+        now >= self.published_at
+            && now.duration_since(self.published_at) <= frame::MAX_FRAME_AGE
+            && self.world_scale.is_finite()
+            && self.world_scale > 0.0
+            && matches!(self.origin, OriginEvidence::Known(_))
+            && current == self.origin
+    }
+}
+
+/// The drawn hands and their exact controller inputs, copied under one late-frame lock.
+pub(crate) fn drawn_hands_with_sources(dtf: f32) -> Option<([Option<DrawnHand>; 2], HandSources)> {
+    let frame = (*FRAME.lock())?;
+    Some((
+        Hand::BOTH.map(|hand| frame.drawn(hand, dtf)),
+        frame.sources?,
+    ))
 }
 
 /// Count a palette upload edited by a draw outside this module (the presentation layer's), for the
@@ -202,14 +272,25 @@ pub(crate) fn begin_frame() {
     crate::controllers::hands::late::weapon::begin_frame();
     // All model and palette consumers share this post-step measurement for the rendered frame.
     unsafe { physics::sample_render_offsets() };
-    let Some(active) = hands::render_active_hands() else {
+    let origin = origin_provenance::begin(Ok(()));
+    let Some(source) = frame::latest() else {
+        *FRAME.lock() = None;
+        return;
+    };
+    let Some(active) = hands::active_hands_from_frame(&source, DrawTime::Render) else {
         *FRAME.lock() = None;
         return;
     };
     let hands = compose_render_hands(&active);
+    let sources = Some(HandSources::from_frame(
+        &source,
+        active.world_scale,
+        origin.finish(),
+    ));
     let solved = bones::solved();
     *FRAME.lock() = Some(LateFrame {
         hands,
+        sources,
         ticks: ik::tick_records(),
         transport: character_transport(),
         solved,
@@ -310,6 +391,7 @@ pub(super) fn current() -> Option<LateFrame> {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(super) struct LateFrame {
     hands: [Option<RenderHand>; 2],
+    sources: Option<HandSources>,
     ticks: ik::TickRecords,
     transport: Option<[Mat4; 2]>,
     solved: Solved,
@@ -459,12 +541,12 @@ impl LateFrame {
 }
 
 fn character_transport() -> Option<[Mat4; 2]> {
-    let address = ik::local_character();
-    if address == 0 {
+    let current = unsafe { Character::GetLocalPlayerCharacter() };
+    if !matches_local_character(current as usize, ik::local_character()) {
         return None;
     }
-    // The render update runs with the local character live and its tick matrices finalized.
-    let character = unsafe { &*(address as *const Character) };
+    // The game-thread lookup owns the lifetime check; the IK address is only an identity.
+    let character = unsafe { current.as_ref() }?;
     let pair = [
         Mat4::from(character.m_WorldMatrixT0),
         Mat4::from(character.m_WorldMatrixT1),
@@ -472,6 +554,10 @@ fn character_transport() -> Option<[Mat4; 2]> {
     pair.iter()
         .all(|m| m.is_finite() && m.determinant().abs() > f32::EPSILON)
         .then_some(pair)
+}
+
+fn matches_local_character(current: usize, recorded: usize) -> bool {
+    current != 0 && current == recorded
 }
 
 fn compose_render_hands(active: &ActiveHands) -> [Option<RenderHand>; 2] {
@@ -539,6 +625,7 @@ mod tests {
                     aim: still,
                 }),
             ],
+            sources: None,
             ticks: ik::TickRecords {
                 previous: [None, target(previous_tick)],
                 current: [None, target(current_tick)],
@@ -560,6 +647,35 @@ mod tests {
         f.solved.previous[Hand::Right.index()] = joints;
         f.solved.current[Hand::Right.index()] = joints;
         f
+    }
+
+    #[test]
+    fn hand_sources_reject_age_and_origin_discontinuities() {
+        let now = Instant::now();
+        let [origin, changed] = origin_provenance::test_origins();
+        let sources = HandSources {
+            sequence: 1,
+            published_at: now,
+            origin,
+            world_scale: 1.0,
+            hands: [None; 2],
+        };
+        assert!(sources.is_usable_with_origin(now, origin));
+        assert!(!sources.is_usable_with_origin(now, changed));
+        assert!(!sources.is_usable_with_origin(now - frame::MAX_FRAME_AGE, origin));
+        assert!(!sources.is_usable_with_origin(
+            now + frame::MAX_FRAME_AGE + std::time::Duration::from_millis(1),
+            origin,
+        ));
+    }
+
+    #[test]
+    fn character_transport_requires_the_current_local_ik_identity() {
+        assert!(!matches_local_character(0, 0));
+        assert!(!matches_local_character(0, 17));
+        assert!(!matches_local_character(17, 0));
+        assert!(!matches_local_character(17, 23));
+        assert!(matches_local_character(17, 17));
     }
 
     #[test]

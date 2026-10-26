@@ -92,15 +92,12 @@ pub fn active_hands() -> Option<ActiveHands> {
     compose_active_hands(DrawTime::Tick)
 }
 
-/// The active hands as [`active_hands`] composes them, for a frame rendered now rather than for
-/// the simulation tick: a hand body's hand is drawn at its body blended between the physics steps
-/// ([`DrawTime::Render`]). The late update's render-time hands are composed from these.
-pub fn render_active_hands() -> Option<ActiveHands> {
-    compose_active_hands(DrawTime::Render)
-}
-
-fn compose_active_hands(at: DrawTime) -> Option<ActiveHands> {
-    let mut active = active_hands_raw()?;
+/// Compose hands from this exact controller snapshot, without reading the controller slot again.
+pub(crate) fn active_hands_from_frame(
+    frame: &ControllerFrame,
+    at: DrawTime,
+) -> Option<ActiveHands> {
+    let mut active = active_hands_raw_from_frame(frame)?;
     vehicles::apply(&mut active.hands);
     let physical = guns::physical_hands();
     guns::targets::apply(
@@ -135,6 +132,14 @@ fn compose_active_hands(at: DrawTime) -> Option<ActiveHands> {
 /// The active hands as the controllers hold them, before any two-handed pose: where the grab
 /// volumes are tested.
 pub fn active_hands_raw() -> Option<ActiveHands> {
+    active_hands_raw_from_frame(&frame::latest()?)
+}
+
+fn compose_active_hands(at: DrawTime) -> Option<ActiveHands> {
+    active_hands_from_frame(&frame::latest()?, at)
+}
+
+fn active_hands_raw_from_frame(frame: &ControllerFrame) -> Option<ActiveHands> {
     let (config, world_scale) = Config::lock_query(|c| (c.controllers, c.vr.world_scale));
     if !config.enabled || !scheme::is_controllers() || headpose::source() != headpose::Source::Vr {
         return None;
@@ -145,14 +150,12 @@ pub fn active_hands_raw() -> Option<ActiveHands> {
         orientation: cockpit.orientation,
     };
     let remaps = arm_remaps(&config, head, world_scale);
-    let hands = frame::with_latest(|frame| {
-        Hand::BOTH.map(|hand| {
-            frame
-                .focused
-                .then(|| cockpit_hand(frame, hand, &config.hands, remaps[hand.index()]))
-                .flatten()
-        })
-    })?;
+    let hands = Hand::BOTH.map(|hand| {
+        frame
+            .focused
+            .then(|| cockpit_hand(frame, hand, &config.hands, remaps[hand.index()]))
+            .flatten()
+    });
     Some(ActiveHands {
         config,
         head,

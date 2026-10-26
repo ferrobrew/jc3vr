@@ -8,7 +8,8 @@
 //! ([`late::drawn_hands`], the hands the palette edit renders, which fall short of the controllers
 //! where an arm cannot reach or a hand blends with the animation). The button sits at a fixed place
 //! in that frame, as the overlay draws it, and the pressing fingertip is read from the controller
-//! frame (its tracked skeleton, or an estimate from its controller), carried with its hand to
+//! snapshot that composed those rendered hands (its tracked skeleton, or an estimate from its
+//! controller), carried with its hand to
 //! where that hand is drawn ([`press::carry`]), and brought into the off hand's frame. The press
 //! detector ([`press`]) and the drawn button therefore share one frame: the finger the player sees
 //! touching the button is the one that presses it, whatever the body-scale remap, the two-handed
@@ -35,7 +36,10 @@ use parking_lot::Mutex;
 
 use crate::{
     controllers::{
-        body::rig::frames::Frames,
+        body::rig::{
+            frames::Frames,
+            origin_provenance::{self, OriginEvidence},
+        },
         config::ControllersConfig,
         frame::{self, Hand, Pose},
         hands::{self, late},
@@ -46,6 +50,7 @@ use crate::{
             },
             store,
         },
+        physical_hands::DrawTime,
         weapons::{
             c4::{
                 self, DetonationSource,
@@ -119,68 +124,26 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
         stand_down();
         return;
     }
-    let Some(active) = hands::active_hands() else {
+    let Some(sample) = sample_hands() else {
         stand_down();
         return;
     };
     let tuning = &config.weapons.c4.detonator;
     let presser = inputs.presser;
     let off = presser.other();
-    let frames = Frames {
-        head_world: headpose::query().position,
-        head_cockpit: active.head.position,
-        view: headpose::xr::body_rotation(),
-        world_scale: active.world_scale,
-        character: Mat4::IDENTITY,
-    };
-    if !frames.is_usable() {
-        stand_down();
-        return;
-    }
-    // Both rendered and fallback poses are world-space before a tracked point is carried onto them.
-    let drawn = late::drawn_hands(hooks::camera::last_dtf());
-    let grips = if drawn[presser.index()].is_some() && drawn[off.index()].is_some() {
-        drawn.map(|hand| hand.map(|h| h.grip))
-    } else {
-        active.hands.map(|hand| {
-            hand.map(|h| Pose {
-                position: frames.cockpit_to_world(h.grip.position),
-                orientation: (frames.view * h.grip.orientation).normalize(),
-            })
-        })
-    };
-    let off_grip = grips[off.index()];
-    let face = off_grip.and_then(|_| press::button_face(off, Pose::IDENTITY, tuning));
-    let tip = frame::with_latest(|frame| {
-        let dom = frame.hand(presser);
-        let presser_grip = grips[presser.index()]?;
-        let off_grip = off_grip?;
-        if !(frame.focused && dom.active && dom.grip.is_valid()) {
-            return None;
-        }
-        let joints = dom.joints.as_ref();
-        let source = FingertipSource {
-            joints,
-            aim: dom.aim.pose,
-            trigger_touch: dom.inputs.trigger_touch,
-        };
-        let kind = FingertipSourceKind::from_source(source);
-        if kind == FingertipSourceKind::Estimate && !dom.aim.is_valid() {
-            return None;
-        }
-        let tip = press::fingertip(presser, source, tuning);
-        let on_drawn_hand = press::on_drawn_hand(tip, dom.grip.pose, presser_grip, &frames)?;
-        Some((press::carry(on_drawn_hand, off_grip, Pose::IDENTITY), kind))
-    })
-    .flatten();
+    let grips = sample.grips;
+    let face = grips[off.index()].and_then(|_| press::button_face(off, Pose::IDENTITY, tuning));
+    let tip = sample.fingertip(presser, tuning);
     let charges = c4::charges().unwrap_or(0).max(0);
     let lit = charges > 0;
 
     let now = Instant::now();
     let mut state = STATE.lock();
-    if state.status.fingertip != tip.map(|(_, kind)| kind) {
+    if state.status.fingertip != tip.map(|(_, kind)| kind) || !sample.follows(state.sample) {
         state.detector = PressDetector::new();
+        state.near = false;
     }
+    state.sample = Some(sample.stamp());
     let reading = state
         .detector
         .step(tip.map(|(t, _)| t), face, inputs.dt, tuning);
@@ -230,7 +193,7 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
         store::clear(Source::WristDetonator);
         return;
     };
-    let world_grip = grips[off.index()].map_or(frames.view, |grip| grip.orientation);
+    let world_grip = grips[off.index()].map_or(glam::Quat::IDENTITY, |grip| grip.orientation);
     let look = Look {
         off,
         normal: (world_grip * face.normal).normalize_or(Vec3::Y),
@@ -263,10 +226,122 @@ pub(crate) fn stand_down() {
     state.detector = PressDetector::new();
     state.status.acting = false;
     state.status.reading = PressReading::default();
+    state.status.fingertip = None;
+    state.sample = None;
     state.flash = None;
     state.near = false;
     drop(state);
     store::clear(Source::WristDetonator);
+}
+
+struct HandSample {
+    grips: [Option<Pose>; 2],
+    sources: late::HandSources,
+    rendered: bool,
+}
+
+impl HandSample {
+    fn fingertip(
+        &self,
+        hand: Hand,
+        tuning: &WristDetonatorConfig,
+    ) -> Option<(Vec3, FingertipSourceKind)> {
+        let input = self.sources.hands[hand.index()]?;
+        let source = FingertipSource {
+            joints: input.joints.as_ref(),
+            aim: input.aim.pose,
+            trigger_touch: input.trigger_touch,
+        };
+        let kind = FingertipSourceKind::from_source(source);
+        if kind == FingertipSourceKind::Estimate && !input.aim.is_valid() {
+            return None;
+        }
+        // The common head/body transform cancels in grip-relative space. Only scale remains.
+        let frames = Frames {
+            head_world: Vec3::ZERO,
+            head_cockpit: Vec3::ZERO,
+            view: glam::Quat::IDENTITY,
+            world_scale: self.sources.world_scale,
+            character: Mat4::IDENTITY,
+        };
+        let point = press::on_drawn_hand(
+            press::fingertip(hand, source, tuning),
+            input.grip.pose,
+            self.grips[hand.index()]?,
+            &frames,
+        )?;
+        let point = press::carry(point, self.grips[hand.other().index()]?, Pose::IDENTITY);
+        point.is_finite().then_some((point, kind))
+    }
+
+    fn stamp(&self) -> SampleStamp {
+        SampleStamp {
+            sequence: self.sources.sequence,
+            published_at: self.sources.published_at,
+            origin: self.sources.origin,
+            world_scale: self.sources.world_scale,
+            rendered: self.rendered,
+        }
+    }
+
+    fn follows(&self, previous: Option<SampleStamp>) -> bool {
+        previous.is_some_and(|previous| {
+            self.sources.origin == previous.origin
+                && self.sources.world_scale == previous.world_scale
+                && self.rendered == previous.rendered
+                && self.sources.sequence >= previous.sequence
+                && self.sources.published_at >= previous.published_at
+                && self
+                    .sources
+                    .published_at
+                    .duration_since(previous.published_at)
+                    <= frame::MAX_FRAME_AGE
+        })
+    }
+}
+
+#[derive(Copy, Clone)]
+struct SampleStamp {
+    sequence: u64,
+    published_at: Instant,
+    origin: OriginEvidence,
+    world_scale: f32,
+    rendered: bool,
+}
+
+fn sample_hands() -> Option<HandSample> {
+    if let Some((drawn, sources)) = late::drawn_hands_with_sources(hooks::camera::last_dtf()) {
+        return sources.is_usable_at(Instant::now()).then_some(HandSample {
+            grips: drawn.map(|hand| hand.map(|h| h.grip)),
+            sources,
+            rendered: true,
+        });
+    }
+    let origin = origin_provenance::begin(Ok(()));
+    let source = frame::latest()?;
+    let active = hands::active_hands_from_frame(&source, DrawTime::Tick)?;
+    let frames = Frames {
+        head_world: headpose::query().position,
+        head_cockpit: active.head.position,
+        view: headpose::xr::body_rotation(),
+        world_scale: active.world_scale,
+        character: Mat4::IDENTITY,
+    };
+    if !frames.is_usable() {
+        return None;
+    }
+    let grips = active.hands.map(|hand| {
+        hand.map(|h| Pose {
+            position: frames.cockpit_to_world(h.grip.position),
+            orientation: (frames.view * h.grip.orientation).normalize(),
+        })
+    });
+    let sources = late::HandSources::from_frame(&source, active.world_scale, origin.finish());
+    sources.is_usable_at(Instant::now()).then_some(HandSample {
+        grips,
+        sources,
+        rendered: false,
+    })
 }
 
 /// The overlay slot lives a little past one input tick.
@@ -323,6 +398,7 @@ impl FlashKind {
 
 struct State {
     detector: PressDetector,
+    sample: Option<SampleStamp>,
     status: WristStatus,
     flash: Option<Flash>,
     /// Whether the fingertip was within the approach radius on the last tick.
@@ -331,6 +407,7 @@ struct State {
 
 static STATE: Mutex<State> = Mutex::new(State {
     detector: PressDetector::new(),
+    sample: None,
     status: WristStatus {
         acting: false,
         reading: PressReading {
@@ -548,6 +625,135 @@ mod tests {
             FingertipSourceKind::from_source(fingertip_source(None)),
             FingertipSourceKind::Estimate
         );
+    }
+
+    fn controller_frame(now: Instant) -> frame::ControllerFrame {
+        let tracked = frame::TrackedPose {
+            position_valid: true,
+            orientation_valid: true,
+            ..frame::TrackedPose::default()
+        };
+        frame::ControllerFrame {
+            sequence: 11,
+            display_time_ns: 110,
+            published_at: now,
+            focused: true,
+            action_set: crate::controllers::frame::ActionSetKind::default(),
+            hands: Hand::BOTH.map(|hand| {
+                let mut joints = [frame::HandJoint::default(); frame::HAND_JOINT_COUNT];
+                joints[press::INDEX_TIP_JOINT] = frame::HandJoint {
+                    pose: Pose {
+                        position: Vec3::new(hand.index() as f32, 0.0, -0.1),
+                        ..Pose::IDENTITY
+                    },
+                    position_valid: true,
+                    ..frame::HandJoint::default()
+                };
+                frame::HandFrame {
+                    active: true,
+                    grip: tracked,
+                    aim: tracked,
+                    joints: Some(joints),
+                    ..frame::HandFrame::default()
+                }
+            }),
+        }
+    }
+
+    #[test]
+    fn moving_joints_and_drawn_grips_remain_paired_for_either_presser() {
+        let now = Instant::now();
+        let origin = origin_provenance::begin(Ok(()));
+        let mut source = controller_frame(now);
+        let sources = late::HandSources::from_frame(&source, 2.0, origin);
+        let sample = HandSample {
+            grips: [
+                Some(Pose {
+                    position: Vec3::X * 4.0,
+                    ..Pose::IDENTITY
+                }),
+                Some(Pose {
+                    position: Vec3::X * 8.0,
+                    ..Pose::IDENTITY
+                }),
+            ],
+            sources,
+            rendered: true,
+        };
+        source.sequence += 1;
+        for hand in Hand::BOTH {
+            let joints = source.hands[hand.index()].joints.as_mut().unwrap();
+            joints[press::INDEX_TIP_JOINT].pose.position += Vec3::Y;
+            source.hands[hand.index()].grip.pose.position += Vec3::Y * 0.5;
+        }
+        let tuning = WristDetonatorConfig::new();
+        for hand in Hand::BOTH {
+            let copied = sample.sources.hands[hand.index()].unwrap();
+            let tip = copied.joints.unwrap()[press::INDEX_TIP_JOINT].pose.position;
+            let expected = sample.grips[hand.index()].unwrap().position + tip * 2.0
+                - sample.grips[hand.other().index()].unwrap().position;
+            assert!(
+                sample
+                    .fingertip(hand, &tuning)
+                    .unwrap()
+                    .0
+                    .abs_diff_eq(expected, 1e-5)
+            );
+        }
+        assert_eq!(sample.sources.sequence, 11);
+        let newer = HandSample {
+            sources: late::HandSources::from_frame(&source, 2.0, origin),
+            ..sample
+        };
+        assert_ne!(
+            newer.fingertip(Hand::Right, &tuning),
+            sample.fingertip(Hand::Right, &tuning)
+        );
+    }
+
+    #[test]
+    fn source_validity_and_sample_discontinuities_do_not_share_press_history() {
+        let now = Instant::now();
+        let origin = origin_provenance::begin(Ok(()));
+        let mut source = controller_frame(now);
+        let mut sample = HandSample {
+            grips: [Some(Pose::IDENTITY); 2],
+            sources: late::HandSources::from_frame(&source, 1.0, origin),
+            rendered: true,
+        };
+        let tuning = WristDetonatorConfig::new();
+        let previous = Some(sample.stamp());
+        assert!(sample.follows(previous));
+        sample.rendered = false;
+        assert!(!sample.follows(previous));
+        sample.rendered = true;
+        sample.sources.sequence -= 1;
+        assert!(!sample.follows(previous));
+        sample.sources.origin = OriginEvidence::Unavailable(
+            crate::controllers::body::rig::origin_provenance::OriginUnavailable::ChangedDuringAcquisition,
+        );
+        assert!(!sample.sources.is_usable_at(now));
+        assert!(!sample.follows(previous));
+        source.hands[Hand::Right.index()].aim.position_valid = false;
+        sample.sources = late::HandSources::from_frame(&source, 1.0, origin);
+        assert_eq!(
+            sample.fingertip(Hand::Right, &tuning).unwrap().1,
+            FingertipSourceKind::Skeleton
+        );
+        source.hands[Hand::Right.index()].joints.as_mut().unwrap()[press::INDEX_TIP_JOINT]
+            .position_valid = false;
+        sample.sources = late::HandSources::from_frame(&source, 1.0, origin);
+        assert!(sample.fingertip(Hand::Right, &tuning).is_none());
+        source.hands[Hand::Right.index()].aim.position_valid = true;
+        sample.sources = late::HandSources::from_frame(&source, 1.0, origin);
+        assert_eq!(
+            sample.fingertip(Hand::Right, &tuning).unwrap().1,
+            FingertipSourceKind::Estimate
+        );
+        source.focused = false;
+        sample.sources = late::HandSources::from_frame(&source, 1.0, origin);
+        assert!(sample.sources.hands.iter().all(Option::is_none));
+        assert!(sample.fingertip(Hand::Right, &tuning).is_none());
     }
 
     #[test]
