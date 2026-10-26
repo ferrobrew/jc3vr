@@ -23,7 +23,9 @@ pub(crate) enum GraphState {
     GroundInto,
     GroundFollowOn,
     WingsuitIdle,
+    #[cfg(test)]
     OrdinaryLocomotion,
+    #[cfg(test)]
     Other,
 }
 
@@ -42,9 +44,9 @@ pub(crate) struct Frame {
     pub state: GraphState,
     pub sample: Sample,
     pub baseline: Baseline,
-    pub blend: FinalizedBlend,
+    pub blend: Option<FinalizedBlend>,
     pub source: u64,
-    pub clip_time: f32,
+    pub clip_time: Option<f32>,
     pub request: DeltaRequest,
     pub root_treatment: RootTreatment,
 }
@@ -83,13 +85,19 @@ impl Decision {
     }
 }
 
-/// No native reader or activation function exists in this test-only policy.
+/// The native exact-state reader omits clip time and weight rather than inventing them.
+/// Such a reader can own only the two accepted states, never an outgoing blend tail.
 #[derive(Default)]
 pub(crate) struct Policy {
     previous: Option<Frame>,
 }
 
 impl Policy {
+    pub const fn new() -> Self {
+        Self { previous: None }
+    }
+
+    #[cfg(test)]
     pub fn unavailable(&mut self) -> Decision {
         self.clear(Phase::Idle, Some(InvalidPair::MissingSample))
     }
@@ -103,6 +111,7 @@ impl Policy {
     }
 
     pub fn observe(&mut self, frame: Frame) -> Decision {
+        #[cfg(test)]
         if matches!(
             frame.state,
             GraphState::OrdinaryLocomotion | GraphState::Other
@@ -112,7 +121,7 @@ impl Policy {
         if let Err(reason) = validate(frame) {
             return self.clear(Phase::Interrupted, Some(reason));
         }
-        if frame.blend.weight == 0.0 {
+        if frame.blend.is_some_and(|blend| blend.weight == 0.0) {
             return self.clear(Phase::Idle, None);
         }
         let Some(previous) = self.previous else {
@@ -162,20 +171,29 @@ fn validate(frame: Frame) -> Result<(), InvalidPair> {
     if frame.accepted.character != stamp.character
         || frame.accepted.continuity != stamp.continuity
         || frame.accepted.run != frame.baseline.run
-        || frame.accepted.run != frame.blend.run
     {
         return Err(InvalidPair::AdmissionMismatch);
     }
-    if frame.blend.stamp != stamp {
-        return Err(InvalidPair::BlendEpochMismatch);
+    if let Some(blend) = frame.blend {
+        if frame.accepted.run != blend.run {
+            return Err(InvalidPair::AdmissionMismatch);
+        }
+        if blend.stamp != stamp {
+            return Err(InvalidPair::BlendEpochMismatch);
+        }
+        if blend.source != frame.source {
+            return Err(InvalidPair::SourceChanged);
+        }
+        if !blend.weight.is_finite() || !(0.0..=1.0).contains(&blend.weight) {
+            return Err(InvalidPair::InvalidBlendWeight);
+        }
+    } else if frame.state == GraphState::WingsuitIdle {
+        return Err(InvalidPair::MissingSample);
     }
-    if frame.blend.source != frame.source {
-        return Err(InvalidPair::SourceChanged);
-    }
-    if !frame.blend.weight.is_finite() || !(0.0..=1.0).contains(&frame.blend.weight) {
-        return Err(InvalidPair::InvalidBlendWeight);
-    }
-    if !frame.clip_time.is_finite() || frame.clip_time < 0.0 {
+    if frame
+        .clip_time
+        .is_some_and(|time| !time.is_finite() || time < 0.0)
+    {
         return Err(InvalidPair::ClipTimeReversed);
     }
     if origin.finalized > stamp.finalized {
@@ -209,8 +227,15 @@ fn continue_pair(previous: Frame, current: Frame) -> Result<Pair, InvalidPair> {
     {
         return Err(InvalidPair::SourceChanged);
     }
-    if current.clip_time < previous.clip_time {
-        return Err(InvalidPair::ClipTimeReversed);
+    match (previous.clip_time, current.clip_time) {
+        (Some(before), Some(after)) if after < before => {
+            return Err(InvalidPair::ClipTimeReversed);
+        }
+        (Some(_), None) | (None, Some(_)) => return Err(InvalidPair::SourceChanged),
+        _ => {}
+    }
+    if previous.blend.is_some() != current.blend.is_some() {
+        return Err(InvalidPair::SourceChanged);
     }
     if !matches!(
         (previous.state, current.state),

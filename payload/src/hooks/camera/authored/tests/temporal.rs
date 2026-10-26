@@ -83,11 +83,11 @@ fn tail_requires_current_finalized_weight_for_the_same_accepted_source() {
         let mut tail = frame(3, GraphState::WingsuitIdle, 1.5, 0.5);
         let expected = match change {
             0 => {
-                tail.blend.stamp.finalized -= 1;
+                tail.blend.as_mut().unwrap().stamp.finalized -= 1;
                 InvalidPair::BlendEpochMismatch
             }
             1 => {
-                tail.blend.source += 1;
+                tail.blend.as_mut().unwrap().source += 1;
                 InvalidPair::SourceChanged
             }
             2 => {
@@ -95,7 +95,7 @@ fn tail_requires_current_finalized_weight_for_the_same_accepted_source() {
                 InvalidPair::AdmissionMismatch
             }
             3 => {
-                tail.blend.weight = f32::NAN;
+                tail.blend.as_mut().unwrap().weight = f32::NAN;
                 InvalidPair::InvalidBlendWeight
             }
             _ => {
@@ -162,7 +162,7 @@ fn character_and_continuity_changes_clear_the_temporal_pair() {
             next.baseline.sample.root.stamp.continuity += 1;
         }
         next.sample.local.stamp = next.sample.root.stamp;
-        next.blend.stamp = next.sample.root.stamp;
+        next.blend.as_mut().unwrap().stamp = next.sample.root.stamp;
         next.baseline.sample.local.stamp = next.baseline.sample.root.stamp;
         let result = policy.observe(next);
         assert_eq!(result.owner(), Owner::NormalTracked);
@@ -175,6 +175,28 @@ fn character_and_continuity_changes_clear_the_temporal_pair() {
             })
         );
     }
+}
+
+#[test]
+fn exact_state_capture_does_not_fabricate_a_blend_tail() {
+    let mut policy = Policy::new();
+    let exact = |tick, state| {
+        let mut value = frame(tick, state, 0.0, 1.0);
+        value.blend = None;
+        value.clip_time = None;
+        value
+    };
+    assert_eq!(
+        policy.observe(exact(1, GraphState::GroundInto)).phase,
+        Phase::Entry
+    );
+    assert_eq!(
+        policy.observe(exact(2, GraphState::GroundFollowOn)).owner(),
+        Owner::Authored
+    );
+    let tail = policy.observe(exact(3, GraphState::WingsuitIdle));
+    assert_eq!(tail.owner(), Owner::NormalTracked);
+    assert_eq!(tail.reason, Some(InvalidPair::MissingSample));
 }
 
 #[test]

@@ -49,14 +49,14 @@ fn frame(finalized: u64, state: GraphState, clip_time: f32, weight: f32) -> Fram
         state,
         sample,
         baseline: baseline(),
-        blend: FinalizedBlend {
+        blend: Some(FinalizedBlend {
             stamp: sample.root.stamp,
             run: 30,
             source: 40,
             weight,
-        },
+        }),
         source: 40,
-        clip_time,
+        clip_time: Some(clip_time),
         request: DeltaRequest::RootCompensatedRelativeToBaseline,
         root_treatment: RootTreatment::ComposeWithAuthoredLocal,
     }

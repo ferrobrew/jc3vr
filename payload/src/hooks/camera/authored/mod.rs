@@ -1,22 +1,60 @@
-//! Availability of the authored-camera adapter and its test-only composition contract.
+//! Selective native camera-channel following for controlled gameplay testing.
 //!
-//! Native channel identity, baseline/root semantics, and serialized reader ownership are not
-//! established. The pure model has no production capture or activation path.
+//! Only the exact boosted ground-takeoff states admit the adapter. The native model-space
+//! channel retains its Reference hierarchy; the character world root remains in the view base.
 
-#[cfg(test)]
 mod composition;
-#[cfg(test)]
+mod native;
 mod policy;
+mod runtime;
 #[cfg(test)]
 mod tests;
 
-/// Production availability does not depend on a candidate state bit or asset curve presence.
+use parking_lot::Mutex;
+pub(crate) use runtime::{TrackedView, capture, normal_reset, reset, selected, take_normal_reset};
+
+/// The existing camera debug UI displays the current admission and its integration limits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Status {
-    Unavailable,
+    WaitingForCameraTree,
+    NormalTracked {
+        reason: Refusal,
+        unsupported: UnsupportedCases,
+    },
+    BoostedGroundTakeoff {
+        phase: policy::Phase,
+        limitation: Limit,
+    },
 }
 
-/// The native adapter remains unavailable until its source and consumers are verified together.
-pub(crate) const fn status() -> Status {
-    Status::Unavailable
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Refusal {
+    Disabled,
+    OutsideGameplay,
+    NoTrackedHead,
+    MissingState,
+    OrdinaryOrUnsupportedState,
+    PickupNotVerified,
+    HangingNotVerified,
+    IdleTailWeightNotBound,
+    MissingChannel,
+    InvalidTransform,
+    SourceChanged,
+    Policy(composition::InvalidPair),
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Limit {
+    ExactStatesOnlyTreeSampledNoBlendTail,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum UnsupportedCases {
+    LandingExplosionRecoveryFloorPickupHanging,
+}
+
+pub(crate) fn status() -> Status {
+    *STATUS.lock()
+}
+
+static STATUS: Mutex<Status> = Mutex::new(Status::WaitingForCameraTree);

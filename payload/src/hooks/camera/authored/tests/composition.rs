@@ -1,14 +1,5 @@
 use super::*;
-use crate::hooks::camera::authored::{
-    Status,
-    composition::{InvalidPair, Pair, compose_view},
-    status,
-};
-
-#[test]
-fn production_is_explicitly_unavailable() {
-    assert_eq!(status(), Status::Unavailable);
-}
+use crate::hooks::camera::authored::composition::{InvalidPair, Pair, compose_view};
 
 #[test]
 fn root_local_inverse_cancels_without_erasing_the_local_delta() {

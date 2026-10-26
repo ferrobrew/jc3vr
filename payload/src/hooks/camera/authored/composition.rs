@@ -19,6 +19,7 @@ pub(crate) struct Trs {
 }
 
 impl Trs {
+    #[cfg(test)]
     pub const IDENTITY: Self = Self {
         translation: Vec3::ZERO,
         rotation: Quat::IDENTITY,
@@ -84,8 +85,10 @@ pub(crate) struct Baseline {
 /// Only established root semantics can select a composition operation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RootTreatment {
+    #[cfg_attr(not(test), allow(dead_code))]
     Unknown,
     SeparateFromAuthoredLocal,
+    #[cfg_attr(not(test), allow(dead_code))]
     ComposeWithAuthoredLocal,
 }
 
@@ -93,6 +96,7 @@ pub(crate) enum RootTreatment {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum DeltaRequest {
     AuthoredLocalRelativeToBaseline,
+    #[cfg_attr(not(test), allow(dead_code))]
     RootCompensatedRelativeToBaseline,
 }
 
@@ -113,6 +117,7 @@ pub(crate) enum InvalidPair {
     AdmissionMismatch,
     BlendEpochMismatch,
     InvalidBlendWeight,
+    #[cfg(test)]
     UnsupportedState,
     InvalidTransition,
     ClipTimeReversed,
