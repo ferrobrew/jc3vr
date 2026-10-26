@@ -86,6 +86,53 @@ pub fn release_velocity(
     (count > 0).then(|| sum / count as f32)
 }
 
+/// The grip's angular release velocity, using the same peak-window policy as [`release_velocity`].
+/// Missing runtime angular velocities use the shortest orientation difference in cockpit axes.
+/// `samples` must be in time order.
+pub fn release_angular_velocity(
+    samples: &[MotionSample],
+    release_s: f64,
+    estimate: ReleaseEstimate,
+) -> Option<Vec3> {
+    let start = release_s - f64::from(estimate.window_s.max(0.0));
+    let velocities = samples
+        .iter()
+        .enumerate()
+        .filter(|(_, sample)| sample.time_s >= start && sample.time_s <= release_s)
+        .filter_map(|(index, sample)| {
+            let angular = sample
+                .angular_velocity
+                .filter(|v| v.is_finite())
+                .or_else(|| {
+                    let previous = samples.get(index.checked_sub(1)?)?;
+                    let dt = (sample.time_s - previous.time_s) as f32;
+                    if !(dt > 0.0
+                        && sample.orientation.is_finite()
+                        && previous.orientation.is_finite())
+                    {
+                        return None;
+                    }
+                    let turn = (sample.orientation * previous.orientation.inverse()).normalize();
+                    let turn = if turn.w < 0.0 { -turn } else { turn };
+                    Some(turn.to_scaled_axis() / dt)
+                })?;
+            angular.is_finite().then_some((sample.time_s, angular))
+        })
+        .collect::<Vec<_>>();
+    let (peak_time, _) = velocities
+        .iter()
+        .copied()
+        .max_by(|a, b| a.1.length_squared().total_cmp(&b.1.length_squared()))?;
+    let span = f64::from(estimate.peak_span_s.max(0.0));
+    let (sum, count) = velocities
+        .iter()
+        .filter(|(time, _)| (time - peak_time).abs() <= span)
+        .fold((Vec3::ZERO, 0u32), |(sum, count), (_, angular)| {
+            (sum + *angular, count + 1)
+        });
+    (count > 0).then(|| sum / count as f32)
+}
+
 /// The fastest velocity of the grip among the samples after `since_s`, or `None` without one.
 ///
 /// `samples` must be in time order.

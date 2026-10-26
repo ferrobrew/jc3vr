@@ -6,10 +6,10 @@
 //!   everything else a draw or a dock moves.
 //! - A drop runs the weapon's drop at once while the inventory still holds it
 //!   ([`WeaponBase::OnDrop`], as a swimming character's pickup does to a slot's occupant), gives
-//!   its body the cached gun motion, and then clears the slot ([`Inventory::DropWeapon`], whose own
-//!   deferred drop does nothing to a weapon already dropped). A heavy weapon is dropped through
-//!   the slot alone: unequipping it drops it through the inventory, and the game's own drop
-//!   already gives it the hand's motion.
+//!   its body the copied release-time hand and rig motion, and then clears the slot
+//!   ([`Inventory::DropWeapon`]). A strong reference retains a heavy weapon through the slot
+//!   removal its unequip can perform inside `OnDrop`. The immediate drop fulfils any deferred
+//!   drop queued by that recursive unequip.
 //!
 //! Everything here runs on the input tick, on the main thread outside the world update, with the
 //! local player's character.
@@ -33,9 +33,8 @@ use crate::controllers::{
     weapons::{
         dual_wield::single,
         engine::slot_from_raw,
-        hold::release_diagnostics::{
-            DropBranch, DropObservation, NativeWrite, SampleStage, WorldMotion,
-        },
+        hold::release_diagnostics::{DropObservation, NativeWrite, ReleaseMotion, SampleStage},
+        inventory::engine::strong_to,
     },
 };
 
@@ -103,7 +102,7 @@ pub(crate) unsafe fn holster(owner: &Character, weapon: usize) -> Result<(), Doc
 /// The reported drop motion and copied observations, without a native velocity readback.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Thrown {
-    /// Attempted motion, or the cached sample for the delegated heavy-slot drop.
+    /// The sanitized release motion requested on the native body.
     pub linear: Vec3,
     pub angular: Vec3,
     /// Whether the existing native setter returned success. Later persistence is unknown.
@@ -111,7 +110,7 @@ pub struct Thrown {
     pub diagnostic: DropObservation,
 }
 
-/// Drop the wielded weapon, requesting its cached gun motion with the linear part capped at
+/// Drop the wielded weapon, requesting its copied release motion with the linear part capped at
 /// `max_speed_mps`.
 ///
 /// # Safety
@@ -120,8 +119,9 @@ pub struct Thrown {
 pub(crate) unsafe fn drop_held(
     owner: &mut Character,
     max_speed_mps: f32,
+    release: ReleaseMotion,
 ) -> Result<Thrown, DockRefusal> {
-    // The wielded weapon is live in the inventory until the slot is cleared below.
+    // The inventory retains the weapon until the strong reference is acquired below.
     let weapon = unsafe { wielded_mut(owner) }.ok_or(DockRefusal::NothingHeld)?;
     let slot = unsafe { slot_of(weapon) }.ok_or(DockRefusal::Unsupported)?;
     // The game's pair is one weapon and cannot fall; a single pistol is a weapon alone.
@@ -140,28 +140,23 @@ pub(crate) unsafe fn drop_held(
     let address = weapon as *mut WeaponBase as usize;
     let diagnostic =
         DropObservation::sampled(address, Some(slot), SampleStage::Wielded, motion, body);
-    if slot == WeaponSlot::E_SLOT_HEAVY {
+    // OnDrop can unequip a heavy weapon through its slot, so retain it through the write.
+    let strong = unsafe { strong_to(weapon) }.ok_or(DockRefusal::NotDone)?;
+    let mut thrown = unsafe { throw(weapon, max_speed_mps, diagnostic, release) };
+    if owner
+        .m_Inventory
+        .m_Weapons
+        .get(slot as usize)
+        .is_some_and(|entry| entry.px as usize == address)
+    {
         unsafe { owner.m_Inventory.DropWeapon(slot, false) };
-        let (linear, angular) = motion.unwrap_or_default();
-        return Ok(Thrown {
-            linear,
-            angular,
-            set: false,
-            diagnostic: DropObservation {
-                branch: DropBranch::HeavySlotNativeDrop,
-                write: NativeWrite::HeavySlotDelegated,
-                slot_clear_returned: true,
-                ..diagnostic
-            },
-        });
     }
-    let mut thrown = unsafe { throw(weapon, max_speed_mps, diagnostic) };
-    unsafe { owner.m_Inventory.DropWeapon(slot, false) };
     thrown.diagnostic.slot_clear_returned = true;
+    drop(strong);
     Ok(thrown)
 }
 
-/// Drop `weapon` at once ([`WeaponBase::OnDrop`]), then request the copied cached motion on its
+/// Drop `weapon` at once ([`WeaponBase::OnDrop`]), then request the copied release motion on its
 /// first gun's body, with the linear part capped at `max_speed_mps`, without a native readback.
 ///
 /// # Safety
@@ -172,17 +167,19 @@ unsafe fn throw(
     weapon: &mut WeaponBase,
     max_speed_mps: f32,
     mut diagnostic: DropObservation,
+    release: ReleaseMotion,
 ) -> Thrown {
-    let motion = diagnostic.cached_world_motion;
     let body = diagnostic.native_body_id;
     let address = diagnostic.weapon;
     unsafe { weapon.OnDrop() };
+    // The immediate drop fulfils a request queued by a heavy weapon's recursive unequip.
+    weapon.m_DeferredDrop = false;
     diagnostic.on_drop_returned = true;
-    match (motion, body, NonZeroUsize::new(address)) {
-        (Some(WorldMotion { linear, angular }), Some(body), Some(owner_object)) => {
-            let linear = finite_or_zero(linear).clamp_length_max(max_speed_mps.max(0.0));
-            let angular = finite_or_zero(angular);
-            diagnostic.requested_world_motion = Some(WorldMotion { linear, angular });
+    let requested = diagnostic.prepare_release(release, max_speed_mps);
+    let linear = requested.linear;
+    let angular = requested.angular;
+    match (body, NonZeroUsize::new(address)) {
+        (Some(body), Some(owner_object)) => {
             // SAFETY: the input tick runs outside the physics step.
             let result = unsafe {
                 physical_hands::set_body_velocities(body, owner_object, linear, angular)
@@ -202,15 +199,15 @@ unsafe fn throw(
             }
         }
         _ => {
-            diagnostic.write = match (motion.is_some(), body.is_some()) {
-                (false, false) => NativeWrite::MissingMotionAndBody,
-                (false, true) => NativeWrite::MissingMotion,
-                (true, false) => NativeWrite::MissingBody,
-                (true, true) => NativeWrite::MissingOwner,
+            diagnostic.requested_world_motion = None;
+            diagnostic.write = if body.is_none() {
+                NativeWrite::MissingBody
+            } else {
+                NativeWrite::MissingOwner
             };
             Thrown {
-                linear: Vec3::ZERO,
-                angular: Vec3::ZERO,
+                linear,
+                angular,
                 set: false,
                 diagnostic,
             }
@@ -218,13 +215,26 @@ unsafe fn throw(
     }
 }
 
-/// Let a weapon no inventory slot holds fall from the hand, with the hand's motion capped at
-/// `max_speed_mps`: the drop a held weapon gets, without the slot to clear.
+/// Drop a weapon without a hand-release estimate, requesting rest motion for inventory cleanup.
+/// The linear request still observes `max_speed_mps`.
 ///
 /// # Safety
 ///
 /// `weapon` must be live, on the main thread outside the world update.
 pub(crate) unsafe fn drop_loose(weapon: &mut WeaponBase, max_speed_mps: f32) -> Thrown {
+    unsafe { release_loose(weapon, max_speed_mps, ReleaseMotion::REST) }
+}
+
+/// Drop a carried weapon using motion copied before its disarm.
+///
+/// # Safety
+///
+/// As [`drop_loose`]. The caller retains a slot or strong reference through the call.
+pub(crate) unsafe fn release_loose(
+    weapon: &mut WeaponBase,
+    max_speed_mps: f32,
+    release: ReleaseMotion,
+) -> Thrown {
     let first = unsafe { gun::guns(weapon) }.next().flatten();
     let motion = first.map(|gun| {
         (
@@ -236,7 +246,7 @@ pub(crate) unsafe fn drop_loose(weapon: &mut WeaponBase, max_speed_mps: f32) -> 
     let address = weapon as *mut WeaponBase as usize;
     let diagnostic =
         DropObservation::sampled(address, None, SampleStage::OutsideInventory, motion, body);
-    unsafe { throw(weapon, max_speed_mps, diagnostic) }
+    unsafe { throw(weapon, max_speed_mps, diagnostic, release) }
 }
 
 /// Drop the weapon in `slot` onto the ground before another weapon replaces it there, so that it
@@ -306,8 +316,4 @@ unsafe fn skip_interpolation(weapon: &mut WeaponBase) {
             unsafe { weapon.SkipRenderInterpolationForOneFrame(index) };
         }
     }
-}
-
-fn finite_or_zero(v: Vec3) -> Vec3 {
-    if v.is_finite() { v } else { Vec3::ZERO }
 }

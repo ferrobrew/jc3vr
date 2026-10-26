@@ -220,20 +220,14 @@ fn latest_record_storage_is_fixed_size_across_many_attempts() {
 }
 
 #[test]
-fn delegation_and_write_rejection_remain_distinct_from_a_zero_request() {
+fn heavy_write_rejection_remains_distinct_from_a_zero_request() {
     let mut status = ReleaseStatus::EMPTY;
     let mut attempt = record(Hand::Left, 42);
     let mut sample = observation(SampleStage::Wielded, Some((Vec3::ZERO, Vec3::ZERO)));
-    sample.branch = DropBranch::HeavySlotNativeDrop;
     sample.slot = Some(WeaponSlot::E_SLOT_HEAVY);
-    sample.write = NativeWrite::HeavySlotDelegated;
     sample.slot_clear_returned = true;
-    attempt.drop = Some(sample);
-    status.record(attempt);
-    let delegated = status.latest.unwrap().drop.unwrap();
-    assert_eq!(delegated.write, NativeWrite::HeavySlotDelegated);
-    assert_eq!(delegated.requested_world_motion, None);
-    assert!(!delegated.on_drop_returned);
+    assert_eq!(sample.requested_world_motion, None);
+    assert!(!sample.on_drop_returned);
 
     sample.branch = DropBranch::OnDropThenVelocityWrite;
     sample.requested_world_motion = Some(WorldMotion {
@@ -251,6 +245,338 @@ fn delegation_and_write_rejection_remain_distinct_from_a_zero_request() {
         status.latest.unwrap().native_readback,
         NativeReadback::UNAVAILABLE
     );
+}
+
+fn controller(hand: Hand) -> ControllerContext {
+    let mut hands: [HandFrame; 2] = Default::default();
+    hands[hand.index()].active = true;
+    hands[hand.index()].grip = TrackedPose {
+        position_valid: true,
+        orientation_valid: true,
+        position_tracked: true,
+        orientation_tracked: true,
+        ..TrackedPose::default()
+    };
+    ControllerContext::from_frame(
+        &ControllerFrame {
+            sequence: 1,
+            display_time_ns: 1_000_000_000,
+            published_at: Instant::now(),
+            focused: true,
+            action_set: ActionSetKind::OnFoot,
+            hands,
+        },
+        hand,
+    )
+}
+
+fn release_frame() -> ReleaseFrame {
+    ReleaseFrame {
+        origin: Vec3::new(100.0, 20.0, -30.0),
+        rotation: Quat::IDENTITY,
+        scale: 1.0,
+        teleport_epoch: 0,
+        recenters: 0,
+    }
+}
+
+fn release_sample(time_s: f64, velocity: Vec3, angular: Vec3) -> MotionSample {
+    MotionSample {
+        time_s,
+        position: Vec3::ZERO,
+        orientation: Quat::IDENTITY,
+        linear_velocity: Some(velocity),
+        angular_velocity: Some(angular),
+    }
+}
+
+fn assert_motion(actual: WorldMotion, linear: Vec3, angular: Vec3) {
+    assert!(actual.linear.distance(linear) < 1e-3, "{actual:?}");
+    assert!(actual.angular.distance(angular) < 1e-3, "{actual:?}");
+}
+
+#[test]
+fn native_request_uses_timestamped_hand_motion_for_both_hands_and_supported_slots() {
+    for hand in Hand::BOTH {
+        for slot in [WeaponSlot::E_SLOT_TWO_HANDED, WeaponSlot::E_SLOT_HEAVY] {
+            let context = controller(hand);
+            let rig = RigMotion {
+                frame: release_frame(),
+                motion: WorldMotion {
+                    linear: Vec3::X * 3.0,
+                    angular: Vec3::ZERO,
+                },
+            };
+            let samples = [
+                release_sample(0.95, Vec3::NEG_Z * 8.0, Vec3::Y * 4.0),
+                release_sample(1.0, Vec3::NEG_Z, Vec3::Y),
+                release_sample(1.01, Vec3::splat(100.0), Vec3::splat(100.0)),
+            ];
+            let release = estimate_release(ReleaseInput {
+                rig: Some(rig),
+                controller: Some(&context),
+                samples: &samples,
+                since_s: 0.9,
+                point_world: rig.frame.origin,
+            });
+            let mut drop = observation(SampleStage::Wielded, Some((Vec3::ZERO, Vec3::ZERO)));
+            drop.slot = Some(slot);
+            let requested = drop.prepare_release(release, 20.0);
+            assert_motion(requested, Vec3::new(3.0, 0.0, -8.0), Vec3::Y * 4.0);
+            assert_eq!(drop.release_source, SampleSource::TimestampedHandHistory);
+            assert_eq!(drop.history_age_s, Some(0.0));
+            assert_eq!(drop.requested_world_motion, Some(requested));
+        }
+    }
+}
+
+#[test]
+fn release_converts_point_motion_and_scale_once_and_rig_motion_once() {
+    let context = controller(Hand::Left);
+    let rig = RigMotion {
+        frame: ReleaseFrame {
+            rotation: Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+            scale: 2.0,
+            ..release_frame()
+        },
+        motion: WorldMotion {
+            linear: Vec3::X * 5.0,
+            angular: Vec3::Y,
+        },
+    };
+    let point = rig.frame.origin + rig.frame.rotation * (Vec3::NEG_Z * 0.2);
+    let sample = release_sample(1.0, Vec3::X * 2.0, Vec3::Y * 3.0);
+    let release = estimate_release(ReleaseInput {
+        rig: Some(rig),
+        controller: Some(&context),
+        samples: &[sample],
+        since_s: 0.9,
+        point_world: point,
+    });
+    let hand_linear = rig.frame.rotation * (Vec3::X * 1.7) * 2.0;
+    let transport = rig.motion.linear + rig.motion.angular.cross(point - rig.frame.origin);
+    assert_motion(release.world, hand_linear + transport, Vec3::Y * 4.0);
+    let mut drop = observation(
+        SampleStage::AfterDisarm,
+        Some((Vec3::splat(900.0), Vec3::splat(900.0))),
+    );
+    let requested = drop.prepare_release(release, 2.0);
+    assert!((requested.linear.length() - 2.0).abs() < 1e-3);
+    assert!(
+        requested
+            .linear
+            .normalize()
+            .distance(release.world.linear.normalize())
+            < 1e-3
+    );
+    assert_eq!(requested.angular, release.world.angular);
+}
+
+#[test]
+fn missing_or_stale_tracking_releases_with_transport_not_an_old_throw_peak() {
+    let context = controller(Hand::Right);
+    let rig = RigMotion {
+        frame: release_frame(),
+        motion: WorldMotion {
+            linear: Vec3::X * 6.0,
+            angular: Vec3::Y,
+        },
+    };
+    let point = rig.frame.origin + Vec3::Z;
+    let samples = [release_sample(1.0, Vec3::Z * 40.0, Vec3::X * 40.0)];
+    for invalid in [
+        ControllerContext {
+            focused: false,
+            ..context
+        },
+        ControllerContext {
+            position_tracked: false,
+            ..context
+        },
+        ControllerContext {
+            orientation_tracked: false,
+            ..context
+        },
+        ControllerContext {
+            publication_age: Duration::from_secs(1),
+            ..context
+        },
+        ControllerContext {
+            display_time_ns: 2_000_000_000,
+            ..context
+        },
+    ] {
+        let release = estimate_release(ReleaseInput {
+            rig: Some(rig),
+            controller: Some(&invalid),
+            samples: &samples,
+            since_s: 0.0,
+            point_world: point,
+        });
+        assert_eq!(release.source, SampleSource::RigTransportOnly);
+        assert_motion(release.world, Vec3::X * 7.0, Vec3::Y);
+    }
+}
+
+#[test]
+fn acquisition_bound_excludes_the_previous_items_throw_and_slow_release_stays_slow() {
+    let context = controller(Hand::Right);
+    let rig = RigMotion {
+        frame: release_frame(),
+        motion: WorldMotion {
+            linear: Vec3::ZERO,
+            angular: Vec3::ZERO,
+        },
+    };
+    let samples = [
+        release_sample(0.9, Vec3::Z * 20.0, Vec3::Y * 12.0),
+        release_sample(1.0, Vec3::X * 0.1, Vec3::ZERO),
+    ];
+    let release = estimate_release(ReleaseInput {
+        rig: Some(rig),
+        controller: Some(&context),
+        samples: &samples,
+        since_s: 0.99,
+        point_world: rig.frame.origin,
+    });
+    assert_motion(release.world, Vec3::X * 0.1, Vec3::ZERO);
+}
+
+#[test]
+fn release_uses_position_and_orientation_differences_when_runtime_omits_velocities() {
+    let context = controller(Hand::Right);
+    let rig = RigMotion {
+        frame: release_frame(),
+        motion: WorldMotion {
+            linear: Vec3::ZERO,
+            angular: Vec3::ZERO,
+        },
+    };
+    let samples = [
+        MotionSample {
+            position: Vec3::ZERO,
+            linear_velocity: None,
+            angular_velocity: None,
+            ..release_sample(0.98, Vec3::ZERO, Vec3::ZERO)
+        },
+        MotionSample {
+            position: Vec3::X * 0.04,
+            orientation: -Quat::from_rotation_y(0.06),
+            linear_velocity: None,
+            angular_velocity: None,
+            ..release_sample(1.0, Vec3::ZERO, Vec3::ZERO)
+        },
+    ];
+    let release = estimate_release(ReleaseInput {
+        rig: Some(rig),
+        controller: Some(&context),
+        samples: &samples,
+        since_s: 0.9,
+        point_world: rig.frame.origin + Vec3::X * 0.04,
+    });
+    assert_motion(release.world, Vec3::X * 2.0, Vec3::Y * 3.0);
+}
+
+#[test]
+fn a_missing_runtime_angular_velocity_still_moves_the_gun_point() {
+    let context = controller(Hand::Left);
+    let rig = RigMotion {
+        frame: release_frame(),
+        motion: WorldMotion {
+            linear: Vec3::ZERO,
+            angular: Vec3::ZERO,
+        },
+    };
+    let samples = [
+        MotionSample {
+            angular_velocity: None,
+            ..release_sample(0.95, Vec3::ZERO, Vec3::ZERO)
+        },
+        MotionSample {
+            orientation: Quat::from_rotation_y(0.1),
+            angular_velocity: None,
+            ..release_sample(1.0, Vec3::ZERO, Vec3::ZERO)
+        },
+    ];
+    let lever = samples[1].orientation * (Vec3::NEG_Z * 0.2);
+    let release = estimate_release(ReleaseInput {
+        rig: Some(rig),
+        controller: Some(&context),
+        samples: &samples,
+        since_s: 0.9,
+        point_world: rig.frame.origin + lever,
+    });
+    assert_motion(release.world, (Vec3::Y * 2.0).cross(lever), Vec3::Y * 2.0);
+}
+
+#[test]
+fn transport_is_finite_differenced_once_and_discontinuities_reprime_it() {
+    let mut transport = ReleaseTransport::new();
+    let first = release_frame();
+    assert_eq!(transport.update(Some(first), 0.02), None);
+    let next = ReleaseFrame {
+        origin: first.origin + Vec3::X * 0.2,
+        ..first
+    };
+    let rig = transport.update(Some(next), 0.02).unwrap();
+    assert_motion(rig.motion, Vec3::X * 10.0, Vec3::ZERO);
+    for reset in [
+        ReleaseFrame {
+            teleport_epoch: 1,
+            ..next
+        },
+        ReleaseFrame {
+            recenters: 1,
+            ..next
+        },
+        ReleaseFrame { scale: 2.0, ..next },
+        ReleaseFrame {
+            rotation: Quat::from_rotation_y(1.0),
+            ..next
+        },
+        ReleaseFrame {
+            origin: Vec3::splat(f32::NAN),
+            ..next
+        },
+    ] {
+        let mut transport = ReleaseTransport {
+            previous: Some(next),
+        };
+        assert_eq!(transport.update(Some(reset), 0.02), None);
+    }
+    assert_eq!(transport.update(Some(next), 1.0), None);
+    assert_eq!(transport.update(None, 0.02), None);
+    assert_eq!(transport.update(Some(next), 0.02), None);
+}
+
+#[test]
+fn an_unprimed_rig_or_bad_request_never_reuses_cached_motion() {
+    let context = controller(Hand::Left);
+    let release = estimate_release(ReleaseInput {
+        rig: None,
+        controller: Some(&context),
+        samples: &[release_sample(1.0, Vec3::X * 40.0, Vec3::Y * 20.0)],
+        since_s: 0.0,
+        point_world: Vec3::ZERO,
+    });
+    assert_eq!(release, ReleaseMotion::REST);
+    for cap in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+        let mut drop = observation(
+            SampleStage::OutsideInventory,
+            Some((Vec3::X * 50.0, Vec3::Y * 50.0)),
+        );
+        let requested = drop.prepare_release(
+            ReleaseMotion {
+                world: WorldMotion {
+                    linear: Vec3::X * 4.0,
+                    angular: Vec3::splat(f32::NAN),
+                },
+                ..ReleaseMotion::REST
+            },
+            cap,
+        );
+        assert_motion(requested, Vec3::ZERO, Vec3::ZERO);
+    }
 }
 
 #[test]

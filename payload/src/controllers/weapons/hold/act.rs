@@ -14,6 +14,9 @@
 //! once. The rigid grip reads a hand's slide in the placement detour ([`snap_view`]) to place the
 //! gun's attach bone between the socket and the hand.
 
+use std::time::Instant;
+
+use glam::Mat4;
 use jc3gi::{
     character::{
         character::{Character, SafeBoneIndex},
@@ -23,25 +26,36 @@ use jc3gi::{
 };
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    aim::gun,
-    frame::{Hand, Pose},
-    loadout::{ObjectAddress, Socket, grab, live},
-    weapons::{
-        docks, engine,
-        hold::{
-            self, armed,
-            dock::{ReleaseWatch, Snap, SnapFrom, SnapKind},
-            equip::{self, DockRefusal, Thrown},
-            layout,
-            release_diagnostics::{ReleaseRecord, ReleaseRoute, ReleaseStatus, SampleStage},
-        },
-        inventory::{
-            self, carry,
-            engine::{heavy_tracked, slot_of},
-            reconcile, sockets,
+use crate::{
+    config::Config,
+    controllers::{
+        aim::gun,
+        frame::{Hand, Pose},
+        loadout::{ObjectAddress, Socket, grab, live},
+        motion,
+        roomscale::teleport,
+        weapons::{
+            docks, engine,
+            hold::{
+                self, armed,
+                dock::{ReleaseWatch, Snap, SnapFrom, SnapKind},
+                equip::{self, DockRefusal, Thrown},
+                layout,
+                release_diagnostics::{
+                    MAX_RELEASE_AGE_S, ReleaseFrame, ReleaseInput, ReleaseMotion, ReleaseRecord,
+                    ReleaseRoute, ReleaseStatus, ReleaseTransport, RigMotion, SampleStage,
+                    estimate_release,
+                },
+            },
+            inventory::{
+                self, carry,
+                engine::{heavy_tracked, slot_of},
+                reconcile, sockets,
+            },
         },
     },
+    headpose,
+    vr::recenter_count,
 };
 
 /// A snap as the rigid grip sees it.
@@ -138,6 +152,7 @@ pub(crate) unsafe fn dock(hand: Hand, socket: Socket, snap_s: f32) -> Result<(),
     };
     let mut state = STATE.lock();
     state.watches[hand.index()].release.disarm();
+    state.watches[hand.index()].since_s = None;
     if state.slide_back(object, socket, hand, snap_s) {
         return Ok(());
     }
@@ -220,6 +235,7 @@ pub(crate) fn arm(hand: Hand) {
 /// it came into the hand some other way ([`ReleaseWatch::latch_press`]).
 pub(crate) fn release_tick(grips: [bool; 2]) -> [bool; 2] {
     let held = Hand::BOTH.map(live::in_hand);
+    let now_s = motion::latest_time();
     let mut state = STATE.lock();
     Hand::BOTH.map(|hand| {
         let watch = &mut state.watches[hand.index()];
@@ -227,12 +243,14 @@ pub(crate) fn release_tick(grips: [bool; 2]) -> [bool; 2] {
         let holder = weapon.map(|_| hand);
         if weapon != watch.weapon {
             watch.weapon = weapon;
+            watch.since_s = now_s;
             watch.release.unarm();
         }
         if std::mem::take(&mut watch.pending) && weapon.is_some() && grips[hand.index()] {
             watch.release.arm(hand);
         }
         if watch.release.latch_press(holder, grips).is_some() {
+            watch.since_s = now_s;
             tracing::info!(
                 target: "controllers",
                 hand = hand.label(),
@@ -277,6 +295,7 @@ pub(crate) fn snap_view(weapon: usize, hand: Hand) -> Option<SnapView> {
 ///
 /// The main thread, outside the world update.
 pub(crate) unsafe fn tick(dt: f32) {
+    sample_release_transport(dt);
     for hand in Hand::BOTH {
         let finished = {
             let mut state = STATE.lock();
@@ -305,9 +324,13 @@ pub(crate) unsafe fn tick(dt: f32) {
 pub(crate) fn clear() {
     let mut state = STATE.lock();
     state.snaps = [None; 2];
+    state.transport = ReleaseTransport::new();
+    state.rig = None;
     for watch in &mut state.watches {
         watch.release.disarm();
         watch.pending = false;
+        watch.weapon = None;
+        watch.since_s = None;
     }
 }
 
@@ -334,11 +357,12 @@ struct Seat {
 
 /// One hand's grip watch: the weapon the table had in it at the last tick, and whether a grab put
 /// it there.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 struct Watch {
     release: ReleaseWatch,
     weapon: Option<usize>,
     pending: bool,
+    since_s: Option<f64>,
 }
 
 impl Watch {
@@ -347,6 +371,7 @@ impl Watch {
             release: ReleaseWatch::new(),
             weapon: None,
             pending: false,
+            since_s: None,
         }
     }
 }
@@ -357,6 +382,8 @@ struct State {
     /// Each weapon's gun pose on a socket's bone, from its last draw off it: weapon, socket, pose.
     offsets: Vec<(usize, Socket, Pose)>,
     watches: [Watch; 2],
+    transport: ReleaseTransport,
+    rig: Option<(Instant, RigMotion)>,
     status: DockStatus,
 }
 
@@ -428,6 +455,8 @@ static STATE: Mutex<State> = Mutex::new(State {
     snaps: [None; 2],
     offsets: Vec::new(),
     watches: [Watch::new(); 2],
+    transport: ReleaseTransport::new(),
+    rig: None,
     status: DockStatus {
         snapping: [None; 2],
         grip_holds: [false; 2],
@@ -439,6 +468,54 @@ static STATE: Mutex<State> = Mutex::new(State {
         last_refusal: None,
     },
 });
+
+fn sample_release_transport(dt: f32) {
+    let scale = Config::lock_query(|config| config.vr.world_scale);
+    let frame = headpose::anchor().map(|origin| ReleaseFrame {
+        origin,
+        rotation: headpose::xr::body_rotation(),
+        scale,
+        teleport_epoch: teleport::epoch(),
+        recenters: recenter_count(),
+    });
+    let mut state = STATE.lock();
+    state.rig = state
+        .transport
+        .update(frame, dt)
+        .map(|rig| (Instant::now(), rig));
+}
+
+/// Copy the estimate before disarm changes the gun's attach pose or cached native motion.
+unsafe fn release_motion(
+    hand: Hand,
+    weapon: &WeaponBase,
+    diagnostic: &ReleaseRecord,
+) -> ReleaseMotion {
+    let Some(gun) = (unsafe { gun::guns(weapon) }).next().flatten() else {
+        return ReleaseMotion::REST;
+    };
+    let point_world = Mat4::from(gun.m_WorldMatrixT1).w_axis.truncate();
+    let (rig, since_s) = {
+        let state = STATE.lock();
+        let rig = state
+            .rig
+            .filter(|(at, _)| at.elapsed().as_secs_f32() <= MAX_RELEASE_AGE_S);
+        let watch = state.watches[hand.index()];
+        let since_s = (watch.weapon == diagnostic.weapon)
+            .then_some(watch.since_s)
+            .flatten()
+            .unwrap_or(f64::INFINITY);
+        (rig.map(|(_, rig)| rig), since_s)
+    };
+    let samples = motion::history(hand);
+    estimate_release(ReleaseInput {
+        rig,
+        controller: diagnostic.controller.as_ref(),
+        samples: &samples,
+        since_s,
+        point_world,
+    })
+}
 
 /// Draw the weapon on `socket` into `hand` through the loadout table, which the reconcile carries
 /// out at once. Returns where it sat.
@@ -536,10 +613,13 @@ unsafe fn drop_from(
     diagnostic.weapon = Some(object);
     let thrown = if is_wielded(owner, object) {
         diagnostic.route = ReleaseRoute::Wielded;
-        unsafe { equip::drop_held(owner, max_speed_mps) }?
+        let weapon = unsafe { gun::held_weapon(owner) }.ok_or(DockRefusal::NotDone)?;
+        let motion = unsafe { release_motion(hand, weapon, diagnostic) };
+        unsafe { equip::drop_held(owner, max_speed_mps, motion) }?
     } else if armed::in_hand(hand) == Some(object) {
         diagnostic.route = ReleaseRoute::ArmedInHand;
         let weapon = unsafe { armed::weapon_of(owner, hand) }.ok_or(DockRefusal::NotDone)?;
+        let motion = unsafe { release_motion(hand, weapon, diagnostic) };
         diagnostic.stages.before_disarm = true;
         unsafe { armed::disarm(owner, hand, Some(&mut *weapon), true) };
         diagnostic.stages.disarm_returned = true;
@@ -548,7 +628,7 @@ unsafe fn drop_from(
         }
         // A carried weapon's strong reference is kept until the drop is done.
         let strong = carry::release(object);
-        let mut thrown = unsafe { equip::drop_loose(weapon, max_speed_mps) };
+        let mut thrown = unsafe { equip::release_loose(weapon, max_speed_mps, motion) };
         thrown.diagnostic.sample_stage = SampleStage::AfterDisarm;
         let slot = unsafe { slot_of(weapon) };
         thrown.diagnostic.slot = slot;
