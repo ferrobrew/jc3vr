@@ -241,14 +241,6 @@ fn preparation_and_validation_do_not_hold_the_lifecycle_mutex() {
     assert!(advance_shutdown_state(&shutdown, &AtomicBool::new(false)));
 }
 
-#[test]
-fn magazine_activation_refuses_an_unproven_entry_exclusion_contract() {
-    assert_eq!(
-        crate::hooks::activate_magazine_executor(),
-        Err(DeferReason::HookEntryExclusionUnproven),
-    );
-}
-
 struct Harness {
     shutdown: Mutex<Shutdown>,
     shutting_down: AtomicBool,

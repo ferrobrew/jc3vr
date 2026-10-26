@@ -25,7 +25,7 @@ use crate::controllers::{
             config::{LooseMagazineConfig, ReloadButton, ReloadConfig},
             eject::{self, FlickDetector},
             engine,
-            extraction::MagazineId,
+            extraction::{DetachKind, MagazineId},
             frames::{self, GunFrame},
             gate,
             insert::{self, InsertEvent, InsertInputs, InsertStage, InsertionSource, Well},
@@ -235,6 +235,7 @@ impl State {
             self.since_draw_s = 0.0;
             loose::let_go();
             self.cancel_extraction();
+            self.cancel_ejects();
             self.status.insertion.reset();
             self.status.insert_hands = None;
             self.status.work.reset();
@@ -248,6 +249,8 @@ impl State {
         self.fold_shots(tick, reload);
         self.sync(tick, reload);
 
+        self.extraction_blocks_belt = [false; 2];
+        self.finish_ejects(tick, config);
         self.ejects(tick, inputs, config);
         self.insert(tick, inputs, config);
         self.extract(tick, inputs, reload);
@@ -298,6 +301,7 @@ impl State {
         let e = gun.entry();
         let chambering = chambering(&weapon.plan, reload);
         self.belts[hand.index()].holds_fire()
+            || self.pending_ejects[hand.index()].is_some()
             || self.extraction_hand() == Some(hand.other())
             || (self
                 .status
@@ -398,20 +402,13 @@ impl State {
         hand: Hand,
         config: &ControllersConfig,
     ) {
-        let loose = config.weapons.reload.loose.enabled;
-        let ejected = !weapon.reading.out;
-        let outcome = if ejected {
-            // SAFETY: this legacy path retains its existing execution boundary; physics write
-            // authority is not established by the input tick and remains a separate engine risk.
-            unsafe { engine::drop_magazine(weapon.address, gun.index, loose) }
-        } else {
-            engine::DetachOutcome::NoThrow
-        };
-        if outcome != engine::DetachOutcome::NoThrow {
-            self.status.counts.ejects += 1;
-            self.event(format!("{hand:?} ejected"));
-            haptics::play(hand, Event::Eject);
-        }
+        self.queue_eject(
+            weapon,
+            gun,
+            hand,
+            DetachKind::Eject,
+            config.weapons.reload.loose.enabled,
+        );
     }
 
     /// The two-handed load: take from the pouch, carry to the well of the gun in the other hand,
@@ -636,7 +633,10 @@ impl State {
                 _ => Vec3::ZERO,
             };
             self.last_mouths[i] = well.map(|w| w.mouth);
-            if self.extraction_hand() == Some(hand.other()) || self.extraction_blocks_belt[i] {
+            if self.extraction_hand() == Some(hand.other())
+                || self.pending_ejects[i].is_some()
+                || self.extraction_blocks_belt[i]
+            {
                 self.belts[i] = BeltPush::new();
                 continue;
             }
@@ -660,12 +660,8 @@ impl State {
             // A magazine still in drops as the fresh one goes in, and the game's reload returns
             // its rounds.
             if weapon.plan.load.ejects() && !weapon.reading.out {
-                // SAFETY: main thread, outside the world update; the weapon was read this tick.
-                if unsafe { engine::drop_magazine(weapon.address, gun.index, reload.loose.enabled) }
-                    == engine::DetachOutcome::NoThrow
-                {
-                    continue;
-                }
+                self.queue_eject(weapon, gun, hand, DetachKind::Belt, reload.loose.enabled);
+                continue;
             }
             if self.load(weapon, gun) {
                 self.status.counts.belt_reloads += 1;
@@ -693,7 +689,8 @@ impl State {
     fn belt_gate(&self, tick: &Tick, hand: Hand) -> BeltGate {
         BeltGate {
             holding: self.status.insert_hands.is_some_and(|(_, gun)| gun == hand),
-            extracting: self.extraction_hand() == Some(hand.other()),
+            extracting: self.extraction_hand() == Some(hand.other())
+                || self.pending_ejects[hand.index()].is_some(),
             blocked: self.extraction_blocks_belt[hand.index()],
             since_draw_s: self.since_draw_s,
             has_ammo: tick.gun(hand).is_some_and(|(weapon, _)| weapon.has_ammo()),
@@ -719,7 +716,7 @@ impl State {
     }
 
     /// Load `gun` of `weapon`: a whole magazine or one shell. Returns whether anything loaded.
-    fn load(&mut self, weapon: &WeaponTick, gun: &GunTick) -> bool {
+    pub(super) fn load(&mut self, weapon: &WeaponTick, gun: &GunTick) -> bool {
         let record = self.records.get(weapon.key);
         // SAFETY (each engine call): main thread, outside the world update; the weapon was read
         // this tick.
@@ -756,6 +753,7 @@ impl State {
         self.stocked_pouch = None;
         self.free = None;
         self.cancel_extraction();
+        self.cancel_ejects();
     }
 
     pub(super) fn stand_down(&mut self) {

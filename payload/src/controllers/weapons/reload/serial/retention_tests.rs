@@ -19,6 +19,7 @@ fn request(generation: u64) -> DetachRequest {
         },
         generation,
         expected: Identity::test(),
+        kind: DetachKind::Pull,
     }
 }
 

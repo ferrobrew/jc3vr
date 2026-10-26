@@ -12,6 +12,7 @@ fn request(generation: u64) -> DetachRequest {
         },
         generation,
         expected: Identity::test(),
+        kind: DetachKind::Pull,
     }
 }
 
@@ -49,12 +50,12 @@ fn a_new_mailbox_stays_closed_through_lifecycle_preflight() {
 }
 
 #[test]
-fn draining_an_installed_callback_never_clears_its_installation() {
+fn draining_an_installed_callback_closes_admission_without_claiming_hook_removal() {
     let mut queue = mailbox();
-    assert!(!queue.stop_and_drain());
+    assert!(queue.stop_and_drain());
     assert!(queue.installed);
     assert!(!queue.accepting);
-    assert!(!queue.stop_and_drain());
+    assert!(queue.stop_and_drain());
     assert!(!queue.submit(request(1)));
 }
 
@@ -150,6 +151,31 @@ fn canceling_an_unread_retained_result_consumes_it_without_rollback() {
     assert_eq!(queue.poll(r), None);
     assert!(!queue.submit(r));
     assert!(queue.submit(request(2)));
+}
+
+#[test]
+fn each_hand_has_one_independent_slot_and_a_duplicate_callback_cannot_repeat_a_request() {
+    let mut hands = [mailbox(), mailbox()];
+    let right = request(1);
+    let left = DetachRequest {
+        id: MagazineId {
+            holder: Hand::Left,
+            weapon: 2,
+            ..right.id
+        },
+        ..right
+    };
+    assert!(hands[Hand::Right.index()].submit(right));
+    assert!(hands[Hand::Left.index()].submit(left));
+    for request in [left, right] {
+        let queue = &mut hands[request.id.holder.index()];
+        assert_eq!(queue.begin(), Some(request));
+        assert_eq!(queue.begin(), None);
+        queue.complete(request, retained());
+        assert_eq!(queue.begin(), None);
+        assert_eq!(queue.poll(request), Some(retained()));
+        assert_eq!(queue.poll(request), None);
+    }
 }
 
 #[test]

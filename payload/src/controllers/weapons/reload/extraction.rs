@@ -11,6 +11,7 @@ use crate::controllers::{
     grab::{Candidate, GrabVolume, GripTarget, resolve::reaches},
     haptics::{self, Event},
     weapons::{
+        capabilities::tracked_hands,
         foregrip,
         reload::{
             FinishInputs, GunTick, State, Tick, WeaponTick,
@@ -110,12 +111,20 @@ impl Pull {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(super) enum DetachKind {
+    Pull,
+    Eject,
+    Belt,
+}
+
 /// A request is a value, not permission to call the engine from the input tick.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) struct DetachRequest {
     pub id: MagazineId,
     pub generation: u64,
     pub expected: serial::Identity,
+    pub kind: DetachKind,
 }
 
 /// Input context retained until the actual result can be assigned to a hand.
@@ -188,7 +197,11 @@ impl State {
         reload: &ReloadConfig,
     ) -> Option<Candidate> {
         let hand = free?;
-        if !engine::physical_detach_available() || self.extraction_needs_neutral[hand.index()] {
+        if !engine::physical_detach_available()
+            || self.extraction_needs_neutral[hand.index()]
+            || !tracked_hands().into_iter().all(|tracked| tracked)
+            || self.pending_ejects[hand.other().index()].is_some()
+        {
             return None;
         }
         if self.status.insertion.holding()
@@ -218,6 +231,10 @@ impl State {
     /// Complete extraction after the ordinary insertion step so it cannot consume a stale
     /// magazine-in snapshot on the tick the engine prop enters the hand.
     pub(super) fn extract(&mut self, tick: &Tick, inputs: &FinishInputs, reload: &ReloadConfig) {
+        if !tracked_hands().into_iter().all(|tracked| tracked) {
+            self.cancel_extraction();
+            return;
+        }
         self.extract_with(tick, inputs, reload, &mut SerialEngine);
     }
 
@@ -242,7 +259,6 @@ impl State {
         reload: &ReloadConfig,
         adapter: &mut impl DetachEngine,
     ) {
-        self.extraction_blocks_belt = [false; 2];
         if let Some(hand) = self.extraction_hand() {
             self.extraction_blocks_belt[hand.other().index()] = true;
         }
@@ -372,6 +388,7 @@ impl State {
             id: current.id,
             generation,
             expected: current.expected,
+            kind: DetachKind::Pull,
         };
         if adapter.submit(request) {
             self.pending_detach = Some(PendingDetach {

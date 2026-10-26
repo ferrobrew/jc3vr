@@ -19,6 +19,7 @@ use crate::{
 };
 
 pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
+    ui.label(format!("Native magazine execution: {:?}", r.serial));
     let c = &r.counts;
     ui.label(format!(
         "True reload: {} · ejects {} · seats {} · belt reloads {} · actions worked {} · slides \

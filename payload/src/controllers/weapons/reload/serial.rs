@@ -1,24 +1,35 @@
-//! Magazine request admission and identity capture.
+//! Bounded magazine requests consumed by the native serial post-physics character callback.
 //!
-//! Production admission stays closed until hook entry exclusion through removal is proven.
-//! Execution and completion transitions remain available only to isolated mailbox tests.
+//! Input publishes identities only. The callback resolves the current owned weapon and spare again
+//! before detaching, and completion delivers the retained prop through the ordinary magazine flow.
+
+use std::time::Instant;
 
 use jc3gi::{
     character::character::Character,
-    equipment::weapon::{WeaponData, WeaponState},
+    equipment::weapon::{WeaponBase, WeaponData, WeaponState},
+    game::GameObjectUpdateContext,
     game_world::GameWorld,
 };
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    aim::gun,
-    hands::late,
-    weapons::{
-        hold::armed,
-        reload::{
-            engine::DetachOutcome,
-            extraction::{DetachRequest, MagazineId},
-            loose::Retention,
+use crate::{
+    config::Config,
+    controllers::{
+        aim::gun,
+        frame::{self, Button, Hand},
+        hands::late,
+        loadout::live,
+        mode, scheme,
+        weapons::{
+            capabilities::{Capabilities, GunHand, gun_owners_now},
+            hold::{armed, refs::Strong},
+            inventory::engine::strong_to,
+            reload::{
+                engine::{self, DetachOutcome},
+                extraction::{DetachKind, DetachRequest, MagazineId},
+                loose::Retention,
+            },
         },
     },
 };
@@ -80,41 +91,246 @@ impl Identity {
 /// Called on the game input thread while inventory and weapon ownership are stable.
 pub(super) unsafe fn capture(id: MagazineId) -> Option<Identity> {
     let character = unsafe { Character::GetLocalPlayerCharacter() };
-    unsafe { resolve(character, id) }
+    unsafe { resolve(character, id) }.map(|(identity, _)| identity)
+}
+
+/// Runtime evidence from the native consumer, copied without exposing engine objects.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub struct SerialStatus {
+    pub installed: bool,
+    pub accepting: bool,
+    pub pending: [bool; 2],
+    pub executing: [bool; 2],
+    pub completed: [bool; 2],
+    pub callbacks: u64,
+    pub submitted: u64,
+    pub executed: u64,
+    pub refused: u64,
+    pub canceled: u64,
+    pub last_refusal: Option<Refusal>,
+}
+
+impl SerialStatus {
+    pub(super) const fn new() -> Self {
+        Self {
+            installed: false,
+            accepting: false,
+            pending: [false; 2],
+            executing: [false; 2],
+            completed: [false; 2],
+            callbacks: 0,
+            submitted: 0,
+            executed: 0,
+            refused: 0,
+            canceled: 0,
+            last_refusal: None,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Refusal {
+    Admission,
+    Retention,
+    Paused,
+    Permission,
+    Identity,
+    NoThrow,
+}
+
+pub fn status() -> SerialStatus {
+    let state = MAILBOX.lock();
+    SerialStatus {
+        installed: state.hands.iter().all(|h| h.installed),
+        accepting: state.hands.iter().all(|h| h.accepting),
+        pending: state
+            .hands
+            .each_ref()
+            .map(|h| matches!(h.slot, Some(Slot::Pending(_)))),
+        executing: state
+            .hands
+            .each_ref()
+            .map(|h| matches!(h.slot, Some(Slot::Executing { .. }))),
+        completed: state
+            .hands
+            .each_ref()
+            .map(|h| matches!(h.slot, Some(Slot::Complete { .. }))),
+        ..state.status
+    }
+}
+
+/// Called by hook installation only after the character library is enabled.
+pub(crate) fn set_installed(installed: bool) {
+    for hand in &mut MAILBOX.lock().hands {
+        hand.installed = installed;
+        hand.accepting = installed;
+        if !installed {
+            hand.cancel_all();
+        }
+    }
 }
 
 pub(super) fn available() -> bool {
-    let state = MAILBOX.lock();
-    state.installed && state.accepting
+    MAILBOX
+        .lock()
+        .hands
+        .iter()
+        .all(|h| h.installed && h.accepting)
 }
 
 pub(super) fn submit(request: DetachRequest) -> bool {
+    submit_with_retention(request, true)
+}
+
+pub(super) fn submit_with_retention(request: DetachRequest, retain: bool) -> bool {
     let mut state = MAILBOX.lock();
-    if !state.can_submit(request) {
+    let hand = request.id.holder.index();
+    if !state.hands[hand].can_submit(request) {
+        state.refuse(Refusal::Admission);
         return false;
     }
-    let Some(retention) = Retention::reserve(request.expected.gun, request.expected.spare) else {
-        return false;
+    let retention = if retain {
+        let Some(retention) = Retention::reserve(request.expected.gun, request.expected.spare)
+        else {
+            state.refuse(Refusal::Retention);
+            return false;
+        };
+        Some(retention)
+    } else {
+        None
     };
-    state.retention = Some(retention);
-    state.submit(request)
+    state.hands[hand].retention = retention;
+    let submitted = state.hands[hand].submit(request);
+    state.status.submitted += u64::from(submitted);
+    submitted
 }
 
 pub(super) fn poll(request: DetachRequest) -> Option<DetachOutcome> {
-    MAILBOX.lock().poll(request)
+    MAILBOX.lock().hands[request.id.holder.index()].poll(request)
 }
 
 pub(super) fn cancel(request: DetachRequest) {
-    MAILBOX.lock().cancel(request);
+    let mut state = MAILBOX.lock();
+    state.hands[request.id.holder.index()].cancel(request);
+    state.status.canceled += 1;
 }
 
-/// Close admission and cancel queued work before lifecycle preparation.
-/// An installed callback cannot report readiness without a proven entry-exclusion adapter.
+/// Close admission and cancel pending work. Hook removal remains the hook owner's responsibility.
 pub(crate) fn stop_and_drain() -> bool {
-    MAILBOX.lock().stop_and_drain()
+    let mut state = MAILBOX.lock();
+    let mut drained = true;
+    for hand in &mut state.hands {
+        drained &= hand.stop_and_drain();
+    }
+    drained
 }
 
-unsafe fn resolve(character: *mut Character, id: MagazineId) -> Option<Identity> {
+/// Consume at most one request per gun hand before the native message poll.
+///
+/// # Safety
+///
+/// Called only at `Character::UpdatePassPostPhysics_Serial` entry with its native arguments.
+pub(crate) unsafe fn consume(character: *mut Character, context: *mut GameObjectUpdateContext) {
+    if character.is_null() || unsafe { Character::GetLocalPlayerCharacter() } != character {
+        return;
+    }
+    let paused = unsafe { context.as_ref() }.is_none_or(|context| context.m_Paused);
+    MAILBOX.lock().status.callbacks += 1;
+    for hand in Hand::BOTH {
+        let work = {
+            let mut state = MAILBOX.lock();
+            let queue = &mut state.hands[hand.index()];
+            queue
+                .begin()
+                .map(|request| (request, queue.retention.take()))
+        };
+        let Some((request, retention)) = work else {
+            continue;
+        };
+        let resolved = if paused {
+            None
+        } else {
+            unsafe { resolve(character, request.id) }
+        };
+        let refusal = if paused {
+            Some(Refusal::Paused)
+        } else if resolved
+            .as_ref()
+            .is_none_or(|(identity, _)| *identity != request.expected || !identity.has_spare())
+        {
+            Some(Refusal::Identity)
+        } else if !permitted(request, retention.is_some()) {
+            Some(Refusal::Permission)
+        } else {
+            None
+        };
+        let authorized = MAILBOX.lock().hands[hand.index()].authorize(request, refusal.is_none());
+        let outcome = if authorized {
+            // SAFETY: the native serial phase owns execution; resolve found the current inventory
+            // entry and its exact gun and spare, rather than borrowing any queued address.
+            unsafe { engine::detach_serial(request.id.weapon, request.id.gun, retention.as_ref()) }
+        } else {
+            DetachOutcome::NoThrow
+        };
+        drop(resolved);
+        let mut state = MAILBOX.lock();
+        if let Some(refusal) = refusal.or_else(|| {
+            (authorized && outcome == DetachOutcome::NoThrow).then_some(Refusal::NoThrow)
+        }) {
+            state.refuse(refusal);
+        }
+        state.status.executed += u64::from(authorized);
+        let queue = &mut state.hands[hand.index()];
+        queue.retention = retention;
+        queue.complete(request, outcome);
+    }
+}
+
+fn permitted(request: DetachRequest, retain: bool) -> bool {
+    let pull = request.kind == DetachKind::Pull;
+    if crate::is_shutting_down()
+        || !scheme::is_controllers()
+        || !Capabilities::of(mode::current().mode).reload
+        || !Config::lock_query(|c| {
+            let reload = &c.controllers.weapons.reload;
+            reload.enabled
+                && (!retain || reload.loose.enabled)
+                && (!pull || reload.extraction.enabled)
+                && (request.kind != DetachKind::Belt || reload.belt.enabled)
+        })
+    {
+        return false;
+    }
+    let tracked = frame::with_latest(|frame| {
+        frame.focused
+            && frame.is_fresh_at(Instant::now())
+            && (!pull
+                || frame
+                    .hand(request.id.holder.other())
+                    .buttons
+                    .contains(Button::SqueezePress))
+            && [request.id.holder, request.id.holder.other()]
+                .into_iter()
+                .all(|hand| {
+                    let tracked = frame.hand(hand);
+                    (!pull && hand != request.id.holder)
+                        || (tracked.active && tracked.grip.is_tracked())
+                })
+    })
+    .unwrap_or(false);
+    if !tracked {
+        return false;
+    }
+    let owner = gun_owners_now()[request.id.holder.index()];
+    owner.is_some_and(|owner| {
+        owner.weapon == request.id.weapon
+            && matches!(owner.role, GunHand::Grip | GunHand::NativePair(_))
+    }) && (!pull
+        || (live::in_hand(request.id.holder.other()).is_none()
+            && armed::in_hand(request.id.holder.other()).is_none()))
+}
+
+unsafe fn resolve(character: *mut Character, id: MagazineId) -> Option<(Identity, Strong)> {
     if character.is_null() || unsafe { Character::GetLocalPlayerCharacter() } != character {
         return None;
     }
@@ -129,13 +345,22 @@ unsafe fn resolve(character: *mut Character, id: MagazineId) -> Option<Identity>
     if !owner.m_IsLocalCharacter || owner.m_Inventory.m_Character != character {
         return None;
     }
-    let (slot, shared) = owner
+    let inventory = owner
         .m_Inventory
         .m_Weapons
         .iter()
         .enumerate()
-        .find(|(_, p)| p.px as usize == id.weapon && !p.px.is_null() && !p.pn.is_null())?;
-    let weapon = unsafe { shared.px.as_ref() }?;
+        .find(|(_, p)| p.px as usize == id.weapon && !p.px.is_null() && !p.pn.is_null());
+    let (slot, weapon, weapon_control) = if let Some((slot, shared)) = inventory {
+        (slot, unsafe { shared.px.as_ref() }?, shared.pn as usize)
+    } else {
+        let weapon = unsafe { armed::weapon_of(owner, id.holder) }?;
+        if weapon as *mut WeaponBase as usize != id.weapon {
+            return None;
+        }
+        // The existing carry set owns this non-slot weapon throughout the character update.
+        (usize::MAX, &*weapon, 0)
+    };
     if !std::ptr::eq(weapon.m_User[0].cast::<Character>(), character) || weapon.m_User[1].is_null()
     {
         return None;
@@ -155,35 +380,42 @@ unsafe fn resolve(character: *mut Character, id: MagazineId) -> Option<Identity>
         .m_lBoneAttachementPerWeaponState
         .get(usize::try_from(state).ok()?)?;
     if late::attach_hand(*bone) != Some(id.holder)
-        || gun.m_Owner != shared.px
+        || gun.m_Owner as usize != id.weapon
         || gun.m_MagazineUniqueTag == WeaponData::NO_MAGAZINE_UNIQUE_TAG
     {
         return None;
     }
-    Some(Identity {
-        character: character as usize,
-        character_control: weapon.m_User[1] as usize,
-        model: owner.m_AnimatedModel.m_InstanceData as usize,
-        world,
-        slot,
-        weapon_control: shared.pn as usize,
-        weapon_name: weapon.m_WeaponNameHash,
-        gun: gun as *const WeaponData as usize,
-        spare: gun.m_MagazineObject.px as usize,
-        spare_control: gun.m_MagazineObject.pn as usize,
-        tag: gun.m_MagazineUniqueTag,
-    })
+    let strong = unsafe { strong_to(weapon) }?;
+    let weapon_control = if weapon_control == 0 {
+        strong.control_block() as usize
+    } else {
+        weapon_control
+    };
+    Some((
+        Identity {
+            character: character as usize,
+            character_control: weapon.m_User[1] as usize,
+            model: owner.m_AnimatedModel.m_InstanceData as usize,
+            world,
+            slot,
+            weapon_control,
+            weapon_name: weapon.m_WeaponNameHash,
+            gun: gun as *const WeaponData as usize,
+            spare: gun.m_MagazineObject.px as usize,
+            spare_control: gun.m_MagazineObject.pn as usize,
+            tag: gun.m_MagazineUniqueTag,
+        },
+        strong,
+    ))
 }
 
 #[derive(Debug, Copy, Clone)]
 enum Slot {
     Pending(DetachRequest),
-    #[cfg(test)]
     Executing {
         request: DetachRequest,
         canceled: bool,
     },
-    #[cfg(test)]
     Complete {
         request: DetachRequest,
         outcome: DetachOutcome,
@@ -225,12 +457,6 @@ impl<L> Mailbox<L> {
         true
     }
 
-    #[cfg(not(test))]
-    fn poll(&mut self, _: DetachRequest) -> Option<DetachOutcome> {
-        None
-    }
-
-    #[cfg(test)]
     fn poll(&mut self, request: DetachRequest) -> Option<DetachOutcome> {
         let Some(Slot::Complete {
             request: actual,
@@ -247,15 +473,6 @@ impl<L> Mailbox<L> {
         Some(outcome)
     }
 
-    #[cfg(not(test))]
-    fn cancel(&mut self, request: DetachRequest) {
-        if matches!(self.slot, Some(Slot::Pending(actual)) if actual == request) {
-            self.slot = None;
-            self.retention = None;
-        }
-    }
-
-    #[cfg(test)]
     fn cancel(&mut self, request: DetachRequest) {
         match self.slot {
             Some(Slot::Pending(r)) | Some(Slot::Complete { request: r, .. }) if r == request => {
@@ -272,13 +489,6 @@ impl<L> Mailbox<L> {
         }
     }
 
-    #[cfg(not(test))]
-    fn cancel_all(&mut self) {
-        self.slot = None;
-        self.retention = None;
-    }
-
-    #[cfg(test)]
     fn cancel_all(&mut self) {
         self.slot = match self.slot {
             Some(Slot::Executing { request, .. }) => Some(Slot::Executing {
@@ -295,10 +505,9 @@ impl<L> Mailbox<L> {
     fn stop_and_drain(&mut self) -> bool {
         self.accepting = false;
         self.cancel_all();
-        !self.installed && self.slot.is_none()
+        self.slot.is_none()
     }
 
-    #[cfg(test)]
     fn begin(&mut self) -> Option<DetachRequest> {
         if !self.installed || !self.accepting {
             return None;
@@ -313,7 +522,6 @@ impl<L> Mailbox<L> {
         Some(request)
     }
 
-    #[cfg(test)]
     fn authorize(&self, request: DetachRequest, valid: bool) -> bool {
         valid
             && self.accepting
@@ -321,7 +529,6 @@ impl<L> Mailbox<L> {
             Some(Slot::Executing { request: r, canceled: false }) if r == request)
     }
 
-    #[cfg(test)]
     fn complete(&mut self, request: DetachRequest, outcome: DetachOutcome) {
         if let Some(Slot::Executing {
             request: actual,
@@ -339,7 +546,23 @@ impl<L> Mailbox<L> {
     }
 }
 
-static MAILBOX: Mutex<Mailbox> = Mutex::new(Mailbox::new());
+struct Queues {
+    hands: [Mailbox; 2],
+    status: SerialStatus,
+}
+
+impl Queues {
+    fn refuse(&mut self, refusal: Refusal) {
+        self.status.refused += 1;
+        self.status.last_refusal = Some(refusal);
+        tracing::debug!(target: "controllers", ?refusal, "reload: serial magazine request refused");
+    }
+}
+
+static MAILBOX: Mutex<Queues> = Mutex::new(Queues {
+    hands: [Mailbox::new(), Mailbox::new()],
+    status: SerialStatus::new(),
+});
 
 #[cfg(test)]
 mod retention_tests;

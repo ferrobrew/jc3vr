@@ -77,6 +77,7 @@ fn state() -> State {
         measured: [None; 2],
         extraction: Pull::new(),
         pending_detach: None,
+        pending_ejects: [None; 2],
         detach_generation: 0,
         extraction_blocks_belt: [false; 2],
         extraction_needs_neutral: [false; 2],

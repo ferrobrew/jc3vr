@@ -47,14 +47,10 @@ struct HookState {
 unsafe impl Send for HookState {}
 unsafe impl Sync for HookState {}
 
-/// The mailbox remains closed until an adapter proves entry exclusion through hook removal.
-///
-/// HookLibrary does not supply exclusion. ThreadSuspender snapshots threads, ignores suspension
-/// failures, and does not drain an original call already inside the callback. The game pre-update
-/// role alone does not exclude an unexpected worker entry. No safe activation adapter exists yet.
-#[allow(dead_code)]
-pub(crate) fn activate_magazine_executor() -> Result<(), DeferReason> {
-    Err(DeferReason::HookEntryExclusionUnproven)
+/// Open magazine admission after the native serial callback detour has been installed.
+fn activate_magazine_executor() {
+    MAGAZINE_BINDER_INSTALLED.store(true, Ordering::Release);
+    reload::serial::set_installed(true);
 }
 
 pub(super) fn install() {
@@ -92,10 +88,15 @@ pub(super) fn install() {
             return;
         }
     };
-    let _ = HOOK_STATE.set(HookState {
-        patcher: Mutex::new(patcher),
-        hook_library,
-    });
+    if HOOK_STATE
+        .set(HookState {
+            patcher: Mutex::new(patcher),
+            hook_library,
+        })
+        .is_ok()
+    {
+        activate_magazine_executor();
+    }
 }
 
 pub(super) fn uninstall() -> bool {
@@ -137,6 +138,16 @@ pub(super) fn uninstall() -> bool {
         &mut *state.patcher.lock(),
         re_utilities::Patcher::new(),
     ));
+    MAGAZINE_BINDER_INSTALLED.store(false, Ordering::Release);
+    reload::serial::set_installed(false);
+    if character::magazine::active_entries() != 0
+        || crate::controllers::physical_hands::human_hull::active_entries() != 0
+    {
+        tracing::error!(
+            "native callback remains active after hook removal; the image must remain mapped"
+        );
+        return false;
+    }
     true
 }
 
@@ -153,7 +164,7 @@ impl ShutdownParticipant for MagazineShutdown {
         reload::cancel_extraction_on_standdown();
         match magazine_preparation(
             reload::serial::stop_and_drain(),
-            MAGAZINE_BINDER_INSTALLED.load(Ordering::Acquire),
+            character::magazine::active_entries() != 0,
         ) {
             PrepareOutcome::Ready(()) => {
                 PrepareOutcome::Ready(Box::new(InactiveMagazine { preparation }))
@@ -164,11 +175,9 @@ impl ShutdownParticipant for MagazineShutdown {
     }
 }
 
-fn magazine_preparation(drained: bool, binder_installed: bool) -> PrepareOutcome<()> {
-    if !drained {
+fn magazine_preparation(drained: bool, entry_active: bool) -> PrepareOutcome<()> {
+    if !drained || entry_active {
         PrepareOutcome::Deferred(DeferReason::MagazineBusy)
-    } else if binder_installed {
-        PrepareOutcome::Deferred(DeferReason::HookEntryExclusionUnproven)
     } else {
         PrepareOutcome::Ready(())
     }
@@ -181,15 +190,13 @@ struct InactiveMagazine {
 impl PreparedParticipant for InactiveMagazine {
     fn validate(&self, preparation: Preparation) -> bool {
         self.preparation == preparation
-            && !MAGAZINE_BINDER_INSTALLED.load(Ordering::Acquire)
+            && character::magazine::active_entries() == 0
             && reload::serial::stop_and_drain()
     }
 
     fn commit(&mut self) {}
 }
 
-// This remains false because activation is blocked, and the character library omits the binder.
-// A future installer must publish installation before enabling it, even when acceptance is closed.
 static MAGAZINE_BINDER_INSTALLED: AtomicBool = AtomicBool::new(false);
 
 pub(super) fn patcher() -> Option<MutexGuard<'static, re_utilities::Patcher>> {

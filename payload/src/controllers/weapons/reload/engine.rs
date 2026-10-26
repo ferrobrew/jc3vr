@@ -1,9 +1,8 @@
 //! The reload's engine reads, calls, and detours.
 //!
-//! Input reads use the tick's weapon addresses. Physical extraction remains unavailable because
-//! hook entry exclusion through removal is unproven. Legacy input drop callers do not establish
-//! a physics write mark. Detach calls retain raw addresses rather than owner borrows across
-//! reentrant engine calls.
+//! Input reads use the tick's weapon addresses. Physical magazine detachment executes only from
+//! the native serial post-physics character callback after its consumer resolves current ownership.
+//! Detach calls keep no owner borrow across reentrant engine calls.
 //!
 //! - [`Character::StartReloadingWieldingWeapon`]: every animated reload start, refused while the
 //!   weapon is reloaded by hand.
@@ -153,11 +152,14 @@ pub unsafe fn measure_gun(
 ///
 /// # Safety
 ///
-/// `address` must be live, and the caller must hold the physics world's write mark. The legacy
-/// input callers do not establish that precondition; physical extraction does not use them.
-pub(super) unsafe fn drop_magazine(address: usize, index: usize, loose: bool) -> DetachOutcome {
-    // SAFETY: this function's contract applies to the legacy engine drop.
-    unsafe { detach_magazine(address, index, loose, None) }
+/// `address` must have just been resolved from the current character's owned inventory, and this
+/// call must execute inside the native serial post-physics character callback.
+pub(super) unsafe fn detach_serial(
+    address: usize,
+    index: usize,
+    retention: Option<&Retention>,
+) -> DetachOutcome {
+    unsafe { detach_magazine(address, index, retention.is_some(), retention) }
 }
 
 /// The engine drop and retention are separate operations with separate accounting.
@@ -169,7 +171,7 @@ pub(super) enum DetachOutcome {
     Retained(Loose),
 }
 
-/// Physical pulls remain unavailable without a proven callback installation and removal adapter.
+/// Whether the native callback is installed and currently accepts magazine requests.
 pub(super) fn physical_detach_available() -> bool {
     crate::controllers::weapons::reload::serial::available()
 }
@@ -226,6 +228,9 @@ unsafe fn detach_inputs(
 ) -> Option<(*mut Character, u32, i32, *mut WeaponData, usize)> {
     let (character, rounds) = {
         let base = unsafe { weapon.as_ref() }?;
+        if base.m_WeaponIsWithoutMagazine {
+            return None;
+        }
         (base.m_User[0] as *mut Character, base.m_MagazineAmmo.max(0))
     };
     let part = unsafe { magazine_part(weapon) }
@@ -255,7 +260,7 @@ pub(super) fn finish_detach(
 ///
 /// # Safety
 ///
-/// As [`drop_magazine`].
+/// The weapon must be owned and live on the input thread, outside the world update.
 pub unsafe fn load_rounds(address: usize, rounds: i32) {
     let Some(weapon) = (unsafe { (address as *mut WeaponBase).as_mut() }) else {
         return;
@@ -287,7 +292,7 @@ pub unsafe fn load_rounds(address: usize, rounds: i32) {
 ///
 /// # Safety
 ///
-/// As [`drop_magazine`].
+/// The weapon must be owned and live on the input thread, outside the world update.
 pub unsafe fn magazine_tag(address: usize, index: usize) -> Option<i32> {
     let weapon = unsafe { (address as *mut WeaponBase).as_mut() }?;
     let gun = unsafe { gun_mut(weapon, index) }?;
@@ -309,7 +314,7 @@ pub unsafe fn local_player_matrix() -> Option<Mat4> {
 ///
 /// # Safety
 ///
-/// As [`drop_magazine`].
+/// The weapon must be owned and live on the input thread, outside the world update.
 pub unsafe fn load_full(address: usize) -> bool {
     let Some(weapon) = (unsafe { (address as *mut WeaponBase).as_mut() }) else {
         return false;
@@ -330,7 +335,7 @@ pub unsafe fn load_full(address: usize) -> bool {
 ///
 /// # Safety
 ///
-/// As [`drop_magazine`].
+/// The weapon must be owned and live on the input thread, outside the world update.
 pub unsafe fn load_one(address: usize) -> bool {
     let Some(weapon) = (unsafe { (address as *mut WeaponBase).as_mut() }) else {
         return false;
@@ -359,7 +364,7 @@ pub unsafe fn load_one(address: usize) -> bool {
 ///
 /// # Safety
 ///
-/// As [`drop_magazine`].
+/// The weapon must be owned and live on the input thread, outside the world update.
 pub unsafe fn cycled(address: usize, kind: ActionKind, clip: bool) {
     let Some(weapon) = (unsafe { (address as *mut WeaponBase).as_mut() }) else {
         return;
@@ -391,7 +396,7 @@ pub unsafe fn cycled(address: usize, kind: ActionKind, clip: bool) {
 ///
 /// # Safety
 ///
-/// As [`drop_magazine`].
+/// The weapon must be owned and live on the input thread, outside the world update.
 pub unsafe fn gun_address(address: usize, index: usize) -> Option<usize> {
     unsafe { gun_mut(address as *const WeaponBase, index) }
         .map(|gun| gun as *mut WeaponData as usize)
@@ -516,7 +521,7 @@ unsafe fn model_parts<'a>(
 ///
 /// # Safety
 ///
-/// As [`drop_magazine`].
+/// The weapon must be owned and live on the input thread, outside the world update.
 pub unsafe fn show_magazine_part(address: usize, shown: bool) {
     let Some(weapon) = (unsafe { (address as *const WeaponBase).as_ref() }) else {
         return;

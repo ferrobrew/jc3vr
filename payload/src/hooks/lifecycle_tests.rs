@@ -1,20 +1,20 @@
 use super::*;
 
 #[test]
-fn false_magazine_drain_vetoes_preparation_with_or_without_a_binder() {
-    for installed in [false, true] {
+fn pending_magazine_work_vetoes_preparation_with_or_without_an_entry() {
+    for entry_active in [false, true] {
         assert!(matches!(
-            magazine_preparation(false, installed),
+            magazine_preparation(false, entry_active),
             PrepareOutcome::Deferred(DeferReason::MagazineBusy),
         ));
     }
 }
 
 #[test]
-fn drained_installed_binder_still_requires_entry_exclusion() {
+fn drained_magazine_work_waits_for_the_native_callback_to_return() {
     assert!(matches!(
         magazine_preparation(true, true),
-        PrepareOutcome::Deferred(DeferReason::HookEntryExclusionUnproven),
+        PrepareOutcome::Deferred(DeferReason::MagazineBusy),
     ));
     assert!(matches!(
         magazine_preparation(true, false),

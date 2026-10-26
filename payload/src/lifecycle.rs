@@ -25,7 +25,6 @@ pub(crate) enum ParticipantId {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum DeferReason {
     MagazineBusy,
-    HookEntryExclusionUnproven,
     ParticipantBusy(ParticipantId),
     StalePreparation,
 }

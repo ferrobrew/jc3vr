@@ -39,6 +39,7 @@ pub mod belt;
 mod bones;
 pub mod chamber;
 pub mod config;
+mod deferred;
 pub mod eject;
 mod engine;
 #[cfg(test)]
@@ -80,7 +81,7 @@ use crate::controllers::{
             config::{ReloadButton, ReloadConfig},
             eject::{FlickDetector, TapDetector},
             engine::Reading,
-            extraction::{PendingDetach, Pull},
+            extraction::{DetachRequest, PendingDetach, Pull},
             frames::GunFrame,
             insert::{Insertion, InsertionSource, Well},
             plan::ReloadPlan,
@@ -117,6 +118,8 @@ pub struct ReloadStatus {
     /// The hands whose guns may not fire, by [`Hand::index`].
     pub fire_held: [bool; 2],
     pub counts: ReloadCounts,
+    /// Native serial magazine execution and the most recent refusal.
+    pub serial: serial::SerialStatus,
     /// The most recent reload events, newest last.
     pub events: Vec<String>,
 }
@@ -160,6 +163,7 @@ pub struct ReloadCounts {
 pub fn status() -> ReloadStatus {
     let mut status = STATE.lock().status.clone();
     status.counts.refused = gate::refused();
+    status.serial = serial::status();
     status
 }
 
@@ -478,7 +482,9 @@ pub(crate) fn eligible_belt_for_test(
 /// Cancel only physical magazine manipulation on a mode boundary. Other weapon holds remain.
 /// The resumed input path must observe neutral grips before accepting a fresh magazine claim.
 pub(crate) fn cancel_extraction_on_standdown() {
-    STATE.lock().cancel_extraction();
+    let mut state = STATE.lock();
+    state.cancel_extraction();
+    state.cancel_ejects();
 }
 
 /// Stop acting: drop any round in hand, forget the tick, and hand the weapons back to the game.
@@ -665,6 +671,7 @@ struct State {
     measured: [Option<(usize, Pose)>; 2],
     extraction: Pull,
     pending_detach: Option<PendingDetach>,
+    pending_ejects: [Option<DetachRequest>; 2],
     detach_generation: u64,
     extraction_blocks_belt: [bool; 2],
     extraction_needs_neutral: [bool; 2],
@@ -701,6 +708,7 @@ static STATE: Mutex<State> = Mutex::new(State {
             empty_pouch: 0,
             refused: 0,
         },
+        serial: serial::SerialStatus::new(),
         events: Vec::new(),
     },
     tick: None,
@@ -713,6 +721,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     measured: [None; 2],
     extraction: Pull::new(),
     pending_detach: None,
+    pending_ejects: [None; 2],
     detach_generation: 0,
     extraction_blocks_belt: [false; 2],
     extraction_needs_neutral: [false; 2],

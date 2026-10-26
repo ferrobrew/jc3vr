@@ -41,6 +41,7 @@ pub(crate) mod config;
 pub(crate) mod gate;
 pub(crate) mod head;
 pub(crate) mod layers;
+pub(crate) mod magazine;
 pub(crate) mod modifiers;
 pub(crate) mod signals;
 pub(crate) mod wielded;
@@ -57,6 +58,7 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_hook_library(acts::hook_library())
         .with_hook_library(gate::hook_library())
         .with_hook_library(layers::hook_library())
+        .with_hook_library(magazine::hook_library())
         .with_hook_library(modifiers::hook_library())
         .with_hook_library(signals::hook_library())
         .with_hook_library(wielded::hook_library())
