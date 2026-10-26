@@ -71,6 +71,17 @@ fn _Explosive_size_check() {
     unreachable!()
 }
 impl Explosive {
+    pub const RemoveSelf_ADDRESS: usize = 0x1408F2E50;
+    /// Marks the explosive removed and erases it from the ammunition manager's active objects.
+    /// This operation does not return ammunition to an inventory.
+    pub unsafe fn RemoveSelf(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::RemoveSelf_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
     pub const SetPhysicsTransform_ADDRESS: usize = 0x1408C8180;
     /// Queues `transform` for the physics body: when the explosive has a
     /// [`m_PfxInstance`](crate::equipment::explosive::Explosive::m_PfxInstance), copies it to

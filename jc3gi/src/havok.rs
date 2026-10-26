@@ -322,6 +322,34 @@ impl std::convert::AsMut<hkSimdFloat32> for hkSimdFloat32 {
     }
 }
 #[derive(Copy, Clone)]
+#[repr(C, align(8))]
+/// A strided array of three-dimensional vertices (`hkStridedVertices`).
+pub struct hkStridedVertices {
+    /// The first vertex, whose coordinates are stored as floats.
+    pub m_vertices: *const f32,
+    /// The number of vertices.
+    pub m_numVertices: i32,
+    /// The distance in bytes between consecutive vertices.
+    pub m_striding: i32,
+}
+fn _hkStridedVertices_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x10], hkStridedVertices>([0u8; 0x10]);
+    }
+    unreachable!()
+}
+impl hkStridedVertices {}
+impl std::convert::AsRef<hkStridedVertices> for hkStridedVertices {
+    fn as_ref(&self) -> &hkStridedVertices {
+        self
+    }
+}
+impl std::convert::AsMut<hkStridedVertices> for hkStridedVertices {
+    fn as_mut(&mut self) -> &mut hkStridedVertices {
+        self
+    }
+}
+#[derive(Copy, Clone)]
 #[repr(C, align(16))]
 /// A Havok transform (`hkTransformf`): a rotation as three column vectors, the images of the local
 /// axes, and a translation.
@@ -343,6 +371,29 @@ impl std::convert::AsRef<hkTransformf> for hkTransformf {
 }
 impl std::convert::AsMut<hkTransformf> for hkTransformf {
     fn as_mut(&mut self) -> &mut hkTransformf {
+        self
+    }
+}
+#[derive(Copy, Clone)]
+#[repr(C, align(16))]
+/// A four-lane floating-point vector (`hkVector4f`).
+pub struct hkVector4f {
+    pub data: [f32; 4],
+}
+fn _hkVector4f_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x10], hkVector4f>([0u8; 0x10]);
+    }
+    unreachable!()
+}
+impl hkVector4f {}
+impl std::convert::AsRef<hkVector4f> for hkVector4f {
+    fn as_ref(&self) -> &hkVector4f {
+        self
+    }
+}
+impl std::convert::AsMut<hkVector4f> for hkVector4f {
+    fn as_mut(&mut self) -> &mut hkVector4f {
         self
     }
 }
@@ -764,6 +815,24 @@ impl hknpConvexShape {
     pub fn vftable(&self) -> *const crate::havok::hknpShapeVftable {
         self.base.vftable() as *const crate::havok::hknpShapeVftable
     }
+    pub const createFromVertices_ADDRESS: usize = 0x1414E0B10;
+    /// Builds a convex shape from strided vertices, applying `radius` and `config`.
+    pub unsafe fn createFromVertices(
+        vertices: *const crate::havok::hkStridedVertices,
+        radius: f32,
+        config: *const crate::havok::hknpConvexShapeBuildConfig,
+    ) -> *mut crate::havok::hknpShape {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                vertices: *const crate::havok::hkStridedVertices,
+                radius: f32,
+                config: *const crate::havok::hknpConvexShapeBuildConfig,
+            ) -> *mut crate::havok::hknpShape = ::std::mem::transmute(
+                Self::createFromVertices_ADDRESS,
+            );
+            f(vertices, radius, config)
+        }
+    }
     /// As [`hkReferencedObject::deleteThisReferencedObject`](crate::havok::hkReferencedObject::deleteThisReferencedObject).
     pub unsafe fn deleteThisReferencedObject(&mut self) {
         unsafe {
@@ -807,6 +876,46 @@ impl std::convert::AsRef<hknpConvexShape> for hknpConvexShape {
 }
 impl std::convert::AsMut<hknpConvexShape> for hknpConvexShape {
     fn as_mut(&mut self) -> &mut hknpConvexShape {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The options used to build a convex shape (`hknpConvexShapeBuildConfig`). Only the options read
+/// by the vertex factory are mapped.
+pub struct hknpConvexShapeBuildConfig {
+    /// The tolerance used when simplifying the convex shape.
+    pub m_simplificationTolerance: f32,
+    /// Whether the input vertices are shrunk by the shape radius during construction.
+    pub m_shrinkByRadius: bool,
+    _field_5: [u8; 51],
+}
+fn _hknpConvexShapeBuildConfig_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x38], hknpConvexShapeBuildConfig>([0u8; 0x38]);
+    }
+    unreachable!()
+}
+impl hknpConvexShapeBuildConfig {
+    pub const Construct_ADDRESS: usize = 0x1414DCF60;
+    /// `hknpConvexShapeBuildConfig::hknpConvexShapeBuildConfig`: initializes the build options.
+    pub unsafe fn Construct(&mut self) -> *mut crate::havok::hknpConvexShapeBuildConfig {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+            ) -> *mut crate::havok::hknpConvexShapeBuildConfig = ::std::mem::transmute(
+                Self::Construct_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+}
+impl std::convert::AsRef<hknpConvexShapeBuildConfig> for hknpConvexShapeBuildConfig {
+    fn as_ref(&self) -> &hknpConvexShapeBuildConfig {
+        self
+    }
+}
+impl std::convert::AsMut<hknpConvexShapeBuildConfig> for hknpConvexShapeBuildConfig {
+    fn as_mut(&mut self) -> &mut hknpConvexShapeBuildConfig {
         self
     }
 }
@@ -889,7 +998,9 @@ pub struct hknpShape {
     /// shape. A sphere is a point with its radius here, and a capsule's core is a box around its
     /// segment with most of its radius here.
     pub m_convexRadius: f32,
-    _field_18: [u8; 24],
+    /// Opaque user data carried by the shape.
+    pub m_userData: u64,
+    _field_20: [u8; 16],
 }
 fn _hknpShape_size_check() {
     unsafe {

@@ -2848,6 +2848,25 @@ impl WeaponBase {
             )
         }
     }
+    pub const ConsumeAmmoBase_ADDRESS: usize = 0x140966220;
+    /// The base implementation of [`ConsumeAmmo`](crate::equipment::weapon::WeaponBase::ConsumeAmmo). Deducts the requested
+    /// count from the gun's magazine, updates empty-magazine state, and deducts reserve
+    /// ammunition when the weapon's ammunition policy requires it. Reserve ammunition can
+    /// belong to the weapon or its owning character's inventory.
+    pub unsafe fn ConsumeAmmoBase(
+        &mut self,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+        count: i32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon_data: *mut crate::equipment::weapon::WeaponData,
+                count: i32,
+            ) = ::std::mem::transmute(Self::ConsumeAmmoBase_ADDRESS);
+            f(self as *mut Self as _, weapon_data, count)
+        }
+    }
     pub const IsWeaponAimingBase_ADDRESS: usize = 0x140950F90;
     /// The base implementation of the [`IsWeaponAiming`](crate::equipment::weapon::WeaponBase::IsWeaponAiming) virtual.
     pub unsafe fn IsWeaponAimingBase(&self) -> bool {

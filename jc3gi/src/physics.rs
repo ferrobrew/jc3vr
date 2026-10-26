@@ -402,9 +402,9 @@ pub struct PfxCharacterInstance {
     _field_d8: [u8; 16],
     /// The character rigid-body listener (`CCustomCharacterRBListener*`).
     pub m_CharacterRBListener: *mut ::std::ffi::c_void,
-    /// The owning character (`IPfxCharacter*`). Its `GetSharedPfxCharacterSettings` virtual returns
-    /// the shared settings that hold the per-state shape table.
-    pub m_Owner: *mut ::std::ffi::c_void,
+    /// The owning character, whose [`GetSharedPfxCharacterSettings`](crate::physics::PfxCharacterOwner::GetSharedPfxCharacterSettings)
+    /// virtual returns the shared settings that hold the per-state shape table.
+    pub m_Owner: *mut crate::physics::PfxCharacterOwner,
     _field_f8: [u8; 8],
 }
 fn _PfxCharacterInstance_size_check() {
@@ -554,6 +554,67 @@ impl std::convert::AsRef<PfxCharacterInstance> for PfxCharacterInstance {
 }
 impl std::convert::AsMut<PfxCharacterInstance> for PfxCharacterInstance {
     fn as_mut(&mut self) -> &mut PfxCharacterInstance {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The character-side interface that exposes shared character settings (`IPfxCharacter`).
+pub struct PfxCharacterOwner {
+    vftable: *const crate::physics::PfxCharacterOwnerVftable,
+}
+fn _PfxCharacterOwner_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x8], PfxCharacterOwner>([0u8; 0x8]);
+    }
+    unreachable!()
+}
+impl PfxCharacterOwner {
+    pub fn vftable(&self) -> *const crate::physics::PfxCharacterOwnerVftable {
+        self.vftable as *const crate::physics::PfxCharacterOwnerVftable
+    }
+    /// Returns the character's shared proxy settings.
+    pub unsafe fn GetSharedPfxCharacterSettings(
+        &mut self,
+    ) -> *mut crate::physics::SharedPfxCharacterSettings {
+        unsafe {
+            let f = (&raw const (*self.vftable()).GetSharedPfxCharacterSettings).read();
+            f(self as *mut Self as _)
+        }
+    }
+}
+impl std::convert::AsRef<PfxCharacterOwner> for PfxCharacterOwner {
+    fn as_ref(&self) -> &PfxCharacterOwner {
+        self
+    }
+}
+impl std::convert::AsMut<PfxCharacterOwner> for PfxCharacterOwner {
+    fn as_mut(&mut self) -> &mut PfxCharacterOwner {
+        self
+    }
+}
+#[repr(C, align(8))]
+pub struct PfxCharacterOwnerVftable {
+    _vfunc_0: unsafe extern "system" fn(this: *mut crate::physics::PfxCharacterOwner),
+    _vfunc_1: unsafe extern "system" fn(this: *mut crate::physics::PfxCharacterOwner),
+    /// Returns the character's shared proxy settings.
+    pub GetSharedPfxCharacterSettings: unsafe extern "system" fn(
+        this: *mut crate::physics::PfxCharacterOwner,
+    ) -> *mut crate::physics::SharedPfxCharacterSettings,
+}
+fn _PfxCharacterOwnerVftable_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x18], PfxCharacterOwnerVftable>([0u8; 0x18]);
+    }
+    unreachable!()
+}
+impl PfxCharacterOwnerVftable {}
+impl std::convert::AsRef<PfxCharacterOwnerVftable> for PfxCharacterOwnerVftable {
+    fn as_ref(&self) -> &PfxCharacterOwnerVftable {
+        self
+    }
+}
+impl std::convert::AsMut<PfxCharacterOwnerVftable> for PfxCharacterOwnerVftable {
+    fn as_mut(&mut self) -> &mut PfxCharacterOwnerVftable {
         self
     }
 }
@@ -1814,6 +1875,59 @@ impl std::convert::AsRef<RigidObject> for RigidObject {
 }
 impl std::convert::AsMut<RigidObject> for RigidObject {
     fn as_mut(&mut self) -> &mut RigidObject {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The character proxy's shared shape settings (`CPfxCharacterSettings`): a shape for each
+/// [`ProxyState`](crate::physics::ProxyState), shared by the character proxies that use these settings. Only the shape table and
+/// its corresponding flags are mapped.
+pub struct SharedPfxCharacterSettings {
+    /// The collision shape selected by each [`ProxyState`](crate::physics::ProxyState).
+    pub m_CapsuleShape: [*mut crate::havok::hknpShape; 10],
+    /// Per-state fake-contact flags corresponding to [`m_CapsuleShape`](crate::physics::SharedPfxCharacterSettings::m_CapsuleShape).
+    pub m_FakeContact: [bool; 10],
+    _field_5a: [u8; 6],
+}
+fn _SharedPfxCharacterSettings_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x60], SharedPfxCharacterSettings>([0u8; 0x60]);
+    }
+    unreachable!()
+}
+impl SharedPfxCharacterSettings {
+    pub const Construct_ADDRESS: usize = 0x1402B0420;
+    /// `CPfxCharacterSettings::CPfxCharacterSettings`: initializes the shared settings.
+    pub unsafe fn Construct(
+        &mut self,
+    ) -> *mut crate::physics::SharedPfxCharacterSettings {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+            ) -> *mut crate::physics::SharedPfxCharacterSettings = ::std::mem::transmute(
+                Self::Construct_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const Destruct_ADDRESS: usize = 0x14024D300;
+    /// `CPfxCharacterSettings::~CPfxCharacterSettings`: releases the settings' owned resources.
+    pub unsafe fn Destruct(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::Destruct_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+}
+impl std::convert::AsRef<SharedPfxCharacterSettings> for SharedPfxCharacterSettings {
+    fn as_ref(&self) -> &SharedPfxCharacterSettings {
+        self
+    }
+}
+impl std::convert::AsMut<SharedPfxCharacterSettings> for SharedPfxCharacterSettings {
+    fn as_mut(&mut self) -> &mut SharedPfxCharacterSettings {
         self
     }
 }
