@@ -71,12 +71,8 @@ pub(super) unsafe fn targets(
         }
     };
     let source = &mut state[at];
-    source.seen = Instant::now();
-    if source.alive.is_none() {
-        source.alive = source.weak.lock();
-        if source.alive.is_none() {
-            return true;
-        }
+    if !source.observe(Weak::lock) {
+        return true;
     }
     if weapon.m_InfinitePickup || weapon.m_State != WeaponState::E_WS_WEAPON_RACK {
         return !single::is(address);
@@ -107,7 +103,7 @@ pub(super) unsafe fn targets(
         }
     }
     let request = if !busy
-        && matches!(source.copy, Stage::Empty)
+        && source.needs_copy()
         && !owner.m_Inventory.m_WeaponPendingSpawn[WeaponSlot::E_SLOT_DUAL_WIELD as usize]
     {
         let member = source.callback();
@@ -130,12 +126,10 @@ pub(super) unsafe fn targets(
 }
 
 pub(super) fn retains_single(object: usize) -> bool {
-    STATE.lock().iter().any(|s| {
-        s.claims.first.is_some()
-            && !s.claims.finished
-            && s.address == object
-            && s.weak.lock().is_some()
-    })
+    STATE
+        .lock()
+        .iter()
+        .any(|s| s.address == object && s.retains_single(Weak::lock))
 }
 
 pub(super) fn owns(member: Member) -> bool {
@@ -209,8 +203,7 @@ pub(super) unsafe fn take(
         let actor = if first {
             source.copy.take().ok_or(RackRefusal::CopyPending)?
         } else {
-            unsafe { engine::strong_to(&*(source.address as *const WeaponBase)) }
-                .ok_or(RackRefusal::Gone)?
+            source.weak.lock().ok_or(RackRefusal::Gone)?
         };
         (actor, first, source.pickup_started)
     };
@@ -316,24 +309,40 @@ pub(super) fn tick() {
 }
 
 pub(super) fn clear() {
-    let sources = std::mem::take(&mut *STATE.lock());
+    let sources = clear_sources(&mut STATE.lock(), Weak::lock);
     for source in sources {
         unsafe { retire(source) };
     }
 }
 
-struct Source {
+struct Source<T = Strong, W = Weak> {
     address: usize,
     generation: u64,
-    alive: Option<Strong>,
-    weak: Weak,
+    alive: Option<T>,
+    weak: W,
     seen: Instant,
-    copy: Stage,
+    copy: Stage<T>,
     claims: Claims,
     pickup_started: bool,
 }
 
-impl Source {
+impl<T, W> Source<T, W> {
+    fn observe(&mut self, lock: impl FnOnce(&W) -> Option<T>) -> bool {
+        self.seen = Instant::now();
+        if self.alive.is_none() {
+            self.alive = lock(&self.weak);
+        }
+        self.alive.is_some()
+    }
+
+    fn needs_copy(&self) -> bool {
+        self.claims.first.is_none() && matches!(self.copy, Stage::Empty)
+    }
+
+    fn retains_single(&self, lock: impl FnOnce(&W) -> Option<T>) -> bool {
+        self.claims.first.is_some() && !self.claims.finished && lock(&self.weak).is_some()
+    }
+
     fn matches(&self, member: Member) -> bool {
         member.index < 2 && self.address == member.source && self.generation == member.generation
     }
@@ -345,6 +354,25 @@ impl Source {
             index: 0,
         }
     }
+}
+
+fn clear_sources<T, W>(
+    sources: &mut Vec<Source<T, W>>,
+    lock: impl Fn(&W) -> Option<T>,
+) -> Vec<Source<T, W>> {
+    let mut retired = Vec::new();
+    let mut at = 0;
+    while at < sources.len() {
+        // The remaining native actor stays at its placement rule, so its claim must outlive
+        // observation without keeping the actor alive through streaming destruction.
+        sources[at].alive = None;
+        if sources[at].retains_single(&lock) {
+            at += 1;
+        } else {
+            retired.push(sources.swap_remove(at));
+        }
+    }
+    retired
 }
 
 #[derive(Default)]
@@ -484,7 +512,93 @@ unsafe fn retire(source: Source) {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Weak as TestWeak};
+
     use super::*;
+
+    #[test]
+    fn partial_source_survives_clear_and_reobservation_without_another_copy() {
+        for first in [0, 1] {
+            let native = Arc::new(());
+            let copy = Arc::new(());
+            let mut source = test_source(&native, Stage::Ready(copy));
+            let callback = source.callback();
+            let taken = source.copy.take().unwrap();
+            assert!(!Arc::ptr_eq(&taken, &native));
+            source.claims.accept(first);
+            source.copy.complete(taken, true);
+            let mut sources = vec![source];
+
+            for _ in 0..3 {
+                assert!(clear_sources(&mut sources, TestWeak::upgrade).is_empty());
+                assert_eq!(sources.len(), 1);
+                assert!(sources[0].alive.is_none());
+                assert_eq!(Arc::strong_count(&native), 1);
+                assert!(sources[0].retains_single(TestWeak::upgrade));
+                assert!(sources[0].matches(callback));
+                assert!(!sources[0].needs_copy());
+            }
+
+            let source = sources
+                .iter_mut()
+                .find(|s| s.address == callback.source)
+                .unwrap();
+            assert!(source.observe(TestWeak::upgrade));
+            assert!(Arc::ptr_eq(source.alive.as_ref().unwrap(), &native));
+            assert_eq!(source.generation, callback.generation);
+            assert!(!source.needs_copy());
+            assert!(!source.claims.available(first));
+            assert!(source.claims.available(1 - first));
+            let remaining = source.weak.upgrade().unwrap();
+            assert!(Arc::ptr_eq(&remaining, &native));
+            source.claims.accept(1 - first);
+            assert!(!source.claims.available(0) && !source.claims.available(1));
+            assert_eq!(clear_sources(&mut sources, TestWeak::upgrade).len(), 1);
+            assert!(sources.is_empty());
+        }
+    }
+
+    #[test]
+    fn cleared_partial_source_expires_without_pinning_the_native_actor() {
+        let native = Arc::new(());
+        let mut source = test_source(&native, Stage::Taken);
+        source.claims.accept(0);
+        let mut sources = vec![source];
+        assert!(clear_sources(&mut sources, TestWeak::upgrade).is_empty());
+        assert_eq!(Arc::strong_count(&native), 1);
+        drop(native);
+        assert!(!sources[0].retains_single(TestWeak::upgrade));
+        assert!(!sources[0].observe(TestWeak::upgrade));
+        assert_eq!(clear_sources(&mut sources, TestWeak::upgrade).len(), 1);
+        assert!(sources.is_empty());
+    }
+
+    #[test]
+    fn clear_retires_an_unclaimed_source_and_its_staged_copy() {
+        let native = Arc::new(());
+        let copy = Arc::new(());
+        let mut sources = vec![test_source(&native, Stage::Ready(Arc::clone(&copy)))];
+        let retired = clear_sources(&mut sources, TestWeak::upgrade);
+        assert!(sources.is_empty());
+        assert_eq!(retired.len(), 1);
+        assert!(retired[0].alive.is_none());
+        assert_eq!(Arc::strong_count(&native), 1);
+        drop(retired);
+        assert_eq!(Arc::strong_count(&copy), 1);
+    }
+
+    fn test_source(native: &Arc<()>, copy: Stage<Arc<()>>) -> Source<Arc<()>, TestWeak<()>> {
+        Source {
+            address: Arc::as_ptr(native) as usize,
+            generation: 17,
+            alive: Some(Arc::clone(native)),
+            weak: Arc::downgrade(native),
+            seen: Instant::now(),
+            copy,
+            claims: Claims::default(),
+            pickup_started: false,
+        }
+    }
 
     #[test]
     fn finite_ammunition_is_conserved_including_native_extra_rounds() {

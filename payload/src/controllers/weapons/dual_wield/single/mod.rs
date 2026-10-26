@@ -24,11 +24,11 @@
 //! the loadout table's, in whichever hand or on whichever socket the table has it, and a drop is a
 //! drop of that object.
 //!
-//! The set of single pistols ([`set`]) is the VR inventory's to keep: an object leaves it at the
-//! first input tick after the inventory stops tracking it, and while the hands stand down only
-//! the pistols the slot and the carry set keep alive stay in it, so a dead object's address is
-//! taken for a single pistol at most until that tick. A twin that is not wanted any more is put
-//! away out of reach ([`park`]), never left in the world.
+//! The set of single pistols ([`set`]) follows the inventory and partially consumed finite rack
+//! sources. An untracked object leaves it unless a source's weak reference still locks. While
+//! the hands stand down, the slot's, the carry set's, and these weak-checked rack pistols stay
+//! single. A twin that is not wanted any more is put away out of reach ([`park`]), never left in
+//! the world.
 //! The settings switch only the making of new ones; pistols already single stay single.
 
 pub mod grant;
@@ -355,20 +355,21 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, tick: &Tick) {
     }
 }
 
-/// Forget every single pistol and the slot's history: the inventory is off.
+/// Forget the inventory's single pistols and slot history, retaining weak-live finite sources.
 pub(crate) fn clear() {
     ACTIVE.store(false, Ordering::Relaxed);
     for object in set::all() {
-        set::remove(object);
+        if !paired::retains_single(object) {
+            set::remove(object);
+        }
     }
     std::mem::take(&mut *PARKED.lock());
     STATE.lock().grants.clear();
 }
 
-/// Stop making pistols single while the weapon handling stands down, and keep only the single
-/// pistols something keeps alive for the inventory's return: the slot's and the carried ones. A
-/// pistol lying in the world may be destroyed meanwhile, and its address taken by another object,
-/// which must not be mistaken for a single pistol.
+/// Stop making pistols single while weapon handling stands down. Keep the slot's, the carried
+/// pistols, and the partially consumed finite sources whose weak references still lock. Other
+/// world pistols may be destroyed and their addresses reused while observation is stopped.
 ///
 /// # Safety
 ///
@@ -382,7 +383,7 @@ pub(crate) unsafe fn stand_down() {
         .and_then(|owner| unsafe { slot_weapon(owner) })
         .map(|w| w as *mut WeaponBase as usize);
     for object in set::all() {
-        if Some(object) != slot && !carry::contains(object) {
+        if Some(object) != slot && !carry::contains(object) && !paired::retains_single(object) {
             set::remove(object);
         }
     }
