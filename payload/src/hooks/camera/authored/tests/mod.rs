@@ -55,6 +55,7 @@ fn frame(finalized: u64, state: GraphState, clip_time: f32, weight: f32) -> Fram
             source: 40,
             weight,
         }),
+        native: None,
         source: 40,
         clip_time: Some(clip_time),
         request: DeltaRequest::RootCompensatedRelativeToBaseline,

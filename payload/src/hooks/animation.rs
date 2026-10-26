@@ -43,6 +43,9 @@ fn update_animations_time(controller: *mut AnimationController, dt: f32) {
         dt
     };
     UPDATE_ANIMATIONS_TIME.get().unwrap().call(controller, dt);
+    if let Some(controller) = unsafe { controller.as_ref() } {
+        unsafe { crate::hooks::camera::authored::animation_update(controller, false) };
+    }
 }
 
 /// Hold clip time during synchronous pose evaluation when idle breathing suppression applies.
@@ -61,6 +64,9 @@ fn update_animations(controller: *mut AnimationController, dt: f32, num_of_bones
         .get()
         .unwrap()
         .call(controller, dt, num_of_bones);
+    if let Some(controller) = unsafe { controller.as_ref() } {
+        unsafe { crate::hooks::camera::authored::animation_update(controller, true) };
+    }
 }
 
 /// Whether this controller belongs to the local player, that player's body rule state is the

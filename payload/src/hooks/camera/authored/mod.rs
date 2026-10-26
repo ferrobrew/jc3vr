@@ -5,12 +5,14 @@
 //! root remains in the view base.
 
 mod composition;
+mod evidence;
 mod native;
 mod policy;
 mod runtime;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use native::animation_update;
 use parking_lot::Mutex;
 pub(crate) use runtime::{TrackedView, capture, normal_reset, reset, selected, take_normal_reset};
 
@@ -41,13 +43,19 @@ pub(crate) enum Refusal {
     OrdinaryOrUnsupportedState,
     IdleTailWeightNotBound,
     MissingChannel,
+    MissingClip,
+    MissingFinalizedAnimation,
+    IncoherentAnimation,
+    InvalidClipTime,
+    InvalidNativeWeight,
+    NativeTailComplete,
     InvalidTransform,
     Policy(composition::InvalidPair),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Limit {
-    ExactStatesOnlyTreeSampledNoBlendTail,
+    SynchronousSourceVerifiedNativeBlend,
 }
 
 pub(crate) fn status() -> Status {

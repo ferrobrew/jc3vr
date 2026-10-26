@@ -115,6 +115,17 @@ pub(crate) struct FinalizedBlend {
     pub weight: f32,
 }
 
+/// Presence of the admitted clip set in this serial's native camera tracks.
+/// This is not a normalized weight and never scales an already blended pose.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct NativeContribution {
+    pub stamp: Stamp,
+    pub run: u64,
+    pub source: u64,
+    pub outgoing: bool,
+    pub contributing: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Frame {
     pub accepted: AcceptedRun,
@@ -122,6 +133,7 @@ pub(crate) struct Frame {
     pub sample: Sample,
     pub baseline: Baseline,
     pub blend: Option<FinalizedBlend>,
+    pub native: Option<NativeContribution>,
     pub source: u64,
     pub clip_time: Option<f32>,
     pub request: DeltaRequest,
@@ -162,8 +174,7 @@ impl Decision {
     }
 }
 
-/// The native exact-state reader omits clip time and weight rather than inventing them.
-/// Such a reader can own only named states, never an outgoing blend tail.
+/// Native contribution gates ownership; pose composition retains the native blend once.
 #[derive(Default)]
 pub(crate) struct Policy {
     previous: Option<Frame>,
@@ -198,7 +209,11 @@ impl Policy {
         if let Err(reason) = validate(frame) {
             return self.clear(Phase::Interrupted, Some(reason));
         }
-        if frame.blend.is_some_and(|blend| blend.weight == 0.0) {
+        if frame.blend.is_some_and(|blend| blend.weight == 0.0)
+            || frame
+                .native
+                .is_some_and(|native| native.outgoing && !native.contributing)
+        {
             return self.clear(Phase::Idle, None);
         }
         let Some(previous) = self.previous else {
@@ -219,7 +234,9 @@ impl Policy {
         };
         self.previous = Some(frame);
         Decision {
-            phase: if frame.state == GraphState::WingsuitIdle {
+            phase: if frame.state == GraphState::WingsuitIdle
+                || frame.native.is_some_and(|native| native.outgoing)
+            {
                 Phase::Tail
             } else {
                 Phase::Live
@@ -251,6 +268,17 @@ fn validate(frame: Frame) -> Result<(), InvalidPair> {
         || frame.accepted.run != frame.baseline.run
     {
         return Err(InvalidPair::AdmissionMismatch);
+    }
+    if let Some(native) = frame.native {
+        if native.stamp != stamp {
+            return Err(InvalidPair::BlendEpochMismatch);
+        }
+        if native.run != frame.accepted.run || native.source != frame.source {
+            return Err(InvalidPair::SourceChanged);
+        }
+        if frame.clip_time.is_none() {
+            return Err(InvalidPair::MissingSample);
+        }
     }
     if let Some(blend) = frame.blend {
         if frame.accepted.run != blend.run {
@@ -299,14 +327,18 @@ fn continue_pair(previous: Frame, current: Frame) -> Result<Pair, InvalidPair> {
     if previous.baseline != current.baseline {
         return Err(InvalidPair::BaselineChanged);
     }
-    if previous.source != current.source
+    let native_handoff = previous.native.is_some()
+        && current.native.is_some()
+        && previous.state != current.state
+        && previous.state.continues(current.state);
+    if (previous.source != current.source && !native_handoff)
         || previous.request != current.request
         || previous.root_treatment != current.root_treatment
     {
         return Err(InvalidPair::SourceChanged);
     }
     match (previous.clip_time, current.clip_time) {
-        (Some(before), Some(after)) if after < before => {
+        (Some(before), Some(after)) if after < before && current.native.is_none() => {
             return Err(InvalidPair::ClipTimeReversed);
         }
         (Some(_), None) | (None, Some(_)) => return Err(InvalidPair::SourceChanged),

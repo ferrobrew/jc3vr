@@ -14,8 +14,11 @@ use crate::{
             Baseline, DeltaRequest, InvalidPair, LocalSample, RootSample, RootTreatment, Sample,
             Stamp, Trs, compose_view,
         },
+        evidence::Clip,
         native::{NativeSample, Source, read, trs},
-        policy::{AcceptedRun, Frame, GraphState, NamedCase, Owner, Phase, Policy},
+        policy::{
+            AcceptedRun, Frame, GraphState, NamedCase, NativeContribution, Owner, Phase, Policy,
+        },
     },
 };
 
@@ -68,6 +71,10 @@ struct Runtime {
     source: Option<Source>,
     graph_state: Option<GraphState>,
     pose_buffer: u64,
+    finalized: u64,
+    clips: Vec<Clip>,
+    clip_source: u64,
+    outgoing: bool,
     serial: u64,
     run: u64,
     baseline: Option<Baseline>,
@@ -124,7 +131,9 @@ impl Runtime {
                 if self.continuity.is_some()
                     && matches!(
                         reason,
-                        Refusal::OrdinaryOrUnsupportedState | Refusal::IdleTailWeightNotBound
+                        Refusal::OrdinaryOrUnsupportedState
+                            | Refusal::IdleTailWeightNotBound
+                            | Refusal::NativeTailComplete
                     ) =>
             {
                 self.release(reason, views, always_use_t1, now)
@@ -161,12 +170,77 @@ impl Runtime {
         views: [TrackedView; 2],
         always_use_t1: bool,
     ) -> Result<Option<[Mat4; 2]>, Refusal> {
-        let graph_state = native.state?;
+        native.animation.validate()?;
+        let outgoing = matches!(
+            native.state,
+            Err(Refusal::OrdinaryOrUnsupportedState | Refusal::IdleTailWeightNotBound)
+        );
+        let graph_state = if outgoing {
+            self.graph_state.ok_or(native.state.unwrap_err())?
+        } else {
+            native.state?
+        };
         let case = graph_state
             .named_case()
             .ok_or(Refusal::OrdinaryOrUnsupportedState)?;
+        let clips = if outgoing {
+            self.clips
+                .iter()
+                .filter_map(|previous| {
+                    native
+                        .animation
+                        .samplers
+                        .iter()
+                        .find(|clip| clip.source == previous.source)
+                        .copied()
+                })
+                .collect::<Vec<_>>()
+        } else {
+            native.animation.playing.clone()
+        };
+        if self.previous.is_some()
+            && self.finalized == native.finalized
+            && (self.graph_state != Some(graph_state)
+                || self.clips != clips
+                || self.outgoing != outgoing)
+        {
+            return Err(Refusal::IncoherentAnimation);
+        }
+        if outgoing && !clips.iter().copied().any(Clip::contributes) {
+            return Err(Refusal::NativeTailComplete);
+        }
+        let same_state = self.graph_state == Some(graph_state);
+        let source_changed = !outgoing
+            && (clips.len() != self.clips.len()
+                || clips.iter().any(|clip| {
+                    !self
+                        .clips
+                        .iter()
+                        .any(|previous| previous.source == clip.source)
+                }));
+        let clip_restart = same_state
+            && !outgoing
+            && (self.outgoing
+                || clips.len() != self.clips.len()
+                || clips.iter().any(|clip| {
+                    self.clips
+                        .iter()
+                        .find(|previous| previous.source == clip.source)
+                        .is_none_or(|previous| clip.restarted(*previous))
+                }));
+        if outgoing
+            && clips.iter().any(|clip| {
+                self.clips
+                    .iter()
+                    .find(|previous| previous.source == clip.source)
+                    .is_some_and(|previous| clip.restarted(*previous))
+            })
+        {
+            return Err(Refusal::InvalidClipTime);
+        }
         if self.character != native.character
             || self.source != Some(native.source)
+            || clip_restart
             || self
                 .graph_state
                 .is_some_and(|previous| !previous.continues(graph_state))
@@ -178,7 +252,15 @@ impl Runtime {
             self.character = native.character;
             self.source = Some(native.source);
         }
+        if self.previous.is_some() && native.finalized < self.finalized {
+            return Err(Refusal::IncoherentAnimation);
+        }
+        if source_changed || clip_restart || self.previous.is_none() {
+            self.clip_source = native.finalized;
+        }
         self.graph_state = Some(graph_state);
+        self.clips = clips;
+        self.outgoing = outgoing;
         if let Some(previous) = self.previous
             && previous
                 .root
@@ -190,12 +272,12 @@ impl Runtime {
             self.policy.teleport();
             return Err(Refusal::Policy(InvalidPair::Teleport));
         }
-        if self.previous.is_none() || self.pose_buffer != native.pose_buffer {
+        if self.previous.is_none() || self.finalized != native.finalized {
             self.serial = self.serial.wrapping_add(1);
             let stamp = Stamp {
                 character: native.character,
                 continuity: self.run,
-                finalized: self.serial,
+                finalized: native.finalized,
             };
             let sample = Sample {
                 root: RootSample {
@@ -236,8 +318,15 @@ impl Runtime {
                 sample,
                 baseline,
                 blend: None,
-                source: native.source.camera_bone.into(),
-                clip_time: None,
+                native: Some(NativeContribution {
+                    stamp,
+                    run: self.run,
+                    source: self.clip_source,
+                    outgoing,
+                    contributing: self.clips.iter().copied().any(Clip::contributes),
+                }),
+                source: self.clip_source,
+                clip_time: self.clips.first().map(|clip| clip.time),
                 request: DeltaRequest::AuthoredLocalRelativeToBaseline,
                 root_treatment: RootTreatment::SeparateFromAuthoredLocal,
             };
@@ -258,10 +347,11 @@ impl Runtime {
             }
             self.previous = Some(sample);
             self.pose_buffer = native.pose_buffer;
+            self.finalized = native.finalized;
             *STATUS.lock() = Status::NamedCase {
                 case,
                 phase: decision.phase,
-                limitation: Limit::ExactStatesOnlyTreeSampledNoBlendTail,
+                limitation: Limit::SynchronousSourceVerifiedNativeBlend,
             };
         }
         let (Some(pair), Some(deltas)) = (self.pair, self.deltas) else {
@@ -286,8 +376,8 @@ impl Runtime {
         self.selected = Some(result);
         *STATUS.lock() = Status::NamedCase {
             case,
-            phase: Phase::Live,
-            limitation: Limit::ExactStatesOnlyTreeSampledNoBlendTail,
+            phase: if outgoing { Phase::Tail } else { Phase::Live },
+            limitation: Limit::SynchronousSourceVerifiedNativeBlend,
         };
         Ok(self.selected)
     }
@@ -374,6 +464,10 @@ impl Runtime {
         self.source = None;
         self.graph_state = None;
         self.pose_buffer = 0;
+        self.finalized = 0;
+        self.clips.clear();
+        self.clip_source = 0;
+        self.outgoing = false;
         self.baseline = None;
         self.previous = None;
         self.pair = None;
@@ -416,6 +510,10 @@ static STATE: Mutex<Runtime> = Mutex::new(Runtime {
     source: None,
     graph_state: None,
     pose_buffer: 0,
+    finalized: 0,
+    clips: Vec::new(),
+    clip_source: 0,
+    outgoing: false,
     serial: 0,
     run: 0,
     baseline: None,
@@ -433,24 +531,72 @@ static STATE: Mutex<Runtime> = Mutex::new(Runtime {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hooks::camera::authored::policy::{HangingState, LandingState, RecoveryState};
+    #[path = "adapter.rs"]
+    mod adapter;
+
+    use crate::hooks::camera::authored::{
+        evidence::{Animation, ClipSource},
+        policy::{HangingState, LandingState, RecoveryState},
+    };
 
     fn native(buffer: u64, state: GraphState, translation: Vec3) -> NativeSample {
+        let graph_serial: u64 = match state {
+            GraphState::GroundInto => 1,
+            GraphState::GroundFollowOn => 2,
+            GraphState::Landing(LandingState::Hard) => 3,
+            GraphState::Landing(_) => 4,
+            GraphState::Recovery(RecoveryState::PoseMatching) => 5,
+            GraphState::Recovery(RecoveryState::BlendIn) => 6,
+            GraphState::Recovery(_) => 7,
+            GraphState::FloorPickup => 8,
+            GraphState::Hanging(HangingState::GrappleAttached) => 9,
+            GraphState::Hanging(HangingState::StuntIdle) => 10,
+            _ => 11,
+        };
         NativeSample {
             character: 10,
             source: Source {
                 controller: 20,
                 producer: 30,
+                producer_owner: 31,
+                skeleton_resource: 41,
                 skeleton: 40,
+                driver: 42,
+                rule: 43,
+                blender: 44,
                 camera_bone: 50,
             },
             pose_buffer: buffer,
+            finalized: buffer * 100 + graph_serial,
+            animation: Animation {
+                state: Some(1),
+                playing: vec![clip(buffer as f32 / 1000.0)],
+                samplers: vec![clip(buffer as f32 / 1000.0)],
+            },
             state: Ok(state),
             root: Trs::IDENTITY,
             local: Trs {
                 translation,
                 ..Trs::IDENTITY
             },
+        }
+    }
+
+    fn clip(time: f32) -> Clip {
+        Clip {
+            source: ClipSource {
+                instance: 60,
+                owner: 61,
+                animation: 62,
+                binding: 63,
+            },
+            time,
+            duration: 2.0,
+            looping: false,
+            overflows: 0,
+            underflows: 0,
+            weight: 1.0,
+            camera_track_weight: 1.0,
         }
     }
 
@@ -734,12 +880,16 @@ mod tests {
                 assert!(state.selected.is_some());
                 let mut exit = native(300, GraphState::FloorPickup, Vec3::X);
                 exit.state = Err(Refusal::OrdinaryOrUnsupportedState);
+                exit.animation.samplers[0].weight = 0.0;
+                exit.animation.playing[0].weight = 0.0;
                 if during_handback {
                     assert!(state.capture(Ok(exit), views, false, now, epoch).is_some());
                     assert!(state.handback.is_some());
                     assert!(state.continuity.is_some());
                     exit = native(400, GraphState::FloorPickup, Vec3::X);
                     exit.state = Err(Refusal::OrdinaryOrUnsupportedState);
+                    exit.animation.samplers[0].weight = 0.0;
+                    exit.animation.playing[0].weight = 0.0;
                 }
                 let mut next_epoch = epoch;
                 match change {
@@ -789,6 +939,8 @@ mod tests {
         for (step, position) in [1.0, 6.0, 11.0].into_iter().enumerate() {
             let mut exit = native(300, GraphState::FloorPickup, Vec3::X);
             exit.state = Err(Refusal::IdleTailWeightNotBound);
+            exit.animation.samplers[0].weight = 0.0;
+            exit.animation.playing[0].weight = 0.0;
             exit.root.translation = Vec3::X * position;
             assert!(
                 state
