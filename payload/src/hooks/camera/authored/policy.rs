@@ -59,6 +59,8 @@ pub(crate) enum RecoveryState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum HangingState {
     GrappleAttached,
+    GrapplePreUpsideDown,
+    GrappleUpsideDown,
     StuntIdle,
     StuntIdleLeft,
     StuntIdleRight,
@@ -84,7 +86,7 @@ impl GraphState {
         !matches!(self, Self::GroundFollowOn | Self::WingsuitIdle) && self.named_case().is_some()
     }
 
-    /// Distinct landing and hanging motions do not share an entry baseline.
+    /// Only explicit graph handoffs share an entry baseline across distinct motions.
     pub fn continues(self, next: Self) -> bool {
         if self.named_case().is_none() {
             return false;
@@ -101,6 +103,10 @@ impl GraphState {
                     | (
                         Self::Recovery(RecoveryState::BlendIn),
                         Self::Recovery(RecoveryState::GetUp)
+                    )
+                    | (
+                        Self::Hanging(HangingState::GrapplePreUpsideDown),
+                        Self::Hanging(HangingState::GrappleUpsideDown)
                     )
             )
     }

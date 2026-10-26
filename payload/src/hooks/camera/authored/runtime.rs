@@ -175,7 +175,7 @@ impl Runtime {
             native.state,
             Err(Refusal::OrdinaryOrUnsupportedState | Refusal::IdleTailWeightNotBound)
         );
-        let graph_state = if outgoing {
+        let mut graph_state = if outgoing {
             self.graph_state.ok_or(native.state.unwrap_err())?
         } else {
             native.state?
@@ -183,7 +183,7 @@ impl Runtime {
         let case = graph_state
             .named_case()
             .ok_or(Refusal::OrdinaryOrUnsupportedState)?;
-        let clips = if outgoing {
+        let mut clips = if outgoing {
             self.clips
                 .iter()
                 .filter_map(|previous| {
@@ -206,8 +206,40 @@ impl Runtime {
         {
             return Err(Refusal::IncoherentAnimation);
         }
-        if outgoing && !clips.iter().copied().any(Clip::contributes) {
-            return Err(Refusal::NativeTailComplete);
+        let handoff_contributes = !outgoing
+            && self.character == native.character
+            && self.source == Some(native.source)
+            && self
+                .graph_state
+                .is_some_and(|previous| previous != graph_state && previous.continues(graph_state))
+            && self.clips.iter().any(|previous| {
+                native
+                    .animation
+                    .samplers
+                    .iter()
+                    .any(|clip| clip.source == previous.source && clip.contributes())
+            });
+        if !clips.iter().copied().any(Clip::contributes) {
+            if !handoff_contributes {
+                return Err(if outgoing {
+                    Refusal::NativeTailComplete
+                } else {
+                    Refusal::MissingChannel
+                });
+            }
+            graph_state = self.graph_state.ok_or(Refusal::MissingState)?;
+            clips = self
+                .clips
+                .iter()
+                .filter_map(|previous| {
+                    native
+                        .animation
+                        .samplers
+                        .iter()
+                        .find(|clip| clip.source == previous.source)
+                        .copied()
+                })
+                .collect();
         }
         let same_state = self.graph_state == Some(graph_state);
         let source_changed = !outgoing
@@ -533,6 +565,8 @@ mod tests {
     use super::*;
     #[path = "adapter.rs"]
     mod adapter;
+    #[path = "grapple.rs"]
+    mod grapple;
 
     use crate::hooks::camera::authored::{
         evidence::{Animation, ClipSource},
@@ -647,55 +681,6 @@ mod tests {
             .unwrap();
         assert_eq!(pair, repeated);
         assert_eq!(state.serial, 2);
-    }
-
-    #[test]
-    fn every_named_family_runs_the_same_native_sample_path() {
-        for graph in [
-            GraphState::GroundInto,
-            GraphState::Landing(LandingState::Hard),
-            GraphState::Recovery(RecoveryState::GetUp),
-            GraphState::FloorPickup,
-            GraphState::Hanging(HangingState::GrappleAttached),
-        ] {
-            let mut state = Runtime::default();
-            let views = [TrackedView {
-                world: Mat4::IDENTITY,
-                tracking_translation: Vec3::ZERO,
-            }; 2];
-            assert!(
-                state
-                    .update(native(100, graph, Vec3::ZERO), views, false)
-                    .unwrap()
-                    .is_none()
-            );
-            let pair = state
-                .update(native(200, graph, Vec3::X), views, false)
-                .unwrap()
-                .unwrap();
-            assert!(pair[0].w_axis.truncate().abs_diff_eq(Vec3::ZERO, 0.0001));
-            assert!(pair[1].w_axis.truncate().abs_diff_eq(Vec3::X, 0.0001));
-        }
-    }
-
-    #[test]
-    fn identity_hanging_channel_still_has_an_active_runtime_pair() {
-        let mut state = Runtime::default();
-        let graph = GraphState::Hanging(HangingState::GrappleAttached);
-        let views = [TrackedView {
-            world: Mat4::IDENTITY,
-            tracking_translation: Vec3::ZERO,
-        }; 2];
-        state
-            .update(native(100, graph, Vec3::ZERO), views, false)
-            .unwrap();
-        assert_eq!(
-            state
-                .update(native(200, graph, Vec3::ZERO), views, false)
-                .unwrap(),
-            Some([Mat4::IDENTITY; 2])
-        );
-        assert!(state.deltas.is_some());
     }
 
     #[test]

@@ -425,7 +425,10 @@ pub(super) fn trs(matrix: Mat4) -> Result<Trs, Refusal> {
     Ok(value)
 }
 
-// The shipped AFSM and its explicit ASB state map supply these names.
+// The shipped AFSM and its explicit ASB state map supply these names. Grapple inversion uses
+// the pre-upside-down and attached-upside-down sequence, not the native S_GRAPPLE_HANG name.
+// Its rico_grpl_newhang_land and rico_grpl_newhang_idle clips bind CharacterCam1; the idle
+// preserves the land endpoint, so the verified handoff retains the entry-relative correction.
 const EXACT_STATES: &[(&[u8], GraphState)] = &[
     (
         b"S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND_INTO",
@@ -471,6 +474,14 @@ const EXACT_STATES: &[(&[u8], GraphState)] = &[
     (
         b"S_GRAPPLE_ATTACH_0",
         GraphState::Hanging(HangingState::GrappleAttached),
+    ),
+    (
+        b"S_GRAPPLE_PRE_UPSIDEDOWN",
+        GraphState::Hanging(HangingState::GrapplePreUpsideDown),
+    ),
+    (
+        b"S_GRAPPLE_ATTACH_UPSIDE_DOWN",
+        GraphState::Hanging(HangingState::GrappleUpsideDown),
     ),
     (
         b"S_IDLE_HANG_STUNT",
@@ -546,6 +557,41 @@ mod tests {
             evidence::matching(source, after.current, &animation),
             Err(Refusal::MissingFinalizedAnimation)
         ));
+    }
+
+    #[test]
+    fn upside_down_camera_states_cannot_bypass_evaluated_range_or_buffer_exchange() {
+        for (offset, name) in [
+            b"S_GRAPPLE_PRE_UPSIDEDOWN".as_slice(),
+            b"S_GRAPPLE_ATTACH_UPSIDE_DOWN".as_slice(),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            for exchanged in [false, true] {
+                let count = if exchanged { 8 } else { 9 };
+                let (evaluation, after, source, mut animation) =
+                    evaluation_fixture(920 + offset as u64, count);
+                let id = |name: &[u8]| {
+                    name.iter().fold(0_u32, |id, byte| {
+                        id.wrapping_mul(31).wrapping_add(u32::from(*byte))
+                    })
+                };
+                animation.state = Some(id(name));
+                assert!(classify_with(animation.state, id).is_ok());
+                let after = if exchanged { after } else { evaluation.before };
+                evidence::publish(source, after.current, animation.clone());
+                let result = evaluation
+                    .complete(after, source.camera_bone)
+                    .map(|()| (source, after.current, animation.clone()));
+                assert!(matches!(result, Err(Refusal::MissingFinalizedAnimation)));
+                publish_evaluation(source.controller, result);
+                assert!(matches!(
+                    evidence::matching(source, after.current, &animation),
+                    Err(Refusal::MissingFinalizedAnimation)
+                ));
+            }
+        }
     }
 
     fn evaluation_fixture(
@@ -631,8 +677,9 @@ mod tests {
             b"S_FULL_RAGDOLL".as_slice(),
             b"S_CRASH_LAND_RAGDOLL".as_slice(),
             b"S_HEAVY_WEAPON_PICKUP".as_slice(),
-            b"S_GRAPPLE_HANG".as_slice(),
             b"S_GRAPPLE_REEL_TO_LAND".as_slice(),
+            b"S_GRAPPLE_ATTACH_UPSIDE_DOWN_UNKNOWN".as_slice(),
+            b"S_GRAPPLE_PRE_UPSIDEDOWN_UNKNOWN".as_slice(),
             b"S_JC_WINGSUIT_TO_LAND_SLIDE".as_slice(),
             b"S_GETUP_UNKNOWN".as_slice(),
         ] {
@@ -646,6 +693,19 @@ mod tests {
             Err(Refusal::IdleTailWeightNotBound)
         );
         assert_eq!(classify_with(None, id), Err(Refusal::MissingState));
+    }
+
+    #[test]
+    fn legacy_grapple_hang_predicate_name_does_not_supply_a_shipped_camera_state() {
+        let id = |name: &[u8]| {
+            name.iter().fold(0_u32, |id, byte| {
+                id.wrapping_mul(31).wrapping_add(u32::from(*byte))
+            })
+        };
+        assert_eq!(
+            classify_with(Some(id(b"S_GRAPPLE_HANG")), id),
+            Err(Refusal::OrdinaryOrUnsupportedState)
+        );
     }
 
     #[test]
@@ -704,6 +764,14 @@ mod tests {
             (
                 b"S_GRAPPLE_ATTACH_0".as_slice(),
                 GraphState::Hanging(HangingState::GrappleAttached),
+            ),
+            (
+                b"S_GRAPPLE_PRE_UPSIDEDOWN".as_slice(),
+                GraphState::Hanging(HangingState::GrapplePreUpsideDown),
+            ),
+            (
+                b"S_GRAPPLE_ATTACH_UPSIDE_DOWN".as_slice(),
+                GraphState::Hanging(HangingState::GrappleUpsideDown),
             ),
             (
                 b"S_IDLE_HANG_STUNT".as_slice(),

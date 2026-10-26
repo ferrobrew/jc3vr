@@ -15,14 +15,35 @@ fn timed(serial: u64, graph: GraphState, time: f32, position: Vec3) -> NativeSam
     value
 }
 
-fn all_cases() -> [GraphState; 5] {
+fn all_cases() -> [GraphState; 7] {
     [
         GraphState::GroundInto,
         GraphState::Landing(LandingState::Hard),
         GraphState::Recovery(RecoveryState::GetUp),
         GraphState::FloorPickup,
         GraphState::Hanging(HangingState::GrappleAttached),
+        GraphState::Hanging(HangingState::GrapplePreUpsideDown),
+        GraphState::Hanging(HangingState::GrappleUpsideDown),
     ]
+}
+
+#[test]
+fn every_named_family_runs_the_same_native_sample_path() {
+    for graph in all_cases() {
+        let mut state = Runtime::default();
+        assert!(
+            state
+                .update(native(100, graph, Vec3::ZERO), views(), false)
+                .unwrap()
+                .is_none()
+        );
+        let pair = state
+            .update(native(200, graph, Vec3::X), views(), false)
+            .unwrap()
+            .unwrap();
+        assert!(pair[0].w_axis.truncate().abs_diff_eq(Vec3::ZERO, 0.0001));
+        assert!(pair[1].w_axis.truncate().abs_diff_eq(Vec3::X, 0.0001));
+    }
 }
 
 #[test]
