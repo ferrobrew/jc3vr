@@ -3,6 +3,41 @@
 use super::*;
 
 #[test]
+fn vehicle_stunt_routes_physical_right_a_in_land_helicopter_and_plane_modes() {
+    for dominant in Hand::BOTH {
+        for class in [VehicleClass::Car, VehicleClass::Helicopter, VehicleClass::Plane] {
+            let mode = Mode::Vehicle(VehicleSeat {
+                class,
+                driver: true,
+            });
+            let mut c = Controls {
+                dominant,
+                ..Default::default()
+            };
+            c.hands[Hand::Right.index()].a = down();
+            let step = Bindings::default().sim_step(mode, &c, DT, &CONFIG);
+            assert_eq!(
+                player(&step, STUNT_JUMP),
+                Some(Want::Hold(1.0)),
+                "physical right A in {class:?} with {dominant:?} dominance",
+            );
+
+            let mut c = Controls {
+                dominant,
+                ..Default::default()
+            };
+            c.hands[Hand::Left.index()].a = down();
+            let step = Bindings::default().sim_step(mode, &c, DT, &CONFIG);
+            assert_eq!(
+                player(&step, STUNT_JUMP),
+                None,
+                "physical left A in {class:?} with {dominant:?} dominance",
+            );
+        }
+    }
+}
+
+#[test]
 fn the_car_uses_triggers_as_throttle() {
     let mut b = Bindings::default();
     let car = Mode::Vehicle(VehicleSeat {

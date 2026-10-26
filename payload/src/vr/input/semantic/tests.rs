@@ -2,12 +2,14 @@ use std::collections::{HashMap, HashSet};
 
 use super::*;
 use crate::{
-    controllers::frame::Hand,
+    controllers::frame::{Hand, InteractionProfile},
     vr::input::{
         layout::{self, BoolInput, FloatInput, HandsAction, Input, Profile, Vec2Input},
         semantic::{
+            bound::{BoundSet, Physical, PhysicalSet, of_sources},
             defaults::{
-                Side, Suggestion, default_binding, default_path, mirror, resolve, suggestions,
+                Component, DefaultBinding, Side, Suggestion, default_binding, default_path, mirror,
+                resolve, suggestions,
             },
             vocabulary::{
                 GlobalAction as G, HelicopterAction as H, LandVehicleAction as L, MenuAction as M,
@@ -518,4 +520,69 @@ fn the_defaults_mirror_the_gamepad_by_side() {
     };
     assert_eq!(touch_pause(Hand::Left), Some("input/menu/click"));
     assert_eq!(touch_pause(Hand::Right), None);
+}
+
+#[test]
+fn vehicle_stunt_defaults_stay_on_physical_right_lower_face_for_both_dominance_choices() {
+    let stunts = [
+        (SemanticSet::LandVehicle, L::Stunt as usize),
+        (SemanticSet::Helicopter, H::Stunt as usize),
+        (SemanticSet::Plane, P::Stunt as usize),
+    ];
+    for profile in Profile::ALL {
+        for dominant in Hand::BOTH {
+            for (set, index) in stunts {
+                assert_eq!(
+                    default_binding(set, index),
+                    Some(DefaultBinding {
+                        side: Side::Right,
+                        component: Component::LowerFace,
+                    }),
+                    "{}.Stunt ({dominant:?}-handed)",
+                    set.name(),
+                );
+                assert_eq!(
+                    default_path(set, index, profile, Hand::Right, dominant),
+                    Some("input/a/click"),
+                    "{}.Stunt on physical right ({profile:?}, {dominant:?}-handed)",
+                    set.name(),
+                );
+                assert_eq!(
+                    default_path(set, index, profile, Hand::Left, dominant),
+                    None,
+                    "{}.Stunt must not move to physical left ({profile:?}, {dominant:?}-handed)",
+                    set.name(),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn an_enumerated_vehicle_stunt_rebinding_takes_precedence_over_the_default() {
+    let set = SemanticSet::LandVehicle;
+    let index = L::Stunt as usize;
+    let mut enumerated_sources = vec![None; set.actions().len()];
+    enumerated_sources[index] = Some(of_sources([
+        "/user/hand/left/input/a/click",
+    ]));
+    for dominant in Hand::BOTH {
+        let merged = BoundSet::merged(
+            set,
+            &enumerated_sources,
+            [InteractionProfile::ValveIndex; 2],
+            dominant,
+            default_binding,
+        );
+        assert_eq!(
+            merged.get(index, Hand::Left),
+            PhysicalSet::of(Physical::LowerFace),
+            "explicit left-A binding with {dominant:?} dominance",
+        );
+        assert_eq!(
+            merged.get(index, Hand::Right),
+            PhysicalSet::EMPTY,
+            "explicit binding must replace, not add to, right-A default",
+        );
+    }
 }
