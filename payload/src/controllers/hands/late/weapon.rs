@@ -1,7 +1,7 @@
 //! Re-pushing the held gun's model matrix with the same correction the palette edit applies to the
 //! hand bones, so the gun and the hand never separate.
 
-use std::ffi::c_void;
+use std::{ffi::c_void, time::Instant};
 
 use detours_macro::detour;
 use glam::Mat4;
@@ -11,9 +11,11 @@ use jc3gi::{
     game::GameObjectRenderContext,
     types::math::Matrix4,
 };
+use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
+    aim::gun,
     frame::Hand,
     hands::{
         ik,
@@ -22,15 +24,68 @@ use crate::controllers::{
             math::{lerp_transform, pose_matrix},
         },
     },
-    weapons::hold::armed,
+    weapons::hold::{self, armed},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&WEAPON_UPDATE_RENDER_BINDER)
 }
 
-/// The hand an attach bone (an `NBone::ESafeBoneIndex`) belongs to, or `None` for a holster or
-/// other non-hand bone.
+/// One gun mesh's submitted pose, for comparison with its identified current collision body.
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct RenderedGun {
+    pub weapon: usize,
+    pub matrix: Mat4,
+    pub fraction: f32,
+    pub at: Instant,
+}
+
+pub(crate) fn rendered_guns() -> [Option<RenderedGun>; 2] {
+    *RENDERED_GUNS.lock()
+}
+
+pub(super) fn begin_frame() {
+    *RENDERED_GUNS.lock() = [None; 2];
+}
+
+/// The hand that owns this gun, retaining paired-gun placement through native state changes.
+pub(crate) fn gun_hand(
+    weapon: usize,
+    state: WeaponState,
+    bone: Option<u32>,
+    index: usize,
+    count: usize,
+) -> Option<Hand> {
+    let owner = hold::owned_holder(weapon).or_else(|| armed::hand_of(weapon));
+    attachment_hand(state, bone, owner, index, count)
+}
+
+fn attachment_hand(
+    state: WeaponState,
+    bone: Option<u32>,
+    owner: Option<Hand>,
+    index: usize,
+    count: usize,
+) -> Option<Hand> {
+    if !matches!(
+        state,
+        WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING
+    ) && owner.is_none()
+    {
+        return None;
+    }
+    owner
+        .map(|hand| {
+            if count > 1 && index % 2 == 1 {
+                hand.other()
+            } else {
+                hand
+            }
+        })
+        .or_else(|| bone.and_then(attach_hand))
+}
+
+/// The hand an attach bone belongs to, or `None` for a non-hand bone.
 pub(crate) fn attach_hand(bone: u32) -> Option<Hand> {
     [
         (SafeBoneIndex::ATTACH_HAND_LEFT as u32, Hand::Left),
@@ -69,54 +124,103 @@ unsafe fn late_update_weapon(game_object: *mut c_void, context: *const GameObjec
     let local = ik::local_character();
     // `m_User` is a `weak_ptr<CCharacter>`; its first word is the character. Checked before the
     // frame lock, since this runs for every weapon in the world.
-    if local == 0 || weapon.m_User[0] as usize != local {
+    let address = weapon as *const WeaponBase as usize;
+    let owned = hold::owned_holder(address)
+        .or_else(|| armed::hand_of(address))
+        .is_some();
+    if local == 0 || (weapon.m_User[0] as usize != local && !owned) {
         return;
     }
     let Some(frame) = frame::current() else {
         return;
     };
     let state = weapon.m_State;
-    if !matches!(
-        state,
-        WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING
-    ) && !armed::is(weapon as *const WeaponBase as usize)
-    {
-        return;
-    }
     let dtf = context.m_Dtf;
     let guns = &weapon.m_lWeaponData;
     let mut cursor = guns.m_Begin;
+    let count = unsafe { gun::guns(weapon) }.count();
+    let mut index = 0;
     while !cursor.is_null() && cursor < guns.m_End {
         let gun = unsafe { (*cursor).as_ref() };
+        let gun_index = index;
+        index += 1;
         cursor = unsafe { cursor.add(1) };
         let Some(gun) = gun else {
             continue;
         };
-        let Some(&bone) = gun.m_lBoneAttachementPerWeaponState.get(state as usize) else {
+        let bone = gun
+            .m_lBoneAttachementPerWeaponState
+            .get(state as usize)
+            .copied();
+        let Some(hand) = gun_hand(
+            weapon as *const WeaponBase as usize,
+            state,
+            bone,
+            gun_index,
+            count,
+        ) else {
             continue;
         };
-        let Some(hand) = attach_hand(bone) else {
+        let Some(instance) = (unsafe { gun.m_BaseModelInstance.as_mut() }) else {
             continue;
         };
-        let (Some(d), Some(instance)) = (frame.hand_delta(hand, dtf), unsafe {
-            gun.m_BaseModelInstance.as_mut()
-        }) else {
-            continue;
-        };
-        let interpolated = lerp_transform(
+        let matrices = [
             Mat4::from(gun.m_WorldMatrixT0),
             Mat4::from(gun.m_WorldMatrixT1),
-            dtf,
+        ];
+        let delta = frame.hand_delta(hand, dtf);
+        let rendered = delta.map_or_else(
+            || lerp_transform(matrices[0], matrices[1], dtf),
+            |d| pose_matrix(d) * frame::interpolate_in_character(matrices, dtf),
         );
-        let matrix = Matrix4::from(pose_matrix(d) * interpolated);
-        unsafe { instance.UpdateMatrix(&matrix) };
-        frame::count_weapon_update();
+        if delta.is_some() {
+            let matrix = Matrix4::from(rendered);
+            unsafe { instance.UpdateMatrix(&matrix) };
+            frame::count_weapon_update();
+        }
+        RENDERED_GUNS.lock()[hand.index()] = Some(RenderedGun {
+            weapon: weapon as *const WeaponBase as usize,
+            matrix: rendered,
+            fraction: dtf,
+            at: Instant::now(),
+        });
     }
 }
+
+static RENDERED_GUNS: Mutex<[Option<RenderedGun>; 2]> = Mutex::new([None; 2]);
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn held_vehicle_weapons_keep_both_hands_without_selecting_a_native_slot() {
+        let holster = Some(SafeBoneIndex::LEFT_HOLSTER as u32);
+        for holder in Hand::BOTH {
+            assert_eq!(
+                attachment_hand(WeaponState::E_WS_HOLSTERED, holster, Some(holder), 0, 1),
+                Some(holder)
+            );
+            assert_eq!(
+                attachment_hand(WeaponState::E_WS_HOLSTERED, holster, Some(holder), 1, 2),
+                Some(holder.other())
+            );
+        }
+        assert_eq!(
+            attachment_hand(WeaponState::E_WS_HOLSTERED, holster, None, 0, 1),
+            None
+        );
+        assert_eq!(
+            attachment_hand(
+                WeaponState::E_WS_WIELDING,
+                Some(SafeBoneIndex::ATTACH_HAND_RIGHT as u32),
+                None,
+                0,
+                1
+            ),
+            Some(Hand::Right)
+        );
+    }
 
     #[test]
     fn attach_bones_map_to_hands() {

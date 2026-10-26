@@ -2,9 +2,9 @@
 //! two reads, the mod's joints, the contact flashes, the player's ground, and the gazed body, within
 //! a primitive budget that keeps whole bodies, the nearest first.
 //!
-//! Every point is a world anchor at the frame's interpolation fraction between the last two reads,
-//! which is where the engine draws the objects the bodies belong to (between their last two ticks'
-//! matrices), so a collider stays on its object at frame rate however fast either moves.
+//! Every point is a world anchor. The live view supplies a current render-time body sample without
+//! a previous snapshot, so actual collision geometry is not displaced to match an interpolated mesh.
+//! Paired snapshots remain supported for pure snapshot consumers and regression checks.
 
 use std::collections::HashMap;
 
@@ -425,6 +425,33 @@ mod tests {
             panic!("{out:?}");
         };
         assert_eq!(*at, Anchor::World(Vec3::X));
+    }
+
+    #[test]
+    fn current_body_presentation_does_not_trail_the_render_fraction() {
+        let current = Snapshot {
+            bodies: vec![body(
+                1,
+                BodyKind::GunBody,
+                Vec3::new(2.0, 0.0, -1.0),
+                sphere(),
+            )],
+            ..Snapshot::default()
+        };
+        let config = ColliderViewConfig {
+            boxes: false,
+            ..ColliderViewConfig::new()
+        };
+        for dtf in [0.0, 0.25, 0.75, 1.0] {
+            let mut input = inputs(&current, None, &config);
+            input.dtf = dtf;
+            let mut out = Vec::new();
+            build(&input, &mut out);
+            let [Primitive::Sprite { at, .. }] = out.as_slice() else {
+                panic!("{out:?}");
+            };
+            assert_eq!(*at, Anchor::World(Vec3::new(2.0, 0.0, -1.0)));
+        }
     }
 
     #[test]

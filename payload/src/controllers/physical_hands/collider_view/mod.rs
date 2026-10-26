@@ -5,16 +5,14 @@
 //! - [`callback`]: a pre-simulation callback that counts the physics steps;
 //! - [`scan`]: the read of the world after a step, on the game thread outside the step;
 //! - [`model`]: the snapshot it fills, and the pure geometry over it;
-//! - [`draw`]: the primitives, between the last two reads, within a budget;
+//! - [`draw`]: the primitives within a budget;
 //! - [`config`]: the settings.
 //!
-//! The world is read once per physics step, at the top of the render update (`Game::UpdateRender`,
-//! after the game's update has stepped the world and before anything is drawn), which keeps the
-//! read off every rendered frame. The primitives are built every rendered frame there, at the
-//! frame's interpolation fraction between the last two reads, so the colliders move with their
-//! objects at frame rate. The view's own state is a lock only the game thread takes, with the
-//! overlay store's and the readout's leaf locks briefly under it; the readout may be read from any
-//! thread.
+//! Geometry discovery runs once per physics step. After the engine's render update, retained body
+//! transforms are refreshed and drawn at their current collision poses, independently of the mesh's
+//! render interpolation. The same-frame mesh/body comparison reports that difference rather than
+//! moving the outline to conceal it. The view's state is a game-thread lock; the overlay store and
+//! status use leaf locks, and the status may be read from any thread.
 
 mod callback;
 pub mod config;
@@ -39,6 +37,8 @@ use self::{
 use crate::{
     config::Config,
     controllers::{
+        frame::Hand,
+        hands::late,
         overlay::{
             primitive::{Primitive, Source},
             store,
@@ -69,9 +69,30 @@ pub struct ColliderViewStatus {
     pub primitives: usize,
     /// How long the last read took, microseconds.
     pub read_us: u32,
+    /// Render-time transform samples, including frames without a physics step.
+    pub pose_reads: u64,
+    /// The physics step identified by the current body-pose sample.
+    pub pose_step: u64,
+    /// The render fraction, for comparison with the separately interpolated visible meshes.
+    pub render_fraction: f32,
+    /// Time since the frame's body poses were sampled, microseconds.
+    pub pose_age_us: u32,
+    /// Mesh versus current collision pose for each hand's identified held gun.
+    pub gun_pose_gaps: [Option<GunPoseGap>; 2],
     /// The body under the gaze at the last frame.
     pub gaze: Option<GazeReadout>,
     pub last_error: Option<String>,
+}
+
+/// A current collision body compared with the mesh submitted in this render frame.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct GunPoseGap {
+    pub weapon: usize,
+    pub body: u32,
+    pub translation_m: f32,
+    pub rotation_deg: f32,
+    pub mesh_age_us: u32,
+    pub render_fraction: f32,
 }
 
 /// The body under the gaze, for the debug UI.
@@ -117,13 +138,12 @@ pub(crate) fn frame_tick() {
     STATUS.lock().registered = registered;
 }
 
-/// Read the world when it has stepped since the last read, and submit the frame's primitives at
-/// the interpolation fraction `dtf`.
+/// Discover geometry after a step and submit current collision poses after the mesh render updates.
+/// The render fraction identifies the mesh sample; collision geometry is not interpolated by it.
 ///
 /// # Safety
 ///
-/// The game thread, at the top of the render update: after the game's update, outside the physics
-/// step.
+/// The game thread, after the engine's render update and outside the physics step.
 pub(crate) unsafe fn render_tick(dtf: f32) {
     let config = Config::lock_query(|c| c.controllers.physical_hands.collider_view);
     if !config.enabled || !hooks::in_gameplay() {
@@ -174,6 +194,15 @@ pub(crate) unsafe fn render_tick(dtf: f32) {
             }
         }
     }
+    let sampled_at = Instant::now();
+    if let Some(current) = state.current.as_mut() {
+        // SAFETY: forwarded from the caller; only retained transforms and boxes are read here.
+        if let Err(e) = unsafe { scan::refresh(current, head.position) } {
+            state.previous = None;
+            state.current = None;
+            error = Some(e.to_string());
+        }
+    }
     let Some(current) = state.current.as_ref() else {
         store::clear(Source::ColliderView);
         let mut status = STATUS.lock();
@@ -198,7 +227,7 @@ pub(crate) unsafe fn render_tick(dtf: f32) {
     let drawn = draw::build(
         &DrawInputs {
             current,
-            previous: state.previous.as_ref(),
+            previous: None,
             dtf,
             config: &config,
             flashes: &flashes,
@@ -217,6 +246,26 @@ pub(crate) unsafe fn render_tick(dtf: f32) {
         distance_m: b.distance_m,
     });
     let (scanned, in_range) = (current.scanned, current.in_range);
+    let rendered = late::rendered_guns();
+    let physical = guns::status();
+    let gun_pose_gaps = Hand::BOTH.map(|hand| {
+        let mesh = rendered[hand.index()]?;
+        let gun = physical.hands[hand.index()].as_ref()?;
+        if mesh.weapon != gun.weapon || !gun.in_world {
+            return None;
+        }
+        let body = current.body(gun.body_id)?;
+        let (_, rotation, position) = mesh.matrix.to_scale_rotation_translation();
+        let (_, body_rotation, body_position) = body.transform.to_scale_rotation_translation();
+        Some(GunPoseGap {
+            weapon: mesh.weapon,
+            body: gun.body_id,
+            translation_m: position.distance(body_position),
+            rotation_deg: rotation.angle_between(body_rotation).to_degrees(),
+            mesh_age_us: u32::try_from(mesh.at.elapsed().as_micros()).unwrap_or(u32::MAX),
+            render_fraction: mesh.fraction,
+        })
+    });
     store::submit(Source::ColliderView, &mut state.primitives, TTL);
 
     let mut status = STATUS.lock();
@@ -227,6 +276,11 @@ pub(crate) unsafe fn render_tick(dtf: f32) {
     status.drawn = drawn;
     status.primitives = primitives;
     status.gaze = gaze;
+    status.pose_reads += 1;
+    status.gun_pose_gaps = gun_pose_gaps;
+    status.pose_step = steps;
+    status.render_fraction = dtf;
+    status.pose_age_us = u32::try_from(sampled_at.elapsed().as_micros()).unwrap_or(u32::MAX);
     if let Some(took) = took {
         status.reads += 1;
         status.read_us = u32::try_from(took.as_micros()).unwrap_or(u32::MAX);
@@ -310,6 +364,11 @@ static STATUS: Mutex<ColliderViewStatus> = Mutex::new(ColliderViewStatus {
     },
     primitives: 0,
     read_us: 0,
+    pose_reads: 0,
+    pose_step: 0,
+    render_fraction: 0.0,
+    pose_age_us: 0,
+    gun_pose_gaps: [None; 2],
     gaze: None,
     last_error: None,
 });

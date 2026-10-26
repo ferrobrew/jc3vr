@@ -163,6 +163,39 @@ pub(super) unsafe fn scan(
     })
 }
 
+/// Refresh retained bodies at render time without re-reading their shape geometry.
+/// Reused or removed body slots are discarded instead of displaying the old body's outline.
+///
+/// # Safety
+///
+/// The game thread, outside the physics step.
+pub(super) unsafe fn refresh(snapshot: &mut Snapshot, centre: Vec3) -> Result<(), ScanError> {
+    let world = unsafe { World::get() }.ok_or(ScanError::NoPhysicsWorld)?;
+    let w = world.world();
+    if w.m_bodies.is_null() {
+        return Err(ScanError::NoBodies);
+    }
+    let space = Space::of(w);
+    snapshot.bodies.retain_mut(|body| {
+        if body.id > w.m_peakBodyIndex {
+            return false;
+        }
+        // SAFETY: the id is within the world's body array on this thread.
+        let slot = unsafe { &*w.m_bodies.add(body.id as usize) };
+        if motion_kind(slot).is_none() || slot.m_shape as usize != body.shape_key {
+            return false;
+        }
+        let mut transform = havok_affine(&slot.m_transform);
+        transform.translation += Vec3A::from(world.shift);
+        body.transform = transform;
+        body.aabb = space.restore(slot, world.shift);
+        body.distance_m = body.aabb.distance(centre);
+        true
+    });
+    snapshot.ground = unsafe { player_proxy() }.and_then(|player| player.ground);
+    Ok(())
+}
+
 /// The world's integer space.
 struct Space {
     scale_inv: Vec3,

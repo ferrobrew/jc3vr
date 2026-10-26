@@ -31,6 +31,19 @@ pub(crate) fn lerp_transform(a: Mat4, b: Mat4, t: f32) -> Mat4 {
     Mat4::from_scale_rotation_translation(sa.lerp(sb, t), ra.slerp(rb, t), ta.lerp(tb, t))
 }
 
+/// Interpolate an attachment in its parent's frame, preserving its local mechanical motion.
+/// World-space interpolation cuts across the turn of a moving parent instead of following it.
+pub(crate) fn interpolate_attached(parent: [Mat4; 2], attachment: [Mat4; 2], t: f32) -> Mat4 {
+    let local = [
+        parent[0].inverse() * attachment[0],
+        parent[1].inverse() * attachment[1],
+    ];
+    if local.iter().any(|m| !m.is_finite()) {
+        return lerp_transform(attachment[0], attachment[1], t);
+    }
+    lerp_transform(parent[0], parent[1], t) * lerp_transform(local[0], local[1], t)
+}
+
 pub(crate) fn pose_matrix(p: Pose) -> Mat4 {
     Mat4::from_rotation_translation(p.orientation, p.position)
 }
@@ -102,6 +115,22 @@ mod tests {
             .is_none()
         );
         assert!(correction(reference, reference, f32::NAN).is_none());
+    }
+
+    #[test]
+    fn a_rigid_attachment_follows_platform_translation_and_rotation() {
+        let local = Mat4::from_translation(Vec3::new(0.4, 1.2, -0.5));
+        for (distance, yaw) in [(2.0, 0.0), (0.0, 1.0), (2.0, -0.6)] {
+            let parent = [
+                Mat4::IDENTITY,
+                Mat4::from_rotation_translation(Quat::from_rotation_y(yaw), Vec3::X * distance),
+            ];
+            let attachment = [parent[0] * local, parent[1] * local];
+            for t in [0.0, 0.25, 0.5, 1.0] {
+                let expected = lerp_transform(parent[0], parent[1], t) * local;
+                assert!(interpolate_attached(parent, attachment, t).abs_diff_eq(expected, 1e-5));
+            }
+        }
     }
 
     #[test]

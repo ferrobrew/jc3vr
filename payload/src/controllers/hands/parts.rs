@@ -2,11 +2,10 @@
 //! spinning barrel that a weapon draws as its own model next to the gun's
 //! ([`ModelAttachementWeaponComponent`], and the barrel recoil and spin components derived from it).
 //!
-//! A part keeps its own pair of cached world matrices and interpolates them in its own render
-//! update, so the late update's re-push of the gun's model matrix ([`crate::controllers::hands::late`])
-//! leaves it where the simulation placed it: one to two ticks behind the corrected gun and hand. A
-//! post-call detour on the part's render update re-pushes its model matrix as the correction of
-//! the hand it rides times the engine's own interpolated matrix, as the gun's is.
+//! A part keeps its own cached world matrices. Its local transforms relative to the owning gun
+//! interpolate beneath that gun's rendered parent, preserving mechanical travel through a vehicle
+//! turn. A post-call render detour applies the same hand correction as the gun's late update
+//! ([`crate::controllers::hands::late`]) for held and wielded weapons.
 //!
 //! A part rides its gun, and so the hand the gun's attach bone belongs to, unless an animation
 //! task put it on one of the holder's bones for the placement (a magazine carried in the off-hand
@@ -28,7 +27,7 @@ use detours_macro::detour;
 use glam::Mat4;
 use jc3gi::{
     character::character::SafeBoneIndex,
-    equipment::weapon::{ModelAttachementWeaponComponent, WeaponBase, WeaponState},
+    equipment::weapon::{ModelAttachementWeaponComponent, WeaponBase, WeaponData},
     game::GameObjectRenderContext,
     types::math::Matrix4,
 };
@@ -39,7 +38,10 @@ use crate::controllers::{
     aim::gun,
     frame::Hand,
     hands::{ik, late},
-    weapons::reload,
+    weapons::{
+        hold::{self, armed},
+        reload,
+    },
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -100,7 +102,10 @@ fn part_update_attachment_transforms(
     let Some(part) = (unsafe { part.as_ref() }) else {
         return;
     };
-    if !unsafe { part.m_Owner.as_ref() }.is_some_and(|w| w.m_IsUserLocalPlayer) {
+    if !unsafe { part.m_Owner.as_ref() }.is_some_and(|w| {
+        let address = w as *const WeaponBase as usize;
+        w.m_IsUserLocalPlayer || hold::owned_holder(address).is_some() || armed::is(address)
+    }) {
         return;
     }
     let mut placed = PLACED_ON.lock();
@@ -136,39 +141,69 @@ unsafe fn late_update_part(
     };
     let local = ik::local_character();
     // `m_User` is a `weak_ptr<CCharacter>`; its first word is the character.
-    if local == 0 || weapon.m_User[0] as usize != local {
+    let address = weapon as *const WeaponBase as usize;
+    let owned = hold::owned_holder(address)
+        .or_else(|| armed::hand_of(address))
+        .is_some();
+    if local == 0 || (weapon.m_User[0] as usize != local && !owned) {
         return;
     }
     let state = weapon.m_State;
-    if !matches!(
-        state,
-        WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING
-    ) {
-        return;
-    }
     let placed_on = PLACED_ON
         .lock()
         .as_ref()
         .and_then(|p| p.get(&(part as *const _ as usize)).copied())
         .unwrap_or(ModelAttachementWeaponComponent::NO_CHARACTER_BONE);
-    let gun_bone = unsafe { gun_bone(weapon, part.m_WeaponDataIndex, state) };
-    let Some(hand) = part_hand(placed_on, gun_bone) else {
+    let Some(gun) = (unsafe { part_gun(weapon, part.m_WeaponDataIndex) }) else {
+        return;
+    };
+    let gun_bone = gun
+        .m_lBoneAttachementPerWeaponState
+        .get(state as usize)
+        .copied();
+    let Some(holder) = late::gun_hand(
+        weapon as *const WeaponBase as usize,
+        state,
+        gun_bone,
+        part.m_WeaponDataIndex as usize,
+        unsafe { gun::guns(weapon) }.count(),
+    ) else {
+        return;
+    };
+    let hand = if placed_on == ModelAttachementWeaponComponent::NO_CHARACTER_BONE {
+        holder
+    } else if let Some(hand) = part_hand(placed_on, gun_bone) {
+        hand
+    } else {
         return;
     };
     let dtf = context.m_Dtf;
     let Some(instance) = (unsafe { part.m_BaseModelInstance.as_mut() }) else {
         return;
     };
-    let interpolated = late::lerp_transform(
+    let matrices = [
         Mat4::from(part.m_WorldMatrixSaved),
         Mat4::from(part.m_WorldMatrix),
-        dtf,
-    );
-    // The wielding states carry no holstered scale, so the engine pushed the interpolation as is.
+    ];
+    let on_gun = placed_on == ModelAttachementWeaponComponent::NO_CHARACTER_BONE;
     let correction = late::hand_correction(hand, dtf);
+    let interpolated = if on_gun {
+        let parent = [
+            Mat4::from(gun.m_WorldMatrixT0),
+            Mat4::from(gun.m_WorldMatrixT1),
+        ];
+        let rendered = if correction.is_some() {
+            late::interpolate_in_character(parent, dtf)
+        } else {
+            late::lerp_transform(parent[0], parent[1], dtf)
+        };
+        animated_part(parent, matrices, rendered, dtf)
+    } else {
+        late::lerp_transform(matrices[0], matrices[1], dtf)
+    };
     let corrected = correction.map_or(interpolated, |d| d * interpolated);
     let adjusted = reload::adjust_part(part, weapon as *const WeaponBase as usize, corrected, dtf);
-    if correction.is_none() && adjusted.is_none() {
+    if !on_gun && correction.is_none() && adjusted.is_none() {
         return;
     }
     let matrix = Matrix4::from(adjusted.unwrap_or(corrected));
@@ -176,19 +211,63 @@ unsafe fn late_update_part(
     PARTS_UPDATED.fetch_add(1, Ordering::Relaxed);
 }
 
-/// The attach bone gun `index` of `weapon` rides in `state`.
-unsafe fn gun_bone(weapon: &WeaponBase, index: u32, state: WeaponState) -> Option<u32> {
-    let gun = unsafe { gun::guns(weapon) }
+fn animated_part(parent: [Mat4; 2], part: [Mat4; 2], rendered_parent: Mat4, dtf: f32) -> Mat4 {
+    let local = [parent[0].inverse() * part[0], parent[1].inverse() * part[1]];
+    if local.iter().all(|m| m.is_finite()) {
+        rendered_parent * late::lerp_transform(local[0], local[1], dtf)
+    } else {
+        late::lerp_transform(part[0], part[1], dtf)
+    }
+}
+
+/// The gun that owns this part, not merely the selected weapon's first gun.
+unsafe fn part_gun(weapon: &WeaponBase, index: u32) -> Option<&WeaponData> {
+    unsafe { gun::guns(weapon) }
         .nth(usize::try_from(index).ok()?)
-        .flatten()?;
-    gun.m_lBoneAttachementPerWeaponState
-        .get(state as usize)
-        .copied()
+        .flatten()
 }
 
 #[cfg(test)]
 mod tests {
+    use glam::{Quat, Vec3};
+
     use super::*;
+
+    #[test]
+    fn vehicle_translation_and_turn_preserve_the_animated_action_offset() {
+        let local = [
+            Mat4::from_translation(Vec3::Z * 0.1),
+            Mat4::from_translation(Vec3::Z * 0.16),
+        ];
+        for (distance, yaw) in [(0.0, 0.0), (4.0, 0.0), (2.0, 0.8), (-1.0, -0.4)] {
+            let parent = [
+                Mat4::from_translation(Vec3::new(100.0, 3.0, -50.0)),
+                Mat4::from_rotation_translation(
+                    Quat::from_rotation_y(yaw),
+                    Vec3::new(100.0 + distance, 3.0, -50.0),
+                ),
+            ];
+            let part = [parent[0] * local[0], parent[1] * local[1]];
+            for t in [0.0, 0.25, 0.5, 1.0] {
+                let rendered = late::lerp_transform(parent[0], parent[1], t);
+                let actual = animated_part(parent, part, rendered, t);
+                let action = rendered.inverse() * actual;
+                assert!(action.abs_diff_eq(late::lerp_transform(local[0], local[1], t), 2e-5));
+            }
+        }
+    }
+
+    #[test]
+    fn a_part_follows_the_late_parent_without_losing_mechanical_travel() {
+        let parent = [Mat4::IDENTITY; 2];
+        let parts = [Mat4::IDENTITY, Mat4::from_translation(Vec3::Z * 0.08)];
+        let late_parent = Mat4::from_rotation_translation(Quat::from_rotation_x(0.3), Vec3::X);
+        let result = animated_part(parent, parts, late_parent, 0.5);
+        assert!(
+            (late_parent.inverse() * result)
+                .abs_diff_eq(Mat4::from_translation(Vec3::Z * 0.04), 1e-5)
+        );
+    }
 
     const ON_GUN: u32 = ModelAttachementWeaponComponent::NO_CHARACTER_BONE;
 

@@ -10,6 +10,20 @@ Anything drawn relative to the player is anchored at render time:
 - a model the mod holds in a hand is re-pushed at render time from the hand's render-time pose or correction, after the engine's own render update has pushed its interpolated matrix;
 - a model the mod places on the body keeps its interpolation: both of its cached matrices are written on the tick, so the engine draws it between them with the body it rides.
 
+## Moving-frame sampling
+
+The late hand frame captures the character transport pair after the head pair is published. Wrist references interpolate in the character's local frame, then use the same interpolated character transform as the skeleton. Render-time controller poses interpolate relative to their head transport pair. This preserves the arc of a turn rather than interpolating world positions across it. The gun mesh uses the same character-relative interpolation before the hand correction is applied. The existing root transport supplies platform movement; these consumers add no platform velocity.
+
+The physical-hand render offset is sampled from the current body after simulation and frozen before the render hands are composed. Its reference is the published palm target from `physics::state::acting_palms`, including the physical gun's support and weight target. Subtracting a raw controller reference would cancel or duplicate that support and weight. The residual is converted to the publication's cockpit frame before the render head pair transports it. The render path does not blend that residual one physics step behind. A failed body read uses the latest bounded pre-step residual. The sampler never drives or places a body.
+
+Gun parts use the ownership of the held or wielded weapon, including a weapon retained in a hand while the native state is holstered in a vehicle. Each paired gun keeps its hand. A part that rides the gun interpolates its local transform relative to that gun and is composed beneath the gun's rendered parent. Slide, bolt, barrel, and magazine animation therefore retains its relative travel. A part placed explicitly in a reload hand follows that hand instead. A weapon that is actually on a body socket receives no hand correction.
+
+The collider view discovers bodies and shape geometry at physics-step cadence, then refreshes retained body transforms and broad-phase boxes every rendered frame. It draws the current collision pose, without delayed snapshot interpolation or a hand correction. Contact rings remain at their recorded world positions. The readout reports the physics-step identity, pose-read count, render fraction, and pose sample age separately. For a held gun, it compares the submitted mesh pose with the current body identified by that hand's held-gun record. A mesh/body gap is a timing or pose observation; it is not a measurement of native hull fidelity. The collider sample runs after the engine's render update so it can compare that frame's submitted mesh rather than the preceding frame's matrix.
+
+## Verification limits
+
+Pure-logic regressions cover parent-relative translation and rotation, immediate physical-offset sampling, held ownership through holstered vehicle states, local action travel beneath a moving parent, and current collision display independent of the render fraction. These checks do not establish game or headset acceptance. Standing-platform translation, acceleration, braking, and turning remain separate from seated travel. Runtime checks must also cover both hands, gun transfer, reload-hand placement, action cycling, and actual contacts with the collider view enabled. Removing the extra interpolation delay can expose physics-step jitter; it must not be tuned by moving current collision geometry onto a delayed mesh.
+
 ## Where it applies
 
 Overlay markers and readouts:

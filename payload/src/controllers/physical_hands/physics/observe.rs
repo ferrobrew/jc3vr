@@ -8,20 +8,23 @@ use std::{
 };
 
 use glam::Vec3;
+use parking_lot::Mutex;
 
 use crate::{
     config::Config,
     controllers::{
-        frame::Hand,
+        frame::{Hand, Pose},
         hands::CockpitHand,
         haptics::{self, Sustain},
         physical_hands::physics::{
             blows, callback,
             drive::rig_jumped,
+            guns,
             lifecycle::HANDS,
             render::RenderOffset,
             state::{
-                CLEANUP_REGISTERED, MIN_PRESSURE_LOAD, SHARED, TRACKERS_AT_REST, Target,
+                CLEANUP_REGISTERED, MIN_PRESSURE_LOAD, RENDER_MAX_TURN_RAD,
+                RENDER_TURN_DEADBAND_RAD, SHARED, STALE_AFTER, TRACKERS_AT_REST, Target,
                 VELOCITY_SMOOTHING_S, acting_palms, enabled,
             },
         },
@@ -190,35 +193,90 @@ pub(crate) fn apply(cockpit: &mut [Option<CockpitHand>; 2], palm_offset: Vec3) {
     }
 }
 
-/// Draw each driven hand where its body is, as [`apply`] does, for a frame rendered now: the
-/// offset is the last two steps' blended by the time since the latest (`OffsetTimeline::at`), not
-/// the latest step's alone, so a hand held back by a wall is drawn without stepping between
-/// the physics steps while the controller moves on. Called by
-/// [`crate::controllers::physical_hands::apply_at_render`] for the late update's render-time hands.
-pub(crate) fn apply_at_render(cockpit: &mut [Option<CockpitHand>; 2], palm_offset: Vec3) {
+/// Freeze post-step presentation offsets against the published palms, in their transport frame.
+/// This reads bodies but never drives or places them.
+///
+/// # Safety
+///
+/// The game thread, after simulation and outside the physics step.
+pub(crate) unsafe fn sample_render_offsets() {
     let now = Instant::now();
-    let (offsets, shown, scale) = {
+    let config = Config::lock_query(|c| c.controllers.physical_hands);
+    let (targets, rotation, scale, shown, fallback) = {
         let shared = SHARED.lock();
-        if !shared.fresh(now) {
+        if !enabled(&config)
+            || !config.bodies.render_at_body
+            || !shared.fresh(now)
+            || !shared.stepped_lately(now)
+        {
+            *RENDER_OFFSETS.lock() = None;
             return;
         }
-        let Some(offsets) = shared.offset_timeline.at(now) else {
-            return;
-        };
-        (offsets, shared.shown, shared.world_scale.max(1e-3))
+        (
+            shared.targets,
+            shared
+                .rig
+                .map_or_else(headpose::xr::body_rotation, |rig| rig.0),
+            shared.world_scale.max(1e-3),
+            shared.shown,
+            shared.offset_timeline.at(now),
+        )
     };
-    let body_rotation = headpose::xr::body_rotation();
-    for ((hand, offset), shown) in cockpit.iter_mut().zip(offsets).zip(shown) {
-        if let Some(hand) = hand.as_mut()
-            && shown
-        {
-            let offset = offset.to_cockpit(body_rotation, scale);
-            if !offset.is_none() {
-                offset.apply(hand, palm_offset);
-            }
+    let on_gun = guns::physical_hands();
+    let hands = HANDS.lock();
+    let offsets = Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        let target = targets[i].filter(|_| shown[i])?;
+        let body = hands.bodies[i].as_ref()?;
+        // SAFETY: the caller excludes the physics step; the owning body validates its slot.
+        let motion = match unsafe { body.motion() } {
+            Ok(motion) => motion,
+            Err(_) => return fallback.map(|offsets| offsets[i].to_cockpit(rotation, scale)),
+        };
+        // `acting_palms` publishes the support/weight-adjusted reference. Subtracting a raw
+        // controller palm here would cancel that target when this residual is applied to it.
+        let offset = RenderOffset::between(
+            Pose {
+                position: target.position,
+                orientation: target.orientation,
+            },
+            Pose {
+                position: motion.position,
+                orientation: motion.orientation,
+            },
+            config.bodies.break_distance_m * scale,
+            if on_gun[i] {
+                0.0
+            } else {
+                RENDER_TURN_DEADBAND_RAD
+            },
+            RENDER_MAX_TURN_RAD,
+        );
+        Some(offset.to_cockpit(rotation, scale))
+    });
+    drop(hands);
+    *RENDER_OFFSETS.lock() = Some((now, offsets));
+}
+
+/// Apply the frame's post-step offsets without adding another physics-step interpolation delay.
+pub(crate) fn apply_at_render(cockpit: &mut [Option<CockpitHand>; 2], palm_offset: Vec3) {
+    let sampled = *RENDER_OFFSETS.lock();
+    let Some((at, offsets)) = sampled else {
+        apply(cockpit, palm_offset);
+        return;
+    };
+    if Instant::now().saturating_duration_since(at) > STALE_AFTER {
+        apply(cockpit, palm_offset);
+        return;
+    }
+    for (hand, offset) in cockpit.iter_mut().zip(offsets) {
+        if let (Some(hand), Some(offset)) = (hand.as_mut(), offset) {
+            offset.apply(hand, palm_offset);
         }
     }
 }
+
+static RENDER_OFFSETS: Mutex<Option<(Instant, [Option<RenderOffset>; 2])>> = Mutex::new(None);
 
 /// Remove the callback and destroy the bodies.
 ///

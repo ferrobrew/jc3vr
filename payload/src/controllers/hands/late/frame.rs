@@ -4,7 +4,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use glam::{Mat4, Vec3};
-use jc3gi::graphics_engine::render_block::Matrix3x4;
+use jc3gi::{character::character::Character, graphics_engine::render_block::Matrix3x4};
 use parking_lot::Mutex;
 
 use crate::{
@@ -14,12 +14,16 @@ use crate::{
             self, ActiveHands, ik,
             late::{
                 bones::{self, HandBones, Solved},
-                math::{MAX_SHIFT_M, MAX_TURN_RAD, correction, pose_matrix, relative_metrics},
+                math::{
+                    MAX_SHIFT_M, MAX_TURN_RAD, correction, interpolate_attached, lerp_transform,
+                    pose_matrix, relative_metrics,
+                },
             },
             palette::{self, PaletteLayout},
             pose as hand_pose,
             reach::{self, ReachConfig},
         },
+        physical_hands::physics,
     },
     headpose,
 };
@@ -31,12 +35,26 @@ use crate::{
 pub struct PosePair {
     pub previous: Pose,
     pub current: Pose,
+    /// The head pair that transports the fixed latest tracking pose into the world.
+    pub transport: Option<[Mat4; 2]>,
 }
 
 impl PosePair {
     /// The pose at the interpolation fraction `dtf`.
     pub fn at(&self, dtf: f32) -> Pose {
-        hand_pose::interp(self.previous, self.current, dtf)
+        let Some(parent) = self.transport else {
+            return hand_pose::interp(self.previous, self.current, dtf);
+        };
+        let matrix = interpolate_attached(
+            parent,
+            [pose_matrix(self.previous), pose_matrix(self.current)],
+            dtf,
+        );
+        let (_, orientation, position) = matrix.to_scale_rotation_translation();
+        Pose {
+            position,
+            orientation,
+        }
     }
 }
 
@@ -181,6 +199,9 @@ pub fn status() -> LateStatus {
 /// Snapshot the frame's late-update inputs. Called once per rendered frame from `Game::UpdateRender`
 /// after the VR head pose pair is published and before the engine's render update.
 pub(crate) fn begin_frame() {
+    crate::controllers::hands::late::weapon::begin_frame();
+    // All model and palette consumers share this post-step measurement for the rendered frame.
+    unsafe { physics::sample_render_offsets() };
     let Some(active) = hands::render_active_hands() else {
         *FRAME.lock() = None;
         return;
@@ -190,6 +211,7 @@ pub(crate) fn begin_frame() {
     *FRAME.lock() = Some(LateFrame {
         hands,
         ticks: ik::tick_records(),
+        transport: character_transport(),
         solved,
         enabled: active.config.hands.late_update,
         reach: active.config.hands.reach,
@@ -270,6 +292,15 @@ pub(crate) fn hand_correction(hand: Hand, dtf: f32) -> Option<Mat4> {
     frame.hand_delta(hand, dtf).map(pose_matrix)
 }
 
+/// Interpolate a model attachment in the same parent frame as this frame's hand references.
+pub(crate) fn interpolate_in_character(matrices: [Mat4; 2], dtf: f32) -> Mat4 {
+    let transport = FRAME.lock().and_then(|frame| frame.transport);
+    transport.map_or_else(
+        || lerp_transform(matrices[0], matrices[1], dtf),
+        |parent| interpolate_attached(parent, matrices, dtf),
+    )
+}
+
 /// The current frame's snapshot, for the weapon render seam's own guard and per-gun lookups.
 pub(super) fn current() -> Option<LateFrame> {
     *FRAME.lock()
@@ -280,6 +311,7 @@ pub(super) fn current() -> Option<LateFrame> {
 pub(super) struct LateFrame {
     hands: [Option<RenderHand>; 2],
     ticks: ik::TickRecords,
+    transport: Option<[Mat4; 2]>,
     solved: Solved,
     /// The late update's toggle; the render hands are published for the overlay either way.
     enabled: bool,
@@ -332,11 +364,23 @@ impl LateFrame {
         })
     }
 
-    /// The tick targets interpolated at `dtf`.
+    /// The tick targets in the same interpolated parent frame as the rendered skeleton.
     fn reference(&self, hand: Hand, dtf: f32) -> Option<Pose> {
         let current = self.ticks.current[hand.index()]?;
         let previous = self.ticks.previous[hand.index()].unwrap_or(current);
-        Some(hand_pose::interp(previous.wrist, current.wrist, dtf))
+        let Some(transport) = self.transport else {
+            return Some(hand_pose::interp(previous.wrist, current.wrist, dtf));
+        };
+        let matrix = interpolate_attached(
+            transport,
+            [pose_matrix(previous.wrist), pose_matrix(current.wrist)],
+            dtf,
+        );
+        let (_, orientation, position) = matrix.to_scale_rotation_translation();
+        Some(Pose {
+            position,
+            orientation,
+        })
     }
 
     /// The solved wrist's shortfall from its target, interpolated at `dtf`.
@@ -345,7 +389,15 @@ impl LateFrame {
         let previous = self.solved.previous[hand.index()]
             .and_then(|j| j.miss)
             .unwrap_or(current);
-        Some(previous.lerp(current, dtf))
+        Some(self.transport.map_or_else(
+            || previous.lerp(current, dtf),
+            |parent| {
+                let local_previous = parent[0].inverse().transform_vector3(previous);
+                let local_current = parent[1].inverse().transform_vector3(current);
+                lerp_transform(parent[0], parent[1], dtf)
+                    .transform_vector3(local_previous.lerp(local_current, dtf))
+            },
+        ))
     }
 
     /// How far the rendered hand leaves the solved wrist toward the target at `dtf`, in the world.
@@ -374,8 +426,7 @@ impl LateFrame {
                 ..HandLateStatus::default()
             };
         };
-        let previous = self.ticks.previous[hand.index()].unwrap_or(current);
-        let reference = hand_pose::interp(previous.wrist, current.wrist, dtf);
+        let reference = self.reference(hand, dtf).unwrap();
         let now = render_hand.wrist.at(dtf);
         let metrics = relative_metrics(now, reference);
         let (physical_displacement_m, relative_rotation_deg) = metrics
@@ -407,6 +458,22 @@ impl LateFrame {
     }
 }
 
+fn character_transport() -> Option<[Mat4; 2]> {
+    let address = ik::local_character();
+    if address == 0 {
+        return None;
+    }
+    // The render update runs with the local character live and its tick matrices finalized.
+    let character = unsafe { &*(address as *const Character) };
+    let pair = [
+        Mat4::from(character.m_WorldMatrixT0),
+        Mat4::from(character.m_WorldMatrixT1),
+    ];
+    pair.iter()
+        .all(|m| m.is_finite() && m.determinant().abs() > f32::EPSILON)
+        .then_some(pair)
+}
+
 fn compose_render_hands(active: &ActiveHands) -> [Option<RenderHand>; 2] {
     let (previous_head, current_head) = (headpose::query_prev(), headpose::query());
     let cockpit_head = active.head;
@@ -423,6 +490,10 @@ fn compose_render_hands(active: &ActiveHands) -> [Option<RenderHand>; 2] {
         PosePair {
             previous: side(previous_head),
             current: side(current_head),
+            transport: Some([
+                Mat4::from_rotation_translation(previous_head.orientation, previous_head.position),
+                Mat4::from_rotation_translation(current_head.orientation, current_head.position),
+            ]),
         }
     };
     active.hands.map(|hand| {
@@ -456,6 +527,7 @@ mod tests {
         let still = PosePair {
             previous: now,
             current: now,
+            transport: None,
         };
         let target = |wrist| Some(ik::TickTarget { wrist, weight });
         LateFrame {
@@ -471,6 +543,7 @@ mod tests {
                 previous: [None, target(previous_tick)],
                 current: [None, target(current_tick)],
             },
+            transport: None,
             solved: Solved::default(),
             enabled: true,
             reach: ReachConfig::new(),
@@ -487,6 +560,49 @@ mod tests {
         f.solved.previous[Hand::Right.index()] = joints;
         f.solved.current[Hand::Right.index()] = joints;
         f
+    }
+
+    #[test]
+    fn a_turning_platform_uses_the_same_parent_frame_for_the_reference_and_correction() {
+        let parent = [
+            Mat4::IDENTITY,
+            Mat4::from_rotation_translation(Quat::from_rotation_y(0.8), Vec3::X * 3.0),
+        ];
+        let local = Pose {
+            position: Vec3::new(0.4, 1.0, -0.5),
+            orientation: Quat::IDENTITY,
+        };
+        let from_matrix = |matrix: Mat4| {
+            let (_, orientation, position) = matrix.to_scale_rotation_translation();
+            Pose {
+                position,
+                orientation,
+            }
+        };
+        let ticks = [
+            from_matrix(parent[0] * pose_matrix(local)),
+            from_matrix(parent[1] * pose_matrix(local)),
+        ];
+        let pair = PosePair {
+            previous: ticks[0],
+            current: ticks[1],
+            transport: Some(parent),
+        };
+        let mut f = frame(ticks[1], ticks[0], ticks[1], 1.0);
+        f.transport = Some(parent);
+        f.hands[Hand::Right.index()] = Some(RenderHand {
+            wrist: pair,
+            grip: pair,
+            aim: pair,
+        });
+        for t in [0.0, 0.25, 0.5, 1.0] {
+            let expected = lerp_transform(parent[0], parent[1], t) * pose_matrix(local);
+            let reference = f.reference(Hand::Right, t).unwrap();
+            assert!(pose_matrix(reference).abs_diff_eq(expected, 1e-5));
+            let delta = f.hand_delta(Hand::Right, t).unwrap();
+            assert!(pose_matrix(delta).abs_diff_eq(Mat4::IDENTITY, 1e-5));
+            assert!(pose_matrix(f.drawn(Hand::Right, t).unwrap().grip).abs_diff_eq(expected, 1e-5));
+        }
     }
 
     #[test]
@@ -522,6 +638,7 @@ mod tests {
         let pair = PosePair {
             previous: grip,
             current: grip,
+            transport: None,
         };
         f.hands[Hand::Right.index()].as_mut().unwrap().grip = pair;
         let drawn = f.drawn(Hand::Right, 0.5).unwrap();

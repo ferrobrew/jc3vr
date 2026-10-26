@@ -132,12 +132,6 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // state, so it is polled here and read by the render side.
         crate::hud::depth::poll_vehicle_state();
 
-        // The collider view reads the physics world the game's update just stepped, and places its
-        // primitives at this frame's interpolation fraction.
-        crate::controllers::physical_hands::collider_view::render_tick(
-            (*update_contexts).m_RenderContext.m_Dtf,
-        );
-
         // Pump the OpenXR runtime once per frame and, if a session is running, begin the XR frame
         // before the eye Draws: `xrWaitFrame` inside `frame_begin` paces the app against the
         // compositor, replacing vsync (which stays suppressed via BLOCK_FLIP). Set the headpose
@@ -243,6 +237,10 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         }
         #[cfg(feature = "profiler")]
         drop(engine_scope);
+        // Compare current physics poses with the weapon matrices published by this render update.
+        crate::controllers::physical_hands::collider_view::render_tick(
+            (*update_contexts).m_RenderContext.m_Dtf,
+        );
         // After the engine's render update, whose camera update stores this frame's `dtf`: the
         // late hand readout is evaluated at it, and before it the readout would pair this frame's
         // hand snapshot with the previous frame's `dtf`.
