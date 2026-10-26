@@ -10,7 +10,7 @@ pub mod frames;
 pub mod lean;
 pub mod legs;
 pub(crate) mod live_observation;
-mod observation;
+pub(crate) mod observation;
 pub(crate) mod origin_provenance;
 pub mod pelvis;
 pub mod root;

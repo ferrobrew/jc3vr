@@ -68,7 +68,7 @@ use crate::{
                 authority::{Case, WeightFollower, Weights, classify},
                 config::{ProceduralBodyConfig, ProceduralMode},
                 gate_state::{FeetRequest, Landing, LowerRequest, STATE, State},
-                ground::{GroundCaster, GroundTally},
+                ground::{FitGround, GroundCaster, GroundTally},
                 rig::{Rig, RigBone, RigError},
                 solver::{
                     SolveInput,
@@ -460,7 +460,16 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                 state.status.landing_dip_m = 0.0;
                 state.status.landing_reach = 0.0;
                 state.status.air_weight = 0.0;
-                state.status.ground = GroundTally::default();
+                let mut caster = GroundCaster::new(character, world.w_axis.y, &config);
+                let mut ground =
+                    unsafe { FitGround::new(character, &mut caster, world.w_axis.truncate(), now) };
+                let support = ground.as_ref().map(|ground| ground.sample);
+                let mut missing = crate::controllers::body::rig::estimate::MissingTerrain;
+                let terrain: &mut dyn crate::controllers::body::rig::estimate::Terrain =
+                    match ground.as_mut() {
+                        Some(ground) => ground,
+                        None => &mut missing,
+                    };
                 let fit = crate::controllers::body::rig::runtime::at_gate(
                     crate::controllers::body::rig::runtime::GateInput {
                         rig,
@@ -471,10 +480,14 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                         view: crate::headpose::xr::body_rotation(),
                         world_scale: scale,
                         origin: crate::controllers::roomscale::teleport::epoch(),
+                        support,
                         now,
                         dt,
                     },
+                    terrain,
                 );
+                state.status.ground = caster.tally;
+                state.ground_log.record(&caster.tally, now);
                 state.status.fit = crate::controllers::body::rig::runtime::status();
                 let Some(fit) = fit else {
                     state.status.weight = 0.0;
@@ -502,6 +515,14 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                     animated.position(RigBone::Hips).y - pose.position(RigBone::Hips).y;
                 state.status.neck_error_m = fit.quality.neck_residual_m;
                 state.status.gait_phase = Some(fit.gait.phase);
+                state.status.stepping = fit.contacts.iter().any(|contact| {
+                    matches!(
+                        contact,
+                        crate::controllers::body::rig::estimate::ContactState::Swinging { .. }
+                    )
+                });
+                state.status.legs_moving =
+                    fit.gait.completed_across_support.length_squared() > 1.0e-6;
                 return true;
             }
             crate::controllers::body::rig::runtime::hand_back();

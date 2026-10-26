@@ -77,6 +77,7 @@ impl Support {
         local.position.x.abs() <= self.half_extent.x && local.position.z.abs() <= self.half_extent.y
     }
 
+    #[cfg(test)]
     pub(crate) fn foothold(self, world: Vec3, heading: f32, ankle_height: f32) -> Option<FootPose> {
         let mut local = self.local(FootPose {
             position: world,
@@ -118,6 +119,7 @@ impl Contact {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn seed(pose: FootPose, support: Option<Support>, ankle_height: f32) -> Self {
         let Some(surface) = support else {
             return Self::released(pose, ReleaseReason::NoSupport);
@@ -125,6 +127,10 @@ impl Contact {
         let Some(local) = surface.foothold(pose.position, yaw(pose.rotation), ankle_height) else {
             return Self::released(pose, ReleaseReason::NoSupport);
         };
+        Self::plant(surface, local)
+    }
+
+    pub(crate) fn plant(surface: Support, local: FootPose) -> Self {
         Self {
             state: ContactState::Planted {
                 support: surface.key(),
@@ -134,6 +140,10 @@ impl Contact {
             from_local: local,
             target_local: local,
         }
+    }
+
+    pub(crate) fn lose_support(&mut self) {
+        self.state = ContactState::Released(ReleaseReason::LostSupport);
     }
 
     /// Full contact identity includes private swing data and float component bits, not padding.
@@ -236,6 +246,13 @@ impl Contact {
 
     pub(crate) fn endpoint(self) -> FootPose {
         self.target_local
+    }
+
+    pub(crate) fn surface_endpoint(&mut self, support: Support, endpoint: FootPose) {
+        if let ContactState::Swinging { progress, .. } = self.state {
+            self.target_local = endpoint;
+            self.set_swing(support, progress);
+        }
     }
 
     pub(crate) fn touchdown(&mut self, support: Support, valid: bool) {

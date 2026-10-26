@@ -11,6 +11,7 @@ mod fit;
 mod reuse;
 mod state;
 mod temporal;
+mod terrain;
 mod work;
 
 #[cfg(test)]
@@ -28,8 +29,9 @@ use glam::{Quat, Vec3};
 use crate::controllers::body::rig::estimate::contacts::ReleaseReason;
 pub(crate) use crate::controllers::body::rig::estimate::{
     anatomy::Anatomy,
-    contacts::{ContactState, Support},
+    contacts::{ContactState, Support, rigid_upright as support_transform_valid},
     state::Estimator,
+    terrain::{MissingTerrain, SupportSample, Terrain},
 };
 use crate::controllers::{
     body::rig::{

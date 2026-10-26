@@ -16,6 +16,7 @@ use crate::controllers::{
             },
             reuse::Fits,
             temporal::{self, Envelope, TemporalStatus},
+            terrain::{Terrain, matches_surface},
             work::Work,
         },
         observation::{Observation, PairSide},
@@ -131,6 +132,7 @@ impl Estimator {
         self.reference_mode = reference;
     }
 
+    #[cfg(test)]
     pub(crate) fn update(&mut self, update: Update<'_>) -> Result<Snapshot, EstimateError> {
         #[cfg(test)]
         let mut reference = (!self.reference_mode
@@ -143,7 +145,11 @@ impl Estimator {
         #[cfg(test)]
         let reference_update = Update { ..update };
         let mut work = Work::default();
-        let result = self.update_counted(update, &mut work);
+        let result = self.update_counted(
+            update,
+            &mut work,
+            &mut crate::controllers::body::rig::estimate::terrain::PatchTerrain,
+        );
         self.last_work = work;
         #[cfg(test)]
         if let Some(reference) = reference.as_mut() {
@@ -198,10 +204,22 @@ impl Estimator {
         assert_eq!(self.last_dt.to_bits(), other.last_dt.to_bits());
     }
 
+    pub(crate) fn update_terrain(
+        &mut self,
+        update: Update<'_>,
+        terrain: &mut dyn Terrain,
+    ) -> Result<Snapshot, EstimateError> {
+        let mut work = Work::default();
+        let result = self.update_counted(update, &mut work, terrain);
+        self.last_work = work;
+        result
+    }
+
     fn update_counted(
         &mut self,
         update: Update<'_>,
         work: &mut Work,
+        terrain: &mut dyn Terrain,
     ) -> Result<Snapshot, EstimateError> {
         update.anatomy.validate()?;
         let observation = update.observation;
@@ -296,7 +314,7 @@ impl Estimator {
         let root_stance = current.root.transform_point3(update.anatomy.root_to_stance);
         let floor_y = update
             .support
-            .map_or(root_stance.y, |surface| surface.current.w_axis.y);
+            .map_or(root_stance.y, |surface| terrain.floor_height(surface));
         let initial_stance = Stance {
             origin: Vec3::new(root_stance.x, floor_y, root_stance.z),
             yaw: root_yaw,
@@ -355,12 +373,24 @@ impl Estimator {
                 update.anatomy.character,
                 update.anatomy.ankle_height,
             )
-            .map(|pose| Contact::seed(pose, update.support, update.anatomy.ankle_height))
+            .map(|pose| {
+                update.support.and_then(|surface| {
+                    terrain.foothold(surface, pose.position, yaw(pose.rotation), update.anatomy.ankle_height)
+                        .map(|local| Contact::plant(surface, local))
+                }).unwrap_or_else(|| Contact::released(pose, crate::controllers::body::rig::estimate::contacts::ReleaseReason::NoSupport))
+            })
         } else {
             old.expect("a continuing estimate has a state").contacts
         };
         for contact in &mut contacts {
             contact.carry(update.support, update.dt);
+            if terrain.observed()
+                && contact.planted()
+                && let Some(surface) = update.support
+                && !matches_surface(terrain, surface, contact.pose, update.anatomy.ankle_height)
+            {
+                contact.lose_support();
+            }
         }
         let tracking_floor = frames.cockpit_to_world(Vec3::ZERO);
         let mut context = Context {
@@ -395,7 +425,50 @@ impl Estimator {
         for contact in &mut held_contacts {
             contact.carry(update.support, 0.0);
         }
-        let preliminary_result = fits.fit_contacts(contacts, work);
+        let mut preview = contacts;
+        let mut recovery_endpoints = [None; 2];
+        if terrain.observed()
+            && let Some(surface) = update.support
+        {
+            let stance = previous_parameters.stance(floor_y);
+            let lead = (completed / update.dt).clamp_length_max(3.0) * SWING_SECONDS;
+            let lead = horizontal(lead).clamp_length_max(0.25);
+            for (side, mut foot) in rest_feet(
+                stance,
+                update.anatomy.character,
+                update.anatomy.ankle_height,
+            )
+            .into_iter()
+            .enumerate()
+            {
+                foot.position += lead;
+                if !contacts[side].active()
+                    && let Some(local) = terrain.foothold(
+                        surface,
+                        foot.position,
+                        stance.yaw,
+                        update.anatomy.ankle_height,
+                    )
+                {
+                    preview[side] = Contact::plant(surface, local);
+                    recovery_endpoints[side] = Some(local);
+                }
+            }
+        }
+        // Observed footholds constrain pelvis feasibility before released feet can pass lift checks.
+        // Preview plants never enter the committed contact state.
+        let preliminary_result = fits
+            .fit_contacts(preview, work)
+            .map(|(candidate, selected)| {
+                let selected = std::array::from_fn(|side| {
+                    if contacts[side].active() {
+                        selected[side]
+                    } else {
+                        contacts[side]
+                    }
+                });
+                (candidate, selected)
+            });
         context.contacts = fits.last_contacts();
         let (preliminary, selected_contacts) = match preliminary_result {
             Ok(result) => result,
@@ -408,7 +481,6 @@ impl Estimator {
             Err(error) => return Err(error),
         };
         contacts = selected_contacts;
-        // Relative hip velocity removes observed support transport before predicting local placement.
         let carried_hips = old
             .filter(|_| !reseed && update.transition != Transition::Recenter)
             .map(|old| {
@@ -422,10 +494,23 @@ impl Estimator {
                         .map_or(hip, |surface| surface.carry_point(hip))
                 })
             });
-        let touchdown_hips = predict_hips(preliminary, carried_hips, completed, update.dt);
+        let prediction_history = if terrain.observed() {
+            None
+        } else {
+            carried_hips
+        };
+        let touchdown_hips = predict_hips(preliminary, prediction_history, completed, update.dt);
         let recovering = temporal_status == TemporalStatus::ConstraintRecovery;
         if !recovering {
-            transition_contacts_counted(&mut contacts, preliminary, touchdown_hips, &update, work);
+            transition_contacts_counted(
+                &mut contacts,
+                preliminary,
+                touchdown_hips,
+                &update,
+                work,
+                terrain,
+                recovery_endpoints,
+            );
         }
         // Every transition, including release and lift, precedes this final fit.
         context.contacts = contacts;
@@ -471,7 +556,7 @@ impl Estimator {
         }
         fit::publish_feet(&mut candidate, &mut contacts);
         let stance = candidate.parameters.stance(floor_y);
-        let touchdown_hips = predict_hips(candidate, carried_hips, completed, update.dt);
+        let touchdown_hips = predict_hips(candidate, prediction_history, completed, update.dt);
         let feasible = candidate.neck_error <= NECK_TOLERANCE * frames.world_scale * 1.05
             && candidate
                 .arm_errors
@@ -692,6 +777,8 @@ pub(crate) fn transition_contacts(
         predicted_hips,
         update,
         &mut Work::default(),
+        &mut crate::controllers::body::rig::estimate::terrain::PatchTerrain,
+        [None; 2],
     );
 }
 
@@ -701,11 +788,13 @@ fn transition_contacts_counted(
     predicted_hips: [Vec3; 2],
     update: &Update<'_>,
     work: &mut Work,
+    terrain: &mut dyn Terrain,
+    recovery_endpoints: [Option<crate::controllers::body::rig::legs::swing::FootPose>; 2],
 ) {
     let Some(surface) = update.support else {
         return;
     };
-    let stance = candidate.parameters.stance(surface.current.w_axis.y);
+    let stance = candidate.parameters.stance(terrain.floor_height(surface));
     let rest = rest_feet(
         stance,
         update.anatomy.character,
@@ -734,26 +823,84 @@ fn transition_contacts_counted(
         let lead =
             horizontal(predicted_hips[side] - candidate.body.hips[side]).clamp_length_max(0.25);
         let desired = rest[side].position + lead;
-        if let Some(endpoint) = surface.foothold(desired, stance.yaw, update.anatomy.ankle_height) {
-            let mut predicted = candidate;
-            predicted.body.hips = predicted_hips;
-            if fit::endpoint_feasible_counted(
-                predicted,
-                surface.world(endpoint),
-                contacts[1 - side].pose.position,
-                update.anatomy.character,
-                side,
-                work,
-            ) {
-                if swinging {
-                    contacts[side].retarget(surface, endpoint, update.dt);
-                } else {
-                    contacts[side].lift(surface, endpoint);
+        let target = match contacts[side].state {
+            ContactState::Swinging { progress, .. }
+                if progress >= crate::controllers::body::rig::estimate::contacts::ENDPOINT_COMMIT_PROGRESS =>
+            {
+                surface.world(contacts[side].endpoint()).position
+            }
+            ContactState::Released(_) => recovery_endpoints[side]
+                .map_or(desired, |endpoint| surface.world(endpoint).position),
+            _ => desired,
+        };
+        let Some(endpoint) =
+            terrain.foothold(surface, target, stance.yaw, update.anatomy.ankle_height)
+        else {
+            contacts[side].lose_support();
+            continue;
+        };
+        let mut predicted = candidate;
+        predicted.body.hips = predicted_hips;
+        let reachable = [candidate, predicted]
+            .into_iter()
+            .enumerate()
+            .all(|(index, pose)| {
+                if index == 0 && !terrain.observed() {
+                    return true;
                 }
+                fit::endpoint_feasible_counted(
+                    pose,
+                    surface.world(endpoint),
+                    contacts[1 - side].pose.position,
+                    update.anatomy.character,
+                    side,
+                    work,
+                )
+            });
+        #[cfg(test)]
+        if !reachable && !contacts[side].active() && terrain.observed() {
+            eprintln!(
+                "terrain recovery endpoint rejected: side={side}, endpoint={:?}, hip={:?}, predicted_hip={:?}, current_distance={}, predicted_distance={}, maximum={}, other={:?}, stance={stance:?}",
+                surface.world(endpoint),
+                candidate.body.hips[side],
+                predicted_hips[side],
+                candidate.body.hips[side].distance(surface.world(endpoint).position),
+                predicted_hips[side].distance(surface.world(endpoint).position),
+                update.anatomy.character.leg(side) * 0.995,
+                contacts[1 - side].pose.position
+            );
+        }
+        if reachable {
+            if swinging {
+                contacts[side].retarget(surface, endpoint, update.dt);
+                if terrain.observed() {
+                    let endpoint = surface.world(contacts[side].endpoint());
+                    if let Some(local) = terrain.foothold(
+                        surface,
+                        endpoint.position,
+                        yaw(endpoint.rotation),
+                        update.anatomy.ankle_height,
+                    ) && [candidate, predicted].into_iter().all(|pose| {
+                        fit::endpoint_feasible_counted(
+                            pose,
+                            surface.world(local),
+                            contacts[1 - side].pose.position,
+                            update.anatomy.character,
+                            side,
+                            work,
+                        )
+                    }) {
+                        contacts[side].surface_endpoint(surface, local);
+                    } else {
+                        contacts[side].lose_support();
+                    }
+                }
+            } else {
+                contacts[side].lift(surface, endpoint);
             }
         }
     }
-    validate_touchdowns(contacts, candidate, update, work);
+    validate_touchdowns(contacts, candidate, update, work, terrain);
 }
 
 fn validate_touchdowns(
@@ -761,13 +908,26 @@ fn validate_touchdowns(
     candidate: Candidate,
     update: &Update<'_>,
     work: &mut Work,
+    terrain: &mut dyn Terrain,
 ) {
     let Some(surface) = update.support else {
         return;
     };
     for side in 0..2 {
+        if terrain.observed()
+            && !matches!(contacts[side].state, ContactState::Swinging { progress, .. } if progress >= 1.0)
+        {
+            continue;
+        }
         let endpoint = contacts[side].endpoint();
         let valid = surface.contains(endpoint)
+            && (!terrain.observed()
+                || matches_surface(
+                    terrain,
+                    surface,
+                    surface.world(endpoint),
+                    update.anatomy.ankle_height,
+                ))
             && fit::endpoint_feasible_counted(
                 candidate,
                 surface.world(endpoint),

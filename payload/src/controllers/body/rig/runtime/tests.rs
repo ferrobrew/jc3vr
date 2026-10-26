@@ -1,3 +1,5 @@
+mod terrain;
+
 use super::*;
 use crate::controllers::body::{
     procedural::{
@@ -72,6 +74,7 @@ fn input(rig: &Rig, now: Instant) -> GateInput<'_> {
         view: Quat::IDENTITY,
         world_scale: 1.0,
         origin: 0,
+        support: None,
         now,
         dt: 1.0 / 30.0,
     }

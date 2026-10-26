@@ -1,0 +1,27 @@
+# Terrain-aware body gait
+
+## Runtime path
+
+The full on-foot body path constructs `FitGround` at the native HumanIK solve gate. It copies the proxy support record, validates the current ground body, reads its current physics transform, and casts down through the root and each requested foot location. The result enters `rig::runtime::at_gate`, `Estimator::update_terrain`, contact transitions, and `solver::constrained::realize`. The final pose uses the fit's feet, including their surface-aligned rotation. The legacy gait does not run alongside the fit.
+
+The native support record is [physics::PfxCharacterInstance::m_GroundInformation](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PfxCharacterInstance##field-m_GroundInformation). The proxy updates this record before physics and readers retain it until the next proxy update. The solve gate reads that completed record after physics. It does not refresh native support or interpret the recorded surface velocity as a future displacement. [physics::PfxCharacterInstance::IsGroundBodyValid](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PfxCharacterInstance##func-IsGroundBodyValid) validates the ground slot before its current transform is copied. Scene rays use the existing [physics::PhysicsSystem::CastRay](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PhysicsSystem##func-CastRay) adapter outside physics.
+
+## Contacts and steps
+
+Static world geometry uses a stationary world frame. Each retained plant receives a fresh downward ray at its carried position. Each new step receives an actual hit at its requested touchdown location. The adapter checks the hit normal and aligns the foot to that surface. A miss, an excessive slope, disabled casts, or an unrelated object hit releases the contact. Root height remains the search range origin; it is not a floor measurement.
+
+Moving support uses the validated ground body identity, its shape and motion identity, and its current world transform. The runtime pairs consecutive samples with matching identity. The support sample time must equal the current solve-gate time. A stale or future-dated sample cannot retain contact. Plants and swing endpoints remain in the support frame, and completed root travel subtracts the observed platform transport once.
+
+The runtime measures completed root travel between consecutive committed fit roots. The engine's previous interpolation matrix does not replace the previous fit root. Gait phase and touchdown lead use completed travel relative to the support. Pelvis sway, crouching, and an uncompleted root request do not supply walking speed. Turning can still request a corrective step from the stance heading error.
+
+A touchdown candidate must be reachable from both the current fitted hips and the predicted touchdown hips. Retargeting remains bounded, and its clamped endpoint receives another terrain projection and reach check. Late swing retains its committed location. Touchdown receives a fresh terrain check before becoming planted. Missing evidence stays a released contact rather than a fabricated floor, knee support, or seated pose. Head and hand tracking authority and the body-follow setting remain unchanged.
+
+## Limits and verification
+
+The proxy record describes the last pre-physics support query; it is not a timestamped contact manifold captured during the solve gate. Current rays confirm the actual foot surface, but they do not establish every intervening contact. Upright translated and yaw-rotating moving supports are represented. A tilted moving support is explicitly unavailable because the estimator requires an upright support frame. Static slopes are represented by the individual foot hit normals and heights.
+
+The moving identity combines the native body ID, shape pointer, and motion ID. This detects ordinary replacement and support changes. The bindings do not expose a body allocation generation, so destruction and exact slot/shape/motion reuse between samples cannot be distinguished. Static world geometry shares one frame and relies on fresh per-foot rays rather than a fabricated finite plane. A step cannot cross from one moving support to another in one swing; loss of the old support releases the foot first. The adapter does not use arbitrary prop surfaces as standing support.
+
+The terrain path adds bounded per-contact casts at the existing safe solve gate. It does not add hooks, change physics inputs, extrapolate platform transforms, or add knee/pelvis support from a low head or a dwell. Native errors and misses withdraw contact. Exact edge coverage remains limited to a ray at each foot target; it does not test the whole sole or the swing volume.
+
+The added runtime tests feed copied ray hits through the same hit-to-foothold conversion as `FitGround`, then through production runtime commits and the final pose writer. They cover slope-aligned plants, moving-support carry without duplicate gait travel, missing terrain, future-dated samples, turning steps, and changed support identity. Centralized formatting, all-feature Clippy, and Wine tests cover the integrated path. Game and headset acceptance remain unperformed. Live acceptance must include stairs, edges, turning in place, platform translation and turning, support loss, low floor reaches, disabled body-follow, and tracking withdrawal.

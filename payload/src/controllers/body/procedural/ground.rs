@@ -18,15 +18,25 @@ use std::{
     time::{Duration, Instant},
 };
 
-use glam::Vec3;
-use jc3gi::character::character::Character;
+use glam::{Mat4, Quat, Vec3};
+use jc3gi::{
+    character::character::Character,
+    physics::{PhysicsSystem, hknpBody, hknpCharacterSurfaceInfo},
+};
 
 use crate::controllers::{
     aim::{
         ray::Ray,
         raycast::{self, CastOptions},
     },
-    body::{procedural::config::ProceduralBodyConfig, rig::legs::swing::Ground},
+    body::{
+        procedural::config::ProceduralBodyConfig,
+        rig::{
+            estimate::{Support, SupportSample, Terrain},
+            legs::swing::{FootPose, Ground},
+        },
+    },
+    physical_hands::physics::havok_affine,
 };
 
 /// The casts of one gate, and the running tally the log reports.
@@ -67,6 +77,104 @@ impl GroundTally {
     }
 }
 
+#[cfg(test)]
+mod tests;
+
+/// Current scene geometry paired with the proxy's last completed pre-physics support record.
+pub(crate) struct FitGround<'a> {
+    caster: &'a mut GroundCaster,
+    pub sample: SupportSample,
+    body: u32,
+    moving: bool,
+    floor: f32,
+}
+
+impl<'a> FitGround<'a> {
+    /// # Safety
+    ///
+    /// The local character is live at the native HumanIK solve gate, outside physics.
+    pub(crate) unsafe fn new(
+        character: &Character,
+        caster: &'a mut GroundCaster,
+        point: Vec3,
+        now: Instant,
+    ) -> Option<Self> {
+        let proxy = unsafe { character.m_PfxCharacter.px.as_ref() }?;
+        let info = &proxy.m_GroundInformation;
+        let normal = Vec3::from_array(info.m_surfaceNormal.data);
+        if info.m_supportedState != hknpCharacterSurfaceInfo::SUPPORTED
+            || !normal.is_finite()
+            || normal.y < MIN_GROUND_NORMAL_Y
+            || !unsafe { proxy.IsGroundBodyValid() }
+        {
+            return None;
+        }
+        let physics = unsafe { PhysicsSystem::get() }?;
+        let world = unsafe { physics.m_World.as_ref() }?;
+        let body = proxy.m_GroundBodyId;
+        if world.m_bodies.is_null() || body > world.m_peakBodyIndex {
+            return None;
+        }
+        let slot = unsafe { &*world.m_bodies.add(body as usize) };
+        let moving = slot.m_flags & hknpBody::IS_STATIC == 0;
+        let transform = if moving {
+            let mut transform = Mat4::from(havok_affine(&slot.m_transform));
+            transform.w_axis += Vec3::from_array(physics.m_AccumulatedShift.data).extend(0.0);
+            transform
+        } else {
+            Mat4::IDENTITY
+        };
+        let hit = unsafe { caster.fit_hit(point) }?;
+        if !accepts_body(moving, body, hit.body, hit.object.is_some()) {
+            return None;
+        }
+        Some(Self {
+            caster,
+            sample: SupportSample {
+                identity: if moving { u64::from(body) + 1 } else { 0 },
+                generation: if moving {
+                    slot.m_shape as usize as u64 ^ u64::from(slot.m_motionId)
+                } else {
+                    0
+                },
+                transform,
+                at: now,
+            },
+            body,
+            moving,
+            floor: hit.position.y,
+        })
+    }
+}
+
+impl Terrain for FitGround<'_> {
+    fn floor_height(&self, _support: Support) -> f32 {
+        self.floor
+    }
+
+    fn foothold(
+        &mut self,
+        support: Support,
+        point: Vec3,
+        heading: f32,
+        ankle_height: f32,
+    ) -> Option<FootPose> {
+        // SAFETY: FitGround is constructed and consumed within one live solve gate.
+        let hit = unsafe { self.caster.fit_hit(point) }?;
+        if !accepts_body(self.moving, self.body, hit.body, hit.object.is_some()) {
+            return None;
+        }
+        terrain_foothold(
+            support,
+            point,
+            heading,
+            ankle_height,
+            &hit,
+            self.moving.then_some(self.body),
+        )
+    }
+}
+
 /// Casts the ground under footholds for one gate.
 pub struct GroundCaster {
     character: usize,
@@ -88,6 +196,41 @@ impl GroundCaster {
             enabled: config.ground_casts,
             tally: GroundTally::new(),
         }
+    }
+
+    /// A current hit for the fitted contacts, including the actual body identity.
+    ///
+    /// # Safety
+    ///
+    /// Called only inside the caster's live solve gate.
+    unsafe fn fit_hit(&mut self, point: Vec3) -> Option<raycast::RayHit> {
+        if !self.enabled || !point.is_finite() {
+            return None;
+        }
+        let from = Vec3::new(point.x, self.root_height + self.up_m, point.z);
+        let ray = Ray::new(from, Vec3::NEG_Y)?;
+        let options = CastOptions {
+            ignore: [self.character, 0],
+            see_through: false,
+            material: false,
+        };
+        self.tally.casts += 1;
+        let hit = match unsafe { raycast::cast(&ray, self.up_m + self.down_m, &options) } {
+            Ok(hit) => hit?,
+            Err(_) => {
+                self.tally.errors += 1;
+                return None;
+            }
+        };
+        if !hit.position.is_finite()
+            || !hit.normal.is_finite()
+            || hit.normal.y < MIN_GROUND_NORMAL_Y
+        {
+            self.tally.steep += 1;
+            return None;
+        }
+        self.tally.hits += 1;
+        Some(hit)
     }
 
     /// The ground under `point` (its horizontal place), between the highest step up and the
@@ -212,6 +355,42 @@ impl GroundLog {
             *self = Self::new();
         }
     }
+}
+
+fn accepts_body(moving: bool, ground: u32, hit: u32, object: bool) -> bool {
+    if moving {
+        hit == ground
+    } else {
+        !object || hit == ground
+    }
+}
+
+pub(crate) fn terrain_foothold(
+    support: Support,
+    point: Vec3,
+    heading: f32,
+    ankle_height: f32,
+    hit: &raycast::RayHit,
+    accepted_body: Option<u32>,
+) -> Option<FootPose> {
+    if !accepted_body.map_or(hit.object.is_none(), |body| hit.body == body)
+        || !point.is_finite()
+        || !hit.position.is_finite()
+        || !hit.normal.is_finite()
+        || hit.normal.y < MIN_GROUND_NORMAL_Y
+    {
+        return None;
+    }
+    let normal = hit.normal.normalize();
+    let forward = Quat::from_rotation_y(heading) * Vec3::NEG_Z;
+    let forward = (forward - normal * forward.dot(normal)).try_normalize()?;
+    let right = forward.cross(normal).normalize();
+    let rotation = Quat::from_mat3(&glam::Mat3::from_cols(right, normal, -forward));
+    let local = support.local(FootPose {
+        position: Vec3::new(point.x, hit.position.y + ankle_height, point.z),
+        rotation,
+    });
+    support.contains(local).then_some(local)
 }
 
 /// How often the running tally is logged.

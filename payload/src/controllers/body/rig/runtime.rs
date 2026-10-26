@@ -8,12 +8,17 @@ use std::time::{Duration, Instant};
 use glam::{Mat4, Quat, Vec2, Vec3};
 use parking_lot::Mutex;
 
+#[cfg(test)]
+use crate::controllers::body::rig::estimate::MissingTerrain;
 use crate::controllers::{
     body::{
         BodyDimensions,
         procedural::rig::Rig,
         rig::{
-            estimate::{Anatomy, EstimateError, Estimator, Quality, Snapshot, Transition, Update},
+            estimate::{
+                Anatomy, EstimateError, Estimator, Quality, Snapshot, Support, SupportSample,
+                Terrain, Transition, Update,
+            },
             observation::{
                 CompositionPair, CompositionSide, Epochs, Observation, RawPose, RawTracking,
                 SampleStamp, StepStamp,
@@ -58,6 +63,7 @@ pub(crate) struct GateInput<'a> {
     pub view: Quat,
     pub world_scale: f32,
     pub origin: u64,
+    pub support: Option<SupportSample>,
     pub now: Instant,
     pub dt: f32,
 }
@@ -85,9 +91,9 @@ pub(crate) fn frame_tick(head: Pose, frame: Option<&ControllerFrame>) {
 }
 
 /// Commit once at the local solve gate and publish exactly that result for the movement owner.
-pub(crate) fn at_gate(input: GateInput<'_>) -> Option<Snapshot> {
+pub(crate) fn at_gate(input: GateInput<'_>, terrain: &mut dyn Terrain) -> Option<Snapshot> {
     let tracking = *TRACKING.lock();
-    STATE.lock().commit(tracking, input)
+    STATE.lock().commit_terrain(tracking, input, terrain)
 }
 
 /// Withdraw the previous request when the animation or an anchored solve owns this update.
@@ -183,6 +189,7 @@ struct Runtime {
     estimator: Estimator,
     anatomy: Option<Anatomy>,
     previous: Option<CompositionSide>,
+    support: Option<SupportSample>,
     accepted: Option<Accepted>,
     last_gate: Option<Instant>,
     migrated_at: Option<Instant>,
@@ -195,6 +202,7 @@ static STATE: Mutex<Runtime> = Mutex::new(Runtime {
     estimator: Estimator::empty(),
     anatomy: None,
     previous: None,
+    support: None,
     accepted: None,
     last_gate: None,
     migrated_at: None,
@@ -212,10 +220,21 @@ impl Runtime {
     fn withdraw(&mut self, reason: Fallback) {
         self.accepted = None;
         self.previous = None;
+        self.support = None;
         self.status.fallback = Some(reason);
     }
 
+    #[cfg(test)]
     fn commit(&mut self, tracking: Option<Tracking>, input: GateInput<'_>) -> Option<Snapshot> {
+        self.commit_terrain(tracking, input, &mut MissingTerrain)
+    }
+
+    fn commit_terrain(
+        &mut self,
+        tracking: Option<Tracking>,
+        input: GateInput<'_>,
+        terrain: &mut dyn Terrain,
+    ) -> Option<Snapshot> {
         self.migrated_at = Some(input.now);
         self.status.step = self.status.step.wrapping_add(1);
         self.status.sample = None;
@@ -226,7 +245,7 @@ impl Runtime {
             return None;
         };
         self.status.sample = Some(tracking.sequence);
-        let result = self.fit(tracking, &input);
+        let result = self.fit(tracking, &input, terrain);
         self.status.evaluations = self.estimator.last_work().evaluations;
         self.last_gate = Some(input.now);
         match result {
@@ -260,7 +279,11 @@ impl Runtime {
         &mut self,
         tracking: Tracking,
         input: &GateInput<'_>,
+        terrain: &mut dyn Terrain,
     ) -> Result<Snapshot, EstimateError> {
+        if !input.previous_root.is_finite() {
+            return Err(EstimateError::InvalidRoot);
+        }
         let calibration = 1;
         let anatomy = Anatomy::from_rig(input.player, input.rig, calibration)?;
         let epochs = Epochs {
@@ -313,10 +336,7 @@ impl Runtime {
         let previous = if reseed {
             current
         } else {
-            CompositionSide {
-                root: input.previous_root,
-                ..self.previous.expect("a continuing fit has a side")
-            }
+            self.previous.expect("a continuing fit has a side")
         };
         let observation = Observation::new(
             RawTracking {
@@ -329,23 +349,49 @@ impl Runtime {
             },
             CompositionPair::new(previous, current)?,
         )?;
-        let snapshot = self.estimator.update(Update {
-            observation: &observation,
-            now: input.now,
-            max_age: MAX_AGE,
-            dt: input.dt,
-            anatomy: &anatomy,
-            support: None,
-            transition: if teleported {
-                Transition::Teleport
-            } else if reseed {
-                Transition::Reseed
-            } else {
-                Transition::Continue
+        let sample = input.support.filter(|sample| sample.at == input.now);
+        let support = sample
+            .filter(|sample| {
+                crate::controllers::body::rig::estimate::support_transform_valid(sample.transform)
+            })
+            .map(|sample| {
+                let last = self.support.filter(|last| {
+                    !reseed
+                        && last.identity == sample.identity
+                        && last.generation == sample.generation
+                        && last.at < sample.at
+                });
+                Support {
+                    identity: sample.identity,
+                    generation: sample.generation,
+                    previous_step: previous.stamp,
+                    current_step: current.stamp,
+                    previous: last.map_or(sample.transform, |last| last.transform),
+                    current: sample.transform,
+                    half_extent: Vec2::splat(f32::MAX),
+                }
+            });
+        let snapshot = self.estimator.update_terrain(
+            Update {
+                observation: &observation,
+                now: input.now,
+                max_age: MAX_AGE,
+                dt: input.dt,
+                anatomy: &anatomy,
+                support,
+                transition: if teleported {
+                    Transition::Teleport
+                } else if reseed {
+                    Transition::Reseed
+                } else {
+                    Transition::Continue
+                },
             },
-        })?;
+            terrain,
+        )?;
         self.anatomy = Some(anatomy);
         self.previous = Some(current);
+        self.support = support.and(sample);
         Ok(snapshot)
     }
 
