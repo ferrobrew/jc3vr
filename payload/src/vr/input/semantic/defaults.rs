@@ -288,7 +288,7 @@ fn land_vehicle(action: LandVehicleAction) -> Option<DefaultBinding> {
         Grapple => on(Off, UpperFace),
         // The grapple took the off-hand's upper face; nitrous is also on the cockpit's button.
         VehicleMod => on(Dom, ThumbstickClick),
-        Handbrake => on(Off, LowerFace),
+        Handbrake => on(Left, LowerFace),
         Horn => on(Off, ThumbstickClick),
     }
 }

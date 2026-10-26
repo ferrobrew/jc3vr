@@ -434,6 +434,7 @@ fn the_defaults_mirror_the_gamepad_by_side() {
     assert_eq!(on_foot(F::FireGrapple, Hand::Left), None);
     assert_eq!(on_foot(F::ReleaseTethers, Hand::Left), None);
     assert_eq!(land(L::Handbrake, Hand::Left), Some("input/a/click"));
+    assert_eq!(land(L::Handbrake, Hand::Right), None);
     for (set, exit) in [
         (SemanticSet::Helicopter, H::ExitVehicle as usize),
         (SemanticSet::Plane, P::ExitVehicle as usize),
@@ -554,6 +555,36 @@ fn vehicle_stunt_defaults_stay_on_physical_right_lower_face_for_both_dominance_c
                     set.name(),
                 );
             }
+            assert_eq!(
+                default_binding(SemanticSet::LandVehicle, L::Handbrake as usize),
+                Some(DefaultBinding {
+                    side: Side::Left,
+                    component: Component::LowerFace,
+                }),
+                "handbrake ({dominant:?}-handed)",
+            );
+            assert_eq!(
+                default_path(
+                    SemanticSet::LandVehicle,
+                    L::Handbrake as usize,
+                    profile,
+                    Hand::Left,
+                    dominant,
+                ),
+                Component::LowerFace.path(profile, Hand::Left),
+                "handbrake on physical left ({profile:?}, {dominant:?}-handed)",
+            );
+            assert_eq!(
+                default_path(
+                    SemanticSet::LandVehicle,
+                    L::Handbrake as usize,
+                    profile,
+                    Hand::Right,
+                    dominant,
+                ),
+                None,
+                "handbrake must not move to physical right ({profile:?}, {dominant:?}-handed)",
+            );
         }
     }
 }
@@ -563,9 +594,7 @@ fn an_enumerated_vehicle_stunt_rebinding_takes_precedence_over_the_default() {
     let set = SemanticSet::LandVehicle;
     let index = L::Stunt as usize;
     let mut enumerated_sources = vec![None; set.actions().len()];
-    enumerated_sources[index] = Some(of_sources([
-        "/user/hand/left/input/a/click",
-    ]));
+    enumerated_sources[index] = Some(of_sources(["/user/hand/left/input/a/click"]));
     for dominant in Hand::BOTH {
         let merged = BoundSet::merged(
             set,

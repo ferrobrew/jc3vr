@@ -5,7 +5,11 @@ use super::*;
 #[test]
 fn vehicle_stunt_routes_physical_right_a_in_land_helicopter_and_plane_modes() {
     for dominant in Hand::BOTH {
-        for class in [VehicleClass::Car, VehicleClass::Helicopter, VehicleClass::Plane] {
+        for class in [
+            VehicleClass::Car,
+            VehicleClass::Helicopter,
+            VehicleClass::Plane,
+        ] {
             let mode = Mode::Vehicle(VehicleSeat {
                 class,
                 driver: true,
@@ -34,6 +38,25 @@ fn vehicle_stunt_routes_physical_right_a_in_land_helicopter_and_plane_modes() {
                 "physical left A in {class:?} with {dominant:?} dominance",
             );
         }
+    }
+}
+
+#[test]
+fn the_car_reads_left_a_for_handbrake_and_right_a_for_stunt() {
+    let mode = Mode::Vehicle(VehicleSeat {
+        class: VehicleClass::Car,
+        driver: true,
+    });
+    for dominant in Hand::BOTH {
+        let mut c = Controls {
+            dominant,
+            ..Default::default()
+        };
+        c.hands[Hand::Left.index()].a = down();
+        c.hands[Hand::Right.index()].a = down();
+        let step = Bindings::default().sim_step(mode, &c, DT, &CONFIG);
+        assert_eq!(player(&step, HANDBRAKE), Some(Want::Hold(1.0)));
+        assert_eq!(player(&step, STUNT_JUMP), Some(Want::Hold(1.0)));
     }
 }
 
