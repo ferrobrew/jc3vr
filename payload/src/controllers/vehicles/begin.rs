@@ -3,13 +3,13 @@
 //! the driver's controls, the cockpit's buttons, the parachute's handles, and the mounted gun's
 //! handles.
 
-use std::{sync::atomic::Ordering, time::Instant};
+use std::sync::atomic::Ordering;
 
 use glam::Vec3;
 
 use crate::{
     controllers::{
-        body::{self, BodyDimensions, rig},
+        body::{self, BodyDimensions},
         config::ControllersConfig,
         fingers::grip::{self, Grip, GripSource},
         frame::Hand,
@@ -24,7 +24,7 @@ use crate::{
             handle_tick::handles_act,
             mounted_grip,
             mounted_tick::{mounted_tick, offered},
-            parachute,
+            parachute, parachute_rig,
             physical::{
                 self, ControlState, Placement,
                 buttons::{Button, ButtonPlacement, PushPhase},
@@ -85,6 +85,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     let mounted = mounted_tick(&active, aiming);
     let handles_on = handles_act(mode, &config);
     let handles_config = config.vehicles.parachute_handles;
+    let native_centres = parachute_rig::centres(handles_on, &xf);
 
     let mut events = Vec::new();
     let mut handle_events = Vec::new();
@@ -194,25 +195,13 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         });
     }
     if handles_on {
-        let dims = body_dimensions(&config);
-        // Along the torso, so that a player turned from the recenter's forward finds the handles
-        // by their own shoulders; while the estimate is stale, the last heading eases toward the
-        // head's.
-        let now = Instant::now();
-        let dt = state
-            .handles_torso
-            .map_or(0.0, |(_, at)| now.duration_since(at).as_secs_f32());
-        let torso = parachute::torso_heading(
-            rig::estimate().map(|e| e.rotation()),
-            state.handles_torso.map(|(torso, _)| torso),
-            hands::reach::yaw_only(active.head.orientation),
-            dt,
-        );
-        state.handles_torso = Some((torso, now));
-        let shoulders = body::shoulder_positions(active.head.position, torso, &dims);
-        let centres = parachute::handle_centres(&handles_config, shoulders, torso);
+        let centres = native_centres.map(|point| point.unwrap_or(Vec3::ZERO));
         let placed = parachute::candidates(&handles_config, &state.handles, centres, grips);
         for (hand, c) in Hand::BOTH.into_iter().zip(placed) {
+            if state.handles.holds[hand.index()].is_none() && native_centres[hand.index()].is_none()
+            {
+                continue;
+            }
             let target = handle_target(c.volume, c.centre, c.radius, hand);
             let target = GripTarget {
                 mark: target.mark.showing(Shown::Always),
@@ -229,7 +218,11 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         // reach.
         targets.extend(
             parachute::reach_candidates(&handles_config, &state.handles, centres)
-                .filter(|c| c.hand.is_none_or(|h| !holding[h.index()]))
+                .filter(|c| {
+                    c.hand.is_some_and(|hand| {
+                        !holding[hand.index()] && native_centres[hand.index()].is_some()
+                    })
+                })
                 .map(|c| {
                     c.target(Mark::ring(MarkAt::Cockpit(c.centre), c.radius).showing(Shown::Never))
                         .ranked(Tier::Fallback)

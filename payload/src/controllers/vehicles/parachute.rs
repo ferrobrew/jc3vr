@@ -33,7 +33,9 @@
 //! nothing. The holding hand is drawn on the handle ([`anchor_point`]): straight below where it was
 //! taken, no further down than a full pull and no higher than where it was taken.
 
-use glam::{Quat, Vec2, Vec3};
+#[cfg(test)]
+use glam::Quat;
+use glam::{Vec2, Vec3};
 
 use crate::controllers::{
     frame::Hand,
@@ -84,6 +86,7 @@ pub struct StepInputs {
 /// [`TORSO_FALLBACK_S`], so the handles neither jump to the cockpit frame's forward nor stay
 /// pinned to a stale heading. With no heading yet, the head's. `dt` is the time since the last
 /// heading, seconds.
+#[cfg(test)]
 pub fn torso_heading(estimate: Option<Quat>, last: Option<Quat>, head_yaw: Quat, dt: f32) -> Quat {
     if let Some(estimate) = estimate.filter(|q| q.is_finite()) {
         return estimate;
@@ -98,11 +101,13 @@ pub fn torso_heading(estimate: Option<Quat>, last: Option<Quat>, head_yaw: Quat,
 }
 
 /// The time constant over which a stale torso heading eases toward the head's, seconds.
+#[cfg(test)]
 pub const TORSO_FALLBACK_S: f32 = 2.0;
 
 /// Where the handles' volumes are centred for shoulder joints at `shoulders`, indexed by
 /// [`Hand::index`], for a torso turned by `torso` in the cockpit frame: each shoulder's offset
 /// along the torso's axes, mirrored for the left.
+#[cfg(test)]
 pub fn handle_centres(
     config: &ParachuteHandlesConfig,
     shoulders: [Vec3; 2],
