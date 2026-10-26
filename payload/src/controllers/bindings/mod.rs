@@ -420,6 +420,15 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
                 hand: grapple_hand,
                 detection: &detection,
                 button_held: grapple_held,
+                grip: ButtonControl {
+                    down: frame
+                        .hand(grapple_hand)
+                        .buttons
+                        .contains(Button::SqueezePress),
+                    pressed: edges.pressed(grapple_hand, Button::SqueezePress),
+                    released: edges.released(grapple_hand, Button::SqueezePress),
+                },
+                dt,
                 config: &config,
             })
         });

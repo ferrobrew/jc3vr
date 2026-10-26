@@ -148,6 +148,20 @@ unsafe fn run(owner: &Character, dt: f32) {
     let melee_impulse = unsafe { engine::melee_impulse(owner) };
     // SAFETY: forwarded from the caller.
     let standing_on = unsafe { engine::ground_body(owner) };
+    let floor_hands: Vec<Vec3> = Hand::BOTH
+        .into_iter()
+        .filter(|hand| free[hand.index()])
+        .filter_map(|hand| active.hands[hand.index()])
+        .map(|hand| PalmBox::from_wrist(compose(hand.wrist), active.world_scale, &config).centre)
+        .collect();
+    let floor_radius =
+        (config.pickup.reach_m + config.palm_half_extents_m.abs().length()) * active.world_scale;
+    let floor_weapons = if config.pickup.enabled {
+        // SAFETY: this input phase runs outside the world step, before holding the hand-state lock.
+        unsafe { pickup::floor_weapons(&floor_hands, floor_radius) }
+    } else {
+        Vec::new()
+    };
 
     let mut state = STATE.lock();
     let now = Instant::now();
@@ -194,6 +208,7 @@ unsafe fn run(owner: &Character, dt: f32) {
     };
 
     let reach_tuning = pickup::ReachTuning {
+        floor_weapons: &floor_weapons,
         world_scale: active.world_scale,
         pickup: &config.pickup,
         doors: &config.doors,

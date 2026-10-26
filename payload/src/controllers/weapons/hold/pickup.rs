@@ -16,9 +16,10 @@
 //!
 //! A weapon `PickupItem` does not put into the inventory (a hand grenade, which the game collects
 //! by proximity, and a weapon with [`WeaponBase::m_InfinitePickup`], which gives a copy) and a
-//! pickup the animation forbids
+//! native pickup the animation forbids
 //! ([`Inventory::GetAnimationAllowsPickup`](jc3gi::character::inventory::Inventory::GetAnimationAllowsPickup))
-//! are refused, and the caller falls back to the use-item click.
+//! are refused, and the caller falls back to the use-item click. A table take does not queue that
+//! animation and does not require its permission.
 //!
 //! A weapon on a rack is taken the same way, after the call that starts the game's own pickup of
 //! it ([`WeaponBase::PickupStart`]), which takes it out of the rack's state and tells the rack it
@@ -160,7 +161,10 @@ pub(crate) unsafe fn take(
         }
     }
     let slot = unsafe { takeable(owner, weapon) }?;
-    match unsafe { route(weapon, Some(hand)) }? {
+    let route = animation_eligibility(unsafe { route(weapon, Some(hand)) }?, || unsafe {
+        owner.m_Inventory.GetAnimationAllowsPickup()
+    })?;
+    match route {
         TakeRoute::Table { hand } => {
             let source = match (options.cause, from_rack) {
                 (Cause::Steal, _) => TakeSource::Character,
@@ -375,16 +379,16 @@ pub(crate) unsafe fn credit_stored(owner: &mut Character, weapon: &mut WeaponBas
 static EMBEDDED_POWER_CORE: LazyLock<u32> =
     LazyLock::new(|| hashlittle(b"w210_powercore_embedded") as u32);
 
-/// Whether `owner` can take `weapon` into a hand by a direct pickup, whatever its state: its slot
-/// is one the inventory holds it in, it is not a hand grenade or a weapon that gives a copy, and
-/// the animation allows a pickup. Returns its slot.
+/// Whether `weapon` can enter a direct pickup, whatever its state: its slot is one the inventory
+/// holds, and it is not a hand grenade or a weapon that gives a copy. The native route checks
+/// animation permission separately. Returns its slot.
 ///
 /// # Safety
 ///
 /// `owner` must be the live local player character and `weapon` live, on the main thread outside
 /// the world update.
 pub(crate) unsafe fn takeable(
-    owner: &Character,
+    _owner: &Character,
     weapon: &WeaponBase,
 ) -> Result<WeaponSlot, Refusal> {
     // Read as the raw value: an unset slot is out of the enum's range.
@@ -396,10 +400,17 @@ pub(crate) unsafe fn takeable(
     if weapon.m_InfinitePickup {
         return Err(Refusal::InfinitePickup);
     }
-    if !unsafe { owner.m_Inventory.GetAnimationAllowsPickup() } {
+    Ok(slot)
+}
+
+fn animation_eligibility(
+    route: TakeRoute,
+    allows_animation: impl FnOnce() -> bool,
+) -> Result<TakeRoute, Refusal> {
+    if matches!(route, TakeRoute::Game(_)) && !allows_animation() {
         return Err(Refusal::AnimationForbids);
     }
-    Ok(slot)
+    Ok(route)
 }
 
 /// `owner`'s game-object subobject, which the pickups take as their activator.
@@ -417,4 +428,37 @@ pub(crate) unsafe fn gun_pose(weapon: &WeaponBase) -> Option<Pose> {
         position,
         orientation: orientation.normalize(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::controllers::loadout::take::GameTake;
+
+    #[test]
+    fn a_table_take_does_not_query_the_native_animation_gate() {
+        let route = TakeRoute::Table { hand: Hand::Left };
+        assert_eq!(
+            animation_eligibility(route, || panic!("table pickup has no native animation")),
+            Ok(route)
+        );
+    }
+
+    #[test]
+    fn a_native_take_checks_animation_permission_before_mutating_inventory() {
+        for reason in [
+            GameTake::TableStopped,
+            GameTake::GameLayout,
+            GameTake::Heavy,
+            GameTake::Swaps,
+            GameTake::OneWeapon,
+        ] {
+            let route = TakeRoute::Game(reason);
+            assert_eq!(
+                animation_eligibility(route, || false),
+                Err(Refusal::AnimationForbids)
+            );
+            assert_eq!(animation_eligibility(route, || true), Ok(route));
+        }
+    }
 }

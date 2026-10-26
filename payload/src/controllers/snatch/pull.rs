@@ -73,7 +73,7 @@ pub(super) enum Fired {
 /// The main thread, outside the world update.
 pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal> {
     let freed = match offer.kind {
-        OfferKind::Ground { weapon, weak } => {
+        OfferKind::Ground { weapon, weak, .. } => {
             let grabbed = Grabbed {
                 object: weapon,
                 kind: Pulled::Weapon,

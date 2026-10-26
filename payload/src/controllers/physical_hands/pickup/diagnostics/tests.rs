@@ -340,6 +340,7 @@ fn the_actual_ray_scan_records_misses_without_engine_reads() {
     let doors = DoorsConfig::default();
     let characters = CharactersConfig::default();
     let tuning = ReachTuning {
+        floor_weapons: &[],
         world_scale: 1.0,
         pickup: &pickup,
         doors: &doors,

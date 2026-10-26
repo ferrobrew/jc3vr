@@ -34,6 +34,7 @@
 pub mod config;
 mod engine;
 mod hooks;
+mod prearm;
 mod pull;
 pub mod rules;
 mod target;
@@ -46,7 +47,12 @@ use re_utilities::hook_library::HookLibrary;
 pub use crate::controllers::snatch::config::SnatchConfig;
 use crate::controllers::{
     aim::{self, grapple_weapons},
-    bindings::{controls::ButtonControl, hold::Desired, tables, yank::YankDetector},
+    bindings::{
+        controls::ButtonControl,
+        hold::Desired,
+        tables,
+        yank::{YankConfig, YankDetector},
+    },
     config::ControllersConfig,
     frame::Hand,
     grab::{GrabVolume, GripTarget, Mark, MarkAt, Provided},
@@ -55,6 +61,7 @@ use crate::controllers::{
     mode::{Detection, Mode},
     physical_hands::BodyError,
     snatch::{
+        prearm::Prearm,
         pull::{Arrival, Attached, Fired, Grabbed},
         rules::StallWatch,
         target::Offer,
@@ -140,6 +147,9 @@ pub(crate) struct OfferInput<'a> {
     pub detection: &'a Detection,
     /// Whether the grapple button is held.
     pub button_held: bool,
+    /// The grapple hand's grip after input filtering.
+    pub grip: ButtonControl,
+    pub dt: f32,
     pub config: &'a ControllersConfig,
 }
 
@@ -159,26 +169,36 @@ pub(crate) unsafe fn targets(input: &OfferInput) -> Provided {
         0.0
     });
     let mut state = STATE.lock();
-    state.offer = None;
     state.status.live = true;
     if !config.enabled || !matches!(state.phase, Phase::Idle) {
+        state.prearm.clear();
         return Provided::default();
     }
     if let Err(why) = unsafe { target::offerable(input) } {
+        state.prearm.clear();
         state.status.target = None;
         state.status.unoffered = Some(why);
         return Provided::default();
     }
     state.status.unoffered = None;
-    let offer = aim::status()
-        .grapple
+    let grapple = aim::status().grapple;
+    let current = grapple
+        .as_ref()
         .and_then(|grapple| unsafe { target::choose(&grapple.ray, input.config) });
-    state.status.target = offer.as_ref().map(|o| TargetReadout {
-        kind: o.kind.label(),
-        distance_m: o.distance,
-    });
-    let Some(offer) = offer else {
+    let Some(offer) = state
+        .prearm
+        .observe(current, input.grip, input.dt, |offer| {
+            grapple.as_ref().is_some_and(|grapple| unsafe {
+                target::refresh(offer, &grapple.ray, input.config)
+            })
+        })
+    else {
+        state.status.target = None;
         return Provided::default();
+    };
+    let readout = TargetReadout {
+        kind: offer.kind.label(),
+        distance_m: offer.distance,
     };
     let target = GripTarget::measured(
         GrabVolume::Snatch(offer.kind.remote()),
@@ -192,7 +212,7 @@ pub(crate) unsafe fn targets(input: &OfferInput) -> Provided {
         offer.kind.label(),
         offer.distance
     ));
-    state.offer = Some(offer);
+    state.status.target = Some(readout);
     Provided {
         targets: vec![target],
         notes,
@@ -263,7 +283,7 @@ pub(crate) fn stand_down() {
     // SAFETY: the input tick runs on the main thread outside the world update.
     unsafe { state.phase.end_line() };
     state.phase = Phase::Idle;
-    state.offer = None;
+    state.prearm.clear();
     state.status.live = false;
     state.status.phase = Phase::Idle.label();
     state.status.target = None;
@@ -307,7 +327,7 @@ const MARK_SIZE_M: f32 = 0.3;
 
 static STATE: Mutex<State> = Mutex::new(State {
     phase: Phase::Idle,
-    offer: None,
+    prearm: Prearm::new(),
     status: SnatchStatus {
         live: false,
         phase: "IDLE",
@@ -323,8 +343,8 @@ static STATE: Mutex<State> = Mutex::new(State {
 
 struct State {
     phase: Phase,
-    /// The target offered to the grip this tick.
-    offer: Option<Offer>,
+    /// The recent aimed target retained across the grip edge.
+    prearm: Prearm<Offer>,
     status: SnatchStatus,
 }
 
@@ -385,6 +405,12 @@ impl Phase {
             unsafe { engine::cancel(*wire) };
         }
     }
+}
+
+fn armed_yank(distance: Option<f32>, config: &YankConfig) -> YankDetector {
+    let mut yank = YankDetector::new();
+    yank.step(0.0, distance, true, config);
+    yank
 }
 
 impl State {
@@ -558,7 +584,7 @@ impl State {
         if !matches!(input.grabs[hand.index()], Some(GrabVolume::Snatch(_))) {
             return Phase::Idle;
         }
-        let Some(offer) = self.offer.take() else {
+        let Some(offer) = self.prearm.take() else {
             return Phase::Idle;
         };
         tracing::info!(
@@ -572,7 +598,7 @@ impl State {
         Phase::Armed {
             hand,
             offer,
-            yank: YankDetector::new(),
+            yank: armed_yank(input.distance, &input.config.weapons.snatch.yank),
         }
     }
 
@@ -591,5 +617,18 @@ impl State {
         self.status.failed += 1;
         self.status.last_refusal = Some(refusal.to_string());
         Phase::Idle
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_first_held_tick_measures_the_pull_from_the_grip_edge() {
+        let config = SnatchConfig::new().yank;
+        let mut yank = armed_yank(Some(0.6), &config);
+        assert!(yank.step(0.05, Some(0.42), true, &config).is_some());
+        assert!(yank.step(0.05, Some(0.3), true, &config).is_none());
     }
 }

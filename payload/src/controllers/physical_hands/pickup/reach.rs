@@ -4,17 +4,28 @@
 use std::num::NonZeroUsize;
 
 use glam::Vec3;
+use jc3gi::{character::character::Character, physics::PfxLayer};
 
-use crate::controllers::physical_hands::{
-    articulated, bodies,
-    characters::{self, CharactersConfig},
-    config::PickupConfig,
-    contact::{Surface, SurfaceHit},
-    doors::{self, DoorsConfig},
-    grab_view::model::{RayOutcome, ReachRay},
-    grasp::{self, Reach, TargetKind},
-    palm::PalmBox,
-    pickup::diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
+use crate::controllers::{
+    aim::{
+        ray::Ray,
+        raycast::{self, CastOptions},
+    },
+    physical_hands::{
+        articulated, bodies,
+        characters::{self, CharactersConfig},
+        collider_view::{
+            self,
+            model::{Aabb, BodyKind},
+        },
+        config::PickupConfig,
+        contact::{Surface, SurfaceHit},
+        doors::{self, DoorsConfig},
+        grab_view::model::{RayOutcome, ReachRay},
+        grasp::{self, Reach, TargetKind},
+        palm::PalmBox,
+        pickup::diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
+    },
 };
 
 /// The existing reach readouts and a bounded copy of its evaluated branches.
@@ -34,6 +45,63 @@ pub(crate) struct ReachTuning<'a> {
     pub characters: &'a CharactersConfig,
     /// The hand bodies, whose grip joints do not make what they hold articulated.
     pub hand_bodies: [Option<u32>; 2],
+    /// Live dropped-weapon bodies discovered once for both hands this simulation tick.
+    pub floor_weapons: &'a [FloorWeapon],
+}
+
+/// A dropped weapon's exact dynamic body and its broad-phase bounds.
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct FloorWeapon {
+    pub object: NonZeroUsize,
+    pub body: u32,
+    pub bounds: Aabb,
+}
+
+/// Discover dropped weapons near either hand, independently of the wrist's pointing direction.
+///
+/// # Safety
+///
+/// The simulation thread, outside the physics step.
+pub(crate) unsafe fn floor_weapons(hands: &[Vec3], radius: f32) -> Vec<FloorWeapon> {
+    let Some(first) = hands.first().filter(|point| point.is_finite()) else {
+        return Vec::new();
+    };
+    if !radius.is_finite() || radius <= 0.0 {
+        return Vec::new();
+    }
+    let spread = hands
+        .iter()
+        .map(|point| point.distance(*first))
+        .fold(0.0, f32::max);
+    let Ok(snapshot) = (unsafe { collider_view::scan_moving(*first, radius + spread, 64) }) else {
+        return Vec::new();
+    };
+    snapshot
+        .bodies
+        .into_iter()
+        .filter_map(|body| {
+            if body.kind != BodyKind::Dynamic
+                || !hands
+                    .iter()
+                    .any(|point| body.aabb.distance(*point) <= radius)
+            {
+                return None;
+            }
+            let object = unsafe { bodies::owner_of(body.id) }?;
+            if !matches!(
+                unsafe { bodies::classify(object, body.id) },
+                Ok(TargetKind::Weapon)
+            ) || unsafe { bodies::read(body.id, object) }.is_err()
+            {
+                return None;
+            }
+            Some(FloorWeapon {
+                object,
+                body: body.id,
+                bounds: body.aabb,
+            })
+        })
+        .collect()
 }
 
 /// The directions of the reach rays in the wrist frame: out of the palm (-Y), along the fingers
@@ -121,9 +189,124 @@ pub(crate) unsafe fn reach(
             recorded.outcome = RayOutcome::of(true, judged.reaches.len() > before);
         }
     }
+    for weapon in tuning.floor_weapons {
+        if standing_on == Some(weapon.body) {
+            continue;
+        }
+        let Some(reach) = floor_reach(weapon, palm, tuning, &mut |from, to| unsafe {
+            floor_cast(from, to)
+        }) else {
+            continue;
+        };
+        if !matches!(
+            unsafe { bodies::classify(reach.object, reach.body) },
+            Ok(TargetKind::Weapon)
+        ) || unsafe { bodies::read(reach.body, reach.object) }.is_err()
+        {
+            continue;
+        }
+        judged.scan.push(ScanEntry {
+            branch: Branch::Ray,
+            object: Some(reach.object),
+            body: Some(reach.body),
+            door: None,
+            point: Some(reach.point),
+            distance: Some(reach.distance),
+            mass_kg: None,
+            result: ScanResult::Offered,
+        });
+        if judged.notes.len() < MAX_REACH_NOTES {
+            judged.notes.push(format!(
+                "a dropped weapon, body {}: in surface reach",
+                reach.body
+            ));
+        }
+        judged.reaches.push(reach);
+    }
     let selected = grasp::nearest(judged.reaches);
     judged.scan.ray_selected = selected;
     selected
+}
+
+/// The ordinary palm query layer excludes dropped weapons; this cast meets their real bodies.
+unsafe fn floor_cast(from: Vec3, to: Vec3) -> Option<SurfaceHit> {
+    let ray = Ray::new(from, to - from)?;
+    let player = unsafe { Character::GetLocalPlayerCharacter() } as usize;
+    let options = CastOptions {
+        ignore: [player, 0],
+        see_through: false,
+        material: false,
+    };
+    let hit = unsafe {
+        raycast::cast_on(
+            &ray,
+            from.distance(to),
+            &options,
+            PfxLayer::VEHICLE_RAYCAST as i32,
+        )
+    }
+    .ok()??;
+    Some(SurfaceHit {
+        position: hit.position,
+        normal: hit.normal,
+        surface: Surface::Solid {
+            object: hit.object,
+            body: hit.body,
+        },
+        material: None,
+    })
+}
+
+/// A body's bounds direct the probe; only a hit on that exact body establishes surface reach.
+fn floor_reach(
+    weapon: &FloorWeapon,
+    palm: &PalmBox,
+    tuning: &ReachTuning,
+    cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
+) -> Option<Reach> {
+    let reach = tuning.pickup.reach_m * tuning.world_scale;
+    if !reach.is_finite()
+        || reach <= 0.0
+        || !palm.centre.is_finite()
+        || !weapon.bounds.min.is_finite()
+        || !weapon.bounds.max.is_finite()
+        || !weapon.bounds.min.cmple(weapon.bounds.max).all()
+    {
+        return None;
+    }
+    let nearest = palm.centre.clamp(weapon.bounds.min, weapon.bounds.max);
+    for toward in [nearest, weapon.bounds.centre()] {
+        let direction = (toward - palm.centre).normalize_or_zero();
+        if direction == Vec3::ZERO {
+            continue;
+        }
+        let local = palm.orientation.inverse() * direction;
+        let extent = local.abs().dot(palm.half_extents.abs());
+        let length = reach + extent;
+        let Some(hit) = cast(palm.centre, palm.centre + direction * length) else {
+            continue;
+        };
+        if !matches!(hit.surface, Surface::Solid { object: Some(object), body }
+            if object == weapon.object && body == weapon.body)
+            || !hit.position.is_finite()
+            || !hit.normal.is_finite()
+        {
+            continue;
+        }
+        let distance = hit.position.distance(palm.centre);
+        if distance > length {
+            continue;
+        }
+        return Some(Reach {
+            object: weapon.object,
+            body: weapon.body,
+            point: hit.position,
+            distance,
+            normal: hit.normal,
+            kind: TargetKind::Weapon,
+        });
+    }
+    None
 }
 
 /// The most notes one hand's reach keeps per tick.
@@ -321,4 +504,139 @@ unsafe fn articulated_kind(
     }
     unsafe { articulated::joined(body, tuning.hand_bodies) }
         .map(|_| TargetKind::Articulated { mass_kg })
+}
+
+#[cfg(test)]
+mod tests {
+    use glam::Quat;
+
+    use super::*;
+    use crate::controllers::{
+        frame::Hand,
+        grab::{GrabVolume, GripTarget, Mark, MarkAt, PickupKind, RemoteKind, resolve},
+    };
+
+    fn weapon() -> FloorWeapon {
+        FloorWeapon {
+            object: NonZeroUsize::new(1).unwrap(),
+            body: 7,
+            bounds: Aabb {
+                min: Vec3::new(-0.3, -0.03, -0.03),
+                max: Vec3::new(0.3, 0.03, 0.03),
+            },
+        }
+    }
+
+    fn hit(weapon: FloorWeapon, position: Vec3) -> SurfaceHit {
+        SurfaceHit {
+            position,
+            normal: Vec3::Y,
+            surface: Surface::Solid {
+                object: Some(weapon.object),
+                body: weapon.body,
+            },
+            material: None,
+        }
+    }
+
+    #[test]
+    fn floor_surface_reach_does_not_depend_on_the_five_wrist_directions() {
+        let pickup = PickupConfig::default();
+        let doors = DoorsConfig::default();
+        let characters = CharactersConfig::default();
+        let tuning = ReachTuning {
+            world_scale: 1.0,
+            pickup: &pickup,
+            doors: &doors,
+            characters: &characters,
+            hand_bodies: [None; 2],
+            floor_weapons: &[],
+        };
+        for orientation in [
+            Quat::IDENTITY,
+            Quat::from_rotation_x(1.5),
+            Quat::from_rotation_z(1.5),
+        ] {
+            let palm = PalmBox {
+                centre: Vec3::new(0.2, 0.11, 0.0),
+                orientation,
+                half_extents: Vec3::splat(0.02),
+            };
+            let reached = floor_reach(&weapon(), &palm, &tuning, &mut |from, to| {
+                assert!(to.y < from.y);
+                Some(hit(weapon(), Vec3::new(0.2, 0.03, 0.0)))
+            })
+            .unwrap();
+            assert_eq!(reached.body, weapon().body);
+            assert!((reached.distance - 0.08).abs() < 1e-6);
+            let marker = Mark::ring(MarkAt::World(reached.point), 0.05);
+            let targets = [
+                GripTarget::measured(
+                    GrabVolume::Snatch(RemoteKind::Weapon),
+                    Hand::Left,
+                    0.01,
+                    marker,
+                ),
+                GripTarget::measured(
+                    GrabVolume::Pickup(PickupKind::Weapon),
+                    Hand::Left,
+                    reached.distance,
+                    marker,
+                ),
+            ];
+            assert_eq!(
+                resolve::resolve(&targets, [Some(palm.centre), None])[0]
+                    .chosen
+                    .unwrap()
+                    .index,
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn a_broadphase_box_is_not_a_hit_and_another_body_cannot_validate_the_weapon() {
+        let pickup = PickupConfig::default();
+        let doors = DoorsConfig::default();
+        let characters = CharactersConfig::default();
+        let tuning = ReachTuning {
+            world_scale: 1.0,
+            pickup: &pickup,
+            doors: &doors,
+            characters: &characters,
+            hand_bodies: [None; 2],
+            floor_weapons: &[],
+        };
+        let palm = PalmBox {
+            centre: Vec3::Y * 0.11,
+            orientation: Quat::IDENTITY,
+            half_extents: Vec3::splat(0.02),
+        };
+        assert!(floor_reach(&weapon(), &palm, &tuning, &mut |_, _| None).is_none());
+        for wrong in [
+            FloorWeapon {
+                body: 8,
+                ..weapon()
+            },
+            FloorWeapon {
+                object: NonZeroUsize::new(2).unwrap(),
+                ..weapon()
+            },
+        ] {
+            assert!(
+                floor_reach(&weapon(), &palm, &tuning, &mut |_, _| Some(hit(
+                    wrong,
+                    Vec3::Y * 0.03
+                )))
+                .is_none()
+            );
+        }
+        assert!(
+            floor_reach(&weapon(), &palm, &tuning, &mut |_, _| Some(hit(
+                weapon(),
+                Vec3::Y * -0.3
+            )))
+            .is_none()
+        );
+    }
 }

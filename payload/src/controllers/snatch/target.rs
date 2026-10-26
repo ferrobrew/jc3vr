@@ -27,6 +27,142 @@ use crate::controllers::{
     },
 };
 
+/// Revalidate a recent offer without selecting a different object.
+///
+/// # Safety
+///
+/// The main thread, outside the world update and the physics step.
+pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersConfig) -> bool {
+    let point = match &mut offer.kind {
+        OfferKind::Ground {
+            weapon,
+            body,
+            local_point,
+            weak,
+        } => {
+            let Some(_alive) = weak.lock() else {
+                return false;
+            };
+            if !unsafe { grapple_weapons::is_dropped_weapon(*weapon) } {
+                return false;
+            }
+            let Ok((centre, orientation)) = (unsafe { physical_hands::body_pose(*body, *weapon) })
+            else {
+                return false;
+            };
+            let point = centre + orientation * *local_point;
+            let player = unsafe { Character::GetLocalPlayerCharacter() } as usize;
+            let options = CastOptions {
+                ignore: [player, weapon.get()],
+                see_through: true,
+                material: false,
+            };
+            if !unsafe { raycast::line_of_sight(ray.origin, point, SIGHT_TOLERANCE_M, &options) } {
+                return false;
+            }
+            point
+        }
+        OfferKind::Held(target) => {
+            let Some(current) = steal::targets(|p| p)
+                .into_iter()
+                .find(|current| current.weapon == target.weapon && current.kind == target.kind)
+            else {
+                return false;
+            };
+            let TargetKind::Held { character } = current.kind else {
+                return false;
+            };
+            if !unsafe { in_sight(ray, current.points[0], character) } {
+                return false;
+            }
+            *target = current;
+            current.points[0]
+        }
+        OfferKind::Holstered(target) => {
+            let Some(current) = steal::holstered_targets().into_iter().find(|current| {
+                current.weapon == target.weapon && current.character == target.character
+            }) else {
+                return false;
+            };
+            if !unsafe { in_sight(ray, current.point, current.character) } {
+                return false;
+            }
+            *target = current;
+            current.point
+        }
+        OfferKind::Prop {
+            object, body, weak, ..
+        } => {
+            let Some(_alive) = weak.lock() else {
+                return false;
+            };
+            if !config.weapons.snatch.props
+                || unsafe { remote::loose_prop(*object, *body, &config.physical_hands.pickup) }
+                    .is_none()
+            {
+                return false;
+            }
+            let Ok((point, _)) = (unsafe { physical_hands::body_pose(*body, *object) }) else {
+                return false;
+            };
+            if !unsafe { in_sight(ray, point, object.get()) } {
+                return false;
+            }
+            point
+        }
+        OfferKind::Door { door, handle, weak } => {
+            let Some(_alive) = weak.lock() else {
+                return false;
+            };
+            if !config.weapons.snatch.doors
+                || !config.physical_hands.doors.enabled
+                || unsafe {
+                    remote::door_moving(door, config.weapons.snatch.door_max_vehicle_speed_mps)
+                }
+            {
+                return false;
+            }
+            let Some(body) = door.vehicle_body else {
+                return false;
+            };
+            let Some((current, point)) = (unsafe {
+                remote::closed_door(
+                    door.vehicle,
+                    body,
+                    *handle,
+                    door.outward,
+                    config.weapons.snatch.door_reach_m,
+                    &config.physical_hands.doors,
+                )
+            }) else {
+                return false;
+            };
+            if current.part_index != door.part_index || current.slot != door.slot {
+                return false;
+            }
+            if !unsafe { in_sight(ray, point, door.vehicle.get()) } {
+                return false;
+            }
+            *door = current;
+            *handle = point;
+            point
+        }
+    };
+    let chosen = rules::choose(
+        ray,
+        [Candidate { kind: (), point }],
+        (config.weapons.snatch.cone_deg + RETAIN_CONE_DEG).to_radians(),
+        config.weapons.snatch.range_m,
+    );
+    let Some(chosen) = chosen else { return false };
+    offer.point = point;
+    offer.distance = chosen.distance;
+    true
+}
+
+/// Extra angular tolerance while retaining a recent aimed identity across a grip press.
+const RETAIN_CONE_DEG: f32 = 4.0;
+
 /// A remote target offered to the grip.
 pub(super) struct Offer {
     pub kind: OfferKind,
@@ -38,7 +174,12 @@ pub(super) struct Offer {
 
 pub(super) enum OfferKind {
     /// A weapon lying in the world.
-    Ground { weapon: NonZeroUsize, weak: Weak },
+    Ground {
+        weapon: NonZeroUsize,
+        body: u32,
+        local_point: Vec3,
+        weak: Weak,
+    },
     /// A gun in a character's hands.
     Held(WorldTarget),
     /// A gun holstered on a character's body.
@@ -202,8 +343,15 @@ unsafe fn aimed_offer(
     // SAFETY: the caller's strong reference keeps the object, and its weak reference, alive.
     let weak = || unsafe { weak_of(aimed.object) };
     if aimed.weapon {
+        if !unsafe { grapple_weapons::is_dropped_weapon(aimed.object) } {
+            return None;
+        }
+        let (centre, orientation) =
+            unsafe { physical_hands::body_pose(aimed.body, aimed.object) }.ok()?;
         return Some(OfferKind::Ground {
             weapon: aimed.object,
+            body: aimed.body,
+            local_point: orientation.inverse() * (aimed.point - centre),
             weak: weak(),
         });
     }

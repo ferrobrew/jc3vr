@@ -44,7 +44,7 @@ use glam::Vec3;
 use jc3gi::{
     equipment::weapon::WeaponBase, input::input_action_map::Action, vehicle::vehicle::DoorSlot,
 };
-pub(super) use reach::{REACH_DIRECTIONS, ReachObservations, ReachTuning, reach};
+pub(super) use reach::{REACH_DIRECTIONS, ReachObservations, ReachTuning, floor_weapons, reach};
 use state::{Held, HeldKind};
 pub(super) use state::{PickupState, Request};
 pub(super) use tick::{JointInputs, TickInputs, TickOutcome, tick};
