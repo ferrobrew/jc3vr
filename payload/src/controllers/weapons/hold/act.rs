@@ -14,6 +14,9 @@
 //! once. The rigid grip reads a hand's slide in the placement detour ([`snap_view`]) to place the
 //! gun's attach bone between the socket and the hand.
 
+#[cfg(test)]
+mod release_tests;
+
 use std::time::Instant;
 
 use glam::Mat4;
@@ -233,32 +236,30 @@ pub(crate) fn arm(hand: Hand) {
 /// Fold in one input tick of the grips, by [`Hand::index`]: returns, by hand, whether the hand's
 /// grip opened on the weapon the table has in it: one it took by a grab, or one it closed on after
 /// it came into the hand some other way ([`ReleaseWatch::latch_press`]).
-pub(crate) fn release_tick(grips: [bool; 2]) -> [bool; 2] {
+pub(crate) fn release_tick(grips: [bool; 2], action_hands: [bool; 2]) -> [bool; 2] {
     let held = Hand::BOTH.map(live::in_hand);
     let now_s = motion::latest_time();
     let mut state = STATE.lock();
     Hand::BOTH.map(|hand| {
-        let watch = &mut state.watches[hand.index()];
-        let weapon = held[hand.index()];
-        let holder = weapon.map(|_| hand);
-        if weapon != watch.weapon {
-            watch.weapon = weapon;
-            watch.since_s = now_s;
-            watch.release.unarm();
-        }
-        if std::mem::take(&mut watch.pending) && weapon.is_some() && grips[hand.index()] {
-            watch.release.arm(hand);
-        }
-        if watch.release.latch_press(holder, grips).is_some() {
-            watch.since_s = now_s;
-            tracing::info!(
-                target: "controllers",
-                hand = hand.label(),
-                "hold: the grip closed on the gun in the hand, which it holds from now on"
-            );
-        }
-        watch.release.observe(holder, grips) == Some(hand)
+        state.watches[hand.index()].observe_release(
+            hand,
+            held[hand.index()],
+            grips,
+            action_hands,
+            now_s,
+        )
     })
+}
+
+/// Cancel grip-release intent while its input route is inactive, without stopping snap motion.
+pub(crate) fn cancel_releases() {
+    let mut state = STATE.lock();
+    for watch in &mut state.watches {
+        watch.release.disarm();
+        watch.pending = false;
+        watch.weapon = None;
+        watch.since_s = None;
+    }
 }
 
 /// Which hands' guns a dock's snap is moving onto their sockets, which holds them back from firing,
@@ -373,6 +374,34 @@ impl Watch {
             pending: false,
             since_s: None,
         }
+    }
+
+    fn observe_release(
+        &mut self,
+        hand: Hand,
+        weapon: Option<usize>,
+        grips: [bool; 2],
+        action_hands: [bool; 2],
+        now_s: Option<f64>,
+    ) -> bool {
+        let holder = weapon.map(|_| hand);
+        if weapon != self.weapon {
+            self.weapon = weapon;
+            self.since_s = now_s;
+            self.release.unarm();
+        }
+        if std::mem::take(&mut self.pending) && weapon.is_some() && grips[hand.index()] {
+            self.release.arm(hand);
+        }
+        if self.release.latch_press(holder, grips).is_some() {
+            self.since_s = now_s;
+            tracing::info!(
+                target: "controllers",
+                hand = hand.label(),
+                "hold: the grip closed on the gun in the hand, which it holds from now on"
+            );
+        }
+        self.release.observe_action(holder, grips, action_hands) == Some(hand)
     }
 }
 

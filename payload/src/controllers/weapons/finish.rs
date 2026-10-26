@@ -276,7 +276,6 @@ pub(crate) fn finish_tick(
             outcome,
         });
     }
-    let released = hold::act::release_tick(grips.map(ButtonControl::held));
     let grenade_opened = Hand::BOTH.map(|hand| {
         if opened[hand.index()] && grenade::safe::in_hand(hand).is_some() {
             let socket = docked_at(hand, |volume| {
@@ -367,10 +366,17 @@ pub(crate) fn finish_tick(
         &config,
     );
     let action_hands = reload::action_hands();
-    if config.weapons.hold.grip_to_hold && capabilities.release && active.is_some() {
+    let release_active = config.weapons.hold.grip_to_hold && capabilities.release && active.is_some();
+    let released = if release_active {
+        hold::act::release_tick(grips.map(ButtonControl::held), action_hands)
+    } else {
+        hold::act::cancel_releases();
+        [false; 2]
+    };
+    if release_active {
         for hand in Hand::BOTH
             .into_iter()
-            .filter(|hand| released[hand.index()] && !action_hands[hand.index()])
+            .filter(|hand| released[hand.index()])
         {
             let gun = lone.map(|(weapon, _)| weapon);
             release(hand, gun, active.as_ref(), world_scale, &config);

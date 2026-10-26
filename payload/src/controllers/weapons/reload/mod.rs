@@ -304,8 +304,7 @@ pub(super) fn action_hands() -> [bool; 2] {
     let working = Hand::BOTH.into_iter().any(|hand| {
         tick.gun(hand).is_some_and(|(weapon, gun)| {
             state.records.get(weapon.key).travels[gun.entry()]
-                .grip
-                .is_some()
+                .holds_release(weapon.plan.action)
         })
     });
     [working; 2]

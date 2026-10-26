@@ -117,8 +117,7 @@ const ROUNDING_S: f32 = 1e-5;
 /// Watches the holding hand's grip while the grip holds the gun.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct ReleaseWatch {
-    /// The hand whose grip holds the gun.
-    armed: Option<Hand>,
+    state: ReleaseState,
     /// Each hand's grip on the last tick, by [`Hand::index`], for [`Self::latch_press`].
     before: [bool; 2],
 }
@@ -126,27 +125,27 @@ pub struct ReleaseWatch {
 impl ReleaseWatch {
     pub const fn new() -> Self {
         Self {
-            armed: None,
+            state: ReleaseState::Unarmed,
             before: [false; 2],
         }
     }
 
     /// `hand` took the gun by a grab: its grip holds it from now on.
     pub fn arm(&mut self, hand: Hand) {
-        self.armed = Some(hand);
+        self.state = ReleaseState::Holding(hand);
     }
 
     /// Stop watching a gun that left the hand for another, keeping the grip's last state, so that
     /// a grip already held when the new gun arrived is not taken for a press.
     pub fn unarm(&mut self) {
-        self.armed = None;
+        self.state = ReleaseState::Unarmed;
     }
 
     /// Stop watching. The gun stays in the hand, and is the grip's again once the grip closes on
     /// it ([`Self::latch_press`]): after a stand-down (a tracking loss, a lost focus, the debug
     /// panel) a gun held through it is kept rather than dropped by the masked grip.
     pub fn disarm(&mut self) {
-        self.armed = None;
+        self.state = ReleaseState::Unarmed;
         self.before = [false; 2];
     }
 
@@ -157,11 +156,11 @@ impl ReleaseWatch {
     /// not drop it on letting go. Returns the hand when it latched.
     pub fn latch_press(&mut self, holder: Option<Hand>, grips: [bool; 2]) -> Option<Hand> {
         let before = std::mem::replace(&mut self.before, grips);
-        let hand = holder.filter(|h| self.armed.is_none() && grips[h.index()])?;
+        let hand = holder.filter(|h| self.armed().is_none() && grips[h.index()])?;
         if before[hand.index()] {
             return None;
         }
-        self.armed = Some(hand);
+        self.state = ReleaseState::Holding(hand);
         Some(hand)
     }
 
@@ -169,21 +168,48 @@ impl ReleaseWatch {
     /// hand's grip is held, by [`Hand::index`]. Returns the holding hand when its grip opened. A
     /// gun that left the armed hand disarms the watch.
     pub fn observe(&mut self, holder: Option<Hand>, grips: [bool; 2]) -> Option<Hand> {
-        let hand = self.armed?;
+        self.observe_action(holder, grips, [false; 2])
+    }
+
+    /// Retain an open grip while a physical action owns the hand. The owning watch resets this
+    /// state when its exact weapon changes; a regrip cancels the deferred release.
+    pub fn observe_action(
+        &mut self,
+        holder: Option<Hand>,
+        grips: [bool; 2],
+        action_hands: [bool; 2],
+    ) -> Option<Hand> {
+        let hand = self.armed()?;
         if holder != Some(hand) {
-            self.armed = None;
+            self.state = ReleaseState::Unarmed;
             return None;
         }
         if grips[hand.index()] {
+            self.state = ReleaseState::Holding(hand);
             return None;
         }
-        self.armed = None;
+        if action_hands[hand.index()] {
+            self.state = ReleaseState::Deferred(hand);
+            return None;
+        }
+        self.state = ReleaseState::Unarmed;
         Some(hand)
     }
 
     pub fn armed(&self) -> Option<Hand> {
-        self.armed
+        match self.state {
+            ReleaseState::Unarmed => None,
+            ReleaseState::Holding(hand) | ReleaseState::Deferred(hand) => Some(hand),
+        }
     }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+enum ReleaseState {
+    #[default]
+    Unarmed,
+    Holding(Hand),
+    Deferred(Hand),
 }
 
 #[cfg(test)]
