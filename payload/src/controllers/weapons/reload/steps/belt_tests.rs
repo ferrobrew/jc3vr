@@ -111,6 +111,57 @@ fn actual_belt_gate_requires_ammo_space_delay_and_no_other_reload_claim() {
 }
 
 #[test]
+fn shell_pouch_and_belt_gates_count_magazine_rounds_without_the_chamber() {
+    let (config, state, mut tick, guns) = fixture();
+    let slot = tick.guns[tick.dominant.index()].unwrap().weapon;
+    let weapon = tick.weapons[slot].as_mut().unwrap();
+    weapon.plan.load = LoadKind::Shell;
+    weapon.reading.out = false;
+    weapon.reading.chambers = 1;
+    weapon.reading.magazine = weapon.reading.capacity;
+    assert_eq!(
+        weapon.reading.magazine_rounds(),
+        weapon.reading.capacity - 1
+    );
+    assert!(weapon.reading.has_space());
+    assert!(state.can_take(weapon));
+    assert!(state.can_belt(weapon));
+    assert!(
+        state
+            .belt_gate(&tick, tick.dominant)
+            .allows(&config.weapons.reload)
+    );
+    assert!(offer(&state, &tick, &config, guns).is_some());
+
+    let finish = state.belt_finish(&tick);
+    tick.weapons[slot].as_mut().unwrap().reading.magazine += 1;
+    let weapon = tick.weapons[slot].as_ref().unwrap();
+    assert_eq!(weapon.reading.magazine_rounds(), weapon.reading.capacity);
+    assert!(!weapon.reading.has_space());
+    assert!(!state.can_take(weapon));
+    assert!(!state.can_belt(weapon));
+    assert!(
+        !state
+            .belt_gate(&tick, tick.dominant)
+            .allows(&config.weapons.reload)
+    );
+    assert!(offer(&state, &tick, &config, guns).is_none());
+    assert!(
+        finish
+            .eligibility_with(SEQUENCE, &config, guns, guns, |_| {
+                Some((weapon.reading, weapon.reserve))
+            })
+            .is_none()
+    );
+
+    let weapon = tick.weapons[slot].as_mut().unwrap();
+    weapon.reading.chambers = 0;
+    weapon.reading.magazine = weapon.reading.capacity;
+    assert!(!state.can_take(weapon));
+    assert!(!state.can_belt(weapon));
+}
+
+#[test]
 fn post_finish_evidence_uses_final_ammo_not_the_tick_or_debug_status() {
     let (config, state, tick, guns) = fixture();
     let finish = state.belt_finish(&tick);

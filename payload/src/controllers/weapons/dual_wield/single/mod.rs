@@ -69,6 +69,7 @@ use crate::{
                 carry, config::InventoryConfig, engine as inventory_engine, engine::ObjectKey,
                 restore,
             },
+            reload,
         },
     },
 };
@@ -195,8 +196,7 @@ pub(crate) unsafe fn clamp_magazine(owner: &mut Character, weapon: &mut WeaponBa
     }
     let tuned = unsafe { weapon.GetMagazineSize() };
     let unlimited = unsafe { weapon.HasUnlimitedAmmo() };
-    let chamber =
-        crate::controllers::weapons::reload::chamber_rounds(weapon as *const WeaponBase as usize);
+    let chamber = reload::chamber_rounds(weapon as *const WeaponBase as usize);
     let Some(clamped) = magazine::clamp(weapon.m_MagazineAmmo - chamber, tuned, unlimited) else {
         return;
     };
@@ -631,6 +631,7 @@ unsafe fn take_twin(owner: &mut Character, strong: Strong, tick: &Tick) {
         }
         return;
     }
+    let dealt = unsafe { reload::split_pair(slot_pistol, twin_pistol, tuned) }.unwrap_or(dealt);
     unsafe { deal(owner, slot_pistol, twin_pistol, dealt) };
     if let (Some(object), Some(weapon)) = (inventory_engine::object_address(twin_pistol), unsafe {
         inventory_engine::weapon_type(twin_pistol)

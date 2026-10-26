@@ -59,6 +59,7 @@ pub mod travel;
 pub mod wells;
 
 use glam::Vec3;
+use jc3gi::equipment::weapon::WeaponBase;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -75,7 +76,9 @@ use crate::controllers::{
     weapons::{
         capabilities::{GunHand, GunOwner},
         docks,
+        dual_wield::single::magazine::Dealt,
         engine::HeldWeapon,
+        inventory::engine::strong_to,
         pouch_models,
         reload::{
             belt::{BeltPush, PushStage},
@@ -505,7 +508,7 @@ impl BeltFinish {
         let (reading, reserve) = read(address)?;
         let gate = BeltGate {
             has_ammo: reading.unlimited || reserve > 0,
-            can_belt: reading.out || reading.magazine < reading.capacity,
+            can_belt: reading.out || reading.has_space(),
             ..self.gate
         };
         gate.allows(&config.weapons.reload)
@@ -654,6 +657,26 @@ pub(super) fn holds_fire(weapon: usize, hand: Hand) -> bool {
         || (gate::tracks(weapon, hand) && ammo::holds_fire(weapon, hand.index()))
 }
 
+/// Preserve each chamber when an observed native pair is dealt to two single pistols.
+///
+/// # Safety
+///
+/// Both weapons must be live and owned on the input thread at the pair's native ammo allocation.
+pub(crate) unsafe fn split_pair(pair: &WeaponBase, twin: &WeaponBase, tuned: i32) -> Option<Dealt> {
+    let owner = unsafe { strong_to(twin) }?;
+    ammo::split_pair(
+        pair as *const _ as usize,
+        twin as *const _ as usize,
+        owner,
+        twin.m_User[1] as usize,
+        ammo::NativeAmmo {
+            total: pair.m_MagazineAmmo,
+            out: pair.m_WeaponIsWithoutMagazine,
+        },
+        tuned,
+    )
+}
+
 /// Loaded rounds excluded from a single pistol's magazine-capacity clamp.
 pub(crate) fn chamber_rounds(weapon: usize) -> i32 {
     ammo::protected_rounds(weapon)
@@ -663,7 +686,7 @@ pub(crate) fn chamber_rounds(weapon: usize) -> i32 {
 pub(super) fn chamber_without_magazine(weapon: usize, hand: Hand) -> bool {
     gate::tracks(weapon, hand)
         && !holds_fire(weapon, hand)
-        && ammo::snapshot(weapon).is_some_and(|ammo| ammo.out && ammo.chamber_rounds() > 0)
+        && ammo::active_snapshot(weapon).is_some_and(|ammo| ammo.out && ammo.chamber_rounds() > 0)
 }
 
 /// How many events the readout keeps.

@@ -21,7 +21,7 @@ use crate::controllers::{
             BeltFinish, BeltGate, FinishInputs, GunTick, MAX_EVENTS, State, Tick, WeaponReadout,
             WeaponTick,
             action::locks_back,
-            ammo::{self, NativeAmmo},
+            ammo::{self, NativeAmmo, Observation},
             belt::{BeltPush, PushInputs},
             chamber::{self, ActionKind, Chamber},
             config::{LooseMagazineConfig, ReloadButton, ReloadConfig},
@@ -111,7 +111,7 @@ impl State {
             let Some(base) = (unsafe { (weapon.address as *const WeaponBase).as_ref() }) else {
                 continue;
             };
-            let Some(weapon_tick) = (unsafe { weapon_tick(weapon, base, config) }) else {
+            let Some(mut weapon_tick) = (unsafe { weapon_tick(weapon, base, config) }) else {
                 continue;
             };
             for hand in Hand::BOTH {
@@ -160,37 +160,35 @@ impl State {
                     handle,
                 });
             }
-            if chambering(&weapon_tick.plan, &config.weapons.reload)
-                && let Some(owner) = unsafe { strong_to(base) }
-            {
+            if let Some(owner) = unsafe { strong_to(base) } {
                 let record = self.records.get(weapon_tick.key);
-                let mut chambers = record.chambers;
-                let mut present = [false; 2];
+                let topology = unsafe { engine::gun_topology(base) };
                 let gun_map = Hand::BOTH.map(|hand| {
                     let gun = guns[hand.index()].filter(|gun| gun.weapon == slot)?;
-                    present[gun.entry()] = true;
                     Some((
                         gun.entry(),
                         config.weapons.reload.manual_action && weapon_tick.plan.action.manual(),
                     ))
                 });
-                for (entry, chamber) in chambers.iter_mut().enumerate() {
-                    if !present[entry] {
-                        *chamber = Chamber::Empty;
-                    }
-                }
                 let partition = ammo::observe(
                     weapon.address,
                     owner,
                     base.m_User[1] as usize,
-                    NativeAmmo {
-                        total: weapon_tick.reading.magazine,
-                        out: weapon_tick.reading.out,
+                    Observation {
+                        native: NativeAmmo {
+                            total: weapon_tick.reading.magazine,
+                            out: weapon_tick.reading.out,
+                        },
+                        chambers: record.chambers,
+                        topology,
+                        guns: gun_map,
+                        active: chambering(&weapon_tick.plan, &config.weapons.reload),
                     },
-                    chambers,
-                    gun_map,
                 );
-                record.chambers = partition.chambers;
+                if let Some(partition) = partition {
+                    record.chambers = partition.chambers;
+                }
+                weapon_tick.reading.chambers = ammo::protected_rounds(weapon.address);
             }
             read[slot] = Some(weapon_tick);
         }
@@ -408,7 +406,7 @@ impl State {
 
     fn sync_owned(&mut self, tick: &Tick) {
         for weapon in tick.weapons.iter().flatten() {
-            if let Some(ammo) = ammo::snapshot(weapon.address) {
+            if let Some(ammo) = ammo::active_snapshot(weapon.address) {
                 self.records.get(weapon.key).chambers = ammo.chambers;
             }
         }
@@ -764,7 +762,7 @@ impl State {
     pub(super) fn can_take(&self, weapon: &WeaponTick) -> bool {
         match weapon.plan.load {
             LoadKind::Magazine | LoadKind::Cylinder => weapon.reading.out,
-            LoadKind::Shell | LoadKind::Rocket => weapon.reading.magazine < weapon.reading.capacity,
+            LoadKind::Shell | LoadKind::Rocket => weapon.reading.has_space(),
         }
     }
 
@@ -772,7 +770,7 @@ impl State {
     /// magazine.
     fn can_belt(&self, weapon: &WeaponTick) -> bool {
         let reading = &weapon.reading;
-        reading.out || reading.magazine < reading.capacity
+        reading.out || reading.has_space()
     }
 
     /// Load `gun` of `weapon`: a whole magazine or one shell. Returns whether anything loaded.

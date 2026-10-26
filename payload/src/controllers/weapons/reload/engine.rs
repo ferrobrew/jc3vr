@@ -66,12 +66,29 @@ pub struct Reading {
     /// The magazine size; negative means no limit.
     pub capacity: i32,
     pub magazine: i32,
+    /// Chamber-owned rounds already included in `magazine`.
+    pub chambers: i32,
     /// The game's magazine-out flag.
     pub out: bool,
     /// The weapon has unlimited magazines or an untimed reload.
     pub exempt: bool,
     /// The weapon's user has unlimited ammunition.
     pub unlimited: bool,
+}
+
+impl Reading {
+    pub(super) fn magazine_rounds(self) -> i32 {
+        magazine_rounds(self.magazine, self.chambers)
+    }
+
+    pub(super) fn has_space(self) -> bool {
+        self.magazine_rounds() < self.capacity
+    }
+}
+
+/// Native loaded totals include protected chamber rounds, which do not occupy magazine space.
+fn magazine_rounds(total: i32, chambers: i32) -> i32 {
+    total.max(0).saturating_sub(chambers.max(0)).max(0)
 }
 
 /// Read `weapon`.
@@ -90,6 +107,7 @@ pub unsafe fn read(weapon: &WeaponBase) -> Reading {
         name_hash: weapon.m_WeaponNameHash,
         capacity,
         magazine: weapon.m_MagazineAmmo,
+        chambers: ammo::protected_rounds(weapon as *const WeaponBase as usize),
         out: weapon.m_WeaponIsWithoutMagazine,
         exempt: reload_type == ReloadType::E_RELOAD_NO_ANIMATION as i32
             || ammo_type == AmmunitionType::AMMO_UNLIMITED as i32
@@ -97,6 +115,19 @@ pub unsafe fn read(weapon: &WeaponBase) -> Reading {
             || ammo_type >= AmmunitionType::NOF_AMMO_TYPES as i32,
         unlimited: unsafe { weapon.HasUnlimitedAmmo() },
     }
+}
+
+/// Which gun entries belong to the weapon, independent of hand-pose tracking.
+///
+/// # Safety
+///
+/// As [`read`].
+pub(super) unsafe fn gun_topology(weapon: &WeaponBase) -> [bool; 2] {
+    let mut topology = [false; 2];
+    for (entry, gun) in unsafe { gun::guns(weapon) }.take(2).enumerate() {
+        topology[entry] = gun.is_some_and(|gun| std::ptr::eq(gun.m_Owner, weapon));
+    }
+    topology
 }
 
 /// The reserve of `weapon`'s ammunition in its user's inventory; zero without a user.
@@ -373,9 +404,8 @@ pub unsafe fn load_one(address: usize) -> bool {
     let Some(weapon) = (unsafe { (address as *mut WeaponBase).as_mut() }) else {
         return false;
     };
-    let capacity = unsafe { single::magazine_size(weapon) };
-    let chambers = current_ammo(weapon).map_or(0, Ammo::chamber_rounds);
-    if weapon.m_MagazineAmmo - chambers >= capacity {
+    current_ammo(weapon);
+    if !unsafe { read(weapon) }.has_space() {
         return false;
     }
     let unlimited = unsafe { weapon.HasUnlimitedAmmo() };

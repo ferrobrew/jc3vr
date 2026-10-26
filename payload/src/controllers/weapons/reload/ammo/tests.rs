@@ -59,6 +59,118 @@ fn replacement_runtime_adopts_only_its_native_rounds() {
     assert_eq!(old.ammo.total(), 1);
 }
 
+#[test]
+fn observed_disabled_policy_releases_empty_chamber_gates_with_loaded_rounds() {
+    for stand_down in [false, true] {
+        let native = NativeAmmo {
+            total: 5,
+            out: false,
+        };
+        let mut runtime = super::Runtime::new(
+            Ammo::adopt(native, [Chamber::Empty; 2]),
+            [Some((0, true)), None],
+        );
+        let mut observation = Observation {
+            native,
+            chambers: [Chamber::Chambered; 2],
+            topology: [true, false],
+            guns: [Some((0, true)), None],
+            active: true,
+        };
+        assert!(runtime.observe(observation).is_some());
+        assert!(runtime.holds_fire(0));
+        if stand_down {
+            runtime.suspend();
+        }
+        let partition = runtime.ammo;
+        observation.active = false;
+        assert!(runtime.observe(observation).is_none());
+        assert!(!runtime.holds_fire(0));
+        assert_eq!(runtime.guns, [None; 2]);
+        assert_eq!(runtime.shot(0, 4), None);
+        assert_eq!(runtime.ammo, partition);
+        assert_eq!(runtime.ammo.magazine, 5);
+    }
+}
+
+#[test]
+fn observed_topology_removes_hidden_chamber_without_using_stale_records() {
+    let mut runtime = super::Runtime::new(
+        Ammo::adopt(
+            NativeAmmo {
+                total: 8,
+                out: false,
+            },
+            [Chamber::Chambered; 2],
+        ),
+        [Some((0, false)), Some((1, false))],
+    );
+    let observation = Observation {
+        native: NativeAmmo {
+            total: 8,
+            out: false,
+        },
+        chambers: [Chamber::Chambered; 2],
+        topology: [true, false],
+        guns: [Some((0, false)), None],
+        active: true,
+    };
+    let partition = runtime.observe(observation).unwrap();
+    assert_eq!(partition.chambers, [Chamber::Chambered, Chamber::Empty]);
+    assert_eq!((partition.magazine, partition.total()), (7, 8));
+    runtime.ammo.eject(0);
+    runtime.observe(Observation {
+        native: NativeAmmo {
+            total: 7,
+            out: false,
+        },
+        ..observation
+    });
+    assert_eq!(runtime.ammo.chambers, [Chamber::Empty; 2]);
+}
+
+#[test]
+fn observed_pair_allocation_gives_each_single_one_chamber_and_magazine_capacity() {
+    for total in [24, 26, 30] {
+        let native = NativeAmmo { total, out: false };
+        let mut slot = super::Runtime::new(
+            Ammo::adopt(native, [Chamber::Chambered; 2]),
+            [Some((0, false)), Some((1, false))],
+        );
+        slot.observe(Observation {
+            native,
+            chambers: [Chamber::Chambered; 2],
+            topology: [true; 2],
+            guns: [Some((0, false)), Some((1, false))],
+            active: true,
+        });
+        let (dealt, mut twin) = slot.split_pair(native, 24);
+        assert_eq!(dealt.slot + dealt.twin + dealt.over, total);
+        for (runtime, allocated) in [(&mut slot, dealt.slot), (&mut twin, dealt.twin)] {
+            let partition = runtime
+                .observe(Observation {
+                    native: NativeAmmo {
+                        total: allocated,
+                        out: false,
+                    },
+                    chambers: [Chamber::Chambered; 2],
+                    topology: [true, false],
+                    guns: [Some((0, false)), None],
+                    active: true,
+                })
+                .unwrap();
+            assert_eq!(partition.chambers, [Chamber::Chambered, Chamber::Empty]);
+            assert_eq!(partition.chamber_rounds(), 1);
+            assert!(partition.magazine <= 12);
+            assert!(partition.total() <= 13);
+            let retained = partition.magazine;
+            runtime.ammo.detach(true);
+            assert_eq!(runtime.ammo.total(), 1);
+            assert_eq!(retained + runtime.ammo.total(), allocated);
+        }
+    }
+}
+
 fn magazine(rounds: i32) -> Loose {
     Loose::test(
         NonZeroUsize::new(1).unwrap(),

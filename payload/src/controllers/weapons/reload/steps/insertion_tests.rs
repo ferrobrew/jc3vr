@@ -147,6 +147,7 @@ pub(super) fn tick(seating: bool, config: &ControllersConfig) -> Tick {
                     name_hash: 1,
                     capacity: 30,
                     magazine: 0,
+                    chambers: 0,
                     out: true,
                     exempt: false,
                     unlimited: false,

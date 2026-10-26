@@ -120,6 +120,7 @@ fn tick(pull: f32, rounds: i32) -> Tick {
                     name_hash: 1,
                     capacity: 30,
                     magazine: rounds,
+                    chambers: 0,
                     out: false,
                     exempt: false,
                     unlimited: false,
