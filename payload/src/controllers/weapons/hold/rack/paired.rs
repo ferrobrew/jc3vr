@@ -1,7 +1,9 @@
-//! Independent members of a native unlimited-stock pistol rack.
+//! Independent members of a native paired weapon rack.
 //!
-//! The rack's two native guns remain the visible source. Each member gets one actor through the
-//! existing native give path, held outside the loadout until that member is explicitly grabbed.
+//! Unlimited racks initialize an actor for each member. Finite racks retain the original actor
+//! and initialize only one additional actor, with ammunition moved only on an accepted take.
+
+mod finite;
 
 use std::time::{Duration, Instant};
 
@@ -57,6 +59,9 @@ pub(crate) unsafe fn targets(
     to_cockpit: &impl Fn(glam::Vec3) -> glam::Vec3,
     out: &mut Vec<WorldTarget>,
 ) -> bool {
+    if !weapon.m_InfinitePickup {
+        return unsafe { finite::targets(owner, weapon, alive, to_cockpit, out) };
+    }
     if !unsafe { qualifies(weapon) } {
         return false;
     }
@@ -147,6 +152,9 @@ pub(crate) unsafe fn targets(
 
 /// Split the native rack's allocation, not a fabricated actor's ammunition snapshot.
 pub(crate) fn copy_request(member: Member, ammo: i32) -> CopyRequest {
+    if finite::owns(member) {
+        return CopyRequest { member, ammo: 0 };
+    }
     let dealt = magazine::split(ammo, ammo);
     CopyRequest {
         member,
@@ -158,8 +166,16 @@ pub(crate) fn copy_request(member: Member, ammo: i32) -> CopyRequest {
     }
 }
 
+/// Whether an unowned finite source must keep its single-member designation.
+pub(crate) fn retains_single(object: usize) -> bool {
+    finite::retains_single(object)
+}
+
 /// Whether an arrival still belongs to a waiting member of the same source generation.
 pub(crate) fn waiting(member: Member) -> bool {
+    if finite::owns(member) {
+        return finite::waiting(member);
+    }
     let state = STATE.lock();
     find(&state, member)
         .is_some_and(|s| matches!(s.members[member.index as usize], Stage::Waiting { .. }))
@@ -171,6 +187,10 @@ pub(crate) fn waiting(member: Member) -> bool {
 ///
 /// `actor` owns a live weapon on the main thread outside the world update.
 pub(crate) unsafe fn staged(member: Member, actor: Strong) {
+    if finite::owns(member) {
+        unsafe { finite::staged(member, actor) };
+        return;
+    }
     let weapon = unsafe { &mut *engine::weapon_of(&actor) };
     if !two_guns(weapon)
         || unsafe { gun(weapon, 0) }.is_none()
@@ -222,6 +242,9 @@ pub(crate) unsafe fn take(
     member: Member,
     options: TakeOptions,
 ) -> Result<WeaponSlot, RackRefusal> {
+    if finite::owns(member) {
+        return unsafe { finite::take(owner, hand, member, options) };
+    }
     let actor = {
         let mut state = STATE.lock();
         let source = find_mut(&mut state, member).ok_or(RackRefusal::Gone)?;
@@ -274,6 +297,7 @@ pub(crate) unsafe fn take(
 
 /// Retire sources no longer offered, and make failed native requests non-repeating.
 pub(crate) fn tick() {
+    finite::tick();
     let mut state = STATE.lock();
     let mut retired = Vec::new();
     let mut at = 0;
@@ -299,6 +323,7 @@ pub(crate) fn tick() {
 
 /// Forget the generation before a reset, stand-down, or character replacement.
 pub(crate) fn clear() {
+    finite::clear();
     let sources = std::mem::take(&mut STATE.lock().sources);
     for source in sources {
         unsafe { retire(source) };
@@ -374,6 +399,12 @@ static STATE: Mutex<State> = Mutex::new(State {
     sources: Vec::new(),
 });
 
+fn next_generation() -> Option<u64> {
+    let mut state = STATE.lock();
+    state.generation = state.generation.checked_add(1)?;
+    Some(state.generation)
+}
+
 fn find(state: &State, member: Member) -> Option<&Source> {
     (member.index < 2).then_some(())?;
     state
@@ -395,7 +426,6 @@ unsafe fn qualifies(weapon: &WeaponBase) -> bool {
         || !live::running()
         || live::resetting()
         || live::mission_holds()
-        || !weapon.m_InfinitePickup
         || weapon.m_State != WeaponState::E_WS_WEAPON_RACK
         || !offered_state(weapon)
         || unsafe { engine::slot_of(weapon) } != Some(WeaponSlot::E_SLOT_DUAL_WIELD)

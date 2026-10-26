@@ -161,7 +161,7 @@ pub(crate) unsafe fn take(
         member,
     } = target.kind
     {
-        if source != target.weapon {
+        if source != target.weapon || weapon.m_State != WeaponState::E_WS_WEAPON_RACK {
             return Err(RackRefusal::Gone);
         }
         return unsafe {

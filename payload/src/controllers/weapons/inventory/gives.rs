@@ -80,6 +80,19 @@ pub(crate) fn within_member_start(member: Member, start: impl FnOnce()) {
     MEMBER_START.with(|copy| copy.set(previous));
 }
 
+/// Initialize the finite pair's only additional actor, without invoking its source pickup.
+///
+/// # Safety
+///
+/// The owner is the live local player on the main thread outside the world update, and no pistol
+/// spawn is pending. The tag is read from the live native source, not a placement-rule selector.
+pub(crate) unsafe fn request_member_copy(owner: &Character, member: Member, tag: i32) {
+    within_member_start(member, || unsafe {
+        let inventory = &raw const owner.m_Inventory as *mut Inventory;
+        (*inventory).GivePlayerWeapon(tag, 0, WeaponSlot::E_SLOT_DUAL_WIELD, false, false, false);
+    });
+}
+
 /// Whether a native source request still owns the pistol callback, including a canceled request.
 pub(crate) fn member_pending() -> bool {
     let state = STATE.lock();

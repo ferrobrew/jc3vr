@@ -64,7 +64,7 @@ use crate::{
                 magazine::Dealt,
             },
             engine::slot_from_raw,
-            hold::{self, refs::Strong},
+            hold::{self, rack::paired, refs::Strong},
             inventory::{
                 carry, config::InventoryConfig, engine as inventory_engine, engine::ObjectKey,
                 restore,
@@ -153,6 +153,11 @@ pub(crate) unsafe fn designate(weapon: &mut WeaponBase, why: &str) -> bool {
             false
         }
     }
+}
+
+/// Remove a single-pistol designation when an unclaimed source split is rolled back.
+pub(crate) fn undesignate(object: usize) {
+    set::remove(object);
 }
 
 /// Keep `weapon`'s next gun on its first, when it is a single pistol, so that its update fires the
@@ -310,7 +315,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, tick: &Tick) {
     let enabled = tick.separate && tick.settings.enabled && tick.settings.carry;
     ACTIVE.store(enabled, Ordering::Relaxed);
     for object in set::all() {
-        if !tick.tracked.contains(&object) {
+        if !tick.tracked.contains(&object) && !paired::retains_single(object) {
             set::remove(object);
         }
     }
