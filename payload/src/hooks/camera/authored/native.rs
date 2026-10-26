@@ -19,6 +19,7 @@ use crate::hooks::camera::authored::{
 };
 
 /// All native pointers are used only during capture; publication contains owned values.
+#[derive(PartialEq)]
 pub(super) struct NativeSample {
     pub character: u64,
     pub source: Source,

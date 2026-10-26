@@ -72,6 +72,7 @@ struct Runtime {
     graph_state: Option<GraphState>,
     pose_buffer: u64,
     finalized: u64,
+    observed: Option<NativeSample>,
     clips: Vec<Clip>,
     clip_source: u64,
     outgoing: bool,
@@ -171,6 +172,13 @@ impl Runtime {
         always_use_t1: bool,
     ) -> Result<Option<[Mat4; 2]>, Refusal> {
         native.animation.validate()?;
+        // A pending handoff retains admitted clips; coherence compares the unchanged native input.
+        if self.previous.is_some()
+            && self.finalized == native.finalized
+            && self.observed.as_ref() != Some(&native)
+        {
+            return Err(Refusal::IncoherentAnimation);
+        }
         let outgoing = matches!(
             native.state,
             Err(Refusal::OrdinaryOrUnsupportedState | Refusal::IdleTailWeightNotBound)
@@ -198,14 +206,6 @@ impl Runtime {
         } else {
             native.animation.playing.clone()
         };
-        if self.previous.is_some()
-            && self.finalized == native.finalized
-            && (self.graph_state != Some(graph_state)
-                || self.clips != clips
-                || self.outgoing != outgoing)
-        {
-            return Err(Refusal::IncoherentAnimation);
-        }
         let handoff_contributes = !outgoing
             && self.character == native.character
             && self.source == Some(native.source)
@@ -380,6 +380,7 @@ impl Runtime {
             self.previous = Some(sample);
             self.pose_buffer = native.pose_buffer;
             self.finalized = native.finalized;
+            self.observed = Some(native);
             *STATUS.lock() = Status::NamedCase {
                 case,
                 phase: decision.phase,
@@ -497,6 +498,7 @@ impl Runtime {
         self.graph_state = None;
         self.pose_buffer = 0;
         self.finalized = 0;
+        self.observed = None;
         self.clips.clear();
         self.clip_source = 0;
         self.outgoing = false;
@@ -543,6 +545,7 @@ static STATE: Mutex<Runtime> = Mutex::new(Runtime {
     graph_state: None,
     pose_buffer: 0,
     finalized: 0,
+    observed: None,
     clips: Vec::new(),
     clip_source: 0,
     outgoing: false,
