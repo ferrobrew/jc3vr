@@ -60,6 +60,13 @@ pub(super) fn install() {
         tracing::error!(%error, "hook installation refused without shutdown preparation");
         return;
     }
+    if let Err(error) = lifecycle::register_participant(
+        ParticipantId::HumanCollider,
+        Arc::new(crate::controllers::physical_hands::human_hull::HumanHullShutdown),
+    ) {
+        tracing::error!(%error, "human hull installation refused without shutdown preparation");
+        return;
+    }
     let mut patcher = re_utilities::Patcher::new();
     let hook_library = ThreadSuspender::for_block(|| {
         let library = HookLibrary::new()
@@ -76,6 +83,7 @@ pub(super) fn install() {
             .with_hook_library(ui::hook_library())
             .with_hook_library(crate::pause_menu::hook_library())
             .with_hook_library(crate::controllers::hook_library())
+            .with_hook_library(crate::controllers::physical_hands::human_hull::hook_library())
             .with_hook_library(crate::grapple::physical::hook_library());
         #[cfg(feature = "profiler")]
         let library = library.with_hook_library(profiler::hook_library());

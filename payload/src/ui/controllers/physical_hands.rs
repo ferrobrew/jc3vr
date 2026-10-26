@@ -12,6 +12,7 @@ use crate::{
             config::{PickupConfig, ShoveConfig},
             doors::{self, DoorsConfig},
             grasp::TargetKind,
+            human_hull,
             pickup::diagnostics,
             sounds::{ImpactSoundsConfig, SoundsStatus},
             vault::{VaultConfig, VaultStatus},
@@ -166,6 +167,14 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
 }
 
 pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) {
+    let mut hull_enabled = human_hull::status().enabled;
+    if ui
+        .checkbox(&mut hull_enabled, "Half-width human collision hulls")
+        .changed()
+    {
+        human_hull::set_enabled(hull_enabled);
+    }
+    ui.label("Restoration waits for full-size clearance. The current hull remains installed while restoration is deferred.");
     ui.checkbox(&mut p.enabled, "Physical palms");
     ui.add_enabled_ui(p.enabled, |ui| {
         vec3_drag(ui, "Palm half size (m)", &mut p.palm_half_extents_m, 0.002);

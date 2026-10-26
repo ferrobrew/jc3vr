@@ -133,7 +133,10 @@ unsafe extern "system" fn pre_simulation(
     // joint, or grip as a lost one.
     let _timing = crate::frame_timing::scope(crate::frame_timing::Slot::HandBodies);
     // SAFETY: the engine calls this before a step, on the thread that steps the world.
-    unsafe { crate::controllers::physical_hands::physics::step(dt) }
+    unsafe {
+        crate::controllers::physical_hands::human_hull::step(_world);
+        crate::controllers::physical_hands::physics::step(dt);
+    }
 }
 
 /// The hand bodies keep no Havok-space positions: the step converts game space with the world's

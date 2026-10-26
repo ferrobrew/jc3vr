@@ -50,12 +50,6 @@ pub(crate) fn frame_tick() {
             shared.status.last_shove = shoves.last;
         }
     }
-    if !enabled(&config) || !hooks::in_gameplay() {
-        blows::discard();
-        return;
-    }
-    // SAFETY: the game thread, ahead of the game's update.
-    let delivered = unsafe { blows::deliver(&config) };
     // SAFETY: the game thread, ahead of the game's update, which fires the callbacks.
     let registered = unsafe { callback::ensure_registered() };
     if registered && !CLEANUP_REGISTERED.swap(true, Ordering::AcqRel) {
@@ -64,6 +58,12 @@ pub(crate) fn frame_tick() {
             unsafe { shutdown() };
         });
     }
+    if !enabled(&config) || !hooks::in_gameplay() {
+        blows::discard();
+        return;
+    }
+    // SAFETY: the game thread, ahead of the game's update.
+    let delivered = unsafe { blows::deliver(&config) };
     let mut shared = SHARED.lock();
     let now = Instant::now();
     let follow_through = Duration::from_secs_f32(config.bodies.hits.follow_through_s.max(0.0));
