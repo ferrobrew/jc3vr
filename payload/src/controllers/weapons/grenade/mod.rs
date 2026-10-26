@@ -7,6 +7,7 @@
 
 pub mod catch;
 pub mod config;
+mod locker;
 mod native;
 pub mod pin;
 pub(crate) mod safe;
@@ -35,6 +36,7 @@ use crate::{
             controls::ButtonControl,
             hold::{Desired, MapKind},
         },
+        body::rig::frames::Frames,
         config::ControllersConfig,
         frame::{Hand, Pose},
         grab::{Candidate, GrabVolume},
@@ -148,7 +150,12 @@ pub(super) struct BeginInputs<'a> {
 ///
 /// The game thread, outside the world update.
 pub(super) unsafe fn begin_tick(inputs: &BeginInputs, tuning: &GrenadeConfig) -> Vec<Candidate> {
-    STATE.lock().sightings.clear();
+    {
+        let mut state = STATE.lock();
+        state.sightings.clear();
+        state.locker_frames = None;
+    }
+    locker::clear();
     if !inputs.acting {
         return Vec::new();
     }
@@ -160,7 +167,21 @@ pub(super) unsafe fn begin_tick(inputs: &BeginInputs, tuning: &GrenadeConfig) ->
     let Some(frames) = docks::cockpit_frames(inputs.active, player) else {
         return Vec::new();
     };
+    STATE.lock().locker_frames = Some(frames);
     let mut candidates = Vec::new();
+    if let Some(owner) = unsafe { engine::local_player() } {
+        candidates.extend(unsafe {
+            locker::begin(
+                owner,
+                inputs.free,
+                inputs
+                    .active
+                    .hands
+                    .map(|hand| hand.map(|hand| hand.grip.position)),
+                |point| frames.world_to_cockpit(point),
+            )
+        });
+    }
     for world in safe::loose() {
         for hand in Hand::BOTH {
             if inputs.free[hand.index()] && !holds(hand) {
@@ -189,6 +210,7 @@ pub(super) unsafe fn begin_tick(inputs: &BeginInputs, tuning: &GrenadeConfig) ->
 pub(super) struct TickInputs {
     pub acting: bool,
     pub pouch_grab: Option<Hand>,
+    pub locker_grabs: [bool; 2],
     pub pin_grab: Option<Hand>,
     pub catch_grab: Option<Hand>,
     pub cockpit_grips: [Option<Vec3>; 2],
@@ -211,6 +233,31 @@ pub(super) fn input_tick(
     }
     let tuning = &config.weapons.grenade;
     let _ = (inputs.pin_grab, inputs.triggers, inputs.dominant);
+    for hand in Hand::BOTH {
+        if inputs.locker_grabs[hand.index()] && !holds(hand) {
+            let frames = STATE.lock().locker_frames;
+            let result = frames
+                .ok_or(locker::Refusal::SourceChanged)
+                .and_then(|frames| {
+                    // SAFETY: the weapon input tick runs on the game thread outside the world update.
+                    unsafe {
+                        locker::take(
+                            hand,
+                            inputs.cockpit_grips[hand.index()],
+                            |point| frames.world_to_cockpit(point),
+                            tuning,
+                        )
+                    }
+                });
+            match result {
+                Ok(()) => haptics::play(hand, Event::GrenadePrime),
+                Err(error) => {
+                    tracing::debug!(target: "controllers", hand = hand.label(), %error, "grenade: locker draw refused");
+                    haptics::play(hand, Event::PouchRefused);
+                }
+            }
+        }
+    }
     if let Some(hand) = inputs.pouch_grab
         && !holds(hand)
     {
@@ -266,10 +313,12 @@ pub(super) fn input_tick(
 
 /// A loss of input releases safe items inertly and leaves a caught grenade's fuse unchanged.
 pub(super) fn stand_down() {
+    locker::clear();
     safe::stand_down();
     let mut state = STATE.lock();
     state.next_pulse_s = 0.0;
     state.sightings.clear();
+    state.locker_frames = None;
     state.status.fuse = None;
     drop(state);
     if catch::caught().is_some() {
@@ -326,6 +375,7 @@ const WARNING_URGENT: Rgba = [1.0, 0.15, 0.1, 0.95];
 struct State {
     thrown: [bool; 2],
     sightings: Vec<Sighting>,
+    locker_frames: Option<Frames>,
     status: GrenadeStatus,
     grips: [Option<Pose>; 2],
     next_pulse_s: f32,
@@ -334,6 +384,7 @@ struct State {
 static STATE: Mutex<State> = Mutex::new(State {
     thrown: [false; 2],
     sightings: Vec::new(),
+    locker_frames: None,
     status: GrenadeStatus {
         stage: Stage::Idle,
         fuse: None,

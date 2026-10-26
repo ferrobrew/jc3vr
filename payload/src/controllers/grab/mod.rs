@@ -57,6 +57,8 @@ pub enum GrabVolume {
     Handle,
     /// The grenade pouch.
     GrenadePouch,
+    /// A visible grenade display at an interaction-backed locker or pickup source.
+    GrenadeLocker,
     /// The universal reload pouch on the belt, for the hand without a gun, while the true reload
     /// reloads the held weapon (see [`crate::controllers::weapons::reload`]).
     MagazinePouch,
@@ -120,6 +122,7 @@ impl GrabVolume {
             GrabVolume::Foregrip => "foregrip",
             GrabVolume::Handle => "gun grip",
             GrabVolume::GrenadePouch => "grenade pouch",
+            GrabVolume::GrenadeLocker => "locker grenade",
             GrabVolume::MagazinePouch => "reload pouch",
             GrabVolume::WeaponAction => "weapon action",
             GrabVolume::InsertedMagazine => "inserted magazine",
@@ -169,9 +172,10 @@ impl GrabVolume {
             | GrabVolume::Snatch(RemoteKind::Door)
             | GrabVolume::Pickup(PickupKind::Door) => Category::Vehicle,
             GrabVolume::Pickup(PickupKind::Character) => Category::Character,
-            GrabVolume::GrenadePin | GrabVolume::LiveGrenade | GrabVolume::ChargeSurface => {
-                Category::Explosive
-            }
+            GrabVolume::GrenadeLocker
+            | GrabVolume::GrenadePin
+            | GrabVolume::LiveGrenade
+            | GrabVolume::ChargeSurface => Category::Explosive,
             GrabVolume::Climb => Category::Climb,
             GrabVolume::Pickup(PickupKind::Prop | PickupKind::Hinged)
             | GrabVolume::Snatch(RemoteKind::Object)
@@ -185,6 +189,7 @@ impl GrabVolume {
             GrabVolume::Foregrip
             | GrabVolume::Handle
             | GrabVolume::GrenadePouch
+            | GrabVolume::GrenadeLocker
             | GrabVolume::MagazinePouch
             | GrabVolume::WeaponAction
             | GrabVolume::InsertedMagazine
