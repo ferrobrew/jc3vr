@@ -121,6 +121,8 @@ unsafe fn late_update_weapon(game_object: *mut c_void, context: *const GameObjec
             .sub(WeaponBase::GAME_OBJECT_BASE_OFFSET as usize)
             .cast::<WeaponBase>())
     };
+    // SAFETY: this render invocation owns a live native weapon; the observer retains only a weak reference.
+    unsafe { crate::controllers::weapons::grenade::observe_world_weapon(weapon) };
     let local = ik::local_character();
     // `m_User` is a `weak_ptr<CCharacter>`; its first word is the character. Checked before the
     // frame lock, since this runs for every weapon in the world.

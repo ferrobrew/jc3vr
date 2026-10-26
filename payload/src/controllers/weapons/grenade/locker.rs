@@ -1,26 +1,70 @@
-//! Safe grenade draws from visible native grenade displays in nearby interaction graphs.
+//! Safe grenade draws from visible native grenade weapons in the world.
 //!
-//! Source discovery borrows the character's valid interaction entries. A placement rule's spawned
-//! grenade weapon, or a grenade weapon's own pickup entry, supplies the displayed model and position.
-//! Completion reads the same source again and never invokes native pickup or changes the display.
+//! Native state, placement, and render observations register weak weapon sources independently of
+//! pickup eligibility. The input tick locks each source briefly and reads its current visible model.
+//! Completion revalidates the same registration and model before drawing an independent safe item.
 
-use std::fmt;
+use std::{
+    fmt,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
+use detours_macro::detour;
 use glam::{Mat4, Vec3};
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
-    equipment::weapon::{WeaponBase, WeaponData, WeaponState},
+    equipment::weapon::{ThrownGrenadeWeapon, WeaponBase, WeaponData, WeaponState},
     graphics_engine::model_instance::ModelInstanceFlags,
     interaction::InteractionGraphEntry,
     weapon_placement_rule::WeaponPlacementRule,
 };
 use parking_lot::Mutex;
+use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     frame::Hand,
     grab::{Candidate, GrabVolume},
-    weapons::{config::GrenadeConfig, engine, grenade::safe, hold::refs::Strong},
+    weapons::{
+        config::GrenadeConfig,
+        engine,
+        grenade::safe,
+        hold::refs::{Strong, Weak},
+    },
 };
+
+pub(super) fn hook_library() -> HookLibrary {
+    HookLibrary::new()
+        .with_static_binder(&WORLD_STATE_BINDER)
+        .with_static_binder(&GRENADE_PLACEMENT_BINDER)
+}
+
+/// Note a live native grenade weapon without asking whether its ammunition can be picked up.
+///
+/// # Safety
+///
+/// The caller runs the weapon's native update or render pass and keeps it live for this call.
+pub(super) unsafe fn observe(weapon: &WeaponBase) {
+    if !world_grenade(weapon) {
+        return;
+    }
+    let key = WeaponKey {
+        weapon: weapon as *const WeaponBase as usize,
+        control: weapon.m_WeakThis.pn as usize,
+    };
+    if key.control == 0 || weapon.m_WeakThis.px.is_null() {
+        return;
+    }
+    let mut registry = REGISTRY.lock();
+    let known = registry.sources.iter().any(|source| source.key == key);
+    let registration = registry.register(key, || unsafe { Weak::of(&weapon.m_WeakThis) });
+    drop(registry);
+    if !known && let Some(registration) = registration {
+        tracing::debug!(target: "controllers", weapon = key.weapon, registration, weapon_name = weapon.m_WeaponNameHash, "grenade: observed a native world display source");
+    }
+    if !CLEANUP.swap(true, Ordering::AcqRel) {
+        crate::lifecycle::on_cleanup(|_| reset());
+    }
+}
 
 /// Why an offered locker grenade did not reach the hand.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -92,9 +136,15 @@ pub(super) unsafe fn take(
     let offered = OFFERS.lock()[hand.index()].take();
     let owner = unsafe { engine::local_player() }.ok_or(Refusal::SourceChanged)?;
     let current = unsafe { sources(owner, &to_cockpit) };
-    complete(offered, &current, grip, || unsafe {
+    let result = complete(offered, &current, grip, || unsafe {
         safe::draw(hand, tuning)
-    })
+    });
+    if result.is_ok()
+        && let Some(source) = offered
+    {
+        tracing::debug!(target: "controllers", hand = hand.label(), registration = source.identity.registration, weapon = source.identity.weapon, data = source.identity.data, model = source.identity.model, "grenade: drew from a native world display source");
+    }
+    result
 }
 
 /// Stop accepting cached sources after loss of gameplay or input.
@@ -103,13 +153,14 @@ pub(super) fn clear() {
 }
 
 const MAX_ENTRIES: usize = 256;
-const MAX_DISPLAYS: usize = 32;
+const MAX_SOURCES: usize = 64;
+const MAX_DISPLAYS: usize = MAX_SOURCES * MAX_MODELS_PER_WEAPON;
 const MAX_MODELS_PER_WEAPON: usize = 8;
 const REACH_M: f32 = 0.18;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct Identity {
-    entry: usize,
+    registration: u64,
     weapon: usize,
     control: usize,
     data: usize,
@@ -123,19 +174,141 @@ struct Source {
 }
 
 static OFFERS: Mutex<[Option<Source>; 2]> = Mutex::new([None; 2]);
+static REGISTRY: Mutex<Registry<Weak>> = Mutex::new(Registry::new());
+static CLEANUP: AtomicBool = AtomicBool::new(false);
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct WeaponKey {
+    weapon: usize,
+    control: usize,
+}
+
+struct Registered<R> {
+    key: WeaponKey,
+    generation: u64,
+    reference: R,
+}
+
+struct Registry<R> {
+    next: u64,
+    sources: Vec<Registered<R>>,
+}
+
+impl<R> Registry<R> {
+    const fn new() -> Self {
+        Self {
+            next: 1,
+            sources: Vec::new(),
+        }
+    }
+
+    fn register(&mut self, key: WeaponKey, reference: impl FnOnce() -> R) -> Option<u64> {
+        if let Some(index) = self.sources.iter().position(|source| source.key == key) {
+            let source = self.sources.remove(index);
+            let generation = source.generation;
+            self.sources.push(source);
+            return Some(generation);
+        }
+        let generation = self.next;
+        self.next = self.next.checked_add(1)?;
+        self.sources
+            .retain(|source| source.key.weapon != key.weapon);
+        if self.sources.len() >= MAX_SOURCES {
+            self.sources.remove(0);
+        }
+        self.sources.push(Registered {
+            key,
+            generation,
+            reference: reference(),
+        });
+        Some(generation)
+    }
+
+    fn read<T>(&mut self, mut read: impl FnMut(&Registered<R>) -> Option<T>) -> Vec<T> {
+        let mut out = Vec::new();
+        self.sources.retain(|source| {
+            if let Some(value) = read(source) {
+                out.push(value);
+                true
+            } else {
+                false
+            }
+        });
+        out
+    }
+}
 
 unsafe fn sources(owner: &Character, to_cockpit: &impl Fn(Vec3) -> Vec3) -> Vec<Source> {
+    unsafe { seed_interactions(owner) };
+    let mut out = Vec::new();
+    let _ = REGISTRY.lock().read(|source| {
+        let alive = source.reference.lock()?;
+        let address =
+            (alive.object() as usize).checked_sub(WeaponBase::GAME_OBJECT_BASE_OFFSET as usize)?;
+        if address != source.key.weapon || alive.control_block() as usize != source.key.control {
+            return None;
+        }
+        let weapon = unsafe { &*(address as *const WeaponBase) };
+        if !world_grenade(weapon) {
+            return None;
+        }
+        unsafe {
+            weapon_displays(
+                weapon,
+                Identity {
+                    registration: source.generation,
+                    weapon: address,
+                    control: source.key.control,
+                    data: 0,
+                    model: 0,
+                },
+                to_cockpit,
+                &mut out,
+            );
+        }
+        Some(())
+    });
+    out
+}
+
+fn reset() {
+    clear();
+    REGISTRY.lock().sources.clear();
+}
+
+#[detour(address = jc3gi::equipment::weapon::WeaponBase::SetState_ADDRESS)]
+fn world_state(weapon: *mut WeaponBase, state: WeaponState, keep_out_of_world: bool) {
+    WORLD_STATE
+        .get()
+        .unwrap()
+        .call(weapon, state, keep_out_of_world);
+    if let Some(weapon) = unsafe { weapon.as_ref() } {
+        unsafe { observe(weapon) };
+    }
+}
+
+#[detour(address = jc3gi::equipment::weapon::ThrownGrenadeWeapon::UpdateAttachmentTransforms_ADDRESS)]
+fn grenade_placement(weapon: *mut ThrownGrenadeWeapon, snow: f32, water: f32, transform_type: u32) {
+    GRENADE_PLACEMENT
+        .get()
+        .unwrap()
+        .call(weapon, snow, water, transform_type);
+    if let Some(weapon) = unsafe { weapon.cast::<WeaponBase>().as_ref() } {
+        unsafe { observe(weapon) };
+    }
+}
+
+unsafe fn seed_interactions(owner: &Character) {
     let entries = &owner.m_InteractionUserProxy.m_ValidEntries;
     let begin = entries.m_Begin as usize;
     let end = entries.m_End as usize;
     let stride = std::mem::size_of::<*mut InteractionGraphEntry>();
     let Some(bytes) = end.checked_sub(begin).filter(|_| begin != 0) else {
-        return Vec::new();
+        return;
     };
     if !bytes.is_multiple_of(stride) || bytes / stride > MAX_ENTRIES {
-        return Vec::new();
+        return;
     }
-    let mut out = Vec::new();
     for index in 0..bytes / stride {
         let entry = unsafe { *entries.m_Begin.add(index) };
         let Some(alive) = (unsafe { offered(entry) }) else {
@@ -146,25 +319,8 @@ unsafe fn sources(owner: &Character, to_cockpit: &impl Fn(Vec3) -> Vec3) -> Vec<
         else {
             continue;
         };
-        unsafe {
-            weapon_displays(
-                &*(address as *const WeaponBase),
-                Identity {
-                    entry: entry as usize,
-                    weapon: address,
-                    control: alive.control_block() as usize,
-                    data: 0,
-                    model: 0,
-                },
-                to_cockpit,
-                &mut out,
-            );
-        }
-        if out.len() >= MAX_DISPLAYS {
-            break;
-        }
+        unsafe { observe(&*(address as *const WeaponBase)) };
     }
-    out
 }
 
 unsafe fn offered(entry: *mut InteractionGraphEntry) -> Option<Strong> {
@@ -199,12 +355,7 @@ unsafe fn weapon_displays(
     to_cockpit: &impl Fn(Vec3) -> Vec3,
     out: &mut Vec<Source>,
 ) {
-    let slot = unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() };
-    let state = unsafe { (&raw const weapon.m_State).cast::<i32>().read() };
-    if slot != WeaponSlot::E_SLOT_HAND_GRENADE as i32
-        || !(state == WeaponState::E_WS_WEAPON_RACK as i32
-            || state == WeaponState::E_WS_DROPPED as i32)
-    {
+    if !world_grenade(weapon) {
         return;
     }
     let data = &weapon.m_lWeaponData;
@@ -241,6 +392,14 @@ unsafe fn weapon_displays(
             return;
         }
     }
+}
+
+fn world_grenade(weapon: &WeaponBase) -> bool {
+    let slot = unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() };
+    let state = unsafe { (&raw const weapon.m_State).cast::<i32>().read() };
+    slot == WeaponSlot::E_SLOT_HAND_GRENADE as i32
+        && (state == WeaponState::E_WS_WEAPON_RACK as i32
+            || state == WeaponState::E_WS_DROPPED as i32)
 }
 
 unsafe fn display(
@@ -304,7 +463,7 @@ fn complete(
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::Cell, mem::MaybeUninit, num::NonZeroU64};
+    use std::{cell::Cell, mem::MaybeUninit, num::NonZeroU64, sync::Arc};
 
     use jc3gi::{
         equipment::weapon::WeaponClass, graphics_engine::model_instance::ModelInstance,
@@ -316,12 +475,104 @@ mod tests {
 
     fn identity() -> Identity {
         Identity {
-            entry: 1,
+            registration: 1,
             weapon: 2,
             control: 3,
             data: 4,
             model: 5,
         }
+    }
+
+    #[test]
+    fn registry_is_weak_bounded_and_rejects_reused_native_addresses() {
+        let mut registry = Registry::new();
+        let alive = Arc::new(());
+        let key = WeaponKey {
+            weapon: 1,
+            control: 2,
+        };
+        let first = registry.register(key, || Arc::downgrade(&alive)).unwrap();
+        assert_eq!(Arc::strong_count(&alive), 1);
+        assert_eq!(
+            registry.register(key, || panic!(
+                "duplicate registration must keep its weak reference"
+            )),
+            Some(first)
+        );
+        let replacement = registry
+            .register(WeaponKey { control: 3, ..key }, || Arc::downgrade(&alive))
+            .unwrap();
+        assert_ne!(first, replacement);
+        assert_eq!(registry.sources.len(), 1);
+        drop(alive);
+        assert!(
+            registry
+                .read(|source| source.reference.upgrade())
+                .is_empty()
+        );
+        assert!(registry.sources.is_empty());
+        let alive = Arc::new(());
+        for index in 0..MAX_SOURCES + 1 {
+            let _ = registry.register(
+                WeaponKey {
+                    weapon: index,
+                    control: index + 1,
+                },
+                || Arc::downgrade(&alive),
+            );
+        }
+        assert_eq!(registry.sources.len(), MAX_SOURCES);
+        assert_eq!(Arc::strong_count(&alive), 1);
+        assert_eq!(Arc::weak_count(&alive), MAX_SOURCES);
+        registry.sources.clear();
+        assert_eq!(Arc::weak_count(&alive), 0);
+    }
+
+    #[test]
+    fn lifecycle_registration_survives_absent_interaction_entries_for_both_hands() {
+        let mut registry = Registry::new();
+        let alive = Arc::new(Vec3::ZERO);
+        let key = WeaponKey {
+            weapon: 2,
+            control: 3,
+        };
+        let registration = registry.register(key, || Arc::downgrade(&alive)).unwrap();
+        let current = registry.read(|source| {
+            let centre = *source.reference.upgrade()?;
+            Some(Source {
+                identity: Identity {
+                    registration: source.generation,
+                    ..identity()
+                },
+                centre,
+            })
+        });
+        assert_eq!(current[0].identity.registration, registration);
+        let draws = Cell::new(0);
+        for _hand in Hand::BOTH {
+            let offer = nearest(&current, Vec3::ZERO);
+            assert_eq!(
+                complete(offer, &current, Some(Vec3::ZERO), || {
+                    draws.set(draws.get() + 1);
+                    true
+                }),
+                Ok(())
+            );
+        }
+        assert_eq!(draws.get(), 2);
+        drop(alive);
+        let gone: Vec<Source> = registry.read(|source| {
+            source.reference.upgrade().map(|centre| Source {
+                identity: current[0].identity,
+                centre: *centre,
+            })
+        });
+        assert_eq!(
+            complete(Some(current[0]), &gone, Some(Vec3::ZERO), || panic!(
+                "freed source cannot draw"
+            )),
+            Err(Refusal::SourceChanged)
+        );
     }
 
     #[test]

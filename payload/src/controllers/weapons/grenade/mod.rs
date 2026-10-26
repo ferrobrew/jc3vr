@@ -73,6 +73,16 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&UPDATE_FROM_USER_BINDER)
         .with_static_binder(&GRENADE_PROPEL_TOWARD_BINDER)
         .with_hook_library(native::hook_library())
+        .with_hook_library(locker::hook_library())
+}
+
+/// Observe a live world weapon during native placement or rendering for safe grenade sources.
+///
+/// # Safety
+///
+/// The caller runs the weapon's native pass and keeps it live for this call.
+pub(crate) unsafe fn observe_world_weapon(weapon: &WeaponBase) {
+    unsafe { locker::observe(weapon) };
 }
 
 /// The held live grenade's fuse.
