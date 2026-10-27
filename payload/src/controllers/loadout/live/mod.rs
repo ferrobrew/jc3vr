@@ -56,7 +56,7 @@ use crate::controllers::{
             Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, Take, TakeSource,
         },
     },
-    weapons::grenade::safe::stand_down as stand_down_safe_items,
+    weapons::grenade::safe::reset as retire_safe_items,
 };
 
 /// The live table as the readouts show it.
@@ -472,10 +472,11 @@ pub(crate) fn forgotten(objects: &[ObjectAddress]) {
 }
 
 /// Stop the table: the old inventory is off, so the game's slots are the player's weapons again.
-/// Safe activation is cancelled before the table lock; retired models are reaped by their owner.
+/// Safe actors and queued releases retire before the table lock; native removal waits for the
+/// serialized render boundary.
 /// The next tick with the inventory on starts it again from the slots.
 pub(crate) fn stop() {
-    stand_down_safe_items();
+    retire_safe_items();
     let mut live = LIVE.lock();
     if !live.started {
         return;
@@ -516,7 +517,7 @@ pub(crate) fn respawning() {
 /// The frontend reset the game's systems (the quit to the menu): whatever follows starts the table
 /// again from the slots, as a load does.
 pub(crate) fn frontend_reset() {
-    stand_down_safe_items();
+    retire_safe_items();
     let mut live = LIVE.lock();
     live.reset.frontend = true;
     live.reset.began = true;
@@ -525,7 +526,7 @@ pub(crate) fn frontend_reset() {
 /// The spawn reset is about to replace the slots' weapons, and the inventory releases the carry
 /// set's weapons (`released`), which the reset then removes.
 pub(crate) fn reset_began(released: &[ObjectAddress]) {
-    stand_down_safe_items();
+    retire_safe_items();
     let mut live = LIVE.lock();
     if !live.started {
         return;
@@ -552,7 +553,7 @@ pub(crate) fn reset_ended() {
 /// The game loaded the player's save data: the next input tick starts the table again from the
 /// slots the load put in the inventory.
 pub(crate) fn loaded() {
-    stand_down_safe_items();
+    retire_safe_items();
     let mut live = LIVE.lock();
     live.reset.loaded = true;
     live.reset.completed = true;
@@ -1017,7 +1018,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::controllers::loadout::{Departure, item::WeaponType, safe_items::ModelLeaseId};
+    use crate::controllers::loadout::{Departure, item::WeaponType, safe_items::ItemLeaseId};
 
     fn object(n: usize) -> ObjectAddress {
         ObjectAddress::new(NonZeroUsize::MIN.saturating_add(n * 0x10))
@@ -1100,7 +1101,7 @@ mod tests {
         let mut live = started(&[]);
         let safe = live
             .table
-            .admit_safe_item(ModelLeaseId::new(NonZeroU64::MIN), Hand::Left)
+            .admit_safe_item(ItemLeaseId::new(NonZeroU64::MIN), Hand::Left)
             .unwrap();
         let before = live.table.snapshot();
         for event in [
@@ -1137,12 +1138,12 @@ mod tests {
         let mut live = started(&[]);
         let left = live
             .table
-            .admit_safe_item(ModelLeaseId::new(NonZeroU64::MIN), Hand::Left)
+            .admit_safe_item(ItemLeaseId::new(NonZeroU64::MIN), Hand::Left)
             .unwrap();
         let right = live
             .table
             .admit_safe_item(
-                ModelLeaseId::new(NonZeroU64::MIN.saturating_add(1)),
+                ItemLeaseId::new(NonZeroU64::MIN.saturating_add(1)),
                 Hand::Right,
             )
             .unwrap();

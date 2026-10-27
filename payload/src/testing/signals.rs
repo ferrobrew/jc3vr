@@ -195,7 +195,11 @@ signals! {
     WeaponDrops => "weapons.drops", Counter, "Weapons let go of from a hand.";
     Promotions => "weapons.promotions", Counter, "Weapons armed in a hand that became the wielded weapon in the same hand.";
     WeaponGrabs => "weapons.grabs", Counter, "Grabs the weapon handling saw.";
-    GrenadePins => "grenade.pins_pulled", Counter, "Pins pulled from grenades taken from the pouch.";
+    GrenadesDrawn => "grenade.drawn", Counter, "Safe grenade actors admitted from a source.";
+    GrenadesStowed => "grenade.stowed", Counter, "Safe grenades moved into holsters.";
+    GrenadesRedrawn => "grenade.redrawn", Counter, "Safe grenades drawn from holsters.";
+    GrenadesDropped => "grenade.dropped", Counter, "Safe grenades released inertly into the world.";
+    GrenadesRecovered => "grenade.recovered", Counter, "Loose safe grenades recovered into a hand.";
     GrenadesThrown => "grenade.thrown", Counter, "Grenades thrown from the pouch.";
     GrenadesCaught => "grenade.caught", Counter, "Live grenades caught.";
     GrenadesThrownOn => "grenade.thrown_on", Counter, "Caught grenades thrown on.";
@@ -412,7 +416,11 @@ impl Signal {
             Signal::WeaponDrops => count(act::status().drops),
             Signal::Promotions => count(inventory::reconcile::status().promotions),
             Signal::WeaponGrabs => count(weapons::status().grabs),
-            Signal::GrenadePins => count(grenade::status().pins_pulled),
+            Signal::GrenadesDrawn => count(grenade::safe::counts().drawn),
+            Signal::GrenadesStowed => count(grenade::safe::counts().stowed),
+            Signal::GrenadesRedrawn => count(grenade::safe::counts().redrawn),
+            Signal::GrenadesDropped => count(grenade::safe::counts().dropped),
+            Signal::GrenadesRecovered => count(grenade::safe::counts().recovered),
             Signal::GrenadesThrown => count(grenade::status().thrown),
             Signal::GrenadesCaught => count(grenade::status().catch.caught),
             Signal::GrenadesThrownOn => count(grenade::status().catch.thrown),

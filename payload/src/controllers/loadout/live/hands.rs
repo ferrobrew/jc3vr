@@ -176,7 +176,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::controllers::loadout::{safe_items::ModelLeaseId, socket::BodyLayout};
+    use crate::controllers::loadout::{safe_items::ItemLeaseId, socket::BodyLayout};
 
     fn object(n: usize) -> ObjectAddress {
         ObjectAddress::new(NonZeroUsize::MIN.saturating_add(n * 0x10))
@@ -360,7 +360,7 @@ mod tests {
     fn native_other_reconciliation_cannot_remove_an_actor_free_item() {
         let mut table = Loadout::new(BodyLayout::full(Hand::Right));
         let safe = table
-            .admit_safe_item(ModelLeaseId::new(NonZeroU64::MIN), Hand::Left)
+            .admit_safe_item(ItemLeaseId::new(NonZeroU64::MIN), Hand::Left)
             .unwrap();
         let before = table.snapshot();
         for thrown in [false, true] {

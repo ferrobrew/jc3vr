@@ -322,11 +322,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 &config.weapons.grenade,
             )
         };
-        targets.extend(grenades.iter().map(|c| match (c.volume, c.hand) {
-            // The pin is on the grenade in the other hand.
-            (GrabVolume::GrenadePin, Some(hand)) => place.on_hand(c, hand.other()),
-            _ => place.world(c),
-        }));
+        targets.extend(grenades.iter().map(|c| place.world(c)));
     }
     // SAFETY: the input tick runs on the main thread outside the world update.
     let taken = unsafe {

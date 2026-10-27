@@ -263,7 +263,6 @@ fn every_kind() -> Vec<GrabVolume> {
         GrabVolume::Climb,
         GrabVolume::StuntHold,
         GrabVolume::WorldWeapon,
-        GrabVolume::GrenadePin,
         GrabVolume::LiveGrenade,
         GrabVolume::WorldMagazine,
         GrabVolume::Snatch(RemoteKind::Weapon),
@@ -302,7 +301,6 @@ fn every_kind() -> Vec<GrabVolume> {
             | GrabVolume::Climb
             | GrabVolume::StuntHold
             | GrabVolume::WorldWeapon
-            | GrabVolume::GrenadePin
             | GrabVolume::LiveGrenade
             | GrabVolume::WorldMagazine
             | GrabVolume::Snatch(_) => {}

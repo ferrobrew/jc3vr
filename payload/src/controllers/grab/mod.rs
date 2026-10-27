@@ -98,9 +98,6 @@ pub enum GrabVolume {
     /// A weapon without a body in the world for the free hand to take: a gun in a character's
     /// hands, or a weapon on a rack or in a locker (see [`crate::controllers::weapons::hold::take`]).
     WorldWeapon,
-    /// The pin of the grenade the other hand holds (see
-    /// [`crate::controllers::weapons::grenade::pin`]).
-    GrenadePin,
     /// A live grenade in flight or on the ground near a free hand, to catch (see
     /// [`crate::controllers::weapons::grenade::catch`]).
     LiveGrenade,
@@ -139,7 +136,6 @@ impl GrabVolume {
             GrabVolume::Climb => "surface to climb",
             GrabVolume::StuntHold => "helicopter to hang from",
             GrabVolume::WorldWeapon => "weapon to take",
-            GrabVolume::GrenadePin => "grenade pin",
             GrabVolume::LiveGrenade => "live grenade",
             GrabVolume::WorldMagazine => "magazine in the world",
             GrabVolume::Socket(socket) => socket_label(socket),
@@ -172,10 +168,9 @@ impl GrabVolume {
             | GrabVolume::Snatch(RemoteKind::Door)
             | GrabVolume::Pickup(PickupKind::Door) => Category::Vehicle,
             GrabVolume::Pickup(PickupKind::Character) => Category::Character,
-            GrabVolume::GrenadeLocker
-            | GrabVolume::GrenadePin
-            | GrabVolume::LiveGrenade
-            | GrabVolume::ChargeSurface => Category::Explosive,
+            GrabVolume::GrenadeLocker | GrabVolume::LiveGrenade | GrabVolume::ChargeSurface => {
+                Category::Explosive
+            }
             GrabVolume::Climb => Category::Climb,
             GrabVolume::Pickup(PickupKind::Prop | PickupKind::Hinged)
             | GrabVolume::Snatch(RemoteKind::Object)
@@ -197,7 +192,6 @@ impl GrabVolume {
             | GrabVolume::C4Pouch
             | GrabVolume::ChargeSurface
             | GrabVolume::WorldWeapon
-            | GrabVolume::GrenadePin
             | GrabVolume::LiveGrenade
             | GrabVolume::WorldMagazine
             | GrabVolume::Socket(_) => Consumer::Weapons,

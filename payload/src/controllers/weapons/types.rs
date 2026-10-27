@@ -37,8 +37,6 @@ pub enum GrabOutcome {
     ForegripUnmeasured,
     /// A grenade-pouch grab: a grenade is asked for.
     Pouch,
-    /// A grab of the held grenade's pin.
-    Pin,
     /// A grab of a live grenade, to catch it.
     Catch,
     /// A reload-pouch grab: a round is taken for the reload.
@@ -90,7 +88,6 @@ impl GrabOutcome {
             GrabOutcome::Handover { moved: false } => "gun not handed over".to_owned(),
             GrabOutcome::ForegripUnmeasured => "foregrip not measured yet".to_owned(),
             GrabOutcome::Pouch => "grenade asked for".to_owned(),
-            GrabOutcome::Pin => "grenade pin grabbed".to_owned(),
             GrabOutcome::Catch => "live grenade grabbed".to_owned(),
             GrabOutcome::Magazine => "reload pouch".to_owned(),
             GrabOutcome::Action => "action grabbed".to_owned(),

@@ -47,6 +47,15 @@ pub(super) struct Consolidation {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub(super) struct Removal {
+    pub old_id: String,
+    pub path: String,
+    pub kind: String,
+    pub semantic: Witness,
+    pub reason: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub(super) struct Assignment {
     pub old_id: String,
     pub path: String,
@@ -102,6 +111,17 @@ pub(super) fn fixtures() -> (Baseline, Mapping) {
 }
 
 pub(super) fn parity(baseline: &Baseline, mapping: &Mapping, sources: &[SourceFile]) -> Vec<Issue> {
+    let removals: Vec<Removal> =
+        serde_json::from_str(include_str!("removals.json")).expect("reviewed UI removals");
+    parity_with_removals(baseline, mapping, sources, &removals)
+}
+
+fn parity_with_removals(
+    baseline: &Baseline,
+    mapping: &Mapping,
+    sources: &[SourceFile],
+    removals: &[Removal],
+) -> Vec<Issue> {
     let obligations: HashMap<_, _> = baseline.controls.iter().map(|row| (&row.id, row)).collect();
     let mut issues = Vec::new();
     let mut assigned = HashSet::new();
@@ -137,6 +157,23 @@ pub(super) fn parity(baseline: &Baseline, mapping: &Mapping, sources: &[SourceFi
                 .filter(|(kind, semantic)| kind == &row.kind && semantic == &row.semantic)
                 .count()
         });
+        if let Some(removal) = removals.iter().find(|removal| removal.old_id == row.old_id) {
+            if removal.path != row.path
+                || removal.kind != row.kind
+                || removal.semantic != row.semantic
+                || removal.reason.is_empty()
+                || removals
+                    .iter()
+                    .filter(|other| other.old_id == row.old_id)
+                    .count()
+                    != 1
+                || count != 0
+                || row.consolidation.is_some()
+            {
+                issues.push(Issue::InvalidReview(row.old_id.clone()));
+            }
+            continue;
+        }
         if count == 0 {
             issues.push(Issue::MissingTarget(row.old_id.clone()));
         } else if count != row.expected_matches {

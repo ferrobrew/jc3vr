@@ -8,13 +8,13 @@ use crate::controllers::{
     loadout::{
         ItemId,
         live::{LIVE, Live},
-        safe_items::{ModelLeaseId, SafeItemError, SafeItemView},
+        safe_items::{ItemLeaseId, SafeItemError, SafeItemView},
         table::Place,
     },
 };
 
 pub(crate) fn admit_safe_item(
-    model: ModelLeaseId,
+    model: ItemLeaseId,
     hand: Hand,
 ) -> Result<SafeItemView, SafeItemError> {
     let mut live = LIVE.lock();
@@ -48,7 +48,7 @@ pub(crate) fn move_safe_item(
 }
 
 /// Retire an item even during a reset so the resource owner can complete cleanup.
-pub(crate) fn retire_safe_item(expected: SafeItemView) -> Result<ModelLeaseId, SafeItemError> {
+pub(crate) fn retire_safe_item(expected: SafeItemView) -> Result<ItemLeaseId, SafeItemError> {
     let mut live = LIVE.lock();
     let result = live.table.retire_safe_item(expected);
     match &result {

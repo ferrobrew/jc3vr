@@ -115,13 +115,13 @@ mod tests {
     use std::num::NonZeroU64;
 
     use super::*;
-    use crate::controllers::loadout::{BodyLayout, Departure, safe_items::ModelLeaseId};
+    use crate::controllers::loadout::{BodyLayout, Departure, safe_items::ItemLeaseId};
 
     #[test]
     fn safe_item_moves_publish_hand_occupancy_without_a_native_alias() {
         let mut table = Loadout::new(BodyLayout::full(Hand::Right));
         let item = table
-            .admit_safe_item(ModelLeaseId::new(NonZeroU64::MIN), Hand::Left)
+            .admit_safe_item(ItemLeaseId::new(NonZeroU64::MIN), Hand::Left)
             .unwrap();
         publish(&table);
         assert_eq!(held_kind(Hand::Left), Some(ItemKind::Grenade));
@@ -139,7 +139,7 @@ mod tests {
             .unwrap();
         publish(&table);
         assert_eq!(held_kind(Hand::Right), None);
-        assert_eq!(table.retire_safe_item(item), Ok(item.binding.model));
+        assert_eq!(table.retire_safe_item(item), Ok(item.binding.lease));
         publish(&table);
         assert!(PLACES.lock().is_empty());
         clear();

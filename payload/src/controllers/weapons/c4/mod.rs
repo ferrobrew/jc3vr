@@ -92,7 +92,7 @@ use crate::{
             },
             config::C4Config,
             engine,
-            grenade::stage::Release,
+            grenade::Release,
         },
     },
     headpose,

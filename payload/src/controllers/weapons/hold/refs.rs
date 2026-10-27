@@ -39,6 +39,21 @@ impl Weak {
         // SAFETY: the weak reference keeps its control block alive.
         unsafe { Strong::lock(&self.0) }
     }
+
+    /// The engine weak reference this holds, for an operation that reads or copies it.
+    pub(crate) fn raw(&self) -> &WeakPtrGameObject {
+        &self.0
+    }
+}
+
+impl Clone for Weak {
+    /// A second weak reference to the same object, with its own count.
+    fn clone(&self) -> Self {
+        let mut weak = Weak(null_weak());
+        // SAFETY: the source is a live reference, and the engine's copy takes its own count.
+        unsafe { weak.0.Assign(&self.0) };
+        weak
+    }
 }
 
 impl Drop for Weak {

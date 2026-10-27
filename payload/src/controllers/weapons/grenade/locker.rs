@@ -512,7 +512,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::controllers::loadout::{BodyLayout, Loadout, safe_items::ModelLeaseId};
+    use crate::controllers::loadout::{BodyLayout, Loadout, safe_items::ItemLeaseId};
 
     fn identity() -> Identity {
         Identity {
@@ -672,7 +672,7 @@ mod tests {
                 complete(offer, &sources, Some(Vec3::ZERO), || {
                     table
                         .admit_safe_item(
-                            ModelLeaseId::new(NonZeroU64::new(hand.index() as u64 + 1).unwrap()),
+                            ItemLeaseId::new(NonZeroU64::new(hand.index() as u64 + 1).unwrap()),
                             hand,
                         )
                         .is_ok()
@@ -683,7 +683,7 @@ mod tests {
         let items: Vec<_> = table.safe_items().collect();
         assert_eq!(items.len(), 2);
         assert_ne!(items[0].item, items[1].item);
-        assert_ne!(items[0].binding.model, items[1].binding.model);
+        assert_ne!(items[0].binding.lease, items[1].binding.lease);
         assert_eq!(weapon.m_State, WeaponState::E_WS_WEAPON_RACK);
         assert_eq!(model.m_Flags, ModelInstanceFlags::VISIBLE);
         sources.clear();

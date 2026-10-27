@@ -8,6 +8,10 @@ A token witness contains the primitive call, its referenced local `let` bindings
 
 The owner and section assignments record reviewed source routing. They do not execute production dispatch and do not prove that a page renders the target. The gate also does not prove effects inside called helpers, Rust name resolution or types, runtime enabled gates, callback execution, or expansion of parameterized call sites. An attached command block is checked as source evidence; its sink is not activated. Identical lexical templates retain explicit occurrence counts. The gate does not infer distinct runtime owners from identical templates.
 
+## Reviewed removals
+
+`removals.json` records the intentional removal of the pin switch, pin radius, and trigger-to-pull-pin setting. Safe grenade items arm only on deliberate release, so those controls have no current target. The baseline and mapping remain unchanged. Each removal records the exact historical ID, reviewed path, kind, and token witness, plus its reason. The parity check requires that exact witness to remain absent. Tests freeze the removal file fingerprint and reject missing approval, changed evidence, and reintroduced controls. Other controls retain their existing target and consolidation requirements.
+
 ## Current witness v2 review
 
 The baseline remains immutable with its original v1 witness evidence and file fingerprint `9b6099490bea7ce7`. Current witness v2 changes exactly two of the 1,405 reviewed assignments. The captured-pose reset command in `camera.rs` now includes `.clicked()` and `vr::pose_control::reset()` after the nested hover-text match. The far-field mode selector now includes the hover-text conditional's `else` arm. Both changes extend suffix evidence; their primitive calls, bindings, source paths, kinds, owners, sections, occurrence counts, and consolidation assignments remain unchanged. Pause-item suffix capture retains v1 behavior to avoid changing neighboring-row evidence in this widget-handler fix. The mapping records the exact two historical IDs and the review reason in `current_witness_review`; the mapping fingerprint for that review is `466a184d1f01228c`.

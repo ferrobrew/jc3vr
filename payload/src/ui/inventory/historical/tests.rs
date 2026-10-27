@@ -205,6 +205,61 @@ fn reviewed_turn_choices_allow_only_the_equivalent_radio_setting() {
 }
 
 #[test]
+fn pin_control_removal_requires_exact_review_and_absent_targets() {
+    let (baseline, mapping) = fixtures();
+    let sources: Vec<_> = source_files().copied().collect();
+    let removals: Vec<Removal> = serde_json::from_str(include_str!("removals.json")).unwrap();
+    assert_eq!(removals.len(), 3);
+    assert!(parity_with_removals(&baseline, &mapping, &sources, &removals).is_empty());
+    assert_eq!(
+        parity_with_removals(&baseline, &mapping, &sources, &[]).len(),
+        3
+    );
+    for removal in &removals {
+        let mut changed = removals.clone();
+        changed
+            .iter_mut()
+            .find(|row| row.old_id == removal.old_id)
+            .unwrap()
+            .semantic
+            .call
+            .push_str(" changed");
+        assert!(
+            parity_with_removals(&baseline, &mapping, &sources, &changed)
+                .contains(&Issue::InvalidReview(removal.old_id.clone()))
+        );
+        let restored = match removal.old_id.as_str() {
+            id if id.contains("deb469311a7ab59a") => {
+                "fn restored() { ui.checkbox(&mut g.pin.enabled, \"Pull the pin to start the fuse\"); }"
+            }
+            id if id.contains("03ca934241cd7f19") => {
+                "fn restored() { ui.add(egui::Slider::new(&mut g.pin.radius_m, 0.02..=0.2)); }"
+            }
+            _ => {
+                "fn restored() { ui.checkbox(&mut g.pin.trigger, \"The holding hand's trigger pulls the pin\",); }"
+            }
+        };
+        let source = SourceFile {
+            path: "payload/src/ui/controllers/weapons.rs",
+            text: restored,
+            surface: Surface::Debug,
+            destinations: &[],
+        };
+        let mut changed_sources = sources.clone();
+        changed_sources.retain(|entry| entry.path != removal.path);
+        changed_sources.push(source);
+        assert!(
+            parity_with_removals(&baseline, &mapping, &changed_sources, &removals)
+                .contains(&Issue::InvalidReview(removal.old_id.clone()))
+        );
+    }
+    assert_eq!(
+        fingerprint(include_bytes!("removals.json")),
+        REMOVALS_FINGERPRINT
+    );
+}
+
+#[test]
 fn frozen_files_require_deliberate_review_to_change() {
     // These hashes freeze both obligations and reviewed owners independently of current sources.
     assert_eq!(
@@ -451,6 +506,7 @@ fn extra_matching_current_owner_is_not_silently_selected() {
 const ORIGINAL: &str = "fn old() { let c = &mut cfg.controllers; ui.checkbox(&mut c.enabled, \"Enabled\"); if ui.button(\"Capture\").clicked() { sink::capture(); } }";
 const BASELINE_FINGERPRINT: u64 = 0x9b6099490bea7ce7;
 const MAPPING_FINGERPRINT: u64 = 0x1fe287119a34c0d6;
+const REMOVALS_FINGERPRINT: u64 = 0xb7b5d19596694f6d;
 
 fn source(text: &'static str) -> SourceFile {
     SourceFile {

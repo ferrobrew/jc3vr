@@ -110,28 +110,6 @@ pub(super) fn c4_by_hand() -> Line {
     ))
 }
 
-pub(super) fn grenade_pin() -> Line {
-    if !read_config(|c| {
-        c.controllers.weapons.grenade_throw && c.controllers.weapons.grenade.pin.enabled
-    }) {
-        return Line::off("");
-    }
-    let status = grenade::status();
-    let pin = status
-        .pin
-        .map_or_else(|| prose("No grenade in hand"), |p| prose(p.label()));
-    let last = status
-        .last_puller
-        .map_or_else(Text::default, |p| text!(", last by ", prose(p.label())));
-    Line::ok(text!(
-        pin,
-        ", ",
-        status.pins_pulled.to_string(),
-        " pulled",
-        last
-    ))
-}
-
 pub(super) fn live_grenades() -> Line {
     if !read_config(|c| {
         c.controllers.weapons.grenade_throw && c.controllers.weapons.grenade.catch.enabled

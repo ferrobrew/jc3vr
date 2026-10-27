@@ -12,7 +12,7 @@ use crate::controllers::{
         binding::Binding,
         item::ItemKind,
         projection::{SlotContent, project_store},
-        safe_items::{ModelLeaseId, SafeItemError},
+        safe_items::{ItemLeaseId, SafeItemError},
         table::{Departure, Loadout, Place},
         tests::fixtures::{a_pistol, check_invariants, object, take, weapon},
         transition::{Release, Removal, RemovalWhy, TransitionError},
@@ -34,7 +34,7 @@ fn independent_safe_items_resolve_through_draw_transfer_and_stow() {
         .move_safe_item(first, Place::Socket(Socket::Hip(Hand::Left)))
         .unwrap();
     assert_eq!(table.safe_item(first.item), Some(stowed));
-    assert_eq!(table.safe_item_for_model(model(2)), Some(second));
+    assert_eq!(table.safe_item_for_lease(model(2)), Some(second));
     check_safe_items(&table);
     let drawn = table
         .move_safe_item(stowed, Place::Hand(Hand::Left))
@@ -46,9 +46,9 @@ fn independent_safe_items_resolve_through_draw_transfer_and_stow() {
         .move_safe_item(drawn, Place::Hand(Hand::Right))
         .unwrap();
     assert_eq!(transferred.item, first.item);
-    assert_eq!(transferred.binding.model, first.binding.model);
+    assert_eq!(transferred.binding.lease, first.binding.lease);
     assert_eq!(transferred.binding.revision(), 3);
-    assert_eq!(table.safe_item_for_model(model(1)), Some(transferred));
+    assert_eq!(table.safe_item_for_lease(model(1)), Some(transferred));
     assert_eq!(table.safe_item(second.item), Some(second));
     assert_eq!(table.held(Hand::Left), None);
     check_safe_items(&table);
@@ -63,7 +63,7 @@ fn duplicate_lease_occupied_hand_and_invalid_holster_leave_the_table_unchanged()
     let next_id = table.next_id;
     assert_eq!(
         table.admit_safe_item(model(1), Hand::Right),
-        Err(SafeItemError::ModelAlreadyBound {
+        Err(SafeItemError::LeaseAlreadyBound {
             model: model(1),
             item: first.item,
         })
@@ -128,7 +128,7 @@ fn safe_items_share_native_occupancy_without_rebinding_or_replacing_a_weapon() {
             .binding,
         Binding::Live(object(1))
     );
-    assert_eq!(table.safe_item_for_model(model(1)), Some(safe));
+    assert_eq!(table.safe_item_for_lease(model(1)), Some(safe));
     check_invariants(&table);
     let stowed = table
         .move_safe_item(safe, Place::Socket(Socket::Hip(Hand::Left)))
@@ -181,16 +181,16 @@ fn inert_drops_keep_identity_and_retirement_invalidates_only_that_identity() {
         .move_safe_item(first, Place::World(Departure::Dropped))
         .unwrap();
     assert_eq!(dropped.item, first.item);
-    assert_eq!(dropped.binding.model, first.binding.model);
+    assert_eq!(dropped.binding.lease, first.binding.lease);
     assert_eq!(table.safe_item(first.item), Some(dropped));
-    assert_eq!(table.safe_item_for_model(model(1)), Some(dropped));
+    assert_eq!(table.safe_item_for_lease(model(1)), Some(dropped));
     assert_eq!(table.world.len(), 0);
     assert_eq!(table.safe_world.len(), 1);
     assert_eq!(table.held(Hand::Left), None);
     check_safe_items(&table);
     assert_eq!(table.retire_safe_item(dropped), Ok(model(1)));
     assert_eq!(table.safe_item(first.item), None);
-    assert_eq!(table.safe_item_for_model(model(1)), None);
+    assert_eq!(table.safe_item_for_lease(model(1)), None);
     assert_eq!(table.safe_item(second.item), Some(second));
     assert_eq!(
         table.retire_safe_item(dropped),
@@ -206,7 +206,7 @@ fn inert_drops_keep_identity_and_retirement_invalidates_only_that_identity() {
         .move_safe_item(second, Place::Socket(Socket::Chest))
         .unwrap();
     assert_eq!(table.retire_safe_item(second), Ok(model(2)));
-    assert_eq!(table.safe_item_for_model(model(2)), None);
+    assert_eq!(table.safe_item_for_lease(model(2)), None);
     assert_eq!(table.safe_item(replacement.item), Some(replacement));
     check_safe_items(&table);
 }
@@ -228,7 +228,7 @@ fn independent_world_models_share_no_occupancy_or_native_address() {
         .move_safe_item(first, Place::Hand(Hand::Right))
         .unwrap();
     assert_eq!(recovered.item, first.item);
-    assert_eq!(recovered.binding.model, first.binding.model);
+    assert_eq!(recovered.binding.lease, first.binding.lease);
     assert_eq!(recovered.binding.revision(), 2);
     let before = table.snapshot();
     assert_eq!(
@@ -312,7 +312,7 @@ fn a_holstered_item_must_be_drawn_before_restowing_and_can_leave_a_removed_holst
         .move_safe_item(stowed, Place::Hand(Hand::Right))
         .unwrap();
     assert_eq!(drawn.item, first.item);
-    assert_eq!(drawn.binding.model, first.binding.model);
+    assert_eq!(drawn.binding.lease, first.binding.lease);
     check_safe_items(&table);
 }
 
@@ -449,8 +449,8 @@ fn safe_items_never_project_into_native_slots_or_weapon_caches() {
     check_safe_items(&table);
 }
 
-fn model(n: u64) -> ModelLeaseId {
-    ModelLeaseId::new(NonZeroU64::new(n).unwrap())
+fn model(n: u64) -> ItemLeaseId {
+    ItemLeaseId::new(NonZeroU64::new(n).unwrap())
 }
 
 fn check_safe_items(table: &Loadout) {
@@ -468,12 +468,12 @@ fn check_safe_items(table: &Loadout) {
         assert_eq!(item.binding.address(), None);
         assert_eq!(item.binding.safe_item(), Some(safe.binding));
         assert_eq!(safe.place, item.place);
-        assert_eq!(table.safe_item_for_model(safe.binding.model), Some(safe));
+        assert_eq!(table.safe_item_for_lease(safe.binding.lease), Some(safe));
         assert!(items[..index].iter().all(|other| {
             other
                 .binding
                 .safe_item()
-                .is_none_or(|binding| binding.model != safe.binding.model)
+                .is_none_or(|binding| binding.lease != safe.binding.lease)
         }));
         assert_eq!(table.snapshot().projection.slot_of(item.id), None);
         match safe.place {

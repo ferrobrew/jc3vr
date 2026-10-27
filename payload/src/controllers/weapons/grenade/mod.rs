@@ -1,17 +1,16 @@
 //! Independent safe grenades and native deliberate throws.
 //!
-//! A pouch draw creates only a model and a loadout item, independently of native ammunition.
-//! Transfers, holster moves, and incidental releases keep that identity and stay actor-free.
-//! Opening the grip during a tracked throwing motion requests the grenade weapon's existing
-//! pool-backed creation and launch path. Native live grenades can still be caught and thrown on.
+//! A pouch draw takes a native grenade from the grenade weapon's own pool and leaves it inert, so
+//! the item the player sees, carries, stows, and drops is the engine's own object from that moment
+//! on. Transfers, holster moves, and incidental releases keep that item and its actor; only a
+//! deliberate tracked throw arms the fuse, and it does so once the grenade has left the hand. Native
+//! live grenades can still be caught and thrown on.
 
 pub mod catch;
 pub mod config;
 mod locker;
 mod native;
-pub mod pin;
 pub(crate) mod safe;
-pub mod stage;
 
 use std::{cell::Cell, time::Duration};
 
@@ -57,11 +56,7 @@ use crate::{
         weapons::{
             config::GrenadeConfig,
             docks, engine,
-            grenade::{
-                catch::{CatchCounts, Caught, Sighting},
-                pin::{Pin, Puller},
-                stage::{Outcome, Release, Stage},
-            },
+            grenade::catch::{CatchCounts, Caught, Sighting},
         },
     },
     headpose,
@@ -97,28 +92,31 @@ pub struct Fuse {
     pub total_s: f32,
 }
 
+/// The velocity a release throws its item with.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Release {
+    pub velocity: Vec3,
+}
+
 /// One reported native throw step.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct GrenadeEvent {
     pub hand: Option<Hand>,
-    pub outcome: Outcome,
+    pub release: Release,
 }
 
 /// The grenade controller's readout. Safe held items have no live fuse.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct GrenadeStatus {
-    pub stage: Stage,
     pub fuse: Option<Fuse>,
     pub last_release: Option<Vec3>,
     pub weapon_seen: bool,
-    /// Whether another safe grenade may be drawn, independently of ammunition.
+    /// Whether the pouch's supply is independent of native grenade ammunition. A draw is still
+    /// refused when the engine's ammunition pool has no room for another grenade.
     pub in_stock: Option<bool>,
     pub primed: u64,
     pub thrown: u64,
     pub gone: u64,
-    pub pin: Option<Pin>,
-    pub pins_pulled: u64,
-    pub last_puller: Option<Puller>,
     pub caught_hand: Option<Hand>,
     pub catch: CatchCounts,
     pub events: Vec<GrenadeEvent>,
@@ -226,7 +224,6 @@ pub(super) struct TickInputs {
     pub acting: bool,
     pub pouch_grab: Option<Hand>,
     pub locker_grabs: [bool; 2],
-    pub pin_grab: Option<Hand>,
     pub catch_grab: Option<Hand>,
     pub cockpit_grips: [Option<Vec3>; 2],
     pub triggers: [ButtonControl; 2],
@@ -247,7 +244,7 @@ pub(super) fn input_tick(
         return;
     }
     let tuning = &config.weapons.grenade;
-    let _ = (inputs.pin_grab, inputs.triggers, inputs.dominant);
+    let _ = (inputs.triggers, inputs.dominant);
     for hand in Hand::BOTH {
         if inputs.locker_grabs[hand.index()] && !holds(hand) {
             let frames = STATE.lock().locker_frames;
@@ -287,8 +284,7 @@ pub(super) fn input_tick(
         && !holds(hand)
     {
         let world = STATE.lock().grips[hand.index()].map(|grip| grip.position);
-        let took_safe =
-            world.is_some_and(|world| safe::take_loose(hand, world, tuning.catch.radius_m));
+        let took_safe = world.is_some_and(|world| safe::take_loose(hand, world, tuning));
         if !took_safe
             && catch::caught().is_none()
             && let Some(grip) = inputs.cockpit_grips[hand.index()]
@@ -351,13 +347,13 @@ pub(crate) fn observe_hands(grips: [Option<Pose>; 2]) {
     );
 }
 
-/// Draw actor-free grenade models before the engine culls its render instances.
+/// Draw the items' native actors; their own render updates show them.
 ///
 /// # Safety
 ///
 /// The game thread, outside the world update.
-pub(crate) unsafe fn render_frame(dtf: f32) {
-    unsafe { safe::render_frame(dtf) };
+pub(crate) unsafe fn render_frame() {
+    unsafe { safe::render_frame() };
 }
 
 pub(crate) fn fallback_target(
@@ -376,7 +372,7 @@ pub(super) fn report_native_throw(hand: Hand, release: Release) {
     state.thrown[hand.index()] = true;
     state.status.events.push(GrenadeEvent {
         hand: Some(hand),
-        outcome: Outcome::Thrown(release),
+        release,
     });
     let excess = state.status.events.len().saturating_sub(MAX_EVENTS);
     state.status.events.drain(..excess);
@@ -401,7 +397,6 @@ static STATE: Mutex<State> = Mutex::new(State {
     sightings: Vec::new(),
     locker_frames: None,
     status: GrenadeStatus {
-        stage: Stage::Idle,
         fuse: None,
         last_release: None,
         weapon_seen: false,
@@ -409,9 +404,6 @@ static STATE: Mutex<State> = Mutex::new(State {
         primed: 0,
         thrown: 0,
         gone: 0,
-        pin: None,
-        pins_pulled: 0,
-        last_puller: None,
         caught_hand: None,
         catch: CatchCounts {
             tracked: 0,
@@ -540,10 +532,9 @@ fn update_from_user(
         config.controllers.enabled && config.controllers.weapons.grenade_throw
     }) && scheme::is_controllers();
     if !acting {
-        native::cancel();
+        native::disarm();
     }
-    // SAFETY: the local grenade weapon is live on its update thread.
-    unsafe { native::update(&mut *weapon, dt) };
+    // Native item operations run at the render boundary, after the simulation workers join.
 }
 
 #[detour(address = jc3gi::equipment::explosive::Grenade::PropelToward_ADDRESS)]

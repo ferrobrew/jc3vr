@@ -320,7 +320,6 @@ const SECTIONS: &[Section] = &[
         title: "EXPLOSIVES AND MAGAZINES",
         display_title: "Explosives and magazines",
         rows: &[
-            row!("GRENADE PIN", "Grenade pin", explosives::grenade_pin),
             row!("LIVE GRENADES", "Live grenades", explosives::live_grenades),
             row!("C4 BY HAND", "C4 by hand", explosives::c4_by_hand),
             row!("MAGAZINES", "Magazines", explosives::magazines),

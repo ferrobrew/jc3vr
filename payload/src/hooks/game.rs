@@ -219,9 +219,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         crate::controllers::weapons::pouch_models::render_frame(
             (*update_contexts).m_RenderContext.m_Dtf,
         );
-        crate::controllers::weapons::grenade::render_frame(
-            (*update_contexts).m_RenderContext.m_Dtf,
-        );
+        crate::controllers::weapons::grenade::render_frame();
         input::wingsuit::sync();
 
         mark(Phase::OriginalUpdateRender);

@@ -1,7 +1,7 @@
-//! Actor-free grenade bindings and checked moves on the runtime loadout table.
+//! Grenade item bindings and checked moves on the runtime loadout table.
 //!
-//! The grenade controller retains the model resource. These identifiers never stand in for a
-//! native address, and moving an item never creates or activates an engine object.
+//! The grenade controller retains the item's native resource. These identifiers never stand in for
+//! a native address, and moving an item never creates or activates an engine object.
 
 use std::{fmt, num::NonZeroU64};
 
@@ -15,26 +15,26 @@ use crate::controllers::{
     },
 };
 
-/// An opaque model lease identity, distinct from an object address.
+/// An opaque item lease identity, distinct from an object address.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ModelLeaseId(NonZeroU64);
+pub struct ItemLeaseId(NonZeroU64);
 
-impl ModelLeaseId {
+impl ItemLeaseId {
     pub const fn new(identity: NonZeroU64) -> Self {
         Self(identity)
     }
 }
 
-impl fmt::Display for ModelLeaseId {
+impl fmt::Display for ItemLeaseId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "model lease #{}", self.0)
+        write!(f, "item lease #{}", self.0)
     }
 }
 
-/// An actor-free render identity and movement revision within one table lifetime.
+/// An item's runtime identity and movement revision within one table lifetime.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct SafeItemBinding {
-    pub model: ModelLeaseId,
+    pub lease: ItemLeaseId,
     revision: u64,
 }
 
@@ -66,7 +66,7 @@ pub enum SafeItemError {
     UnknownItem(ItemId),
     StaleItem(ItemId),
     NotHeld(ItemId),
-    ModelAlreadyBound { model: ModelLeaseId, item: ItemId },
+    LeaseAlreadyBound { model: ItemLeaseId, item: ItemId },
     Occupied { place: Place, item: ItemId },
     UnsupportedHolster(Socket),
     UnsupportedDeparture(Departure),
@@ -92,25 +92,28 @@ impl Loadout {
     }
 
     /// Resolve a model identity through its current table owner.
-    pub fn safe_item_for_model(&self, model: ModelLeaseId) -> Option<SafeItemView> {
-        self.safe_items().find(|item| item.binding.model == model)
+    pub fn safe_item_for_lease(&self, model: ItemLeaseId) -> Option<SafeItemView> {
+        self.safe_items().find(|item| item.binding.lease == model)
     }
 
-    /// Admit an item without allocating a model or a native actor.
+    /// Admit an item without allocating its native actor.
     pub fn admit_safe_item(
         &mut self,
-        model: ModelLeaseId,
+        model: ItemLeaseId,
         hand: Hand,
     ) -> Result<SafeItemView, SafeItemError> {
-        if let Some(owner) = self.safe_item_for_model(model) {
-            return Err(SafeItemError::ModelAlreadyBound {
+        if let Some(owner) = self.safe_item_for_lease(model) {
+            return Err(SafeItemError::LeaseAlreadyBound {
                 model,
                 item: owner.item,
             });
         }
         self.require_safe_destination(Place::Hand(hand))?;
         let id = self.allocate();
-        let binding = SafeItemBinding { model, revision: 0 };
+        let binding = SafeItemBinding {
+            lease: model,
+            revision: 0,
+        };
         self.hands[hand.index()] = Some(Item {
             id,
             kind: ItemKind::Grenade,
@@ -166,11 +169,11 @@ impl Loadout {
     pub fn retire_safe_item(
         &mut self,
         expected: SafeItemView,
-    ) -> Result<ModelLeaseId, SafeItemError> {
+    ) -> Result<ItemLeaseId, SafeItemError> {
         let current = self.require_safe_view(expected)?;
         self.remove_safe(current)
             .ok_or(SafeItemError::StaleItem(expected.item))?;
-        Ok(current.binding.model)
+        Ok(current.binding.lease)
     }
 
     fn require_safe_view(&self, expected: SafeItemView) -> Result<SafeItemView, SafeItemError> {
@@ -242,7 +245,7 @@ impl SafeItemView {
     }
 }
 
-/// An inert model in the world, separate from native physical weapons.
+/// An item lying in the world, separate from native physical weapons.
 #[derive(Debug)]
 pub(super) struct SafeWorld {
     pub(super) item: Item,

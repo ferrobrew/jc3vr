@@ -442,13 +442,8 @@ fn grapple_readout(ui: &mut Ui, a: &AnchorStatus, (yanks, last): (u64, Option<Ya
 }
 
 fn grenade_readout(ui: &mut Ui, g: &GrenadeStatus) {
-    let hand = g
-        .stage
-        .hand()
-        .map_or(String::new(), |h| format!(" in the {} hand", h.label()));
     ui.label(format!(
-        "Grenade: {}{hand} · primed {} · thrown {} · gone before the throw {}{}",
-        g.stage.label(),
+        "Grenade · primed {} · thrown {} · gone before the throw {}{}",
         g.primed,
         g.thrown,
         g.gone,
@@ -465,13 +460,6 @@ fn grenade_readout(ui: &mut Ui, g: &GrenadeStatus) {
             f.total_s
         ));
     }
-    ui.label(format!(
-        "  pin {} · pulled {}{}",
-        g.pin.map_or("none", |p| p.label()),
-        g.pins_pulled,
-        g.last_puller
-            .map_or(String::new(), |p| format!(", last by {}", p.label()))
-    ));
     ui.label(format!(
         "  live grenades {} · in reach {} · caught {} · thrown on {} · lost in the hand {}{}",
         g.catch.tracked,
@@ -493,11 +481,11 @@ fn grenade_readout(ui: &mut Ui, g: &GrenadeStatus) {
     }
     for event in g.events.iter().rev() {
         ui.label(format!(
-            "  {}{}",
+            "  {}{:.1} m/s",
             event
                 .hand
                 .map_or(String::new(), |h| format!("{}: ", h.label())),
-            event.outcome.label()
+            event.release.velocity.length()
         ));
     }
 }
@@ -688,18 +676,11 @@ fn grenade_settings(ui: &mut Ui, g: &mut GrenadeConfig) {
     ui.add(
         egui::Slider::new(&mut g.warning_interval_s[1], 0.02..=1.0).text("Fastest pulse gap (s)"),
     );
-    ui.checkbox(&mut g.pin.enabled, "Pull the pin to start the fuse")
+    ui.add(egui::Slider::new(&mut g.arm_speed_mps, 0.1..=5.0).text("Arming release (m/s)"))
         .on_hover_text(
-            "A grenade from the pouch comes out with its fuse held until the other hand grabs its \
-             pin or its own trigger pulls it; then it cooks in the hand.",
+            "A release at least this fast arms the grenade as a throw; a slower one lets it go \
+             inert.",
         );
-    ui.add_enabled_ui(g.pin.enabled, |ui| {
-        ui.add(egui::Slider::new(&mut g.pin.radius_m, 0.02..=0.2).text("Pin radius (m)"));
-        ui.checkbox(
-            &mut g.pin.trigger,
-            "The holding hand's trigger pulls the pin",
-        );
-    });
     ui.checkbox(&mut g.catch.enabled, "Catch live grenades")
         .on_hover_text("A grip press at a live grenade near the player catches it; opening the grip throws it.");
     ui.add_enabled_ui(g.catch.enabled, |ui| {

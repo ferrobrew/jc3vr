@@ -1,38 +1,8 @@
-//! The settings of the grenade's pin and of catching live grenades (see
-//! [`crate::controllers::weapons::grenade::pin`] and
-//! [`crate::controllers::weapons::grenade::catch`]), held in
-//! [`GrenadeConfig`](crate::controllers::weapons::config::GrenadeConfig).
+//! The settings for catching live grenades, held in
+//! [`GrenadeConfig`](crate::controllers::weapons::config::GrenadeConfig) alongside the pouch throw's
+//! own tuning.
 
 use serde::{Deserialize, Serialize};
-
-/// Persisted pin preferences. Safe pouch items auto-arm on a deliberate throw, so these
-/// preferences do not create or pause a live grenade while it is held.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct GrenadePinConfig {
-    /// Retained for settings compatibility; safe grenade activation does not depend on it.
-    pub enabled: bool,
-    /// The saved pin interaction radius, metres, reserved for a non-activating pin interaction.
-    pub radius_m: f32,
-    /// The saved trigger preference, reserved for a non-activating pin interaction.
-    pub trigger: bool,
-}
-
-impl GrenadePinConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            radius_m: 0.08,
-            trigger: true,
-        }
-    }
-}
-
-impl Default for GrenadePinConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 /// Catching a live grenade near the player and throwing it on. Acts only under the controller
 /// scheme, so it defaults on.

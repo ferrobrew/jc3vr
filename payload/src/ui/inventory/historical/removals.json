@@ -1,0 +1,23 @@
+[
+  {
+    "old_id": "payload/src/ui/controllers/weapons.rs::grenade_settings::Setting::deb469311a7ab59a::1",
+    "path": "payload/src/ui/controllers/weapons.rs",
+    "kind": "Setting",
+    "semantic": {"call": "checkbox ( & mut g . pin . enabled , \"Pull the pin to start the fuse\" )", "bindings": [], "effect": ""},
+    "reason": "Safe grenade items arm on deliberate release; pin controls no longer exist."
+  },
+  {
+    "old_id": "payload/src/ui/controllers/weapons.rs::grenade_settings::Setting::03ca934241cd7f19::1",
+    "path": "payload/src/ui/controllers/weapons.rs",
+    "kind": "Setting",
+    "semantic": {"call": "new ( & mut g . pin . radius_m , 0 . 02 . . = 0 . 2 )", "bindings": [], "effect": ""},
+    "reason": "Safe grenade items arm on deliberate release; pin controls no longer exist."
+  },
+  {
+    "old_id": "payload/src/ui/controllers/weapons.rs::grenade_settings::Setting::36048d254e87b574::1",
+    "path": "payload/src/ui/controllers/weapons.rs",
+    "kind": "Setting",
+    "semantic": {"call": "checkbox ( & mut g . pin . trigger , \"The holding hand's trigger pulls the pin\" , )", "bindings": [], "effect": ""},
+    "reason": "Safe grenade items arm on deliberate release; pin controls no longer exist."
+  }
+]

@@ -1,8 +1,13 @@
-//! Actor-free grenade items, each with its own engine-owned model instance.
+//! Safe grenade items, each backed by its own inert native grenade.
 //!
-//! A model lease is a monotonic identity, never a native object address. The loadout table owns
-//! the item's place; this module owns its render instance. Only an explicit throwing release
-//! submits a native activation request.
+//! An item is identified by a monotonic lease, never by a native object address. The loadout table
+//! owns the item's place. This module owns its inert actor and the held/stowed transform pair;
+//! the simulation owns world-item transforms. Drawing uses the grenade weapon's factory with pool
+//! reclamation disabled, so exhaustion refuses admission without removing another object.
+//!
+//! The actor is inert from the moment it is created: only a deliberate, tracked release arms it, and
+//! that happens after it has left the hand. A stowed or dropped item stays inert forever, so a lost
+//! grip, a lost tracker, or a lost input can end an item's time in a hand but never its safety.
 
 use std::{
     num::NonZeroU64,
@@ -11,98 +16,92 @@ use std::{
 
 use glam::{Mat4, Vec3};
 use jc3gi::{
-    character::inventory::WeaponSlot,
+    character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::ThrownGrenadeWeapon,
-    graphics_engine::model_instance::{ModelInstance, ModelInstanceFlags, ModelInstanceManager},
-    types::math::Matrix4,
 };
 use parking_lot::Mutex;
 
 use crate::controllers::{
     frame::{Hand, Pose},
-    hands::late::lerp_transform,
     loadout::{
         Departure, Place, Socket, live,
-        safe_items::{ModelLeaseId, SafeItemView},
+        safe_items::{ItemLeaseId, SafeItemView},
     },
     weapons::{
         config::GrenadeConfig,
         engine,
-        grenade::{hold_offset, native, release, stage::Release},
+        grenade::{
+            Release, hold_offset,
+            native::{self, Actor},
+            release,
+        },
     },
 };
+
+/// Successful safe-item transitions since the payload loaded.
+#[derive(Default, Debug, Copy, Clone)]
+pub(crate) struct Counts {
+    pub drawn: u64,
+    pub stowed: u64,
+    pub redrawn: u64,
+    pub dropped: u64,
+    pub recovered: u64,
+}
+
+pub(crate) fn counts() -> Counts {
+    *COUNTS.lock()
+}
 
 /// Draw another safe grenade without reading or mutating ammunition.
 ///
 /// # Safety
 ///
-/// The game thread, outside the world update.
+/// The serialized input fragment before ammunition pre-simulation, or the render boundary.
 pub(crate) unsafe fn draw(hand: Hand, tuning: &GrenadeConfig) -> bool {
     let Some(owner) = (unsafe { engine::local_player() }) else {
         return false;
     };
-    let Some(weapon) = owner
-        .m_Inventory
-        .m_Weapons
-        .get(WeaponSlot::E_SLOT_HAND_GRENADE as usize)
-        .and_then(|weapon| unsafe { weapon.px.cast::<ThrownGrenadeWeapon>().as_ref() })
-    else {
+    let Some(weapon) = grenade_weapon(owner) else {
         return false;
     };
-    if weapon.m_PhysicalProjectileModel.px.is_null() {
-        return false;
-    }
     let Some(grip) = STATE.lock().grips[hand.index()] else {
         return false;
     };
     let world = matrix(grip, hand, tuning);
-    let Some(manager) = (unsafe { ModelInstanceManager::get() }) else {
-        return false;
-    };
     let Some(model) = new_model_id() else {
         return false;
     };
-    let Ok(view) = live::admit_safe_item(model, hand) else {
+    // The actor comes first: a refusal from the pool must leave no item behind, and an item must
+    // never exist without the actor that shows it.
+    let Some(actor) = (unsafe { native::create(weapon, world) }) else {
         return false;
     };
-    let instance = unsafe {
-        manager.CreateInstanceFromModel(
-            &weapon.m_PhysicalProjectileModel,
-            &Matrix4::from(world),
-            true,
-            false,
-            true,
-        )
-    };
-    let Some(instance) = (unsafe { instance.as_mut() }) else {
-        let _ = live::retire_safe_item(view);
+    if live::admit_safe_item(model, hand).is_err() {
+        unsafe { native::remove(&actor) };
         return false;
-    };
-    instance
-        .m_Flags
-        .remove(ModelInstanceFlags::FLAG_CLIPONDISTANCE);
-    unsafe { manager.ShowModelInstance(instance) };
-    let owner_id = owner as *const _ as usize;
+    }
+    let owner_id = owner as *const Character as usize;
     let mut state = STATE.lock();
     state.owner = Some(owner_id);
-    state.models.push(Model {
+    state.items.push(Item {
         model,
-        instance: instance as *mut ModelInstance as usize,
+        actor,
         world: [world; 2],
-        activating: false,
     });
+    drop(state);
     ensure_cleanup();
+    COUNTS.lock().drawn += 1;
     true
 }
 
-/// The safe item in a hand; unlike a native grenade it has no explosive address.
+/// The safe item in a hand; unlike a caught grenade it has no explosive address to hand out.
 pub(crate) fn in_hand(hand: Hand) -> Option<SafeItemView> {
     live::safe_items()
         .into_iter()
         .find(|item| item.place == Place::Hand(hand))
 }
 
-/// Move a safe item between hands, preserving its table and model identities.
+/// Move a safe item between hands, carrying its actor and its table identity.
 pub(crate) fn transfer(from: Hand, to: Hand) -> bool {
     in_hand(from).is_some_and(|item| live::move_safe_item(item, Place::Hand(to)).is_ok())
 }
@@ -118,16 +117,21 @@ pub(crate) fn stow(hand: Hand, socket: Socket, world: Mat4) -> bool {
     if live::move_safe_item(item, Place::Socket(socket)).is_err() {
         return false;
     }
-    place(item.binding.model, world);
+    place(item.binding.lease, world);
+    COUNTS.lock().stowed += 1;
     true
 }
 
-/// Draw the exact safe item stored in a holster, without allocating another model.
+/// Draw the exact safe item stored in a holster, without allocating another actor.
 pub(crate) fn draw_stowed(socket: Socket, hand: Hand) -> bool {
-    live::safe_items()
+    let moved = live::safe_items()
         .into_iter()
         .find(|item| item.place == Place::Socket(socket))
-        .is_some_and(|item| live::move_safe_item(item, Place::Hand(hand)).is_ok())
+        .is_some_and(|item| live::move_safe_item(item, Place::Hand(hand)).is_ok());
+    if moved {
+        COUNTS.lock().redrawn += 1;
+    }
+    moved
 }
 
 /// Update the resolved world transform of a safe item in a holster.
@@ -136,11 +140,12 @@ pub(crate) fn place_stowed(socket: Socket, world: Mat4) {
         .into_iter()
         .find(|item| item.place == Place::Socket(socket))
     {
-        place(item.binding.model, world);
+        place(item.binding.lease, world);
     }
 }
 
-/// Release a safe grenade. An untracked or slow release remains an inert world model.
+/// Release a safe grenade. Only a tracked, deliberate release arms it; anything else leaves the item
+/// inert and lets the simulation take it.
 pub(crate) fn opened(hand: Hand, world_scale: f32, tuning: &GrenadeConfig) {
     let Some(item) = in_hand(hand) else {
         return;
@@ -149,71 +154,120 @@ pub(crate) fn opened(hand: Hand, world_scale: f32, tuning: &GrenadeConfig) {
     let estimate = tracked
         .then(|| release(hand, world_scale, tuning))
         .flatten();
-    let Some(world) = STATE
-        .lock()
-        .models
-        .iter()
-        .find(|model| model.model == item.binding.model)
-        .map(|model| model.world[1])
-    else {
+    let Some(world) = position(item.binding.lease) else {
         return;
     };
-    let Ok(loose) = live::move_safe_item(item, Place::World(Departure::Dropped)) else {
-        return;
+    let launch = native::Launch {
+        item,
+        hand,
+        world,
+        velocity: estimate.map_or(Vec3::ZERO, |release| release.velocity),
+        arm: deliberate(estimate, tuning),
     };
-    if deliberate(estimate) {
-        let release = estimate.expect("a deliberate release has tracked velocity");
-        if native::submit(loose, hand, world, release)
-            && let Some(model) = STATE
-                .lock()
-                .models
-                .iter_mut()
-                .find(|model| model.model == item.binding.model)
-        {
-            model.activating = true;
-        }
+    native::submit(launch);
+}
+
+/// Take up the nearest inert item within reach, giving it a fresh actor in the hand.
+///
+/// A released actor is a simulating body, which the engine no longer follows from its transform, so
+/// the item is admitted to the hand with a new inert actor rather than a teleported one.
+pub(crate) fn take_loose(hand: Hand, world: Vec3, tuning: &GrenadeConfig) -> bool {
+    let Some(item) = nearest_loose(world, tuning.catch.radius_m) else {
+        return false;
+    };
+    let Some(old) = actor(item).filter(|actor| actor.explosive().is_some()) else {
+        return false;
+    };
+    if native::waiting(item) || live::safe_item(item.item) != Some(item) {
+        return false;
     }
+    let Some(held) = grip_world(hand, tuning) else {
+        return false;
+    };
+    let Some(owner) = (unsafe { engine::local_player() }) else {
+        return false;
+    };
+    let Some(weapon) = grenade_weapon(owner) else {
+        return false;
+    };
+    let Some(replacement) = (unsafe { native::create(weapon, held) }) else {
+        return false;
+    };
+    let landed = {
+        let mut state = STATE.lock();
+        state
+            .items
+            .iter_mut()
+            .find(|entry| entry.model == item.binding.lease)
+            .filter(|_| old.explosive().is_some())
+            .filter(|_| live::move_safe_item(item, Place::Hand(hand)).is_ok())
+            .map(|entry| {
+                entry.world = [held; 2];
+                std::mem::replace(&mut entry.actor, replacement.clone())
+            })
+    };
+    let Some(landed) = landed else {
+        unsafe { native::remove(&replacement) };
+        return false;
+    };
+    unsafe { native::remove(&landed) };
+    COUNTS.lock().recovered += 1;
+    true
 }
 
-/// Pick up the nearest inert loose model within reach, preserving its item identity.
-pub(crate) fn take_loose(hand: Hand, world: Vec3, radius_m: f32) -> bool {
-    let items = live::safe_items();
-    let state = STATE.lock();
-    let nearest = items
-        .iter()
-        .filter(|item| matches!(item.place, Place::World(_)))
-        .filter_map(|item| {
-            let model = state
-                .models
-                .iter()
-                .find(|model| model.model == item.binding.model && !model.activating)?;
-            let distance = model.world[1].w_axis.truncate().distance(world);
-            (distance <= radius_m).then_some((*item, distance))
-        })
-        .min_by(|a, b| a.1.total_cmp(&b.1))
-        .map(|(item, _)| item);
-    drop(state);
-    nearest.is_some_and(|item| live::move_safe_item(item, Place::Hand(hand)).is_ok())
-}
-
-/// World-space grab points for the inert loose models.
+/// World-space grab points for the inert loose items.
 pub(crate) fn loose() -> Vec<Vec3> {
     let items = live::safe_items();
-    STATE
-        .lock()
-        .models
+    let state = STATE.lock();
+    state
+        .items
         .iter()
-        .filter(|model| {
-            !model.activating
-                && items.iter().any(|item| {
-                    item.binding.model == model.model && matches!(item.place, Place::World(_))
-                })
+        .filter(|entry| {
+            items.iter().any(|item| {
+                item.binding.lease == entry.model && matches!(item.place, Place::World(_))
+            })
         })
-        .map(|model| model.world[1].w_axis.truncate())
+        .filter_map(|entry| entry.actor.position())
         .collect()
 }
 
-/// Note tracked world grips for the safe model placement.
+/// The actor behind an item, while the pool still holds it.
+pub(super) fn actor(item: SafeItemView) -> Option<Actor> {
+    STATE
+        .lock()
+        .items
+        .iter()
+        .find(|entry| entry.model == item.binding.lease)
+        .map(|entry| entry.actor.clone())
+}
+
+/// Move a released item into the world: its actor is in the simulation, which owns it from here.
+pub(super) fn dropped(item: SafeItemView) {
+    let Some(current) = live::safe_item(item.item) else {
+        return;
+    };
+    if matches!(current.place, Place::World(_)) {
+        return;
+    }
+    if let Err(error) = live::move_safe_item(current, Place::World(Departure::Dropped)) {
+        tracing::debug!(target: "controllers", %error, "grenade: released item could not be placed in the world");
+    } else {
+        COUNTS.lock().dropped += 1;
+    }
+}
+
+/// Retire an item whose tree became a live grenade: the loadout no longer owns it.
+pub(super) fn launched(item: SafeItemView) {
+    retire(item, "launched item");
+}
+
+/// Retire an item whose actor the pool has already reclaimed.
+pub(super) fn lost(item: SafeItemView) {
+    forget(item.binding.lease);
+    retire(item, "item whose actor was reclaimed");
+}
+
+/// Note tracked world grips for the item transforms.
 pub(crate) fn observe(grips: [Option<Pose>; 2], tuning: &GrenadeConfig) {
     let items = live::safe_items();
     let mut state = STATE.lock();
@@ -221,100 +275,194 @@ pub(crate) fn observe(grips: [Option<Pose>; 2], tuning: &GrenadeConfig) {
     for item in items {
         if let Place::Hand(hand) = item.place
             && let Some(grip) = grips[hand.index()]
-            && let Some(model) = state
-                .models
+            && let Some(entry) = state
+                .items
                 .iter_mut()
-                .find(|model| model.model == item.binding.model)
+                .find(|entry| entry.model == item.binding.lease)
         {
-            model.world = [model.world[1], matrix(grip, hand, tuning)];
+            entry.world = [entry.world[1], matrix(grip, hand, tuning)];
         }
     }
 }
 
-/// Retire the safe identity only after its replacement has launched successfully.
-pub(crate) fn launched(item: SafeItemView) {
-    if let Err(error) = live::retire_safe_item(item) {
-        tracing::warn!(target: "controllers", %error, "grenade: launched item's safe representation could not retire");
-    }
-}
-
-/// Keep the model inert and available for pickup when native activation cannot complete.
-pub(crate) fn activation_failed(item: SafeItemView) {
-    if let Some(model) = STATE
-        .lock()
-        .models
-        .iter_mut()
-        .find(|model| model.model == item.binding.model)
-    {
-        model.activating = false;
-    }
-}
-
-/// Render the independent safe models; also reap models whose table identities have retired.
+/// Give every item's actor the transform its place resolves to, and retire the items whose actor the
+/// pool has taken.
 ///
 /// # Safety
 ///
 /// The game thread, outside the world update.
-pub(crate) unsafe fn render_frame(dtf: f32) {
+pub(crate) unsafe fn render_frame() {
     let owner = if crate::hooks::in_gameplay() {
-        (unsafe { engine::local_player() }).map(|owner| owner as *const _ as usize)
+        (unsafe { engine::local_player() }).map(|owner| owner as *const Character as usize)
     } else {
         None
     };
-    let mut state = STATE.lock();
-    if state.owner.is_some() && state.owner != owner {
-        drop(state);
+    let current_owner = STATE.lock().owner;
+    if current_owner.is_some() && current_owner != owner {
         unsafe { clear() };
         return;
     }
+    let retiring = std::mem::take(&mut STATE.lock().retiring);
+    for actor in retiring {
+        unsafe { native::remove(&actor) };
+    }
     let items = live::safe_items();
-    let Some(manager) = (unsafe { ModelInstanceManager::get() }) else {
-        return;
-    };
-    state.models.retain(|model| {
-        let exists = items.iter().any(|item| item.binding.model == model.model);
-        if !exists {
-            unsafe { manager.AddToDeleteQueue(model.instance as *mut ModelInstance, false) };
-        }
-        exists
+    native::reconcile(&items);
+    let RegistryPlan {
+        gone,
+        removed,
+        placements,
+    } = reconcile_registry(&mut STATE.lock().items, &items, |actor| {
+        actor.explosive().is_some()
     });
-    let t = if dtf.is_finite() {
-        dtf.clamp(0.0, 1.0)
-    } else {
-        1.0
-    };
-    for model in &state.models {
-        let world = lerp_transform(model.world[0], model.world[1], t);
-        if world.is_finite() {
-            unsafe {
-                (*(model.instance as *mut ModelInstance)).UpdateMatrix(&Matrix4::from(world))
-            };
+    for actor in removed {
+        unsafe { native::remove(&actor) };
+    }
+    for (actor, [previous, world]) in placements {
+        unsafe { native::place(&actor, previous, world) };
+    }
+    for item in &items {
+        if gone.contains(&item.binding.lease) || actor(*item).is_none() {
+            lost(*item);
         }
+    }
+    if let Some(owner) = unsafe { engine::local_player() }
+        && let Some(weapon) = grenade_weapon(owner)
+    {
+        unsafe { native::update(weapon) };
     }
 }
 
-/// Leave held items as inert models when input stops, rather than arming them.
+/// Leave held items to the world when input stops, without arming anything.
 pub(crate) fn stand_down() {
-    native::cancel();
+    native::disarm();
     for hand in Hand::BOTH {
-        if let Some(item) = in_hand(hand) {
-            let _ = live::move_safe_item(item, Place::World(Departure::Dropped));
+        let Some(item) = in_hand(hand) else {
+            continue;
+        };
+        let Some(world) = position(item.binding.lease) else {
+            continue;
+        };
+        native::submit(native::Launch {
+            item,
+            hand,
+            world,
+            velocity: Vec3::ZERO,
+            arm: false,
+        });
+    }
+}
+
+/// Retire every owned actor at the next serialized render boundary. This is safe from reset
+/// callbacks, which may run on a simulation worker and must not dereference pooled actors.
+pub(crate) fn reset() {
+    native::clear();
+    let mut state = STATE.lock();
+    let items = std::mem::take(&mut state.items);
+    state
+        .retiring
+        .extend(items.into_iter().map(|item| item.actor));
+    state.owner = None;
+    state.grips = [None; 2];
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Membership {
+    Remove,
+    Lost,
+    Drive,
+    Simulated,
+}
+
+fn membership(place: Option<Place>, alive: bool) -> Membership {
+    if !alive {
+        Membership::Lost
+    } else {
+        match place {
+            None => Membership::Remove,
+            Some(Place::Hand(_) | Place::Socket(_)) => Membership::Drive,
+            Some(_) => Membership::Simulated,
         }
     }
 }
 
-fn deliberate(release: Option<Release>) -> bool {
-    release.is_some_and(|release| release.velocity.is_finite() && release.velocity.length() >= 1.0)
+fn deliberate(release: Option<Release>, tuning: &GrenadeConfig) -> bool {
+    release.is_some_and(|release| {
+        release.velocity.is_finite() && release.velocity.length() >= tuning.arm_speed_mps.max(0.0)
+    })
 }
 
-fn new_model_id() -> Option<ModelLeaseId> {
+fn nearest_loose(world: Vec3, radius_m: f32) -> Option<SafeItemView> {
+    let items = live::safe_items();
+    let state = STATE.lock();
+    items
+        .iter()
+        .filter(|item| matches!(item.place, Place::World(_)))
+        .filter_map(|item| {
+            let centre = state
+                .items
+                .iter()
+                .find(|entry| entry.model == item.binding.lease)?
+                .actor
+                .position()?;
+            let distance = centre.distance(world);
+            (distance.is_finite() && distance <= radius_m).then_some((*item, distance))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(item, _)| item)
+}
+
+fn grenade_weapon(owner: &mut Character) -> Option<&mut ThrownGrenadeWeapon> {
+    let weapon = owner
+        .m_Inventory
+        .m_Weapons
+        .get(WeaponSlot::E_SLOT_HAND_GRENADE as usize)?;
+    // SAFETY: the inventory owns its weapons for as long as the owner lives.
+    unsafe { weapon.px.cast::<ThrownGrenadeWeapon>().as_mut() }
+}
+
+fn position(model: ItemLeaseId) -> Option<Mat4> {
+    STATE
+        .lock()
+        .items
+        .iter()
+        .find(|entry| entry.model == model)
+        .map(|entry| entry.world[1])
+}
+
+fn place(model: ItemLeaseId, world: Mat4) {
+    if !world.is_finite() {
+        return;
+    }
+    if let Some(entry) = STATE
+        .lock()
+        .items
+        .iter_mut()
+        .find(|entry| entry.model == model)
+    {
+        entry.world = [entry.world[1], world];
+    }
+}
+
+fn forget(model: ItemLeaseId) {
+    STATE.lock().items.retain(|entry| entry.model != model);
+}
+
+fn retire(item: SafeItemView, what: &str) {
+    forget(item.binding.lease);
+    if let Err(error) = live::retire_safe_item(item) {
+        tracing::warn!(target: "controllers", %error, "grenade: {what}'s safe representation could not retire");
+    }
+}
+
+fn new_model_id() -> Option<ItemLeaseId> {
     NEXT_MODEL
         .try_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
             next.checked_add(1)
         })
         .ok()
         .and_then(NonZeroU64::new)
-        .map(ModelLeaseId::new)
+        .map(ItemLeaseId::new)
 }
 
 fn matrix(grip: Pose, hand: Hand, tuning: &GrenadeConfig) -> Mat4 {
@@ -324,34 +472,37 @@ fn matrix(grip: Pose, hand: Hand, tuning: &GrenadeConfig) -> Mat4 {
     )
 }
 
-fn place(id: ModelLeaseId, world: Mat4) {
-    if !world.is_finite() {
-        return;
-    }
-    if let Some(model) = STATE
-        .lock()
-        .models
-        .iter_mut()
-        .find(|model| model.model == id)
-    {
-        model.world = [model.world[1], world];
-    }
+/// The transform a held item takes in a tracked hand.
+fn grip_world(hand: Hand, tuning: &GrenadeConfig) -> Option<Mat4> {
+    STATE.lock().grips[hand.index()].map(|grip| matrix(grip, hand, tuning))
 }
 
 unsafe fn clear() {
-    native::cancel();
-    let mut state = STATE.lock();
-    for model in state.models.drain(..) {
-        if let Some(item) = live::safe_items()
-            .into_iter()
-            .find(|item| item.binding.model == model.model)
-        {
-            let _ = live::retire_safe_item(item);
-        }
-        if let Some(manager) = unsafe { ModelInstanceManager::get() } {
-            unsafe { manager.AddToDeleteQueue(model.instance as *mut ModelInstance, false) };
+    // The queue names items that are about to be retired, so it goes first.
+    native::clear();
+    let actors: Vec<Actor> = {
+        let mut state = STATE.lock();
+        let mut actors = std::mem::take(&mut state.retiring);
+        actors.extend(state.items.drain(..).map(|item| item.actor));
+        actors
+    };
+    if !actors.is_empty() {
+        tracing::debug!(
+            target: "controllers",
+            actors = actors.len(),
+            "grenade: clearing every safe item's actor",
+        );
+    }
+    for actor in &actors {
+        unsafe { native::remove(actor) };
+    }
+    let items = live::safe_items();
+    for item in items {
+        if let Err(error) = live::retire_safe_item(item) {
+            tracing::warn!(target: "controllers", %error, "grenade: item could not retire on cleanup");
         }
     }
+    let mut state = STATE.lock();
     state.owner = None;
     state.grips = [None; 2];
 }
@@ -365,23 +516,70 @@ fn ensure_cleanup() {
     }
 }
 
-struct Model {
-    model: ModelLeaseId,
-    instance: usize,
+struct RegistryPlan<A> {
+    gone: Vec<ItemLeaseId>,
+    removed: Vec<A>,
+    placements: Vec<(A, [Mat4; 2])>,
+}
+
+fn reconcile_registry<A: Clone>(
+    entries: &mut Vec<Item<A>>,
+    items: &[SafeItemView],
+    alive: impl Fn(&A) -> bool,
+) -> RegistryPlan<A> {
+    let mut plan = RegistryPlan {
+        gone: Vec::new(),
+        removed: Vec::new(),
+        placements: Vec::new(),
+    };
+    entries.retain(|entry| {
+        let item = items.iter().find(|item| item.binding.lease == entry.model);
+        match membership(item.map(|item| item.place), alive(&entry.actor)) {
+            Membership::Remove => {
+                plan.removed.push(entry.actor.clone());
+                false
+            }
+            Membership::Lost => {
+                plan.gone.push(entry.model);
+                false
+            }
+            Membership::Drive => {
+                plan.placements.push((entry.actor.clone(), entry.world));
+                true
+            }
+            Membership::Simulated => true,
+        }
+    });
+    plan
+}
+
+struct Item<A = Actor> {
+    model: ItemLeaseId,
+    actor: A,
+    /// The item's transform for the previous tick and the current one, which the actor's render
+    /// update interpolates between.
     world: [Mat4; 2],
-    activating: bool,
 }
 
 struct State {
     owner: Option<usize>,
     grips: [Option<Pose>; 2],
-    models: Vec<Model>,
+    items: Vec<Item>,
+    retiring: Vec<Actor>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
     owner: None,
     grips: [None; 2],
-    models: Vec::new(),
+    items: Vec::new(),
+    retiring: Vec::new(),
+});
+static COUNTS: Mutex<Counts> = Mutex::new(Counts {
+    drawn: 0,
+    stowed: 0,
+    redrawn: 0,
+    dropped: 0,
+    recovered: 0,
 });
 static NEXT_MODEL: AtomicU64 = AtomicU64::new(1);
 static CLEANUP: AtomicBool = AtomicBool::new(false);
@@ -401,7 +599,7 @@ mod tests {
             .admit_safe_item(new_model_id().unwrap(), Hand::Right)
             .unwrap();
         assert_ne!(first.item, second.item);
-        assert_ne!(first.binding.model, second.binding.model);
+        assert_ne!(first.binding.lease, second.binding.lease);
         let stowed = table
             .move_safe_item(first, Place::Socket(Socket::Hip(Hand::Left)))
             .unwrap();
@@ -418,24 +616,152 @@ mod tests {
             .move_safe_item(dropped, Place::Hand(Hand::Right))
             .unwrap();
         assert_eq!(transferred.item, first.item);
-        assert_eq!(transferred.binding.model, first.binding.model);
+        assert_eq!(transferred.binding.lease, first.binding.lease);
         assert_eq!(recovered.item, second.item);
-        assert_eq!(recovered.binding.model, second.binding.model);
-        assert_eq!(table.retire_safe_item(transferred), Ok(first.binding.model));
+        assert_eq!(recovered.binding.lease, second.binding.lease);
+        assert_eq!(table.retire_safe_item(transferred), Ok(first.binding.lease));
         assert_eq!(table.safe_item(first.item), None);
         assert_eq!(table.safe_item(second.item), Some(recovered));
     }
 
     #[test]
-    fn only_a_tracked_deliberate_release_activates_a_grenade() {
-        assert!(!deliberate(None));
-        for velocity in [Vec3::ZERO, Vec3::X * 0.99, Vec3::NAN] {
-            assert!(!deliberate(Some(Release { velocity })));
+    fn only_a_tracked_deliberate_release_arms_a_grenade() {
+        let tuning = GrenadeConfig::new();
+        assert!(!deliberate(None, &tuning));
+        for velocity in [
+            Vec3::ZERO,
+            Vec3::NAN,
+            Vec3::X * (tuning.arm_speed_mps * 0.5),
+        ] {
+            assert!(!deliberate(Some(Release { velocity }), &tuning));
         }
-        assert!(deliberate(Some(Release { velocity: Vec3::X })));
-        assert!(deliberate(Some(Release {
-            velocity: -Vec3::Y * 8.0
-        })));
+        for velocity in [Vec3::X * tuning.arm_speed_mps, -Vec3::Y * 8.0] {
+            assert!(deliberate(Some(Release { velocity }), &tuning));
+        }
+    }
+
+    #[test]
+    fn the_arming_speed_comes_from_the_tuning() {
+        let slow = GrenadeConfig {
+            arm_speed_mps: 0.25,
+            ..GrenadeConfig::new()
+        };
+        let fast = GrenadeConfig {
+            arm_speed_mps: 4.0,
+            ..GrenadeConfig::new()
+        };
+        let gentle = Release {
+            velocity: Vec3::X * 0.5,
+        };
+        assert!(deliberate(Some(gentle), &slow));
+        assert!(!deliberate(Some(gentle), &fast));
+    }
+
+    #[test]
+    fn registry_plan_preserves_world_pose_and_retires_orphaned_or_expired_actors() {
+        let mut table = Loadout::new(BodyLayout::full(Hand::Right));
+        let held = table
+            .admit_safe_item(new_model_id().unwrap(), Hand::Left)
+            .unwrap();
+        let loose = table
+            .admit_safe_item(new_model_id().unwrap(), Hand::Right)
+            .unwrap();
+        let loose = table
+            .move_safe_item(loose, Place::World(Departure::Dropped))
+            .unwrap();
+        let orphan = new_model_id().unwrap();
+        let expired = new_model_id().unwrap();
+        let cached = Mat4::from_translation(Vec3::X);
+        let mut entries = vec![
+            Item {
+                model: held.binding.lease,
+                actor: 1,
+                world: [cached; 2],
+            },
+            Item {
+                model: loose.binding.lease,
+                actor: 2,
+                world: [cached; 2],
+            },
+            Item {
+                model: orphan,
+                actor: 3,
+                world: [cached; 2],
+            },
+            Item {
+                model: expired,
+                actor: 4,
+                world: [cached; 2],
+            },
+        ];
+        let items: Vec<_> = table.safe_items().collect();
+        let plan = reconcile_registry(&mut entries, &items, |actor| *actor != 4);
+        assert_eq!(plan.placements, vec![(1, [cached; 2])]);
+        assert_eq!(plan.removed, vec![3]);
+        assert_eq!(plan.gone, vec![expired]);
+        assert_eq!(
+            entries.iter().map(|entry| entry.actor).collect::<Vec<_>>(),
+            [1, 2]
+        );
+        let plan = reconcile_registry(&mut entries, &[], |_| true);
+        assert_eq!(plan.removed, [1, 2]);
+        assert!(plan.placements.is_empty());
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn rendering_drives_only_held_and_stowed_live_items() {
+        assert_eq!(
+            membership(Some(Place::Hand(Hand::Left)), true),
+            Membership::Drive
+        );
+        assert_eq!(
+            membership(Some(Place::Socket(Socket::Hip(Hand::Right))), true),
+            Membership::Drive
+        );
+        assert_eq!(
+            membership(Some(Place::World(Departure::Dropped)), true),
+            Membership::Simulated
+        );
+        assert_eq!(membership(None, true), Membership::Remove);
+        assert_eq!(
+            membership(Some(Place::Hand(Hand::Left)), false),
+            Membership::Lost
+        );
+        assert_eq!(membership(None, false), Membership::Lost);
+    }
+
+    #[test]
+    fn stop_and_restart_reconcile_old_leases_even_with_the_same_owner() {
+        let mut table = Loadout::new(BodyLayout::full(Hand::Right));
+        let held = table
+            .admit_safe_item(new_model_id().unwrap(), Hand::Left)
+            .unwrap();
+        let stowed = table
+            .admit_safe_item(new_model_id().unwrap(), Hand::Right)
+            .unwrap();
+        let stowed = table
+            .move_safe_item(stowed, Place::Socket(Socket::Hip(Hand::Right)))
+            .unwrap();
+        let loose = table
+            .admit_safe_item(new_model_id().unwrap(), Hand::Right)
+            .unwrap();
+        let loose = table
+            .move_safe_item(loose, Place::World(Departure::Dropped))
+            .unwrap();
+        table = Loadout::new(BodyLayout::full(Hand::Right));
+        let fresh = table
+            .admit_safe_item(new_model_id().unwrap(), Hand::Left)
+            .unwrap();
+        for old in [held, stowed, loose] {
+            let place = table
+                .safe_items()
+                .into_iter()
+                .find(|item| item.binding.lease == old.binding.lease)
+                .map(|item| item.place);
+            assert_eq!(membership(place, true), Membership::Remove);
+        }
+        assert_eq!(membership(Some(fresh.place), true), Membership::Drive);
     }
 
     #[test]

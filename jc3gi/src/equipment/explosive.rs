@@ -57,9 +57,10 @@ pub struct Explosive {
     /// Seconds since the explosive was thrown; [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) resets it.
     pub m_TimeSinceThrow: f32,
     /// Seconds until the explosive detonates. The constructor sets it to the grenade weapon's
-    /// detonation time; the post-simulation update counts it down by the tick delta while the
-    /// virtual `ShouldTickDetonationTimer` holds (a hand grenade's does from the moment it spawns,
-    /// primed or thrown) and calls the virtual `Detonate` once it reaches zero.
+    /// detonation time; [`UpdatePostSim`](crate::equipment::explosive::Explosive::UpdatePostSim) counts it down by the tick delta
+    /// while the virtual `ShouldTickDetonationTimer` holds (a hand grenade's does from the moment it
+    /// spawns, primed or thrown) and calls the virtual `Detonate` once it is at or below zero, a
+    /// dispatch that does not consult that virtual again.
     pub m_DetonationTimer: f32,
     /// The detonation time [`m_DetonationTimer`](crate::equipment::explosive::Explosive::m_DetonationTimer) started from.
     pub m_StartDetonationTimer: f32,
@@ -201,6 +202,28 @@ impl Explosive {
             f(self as *mut Self as _)
         }
     }
+    pub const UpdatePostSim_ADDRESS: usize = 0x14091DB90;
+    /// The explosive's post-simulation update (its override of the `CGameObject` virtual). It is
+    /// where the fuse runs: it counts [`m_DetonationTimer`](crate::equipment::explosive::Explosive::m_DetonationTimer) down by the
+    /// context's tick delta while the virtual `ShouldTickDetonationTimer` returns true, and calls the
+    /// virtual `Detonate` once the timer is at or below zero, without consulting that virtual again.
+    /// The rest of the update places a body attached to a parent object at the parent's transform,
+    /// follows the body with the sound instance, re-enables collisions that were disabled against the
+    /// thrower once the explosive has been loose for a moment, and drops the explosive from the update
+    /// when it has no physics body. `game_object` is the explosive's `CGameObject` subobject
+    /// ([`GAME_OBJECT_BASE_OFFSET`](crate::equipment::explosive::Explosive::GAME_OBJECT_BASE_OFFSET)), not the start of the explosive.
+    pub unsafe fn UpdatePostSim(
+        game_object: *mut ::std::ffi::c_void,
+        context: *mut crate::game::GameObjectUpdateContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                game_object: *mut ::std::ffi::c_void,
+                context: *mut crate::game::GameObjectUpdateContext,
+            ) = ::std::mem::transmute(Self::UpdatePostSim_ADDRESS);
+            f(game_object, context)
+        }
+    }
 }
 impl Explosive {
     /// The offset of the embedded `CGameObject` subobject. Weak references to the explosive (such
@@ -223,7 +246,10 @@ impl std::convert::AsMut<Explosive> for Explosive {
 /// targets, extra trail effects, and the landing position.
 pub struct Grenade {
     _field_0: [u8; 1568],
-    /// Whether the grenade applies the thrower's grenade upgrades (homing and similar).
+    /// Whether the grenade applies the thrower's grenade upgrades. The collision handler gates
+    /// the contact, hostile-contact, and character-or-vehicle contact upgrades on this field.
+    /// Those upgrades can zero [`Explosive::m_DetonationTimer`](crate::equipment::explosive::Explosive::m_DetonationTimer) without consulting
+    /// [`m_ShouldTickDetonationTimer`](crate::equipment::explosive::Grenade::m_ShouldTickDetonationTimer).
     pub m_CanUseUpgrades: bool,
     _field_621: [u8; 255],
     /// The target position the grenade was thrown at, recorded by
@@ -455,5 +481,25 @@ impl std::convert::AsRef<PlantedExplosive> for PlantedExplosive {
 impl std::convert::AsMut<PlantedExplosive> for PlantedExplosive {
     fn as_mut(&mut self) -> &mut PlantedExplosive {
         self
+    }
+}
+pub const AllocateGrenade_ADDRESS: usize = 0x1409630C0;
+/// Reserves a grenade slot under the ammunition manager's critical section. When no slot remains,
+/// `reclaim` permits `FreePoolSoPlayerCanFire` to erase an existing entry before retrying.
+/// With `reclaim` false, exhaustion returns null without removing another object.
+pub unsafe fn AllocateGrenade(
+    manager: *mut ::std::ffi::c_void,
+    allocation_type: u32,
+    position: *const crate::types::math::Vector3,
+    reclaim: bool,
+) -> *mut ::std::ffi::c_void {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            manager: *mut ::std::ffi::c_void,
+            allocation_type: u32,
+            position: *const crate::types::math::Vector3,
+            reclaim: bool,
+        ) -> *mut ::std::ffi::c_void = ::std::mem::transmute(AllocateGrenade_ADDRESS);
+        f(manager, allocation_type, position, reclaim)
     }
 }

@@ -69,7 +69,7 @@ impl fmt::Display for Binding {
                 slot_label(*slot)
             ),
             Binding::Awaiting(Awaiting::Respawn) => f.write_str("waiting to be spawned again"),
-            Binding::SafeItem(binding) => write!(f, "safe item, {}", binding.model),
+            Binding::SafeItem(binding) => write!(f, "safe item, {}", binding.lease),
         }
     }
 }

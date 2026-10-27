@@ -220,7 +220,6 @@ pub(crate) fn finish_tick(
                 None => GrabOutcome::ForegripUnmeasured,
             },
             GrabVolume::GrenadePouch | GrabVolume::GrenadeLocker => GrabOutcome::Pouch,
-            GrabVolume::GrenadePin => GrabOutcome::Pin,
             GrabVolume::LiveGrenade => GrabOutcome::Catch,
             GrabVolume::MagazinePouch
             | GrabVolume::WorldMagazine
@@ -299,9 +298,6 @@ pub(crate) fn finish_tick(
             pouch_grab: Hand::BOTH
                 .into_iter()
                 .find(|h| grabs[h.index()] == Some(GrabVolume::GrenadePouch)),
-            pin_grab: Hand::BOTH
-                .into_iter()
-                .find(|h| grabs[h.index()] == Some(GrabVolume::GrenadePin)),
             catch_grab: Hand::BOTH
                 .into_iter()
                 .find(|h| grabs[h.index()] == Some(GrabVolume::LiveGrenade)),

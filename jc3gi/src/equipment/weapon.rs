@@ -1569,8 +1569,11 @@ impl ThrownGrenadeWeapon {
     pub const PrimeGrenade_ADDRESS: usize = 0x140989470;
     /// Primes a grenade (`CreatePrimed<CGrenade>`): consumes one grenade, allocates a
     /// [`Grenade`](crate::equipment::explosive::Grenade) from the ammunition pool at the weapon's world
-    /// matrix (returning null when the pool is full), plays the priming effect, stores it in
-    /// [`m_PrimedGrenade`](crate::equipment::weapon::ThrownGrenadeWeapon::m_PrimedGrenade), and adds it to the update. The grenade's
+    /// matrix, plays the priming effect, stores it in
+    /// [`m_PrimedGrenade`](crate::equipment::weapon::ThrownGrenadeWeapon::m_PrimedGrenade), and adds it to the update. Player holder
+    /// information enables reclamation in [`AllocateGrenade`](crate::equipment::explosive::AllocateGrenade),
+    /// so a full pool can erase an existing entry before allocating. Failure returns null.
+    /// The grenade's
     /// detonation timer runs from this point
     /// ([`Explosive::m_DetonationTimer`](crate::equipment::explosive::Explosive::m_DetonationTimer)), so a
     /// grenade held for longer than its fuse explodes before it is thrown.

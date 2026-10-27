@@ -6,10 +6,7 @@
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::weapons::{
-    c4::config::C4StickConfig,
-    grenade::config::{GrenadeCatchConfig, GrenadePinConfig},
-};
+use crate::controllers::weapons::{c4::config::C4StickConfig, grenade::config::GrenadeCatchConfig};
 
 /// The body's sockets (see [`crate::controllers::weapons::docks`]). They act only under the
 /// controller scheme, so they default on.
@@ -651,8 +648,9 @@ pub struct GrenadeConfig {
     /// The gap between warning pulses when the warning starts, and when the fuse is about to run
     /// out, seconds.
     pub warning_interval_s: [f32; 2],
-    /// The pin of a grenade taken from the pouch.
-    pub pin: GrenadePinConfig,
+    /// The fastest hand release that counts as a deliberate throw rather than letting the grenade
+    /// go, metres per second. A release below it leaves the item inert in the world.
+    pub arm_speed_mps: f32,
     /// Catching live grenades.
     pub catch: GrenadeCatchConfig,
 }
@@ -670,7 +668,7 @@ impl GrenadeConfig {
             warning_overlay: true,
             warning_haptics: true,
             warning_interval_s: [0.5, 0.08],
-            pin: GrenadePinConfig::new(),
+            arm_speed_mps: 1.0,
             catch: GrenadeCatchConfig::new(),
         }
     }

@@ -10,7 +10,7 @@
 //! the most that may be live at once leaves it out of the live list, where nothing would detonate
 //! it, so a release with no room left takes the charge back instead of throwing it.
 
-use crate::controllers::{frame::Hand, weapons::grenade::stage::Release};
+use crate::controllers::{frame::Hand, weapons::grenade::Release};
 
 /// Where a throw is.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
