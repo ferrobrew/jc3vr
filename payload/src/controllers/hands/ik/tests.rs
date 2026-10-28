@@ -21,10 +21,36 @@ fn array<T>(values: &mut [T]) -> HkArray<T> {
     }
 }
 
+struct FixtureState;
+
+impl FixtureState {
+    fn new() -> Self {
+        Self::clear();
+        Self
+    }
+
+    fn clear() {
+        crate::controllers::frame::clear();
+        rig::invalidate();
+        DEFERRED.replace(None);
+        ownership::clear();
+        headpose::withdraw_anchors();
+    }
+}
+
+impl Drop for FixtureState {
+    fn drop(&mut self) {
+        Self::clear();
+    }
+}
+
 #[test]
 fn replacement_before_measure_cannot_seed_new_or_deferred_plans_with_old_arms() {
+    let _config = crate::config::test_fixture();
+    // Plan admission is under test, not the live controller and world-rotation adapters.
+    crate::config::CONFIG.lock().controllers.enabled = false;
     let _role = thread_role::enter(ThreadRole::Unmarked);
-    crate::controllers::frame::clear();
+    let _state = FixtureState::new();
     let mut bones: [HkaBone; 2] = unsafe { std::mem::zeroed() };
     let mut parents = [-1, 0];
     let mut havok: HkaSkeleton = unsafe { std::mem::zeroed() };
@@ -55,20 +81,24 @@ fn replacement_before_measure_cannot_seed_new_or_deferred_plans_with_old_arms() 
     character.m_DamageFlags = DamageStateFlags::ENABLED;
     character.m_WorldMatrixT1 = Mat4::IDENTITY.into();
     character.m_AnimatedModel.m_AnimationController = &mut controller;
-    std::hint::black_box((
-        &havok,
-        &skeleton,
-        &replacement,
-        &pose,
-        &producer,
-        &replacement_producer,
-    ));
-
     for replace_producer in [false, true] {
+        controller.m_Skeleton = &mut skeleton;
+        controller.m_PoseProducer = &mut producer;
         unsafe { rig::prepare(&character) };
         rig::seed_test_measurement();
-        assert!(rig::test_arms().iter().all(Option::is_some));
+        let arms = rig::test_arms(Quat::IDENTITY);
+        assert!(arms.iter().all(Option::is_some));
+        let view = Quat::from_rotation_y(0.6);
+        for (original, transported) in arms.into_iter().zip(rig::test_arms(view)) {
+            assert!(
+                transported
+                    .unwrap()
+                    .eye_to_shoulder
+                    .abs_diff_eq(view.inverse() * original.unwrap().eye_to_shoulder, 1.0e-6)
+            );
+        }
         let mut retained = unsafe { plan(&character) };
+        assert!(unsafe { retained.current_for(&character) });
         let old_identity = retained.arm_identity;
         let hand = CockpitHand {
             wrist: Pose::IDENTITY,
@@ -88,12 +118,12 @@ fn replacement_before_measure_cannot_seed_new_or_deferred_plans_with_old_arms() 
         } else {
             controller.m_Skeleton = &mut replacement;
         }
-        std::hint::black_box(&controller);
         let fresh = unsafe { plan(&character) };
         assert!(fresh.arm_identity.is_some());
         assert_ne!(fresh.arm_identity, old_identity);
-        assert!(rig::test_arms().iter().all(Option::is_none));
+        assert!(rig::test_arms(view).iter().all(Option::is_none));
         assert!(!unsafe { retained.current_for(&character) });
+        assert!(unsafe { fresh.current_for(&character) });
         headpose::set_anchors(Anchors {
             head: Vec3::Y,
             head_prev: Vec3::Y,
@@ -114,6 +144,4 @@ fn replacement_before_measure_cannot_seed_new_or_deferred_plans_with_old_arms() 
             [0.0; 2]
         );
     }
-    rig::invalidate();
-    headpose::withdraw_anchors();
 }

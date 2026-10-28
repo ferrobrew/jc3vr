@@ -14,6 +14,32 @@ fn key(
 }
 
 #[test]
+fn unavailable_measurements_do_not_resolve_a_native_view() {
+    let now = Instant::now();
+    let mut state = State::EMPTY;
+    let read = |state: &State, at| {
+        assert_eq!(
+            state.arms_with(at, || panic!("unavailable cache resolves a view")),
+            [None; 2]
+        );
+    };
+    read(&state, now);
+
+    let mut controller: AnimationController = unsafe { std::mem::zeroed() };
+    let mut skeleton: Skeleton = unsafe { std::mem::zeroed() };
+    let mut havok: HkaSkeleton = unsafe { std::mem::zeroed() };
+    state.prepare(
+        (key(&mut controller, &mut skeleton, &mut havok), 1),
+        Quat::IDENTITY,
+    );
+    state.last = Some(now);
+    read(&state, now);
+    state.resolved = [true; 2];
+    read(&state, now + Duration::from_secs(1));
+    read(&state, now - Duration::from_millis(1));
+}
+
+#[test]
 fn replacement_failure_expiry_and_view_changes_do_not_reuse_authoritative_old_arms() {
     let mut controller: AnimationController = unsafe { std::mem::zeroed() };
     let mut skeleton: Skeleton = unsafe { std::mem::zeroed() };

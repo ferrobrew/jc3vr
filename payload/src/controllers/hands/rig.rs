@@ -47,7 +47,7 @@ pub fn arms() -> [Option<MeasuredArm>; 2] {
     }
     STATE
         .lock()
-        .arms(Instant::now(), headpose::xr::body_rotation())
+        .arms_with(Instant::now(), headpose::xr::body_rotation)
 }
 
 /// Check the current native identity before composing any hand targets from retained measurements.
@@ -230,14 +230,22 @@ impl State {
         self.character_rotation = character_rotation;
     }
 
+    #[cfg(test)]
     fn arms(&self, now: Instant, view: Quat) -> [Option<MeasuredArm>; 2] {
+        self.arms_with(now, || view)
+    }
+
+    fn arms_with(&self, now: Instant, view: impl FnOnce() -> Quat) -> [Option<MeasuredArm>; 2] {
         let fresh = self.key.is_some()
             && self.last.is_some_and(|last| {
                 now >= last && now.duration_since(last) <= Duration::from_millis(250)
             });
-        let to_view = view.inverse() * self.character_rotation;
+        if !fresh || !self.resolved.iter().any(|resolved| *resolved) {
+            return [None; 2];
+        }
+        let to_view = view().inverse() * self.character_rotation;
         Hand::BOTH.map(|hand| {
-            if !fresh || !self.resolved[hand.index()] {
+            if !self.resolved[hand.index()] {
                 return None;
             }
             self.trackers[hand.index()].arm().map(|mut arm| {
@@ -251,8 +259,8 @@ impl State {
 static STATE: Mutex<State> = Mutex::new(State::EMPTY);
 
 #[cfg(test)]
-pub(crate) fn test_arms() -> [Option<MeasuredArm>; 2] {
-    STATE.lock().arms(Instant::now(), Quat::IDENTITY)
+pub(crate) fn test_arms(view: Quat) -> [Option<MeasuredArm>; 2] {
+    STATE.lock().arms(Instant::now(), view)
 }
 
 #[cfg(test)]
