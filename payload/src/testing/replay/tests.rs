@@ -1,3 +1,5 @@
+use std::sync::mpsc;
+
 use tracking_format::input::{CapturedInput, DiscontinuityReason, InputRecord};
 
 use super::*;
@@ -17,6 +19,15 @@ fn state() -> State {
         phase: PhaseState::Idle,
         last: None,
         orphans: Vec::new(),
+        shutting_down: false,
+    }
+}
+
+fn request(id: u32) -> Request {
+    Request {
+        run: RunId(id),
+        path: "fixture.tracking".into(),
+        options: ReplayOptions::default(),
     }
 }
 
@@ -148,6 +159,87 @@ fn runtime_replay_nonzero_origin_tail_and_repeated_start_stop() {
         assert!(take_frames().is_none());
     }
     history::take_capture();
+}
+
+#[test]
+fn blocked_loaders_retain_capacity_and_recover_after_reaping() {
+    let _serial = history::TEST_LOCK.lock();
+    let mut state = state();
+    let mut releases = Vec::new();
+    for id in 1..=2 {
+        state.admit_loader().unwrap();
+        let (send, receive) = mpsc::channel();
+        releases.push(send);
+        let handle = std::thread::spawn(move || {
+            receive.recv().unwrap();
+            Err(ReplayError::Disabled)
+        });
+        state.phase = PhaseState::Loading {
+            request: request(id),
+            handle,
+        };
+        state.finish(ReplayOutcome::Stopped);
+    }
+    assert!(matches!(
+        state.admit_loader(),
+        Err(ReplayError::LoaderCapacity)
+    ));
+    assert_eq!(state.orphans.len(), 2);
+    releases.remove(0).send(()).unwrap();
+    let (done, wait) = mpsc::channel();
+    let handle = state.orphans.remove(0);
+    assert!(handle.join().unwrap().is_err());
+    state.orphans.push(std::thread::spawn(move || {
+        done.send(()).unwrap();
+        Err(ReplayError::Disabled)
+    }));
+    wait.recv().unwrap();
+    // A finished handle is kept until the production admission reaps and joins it.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !state.orphans.last().unwrap().is_finished() {
+        assert!(Instant::now() < deadline, "loader completion deadline");
+        std::thread::yield_now();
+    }
+    state.admit_loader().unwrap();
+    assert_eq!(state.orphans.len(), 1);
+    releases.remove(0).send(()).unwrap();
+    assert!(state.orphans.pop().unwrap().join().unwrap().is_err());
+}
+
+#[test]
+fn shutdown_retains_active_and_orphan_loaders_until_joined() {
+    let _serial = history::TEST_LOCK.lock();
+    let owner = Mutex::new(state());
+    let mut releases = Vec::new();
+    for id in 1..=2 {
+        let (send, receive) = mpsc::channel();
+        releases.push(send);
+        let handle = std::thread::spawn(move || {
+            receive.recv().unwrap();
+            Err(ReplayError::Disabled)
+        });
+        let mut state = owner.lock();
+        state.phase = PhaseState::Loading {
+            request: request(id),
+            handle,
+        };
+        if id == 1 {
+            state.finish(ReplayOutcome::Stopped);
+        }
+    }
+    for _ in 0..2 {
+        assert!(!shutdown_state(&owner, Duration::ZERO));
+        assert_eq!(owner.lock().orphans.len(), 2);
+    }
+    assert!(matches!(
+        owner.lock().admit_loader(),
+        Err(ReplayError::ShuttingDown)
+    ));
+    for release in releases {
+        release.send(()).unwrap();
+    }
+    assert!(shutdown_state(&owner, Duration::from_secs(2)));
+    assert!(owner.lock().orphans.is_empty());
 }
 
 #[test]

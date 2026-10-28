@@ -145,6 +145,8 @@ pub(crate) enum ReplayError {
         count: usize,
         max: usize,
     },
+    LoaderCapacity,
+    ShuttingDown,
     LoaderThread(Arc<std::io::Error>),
     /// The loader thread panicked.
     LoaderPanicked {
@@ -189,6 +191,10 @@ impl std::fmt::Display for ReplayError {
                 }
                 write!(f, "{field} has {count} entries; the staging limit is {max}")
             }
+            ReplayError::LoaderCapacity => {
+                write!(f, "the {MAX_LOADERS}-loader capacity is occupied")
+            }
+            ReplayError::ShuttingDown => write!(f, "loader admission is closed for shutdown"),
             ReplayError::LoaderThread(error) => {
                 write!(f, "could not spawn the loader thread: {error}")
             }
@@ -375,34 +381,39 @@ pub(crate) fn take_frames() -> Option<Vec<ReplayedFrame>> {
 /// replay's is left running; `false` means the payload must stay mapped.
 #[must_use = "a loader that did not finish means the payload must stay mapped"]
 pub(crate) fn shutdown() -> bool {
-    let mut state = STATE.lock();
+    shutdown_state(&STATE, SHUTDOWN_BUDGET)
+}
+
+fn shutdown_state(owner: &Mutex<State>, budget: Duration) -> bool {
+    let mut state = owner.lock();
+    state.shutting_down = true;
     state.pending = None;
-    let mut handles = std::mem::take(&mut state.orphans);
     if let PhaseState::Loading { handle, .. } =
         std::mem::replace(&mut state.phase, PhaseState::Idle)
     {
-        handles.push(handle);
+        state.orphans.push(handle);
     }
     drop(state);
     *STEP.lock() = Step::default();
     history::end_replay();
     ACTIVE.store(false, Ordering::Relaxed);
     DRIVING.store(false, Ordering::Relaxed);
-    let deadline = Instant::now() + SHUTDOWN_BUDGET;
-    for handle in handles {
-        while !handle.is_finished() {
-            if Instant::now() >= deadline {
-                tracing::error!(
-                    "replay: a loader did not finish within {} s; leaving the payload mapped",
-                    SHUTDOWN_BUDGET.as_secs()
-                );
-                return false;
-            }
-            std::thread::sleep(Duration::from_millis(10));
+    let deadline = Instant::now() + budget;
+    loop {
+        let mut state = owner.lock();
+        reap(&mut state.orphans);
+        if state.orphans.is_empty() {
+            return true;
         }
-        let _ = handle.join();
+        drop(state);
+        if Instant::now() >= deadline {
+            tracing::error!(
+                "replay: loaders remain owned after the shutdown deadline; leaving the payload mapped"
+            );
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(10));
     }
-    true
 }
 
 fn input_deadline(
@@ -481,6 +492,7 @@ struct State {
     last: Option<(RunId, ReplayOutcome)>,
     /// The loaders of replays replaced while they loaded.
     orphans: Vec<LoaderHandle>,
+    shutting_down: bool,
 }
 
 type LoaderHandle = JoinHandle<Result<Loaded, ReplayError>>;
@@ -492,6 +504,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     phase: PhaseState::Idle,
     last: None,
     orphans: Vec::new(),
+    shutting_down: false,
 });
 
 /// What [`begin_frame`] stages for the seams.
@@ -508,11 +521,35 @@ static STEP: Mutex<Step> = Mutex::new(Step {
     frames: None,
 });
 
+const MAX_LOADERS: usize = 2;
 const FRAME_BUDGET: usize = 1;
 const INPUT_BUDGET: usize = 128;
 const RECENTER_BUDGET: usize = 64;
 
+fn reap(handles: &mut Vec<LoaderHandle>) {
+    let mut index = 0;
+    while index < handles.len() {
+        if handles[index].is_finished() {
+            let _ = handles.swap_remove(index).join();
+        } else {
+            index += 1;
+        }
+    }
+}
+
 impl State {
+    fn admit_loader(&mut self) -> Result<(), ReplayError> {
+        reap(&mut self.orphans);
+        if self.shutting_down {
+            return Err(ReplayError::ShuttingDown);
+        }
+        let active = usize::from(matches!(self.phase, PhaseState::Loading { .. }));
+        if self.orphans.len() + active >= MAX_LOADERS {
+            return Err(ReplayError::LoaderCapacity);
+        }
+        Ok(())
+    }
+
     fn stage_frame(&mut self, now: Instant) -> Option<Vec<RecenterEvent>> {
         let PhaseState::Playing {
             run,
@@ -669,6 +706,9 @@ impl State {
         if crate::recorder::tracking::is_recording() {
             return self.fail(request.run, ReplayError::Recording);
         }
+        if let Err(error) = self.admit_loader() {
+            return self.fail(request.run, error);
+        }
         match load::spawn(request.path.clone(), expected) {
             Ok(handle) => {
                 tracing::info!("replay: loading {}", request.path.display());
@@ -679,7 +719,7 @@ impl State {
     }
 
     fn advance(&mut self) {
-        self.orphans.retain(|handle| !handle.is_finished());
+        reap(&mut self.orphans);
         if let PhaseState::Playing {
             loaded,
             started,
