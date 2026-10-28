@@ -7,6 +7,8 @@
 //! lock, does its work, and writes back. [`Session::generation`] tells a write-back whether the
 //! session moved on in between.
 
+use std::time::{Duration, Instant};
+
 use jc3gi::ui::pause_ui::PauseMenuType;
 use parking_lot::Mutex;
 
@@ -30,6 +32,10 @@ pub(crate) struct Session {
     /// was reset). Deferred rather than done in the command hook, because the movie is still inside
     /// its own handler there and redraws the selected row after the command returns.
     pub(crate) rebuild: bool,
+    pub(crate) rebuild_retry: Option<Instant>,
+    /// A successful stale movie write must be reconciled against the current session on capture.
+    pub(crate) reconcile: bool,
+    pub(crate) reconcile_retry: Option<Instant>,
     /// Raised by the command hook around the game's `populate_settings` handling, so the populate
     /// hook knows the screen is opening from an entry rather than being refreshed.
     pub(crate) opening: bool,
@@ -68,6 +74,7 @@ impl Session {
         self.page = page;
         self.live.invalidate();
         self.rebuild = false;
+        self.rebuild_retry = None;
         self.last_selected = None;
         self.generation = self.generation.wrapping_add(1);
     }
@@ -107,11 +114,29 @@ impl Session {
         true
     }
 
+    /// Commit a tab only after its movie rows have been installed.
+    pub(crate) fn switched(
+        &mut self,
+        generation: u64,
+        from: usize,
+        tab: usize,
+        page: Page,
+    ) -> bool {
+        if self.generation != generation || self.state.shown_page() != Some(from) {
+            return false;
+        }
+        self.state = self.state.switch_tab(tab);
+        self.tabs.shown(tab);
+        self.set_page(Some(page));
+        true
+    }
+
     /// Whether a requested rebuild runs now. While the list is not in its root state (an option
     /// picker or message box is open) the request stays, and the rebuild runs on a later frame.
     pub(crate) fn take_rebuild(&mut self, list_in_root_state: bool) -> bool {
-        if self.rebuild && list_in_root_state {
-            self.rebuild = false;
+        let now = Instant::now();
+        if self.rebuild && list_in_root_state && self.rebuild_retry.is_none_or(|at| now >= at) {
+            self.rebuild_retry = Some(now + Duration::from_secs(1));
             true
         } else {
             false
@@ -119,12 +144,16 @@ impl Session {
     }
 }
 
-/// The session, shared by the pause-menu hooks (all on the capture thread).
+/// The session, shared by the hooks. Native row writes require the capture thread; close and
+/// synchronous callbacks can move the session on before a write commits.
 pub(crate) static SESSION: Mutex<Session> = Mutex::new(Session {
     state: MenuState::Closed,
     page: None,
     live: LiveSlots::new(),
     rebuild: false,
+    rebuild_retry: None,
+    reconcile: false,
+    reconcile_retry: None,
     opening: false,
     opening_vr: false,
     mute_select_sound: false,
@@ -249,6 +278,12 @@ mod tests {
         assert!(!session.take_rebuild(false));
         assert!(session.rebuild);
         assert!(session.take_rebuild(true));
+        assert!(session.rebuild);
+        assert!(!session.take_rebuild(true));
+        session.rebuild_retry = Some(Instant::now() - Duration::from_secs(1));
+        assert!(session.take_rebuild(true));
+        let generation = session.generation;
+        assert!(session.rebuilt(generation, 1, Page::new("REBUILT")));
         assert!(!session.rebuild);
     }
 }

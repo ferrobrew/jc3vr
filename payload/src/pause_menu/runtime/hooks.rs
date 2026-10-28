@@ -243,21 +243,41 @@ fn update(this: *mut PauseUI, dt: f32, dtf: f32) {
     UPDATE.get().unwrap().call(this, dt, dtf);
     let _timing = frame_timing::scope(Slot::UiCapture);
 
-    if SESSION.lock().state.shown_page().is_none() {
-        return;
+    {
+        let session = SESSION.lock();
+        if session.state.shown_page().is_none() && !session.reconcile {
+            return;
+        }
     }
     // SAFETY: the detour's own `this`, the live pause screen.
     let Some(screen) = (unsafe { pause_screen(this) }) else {
         return;
     };
-    if !screen.is_active() {
-        return;
-    }
     let Some(thread) = CaptureThread::current() else {
         warn_off_thread_once();
         return;
     };
 
+    match crate::pause_menu::runtime::replace::reconcile(
+        &SESSION,
+        std::time::Instant::now(),
+        |index, page| {
+            render::replace_rows(&thread, &screen, index, page, None)?;
+            let labels: Vec<&str> = tabbed_pages().iter().map(|def| def.tab).collect();
+            render::setup_tabs(&thread, &screen, &labels, index)
+        },
+        || render::clear_stale_rows(&thread, &screen),
+    ) {
+        Ok(true) => {}
+        Ok(false) => return,
+        Err(error) => {
+            tracing::debug!("pause menu: reconciling stale installed rows: {error}");
+            return;
+        }
+    }
+    if !screen.is_active() || SESSION.lock().state.shown_page().is_none() {
+        return;
+    }
     if take(&mut SESSION.lock().setup_tabs) {
         open_tabs(&thread, &screen);
     }
@@ -275,6 +295,9 @@ fn update(this: *mut PauseUI, dt: f32, dtf: f32) {
         }
     }
 
+    if SESSION.lock().reconcile {
+        return;
+    }
     let Some(page_index) = SESSION.lock().state.shown_page() else {
         return;
     };
@@ -286,6 +309,9 @@ fn update(this: *mut PauseUI, dt: f32, dtf: f32) {
     let root = in_root_state();
     if SESSION.lock().take_rebuild(root) {
         rebuild(&thread, &screen, page_index);
+    }
+    if SESSION.lock().reconcile {
+        return;
     }
     if root {
         skip_headers(&thread, &screen);
@@ -715,26 +741,27 @@ fn switch_tab(thread: &CaptureThread, screen: &Screen, tab: usize) {
         return;
     }
     save_scroll(thread, screen);
-    transition(|state| state.switch_tab(tab));
-    let generation = {
-        let mut session = SESSION.lock();
-        if session.state.shown_page() != Some(tab) {
+    let def = &PAGES[tab];
+    let mut rows = 0;
+    match crate::pause_menu::runtime::replace::switch(
+        &SESSION,
+        tab,
+        def.build,
+        |page| {
+            rows = page.items.len();
+            render::replace_rows(thread, screen, tab, page, None)
+        },
+        |from| run_on_close(Some(from)),
+    ) {
+        Ok(true) => {}
+        Ok(false) => {
+            tracing::debug!("pause menu: the session moved on during a tab switch");
             return;
         }
-        session.tabs.shown(tab);
-        session.generation
-    };
-    let def = &PAGES[tab];
-    let page = (def.build)();
-    let rows = page.items.len();
-    if let Err(error) = render::replace_rows(thread, screen, tab, &page, None) {
-        // The screen still draws the old tab's rows, which the session no longer resolves.
-        tracing::error!("pause menu: switching to the tab {:?}: {error}", def.tab);
-        return;
-    }
-    if !SESSION.lock().rebuilt(generation, tab, page) {
-        tracing::debug!("pause menu: the session moved on during a tab switch");
-        return;
+        Err(error) => {
+            tracing::error!("pause menu: switching to the tab {:?}: {error}", def.tab);
+            return;
+        }
     }
     restore_tab_scroll(thread, screen, tab, rows);
     if let Err(error) = render::select_tab(thread, screen, from, tab) {
@@ -778,18 +805,14 @@ fn rebuild(thread: &CaptureThread, screen: &Screen, page_index: usize) {
     let Some(def) = PAGES.get(page_index) else {
         return;
     };
-    let (generation, last) = {
-        let session = SESSION.lock();
-        (session.generation, session.last_selected)
-    };
-    let page = (def.build)();
-    let focus = page.rebuild_focus(last);
-    match render::replace_rows(thread, screen, page_index, &page, focus) {
-        Ok(()) => {
-            if !SESSION.lock().rebuilt(generation, page_index, page) {
-                tracing::debug!("pause menu: the session moved on during a rebuild");
-            }
-        }
+    match crate::pause_menu::runtime::replace::rebuild(
+        &SESSION,
+        page_index,
+        def.build,
+        |page, focus| render::replace_rows(thread, screen, page_index, page, focus),
+    ) {
+        Ok(true) => {}
+        Ok(false) => tracing::debug!("pause menu: the session moved on during a rebuild"),
         Err(error) => tracing::error!("pause menu: rebuilding the page {:?}: {error}", def.tab),
     }
 }

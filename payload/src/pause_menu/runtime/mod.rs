@@ -3,6 +3,7 @@
 
 mod hooks;
 mod render;
+mod replace;
 mod root;
 mod session;
 

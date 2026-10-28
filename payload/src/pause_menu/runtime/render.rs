@@ -101,7 +101,8 @@ pub(crate) fn settings_in_root_state(
 ///
 /// Returns `Ok` once the screen has redrawn the new rows, so the caller's record of the shown page
 /// must follow. Focusing is best effort: a refused focus call is logged and leaves the first row
-/// highlighted. An `Err` means the screen still draws the old rows.
+/// highlighted. A refused refresh restores the previous page object. A refused rollback is logged;
+/// native movie behavior after that refusal is not established by renderer-free tests.
 pub(crate) fn replace_rows(
     thread: &CaptureThread,
     screen: &Screen,
@@ -111,12 +112,16 @@ pub(crate) fn replace_rows(
 ) -> Result<(), RenderError> {
     let specs = encode_page(page_index, page).map_err(RenderError::Encode)?;
     let clip = clip(thread, screen)?;
-    let page_object = clip
+    let settings = clip
         .member(c"m_SettingsArray")
         .filter(GfxValue::is_object)
-        .and_then(|settings| settings.element(SettingsUI::PAGE_GRAPHICS as u32))
+        .ok_or(RenderError::Missing("m_SettingsArray"))?;
+    let previous = settings
+        .element(SettingsUI::PAGE_GRAPHICS as u32)
         .filter(GfxValue::is_object)
         .ok_or(RenderError::Missing("the shown page object"))?;
+    let page_object =
+        GfxValue::create_object(thread, screen).ok_or(RenderError::CreateFailed("page object"))?;
     let settings_screen = clip
         .path("MCI_settings_screen")
         .ok_or(RenderError::Missing("MCI_settings_screen"))?;
@@ -127,14 +132,32 @@ pub(crate) fn replace_rows(
     {
         return Err(RenderError::Refused("the page object's members"));
     }
-    settings_screen
+    if !settings.set_element(SettingsUI::PAGE_GRAPHICS as u32, &page_object) {
+        return Err(RenderError::Refused("the page's slot in m_SettingsArray"));
+    }
+    if settings_screen
         .invoke(c"RefreshCurrentScreen", &[])
-        .ok_or(RenderError::Refused("RefreshCurrentScreen"))?;
+        .is_none()
+    {
+        let restored = settings.set_element(SettingsUI::PAGE_GRAPHICS as u32, &previous);
+        if !restored {
+            tracing::error!(
+                "pause menu: the movie refused the previous page's slot during rollback"
+            );
+        }
+        return Err(RenderError::Refused("RefreshCurrentScreen"));
+    }
 
     if let Err(error) = focus_row(&clip, &title, focus) {
         tracing::warn!("pause menu: focusing the rebuilt page: {error}");
     }
     Ok(())
+}
+
+/// Remove stale VR rows after a reentrant close. Failures retain the session's recovery request.
+pub(crate) fn clear_stale_rows(thread: &CaptureThread, screen: &Screen) -> Result<(), RenderError> {
+    replace_rows(thread, screen, 0, &Page::new(""), None)?;
+    hide_tabs(thread, screen)
 }
 
 /// The per-frame pass over the visible rows of `page` (registered at `page_index`): give each row
