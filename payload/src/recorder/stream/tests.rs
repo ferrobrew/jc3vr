@@ -7,6 +7,7 @@ use std::{
 };
 
 use super::*;
+use crate::vr::CaptureEyeView;
 
 #[test]
 fn exhausted_first_address_rotates_to_later_success_on_next_bounded_retry() {
@@ -124,23 +125,27 @@ fn finish_drains_queued_frames_with_original_stream_and_sidecar_order() {
         eye: 1,
         width: 2,
         height: 2,
-        views: None,
+        views: Some(CaptureViews {
+            predicted_display_time_ns: i64::from(frame) * 100,
+            eyes: [CaptureEyeView {
+                position: [frame as f32, 0.0, 0.0],
+                orientation: [0.0, 0.0, 0.0, 1.0],
+                fov: [-0.7, 0.7, 0.7, -0.7],
+            }; 2],
+        }),
     };
     assert!(matches!(
         writer.send(Frame::Fresh(vec![1; 6], metadata(0))),
         SendOutcome::Queued
     ));
-    assert!(matches!(
-        writer.send(Frame::Duplicate(metadata(1))),
-        SendOutcome::Queued
-    ));
+    assert!(matches!(writer.send(Frame::Duplicate), SendOutcome::Queued));
     assert!(matches!(
         writer.send(Frame::Fresh(vec![2; 6], metadata(2))),
         SendOutcome::Queued
     ));
     writer.finish();
     assert!(matches!(
-        writer.send(Frame::Duplicate(metadata(3))),
+        writer.send(Frame::Duplicate),
         SendOutcome::Failed(_)
     ));
     assert!(writer.poll_completion().is_none());
@@ -162,11 +167,19 @@ fn finish_drains_queued_frames_with_original_stream_and_sidecar_order() {
     assert_eq!(lines.len(), 3);
     for (index, line) in lines.iter().enumerate() {
         assert_eq!(line["stream_frame"], index);
-        assert_eq!(line["capture_frame"], index);
+        let source = [0, 0, 2][index];
+        assert_eq!(line["capture_frame"], source);
         assert_eq!(line["duplicate"], index == 1);
-        assert_eq!(line["unix_ms"], 1000 + index);
-        assert_eq!(line["game_run_time_us"], 2000 + index);
+        assert_eq!(line["unix_ms"], 1000 + source);
+        assert_eq!(line["game_run_time_us"], 2000 + source);
         assert_eq!(line["eye"], 1);
+        assert_eq!(line["predicted_display_time_ns"], source * 100);
+        assert_eq!(line["views"][0]["position"][0], source as f64);
+        assert_eq!(
+            line.as_object().unwrap().len(),
+            8,
+            "existing sidecar wire fields"
+        );
     }
     let info: serde_json::Value =
         serde_json::from_slice(&fs::read(folder.0.join("stream.json")).unwrap()).unwrap();

@@ -9,6 +9,8 @@
 //! has long completed, so the map returns at once with no GPU stall, and on the rare frame it has
 //! not, the map refuses and the recorder repeats the previous frame rather than waiting.
 
+mod ring;
+
 use anyhow::{Context as _, bail};
 use windows::Win32::Graphics::{
     Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
@@ -29,6 +31,8 @@ use windows::Win32::Graphics::{
     },
 };
 
+use crate::recorder::{convert::ring::SourceRing, stream::FrameMetadata};
+
 /// The committed, precompiled pack shaders (entry point `main`). The vertex shader is the capture
 /// composite's fullscreen triangle.
 const VERTEX_DXBC: &[u8] = include_bytes!("../shaders/capture_vs.dxbc");
@@ -37,6 +41,13 @@ const PIXEL_DXBC: &[u8] = include_bytes!("../shaders/i420_pack_ps.dxbc");
 /// How many staging textures the readback cycles through. The map targets the oldest, so a frame
 /// is read back `RING_DEPTH - 1` frames after it was converted.
 pub const RING_DEPTH: usize = 3;
+
+/// Whether this conversion supplied pixels and their matching source record.
+pub enum Readback {
+    Priming,
+    Pending,
+    Fresh(FrameMetadata),
+}
 
 /// The pack pipeline and readback ring, built for one source size and output scale.
 pub struct Converter {
@@ -51,10 +62,7 @@ pub struct Converter {
     /// The source texture the SRV was made for, to detect a rebuilt capture texture.
     source: ID3D11Texture2D,
     ring: [ID3D11Texture2D; RING_DEPTH],
-    /// The ring slot the next convert writes.
-    slot: usize,
-    /// How many converts have run, so the ring is not read before it holds a frame.
-    converted: usize,
+    sources: SourceRing<FrameMetadata>,
     /// The luma plane size.
     width: u32,
     height: u32,
@@ -206,8 +214,7 @@ impl Converter {
                 source_srv,
                 source: source.clone(),
                 ring,
-                slot: 0,
-                converted: 0,
+                sources: SourceRing::new(),
                 width,
                 height,
             })
@@ -224,10 +231,9 @@ impl Converter {
         self.width as usize * (self.height as usize * 3 / 2)
     }
 
-    /// Convert `source` into the ring and read the oldest slot back into `buffer`. Returns `false`
-    /// when no frame was read back this call (the ring is priming, or the map refused because the
-    /// copy has not completed), in which case `buffer` is untouched. The caller must hold the
-    /// engine context mutex.
+    /// Convert `source` into the ring with its metadata and read the oldest slot into `buffer`.
+    /// Returns that slot's source metadata on a fresh readback. Priming and pending readbacks
+    /// leave `buffer` untouched. The caller must hold the engine context mutex.
     ///
     /// # Safety
     /// `context` must be the live engine immediate context, and `source` a live texture on the
@@ -238,7 +244,8 @@ impl Converter {
         context: &ID3D11DeviceContext,
         source: &ID3D11Texture2D,
         buffer: &mut [u8],
-    ) -> anyhow::Result<bool> {
+        metadata: FrameMetadata,
+    ) -> anyhow::Result<Readback> {
         unsafe {
             // The capture texture is rebuilt across a resize; a stale SRV would sample the old one.
             if self.source != *source {
@@ -267,15 +274,12 @@ impl Converter {
             context.PSSetShaderResources(0, Some(&[None]));
             context.OMSetRenderTargets(Some(&[None]), None);
 
-            context.CopyResource(&self.ring[self.slot], &self.target);
-            self.slot = (self.slot + 1) % RING_DEPTH;
-            self.converted += 1;
-            if self.converted < RING_DEPTH {
-                return Ok(false);
-            }
+            context.CopyResource(&self.ring[self.sources.copy_slot()], &self.target);
+            let Some((slot, metadata)) = self.sources.copied(metadata) else {
+                return Ok(Readback::Priming);
+            };
 
-            // The oldest slot is the one the next convert will overwrite: `self.slot` now.
-            let staging = &self.ring[self.slot];
+            let staging = &self.ring[slot];
             let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
             match context.Map(
                 staging,
@@ -285,7 +289,7 @@ impl Converter {
                 Some(&mut mapped),
             ) {
                 Ok(()) => {}
-                Err(e) if e.code() == DXGI_ERROR_WAS_STILL_DRAWING => return Ok(false),
+                Err(e) if e.code() == DXGI_ERROR_WAS_STILL_DRAWING => return Ok(Readback::Pending),
                 Err(e) => return Err(e).context("mapping the readback staging texture"),
             }
             let rows = self.height as usize * 3 / 2;
@@ -306,7 +310,7 @@ impl Converter {
                 buffer[row * row_len..(row + 1) * row_len].copy_from_slice(src);
             }
             context.Unmap(staging, 0);
-            Ok(true)
+            Ok(Readback::Fresh(metadata))
         }
     }
 }

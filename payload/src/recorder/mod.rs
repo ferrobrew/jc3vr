@@ -242,9 +242,9 @@ pub unsafe fn capture_frame(
     };
     let size = converter.size();
     let mut state = STATE.lock();
-    let Some(writer) = state.writers.active() else {
+    if state.writers.active().is_none() {
         return;
-    };
+    }
     let metadata = stream::FrameMetadata {
         frame: state.frame_index,
         unix_ms: jiff::Timestamp::now().as_millisecond(),
@@ -255,15 +255,17 @@ pub unsafe fn capture_frame(
         height: size.1,
         views: crate::vr::capture_views(),
     };
+    state.frame_index = state.frame_index.saturating_add(1);
+    let writer = state.writers.active().unwrap();
     let mut buffer = writer.take_buffer(converter.frame_len());
     // SAFETY: forwarded from the caller's contract.
-    let frame = match unsafe { converter.convert(device, context, source, &mut buffer) } {
-        Ok(true) => stream::Frame::Fresh(buffer, metadata),
-        Ok(false) => {
+    let frame = match unsafe { converter.convert(device, context, source, &mut buffer, metadata) } {
+        Ok(convert::Readback::Fresh(source)) => stream::Frame::Fresh(buffer, source),
+        Ok(convert::Readback::Priming | convert::Readback::Pending) => {
             // Not ready (the ring is still priming, or the map refused): repeat the previous
             // frame so the stream keeps its cadence.
             FRAMES_DUPLICATED.fetch_add(1, Ordering::Relaxed);
-            stream::Frame::Duplicate(metadata)
+            stream::Frame::Duplicate
         }
         Err(e) => {
             drop(state);
@@ -274,7 +276,6 @@ pub unsafe fn capture_frame(
     match writer.send(frame) {
         stream::SendOutcome::Queued => {
             FRAMES_SENT.fetch_add(1, Ordering::Relaxed);
-            state.frame_index += 1;
         }
         stream::SendOutcome::Full => {
             FRAMES_DROPPED.fetch_add(1, Ordering::Relaxed);

@@ -19,7 +19,9 @@ The game writes the sidecar to `sessions/<stamp>/capture/<stamp>/` beside the pa
 - `stream.json`: the stream size, rate, eye, pixel format, colour space and range, the host target, and the start wall clock.
 - `frames.jsonl`: one line per stream frame with `stream_frame` (the frame number in the video), `capture_frame` (the render thread's ordinal), `duplicate`, `unix_ms`, `game_run_time_us`, `eye`, `predicted_display_time_ns`, and `views`: both eyes' raw located pose (position, orientation as `x, y, z, w`) in the runtime's LOCAL space and field of view as `left, right, up, down` angles in radians.
 
-Take markers (`markers.jsonl` in the session root, from the director's hotkey) carry the same wall clock and game-run time, so a marker maps to a stream frame through the sidecar.
+The capture ordinal, timestamps, and views describe the source pixels copied into the staging ring, rather than the later map or delivery attempt. A no-wait map that is not ready repeats both the previous pixels and their source metadata. `stream_frame` still advances for each delivered frame, and `duplicate` identifies that repeated source. Priming emits no video frame until a source is available. The existing JSON field set is unchanged; there is no separate delivery timestamp.
+
+Take markers (`markers.jsonl` in the session root, from the director's hotkey) carry the same wall clock and game-run time, so a marker maps to a source frame through the sidecar.
 
 ## Post
 

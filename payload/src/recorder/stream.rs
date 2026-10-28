@@ -50,8 +50,8 @@ pub struct FrameMetadata {
 pub enum Frame {
     /// Fresh planar bytes for the frame.
     Fresh(Vec<u8>, FrameMetadata),
-    /// The readback was not ready: re-send the previous frame's bytes under this metadata.
-    Duplicate(FrameMetadata),
+    /// The readback was not ready: repeat the previous bytes and source metadata.
+    Duplicate,
 }
 
 /// The result of queueing a frame.
@@ -237,7 +237,7 @@ struct WriterThread {
     next_address: usize,
     header_written: bool,
     /// The bytes of the last fresh frame, re-sent for duplicates.
-    last_fresh: Option<Vec<u8>>,
+    last_fresh: Option<(Vec<u8>, FrameMetadata)>,
     /// The next stream frame index: the frame number the video will have for the next write.
     stream_frame: u32,
     dropped_before_connect: u32,
@@ -375,20 +375,20 @@ impl WriterThread {
         // writes below can borrow `self` freely; they go back into `last_fresh` at the end.
         let (held, metadata, duplicate) = match frame {
             Frame::Fresh(buffer, metadata) => {
-                if let Some(previous) = self.last_fresh.take() {
+                if let Some((previous, _)) = self.last_fresh.take() {
                     let _ = self.pool.try_send(previous);
                 }
                 (buffer, metadata, false)
             }
-            Frame::Duplicate(metadata) => match self.last_fresh.take() {
-                Some(bytes) => (bytes, metadata, true),
+            Frame::Duplicate => match self.last_fresh.take() {
+                Some((bytes, source)) => (bytes, source, true),
                 // Nothing to repeat yet (the ring is still priming): the stream simply starts a
                 // frame later.
                 None => return Ok(()),
             },
         };
         let result = self.write_bytes(&held, &metadata, duplicate);
-        self.last_fresh = Some(held);
+        self.last_fresh = Some((held, metadata));
         result
     }
 
