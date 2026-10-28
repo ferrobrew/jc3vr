@@ -198,6 +198,9 @@ impl EguiDebugRenderState {
     }
 
     pub(crate) fn prepare_if_necessary(&mut self, renderer: &mut egui_directx11::Renderer) {
+        crate::hud::HUD_STATE
+            .lock()
+            .drain_preview_retirements(renderer);
         // Drain post-stage egui ids the render thread dropped without a renderer to unregister
         // them with (see `capture_post_stage`); this is the first point back on the UI thread.
         for id in self.pending_unregisters.drain(..) {

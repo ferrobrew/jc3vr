@@ -1,6 +1,8 @@
 //! The HUD-redirect state machine: it lazily creates the target, applies and relinquishes the rebind,
 //! owns the egui preview registration, and drives the lazy-follow damping for the floating panel.
 
+mod resources;
+
 use std::time::{Duration, Instant};
 
 use glam::{Quat, Vec2, Vec3, Vec4};
@@ -16,6 +18,7 @@ use crate::hud::{
     markers::MarkerDepth,
     quad::{HudQuad, PanelParams},
     split,
+    state::resources::{Native, Retry, Surface},
     target::HudTarget,
     warp::{HudWarp, WarpInputs},
     world_markers::layout::StageFrame,
@@ -115,6 +118,9 @@ pub(crate) fn stage_safe_area_readout() -> StageSafeAreaReadout {
 /// thread).
 pub struct HudState {
     target: Option<HudTarget>,
+    retry: Retry,
+    layer_retry: Retry,
+    pending_unregisters: Vec<egui::TextureId>,
     /// Whether the redirect is currently applied to the UI's render buffer.
     redirected: bool,
     /// The last engine render size seen by [`ensure_redirected`]. A change means the engine re-ran
@@ -205,6 +211,9 @@ impl HudState {
     const fn new() -> Self {
         Self {
             target: None,
+            retry: Retry::new(),
+            layer_retry: Retry::new(),
+            pending_unregisters: Vec::new(),
             redirected: false,
             render_size: None,
             stage_safe_area: false,
@@ -229,7 +238,8 @@ impl HudState {
     /// the target on a config-size change and applying the rebind once. A render-size change
     /// (`render_width`/`render_height`) forces a re-apply without recreating the target,
     /// because the engine re-runs `InitPlatformRT` on a device/reset and discards our rebind. A failed
-    /// target build or a not-yet-live UI leaves the state unredirected, so the next tick retries.
+    /// allocation keeps an applied old target usable. A failed binding restores the engine binding
+    /// and clears the applied publication. Failed requests retry at most once per second.
     /// `stage_safe_area` selects the atlas viewport probe's safe area (see
     /// [`binding::redirect_to`]); a change re-applies the redirect.
     pub(super) fn ensure_redirected(
@@ -241,94 +251,63 @@ impl HudState {
         render_height: u32,
         stage_safe_area: bool,
     ) {
-        if texture_width == 0 || texture_height == 0 {
-            return;
+        let mut native = Native(device);
+        let replaced = resources::redirect(
+            Surface {
+                target: &mut self.target,
+                redirected: &mut self.redirected,
+                render_size: &mut self.render_size,
+                stage_safe_area: &mut self.stage_safe_area,
+                retry: &mut self.retry,
+            },
+            &mut native,
+            AppliedRedirect {
+                texture: (texture_width, texture_height),
+                stage_safe_area,
+            },
+            (render_width, render_height),
+            Instant::now(),
+        );
+        if replaced {
+            resources::retire(&mut self.preview_id, &mut self.pending_unregisters);
         }
-
-        // Recreate the target when the configured HUD resolution changes (or when none exists yet).
-        if self.target.as_ref().map(HudTarget::size) != Some((texture_width, texture_height)) {
-            match HudTarget::new(device, texture_width, texture_height) {
-                Ok(target) => {
-                    self.target = Some(target);
-                    self.redirected = false;
-                    // The preview SRV belonged to the old texture; re-register it on the next preview.
-                    self.preview_id = None;
-                }
-                Err(e) => {
-                    tracing::error!("HUD: {e:#}");
-                    self.target = None;
-                    return;
-                }
-            }
-        }
-
-        // A render-size change means the engine re-ran `InitPlatformRT` (its device/reset path),
-        // which rebuilds `m_RenderBuffer` from the engine surface and discards our rebind. Re-apply it
-        // even though our target texture is independent of the engine's own targets.
-        if self.render_size != Some((render_width, render_height)) {
-            self.render_size = Some((render_width, render_height));
-            self.redirected = false;
-        }
-
-        // The engine's device-reset path (`RestoreAfterReset`) can replace the movie's viewport
-        // with device-sized state without the back buffer changing size (e.g. an alt-tab
-        // fullscreen reacquire), which skews the Scaleform mouse transform off the
-        // texture-shaped render. Detect the drift and re-apply.
-        if self.redirected && !binding::movie_viewport_matches(texture_width, texture_height) {
-            tracing::warn!(
-                target: "hud",
-                "the movie viewport drifted from the redirect (engine reset path?); re-applying"
-            );
-            self.redirected = false;
-        }
-
-        if self.stage_safe_area != stage_safe_area {
-            self.stage_safe_area = stage_safe_area;
-            self.redirected = false;
-        }
-
-        let Some(target) = self.target.as_ref() else {
-            return;
-        };
-        if !self.redirected
-            && binding::redirect_to(target, texture_width, texture_height, stage_safe_area)
-        {
-            self.redirected = true;
-        }
-        *APPLIED_REDIRECT.lock() = self.redirected.then_some(AppliedRedirect {
-            texture: (texture_width, texture_height),
-            stage_safe_area,
+        *APPLIED_REDIRECT.lock() = self.redirected.then(|| AppliedRedirect {
+            texture: self
+                .target
+                .as_ref()
+                .expect("a redirect owns its target")
+                .size(),
+            stage_safe_area: self.stage_safe_area,
         });
     }
 
     /// Ensure the extra layer targets exist at the main target's size while the split is enabled,
-    /// and drop them while it is not. Layer creation failures log and leave the slot empty, which
-    /// keeps the split inactive (see [`split_views`](HudState::split_views)).
+    /// and drop them while it is not. All replacements commit together; a failure keeps the old
+    /// layers and their previews. Size-mismatched layers keep the split inactive.
     pub(super) fn ensure_layers(&mut self, device: &Device, enabled: bool) {
         if !enabled {
             if self.layer_targets.iter().any(Option::is_some) {
                 self.layer_targets = [None, None];
-                // The preview SRVs belonged to the dropped textures; re-register next preview.
-                self.layer_preview_ids = [None, None];
+                for id in &mut self.layer_preview_ids {
+                    resources::retire(id, &mut self.pending_unregisters);
+                }
+                self.layer_retry.succeeded();
             }
             return;
         }
         let Some((width, height)) = self.target.as_ref().map(HudTarget::size) else {
             return;
         };
-        for slot in &mut self.layer_targets {
-            if slot.as_ref().map(HudTarget::size) != Some((width, height)) {
-                match HudTarget::new(device, width, height) {
-                    Ok(target) => {
-                        *slot = Some(target);
-                        self.layer_preview_ids = [None, None];
-                    }
-                    Err(e) => {
-                        tracing::error!("HUD split layer: {e:#}");
-                        *slot = None;
-                        return;
-                    }
-                }
+        let changed = resources::layers(
+            &mut self.layer_targets,
+            &mut Native(device),
+            (width, height),
+            &mut self.layer_retry,
+            Instant::now(),
+        );
+        for (changed, id) in changed.into_iter().zip(&mut self.layer_preview_ids) {
+            if changed {
+                resources::retire(id, &mut self.pending_unregisters);
             }
         }
     }
@@ -343,6 +322,9 @@ impl HudState {
         let main = self.target.as_ref()?;
         let markers = self.layer_targets[0].as_ref()?;
         let center = self.layer_targets[1].as_ref()?;
+        if markers.size() != main.size() || center.size() != main.size() {
+            return None;
+        }
         Some(split::LayerViews {
             views: [main, markers, center].map(|t| (t.color_rtv().clone(), t.depth_dsv().clone())),
             sizes: [main, markers, center].map(HudTarget::size),
@@ -358,6 +340,8 @@ impl HudState {
             self.redirected = false;
         }
         self.target = None;
+        resources::retire(&mut self.preview_id, &mut self.pending_unregisters);
+        self.retry.succeeded();
         *APPLIED_REDIRECT.lock() = None;
     }
 
@@ -699,6 +683,7 @@ impl HudState {
         &mut self,
         renderer: &mut egui_directx11::Renderer,
     ) -> Option<egui::TextureId> {
+        self.drain_preview_retirements(renderer);
         if self.preview_id.is_none()
             && let Some(target) = self.target.as_ref()
         {
@@ -713,6 +698,7 @@ impl HudState {
         &mut self,
         renderer: &mut egui_directx11::Renderer,
     ) -> [Option<egui::TextureId>; split::LAYER_COUNT - 1] {
+        self.drain_preview_retirements(renderer);
         for (id, target) in self
             .layer_preview_ids
             .iter_mut()
@@ -730,14 +716,17 @@ impl HudState {
     /// Drop the egui preview registration. Call on the UI thread (it owns the renderer), so the texture
     /// id is released rather than leaked.
     pub fn release_preview(&mut self, renderer: &mut egui_directx11::Renderer) {
-        if let Some(id) = self.preview_id.take() {
-            renderer.unregister_user_texture(id);
-        }
+        resources::retire(&mut self.preview_id, &mut self.pending_unregisters);
         for id in &mut self.layer_preview_ids {
-            if let Some(id) = id.take() {
-                renderer.unregister_user_texture(id);
-            }
+            resources::retire(id, &mut self.pending_unregisters);
         }
+        self.drain_preview_retirements(renderer);
+    }
+
+    pub(crate) fn drain_preview_retirements(&mut self, renderer: &mut egui_directx11::Renderer) {
+        resources::drain(&mut self.pending_unregisters, |id| {
+            renderer.unregister_user_texture(id);
+        });
     }
 }
 

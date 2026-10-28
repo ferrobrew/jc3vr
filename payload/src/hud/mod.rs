@@ -156,7 +156,7 @@ pub(crate) unsafe fn sample_stage_safe_area(manager: &UIManager) {
         bounds: [safe.x1, safe.y1, safe.x2, safe.y2],
         percentage: manager.m_SafeAreaPercentage,
         stage: Vec2::new(manager.m_CachedStageWidth, manager.m_CachedStageHeight),
-        aspect: Config::lock_query(|cfg| aspect_for(&cfg.hud, mode)),
+        aspect: effective_aspect(Config::lock_query(|cfg| aspect_for(&cfg.hud, mode))),
     };
     publish_stage_safe_area(layout, Instant::now());
 }
@@ -165,7 +165,13 @@ pub(crate) unsafe fn sample_stage_safe_area(manager: &UIManager) {
 /// outside [`tick`]/[`draw_quad`] and so re-derive the mode.
 pub fn current_aspect() -> f32 {
     let cfg = Config::lock_query(|c| c.hud);
-    aspect_for(&cfg, current_mode())
+    effective_aspect(aspect_for(&cfg, current_mode()))
+}
+
+fn effective_aspect(requested: f32) -> f32 {
+    state::applied_redirect().map_or(requested, |applied| {
+        applied.texture.0 as f32 / applied.texture.1 as f32
+    })
 }
 
 /// The panel's reference width as a fraction of its distance at scale 1.0: 4 m wide at 3 m, the
@@ -286,7 +292,7 @@ fn hud_target_size(
 pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let cfg = Config::lock_query(|c| c.hud);
     let mut hud = HUD_STATE.lock();
-    if !cfg.redirect || !cfg.quad {
+    if !cfg.redirect || !cfg.quad || hud.redirected_size().is_none() {
         hud.clear_panel_corners();
         pointer::publish_panel(None);
         return;
@@ -304,7 +310,7 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
             .or_else(render_camera_pose)
     {
         let mode = current_mode();
-        let aspect = aspect_for(&cfg, mode);
+        let aspect = effective_aspect(aspect_for(&cfg, mode));
         // World-lock the panel while an in-game menu (pause / map) is open, or during a non-gameplay
         // transition in VR (loading screens / fast-travel, issue #27), so it stays put and the player
         // can look around it, reverting to head-follow on close/resume. During a loading transition the
@@ -564,8 +570,8 @@ pub fn compute_panel_vp(symmetric: bool) -> Option<(Matrix4, Matrix4)> {
 
 /// Register the HUD's shutdown cleanup. Call once at init. The cleanup clears the redirect config flag
 /// (so the per-frame [`tick`] restores the engine binding on the render thread, as a toggle-off does)
-/// and releases the egui preview registration. The shutdown path delays the hook uninstall, giving a
-/// few frames to tick the restore through before the hooks come down.
+/// and releases the egui preview registrations when the owning renderer is available. This requests
+/// render-thread restoration; it does not acknowledge native restoration or establish unload safety.
 pub fn install() {
     crate::lifecycle::on_cleanup(|renderer| {
         // Automatically, so that a save during the teardown keeps the redirect the user chose.
