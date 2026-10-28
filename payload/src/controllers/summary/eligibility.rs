@@ -26,6 +26,8 @@ pub(crate) struct SnatchHint {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct Eligibility {
     pub routing: CurrentRouting,
+    /// Accepted semantic routes before the descriptor merges their effects.
+    pub routes: Vec<(ActionId, Hand)>,
     pub chosen: [Option<GrabVolume>; 2],
     /// Current contextual actions proved usable by their owning subsystem, including cutscene skip.
     pub actions: Vec<Action>,

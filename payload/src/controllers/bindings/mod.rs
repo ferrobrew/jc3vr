@@ -719,7 +719,18 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         &trigger_routes,
         trigger_changed,
     );
-    let eligibility = summary::capture(summary::Refresh {
+    let routes = summary::permitted_routes(
+        &state.bindings,
+        detection.mode,
+        &controls,
+        &semantic_input,
+        &routed,
+        trigger_ownership::masks(
+            final_owners,
+            Hand::BOTH.map(|hand| trigger_blocked[hand.index()] || trigger_changed[hand.index()]),
+        ),
+    );
+    let mut eligibility = summary::capture(summary::Refresh {
         sequence: frame.sequence,
         belt_reload,
         parachute: vehicles::parachute_holds(),
@@ -756,6 +767,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             .as_ref()
             .map_or(Default::default(), flight::FlightState::current),
     });
+    eligibility.routes = routes;
     crate::controllers::summary::refresh(detection.mode, &controls, &config, &eligibility);
     let writes = state.tracker.resolve(&step.desired, dt);
     // SAFETY: the input tick runs on the main thread after the device poll.

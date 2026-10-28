@@ -21,24 +21,55 @@ use crate::{
     vr::input::semantic::bound::{EnumeratedSource, SourceTable, of_sources},
 };
 
-const MODE: Mode = Mode::OnFoot(OnFootVariant::Ground);
-const TRIGGER: &str = "/user/hand/right/input/trigger/value";
-const GRIP: &str = "/user/hand/left/input/squeeze/click";
-const LEFT_A: &str = "/user/hand/left/input/a/click";
+pub(super) const MODE: Mode = Mode::OnFoot(OnFootVariant::Ground);
+pub(super) const TRIGGER: &str = "/user/hand/right/input/trigger/value";
+pub(super) const GRIP: &str = "/user/hand/left/input/squeeze/click";
+pub(super) const LEFT_A: &str = "/user/hand/left/input/a/click";
 
-struct Fixture {
-    input: SemanticInput,
-    policy: Tick,
-    table: SourceTable,
+pub(super) struct Fixture {
+    pub(super) input: SemanticInput,
+    pub(super) policy: Tick,
+    pub(super) table: SourceTable,
 }
 
-fn fixture(entries: &[(ActionId, &[&str])]) -> Fixture {
+pub(super) fn fixture(entries: &[(ActionId, &[&str])]) -> Fixture {
+    fixture_mode(entries, SemanticSet::OnFoot)
+}
+
+pub(super) fn fixture_mode(entries: &[(ActionId, &[&str])], mode: SemanticSet) -> Fixture {
     let make_group = |sequence, pressed| {
         let semantics: Vec<_> = entries
             .iter()
             .map(|(id, sources)| (*id, pressed, paths(sources)))
             .collect();
         let mut group = group(sequence, sequence, [false; 3], &semantics);
+        if mode != SemanticSet::OnFoot {
+            group.samples.retain(|sample| !matches!(sample.route, InputRoute::Semantic { set, .. } if set == SemanticSet::OnFoot.index() as u8));
+            for (action, definition) in mode.actions().iter().enumerate() {
+                for hand in Hand::BOTH {
+                    group.samples.push(RouteSample {
+                        route: InputRoute::Semantic {
+                            set: mode.index() as u8,
+                            action: action as u16,
+                            hand: hand.index() as u8,
+                        },
+                        value: match definition.kind {
+                            ActionKind::Bool => ValueBits::Bool(false),
+                            ActionKind::Float => ValueBits::Float(0),
+                            ActionKind::Vec2 => ValueBits::Vec2([0; 2]),
+                        },
+                        active: false,
+                        down: false,
+                        change: None,
+                        sources: paths(&[]),
+                    });
+                }
+            }
+            group.context = match mode {
+                SemanticSet::LandVehicle => 2,
+                _ => panic!("unsupported fixture mode"),
+            };
+        }
         for sample in &mut group.samples {
             if let InputRoute::Semantic { set, action, hand } = sample.route
                 && let Some((_, sources)) = entries
@@ -61,16 +92,40 @@ fn fixture(entries: &[(ActionId, &[&str])]) -> Fixture {
         group
     };
     let mut runtime = Runtime::default();
-    evaluate(&mut runtime, make_group(1, false), true);
-    evaluate(&mut runtime, make_group(2, false), true);
-    let policy = evaluate(&mut runtime, make_group(3, true), true);
-    let mut input = SemanticInput::rest(SemanticSet::OnFoot, Default::default(), Hand::Right);
+    let mut evaluate_mode = |group: InputGroup| {
+        let context = group.context;
+        let frame = ControllerFrame {
+            sequence: group.stamp.sequence,
+            display_time_ns: 0,
+            published_at: Instant::now(),
+            focused: true,
+            action_set: ActionSetKind::OnFoot,
+            hands: Default::default(),
+        };
+        runtime.step(TickInput {
+            publications: vec![Publication {
+                observed_at: Instant::now(),
+                frame_sequence: Some(frame.sequence),
+                record: InputRecord::Group(group),
+            }],
+            replay: false,
+            frame: Some(&frame),
+            context,
+            gameplay: true,
+            usable: true,
+            config: &BindingsConfig::new(),
+        })
+    };
+    evaluate_mode(make_group(1, false));
+    evaluate_mode(make_group(2, false));
+    let policy = evaluate_mode(make_group(3, true));
+    let mut input = SemanticInput::rest(mode, Default::default(), Hand::Right);
     for set in [&mut input.global, &mut input.mode] {
         for action in &mut set.actions {
             action.bound = Default::default();
         }
     }
-    let mut shown = vec![Some(Vec::new()); OnFootAction::ALL.len()];
+    let mut shown = vec![Some(Vec::new()); mode.actions().len()];
     for &(id, sources) in entries {
         input.get_mut(id).unwrap().bound = of_sources(sources.iter().copied());
         shown[id.index()] = Some(
@@ -85,7 +140,7 @@ fn fixture(entries: &[(ActionId, &[&str])]) -> Fixture {
     }
     policy.filter_semantic(&mut input);
     let mut table = SourceTable::default();
-    table.insert(SemanticSet::OnFoot, shown);
+    table.insert(mode, shown);
     Fixture {
         input,
         policy,

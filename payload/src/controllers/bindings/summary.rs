@@ -102,21 +102,50 @@ pub(super) fn grapple_routes(
     if !tables::Bindings::grapple_gate_open(mode, controls) {
         return Vec::new();
     }
-    let masks = bindings.semantic_masks(mode, controls);
-    actions
-        .iter()
-        .flat_map(|&id| Hand::BOTH.map(|hand| (id, hand)))
-        .filter(|&(id, hand)| {
-            policy.permits(id, hand)
-                && input.get(id).is_some_and(|action| {
-                    let bound = action.bound[hand.index()];
-                    bound != PhysicalSet::EMPTY
-                        && !triggers[hand.index()].covers(mode, id, bound)
-                        && !masks
-                            .iter()
-                            .any(|mask| mask.hand == hand && mask.covers(id, bound))
+    permitted_routes(bindings, mode, controls, input, policy, triggers)
+        .into_iter()
+        .filter(|(id, _)| actions.contains(id))
+        .collect()
+}
+
+/// The same aggregate source masks used by execution, before descriptions merge action rows.
+pub(super) fn permitted_routes(
+    bindings: &tables::Bindings,
+    mode: Mode,
+    controls: &Controls,
+    input: &SemanticInput,
+    policy: &Tick,
+    triggers: [TriggerMask; 2],
+) -> Vec<(ActionId, Hand)> {
+    let masks = bindings.effective_masks(mode, controls, input);
+    [&input.global, &input.mode]
+        .into_iter()
+        .flat_map(|set| {
+            set.actions
+                .iter()
+                .enumerate()
+                .flat_map(move |(index, action)| {
+                    Hand::BOTH.map(|hand| {
+                        (
+                            ActionId {
+                                set: set.set,
+                                index: index as u8,
+                            },
+                            hand,
+                            action.bound[hand.index()],
+                        )
+                    })
                 })
         })
+        .filter(|&(id, hand, bound)| {
+            policy.permits(id, hand)
+                && bound != PhysicalSet::EMPTY
+                && !triggers[hand.index()].covers(mode, id, bound)
+                && !masks
+                    .iter()
+                    .any(|mask| mask.hand == hand && mask.covers(id, bound))
+        })
+        .map(|(id, hand, _)| (id, hand))
         .collect()
 }
 
@@ -287,6 +316,7 @@ fn capture_current(
         }
     }
     Eligibility {
+        routes: Vec::new(),
         routing: CurrentRouting {
             ready: input.ready,
             triggers: Hand::BOTH.map(|hand| {

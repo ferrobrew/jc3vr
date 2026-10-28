@@ -353,6 +353,7 @@ pub fn describe(ctx: &DescribeCtx) -> Vec<Row> {
         Bindings {
             layout: default_binding,
             runtime: None,
+            routes: None,
         },
     )
 }
@@ -365,18 +366,31 @@ pub(crate) fn describe_bound(ctx: &DescribeCtx, sources: &SourceTable) -> Vec<Ro
         Bindings {
             layout: default_binding,
             runtime: Some(sources),
+            routes: None,
         },
     )
 }
 
 /// Runtime sources without default fallbacks or cross-hand folding. Each physical source remains
 /// identifiable until the wrist applies per-hand eligibility.
+#[cfg(test)]
 pub(crate) fn describe_sources(ctx: &DescribeCtx, sources: &SourceTable) -> Vec<Row> {
+    describe_current(ctx, sources, None)
+}
+
+/// Current semantic routes are filtered while action identity is still available. Physical
+/// mechanics remain subject to their owning subsystem's separate eligibility.
+pub(crate) fn describe_current(
+    ctx: &DescribeCtx,
+    sources: &SourceTable,
+    routes: Option<&[(ActionId, Hand)]>,
+) -> Vec<Row> {
     describe_unfolded(
         ctx,
         Bindings {
             layout: |_, _| None,
             runtime: Some(sources),
+            routes,
         },
     )
 }
@@ -388,6 +402,7 @@ pub(crate) struct Bindings<'a> {
     pub(crate) layout: Layout,
     /// The sources the runtime reported.
     pub(crate) runtime: Option<&'a SourceTable>,
+    pub(crate) routes: Option<&'a [(ActionId, Hand)]>,
 }
 
 /// [`describe`], with the actions on the inputs `bindings` puts them on.
@@ -400,7 +415,11 @@ fn describe_unfolded(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
         dominant: ctx.dominant,
         yank: ctx.features.yank,
         bindings,
-        masks: context_masks(ctx.mode, &ctx.table, ctx.dominant),
+        masks: if bindings.routes.is_some() {
+            Vec::new()
+        } else {
+            context_masks(ctx.mode, &ctx.table, ctx.dominant)
+        },
         rows: Vec::new(),
     };
     declare(&mut sink, ctx.mode, &ctx.table);
@@ -614,6 +633,13 @@ fn bound_inputs(bindings: Bindings, action: ActionId, dominant: Hand) -> Vec<Bou
     {
         return sources
             .iter()
+            .filter(|source| {
+                bindings.routes.is_none_or(|routes| {
+                    source
+                        .hand
+                        .is_some_and(|hand| routes.contains(&(action, hand)))
+                })
+            })
             .map(|source| match (source.hand, source.component) {
                 (Some(hand), Some(component)) => Bound::Component(hand, component),
                 (hand, _) => Bound::Named(hand, source.name),

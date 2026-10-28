@@ -58,7 +58,7 @@ use crate::{
             tables::{
                 declare::TableCtx,
                 describe::{
-                    DescribeCtx, Features, PhysicalFeatures, describe_bound, describe_sources,
+                    DescribeCtx, Features, PhysicalFeatures, describe_bound, describe_current,
                 },
             },
         },
@@ -199,7 +199,7 @@ pub(crate) fn refresh(
         hints: hints_fingerprint(&hints),
     };
     let (generation, table) = sources::table();
-    let known_rows = describe_sources(&ctx, &table);
+    let known_rows = describe_current(&ctx, &table, Some(&eligibility.routes));
     let mut report = eligibility::resolve(&known_rows, eligibility);
     snatch::extend(&mut report.context, &table, eligibility.snatch.as_ref());
     let current = &report.context;
