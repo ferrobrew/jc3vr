@@ -41,14 +41,14 @@
 //!    own grip before the body-scale remap while they ride the player's body, each pouch with a
 //!    reach margin a hand that misses it by a little still takes it within; the held gun's parts,
 //!    reached by the hand on the gun; the weapons in the world without a body (in characters'
-//!    hands, on racks, in lockers); and the grenade's pin, a live grenade, and a magazine in the
-//!    world. A braced foregrip is offered to its hand as held.
+//!    hands, on racks, in lockers); and the grenades and magazines in the world. A braced
+//!    foregrip is offered to its hand as held.
 //! 2. [`finish_tick`] acts on the grabs the grip model hands it: a socket grab draws or docks as
 //!    the loadout table decides ([`crate::controllers::loadout::grab`]), a grab of the held gun's
 //!    grip by the free hand hands the gun over, a foregrip grab braces the gun, a grenade-pouch
-//!    grab primes a grenade for the throw, a C4-pouch grab primes a charge, and a reload-pouch grab
-//!    takes a round for the reload. Opening the grip on a gun docks it on the nearest socket under
-//!    the hand that takes it, or lets it fall
+//!    grab draws a safe grenade that a deliberate tracked throw arms, a C4-pouch grab primes a
+//!    charge, and a reload-pouch grab takes a round for the reload. Opening the grip on a gun docks
+//!    it on the nearest socket under the hand that takes it, or lets it fall
 //!    ([`crate::controllers::grab::resolve::dock_target`]). It runs the throws, the wrist
 //!    detonator, and the reload, and holds the fire inputs back while a reload plays (the
 //!    action-runs hand tier) and while the reload holds the gun from firing.

@@ -34,7 +34,7 @@ The animated hang remains an animation-owned state. It is not used to represent 
 
 ## Settings and readouts
 
-The debug UI's Controllers tab contains the climbing and stunt settings. Physical-grip-to-hang controls are not offered. `MOVING CLIMBS` reports moving-grip activity. `STUNT POSITIONS` reports a native hang or roof position, successful roof entries, refusals, and native-hang release requests. `ROOF TORSO` reports the procedural torso on the roof idle. The recorder template is `testing/scenarios/stunt_positions.toml`.
+The debug UI's Controllers tab contains the climbing and stunt settings. Physical-grip-to-hang entry has no policy or tuning fields. Older saved `enter_hang`, `hang_hold_s`, and `hang_below_m` keys are ignored when loading the configuration. `MOVING CLIMBS` reports moving-grip activity. `STUNT POSITIONS` reports a native hang or roof position, successful roof entries, refusals, and native-hang release requests. `ROOF TORSO` reports the procedural torso on the roof idle. The recorder template is `testing/scenarios/stunt_positions.toml`.
 
 ## Headset checklist
 

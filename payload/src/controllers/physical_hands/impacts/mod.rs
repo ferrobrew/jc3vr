@@ -32,7 +32,7 @@ use crate::{
             bodies,
             impacts::{
                 policy::Motion,
-                state::{Enabled, FlagCall, Identity, Observation, State},
+                state::{Contact, Enabled, FlagCall, Identity, Lease, Observation, State},
             },
             physics::body,
             sounds::{self, Impact, ImpactKind},
@@ -185,11 +185,49 @@ pub(super) unsafe fn record(event: *const hknpContactImpulseEvent) {
         return;
     }
     let leases = STATE.lock().leases;
-    let Some(world) = (unsafe { World::get() }) else {
+    record_leased(
+        event.m_bodyIds,
+        leases,
+        |leases| unsafe { observe_contacts(event, leases) },
+        |contacts| {
+            let mut state = STATE.lock();
+            let now = Instant::now();
+            for contact in contacts.into_iter().flatten() {
+                state.queue(contact, now);
+            }
+        },
+    );
+}
+
+fn record_leased(
+    bodies: [u32; 2],
+    leases: [Option<Lease>; 2],
+    observe: impl FnOnce([Option<Lease>; 2]) -> [Option<Contact>; 2],
+    enqueue: impl FnOnce([Option<Contact>; 2]),
+) {
+    if !leases
+        .iter()
+        .flatten()
+        .any(|l| bodies.contains(&l.identity.body))
+    {
         return;
+    }
+    let contacts = observe(leases);
+    if contacts.iter().any(Option::is_some) {
+        enqueue(contacts);
+    }
+}
+
+unsafe fn observe_contacts(
+    event: &hknpContactImpulseEvent,
+    leases: [Option<Lease>; 2],
+) -> [Option<Contact>; 2] {
+    let mut contacts = [None; 2];
+    let Some(world) = (unsafe { World::get() }) else {
+        return contacts;
     };
-    let mut contacts = Vec::with_capacity(2);
-    for lease in leases.into_iter().flatten() {
+    for (slot, lease) in contacts.iter_mut().zip(leases) {
+        let Some(lease) = lease else { continue };
         let Some(side) = event
             .m_bodyIds
             .iter()
@@ -238,13 +276,9 @@ pub(super) unsafe fn record(event: *const hknpContactImpulseEvent) {
         let character = other_owner.is_some_and(|owner| unsafe {
             crate::controllers::physical_hands::engine::is_character(owner)
         });
-        contacts.push(lease.contact(at, normal, impulse, character));
+        *slot = Some(lease.contact(at, normal, impulse, character));
     }
-    let mut state = STATE.lock();
-    let now = Instant::now();
-    for contact in contacts {
-        state.queue(contact, now);
-    }
+    contacts
 }
 
 /// Preserve native flag intent while a held-body lease keeps events enabled.

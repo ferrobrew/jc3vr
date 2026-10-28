@@ -159,12 +159,11 @@ fn pending_landing_survives_extra_no_grip_steps_until_handoff_reject_consume_or_
     let gate = Gate::new();
     let at = Instant::now();
     pending(&gate, at);
+    let mut state = crate::controllers::physical_hands::climb::state::State::new();
     for millis in [10, 20, 40] {
-        crate::controllers::physical_hands::climb::state::STATE
-            .lock()
-            .finish_climb_with(at + Duration::from_millis(millis), |now| {
-                gate.finish_grips(now)
-            });
+        state.finish_climb_with(at + Duration::from_millis(millis), |now| {
+            gate.finish_grips(now)
+        });
         assert!(gate.blocks(caller(), at + Duration::from_millis(millis), |_, _| 8));
     }
     let offer = gate

@@ -162,29 +162,22 @@ impl Entry {
     }
 }
 
-/// Take the local player into a stunt position on `vehicle` near `from`. A roof entry first
-/// asks for the stunt area under the player, as the game's own on-foot movement does, which
-/// keeps the player's heading; otherwise, and for a helicopter's hang, the game's nearest stunt
-/// position, which turns the player to the vehicle's heading.
+/// Take the local player into a roof stunt position on `vehicle` near `from`. The entry first
+/// asks for the stunt area under the player, which keeps the player's heading, then tries the
+/// nearest stunt position, which turns the player to the vehicle's heading.
 ///
 /// # Safety
 ///
 /// `vehicle` must be a live vehicle, on the game thread outside the world update.
-pub(super) unsafe fn enter(
-    vehicle: NonZeroUsize,
-    from: Vec3,
-    roof: bool,
-) -> Result<Entry, StuntError> {
+pub(super) unsafe fn enter(vehicle: NonZeroUsize, from: Vec3) -> Result<Entry, StuntError> {
     let character =
         unsafe { Character::GetLocalPlayerCharacter().as_mut() }.ok_or(StuntError::NoPlayer)?;
-    if roof && !unsafe { character.IsThisVehicleBelow(vehicle.get() as *const Vehicle) } {
+    if !unsafe { character.IsThisVehicleBelow(vehicle.get() as *const Vehicle) } {
         return Err(StuntError::Refused);
     }
-    if roof
-        && crate::controllers::physical_hands::climb::native::deliberate(character, || unsafe {
-            character.AutoAttachToStuntAreaOnVehicleBelow()
-        })
-    {
+    if crate::controllers::physical_hands::climb::native::deliberate(character, || unsafe {
+        character.AutoAttachToStuntAreaOnVehicleBelow()
+    }) {
         return Ok(Entry::Below);
     }
     let position = Vector3::from(from);

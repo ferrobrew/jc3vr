@@ -14,13 +14,12 @@ use crate::{
             climb::{
                 engine, native,
                 solve::{
-                    ClimbTuning, Follow, Mantle, MantleCheck, MantleMotion, MantleTuning,
-                    body_target, carry_velocity, climb_velocity, fling_carry, is_ledge,
-                    mantle_starts, release_velocity, smooth_motion,
+                    ClimbTuning, Follow, MantleTuning, body_target, carry_velocity, climb_velocity,
+                    fling_carry, is_ledge, release_velocity, smooth_motion,
                 },
                 state::{
-                    Carry, Event, Grip, LOG_PERIOD, MANTLE_LANDED_BELOW_M, MAX_MANTLE_STEPS,
-                    MAX_STALE_STEPS, MantleFrame, Request, STATE, enabled,
+                    Carry, Event, Grip, LOG_PERIOD, MAX_MANTLE_STEPS, MAX_STALE_STEPS, MantleStep,
+                    MantleTick, Request, STATE, enabled,
                 },
             },
             physics::{self, drive::Goal},
@@ -349,81 +348,30 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
 
     let stands = support.is_some_and(|y| y >= config.climb.min_ledge_normal_y);
     if config.climb.mantle {
-        if state.mantle.is_none()
-            && let Some(top) = unsafe { state.ledge_top() }
-            && mantle_starts(
-                &MantleCheck {
-                    feet_y: place.feet.y,
-                    top_y: top.y,
-                    rise_mps: (state.smoothed - state.smoothed_carry).y,
-                    climbed_m: place.feet.y - state.start_feet_y,
-                    supported: support.is_some(),
-                },
-                &mantle_tuning,
-            )
-            && let Some(mantle) = Mantle::start(top, place.feet)
-        {
-            tracing::info!(top = ?top, feet = ?place.feet, "hand climbing: mantling over a ledge");
-            state.mantle = Some(mantle);
-            state.mantle_frame = state.ledge_grip().and_then(|g| {
-                unsafe { engine::body_frame(g.hold.body) }
-                    .filter(|_| g.hold.moving)
-                    .map(|f| MantleFrame {
-                        owner: g.hold,
-                        transform: f.transform,
-                    })
-            });
-            state.mantle_steps = 0;
-            state.status.mantles += 1;
-        }
-        if let Some(captured) = state.mantle_frame {
-            let hold = captured.owner;
-            let from = captured.transform;
-            if !unsafe { hold.valid() } {
-                state.drop_all("the mantle's body changed");
-                state.finish_climb();
-                return [None; 2];
-            }
-            if let (Some(mantle), Some(now)) = (state.mantle.as_mut(), unsafe {
-                engine::body_frame(hold.body)
-            }) {
-                let turn = crate::controllers::physical_hands::climb::solve::carried_turn(
-                    from,
-                    now.transform,
-                );
-                mantle.top = crate::controllers::physical_hands::climb::solve::carried(
-                    from,
-                    now.transform,
-                    mantle.top,
-                );
-                let over = turn * Vec3::new(mantle.over.x, 0.0, mantle.over.y);
-                mantle.over = glam::Vec2::new(over.x, over.z).normalize_or_zero();
-                state.mantle_frame = Some(MantleFrame {
-                    transform: now.transform,
-                    ..captured
-                });
-            }
-        }
-        if let Some(mantle) = state.mantle {
-            state.mantle_steps += 1;
-            let landed = stands && place.feet.y >= mantle.top.y - MANTLE_LANDED_BELOW_M;
-            let motion = mantle.motion(place.feet, &mantle_tuning);
-            if landed || motion == MantleMotion::Arrived {
-                if let (Some(captured), Some(context)) = (state.mantle_frame, context) {
-                    unsafe {
-                        native::landed(
-                            context,
-                            captured.owner,
-                            captured.completion(context, place.feet),
-                            Instant::now(),
-                        )
-                    };
+        let mantle = state.step_mantle(
+            MantleTick {
+                feet: place.feet,
+                supported: support.is_some(),
+                stands,
+                tuning: &mantle_tuning,
+                max_steps: scale_ticks(MAX_MANTLE_STEPS),
+                context,
+            },
+            |hold| {
+                let valid = unsafe { hold.valid() };
+                let frame = valid
+                    .then(|| unsafe { engine::body_frame(hold.body) })
+                    .flatten();
+                (valid, frame)
+            },
+        );
+        match mantle {
+            MantleStep::Inactive => {}
+            MantleStep::Move(over) => velocity = over + carry,
+            MantleStep::Completed(landing) => {
+                if let (Some((owner, landing)), Some(context)) = (landing, context) {
+                    unsafe { native::landed(context, owner, landing, Instant::now()) };
                 }
-                tracing::info!(
-                    feet = ?place.feet,
-                    stood = landed,
-                    "hand climbing: mantled onto the ledge"
-                );
                 for hand in Hand::BOTH {
                     if state.grips[hand.index()].take().is_some() {
                         state.events.push((hand, Event::Released));
@@ -432,13 +380,10 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
                 state.finish_climb();
                 return [None; 2];
             }
-            if state.mantle_steps > scale_ticks(MAX_MANTLE_STEPS) {
-                state.drop_all("the mantle did not reach the ledge's top");
+            MantleStep::Cancelled(reason) => {
+                state.drop_all(reason);
                 state.finish_climb();
                 return [None; 2];
-            }
-            if let MantleMotion::Move(over) = motion {
-                velocity = over + carry;
             }
         }
     }

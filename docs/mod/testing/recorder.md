@@ -140,7 +140,7 @@ Scenario signals read the snapshots the mod's systems publish for the status row
 | `climb.climbing`, `.mantling`, `.error` | flag | A hand grips the world; the mantle runs; the climbing holds an error. |
 | `climb.grips`, `.moving_grips`, `.releases`, `.mantles`, `.drops` | counter | The climbing's counts. |
 | `stunt.hanging`, `.standing` | flag | The game holds the player hanging from a helicopter, or standing in a vehicle's stunt area ([stunt-positions.md](../input/stunt-positions.md)). |
-| `stunt.hang_entries`, `.roof_entries`, `.releases`, `.refusals` | counter | The hangs the grips entered, the stunt areas the mantles entered, the hangs let go by opening the grips, and the entries the game refused. |
+| `stunt.hang_entries`, `.roof_entries`, `.releases`, `.refusals` | counter | The legacy hang-entry count, which stays zero; the stunt areas the mantles entered; the hangs let go by opening the grips; and the roof entries the game refused. |
 | `push_up.pushes` | counter | Pushes up with the hands pressed down ([physical-hands.md](../input/physical-hands.md#pushing-up)). |
 | `push_up.lifting` | flag | The hands lift the body. |
 | `articulated.grips` | counter | Articulated objects a hand took hold of ([physical-hands.md](../input/physical-hands.md#articulated-objects)). |

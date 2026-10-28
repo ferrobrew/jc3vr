@@ -15,9 +15,12 @@ use crate::controllers::{
     physical_hands::{
         PhysicalHandsConfig,
         climb::{
-            engine,
+            engine::{self, BodyFrame},
             native::Context,
-            solve::{Mantle, carried, carried_turn},
+            solve::{
+                Mantle, MantleCheck, MantleMotion, MantleTuning, carried, carried_turn,
+                mantle_starts,
+            },
             types::{ClimbHandStatus, ClimbStatus, Hold, Landing},
         },
         physics::{self, drive::Goal},
@@ -288,6 +291,22 @@ impl MantleFrame {
     }
 }
 
+pub(super) struct MantleTick<'a> {
+    pub feet: Vec3,
+    pub supported: bool,
+    pub stands: bool,
+    pub tuning: &'a MantleTuning,
+    pub max_steps: u32,
+    pub context: Option<Context>,
+}
+
+pub(super) enum MantleStep {
+    Inactive,
+    Move(Vec3),
+    Completed(Option<(Hold, Landing)>),
+    Cancelled(&'static str),
+}
+
 pub(super) struct State {
     pub(super) requests: [Option<Request>; 2],
     pub(super) grips: [Option<Grip>; 2],
@@ -329,6 +348,82 @@ pub(super) struct State {
 }
 
 impl State {
+    pub(super) fn step_mantle(
+        &mut self,
+        tick: MantleTick<'_>,
+        mut body: impl FnMut(Hold) -> (bool, Option<BodyFrame>),
+    ) -> MantleStep {
+        if self.mantle.is_none()
+            && let Some(grip) = self.ledge_grip()
+        {
+            let (valid, frame) = body(grip.hold);
+            if !valid {
+                return MantleStep::Cancelled("the mantle's body changed");
+            }
+            let top = grip
+                .frame
+                .zip(frame)
+                .map_or(grip.hold.point, |(from, now)| {
+                    carried(from, now.transform, grip.hold.point)
+                });
+            if mantle_starts(
+                &MantleCheck {
+                    feet_y: tick.feet.y,
+                    top_y: top.y,
+                    rise_mps: (self.smoothed - self.smoothed_carry).y,
+                    climbed_m: tick.feet.y - self.start_feet_y,
+                    supported: tick.supported,
+                },
+                tick.tuning,
+            ) && let Some(mantle) = Mantle::start(top, tick.feet)
+            {
+                tracing::info!(top = ?top, feet = ?tick.feet, "hand climbing: mantling over a ledge");
+                self.mantle = Some(mantle);
+                self.mantle_frame = frame.filter(|_| grip.hold.moving).map(|f| MantleFrame {
+                    owner: grip.hold,
+                    transform: f.transform,
+                });
+                self.mantle_steps = 0;
+                self.status.mantles += 1;
+            }
+        }
+        if let Some(captured) = self.mantle_frame {
+            let (valid, now) = body(captured.owner);
+            if !valid {
+                return MantleStep::Cancelled("the mantle's body changed");
+            }
+            if let (Some(mantle), Some(now)) = (self.mantle.as_mut(), now) {
+                let turn = carried_turn(captured.transform, now.transform);
+                mantle.top = carried(captured.transform, now.transform, mantle.top);
+                let over = turn * Vec3::new(mantle.over.x, 0.0, mantle.over.y);
+                mantle.over = glam::Vec2::new(over.x, over.z).normalize_or_zero();
+                self.mantle_frame = Some(MantleFrame {
+                    transform: now.transform,
+                    ..captured
+                });
+            }
+        }
+        let Some(mantle) = self.mantle else {
+            return MantleStep::Inactive;
+        };
+        self.mantle_steps += 1;
+        let landed = tick.stands && tick.feet.y >= mantle.top.y - MANTLE_LANDED_BELOW_M;
+        let motion = mantle.motion(tick.feet, tick.tuning);
+        if landed || motion == MantleMotion::Arrived {
+            tracing::info!(feet = ?tick.feet, stood = landed, "hand climbing: mantled onto the ledge");
+            return MantleStep::Completed(self.mantle_frame.zip(tick.context).map(
+                |(captured, context)| (captured.owner, captured.completion(context, tick.feet)),
+            ));
+        }
+        if self.mantle_steps > tick.max_steps {
+            return MantleStep::Cancelled("the mantle did not reach the ledge's top");
+        }
+        match motion {
+            MantleMotion::Move(velocity) => MantleStep::Move(velocity),
+            MantleMotion::Arrived => unreachable!(),
+        }
+    }
+
     pub(super) fn fresh(&self, now: Instant) -> bool {
         self.published
             .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER)
@@ -337,12 +432,6 @@ impl State {
     pub(super) fn stepped_lately(&self, now: Instant) -> bool {
         self.stepped
             .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER)
-    }
-
-    /// The highest gripped surface that is a ledge's top ([`is_ledge`]).
-    pub(super) unsafe fn ledge_top(&self) -> Option<Vec3> {
-        let grip = self.ledge_grip()?;
-        Some(unsafe { grip.carried() }.map_or(grip.hold.point, |c| c.point))
     }
 
     /// The grip on the highest ledge's top.
@@ -429,53 +518,59 @@ impl State {
 #[cfg(test)]
 mod tests;
 
-pub(super) static STATE: Mutex<State> = Mutex::new(State {
-    requests: [None; 2],
-    grips: [None; 2],
-    palms: [None; 2],
-    pressing: [false; 2],
-    rig: None,
-    rig_epoch: 0,
-    published: None,
-    publishes: 0,
-    stepped_publish: 0,
-    stale_steps: 0,
-    stepped: None,
-    climbing: false,
-    mantle: None,
-    mantle_steps: 0,
-    mantle_frame: None,
-    player: None,
-    smoothed: Vec3::ZERO,
-    smoothed_carry: Vec3::ZERO,
-    motion_grips: [None; 2],
-    input_at: None,
-    input_held: [false; 2],
-    input_mode: None,
-    start_feet_y: 0.0,
-    carry: None,
-    events: Vec::new(),
-    epoch: 0,
-    warned_mode: false,
-    logged_at: None,
-    held_by_game: false,
-    status: ClimbStatus {
-        climbing: false,
-        mantling: false,
-        hands: [ClimbHandStatus {
-            reach: None,
-            grip: None,
-        }; 2],
-        velocity: Vec3::ZERO,
-        gap_m: 0.0,
-        in_air: None,
-        grips: 0,
-        moving_grips: 0,
-        releases: 0,
-        mantles: 0,
-        drops: 0,
-        last_drop: None,
-        last_fling_mps: None,
-        last_error: None,
-    },
-});
+pub(super) static STATE: Mutex<State> = Mutex::new(State::new());
+
+impl State {
+    pub(super) const fn new() -> Self {
+        Self {
+            requests: [None; 2],
+            grips: [None; 2],
+            palms: [None; 2],
+            pressing: [false; 2],
+            rig: None,
+            rig_epoch: 0,
+            published: None,
+            publishes: 0,
+            stepped_publish: 0,
+            stale_steps: 0,
+            stepped: None,
+            climbing: false,
+            mantle: None,
+            mantle_steps: 0,
+            mantle_frame: None,
+            player: None,
+            smoothed: Vec3::ZERO,
+            smoothed_carry: Vec3::ZERO,
+            motion_grips: [None; 2],
+            input_at: None,
+            input_held: [false; 2],
+            input_mode: None,
+            start_feet_y: 0.0,
+            carry: None,
+            events: Vec::new(),
+            epoch: 0,
+            warned_mode: false,
+            logged_at: None,
+            held_by_game: false,
+            status: ClimbStatus {
+                climbing: false,
+                mantling: false,
+                hands: [ClimbHandStatus {
+                    reach: None,
+                    grip: None,
+                }; 2],
+                velocity: Vec3::ZERO,
+                gap_m: 0.0,
+                in_air: None,
+                grips: 0,
+                moving_grips: 0,
+                releases: 0,
+                mantles: 0,
+                drops: 0,
+                last_drop: None,
+                last_fling_mps: None,
+                last_error: None,
+            },
+        }
+    }
+}

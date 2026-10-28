@@ -10,6 +10,7 @@ use jc3gi::physics::{hknpBody, hknpWorld};
 
 use crate::controllers::physical_hands::impacts::{
     policy::Motion,
+    record_leased,
     state::{Contact, Enabled, FlagCall, Held, Identity, Observation, State},
 };
 
@@ -92,6 +93,54 @@ fn flag_call(identity: Identity, enable: bool, flags: u32, mode: i32) -> FlagCal
         mode,
         enable,
     }
+}
+
+#[test]
+fn unrelated_events_skip_native_observation_and_enqueue() {
+    let (state, _, _) = acquire([true, false], false);
+    record_leased(
+        [20, 21],
+        state.leases,
+        |_| panic!("unrelated event must not resolve native contacts"),
+        |_| panic!("unrelated event must not acquire the queue lock"),
+    );
+}
+
+#[test]
+fn filtered_events_skip_enqueue() {
+    let (state, observation, _) = acquire([true, false], false);
+    let mut observed = false;
+    record_leased(
+        [20, observation.identity.body],
+        state.leases,
+        |_| {
+            observed = true;
+            [None; 2]
+        },
+        |_| panic!("filtered event must not acquire the queue lock"),
+    );
+    assert!(observed);
+}
+
+#[test]
+fn an_admitted_event_queues_the_observed_contact() {
+    let (mut state, observation, now) = acquire([true, false], false);
+    let leases = state.leases;
+    let contact = contact(&state);
+    record_leased(
+        [observation.identity.body, 20],
+        leases,
+        |_| [None, Some(contact)],
+        |contacts| {
+            for contact in contacts.into_iter().flatten() {
+                state.queue(contact, now);
+            }
+        },
+    );
+    assert_eq!(
+        state.deliver(now, active(), &[observation.identity]).len(),
+        1
+    );
 }
 
 #[test]

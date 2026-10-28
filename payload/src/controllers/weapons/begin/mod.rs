@@ -1,6 +1,6 @@
 //! The first half of the weapon handling's input tick: read the weapons in the hands, and provide
 //! the weapon handling's grip targets ([`crate::controllers::grab`]): the sockets and pouches on
-//! the body, the held gun's parts, the weapons and grenades in the world, and the grenade's pin.
+//! the body, the held gun's parts, and the weapons and grenades in the world.
 
 use std::time::{Duration, Instant};
 

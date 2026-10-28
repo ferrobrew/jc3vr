@@ -1,10 +1,7 @@
-//! When the grips take the player into a stunt position and when they let go of one. Pure.
+//! Deliberate roof-mantle entry and grip-open exit from an existing native hang. Pure.
 //!
-//! [`Tracker::step`] reads one input tick: the stunt position the game has the player in, the
-//! grips the player holds, the hand climb's grips on a helicopter, and a mantle that landed on a
-//! vehicle's roof, and decides one thing to do about them ([`Decision`]).
-
-use crate::controllers::frame::Hand;
+//! [`Tracker::step`] reads the game's stunt position, the held grips, and a completed roof
+//! mantle, and returns one [`Decision`]. Physical grips do not request the animated hang.
 
 /// A stunt position the game holds the player in.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -29,11 +26,8 @@ impl StuntKind {
 pub struct Tick {
     /// The stunt position the game has the player in, if any.
     pub position: Option<StuntKind>,
-    /// Whether each hand's grip is held, indexed by [`Hand::index`].
+    /// Whether each hand's grip is held, indexed by [`crate::controllers::frame::Hand::index`].
     pub held: [bool; 2],
-    /// For each hand whose climbing grip holds a helicopter, how far the body's centre hangs below
-    /// the gripped point, metres (negative above it).
-    pub helicopter_grips: [Option<f32>; 2],
     /// A mantle that landed on a vehicle since the last tick: how far the feet are from the
     /// vehicle's nearest stunt area, metres, or `None` for a vehicle without one.
     pub roof_landing: Option<Option<f32>>,
@@ -44,9 +38,6 @@ pub struct Tick {
 /// The tracker's tuning, from [`StuntConfig`](crate::controllers::physical_hands::stunt::config::StuntConfig).
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Tuning {
-    pub enter_hang: bool,
-    pub hang_hold_s: f32,
-    pub hang_below_m: f32,
     pub enter_roof: bool,
     pub roof_offer_m: f32,
     pub let_go: bool,
@@ -59,8 +50,6 @@ pub struct Tuning {
 pub enum Decision {
     /// Nothing to change.
     Hold,
-    /// Take the player into the helicopter's hang, which this hand's grip holds.
-    EnterHang(Hand),
     /// Take the player into the stunt area the mantle landed by.
     EnterRoof,
     /// Let go of the helicopter: every grip opened in its hang.
@@ -74,8 +63,6 @@ pub enum Decision {
 pub struct Tracker {
     /// The position on the last tick.
     position: Option<StuntKind>,
-    /// How long each hand's grip has held a helicopter with the body below it, seconds.
-    hang_held_s: [f32; 2],
     /// Whether a grip has held in this hang, so that opening every grip lets go: a hang the
     /// grapple or the game entered waits for the player to take hold.
     armed: bool,
@@ -93,7 +80,6 @@ impl Tracker {
     pub const fn new() -> Self {
         Self {
             position: None,
-            hang_held_s: [0.0; 2],
             armed: false,
             open_s: 0.0,
             let_go_s: None,
@@ -117,7 +103,6 @@ impl Tracker {
         let any_held = tick.held.iter().any(|&h| h);
         if tick.position != self.position {
             self.position = tick.position;
-            self.hang_held_s = [0.0; 2];
             self.armed = tick.position == Some(StuntKind::Hanging) && any_held;
             self.open_s = 0.0;
             self.let_go_s = None;
@@ -133,7 +118,6 @@ impl Tracker {
     /// The game refused an entry: wait before trying again.
     pub fn refused(&mut self, tuning: &Tuning) {
         self.retry_in_s = tuning.retry_s.max(0.0);
-        self.hang_held_s = [0.0; 2];
     }
 
     fn hanging(&mut self, any_held: bool, dt: f32, tuning: &Tuning) -> Decision {
@@ -164,7 +148,6 @@ impl Tracker {
     fn free(&mut self, tick: &Tick, dt: f32, tuning: &Tuning) -> Decision {
         if self.retry_in_s > 0.0 {
             self.retry_in_s = (self.retry_in_s - dt).max(0.0);
-            self.hang_held_s = [0.0; 2];
             return Decision::Hold;
         }
         if tuning.enter_roof
@@ -173,23 +156,7 @@ impl Tracker {
         {
             return Decision::EnterRoof;
         }
-        let mut ready = None;
-        for hand in Hand::BOTH {
-            let i = hand.index();
-            let hangs = tick.held[i]
-                && tick.helicopter_grips[i].is_some_and(|below| below >= tuning.hang_below_m);
-            self.hang_held_s[i] = if hangs { self.hang_held_s[i] + dt } else { 0.0 };
-            if hangs && self.hang_held_s[i] >= tuning.hang_hold_s && ready.is_none() {
-                ready = Some(hand);
-            }
-        }
-        match ready {
-            Some(hand) if tuning.enter_hang => {
-                self.hang_held_s = [0.0; 2];
-                Decision::EnterHang(hand)
-            }
-            _ => Decision::Hold,
-        }
+        Decision::Hold
     }
 }
 
@@ -205,9 +172,6 @@ mod tests {
 
     fn tuning() -> Tuning {
         Tuning {
-            enter_hang: true,
-            hang_hold_s: 0.3,
-            hang_below_m: 0.3,
             enter_roof: true,
             roof_offer_m: 0.6,
             let_go: true,
@@ -220,69 +184,16 @@ mod tests {
         (0..ticks).map(|_| tracker.step(tick, &tuning())).collect()
     }
 
-    fn gripping_helicopter(below: f32) -> Tick {
-        Tick {
-            held: [true, false],
-            helicopter_grips: [Some(below), None],
-            dt: DT,
-            ..Tick::default()
-        }
-    }
-
     #[test]
-    fn a_held_grip_below_a_helicopter_enters_its_hang() {
-        let mut tracker = Tracker::new();
-        let decisions = run(&mut tracker, &gripping_helicopter(0.8), 12);
-        let first = decisions
-            .iter()
-            .position(|d| *d == Decision::EnterHang(Hand::Left))
-            .expect("the hang is entered");
-        // Not before the hold time.
-        assert!(first as f32 * DT >= 0.3 - DT, "{first}");
-        assert_eq!(
-            decisions
-                .iter()
-                .filter(|d| matches!(d, Decision::EnterHang(_)))
-                .count(),
-            1
-        );
-    }
-
-    #[test]
-    fn a_grip_above_the_body_or_a_brief_one_does_not_hang() {
-        let mut tracker = Tracker::new();
-        // Climbing over the top of the helicopter: the body is above the grip.
-        assert!(
-            run(&mut tracker, &gripping_helicopter(-0.2), 30)
-                .iter()
-                .all(|d| *d == Decision::Hold)
-        );
-        // A grip let go before the hold time restarts it.
-        let mut tracker = Tracker::new();
-        run(&mut tracker, &gripping_helicopter(0.8), 5);
-        tracker.step(
-            &Tick {
-                dt: DT,
-                ..Tick::default()
-            },
-            &tuning(),
-        );
-        assert!(
-            run(&mut tracker, &gripping_helicopter(0.8), 5)
-                .iter()
-                .all(|d| *d == Decision::Hold)
-        );
-    }
-
-    #[test]
-    fn a_climb_grip_whose_button_is_open_does_not_hang() {
+    fn held_grips_without_a_completed_mantle_do_not_request_entry() {
         let mut tracker = Tracker::new();
         let tick = Tick {
-            held: [false, false],
-            ..gripping_helicopter(0.8)
+            held: [true; 2],
+            dt: DT,
+            ..Tick::default()
         };
         assert!(
-            run(&mut tracker, &tick, 30)
+            run(&mut tracker, &tick, 100)
                 .iter()
                 .all(|d| *d == Decision::Hold)
         );
@@ -323,7 +234,6 @@ mod tests {
             decisions.iter().filter(|d| **d == Decision::LetGo).count(),
             1
         );
-        // The game keeping the hang is reported once.
         assert_eq!(
             decisions
                 .iter()
@@ -423,28 +333,40 @@ mod tests {
     }
 
     #[test]
-    fn a_refused_entry_waits_before_trying_again() {
+    fn a_refused_roof_entry_waits_before_trying_again() {
         let mut tracker = Tracker::new();
-        let decisions = run(&mut tracker, &gripping_helicopter(0.8), 12);
-        assert!(decisions.contains(&Decision::EnterHang(Hand::Left)));
+        let near = Tick {
+            roof_landing: Some(Some(0.3)),
+            dt: DT,
+            ..Tick::default()
+        };
+        assert_eq!(tracker.step(&near, &tuning()), Decision::EnterRoof);
         tracker.refused(&tuning());
-        let after = run(&mut tracker, &gripping_helicopter(0.8), 60);
+        let after = run(&mut tracker, &near, 60);
         let next = after
             .iter()
-            .position(|d| matches!(d, Decision::EnterHang(_)))
+            .position(|d| *d == Decision::EnterRoof)
             .expect("tried again");
         assert!(next as f32 * DT >= 1.0, "{next}");
     }
 
     #[test]
-    fn a_bad_tick_length_is_no_time() {
+    fn a_bad_tick_length_does_not_advance_hang_release() {
         let mut tracker = Tracker::new();
-        let tick = Tick {
+        let holding = Tick {
+            position: Some(StuntKind::Hanging),
+            held: [true, false],
+            dt: DT,
+            ..Tick::default()
+        };
+        tracker.step(&holding, &tuning());
+        let open = Tick {
+            held: [false; 2],
             dt: f32::NAN,
-            ..gripping_helicopter(0.8)
+            ..holding
         };
         assert!(
-            run(&mut tracker, &tick, 100)
+            run(&mut tracker, &open, 100)
                 .iter()
                 .all(|d| *d == Decision::Hold)
         );

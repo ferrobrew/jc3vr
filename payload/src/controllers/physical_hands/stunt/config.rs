@@ -2,24 +2,14 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Stunt positions held by the player's grip (see
-/// [`crate::controllers::physical_hands::stunt`]): a helicopter gripped by the hands takes the
-/// player into its hang, a mantle onto a vehicle's roof takes the player into its stunt area,
-/// and letting go of the grips in the hang lets go of the helicopter. It needs the hand climbing,
-/// whose grips on moving bodies it builds on.
+/// Deliberate roof-mantle entry and grip-open exit from the game's existing helicopter hang
+/// (see [`crate::controllers::physical_hands::stunt`]). Physical grips retain their handholds
+/// through the hand climb instead of requesting the animated hang.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct StuntConfig {
     /// Hold stunt positions with the grip.
     pub enabled: bool,
-    /// Legacy saved setting. Physical grips never request the animated helicopter hang.
-    pub enter_hang: bool,
-    /// How long a grip on a helicopter must hold, with the body hanging below it, before the hang
-    /// is entered, seconds: a brief grab while climbing past does not.
-    pub hang_hold_s: f32,
-    /// How far below the gripped point the body's centre must be for the grip to count as a hang,
-    /// metres.
-    pub hang_below_m: f32,
     /// Enter a vehicle's stunt area when a mantle lands on its roof.
     pub enter_roof: bool,
     /// How far from the nearest stunt area the feet may land for the mantle to enter it, metres.
@@ -41,9 +31,6 @@ impl StuntConfig {
     pub const fn new() -> Self {
         Self {
             enabled: true,
-            enter_hang: false,
-            hang_hold_s: 0.3,
-            hang_below_m: 0.3,
             enter_roof: true,
             roof_offer_m: 0.6,
             let_go: true,

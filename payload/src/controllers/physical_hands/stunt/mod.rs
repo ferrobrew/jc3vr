@@ -22,13 +22,11 @@ pub mod engine;
 pub mod solve;
 
 use std::{
-    num::NonZeroUsize,
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 
 pub use config::StuntConfig;
-use glam::Vec3;
 use jc3gi::input::input_action_map::Action;
 use parking_lot::Mutex;
 
@@ -40,8 +38,7 @@ use crate::{
         frame::Hand,
         haptics::{self, Event, Sustain},
         physical_hands::{
-            PhysicalHandsConfig,
-            climb::{self, engine::player_place},
+            PhysicalHandsConfig, climb,
             stunt::{
                 engine::Entry,
                 solve::{Decision, StuntKind, Tick, Tracker, Tuning},
@@ -61,7 +58,7 @@ pub struct StuntStatus {
     pub holding: [bool; 2],
     /// Which hands' climbing grips hold a helicopter, indexed by [`Hand::index`].
     pub on_helicopter: [bool; 2],
-    /// The hangs the grips entered.
+    /// Legacy recorder counter. Physical grips never request native hang entry, so it stays zero.
     pub hang_entries: u64,
     /// The stunt areas the mantles entered.
     pub roof_entries: u64,
@@ -99,7 +96,7 @@ pub(crate) fn hanging() -> bool {
             .is_some_and(|at| Instant::now().saturating_duration_since(at) <= STALE_AFTER)
 }
 
-/// Read the stunt position, enter one where the grips or a mantle offer it, and let go of a hang
+/// Read the stunt position, enter a roof where a completed mantle offers it, and let go of a hang
 /// whose grips opened. `held` is each hand's grip; a let-go asks the game for its jump, which
 /// leaves the hang, through `desired`. Called from the input tick after the climb's.
 pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
@@ -128,10 +125,8 @@ pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
     state.observe_position(read.kind);
 
     let gripped = climb::gripped();
-    // SAFETY: as above.
-    let body = unsafe { player_place() }.ok().map(|place| place.body);
     // SAFETY: as above; the grips were taken on bodies of the live world.
-    let helicopters = gripped.map(|grip| unsafe { helicopter_grip(grip?, body?) });
+    let helicopters = gripped.map(|grip| unsafe { helicopter_grip(grip) });
     let landing_offer = climb::take_landing();
     let landing = landing_offer.as_ref().map(|offer| {
         let landing = offer.landing;
@@ -145,15 +140,13 @@ pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
     let tick = Tick {
         position: read.kind,
         held,
-        // Physical grips keep their actual point instead of entering the native animated hang.
-        helicopter_grips: [None; 2],
         roof_landing: landing.map(|(_, _, distance)| distance),
         dt,
     };
     let tuning = tuning(&config.stunt);
     let decision = state.tracker.step(&tick, &tuning);
     state.status.armed = state.tracker.armed();
-    state.status.on_helicopter = helicopters.map(|h| h.is_some());
+    state.status.on_helicopter = helicopters;
     state.status.holding = if read.kind == Some(StuntKind::Hanging) {
         held
     } else {
@@ -163,31 +156,11 @@ pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
     let mut strains: Vec<(Hand, f32)> = Vec::new();
     match decision {
         Decision::Hold => {}
-        Decision::EnterHang(hand) => {
-            if let Some(grip) = helicopters[hand.index()] {
-                // SAFETY: as above; the vehicle owns the gripped body.
-                let entered = unsafe { engine::enter(grip.vehicle, grip.point, false) };
-                if state.entered(entered, StuntKind::Hanging, &tuning) {
-                    tracing::info!(
-                        hand = hand.label(),
-                        point = ?grip.point,
-                        below_m = grip.below_m,
-                        "stunt positions: the grip took the player into the helicopter's hang"
-                    );
-                    pulses.extend(
-                        Hand::BOTH
-                            .into_iter()
-                            .filter(|h| held[h.index()])
-                            .map(|h| (h, Event::StuntEnter)),
-                    );
-                }
-            }
-        }
         Decision::EnterRoof => {
             if let Some((Some(vehicle), feet, distance)) = landing {
                 // SAFETY: as above.
-                let entered = unsafe { engine::enter(vehicle, feet, true) };
-                if state.entered(entered, StuntKind::Standing, &tuning) {
+                let entered = unsafe { engine::enter(vehicle, feet) };
+                if state.entered(entered, &tuning) {
                     tracing::info!(
                         feet = ?feet,
                         distance_m = ?distance,
@@ -222,7 +195,7 @@ pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
     for hand in Hand::BOTH {
         let i = hand.index();
         let in_hang = state.status.holding[i];
-        if in_hang || (held[i] && helicopters[i].is_some()) {
+        if in_hang || (held[i] && helicopters[i]) {
             grip::declare(hand, Grip::new(GripSource::Stunt).pose(skid));
         }
         if in_hang && strain >= MIN_STRAIN {
@@ -250,40 +223,22 @@ const MIN_STRAIN: f32 = 0.1;
 
 static HOLDS: AtomicBool = AtomicBool::new(false);
 
-/// A climbing grip on a helicopter.
-#[derive(Debug, Copy, Clone, PartialEq)]
-struct HelicopterGrip {
-    vehicle: NonZeroUsize,
-    point: Vec3,
-    /// How far the body's centre hangs below the gripped point, metres.
-    below_m: f32,
-}
-
-/// The helicopter `grip` holds, if it holds one, with the body at `body`.
+/// Whether a live moving grip holds a helicopter, for the hand pose and readout.
 ///
 /// # Safety
 ///
 /// The game thread, outside the world update.
-unsafe fn helicopter_grip(grip: climb::Hold, body: Vec3) -> Option<HelicopterGrip> {
-    if !grip.moving {
-        return None;
+unsafe fn helicopter_grip(grip: Option<climb::Hold>) -> bool {
+    let Some(grip) = grip else { return false };
+    if !grip.moving || !unsafe { grip.valid() } {
+        return false;
     }
-    if !unsafe { grip.valid() } {
-        return None;
-    }
-    let vehicle = unsafe { engine::vehicle_of(grip.body) }?;
-    unsafe { engine::is_helicopter(vehicle) }.then_some(HelicopterGrip {
-        vehicle,
-        point: grip.point,
-        below_m: grip.point.y - body.y,
-    })
+    unsafe { engine::vehicle_of(grip.body) }
+        .is_some_and(|vehicle| unsafe { engine::is_helicopter(vehicle) })
 }
 
 fn tuning(config: &StuntConfig) -> Tuning {
     Tuning {
-        enter_hang: false,
-        hang_hold_s: config.hang_hold_s,
-        hang_below_m: config.hang_below_m,
         enter_roof: config.enter_roof,
         roof_offer_m: config.roof_offer_m,
         let_go: config.let_go,
@@ -326,26 +281,18 @@ impl State {
     }
 
     /// Count an entry, or a refusal, which the tracker then waits out; whether it entered.
-    fn entered(
-        &mut self,
-        entered: Result<Entry, engine::StuntError>,
-        kind: StuntKind,
-        tuning: &Tuning,
-    ) -> bool {
+    fn entered(&mut self, entered: Result<Entry, engine::StuntError>, tuning: &Tuning) -> bool {
         match entered {
             Ok(entry) => {
                 self.status.last_entry = Some(entry);
-                match kind {
-                    StuntKind::Hanging => self.status.hang_entries += 1,
-                    StuntKind::Standing => self.status.roof_entries += 1,
-                }
+                self.status.roof_entries += 1;
                 tracing::debug!(entry = entry.label(), "stunt positions: entered");
                 true
             }
             Err(e) => {
                 self.tracker.refused(tuning);
                 self.status.refusals += 1;
-                tracing::info!(position = kind.label(), error = %e, "stunt positions: the game refused the entry");
+                tracing::info!(error = %e, "stunt positions: the game refused the roof entry");
                 self.status.last_error = Some(e.to_string());
                 false
             }
@@ -373,13 +320,6 @@ static STATE: Mutex<State> = Mutex::new(State {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn production_tuning_never_turns_a_physical_grip_into_an_animated_hang() {
-        let mut config = StuntConfig::new();
-        config.enter_hang = true;
-        assert!(!tuning(&config).enter_hang);
-    }
 
     #[test]
     fn the_hold_pulse_follows_the_vehicles_speed() {
