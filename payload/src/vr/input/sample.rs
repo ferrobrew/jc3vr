@@ -115,6 +115,7 @@ impl InputState {
         };
         let mut hands: [HandFrame; 2] = Default::default();
         let mut first_error = None;
+        let mut joints_error = None;
         let generation = sources::observation_generation(self.profiles, self.dominant);
         let mut observed = Vec::new();
         let mut raw = [State::<bool>::default(); 3];
@@ -152,17 +153,12 @@ impl InputState {
             }
         }
         for hand in Hand::BOTH {
-            match self.sample_hand(&sampling, hand, &raw) {
-                Ok((frame, joints_error)) => {
-                    hands[hand.index()] = frame;
-                    if let Some(e) = joints_error {
-                        first_error.get_or_insert(e);
-                    }
-                }
-                Err(e) => {
-                    first_error.get_or_insert(e);
-                }
-            }
+            accept_hand(
+                self.sample_hand(&sampling, hand, &raw),
+                &mut hands[hand.index()],
+                &mut first_error,
+                &mut joints_error,
+            );
         }
         self.previous_buttons = [hands[0].buttons, hands[1].buttons];
 
@@ -241,7 +237,7 @@ impl InputState {
         if let Err(e) = self.flush_haptics(session, cfg) {
             first_error.get_or_insert(e);
         }
-        match first_error {
+        match first_error.or(joints_error) {
             Some(e) => self.note_failure(&e),
             None => self.note_success(),
         }
@@ -506,6 +502,25 @@ impl InputState {
     }
 }
 
+fn accept_hand(
+    result: anyhow::Result<(HandFrame, Option<anyhow::Error>)>,
+    hand: &mut HandFrame,
+    critical: &mut Option<anyhow::Error>,
+    diagnostic: &mut Option<anyhow::Error>,
+) {
+    match result {
+        Ok((frame, error)) => {
+            *hand = frame;
+            if let Some(error) = error {
+                diagnostic.get_or_insert(error);
+            }
+        }
+        Err(error) => {
+            critical.get_or_insert(error);
+        }
+    }
+}
+
 /// What one frame's sample reads against.
 struct Sampling<'a> {
     session: &'a xr::Session<xr::D3D11>,
@@ -646,6 +661,62 @@ fn rotate_to_cockpit(v: xr::Vector3f, baseline: Option<Baseline>) -> Vec3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn optional_joint_error_preserves_controller_publication_and_ordered_history() {
+        let _serial = history::TEST_LOCK.lock();
+        let _flight = flight_pose::test_guard();
+        history::take_gameplay();
+        history::take_capture();
+        let mut hand = HandFrame::default();
+        let mut critical = None;
+        let mut diagnostic = None;
+        accept_hand(
+            Ok((
+                HandFrame {
+                    active: true,
+                    grip: TrackedPose {
+                        position_valid: true,
+                        orientation_valid: true,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                Some(anyhow::anyhow!("input: optional joint query failed")),
+            )),
+            &mut hand,
+            &mut critical,
+            &mut diagnostic,
+        );
+        assert!(critical.is_none());
+        assert!(diagnostic.is_some());
+        assert!(hand.active && hand.grip.is_valid() && hand.joints.is_none());
+        let mut observed = vec![RouteSample {
+            route: InputRoute::Raw(0),
+            value: ValueBits::Bool(true),
+            active: true,
+            down: true,
+            change: None,
+            sources: tracking_format::input::SourceQuery::NotEnumerated,
+        }];
+        admission::apply(&[hand, HandFrame::default()], &mut observed);
+        history::publish_observation(
+            history::LiveSample {
+                samples: observed,
+                context: 0,
+                focused: true,
+                generation: 1,
+                observed_at: history::observation_time(),
+                frame_sequence: 1,
+            },
+            critical.is_none(),
+        );
+        let (_, published) = history::take_gameplay();
+        assert!(
+            matches!(&published.last().unwrap().record, tracking_format::input::InputRecord::Group(group) if group.samples[0].active && group.samples[0].down)
+        );
+        history::take_capture();
+    }
 
     #[test]
     fn a_tracked_location_converts_with_its_flags() {
