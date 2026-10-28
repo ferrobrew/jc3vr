@@ -347,6 +347,16 @@ pub(crate) fn depart(hand: Hand, object: ObjectAddress, whereabouts: Whereabouts
     live.publish_places();
 }
 
+/// Move a weapon to the world before its last carry owner releases it.
+pub(crate) fn dropped(object: ObjectAddress) {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return;
+    }
+    live.fold(Event::Dropped { object });
+    live.publish_places();
+}
+
 /// Whether the player travels fast now (the wingsuit, a vehicle, the parachute, a fall), as the
 /// inventory measures it each input tick: a let-go while it holds is a let-go at speed, which a
 /// weapon left behind comes back from.

@@ -211,10 +211,10 @@ pub(crate) unsafe fn input_tick(
         unsafe { stop(owner, "the inventory is off", inputs.settings.carry) };
         return None;
     }
-    let mut state = STATE.lock();
     if !inputs.settings.carry && carry::count() > 0 {
-        unsafe { carry::drop_all() };
+        unsafe { carry::drop_all(owner) };
     }
+    let mut state = STATE.lock();
     state.status.active = true;
     let player = engine::position(owner);
     let slots = unsafe { engine::slots(owner) };
@@ -437,7 +437,7 @@ unsafe fn stop(owner: &mut Character, why: &str, keep: bool) {
             "inventory: the table stopped; the weapons beyond the slots are kept stashed"
         );
     } else {
-        unsafe { carry::drop_all() };
+        unsafe { carry::drop_all(owner) };
         restore::clear();
         single::clear();
     }
