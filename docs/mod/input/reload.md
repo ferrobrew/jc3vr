@@ -131,7 +131,7 @@ Every gun in a hand is reloaded on its own, whichever hand holds it and whether 
 
 A single pistol ([physical-weapons.md, "Separate pistols"](physical-weapons.md#separate-pistols)) is a weapon of its own with one gun, and is reloaded as any other: its magazine is its own, half the tuned size rounded up, which the reload reads as its capacity, and its reserve is the character's. The game's own reload fills it to the tuned size, so a load through the game's reload is brought down to the half at once, the rounds over it going back to the reserve. The game's pair, while the pistols are not made separate, is one weapon of one magazine with a gun in each hand: each hand's eject drops that gun's magazine prop and takes the pair's magazine out, and a load fills the pair.
 
-A weapon is remembered by its item in the loadout table when the table holds it, and otherwise by its object (`records.rs`), so its chambers and its actions outlive the spawn reset's replacement of the weapon object, as they outlive a weapon change. A gun's chamber and action are kept by the gun's place in its weapon rather than by the hand, so a weapon handed to the other hand keeps them.
+A weapon is remembered by its item in the loadout table when the table holds it, and otherwise by its object (`records.rs`). Item-keyed chamber and action values can survive replacement of the native object. The pre-reset boundary discards object-address-only records and releases the ammunition ledger's native owners outside its locks. A replacement seeds its ammunition partition from its current native total and any surviving item values. A gun's chamber and action are kept by the gun's place in its weapon rather than by the hand, so a weapon handed to the other hand keeps them.
 
 ## Haptics
 

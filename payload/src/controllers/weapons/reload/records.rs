@@ -93,6 +93,14 @@ impl<K: Copy + PartialEq> Records<K> {
     }
 }
 
+impl<I> Records<RecordKey<I>> {
+    /// Only a table item supplies a durable identity across replacement native objects.
+    pub(super) fn on_pre_reset(&mut self) {
+        self.entries
+            .retain(|(key, _)| matches!(key, RecordKey::Item(_)));
+    }
+}
+
 /// How many weapons' records are kept across weapon changes.
 pub(super) const MAX_RECORDS: usize = 8;
 /// How many guns a record keeps entries for.
@@ -101,6 +109,17 @@ const GUN_ENTRIES: usize = 2;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reset_discards_address_only_values_but_keeps_durable_item_state() {
+        let mut records = Records::<RecordKey<u32>>::new();
+        records.get(RecordKey::Item(7)).last_magazine = Some(9);
+        records.get(RecordKey::Object(100)).last_magazine = Some(5);
+        records.on_pre_reset();
+        assert_eq!(records.entries.len(), 1);
+        assert_eq!(records.get(RecordKey::Item(7)).last_magazine, Some(9));
+        assert_eq!(records.get(RecordKey::Object(100)).last_magazine, None);
+    }
 
     #[test]
     fn a_weapon_the_table_holds_is_keyed_by_its_item_across_objects() {

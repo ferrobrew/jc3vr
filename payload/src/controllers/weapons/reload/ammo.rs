@@ -406,21 +406,34 @@ pub(super) fn suspend() {
     }
 }
 
-struct Entry {
+/// Reset destroys the native identities. The native loaded totals already own every round;
+/// only the chamber partition and identity retention are discarded here.
+pub(super) fn on_pre_reset() {
+    release_for_reset(&LEDGER);
+}
+
+fn release_for_reset<Owner>(ledger: &Mutex<Ledger<Owner>>) {
+    let retired = std::mem::take(&mut ledger.lock().entries);
+    drop(retired);
+}
+
+struct Entry<Owner = Strong> {
     weapon: usize,
-    owner: Strong,
+    owner: Owner,
     user: usize,
     runtime: Runtime,
     magazine_only: bool,
 }
 
-struct Ledger {
-    entries: Vec<Entry>,
+struct Ledger<Owner = Strong> {
+    entries: Vec<Entry<Owner>>,
 }
 
 static LEDGER: Mutex<Ledger> = Mutex::new(Ledger {
     entries: Vec::new(),
 });
 
+#[cfg(test)]
+mod ownership_tests;
 #[cfg(test)]
 mod tests;

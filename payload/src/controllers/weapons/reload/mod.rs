@@ -678,6 +678,12 @@ pub(crate) unsafe fn split_pair(pair: &WeaponBase, twin: &WeaponBase, tuned: i32
     )
 }
 
+/// Release native ammunition identities before the spawn system resets its objects.
+pub(crate) fn on_pre_reset() {
+    STATE.lock().records.on_pre_reset();
+    ammo::on_pre_reset();
+}
+
 /// Loaded rounds excluded from a single pistol's magazine-capacity clamp.
 pub(crate) fn chamber_rounds(weapon: usize) -> i32 {
     ammo::protected_rounds(weapon)

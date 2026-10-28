@@ -556,6 +556,7 @@ fn live_slot(object: ObjectKey) -> Option<SlotObject> {
 /// The spawn system is resetting: release every weapon the inventory keeps and forget them all,
 /// since the reset removes the weapons in the world and replaces the slots' weapons.
 fn on_reset() {
+    crate::controllers::weapons::reload::on_pre_reset();
     let released: Vec<ObjectAddress> = carry::objects()
         .into_iter()
         .filter_map(ObjectAddress::from_address)
