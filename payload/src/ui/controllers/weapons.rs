@@ -436,6 +436,11 @@ fn grapple_readout(ui: &mut Ui, a: &AnchorStatus, (yanks, last): (u64, Option<Ya
         n.failed,
         n.tosses
     ));
+    if let Some(length) = n.sling_length_m {
+        ui.label(format!(
+            "  Rope {length:.2} m · release grip to throw · release B to snatch"
+        ));
+    }
     if let Some(refusal) = &n.last_refusal {
         ui.label(format!("Snatch: last refusal: {refusal}"));
     }

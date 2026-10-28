@@ -80,4 +80,5 @@ mod layout;
 pub(crate) mod legacy;
 mod menus;
 mod on_foot;
+mod snatch;
 mod vehicles;

@@ -1,0 +1,22 @@
+# Record this sequence before running the scenario.
+name = "grapple-held hammer throws"
+description = "On foot with an empty grapple hand, aim at a dropped weapon out of reach, grip it, hold B, and yank. Swing it in a broad circle without aiming at it, then open the grip while B stays down. Release B and confirm no grapple or tether fires. Repeat with a loose prop. Repeat once more, retain grip, release B, and let the target arrive in the hand. Also test B before grip as an ordinary grapple, cancellation while B stays down, tracking loss, opening the menu, a stationary held line longer than the normal stall window, and a target picked up or destroyed during flight. Confirm the native line begins at the tracked forearm, neither category is pulled fully in while B stays down, and release preserves the object's current motion."
+recording = "../recordings/grapple_hammer_throw.jc3trk"
+settle_s = 2.0
+
+[[expect]]
+name = "the attached target swings on its held line"
+log = "snatch: swinging on the held line"
+
+[[expect]]
+name = "releasing B resumes the snatch"
+log = "snatch: released B; pulling to the hand"
+
+[[expect]]
+name = "the grip release cancels the owned line"
+log = "snatch: cancelled"
+
+[[expect]]
+name = "the swinging phase appears in the status readout"
+status = "SNATCH"
+detail = "SWINGING"

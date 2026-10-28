@@ -37,6 +37,7 @@ pub(crate) mod grid;
 pub mod labels;
 pub mod localise;
 pub(crate) mod page_clock;
+pub(crate) mod snatch;
 
 use std::{
     collections::hash_map::DefaultHasher,
@@ -202,7 +203,8 @@ pub(crate) fn refresh(
     };
     let (generation, table) = sources::table();
     let known_rows = describe_sources(&ctx, &table);
-    let report = eligibility::resolve(&known_rows, eligibility);
+    let mut report = eligibility::resolve(&known_rows, eligibility);
+    snatch::extend(&mut report.context, &table, eligibility.snatch.as_ref());
     let current = &report.context;
     let (previous, same_current) = {
         let state = STATE.lock();

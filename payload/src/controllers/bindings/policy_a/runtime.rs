@@ -75,6 +75,7 @@ pub(crate) struct Tick {
     pub(crate) commands: Vec<SystemCommand>,
     raw: [ButtonControl; 3],
     routes: Vec<(ActionId, Hand, Intent)>,
+    permitted: Vec<(ActionId, Hand)>,
     claims: u32,
 }
 
@@ -226,6 +227,12 @@ impl Runtime {
                 }
                 (route.id, route.hand, intent)
             })
+            .collect();
+        tick.permitted = self
+            .routes
+            .iter()
+            .filter(|route| route.present && route.system.is_none() && !route.blocked)
+            .map(|route| (route.id, route.hand))
             .collect();
         tick.claims |= self.claims;
         tick
@@ -441,6 +448,11 @@ impl Runtime {
 }
 
 impl Tick {
+    /// Whether the policy permits this semantic route, including attribution and neutral recovery.
+    pub(crate) fn permits(&self, id: ActionId, hand: Hand) -> bool {
+        self.permitted.contains(&(id, hand))
+    }
+
     pub(crate) fn filter_raw(&self, frame: &mut ControllerFrame, edges: &mut Edges) {
         for control in Control::ALL {
             let (hand, _) = raw_location(control);

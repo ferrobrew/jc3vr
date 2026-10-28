@@ -12,6 +12,14 @@ pub struct SnatchConfig {
     /// aim, then yank the hand back. Also lets the grapple's aim see weapons lying in the world,
     /// which a tap of the grapple button then tosses to the player's feet, and a hold tethers.
     pub enabled: bool,
+    /// Hold B after gripping a remote target to keep its rope length and swing it physically.
+    pub sling: bool,
+    /// The radial rope stiffness, per second squared.
+    pub sling_stiffness: f32,
+    /// The radial damping relative to the tracked anchor, per second.
+    pub sling_damping: f32,
+    /// The greatest tension acceleration, metres per second squared.
+    pub sling_max_accel_mps2: f32,
     /// The farthest a target may be, metres. The hook's line caps it.
     pub range_m: f32,
     /// How far off the grapple's ray a gun in a character's hands may be and still be chosen,
@@ -59,6 +67,10 @@ impl SnatchConfig {
     pub const fn new() -> Self {
         Self {
             enabled: true,
+            sling: true,
+            sling_stiffness: 400.0,
+            sling_damping: 30.0,
+            sling_max_accel_mps2: 120.0,
             range_m: 20.0,
             cone_deg: 6.0,
             yank: YankConfig {

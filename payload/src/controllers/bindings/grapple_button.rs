@@ -102,6 +102,8 @@ enum Phase {
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct GrappleButton {
     phase: Phase,
+    /// An external snatch press stays consumed until an observed neutral sample.
+    snatch_owned: bool,
 }
 
 /// How long a press may be held and still be a tap, seconds.
@@ -117,11 +119,37 @@ pub const TIGHTEN_RAMP_S: f32 = 1.0;
 
 impl GrappleButton {
     pub const fn new() -> Self {
-        Self { phase: Phase::Idle }
+        Self {
+            phase: Phase::Idle,
+            snatch_owned: false,
+        }
+    }
+
+    /// Claim a fresh grip-first press before the ordinary grapple gestures see it.
+    pub(crate) fn claim_snatch(&mut self, button: ButtonControl, eligible: bool) -> bool {
+        if eligible && button.pressed && self.phase == Phase::Idle && !self.snatch_owned {
+            self.snatch_owned = true;
+        }
+        self.snatch_owned
+    }
+
+    /// Consume the owned release too; masked or missing samples cannot transfer ownership.
+    pub(crate) fn observe_snatch_neutral(&mut self, button: ButtonControl, usable: bool) {
+        if usable && !button.held() && !button.released {
+            self.snatch_owned = false;
+        }
+    }
+
+    /// Reset ordinary gestures without transferring a consumed press back to the game.
+    pub(crate) fn reset_preserving_snatch(&mut self) {
+        self.phase = Phase::Idle;
     }
 
     /// Read the current gesture permissions without advancing the button or its timers.
     pub fn current_permissions(&self, context: GrappleContext) -> GrapplePermissions {
+        if self.snatch_owned {
+            return GrapplePermissions::default();
+        }
         let tighten = match self.phase {
             Phase::Idle | Phase::TapWaiting { .. } | Phase::Pressed { .. } => {
                 context.tethers && !context.aim_target
@@ -146,6 +174,12 @@ impl GrappleButton {
 
     /// Advance one tick.
     pub fn step(&mut self, tick: GrappleTick) -> GrappleOutput {
+        if self.snatch_owned {
+            return GrappleOutput {
+                gestures: true,
+                ..Default::default()
+            };
+        }
         let GrappleTick {
             button,
             context,
@@ -319,6 +353,44 @@ fn tighten_at(held_s: f32) -> f32 {
 mod tests {
     use super::*;
 
+    #[test]
+    fn snatch_consumes_cancelled_press_and_release_until_observed_neutral() {
+        let mut g = GrappleButton::new();
+        assert!(g.claim_snatch(PRESS, true));
+        assert_eq!(
+            g.current_permissions(TETHERS),
+            GrapplePermissions::default()
+        );
+        assert_eq!(
+            g.step(tick(HELD, TETHERS)),
+            GrappleOutput {
+                gestures: true,
+                ..Default::default()
+            }
+        );
+        g.reset_preserving_snatch();
+        g.cancel();
+        g.observe_snatch_neutral(UP, false);
+        assert!(g.claim_snatch(HELD, false));
+        assert_eq!(g.step(tick(RELEASE, TETHERS)).fire, None);
+        g.observe_snatch_neutral(RELEASE, true);
+        assert!(g.claim_snatch(UP, false));
+        g.observe_snatch_neutral(UP, true);
+        assert!(!g.claim_snatch(UP, false));
+        assert!(!g.step(tick(PRESS, GrappleContext::default())).gestures);
+    }
+
+    #[test]
+    fn b_before_grip_and_pending_ordinary_gestures_cannot_be_claimed() {
+        let mut g = GrappleButton::new();
+        assert!(!g.step(tick(PRESS, GrappleContext::default())).gestures);
+        assert!(!g.claim_snatch(HELD, true));
+        assert!(!g.step(tick(RELEASE, GrappleContext::default())).gestures);
+        let mut g = GrappleButton::new();
+        g.step(tick(PRESS, TETHERS));
+        assert!(!g.claim_snatch(PRESS, true));
+    }
+
     const DT: f32 = 1.0 / 30.0;
     const UP: ButtonControl = ButtonControl {
         down: false,
@@ -393,7 +465,10 @@ mod tests {
     #[test]
     fn current_permissions_follow_idle_and_tap_waiting_context_without_advancing() {
         for phase in [Phase::Idle, Phase::TapWaiting { waited_s: 0.1 }] {
-            let g = GrappleButton { phase };
+            let g = GrappleButton {
+                phase,
+                ..Default::default()
+            };
             for tethers in [false, true] {
                 for aim_target in [false, true] {
                     let context = GrappleContext {
@@ -489,7 +564,10 @@ mod tests {
             Phase::Spent,
             Phase::Passing,
         ] {
-            let g = GrappleButton { phase };
+            let g = GrappleButton {
+                phase,
+                ..Default::default()
+            };
             for tethers in [false, true] {
                 assert_eq!(
                     g.current_permissions(GrappleContext {

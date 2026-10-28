@@ -29,7 +29,10 @@
 //! the end, holds the grapple button back from the game while its line is out, and ends its own
 //! wire on every exit and stand-down.
 //!
-//! [`hooks`] makes the grapple button's tap and hold work on a weapon under the aim.
+//! Holding B after arming retains the attached weapon or prop on a compliant radial rope
+//! ([`sling`]). [`sling_hooks`] keeps the native device endpoint on the tracked forearm and excludes
+//! the owned wire's native constraint and tension path until B releases. Grip release writes no
+//! target velocity. [`hooks`] keeps ordinary grapple taps and holds working on aimed weapons.
 
 pub mod config;
 mod engine;
@@ -37,6 +40,8 @@ mod hooks;
 mod prearm;
 mod pull;
 pub mod rules;
+mod sling;
+mod sling_hooks;
 mod target;
 
 use std::{fmt, num::NonZeroUsize};
@@ -59,7 +64,7 @@ use crate::controllers::{
     haptics::{self, Event},
     loadout::slot_label,
     mode::{Detection, Mode},
-    physical_hands::BodyError,
+    physical_hands::{self, BodyError},
     snatch::{
         prearm::Prearm,
         pull::{Arrival, Attached, Fired, Grabbed},
@@ -74,7 +79,26 @@ use crate::controllers::{
 
 /// The snatch's hooks, aggregated by [`crate::controllers::hook_library`].
 pub(crate) fn hook_library() -> HookLibrary {
-    hooks::hook_library()
+    hooks::hook_library().with_hook_library(sling_hooks::hook_library())
+}
+
+/// Only an already-gripped remote target can claim a subsequent fresh B press.
+pub(crate) fn can_claim_button() -> bool {
+    matches!(STATE.lock().phase, Phase::Armed { .. })
+}
+
+/// A copied phase-specific instruction for the current usable-controls provider.
+pub(crate) fn hint() -> Option<(Hand, bool)> {
+    let state = STATE.lock();
+    match state.phase {
+        Phase::Armed { hand, .. } => Some((hand, false)),
+        Phase::Pulling {
+            hand,
+            rope: Some(_),
+            ..
+        } => Some((hand, true)),
+        _ => None,
+    }
 }
 
 /// Why a snatch did not happen, or ended before the target reached the hand.
@@ -219,6 +243,25 @@ pub(crate) unsafe fn targets(input: &OfferInput) -> Provided {
     }
 }
 
+/// Separate consumers of the routed grapple hold.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct ButtonHolds {
+    pub ordinary: bool,
+    pub modifier: bool,
+}
+
+impl ButtonHolds {
+    pub(crate) fn routed(held: bool, owned: bool) -> Self {
+        Self {
+            ordinary: held && !owned,
+            modifier: held && owned,
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) use hooks::should_reel_weapon;
+
 /// What the bindings hand [`finish_tick`].
 pub(crate) struct FinishInput<'a> {
     /// The grapple hand.
@@ -230,8 +273,10 @@ pub(crate) struct FinishInput<'a> {
     /// The grapple hand's distance from the body point a yank pulls toward, metres, or `None`
     /// while the hand is untracked.
     pub distance: Option<f32>,
-    /// Whether the grapple button is held, as the tables inject it.
-    pub button_held: bool,
+    /// The routed ordinary grapple hold, independent of the snatch modifier.
+    pub ordinary_button_held: bool,
+    /// The grapple hold owned by the snatch after a grip-first claim.
+    pub modifier_held: bool,
     pub detection: &'a Detection,
     pub dt: f32,
     pub config: &'a ControllersConfig,
@@ -245,7 +290,7 @@ pub(crate) struct FinishInput<'a> {
 /// The main thread, outside the world update.
 pub(crate) unsafe fn finish_tick(input: &FinishInput, desired: &mut Vec<Desired>) {
     let config = &input.config.weapons.snatch;
-    hooks::publish(config.enabled, input.button_held);
+    hooks::publish(config.enabled, input.ordinary_button_held);
     if let Some(weak) = hooks::take_toss() {
         match unsafe { pull::toss(&weak) } {
             Ok(()) => {
@@ -287,6 +332,7 @@ pub(crate) fn stand_down() {
     state.status.live = false;
     state.status.phase = Phase::Idle.label();
     state.status.target = None;
+    state.status.sling_length_m = None;
 }
 
 /// The snatch's readout.
@@ -308,6 +354,8 @@ pub struct SnatchStatus {
     pub failed: u64,
     /// Weapons a tap of the grapple tossed to the player.
     pub tosses: u64,
+    /// The attachment-time rope length while swinging.
+    pub sling_length_m: Option<f32>,
 }
 
 /// The target offered, for the readout.
@@ -338,6 +386,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         taken: 0,
         failed: 0,
         tosses: 0,
+        sling_length_m: None,
     },
 });
 
@@ -375,6 +424,7 @@ enum Phase {
         target: Grabbed,
         wire: NonZeroUsize,
         stall: StallWatch,
+        rope: Option<sling::Sling>,
     },
 }
 
@@ -385,6 +435,7 @@ impl Phase {
             Phase::Armed { .. } => "ARMED",
             Phase::Freeing { .. } => "FREEING",
             Phase::HookOut { .. } => "HOOK OUT",
+            Phase::Pulling { rope: Some(_), .. } => "SWINGING",
             Phase::Pulling { .. } => "PULLING",
         }
     }
@@ -401,6 +452,7 @@ impl Phase {
 
     /// End the snatch's line, when it has one out.
     unsafe fn end_line(&self) {
+        sling_hooks::clear();
         if let Phase::HookOut { wire, .. } | Phase::Pulling { wire, .. } = self {
             unsafe { engine::cancel(*wire) };
         }
@@ -417,15 +469,31 @@ impl State {
     /// One input tick of the snatch.
     unsafe fn step(&mut self, input: &FinishInput) {
         let config = &input.config.weapons.snatch;
+        self.status.sling_length_m = None;
+        if let Phase::HookOut { target, .. } | Phase::Pulling { target, .. } = &self.phase
+            && physical_hands::held_props().contains(&Some(target.object))
+        {
+            self.cancel("another hand took the target");
+            return;
+        }
         let on_foot =
             matches!(input.detection.mode, Mode::OnFoot(_)) && input.detection.traversal.is_none();
         if let Some(hand) = self.phase.hand() {
-            if !config.enabled || !on_foot {
-                self.cancel("the snatch is off or the player left their feet");
+            let continuation = sling::Continuation {
+                enabled: config.enabled,
+                on_foot,
+                tracked: input.distance.is_some(),
+                same_hand: hand == input.hand,
+                empty_hand: physical_hands::free_hands()[hand.index()]
+                    && physical_hands::held_props()[hand.index()].is_none(),
+                grip_held: input.grips[hand.index()].held(),
+            };
+            if let Some(why) = continuation.cancellation() {
+                self.cancel(why);
                 return;
             }
-            if !input.grips[hand.index()].held() {
-                self.cancel("the grip opened");
+            if matches!(self.phase, Phase::Pulling { rope: Some(_), .. }) && !config.sling {
+                self.cancel("hammer throws are off");
                 return;
             }
         }
@@ -504,12 +572,27 @@ impl State {
                     haptics::play(hand, Event::GrappleAttach);
                     match unsafe { pull::attached(&target, config.door_swing_mps) } {
                         Ok(Attached::Pull) => {
-                            tracing::info!(target: "controllers", hand = hand.label(), "snatch: the hook holds the target; pulling");
-                            Phase::Pulling {
-                                hand,
-                                target,
-                                wire,
-                                stall: StallWatch::default(),
+                            let mut rope = None;
+                            let result = if input.modifier_held && config.sling {
+                                unsafe { pull::sling(hand, &target, wire, &mut rope, input) }.map(|length| {
+                                    self.status.sling_length_m = Some(length);
+                                    tracing::info!(target: "controllers", length_m = length, "snatch: swinging on the held line");
+                                })
+                            } else {
+                                Ok(())
+                            };
+                            match result {
+                                Ok(()) => Phase::Pulling {
+                                    hand,
+                                    target,
+                                    wire,
+                                    stall: StallWatch::default(),
+                                    rope,
+                                },
+                                Err(refusal) => {
+                                    unsafe { engine::cancel(wire) };
+                                    self.failed(hand, refusal)
+                                }
                             }
                         }
                         Ok(Attached::Opened) => {
@@ -543,39 +626,87 @@ impl State {
                 target,
                 wire,
                 mut stall,
-            } => match unsafe { pull::pull(hand, &target, wire, &mut stall, input) } {
-                Ok(None) => Phase::Pulling {
-                    hand,
-                    target,
-                    wire,
-                    stall,
-                },
-                Ok(Some(arrival)) => {
-                    self.status.taken += 1;
-                    haptics::play(hand, Event::Take);
-                    match arrival {
-                        Arrival::Weapon(slot) => tracing::info!(
-                            target: "controllers",
-                            hand = hand.label(),
-                            slot = slot_label(slot),
-                            "snatch: the weapon came into the {} hand",
-                            hand.label()
-                        ),
-                        Arrival::Prop => tracing::info!(
-                            target: "controllers",
-                            hand = hand.label(),
-                            "snatch: the object came into the {} hand's hold",
-                            hand.label()
-                        ),
+                mut rope,
+            } => {
+                let mode = sling::attached_mode(config.sling, input.modifier_held, rope.is_some());
+                let result = match mode {
+                    sling::AttachedMode::Swing => {
+                        let starting = rope.is_none();
+                        unsafe { pull::sling(hand, &target, wire, &mut rope, input) }.map(|length| {
+                            if starting {
+                                tracing::info!(target: "controllers", length_m = length, "snatch: swinging on the held line");
+                            }
+                            self.status.sling_length_m = Some(length);
+                            None
+                        })
                     }
-                    Phase::Idle
+                    sling::AttachedMode::Resume | sling::AttachedMode::Pull => {
+                        if mode == sling::AttachedMode::Resume {
+                            rope = None;
+                            sling_hooks::clear();
+                            stall = StallWatch::default();
+                            tracing::info!(target: "controllers", "snatch: released B; pulling to the hand");
+                        }
+                        unsafe { pull::pull(hand, &target, wire, &mut stall, input) }
+                    }
+                    sling::AttachedMode::Cancel => Err(Refusal::Gone),
+                };
+                match result {
+                    Ok(None) => Phase::Pulling {
+                        hand,
+                        target,
+                        wire,
+                        stall,
+                        rope,
+                    },
+                    Ok(Some(arrival)) => {
+                        self.status.taken += 1;
+                        haptics::play(hand, Event::Take);
+                        match arrival {
+                            Arrival::Weapon(slot) => tracing::info!(
+                                target: "controllers",
+                                hand = hand.label(),
+                                slot = slot_label(slot),
+                                "snatch: the weapon came into the {} hand",
+                                hand.label()
+                            ),
+                            Arrival::Prop => tracing::info!(
+                                target: "controllers",
+                                hand = hand.label(),
+                                "snatch: the object came into the {} hand's hold",
+                                hand.label()
+                            ),
+                        }
+                        Phase::Idle
+                    }
+                    Err(refusal) => {
+                        unsafe { engine::cancel(wire) };
+                        sling_hooks::clear();
+                        self.failed(hand, refusal)
+                    }
                 }
-                Err(refusal) => {
-                    unsafe { engine::cancel(wire) };
-                    self.failed(hand, refusal)
-                }
-            },
+            }
         };
+        if matches!(self.phase, Phase::Idle) {
+            sling_hooks::clear();
+        }
+        if input.modifier_held && config.sling {
+            if let Phase::HookOut {
+                hand,
+                wire,
+                ref target,
+                ..
+            } = self.phase
+                && !matches!(target.kind, pull::Pulled::Door { .. })
+                && let Err(refusal) = unsafe { pull::prepare_sling(hand, wire, input) }
+            {
+                unsafe { engine::cancel(wire) };
+                sling_hooks::clear();
+                self.phase = self.failed(hand, refusal);
+            }
+        } else {
+            sling_hooks::clear();
+        }
     }
 
     /// Arm the snatch on the offered target, when the grapple hand's grip took it this tick.

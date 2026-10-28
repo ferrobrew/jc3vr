@@ -145,6 +145,63 @@ impl Bindings {
         self.grips
     }
 
+    /// Claim the snatch's B episode before ordinary grapple evaluation.
+    pub(crate) fn claim_snatch(
+        &mut self,
+        button: ButtonControl,
+        eligible: bool,
+        usable: bool,
+        all_sources_neutral: bool,
+    ) -> bool {
+        self.grapple
+            .observe_snatch_neutral(button, usable && all_sources_neutral);
+        self.grapple.claim_snatch(button, eligible && usable)
+    }
+
+    /// Reset the tables while retaining ownership of a consumed snatch press.
+    pub(crate) fn reset_preserving_snatch(&mut self) {
+        let mut grapple = self.grapple;
+        grapple.reset_preserving_snatch();
+        *self = Self::new();
+        self.grapple = grapple;
+    }
+
+    pub(crate) fn grapple_gate_open(mode: Mode, controls: &Controls) -> bool {
+        !matches!(mode, Mode::OnFoot(_)) || !SightChord::of(controls).dominant_grip
+    }
+
+    pub(crate) fn semantic_masks(&self, mode: Mode, controls: &Controls) -> Vec<Mask> {
+        let mut masks = context_masks(mode, &TableCtx::of(controls), controls.dominant);
+        for hand in Hand::BOTH {
+            let i = hand.index();
+            // A grip press latched to a grab belongs to the grab for the whole press.
+            if self.grips[i].grabbing() {
+                masks.push(Mask {
+                    hand,
+                    scope: MaskScope::Input(Physical::Grip),
+                    exempt: None,
+                });
+            }
+            if controls.masked_hands[i] {
+                masks.push(Mask {
+                    hand,
+                    scope: MaskScope::Hand,
+                    exempt: None,
+                });
+            }
+            for physical in MASKABLE {
+                if controls.masked_inputs[i].contains(physical) {
+                    masks.push(Mask {
+                        hand,
+                        scope: MaskScope::Input(physical),
+                        exempt: None,
+                    });
+                }
+            }
+        }
+        masks
+    }
+
     /// Read the current grapple gesture permissions without advancing the tables.
     pub fn grapple_permissions(&self, context: GrappleContext) -> GrapplePermissions {
         self.grapple.current_permissions(context)
@@ -192,34 +249,7 @@ impl Bindings {
             })
         });
         let ctx = TableCtx::of(controls);
-        let mut masks = context_masks(mode, &ctx, controls.dominant);
-        for hand in Hand::BOTH {
-            let i = hand.index();
-            // A grip press latched to a grab belongs to the grab for the whole press.
-            if self.grips[i].grabbing() {
-                masks.push(Mask {
-                    hand,
-                    scope: MaskScope::Input(Physical::Grip),
-                    exempt: None,
-                });
-            }
-            if controls.masked_hands[i] {
-                masks.push(Mask {
-                    hand,
-                    scope: MaskScope::Hand,
-                    exempt: None,
-                });
-            }
-            for physical in MASKABLE {
-                if controls.masked_inputs[i].contains(physical) {
-                    masks.push(Mask {
-                        hand,
-                        scope: MaskScope::Input(physical),
-                        exempt: None,
-                    });
-                }
-            }
-        }
+        let masks = self.semantic_masks(mode, controls);
         let intents = Intents::build(
             input,
             &masks,

@@ -783,6 +783,103 @@ fn _GrapplingHookWire_size_check() {
     unreachable!()
 }
 impl GrapplingHookWire {
+    pub const Update_ADDRESS: usize = 0x14094DE00;
+    /// Advances both ends, creates or updates a physical constraint when
+    /// [`ShouldUseConstraint`](crate::equipment::grappling_hook::GrapplingHookWire::ShouldUseConstraint) permits it, and updates the wire effects.
+    pub unsafe fn Update(
+        &mut self,
+        owner: *const crate::types::shared_ptr::SharedPtr<
+            crate::character::character::Character,
+        >,
+        tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+        dt: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                owner: *const crate::types::shared_ptr::SharedPtr<
+                    crate::character::character::Character,
+                >,
+                tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+                dt: f32,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(self as *mut Self as _, owner, tuning, dt)
+        }
+    }
+    pub const ShouldUseConstraint_ADDRESS: usize = 0x1408CC640;
+    /// Whether both ends have live proxies, neither end is invalid, both proxies permit a
+    /// constraint, and at least one requests a physical constraint. The disassembler mislabels
+    /// this function as `CWireEnd::GetAttachmentObjectInfo`.
+    pub unsafe fn ShouldUseConstraint(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::ShouldUseConstraint_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const CreateConstraint_ADDRESS: usize = 0x1408F3DE0;
+    /// Creates the spring and linear-motor constraint between distinct valid proxy bodies. A new
+    /// attachment snapshots the current length into [`m_MaxLength`](crate::equipment::grappling_hook::GrapplingHookWire::m_MaxLength); a wire
+    /// that is neither active nor an attachment wire also receives a safety buffer. The spring's
+    /// length is the maximum length less `tether_shorten_length`, bounded away from zero. The
+    /// disassembler mislabels this function as `NPfxVehicle::SStaticWheelFrictionData::addFrictionConstraint`.
+    pub unsafe fn CreateConstraint(
+        &mut self,
+        tether_shorten_length: f32,
+        reattaching: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                tether_shorten_length: f32,
+                reattaching: bool,
+            ) = ::std::mem::transmute(Self::CreateConstraint_ADDRESS);
+            f(self as *mut Self as _, tether_shorten_length, reattaching)
+        }
+    }
+    pub const DestroyConstraint_ADDRESS: usize = 0x1408CC6D0;
+    /// Removes the wire's physics constraint and releases its data.
+    pub unsafe fn DestroyConstraint(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::DestroyConstraint_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const UpdateConstraint_ADDRESS: usize = 0x1408F4250;
+    /// Updates the existing spring and motor, including their pivots and tension response.
+    pub unsafe fn UpdateConstraint(
+        &mut self,
+        tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+        dt: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+                dt: f32,
+            ) = ::std::mem::transmute(Self::UpdateConstraint_ADDRESS);
+            f(self as *mut Self as _, tuning, dt)
+        }
+    }
+    pub const UpdateWireTension_ADDRESS: usize = 0x140944CB0;
+    /// Computes the wire tension and break state and sends tension to both attachment proxies.
+    pub unsafe fn UpdateWireTension(
+        &mut self,
+        tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+        dt: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+                dt: f32,
+            ) = ::std::mem::transmute(Self::UpdateWireTension_ADDRESS);
+            f(self as *mut Self as _, tuning, dt)
+        }
+    }
     pub const SetupHookCastFilters_ADDRESS: usize = 0x1408CC5C0;
     /// Sets both ends' cast-filter ignore objects
     /// ([`WireEndCastFilter::m_IgnoreObject1`](crate::equipment::wire_end::WireEndCastFilter::m_IgnoreObject1)

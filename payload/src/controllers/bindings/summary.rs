@@ -6,36 +6,43 @@ use jc3gi::{
     input::input_action_map::Action,
 };
 
-use crate::controllers::{
-    aim::gun,
-    bindings::{
-        grapple_button::GrapplePermissions,
-        tables::{
-            self,
-            describe::{Control, Effect, Gesture, ModAction, Row},
+use crate::{
+    controllers::{
+        aim::gun,
+        bindings::{
+            controls::Controls,
+            grapple_button::GrapplePermissions,
+            intents::SemanticInput,
+            policy_a::runtime::Tick,
+            tables::{
+                self,
+                describe::{Control, Effect, Gesture, ModAction, Row},
+            },
+            trigger_ownership::{Owner, TriggerMask},
         },
-        trigger_ownership::Owner,
+        config::ControllersConfig,
+        frame::Hand,
+        grab::{GrabVolume, GripTarget, PickupKind},
+        hands::{
+            late,
+            tiers::{self, HandTier, TierState},
+        },
+        mode::{AirborneVariant, Detection, Mode},
+        snatch,
+        summary::{
+            current::{CurrentRouting, TriggerUse},
+            eligibility::{Eligibility, SnatchHint},
+        },
+        vehicles::{
+            parachute::HandleHold, physical::ControlKind, wingsuit_gestures::GestureAvailability,
+        },
+        weapons::{
+            self,
+            capabilities::{GunHand, GunOwner},
+            reload::{BeltEligibility, ReloadStatus, config::ReloadButton},
+        },
     },
-    config::ControllersConfig,
-    frame::Hand,
-    grab::{GrabVolume, GripTarget, PickupKind},
-    hands::{
-        late,
-        tiers::{self, HandTier, TierState},
-    },
-    mode::{AirborneVariant, Detection, Mode},
-    summary::{
-        current::{CurrentRouting, TriggerUse},
-        eligibility::Eligibility,
-    },
-    vehicles::{
-        parachute::HandleHold, physical::ControlKind, wingsuit_gestures::GestureAvailability,
-    },
-    weapons::{
-        self,
-        capabilities::{GunHand, GunOwner},
-        reload::{BeltEligibility, ReloadStatus, config::ReloadButton},
-    },
+    vr::input::semantic::{bound::PhysicalSet, vocabulary::ActionId},
 };
 
 /// State that can invalidate an offer between the provider pass and final publication.
@@ -68,6 +75,7 @@ pub(super) struct Refresh<'a> {
     pub config: &'a ControllersConfig,
     pub owners: [Owner; 2],
     pub ready: [bool; 2],
+    pub grapple_routes: Vec<(ActionId, Hand)>,
     pub trigger_blocked: [bool; 2],
     pub chosen: [Option<GrabVolume>; 2],
     pub selected: [Option<GripTarget>; 2],
@@ -78,6 +86,38 @@ pub(super) struct Refresh<'a> {
     pub flight: GestureAvailability,
     /// The vehicle owner's active handle holds after finish, indexed by physical hand.
     pub parachute: [Option<HandleHold>; 2],
+}
+
+pub(super) fn grapple_routes(
+    bindings: &tables::Bindings,
+    mode: Mode,
+    controls: &Controls,
+    input: &SemanticInput,
+    policy: &Tick,
+    triggers: [TriggerMask; 2],
+) -> Vec<(ActionId, Hand)> {
+    let Some((actions, _)) = tables::grapple_press(mode) else {
+        return Vec::new();
+    };
+    if !tables::Bindings::grapple_gate_open(mode, controls) {
+        return Vec::new();
+    }
+    let masks = bindings.semantic_masks(mode, controls);
+    actions
+        .iter()
+        .flat_map(|&id| Hand::BOTH.map(|hand| (id, hand)))
+        .filter(|&(id, hand)| {
+            policy.permits(id, hand)
+                && input.get(id).is_some_and(|action| {
+                    let bound = action.bound[hand.index()];
+                    bound != PhysicalSet::EMPTY
+                        && !triggers[hand.index()].covers(mode, id, bound)
+                        && !masks
+                            .iter()
+                            .any(|mask| mask.hand == hand && mask.covers(id, bound))
+                })
+        })
+        .collect()
 }
 
 pub(super) fn capture(input: Refresh<'_>) -> Eligibility {
@@ -91,7 +131,15 @@ pub(super) fn capture(input: Refresh<'_>) -> Eligibility {
             .and_then(|target| target.door_eligibility)
             .is_some_and(|offer| offer.current(hand, &input.config.physical_hands))
     });
-    capture_current(
+    let hint = snatch::hint().filter(|(hand, _)| {
+        input.ready[hand.index()]
+            && matches!(input.owners[hand.index()].mode, Mode::OnFoot(_))
+            && input.config.weapons.snatch.enabled
+    });
+    let modifier_enabled = input.config.weapons.snatch.sling;
+    let mut input = input;
+    let routes = std::mem::take(&mut input.grapple_routes);
+    let mut eligibility = capture_current(
         input,
         BeforeFinish {
             guns,
@@ -104,7 +152,14 @@ pub(super) fn capture(input: Refresh<'_>) -> Eligibility {
         fire,
         reload_permissions,
         doors,
-    )
+    );
+    eligibility.snatch = hint.map(|(hand, swinging)| SnatchHint {
+        hand,
+        swinging,
+        modifier_enabled,
+        routes,
+    });
+    eligibility
 }
 
 fn capture_current(
@@ -242,6 +297,7 @@ fn capture_current(
         chosen,
         actions,
         mechanics,
+        snatch: None,
         native_reload: reload_permissions.native_reload,
         held_holster: reload_permissions.held_holster,
         tighten: input.grapple.tighten,

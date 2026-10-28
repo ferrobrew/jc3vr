@@ -2,12 +2,24 @@
 
 use jc3gi::input::input_action_map::Action;
 
-use crate::controllers::{
-    bindings::tables::describe::{Control, Effect, Gesture, ModAction, Row},
-    frame::Hand,
-    grab::GrabVolume,
-    summary::current::{CurrentContext, CurrentRouting},
+use crate::{
+    controllers::{
+        bindings::tables::describe::{Control, Effect, Gesture, ModAction, Row},
+        frame::Hand,
+        grab::GrabVolume,
+        summary::current::{CurrentContext, CurrentRouting},
+    },
+    vr::input::semantic::vocabulary::ActionId,
 };
+
+/// A current snatch phase; modifier controls are resolved from known runtime sources.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SnatchHint {
+    pub hand: Hand,
+    pub swinging: bool,
+    pub modifier_enabled: bool,
+    pub routes: Vec<(ActionId, Hand)>,
+}
 
 /// Post-finish gates supplied by the central input owner. No engine permission is inferred from
 /// tracking or from the fact that a hand holds a gun.
@@ -20,6 +32,7 @@ pub(crate) struct Eligibility {
     /// Actual current physical gestures not represented by a chosen grip target. Examples include
     /// an eligible belt reload or flight gesture. The producer supplies their real physical control.
     pub mechanics: Vec<Row>,
+    pub snatch: Option<SnatchHint>,
     /// The reload owner permits the native tap, independently of held holstering.
     pub native_reload: bool,
     /// The inventory owner permits the reload input's held holster action.
@@ -128,15 +141,13 @@ pub(crate) fn resolve(rows: &[Row], snapshot: &Eligibility) -> EligibilityReport
             usable.push(row.clone());
         }
     }
-    EligibilityReport {
-        context: CurrentContext {
-            usable,
-            routing: snapshot.routing,
-            native_reload: snapshot.native_reload,
-            held_holster: snapshot.held_holster,
-        },
-        omitted,
-    }
+    let context = CurrentContext {
+        usable,
+        routing: snapshot.routing,
+        native_reload: snapshot.native_reload,
+        held_holster: snapshot.held_holster,
+    };
+    EligibilityReport { context, omitted }
 }
 
 fn mechanic_routing(row: &Row, routing: CurrentRouting) -> bool {

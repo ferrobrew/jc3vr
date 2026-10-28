@@ -4,7 +4,7 @@
 
 use std::num::NonZeroUsize;
 
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::WeaponBase,
@@ -28,6 +28,8 @@ use crate::controllers::{
     snatch::{
         FinishInput, Refusal, engine,
         rules::{self, PullLimits, StallWatch, Verdict},
+        sling::{RopeStep, Sling},
+        sling_hooks,
         target::{Offer, OfferKind},
     },
     weapons::hold::{
@@ -270,6 +272,82 @@ pub(super) unsafe fn pull(
     .map_err(Refusal::Body)?;
     haptics::sustain(hand, Sustain::GrappleTension, solution.loads[hand.index()]);
     Ok(None)
+}
+
+/// The native device endpoint follows the tracked wrist frame, never the aim ray.
+///
+/// # Safety
+///
+/// The main thread, outside the world update.
+pub(super) unsafe fn prepare_sling(
+    hand: Hand,
+    wire: NonZeroUsize,
+    input: &FinishInput,
+) -> Result<Vec3, Refusal> {
+    let wrist = ik::tick_records().current[hand.index()]
+        .ok_or(Refusal::Gone)?
+        .wrist;
+    let anchor = wrist.position + wrist.orientation * input.config.aim.grapple_origin_m;
+    let transform = Mat4::from_rotation_translation(wrist.orientation, anchor);
+    if !transform.is_finite() {
+        return Err(Refusal::Gone);
+    }
+    let proxy = unsafe { engine::device_proxy(wire) }.ok_or(Refusal::LineLost)?;
+    unsafe { engine::remove_constraint(wire) };
+    sling_hooks::publish(wire.get(), proxy, transform);
+    Ok(anchor)
+}
+
+/// Keep the attachment-time length with a radial correction while B is held.
+///
+/// # Safety
+///
+/// The main thread, outside the world update and physics step.
+pub(super) unsafe fn sling(
+    hand: Hand,
+    grabbed: &Grabbed,
+    wire: NonZeroUsize,
+    rope: &mut Option<Sling>,
+    input: &FinishInput,
+) -> Result<f32, Refusal> {
+    if unsafe { engine::read_wire(wire) }.0 != engine::WireReading::Attached {
+        return Err(Refusal::LineLost);
+    }
+    let body = match grabbed.kind {
+        Pulled::Weapon => unsafe { engine::dropped(grabbed.object) }?.1,
+        Pulled::Prop { body, .. } => body,
+        Pulled::Door { .. } => return Err(Refusal::Gone),
+    };
+    let state =
+        unsafe { physical_hands::body_state(body, grabbed.object) }.map_err(Refusal::Body)?;
+    let anchor = unsafe { prepare_sling(hand, wire, input) }?;
+    let rope = match rope {
+        Some(rope) => rope,
+        slot @ None => slot.insert(Sling::new(state.pose.centre, anchor).ok_or(Refusal::Gone)?),
+    };
+    let rigid = state.rigid();
+    let config = &input.config.weapons.snatch;
+    let velocity = rope
+        .step(RopeStep {
+            centre: state.pose.centre,
+            velocity: rigid.velocities.linear,
+            anchor,
+            dt: input.dt,
+            stiffness: config.sling_stiffness,
+            damping: config.sling_damping,
+            max_accel: config.sling_max_accel_mps2,
+        })
+        .ok_or(Refusal::Gone)?;
+    unsafe {
+        physical_hands::set_body_velocities(
+            body,
+            grabbed.object,
+            velocity,
+            rigid.velocities.angular,
+        )
+    }
+    .map_err(Refusal::Body)?;
+    Ok(rope.length_m)
 }
 
 /// Gravity's acceleration, metres per second squared.

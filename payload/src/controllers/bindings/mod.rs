@@ -326,6 +326,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             .as_ref()
             .is_some_and(|s| s.action_set != detection.mode.action_set());
     if set_pending {
+        snatch::stand_down();
         if let Some(flight) = &mut state.flight {
             flight.reset();
         }
@@ -409,6 +410,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             dominant,
         ),
     };
+    let raw_grapple_button = grapple_button(&semantic_input, detection.mode);
     routed.filter_semantic(&mut semantic_input);
     let grapple_hand = dominant.other();
     // The hand's pulls act only while the grapple button is held.
@@ -497,7 +499,15 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         .and_then(|snapshot| snapshot.character)
         .is_some_and(|character| character.has(StateBitFlag::SB_IN_RAGDOLL));
     let grapple_distance = grapple_hand_distance(grapple_hand, &config.bindings.yank);
-    let line = line_attached();
+    let snatch_button_owned = state.bindings.claim_snatch(
+        raw_grapple_button,
+        snatch::can_claim_button() && config.weapons.snatch.sling,
+        semantic.is_some()
+            && !controls.masked_hands.contains(&true)
+            && matches!(detection.mode, Mode::OnFoot(_)),
+        neutral_policy.frame_neutral(&original) && source_neutral,
+    );
+    let line = line_attached() && !snatch_button_owned;
     let yank = state.yank.step(
         dt,
         grapple_distance,
@@ -514,7 +524,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         grapple::physical::input_tick(&grapple::physical::TickInput {
             dt,
             distance: grapple_distance,
-            button_held: grapple_held,
+            button_held: grapple_held && !snatch_button_owned,
             detection: &detection,
             config: &config,
         })
@@ -634,6 +644,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
                 want: Want::Analog(value),
             });
         }
+        let button_holds = snatch::ButtonHolds::routed(step.grapple_held, snatch_button_owned);
         // SAFETY: the input tick runs on the main thread outside the world update.
         unsafe {
             snatch::finish_tick(
@@ -642,7 +653,8 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
                     grabs: grabs_for(step.grabs, Consumer::Snatch),
                     grips: finish.grips,
                     distance: grapple_hand_distance(grapple_hand, &config.weapons.snatch.yank),
-                    button_held: grapple_held,
+                    ordinary_button_held: button_holds.ordinary,
+                    modifier_held: button_holds.modifier,
                     detection: &detection,
                     dt,
                     config: &config,
@@ -677,6 +689,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         weapons::hold::tick::publish_fire([false; 2]);
         weapons::wheel::pause();
         physical_hands::pickup::pause();
+        snatch::stand_down();
     }
     let final_owners = weapons::capabilities::gun_owners_now().map(|gun| TriggerOwner {
         mode: detection.mode,
@@ -704,6 +717,18 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         config: &config,
         owners: final_owners,
         ready: Hand::BOTH.map(|hand| !in_menu && state.recovery.ready(hand)),
+        grapple_routes: summary::grapple_routes(
+            &state.bindings,
+            detection.mode,
+            &controls,
+            &semantic_input,
+            &routed,
+            trigger_ownership::masks(
+                final_owners,
+                Hand::BOTH
+                    .map(|hand| trigger_blocked[hand.index()] || trigger_changed[hand.index()]),
+            ),
+        ),
         trigger_blocked: Hand::BOTH
             .map(|hand| trigger_blocked[hand.index()] || trigger_changed[hand.index()]),
         chosen: Hand::BOTH.map(|hand| {
@@ -867,7 +892,7 @@ impl State {
     /// tick wrote ([`HoldTracker::release_all`]).
     fn reset(&mut self, poll: DevicePoll) -> Vec<ActionWrite> {
         self.recovery.disarm();
-        self.bindings = Bindings::new();
+        self.bindings.reset_preserving_snatch();
         self.trigger_ownership.suspend();
         if let Some(flight) = &mut self.flight {
             flight.reset();
@@ -986,10 +1011,15 @@ fn line_attached() -> bool {
 
 /// Whether the grapple button is held on either hand in `mode`.
 fn grapple_button_held(semantic: &SemanticInput, mode: Mode) -> bool {
-    tables::grapple_press(mode).is_some_and(|(actions, _)| {
+    grapple_button(semantic, mode).held()
+}
+
+fn grapple_button(semantic: &SemanticInput, mode: Mode) -> ButtonControl {
+    tables::grapple_press(mode).map_or_else(ButtonControl::default, |(actions, _)| {
         actions
             .iter()
             .filter_map(|&action| semantic.get(action))
-            .any(|input| input.hands.iter().any(|h| h.button.held()))
+            .flat_map(|input| input.hands.iter().map(|h| h.button))
+            .fold(ButtonControl::default(), tables::merge_buttons)
     })
 }

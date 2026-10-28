@@ -211,6 +211,18 @@ pub enum ModAction {
     ParachuteHandles,
     /// Pull a held parachute handle down to steer or contribute to braking.
     PullParachuteHandle,
+    /// Yank an armed remote target, optionally holding the grapple button to swing it.
+    SnatchYank,
+    /// Swing the attached target and release grip to detach, or B to snatch.
+    SnatchSwing,
+    /// Keep the grip closed while preparing the snatch.
+    SnatchGrip,
+    /// Release the grip to detach with the target's current momentum.
+    SnatchThrow,
+    /// Hold the resolved grapple button before the yank.
+    SnatchModifier,
+    /// Release the resolved grapple button to resume the pull.
+    SnatchResume,
     /// Spread the arms in the wingsuit and lower or raise them to bank, dive, and climb.
     ArmSteering,
     /// Lower both arms, then spread them to request wingsuit deployment.
@@ -619,7 +631,7 @@ fn bound_inputs(bindings: Bindings, action: ActionId, dominant: Hand) -> Vec<Bou
 }
 
 /// The control a press of `component` on `hand` is.
-const fn press_control(component: Component, hand: Hand) -> Control {
+pub(crate) const fn press_control(component: Component, hand: Hand) -> Control {
     match component {
         Component::TriggerValue => Control::Trigger(hand),
         Component::GripPress => Control::Grip(hand),

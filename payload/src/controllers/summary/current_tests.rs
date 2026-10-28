@@ -27,6 +27,8 @@ use crate::{
 mod doors;
 #[path = "current_tests/flight.rs"]
 mod flight;
+#[path = "current_tests/snatch.rs"]
+mod snatch;
 
 const MODE: Mode = Mode::OnFoot(OnFootVariant::Ground);
 
@@ -78,7 +80,12 @@ fn resolved(
     hints: &[ContextHint],
 ) -> CurrentSummary {
     let rows = describe_sources(ctx, table);
-    let report = eligibility::resolve(&rows, snapshot);
+    let mut report = eligibility::resolve(&rows, snapshot);
+    crate::controllers::summary::snatch::extend(
+        &mut report.context,
+        table,
+        snapshot.snatch.as_ref(),
+    );
     project(
         &rows,
         ctx.mode,

@@ -29,7 +29,7 @@ With the patch, a gun on the ground is a grapple target like any other ([The gra
 
 In the grip's one targeting rule ([grip.md](grip.md)) the snatch is the lowest tier, `Tier::Remote`, taken only when nothing at all is in reach (not even a surface to climb or a reach margin), so anything within real reach always wins. It is offered only to the grapple hand, empty (no gun, foregrip, grenade, charge, or prop), on foot with no traversal, with the hook free (no active or attachment wire, no fire pending, the hook inactive) and the grapple button up. A fist never takes it: only a press aimed at it arms the snatch.
 
-The grapple hand is the off-hand of the acting hand. The game's grapple device is on Rico's left forearm, so with a left-handed setup the line would leave the arm opposite the snatching hand; that is deferred with left-handedness project-wide.
+The grapple hand is the off-hand of the acting hand. The game's grapple device is on Rico's left forearm, so an ordinary snatch in a left-handed setup still leaves the opposite arm. During a grapple-held hammer throw, the native device proxy follows the tracked grapple hand's wrist frame.
 
 ## The interaction
 
@@ -44,6 +44,18 @@ Hold to hold holds: opening the grip at any point cancels. Mid-flight, the line 
 Haptics: `Event::SnatchArm` when the grip arms it, the grapple's fire and attach cues on the snatching hand, the line's tension (`Sustain::GrappleTension`, by the pull's share of its strongest pull) while it pulls, and the take's cue on arrival; a refused or failed snatch plays `Event::SnatchRefused` ([haptics.md](haptics.md)).
 
 Leaving the feet (a vehicle, a fall, a ragdoll, a reel) or turning the snatch off cancels it as opening the grip does.
+
+## Grapple-held hammer throws
+
+Grip a remote weapon or loose prop first, then hold the grapple semantic button (B) and yank. The native hook flies and attaches, but the target stays on a fixed-length rope instead of coming into the hand. Moving the tracked forearm can accelerate the target around the anchor. Aiming elsewhere does not move the target toward that ray. Opening the grip cancels the native line without writing a release velocity, so the target retains its current motion. Releasing B while retaining grip resumes the ordinary snatch with a fresh stall watch. Doors keep their existing open-door behavior.
+
+The rope uses the target's centre of mass and the tracked wrist frame with `aim.grapple_origin_m`. The native device proxy's visual getters receive that frame during the owned wire update. The rope snapshots its length at attachment, then applies a bounded tension-only radial velocity increment using velocity relative to the moving anchor. Tangential and angular velocity remain unchanged by that increment. Gravity and collisions remain part of the engine simulation. Excessive stretch, an invalid sample, tracking loss, a lost line, changed target ownership, an occupied hand, a hand-role change, leaving the supported mode, opening a menu, or disabling the feature ends the line. A stationary swing does not use the arrival pull's stall timeout.
+
+Weapons and props use the same correction. The owned wire's native constraint creation and tension callbacks are excluded while swinging, so a prop does not receive a second rope force. This exclusion starts during hook flight and ends before the ordinary pull resumes. The input tick owns target references and body access outside physics work. Hooks copy the published anchor and compare wire/proxy identities; they do not resolve target references or drive target bodies on a worker.
+
+`GrappleButton` owns a fresh B press only after the grip has armed a remote target. It consumes that press and release through cancellation and stand-down until a usable neutral observation on the original hand and on-foot route. B before grip remains an ordinary grapple. The native custom-wire state ignores ordinary fire/reel input, and the input owner prevents delayed zip, tether, or release gestures from the consumed episode.
+
+`weapons.snatch.sling` is enabled by default. Its switch, radial stiffness, radial damping, and maximum tension acceleration are in the debug UI. The snatch readout shows `SWINGING` and the saved rope length. `testing/scenarios/grapple_hammer_throw.toml` records the acceptance sequence for weapons, props, release momentum, B release, ordinary grapple preservation, and cancellation. This sequence still needs a headset recording and live-game acceptance.
 
 ## The grapple button at a gun
 

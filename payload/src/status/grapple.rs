@@ -192,6 +192,7 @@ fn snatch_phase(phase: &str) -> Text {
         "FREEING" => "Freeing",
         "HOOK OUT" => "Hook out",
         "PULLING" => "Pulling",
+        "SWINGING" => "Swinging",
         other => other,
     };
     Text::pair(phase, display)

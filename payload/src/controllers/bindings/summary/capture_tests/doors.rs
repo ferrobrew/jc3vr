@@ -56,6 +56,7 @@ fn capture_door_with_owner(
                 gun: None,
             }; 2],
             ready,
+            grapple_routes: Default::default(),
             trigger_blocked: [false; 2],
             chosen: Hand::BOTH
                 .map(|hand| tick.chosen()[hand.index()].filter(|_| !released[hand.index()])),

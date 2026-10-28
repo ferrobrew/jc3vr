@@ -47,6 +47,7 @@ fn capture_revalidates_belt_against_physical_guns_without_per_hand_trigger_subst
                 config: &config,
                 owners,
                 ready,
+                grapple_routes: Default::default(),
                 trigger_blocked: [true; 2],
                 chosen: [None; 2],
                 selected: [None; 2],

@@ -42,6 +42,11 @@ pub(super) fn publish(enabled: bool, button_held: bool) {
     BUTTON_HELD.store(button_held, Ordering::Relaxed);
 }
 
+/// The input-side gate runs before the native held/tether latch updates.
+pub(crate) fn should_reel_weapon(enabled: bool, ordinary_button_held: bool) -> bool {
+    enabled && !ordinary_button_held
+}
+
 /// The weapon a tap reeled in since the last call, to toss.
 pub(super) fn take_toss() -> Option<Weak> {
     TOSS.lock().take()
@@ -87,7 +92,10 @@ fn set_extend(
 /// start its reel.
 #[detour(address = jc3gi::equipment::grappling_hook::GrapplingHook::OnPreSimUpdate_ADDRESS)]
 fn on_pre_sim_update(hook: *mut GrapplingHook, dt: f32) {
-    if ENABLED.load(Ordering::Relaxed) && !BUTTON_HELD.load(Ordering::Relaxed) {
+    if should_reel_weapon(
+        ENABLED.load(Ordering::Relaxed),
+        BUTTON_HELD.load(Ordering::Relaxed),
+    ) {
         // SAFETY: the engine's own hook, in its update.
         unsafe { reel_in_weapon(hook) };
     }

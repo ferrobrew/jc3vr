@@ -122,6 +122,19 @@ pub(super) unsafe fn cancel(wire: NonZeroUsize) {
     }
 }
 
+/// The owned native wire's device proxy. No wire address is dereferenced after ownership is lost.
+pub(super) unsafe fn device_proxy(wire: NonZeroUsize) -> Option<usize> {
+    let wire = unsafe { active_wire(wire) }?;
+    NonZeroUsize::new(wire.m_WireEnds[1].m_PointProxy as usize).map(NonZeroUsize::get)
+}
+
+/// Remove a native rope before substituting the same tension model for both target categories.
+pub(super) unsafe fn remove_constraint(wire: NonZeroUsize) {
+    if unsafe { active_wire(wire) }.is_some() {
+        unsafe { (&mut *(wire.get() as *mut GrapplingHookWire)).DestroyConstraint() };
+    }
+}
+
 /// The weapon at `address`, while it lies in the world, with its first gun's body.
 ///
 /// # Safety

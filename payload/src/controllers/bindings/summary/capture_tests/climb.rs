@@ -52,6 +52,7 @@ impl Capture {
                     gun: None,
                 }; 2],
                 ready: self.ready,
+                grapple_routes: Default::default(),
                 trigger_blocked: [true; 2],
                 chosen: Hand::BOTH
                     .map(|hand| self.chosen[hand.index()].filter(|_| !self.released[hand.index()])),

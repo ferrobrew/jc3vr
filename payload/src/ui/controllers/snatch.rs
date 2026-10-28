@@ -12,6 +12,14 @@ pub(super) fn snatch_settings(ui: &mut Ui, s: &mut SnatchConfig) {
     );
     ui.add_enabled_ui(s.enabled, |ui| {
         ui.indent("snatch", |ui| {
+            ui.checkbox(&mut s.sling, "Grapple-held hammer throws").on_hover_text(
+                "Grip a remote weapon or loose object, then hold B and yank. Swing it on the line; open the grip to throw, or release B to bring it to the hand.",
+            );
+            ui.add_enabled_ui(s.sling, |ui| {
+                ui.add(egui::Slider::new(&mut s.sling_stiffness, 50.0..=1000.0).text("Rope stiffness (1/s²)"));
+                ui.add(egui::Slider::new(&mut s.sling_damping, 1.0..=80.0).text("Radial damping (1/s)"));
+                ui.add(egui::Slider::new(&mut s.sling_max_accel_mps2, 10.0..=300.0).text("Maximum tension (m/s²)"));
+            });
             ui.add(egui::Slider::new(&mut s.range_m, 2.0..=60.0).text("Range (m)"));
             ui.add(
                 egui::Slider::new(&mut s.cone_deg, 1.0..=20.0).text("Cone for guns in hands (°)"),

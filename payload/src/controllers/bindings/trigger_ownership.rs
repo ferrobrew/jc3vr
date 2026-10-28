@@ -20,7 +20,7 @@ use crate::{
     },
     vr::input::semantic::{
         SemanticSet,
-        bound::Physical,
+        bound::{Physical, PhysicalSet},
         vocabulary::{ActionId, HelicopterAction, LandVehicleAction, OnFootAction, PlaneAction},
     },
 };
@@ -117,6 +117,14 @@ pub(super) struct TriggerMask {
     pub keep: SemanticKeep,
 }
 
+impl TriggerMask {
+    pub(super) fn covers(self, mode: Mode, id: ActionId, bound: PhysicalSet) -> bool {
+        self.reserved
+            && !self.keep.retains(mode, id)
+            && (bound.contains(Physical::Trigger) || bound == bound.with_unknown())
+    }
+}
+
 pub(super) fn masks(owners: [Owner; 2], blocked: [bool; 2]) -> [TriggerMask; 2] {
     Hand::BOTH.map(|hand| {
         let i = hand.index();
@@ -181,11 +189,7 @@ pub(super) fn mask_routes(input: &mut SemanticInput, mode: Mode, masks: [Trigger
             };
             for hand in Hand::BOTH {
                 let i = hand.index();
-                let bound = action.bound[i];
-                if masks[i].reserved
-                    && !masks[i].keep.retains(mode, id)
-                    && (bound.contains(Physical::Trigger) || bound == bound.with_unknown())
-                {
+                if masks[i].covers(mode, id, action.bound[i]) {
                     action.hands[i] = Intent::default();
                 }
             }

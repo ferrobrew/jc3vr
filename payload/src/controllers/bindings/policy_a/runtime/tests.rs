@@ -2,6 +2,8 @@
 mod rereview_tests;
 #[path = "review_tests.rs"]
 mod review_tests;
+#[path = "snatch_tests.rs"]
+mod snatch_tests;
 
 use std::{sync::Arc, time::Instant};
 
