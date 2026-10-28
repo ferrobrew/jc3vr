@@ -203,6 +203,15 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
     if state.status.drops != drops_before {
         released_by_grip = None;
     }
+    if !state.mantle_owner_valid(|hold| {
+        (unsafe { hold.valid() })
+            && (!hold.moving || unsafe { engine::body_frame(hold.body) }.is_some())
+    }) {
+        state.carry = None;
+        state.drop_all("the mantle's body changed");
+        state.finish_climb();
+        return [None; 2];
+    }
     if state.grips.iter().all(Option::is_none) {
         if let Some(hand) = released_by_grip
             && !held_by_game
@@ -313,7 +322,7 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
     let carried = state
         .grips
         .map(|grip| grip.and_then(|g| unsafe { g.carried() }));
-    let carry =
+    let mut carry =
         carry_velocity(
             state.grips.iter().enumerate().filter_map(|(i, grip)| {
                 grip.map(|_| carried[i].map_or(Vec3::ZERO, |c| c.velocity))
@@ -342,9 +351,10 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
         return [None; 2];
     }
     let mut velocity = climb_velocity(target, place.body, &tuning) + carry;
+    let mut ground = state.grips.iter().flatten().next().map(|g| g.hold);
 
     let stands = support.is_some_and(|y| y >= config.climb.min_ledge_normal_y);
-    if config.climb.mantle {
+    if config.climb.mantle || state.mantle.is_some() {
         let mantle = state.step_mantle(
             MantleTick {
                 feet: place.feet,
@@ -352,6 +362,7 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
                 stands,
                 tuning: &mantle_tuning,
                 max_steps: scale_ticks(MAX_MANTLE_STEPS),
+                max_carry_speed_mps: config.climb.max_carry_speed_mps,
                 context,
             },
             |hold| {
@@ -364,7 +375,11 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
         );
         match mantle {
             MantleStep::Inactive => {}
-            MantleStep::Move(over) => velocity = over + carry,
+            MantleStep::Move(motion) => {
+                velocity = motion.velocity;
+                carry = motion.carry;
+                ground = Some(motion.ground);
+            }
             MantleStep::Completed(landing) => {
                 if let (Some((owner, landing)), Some(context)) = (landing, context) {
                     unsafe { native::landed(context, owner, landing, Instant::now()) };
@@ -385,16 +400,13 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
         }
     }
 
-    let ground = Hand::BOTH
-        .into_iter()
-        .find_map(|hand| state.grips[hand.index()].map(|g| g.hold.body));
     let Some(ground) = ground else {
         // The check above leaves a grip, but a climb with none to stand on ends rather than panics.
         state.finish_climb();
         return [None; 2];
     };
     // SAFETY: forwarded from the caller; the ground is a body the step checked above.
-    if let Err(e) = unsafe { engine::hold(velocity, ground, carry) } {
+    if let Err(e) = unsafe { engine::hold(velocity, ground.body, carry) } {
         state.status.last_error = Some(e.to_string());
         state.drop_all("the player could not be held");
         state.finish_climb();

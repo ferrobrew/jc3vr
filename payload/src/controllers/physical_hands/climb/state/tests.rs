@@ -57,6 +57,7 @@ fn tick(tuning: &MantleTuning, feet: Vec3) -> MantleTick<'_> {
         stands: false,
         tuning,
         max_steps: MAX_MANTLE_STEPS,
+        max_carry_speed_mps: 50.0,
         context: Some(context()),
     }
 }
@@ -130,7 +131,7 @@ fn mantle_trajectory_and_handoff_keep_the_captured_owner_when_the_handset_change
         assert_eq!(state.mantle.unwrap().top, Vec3::new(translation, 1.0, 0.0));
         let over = state.mantle.unwrap().over;
         assert!((over - glam::Vec2::new(-1.0, 0.0)).length() < 1e-5);
-        let MantleStep::Move(velocity) = result else {
+        let MantleStep::Move(ClimbMotion { velocity, .. }) = result else {
             panic!("mantle must keep moving")
         };
         assert!(velocity.x < 0.0);
@@ -166,9 +167,94 @@ fn state_frame() -> Affine3A {
 }
 
 #[test]
+fn mantle_motion_carry_and_support_stay_on_a_with_static_b_first_or_a_released() {
+    let (mut state, a, mut b) = captured();
+    b.hold.moving = false;
+    b.frame = None;
+    let tuning = tuning();
+    for grips in [[Some(b), Some(a)], [Some(b), None]] {
+        state.grips = grips;
+        let MantleStep::Move(motion) =
+            state.step_mantle(tick(&tuning, Vec3::new(0.0, 0.8, 1.0)), |hold| {
+                assert_eq!(hold, a.hold);
+                let mut moving = frame(Affine3A::IDENTITY);
+                moving.linear = Vec3::X * 10.0;
+                (true, Some(moving))
+            })
+        else {
+            panic!("mantle must move")
+        };
+        assert_eq!(motion.ground, a.hold);
+        assert_eq!(motion.carry, Vec3::X * 10.0);
+        let MantleMotion::Move(relative) = state
+            .mantle
+            .unwrap()
+            .motion(Vec3::new(0.0, 0.8, 1.0), &tuning)
+        else {
+            panic!("mantle must move")
+        };
+        assert_eq!(motion.velocity, relative + motion.carry);
+    }
+}
+
+#[test]
+fn captured_point_carry_is_bounded_once_and_responds_to_active_limit_changes() {
+    let (mut state, a, _) = captured();
+    let tuning = tuning();
+    let feet = Vec3::new(0.0, 0.8, 1.0);
+    for (linear, angular, limit, expected) in [
+        (Vec3::X * 10.0, Vec3::ZERO, 5.0, Vec3::X * 5.0),
+        (Vec3::ZERO, Vec3::Z * -10.0, 5.0, Vec3::X * 5.0),
+        (Vec3::X * 10.0, Vec3::ZERO, 2.0, Vec3::X * 2.0),
+    ] {
+        let MantleStep::Move(motion) = state.step_mantle(
+            MantleTick {
+                max_carry_speed_mps: limit,
+                ..tick(&tuning, feet)
+            },
+            |owner| {
+                assert_eq!(owner, a.hold);
+                let mut moving = frame(Affine3A::IDENTITY);
+                moving.linear = linear;
+                moving.angular = angular;
+                (true, Some(moving))
+            },
+        ) else {
+            panic!("mantle must move")
+        };
+        assert_eq!(motion.ground, a.hold);
+        assert!(motion.carry.abs_diff_eq(expected, 1e-6));
+        let MantleMotion::Move(relative) = state.mantle.unwrap().motion(feet, &tuning) else {
+            panic!("mantle must move")
+        };
+        assert!(motion.velocity.abs_diff_eq(relative + expected, 1e-6));
+        let released = crate::controllers::physical_hands::climb::solve::release_velocity(
+            motion.velocity,
+            motion.carry,
+            1.0,
+            100.0,
+        );
+        assert!(released.abs_diff_eq(expected + relative, 1e-6));
+        assert_eq!(
+            crate::controllers::physical_hands::climb::solve::release_velocity(
+                motion.velocity,
+                motion.carry,
+                0.0,
+                100.0
+            ),
+            motion.carry
+        );
+    }
+}
+
+#[test]
 fn an_invalid_captured_body_cancels_even_when_a_higher_valid_grip_remains() {
     let (mut state, a, b) = captured();
     state.grips = [None, Some(b)];
+    assert!(!state.mantle_owner_valid(|hold| {
+        assert_eq!(hold, a.hold);
+        false
+    }));
     assert!(matches!(
         state.step_mantle(tick(&tuning(), Vec3::new(0.0, 0.8, 1.0)), |hold| {
             assert_eq!(hold, a.hold);
@@ -179,7 +265,7 @@ fn an_invalid_captured_body_cancels_even_when_a_higher_valid_grip_remains() {
 }
 
 #[test]
-fn a_temporarily_missing_frame_keeps_the_captured_trajectory_and_owner() {
+fn a_missing_moving_frame_cancels_without_inventing_carry() {
     let (mut state, a, _) = captured();
     let before = state.mantle;
     assert!(matches!(
@@ -187,7 +273,7 @@ fn a_temporarily_missing_frame_keeps_the_captured_trajectory_and_owner() {
             assert_eq!(hold, a.hold);
             (true, None)
         }),
-        MantleStep::Move(_)
+        MantleStep::Cancelled("the mantle's body changed")
     ));
     assert_eq!(state.mantle, before);
     assert_eq!(state.mantle_frame.unwrap().owner, a.hold);

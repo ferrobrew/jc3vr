@@ -297,12 +297,20 @@ pub(super) struct MantleTick<'a> {
     pub stands: bool,
     pub tuning: &'a MantleTuning,
     pub max_steps: u32,
+    pub max_carry_speed_mps: f32,
     pub context: Option<Context>,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(super) struct ClimbMotion {
+    pub velocity: Vec3,
+    pub carry: Vec3,
+    pub ground: Hold,
 }
 
 pub(super) enum MantleStep {
     Inactive,
-    Move(Vec3),
+    Move(ClimbMotion),
     Completed(Option<(Hold, Landing)>),
     Cancelled(&'static str),
 }
@@ -357,6 +365,10 @@ impl State {
         self.held_by_game = native;
     }
 
+    pub(super) fn mantle_owner_valid(&self, valid: impl FnOnce(Hold) -> bool) -> bool {
+        self.mantle_frame.is_none_or(|frame| valid(frame.owner))
+    }
+
     pub(super) fn step_mantle(
         &mut self,
         tick: MantleTick<'_>,
@@ -388,22 +400,26 @@ impl State {
             {
                 tracing::info!(top = ?top, feet = ?tick.feet, "hand climbing: mantling over a ledge");
                 self.mantle = Some(mantle);
-                self.mantle_frame = frame.filter(|_| grip.hold.moving).map(|f| MantleFrame {
+                self.mantle_frame = Some(MantleFrame {
                     owner: grip.hold,
-                    transform: f.transform,
+                    transform: frame.map_or(Affine3A::IDENTITY, |f| f.transform),
                 });
                 self.mantle_steps = 0;
                 self.status.mantles += 1;
             }
         }
+        let mut carry = Vec3::ZERO;
         if let Some(captured) = self.mantle_frame {
             let (valid, now) = body(captured.owner);
-            if !valid {
+            if !valid || (captured.owner.moving && now.is_none()) {
                 return MantleStep::Cancelled("the mantle's body changed");
             }
             if let (Some(mantle), Some(now)) = (self.mantle.as_mut(), now) {
                 let turn = carried_turn(captured.transform, now.transform);
                 mantle.top = carried(captured.transform, now.transform, mantle.top);
+                carry = now
+                    .point_velocity(mantle.top)
+                    .clamp_length_max(tick.max_carry_speed_mps.max(0.0));
                 let over = turn * Vec3::new(mantle.over.x, 0.0, mantle.over.y);
                 mantle.over = glam::Vec2::new(over.x, over.z).normalize_or_zero();
                 self.mantle_frame = Some(MantleFrame {
@@ -420,15 +436,27 @@ impl State {
         let motion = mantle.motion(tick.feet, tick.tuning);
         if landed || motion == MantleMotion::Arrived {
             tracing::info!(feet = ?tick.feet, stood = landed, "hand climbing: mantled onto the ledge");
-            return MantleStep::Completed(self.mantle_frame.zip(tick.context).map(
-                |(captured, context)| (captured.owner, captured.completion(context, tick.feet)),
-            ));
+            return MantleStep::Completed(
+                self.mantle_frame
+                    .filter(|f| f.owner.moving)
+                    .zip(tick.context)
+                    .map(|(captured, context)| {
+                        (captured.owner, captured.completion(context, tick.feet))
+                    }),
+            );
         }
         if self.mantle_steps > tick.max_steps {
             return MantleStep::Cancelled("the mantle did not reach the ledge's top");
         }
         match motion {
-            MantleMotion::Move(velocity) => MantleStep::Move(velocity),
+            MantleMotion::Move(velocity) => match self.mantle_frame {
+                Some(captured) => MantleStep::Move(ClimbMotion {
+                    velocity: velocity + carry,
+                    carry,
+                    ground: captured.owner,
+                }),
+                None => MantleStep::Cancelled("the mantle has no support owner"),
+            },
             MantleMotion::Arrived => unreachable!(),
         }
     }

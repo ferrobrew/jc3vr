@@ -24,7 +24,7 @@ Native vehicle attachment and stunt traversal control the character's movement i
 
 The climb smooths total velocity and inherited point velocity with the same coefficient. The release is inherited velocity plus the scaled, capped difference between those smoothed velocities. The fling cap applies only to hand-generated motion. Turning the fling off still preserves inherited vehicle motion. The point velocity includes the body's angular velocity at the gripped point.
 
-The carry average includes every active grip, including zero velocity for a static grip. A changed grip set resets the total and carry filters together. This prevents carry from a released moving hand from remaining in a static grip. Destruction, stale input, a mode change, a teleport, and player replacement discard the grip without generating a release fling.
+Outside a mantle, the carry average includes every active grip, including zero velocity for a static grip. During a mantle, one command contains the trajectory velocity, the captured owner's point velocity capped once by the current carry-speed limit, and that owner's support identity. The same bounded carry is added to the trajectory and recorded for release; active limit changes apply on the next step. A different grip or release of the captured hand does not change that command's owner while another grip remains. An invalid owner or missing moving-body frame cancels the mantle without a fling. A changed grip set resets the total and carry filters together. This prevents carry from a released moving hand from remaining in a static grip. Destruction, stale input, a mode change, a teleport, and player replacement discard the grip without generating a release fling.
 
 ## Normal helicopter hang
 
