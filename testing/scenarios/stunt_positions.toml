@@ -1,17 +1,18 @@
-# Template: record the physical skid grip, a normal grapple hang, and a deliberate roof mantle.
+# Record only the physical skid grip and deliberate roof mantle in this recording.
 name = "keep a physical vehicle grip and deliberately enter a roof stunt"
-description = "With moving climbing enabled, grip a helicopter skid while it moves, use a gun in the free hand, and release without entering an animated hang. Separately enter the normal grapple hang and leave through the game controls. Climb a moving car and complete a deliberate mantle onto its roof, then ride with the hands free. See docs/mod/input/stunt-positions.md for destruction, mixed-body, and momentum checks."
+description = "With moving climbing enabled, grip a helicopter skid while it moves, use a gun in the free hand, and release without entering an animated hang. Climb a moving car and complete a deliberate mantle onto its roof, then ride with the hands free. Record the intentional grapple hang separately with stunt_hang.toml. See docs/mod/input/stunt-positions.md for destruction, mixed-body, and momentum checks."
 recording = "../recordings/stunt_positions.jc3trk"
 settle_s = 3.0
 
 [[expect]]
-name = "physical grips do not request the animated helicopter hang"
-signal = "stunt.hang_entries"
-at_most = 0
+name = "the recording exercises a physical moving grip"
+signal = "climb.moving_grips"
 
 [[expect]]
-name = "the normal grapple hang remains available"
+name = "physical grips never enter the observed native helicopter hang"
 signal = "stunt.hanging"
+check = "always"
+is = false
 
 [[expect]]
 name = "the deliberate mantle entered a roof stunt"

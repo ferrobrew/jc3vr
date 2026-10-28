@@ -151,7 +151,7 @@ signals! {
     ClimbError => "climb.error", Flag, "The climbing holds an error.";
     StuntHanging => "stunt.hanging", Flag, "The game holds the player hanging from a helicopter.";
     StuntStanding => "stunt.standing", Flag, "The game holds the player standing in a vehicle's stunt area.";
-    StuntHangEntries => "stunt.hang_entries", Counter, "Helicopter hangs the grips entered.";
+    StuntHangEntries => "stunt.hang_entries", Counter, "Legacy physical-grip hang-request counter; always zero, not a native hang observation.";
     StuntRoofEntries => "stunt.roof_entries", Counter, "Stunt areas the mantles entered.";
     StuntReleases => "stunt.releases", Counter, "Hangs let go by opening the grips.";
     StuntRefusals => "stunt.refusals", Counter, "Stunt position entries the game refused.";
