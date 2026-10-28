@@ -67,7 +67,7 @@ use crate::{
             procedural::{
                 authority::{Case, WeightFollower, Weights, classify},
                 config::{ProceduralBodyConfig, ProceduralMode},
-                gate_state::{FeetRequest, Landing, LowerRequest, STATE, State},
+                gate_state::{FeetRequest, Landing, STATE, State},
                 ground::{FitGround, GroundCaster, GroundTally},
                 rig::{Rig, RigBone, RigError},
                 solver::{
@@ -77,7 +77,6 @@ use crate::{
                     arms::{Side, TorsoKeepOut},
                     clavicles::{self, ClavicleTurn},
                     crouch_depth, hips_height, hips_room, line_yaw,
-                    lower::LowerStatus,
                     pose::{RigPose, SolveKind},
                     reach_drop, solve,
                 },
@@ -86,10 +85,8 @@ use crate::{
             },
             rig::{legs::swing::FootPose, pelvis, torso_turn},
         },
-        frame::Hand,
-        locomotion::{LocomotionStatus, status as locomotion_status},
+        locomotion::status as locomotion_status,
         mode::{AirborneVariant, Mode, current as current_mode},
-        roomscale::{frame_shared, posture::EffectivePosture},
         vehicles::parachute_brake,
     },
     headpose::{body_relative_rotation, query},
@@ -132,8 +129,6 @@ pub struct ProceduralStatus {
     pub standing_samples: usize,
     /// How far the player's head is below that, past the deadband, metres.
     pub head_drop_m: f32,
-    /// The lower body's pose and what it was picked from.
-    pub lower: LowerStatus,
     /// Whether the feet walk rather than step standing.
     pub legs_moving: bool,
     /// How far ahead of its hip the last walking foot landed, metres.
@@ -208,15 +203,6 @@ pub fn published_status() -> ProceduralStatus {
     *PUBLISHED.lock()
 }
 
-/// Whether the body sits on the ground, or is still getting up from it, as of a gate within the
-/// last few ticks: the stick stands it up rather than walking it, so the stick locomotion holds
-/// its velocity at zero. A leaf lock, so any thread may ask; a gate that has stopped running
-/// stops holding the stick.
-pub fn sat_on_ground() -> bool {
-    let status = *PUBLISHED.lock();
-    status.at.is_some_and(|at| at.elapsed() <= SAT_STALE_AFTER) && status.lower.holds_stick()
-}
-
 /// Whether the procedural body poses the torso at all: the wrist targets wait for the gate while
 /// it does, so they are queued on the torso it writes.
 pub fn owns_body() -> bool {
@@ -272,12 +258,6 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
     }
     let wing_queue = {
         let mut state = STATE.lock();
-        // A gate that wrote no pose holds no pose of the legs either: a sit must not keep holding
-        // the stick through a pass that never reached the solve.
-        if !wrote {
-            state.lower.reset();
-            state.status.lower = state.lower.status();
-        }
         state.wing_queue.take()
     };
     // Queued with the gate's state let go: the hand IK takes the configuration lock.
@@ -291,6 +271,34 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
     wrote
 }
 
+fn uses_constrained_fit(case: Case, mode: ProceduralMode) -> bool {
+    case == Case::OnFoot && mode == ProceduralMode::Full
+}
+
+#[cfg(test)]
+#[test]
+fn dispatcher_keeps_on_foot_in_constrained_fit_and_airborne_in_under_head() {
+    assert!(uses_constrained_fit(Case::OnFoot, ProceduralMode::Full));
+    for case in [
+        Case::Jump,
+        Case::HandClimb,
+        Case::Flight,
+        Case::Wingsuit,
+        Case::Parachute,
+    ] {
+        assert!(!uses_constrained_fit(case, ProceduralMode::Full));
+    }
+    assert!(!uses_constrained_fit(Case::OnFoot, ProceduralMode::Off));
+    for enabled in [false, true] {
+        let saved = format!(
+            "mode = 'Full'\nkneel = {enabled}\nsit = {enabled}\nkneel_blend_s = 0.4\nsit_blend_s = 0.6\nsit_after_s = 1.0\n"
+        );
+        let config: ProceduralBodyConfig =
+            toml::from_str(&saved).expect("old saved keys remain accepted");
+        assert!(uses_constrained_fit(Case::OnFoot, config.mode));
+    }
+}
+
 /// The gate itself; [`at_solve_gate`] publishes its status after it. Returns whether it wrote a
 /// procedural pose; every path that does not leaves the torso's published weight at zero.
 ///
@@ -298,24 +306,15 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
 ///
 /// As [`at_solve_gate`].
 unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
-    let (config, pelvis_config, legs_config, off_hand, scale) = Config::lock_query(|c| {
+    let (config, pelvis_config, legs_config, scale) = Config::lock_query(|c| {
         (
             c.controllers.body.procedural,
             c.controllers.body.rig.pelvis,
             c.controllers.body.rig.legs,
-            c.controllers.acting_hand().other(),
             c.vr.world_scale,
         )
     });
-    let off_side = match off_hand {
-        Hand::Left => Side::Left,
-        Hand::Right => Side::Right,
-    };
     let now = Instant::now();
-    // Read before the gate's own state: the roomscale frame half publishes it from the game thread.
-    let standing_play = frame_shared()
-        .filter(|frame| frame.fresh(now))
-        .is_some_and(|frame| frame.posture != EffectivePosture::Seated);
     // Read before the gate's own state too: it takes the configuration and the controller frame.
     let mode = current_mode().mode;
     let player_arms = (mode == Mode::Airborne(AirborneVariant::Wingsuit))
@@ -450,7 +449,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                 return true;
             }
             state.on_hips_logged = None;
-            if case == Case::OnFoot && config.mode == ProceduralMode::Full {
+            if uses_constrained_fit(case, config.mode) {
                 state.reset_under_head();
                 state.status.stepping = false;
                 state.status.legs_moving = false;
@@ -527,7 +526,6 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             }
             crate::controllers::body::rig::runtime::hand_back();
             let velocity = root_velocity(&previous_world, &world, dt);
-            let commanded = commanded_velocity(&locomotion);
             let mut caster = GroundCaster::new(character, world.w_axis.y, &config);
             // The legs come back from the animation with the feet where it left them, and step
             // from there; while the animation has them, the feet are its own.
@@ -649,23 +647,6 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                 &pelvis_config,
             );
             input.hips_xz = Some(state.hips.step(place, dt, pelvis_config.follow_s));
-            let lower = LowerRequest {
-                world: &world,
-                rig,
-                stance,
-                crouch,
-                grounded: case == Case::OnFoot && legs_procedural && !airborne,
-                moving: commanded.length() > legs_config.standing_mps
-                    || locomotion.stick.length() > MOVING_STICK,
-                stick: locomotion.stick.length() > MOVING_STICK,
-                standing_play,
-                head_world: query().position,
-                off_side,
-                dt,
-            };
-            if let Some(targets) = state.step_lower(&lower, &input, &config) {
-                input.hold(targets);
-            }
             let need = reach_drop(rig, &input, &config);
             let reach = state.drop.step(need, dt, config.reach_drop_s);
             let dip = state.dip.step(dt, config.landing_dip_s);
@@ -834,14 +815,6 @@ const ELBOW_HINT_UPRIGHT: f32 = 0.5;
 /// The longest step the body takes, seconds: a hitch is not a long blend.
 const MAX_STEP_S: f32 = 0.1;
 
-/// How far the move stick must be pushed for the body to count as told to move, whatever the
-/// velocity has reached yet.
-const MOVING_STICK: f32 = 0.3;
-
-/// How long a gate's sit holds the stick after it, at most: past this the gate has stopped
-/// running, and the stick walks again.
-const SAT_STALE_AFTER: Duration = Duration::from_millis(200);
-
 /// How often the pass-through logs its read-back.
 const PASS_THROUGH_LOG_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -916,7 +889,6 @@ const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
     standing_m: 0.0,
     standing_samples: 0,
     head_drop_m: 0.0,
-    lower: LowerStatus::new(),
     legs_moving: false,
     touchdown_lead_m: None,
     motion_lean_deg: 0.0,
@@ -958,18 +930,6 @@ fn root_velocity(previous: &Mat4, current: &Mat4, dt: f32) -> Vec3 {
     let speed = root_speed(horizontal.length(), dt, MAX_HORIZONTAL_MPS);
     let velocity = horizontal.normalize_or_zero() * speed;
     Vec3::new(velocity.x, 0.0, velocity.y)
-}
-
-/// The body's commanded horizontal velocity, world space: the stick's, or the movement task's
-/// where the stick does not drive the body.
-fn commanded_velocity(locomotion: &LocomotionStatus) -> Vec3 {
-    let v: Vec2 = locomotion.velocity.unwrap_or(locomotion.task_velocity);
-    let velocity = Vec3::new(v.x, 0.0, v.y);
-    if velocity.is_finite() {
-        velocity
-    } else {
-        Vec3::ZERO
-    }
 }
 
 /// The solve's inputs from the headpose, the torso estimate, and the feet, in model space, at the

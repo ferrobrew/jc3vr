@@ -205,15 +205,15 @@ fn reviewed_turn_choices_allow_only_the_equivalent_radio_setting() {
 }
 
 #[test]
-fn pin_control_removal_requires_exact_review_and_absent_targets() {
+fn control_removal_requires_exact_review_and_absent_targets() {
     let (baseline, mapping) = fixtures();
     let sources: Vec<_> = source_files().copied().collect();
     let removals: Vec<Removal> = serde_json::from_str(include_str!("removals.json")).unwrap();
-    assert_eq!(removals.len(), 6);
+    assert_eq!(removals.len(), 10);
     assert!(parity_with_removals(&baseline, &mapping, &sources, &removals).is_empty());
     assert_eq!(
         parity_with_removals(&baseline, &mapping, &sources, &[]).len(),
-        6
+        10
     );
     for removal in &removals {
         let mut changed = removals.clone();
@@ -244,16 +244,28 @@ fn pin_control_removal_requires_exact_review_and_absent_targets() {
             id if id.contains("b8008d4c0a040c22") => {
                 "fn restored() { ui.add(egui::Slider::new(&mut c.hang_hold_s, 0.0..=2.0)); }"
             }
+            id if id.contains("a9543469b4356906") || id.contains("436331d5bee0e6b8") => {
+                "fn restored() { page.item(config_toggle!(\"KNEEL BELOW A SQUAT\", |c| c.controllers.body.procedural.kneel)); }"
+            }
+            id if id.contains("609ed2e81e31ae87") || id.contains("a4753ae939c3440d") => {
+                "fn restored() { page.item(config_toggle!(\"SIT ON THE GROUND\", |c| c.controllers.body.procedural.sit)); }"
+            }
             _ => "fn restored() { ui.add(egui::Slider::new(&mut c.hang_below_m, -0.5..=1.5)); }",
         };
         let source = SourceFile {
             path: if removal.path.ends_with("stunt.rs") {
                 "payload/src/ui/controllers/stunt.rs"
+            } else if removal.path.ends_with("pages.rs") {
+                "payload/src/controllers/body/menu/pages.rs"
             } else {
                 "payload/src/ui/controllers/weapons.rs"
             },
             text: restored,
-            surface: Surface::Debug,
+            surface: if removal.path.ends_with("pages.rs") {
+                Surface::Pause
+            } else {
+                Surface::Debug
+            },
             destinations: &[],
         };
         let mut changed_sources = sources.clone();
@@ -517,7 +529,7 @@ fn extra_matching_current_owner_is_not_silently_selected() {
 const ORIGINAL: &str = "fn old() { let c = &mut cfg.controllers; ui.checkbox(&mut c.enabled, \"Enabled\"); if ui.button(\"Capture\").clicked() { sink::capture(); } }";
 const BASELINE_FINGERPRINT: u64 = 0x9b6099490bea7ce7;
 const MAPPING_FINGERPRINT: u64 = 0x488a71f510dadf44;
-const REMOVALS_FINGERPRINT: u64 = 0x5b07d08c09276dab;
+const REMOVALS_FINGERPRINT: u64 = 0x9ad42b0d51971790;
 
 fn source(text: &'static str) -> SourceFile {
     SourceFile {

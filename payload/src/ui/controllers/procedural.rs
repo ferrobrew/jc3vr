@@ -83,38 +83,7 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
             "Standing height {:+.3} m over the head anchor from {} samples · head {:.3} m below it past the deadband",
             status.standing_m, status.standing_samples, status.head_drop_m,
         ));
-        let lower = &status.lower;
-        ui.label(format!(
-            "Lower body: {} · hips wanted at {:.3} m against the floor at {:.3} m · low {:.2} s · kneel {:.2}{} · {}",
-            lower.pose.label(),
-            lower.wanted_hips_m,
-            lower.floor_m,
-            lower.low_s,
-            lower.kneel_weight,
-            lower
-                .kneel_side
-                .map_or_else(String::new, |side| format!(" ({} knee)", side.label())),
-            if lower.moving { "moving" } else { "still" },
-        ));
-        ui.label(format!(
-            "Sit {:.2}{} · head {:.2} m/s · low and still {:.2} s · {} · {}",
-            lower.sit_weight,
-            lower
-                .sit_legs
-                .map_or_else(String::new, |legs| format!(" ({})", legs.label())),
-            lower.head_speed_mps,
-            lower.still_s,
-            if lower.standing_play {
-                "standing play"
-            } else {
-                "seated play"
-            },
-            if lower.sit_armed {
-                "may sit"
-            } else {
-                "waits for the head to rise"
-            },
-        ));
+        ui.label("Knee and ground-sit inference is unavailable; the on-foot fit uses tracked head and hands.");
         let ground = &status.ground;
         ui.label(format!(
             "Ground casts this tick {} · hits {} · too steep {} · on objects {} · errors {} · largest offset {:+.3} m",

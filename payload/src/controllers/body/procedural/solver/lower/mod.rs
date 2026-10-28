@@ -42,17 +42,6 @@ pub enum LowerPose {
     Sit,
 }
 
-impl LowerPose {
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Stand => "stand",
-            Self::Crouch => "crouch",
-            Self::Kneel => "kneel",
-            Self::Sit => "sit",
-        }
-    }
-}
-
 /// How the legs lie while sitting on the ground.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum SitLegs {
@@ -60,15 +49,6 @@ pub enum SitLegs {
     Crossed,
     /// The feet flat in front, the knees up: the head upright or back.
     KneesUp,
-}
-
-impl SitLegs {
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Crossed => "crossed",
-            Self::KneesUp => "knees up",
-        }
-    }
 }
 
 /// The rig's measures the poses are built from, model space, metres.
@@ -206,18 +186,7 @@ pub struct LowerInput {
     pub dt: f32,
 }
 
-/// A held pose's targets, model space, for the solver to mix over its own by `weight`.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct LowerTargets {
-    /// How much of the pose to take, `0..=1`.
-    pub weight: f32,
-    /// Where the hips go.
-    pub hips: Vec3,
-    /// Where each foot (the ankle) goes and how it turns, left then right.
-    pub feet: [FootPose; 2],
-    /// Where each knee points, left then right.
-    pub poles: [Vec3; 2],
-}
+pub(crate) use crate::controllers::body::procedural::solver::lower_targets::LowerTargets;
 
 /// What the pose selection decided and from what, for the readouts and the log.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -295,16 +264,6 @@ pub enum SitEnd {
     Interrupted,
 }
 
-impl SitEnd {
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::HeadRose => "the head rose",
-            Self::Stick => "the stick",
-            Self::Interrupted => "interrupted",
-        }
-    }
-}
-
 /// The lower body's pose, the places a held pose keeps, and the weights it eases in and out by.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct LowerBody {
@@ -337,11 +296,6 @@ impl LowerBody {
             head_speed: 0.0,
             status: LowerStatus::new(),
         }
-    }
-
-    /// Stand at once: the body has left the procedural legs.
-    pub fn reset(&mut self) {
-        *self = Self::new();
     }
 
     pub fn status(&self) -> LowerStatus {

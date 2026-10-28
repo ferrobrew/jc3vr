@@ -44,13 +44,11 @@ pub struct ProceduralBodyConfig {
     pub crouch_lift_share: f32,
     /// The least share of a cycle each foot spends on the ground at the hips' lowest.
     pub crouch_duty: f32,
-    /// Kneel on one knee when the head goes below the floor of a squat and stays there, still and
-    /// not moving: the trailing foot's knee down, or the off hand's side.
+    /// Accepted for saved-key compatibility; production does not infer knee contact.
     pub kneel: bool,
     /// How long the kneel takes to ease in or out, seconds.
     pub kneel_blend_s: f32,
-    /// Sit on the ground in standing play when the head stays low and still: the hips to the
-    /// ground under the player and the legs out in front. The stick stands the body up.
+    /// Accepted for saved-key compatibility; production does not infer seated ground contact.
     pub sit: bool,
     /// How long the sit takes to ease in or out, seconds.
     pub sit_blend_s: f32,

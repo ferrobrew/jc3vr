@@ -40,5 +40,33 @@
     "kind": "Setting",
     "semantic": {"call": "new ( & mut c . hang_below_m , - 0 . 5 . . = 1 . 5 )", "bindings": [], "effect": ""},
     "reason": "Physical vehicle grips keep their actual handhold; there is no automatic hang-entry height to tune."
+  },
+  {
+    "old_id": "payload/src/controllers/body/menu/pages.rs::summary::PauseItem::a9543469b4356906::1",
+    "path": "payload/src/controllers/body/menu/pages.rs",
+    "kind": "PauseItem",
+    "semantic": {"call": "item ( config_toggle ! ( \"KNEEL BELOW A SQUAT\" , | c | c . controllers . body . procedural . kneel ) )", "bindings": [], "effect": ""},
+    "reason": "On-foot constrained fitting does not infer knee contact; the unavailable control is removed."
+  },
+  {
+    "old_id": "payload/src/controllers/body/menu/pages.rs::summary::Setting::436331d5bee0e6b8::1",
+    "path": "payload/src/controllers/body/menu/pages.rs",
+    "kind": "Setting",
+    "semantic": {"call": "config_toggle ! ( \"KNEEL BELOW A SQUAT\" , | c | c . controllers . body . procedural . kneel )", "bindings": [], "effect": ""},
+    "reason": "On-foot constrained fitting does not infer knee contact; the unavailable control is removed."
+  },
+  {
+    "old_id": "payload/src/controllers/body/menu/pages.rs::summary::PauseItem::609ed2e81e31ae87::1",
+    "path": "payload/src/controllers/body/menu/pages.rs",
+    "kind": "PauseItem",
+    "semantic": {"call": "item ( config_toggle ! ( \"SIT ON THE GROUND\" , | c | c . controllers . body . procedural . sit ) )", "bindings": [], "effect": ""},
+    "reason": "On-foot constrained fitting does not infer seated ground contact; the unavailable control is removed."
+  },
+  {
+    "old_id": "payload/src/controllers/body/menu/pages.rs::summary::Setting::a4753ae939c3440d::1",
+    "path": "payload/src/controllers/body/menu/pages.rs",
+    "kind": "Setting",
+    "semantic": {"call": "config_toggle ! ( \"SIT ON THE GROUND\" , | c | c . controllers . body . procedural . sit )", "bindings": [], "effect": ""},
+    "reason": "On-foot constrained fitting does not infer seated ground contact; the unavailable control is removed."
   }
 ]

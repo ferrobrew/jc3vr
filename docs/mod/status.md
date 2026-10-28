@@ -70,8 +70,8 @@ The status rows say whether each of the mod's systems is live, for confirming a 
 | | `HAND-OVER CASE` | in the full mode, the hand-over table's current case; `OK` on foot, `WAITING` while the animation has the body |
 | | `GROUND CASTS` | in the full mode, the last gate's ground casts that hit, and any errors |
 | | `STANCE` | whether the neutral stance has been measured |
-| | `LOWER BODY` | in the full mode, the lower body's pose on foot: `STAND`, `CROUCH`, `KNEEL` with the knee that is down and the kneel's weight, or `SIT` with how the legs lie (`CROSSED` or `KNEES UP`) and the sit's weight; `WAITING` off the ground |
-| | `POSE INPUTS` | in the full mode, what the pose is picked from: the hips' height the head asks for against the squat's floor, the crouch's depth, how long the head has been low and still enough to sit, `MOVING` while the body is told to move, `SEATED` in the seated posture (which does not sit on the ground), and `RISE TO SIT` after the stick stood the body up, until the head rises; the log adds the head's speed and the sit's weight |
+| | `LOWER BODY` | in the full mode, reports that knee and ground-sit inference is unavailable |
+| | `POSE INPUTS` | in the full mode, the current crouch depth |
 | | `TWIST BONES` | in the full mode, how many twist bones the limbs' twist is shared over, on how many segments, and the largest twist on the last pass; `WAITING` while the body has no weight, `NONE FOUND` fails it |
 | | `WINGSUIT ARMS` | in the full mode with `ARMS AS WINGS` on, the wingsuit's arms' weight and the hands queued; `OK` with both at full weight, `NOT IN THE WINGSUIT` otherwise |
 | | `PARACHUTE BODY` | in the full mode with `BODY UNDER THE PARACHUTE` on, the torso's weight under the parachute and how far the legs flare for the handles' brake; `OK` at full weight, `NOT UNDER THE CANOPY` otherwise |

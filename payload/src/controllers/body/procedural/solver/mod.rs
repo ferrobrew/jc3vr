@@ -34,7 +34,9 @@ pub mod arms;
 pub mod clavicles;
 pub(crate) mod constrained;
 pub mod hips;
+#[cfg(test)]
 pub mod lower;
+mod lower_targets;
 pub mod pose;
 pub mod spine;
 pub mod twist;
@@ -49,7 +51,7 @@ use crate::controllers::body::procedural::{
     rig::{Rig, RigBone},
     solver::{
         hips::{hips_input, place_hips},
-        lower::LowerTargets,
+        lower_targets::LowerTargets,
         pose::RigPose,
         spine::{ChestTurn, bend_spine, chest_pitch, turn_neck},
     },
@@ -103,6 +105,7 @@ impl SolveInput {
 
     /// Take the held pose `targets` by its weight: its feet replace the feet by the weight now, and
     /// the solve mixes its hips and knees by the same. A held foot does not roll onto its toes.
+    #[cfg(test)]
     pub fn hold(&mut self, targets: LowerTargets) {
         let w = targets.weight.clamp(0.0, 1.0);
         for side in 0..2 {

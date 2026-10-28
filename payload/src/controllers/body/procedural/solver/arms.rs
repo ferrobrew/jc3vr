@@ -136,6 +136,7 @@ impl Side {
     pub const BOTH: [Self; 2] = [Self::Left, Self::Right];
 
     /// The other side.
+    #[cfg(test)]
     pub const fn other(self) -> Self {
         match self {
             Self::Left => Self::Right,
@@ -144,17 +145,11 @@ impl Side {
     }
 
     /// The side's sign along the body's right: -1 on the left, +1 on the right.
+    #[cfg(test)]
     pub const fn sign(self) -> f32 {
         match self {
             Self::Left => -1.0,
             Self::Right => 1.0,
-        }
-    }
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Left => "left",
-            Self::Right => "right",
         }
     }
 }
