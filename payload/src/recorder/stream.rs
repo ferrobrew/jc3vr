@@ -15,7 +15,7 @@
 
 use std::{
     io::Write as _,
-    net::TcpStream,
+    net::{SocketAddr, TcpStream, ToSocketAddrs},
     path::PathBuf,
     sync::{
         Arc,
@@ -83,33 +83,41 @@ impl Writer {
             .with_context(|| format!("could not create {}", folder.display()))?;
         let sidecar = std::fs::File::create(folder.join("frames.jsonl"))
             .with_context(|| format!("could not create the sidecar in {}", folder.display()))?;
+        let target = format!("{}:{}", cfg.host(), cfg.port);
+        let frame_rate = cfg.frame_rate.max(1);
+        Self::spawn_thread(move |receiver, pool, shared| {
+            let mut session = WriterThread {
+                target,
+                frame_rate,
+                folder,
+                sidecar: std::io::BufWriter::new(sidecar),
+                stream: None,
+                next_address: 0,
+                header_written: false,
+                last_fresh: None,
+                stream_frame: 0,
+                dropped_before_connect: 0,
+                pool,
+                shared,
+            };
+            session.run(receiver);
+        })
+    }
+
+    fn spawn_thread(
+        run: impl FnOnce(Receiver<Frame>, SyncSender<Vec<u8>>, Arc<Shared>) + Send + 'static,
+    ) -> anyhow::Result<Self> {
         let (sender, receiver) = mpsc::sync_channel(QUEUE_DEPTH);
         let (pool_sender, pool) = mpsc::sync_channel(QUEUE_DEPTH + 2);
         let shared = Arc::new(Shared {
             connected: AtomicBool::new(false),
             error: Mutex::new(None),
+            finish_deadline: Mutex::new(None),
         });
         let thread_shared = Arc::clone(&shared);
-        let target = format!("{}:{}", cfg.host(), cfg.port);
-        let frame_rate = cfg.frame_rate.max(1);
         let handle = std::thread::Builder::new()
             .name("jc3vr-recorder".to_owned())
-            .spawn(move || {
-                let mut session = WriterThread {
-                    target,
-                    frame_rate,
-                    folder,
-                    sidecar: std::io::BufWriter::new(sidecar),
-                    stream: None,
-                    header_written: false,
-                    last_fresh: None,
-                    stream_frame: 0,
-                    dropped_before_connect: 0,
-                    pool: pool_sender,
-                    shared: thread_shared,
-                };
-                session.run(receiver);
-            })
+            .spawn(move || run(receiver, pool_sender, thread_shared))
             .context("could not spawn the recorder writer thread")?;
         Ok(Self {
             sender: Some(sender),
@@ -148,32 +156,50 @@ impl Writer {
         self.shared.connected.load(Ordering::Relaxed)
     }
 
-    /// Close the queue so the thread drains what it has, closes the stream, and exits.
+    /// Close the queue and allow its accepted frames to drain within the network grace period.
     pub fn finish(&mut self) {
-        self.sender = None;
+        if self.sender.take().is_some() {
+            *self.shared.finish_deadline.lock() = Some(Instant::now() + FINISH_GRACE);
+        }
     }
 
-    /// Wait for the thread to exit, up to `budget`. Returns whether it did.
-    pub fn join(mut self, budget: Duration) -> bool {
-        self.finish();
-        let Some(handle) = self.handle.take() else {
-            return true;
-        };
-        let deadline = Instant::now() + budget;
-        while !handle.is_finished() {
-            if Instant::now() >= deadline {
-                tracing::error!(
-                    "recorder: the writer did not finish within {} s; leaving the payload mapped \
-                     rather than unmapping under a live thread",
-                    budget.as_secs()
-                );
-                return false;
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        let _ = handle.join();
-        true
+    pub(super) fn is_finished(&self) -> bool {
+        self.handle.as_ref().is_some_and(JoinHandle::is_finished)
     }
+
+    /// A pending result keeps the join handle owned. I/O failure after exit is safe to reap.
+    pub(super) fn poll_completion(&mut self) -> Option<Completion> {
+        if !self.is_finished() {
+            return None;
+        }
+        let result = self
+            .handle
+            .take()
+            .expect("recorder: finished handle")
+            .join();
+        let error = if result.is_err() {
+            Some("recorder: the video writer thread panicked".to_owned())
+        } else {
+            self.shared.error.lock().clone()
+        };
+        Some(Completion { error })
+    }
+
+    #[cfg(test)]
+    pub(super) fn spawn_controlled(
+        run: impl FnOnce(Receiver<Frame>) -> Result<(), String> + Send + 'static,
+    ) -> Self {
+        Self::spawn_thread(move |receiver, _pool, shared| {
+            if let Err(error) = run(receiver) {
+                *shared.error.lock() = Some(error);
+            }
+        })
+        .expect("recorder: controlled writer spawn")
+    }
+}
+
+pub(super) struct Completion {
+    pub(super) error: Option<String>,
 }
 
 /// How many frames may wait for the writer before the render thread starts dropping. At full eye
@@ -183,9 +209,23 @@ const QUEUE_DEPTH: usize = 6;
 /// How often the thread retries the host while waiting for the listener.
 const CONNECT_RETRY: Duration = Duration::from_millis(500);
 
+const CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
+const WRITE_TIMEOUT: Duration = Duration::from_millis(250);
+const FRAME_WRITE_BUDGET: Duration = Duration::from_secs(5);
+const FINISH_GRACE: Duration = Duration::from_secs(5);
+
 struct Shared {
     connected: AtomicBool,
     error: Mutex<Option<String>>,
+    finish_deadline: Mutex<Option<Instant>>,
+}
+
+impl Shared {
+    fn network_expired(&self) -> bool {
+        self.finish_deadline
+            .lock()
+            .is_some_and(|deadline| Instant::now() >= deadline)
+    }
 }
 
 struct WriterThread {
@@ -194,6 +234,7 @@ struct WriterThread {
     folder: PathBuf,
     sidecar: std::io::BufWriter<std::fs::File>,
     stream: Option<TcpStream>,
+    next_address: usize,
     header_written: bool,
     /// The bytes of the last fresh frame, re-sent for duplicates.
     last_fresh: Option<Vec<u8>>,
@@ -286,15 +327,45 @@ impl WriterThread {
     }
 
     fn try_connect(&mut self) {
-        match TcpStream::connect(&self.target) {
-            Ok(stream) => {
+        // Hostname resolution can still block in the OS. The retained owner covers that case.
+        let result = (|| -> std::io::Result<Option<TcpStream>> {
+            let addresses: Vec<_> = self.target.to_socket_addrs()?.collect();
+            let deadline = Instant::now() + CONNECT_TIMEOUT;
+            let stream = connect_resolved(
+                &addresses,
+                &mut self.next_address,
+                || {
+                    if self.shared.network_expired() {
+                        Duration::ZERO
+                    } else {
+                        deadline.saturating_duration_since(Instant::now())
+                    }
+                },
+                |address, remaining| match TcpStream::connect_timeout(address, remaining) {
+                    Ok(stream) => Some(stream),
+                    Err(error) => {
+                        tracing::debug!("recorder: waiting for the host at {address}: {error}");
+                        None
+                    }
+                },
+            );
+            if let Some(stream) = stream {
+                stream.set_write_timeout(Some(WRITE_TIMEOUT))?;
                 let _ = stream.set_nodelay(true);
+                Ok(Some(stream))
+            } else {
+                Ok(None)
+            }
+        })();
+        match result {
+            Ok(Some(stream)) => {
                 tracing::info!("recorder: connected to {}", self.target);
                 self.stream = Some(stream);
                 self.shared.connected.store(true, Ordering::Relaxed);
             }
-            Err(e) => {
-                tracing::debug!("recorder: waiting for the host at {}: {e}", self.target);
+            Ok(None) => {}
+            Err(error) => {
+                tracing::debug!("recorder: waiting for the host at {}: {error}", self.target);
             }
         }
     }
@@ -327,24 +398,26 @@ impl WriterThread {
         metadata: &FrameMetadata,
         duplicate: bool,
     ) -> anyhow::Result<()> {
+        let deadline = Instant::now() + FRAME_WRITE_BUDGET;
         if !self.header_written {
             let header = format!(
                 "YUV4MPEG2 W{} H{} F{}:1 Ip A1:1 C420jpeg XYSCSS=420JPEG XCOLORRANGE=LIMITED\n",
                 metadata.width, metadata.height, self.frame_rate
             );
-            self.stream
-                .as_mut()
-                .context("no stream")?
-                .write_all(header.as_bytes())
-                .context("writing the stream header")?;
+            write_network(
+                self.stream.as_mut().context("no stream")?,
+                header.as_bytes(),
+                &self.shared,
+                deadline,
+            )
+            .context("writing the stream header")?;
             self.header_written = true;
             self.write_stream_info(metadata);
         }
         let stream_frame = self.stream_frame;
         let stream = self.stream.as_mut().context("no stream")?;
-        stream
-            .write_all(b"FRAME\n")
-            .and_then(|()| stream.write_all(bytes))
+        write_network(stream, b"FRAME\n", &self.shared, deadline)
+            .and_then(|()| write_network(stream, bytes, &self.shared, deadline))
             .with_context(|| format!("writing frame {stream_frame} to the host"))?;
         self.write_sidecar_line(metadata, duplicate);
         self.stream_frame += 1;
@@ -398,3 +471,51 @@ impl WriterThread {
         }
     }
 }
+
+/// Advance before each attempt so an address that uses the whole budget cannot starve later ones.
+fn connect_resolved<T>(
+    addresses: &[SocketAddr],
+    next_address: &mut usize,
+    mut remaining: impl FnMut() -> Duration,
+    mut connect: impl FnMut(&SocketAddr, Duration) -> Option<T>,
+) -> Option<T> {
+    for _ in 0..addresses.len() {
+        let budget = remaining();
+        if budget.is_zero() {
+            break;
+        }
+        let index = *next_address % addresses.len();
+        *next_address = (index + 1) % addresses.len();
+        if let Some(stream) = connect(&addresses[index], budget) {
+            return Some(stream);
+        }
+    }
+    None
+}
+
+/// The socket has a per-call timeout; the deadline also bounds a peer making slow progress.
+fn write_network(
+    stream: &mut impl std::io::Write,
+    mut bytes: &[u8],
+    shared: &Shared,
+    deadline: Instant,
+) -> std::io::Result<()> {
+    while !bytes.is_empty() {
+        if Instant::now() >= deadline || shared.network_expired() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "recorder: the network drain deadline expired",
+            ));
+        }
+        match stream.write(bytes) {
+            Ok(0) => return Err(std::io::ErrorKind::WriteZero.into()),
+            Ok(count) => bytes = &bytes[count..],
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests;

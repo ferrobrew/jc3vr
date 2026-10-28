@@ -25,8 +25,9 @@
 //!
 //! ## Threads and shutdown
 //!
-//! The writer is a joinable thread; [`shutdown`] stops it and waits, on the same argument as the
-//! screenshot writer: a thread still running when the DLL unmaps parks the process.
+//! Active and draining writers share a bounded owner. Completed threads are joined before their
+//! slots are reused. [`shutdown`] waits for every retained writer and keeps the DLL mapped if any
+//! writer has not exited.
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
@@ -34,9 +35,13 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D};
 
-use crate::stereo::{far_phase, single_pass::collapse_active};
+use crate::{
+    recorder::owners::{Completion, VideoWriters},
+    stereo::{far_phase, single_pass::collapse_active},
+};
 
 pub mod convert;
+mod owners;
 pub mod stream;
 pub(crate) mod tracking;
 
@@ -97,6 +102,7 @@ pub struct Status {
 pub fn start() {
     let cfg = crate::config::Config::lock_query(|c| c.recorder.clone());
     let mut state = STATE.lock();
+    state.reap();
     if state.recording {
         return;
     }
@@ -104,11 +110,15 @@ pub fn start() {
         return;
     }
     let stamp = crate::session::stamp();
-    match stream::Writer::spawn(&cfg, &stamp) {
-        Ok(writer) => {
-            state.writer = Some(writer);
+    let folder = format!("capture/{stamp}");
+    let (completions, result) = state
+        .writers
+        .start(folder.clone(), || stream::Writer::spawn(&cfg, &stamp));
+    state.report(completions);
+    match result {
+        Ok(()) => {
             state.recording = true;
-            state.folder = Some(format!("capture/{stamp}"));
+            state.folder = Some(folder);
             state.error = None;
             state.size = None;
             state.frame_index = 0;
@@ -133,21 +143,17 @@ pub fn start() {
     }
 }
 
-/// Stop the recording, if any. Any thread. The writer finishes its queue and closes the stream;
-/// the converter is released on the render thread's next pass.
+/// Stop the recording, if any. Any thread. The writer drains its queue while network deadlines
+/// permit and closes the stream. The converter is released on the render thread's next pass.
 pub fn stop() {
     let mut state = STATE.lock();
+    state.reap();
     if !state.recording {
         return;
     }
     RECORDING.store(false, Ordering::Release);
     state.recording = false;
-    if let Some(mut writer) = state.writer.take() {
-        writer.finish();
-        // Keep the handle so eject can wait for the drain; a stale one from an earlier recording
-        // has long exited and is simply replaced.
-        state.finishing = Some(writer);
-    }
+    state.writers.stop();
     tracing::info!(
         "recorder: stopped after {} frames ({} duplicated, {} dropped)",
         FRAMES_SENT.load(Ordering::Relaxed),
@@ -172,14 +178,18 @@ pub fn is_recording() -> bool {
 
 /// The live status for the debug tab.
 pub fn status() -> Status {
-    let state = STATE.lock();
+    let mut state = STATE.lock();
+    state.reap();
     Status {
         recording: state.recording,
         size: state.size,
         frames_sent: FRAMES_SENT.load(Ordering::Relaxed),
         frames_duplicated: FRAMES_DUPLICATED.load(Ordering::Relaxed),
         frames_dropped: FRAMES_DROPPED.load(Ordering::Relaxed),
-        connected: state.writer.as_ref().is_some_and(stream::Writer::connected),
+        connected: state
+            .writers
+            .active()
+            .is_some_and(stream::Writer::connected),
         error: state.error.clone(),
         folder: state.folder.clone(),
     }
@@ -232,7 +242,7 @@ pub unsafe fn capture_frame(
     };
     let size = converter.size();
     let mut state = STATE.lock();
-    let Some(writer) = state.writer.as_ref() else {
+    let Some(writer) = state.writers.active() else {
         return;
     };
     let metadata = stream::FrameMetadata {
@@ -281,11 +291,16 @@ pub unsafe fn capture_frame(
 #[must_use = "a writer that did not finish means the payload must stay mapped"]
 pub fn shutdown() -> bool {
     stop();
-    let writer = STATE.lock().finishing.take();
-    match writer {
-        Some(writer) => writer.join(SHUTDOWN_BUDGET),
-        None => true,
+    let mut state = STATE.lock();
+    let result = state.writers.shutdown(SHUTDOWN_BUDGET);
+    state.report(result.completions);
+    if !result.stopped {
+        tracing::error!(
+            "recorder: video writers have not exited; leaving the payload mapped rather than \
+             unmapping under a live thread"
+        );
     }
+    result.stopped
 }
 
 /// The smallest output scale the config accepts.
@@ -301,9 +316,7 @@ static FRAMES_DROPPED: AtomicU32 = AtomicU32::new(0);
 
 struct State {
     recording: bool,
-    writer: Option<stream::Writer>,
-    /// The writer of the last recording, kept so eject can join it after `stop` handed it off.
-    finishing: Option<stream::Writer>,
+    writers: VideoWriters,
     eye: usize,
     scale: f32,
     size: Option<(u32, u32)>,
@@ -312,10 +325,24 @@ struct State {
     folder: Option<String>,
 }
 
+impl State {
+    fn reap(&mut self) {
+        let completions = self.writers.reap();
+        self.report(completions);
+    }
+
+    fn report(&mut self, completions: Vec<Completion>) {
+        for completion in completions {
+            if self.folder.as_ref() == Some(&completion.folder) && completion.error.is_some() {
+                self.error = completion.error;
+            }
+        }
+    }
+}
+
 static STATE: Mutex<State> = Mutex::new(State {
     recording: false,
-    writer: None,
-    finishing: None,
+    writers: VideoWriters::new(),
     eye: 0,
     scale: 1.0,
     size: None,
