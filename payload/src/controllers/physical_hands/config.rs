@@ -53,6 +53,8 @@ pub struct PhysicalHandsConfig {
     pub show_boxes: bool,
     /// Picking up and holding loose objects with an empty hand's grip.
     pub pickup: PickupConfig,
+    /// Solver-contact feedback for held props. Native damage and materials are unchanged.
+    pub held_impacts: bool,
     /// The hand bodies, which replace the palm's probes for the hands they drive.
     pub bodies: HandBodiesConfig,
     /// Climbing by gripping the static world with a hand its body drives.
@@ -94,6 +96,7 @@ impl PhysicalHandsConfig {
             object_impulse: 1.0,
             show_boxes: false,
             pickup: PickupConfig::new(),
+            held_impacts: true,
             bodies: HandBodiesConfig::new(),
             climb: ClimbConfig::new(),
             doors: DoorsConfig::new(),

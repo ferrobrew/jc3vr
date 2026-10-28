@@ -120,6 +120,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 ### input/
 
+- [held-prop-impacts.md](mod/input/held-prop-impacts.md) — held-body solver-contact feedback, native damage ownership, and acceptance scenarios.
 - [input.md](mod/input/input.md) — how the mod taps, consumes, and injects the game's input.
 - [grip.md](mod/input/grip.md) — the grip: every grab target as one representation from the subsystem that provides it, the one rule that picks what each hand takes (the nearest grab point, with surfaces to climb and reach margins as fallbacks), the grip's press continuously looking while held, an empty grip as a fist, letting go and docking, the colour-coded markers anchored at render time, the readouts and logs, and adding a grab target.
 - [controllers-and-roomscale.md](mod/input/controllers-and-roomscale.md) — the motion-controller and roomscale plan of record: the continuous-body principles, the aim-state pin, controller-owned hands and their tiers, per-hand aiming, weapon handling, per-mode bindings, roomscale, the milestones, the implementation status, and the headset test checklist.

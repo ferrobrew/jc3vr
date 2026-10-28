@@ -497,7 +497,7 @@ pub unsafe fn in_player_group(body: u32) -> bool {
 }
 
 /// The engine instance of the body `body`, as an address.
-pub(super) unsafe fn instance_of(world: &hknpWorld, body: u32) -> Option<usize> {
+pub(crate) unsafe fn instance_of(world: &hknpWorld, body: u32) -> Option<usize> {
     let buffer = unsafe {
         world
             .m_bodyProperties

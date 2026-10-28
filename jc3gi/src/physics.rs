@@ -266,6 +266,38 @@ fn _GrapplingMode_size_check() {
     }
     unreachable!()
 }
+#[repr(C, align(8))]
+/// The physics system's global collision listener. Contact impulse dispatch resolves both body
+/// instances and calls each instance's event virtual when its subscription flag is active.
+pub struct HavokCollisionListener {}
+impl HavokCollisionListener {
+    pub const onContactImpulseEvent_ADDRESS: usize = 0x1401CE500;
+    /// Dispatches a contact impulse event without modifying the contact's solver impulses.
+    pub unsafe fn onContactImpulseEvent(
+        &mut self,
+        input: *const ::std::ffi::c_void,
+        event: *const crate::havok::hknpContactImpulseEvent,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                input: *const ::std::ffi::c_void,
+                event: *const crate::havok::hknpContactImpulseEvent,
+            ) = ::std::mem::transmute(Self::onContactImpulseEvent_ADDRESS);
+            f(self as *mut Self as _, input, event)
+        }
+    }
+}
+impl std::convert::AsRef<HavokCollisionListener> for HavokCollisionListener {
+    fn as_ref(&self) -> &HavokCollisionListener {
+        self
+    }
+}
+impl std::convert::AsMut<HavokCollisionListener> for HavokCollisionListener {
+    fn as_mut(&mut self) -> &mut HavokCollisionListener {
+        self
+    }
+}
 #[repr(C, align(16))]
 /// A [`RaycastFilter`](crate::physics::RaycastFilter) whose ignore mask is set pass by pass (`CIgnoreMaterialFlagFilter`).
 pub struct IgnoreMaterialFlagFilter {
@@ -2395,6 +2427,34 @@ fn _hknpWorld_size_check() {
     unreachable!()
 }
 impl hknpWorld {
+    pub const enableBodyFlags_ADDRESS: usize = 0x1414CE4C0;
+    /// Adds collision flags and rebuilds collision caches when `rebuild_mode` selects rebuilding.
+    /// The disassembler labels this function as a rigid-body constructor.
+    pub unsafe fn enableBodyFlags(&mut self, body: u32, flags: u32, rebuild_mode: i32) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                body: u32,
+                flags: u32,
+                rebuild_mode: i32,
+            ) = ::std::mem::transmute(Self::enableBodyFlags_ADDRESS);
+            f(self as *mut Self as _, body, flags, rebuild_mode)
+        }
+    }
+    pub const disableBodyFlags_ADDRESS: usize = 0x1414CE550;
+    /// Removes collision flags and rebuilds collision caches when `rebuild_mode` selects rebuilding.
+    /// The disassembler labels this function as a signal subscription.
+    pub unsafe fn disableBodyFlags(&mut self, body: u32, flags: u32, rebuild_mode: i32) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                body: u32,
+                flags: u32,
+                rebuild_mode: i32,
+            ) = ::std::mem::transmute(Self::disableBodyFlags_ADDRESS);
+            f(self as *mut Self as _, body, flags, rebuild_mode)
+        }
+    }
     pub const createConstraint_ADDRESS: usize = 0x1414E7200;
     /// Creates a constraint from `cinfo`, writes its id to `out`, and returns `out`. A constraint
     /// whose two bodies are the same, or whose data is of a type the world does not support, is
@@ -2614,6 +2674,8 @@ impl hknpWorld {
     /// The body property that holds a body's engine instance ([`PfxInstance`](crate::physics::PfxInstance)), as the physics
     /// queries read it to report the body's owner.
     pub const BODY_PROPERTY_PFX_INSTANCE: u16 = 1;
+    /// Rebuild the body's collision caches after changing flags.
+    pub const REBUILD_COLLISION_CACHES: i32 = 0;
 }
 impl std::convert::AsRef<hknpWorld> for hknpWorld {
     fn as_ref(&self) -> &hknpWorld {

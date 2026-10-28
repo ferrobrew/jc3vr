@@ -47,7 +47,7 @@
 //! switched off, the player's character changes, or the payload unloads.
 
 mod blows;
-mod body;
+pub(super) mod body;
 mod callback;
 pub mod config;
 mod contact;

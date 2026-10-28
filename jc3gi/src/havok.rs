@@ -501,6 +501,34 @@ fn _hkcdGskGetClosestPointStatus_size_check() {
     unreachable!()
 }
 #[repr(C, align(16))]
+/// A contact manifold (`hkcdManifold4`) with the normal and world-space contact positions.
+pub struct hkcdManifold4 {
+    pub m_numPoints: i32,
+    pub m_minimumDistance: f32,
+    _field_8: [u8; 8],
+    pub m_normal: crate::havok::hkVector4f,
+    pub m_weldNormal: crate::havok::hkVector4f,
+    pub m_distances: [f32; 4],
+    pub m_positions: [crate::havok::hkVector4f; 4],
+}
+fn _hkcdManifold4_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x80], hkcdManifold4>([0u8; 0x80]);
+    }
+    unreachable!()
+}
+impl hkcdManifold4 {}
+impl std::convert::AsRef<hkcdManifold4> for hkcdManifold4 {
+    fn as_ref(&self) -> &hkcdManifold4 {
+        self
+    }
+}
+impl std::convert::AsMut<hkcdManifold4> for hkcdManifold4 {
+    fn as_mut(&mut self) -> &mut hkcdManifold4 {
+        self
+    }
+}
+#[repr(C, align(16))]
 /// The construction info of a Havok body (`hknpBodyCinfo`), read by
 /// [`hknpWorld::createDynamicBody`](crate::physics::hknpWorld::createDynamicBody). Positions are Havok
 /// space: the game-space position less
@@ -772,7 +800,25 @@ fn _hknpContactImpulseEvent_size_check() {
     }
     unreachable!()
 }
-impl hknpContactImpulseEvent {}
+impl hknpContactImpulseEvent {
+    pub const calculateContactPointPositions_ADDRESS: usize = 0x1415192C0;
+    /// Reconstructs the contact positions from the Jacobian and the world's body motions.
+    /// The disassembler labels this function `hknpBodyTracker_getBodyIdsFromInput`.
+    pub unsafe fn calculateContactPointPositions(
+        &self,
+        world: *const crate::physics::hknpWorld,
+        manifold: *mut crate::havok::hkcdManifold4,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                world: *const crate::physics::hknpWorld,
+                manifold: *mut crate::havok::hkcdManifold4,
+            ) = ::std::mem::transmute(Self::calculateContactPointPositions_ADDRESS);
+            f(self as *const Self as _, world, manifold)
+        }
+    }
+}
 impl hknpContactImpulseEvent {
     /// [`m_status`](crate::havok::hknpContactImpulseEvent::m_status): the contact's impulse stayed positive this step.
     pub const STATUS_CONTINUED: u8 = 3;

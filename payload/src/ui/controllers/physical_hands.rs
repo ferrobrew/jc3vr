@@ -213,6 +213,17 @@ pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) 
         );
         ui.separator();
         pickup_settings(ui, &mut p.pickup);
+        ui.checkbox(&mut p.held_impacts, "Held-prop impact feedback");
+        let impacts = crate::controllers::physical_hands::impacts::status();
+        ui.label(format!(
+            "Held impacts: {} bodies, {} contacts, {} feedback, {} suppressed, {} dropped",
+            impacts.listening,
+            impacts.contacts,
+            impacts.feedback,
+            impacts.suppressed,
+            impacts.dropped
+        ));
+        ui.label("Held props retain native collision damage and material protection.");
     });
 }
 

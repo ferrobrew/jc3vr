@@ -42,6 +42,8 @@ pub(crate) fn frame_tick() {
         return;
     }
     let config = Config::lock_query(|c| c.controllers.physical_hands);
+    // SAFETY: the game thread, ahead of the game's update.
+    unsafe { crate::controllers::physical_hands::impacts::deliver() };
     if hooks::in_gameplay() {
         // The shoves come from the pickups, which hold characters with or without the bodies.
         // SAFETY: the game thread, ahead of the game's update.
@@ -284,6 +286,8 @@ static RENDER_OFFSETS: Mutex<Option<(Instant, [Option<RenderOffset>; 2])>> = Mut
 ///
 /// The game thread, outside the game's update.
 unsafe fn shutdown() {
+    // SAFETY: shutdown runs outside the world update before hooks are removed.
+    unsafe { crate::controllers::physical_hands::impacts::clear() };
     unsafe { callback::unregister() };
     let destroyed = unsafe { HANDS.lock().destroy_all("the payload is unloading") };
     let mut shared = SHARED.lock();

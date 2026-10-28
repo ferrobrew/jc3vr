@@ -136,6 +136,7 @@ unsafe extern "system" fn pre_simulation(
     unsafe {
         crate::controllers::physical_hands::human_hull::step(_world);
         crate::controllers::physical_hands::physics::step(dt);
+        crate::controllers::physical_hands::impacts::step();
     }
 }
 

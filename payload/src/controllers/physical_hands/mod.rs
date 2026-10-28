@@ -63,6 +63,7 @@ pub mod grab_view;
 pub mod grasp;
 pub mod hold;
 pub(crate) mod human_hull;
+pub(crate) mod impacts;
 pub mod palm;
 pub mod physics;
 pub mod pickup;

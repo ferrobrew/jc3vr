@@ -107,6 +107,7 @@ impl PickupState {
         }
         self.evidence_holds = [None; 2];
         self.held = [None; 2];
+        crate::controllers::physical_hands::impacts::publish([None; 2]);
         self.latches = [None; 2];
         self.seizes = [None; 2];
         self.regrips = [None; 2];

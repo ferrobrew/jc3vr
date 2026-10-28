@@ -470,6 +470,10 @@ pub(crate) unsafe fn tick(
             );
         }
     }
+    crate::controllers::physical_hands::impacts::publish(state.held.map(|h| {
+        h.filter(|h| h.kind != HeldKind::Ragdoll)
+            .map(|h| (h.body, h.object))
+    }));
     outcome
 }
 
