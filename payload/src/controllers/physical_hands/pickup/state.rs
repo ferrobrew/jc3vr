@@ -9,7 +9,7 @@ use crate::controllers::{
     grab::PickupKind,
     physical_hands::{
         characters::{Regrip, Seize},
-        doors::Latch,
+        doors::{Latch, tearing::TearGrip},
         grasp::{Grip, Reach, TargetKind},
         pickup::diagnostics::{self, ConsumerResult, RequestKey, scan::Scan},
     },
@@ -21,6 +21,7 @@ pub(crate) struct PickupState {
     pub(crate) held: [Option<Held>; 2],
     /// Each hand's grip on a latched door, before the latch gives.
     pub(crate) latches: [Option<Latch>; 2],
+    pub(crate) doors: [Option<TearGrip>; 2],
     /// Each hand's grip on a character.
     pub(crate) seizes: [Option<Seize>; 2],
     /// Each hand waiting to take hold of a character it yanked off its feet.
@@ -40,6 +41,7 @@ impl PickupState {
         Self {
             held: [None; 2],
             latches: [None; 2],
+            doors: [None; 2],
             seizes: [None; 2],
             regrips: [None; 2],
             hijack_clicks: [false; 2],
@@ -109,6 +111,7 @@ impl PickupState {
         self.held = [None; 2];
         crate::controllers::physical_hands::impacts::publish([None; 2]);
         self.latches = [None; 2];
+        self.doors = [None; 2];
         self.seizes = [None; 2];
         self.regrips = [None; 2];
         self.requests = [None; 2];

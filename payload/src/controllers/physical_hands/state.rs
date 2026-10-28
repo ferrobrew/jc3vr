@@ -118,6 +118,8 @@ impl State {
             }
         }
         status.door_grips += outcome.door_grips;
+        status.tears += outcome.tears;
+        status.tear_refusals += outcome.tear_refusals;
         status.character_grips += outcome.character_grips;
         status.hijacks += outcome.hijacks;
         status.yanks += outcome.yanks;
@@ -186,6 +188,8 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
             lost: 0,
             door_grips: 0,
             unlatches: 0,
+            tears: 0,
+            tear_refusals: 0,
             last_door: None,
             character_grips: 0,
             hijacks: 0,

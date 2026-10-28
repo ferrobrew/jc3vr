@@ -35,6 +35,7 @@ pub(crate) mod diagnostics;
 mod grips;
 mod reach;
 mod state;
+mod tearing;
 mod tick;
 
 use std::time::Instant;
@@ -113,6 +114,8 @@ pub struct PickupStatus {
     pub door_grips: u64,
     /// Latches a hand undid.
     pub unlatches: u64,
+    pub tears: u64,
+    pub tear_refusals: u64,
     /// The slot of the last door a hand took.
     pub last_door: Option<DoorSlot>,
     /// Grips taken on characters.

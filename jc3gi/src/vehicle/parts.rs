@@ -26,6 +26,31 @@ impl std::convert::AsMut<AdfHashString> for AdfHashString {
         self
     }
 }
+#[repr(C, align(4))]
+/// The authored limited hinge's local frame, axis, and signed angular limits.
+pub struct ConstraintInfo {
+    pub m_TransformLocal: crate::types::math::Matrix4,
+    pub m_AxisIndex: i32,
+    pub m_MinAngle: f32,
+    pub m_MaxAngle: f32,
+}
+fn _ConstraintInfo_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4C], ConstraintInfo>([0u8; 0x4C]);
+    }
+    unreachable!()
+}
+impl ConstraintInfo {}
+impl std::convert::AsRef<ConstraintInfo> for ConstraintInfo {
+    fn as_ref(&self) -> &ConstraintInfo {
+        self
+    }
+}
+impl std::convert::AsMut<ConstraintInfo> for ConstraintInfo {
+    fn as_mut(&mut self) -> &mut ConstraintInfo {
+        self
+    }
+}
 #[repr(C, align(8))]
 /// `SPart`: one entry of a vehicle's `VehicleParts` ADF resource (the `<model>_vehicle_parts.vmodc`
 /// in the vehicle's entity), describing a breakable, separately modelled piece of the vehicle such
@@ -60,11 +85,23 @@ pub struct Part {
     _field_52: [u8; 2],
     /// The part's pivot in its parent part's space, as the engine's row-major matrix.
     pub m_parent_space_offset: crate::types::math::Matrix4,
-    _field_94: [u8; 4],
+    _field_94: [u8; 21],
+    /// Whether the part may break off. Root parts cannot break off regardless of this property.
+    pub m_should_break: u8,
+    _field_aa: [u8; 2],
+    /// Whether ordinary damage keeps the part attached until its body or an ancestor breaks.
+    pub m_prevent_breaking_while_alive: u8,
+    _field_ad: [u8; 3],
+    /// Whether breaking destroys the visual part instead of retaining its physical body.
+    pub m_disappears_when_broken: u8,
+    _field_b1: [u8; 5],
+    /// Whether the part has an authored world-collision shape.
+    pub m_has_world_collision_shape: u8,
+    _field_b7: [u8; 1],
 }
 fn _Part_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x98], Part>([0u8; 0x98]);
+        ::std::mem::transmute::<[u8; 0xB8], Part>([0u8; 0xB8]);
     }
     unreachable!()
 }
@@ -101,15 +138,30 @@ fn _PartEventReason_size_check() {
 pub struct PartInstance {
     /// The part this one hangs from, or null for the root part.
     pub m_ParentPart: *mut crate::vehicle::parts::PartInstance,
-    _field_8: [u8; 24],
+    _field_8: [u8; 16],
+    /// The breakable body whose resource and phase govern this part.
+    pub m_Breakable: *mut crate::vehicle::parts::PfxBreakable,
     /// The part's index in its body's part instances, the same as its [`Part::m_part_index`](crate::vehicle::parts::Part::m_part_index).
     pub m_PartInstanceIndex: u32,
-    _field_24: [u8; 12],
+    _field_24: [u8; 8],
+    /// Whether the part has been deleted from its owner's active parts.
+    pub m_Deleted: bool,
+    /// Whether the resource entry supplies a valid part instance, checked by restoration.
+    pub m_IsValid: bool,
+    _field_2e: [u8; 2],
     /// The owner the part reports damage to (`IDamagePartOwner*`). For a vehicle's part this is
     /// the vehicle's damage-part-owner interface; the vehicle's render update only draws parts
     /// whose owner it is.
     pub m_DamagePartOwner: *mut ::std::ffi::c_void,
-    _field_38: [u8; 14],
+    /// The resolved damage-type tuning used for damaged, loosened, and broken health transitions.
+    pub m_PartDamageType: *const ::std::ffi::c_void,
+    /// Remaining part health. Negative health is not processed by the break-off damage helper.
+    pub m_Health: i32,
+    /// Blocks ordinary damage admission and the final instant break operation, including forced
+    /// break damage.
+    pub m_Invulnerable: bool,
+    /// Ordinary damage must be attributed to the player while set.
+    pub m_IsOnlyVulnerableToPlayerDamage: bool,
     /// Whether the part has broken off the body. A part also counts as broken off when any ancestor
     /// has ([`BrokeOffOrAncestorBrokeOff`](crate::vehicle::parts::PartInstance::BrokeOffOrAncestorBrokeOff)).
     pub m_BrokeOff: bool,
@@ -137,6 +189,38 @@ fn _PartInstance_size_check() {
     unreachable!()
 }
 impl PartInstance {
+    pub const DamagePart_ToBreakOff_ADDRESS: usize = 0x14022FAF0;
+    /// Applies enough player-attributed or unattributed damage to pass below zero health. Uses
+    /// neutral damage flags. Forced damage bypasses ordinary invulnerability admission and the
+    /// prevent-breaking-while-alive property, but still requires an authored breakable non-root
+    /// part. The final break operation independently refuses an invulnerable part and defers while
+    /// its breakable is in a parallel update phase.
+    pub unsafe fn DamagePart_ToBreakOff(
+        &mut self,
+        is_player_doing_damage: bool,
+        force_damage: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                is_player_doing_damage: bool,
+                force_damage: bool,
+            ) = ::std::mem::transmute(Self::DamagePart_ToBreakOff_ADDRESS);
+            f(self as *mut Self as _, is_player_doing_damage, force_damage)
+        }
+    }
+    pub const IsAllowedToBreakOffNow_ADDRESS: usize = 0x1401D0740;
+    /// Whether authored breakability and the body's current life state permit breaking off.
+    /// Forced damage ignores the prevent-breaking-while-alive property, not authored breakability.
+    pub unsafe fn IsAllowedToBreakOffNow(&self, force_damage: bool) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                force_damage: bool,
+            ) -> bool = ::std::mem::transmute(Self::IsAllowedToBreakOffNow_ADDRESS);
+            f(self as *const Self as _, force_damage)
+        }
+    }
     pub const BrokeOffOrAncestorBrokeOff_ADDRESS: usize = 0x1401D0670;
     /// Whether the part or any of its ancestors has broken off ([`m_BrokeOff`](crate::vehicle::parts::PartInstance::m_BrokeOff)),
     /// walking [`m_ParentPart`](crate::vehicle::parts::PartInstance::m_ParentPart) to the root.
@@ -194,7 +278,10 @@ impl std::convert::AsMut<PartInstance> for PartInstance {
 /// zero ([`Vehicle::m_PfxVehicle`](crate::vehicle::vehicle::Vehicle::m_PfxVehicle)). Only some members
 /// are bound.
 pub struct PfxBreakable {
-    _field_0: [u8; 288],
+    _field_0: [u8; 204],
+    /// Positive while part transitions must defer their non-thread-safe work.
+    pub m_InParallelUpdatePhaseCounter: i32,
+    _field_d0: [u8; 80],
     /// The part instances, one per entry of the parts resource, indexed by part index.
     pub m_PartInstances: *mut crate::vehicle::parts::PartInstance,
     /// The indices of the valid part instances, [`m_NumberOfValidParts`](crate::vehicle::parts::PfxBreakable::m_NumberOfValidParts)
@@ -211,6 +298,25 @@ fn _PfxBreakable_size_check() {
     unreachable!()
 }
 impl PfxBreakable {
+    pub const GetConstraintInfoFromPrototype_ADDRESS: usize = 0x14024C000;
+    /// Reads a part's limited hinge from the physics prototype, found by its part-name hash.
+    /// Returns false for an absent part, an absent constraint, or a constraint other than a limited hinge.
+    pub unsafe fn GetConstraintInfoFromPrototype(
+        &mut self,
+        part_name_hash: u32,
+        info: *mut crate::vehicle::parts::ConstraintInfo,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                part_name_hash: u32,
+                info: *mut crate::vehicle::parts::ConstraintInfo,
+            ) -> bool = ::std::mem::transmute(
+                Self::GetConstraintInfoFromPrototype_ADDRESS,
+            );
+            f(self as *mut Self as _, part_name_hash, info)
+        }
+    }
     pub const GetPartByIndex_ADDRESS: usize = 0x140237A60;
     /// The part instance at `index`, or null when `index` is not below the parts resource's part
     /// count.

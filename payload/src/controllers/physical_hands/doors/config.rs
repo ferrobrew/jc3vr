@@ -21,6 +21,7 @@ pub struct DoorsConfig {
     /// How far a hand gripping a closed door must pull it outward before the latch gives, metres
     /// of the player's hand.
     pub unlatch_pull_m: f32,
+    pub tearing: TearConfig,
 }
 
 impl DoorsConfig {
@@ -31,7 +32,45 @@ impl DoorsConfig {
             handle_reach_m: 0.15,
             handle_share: 0.4,
             unlatch_pull_m: 0.05,
+            tearing: TearConfig::new(),
         }
+    }
+}
+
+/// Deliberate tearing after an open grip settles; distances and speeds use player metres.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TearConfig {
+    pub enabled: bool,
+    pub settle_s: f32,
+    pub reset_lag_m: f32,
+    pub yank_lag_m: f32,
+    pub yank_speed_mps: f32,
+    pub push_lag_m: f32,
+    pub push_hold_s: f32,
+    pub push_load: f32,
+    pub limit_margin_rad: f32,
+}
+
+impl TearConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            settle_s: 0.2,
+            reset_lag_m: 0.045,
+            yank_lag_m: 0.18,
+            yank_speed_mps: 1.8,
+            push_lag_m: 0.14,
+            push_hold_s: 0.18,
+            push_load: 0.65,
+            limit_margin_rad: 0.08,
+        }
+    }
+}
+
+impl Default for TearConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

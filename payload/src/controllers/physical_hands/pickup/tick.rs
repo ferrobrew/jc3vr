@@ -21,6 +21,7 @@ use crate::controllers::{
             diagnostics::{self, ConsumerResult, DriveRecord},
             grips::{keep_latch, keep_regrip, keep_seize, shove_on_release},
             state::{Held, HeldKind, PickupState, Request},
+            tearing::{self, Frame as TearFrame, Observation},
         },
         rigid::Velocities,
     },
@@ -48,6 +49,7 @@ pub(crate) struct TickInputs {
     pub dt: f32,
     /// How far a hand gripping a latched door pulls it before the latch gives, world metres.
     pub unlatch_pull_m: f32,
+    pub tearing: doors::config::TearConfig,
     /// The VR world scale.
     pub world_scale: f32,
     pub characters: CharactersConfig,
@@ -80,6 +82,8 @@ pub(crate) struct TickOutcome {
     pub unlatched: [bool; 2],
     /// Grips taken on a latched door this tick.
     pub door_grips: u64,
+    pub tears: u64,
+    pub tear_refusals: u64,
     /// The slot of a door a hand took this tick.
     pub door: Option<DoorSlot>,
     /// Grips taken on characters this tick.
@@ -119,6 +123,7 @@ pub(crate) unsafe fn tick(
         joints,
         dt,
         unlatch_pull_m,
+        tearing,
         world_scale,
         characters: character_config,
         reaches,
@@ -147,6 +152,7 @@ pub(crate) unsafe fn tick(
         let i = hand.index();
         match state.requests[i].take() {
             Some(Request::Release) => {
+                state.doors[i] = None;
                 state.evidence_holds[i] = None;
                 if state.latches[i].take().is_some() {
                     outcome.released[i] = true;
@@ -175,6 +181,7 @@ pub(crate) unsafe fn tick(
             }
             Some(request @ (Request::Grab(_) | Request::ObservedGrab(_))) => 'grab: {
                 let (reach, evidence) = request.grab().expect("grab request");
+                state.doors[i] = None;
                 state.evidence_holds[i] = None;
                 let record = |result| {
                     if let Some(key) = evidence {
@@ -249,7 +256,7 @@ pub(crate) unsafe fn tick(
                 }
                 // SAFETY: forwarded from the caller.
                 let body = unsafe { bodies::read(reach.body, reach.object) };
-                let result = take_body(
+                let mut result = take_body(
                     state,
                     BodyGrab {
                         hand,
@@ -261,6 +268,27 @@ pub(crate) unsafe fn tick(
                     config,
                     &mut outcome,
                 );
+                if matches!(result, ConsumerResult::BodyAccepted { .. })
+                    && let TargetKind::Door(door) = reach.kind
+                {
+                    let acquired =
+                        unsafe { doors::tearing::TearGrip::take(door, reach.object, reach.body) };
+                    if !crate::controllers::physical_hands::pickup::tearing::acquired(
+                        state, i, acquired,
+                    ) {
+                        outcome.taken[i] = false;
+                        result = ConsumerResult::BodyRefused(bodies::BodyError::Reowned);
+                        outcome.refuse(
+                            hand,
+                            reach.point,
+                            "physical hands: doors: the reached door's identity changed".to_owned(),
+                        );
+                    } else {
+                        result = ConsumerResult::BodyAccepted {
+                            joined: state.held[i].is_some_and(|h| h.joined),
+                        };
+                    }
+                }
                 record(result);
                 if matches!(result, ConsumerResult::BodyAccepted { .. }) {
                     state.evidence_holds[i] = evidence;
@@ -321,6 +349,7 @@ pub(crate) unsafe fn tick(
     // Drive each carried body once, from every hand that carries it; a joined hold is only
     // reported.
     let mut driven = [false; 2];
+    let mut observed = [None; 2];
     for hand in Hand::BOTH {
         let i = hand.index();
         let Some(held) = state.held[i].filter(|_| !driven[i]) else {
@@ -338,6 +367,11 @@ pub(crate) unsafe fn tick(
                 continue;
             }
         };
+        for (k, holder) in holders.iter().enumerate() {
+            if holder.is_some() {
+                observed[k] = Some(Observation::of(&held, body));
+            }
+        }
         let holding = holders.iter().flatten().count();
         let mut holds = [None; 2];
         for k in 0..2 {
@@ -470,6 +504,19 @@ pub(crate) unsafe fn tick(
             );
         }
     }
+    unsafe {
+        tearing::step(
+            state,
+            TearFrame {
+                palms,
+                observed,
+                dt,
+                world_scale,
+            },
+            &tearing,
+            &mut outcome,
+        )
+    };
     crate::controllers::physical_hands::impacts::publish(state.held.map(|h| {
         h.filter(|h| h.kind != HeldKind::Ragdoll)
             .map(|h| (h.body, h.object))

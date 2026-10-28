@@ -25,6 +25,7 @@ pub mod engine;
 pub mod geometry;
 pub(crate) mod scan;
 pub mod table;
+pub(crate) mod tearing;
 
 use std::{num::NonZeroUsize, time::Instant};
 

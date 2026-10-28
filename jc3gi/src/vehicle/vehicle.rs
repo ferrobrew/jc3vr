@@ -246,7 +246,11 @@ fn _Seat_size_check() {
 /// ([`Character::GAME_OBJECT_BASE_OFFSET`](crate::character::character::Character::GAME_OBJECT_BASE_OFFSET)),
 /// and the vtable there serves RTTI and the transform virtuals. Only some members are bound.
 pub struct Vehicle {
-    _field_0: [u8; 1088],
+    _field_0: [u8; 559],
+    /// The damageable object's general invulnerability. Vehicle damage admission refuses part
+    /// damage while set, independently of each part's own protection.
+    pub m_Invulnerable: bool,
+    _field_230: [u8; 528],
     /// The signed throttle the vehicle's input reader last applied (`m_SteeringValues.Acceleration`).
     /// A plane's reader ([`AirPlane::UpdateVehicleInputsFromActionMap`](crate::vehicle::vehicle::AirPlane::UpdateVehicleInputsFromActionMap)) sets it to the
     /// `PLANE_INC_TRUST` value less the `PLANE_DEC_TRUST` value, so it is negative while braking.
@@ -291,7 +295,10 @@ pub struct Vehicle {
     /// helicopter's stunt position is a hang from the airframe instead, entered through the
     /// vehicle's interaction context rather than an area.
     pub m_StuntAreas: crate::vehicle::stunt_areas::StuntAreas,
-    _field_4938: [u8; 714],
+    _field_4938: [u8; 552],
+    /// The vehicle's damage-immune mode. Vehicle damage admission suppresses part damage while set.
+    pub m_InJesusMode: bool,
+    _field_4b61: [u8; 161],
     /// Whether the holstered weapons of the characters seated in the vehicle are hidden: the
     /// seat states' hide task
     /// ([`NWeaponHideInVehicleTask_OnEnter`](crate::equipment::weapon_animation::NWeaponHideInVehicleTask_OnEnter))

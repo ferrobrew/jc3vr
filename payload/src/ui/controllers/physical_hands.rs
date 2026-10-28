@@ -287,9 +287,11 @@ pub(super) fn characters_doors_readout(ui: &mut Ui, status: &PhysicalHandsStatus
     });
     let p = &status.pickup;
     ui.label(format!(
-        "Doors: {} latched grips · {} unlatched{}",
+        "Doors: {} latched grips · {} unlatched · {} torn · {} tear refusals{}",
         p.door_grips,
         p.unlatches,
+        p.tears,
+        p.tear_refusals,
         p.last_door.map_or(String::new(), |slot| format!(
             " · last {}",
             doors::slot_label(slot)
@@ -410,6 +412,19 @@ fn doors_settings(ui: &mut Ui, d: &mut DoorsConfig) {
             egui::Slider::new(&mut d.handle_share, 0.0..=1.0).text("Handle area from the hinge"),
         );
         ui.add(egui::Slider::new(&mut d.unlatch_pull_m, 0.0..=0.3).text("Pull to unlatch (m)"));
+        let t = &mut d.tearing;
+        ui.checkbox(&mut t.enabled, "Tear detachable doors by hand");
+        ui.add(egui::Slider::new(&mut t.settle_s, 0.05..=1.0).text("Settle before tearing (s)"));
+        ui.add(egui::Slider::new(&mut t.reset_lag_m, 0.01..=0.1).text("Settled grip lag (m)"));
+        ui.add(egui::Slider::new(&mut t.yank_lag_m, 0.1..=0.5).text("Yank lag (m)"));
+        ui.add(egui::Slider::new(&mut t.yank_speed_mps, 0.5..=5.0).text("Yank speed (m/s)"));
+        ui.add(egui::Slider::new(&mut t.push_lag_m, 0.1..=0.5).text("Push beyond limit (m)"));
+        ui.add(egui::Slider::new(&mut t.push_hold_s, 0.05..=0.8).text("Push duration (s)"));
+        ui.add(egui::Slider::new(&mut t.push_load, 0.1..=1.0).text("Push grip load"));
+        ui.add(
+            egui::Slider::new(&mut t.limit_margin_rad, 0.0..=0.2)
+                .text("Opening limit margin (rad)"),
+        );
     });
 }
 

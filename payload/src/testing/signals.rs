@@ -165,6 +165,8 @@ signals! {
     GripRightFist => "grab.right_fist", Flag, "The right grip is closed on nothing.";
     DoorGrips => "doors.grips", Counter, "Grips taken on a latched vehicle door.";
     DoorUnlatches => "doors.unlatches", Counter, "Vehicle door latches a hand undid.";
+    DoorTears => "doors.tears", Counter, "Held vehicle doors confirmed detached with the same body.";
+    DoorTearRefusals => "doors.tear_refusals", Counter, "Native door tear requests refused by protection or eligibility.";
     DoorOnLatch => "doors.on_latch", Flag, "A hand grips a latched vehicle door.";
     CharacterGrips => "characters.grips", Counter, "Grips taken on characters.";
     Hijacks => "characters.hijacks", Counter, "Seated characters a hand pulled out through an open door.";
@@ -334,6 +336,8 @@ impl Signal {
             }
             Signal::DoorGrips => count(physical_hands::status().pickup.door_grips),
             Signal::DoorUnlatches => count(physical_hands::status().pickup.unlatches),
+            Signal::DoorTears => count(physical_hands::status().pickup.tears),
+            Signal::DoorTearRefusals => count(physical_hands::status().pickup.tear_refusals),
             Signal::DoorOnLatch => flag(physical_hands::status().hands.iter().any(|h| h.latched)),
             Signal::CharacterGrips => count(physical_hands::status().pickup.character_grips),
             Signal::Hijacks => count(physical_hands::status().pickup.hijacks),

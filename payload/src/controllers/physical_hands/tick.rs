@@ -485,6 +485,10 @@ unsafe fn run(owner: &Character, dt: f32) {
             joints: joint_inputs(&config),
             dt,
             unlatch_pull_m: config.doors.unlatch_pull_m * active.world_scale,
+            tearing: crate::controllers::physical_hands::doors::config::TearConfig {
+                enabled: config.doors.enabled && config.doors.tearing.enabled,
+                ..config.doors.tearing
+            },
             world_scale: active.world_scale,
             characters: config.characters,
             reaches: hand_status.map(|h| h.reach),

@@ -45,6 +45,19 @@ pub(super) unsafe fn keep_latch(
             // SAFETY: forwarded from the caller; the door's body was found just now.
             match unsafe { bodies::read(body, object) } {
                 Ok(read) => {
+                    let Some(acquired) =
+                        (unsafe { doors::tearing::TearGrip::take(latch.door, object, body) })
+                    else {
+                        crate::controllers::physical_hands::pickup::tearing::acquired(
+                            state, i, None,
+                        );
+                        outcome.released[i] = true;
+                        outcome.lost += 1;
+                        outcome.error = Some(
+                            "physical hands: doors: the opened door's identity changed".to_owned(),
+                        );
+                        return;
+                    };
                     tracing::info!(
                         hand = hand.label(),
                         slot = doors::slot_label(latch.door.slot),
@@ -63,6 +76,11 @@ pub(super) unsafe fn keep_latch(
                         joined: false,
                         kind: HeldKind::Door,
                     });
+                    crate::controllers::physical_hands::pickup::tearing::acquired(
+                        state,
+                        i,
+                        Some(acquired),
+                    );
                     outcome.unlatched[i] = true;
                 }
                 Err(e) => {
