@@ -34,6 +34,7 @@ use crate::controllers::{
             loose,
             plan::{self, LoadKind, ReloadPlan, WeaponFacts},
             records::RecordKey,
+            retained::{self, SeatOutcome},
             serial,
             travel::ActionTravel,
             wells,
@@ -51,9 +52,8 @@ trait MagazineInsertion {
         dt: f32,
         config: &LooseMagazineConfig,
     ) -> loose::Operation<()>;
-    fn seat(&mut self) -> loose::Operation<i32>;
+    fn seat(&mut self, weapon: usize) -> SeatOutcome;
     fn release(&mut self);
-    fn load_rounds(&mut self, weapon: usize, rounds: i32);
 }
 
 struct NativeMagazine;
@@ -74,14 +74,24 @@ impl MagazineInsertion for NativeMagazine {
     ) -> loose::Operation<()> {
         unsafe { loose::carry(top, axis, dt, config) }
     }
-    fn seat(&mut self) -> loose::Operation<i32> {
-        unsafe { loose::seat() }
+    fn seat(&mut self, address: usize) -> SeatOutcome {
+        let Some(magazine) = loose::held() else {
+            return SeatOutcome::Gone;
+        };
+        let Some(weapon) = (unsafe { (address as *const WeaponBase).as_ref() }) else {
+            return SeatOutcome::Gone;
+        };
+        let capacity =
+            unsafe { crate::controllers::weapons::dual_wield::single::magazine_size(weapon) };
+        retained::seat(
+            magazine.rounds,
+            capacity,
+            || unsafe { loose::seat() },
+            |rounds| unsafe { engine::load_rounds(address, rounds) },
+        )
     }
     fn release(&mut self) {
         loose::let_go();
-    }
-    fn load_rounds(&mut self, weapon: usize, rounds: i32) {
-        unsafe { engine::load_rounds(weapon, rounds) };
     }
 }
 
@@ -627,16 +637,28 @@ impl State {
                 let loaded = match target {
                     // SAFETY (both): main thread, outside the world update; the weapon was read
                     // this tick.
-                    Some((weapon, gun)) if world_magazine => match adapter.seat() {
-                        loose::Operation::Ready(rounds) => {
-                            adapter.load_rounds(weapon.address, rounds);
+                    Some((weapon, gun)) if world_magazine => match adapter.seat(weapon.address) {
+                        SeatOutcome::Loaded => {
                             if weapon.plan.action == ActionKind::None {
                                 self.records.get(weapon.key).chambers[gun.entry()] =
                                     Chamber::Chambered;
                             }
                             true
                         }
-                        loose::Operation::Deferred => {
+                        SeatOutcome::Rejected { rounds, capacity } => {
+                            tracing::info!(target: "controllers", rounds, capacity, "reload: retained magazine does not fit the weapon");
+                            if inputs.grips[hand.index()].held() {
+                                self.status.insertion = before;
+                                self.status.insert_hands = before_hands;
+                            } else {
+                                adapter.release();
+                                self.status.insertion = before;
+                                self.status.insertion.reset();
+                                self.status.insert_hands = None;
+                            }
+                            return;
+                        }
+                        SeatOutcome::Deferred => {
                             if inputs.grips[hand.index()].held() {
                                 self.status.insertion = before;
                                 self.status.insert_hands = before_hands;
@@ -647,7 +669,7 @@ impl State {
                             }
                             return;
                         }
-                        loose::Operation::Gone => {
+                        SeatOutcome::Gone => {
                             adapter.release();
                             self.status.insertion.reset();
                             self.status.insert_hands = None;

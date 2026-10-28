@@ -53,6 +53,7 @@ pub mod loose;
 pub mod plan;
 mod records;
 mod render;
+mod retained;
 pub(crate) mod serial;
 mod steps;
 pub mod travel;

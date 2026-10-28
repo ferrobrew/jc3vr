@@ -20,6 +20,7 @@ struct FakeMagazine {
     carries: usize,
     seat: loose::Operation<i32>,
     seats: usize,
+    rejected: bool,
     transfers: Vec<i32>,
     releases: usize,
 }
@@ -44,23 +45,31 @@ impl MagazineInsertion for FakeMagazine {
             loose::Operation::Gone
         }
     }
-    fn seat(&mut self) -> loose::Operation<i32> {
+    fn seat(&mut self, _: usize) -> SeatOutcome {
         self.seats += 1;
         if !self.held {
-            return loose::Operation::Gone;
+            return SeatOutcome::Gone;
         }
-        if matches!(self.seat, loose::Operation::Ready(_)) {
-            self.held = false;
-            self.available = None;
+        if self.rejected {
+            return SeatOutcome::Rejected {
+                rounds: 22,
+                capacity: 12,
+            };
         }
-        self.seat
+        match self.seat {
+            loose::Operation::Ready(rounds) => {
+                self.held = false;
+                self.available = None;
+                self.transfers.push(rounds);
+                SeatOutcome::Loaded
+            }
+            loose::Operation::Deferred => SeatOutcome::Deferred,
+            loose::Operation::Gone => SeatOutcome::Gone,
+        }
     }
     fn release(&mut self) {
         self.held = false;
         self.releases += 1;
-    }
-    fn load_rounds(&mut self, _: usize, rounds: i32) {
-        self.transfers.push(rounds);
     }
 }
 
@@ -207,6 +216,7 @@ fn adapter() -> FakeMagazine {
         carries: 0,
         seat: loose::Operation::Ready(17),
         seats: 0,
+        rejected: false,
         transfers: Vec::new(),
         releases: 0,
     }
@@ -235,6 +245,33 @@ fn world_pickup() -> (State, FakeMagazine, FinishInputs) {
     inputs.grabs[Hand::Left.index()] = Some(GrabVolume::WorldMagazine);
     inputs.grips[Hand::Left.index()].pressed = true;
     (state, adapter, inputs)
+}
+
+#[test]
+fn rejected_oversized_seat_keeps_rounds_and_chamber_and_obeys_grip_release() {
+    let config = ControllersConfig::default();
+    for held in [true, false] {
+        let mut state = state(InsertStage::Captured {
+            elapsed_s: 0.1,
+            depth_m: 0.0,
+        });
+        let mut adapter = adapter();
+        adapter.rejected = true;
+        let tick = tick(true, &config);
+        let key = tick.weapons[0].unwrap().key;
+        state.records.get(key).chambers = [Chamber::Chambered, Chamber::Empty];
+        let before = state.records.get(key).chambers;
+        let seated_before = state.status.insertion.seated;
+        state.insert_with(&tick, &inputs(held), &config, &mut adapter);
+        assert_eq!(state.status.insertion.seated, seated_before);
+        assert_eq!(adapter.seats, 1);
+        assert!(adapter.transfers.is_empty());
+        assert_eq!(state.status.counts.seats, 0);
+        assert_eq!(state.records.get(key).chambers, before);
+        assert_eq!(adapter.held, held);
+        assert_eq!(adapter.releases, usize::from(!held));
+        assert_eq!(state.status.insert_hands.is_some(), held);
+    }
 }
 
 #[test]

@@ -301,7 +301,7 @@ pub(super) fn finish_detach(
 
 /// Seat a magazine of `rounds` from the world into the weapon at `address`: the rounds still
 /// counted in the weapon go back to the reserve, the magazine holds the seated magazine's rounds
-/// (up to its size), and the magazine part shows again.
+/// and the magazine part shows again. The retained-magazine admission has already checked its size.
 ///
 /// # Safety
 ///
@@ -309,12 +309,6 @@ pub(super) fn finish_detach(
 pub unsafe fn load_rounds(address: usize, rounds: i32) {
     let Some(weapon) = (unsafe { (address as *mut WeaponBase).as_mut() }) else {
         return;
-    };
-    let capacity = unsafe { single::magazine_size(weapon) };
-    let rounds = if capacity >= 0 {
-        rounds.clamp(0, capacity)
-    } else {
-        rounds.max(0)
     };
     let partition = current_ammo(weapon);
     let chambers = partition.map_or(0, Ammo::chamber_rounds);
