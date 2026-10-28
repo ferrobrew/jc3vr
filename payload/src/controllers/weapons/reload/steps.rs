@@ -195,6 +195,7 @@ impl State {
                         active: chambering(&weapon_tick.plan, &config.weapons.reload),
                     },
                 );
+                weapon_tick.ammo_owned = partition.is_some();
                 if let Some(partition) = partition {
                     record.chambers = partition.chambers;
                 }
@@ -366,10 +367,14 @@ impl State {
             || (weapon.reading.out && (!chambering || record.chambers[e] == Chamber::Empty))
     }
 
-    /// Fold each weapon's shots into its chambers.
+    /// Apply queued shot effects, deriving readiness only for weapons without an active partition.
     fn fold_shots(&mut self, tick: &Tick, reload: &ReloadConfig) {
+        self.apply_shots(tick, reload, gate::take_shots());
+    }
+
+    fn apply_shots(&mut self, tick: &Tick, reload: &ReloadConfig, shots: Vec<gate::Shot>) {
         let mut locked = false;
-        for shot in gate::take_shots() {
+        for shot in shots {
             let Some(weapon) = tick.weapon(shot.weapon) else {
                 continue;
             };
@@ -382,8 +387,10 @@ impl State {
                 && let Some(entry) = entry
             {
                 let left = shot.magazine;
-                record.chambers[entry] =
-                    chamber::after_shot(left, weapon.plan.action, reload.manual_action);
+                if !weapon.ammo_owned {
+                    record.chambers[entry] =
+                        chamber::after_shot(left, weapon.plan.action, reload.manual_action);
+                }
                 if locks_back(&weapon.plan, reload) && left <= 0 {
                     record.travels[entry].lock_back();
                     locked = true;
@@ -405,7 +412,9 @@ impl State {
             let record = self.records.get(weapon.key);
             let previous = record.last_magazine.replace(magazine);
             if previous.is_none() && magazine <= 0 {
-                record.chambers = [Chamber::Empty; 2];
+                if !weapon.ammo_owned {
+                    record.chambers = [Chamber::Empty; 2];
+                }
                 if locks_back(&weapon.plan, reload) {
                     record.travels.iter_mut().for_each(ActionTravel::lock_back);
                 }
@@ -416,7 +425,9 @@ impl State {
 
     fn sync_owned(&mut self, tick: &Tick) {
         for weapon in tick.weapons.iter().flatten() {
-            if let Some(ammo) = ammo::active_snapshot(weapon.address) {
+            if weapon.ammo_owned
+                && let Some(ammo) = ammo::active_snapshot(weapon.address)
+            {
                 self.records.get(weapon.key).chambers = ammo.chambers;
             }
         }
@@ -895,6 +906,7 @@ unsafe fn weapon_tick(
     )?;
     Some(WeaponTick {
         address: weapon.address,
+        ammo_owned: false,
         key: RecordKey::new(item_of(weapon.address), weapon.address),
         plan,
         from_table: entry.is_some(),
@@ -908,6 +920,8 @@ pub(super) use belt_tests::eligible_belt_for_test;
 
 #[cfg(test)]
 mod action_tests;
+#[cfg(test)]
+mod authority_tests;
 #[cfg(test)]
 mod belt_tests;
 #[cfg(test)]

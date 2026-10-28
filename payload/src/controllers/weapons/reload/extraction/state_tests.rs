@@ -102,6 +102,7 @@ fn tick(pull: f32, rounds: i32) -> Tick {
         weapons: [
             Some(WeaponTick {
                 address: 1,
+                ammo_owned: false,
                 key: RecordKey::Object(1),
                 plan: ReloadPlan {
                     load: LoadKind::Magazine,

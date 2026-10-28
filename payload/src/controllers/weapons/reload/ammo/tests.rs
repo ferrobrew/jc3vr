@@ -33,6 +33,47 @@ fn runtime_hand_mapping_follows_the_gun_and_standdown_releases_gating() {
 }
 
 #[test]
+fn native_count_writers_preserve_readiness_until_explicit_feed() {
+    let mut runtime = super::Runtime::new(
+        Ammo::adopt(
+            NativeAmmo {
+                total: 5,
+                out: false,
+            },
+            [Chamber::Chambered; 2],
+        ),
+        [Some((0, false)), Some((1, true))],
+    );
+    assert_eq!(runtime.shot(1, 4), Some(4));
+    for total in [9, 3, 0, 8] {
+        let partition = runtime
+            .observe(Observation {
+                native: NativeAmmo { total, out: false },
+                chambers: [Chamber::Chambered; 2],
+                topology: [true; 2],
+                guns: [Some((0, false)), Some((1, true))],
+                active: true,
+            })
+            .unwrap();
+        assert_eq!(partition.total(), total);
+        assert_eq!(partition.chambers[1], Chamber::Empty);
+        assert_eq!(
+            partition.chambers[0],
+            if total > 0 && total != 8 {
+                Chamber::Chambered
+            } else {
+                Chamber::Empty
+            }
+        );
+    }
+    assert_eq!(runtime.ammo.feed(1), Chamber::Chambered);
+    assert_eq!(runtime.ammo.total(), 8);
+    runtime.suspend();
+    assert_eq!(runtime.shot(1, 7), None);
+    assert!(!runtime.holds_fire(0));
+}
+
+#[test]
 fn replacement_runtime_adopts_only_its_native_rounds() {
     let old = super::Runtime::new(
         Ammo::adopt(

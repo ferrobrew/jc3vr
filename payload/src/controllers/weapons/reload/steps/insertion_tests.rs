@@ -138,6 +138,7 @@ pub(super) fn tick(seating: bool, config: &ControllersConfig) -> Tick {
         weapons: [
             Some(WeaponTick {
                 address: 1,
+                ammo_owned: false,
                 key: RecordKey::Object(1),
                 plan: ReloadPlan {
                     load: LoadKind::Magazine,

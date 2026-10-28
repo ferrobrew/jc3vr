@@ -737,6 +737,8 @@ impl Tick {
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct WeaponTick {
     address: usize,
+    /// Whether this tick's observation adopted the active ammo partition.
+    ammo_owned: bool,
     /// The weapon's record.
     key: RecordKey,
     plan: ReloadPlan,
