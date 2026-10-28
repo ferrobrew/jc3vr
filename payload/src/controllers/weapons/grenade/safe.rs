@@ -336,7 +336,16 @@ pub(crate) unsafe fn render_frame() {
 /// Leave held items to the world when input stops, without arming anything.
 pub(crate) fn stand_down() {
     native::disarm();
+    stand_down_hands([true; 2]);
+}
+
+/// A masked hand releases its own safe item inertly without changing the other hand's release.
+pub(crate) fn stand_down_hands(unavailable: [bool; 2]) {
+    native::disarm_hands(unavailable);
     for hand in Hand::BOTH {
+        if !unavailable[hand.index()] {
+            continue;
+        }
         let Some(item) = in_hand(hand) else {
             continue;
         };

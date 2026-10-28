@@ -25,6 +25,7 @@
 //! - [`bound`] reduces the runtime's bound sources to the physical inputs each action reads on
 //!   each hand, which the bindings' masks act on.
 
+pub(crate) mod admission;
 pub(crate) mod bound;
 pub(crate) mod defaults;
 pub(crate) mod frame;

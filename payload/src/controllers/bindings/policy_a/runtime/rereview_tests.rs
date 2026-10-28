@@ -8,7 +8,7 @@ use tracking_format::{
 
 use super::*;
 
-fn captured_wire(publications: Vec<Publication>) -> Vec<CapturedInput> {
+pub(super) fn captured_wire(publications: Vec<Publication>) -> Vec<CapturedInput> {
     let origin = publications
         .iter()
         .map(|entry| entry.observed_at)
@@ -43,7 +43,7 @@ fn captured_wire(publications: Vec<Publication>) -> Vec<CapturedInput> {
     decode(&bytes).unwrap().input
 }
 
-fn publish_captured(runtime: &mut Runtime, template: InputGroup) -> Tick {
+pub(super) fn publish_captured(runtime: &mut Runtime, template: InputGroup) -> Tick {
     publish_configured(runtime, template, &BindingsConfig::new())
 }
 
@@ -348,7 +348,7 @@ fn every_reset_discards_earlier_commands_and_accepted_edges_in_the_drain() {
             reset.stamp.epoch += 1;
         }
         if damage == 1 {
-            reset.samples[0].active = false;
+            reset.source_generation += 1;
         }
         if damage == 2 {
             reset.stamp.clock = ClockDomain::HostMonotonic;

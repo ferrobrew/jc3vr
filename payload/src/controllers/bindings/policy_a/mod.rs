@@ -238,6 +238,7 @@ pub(crate) struct PolicyA {
     locked: Members,
     chord: Option<Chord>,
     awaiting_neutral: bool,
+    unavailable: [bool; 3],
 }
 
 impl PolicyA {
@@ -259,6 +260,7 @@ impl PolicyA {
             locked: Members::EMPTY,
             chord: None,
             awaiting_neutral: true,
+            unavailable: [true; 3],
         })
     }
 
@@ -273,6 +275,7 @@ impl PolicyA {
         self.locked = Members::EMPTY;
         self.chord = None;
         self.awaiting_neutral = true;
+        self.unavailable = [true; 3];
         self.describe(&mut out);
         out
     }
@@ -296,7 +299,17 @@ impl PolicyA {
 
     /// Feed every observed group in order, even when several groups precede one game tick.
     /// Gameplay context changes invalidate singles but retain system-chord ownership.
+    #[cfg(test)]
     pub(crate) fn observe(&mut self, input: Observation) -> Arbitration {
+        self.observe_available(input, [true; 3])
+    }
+
+    /// Availability is observed with each group. A missing control never supplies an up level.
+    pub(crate) fn observe_available(
+        &mut self,
+        input: Observation,
+        available: [bool; 3],
+    ) -> Arbitration {
         if input.stamp.epoch != self.epoch
             || self.last.is_some_and(|last| {
                 input.stamp.at <= last.at
@@ -331,9 +344,10 @@ impl PolicyA {
             self.invalidate_singles(input.stamp.at, &mut out);
         }
         self.interpretation = Some((input.generation, input.context, input.singles_enabled));
-        if self.awaiting_neutral {
+        if self.awaiting_neutral && available == [true; 3] {
             if input.down == [false; 3] {
                 self.awaiting_neutral = false;
+                self.unavailable = [false; 3];
                 out.status = ObservationStatus::Recovered;
             } else {
                 out.status = ObservationStatus::AwaitingNeutral;
@@ -341,10 +355,58 @@ impl PolicyA {
             self.describe(&mut out);
             return out;
         }
-        let previous = self.down;
-        self.down = input.down;
+        let was_awaiting = self.awaiting_neutral;
+        self.awaiting_neutral = false;
+        let mut recovered = [false; 3];
         for control in Control::ALL {
             let i = control.index();
+            if !available[i] {
+                if !self.unavailable[i] {
+                    for pair in [Members::RECENTER, Members::PANEL] {
+                        if pair.contains(control)
+                            && Control::ALL.into_iter().any(|member| {
+                                pair.contains(member)
+                                    && (self.locked.contains(member)
+                                        || self.presses[member.index()]
+                                            .is_some_and(|press| press.kind == PressKind::Pending))
+                            })
+                        {
+                            self.claim(pair);
+                        }
+                    }
+                }
+                self.release_single(control, input.stamp.at, &mut out);
+                self.presses[i] = None;
+                self.unavailable[i] = true;
+                if let Some(chord) = &mut self.chord
+                    && chord.members.contains(control)
+                {
+                    chord.cancelled = true;
+                }
+            } else if self.unavailable[i] && !input.down[i] {
+                self.unavailable[i] = false;
+                self.down[i] = false;
+                recovered[i] = true;
+            }
+        }
+        if was_awaiting {
+            out.status = if self.unavailable == [true; 3] {
+                ObservationStatus::AwaitingNeutral
+            } else {
+                ObservationStatus::Recovered
+            };
+        }
+        let previous = self.down;
+        for i in 0..3 {
+            if available[i] && !self.unavailable[i] && !recovered[i] {
+                self.down[i] = input.down[i];
+            }
+        }
+        for control in Control::ALL {
+            let i = control.index();
+            if !available[i] || self.unavailable[i] || recovered[i] {
+                continue;
+            }
             if input.down[i] && !previous[i] {
                 self.presses[i] = Some(Press {
                     identity: PressIdentity {
@@ -414,7 +476,7 @@ impl PolicyA {
     fn describe(&self, out: &mut Arbitration) {
         for control in Control::ALL {
             let i = control.index();
-            out.sources[i] = if self.awaiting_neutral {
+            out.sources[i] = if self.unavailable[i] {
                 SourceDecision {
                     press: None,
                     disposition: Disposition::AwaitingNeutral,
@@ -441,7 +503,7 @@ impl PolicyA {
                     single_down: false,
                 }
             };
-            out.withheld[i] = self.awaiting_neutral
+            out.withheld[i] = self.unavailable[i]
                 || self.locked.contains(control)
                 || self.presses[i].is_some_and(|press| {
                     matches!(press.kind, PressKind::Pending | PressKind::Consumed)
@@ -467,6 +529,7 @@ impl PolicyA {
     fn refuse_committed_overlaps(&mut self, previous: [bool; 3], out: &mut Arbitration) {
         for pair in [Members::RECENTER, Members::PANEL] {
             if !pair.all_down(self.down)
+                || !pair.all_up(self.unavailable)
                 || !Control::ALL
                     .into_iter()
                     .any(|c| pair.contains(c) && !previous[c.index()])
@@ -553,6 +616,7 @@ impl PolicyA {
         }
         for pair in [Members::RECENTER, Members::PANEL] {
             if pair.all_down(self.down)
+                && pair.all_up(self.unavailable)
                 && Control::ALL.into_iter().any(|c| {
                     pair.contains(c)
                         && self.presses[c.index()].is_some_and(|p| p.kind == PressKind::Pending)
@@ -577,7 +641,7 @@ impl PolicyA {
     }
 
     fn pending_pair(&self, members: Members) -> Option<[PressIdentity; 2]> {
-        if !members.all_down(self.down) {
+        if !members.all_down(self.down) || !members.all_up(self.unavailable) {
             return None;
         }
         let partner = if members == Members::RECENTER {
@@ -677,7 +741,7 @@ impl PolicyA {
     }
 
     fn finish_neutral(&mut self) {
-        if self.locked.all_up(self.down) {
+        if self.locked.all_up(self.down) && self.locked.all_up(self.unavailable) {
             for control in Control::ALL {
                 if self.locked.contains(control) {
                     self.presses[control.index()] = None;

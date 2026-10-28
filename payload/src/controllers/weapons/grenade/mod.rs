@@ -322,6 +322,14 @@ pub(super) fn input_tick(
     }
 }
 
+/// Cancel only the unavailable hands' throws before masked grips can look like finger opening.
+pub(crate) fn input_unavailable(unavailable: [bool; 2]) {
+    safe::stand_down_hands(unavailable);
+    if catch::caught().is_some_and(|caught| unavailable[caught.hand.index()]) {
+        catch::let_go(false);
+    }
+}
+
 /// A loss of input releases safe items inertly and leaves a caught grenade's fuse unchanged.
 pub(super) fn stand_down() {
     locker::clear();

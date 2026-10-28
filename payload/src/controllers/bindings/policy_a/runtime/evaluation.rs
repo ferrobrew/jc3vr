@@ -159,6 +159,7 @@ impl Runtime {
         if group.action_schema != SCHEMA_VERSION
             || !group.is_bounded()
             || !group.focused
+            || group.source_generation != group.binding_generation
             || group.context != context_set(context)
             || !complete_inventory(group)
         {
@@ -199,19 +200,14 @@ impl Runtime {
             for route in &mut self.routes {
                 if route.system.is_some() {
                     route.neutral = true;
-                    route.delivery = Delivery::default();
+                    route.delivery.cancel();
                 }
             }
             self.interpretation = Some(interpretation);
         }
         let physical = raw_evidence(group);
-        let Some(down) = physical else {
-            self.reset(ResetReason::BindingUnresolved);
-            if !self.replay {
-                history::record_policy(evaluation);
-            }
-            return;
-        };
+        let available = physical.map(|value| value.is_some());
+        let down = physical.map(|value| value.unwrap_or(false));
         let Some(policy) = &mut self.policy else {
             self.reset(ResetReason::BindingUnresolved);
             tick.commands.clear();
@@ -220,20 +216,23 @@ impl Runtime {
             }
             return;
         };
-        let decision = policy.observe(Observation {
-            stamp: ObservationStamp {
-                epoch: ClockEpoch(group.stamp.epoch),
-                at: Duration::from_nanos(group.stamp.time_ns),
-                sync: group.stamp.sync,
-                sequence: group.stamp.sequence,
+        let decision = policy.observe_available(
+            Observation {
+                stamp: ObservationStamp {
+                    epoch: ClockEpoch(group.stamp.epoch),
+                    at: Duration::from_nanos(group.stamp.time_ns),
+                    sync: group.stamp.sync,
+                    sequence: group.stamp.sequence,
+                },
+                generation: BindingGeneration(group.binding_generation),
+                context: GameplayContext(context),
+                singles_enabled: true,
+                down,
+                #[cfg(test)]
+                evidence: InputEvidence::VerifiedUnmasked,
             },
-            generation: BindingGeneration(group.binding_generation),
-            context: GameplayContext(context),
-            singles_enabled: true,
-            down,
-            #[cfg(test)]
-            evidence: InputEvidence::VerifiedUnmasked,
-        });
+            available,
+        );
         evaluation = recording::evaluation(group, self.config, context, gameplay, &decision);
         evaluation.neutral = group_neutral(group, config);
         if let ObservationStatus::Reset(reason) = decision.status {
@@ -258,8 +257,12 @@ impl Runtime {
                 let i = control.index();
                 let (hand, physical) = raw_location(control);
                 let claimed = claims & (SourceIdentity { hand, physical }).bit() != 0;
+                if !available[i] {
+                    self.raw_neutral[i] = true;
+                    self.raw[i] = Delivery::default();
+                }
                 let neutral = self.raw_neutral[i];
-                if physical_is_neutral(&decision, down, i) {
+                if available[i] && physical_is_neutral(&decision, down, i) {
                     self.raw_neutral[i] = false;
                 }
                 let button = if claimed

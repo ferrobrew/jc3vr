@@ -78,6 +78,8 @@ pub enum SourceQuery {
 pub struct RouteSample {
     pub route: InputRoute,
     pub value: ValueBits,
+    /// Effective producer availability, including the route's required hand pose. False never
+    /// establishes a neutral level. The unmasked value remains present for diagnostics.
     pub active: bool,
     pub down: bool,
     pub change: Option<RuntimeChange>,

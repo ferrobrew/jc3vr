@@ -179,6 +179,7 @@ fn produce_hands(
         grips,
         grabs,
         triggers: [ButtonControl::default(); 2],
+        unavailable: [false; 2],
         reload_button: ButtonControl::default(),
         dt: 0.01,
     };

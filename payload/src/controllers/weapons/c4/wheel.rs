@@ -19,6 +19,15 @@ pub struct WheelHands {
     pub dominant: Hand,
 }
 
+impl WheelHands {
+    pub(crate) fn available(free: [bool; 2], unavailable: [bool; 2], dominant: Hand) -> Self {
+        Self {
+            free: Hand::BOTH.map(|hand| free[hand.index()] && !unavailable[hand.index()]),
+            dominant,
+        }
+    }
+}
+
 /// What a tick does about the planting mode.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum WheelStep {

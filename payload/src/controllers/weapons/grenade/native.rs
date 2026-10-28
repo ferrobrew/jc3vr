@@ -265,8 +265,14 @@ pub(super) fn submit(launch: Launch) -> bool {
 /// A release that has not launched cannot have armed anything, so withdrawing it leaves the item
 /// inert in the hand rather than cancelling an actor that may not be recoverable.
 pub(super) fn disarm() {
+    disarm_hands([true; 2]);
+}
+
+pub(super) fn disarm_hands(hands: [bool; 2]) {
     for waiting in &mut STATE.lock().queue {
-        waiting.launch.arm = false;
+        if hands[waiting.launch.hand.index()] {
+            waiting.launch.arm = false;
+        }
     }
 }
 
@@ -611,6 +617,29 @@ mod tests {
             velocity: Vec3::X,
             arm,
         }
+    }
+
+    #[test]
+    fn unavailable_hand_disarms_only_its_queued_release() {
+        let _guard = QUEUE_TEST.lock();
+        clear();
+        let mut table = Loadout::new(BodyLayout::full(Hand::Right));
+        for hand in Hand::BOTH {
+            let lease =
+                ItemLeaseId::new(std::num::NonZeroU64::new(hand.index() as u64 + 1).unwrap());
+            let item = table.admit_safe_item(lease, hand).unwrap();
+            assert!(submit(Launch {
+                hand,
+                ..launch(item, true)
+            }));
+        }
+        disarm_hands([true, false]);
+        {
+            let state = STATE.lock();
+            assert!(!state.queue[0].launch.arm);
+            assert!(state.queue[1].launch.arm);
+        }
+        clear();
     }
 
     #[test]

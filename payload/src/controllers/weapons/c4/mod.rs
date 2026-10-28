@@ -291,16 +291,12 @@ pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Config) {
         state.stage = stage::on_input(state.stage, InputEvent::Grab(hand));
     }
     let planting = state.status.planting_mode;
-    let pending = state
-        .wheel
-        .map(|(hand, since)| (hand, since.elapsed().as_secs_f32()));
     let hands = WheelHands {
         free: inputs.free,
         dominant: inputs.dominant,
     };
-    match wheel::step(planting, state.stage, pending, hands) {
+    match state.step_wheel(hands, Instant::now()) {
         WheelStep::Leave(hand) => {
-            state.wheel = Some((hand, Instant::now()));
             drop(state);
             // SAFETY: the input tick runs on the main thread outside the world update.
             if let Some(owner) = unsafe { engine::local_player() } {
@@ -313,13 +309,8 @@ pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Config) {
             );
             state = STATE.lock();
         }
-        WheelStep::Take(hand) => {
-            state.wheel = None;
-            state.stage = stage::on_input(state.stage, InputEvent::Grab(hand));
-        }
-        WheelStep::Wait => {}
+        WheelStep::Take(_) | WheelStep::Wait => {}
         WheelStep::Drop => {
-            state.wheel = None;
             tracing::info!(
                 target: "controllers",
                 planting,
@@ -349,12 +340,13 @@ pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Config) {
 
 /// Stop the throw: a held charge is taken back at the weapon's next update, and a grab not yet
 /// served is forgotten. A detonation request stands: it was asked for before the stop.
-pub(super) fn stand_down() {
-    let mut state = STATE.lock();
-    state.stage = stage::on_input(state.stage, InputEvent::StandDown);
-    state.status.stage = state.stage;
-    state.wheel = None;
-    state.preview = None;
+pub(crate) fn stand_down() {
+    STATE.lock().stand_down();
+}
+
+/// Cancel only work owned by a hand whose input is unavailable, including a pending wheel charge.
+pub(crate) fn input_unavailable(unavailable: [bool; 2]) {
+    STATE.lock().input_unavailable(unavailable);
 }
 
 /// Note the controllers' grips in the world for the weapon's updates: where a held charge sits and
@@ -401,8 +393,69 @@ struct State {
     /// The surface the held charge is coming to, with its hand.
     preview: Option<(Hand, stick_by_hand::Contact)>,
     /// The hand a charge from the weapon wheel is for, and when the planting mode was left for it.
-    wheel: Option<(Hand, Instant)>,
+    wheel: Option<WheelRequest>,
 }
+
+#[derive(Clone, Copy)]
+enum WheelRequest {
+    Pending { hand: Hand, since: Instant },
+    Cancelled,
+}
+
+impl State {
+    fn stand_down(&mut self) {
+        self.stage = stage::on_input(self.stage, InputEvent::StandDown);
+        self.status.stage = self.stage;
+        self.wheel = None;
+        self.preview = None;
+    }
+
+    fn input_unavailable(&mut self, unavailable: [bool; 2]) {
+        if self
+            .stage
+            .hand()
+            .is_some_and(|hand| unavailable[hand.index()])
+        {
+            self.stage = stage::on_input(self.stage, InputEvent::StandDown);
+            self.status.stage = self.stage;
+            self.preview = None;
+        }
+        if matches!(self.wheel, Some(WheelRequest::Pending { hand, .. }) if unavailable[hand.index()])
+        {
+            self.wheel = Some(WheelRequest::Cancelled);
+        }
+    }
+
+    fn step_wheel(&mut self, hands: WheelHands, now: Instant) -> WheelStep {
+        let pending = match self.wheel {
+            Some(WheelRequest::Cancelled) => {
+                if !self.status.planting_mode {
+                    self.wheel = None;
+                }
+                return WheelStep::Wait;
+            }
+            Some(WheelRequest::Pending { hand, since }) => {
+                Some((hand, now.saturating_duration_since(since).as_secs_f32()))
+            }
+            None => None,
+        };
+        let step = wheel::step(self.status.planting_mode, self.stage, pending, hands);
+        match step {
+            WheelStep::Leave(hand) => self.wheel = Some(WheelRequest::Pending { hand, since: now }),
+            WheelStep::Take(hand) => {
+                self.wheel = None;
+                self.stage = stage::on_input(self.stage, InputEvent::Grab(hand));
+            }
+            WheelStep::Drop => self.wheel = None,
+            WheelStep::Wait => {}
+        }
+        self.status.stage = self.stage;
+        step
+    }
+}
+
+#[cfg(test)]
+mod input_tests;
 
 static STATE: Mutex<State> = Mutex::new(State {
     stage: Stage::Idle,
@@ -912,91 +965,4 @@ unsafe fn first_weapon_data(weapon: &mut PlantedExplosiveWeapon) -> Option<*mut 
 }
 
 #[cfg(test)]
-mod tests {
-    use glam::Quat;
-
-    use super::*;
-
-    fn fresh() -> State {
-        State {
-            stage: Stage::Idle,
-            primed: None,
-            thrown: [false; 2],
-            status: C4Status::default(),
-            grips: [None; 2],
-            detonation: None,
-            was_detonating: false,
-            held_since: None,
-            stick: None,
-            preview: None,
-            wheel: None,
-        }
-    }
-
-    #[test]
-    fn a_started_detonation_is_credited_to_the_request_or_the_game() {
-        let mut state = fresh();
-        state.detonation = Some(PendingDetonation {
-            source: DetonationSource::WristButton,
-            remaining_s: DETONATION_TIMEOUT_S,
-        });
-        settle_detonation(&mut state, true, 3, 0.03);
-        assert_eq!(
-            state.status.last_detonation,
-            Some(Detonation {
-                source: DetonationSource::WristButton,
-                started: true,
-                charges: 3,
-            })
-        );
-        assert!(state.detonation.is_none() && !state.status.detonation_pending);
-        settle_detonation(&mut state, true, 2, 0.03);
-        assert_eq!(
-            state.status.last_detonation.map(|d| d.source),
-            Some(DetonationSource::GameInput)
-        );
-        assert_eq!(state.status.detonations, 2);
-    }
-
-    #[test]
-    fn an_unanswered_request_times_out() {
-        let mut state = fresh();
-        state.detonation = Some(PendingDetonation {
-            source: DetonationSource::WristButton,
-            remaining_s: DETONATION_TIMEOUT_S,
-        });
-        settle_detonation(&mut state, false, 1, 0.1);
-        assert!(state.status.detonation_pending);
-        for _ in 0..10 {
-            settle_detonation(&mut state, false, 1, 0.1);
-        }
-        assert!(!state.status.detonation_pending);
-        assert_eq!(
-            state.status.last_detonation,
-            Some(Detonation {
-                source: DetonationSource::WristButton,
-                started: false,
-                charges: 1,
-            })
-        );
-        assert_eq!(state.status.detonations, 0);
-    }
-
-    #[test]
-    fn the_held_charge_sits_at_the_mirrored_offset() {
-        let tuning = C4Config {
-            hold_offset_m: Vec3::new(0.02, 0.0, -0.05),
-            ..C4Config::new()
-        };
-        assert_eq!(
-            hold_offset(Hand::Left, &tuning),
-            Vec3::new(-0.02, 0.0, -0.05)
-        );
-        let grip = Pose {
-            position: Vec3::new(1.0, 2.0, 3.0),
-            orientation: Quat::IDENTITY,
-        };
-        let m = Mat4::from(held_matrix(grip, hold_offset(Hand::Right, &tuning)));
-        assert!(m.w_axis.truncate().distance(Vec3::new(1.02, 2.0, 2.95)) < 1e-6);
-    }
-}
+mod tests;

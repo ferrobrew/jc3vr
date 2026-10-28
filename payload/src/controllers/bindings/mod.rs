@@ -32,12 +32,14 @@
 //! poll ([`HoldTracker::release_all`]): the poll does not run while the device manager is disabled,
 //! and an effector left clicked there reads as a fresh click on every frame.
 
+mod buttons;
 pub mod controls;
 mod flight;
 pub mod grapple_button;
 pub mod hold;
 pub mod inject;
 pub mod intents;
+mod loss;
 pub(crate) mod policy_a;
 mod recovery;
 mod report;
@@ -60,6 +62,7 @@ use crate::{
     controllers::{
         aim::{self, sights},
         bindings::{
+            buttons::{grapple_button, grapple_button_held, reload_button},
             controls::{ButtonControl, Controls, yaw_of},
             grapple_button::GrappleContext,
             hold::{ActionWrite, Desired, DevicePoll, HoldTracker, MapKind, Target, Want},
@@ -92,9 +95,7 @@ use crate::{
     },
     vr::{
         self,
-        input::semantic::{
-            SemanticSet, frame as semantic_frame, history, vocabulary::OnFootAction,
-        },
+        input::semantic::{SemanticSet, frame as semantic_frame, history},
     },
 };
 
@@ -210,7 +211,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     // The edges are taken even while idle, so that a press from before injection resumed is not
     // replayed then.
     let mut edges = frame::take_edges();
-    let (semantic, mut semantic_edges) = semantic_frame::take();
+    let (semantic, semantic_edges) = semantic_frame::take();
     let (replay, publications) = history::take_gameplay();
     let mut routed = INPUT_POLICY.lock().step(TickInput {
         publications,
@@ -218,14 +219,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         frame: frame.as_ref(),
         context: policy_context(detection.mode),
         gameplay: idle.is_none(),
-        usable: config.bindings.enabled
-            && scheme::is_controllers()
-            && frame.as_ref().is_some_and(|frame| {
-                frame
-                    .hands
-                    .iter()
-                    .all(|hand| hand.active && hand.grip.is_valid())
-            }),
+        usable: config.bindings.enabled && scheme::is_controllers(),
         config: &config.bindings,
     });
     let mut panel_toggled = false;
@@ -306,19 +300,9 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         return InputTickOutput::default();
     };
 
-    let tracking_lost = state.recovery.observe(&frame);
+    state.recovery.observe(&frame);
+    loss::cancel_throws(Hand::BOTH.map(|hand| !state.recovery.ready(hand)));
     let mut reported = Vec::new();
-    if tracking_lost {
-        clear_controller();
-        reported = state.stand_down(poll);
-        weapons::stand_down();
-        vehicles::stand_down();
-        grapple::physical::stand_down();
-        snatch::stand_down();
-        grab::tick::stand_down();
-        edges = Default::default();
-        semantic_edges = Default::default();
-    }
     // Mode selection precedes the next OpenXR sample. Preserve paused holds while waiting for it;
     // the poll runs here, so it releases their effectors, and only the clicks need undoing.
     let set_pending = frame.action_set != detection.mode.action_set()
@@ -351,17 +335,13 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         .recovery
         .filter_observed(&original, &mut frame, &mut edges, &neutral_policy);
     state.publish_recovery();
-    if tracking_lost {
-        clear_controller();
-    } else {
-        update_controller(
-            Some(&frame),
-            &edges,
-            detection.mode == Mode::Ui,
-            config.acting_hand(),
-            state.recovery.ready(config.acting_hand()),
-        );
-    }
+    update_controller(
+        Some(&frame),
+        &edges,
+        detection.mode == Mode::Ui,
+        config.acting_hand(),
+        state.recovery.ready(config.acting_hand()),
+    );
 
     let dominant = config.acting_hand();
     let move_rotation = match config.locomotion.direction {
@@ -412,6 +392,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     };
     let raw_grapple_button = grapple_button(&semantic_input, detection.mode);
     routed.filter_semantic(&mut semantic_input);
+    state.bindings.cancel_routed_gestures(&routed);
     let grapple_hand = dominant.other();
     // The hand's pulls act only while the grapple button is held.
     let mut grapple_held = grapple_button_held(&semantic_input, detection.mode);
@@ -596,6 +577,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             grabs: grabs_for(step.grabs, Consumer::Weapons),
             grips: controls.hands.map(|h| h.grip),
             triggers: controls.hands.map(|h| h.trigger_press),
+            unavailable: controls.masked_hands,
             reload_button: reload_button(&semantic_input),
             dt,
         };
@@ -970,24 +952,6 @@ fn off_hand_rotation(frame: &ControllerFrame, off: Hand) -> f32 {
     }
 }
 
-/// The reload action's press over the tick, on either hand, for the reload's eject tap. The
-/// tables drive the game's reload action from the same press, which the game reads as a holster
-/// when it is held.
-fn reload_button(semantic: &SemanticInput) -> ButtonControl {
-    semantic
-        .get(OnFootAction::Reload.id())
-        .map_or_else(ButtonControl::default, |input| {
-            input
-                .hands
-                .iter()
-                .fold(ButtonControl::default(), |acc, intent| ButtonControl {
-                    down: acc.down || intent.button.down,
-                    pressed: acc.pressed || intent.button.pressed,
-                    released: acc.released || intent.button.released,
-                })
-        })
-}
-
 /// The grapple hand's distance from the body point a yank pulls toward, in the cockpit frame, or
 /// `None` while the hand is untracked or the hands are inert.
 fn grapple_hand_distance(hand: Hand, config: &YankConfig) -> Option<f32> {
@@ -1007,19 +971,4 @@ fn line_attached() -> bool {
     mode::last_snapshot()
         .and_then(|s| s.character)
         .is_some_and(|c| c.grapple_wire)
-}
-
-/// Whether the grapple button is held on either hand in `mode`.
-fn grapple_button_held(semantic: &SemanticInput, mode: Mode) -> bool {
-    grapple_button(semantic, mode).held()
-}
-
-fn grapple_button(semantic: &SemanticInput, mode: Mode) -> ButtonControl {
-    tables::grapple_press(mode).map_or_else(ButtonControl::default, |(actions, _)| {
-        actions
-            .iter()
-            .filter_map(|&action| semantic.get(action))
-            .flat_map(|input| input.hands.iter().map(|h| h.button))
-            .fold(ButtonControl::default(), tables::merge_buttons)
-    })
 }

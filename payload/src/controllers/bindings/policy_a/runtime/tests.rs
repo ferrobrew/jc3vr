@@ -1,3 +1,7 @@
+#[path = "boundary_tests.rs"]
+mod boundary_tests;
+#[path = "derived_tests.rs"]
+mod derived_tests;
 #[path = "rereview_tests.rs"]
 mod rereview_tests;
 #[path = "review_tests.rs"]

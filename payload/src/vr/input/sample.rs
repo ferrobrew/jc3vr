@@ -31,7 +31,7 @@ use crate::{
             replay,
             self_check::CheckFrame,
             semantic::{
-                SemanticSet,
+                SemanticSet, admission,
                 frame::{
                     self as semantic_frame, ActionState, ActionValue, SemanticFrame, SetState,
                 },
@@ -140,6 +140,14 @@ impl InputState {
                 }
                 Err(error) => {
                     first_error.get_or_insert(error);
+                    observed.push(RouteSample {
+                        route: InputRoute::Raw(index as u8),
+                        value: ValueBits::Bool(false),
+                        active: false,
+                        down: false,
+                        change: None,
+                        sources: sources::observation_sources(SetId::Hands, input.name()),
+                    });
                 }
             }
         }
@@ -204,6 +212,7 @@ impl InputState {
             .filter(|_| first_error.is_none())
             .map(|_| frame.clone());
         let mut live_controllers = first_error.is_none().then(|| frame.clone());
+        admission::apply(&frame.hands, &mut observed);
         let (frame_sequence, published_at) = frame::publish(frame);
         if let Some(controllers) = live_controllers.as_mut() {
             controllers.sequence = frame_sequence;
@@ -226,7 +235,7 @@ impl InputState {
                 observed_at,
                 frame_sequence,
             },
-            first_error.is_none(),
+            true,
         );
 
         if let Err(e) = self.flush_haptics(session, cfg) {

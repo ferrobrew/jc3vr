@@ -48,6 +48,27 @@ impl OpenWatch {
         })
     }
 
+    /// Unavailable controls cannot establish a deliberate opening or retain a closed episode.
+    pub(crate) fn step_available(
+        &mut self,
+        values: [Option<f32>; 2],
+        grips: [ButtonControl; 2],
+        unavailable: [bool; 2],
+    ) -> [bool; 2] {
+        for (i, unavailable) in unavailable.into_iter().enumerate() {
+            if unavailable {
+                self.closed[i] = false;
+            }
+        }
+        let opened = self.step(values, grips);
+        for (i, unavailable) in unavailable.into_iter().enumerate() {
+            if unavailable {
+                self.closed[i] = false;
+            }
+        }
+        std::array::from_fn(|i| opened[i] && !unavailable[i])
+    }
+
     #[cfg(test)]
     /// Whether `hand`'s fingers are closed.
     pub fn closed(&self, hand: Hand) -> bool {
@@ -77,6 +98,24 @@ mod tests {
 
     fn left(value: Option<f32>, grip: ButtonControl) -> ([Option<f32>; 2], [ButtonControl; 2]) {
         ([value, None], [grip, UP])
+    }
+
+    #[test]
+    fn unavailable_hand_does_not_open_and_other_hands_real_opening_survives() {
+        for lost in Hand::BOTH {
+            let mut watch = OpenWatch::new();
+            watch.step([Some(1.0); 2], [HELD; 2]);
+            let mut unavailable = [false; 2];
+            unavailable[lost.index()] = true;
+            let opened = watch.step_available([Some(0.0); 2], [UP; 2], unavailable);
+            assert!(!opened[lost.index()]);
+            assert!(opened[lost.other().index()]);
+            assert!(!watch.closed(lost));
+            assert_eq!(
+                watch.step_available([Some(0.0); 2], [UP; 2], [false; 2]),
+                [false; 2]
+            );
+        }
     }
 
     #[test]

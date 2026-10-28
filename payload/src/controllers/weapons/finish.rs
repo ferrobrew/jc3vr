@@ -59,6 +59,8 @@ pub(crate) struct FinishInputs {
     pub grips: [ButtonControl; 2],
     /// Each hand's trigger press over the tick.
     pub triggers: [ButtonControl; 2],
+    /// The input owner's per-hand recovery mask, before filtered controls can appear neutral.
+    pub unavailable: [bool; 2],
     /// The reload action's press over the tick.
     pub reload_button: ButtonControl,
     /// The engine's tick delta, seconds.
@@ -76,6 +78,7 @@ pub(crate) fn finish_tick(
         grabs,
         grips,
         triggers,
+        unavailable,
         reload_button,
         dt,
     } = *inputs;
@@ -92,7 +95,10 @@ pub(crate) fn finish_tick(
         })
     })
     .unwrap_or([None; 2]);
-    let opened = STATE.lock().opening.step(values, grips);
+    let opened = STATE
+        .lock()
+        .opening
+        .step_available(values, grips, unavailable);
     let (weapon, lone, gameplay, gun_side, touch, slide, promote, docked_touch) = {
         let state = STATE.lock();
         (
@@ -337,7 +343,7 @@ pub(crate) fn finish_tick(
                 .into_iter()
                 .find(|h| grabs[h.index()] == Some(GrabVolume::C4Pouch)),
             opened,
-            free,
+            free: c4::wheel::WheelHands::available(free, unavailable, config.acting_hand()).free,
             dominant: config.acting_hand(),
             world_scale: active.as_ref().map_or(1.0, |a| a.world_scale),
         },

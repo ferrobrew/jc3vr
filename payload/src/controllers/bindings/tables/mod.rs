@@ -54,6 +54,7 @@ use crate::{
             },
             hold::{Desired, MapKind, Target, Want},
             intents::{Gestures, Intents, Mask, MaskScope, SemanticInput},
+            policy_a::runtime::Tick,
             tables::{
                 declare::{TableCtx, declare},
                 sink::{EvalSink, Latches, MenuLatch, PadLatch},
@@ -119,6 +120,9 @@ pub struct Bindings {
     grapple: GrappleButton,
     /// Trigger sources accepted into the current grapple episode, including inseparable routes.
     grapple_triggers: [bool; 2],
+    /// Accepted action and hand participants in derived gesture episodes.
+    grapple_routes: Vec<(ActionId, Hand)>,
+    system_routes: Vec<(ActionId, Hand)>,
 }
 
 impl Bindings {
@@ -137,6 +141,8 @@ impl Bindings {
             pads: [PadLatch { press: None }; 2],
             grapple: GrappleButton::new(),
             grapple_triggers: [false; 2],
+            grapple_routes: Vec::new(),
+            system_routes: Vec::new(),
         }
     }
 
@@ -215,6 +221,28 @@ impl Bindings {
         {
             self.grapple.cancel();
             self.grapple_triggers = [false; 2];
+            self.grapple_routes.clear();
+        }
+    }
+
+    /// Invalidate derived episodes before unavailable delivery can appear to release a button.
+    pub(crate) fn cancel_routed_gestures(&mut self, tick: &Tick) {
+        if self
+            .grapple_routes
+            .iter()
+            .any(|&(id, hand)| tick.cancelled(id, hand))
+        {
+            self.grapple.cancel();
+            self.grapple_triggers = [false; 2];
+            self.grapple_routes.clear();
+        }
+        if self
+            .system_routes
+            .iter()
+            .any(|&(id, hand)| tick.cancelled(id, hand))
+        {
+            self.system = SystemButton::default();
+            self.system_routes.clear();
         }
     }
 
@@ -285,12 +313,16 @@ impl Bindings {
             grapple_held = button.down;
             if !self.grapple.pending() {
                 self.grapple_triggers = [false; 2];
+                self.grapple_routes.clear();
             }
             for hand in Hand::BOTH {
                 for &id in inputs {
                     if intents.hand(id, hand).button.held()
                         && let Some(action) = input.get(id)
                     {
+                        if !self.grapple_routes.contains(&(id, hand)) {
+                            self.grapple_routes.push((id, hand));
+                        }
                         let bound = action.bound[hand.index()];
                         self.grapple_triggers[hand.index()] |= bound.contains(Physical::Trigger)
                             || bound == bound.with_unknown()
@@ -310,15 +342,30 @@ impl Bindings {
             );
             if !self.grapple.pending() {
                 self.grapple_triggers = [false; 2];
+                self.grapple_routes.clear();
             }
         }
         let body_turn = body_turn_action(mode).map_or(0.0, |a| intents.raw(a));
+        if self.system.held.is_none() {
+            self.system_routes.clear();
+        }
+        let pause = GlobalAction::Pause.id();
+        for hand in Hand::BOTH {
+            if intents.hand(pause, hand).button.held()
+                && !self.system_routes.contains(&(pause, hand))
+            {
+                self.system_routes.push((pause, hand));
+            }
+        }
         self.system.step(
             &mut out.desired,
-            intents.button(GlobalAction::Pause.id()),
+            intents.button(pause),
             dt,
             config.long_press_s,
         );
+        if self.system.held.is_none() {
+            self.system_routes.clear();
+        }
         if mode != Mode::Ui {
             skip_cutscene(
                 &mut out.desired,

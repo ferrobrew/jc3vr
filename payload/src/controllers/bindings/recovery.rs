@@ -1,8 +1,8 @@
 //! Per-hand neutral rearming after controller input or pose loss.
 //!
-//! When a hand loses its usable pose, or injection idles, the shared hold tracker is cleared, and
-//! it cannot tell a control still held from before the loss from a new press. The whole hand is
-//! therefore masked until a sample arrives with its controls at rest. "At rest" is judged against
+//! A hand that loses its usable pose is masked until a sample arrives with its controls at rest.
+//! The other hand retains its recovery and accepted holds. Global injection stand-down clears
+//! shared hold history and disarms both hands. "At rest" is judged against
 //! what the bindings would act on: a value inside every consumer's deadzone does nothing in play,
 //! so it cannot be a held press, and demanding more would leave a worn, drifting control masking
 //! the hand for good.
@@ -18,6 +18,7 @@ use crate::{
         frame::{Button, ButtonSet, ControllerFrame, Edges, Hand, HandFrame},
     },
     headpose::config::{VrTurnConfig, VrTurnMode},
+    vr::input::semantic::admission::hand_usable,
 };
 
 /// One hand's recovery state, for the tick report.
@@ -212,10 +213,6 @@ fn finite_or_zero(value: f32) -> f32 {
     if value.is_finite() { value } else { 0.0 }
 }
 
-fn hand_usable(hand: &HandFrame) -> bool {
-    hand.active && hand.grip.is_valid()
-}
-
 /// The first control of `hand` that is not at rest, or `None` when the hand is neutral.
 fn blocker(hand: &HandFrame, config: &NeutralPolicy, index: usize) -> Option<Blocker> {
     let input = &hand.inputs;
@@ -356,9 +353,6 @@ mod tests {
         published: &ControllerFrame,
     ) -> (bool, ControllerFrame, Edges) {
         let lost = recovery.observe(published);
-        if lost {
-            recovery.disarm();
-        }
         let mut frame = published.clone();
         let mut edges = Edges {
             pressed: published.hands.each_ref().map(|h| h.buttons),
@@ -366,6 +360,53 @@ mod tests {
         };
         recovery.filter_observed(published, &mut frame, &mut edges, &policy());
         (lost, frame, edges)
+    }
+
+    #[test]
+    fn hand_loss_preserves_the_other_hands_ready_state_and_controls() {
+        for lost in Hand::BOTH {
+            let live = lost.other();
+            let mut recovery = Recovery::new();
+            let neutral = published(1, [true; 2], [0.0; 2]);
+            recovery.observe(&neutral);
+            recovery.filter_observed(
+                &neutral,
+                &mut neutral.clone(),
+                &mut Edges::default(),
+                &policy(),
+            );
+            assert!(recovery.ready(live));
+            let mut usable = [true; 2];
+            usable[lost.index()] = false;
+            let original = published(2, usable, [1.0; 2]);
+            assert!(recovery.observe(&original));
+            let mut filtered = original.clone();
+            recovery.filter_observed(&original, &mut filtered, &mut Edges::default(), &policy());
+            assert!(recovery.ready(live));
+            assert!(!recovery.ready(lost));
+            assert_eq!(filtered.hand(live).inputs.trigger, 1.0);
+            assert_eq!(filtered.hand(lost).inputs.trigger, 0.0);
+            let recovered = published(3, [true; 2], [1.0; 2]);
+            recovery.observe(&recovered);
+            recovery.filter_observed(
+                &recovered,
+                &mut recovered.clone(),
+                &mut Edges::default(),
+                &policy(),
+            );
+            assert!(!recovery.ready(lost));
+            let mut triggers = [1.0; 2];
+            triggers[lost.index()] = 0.0;
+            let neutral = published(4, [true; 2], triggers);
+            recovery.observe(&neutral);
+            recovery.filter_observed(
+                &neutral,
+                &mut neutral.clone(),
+                &mut Edges::default(),
+                &policy(),
+            );
+            assert!(recovery.ready(lost) && recovery.ready(live));
+        }
     }
 
     #[test]
@@ -390,9 +431,7 @@ mod tests {
             published(6, [false, true], [0.0, 1.0]),
         ];
         for (i, sample) in samples.iter().enumerate() {
-            if state.recovery.observe(sample) {
-                state.reset(DevicePoll::Running);
-            }
+            state.recovery.observe(sample);
             let mut frame = sample.clone();
             let mut edges = Edges::default();
             state
@@ -415,15 +454,22 @@ mod tests {
                 Vec::new()
             };
             let writes = state.tracker.resolve(&desired, 0.01);
-            if matches!(i, 1 | 5) {
-                assert_eq!(writes.len(), 1);
-                assert_eq!(writes[0].phase, Phase::Clicked);
-            } else {
-                assert!(
-                    writes.is_empty(),
-                    "sample {} must not fire or synthesize release",
-                    i + 1
-                );
+            match i {
+                1 | 5 => {
+                    assert_eq!(writes.len(), 1);
+                    assert_eq!(writes[0].phase, Phase::Clicked);
+                }
+                2 | 3 => {
+                    assert_eq!(writes.len(), 1);
+                    assert!(
+                        matches!(writes[0].phase, Phase::Held { seconds } if seconds >= (i - 1) as f32 * 0.01)
+                    );
+                }
+                4 => {
+                    assert_eq!(writes.len(), 1);
+                    assert!(matches!(writes[0].phase, Phase::Released { .. }));
+                }
+                _ => assert!(writes.is_empty()),
             }
         }
         assert_eq!(samples[2].hands[1].inputs.trigger, 1.0);

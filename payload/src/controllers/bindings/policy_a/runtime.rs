@@ -76,6 +76,7 @@ pub(crate) struct Tick {
     raw: [ButtonControl; 3],
     routes: Vec<(ActionId, Hand, Intent)>,
     permitted: Vec<(ActionId, Hand)>,
+    cancelled: Vec<(ActionId, Hand)>,
     claims: u32,
 }
 
@@ -124,7 +125,7 @@ impl Runtime {
                 if route.system.is_some() {
                     route.neutral = true;
                     route.claimed = true;
-                    route.delivery = Delivery::default();
+                    route.delivery.cancel();
                 }
             }
             self.consumer_context = Some((input.context, input.gameplay));
@@ -190,7 +191,7 @@ impl Runtime {
                 tick.commands.clear();
                 self.raw = Default::default();
                 for route in &mut self.routes {
-                    route.delivery = Delivery::default();
+                    route.delivery.cancel();
                 }
             }
             tick.claims |= self.claims;
@@ -215,6 +216,13 @@ impl Runtime {
             tick.commands.clear();
         }
         tick.raw = self.raw.each_mut().map(Delivery::take);
+        tick.cancelled = self
+            .routes
+            .iter_mut()
+            .filter_map(|route| {
+                std::mem::take(&mut route.delivery.cancelled).then_some((route.id, route.hand))
+            })
+            .collect();
         tick.routes = self
             .routes
             .iter_mut()
@@ -256,7 +264,7 @@ impl Runtime {
             if route.system.is_none() {
                 route.neutral = true;
                 route.blocked = true;
-                route.delivery = Delivery::default();
+                route.delivery.cancel();
             }
         }
         self.raw_neutral = [true; 3];
@@ -273,7 +281,7 @@ impl Runtime {
         for route in &mut self.routes {
             route.neutral = true;
             route.blocked = true;
-            route.delivery = Delivery::default();
+            route.delivery.cancel();
             route.intent = Intent::default();
             route.system_fired = false;
             if route.system.is_some() {
@@ -335,7 +343,7 @@ impl Runtime {
             if route.attribution != attribution {
                 route.neutral = true;
                 route.claimed = true;
-                route.delivery = Delivery::default();
+                route.delivery.cancel();
             }
             route.attribution = attribution;
             route.sample_down = sample.active && sample.down;
@@ -438,7 +446,7 @@ impl Runtime {
         for route in &mut self.routes {
             if !route.present {
                 route.neutral = true;
-                route.delivery = Delivery::default();
+                route.delivery.cancel();
                 route.intent = Intent::default();
             }
         }
@@ -448,6 +456,11 @@ impl Runtime {
 }
 
 impl Tick {
+    /// Whether ordered delivery invalidated this route rather than accepting its release.
+    pub(crate) fn cancelled(&self, id: ActionId, hand: Hand) -> bool {
+        self.cancelled.contains(&(id, hand))
+    }
+
     /// Whether the policy permits this semantic route, including attribution and neutral recovery.
     pub(crate) fn permits(&self, id: ActionId, hand: Hand) -> bool {
         self.permitted.contains(&(id, hand))
@@ -527,12 +540,11 @@ impl Tick {
     }
 }
 
-fn raw_evidence(group: &InputGroup) -> Option<[bool; 3]> {
-    if group.source_generation != group.binding_generation {
-        return None;
-    }
-    let mut down = [false; 3];
-    for control in Control::ALL {
+fn raw_evidence(group: &InputGroup) -> [Option<bool>; 3] {
+    Control::ALL.map(|control| {
+        if group.source_generation != group.binding_generation {
+            return None;
+        }
         let sample = group
             .samples
             .iter()
@@ -540,12 +552,9 @@ fn raw_evidence(group: &InputGroup) -> Option<[bool; 3]> {
         let ValueBits::Bool(value) = sample.value else {
             return None;
         };
-        if !sample.active || value != sample.down || !raw_verified(&sample.sources, control) {
-            return None;
-        }
-        down[control.index()] = value;
-    }
-    Some(down)
+        (sample.active && value == sample.down && raw_verified(&sample.sources, control))
+            .then_some(value)
+    })
 }
 
 fn complete_inventory(group: &InputGroup) -> bool {
@@ -598,7 +607,7 @@ pub(crate) fn group_neutral(group: &InputGroup, config: &BindingsConfig) -> bool
         && group.focused
         && group.is_bounded()
         && complete_inventory(group)
-        && raw_evidence(group) == Some([false; 3])
+        && raw_evidence(group) == [Some(false); 3]
         && group.samples.iter().all(|sample| {
             let InputRoute::Semantic { hand, .. } = sample.route else {
                 return true;
@@ -719,7 +728,7 @@ impl Route {
         let cancel = consumed || unresolved || !sample.active || !enabled || merged && withheld;
         if cancel {
             self.neutral = true;
-            self.delivery = Delivery::default();
+            self.delivery.cancel();
         }
         let was_neutral = self.neutral;
         if !down && neutral_value(sample.value, config) && !unresolved && sample.active && !withheld
@@ -771,8 +780,16 @@ struct Delivery {
     pending: VecDeque<ButtonControl>,
     latest: ButtonControl,
     overflowed: bool,
+    cancelled: bool,
 }
 impl Delivery {
+    fn cancel(&mut self) {
+        *self = Self {
+            cancelled: true,
+            ..Default::default()
+        };
+    }
+
     fn withhold(&mut self) {
         self.latest = ButtonControl::default();
     }
