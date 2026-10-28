@@ -154,8 +154,8 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 ## issues/
 
-- [gameplay-final-audit-followup.md](issues/gameplay-final-audit-followup.md): corrections for existing grenade shelves, vehicle button sides, inverted-grapple camera coverage, and independent chamber accounting, with build verification and remaining live checks.
-
+- [gameplay-review-followup.md](issues/gameplay-review-followup.md) — the appraisal of the work on the 2026-10-24 gameplay feedback: per-item verdicts, the ranked corrective work, and the cross-cutting observations.
+- [debug-ui-prune.md](issues/debug-ui-prune.md) — the debug UI prune: the target page structure, per-feature dispositions, the HUD depth paths, the inventory view, and the parity gate removal.
 - [08-14-hud-overlays-and-depth.md](issues/08-14-hud-overlays-and-depth.md) — HUD overlays and depth (issues #8, #14).
 - [15-enclosed-vehicles.md](issues/15-enclosed-vehicles.md) — enclosed vehicles (issue #15).
 - [20-animation-judder.md](issues/20-animation-judder.md) — animation judder (issue #20).
