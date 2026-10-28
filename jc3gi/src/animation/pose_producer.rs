@@ -332,7 +332,12 @@ impl std::convert::AsMut<Blender> for Blender {
 ///
 /// The poses are reused buffers. [`Update`](crate::animation::pose_producer::PoseProducer::Update) exchanges their pointers before synchronously evaluating [`m_PoseT1`](crate::animation::pose_producer::PoseProducer::m_PoseT1). The asynchronous pose-job path (`CPoseProducer::KickUpdateJob`) also exchanges them before queuing `PoseUpdate_fragment` on a CPU fragment worker. [`m_PoseT0`](crate::animation::pose_producer::PoseProducer::m_PoseT0) receives the previously current pose, including changes made before the exchange, such as HumanIK results and joint writes. The skinning job blends `T0` to `T1`.
 pub struct PoseProducer {
-    _field_0: [u8; 32],
+    _field_0: [u8; 8],
+    /// The ordered animation layers evaluated by [`Update`](crate::animation::pose_producer::PoseProducer::Update). The first layer samples over the skeleton's reference pose.
+    pub m_Blenders: crate::animation::skeleton::HkArray<
+        crate::types::shared_ptr::SharedPtr<crate::animation::pose_producer::Blender>,
+    >,
+    _field_18: [u8; 8],
     /// The previously current pose after the latest buffer exchange. [`Update`](crate::animation::pose_producer::PoseProducer::Update) exchanges this pointer with [`m_PoseT1`](crate::animation::pose_producer::PoseProducer::m_PoseT1) before evaluating the new current output.
     pub m_PoseT0: *mut crate::animation::skeleton::HkaPose,
     /// The current pose buffer. [`UpdateBlendersPoseInRange`](crate::animation::pose_producer::PoseProducer::UpdateBlendersPoseInRange) writes its selected local transforms and float slots. The animation controller's joint accessors ([`AnimationController::GetJoint`](crate::character::character::AnimationController::GetJoint) and [`SetJoint`](crate::character::character::AnimationController::SetJoint)) read and write it in model space.
@@ -345,6 +350,24 @@ fn _PoseProducer_size_check() {
     unreachable!()
 }
 impl PoseProducer {
+    pub const KickUpdateJob_ADDRESS: usize = 0x141E692C0;
+    /// Exchanges the pose buffers and queues `PoseUpdate_fragment` with the selected layer and bone counts. The worker evaluates the pose after this call returns; returning from dispatch does not establish completed pose output.
+    pub unsafe fn KickUpdateJob(
+        &mut self,
+        dt: f32,
+        num_animation_layers: i32,
+        num_bones: i32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                dt: f32,
+                num_animation_layers: i32,
+                num_bones: i32,
+            ) = ::std::mem::transmute(Self::KickUpdateJob_ADDRESS);
+            f(self as *mut Self as _, dt, num_animation_layers, num_bones)
+        }
+    }
     pub const Update_ADDRESS: usize = 0x141E6A9A0;
     /// Exchanges [`m_PoseT0`](crate::animation::pose_producer::PoseProducer::m_PoseT0) and [`m_PoseT1`](crate::animation::pose_producer::PoseProducer::m_PoseT1), advances each blender's time by `dt`, and synchronously evaluates all blenders through [`UpdateBlendersPoseInRange`](crate::animation::pose_producer::PoseProducer::UpdateBlendersPoseInRange) for `num_bones`. The selected local transforms and float slots are copied into the current pose before this call returns. The blender range is captured before the time updates.
     pub unsafe fn Update(&mut self, dt: f32, num_bones: i32) {

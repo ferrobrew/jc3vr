@@ -366,6 +366,14 @@ fn posture_swing(up_body: Vec3, deadband_deg: f32, full_deg: f32) -> Quat {
     Quat::from_axis_angle(axis, deviation * engagement)
 }
 
+/// Compose the latest input state in a captured current body frame without advancing input.
+pub(crate) fn orientation_at(root: glam::Mat4) -> Quat {
+    let (_, body, _) = root.to_scale_rotation_translation();
+    let body = grapple::filter_body_rotation(body);
+    let state = SIM.lock();
+    body * state.posture * Quat::from_euler(glam::EulerRot::YXZ, state.yaw, state.pitch, state.roll)
+}
+
 /// Wrap an angle (radians) into `[-π, π]`.
 pub fn wrap_angle(angle: f32) -> f32 {
     let wrapped = angle.rem_euclid(std::f32::consts::TAU);

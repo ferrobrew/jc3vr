@@ -202,7 +202,11 @@ fn render_frame(
     // input-tick advance alone left up to a tick of that rotation reaching the view before the
     // filter engaged (issue #36 telemetry). At frame cadence the held pre-reel frame is the one
     // the previous render composed with, so an instant engage is seamless.
-    let anchor_raw = frozen.map_or_else(|| headpose::anchor().unwrap_or(Vec3::ZERO), |f| f.anchor);
+    let anchor_pair = headpose::anchor_pair();
+    let anchor_raw = frozen.map_or_else(
+        || anchor_pair.map_or(Vec3::ZERO, |pair| pair[1].head),
+        |f| f.anchor,
+    );
     let headpose_config = config::Config::lock_query(|c| c.headpose);
     grapple::advance(
         headpose::xr::body_rotation_followed(),
@@ -226,7 +230,7 @@ fn render_frame(
     // offset by the same amount so the pair keeps the true tick delta for the engine's `dtf` lerp.
     let anchor = grapple::filter_anchor(anchor_raw);
     let anchor_prev_raw = frozen.map_or_else(
-        || headpose::anchor_prev().unwrap_or(anchor_raw),
+        || anchor_pair.map_or(anchor_raw, |pair| pair[0].head),
         |f| f.anchor,
     );
 
@@ -235,8 +239,14 @@ fn render_frame(
     // per-tick body/anchor motion between rendered frames. The previous-tick anchor and body rotation
     // fall back to the current-tick values until they are available, degenerating to no interpolation
     // rather than a bad one. Under the freeze diagnostic, prev == cur so the lerp is constant too.
-    let body_rotation_prev =
-        frozen.map_or_else(headpose::xr::body_rotation_prev, |f| f.body_rotation);
+    let body_rotation_prev = frozen.map_or_else(
+        || {
+            anchor_pair.map_or_else(headpose::xr::body_rotation_prev, |pair| {
+                pair[0].previous_endpoint(headpose::xr::body_rotation_prev(), body_rotation)
+            })
+        },
+        |f| f.body_rotation,
+    );
     let anchor_prev = anchor - (anchor_raw - anchor_prev_raw);
 
     // Publish the raw cockpit-frame HMD pose (the tracking delta before the body-frame composition
@@ -263,8 +273,11 @@ fn render_frame(
         anchor,
         cfg.world_scale,
     );
+    let cockpit_prev = anchor_pair.map_or(cockpit.prev, |pair| {
+        pair[0].previous_endpoint(cockpit.prev, cockpit.cur)
+    });
     let prev = headpose::xr::compose(
-        cockpit.prev,
+        cockpit_prev,
         center_orientation,
         body_rotation_prev,
         anchor_prev,

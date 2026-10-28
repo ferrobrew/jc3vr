@@ -21,6 +21,8 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::config::Config;
 
+pub(crate) mod publication;
+
 /// The type id (`hashlittle("S_IDLE")`, the engine's own `HashString`) of the on-foot base idle rule
 /// state, resolved via the game's own hash so it stays correct rather than hard-coding the value.
 static S_IDLE_TYPE_ID: LazyLock<u32> = LazyLock::new(|| hashlittle(b"S_IDLE") as u32);
@@ -29,6 +31,22 @@ pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&UPDATE_ANIMATIONS_TIME_BINDER)
         .with_static_binder(&UPDATE_ANIMATIONS_BINDER)
+        .with_static_binder(&KICK_UPDATE_JOB_BINDER)
+}
+
+/// Async dispatch cannot certify completed animation output.
+#[detour(address = jc3gi::animation::pose_producer::PoseProducer::KickUpdateJob_ADDRESS)]
+fn kick_update_job(
+    producer: *mut jc3gi::animation::pose_producer::PoseProducer,
+    dt: f32,
+    layers: i32,
+    bones: i32,
+) {
+    publication::invalidate_producer(producer as usize);
+    KICK_UPDATE_JOB
+        .get()
+        .unwrap()
+        .call(producer, dt, layers, bones);
 }
 
 /// Hold clip time on the controller's time-only path when idle breathing suppression applies.
@@ -63,6 +81,9 @@ fn update_animations(controller: *mut AnimationController, dt: f32, num_of_bones
         dt
     };
     let local = unsafe { is_local_controller(controller) };
+    let pose_evaluation = unsafe { controller.as_ref() }
+        .filter(|_| local)
+        .and_then(|controller| unsafe { publication::begin(controller, num_of_bones) });
     let evaluation = unsafe {
         controller
             .as_ref()
@@ -76,6 +97,7 @@ fn update_animations(controller: *mut AnimationController, dt: f32, num_of_bones
         .unwrap()
         .call(controller, dt, num_of_bones);
     if local && let Some(controller) = unsafe { controller.as_ref() } {
+        unsafe { publication::complete(controller, pose_evaluation) };
         unsafe { crate::hooks::camera::authored::animation_update(controller, evaluation) };
     }
 }
@@ -84,6 +106,7 @@ unsafe fn is_local_controller(controller: *mut AnimationController) -> bool {
     let selected = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
         .map(|player| player.m_AnimatedModel.m_AnimationController)
         .filter(|controller| !controller.is_null());
+    publication::select(selected.map(|controller| controller as usize));
     crate::hooks::camera::authored::select_controller(selected.map(|controller| controller as u64));
     selected.is_some_and(|selected| std::ptr::eq(selected, controller))
 }

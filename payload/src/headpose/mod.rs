@@ -30,6 +30,7 @@ use std::sync::{
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
+pub(crate) mod anchors;
 pub mod config;
 pub mod follow;
 pub mod sim;
@@ -140,16 +141,13 @@ pub fn set_pose_pair(prev: HeadPose, cur: HeadPose) {
     s.prev_pose = prev;
 }
 
-/// The animated bone positions the character hook captures each frame *before* it overrides the
-/// head bone, for [`set_anchors`].
+/// The current geometry passed through the root-stabilization adapter before publication.
 #[derive(Copy, Clone)]
 pub struct Anchors {
     /// The head bone world position (this sim tick, from `m_WorldMatrixT1`).
     pub head: Vec3,
-    /// The head bone world position as of the previous sim tick (the same animated joint through
-    /// `m_WorldMatrixT0`). The VR source composes the previous-tick side of its pose pair from this,
-    /// so the engine's sub-frame lerp smooths fast per-tick anchor motion (vehicles, parachuting)
-    /// instead of stepping at the tick rate.
+    /// The root-stabilization adapter's previous head position. Published history retains the
+    /// complete preceding capture instead of reconstructing it from this field.
     pub head_prev: Vec3,
     /// The neck bone world position (the camera's pitch pivot).
     pub neck: Vec3,
@@ -159,47 +157,30 @@ pub struct Anchors {
     pub eye_arm: Vec3,
 }
 
-/// Publish the animated bone anchors, captured by the character hook each frame *before* it
-/// overrides the head bone. Non-finite or absurdly distant positions (loading screens,
-/// uninitialized bone data) are rejected, leaving the previous anchors in place. The pose position
-/// is refreshed immediately so the character hook, which reads the pose right after publishing the
-/// anchors, sees a position anchored to this frame's animated pose: the sim source recomputes it
-/// from the new anchor outright, and the VR pose is shifted by the anchor delta, keeping its
-/// room-scale component while moving the anchor component onto this frame's anchor.
+/// Publish a collapsed anchor sample for non-historical callers.
+#[cfg(test)]
 pub fn set_anchors(anchors: Anchors) {
-    if !anchors.head.is_finite()
-        || !anchors.head_prev.is_finite()
-        || !anchors.neck.is_finite()
-        || anchors.head.length_squared() > MAX_ANCHOR_RADIUS * MAX_ANCHOR_RADIUS
-        || anchors.head_prev.length_squared() > MAX_ANCHOR_RADIUS * MAX_ANCHOR_RADIUS
-        || anchors.neck.length_squared() > MAX_ANCHOR_RADIUS * MAX_ANCHOR_RADIUS
-    {
+    let geometry = anchors::Geometry::from_anchors(anchors, glam::Mat4::IDENTITY);
+    set_anchor_pair([geometry; 2]);
+}
+
+/// Publish the complete pre-override endpoints captured on distinct simulation ticks.
+/// Invalid geometry withdraws the whole pair rather than retaining individual old components.
+pub(crate) fn set_anchor_pair(pair: [anchors::Geometry; 2]) {
+    if !pair.into_iter().all(anchors::Geometry::valid) {
+        withdraw_anchors();
         return;
     }
     let offset = Config::lock_query(|c| c.headpose.position_offset);
-    let mut s = state().lock();
-    let previous_anchor = s.anchor;
-    s.anchor = Some(anchors.head);
-    s.anchor_prev = Some(anchors.head_prev);
-    s.neck_delta = anchors.neck - anchors.head;
-    // The eye arm has its own sanity bound: a neck-to-eye distance beyond a metre is garbage bone
-    // data (missing eye bones resolve to the model origin).
-    if anchors.eye_arm.is_finite() && anchors.eye_arm.length_squared() < 1.0 {
-        s.eye_arm = anchors.eye_arm;
-    }
-    // The sim's pose position is anchor-derived, so recompute it here from this frame's animated
-    // head bone. The VR source composes the full position (the anchor plus the room-scale HMD
-    // translation) at its own render cadence, so between publishes the anchor advances up to one
-    // sim tick ahead of the published pose -- and the sim-tick consumers (the head-bone override,
-    // the HumanIK target) read it against the *new* anchor, sitting the head bone one tick behind
-    // the moving body (issue #44: the shadow's head trails the torso). Shifting by the anchor
-    // delta brings the anchor component current without touching the room-scale component; the
-    // next render-frame publish recomposes the full pose anyway.
-    if source() == Source::Sim {
-        s.pose.position = anchors.head + s.pose.orientation * offset;
-    } else if let Some(previous_anchor) = previous_anchor {
-        s.pose.position += anchors.head - previous_anchor;
-    }
+    let sim_orientation = (source() == Source::Sim).then(|| sim::orientation_at(pair[1].root));
+    state()
+        .lock()
+        .publish_anchors(pair, offset, sim_orientation);
+}
+
+/// Read both complete endpoints from the same publication.
+pub(crate) fn anchor_pair() -> Option<[anchors::Geometry; 2]> {
+    state().lock().anchor_pair
 }
 
 /// Withdraw simulation anchor authority while leaving the separately published display pose alone.
@@ -207,6 +188,7 @@ pub(crate) fn withdraw_anchors() {
     let mut state = state().lock();
     state.anchor = None;
     state.anchor_prev = None;
+    state.anchor_pair = None;
     state.neck_delta = Vec3::ZERO;
     state.eye_arm = Vec3::ZERO;
 }
@@ -227,8 +209,8 @@ pub fn anchor_prev() -> Option<Vec3> {
 /// The world-space vector from the head bone anchor to the neck bone: the camera hangs the eye arm
 /// from the neck rather than the head bone, so under the sim source pitching the head swings the
 /// eyes forward over the chest instead of rotating in place at the skull base. Zero until the
-/// character hook has published anchors. Body-local and effectively constant between ticks, so
-/// consumers may apply the current value to both sides of the pose pair.
+/// character hook has published anchors. Camera consumers read the matching endpoint from
+/// [`anchor_pair`] instead of sharing this current value across ticks.
 pub fn neck_delta() -> Vec3 {
     state().lock().neck_delta
 }
@@ -266,7 +248,7 @@ pub fn is_active() -> bool {
 }
 
 #[derive(Default)]
-struct HeadPoseState {
+pub(crate) struct HeadPoseState {
     /// The current headpose, written by the active source (sim or VR).
     pose: HeadPose,
     /// The headpose as of the previous input tick, for engine interpolation.
@@ -275,10 +257,49 @@ struct HeadPoseState {
     anchor: Option<Vec3>,
     /// The previous sim tick's animated head bone world position (see [`Anchors::head_prev`]).
     anchor_prev: Option<Vec3>,
+    anchor_pair: Option<[anchors::Geometry; 2]>,
     /// The world-space head-to-neck vector, published alongside the anchor (see [`neck_delta`]).
     neck_delta: Vec3,
     /// The body-frame neck-to-eye-midpoint arm (see [`Anchors::eye_arm`]).
     eye_arm: Vec3,
+}
+
+impl HeadPoseState {
+    pub(crate) fn publish_anchors(
+        &mut self,
+        pair: [anchors::Geometry; 2],
+        offset: Vec3,
+        sim_orientation: Option<Quat>,
+    ) {
+        let [previous, current] = pair;
+        let previous_anchor = self.anchor;
+        self.anchor = Some(current.head);
+        self.anchor_prev = Some(previous.head);
+        self.neck_delta = current.neck_delta;
+        self.eye_arm = current.eye_arm;
+        self.anchor_pair = Some(pair);
+        if let Some(orientation) = sim_orientation {
+            self.pose = HeadPose {
+                position: current.head + orientation * offset,
+                orientation,
+            };
+            if current.collapsed {
+                self.prev_pose = self.pose;
+            }
+        } else if let Some(previous_anchor) = previous_anchor {
+            self.pose.position += current.head - previous_anchor;
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_poses(&self) -> [HeadPose; 2] {
+        [self.prev_pose, self.pose]
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_set_poses(&mut self, poses: [HeadPose; 2]) {
+        [self.prev_pose, self.pose] = poses;
+    }
 }
 
 static STATE: OnceLock<Mutex<HeadPoseState>> = OnceLock::new();
@@ -286,7 +307,3 @@ static STATE: OnceLock<Mutex<HeadPoseState>> = OnceLock::new();
 fn state() -> &'static Mutex<HeadPoseState> {
     STATE.get_or_init(|| Mutex::new(HeadPoseState::default()))
 }
-
-/// Anchor positions beyond this radius from the origin are rejected as garbage. The world is
-/// ~32 km across, so 100 km is well outside any legitimate game position.
-const MAX_ANCHOR_RADIUS: f32 = 100_000.0;

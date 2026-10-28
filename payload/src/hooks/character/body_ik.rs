@@ -142,6 +142,7 @@ pub(crate) const BODY_IK_TARGET: &str = "body_ik";
 /// ([`crate::hooks::character::head::override_head`]) so the override composes its body-relative
 /// offset onto the pure animated orientation rather than the IK-bent one (which would double-count
 /// the yaw HumanIK already applied toward the target).
+#[derive(Clone, Copy)]
 pub(crate) struct PreIkPose {
     pub(crate) head_orientation: glam::Quat,
     pub(crate) neck_orientation: glam::Quat,
@@ -224,6 +225,7 @@ pub(crate) fn shoulders_driven() -> [bool; 2] {
 }
 
 pub(crate) fn capture_unavailable() {
+    headpose::anchors::HISTORY.lock().clear();
     *PRE_IK_POSE.lock() = None;
     *SHOULDERS_DRIVEN.lock() = [false; 2];
     headpose::withdraw_anchors();
@@ -271,94 +273,103 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
             return;
         };
 
-        // Anchor capture, MOVED here from UpdatePropEffects. It must run pre-IK: the HumanIK MAIN
-        // solve happens later in this same function, and reading the head bone *after* the solve
-        // would let the anchor chase the very target HIK pulls it toward — a feedback loop that pins
-        // the camera to a fixed world point while the body walks out from under it. Reading here,
-        // before the solve, samples the freshly animated pose: the decompile shows
-        // AnimationController::GetJoint recomputes the model-space transform on demand when the bone
-        // is dirty (CBlender::UpdateTime), and the animation graph finalized this frame's local pose
-        // earlier in SIM, so this read reflects this frame's animation. At worst it is the previous
-        // frame's model-space pose (one frame of latency) — still IK-free, and it can never contain
-        // this frame's solve, so no tight feedback loop can form. UpdatePropEffects does not
-        // capture; it only consumes the published anchors.
-        let (_, character_rotation, _) = character_world.to_scale_rotation_translation();
-        let joint_translation = |joint: &Joint| {
-            let [x, y, z] = joint.m_Translation.data;
-            glam::Vec3::new(x, y, z)
-        };
-        let quat_of = |joint: &Joint| {
-            let [qx, qy, qz, qw] = joint.m_Orientation.data;
-            glam::Quat::from_xyzw(qx, qy, qz, qw)
-        };
-
-        let Some(head_joint) = pose.read(head_index) else {
-            capture_unavailable();
-            return;
-        };
-        let Some(neck_joint) = pose.read(neck_index) else {
-            capture_unavailable();
-            return;
-        };
-        let animated_head_world = character_world.transform_point3(joint_translation(&head_joint));
-        // The previous-tick head anchor: the same animated joint through the character's T0 world
-        // matrix. Feeds the VR pose pair so the engine's sub-frame lerp smooths per-tick anchor
-        // motion (vehicles, parachuting) instead of stepping the camera at the tick rate.
-        let animated_head_world_prev =
-            character_world_prev.transform_point3(joint_translation(&head_joint));
-
-        let animated_neck_world = character_world.transform_point3(joint_translation(&neck_joint));
-
-        let eye_joint = |name: &[u8]| {
-            pose.named(name)
-                .and_then(|index| pose.read(index))
-                .map(|joint| joint_translation(&joint))
-        };
-        let (Some(left_eye), Some(right_eye)) = (eye_joint(b"fLeftEye"), eye_joint(b"fRightEye"))
+        let (Some(left_eye_index), Some(right_eye_index)) =
+            (pose.named(b"fLeftEye"), pose.named(b"fRightEye"))
         else {
             capture_unavailable();
             return;
         };
-        let eye_mid_model = (left_eye + right_eye) / 2.0;
-        let eye_mid_world = character_world.transform_point3(eye_mid_model);
-        let eye_arm = character_rotation.inverse() * (eye_mid_world - animated_neck_world);
+        let Some(game) = jc3gi::game::Game::get() else {
+            capture_unavailable();
+            return;
+        };
+        let identity = headpose::anchors::Identity {
+            character: std::ptr::from_ref(character) as usize,
+            skeleton: pose.key(),
+            producer: pose.producer(),
+            bones: [head_index, neck_index, left_eye_index, right_eye_index],
+        };
+        // GetJoint exposes only the current pose. Retain its pre-solve geometry rather than
+        // reading the previous native pose, which contains the preceding IK override.
+        let publication = crate::hooks::animation::publication::current(
+            identity.skeleton,
+            identity.producer,
+            identity.bones,
+        );
+        let pair = headpose::anchors::HISTORY.lock().capture(
+            headpose::anchors::Capture {
+                identity,
+                tick: game.m_FrameCounter,
+                serial: publication.map(|receipt| receipt.serial),
+                context: headpose::anchors::Context::current(),
+                previous_root: character_world_prev,
+                current_root: character_world,
+            },
+            || {
+                let translation = |joint: &Joint| glam::Vec3::from_array(joint.m_Translation.data);
+                let orientation = |joint: &Joint| glam::Quat::from_array(joint.m_Orientation.data);
+                let head = pose.read(head_index)?;
+                let neck = pose.read(neck_index)?;
+                let eyes = (translation(&pose.read(left_eye_index)?)
+                    + translation(&pose.read(right_eye_index)?))
+                    / 2.0;
+                let mut sample = headpose::anchors::Sample::animated(
+                    character_world,
+                    [translation(&head), translation(&neck), eyes],
+                    [orientation(&head), orientation(&neck)],
+                );
+                if !sample.valid() {
+                    return None;
+                }
+                let geometry = sample.geometry;
+                let stabilized = stabilize_anchors(
+                    character,
+                    headpose::Anchors {
+                        head: geometry.head,
+                        head_prev: geometry.head,
+                        neck: geometry.head + geometry.neck_delta,
+                        eye_arm: geometry.eye_arm,
+                    },
+                    Neutral {
+                        head: sample.head_model,
+                        neck: sample.neck_model,
+                        eyes,
+                    },
+                    dt,
+                );
+                sample.geometry =
+                    headpose::anchors::Geometry::from_anchors(stabilized, character_world);
+                Some(sample)
+            },
+        );
+        let Some(pair) = pair else {
+            capture_unavailable();
+            return;
+        };
+        let current = pair.current;
+        let animated_head_world = current.root.transform_point3(current.head_model);
+        let animated_head_world_prev = pair
+            .previous
+            .root
+            .transform_point3(pair.previous.head_model);
         let completion = rig::root::complete_movement(character_world_prev, character_world);
         live_observation::publish_native(NativeCapture {
             completion,
-            previous_root: character_world_prev,
-            current_root: character_world,
+            previous_root: pair.previous.root,
+            current_root: current.root,
             previous_anchor: animated_head_world_prev,
             current_anchor: animated_head_world,
-            current_head_model: joint_translation(&head_joint),
-            current_neck_model: joint_translation(&neck_joint),
-            current_eye_mid_model: eye_mid_model,
+            current_head_model: current.head_model,
+            current_neck_model: current.neck_model,
+            current_eye_mid_model: current.eyes_model,
         });
-
-        // On foot the view hangs from Rico's root rather than his animated head, so the clips' bob
-        // and lurch never reach it (`controllers::locomotion::anchor`).
-        headpose::set_anchors(stabilize_anchors(
-            character,
-            headpose::Anchors {
-                head: animated_head_world,
-                head_prev: animated_head_world_prev,
-                neck: animated_neck_world,
-                eye_arm,
-            },
-            Neutral {
-                head: joint_translation(&head_joint),
-                neck: joint_translation(&neck_joint),
-                eyes: eye_mid_model,
-            },
-            dt,
-        ));
-
-        // Snapshot the pre-IK head and neck model-space orientations for the post-solve override's
-        // compose base (see PreIkPose). Refreshed every frame the local player is active, so it can
-        // never go stale.
+        headpose::set_anchor_pair(pair.geometry());
         *PRE_IK_POSE.lock() = Some(PreIkPose {
-            head_orientation: quat_of(&head_joint),
-            neck_orientation: quat_of(&neck_joint),
+            head_orientation: current.head_orientation,
+            neck_orientation: current.neck_orientation,
         });
+        let (_, character_rotation, _) = character_world.to_scale_rotation_translation();
+        let joint_translation = |joint: &Joint| glam::Vec3::from_array(joint.m_Translation.data);
 
         // From here on: the HumanIK body-follow targets, behind the body_ik config. Only while
         // gameplay owns the character: outside E_GAME_RUN the engine repositions Rico for a teleport,
@@ -488,7 +499,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         let head_offset_model = character_rotation.inverse()
             * (target_world - headpose::anchor().unwrap_or(animated_head_world));
         let lean = {
-            let from = joint_translation(&head_joint) - pivot;
+            let from = current.head_model - pivot;
             let to = from + head_offset_model;
             // Degenerate only if the head sits on the pivot or the offset would drive it there,
             // neither of which is a real pose; the identity is the right answer for both.
@@ -774,7 +785,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
             // The positional delta the solver actually has to work with: the queued target against
             // the animated head bone it starts from. Near zero means the position target and its
             // pull can do nothing, whatever the weights say.
-            target_delta: target_model.distance(joint_translation(&head_joint)),
+            target_delta: target_model.distance(current.head_model),
             torso_lean_deg: lean_angle.to_degrees(),
             torso_yaw_deg: torso_yaw.to_degrees(),
             shoulders_mapped,

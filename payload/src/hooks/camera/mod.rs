@@ -33,8 +33,8 @@ pub(crate) use config::CameraConfig;
 use crate::{
     fsr::apply_jitter_to_projection,
     headpose::{
-        HeadPose, Source, anchor, anchor_prev, eye_arm, is_active, neck_delta, query, query_prev,
-        source, xr::follow_turn,
+        HeadPose, Source, anchor, anchor_prev, is_active, query, query_prev, source,
+        xr::follow_turn,
     },
     hooks::in_gameplay,
 };
@@ -367,12 +367,15 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
                 // interpolates via the skinning-palette pose pair.
                 let cur = query();
                 let prev = query_prev();
+                let [previous_geometry, current_geometry] =
+                    crate::headpose::anchor_pair().unwrap_or_default();
                 let character_t1_matrix = glam::Mat4::from(local_character.m_WorldMatrixT1);
                 let position = camera_position(
                     &cur,
-                    character_t1_matrix,
                     follow_turn(true),
                     &camera_settings,
+                    current_geometry,
+                    source(),
                 );
                 write_camera_transform(&mut camera.m_TransformT1, cur.orientation, position);
                 height::record(character_t1_matrix, position);
@@ -383,15 +386,16 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
                 if camera_settings.always_use_t1 {
                     camera.m_TransformT0 = camera.m_TransformT1;
                 } else {
-                    let character_t0_matrix = glam::Mat4::from(local_character.m_WorldMatrixT0);
                     write_camera_transform(
                         &mut camera.m_TransformT0,
                         prev.orientation,
                         camera_position(
                             &prev,
-                            character_t0_matrix,
-                            follow_turn(false),
+                            previous_geometry
+                                .previous_endpoint(follow_turn(false), follow_turn(true)),
                             &camera_settings,
+                            previous_geometry,
+                            source(),
                         ),
                     );
                 }
@@ -462,18 +466,19 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
 /// the view.
 fn camera_position(
     pose: &HeadPose,
-    character_matrix: glam::Mat4,
     view_turn: glam::Quat,
     camera_settings: &config::CameraConfig,
+    geometry: crate::headpose::anchors::Geometry,
+    pose_source: Source,
 ) -> glam::Vec3 {
-    let (_, character_rotation, _) = character_matrix.to_scale_rotation_translation();
+    let (_, character_rotation, _) = geometry.root.to_scale_rotation_translation();
     let measured_arm = if camera_settings.use_eye_matrices {
-        eye_arm()
+        geometry.eye_arm
     } else {
         glam::Vec3::ZERO
     };
     let rig = EyeRig {
-        neck_delta: neck_delta(),
+        neck_delta: geometry.neck_delta,
         arm: measured_arm + camera_settings.head_offset,
         body_offset: camera_settings.body_offset,
         view_turn,
@@ -482,7 +487,7 @@ fn camera_position(
         pose,
         character_rotation,
         &rig,
-        NeckModel::for_source(source()),
+        NeckModel::for_source(pose_source),
     )
 }
 
@@ -751,18 +756,22 @@ fn camera_tree_update_render_contexts(
             if headpose_active {
                 let cur = query();
                 let prev = query_prev();
+                let [previous_geometry, current_geometry] =
+                    crate::headpose::anchor_pair().unwrap_or_default();
                 (
                     camera_position(
                         &prev,
-                        character_t0_matrix,
-                        follow_turn(false),
+                        previous_geometry.previous_endpoint(follow_turn(false), follow_turn(true)),
                         &camera_settings,
+                        previous_geometry,
+                        source(),
                     ),
                     camera_position(
                         &cur,
-                        character_t1_matrix,
                         follow_turn(true),
                         &camera_settings,
+                        current_geometry,
+                        source(),
                     ),
                     Some(prev.orientation),
                     Some(cur.orientation),
@@ -983,6 +992,9 @@ fn calculate_head_position(
         head_position
     }
 }
+
+#[cfg(test)]
+mod anchor_tests;
 
 #[cfg(test)]
 mod tests {

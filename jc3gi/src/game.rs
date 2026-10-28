@@ -31,7 +31,11 @@ pub struct Game {
     /// A console override for [`m_InterpolationMethod`](crate::game::Game::m_InterpolationMethod);
     /// [`INTERPOLATION_OVERRIDE_NONE`](crate::game::Game::INTERPOLATION_OVERRIDE_NONE) when unset.
     pub m_InterpolationOverride: i32,
-    _field_a4: [u8; 444],
+    _field_a4: [u8; 300],
+    /// The simulation dispatch counter, incremented by [`UpdateGame`](crate::game::Game::UpdateGame) before
+    /// the active state's update. Render-only updates do not advance it.
+    pub m_FrameCounter: u64,
+    _field_1d8: [u8; 136],
     pub m_DecoupleEnabled: bool,
     _field_261: [u8; 87],
     /// The [`GameUpdateFlags`](crate::game::GameUpdateFlags) bit set gating the phases of [`Update`](crate::game::Game::Update): the sim

@@ -54,7 +54,7 @@ pub(crate) struct RawPacket {
 }
 
 /// Values read together before the local character's procedural IK writes.
-/// The previous anchor uses the current animated head joint through the previous root.
+/// The previous anchor retains the preceding pre-override capture when its native tick is adjacent.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct NativeCapture {
     pub completion: Option<CompletionToken>,

@@ -128,7 +128,12 @@ impl std::convert::AsMut<AnimatedModel> for AnimatedModel {
 #[repr(C, align(8))]
 /// A character's animation controller (`NCharacterSystem::CAnimationControl`): owns the skeleton resource handle and pose producer, with a body part per animation layer. [`InitSkeleton`](crate::character::character::AnimationController::InitSkeleton), [`InitControl`](crate::character::character::AnimationController::InitControl), and [`Reset`](crate::character::character::AnimationController::Reset) change that state in place; an unchanged controller address does not imply an unchanged skeleton or producer.
 pub struct AnimationController {
-    _field_0: [u8; 152],
+    _field_0: [u8; 145],
+    /// Whether control initialization has completed. [`UpdateAnimations`](crate::character::character::AnimationController::UpdateAnimations)
+    /// and [`UpdateAnimationsTime`](crate::character::character::AnimationController::UpdateAnimationsTime) return without updating the producer
+    /// while this is clear.
+    pub m_Initialized: bool,
+    _field_92: [u8; 6],
     /// The owned skeleton resource handle (`TResourceCachePtr<CSkeleton>::m_Handle`). [`InitSkeleton`](crate::character::character::AnimationController::InitSkeleton) replaces it and releases the previous handle. The handle's resource-retention operations are not mapped.
     pub m_SkeletonResourceHandle: *mut ::std::ffi::c_void,
     /// The cached skeleton pointer, through which [`GetBoneIndex`](crate::character::character::AnimationController::GetBoneIndex) resolves a bone by the hash of its name. [`InitSkeleton`](crate::character::character::AnimationController::InitSkeleton) refreshes it when the acquired resource handle is non-null, but does not clear it on the empty-handle path. This cache is not an independent owning reference.
