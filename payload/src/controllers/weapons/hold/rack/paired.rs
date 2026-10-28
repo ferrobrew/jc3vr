@@ -253,8 +253,8 @@ pub(crate) unsafe fn take(
     };
     let weapon = unsafe { &mut *engine::weapon_of(&actor) };
     // A staged actor is not in the single-pistol inventory watch until the take makes it owned.
-    unsafe { single::designate(weapon, "a paired rack member") };
-    let result = unsafe { pickup::route(weapon, Some(hand)) }
+    let result = unsafe { designate_member(weapon) }
+        .and_then(|()| unsafe { pickup::route(weapon, Some(hand)) })
         .and_then(|route| match route {
             TakeRoute::Table { hand } => Ok(hand),
             TakeRoute::Game(_) => Err(Refusal::NotTaken),
@@ -328,6 +328,13 @@ pub(crate) fn clear() {
     for source in sources {
         unsafe { retire(source) };
     }
+}
+
+unsafe fn designate_member(weapon: &mut WeaponBase) -> Result<(), Refusal> {
+    (single::is(weapon as *const WeaponBase as usize)
+        || unsafe { single::designate(weapon, "a paired rack member") })
+    .then_some(())
+    .ok_or(Refusal::NotTaken)
 }
 
 const MAX_SOURCES: usize = 8;
@@ -506,7 +513,45 @@ unsafe fn retire(source: Source) {
 
 #[cfg(test)]
 mod tests {
+    use std::mem::MaybeUninit;
+
+    use jc3gi::equipment::weapon::WeaponClass;
+
     use super::*;
+    use crate::controllers::weapons::dual_wield::single::set;
+
+    #[test]
+    fn a_full_production_single_set_refuses_before_take_and_restores_ready() {
+        let added: Vec<_> = (1..=set::CAPACITY)
+            .map(|index| 0x7200_0000 + index)
+            .collect();
+        for &object in &added {
+            assert_eq!(set::insert(object), Ok(true));
+        }
+        let mut storage = Box::new(MaybeUninit::<WeaponBase>::zeroed());
+        // SAFETY: the mapped enums receive valid values before the initialized weapon is borrowed.
+        let weapon = unsafe {
+            (&raw mut (*storage.as_mut_ptr()).m_Class).write(WeaponClass::E_WEAPON_CLASS_NONE);
+            (&raw mut (*storage.as_mut_ptr()).m_EquipSlot).write(WeaponSlot::E_SLOT_DUAL_WIELD);
+            let weapon = storage.assume_init_mut();
+            let begin = std::ptr::NonNull::<*mut WeaponData>::dangling().as_ptr();
+            weapon.m_lWeaponData.m_Begin = begin;
+            weapon.m_lWeaponData.m_End = begin.wrapping_add(2);
+            weapon
+        };
+        let mut stage = Stage::Ready(17);
+        let actor = stage.take().unwrap();
+        let mut taken = false;
+        let result = unsafe { designate_member(weapon) }.map(|()| taken = true);
+        stage.complete(actor, result.is_ok());
+        assert_eq!(result, Err(Refusal::NotTaken));
+        assert!(!taken);
+        assert!(matches!(stage, Stage::Ready(17)));
+        assert!(!single::is(weapon as *const WeaponBase as usize));
+        for object in added {
+            assert!(set::remove(object));
+        }
+    }
 
     #[test]
     fn native_pair_allocation_is_conserved_for_both_grab_orders() {

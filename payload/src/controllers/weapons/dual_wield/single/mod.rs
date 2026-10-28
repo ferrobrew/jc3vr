@@ -33,7 +33,7 @@
 
 pub mod grant;
 pub mod magazine;
-mod set;
+pub(crate) mod set;
 
 use std::{
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
