@@ -11,10 +11,12 @@ use crate::controllers::{
     fingers::grip::{self, Grip as FingerGrip, GripSource},
     frame::Hand,
     grab::GrabVolume,
+    mode::{self, AirborneVariant, Mode, OnFootVariant},
     physical_hands::{
         PhysicalHandsConfig,
         climb::{
             engine,
+            native::Context,
             solve::{Mantle, carried, carried_turn},
             types::{ClimbHandStatus, ClimbStatus, Hold, Landing},
         },
@@ -47,9 +49,13 @@ pub(crate) fn gripped() -> [Option<Hold>; 2] {
 
 /// The last mantle that landed on a moving body, once: the stunt positions take the player into
 /// a vehicle's stunt area from it. A landing older than a moment is dropped.
-pub(crate) fn take_landing() -> Option<Landing> {
-    let (landing, at) = STATE.lock().landing.take()?;
-    (Instant::now().saturating_duration_since(at) <= STALE_AFTER).then_some(landing)
+pub(crate) fn take_landing()
+-> Option<crate::controllers::physical_hands::climb::native::LandingOffer<'static>> {
+    let context = unsafe { engine::gate_context() };
+    crate::controllers::physical_hands::climb::native::observe(context);
+    crate::controllers::physical_hands::climb::native::take_landing(Instant::now(), |landing| {
+        (unsafe { engine::body_identity(landing.body) }) == Some(landing.identity)
+    })
 }
 
 /// The static surface each hand reaches, as the palms' tick last found it: the hands push the body
@@ -85,9 +91,31 @@ pub(crate) fn reach_hold(hand: Hand) -> Option<Hold> {
 /// grip the surface in reach, and a released grip asks it to let go. Called from the input tick
 /// after the tables, with each hand's held grip and the grab volume its press latched.
 pub(crate) fn finish_tick(held: [bool; 2], grabs: [Option<GrabVolume>; 2]) {
+    crate::controllers::physical_hands::climb::native::observe(unsafe { engine::gate_context() });
     let mut state = STATE.lock();
     let now = Instant::now();
     let fresh = state.fresh(now);
+    let input_mode = mode::current().mode;
+    let allowed = matches!(
+        input_mode,
+        Mode::OnFoot(OnFootVariant::Ground) | Mode::Airborne(AirborneVariant::Falling)
+    );
+    if state
+        .input_mode
+        .is_some_and(|previous| previous != input_mode)
+    {
+        state.requests = [None; 2];
+    }
+    state.input_at = allowed.then_some(now);
+    state.input_held = held.map(|h| h && allowed);
+    state.input_mode = Some(input_mode);
+    if !allowed {
+        crate::controllers::physical_hands::climb::native::clear();
+        state.requests = [None; 2];
+        state.drop_all("the player left physical climbing input");
+        state.finish_climb();
+        return;
+    }
     for hand in Hand::BOTH {
         let i = hand.index();
         if state.grips[i].is_some() && state.stepped_lately(now) {
@@ -111,8 +139,14 @@ pub(crate) fn finish_tick(held: [bool; 2], grabs: [Option<GrabVolume>; 2]) {
 }
 
 pub(crate) fn stand_down() {
+    crate::controllers::physical_hands::climb::native::clear();
     let mut state = STATE.lock();
     state.requests = [None; 2];
+    state.input_at = None;
+    state.input_mode = None;
+    state.input_held = [false; 2];
+    state.drop_all("the hand input stood down");
+    state.finish_climb();
     state.palms = [None; 2];
     state.pressing = [false; 2];
     state.published = None;
@@ -163,10 +197,7 @@ impl Grip {
     ///
     /// The thread that steps the physics world, outside the step.
     pub(super) unsafe fn body_holds(&self) -> bool {
-        match self.frame {
-            None => unsafe { engine::is_static(self.hold.body) },
-            Some(_) => unsafe { engine::body_frame(self.hold.body) }.is_some(),
-        }
+        unsafe { self.hold.valid() }
     }
 
     /// Where a grip on a moving body has been carried since the hand took hold, or `None` for a
@@ -177,6 +208,9 @@ impl Grip {
     /// The thread that steps the physics world, outside the step.
     pub(super) unsafe fn carried(&self) -> Option<Carried> {
         let from = self.frame?;
+        if !unsafe { self.hold.valid() } {
+            return None;
+        }
         let now = unsafe { engine::body_frame(self.hold.body) }?;
         let point = carried(from, now.transform, self.hold.point);
         Some(Carried {
@@ -235,6 +269,25 @@ pub(super) struct Grip {
     pub(super) missing_steps: u32,
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct MantleFrame {
+    pub owner: Hold,
+    pub transform: Affine3A,
+}
+
+impl MantleFrame {
+    pub fn completion(self, context: Context, feet: Vec3) -> Landing {
+        Landing {
+            body: self.owner.body,
+            identity: self.owner.identity,
+            character: context.character,
+            proxy: context.proxy,
+            epoch: context.epoch,
+            feet,
+        }
+    }
+}
+
 pub(super) struct State {
     pub(super) requests: [Option<Request>; 2],
     pub(super) grips: [Option<Grip>; 2],
@@ -254,7 +307,14 @@ pub(super) struct State {
     pub(super) climbing: bool,
     pub(super) mantle: Option<Mantle>,
     pub(super) mantle_steps: u32,
+    pub(super) mantle_frame: Option<MantleFrame>,
+    pub(super) player: Option<(usize, usize)>,
     pub(super) smoothed: Vec3,
+    pub(super) smoothed_carry: Vec3,
+    pub(super) motion_grips: [Option<Hold>; 2],
+    pub(super) input_at: Option<Instant>,
+    pub(super) input_held: [bool; 2],
+    pub(super) input_mode: Option<Mode>,
     /// The feet's height when the climb started.
     pub(super) start_feet_y: f32,
     /// The fling still carrying the body, if one is.
@@ -265,8 +325,6 @@ pub(super) struct State {
     pub(super) logged_at: Option<Instant>,
     /// Whether the game held the player in a stunt position on the last step.
     pub(super) held_by_game: bool,
-    /// The last mantle that landed on a moving body, and when.
-    pub(super) landing: Option<(Landing, Instant)>,
     pub(super) status: ClimbStatus,
 }
 
@@ -282,8 +340,9 @@ impl State {
     }
 
     /// The highest gripped surface that is a ledge's top ([`is_ledge`]).
-    pub(super) fn ledge_top(&self) -> Option<Vec3> {
-        self.ledge_grip().map(|g| g.hold.point)
+    pub(super) unsafe fn ledge_top(&self) -> Option<Vec3> {
+        let grip = self.ledge_grip()?;
+        Some(unsafe { grip.carried() }.map_or(grip.hold.point, |c| c.point))
     }
 
     /// The grip on the highest ledge's top.
@@ -340,13 +399,24 @@ impl State {
 
     /// Forget the climb once no hand grips.
     pub(super) fn finish_climb(&mut self) {
+        self.finish_climb_with(
+            Instant::now(),
+            crate::controllers::physical_hands::climb::native::finish_grips,
+        );
+    }
+
+    pub(super) fn finish_climb_with(&mut self, now: Instant, finish_grips: impl FnOnce(Instant)) {
         if self.climbing {
             tracing::info!("hand climbing: climbing ends");
         }
         self.climbing = false;
         self.mantle = None;
         self.mantle_steps = 0;
+        self.mantle_frame = None;
         self.smoothed = Vec3::ZERO;
+        self.smoothed_carry = Vec3::ZERO;
+        self.motion_grips = [None; 2];
+        finish_grips(now);
         self.status.climbing = false;
         self.status.mantling = false;
         self.status.velocity = Vec3::ZERO;
@@ -355,6 +425,9 @@ impl State {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
 
 pub(super) static STATE: Mutex<State> = Mutex::new(State {
     requests: [None; 2],
@@ -371,7 +444,14 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     climbing: false,
     mantle: None,
     mantle_steps: 0,
+    mantle_frame: None,
+    player: None,
     smoothed: Vec3::ZERO,
+    smoothed_carry: Vec3::ZERO,
+    motion_grips: [None; 2],
+    input_at: None,
+    input_held: [false; 2],
+    input_mode: None,
     start_feet_y: 0.0,
     carry: None,
     events: Vec::new(),
@@ -379,7 +459,6 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     warned_mode: false,
     logged_at: None,
     held_by_game: false,
-    landing: None,
     status: ClimbStatus {
         climbing: false,
         mantling: false,

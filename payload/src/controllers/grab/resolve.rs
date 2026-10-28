@@ -168,3 +168,29 @@ pub fn nearest_miss(
         })
         .min_by(|a, b| a.1.total_cmp(&b.1))
 }
+
+#[cfg(test)]
+mod vehicle_grip_tests {
+    use super::*;
+
+    #[test]
+    fn only_an_explicit_foregrip_target_outranks_the_climbing_fallback() {
+        let climb = Reach {
+            index: 0,
+            volume: GrabVolume::Climb,
+            distance: 0.01,
+            tier: Tier::of(GrabVolume::Climb),
+        };
+        assert_eq!(choose([climb]).map(|r| r.volume), Some(GrabVolume::Climb));
+        let foregrip = Reach {
+            index: 1,
+            volume: GrabVolume::Foregrip,
+            distance: 0.1,
+            tier: Tier::of(GrabVolume::Foregrip),
+        };
+        assert_eq!(
+            choose([climb, foregrip]).map(|r| r.volume),
+            Some(GrabVolume::Foregrip)
+        );
+    }
+}

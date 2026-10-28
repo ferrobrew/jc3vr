@@ -10,7 +10,7 @@ The owner and section assignments record reviewed source routing. They do not ex
 
 ## Reviewed removals
 
-`removals.json` records the intentional removal of the pin switch, pin radius, and trigger-to-pull-pin setting. Safe grenade items arm only on deliberate release, so those controls have no current target. The baseline and mapping remain unchanged. Each removal records the exact historical ID, reviewed path, kind, and token witness, plus its reason. The parity check requires that exact witness to remain absent. Tests freeze the removal file fingerprint and reject missing approval, changed evidence, and reintroduced controls. Other controls retain their existing target and consolidation requirements.
+`removals.json` records the intentional removal of the pin switch, pin radius, trigger-to-pull-pin setting, and physical-grip helicopter-hang switch, delay, and height controls. Physical vehicle grips retain their actual handhold, so automatic hang-entry tuning has no current behavior. Safe grenade items arm only on deliberate release, so those controls have no current target. The baseline and mapping remain unchanged. Each removal records the exact historical ID, reviewed path, kind, and token witness, plus its reason. The parity check requires that exact witness to remain absent. Tests freeze the removal file fingerprint and reject missing approval, changed evidence, and reintroduced controls. Other controls retain their existing target and consolidation requirements.
 
 ## Current witness v2 review
 

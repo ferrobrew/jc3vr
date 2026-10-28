@@ -1443,6 +1443,21 @@ impl Character {
             f(self as *mut Self as _)
         }
     }
+    pub const IsThisVehicleBelow_ADDRESS: usize = 0x1407D5C80;
+    /// Whether the ground-information vehicle flag is set and its weak ground object resolves
+    /// to exactly `vehicle`. A missing, expired, or different vehicle returns false.
+    pub unsafe fn IsThisVehicleBelow(
+        &self,
+        vehicle: *const crate::vehicle::vehicle::Vehicle,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                vehicle: *const crate::vehicle::vehicle::Vehicle,
+            ) -> bool = ::std::mem::transmute(Self::IsThisVehicleBelow_ADDRESS);
+            f(self as *const Self as _, vehicle)
+        }
+    }
     pub const IsInMountedGunState_ADDRESS: usize = 0x1407B0F60;
     /// Whether the character mans a mounted gun: the weapon in the
     /// [`E_SLOT_HEAVY`](crate::character::inventory::WeaponSlot::E_SLOT_HEAVY) slot is in its mounted weapon state.

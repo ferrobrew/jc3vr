@@ -19,5 +19,26 @@
     "kind": "Setting",
     "semantic": {"call": "checkbox ( & mut g . pin . trigger , \"The holding hand's trigger pulls the pin\" , )", "bindings": [], "effect": ""},
     "reason": "Safe grenade items arm on deliberate release; pin controls no longer exist."
+  },
+  {
+    "old_id": "payload/src/ui/controllers/stunt.rs::stunt_settings::Setting::8919ba87e7d9a9b6::1",
+    "path": "payload/src/ui/controllers/stunt.rs",
+    "kind": "Setting",
+    "semantic": {"call": "checkbox ( & mut c . enter_hang , \"Enter a helicopter's hang from a grip\" )", "bindings": [], "effect": ""},
+    "reason": "Physical vehicle grips keep their actual handhold and never request the animated helicopter hang."
+  },
+  {
+    "old_id": "payload/src/ui/controllers/stunt.rs::stunt_settings::Setting::b8008d4c0a040c22::1",
+    "path": "payload/src/ui/controllers/stunt.rs",
+    "kind": "Setting",
+    "semantic": {"call": "new ( & mut c . hang_hold_s , 0 . 0 . . = 2 . 0 )", "bindings": [], "effect": ""},
+    "reason": "Physical vehicle grips keep their actual handhold; there is no automatic hang-entry delay to tune."
+  },
+  {
+    "old_id": "payload/src/ui/controllers/stunt.rs::stunt_settings::Setting::441a6ee384189584::1",
+    "path": "payload/src/ui/controllers/stunt.rs",
+    "kind": "Setting",
+    "semantic": {"call": "new ( & mut c . hang_below_m , - 0 . 5 . . = 1 . 5 )", "bindings": [], "effect": ""},
+    "reason": "Physical vehicle grips keep their actual handhold; there is no automatic hang-entry height to tune."
   }
 ]

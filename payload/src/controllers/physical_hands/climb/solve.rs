@@ -122,6 +122,32 @@ pub fn fling(smoothed: Vec3, scale: f32, max_speed: f32) -> Vec3 {
     (smoothed * scale.max(0.0)).clamp_length_max(max_speed.max(0.0))
 }
 
+/// Filter total and carry together, resetting both when the contributing grip set changes.
+pub fn smooth_motion(
+    previous: (Vec3, Vec3),
+    current: (Vec3, Vec3),
+    changed: bool,
+    step_s: f32,
+    seconds: f32,
+) -> (Vec3, Vec3) {
+    if changed {
+        current
+    } else {
+        (
+            smooth(previous.0, current.0, step_s, seconds),
+            smooth(previous.1, current.1, step_s, seconds),
+        )
+    }
+}
+
+/// Keep inherited point velocity separate from the capped, scaled hand-generated release.
+pub fn release_velocity(total: Vec3, carry: Vec3, scale: f32, max_speed: f32) -> Vec3 {
+    if !(total.is_finite() && carry.is_finite()) {
+        return Vec3::ZERO;
+    }
+    carry + fling(total - carry, scale, max_speed)
+}
+
 /// The velocity a fling of `kept` carries `elapsed_s` seconds after the release: thrown, under
 /// `gravity_mps2`, so that the game's own air handling, whenever it takes over, finds the body
 /// moving as a throw would.
@@ -381,6 +407,58 @@ mod tests {
         }])
         .unwrap();
         assert!(away.z > 0.0);
+    }
+
+    #[test]
+    fn release_keeps_vehicle_speed_and_caps_only_relative_motion() {
+        let carry = Vec3::X * 60.0;
+        assert_eq!(
+            release_velocity(carry + Vec3::Y * 20.0, carry, 2.0, 8.0),
+            carry + Vec3::Y * 8.0
+        );
+        assert_eq!(release_velocity(carry, carry, 3.0, 8.0), carry);
+        assert_eq!(release_velocity(carry + Vec3::Y, carry, 0.0, 8.0), carry);
+    }
+
+    #[test]
+    fn moving_static_and_two_different_bodies_share_carry_without_last_hand_bias() {
+        assert_eq!(
+            carry_velocity([Vec3::X * 20.0, Vec3::ZERO], 100.0),
+            Vec3::X * 10.0
+        );
+        assert_eq!(
+            carry_velocity([Vec3::X * 20.0, Vec3::Z * 10.0], 100.0),
+            Vec3::new(10.0, 0.0, 5.0)
+        );
+        assert_eq!(carry_velocity([Vec3::ZERO], 100.0), Vec3::ZERO);
+        assert_eq!(
+            release_velocity(Vec3::Y * 2.0, Vec3::ZERO, 1.0, 8.0),
+            Vec3::Y * 2.0
+        );
+    }
+
+    #[test]
+    fn changing_the_grip_set_clears_old_carry_before_the_final_release() {
+        let previous = (Vec3::X * 30.0 + Vec3::Y, Vec3::X * 30.0);
+        let static_motion = (Vec3::Y * 2.0, Vec3::ZERO);
+        let now = smooth_motion(previous, static_motion, true, 0.03, 0.1);
+        assert_eq!(now, static_motion);
+        assert_eq!(release_velocity(now.0, now.1, 1.0, 8.0), Vec3::Y * 2.0);
+        let other_body = (Vec3::Z * 10.0 + Vec3::Y, Vec3::Z * 10.0);
+        assert_eq!(
+            smooth_motion(previous, other_body, true, 0.03, 0.1),
+            other_body
+        );
+    }
+
+    #[test]
+    fn identical_filters_separate_carry_from_relative_motion() {
+        let carry = Vec3::X * 30.0;
+        let relative = Vec3::Y * 3.0;
+        let total = smooth(Vec3::ZERO, carry + relative, 0.03, 0.1);
+        let inherited = smooth(Vec3::ZERO, carry, 0.03, 0.1);
+        let hand = smooth(Vec3::ZERO, relative, 0.03, 0.1);
+        assert!((total - inherited).abs_diff_eq(hand, 1e-5));
     }
 
     #[test]

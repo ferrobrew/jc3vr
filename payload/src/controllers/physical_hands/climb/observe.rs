@@ -59,6 +59,7 @@ pub(crate) unsafe fn reach(
                 normal: hit.normal,
                 body,
                 moving: !frame.is_static,
+                identity: unsafe { engine::body_identity(body) }?,
             })
         })
         .min_by(|a, b| {

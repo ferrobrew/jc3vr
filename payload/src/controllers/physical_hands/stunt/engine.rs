@@ -177,7 +177,14 @@ pub(super) unsafe fn enter(
 ) -> Result<Entry, StuntError> {
     let character =
         unsafe { Character::GetLocalPlayerCharacter().as_mut() }.ok_or(StuntError::NoPlayer)?;
-    if roof && unsafe { character.AutoAttachToStuntAreaOnVehicleBelow() } {
+    if roof && !unsafe { character.IsThisVehicleBelow(vehicle.get() as *const Vehicle) } {
+        return Err(StuntError::Refused);
+    }
+    if roof
+        && crate::controllers::physical_hands::climb::native::deliberate(character, || unsafe {
+            character.AutoAttachToStuntAreaOnVehicleBelow()
+        })
+    {
         return Ok(Entry::Below);
     }
     let position = Vector3::from(from);

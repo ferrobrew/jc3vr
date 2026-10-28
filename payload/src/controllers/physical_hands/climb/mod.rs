@@ -30,6 +30,8 @@
 
 pub mod config;
 pub mod engine;
+pub(crate) mod lifetime;
+pub(crate) mod native;
 mod observe;
 pub mod solve;
 mod state;

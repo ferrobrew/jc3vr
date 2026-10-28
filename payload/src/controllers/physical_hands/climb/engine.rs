@@ -14,13 +14,13 @@
 //! Every function here runs on the thread that steps the physics world, outside the step, except
 //! the reads marked otherwise.
 
-use std::fmt;
+use std::{fmt, ptr};
 
 use glam::{Affine3A, Mat4, Quat, Vec3, Vec3A};
 use jc3gi::{
     character::character::Character,
     havok::hkSimdFloat32,
-    physics::{PfxCharacterInstance, hknpBody, hknpCharacterSurfaceInfo, hknpWorld},
+    physics::{PfxCharacterInstance, PfxInstance, hknpBody, hknpCharacterSurfaceInfo, hknpWorld},
     types::vector_math::AlignedVector3,
 };
 
@@ -80,17 +80,95 @@ pub unsafe fn player_place() -> Result<PlayerPlace, ClimbEngineError> {
     Ok(PlayerPlace { body, feet })
 }
 
-/// Whether the body `body` is a static body of the world: one of the static world, which never
-/// moves.
+/// The live metadata of a reached body. Static world geometry may have no engine owner.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub struct BodyIdentity {
+    pub(crate) world: usize,
+    pub(crate) bodies: usize,
+    pub(crate) instance: usize,
+    pub(crate) owner: usize,
+    pub(crate) shape: usize,
+    pub(crate) motion: u32,
+    pub(crate) static_body: bool,
+    pub(crate) lifetime: u64,
+}
+
+/// The current identity of an added body, checked before reading its engine instance.
 ///
 /// # Safety
 ///
-/// The game thread, outside the physics step.
-pub unsafe fn is_static(body: u32) -> bool {
-    let Some(world) = (unsafe { World::get() }) else {
-        return false;
+/// Outside the physics step, while body creation and destruction are not running.
+pub unsafe fn body_identity(body: u32) -> Option<BodyIdentity> {
+    let world = unsafe { World::get() }?;
+    let world = world.world();
+    let slot = unsafe { slot(world, body) }?;
+    if slot.m_broadPhaseId == hknpBody::INVALID_BROAD_PHASE_ID || slot.m_shape.is_null() {
+        return None;
+    }
+    let buffer = unsafe {
+        world
+            .m_bodyProperties
+            .getWithDefault(hknpWorld::BODY_PROPERTY_PFX_INSTANCE, ptr::null_mut())
+            .as_ref()
+    }?;
+    if body >= buffer.m_capacity || buffer.m_occupancy.is_null() || buffer.m_data.is_null() {
+        return None;
+    }
+    let occupied =
+        unsafe { *buffer.m_occupancy.add((body / 32) as usize) } & (1 << (body % 32)) != 0;
+    if !occupied {
+        return None;
+    }
+    let instance = unsafe {
+        *buffer
+            .m_data
+            .cast::<*const PfxInstance>()
+            .add(body as usize)
     };
-    unsafe { slot(world.world(), body) }.is_some_and(|slot| slot.m_flags & hknpBody::IS_STATIC != 0)
+    let owner = unsafe { instance.as_ref() }?.m_GameObject as usize;
+    let static_body = slot.m_flags & hknpBody::IS_STATIC != 0;
+    if owner == 0 && !static_body {
+        return None;
+    }
+    Some(BodyIdentity {
+        world: ptr::from_ref(world) as usize,
+        bodies: world.m_bodies as usize,
+        instance: instance as usize,
+        owner,
+        shape: slot.m_shape as usize,
+        motion: slot.m_motionId,
+        static_body,
+        lifetime: crate::controllers::physical_hands::climb::lifetime::stamp(
+            ptr::from_ref(world) as usize,
+            body,
+        ),
+    })
+}
+
+/// Copy ownership only from the serialized input/pre-simulation boundary.
+///
+/// # Safety
+///
+/// The game thread outside the world update, or its pre-simulation callback before the step.
+pub(crate) unsafe fn gate_context()
+-> Option<crate::controllers::physical_hands::climb::native::Context> {
+    let character = unsafe { Character::GetLocalPlayerCharacter() };
+    let local = unsafe { character.as_ref() }?;
+    if !local.m_IsLocalCharacter || local.m_PfxCharacter.px.is_null() {
+        return None;
+    }
+    let world = unsafe { World::get() }?;
+    let world = world.world();
+    if world.m_bodies.is_null() {
+        return None;
+    }
+    Some(crate::controllers::physical_hands::climb::native::Context {
+        character: character as usize,
+        proxy: local.m_PfxCharacter.px as usize,
+        world: ptr::from_ref(world) as usize,
+        bodies: world.m_bodies as usize,
+        epoch: crate::controllers::roomscale::teleport::epoch(),
+    })
 }
 
 /// A body's place and motion, game space.
@@ -300,5 +378,32 @@ fn aligned(v: Vec3) -> AlignedVector3 {
     AlignedVector3 {
         data: v.to_array(),
         _w: 0.0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inherited_motion_uses_the_rotating_gripped_point() {
+        let frame = BodyFrame {
+            transform: Affine3A::IDENTITY,
+            is_static: false,
+            is_keyframed: false,
+            mass_kg: Some(1000.0),
+            centre: Vec3::ZERO,
+            linear: Vec3::X * 30.0,
+            angular: Vec3::Y * 2.0,
+        };
+        assert_eq!(frame.point_velocity(Vec3::Z * 3.0), Vec3::X * 36.0);
+        assert_eq!(
+            BodyFrame {
+                is_static: true,
+                ..frame
+            }
+            .point_velocity(Vec3::Z * 3.0),
+            Vec3::ZERO
+        );
     }
 }

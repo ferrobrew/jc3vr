@@ -56,12 +56,7 @@ pub(super) fn stunt_settings(ui: &mut Ui, c: &mut StuntConfig) {
         "Hold stunt positions with the grip (needs the hand climbing)",
     );
     ui.add_enabled_ui(c.enabled, |ui| {
-        ui.checkbox(&mut c.enter_hang, "Enter a helicopter's hang from a grip");
-        ui.add(egui::Slider::new(&mut c.hang_hold_s, 0.0..=2.0).text("Hold before the hang (s)"));
-        ui.add(
-            egui::Slider::new(&mut c.hang_below_m, -0.5..=1.5)
-                .text("Body below the grip to hang (m)"),
-        );
+        ui.label("Physical grips stay at the handhold; the normal grapple can still enter a hang.");
         ui.checkbox(&mut c.enter_roof, "Enter a roof's stunt area from a mantle");
         ui.add(
             egui::Slider::new(&mut c.roof_offer_m, 0.0..=2.0).text("Feet from the stunt area (m)"),

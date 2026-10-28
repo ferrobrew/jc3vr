@@ -1,6 +1,6 @@
-//! Stunt positions held by the player's grip: a helicopter gripped with the body hanging below
-//! the grip takes the player into its hang, a mantle onto a vehicle's roof takes the player into
-//! its stunt area, and in the hang, letting go of every grip lets go of the helicopter. Standing
+//! Deliberate roof-mantle handoff and grip input in the game's existing helicopter hang.
+//! Physical grips remain at their actual points through the moving climb. A completed mantle
+//! can enter the same vehicle's stunt area, while the normal grapple still enters a hang. Standing
 //! on a roof needs no grip. The design is in `docs/mod/input/stunt-positions.md`, the engine side
 //! in `docs/engine/gameplay/stunt-positions.md`.
 //!
@@ -116,6 +116,7 @@ pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
         .then(|| unsafe { engine::position() })
         .flatten();
     let Some(read) = read else {
+        climb::native::reject_landing();
         HOLDS.store(false, Ordering::Release);
         state.tracker = Tracker::new();
         state.observe_position(None);
@@ -131,7 +132,9 @@ pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
     let body = unsafe { player_place() }.ok().map(|place| place.body);
     // SAFETY: as above; the grips were taken on bodies of the live world.
     let helicopters = gripped.map(|grip| unsafe { helicopter_grip(grip?, body?) });
-    let landing = climb::take_landing().map(|landing| {
+    let landing_offer = climb::take_landing();
+    let landing = landing_offer.as_ref().map(|offer| {
+        let landing = offer.landing;
         // SAFETY: as above.
         let vehicle = unsafe { engine::vehicle_of(landing.body) };
         // SAFETY: as above; the vehicle owns a body of the live world.
@@ -142,7 +145,8 @@ pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
     let tick = Tick {
         position: read.kind,
         held,
-        helicopter_grips: helicopters.map(|h| h.map(|h| h.below_m)),
+        // Physical grips keep their actual point instead of entering the native animated hang.
+        helicopter_grips: [None; 2],
         roof_landing: landing.map(|(_, _, distance)| distance),
         dt,
     };
@@ -264,6 +268,9 @@ unsafe fn helicopter_grip(grip: climb::Hold, body: Vec3) -> Option<HelicopterGri
     if !grip.moving {
         return None;
     }
+    if !unsafe { grip.valid() } {
+        return None;
+    }
     let vehicle = unsafe { engine::vehicle_of(grip.body) }?;
     unsafe { engine::is_helicopter(vehicle) }.then_some(HelicopterGrip {
         vehicle,
@@ -274,7 +281,7 @@ unsafe fn helicopter_grip(grip: climb::Hold, body: Vec3) -> Option<HelicopterGri
 
 fn tuning(config: &StuntConfig) -> Tuning {
     Tuning {
-        enter_hang: config.enter_hang,
+        enter_hang: false,
         hang_hold_s: config.hang_hold_s,
         hang_below_m: config.hang_below_m,
         enter_roof: config.enter_roof,
@@ -366,6 +373,13 @@ static STATE: Mutex<State> = Mutex::new(State {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn production_tuning_never_turns_a_physical_grip_into_an_animated_hang() {
+        let mut config = StuntConfig::new();
+        config.enter_hang = true;
+        assert!(!tuning(&config).enter_hang);
+    }
 
     #[test]
     fn the_hold_pulse_follows_the_vehicles_speed() {

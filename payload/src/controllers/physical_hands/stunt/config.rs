@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 pub struct StuntConfig {
     /// Hold stunt positions with the grip.
     pub enabled: bool,
-    /// Enter a helicopter's hang when a hand grips it and the body hangs below the grip.
+    /// Legacy saved setting. Physical grips never request the animated helicopter hang.
     pub enter_hang: bool,
     /// How long a grip on a helicopter must hold, with the body hanging below it, before the hang
     /// is entered, seconds: a brief grab while climbing past does not.
@@ -41,7 +41,7 @@ impl StuntConfig {
     pub const fn new() -> Self {
         Self {
             enabled: true,
-            enter_hang: true,
+            enter_hang: false,
             hang_hold_s: 0.3,
             hang_below_m: 0.3,
             enter_roof: true,

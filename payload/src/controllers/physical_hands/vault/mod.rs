@@ -411,6 +411,7 @@ mod tests {
             normal,
             body: 7,
             moving: false,
+            identity: Default::default(),
         }
     }
 

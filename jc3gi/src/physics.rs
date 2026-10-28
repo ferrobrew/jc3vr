@@ -2455,6 +2455,26 @@ impl hknpWorld {
             f(self as *mut Self as _, body, flags, rebuild_mode)
         }
     }
+    pub const destroyBodies_ADDRESS: usize = 0x1414EA080;
+    /// Removes the bodies from the simulation, notifies the world's body-destroyed listeners,
+    /// detaches their motions, releases their shape references, and schedules their slots for
+    /// deletion. `activation_mode` is forwarded to the removal of the bodies.
+    pub unsafe fn destroyBodies(
+        &mut self,
+        ids: *const u32,
+        count: i32,
+        activation_mode: i32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                ids: *const u32,
+                count: i32,
+                activation_mode: i32,
+            ) = ::std::mem::transmute(Self::destroyBodies_ADDRESS);
+            f(self as *mut Self as _, ids, count, activation_mode)
+        }
+    }
     pub const createConstraint_ADDRESS: usize = 0x1414E7200;
     /// Creates a constraint from `cinfo`, writes its id to `out`, and returns `out`. A constraint
     /// whose two bodies are the same, or whose data is of a type the world does not support, is

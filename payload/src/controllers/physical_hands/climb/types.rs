@@ -3,6 +3,8 @@
 
 use glam::{Quat, Vec3};
 
+use crate::controllers::physical_hands::climb::engine::{self, BodyIdentity};
+
 /// A surface a hand can grip: the static world, or with [`ClimbConfig::moving`], a moving body.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Hold {
@@ -14,6 +16,19 @@ pub struct Hold {
     pub body: u32,
     /// Whether the body moves, keyframed or dynamic, rather than being of the static world.
     pub moving: bool,
+    /// The live world, body, and engine instance that supplied the surface.
+    pub identity: BodyIdentity,
+}
+
+impl Hold {
+    /// Whether the surface still belongs to the body reached.
+    ///
+    /// # Safety
+    ///
+    /// Outside the physics step, while bodies are not being created or destroyed.
+    pub(crate) unsafe fn valid(self) -> bool {
+        (unsafe { engine::body_identity(self.body) }) == Some(self.identity)
+    }
 }
 
 /// One hand's climbing on the last tick, for the readout.
@@ -59,6 +74,11 @@ pub struct ClimbStatus {
 pub(crate) struct Landing {
     /// The body whose ledge the mantle carried the player over.
     pub body: u32,
+    /// The body and owner that completed the mantle.
+    pub identity: BodyIdentity,
+    pub character: usize,
+    pub proxy: usize,
+    pub epoch: u64,
     /// Where the feet landed, game space.
     pub feet: Vec3,
 }

@@ -209,11 +209,11 @@ fn pin_control_removal_requires_exact_review_and_absent_targets() {
     let (baseline, mapping) = fixtures();
     let sources: Vec<_> = source_files().copied().collect();
     let removals: Vec<Removal> = serde_json::from_str(include_str!("removals.json")).unwrap();
-    assert_eq!(removals.len(), 3);
+    assert_eq!(removals.len(), 6);
     assert!(parity_with_removals(&baseline, &mapping, &sources, &removals).is_empty());
     assert_eq!(
         parity_with_removals(&baseline, &mapping, &sources, &[]).len(),
-        3
+        6
     );
     for removal in &removals {
         let mut changed = removals.clone();
@@ -235,12 +235,23 @@ fn pin_control_removal_requires_exact_review_and_absent_targets() {
             id if id.contains("03ca934241cd7f19") => {
                 "fn restored() { ui.add(egui::Slider::new(&mut g.pin.radius_m, 0.02..=0.2)); }"
             }
-            _ => {
+            id if id.contains("36048d254e87b574") => {
                 "fn restored() { ui.checkbox(&mut g.pin.trigger, \"The holding hand's trigger pulls the pin\",); }"
             }
+            id if id.contains("8919ba87e7d9a9b6") => {
+                "fn restored() { ui.checkbox(&mut c.enter_hang, \"Enter a helicopter's hang from a grip\"); }"
+            }
+            id if id.contains("b8008d4c0a040c22") => {
+                "fn restored() { ui.add(egui::Slider::new(&mut c.hang_hold_s, 0.0..=2.0)); }"
+            }
+            _ => "fn restored() { ui.add(egui::Slider::new(&mut c.hang_below_m, -0.5..=1.5)); }",
         };
         let source = SourceFile {
-            path: "payload/src/ui/controllers/weapons.rs",
+            path: if removal.path.ends_with("stunt.rs") {
+                "payload/src/ui/controllers/stunt.rs"
+            } else {
+                "payload/src/ui/controllers/weapons.rs"
+            },
             text: restored,
             surface: Surface::Debug,
             destinations: &[],
@@ -506,7 +517,7 @@ fn extra_matching_current_owner_is_not_silently_selected() {
 const ORIGINAL: &str = "fn old() { let c = &mut cfg.controllers; ui.checkbox(&mut c.enabled, \"Enabled\"); if ui.button(\"Capture\").clicked() { sink::capture(); } }";
 const BASELINE_FINGERPRINT: u64 = 0x9b6099490bea7ce7;
 const MAPPING_FINGERPRINT: u64 = 0x1fe287119a34c0d6;
-const REMOVALS_FINGERPRINT: u64 = 0xb7b5d19596694f6d;
+const REMOVALS_FINGERPRINT: u64 = 0x5b07d08c09276dab;
 
 fn source(text: &'static str) -> SourceFile {
     SourceFile {

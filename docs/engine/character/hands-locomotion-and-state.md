@@ -268,7 +268,7 @@ The character's update passes are registered in the game world's update queues b
 3. the pre-simulation callbacks run, then the step;
 4. the post-physics pass and the next tick's state machines read the support found in 2.
 
-A support or a velocity written by a pre-simulation callback is therefore the one the step and every reader until the next proxy update see.
+A support or a velocity written by a pre-simulation callback is therefore the one the step and every reader until the next proxy update see. `PfxCharacterInstance::UpdateContext` refreshes support before deriving inherited surface velocity and running the Havok context. A later velocity write replaces the context output; the surface velocity written beside it is not added to that output again during the same step. The next proxy update refreshes support before consuming surface velocity again. The physics-update wrapper is mislabeled `IsStillAlive` in the disassembler; its body calls `PhysicsSystem::Update`, dispatches queued collisions, and processes damage events.
 
 #### Who reads it
 

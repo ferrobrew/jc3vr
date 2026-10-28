@@ -1,37 +1,25 @@
-# Template: fill testing/recordings/stunt_positions.jc3trk, then run. See docs/mod/input/stunt-positions.md and docs/mod/testing/recorder.md.
-name = "hang from a helicopter by the grip, let go, and ride a roof"
-description = "Recorded with HOLD STUNT POSITIONS, CLIMB WITH THE HANDS, and CLIMB MOVING THINGS on, empty-handed (stunt-positions.md, checklist items 1 to 6). Climb onto a parked helicopter's skid and hang from it with both grips held until the hang starts, have it lift off and hold on for a few seconds, then open both grips over water. Then grip a parked car's side, climb it, and mantle onto its roof, and stand there with the hands free for a few seconds."
+# Template: record the physical skid grip, a normal grapple hang, and a deliberate roof mantle.
+name = "keep a physical vehicle grip and deliberately enter a roof stunt"
+description = "With moving climbing enabled, grip a helicopter skid while it moves, use a gun in the free hand, and release without entering an animated hang. Separately enter the normal grapple hang and leave through the game controls. Climb a moving car and complete a deliberate mantle onto its roof, then ride with the hands free. See docs/mod/input/stunt-positions.md for destruction, mixed-body, and momentum checks."
 recording = "../recordings/stunt_positions.jc3trk"
 settle_s = 3.0
 
 [[expect]]
-name = "the grip entered the helicopter's hang"
+name = "physical grips do not request the animated helicopter hang"
 signal = "stunt.hang_entries"
+at_most = 0
 
 [[expect]]
-log = "stunt positions: the grip took the player into the helicopter's hang"
-
-[[expect]]
+name = "the normal grapple hang remains available"
 signal = "stunt.hanging"
 
 [[expect]]
-name = "opening the grips let go"
-signal = "stunt.releases"
+name = "the deliberate mantle entered a roof stunt"
+signal = "stunt.roof_entries"
 
 [[expect]]
-name = "the game did not keep the hang after the let-go"
-log = "the game kept the player in the hang"
-at_most = 0
-
-[[expect]]
-name = "the mantle entered the roof's stunt area"
 signal = "stunt.standing"
 
 [[expect]]
-name = "the torso is on the stunt idle's hips on the roof"
+name = "the torso uses the roof idle hips"
 signal = "procedural.roof"
-
-[[expect]]
-name = "the game refused no entry"
-signal = "stunt.refusals"
-at_most = 0

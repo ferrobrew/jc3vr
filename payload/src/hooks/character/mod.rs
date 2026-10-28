@@ -44,6 +44,7 @@ pub(crate) mod layers;
 pub(crate) mod magazine;
 pub(crate) mod modifiers;
 pub(crate) mod signals;
+mod stunt;
 pub(crate) mod wielded;
 
 pub(crate) use acts::resolve_act_id;
@@ -61,6 +62,7 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_hook_library(magazine::hook_library())
         .with_hook_library(modifiers::hook_library())
         .with_hook_library(signals::hook_library())
+        .with_hook_library(stunt::hook_library())
         .with_hook_library(wielded::hook_library())
 }
 

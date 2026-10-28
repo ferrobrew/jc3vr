@@ -286,6 +286,7 @@ static RENDER_OFFSETS: Mutex<Option<(Instant, [Option<RenderOffset>; 2])>> = Mut
 ///
 /// The game thread, outside the game's update.
 unsafe fn shutdown() {
+    crate::controllers::physical_hands::climb::native::clear();
     // SAFETY: shutdown runs outside the world update before hooks are removed.
     unsafe { crate::controllers::physical_hands::impacts::clear() };
     unsafe { callback::unregister() };
