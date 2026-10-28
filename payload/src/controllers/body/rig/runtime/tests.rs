@@ -1,13 +1,20 @@
 mod terrain;
 
 use super::*;
-use crate::controllers::body::{
-    procedural::{
-        rig::{ArmRig, RigBone},
-        skeleton::Transform,
-        solver::{constrained::realize, pose::RigPose},
+use crate::controllers::{
+    body::{
+        procedural::{
+            rig::{ArmRig, RigBone},
+            skeleton::Transform,
+            solver::{constrained::realize, pose::RigPose},
+        },
+        rig::{
+            estimate::{ContactState, MAX_COMPUTED_EVALUATIONS},
+            live_observation::{LocatedTracking, make_raw_packet},
+            origin_provenance::{OriginEvidence, OriginUnavailable},
+        },
     },
-    rig::estimate::{ContactState, MAX_COMPUTED_EVALUATIONS},
+    frame::{ActionSetKind, ControllerFrame, HandFrame},
 };
 
 fn rig() -> Rig {
@@ -114,6 +121,65 @@ fn committed_fit_reaches_the_pose_consumer_and_both_consumers_share_the_step() {
     let velocity = runtime.take_root(now, 1.0 / 30.0, Mat4::IDENTITY, true);
     assert!(velocity.x > 0.0 && velocity.length() <= 1.5);
     assert_eq!(runtime.consumed, fit.provenance.current.step);
+    assert_eq!(
+        runtime.take_root(now, 1.0 / 30.0, Mat4::IDENTITY, true),
+        Vec2::ZERO
+    );
+}
+
+#[test]
+fn sampler_flags_with_finite_head_withdraw_pose_and_root() {
+    let rig = rig();
+    let now = Instant::now();
+    let mut runtime = Runtime::default();
+    assert!(
+        runtime
+            .commit(Some(tracking(now, 1)), input(&rig, now))
+            .is_some()
+    );
+    let controllers = ControllerFrame {
+        sequence: 2,
+        display_time_ns: 2,
+        published_at: now,
+        focused: true,
+        action_set: ActionSetKind::OnFoot,
+        hands: std::array::from_fn(|_| HandFrame {
+            active: true,
+            grip: tracking(now, 2).head,
+            ..HandFrame::default()
+        }),
+    };
+    let located = LocatedTracking {
+        head: openxr::Posef::IDENTITY,
+        flags: openxr::ViewStateFlags::EMPTY,
+        display_time_ns: 2,
+        cockpit_from_local: openxr::Posef::IDENTITY,
+        origin: OriginEvidence::Unavailable(OriginUnavailable::SourceAbsent),
+    };
+    for flags in [
+        openxr::ViewStateFlags::EMPTY,
+        openxr::ViewStateFlags::POSITION_VALID,
+        openxr::ViewStateFlags::ORIENTATION_VALID,
+    ] {
+        let raw = make_raw_packet(
+            Some(LocatedTracking { flags, ..located }),
+            Some(controllers.clone()),
+        )
+        .unwrap();
+        assert!(raw.head.pose.position.is_finite());
+        assert!(!(raw.head.position_valid && raw.head.orientation_valid));
+        assert!(raw.grips.iter().all(Option::is_some));
+        assert!(
+            runtime
+                .commit(Some(Tracking::from(raw)), input(&rig, now))
+                .is_none()
+        );
+    }
+    assert!(runtime.accepted.is_none());
+    assert!(matches!(
+        runtime.status.fallback,
+        Some(Fallback::Rejected(_))
+    ));
     assert_eq!(
         runtime.take_root(now, 1.0 / 30.0, Mat4::IDENTITY, true),
         Vec2::ZERO

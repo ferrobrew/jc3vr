@@ -209,16 +209,9 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
                         camera.m_Projection = vr.projection_reverse_z;
                         camera.m_ProjectionF = vr.projection_reverse_z;
                     }
-                    let delta = vr.world_offset;
-                    let mut transform = glam::Mat4::from(camera.m_TransformF);
-                    transform.w_axis += delta.extend(0.0);
-                    // Rotate the camera basis to this eye's orientation (display canting) about the
-                    // now-offset eye position. m_TransformF is a column-vector world transform (its
-                    // columns are the basis vectors), so a head-local rotation composes on the right
-                    // and leaves the translation column -- the eye position just written -- intact.
-                    // Identity for parallel-panel HMDs; corrects the Valve Index's ~5°/eye cant,
-                    // without which the two eyes are rotationally mismatched and will not fuse.
-                    let transform = transform * glam::Mat4::from_quat(vr.orientation_delta);
+                    let center = glam::Mat4::from(camera.m_TransformF);
+                    let delta = vr.world_offset(center);
+                    let transform = vr.resolve(center);
                     camera.m_TransformF = Matrix4::from(transform);
                     // Re-derive m_View = inverse(m_TransformF); the engine's data reads straight into
                     // glam's column-major matrix (see the Matrix4 glam bridge), so the inverse is

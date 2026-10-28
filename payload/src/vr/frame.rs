@@ -1,5 +1,5 @@
 //! Per-rendered-frame VR wiring: turn the located views into the headpose the camera follows and
-//! the per-eye render parameters (off-axis projection + world-space eye offset) the
+//! the per-eye render parameters (off-axis projection and head-local eye displacement) the
 //! `SetupRenderCamera` hook applies.
 //!
 //! This is the bridge between [`crate::vr`]'s frame API (which holds the OpenXR runtime lock for the
@@ -35,10 +35,8 @@ pub struct EyeRenderParams {
     /// The reverse-Z off-axis projection, to write *after* `SetupRenderCamera` under
     /// [`ProjectionConvention::ManualReverseZ`].
     pub projection_reverse_z: Matrix4,
-    /// The world-space offset of this eye from the center head pose (the true per-eye delta from
-    /// `locate_views`, transformed through the cockpit→body→world chain), to add to the render
-    /// camera's `m_TransformF` translation.
-    pub world_offset: Vec3,
+    /// The eye displacement in the located center head's axes, scaled to game units.
+    pub local_offset: Vec3,
     /// This eye's orientation relative to the center head pose (the display canting from
     /// `locate_views`), as a head-local rotation. The camera hook applies it to the render camera's
     /// basis, about the already-offset eye position, so the rendered content matches the per-eye pose
@@ -47,6 +45,19 @@ pub struct EyeRenderParams {
     pub orientation_delta: Quat,
     /// Which depth convention to write the projection in.
     pub convention: ProjectionConvention,
+}
+
+impl EyeRenderParams {
+    /// Resolve displacement and cant from the final selected, interpolated center camera.
+    pub fn resolve(self, center: glam::Mat4) -> glam::Mat4 {
+        let mut eye = center;
+        eye.w_axis += self.world_offset(center).extend(0.0);
+        eye * glam::Mat4::from_quat(self.orientation_delta)
+    }
+
+    pub fn world_offset(self, center: glam::Mat4) -> Vec3 {
+        center.transform_vector3(self.local_offset)
+    }
 }
 
 /// The per-eye render parameters for the frame in flight, or `None` when no VR frame is rendering
@@ -233,11 +244,6 @@ fn render_frame(
     // camera outside gameplay (loading screens, teleports) — keeping head-tracking through the
     // transition without pinning the camera to the body (issue #27).
     headpose::xr::set_cockpit_pose(center_position, center_orientation);
-    // The player's torso, estimated from this cockpit pose and the controllers sampled with it.
-    crate::controllers::body::rig::frame_tick(crate::controllers::frame::Pose {
-        position: center_position,
-        orientation: center_orientation,
-    });
 
     // The posture's head height and the roomscale cockpit shift. The per-eye offsets below stay
     // relative to the located centre, so they are untouched by either.
@@ -353,10 +359,8 @@ fn render_frame(
         EyeRenderParams {
             projection_standard: projection.standard_depth,
             projection_reverse_z: projection.reverse_z,
-            // The eye's offset from the center head pose, in the cockpit frame, rotated into world
-            // space by the body frame -- the true per-eye parallax delta, replacing the synthetic
-            // ±IPD/2 lateral offset.
-            world_offset: body_rotation * ((eye_position - center_position) * cfg.world_scale),
+            local_offset: center_orientation.inverse()
+                * ((eye_position - center_position) * cfg.world_scale),
             // The eye's orientation relative to the center head pose, in the head-local frame -- the
             // display canting. `center_orientation` is the slerp-mid, so each eye carries half the
             // inter-eye cant (symmetric); the camera hook applies it locally so each eye renders at the
@@ -374,10 +378,8 @@ fn render_frame(
     };
 
     // Under the full-camera freeze the render camera itself is pinned in world space (see the
-    // `SetupRenderCamera` hook), so the per-eye parameters must be pinned with it: `world_offset`
-    // carries the live body rotation and the live eye-to-centre delta, and letting those keep moving
-    // would swing each eye by up to the IPD around the frozen centre -- exactly the residual motion
-    // the mode exists to remove. Captured on the first frozen frame and reused until the mode leaves.
+    // `SetupRenderCamera` hook), so the head-local eye geometry is pinned with it. Otherwise live
+    // changes in the located eye pair would move the eyes around the frozen center.
     let params = {
         let mut frozen_params = FROZEN_EYE_PARAMS.lock();
         if cfg.freeze_mode == FreezeMode::FullCamera {
@@ -447,6 +449,45 @@ fn symmetric_projection(fov: openxr::Fovf, near: f32, far: f32) -> OffAxisProjec
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn final_center_transports_authored_rotation_and_interpolation_without_doubling_hmd_roll() {
+        let hmd = Quat::from_rotation_z(0.4) * Quat::from_rotation_x(-0.2);
+        let body = Quat::from_rotation_y(0.7);
+        let authored0 = Quat::from_rotation_x(0.3);
+        let authored1 = Quat::from_rotation_z(-0.6);
+        let local = Vec3::new(0.032, 0.002, -0.003);
+        let sampled = hmd * local;
+        let cant = Quat::from_rotation_y(0.08);
+        let params = EyeRenderParams {
+            projection_standard: glam::Mat4::IDENTITY.into(),
+            projection_reverse_z: glam::Mat4::IDENTITY.into(),
+            local_offset: hmd.inverse() * sampled,
+            orientation_delta: cant,
+            convention: ProjectionConvention::ManualReverseZ,
+        };
+        for alpha in [0.0, 0.3, 1.0] {
+            let rotation = (body * authored0 * hmd).slerp(body * authored1 * hmd, alpha);
+            let position = Vec3::new(10.0, 2.0, -3.0).lerp(Vec3::new(11.0, 2.1, -4.0), alpha);
+            let center = glam::Mat4::from_rotation_translation(rotation, position);
+            let eye = params.resolve(center);
+            assert!(
+                eye.w_axis
+                    .truncate()
+                    .abs_diff_eq(position + rotation * local, 1.0e-5)
+            );
+            assert!(
+                eye.transform_vector3(Vec3::NEG_Z)
+                    .abs_diff_eq(rotation * cant * Vec3::NEG_Z, 1.0e-5)
+            );
+        }
+        let ordinary = glam::Mat4::from_quat(body * hmd);
+        assert!(
+            params
+                .world_offset(ordinary)
+                .abs_diff_eq(body * sampled, 1.0e-6)
+        );
+    }
 
     #[test]
     fn rendered_hmd_replay_and_desktop_replay_cannot_publish_live_composition() {

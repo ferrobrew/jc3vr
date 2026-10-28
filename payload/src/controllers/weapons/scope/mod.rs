@@ -517,21 +517,18 @@ fn chosen(plans: &[Option<Plan>; 2]) -> Option<Hand> {
 /// Both eyes' world positions this frame: the centre camera moved by each eye's offset. `None`
 /// for an eye without a VR frame's render parameters.
 fn eye_positions() -> [Option<Vec3>; 2] {
-    let Some((head, _)) = crate::hud::render_camera_pose() else {
+    let Some((head, orientation)) = crate::hud::render_camera_pose() else {
         return [None; 2];
     };
-    [0, 1].map(|eye| crate::vr::render_params(eye).map(|p| head + p.world_offset))
+    let center = Mat4::from_rotation_translation(orientation, head);
+    [0, 1].map(|eye| crate::vr::render_params(eye).map(|p| p.resolve(center).w_axis.truncate()))
 }
 
 /// An eye's camera under the collapse, which keeps the render camera centred.
 fn collapse_camera(eye: usize) -> Option<EyeCamera> {
     let center = STEREO_STATE.lock().center_transform?;
     let params = crate::vr::render_params(eye)?;
-    let eye_world = view::collapse_eye_world(
-        Mat4::from(center),
-        params.world_offset,
-        params.orientation_delta,
-    );
+    let eye_world = params.resolve(Mat4::from(center));
     Some(camera_of(&EyeView::from_eye_world(
         eye_world,
         Mat4::from(params.projection_reverse_z),

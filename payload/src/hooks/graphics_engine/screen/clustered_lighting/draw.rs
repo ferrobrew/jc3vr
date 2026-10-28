@@ -190,7 +190,17 @@ fn run_draw_clustered(
                     grid.exact_y,
                     eye,
                 ),
-                light_view_offset: request.light_view.then_some(params.world_offset),
+                light_view_offset: request
+                    .light_view
+                    .then(|| {
+                        crate::hud::render_camera_pose().map(|(position, orientation)| {
+                            params.world_offset(glam::Mat4::from_rotation_translation(
+                                orientation,
+                                position,
+                            ))
+                        })
+                    })
+                    .flatten(),
                 binds: 0,
                 viewport_pinned: false,
                 saved_viewport: None,

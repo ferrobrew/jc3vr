@@ -20,6 +20,7 @@ use crate::{
                 self, CompletionSnapshot, CompletionSnapshotAvailability, CompletionToken,
                 CompletionUnavailable, FrameSourceSnapshot, MovementCompletion,
             },
+            runtime,
         },
         frame::{ControllerFrame, Pose, TrackedPose},
         roomscale::teleport,
@@ -29,6 +30,7 @@ use crate::{
 
 /// The head located before replay replacement, with the exact transform used to rebase grips.
 /// `cockpit_from_local` is a transform value, not a complete origin-generation identity.
+#[derive(Clone, Copy)]
 pub(crate) struct LocatedTracking {
     pub head: xr::Posef,
     pub flags: xr::ViewStateFlags,
@@ -289,11 +291,13 @@ pub(crate) fn publish_tracking(
     located: Option<LocatedTracking>,
     controllers: Option<ControllerFrame>,
 ) {
+    runtime::frame_tick(make_raw_packet(located, controllers.clone()).ok());
     SLOT.lock().publish_tracking(located, controllers);
 }
 
 /// Clear tracking before acquisition, including every early return and locate failure.
 pub(crate) fn tracking_unavailable() {
+    runtime::frame_tick(None);
     SLOT.lock().raw = Err(Unavailable::NoLiveTracking);
 }
 
@@ -656,7 +660,7 @@ fn read_completion(
     CompletionObservation::observed(completion, age)
 }
 
-fn make_raw_packet(
+pub(crate) fn make_raw_packet(
     located: Option<LocatedTracking>,
     controllers: Option<ControllerFrame>,
 ) -> Result<RawPacket, Unavailable> {

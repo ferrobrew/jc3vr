@@ -115,7 +115,7 @@ fn write_meye(rows: &mut [Vector4; STEREO_CB_TOTAL_ROWS], eye: usize, m_eye: gla
 ///
 /// Per eye: offset the center world transform by the eye parallax + orientation delta, invert to a
 /// view, zero its translation for the camera-relative OffsetVP, multiply by the reverse-Z eye
-/// projection, and pair it with the eye's camera world position (`center campos + world_offset`).
+/// projection, and pair it with the eye's camera position resolved from the final center.
 /// The engine `Matrix4` <-> `glam::Mat4` bridge is a transpose, so the math is done in glam
 /// column-vector form and converted back once (see the `Matrix4` doc-comment).
 fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TOTAL_ROWS]> {
@@ -149,9 +149,8 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
     for eye in 0..2 {
         let params = render_params(eye)?;
 
-        let mut eye_world = center_world;
-        eye_world.w_axis += params.world_offset.extend(0.0);
-        let eye_world = eye_world * glam::Mat4::from_quat(params.orientation_delta);
+        let eye_world = params.resolve(center_world);
+        let world_offset = params.world_offset(center_world);
         // Camera forward is -Z of the world transform; kept for the divergence diagnostic below.
         forwards[eye] = (-eye_world.z_axis.truncate()).normalize_or_zero();
 
@@ -172,9 +171,9 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
             };
         }
         let eye_campos = glam::Vec3::new(
-            center_campos.data[0] + params.world_offset.x,
-            center_campos.data[1] + params.world_offset.y,
-            center_campos.data[2] + params.world_offset.z,
+            center_campos.data[0] + world_offset.x,
+            center_campos.data[1] + world_offset.y,
+            center_campos.data[2] + world_offset.z,
         );
         rows[eye * 5 + 4] = Vector4 {
             data: [
@@ -215,7 +214,7 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
             m
         };
         let eye_diag = |p: &crate::vr::EyeRenderParams, i: usize| EyeDiagnostics {
-            world_offset: p.world_offset.to_array(),
+            world_offset: p.world_offset(center_world).to_array(),
             orientation_delta_quat: p.orientation_delta.to_array(),
             orientation_delta_deg: p.orientation_delta.to_axis_angle().1.to_degrees(),
             forward: forwards[i].to_array(),
@@ -262,8 +261,8 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
             tracing::info!(
                 target: "single_pass",
                 "cb13 eyes: fwd divergence={diverge:.2}deg | eye0 delta={:.2}deg off={:.4?} | eye1 delta={:.2}deg off={:.4?} | M_eye dev eye0={:.4} eye1={:.4}",
-                p0.orientation_delta.to_axis_angle().1.to_degrees(), p0.world_offset,
-                p1.orientation_delta.to_axis_angle().1.to_degrees(), p1.world_offset,
+                p0.orientation_delta.to_axis_angle().1.to_degrees(), p0.world_offset(center_world),
+                p1.orientation_delta.to_axis_angle().1.to_degrees(), p1.world_offset(center_world),
                 meye_dev(MEYE_ROW_BASE), meye_dev(MEYE_ROW_BASE + 4),
             );
         }

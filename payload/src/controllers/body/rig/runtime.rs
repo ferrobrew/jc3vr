@@ -9,7 +9,7 @@ use glam::{Mat4, Quat, Vec2, Vec3};
 use parking_lot::Mutex;
 
 #[cfg(test)]
-use crate::controllers::body::rig::estimate::MissingTerrain;
+use crate::controllers::{body::rig::estimate::MissingTerrain, frame::Pose};
 use crate::controllers::{
     body::{
         BodyDimensions,
@@ -27,7 +27,7 @@ use crate::controllers::{
             torso::{TorsoEstimate, wrap, yaw_of},
         },
     },
-    frame::{ControllerFrame, Hand, Pose, TrackedPose},
+    frame::TrackedPose,
 };
 
 /// Why inferred body authority is absent on the latest simulation update.
@@ -69,25 +69,23 @@ pub(crate) struct GateInput<'a> {
 }
 
 /// Retain the frame's copied head and controller sample for the next simulation correction.
-pub(crate) fn frame_tick(head: Pose, frame: Option<&ControllerFrame>) {
-    let packet = frame.map(|frame| Tracking {
-        head: TrackedPose {
-            pose: head,
-            position_valid: head.position.is_finite(),
-            orientation_valid: head.orientation.is_finite()
-                && (head.orientation.length_squared() - 1.0).abs() < 1.0e-3,
-            ..TrackedPose::default()
-        },
-        grips: Hand::BOTH.map(|hand| {
-            let hand = frame.hand(hand);
-            hand.active.then_some(hand.grip)
-        }),
-        sequence: frame.sequence,
-        display_time_ns: frame.display_time_ns,
-        published_at: frame.published_at,
-        focused: frame.focused,
-    });
-    *TRACKING.lock() = packet;
+pub(crate) fn frame_tick(
+    packet: Option<crate::controllers::body::rig::live_observation::RawPacket>,
+) {
+    *TRACKING.lock() = packet.map(Tracking::from);
+}
+
+impl From<crate::controllers::body::rig::live_observation::RawPacket> for Tracking {
+    fn from(packet: crate::controllers::body::rig::live_observation::RawPacket) -> Self {
+        Self {
+            head: packet.head,
+            grips: packet.grips,
+            sequence: packet.sequence,
+            display_time_ns: packet.display_time_ns,
+            published_at: packet.published_at,
+            focused: packet.focused,
+        }
+    }
 }
 
 /// Commit once at the local solve gate and publish exactly that result for the movement owner.

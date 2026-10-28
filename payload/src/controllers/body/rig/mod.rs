@@ -27,19 +27,10 @@ use parking_lot::Mutex;
 pub use crate::controllers::body::rig::{config::RigConfig, root::lean_allowance};
 use crate::{
     config::Config,
-    controllers::{
-        body::rig::torso::{TorsoEstimate, wrap, yaw_forward, yaw_of},
-        frame::{self, Pose},
-    },
+    controllers::body::rig::torso::{TorsoEstimate, wrap, yaw_forward, yaw_of},
     headpose::{self, xr::FollowSettings},
     hooks,
 };
-
-/// Copy this frame's cockpit head and grips for the next simulation-time fit.
-pub fn frame_tick(head: Pose) {
-    let frame = frame::latest();
-    runtime::frame_tick(head, frame.as_ref());
-}
 
 /// The latest committed torso estimate, when fresh and geometrically usable.
 pub fn estimate() -> Option<TorsoEstimate> {

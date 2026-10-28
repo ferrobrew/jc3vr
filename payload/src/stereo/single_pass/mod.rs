@@ -298,9 +298,7 @@ pub fn set_ui_viewport_raw(context: *mut c_void, viewport: &D3D11_VIEWPORT) {
 fn full_eye_view_projection(eye: usize) -> Option<Matrix4> {
     let center_transform = crate::stereo::STEREO_STATE.lock().center_transform?;
     let params = crate::vr::render_params(eye)?;
-    let mut eye_world = glam::Mat4::from(center_transform);
-    eye_world.w_axis += params.world_offset.extend(0.0);
-    let eye_world = eye_world * glam::Mat4::from_quat(params.orientation_delta);
+    let eye_world = params.resolve(glam::Mat4::from(center_transform));
     let vp = glam::Mat4::from(params.projection_reverse_z) * eye_world.inverse();
     Some(Matrix4::from(vp))
 }

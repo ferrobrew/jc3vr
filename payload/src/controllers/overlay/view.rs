@@ -13,7 +13,9 @@
 //! (`A = P.z_axis.z`, `B = P.w_axis.z` in the glam bridge's layout), the device depth at view
 //! distance `d` is `-A + B / d`, so `d = B / (depth + A)`.
 
-use glam::{Mat4, Quat, Vec3, Vec4};
+#[cfg(test)]
+use glam::Quat;
+use glam::{Mat4, Vec3, Vec4};
 use jc3gi::camera::camera_manager::CameraManager;
 use windows::Win32::Graphics::Direct3D11::D3D11_VIEWPORT;
 
@@ -65,14 +67,6 @@ impl EyeView {
     }
 }
 
-/// An eye's world transform under the collapse: the centre transform moved by the eye's world
-/// offset and turned by its orientation relative to the centre.
-pub fn collapse_eye_world(center: Mat4, world_offset: Vec3, orientation_delta: Quat) -> Mat4 {
-    let mut eye_world = center;
-    eye_world.w_axis += world_offset.extend(0.0);
-    eye_world * Mat4::from_quat(orientation_delta)
-}
-
 /// The current draw's eye, and the viewport to draw it into when it is not the whole target (one
 /// half of the collapse's shared target). `None` when no camera is readable.
 pub fn current(eye: usize) -> Option<(EyeView, Option<D3D11_VIEWPORT>)> {
@@ -80,11 +74,7 @@ pub fn current(eye: usize) -> Option<(EyeView, Option<D3D11_VIEWPORT>)> {
     if let Some((viewport, _)) = collapse_ui_eye_override() {
         let center = STEREO_STATE.lock().center_transform?;
         let params = vr?;
-        let eye_world = collapse_eye_world(
-            Mat4::from(center),
-            params.world_offset,
-            params.orientation_delta,
-        );
+        let eye_world = params.resolve(Mat4::from(center));
         let view = EyeView::from_eye_world(eye_world, Mat4::from(params.projection_reverse_z));
         return Some((view, Some(viewport)));
     }
@@ -183,7 +173,14 @@ mod tests {
         let offset = Vec3::new(0.032, 0.0, 0.004);
         let delta = Quat::from_rotation_y(0.087);
         let projection = reverse_z(NEAR, FAR);
-        let eye_world = collapse_eye_world(center, offset, delta);
+        let params = crate::vr::EyeRenderParams {
+            projection_standard: projection.into(),
+            projection_reverse_z: projection.into(),
+            local_offset: center.inverse().transform_vector3(offset),
+            orientation_delta: delta,
+            convention: crate::vr::ProjectionConvention::ManualReverseZ,
+        };
+        let eye_world = params.resolve(center);
         let full = projection * eye_world.inverse();
         let eye = EyeView::from_eye_world(eye_world, projection);
         assert!(eye.position.distance(center.w_axis.truncate() + offset) < 1e-5);
