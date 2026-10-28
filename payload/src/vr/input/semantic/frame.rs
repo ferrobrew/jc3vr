@@ -8,8 +8,8 @@
 //! two ticks must still reach the bindings.
 //!
 //! Each action also carries a digital state ([`ActionState::down`]): a boolean action's value, or
-//! a float action's value past the press thresholds of the input it reads by default (a trigger's,
-//! a grip's, or a trackpad's), with hysteresis against the previous frame. The edges are those of
+//! a float action's value past its action-owned trigger, grip, or trackpad thresholds, with
+//! hysteresis against the previous frame. Suggested bindings do not define press behavior. The edges are those of
 //! the digital state.
 
 use std::time::Instant;
@@ -21,8 +21,7 @@ use crate::{
     controllers::frame::{ActionSetKind, GripPress, Hand, MAX_FRAME_AGE, PressRules},
     vr::input::semantic::{
         ActionKind, SemanticSet,
-        defaults::{Component, default_binding},
-        vocabulary::ActionId,
+        vocabulary::{ActionId, FloatPress},
     },
 };
 
@@ -63,7 +62,7 @@ pub(crate) struct ActionState {
     /// Whether the runtime bound the action to an active source on this hand this sync.
     pub(crate) active: bool,
     /// The digital state: a boolean action's value, or a float action past its press thresholds.
-    /// Always false for a vector action, and for a float action whose default input has no press.
+    /// Always false for a vector action, and for a float action with no press semantics.
     pub(crate) down: bool,
 }
 
@@ -108,9 +107,8 @@ impl SemanticFrame {
 }
 
 /// The digital state of action `index` of `set` after observing `value` on a hand read by `rules`,
-/// given whether it was down before. A float action is thresholded by the press thresholds of the
-/// input it reads by default, wherever the player bound it, since the thresholds belong to the
-/// action's meaning (a trigger pull, a grip squeeze).
+/// given whether it was down before. A float action uses its action-owned press classification,
+/// wherever the player binds it.
 pub(crate) fn digital(
     set: SemanticSet,
     index: usize,
@@ -122,13 +120,18 @@ pub(crate) fn digital(
         ActionValue::Bool(b) => b,
         ActionValue::Vec2(_) => false,
         ActionValue::Float(f) => {
-            let thresholds = match default_binding(set, index).map(|b| b.component) {
-                Some(Component::TriggerValue) => rules.trigger,
-                Some(Component::GripPress) => match rules.grip {
+            let thresholds = match (ActionId {
+                set,
+                index: index as u8,
+            })
+            .float_press()
+            {
+                Some(FloatPress::Trigger) => rules.trigger,
+                Some(FloatPress::Grip) => match rules.grip {
                     GripPress::Value(t) | GripPress::Force(t) => t,
                 },
-                Some(Component::TrackpadForce) => rules.trackpad,
-                _ => return false,
+                Some(FloatPress::Trackpad) => rules.trackpad,
+                None => return false,
             };
             f.is_finite() && thresholds.apply(was_down, f)
         }

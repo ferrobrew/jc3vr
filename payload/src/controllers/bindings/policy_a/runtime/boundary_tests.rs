@@ -1,9 +1,25 @@
 //! Sampler admission through ordered arbitration and semantic table execution.
 
+use jc3gi::input::input_action_map::Action;
+
 use super::*;
 use crate::{
-    controllers::frame::{HandFrame, TrackedPose},
-    vr::input::semantic::admission,
+    controllers::{
+        bindings::{
+            controls::Controls,
+            tables::Bindings,
+            trigger_ownership::{TriggerMask, mask_routes},
+        },
+        config::ControllersConfig,
+        frame::{HandFrame, InteractionProfile, TrackedPose},
+        mode::{AirborneVariant, Mode, OnFootVariant},
+    },
+    vr::input::semantic::{
+        admission,
+        bound::of_sources,
+        frame::{ActionValue, digital},
+        vocabulary::WingsuitAction,
+    },
 };
 
 fn hands() -> [HandFrame; 2] {
@@ -300,4 +316,147 @@ fn queued_live_publications_keep_middle_loss_through_capture_and_replay() {
         replay(&mut replayed, publications).commands,
         [SystemCommand::TogglePanel]
     );
+}
+
+#[test]
+fn analog_grapple_without_default_uses_sampler_hysteresis_through_policy_and_tables() {
+    for (id, mode) in [
+        (
+            OnFootAction::FireGrapple.id(),
+            Mode::OnFoot(OnFootVariant::Ground),
+        ),
+        (
+            WingsuitAction::FireGrapple.id(),
+            Mode::Airborne(AirborneVariant::Wingsuit),
+        ),
+    ] {
+        assert!(default_binding(id.set, id.index()).is_none());
+        let mut runtime = Runtime::default();
+        let mut bindings = Bindings::new();
+        let rules = ControllersConfig::new()
+            .input
+            .press_rules(InteractionProfile::ValveIndex, Hand::Right);
+        let controls = Controls {
+            dominant: Hand::Right,
+            ..Default::default()
+        };
+        let mut was_down = false;
+        let mut results = Vec::new();
+        for (index, value) in [
+            0.0,
+            0.0,
+            1.0,
+            (rules.trigger.press + rules.trigger.release) * 0.5,
+            0.0,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let down = digital(
+                id.set,
+                id.index(),
+                ActionValue::Float(value),
+                &rules,
+                was_down,
+            );
+            was_down = down;
+            let mut group = group((index as u64 + 1) * 10, index as u64 + 1, [false; 3], &[]);
+            if id.set == SemanticSet::Wingsuit {
+                group.samples.retain(|sample| !matches!(sample.route, InputRoute::Semantic { set, .. } if set == SemanticSet::OnFoot.index() as u8));
+                for (action, definition) in id.set.actions().iter().enumerate() {
+                    for hand in Hand::BOTH {
+                        group.samples.push(RouteSample {
+                            route: InputRoute::Semantic {
+                                set: id.set.index() as u8,
+                                action: action as u16,
+                                hand: hand.index() as u8,
+                            },
+                            value: match definition.kind {
+                                ActionKind::Bool => ValueBits::Bool(false),
+                                ActionKind::Float => ValueBits::Float(0),
+                                ActionKind::Vec2 => ValueBits::Vec2([0; 2]),
+                            },
+                            active: false,
+                            down: false,
+                            change: None,
+                            sources: paths(&[]),
+                        });
+                    }
+                }
+                group.context = mode.action_set().index() as u64;
+            }
+            let sample = group
+                .samples
+                .iter_mut()
+                .find(|sample| {
+                    sample.route
+                        == InputRoute::Semantic {
+                            set: id.set.index() as u8,
+                            action: id.index as u16,
+                            hand: 1,
+                        }
+                })
+                .unwrap();
+            let source = "/user/hand/right/input/trigger/value";
+            sample.sources = paths(&[source]);
+            sample.value = ValueBits::Float(value.to_bits());
+            sample.active = true;
+            sample.down = down;
+            admission::apply(&hands(), &mut group.samples);
+            let frame = ControllerFrame {
+                sequence: group.stamp.sequence,
+                display_time_ns: 0,
+                published_at: Instant::now(),
+                focused: true,
+                action_set: mode.action_set(),
+                hands: hands(),
+            };
+            let tick = runtime.step(TickInput {
+                publications: vec![Publication {
+                    observed_at: Instant::now(),
+                    frame_sequence: Some(frame.sequence),
+                    record: InputRecord::Group(group),
+                }],
+                replay: false,
+                frame: Some(&frame),
+                context: mode.action_set().index() as u64,
+                gameplay: true,
+                usable: true,
+                config: &BindingsConfig::new(),
+            });
+            let mut input =
+                SemanticInput::rest(id.set, [InteractionProfile::ValveIndex; 2], Hand::Right);
+            input.get_mut(id).unwrap().bound = of_sources([source]);
+            tick.filter_semantic(&mut input);
+            let button = input.get(id).unwrap().hands[1].button;
+            results.push(button);
+            if index == 2 {
+                let mut reserved = input.clone();
+                mask_routes(
+                    &mut reserved,
+                    mode,
+                    [
+                        TriggerMask::default(),
+                        TriggerMask {
+                            reserved: true,
+                            ..Default::default()
+                        },
+                    ],
+                );
+                assert!(!reserved.get(id).unwrap().hands[1].button.held());
+            }
+            let step = bindings.step(mode, &controls, &input, 0.01, &BindingsConfig::new());
+            assert_eq!(step.grapple_held, down);
+            if index == 2 || index == 3 {
+                assert!(
+                    step.desired
+                        .iter()
+                        .any(|desired| desired.target.action == Action::FIRE_GRAPPLE)
+                );
+            }
+        }
+        assert!(results[2].pressed && results[2].down);
+        assert!(results[3].down && !results[3].pressed);
+        assert!(results[4].released && !results[4].down);
+    }
 }

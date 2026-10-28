@@ -21,6 +21,67 @@ impl ActionId {
     pub(crate) const fn index(self) -> usize {
         self.index as usize
     }
+
+    /// Press thresholds belong to the action, independently of its suggested binding.
+    pub(crate) fn float_press(self) -> Option<FloatPress> {
+        use FloatPress::{Grip, Trackpad, Trigger};
+        match self.set {
+            SemanticSet::OnFoot => match OnFootAction::ALL[self.index()] {
+                OnFootAction::Fire
+                | OnFootAction::FireOffHandPistol
+                | OnFootAction::RetractTethers
+                | OnFootAction::FireGrapple => Some(Trigger),
+                OnFootAction::WeaponSelectPress => Some(Trackpad),
+                _ => None,
+            },
+            SemanticSet::Wingsuit => match WingsuitAction::ALL[self.index()] {
+                WingsuitAction::FireGuns
+                | WingsuitAction::FireSecondary
+                | WingsuitAction::FireGrapple => Some(Trigger),
+                _ => None,
+            },
+            SemanticSet::LandVehicle => match LandVehicleAction::ALL[self.index()] {
+                LandVehicleAction::Accelerate
+                | LandVehicleAction::Reverse
+                | LandVehicleAction::Fire
+                | LandVehicleAction::FireOffHandPistol => Some(Trigger),
+                LandVehicleAction::FirePrimary | LandVehicleAction::FireSecondary => Some(Grip),
+                _ => None,
+            },
+            SemanticSet::Helicopter => match HelicopterAction::ALL[self.index()] {
+                HelicopterAction::CollectiveUp
+                | HelicopterAction::CollectiveDown
+                | HelicopterAction::Fire
+                | HelicopterAction::FireOffHandPistol => Some(Trigger),
+                HelicopterAction::FirePrimary | HelicopterAction::FireSecondary => Some(Grip),
+                _ => None,
+            },
+            SemanticSet::Plane => match PlaneAction::ALL[self.index()] {
+                PlaneAction::ThrustUp
+                | PlaneAction::ThrustDown
+                | PlaneAction::Fire
+                | PlaneAction::FireOffHandPistol => Some(Trigger),
+                PlaneAction::FirePrimary | PlaneAction::FireSecondary => Some(Grip),
+                _ => None,
+            },
+            SemanticSet::Menu => match MenuAction::ALL[self.index()] {
+                MenuAction::MenuModifier => Some(Grip),
+                MenuAction::MenuTabPress => Some(Trackpad),
+                MenuAction::MenuPagePrev | MenuAction::MenuPageNext | MenuAction::PointerSelect => {
+                    Some(Trigger)
+                }
+                _ => None,
+            },
+            SemanticSet::Global => None,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum FloatPress {
+    Trigger,
+    Grip,
+    Trackpad,
 }
 
 /// Declare one set's action enum, its `ALL` table, and its `DEFS` table, from one list so that the
