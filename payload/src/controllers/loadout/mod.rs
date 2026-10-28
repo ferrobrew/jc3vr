@@ -32,6 +32,7 @@ mod item;
 pub mod live;
 mod projection;
 mod reset;
+pub(crate) mod restore;
 pub mod safe_items;
 pub mod sandbox;
 mod socket;

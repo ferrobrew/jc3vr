@@ -21,6 +21,8 @@
 //! caller of `SpawnSystem::PreUpdate`, including reset-time service. The callback hands retained
 //! results to the input tick; the module and carry locks are taken separately.
 
+pub(crate) mod adoption;
+
 use std::{
     ffi::c_void,
     fmt, fs, io,
@@ -46,14 +48,13 @@ use crate::{
     config::paths,
     controllers::{
         hands::ik,
-        loadout::{Restored, live},
         weapons::{
             dual_wield::single,
             hold::refs::Strong,
             inventory::{
                 StatusUnavailable, carry,
                 config::InventoryConfig,
-                engine::{self as inventory_engine, kind_of, weapon_of},
+                engine::{self as inventory_engine, kind_of},
                 persist::{Fingerprint, RESERVES, Record, SLOTS, Sidecar},
                 sidecar,
                 spawn_safety::{self, RequestKind},
@@ -328,28 +329,19 @@ pub(crate) unsafe fn on_load(save_data: *const PlayerSaveData, settings: &Invent
 /// # Safety
 ///
 /// `owner` must be the live local player character, on the main thread outside the world update.
-pub(crate) unsafe fn input_tick(owner: &mut Character, settings: &InventoryConfig) {
+pub(crate) unsafe fn input_tick(owner: &mut Character, settings: &InventoryConfig, ready: bool) {
+    if !ready {
+        return;
+    }
     let enabled = settings.enabled && settings.carry;
-    let plan = {
-        let mut plan = PLAN.lock();
-        if !plan.due {
-            None
-        } else {
-            plan.due = false;
-            let from_load = plan.from_load.take();
-            let from_reset = plan.from_reset.take();
-            Some(choose(
-                from_load,
-                from_reset,
-                owner as *const Character as usize,
-            ))
-        }
-    };
+    let plan = PLAN
+        .lock()
+        .take_due(ready, owner as *const Character as usize);
     if let Some(chosen) = plan.filter(|_| enabled) {
         single::cover_respawn(chosen.slot_pistol_single);
         unsafe { request(owner, chosen.origin, chosen.records) };
     }
-    unsafe { adopt(owner) };
+    unsafe { adoption::adopt(owner) };
     publish_status();
 }
 
@@ -444,6 +436,20 @@ struct Plan {
     /// Counts the resets, so a spawn of an earlier world is told apart.
     generation: u64,
     origin: Option<Origin>,
+}
+
+impl Plan {
+    fn take_due(&mut self, ready: bool, character: usize) -> Option<Chosen> {
+        if !ready || !self.due {
+            return None;
+        }
+        self.due = false;
+        Some(choose(
+            self.from_load.take(),
+            self.from_reset.take(),
+            character,
+        ))
+    }
 }
 
 static PLAN: Mutex<Plan> = Mutex::new(Plan {
@@ -741,100 +747,6 @@ unsafe fn request(owner: &Character, origin: Origin, records: Vec<Record>) {
     STATUS.lock().last_respawn = Some(outcome);
 }
 
-/// Adopt each weapon the spawn system has handed over onto its socket, and give up on spawns that
-/// never came.
-unsafe fn adopt(owner: &mut Character) {
-    let generation = PLAN.lock().generation;
-    let spawned = std::mem::take(&mut *SPAWNED.lock());
-    for (asked_in, strong) in spawned {
-        if asked_in != generation {
-            continue;
-        }
-        // SAFETY: the strong reference keeps the weapon alive.
-        let weapon = unsafe { &mut *weapon_of(&strong) };
-        let Some(kind) = (unsafe { kind_of(weapon) }) else {
-            continue;
-        };
-        let record = {
-            let mut plan = PLAN.lock();
-            let index = plan
-                .spawning
-                .iter()
-                .position(|s| s.record.tag_hash == kind.tag_hash);
-            let record = index.map(|i| plan.spawning.remove(i).record);
-            SPAWNING.store(plan.spawning.len(), Ordering::Relaxed);
-            record
-        };
-        let Some(record) = record else {
-            continue;
-        };
-        // The recorded socket when it is free, otherwise where the table puts a weapon of its type.
-        let socket = unsafe { inventory_engine::weapon_type(weapon) }
-            .and_then(|weapon| live::free_socket(weapon, Some(record.socket)));
-        let restored = socket.is_some_and(|socket| {
-            match unsafe { carry::carry_loose(owner, strong, socket) } {
-                Ok(object) => {
-                    // SAFETY: the carry set keeps the weapon alive.
-                    let weapon = unsafe { &mut *(object as *mut WeaponBase) };
-                    if record.single {
-                        unsafe { single::designate(weapon, "a carried pistol restored") };
-                    }
-                    if record.magazine >= 0 {
-                        unsafe { weapon.SetMagazineAmmo(record.magazine) };
-                    }
-                    if let (Some(object), Some(weapon)) = (
-                        inventory_engine::object_address(weapon),
-                        unsafe { inventory_engine::weapon_type(weapon) },
-                    ) {
-                        live::restored(Restored {
-                            object,
-                            weapon,
-                            socket,
-                        });
-                    }
-                    tracing::info!(
-                        target: "controllers",
-                        socket = socket.label(),
-                        magazine = record.magazine,
-                        "inventory: restored a carried weapon on the {}",
-                        socket.label()
-                    );
-                    true
-                }
-                Err(refusal) => {
-                    tracing::info!(target: "controllers", %refusal, "inventory: a respawned weapon was not carried");
-                    false
-                }
-            }
-        });
-        if !restored && socket.is_none() {
-            tracing::info!(target: "controllers", "inventory: no socket is free for a respawned weapon; it lies at the player's feet");
-        }
-        let mut status = STATUS.lock();
-        if restored {
-            status.restored += 1;
-        }
-        if let Some(outcome) = &mut status.last_respawn {
-            if restored {
-                outcome.restored += 1;
-            } else {
-                outcome.failed += 1;
-            }
-        }
-    }
-    let expired = expire_spawning();
-    if !expired.is_empty() {
-        tracing::info!(target: "controllers", expired = expired.len(), "inventory: respawns of carried weapons never came");
-        if let Some(outcome) = &mut STATUS.lock().last_respawn {
-            outcome.failed += expired.len();
-        }
-    }
-    // A single pistol that never came back leaves the slot's pistol the pair it was split from.
-    for record in expired.iter().filter(|r| r.single) {
-        unsafe { single::pistol_not_restored(owner, record.tag_hash) };
-    }
-}
-
 fn expire_spawning() -> Vec<Record> {
     let mut plan = PLAN.lock();
     let (waiting, expired) = std::mem::take(&mut plan.spawning)
@@ -879,6 +791,8 @@ unsafe extern "system" fn spawned(
     }
 }
 
+#[cfg(test)]
+mod readiness_tests;
 #[cfg(test)]
 mod status_tests;
 

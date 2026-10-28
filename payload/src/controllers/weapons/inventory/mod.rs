@@ -201,8 +201,8 @@ pub(crate) unsafe fn input_tick(
         let slots = unsafe { live_slots(owner) };
         let spawning = engine::tracked_slots()
             .any(|slot| owner.m_Inventory.m_WeaponPendingSpawn[slot as usize]);
-        live::begin_tick(inputs.dominant, &slots, spawning);
-        unsafe { restore::input_tick(owner, &inputs.settings) };
+        let restore_ready = live::begin_tick(inputs.dominant, &slots, spawning);
+        unsafe { restore::input_tick(owner, &inputs.settings, restore_ready) };
         unsafe { use_item::input_tick(owner) };
         unsafe { gives::input_tick(owner) };
         unsafe { resume() };

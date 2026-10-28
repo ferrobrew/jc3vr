@@ -346,6 +346,7 @@ impl fmt::Display for Transition {
 /// Why a transition was refused. The table is as it was.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TransitionError {
+    NoRestoreSocket,
     HandEmpty(Hand),
     HandOccupied {
         hand: Hand,
@@ -404,6 +405,9 @@ pub enum TransitionError {
 impl fmt::Display for TransitionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            TransitionError::NoRestoreSocket => {
+                f.write_str("loadout: no compatible restore socket is available")
+            }
             TransitionError::HandEmpty(hand) => {
                 write!(f, "loadout: the {} hand holds nothing", hand.label())
             }
@@ -696,49 +700,17 @@ impl Loadout {
         }])
     }
 
-    /// A weapon the mod spawned to stand for one the player has comes onto the body. An item of its
-    /// type that waits to be spawned again (a cache's restored weapon whose object is gone) is
-    /// bound to it where the table has that item; otherwise it comes onto its socket when the body
-    /// has it free and it fits there, or where a weapon goes when the player does not choose.
+    /// Bind the compatible item awaiting this recorded socket, or admit a new item to a free socket.
     pub fn restored(&mut self, restored: Restored) -> Result<Vec<Transition>, TransitionError> {
         if let Some(found) = self.locate(restored.object) {
             return Err(found.already());
         }
-        let waiting = self
-            .items()
-            .filter(|item| item.binding == Binding::Awaiting(Awaiting::Respawn))
-            .filter(|item| {
-                item.kind.weapon().map(WeaponType::tag_hash) == Some(restored.weapon.tag_hash())
-            })
-            // The one on the recorded socket first.
-            .min_by_key(|item| item.place != Place::Socket(restored.socket))
-            .map(|item| item.id);
-        if let Some(id) = waiting {
-            return self.spawned(id, restored.object);
-        }
-        let item = Item {
-            id: self.allocate(),
-            kind: ItemKind::Weapon(restored.weapon),
-            binding: Binding::Live(restored.object),
-        };
-        let socket = restored.socket;
-        let item = if self.body.has(socket) && self.sockets[socket.index()].is_none() {
-            match Docked::new(item, socket) {
-                Ok(docked) => {
-                    let transition =
-                        change(&docked.item, None, Place::Socket(socket), Cause::Restored);
-                    self.sockets[socket.index()] = Some(docked);
-                    return Ok(vec![transition]);
-                }
-                Err(item) => item,
-            }
-        } else {
-            item
-        };
+        let admission = self
+            .admit_restore(restored)
+            .map_err(|_| TransitionError::NoRestoreSocket)?;
         Ok(self
-            .onto_body(item, None, Cause::Restored)
-            .into_iter()
-            .collect())
+            .commit_restore(admission)
+            .expect("unchanged restore admission"))
     }
 
     /// The game takes items away, from wherever they are, the hands included.
