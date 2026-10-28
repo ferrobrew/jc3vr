@@ -1,6 +1,8 @@
 //! Versioned dock persistence, explicit legacy migration, and detached-view recovery.
 
-use std::{fmt::Display, fs, io, path::Path};
+mod writer;
+
+use std::{fs, io, path::Path};
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -41,9 +43,15 @@ pub(crate) struct Layout {
     save_enabled: bool,
     frames: u32,
     saved: Option<String>,
+    saved_generation: u64,
 }
 
 pub(crate) static STATE: Mutex<Option<Layout>> = Mutex::new(None);
+
+#[must_use = "an unfinished layout writer requires the payload to stay mapped"]
+pub(crate) fn shutdown() -> bool {
+    writer::shutdown()
+}
 
 impl Default for Layout {
     fn default() -> Self {
@@ -56,6 +64,7 @@ impl Default for Layout {
             save_enabled: true,
             frames: 0,
             saved: None,
+            saved_generation: 0,
         }
     }
 }
@@ -170,6 +179,7 @@ impl Layout {
     }
 
     pub(crate) fn save(&mut self) {
+        self.acknowledge(writer::acknowledgement());
         if !self.save_enabled {
             return;
         }
@@ -191,26 +201,23 @@ impl Layout {
                 return;
             }
         };
-        if self.saved.as_deref() == Some(json.as_str()) {
-            return;
-        }
         let Some(path) = config::paths::file("ui_layout_v2.json") else {
             return;
         };
-        self.write_json(&path, json, config::write::replace);
+        if let Err(error) = writer::submit(path, json) {
+            self.notice = error;
+        }
     }
 
-    fn write_json<E: Display>(
-        &mut self,
-        path: &Path,
-        json: String,
-        replace: impl FnOnce(&Path, &[u8]) -> Result<(), E>,
-    ) {
-        match replace(path, json.as_bytes()) {
-            Ok(()) => self.saved = Some(json),
-            Err(error) => {
-                self.notice = format!("UI layout: could not replace {}: {error}", path.display())
-            }
+    fn acknowledge(&mut self, acknowledgement: writer::Acknowledgement) {
+        if let Some(saved) = acknowledgement.saved
+            && saved.generation > self.saved_generation
+        {
+            self.saved_generation = saved.generation;
+            self.saved = Some(saved.text.to_string());
+        }
+        if let Some(error) = acknowledgement.error {
+            self.notice = error;
         }
     }
 

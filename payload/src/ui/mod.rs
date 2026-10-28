@@ -29,7 +29,7 @@ pub mod game;
 pub mod hud;
 #[cfg(test)]
 pub(crate) mod inventory;
-mod layout;
+pub(crate) mod layout;
 pub(crate) mod navigation;
 mod overview;
 pub mod performance;

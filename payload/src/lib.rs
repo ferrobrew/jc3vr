@@ -156,6 +156,10 @@ fn shutdown_startup() {
         module::pin();
     }
 
+    if !ui::layout::shutdown() {
+        module::pin();
+    }
+
     // And for the settings writers, after which a change still waiting to settle is written here.
     if !config::shutdown() {
         module::pin();

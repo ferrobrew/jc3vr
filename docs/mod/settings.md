@@ -29,7 +29,7 @@ The payload keeps its files in the per-user configuration directory that the `di
 | File | Holds | Written |
 | --- | --- | --- |
 | `settings.toml` | The whole runtime configuration | When a setting changes, as described below |
-| `ui_layout_v2.json` | The debug UI's feature selection and dock layout | Atomic replacement when the layout changes, checked every 60 editing UI frames |
+| `ui_layout_v2.json` | The debug UI's feature selection and dock layout | One owned coalescing writer performs atomic replacement outside UI locks; snapshots are checked every 60 editing UI frames |
 | `ui_layout.json` | The previous debug UI layout retained for explicit migration | Read during migration; not overwritten |
 | `teleports.toml` | The director's teleport bookmarks | When a bookmark is saved or removed |
 | `inventory.toml` | The VR inventory's save sidecar: the weapons carried beyond the slots, tied to the game's save ([input/two-handed-inventory.md](input/two-handed-inventory.md#saves-resets-and-loads)) | Each time the game stores the player's save data |

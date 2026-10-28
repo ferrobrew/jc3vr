@@ -34,6 +34,8 @@ Renderer-free tests cover the concrete configuration fields, edit isolation, fil
 
 The workspace and detached feature views use `ui_layout_v2.json`. Feature views store stable catalog keys and section names. Detach this view opens the selected feature and section in a dock window. Dragging its tab back to the main dock re-docks it. Closing a detached view does not remove its feature from navigation. Recover detached views gathers saved views into the main dock. Restore default layout returns to one workspace on Overview.
 
+Layout edits submit a serialized snapshot every sixty editing frames to one owned writer. It keeps one in-flight replacement and only the newest pending snapshot. Atomic durable replacement runs outside the layout and egui locks. The saved snapshot cache advances only after a successful generation acknowledgement; a failed latest snapshot can retry on the next submission. Shutdown closes admission and drains the worker, and an unfinished worker keeps the payload mapped.
+
 An existing `ui_layout.json` is not overwritten. The UI reports that an old layout is available and waits for an explicit action. Migrate old layout converts its tab identities to feature destinations with the dock library's geometry-preserving mapping, including detached surfaces. Restore default layout discards the old arrangement for the new workspace. Both actions leave the original file intact. An invalid or unsupported layout reports a notice and blocks automatic persistence until recovery or reset.
 
 ## Migration coverage

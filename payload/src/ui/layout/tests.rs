@@ -1,7 +1,4 @@
-use std::{
-    fs::OpenOptions,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::json;
 
@@ -169,43 +166,6 @@ fn layout_read_errors_block_automatic_save_and_preserve_the_file() {
     assert!(!directory.save_enabled);
     assert!(!directory.notice.is_empty());
     assert!(Layout::load_paths(Some(&root.join("missing.json")), None).save_enabled);
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn failed_atomic_replacement_preserves_saved_bytes_and_last_saved_cache() {
-    let root = temporary_directory();
-    let path = root.join("layout.json");
-    let previous = current_wire().to_string();
-    fs::write(&path, &previous).unwrap();
-    let mut layout = Layout::decode(Some(&previous), None);
-    // An exclusive destination handle exercises a real Windows replacement failure.
-    #[cfg(windows)]
-    let held = {
-        use std::os::windows::fs::OpenOptionsExt;
-        OpenOptions::new()
-            .read(true)
-            .share_mode(0)
-            .open(&path)
-            .unwrap()
-    };
-    #[cfg(windows)]
-    layout.write_json(&path, "replacement".to_owned(), config::write::replace);
-    #[cfg(windows)]
-    drop(held);
-    #[cfg(not(windows))]
-    layout.write_json(&path, "replacement".to_owned(), |_, _| {
-        Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "replacement denied",
-        ))
-    });
-    assert_eq!(fs::read_to_string(&path).unwrap(), previous);
-    assert_eq!(layout.saved.as_deref(), Some(previous.as_str()));
-    assert!(layout.notice.contains("could not replace"));
-    layout.write_json(&path, "replacement".to_owned(), config::write::replace);
-    assert_eq!(fs::read_to_string(&path).unwrap(), "replacement");
-    assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
     fs::remove_dir_all(root).unwrap();
 }
 
