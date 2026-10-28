@@ -123,6 +123,7 @@ pub struct HandBody {
     body_id: u32,
     spec: BodySpec,
     source: Source,
+    world: usize,
 }
 
 // SAFETY: the wrapper is only touched on the thread that steps the physics world, outside the
@@ -223,6 +224,7 @@ impl HandBody {
             body_id,
             spec,
             source,
+            world: world.world() as *const hknpWorld as usize,
         };
         if spec.contact_events
             && let Err(e) = unsafe { contact::listen(memory, source) }
@@ -268,8 +270,8 @@ impl HandBody {
     /// # Safety
     ///
     /// As [`HandBody::create`].
-    pub unsafe fn is_added(&self) -> bool {
-        unsafe { self.wrapper.as_ref().IsAddedToWorld() }
+    pub unsafe fn is_added(&self) -> Result<bool, BodyError> {
+        unsafe { self.with_checked(|access| access.wrapper.as_ref().IsAddedToWorld()) }
     }
 
     /// Add the body to the simulation.
@@ -277,8 +279,8 @@ impl HandBody {
     /// # Safety
     ///
     /// As [`HandBody::create`].
-    pub unsafe fn add(&mut self) {
-        unsafe { self.wrapper.as_mut().AddToWorld() };
+    pub unsafe fn add(&mut self) -> Result<(), BodyError> {
+        unsafe { self.with_checked(|access| access.wrapper.as_mut().AddToWorld()) }
     }
 
     /// Take the body out of the simulation; it keeps existing.
@@ -286,8 +288,8 @@ impl HandBody {
     /// # Safety
     ///
     /// As [`HandBody::create`].
-    pub unsafe fn remove(&mut self) {
-        unsafe { self.wrapper.as_mut().RemoveFromWorld(0) };
+    pub unsafe fn remove(&mut self) -> Result<(), BodyError> {
+        unsafe { self.with_checked(|access| access.wrapper.as_mut().RemoveFromWorld(0)) }
     }
 
     /// The body's state, game space, after checking that its slot still holds it.
@@ -296,11 +298,11 @@ impl HandBody {
     ///
     /// As [`HandBody::create`].
     pub unsafe fn motion(&self) -> Result<BodyMotion, BodyError> {
-        let world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
-        let world = world.world();
+        let access = unsafe { self.checked() }?;
+        let world = access.world.world();
         let slot = unsafe { self.slot(world) }?;
         let mut transform = Matrix4::IDENTITY;
-        unsafe { self.wrapper.as_ref().GetTransform(&mut transform) };
+        unsafe { access.wrapper.as_ref().GetTransform(&mut transform) };
         let transform = Mat4::from(transform);
         let motion = unsafe { &*world.m_motions.add(slot.m_motionId as usize) };
         let frame = Quat::from_array(motion.m_orientation.data);
@@ -383,8 +385,16 @@ impl HandBody {
             orientation.normalize(),
             position,
         ));
-        unsafe { self.wrapper.as_mut().SetTransform(&transform) };
-        unsafe { self.set_velocities(Vec3::ZERO, Vec3::ZERO) }
+        unsafe {
+            self.with_checked(|access| {
+                access.wrapper.as_mut().SetTransform(&transform);
+                access.world.world_mut().setBodyVelocity(
+                    self.body_id,
+                    &aligned(Vec3::ZERO),
+                    &aligned(Vec3::ZERO),
+                );
+            })
+        }
     }
 
     /// Delete the wrapper, which removes the body from the simulation and destroys it, when the
@@ -431,10 +441,35 @@ impl HandBody {
         Ok(())
     }
 
+    unsafe fn with_checked<T>(
+        &self,
+        operation: impl FnOnce(&mut CheckedBody) -> T,
+    ) -> Result<T, BodyError> {
+        checked_call(|| unsafe { self.checked() }, operation)
+    }
+
+    unsafe fn checked(&self) -> Result<CheckedBody, BodyError> {
+        let world = unsafe { World::get() }.ok_or(BodyError::Lost)?;
+        unsafe { self.slot(world.world()) }?;
+        Ok(CheckedBody {
+            world,
+            wrapper: self.wrapper,
+        })
+    }
+
     /// The body's slot, checked to still hold this wrapper's body: the id has a slot with a
     /// motion, and the slot's engine instance is this wrapper.
     unsafe fn slot<'w>(&self, world: &'w hknpWorld) -> Result<&'w hknpBody, BodyError> {
-        if self.body_id > world.m_peakBodyIndex
+        unsafe { self.slot_with(world, |world, body| instance_of(world, body)) }
+    }
+
+    unsafe fn slot_with<'w>(
+        &self,
+        world: &'w hknpWorld,
+        instance: impl FnOnce(&hknpWorld, u32) -> Option<usize>,
+    ) -> Result<&'w hknpBody, BodyError> {
+        if self.world != world as *const hknpWorld as usize
+            || self.body_id > world.m_peakBodyIndex
             || world.m_bodies.is_null()
             || world.m_motions.is_null()
         {
@@ -444,11 +479,24 @@ impl HandBody {
         if slot.m_motionId == hknpBody::INVALID_MOTION_ID {
             return Err(BodyError::Lost);
         }
-        if unsafe { instance_of(world, self.body_id) } != Some(self.wrapper.as_ptr() as usize) {
+        if instance(world, self.body_id) != Some(self.wrapper.as_ptr() as usize) {
             return Err(BodyError::Lost);
         }
         Ok(slot)
     }
+}
+
+fn checked_call<A, T>(
+    check: impl FnOnce() -> Result<A, BodyError>,
+    operation: impl FnOnce(&mut A) -> T,
+) -> Result<T, BodyError> {
+    let mut access = check()?;
+    Ok(operation(&mut access))
+}
+
+struct CheckedBody {
+    world: World,
+    wrapper: NonNull<PfxRigidBody>,
 }
 
 /// The local player's collision system group, or `None` without a player or a body, or when the
@@ -546,6 +594,9 @@ pub(super) unsafe fn release(object: *mut hkReferencedObject) {
 pub(super) fn half_to_f32(half: u16) -> f32 {
     f32::from_bits(u32::from(half) << 16)
 }
+
+#[cfg(test)]
+mod tests;
 
 fn aligned(v: Vec3) -> AlignedVector3 {
     AlignedVector3 {

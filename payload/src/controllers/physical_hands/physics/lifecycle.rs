@@ -113,6 +113,29 @@ impl Hands {
 
     /// Make, add, and drive one hand's body toward `request.goal`.
     pub(super) unsafe fn act(&mut self, request: ActRequest<'_>) -> Result<Acted, BodyError> {
+        let hand = request.hand;
+        let result = unsafe { self.act_checked(request) };
+        if matches!(result, Err(BodyError::Lost)) {
+            unsafe { self.lost(hand) };
+        }
+        result
+    }
+
+    unsafe fn lost(&mut self, hand: Hand) {
+        let i = hand.index();
+        unsafe { self.unjoin(hand, "the hand body was lost") };
+        unsafe { drop_hand(&mut self.guns, hand, "the hand body was lost") };
+        if let Some(body) = self.bodies[i].take() {
+            body.abandon();
+        }
+        self.added[i] = false;
+        self.goals[i] = None;
+        self.palms[i] = None;
+        self.placed[i] = false;
+        self.missing_since[i] = None;
+    }
+
+    unsafe fn act_checked(&mut self, request: ActRequest<'_>) -> Result<Acted, BodyError> {
         let ActRequest {
             hand,
             spec,
@@ -162,7 +185,7 @@ impl Hands {
             // Added, then placed, as the engine activates its own free bodies: a parked body comes
             // back at its hand, at rest.
             // SAFETY: forwarded from the caller.
-            unsafe { body.add() };
+            unsafe { body.add() }?;
             self.added[i] = true;
             self.goals[i] = None;
             self.palms[i] = None;
@@ -172,31 +195,11 @@ impl Hands {
             tracing::info!(
                 hand = hand.label(),
                 body_id = body.body_id(),
-                in_world = unsafe { body.is_added() },
+                in_world = unsafe { body.is_added() }?,
                 "hand bodies: added a hand body to the world"
             );
         }
-        let motion = match unsafe { body.motion() } {
-            Ok(motion) => motion,
-            Err(BodyError::Lost) => {
-                tracing::warn!(
-                    hand = hand.label(),
-                    body_id = body.body_id(),
-                    "hand bodies: a hand body's slot no longer holds it; forgetting it"
-                );
-                // SAFETY: forwarded from the caller.
-                unsafe { self.unjoin(hand, "the hand body was lost") };
-                unsafe { drop_hand(&mut self.guns, hand, "the hand body was lost") };
-                if let Some(body) = self.bodies[i].take() {
-                    body.abandon();
-                }
-                self.added[i] = false;
-                self.goals[i] = None;
-                self.palms[i] = None;
-                return Err(BodyError::Lost);
-            }
-            Err(e) => return Err(e),
-        };
+        let motion = unsafe { body.motion() }?;
         let lag = self.goals[i].map_or(Vec3::ZERO, |sent| sent.position - motion.position);
         let drawn = self.palms[i].map_or(RenderOffset::NONE, |sent| {
             RenderOffset::between(
@@ -343,8 +346,13 @@ impl Hands {
             return;
         };
         // SAFETY: forwarded from the caller.
-        let Ok(motion) = (unsafe { body.motion() }) else {
-            return;
+        let motion = match unsafe { body.motion() } {
+            Ok(motion) => motion,
+            Err(BodyError::Lost) => {
+                unsafe { self.lost(hand) };
+                return;
+            }
+            Err(_) => return,
         };
         let carried = rig_carry(
             Goal {
@@ -355,11 +363,15 @@ impl Hands {
             to,
         );
         // SAFETY: forwarded from the caller.
-        if unsafe { body.place(carried.position, carried.orientation) }.is_ok() {
-            contact::mute_for(hand, RIG_MUTE_STEPS);
-            self.placed[i] = true;
-            self.goals[i] = None;
-            self.palms[i] = None;
+        match unsafe { body.place(carried.position, carried.orientation) } {
+            Ok(()) => {
+                contact::mute_for(hand, RIG_MUTE_STEPS);
+                self.placed[i] = true;
+                self.goals[i] = None;
+                self.palms[i] = None;
+            }
+            Err(BodyError::Lost) => unsafe { self.lost(hand) },
+            Err(_) => {}
         }
     }
 
@@ -371,8 +383,12 @@ impl Hands {
         unsafe { drop_hand(&mut self.guns, hand, "the hand stopped acting") };
         if let Some(body) = self.bodies[i].as_mut()
             && self.added[i]
+            && matches!(
+                unsafe { body.set_velocities(Vec3::ZERO, Vec3::ZERO) },
+                Err(BodyError::Lost)
+            )
         {
-            let _ = unsafe { body.set_velocities(Vec3::ZERO, Vec3::ZERO) };
+            unsafe { self.lost(hand) };
         }
         // A body held in place deals no blows: it is not swung.
         contact::mute_for(hand, 1);
@@ -394,7 +410,10 @@ impl Hands {
         if !self.added[i] {
             return;
         }
-        unsafe { body.remove() };
+        if matches!(unsafe { body.remove() }, Err(BodyError::Lost)) {
+            unsafe { self.lost(hand) };
+            return;
+        }
         self.added[i] = false;
         tracing::info!(
             hand = hand.label(),

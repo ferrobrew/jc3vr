@@ -261,9 +261,9 @@ unsafe fn make(
         unsafe { HandBody::create(Source::Gun(hand), spec, at.position, at.orientation) }
             .map_err(|_| GunError::Body("the gun body could not be made"))?;
     // Added, then placed, as the engine activates its own free bodies, moving with the hand.
-    unsafe { body.add() };
     let placed = unsafe {
-        body.place(at.position, at.orientation)
+        body.add()
+            .and_then(|()| body.place(at.position, at.orientation))
             .and_then(|()| carry_with_hand(&mut body, hand_body, &hand_motion))
     };
     if placed.is_err() {
@@ -477,7 +477,7 @@ unsafe fn keep(
             weapon: slot.held.weapon.get(),
             body_id: slot.body.body_id(),
             // SAFETY: forwarded from the caller.
-            in_world: unsafe { slot.body.is_added() },
+            in_world: unsafe { slot.body.is_added() }.unwrap_or(false),
             mass_kg: slot.mass_kg,
             mass_source: slot.mass_source,
             holder_joint,
