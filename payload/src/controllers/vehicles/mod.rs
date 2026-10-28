@@ -52,6 +52,7 @@ pub mod config;
 mod control_haptics;
 pub mod driver_aim;
 pub mod driving_view;
+mod entry;
 mod finish;
 pub mod fit;
 mod handle_tick;

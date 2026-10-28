@@ -16,20 +16,22 @@ use crate::{
         grab::{self, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
         hands::{self, tiers},
         loadout::live,
-        mode::Mode,
+        mode::{Mode, VehicleSeat},
         vehicles::{
             arm_tick::arms_act,
-            driving_view, fit,
-            fit::FitInputs,
+            driving_view,
+            entry::{VehicleEntry, VehicleEntryIdentity},
+            fit,
+            fit::{FitInputs, VehicleLatch},
             handle_tick::handles_act,
             mounted_grip,
             mounted_tick::{mounted_tick, offered},
             parachute, parachute_rig,
             physical::{
-                self, ControlState, Placement,
+                self, ControlEvent, Placement,
                 buttons::{Button, ButtonPlacement, PushPhase},
             },
-            state::{MOUNTED_WEAPON, STATE, log_handle_events, push_events},
+            state::{MOUNTED_WEAPON, STATE, State, log_handle_events, push_events},
             types::TickVolumes,
             wheel::CockpitTransform,
             wing_guide,
@@ -58,7 +60,19 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         body: headpose::xr::body_rotation(),
         world_scale: active.world_scale,
     };
-    let mut latch = STATE.lock().latch.take();
+    // SAFETY: the input tick runs on the main thread outside the world update.
+    let entry = seat.and_then(|_| unsafe { VehicleEntry::read() });
+    let mut events = Vec::new();
+    let mut state = STATE.lock();
+    let mut latch = prepare_entry(
+        &mut state,
+        seat,
+        entry.as_ref().map(|e| e.identity),
+        &mut events,
+    );
+    let retired_owner = state.entry_owner.take();
+    drop(state);
+    drop(retired_owner);
     let fit = fit::fit(
         &FitInputs {
             physical: &physical_config,
@@ -67,8 +81,10 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
             xf: &xf,
             anchor: headpose::anchor(),
         },
+        entry.as_ref(),
         &mut latch,
     );
+    STATE.lock().entry_owner = entry.map(VehicleEntry::into_owner);
     driving_view::publish(fit.view);
     let offered = offered(seat, &config, fit.fork);
     let placement = Placement {
@@ -87,13 +103,8 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     let handles_config = config.vehicles.parachute_handles;
     let native_centres = parachute_rig::centres(handles_on, &xf);
 
-    let mut events = Vec::new();
     let mut handle_events = Vec::new();
     let mut state = STATE.lock();
-    if state.status.seat != seat {
-        physical::release_all(&mut state.controls, &mut events);
-        state.controls = ControlState::default();
-    }
     if !handles_on {
         parachute::release_all(&mut state.handles, &mut handle_events);
     }
@@ -275,6 +286,19 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     );
     TickVolumes { targets }
 }
+
+fn prepare_entry(
+    state: &mut State,
+    seat: Option<VehicleSeat>,
+    identity: Option<VehicleEntryIdentity>,
+    events: &mut Vec<ControlEvent>,
+) -> Option<VehicleLatch> {
+    state.observe_entry(seat, identity, events);
+    state.latch.take()
+}
+
+#[cfg(test)]
+mod tests;
 
 /// A vehicle control's grab point for `hand`, at `point` in the cockpit frame.
 fn control_target(volume: GrabVolume, point: Vec3, radius: f32, hand: Hand) -> GripTarget {

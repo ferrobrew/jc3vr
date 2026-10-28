@@ -9,11 +9,13 @@ use parking_lot::Mutex;
 use crate::controllers::{
     frame::{Hand, Pose},
     hands::{self, CockpitHand, tiers},
+    mode::VehicleSeat,
     overlay::{primitive::Source, store},
     vehicles::{
         arm_steering as arm,
         config::{MountedConfig, ParachuteHandlesConfig},
         driving_view,
+        entry::VehicleEntryIdentity,
         fit::VehicleLatch,
         mounted::{MountedTarget, Reference},
         mounted_grip::MountedGrip,
@@ -23,6 +25,7 @@ use crate::controllers::{
         types::{ArmReadout, VehicleSummary, VehiclesStatus},
         wheel_render::{self, RenderWheel},
     },
+    weapons::hold::refs::Strong,
 };
 
 /// The wrists' mean tilt now, degrees, positive with the leading edges down: what the wingsuit's
@@ -140,6 +143,8 @@ pub(crate) fn stand_down() {
     state.mounted_handles = None;
     state.placement = None;
     state.latch = None;
+    state.entry = None;
+    let retired_owner = state.entry_owner.take();
     driving_view::publish(None);
     state.render = None;
     state.steering_turn = None;
@@ -157,6 +162,7 @@ pub(crate) fn stand_down() {
     state.status.rendered_angle = None;
     push_events(&mut state.status, events);
     drop(state);
+    drop(retired_owner);
     *ARM_PANEL.lock() = None;
     log_handle_events(&handle_events);
     store::clear(Source::WingGuide);
@@ -220,6 +226,8 @@ const MAX_EVENTS: usize = 6;
 
 pub(super) struct State {
     pub(super) status: VehiclesStatus,
+    pub(super) entry: Option<VehicleEntryIdentity>,
+    pub(super) entry_owner: Option<Strong>,
     pub(super) controls: ControlState,
     pub(super) placement: Option<Placement>,
     /// The control each hand held last, kept while its anchor blends out.
@@ -258,50 +266,92 @@ pub(super) struct State {
     pub(super) afterburner: bool,
 }
 
-pub(super) static STATE: Mutex<State> = Mutex::new(State {
-    status: VehiclesStatus {
-        active: false,
-        seat: None,
-        offered: &[],
-        volumes: [None; 2],
-        holds: [None; 2],
-        controls: ControlState::new(),
-        outputs: Outputs::NONE,
-        events: Vec::new(),
-        mounted: None,
-        arms: None,
-        handles: None,
-        fit: None,
-        wheel: None,
-        rendered_angle: None,
-        last_cue: None,
-        cues: 0,
-        afterburner_lights: 0,
-        button_presses: 0,
-        mounted_grip_events: 0,
-        mounted_holds: [false; 2],
-    },
-    controls: ControlState::new(),
-    placement: None,
-    last_holds: [None; 2],
-    last_handles: [None; 2],
-    anchor_weights: [0.0; 2],
-    handles: HandleState::new(),
-    handles_on: false,
-    handles_config: ParachuteHandlesConfig::new(),
-    mounted_reference: None,
-    mounted_target: None,
-    mounted_last: None,
-    mounted_grip: MountedGrip::new(),
-    mounted_barrel: None,
-    mounted_handle_points: [None; 2],
-    mounted_config: MountedConfig::new(),
-    mounted_handles: None,
-    latch: None,
-    render: None,
-    steering_turn: None,
-    afterburner: false,
-});
+impl State {
+    pub(super) fn observe_entry(
+        &mut self,
+        seat: Option<VehicleSeat>,
+        identity: Option<VehicleEntryIdentity>,
+        events: &mut Vec<ControlEvent>,
+    ) {
+        if self.status.seat == seat && self.entry == identity {
+            return;
+        }
+        physical::release_all(&mut self.controls, events);
+        self.controls = ControlState::default();
+        for hand in Hand::BOTH {
+            let i = hand.index();
+            if self.last_holds[i].take().is_some() {
+                self.anchor_weights[i] = 0.0;
+            }
+        }
+        self.placement = None;
+        self.latch = None;
+        self.render = None;
+        self.steering_turn = None;
+        self.afterburner = false;
+        self.status.holds = [None; 2];
+        self.status.controls = self.controls;
+        self.status.outputs = Outputs::NONE;
+        self.status.volumes = [None; 2];
+        self.status.fit = None;
+        self.status.wheel = None;
+        self.status.rendered_angle = None;
+        self.entry = identity;
+    }
+}
+
+impl State {
+    pub(super) const fn new() -> Self {
+        Self {
+            entry: None,
+            entry_owner: None,
+            status: VehiclesStatus {
+                active: false,
+                seat: None,
+                offered: &[],
+                volumes: [None; 2],
+                holds: [None; 2],
+                controls: ControlState::new(),
+                outputs: Outputs::NONE,
+                events: Vec::new(),
+                mounted: None,
+                arms: None,
+                handles: None,
+                fit: None,
+                wheel: None,
+                rendered_angle: None,
+                last_cue: None,
+                cues: 0,
+                afterburner_lights: 0,
+                button_presses: 0,
+                mounted_grip_events: 0,
+                mounted_holds: [false; 2],
+            },
+            controls: ControlState::new(),
+            placement: None,
+            last_holds: [None; 2],
+            last_handles: [None; 2],
+            anchor_weights: [0.0; 2],
+            handles: HandleState::new(),
+            handles_on: false,
+            handles_config: ParachuteHandlesConfig::new(),
+            mounted_reference: None,
+            mounted_target: None,
+            mounted_last: None,
+            mounted_grip: MountedGrip::new(),
+            mounted_barrel: None,
+            mounted_handle_points: [None; 2],
+            mounted_config: MountedConfig::new(),
+            mounted_handles: None,
+            latch: None,
+            render: None,
+            steering_turn: None,
+            afterburner: false,
+        }
+    }
+}
+
+pub(super) static STATE: Mutex<State> = Mutex::new(State::new());
 
 /// The arm steering's readout for the headset panel ([`arm_panel`]).
 pub(super) static ARM_PANEL: Mutex<Option<ArmReadout>> = Mutex::new(None);

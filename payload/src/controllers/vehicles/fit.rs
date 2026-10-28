@@ -24,7 +24,6 @@ use std::{
 
 use glam::{Mat4, Vec3};
 use jc3gi::{
-    character::character::Character,
     types::math::Vector3,
     vehicle::{
         parts::{AdfHashString, PartInstance, PfxBreakable},
@@ -38,6 +37,7 @@ use crate::controllers::{
     vehicles::{
         config::{DrivingViewConfig, PhysicalControlsConfig},
         driving_view::{self, Correction, Entry, Target},
+        entry::VehicleEntry,
         wheel::{
             self, BarsFrame, CockpitTransform, PartWheel, WheelFrame, WheelPartView, WheelSource,
         },
@@ -111,7 +111,6 @@ pub struct SeatReadout {
 /// What the fit keeps for the vehicle the player drives, for as long as they drive it.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct VehicleLatch {
-    vehicle: usize,
     since: Instant,
     /// The fallback wheel, held in the vehicle's space.
     local: Option<WheelFrame>,
@@ -119,10 +118,24 @@ pub struct VehicleLatch {
     view: Entry,
 }
 
+impl VehicleLatch {
+    pub(super) fn new() -> Self {
+        Self {
+            since: Instant::now(),
+            local: None,
+            view: Entry::new(),
+        }
+    }
+}
+
 /// Fit the wheel and the handlebars for the seat: to the vehicle where the local player drives one,
 /// otherwise to the specs. `latch` carries the fallback wheel and the driving view's measurement
 /// between ticks.
-pub fn fit(inputs: &FitInputs, latch: &mut Option<VehicleLatch>) -> Fit {
+pub(super) fn fit(
+    inputs: &FitInputs,
+    entry: Option<&VehicleEntry>,
+    latch: &mut Option<VehicleLatch>,
+) -> Fit {
     let config = inputs.physical;
     let specs = Fit {
         wheel: WheelFrame::from_spec(&config.wheel),
@@ -137,27 +150,13 @@ pub fn fit(inputs: &FitInputs, latch: &mut Option<VehicleLatch>) -> Fit {
         *latch = None;
         return specs;
     }
-    // SAFETY: the input tick runs on the main thread outside the world update, where the local
-    // character and its vehicle are stable.
-    let Some(vehicle) = (unsafe {
-        Character::GetLocalPlayerCharacter()
-            .as_ref()
-            .and_then(|c| c.GetVehiclePtr().as_ref())
-    }) else {
+    let Some(entry) = entry else {
         *latch = None;
         return specs;
     };
-    let address = vehicle as *const Vehicle as usize;
-    if latch.is_none_or(|l| l.vehicle != address) {
-        *latch = Some(VehicleLatch {
-            vehicle: address,
-            since: Instant::now(),
-            local: None,
-            view: Entry::new(),
-        });
-    }
-    // SAFETY: as above.
-    unsafe { fit_vehicle(inputs, vehicle, latch, specs) }
+    latch.get_or_insert_with(VehicleLatch::new);
+    // SAFETY: the input tick retains the observed vehicle outside the world update.
+    unsafe { fit_vehicle(inputs, entry.vehicle(), latch, specs) }
 }
 
 /// How long after entering a vehicle the fallback wheel is carried into its space and the driving
