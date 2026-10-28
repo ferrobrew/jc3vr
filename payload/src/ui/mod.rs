@@ -296,6 +296,9 @@ pub fn restart_banner(ctx: &egui::Context) {
 
 pub fn egui_debug_window(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer) {
     capture_header(ui);
+    if let Some(reason) = crate::lifecycle::deferred_reason() {
+        ui.colored_label(egui::Color32::YELLOW, reason.to_string());
+    }
     let editing = debug_ui_capture().is_some_and(|snapshot| snapshot.edit_capture.any());
     edit_boundary(ui, editing, |ui| egui_debug_window_body(ui, renderer));
 }

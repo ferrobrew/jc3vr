@@ -46,6 +46,7 @@ mod reset;
 pub mod restore;
 pub(crate) mod sidecar;
 pub mod sockets;
+pub(crate) mod spawn_safety;
 pub mod traversal;
 mod world;
 

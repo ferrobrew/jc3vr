@@ -7,6 +7,86 @@ use std::{
 };
 
 use super::*;
+use crate::controllers::weapons::inventory::spawn_safety::{RequestKind, SpawnSafety};
+
+#[test]
+fn exposed_inventory_requests_defer_before_other_participants_or_cleanup() {
+    for kind in [RequestKind::Restore, RequestKind::Twin] {
+        let harness = Harness::new();
+        let safety = Arc::new(SpawnSafety::for_test());
+        safety.activate_for_test();
+        harness
+            .shutdown
+            .lock()
+            .register(ParticipantId::InventorySpawn, safety.clone())
+            .unwrap();
+        let magazine = FakeParticipant::new(ParticipantId::MagazineExecutor, [Answer::Ready]);
+        harness.register(&magazine);
+        harness.add_cleanup("cleanup");
+        safety.submit_for_test(kind, || ()).unwrap();
+        harness.shutdown.lock().request();
+
+        assert!(!harness.frame());
+        assert!(!harness.shutting_down.load(Ordering::Acquire));
+        assert_eq!(harness.cleanups.lock().len(), 1);
+        assert_eq!(magazine.calls.load(Ordering::Relaxed), 0);
+        assert!(harness.events.lock().is_empty());
+        assert!(matches!(
+            harness.shutdown.lock().phase,
+            Phase::Pending {
+                blocked: Some(Blocked::Deferred(DeferReason::SpawnCallbacksUnproven)),
+                ..
+            }
+        ));
+        assert_eq!(safety.submit_for_test(kind, || 37), Ok(37));
+    }
+}
+
+#[test]
+fn later_participant_deferral_reopens_inventory_admission() {
+    let harness = Harness::new();
+    let safety = Arc::new(SpawnSafety::for_test());
+    safety.activate_for_test();
+    harness
+        .shutdown
+        .lock()
+        .register(ParticipantId::InventorySpawn, safety.clone())
+        .unwrap();
+    harness.register(&FakeParticipant::new(
+        ParticipantId::MagazineExecutor,
+        [Answer::Deferred],
+    ));
+    harness.add_cleanup("cleanup");
+    harness.shutdown.lock().request();
+
+    assert!(!harness.frame());
+    assert!(!harness.shutting_down.load(Ordering::Acquire));
+    assert_eq!(harness.cleanups.lock().len(), 1);
+    assert_eq!(safety.submit_for_test(RequestKind::Restore, || 41), Ok(41));
+}
+
+#[test]
+fn unexposed_inventory_preparation_commits_without_reopening_admission() {
+    let harness = Harness::new();
+    let safety = Arc::new(SpawnSafety::for_test());
+    safety.activate_for_test();
+    harness
+        .shutdown
+        .lock()
+        .register(ParticipantId::InventorySpawn, safety.clone())
+        .unwrap();
+    harness.add_cleanup("cleanup");
+    harness.shutdown.lock().request();
+    assert!(harness.frame());
+    assert!(harness.shutting_down.load(Ordering::Acquire));
+    assert_eq!(harness.cleanup_calls.load(Ordering::Relaxed), 1);
+    assert!(safety.post_unpatch_for_test().is_ok());
+    assert!(
+        safety
+            .submit_for_test(RequestKind::Twin, || panic!("native call after commit"))
+            .is_err()
+    );
+}
 
 #[test]
 fn repeated_requests_defer_without_stopping_frames_or_draining_cleanups() {

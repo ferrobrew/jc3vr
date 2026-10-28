@@ -56,6 +56,7 @@ use crate::{
                 engine::{self as inventory_engine, kind_of, weapon_of},
                 persist::{Fingerprint, RESERVES, Record, SLOTS, Sidecar},
                 sidecar,
+                spawn_safety::{self, RequestKind},
             },
         },
     },
@@ -370,7 +371,7 @@ pub(crate) unsafe fn request_twin(owner: &Character, tag_hash: u32) -> bool {
     let generation = PLAN.lock().generation;
     let transform = owner.m_WorldMatrixT1;
     let transform: *const Matrix4 = &transform;
-    unsafe {
+    spawn_safety::submit(RequestKind::Twin, || unsafe {
         system.SpawnTagIndex(
             index,
             transform,
@@ -379,8 +380,8 @@ pub(crate) unsafe fn request_twin(owner: &Character, tag_hash: u32) -> bool {
             (generation | TWIN_REQUEST) as usize as *mut u8,
             u32::MAX,
         )
-    };
-    true
+    })
+    .is_ok()
 }
 
 /// The second pistols the spawn system has handed over since the last call, asked for in the
@@ -707,7 +708,7 @@ unsafe fn request(owner: &Character, origin: Origin, records: Vec<Record>) {
             continue;
         }
         let transform: *const Matrix4 = &transform;
-        unsafe {
+        if spawn_safety::submit(RequestKind::Restore, || unsafe {
             system.SpawnTagIndex(
                 index,
                 transform,
@@ -716,7 +717,12 @@ unsafe fn request(owner: &Character, origin: Origin, records: Vec<Record>) {
                 generation as usize as *mut u8,
                 u32::MAX,
             )
-        };
+        })
+        .is_err()
+        {
+            outcome.failed += 1;
+            continue;
+        }
         plan.spawning.push(Spawning {
             record,
             at: Instant::now(),
@@ -816,15 +822,7 @@ unsafe fn adopt(owner: &mut Character) {
             }
         }
     }
-    let expired: Vec<Record> = {
-        let mut plan = PLAN.lock();
-        let (waiting, expired) = std::mem::take(&mut plan.spawning)
-            .into_iter()
-            .partition(|s| s.at.elapsed() <= SPAWN_WAIT);
-        plan.spawning = waiting;
-        SPAWNING.store(plan.spawning.len(), Ordering::Relaxed);
-        expired.into_iter().map(|s| s.record).collect()
-    };
+    let expired = expire_spawning();
     if !expired.is_empty() {
         tracing::info!(target: "controllers", expired = expired.len(), "inventory: respawns of carried weapons never came");
         if let Some(outcome) = &mut STATUS.lock().last_respawn {
@@ -837,12 +835,23 @@ unsafe fn adopt(owner: &mut Character) {
     }
 }
 
+fn expire_spawning() -> Vec<Record> {
+    let mut plan = PLAN.lock();
+    let (waiting, expired) = std::mem::take(&mut plan.spawning)
+        .into_iter()
+        .partition(|s| s.at.elapsed() <= SPAWN_WAIT);
+    plan.spawning = waiting;
+    SPAWNING.store(plan.spawning.len(), Ordering::Relaxed);
+    expired.into_iter().map(|s| s.record).collect()
+}
+
 /// The spawn system's callback for a respawn: take a strong reference to each spawned weapon and
 /// hand it to the next input tick. Runs inline on the caller of `SpawnSystem::PreUpdate`.
 unsafe extern "system" fn spawned(
     objects: *const Vector<SharedPtr<GameObject>>,
     userdata: *mut c_void,
 ) {
+    let _entry = spawn_safety::callback_entry();
     let Some(objects) = (unsafe { objects.as_ref() }) else {
         return;
     };
@@ -872,3 +881,6 @@ unsafe extern "system" fn spawned(
 
 #[cfg(test)]
 mod status_tests;
+
+#[cfg(test)]
+mod spawn_safety_tests;

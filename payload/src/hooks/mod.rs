@@ -8,7 +8,7 @@ use parking_lot::{Mutex, MutexGuard};
 use re_utilities::{ThreadSuspender, hook_library::HookLibrary};
 
 use crate::{
-    controllers::weapons::reload,
+    controllers::weapons::{inventory::spawn_safety, reload},
     lifecycle::{
         self, DeferReason, ParticipantId, Preparation, PrepareOutcome, PreparedParticipant,
         ShutdownParticipant,
@@ -54,6 +54,12 @@ fn activate_magazine_executor() {
 }
 
 pub(super) fn install() {
+    if let Err(error) =
+        lifecycle::register_participant(ParticipantId::InventorySpawn, spawn_safety::participant())
+    {
+        tracing::error!(%error, "inventory spawn installation refused without shutdown preparation");
+        return;
+    }
     if let Err(error) =
         lifecycle::register_participant(ParticipantId::MagazineExecutor, Arc::new(MagazineShutdown))
     {
@@ -104,6 +110,7 @@ pub(super) fn install() {
         .is_ok()
     {
         activate_magazine_executor();
+        spawn_safety::activate();
     }
 }
 
@@ -148,6 +155,10 @@ pub(super) fn uninstall() -> bool {
     ));
     MAGAZINE_BINDER_INSTALLED.store(false, Ordering::Release);
     reload::serial::set_installed(false);
+    if let Err(error) = spawn_safety::post_unpatch_check() {
+        tracing::error!(%error, "hook removal: inventory spawn callbacks require the image to remain mapped");
+        return false;
+    }
     if character::magazine::active_entries() != 0
         || crate::controllers::physical_hands::human_hull::active_entries() != 0
         || crate::controllers::weapons::grenade::locker_active_entries() != 0

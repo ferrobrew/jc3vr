@@ -17,6 +17,7 @@ use parking_lot::Mutex;
 /// The participants with reversible work that must precede all ordinary cleanup.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum ParticipantId {
+    InventorySpawn,
     MagazineExecutor,
     #[allow(dead_code)] // Reserved until the reversible collider adapter is installed.
     HumanCollider,
@@ -24,9 +25,37 @@ pub(crate) enum ParticipantId {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum DeferReason {
+    SpawnCallbacksUnproven,
+    SpawnCallbackActive,
     MagazineBusy,
     ParticipantBusy(ParticipantId),
     StalePreparation,
+}
+
+impl fmt::Display for DeferReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("shutdown deferred: ")?;
+        match self {
+            Self::SpawnCallbacksUnproven => f.write_str(
+                "inventory restore or second-pistol requests expose native callbacks whose retirement is unproven; gameplay remains active, and ejection requires exiting the game",
+            ),
+            Self::SpawnCallbackActive => f.write_str("an inventory spawn callback is active"),
+            Self::MagazineBusy => f.write_str("the magazine executor is busy"),
+            Self::ParticipantBusy(id) => write!(f, "participant {id:?} is busy"),
+            Self::StalePreparation => f.write_str("the preparation changed before commit"),
+        }
+    }
+}
+
+/// The current refusal, without changing admission or consuming cleanup registrations.
+pub(crate) fn deferred_reason() -> Option<DeferReason> {
+    match SHUTDOWN.lock().phase {
+        Phase::Pending {
+            blocked: Some(Blocked::Deferred(reason)),
+            ..
+        } => Some(reason),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -53,6 +82,17 @@ pub(crate) struct Preparation {
     request: u64,
     attempt: u64,
     revision: u64,
+}
+
+#[cfg(test)]
+impl Preparation {
+    pub(crate) fn for_test() -> Self {
+        Self {
+            request: 1,
+            attempt: 1,
+            revision: 1,
+        }
+    }
 }
 
 pub(crate) enum PrepareOutcome<T> {
@@ -172,7 +212,7 @@ fn advance_shutdown_state(shutdown: &Mutex<Shutdown>, shutting_down: &AtomicBool
             let accepted = shutdown.lock().finish_attempt(attempt.preparation, blocked);
             if accepted && attempt.previous != Some(blocked) {
                 tracing::info!(
-                    ?reason,
+                    reason = %reason,
                     "shutdown deferred; gameplay and cleanup owners remain live"
                 );
             }
@@ -206,7 +246,7 @@ struct Shutdown {
     request_generation: u64,
     attempt_generation: u64,
     revision: u64,
-    participants: [Option<Arc<dyn ShutdownParticipant>>; 2],
+    participants: [Option<Arc<dyn ShutdownParticipant>>; 3],
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -231,7 +271,7 @@ impl Shutdown {
             request_generation: 0,
             attempt_generation: 0,
             revision: 0,
-            participants: [None, None],
+            participants: [None, None, None],
         }
     }
 
@@ -244,8 +284,9 @@ impl Shutdown {
             return Err(RegistrationError::ShutdownStarted);
         }
         let index = match id {
-            ParticipantId::MagazineExecutor => 0,
-            ParticipantId::HumanCollider => 1,
+            ParticipantId::InventorySpawn => 0,
+            ParticipantId::MagazineExecutor => 1,
+            ParticipantId::HumanCollider => 2,
         };
         if self.participants[index].is_some() {
             return Err(RegistrationError::Duplicate(id));
@@ -352,7 +393,7 @@ fn commit_prepared(
 
 struct Attempt {
     preparation: Preparation,
-    participants: [Option<Arc<dyn ShutdownParticipant>>; 2],
+    participants: [Option<Arc<dyn ShutdownParticipant>>; 3],
     previous: Option<Blocked>,
 }
 
