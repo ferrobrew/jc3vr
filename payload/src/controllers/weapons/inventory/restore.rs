@@ -26,6 +26,7 @@ pub(crate) mod adoption;
 use std::{
     ffi::c_void,
     fmt, fs, io,
+    io::Read,
     path::PathBuf,
     sync::{
         Arc,
@@ -55,7 +56,7 @@ use crate::{
                 StatusUnavailable, carry,
                 config::InventoryConfig,
                 engine::{self as inventory_engine, kind_of},
-                persist::{Fingerprint, RESERVES, Record, SLOTS, Sidecar},
+                persist::{Fingerprint, MAX_BYTES, RESERVES, Record, SLOTS, Sidecar},
                 sidecar,
                 spawn_safety::{self, RequestKind},
             },
@@ -609,7 +610,12 @@ unsafe fn read_for_load(
     let Some(path) = path else {
         return (LoadOutcome::Missing, Vec::new(), None);
     };
-    let text = match fs::read_to_string(&path) {
+    let text = match fs::File::open(&path).and_then(|file| {
+        let mut text = String::new();
+        file.take((MAX_BYTES + 1) as u64)
+            .read_to_string(&mut text)?;
+        Ok(text)
+    }) {
         Ok(text) => text,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             return (LoadOutcome::Missing, Vec::new(), None);

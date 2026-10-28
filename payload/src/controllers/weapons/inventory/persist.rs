@@ -1,13 +1,13 @@
 //! The save sidecar: the weapons the player carries beyond the slots, kept beside the game's save
 //! in a file of the mod's own, since the save stores only the slots. Pure: the format, its
-//! version, the fingerprint that ties a sidecar to the save it was written with, and what a load
-//! restores.
+//! version, the fingerprint that compares saved slot types and reserves, and what a load restores.
 //!
 //! The game keeps one save per user and writes it often (autosaves, checkpoints), and the mod
 //! cannot name which save a load reads. So the sidecar is written each time the game stores the
 //! player's data, with a fingerprint of what the store writes (each slot's weapon type and every
-//! reserve), and a load accepts it only when the same values come back out of the save. A sidecar
-//! from another save, an older one, or a later one does not match, and nothing extra is carried.
+//! reserve), and a load accepts it only when the same values come back out of the save. This is a
+//! best-effort compatibility check, not a save identity: different saves with equal slots and
+//! reserves can accept the same sidecar. No verified native save identifier is available here.
 //!
 //! The file is TOML:
 //!
@@ -50,7 +50,10 @@ pub const SLOTS: usize = 8;
 /// How many reserves the save stores.
 pub const RESERVES: usize = 17;
 
-/// The values that tie a sidecar to a save: each slot's weapon type as its spawn tag hash (zero for
+/// The maximum encoded input, including comments and whitespace.
+pub const MAX_BYTES: usize = 64 * 1024;
+
+/// The saved values compared with a sidecar: each slot's weapon type as its spawn tag hash (zero for
 /// an empty slot, and for the heavy slot, which the save never stores), and every reserve.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Fingerprint {
@@ -200,6 +203,11 @@ impl Sidecar {
 
     /// Read a sidecar from its file's text.
     pub fn decode(text: &str) -> Result<Sidecar, SidecarError> {
+        if text.len() > MAX_BYTES {
+            return Err(SidecarError::Malformed(format!(
+                "input exceeds {MAX_BYTES} bytes"
+            )));
+        }
         let version: Versioned =
             toml::from_str(text).map_err(|e| SidecarError::Malformed(e.message().to_owned()))?;
         if version.version != VERSION {
@@ -339,6 +347,32 @@ mod tests {
     }
 
     #[test]
+    fn input_is_byte_bounded_before_toml_parsing() {
+        assert!(matches!(
+            Sidecar::decode(&" ".repeat(MAX_BYTES + 1)),
+            Err(SidecarError::Malformed(_))
+        ));
+    }
+
+    #[test]
+    fn writer_records_with_mission_stash_and_active_carry_round_trip_without_a_place_count_cap() {
+        let mut file = sidecar();
+        let stashed = Socket::ALL.map(|socket| Record {
+            socket,
+            ..file.carried[0]
+        });
+        let active = Socket::ALL.map(|socket| Record {
+            socket,
+            ..file.carried[1]
+        });
+        file.carried = stashed.into_iter().chain(active).collect();
+        assert!(file.carried.len() > Socket::COUNT + Hand::BOTH.len());
+        let text = file.encode();
+        assert!(text.len() < MAX_BYTES);
+        assert_eq!(Sidecar::decode(&text), Ok(file));
+    }
+
+    #[test]
     fn a_file_from_before_separate_pistols_says_nothing_of_the_slot_s_pistol() {
         let text = sidecar().encode();
         assert!(text.contains("slot_pistol_single = true"));
@@ -393,7 +427,7 @@ mod tests {
     }
 
     #[test]
-    fn the_fingerprint_accepts_its_own_save_only() {
+    fn differing_slot_types_and_reserves_reject_the_sidecar() {
         let saved = fingerprint();
         assert_eq!(saved.matches(&saved, |_| true), Ok(()));
         let mut other_slot = saved;
@@ -415,6 +449,20 @@ mod tests {
     }
 
     #[test]
+    fn equal_fingerprints_accept_different_carried_records() {
+        let first = sidecar();
+        let second = Sidecar {
+            carried: Vec::new(),
+            ..first.clone()
+        };
+        assert_ne!(first.carried, second.carried);
+        assert_eq!(
+            first.fingerprint.matches(&second.fingerprint, |_| true),
+            Ok(())
+        );
+    }
+
+    #[test]
     fn a_slot_of_content_not_installed_loads_empty_and_still_matches() {
         let saved = fingerprint();
         let mut loaded = saved;
@@ -422,7 +470,7 @@ mod tests {
         assert_eq!(saved.matches(&loaded, |hash| hash != 0x3333_4444), Ok(()));
         assert!(
             saved.matches(&loaded, |_| true).is_err(),
-            "a known type that loads empty is another save"
+            "a known type that loads empty differs from the saved fingerprint"
         );
     }
 
