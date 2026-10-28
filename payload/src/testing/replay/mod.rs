@@ -28,6 +28,7 @@
 
 pub(crate) mod cursor;
 mod load;
+mod validate;
 
 use std::{
     path::PathBuf,
@@ -132,6 +133,11 @@ pub(crate) enum ReplayError {
     Empty {
         path: PathBuf,
     },
+    InvalidSample {
+        path: PathBuf,
+        frame: Option<usize>,
+        field: String,
+    },
     LoaderThread(Arc<std::io::Error>),
     /// The loader thread panicked.
     LoaderPanicked {
@@ -156,6 +162,13 @@ impl std::fmt::Display for ReplayError {
             }
             ReplayError::Decode { path, error } => write!(f, "{}: {error}", path.display()),
             ReplayError::Empty { path } => write!(f, "{} holds no frames", path.display()),
+            ReplayError::InvalidSample { path, frame, field } => {
+                write!(f, "{}: ", path.display())?;
+                if let Some(frame) = frame {
+                    write!(f, "frame {frame}: ")?;
+                }
+                write!(f, "{field} is non-finite or degenerate")
+            }
             ReplayError::LoaderThread(error) => {
                 write!(f, "could not spawn the loader thread: {error}")
             }
@@ -590,6 +603,7 @@ impl State {
                     action_schema: crate::vr::input::semantic::SCHEMA_VERSION,
                     dominant_hand: c.controllers.dominant_hand,
                     world_scale: c.vr.world_scale,
+                    start: request.options.start,
                 },
             )
         });
@@ -678,16 +692,11 @@ impl State {
         for warning in &loaded.warnings {
             tracing::warn!("replay: {warning}");
         }
-        let transform = match run.options.start {
-            StartMode::InPlace => None,
-            StartMode::Marker => Some(header.start.transform),
-            StartMode::Bookmark => Some(bookmark_transform(header.start.bookmark.as_deref()).unwrap_or_else(|| {
-                tracing::warn!(
-                    bookmark = ?header.start.bookmark,
-                    "replay: the start marker names no bookmark that exists; starting at the marker"
-                );
-                header.start.transform
-            })),
+        let transform = match resolve_start(&loaded, run.options.start, || {
+            bookmark_transform(header.start.bookmark.as_deref())
+        }) {
+            Ok(transform) => transform,
+            Err(error) => return self.fail(run.id, error),
         };
         match transform {
             Some(transform) => {
@@ -763,6 +772,23 @@ impl State {
     }
 }
 
+fn resolve_start(
+    loaded: &Loaded,
+    mode: StartMode,
+    bookmark: impl FnOnce() -> Option<[f32; 16]>,
+) -> Result<Option<[f32; 16]>, ReplayError> {
+    let transform = match mode {
+        StartMode::InPlace => return Ok(None),
+        StartMode::Marker => loaded.recording.header.start.transform,
+        StartMode::Bookmark => bookmark().unwrap_or_else(|| {
+            tracing::warn!(bookmark = ?loaded.recording.header.start.bookmark, "replay: the start bookmark is unavailable; starting at the marker");
+            loaded.recording.header.start.transform
+        }),
+    };
+    validate::transform(&loaded.path, "resolved start transform", &transform)?;
+    Ok(Some(transform))
+}
+
 /// The transform of the director bookmark named `name`, as it stands now.
 fn bookmark_transform(name: Option<&str>) -> Option<[f32; 16]> {
     let name = name?;
@@ -773,179 +799,4 @@ fn bookmark_transform(name: Option<&str>) -> Option<[f32; 16]> {
 }
 
 #[cfg(test)]
-mod tests {
-    use tracking_format::input::{CapturedInput, DiscontinuityReason, InputRecord};
-
-    use super::*;
-
-    fn fixture() -> Arc<Loaded> {
-        let frame = |time_ns| crate::recorder::tracking::format::Frame {
-            time_ns,
-            display_time_ns: 90,
-            session: crate::recorder::tracking::format::SessionSample {
-                state: None,
-                should_render: true,
-                head_tracked: false,
-            },
-            head: None,
-            stage: StageInfo::default(),
-            controllers: None,
-            semantic: None,
-            recenters: Vec::new(),
-        };
-        let header = crate::recorder::tracking::format::Header {
-            build: "fixture".into(),
-            recorded_at: "fixture".into(),
-            action_schema: 4,
-            start: crate::recorder::tracking::format::StartMarker {
-                transform: [0.0; 16],
-                bookmark: None,
-            },
-            dominant_hand: controller_frame::Hand::Right,
-            world_scale: 1.0,
-            time_scale: 1.0,
-        };
-        let input = [100, 110, 130]
-            .map(|capture_time_ns| CapturedInput {
-                capture_time_ns,
-                frame_sequence: Some(capture_time_ns),
-                record: InputRecord::Discontinuity {
-                    reason: DiscontinuityReason::Unavailable,
-                    discarded: 0,
-                },
-            })
-            .to_vec();
-        let input_replay = tracking_format::input::replay::PreparedInput::new(&input);
-        Arc::new(Loaded {
-            path: PathBuf::from("fixture.tracking"),
-            recording: crate::recorder::tracking::format::Recording {
-                header,
-                frames: vec![frame(100), frame(110)],
-                input,
-                version: 2,
-                truncated: false,
-                skipped_records: 0,
-            },
-            times: vec![100, 110],
-            semantic: true,
-            input_available: true,
-            input_replay,
-            warnings: Vec::new(),
-        })
-    }
-
-    #[test]
-    fn runtime_replay_nonzero_origin_tail_and_repeated_start_stop() {
-        let _serial = history::TEST_LOCK.lock();
-        let now = Instant::now();
-        let loaded = fixture();
-        let mut state = State {
-            pending: None,
-            stop: false,
-            next_run: 0,
-            phase: PhaseState::Idle,
-            last: None,
-            orphans: Vec::new(),
-        };
-        for (index, pacing) in [Pacing::RealTime, Pacing::FrameLocked]
-            .into_iter()
-            .enumerate()
-        {
-            state.play(
-                Run {
-                    id: RunId(index as u32),
-                    options: ReplayOptions {
-                        start: StartMode::InPlace,
-                        pacing,
-                    },
-                },
-                Arc::clone(&loaded),
-            );
-            assert!(state.stage_frame(now).unwrap().is_empty());
-            assert_eq!(
-                take_frames().unwrap()[0].display_time_ns,
-                DISPLAY_TIME_ORIGIN_NS + 100
-            );
-            assert!(take_frames().is_none());
-            assert_eq!(history::replayed_for_test().1, loaded.recording.input[..1]);
-            state.stage_frame(now + Duration::from_nanos(10)).unwrap();
-            assert_eq!(take_frames().unwrap().len(), 1);
-            state.advance();
-            assert!(matches!(state.phase, PhaseState::Playing { .. }));
-            assert_eq!(history::replayed_for_test().1, loaded.recording.input[..2]);
-            state.stage_frame(now + Duration::from_nanos(30)).unwrap();
-            assert!(take_frames().is_none());
-            assert_eq!(history::replayed_for_test().1, loaded.recording.input);
-            state.advance();
-            assert!(matches!(state.phase, PhaseState::Idle));
-            assert!(matches!(
-                state.last.as_ref().unwrap().1,
-                ReplayOutcome::Completed { frames: 2, .. }
-            ));
-            assert_eq!(history::replayed_for_test(), (false, Vec::new()));
-            state.play(
-                Run {
-                    id: RunId(20 + index as u32),
-                    options: ReplayOptions {
-                        start: StartMode::InPlace,
-                        pacing,
-                    },
-                },
-                Arc::clone(&loaded),
-            );
-            state.stage_frame(now).unwrap();
-            assert_eq!(history::replayed_for_test().1.len(), 1);
-            state.finish(ReplayOutcome::Stopped);
-            assert!(matches!(state.phase, PhaseState::Idle));
-            assert_eq!(history::replayed_for_test(), (false, Vec::new()));
-            assert!(take_frames().is_none());
-        }
-        history::take_capture();
-    }
-
-    #[test]
-    fn input_pacing_uses_capture_time_and_consumes_each_record_once() {
-        let records = [10, 20, 30].map(|capture_time_ns| CapturedInput {
-            capture_time_ns,
-            frame_sequence: None,
-            record: InputRecord::Discontinuity {
-                reason: DiscontinuityReason::Unavailable,
-                discarded: capture_time_ns,
-            },
-        });
-        let prepared = tracking_format::input::replay::PreparedInput::new(&records);
-        for deadlines in [vec![10, 19, 20, 30], vec![30]] {
-            let mut cursor = InputReplay::default();
-            let mut actual = Vec::new();
-            for elapsed in deadlines {
-                let deadline = input_deadline(Pacing::RealTime, elapsed, 0, None, 30);
-                let range = cursor.advance(&prepared, deadline);
-                actual.extend_from_slice(&records[range]);
-            }
-            assert_eq!(actual, records);
-            assert!(cursor.finished(records.len()));
-        }
-        let mut cursor = InputReplay::default();
-        assert_eq!(
-            cursor.advance(
-                &prepared,
-                input_deadline(Pacing::FrameLocked, 9999, 0, Some(10), 30)
-            ),
-            0..1
-        );
-        assert_eq!(
-            cursor.advance(
-                &prepared,
-                input_deadline(Pacing::FrameLocked, 9999, 0, Some(20), 30)
-            ),
-            1..2
-        );
-        assert_eq!(
-            cursor.advance(
-                &prepared,
-                input_deadline(Pacing::FrameLocked, 0, 0, None, 30)
-            ),
-            2..3
-        );
-    }
-}
+mod tests;

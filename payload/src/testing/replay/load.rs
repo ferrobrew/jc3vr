@@ -11,7 +11,7 @@ use std::{
 use crate::{
     controllers::frame::Hand,
     recorder::tracking::format::{self, Recording, SemanticSample},
-    testing::replay::ReplayError,
+    testing::replay::{ReplayError, StartMode, validate},
 };
 
 /// A recording read and checked, ready to replay.
@@ -37,6 +37,7 @@ pub(crate) struct Expected {
     pub(crate) action_schema: u32,
     pub(crate) dominant_hand: Hand,
     pub(crate) world_scale: f32,
+    pub(crate) start: StartMode,
 }
 
 /// Read the recording at `path` on a new thread.
@@ -183,6 +184,10 @@ fn prepare(path: &Path, recording: Recording, expected: Expected) -> Result<Load
             },
         });
     }
+    validate::recording(path, &recording, expected.world_scale)?;
+    if expected.start == StartMode::Marker {
+        validate::transform(path, "start.transform", &recording.header.start.transform)?;
+    }
     let (semantic, mut warnings) = check(&recording, expected);
     let input_available = recording.version >= 2
         && !recording.input.is_empty()
@@ -272,15 +277,25 @@ fn matches_schema(sample: &SemanticSample) -> bool {
 mod tests {
     use std::io::Cursor;
 
-    use glam::Vec2;
+    use glam::{Mat4, Quat, Vec2, Vec3};
     use pretty_assertions::assert_eq;
     use tracking_synth::{scripts, synth::Options};
 
     use super::*;
     use crate::{
-        controllers::frame::ActionSetKind,
-        recorder::tracking::format::{Frame, Header, SessionSample, StartMarker},
+        controllers::{
+            fingers::{config::FingerSource, curl},
+            frame::{
+                ActionSetKind, HAND_JOINT_COUNT, HandFrame, HandInputs, HandJoint,
+                InteractionProfile, Pose,
+            },
+        },
+        recorder::tracking::format::{
+            ControllerSample, EyeSample, Frame, HeadSample, Header, RecenterEvent, SessionSample,
+            StartMarker,
+        },
         vr::{
+            RecenterCause, RecenterKind,
             input::semantic::{
                 SCHEMA_VERSION, SemanticSet,
                 frame::{ActionState, ActionValue, SetState},
@@ -419,6 +434,7 @@ mod tests {
         action_schema: 2,
         dominant_hand: Hand::Right,
         world_scale: 1.0,
+        start: StartMode::InPlace,
     };
 
     fn set(set: SemanticSet, count: usize) -> SetState {
@@ -473,6 +489,10 @@ mod tests {
     }
 
     fn wire_load(recording: Recording) -> Result<Loaded, ReplayError> {
+        wire_load_mode(recording, StartMode::InPlace)
+    }
+
+    fn wire_load_mode(recording: Recording, start: StartMode) -> Result<Loaded, ReplayError> {
         let mut bytes = format::encode_input_preamble(&recording.header);
         for entry in &recording.input {
             bytes.extend(tracking_format::encode_input(entry).unwrap());
@@ -483,8 +503,233 @@ mod tests {
         prepare(
             Path::new("fixture.tracking"),
             format::decode(&bytes).unwrap(),
-            EXPECTED,
+            Expected { start, ..EXPECTED },
         )
+    }
+
+    #[test]
+    fn numeric_admission_follows_wire_decode_and_component_validity() {
+        let base = || recording(SemanticSet::Global.actions().len());
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let mut sample = base();
+            sample.header.start.transform = Mat4::IDENTITY.to_cols_array();
+            sample.header.start.transform[12] = bad;
+            assert!(matches!(
+                wire_load_mode(sample.clone(), StartMode::Marker),
+                Err(ReplayError::InvalidSample { frame: None, .. })
+            ));
+            assert!(wire_load_mode(sample.clone(), StartMode::InPlace).is_ok());
+            assert!(wire_load_mode(sample, StartMode::Bookmark).is_ok());
+            let mut sample = base();
+            sample.frames[0].head = Some(HeadSample {
+                eyes: [EyeSample {
+                    pose: Pose::IDENTITY,
+                    fov: [-0.5, 0.5, 0.5, -0.5],
+                }; 2],
+            });
+            sample.frames[0].head.as_mut().unwrap().eyes[1].fov[0] = bad;
+            assert!(
+                matches!(wire_load(sample), Err(ReplayError::InvalidSample { frame: Some(0), field, .. }) if field == "head.eyes[1].fov")
+            );
+            let mut sample = base();
+            let mut hand = HandFrame::default();
+            hand.grip.pose.position = Vec3::splat(bad);
+            hand.grip.pose.orientation = Quat::from_xyzw(bad, 0.0, 0.0, 0.0);
+            hand.joints = Some([HandJoint::default(); HAND_JOINT_COUNT]);
+            hand.joints.as_mut().unwrap()[0].pose.position = Vec3::splat(bad);
+            sample.frames[0].controllers = Some(ControllerSample {
+                focused: true,
+                action_set: ActionSetKind::OnFoot,
+                hands: [hand, HandFrame::default()],
+            });
+            assert!(wire_load(sample.clone()).is_ok());
+            sample.frames[0].controllers.as_mut().unwrap().hands[0]
+                .grip
+                .position_valid = true;
+            assert!(matches!(
+                wire_load(sample.clone()),
+                Err(ReplayError::InvalidSample { frame: Some(0), .. })
+            ));
+            sample.frames[0].controllers.as_mut().unwrap().hands[0]
+                .grip
+                .position_valid = false;
+            sample.frames[0].controllers.as_mut().unwrap().hands[0]
+                .grip
+                .orientation_valid = true;
+            assert!(wire_load(sample).is_err());
+        }
+        let mut sample = base();
+        assert!(wire_load_mode(sample.clone(), StartMode::Marker).is_err());
+        sample.frames[0].recenters.push(RecenterEvent {
+            kind: RecenterKind::Full,
+            cause: RecenterCause::Manual,
+            turn: Quat::from_xyzw(0.0, 0.0, 0.0, 0.0),
+        });
+        assert!(
+            matches!(wire_load(sample), Err(ReplayError::InvalidSample { frame: Some(0), field, .. }) if field == "recenters[0].turn")
+        );
+    }
+
+    #[test]
+    fn active_raw_inputs_are_admitted_by_domain_before_finger_estimation() {
+        type InputScalar = fn(&mut HandInputs) -> &mut f32;
+        let fields: [(&str, InputScalar); 8] = [
+            ("trigger", |i| &mut i.trigger),
+            ("squeeze", |i| &mut i.squeeze),
+            ("squeeze_force", |i| &mut i.squeeze_force),
+            ("trackpad_force", |i| &mut i.trackpad_force),
+            ("thumbstick", |i| &mut i.thumbstick.x),
+            ("thumbstick", |i| &mut i.thumbstick.y),
+            ("trackpad", |i| &mut i.trackpad.x),
+            ("trackpad", |i| &mut i.trackpad.y),
+        ];
+        for (name, field) in fields {
+            for touch in [false, true] {
+                for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 1.01, -1.01] {
+                    let mut sample = recording(SemanticSet::Global.actions().len());
+                    let mut hand = HandFrame {
+                        active: true,
+                        ..Default::default()
+                    };
+                    hand.inputs.trigger_touch = touch;
+                    hand.inputs.trackpad_touch = touch;
+                    hand.inputs.thumbstick_touch = touch;
+                    *field(&mut hand.inputs) = bad;
+                    sample.frames[0].controllers = Some(ControllerSample {
+                        focused: true,
+                        action_set: ActionSetKind::OnFoot,
+                        hands: [hand, HandFrame::default()],
+                    });
+                    assert!(
+                        matches!(wire_load(sample.clone()), Err(ReplayError::InvalidSample { frame: Some(0), field, .. }) if field == format!("controllers.hands[0].inputs.{name}"))
+                    );
+                    sample.frames[0].controllers.as_mut().unwrap().hands[0].active = false;
+                    assert!(wire_load(sample).is_ok());
+                }
+            }
+        }
+        for profile in [
+            InteractionProfile::Other,
+            InteractionProfile::ValveIndex,
+            InteractionProfile::OculusTouch,
+        ] {
+            for value in [0.0, 0.5, 1.0] {
+                let mut sample = recording(SemanticSet::Global.actions().len());
+                let hand = HandFrame {
+                    active: true,
+                    profile,
+                    inputs: HandInputs {
+                        trigger: value,
+                        trigger_touch: true,
+                        squeeze: value,
+                        squeeze_force: value,
+                        trackpad_force: value,
+                        thumbstick: Vec2::new(-value, value),
+                        trackpad: Vec2::new(value, -value),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                };
+                sample.frames[0].controllers = Some(ControllerSample {
+                    focused: true,
+                    action_set: ActionSetKind::OnFoot,
+                    hands: [hand, HandFrame::default()],
+                });
+                let loaded = wire_load(sample).unwrap();
+                let hand = &loaded.recording.frames[0]
+                    .controllers
+                    .as_ref()
+                    .unwrap()
+                    .hands[0];
+                assert!(hand.joints.is_none());
+                for source in [FingerSource::Auto, FingerSource::Estimate] {
+                    let (_, curls) = curl::select(source, Hand::Left, hand).unwrap();
+                    assert!(
+                        curls
+                            .curl
+                            .into_iter()
+                            .chain(curls.splay)
+                            .all(f32::is_finite)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cockpit_positions_bound_actual_midpoint_offsets_and_scaled_composition() {
+        let head = |positions: [Vec3; 2]| HeadSample {
+            eyes: positions.map(|position| EyeSample {
+                pose: Pose {
+                    position,
+                    orientation: Quat::from_rotation_y(0.3),
+                },
+                fov: [-0.5, 0.5, 0.5, -0.5],
+            }),
+        };
+        let mut sample = recording(SemanticSet::Global.actions().len());
+        let huge = Vec3::splat(3e38);
+        assert!(!(0.5 * (huge + huge)).is_finite());
+        sample.frames[0].head = Some(head([huge; 2]));
+        assert!(wire_load(sample).is_err());
+        let max = validate::MAX_COCKPIT_POSITION_M;
+        for positions in [
+            [Vec3::splat(max - 0.1), Vec3::splat(max)],
+            [Vec3::splat(-max), Vec3::splat(max)],
+        ] {
+            let mut sample = recording(SemanticSet::Global.actions().len());
+            sample.frames[0].head = Some(head(positions));
+            let loaded = wire_load(sample).unwrap();
+            let eyes = loaded.recording.frames[0].head.unwrap().eyes;
+            let center = 0.5 * (eyes[0].pose.position + eyes[1].pose.position);
+            let orientation = eyes[0]
+                .pose
+                .orientation
+                .slerp(eyes[1].pose.orientation, 0.5);
+            for scale in [0.01, 1.0, 100.0] {
+                let body = Quat::from_euler(glam::EulerRot::YXZ, 1.2, -0.7, 0.8);
+                let world = crate::headpose::xr::compose(
+                    center,
+                    orientation,
+                    body,
+                    Vec3::new(10000.0, 200.0, -3000.0),
+                    scale,
+                );
+                assert!(world.position.is_finite() && world.orientation.is_finite());
+                for eye in eyes {
+                    let offset = body * ((eye.pose.position - center) * scale);
+                    assert!(offset.is_finite() && (world.position + offset).is_finite());
+                }
+            }
+        }
+        let mut sample = recording(SemanticSet::Global.actions().len());
+        sample.header.start.transform = Mat4::from_translation(huge).to_cols_array();
+        assert!(wire_load_mode(sample, StartMode::Marker).is_ok());
+    }
+
+    #[test]
+    fn finite_degenerate_views_are_rejected_after_decode() {
+        let base = || recording(SemanticSet::Global.actions().len());
+        for fov in [[0.0; 4], [-2.0, 0.5, 0.5, -0.5], [0.5, -0.5, 0.5, -0.5]] {
+            let mut sample = base();
+            sample.frames[0].head = Some(HeadSample {
+                eyes: [EyeSample {
+                    pose: Pose::IDENTITY,
+                    fov,
+                }; 2],
+            });
+            assert!(wire_load(sample).is_err());
+        }
+        let mut sample = base();
+        let mut pose = Pose::IDENTITY;
+        pose.orientation = Quat::from_xyzw(0.0, 0.0, 0.0, 0.0);
+        sample.frames[0].head = Some(HeadSample {
+            eyes: [EyeSample {
+                pose,
+                fov: [-0.5, 0.5, 0.5, -0.5],
+            }; 2],
+        });
+        assert!(wire_load(sample).is_err());
     }
 
     #[test]
