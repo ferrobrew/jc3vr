@@ -599,6 +599,7 @@ mod tests {
         controller: u64,
         num_of_bones: i32,
     ) -> (AnimationEvaluation, ProducerBuffers, Source, Animation) {
+        evidence::select_controller(Some(controller));
         let before = ProducerBuffers {
             producer: controller + 1,
             owner: controller + 2,

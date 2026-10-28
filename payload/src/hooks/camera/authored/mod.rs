@@ -12,6 +12,7 @@ mod runtime;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use evidence::select_controller;
 pub(crate) use native::{animation_evaluation, animation_update};
 use parking_lot::Mutex;
 pub(crate) use runtime::{TrackedView, capture, normal_reset, reset, selected, take_normal_reset};

@@ -113,35 +113,43 @@ pub(super) struct Finalized {
     pub animation: Animation,
 }
 
-const MAX_LATEST_PUBLICATIONS: usize = 64;
-
 #[derive(Default)]
 struct Publication {
     serial: u64,
-    latest: Vec<Finalized>,
+    selected: Option<u64>,
+    latest: Option<Finalized>,
 }
 
 impl Publication {
-    fn record(&mut self, source: Source, pose_buffer: u64, animation: Animation) {
-        self.serial = self.serial.wrapping_add(1);
-        let serial = self.serial;
-        self.latest
-            .retain(|entry| entry.source.controller != source.controller);
-        if self.latest.len() == MAX_LATEST_PUBLICATIONS {
-            self.latest.remove(0);
+    fn select(&mut self, controller: Option<u64>) {
+        if self.selected != controller {
+            self.latest = None;
+            self.selected = controller;
         }
-        self.latest.push(Finalized {
+    }
+
+    fn record(&mut self, source: Source, pose_buffer: u64, animation: Animation) {
+        if self.selected != Some(source.controller) {
+            return;
+        }
+        self.serial = self.serial.wrapping_add(1);
+        self.latest = Some(Finalized {
             source,
             pose_buffer,
-            serial,
+            serial: self.serial,
             animation,
         });
     }
 
     fn invalidate(&mut self, controller: u64) {
-        self.latest
-            .retain(|entry| entry.source.controller != controller);
+        if self.selected == Some(controller) {
+            self.latest = None;
+        }
     }
+}
+
+pub(crate) fn select_controller(controller: Option<u64>) {
+    PUBLICATION.lock().select(controller);
 }
 
 /// Called only at the existing serialized controller seam; no native pointer is stored.
@@ -161,8 +169,8 @@ pub(super) fn matching(
     let publication = PUBLICATION.lock();
     let latest = publication
         .latest
-        .iter()
-        .find(|entry| entry.source.controller == source.controller)
+        .as_ref()
+        .filter(|entry| entry.source.controller == source.controller)
         .ok_or(Refusal::MissingFinalizedAnimation)?;
     if latest.source != source
         || latest.pose_buffer != pose_buffer
@@ -175,7 +183,8 @@ pub(super) fn matching(
 
 static PUBLICATION: Mutex<Publication> = Mutex::new(Publication {
     serial: 0,
-    latest: Vec::new(),
+    selected: None,
+    latest: None,
 });
 
 #[cfg(test)]
@@ -253,6 +262,7 @@ mod tests {
             playing: vec![clip(0.1)],
             samplers: vec![clip(0.1)],
         };
+        select_controller(Some(source.controller));
         publish(source, 100, animation.clone());
         let first = matching(source, 100, &animation).unwrap();
         let mut changed = animation.clone();
@@ -282,9 +292,9 @@ mod tests {
     }
 
     #[test]
-    fn publication_is_bounded_replaces_controllers_and_invalidates_locally() {
+    fn only_selected_local_publication_survives_npc_updates_and_selection_replacement() {
         let source = Source {
-            controller: 0,
+            controller: 1,
             producer: 901,
             producer_owner: 902,
             skeleton_resource: 903,
@@ -300,8 +310,11 @@ mod tests {
             samplers: vec![clip(0.1)],
         };
         let mut publication = Publication::default();
-
-        for controller in 1..=65 {
+        publication.select(Some(source.controller));
+        publication.record(source, 100, animation.clone());
+        let serial = publication.latest.as_ref().unwrap().serial;
+        for controller in 2..=100 {
+            publication.select(Some(source.controller));
             publication.record(
                 Source {
                     controller,
@@ -310,49 +323,25 @@ mod tests {
                 controller,
                 animation.clone(),
             );
+            publication.invalidate(controller);
         }
-
-        assert_eq!(publication.latest.len(), MAX_LATEST_PUBLICATIONS);
-        assert_eq!(publication.latest[0].source.controller, 2);
-        assert!(
-            !publication
-                .latest
-                .iter()
-                .any(|entry| entry.source.controller == 1)
-        );
-
-        let previous_serial = publication.latest[63].serial;
-        publication.record(
-            Source {
-                controller: 65,
-                ..source
-            },
-            650,
-            animation.clone(),
-        );
-        assert_eq!(publication.latest.len(), MAX_LATEST_PUBLICATIONS);
-        assert_eq!(publication.latest[63].source.controller, 65);
-        assert_eq!(publication.latest[63].pose_buffer, 650);
-        assert!(publication.latest[63].serial > previous_serial);
-
-        publication.record(
-            Source {
-                controller: 66,
-                ..source
-            },
-            66,
-            animation,
-        );
-        assert_eq!(publication.latest.len(), MAX_LATEST_PUBLICATIONS);
-        assert_eq!(publication.latest[0].source.controller, 3);
-
-        publication.invalidate(40);
-        assert!(
-            !publication
-                .latest
-                .iter()
-                .any(|entry| entry.source.controller == 40)
-        );
+        let local = publication.latest.as_ref().unwrap();
+        assert_eq!(local.source, source);
+        assert_eq!(local.pose_buffer, 100);
+        assert_eq!(local.serial, serial);
+        publication.select(Some(2));
+        assert!(publication.latest.is_none());
+        publication.record(source, 100, animation.clone());
+        assert!(publication.latest.is_none());
+        let replacement = Source {
+            controller: 2,
+            ..source
+        };
+        publication.record(replacement, 200, animation);
+        assert_eq!(publication.latest.as_ref().unwrap().source, replacement);
+        assert!(publication.latest.as_ref().unwrap().serial > serial);
+        publication.select(None);
+        assert!(publication.latest.is_none());
     }
 
     #[test]

@@ -70,12 +70,12 @@ struct Runtime {
     character: u64,
     source: Option<Source>,
     graph_state: Option<GraphState>,
-    pose_buffer: u64,
     finalized: u64,
     observed: Option<NativeSample>,
     clips: Vec<Clip>,
     clip_source: u64,
     outgoing: bool,
+    #[cfg(test)]
     serial: u64,
     run: u64,
     baseline: Option<Baseline>,
@@ -305,7 +305,10 @@ impl Runtime {
             return Err(Refusal::Policy(InvalidPair::Teleport));
         }
         if self.previous.is_none() || self.finalized != native.finalized {
-            self.serial = self.serial.wrapping_add(1);
+            #[cfg(test)]
+            {
+                self.serial = self.serial.wrapping_add(1);
+            }
             let stamp = Stamp {
                 character: native.character,
                 continuity: self.run,
@@ -378,7 +381,6 @@ impl Runtime {
                 self.pair = self.previous.map(|previous| [previous, sample]);
             }
             self.previous = Some(sample);
-            self.pose_buffer = native.pose_buffer;
             self.finalized = native.finalized;
             self.observed = Some(native);
             *STATUS.lock() = Status::NamedCase {
@@ -496,7 +498,6 @@ impl Runtime {
         self.character = 0;
         self.source = None;
         self.graph_state = None;
-        self.pose_buffer = 0;
         self.finalized = 0;
         self.observed = None;
         self.clips.clear();
@@ -543,12 +544,12 @@ static STATE: Mutex<Runtime> = Mutex::new(Runtime {
     character: 0,
     source: None,
     graph_state: None,
-    pose_buffer: 0,
     finalized: 0,
     observed: None,
     clips: Vec::new(),
     clip_source: 0,
     outgoing: false,
+    #[cfg(test)]
     serial: 0,
     run: 0,
     baseline: None,

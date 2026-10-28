@@ -43,7 +43,9 @@ fn update_animations_time(controller: *mut AnimationController, dt: f32) {
         dt
     };
     UPDATE_ANIMATIONS_TIME.get().unwrap().call(controller, dt);
-    if let Some(controller) = unsafe { controller.as_ref() } {
+    if unsafe { is_local_controller(controller) }
+        && let Some(controller) = unsafe { controller.as_ref() }
+    {
         unsafe { crate::hooks::camera::authored::animation_update(controller, None) };
     }
 }
@@ -60,18 +62,30 @@ fn update_animations(controller: *mut AnimationController, dt: f32, num_of_bones
     } else {
         dt
     };
+    let local = unsafe { is_local_controller(controller) };
     let evaluation = unsafe {
-        controller.as_ref().and_then(|controller| {
-            crate::hooks::camera::authored::animation_evaluation(controller, num_of_bones)
-        })
+        controller
+            .as_ref()
+            .filter(|_| local)
+            .and_then(|controller| {
+                crate::hooks::camera::authored::animation_evaluation(controller, num_of_bones)
+            })
     };
     UPDATE_ANIMATIONS
         .get()
         .unwrap()
         .call(controller, dt, num_of_bones);
-    if let Some(controller) = unsafe { controller.as_ref() } {
+    if local && let Some(controller) = unsafe { controller.as_ref() } {
         unsafe { crate::hooks::camera::authored::animation_update(controller, evaluation) };
     }
+}
+
+unsafe fn is_local_controller(controller: *mut AnimationController) -> bool {
+    let selected = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
+        .map(|player| player.m_AnimatedModel.m_AnimationController)
+        .filter(|controller| !controller.is_null());
+    crate::hooks::camera::authored::select_controller(selected.map(|controller| controller as u64));
+    selected.is_some_and(|selected| std::ptr::eq(selected, controller))
 }
 
 /// Whether this controller belongs to the local player, that player's body rule state is the
