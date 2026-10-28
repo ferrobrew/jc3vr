@@ -208,6 +208,33 @@ impl Bindings {
         masks
     }
 
+    pub(crate) fn effective_masks(
+        &self,
+        mode: Mode,
+        controls: &Controls,
+        input: &SemanticInput,
+    ) -> Vec<Mask> {
+        let mut masks = self.semantic_masks(mode, controls);
+        if mode == Mode::Ui
+            && let Some(hand) = controls.pointer_hand
+        {
+            let select = MenuAction::PointerSelect.id();
+            masks.retain(|mask| mask.exempt != Some(select));
+            if let Some(action) = input.get(select) {
+                for physical in MASKABLE {
+                    if action.bound[hand.index()].contains(physical) {
+                        masks.push(Mask {
+                            hand,
+                            scope: MaskScope::Input(physical),
+                            exempt: Some(select),
+                        });
+                    }
+                }
+            }
+        }
+        masks
+    }
+
     /// Read the current grapple gesture permissions without advancing the tables.
     pub fn grapple_permissions(&self, context: GrappleContext) -> GrapplePermissions {
         self.grapple.current_permissions(context)
@@ -277,7 +304,7 @@ impl Bindings {
             })
         });
         let ctx = TableCtx::of(controls);
-        let masks = self.semantic_masks(mode, controls);
+        let masks = self.effective_masks(mode, controls, input);
         let intents = Intents::build(
             input,
             &masks,
@@ -365,6 +392,9 @@ impl Bindings {
         );
         if self.system.held.is_none() {
             self.system_routes.clear();
+        }
+        if intents.button(GlobalAction::OpenCommlink.id()).pressed {
+            toggle(&mut out.desired, Action::GUI_PDA);
         }
         if mode != Mode::Ui {
             skip_cutscene(

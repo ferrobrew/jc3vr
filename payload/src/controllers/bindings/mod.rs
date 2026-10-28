@@ -95,7 +95,7 @@ use crate::{
     },
     vr::{
         self,
-        input::semantic::{SemanticSet, frame as semantic_frame, history},
+        input::semantic::{SemanticSet, frame as semantic_frame, history, vocabulary::MenuAction},
     },
 };
 
@@ -160,7 +160,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     }
     if !config.enabled {
         clear_controller();
-        update_egui_controller(None, config.acting_hand());
+        update_egui_controller(None, config.acting_hand(), Default::default());
         let mut state = STATE.lock();
         state.observe_poll(poll);
         state.stand_down(poll);
@@ -222,6 +222,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         usable: config.bindings.enabled && scheme::is_controllers(),
         config: &config.bindings,
     });
+    crate::controllers::summary::hold::publish(false, false);
     let mut panel_toggled = false;
     for &command in &routed.commands {
         system_command(command);
@@ -271,6 +272,16 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             })
             .map(|(frame, edges)| (frame, edges)),
         config.acting_hand(),
+        Hand::BOTH.map(|hand| {
+            if panel_input.as_ref().is_some_and(|(frame, _)| {
+                frame.hand(hand).active && frame.hand(hand).grip.is_tracked()
+            }) && PANEL_RECOVERY.lock().ready(hand)
+            {
+                routed.button(MenuAction::PointerSelect.id(), hand)
+            } else {
+                ButtonControl::default()
+            }
+        }),
     );
 
     let mut state = STATE.lock();
@@ -337,7 +348,11 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     state.publish_recovery();
     update_controller(
         Some(&frame),
-        &edges,
+        if state.recovery.ready(config.acting_hand()) {
+            routed.button(MenuAction::PointerSelect.id(), config.acting_hand())
+        } else {
+            ButtonControl::default()
+        },
         detection.mode == Mode::Ui,
         config.acting_hand(),
         state.recovery.ready(config.acting_hand()),
@@ -522,6 +537,18 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         dt,
         &config.bindings,
     );
+    let summary_masks = state
+        .bindings
+        .effective_masks(detection.mode, &controls, &semantic_input);
+    let (_, summary_sources) = crate::vr::input::sources::table();
+    let (summary_hold, summary_cancel) = crate::controllers::summary::hold::accepted(
+        &semantic_input,
+        &routed,
+        &summary_masks,
+        &frame,
+        &summary_sources,
+    );
+    crate::controllers::summary::hold::publish(summary_hold, summary_cancel);
     let flight_tick = flight::Tick {
         frame: &original,
         config: &config,
@@ -729,7 +756,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             .as_ref()
             .map_or(Default::default(), flight::FlightState::current),
     });
-    crate::controllers::summary::refresh(detection.mode, &controls, &config, &frame, &eligibility);
+    crate::controllers::summary::refresh(detection.mode, &controls, &config, &eligibility);
     let writes = state.tracker.resolve(&step.desired, dt);
     // SAFETY: the input tick runs on the main thread after the device poll.
     let landings = unsafe { inject::apply(&writes) };
@@ -810,6 +837,7 @@ fn cancel_capture_routes(poll: DevicePoll) {
     update_egui_controller(
         None,
         Config::lock_query(|config| config.controllers.acting_hand()),
+        Default::default(),
     );
     let mut state = STATE.lock();
     state.stand_down(poll);

@@ -34,7 +34,7 @@ use crate::{
         defaults::{Component, default_binding},
         frame::ActionValue,
         history::{self, Publication},
-        vocabulary::{ActionId, GlobalAction},
+        vocabulary::{ActionId, GlobalAction, MenuAction},
     },
 };
 
@@ -441,7 +441,8 @@ impl Runtime {
             if claimed {
                 route.neutral = true;
             }
-            route.update(sample, decision, gameplay && !claimed, config);
+            let pointer = route.id == MenuAction::PointerSelect.id();
+            route.update(sample, decision, (gameplay || pointer) && !claimed, config);
         }
         for route in &mut self.routes {
             if !route.present {
@@ -456,6 +457,17 @@ impl Runtime {
 }
 
 impl Tick {
+    /// Accepted state for an owner outside the gameplay table evaluator.
+    pub(crate) fn button(&self, id: ActionId, hand: Hand) -> ButtonControl {
+        if !self.permits(id, hand) {
+            return ButtonControl::default();
+        }
+        self.routes
+            .iter()
+            .find(|(action, side, _)| *action == id && *side == hand)
+            .map_or_default(|(_, _, intent)| intent.button)
+    }
+
     /// Whether ordered delivery invalidated this route rather than accepting its release.
     pub(crate) fn cancelled(&self, id: ActionId, hand: Hand) -> bool {
         self.cancelled.contains(&(id, hand))

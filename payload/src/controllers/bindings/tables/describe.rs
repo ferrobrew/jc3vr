@@ -888,6 +888,11 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
             );
         }
     }
+    for (control, gesture) in controls(GlobalAction::OpenCommlink.id()) {
+        if control != Control::Unbound {
+            add(control, gesture, Effect::Actions(vec![Action::GUI_PDA]));
+        }
+    }
     let mut pause: Vec<Control> = Vec::new();
     for (control, _) in controls(GlobalAction::Pause.id()) {
         if !pause.contains(&control) {

@@ -32,7 +32,7 @@ use crate::{
     config::Config,
     controllers::{
         bindings::tables::describe::{Control, StickDir},
-        frame::{self, Button, InteractionProfile, Pose},
+        frame::{self, Pose},
         hands::late,
         scheme,
         summary::{
@@ -163,14 +163,7 @@ impl Panel {
         };
         let glance = self.glance.step(looked, dt, &config.glance);
         let (touched, pressed) = if active && config.show_on_trackpad_touch {
-            frame::with_latest(|f| {
-                let hand = f.hand(off);
-                let index = hand.profile == InteractionProfile::ValveIndex;
-                let pressed = hand.buttons.contains(Button::TrackpadPressLeft)
-                    || hand.buttons.contains(Button::TrackpadPressRight);
-                (index && hand.inputs.trackpad_touch, index && pressed)
-            })
-            .unwrap_or_default()
+            summary::hold::current()
         } else {
             (false, false)
         };

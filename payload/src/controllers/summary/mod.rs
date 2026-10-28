@@ -31,6 +31,7 @@ pub(crate) mod current;
 pub(crate) mod eligibility;
 pub mod game_hints;
 pub mod glance;
+pub(crate) mod hold;
 #[cfg(test)]
 mod glyphs;
 pub(crate) mod grid;
@@ -62,7 +63,6 @@ use crate::{
             },
         },
         config::ControllersConfig,
-        frame::{ControllerFrame, InteractionProfile},
         mode::{AirborneVariant, Mode},
         summary::{
             content::{Side, Summary, build, with_context},
@@ -142,13 +142,11 @@ pub(crate) fn refresh(
     mode: Mode,
     controls: &Controls,
     config: &ControllersConfig,
-    frame: &ControllerFrame,
     eligibility: &Eligibility,
 ) {
     if !config.summary.enabled {
         return;
     }
-    let off = controls.dominant.other();
     let weapons = &config.weapons;
     let physical = &config.vehicles.physical;
     let ctx = DescribeCtx {
@@ -167,8 +165,7 @@ pub(crate) fn refresh(
             c4_throw: weapons.c4_throw,
             wrist_detonator: weapons.wrist_detonator,
             sight_chord: controls.sight_chord,
-            trackpad_shows_summary: config.summary.show_on_trackpad_touch
-                && frame.hand(off).profile == InteractionProfile::ValveIndex,
+            trackpad_shows_summary: config.summary.show_on_trackpad_touch,
             wheel_trackpad: weapons.wheel.enabled && weapons.wheel.trackpad,
             wheel_stick: weapons.wheel.enabled && weapons.wheel.stick,
             parachute_handles: config.vehicles.parachute_handles.enabled,

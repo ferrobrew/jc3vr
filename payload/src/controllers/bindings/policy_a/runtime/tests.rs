@@ -8,6 +8,8 @@ mod rereview_tests;
 mod review_tests;
 #[path = "snatch_tests.rs"]
 mod snatch_tests;
+#[path = "ui_tests.rs"]
+mod ui_tests;
 
 use std::{sync::Arc, time::Instant};
 

@@ -1,5 +1,6 @@
-//! The egui debug panel's controller pointer: either hand's aim ray against the panel, its trigger
-//! as the primary button, its upper face button as the secondary, and its thumbstick as the wheel.
+//! The egui debug panel's controller pointer: either hand's aim ray against the panel, accepted menu
+//! pointer-select delivery as the primary button, its upper face button as the secondary, and its
+//! thumbstick as the wheel.
 //!
 //! The input tick steps it once per tick ([`update_egui_controller`]) from the controller frame
 //! with the debug panel chord's presses already masked out, and queues one [`ControllerUpdate`] per
@@ -43,6 +44,7 @@ use parking_lot::Mutex;
 use crate::{
     config::Config,
     controllers::{
+        bindings::controls::ButtonControl,
         frame::{Button, ControllerFrame, Edges, Hand, Pose},
         overlay::{
             primitive::{Anchor, DepthMode, HandPose, Primitive, Rgba, Source},
@@ -82,7 +84,11 @@ impl ControllerUpdate {
 /// Step the controller pointer from the latest frame and the edges since the last tick, both with
 /// the debug panel chord masked, or `None` when no focused frame is available. Runs on the input
 /// tick, which owns the controller edges.
-pub(crate) fn update_egui_controller(input: Option<(&ControllerFrame, &Edges)>, dominant: Hand) {
+pub(crate) fn update_egui_controller(
+    input: Option<(&ControllerFrame, &Edges)>,
+    dominant: Hand,
+    select: [ButtonControl; 2],
+) {
     let now = Instant::now();
     let (enabled, slop) = Config::lock_query(|c| {
         let panel = &c.hud.egui_panel;
@@ -96,7 +102,14 @@ pub(crate) fn update_egui_controller(input: Option<(&ControllerFrame, &Edges)>, 
     });
     let samples = input
         .filter(|(frame, _)| enabled && frame.is_fresh_at(now) && egui_panel::accepts_edit_input())
-        .map(|(frame, edges)| Hand::BOTH.map(|hand| sample(frame, edges, hand)));
+        .map(|(frame, edges)| {
+            Hand::BOTH.map(|hand| {
+                let mut sample = sample(frame, edges, hand);
+                let button = select[hand.index()];
+                sample.trigger = TriggerSample::from(button);
+                sample
+            })
+        });
     let placed = egui_panel::is_placed();
     let mut state = STATE.lock();
     let Some(mut samples) = samples else {

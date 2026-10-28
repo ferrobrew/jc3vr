@@ -1,5 +1,5 @@
-//! The controller pointer: the dominant hand's aim ray against the rendered panel, with its trigger
-//! as the primary button.
+//! The controller pointer: the dominant hand's aim ray against the rendered panel, with accepted
+//! menu pointer-select delivery as the primary button.
 //!
 //! The input tick updates the pointer once per tick ([`update_controller`]) and the UI mouse
 //! delivery reads the latest sample ([`selected_controller`]). The trigger is armed only after a
@@ -13,7 +13,8 @@ use parking_lot::Mutex;
 use crate::{
     config::Config,
     controllers::{
-        frame::{ActionSetKind, Button, ControllerFrame, Edges, Hand, MAX_FRAME_AGE},
+        bindings::controls::ButtonControl,
+        frame::{ActionSetKind, ControllerFrame, Hand, MAX_FRAME_AGE},
         scheme,
     },
     headpose,
@@ -40,7 +41,7 @@ pub struct ControllerPointer {
 /// game-menu click.
 pub fn update_controller(
     frame: Option<&ControllerFrame>,
-    edges: &Edges,
+    select: ButtonControl,
     ui_mode: bool,
     hand: Hand,
     recovery_ready: bool,
@@ -48,13 +49,7 @@ pub fn update_controller(
     let now = Instant::now();
     let mut state = CONTROLLER_STATE.lock();
     state.expire(now);
-    let trigger = TriggerSample {
-        level: frame.is_some_and(|frame| {
-            frame.focused && frame.hand(hand).buttons.contains(Button::TriggerPress)
-        }),
-        pressed: edges.pressed(hand, Button::TriggerPress),
-        released: edges.released(hand, Button::TriggerPress),
-    };
+    let trigger = TriggerSample::from(select);
     let trigger_down = trigger.down(state.trigger_down);
     let ui_frame = frame.filter(|frame| {
         frame.focused && frame.action_set == ActionSetKind::Ui && frame.is_fresh_at(now)
@@ -115,6 +110,16 @@ pub(super) struct TriggerSample {
     pub(super) level: bool,
     pub(super) pressed: bool,
     pub(super) released: bool,
+}
+
+impl From<ButtonControl> for TriggerSample {
+    fn from(button: ButtonControl) -> Self {
+        Self {
+            level: button.down,
+            pressed: button.pressed,
+            released: button.released,
+        }
+    }
 }
 
 impl TriggerSample {
@@ -306,6 +311,25 @@ mod tests {
         state
             .step(hit, down, Hand::Right, now)
             .map_or(0, |pointer| pointer.buttons)
+    }
+
+    #[test]
+    fn semantic_select_clicks_without_a_raw_trigger_and_rest_does_not_click() {
+        let mut state = ControllerState::new();
+        let now = Instant::now();
+        state.step(INSIDE, false, Hand::Right, now);
+        let select = TriggerSample::from(ButtonControl {
+            down: true,
+            pressed: true,
+            released: false,
+        });
+        assert_eq!(buttons(&mut state, INSIDE, select.down(false), now), 1);
+        state.step(INSIDE, false, Hand::Right, now);
+        let remapped_rest = TriggerSample::from(ButtonControl::default());
+        assert_eq!(
+            buttons(&mut state, INSIDE, remapped_rest.down(false), now),
+            0
+        );
     }
 
     #[test]
