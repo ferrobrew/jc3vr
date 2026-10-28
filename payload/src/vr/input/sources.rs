@@ -10,14 +10,11 @@
 //! as text against the inputs it knows on the shipped profiles.
 //!
 //! The runtime raises no event when the player rebinds within the same interaction profile, so the
-//! cache is refreshed:
-//!
-//! - in full after the interaction profiles change,
-//! - per set, the first time the set is active,
-//! - in full on the next frame after the controls summary is rebuilt ([`request_refresh`]),
-//! - in full once a second while the debug UI's page is showing ([`note_viewed`]),
-//! - the active sets at every sync, before sampling, so protected presses are never authorized by
-//!   a UI refresh interval. A same-profile rebind between query and read remains a runtime limitation.
+//! active sets are enumerated at every sync before sampling. Protected presses never depend on a
+//! display refresh interval. Opaque path identities reuse bounded runtime-owned path strings and
+//! localized names; source tables rebuild only on changed paths or a requested name refresh.
+//! Profile changes, locale requests, and the diagnostic page's periodic refresh query every set.
+//! A same-profile rebind between query and read remains a runtime limitation.
 
 use std::{
     ptr,
@@ -44,6 +41,9 @@ use crate::{
         },
     },
 };
+
+mod metadata;
+use crate::vr::input::sources::metadata::MetadataCache;
 
 /// One source an action is bound to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -236,13 +236,7 @@ pub(crate) fn note_viewed() {
     *VIEWED_AT.lock() = Some(Instant::now());
 }
 
-/// Note that the controls summary is showing, so the frame keeps the active sets' sources fresh.
-pub(crate) fn note_shown() {
-    *SHOWN_AT.lock() = Some(Instant::now());
-}
-
-/// Query every set on the next frame: the controls summary was rebuilt, and the player may have
-/// rebound since the sources were last read.
+/// Refresh every set's source names on the next frame after a locale or diagnostic request.
 pub(crate) fn request_refresh() {
     REFRESH_REQUESTED.store(true, Ordering::Relaxed);
 }
@@ -324,22 +318,20 @@ fn identify_sources<T: Copy>(
 
 /// When the cache is refreshed. Owned by the input state, driven from the frame's update.
 pub(crate) struct SourcesRefresh {
-    /// Whether each set (in [`SetId::all`] order) has been queried while active.
-    seen_active: Vec<bool>,
     /// Whether every set must be queried on the next update.
     stale: bool,
     last_full: Option<Instant>,
-    /// When the active sets were last queried for the showing controls summary.
-    last_shown: Option<Instant>,
+    metadata: MetadataCache,
+    action_paths: Vec<(sys::Action, Result<Vec<xr::Path>, SourceQuery>)>,
 }
 
 impl SourcesRefresh {
     pub(crate) fn new() -> SourcesRefresh {
         SourcesRefresh {
-            seen_active: vec![false; SetId::all().count()],
             stale: true,
             last_full: None,
-            last_shown: None,
+            metadata: MetadataCache::default(),
+            action_paths: Vec::new(),
         }
     }
 
@@ -366,26 +358,75 @@ impl SourcesRefresh {
         let due = recent(&VIEWED_AT) && elapsed(self.last_full);
         let requested = REFRESH_REQUESTED.swap(false, Ordering::Relaxed);
         let full = self.stale || due || requested;
-        let shown = !full && recent(&SHOWN_AT) && elapsed(self.last_shown);
+        if full {
+            self.metadata.clear();
+        }
         let mut fresh = Vec::new();
-        for (i, set) in SetId::all().enumerate() {
+        for set in SetId::all() {
             let is_active = active.contains(&set);
-            let first_active = is_active && !self.seen_active[i];
-            if !full && !first_active && !is_active {
+            if !full && !is_active {
                 continue;
             }
-            if is_active {
-                self.seen_active[i] = true;
+            let queries = actions
+                .set_actions(set)
+                .into_iter()
+                .map(|(name, action)| {
+                    let paths = enumerate(session, action).map(|mut paths| {
+                        paths.sort_by_key(|path| path.into_raw());
+                        paths.dedup();
+                        paths
+                    });
+                    let identity = paths
+                        .as_ref()
+                        .map(Clone::clone)
+                        .map_err(QueryFailure::observation);
+                    let slot = self.action_paths.iter_mut().find(|(key, _)| *key == action);
+                    let changed = match slot {
+                        Some((_, previous)) if *previous == identity => false,
+                        Some((_, previous)) => {
+                            *previous = identity;
+                            true
+                        }
+                        None => {
+                            self.action_paths.push((action, identity));
+                            true
+                        }
+                    };
+                    (name, action, paths, changed)
+                })
+                .collect::<Vec<_>>();
+            if !full && !queries.iter().any(|(_, _, _, changed)| *changed) {
+                continue;
             }
+            let flags = xr::InputSourceLocalizedNameFlags::USER_PATH
+                | xr::InputSourceLocalizedNameFlags::COMPONENT;
             fresh.push(SetSources {
                 set,
                 refreshed_at: now,
                 active: is_active,
-                actions: actions
-                    .set_actions(set)
+                actions: queries
                     .into_iter()
-                    .map(|(name, action)| {
-                        ActionSources::from_query(name, query_action_typed(session, action))
+                    .map(|(name, action, paths, _)| {
+                        let result = paths.and_then(|paths| {
+                            self.metadata.resolve(
+                                paths,
+                                |path| {
+                                    session
+                                        .instance()
+                                        .path_to_string(path)
+                                        .map_err(|error| error.to_string())
+                                },
+                                |path| {
+                                    session
+                                        .input_source_localized_name(path, flags)
+                                        .map_err(|error| error.to_string())
+                                },
+                            )
+                        });
+                        if result.is_err() {
+                            self.action_paths.retain(|(key, _)| *key != action);
+                        }
+                        ActionSources::from_query(name, result)
                     })
                     .collect(),
             });
@@ -394,8 +435,14 @@ impl SourcesRefresh {
             self.stale = false;
             self.last_full = Some(now);
         }
-        if full || shown {
-            self.last_shown = Some(now);
+        {
+            let mut cache = CACHE.lock();
+            for entry in cache.iter_mut() {
+                entry.active = active.contains(&entry.set);
+                if entry.active {
+                    entry.refreshed_at = now;
+                }
+            }
         }
         if fresh.is_empty() {
             return;
@@ -409,13 +456,23 @@ impl SourcesRefresh {
             }
         }
         let mut cache = CACHE.lock();
+        let mut changed = false;
         for entry in fresh {
             match cache.iter_mut().find(|c| c.set == entry.set) {
-                Some(slot) => *slot = entry,
-                None => cache.push(entry),
+                Some(slot) => {
+                    changed |= slot.actions != entry.actions;
+                    *slot = entry;
+                }
+                None => {
+                    changed = true;
+                    cache.push(entry);
+                }
             }
         }
         cache.sort_by_key(|c| SetId::all().position(|s| s == c.set));
+        if !changed {
+            return;
+        }
         let table = source_table(&cache);
         refresh_observation_sources(&cache);
         drop(cache);
@@ -454,8 +511,6 @@ fn physical_inputs(entry: &SetSources) -> Enumerated {
 }
 
 static VIEWED_AT: Mutex<Option<Instant>> = Mutex::new(None);
-
-static SHOWN_AT: Mutex<Option<Instant>> = Mutex::new(None);
 
 static REFRESH_REQUESTED: AtomicBool = AtomicBool::new(false);
 

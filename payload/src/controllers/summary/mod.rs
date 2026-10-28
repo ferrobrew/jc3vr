@@ -20,9 +20,8 @@
 //! name otherwise, and "unbound" in the reference for an action bound to nothing. The input tick
 //! rebuilds the summary when the mode, the table context, the enabled gestures, the game's
 //! language, or the bound sources change ([`refresh`]), resolving the strings on the game thread;
-//! the render thread draws the latest one ([`crate::hud::summary_panel`]). A rebuild asks for the
-//! sources to be read again, and the panel keeps the active sets' sources fresh while it shows
-//! ([`note_shown`]), since a rebind within a profile raises no event.
+//! the render thread draws the latest one ([`crate::hud::summary_panel`]). Active source paths are
+//! checked every sync independently of panel visibility. A locale change requests fresh names.
 
 pub mod config;
 pub mod content;
@@ -31,10 +30,10 @@ pub(crate) mod current;
 pub(crate) mod eligibility;
 pub mod game_hints;
 pub mod glance;
-pub(crate) mod hold;
 #[cfg(test)]
 mod glyphs;
 pub(crate) mod grid;
+pub(crate) mod hold;
 pub mod labels;
 pub mod localise;
 pub(crate) mod page_clock;
@@ -128,12 +127,6 @@ pub fn status() -> SummaryStatus {
         revision: state.published.as_ref().map_or(0, |p| p.revision),
         omitted: state.published.as_ref().map_or(0, |p| p.omitted.len()),
     }
-}
-
-/// Note that the panel is showing, so the bound sources it labels are kept fresh. A leaf slot:
-/// safe from the draw task.
-pub fn note_shown() {
-    sources::note_shown();
 }
 
 /// Rebuild the summary if what it depends on changed. Runs on the input tick, after the bindings
@@ -248,9 +241,9 @@ pub(crate) fn refresh(
         &|name| table.name(name).to_owned(),
         &description,
     );
-    // A rebind within a profile raises no event, so read the sources again; the summary rebuilds
-    // only if they changed.
-    sources::request_refresh();
+    if previous.is_none_or(|old| old.locale != key.locale) {
+        sources::request_refresh();
+    }
     tracing::debug!(
         target: "controllers",
         heading = %summary.heading,

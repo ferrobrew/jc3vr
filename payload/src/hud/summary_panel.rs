@@ -194,7 +194,6 @@ impl Panel {
         if self.alpha <= 0.0 {
             return;
         }
-        summary::note_shown();
 
         if self.gpu.is_none() {
             match Gpu::new(device) {
