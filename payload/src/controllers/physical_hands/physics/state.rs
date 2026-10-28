@@ -106,6 +106,9 @@ pub(crate) fn pressing(hand: Hand) -> bool {
 /// The push the hand bodies give the player, world `(x, z)` metres per second: zero when no step
 /// has run lately.
 pub(crate) fn push() -> Vec2 {
+    if crate::controllers::physical_hands::stunt::game_holds() {
+        return Vec2::ZERO;
+    }
     let shared = SHARED.lock();
     let now = Instant::now();
     if shared.stepped_lately(now) && shared.fresh(now) {

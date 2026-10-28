@@ -66,11 +66,8 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
     let held_by_game = stunt::game_holds();
     if held_by_game && !state.held_by_game {
         native::clear();
-        state.drop_all("the game took the player into a stunt position");
-        state.carry = None;
-        state.finish_climb();
     }
-    state.held_by_game = held_by_game;
+    state.observe_movement_owner(held_by_game);
     let reason = if !enabled(&config) {
         Some("climbing is off")
     } else if teleport::epoch() != state.epoch {

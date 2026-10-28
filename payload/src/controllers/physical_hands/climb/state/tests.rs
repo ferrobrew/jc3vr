@@ -92,6 +92,24 @@ fn captured() -> (State, Grip, Grip) {
 }
 
 #[test]
+fn native_movement_ownership_discards_climb_mantle_and_release_carry() {
+    let (mut state, _, _) = captured();
+    state.climbing = true;
+    state.carry = Some(Carry {
+        kept: Vec3::X * 10.0,
+        steps: 0,
+    });
+    state.observe_movement_owner(true);
+    assert!(state.held_by_game);
+    assert!(!state.climbing);
+    assert!(state.mantle.is_none());
+    assert!(state.carry.is_none());
+    assert_eq!(state.grips.map(|g| g.is_some()), [false; 2]);
+    assert_eq!(state.smoothed, Vec3::ZERO);
+    assert_eq!(state.smoothed_carry, Vec3::ZERO);
+}
+
+#[test]
 fn mantle_trajectory_and_handoff_keep_the_captured_owner_when_the_handset_changes() {
     let (mut state, a, b) = captured();
     let tuning = tuning();

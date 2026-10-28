@@ -58,6 +58,8 @@ impl std::error::Error for StuntError {}
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct PositionRead {
     pub kind: Option<StuntKind>,
+    /// Whether native vehicle attachment or stunt traversal owns the character's movement.
+    pub owns_movement: bool,
     /// The vehicle's speed over the last simulation step, metres per second; zero off a vehicle.
     pub vehicle_speed_mps: f32,
 }
@@ -69,12 +71,25 @@ pub struct PositionRead {
 /// The game thread, outside the world update.
 pub(super) unsafe fn position() -> Option<PositionRead> {
     let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
+    unsafe {
+        crate::controllers::physical_hands::stunt::observation::read_ready(character, |character| {
+            position_ready(character)
+        })
+    }
+}
+
+unsafe fn position_ready(character: &Character) -> PositionRead {
+    let in_position = unsafe { character.IsInStuntPosition() };
+    let in_area = unsafe { character.IsInStuntArea() };
+    let traversing = unsafe { character.IsStuntTraversing() };
+    let owns_movement =
+        unsafe { character.IsInVehicleAttachState() } || in_position || in_area || traversing;
     let kind = unsafe {
-        if !character.IsInStuntPosition() {
+        if !in_position {
             None
         } else if character.IsStuntHanging() {
             Some(StuntKind::Hanging)
-        } else if character.IsInStuntArea() && !character.IsStuntTraversing() {
+        } else if in_area && !traversing {
             Some(StuntKind::Standing)
         } else {
             None
@@ -89,10 +104,11 @@ pub(super) unsafe fn position() -> Option<PositionRead> {
             let speed = from.distance(to) / sim_rate::world_step_seconds(None);
             if speed.is_finite() { speed } else { 0.0 }
         });
-    Some(PositionRead {
+    PositionRead {
         kind,
+        owns_movement,
         vehicle_speed_mps,
-    })
+    }
 }
 
 /// The vehicle that owns the body `body`, if a vehicle does.

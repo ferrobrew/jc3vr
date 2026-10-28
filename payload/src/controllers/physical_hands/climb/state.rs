@@ -348,6 +348,15 @@ pub(super) struct State {
 }
 
 impl State {
+    pub(super) fn observe_movement_owner(&mut self, native: bool) {
+        if native && !self.held_by_game {
+            self.drop_all("the game took ownership of the player's movement");
+            self.carry = None;
+            self.finish_climb();
+        }
+        self.held_by_game = native;
+    }
+
     pub(super) fn step_mantle(
         &mut self,
         tick: MantleTick<'_>,

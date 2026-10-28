@@ -14,17 +14,15 @@
 //! and move nothing: the game moves the player with the vehicle.
 //!
 //! Everything runs on the input tick ([`finish_tick`]), on the game thread outside the world
-//! update, where the game's own entries are safe to call. [`game_holds`] is an atomic the hand
-//! bodies' pre-simulation step reads; the rest shares a leaf lock of its own.
+//! update, where the game's own entries are safe to call. [`game_holds`] reads a short-lived,
+//! lifecycle-matched observation; missing observations conservatively yield movement.
 
 pub mod config;
 pub mod engine;
+mod observation;
 pub mod solve;
 
-use std::{
-    sync::atomic::{AtomicBool, Ordering},
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 pub use config::StuntConfig;
 use jc3gi::input::input_action_map::Action;
@@ -75,10 +73,10 @@ pub fn status() -> StuntStatus {
     STATE.lock().status.clone()
 }
 
-/// Whether the game holds the player in a stunt position, as the last input tick read it, with
-/// the stunt positions on. The hand climb's grips move nothing while it does.
+/// Whether physical movement must yield to native attachment or an unavailable observation.
+/// Only a fresh, lifecycle-matched native observation can admit physical movement.
 pub(crate) fn game_holds() -> bool {
-    HOLDS.load(Ordering::Acquire)
+    observation::movement_owner().yields()
 }
 
 /// Whether the stunt positions are on: their switch, under the hand climbing, which they need.
@@ -109,20 +107,21 @@ pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
         .min(MAX_TICK_S);
     state.ticked = Some(now);
     // SAFETY: the input tick runs on the game thread outside the world update.
-    let read = enabled(&config)
-        .then(|| unsafe { engine::position() })
-        .flatten();
+    let read = unsafe { engine::position() };
+    state.observe_read(read, enabled(&config));
+    observation::publish(read, now);
     let Some(read) = read else {
         climb::native::reject_landing();
-        HOLDS.store(false, Ordering::Release);
         state.tracker = Tracker::new();
         state.observe_position(None);
         state.status.holding = [false; 2];
         state.status.on_helicopter = [false; 2];
         return;
     };
-    HOLDS.store(read.kind.is_some(), Ordering::Release);
-    state.observe_position(read.kind);
+    if !enabled(&config) {
+        climb::native::reject_landing();
+        return;
+    }
 
     let gripped = climb::gripped();
     // SAFETY: as above; the grips were taken on bodies of the live world.
@@ -221,8 +220,6 @@ const MAX_TICK_S: f32 = 0.1;
 /// The least share of the hold pulse that pulses a hand.
 const MIN_STRAIN: f32 = 0.1;
 
-static HOLDS: AtomicBool = AtomicBool::new(false);
-
 /// Whether a live moving grip holds a helicopter, for the hand pose and readout.
 ///
 /// # Safety
@@ -262,6 +259,16 @@ struct State {
 }
 
 impl State {
+    fn observe_read(&mut self, read: Option<engine::PositionRead>, assist: bool) {
+        self.observe_position(read.and_then(|r| r.kind));
+        if !assist {
+            self.tracker = Tracker::new();
+            self.status.armed = false;
+            self.status.holding = [false; 2];
+            self.status.on_helicopter = [false; 2];
+        }
+    }
+
     /// Log the position as it changes.
     fn observe_position(&mut self, position: Option<StuntKind>) {
         if position == self.status.position {
@@ -320,6 +327,30 @@ static STATE: Mutex<State> = Mutex::new(State {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ownership_survives_assist_disable_and_a_traversal_without_a_presentation_kind() {
+        let mut state = State {
+            tracker: Tracker::new(),
+            ticked: None,
+            status: StuntStatus::default(),
+        };
+        for assist in [true, false] {
+            for kind in [Some(StuntKind::Standing), Some(StuntKind::Hanging), None] {
+                state.observe_read(
+                    Some(engine::PositionRead {
+                        kind,
+                        owns_movement: true,
+                        vehicle_speed_mps: 0.0,
+                    }),
+                    assist,
+                );
+                assert_eq!(state.status.position, kind);
+            }
+        }
+        state.observe_read(None, false);
+        assert_eq!(state.status.position, None);
+    }
 
     #[test]
     fn the_hold_pulse_follows_the_vehicles_speed() {

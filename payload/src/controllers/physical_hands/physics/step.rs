@@ -34,7 +34,7 @@ use crate::{
                 },
                 types::{BodyPhase, HandBodyStatus},
             },
-            vault,
+            stunt, vault,
         },
     },
     hooks, sim_rate,
@@ -348,8 +348,8 @@ pub(crate) unsafe fn step(given_dt: f32) {
             },
         )
     };
-    // The hands pressed down on what does not give push the body up, unless they climb.
-    if !climbing {
+    let may_move = physical_locomotion_allowed(climbing, stunt::game_holds());
+    if may_move {
         let press = vault::Press {
             lags: press_lags,
             supports: climb::static_reaches(),
@@ -359,8 +359,10 @@ pub(crate) unsafe fn step(given_dt: f32) {
         // SAFETY: forwarded from the caller; the characters' proxy updates ran before this
         // callback.
         unsafe { vault::step(press, &config.vault) };
+    } else {
+        vault::stand_down();
     }
-    push = if b.push && !climbing {
+    push = if b.push && may_move {
         smooth_push(
             push,
             hand_push,
@@ -413,6 +415,10 @@ pub(crate) unsafe fn step(given_dt: f32) {
     if let Some(error) = error {
         status.last_error = Some(error);
     }
+}
+
+pub(crate) fn physical_locomotion_allowed(climbing: bool, native_owns_movement: bool) -> bool {
+    !climbing && !native_owns_movement
 }
 
 /// The step the physics world takes this step, seconds, as [`step`] published it before driving

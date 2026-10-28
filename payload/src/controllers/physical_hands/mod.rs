@@ -212,10 +212,9 @@ pub(crate) unsafe fn push_body(character: &mut Character) {
     } else {
         glam::Vec2::ZERO
     };
-    let push = palms + physics::push();
-    if push == glam::Vec2::ZERO || !push.is_finite() {
+    let Some(push) = admitted_push(stunt::game_holds(), palms, physics::push()) else {
         return;
-    }
+    };
     let mut wanted = Vector3 { data: [0.0; 3] };
     unsafe { character.GetWantedWorldVelocity(&mut wanted) };
     let [x, y, z] = wanted.data;
@@ -223,4 +222,26 @@ pub(crate) unsafe fn push_body(character: &mut Character) {
         data: [x + push.x, y, z + push.y],
     };
     unsafe { character.SetWantedWorldVelocity(&pushed) };
+}
+
+fn admitted_push(
+    yield_movement: bool,
+    palms: glam::Vec2,
+    physics: glam::Vec2,
+) -> Option<glam::Vec2> {
+    let push = palms + physics;
+    (!yield_movement && push.is_finite() && push != glam::Vec2::ZERO).then_some(push)
+}
+
+#[cfg(test)]
+mod movement_tests {
+    use super::*;
+
+    #[test]
+    fn cached_palm_push_is_not_admitted_while_native_ownership_is_true_or_unknown() {
+        let cached = glam::Vec2::new(2.0, 3.0);
+        assert_eq!(admitted_push(true, cached, glam::Vec2::ZERO), None);
+        assert_eq!(admitted_push(true, cached, cached), None);
+        assert_eq!(admitted_push(false, cached, glam::Vec2::ZERO), Some(cached));
+    }
 }
