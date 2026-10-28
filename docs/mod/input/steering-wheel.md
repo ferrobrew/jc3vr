@@ -12,6 +12,8 @@ The meshes whose box misleads have an override in `WHEEL_OVERRIDES`: the circuit
 
 A hand holding a gun, a prop, a grenade, or a charge does not take the wheel or the handlebars while `vehicles.free_hands_only` (on) holds: the player drives with the free hand, or docks first ([two-handed-inventory.md, "Traversal"](two-handed-inventory.md#traversal)). A hand already on the wheel keeps it.
 
+The input tick captures the actual attached vehicle once through [`Character::GetVehicle`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-GetVehicle), retaining its owner while fitting and between observations. `VehicleEntryIdentity` copies the vehicle address and owner control block. Both the fit latch and physical control state reset from that one identity and the seat mode before any held target or grip is declared. A different vehicle of the same class, a changed owner at the same address, or a missing observation releases old controls and clears their anchor blend, buttons, and placement. Fitting then uses the retained vehicle rather than resolving another one. Driver and passenger permissions remain mode-based, and mounted guns retain their separate weapon identity. This bounds entry-state lifetime without asserting that an uninterrupted same-class replacement occurs in normal gameplay.
+
 ## Turning the wheel
 
 The design follows the VR wheels of other games: Sacchan's SaccGroundVehicle for VRChat (hold to grip, per-hand accumulators seeded from the current steering, ±450° for a car) and BNG's VR Interaction Framework wheel (position-tracked, hold to grip, ±360°, a linear return).

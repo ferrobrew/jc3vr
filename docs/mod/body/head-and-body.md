@@ -32,7 +32,7 @@ JC3 has a real rig, so there's a known body bone — but you still decide how it
 The transform chain, root applied outermost so roomscale translation is interpreted in the body's local frame:
 
     world_camera_eye = body_root · neck/head_attach_offset · hmd_head_pose · (±IPD/2 along head-local X)
-    view_eye         = inverse(world_camera_eye)      (paired with that eye's asymmetric projection — vr-runtime blocker 1)
+    view_eye         = inverse(world_camera_eye)      (paired with that eye's asymmetric projection)
 
 The key move is the yaw split: body yaw comes from the stick (C) or the vehicle/flight root, while head pitch, roll, and residual yaw come only from the HMD. On foot the body also turns to face the torso estimate above, with the view frame turned back by the same amount, so that turn never reaches the camera. Head pitch and roll must never feed back into body rotation — tilting your head must not roll the character. Yaw is the only shared axis. `eye_to_head` is a pure ±IPD/2 translation along head-local X with no rotation; each eye still needs its own asymmetric projection.
 
@@ -70,7 +70,7 @@ On the camera-on-the-head question we take Boneworks' stance. The character's he
 
 ## RE notes
 
-The camera hook writes position only — the translation columns of `m_TransformF` — plus a hardcoded ~90° FOV; rotation is never written. Before writing rotation, clear the coordinate-frame gate (the §15.7 experiment in `docs/mod/vr-runtime.md`, blocker 3). Vehicles take a different path (see `docs/engine/rendering/rendering.md` §2.8, "Vehicle camera path"), so vehicle head-look behaves differently from on-foot — confirm the cockpit head-bone position is sane (not clipped to seat or world origin) by logging `m_CameraTransform` translation against character world position in a vehicle.
+During gameplay, with the camera override enabled, an active head pose, and a valid anchor, `camera_update_render` writes the complete previous/current head transforms to [`Camera::m_TransformT0`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##field-m_TransformT0) and [`Camera::m_TransformT1`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##field-m_TransformT1) before the native render update. These writes include rotation and translation. The native update interpolates them into [`Camera::m_TransformF`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##field-m_TransformF) and derives the view matrix. The control contexts use the same pose pair. When the tracked head or anchor is unavailable, the existing bone fallback updates translation only; disabling the override skips placement. Outside gameplay, the simulation camera remains untouched and the render-copy loading presentation follows the separate path above. Vehicle anchor placement still requires runtime checks across driver, passenger, and gunner entries; the engine's vehicle camera route is described in [rendering.md](../../engine/rendering/rendering.md#28-vehicle-camera-path).
 
 ## Hiding the head (and keeping its shadow)
 
