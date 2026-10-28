@@ -123,6 +123,8 @@ The `check` decides over which frames the condition must hold: `eventually` on s
 
 A scenario that cannot be read, or has an unknown signal, row, level, or health, a condition of the wrong kind, or more than one probe or condition, is refused with an error that names the expectation, before anything replays.
 
+Request files are limited to 8 KiB and scenario files to 64 KiB before TOML parsing. The reader consumes at most the limit plus one sentinel byte, including when a file grows during the read. Scenarios admit at most 128 expectations. Each supplied string is limited to 4096 UTF-8 bytes, including request paths and scenario names, descriptions, recording paths, and expectation fields. Count and string checks run after the bounded parse and before replay admission. Errors identify the file and offending field/count. The game-thread reader bounds read attempts, but an individual operating-system file read can still block; these limits do not establish an I/O latency deadline.
+
 ### Results
 
 When the replay and the settling time end, each expectation's verdict goes to the session log at info for PASS and warn for FAIL, as `scenario: <name>: PASS: <what decided it>: <expectation>`, followed by a summary line with the count. The summary file `sessions/<stamp>/testing/<start stamp>_<scenario file>.toml` holds the same: the scenario, its file and recording, the build, whether it passed, the frame count, and each expectation's verdict and detail. A replay that fails, is stopped, or is replaced fails every expectation as not checked, with the reason.

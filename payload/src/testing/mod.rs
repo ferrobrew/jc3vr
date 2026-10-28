@@ -17,6 +17,7 @@ pub(crate) mod request;
 pub(crate) mod scenario;
 pub(crate) mod signal_status;
 pub(crate) mod signals;
+mod text;
 
 pub use config::TestingConfig;
 

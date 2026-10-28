@@ -2,6 +2,63 @@ use pretty_assertions::assert_eq;
 
 use super::*;
 
+#[test]
+fn scenario_limits_reject_bytes_entries_and_strings_before_replay_admission() {
+    let path = Path::new("fixture.toml");
+    assert!(matches!(
+        parse(path, &"x".repeat(text::SCENARIO_BYTES + 1))
+            .unwrap_err()
+            .kind,
+        ScenarioErrorKind::Read(TextError::Limit { .. })
+    ));
+    let prefix = "recording = 'fixture.tracking'\n";
+    let entry = "[[expect]]\nlog = 'sample'\n";
+    assert!(
+        parse(
+            path,
+            &format!("{prefix}{}", entry.repeat(text::EXPECTATIONS))
+        )
+        .is_ok()
+    );
+    assert!(matches!(
+        parse(
+            path,
+            &format!("{prefix}{}", entry.repeat(text::EXPECTATIONS + 1))
+        )
+        .unwrap_err()
+        .kind,
+        ScenarioErrorKind::Read(TextError::Limit {
+            field: "expect",
+            ..
+        })
+    ));
+    assert!(
+        parse(
+            path,
+            &format!(
+                "{prefix}[[expect]]\nlog = '{}'",
+                "x".repeat(text::STRING_BYTES)
+            )
+        )
+        .is_ok()
+    );
+    assert!(matches!(
+        parse(
+            path,
+            &format!(
+                "{prefix}[[expect]]\nlog = '{}'",
+                "x".repeat(text::STRING_BYTES + 1)
+            )
+        )
+        .unwrap_err()
+        .kind,
+        ScenarioErrorKind::Read(TextError::Limit {
+            field: "expect.log",
+            ..
+        })
+    ));
+}
+
 fn path() -> PathBuf {
     PathBuf::from("/scenarios/climb.toml")
 }

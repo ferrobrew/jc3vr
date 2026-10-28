@@ -16,6 +16,7 @@ use crate::{
         replay::{Pacing, ReplayOptions, StartMode},
         scenario::expect::{Check, Condition},
         signals::{self, Signal, SignalKind},
+        text::{self, TextError},
     },
 };
 
@@ -71,7 +72,7 @@ pub(crate) struct ScenarioError {
 
 #[derive(Debug)]
 pub(crate) enum ScenarioErrorKind {
-    Read(std::io::Error),
+    Read(TextError),
     Parse(toml::de::Error),
     NoExpectations,
     NoRecording,
@@ -171,7 +172,8 @@ pub(crate) fn read(path: &Path) -> Result<Scenario, ScenarioError> {
         path: path.to_owned(),
         kind,
     };
-    let text = std::fs::read_to_string(path).map_err(|e| error(ScenarioErrorKind::Read(e)))?;
+    let text =
+        text::read(path, text::SCENARIO_BYTES).map_err(|e| error(ScenarioErrorKind::Read(e)))?;
     parse(path, &text)
 }
 
@@ -181,8 +183,12 @@ pub(crate) fn parse(path: &Path, text: &str) -> Result<Scenario, ScenarioError> 
         path: path.to_owned(),
         kind,
     };
+    text::limit("scenario file", text.len(), text::SCENARIO_BYTES)
+        .map_err(|e| error(ScenarioErrorKind::Read(e)))?;
     let file: ScenarioFile =
         toml::from_str(text).map_err(|e| error(ScenarioErrorKind::Parse(e)))?;
+    file.limits()
+        .map_err(|e| error(ScenarioErrorKind::Read(e)))?;
     if file.recording.trim().is_empty() {
         return Err(error(ScenarioErrorKind::NoRecording));
     }
@@ -251,6 +257,34 @@ struct ScenarioFile {
     settle_s: f32,
     #[serde(default)]
     expect: Vec<ExpectationFile>,
+}
+
+impl ScenarioFile {
+    fn limits(&self) -> Result<(), TextError> {
+        text::limit("expect", self.expect.len(), text::EXPECTATIONS)?;
+        text::string("recording", &self.recording)?;
+        for (field, value) in [("name", &self.name), ("description", &self.description)] {
+            if let Some(value) = value {
+                text::string(field, value)?;
+            }
+        }
+        for entry in &self.expect {
+            for (field, value) in [
+                ("expect.name", &entry.name),
+                ("expect.signal", &entry.signal),
+                ("expect.status", &entry.status),
+                ("expect.log", &entry.log),
+                ("expect.health", &entry.health),
+                ("expect.detail", &entry.detail),
+                ("expect.level", &entry.level),
+            ] {
+                if let Some(value) = value {
+                    text::string(field, value)?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 fn default_settle() -> f32 {

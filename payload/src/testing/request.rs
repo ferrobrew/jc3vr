@@ -22,6 +22,7 @@ use crate::{
     testing::{
         replay::{self, Pacing, ReplayOptions, StartMode},
         scenario,
+        text::{self, TextError},
     },
 };
 
@@ -81,7 +82,7 @@ struct RequestError {
 
 #[derive(Debug)]
 enum RequestErrorKind {
-    Read(std::io::Error),
+    Read(TextError),
     Remove(std::io::Error),
     Parse(toml::de::Error),
     /// The command needs a path and has none.
@@ -139,7 +140,8 @@ fn take(path: &Path) -> Result<String, RequestError> {
         path: path.to_owned(),
         kind,
     };
-    let text = std::fs::read_to_string(path).map_err(|e| error(RequestErrorKind::Read(e)))?;
+    let text =
+        text::read(path, text::REQUEST_BYTES).map_err(|e| error(RequestErrorKind::Read(e)))?;
     std::fs::remove_file(path).map_err(|e| error(RequestErrorKind::Remove(e)))?;
     Ok(text)
 }
@@ -149,7 +151,12 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
         path: path.to_owned(),
         kind,
     };
+    text::limit("request file", text.len(), text::REQUEST_BYTES)
+        .map_err(|e| error(RequestErrorKind::Read(e)))?;
     let file: RequestFile = toml::from_str(text).map_err(|e| error(RequestErrorKind::Parse(e)))?;
+    if let Some(path) = &file.path {
+        text::string("path", path).map_err(|e| error(RequestErrorKind::Read(e)))?;
+    }
     let resolve = |command| -> Result<PathBuf, RequestError> {
         let given = file
             .path
@@ -203,6 +210,24 @@ mod tests {
 
     fn read(text: &str) -> Result<Request, RequestErrorKind> {
         parse(Path::new("C:/config/test_request.toml"), text).map_err(|e| e.kind)
+    }
+
+    #[test]
+    fn oversized_requests_and_paths_never_reach_dispatch() {
+        assert!(matches!(
+            read(&"x".repeat(text::REQUEST_BYTES + 1)),
+            Err(RequestErrorKind::Read(TextError::Limit { .. }))
+        ));
+        assert!(matches!(
+            read(&format!(
+                "command = 'replay'\npath = '{}'",
+                "x".repeat(text::STRING_BYTES + 1)
+            )),
+            Err(RequestErrorKind::Read(TextError::Limit {
+                field: "path",
+                ..
+            }))
+        ));
     }
 
     #[test]
