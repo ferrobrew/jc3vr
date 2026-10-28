@@ -22,6 +22,7 @@ use jc3gi::{
 use parking_lot::Mutex;
 
 use crate::controllers::{
+    body::rig::frames::Frames,
     frame::{Hand, Pose},
     loadout::{
         Departure, Place, Socket, live,
@@ -171,8 +172,13 @@ pub(crate) fn opened(hand: Hand, world_scale: f32, tuning: &GrenadeConfig) {
 ///
 /// A released actor is a simulating body, which the engine no longer follows from its transform, so
 /// the item is admitted to the hand with a new inert actor rather than a teleported one.
-pub(crate) fn take_loose(hand: Hand, world: Vec3, tuning: &GrenadeConfig) -> bool {
-    let Some(item) = nearest_loose(world, tuning.catch.radius_m) else {
+pub(crate) fn take_loose(
+    hand: Hand,
+    cockpit_grip: Vec3,
+    frames: &Frames,
+    tuning: &GrenadeConfig,
+) -> bool {
+    let Some(item) = nearest_loose(cockpit_grip, frames, tuning.catch.radius_m) else {
         return false;
     };
     let Some(old) = actor(item).filter(|actor| actor.explosive().is_some()) else {
@@ -401,7 +407,7 @@ fn deliberate(release: Option<Release>, tuning: &GrenadeConfig) -> bool {
     })
 }
 
-fn nearest_loose(world: Vec3, radius_m: f32) -> Option<SafeItemView> {
+fn nearest_loose(grip: Vec3, frames: &Frames, radius_m: f32) -> Option<SafeItemView> {
     let items = live::safe_items();
     let state = STATE.lock();
     items
@@ -414,11 +420,24 @@ fn nearest_loose(world: Vec3, radius_m: f32) -> Option<SafeItemView> {
                 .find(|entry| entry.model == item.binding.lease)?
                 .actor
                 .position()?;
-            let distance = centre.distance(world);
-            (distance.is_finite() && distance <= radius_m).then_some((*item, distance))
+            loose_distance(grip, centre, frames, radius_m).map(|distance| (*item, distance))
         })
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(item, _)| item)
+}
+
+fn loose_distance(grip: Vec3, world: Vec3, frames: &Frames, radius_m: f32) -> Option<f32> {
+    if !frames.is_usable()
+        || !grip.is_finite()
+        || !world.is_finite()
+        || !radius_m.is_finite()
+        || radius_m <= 0.0
+    {
+        return None;
+    }
+    // Completion uses the same cockpit geometry as the inert item's offer.
+    let distance = frames.world_to_cockpit(world).distance(grip);
+    (distance.is_finite() && distance <= radius_m).then_some(distance)
 }
 
 fn grenade_weapon(owner: &mut Character) -> Option<&mut ThrownGrenadeWeapon> {
@@ -595,8 +614,43 @@ static CLEANUP: AtomicBool = AtomicBool::new(false);
 
 #[cfg(test)]
 mod tests {
+    use glam::Quat;
+
     use super::*;
     use crate::controllers::loadout::{BodyLayout, Loadout};
+
+    #[test]
+    fn loose_completion_matches_offer_boundary_at_every_world_scale() {
+        for scale in [0.5, 1.0, 2.0] {
+            let frames = Frames {
+                head_world: Vec3::ZERO,
+                head_cockpit: Vec3::ZERO,
+                view: Quat::IDENTITY,
+                world_scale: scale,
+                character: Mat4::IDENTITY,
+            };
+            let radius = 0.25;
+            for distance in [radius - 0.001, radius, radius + 0.001] {
+                let world = frames.cockpit_to_world(Vec3::X * distance);
+                let offered = frames.world_to_cockpit(world).length() <= radius;
+                assert_eq!(
+                    loose_distance(Vec3::ZERO, world, &frames, radius).is_some(),
+                    offered
+                );
+                assert_eq!(offered, distance <= radius);
+            }
+            for invalid in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+                let invalid_frames = Frames {
+                    world_scale: invalid,
+                    ..frames
+                };
+                assert!(loose_distance(Vec3::ZERO, Vec3::ZERO, &invalid_frames, radius).is_none());
+                assert!(loose_distance(Vec3::ZERO, Vec3::ZERO, &frames, invalid).is_none());
+            }
+            assert!(loose_distance(Vec3::NAN, Vec3::ZERO, &frames, radius).is_none());
+            assert!(loose_distance(Vec3::ZERO, Vec3::INFINITY, &frames, radius).is_none());
+        }
+    }
 
     #[test]
     fn independent_runtime_bindings_keep_identity_across_hands_holsters_and_inert_drop() {

@@ -283,8 +283,10 @@ pub(super) fn input_tick(
     if let Some(hand) = inputs.catch_grab
         && !holds(hand)
     {
-        let world = STATE.lock().grips[hand.index()].map(|grip| grip.position);
-        let took_safe = world.is_some_and(|world| safe::take_loose(hand, world, tuning));
+        let frames = STATE.lock().locker_frames;
+        let took_safe = frames
+            .zip(inputs.cockpit_grips[hand.index()])
+            .is_some_and(|(frames, grip)| safe::take_loose(hand, grip, &frames, tuning));
         if !took_safe
             && catch::caught().is_none()
             && let Some(grip) = inputs.cockpit_grips[hand.index()]
