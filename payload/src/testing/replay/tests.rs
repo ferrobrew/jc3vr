@@ -20,6 +20,7 @@ fn state() -> State {
         last: None,
         orphans: Vec::new(),
         shutting_down: false,
+        stop_owned: None,
     }
 }
 
@@ -31,7 +32,7 @@ fn request(id: u32) -> Request {
     }
 }
 
-fn fixture() -> Arc<Loaded> {
+pub(super) fn fixture() -> Arc<Loaded> {
     let frame = |time_ns| Frame {
         time_ns,
         display_time_ns: 90,
@@ -203,6 +204,71 @@ fn blocked_loaders_retain_capacity_and_recover_after_reaping() {
     state.admit_loader().unwrap();
     assert_eq!(state.orphans.len(), 1);
     releases.remove(0).send(()).unwrap();
+    assert!(state.orphans.pop().unwrap().join().unwrap().is_err());
+}
+
+#[test]
+fn scoped_stop_preserves_current_pending_and_loading_replacements() {
+    let _serial = history::TEST_LOCK.lock();
+    let mut state = state();
+    for pending in [false, true] {
+        state.play(
+            Run {
+                id: RunId(2),
+                options: ReplayOptions::default(),
+            },
+            fixture(),
+        );
+        if pending {
+            state.pending = Some(request(3));
+        }
+        state.cancel_owned(RunId(1));
+        assert_eq!(state.run_id(), Some(RunId(2)));
+        assert_eq!(
+            state.pending.as_ref().map(|r| r.run),
+            pending.then_some(RunId(3))
+        );
+        state.cancel_owned(RunId(2));
+        assert!(matches!(state.phase, PhaseState::Idle));
+        assert_eq!(
+            state.pending.as_ref().map(|r| r.run),
+            pending.then_some(RunId(3))
+        );
+        if pending {
+            state.cancel_owned(RunId(3));
+            assert!(state.pending.is_none());
+        }
+    }
+    state.play(
+        Run {
+            id: RunId(6),
+            options: ReplayOptions::default(),
+        },
+        fixture(),
+    );
+    state.pending = Some(request(7));
+    state.request_stop_owned(RunId(6));
+    state.request_stop_owned(RunId(7));
+    state.request_stop_owned(RunId(1));
+    assert!(state.pending.is_none());
+    assert_eq!(state.stop_owned, Some(RunId(6)));
+    let stopped = state.stop_owned.take().unwrap();
+    state.cancel_owned(stopped);
+    let (release, wait) = mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        wait.recv().unwrap();
+        Err(ReplayError::Disabled)
+    });
+    state.phase = PhaseState::Loading {
+        request: request(4),
+        handle,
+    };
+    state.pending = Some(request(5));
+    state.cancel_owned(RunId(1));
+    assert_eq!(state.run_id(), Some(RunId(4)));
+    assert_eq!(state.pending.as_ref().unwrap().run, RunId(5));
+    release.send(()).unwrap();
+    state.finish(ReplayOutcome::Stopped);
     assert!(state.orphans.pop().unwrap().join().unwrap().is_err());
 }
 

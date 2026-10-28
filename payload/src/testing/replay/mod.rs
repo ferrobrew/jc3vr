@@ -28,6 +28,8 @@
 
 pub(crate) mod cursor;
 mod load;
+#[cfg(test)]
+pub(crate) mod observation_tests;
 mod validate;
 
 use std::{
@@ -259,7 +261,10 @@ pub(crate) struct ReplayedFrame {
 /// serviced at the top of the next frame.
 pub(crate) fn start(path: PathBuf, options: ReplayOptions) -> RunId {
     let mut state = STATE.lock();
-    state.next_run = state.next_run.wrapping_add(1);
+    state.next_run = state
+        .next_run
+        .checked_add(1)
+        .expect("replay request identity exhausted");
     let run = RunId(state.next_run);
     state.pending = Some(Request { run, path, options });
     run
@@ -268,6 +273,11 @@ pub(crate) fn start(path: PathBuf, options: ReplayOptions) -> RunId {
 /// Ask for the running replay to stop. Any thread.
 pub(crate) fn stop() {
     STATE.lock().stop = true;
+}
+
+/// Stop only the replay owned by a scenario, including a request not yet serviced.
+pub(crate) fn stop_owned(run: RunId) {
+    STATE.lock().request_stop_owned(run);
 }
 
 /// Whether a replay is loading, teleporting, or playing.
@@ -315,14 +325,19 @@ pub(crate) fn status() -> ReplayStatus {
     status
 }
 
-/// How the replay `run` ended, once it has.
-pub(crate) fn outcome(run: RunId) -> Option<ReplayOutcome> {
-    STATE
-        .lock()
-        .last
-        .as_ref()
-        .filter(|(last, _)| *last == run)
-        .map(|(_, outcome)| outcome.clone())
+/// The observation eligibility of one scenario-owned replay, sampled under one state lock.
+#[derive(Debug, Clone)]
+pub(crate) enum Observation {
+    Pending,
+    Loading,
+    Teleporting,
+    Playing,
+    Ended(ReplayOutcome),
+    Replaced,
+}
+
+pub(crate) fn observation(run: RunId) -> Observation {
+    STATE.lock().observation(run)
 }
 
 /// Service the requests and move the replay through its phases. Game thread, once per frame from
@@ -331,6 +346,9 @@ pub(crate) fn update() {
     let mut state = STATE.lock();
     if std::mem::take(&mut state.stop) {
         state.finish(ReplayOutcome::Stopped);
+    }
+    if let Some(run) = state.stop_owned.take() {
+        state.cancel_owned(run);
     }
     if let Some(request) = state.pending.take() {
         state.finish(ReplayOutcome::Stopped);
@@ -493,6 +511,7 @@ struct State {
     /// The loaders of replays replaced while they loaded.
     orphans: Vec<LoaderHandle>,
     shutting_down: bool,
+    stop_owned: Option<RunId>,
 }
 
 type LoaderHandle = JoinHandle<Result<Loaded, ReplayError>>;
@@ -505,6 +524,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     last: None,
     orphans: Vec::new(),
     shutting_down: false,
+    stop_owned: None,
 });
 
 /// What [`begin_frame`] stages for the seams.
@@ -538,6 +558,60 @@ fn reap(handles: &mut Vec<LoaderHandle>) {
 }
 
 impl State {
+    fn observation(&self, run: RunId) -> Observation {
+        if self.next_run != run.0 {
+            return Observation::Replaced;
+        }
+        if let Some(request) = &self.pending {
+            return if request.run == run {
+                Observation::Pending
+            } else {
+                Observation::Replaced
+            };
+        }
+        if self.run_id() == Some(run) {
+            return match self.phase {
+                PhaseState::Loading { .. } => Observation::Loading,
+                PhaseState::Teleporting { .. } => Observation::Teleporting,
+                PhaseState::Playing { .. } => Observation::Playing,
+                PhaseState::Idle => unreachable!(),
+            };
+        }
+        if matches!(self.phase, PhaseState::Idle)
+            && let Some((id, outcome)) = &self.last
+            && *id == run
+        {
+            return Observation::Ended(outcome.clone());
+        }
+        Observation::Replaced
+    }
+
+    fn request_stop_owned(&mut self, run: RunId) {
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|request| request.run == run)
+        {
+            self.pending = None;
+        }
+        if self.run_id() == Some(run) {
+            self.stop_owned = Some(run);
+        }
+    }
+
+    fn cancel_owned(&mut self, run: RunId) {
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|request| request.run == run)
+        {
+            self.pending = None;
+        }
+        if self.run_id() == Some(run) {
+            self.finish(ReplayOutcome::Stopped);
+        }
+    }
+
     fn admit_loader(&mut self) -> Result<(), ReplayError> {
         reap(&mut self.orphans);
         if self.shutting_down {

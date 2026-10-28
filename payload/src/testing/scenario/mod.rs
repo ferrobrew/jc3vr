@@ -11,10 +11,12 @@
 
 pub(crate) mod expect;
 pub(crate) mod file;
+#[cfg(test)]
+mod tests;
 
 use std::{
     path::{Path, PathBuf},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use parking_lot::Mutex;
@@ -24,7 +26,7 @@ use crate::{
     config::Config,
     testing::{
         log_tap::{self, LogLine},
-        replay::{self, ReplayOutcome, RunId},
+        replay::{self, Observation, ReplayOutcome, RunId},
         scenario::{
             expect::{Tracker, Verdict},
             file::{Expectation, Probe, Scenario},
@@ -157,39 +159,13 @@ pub(crate) fn update() {
     };
     let (lines, lost) = log_tap::drain();
     run.lost_log_lines += lost;
-    let next = match replay::outcome(run.replay) {
-        None if replay::is_driving() => {
-            run.observe(&lines);
-            Next::Continue
-        }
-        None if !replay::is_active() && run.requested.elapsed() > REQUEST_GRACE => Next::Abort(
-            "the replay ended without an outcome; another replay replaced it".to_owned(),
-        ),
-        None => Next::Continue,
-        Some(ReplayOutcome::Completed { .. }) => {
-            run.observe(&lines);
-            let until = *run
-                .settle_until
-                .get_or_insert_with(|| Instant::now() + run.scenario.settle);
-            if Instant::now() >= until {
-                Next::Finish
-            } else {
-                Next::Continue
-            }
-        }
-        Some(ReplayOutcome::Stopped) => Next::Abort("the replay was stopped".to_owned()),
-        Some(ReplayOutcome::Failed(error)) => Next::Abort(format!("the replay failed: {error}")),
-    };
+    let next = run.update(replay::observation(run.replay), &lines, Instant::now());
     match next {
         Next::Continue => {}
         Next::Finish => state.finish(None),
         Next::Abort(reason) => state.abort(&reason),
     }
 }
-
-/// How long after a scenario's request the replay may take to become active before its absence
-/// means another replay replaced it.
-const REQUEST_GRACE: Duration = Duration::from_secs(2);
 
 enum Pending {
     Start(PathBuf),
@@ -222,7 +198,6 @@ static STATE: Mutex<State> = Mutex::new(State {
 struct Run {
     scenario: Scenario,
     replay: RunId,
-    requested: Instant,
     started_at: String,
     expectations: Vec<Observed>,
     /// Frames observed.
@@ -286,11 +261,67 @@ impl Observed {
 }
 
 impl Run {
-    fn observe(&mut self, lines: &[LogLine]) {
-        self.frames += 1;
-        for expectation in &mut self.expectations {
-            expectation.observe(lines);
+    fn update(&mut self, observation: Observation, lines: &[LogLine], now: Instant) -> Next {
+        match observation {
+            Observation::Pending | Observation::Loading | Observation::Teleporting => {
+                Next::Continue
+            }
+            Observation::Playing => {
+                self.observe(lines);
+                Next::Continue
+            }
+            Observation::Ended(ReplayOutcome::Completed { .. }) => {
+                self.observe(lines);
+                let until = *self
+                    .settle_until
+                    .get_or_insert_with(|| now + self.scenario.settle);
+                if now >= until {
+                    Next::Finish
+                } else {
+                    Next::Continue
+                }
+            }
+            Observation::Ended(ReplayOutcome::Stopped) => {
+                Next::Abort("the replay was stopped".to_owned())
+            }
+            Observation::Ended(ReplayOutcome::Failed(error)) => {
+                Next::Abort(format!("the replay failed: {error}"))
+            }
+            Observation::Replaced => Next::Abort("another replay replaced it".to_owned()),
         }
+    }
+
+    fn observe(&mut self, lines: &[LogLine]) {
+        let value = match &self.expectation.probe {
+            Probe::Signal { signal, delta } => match (signal.read(), delta) {
+                (Value::Number(n), true) => Value::Number(n - *self.baseline.get_or_insert(n)),
+                (value, _) => value,
+            },
+            Probe::Status {
+                label,
+                health,
+                detail,
+            } => match status_row(label) {
+                Some(line) => Value::Bool(
+                    health.is_none_or(|h| line.health == h)
+                        && detail.as_deref().is_none_or(|d| line.detail.contains(d)),
+                ),
+                None => Value::Missing,
+            },
+            Probe::Log { pattern, level } => {
+                self.log_matches += lines
+                    .iter()
+                    .filter(|line| {
+                        // `Level` orders the most verbose highest, so a line at a level or above
+                        // is one that compares at or below it.
+                        level.is_none_or(|level| line.level <= level)
+                            && line.text.contains(pattern.as_str())
+                    })
+                    .count() as u64;
+                Value::Number(self.log_matches as f64)
+            }
+        };
+        self.tracker.observe(value);
     }
 }
 
@@ -330,7 +361,6 @@ impl State {
                 .collect(),
             scenario,
             replay,
-            requested: Instant::now(),
             started_at: crate::session::stamp(),
             frames: 0,
             lost_log_lines: 0,
@@ -345,10 +375,8 @@ impl State {
 
     /// End the running scenario, if any, before its replay finished.
     fn abort(&mut self, reason: &str) {
-        if self.running.is_some() {
-            if replay::is_active() {
-                replay::stop();
-            }
+        if let Some(run) = &self.running {
+            replay::stop_owned(run.replay);
             self.finish(Some(reason.to_owned()));
         }
     }
