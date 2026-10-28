@@ -284,6 +284,9 @@ fn legacy_files(root: &std::path::Path, directory: &std::path::Path) -> Vec<Stri
         ) {
             continue;
         }
+        if relative == "controllers/settings" {
+            continue;
+        }
         if path.is_dir() {
             result.extend(legacy_files(root, &path));
         } else if path.extension().is_some_and(|extension| extension == "rs")

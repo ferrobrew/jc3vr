@@ -7,7 +7,7 @@ use crate::{
     controllers::{
         bindings::{Blocker, HandRecovery},
         config::{InputConfig, LocomotionDirection, SchemeSetting},
-        frame::{self, Button, GripPress, Hand},
+        frame::{self, Button, GripPress, Hand, PressThresholds},
     },
     ui::controllers::{locomotion, unarmed},
     vr::input::{self as vr_input, restart},
@@ -65,23 +65,32 @@ pub(super) fn thresholds(ui: &mut Ui, cfg: &mut config::Config) {
     egui::CollapsingHeader::new("Input")
         .default_open(true)
         .show(ui, |ui| {
+            let before_trigger = c.input.trigger_press;
             ui.add(
                 egui::Slider::new(&mut c.input.trigger_press.press, 0.05..=1.0)
                     .text("Trigger press"),
             );
+            settle_threshold(&mut c.input.trigger_press, before_trigger, true);
+            let before_trigger = c.input.trigger_press;
             ui.add(
                 egui::Slider::new(&mut c.input.trigger_press.release, 0.0..=1.0)
                     .text("Trigger release"),
             );
+            settle_threshold(&mut c.input.trigger_press, before_trigger, false);
+            let before_squeeze = c.input.squeeze_press;
             ui.add(
                 egui::Slider::new(&mut c.input.squeeze_press.press, 0.05..=1.0)
                     .text("Squeeze press"),
             )
             .on_hover_text("The grip press on a controller without grip force (Touch).");
+            settle_threshold(&mut c.input.squeeze_press, before_squeeze, true);
+            let before_squeeze = c.input.squeeze_press;
             ui.add(
                 egui::Slider::new(&mut c.input.squeeze_press.release, 0.0..=1.0)
                     .text("Squeeze release"),
             );
+            settle_threshold(&mut c.input.squeeze_press, before_squeeze, false);
+            let before_force = c.input.squeeze_force_press;
             ui.add(
                 egui::Slider::new(&mut c.input.squeeze_force_press.press, 0.05..=1.0)
                     .text("Grip force press"),
@@ -90,19 +99,26 @@ pub(super) fn thresholds(ui: &mut Ui, cfg: &mut config::Config) {
                 "The grip press on a controller with grip force (Index), whose capacitive squeeze \
              value is full whenever the hand rests round the handle.",
             );
+            settle_threshold(&mut c.input.squeeze_force_press, before_force, true);
+            let before_force = c.input.squeeze_force_press;
             ui.add(
                 egui::Slider::new(&mut c.input.squeeze_force_press.release, 0.0..=1.0)
                     .text("Grip force release"),
             );
+            settle_threshold(&mut c.input.squeeze_force_press, before_force, false);
+            let before_trackpad = c.input.trackpad_press;
             ui.add(
                 egui::Slider::new(&mut c.input.trackpad_press.press, 0.05..=1.0)
                     .text("Trackpad press"),
             )
             .on_hover_text("The trackpad force that presses a half, which pages the menu tabs.");
+            settle_threshold(&mut c.input.trackpad_press, before_trackpad, true);
+            let before_trackpad = c.input.trackpad_press;
             ui.add(
                 egui::Slider::new(&mut c.input.trackpad_press.release, 0.0..=1.0)
                     .text("Trackpad release"),
             );
+            settle_threshold(&mut c.input.trackpad_press, before_trackpad, false);
             grip_readout(ui, &c.input);
             ui.add(
                 egui::Slider::new(&mut c.input.stick_deadzone, 0.0..=0.9).text("Stick deadzone"),
@@ -137,14 +153,14 @@ pub(super) fn menu_panel(ui: &mut Ui, cfg: &mut config::Config) {
     ui.add(egui::Slider::new(&mut b.crouch_flick, 0.3..=1.0).text("Seated crouch flick"));
     ui.add(egui::Slider::new(&mut b.menu_stick_push, 0.2..=0.95).text("Menu stick push"));
     ui.add(
-        egui::Slider::new(&mut b.stick_chord_window_s, 0.0..=0.3)
+        egui::Slider::new(&mut b.stick_chord_window_s, 0.001..=0.3)
             .text("Stick click chord window (s)"),
     )
     .on_hover_text("How long a lone stick click waits for the other before it acts.");
     ui.add(egui::Slider::new(&mut b.recenter_hold_s, 0.3..=3.0).text("Recenter chord hold (s)"))
         .on_hover_text("Hold both stick clicks this long to recenter the VR view.");
     ui.add(
-        egui::Slider::new(&mut b.panel_chord_window_s, 0.0..=1.0)
+        egui::Slider::new(&mut b.panel_chord_window_s, 0.001..=1.0)
             .text("Debug panel chord window (s)"),
     )
     .on_hover_text(
@@ -257,6 +273,34 @@ pub(super) fn animation_settings(ui: &mut Ui, cfg: &mut config::Config) {
 
     unarmed::unarmed_settings(ui, &mut c.body.unarmed);
 }
+
+fn settle_threshold(pair: &mut PressThresholds, before: PressThresholds, press: bool) {
+    let value = if press { pair.press } else { pair.release };
+    *pair = before;
+    set_threshold(pair, press, value);
+}
+
+fn set_threshold(pair: &mut PressThresholds, press: bool, value: f32) {
+    let candidate = if press {
+        PressThresholds {
+            press: value,
+            release: pair.release.min(value),
+        }
+    } else {
+        PressThresholds {
+            press: pair.press.max(value),
+            release: value,
+        }
+    };
+    if config::validate::press_thresholds("input", candidate).is_ok() {
+        *pair = candidate;
+    }
+}
+
+#[cfg(test)]
+mod tests;
+#[cfg(test)]
+mod widget_tests;
 
 /// Each hand's grip and trackpad readings beside their thresholds, for tuning them.
 fn grip_readout(ui: &mut Ui, input: &InputConfig) {

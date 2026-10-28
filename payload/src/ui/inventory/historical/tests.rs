@@ -516,7 +516,7 @@ fn extra_matching_current_owner_is_not_silently_selected() {
 
 const ORIGINAL: &str = "fn old() { let c = &mut cfg.controllers; ui.checkbox(&mut c.enabled, \"Enabled\"); if ui.button(\"Capture\").clicked() { sink::capture(); } }";
 const BASELINE_FINGERPRINT: u64 = 0x9b6099490bea7ce7;
-const MAPPING_FINGERPRINT: u64 = 0x1fe287119a34c0d6;
+const MAPPING_FINGERPRINT: u64 = 0x488a71f510dadf44;
 const REMOVALS_FINGERPRINT: u64 = 0x5b07d08c09276dab;
 
 fn source(text: &'static str) -> SourceFile {

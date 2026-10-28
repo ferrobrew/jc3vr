@@ -52,6 +52,8 @@ The log lists what the load defaulted (info), skipped, and reset with the reason
 
 Lists merge element by element when the file's list has the default's length, and otherwise replace the default whole, so a list that can grow or shrink, such as the key bindings, loads as written.
 
+The input threshold editor changes each press/release pair together. Lowering press below release lowers release; raising release above press raises press. The existing threshold validator admits the result before publication. Chord-window sliders keep a positive duration, matching load validation.
+
 ## Saving
 
 A change the user meant goes through `config::edit()`, a guard that derefs to the `Config` and marks the configuration changed when it drops. Every debug UI tab that binds controls to the configuration, the pause menu's VR pages, the hotkeys (F4, F8, F11, and the director's key bindings), the body calibration's save, the sight tuning tool's capture, and the director tab's key binding reset use it. Reads, and changes the payload makes on its own, take the plain `CONFIG` lock and are never a reason to save: a value discovered at runtime, a diagnostic that disarms itself, or a fallback.

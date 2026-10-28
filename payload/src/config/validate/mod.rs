@@ -127,7 +127,7 @@ fn volume(name: &str, value: &VolumeSpec) -> Result<(), Invalid> {
     positive(&format!("{name}.radius_m"), value.radius_m, 10.0)
 }
 
-fn press_thresholds(name: &str, thresholds: PressThresholds) -> Result<(), Invalid> {
+pub(crate) fn press_thresholds(name: &str, thresholds: PressThresholds) -> Result<(), Invalid> {
     range(&format!("{name}.press"), thresholds.press, 0.0, 1.0)?;
     range(&format!("{name}.release"), thresholds.release, 0.0, 1.0)?;
     if thresholds.release > thresholds.press {
