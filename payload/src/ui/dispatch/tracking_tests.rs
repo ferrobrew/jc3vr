@@ -9,6 +9,7 @@ use crate::{
 
 #[test]
 fn actual_tracking_status_reads_the_snapshot_without_a_renderer_or_actions() {
+    let _config = crate::config::test_fixture();
     let _serial = history::TEST_LOCK.lock();
     assert_eq!(route(FeatureId::TrackingCapture), FeatureRoute::Tracking);
     let status = tracking::peek_status();
@@ -49,6 +50,7 @@ fn actual_tracking_status_reads_the_snapshot_without_a_renderer_or_actions() {
 
 #[test]
 fn actual_tracking_controls_keep_idle_actions_settings_and_instructions_without_activation() {
+    let _config = crate::config::test_fixture();
     let _serial = history::TEST_LOCK.lock();
     let status = tracking::peek_status();
     assert!(!status.recording);
@@ -98,7 +100,8 @@ fn actual_tracking_controls_keep_idle_actions_settings_and_instructions_without_
         );
         assert_eq!(selection, original_selection);
         assert_eq!(tracking_state(), before);
-        assert_eq!(config::status(), save_status);
+        assert_eq!(save_status, config::SaveStatus::UpToDate);
+        assert_eq!(config::status(), config::SaveStatus::Pending);
     }
 }
 

@@ -5,6 +5,7 @@ use crate::{config, ui::environment::test_game};
 
 #[test]
 fn actual_environment_status_is_read_only_without_a_renderer() {
+    let _config = crate::config::test_fixture();
     let before = configuration_snapshot();
     let save_status = config::status();
     for (time, weather, expected) in [
@@ -83,6 +84,7 @@ fn actual_environment_status_is_read_only_without_a_renderer() {
 
 #[test]
 fn actual_environment_controls_retain_all_weather_event_commands_without_a_renderer() {
+    let _config = crate::config::test_fixture();
     let before = configuration_snapshot();
     let save_status = config::status();
     for width in [420.0, 1100.0] {

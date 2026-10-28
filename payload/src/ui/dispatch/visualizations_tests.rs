@@ -7,6 +7,7 @@ use crate::config;
 
 #[test]
 fn production_visualizations_show_each_canonical_row_only_under_its_owner() {
+    let _config = crate::config::test_fixture();
     let before = serde_json::to_value(config::get()).unwrap();
     let owners: [(FeatureId, &[&str]); 3] = [
         (FeatureId::RootWalls, &["Body mirror", "Controller gizmos"]),
@@ -103,6 +104,7 @@ fn production_visualizations_show_each_canonical_row_only_under_its_owner() {
 
 #[test]
 fn specialized_visualizations_remain_separate_from_the_canonical_inventory() {
+    let _config = crate::config::test_fixture();
     for width in [420.0, 1400.0] {
         let previews = visualization_labels(FeatureId::Previews, width);
         assert_eq!(route(FeatureId::Previews), FeatureRoute::Previews);

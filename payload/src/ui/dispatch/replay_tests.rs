@@ -16,6 +16,7 @@ use crate::{
 
 #[test]
 fn actual_replay_status_reads_replay_and_scenario_snapshots_without_a_renderer_or_actions() {
+    let _config = crate::config::test_fixture();
     assert_eq!(route(FeatureId::Replay), FeatureRoute::Replay);
     let status = replay::status();
     assert_eq!(status.phase, Phase::Idle);
@@ -62,6 +63,7 @@ fn actual_replay_status_reads_replay_and_scenario_snapshots_without_a_renderer_o
 
 #[test]
 fn actual_replay_controls_keep_idle_forms_and_instructions_without_activation() {
+    let _config = crate::config::test_fixture();
     let status = replay::status();
     assert_eq!(status.phase, Phase::Idle);
     let before = replay_state();
@@ -151,6 +153,7 @@ fn actual_replay_controls_keep_idle_forms_and_instructions_without_activation() 
 
 #[test]
 fn actual_replay_status_expands_every_signal_row_without_commands_or_source_reads() {
+    let _config = crate::config::test_fixture();
     for width in [420.0, 1100.0] {
         signal_status::publish();
         let status = signal_status::snapshot();

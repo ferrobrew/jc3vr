@@ -16,6 +16,7 @@ use crate::{
 
 #[test]
 fn actual_keyboard_status_reads_effective_bindings_without_a_renderer_or_actions() {
+    let _config = crate::config::test_fixture();
     let _serial = history::TEST_LOCK.lock();
     assert_eq!(route(FeatureId::Keyboard), FeatureRoute::Director);
     let before = keyboard_state();
@@ -61,6 +62,7 @@ fn actual_keyboard_status_reads_effective_bindings_without_a_renderer_or_actions
 
 #[test]
 fn actual_keyboard_controls_keep_the_binding_commands_and_reset_without_activation() {
+    let _config = crate::config::test_fixture();
     let _serial = history::TEST_LOCK.lock();
     let before = keyboard_state();
     assert!(!before.recording);

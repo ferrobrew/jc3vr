@@ -314,6 +314,7 @@ fn production_dock_read_only_disables_main_and_detached_controls_and_layout_gest
 
 #[test]
 fn actual_runtime_dispatch_separates_read_only_status_from_controls_without_a_renderer() {
+    let _config = crate::config::test_fixture();
     let before = serde_json::to_value(config::get()).unwrap();
     let save_status = config::status();
     let source = headpose::source();
@@ -457,6 +458,7 @@ fn assert_runtime_status_labels(labels: &[(String, egui::Rect)]) {
 
 #[test]
 fn actual_preview_route_reports_missing_renderer_without_a_device() {
+    let _config = crate::config::test_fixture();
     let context = egui::Context::default();
     let mut selection = NavigationState {
         feature: FeatureId::Previews,

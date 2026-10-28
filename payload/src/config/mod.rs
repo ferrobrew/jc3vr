@@ -204,4 +204,7 @@ impl Config {
 }
 
 #[cfg(test)]
+pub(crate) use persist::test_fixture;
+
+#[cfg(test)]
 mod tests;

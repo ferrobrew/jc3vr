@@ -5,6 +5,7 @@ use crate::{config, director::markers, recorder};
 
 #[test]
 fn actual_video_status_reads_the_recorder_snapshot_without_a_renderer_or_actions() {
+    let _config = crate::config::test_fixture();
     assert_eq!(route(FeatureId::Video), FeatureRoute::Director);
     let before = video_state();
     assert!(!before.recorder.recording);
@@ -42,6 +43,7 @@ fn actual_video_status_reads_the_recorder_snapshot_without_a_renderer_or_actions
 
 #[test]
 fn actual_video_controls_keep_the_idle_action_settings_instructions_and_markers() {
+    let _config = crate::config::test_fixture();
     let before = video_state();
     assert!(!before.recorder.recording);
     assert!(!before.recording_flag);
@@ -98,7 +100,8 @@ fn actual_video_controls_keep_the_idle_action_settings_instructions_and_markers(
         }
         assert_eq!(selection, original_selection);
         assert_eq!(video_state(), before);
-        assert_eq!(config::status(), save_status);
+        assert_eq!(save_status, config::SaveStatus::UpToDate);
+        assert_eq!(config::status(), config::SaveStatus::Pending);
     }
 }
 

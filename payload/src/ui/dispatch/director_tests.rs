@@ -5,6 +5,7 @@ use crate::{config, ui::director::test_game};
 
 #[test]
 fn actual_director_safety_status_is_read_only_without_a_renderer() {
+    let _config = crate::config::test_fixture();
     let before = configuration_snapshot();
     let save_status = config::status();
     for (actor, heat, expected) in [
@@ -82,6 +83,7 @@ fn actual_director_safety_status_is_read_only_without_a_renderer() {
 
 #[test]
 fn actual_director_safety_controls_retain_settings_and_heat_commands_without_a_renderer() {
+    let _config = crate::config::test_fixture();
     let before = configuration_snapshot();
     for width in [420.0, 1100.0] {
         let _fixture = test_game::install(

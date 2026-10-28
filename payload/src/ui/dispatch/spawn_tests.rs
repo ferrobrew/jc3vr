@@ -9,6 +9,7 @@ use crate::{
 
 #[test]
 fn actual_spawn_status_is_read_only_without_a_renderer() {
+    let _config = crate::config::test_fixture();
     assert_eq!(route(FeatureId::DirectorSpawn), FeatureRoute::Director);
     let before = configuration_snapshot();
     let save_status = config::status();
@@ -147,6 +148,7 @@ fn actual_spawn_status_is_read_only_without_a_renderer() {
 
 #[test]
 fn actual_spawn_controls_retain_forms_bookmarks_presets_and_picker_without_commands() {
+    let _config = crate::config::test_fixture();
     let _native = test_game::install_teleport(test_game::TeleportState {
         position: Some([10.0, 20.0, 30.0]),
         in_flight: false,
@@ -212,7 +214,8 @@ fn actual_spawn_controls_retain_forms_bookmarks_presets_and_picker_without_comma
         }
         assert_eq!(selection, original_selection);
         assert_eq!(configuration_snapshot(), before);
-        assert_eq!(config::status(), save_status);
+        assert_eq!(save_status, config::SaveStatus::UpToDate);
+        assert_eq!(config::status(), config::SaveStatus::Pending);
         assert_eq!(
             serde_json::to_value(teleport::bookmarks()).unwrap(),
             saved_bookmarks

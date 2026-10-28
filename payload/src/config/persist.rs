@@ -187,6 +187,36 @@ static SAVER: Mutex<Saver> = Mutex::new(Saver::new());
 
 static EDITS: Mutex<Edits> = Mutex::new(Edits::new());
 
+#[cfg(test)]
+pub(crate) fn test_fixture() -> TestFixture {
+    let guard = TEST_CONFIG.lock();
+    let config = CONFIG.lock().clone();
+    let edits = std::mem::replace(&mut *EDITS.lock(), Edits::new());
+    TestFixture {
+        _guard: guard,
+        config,
+        edits,
+    }
+}
+
+#[cfg(test)]
+static TEST_CONFIG: Mutex<()> = Mutex::new(());
+
+#[cfg(test)]
+pub(crate) struct TestFixture {
+    _guard: parking_lot::MutexGuard<'static, ()>,
+    config: Config,
+    edits: Edits,
+}
+
+#[cfg(test)]
+impl Drop for TestFixture {
+    fn drop(&mut self) {
+        *CONFIG.lock() = self.config.clone();
+        *EDITS.lock() = std::mem::replace(&mut self.edits, Edits::new());
+    }
+}
+
 /// The file's state. Held for each whole write, which serializes the writers.
 static WRITTEN: Mutex<FileState> = Mutex::new(FileState {
     generation: 0,
@@ -633,6 +663,18 @@ fn write_generation(generation: u64, path: &Path, text: &str) -> Result<Written,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scoped_config_fixture_restores_both_settings_and_edit_status() {
+        {
+            let _fixture = test_fixture();
+            crate::config::edit().hud.distance = 42.0;
+            assert!(EDITS.lock().pending());
+        }
+        let _fixture = test_fixture();
+        assert_eq!(CONFIG.lock().hud.distance, Config::new().hud.distance);
+        assert!(!EDITS.lock().pending());
+    }
 
     #[test]
     fn a_retry_waits_and_backs_off_up_to_the_cap() {

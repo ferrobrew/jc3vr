@@ -18,6 +18,7 @@ use crate::{
 
 #[test]
 fn actual_hud_status_reads_published_snapshots_without_a_renderer_or_actions() {
+    let _config = crate::config::test_fixture();
     let _fixture = test_stage_safe_area::install(StageSafeAreaReadout::Unavailable);
     assert_eq!(route(FeatureId::Hud), FeatureRoute::Hud);
     assert!(HUD_STATE.lock().depth_status().is_none());
@@ -57,6 +58,7 @@ fn actual_hud_status_reads_published_snapshots_without_a_renderer_or_actions() {
 
 #[test]
 fn actual_hud_status_renders_owned_safe_area_samples_without_actions() {
+    let _config = crate::config::test_fixture();
     let layout = StageSafeArea {
         bounds: [32.0, -12.0, 1248.0, 702.0],
         percentage: 0.05,
@@ -145,6 +147,7 @@ fn actual_hud_status_renders_owned_safe_area_samples_without_actions() {
 
 #[test]
 fn actual_hud_controls_keep_the_renderer_availability_guard() {
+    let _config = crate::config::test_fixture();
     let before = hud_state();
     let save_status = config::status();
     let mut selection = NavigationState {
