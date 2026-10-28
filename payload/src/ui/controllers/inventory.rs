@@ -125,6 +125,12 @@ pub(super) fn inventory_readout(
         s.carried_replaced,
         s.with_others
     ));
+    if let Some(reason) = readout.member_closure {
+        ui.label(format!(
+            "Paired rack-member requests disabled until the game restarts: {}. Ordinary game gives remain enabled.",
+            reason.label()
+        ));
+    }
     let p = &readout.single;
     ui.label(format!(
         "Single pistols: {} · active {} · slot's single {} · second pistol {:?} · split {} · \

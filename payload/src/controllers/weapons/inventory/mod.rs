@@ -150,6 +150,7 @@ pub(crate) struct InventoryReadout {
     pub traversal: traversal::TraversalStatus,
     pub swim_vacates: u64,
     pub single: single::SingleStatus,
+    pub member_closure: Option<gives::MemberClosure>,
     /// The single pistols in `status.world`, captured with the readout.
     pub world_singles: Vec<ObjectAddress>,
 }
@@ -412,7 +413,7 @@ pub(crate) unsafe fn stand_down() {
 /// `owner` must be the live local player character, on the main thread outside the world update.
 unsafe fn stop(owner: &mut Character, why: &str, keep: bool) {
     unsafe { use_item::stand_down() };
-    unsafe { gives::stand_down() };
+    unsafe { gives::stand_down(owner) };
     ammo::clear();
     lost::clear();
     traversal::publish(false);
@@ -602,6 +603,7 @@ fn publish_status() {
         traversal: traversal::status(),
         swim_vacates: use_item::swim_vacates(),
         single: single::status(),
+        member_closure: gives::member_closure(),
         world_singles,
     };
     let readout = Arc::new(readout);

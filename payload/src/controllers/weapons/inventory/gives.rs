@@ -25,6 +25,10 @@
 //! player's weapons (its give-back is the table's cache restored) and everything while the table
 //! does not run or the weapons keep the game's own layout.
 
+mod authority;
+#[cfg(test)]
+mod tests;
+
 use std::cell::Cell;
 
 use detours_macro::detour;
@@ -54,7 +58,11 @@ use crate::{
                 },
                 refs::Strong,
             },
-            inventory::{self, engine, reconcile},
+            inventory::{
+                self, engine,
+                gives::authority::{Authority, Identity},
+                reconcile,
+            },
         },
     },
 };
@@ -75,6 +83,9 @@ pub(crate) fn within_copy_start(start: impl FnOnce()) {
 
 /// Request the next native rack give for exactly one physical source member.
 pub(crate) fn within_member_start(member: Member, start: impl FnOnce()) {
+    if STATE.lock().members_closed.is_some() {
+        return;
+    }
     let previous = MEMBER_START.with(|copy| copy.replace(Some(member)));
     within_copy_start(start);
     MEMBER_START.with(|copy| copy.set(previous));
@@ -93,23 +104,49 @@ pub(crate) unsafe fn request_member_copy(owner: &Character, member: Member, tag:
     });
 }
 
+/// Why paired rack-member admission stays closed until the game process restarts.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum MemberClosure {
+    ReplacedGive,
+    Reset,
+    StandDown,
+    InventoryChanged,
+}
+
+impl MemberClosure {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::ReplacedGive => "an unresolved rack-member give was replaced",
+            Self::Reset => "a reset canceled an unresolved rack-member give",
+            Self::StandDown => "inventory stand-down canceled an unresolved rack-member give",
+            Self::InventoryChanged => {
+                "inventory replacement canceled an unresolved rack-member give"
+            }
+        }
+    }
+}
+
+pub(crate) fn member_closure() -> Option<MemberClosure> {
+    STATE.lock().members_closed
+}
+
 /// Whether a native source request still owns the pistol callback, including a canceled request.
 pub(crate) fn member_pending() -> bool {
     let state = STATE.lock();
-    state.records.iter().flatten().any(|r| r.member.is_some())
+    state.members_closed.is_some()
+        || state.records.iter().flatten().any(|r| r.member.is_some())
         || state.queued.iter().any(|a| a.member.is_some())
 }
 
 /// Forget the gives recorded: the spawn reset owns every give made before it. Called at the reset's
 /// pre-reset event.
 pub(crate) fn on_reset() {
+    let queued = {
+        let mut state = STATE.lock();
+        state.pre_reset()
+    };
+    drop(queued);
     rack::paired::clear();
-    let mut state = STATE.lock();
-    for record in &mut state.records {
-        if record.is_some_and(|r| r.member.is_none()) {
-            *record = None;
-        }
-    }
 }
 
 /// Hand the queued gives over and place them in the table. Called each input tick while the table
@@ -119,9 +156,13 @@ pub(crate) fn on_reset() {
 ///
 /// `owner` must be the live local player character, on the main thread outside the world update.
 pub(crate) unsafe fn input_tick(owner: &mut Character) {
+    let inventory = &raw mut owner.m_Inventory;
+    observe_inventory(inventory);
     let queued = std::mem::take(&mut STATE.lock().queued);
     for arrival in queued {
-        unsafe { hand_over(owner, arrival) };
+        if STATE.lock().admits(&arrival, inventory as usize) {
+            unsafe { hand_over(owner, arrival) };
+        }
     }
 }
 
@@ -130,23 +171,24 @@ pub(crate) unsafe fn input_tick(owner: &mut Character) {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
-pub(crate) unsafe fn stand_down() {
+/// The owner must be the live local player on the main thread outside the world update.
+pub(crate) unsafe fn stand_down(owner: &mut Character) {
+    let inventory = &raw mut owner.m_Inventory;
+    observe_inventory(inventory);
     rack::paired::clear();
     let mut state = STATE.lock();
-    for record in &mut state.records {
-        if record.is_some_and(|r| r.member.is_none()) {
-            *record = None;
-        }
-    }
+    state.retire_records(MemberClosure::StandDown);
     let queued = std::mem::take(&mut state.queued);
     drop(state);
     for arrival in queued {
+        if !STATE.lock().admits(&arrival, inventory as usize) {
+            continue;
+        }
         if arrival.member.is_some() {
             unsafe { (*engine::weapon_of(&arrival.weapon)).Despawn() };
         } else {
             let mut shared = shared_weapon(arrival.weapon);
-            unsafe { call_original(arrival.inventory, &mut shared) };
+            unsafe { call_original(inventory, &mut shared) };
         }
     }
 }
@@ -157,33 +199,86 @@ const SLOTS: usize = 8;
 /// A give recorded at the give's call.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct Record {
+    identity: Identity,
     tag_index: i32,
     source: GiveSource,
     member: Option<CopyRequest>,
 }
 
 /// A given weapon that arrived, held until the next input tick.
-struct Arrival {
-    inventory: *mut Inventory,
-    weapon: Strong,
+struct Arrival<W = Strong> {
+    identity: Identity,
+    weapon: W,
     slot: WeaponSlot,
     source: GiveSource,
     member: Option<CopyRequest>,
 }
 
-// SAFETY: the inventory is the local player's, reached only on the input tick while the character
-// lives, and the weapon's reference is atomically counted.
-unsafe impl Send for Arrival {}
-
-struct State {
+struct State<W = Strong> {
+    authority: Authority,
     records: [Option<Record>; SLOTS],
-    queued: Vec<Arrival>,
+    queued: Vec<Arrival<W>>,
+    members_closed: Option<MemberClosure>,
+}
+
+impl<W> State<W> {
+    fn replace_record(&mut self, slot: usize, record: Option<Record>, why: MemberClosure) {
+        // Slot/tag callbacks cannot prove that a superseded member request has retired.
+        if self.records[slot].is_some_and(|old| old.member.is_some())
+            && self.members_closed.is_none()
+        {
+            self.members_closed = Some(why);
+            tracing::warn!(target: "controllers", reason = ?why,
+                restart_scope = "game_process", native_callback_retirement = "unproven",
+                "inventory: paired rack-member requests stay disabled until the game restarts; {}; ordinary game gives remain enabled",
+                why.label());
+        }
+        self.records[slot] = record;
+    }
+
+    fn retire_records(&mut self, why: MemberClosure) {
+        for slot in 0..SLOTS {
+            self.replace_record(slot, None, why);
+        }
+    }
+
+    fn pre_reset(&mut self) -> Vec<Arrival<W>> {
+        self.authority.invalidate();
+        self.retire_records(MemberClosure::Reset);
+        std::mem::take(&mut self.queued)
+    }
+
+    fn admits(&self, arrival: &Arrival<W>, inventory: usize) -> bool {
+        self.authority.current(arrival.identity, inventory)
+    }
+
+    fn claim_record(&mut self, slot: usize, tag: i32, inventory: usize) -> Option<Record> {
+        let record = self.records[slot].filter(|record| {
+            record.tag_index == tag && self.authority.current(record.identity, inventory)
+        })?;
+        self.records[slot] = None;
+        Some(record)
+    }
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
+    authority: Authority::new(),
     records: [None; SLOTS],
     queued: Vec::new(),
+    members_closed: None,
 });
+
+fn observe_inventory(inventory: *mut Inventory) {
+    let retired = {
+        let mut state = STATE.lock();
+        if !state.authority.observe(inventory as usize) {
+            return;
+        }
+        state.retire_records(MemberClosure::InventoryChanged);
+        std::mem::take(&mut state.queued)
+    };
+    drop(retired);
+}
 
 thread_local! {
     /// Whether this thread is inside the local player's pickup start of a weapon with unlimited
@@ -233,22 +328,18 @@ unsafe fn call_original(inventory: *mut Inventory, weapon: &mut SharedPtr<Weapon
 /// follow.
 unsafe fn hand_over(owner: &mut Character, arrival: Arrival) {
     let Arrival {
-        inventory,
         weapon,
         slot,
         source,
         member,
+        ..
     } = arrival;
+    let inventory = &raw mut owner.m_Inventory;
     if let Some(request) = member {
         unsafe { stage_member(owner, inventory, weapon, slot, request) };
         return;
     }
     let object = engine::weapon_of(&weapon) as usize;
-    if inventory != &raw mut owner.m_Inventory {
-        let mut shared = shared_weapon(weapon);
-        unsafe { call_original(inventory, &mut shared) };
-        return;
-    }
     let occupant = owner.m_Inventory.m_Weapons[slot as usize].px as usize;
     if occupant != 0 && occupant != object {
         // The give's add would drop or despawn it; it stays where the table has it.
@@ -355,7 +446,9 @@ fn give_player_weapon(
         .with(Cell::get)
         .map(|member| rack::paired::copy_request(member, ammo));
     if is_local(inventory) && tracked(slot) {
-        let record = table_places().then(|| Record {
+        let identity = STATE.lock().authority.identity(inventory as usize);
+        let record = identity.filter(|_| table_places()).map(|identity| Record {
+            identity,
             tag_index,
             source: if COPY_START.with(Cell::get) {
                 GiveSource::RackCopy
@@ -364,7 +457,9 @@ fn give_player_weapon(
             },
             member,
         });
-        STATE.lock().records[slot as usize] = record;
+        STATE
+            .lock()
+            .replace_record(slot as usize, record, MemberClosure::ReplacedGive);
     }
     GIVE_PLAYER_WEAPON.get().unwrap().call(
         inventory,
@@ -403,14 +498,13 @@ unsafe fn queue(inventory: *mut Inventory, weapon: *mut SharedPtr<WeaponBase>) -
             as *const GameObject))
             .GetUniqueSpawnTagIndex()
     };
-    let mut state = STATE.lock();
-    let Some(record) = state.records[slot as usize].filter(|r| r.tag_index == tag_index) else {
-        return false;
-    };
-    state.records[slot as usize] = None;
-    if !table_places() && record.member.is_none() {
+    if !table_places() {
         return false;
     }
+    let mut state = STATE.lock();
+    let Some(record) = state.claim_record(slot as usize, tag_index, inventory as usize) else {
+        return false;
+    };
     let object = SharedPtr {
         px: (shared.px as usize + WeaponBase::GAME_OBJECT_BASE_OFFSET as usize) as *mut GameObject,
         pn: shared.pn,
@@ -420,7 +514,7 @@ unsafe fn queue(inventory: *mut Inventory, weapon: *mut SharedPtr<WeaponBase>) -
         return false;
     };
     state.queued.push(Arrival {
-        inventory,
+        identity: record.identity,
         weapon: strong,
         slot,
         source: record.source,
