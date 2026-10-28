@@ -3,10 +3,7 @@
 //! at the very end of the pose-finalization pass, after the HumanIK solve and the model-space pose
 //! computation.
 
-use jc3gi::{
-    character::character::{AnimatedModel, Character, Joint, SafeBoneIndex},
-    hash::hashlittle,
-};
+use jc3gi::character::character::{AnimatedModel, Character, Joint, SafeBoneIndex};
 
 use crate::{
     config::Config,
@@ -30,12 +27,36 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
             return;
         };
 
+        if !crate::hooks::character::pose::eligible(character) {
+            crate::hooks::character::body_ik::capture_unavailable();
+            return;
+        }
         let Some(animation_controller) = character.m_AnimatedModel.m_AnimationController.as_mut()
         else {
+            crate::hooks::character::body_ik::capture_unavailable();
             return;
         };
 
-        let head_index = character.GetSafeIndex(SafeBoneIndex::HEAD);
+        let Some(mut pose) = crate::hooks::character::pose::LivePose::new(animation_controller)
+        else {
+            crate::hooks::character::body_ik::capture_unavailable();
+            return;
+        };
+        let (Some(head_index), Some(neck_index)) = (
+            pose.safe_index(character.GetSafeIndex(SafeBoneIndex::HEAD)),
+            pose.safe_index(character.GetSafeIndex(SafeBoneIndex::NECK)),
+        ) else {
+            crate::hooks::character::body_ik::capture_unavailable();
+            return;
+        };
+        let Some(mut joint) = pose.read(head_index) else {
+            crate::hooks::character::body_ik::capture_unavailable();
+            return;
+        };
+        let Some(mut neck_joint) = pose.read(neck_index) else {
+            crate::hooks::character::body_ik::capture_unavailable();
+            return;
+        };
 
         // Publish the render-block head-hide inputs (the draws run on the render thread and only
         // load these): the player root pair for ownership, and the collapse set — the HEAD bone
@@ -61,7 +82,7 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
                 .w_axis
                 .truncate(),
         );
-        let bone = |name: &[u8]| animation_controller.GetBoneIndex(hashlittle(name) as u32);
+        let bone = |name: &[u8]| pose.named(name).unwrap_or(u32::MAX);
         render_block::publish_collapse_bones(&[
             head_index,
             bone(b"offset_facialOrienter"),
@@ -89,8 +110,6 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
         // the published anchors and applies the head override on top of the solved pose.
         let hide_scale = Config::lock_query(|c| c.camera.hide_head_scale);
         let scale = 0.001;
-        let mut joint = Joint::default();
-        animation_controller.GetJoint(head_index, &mut joint);
 
         let character_world = glam::Mat4::from(character.m_WorldMatrixT1);
         let (_, character_rotation, _) = character_world.to_scale_rotation_translation();
@@ -99,9 +118,6 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
             glam::Vec3::new(x, y, z)
         };
 
-        let neck_index = character.GetSafeIndex(SafeBoneIndex::NECK);
-        let mut neck_joint = Joint::default();
-        animation_controller.GetJoint(neck_index, &mut neck_joint);
         // The head-hide collapse target: the render side cannot read positions out of the
         // palette (the translation slots depend on each block's layout), so the model-space neck
         // point comes from the skeleton here.
@@ -174,7 +190,7 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
             }
         }
 
-        animation_controller.SetJoint(head_index, &mut joint);
+        pose.write(head_index, &mut joint);
 
         // Twist the neck along with the head beyond the configured start: the head bone carries
         // the whole body-relative yaw, and past a real head's range the neck must follow or the
@@ -203,7 +219,7 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
                 });
                 let twisted = glam::Quat::from_rotation_y(twist) * animated;
                 neck_joint.m_Orientation.data = [twisted.x, twisted.y, twisted.z, twisted.w];
-                animation_controller.SetJoint(neck_index, &mut neck_joint);
+                pose.write(neck_index, &mut neck_joint);
             }
         }
 
@@ -229,11 +245,14 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
             // "fRightEar",
         ];
         for s in facial_indices {
-            let index = animation_controller.GetBoneIndex(hashlittle(s.as_bytes()) as u32);
-            let mut joint = Joint::default();
-            animation_controller.GetJoint(index, &mut joint);
+            let Some(index) = pose.named(s.as_bytes()) else {
+                continue;
+            };
+            let Some(mut joint) = pose.read(index) else {
+                continue;
+            };
             joint.m_Scale.data = [scale, scale, scale];
-            animation_controller.SetJoint(index, &mut joint);
+            pose.write(index, &mut joint);
         }
     }
 }

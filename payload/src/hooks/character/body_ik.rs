@@ -12,7 +12,6 @@ use jc3gi::{
     character::character::{
         AimState, Character, CharacterLodFlags, Joint, SafeBoneIndex, get_Character_EnableHIK,
     },
-    hash::hashlittle,
     types::math::Vector3,
 };
 use parking_lot::Mutex;
@@ -224,9 +223,17 @@ pub(crate) fn shoulders_driven() -> [bool; 2] {
     *SHOULDERS_DRIVEN.lock()
 }
 
+pub(crate) fn capture_unavailable() {
+    *PRE_IK_POSE.lock() = None;
+    *SHOULDERS_DRIVEN.lock() = [false; 2];
+    headpose::withdraw_anchors();
+    live_observation::native_unavailable();
+    rig::runtime::hand_back();
+}
+
 /// Capture the headpose anchors (pre-IK) and queue the HumanIK head effector target for the local
-/// player. Every engine-pointer hop is null-guarded; any failure leaves the previous anchors and
-/// queues nothing. `controller_hands` (indexed by [`Hand::index`]) marks the wrists the controllers
+/// player. A failed native pose or required bone lookup withdraws anchor and body authority.
+/// `controller_hands` (indexed by [`Hand::index`]) marks the wrists the controllers
 /// drive this tick, whose hand pins stand down. `dt` is the pass's step.
 pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
     character: *mut Character,
@@ -238,17 +245,31 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
             return;
         };
         *SHOULDERS_DRIVEN.lock() = [false; 2];
+        *PRE_IK_POSE.lock() = None;
+        if !crate::hooks::character::pose::eligible(character) {
+            capture_unavailable();
+            return;
+        }
         let character_world = glam::Mat4::from(character.m_WorldMatrixT1);
         let character_world_prev = glam::Mat4::from(character.m_WorldMatrixT0);
         let Some(animation_controller) = character.m_AnimatedModel.m_AnimationController.as_mut()
         else {
-            live_observation::native_unavailable();
+            capture_unavailable();
             let _ = rig::root::complete_movement(character_world_prev, character_world);
             return;
         };
 
-        let head_index = character.GetSafeIndex(SafeBoneIndex::HEAD);
-        let neck_index = character.GetSafeIndex(SafeBoneIndex::NECK);
+        let Some(pose) = crate::hooks::character::pose::LivePose::new(animation_controller) else {
+            capture_unavailable();
+            return;
+        };
+        let (Some(head_index), Some(neck_index)) = (
+            pose.safe_index(character.GetSafeIndex(SafeBoneIndex::HEAD)),
+            pose.safe_index(character.GetSafeIndex(SafeBoneIndex::NECK)),
+        ) else {
+            capture_unavailable();
+            return;
+        };
 
         // Anchor capture, MOVED here from UpdatePropEffects. It must run pre-IK: the HumanIK MAIN
         // solve happens later in this same function, and reading the head bone *after* the solve
@@ -271,8 +292,14 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
             glam::Quat::from_xyzw(qx, qy, qz, qw)
         };
 
-        let mut head_joint = Joint::default();
-        animation_controller.GetJoint(head_index, &mut head_joint);
+        let Some(head_joint) = pose.read(head_index) else {
+            capture_unavailable();
+            return;
+        };
+        let Some(neck_joint) = pose.read(neck_index) else {
+            capture_unavailable();
+            return;
+        };
         let animated_head_world = character_world.transform_point3(joint_translation(&head_joint));
         // The previous-tick head anchor: the same animated joint through the character's T0 world
         // matrix. Feeds the VR pose pair so the engine's sub-frame lerp smooths per-tick anchor
@@ -280,19 +307,19 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         let animated_head_world_prev =
             character_world_prev.transform_point3(joint_translation(&head_joint));
 
-        let mut neck_joint = Joint::default();
-        animation_controller.GetJoint(neck_index, &mut neck_joint);
         let animated_neck_world = character_world.transform_point3(joint_translation(&neck_joint));
 
         let eye_joint = |name: &[u8]| {
-            let mut joint = Joint::default();
-            animation_controller.GetJoint(
-                animation_controller.GetBoneIndex(hashlittle(name) as u32),
-                &mut joint,
-            );
-            joint_translation(&joint)
+            pose.named(name)
+                .and_then(|index| pose.read(index))
+                .map(|joint| joint_translation(&joint))
         };
-        let eye_mid_model = (eye_joint(b"fLeftEye") + eye_joint(b"fRightEye")) / 2.0;
+        let (Some(left_eye), Some(right_eye)) = (eye_joint(b"fLeftEye"), eye_joint(b"fRightEye"))
+        else {
+            capture_unavailable();
+            return;
+        };
+        let eye_mid_model = (left_eye + right_eye) / 2.0;
         let eye_mid_world = character_world.transform_point3(eye_mid_model);
         let eye_arm = character_rotation.inverse() * (eye_mid_world - animated_neck_world);
         let completion = rig::root::complete_movement(character_world_prev, character_world);
@@ -445,15 +472,18 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         // for travel — the same head displacement resolves to a smaller rotation about a longer arm,
         // so the shoulders move further. `pivot_drop` picks the blend; the anisotropic version, with
         // the pivot chosen per axis, is the follow-up if this confirms the theory.
-        let joint_position = |bone: u32| {
-            let mut joint = Joint::default();
-            animation_controller.GetJoint(bone, &mut joint);
-            joint_translation(&joint)
+        let joint_position = |bone: u32| pose.read(bone).map(|joint| joint_translation(&joint));
+        let Some(spine_pivot) = pose
+            .safe_index(character.GetSafeIndex(SafeBoneIndex::SPINE))
+            .and_then(joint_position)
+        else {
+            capture_unavailable();
+            return;
         };
-        let spine_pivot = joint_position(character.GetSafeIndex(SafeBoneIndex::SPINE));
         let pivot = bone_for_effector(&character.m_HIK, Effector::HIPS as i32)
+            .and_then(joint_position)
             .map_or(spine_pivot, |hips| {
-                spine_pivot.lerp(joint_position(hips), cfg.pivot_drop.clamp(0.0, 1.0))
+                spine_pivot.lerp(hips, cfg.pivot_drop.clamp(0.0, 1.0))
             });
         let head_offset_model = character_rotation.inverse()
             * (target_world - headpose::anchor().unwrap_or(animated_head_world));
@@ -550,8 +580,9 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
                 if effector_live_targeted(&character.m_HIK, shoulder_effector) {
                     continue;
                 }
-                let mut joint = Joint::default();
-                animation_controller.GetJoint(index, &mut joint);
+                let Some(joint) = pose.read(index) else {
+                    continue;
+                };
                 let target = pivot + torso * (joint_translation(&joint) - pivot);
                 let target = Vector3 {
                     data: [target.x, target.y, target.z],
@@ -644,8 +675,9 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
                 if effector_live_targeted(&character.m_HIK, hand_effector) {
                     continue;
                 }
-                let mut joint = Joint::default();
-                animation_controller.GetJoint(index, &mut joint);
+                let Some(joint) = pose.read(index) else {
+                    continue;
+                };
                 let animated = joint_translation(&joint);
                 let target = Vector3 {
                     data: [animated.x, animated.y, animated.z],

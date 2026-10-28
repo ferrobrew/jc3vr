@@ -8,30 +8,78 @@
 //! eye bones, the point the view is anchored at. All are read before the solve, so they are the
 //! animated pose, never the previous tick's IK.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Quat, Vec3};
 use jc3gi::{
     animation::ik::Effector,
-    character::character::{AnimationController, Character, Joint},
+    character::character::{AnimationController, Character},
 };
 use parking_lot::Mutex;
 
 use crate::{
     controllers::{
+        body::procedural::skeleton::SkeletonKey,
         frame::Hand,
-        hands::{
-            ik,
-            reach::{ArmSample, ArmTracker, MeasuredArm},
-        },
+        hands::reach::{ArmSample, ArmTracker, MeasuredArm},
     },
     headpose,
-    hooks::character::body_ik,
+    hooks::character::{
+        body_ik,
+        pose::{self, LivePose},
+    },
 };
 
 /// The measured arms, indexed by [`Hand::index`]; `None` for an arm not yet measured.
 pub fn arms() -> [Option<MeasuredArm>; 2] {
-    STATE.lock().trackers.map(|t| t.arm())
+    if matches!(
+        crate::thread_role::current(),
+        crate::thread_role::ThreadRole::Game
+            | crate::thread_role::ThreadRole::GameFrame
+            | crate::thread_role::ThreadRole::GameDebugUi
+    ) {
+        unsafe {
+            match Character::GetLocalPlayerCharacter().as_ref() {
+                Some(character) => prepare(character),
+                None => invalidate(),
+            }
+        }
+    }
+    STATE
+        .lock()
+        .arms(Instant::now(), headpose::xr::body_rotation())
+}
+
+/// Check the current native identity before composing any hand targets from retained measurements.
+///
+/// # Safety
+///
+/// The local character and controller must be live on their serialized owning thread.
+pub(crate) unsafe fn prepare(character: &Character) {
+    let identity = (|| {
+        if !pose::eligible(character) {
+            return None;
+        }
+        let controller = unsafe { character.m_AnimatedModel.m_AnimationController.as_ref() }?;
+        unsafe { pose::identity(controller) }
+    })();
+    let mut state = STATE.lock();
+    match identity {
+        Some(key) => {
+            let (_, rotation, _) =
+                Mat4::from(character.m_WorldMatrixT1).to_scale_rotation_translation();
+            state.prepare(key, rotation);
+        }
+        None => state.invalidate(),
+    }
+}
+
+pub(crate) fn identity() -> Option<(SkeletonKey, usize)> {
+    STATE.lock().key
+}
+
+pub(crate) fn invalidate() {
+    STATE.lock().invalidate();
 }
 
 /// One arm's measurement state, for the debug UI.
@@ -79,23 +127,31 @@ pub(crate) unsafe fn measure(
     controller: &mut AnimationController,
     shoulder_smoothing_s: f32,
 ) -> [Option<TickArm>; 2] {
-    let eyes = unsafe {
-        match (
-            ik::bone_index(controller, "fLeftEye"),
-            ik::bone_index(controller, "fRightEye"),
-        ) {
-            (Some(left), Some(right)) => {
-                Some((joint_position(controller, left) + joint_position(controller, right)) * 0.5)
-            }
-            _ => None,
-        }
+    if !pose::eligible(character) {
+        STATE.lock().invalidate();
+        return [None; 2];
+    }
+    let Some(pose) = (unsafe { LivePose::new(controller) }) else {
+        STATE.lock().invalidate();
+        return [None; 2];
     };
+    let point = |index| {
+        pose.read(index)
+            .map(|joint| Vec3::from_array(joint.m_Translation.data))
+    };
+    let eyes = pose
+        .named(b"fLeftEye")
+        .and_then(point)
+        .zip(pose.named(b"fRightEye").and_then(point))
+        .map(|(left, right)| (left + right) * 0.5);
     let (_, character_rotation, _) =
         Mat4::from(character.m_WorldMatrixT1).to_scale_rotation_translation();
-    let to_body = (headpose::xr::body_rotation().inverse() * character_rotation).normalize();
+    let to_body = Quat::IDENTITY;
 
     let now = Instant::now();
     let mut state = STATE.lock();
+    let key = (pose.key(), pose.producer());
+    state.prepare(key, character_rotation);
     let dt = state
         .last
         .map_or(0.0, |last| now.duration_since(last).as_secs_f32());
@@ -117,21 +173,24 @@ pub(crate) unsafe fn measure(
         let bone = |effector: Effector| unsafe {
             body_ik::bone_for_effector(&character.m_HIK, effector as i32)
         };
-        let joints = (bone(shoulder), bone(elbow), bone(wrist), eyes);
+        let joints = (
+            bone(shoulder).and_then(point),
+            bone(elbow).and_then(point),
+            bone(wrist).and_then(point),
+            eyes,
+        );
         let (Some(shoulder), Some(elbow), Some(wrist), Some(eyes)) = joints else {
             state.resolved[hand.index()] = false;
             return None;
         };
-        state.resolved[hand.index()] = true;
-        let sample = unsafe {
-            ArmSample {
-                shoulder: joint_position(controller, shoulder),
-                elbow: joint_position(controller, elbow),
-                wrist: joint_position(controller, wrist),
-                eyes,
-                to_body,
-            }
+        let sample = ArmSample {
+            shoulder,
+            elbow,
+            wrist,
+            eyes,
+            to_body,
         };
+        state.resolved[hand.index()] = sample.plausible();
         let tracker = &mut state.trackers[hand.index()];
         tracker.update(sample, dt, shoulder_smoothing_s);
         let arm = tracker.arm().filter(|_| sample.plausible());
@@ -142,20 +201,79 @@ pub(crate) unsafe fn measure(
     })
 }
 
-unsafe fn joint_position(controller: &mut AnimationController, bone: u32) -> Vec3 {
-    let mut joint = Joint::default();
-    unsafe { controller.GetJoint(bone, &mut joint) };
-    Vec3::from_array(joint.m_Translation.data)
-}
-
 struct State {
     trackers: [ArmTracker; 2],
     resolved: [bool; 2],
     last: Option<Instant>,
+    key: Option<(SkeletonKey, usize)>,
+    character_rotation: Quat,
 }
 
-static STATE: Mutex<State> = Mutex::new(State {
-    trackers: [ArmTracker::EMPTY; 2],
-    resolved: [false; 2],
-    last: None,
-});
+impl State {
+    const EMPTY: Self = Self {
+        trackers: [ArmTracker::EMPTY; 2],
+        resolved: [false; 2],
+        last: None,
+        key: None,
+        character_rotation: Quat::IDENTITY,
+    };
+
+    fn invalidate(&mut self) {
+        *self = Self::EMPTY;
+    }
+
+    fn prepare(&mut self, key: (SkeletonKey, usize), character_rotation: Quat) {
+        if self.key != Some(key) {
+            self.invalidate();
+        }
+        self.key = Some(key);
+        self.character_rotation = character_rotation;
+    }
+
+    fn arms(&self, now: Instant, view: Quat) -> [Option<MeasuredArm>; 2] {
+        let fresh = self.key.is_some()
+            && self.last.is_some_and(|last| {
+                now >= last && now.duration_since(last) <= Duration::from_millis(250)
+            });
+        let to_view = view.inverse() * self.character_rotation;
+        Hand::BOTH.map(|hand| {
+            if !fresh || !self.resolved[hand.index()] {
+                return None;
+            }
+            self.trackers[hand.index()].arm().map(|mut arm| {
+                arm.eye_to_shoulder = to_view * arm.eye_to_shoulder;
+                arm
+            })
+        })
+    }
+}
+
+static STATE: Mutex<State> = Mutex::new(State::EMPTY);
+
+#[cfg(test)]
+pub(crate) fn test_arms() -> [Option<MeasuredArm>; 2] {
+    STATE.lock().arms(Instant::now(), Quat::IDENTITY)
+}
+
+#[cfg(test)]
+pub(crate) fn seed_test_measurement() {
+    let mut state = STATE.lock();
+    state.last = Some(Instant::now());
+    state.resolved = [true; 2];
+    for tracker in &mut state.trackers {
+        tracker.update(
+            ArmSample {
+                shoulder: Vec3::new(0.2, 1.4, 0.0),
+                elbow: Vec3::new(0.5, 1.4, 0.0),
+                wrist: Vec3::new(0.8, 1.4, 0.0),
+                eyes: Vec3::new(0.0, 1.7, 0.0),
+                to_body: Quat::IDENTITY,
+            },
+            0.0,
+            0.1,
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests;

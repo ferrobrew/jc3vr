@@ -202,6 +202,15 @@ pub fn set_anchors(anchors: Anchors) {
     }
 }
 
+/// Withdraw simulation anchor authority while leaving the separately published display pose alone.
+pub(crate) fn withdraw_anchors() {
+    let mut state = state().lock();
+    state.anchor = None;
+    state.anchor_prev = None;
+    state.neck_delta = Vec3::ZERO;
+    state.eye_arm = Vec3::ZERO;
+}
+
 /// The animated head bone world position, or `None` until the character hook has published a valid
 /// one (no local character yet, or only garbage bone data so far).
 pub fn anchor() -> Option<Vec3> {

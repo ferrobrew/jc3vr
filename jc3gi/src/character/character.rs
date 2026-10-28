@@ -471,7 +471,10 @@ pub struct Character {
     _field_2090: [u8; 89],
     /// Packed damage-state bit-flags; see [`DamageStateFlags`](crate::character::character::DamageStateFlags).
     pub m_DamageFlags: crate::character::character::DamageStateFlags,
-    _field_20ea: [u8; 6],
+    _field_20ea: [u8; 2],
+    /// Initialization state required by the character update passes.
+    pub m_InitializationFlags: crate::character::character::CharacterInitializationFlags,
+    _field_20ed: [u8; 3],
     /// Whether the character's weapons draw ammunition without consuming it. Read by
     /// `CWeaponBase::HasUnlimitedAmmo` together with the non-player and challenge-island rules.
     /// Set through [`SetUnlimitedAmmo`](crate::character::character::Character::SetUnlimitedAmmo), which also refreshes the HUD's
@@ -521,7 +524,10 @@ pub struct Character {
     /// ([`ControlParameters::m_UserVM`](crate::character::control_parameters::ControlParameters::m_UserVM)). Almost every one-bit "what is the character doing"
     /// predicate on this type reads through this pointer.
     pub m_ControlParameters: *mut crate::character::control_parameters::ControlParameters,
-    _field_2720: [u8; 108],
+    _field_2720: [u8; 104],
+    /// Pause state that excludes the character from update passes.
+    pub m_PauseFlags: crate::character::character::CharacterPauseFlags,
+    _field_2789: [u8; 3],
     /// Per-character LOD/update-gating flags; see [`CharacterLodFlags`](crate::character::character::CharacterLodFlags).
     pub m_LodFlags: crate::character::character::CharacterLodFlags,
     _field_278d: [u8; 27],
@@ -2485,6 +2491,16 @@ impl std::convert::AsMut<Character> for Character {
     }
 }
 crate::__bitflags! {
+    #[doc = " Initialization state tested by the character update passes."] pub struct
+    CharacterInitializationFlags : u8 { const INITIALIZED = 1usize as _; }
+}
+fn _CharacterInitializationFlags_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x1], CharacterInitializationFlags>([0u8; 0x1]);
+    }
+    unreachable!()
+}
+crate::__bitflags! {
     #[doc =
     " Per-character LOD/update-gating flags. Checked before the SIM-phase animation and IK work:"]
     #[doc =
@@ -2496,6 +2512,16 @@ crate::__bitflags! {
 fn _CharacterLodFlags_size_check() {
     unsafe {
         ::std::mem::transmute::<[u8; 0x1], CharacterLodFlags>([0u8; 0x1]);
+    }
+    unreachable!()
+}
+crate::__bitflags! {
+    #[doc = " Pause state tested by the character update passes."] pub struct
+    CharacterPauseFlags : u8 { const PAUSED = 1usize as _; }
+}
+fn _CharacterPauseFlags_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x1], CharacterPauseFlags>([0u8; 0x1]);
     }
     unreachable!()
 }
@@ -2678,12 +2704,9 @@ pub unsafe fn get_Character_GoreEnabled() -> &'static mut bool {
 crate::__bitflags! {
     #[doc =
     " A byte of `CCharacter` bitfields holding the visibility, invulnerability, and weapons-enabled"]
-    #[doc =
-    " flags. Not every bit is mapped: three of the remaining bits are, in ascending order, `Enabled`,"]
-    #[doc =
-    " `m_GhostMode`, and `m_PermanentGhostMode`, and these names are unconfirmed."] pub
-    struct DamageStateFlags : u8 { const VISIBLE = 1usize as _; const GOD_MODE = 2usize
-    as _; const JESUS_MODE = 4usize as _; const WEAPONS_ENABLED = 64usize as _; }
+    #[doc = " flags. The ghost-mode fields remain unmapped."] pub struct DamageStateFlags
+    : u8 { const VISIBLE = 1usize as _; const GOD_MODE = 2usize as _; const JESUS_MODE =
+    4usize as _; const ENABLED = 8usize as _; const WEAPONS_ENABLED = 64usize as _; }
 }
 fn _DamageStateFlags_size_check() {
     unsafe {

@@ -49,8 +49,7 @@ use glam::{Mat4, Quat, Vec3};
 use jc3gi::{
     animation::ik::{Effector, Pass, SolveStep},
     character::character::{
-        AnimationController, Character, CharacterLodFlags, Joint, SafeBoneIndex,
-        get_Character_EnableHIK,
+        AnimationController, Character, CharacterLodFlags, SafeBoneIndex, get_Character_EnableHIK,
     },
     hash::hashlittle,
     types::math::Vector3,
@@ -63,6 +62,7 @@ use crate::{
         body::{
             procedural::{
                 ArmContext, arm_context, owns_body,
+                skeleton::SkeletonKey,
                 solver::arms::{Side, elbow_hint},
             },
             unarmed,
@@ -81,6 +81,9 @@ use crate::{
 
 mod ownership;
 
+#[cfg(test)]
+mod tests;
+
 /// The effective controller weights for a placement in this pose-finalization pass.
 pub(crate) fn placement_weights(character: usize, controller: usize) -> [f32; 2] {
     ownership::weights(character, controller)
@@ -92,6 +95,7 @@ pub(crate) fn placement_weights(character: usize, controller: usize) -> [f32; 2]
 pub struct HandPlan {
     active: Option<ActiveHands>,
     weights: [f32; 2],
+    arm_identity: Option<(SkeletonKey, usize)>,
 }
 
 impl HandPlan {
@@ -104,12 +108,22 @@ impl HandPlan {
     pub fn driven(&self) -> [bool; 2] {
         Hand::BOTH.map(|hand| self.drives(hand))
     }
+
+    unsafe fn current_for(&self, character: &Character) -> bool {
+        unsafe { rig::prepare(character) };
+        self.arm_identity.is_some() && self.arm_identity == rig::identity()
+    }
 }
 
 /// Decide which hands the controllers drive this tick: hand IK on, the hands active
 /// ([`hands::active_hands`]), the hand tracked, its tier weight above zero, and the character in
 /// gameplay with the headpose driving it.
-pub fn plan() -> HandPlan {
+///
+/// # Safety
+///
+/// The local character and controller must be live on their serialized owning thread.
+pub(crate) unsafe fn plan(character: &Character) -> HandPlan {
+    unsafe { rig::prepare(character) };
     let active = hands::active_hands()
         .filter(|a| a.config.hands.ik && hooks::in_gameplay() && headpose::is_active());
     let tier_weights = tiers::weights();
@@ -119,7 +133,11 @@ pub fn plan() -> HandPlan {
             .is_some_and(|a| a.hands[hand.index()].is_some())
     });
     let weights = ownership::effective_weights(tracked, tier_weights);
-    HandPlan { active, weights }
+    HandPlan {
+        active,
+        weights,
+        arm_identity: rig::identity(),
+    }
 }
 
 /// What the hand IK did for one hand on its last tick, for the debug UI.
@@ -227,6 +245,10 @@ pub(crate) fn local_character() -> usize {
 /// As [`queue`].
 pub(crate) unsafe fn queue_or_defer(character: *mut Character, plan: HandPlan) {
     ownership::clear();
+    if !unsafe { character.as_ref() }.is_some_and(|owner| unsafe { plan.current_for(owner) }) {
+        DEFERRED.replace(None);
+        return;
+    }
     if let Some(owner) = unsafe { character.as_ref() }.filter(|c| c.m_IsLocalCharacter) {
         LOCAL_CHARACTER.store(character as usize, Ordering::Relaxed);
         ownership::publish(
@@ -276,7 +298,9 @@ pub(crate) unsafe fn deferred_wrist_targets(character: &Character) -> [Option<(V
         let Some((plan, active)) = plan
             .as_ref()
             .and_then(|plan| plan.active.as_ref().map(|active| (plan, active)))
-            .filter(|_| headpose::anchor().is_some())
+            .filter(|(plan, _)| {
+                headpose::anchor().is_some() && unsafe { plan.current_for(character) }
+            })
         else {
             return [None; 2];
         };
@@ -324,7 +348,17 @@ pub(crate) unsafe fn queue_model_wrists(
             Hand::Left => (Effector::LEFT_WRIST as i32, SafeBoneIndex::LEFT_HAND),
             Hand::Right => (Effector::RIGHT_WRIST as i32, SafeBoneIndex::RIGHT_HAND),
         };
-        let wrist_bone = unsafe { character.GetSafeIndex(wrist_safe) };
+        let Some(wrist_bone) =
+            (unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() }).and_then(
+                |controller| {
+                    unsafe { crate::hooks::character::pose::LivePose::new(controller) }.and_then(
+                        |pose| pose.safe_index(unsafe { character.GetSafeIndex(wrist_safe) }),
+                    )
+                },
+            )
+        else {
+            continue;
+        };
         if unsafe { character.m_HIK.GetEffectorIdFromBoneIndex(wrist_bone) } != effector {
             log_once(
                 &UNMAPPED_LOGGED,
@@ -346,9 +380,13 @@ pub(crate) unsafe fn queue_model_wrists(
             log_once(&KNUCKLES_LOGGED, "the knuckle bones did not resolve");
             continue;
         };
-        let (wrist, _) = unsafe { joint(controller, wrist_bone) };
-        let (index, _) = unsafe { joint(controller, index_bone) };
-        let (middle, _) = unsafe { joint(controller, middle_bone) };
+        let (Some((wrist, _)), Some((index, _)), Some((middle, _))) = (
+            unsafe { joint(controller, wrist_bone) },
+            unsafe { joint(controller, index_bone) },
+            unsafe { joint(controller, middle_bone) },
+        ) else {
+            continue;
+        };
         let Some(animated_frame) = hand_pose::wrist_frame_from_bones(hand, wrist, index, middle)
         else {
             continue;
@@ -411,12 +449,18 @@ unsafe fn queue(character: *mut Character, plan: &HandPlan, arms: Option<&ArmCon
     let Some(character) = (unsafe { character.as_mut() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };
+    if !unsafe { plan.current_for(character) } {
+        return;
+    }
     LOCAL_CHARACTER.store(character as *mut Character as usize, Ordering::Relaxed);
 
     let smoothing = Config::lock_query(|c| c.controllers.hands.reach.shoulder_smoothing_s);
     let measured = match unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() } {
         Some(controller) => unsafe { rig::measure(character, controller, smoothing) },
-        None => [None; 2],
+        None => {
+            rig::invalidate();
+            [None; 2]
+        }
     };
     let shoulders_pinned = body_ik::shoulders_driven();
 
@@ -575,15 +619,17 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     let targets = TICKS.lock().current;
     let joints = Hand::BOTH.map(|hand| {
         let b = &bones[hand.index()];
-        (b.elbow() != 0 && b.wrist() != 0).then(|| {
-            let wrist = unsafe { joint(controller, b.wrist() as u32) }.0;
-            late::ArmJoints {
-                elbow: unsafe { joint(controller, b.elbow() as u32) }.0,
-                wrist,
-                miss: targets[hand.index()]
-                    .map(|t| t.wrist.position - to_world.transform_point3(wrist))
-                    .filter(|m| m.is_finite()),
-            }
+        if b.elbow() == 0 || b.wrist() == 0 {
+            return None;
+        }
+        let wrist = unsafe { joint(controller, b.wrist() as u32) }?.0;
+        let elbow = unsafe { joint(controller, b.elbow() as u32) }?.0;
+        Some(late::ArmJoints {
+            elbow,
+            wrist,
+            miss: targets[hand.index()]
+                .map(|t| t.wrist.position - to_world.transform_point3(wrist))
+                .filter(|m| m.is_finite()),
         })
     });
     late::publish_solved(bones, joints);
@@ -637,7 +683,9 @@ unsafe fn queue_hand(
         Hand::Left => (Effector::LEFT_WRIST as i32, SafeBoneIndex::LEFT_HAND),
         Hand::Right => (Effector::RIGHT_WRIST as i32, SafeBoneIndex::RIGHT_HAND),
     };
-    let wrist_bone = unsafe { character.GetSafeIndex(wrist_safe) };
+    let wrist_bone = unsafe { crate::hooks::character::pose::LivePose::new(controller) }
+        .and_then(|pose| pose.safe_index(unsafe { character.GetSafeIndex(wrist_safe) }))
+        .ok_or(HandIkSkip::UnmappedWrist)?;
     if unsafe { character.m_HIK.GetEffectorIdFromBoneIndex(wrist_bone) } != effector {
         log_once(
             &UNMAPPED_LOGGED,
@@ -653,9 +701,12 @@ unsafe fn queue_hand(
         log_once(&KNUCKLES_LOGGED, "the knuckle bones did not resolve");
         return Err(HandIkSkip::NoHandFrame);
     };
-    let (wrist_position, _) = unsafe { joint(controller, wrist_bone) };
-    let (index_position, _) = unsafe { joint(controller, index_bone) };
-    let (middle_position, _) = unsafe { joint(controller, middle_bone) };
+    let (wrist_position, _) =
+        unsafe { joint(controller, wrist_bone) }.ok_or(HandIkSkip::NoHandFrame)?;
+    let (index_position, _) =
+        unsafe { joint(controller, index_bone) }.ok_or(HandIkSkip::NoHandFrame)?;
+    let (middle_position, _) =
+        unsafe { joint(controller, middle_bone) }.ok_or(HandIkSkip::NoHandFrame)?;
     let animated_frame =
         hand_pose::wrist_frame_from_bones(hand, wrist_position, index_position, middle_position)
             .ok_or(HandIkSkip::NoHandFrame)?;
@@ -865,12 +916,12 @@ fn wrist_target(character: &Character, active: &ActiveHands, cockpit: &CockpitHa
 }
 
 /// The model-space position and orientation of `bone`.
-unsafe fn joint(controller: &mut AnimationController, bone: u32) -> (Vec3, Quat) {
-    let mut joint = Joint::default();
-    unsafe { controller.GetJoint(bone, &mut joint) };
+unsafe fn joint(controller: &mut AnimationController, bone: u32) -> Option<(Vec3, Quat)> {
+    let pose = unsafe { crate::hooks::character::pose::LivePose::new(controller) }?;
+    let joint = pose.read(bone)?;
     let [x, y, z] = joint.m_Translation.data;
     let [qx, qy, qz, qw] = joint.m_Orientation.data;
-    (Vec3::new(x, y, z), Quat::from_xyzw(qx, qy, qz, qw))
+    Some((Vec3::new(x, y, z), Quat::from_xyzw(qx, qy, qz, qw)))
 }
 
 /// A bone's skeleton index by name, or `None` when the lookup fails (the root index, which a

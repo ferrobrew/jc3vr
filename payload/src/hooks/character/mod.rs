@@ -43,6 +43,7 @@ pub(crate) mod head;
 pub(crate) mod layers;
 pub(crate) mod magazine;
 pub(crate) mod modifiers;
+pub(crate) mod pose;
 pub(crate) mod signals;
 mod stunt;
 pub(crate) mod wielded;
@@ -91,15 +92,30 @@ fn character_update_pass_finalize_pose_parallel(
     // pose job, so its place here is free.
     let timing = frame_timing::scope(Slot::CharacterPose);
     let local = unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter);
-    let plan = local.then(hands::ik::plan);
+    let pose_ready = local
+        && unsafe { character.as_mut() }.is_some_and(|c| {
+            pose::eligible(c)
+                && unsafe { c.m_AnimatedModel.m_AnimationController.as_mut() }
+                    .is_some_and(|controller| unsafe { pose::LivePose::new(controller) }.is_some())
+        });
+    if local && !pose_ready {
+        hands::rig::invalidate();
+        controllers::body::rig::runtime::hand_back();
+    }
+    let plan =
+        (local && pose_ready).then(|| unsafe { hands::ik::plan(character.as_ref().unwrap()) });
     // SAFETY: the engine passes the pass's update context, whose first field is the step.
     let dt = unsafe { context.cast::<GameObjectUpdateContext>().as_ref() }.map_or(0.0, |c| c.m_Dt);
-    if let Some(character) = unsafe { character.as_ref() }.filter(|c| c.m_IsLocalCharacter) {
+    if let Some(character) =
+        unsafe { character.as_ref() }.filter(|c| c.m_IsLocalCharacter && pose_ready)
+    {
         unsafe { skeleton::dump_once(character) };
         set_local_character(character, Instant::now());
         gate::begin_pass(dt);
     }
-    unsafe { controllers::body::unarmed::tick(character) };
+    if pose_ready {
+        unsafe { controllers::body::unarmed::tick(character) };
+    }
     unsafe {
         // The wingsuit's arms queue their own wrist targets at the solve gate, so the body IK does
         // not pin those wrists to the animation either; their last gate is a tick behind.
