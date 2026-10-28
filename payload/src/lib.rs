@@ -163,6 +163,10 @@ fn shutdown_startup() {
     if !controllers::diagnostics::shutdown() {
         module::pin();
     }
+    // Sidecar replacement and its status publication must finish before the DLL can unmap.
+    if !controllers::weapons::inventory::sidecar::shutdown() {
+        module::pin();
+    }
 
     // The cleanups cleared render-thread-driven config flags (e.g. the HUD redirect). Give the still-
     // live hooks a few frames to tick those changes through -- the per-frame restore runs on the

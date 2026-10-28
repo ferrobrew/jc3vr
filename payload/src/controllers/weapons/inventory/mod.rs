@@ -44,6 +44,7 @@ pub mod pins;
 pub mod reconcile;
 mod reset;
 pub mod restore;
+pub(crate) mod sidecar;
 pub mod sockets;
 pub mod traversal;
 mod world;

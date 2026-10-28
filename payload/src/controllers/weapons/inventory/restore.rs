@@ -8,7 +8,7 @@
 //! - at the reset's pre-reset event, the carried weapons are recorded (type, magazine, socket)
 //!   before the carry set lets them go ([`on_pre_reset`]);
 //! - each store of the player's save data writes the save sidecar, the carried weapons with the
-//!   fingerprint of what the store writes ([`on_store`]), on a writer thread;
+//!   fingerprint of what the store writes ([`on_store`]), through one coalescing owned writer;
 //! - each load of the player's save data reads the sidecar and keeps its weapons when its
 //!   fingerprint matches what the load put into the inventory, and nothing extra otherwise
 //!   ([`on_load`]);
@@ -43,7 +43,7 @@ use jc3gi::{
 use parking_lot::Mutex;
 
 use crate::{
-    config::{self, paths},
+    config::paths,
     controllers::{
         hands::ik,
         loadout::{Restored, live},
@@ -55,6 +55,7 @@ use crate::{
                 config::InventoryConfig,
                 engine::{self as inventory_engine, kind_of, weapon_of},
                 persist::{Fingerprint, RESERVES, Record, SLOTS, Sidecar},
+                sidecar,
             },
         },
     },
@@ -121,7 +122,7 @@ pub struct RespawnOutcome {
 pub struct RestoreStatus {
     /// The sidecar's path, when there is a configuration directory.
     pub path: Option<PathBuf>,
-    /// Sidecar writes since the payload loaded, and the last one's error.
+    /// Successful sidecar replacements since the payload loaded, and the last attempt's error.
     pub writes: u64,
     pub last_write_error: Option<String>,
     /// The carried weapons the last write recorded.
@@ -135,7 +136,8 @@ pub struct RestoreStatus {
 }
 
 pub fn status() -> RestoreStatus {
-    let status = STATUS.lock().clone();
+    let mut status = STATUS.lock().clone();
+    merge_write_status(&mut status);
     let path = paths::file(SIDECAR_FILE_NAME);
     let spawning = PLAN.lock().spawning.len();
     status_with_owner_fields(status, path, spawning)
@@ -254,12 +256,13 @@ pub(crate) fn on_frontend() {
 ///
 /// `save_data` must be the save data the store is given, live for the call.
 pub(crate) unsafe fn on_store(save_data: *const PlayerSaveData, settings: &InventoryConfig) {
-    if !(settings.enabled && settings.carry && settings.persist) {
+    if crate::is_shutting_down() || !(settings.enabled && settings.carry && settings.persist) {
         return;
     }
     let Some(character) = (unsafe { character_of(save_data) }) else {
         return;
     };
+    let sequence = WRITE_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1;
     let fingerprint = unsafe { stored_fingerprint(character) };
     let carried = carry::records();
     let path = paths::file(SIDECAR_FILE_NAME);
@@ -275,13 +278,12 @@ pub(crate) unsafe fn on_store(save_data: *const PlayerSaveData, settings: &Inven
         slot_pistol_single,
     }
     .encode();
-    let sequence = WRITE_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1;
-    let spawned = std::thread::Builder::new()
-        .name("jc3vr-inventory-sidecar".to_owned())
-        .spawn(move || write(path, text, sequence, count));
-    if let Err(error) = spawned {
-        tracing::warn!(target: "controllers", %error, "inventory: the sidecar writer did not start");
-    }
+    sidecar::submit(sidecar::Snapshot {
+        path,
+        text,
+        sequence,
+        count,
+    });
 }
 
 /// The game loaded the player's save data: read the sidecar, and keep its carried weapons for the
@@ -492,12 +494,13 @@ fn observe_path(path: Option<PathBuf>) {
     publish_status();
 }
 
-fn publish_status() {
+pub(super) fn publish_status() {
     let (mut status, revision) = {
         let status = STATUS.lock();
         let revision = UI_REVISION.fetch_add(1, Ordering::Relaxed);
         (status.clone(), revision)
     };
+    merge_write_status(&mut status);
     let path_observed = PATH_OBSERVED.load(Ordering::Acquire);
     status.spawning = SPAWNING.load(Ordering::Relaxed);
     let path = if !path_observed {
@@ -525,9 +528,20 @@ fn publish_status() {
     drop(previous);
 }
 
-/// The writes asked for, and the newest one done, so an older write never replaces a newer one.
+fn merge_write_status(status: &mut RestoreStatus) {
+    apply_write_status(status, sidecar::status());
+}
+
+fn apply_write_status(status: &mut RestoreStatus, written: sidecar::WriteStatus) {
+    if written.sequence != 0 && written.path == status.path {
+        status.writes = written.writes;
+        status.last_written = written.last_written;
+        status.last_write_error = written.error;
+    }
+}
+
+/// The submission sequence prevents an older prepared snapshot from replacing a newer one.
 static WRITE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-static WRITTEN_SEQUENCE: Mutex<u64> = Mutex::new(0);
 
 /// How long a reset's record waits for the player: a load screen's length. A record older than
 /// this is taken for a quit to the menu, and a new game does not get it.
@@ -625,39 +639,6 @@ unsafe fn read_for_load(
         records,
         sidecar.slot_pistol_single,
     )
-}
-
-/// Write the sidecar's `text` to `path`, unless a newer write is done already.
-fn write(path: PathBuf, text: String, sequence: u64, count: usize) {
-    let mut written = WRITTEN_SEQUENCE.lock();
-    if *written > sequence {
-        return;
-    }
-    let result = config::write::replace(&path, text.as_bytes());
-    *written = sequence;
-    std::mem::drop(written);
-    let mut status = STATUS.lock();
-    status.writes += 1;
-    status.last_written = count;
-    match result {
-        Ok(()) => {
-            status.last_write_error = None;
-            std::mem::drop(status);
-            tracing::info!(
-                target: "controllers",
-                carried = count,
-                path = %path.display(),
-                "inventory: wrote the save sidecar"
-            );
-        }
-        Err(error) => {
-            let why = format!("inventory: sidecar: {error}");
-            status.last_write_error = Some(why.clone());
-            std::mem::drop(status);
-            tracing::warn!(target: "controllers", error = %why, "inventory: the save sidecar was not written");
-        }
-    }
-    publish_status();
 }
 
 /// The set a respawn restores.
@@ -890,110 +871,4 @@ unsafe extern "system" fn spawned(
 }
 
 #[cfg(test)]
-mod status_tests {
-    use std::{sync::mpsc, thread};
-
-    use super::*;
-
-    #[test]
-    fn ui_query_has_no_path_resolution_file_io_or_owner_access() {
-        let source = include_str!("restore.rs");
-        let query = source
-            .split("pub(crate) fn peek_status()")
-            .nth(1)
-            .unwrap()
-            .split("\n}\n")
-            .next()
-            .unwrap();
-        assert!(query.contains("UI_STATUS.try_lock()"));
-        for forbidden in [
-            "paths::",
-            "fs::",
-            "create_dir_all",
-            "PLAN",
-            "STATUS.lock",
-            "publish_status",
-        ] {
-            assert!(
-                !query.contains(forbidden),
-                "the UI query contains {forbidden}"
-            );
-        }
-    }
-
-    #[test]
-    fn actual_ui_query_never_waits_for_restore_owners_or_resolves_a_path() {
-        let previous_publication = UI_STATUS.lock().take();
-        let original = STATUS.lock().clone();
-        let original_path_observed = PATH_OBSERVED.swap(false, Ordering::AcqRel);
-        let original_spawning = SPAWNING.swap(0, Ordering::Relaxed);
-        assert!(matches!(
-            peek_status(),
-            Err(StatusUnavailable::Uninitialized)
-        ));
-        assert!(!PATH_OBSERVED.load(Ordering::Acquire));
-
-        let expected = RestoreStatus {
-            path: Some(PathBuf::from("published-inventory.toml")),
-            writes: 4,
-            last_write_error: Some("inventory: sidecar: test error".to_owned()),
-            last_written: 2,
-            last_load: Some(LoadOutcome::Accepted {
-                carried: 2,
-                unknown: 1,
-            }),
-            last_respawn: Some(RespawnOutcome {
-                origin: Some(Origin::Load),
-                requested: 3,
-                restored: 1,
-                failed: 1,
-            }),
-            restored: 5,
-            spawning: 1,
-        };
-        *STATUS.lock() = expected.clone();
-        SPAWNING.store(expected.spawning, Ordering::Relaxed);
-        PATH_OBSERVED.store(true, Ordering::Release);
-        publish_status();
-        let first = peek_status().unwrap();
-        assert_eq!(first.status, expected);
-        assert_eq!(first.path, PathStatus::Available);
-        assert_eq!(
-            status_with_owner_fields(
-                STATUS.lock().clone(),
-                expected.path.clone(),
-                expected.spawning,
-            ),
-            expected,
-        );
-
-        let plan = PLAN.lock();
-        let status = STATUS.lock();
-        let (send, receive) = mpsc::channel();
-        let query = thread::spawn(move || send.send(peek_status()).unwrap());
-        let result = receive.recv_timeout(Duration::from_secs(1));
-        drop(status);
-        drop(plan);
-        query.join().unwrap();
-        let readout = result
-            .expect("the actual UI query must not wait for PLAN or STATUS")
-            .unwrap();
-        assert!(Arc::ptr_eq(&first, &readout));
-        assert_eq!(readout.status, expected);
-
-        let publication = UI_STATUS.lock();
-        assert!(matches!(peek_status(), Err(StatusUnavailable::Busy)));
-        drop(publication);
-        observe_path(None);
-        assert_eq!(peek_status().unwrap().path, PathStatus::Unavailable);
-        PATH_OBSERVED.store(false, Ordering::Release);
-        publish_status();
-        assert_eq!(peek_status().unwrap().path, PathStatus::Uninitialized);
-
-        *STATUS.lock() = original;
-        PATH_OBSERVED.store(original_path_observed, Ordering::Release);
-        SPAWNING.store(original_spawning, Ordering::Relaxed);
-        *UI_STATUS.lock() = previous_publication;
-        assert_eq!(readout.status, expected);
-    }
-}
+mod status_tests;
