@@ -24,7 +24,10 @@
 //!
 //! Everything here runs on the input tick, on the main thread outside the world update.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::{
+    ptr::NonNull,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use jc3gi::{
     animation::symbol_table::EventIdSymbolTable,
@@ -149,7 +152,7 @@ pub(crate) unsafe fn project_back(owner: &mut Character) {
         return;
     };
     for hand in Hand::BOTH {
-        let weapon = unsafe { armed::weapon_of(owner, hand) };
+        let weapon = unsafe { armed::weapon_handle(owner, hand) };
         unsafe { armed::disarm(owner, hand, weapon, true) };
     }
     if unsafe { slots(owner, &snapshot, &store.projection) } {
@@ -208,17 +211,18 @@ unsafe fn slots(
             SlotContent::Empty => None,
             SlotContent::Game => continue,
         };
-        let current = owner.m_Inventory.m_Weapons[slot as usize].px as usize;
+        let current_source = NonNull::new(owner.m_Inventory.m_Weapons[slot as usize].px);
+        let current = current_source.map_or(0, |handle| handle.as_ptr() as ObjectKey);
         if (current != 0 && Some(current) == desired) || (current == 0 && desired.is_none()) {
             continue;
         }
-        if current != 0 {
+        if let Some(mut source) = current_source {
             // A weapon the table does not have on the body is the game's to keep there.
             let Some(socket) = home_of(snapshot, current) else {
                 continue;
             };
-            // SAFETY: the slot keeps the weapon alive.
-            let weapon = unsafe { &mut *(current as *mut WeaponBase) };
+            // SAFETY: the input phase retains the original slot source through removal.
+            let weapon = unsafe { source.as_mut() };
             if !unsafe { take_out(owner, slot, weapon, socket) } {
                 continue;
             }
@@ -278,7 +282,7 @@ unsafe fn take_out(
         UNEQUIPS.fetch_add(1, Ordering::Relaxed);
     }
     if let Some(hand) = armed::hand_of(object) {
-        unsafe { armed::disarm(owner, hand, Some(&mut *weapon), true) };
+        unsafe { armed::disarm(owner, hand, Some(NonNull::from(&mut *weapon)), true) };
     }
     if weapon.m_State != WeaponState::E_WS_HOLSTERED {
         carry::release(object);
@@ -302,7 +306,7 @@ unsafe fn put_in(owner: &mut Character, slot: WeaponSlot, object: ObjectKey, hom
     }
     if let Some(hand) = armed::hand_of(object) {
         // SAFETY: the carry set keeps the weapon alive.
-        let weapon = unsafe { (object as *mut WeaponBase).as_mut() };
+        let weapon = unsafe { carry::weapon_handle(object) };
         unsafe { armed::disarm(owner, hand, weapon, true) };
     }
     let Some(strong) = carry::release(object) else {
@@ -336,9 +340,12 @@ unsafe fn primary(owner: &mut Character, snapshot: &LoadoutSnapshot) {
     if unsafe { traversal::wield_skipped(owner) } {
         if let Some(current) = wielded {
             unsafe { abort_clips(owner) };
-            // SAFETY: the table has it on the body, in a slot while wielded.
-            let current = unsafe { &mut *(current as *mut WeaponBase) };
-            unsafe { current.OnUnequip() };
+            let Some(mut handle) = inventory_engine::slot_handle(&owner.m_Inventory, current)
+            else {
+                return;
+            };
+            // SAFETY: the input phase retains the revalidated original slot source.
+            unsafe { handle.as_mut().OnUnequip() };
             UNEQUIPS.fetch_add(1, Ordering::Relaxed);
             tracing::info!(target: "controllers", "reconcile: the game's update skips the wielded weapon here; unequipped it to arm it in its hand");
         }
@@ -350,31 +357,34 @@ unsafe fn primary(owner: &mut Character, snapshot: &LoadoutSnapshot) {
     if wielded == primary {
         return;
     }
-    let in_slot = |object: ObjectKey| {
-        owner
-            .m_Inventory
-            .m_Weapons
-            .iter()
-            .any(|slot| slot.px as usize == object)
-    };
-    match (wielded, primary.filter(|&p| in_slot(p))) {
+    let target = primary
+        .filter(|&object| inventory_engine::slot_handle(&owner.m_Inventory, object).is_some());
+    match (wielded, target) {
         (_, Some(target)) => {
             if !unsafe { owner.m_Inventory.GetAnimationAllowsDrawing() } {
                 return;
             }
             unsafe { abort_clips(owner) };
             if let Some(current) = wielded {
-                // SAFETY: the table has it on the body, in a slot while wielded.
-                let current = unsafe { &mut *(current as *mut WeaponBase) };
-                unsafe { current.OnUnequip() };
+                let Some(mut handle) = inventory_engine::slot_handle(&owner.m_Inventory, current)
+                else {
+                    return;
+                };
+                // SAFETY: the input phase retains the revalidated original slot source.
+                unsafe { handle.as_mut().OnUnequip() };
             }
-            // SAFETY: the slot keeps the weapon alive.
-            let weapon = unsafe { &mut *(target as *mut WeaponBase) };
+            let Some(handle) = inventory_engine::slot_handle(&owner.m_Inventory, target) else {
+                return;
+            };
             if let Some(hand) = armed::hand_of(target) {
-                unsafe { armed::disarm(owner, hand, Some(&mut *weapon), true) };
+                unsafe { armed::disarm(owner, hand, Some(handle), true) };
                 PROMOTIONS.fetch_add(1, Ordering::Relaxed);
             }
-            unsafe { weapon.OnEquip(owner) };
+            let Some(mut handle) = inventory_engine::slot_handle(&owner.m_Inventory, target) else {
+                return;
+            };
+            // SAFETY: the input phase retains the revalidated original slot source.
+            unsafe { handle.as_mut().OnEquip(owner) };
             EQUIPS.fetch_add(1, Ordering::Relaxed);
             tracing::info!(target: "controllers", "reconcile: the primary hand's weapon is wielded");
         }
@@ -383,9 +393,12 @@ unsafe fn primary(owner: &mut Character, snapshot: &LoadoutSnapshot) {
                 return;
             }
             unsafe { abort_clips(owner) };
-            // SAFETY: as above.
-            let current = unsafe { &mut *(current as *mut WeaponBase) };
-            unsafe { current.OnUnequip() };
+            let Some(mut handle) = inventory_engine::slot_handle(&owner.m_Inventory, current)
+            else {
+                return;
+            };
+            // SAFETY: the input phase retains the revalidated original slot source.
+            unsafe { handle.as_mut().OnUnequip() };
             UNEQUIPS.fetch_add(1, Ordering::Relaxed);
             tracing::info!(target: "controllers", "reconcile: no hand holds a weapon; unequipped the wielded one");
         }
@@ -401,24 +414,20 @@ unsafe fn hands(owner: &mut Character, snapshot: &LoadoutSnapshot) {
         let want = hand_weapon(snapshot, hand).filter(|&w| Some(w) != wielded);
         let current = armed::in_hand(hand);
         if current.is_some() && current != want {
-            let weapon = unsafe { armed::weapon_of(owner, hand) };
+            let weapon = unsafe { armed::weapon_handle(owner, hand) };
             let stop = current != wielded;
             unsafe { armed::disarm(owner, hand, weapon, stop) };
         }
         let Some(object) = want.filter(|&w| Some(w) != armed::in_hand(hand)) else {
             continue;
         };
-        let alive = carry::contains(object)
-            || owner
-                .m_Inventory
-                .m_Weapons
-                .iter()
-                .any(|slot| slot.px as usize == object);
-        if !alive {
+        let Some(mut handle) = inventory_engine::slot_handle(&owner.m_Inventory, object)
+            .or_else(|| unsafe { carry::weapon_handle(object) })
+        else {
             continue;
-        }
-        // SAFETY: the slot, or the carry set, keeps the weapon alive.
-        let weapon = unsafe { &mut *(object as *mut WeaponBase) };
+        };
+        // SAFETY: the input phase retains the revalidated original slot or carry-set source.
+        let weapon = unsafe { handle.as_mut() };
         let heavy = unsafe { inventory_engine::slot_of(weapon) } == Some(WeaponSlot::E_SLOT_HEAVY);
         if (heavy && !inventory_engine::heavy_tracked())
             || weapon.m_State != WeaponState::E_WS_HOLSTERED

@@ -56,6 +56,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     controllers::{
+        aim::gun,
         frame::Hand,
         loadout::{Place, Restored, Socket, live},
         weapons::{
@@ -258,22 +259,26 @@ pub(crate) fn on_reset(slot_single: Option<bool>) {
 ///
 /// `owner` must be the live local player character, on the main thread outside the world update.
 pub(crate) unsafe fn pistol_not_restored(owner: &mut Character, tag_hash: u32) {
-    let reverted = unsafe { slot_weapon(owner) }.filter(|weapon| {
-        let object = *weapon as *const WeaponBase as usize;
+    let reverted = slot_handle(owner).filter(|handle| {
+        // SAFETY: the input phase retains this slot source for this read.
+        let weapon = unsafe { handle.as_ref() };
         let same_kind =
             unsafe { inventory_engine::kind_of(weapon) }.is_some_and(|k| k.tag_hash == tag_hash);
-        same_kind && set::remove(object)
+        same_kind && set::remove(handle.as_ptr() as usize)
     });
-    let Some(weapon) = reverted else {
+    let Some(mut handle) = reverted else {
         // The slot's pistol has not come back yet: when it does, it stays the pair.
         STATE.lock().unrestored.push(tag_hash);
         return;
     };
     // The game shows both guns again as it would any pair it holds.
-    let shown = unsafe { gun_mut(weapon, 0) }
+    let shown = unsafe { gun::guns(handle.as_ref()) }
+        .next()
+        .flatten()
         .and_then(|gun| unsafe { gun.m_BaseModelInstance.as_ref() })
         .is_some_and(|model| model.m_Flags.contains(ModelInstanceFlags::VISIBLE));
-    unsafe { weapon.SetVisible(shown, false, false) };
+    // SAFETY: the input phase retains the slot source and serializes mutation after the read ends.
+    unsafe { handle.as_mut().SetVisible(shown, false, false) };
     note(
         |s| s.pairs += 1,
         "the second pistol never came back; the slot's pistol is the pair again".to_owned(),
@@ -321,10 +326,10 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, tick: &Tick) {
             set::remove(object);
         }
     }
-    let slot = unsafe { slot_weapon(owner) };
-    let slot_object = slot.as_ref().map(|w| *w as *const WeaponBase as usize);
+    let slot_object = slot_handle(owner).map(|handle| handle.as_ptr() as ObjectKey);
     let slot_is_single = slot_object.is_some_and(set::contains);
     unsafe { keep_owned(owner, slot_object) };
+    let slot = unsafe { slot_weapon(owner) };
     if RACK_COPY_ASKED.swap(false, Ordering::Relaxed) {
         STATE.lock().grants.cover_rack_copy();
     }
@@ -383,7 +388,7 @@ pub(crate) unsafe fn stand_down() {
     }
     let slot = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
         .and_then(|owner| unsafe { slot_weapon(owner) })
-        .map(|w| w as *mut WeaponBase as usize);
+        .map(|w| w as *const WeaponBase as usize);
     for object in set::all() {
         if Some(object) != slot && !carry::contains(object) && !paired::retains_single(object) {
             set::remove(object);
@@ -478,8 +483,13 @@ unsafe fn keep_owned(owner: &mut Character, slot: Option<usize>) {
         .chain(carried.iter().map(|(seen, _)| seen.object))
         .filter(|&object| set::contains(object));
     for object in owned.collect::<Vec<_>>() {
-        // SAFETY: the slot or the carry set keeps the weapon alive.
-        let weapon = unsafe { &mut *(object as *mut WeaponBase) };
+        let Some(mut handle) =
+            matching_slot(owner, object).or_else(|| unsafe { carry::weapon_handle(object) })
+        else {
+            continue;
+        };
+        // SAFETY: the serialized input phase retains the revalidated slot or carry-set source.
+        let weapon = unsafe { handle.as_mut() };
         unsafe { hide_extra(weapon) };
         pin(weapon);
         unsafe { clamp_magazine(owner, weapon) };
@@ -491,9 +501,11 @@ unsafe fn act_on(owner: &mut Character, grant: Grant) {
     match grant {
         Grant::Nothing => {}
         Grant::One { object, why } => {
-            // SAFETY: the decision is about the slot's weapon this tick, which the slot keeps
-            // alive.
-            let weapon = unsafe { &mut *(object as *mut WeaponBase) };
+            let Some(mut handle) = matching_slot(owner, object) else {
+                return;
+            };
+            // SAFETY: the serialized input phase retains the revalidated original slot source.
+            let weapon = unsafe { handle.as_mut() };
             // A respawned pistol whose carried half never came back stays the pair it was.
             let tag = unsafe { inventory_engine::kind_of(weapon) }.map(|k| k.tag_hash);
             let unrestored = why == OneWhy::Respawn && {
@@ -516,8 +528,11 @@ unsafe fn act_on(owner: &mut Character, grant: Grant) {
             }
         }
         Grant::Request { object } => {
-            // SAFETY: as above.
-            let weapon = unsafe { &*(object as *const WeaponBase) };
+            let Some(handle) = matching_slot(owner, object) else {
+                return;
+            };
+            // SAFETY: the serialized input phase retains the revalidated original slot source.
+            let weapon = unsafe { handle.as_ref() };
             let Some(kind) = (unsafe { inventory_engine::kind_of(weapon) }) else {
                 return;
             };
@@ -568,12 +583,13 @@ unsafe fn twin_socket(pair: &WeaponBase, dominant: Hand) -> Option<Socket> {
 /// A twin came: carry it on the hip the slot's pistol does not take, and deal the pair's magazine
 /// between the two, or let it go when the pair it was asked for is not in the slot any more.
 unsafe fn take_twin(owner: &mut Character, strong: Strong, tick: &Tick) {
-    let slot = unsafe { slot_weapon(owner) }.map(|w| w as *mut WeaponBase as usize);
+    let slot_source = slot_handle(owner);
+    let slot = slot_source.map(|handle| handle.as_ptr() as ObjectKey);
     // SAFETY: the strong reference keeps the twin alive.
     let twin_kind = unsafe { inventory_engine::kind_of(&*inventory_engine::weapon_of(&strong)) };
-    // SAFETY: the slot keeps its weapon alive.
-    let slot_kind = slot
-        .and_then(|object| unsafe { inventory_engine::kind_of(&*(object as *const WeaponBase)) });
+    // SAFETY: the serialized input phase retains the original slot source for this read.
+    let slot_kind =
+        slot_source.and_then(|handle| unsafe { inventory_engine::kind_of(handle.as_ref()) });
     let same_kind = twin_kind.is_some_and(|t| slot_kind.is_some_and(|s| s.tag_hash == t.tag_hash));
     // Both halves need a place in the table, or the pair stays whole.
     let room = set::CAPACITY - set::len() >= 2;
@@ -589,9 +605,12 @@ unsafe fn take_twin(owner: &mut Character, strong: Strong, tick: &Tick) {
         unsafe { park(owner, strong, "it came for a pair no longer in the slot") };
         return;
     };
-    // SAFETY: the slot keeps the pair alive.
-    let slot_pistol = unsafe { &mut *(pair as *mut WeaponBase) };
-    let Some(socket) = (unsafe { twin_socket(slot_pistol, tick.dominant) }) else {
+    let Some(pair_source) = matching_slot(owner, pair) else {
+        unsafe { park(owner, strong, "the pair left the slot") };
+        return;
+    };
+    // SAFETY: this shared read ends before carry_loose can call into the inventory.
+    let Some(socket) = (unsafe { twin_socket(pair_source.as_ref(), tick.dominant) }) else {
         STATE.lock().grants.refused(pair);
         note(
             |s| s.pairs += 1,
@@ -615,8 +634,20 @@ unsafe fn take_twin(owner: &mut Character, strong: Strong, tick: &Tick) {
         }
     };
     drop(keep);
-    // SAFETY: the carry set keeps the twin alive.
-    let twin_pistol = unsafe { &mut *(twin as *mut WeaponBase) };
+    let Some((mut pair_source, mut twin_source)) = matching_slot(owner, pair)
+        .zip(unsafe { carry::weapon_handle(twin) })
+        .filter(|(pair, twin)| pair != twin)
+    else {
+        STATE.lock().grants.refused(pair);
+        if let Some(strong) = carry::release(twin) {
+            unsafe { park(owner, strong, "the pair left the slot before splitting") };
+        }
+        return;
+    };
+    // SAFETY: the input phase retains these distinct, revalidated original sources and serializes
+    // native mutation. No slot borrow spans carry_loose.
+    let slot_pistol = unsafe { pair_source.as_mut() };
+    let twin_pistol = unsafe { twin_source.as_mut() };
     let tuned = unsafe { slot_pistol.GetMagazineSize() };
     let dealt = magazine::split(slot_pistol.m_MagazineAmmo, tuned);
     if !(unsafe { designate(slot_pistol, "the slot's half of a pair") }
@@ -724,15 +755,47 @@ fn note(count: impl FnOnce(&mut State), what: String) {
     state.last = Some(what);
 }
 
+/// The original native pointer in `owner`'s dual-wield slot, without a pointee borrow.
+fn slot_handle(owner: &Character) -> Option<std::ptr::NonNull<WeaponBase>> {
+    std::ptr::NonNull::new(
+        owner
+            .m_Inventory
+            .m_Weapons
+            .get(WeaponSlot::E_SLOT_DUAL_WIELD as usize)?
+            .px,
+    )
+}
+
+/// Revalidate a grant's identity against the current original slot pointer.
+/// The caller's input phase must retain that source and serialize mutation while using it.
+fn matching_slot(owner: &Character, object: ObjectKey) -> Option<std::ptr::NonNull<WeaponBase>> {
+    matching_inventory_slot(&owner.m_Inventory, object)
+}
+
+fn matching_inventory_slot(
+    inventory: &Inventory,
+    object: ObjectKey,
+) -> Option<std::ptr::NonNull<WeaponBase>> {
+    let source = inventory
+        .m_Weapons
+        .get(WeaponSlot::E_SLOT_DUAL_WIELD as usize)?
+        .px;
+    std::ptr::NonNull::new(source).filter(|handle| handle.as_ptr() as ObjectKey == object)
+}
+
+#[cfg(test)]
+mod tests;
+
 /// The weapon in `owner`'s dual-wield slot.
-unsafe fn slot_weapon(owner: &Character) -> Option<&'static mut WeaponBase> {
+/// The input phase must retain the slot source without native mutation for this shared borrow.
+unsafe fn slot_weapon(owner: &Character) -> Option<&WeaponBase> {
     unsafe {
         owner
             .m_Inventory
             .m_Weapons
             .get(WeaponSlot::E_SLOT_DUAL_WIELD as usize)?
             .px
-            .as_mut()
+            .as_ref()
     }
 }
 
@@ -755,7 +818,7 @@ unsafe fn gun_count(weapon: &WeaponBase) -> usize {
 unsafe fn gun_mut(
     weapon: &mut WeaponBase,
     index: usize,
-) -> Option<&'static mut jc3gi::equipment::weapon::WeaponData> {
+) -> Option<&mut jc3gi::equipment::weapon::WeaponData> {
     if index >= unsafe { gun_count(weapon) } {
         return None;
     }

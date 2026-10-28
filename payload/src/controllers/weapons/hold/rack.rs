@@ -56,7 +56,7 @@ use crate::controllers::{
             steal,
             world::{TargetKind, WorldTarget},
         },
-        inventory::engine::slot_of,
+        inventory::engine::{self as inventory_engine, slot_of},
     },
 };
 
@@ -151,7 +151,7 @@ pub(crate) unsafe fn take(
         return Err(RackRefusal::Gone);
     };
     // SAFETY: the strong reference keeps the weapon alive.
-    let weapon = unsafe { &mut *(target.weapon as *mut WeaponBase) };
+    let weapon = unsafe { &mut *inventory_engine::weapon_of(&alive) };
     if !offered_state(weapon) {
         return Err(RackRefusal::Gone);
     }
@@ -206,7 +206,6 @@ pub(crate) unsafe fn take(
     unsafe { weapon.SetVisible(false, false, false) };
     *COPY.lock() = Some(Copy {
         display: alive,
-        display_weapon: target.weapon,
         hand,
         from,
         slide_s: options.slide_s,
@@ -236,9 +235,11 @@ pub(crate) fn arrived(weapon: usize, hand: Hand) {
         return;
     };
     pending.arrived_at = Some(Instant::now());
-    // SAFETY: the weapon the game wields this input tick is live.
-    if let Some(copy) = unsafe { (weapon as *mut WeaponBase).as_mut() } {
-        unsafe { dual_wield::single::rack_copy_arrived(copy) };
+    // SAFETY: the serialized input phase retains the current slot source for this call.
+    if let Some(mut source) = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
+        .and_then(|owner| inventory_engine::slot_handle(&owner.m_Inventory, weapon))
+    {
+        unsafe { dual_wield::single::rack_copy_arrived(source.as_mut()) };
     }
     if let Some(from) = pending.from {
         act::slide_in(weapon, hand, from, pending.slide_s);
@@ -301,7 +302,6 @@ const COPY_WAIT: Duration = Duration::from_secs(3);
 struct Copy {
     /// The rack's own weapon, hidden until the copy is in the hand, held alive meanwhile.
     display: Strong,
-    display_weapon: usize,
     hand: Hand,
     /// Where the rack's weapon was, for the copy's slide.
     from: Option<Pose>,
@@ -315,7 +315,7 @@ impl Copy {
     fn restore(self) {
         // SAFETY: the strong reference keeps the weapon alive; called on the main thread outside
         // the world update.
-        let weapon = unsafe { &mut *(self.display_weapon as *mut WeaponBase) };
+        let weapon = unsafe { &mut *inventory_engine::weapon_of(&self.display) };
         if weapon.m_State == WeaponState::E_WS_WEAPON_RACK {
             unsafe { weapon.SetVisible(true, true, false) };
         }

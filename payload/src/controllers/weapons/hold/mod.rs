@@ -71,6 +71,7 @@ pub(crate) mod use_item;
 pub mod world;
 
 use std::{
+    ptr::NonNull,
     sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     time::Instant,
 };
@@ -517,7 +518,7 @@ const fn is_wielded(state: WeaponState) -> bool {
 }
 
 /// The weapons of `inventory` the table holds in a hand.
-unsafe fn held_in(inventory: *mut Inventory) -> impl Iterator<Item = &'static mut WeaponBase> {
+unsafe fn held_in(inventory: *mut Inventory) -> impl Iterator<Item = NonNull<WeaponBase>> {
     let hands = Hand::BOTH.map(live::in_hand);
     let weapons = if hands == [None; 2] {
         None
@@ -528,7 +529,7 @@ unsafe fn held_in(inventory: *mut Inventory) -> impl Iterator<Item = &'static mu
         .into_iter()
         .flat_map(|inventory| inventory.m_Weapons.iter())
         .filter(move |slot| hands.contains(&Some(slot.px as usize)))
-        .filter_map(|slot| unsafe { slot.px.as_mut() })
+        .filter_map(|slot| NonNull::new(slot.px))
 }
 
 #[detour(address = jc3gi::character::inventory::Inventory::UpdateAttachmentTransforms_ADDRESS)]
@@ -539,8 +540,9 @@ fn update_attachment_transforms(
     p4: f32,
     transform_type: u32,
 ) {
-    for weapon in unsafe { held_in(inventory) } {
-        unsafe { apply(weapon, true) };
+    for mut weapon in unsafe { held_in(inventory) } {
+        // SAFETY: the inventory retains the source during placement; each mutation ends here.
+        unsafe { apply(weapon.as_mut(), true) };
     }
     unsafe { armed::apply_in(inventory) };
     unsafe { inventory::carry::place_slots(inventory) };
@@ -563,8 +565,9 @@ fn update_inventory_post_finalize_pose(inventory: *mut Inventory) {
         .get()
         .unwrap()
         .call(inventory);
-    for weapon in unsafe { held_in(inventory) } {
-        unsafe { apply(weapon, false) };
+    for mut weapon in unsafe { held_in(inventory) } {
+        // SAFETY: the inventory retains the source during placement; each mutation ends here.
+        unsafe { apply(weapon.as_mut(), false) };
     }
     unsafe { armed::apply_in(inventory) };
     unsafe { inventory::carry::place_slots(inventory) };

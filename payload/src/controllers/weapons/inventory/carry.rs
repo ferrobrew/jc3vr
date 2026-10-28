@@ -34,6 +34,7 @@
 
 use std::{
     fmt,
+    ptr::NonNull,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
@@ -128,6 +129,20 @@ pub(crate) fn objects() -> Vec<ObjectKey> {
 /// Whether `object` is carried.
 pub(crate) fn contains(object: ObjectKey) -> bool {
     CARRY.lock().iter().any(|c| c.object == object)
+}
+
+/// The original native pointer retained by the carry set for `object`.
+///
+/// # Safety
+///
+/// The caller's phase must prevent carry-set removal until each use ends, and serialize native
+/// mutation. The address is only a lookup key; the retained strong reference supplies the pointer.
+pub(crate) unsafe fn weapon_handle(object: ObjectKey) -> Option<NonNull<WeaponBase>> {
+    CARRY
+        .lock()
+        .iter()
+        .find(|carried| carried.object == object)
+        .and_then(|carried| NonNull::new(carried.weapon()))
 }
 
 /// Take `object` out of the carry set, handing over its strong reference.

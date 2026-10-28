@@ -128,11 +128,12 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, wielded: Option<usize>, p
     let mode = wielded
         .and_then(|w| unsafe { (w as *const WeaponBase).as_ref() })
         .map_or(AimMode::AIM_NORMAL, |w| w.m_AimMode);
-    let in_hands: Vec<&mut WeaponBase> = Hand::BOTH
-        .into_iter()
-        .filter_map(|hand| unsafe { armed::weapon_of(owner, hand) })
-        .collect();
-    for weapon in in_hands {
+    for hand in Hand::BOTH {
+        let Some(mut handle) = (unsafe { armed::weapon_handle(owner, hand) }) else {
+            continue;
+        };
+        // SAFETY: the input phase retains each source and mutates only this weapon until the call returns.
+        let weapon = unsafe { handle.as_mut() };
         if weapon.m_AimMode != mode {
             unsafe { weapon.SetAimMode(mode) };
             AIM_MODES.fetch_add(1, Ordering::Relaxed);
@@ -269,14 +270,16 @@ unsafe fn update_armed(
         let Some(address) = armed::in_hand(hand) else {
             continue;
         };
-        let Some(weapon) = (unsafe { armed::weapon_in(inventory, address) }) else {
+        let Some(mut handle) = (unsafe { armed::weapon_in(inventory, address) }) else {
             continue;
         };
-        // SAFETY: `weapon_in` found the inventory live.
-        let Some((inputs, aim)) = (unsafe { update_arguments(&*inventory, weapon, hand) }) else {
+        // SAFETY: this phase retains the source, and the read ends before mutation.
+        let Some((inputs, aim)) = (unsafe { update_arguments(&*inventory, handle.as_ref(), hand) })
+        else {
             continue;
         };
-        update(weapon, &inputs, &aim);
+        // SAFETY: the inventory phase serializes this weapon's mutation.
+        update(unsafe { handle.as_mut() }, &inputs, &aim);
         UPDATES[hand.index()].fetch_add(1, Ordering::Relaxed);
     }
 }

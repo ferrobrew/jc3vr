@@ -27,6 +27,7 @@
 
 use std::{
     fmt,
+    ptr::NonNull,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -51,7 +52,7 @@ use crate::controllers::{
             layout,
             pips::{self, Shown},
         },
-        inventory::{carry, engine::slot_of},
+        inventory::{carry, engine as inventory_engine, engine::slot_of},
     },
 };
 
@@ -131,19 +132,7 @@ pub(crate) unsafe fn arm(
     if hands[hand.index()].is_some() {
         return Err(ArmRefusal::Occupied);
     }
-    let bone = layout::hand_bone(hand);
-    let mut saved = [None; gun::MAX_GUNS];
-    for (gun, slot_saved) in unsafe { guns_mut(weapon) }.zip(saved.iter_mut()) {
-        let Some(entry) = gun
-            .m_lBoneAttachementPerWeaponState
-            .get_mut(WeaponState::E_WS_HOLSTERED as usize)
-        else {
-            continue;
-        };
-        *slot_saved = Some((*entry, gun.m_HolsteredScaleValue));
-        *entry = bone;
-        gun.m_HolsteredScaleValue = 1.0;
-    }
+    let saved = unsafe { arm_layout(weapon, hand) };
     let address = weapon as *mut WeaponBase as usize;
     hands[hand.index()] = Some(Armed {
         weapon: address,
@@ -163,31 +152,23 @@ pub(crate) unsafe fn arm(
 /// # Safety
 ///
 /// `owner` must be the live local player character, and `weapon` the weapon armed in `hand` when
-/// given, on the main thread outside the world update.
+/// given, on the main thread outside the world update. No weapon borrow may overlap this call;
+/// the slot or carry-set source must remain retained until restoration and `StopUsing` return.
 pub(crate) unsafe fn disarm(
     owner: &mut Character,
     hand: Hand,
-    weapon: Option<&mut WeaponBase>,
+    weapon: Option<NonNull<WeaponBase>>,
     stop: bool,
 ) {
     let Some(armed) = forget(hand) else {
         return;
     };
-    let Some(weapon) = weapon.filter(|w| *w as *const WeaponBase as usize == armed.weapon) else {
+    let Some(mut weapon) = weapon.filter(|w| w.as_ptr() as usize == armed.weapon) else {
         return;
     };
-    for (gun, saved) in unsafe { guns_mut(weapon) }.zip(armed.saved) {
-        let Some((bone, scale)) = saved else {
-            continue;
-        };
-        if let Some(entry) = gun
-            .m_lBoneAttachementPerWeaponState
-            .get_mut(WeaponState::E_WS_HOLSTERED as usize)
-        {
-            *entry = bone;
-        }
-        gun.m_HolsteredScaleValue = scale;
-    }
+    // SAFETY: the caller serializes native mutation and keeps the validated weapon alive.
+    let weapon = unsafe { weapon.as_mut() };
+    unsafe { restore_layout(weapon, armed.saved) };
     unsafe { skip_interpolation(weapon) };
     let used = std::ptr::eq(weapon.m_User[0].cast::<Character>(), owner);
     if stop && used && weapon.m_State == WeaponState::E_WS_HOLSTERED {
@@ -214,8 +195,9 @@ pub(crate) unsafe fn apply_in(inventory: *mut Inventory) {
         let Some(address) = in_hand(hand) else {
             continue;
         };
-        if let Some(weapon) = unsafe { weapon_in(inventory, address) } {
-            unsafe { write_hand(weapon, hand) };
+        if let Some(mut weapon) = unsafe { weapon_in(inventory, address) } {
+            // SAFETY: this inventory phase serializes each weapon write and retains its source.
+            unsafe { write_hand(weapon.as_mut(), hand) };
         }
     }
 }
@@ -225,8 +207,9 @@ pub(crate) unsafe fn apply_in(inventory: *mut Inventory) {
 ///
 /// # Safety
 ///
-/// `inventory` must be null or live, on the thread updating its owner.
-pub(crate) unsafe fn carried_for(inventory: &Inventory) -> Vec<&'static WeaponBase> {
+/// The inventory must belong to the live local owner. Its update phase must retain the carry-set
+/// sources without replacement or removal for the returned borrow.
+pub(crate) unsafe fn carried_for(inventory: &Inventory) -> Vec<&WeaponBase> {
     let local = ik::local_character();
     if local == 0 || inventory.m_Character as usize != local {
         return Vec::new();
@@ -313,7 +296,7 @@ pub(crate) unsafe fn stand_down() {
         return;
     };
     for hand in Hand::BOTH {
-        let weapon = unsafe { weapon_of(owner, hand) };
+        let weapon = unsafe { weapon_handle(owner, hand) };
         unsafe { disarm(owner, hand, weapon, true) };
     }
 }
@@ -323,7 +306,16 @@ pub(crate) unsafe fn stand_down() {
 pub(crate) struct Armed {
     pub weapon: usize,
     /// Each gun's holstered bone and holstered scale before it came into the hand.
-    saved: [Option<(u32, f32)>; gun::MAX_GUNS],
+    saved: [Option<SavedGun>; MAX_ARMED_GUNS],
+}
+
+const MAX_ARMED_GUNS: usize = 2;
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct SavedGun {
+    address: usize,
+    bone: u32,
+    scale: f32,
 }
 
 /// The armed weapons, by [`Hand::index`].
@@ -332,16 +324,31 @@ static HANDS: Mutex<[Option<Armed>; 2]> = Mutex::new([None; 2]);
 static ARMED: [AtomicUsize; 2] = [const { AtomicUsize::new(0) }; 2];
 static READOUTS: Mutex<[Option<ArmedReadout>; 2]> = Mutex::new([None; 2]);
 
+#[cfg(test)]
+mod tests;
+
 /// The weapon armed in `hand`, when `owner`'s inventory or the carry set holds it.
 ///
 /// # Safety
 ///
 /// `owner` must be the live local player character, on the main thread outside the world update or
-/// on the thread updating it.
-pub(crate) unsafe fn weapon_of(owner: &Character, hand: Hand) -> Option<&'static mut WeaponBase> {
-    let address = in_hand(hand)?;
+/// on the thread updating it. The phase must retain the slot or carry-set source without native
+/// mutation for the returned shared borrow.
+pub(crate) unsafe fn weapon_of(owner: &Character, hand: Hand) -> Option<&WeaponBase> {
+    let handle = unsafe { weapon_handle(owner, hand) }?;
+    // SAFETY: the owner phase keeps the slot or carry-set source alive for this shared borrow.
+    Some(unsafe { handle.as_ref() })
+}
+
+/// A validated weapon handle, without creating an exclusive native borrow.
+///
+/// # Safety
+///
+/// As [`weapon_of`]. Dereferencing the handle additionally requires the caller to keep its source
+/// alive, serialize native mutation, and end each borrow before another call can touch the weapon.
+pub(crate) unsafe fn weapon_handle(owner: &Character, hand: Hand) -> Option<NonNull<WeaponBase>> {
     let inventory = &owner.m_Inventory as *const Inventory as *mut Inventory;
-    unsafe { weapon_in(inventory, address) }
+    unsafe { weapon_in(inventory, in_hand(hand)?) }
 }
 
 /// The armed weapon at `address`, when `inventory` holds it, or when it is a carried one and
@@ -353,38 +360,88 @@ pub(crate) unsafe fn weapon_of(owner: &Character, hand: Hand) -> Option<&'static
 pub(crate) unsafe fn weapon_in(
     inventory: *mut Inventory,
     address: usize,
-) -> Option<&'static mut WeaponBase> {
+) -> Option<NonNull<WeaponBase>> {
     let inventory = unsafe { inventory.as_ref() }?;
     let local = ik::local_character();
     if local == 0 || inventory.m_Character as usize != local {
         return None;
     }
-    let in_slot = inventory
-        .m_Weapons
-        .iter()
-        .any(|slot| slot.px as usize == address);
-    if !(in_slot || carry::contains(address)) {
-        return None;
-    }
-    // SAFETY: the slot, or the carry set, keeps the weapon alive.
-    unsafe { (address as *mut WeaponBase).as_mut() }
+    inventory_engine::slot_handle(inventory, address)
+        .or_else(|| unsafe { carry::weapon_handle(address) })
 }
 
 /// Write `hand`'s attach bone into `weapon`'s holstered entries.
 unsafe fn write_hand(weapon: &mut WeaponBase, hand: Hand) {
     let bone = layout::hand_bone(hand);
-    for gun in unsafe { guns_mut(weapon) } {
-        if let Some(entry) = gun
-            .m_lBoneAttachementPerWeaponState
-            .get_mut(WeaponState::E_WS_HOLSTERED as usize)
-        {
+    unsafe {
+        for_each_gun_mut(weapon, |_, gun| {
+            if let Some(entry) = gun
+                .m_lBoneAttachementPerWeaponState
+                .get_mut(WeaponState::E_WS_HOLSTERED as usize)
+            {
+                *entry = bone;
+            }
+        })
+    };
+}
+
+unsafe fn arm_layout(weapon: &mut WeaponBase, hand: Hand) -> [Option<SavedGun>; MAX_ARMED_GUNS] {
+    let bone = layout::hand_bone(hand);
+    let mut saved = [None; MAX_ARMED_GUNS];
+    unsafe {
+        for_each_gun_mut(weapon, |index, gun| {
+            let address = gun as *mut WeaponData as usize;
+            let Some(entry) = gun
+                .m_lBoneAttachementPerWeaponState
+                .get_mut(WeaponState::E_WS_HOLSTERED as usize)
+            else {
+                return;
+            };
+            saved[index] = Some(SavedGun {
+                address,
+                bone: *entry,
+                scale: gun.m_HolsteredScaleValue,
+            });
             *entry = bone;
-        }
+            gun.m_HolsteredScaleValue = 1.0;
+        })
+    };
+    saved
+}
+
+unsafe fn restore_layout(weapon: &mut WeaponBase, saved: [Option<SavedGun>; MAX_ARMED_GUNS]) {
+    unsafe {
+        for_each_gun_mut(weapon, |_, gun| {
+            let Some(saved) = saved
+                .into_iter()
+                .flatten()
+                .find(|saved| saved.address == gun as *mut WeaponData as usize)
+            else {
+                return;
+            };
+            if let Some(entry) = gun
+                .m_lBoneAttachementPerWeaponState
+                .get_mut(WeaponState::E_WS_HOLSTERED as usize)
+            {
+                *entry = saved.bone;
+            }
+            gun.m_HolsteredScaleValue = saved.scale;
+        })
+    };
+}
+
+/// Borrow each distinct native gun once, with no borrow surviving the callback.
+unsafe fn for_each_gun_mut(weapon: &mut WeaponBase, mut visit: impl FnMut(usize, &mut WeaponData)) {
+    for (index, mut gun) in unsafe { gun_handles(weapon) }
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
+        visit(index, unsafe { gun.as_mut() });
     }
 }
 
-/// The weapon's guns, to write.
-unsafe fn guns_mut(weapon: &mut WeaponBase) -> impl Iterator<Item = &'static mut WeaponData> {
+unsafe fn gun_handles(weapon: &WeaponBase) -> [Option<NonNull<WeaponData>>; MAX_ARMED_GUNS] {
     let list = &weapon.m_lWeaponData;
     let begin = list.m_Begin;
     let count = if begin.is_null() || list.m_End < begin {
@@ -392,7 +449,18 @@ unsafe fn guns_mut(weapon: &mut WeaponBase) -> impl Iterator<Item = &'static mut
     } else {
         unsafe { list.m_End.offset_from(begin) as usize }
     };
-    (0..count.min(gun::MAX_GUNS)).filter_map(move |i| unsafe { (*begin.add(i)).as_mut() })
+    let mut guns = [None; MAX_ARMED_GUNS];
+    let mut next = 0;
+    for index in 0..count.min(MAX_ARMED_GUNS) {
+        let Some(gun) = NonNull::new(unsafe { *begin.add(index) }) else {
+            continue;
+        };
+        if !guns.contains(&Some(gun)) {
+            guns[next] = Some(gun);
+            next += 1;
+        }
+    }
+    guns
 }
 
 unsafe fn skip_interpolation(weapon: &mut WeaponBase) {

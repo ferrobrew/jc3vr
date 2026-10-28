@@ -13,7 +13,7 @@
 //! - [`DoActWeaponComponent::Fire_Start`]: the pump's per-shot act, skipped while the pump is
 //!   worked by hand.
 
-use std::sync::OnceLock;
+use std::{ptr::NonNull, sync::OnceLock};
 
 use detours_macro::detour;
 use glam::Mat4;
@@ -39,6 +39,7 @@ use crate::{
         weapons::{
             dual_wield::single,
             empty,
+            inventory::{carry, engine as inventory_engine},
             reload::{
                 ammo::{self, Ammo, NativeAmmo},
                 chamber::{ActionKind, Chamber},
@@ -208,13 +209,24 @@ pub(super) fn physical_detach_available() -> bool {
     crate::controllers::weapons::reload::serial::available()
 }
 
+/// Resolve an identity to its original current native source, never to a pointer from the key.
+/// The caller's input or owner-update phase must retain that source and serialize native access.
+unsafe fn owned_handle(address: usize) -> Option<NonNull<WeaponBase>> {
+    let owner = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
+    inventory_engine::slot_handle(&owner.m_Inventory, address)
+        .or_else(|| unsafe { carry::weapon_handle(address) })
+}
+
 unsafe fn detach_magazine(
     address: usize,
     index: usize,
     retain: bool,
     reserved: Option<&Retention>,
 ) -> DetachOutcome {
-    let weapon = address as *mut WeaponBase;
+    let Some(source) = (unsafe { owned_handle(address) }) else {
+        return DetachOutcome::NoThrow;
+    };
+    let weapon = source.as_ptr();
     let Some((character, part, rounds, gun, spare)) = (unsafe { detach_inputs(weapon, index) })
     else {
         return DetachOutcome::NoThrow;
@@ -307,9 +319,10 @@ pub(super) fn finish_detach(
 ///
 /// The weapon must be owned and live on the input thread, outside the world update.
 pub unsafe fn load_rounds(address: usize, rounds: i32) {
-    let Some(weapon) = (unsafe { (address as *mut WeaponBase).as_mut() }) else {
+    let Some(mut source) = (unsafe { owned_handle(address) }) else {
         return;
     };
+    let weapon = unsafe { source.as_mut() };
     let partition = current_ammo(weapon);
     let chambers = partition.map_or(0, Ammo::chamber_rounds);
     let leftover = weapon.m_MagazineAmmo.max(0) - chambers;
@@ -340,7 +353,8 @@ pub unsafe fn load_rounds(address: usize, rounds: i32) {
 ///
 /// The weapon must be owned and live on the input thread, outside the world update.
 pub unsafe fn magazine_tag(address: usize, index: usize) -> Option<i32> {
-    let weapon = unsafe { (address as *mut WeaponBase).as_mut() }?;
+    let mut source = unsafe { owned_handle(address) }?;
+    let weapon = unsafe { source.as_mut() };
     let gun = unsafe { gun_mut(weapon, index) }?;
     Some(gun.m_MagazineUniqueTag)
 }
@@ -362,9 +376,10 @@ pub unsafe fn local_player_matrix() -> Option<Mat4> {
 ///
 /// The weapon must be owned and live on the input thread, outside the world update.
 pub unsafe fn load_full(address: usize) -> bool {
-    let Some(weapon) = (unsafe { (address as *mut WeaponBase).as_mut() }) else {
+    let Some(mut source) = (unsafe { owned_handle(address) }) else {
         return false;
     };
+    let weapon = unsafe { source.as_mut() };
     let partition = current_ammo(weapon);
     let chambers = partition.map_or(0, Ammo::chamber_rounds);
     ammo::magazine_only(address, true);
@@ -395,9 +410,10 @@ pub unsafe fn load_full(address: usize) -> bool {
 ///
 /// The weapon must be owned and live on the input thread, outside the world update.
 pub unsafe fn load_one(address: usize) -> bool {
-    let Some(weapon) = (unsafe { (address as *mut WeaponBase).as_mut() }) else {
+    let Some(mut source) = (unsafe { owned_handle(address) }) else {
         return false;
     };
+    let weapon = unsafe { source.as_mut() };
     current_ammo(weapon);
     if !unsafe { read(weapon) }.has_space() {
         return false;
@@ -419,8 +435,8 @@ pub unsafe fn load_one(address: usize) -> bool {
 }
 
 pub(super) unsafe fn set_shot_ammo(address: usize, total: i32) {
-    if let Some(weapon) = unsafe { (address as *mut WeaponBase).as_mut() } {
-        unsafe { weapon.SetMagazineAmmo(total) };
+    if let Some(mut source) = unsafe { owned_handle(address) } {
+        unsafe { source.as_mut().SetMagazineAmmo(total) };
     }
 }
 
@@ -453,7 +469,8 @@ pub(super) unsafe fn action_ammo(address: usize) -> Option<(i32, bool)> {
 ///
 /// The weapon must be owned and live on the input thread, outside the world update.
 pub(super) unsafe fn eject_chamber_round(address: usize, gun: usize) -> Option<(i32, bool)> {
-    let weapon = unsafe { (address as *mut WeaponBase).as_mut() }?;
+    let mut source = unsafe { owned_handle(address) }?;
+    let weapon = unsafe { source.as_mut() };
     let partition = current_ammo(weapon);
     let total = if partition.is_some() {
         ammo::change(address, |ammo| {
@@ -480,9 +497,10 @@ pub(super) fn feed_chamber(address: usize, gun: usize) -> Option<Chamber> {
 ///
 /// The weapon must be owned and live on the input thread, outside the world update.
 pub unsafe fn cycled(address: usize, kind: ActionKind, clip: bool) {
-    let Some(weapon) = (unsafe { (address as *mut WeaponBase).as_mut() }) else {
+    let Some(mut source) = (unsafe { owned_handle(address) }) else {
         return;
     };
+    let weapon = unsafe { source.as_mut() };
     let act = match kind {
         ActionKind::Bolt => {
             if is_sniper(weapon) {
@@ -512,8 +530,8 @@ pub unsafe fn cycled(address: usize, kind: ActionKind, clip: bool) {
 ///
 /// The weapon must be owned and live on the input thread, outside the world update.
 pub unsafe fn gun_address(address: usize, index: usize) -> Option<usize> {
-    unsafe { gun_mut(address as *const WeaponBase, index) }
-        .map(|gun| gun as *mut WeaponData as usize)
+    let source = unsafe { owned_handle(address) }?;
+    unsafe { gun_mut(source.as_ptr(), index) }.map(|gun| gun as *mut WeaponData as usize)
 }
 
 /// The local player's reload start, refused while the weapon is reloaded by hand (see [`gate`]).
@@ -637,10 +655,10 @@ unsafe fn model_parts<'a>(
 ///
 /// The weapon must be owned and live on the input thread, outside the world update.
 pub unsafe fn show_magazine_part(address: usize, shown: bool) {
-    let Some(weapon) = (unsafe { (address as *const WeaponBase).as_ref() }) else {
+    let Some(source) = (unsafe { owned_handle(address) }) else {
         return;
     };
-    if let Some(part) = unsafe { magazine_part(weapon) }
+    if let Some(part) = unsafe { magazine_part(source.as_ptr()) }
         && part.m_Enabled != shown
     {
         unsafe { part.Enable(shown) };

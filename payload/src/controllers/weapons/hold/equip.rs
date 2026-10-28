@@ -14,7 +14,7 @@
 //! Everything here runs on the input tick, on the main thread outside the world update, with the
 //! local player's character.
 
-use std::{fmt, num::NonZeroUsize};
+use std::{fmt, num::NonZeroUsize, ptr::NonNull};
 
 use glam::{Mat4, Vec3};
 use jc3gi::{
@@ -87,7 +87,9 @@ impl std::error::Error for DockRefusal {}
 ///
 /// `owner` must be the live local player character, on the main thread outside the world update.
 pub(crate) unsafe fn holster(owner: &Character, weapon: usize) -> Result<(), DockRefusal> {
-    let held = unsafe { wielded_mut(owner) }.ok_or(DockRefusal::NothingHeld)?;
+    let mut handle = unsafe { wielded_mut(owner) }.ok_or(DockRefusal::NothingHeld)?;
+    // SAFETY: the input phase retains the slot's source and serializes native mutation.
+    let held = unsafe { handle.as_mut() };
     if held as *mut WeaponBase as usize != weapon {
         return Err(DockRefusal::NothingHeld);
     }
@@ -122,7 +124,9 @@ pub(crate) unsafe fn drop_held(
     release: ReleaseMotion,
 ) -> Result<Thrown, DockRefusal> {
     // The inventory retains the weapon until the strong reference is acquired below.
-    let weapon = unsafe { wielded_mut(owner) }.ok_or(DockRefusal::NothingHeld)?;
+    let mut handle = unsafe { wielded_mut(owner) }.ok_or(DockRefusal::NothingHeld)?;
+    // SAFETY: the input phase serializes mutation; the slot and then the strong source retain it.
+    let weapon = unsafe { handle.as_mut() };
     let slot = unsafe { slot_of(weapon) }.ok_or(DockRefusal::Unsupported)?;
     // The game's pair is one weapon and cannot fall; a single pistol is a weapon alone.
     let pair = !single::is(weapon as *mut WeaponBase as usize);
@@ -256,9 +260,11 @@ pub(crate) unsafe fn release_loose(
 ///
 /// As [`holster`].
 pub(crate) unsafe fn drop_occupant(owner: &mut Character, slot: WeaponSlot) -> bool {
-    let Some(occupant) = (unsafe { slot_weapon(&owner.m_Inventory, slot) }) else {
+    let Some(mut handle) = slot_weapon(&owner.m_Inventory, slot) else {
         return false;
     };
+    // SAFETY: the input phase retains this source until DropWeapon and serializes mutation.
+    let occupant = unsafe { handle.as_mut() };
     if slot != WeaponSlot::E_SLOT_HEAVY && occupant.m_State != WeaponState::E_WS_DROPPED {
         unsafe { occupant.OnDrop() };
     }
@@ -287,14 +293,23 @@ pub(crate) unsafe fn pose_on_bone(
 }
 
 /// The weapon `owner` wields, to act on.
-unsafe fn wielded_mut(owner: &Character) -> Option<&'static mut WeaponBase> {
-    let address = unsafe { gun::held_weapon(owner) }? as *const WeaponBase as usize;
-    unsafe { (address as *mut WeaponBase).as_mut() }
+unsafe fn wielded_mut(owner: &Character) -> Option<NonNull<WeaponBase>> {
+    let slot = unsafe { (&raw const owner.m_SelectedWeaponSlot).cast::<i32>().read() };
+    let slot = usize::try_from(slot).ok()?;
+    let handle = NonNull::new(owner.m_Inventory.m_Weapons.get(slot)?.px)?;
+    // SAFETY: the input phase retains the slot source; validation ends before callers mutate it.
+    let weapon = unsafe { handle.as_ref() };
+    let owned = std::ptr::eq(weapon.m_User[0].cast::<Character>(), owner);
+    let wielded = matches!(
+        weapon.m_State,
+        WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING
+    );
+    (owned && wielded).then_some(handle)
 }
 
 /// The weapon in `slot`.
-unsafe fn slot_weapon(inventory: &Inventory, slot: WeaponSlot) -> Option<&'static mut WeaponBase> {
-    unsafe { inventory.m_Weapons.get(slot as usize)?.px.as_mut() }
+fn slot_weapon(inventory: &Inventory, slot: WeaponSlot) -> Option<NonNull<WeaponBase>> {
+    NonNull::new(inventory.m_Weapons.get(slot as usize)?.px)
 }
 
 /// The weapon's slot, read as the raw value: an unset slot is out of the enum's range.

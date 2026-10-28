@@ -657,11 +657,14 @@ unsafe fn drop_from(
         unsafe { equip::drop_held(owner, max_speed_mps, motion) }?
     } else if armed::in_hand(hand) == Some(object) {
         diagnostic.route = ReleaseRoute::ArmedInHand;
-        let weapon = unsafe { armed::weapon_of(owner, hand) }.ok_or(DockRefusal::NotDone)?;
-        let motion = unsafe { release_motion(hand, weapon, diagnostic) };
+        let mut handle =
+            unsafe { armed::weapon_handle(owner, hand) }.ok_or(DockRefusal::NotDone)?;
+        let motion = unsafe { release_motion(hand, handle.as_ref(), diagnostic) };
         diagnostic.stages.before_disarm = true;
-        unsafe { armed::disarm(owner, hand, Some(&mut *weapon), true) };
+        unsafe { armed::disarm(owner, hand, Some(handle), true) };
         diagnostic.stages.disarm_returned = true;
+        // SAFETY: the slot or carry set retains the source until release finishes, outside the world update.
+        let weapon = unsafe { handle.as_mut() };
         if weapon.m_State != WeaponState::E_WS_HOLSTERED {
             return Err(DockRefusal::NotHolstered);
         }

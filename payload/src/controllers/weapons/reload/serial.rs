@@ -355,11 +355,11 @@ unsafe fn resolve(character: *mut Character, id: MagazineId) -> Option<(Identity
         (slot, unsafe { shared.px.as_ref() }?, shared.pn as usize)
     } else {
         let weapon = unsafe { armed::weapon_of(owner, id.holder) }?;
-        if weapon as *mut WeaponBase as usize != id.weapon {
+        if weapon as *const WeaponBase as usize != id.weapon {
             return None;
         }
         // The existing carry set owns this non-slot weapon throughout the character update.
-        (usize::MAX, &*weapon, 0)
+        (usize::MAX, weapon, 0)
     };
     if !std::ptr::eq(weapon.m_User[0].cast::<Character>(), character) || weapon.m_User[1].is_null()
     {

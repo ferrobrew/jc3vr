@@ -4,11 +4,17 @@
 //! Everything here runs on the input tick, on the main thread outside the world update, unless a
 //! function says otherwise.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+    ptr::NonNull,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use glam::{Mat4, Vec3};
 use jc3gi::{
-    character::{character::Character, inventory::WeaponSlot},
+    character::{
+        character::Character,
+        inventory::{Inventory, WeaponSlot},
+    },
     equipment::weapon::{WeaponBase, WeaponState},
     game::GameObject,
     spawn_system::SpawnSystem,
@@ -92,10 +98,23 @@ pub(crate) fn tracked_slots() -> impl Iterator<Item = WeaponSlot> {
 
 static HEAVY_TRACKED: AtomicBool = AtomicBool::new(true);
 
+/// The original native slot pointer matching an identity, without a pointee borrow.
+/// The caller must retain the slot source and serialize native access while using the handle.
+pub(crate) fn slot_handle(inventory: &Inventory, object: ObjectKey) -> Option<NonNull<WeaponBase>> {
+    inventory
+        .m_Weapons
+        .iter()
+        .find(|slot| slot.px as usize == object)
+        .and_then(|slot| NonNull::new(slot.px))
+}
+
 /// The weapon `strong` refers to, which it keeps alive.
 pub(crate) fn weapon_of(strong: &Strong) -> *mut WeaponBase {
-    (strong.object() as usize).wrapping_sub(WeaponBase::GAME_OBJECT_BASE_OFFSET as usize)
-        as *mut WeaponBase
+    strong
+        .object()
+        .cast::<u8>()
+        .wrapping_sub(WeaponBase::GAME_OBJECT_BASE_OFFSET as usize)
+        .cast::<WeaponBase>()
 }
 
 /// A weak reference to `weapon`.

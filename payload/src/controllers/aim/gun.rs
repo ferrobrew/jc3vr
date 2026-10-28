@@ -95,8 +95,9 @@ pub fn counters() -> GunCounters {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character.
-pub(crate) unsafe fn held_weapon(owner: &Character) -> Option<&'static WeaponBase> {
+/// `owner` must be the live local player character. Its phase must retain the selected slot's
+/// source without replacement and prevent native mutation for the returned shared borrow.
+pub(crate) unsafe fn held_weapon(owner: &Character) -> Option<&WeaponBase> {
     // Read as the raw value: the slot can be out of the enum's range, and then indexes nothing.
     let slot = unsafe { (&raw const owner.m_SelectedWeaponSlot).cast::<i32>().read() };
     let slot = usize::try_from(slot).ok()?;
