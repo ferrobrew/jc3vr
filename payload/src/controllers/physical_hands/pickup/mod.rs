@@ -33,6 +33,7 @@
 
 pub(crate) mod diagnostics;
 mod grips;
+mod input;
 mod reach;
 mod state;
 mod tearing;
@@ -40,7 +41,7 @@ mod tick;
 
 use std::time::Instant;
 
-use diagnostics::{ConsumerResult, InputConsumer, InputContext};
+use diagnostics::InputContext;
 use glam::Vec3;
 use jc3gi::{
     equipment::weapon::WeaponBase, input::input_action_map::Action, vehicle::vehicle::DoorSlot,
@@ -55,13 +56,9 @@ use crate::{
     controllers::{
         bindings::hold::{Desired, MapKind, Target, Want},
         frame::Hand,
-        grab::GrabVolume,
         hands::ik,
         haptics::{self, Event},
-        physical_hands::{
-            STATE, bodies, grab_view,
-            grasp::{Reach, TargetKind},
-        },
+        physical_hands::{STATE, bodies, grab_view, grasp::Reach},
         weapons::{
             self, FinishInputs,
             hold::{
@@ -142,73 +139,10 @@ pub(crate) fn finish_tick(
     let mut state = STATE.lock();
     state.pickup.input_at = Some(Instant::now());
     let fresh = state.fresh(Instant::now());
-    let mut pulses = Vec::new();
-    let mut weapons = Vec::new();
-    // A hand that yanked a seated character out through an open door enters the vehicle the
-    // game's own way, which hijacks the seat.
-    for clicked in std::mem::take(&mut state.pickup.hijack_clicks) {
-        if clicked {
-            desired.push(Desired {
-                target: Target {
-                    map: MapKind::Player,
-                    action: Action::ENTER_VEHICLE,
-                },
-                want: Want::Click,
-            });
-        }
-    }
-    for hand in Hand::BOTH {
-        let i = hand.index();
-        let observation = context.hands[i];
-        if !inputs.grips[i].held() {
-            diagnostics::input_consumer(hand, observation, InputConsumer::GripOpen);
-            if state.pickup.held[i].is_some()
-                || state.pickup.requests[i].is_some_and(|request| request.grab().is_some())
-            {
-                state.pickup.replace_request(
-                    hand,
-                    Some(Request::Release),
-                    ConsumerResult::Replaced,
-                );
-            }
-            continue;
-        }
-        if !matches!(inputs.grabs[i], Some(GrabVolume::Pickup(_))) {
-            diagnostics::input_consumer(hand, observation, InputConsumer::NotPickup);
-            continue;
-        }
-        let Some(reach) = state.status.hands[i].reach.filter(|_| fresh) else {
-            diagnostics::input_consumer(
-                hand,
-                observation,
-                if fresh {
-                    InputConsumer::NoReach
-                } else {
-                    InputConsumer::StaleReach
-                },
-            );
-            continue;
-        };
-        match reach.kind {
-            TargetKind::Weapon => {
-                diagnostics::input_consumer(hand, observation, InputConsumer::WeaponPath);
-                weapons.push((hand, reach));
-                state.status.pickup.weapons += 1;
-                pulses.push(hand);
-            }
-            TargetKind::Prop { .. }
-            | TargetKind::Articulated { .. }
-            | TargetKind::Door(_)
-            | TargetKind::Character(_) => {
-                let key = diagnostics::queued(hand, observation, reach);
-                state.pickup.replace_request(
-                    hand,
-                    Some(Request::ObservedGrab(key)),
-                    ConsumerResult::Replaced,
-                );
-            }
-        }
-    }
+    let reaches = state.status.hands.each_ref().map(|hand| hand.reach);
+    let weapons = input::finish(&mut state.pickup, inputs, reaches, fresh, desired, context);
+    state.status.pickup.weapons += weapons.len() as u64;
+    let pulses: Vec<_> = weapons.iter().map(|(hand, _)| *hand).collect();
     drop(state);
     let (holding, regions) =
         Config::lock_query(|c| (c.controllers.weapons.hold, c.controllers.weapons.regions));

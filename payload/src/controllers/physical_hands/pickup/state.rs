@@ -56,6 +56,32 @@ impl PickupState {
         self.held[hand.index()].is_some()
     }
 
+    /// Whether the hand owns a grip or has a grab waiting for the simulation tick.
+    pub(crate) fn has_interaction(&self, hand: Hand) -> bool {
+        let Self {
+            held,
+            latches,
+            doors,
+            seizes,
+            regrips,
+            requests,
+            hijack_clicks: _,
+            evidence_holds: _,
+            scans: _,
+            input_at: _,
+        } = self;
+        let i = hand.index();
+        held[i].is_some()
+            || latches[i].is_some()
+            || doors[i].is_some()
+            || seizes[i].is_some()
+            || regrips[i].is_some()
+            || match requests[i] {
+                Some(Request::Grab(_) | Request::ObservedGrab(_)) => true,
+                Some(Request::Release) | None => false,
+            }
+    }
+
     /// What kind of target the object `hand` holds is, when it holds one.
     pub(crate) fn held_kind(&self, hand: Hand) -> Option<PickupKind> {
         self.held[hand.index()].map(|held| match held.kind {
@@ -114,6 +140,7 @@ impl PickupState {
         self.doors = [None; 2];
         self.seizes = [None; 2];
         self.regrips = [None; 2];
+        self.hijack_clicks = [false; 2];
         self.requests = [None; 2];
     }
 
