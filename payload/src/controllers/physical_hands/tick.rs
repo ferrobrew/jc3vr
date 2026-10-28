@@ -650,6 +650,7 @@ fn joint_inputs(config: &PhysicalHandsConfig) -> pickup::JointInputs {
     let joining = physics::enabled(config) && config.bodies.joint_grabs;
     let bodies = physics::status();
     pickup::JointInputs {
+        enabled: joining,
         join: Hand::BOTH.map(|hand| joining && physics::drives(hand)),
         lost,
         loads: bodies.hands.map(|h| (h.force_share, h.torque_share)),

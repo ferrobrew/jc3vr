@@ -49,9 +49,14 @@ pub(super) fn acquired(state: &mut PickupState, index: usize, result: Option<Acq
     match result {
         Acquisition::Attached(grip) => state.doors[index] = Some(grip),
         Acquisition::Detached => {
-            if let Some(held) = state.held[index].as_mut() {
-                held.kind = HeldKind::Prop;
-                held.joined = false;
+            if let Some(held) = state.held[index] {
+                let joined = state.held[1 - index]
+                    .filter(|h| h.same(&held))
+                    .is_some_and(|h| h.joined);
+                for holder in state.held.iter_mut().flatten().filter(|h| h.same(&held)) {
+                    holder.kind = HeldKind::Prop;
+                    holder.joined = joined;
+                }
             }
         }
     }
@@ -197,7 +202,12 @@ impl TearEngine for NativeTearing {
     }
 }
 
-fn apply(state: &mut PickupState, held: &Held, result: TearResult, outcome: &mut TickOutcome) {
+pub(super) fn apply(
+    state: &mut PickupState,
+    held: &Held,
+    result: TearResult,
+    outcome: &mut TickOutcome,
+) {
     let mut changed = false;
     for k in 0..2 {
         if !state.held[k].is_some_and(|h| h.same(held)) {

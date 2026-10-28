@@ -1,7 +1,7 @@
 //! The pickups' simulation tick: take hold and let go as the input tick asked, keep the grips on
 //! latched doors, and drive what the hands carry.
 
-use std::time::Instant;
+use std::{num::NonZeroUsize, time::Instant};
 
 use glam::Vec3;
 use jc3gi::vehicle::vehicle::DoorSlot;
@@ -15,6 +15,7 @@ use crate::controllers::{
         doors::{self, Latch},
         grasp::{self, Grip, PalmMotion, Reach, TargetKind},
         hold::{self, HandHold, HoldTuning, PlayerKeepOut},
+        physics,
         physics::HoldTarget,
         pickup::{
             HeldReport,
@@ -30,6 +31,8 @@ use crate::controllers::{
 /// What the hand bodies tell a pickup tick about the joints.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub(crate) struct JointInputs {
+    /// Whether joint grabs are enabled, independent of which hands currently act.
+    pub enabled: bool,
     /// Which hands take what they grab through a joint: those their bodies drive, with
     /// `joint_grabs`.
     pub join: [bool; 2],
@@ -117,6 +120,15 @@ pub(crate) unsafe fn tick(
     inputs: TickInputs,
     config: &PickupConfig,
 ) -> TickOutcome {
+    unsafe { tick_with(state, inputs, config, &mut NativeBodies) }
+}
+
+unsafe fn tick_with(
+    state: &mut PickupState,
+    inputs: TickInputs,
+    config: &PickupConfig,
+    engine: &mut impl BodyEngine,
+) -> TickOutcome {
     let TickInputs {
         palms,
         space,
@@ -129,6 +141,14 @@ pub(crate) unsafe fn tick(
         reaches,
     } = inputs;
     let mut outcome = TickOutcome::default();
+    if state
+        .joints_enabled
+        .is_some_and(|previous| previous != joints.enabled)
+    {
+        outcome.released = Hand::BOTH.map(|h| state.has_interaction(h));
+        state.drop_all();
+    }
+    state.joints_enabled = Some(joints.enabled);
     for hand in Hand::BOTH {
         let i = hand.index();
         if joints.lost[i] && state.held[i].is_some_and(|h| h.joined) {
@@ -262,7 +282,7 @@ pub(crate) unsafe fn tick(
                     break 'grab;
                 }
                 // SAFETY: forwarded from the caller.
-                let body = unsafe { bodies::read(reach.body, reach.object) };
+                let body = engine.read(reach.body, reach.object);
                 let mut result = take_body(
                     state,
                     BodyGrab {
@@ -362,12 +382,21 @@ pub(crate) unsafe fn tick(
         let Some(held) = state.held[i].filter(|_| !driven[i]) else {
             continue;
         };
+        let joined = state
+            .held
+            .iter()
+            .flatten()
+            .filter(|h| h.same(&held))
+            .all(|h| h.joined);
+        for holder in state.held.iter_mut().flatten().filter(|h| h.same(&held)) {
+            holder.joined = joined;
+        }
         let holders = [0, 1].map(|k| state.held[k].filter(|h| h.same(&held)));
         for (k, holder) in holders.iter().enumerate() {
             driven[k] |= holder.is_some();
         }
         // SAFETY: forwarded from the caller.
-        let body = match unsafe { bodies::read(held.body, held.object) } {
+        let body = match engine.read(held.body, held.object) {
             Ok(body) => body,
             Err(e) => {
                 lose(state, &held, &mut outcome, e.to_string());
@@ -454,7 +483,8 @@ pub(crate) unsafe fn tick(
         let tuning = carry_tuning(&held, &holds, config);
         let solution = hold::solve(&body.rigid(), holds, dt, &tuning);
         // SAFETY: forwarded from the caller.
-        let result = unsafe { bodies::drive(held.body, held.object, solution.velocities) };
+        engine.release_joints(&held);
+        let result = engine.drive(&held, solution.velocities);
         if let Err(e) = result {
             for (k, hold) in holds.iter().enumerate() {
                 if hold.is_some() {
@@ -531,6 +561,37 @@ pub(crate) unsafe fn tick(
     outcome
 }
 
+trait BodyEngine {
+    fn read(
+        &mut self,
+        body: u32,
+        object: NonZeroUsize,
+    ) -> Result<bodies::BodyState, bodies::BodyError>;
+    fn release_joints(&mut self, held: &Held);
+    fn drive(&mut self, held: &Held, velocity: Velocities) -> Result<(), bodies::BodyError>;
+}
+
+struct NativeBodies;
+
+impl BodyEngine for NativeBodies {
+    fn read(
+        &mut self,
+        body: u32,
+        object: NonZeroUsize,
+    ) -> Result<bodies::BodyState, bodies::BodyError> {
+        unsafe { bodies::read(body, object) }
+    }
+    fn release_joints(&mut self, held: &Held) {
+        unsafe { physics::release_body_joints(held.object, held.body) };
+    }
+    fn drive(&mut self, held: &Held, velocity: Velocities) -> Result<(), bodies::BodyError> {
+        unsafe { bodies::drive(held.body, held.object, velocity) }
+    }
+}
+
+#[cfg(test)]
+mod tests;
+
 pub(super) struct BodyGrab {
     pub hand: Hand,
     pub reach: Reach,
@@ -558,8 +619,8 @@ pub(super) fn take_body(
             .filter(|&m| grasp::can_take(&reach.kind, m, config))
         {
             Some(mass_kg) => {
-                let kind = HeldKind::of(&reach.kind);
-                let joined = kind.joined(joined);
+                let (kind, joined) =
+                    state.body_mode(reach.object, reach.body, HeldKind::of(&reach.kind), joined);
                 state.held[i] = Some(Held {
                     object: reach.object,
                     body: reach.body,

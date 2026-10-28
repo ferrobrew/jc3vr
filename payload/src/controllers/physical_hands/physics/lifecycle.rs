@@ -4,7 +4,7 @@
 //! body never stops, parks, or goes while a gun body hangs from it: the gun's joints, and with a
 //! holding hand the gun body, go first ([`drop_hand`]).
 
-use std::time::Instant;
+use std::{num::NonZeroUsize, time::Instant};
 
 use glam::Vec3;
 use parking_lot::Mutex;
@@ -462,6 +462,23 @@ impl Hands {
             .into_iter()
             .map(|hand| u64::from(unsafe { self.destroy(hand, reason) }))
             .sum()
+    }
+}
+
+/// End the joints to a body before a carry drive takes ownership.
+///
+/// # Safety
+///
+/// The game thread, outside the physics step.
+pub(crate) unsafe fn release_body_joints(object: NonZeroUsize, body: u32) {
+    let mut hands = HANDS.lock();
+    for hand in Hand::BOTH {
+        if hands.joints[hand.index()]
+            .as_ref()
+            .is_some_and(|j| j.target() == (Some(object), body))
+        {
+            unsafe { hands.unjoin(hand, "the body is carried") };
+        }
     }
 }
 

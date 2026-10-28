@@ -66,6 +66,7 @@ pub(super) unsafe fn keep_latch(
                         "physical hands: doors: the latch gave, and the hand holds the door"
                     );
                     let world = unsafe { doors::engine::vehicle_frame(latch.door.vehicle) };
+                    state.carry_body(object, body);
                     state.held[i] = Some(Held {
                         object,
                         body,
@@ -266,13 +267,15 @@ pub(super) unsafe fn keep_regrip(
                     joined = joints.join[i],
                     "physical hands: characters: a hand took hold of a fallen character's ragdoll"
                 );
+                let (kind, joined) =
+                    state.body_mode(reach.object, reach.body, HeldKind::Ragdoll, joints.join[i]);
                 state.held[i] = Some(Held {
                     object: reach.object,
                     body: reach.body,
                     grip: Grip::of(palm.pose, body.pose, reach.point),
                     mass_kg: body.mass_kg.unwrap_or(f32::INFINITY),
-                    joined: joints.join[i],
-                    kind: HeldKind::Ragdoll,
+                    joined,
+                    kind,
                 });
                 outcome.regrips += 1;
             }

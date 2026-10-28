@@ -34,6 +34,7 @@ pub(crate) struct PickupState {
     pub(crate) scans: [Scan; 2],
     /// When the input tick last acted on the grips.
     pub(crate) input_at: Option<Instant>,
+    pub(crate) joints_enabled: Option<bool>,
 }
 
 impl PickupState {
@@ -49,6 +50,35 @@ impl PickupState {
             evidence_holds: [None; 2],
             scans: [Scan::new(); 2],
             input_at: None,
+            joints_enabled: None,
+        }
+    }
+
+    /// A second holder inherits the existing body's mode and classification.
+    pub(crate) fn body_mode(
+        &self,
+        object: NonZeroUsize,
+        body: u32,
+        kind: HeldKind,
+        joined: bool,
+    ) -> (HeldKind, bool) {
+        self.held
+            .iter()
+            .flatten()
+            .find(|h| h.object == object && h.body == body)
+            .map_or((kind, kind.joined(joined)), |h| (h.kind, h.joined))
+    }
+
+    /// A latch handoff retains the pull by carrying every holder of the same body.
+    pub(crate) fn carry_body(&mut self, object: NonZeroUsize, body: u32) {
+        for holder in self
+            .held
+            .iter_mut()
+            .flatten()
+            .filter(|h| h.object == object && h.body == body)
+        {
+            holder.joined = false;
+            holder.kind = HeldKind::Door;
         }
     }
 
@@ -69,6 +99,7 @@ impl PickupState {
             evidence_holds: _,
             scans: _,
             input_at: _,
+            joints_enabled: _,
         } = self;
         let i = hand.index();
         held[i].is_some()
