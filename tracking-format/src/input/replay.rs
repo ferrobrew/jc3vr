@@ -73,6 +73,20 @@ impl PreparedInput {
             work,
         }
     }
+
+    /// The largest dependency-complete publication unit, in records.
+    pub fn max_unit_records(&self) -> usize {
+        let mut start = 0;
+        self.units
+            .iter()
+            .map(|unit| {
+                let size = unit.end - start;
+                start = unit.end;
+                size
+            })
+            .max()
+            .unwrap_or(0)
+    }
 }
 
 /// Independent from the pose cursor. Frame advancement visits each prepared unit at most once,
@@ -87,19 +101,37 @@ pub struct InputReplay {
 
 impl InputReplay {
     pub fn advance(&mut self, prepared: &PreparedInput, capture_time_ns: u64) -> Range<usize> {
+        self.advance_bounded(prepared, capture_time_ns, usize::MAX)
+    }
+
+    /// Advance whole dependency units within a record budget. Unconsumed units remain pending.
+    pub fn advance_bounded(
+        &mut self,
+        prepared: &PreparedInput,
+        capture_time_ns: u64,
+        budget: usize,
+    ) -> Range<usize> {
         let start = self.next;
         while let Some(unit) = prepared.units.get(self.unit) {
             #[cfg(test)]
             {
                 self.unit_checks += 1;
             }
-            if unit.capture_time_ns > capture_time_ns {
+            if unit.capture_time_ns > capture_time_ns || unit.end - start > budget {
                 break;
             }
             self.next = unit.end;
             self.unit += 1;
         }
         start..self.next
+    }
+
+    /// Whether the next complete unit is due at this capture time.
+    pub fn has_due(&self, prepared: &PreparedInput, capture_time_ns: u64) -> bool {
+        prepared
+            .units
+            .get(self.unit)
+            .is_some_and(|unit| unit.capture_time_ns <= capture_time_ns)
     }
 
     pub fn finished(&self, len: usize) -> bool {

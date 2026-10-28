@@ -3,8 +3,8 @@
 //! The replay's frame rate is the game's, which need not be the recording's: without a headset the
 //! desktop renders at whatever rate it manages. A rendered frame publishes every recorded frame
 //! that has come due since the last one, in order, so that a button pressed and released between
-//! two rendered frames still reaches the input latch, which folds each publish's edges in. The
-//! last one published is what the frame shows.
+//! two rendered frames still reaches the input latch, which folds each publish's edges in. A
+//! publication budget leaves due frames pending in order rather than discarding their edges.
 
 use std::ops::Range;
 
@@ -45,19 +45,31 @@ pub(crate) struct Cursor {
 impl Cursor {
     /// The frames to publish now, given each recorded frame's time (nanoseconds since the
     /// recording started, non-decreasing) and the time since the replay started. Moves past them.
+    #[cfg(test)]
     pub(crate) fn advance(
         &mut self,
         times: &[u64],
         elapsed_ns: u64,
         pacing: Pacing,
     ) -> Range<usize> {
+        self.advance_bounded(times, elapsed_ns, pacing, usize::MAX)
+    }
+
+    pub(crate) fn advance_bounded(
+        &mut self,
+        times: &[u64],
+        elapsed_ns: u64,
+        pacing: Pacing,
+        budget: usize,
+    ) -> Range<usize> {
         let start = self.next.min(times.len());
+        let limit = start.saturating_add(budget).min(times.len());
         let end = match pacing {
-            Pacing::FrameLocked => (start + 1).min(times.len()),
+            Pacing::FrameLocked => (start + 1).min(limit),
             Pacing::RealTime => {
                 let origin = times.first().copied().unwrap_or(0);
                 let due = |time: &u64| time.saturating_sub(origin) <= elapsed_ns;
-                start + times[start..].iter().take_while(|t| due(t)).count()
+                start + times[start..limit].iter().take_while(|t| due(t)).count()
             }
         };
         self.next = end;

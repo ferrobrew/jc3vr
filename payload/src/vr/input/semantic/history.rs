@@ -211,6 +211,11 @@ pub(crate) fn begin_replay(available: bool) {
     SLOT.lock().begin_replay(available);
 }
 
+/// Capacity available before replay publication would discard ordered evidence.
+pub(crate) fn replay_capacity() -> usize {
+    HISTORY_CAPACITY.saturating_sub(SLOT.lock().replayed.len())
+}
+
 /// Preserve the recorded envelope and logical stamp in bounded replay storage, never in the live
 /// publication queue. The gameplay drain selects only one clock at a time.
 pub(crate) fn publish_replayed(records: &[CapturedInput]) {

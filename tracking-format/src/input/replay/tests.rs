@@ -81,6 +81,33 @@ fn reference(records: &[CapturedInput], start: usize, deadline: u64) -> Range<us
 }
 
 #[test]
+fn bounded_equal_stamp_units_preserve_every_record_and_dependency() {
+    let mut records = captured(vec![
+        group(1),
+        policy(1),
+        group(2),
+        policy(2),
+        group(3),
+        policy(3),
+    ]);
+    for record in &mut records {
+        record.capture_time_ns = 5;
+    }
+    let prepared = PreparedInput::new(&records);
+    assert_eq!(prepared.max_unit_records(), 2);
+    let mut replay = InputReplay::default();
+    assert_eq!(replay.advance_bounded(&prepared, 5, 1), 0..0);
+    let mut actual = Vec::new();
+    for expected in [0..2, 2..4, 4..6] {
+        let range = replay.advance_bounded(&prepared, 999, 3);
+        assert_eq!(range, expected);
+        actual.extend_from_slice(&records[range]);
+    }
+    assert_eq!(actual, records);
+    assert!(replay.finished(records.len()));
+}
+
+#[test]
 fn prepared_units_preserve_first_later_match_duplicate_and_gap_semantics() {
     for records in [
         vec![group(1), group(2), policy(1), policy(2)],

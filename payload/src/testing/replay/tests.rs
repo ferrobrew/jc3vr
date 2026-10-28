@@ -1,7 +1,13 @@
 use tracking_format::input::{CapturedInput, DiscontinuityReason, InputRecord};
 
 use super::*;
-use crate::recorder::tracking::format::{Frame, Header, Recording, SessionSample, StartMarker};
+use crate::{
+    controllers::frame::{Button, HandFrame},
+    recorder::tracking::format::{
+        ControllerSample, Frame, Header, RecenterEvent, Recording, SessionSample, StartMarker,
+    },
+    vr::{RecenterCause, RecenterKind},
+};
 
 fn state() -> State {
     State {
@@ -115,14 +121,17 @@ fn runtime_replay_nonzero_origin_tail_and_repeated_start_stop() {
         );
         assert!(take_frames().is_none());
         assert_eq!(history::replayed_for_test().1, loaded.recording.input[..1]);
+        history::take_gameplay();
         state.stage_frame(now + Duration::from_nanos(10)).unwrap();
         assert_eq!(take_frames().unwrap().len(), 1);
         state.advance();
         assert!(matches!(state.phase, PhaseState::Playing { .. }));
-        assert_eq!(history::replayed_for_test().1, loaded.recording.input[..2]);
+        assert_eq!(history::replayed_for_test().1, loaded.recording.input[1..2]);
+        history::take_gameplay();
         state.stage_frame(now + Duration::from_nanos(30)).unwrap();
         assert!(take_frames().is_none());
-        assert_eq!(history::replayed_for_test().1, loaded.recording.input);
+        assert_eq!(history::replayed_for_test().1, loaded.recording.input[2..]);
+        history::take_gameplay();
         state.advance();
         assert!(matches!(state.phase, PhaseState::Idle));
         assert!(matches!(
@@ -139,6 +148,93 @@ fn runtime_replay_nonzero_origin_tail_and_repeated_start_stop() {
         assert!(take_frames().is_none());
     }
     history::take_capture();
+}
+
+#[test]
+fn equal_stamp_pose_and_input_backlogs_are_bounded_without_eviction() {
+    let _serial = history::TEST_LOCK.lock();
+    let mut loaded = fixture();
+    let data = Arc::get_mut(&mut loaded).unwrap();
+    data.recording.frames = vec![data.recording.frames[0].clone(); 4];
+    data.times = vec![100; 4];
+    for (index, frame) in data.recording.frames.iter_mut().enumerate() {
+        let mut hand = HandFrame::default();
+        hand.buttons.set(Button::TriggerClick, index % 2 == 0);
+        frame.controllers = Some(ControllerSample {
+            focused: true,
+            action_set: controller_frame::ActionSetKind::OnFoot,
+            hands: [hand, HandFrame::default()],
+        });
+        frame.recenters.push(RecenterEvent {
+            kind: RecenterKind::Full,
+            cause: RecenterCause::Manual,
+            turn: glam::Quat::from_rotation_y(index as f32 * 0.1),
+        });
+    }
+    data.recording.input = (0..400)
+        .map(|discarded| CapturedInput {
+            capture_time_ns: 100,
+            frame_sequence: None,
+            record: InputRecord::Discontinuity {
+                reason: DiscontinuityReason::Unavailable,
+                discarded,
+            },
+        })
+        .collect();
+    data.input_replay = tracking_format::input::replay::PreparedInput::new(&data.recording.input);
+    let mut state = state();
+    state.play(
+        Run {
+            id: RunId(1),
+            options: ReplayOptions::default(),
+        },
+        Arc::clone(&loaded),
+    );
+    let now = Instant::now();
+    assert_eq!(
+        state.stage_frame(now).unwrap(),
+        loaded.recording.frames[0].recenters
+    );
+    let first = take_frames().unwrap();
+    assert_eq!(first.len(), 1);
+    assert!(
+        first[0].controllers.as_ref().unwrap().hands[0]
+            .buttons
+            .contains(Button::TriggerClick)
+    );
+    assert_eq!(
+        history::replayed_for_test().1,
+        loaded.recording.input[..INPUT_BUDGET]
+    );
+    assert!(state.stage_frame(now).unwrap().is_empty());
+    assert!(take_frames().is_none());
+    let mut actual = history::replayed_for_test().1;
+    history::take_gameplay();
+    for _ in 0..3 {
+        state.stage_frame(now).unwrap();
+        assert!(take_frames().is_none());
+        let chunk = history::replayed_for_test().1;
+        assert!(chunk.len() <= INPUT_BUDGET);
+        actual.extend(chunk);
+        history::take_gameplay();
+    }
+    assert_eq!(actual, loaded.recording.input);
+    for index in 1..4 {
+        assert_eq!(
+            state.stage_frame(now).unwrap(),
+            loaded.recording.frames[index].recenters
+        );
+        let frames = take_frames().unwrap();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(
+            frames[0].controllers.as_ref().unwrap().hands[0]
+                .buttons
+                .contains(Button::TriggerClick),
+            index % 2 == 0
+        );
+    }
+    state.advance();
+    assert!(matches!(state.phase, PhaseState::Idle));
 }
 
 #[test]

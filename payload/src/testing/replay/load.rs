@@ -204,6 +204,29 @@ fn prepare(path: &Path, recording: Recording, expected: Expected) -> Result<Load
     }
     let times = recording.frames.iter().map(|f| f.time_ns).collect();
     let input_replay = tracking_format::input::replay::PreparedInput::new(&recording.input);
+    if input_available && input_replay.max_unit_records() > crate::testing::replay::INPUT_BUDGET {
+        return Err(ReplayError::WorkLimit {
+            path: path.to_owned(),
+            frame: None,
+            field: "input dependency unit",
+            count: input_replay.max_unit_records(),
+            max: crate::testing::replay::INPUT_BUDGET,
+        });
+    }
+    if let Some((index, frame)) = recording
+        .frames
+        .iter()
+        .enumerate()
+        .find(|(_, frame)| frame.recenters.len() > crate::testing::replay::RECENTER_BUDGET)
+    {
+        return Err(ReplayError::WorkLimit {
+            path: path.to_owned(),
+            frame: Some(index),
+            field: "recenters",
+            count: frame.recenters.len(),
+            max: crate::testing::replay::RECENTER_BUDGET,
+        });
+    }
     Ok(Loaded {
         path: path.to_owned(),
         recording,
@@ -708,7 +731,7 @@ mod tests {
     }
 
     #[test]
-    fn finite_degenerate_views_are_rejected_after_decode() {
+    fn finite_degenerate_views_and_recenter_work_are_rejected_after_decode() {
         let base = || recording(SemanticSet::Global.actions().len());
         for fov in [[0.0; 4], [-2.0, 0.5, 0.5, -0.5], [0.5, -0.5, 0.5, -0.5]] {
             let mut sample = base();
@@ -730,6 +753,23 @@ mod tests {
             }; 2],
         });
         assert!(wire_load(sample).is_err());
+        let mut sample = base();
+        sample.frames[0].recenters = vec![
+            RecenterEvent {
+                kind: RecenterKind::Full,
+                cause: RecenterCause::Manual,
+                turn: Quat::IDENTITY
+            };
+            crate::testing::replay::RECENTER_BUDGET + 1
+        ];
+        assert!(matches!(
+            wire_load(sample),
+            Err(ReplayError::WorkLimit {
+                frame: Some(0),
+                field: "recenters",
+                ..
+            })
+        ));
     }
 
     #[test]

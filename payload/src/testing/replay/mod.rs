@@ -138,6 +138,13 @@ pub(crate) enum ReplayError {
         frame: Option<usize>,
         field: String,
     },
+    WorkLimit {
+        path: PathBuf,
+        frame: Option<usize>,
+        field: &'static str,
+        count: usize,
+        max: usize,
+    },
     LoaderThread(Arc<std::io::Error>),
     /// The loader thread panicked.
     LoaderPanicked {
@@ -168,6 +175,19 @@ impl std::fmt::Display for ReplayError {
                     write!(f, "frame {frame}: ")?;
                 }
                 write!(f, "{field} is non-finite or degenerate")
+            }
+            ReplayError::WorkLimit {
+                path,
+                frame,
+                field,
+                count,
+                max,
+            } => {
+                write!(f, "{}: ", path.display())?;
+                if let Some(frame) = frame {
+                    write!(f, "frame {frame}: ")?;
+                }
+                write!(f, "{field} has {count} entries; the staging limit is {max}")
             }
             ReplayError::LoaderThread(error) => {
                 write!(f, "could not spawn the loader thread: {error}")
@@ -488,6 +508,10 @@ static STEP: Mutex<Step> = Mutex::new(Step {
     frames: None,
 });
 
+const FRAME_BUDGET: usize = 1;
+const INPUT_BUDGET: usize = 128;
+const RECENTER_BUDGET: usize = 64;
+
 impl State {
     fn stage_frame(&mut self, now: Instant) -> Option<Vec<RecenterEvent>> {
         let PhaseState::Playing {
@@ -510,7 +534,25 @@ impl State {
         });
         let elapsed =
             u64::try_from(now.saturating_duration_since(started).as_nanos()).unwrap_or(u64::MAX);
-        let range = cursor.advance(&loaded.times, elapsed, run.options.pacing);
+        if STEP.lock().frames.is_some()
+            || history::replay_capacity() != tracking_format::input::HISTORY_CAPACITY
+        {
+            return Some(Vec::new());
+        }
+        let previous_time = cursor
+            .position()
+            .checked_sub(1)
+            .map(|index| loaded.times[index]);
+        if loaded.input_available
+            && let Some(time) = previous_time
+            && input_cursor.has_due(&loaded.input_replay, time)
+        {
+            let range = input_cursor.advance_bounded(&loaded.input_replay, time, INPUT_BUDGET);
+            history::publish_replayed(&loaded.recording.input[range]);
+            return Some(Vec::new());
+        }
+        let range =
+            cursor.advance_bounded(&loaded.times, elapsed, run.options.pacing, FRAME_BUDGET);
         let due = &loaded.recording.frames[range];
         if loaded.input_available {
             let deadline = input_deadline(
@@ -524,7 +566,21 @@ impl State {
                     .last()
                     .map_or(0, |entry| entry.capture_time_ns),
             );
-            let range = input_cursor.advance(&loaded.input_replay, deadline);
+            let deadline = if cursor.finished(loaded.times.len()) {
+                deadline
+            } else {
+                deadline.min(
+                    cursor
+                        .position()
+                        .checked_sub(1)
+                        .map_or(0, |index| loaded.times[index]),
+                )
+            };
+            let range = input_cursor.advance_bounded(
+                &loaded.input_replay,
+                deadline,
+                INPUT_BUDGET.min(history::replay_capacity()),
+            );
             history::publish_replayed(&loaded.recording.input[range]);
         }
         let mut recenters = Vec::new();
@@ -633,6 +689,8 @@ impl State {
         } = &self.phase
         {
             if cursor.finished(loaded.recording.frames.len())
+                && STEP.lock().frames.is_none()
+                && history::replay_capacity() == tracking_format::input::HISTORY_CAPACITY
                 && (!loaded.input_available || input_cursor.finished(loaded.recording.input.len()))
             {
                 let outcome = ReplayOutcome::Completed {
