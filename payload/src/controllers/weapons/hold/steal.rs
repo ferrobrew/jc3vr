@@ -298,9 +298,7 @@ pub(crate) unsafe fn release(hand: Hand, target: &WorldTarget) -> Result<Freed, 
     let weapon = unsafe { &mut *weapon };
     let player =
         unsafe { engine::local_player() }.ok_or(StealRefusal::Pickup(Refusal::NoCharacter))?;
-    unsafe { pickup::takeable(player, weapon) }.map_err(StealRefusal::Pickup)?;
-    // Refused before the character lets go, so a hand that cannot take it leaves it in its hands.
-    unsafe { pickup::route(weapon, Some(hand)) }.map_err(StealRefusal::Pickup)?;
+    unsafe { pickup::preflight(player, weapon, hand) }.map_err(StealRefusal::Pickup)?;
     // SAFETY: the weapon's own weak reference to itself, live while it is.
     let alive = unsafe { Weak::of(&weapon.m_WeakThis) }
         .lock()
@@ -350,8 +348,7 @@ pub(crate) unsafe fn release_holstered(
     let weapon = unsafe { &mut *(target.weapon as *mut WeaponBase) };
     let player =
         unsafe { engine::local_player() }.ok_or(StealRefusal::Pickup(Refusal::NoCharacter))?;
-    unsafe { pickup::takeable(player, weapon) }.map_err(StealRefusal::Pickup)?;
-    unsafe { pickup::route(weapon, Some(hand)) }.map_err(StealRefusal::Pickup)?;
+    unsafe { pickup::preflight(player, weapon, hand) }.map_err(StealRefusal::Pickup)?;
     // SAFETY: the weapon's own weak reference to itself, live while it is.
     let alive = unsafe { Weak::of(&weapon.m_WeakThis) }
         .lock()

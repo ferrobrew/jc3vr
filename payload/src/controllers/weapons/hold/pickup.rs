@@ -160,10 +160,7 @@ pub(crate) unsafe fn take(
             return Err(Refusal::NotOffered { state });
         }
     }
-    let slot = unsafe { takeable(owner, weapon) }?;
-    let route = animation_eligibility(unsafe { route(weapon, Some(hand)) }?, || unsafe {
-        owner.m_Inventory.GetAnimationAllowsPickup()
-    })?;
+    let (slot, route) = unsafe { preflight(owner, weapon, hand) }?;
     match route {
         TakeRoute::Table { hand } => {
             let source = match (options.cause, from_rack) {
@@ -181,6 +178,23 @@ pub(crate) unsafe fn take(
             unsafe { take_by_game(owner, hand, weapon, slot, from_rack, options) }
         }
     }
+}
+
+/// Check all admission conditions before a caller changes the source's ownership.
+///
+/// # Safety
+///
+/// The owner and weapon must be live on the input thread outside the world update.
+pub(crate) unsafe fn preflight(
+    owner: &Character,
+    weapon: &WeaponBase,
+    hand: Hand,
+) -> Result<(WeaponSlot, TakeRoute), Refusal> {
+    complete_preflight(
+        unsafe { takeable(owner, weapon) },
+        || unsafe { route(weapon, Some(hand)) },
+        || unsafe { owner.m_Inventory.GetAnimationAllowsPickup() },
+    )
 }
 
 /// How a take of `weapon` into `hand`, or for the game's use-item pickup into any free hand
@@ -403,6 +417,15 @@ pub(crate) unsafe fn takeable(
     Ok(slot)
 }
 
+fn complete_preflight(
+    takeable: Result<WeaponSlot, Refusal>,
+    route: impl FnOnce() -> Result<TakeRoute, Refusal>,
+    animation: impl FnOnce() -> bool,
+) -> Result<(WeaponSlot, TakeRoute), Refusal> {
+    let slot = takeable?;
+    Ok((slot, animation_eligibility(route()?, animation)?))
+}
+
 fn animation_eligibility(
     route: TakeRoute,
     allows_animation: impl FnOnce() -> bool,
@@ -434,6 +457,35 @@ pub(crate) unsafe fn gun_pose(weapon: &WeaponBase) -> Option<Pose> {
 mod tests {
     use super::*;
     use crate::controllers::loadout::take::GameTake;
+
+    #[test]
+    fn full_preflight_refuses_before_any_source_effect_and_preserves_table_bypass() {
+        let slot = WeaponSlot::E_SLOT_TWO_HANDED;
+        let mut effects = Vec::new();
+        for route in [
+            TakeRoute::Game(GameTake::TableStopped),
+            TakeRoute::Table { hand: Hand::Left },
+        ] {
+            let preflight = complete_preflight(Ok(slot), || Ok(route), || false);
+            if preflight.is_ok() {
+                effects.extend(["OnDrop", "DropWeapon", "HitReaction"]);
+            }
+            if matches!(route, TakeRoute::Game(_)) {
+                assert_eq!(preflight, Err(Refusal::AnimationForbids));
+                assert!(effects.is_empty());
+            } else {
+                assert_eq!(effects, ["OnDrop", "DropWeapon", "HitReaction"]);
+            }
+        }
+        assert_eq!(
+            complete_preflight(
+                Err(Refusal::Grenade),
+                || panic!("route after refusal"),
+                || panic!("animation after refusal")
+            ),
+            Err(Refusal::Grenade)
+        );
+    }
 
     #[test]
     fn a_table_take_does_not_query_the_native_animation_gate() {
