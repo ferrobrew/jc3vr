@@ -159,7 +159,12 @@ pub(crate) fn update() {
     };
     let (lines, lost) = log_tap::drain();
     run.lost_log_lines += lost;
-    let next = run.update(replay::observation(run.replay), &lines, Instant::now());
+    let next = run.update(
+        replay::observation(run.replay),
+        &lines,
+        lost,
+        Instant::now(),
+    );
     match next {
         Next::Continue => {}
         Next::Finish => state.finish(None),
@@ -215,13 +220,24 @@ struct Observed {
     baseline: Option<f64>,
     /// A log probe's matches so far.
     log_matches: u64,
+    lost_log_lines: u64,
 }
 
 impl Observed {
     fn report(&self) -> ExpectationReport {
         ExpectationReport {
             name: self.expectation.name.clone(),
-            verdict: self.tracker.verdict(),
+            verdict: if self.lost_log_lines > 0 {
+                Verdict {
+                    passed: false,
+                    detail: format!(
+                        "inconclusive: the observed log window lost {} lines",
+                        self.lost_log_lines
+                    ),
+                }
+            } else {
+                self.tracker.verdict()
+            },
         }
     }
 
@@ -261,17 +277,23 @@ impl Observed {
 }
 
 impl Run {
-    fn update(&mut self, observation: Observation, lines: &[LogLine], now: Instant) -> Next {
+    fn update(
+        &mut self,
+        observation: Observation,
+        lines: &[LogLine],
+        lost: u64,
+        now: Instant,
+    ) -> Next {
         match observation {
             Observation::Pending | Observation::Loading | Observation::Teleporting => {
                 Next::Continue
             }
             Observation::Playing => {
-                self.observe(lines);
+                self.observe(lines, lost);
                 Next::Continue
             }
             Observation::Ended(ReplayOutcome::Completed { .. }) => {
-                self.observe(lines);
+                self.observe(lines, lost);
                 let until = *self
                     .settle_until
                     .get_or_insert_with(|| now + self.scenario.settle);
@@ -291,37 +313,14 @@ impl Run {
         }
     }
 
-    fn observe(&mut self, lines: &[LogLine]) {
-        let value = match &self.expectation.probe {
-            Probe::Signal { signal, delta } => match (signal.read(), delta) {
-                (Value::Number(n), true) => Value::Number(n - *self.baseline.get_or_insert(n)),
-                (value, _) => value,
-            },
-            Probe::Status {
-                label,
-                health,
-                detail,
-            } => match status_row(label) {
-                Some(line) => Value::Bool(
-                    health.is_none_or(|h| line.health == h)
-                        && detail.as_deref().is_none_or(|d| line.detail.contains(d)),
-                ),
-                None => Value::Missing,
-            },
-            Probe::Log { pattern, level } => {
-                self.log_matches += lines
-                    .iter()
-                    .filter(|line| {
-                        // `Level` orders the most verbose highest, so a line at a level or above
-                        // is one that compares at or below it.
-                        level.is_none_or(|level| line.level <= level)
-                            && line.text.contains(pattern.as_str())
-                    })
-                    .count() as u64;
-                Value::Number(self.log_matches as f64)
+    fn observe(&mut self, lines: &[LogLine], lost: u64) {
+        self.frames += 1;
+        for expectation in &mut self.expectations {
+            if matches!(expectation.expectation.probe, Probe::Log { .. }) {
+                expectation.lost_log_lines = expectation.lost_log_lines.saturating_add(lost);
             }
-        };
-        self.tracker.observe(value);
+            expectation.observe(lines);
+        }
     }
 }
 
@@ -357,6 +356,7 @@ impl State {
                     tracker: Tracker::new(expectation.check, expectation.condition),
                     baseline: None,
                     log_matches: 0,
+                    lost_log_lines: 0,
                 })
                 .collect(),
             scenario,
