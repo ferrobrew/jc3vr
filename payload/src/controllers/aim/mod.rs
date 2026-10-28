@@ -327,7 +327,6 @@ unsafe fn finish(
         None => (None, [None; 2]),
     };
     // A gun armed in a hand beside the wielded weapon aims along its own sight line too.
-    let mut armed_hands = [false; 2];
     let mut armed_weapons = [None; 2];
     if cfg.gun {
         for hand in Hand::BOTH {
@@ -340,7 +339,6 @@ unsafe fn finish(
             };
             let (armed, rays) = unsafe { gun::sight_rays(weapon, tick, cfg) };
             gun_rays[hand.index()] = rays[hand.index()];
-            armed_hands[hand.index()] = true;
             armed_weapons[hand.index()] = Some(armed);
         }
     }
@@ -391,7 +389,13 @@ unsafe fn finish(
     });
     gun::publish(held, gun_targets);
     hold_tick::publish_targets(
-        Hand::BOTH.map(|hand| gun_targets[hand.index()].filter(|_| armed_hands[hand.index()])),
+        owner as *const Character as usize,
+        Hand::BOTH.map(|hand| {
+            Some((
+                armed_weapons[hand.index()]?.address,
+                gun_targets[hand.index()]?,
+            ))
+        }),
     );
     let seat = match mode::current().mode {
         Mode::Vehicle(seat) => Some(seat),
@@ -462,6 +466,7 @@ fn grapple_readout(aim: &PlayerAimControl, ray: Ray) -> GrappleAim {
 /// Record an update that aimed nothing, and withdraw the guns' aim points.
 fn idle_update(idle: AimIdle) {
     gun::publish(None, [None; 2]);
+    hold_tick::publish_targets(0, [None; 2]);
     let mut status = STATUS.lock();
     *status = AimStatus {
         idle: Some(idle),

@@ -202,6 +202,43 @@ pub(crate) unsafe fn apply_in(inventory: *mut Inventory) {
     }
 }
 
+/// Release an armed weapon's input without passing an unavailable aim target to native updates.
+///
+/// # Safety
+///
+/// The inventory phase must retain the source and serialize this weapon's native mutation.
+pub(crate) unsafe fn release_fire(weapon: &mut WeaponBase) {
+    unsafe { release_fire_with(weapon, |weapon, gun| weapon.Fire_Stop(gun)) };
+}
+
+unsafe fn release_fire_with(
+    weapon: &mut WeaponBase,
+    mut stop: impl FnMut(&mut WeaponBase, *mut WeaponData),
+) {
+    let firing = weapon.m_IsFiring;
+    let guns = unsafe { gun_handles(weapon) };
+    // UpdateWeapon_Parallel owns these mapped input latches and pending shot requests. Clearing
+    // them supplies a target-independent release without running its aim checks or firing paths.
+    weapon.m_IsTryingToFire = false;
+    weapon.m_IsTriggerPulled = false;
+    weapon.m_FiredThisInput = false;
+    weapon.m_IsFiringCancelled = false;
+    weapon.m_IsFeatheringTrigger = false;
+    weapon.m_InputBufferTimer = 0.0;
+    weapon.m_ForceFireProjectile = false;
+    weapon.m_ForceFireTimer = 0.0;
+    weapon.m_ForceFireCount = 0;
+    for mut gun in guns.into_iter().flatten() {
+        // SAFETY: the unique handles borrow each retained gun only for this assignment.
+        unsafe { gun.as_mut().m_BurstShotsLeft = 0 };
+        if firing {
+            stop(weapon, gun.as_ptr());
+        }
+    }
+    // Fire_StopBase clears this flag; also clear it for an empty native gun list.
+    weapon.m_IsFiring = false;
+}
+
 /// The weapons armed in the hands that the carry set keeps rather than `inventory`, when
 /// `inventory` is the local player's.
 ///

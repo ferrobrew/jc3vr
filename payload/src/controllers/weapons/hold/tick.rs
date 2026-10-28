@@ -29,12 +29,18 @@
 //! weapon with a gun in each hand, fires from the game's own fire input, which alternates its guns
 //! ([`crate::controllers::weapons::dual_wield`]).
 //!
+//! Optional hand aim does not gate native state updates. A fresh point for the same character and
+//! weapon takes priority; otherwise both phases use the inventory call's current muzzle target.
+//! Without either finite target, the phase releases the mapped trigger and pending-shot state.
+//! A native firing transition dispatches `WeaponBase::Fire_Stop` once per distinct gun, rather than
+//! reusing the weapon's previous aim target.
+//!
 //! The detours run on the simulation's worker threads; they read only the published inputs and
 //! the armed weapons' addresses, and lock nothing but this module's short locks.
 
 use std::{
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use detours_macro::detour;
@@ -55,8 +61,17 @@ use re_utilities::hook_library::HookLibrary;
 use crate::controllers::{
     frame::Hand,
     loadout::live,
-    weapons::{dual_wield::single, hold::armed, reload},
+    weapons::{
+        dual_wield::single,
+        hold::{
+            armed,
+            tick::arguments::{HandTarget, UpdateArguments, UpdateFacts, update_arguments},
+        },
+        reload,
+    },
 };
+
+mod arguments;
 
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -107,9 +122,17 @@ pub(crate) fn publish_fire(fire: [bool; 2]) {
 }
 
 /// Publish each hand's aim point, from its gun's sight line, at the aim update, by [`Hand::index`].
-pub(crate) fn publish_targets(targets: [Option<Vec3>; 2]) {
+pub(crate) fn publish_targets(owner: usize, targets: [Option<(usize, Vec3)>; 2]) {
     let now = Instant::now();
-    *TARGETS.lock() = targets.map(|t| t.filter(|t| t.is_finite()).map(|t| (t, now)));
+    *TARGETS.lock() = targets.map(|target| {
+        let (weapon, point) = target?;
+        point.is_finite().then_some(HandTarget {
+            owner,
+            weapon,
+            point,
+            at: now,
+        })
+    });
 }
 
 /// One input tick: publish `per_hand` (the setting), and with it on, hand each armed gun the
@@ -183,7 +206,7 @@ pub(crate) unsafe fn substitute(weapon: &WeaponBase, input: &WeaponInputs) -> Op
 
 static PER_HAND: AtomicBool = AtomicBool::new(false);
 static FIRE: [AtomicBool; 2] = [const { AtomicBool::new(false) }; 2];
-static TARGETS: Mutex<[Option<(Vec3, Instant)>; 2]> = Mutex::new([None; 2]);
+static TARGETS: Mutex<[Option<HandTarget>; 2]> = Mutex::new([None; 2]);
 static UPDATES: [AtomicU64; 2] = [const { AtomicU64::new(0) }; 2];
 static SUBSTITUTED: AtomicU64 = AtomicU64::new(0);
 static AIM_MODES: AtomicU64 = AtomicU64::new(0);
@@ -191,8 +214,6 @@ static HINTS: AtomicU64 = AtomicU64::new(0);
 /// The use hints of the local player's weapons that stopped being used since the last input tick.
 static STOPPED: Mutex<Vec<u32>> = Mutex::new(Vec::new());
 
-/// How long the aim update's point stays current for an armed weapon's update.
-const MAX_TARGET_AGE: Duration = Duration::from_millis(250);
 /// More use hints than stop between two input ticks.
 const MAX_STOPPED: usize = 16;
 
@@ -231,41 +252,39 @@ unsafe fn restore_hints(owner: &mut Character, wielded: Option<usize>, stopped: 
     }
 }
 
-/// The armed weapon's inputs and aim point for one update, or `None` without a current aim point.
-unsafe fn update_arguments(
+/// Read native state only while its inventory phase retains the source.
+unsafe fn update_facts(
     inventory: &Inventory,
     weapon: &WeaponBase,
     hand: Hand,
-) -> Option<(WeaponInputs, Vector3)> {
-    let (target, at) = TARGETS.lock()[hand.index()]?;
-    if at.elapsed() > MAX_TARGET_AGE {
-        return None;
-    }
+    native_target: Option<Vec3>,
+) -> UpdateFacts {
     let address = weapon as *const WeaponBase as usize;
     // Without the per-hand tick an empty gun fires nothing: its ammunition check would ask the
     // character to reload, which reloads the wielded weapon.
     let loaded = PER_HAND.load(Ordering::Relaxed)
         || (weapon.m_MagazineAmmo > 0 && !weapon.m_WeaponIsWithoutMagazine);
-    let fire = loaded
-        && FIRE[hand.index()].load(Ordering::Relaxed)
-        && !reload::holds_fire(address, hand)
-        && unsafe { inventory.GetAnimationAllowsShooting() };
-    Some((
-        WeaponInputs {
-            m_PrimaryFireInput: if fire { 1.0 } else { 0.0 },
-            m_SecondaryFireInput: 0.0,
-        },
-        Vector3 {
-            data: target.to_array(),
-        },
-    ))
+    UpdateFacts {
+        owner: inventory.m_Character as usize,
+        weapon: address,
+        hand_target: TARGETS.lock()[hand.index()],
+        native_target,
+        now: Instant::now(),
+        loaded,
+        fire: FIRE[hand.index()].load(Ordering::Relaxed),
+        reload_held: reload::holds_fire(address, hand),
+        animation_allows: unsafe { inventory.GetAnimationAllowsShooting() },
+    }
 }
 
 /// Update each weapon armed in a hand of `inventory`'s, after its own fan-out, with `update`.
 unsafe fn update_armed(
     inventory: *mut Inventory,
+    muzzle_target: *const Vector3,
     update: impl Fn(&mut WeaponBase, &WeaponInputs, &Vector3),
 ) {
+    let native_target =
+        unsafe { muzzle_target.as_ref() }.map(|target| Vec3::from_array(target.data));
     for hand in Hand::BOTH {
         let Some(address) = armed::in_hand(hand) else {
             continue;
@@ -273,14 +292,18 @@ unsafe fn update_armed(
         let Some(mut handle) = (unsafe { armed::weapon_in(inventory, address) }) else {
             continue;
         };
-        // SAFETY: this phase retains the source, and the read ends before mutation.
-        let Some((inputs, aim)) = (unsafe { update_arguments(&*inventory, handle.as_ref(), hand) })
-        else {
-            continue;
-        };
-        // SAFETY: the inventory phase serializes this weapon's mutation.
-        update(unsafe { handle.as_mut() }, &inputs, &aim);
-        UPDATES[hand.index()].fetch_add(1, Ordering::Relaxed);
+        // SAFETY: this inventory phase retains the source, and the facts borrow ends before mutation.
+        let facts = unsafe { update_facts(&*inventory, handle.as_ref(), hand, native_target) };
+        let arguments = update_arguments(facts);
+        // SAFETY: only this weapon is borrowed for this call; native phases serialize its mutation.
+        let weapon = unsafe { handle.as_mut() };
+        match arguments {
+            UpdateArguments::Tick { inputs, aim } => {
+                update(weapon, &inputs, &aim);
+                UPDATES[hand.index()].fetch_add(1, Ordering::Relaxed);
+            }
+            UpdateArguments::Stop => unsafe { armed::release_fire(weapon) },
+        }
     }
 }
 
@@ -296,7 +319,7 @@ fn update_weapons_parallel(
         .unwrap()
         .call(inventory, dt, muzzle_target, grenade_target);
     unsafe {
-        update_armed(inventory, |weapon, inputs, aim| {
+        update_armed(inventory, muzzle_target, |weapon, inputs, aim| {
             weapon.UpdateFromUserPostSim_Parallel(dt, aim, inputs)
         })
     };
@@ -314,7 +337,7 @@ fn update_weapons_serial(
         .unwrap()
         .call(inventory, dt, muzzle_target, grenade_target);
     unsafe {
-        update_armed(inventory, |weapon, inputs, aim| {
+        update_armed(inventory, muzzle_target, |weapon, inputs, aim| {
             weapon.UpdateFromUserPostSim_Serial(dt, aim, inputs)
         })
     };

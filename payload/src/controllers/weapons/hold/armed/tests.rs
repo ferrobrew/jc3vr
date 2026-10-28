@@ -24,6 +24,91 @@ fn entries(weapon: &mut WeaponBase, entries: &mut [*mut WeaponData]) {
 }
 
 #[test]
+fn missing_targets_stop_unique_guns_once_across_both_phases_and_repeated_frames() {
+    with_weapon(|weapon, first, second| {
+        let first = first as *mut WeaponData;
+        let second = second as *mut WeaponData;
+        for pair in [[first, first], [first, second], [ptr::null_mut(), second]] {
+            let mut pair = pair;
+            entries(weapon, &mut pair);
+            let expected: Vec<_> = unsafe { gun_handles(weapon) }
+                .into_iter()
+                .flatten()
+                .map(|gun| gun.as_ptr())
+                .collect();
+            weapon.m_IsFiring = true;
+            let mut stopped = Vec::new();
+            for _frame in 0..3 {
+                for _phase in 0..2 {
+                    unsafe {
+                        release_fire_with(weapon, |weapon, gun| {
+                            stopped.push(gun);
+                            weapon.m_IsFiring = false;
+                        })
+                    };
+                }
+            }
+            assert_eq!(stopped, expected);
+            // A new native firing transition resumes cancellation without a mod-side identity cache.
+            weapon.m_IsFiring = true;
+            unsafe {
+                release_fire_with(weapon, |weapon, gun| {
+                    stopped.push(gun);
+                    weapon.m_IsFiring = false;
+                })
+            };
+            assert_eq!(stopped.len(), expected.len() * 2);
+        }
+    });
+}
+
+#[test]
+fn unavailable_target_releases_fired_semi_auto_and_auto_input_and_pending_shots() {
+    with_weapon(|weapon, first, _| {
+        let mut pair = [first as *mut WeaponData; 2];
+        entries(weapon, &mut pair);
+        for automatic in [false, true] {
+            weapon.m_IsFiring = true;
+            weapon.m_IsTryingToFire = true;
+            weapon.m_IsTriggerPulled = true;
+            weapon.m_FiredThisInput = true;
+            weapon.m_IsFiringCancelled = true;
+            weapon.m_IsFeatheringTrigger = true;
+            weapon.m_InputBufferTimer = 0.4;
+            weapon.m_ForceFireProjectile = true;
+            weapon.m_ForceFireTimer = 0.7;
+            weapon.m_ForceFireCount = 3;
+            first.m_BurstShotsLeft = 4;
+            let mut stops = 0;
+            unsafe {
+                release_fire_with(weapon, |weapon, _| {
+                    stops += 1;
+                    weapon.m_IsFiring = false;
+                })
+            };
+            assert_eq!(stops, 1);
+            assert!(!weapon.m_IsTriggerPulled);
+            assert!(!weapon.m_FiredThisInput);
+            assert!(!weapon.m_IsFiringCancelled);
+            assert!(!weapon.m_IsTryingToFire);
+            assert!(!weapon.m_IsFeatheringTrigger);
+            assert!(!weapon.m_ForceFireProjectile);
+            assert_eq!(weapon.m_InputBufferTimer, 0.0);
+            assert_eq!(weapon.m_ForceFireTimer, 0.0);
+            assert_eq!(weapon.m_ForceFireCount, 0);
+            assert_eq!(first.m_BurstShotsLeft, 0);
+            // These are the mapped gates read by UpdateWeapon_Parallel and Fire_StartBase on recovery.
+            let pulled = 1.0 > 0.5;
+            let requests_shot =
+                pulled && (automatic || !weapon.m_FiredThisInput) && !weapon.m_IsFiringCancelled;
+            assert!(requests_shot);
+            let first_shot = !weapon.m_IsFiring;
+            assert!(first_shot);
+        }
+    });
+}
+
+#[test]
 fn arm_disarm_layout_restores_original_bones_and_mirrored_scales_with_duplicates_and_holes() {
     with_weapon(|weapon, first, second| {
         let holstered = WeaponState::E_WS_HOLSTERED as usize;
