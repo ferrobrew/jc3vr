@@ -227,9 +227,16 @@ pub(crate) unsafe fn tick(
                 if let TargetKind::Character(target) = reach.kind
                     && !target.ragdoll
                 {
-                    // SAFETY: forwarded from the caller; the character was reached by this
-                    // tick's casts.
-                    match unsafe { Seize::take(target, reach.point) } {
+                    // SAFETY: the queued target is checked before any character access.
+                    match unsafe {
+                        Seize::take(
+                            target,
+                            reach.point,
+                            palm.pose.position,
+                            world_scale,
+                            &character_config,
+                        )
+                    } {
                         Some(seize) => {
                             tracing::info!(
                                 hand = hand.label(),

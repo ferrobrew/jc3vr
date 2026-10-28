@@ -18,6 +18,7 @@
 //! reactions are dealt by the hand bodies' blows on the next frame tick
 //! ([`crate::controllers::physical_hands::physics::queue_shove`]), outside the game's update.
 
+mod acquisition;
 pub mod config;
 pub mod engine;
 
@@ -161,12 +162,16 @@ impl Seize {
     ///
     /// # Safety
     ///
-    /// The game thread, outside the physics step; the character must be live.
-    pub unsafe fn take(target: CharacterTarget, point: Vec3) -> Option<Self> {
-        let grab = unsafe { frame(target.character) }
-            .inverse()
-            .transform_point3(point);
-        grab.is_finite().then_some(Self { target, grab })
+    /// The game thread, outside the physics step. The queued target need not still be live.
+    pub unsafe fn take(
+        target: CharacterTarget,
+        point: Vec3,
+        palm: Vec3,
+        world_scale: f32,
+        config: &CharactersConfig,
+    ) -> Option<Self> {
+        // SAFETY: the adapter checks body ownership before any character access.
+        unsafe { acquisition::take(target, point, palm, world_scale, config) }
     }
 
     /// What the grip does with the palm at `palm`, world space, yanking at `yank_m` from the grab
@@ -187,19 +192,20 @@ impl Seize {
     }
 }
 
-/// Whether the hand, with its palm at `palm`, still reaches in through an open door of the vehicle
-/// a seated character sits in: the door and how far it stands open, degrees.
+/// Whether the hand still reaches through an open door of the character's current vehicle.
+/// The character must still occupy the vehicle captured by the grip.
 ///
 /// # Safety
 ///
-/// The game thread, outside the physics step; `seated`'s vehicle must be live.
+/// The game thread, outside the physics step. The target's current owner is checked first.
 pub(crate) unsafe fn door_still_open(
-    seated: &Seated,
+    target: CharacterTarget,
     palm: Vec3,
     world_scale: f32,
     config: &CharactersConfig,
 ) -> Option<(DoorSlot, f32)> {
-    unsafe { open_door_near(seated.vehicle, palm, world_scale, config) }
+    let seated = unsafe { acquisition::seated(target, palm, world_scale, config) }?;
+    Some((seated.door, seated.open_deg))
 }
 
 /// The open door of `vehicle` nearest the palm at `palm`, within the hijack's reach and open at

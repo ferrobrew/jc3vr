@@ -144,7 +144,7 @@ pub(super) unsafe fn keep_seize(
         SeizeStep::Pin(pin) => outcome.pins[i] = Some(pin),
         SeizeStep::Yank { at, direction } => {
             state.seizes[i] = None;
-            let Some(seated) = seize.target.seated else {
+            if seize.target.seated.is_none() {
                 // A character on foot is thrown off its feet along the yank by its own hit
                 // reaction; the hand then looks for the ragdoll it falls as, if the player is
                 // hostile to it, and lets go otherwise.
@@ -174,11 +174,10 @@ pub(super) unsafe fn keep_seize(
                     outcome.released[i] = true;
                 }
                 return;
-            };
+            }
             outcome.released[i] = true;
-            // SAFETY: forwarded from the caller; the character, and with it its vehicle, was
-            // checked alive by the step.
-            match unsafe { characters::door_still_open(&seated, palm, world_scale, config) } {
+            // SAFETY: the current attachment is read only after rechecking character ownership.
+            match unsafe { characters::door_still_open(seize.target, palm, world_scale, config) } {
                 Some((door, open_deg)) => {
                     tracing::info!(
                         hand = hand.label(),
