@@ -267,8 +267,14 @@ fn hud_target_size(
         (base * aspect, base)
     };
     (
-        width.round().max(1.0) as u32,
-        height.round().max(1.0) as u32,
+        width.round().clamp(
+            1.0,
+            crate::config::validate::hud::MAX_TEXTURE_DIMENSION as f32,
+        ) as u32,
+        height.round().clamp(
+            1.0,
+            crate::config::validate::hud::MAX_TEXTURE_DIMENSION as f32,
+        ) as u32,
     )
 }
 

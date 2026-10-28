@@ -26,6 +26,8 @@ pub(crate) struct HudTarget {
 impl HudTarget {
     /// Build the color texture (with RTV + SRV) and a matching depth-stencil at `width` x `height`.
     pub(crate) fn new(device: &Device, width: u32, height: u32) -> anyhow::Result<Self> {
+        crate::config::validate::hud::dimension("HUD target width", width)?;
+        crate::config::validate::hud::dimension("HUD target height", height)?;
         let d3d = &device.m_Device;
         // SAFETY: `d3d` is the live engine device; the descriptors below are valid for these calls.
         unsafe {

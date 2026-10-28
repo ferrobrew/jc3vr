@@ -406,7 +406,7 @@ pub(crate) struct PanelParams {
 /// distance`. It is NOT rotated through the camera's transform — that would stack the rotation on
 /// top of the head rotation, swinging the panel offscreen on large turns.
 pub(crate) fn compute_world_corners(params: &PanelParams) -> Option<[Vec4; 4]> {
-    if params.aspect <= 0.0 {
+    if !valid_panel(params) {
         return None;
     }
     let aspect = params.aspect;
@@ -428,7 +428,11 @@ pub(crate) fn compute_world_corners(params: &PanelParams) -> Option<[Vec4; 4]> {
         (half_w, -half_h),
     ];
 
-    Some(layout.map(|(dx, dy)| (center + right * dx + up * dy).extend(1.0)))
+    let corners = layout.map(|(dx, dy)| (center + right * dx + up * dy).extend(1.0));
+    corners
+        .iter()
+        .all(|corner| corner.is_finite())
+        .then_some(corners)
 }
 
 /// Compute the virtual mouse cursor's world-space corners: a small square quad centered on the
@@ -442,7 +446,13 @@ pub(crate) fn compute_cursor_corners(
     frame: crate::hud::cursor::CursorFrame,
     cfg: &crate::hud::config::CursorConfig,
 ) -> Option<[Vec4; 4]> {
-    if params.aspect <= 0.0 || cfg.size <= 0.0 {
+    if !valid_panel(params)
+        || !cfg.size.is_finite()
+        || cfg.size <= 0.0
+        || !cfg.lift.is_finite()
+        || !frame.u.is_finite()
+        || !frame.v.is_finite()
+    {
         return None;
     }
 
@@ -462,7 +472,22 @@ pub(crate) fn compute_cursor_corners(
 
     let half = cfg.size * params.distance * 0.5;
     let layout = [(-half, half), (half, half), (-half, -half), (half, -half)];
-    Some(layout.map(|(dx, dy)| (point + right * dx + up * dy).extend(1.0)))
+    let corners = layout.map(|(dx, dy)| (point + right * dx + up * dy).extend(1.0));
+    corners
+        .iter()
+        .all(|corner| corner.is_finite())
+        .then_some(corners)
+}
+
+fn valid_panel(params: &PanelParams) -> bool {
+    params.pos.is_finite()
+        && params.rot.is_finite()
+        && params.aspect.is_finite()
+        && params.aspect > 0.0
+        && params.distance.is_finite()
+        && params.distance > 0.0
+        && params.panel_height.is_finite()
+        && params.panel_height > 0.0
 }
 
 /// Fetch the render camera's view-projection matrix for the current eye.
@@ -481,3 +506,6 @@ struct Shading<'a> {
     pixel_shader: &'a ID3D11PixelShader,
     opacity: f32,
 }
+
+#[cfg(test)]
+mod geometry_tests;

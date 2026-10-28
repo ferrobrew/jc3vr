@@ -11,6 +11,7 @@ mod aim;
 mod fingers;
 mod grapple;
 mod haptics;
+pub(crate) mod hud;
 mod input;
 mod physical_hands;
 mod roomscale;
