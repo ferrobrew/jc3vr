@@ -8,7 +8,7 @@
 //! animated"). So before each placement of the local player's weapons
 //! ([`Inventory::UpdateAttachmentTransforms`], whose detour lives in
 //! [`crate::controllers::weapons::hold`]), every gun on a hand attach bone of a hand
-//! with a controller weight above zero ([`tiers::weights`]) has that bone written
+//! with an effective controller plan weight above zero ([`ik::placement_weights`]) has that bone written
 //! ([`AnimationController::SetJoint`]) to the hand's current wrist composed with the hand's
 //! canonical grip: the primary attach bone's pose relative to the wrist in the skeleton's bind
 //! pose ([`AnimationController::GetBindPoseBoneMatrix`]). The written pose is blended from the
@@ -58,7 +58,7 @@ use crate::{
     controllers::{
         aim::gun,
         frame::{Hand, Pose},
-        hands::{ik, pose as hand_pose, tiers},
+        hands::{ik, pose as hand_pose},
         physical_hands::physics::guns,
         weapons::{
             config::RightGrip,
@@ -248,7 +248,7 @@ pub(crate) unsafe fn before_placement(
         )
     });
     let targets = ik::tick_records().current;
-    let weights = tiers::weights();
+    let weights = ik::placement_weights(local, controller as *mut AnimationController as usize);
     let mut placement = Placement {
         generation,
         guns: [None; 2],
@@ -269,9 +269,8 @@ pub(crate) unsafe fn before_placement(
             if placement.guns[hand.index()].is_some() {
                 continue;
             }
-            // The tier weight, not whether a target was queued: a hand blending back to the
-            // animation has no target on the tick it reaches zero, and a hand blending in has one
-            // at a small weight, so keying the pin on the target switched the grip at a stroke.
+            // The effective plan weight preserves the yield blend without granting a pin to an
+            // inactive hand or requiring its IK target to have queued successfully.
             let weight = if enabled { weights[hand.index()] } else { 0.0 };
             let address = weapon as *const WeaponBase as usize;
             let snap = act::snap_view(address, hand);

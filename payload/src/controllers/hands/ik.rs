@@ -79,6 +79,13 @@ use crate::{
     hooks::{self, character::body_ik},
 };
 
+mod ownership;
+
+/// The effective controller weights for a placement in this pose-finalization pass.
+pub(crate) fn placement_weights(character: usize, controller: usize) -> [f32; 2] {
+    ownership::weights(character, controller)
+}
+
 /// The hands the controllers drive this tick, decided before the body IK queues its hand pins so
 /// that a pin never competes with a controller target.
 #[derive(Clone)]
@@ -106,12 +113,12 @@ pub fn plan() -> HandPlan {
     let active = hands::active_hands()
         .filter(|a| a.config.hands.ik && hooks::in_gameplay() && headpose::is_active());
     let tier_weights = tiers::weights();
-    let weights = Hand::BOTH.map(|hand| {
+    let tracked = Hand::BOTH.map(|hand| {
         active
             .as_ref()
-            .and_then(|a| a.hands[hand.index()])
-            .map_or(0.0, |_| tier_weights[hand.index()])
+            .is_some_and(|a| a.hands[hand.index()].is_some())
     });
+    let weights = ownership::effective_weights(tracked, tier_weights);
     HandPlan { active, weights }
 }
 
@@ -219,6 +226,15 @@ pub(crate) fn local_character() -> usize {
 ///
 /// As [`queue`].
 pub(crate) unsafe fn queue_or_defer(character: *mut Character, plan: HandPlan) {
+    ownership::clear();
+    if let Some(owner) = unsafe { character.as_ref() }.filter(|c| c.m_IsLocalCharacter) {
+        LOCAL_CHARACTER.store(character as usize, Ordering::Relaxed);
+        ownership::publish(
+            character as usize,
+            owner.m_AnimatedModel.m_AnimationController as usize,
+            plan.weights,
+        );
+    }
     if owns_body() {
         DEFERRED.replace(Some(plan));
     } else {
@@ -534,6 +550,7 @@ pub(crate) unsafe fn flush_deferred(character: *mut Character) {
 /// end of a pose-finalization pass, so that a pass whose solve did not run (HumanIK switched off)
 /// leaves nothing for a later one.
 pub(crate) fn end_finalize() {
+    ownership::clear();
     SECONDARY_PLAN.set(None);
     DEFERRED.take();
 }
