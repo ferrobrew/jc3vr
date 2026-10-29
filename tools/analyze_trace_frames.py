@@ -2,9 +2,15 @@
 # requires-python = ">=3.11"
 # dependencies = ["numpy", "pillow"]
 # ///
-"""Analyze a render-trace screenshot capture to localize a per-frame flicker.
+"""Analyze a render trace: its probe events and its per-eye screenshots.
 
-Reads `traces/<stamp>/frameNNN_eye{0,1}.png` plus `trace.ndjson`, and reports:
+Reads `traces/<stamp>/trace.ndjson` and summarises the probe events it carries:
+  * `StereoDrawDiff`: how many frames the eyes' per-pass draw counts diverged in, the replayable
+    share of shared-pass ops, and which passes diverge or run only in eye 1,
+  * `CoordFrame`: the render camera's basis and the travel direction's agreement with -z_basis.
+
+When the trace folder holds `frameNNN_eye{0,1}.png` screenshots it also reports, to localize a
+per-frame flicker:
   * per-frame luminance distribution and the frame-to-frame brightness pulse,
   * a per-pixel temporal-standard-deviation heatmap (where the flicker lives),
   * a coarse tile ranking of which regions vary most across frames,
@@ -14,6 +20,7 @@ Usage: uv run tools/analyze_trace_frames.py <traces/stamp dir> [--eye 0]
 """
 
 import argparse
+import collections
 import json
 import pathlib
 import sys
@@ -28,11 +35,93 @@ def luma(img: np.ndarray) -> np.ndarray:
     return img[..., :3].astype(np.float32) @ REC709
 
 
-def load_frames(dir_: pathlib.Path, eye: int):
-    paths = sorted(dir_.glob(f"frame*_eye{eye}.png"))
-    if not paths:
-        sys.exit(f"no frame*_eye{eye}.png in {dir_}")
-    return paths
+def load_records(path: pathlib.Path) -> list[dict]:
+    """The trace's records, skipping any line that does not parse (a truncated final line)."""
+    records = []
+    with path.open() as f:
+        for line in f:
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return records
+
+
+def events(records: list[dict], kind: str) -> list[tuple[int, dict]]:
+    """The `(frame, event)` pairs of one event kind, in trace order."""
+    return [(r["frame"], r["event"]) for r in records if r.get("event", {}).get("ev") == kind]
+
+
+def summarise_stereo_draw_diff(records: list[dict]) -> None:
+    diffs = events(records, "StereoDrawDiff")
+    if not diffs:
+        return
+    print("\n=== stereo draw diff ===")
+    mismatched = 0
+    eye1_only_frames = 0
+    order_divergent = 0
+    pcts = []
+    # Per divergent pass: the frames it diverged in and its eye-0/eye-1 op counts there.
+    divergent = collections.defaultdict(list)
+    eye1_only = collections.Counter()
+    names = {}
+    for frame, d in diffs:
+        shared = d["shared_ops"]
+        pcts.append(100.0 * d["matched_ops"] / shared if shared else 100.0)
+        if d["divergent"] or d["eye1_only"] or not d["order_consistent"]:
+            mismatched += 1
+        eye1_only_frames += bool(d["eye1_only"])
+        order_divergent += not d["order_consistent"]
+        for p in d["divergent"]:
+            divergent[p["pass"]].append((frame, p["eye0_ops"], p["eye1_ops"]))
+            names[p["pass"]] = p["name"]
+        for p in d["eye1_only"]:
+            eye1_only[p["pass"]] += 1
+            names[p["pass"]] = p["name"]
+    pcts = np.array(pcts)
+    last = diffs[-1][1]
+    print(f"{len(diffs)} frames diffed, {mismatched} mismatched"
+          f" ({eye1_only_frames} with eye-1-only passes, {order_divergent} with divergent order)")
+    print(f"replayable share of shared-pass ops: mean={pcts.mean():.1f}%"
+          f" min={pcts.min():.1f}% max={pcts.max():.1f}%")
+    print(f"last frame: {last['shared_passes']} shared passes ({last['shared_ops']} eye-0 ops),"
+          f" {last['eye0_only_passes']} eye-0-only passes ({last['eye0_only_ops']} ops,"
+          f" shared prepasses)")
+    if divergent:
+        print("divergent shared passes (frames diverged, mean eye0/eye1 ops):")
+        for pid, hits in sorted(divergent.items(), key=lambda kv: -len(kv[1])):
+            e0 = np.mean([h[1] for h in hits])
+            e1 = np.mean([h[2] for h in hits])
+            print(f"  {names[pid]} ({pid}): {len(hits)}/{len(diffs)} frames,"
+                  f" eye0 {e0:.1f} / eye1 {e1:.1f} ops")
+    if eye1_only:
+        print("eye-1-only passes (unexpected; eye 1 should be a subset of eye 0):")
+        for pid, count in eye1_only.most_common():
+            print(f"  {names[pid]} ({pid}): {count}/{len(diffs)} frames")
+
+
+# Per-frame travel below which a CoordFrame sample counts as standing still (matches the payload's
+# summary threshold).
+MOVING_THRESHOLD_M = 0.005
+
+
+def summarise_coord_frame(records: list[dict]) -> None:
+    samples = [e for _, e in events(records, "CoordFrame")]
+    if not samples:
+        return
+    print("\n=== coord frame ===")
+    first = samples[0]
+    print(f"{len(samples)} samples; first basis right={first['right']} up={first['up']}"
+          f" z_basis={first['z_basis']}")
+    moving = [s for s in samples if np.linalg.norm(s["delta"]) > MOVING_THRESHOLD_M]
+    if not moving:
+        print("camera stationary throughout; walk forward during the trace to test the frame")
+        return
+    for key in ("dot_neg_z", "dot_right", "dot_up"):
+        v = np.array([s[key] for s in moving])
+        print(f"  {key}: mean={v.mean():+.3f} min={v.min():+.3f} max={v.max():+.3f}"
+              f" over {len(moving)} moving samples")
+    print("  dot_neg_z near +1 while walking forward confirms forward = -Z")
 
 
 def main() -> None:
@@ -42,7 +131,21 @@ def main() -> None:
     ap.add_argument("--down", type=int, default=4, help="downscale factor for the temporal maps")
     args = ap.parse_args()
 
-    paths = load_frames(args.dir, args.eye)
+    nd = args.dir / "trace.ndjson"
+    records = load_records(nd) if nd.exists() else []
+    summarise_stereo_draw_diff(records)
+    summarise_coord_frame(records)
+
+    paths = sorted(args.dir.glob(f"frame*_eye{args.eye}.png"))
+    if not paths:
+        if not records:
+            sys.exit(f"no trace.ndjson or frame*_eye{args.eye}.png in {args.dir}")
+        print(f"\nno frame*_eye{args.eye}.png screenshots; skipping the image analysis")
+        return
+    analyze_frames(args, paths)
+
+
+def analyze_frames(args: argparse.Namespace, paths: list[pathlib.Path]) -> None:
     n = len(paths)
     full = np.asarray(Image.open(paths[0]))
     h, w = full.shape[:2]
