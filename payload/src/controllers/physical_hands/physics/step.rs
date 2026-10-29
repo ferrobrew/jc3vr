@@ -257,6 +257,12 @@ pub(crate) unsafe fn step() {
                     spec,
                     goal,
                     palm,
+                    // A grip's pin stays where it is in the world while the player moves.
+                    carrier: if grips[i].is_some() {
+                        Vec3::ZERO
+                    } else {
+                        target.carrier
+                    },
                     render: if on_gun[i] { &render_on_gun } else { &render },
                     anchor: grips[i].map_or(target.position, |g| g.position),
                     clear: &mut clear,

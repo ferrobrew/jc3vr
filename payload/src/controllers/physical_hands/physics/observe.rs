@@ -101,7 +101,7 @@ pub(crate) fn observe(dt: f32) {
     let park_now = acting.as_ref().map(|a| (now, a.park_now));
     let palms = acting
         .filter(|a| a.palms.iter().any(Option::is_some))
-        .map(|a| (a.palms, a.world_scale));
+        .map(|a| (a.palms, a.world_scale, a.origin));
     let body_rotation = headpose::xr::body_rotation();
     let recenters = recenter_count();
     let mut loads = [0.0; 2];
@@ -110,6 +110,7 @@ pub(crate) fn observe(dt: f32) {
         if teleport::epoch() != shared.epoch {
             shared.epoch = teleport::epoch();
             shared.trackers = TRACKERS_AT_REST;
+            shared.carrier.reset();
         }
         // A snap turn or a recenter moves every palm at once without the hands moving: the
         // palms' motion starts afresh, and the next step carries the bodies with the rig.
@@ -117,13 +118,21 @@ pub(crate) fn observe(dt: f32) {
         shared.rig = Some((body_rotation, recenters));
         if jumped {
             shared.trackers = TRACKERS_AT_REST;
+            shared.carrier.reset();
         }
         let previous = shared.targets;
-        let world_scale = palms.as_ref().map_or(1.0, |(_, scale)| *scale);
+        let world_scale = palms.as_ref().map_or(1.0, |(_, scale, _)| *scale);
+        let carrier = match &palms {
+            Some((_, _, origin)) => shared.carrier.update(*origin, dt, VELOCITY_SMOOTHING_S),
+            None => {
+                shared.carrier.reset();
+                Vec3::ZERO
+            }
+        };
         let mut targets = [None; 2];
         for hand in Hand::BOTH {
             let i = hand.index();
-            let palm = palms.as_ref().and_then(|(palms, _)| palms[i]);
+            let palm = palms.as_ref().and_then(|(palms, _, _)| palms[i]);
             let Some(palm) = palm else {
                 shared.trackers[i].0.reset();
                 shared.trackers[i].1.reset();
@@ -140,6 +149,7 @@ pub(crate) fn observe(dt: f32) {
                 orientation: palm.orientation,
                 linear,
                 angular,
+                carrier,
             });
             if jumped && let Some(from) = previous[i] {
                 shared.rig_moves[i] =

@@ -31,6 +31,8 @@ pub(super) struct ActRequest<'a> {
     /// Where the controller's palm will be at the end of the step, which the hand is drawn
     /// against.
     pub palm: Goal,
+    /// The world velocity of the frame that carries the goal, fed forward to the drive.
+    pub carrier: Vec3,
     pub render: &'a RenderTuning,
     /// Where the body is measured against for [`break_distance_m`](Self::break_distance_m): the
     /// controller's palm now, without the lead of the goal, or a grip's pin.
@@ -141,6 +143,7 @@ impl Hands {
             spec,
             goal,
             palm,
+            carrier,
             render,
             anchor,
             break_distance_m,
@@ -262,7 +265,7 @@ impl Hands {
                 joint_lost,
             });
         }
-        let driven = drive(&motion, &goal, tuning, step_s);
+        let driven = drive(&motion, &goal, carrier, tuning, step_s);
         unsafe { body.set_velocities(driven.linear, driven.angular) }?;
         contact::record_motion(hand, motion.position, driven.linear);
         self.goals[i] = Some(goal);

@@ -12,7 +12,7 @@ use parking_lot::Mutex;
 
 use crate::{
     controllers::{
-        frame::Hand,
+        frame::{Hand, Pose},
         hands::{self, pose as hand_pose},
         mode,
         physical_hands::{
@@ -160,6 +160,9 @@ pub(super) struct Target {
     pub(super) orientation: Quat,
     pub(super) linear: Vec3,
     pub(super) angular: Vec3,
+    /// The world velocity of the frame that carries the palm: the player's motion, on a moving
+    /// platform or falling, without the hand's own.
+    pub(super) carrier: Vec3,
 }
 
 impl Target {
@@ -181,6 +184,8 @@ pub(super) struct Shared {
     pub(super) published: Option<Instant>,
     pub(super) world_scale: f32,
     pub(super) trackers: [(VelocityTracker, AngularTracker); 2],
+    /// The motion of the frame that carries the palms.
+    pub(super) carrier: VelocityTracker,
     pub(super) epoch: u64,
     /// The body's facing and the recenter count of the last palms' tick.
     pub(super) rig: Option<(Quat, u32)>,
@@ -232,6 +237,7 @@ pub(super) static SHARED: Mutex<Shared> = Mutex::new(Shared {
     published: None,
     world_scale: 1.0,
     trackers: TRACKERS_AT_REST,
+    carrier: VelocityTracker::new(),
     epoch: 0,
     rig: None,
     rig_moves: [None; 2],
@@ -319,6 +325,15 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
     });
     Some(ActingPalms {
         palms,
+        // The cockpit frame's origin in the world, composed as the palms are.
+        origin: hand_pose::compose_world(
+            head.position,
+            body_rotation,
+            active.head.position,
+            Pose::IDENTITY,
+            active.world_scale,
+        )
+        .position,
         world_scale: active.world_scale,
         // A tracked hand that takes a gun without a body or carries what it grabbed has stopped
         // acting on purpose: its body leaves at once rather than standing frozen in the world.
@@ -333,6 +348,9 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
 pub(super) struct ActingPalms {
     /// Each acting hand's palm, world space.
     pub(super) palms: [Option<PalmBox>; 2],
+    /// Where the cockpit frame's origin is, world space: it moves only with what carries the
+    /// player, not with the head or the hands.
+    pub(super) origin: Vec3,
     pub(super) world_scale: f32,
     /// Which hands stopped acting on purpose, and park at once.
     pub(super) park_now: [bool; 2],

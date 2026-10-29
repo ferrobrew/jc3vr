@@ -5,7 +5,10 @@
 //! The drive is a velocity target solved once per step: the body is asked to close a share of its
 //! error in one step (all of it at a gain of one, which reaches the goal without overshooting or
 //! ringing: the discrete critically damped drive), and the change of velocity that asks for it is
-//! capped by the hand's force and twist over the step. The physics step then integrates the
+//! capped by the hand's force and twist over the step. The speed cap applies to the body's motion
+//! relative to the frame that carries the hand (the player, on a moving platform or falling), whose
+//! velocity is fed forward, so a hand keeps up with a fast carrier while a tracking glitch still
+//! cannot fling it. The physics step then integrates the
 //! velocities and resolves the body's contacts, so a hand that meets a wall stops at it, and the
 //! next step asks again, no harder than its strength. A light hand body meets a light prop without
 //! throwing it, since the solver shares a contact's impulse by mass, while the force cap still lets
@@ -26,6 +29,7 @@ pub struct DriveTuning {
     pub linear_gain: f32,
     /// The share of the rotation error closed in one step, `0..=1`.
     pub angular_gain: f32,
+    /// The fastest a body is driven relative to its carrier, metres per second.
     pub max_speed_mps: f32,
     pub max_angular_speed_rps: f32,
 }
@@ -60,9 +64,17 @@ pub struct Drive {
     pub torque_share: f32,
 }
 
-/// The velocities that carry `body` to `goal` over a step of `step_s` seconds, within `tuning`. A
-/// body or goal that is not finite keeps the body's velocities.
-pub fn drive(body: &BodyMotion, goal: &Goal, tuning: &DriveTuning, step_s: f32) -> Drive {
+/// The velocities that carry `body` to `goal` over a step of `step_s` seconds, within `tuning`,
+/// with `carrier` the world velocity of the frame that carries the goal (zero for a goal fixed in
+/// the world, such as a grip's pin). A body or goal that is not finite keeps the body's velocities;
+/// a carrier that is not finite counts as none.
+pub fn drive(
+    body: &BodyMotion,
+    goal: &Goal,
+    carrier: Vec3,
+    tuning: &DriveTuning,
+    step_s: f32,
+) -> Drive {
     let kept = Drive {
         linear: body.linear,
         angular: body.angular,
@@ -72,7 +84,12 @@ pub fn drive(body: &BodyMotion, goal: &Goal, tuning: &DriveTuning, step_s: f32) 
     if !(step_s.is_finite() && step_s > 0.0 && finite(body) && finite_goal(goal)) {
         return kept;
     }
-    let (linear, force_share) = drive_linear(body, goal, tuning, step_s);
+    let carrier = if carrier.is_finite() {
+        carrier.clamp_length_max(MAX_CARRIER_SPEED_MPS)
+    } else {
+        Vec3::ZERO
+    };
+    let (linear, force_share) = drive_linear(body, goal, carrier, tuning, step_s);
     let (angular, torque_share) = drive_angular(body, goal, tuning, step_s);
     Drive {
         linear,
@@ -159,6 +176,10 @@ pub fn rig_jumped(last: Option<(Quat, u32)>, rotation: Quat, recenters: u32) -> 
     })
 }
 
+/// The fastest carrier the drive feeds forward, metres per second: past a fall's terminal speed,
+/// so an estimate thrown by a jump of the rig cannot fling a hand.
+pub const MAX_CARRIER_SPEED_MPS: f32 = 80.0;
+
 /// The turn of the body's facing between two palms' ticks past which it is a snap turn.
 pub const RIG_JUMP_RAD: f32 = 0.2;
 
@@ -185,10 +206,17 @@ fn finite_goal(goal: &Goal) -> bool {
     goal.position.is_finite() && goal.orientation.is_finite()
 }
 
-/// The linear velocity toward the goal, and the share of the strongest pull it took.
-fn drive_linear(body: &BodyMotion, goal: &Goal, tuning: &DriveTuning, step_s: f32) -> (Vec3, f32) {
-    let wanted = ((goal.position - body.position) * tuning.linear_gain.clamp(0.0, 1.0) / step_s)
-        .clamp_length_max(tuning.max_speed_mps.max(0.0));
+/// The linear velocity toward the goal, with the speed relative to `carrier` capped, and the share
+/// of the strongest pull it took.
+fn drive_linear(
+    body: &BodyMotion,
+    goal: &Goal,
+    carrier: Vec3,
+    tuning: &DriveTuning,
+    step_s: f32,
+) -> (Vec3, f32) {
+    let toward = (goal.position - body.position) * tuning.linear_gain.clamp(0.0, 1.0) / step_s;
+    let wanted = carrier + (toward - carrier).clamp_length_max(tuning.max_speed_mps.max(0.0));
     let change = wanted - body.linear;
     let max_change = tuning.max_force_n.max(0.0) * step_s / tuning.mass_kg.max(f32::EPSILON);
     let needed = change.length();
@@ -278,7 +306,13 @@ mod tests {
 
     #[test]
     fn a_free_body_reaches_a_near_goal_in_one_step() {
-        let d = drive(&at_rest(Vec3::ZERO), &goal(Vec3::X * 0.05), &tuning(), STEP);
+        let d = drive(
+            &at_rest(Vec3::ZERO),
+            &goal(Vec3::X * 0.05),
+            Vec3::ZERO,
+            &tuning(),
+            STEP,
+        );
         assert!((d.linear - Vec3::X * 0.05 / STEP).length() < 1e-4);
         assert!(d.force_share > 0.0 && d.force_share < 1.0);
     }
@@ -288,17 +322,59 @@ mod tests {
         let t = tuning();
         // Far enough that the wanted speed is past what the strength gives in one step, but under
         // the speed cap.
-        let d = drive(&at_rest(Vec3::ZERO), &goal(Vec3::X * 0.6), &t, STEP);
+        let d = drive(
+            &at_rest(Vec3::ZERO),
+            &goal(Vec3::X * 0.6),
+            Vec3::ZERO,
+            &t,
+            STEP,
+        );
         let max_change = t.max_force_n * STEP / t.mass_kg;
         assert!((d.linear.length() - max_change).abs() < 1e-3);
         assert_eq!(d.force_share, 1.0);
     }
 
     #[test]
+    fn a_hand_carried_faster_than_its_cap_keeps_up_with_its_carrier() {
+        let t = tuning();
+        let carrier = Vec3::NEG_Y * 50.0;
+        // Falling with the player at past the cap, a body on its moving goal keeps the fall.
+        let body = BodyMotion {
+            linear: carrier,
+            ..at_rest(Vec3::ZERO)
+        };
+        let d = drive(&body, &goal(carrier * STEP), carrier, &t, STEP);
+        assert!(d.linear.abs_diff_eq(carrier, 1e-3), "{:?}", d.linear);
+        // Without the carrier fed forward, the cap would brake it toward the cap.
+        let capped = drive(&body, &goal(carrier * STEP), Vec3::ZERO, &t, STEP);
+        assert!(capped.linear.length() < carrier.length() - 1.0);
+        // A glitch's jump is still capped, relative to the carrier.
+        let glitch = drive(
+            &body,
+            &goal(carrier * STEP + Vec3::X * 10.0),
+            carrier,
+            &t,
+            STEP,
+        );
+        assert!((glitch.linear - carrier).length() <= t.max_speed_mps + 1e-3);
+        // A carrier estimate that is not finite, or absurdly fast, is held.
+        let wild = drive(&body, &goal(Vec3::ZERO), Vec3::splat(f32::NAN), &t, STEP);
+        assert!(wild.linear.is_finite());
+        let fast = drive(&body, &goal(Vec3::ZERO), Vec3::X * 1e6, &t, STEP);
+        assert!(fast.linear.length() <= MAX_CARRIER_SPEED_MPS + t.max_speed_mps + 1e-3);
+    }
+
+    #[test]
     fn a_body_on_its_goal_moving_with_it_keeps_its_velocity() {
         let mut body = at_rest(Vec3::ZERO);
         body.linear = Vec3::Z * 2.0;
-        let d = drive(&body, &goal(Vec3::Z * 2.0 * STEP), &tuning(), STEP);
+        let d = drive(
+            &body,
+            &goal(Vec3::Z * 2.0 * STEP),
+            Vec3::ZERO,
+            &tuning(),
+            STEP,
+        );
         assert!((d.linear - body.linear).length() < 1e-4);
         assert!(d.force_share < 1e-3);
     }
@@ -308,7 +384,13 @@ mod tests {
         let mut t = tuning();
         t.max_speed_mps = 1.0;
         t.max_force_n = 1.0e9;
-        let d = drive(&at_rest(Vec3::ZERO), &goal(Vec3::Y * 10.0), &t, STEP);
+        let d = drive(
+            &at_rest(Vec3::ZERO),
+            &goal(Vec3::Y * 10.0),
+            Vec3::ZERO,
+            &t,
+            STEP,
+        );
         assert!((d.linear.length() - 1.0).abs() < 1e-4);
     }
 
@@ -321,7 +403,7 @@ mod tests {
             position: Vec3::ZERO,
             orientation: Quat::from_rotation_y(FRAC_PI_2),
         };
-        let d = drive(&at_rest(Vec3::ZERO), &g, &t, STEP);
+        let d = drive(&at_rest(Vec3::ZERO), &g, Vec3::ZERO, &t, STEP);
         assert!((d.angular - Vec3::Y * FRAC_PI_2 / STEP).length() < 1e-2);
     }
 
@@ -335,7 +417,7 @@ mod tests {
             orientation: Quat::from_rotation_x(1.0),
         };
         let body = at_rest(Vec3::ZERO);
-        let d = drive(&body, &g, &t, STEP);
+        let d = drive(&body, &g, Vec3::ZERO, &t, STEP);
         let torque = body.inverse_inertia.inverse() * d.angular / STEP;
         assert!((torque.length() - 1.0).abs() < 1e-3);
         assert_eq!(d.torque_share, 1.0);
@@ -396,7 +478,7 @@ mod tests {
         let mut body = at_rest(Vec3::ZERO);
         body.linear = Vec3::X;
         body.position = Vec3::NAN;
-        let d = drive(&body, &goal(Vec3::ZERO), &tuning(), STEP);
+        let d = drive(&body, &goal(Vec3::ZERO), Vec3::ZERO, &tuning(), STEP);
         assert_eq!(d.linear, Vec3::X);
         assert_eq!(d.force_share, 0.0);
     }
@@ -435,7 +517,7 @@ mod tests {
             };
             let mut body = at_rest(Vec3::ZERO);
             for _ in 0..60 {
-                let d = drive(&body, &goal, &t, STEP);
+                let d = drive(&body, &goal, Vec3::ZERO, &t, STEP);
                 body.linear = d.linear;
                 body.position += d.linear * STEP;
                 assert!(body.position.x <= 0.2 + 1e-5, "overshot at gain {gain}");
