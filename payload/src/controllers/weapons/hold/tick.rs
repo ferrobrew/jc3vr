@@ -13,7 +13,8 @@
 //!   its [`WeaponBase::UpdateFromUserPostSim_Parallel`] and `_Serial` virtuals, with its hand's
 //!   fire input and aim point. The shooting permission gates only the input the inventory's own
 //!   fan-out passes down, so it is checked here for the mod's own
-//!   ([`Inventory::GetAnimationAllowsShooting`]), as is the true reload's hold on the gun;
+//!   ([`Inventory::GetAnimationAllowsShooting`], with the airborne waiver of
+//!   [`crate::controllers::weapons::permission`]), as is the true reload's hold on the gun;
 //! - with the hold in either hand on, the weapon the game wields, which the fan-out updates,
 //!   is handed its hand's fire input in place of the game's own ([`substitute`], from the gun aim's
 //!   per-weapon detour), so both hands fire the same way; the ammunition check's reload request
@@ -67,7 +68,7 @@ use crate::controllers::{
             armed,
             tick::arguments::{HandTarget, UpdateArguments, UpdateFacts, update_arguments},
         },
-        reload,
+        permission, reload,
     },
 };
 
@@ -196,7 +197,7 @@ pub(crate) unsafe fn substitute(weapon: &WeaponBase, input: &WeaponInputs) -> Op
     let user = unsafe { (weapon.m_User[0] as *const Character).as_ref() }?;
     let fire = FIRE[hand.index()].load(Ordering::Relaxed)
         && !reload::holds_fire(address, hand)
-        && unsafe { user.m_Inventory.GetAnimationAllowsShooting() };
+        && unsafe { permission::shooting_allowed(user) };
     SUBSTITUTED.fetch_add(1, Ordering::Relaxed);
     Some(WeaponInputs {
         m_PrimaryFireInput: if fire { 1.0 } else { 0.0 },
@@ -273,7 +274,8 @@ unsafe fn update_facts(
         loaded,
         fire: FIRE[hand.index()].load(Ordering::Relaxed),
         reload_held: reload::holds_fire(address, hand),
-        animation_allows: unsafe { inventory.GetAnimationAllowsShooting() },
+        animation_allows: unsafe { inventory.m_Character.as_ref() }
+            .is_some_and(|owner| unsafe { permission::shooting_allowed(owner) }),
     }
 }
 

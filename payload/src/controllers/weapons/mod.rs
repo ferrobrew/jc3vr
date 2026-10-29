@@ -79,6 +79,7 @@ pub mod heft;
 pub mod hold;
 pub mod inventory;
 pub mod opening;
+pub(crate) mod permission;
 pub mod pouch_models;
 pub mod recoil;
 pub mod regions;

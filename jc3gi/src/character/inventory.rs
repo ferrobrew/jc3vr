@@ -77,7 +77,13 @@ pub struct Inventory {
     /// expected type ([`WeaponSpawned`](crate::character::inventory::Inventory::WeaponSpawned)) clear one.
     pub m_WeaponToRemove: [bool; 8],
     /// Whether the current animation permits shooting; one half of
-    /// [`GetAnimationAllowsShooting`](crate::character::inventory::Inventory::GetAnimationAllowsShooting).
+    /// [`GetAnimationAllowsShooting`](crate::character::inventory::Inventory::GetAnimationAllowsShooting). Written each tick by
+    /// [`UpdateInventoryPermissions`](crate::character::inventory::Inventory::UpdateInventoryPermissions) with the latched
+    /// [`SB_DISABLE_SHOOT`](crate::state::StateBitFlag::SB_DISABLE_SHOOT) request already folded in. In
+    /// Rico's graphs the seated vehicle idles, the wingsuit's glide, the parachute's idle, and the
+    /// grapple hang and upside-down states set no shoot request, while free fall, fast fall, the
+    /// wingsuit's rolls, evades, flinches, and exits, the parachute's opening, and most vehicle
+    /// entries and exits do.
     pub m_DoesAnimationAllowShooting: bool,
     /// Whether the character may reload: recomputed by
     /// [`UpdateInventoryPermissions`](crate::character::inventory::Inventory::UpdateInventoryPermissions), and cleared by the
@@ -397,12 +403,28 @@ impl Inventory {
         }
     }
     pub const UpdateInventoryPermissions_ADDRESS: usize = 0x14091B3E0;
-    /// Recomputes the inventory's per-frame permissions from the owner's state (it consults the
-    /// grapple reel-in predicates among others). Shooting is cleared while pre-reeling or reeling
-    /// in without the shoot-while-reeling upgrade, every permission while the grappling hook holds
-    /// an object, and the grenade permission and two others while the wielded weapon's
-    /// [`m_PrecisionCameraHash`](crate::equipment::weapon::WeaponBase::m_PrecisionCameraHash) hint is
-    /// active. It then ANDs each permission with the inverse of its disable state bit
+    /// Recomputes the inventory's per-frame permissions from the owner's state. The rules are
+    /// tried in order and the first that applies ends the search:
+    ///
+    /// - while the owner pre-reels or reels in
+    ///   ([`Character::IsPreReelingIn`](crate::character::character::Character::IsPreReelingIn),
+    ///   [`Character::IsReelingIn`](crate::character::character::Character::IsReelingIn)) without both
+    ///   flags of the shoot-while-reeling upgrade, shooting and three other permissions are
+    ///   cleared;
+    /// - while the owner's grappling hook has a live wire
+    ///   ([`GrapplingHook::m_ActiveWire`](crate::equipment::grappling_hook::GrapplingHook::m_ActiveWire)),
+    ///   every permission is cleared;
+    /// - while the owner hangs from or is reeled in to a grapple
+    ///   ([`Character::IsGrappleHanging`](crate::character::character::Character::IsGrappleHanging),
+    ///   [`Character::IsReeledIn`](crate::character::character::Character::IsReeledIn)), only the pickup
+    ///   permission ([`m_DoesAnimationAllowPickup`](crate::character::inventory::Inventory::m_DoesAnimationAllowPickup)) is cleared,
+    ///   so shooting stays allowed;
+    /// - otherwise the grenade permission and two others are cleared while the wielded weapon's
+    ///   [`m_PrecisionCameraHash`](crate::equipment::weapon::WeaponBase::m_PrecisionCameraHash) hint is
+    ///   active.
+    ///
+    /// No rule here reads the vehicle, wingsuit, parachute, or fall states; those withhold
+    /// shooting only through the graph's permission tasks. It then ANDs each permission with the inverse of its disable state bit
     /// ([`SB_DISABLE_SHOOT`](crate::state::StateBitFlag::SB_DISABLE_SHOOT) and its siblings), writes the
     /// permission bytes ([`m_DoesAnimationAllowShooting`](crate::character::inventory::Inventory::m_DoesAnimationAllowShooting)
     /// onward), and clears the disable bits. The disable bits are therefore per-frame requests:

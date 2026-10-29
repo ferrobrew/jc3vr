@@ -11,7 +11,8 @@ use crate::controllers::{
     loadout::live,
     mode::{AirborneVariant, Mode, OnFootVariant},
     weapons::{
-        dual_wield::single, foregrip, hold::armed, inventory::engine::slot_of, regions, reload,
+        dual_wield::single, foregrip, hold::armed, inventory::engine::slot_of, permission, regions,
+        reload,
     },
 };
 
@@ -125,7 +126,7 @@ pub(crate) fn gun_owners_now() -> [Option<GunOwner>; 2] {
 pub(crate) fn fire_ready_now(ready: [bool; 2], block_actions: bool) -> [bool; 2] {
     // SAFETY: the input thread resolves the current local character without retaining the borrow.
     let animation = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
-        .is_some_and(|owner| unsafe { owner.m_Inventory.GetAnimationAllowsShooting() });
+        .is_some_and(|owner| unsafe { permission::shooting_allowed(owner) });
     let owners = gun_owners_now();
     let action = tiers::status();
     Hand::BOTH.map(|hand| {
@@ -355,7 +356,7 @@ mod tests {
         assert!(source.contains("} else {\n        weapons::hold::tick::publish_fire([false; 2]);\n        weapons::wheel::pause();"));
         let tick = include_str!("hold/tick.rs");
         assert!(tick.contains("if !wielded || pair {\n        return None;"));
-        assert_eq!(tick.matches(".GetAnimationAllowsShooting()").count(), 2);
+        assert_eq!(tick.matches("permission::shooting_allowed(").count(), 2);
     }
 
     #[test]
