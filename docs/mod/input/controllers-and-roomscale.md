@@ -448,12 +448,12 @@ Author the pyxis definitions for the seams milestone 1 uses, and verify each off
 - Scope lenses.
 - Per-hand aim assist.
 - The true reload.
-- The model-extraction pass for sight offsets (`tools/sights/`), and the sight-tuning tool in the Controllers tab.
+- The model-extraction pass for sight offsets (`tools/sights/`), and the sight-tuning tool in Weapons > Aim, sights, and scopes.
 - Promotions in the hand-tier table, in order of how often the states occur in play. None beyond the anchored grapple and mounted-gun rows is built.
 
 ## Implementation status
 
-Milestones 1 to 5 are implemented and have not been run in the headset. [controllers.md](controllers.md) describes the implementation as built; the tables below map each milestone's parts to the settings that control them and to the section of controllers.md that describes them. Every setting below is in the `controllers` section of the mod's config and in the Controllers tab of the debug UI, which also shows a live readout of each part. The master switch is `controllers.enabled`; with it off, no controller snapshot is published and every controller part is inert. The parts that change how the character behaves act only under the controller scheme, so the gamepad scheme behaves as before. The posture and roomscale parts are the exception: they act on the headset alone, controllers or not; the defaults are the full `Controllers` preset (see [controllers.md, "Test controls and saved tuning"](controllers.md#test-controls-and-saved-tuning)), so these too are on by default.
+Milestones 1 to 5 are implemented and have not been run in the headset. [controllers.md](controllers.md) describes the implementation as built; the tables below map each milestone's parts to the settings that control them and to the section of controllers.md that describes them. Every setting below is in the `controllers` section of the mod's config; the debug UI's features show the switches and tuning they keep, each with a live readout. The master switch is `controllers.enabled`; with it off, no controller snapshot is published and every controller part is inert. The parts that change how the character behaves act only under the controller scheme, so the gamepad scheme behaves as before. The posture and roomscale parts are the exception: they act on the headset alone, controllers or not; the defaults are the full `Controllers` preset (see [controllers.md, "Test controls and saved tuning"](controllers.md#test-controls-and-saved-tuning)), so these too are on by default.
 
 A setting marked "off" below is off by default and has to be switched on to test its part. Every other part is on by default.
 
@@ -603,7 +603,7 @@ Tools > Presets switches every controller feature on (`Controllers`) or off (`Ga
 
 The order puts the parts that everything else depends on first, then the parts whose failure would change the design, then the opt-in breadth. The defaults are the full `Controllers` preset, so items 11 onward are already on; only the sight tuning tool (item 12, `aim.sight_tuning.enabled`) and aim assist (item 29, `aim.assist_strength`) need switching on to test them.
 
-1. Input. The Controllers tab reports the OpenXR input status and the hand-tracking status. Both hands track, the grip and aim poses follow the controllers, and every button, trigger, grip, stick, and trackpad reads, including the system button.
+1. Input. Input/bindings > Devices and thresholds reports the OpenXR input status and the hand-tracking status. Both hands track, the grip and aim poses follow the controllers, and every button, trigger, grip, stick, and trackpad reads, including the system button.
 2. Scheme. A controller press selects the controller scheme; a gamepad, keyboard, or mouse input selects the gamepad scheme; the `Controllers` and `Gamepad` settings pin it. The gamepad scheme behaves as it did before controllers existed.
 3. Mode detection. The detected mode and the active action set follow walking, swimming, falling, the wingsuit, the parachute, each vehicle class in the driver and a passenger seat, the pause menu, the map, the commlink, and the mod's panel. No mode flickers during animation blends, and a fast travel holds the mode.
 4. On-foot bindings. Move with the head direction and the off-hand direction, turn smooth and snap, jump, fire, grapple fire, zip, and tether hold, retract, release, use and enter, reload tap and holster hold, and the explosive tap and hold. A short system press pauses, a long one opens the commlink, and neither toggles twice. The menus navigate, confirm, cancel, change tabs, and change pages.

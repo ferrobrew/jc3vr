@@ -2,8 +2,8 @@
 //! scenario's expectations while it replays ([`scenario`]), so the mod can be exercised without
 //! anyone in the headset. The recording itself is [`crate::recorder::tracking`].
 //!
-//! Nothing runs until it is started: from the debug UI's Testing tab (on the desktop, or in the
-//! headset through the floating panel), the director's key bindings, or the request file a script
+//! Nothing runs until it is started: from the debug UI's Tools > Replay feature (on the desktop,
+//! or in the headset through the floating panel), the director's key bindings, or the request file a script
 //! drops into the configuration directory ([`request`]). `testing.enabled` switches all three off.
 //!
 //! [`update`] drives the tools from the top of the game's update on the game thread. The replay
@@ -44,7 +44,7 @@ pub(crate) fn toggle_replay() {
         }
         None => tracing::warn!(
             "testing: there is no tracking recording from this session to replay; pick one in the \
-             Testing tab"
+             debug UI's Tools > Replay"
         ),
     }
 }
@@ -58,8 +58,8 @@ pub(crate) fn toggle_scenario() {
     match scenario::last_path() {
         Some(path) => scenario::start(path),
         None => tracing::warn!(
-            "testing: no scenario has run in this session; start one from the Testing tab or the \
-             request file"
+            "testing: no scenario has run in this session; start one from the debug UI's \
+             Tools > Replay or the request file"
         ),
     }
 }

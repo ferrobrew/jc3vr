@@ -55,7 +55,7 @@ The casts are bounded: two fingers per hand per tick (at most twenty casts), so 
 
 The grip poses have no settings of their own: they apply whenever the finger curls do (`controllers.fingers.enabled`), and their tuning is `FINGERS.grip`. The debug UI's Grip and fingers feature shows per hand the source, the pose, the mode, the share, and the fitted fingers, and each finger's hook.
 
-The debug UI's Status tab has a `FINGERS` section with `LEFT GRIP POSE` and `RIGHT GRIP POSE`: the pose and its source, the share, the fitted fingers, and `LETTING GO` while a released pose opens; `HOLDS NOTHING`; `WAITING` while the controllers do not drive the hand; `FAILED` when the finger bones do not resolve. A change of a hand's source is logged at info (`fingers: the hand's grip source changed`, with the hand, the old and new source, and the pose), at most twice a second per hand; the source a hand settles on within that interval is logged when it passes, with the count of the changes in between.
+The debug UI's Status page has a `FINGERS` section with `LEFT GRIP POSE` and `RIGHT GRIP POSE`: the pose and its source, the share, the fitted fingers, and `LETTING GO` while a released pose opens; `HOLDS NOTHING`; `WAITING` while the controllers do not drive the hand; `FAILED` when the finger bones do not resolve. A change of a hand's source is logged at info (`fingers: the hand's grip source changed`, with the hand, the old and new source, and the pose), at most twice a second per hand; the source a hand settles on within that interval is logged when it passes, with the count of the changes in between.
 
 ## Unverified in the headset
 

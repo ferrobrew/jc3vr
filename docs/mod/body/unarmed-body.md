@@ -25,7 +25,7 @@ The aim families are already held off by the aim-state pin, and the aim and arm 
 
 ## Debug UI
 
-The debug UI's Body > Animation and IK live status shows whether it applies or why not, whether the weapon's modifiers were kept off the body on the last modifier pass, whether the locomotion is relaxed and how many weapon-wielded checks read unarmed, how many layers the character has, each maskable layer's state with a running count of skipped blends, and whether the game's weapon grip was switched off for each hand on the last `SECONDARY` pass. The feature's controls hold the `weapon_animations` switch.
+The debug UI's Body/tracking > Animation and IK live status shows whether it applies or why not, whether the weapon's modifiers were kept off the body on the last modifier pass, whether the locomotion is relaxed and how many weapon-wielded checks read unarmed, how many layers the character has, each maskable layer's state with a running count of skipped blends, and whether the game's weapon grip was switched off for each hand on the last `SECONDARY` pass. The feature's controls hold the `weapon_animations` switch.
 
 ## Unverified
 

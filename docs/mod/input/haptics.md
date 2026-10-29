@@ -133,11 +133,11 @@ The game's rumble reaches the controllers through two detours ([controllers.md, 
 
 The debug UI's Feedback feature has the haptics readout: the cues sent per category, the mixer's counts (played, stacked, masked, limited), the amplitude each hand was last sent, and the last dozen one-off cues with their primitive, hand, amplitude, and length. The live controller frame has a test button per primitive for each hand, which plays it at full strength.
 
-The debug UI's Status tab has `HAPTIC CUES` under FEEDBACK: the cues sent, masked, and limited. The cues themselves are not logged (they are too frequent); the events that raise them are, by their own subsystems.
+The debug UI's Status page has `HAPTIC CUES` under FEEDBACK: the cues sent, masked, and limited. The cues themselves are not logged (they are too frequent); the events that raise them are, by their own subsystems.
 
 ## In the headset
 
-1. Open the debug UI's Status tab: `HAPTIC CUES` reads `WAITING` with nothing sent. Use the debug UI's test buttons on each hand: tick, click, bump, buzz, and thud should feel distinct in weight and length, and hum and tension should feel like a held vibration. If the five one-off primitives feel the same, the runtime is probably ignoring the frequency.
+1. Open the debug UI's Status page: `HAPTIC CUES` reads `WAITING` with nothing sent. Use the debug UI's test buttons on each hand: tick, click, bump, buzz, and thud should feel distinct in weight and length, and hum and tension should feel like a held vibration. If the five one-off primitives feel the same, the runtime is probably ignoring the frequency.
 2. Reach into a holster and out again: a faint tick on entering. Draw: a click. `HAPTIC CUES` counts up.
 3. Fire a pistol: a thud on the gun hand only. Fire a long burst from an automatic weapon while reaching into a pouch with the other hand: the burst stays clean on the gun hand, and the pouch tick plays on the other.
 4. Hold a gun on its foregrip and fire a burst while the reel or a vehicle's rumble runs: the shots stand out above the rumble rather than merging into it, and the rumble resumes between shots.

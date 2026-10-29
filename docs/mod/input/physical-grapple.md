@@ -68,7 +68,7 @@ The input tick (the game thread, outside the world update) reads the hook, steps
 
 The switches are in the debug UI's Grapple feature, under Movement/vehicles: yank to zip (`bindings.yank.enabled`), pull to reel (`controllers.grapple.pull_to_reel`, which drives both the reel and the tether retract), the pump (`controllers.grapple.pump`), and the anchor hand (`hands.anchor.enabled`, which carries the hang swing's hold); the line's vibration is behind the haptics' master switch ([haptics.md](haptics.md)). Everything defaults on. The tuning is fixed in `GRAPPLE` (`PhysicalGrappleTuning`) and the yank's in `GRAPPLE_YANK`, and the Grapple feature's live status shows the pump and a line for the physical grapple.
 
-The debug UI's Status tab has a `GRAPPLE` section:
+The debug UI's Status page has a `GRAPPLE` section:
 
 - `GRAPPLE STATE`: `INACTIVE`, `FIRING`, `IN FLIGHT`, `ATTACHED`, `REELING IN`, `HANGING`, `REELED IN`, or `SCRIPTED WIRE` (a wire fired outside the reel flow, as the vehicle grapple does), or `WAITING, NO HAND INPUT` while the input tick does not run.
 - `ATTACHED TARGET`: `OBJECT` or `SURFACE` with the distance from the head to the attach point, or `NONE`.

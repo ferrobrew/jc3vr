@@ -110,7 +110,7 @@ fn cinematic_ui(ui: &mut egui::Ui) {
     .on_hover_text(
         "Skips the floating HUD quad, the egui panel, the desktop overlay, and the flat debug \
          overlay without changing their settings. With the HUD redirect off (flatscreen) the \
-         game's own HUD stays; turn the redirect on in the Hud tab to hide it too.",
+         game's own HUD stays; turn the redirect on in Rendering > HUD to hide it too.",
     );
 }
 

@@ -1,5 +1,7 @@
 # Debug UI prune
 
+Status: done. Every page is pruned to the structure below, and a cleanup pass followed: the remap switches live only in the pause menu, the procedural body's switch and the torso follow moved from the pause menu to Body fit, and the off-by-default modes the prune left as constants are deleted. The rest of this page is the plan as it was carried out.
+
 The debug UI holds about 1,180 settings and 90 buttons across 8 pages and 59 features (`payload/src/ui/inventory/catalog.rs`). The 2026-10 reorganisation moved every widget under a new heading and added a parity gate that rejects removals, so the volume and redundancy that motivated the feedback remain. The prune reduces the main window to about 120 controls: every feature keeps one on/off switch, tuning stays only where it is per-user or per-hardware or under an open bug, and settled values become named constants with their configuration fields deleted.
 
 Deleting configuration fields is compatible with existing files. `payload/src/config/load.rs` merges the file over the defaults, skips unknown keys, and logs them in one warning. The next save drops them. A player who changed a now-baked value receives the constant.

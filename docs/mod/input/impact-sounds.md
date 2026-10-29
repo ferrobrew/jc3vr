@@ -19,7 +19,7 @@ Grabbing a ledge or a door sounds when the hand arrives fast enough to count as 
 
 `controllers.physical_hands.sounds.enabled` (on) switches them, in the debug UI's Feedback feature, with the counts and the last sound's kind and material. The thresholds and the cooldowns are fixed in `physical_hands::sounds::SOUNDS`.
 
-The debug UI's Status tab has `IMPACT SOUNDS` under FEEDBACK: the sounds played, the impacts the cooldowns held back, and the impacts whose material has no melee impact sound (`SILENT`).
+The debug UI's Status page has `IMPACT SOUNDS` under FEEDBACK: the sounds played, the impacts the cooldowns held back, and the impacts whose material has no melee impact sound (`SILENT`).
 
 The log has, at info level, `impact sounds: a hand made the melee impact sound` with the hand, the kind (`touch` or `strike`), the material, and the strength, for each sound played (the cooldowns bound how often), and once `impact sounds: the player's melee impact has no sound for a struck material` with the first such material.
 
@@ -29,7 +29,7 @@ Both sources run on the game thread outside the physics step: the palms' tick (t
 
 ## In the headset
 
-1. Open the debug UI's Status tab: `IMPACT SOUNDS` reads `WAITING`. Slap a concrete wall with an open hand: a punch-on-concrete sound at the wall, `a hand made the melee impact sound` with `kind=touch` (or `strike`), and the row counts one played. Slap it again at once: nothing until a quarter second has passed, and `HELD BACK` counts up.
+1. Open the debug UI's Status page: `IMPACT SOUNDS` reads `WAITING`. Slap a concrete wall with an open hand: a punch-on-concrete sound at the wall, `a hand made the melee impact sound` with `kind=touch` (or `strike`), and the row counts one played. Slap it again at once: nothing until a quarter second has passed, and `HELD BACK` counts up.
 2. Touch the wall slowly: no sound.
 3. Slap a car, a wooden crate, and the ground: each sounds like a punch on its material. Report a material that is silent (`SILENT` counts up and the log names the material).
 4. Punch a soldier: a punch-on-flesh sound with the blow.

@@ -3,8 +3,7 @@
 //! A gun's derived sight line runs from its current fire point along the barrel. A weapon's sight
 //! correction ([`SightOverride`]) moves the line's origin and turns it, and is looked up in order:
 //!
-//! 1. the per-weapon entry in the config ([`AimConfig::sights`]), which the tuning tool and the
-//!    Controllers tab write;
+//! 1. the per-weapon entry in the config ([`AimConfig::sights`]), which the tuning tool writes;
 //! 2. the embedded sight table ([`table`]), for an entry of a trusted grade;
 //! 3. none: the line runs from the fire point.
 //!

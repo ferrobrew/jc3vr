@@ -1,5 +1,6 @@
-//! The Testing tab: the tracking recorder (`crate::recorder::tracking`), the replay
-//! (`crate::testing::replay`), and the scenario runner (`crate::testing::scenario`).
+//! The Tools page's tracking capture and replay features: the tracking recorder
+//! (`crate::recorder::tracking`), the replay (`crate::testing::replay`), and the scenario runner
+//! (`crate::testing::scenario`).
 
 use std::{
     path::PathBuf,

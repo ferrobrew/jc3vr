@@ -2,7 +2,7 @@
 //!
 //! Lining up places a marker in the world, a fixed distance straight ahead of the head, which the
 //! overlay draws. The player holds the gun so that its sights sit on the marker and captures, from
-//! the Controllers tab or with the capture chord (both grips held and the dominant A pressed, on
+//! the debug UI's sight tool or with the capture chord (both grips held and the dominant A pressed, on
 //! foot, while the marker is placed). The capture solves the sight offset that makes the held
 //! weapon's sight line, at its current angles, pass through the marker, and stores it as the
 //! weapon's entry in the config's sight table, which takes precedence over the embedded table.
@@ -163,8 +163,8 @@ pub(crate) fn service(
     if !capture {
         return;
     }
-    // The config is locked with the tuning state released: the Controllers tab reads the state
-    // while it holds the config. A capture is the player's own choice, so it is saved.
+    // The config is locked with the tuning state released: the debug UI's sight tool reads the
+    // state while it holds the config. A capture is the player's own choice, so it is saved.
     let result = solve_capture(marker, held, dominant).and_then(|sight| {
         config::edit()
             .controllers
