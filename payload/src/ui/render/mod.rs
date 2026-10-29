@@ -23,8 +23,7 @@ use crate::{
 };
 
 /// Debug-UI only: swap the two eyes in the side-by-side stereo preview, so the pair can be fused
-/// cross-eyed (left image -> right eye) instead of parallel (left image -> left eye). Read by the
-/// F10 capture composite so the recording window fuses the same way as the preview.
+/// cross-eyed (left image -> right eye) instead of parallel (left image -> left eye).
 pub(crate) static STEREO_CROSS_EYED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(true);
 

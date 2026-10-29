@@ -234,7 +234,7 @@ static BRING_UP_FAILED: AtomicBool = AtomicBool::new(false);
 
 /// The live VR runtime state. Blocking locks go through [`lock_state`], which checks the caller's
 /// thread role; [`status`] alone uses `try_lock`, which cannot deadlock and so is not checked. A
-/// const-constructible [`Mutex`] singleton, the same pattern [`crate::capture`] uses.
+/// const-constructible [`Mutex`] singleton.
 static VR_STATE: Mutex<VrState> = Mutex::new(VrState::new());
 
 /// Report a blocking lock of the runtime state from a role that must not take one.

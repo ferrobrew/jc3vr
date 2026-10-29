@@ -62,7 +62,7 @@ While a session runs the compositor owns the HMD present and the engine's own pr
 
 ## Recenter and the runtime controls
 
-Recenter is bound to **F7** (`payload/src/hooks/wndproc.rs`), edge-detected like the other function-key toggles (F4 flat overlay visibility, F5 uninject, F6 egui capture, F10 stereo capture, F11 shadow-PCF A/B) — F7 was the free key in that block. The same action is the pause menu's RECENTER VIEW. The debug UI's Rendering page has the runtime controls (`payload/src/ui/vr.rs`): `vr.enabled`, `vr.native_resolution`, `vr.mirror` with its eye, `vr.own_back_buffer`, and `vr.direct_eye_blit`, and a status readout with the session state, the runtime name, the effective per-eye resolution, and the live headpose source.
+Recenter is bound to **F7** (`payload/src/hooks/wndproc.rs`), edge-detected like the other function-key toggles (F4 flat overlay visibility, F5 uninject, F6 egui capture, F11 shadow-PCF A/B) — F7 was the free key in that block. The same action is the pause menu's RECENTER VIEW. The debug UI's Rendering page has the runtime controls (`payload/src/ui/vr.rs`): `vr.enabled`, `vr.native_resolution`, `vr.mirror` with its eye, `vr.own_back_buffer`, and `vr.direct_eye_blit`, and a status readout with the session state, the runtime name, the effective per-eye resolution, and the live headpose source.
 
 ## Config reference
 
@@ -78,7 +78,7 @@ All under `vr.*` (`payload/src/vr/config.rs`):
 - `blit_srgb_gamma` — `Linearize` (default) or `Passthrough` (see above).
 - `native_resolution` — render each eye at the HMD-recommended resolution (default on; auto-disables on a resize fault).
 - `own_back_buffer` — substitute a mod-owned render target for the engine's swapchain-derived back buffer, so the DXGI swapchain stays at the window size instead of following the per-eye render resolution (default on; see [`swapchain-ownership.md`](stereo/swapchain-ownership.md)). The mirror's present becomes 1:1, and single-pass double-wide stops forcing a 2x-width swapchain.
-- `direct_eye_blit` — blit each eye into the swapchain from its own post-draw (default on). Each eye's full-size copy into its capture texture is then made only when something reads the capture: the mirror's eye, the F10 capture, the recorder, a pending screenshot, or the debug UI's previews. Off, or under the single-pass collapse, or with a back buffer the blit cannot sample as `R8G8B8A8_UNORM`, every eye is copied and the captures are blitted at the submit (`payload/src/vr/blit.rs`).
+- `direct_eye_blit` — blit each eye into the swapchain from its own post-draw (default on). Each eye's full-size copy into its capture texture is then made only when something reads the capture: the mirror's eye, the recorder, a pending screenshot, or the debug UI's previews. Off, or under the single-pass collapse, or with a back buffer the blit cannot sample as `R8G8B8A8_UNORM`, every eye is copied and the captures are blitted at the submit (`payload/src/vr/blit.rs`).
 - `mirror` / `mirror_eye` — desktop mirror on/off and which eye (default on, left). The framing against the window aspect and the centre magnification are constants in `payload/src/vr/mirror.rs`.
 
 ## Playtest checklist

@@ -1,5 +1,5 @@
-//! On-demand screenshots to the session's `screenshots/` folder (F12), for in-headset diagnosis
-//! when the F10 stereo capture is inconvenient (it toggles a fullscreen mode). Every capture shows
+//! On-demand screenshots to the session's `screenshots/` folder (F12), for in-headset diagnosis.
+//! Every capture shows
 //! both eyes side by side in a single PNG: under single-pass collapse the linear back buffer *is*
 //! that side-by-side render and is captured directly, while in two-pass stereo the back buffer only
 //! ever holds one eye, so the two per-eye capture textures the VR presentation path submits are

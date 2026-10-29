@@ -20,7 +20,7 @@
 //!
 //! The packed-index bit layout is documented on `jc3gi`'s `HContext_t::m_DepthStencilStateIndex`. The two
 //! D3D passes borrow the engine's immediate context under `Context::m_Mutex`, the same discipline as
-//! [`crate::vr::blit`] and `crate::capture::composite`. On by default, but still experimental;
+//! [`crate::vr::blit`] and [`crate::vr::mirror`]. On by default, but still experimental;
 //! disabling it skips the two passes and the per-draw index rewrite; see
 //! [`crate::vr::FoveationConfig`].
 

@@ -5,7 +5,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::VK_F9;
 use windows::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
     UI::{
-        Input::KeyboardAndMouse::{VK_F4, VK_F7, VK_F8, VK_F10, VK_F11, VK_F12},
+        Input::KeyboardAndMouse::{VK_F4, VK_F7, VK_F8, VK_F11, VK_F12},
         WindowsAndMessaging::{
             GetClientRect, SIZE_MINIMIZED, SIZE_RESTORED, WM_ACTIVATEAPP, WM_KEYDOWN, WM_KILLFOCUS,
             WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN,
@@ -20,10 +20,6 @@ use crate::{
     hooks::graphics_engine::shader,
     hud::{cursor, egui_panel},
 };
-
-/// Whether F10 toggles the fullscreen stereo capture mode. Off for now: the capture window's
-/// fullscreen toggle is finicky under some setups. The F12 screenshot path covers diagnosis meanwhile.
-const F10_CAPTURE_ENABLED: bool = false;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&WNDPROC_BINDER)
@@ -65,37 +61,13 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     }
 
     // F7 recenters the headpose: snapshots the current headpose as the neutral reference so
-    // subsequent poses are relative to it. Edge-detected like F10/F11.
+    // subsequent poses are relative to it. Edge-detected like F11.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F7.0 as usize {
         consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
             crate::headpose::recenter();
             tracing::info!("Headpose recentered");
-        }
-        return LRESULT(0);
-    }
-
-    // F10 toggles the fullscreen stereo capture mode. Intercept it before egui or the game sees it:
-    // F10 is a system key (it activates the menu bar via WM_SYSKEYDOWN), so consuming it here also
-    // suppresses that default behaviour. Edge-detect on the previous-state bit (lparam bit 30) so
-    // holding F10 toggles once, not on every repeat. Disabled for now (the fullscreen toggle is
-    // finicky under some setups); flip `F10_CAPTURE_ENABLED` to restore it.
-    if F10_CAPTURE_ENABLED
-        && (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN)
-        && wparam.0 == VK_F10.0 as usize
-    {
-        consume_desktop_shortcut(wparam.0);
-        let previous_down = (lparam.0 & 0x4000_0000) != 0;
-        if !previous_down {
-            // Release egui's input capture if held, so the game retains input while the overlay is
-            // hidden.
-            if let Some(egui_state) = EguiState::get().as_mut()
-                && egui_state.is_input_captured()
-            {
-                egui_state.toggle_game_input_capture();
-            }
-            crate::capture::toggle();
         }
         return LRESULT(0);
     }
@@ -117,7 +89,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     }
 
     // F8 summons/dismisses the interactive egui floating panel in VR (issue #24), together with
-    // egui's input capture (`hud::egui_panel::toggle`). Edge-detected like F7/F10/F11.
+    // egui's input capture (`hud::egui_panel::toggle`). Edge-detected like F7/F11.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F8.0 as usize {
         consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
@@ -132,7 +104,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     }
 
     // F11 flips the sun-shadow PCF patch and reloads the shaders, for a live in-headset A/B of the
-    // patch without reaching for the debug overlay. Edge-detected like F10; consumed so the game does
+    // patch without reaching for the debug overlay. Edge-detected like F7; consumed so the game does
     // not also act on it.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F11.0 as usize {
         consume_desktop_shortcut(wparam.0);
@@ -153,8 +125,8 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     }
 
     // F12 writes a PNG of the linear back buffer to the session's `screenshots/` folder -- under
-    // single-pass collapse that is the full side-by-side render (both eyes). A robust alternative to
-    // the F10 fullscreen capture for in-headset diagnosis. Edge-detected; consumed.
+    // single-pass collapse that is the full side-by-side render (both eyes), for in-headset
+    // diagnosis. Edge-detected; consumed.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F12.0 as usize {
         consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;

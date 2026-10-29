@@ -8,7 +8,7 @@
 //! `_SRGB`) format. Sizes and formats generally differ, so this is a **shader blit** (fullscreen
 //! triangle sampling the eye SRV into the slice RTV), not a `CopyResource`. It runs on the engine's
 //! immediate context under `Context::m_Mutex`, serialized with the engine's own render work, the
-//! same model as [`crate::capture::composite`].
+//! same model as the desktop mirror (`crate::vr::mirror`).
 //!
 //! Each eye reaches its slice by one of two routes. The direct route ([`arm_direct`], on by default
 //! through `vr.direct_eye_blit`) acquires the swapchain image at the top of the render update and
@@ -485,7 +485,7 @@ fn end(frame: FrameContext) {
 /// either success or failure.
 fn submit(frame: &mut FrameContext, cfg: &VrConfig) -> anyhow::Result<()> {
     // Clone (AddRef) the captured eye textures under a brief EGUI lock, dropped before the blit
-    // state / context work, mirroring `capture::present_active`'s lock discipline.
+    // state / context work, so the context work never nests under the capture lock.
     let eye_textures: [Option<ID3D11Texture2D>; 2] = {
         let lock = EGUI_DEBUG_RENDER_STATE.lock();
         [lock.texture(0).cloned(), lock.texture(1).cloned()]

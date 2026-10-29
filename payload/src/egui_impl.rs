@@ -301,7 +301,6 @@ impl EguiState {
         let desktop_visible = crate::hud::mirror_overlay::is_active()
             || (crate::vr::render_params(0).is_none()
                 && Config::lock_query(|config| config.hud.flat_overlay_visible)
-                && !crate::capture::is_active()
                 && !crate::director::cinematic::active());
         self.reconcile_surfaces(size.is_some() || desktop_visible);
         if size.is_some()

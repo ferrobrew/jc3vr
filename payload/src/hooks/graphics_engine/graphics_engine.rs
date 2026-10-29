@@ -192,11 +192,9 @@ fn graphics_flip(device: *mut Device) -> u64 {
     }
 
     if let Some(egui_state) = crate::egui_impl::EguiState::get().as_mut() {
-        // Hide the debug overlay while the F10 capture window is up or cinematic mode is on, so the
-        // recording is clean, or while F4 has hidden it from the desktop window (the deferred
+        // Hide the debug overlay while cinematic mode is on, so a recording is clean, or while F4 has hidden it from the desktop window (the deferred
         // mirror-overlay path in `crate::hud::mirror_overlay` honours the same flag).
-        if !crate::capture::is_active()
-            && !crate::director::cinematic::active()
+        if !crate::director::cinematic::active()
             && Config::lock_query(|c| c.hud.flat_overlay_visible)
         {
             egui_state.render();
@@ -259,7 +257,7 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
 
         // Clone (AddRef) the per-eye capture textures under a brief EGUI lock, released before the
         // context work below, mirroring the lock discipline of the other consumers of these captures
-        // (`vr::blit::submit`, `vr::mirror::present_mirror_inner`, `capture::present_active`). Held
+        // (`vr::blit::submit` and `vr::mirror::present_mirror_inner`). Held
         // across the body instead, this deadlocks: the panel and mirror-overlay draws below take the
         // `EguiState` lock, while `crate::update` takes `EguiState` and then this one inside it. One
         // acquisition, not one per eye, so the collapse's two half-copies cannot straddle a resize
@@ -433,10 +431,9 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
 
 /// Whether anything besides the headset reads eye `eye`'s capture this frame, so its post-draw must
 /// copy the eye into it even when the eye went straight to the swapchain: the desktop mirror's eye,
-/// the F10 capture composite, the recorder, a pending screenshot, and the Previews tab.
+/// the recorder, a pending screenshot, and the Previews tab.
 fn eye_capture_wanted(eye: usize) -> bool {
     Config::lock_query(|c| c.vr.mirror && usize::from(c.vr.mirror_eye).min(1) == eye)
-        || crate::capture::is_active()
         || crate::recorder::is_recording()
         || crate::screenshot::is_requested()
         || previews_visible()

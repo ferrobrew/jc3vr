@@ -21,7 +21,6 @@ pub mod util;
 pub mod vr;
 
 mod allocator;
-mod capture;
 mod config;
 mod controllers;
 mod crash;
@@ -207,7 +206,6 @@ fn initialize_from_game() -> anyhow::Result<()> {
     EguiState::install()?;
     ui::render::install();
     hud::install();
-    capture::install();
     vr::install();
     tracing::info!("Initialized in game thread");
 
@@ -285,7 +283,6 @@ fn debug_ui_visible(panel_active: bool) -> bool {
     panel_active
         || crate::hud::mirror_overlay::is_active()
         || (crate::vr::render_params(0).is_none()
-            && !crate::capture::is_active()
             && !crate::director::cinematic::active()
             && config::Config::lock_query(|c| c.hud.flat_overlay_visible))
 }
@@ -331,7 +328,7 @@ fn update() {
         controllers::physical_hands::physics::frame_tick();
         controllers::physical_hands::collider_view::frame_tick();
 
-        // The per-eye captures feed the VR blit, the desktop mirror, and the F10 capture composite.
+        // The per-eye captures feed the VR blit, the desktop mirror, the recorder, and the screenshots.
         // Driven here rather than from inside the egui closure below: they are what VR submits, and
         // preparing them only as a side effect of the debug UI meant an `EguiState` that failed to
         // install left VR with nothing to present and no indication why.
@@ -345,10 +342,7 @@ fn update() {
                 // The debug UI runs holding the egui state lock, which the draw task also takes, so
                 // nothing in it may block on the VR runtime lock (see `crate::thread_role`).
                 let _debug_ui_role = thread_role::enter(thread_role::ThreadRole::GameDebugUi);
-                // While the F10 capture mode is active, keep input with the game rather than letting
-                // this toggle hand it to egui. The overlay itself is hidden by skipping
-                // `egui_state.render()` in `graphics_flip` while capture is active.
-                if util::is_pressed(VK_F6) && !crate::capture::is_active() {
+                if util::is_pressed(VK_F6) {
                     egui_state.toggle_game_input_capture();
                 }
 

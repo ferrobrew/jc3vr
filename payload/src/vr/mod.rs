@@ -22,10 +22,9 @@
 //! tail ([`tail`]) takes the frame's guard over until it submits; both wait on engine threads
 //! meanwhile, so every blocking lock goes through a thread-role check (see [`crate::thread_role`] and
 //! `docs/mod/threading.md`), and other threads read the published slots instead. The game's
-//! `ID3D11Device` is fetched from the graphics engine singleton at session-create time under the
-//! same null-guarding [`crate::capture`] uses; the device is never stored (so the state carries no
-//! raw device pointer across threads). All OpenXR handles are `Send` (`Arc`-backed handles), so the state is a safe
-//! singleton.
+//! `ID3D11Device` is fetched from the graphics engine singleton at session-create time,
+//! null-guarded; the device is never stored (so the state carries no raw device pointer across
+//! threads). All OpenXR handles are `Send` (`Arc`-backed handles), so the state is a safe singleton.
 //!
 //! ## Degradation and retry
 //!

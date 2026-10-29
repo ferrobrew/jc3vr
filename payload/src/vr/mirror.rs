@@ -49,7 +49,7 @@
 //! Everything runs on the game's main thread, after both eyes have drawn and the draw worker has
 //! drained (`hooks::game`). The letterbox draw, egui composite, and present run under the engine's
 //! `Context::m_Mutex`, serialized with the engine's render work, the same discipline as
-//! [`crate::capture`] and [`crate::vr::blit`].
+//! [`crate::vr::blit`].
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
@@ -225,15 +225,15 @@ unsafe fn present_mirror_inner(eye: usize) -> anyhow::Result<()> {
         mirror.draw(&context.m_Context, &rtv, &srv, viewport);
 
         // Bring the debug UI to the desktop while a session runs -- the flat overlay normally rides
-        // the engine flip path, which `BLOCK_FLIP` suppresses in VR. Hidden while the F10 capture
-        // window is up so recordings stay clean.
+        // the engine flip path, which `BLOCK_FLIP` suppresses in VR. Hidden in cinematic mode so
+        // recordings stay clean.
         //
         // The egui frame is tessellated once per frame on eye 0 into an offscreen texture -- the
         // panel texture with the floating panel up (issue #24), else the flat mirror-overlay texture
         // (`crate::hud::mirror_overlay`) -- so here we only composite that texture as an
         // alpha-blended overlay. Never `EguiState::render` (a second egui pass that mutates shared
         // state), so this is safe from the deferred frame tail's thread as well as inline.
-        if !crate::capture::is_active() && !crate::director::cinematic::active() {
+        if !crate::director::cinematic::active() {
             let panel = Config::lock_query(|c| c.hud.egui_panel);
             if panel.enabled {
                 // With `show_on_mirror` off, the panel stays in the headset only, leaving the desktop

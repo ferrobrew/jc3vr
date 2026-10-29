@@ -27,7 +27,7 @@ pub(super) struct Session {
 impl Session {
     /// Create the session against the game's `ID3D11Device`, after checking the D3D11 graphics
     /// requirements the spec requires. The device is fetched from the graphics engine singleton
-    /// under [`crate::capture`]'s null-guarding and is not stored.
+    /// null-guarded, and is not stored.
     pub(super) fn create(
         instance: &xr::Instance,
         system: xr::SystemId,
@@ -74,8 +74,8 @@ impl Session {
     }
 }
 
-/// Fetch the game's `ID3D11Device` from the graphics engine singleton, null-guarded exactly as
-/// [`crate::capture`] does, and run `f` against it. The device is not retained past `f`.
+/// Fetch the game's `ID3D11Device` from the graphics engine singleton, null-guarded at every hop,
+/// and run `f` against it. The device is not retained past `f`.
 fn with_engine_device<R>(
     f: impl FnOnce(&jc3gi::graphics_engine::device::Device) -> R,
 ) -> anyhow::Result<R> {

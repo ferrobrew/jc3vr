@@ -4,8 +4,7 @@
 //! The overlays are the floating HUD quad (`crate::hud`), the interactive egui panel
 //! (`crate::hud::egui_panel`), the flat egui overlay and its desktop-mirror composite
 //! (`crate::hud::mirror_overlay`, `crate::vr::mirror`), and the flat overlay pass in
-//! `graphics_flip`. Each of those gates on [`active`] next to its existing `capture::is_active`
-//! gate. The game's own HUD is already redirected into the floating quad's texture whenever the
+//! `graphics_flip`. Each of those gates on [`active`]. The game's own HUD is already redirected into the floating quad's texture whenever the
 //! quad is drawn, so hiding the quad hides the HUD; with the redirect off (flatscreen) the game's
 //! HUD stays, and the debug tab says so.
 
