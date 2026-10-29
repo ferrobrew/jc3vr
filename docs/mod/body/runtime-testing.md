@@ -1,6 +1,6 @@
 # Integrated runtime testing
 
-The replacement paths run under the existing enabled controller, full-body, weapon-handling, and camera settings. Existing saved switches remain effective. New tracking recordings use lossless chunked version 4 by default; an explicitly saved compression-off setting still selects raw version 4.
+The replacement paths run under the existing enabled controller, full-body, weapon-handling, and camera settings. Existing saved switches remain effective. New tracking recordings use lossless chunked version 5.
 
 ## Runtime coverage
 
