@@ -1,5 +1,5 @@
-//! The game side of the atlas: at the capture seam, lay out the cells, move the weapon, heat, and
-//! tether readouts and the aim part's clips into theirs, and after the capture move them back and
+//! The game side of the atlas: at the capture seam, lay out the cells, move the weapon, heat,
+//! tether, and grenade readouts and the aim part's clips into theirs, and after the capture move them back and
 //! publish the layout keyed by the snapshot the capture produced.
 //!
 //! Both halves run in the `MovieImpl::Capture` detour, on the thread that runs
@@ -64,6 +64,7 @@ pub(crate) unsafe fn begin_capture(cfg: &HudConfig) -> Option<AtlasLayout> {
                 (AtlasClip::Weapons, layout.ammo),
                 (AtlasClip::Heat, layout.heat),
                 (AtlasClip::Tether, layout.tether),
+                (AtlasClip::Grenades, layout.grenades),
             ] {
                 let (Some(parent), Some(cell)) = (parent, cell) else {
                     continue;
@@ -80,6 +81,7 @@ pub(crate) unsafe fn begin_capture(cfg: &HudConfig) -> Option<AtlasLayout> {
                             AtlasClip::Weapons => moved.ammo = Some(cell),
                             AtlasClip::Heat => moved.heat = Some(cell),
                             AtlasClip::Tether => moved.tether = Some(cell),
+                            AtlasClip::Grenades => moved.grenades = Some(cell),
                             _ => {}
                         }
                     }
@@ -179,6 +181,7 @@ pub(crate) unsafe fn after_capture(movie: &MovieImpl) {
         cross: pending.moved.cross,
         tether: pending.moved.tether,
         aim: pending.moved.aim,
+        grenades: pending.moved.grenades,
         layout: pending.layout,
     }));
 }
@@ -191,6 +194,7 @@ struct MovedParts {
     cross: Option<Cell>,
     tether: Option<Cell>,
     aim: Option<Cell>,
+    grenades: Option<Cell>,
 }
 
 /// A clip the atlas moves.
@@ -245,7 +249,7 @@ static PENDING: Mutex<Option<Pending>> = Mutex::new(None);
 
 /// The position each moved readout was last restored to, to notice a restore something else
 /// overrode. The cross and the aim part's clips are left out: the HUD places them every update.
-static LAST_RESTORED: Mutex<[Option<Vec2>; 3]> = Mutex::new([None, None, None]);
+static LAST_RESTORED: Mutex<[Option<Vec2>; 4]> = Mutex::new([None; 4]);
 
 /// The readout's slot in [`LAST_RESTORED`], for the clips whose placement only the atlas changes.
 fn drift_index(clip: AtlasClip) -> Option<usize> {
@@ -253,6 +257,7 @@ fn drift_index(clip: AtlasClip) -> Option<usize> {
         AtlasClip::Weapons => Some(0),
         AtlasClip::Heat => Some(1),
         AtlasClip::Tether => Some(2),
+        AtlasClip::Grenades => Some(3),
         _ => None,
     }
 }
@@ -297,6 +302,7 @@ fn active_layout(cfg: &HudConfig) -> Option<(AtlasLayout, StageFrame)> {
             }),
         tether: (atlas.tether.enabled && controllers).then_some(TETHER),
         aim: Some(AIM),
+        grenades: (atlas.wrist.enabled && controllers).then_some(GRENADES),
         label: markers.enabled.then_some(world_markers::LABEL_CROP),
         marker: markers.enabled.then_some(world_markers::CROP),
         max_markers: world_markers::MAX_MARKERS,
@@ -345,6 +351,20 @@ const TETHER: PartRequest = PartRequest {
         right: 60.0,
         up: 25.0,
         down: 30.0,
+    },
+    max_scale: 1.0,
+};
+
+/// The grenade readout's extents and largest scale, as [`AMMO`]. Its content lies far from its
+/// clip's origin, below and to the right, so the extents to the left and above are negative. They
+/// hold the icons and their backplates in every capacity's layout, but not the icons the movie
+/// parks off the stage for a smaller capacity (see [`layout`]).
+const GRENADES: PartRequest = PartRequest {
+    extents: CropExtents {
+        left: -513.0,
+        right: 584.0,
+        up: -163.0,
+        down: 299.0,
     },
     max_scale: 1.0,
 };

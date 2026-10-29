@@ -97,9 +97,10 @@ pub struct AtlasConfig {
     /// and facing the eye. The game shows it while a gun is out and fades it when holstered; the
     /// quad carries that fade.
     pub ammo: AtlasPartConfig,
-    /// The health bar (drawn by the mod from the player character's health) and the heat readout
-    /// (`MCI_heat_container`, moved into a cell) on the inside of the off-hand's wrist, under the
-    /// controller scheme. The controls summary sits on the back of the same wrist.
+    /// The health bar (drawn by the mod from the player character's health), the heat readout
+    /// (`MCI_heat_container`), and the grenade readout (`MCI_grenade_parent`), both moved into
+    /// cells, on the inside of the off-hand's wrist, under the controller scheme. The controls
+    /// summary sits on the back of the same wrist.
     pub wrist: AtlasPartConfig,
     /// The game's weapon selection cross (`MCI_weapon_selection_wheel`) drawn where the hand
     /// steering the weapon wheel was when the wheel opened, under the controller scheme, while the

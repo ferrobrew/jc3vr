@@ -1,6 +1,6 @@
 //! The body-anchored HUD readouts, under the controller scheme: the weapon readout above the gun
-//! hand, the tether readout above the off-hand's forearm, the health bar and heat readout on the
-//! inside of the off-hand's wrist, and the weapon selection cross where the hand steering the
+//! hand, the tether readout above the off-hand's forearm, the health bar and the heat and grenade
+//! readouts on the inside of the off-hand's wrist, and the weapon selection cross where the hand steering the
 //! weapon wheel was when it opened.
 //!
 //! The readouts above the hand and the forearm stand upright and face the eye. They are drawn
@@ -8,7 +8,7 @@
 //! rather than tested against them: a readout near the hand that the scene's depth could hide
 //! would vanish into the gun or a wall the gun is pushed against.
 //!
-//! The weapon, tether, and heat readouts are the game's own clips, moved into atlas cells for the capture
+//! The weapon, tether, heat, and grenade readouts are the game's own clips, moved into atlas cells for the capture
 //! ([`crate::hud::atlas`]) and drawn here from their cells' copies, so they keep the game's values,
 //! icons, and fades: the game shows the weapon readout while a gun is out and fades it out when it
 //! is holstered, and the quad carries that fade. The health bar is the mod's own
@@ -26,7 +26,7 @@ use std::{
     time::Instant,
 };
 
-use glam::{Vec3, Vec4};
+use glam::{Vec2, Vec3, Vec4};
 use jc3gi::{
     character::character::Character,
     graphics_engine::{device::Device, texture::Texture},
@@ -121,6 +121,8 @@ pub(crate) struct AnchoredStatus {
     pub attention: bool,
     /// Whether the heat readout's cell was drawn.
     pub heat_drawn: bool,
+    /// Whether the grenade readout's cell was drawn.
+    pub grenades_drawn: bool,
     /// The selection cross's opacity, while it is drawn at the steering hand.
     pub cross_alpha: Option<f32>,
     /// Whether the tether readout's quad was placed above the forearm.
@@ -201,6 +203,10 @@ const WRIST_WIDTH_M: f32 = 0.08;
 /// The health bar's width over its height.
 const WRIST_BAR_ASPECT: f32 = 10.0;
 
+/// The grenade readout's height on the wrist, metres; its width follows the cell's aspect. The
+/// readout is a narrow column of icons, so it is sized by its height rather than the wrist's width.
+const WRIST_GRENADES_HEIGHT_M: f32 = 0.04;
+
 /// The glance at the inside of the wrist that shows the wrist readout.
 const WRIST_GLANCE: GlanceConfig = GlanceConfig::new();
 
@@ -227,6 +233,7 @@ struct State {
     last_damage: Option<Instant>,
     bar_corners: Option<[Vec4; 4]>,
     heat_corners: Option<[Vec4; 4]>,
+    grenade_corners: Option<[Vec4; 4]>,
     /// The selection cross's place relative to the head, fixed when the wheel opens.
     cross_offset: Option<Vec3>,
     cross_open: bool,
@@ -259,6 +266,7 @@ impl State {
             last_damage: None,
             bar_corners: None,
             heat_corners: None,
+            grenade_corners: None,
             cross_offset: None,
             cross_open: false,
             cross_corners: None,
@@ -273,6 +281,7 @@ impl State {
                 glance: false,
                 attention: false,
                 heat_drawn: false,
+                grenades_drawn: false,
                 cross_alpha: None,
                 tether_drawn: false,
             },
@@ -298,6 +307,7 @@ impl State {
         self.ammo_corners = None;
         self.bar_corners = None;
         self.heat_corners = None;
+        self.grenade_corners = None;
         self.cross_corners = None;
         self.tether_corners = None;
         let sample = *SAMPLE.lock();
@@ -454,7 +464,7 @@ impl State {
             }
         }
 
-        // The wrist: the health bar and the heat readout.
+        // The wrist: the health bar and the heat and grenade readouts.
         let pose = grip(off).map(|grip| inner_wrist_pose(grip, off, WRIST_OFFSET_M));
         let fraction = sample
             .filter(|s| s.max_health > 0)
@@ -493,15 +503,25 @@ impl State {
         self.status.glance = glance;
         self.status.attention = attention;
         self.status.heat_drawn = false;
+        self.status.grenades_drawn = false;
         let Some(pose) = pose.filter(|_| self.wrist_alpha > 0.0) else {
             return;
         };
         let width = WRIST_WIDTH_M;
-        let bar = fraction.is_some().then_some(width / WRIST_BAR_ASPECT);
+        let bar = fraction
+            .is_some()
+            .then_some(Vec2::new(width, width / WRIST_BAR_ASPECT));
         let heat = atlas::part_texture(Part::Heat, |part| part.cell)
-            .map(|cell| width * cell.rect.size.y / cell.rect.size.x.max(1.0));
-        let heights: Vec<f32> = bar.into_iter().chain(heat).collect();
-        let mut quads = stacked_corners(&pose, width, &heights, WRIST_GAP_M)
+            .map(|cell| Vec2::new(width, width * cell.rect.size.y / cell.rect.size.x.max(1.0)));
+        let grenades = atlas::part_texture(Part::Grenades, |part| part.cell).map(|cell| {
+            let height = WRIST_GRENADES_HEIGHT_M;
+            Vec2::new(
+                height * cell.rect.size.x / cell.rect.size.y.max(1.0),
+                height,
+            )
+        });
+        let sizes: Vec<Vec2> = bar.into_iter().chain(heat).chain(grenades).collect();
+        let mut quads = stacked_corners(&pose, &sizes, WRIST_GAP_M)
             .into_iter()
             .map(|corners| corners.map(|c| c.extend(1.0)));
         if bar.is_some() {
@@ -510,6 +530,10 @@ impl State {
         if heat.is_some() {
             self.heat_corners = quads.next();
             self.status.heat_drawn = true;
+        }
+        if grenades.is_some() {
+            self.grenade_corners = quads.next();
+            self.status.grenades_drawn = true;
         }
         if let (Some(gpu), Some(fraction), Some(trail)) = (self.gpu.as_mut(), fraction, trail) {
             let low = fraction <= WRIST_LOW_HEALTH;
@@ -554,6 +578,18 @@ impl State {
         }
         if let Some(corners) = self.heat_corners {
             atlas::part_texture(Part::Heat, |part| {
+                gpu.quad.draw_faded(
+                    context,
+                    device,
+                    target,
+                    part.target.color_srv(),
+                    &corners,
+                    self.wrist_alpha,
+                )
+            });
+        }
+        if let Some(corners) = self.grenade_corners {
+            atlas::part_texture(Part::Grenades, |part| {
                 gpu.quad.draw_faded(
                     context,
                     device,

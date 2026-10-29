@@ -79,13 +79,15 @@ pub(crate) const HINT_CLIPS: [&str; 2] = [
 /// cell's stage position into theirs. `MCI_dual_tether` is the tether readout: the count of tethers
 /// in use and the retract state. The movie also builds a per-tether list in
 /// `MCI_dualtether_stage` beside it, but holds that stage invisible, so it is left alone.
+/// `MCI_grenade_parent` holds the grenade readout, one icon per grenade the player can carry, full
+/// or empty, laid out for the current capacity.
 ///
 /// The aim part gathers the weapon reticle group, the grapple reticle's clips, and the hit marker
 /// from under the center container. The movie places the grapple reticle's base clip at the
 /// projected grapple aim point, its ghost there too while a wire is attached, and its attached clip
 /// at the projected attach point while a wire is attached and at the base otherwise; the weapon
 /// reticle group and the hit marker stay at the center.
-pub(crate) const ATLAS_CLIPS: [&str; 12] = [
+pub(crate) const ATLAS_CLIPS: [&str; 13] = [
     "MCI_safe_area_bottom_right",
     "MCI_safe_area_bottom_right.MCI_weapons_parent",
     "MCI_safe_area_bottom_right.MCI_heat_container",
@@ -98,6 +100,7 @@ pub(crate) const ATLAS_CLIPS: [&str; 12] = [
     "MCI_safe_area_center.MCI_reticles.MCI_grapple_reticle_group.MCI_reticle_grapple_ghost",
     "MCI_safe_area_center.MCI_reticles.MCI_grapple_reticle_group.MCI_reticle_grapple_attached",
     "MCI_safe_area_center.MCI_inflict_damage",
+    "MCI_safe_area_bottom_right.MCI_grenade_parent",
 ];
 
 /// The index of each clip in [`ATLAS_CLIPS`].
@@ -115,6 +118,7 @@ pub(crate) enum AtlasClip {
     GrappleGhost = 9,
     GrappleAttached = 10,
     HitMarker = 11,
+    Grenades = 12,
 }
 
 /// A heap-pinned managed [`Value`] handle to a clip, plus the game-intent tracking the mask needs.

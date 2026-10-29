@@ -52,6 +52,8 @@ pub(crate) struct LayoutRequest {
     pub tether: Option<PartRequest>,
     /// The aim part: the reticles and the hit marker, around the aim point.
     pub aim: Option<PartRequest>,
+    /// The grenade readout, placed at the right end of a band (see [`layout`]).
+    pub grenades: Option<PartRequest>,
     /// The labelled marker's extents (its label sits to the left of its icon).
     pub label: Option<CropExtents>,
     /// Every other marker's extents.
@@ -72,6 +74,7 @@ pub(crate) struct AtlasLayout {
     pub cross: Option<Cell>,
     pub tether: Option<Cell>,
     pub aim: Option<Cell>,
+    pub grenades: Option<Cell>,
     pub label: Option<Cell>,
     pub markers: Vec<Cell>,
 }
@@ -100,10 +103,18 @@ pub(crate) fn bands(stage: Vec2, frame: &StageFrame) -> Option<[StageRect; 2]> {
 /// Pack the request's parts into the bands: the ammunition and heat readouts, the selection cross,
 /// the tether readout, and the aim part first, then the label cell, then as many marker cells as
 /// fit, up to the request's cap. A part that fits nowhere gets no cell. `None` without bands.
+///
+/// The grenade readout takes the right end of the first band with room before anything else is
+/// packed. The movie parks the icons a smaller grenade capacity does not use far to the right of
+/// the readout, off the stage; from the right end of a band they land past the texture's right edge
+/// (the stage spans the texture's width whenever there are bands), not in another cell.
 pub(crate) fn layout(request: &LayoutRequest) -> Option<AtlasLayout> {
     let bands = bands(request.stage, &request.frame)?;
     let gutter = request.gutter.max(0.0);
     let mut packer = Packer::new(bands, gutter);
+    let grenades = request
+        .grenades
+        .and_then(|part| place_part_at_right_end(&mut packer, &part));
     let ammo = request.ammo.and_then(|part| place_part(&mut packer, &part));
     let heat = request.heat.and_then(|part| place_part(&mut packer, &part));
     let cross = request
@@ -133,6 +144,7 @@ pub(crate) fn layout(request: &LayoutRequest) -> Option<AtlasLayout> {
         cross,
         tether,
         aim,
+        grenades,
         label,
         markers,
     })
@@ -307,6 +319,21 @@ pub(crate) fn band_texels(
 
 /// Place a part at the largest scale up to its own that fits a band.
 fn place_part(packer: &mut Packer, part: &PartRequest) -> Option<Cell> {
+    let (size, scale) = part_size(packer, part)?;
+    let min = packer.place(size)?;
+    Some(part_cell(part, min, size, scale))
+}
+
+/// Place a part as [`place_part`] does, but at the right end of the first band with room, which is
+/// taken from that band's shelves. Call before anything else is packed.
+fn place_part_at_right_end(packer: &mut Packer, part: &PartRequest) -> Option<Cell> {
+    let (size, scale) = part_size(packer, part)?;
+    let min = packer.place_at_right_end(size)?;
+    Some(part_cell(part, min, size, scale))
+}
+
+/// A part's cell size and scale: the largest scale up to its own at which it fits a band.
+fn part_size(packer: &Packer, part: &PartRequest) -> Option<(Vec2, f32)> {
     let raw = extents_size(&part.extents);
     if raw.x <= 0.0 || raw.y <= 0.0 {
         return None;
@@ -316,13 +343,16 @@ fn place_part(packer: &mut Packer, part: &PartRequest) -> Option<Cell> {
     if scale.is_nan() || scale <= 0.0 {
         return None;
     }
-    let size = (raw * scale).ceil().min(room);
-    let min = packer.place(size)?;
-    Some(Cell {
+    Some(((raw * scale).ceil().min(room), scale))
+}
+
+/// A part's cell with its content's top-left at `min`.
+fn part_cell(part: &PartRequest, min: Vec2, size: Vec2, scale: f32) -> Cell {
+    Cell {
         rect: StageRect { min, size },
         origin: (min + Vec2::new(part.extents.left, part.extents.up) * scale).round(),
         scale,
-    })
+    }
 }
 
 /// Place a marker at its own size: its crop keeps the size it has on the panel, so a marker too
@@ -357,6 +387,8 @@ struct Packer {
     bands: [StageRect; 2],
     gutter: f32,
     shelves: [Vec<Shelf>; 2],
+    /// How much of each band's right end is taken by [`Packer::place_at_right_end`].
+    taken_right: [f32; 2],
 }
 
 /// One row of cells.
@@ -374,6 +406,7 @@ impl Packer {
             bands,
             gutter,
             shelves: [Vec::new(), Vec::new()],
+            taken_right: [0.0; 2],
         }
     }
 
@@ -381,16 +414,44 @@ impl Packer {
     fn largest_room(&self) -> Vec2 {
         self.bands
             .iter()
-            .map(|band| band.size - Vec2::splat(2.0 * self.gutter))
+            .zip(self.taken_right)
+            .map(|(band, taken)| band.size - Vec2::new(taken, 0.0) - Vec2::splat(2.0 * self.gutter))
             .fold(Vec2::ZERO, Vec2::max)
+    }
+
+    /// Place a cell of `size` (content only) at the right end of the first band whose shelves are
+    /// empty and that has room, take that end from the band, and return the content's top-left.
+    fn place_at_right_end(&mut self, size: Vec2) -> Option<Vec2> {
+        let outer = size + Vec2::splat(2.0 * self.gutter);
+        for ((band, shelves), taken) in self
+            .bands
+            .iter()
+            .zip(&self.shelves)
+            .zip(self.taken_right.iter_mut())
+        {
+            let right = band.max().x - *taken;
+            if !shelves.is_empty() || right - outer.x < band.min.x || outer.y > band.size.y {
+                continue;
+            }
+            *taken += outer.x;
+            return Some(
+                (Vec2::new(right - outer.x, band.min.y) + Vec2::splat(self.gutter)).ceil(),
+            );
+        }
+        None
     }
 
     /// Place a cell of `size` (content only) and return its content's top-left, or `None` when no
     /// band has room.
     fn place(&mut self, size: Vec2) -> Option<Vec2> {
         let outer = size + Vec2::splat(2.0 * self.gutter);
-        for (band, shelves) in self.bands.iter().zip(self.shelves.iter_mut()) {
-            let right = band.max().x;
+        for ((band, shelves), taken) in self
+            .bands
+            .iter()
+            .zip(self.shelves.iter_mut())
+            .zip(self.taken_right)
+        {
+            let right = band.max().x - taken;
             if let Some(shelf) = shelves
                 .iter_mut()
                 .find(|shelf| shelf.height >= outer.y && shelf.x + outer.x <= right)
@@ -482,6 +543,7 @@ mod tests {
                 },
                 max_scale: 1.0,
             }),
+            grenades: Some(GRENADES),
             label: Some(CropExtents {
                 left: 360.0,
                 ..marker()
@@ -490,6 +552,17 @@ mod tests {
             max_markers: 24,
         }
     }
+
+    /// A part whose content lies away from its clip's origin, as the grenade readout's does.
+    const GRENADES: PartRequest = PartRequest {
+        extents: CropExtents {
+            left: -513.0,
+            right: 584.0,
+            up: -163.0,
+            down: 299.0,
+        },
+        max_scale: 1.0,
+    };
 
     fn overlaps(a: &StageRect, b: &StageRect) -> bool {
         a.min.x < b.max().x && b.min.x < a.max().x && a.min.y < b.max().y && b.min.y < a.max().y
@@ -510,6 +583,7 @@ mod tests {
             .chain(layout.cross.iter())
             .chain(layout.tether.iter())
             .chain(layout.aim.iter())
+            .chain(layout.grenades.iter())
             .chain(layout.label.iter())
             .chain(layout.markers.iter())
             .copied()
@@ -535,6 +609,7 @@ mod tests {
         let cells = all_cells(&layout);
         assert!(layout.ammo.is_some() && layout.heat.is_some() && layout.label.is_some());
         assert!(layout.cross.is_some() && layout.tether.is_some() && layout.aim.is_some());
+        assert!(layout.grenades.is_some());
         assert!(!layout.markers.is_empty());
         for (i, a) in cells.iter().enumerate() {
             assert!(
@@ -582,6 +657,34 @@ mod tests {
         assert_eq!(ammo.origin, ammo.origin.round());
     }
 
+    /// The grenade readout takes the right end of a band, so nothing lies to its right, and its
+    /// clip's origin sits its (negative) extents away from the cell, outside it.
+    #[test]
+    fn grenades_take_the_right_end_of_a_band() {
+        let layout = layout(&request(1.3)).unwrap();
+        let grenades = layout.grenades.unwrap();
+        let band = layout
+            .bands
+            .iter()
+            .find(|band| inside(&grenades.rect, band))
+            .unwrap();
+        assert!(
+            band.max().x - grenades.rect.max().x <= 6.0 + 1.0,
+            "{grenades:?}"
+        );
+        for cell in all_cells(&layout) {
+            let same_rows =
+                cell.rect.min.y < grenades.rect.max().y && grenades.rect.min.y < cell.rect.max().y;
+            assert!(
+                cell == grenades || !same_rows || cell.rect.max().x <= grenades.rect.min.x,
+                "{cell:?} lies right of the grenades"
+            );
+        }
+        let expected = grenades.rect.min + Vec2::new(-513.0, -163.0) * grenades.scale;
+        assert!((grenades.origin - expected).length() <= 0.71);
+        assert!(grenades.origin.x < grenades.rect.min.x);
+    }
+
     #[test]
     fn markers_stop_at_the_cap_and_at_the_room() {
         let mut capped = request(1.3);
@@ -597,8 +700,17 @@ mod tests {
     /// A taller texture has taller bands, which stack more rows of markers.
     #[test]
     fn taller_bands_hold_more_rows() {
-        let short = layout(&request(1.3)).unwrap().markers.len();
-        let tall = layout(&request(1.0)).unwrap().markers.len();
+        let markers_only = |aspect| LayoutRequest {
+            ammo: None,
+            heat: None,
+            cross: None,
+            tether: None,
+            aim: None,
+            grenades: None,
+            ..request(aspect)
+        };
+        let short = layout(&markers_only(1.3)).unwrap().markers.len();
+        let tall = layout(&markers_only(1.0)).unwrap().markers.len();
         assert!(tall > short, "{tall} <= {short}");
     }
 

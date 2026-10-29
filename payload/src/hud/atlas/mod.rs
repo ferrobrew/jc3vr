@@ -8,7 +8,8 @@
 //!
 //! - the weapon readout (`MCI_weapons_parent`), drawn above the gun hand
 //!   ([`crate::hud::anchored`]);
-//! - the heat readout (`MCI_heat_container`), drawn on the off-hand's wrist;
+//! - the heat readout (`MCI_heat_container`) and the grenade readout (`MCI_grenade_parent`), drawn
+//!   on the off-hand's wrist;
 //! - the weapon selection cross (`MCI_weapon_selection_wheel`), drawn at the hand steering the
 //!   weapon wheel ([`crate::controllers::weapons::wheel`]) while the wheel shows it;
 //! - the tether readout (`MCI_dual_tether`), drawn above the off-hand's forearm, where the
@@ -79,6 +80,7 @@ pub(crate) struct FrameStatus {
     pub cross: Option<Cell>,
     pub tether: Option<Cell>,
     pub aim: Option<Cell>,
+    pub grenades: Option<Cell>,
     /// The texture the cells were copied from.
     pub texture: (u32, u32),
 }
@@ -105,6 +107,8 @@ pub(crate) struct AtlasCapture {
     pub tether: Option<Cell>,
     /// The aim part's cell, when its clips were moved into it.
     pub aim: Option<Cell>,
+    /// The grenade readout's cell, when it was moved into it.
+    pub grenades: Option<Cell>,
     pub layout: AtlasLayout,
 }
 

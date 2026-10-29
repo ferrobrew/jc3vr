@@ -275,6 +275,7 @@ fn atlas_status_ui(ui: &mut egui::Ui) {
                 ("Selection cross", frame.cross),
                 ("Tether readout", frame.tether),
                 ("Reticles and hit marker", frame.aim),
+                ("Grenade readout", frame.grenades),
             ] {
                 ui.label(match cell {
                     Some(cell) => format!(
@@ -293,7 +294,7 @@ fn atlas_status_ui(ui: &mut egui::Ui) {
     let anchored = crate::hud::anchored::status();
     ui.label(format!(
         "Weapon readout on {}; health {}; heat level {}; wrist {:.0}% (glance {}, attention \
-         {}, heat {})",
+         {}, heat {}, grenades {})",
         anchored
             .ammo_hand
             .map_or("no hand".to_owned(), |hand| format!("{hand:?}")),
@@ -309,6 +310,11 @@ fn atlas_status_ui(ui: &mut egui::Ui) {
         anchored.glance,
         anchored.attention,
         if anchored.heat_drawn {
+            "drawn"
+        } else {
+            "not drawn"
+        },
+        if anchored.grenades_drawn {
             "drawn"
         } else {
             "not drawn"

@@ -30,10 +30,18 @@ pub(crate) enum Part {
     Cross,
     Tether,
     Aim,
+    Grenades,
 }
 
 impl Part {
-    const ALL: [Part; PARTS] = [Part::Ammo, Part::Heat, Part::Cross, Part::Tether, Part::Aim];
+    const ALL: [Part; PARTS] = [
+        Part::Ammo,
+        Part::Heat,
+        Part::Cross,
+        Part::Tether,
+        Part::Aim,
+        Part::Grenades,
+    ];
 
     const fn index(self) -> usize {
         match self {
@@ -42,12 +50,13 @@ impl Part {
             Part::Cross => 2,
             Part::Tether => 3,
             Part::Aim => 4,
+            Part::Grenades => 5,
         }
     }
 }
 
 /// How many parts there are.
-const PARTS: usize = 5;
+const PARTS: usize = 6;
 
 /// Choose the frame's capture (eye 0). `active` is false while the HUD texture is not the gameplay
 /// HUD's (not redirected, or full-screen UI), which drops the frame.
@@ -81,6 +90,7 @@ pub(crate) fn prepare_frame(device: &Device, hud: Option<&HudTarget>, active: bo
         capture.cross,
         capture.tether,
         capture.aim,
+        capture.grenades,
     ];
     for (part, cell) in Part::ALL.iter().zip(cells) {
         let Some(cell) = cell else {
@@ -119,6 +129,7 @@ pub(crate) fn prepare_frame(device: &Device, hud: Option<&HudTarget>, active: bo
         cross: capture.cross,
         tether: capture.tether,
         aim: capture.aim,
+        grenades: capture.grenades,
         texture,
     });
 }

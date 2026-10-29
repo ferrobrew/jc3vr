@@ -1,6 +1,6 @@
 //! Where the hand- and wrist-anchored readouts go, and when they show. Pure.
 
-use glam::{Mat3, Quat, Vec3};
+use glam::{Mat3, Quat, Vec2, Vec3};
 
 use crate::controllers::{
     frame::{Hand, Pose},
@@ -153,27 +153,23 @@ pub(crate) fn inner_wrist_pose(grip: Pose, hand: Hand, offset: Vec3) -> PanelPos
     }
 }
 
-/// The corners of quads stacked top to bottom on `panel`, each `width` wide and as tall as its
-/// entry in `heights`, `gap` apart, the stack centred on the panel.
-pub(crate) fn stacked_corners(
-    panel: &PanelPose,
-    width: f32,
-    heights: &[f32],
-    gap: f32,
-) -> Vec<[Vec3; 4]> {
-    let total = heights.iter().sum::<f32>() + gap * heights.len().saturating_sub(1) as f32;
+/// The corners of quads stacked top to bottom on `panel`, each as wide and as tall as its entry in
+/// `sizes`, centred across the panel, `gap` apart, the stack centred on the panel.
+pub(crate) fn stacked_corners(panel: &PanelPose, sizes: &[Vec2], gap: f32) -> Vec<[Vec3; 4]> {
+    let total =
+        sizes.iter().map(|size| size.y).sum::<f32>() + gap * sizes.len().saturating_sub(1) as f32;
     let up = panel.rotation * Vec3::Y;
     let mut top = total * 0.5;
-    heights
+    sizes
         .iter()
-        .map(|&height| {
-            let center = panel.center + up * (top - height * 0.5);
-            top -= height + gap;
+        .map(|&size| {
+            let center = panel.center + up * (top - size.y * 0.5);
+            top -= size.y + gap;
             PanelPose {
                 center,
                 rotation: panel.rotation,
             }
-            .corners(width, height)
+            .corners(size.x, size.y)
         })
         .collect()
 }
@@ -402,15 +398,23 @@ mod tests {
             center: Vec3::ZERO,
             rotation: Quat::IDENTITY,
         };
-        let quads = stacked_corners(&panel, 0.08, &[0.01, 0.03], 0.002);
-        assert_eq!(quads.len(), 2);
-        let total = 0.042;
-        // The first quad's top is the stack's top; the second's bottom is its bottom.
+        let sizes = [
+            Vec2::new(0.08, 0.01),
+            Vec2::new(0.08, 0.03),
+            Vec2::new(0.02, 0.04),
+        ];
+        let quads = stacked_corners(&panel, &sizes, 0.002);
+        assert_eq!(quads.len(), 3);
+        let total = 0.084;
+        // The first quad's top is the stack's top; the last's bottom is its bottom.
         assert!((quads[0][0].y - total * 0.5).abs() < 1e-6);
-        assert!((quads[1][2].y + total * 0.5).abs() < 1e-6);
+        assert!((quads[2][2].y + total * 0.5).abs() < 1e-6);
         // The gap separates them.
         assert!((quads[0][2].y - quads[1][0].y - 0.002).abs() < 1e-6);
         assert!(((quads[0][1] - quads[0][0]).length() - 0.08).abs() < 1e-6);
+        // A narrower quad keeps its own width, centred across the panel.
+        assert!(((quads[2][1] - quads[2][0]).length() - 0.02).abs() < 1e-6);
+        assert!((quads[2][0].x + quads[2][1].x).abs() < 1e-6);
     }
 
     #[test]
