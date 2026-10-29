@@ -240,11 +240,7 @@ pub(super) fn feature_readout(
             empty_readout(ui, &readout.empty);
         }
         crate::ui::catalog::FeatureId::Support => heft_readout(ui, &readout.heft),
-        _ => {
-            ui.label(
-                "The shared weapon snapshot is in Hold, transfer, and grab regions > Live status.",
-            );
-        }
+        _ => {}
     }
 }
 

@@ -1,13 +1,12 @@
 //! egui debug UI: the dockable tab tree and per-tab bodies, plus the startup build banner.
 //!
-//! The tabs live in an `egui_dock` tree so any tab can be dragged out into its own floating window
-//! (e.g. Performance parked beside the game view while tuning Render features). The layout is
-//! persisted to `ui_layout.json` in the configuration directory ([`crate::config::paths`]), apart
-//! from the settings, so a customized arrangement survives relaunches.
+//! The feature views live in an `egui_dock` tree so any feature can be dragged out into its own
+//! floating window (e.g. Performance parked beside the game view while tuning Render features). The
+//! layout is persisted to `ui_layout_v2.json` in the configuration directory
+//! ([`crate::config::paths`]), apart from the settings, so a customized arrangement survives
+//! relaunches.
 
 use std::{sync::OnceLock, time::Instant};
-
-use serde::{Deserialize, Serialize};
 
 use crate::{
     config::{self, SaveStatus},
@@ -38,51 +37,6 @@ mod util;
 pub(crate) mod visualizations;
 pub mod vr;
 
-/// The dockable tabs, in default display order. The serialized names are part of the persisted
-/// layout file, so renaming a variant orphans its saved position (it falls back to being appended).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum Tab {
-    Performance,
-    Render,
-    Previews,
-    Diagnostics,
-    Status,
-    Camera,
-    Game,
-    Hud,
-    Environment,
-    Vr,
-    Director,
-    Controllers,
-    Testing,
-}
-
-#[cfg(test)]
-impl Tab {
-    /// Every legacy tab, used to test saved-layout migration.
-    const ALL: [Tab; 13] = [
-        Tab::Performance,
-        Tab::Render,
-        Tab::Previews,
-        Tab::Diagnostics,
-        Tab::Status,
-        Tab::Camera,
-        Tab::Game,
-        Tab::Hud,
-        Tab::Environment,
-        Tab::Vr,
-        Tab::Director,
-        Tab::Controllers,
-        Tab::Testing,
-    ];
-}
-
-impl std::fmt::Display for Tab {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
 struct FeatureBodies<'a, F> {
     render: F,
     selection: &'a mut navigation::NavigationState,
@@ -97,15 +51,11 @@ impl<F: FnMut(&mut egui::Ui, &mut navigation::NavigationState)> egui_dock::TabVi
     fn title(&mut self, tab: &mut layout::View) -> egui::WidgetText {
         match tab {
             layout::View::Workspace => "Features".into(),
-            layout::View::Feature { key, section } => format!(
-                "{}: {}",
-                navigation::NavigationState::recover(Some(key))
-                    .feature
-                    .definition()
-                    .label,
-                section.label()
-            )
-            .into(),
+            layout::View::Feature { key } => navigation::NavigationState::recover(Some(key))
+                .feature
+                .definition()
+                .label
+                .into(),
         }
     }
 
@@ -114,12 +64,9 @@ impl<F: FnMut(&mut egui::Ui, &mut navigation::NavigationState)> egui_dock::TabVi
             layout::View::Workspace => {
                 navigation::feature_body(ui, self.selection, &mut self.render);
             }
-            layout::View::Feature { key, section } => {
-                let mut selection = navigation::NavigationState {
-                    feature: navigation::NavigationState::recover(Some(key)).feature,
-                    section: *section,
-                };
-                ui.push_id(("detached-feature", key.as_str(), *section), |ui| {
+            layout::View::Feature { key } => {
+                let mut selection = navigation::NavigationState::recover(Some(key));
+                ui.push_id(("detached-feature", key.as_str()), |ui| {
                     egui::ScrollArea::vertical()
                         .id_salt(navigation::scroll_key(selection))
                         .show(ui, |ui| (self.render)(ui, &mut selection));
@@ -398,7 +345,6 @@ fn egui_debug_window_body(ui: &mut egui::Ui, renderer: &mut egui_directx11::Rend
         ui.menu_button("Layout", |ui| {
             if ui.button("Restore default layout").clicked() { state.reset(); }
             if ui.button("Recover detached views").clicked() { state.recover(); }
-            if ui.add_enabled(state.has_legacy(), egui::Button::new("Migrate old layout")).clicked() { state.migrate_legacy(); }
             ui.label("Drag a view tab back to the main dock to re-dock it. Closed views remain reachable from the feature navigation.");
         });
     });
@@ -412,7 +358,7 @@ fn egui_debug_window_body(ui: &mut egui::Ui, renderer: &mut egui_directx11::Rend
             .show(ui, |ui| {
                 edit_boundary(ui, editing, |ui| {
                     ui.heading("Visualizations");
-                    visualizations::controls(ui, &visualizations, None);
+                    visualizations::controls(ui, &visualizations);
                 });
             });
     }

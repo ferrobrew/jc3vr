@@ -18,7 +18,7 @@ use crate::{
     status::{self, Health},
     ui::{
         capture::{OwnershipBlocker, OwnershipSnapshot, PanelMode},
-        catalog::{FeatureId, FeatureSection},
+        catalog::FeatureId,
         navigation::NavigationState,
     },
     vr::input::{self, InputStatus},
@@ -498,35 +498,19 @@ fn render_snapshot(
         FeatureId::ActiveTools => {
             ui.heading("Performance, captures, and visualization readouts");
             render_rows(ui, active_tool_rows(&rows));
-            ui.label("Other visualization switches remain in Visualizations. A configured switch does not establish that a view is currently drawing; preview renderer availability is reported by its owning view.");
+            ui.label("A configured visualization switch does not establish that a view is currently drawing; preview renderer availability is reported by its owning view.");
         }
         _ => return,
     }
     ui.separator();
     ui.horizontal_wrapped(|ui| {
-        for (label, feature, section) in [
-            (
-                "All feature status",
-                FeatureId::AllStatus,
-                FeatureSection::Status,
-            ),
-            (
-                "Open performance",
-                FeatureId::Performance,
-                FeatureSection::Status,
-            ),
-            (
-                "Open tracking capture",
-                FeatureId::TrackingCapture,
-                FeatureSection::Controls,
-            ),
-            (
-                "Open video recording",
-                FeatureId::Video,
-                FeatureSection::Controls,
-            ),
+        for (label, feature) in [
+            ("All feature status", FeatureId::AllStatus),
+            ("Open performance", FeatureId::Performance),
+            ("Open tracking capture", FeatureId::TrackingCapture),
+            ("Open video recording", FeatureId::Video),
         ] {
-            destination(ui, label, NavigationState { feature, section }, selection);
+            destination(ui, label, NavigationState { feature }, selection);
         }
     });
 }

@@ -19,7 +19,7 @@ pub use crate::ui::render::capture::{
 };
 use crate::{
     config,
-    ui::catalog::{FeatureId, FeatureSection},
+    ui::{catalog::FeatureId, dispatch::FeatureBody},
 };
 
 /// Debug-UI only: swap the two eyes in the side-by-side stereo preview, so the pair can be fused
@@ -28,31 +28,25 @@ use crate::{
 pub(crate) static STEREO_CROSS_EYED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(true);
 
-pub(crate) fn feature(ui: &mut egui::Ui, id: FeatureId, section: FeatureSection) {
-    match section {
-        FeatureSection::Controls => {
-            let mut cfg = config::edit();
-            let cfg = &mut *cfg;
-            match id {
-                FeatureId::Stereo => {
-                    stereo::section(ui, cfg);
-                    corrections::section(ui, cfg);
-                }
-                FeatureId::Resolution => resolution::section(ui, cfg),
-                FeatureId::Graphics => {
-                    far_field::section(ui, cfg);
-                    single_pass::section(ui, cfg);
-                    post_fx::section(ui, cfg);
-                }
-                _ => {}
-            }
+pub(crate) fn controls(ui: &mut egui::Ui, id: FeatureId) {
+    let mut cfg = config::edit();
+    let cfg = &mut *cfg;
+    match id {
+        FeatureId::Stereo => {
+            stereo::section(ui, cfg);
+            corrections::section(ui, cfg);
         }
-        FeatureSection::Status if id == FeatureId::Graphics => far_field::readout(ui),
-        FeatureSection::Status => {
-            ui.label("No separate live snapshot is available. Existing readouts remain beside this feature's controls.");
+        FeatureId::Resolution => resolution::section(ui, cfg),
+        FeatureId::Graphics => {
+            far_field::section(ui, cfg);
+            single_pass::section(ui, cfg);
+            post_fx::section(ui, cfg);
         }
-        FeatureSection::Visualizations => {
-            ui.label("No separate visualization is available for this feature. Use Visualizations above for shared views.");
-        }
+        _ => {}
     }
+}
+
+pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
+    let body: FeatureBody = |ui, _| far_field::readout(ui);
+    (id == FeatureId::Graphics).then_some(body)
 }

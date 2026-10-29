@@ -1,44 +1,15 @@
-//! Production feature routing and links to shared control owners.
+//! Production feature routing: each feature renders its controls followed by a collapsible live
+//! readout.
 
-#[cfg(test)]
-#[path = "dispatch/director_tests.rs"]
-mod director_tests;
-#[cfg(test)]
-#[path = "dispatch/environment_tests.rs"]
-mod environment_tests;
-#[cfg(test)]
-#[path = "dispatch/hud_tests.rs"]
-mod hud_tests;
-#[cfg(test)]
-#[path = "dispatch/keyboard_tests.rs"]
-mod keyboard_tests;
-#[cfg(test)]
-#[path = "dispatch/replay_tests.rs"]
-mod replay_tests;
-#[cfg(test)]
-#[path = "dispatch/spawn_tests.rs"]
-mod spawn_tests;
 #[cfg(test)]
 #[path = "dispatch/tests.rs"]
 mod tests;
-#[cfg(test)]
-#[path = "dispatch/tracking_tests.rs"]
-mod tracking_tests;
-#[cfg(test)]
-#[path = "dispatch/video_tests.rs"]
-mod video_tests;
-#[cfg(test)]
-#[path = "dispatch/visualizations_tests.rs"]
-mod visualizations_tests;
 
 use egui::Ui;
 
 use crate::ui::{
-    camera,
-    catalog::{FeatureId, FeatureSection},
-    controllers, diagnostics, director, environment, game, hud,
-    navigation::NavigationState,
-    overview, performance, previews, render, testing, vr,
+    camera, catalog::FeatureId, controllers, diagnostics, director, environment, game, hud,
+    navigation::NavigationState, overview, performance, previews, render, testing, vr,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,6 +29,11 @@ pub(crate) enum FeatureRoute {
     Environment,
     Engine,
 }
+
+/// A feature body that needs neither the renderer nor the navigation state. Controller, game,
+/// render, and diagnostics modules hand these out per feature so dispatch can tell whether a
+/// feature has controls or a readout without rendering it.
+pub(crate) type FeatureBody = fn(&mut Ui, FeatureId);
 
 pub(crate) fn route(id: FeatureId) -> FeatureRoute {
     match id {
@@ -79,7 +55,43 @@ pub(crate) fn route(id: FeatureId) -> FeatureRoute {
         | FeatureId::Keyboard => FeatureRoute::Director,
         FeatureId::Environment => FeatureRoute::Environment,
         FeatureId::Engine | FeatureId::Swimming => FeatureRoute::Engine,
-        _ => FeatureRoute::Controller,
+        FeatureId::Calibration
+        | FeatureId::Posture
+        | FeatureId::RootWalls
+        | FeatureId::Torso
+        | FeatureId::Procedural
+        | FeatureId::AnimationIk
+        | FeatureId::Presentation
+        | FeatureId::HandTracking
+        | FeatureId::Fingers
+        | FeatureId::PhysicalHands
+        | FeatureId::CharactersDoors
+        | FeatureId::Snatch
+        | FeatureId::Feedback
+        | FeatureId::Hold
+        | FeatureId::Support
+        | FeatureId::Aim
+        | FeatureId::Reload
+        | FeatureId::Inventory
+        | FeatureId::Explosives
+        | FeatureId::WeaponSelection
+        | FeatureId::Locomotion
+        | FeatureId::Grapple
+        | FeatureId::Climbing
+        | FeatureId::Driving
+        | FeatureId::VehicleControls
+        | FeatureId::Mounted
+        | FeatureId::Wingsuit
+        | FeatureId::Parachute
+        | FeatureId::Devices
+        | FeatureId::Thresholds
+        | FeatureId::Bindings
+        | FeatureId::MenuPanel
+        | FeatureId::Wrist
+        | FeatureId::Semantic
+        | FeatureId::ControllerCapture
+        | FeatureId::Presets
+        | FeatureId::Sandbox => FeatureRoute::Controller,
     }
 }
 
@@ -89,83 +101,86 @@ pub(crate) fn feature(
     renderer: Option<&mut egui_directx11::Renderer>,
 ) {
     let id = selection.feature;
-    let section = selection.section;
+    controls(ui, selection, renderer);
+    // Readouts run after the controls return, so no configuration edit guard is held.
+    let readouts: Vec<FeatureBody> = readouts(id).collect();
+    if !readouts.is_empty() {
+        egui::CollapsingHeader::new("Live status")
+            .default_open(true)
+            .show(ui, |ui| {
+                for readout in readouts {
+                    readout(ui, id);
+                }
+            });
+    }
+}
+
+fn controls(
+    ui: &mut Ui,
+    selection: &mut NavigationState,
+    renderer: Option<&mut egui_directx11::Renderer>,
+) {
+    let id = selection.feature;
     match route(id) {
         FeatureRoute::Overview => overview::render(ui, id, selection),
         FeatureRoute::Controller => {
-            controllers::feature(ui, id, section);
-            if matches!(
-                id,
-                FeatureId::Locomotion
-                    | FeatureId::Driving
-                    | FeatureId::Parachute
-                    | FeatureId::Wingsuit
-            ) {
-                game::feature(ui, id, section);
+            if let Some(body) = controllers::controls(id) {
+                body(ui, id);
             }
-            if section == FeatureSection::Controls {
-                if id == FeatureId::AnimationIk {
-                    camera::body_ik(ui);
-                }
-                if id == FeatureId::Grapple {
-                    camera::grapple_comfort(ui);
-                }
-                if id == FeatureId::Locomotion {
+            game::controls(ui, id);
+            match id {
+                FeatureId::AnimationIk => camera::body_ik(ui),
+                FeatureId::Grapple => camera::grapple_comfort(ui),
+                FeatureId::Locomotion => {
                     ui.collapsing("Advanced tuning", camera::turn_advanced);
                 }
+                _ => {}
             }
         }
-        FeatureRoute::HeadView if section == FeatureSection::Controls => camera::head_view(ui),
-        FeatureRoute::Runtime if section == FeatureSection::Controls => vr::egui_debug_vr(ui),
-        FeatureRoute::Runtime if section == FeatureSection::Status => vr::status(ui),
-        FeatureRoute::Render => render::feature(ui, id, section),
-        FeatureRoute::Hud if section == FeatureSection::Controls => {
-            with_renderer(ui, renderer, hud::egui_debug_hud)
-        }
-        FeatureRoute::Hud if section == FeatureSection::Status => hud::status(ui),
-        FeatureRoute::Previews if section == FeatureSection::Visualizations => {
-            with_renderer(ui, renderer, previews::egui_debug_previews)
-        }
-        FeatureRoute::Performance if section == FeatureSection::Status => {
-            performance::egui_debug_performance(ui)
-        }
-        FeatureRoute::RenderDiagnostics => diagnostics::feature(ui, id, section),
-        FeatureRoute::Tracking if section == FeatureSection::Controls => {
-            testing::tracking_feature(ui)
-        }
-        FeatureRoute::Tracking if section == FeatureSection::Status => testing::tracking_status(ui),
-        FeatureRoute::Replay if section == FeatureSection::Controls => testing::replay_feature(ui),
-        FeatureRoute::Replay if section == FeatureSection::Status => testing::replay_status(ui),
-        FeatureRoute::Director if section == FeatureSection::Controls => director::feature(ui, id),
-        FeatureRoute::Director
-            if id == FeatureId::DirectorSafety && section == FeatureSection::Status =>
-        {
-            director::safety_status(ui)
-        }
-        FeatureRoute::Director if id == FeatureId::Video && section == FeatureSection::Status => {
-            director::video_status(ui)
-        }
-        FeatureRoute::Director
-            if id == FeatureId::Keyboard && section == FeatureSection::Status =>
-        {
-            director::keyboard_status(ui)
-        }
-        FeatureRoute::Director
-            if id == FeatureId::DirectorSpawn && section == FeatureSection::Status =>
-        {
-            director::spawn_status(ui)
-        }
-        FeatureRoute::Environment if section == FeatureSection::Controls => environment::render(ui),
-        FeatureRoute::Environment if section == FeatureSection::Status => environment::status(ui),
-        FeatureRoute::Engine => game::feature(ui, id, section),
-        _ => {
-            ui.label(match section {
-                FeatureSection::Controls => "No separate controls are available in this section.",
-                FeatureSection::Status => "No separate live snapshot is available. Existing readouts remain beside this feature's controls.",
-                FeatureSection::Visualizations => "No separate visualization is available for this feature. Use Visualizations above for shared views.",
-            });
-        }
+        FeatureRoute::HeadView => camera::head_view(ui),
+        FeatureRoute::Runtime => vr::egui_debug_vr(ui),
+        FeatureRoute::Render => render::controls(ui, id),
+        FeatureRoute::Hud => with_renderer(ui, renderer, hud::egui_debug_hud),
+        FeatureRoute::Previews => with_renderer(ui, renderer, previews::egui_debug_previews),
+        FeatureRoute::Performance => {}
+        FeatureRoute::RenderDiagnostics => diagnostics::controls(ui, id),
+        FeatureRoute::Tracking => testing::tracking_feature(ui),
+        FeatureRoute::Replay => testing::replay_feature(ui),
+        FeatureRoute::Director => director::feature(ui, id),
+        FeatureRoute::Environment => environment::render(ui),
+        FeatureRoute::Engine => game::controls(ui, id),
     }
+}
+
+fn readouts(id: FeatureId) -> impl Iterator<Item = FeatureBody> {
+    let routed: Option<FeatureBody> = match route(id) {
+        FeatureRoute::Overview
+        | FeatureRoute::HeadView
+        | FeatureRoute::Previews
+        | FeatureRoute::Engine => None,
+        FeatureRoute::Controller => controllers::status(id),
+        FeatureRoute::Runtime => Some(|ui, _| vr::status(ui)),
+        FeatureRoute::Render => render::status(id),
+        FeatureRoute::Hud => Some(|ui, _| hud::status(ui)),
+        FeatureRoute::Performance => Some(|ui, _| performance::egui_debug_performance(ui)),
+        FeatureRoute::RenderDiagnostics => diagnostics::status(id),
+        FeatureRoute::Tracking => Some(|ui, _| testing::tracking_status(ui)),
+        FeatureRoute::Replay => Some(|ui, _| testing::replay_status(ui)),
+        FeatureRoute::Director => director_status(id),
+        FeatureRoute::Environment => Some(|ui, _| environment::status(ui)),
+    };
+    routed.into_iter().chain(game::status(id))
+}
+
+fn director_status(id: FeatureId) -> Option<FeatureBody> {
+    let body: FeatureBody = match id {
+        FeatureId::DirectorSafety => |ui, _| director::safety_status(ui),
+        FeatureId::DirectorSpawn => |ui, _| director::spawn_status(ui),
+        FeatureId::Video => |ui, _| director::video_status(ui),
+        FeatureId::Keyboard => |ui, _| director::keyboard_status(ui),
+        _ => return None,
+    };
+    Some(body)
 }
 
 fn with_renderer(

@@ -1,7 +1,5 @@
 //! Renderer-free checks against the concrete visualization configuration fields.
 
-use std::collections::HashSet;
-
 use super::*;
 
 fn serialized(config: &Config) -> serde_json::Value {
@@ -77,125 +75,91 @@ fn each_inventory_switch_edits_only_its_concrete_config_field() {
 }
 
 #[test]
-fn filtering_names_groups_and_feature_subsets_preserves_the_saved_config() {
+fn filtering_names_groups_and_feature_names_preserves_the_saved_config() {
     let config = Config::new();
     let before = serialized(&config);
-    assert_eq!(
-        matching(&config, "BODY MIRROR", None)[0].id,
-        ViewId::BodyMirror
-    );
-    let cues = matching(&config, "gameplay cues", None);
+    assert_eq!(matching(&config, "BODY MIRROR")[0].id, ViewId::BodyMirror);
+    let cues = matching(&config, "gameplay cues");
     assert!(!cues.is_empty());
     assert!(cues.iter().all(|entry| entry.group == Group::GameplayCues));
-    let hands = matching(&config, "", Some(FeatureId::PhysicalHands));
+    let hands = matching(&config, "physical hands");
     assert!(!hands.is_empty());
     assert!(
         hands
             .iter()
             .all(|entry| entry.feature == FeatureId::PhysicalHands)
     );
-    assert!(matching(&config, "not a view", None).is_empty());
+    assert!(matching(&config, "not a view").is_empty());
     assert_eq!(before, serialized(&config));
 }
 
 #[test]
-fn feature_subsets_are_exact_disjoint_and_cover_the_inventory() {
-    let config = Config::new();
-    let expected: [(FeatureId, &[ViewId]); 3] = [
-        (
-            FeatureId::RootWalls,
-            &[ViewId::BodyMirror, ViewId::ControllerGizmos],
-        ),
-        (
-            FeatureId::PhysicalHands,
-            &[
-                ViewId::GhostHands,
-                ViewId::GripMarkers,
-                ViewId::GrabView,
-                ViewId::GrabRays,
-                ViewId::GrabTargets,
-                ViewId::GrabWrist,
-                ViewId::GrabRefusals,
-                ViewId::GrabCandidates,
-                ViewId::ColliderView,
-            ],
-        ),
-        (
-            FeatureId::Grapple,
-            &[ViewId::GrappleHighlight, ViewId::GrappleBeam],
-        ),
-    ];
-    let mut union = HashSet::new();
-    for (feature, ids) in expected {
-        let entries = matching(&config, "", Some(feature));
-        let actual: HashSet<_> = entries.iter().map(|entry| entry.id).collect();
-        assert_eq!(entries.len(), ids.len(), "{feature:?}");
-        assert_eq!(actual, ids.iter().copied().collect(), "{feature:?}");
-        for entry in entries {
-            assert_eq!(entry.feature, feature);
-            assert!(union.insert(entry.id), "duplicate owner for {:?}", entry.id);
+fn drawer_shows_every_switch_once_with_the_global_controls() {
+    let snapshot = snapshot_with(Config::new());
+    let before = serialized(&snapshot.config);
+    let context = egui::Context::default();
+    let mut labels = Vec::new();
+    for _ in 0..2 {
+        let output = context.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 4000.0),
+                )),
+                ..Default::default()
+            },
+            |ui| controls(ui, &snapshot),
+        );
+        labels.clear();
+        for clipped in &output.shapes {
+            collect_text(&clipped.shape, &mut labels);
         }
     }
-    assert_eq!(union.len(), 13);
-    assert_eq!(union, ENTRIES.iter().map(|entry| entry.id).collect());
-    for feature in [FeatureId::Previews, FeatureId::RenderDiagnostics] {
-        assert!(matching(&config, "", Some(feature)).is_empty());
+    for entry in ENTRIES {
+        assert_eq!(
+            labels.iter().filter(|label| *label == entry.label).count(),
+            1,
+            "{}",
+            entry.label,
+        );
     }
+    for label in [
+        "Shared overlay settings",
+        "Grab and collider view tuning",
+        "Hide registered views (including Gameplay cues)",
+        "Restore registered views",
+    ] {
+        assert!(labels.iter().any(|text| text == label), "{label}");
+    }
+    assert!(labels.iter().any(|text| text.starts_with("Inventory:")));
+    assert_eq!(serialized(&snapshot.config), before);
 }
 
 #[test]
-fn shared_controls_show_only_owner_rows_without_global_controls_for_a_feature() {
-    let snapshot = snapshot_with(Config::new());
-    let before = serialized(&snapshot.config);
-    for feature in [
-        Some(FeatureId::RootWalls),
-        Some(FeatureId::PhysicalHands),
-        Some(FeatureId::Grapple),
-        None,
-    ] {
-        let context = egui::Context::default();
-        let mut labels = Vec::new();
-        for _ in 0..2 {
-            let output = context.run_ui(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        egui::vec2(1400.0, 4000.0),
-                    )),
-                    ..Default::default()
-                },
-                |ui| controls(ui, &snapshot, feature),
-            );
-            labels.clear();
-            for clipped in &output.shapes {
-                collect_text(&clipped.shape, &mut labels);
-            }
-        }
-        for entry in ENTRIES {
-            assert_eq!(
-                labels.iter().filter(|label| *label == entry.label).count(),
-                usize::from(feature.is_none_or(|feature| feature == entry.feature)),
-                "{feature:?}: {}",
-                entry.label,
-            );
-        }
-        for label in [
-            "Shared overlay settings",
-            "Hide registered views (including Gameplay cues)",
-            "Restore registered views",
-        ] {
-            assert_eq!(
-                labels.iter().any(|text| text == label),
-                feature.is_none(),
-                "{feature:?}: {label}"
-            );
-        }
-        assert_eq!(
-            labels.iter().any(|text| text.starts_with("Inventory:")),
-            feature.is_none()
-        );
-    }
-    assert_eq!(serialized(&snapshot.config), before);
+fn view_tuning_edits_leave_the_registered_switches_alone() {
+    let mut config = Config::new();
+    let grab_switch = !config.controllers.physical_hands.grab_view.enabled;
+    let collider_switch = !config.controllers.physical_hands.collider_view.enabled;
+    let mut grab = config.controllers.physical_hands.grab_view;
+    grab.radius_m += 1.0;
+    let mut collider = config.controllers.physical_hands.collider_view;
+    collider.max_bodies += 1;
+    collider.boxes = !collider.boxes;
+    apply_edits(
+        &mut config,
+        &[
+            Edit::Switch(ViewId::GrabView, grab_switch),
+            Edit::Switch(ViewId::ColliderView, collider_switch),
+            Edit::GrabViewTuning(grab),
+            Edit::ColliderViewTuning(collider),
+        ],
+    );
+    let views = &config.controllers.physical_hands;
+    assert_eq!(views.grab_view.enabled, grab_switch);
+    assert_eq!(views.grab_view.radius_m, grab.radius_m);
+    assert_eq!(views.collider_view.enabled, collider_switch);
+    assert_eq!(views.collider_view.max_bodies, collider.max_bodies);
+    assert_eq!(views.collider_view.boxes, collider.boxes);
 }
 
 fn collect_text(shape: &egui::Shape, labels: &mut Vec<String>) {
@@ -218,7 +182,7 @@ fn requested_switches_precede_disabled_switches() {
     }
     config.controllers.overlay.body_mirror = true;
     config.controllers.overlay.grapple_beam = true;
-    let entries = matching(&config, "", None);
+    let entries = matching(&config, "");
     assert_eq!(entries[0].id, ViewId::BodyMirror);
     assert_eq!(entries[1].id, ViewId::GrappleBeam);
     assert!(

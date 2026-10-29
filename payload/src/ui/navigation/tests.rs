@@ -44,7 +44,6 @@ impl Harness {
         let features = [FeatureSnapshot {
             feature: self.state.feature,
             summary: "Synthetic snapshot: ready",
-            visualization: ViewAvailability::Unavailable("GPU preview unavailable in pure tests."),
         }];
         let mut input = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(
@@ -306,7 +305,7 @@ fn navigation_feature_parity() {
 }
 
 #[test]
-fn narrow_layout_keeps_pages_features_sections_and_recovery_visible() {
+fn narrow_layout_keeps_pages_features_and_recovery_visible() {
     let mut harness = Harness::new();
     for page in PageId::ALL {
         let frame = harness.frame(420.0, Vec::new());
@@ -349,10 +348,6 @@ fn narrow_layout_keeps_pages_features_sections_and_recovery_visible() {
                 feature.key
             );
         }
-        for section in FeatureSection::ALL {
-            harness.click(420.0, NavigationTarget::Section(section));
-            assert_eq!(harness.state.section, section);
-        }
     }
     assert!(
         harness.wheel_down > 0,
@@ -365,29 +360,7 @@ fn narrow_layout_keeps_pages_features_sections_and_recovery_visible() {
 }
 
 #[test]
-fn old_layout_selection_recovers_without_orphaning_a_feature() {
-    for legacy in [
-        "Performance",
-        "Render",
-        "Previews",
-        "Diagnostics",
-        "Status",
-        "Camera",
-        "Game",
-        "Hud",
-        "Environment",
-        "Vr",
-        "Director",
-        "Controllers",
-        "Testing",
-    ] {
-        let recovered = NavigationState::recover(Some(legacy));
-        assert!(
-            FEATURES
-                .iter()
-                .any(|feature| feature.id == recovered.feature)
-        );
-    }
+fn saved_selection_recovers_known_keys_and_defaults_unknown_ones() {
     assert_eq!(
         NavigationState::recover(Some("removed-feature")),
         NavigationState::default()
@@ -404,7 +377,6 @@ fn old_layout_selection_recovers_without_orphaning_a_feature() {
 #[test]
 fn read_only_navigation_ignores_pointer_and_still_reads_snapshots() {
     let mut harness = Harness::new();
-    harness.state.section = FeatureSection::Status;
     harness.ownership.mode = PanelMode::ReadOnly;
     harness.ownership.edit_capture = Default::default();
     let before = harness.state;
@@ -427,26 +399,4 @@ fn header_returns_commands_without_mutating_the_input_snapshot() {
     let clicked = harness.click(1100.0, NavigationTarget::AllowGameplay);
     assert_eq!(clicked.commands, vec![NavigationCommand::AllowGameplay]);
     assert_eq!(harness.ownership.mode, PanelMode::Editing);
-}
-
-#[test]
-fn unavailable_and_available_visualizations_need_no_renderer() {
-    let mut harness = Harness::new();
-    harness.state.section = FeatureSection::Visualizations;
-    harness.frame(1100.0, Vec::new());
-    let features = [FeatureSnapshot {
-        feature: harness.state.feature,
-        summary: "Synthetic snapshot: view adapter present",
-        visualization: ViewAvailability::Available,
-    }];
-    let _output = harness.context.run_ui(egui::RawInput::default(), |ui| {
-        navigation(
-            ui,
-            &mut harness.state,
-            NavigationSnapshot {
-                ownership: harness.ownership,
-                features: &features,
-            },
-        );
-    });
 }

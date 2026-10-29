@@ -1,7 +1,5 @@
 //! Approved navigation destinations and stable persisted feature keys.
 
-use serde::{Deserialize, Serialize};
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum PageId {
     Overview,
@@ -36,26 +34,6 @@ impl PageId {
             Self::Rendering => "Rendering",
             Self::Input => "Input/bindings",
             Self::Capture => "Capture/testing",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub(crate) enum FeatureSection {
-    #[default]
-    Controls,
-    Status,
-    Visualizations,
-}
-
-impl FeatureSection {
-    pub(crate) const ALL: [Self; 3] = [Self::Controls, Self::Status, Self::Visualizations];
-
-    pub(crate) fn label(self) -> &'static str {
-        match self {
-            Self::Controls => "Controls/tuning",
-            Self::Status => "Live status",
-            Self::Visualizations => "Visualizations",
         }
     }
 }

@@ -146,11 +146,6 @@ pub(crate) fn is_recording() -> bool {
     RECORDING.load(Ordering::Relaxed)
 }
 
-#[cfg(test)]
-pub(crate) fn has_pending_request() -> bool {
-    REQUEST.load(Ordering::Relaxed) != REQUEST_NONE
-}
-
 /// The recorder's state after collecting completed writers.
 pub(crate) fn status() -> TrackingStatus {
     let mut state = STATE.lock();

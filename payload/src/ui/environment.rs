@@ -12,11 +12,6 @@ use jc3gi::environment::{LandscapeManager, Weather, WeatherController, WorldTime
 /// Render the Environment tab body.
 pub(crate) fn render(ui: &mut egui::Ui) {
     fn time_of_day_ui(ui: &mut egui::Ui) {
-        #[cfg(test)]
-        if test_game::installed() {
-            ui.label("WorldTime singleton unavailable.");
-            return;
-        }
         let wt = unsafe { WorldTime::get() };
         let Some(wt) = wt else {
             ui.label("WorldTime singleton unavailable.");
@@ -42,7 +37,7 @@ pub(crate) fn render(ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             for (label, event) in WEATHER_EVENTS {
                 if ui.button(*label).clicked() {
-                    send_weather_event(event);
+                    jc3gi::event::send_event_msg(event);
                 }
             }
         });
@@ -120,10 +115,6 @@ struct WeatherSnapshot {
 }
 
 fn observed_snapshot() -> ObservedSnapshot {
-    #[cfg(test)]
-    if let Some(snapshot) = test_game::observed_snapshot() {
-        return snapshot;
-    }
     let time = unsafe { WorldTime::get() }.map(|time| TimeSnapshot {
         hour: time.m_CurrentTimeOfDay,
         speed: time.m_SpeedMultiplicator,
@@ -148,88 +139,7 @@ const WEATHER_EVENTS: &[(&str, &CStr)] = &[
 
 /// Resolve the live `Weather`: `LandscapeManager` -> `m_Atmosphere` -> `GetWeather`.
 fn weather() -> Option<&'static mut Weather> {
-    #[cfg(test)]
-    if test_game::installed() {
-        return None;
-    }
     let atmosphere = unsafe { LandscapeManager::get()? }.m_Atmosphere;
     let weather = unsafe { atmosphere.as_mut()?.GetWeather() };
     unsafe { weather.as_mut() }
-}
-
-/// Fire a named weather event, or record it instead while a test fixture is installed.
-fn send_weather_event(event: &CStr) {
-    #[cfg(test)]
-    if test_game::record_event(event) {
-        return;
-    }
-    jc3gi::event::send_event_msg(event);
-}
-
-#[cfg(test)]
-pub(crate) mod test_game {
-    use std::{cell::RefCell, ffi::CStr};
-
-    use crate::ui::environment::{ObservedSnapshot, TimeSnapshot, WeatherSnapshot};
-
-    #[derive(Clone, Debug, Default, PartialEq)]
-    pub(crate) struct Snapshot {
-        pub time: Option<(f32, f32)>,
-        pub weather: Option<(f32, f32, f32)>,
-        pub events: Vec<String>,
-    }
-
-    pub(crate) struct Fixture {
-        previous: Option<Snapshot>,
-    }
-
-    pub(crate) fn install(time: Option<(f32, f32)>, weather: Option<(f32, f32, f32)>) -> Fixture {
-        let previous = INSTALLED.replace(Some(Snapshot {
-            time,
-            weather,
-            events: Vec::new(),
-        }));
-        Fixture { previous }
-    }
-
-    pub(crate) fn snapshot() -> Option<Snapshot> {
-        INSTALLED.with_borrow(Clone::clone)
-    }
-
-    pub(crate) fn installed() -> bool {
-        INSTALLED.with_borrow(Option::is_some)
-    }
-
-    pub(super) fn observed_snapshot() -> Option<ObservedSnapshot> {
-        INSTALLED.with_borrow(|state| {
-            state.as_ref().map(|state| ObservedSnapshot {
-                time: state.time.map(|(hour, speed)| TimeSnapshot { hour, speed }),
-                weather: state.weather.map(|(severity, rain, snow)| WeatherSnapshot {
-                    severity,
-                    rain,
-                    snow,
-                }),
-            })
-        })
-    }
-
-    pub(crate) fn record_event(event: &CStr) -> bool {
-        INSTALLED.with_borrow_mut(|state| {
-            let Some(state) = state.as_mut() else {
-                return false;
-            };
-            state.events.push(event.to_string_lossy().into_owned());
-            true
-        })
-    }
-
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            INSTALLED.replace(self.previous.take());
-        }
-    }
-
-    thread_local! {
-        static INSTALLED: RefCell<Option<Snapshot>> = const { RefCell::new(None) };
-    }
 }

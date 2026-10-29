@@ -12,7 +12,7 @@ The debug window's top bar contains `Allow gameplay input`. Opening the panel re
 
 The header reports the requested mode separately from effective input ownership. A focus, tracking/recovery, neutral-input, or game-device acknowledgement blocker remains visible instead of reporting that gameplay is active. Editing saves the prior game-device state, and releasing editing restores that state, including a previously disabled device. Restoration never forces the device enabled while the application lacks focus. Ownership transitions clear queued events and egui's remembered pointer/key state, end panel dragging, and wait for a destination-device acknowledgement followed by a neutral input sample. The input tick must consume the held source episodes during that wait; filtering egui events alone does not establish gameplay safety.
 
-The overlay state belongs to the current editing session. `Allow gameplay input` is not a saved configuration field, does not enable motion controllers or bindings, and does not override native menus or input recovery. The feature navigation and detached views share the disabled editing boundary. Visualization settings remain unchanged by input-mode and page changes. Layout persistence and explicit migration from `ui_layout.json` are described in [debug-ui.md](debug-ui.md).
+The overlay state belongs to the current editing session. `Allow gameplay input` is not a saved configuration field, does not enable motion controllers or bindings, and does not override native menus or input recovery. The feature navigation and detached views share the disabled editing boundary. Visualization settings remain unchanged by input-mode and page changes. Layout persistence is described in [debug-ui.md](debug-ui.md).
 
 The capture adapter and header are implemented in `payload/src/egui_impl.rs`, `controllers/mode.rs`, and `ui/mod.rs`. The production adapter notifies the input owner, observes neutral input, gates gameplay and controller-pointer input, and handles desktop F4 visibility separately from the VR panel. Renderer-free tests cover these ownership transitions. No headset verification is recorded.
 
@@ -24,7 +24,6 @@ The payload keeps its files in the per-user configuration directory that the `di
 | --- | --- | --- |
 | `settings.toml` | The whole runtime configuration | When a setting changes, as described below |
 | `ui_layout_v2.json` | The debug UI's feature selection and dock layout | One owned coalescing writer performs atomic replacement outside UI locks; snapshots are checked every 60 editing UI frames |
-| `ui_layout.json` | The previous debug UI layout retained for explicit migration | Read during migration; not overwritten |
 | `teleports.toml` | The director's teleport bookmarks | When a bookmark is saved or removed |
 | `inventory.toml` | The VR inventory's save sidecar: the weapons carried beyond the slots, tied to the game's save ([input/two-handed-inventory.md](input/two-handed-inventory.md#saves-resets-and-loads)) | Each time the game stores the player's save data |
 

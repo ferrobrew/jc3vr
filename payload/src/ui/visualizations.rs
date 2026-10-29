@@ -12,9 +12,10 @@ use crate::{
             primitive::Source,
             store::{self, SourceMask},
         },
+        physical_hands::{collider_view::ColliderViewConfig, grab_view::GrabViewConfig},
         scheme,
     },
-    ui::catalog::FeatureId,
+    ui::{catalog::FeatureId, controllers},
 };
 
 /// A snapshot taken before any configuration edit guard is acquired.
@@ -110,31 +111,29 @@ pub(crate) fn snapshot() -> Snapshot {
     Snapshot { config, runtime }
 }
 
-/// Render the same inventory globally or as a feature-local subset, without navigation changes.
-/// The caller supplies the snapshot before entering any configuration edit boundary.
-pub(crate) fn controls(ui: &mut Ui, snapshot: &Snapshot, feature: Option<FeatureId>) {
-    let id = ui.id().with(("visualization-filter", feature));
+/// Render the drawer's switches, shared settings, view tuning, and readouts, without navigation
+/// changes. The caller supplies the snapshot before entering any configuration edit boundary.
+pub(crate) fn controls(ui: &mut Ui, snapshot: &Snapshot) {
+    let id = ui.id().with("visualization-filter");
     let mut filter = ui
         .ctx()
         .data_mut(|data| data.get_temp::<String>(id).unwrap_or_default());
     ui.add(egui::TextEdit::singleline(&mut filter).hint_text("Filter names or groups"));
     ui.ctx()
         .data_mut(|data| data.insert_temp(id, filter.clone()));
-    if feature.is_none() {
-        let summary = snapshot.summary();
-        ui.label(format!(
-            "Inventory: {}. {} blocked; {} draw unverified.",
-            summary.label(),
-            summary.blocked,
-            summary.draw_unverified
-        ));
-        ui.small("Requested switches include view contents. Active drawing needs a current draw sample; retained primitive counts do not prove it.");
-    }
+    let summary = snapshot.summary();
+    ui.label(format!(
+        "Inventory: {}. {} blocked; {} draw unverified.",
+        summary.label(),
+        summary.blocked,
+        summary.draw_unverified
+    ));
+    ui.small("Requested switches include view contents. Active drawing needs a current draw sample; retained primitive counts do not prove it.");
     let mut edits = Vec::new();
     egui::ScrollArea::vertical()
-        .id_salt(("visualization-switches", feature))
+        .id_salt("visualization-switches")
         .show(ui, |ui| {
-            let entries = matching(&snapshot.config, &filter, feature);
+            let entries = matching(&snapshot.config, &filter);
             if entries.is_empty() {
                 ui.label("No matching visualization switches.");
             }
@@ -154,13 +153,13 @@ pub(crate) fn controls(ui: &mut Ui, snapshot: &Snapshot, feature: Option<Feature
                     }
                 });
             }
-            if feature.is_none() {
-                ui.separator();
-                ui.collapsing("Shared overlay settings", |ui| shared_settings(ui, snapshot, &mut edits));
-                ui.separator();
-                temporary_controls(ui, snapshot);
-                ui.small("Preview, HUD, sight/scope, and performance tools remain in their existing feature editors. Opening this drawer does not activate their capture or scan work.");
-            }
+            ui.separator();
+            ui.collapsing("Shared overlay settings", |ui| shared_settings(ui, snapshot, &mut edits));
+            ui.collapsing("Grab and collider view tuning", |ui| view_settings(ui, snapshot, &mut edits));
+            ui.collapsing("View readouts", controllers::view_readouts);
+            ui.separator();
+            temporary_controls(ui, snapshot);
+            ui.small("Preview, HUD, sight/scope, and performance tools remain in their existing feature editors. Opening this drawer does not activate their capture or scan work.");
         });
     if !edits.is_empty() {
         apply_edits(&mut config::edit(), &edits);
@@ -494,11 +493,10 @@ impl Blocker {
     }
 }
 
-fn matching<'a>(config: &Config, filter: &str, feature: Option<FeatureId>) -> Vec<&'a Entry> {
+fn matching<'a>(config: &Config, filter: &str) -> Vec<&'a Entry> {
     let filter = filter.trim().to_lowercase();
     let mut entries: Vec<_> = ENTRIES
         .iter()
-        .filter(|entry| feature.is_none_or(|feature| entry.feature == feature))
         .filter(|entry| {
             filter.is_empty()
                 || entry.label.to_lowercase().contains(&filter)
@@ -526,6 +524,9 @@ enum Edit {
     RelativeDepthTolerance(f32),
     MinimumLineWidth(f32),
     XrayAlpha(f32),
+    HideGameReticle(bool),
+    GrabViewTuning(GrabViewConfig),
+    ColliderViewTuning(ColliderViewConfig),
 }
 
 fn switch_control(ui: &mut Ui, snapshot: &Snapshot, entry: &Entry, edits: &mut Vec<Edit>) {
@@ -551,6 +552,19 @@ fn unblock_control(ui: &mut Ui, blocker: Blocker, edits: &mut Vec<Edit>) {
 
 fn shared_settings(ui: &mut Ui, snapshot: &Snapshot, edits: &mut Vec<Edit>) {
     let mut overlay = snapshot.config.controllers.overlay;
+    if ui
+        .checkbox(
+            &mut overlay.hide_game_reticle,
+            "Hide the game's reticles while the hands aim",
+        )
+        .on_hover_text(
+            "Hide the HUD's weapon reticle while the guns aim by hand, and its grapple reticle \
+             always: both mark where the gaze aims, and the overlay marks the grapple's target.",
+        )
+        .changed()
+    {
+        edits.push(Edit::HideGameReticle(overlay.hide_game_reticle));
+    }
     if ui
         .checkbox(&mut overlay.enabled, "World-space overlay enabled")
         .changed()
@@ -621,6 +635,21 @@ fn shared_settings(ui: &mut Ui, snapshot: &Snapshot, edits: &mut Vec<Edit>) {
     }
 }
 
+/// The grab view's and collider view's tuning, edited on copies. Only the tuning fields are
+/// written back, so a switch edited in the same frame keeps its value.
+fn view_settings(ui: &mut Ui, snapshot: &Snapshot, edits: &mut Vec<Edit>) {
+    let physical_hands = &snapshot.config.controllers.physical_hands;
+    let mut grab = physical_hands.grab_view;
+    let mut collider = physical_hands.collider_view;
+    controllers::view_settings(ui, &mut grab, &mut collider);
+    if grab != physical_hands.grab_view {
+        edits.push(Edit::GrabViewTuning(grab));
+    }
+    if collider != physical_hands.collider_view {
+        edits.push(Edit::ColliderViewTuning(collider));
+    }
+}
+
 fn apply_edits(config: &mut Config, edits: &[Edit]) {
     for edit in edits {
         match *edit {
@@ -639,6 +668,21 @@ fn apply_edits(config: &mut Config, edits: &[Edit]) {
             }
             Edit::MinimumLineWidth(width) => config.controllers.overlay.min_line_px = width,
             Edit::XrayAlpha(alpha) => config.controllers.overlay.xray_alpha = alpha,
+            Edit::HideGameReticle(hide) => config.controllers.overlay.hide_game_reticle = hide,
+            Edit::GrabViewTuning(tuning) => {
+                let view = &mut config.controllers.physical_hands.grab_view;
+                view.radius_m = tuning.radius_m;
+                view.candidate_radius_m = tuning.candidate_radius_m;
+                view.max_candidates = tuning.max_candidates;
+            }
+            Edit::ColliderViewTuning(tuning) => {
+                // The view's switch is a registered switch; the tuning edit leaves it alone.
+                let view = &mut config.controllers.physical_hands.collider_view;
+                *view = ColliderViewConfig {
+                    enabled: view.enabled,
+                    ..tuning
+                };
+            }
         }
     }
 }

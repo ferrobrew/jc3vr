@@ -28,40 +28,37 @@ use crate::{
     },
     sim_rate::{self, SimRate},
     ui::{
-        catalog::{FeatureId, FeatureSection},
+        catalog::FeatureId,
+        dispatch::FeatureBody,
         util::{patch_slider, patchbox},
     },
 };
 
-pub(crate) fn feature(ui: &mut egui::Ui, id: FeatureId, section: FeatureSection) {
-    match (id, section) {
-        (FeatureId::Swimming, FeatureSection::Controls) => {
-            swimming_controls(ui, &mut config::edit());
-        }
-        (FeatureId::Swimming, FeatureSection::Status) => swimming_readout(ui),
-        (FeatureId::Locomotion, FeatureSection::Controls) => {
+pub(crate) fn controls(ui: &mut egui::Ui, id: FeatureId) {
+    match id {
+        FeatureId::Swimming => swimming_controls(ui, &mut config::edit()),
+        FeatureId::Locomotion => {
             locomotion_controls(ui, &mut config::edit());
             relaxed_strafe_controls(ui);
         }
-        (FeatureId::Locomotion, FeatureSection::Status) => locomotion_readout(ui),
-        (FeatureId::Driving, FeatureSection::Controls) => {
-            driving_controls(ui, &mut config::edit());
-        }
-        (FeatureId::Parachute, FeatureSection::Controls) => {
-            parachute_controls(ui, &mut config::edit());
-        }
-        (FeatureId::Parachute, FeatureSection::Status) => parachute_readout(ui),
-        (FeatureId::Wingsuit, FeatureSection::Controls) => {
-            wingsuit_controls(ui, &mut config::edit());
-        }
-        (FeatureId::Wingsuit, FeatureSection::Status) => wingsuit_readout(ui),
-        (FeatureId::Engine, FeatureSection::Controls) => egui_debug_game(ui),
-        (FeatureId::Engine, FeatureSection::Status) => game_readout(ui),
-        (FeatureId::Swimming | FeatureId::Engine, FeatureSection::Visualizations) => {
-            ui.label("No separate visualization is available for this feature. Use Visualizations above for shared views.");
-        }
+        FeatureId::Driving => driving_controls(ui, &mut config::edit()),
+        FeatureId::Parachute => parachute_controls(ui, &mut config::edit()),
+        FeatureId::Wingsuit => wingsuit_controls(ui, &mut config::edit()),
+        FeatureId::Engine => egui_debug_game(ui),
         _ => {}
     }
+}
+
+pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
+    let body: FeatureBody = match id {
+        FeatureId::Swimming => |ui, _| swimming_readout(ui),
+        FeatureId::Locomotion => |ui, _| locomotion_readout(ui),
+        FeatureId::Parachute => |ui, _| parachute_readout(ui),
+        FeatureId::Wingsuit => |ui, _| wingsuit_readout(ui),
+        FeatureId::Engine => |ui, _| game_readout(ui),
+        _ => return None,
+    };
+    Some(body)
 }
 
 pub fn egui_debug_game(ui: &mut egui::Ui) {

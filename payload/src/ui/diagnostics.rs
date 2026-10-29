@@ -22,26 +22,30 @@ use crate::{
         trace,
     },
     hooks::graphics_engine::terrain,
-    ui::{
-        camera::matrix_grid,
-        catalog::{FeatureId, FeatureSection},
-    },
+    ui::{camera::matrix_grid, catalog::FeatureId, dispatch::FeatureBody},
 };
 
 /// The frame count for the editable "Dump N frames" trace button, persisted across UI frames.
 pub(crate) static TRACE_FRAME_COUNT: AtomicI32 = AtomicI32::new(60);
 
-pub(crate) fn feature(ui: &mut egui::Ui, id: FeatureId, section: FeatureSection) {
-    match (id, section) {
-        (FeatureId::RenderCapture, FeatureSection::Controls) => render_capture_controls(ui),
-        (FeatureId::RenderCapture, FeatureSection::Status) => render_capture_readout(ui),
-        (FeatureId::RenderDiagnostics, FeatureSection::Controls) => egui_debug_diagnostics(ui),
-        (FeatureId::RenderDiagnostics, FeatureSection::Status) => logging_readout(ui),
-        (FeatureId::RenderDiagnostics, FeatureSection::Visualizations) => camera_visualization(ui),
-        _ => {
-            ui.label("No separate visualization is available for this feature. Use Visualizations above for shared views.");
-        }
+pub(crate) fn controls(ui: &mut egui::Ui, id: FeatureId) {
+    match id {
+        FeatureId::RenderCapture => render_capture_controls(ui),
+        FeatureId::RenderDiagnostics => egui_debug_diagnostics(ui),
+        _ => {}
     }
+}
+
+pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
+    let body: FeatureBody = match id {
+        FeatureId::RenderCapture => |ui, _| render_capture_readout(ui),
+        FeatureId::RenderDiagnostics => |ui, _| {
+            logging_readout(ui);
+            camera_visualization(ui);
+        },
+        _ => return None,
+    };
+    Some(body)
 }
 
 pub fn egui_debug_diagnostics(ui: &mut egui::Ui) {

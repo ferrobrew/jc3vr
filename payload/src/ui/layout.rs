@@ -1,36 +1,28 @@
-//! Versioned dock persistence, explicit legacy migration, and detached-view recovery.
+//! Versioned dock persistence and detached-view recovery.
 
 mod writer;
 
 use std::{fs, io, path::Path};
 
 use parking_lot::Mutex;
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
     config,
-    ui::{
-        Tab,
-        catalog::{FeatureId, FeatureSection},
-        navigation::NavigationState,
-    },
+    ui::{catalog::FeatureId, navigation::NavigationState},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum View {
     Workspace,
-    Feature {
-        key: String,
-        section: FeatureSection,
-    },
+    Feature { key: String },
 }
 
 #[derive(Serialize, Deserialize)]
 struct SavedLayout {
     version: u32,
     feature: String,
-    section: FeatureSection,
     dock: egui_dock::DockState<View>,
 }
 
@@ -39,7 +31,6 @@ pub(crate) struct Layout {
     pub dock: egui_dock::DockState<View>,
     pub drawer: bool,
     pub notice: String,
-    legacy: Option<egui_dock::DockState<Tab>>,
     save_enabled: bool,
     frames: u32,
     saved: Option<String>,
@@ -60,7 +51,6 @@ impl Default for Layout {
             dock: egui_dock::DockState::new(vec![View::Workspace]),
             drawer: false,
             notice: String::new(),
-            legacy: None,
             save_enabled: true,
             frames: 0,
             saved: None,
@@ -71,42 +61,38 @@ impl Default for Layout {
 
 impl Layout {
     pub(crate) fn load() -> Self {
-        Self::load_paths(
-            config::paths::file("ui_layout_v2.json").as_deref(),
-            config::paths::file("ui_layout.json").as_deref(),
-        )
+        Self::load_path(config::paths::file("ui_layout_v2.json").as_deref())
     }
 
-    fn load_paths(current: Option<&Path>, legacy: Option<&Path>) -> Self {
-        let current = match read_layout(current) {
-            Ok(text) => text,
-            Err(notice) => return Self::blocked(notice),
-        };
-        if current.is_some() {
-            return Self::decode(current.as_deref(), None);
-        }
-        match read_layout(legacy) {
-            Ok(legacy) => Self::decode(None, legacy.as_deref()),
+    fn load_path(path: Option<&Path>) -> Self {
+        match read_layout(path) {
+            Ok(text) => Self::decode(text.as_deref()),
             Err(notice) => Self::blocked(notice),
         }
     }
 
-    pub(crate) fn decode(current: Option<&str>, legacy: Option<&str>) -> Self {
+    pub(crate) fn decode(current: Option<&str>) -> Self {
         if let Some(json) = current {
             return match decode_current(json) {
                 Ok(saved) if saved.version == 2 => {
                     let mut layout = Self {
-                        selection: NavigationState {
-                            feature: FeatureId::from_key(&saved.feature).unwrap_or(FeatureId::Session),
-                            section: saved.section,
-                        },
+                        selection: NavigationState::recover(Some(&saved.feature)),
                         dock: saved.dock,
                         saved: Some(json.to_owned()),
                         ..Self::default()
                     };
-                    layout.dock.retain_tabs(|view| match view {
-                        View::Workspace => true,
-                        View::Feature { key, .. } => FeatureId::from_key(key).is_some(),
+                    // Layouts saved with per-section views can hold one feature more than once.
+                    let mut seen = Vec::new();
+                    layout.dock.retain_tabs(|view| {
+                        let known = match view {
+                            View::Workspace => true,
+                            View::Feature { key } => FeatureId::from_key(key).is_some(),
+                        };
+                        let first = !seen.contains(view);
+                        if known && first {
+                            seen.push(view.clone());
+                        }
+                        known && first
                     });
                     normalize_tabs(&mut layout.dock);
                     if layout.dock.main_surface().num_tabs() == 0 {
@@ -119,36 +105,7 @@ impl Layout {
                 Err(error) => Self::blocked(format!("UI layout: unsafe or invalid saved layout: {error}. Restore the default layout to replace it.")),
             };
         }
-        if let Some(json) = legacy {
-            return match decode_dock(json) {
-                Ok(dock) => Self {
-                    legacy: Some(dock),
-                    save_enabled: false,
-                    notice: "An old dock layout is available. Migrate old layout preserves detached geometry; Restore default layout starts with one workspace. The old file remains unchanged.".to_owned(),
-                    ..Self::default()
-                },
-                Err(error) => Self::blocked(format!("UI layout: unsafe or invalid old layout: {error}. Restore the default layout to start with one workspace; the old file remains unchanged.")),
-            };
-        }
         Self::default()
-    }
-
-    pub(crate) fn migrate_legacy(&mut self) {
-        if let Some(legacy) = self.legacy.take() {
-            self.dock = legacy.map_tabs(|tab| {
-                let selection = NavigationState::recover(Some(&tab.to_string()));
-                View::Feature {
-                    key: selection.feature.definition().key.to_owned(),
-                    section: legacy_section(*tab),
-                }
-            });
-            normalize_tabs(&mut self.dock);
-            self.ensure_workspace();
-            self.save_enabled = true;
-            self.notice =
-                "The old layout is migrated. The original ui_layout.json remains unchanged."
-                    .to_owned();
-        }
     }
 
     pub(crate) fn reset(&mut self) {
@@ -171,7 +128,6 @@ impl Layout {
     pub(crate) fn detach(&mut self, selection: NavigationState) {
         let view = View::Feature {
             key: selection.feature.definition().key.to_owned(),
-            section: selection.section,
         };
         if self.dock.find_tab(&view).is_none() {
             self.dock.add_window(vec![view]);
@@ -191,7 +147,6 @@ impl Layout {
         let saved = SavedLayout {
             version: 2,
             feature: self.selection.feature.definition().key.to_owned(),
-            section: self.selection.section,
             dock: self.dock.clone(),
         };
         let json = match serde_json::to_string(&saved) {
@@ -219,10 +174,6 @@ impl Layout {
         if let Some(error) = acknowledgement.error {
             self.notice = error;
         }
-    }
-
-    pub(crate) fn has_legacy(&self) -> bool {
-        self.legacy.is_some()
     }
 
     fn blocked(notice: String) -> Self {
@@ -259,12 +210,6 @@ fn read_layout(path: Option<&Path>) -> Result<Option<String>, String> {
 fn decode_current(json: &str) -> Result<SavedLayout, String> {
     let mut wire: Value = serde_json::from_str(json).map_err(|error| error.to_string())?;
     normalize_wire(wire.get_mut("dock").ok_or("missing dock")?)?;
-    serde_json::from_value(wire).map_err(|error| error.to_string())
-}
-
-fn decode_dock<T: DeserializeOwned>(json: &str) -> Result<egui_dock::DockState<T>, String> {
-    let mut wire: Value = serde_json::from_str(json).map_err(|error| error.to_string())?;
-    normalize_wire(&mut wire)?;
     serde_json::from_value(wire).map_err(|error| error.to_string())
 }
 
@@ -384,14 +329,6 @@ fn normalize_tabs<T>(dock: &mut egui_dock::DockState<T>) {
                 }
             }
         }
-    }
-}
-
-fn legacy_section(tab: Tab) -> FeatureSection {
-    match tab {
-        Tab::Performance | Tab::Status | Tab::Diagnostics => FeatureSection::Status,
-        Tab::Previews => FeatureSection::Visualizations,
-        _ => FeatureSection::Controls,
     }
 }
 

@@ -18,40 +18,49 @@ fn production_navigation_dispatches_every_catalog_feature_with_independent_scrol
     let mut keys = HashSet::new();
     for width in [420.0, 1100.0] {
         for feature in FEATURES {
-            for section in FeatureSection::ALL {
-                let mut selection = NavigationState {
-                    feature: feature.id,
-                    section,
-                };
-                let expected = route(feature.id);
-                let mut dispatched = Vec::new();
-                let _ = context.run_ui(
-                    egui::RawInput {
-                        screen_rect: Some(egui::Rect::from_min_size(
-                            egui::Pos2::ZERO,
-                            egui::vec2(width, 800.0),
-                        )),
-                        ..Default::default()
-                    },
-                    |ui| {
-                        feature_body(ui, &mut selection, |ui, selected| {
-                            dispatched.push(route(selected.feature));
-                            ui.label(selected.feature.definition().key);
-                        });
-                    },
-                );
-                assert!(!dispatched.is_empty());
-                assert!(dispatched.iter().all(|actual| *actual == expected));
-                if width == 420.0 {
-                    assert!(keys.insert(scroll_key(selection)));
-                }
+            let mut selection = NavigationState {
+                feature: feature.id,
+            };
+            let expected = route(feature.id);
+            let mut dispatched = Vec::new();
+            let _ = context.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(width, 800.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    feature_body(ui, &mut selection, |ui, selected| {
+                        dispatched.push(route(selected.feature));
+                        ui.label(selected.feature.definition().key);
+                    });
+                },
+            );
+            assert!(!dispatched.is_empty());
+            assert!(dispatched.iter().all(|actual| *actual == expected));
+            if width == 420.0 {
+                assert!(keys.insert(scroll_key(selection)));
             }
         }
     }
-    assert_eq!(keys.len(), FEATURES.len() * FeatureSection::ALL.len());
-    assert_eq!(route(FeatureId::DirectorSafety), FeatureRoute::Director);
-    assert_eq!(route(FeatureId::DirectorSpawn), FeatureRoute::Director);
+    assert_eq!(keys.len(), FEATURES.len());
     assert_eq!(FeatureId::Environment.definition().page, PageId::Capture);
+}
+
+#[test]
+fn every_feature_routes_to_a_renderer() {
+    for feature in FEATURES {
+        let renders = match route(feature.id) {
+            FeatureRoute::Controller => {
+                controllers::controls(feature.id).is_some() || readouts(feature.id).next().is_some()
+            }
+            // Every other route has a fixed renderer for each of its features.
+            _ => true,
+        };
+        assert!(renders, "{} renders nothing", feature.key);
+    }
 }
 
 #[test]
@@ -154,7 +163,6 @@ impl DockHarness {
         let mut dock = egui_dock::DockState::new(vec![View::Workspace]);
         let surface = dock.add_window(vec![View::Feature {
             key: FeatureId::Performance.definition().key.to_owned(),
-            section: FeatureSection::Status,
         }]);
         let window = dock.get_window_state_mut(surface).unwrap();
         window.set_position(egui::pos2(950.0, 80.0));
@@ -313,90 +321,49 @@ fn production_dock_read_only_disables_main_and_detached_controls_and_layout_gest
 }
 
 #[test]
-fn actual_runtime_dispatch_separates_read_only_status_from_controls_without_a_renderer() {
+fn actual_runtime_dispatch_renders_controls_then_live_status_without_a_renderer() {
     let _config = crate::config::test_fixture();
     let before = serde_json::to_value(config::get()).unwrap();
-    let save_status = config::status();
     let source = headpose::source();
     let angles = headpose::sim::euler_angles();
     let recenters = recenter_count();
-    let pose = headpose::query();
     let mut selection = NavigationState {
         feature: FeatureId::Runtime,
-        section: FeatureSection::Status,
     };
     let expected = selection;
     for width in [420.0, 1100.0] {
-        let context = egui::Context::default();
-        let labels = runtime_frame(&context, &mut selection, width, Vec::new());
-        assert_runtime_status_labels(&labels);
-        for (_, rect) in &labels {
-            for pressed in [true, false] {
-                let labels = runtime_frame(
-                    &context,
-                    &mut selection,
-                    width,
-                    vec![
-                        egui::Event::PointerMoved(rect.center()),
-                        egui::Event::PointerButton {
-                            pos: rect.center(),
-                            button: egui::PointerButton::Primary,
-                            pressed,
-                            modifiers: Default::default(),
-                        },
-                    ],
-                );
-                assert_runtime_status_labels(&labels);
-            }
+        let labels = runtime_frame(&egui::Context::default(), &mut selection, width, Vec::new());
+        let position = |wanted: &str| {
+            labels
+                .iter()
+                .position(|(text, _)| text == wanted || text.starts_with(wanted))
+                .unwrap_or_else(|| panic!("missing Runtime label: {wanted}"))
+        };
+        for control in [
+            "Recenter",
+            "Enabled (bring up the OpenXR session)",
+            "Native per-eye resolution",
+            "Desktop mirror",
+            "Body IK",
+            "Mod-owned back buffer",
+            "Direct eye blit",
+        ] {
+            assert!(position(control) < position("Live status"), "{control}");
         }
-        assert_eq!(selection, expected);
-        assert_eq!(serde_json::to_value(config::get()).unwrap(), before);
-        assert_eq!(config::status(), save_status);
-        assert_eq!(headpose::source(), source);
-        assert_eq!(headpose::sim::euler_angles(), angles);
-        assert_eq!(recenter_count(), recenters);
-        assert_eq!(headpose::query().position, pose.position);
-        assert_eq!(headpose::query().orientation, pose.orientation);
-    }
-
-    selection.section = FeatureSection::Controls;
-    let controls = runtime_frame(
-        &egui::Context::default(),
-        &mut selection,
-        1100.0,
-        Vec::new(),
-    );
-    for expected in [
-        "Recenter",
-        "Enabled (bring up the OpenXR session)",
-        "Native per-eye resolution",
-        "Per-eye resolution scale",
-        "Desktop mirror",
-        "Left",
-        "Right",
-        "Fill",
-        "Fit",
-        "Zoom",
-        "Body IK",
-        "Mod-owned back buffer",
-        "Direct eye blit",
-    ] {
-        assert!(
-            controls.iter().any(|(text, _)| text == expected),
-            "missing Runtime control: {expected}"
-        );
-    }
-    assert!(!controls.iter().any(|(text, _)| {
-        [
+        for readout in [
             "Session:",
             "Runtime:",
             "Per-eye resolution:",
             "Headpose source:",
-        ]
-        .into_iter()
-        .any(|prefix| text.starts_with(prefix))
-    }));
-    assert_eq!(serde_json::to_value(config::get()).unwrap(), before);
+        ] {
+            assert!(position(readout) > position("Live status"), "{readout}");
+        }
+        assert_eq!(selection, expected);
+        assert_eq!(serde_json::to_value(config::get()).unwrap(), before);
+        assert_eq!(headpose::source(), source);
+        assert_eq!(headpose::sim::euler_angles(), angles);
+        assert_eq!(recenter_count(), recenters);
+    }
 }
 
 fn runtime_frame(
@@ -438,31 +405,12 @@ fn collect_text(shape: &egui::Shape, labels: &mut Vec<(String, egui::Rect)>) {
     }
 }
 
-fn assert_runtime_status_labels(labels: &[(String, egui::Rect)]) {
-    assert_eq!(labels.len(), 4, "Runtime Status must contain only readouts");
-    for (prefix, (text, _)) in [
-        "Session:",
-        "Runtime:",
-        "Per-eye resolution:",
-        "Headpose source:",
-    ]
-    .into_iter()
-    .zip(labels)
-    {
-        assert!(
-            text.starts_with(prefix),
-            "missing Runtime readout: {prefix}"
-        );
-    }
-}
-
 #[test]
 fn actual_preview_route_reports_missing_renderer_without_a_device() {
     let _config = crate::config::test_fixture();
     let context = egui::Context::default();
     let mut selection = NavigationState {
         feature: FeatureId::Previews,
-        section: FeatureSection::Visualizations,
     };
     let _ = context.run_ui(egui::RawInput::default(), |ui| {
         feature(ui, &mut selection, None)

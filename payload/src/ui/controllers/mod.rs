@@ -54,124 +54,145 @@ use crate::{
         haptics as controller_haptics,
         loadout::{live as loadout_live, sandbox as loadout_sandbox},
         locomotion as controller_locomotion, map as controller_map, mode as controller_mode,
-        overlay as controller_overlay, physical_hands as controller_physical_hands,
+        overlay as controller_overlay,
+        physical_hands::{
+            self as controller_physical_hands, collider_view::ColliderViewConfig,
+            grab_view::GrabViewConfig,
+        },
         roomscale as controller_roomscale, scheme, summary as controller_summary,
         weapons::inventory as controller_inventory,
     },
     hud::{pointer, summary_panel},
-    ui::{
-        catalog::{FeatureId, FeatureSection},
-        visualizations,
-    },
+    ui::{catalog::FeatureId, dispatch::FeatureBody},
     vr::input::{self as vr_input, ActionsOrigin},
 };
 
-pub(crate) fn feature(ui: &mut Ui, id: FeatureId, section: FeatureSection) {
-    match section {
-        FeatureSection::Controls => controls(ui, id),
-        FeatureSection::Status => status(ui, id),
-        FeatureSection::Visualizations => visualizations(ui, id),
-    }
-}
-
-fn controls(ui: &mut Ui, id: FeatureId) {
-    if matches!(id, FeatureId::Calibration | FeatureId::Procedural) {
-        ui.label("Calibration and procedural-body options remain in the pause menu's VR pages.");
-        return;
-    }
-    if id == FeatureId::ControllerCapture {
-        diagnostics::diagnostics(ui);
-        return;
-    }
-    if id == FeatureId::Sandbox {
-        let sandbox = loadout_sandbox::status();
-        loadout::controls(ui, &sandbox);
-        return;
-    }
-    // Snapshot providers that read configuration run before the edit guard exists.
-    let input_status = vr_input::status();
-    let recovery = bindings::recovery_status();
-    let mut cfg = config::edit();
-    match id {
-        FeatureId::Devices => settings::devices(ui, &mut cfg, &input_status, recovery),
-        FeatureId::Thresholds => settings::thresholds(ui, &mut cfg),
-        FeatureId::Bindings => settings::bindings_settings(ui, &mut cfg),
-        FeatureId::MenuPanel => settings::menu_panel(ui, &mut cfg),
-        FeatureId::Locomotion => settings::locomotion_settings(ui, &mut cfg),
-        FeatureId::Grapple => {
+/// The controller editors for a feature, when it has any. Each editor takes the configuration edit
+/// guard itself, after reading any snapshot providers that read configuration.
+pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
+    let body: FeatureBody = match id {
+        FeatureId::ControllerCapture => |ui, _| diagnostics::diagnostics(ui),
+        FeatureId::Sandbox => |ui, _| {
+            let sandbox = loadout_sandbox::status();
+            loadout::controls(ui, &sandbox);
+        },
+        FeatureId::Devices => |ui, _| {
+            let input_status = vr_input::status();
+            let recovery = bindings::recovery_status();
+            settings::devices(ui, &mut config::edit(), &input_status, recovery);
+        },
+        FeatureId::Thresholds => |ui, _| settings::thresholds(ui, &mut config::edit()),
+        FeatureId::Bindings => |ui, _| settings::bindings_settings(ui, &mut config::edit()),
+        FeatureId::MenuPanel => |ui, _| settings::menu_panel(ui, &mut config::edit()),
+        FeatureId::Locomotion => |ui, _| settings::locomotion_settings(ui, &mut config::edit()),
+        FeatureId::Grapple => |ui, _| {
+            let mut cfg = config::edit();
             settings::grapple_settings(ui, &mut cfg);
             hands::anchor_settings(ui, &mut cfg.controllers.hands);
+        },
+        FeatureId::AnimationIk => |ui, _| settings::animation_settings(ui, &mut config::edit()),
+        FeatureId::Presentation => {
+            |ui, _| hands::presentation_settings(ui, &mut config::edit().controllers.hands)
         }
-        FeatureId::AnimationIk => settings::animation_settings(ui, &mut cfg),
-        FeatureId::Presentation => hands::presentation_settings(ui, &mut cfg.controllers.hands),
-        FeatureId::HandTracking => hands::hands_settings(ui, &mut cfg.controllers.hands),
-        FeatureId::Fingers => fingers::fingers_settings(ui, &mut cfg.controllers.fingers),
-        FeatureId::PhysicalHands => {
+        FeatureId::HandTracking => {
+            |ui, _| hands::hands_settings(ui, &mut config::edit().controllers.hands)
+        }
+        FeatureId::Fingers => {
+            |ui, _| fingers::fingers_settings(ui, &mut config::edit().controllers.fingers)
+        }
+        FeatureId::PhysicalHands => |ui, _| {
+            let mut cfg = config::edit();
             physical_hands::physical_hands_settings(ui, &mut cfg.controllers.physical_hands);
             ui.collapsing("Advanced tuning", |ui| {
                 hand_bodies::hand_bodies_settings(ui, &mut cfg.controllers.physical_hands.bodies);
             });
+        },
+        FeatureId::CharactersDoors => |ui, _| {
+            physical_hands::characters_doors_settings(
+                ui,
+                &mut config::edit().controllers.physical_hands,
+            );
+        },
+        FeatureId::Snatch => {
+            |ui, _| snatch::snatch_settings(ui, &mut config::edit().controllers.weapons.snatch)
         }
-        FeatureId::CharactersDoors => {
-            physical_hands::characters_doors_settings(ui, &mut cfg.controllers.physical_hands);
-        }
-        FeatureId::Snatch => snatch::snatch_settings(ui, &mut cfg.controllers.weapons.snatch),
-        FeatureId::Feedback => {
+        FeatureId::Feedback => |ui, _| {
+            let mut cfg = config::edit();
             haptics::haptics_settings(ui, &mut cfg.controllers.haptics);
             ui.separator();
             physical_hands::impact_sounds_settings(ui, &mut cfg.controllers.physical_hands);
+        },
+        FeatureId::Hold => {
+            |ui, _| weapons::hold_feature_settings(ui, &mut config::edit().controllers.weapons)
         }
-        FeatureId::Hold => weapons::hold_feature_settings(ui, &mut cfg.controllers.weapons),
-        FeatureId::Support => weapons::support_settings(ui, &mut cfg.controllers.weapons),
-        FeatureId::Aim => {
+        FeatureId::Support => {
+            |ui, _| weapons::support_settings(ui, &mut config::edit().controllers.weapons)
+        }
+        FeatureId::Aim => |ui, _| {
+            let mut cfg = config::edit();
             aim::aim_settings(ui, &mut cfg.controllers);
             let w = &mut cfg.controllers.weapons;
             scope::scope_settings(ui, &mut w.scopes, &mut w.scope);
             scope::ads_settings(ui, &mut w.ads);
             scope::collide_settings(ui, &mut w.collide);
+        },
+        FeatureId::Reload => {
+            |ui, _| weapons::reload_feature_settings(ui, &mut config::edit().controllers.weapons)
         }
-        FeatureId::Reload => weapons::reload_feature_settings(ui, &mut cfg.controllers.weapons),
-        FeatureId::Inventory => {
+        FeatureId::Inventory => |ui, _| {
+            let mut cfg = config::edit();
             weapons::body_slots_settings(ui, &mut cfg.controllers.weapons);
             inventory::inventory_settings(ui, &mut cfg.controllers.weapons.inventory);
-        }
+        },
         FeatureId::Explosives => {
-            weapons::explosive_feature_settings(ui, &mut cfg.controllers.weapons)
+            |ui, _| weapons::explosive_feature_settings(ui, &mut config::edit().controllers.weapons)
         }
-        FeatureId::WeaponSelection => {
-            weapon_selection::selection_settings(ui, &mut cfg.controllers.weapons)
-        }
-        FeatureId::Climbing => {
+        FeatureId::WeaponSelection => |ui, _| {
+            weapon_selection::selection_settings(ui, &mut config::edit().controllers.weapons)
+        },
+        FeatureId::Climbing => |ui, _| {
+            let mut cfg = config::edit();
             climb::climb_settings(ui, &mut cfg.controllers.physical_hands.climb);
             stunt::stunt_settings(ui, &mut cfg.controllers.physical_hands.stunt);
-        }
+        },
         FeatureId::Driving
         | FeatureId::VehicleControls
         | FeatureId::Mounted
         | FeatureId::Wingsuit
-        | FeatureId::Parachute => {
-            vehicles::feature_settings(ui, &mut cfg.controllers.vehicles, id);
+        | FeatureId::Parachute => |ui, id| {
+            vehicles::feature_settings(ui, &mut config::edit().controllers.vehicles, id);
+        },
+        FeatureId::Posture => {
+            |ui, _| roomscale::roomscale_settings(ui, &mut config::edit().controllers.roomscale)
         }
-        FeatureId::Posture => roomscale::roomscale_settings(ui, &mut cfg.controllers.roomscale),
-        FeatureId::RootWalls => rig::rig_settings(ui, &mut cfg.controllers.body.rig),
-        FeatureId::Torso => {
+        FeatureId::RootWalls => {
+            |ui, _| rig::rig_settings(ui, &mut config::edit().controllers.body.rig)
+        }
+        FeatureId::Torso => |ui, _| {
+            let mut cfg = config::edit();
             let rig = &mut cfg.controllers.body.rig;
             torso::torso_settings(ui, &mut rig.torso, &mut rig.pelvis);
+        },
+        FeatureId::Wrist => {
+            |ui, _| summary::summary_settings(ui, &mut config::edit().controllers.summary)
         }
-        FeatureId::Wrist => summary::summary_settings(ui, &mut cfg.controllers.summary),
-        FeatureId::Presets => presets::presets(ui, &mut cfg),
-        FeatureId::Semantic => {
-            ui.checkbox(&mut cfg.controllers.input.self_check, "Input self-check");
-        }
-        _ => {
-            ui.label("No separate controller tuning is available for this feature.");
-        }
-    }
+        FeatureId::Presets => |ui, _| presets::presets(ui, &mut config::edit()),
+        FeatureId::Semantic => |ui, _| {
+            ui.checkbox(
+                &mut config::edit().controllers.input.self_check,
+                "Input self-check",
+            );
+        },
+        _ => return None,
+    };
+    Some(body)
 }
 
-fn status(ui: &mut Ui, id: FeatureId) {
-    match id {
-        FeatureId::Devices => {
+/// The controller readouts for a feature, when it has any. Readouts take no configuration edit
+/// guard.
+pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
+    let body: FeatureBody = match id {
+        FeatureId::Devices => |ui, _| {
             let current = scheme::current();
             let selected = scheme::selected();
             let status = vr_input::status();
@@ -198,24 +219,26 @@ fn status(ui: &mut Ui, id: FeatureId) {
                 yes_no(ht.system_supported),
                 yes_no(ht.trackers_created)
             ));
-        }
-        FeatureId::Bindings => {
+        },
+        FeatureId::Bindings => |ui, _| {
             let detection = controller_mode::current();
             let snapshot = controller_mode::last_snapshot();
             let report = bindings::last_report();
             mode::mode_readout(ui, detection, snapshot.as_ref(), &report);
-        }
-        FeatureId::MenuPanel => map::map_readout(
-            ui,
-            &controller_map::report(),
-            pointer::selected_controller(),
-            pointer::owns_menu_trigger(),
-        ),
-        FeatureId::AnimationIk => {
+        },
+        FeatureId::MenuPanel => |ui, _| {
+            map::map_readout(
+                ui,
+                &controller_map::report(),
+                pointer::selected_controller(),
+                pointer::owns_menu_trigger(),
+            )
+        },
+        FeatureId::AnimationIk => |ui, _| {
             aim_state::aim_state_readout(ui, &controller_aim_state::status());
             unarmed::unarmed_readout(ui, &controller_unarmed::status(), &hand_ik::status());
-        }
-        FeatureId::Aim => {
+        },
+        FeatureId::Aim => |ui, _| {
             aim::aim_readout(
                 ui,
                 &controller_aim::status(),
@@ -223,42 +246,41 @@ fn status(ui: &mut Ui, id: FeatureId) {
                 &gamepad_setting::status(),
             );
             scope::scope_readout(ui, &scope::ScopeReadout::read());
-        }
+        },
         FeatureId::Presentation => {
-            hands::hands_readout(ui, &hand_ik::status(), &tiers::status(), &late::status())
+            |ui, _| hands::hands_readout(ui, &hand_ik::status(), &tiers::status(), &late::status())
         }
-        FeatureId::Fingers => fingers::fingers_readout(
-            ui,
-            &controller_fingers::status(),
-            vr_input::status().hand_tracking.conforming_motion_range,
-        ),
-        FeatureId::PhysicalHands => {
+        FeatureId::Fingers => |ui, _| {
+            fingers::fingers_readout(
+                ui,
+                &controller_fingers::status(),
+                vr_input::status().hand_tracking.conforming_motion_range,
+            )
+        },
+        FeatureId::PhysicalHands => |ui, _| {
             physical_hands::physical_hands_readout(ui, &controller_physical_hands::status());
             ui.collapsing("Diagnostics", |ui| {
                 hand_bodies::hand_bodies_readout(ui, &controller_physical_hands::physics::status())
             });
-        }
-        FeatureId::CharactersDoors => {
+        },
+        FeatureId::CharactersDoors => |ui, _| {
             physical_hands::characters_doors_readout(
                 ui,
                 &controller_physical_hands::status(),
                 &controller_physical_hands::vault::status(),
             );
-        }
-        FeatureId::Climbing => {
+        },
+        FeatureId::Climbing => |ui, _| {
             climb::climb_readout(ui, &controller_physical_hands::climb::status());
             stunt::stunt_readout(ui, &controller_physical_hands::stunt::status());
+        },
+        FeatureId::Hold => |ui, _| weapons::weapons_readout(ui, &weapons::WeaponsReadout::read()),
+        FeatureId::Support | FeatureId::Reload | FeatureId::Explosives | FeatureId::Grapple => {
+            |ui, id| {
+                weapons::feature_readout(ui, &weapons::WeaponsReadout::read(), id);
+            }
         }
-        FeatureId::Hold => weapons::weapons_readout(ui, &weapons::WeaponsReadout::read()),
-        FeatureId::Support
-        | FeatureId::Reload
-        | FeatureId::Explosives
-        | FeatureId::Grapple
-        | FeatureId::Snatch
-        | FeatureId::WeaponSelection => {
-            weapons::feature_readout(ui, &weapons::WeaponsReadout::read(), id);
-        }
-        FeatureId::Inventory => {
+        FeatureId::Inventory => |ui, _| {
             inventory::inventory_readout(
                 ui,
                 controller_inventory::peek_status(),
@@ -266,78 +288,74 @@ fn status(ui: &mut Ui, id: FeatureId) {
             );
             ui.separator();
             loadout::live_readout(ui, &loadout_live::status());
-        }
-        FeatureId::Sandbox => loadout::sandbox_readout(ui, &loadout_sandbox::status()),
-        FeatureId::Feedback => {
+        },
+        FeatureId::Sandbox => |ui, _| loadout::sandbox_readout(ui, &loadout_sandbox::status()),
+        FeatureId::Feedback => |ui, _| {
             haptics::haptics_readout(ui, &controller_haptics::status());
             physical_hands::impact_sounds_readout(ui, &controller_physical_hands::sounds::status());
-        }
+        },
         FeatureId::Driving
         | FeatureId::VehicleControls
         | FeatureId::Mounted
         | FeatureId::Wingsuit
-        | FeatureId::Parachute => {
+        | FeatureId::Parachute => |ui, id| {
             vehicles::feature_readout(ui, &vehicles::VehiclesReadout::read(), id);
-        }
-        FeatureId::Wrist => {
+        },
+        FeatureId::Wrist => |ui, _| {
             summary::summary_readout(ui, &controller_summary::status(), &summary_panel::status())
-        }
-        FeatureId::Locomotion => {
+        },
+        FeatureId::Locomotion => |ui, _| {
             let stick = controller_locomotion::status();
             let acts = controller_locomotion::acts::status();
             let anchor = controller_locomotion::anchor::status();
             locomotion::locomotion_readout(ui, &stick, &acts, &anchor);
+        },
+        FeatureId::Posture => {
+            |ui, _| roomscale::roomscale_readout(ui, &controller_roomscale::status())
         }
-        FeatureId::Posture => roomscale::roomscale_readout(ui, &controller_roomscale::status()),
-        FeatureId::RootWalls => rig::rig_readout(ui, &controller_roomscale::status().root),
-        FeatureId::Torso => torso::torso_readout(
-            ui,
-            &controller_rig::torso_status(),
-            &controller_rig::skeleton::status(),
-        ),
+        FeatureId::RootWalls => |ui, _| rig::rig_readout(ui, &controller_roomscale::status().root),
+        FeatureId::Torso => |ui, _| {
+            torso::torso_readout(
+                ui,
+                &controller_rig::torso_status(),
+                &controller_rig::skeleton::status(),
+            )
+        },
         FeatureId::Procedural => {
-            procedural::procedural_readout(ui, &controller_body::procedural::status())
+            |ui, _| procedural::procedural_readout(ui, &controller_body::procedural::status())
         }
-        FeatureId::Calibration => body::body_readout(ui, &controller_body::player()),
-        FeatureId::Semantic => {
+        FeatureId::Calibration => |ui, _| body::body_readout(ui, &controller_body::player()),
+        FeatureId::Semantic => |ui, _| {
             semantic::semantic_readout(ui);
             ui.collapsing("Diagnostics", |ui| {
                 frame::live_frame(ui, controller_frame::latest().as_ref())
             });
-        }
-        FeatureId::Thresholds => frame::live_frame(ui, controller_frame::latest().as_ref()),
-        _ => {
-            ui.label("No separate live snapshot is available for this feature.");
-        }
-    }
+        },
+        FeatureId::Thresholds => |ui, _| frame::live_frame(ui, controller_frame::latest().as_ref()),
+        _ => return None,
+    };
+    Some(body)
 }
 
-fn visualizations(ui: &mut Ui, id: FeatureId) {
-    if !matches!(
-        id,
-        FeatureId::RootWalls | FeatureId::PhysicalHands | FeatureId::Grapple
-    ) {
-        ui.label("Shared overlay switches: Body root and walls > Visualizations. Grab and collider views: Physical hands and held objects > Visualizations.");
-        return;
-    }
-    let snapshot = visualizations::snapshot();
-    visualizations::controls(ui, &snapshot, Some(id));
-    if id == FeatureId::PhysicalHands {
-        let grab = controller_physical_hands::grab_view::status();
-        let collider = controller_physical_hands::collider_view::status();
-        grab_view::grab_view_readout(ui, &grab);
-        collider_view::collider_view_readout(ui, &collider);
-        let mut cfg = config::edit();
-        grab_view::grab_view_settings(ui, &mut cfg.controllers.physical_hands.grab_view);
-        collider_view::collider_view_settings(
-            ui,
-            &mut cfg.controllers.physical_hands.collider_view,
-        );
-    } else if id == FeatureId::RootWalls {
-        let overlay = controller_overlay::status();
-        overlay::overlay_readout(ui, &overlay);
-        overlay::overlay_settings(ui, &mut config::edit().controllers.overlay);
-    }
+/// The grab view's and collider view's tuning, edited by the global visualization drawer on copies
+/// of the saved configuration.
+pub(crate) fn view_settings(
+    ui: &mut Ui,
+    grab: &mut GrabViewConfig,
+    collider: &mut ColliderViewConfig,
+) {
+    ui.label("Grab view");
+    grab_view::grab_view_settings(ui, grab);
+    ui.label("Collider view");
+    collider_view::collider_view_settings(ui, collider);
+}
+
+/// The world-space overlay, grab view, and collider view readouts, shown in the global
+/// visualization drawer.
+pub(crate) fn view_readouts(ui: &mut Ui) {
+    overlay::overlay_readout(ui, &controller_overlay::status());
+    grab_view::grab_view_readout(ui, &controller_physical_hands::grab_view::status());
+    collider_view::collider_view_readout(ui, &controller_physical_hands::collider_view::status());
 }
 
 fn vec3_drag(ui: &mut Ui, label: &str, v: &mut Vec3, speed: f64) {

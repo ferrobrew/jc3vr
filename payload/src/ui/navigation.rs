@@ -9,7 +9,7 @@ use egui::{ComboBox, Panel, Ui};
 
 #[cfg(test)]
 use crate::ui::capture::{OwnershipBlocker, OwnershipSnapshot, PanelMode};
-use crate::ui::catalog::{FEATURES, FeatureId, FeatureSection, PageId};
+use crate::ui::catalog::{FEATURES, FeatureId, PageId};
 
 #[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -21,18 +21,10 @@ pub(crate) enum NavigationCommand {
 }
 
 #[cfg(test)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ViewAvailability<'a> {
-    Available,
-    Unavailable(&'a str),
-}
-
-#[cfg(test)]
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct FeatureSnapshot<'a> {
     pub feature: FeatureId,
     pub summary: &'a str,
-    pub visualization: ViewAvailability<'a>,
 }
 
 #[cfg(test)]
@@ -47,7 +39,6 @@ pub(crate) struct NavigationSnapshot<'a> {
 pub(crate) enum NavigationTarget {
     Page(PageId),
     Feature(FeatureId),
-    Section(FeatureSection),
     PageSelector,
     FeatureSelector,
     AllowGameplay,
@@ -93,45 +84,23 @@ impl NavigationFrame {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct NavigationState {
     pub feature: FeatureId,
-    pub section: FeatureSection,
 }
 
 impl Default for NavigationState {
     fn default() -> Self {
         Self {
             feature: FeatureId::Session,
-            section: FeatureSection::Controls,
         }
     }
 }
 
 impl NavigationState {
-    /// This recovers selection only. The existing dock JSON remains an adapter responsibility.
-    pub(crate) fn recover(saved_feature_or_legacy_tab: Option<&str>) -> Self {
-        let feature = saved_feature_or_legacy_tab
-            .and_then(|key| {
-                FeatureId::from_key(key).or(match key {
-                    "Performance" => Some(FeatureId::Performance),
-                    "Render" => Some(FeatureId::Stereo),
-                    "Previews" => Some(FeatureId::Previews),
-                    "Diagnostics" => Some(FeatureId::RenderDiagnostics),
-                    "Status" => Some(FeatureId::AllStatus),
-                    "Camera" => Some(FeatureId::HeadView),
-                    "Game" => Some(FeatureId::Locomotion),
-                    "Hud" => Some(FeatureId::Hud),
-                    "Environment" => Some(FeatureId::Environment),
-                    "Vr" => Some(FeatureId::Runtime),
-                    "Director" => Some(FeatureId::DirectorSafety),
-                    "Controllers" => Some(FeatureId::Devices),
-                    "Testing" => Some(FeatureId::TrackingCapture),
-                    _ => None,
-                })
-            })
-            .unwrap_or(FeatureId::Session);
-        Self {
-            feature,
-            section: FeatureSection::Controls,
-        }
+    /// Recover a selection from a saved feature key. A missing or unknown key selects the default
+    /// feature.
+    pub(crate) fn recover(saved_feature: Option<&str>) -> Self {
+        saved_feature
+            .and_then(FeatureId::from_key)
+            .map_or_else(Self::default, |feature| Self { feature })
     }
 
     pub(crate) fn select_page(&mut self, page: PageId) {
@@ -141,7 +110,6 @@ impl NavigationState {
                 .find(|feature| feature.page == page)
                 .expect("every page has a feature")
                 .id;
-            self.section = FeatureSection::Controls;
         }
     }
 }
@@ -275,12 +243,6 @@ pub(crate) fn navigation(
                 }
             });
         frame.record_target(NavigationTarget::FeatureSelector, &response.response);
-        ui.horizontal_wrapped(|ui| {
-            for section in FeatureSection::ALL {
-                let response = ui.selectable_value(&mut state.section, section, section.label());
-                frame.record_target(NavigationTarget::Section(section), &response);
-            }
-        });
     });
     let feature = snapshot
         .features
@@ -288,32 +250,10 @@ pub(crate) fn navigation(
         .find(|feature| feature.feature == state.feature);
     frame.shown_summary = feature.map(|feature| feature.summary.to_owned());
     ui.heading(state.feature.definition().label);
-    match state.section {
-        FeatureSection::Controls => {
-            ui.label("Existing control editors are not connected to this navigation seam.");
-            ui.collapsing("Advanced tuning", |ui| {
-                ui.label("No editor is connected.");
-            });
-            ui.collapsing("Diagnostics", |ui| {
-                ui.label("No diagnostic provider is connected.");
-            });
-        }
-        FeatureSection::Status => {
-            ui.label(feature.map_or(
-                "Live status unavailable: no snapshot provider.",
-                |feature| feature.summary,
-            ));
-        }
-        FeatureSection::Visualizations => {
-            ui.label(match feature.map(|feature| feature.visualization) {
-                Some(ViewAvailability::Available) => {
-                    "View available through the visualization adapter."
-                }
-                Some(ViewAvailability::Unavailable(reason)) => reason,
-                None => "Visualization unavailable: no snapshot provider.",
-            });
-        }
-    }
+    ui.label(feature.map_or(
+        "Live status unavailable: no snapshot provider.",
+        |feature| feature.summary,
+    ));
     frame
 }
 
@@ -392,22 +332,13 @@ pub(crate) fn feature_body(
         state.feature.definition().page.label(),
         state.feature.definition().label
     ));
-    ui.horizontal_wrapped(|ui| {
-        for section in FeatureSection::ALL {
-            ui.selectable_value(&mut state.section, section, section.label());
-        }
-    });
     egui::ScrollArea::vertical()
         .id_salt(scroll_key(*state))
         .show(ui, |ui| render(ui, state));
 }
 
-pub(crate) fn scroll_key(state: NavigationState) -> (&'static str, &'static str, FeatureSection) {
-    (
-        "debug-feature-content-v2",
-        state.feature.definition().key,
-        state.section,
-    )
+pub(crate) fn scroll_key(state: NavigationState) -> (&'static str, &'static str) {
+    ("debug-feature-content-v2", state.feature.definition().key)
 }
 
 #[cfg(test)]

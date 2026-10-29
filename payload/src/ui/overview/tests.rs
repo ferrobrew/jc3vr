@@ -259,10 +259,7 @@ fn every_overview_destination_renders_without_a_renderer_or_live_producers() {
             FeatureId::ActiveTools,
         ] {
             let context = egui::Context::default();
-            let mut selection = NavigationState {
-                feature,
-                section: FeatureSection::Status,
-            };
+            let mut selection = NavigationState { feature };
             let expected = selection;
             let mut rendered = false;
             let output = context.run_ui(
@@ -291,7 +288,6 @@ fn real_destination_widget_changes_only_navigation_on_click() {
     let mut selection = NavigationState::default();
     let target = NavigationState {
         feature: FeatureId::Video,
-        section: FeatureSection::Controls,
     };
     let mut rect = egui::Rect::NOTHING;
     let mut clicked = false;

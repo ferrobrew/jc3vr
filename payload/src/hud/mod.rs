@@ -68,11 +68,7 @@ use jc3gi::{
     ui::ui_manager::{GetIUIManager, UIManager},
 };
 pub use state::HUD_STATE;
-#[cfg(not(test))]
-use state::StageSafeArea;
-use state::publish_stage_safe_area;
-#[cfg(test)]
-pub(crate) use state::{StageSafeArea, StageSafeAreaSample, test_stage_safe_area};
+use state::{StageSafeArea, publish_stage_safe_area};
 pub(crate) use state::{StageSafeAreaReadout, stage_safe_area_readout};
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 

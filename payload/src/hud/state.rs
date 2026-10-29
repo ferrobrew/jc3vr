@@ -107,10 +107,6 @@ pub(crate) fn publish_stage_safe_area(layout: StageSafeArea, at: Instant) {
 
 /// Copy the publication without waiting for the capture producer or accessing the engine.
 pub(crate) fn stage_safe_area_readout() -> StageSafeAreaReadout {
-    #[cfg(test)]
-    if let Some(readout) = test_stage_safe_area::readout() {
-        return readout;
-    }
     copy_stage_safe_area(&STAGE_SAFE_AREA)
 }
 
@@ -747,30 +743,8 @@ fn copy_stage_safe_area(source: &Mutex<Option<StageSafeAreaSample>>) -> StageSaf
 }
 
 #[cfg(test)]
-pub(crate) mod test_stage_safe_area {
-    use std::cell::Cell;
-
+mod test_stage_safe_area {
     use super::*;
-
-    thread_local! {
-        static READOUT: Cell<Option<StageSafeAreaReadout>> = const { Cell::new(None) };
-    }
-
-    pub(crate) struct Fixture(Option<StageSafeAreaReadout>);
-
-    pub(crate) fn install(readout: StageSafeAreaReadout) -> Fixture {
-        Fixture(READOUT.replace(Some(readout)))
-    }
-
-    pub(super) fn readout() -> Option<StageSafeAreaReadout> {
-        READOUT.get()
-    }
-
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            READOUT.set(self.0);
-        }
-    }
 
     #[test]
     fn publication_copy_is_nonblocking_and_preserves_owned_samples() {
