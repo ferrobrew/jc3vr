@@ -31,8 +31,8 @@ use crate::{
         config::ControllersConfig,
         frame::Hand,
         haptics::{
-            mixer::{HapticPulse, MixConfig, MixStats, Mixer, Sustained, Transient},
-            vocabulary::Primitive,
+            mixer::{HapticPulse, MIX, MixStats, Mixer, Sustained, Transient},
+            vocabulary::{Primitive, VOCABULARY},
         },
         scheme,
     },
@@ -55,14 +55,14 @@ pub fn play_scaled(hand: Hand, event: Event, scale: f32) {
         return;
     }
     let cue = event.cue();
-    let Some(config) = acting(cue.category) else {
+    if !acting(cue.category) {
         return;
-    };
-    let shape = config.vocabulary.shape(cue.primitive);
+    }
+    let shape = VOCABULARY.shape(cue.primitive);
     let transient = Transient {
         amplitude: shape.amplitude(cue.strength * scale.min(1.0)),
         duration: seconds(shape.duration_s * cue.length.factor()),
-        frequency_hz: frequency(&config, cue.primitive),
+        frequency_hz: frequency(cue.primitive),
         priority: cue.primitive.priority(),
     };
     queue(hand, event, transient);
@@ -73,10 +73,10 @@ pub fn play_scaled(hand: Hand, event: Event, scale: f32) {
 /// primitive's hold runs out.
 pub fn sustain(hand: Hand, source: Sustain, level: f32) {
     let cue = source.cue();
-    let Some(config) = acting(cue.category) else {
+    if !acting(cue.category) {
         return;
-    };
-    let shape = config.vocabulary.shape(cue.primitive);
+    }
+    let shape = VOCABULARY.shape(cue.primitive);
     let level = if level.is_finite() {
         level.clamp(0.0, 1.0)
     } else {
@@ -85,7 +85,7 @@ pub fn sustain(hand: Hand, source: Sustain, level: f32) {
     let sustained = Sustained {
         source,
         amplitude: shape.amplitude(cue.strength * level),
-        frequency_hz: frequency(&config, cue.primitive),
+        frequency_hz: frequency(cue.primitive),
         hold: seconds(shape.duration_s),
     };
     MIXER.lock().sustain(hand, sustained, Instant::now());
@@ -95,21 +95,21 @@ pub fn sustain(hand: Hand, source: Sustain, level: f32) {
 /// the game's rumble sets.
 pub(crate) fn play_shot(hand: Hand, amplitude: f32, duration_s: f32) {
     let cue = Event::Shot.cue();
-    let Some(config) = acting(cue.category) else {
+    if !acting(cue.category) {
         return;
-    };
+    }
     let transient = Transient {
         amplitude: amplitude.clamp(0.0, 1.0),
         duration: seconds(duration_s),
-        frequency_hz: frequency(&config, cue.primitive),
+        frequency_hz: frequency(cue.primitive),
         priority: cue.primitive.priority(),
     };
     queue(hand, Event::Shot, transient);
 }
 
 /// What each hand plays from `now`, indexed by [`Hand::index`], for the VR frame loop to send.
-pub(crate) fn mix(now: Instant, config: &MixConfig) -> [Option<HapticPulse>; 2] {
-    let out = MIXER.lock().mix(now, config);
+pub(crate) fn mix(now: Instant) -> [Option<HapticPulse>; 2] {
+    let out = MIXER.lock().mix(now, &MIX);
     let mut status = STATUS.lock();
     for hand in Hand::BOTH {
         status.last_output[hand.index()] = out[hand.index()].map(|p| p.amplitude);
@@ -126,8 +126,7 @@ pub(crate) fn clear() {
 /// Play `primitive` on `hand` at full strength, for the debug UI, whatever the switches say; the
 /// master switch still applies when the frame loop plays it.
 pub fn test(hand: Hand, primitive: Primitive) {
-    let config = Config::lock_query(|c| c.controllers.haptics);
-    let shape = config.vocabulary.shape(primitive);
+    let shape = VOCABULARY.shape(primitive);
     // A sustained primitive tests as a one-off a little longer than its hold, so it is felt alone.
     let duration_s = if primitive.is_sustained() {
         TEST_SUSTAIN_S
@@ -137,7 +136,7 @@ pub fn test(hand: Hand, primitive: Primitive) {
     let transient = Transient {
         amplitude: shape.amplitude(1.0),
         duration: seconds(duration_s),
-        frequency_hz: frequency(&config, primitive),
+        frequency_hz: frequency(primitive),
         priority: primitive.priority(),
     };
     MIXER.lock().transient(hand, transient);
@@ -197,10 +196,10 @@ static STATUS: Mutex<HapticsStatus> = Mutex::new(HapticsStatus {
     last_output: [None; 2],
 });
 
-/// The haptics settings, when the haptics act and `category` is switched on.
-fn acting(category: Category) -> Option<HapticsConfig> {
+/// Whether the haptics act and `category` plays.
+fn acting(category: Category) -> bool {
     let config = Config::lock_query(|c| c.controllers);
-    (acts(&config) && config.haptics.category(category)).then_some(config.haptics)
+    acts(&config) && config.haptics.category(category)
 }
 
 /// Whether the haptics act at all: the controllers and the haptics on, under the controller
@@ -209,9 +208,9 @@ fn acts(config: &ControllersConfig) -> bool {
     config.enabled && config.haptics.enabled && scheme::is_controllers()
 }
 
-fn frequency(config: &HapticsConfig, primitive: Primitive) -> Option<f32> {
-    let hz = config.vocabulary.shape(primitive).frequency_hz;
-    (config.frequencies && hz > 0.0 && hz.is_finite()).then_some(hz)
+fn frequency(primitive: Primitive) -> Option<f32> {
+    let hz = VOCABULARY.shape(primitive).frequency_hz;
+    (hz > 0.0 && hz.is_finite()).then_some(hz)
 }
 
 fn seconds(s: f32) -> Duration {

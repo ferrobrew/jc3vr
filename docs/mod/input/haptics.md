@@ -16,26 +16,26 @@ Seven primitives. Five play once (one-off cues) and two follow a level that thei
 | hum | sustained | 0 | 0.7 | 100 ms hold | 70 Hz | - | the game's rumble, the reel's speed |
 | tension | sustained | 0 | 0.6 | 60 ms hold | 130 Hz | - | a pull, a press, a hang |
 
-A cue's strength places it between the primitive's soft and full amplitudes; a source whose cue follows how hard something happened (a palm's speed, a climb's fling, a recoil kick) scales that strength by its share. A sustained cue's amplitude is its strength times the level its source sends, so a level of zero is still. The length is how long a one-off cue plays, and for a sustained one how long a level holds without being sent again. One cue, the detonation, plays a long thud: three and a half times the thud's length. The shot plays for the length the game's fire rumble sets, capped at `max_shot_s`.
+A cue's strength places it between the primitive's soft and full amplitudes; a source whose cue follows how hard something happened (a palm's speed, a climb's fling, a recoil kick) scales that strength by its share. A sustained cue's amplitude is its strength times the level its source sends, so a level of zero is still. The length is how long a one-off cue plays, and for a sustained one how long a level holds without being sent again. One cue, the detonation, plays a long thud: three and a half times the thud's length. The shot plays for the length the game's fire rumble sets, capped at 0.4 s (`haptics::rumble::MAX_SHOT_S`).
 
-The frequency is a hint (OpenXR's `XrHapticVibration::frequency`); a runtime may ignore it. With `frequencies` off, every vibration goes at the runtime's default frequency, as before the vocabulary.
+The frequency is a hint (OpenXR's `XrHapticVibration::frequency`); a runtime may ignore it. Every vibration carries its primitive's hint.
 
-The shapes are settings (`controllers.haptics.vocabulary`), tuned in the debug UI's Haptics section, so a shape changes every cue built on it together.
+The shapes are fixed in `haptics::vocabulary::VOCABULARY`, so a shape changes every cue built on it together.
 
 ## The mixer
 
 OpenXR plays one vibration per controller at a time, and a new one replaces whatever is playing. The sources queue their cues from any thread, and the VR frame loop asks the mixer once per rendered frame what each hand plays (`haptics::mix`, from the input update under the runtime lock). The mixer holds per hand the one-off cues queued since the last flush, the cue playing and when it ends, and each sustained source's level and when it expires.
 
-- Sustained sources sum. The sum passes a soft limiter: unchanged up to `mix.sustain_knee` (0.45), then bent smoothly toward `mix.sustain_ceiling` (0.7). However many sustained sources stack (a held load, the game's rumble, the grapple's tension), the hand never reaches full strength from them, and a one-off cue stands out above them. With no cue playing, the hand plays the limited sum for `mix.refresh_s` (100 ms), refreshed at every flush. A source that sends a level of zero ends at once; one that stops sending ends when its hold runs out.
-- One-off cues play at the next flush. The cue of the highest priority (then the strongest) among the frame's arrivals leads and sets the length and the frequency. Each other arrival, and a cue still playing, adds `mix.stack_share` (0.35) of its amplitude, and the mod's sustained level adds `mix.duck_share` (0.5) of itself beneath the lead. The total passes the soft limiter at full strength with its knee at `mix.knee` (0.85), so a single cue below the knee plays exactly as shaped and a pile of them never clips. The cue plays for the longer of its own length and what remained of the one it cut into.
+- Sustained sources sum. The sum passes a soft limiter: unchanged up to `MIX.sustain_knee` (0.45, the mixer's fixed tuning in `haptics::mixer::MIX`), then bent smoothly toward `MIX.sustain_ceiling` (0.7). However many sustained sources stack (a held load, the game's rumble, the grapple's tension), the hand never reaches full strength from them, and a one-off cue stands out above them. With no cue playing, the hand plays the limited sum for `MIX.refresh_s` (100 ms), refreshed at every flush. A source that sends a level of zero ends at once; one that stops sending ends when its hold runs out.
+- One-off cues play at the next flush. The cue of the highest priority (then the strongest) among the frame's arrivals leads and sets the length and the frequency. Each other arrival, and a cue still playing, adds `MIX.stack_share` (0.35) of its amplitude, and the mod's sustained level adds `MIX.duck_share` (0.5) of itself beneath the lead. The total passes the soft limiter at full strength with its knee at `MIX.knee` (0.85), so a single cue below the knee plays exactly as shaped and a pile of them never clips. The cue plays for the longer of its own length and what remained of the one it cut into.
 - The game's rumble is left out of a one-off cue's onset entirely (it ducks under the mod's cues), and every sustained source is held off a hand while a one-off cue plays there, resuming at the first flush after it ends.
 - An arrival weaker than the cue playing and of a lower priority is masked: dropped rather than cutting a heavier cue short (a holster tick during a long burst of fire).
 
 The global strength (`intensity`) scales the mixer's output as it is sent, so it scales every cue the same way, and it never changes the mix.
 
-## Categories and switches
+## Categories
 
-Each source belongs to one category, and each category has its own switch beside the master switch and the strength. A source whose category is off sends nothing, so a switched-off category also stops contributing to the mix.
+Each source belongs to one category, which the readout counts its cues under. Every category always plays while the master switch is on; the game's rumble also needs `game_rumble`.
 
 | Category | Sources |
 | --- | --- |
@@ -48,7 +48,7 @@ Each source belongs to one category, and each category has its own switch beside
 
 The shot and the recoil kick are the weapons category's, and also need `game_rumble`, as they always have: the shot is the game's own fire rumble routed to the firing hand.
 
-The pause menu's `VR: CONTROLS` page has `HAPTICS` (`enabled`), `HAPTIC STRENGTH` (`intensity`), and `GAME RUMBLE` under HAPTICS. The per-category switches (`categories.contact`, `categories.weapons`, `categories.vehicles`, `categories.traversal`, and `categories.interface`), `gamepad_rumble`, and `frequencies` are in the debug UI's Controllers tab under "Haptics". Everything is on by default except `gamepad_rumble`. The settings live in `controllers.haptics` ([settings.md](../settings.md)); they moved there from `controllers.weapons.haptics`, so a settings file from before the move loads them as defaults once. The per-source switches that came before the categories (the holster and pouch cues, the line tension, the hand bodies' pressure and hit pulses, the palms' contact pulses, the grapple's pulses) and every per-source amplitude and duration are gone: the category switches and the vocabulary's shapes replace them.
+The pause menu's `VR: CONTROLS` page has `HAPTICS` (`enabled`), `HAPTIC STRENGTH` (`intensity`), and `GAME RUMBLE` under HAPTICS. `gamepad_rumble` is in the debug UI's Feedback feature. Everything is on by default except `gamepad_rumble`. The settings live in `controllers.haptics` ([settings.md](../settings.md)); they moved there from `controllers.weapons.haptics`, so a settings file from before the move loads them as defaults once. The per-source switches that came before the categories (the holster and pouch cues, the line tension, the hand bodies' pressure and hit pulses, the palms' contact pulses, the grapple's pulses) and every per-source amplitude and duration are gone: the vocabulary's shapes replace them.
 
 ## Every source
 
@@ -57,7 +57,7 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | Source | Raised when | Primitive | Strength | Category | Raised by |
 | --- | --- | --- | --- | --- | --- |
 | `Event::PalmTouch` | a palm meets a surface, scaled by how fast (a quarter at a touch) | bump | 0.4 | contact | `physical_hands::touch` |
-| `Event::HandStrike` | a hand body's contact, or a blow on a character, scaled by the arm's momentum; a held gun's contact by the arm's alone, at most once every `physical_hands.bodies.guns.contact_pulse_interval_s` per hand | bump | 0.4 | contact | `physical_hands::physics::blows` |
+| `Event::HandStrike` | a hand body's contact, or a blow on a character, scaled by the arm's momentum; a held gun's contact by the arm's alone, at most once every `HAND_BODIES.guns.contact_pulse_interval_s` per hand | bump | 0.4 | contact | `physical_hands::physics::blows` |
 | `Event::Take` | a hand takes hold of an object, a character, a door, or a weapon off the ground | bump | 0.6 | contact | `physical_hands`, `physical_hands::pickup` |
 | `Event::LetGo` | a hand lets go of what it held | click | 0.25 | contact | `physical_hands` |
 | `Event::Unlatch` | a door's latch gives under the hand | bump | 0.9 | contact | `physical_hands` |
@@ -131,13 +131,13 @@ The game's rumble reaches the controllers through two detours ([controllers.md, 
 
 ## Readout and log
 
-The debug UI's Controllers tab has a Haptics section: the cues sent per category, the mixer's counts (played, stacked, masked, limited), the amplitude each hand was last sent, and the last dozen one-off cues with their primitive, hand, amplitude, and length. Its settings hold the switches, the vocabulary's shapes, the mixer's rules, and the cue table; the live controller frame has a test button per primitive for each hand, which plays it at full strength whatever the category switches say.
+The debug UI's Feedback feature has the haptics readout: the cues sent per category, the mixer's counts (played, stacked, masked, limited), the amplitude each hand was last sent, and the last dozen one-off cues with their primitive, hand, amplitude, and length. The live controller frame has a test button per primitive for each hand, which plays it at full strength.
 
 The debug UI's Status tab has `HAPTIC CUES` under FEEDBACK: the cues sent, masked, and limited. The cues themselves are not logged (they are too frequent); the events that raise them are, by their own subsystems.
 
 ## In the headset
 
-1. Open the debug UI's Status tab: `HAPTIC CUES` reads `WAITING` with nothing sent. Use the debug UI's test buttons on each hand: tick, click, bump, buzz, and thud should feel distinct in weight and length, and hum and tension should feel like a held vibration. If the five one-off primitives feel the same, the runtime is probably ignoring the frequency; try `frequencies` off and compare.
+1. Open the debug UI's Status tab: `HAPTIC CUES` reads `WAITING` with nothing sent. Use the debug UI's test buttons on each hand: tick, click, bump, buzz, and thud should feel distinct in weight and length, and hum and tension should feel like a held vibration. If the five one-off primitives feel the same, the runtime is probably ignoring the frequency.
 2. Reach into a holster and out again: a faint tick on entering. Draw: a click. `HAPTIC CUES` counts up.
 3. Fire a pistol: a thud on the gun hand only. Fire a long burst from an automatic weapon while reaching into a pouch with the other hand: the burst stays clean on the gun hand, and the pouch tick plays on the other.
 4. Hold a gun on its foregrip and fire a burst while the reel or a vehicle's rumble runs: the shots stand out above the rumble rather than merging into it, and the rumble resumes between shots.
@@ -146,7 +146,7 @@ The debug UI's Status tab has `HAPTIC CUES` under FEEDBACK: the cues sent, maske
 7. Take the wheel of a car, turn to the lock and back through centre: a bump at the lock and a tick at centre. Press the horn: a click, and a tick on letting go.
 8. Grapple to a wall: a bump as it fires and a thud as it attaches. Tether two objects and squeeze: a tension on the grapple hand.
 9. Detonate C4: a long thud on both hands.
-10. Switch each category off in the debug UI's "Haptics" section and repeat one of its steps: nothing from that category, while the others still play. Turn `GAME RUMBLE` off: landings and vehicles no longer rumble, and shots no longer pulse. Lower `HAPTIC STRENGTH`: everything weakens together.
+10. Turn `GAME RUMBLE` off: landings and vehicles no longer rumble, and shots no longer pulse. Lower `HAPTIC STRENGTH`: everything weakens together.
 
 ## Open questions
 

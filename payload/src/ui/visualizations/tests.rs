@@ -60,6 +60,7 @@ fn each_inventory_switch_edits_only_its_concrete_config_field() {
             ViewId::ColliderView,
             "/controllers/physical_hands/collider_view/enabled",
         ),
+        (ViewId::PalmBoxes, "/controllers/physical_hands/show_boxes"),
     ];
     assert_eq!(paths.len(), ENTRIES.len());
     for (id, path) in paths {
@@ -125,7 +126,7 @@ fn drawer_shows_every_switch_once_with_the_global_controls() {
     }
     for label in [
         "Shared overlay settings",
-        "Grab and collider view tuning",
+        "Collider view contents",
         "Hide registered views (including Gameplay cues)",
         "Restore registered views",
     ] {
@@ -136,30 +137,23 @@ fn drawer_shows_every_switch_once_with_the_global_controls() {
 }
 
 #[test]
-fn view_tuning_edits_leave_the_registered_switches_alone() {
+fn collider_contents_edits_leave_the_registered_switch_alone() {
     let mut config = Config::new();
-    let grab_switch = !config.controllers.physical_hands.grab_view.enabled;
     let collider_switch = !config.controllers.physical_hands.collider_view.enabled;
-    let mut grab = config.controllers.physical_hands.grab_view;
-    grab.radius_m += 1.0;
     let mut collider = config.controllers.physical_hands.collider_view;
-    collider.max_bodies += 1;
     collider.boxes = !collider.boxes;
+    collider.gaze = !collider.gaze;
     apply_edits(
         &mut config,
         &[
-            Edit::Switch(ViewId::GrabView, grab_switch),
             Edit::Switch(ViewId::ColliderView, collider_switch),
-            Edit::GrabViewTuning(grab),
-            Edit::ColliderViewTuning(collider),
+            Edit::ColliderViewContents(collider),
         ],
     );
-    let views = &config.controllers.physical_hands;
-    assert_eq!(views.grab_view.enabled, grab_switch);
-    assert_eq!(views.grab_view.radius_m, grab.radius_m);
-    assert_eq!(views.collider_view.enabled, collider_switch);
-    assert_eq!(views.collider_view.max_bodies, collider.max_bodies);
-    assert_eq!(views.collider_view.boxes, collider.boxes);
+    let view = &config.controllers.physical_hands.collider_view;
+    assert_eq!(view.enabled, collider_switch);
+    assert_eq!(view.boxes, collider.boxes);
+    assert_eq!(view.gaze, collider.gaze);
 }
 
 fn collect_text(shape: &egui::Shape, labels: &mut Vec<String>) {
@@ -256,7 +250,7 @@ fn retained_overlay_error_does_not_block_requested_visualizations() {
 }
 
 #[test]
-fn the_inventory_maps_every_switch_to_the_exact_eight_output_sources() {
+fn the_inventory_maps_every_switch_to_the_exact_nine_output_sources() {
     let expected = [
         (ViewId::BodyMirror, Source::BodyMirror),
         (ViewId::ControllerGizmos, Source::DebugGizmos),
@@ -271,8 +265,9 @@ fn the_inventory_maps_every_switch_to_the_exact_eight_output_sources() {
         (ViewId::GrabRefusals, Source::GrabView),
         (ViewId::GrabCandidates, Source::GrabView),
         (ViewId::ColliderView, Source::ColliderView),
+        (ViewId::PalmBoxes, Source::PhysicalHands),
     ];
-    assert_eq!(ENTRIES.len(), 13);
+    assert_eq!(ENTRIES.len(), 14);
     assert_eq!(expected.len(), ENTRIES.len());
     for (id, source) in expected {
         assert_eq!(ENTRIES.iter().filter(|entry| entry.id == id).count(), 1);
@@ -292,7 +287,7 @@ fn the_inventory_maps_every_switch_to_the_exact_eight_output_sources() {
             .into_iter()
             .filter(|source| mask.contains(*source))
             .count(),
-        9
+        10
     );
     for source in Source::ALL {
         assert_eq!(

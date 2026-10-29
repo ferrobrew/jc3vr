@@ -473,7 +473,7 @@ impl InputState {
             haptics::clear();
             return Ok(());
         }
-        let pending = haptics::mix(Instant::now(), &haptics_cfg.mix);
+        let pending = haptics::mix(Instant::now());
         for hand in Hand::BOTH {
             if let Some(pulse) = pending[hand.index()] {
                 let vibration = vibration(pulse, haptics_cfg.intensity);

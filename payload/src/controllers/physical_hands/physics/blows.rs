@@ -42,7 +42,7 @@ use crate::controllers::{
         bodies::owner_of,
         collider_view, engine,
         physics::{
-            HandHitsConfig, body,
+            HAND_BODIES, HandHitsTuning, body,
             contact::{self, Contact},
             guns,
             hit::{
@@ -97,7 +97,7 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
     if contacts.is_empty() {
         return delivered;
     }
-    let own_hits = &config.bodies.hits;
+    let own_hits = &HAND_BODIES.hits;
     let attacker = unsafe { Character::GetLocalPlayerCharacter().as_mut() };
     let mut gate = GATE.lock();
     let now_s = gate
@@ -105,7 +105,7 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         .get_or_insert_with(Instant::now)
         .elapsed()
         .as_secs_f64();
-    let pulse_interval_s = f64::from(config.bodies.guns.contact_pulse_interval_s.max(0.0));
+    let pulse_interval_s = f64::from(HAND_BODIES.guns.contact_pulse_interval_s.max(0.0));
     for contact in contacts {
         // The player's own body, the hands, and the other gun are in the player's group, which
         // the gun body never collides with; a contact with one is none.
@@ -163,7 +163,7 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
                 &config.sounds,
             )
         };
-        if !hits.reactions {
+        if !config.bodies.reactions {
             continue;
         }
         let (Some(attacker), Some(victim)) = (attacker.as_deref(), victim) else {
@@ -334,16 +334,16 @@ pub(crate) fn queue_shove(shove: Shove) {
 /// # Safety
 ///
 /// The game thread, outside the game's update.
-pub(super) unsafe fn deliver_shoves(config: &PhysicalHandsConfig) -> ShovesDelivered {
+pub(super) unsafe fn deliver_shoves() -> ShovesDelivered {
     let shoves = std::mem::take(&mut *SHOVES.lock());
     let mut delivered = ShovesDelivered::default();
     let Some(attacker) = (unsafe { Character::GetLocalPlayerCharacter().as_ref() }) else {
         return delivered;
     };
-    let hits = HandHitsConfig {
+    let hits = HandHitsTuning {
         damage: false,
         min_impulse_ns: 0.0,
-        ..config.bodies.hits
+        ..HAND_BODIES.hits
     };
     for shove in shoves {
         // SAFETY: forwarded from the caller; the body's owner proves the character alive.

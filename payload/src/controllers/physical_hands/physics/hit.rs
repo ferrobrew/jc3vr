@@ -3,23 +3,23 @@
 //! blow one hit.
 //!
 //! A contact is a blow only when the hand swung into the character: its speed toward the character
-//! before the contact ([`approach`]) must reach [`HandHitsConfig::min_approach_speed_mps`], so a
+//! before the contact ([`approach`]) must reach [`HandHitsTuning::min_approach_speed_mps`], so a
 //! hand resting on a character, or a character walking into a still hand, strikes nothing. The
-//! blow's impulse is the momentum of an arm of [`HandHitsConfig::blow_mass_kg`] at the hand's own
+//! blow's impulse is the momentum of an arm of [`HandHitsTuning::blow_mass_kg`] at the hand's own
 //! share of that closing speed ([`blow_impulse`]), not the solver's contact impulse, which grows
 //! with the hand body's own mass and with how fast the character moves into the hand. The character
 //! reacts through its own hit reaction, which scales the impulse it is given by the blow type's
 //! factor and compares the result against the character's stagger and knockdown thresholds. The
 //! blow is calibrated against the character's own thresholds ([`blow`]): a blow of
-//! [`HandHitsConfig::stagger_impulse_ns`] (a solid punch) reaches its stagger threshold, a harder
+//! [`HandHitsTuning::stagger_impulse_ns`] (a solid punch) reaches its stagger threshold, a harder
 //! one rises toward its knockdown threshold, and a blow of
-//! [`HandHitsConfig::knockdown_impulse_ns`] (a hard swing) reaches the knockdown and ragdolls it;
+//! [`HandHitsTuning::knockdown_impulse_ns`] (a hard swing) reaches the knockdown and ragdolls it;
 //! a weaker blow than a solid punch flinches it in proportion. Every character is struck alike,
 //! whatever its faction: the game's own reactions to being hit (alarm, heat) follow.
 
 use glam::Vec3;
 
-use crate::controllers::physical_hands::physics::config::HandHitsConfig;
+use crate::controllers::physical_hands::physics::config::HandHitsTuning;
 
 /// How a hand and a character closed on each other before a contact: the hand's speed toward the
 /// character, and the character's toward the hand, metres per second, neither below zero.
@@ -48,7 +48,7 @@ pub fn approach(hand_velocity: Vec3, victim_velocity: Vec3, toward_victim: Vec3)
 /// The impulse of a blow closing as `approach`, newton seconds: an arm of `config.blow_mass_kg`
 /// at the hand's own speed into the character, which is the hand's share of the closing speed.
 /// `None` for a hand that did not swing at the character fast enough to strike.
-pub fn blow_impulse(approach: Approach, config: &HandHitsConfig) -> Option<f32> {
+pub fn blow_impulse(approach: Approach, config: &HandHitsTuning) -> Option<f32> {
     (approach.hand_mps >= config.min_approach_speed_mps.max(0.0) && approach.hand_mps > 0.0)
         .then(|| config.blow_mass_kg.max(0.0) * approach.hand_mps)
 }
@@ -56,9 +56,9 @@ pub fn blow_impulse(approach: Approach, config: &HandHitsConfig) -> Option<f32> 
 /// The hits' settings for a blow struck with a held gun of `gun_mass_kg`: the gun's mass swung with
 /// the arm's, so a rifle swung into a character strikes harder than a fist at the same speed.
 /// `config` unchanged for a hand's own blow, or a mass that is not finite and positive.
-pub fn striking_with(config: &HandHitsConfig, gun_mass_kg: Option<f32>) -> HandHitsConfig {
+pub fn striking_with(config: &HandHitsTuning, gun_mass_kg: Option<f32>) -> HandHitsTuning {
     match gun_mass_kg.filter(|m| m.is_finite() && *m > 0.0) {
-        Some(mass) => HandHitsConfig {
+        Some(mass) => HandHitsTuning {
             blow_mass_kg: config.blow_mass_kg.max(0.0) + mass,
             ..*config
         },
@@ -106,7 +106,7 @@ pub fn blow(
     impulse_ns: f32,
     victim: VictimTuning,
     melee_damage: i32,
-    config: &HandHitsConfig,
+    config: &HandHitsTuning,
 ) -> Blow {
     if !impulse_ns.is_finite() || impulse_ns < config.min_impulse_ns.max(0.0) || impulse_ns <= 0.0 {
         return Blow::TooWeak;
@@ -150,7 +150,7 @@ pub fn blow(
 /// stagger threshold, a flinch. A character whose stagger threshold is not below its knockdown
 /// threshold, or a stagger impulse not below the knockdown impulse, takes the knockdown's share
 /// alone.
-fn scaled_reaction(impulse_ns: f32, victim: VictimTuning, config: &HandHitsConfig) -> f32 {
+fn scaled_reaction(impulse_ns: f32, victim: VictimTuning, config: &HandHitsTuning) -> f32 {
     let knockdown = config.knockdown_impulse_ns;
     let stagger = config.stagger_impulse_ns;
     let linear = impulse_ns / knockdown * victim.knockdown_threshold;
@@ -245,7 +245,7 @@ const MAX_RECENT: usize = 32;
 mod tests {
     use super::*;
 
-    const CONFIG: HandHitsConfig = HandHitsConfig::new();
+    const CONFIG: HandHitsTuning = HandHitsTuning::new();
     const VICTIM: VictimTuning = VictimTuning {
         type_scale: 2.0,
         stagger_threshold: 40.0,
@@ -302,7 +302,7 @@ mod tests {
         assert_eq!(plan(CONFIG.damage_impulse_ns - 1.0).damage, None);
         let hard = plan(CONFIG.knockdown_impulse_ns);
         assert_eq!(hard.damage, Some(100));
-        let off = HandHitsConfig {
+        let off = HandHitsTuning {
             damage: false,
             ..CONFIG
         };

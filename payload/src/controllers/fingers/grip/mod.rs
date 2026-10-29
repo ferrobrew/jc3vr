@@ -174,12 +174,6 @@ impl GripSource {
             _ => Firmness::Held,
         }
     }
-
-    /// Whether the source is a gun in the hand or its foregrip, whose fingers the game's grip
-    /// animation wraps when the grip poses leave weapons alone.
-    pub const fn is_weapon(self) -> bool {
-        matches!(self, GripSource::Gun | GripSource::Foregrip)
-    }
 }
 
 /// How firmly a hold holds, which sets the pose's share
@@ -410,7 +404,6 @@ mod tests {
         assert_eq!(GripSource::Pickup.firmness(), Firmness::Grip);
         assert_eq!(GripSource::Climb.firmness(), Firmness::Grip);
         assert_eq!(GripSource::Stunt.firmness(), Firmness::Grip);
-        assert!(GripSource::Foregrip.is_weapon() && !GripSource::Grenade.is_weapon());
         assert_eq!(
             GripSource::of_control(ControlKind::Throttle),
             GripSource::Lever

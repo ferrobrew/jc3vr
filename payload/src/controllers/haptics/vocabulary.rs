@@ -67,7 +67,7 @@ impl Primitive {
 }
 
 /// How one primitive plays.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Shape {
     /// The amplitude at strength zero, `0..=1`. Zero for a sustained primitive, so that a level of
     /// zero is still.
@@ -93,9 +93,8 @@ impl Shape {
     }
 }
 
-/// The shape of every primitive.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+/// The shape of every primitive, fixed at [`VOCABULARY`].
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Vocabulary {
     pub tick: Shape,
     pub click: Shape,
@@ -165,25 +164,10 @@ impl Vocabulary {
             Primitive::Tension => &self.tension,
         }
     }
-
-    pub fn shape_mut(&mut self, primitive: Primitive) -> &mut Shape {
-        match primitive {
-            Primitive::Tick => &mut self.tick,
-            Primitive::Click => &mut self.click,
-            Primitive::Bump => &mut self.bump,
-            Primitive::Thud => &mut self.thud,
-            Primitive::Buzz => &mut self.buzz,
-            Primitive::Hum => &mut self.hum,
-            Primitive::Tension => &mut self.tension,
-        }
-    }
 }
 
-impl Default for Vocabulary {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+/// The primitives' shapes.
+pub const VOCABULARY: Vocabulary = Vocabulary::new();
 
 #[cfg(test)]
 mod tests {
@@ -191,7 +175,7 @@ mod tests {
 
     #[test]
     fn strength_spans_the_shape() {
-        let shape = Vocabulary::new().bump;
+        let shape = VOCABULARY.bump;
         assert_eq!(shape.amplitude(0.0), shape.soft);
         assert_eq!(shape.amplitude(1.0), shape.full);
         assert_eq!(shape.amplitude(5.0), shape.full);
@@ -200,7 +184,7 @@ mod tests {
 
     #[test]
     fn the_default_primitives_rise_in_weight() {
-        let v = Vocabulary::new();
+        let v = VOCABULARY;
         let weights = [v.tick, v.click, v.bump, v.thud].map(|s| (s.full, s.duration_s));
         for pair in weights.windows(2) {
             assert!(pair[0].0 < pair[1].0 && pair[0].1 < pair[1].1);

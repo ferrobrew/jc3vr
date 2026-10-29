@@ -11,14 +11,13 @@ use crate::controllers::{
     physical_hands::{
         STALE_AFTER, bodies,
         characters::{CharactersConfig, Seize},
-        config::PickupConfig,
         doors::{self, Latch},
         grasp::{self, Grip, PalmMotion, Reach, TargetKind},
         hold::{self, HandHold, HoldTuning, PlayerKeepOut},
         physics,
         physics::HoldTarget,
         pickup::{
-            HeldReport,
+            HeldReport, PickupTuning,
             diagnostics::{self, ConsumerResult, DriveRecord},
             grips::{keep_latch, keep_regrip, keep_seize, shove_on_release},
             state::{Held, HeldKind, PickupState, Request},
@@ -31,10 +30,10 @@ use crate::controllers::{
 /// What the hand bodies tell a pickup tick about the joints.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub(crate) struct JointInputs {
-    /// Whether joint grabs are enabled, independent of which hands currently act.
+    /// Whether joint grabs are enabled (the hand bodies are on), independent of which hands
+    /// currently act.
     pub enabled: bool,
-    /// Which hands take what they grab through a joint: those their bodies drive, with
-    /// `joint_grabs`.
+    /// Which hands take what they grab through a joint: those their bodies drive.
     pub join: [bool; 2],
     /// Which hands lost the joint their grip held.
     pub lost: [bool; 2],
@@ -52,7 +51,7 @@ pub(crate) struct TickInputs {
     pub dt: f32,
     /// How far a hand gripping a latched door pulls it before the latch gives, world metres.
     pub unlatch_pull_m: f32,
-    pub tearing: doors::config::TearConfig,
+    pub tearing: doors::config::TearTuning,
     /// The VR world scale.
     pub world_scale: f32,
     pub characters: CharactersConfig,
@@ -118,7 +117,7 @@ impl TickOutcome {
 pub(crate) unsafe fn tick(
     state: &mut PickupState,
     inputs: TickInputs,
-    config: &PickupConfig,
+    config: &PickupTuning,
 ) -> TickOutcome {
     unsafe { tick_with(state, inputs, config, &mut NativeBodies) }
 }
@@ -126,7 +125,7 @@ pub(crate) unsafe fn tick(
 unsafe fn tick_with(
     state: &mut PickupState,
     inputs: TickInputs,
-    config: &PickupConfig,
+    config: &PickupTuning,
     engine: &mut impl BodyEngine,
 ) -> TickOutcome {
     let TickInputs {
@@ -180,7 +179,7 @@ unsafe fn tick_with(
                 if let Some(seize) = state.seizes[i].take() {
                     outcome.released[i] = true;
                     if let Some(palm) = palms[i] {
-                        shove_on_release(hand, &seize, &palm, &character_config);
+                        shove_on_release(hand, &seize, &palm);
                     }
                 }
                 if state.regrips[i].take().is_some() {
@@ -603,7 +602,7 @@ pub(super) fn take_body(
     state: &mut PickupState,
     grab: BodyGrab,
     body: Result<bodies::BodyState, bodies::BodyError>,
-    config: &PickupConfig,
+    config: &PickupTuning,
     outcome: &mut TickOutcome,
 ) -> ConsumerResult {
     let BodyGrab {
@@ -675,7 +674,7 @@ pub(super) fn take_body(
 pub(super) fn carry_tuning(
     held: &Held,
     holds: &[Option<HandHold>; 2],
-    config: &PickupConfig,
+    config: &PickupTuning,
 ) -> HoldTuning {
     if held.kind == HeldKind::Prop {
         HoldTuning::carrying(config, held.mass_kg, holds)
@@ -702,7 +701,7 @@ fn record_drive(state: &PickupState, index: usize, held: &Held, drive: DriveReco
 unsafe fn throw(
     held: &Held,
     palm: Option<PalmMotion>,
-    config: &PickupConfig,
+    config: &PickupTuning,
 ) -> Result<f32, bodies::BodyError> {
     let body = unsafe { bodies::read(held.body, held.object) }?;
     let Some(palm) = palm.filter(|_| grasp::can_lift(held.mass_kg, 1, config)) else {

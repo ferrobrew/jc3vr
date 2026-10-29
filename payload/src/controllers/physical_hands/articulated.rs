@@ -1,6 +1,6 @@
 //! Articulated world objects: a door, a gate, a hatch, or a lever found in the world, whose body
 //! hangs from the world or from another body by an enabled Havok constraint. The hand takes it as
-//! a loose object whatever its weight, up to [`PickupConfig::max_articulated_mass_kg`], since the
+//! a loose object whatever its weight, up to [`PickupTuning::max_articulated_mass_kg`], since the
 //! constraint carries it: the hold asks for the velocities that carry the grab point to the hand,
 //! and the physics step removes what the constraint forbids, so the object swings about its hinge,
 //! slides along its runner, or turns about its pivot. The design is in
@@ -12,7 +12,7 @@
 //! ([`crate::controllers::physical_hands::physics`]) are left out, so a held crate is not taken for
 //! a hinged one.
 //!
-//! [`PickupConfig::max_articulated_mass_kg`]: crate::controllers::physical_hands::config::PickupConfig::max_articulated_mass_kg
+//! [`PickupTuning::max_articulated_mass_kg`]: crate::controllers::physical_hands::pickup::PickupTuning::max_articulated_mass_kg
 
 use jc3gi::physics::{hknpConstraint, hknpConstraintManager};
 

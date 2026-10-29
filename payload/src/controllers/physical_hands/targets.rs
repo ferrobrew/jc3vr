@@ -92,10 +92,7 @@ pub(crate) fn targets(world_scale: f32, scans: &mut [Option<Scan>; 2]) -> Provid
                 );
                 continue;
             }
-            if let Some(reach) = status
-                .reach
-                .filter(|r| config.pickup.weapons || r.kind != TargetKind::Weapon)
-            {
+            if let Some(reach) = status.reach {
                 out.targets
                     .push(provided_reach(hand, &reach, scale, &config, &state, now));
             }

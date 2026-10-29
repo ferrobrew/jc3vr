@@ -10,11 +10,12 @@ use glam::Vec3;
 use crate::controllers::{
     frame::Hand,
     physical_hands::{
-        PhysicalHandsConfig, bodies,
+        bodies,
         collider_view::{self, ScanError, model::BodyKind},
         doors::engine::vehicle_of,
         grab_view::model::{Candidate, CandidateKind},
         grasp::{self, TargetKind},
+        pickup::PICKUP,
     },
 };
 
@@ -28,9 +29,7 @@ use crate::controllers::{
 pub(super) unsafe fn scan(
     hands: [Option<Vec3>; 2],
     standing_on: Option<u32>,
-    config: &PhysicalHandsConfig,
 ) -> Result<Vec<Candidate>, ScanError> {
-    let view = &config.grab_view;
     let tracked: Vec<(Hand, Vec3)> = Hand::BOTH
         .into_iter()
         .filter_map(|hand| hands[hand.index()].map(|p| (hand, p)))
@@ -44,7 +43,7 @@ pub(super) unsafe fn scan(
         .iter()
         .map(|(_, p)| p.distance(centre))
         .fold(0.0, f32::max);
-    let radius = view.candidate_radius_m.max(0.0);
+    let radius = CANDIDATE_RADIUS_M;
     // SAFETY: forwarded from the caller.
     let snapshot = unsafe { collider_view::scan_moving(centre, radius + spread, SCAN_MAX_BODIES) }?;
 
@@ -68,7 +67,7 @@ pub(super) unsafe fn scan(
             continue;
         };
         // SAFETY: as above; the owner is the body's live object.
-        let Some(kind) = (unsafe { kind_of(object, body.id, standing_on, config) }) else {
+        let Some(kind) = (unsafe { kind_of(object, body.id, standing_on) }) else {
             continue;
         };
         let candidate = Candidate {
@@ -85,7 +84,7 @@ pub(super) unsafe fn scan(
     }
     let mut out: Vec<Candidate> = found.into_iter().map(|(_, c)| c).collect();
     out.sort_by(|a, b| a.distance_m.total_cmp(&b.distance_m));
-    out.truncate(view.max_candidates as usize);
+    out.truncate(MAX_CANDIDATES);
     Ok(out)
 }
 
@@ -100,7 +99,6 @@ unsafe fn kind_of(
     object: NonZeroUsize,
     body: u32,
     standing_on: Option<u32>,
-    config: &PhysicalHandsConfig,
 ) -> Option<CandidateKind> {
     if unsafe { vehicle_of(object) }.is_some() {
         return Some(CandidateKind::Vehicle);
@@ -110,7 +108,7 @@ unsafe fn kind_of(
     }
     match unsafe { bodies::classify(object, body) } {
         Ok(TargetKind::Weapon) => Some(CandidateKind::Weapon),
-        Ok(TargetKind::Prop { mass_kg }) if grasp::can_hold(mass_kg, &config.pickup) => {
+        Ok(TargetKind::Prop { mass_kg }) if grasp::can_hold(mass_kg, &PICKUP) => {
             Some(CandidateKind::Prop)
         }
         Ok(TargetKind::Prop { .. }) => Some(CandidateKind::TooHeavy),
@@ -118,6 +116,12 @@ unsafe fn kind_of(
         Err(_) => None,
     }
 }
+
+/// The most candidates drawn, the nearest first.
+pub(super) const MAX_CANDIDATES: usize = 24;
+
+/// How far from a hand a candidate's box may be and still be drawn, metres.
+const CANDIDATE_RADIUS_M: f32 = 3.0;
 
 /// The most bodies a read keeps, the nearest the hands first, before they are told apart.
 const SCAN_MAX_BODIES: u32 = 64;

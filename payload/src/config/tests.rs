@@ -81,7 +81,7 @@ fn changed_settings_round_trip() {
         offset_m: Vec3::new(0.0, 0.03, 0.0),
         angles_deg: Vec2::new(1.0, -2.0),
     });
-    original.controllers.fingers.curl_ranges[2].closed = 0.8;
+    original.controllers.hands.grip.position_m = Vec3::new(0.01, 0.07, 0.0);
     // An enum, a borrowed default string made owned, and a switch beside its value.
     original.controllers.dominant_hand = Hand::Left;
     original.far_field.gated_types = Cow::Owned("Window".to_owned());
@@ -278,19 +278,19 @@ fn a_mistyped_setting_is_reset_alone() {
     let mut table = defaults_table();
     set(
         &mut table,
-        &["controllers", "hands", "reach_t"],
+        &["controllers", "aim", "assist_strength"],
         "far".into(),
     );
     set(&mut table, &["stereo", "ipd"], 0.07.into());
     set(&mut table, &["controllers", "dominant_hand"], "Left".into());
     let Loaded { config, report } = load(table);
     assert_eq!(
-        config.controllers.hands.reach_t,
-        Config::new().controllers.hands.reach_t
+        config.controllers.aim.assist_strength,
+        Config::new().controllers.aim.assist_strength
     );
     assert_eq!(config.stereo.ipd, 0.07);
     assert_eq!(config.controllers.dominant_hand, Hand::Left);
-    assert_eq!(reset_paths(&report), ["controllers.hands.reach_t"]);
+    assert_eq!(reset_paths(&report), ["controllers.aim.assist_strength"]);
 }
 
 #[test]
@@ -309,24 +309,24 @@ fn a_list_of_the_wrong_length_is_reset_alone() {
     let mut table = defaults_table();
     set(
         &mut table,
-        &["controllers", "fingers", "finger_bend_deg"],
-        Value::Array(vec![1.0.into()]),
+        &["controllers", "hands", "grip", "position_m"],
+        Value::Array(vec![0.01.into()]),
     );
     set(
         &mut table,
-        &["controllers", "fingers", "splay_scale"],
-        2.0.into(),
+        &["controllers", "hands", "grip", "rotation_deg"],
+        Value::Array(vec![5.0.into(), 0.0.into(), 0.0.into()]),
     );
     let Loaded { config, report } = load(table);
     assert_eq!(
-        config.controllers.fingers.finger_bend_deg,
-        Config::new().controllers.fingers.finger_bend_deg
+        config.controllers.hands.grip.position_m,
+        Config::new().controllers.hands.grip.position_m
     );
-    assert_eq!(config.controllers.fingers.splay_scale, 2.0);
     assert_eq!(
-        reset_paths(&report),
-        ["controllers.fingers.finger_bend_deg"]
+        config.controllers.hands.grip.rotation_deg,
+        Vec3::new(5.0, 0.0, 0.0)
     );
+    assert_eq!(reset_paths(&report), ["controllers.hands.grip.position_m"]);
 }
 
 #[test]
@@ -355,19 +355,19 @@ fn an_invalid_controller_setting_is_reset_alone() {
         offset_m: Vec3::new(0.0, 0.01, 0.0),
         angles_deg: Vec2::new(0.5, 0.0),
     });
-    config.controllers.hands.reach_t = 5.0;
-    config.controllers.hands.reach_r = 0.25;
+    config.controllers.aim.assist_strength = 5.0;
+    config.controllers.aim.gun = false;
     config.headpose.vr_turn.snap_angle_deg = 45.0;
     let Loaded { config, report } = parse(&toml::to_string(&config).unwrap()).unwrap();
     assert_eq!(config.controllers.dominant_hand, Hand::Left);
     assert_eq!(
-        config.controllers.hands.reach_t,
-        Config::new().controllers.hands.reach_t
+        config.controllers.aim.assist_strength,
+        Config::new().controllers.aim.assist_strength
     );
-    assert_eq!(config.controllers.hands.reach_r, 0.25);
+    assert!(!config.controllers.aim.gun);
     assert!(config.controllers.aim.sights.get(7).is_some());
     assert_eq!(config.headpose.vr_turn.snap_angle_deg, 45.0);
-    assert_eq!(reset_paths(&report), ["controllers.hands.reach_t"]);
+    assert_eq!(reset_paths(&report), ["controllers.aim.assist_strength"]);
 }
 
 #[test]
@@ -406,7 +406,7 @@ fn an_inconsistency_the_default_does_not_fix_resets_the_group() {
 #[test]
 fn several_invalid_controller_settings_are_each_reset() {
     let mut config = Config::new();
-    config.controllers.hands.reach_t = 5.0;
+    config.controllers.aim.assist_strength = 5.0;
     config.controllers.bindings.move_deadzone = -1.0;
     let Loaded { config, report } = parse(&toml::to_string(&config).unwrap()).unwrap();
     assert_eq!(
@@ -417,7 +417,7 @@ fn several_invalid_controller_settings_are_each_reset() {
         reset_paths(&report),
         [
             "controllers.bindings.move_deadzone",
-            "controllers.hands.reach_t"
+            "controllers.aim.assist_strength"
         ]
     );
 }

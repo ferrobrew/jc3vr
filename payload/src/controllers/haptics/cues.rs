@@ -214,6 +214,7 @@ pub enum Event {
 }
 
 impl Event {
+    #[cfg(test)]
     pub const ALL: [Event; 52] = [
         Event::PalmTouch,
         Event::HandStrike,
@@ -410,6 +411,7 @@ pub enum Sustain {
 }
 
 impl Sustain {
+    #[cfg(test)]
     pub const ALL: [Sustain; 8] = [
         Sustain::PalmPressure,
         Sustain::HeldLoad,
@@ -440,6 +442,7 @@ impl Sustain {
         matches!(self, Sustain::GameRumble)
     }
 
+    #[cfg(test)]
     pub const fn label(self) -> &'static str {
         match self {
             Sustain::PalmPressure => "palm pressure",

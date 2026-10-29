@@ -14,7 +14,7 @@ use glam::{Quat, Vec3};
 use crate::controllers::{
     frame::Pose,
     physical_hands::{
-        characters::CharacterTarget, config::PickupConfig, doors::DoorTarget, rigid::BodyPose,
+        characters::CharacterTarget, doors::DoorTarget, pickup::PickupTuning, rigid::BodyPose,
     },
 };
 
@@ -116,24 +116,24 @@ pub fn torn_away(anchor: Vec3, target: Vec3, break_distance_m: f32) -> bool {
 }
 
 /// Whether `hands` hands can lift a body of `mass_kg` against gravity with their strength.
-pub fn can_lift(mass_kg: f32, hands: usize, config: &PickupConfig) -> bool {
+pub fn can_lift(mass_kg: f32, hands: usize, config: &PickupTuning) -> bool {
     let strength = hands as f32 * config.hand_force_n.max(0.0);
     mass_kg.is_finite() && mass_kg > 0.0 && mass_kg * config.gravity_mps2.max(0.0) <= strength
 }
 
 /// Whether a hand may take hold of a body of `mass_kg` at all.
-pub fn can_hold(mass_kg: f32, config: &PickupConfig) -> bool {
+pub fn can_hold(mass_kg: f32, config: &PickupTuning) -> bool {
     mass_kg.is_finite() && mass_kg > 0.0 && mass_kg <= config.max_mass_kg
 }
 
 /// Whether a hand may take hold of an articulated object of `mass_kg`, which its constraint
 /// carries.
-pub fn can_hold_articulated(mass_kg: f32, config: &PickupConfig) -> bool {
+pub fn can_hold_articulated(mass_kg: f32, config: &PickupTuning) -> bool {
     mass_kg.is_finite() && mass_kg > 0.0 && mass_kg <= config.max_articulated_mass_kg
 }
 
 /// Whether a hand may take hold of a body of `mass_kg` reached as `kind`.
-pub fn can_take(kind: &TargetKind, mass_kg: f32, config: &PickupConfig) -> bool {
+pub fn can_take(kind: &TargetKind, mass_kg: f32, config: &PickupTuning) -> bool {
     match kind {
         TargetKind::Articulated { .. } => can_hold_articulated(mass_kg, config),
         _ => can_hold(mass_kg, config),
@@ -146,7 +146,7 @@ pub fn mass_of(inverse_mass: f32) -> Option<f32> {
 }
 
 /// The velocity a body's grab point leaves the hand with: the hand's own, scaled and capped.
-pub fn throw_velocity(hand_velocity: Vec3, config: &PickupConfig) -> Vec3 {
+pub fn throw_velocity(hand_velocity: Vec3, config: &PickupTuning) -> Vec3 {
     if !hand_velocity.is_finite() {
         return Vec3::ZERO;
     }
@@ -269,6 +269,7 @@ mod tests {
     use std::f32::consts::FRAC_PI_2;
 
     use super::*;
+    use crate::controllers::physical_hands::pickup::PICKUP;
 
     fn pose(position: Vec3, orientation: Quat) -> Pose {
         Pose {
@@ -336,7 +337,7 @@ mod tests {
 
     #[test]
     fn the_lift_follows_the_hands_strength() {
-        let config = PickupConfig::new();
+        let config = PICKUP;
         let one = config.hand_force_n / config.gravity_mps2;
         assert!(can_lift(one * 0.9, 1, &config));
         assert!(!can_lift(one * 1.1, 1, &config));
@@ -371,10 +372,10 @@ mod tests {
 
     #[test]
     fn a_throw_is_the_hand_velocity_scaled_and_capped() {
-        let config = PickupConfig {
+        let config = PickupTuning {
             throw_scale: 2.0,
             max_throw_speed_mps: 10.0,
-            ..PickupConfig::new()
+            ..PICKUP
         };
         assert!(
             (throw_velocity(Vec3::new(1.0, 2.0, 0.0), &config) - Vec3::new(2.0, 4.0, 0.0)).length()

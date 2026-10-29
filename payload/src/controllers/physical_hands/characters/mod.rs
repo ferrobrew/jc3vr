@@ -14,7 +14,7 @@
 //! every ray hit on a character. The pickup tick
 //! ([`crate::controllers::physical_hands::pickup::tick`]) keeps a grip on a character
 //! ([`Seize`]): the hand stays at its grab point on the character ([`SeizeStep::Pin`]) until it pulls
-//! away past [`CharactersConfig::yank_m`] ([`SeizeStep::Yank`]). The yank's and the shove's hit
+//! away past [`YANK_M`] ([`SeizeStep::Yank`]). The yank's and the shove's hit
 //! reactions are dealt by the hand bodies' blows on the next frame tick
 //! ([`crate::controllers::physical_hands::physics::queue_shove`]), outside the game's update.
 
@@ -59,6 +59,22 @@ pub struct Seated {
     pub open_deg: f32,
 }
 
+/// How far a hand gripping a character must pull away from its grab point to yank, metres of the
+/// player's hand.
+pub(crate) const YANK_M: f32 = 0.2;
+
+/// How hard a yank throws a character the player is hostile to, as a share of the knockdown blow
+/// ([`HandHitsTuning::knockdown_impulse_ns`]); one and above knocks the character down.
+///
+/// [`HandHitsTuning::knockdown_impulse_ns`]: crate::controllers::physical_hands::physics::HandHitsTuning::knockdown_impulse_ns
+pub(crate) const YANK_STRENGTH: f32 = 1.3;
+
+/// How long after a yank the hand looks for the fallen character's ragdoll to hold, seconds.
+pub(crate) const REGRIP_S: f32 = 1.0;
+
+/// The slowest hand that shoves a character it lets go of, metres per second.
+pub(crate) const SHOVE_MIN_SPEED_MPS: f32 = 1.5;
+
 /// What a palm centred at `palm` reaches of the character `object` through the ray hit `hit` on
 /// its body `body`: a character on foot, by its capsule or a body of its ragdoll, or a character
 /// seated in a vehicle with a door open beside the hand. `None` for anything else.
@@ -96,7 +112,7 @@ pub(crate) unsafe fn reach(
             return None;
         }
         let vehicle = NonZeroUsize::new(unsafe { character.GetVehiclePtr() } as usize)?;
-        let (door, open_deg) = unsafe { open_door_near(vehicle, palm, world_scale, config) }?;
+        let (door, open_deg) = unsafe { open_door_near(vehicle, palm, world_scale) }?;
         let seated = Seated {
             vehicle,
             door,
@@ -218,16 +234,15 @@ unsafe fn open_door_near(
     vehicle: NonZeroUsize,
     palm: Vec3,
     world_scale: f32,
-    config: &CharactersConfig,
 ) -> Option<(DoorSlot, f32)> {
-    let reach_m = config.hijack_door_reach_m * world_scale;
+    let reach_m = HIJACK_DOOR_REACH_M * world_scale;
     unsafe { door_engine::doors(vehicle) }
         .into_iter()
         .filter(|d| !d.latched)
         .filter_map(|d| {
             let distance = d.door_box?.centre().distance(palm);
             let open_deg = unsafe { door_engine::open_angle(vehicle, d.part_index) }.to_degrees();
-            (distance <= reach_m && open_deg >= config.hijack_min_open_deg)
+            (distance <= reach_m && open_deg >= HIJACK_MIN_OPEN_DEG)
                 .then_some((d.slot, open_deg, distance))
         })
         .min_by(|a, b| a.2.total_cmp(&b.2))
@@ -251,6 +266,13 @@ fn yank(at: Vec3, palm: Vec3, yank_m: f32) -> Option<Vec3> {
         .then(|| pulled.normalize_or_zero())
         .filter(|d| *d != Vec3::ZERO)
 }
+
+/// How far open a door beside the hand must stand for a hand to reach in, degrees.
+const HIJACK_MIN_OPEN_DEG: f32 = 25.0;
+
+/// How far from the palm an open door may be for the hand to reach in through it, metres of the
+/// player's hand.
+const HIJACK_DOOR_REACH_M: f32 = 1.2;
 
 #[cfg(test)]
 mod tests {

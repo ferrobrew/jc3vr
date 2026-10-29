@@ -7,7 +7,7 @@ use jc3gi::vehicle::{parts::ConstraintInfo, vehicle::Vehicle};
 
 use crate::controllers::physical_hands::{
     bodies::owner_of,
-    doors::{DoorTarget, config::TearConfig, engine},
+    doors::{DoorTarget, config::TearTuning, engine},
 };
 
 /// The native identity and gesture history of an open door grip.
@@ -51,7 +51,7 @@ impl TearGrip {
         self.intent = Intent::default();
     }
 
-    pub fn gesture(&mut self, input: Gesture, config: &TearConfig) -> bool {
+    pub fn gesture(&mut self, input: Gesture, config: &TearTuning) -> bool {
         self.intent.step(input, config)
     }
 }
@@ -275,7 +275,7 @@ struct Intent {
 }
 
 impl Intent {
-    fn step(&mut self, input: Gesture, c: &TearConfig) -> bool {
+    fn step(&mut self, input: Gesture, c: &TearTuning) -> bool {
         let Gesture {
             dt,
             lag_m,
@@ -354,6 +354,7 @@ impl Permit {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::physical_hands::doors::config::TEARING;
 
     fn target(vehicle_body: Option<u32>) -> DoorTarget {
         DoorTarget {
@@ -488,7 +489,7 @@ mod tests {
     fn armed() -> Intent {
         let mut intent = Intent::default();
         for _ in 0..15 {
-            assert!(!intent.step(quiet(), &TearConfig::new()));
+            assert!(!intent.step(quiet(), &TEARING));
         }
         intent
     }
@@ -522,7 +523,7 @@ mod tests {
                     separating_speed_mps: 4.0,
                     ..quiet()
                 },
-                &TearConfig::new()
+                &TEARING
             ));
         }
     }
@@ -535,14 +536,14 @@ mod tests {
             separating_speed_mps: 3.0,
             ..quiet()
         };
-        assert!(intent.step(yank, &TearConfig::new()));
-        assert!(!intent.step(yank, &TearConfig::new()));
+        assert!(intent.step(yank, &TEARING));
+        assert!(!intent.step(yank, &TEARING));
         assert!(!armed().step(
             Gesture {
                 separating_speed_mps: 0.5,
                 ..yank
             },
-            &TearConfig::new()
+            &TEARING
         ));
     }
 
@@ -555,7 +556,7 @@ mod tests {
             at_limit: true,
             ..quiet()
         };
-        let c = TearConfig::new();
+        let c = TEARING;
         let mut intent = armed();
         for _ in 0..8 {
             assert!(!intent.step(push, &c));
@@ -586,9 +587,9 @@ mod tests {
     #[test]
     fn disabled_or_stale_tracking_resets_intent() {
         let mut intent = armed();
-        assert!(!intent.step(Gesture { dt: 0.5, ..quiet() }, &TearConfig::new()));
+        assert!(!intent.step(Gesture { dt: 0.5, ..quiet() }, &TEARING));
         assert!(!intent.armed);
-        let mut c = TearConfig::new();
+        let mut c = TEARING;
         c.enabled = false;
         let mut intent = armed();
         assert!(!intent.step(quiet(), &c));

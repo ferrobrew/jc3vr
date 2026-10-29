@@ -26,9 +26,10 @@ use glam::{Vec2, Vec3};
 use crate::controllers::{
     body::procedural::solver::arms::TorsoKeepOut,
     physical_hands::{
-        config::{PhysicalHandsConfig, PickupConfig},
         grasp::{GripTarget, rotation_vector},
+        pickup::PickupTuning,
         rigid::{RigidBody, Velocities},
+        tuning::PalmTuning,
     },
 };
 
@@ -52,7 +53,7 @@ pub struct HoldTuning {
 }
 
 impl HoldTuning {
-    pub fn of(config: &PickupConfig) -> Self {
+    pub fn of(config: &PickupTuning) -> Self {
         Self {
             stiffness_per_s: config.stiffness_per_s.max(0.0),
             angular_stiffness_per_s: config.angular_stiffness_per_s.max(0.0),
@@ -68,7 +69,7 @@ impl HoldTuning {
     /// Add bounded lift reserve for a loose prop deliberately held at two separated points.
     /// One hand retains its configured strength; attached bodies never use this adapter.
     pub(crate) fn carrying(
-        config: &PickupConfig,
+        config: &PickupTuning,
         mass_kg: f32,
         holds: &[Option<HandHold>; 2],
     ) -> Self {
@@ -217,7 +218,7 @@ pub fn solve(
 /// point is, as it is pushed off a wall, once the hand pulls at near its strength. `anchor` is the
 /// grab point, `target` where the hand would have it, and `load` the hand's
 /// [`HoldSolution::loads`]. World `(x, z)` metres per second.
-pub fn resist_push(anchor: Vec3, target: Vec3, load: f32, config: &PhysicalHandsConfig) -> Vec2 {
+pub fn resist_push(anchor: Vec3, target: Vec3, load: f32, config: &PalmTuning) -> Vec2 {
     let lag = anchor - target;
     let horizontal = Vec2::new(lag.x, lag.z);
     let Some(direction) = horizontal.try_normalize() else {
@@ -311,7 +312,7 @@ mod tests {
             rig::{Rig, tests::skeleton},
             solver::pose::RigPose,
         },
-        physical_hands::rigid::tests::crate_body,
+        physical_hands::{pickup::PICKUP, rigid::tests::crate_body, tuning::PALMS},
     };
 
     const DT: f32 = 1.0 / 60.0;
@@ -325,7 +326,7 @@ mod tests {
     }
 
     fn tuning() -> HoldTuning {
-        HoldTuning::of(&PickupConfig::new())
+        HoldTuning::of(&PICKUP)
     }
 
     fn hold(anchor: Vec3, point: Vec3, orientation: Quat) -> HandHold {
@@ -374,7 +375,7 @@ mod tests {
 
     #[test]
     fn separated_two_hand_grips_lift_a_barrel_with_bounded_assistance() {
-        let config = PickupConfig::new();
+        let config = PICKUP;
         let mut body = crate_body(100.0, Vec3::new(0.6, 0.9, 0.6), Vec3::ZERO, Quat::IDENTITY);
         let ends = [Vec3::new(-0.3, 0.0, 0.0), Vec3::new(0.3, 0.0, 0.0)];
         let goals = ends.map(|p| p + Vec3::Y * 0.3);
@@ -392,7 +393,7 @@ mod tests {
 
     #[test]
     fn assistance_does_not_strengthen_one_hand_near_coincident_grips_or_large_bodies() {
-        let config = PickupConfig::new();
+        let config = PICKUP;
         let left = hold(Vec3::NEG_X * 0.3, Vec3::NEG_X * 0.3, Quat::IDENTITY);
         let right = hold(Vec3::X * 0.3, Vec3::X * 0.3, Quat::IDENTITY);
         let baseline = HoldTuning::of(&config);
@@ -427,14 +428,14 @@ mod tests {
         assert!(body.pose.point(on_body).distance(point) < 0.01);
         assert!(body.pose.orientation.angle_between(Quat::IDENTITY) < 0.02);
         // Holding it up takes its weight and no more.
-        let weight = 3.0 * PickupConfig::new().gravity_mps2;
-        let expected = weight / PickupConfig::new().hand_force_n;
+        let weight = 3.0 * PICKUP.gravity_mps2;
+        let expected = weight / PICKUP.hand_force_n;
         assert!((solution.loads[0] - expected).abs() < 0.05);
     }
 
     #[test]
     fn a_body_too_heavy_to_lift_sinks() {
-        let config = PickupConfig::new();
+        let config = PICKUP;
         let mass = 2.0 * config.hand_force_n / config.gravity_mps2;
         let mut body = crate_body(mass, Vec3::splat(0.6), Vec3::ZERO, Quat::IDENTITY);
         let on_body = Vec3::new(0.0, 0.3, 0.0);
@@ -486,7 +487,7 @@ mod tests {
 
     #[test]
     fn two_hands_carry_a_long_body_between_them_and_tilt_it() {
-        let config = PickupConfig::new();
+        let config = PICKUP;
         let tuning = tuning();
         let mass = 1.5 * config.hand_force_n / config.gravity_mps2;
         let mut pole = crate_body(mass, Vec3::new(2.0, 0.1, 0.1), Vec3::ZERO, Quat::IDENTITY);
@@ -548,7 +549,7 @@ mod tests {
 
     #[test]
     fn a_stuck_hold_pushes_the_player_toward_the_grab_point() {
-        let config = PhysicalHandsConfig::new();
+        let config = PALMS;
         // The hand pushed 20 cm past a heavy crate's grab point along -Z: the body moves back +Z.
         let push = resist_push(Vec3::ZERO, Vec3::new(0.0, 0.0, -0.2), 1.0, &config);
         assert!(push.y > 0.0 && push.x.abs() < 1e-6);

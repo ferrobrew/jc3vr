@@ -131,7 +131,7 @@ pub(crate) unsafe fn scan_candidates(
         return;
     }
     // SAFETY: forwarded from the caller.
-    let found = unsafe { candidates::scan(hands, standing_on, config) };
+    let found = unsafe { candidates::scan(hands, standing_on) };
     let took = now.elapsed();
     let mut counts = [0; CandidateKind::COUNT];
     let error = match found {

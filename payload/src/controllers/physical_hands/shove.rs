@@ -16,13 +16,14 @@
 
 use glam::Vec3;
 
-use crate::controllers::physical_hands::{config::ShoveConfig, rigid::RigidBody};
+use crate::controllers::physical_hands::rigid::RigidBody;
 
-/// The contact's tuning.
+/// The contact's tuning, fixed at [`SHOVE`].
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct ShoveTuning {
     /// The speed into the body per metre of press past the deadband, per second.
     pub stiffness_per_s: f32,
+    /// The press depth left alone, metres, so that a hand resting on a crate does not creep it.
     pub deadband_m: f32,
     /// The fastest the contact asks the point to move into the body, metres per second.
     pub max_speed_mps: f32,
@@ -30,19 +31,20 @@ pub struct ShoveTuning {
     pub max_force_n: f32,
     /// The friction coefficient between the palm and the surface.
     pub friction: f32,
+    /// How long the measure of how much a body gives is smoothed over, seconds.
+    pub give_smoothing_s: f32,
 }
 
-impl ShoveTuning {
-    pub fn of(config: &ShoveConfig) -> Self {
-        Self {
-            stiffness_per_s: config.stiffness_per_s,
-            deadband_m: config.deadband_m,
-            max_speed_mps: config.max_speed_mps,
-            max_force_n: config.max_force_n,
-            friction: config.friction,
-        }
-    }
-}
+/// The palms' soft contact with loose objects: a palm pressed into a dynamic body pushes the point
+/// it touches along with the hand, within the hand's strength.
+pub const SHOVE: ShoveTuning = ShoveTuning {
+    stiffness_per_s: 12.0,
+    deadband_m: 0.005,
+    max_speed_mps: 4.0,
+    max_force_n: 600.0,
+    friction: 0.6,
+    give_smoothing_s: 0.08,
+};
 
 /// One tick's shove of a body.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -194,6 +196,7 @@ mod tests {
         max_speed_mps: 4.0,
         max_force_n: 600.0,
         friction: 0.5,
+        give_smoothing_s: 0.08,
     };
 
     #[test]

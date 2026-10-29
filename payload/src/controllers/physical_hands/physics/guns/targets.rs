@@ -70,12 +70,12 @@ mod tests {
         frame::Pose,
         hands::pose as hand_pose,
         physical_hands::{
-            PhysicalHandsConfig,
             palm::PalmBox,
             physics::guns::{
                 HeldGun,
                 math::{intended_seat, seated},
             },
+            tuning::PALMS,
         },
         weapons::{
             config::BracedHeftConfig,
@@ -97,7 +97,6 @@ mod tests {
 
     #[test]
     fn heavy_weight_drives_the_palm_and_gun_once_for_both_hands() {
-        let physical = PhysicalHandsConfig::new();
         let config = HeftConfig::new();
         for holder in Hand::BOTH {
             let mut spring = TestWeight::default();
@@ -115,7 +114,7 @@ mod tests {
                 shown = spring.apply(raw, HeftClass::Heavy, 1.0, &config, t);
                 assert_eq!(shown.grip.position, raw.grip.position);
                 assert!((shown.wrist.orientation * Vec3::NEG_Z).y < -0.1);
-                let palm = PalmBox::from_wrist(shown.wrist, 1.0, &physical);
+                let palm = PalmBox::from_wrist(shown.wrist, 1.0, &PALMS);
                 let palm = Pose {
                     position: palm.centre,
                     orientation: palm.orientation,

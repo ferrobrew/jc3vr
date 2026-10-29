@@ -8,7 +8,6 @@
 //! its specializations) are shared by every area.
 
 mod aim;
-mod fingers;
 mod grapple;
 mod haptics;
 pub(crate) mod hud;
@@ -60,7 +59,6 @@ pub(crate) fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
     weapons::weapons(&c.weapons)?;
     roomscale::roomscale(&c.roomscale)?;
     vehicles::vehicles(&c.vehicles)?;
-    fingers::fingers(&c.fingers)?;
     physical_hands::physical_hands(&c.physical_hands)?;
     grapple::grapple(&c.grapple)?;
     haptics::haptics(&c.haptics)

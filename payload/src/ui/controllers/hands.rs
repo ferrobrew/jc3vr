@@ -12,7 +12,7 @@ use crate::{
             ik::HandIkStatus,
             late::{HandLateStatus, LateStatus},
             parts, reach, rig,
-            tiers::{HandTier, HandTierTable, TierState, TierStatus},
+            tiers::{TierState, TierStatus},
         },
         presentation,
     },
@@ -174,16 +174,10 @@ pub(super) fn presentation_settings(ui: &mut Ui, h: &mut HandsConfig) {
         );
 }
 
-pub(super) fn hands_settings(ui: &mut Ui, h: &mut HandsConfig) {
+pub(super) fn grip_settings(ui: &mut Ui, h: &mut HandsConfig) {
     ui.checkbox(&mut h.rigid_grip, "Rigid grip").on_hover_text(
         "Hold a gun fixed in a controller-driven hand, whatever the animation does.",
     );
-    ui.add(egui::Slider::new(&mut h.reach_t, 0.0..=1.0).text("Position reach"));
-    ui.add(egui::Slider::new(&mut h.reach_r, 0.0..=1.0).text("Rotation reach"));
-    ui.add(egui::Slider::new(&mut h.pull, 0.0..=1.0).text("Pull"));
-    ui.add(egui::Slider::new(&mut h.resist, 0.0..=1.0).text("Resist"));
-    ui.add(egui::Slider::new(&mut h.yield_blend_s, 0.0..=2.0).text("Yield blend (s)"));
-    ui.add(egui::Slider::new(&mut h.return_blend_s, 0.0..=2.0).text("Return blend (s)"));
     ui.label("Grip offset (right hand, grip frame; the left mirrors it)");
     vec3_drag(ui, "Wrist position (m)", &mut h.grip.position_m, 0.005);
     vec3_drag(
@@ -195,25 +189,6 @@ pub(super) fn hands_settings(ui: &mut Ui, h: &mut HandsConfig) {
     if ui.button("Reset grip offset").clicked() {
         h.grip = GripOffset::INDEX_BEST_GUESS;
     }
-    ui.collapsing("Advanced tuning", |ui| tier_settings(ui, h));
-}
-
-fn tier_settings(ui: &mut Ui, h: &mut HandsConfig) {
-    egui::CollapsingHeader::new("Hand tiers").show(ui, |ui| {
-        for state in TierState::ALL {
-            let tier = h.tiers.tier_mut(state);
-            egui::ComboBox::from_label(state.label())
-                .selected_text(tier.label())
-                .show_ui(ui, |ui| {
-                    for option in HandTier::ALL {
-                        ui.selectable_value(tier, option, option.label());
-                    }
-                });
-        }
-        if ui.button("Reset to the plan").clicked() {
-            h.tiers = HandTierTable::PLAN;
-        }
-    });
 }
 
 pub(super) fn anchor_settings(ui: &mut Ui, h: &mut HandsConfig) {

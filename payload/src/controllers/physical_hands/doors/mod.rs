@@ -16,7 +16,7 @@
 //! door as a loose object; a palm at a closed door's handle area, found from the vehicle's door
 //! boxes, takes it as latched. The pickup tick ([`crate::controllers::physical_hands::pickup::tick`])
 //! keeps a latched grip ([`Latch`]): the hand stays at the grab point on the vehicle ([`LatchStep::Pin`])
-//! until it has pulled outward past [`DoorsConfig::unlatch_pull_m`], when the latch gives
+//! until it has pulled outward past [`UNLATCH_PULL_M`], when the latch gives
 //! ([`engine::unlatch`]) and the hold becomes an ordinary one of the door's own body.
 
 pub(crate) mod acquisition;
@@ -58,6 +58,17 @@ pub struct DoorTarget {
     /// Which way is out of the vehicle at the door, world space.
     pub outward: Vec3,
 }
+
+/// How far outside a door's box a palm still reaches it, metres of the player's hand.
+pub(crate) const REACH_M: f32 = 0.06;
+
+/// How far a hand gripping a closed door must pull it outward before the latch gives, metres of
+/// the player's hand.
+pub(crate) const UNLATCH_PULL_M: f32 = 0.05;
+
+/// How far from a door's handle a palm takes the door, whatever the reach's rays hit, metres of the
+/// player's hand.
+pub(crate) const HANDLE_REACH_M: f32 = 0.15;
 
 /// What a hand reaches of a vehicle through the ray hit `hit` on `object`'s body `body`, from a
 /// palm centred at `palm`: an open door it touches, or a closed door whose handle area the palm is
@@ -129,7 +140,7 @@ pub(crate) unsafe fn observed_reach(
                 d,
                 palm,
                 reach_m,
-                config.handle_share,
+                HANDLE_SHARE,
                 origin,
                 ScanEntry {
                     branch: Branch::DoorPanel,
@@ -324,6 +335,10 @@ fn opened_step(
 }
 
 const BODY_WAIT_S: f32 = 0.3;
+
+/// Where on a closed door its handle area starts, as a share of the way from the door's hinge to
+/// its far edge, `0..=1`: a grip nearer the hinge than this takes nothing.
+const HANDLE_SHARE: f32 = 0.4;
 
 /// Whether a latched grip holds or gives, pure.
 #[derive(Debug, Copy, Clone, PartialEq)]

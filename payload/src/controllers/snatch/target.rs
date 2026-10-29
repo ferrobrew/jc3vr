@@ -17,7 +17,7 @@ use crate::controllers::{
     mode::Mode,
     physical_hands::{self, doors::DoorTarget, remote},
     snatch::{
-        OfferInput, Refusal, engine,
+        OfferInput, Refusal, SNATCH, engine,
         rules::{self, Candidate},
     },
     weapons::hold::{
@@ -96,10 +96,7 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
             let Some(_alive) = weak.lock() else {
                 return false;
             };
-            if !config.weapons.snatch.props
-                || unsafe { remote::loose_prop(*object, *body, &config.physical_hands.pickup) }
-                    .is_none()
-            {
+            if unsafe { remote::loose_prop(*object, *body) }.is_none() {
                 return false;
             }
             let Ok((point, _)) = (unsafe { physical_hands::body_pose(*body, *object) }) else {
@@ -114,11 +111,8 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
             let Some(_alive) = weak.lock() else {
                 return false;
             };
-            if !config.weapons.snatch.doors
-                || !config.physical_hands.doors.enabled
-                || unsafe {
-                    remote::door_moving(door, config.weapons.snatch.door_max_vehicle_speed_mps)
-                }
+            if !config.physical_hands.doors.enabled
+                || unsafe { remote::door_moving(door, SNATCH.door_max_vehicle_speed_mps) }
             {
                 return false;
             }
@@ -131,7 +125,7 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
                     body,
                     *handle,
                     door.outward,
-                    config.weapons.snatch.door_reach_m,
+                    SNATCH.door_reach_m,
                     &config.physical_hands.doors,
                 )
             }) else {
@@ -151,8 +145,8 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
     let chosen = rules::choose(
         ray,
         [Candidate { kind: (), point }],
-        (config.weapons.snatch.cone_deg + RETAIN_CONE_DEG).to_radians(),
-        config.weapons.snatch.range_m,
+        (SNATCH.cone_deg + RETAIN_CONE_DEG).to_radians(),
+        SNATCH.range_m,
     );
     let Some(chosen) = chosen else { return false };
     offer.point = point;
@@ -259,7 +253,6 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
         Held(usize),
         Holstered(usize),
     }
-    let snatch = &config.weapons.snatch;
     let hold = &config.weapons.hold;
     let takes_held = hold.steal && hold.direct_pickup && hold.either_hand;
     let aimed = grapple_weapons::aimed().and_then(|(aimed, alive)| {
@@ -274,7 +267,7 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
     } else {
         Vec::new()
     };
-    let holstered = if takes_held && snatch.holstered {
+    let holstered = if takes_held {
         steal::holstered_targets()
     } else {
         Vec::new()
@@ -299,8 +292,8 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
     let chosen = rules::choose(
         ray,
         candidates,
-        snatch.cone_deg.to_radians(),
-        snatch.range_m,
+        SNATCH.cone_deg.to_radians(),
+        SNATCH.range_m,
     )?;
     let point = chosen.candidate.point;
     let kind = match chosen.candidate.kind {
@@ -339,7 +332,6 @@ unsafe fn aimed_offer(
     aimed: &grapple_weapons::Aimed,
     config: &ControllersConfig,
 ) -> Option<OfferKind> {
-    let snatch = &config.weapons.snatch;
     // SAFETY: the caller's strong reference keeps the object, and its weak reference, alive.
     let weak = || unsafe { weak_of(aimed.object) };
     if aimed.weapon {
@@ -356,10 +348,7 @@ unsafe fn aimed_offer(
         });
     }
     let hands = &config.physical_hands;
-    if snatch.props
-        && let Some(mass_kg) =
-            unsafe { remote::loose_prop(aimed.object, aimed.body, &hands.pickup) }
-    {
+    if let Some(mass_kg) = unsafe { remote::loose_prop(aimed.object, aimed.body) } {
         return Some(OfferKind::Prop {
             object: aimed.object,
             body: aimed.body,
@@ -367,18 +356,18 @@ unsafe fn aimed_offer(
             weak: weak(),
         });
     }
-    if snatch.doors && hands.doors.enabled {
+    if hands.doors.enabled {
         let (door, handle) = unsafe {
             remote::closed_door(
                 aimed.object,
                 aimed.body,
                 aimed.point,
                 aimed.normal,
-                snatch.door_reach_m,
+                SNATCH.door_reach_m,
                 &hands.doors,
             )
         }?;
-        if unsafe { remote::door_moving(&door, snatch.door_max_vehicle_speed_mps) } {
+        if unsafe { remote::door_moving(&door, SNATCH.door_max_vehicle_speed_mps) } {
             return None;
         }
         // SAFETY: the door's vehicle is the object under the aim, or the vehicle of a part of it,

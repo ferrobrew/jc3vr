@@ -18,7 +18,7 @@
 //! - [`doors`]: opening vehicle doors by hand, a latched one gripped at its handle area;
 //! - [`grab_view`]: the grab view, a diagnostic of what the grip and the reach saw;
 //! - [`world`]: the Havok world, lent out for one call at a time;
-//! - [`config`]: the settings.
+//! - [`config`]: the settings, and [`tuning`] the palms' fixed tuning.
 //!
 //! A hand its body drives ([`physics::drives`]) meets the world through its body. Otherwise, the
 //! palms are probed rather than simulated: no body is added to the physics world. Each simulation
@@ -77,6 +77,7 @@ pub mod stunt;
 mod targets;
 mod tick;
 mod touch;
+pub mod tuning;
 pub mod vault;
 mod world;
 
@@ -124,10 +125,8 @@ pub enum DrawTime {
 /// body's hand at its body, for `at`. Called by [`crate::controllers::hands::active_hands`] and
 /// [`crate::controllers::hands::active_hands_from_frame`].
 pub fn apply(cockpit: &mut [Option<CockpitHand>; 2], at: DrawTime) {
-    let (enabled, palm_offset) = Config::lock_query(|c| {
-        let p = &c.controllers.physical_hands;
-        (p.enabled && p.clamp_hand, p.palm_offset_m)
-    });
+    let enabled = Config::lock_query(|c| c.controllers.physical_hands.enabled);
+    let palm_offset = tuning::PALMS.palm_offset_m;
     match at {
         DrawTime::Tick => physics::apply(cockpit, palm_offset),
         DrawTime::Render => physics::apply_at_render(cockpit, palm_offset),

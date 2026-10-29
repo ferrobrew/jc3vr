@@ -9,11 +9,10 @@ use crate::controllers::{
     physical_hands::{
         bodies,
         characters::{self, CharactersConfig, Regrip, Seize, SeizeStep},
-        config::PickupConfig,
         doors::{self, LatchStep},
         grasp::{self, Grip, PalmMotion, Reach},
         physics::{self, Shove, ShoveForce},
-        pickup::{Held, HeldKind, JointInputs, PickupState, TickOutcome},
+        pickup::{Held, HeldKind, JointInputs, PickupState, PickupTuning, TickOutcome},
     },
 };
 
@@ -141,7 +140,7 @@ pub(super) unsafe fn keep_seize(
     };
     let palm = palm.pose.position;
     // SAFETY: forwarded from the caller.
-    match unsafe { seize.step(palm, config.yank_m * world_scale) } {
+    match unsafe { seize.step(palm, characters::YANK_M * world_scale) } {
         SeizeStep::Pin(pin) => outcome.pins[i] = Some(pin),
         SeizeStep::Yank { at, direction } => {
             state.seizes[i] = None;
@@ -156,7 +155,7 @@ pub(super) unsafe fn keep_seize(
                     at,
                     direction,
                     force: ShoveForce::Yank {
-                        strength: config.yank_strength,
+                        strength: characters::YANK_STRENGTH,
                     },
                 });
                 outcome.yanks += 1;
@@ -168,8 +167,7 @@ pub(super) unsafe fn keep_seize(
                 if seize.target.hostile {
                     state.regrips[i] = Some(Regrip {
                         seize,
-                        until: Instant::now()
-                            + Duration::from_secs_f32(config.regrip_s.clamp(0.0, MAX_REGRIP_S)),
+                        until: Instant::now() + Duration::from_secs_f32(characters::REGRIP_S),
                     });
                 } else {
                     outcome.released[i] = true;
@@ -210,16 +208,11 @@ pub(super) unsafe fn keep_seize(
 /// The shove a hand gives the character it lets go of, when it lets go moving at least the
 /// shove's least speed: a blow without damage along the hand's motion, dealt on the next frame
 /// tick. A seated character is not shoved.
-pub(super) fn shove_on_release(
-    hand: Hand,
-    seize: &Seize,
-    palm: &PalmMotion,
-    config: &CharactersConfig,
-) {
+pub(super) fn shove_on_release(hand: Hand, seize: &Seize, palm: &PalmMotion) {
     let speed_mps = palm.velocity.length();
     if seize.target.seated.is_some()
         || !speed_mps.is_finite()
-        || speed_mps < config.shove_min_speed_mps.max(0.0)
+        || speed_mps < characters::SHOVE_MIN_SPEED_MPS
     {
         return;
     }
@@ -249,7 +242,7 @@ pub(super) unsafe fn keep_regrip(
     palm: Option<PalmMotion>,
     reach: Option<Reach>,
     joints: &JointInputs,
-    config: &PickupConfig,
+    config: &PickupTuning,
     outcome: &mut TickOutcome,
 ) {
     let i = hand.index();
@@ -309,6 +302,3 @@ pub(super) unsafe fn keep_regrip(
         }
     }
 }
-
-/// The longest a hand waits for a yanked character's ragdoll, seconds.
-const MAX_REGRIP_S: f32 = 5.0;

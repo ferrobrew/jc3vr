@@ -7,11 +7,11 @@
 
 use glam::{Vec2, Vec3};
 
-use crate::controllers::physical_hands::config::PhysicalHandsConfig;
+use crate::controllers::physical_hands::tuning::PalmTuning;
 
 /// The horizontal push one palm asks for, world `(x, z)` metres per second, from a press `depth`
 /// metres into a surface with the world `normal`.
-pub fn hand_push(normal: Vec3, depth: f32, config: &PhysicalHandsConfig) -> Vec2 {
+pub fn hand_push(normal: Vec3, depth: f32, config: &PalmTuning) -> Vec2 {
     let Some(normal) = normal.try_normalize() else {
         return Vec2::ZERO;
     };
@@ -29,7 +29,7 @@ pub fn hand_push(normal: Vec3, depth: f32, config: &PhysicalHandsConfig) -> Vec2
 }
 
 /// Both palms' pushes together, no faster than the fastest push.
-pub fn combine(pushes: [Vec2; 2], config: &PhysicalHandsConfig) -> Vec2 {
+pub fn combine(pushes: [Vec2; 2], config: &PalmTuning) -> Vec2 {
     let sum = pushes[0] + pushes[1];
     let max = config.max_push_speed_mps.max(0.0);
     if !sum.is_finite() {
@@ -41,8 +41,9 @@ pub fn combine(pushes: [Vec2; 2], config: &PhysicalHandsConfig) -> Vec2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::physical_hands::tuning::PALMS;
 
-    const CONFIG: PhysicalHandsConfig = PhysicalHandsConfig::new();
+    const CONFIG: PalmTuning = PALMS;
 
     #[test]
     fn a_press_into_a_wall_pushes_the_body_away() {

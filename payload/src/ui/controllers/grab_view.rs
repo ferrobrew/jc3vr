@@ -1,12 +1,12 @@
-//! The grab view: its switch, what it drew, the palms' state, the candidates, the refused grabs,
-//! and its settings.
+//! The grab view: its switch, what it drew, the palms' state, the candidates, and the refused
+//! grabs.
 
 use egui::Ui;
 
 use crate::controllers::{
     frame::Hand,
     physical_hands::grab_view::{
-        self, GrabViewConfig, GrabViewStatus, draw::PRIMITIVE_BUDGET, model::CandidateKind,
+        self, GrabViewStatus, draw::PRIMITIVE_BUDGET, model::CandidateKind,
     },
 };
 
@@ -73,14 +73,4 @@ pub(super) fn grab_view_readout(ui: &mut Ui, status: &GrabViewStatus) {
     if let Some(error) = &status.last_error {
         ui.label(format!("Last error: {error}"));
     }
-}
-
-pub(super) fn grab_view_settings(ui: &mut Ui, v: &mut GrabViewConfig) {
-    ui.add_enabled_ui(v.enabled, |ui| {
-        ui.add(egui::Slider::new(&mut v.radius_m, 0.1..=10.0).text("Target radius (m)"));
-        ui.add(
-            egui::Slider::new(&mut v.candidate_radius_m, 0.1..=10.0).text("Candidate radius (m)"),
-        );
-        ui.add(egui::Slider::new(&mut v.max_candidates, 1..=64).text("Most candidates"));
-    });
 }

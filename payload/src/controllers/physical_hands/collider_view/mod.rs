@@ -173,7 +173,15 @@ pub(crate) unsafe fn render_tick(dtf: f32) {
         let mods = mod_ids();
         let started = Instant::now();
         // SAFETY: forwarded from the caller.
-        let scanned = unsafe { scan::scan(head.position, &config, &mods) };
+        let scanned = unsafe {
+            scan::scan(
+                head.position,
+                RADIUS_M,
+                MAX_BODIES,
+                config.static_bodies,
+                &mods,
+            )
+        };
         (scanned, started.elapsed())
     });
     let flashes = take_flashes();
@@ -220,7 +228,7 @@ pub(crate) unsafe fn render_tick(dtf: f32) {
                 &current.bodies,
                 head.position,
                 head.orientation * Vec3::NEG_Z,
-                config.radius_m.max(0.0) * 2.0,
+                RADIUS_M * 2.0,
             )
         })
         .flatten();
@@ -230,6 +238,7 @@ pub(crate) unsafe fn render_tick(dtf: f32) {
             previous: None,
             dtf,
             config: &config,
+            budget: MAX_PRIMITIVES,
             flashes: &flashes,
             gaze: gaze.map(|b| b.id),
         },
@@ -303,14 +312,8 @@ pub(crate) unsafe fn scan_moving(
     radius_m: f32,
     max_bodies: u32,
 ) -> Result<Snapshot, ScanError> {
-    let config = ColliderViewConfig {
-        radius_m,
-        max_bodies,
-        static_bodies: false,
-        ..ColliderViewConfig::new()
-    };
     // SAFETY: forwarded from the caller.
-    unsafe { scan::scan(centre, &config, &mod_ids()) }
+    unsafe { scan::scan(centre, radius_m, max_bodies as usize, false, &mod_ids()) }
 }
 
 /// Flash a contact a hand body or a held gun's body started: where the body was before the step
@@ -386,6 +389,16 @@ const TTL: Duration = Duration::from_millis(100);
 
 /// The most contacts kept flashing at once.
 const MAX_FLASHES: usize = 32;
+
+/// How far from the player a body's box may be and still be drawn, metres.
+const RADIUS_M: f32 = 6.0;
+
+/// The most bodies drawn, the nearest first.
+const MAX_BODIES: usize = 128;
+
+/// The most overlay primitives the view submits in a frame. The overlay's own cap covers every
+/// readout together, and the view's slot comes last, so the view gives way first.
+const MAX_PRIMITIVES: usize = 1536;
 
 /// The mod's bodies and joints, from the hand bodies' and the held guns' readouts.
 fn mod_ids() -> ModIds {

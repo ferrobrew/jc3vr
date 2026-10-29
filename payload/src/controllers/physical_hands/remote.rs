@@ -10,12 +10,11 @@ use crate::controllers::{
     frame::Hand,
     physical_hands::{
         STATE, bodies,
-        config::PickupConfig,
         contact::{Surface, SurfaceHit},
         doors::{self, DoorTarget, DoorsConfig, engine as door_engine},
         engine,
         grasp::{self, Reach, TargetKind},
-        pickup::Request,
+        pickup::{PICKUP, Request},
     },
 };
 
@@ -27,11 +26,7 @@ use crate::controllers::{
 ///
 /// The main thread, outside the physics step; `object` and `body` must be held alive or come from
 /// a cast this tick.
-pub(crate) unsafe fn loose_prop(
-    object: NonZeroUsize,
-    body: u32,
-    config: &PickupConfig,
-) -> Option<f32> {
+pub(crate) unsafe fn loose_prop(object: NonZeroUsize, body: u32) -> Option<f32> {
     if unsafe { engine::is_character(object) }
         || unsafe { door_engine::vehicle_of(object) }.is_some()
     {
@@ -40,7 +35,7 @@ pub(crate) unsafe fn loose_prop(
     let TargetKind::Prop { mass_kg } = (unsafe { bodies::classify(object, body) }).ok()? else {
         return None;
     };
-    (grasp::can_hold(mass_kg, config) && mass_kg * config.gravity_mps2 <= config.hand_force_n)
+    (grasp::can_hold(mass_kg, &PICKUP) && mass_kg * PICKUP.gravity_mps2 <= PICKUP.hand_force_n)
         .then_some(mass_kg)
 }
 

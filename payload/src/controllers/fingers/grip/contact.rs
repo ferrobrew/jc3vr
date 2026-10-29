@@ -22,13 +22,13 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     fingers::{
-        config::FingersConfig,
         curl::Finger,
         grip::catalogue::GripPose,
         pose::{
             BoneJoint, PalmFrame, bone_directions, finger_axes, joint_angles, thumb_axis,
             thumb_open,
         },
+        tuning::FingerTuning,
     },
     frame::{Hand, Pose},
 };
@@ -107,7 +107,7 @@ pub struct FitTarget {
 pub fn fit_contacts(
     hand: Hand,
     target: FitTarget,
-    config: &FingersConfig,
+    config: &FingerTuning,
     cast: &mut dyn FnMut(Vec3, Vec3) -> Option<CastHit>,
 ) -> Option<[Option<f32>; 5]> {
     let now = Instant::now();
@@ -197,7 +197,7 @@ pub fn sweep(
     finger: Finger,
     shape: &FingerSweep,
     palm: &PalmFrame,
-    config: &FingersConfig,
+    config: &FingerTuning,
     cast: &mut dyn FnMut(Vec3, Vec3) -> Option<CastHit>,
 ) -> Option<f32> {
     let points = |curl: f32| finger_points(finger, shape, palm, config, curl);
@@ -224,7 +224,7 @@ pub fn finger_points(
     finger: Finger,
     shape: &FingerSweep,
     palm: &PalmFrame,
-    config: &FingersConfig,
+    config: &FingerTuning,
     curl: f32,
 ) -> Option<[Vec3; 4]> {
     let (open, axis, splay_axis, splay) = match finger {
@@ -288,6 +288,7 @@ mod tests {
     use glam::Quat;
 
     use super::*;
+    use crate::controllers::fingers::tuning::FINGERS;
 
     /// A right hand at the origin in the wrist frame's convention.
     fn right_palm() -> PalmFrame {
@@ -328,7 +329,7 @@ mod tests {
 
     #[test]
     fn a_straight_finger_lies_along_its_open_direction() {
-        let config = FingersConfig::new();
+        let config = FINGERS;
         let points = finger_points(
             Finger::Middle,
             &middle_finger(),
@@ -357,7 +358,7 @@ mod tests {
 
     #[test]
     fn a_finger_stops_where_it_meets_the_surface() {
-        let config = FingersConfig::new();
+        let config = FINGERS;
         let near = sweep(
             Finger::Middle,
             &middle_finger(),
@@ -390,7 +391,7 @@ mod tests {
 
     #[test]
     fn a_finger_that_meets_nothing_has_no_fit() {
-        let config = FingersConfig::new();
+        let config = FINGERS;
         let mut calls = 0;
         let mut miss = |_: Vec3, _: Vec3| {
             calls += 1;
@@ -411,7 +412,7 @@ mod tests {
 
     #[test]
     fn the_thumb_sweeps_across_the_palm() {
-        let config = FingersConfig::new();
+        let config = FINGERS;
         let thumb = FingerSweep {
             root: Vec3::new(-0.025, -0.01, -0.02),
             lengths: [0.035, 0.03, 0.024],

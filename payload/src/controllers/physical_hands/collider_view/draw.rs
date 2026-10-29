@@ -38,6 +38,8 @@ pub struct DrawInputs<'a> {
     /// The frame's interpolation fraction between the two reads.
     pub dtf: f32,
     pub config: &'a ColliderViewConfig,
+    /// The most primitives to submit, at most [`PRIMITIVE_CEILING`].
+    pub budget: usize,
     pub flashes: &'a [Flash],
     /// The body under the gaze.
     pub gaze: Option<u32>,
@@ -57,14 +59,14 @@ pub struct Drawn {
 /// How long a contact flashes, seconds.
 pub const FLASH_S: f32 = 0.4;
 
-/// The most primitives the view submits, whatever its setting: the overlay's cap covers every
+/// The most primitives the view submits, whatever its budget: the overlay's cap covers every
 /// readout together.
 pub const PRIMITIVE_CEILING: usize = 2048;
 
 /// Build the frame's primitives into `out` (cleared first).
 pub fn build(inputs: &DrawInputs<'_>, out: &mut Vec<Primitive>) -> Drawn {
     out.clear();
-    let budget = (inputs.config.max_primitives as usize).min(PRIMITIVE_CEILING);
+    let budget = inputs.budget.min(PRIMITIVE_CEILING);
     let frames = Frames::new(inputs);
     let mut drawn = Drawn::default();
     let mut scratch = Vec::new();
@@ -388,6 +390,7 @@ mod tests {
             previous,
             dtf: 0.5,
             config,
+            budget: PRIMITIVE_CEILING,
             flashes: &[],
             gaze: None,
         }
@@ -492,12 +495,15 @@ mod tests {
                 .collect(),
             ..Snapshot::default()
         };
-        let config = ColliderViewConfig {
-            max_primitives: 30,
-            ..ColliderViewConfig::new()
-        };
+        let config = ColliderViewConfig::new();
         let mut out = Vec::new();
-        let drawn = build(&inputs(&current, None, &config), &mut out);
+        let drawn = build(
+            &DrawInputs {
+                budget: 30,
+                ..inputs(&current, None, &config)
+            },
+            &mut out,
+        );
         assert_eq!(out.len(), 26);
         assert_eq!(drawn.bodies, 2);
         assert_eq!(drawn.dropped, 3);
@@ -512,12 +518,15 @@ mod tests {
                 .collect(),
             ..Snapshot::default()
         };
-        let config = ColliderViewConfig {
-            max_primitives: u32::MAX,
-            ..ColliderViewConfig::new()
-        };
+        let config = ColliderViewConfig::new();
         let mut out = Vec::new();
-        build(&inputs(&current, None, &config), &mut out);
+        build(
+            &DrawInputs {
+                budget: usize::MAX,
+                ..inputs(&current, None, &config)
+            },
+            &mut out,
+        );
         assert!(out.len() <= PRIMITIVE_CEILING);
     }
 
@@ -578,13 +587,11 @@ mod tests {
                 impulse_ns: 1.0,
             },
         ];
-        let config = ColliderViewConfig {
-            max_primitives: 3 + 13 + 13,
-            ..ColliderViewConfig::new()
-        };
+        let config = ColliderViewConfig::new();
         let mut out = Vec::new();
         let drawn = build(
             &DrawInputs {
+                budget: 3 + 13 + 13,
                 flashes: &flashes,
                 ..inputs(&current, None, &config)
             },

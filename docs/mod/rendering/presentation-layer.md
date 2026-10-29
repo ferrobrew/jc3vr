@@ -50,7 +50,7 @@ The layer's work is timed in the `presentation` slot of the frame breakdown (`pe
 
 ## Settings and readouts
 
-`controllers.hands.presentation`: `enabled` (on; `BODY AT THE FRAME RATE` on the `VR: BODY` page), `torso` (on), and `arms` (on); the debug UI's Controllers tab has all three next to the late update's switch, with a readout of the layer's state, the draws it re-posed, and its cost. Off, the late update re-poses the hands and the forearms alone, as before. The hand bodies' blended offset follows `bodies.render_at_body`.
+`controllers.hands.presentation`: `enabled` (on; `BODY AT THE FRAME RATE` on the `VR: BODY` page), `torso` (on), and `arms` (on); the debug UI's Controllers tab has all three next to the late update's switch, with a readout of the layer's state, the draws it re-posed, and its cost. Off, the late update re-poses the hands and the forearms alone, as before. The hand bodies' blended offset always applies.
 
 The `RENDER-RATE BODY` status row (under `RENDERING` in the debug UI's Status tab) reads `OK` with the number of the player's body draws the layer re-posed in its last active frame and its smoothed cost per frame in milliseconds; `WAITING` with why it is idle before it has run (not in the headset, no recent tick); `FAILED, NO RIG` for a skeleton without the bones; and `OFF` when switched off. The skeleton's rig is logged once (`presentation: rigged the player's skeleton for the render-rate body`).
 

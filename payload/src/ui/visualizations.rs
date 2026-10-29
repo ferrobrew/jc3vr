@@ -12,7 +12,7 @@ use crate::{
             primitive::Source,
             store::{self, SourceMask},
         },
-        physical_hands::{collider_view::ColliderViewConfig, grab_view::GrabViewConfig},
+        physical_hands::collider_view::ColliderViewConfig,
         scheme,
     },
     ui::{catalog::FeatureId, controllers},
@@ -111,7 +111,7 @@ pub(crate) fn snapshot() -> Snapshot {
     Snapshot { config, runtime }
 }
 
-/// Render the drawer's switches, shared settings, view tuning, and readouts, without navigation
+/// Render the drawer's switches, shared settings, the collider view's contents, and readouts, without navigation
 /// changes. The caller supplies the snapshot before entering any configuration edit boundary.
 pub(crate) fn controls(ui: &mut Ui, snapshot: &Snapshot) {
     let id = ui.id().with("visualization-filter");
@@ -155,7 +155,7 @@ pub(crate) fn controls(ui: &mut Ui, snapshot: &Snapshot) {
             }
             ui.separator();
             ui.collapsing("Shared overlay settings", |ui| shared_settings(ui, snapshot, &mut edits));
-            ui.collapsing("Grab and collider view tuning", |ui| view_settings(ui, snapshot, &mut edits));
+            ui.collapsing("Collider view contents", |ui| collider_settings(ui, snapshot, &mut edits));
             ui.collapsing("View readouts", controllers::view_readouts);
             ui.separator();
             temporary_controls(ui, snapshot);
@@ -181,6 +181,7 @@ enum ViewId {
     GrabRefusals,
     GrabCandidates,
     ColliderView,
+    PalmBoxes,
 }
 
 impl ViewId {
@@ -199,6 +200,7 @@ impl ViewId {
             | Self::GrabRefusals
             | Self::GrabCandidates => Source::GrabView,
             Self::ColliderView => Source::ColliderView,
+            Self::PalmBoxes => Source::PhysicalHands,
         }
     }
 
@@ -219,6 +221,7 @@ impl ViewId {
             Self::GrabRefusals => grab.refusals,
             Self::GrabCandidates => grab.candidates,
             Self::ColliderView => config.controllers.physical_hands.collider_view.enabled,
+            Self::PalmBoxes => config.controllers.physical_hands.show_boxes,
         }
     }
 
@@ -241,6 +244,7 @@ impl ViewId {
             Self::ColliderView => {
                 config.controllers.physical_hands.collider_view.enabled = requested
             }
+            Self::PalmBoxes => config.controllers.physical_hands.show_boxes = requested,
         }
     }
 
@@ -347,6 +351,12 @@ const ENTRIES: &[Entry] = &[
         feature: FeatureId::PhysicalHands,
     },
     Entry {
+        id: ViewId::PalmBoxes,
+        label: "Palm boxes",
+        group: Group::DebugGeometry,
+        feature: FeatureId::PhysicalHands,
+    },
+    Entry {
         id: ViewId::GripMarkers,
         label: "Grip markers",
         group: Group::GameplayCues,
@@ -437,7 +447,7 @@ fn temporary_controls(ui: &mut Ui, snapshot: &Snapshot) {
         ));
     }
     ui.small("Hide also covers switches enabled while hidden. It lasts until Restore or payload teardown; closing this drawer does not restore output. Restore keeps configuration edits made while hidden.");
-    ui.small("Gun readout, sight tuning, physical-hand geometry, magazine pips, and other non-inventory output remain unchanged.");
+    ui.small("Gun readout, sight tuning, magazine pips, and other non-inventory output remain unchanged.");
 }
 
 #[derive(Default)]
@@ -525,8 +535,7 @@ enum Edit {
     MinimumLineWidth(f32),
     XrayAlpha(f32),
     HideGameReticle(bool),
-    GrabViewTuning(GrabViewConfig),
-    ColliderViewTuning(ColliderViewConfig),
+    ColliderViewContents(ColliderViewConfig),
 }
 
 fn switch_control(ui: &mut Ui, snapshot: &Snapshot, entry: &Entry, edits: &mut Vec<Edit>) {
@@ -635,18 +644,14 @@ fn shared_settings(ui: &mut Ui, snapshot: &Snapshot, edits: &mut Vec<Edit>) {
     }
 }
 
-/// The grab view's and collider view's tuning, edited on copies. Only the tuning fields are
-/// written back, so a switch edited in the same frame keeps its value.
-fn view_settings(ui: &mut Ui, snapshot: &Snapshot, edits: &mut Vec<Edit>) {
-    let physical_hands = &snapshot.config.controllers.physical_hands;
-    let mut grab = physical_hands.grab_view;
-    let mut collider = physical_hands.collider_view;
-    controllers::view_settings(ui, &mut grab, &mut collider);
-    if grab != physical_hands.grab_view {
-        edits.push(Edit::GrabViewTuning(grab));
-    }
-    if collider != physical_hands.collider_view {
-        edits.push(Edit::ColliderViewTuning(collider));
+/// What the collider view draws, edited on a copy. Only the contents are written back, so the
+/// view's switch edited in the same frame keeps its value.
+fn collider_settings(ui: &mut Ui, snapshot: &Snapshot, edits: &mut Vec<Edit>) {
+    let current = snapshot.config.controllers.physical_hands.collider_view;
+    let mut collider = current;
+    controllers::collider_view_settings(ui, &mut collider);
+    if collider != current {
+        edits.push(Edit::ColliderViewContents(collider));
     }
 }
 
@@ -669,18 +674,12 @@ fn apply_edits(config: &mut Config, edits: &[Edit]) {
             Edit::MinimumLineWidth(width) => config.controllers.overlay.min_line_px = width,
             Edit::XrayAlpha(alpha) => config.controllers.overlay.xray_alpha = alpha,
             Edit::HideGameReticle(hide) => config.controllers.overlay.hide_game_reticle = hide,
-            Edit::GrabViewTuning(tuning) => {
-                let view = &mut config.controllers.physical_hands.grab_view;
-                view.radius_m = tuning.radius_m;
-                view.candidate_radius_m = tuning.candidate_radius_m;
-                view.max_candidates = tuning.max_candidates;
-            }
-            Edit::ColliderViewTuning(tuning) => {
-                // The view's switch is a registered switch; the tuning edit leaves it alone.
+            Edit::ColliderViewContents(contents) => {
+                // The view's switch is a registered switch; the contents edit leaves it alone.
                 let view = &mut config.controllers.physical_hands.collider_view;
                 *view = ColliderViewConfig {
                     enabled: view.enabled,
-                    ..tuning
+                    ..contents
                 };
             }
         }

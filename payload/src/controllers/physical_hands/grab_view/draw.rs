@@ -22,6 +22,7 @@ use crate::controllers::{
     overlay::primitive::{Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, SpriteSize},
     physical_hands::grab_view::{
         Recorded,
+        candidates::MAX_CANDIDATES,
         config::GrabViewConfig,
         model::{
             Candidate, PalmState, REFUSAL_COLOUR, TargetState, approach, refusal_flash,
@@ -135,9 +136,8 @@ pub(crate) fn build(inputs: &DrawInputs, out: &mut Vec<Primitive>) -> Drawn {
         }
     }
     if config.candidates {
-        let max = config.max_candidates as usize;
         for (k, candidate) in inputs.candidates.iter().enumerate() {
-            if k >= max || out.len() + CANDIDATE_PRIMITIVES > PRIMITIVE_BUDGET {
+            if k >= MAX_CANDIDATES || out.len() + CANDIDATE_PRIMITIVES > PRIMITIVE_BUDGET {
                 drawn.dropped += 1;
                 continue;
             }
@@ -174,11 +174,11 @@ struct TargetLine {
 }
 
 /// Each hand's lines to the targets near it, nearest first per hand, at most
-/// [`MAX_TARGET_LINES`] per hand. A target out of reach farther than the view's radius gets none,
+/// [`MAX_TARGET_LINES`] per hand. A target out of reach farther than [`TARGET_RADIUS_M`] gets none,
 /// nor does a socket or pouch on the body out of reach, whose own marker already shows it.
 fn target_lines(inputs: &DrawInputs) -> Vec<TargetLine> {
     let tick = inputs.tick;
-    let radius = inputs.config.radius_m.max(0.0);
+    let radius = TARGET_RADIUS_M;
     let mut out = Vec::new();
     for hand in Hand::BOTH {
         let i = hand.index();
@@ -307,6 +307,8 @@ const TARGET_LINE_WIDTH_M: f32 = 0.0025;
 const BOX_WIDTH_M: f32 = 0.002;
 /// The most target lines per hand.
 const MAX_TARGET_LINES: usize = 24;
+/// How far from a hand a grip target out of its reach still gets a line, metres.
+const TARGET_RADIUS_M: f32 = 2.0;
 /// A candidate's primitives: its box's twelve edges and its line to the hand.
 const CANDIDATE_PRIMITIVES: usize = 13;
 
@@ -403,10 +405,7 @@ mod tests {
 
     #[test]
     fn the_rays_follow_the_head_and_the_candidates_are_capped() {
-        let config = GrabViewConfig {
-            max_candidates: 2,
-            ..GrabViewConfig::new()
-        };
+        let config = GrabViewConfig::new();
         let frame = test_frame();
         let tick = Tick::default();
         let candidate = Candidate {
@@ -418,7 +417,7 @@ mod tests {
             hand: Hand::Left,
             distance_m: 1.0,
         };
-        let candidates = [candidate; 3];
+        let candidates = [candidate; MAX_CANDIDATES + 1];
         let head = Vec3::new(10.0, 2.0, -5.0);
         let recorded = Recorded {
             head,
@@ -438,7 +437,7 @@ mod tests {
         let mut out = Vec::new();
         let drawn = build(&drawn_inputs, &mut out);
         assert_eq!(drawn.rays, 1);
-        assert_eq!(drawn.candidates, 2);
+        assert_eq!(drawn.candidates, MAX_CANDIDATES);
         assert_eq!(drawn.dropped, 1);
         assert!(out.contains(&line(
             Anchor::Head(Vec3::X),
@@ -447,6 +446,6 @@ mod tests {
             RayOutcome::InReach.colour(),
         )));
         // Two palm markers with their rings, the ray and its hit, and the candidates.
-        assert_eq!(out.len(), 4 + 2 + 2 * CANDIDATE_PRIMITIVES);
+        assert_eq!(out.len(), 4 + 2 + MAX_CANDIDATES * CANDIDATE_PRIMITIVES);
     }
 }

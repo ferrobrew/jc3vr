@@ -59,8 +59,7 @@ pub(crate) fn route(id: FeatureId) -> FeatureRoute {
         | FeatureId::BodyFit
         | FeatureId::AnimationIk
         | FeatureId::Presentation
-        | FeatureId::HandTracking
-        | FeatureId::Fingers
+        | FeatureId::GripFingers
         | FeatureId::PhysicalHands
         | FeatureId::CharactersDoors
         | FeatureId::Snatch

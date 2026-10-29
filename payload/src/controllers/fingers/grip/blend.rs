@@ -2,9 +2,9 @@
 //!
 //! A hand that holds something takes a share of its grip pose that follows how firmly it grips:
 //! a sticky hold (a gun, a vehicle's control, the grapple line) has the whole pose, and a hold the
-//! grip keeps (a loose object, a ledge, a door) has [`GripPosesConfig::light_share`] at the
-//! lightest squeeze and the whole pose from [`GripPosesConfig::firm_squeeze`]. The share then
-//! follows its target with [`GripPosesConfig::blend_s`], so taking hold closes the fingers onto
+//! grip keeps (a loose object, a ledge, a door) has [`GripPoseTuning::light_share`] at the
+//! lightest squeeze and the whole pose from [`GripPoseTuning::firm_squeeze`]. The share then
+//! follows its target with [`GripPoseTuning::blend_s`], so taking hold closes the fingers onto
 //! the pose and letting go opens them back to the measured curls over a short motion.
 //!
 //! The fingers a pose leaves live keep the measured curl at any share: the trigger finger off the
@@ -12,13 +12,13 @@
 //! ([`FingerRole::LiveWhenTracked`]).
 
 use crate::controllers::fingers::{
-    config::{FingersConfig, GripPosesConfig},
     curl::{CurlSource, FingerCurls},
     grip::{
         Firmness,
         catalogue::{FingerRole, PoseShape},
     },
     pose::HandShape,
+    tuning::{FingerTuning, GripPoseTuning},
 };
 
 /// What a hand's blend toward its grip pose reads.
@@ -38,7 +38,7 @@ pub struct BlendInputs<'a> {
 }
 
 /// The hand's shape: the measured curls blended toward the grip pose by the share.
-pub fn blend(inputs: &BlendInputs, config: &FingersConfig) -> HandShape {
+pub fn blend(inputs: &BlendInputs, config: &FingerTuning) -> HandShape {
     let measured = HandShape::of_curls(inputs.measured, config);
     let pose = inputs.pose;
     let mut target = HandShape {
@@ -80,7 +80,7 @@ pub fn blend(inputs: &BlendInputs, config: &FingersConfig) -> HandShape {
 }
 
 /// The pose's share a hold of `firmness` asks for at the grip's `squeeze`, `0..=1`.
-pub fn firmness_share(firmness: Firmness, squeeze: f32, config: &GripPosesConfig) -> f32 {
+pub fn firmness_share(firmness: Firmness, squeeze: f32, config: &GripPoseTuning) -> f32 {
     match firmness {
         Firmness::Held => 1.0,
         Firmness::Grip => {
@@ -105,7 +105,7 @@ pub fn follow_share(previous: f32, target: f32, dt: f32, time_constant_s: f32) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::fingers::{curl::Finger, grip::catalogue::GripPose};
+    use crate::controllers::fingers::{curl::Finger, grip::catalogue::GripPose, tuning::FINGERS};
 
     fn open() -> FingerCurls {
         FingerCurls::default()
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn no_share_keeps_the_measured_curls_and_the_whole_share_takes_the_pose() {
-        let config = FingersConfig::new();
+        let config = FINGERS;
         let measured = FingerCurls {
             curl: [0.1, 0.2, 0.3, 0.4, 0.5],
             splay: [0.0, 0.1, 0.0, -0.1, -0.2],
@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     fn the_trigger_finger_rests_on_the_trigger_follows_it_and_points_off_it() {
-        let config = FingersConfig::new();
+        let config = FINGERS;
         let pose = GripPose::PistolGrip.shape();
         let FingerRole::Trigger { rest, pulled } = pose.roles[1] else {
             panic!("the pistol grip has a trigger finger");
@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn a_tracked_finger_the_pose_leaves_free_stays_live() {
-        let config = FingersConfig::new();
+        let config = FINGERS;
         let pose = GripPose::Cylinder { diameter_m: 0.035 }.shape();
         assert_eq!(pose.roles[0], FingerRole::LiveWhenTracked);
         let measured = FingerCurls {
@@ -188,7 +188,7 @@ mod tests {
 
     #[test]
     fn a_contact_fit_replaces_the_posed_curl() {
-        let config = FingersConfig::new();
+        let config = FINGERS;
         let pose = GripPose::Wrap.shape();
         let measured = open();
         let mut i = inputs(&measured, &pose, 1.0);
@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn the_share_follows_the_grip() {
-        let config = GripPosesConfig::new();
+        let config = FINGERS.grip;
         assert_eq!(firmness_share(Firmness::Held, 0.0, &config), 1.0);
         let light = firmness_share(Firmness::Grip, 0.0, &config);
         assert_eq!(light, config.light_share);

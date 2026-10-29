@@ -4,9 +4,9 @@ The grab view draws, around each hand, what the grip and the palms' reach saw on
 
 ## Using it
 
-The button at the top of "Grab view" in the debug UI's Controllers tab shows and hides it; the tab is reachable in the headset on the floating panel. No key toggles it. The section sits beside "Collider view" ([collider-view.md](collider-view.md)), and the two can be on together. Its settings are `controllers.physical_hands.grab_view`, under "Grab view" in the tab's settings: the switch (`enabled`, on), switches for each part (`rays`, `targets`, `wrist`, `refusals`, `candidates`), how far from a hand a target out of reach still gets a line (`radius_m`, 2 m), how far from a hand a candidate is drawn (`candidate_radius_m`, 3 m), and the most candidates drawn (`max_candidates`, 24). It is a diagnostic, so it has no pause menu entry ([settings.md](../settings.md)); switching `enabled` off is how a build for players hides it. The view draws through the overlay, so it needs `controllers.overlay.enabled`, and it is taken down while a menu is up.
+The Grab view switch in the debug UI's visualization drawer shows and hides it, and so does the button at the top of its readout under the drawer's View readouts; the drawer is reachable in the headset on the floating panel. No key toggles it. The readout sits beside the collider view's ([collider-view.md](collider-view.md)), and the two can be on together. Its settings are `controllers.physical_hands.grab_view`: the switch (`enabled`, on) and switches for each part (`rays`, `targets`, `wrist`, `refusals`, `candidates`), each a registered switch in the drawer. A target out of reach still gets a line within 2 m of a hand (`grab_view::draw::TARGET_RADIUS_M`), a candidate is drawn within 3 m of a hand (`grab_view::candidates::CANDIDATE_RADIUS_M`), and at most 24 candidates are drawn (`grab_view::candidates::MAX_CANDIDATES`). It is a diagnostic, so it has no pause menu entry ([settings.md](../settings.md)); switching `enabled` off is how a build for players hides it. The view draws through the overlay, so it needs `controllers.overlay.enabled`, and it is taken down while a menu is up.
 
-The readout under the button names each hand's palm state, counts what the last tick drew and what the budget left out, the candidates by kind with the time the last read of the world took, and the refused grabs with the last one's hand and reason.
+The readout names each hand's palm state, counts what the last tick drew and what the budget left out, the candidates by kind with the time the last read of the world took, and the refused grabs with the last one's hand and reason.
 
 ## What it draws
 
@@ -22,7 +22,7 @@ The reach rays. Each acting palm casts five short rays from the back of the hand
 
 The door handles. Each door handle within a metre of a free palm is a ring on the handle: bright green when it is within the handle reach and offered, faint green when it is past the reach, and red when it is within the reach but no body was found at it, so it is not offered ([vehicle-doors.md](vehicle-doors.md)).
 
-The lines to the targets. From each hand's grip a line runs to every grip target the resolver saw that tick, of the ones that hand may take, to where its marker is ([grip.md, "Markers"](grip.md#markers)). A target out of reach gets a line only within `radius_m`, and a socket or pouch on the body gets one only once it is in reach, since its own marker already shows it. A target held by the other hand gets none. At most 24 lines per hand are drawn, the nearest first:
+The lines to the targets. From each hand's grip a line runs to every grip target the resolver saw that tick, of the ones that hand may take, to where its marker is ([grip.md, "Markers"](grip.md#markers)). A target out of reach gets a line only within 2 m, and a socket or pouch on the body gets one only once it is in reach, since its own marker already shows it. A target held by the other hand gets none. At most 24 lines per hand are drawn, the nearest first:
 
 | State | Line and marker | Meaning |
 | --- | --- | --- |
@@ -31,7 +31,7 @@ The lines to the targets. From each hand's grip a line runs to every grip target
 | Chosen | magenta, disc | the target a squeeze would take |
 | Held | cyan, disc | the hand holds it |
 
-The marker at the target's end grows from 15 mm to 50 mm as the hand comes from `radius_m` away to the target's reach, so an approach is visible before the hand gets there.
+The marker at the target's end grows from 15 mm to 50 mm as the hand comes from 2 m away to the target's reach, so an approach is visible before the hand gets there.
 
 The palm marker. A disc over the back of each wrist shows the palms' state for that hand, ringed while the palm acts on the world. Its inputs are those of the grip press log's `palms` field (`physical_hands::palm_readout`):
 
@@ -50,7 +50,7 @@ The palm marker. A disc over the back of each wrist shows the palms' state for t
 
 The refusals. When a grab chose a target and the subsystem acting on it refused (the direct pickup of a weapon in the world, the take of a weapon from a character's hands, a rack, or a locker, and the physical hands' grip on an object, a door, or a character), a red ring flashes at the target for half a second, growing as it fades. A refusal the physical hands make flashes where the reach met the object; one the weapon handling makes flashes at the marker of the target the hand chose on that input tick.
 
-The candidates. The weapons lying dropped in the world (gold), the loose objects light enough for a hand (white) and those too heavy (red), and the vehicles and the parts loosened from them (green) whose boxes come within `candidate_radius_m` of a hand are drawn as their boxes, with a faint line from each box's middle to the nearest hand. One box is drawn per object, the nearest first. A candidate the reach never finds, or a weapon with no gold box, is the place to look when a grab does nothing.
+The candidates. The weapons lying dropped in the world (gold), the loose objects light enough for a hand (white) and those too heavy (red), and the vehicles and the parts loosened from them (green) whose boxes come within 3 m of a hand are drawn as their boxes, with a faint line from each box's middle to the nearest hand. One box is drawn per object, the nearest first. A candidate the reach never finds, or a weapon with no gold box, is the place to look when a grab does nothing.
 
 ## Where the data comes from
 

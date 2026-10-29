@@ -13,12 +13,12 @@
 //! - [`drive`]: the drive, pure: the velocities that carry a body to its hand within the hand's
 //!   strength, and the push a held-back hand gives the player;
 //! - [`render`]: the offset that draws a hand where its body is, pure;
-//! - [`joint`]: the fixed constraint that joins a hand body to an object its grip holds, with
-//!   `joint_grabs`, or to a held gun's body;
+//! - [`joint`]: the fixed constraint that joins a hand body to an object its grip holds, or to a
+//!   held gun's body;
 //! - [`guns`]: a held gun as a body of its own, joined to the hand bodies that hold it;
 //! - [`state`]: the shared state the tick's two halves and the rest of the controllers read, and
 //!   the small readers over it;
-//! - [`config`]: the settings.
+//! - [`config`]: the settings, and their fixed tuning ([`HAND_BODIES`]).
 //!
 //! Each simulation tick runs in this order:
 //!
@@ -64,7 +64,7 @@ mod types;
 
 pub(crate) use blows::queue_shove;
 pub use blows::{Shove, ShoveForce};
-pub use config::{HandBodiesConfig, HandHitsConfig};
+pub use config::{HAND_BODIES, HandBodiesConfig, HandHitsTuning};
 pub(crate) use joint::affine as havok_affine;
 pub(crate) use lifecycle::release_body_joints;
 
@@ -83,32 +83,29 @@ pub use self::{
 #[cfg(test)]
 mod tests {
     use crate::controllers::physical_hands::{
-        config::PhysicalHandsConfig,
-        physics::{drive::DriveTuning, state::holding_tuning},
+        physics::{HAND_BODIES, drive::DriveTuning, state::holding_tuning},
+        pickup::PICKUP,
     };
 
     #[test]
     fn a_joined_hand_holds_with_a_holding_hands_strength() {
-        let config = PhysicalHandsConfig::new();
-        let b = &config.bodies;
+        let b = &HAND_BODIES;
         let tuning = DriveTuning {
             mass_kg: b.mass_kg,
-            max_force_n: b.force_n(),
-            max_torque_nm: b.torque_nm(),
+            max_force_n: b.force_n(1.0),
+            max_torque_nm: b.torque_nm(1.0),
             linear_gain: b.linear_gain,
             angular_gain: b.angular_gain,
             max_speed_mps: b.max_speed_mps,
             max_angular_speed_rps: b.max_angular_speed_rps,
         };
-        let one = holding_tuning(&tuning, &config, false);
-        assert_eq!(one.max_force_n, config.pickup.hand_force_n);
-        assert_eq!(one.max_torque_nm, config.pickup.hand_torque_nm);
-        let two = holding_tuning(&tuning, &config, true);
-        assert_eq!(two.max_force_n, config.pickup.hand_force_n);
+        let one = holding_tuning(&tuning, false);
+        assert_eq!(one.max_force_n, PICKUP.hand_force_n);
+        assert_eq!(one.max_torque_nm, PICKUP.hand_torque_nm);
+        let two = holding_tuning(&tuning, true);
+        assert_eq!(two.max_force_n, PICKUP.hand_force_n);
         assert!(
-            (two.max_torque_nm
-                - config.pickup.hand_torque_nm * config.pickup.two_hand_angular_share)
-                .abs()
+            (two.max_torque_nm - PICKUP.hand_torque_nm * PICKUP.two_hand_angular_share).abs()
                 < 1e-5
         );
         // Never stronger than the hand itself.
@@ -116,6 +113,6 @@ mod tests {
             max_force_n: 10.0,
             ..tuning
         };
-        assert_eq!(holding_tuning(&weak, &config, false).max_force_n, 10.0);
+        assert_eq!(holding_tuning(&weak, false).max_force_n, 10.0);
     }
 }

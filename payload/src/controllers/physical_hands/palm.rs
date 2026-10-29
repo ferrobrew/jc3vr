@@ -3,7 +3,7 @@
 
 use glam::{Quat, Vec3};
 
-use crate::controllers::{frame::Pose, physical_hands::config::PhysicalHandsConfig};
+use crate::controllers::{frame::Pose, physical_hands::tuning::PalmTuning};
 
 /// A palm box in the world: an oriented box in the wrist frame's axes.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -21,7 +21,7 @@ pub const PROBE_POINTS: usize = 6;
 impl PalmBox {
     /// The palm box of a hand whose wrist frame is at `wrist` in the world, for a VR world scale
     /// of `world_scale` (world metres per metre of the player's hand).
-    pub fn from_wrist(wrist: Pose, world_scale: f32, config: &PhysicalHandsConfig) -> Self {
+    pub fn from_wrist(wrist: Pose, world_scale: f32, config: &PalmTuning) -> Self {
         let scale = if world_scale.is_finite() && world_scale > 0.0 {
             world_scale
         } else {
@@ -89,6 +89,7 @@ pub const EDGES: [(usize, usize); 12] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::physical_hands::tuning::PALMS;
 
     fn wrist(position: Vec3, orientation: Quat) -> Pose {
         Pose {
@@ -99,7 +100,7 @@ mod tests {
 
     #[test]
     fn the_palm_sits_toward_the_fingers_in_the_wrist_frame() {
-        let config = PhysicalHandsConfig::new();
+        let config = PALMS;
         let palm = PalmBox::from_wrist(wrist(Vec3::ZERO, Quat::IDENTITY), 1.0, &config);
         assert_eq!(palm.centre, config.palm_offset_m);
         // Turned a quarter about +Y, the fingers (-Z) point along -X.
@@ -116,7 +117,7 @@ mod tests {
 
     #[test]
     fn the_world_scale_scales_the_box() {
-        let config = PhysicalHandsConfig::new();
+        let config = PALMS;
         let small = PalmBox::from_wrist(wrist(Vec3::ONE, Quat::IDENTITY), 1.0, &config);
         let big = PalmBox::from_wrist(wrist(Vec3::ONE, Quat::IDENTITY), 2.0, &config);
         assert!((big.half_extents - small.half_extents * 2.0).length() < 1e-6);
@@ -128,7 +129,7 @@ mod tests {
 
     #[test]
     fn every_probe_point_and_corner_is_on_the_box() {
-        let config = PhysicalHandsConfig::new();
+        let config = PALMS;
         let palm = PalmBox::from_wrist(
             wrist(Vec3::new(1.0, 2.0, 3.0), Quat::from_rotation_x(0.4)),
             1.0,

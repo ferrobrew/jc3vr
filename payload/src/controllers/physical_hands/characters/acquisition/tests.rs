@@ -96,7 +96,6 @@ fn disabled_current_capabilities_do_not_reuse_the_queued_offer() {
     let config = CharactersConfig {
         grab: false,
         hijack: false,
-        ..CharactersConfig::default()
     };
     for (target, attachment) in [
         (target(None), Attachment::OnFoot),

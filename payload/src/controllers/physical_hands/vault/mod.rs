@@ -5,8 +5,8 @@
 //! - [`config`]: the settings.
 //!
 //! A hand that presses down on what does not give falls behind its goal downward: its controller is
-//! below the surface its body rests on. Past [`VaultConfig::deadband_m`], that lag lifts the player
-//! at [`VaultConfig::stiffness_per_s`] per metre ([`press_lift`]), as the horizontal push moves
+//! below the surface its body rests on. Past [`VaultTuning::deadband_m`], that lag lifts the player
+//! at [`VaultTuning::stiffness_per_s`] per metre ([`press_lift`]), as the horizontal push moves
 //! them away from a wall. The lag alone is not a press: a body that falls behind its goal for any
 //! other reason, such as the rig carrying the goals down faster than the bodies follow while the
 //! player falls, lags downward too. So a hand's lag counts only while its reach finds a static
@@ -14,15 +14,15 @@
 //! stands on the ground, and nothing lifts a player moving down ([`may_lift`]). The lift lifts the rig with the player, the controller with it, so the
 //! press shallows as the player rises and settles with the hands resting on the surface: the
 //! player is held up for as long as the hands press, and rises no further than the press is deep.
-//! It is bounded by [`VaultConfig::max_lift_mps`], and the feet rise at most
-//! [`VaultConfig::max_rise_m`] above where the push started.
+//! It is bounded by [`VaultTuning::max_lift_mps`], and the feet rise at most
+//! [`VaultTuning::max_rise_m`] above where the push started.
 //!
 //! A push is a deliberate act on something above the ground. A surface less than
-//! [`VaultConfig::min_height_m`] above the feet takes no press ([`clear_of_the_feet`]): the ground
+//! [`VaultTuning::min_height_m`] above the feet takes no press ([`clear_of_the_feet`]): the ground
 //! the player stands on, a kerb, a step, and the game's floor wherever the player's real floor sits
 //! a little below it, so a hand reaching down for a magazine or a grenade rests on the ground
 //! rather than popping the body up. And a press starts to lift only once it has stayed past the
-//! deadband for [`VaultConfig::hold_s`] ([`PressTimer`]), so a hand that brushes a table or lands
+//! deadband for [`VaultTuning::hold_s`] ([`PressTimer`]), so a hand that brushes a table or lands
 //! on a car's hood with a moment's overshoot lifts nothing.
 //!
 //! The lift is given in the hand bodies' pre-simulation step, after the characters' proxy updates,
@@ -33,7 +33,7 @@
 
 pub mod config;
 
-pub use config::VaultConfig;
+pub use config::{VAULT, VaultConfig, VaultTuning};
 use glam::Vec3;
 use parking_lot::Mutex;
 
@@ -155,7 +155,7 @@ pub struct LiftTuning {
 
 impl LiftTuning {
     /// The tuning of `config` at the VR world scale `scale`.
-    pub fn of(config: &VaultConfig, scale: f32) -> Self {
+    pub fn of(config: &VaultTuning, scale: f32) -> Self {
         Self {
             deadband_m: config.deadband_m * scale,
             stiffness_per_s: config.stiffness_per_s,
@@ -193,7 +193,7 @@ pub(crate) struct Press {
 /// (the pre-simulation callback).
 pub(crate) unsafe fn step(press: Press, config: &VaultConfig) -> bool {
     let mut state = STATE.lock();
-    let tuning = LiftTuning::of(config, press.scale);
+    let tuning = LiftTuning::of(&VAULT, press.scale);
     // Each hand that presses on a surface under it, with its lift and the surface.
     let pressing = Hand::BOTH.map(|hand| {
         let i = hand.index();
@@ -213,8 +213,7 @@ pub(crate) unsafe fn step(press: Press, config: &VaultConfig) -> bool {
         state.release();
         return false;
     };
-    let clear =
-        pressing.map(|p| p.filter(|(_, s)| clear_of_the_feet(s, feet, config.min_height_m)));
+    let clear = pressing.map(|p| p.filter(|(_, s)| clear_of_the_feet(s, feet, VAULT.min_height_m)));
     let lift = clear
         .iter()
         .flatten()
@@ -231,7 +230,7 @@ pub(crate) unsafe fn step(press: Press, config: &VaultConfig) -> bool {
         state.finish();
         return false;
     }
-    if !state.lifting && !state.timer.step(true, press.dt, config.hold_s) {
+    if !state.lifting && !state.timer.step(true, press.dt, VAULT.hold_s) {
         return false;
     }
     let motion = PlayerMotion {
@@ -240,7 +239,7 @@ pub(crate) unsafe fn step(press: Press, config: &VaultConfig) -> bool {
         grounded: unsafe { proxy::support() }.is_some(),
         vertical_mps: current.y,
     };
-    if !may_lift(motion, state.lifting, config.fall_tolerance_mps) {
+    if !may_lift(motion, state.lifting, VAULT.fall_tolerance_mps) {
         if !state.lifting {
             state.refuse(Refusal::Motion(motion));
         }
@@ -260,7 +259,7 @@ pub(crate) unsafe fn step(press: Press, config: &VaultConfig) -> bool {
         state.status.pushes += 1;
     }
     let rise = feet - start;
-    if rise >= config.max_rise_m.max(0.0) * press.scale {
+    if rise >= VAULT.max_rise_m * press.scale {
         state.status.lifting = false;
         state.status.lift_mps = 0.0;
         return false;
@@ -376,7 +375,7 @@ mod tests {
     use super::*;
 
     fn tuning() -> LiftTuning {
-        LiftTuning::of(&VaultConfig::new(), 1.0)
+        LiftTuning::of(&VAULT, 1.0)
     }
 
     #[test]
@@ -442,7 +441,7 @@ mod tests {
 
     #[test]
     fn a_push_starts_only_on_the_ground() {
-        let tolerance = VaultConfig::new().fall_tolerance_mps;
+        let tolerance = VAULT.fall_tolerance_mps;
         assert!(may_lift(motion(true, 0.0), false, tolerance));
         // Settling onto the ground, or stepping down, is within the tolerance.
         assert!(may_lift(motion(true, -0.1), false, tolerance));
@@ -454,7 +453,7 @@ mod tests {
 
     #[test]
     fn the_ground_under_the_feet_takes_no_press() {
-        let min = VaultConfig::new().min_height_m;
+        let min = VAULT.min_height_m;
         let at = |y| Hold {
             point: Vec3::new(0.0, y, 0.0),
             ..surface(Vec3::Y)
@@ -473,28 +472,27 @@ mod tests {
 
     #[test]
     fn only_a_held_press_is_deliberate() {
-        let config = VaultConfig::new();
         let dt = 1.0 / 64.0;
-        let ticks = (config.hold_s / dt).ceil() as usize;
+        let ticks = (VAULT.hold_s / dt).ceil() as usize;
         let mut timer = PressTimer::default();
         let pushed: Vec<bool> = (0..ticks + 2)
-            .map(|_| timer.step(true, dt, config.hold_s))
+            .map(|_| timer.step(true, dt, VAULT.hold_s))
             .collect();
         assert!(pushed[..ticks - 1].iter().all(|p| !p), "{pushed:?}");
         assert!(pushed[ticks..].iter().all(|p| *p), "{pushed:?}");
         // A brush that lets up starts over.
         let mut timer = PressTimer::default();
         for _ in 0..ticks - 2 {
-            assert!(!timer.step(true, dt, config.hold_s));
+            assert!(!timer.step(true, dt, VAULT.hold_s));
         }
-        assert!(!timer.step(false, dt, config.hold_s));
-        assert!(!timer.step(true, dt, config.hold_s));
-        assert!(!timer.step(true, f32::NAN, config.hold_s));
+        assert!(!timer.step(false, dt, VAULT.hold_s));
+        assert!(!timer.step(true, dt, VAULT.hold_s));
+        assert!(!timer.step(true, f32::NAN, VAULT.hold_s));
     }
 
     #[test]
     fn a_falling_player_is_never_lifted() {
-        let tolerance = VaultConfig::new().fall_tolerance_mps;
+        let tolerance = VAULT.fall_tolerance_mps;
         for pushing in [false, true] {
             for grounded in [false, true] {
                 assert!(!may_lift(motion(grounded, -4.0), pushing, tolerance));

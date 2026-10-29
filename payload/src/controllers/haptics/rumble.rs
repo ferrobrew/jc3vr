@@ -68,14 +68,14 @@ impl Motors {
 }
 
 /// A shot's amplitude: its rumble's strength raised by its recoil kick (radians).
-pub fn shot_amplitude(strength: f32, kick_rad: f32, config: &HapticsConfig) -> f32 {
-    (strength + kick_rad.abs() * config.kick_amplitude_per_rad).clamp(0.0, 1.0)
+pub fn shot_amplitude(strength: f32, kick_rad: f32) -> f32 {
+    (strength + kick_rad.abs() * KICK_AMPLITUDE_PER_RAD).clamp(0.0, 1.0)
 }
 
 /// The length a weapon's fire rumble plays for on a controller.
-pub fn shot_duration(time: f32, config: &HapticsConfig) -> f32 {
+pub fn shot_duration(time: f32) -> f32 {
     if time.is_finite() {
-        time.clamp(0.0, config.max_shot_s.max(0.0))
+        time.clamp(0.0, MAX_SHOT_S)
     } else {
         0.0
     }
@@ -87,7 +87,7 @@ pub(crate) fn kick(hand: Hand, kick_rad: f32) {
     if !config.game_rumble {
         return;
     }
-    let scale = shot_amplitude(0.0, kick_rad, &config);
+    let scale = shot_amplitude(0.0, kick_rad);
     if scale > MIN_AMPLITUDE {
         haptics::play_scaled(hand, Event::Kick, scale);
     }
@@ -140,6 +140,11 @@ pub struct ContinuousMotor {
 const WEAPON_FIRE: &str = "WeaponFire";
 /// Below this, a kick plays nothing.
 const MIN_AMPLITUDE: f32 = 0.01;
+/// How much a shot's recoil kick adds to its pulse's amplitude, per radian of kick.
+const KICK_AMPLITUDE_PER_RAD: f32 = 6.0;
+/// The longest a weapon's fire rumble plays on a controller, seconds: the game's rumbles can last
+/// long enough to blur into one another.
+const MAX_SHOT_S: f32 = 0.4;
 
 fn acting() -> Option<HapticsConfig> {
     let config = Config::lock_query(|c| c.controllers);
@@ -187,9 +192,9 @@ fn spawn_rumble(
 /// forward below, once the game's own per-frame sum (which this one still needs to run through
 /// unaffected) folds it in.
 fn route(motors: Motors, time: f32, debug_name: *const u8) {
-    let Some(config) = acting().filter(|c| c.game_rumble) else {
+    if !acting().is_some_and(|c| c.game_rumble) {
         return;
-    };
+    }
     let name = (!debug_name.is_null())
         .then(|| unsafe { CStr::from_ptr(debug_name.cast::<c_char>()) })
         .and_then(|name| name.to_str().ok())
@@ -200,8 +205,8 @@ fn route(motors: Motors, time: f32, debug_name: *const u8) {
     let Some((hand, kick_rad)) = fire::rumble_in_shot() else {
         return;
     };
-    let amplitude = shot_amplitude(motors.strongest(), kick_rad, &config);
-    haptics::play_shot(hand, amplitude, shot_duration(time, &config));
+    let amplitude = shot_amplitude(motors.strongest(), kick_rad);
+    haptics::play_shot(hand, amplitude, shot_duration(time));
 }
 
 /// The rumble manager's per-frame push of its summed motor strengths to the gamepad: every active
@@ -292,18 +297,16 @@ mod tests {
 
     #[test]
     fn a_bigger_kick_plays_harder() {
-        let config = HapticsConfig::new();
-        let small = shot_amplitude(0.2, 0.01, &config);
-        let big = shot_amplitude(0.2, 0.05, &config);
+        let small = shot_amplitude(0.2, 0.01);
+        let big = shot_amplitude(0.2, 0.05);
         assert!(big > small && small > 0.2);
-        assert_eq!(shot_amplitude(0.9, 1.0, &config), 1.0);
+        assert_eq!(shot_amplitude(0.9, 1.0), 1.0);
     }
 
     #[test]
     fn long_rumbles_are_capped() {
-        let config = HapticsConfig::new();
-        assert_eq!(shot_duration(5.0, &config), config.max_shot_s);
-        assert_eq!(shot_duration(0.1, &config), 0.1);
-        assert_eq!(shot_duration(f32::NAN, &config), 0.0);
+        assert_eq!(shot_duration(5.0), MAX_SHOT_S);
+        assert_eq!(shot_duration(0.1), 0.1);
+        assert_eq!(shot_duration(f32::NAN), 0.0);
     }
 }

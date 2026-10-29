@@ -126,14 +126,8 @@ impl AcquisitionEngine for NativeAcquisition {
 
     fn open_door(&mut self, vehicle: NonZeroUsize, conditions: Conditions<'_>) -> Option<Seated> {
         // SAFETY: refresh obtains the vehicle from the owner-checked live character this call.
-        let (door, open_deg) = unsafe {
-            open_door_near(
-                vehicle,
-                conditions.palm,
-                conditions.world_scale,
-                conditions.config,
-            )
-        }?;
+        let (door, open_deg) =
+            unsafe { open_door_near(vehicle, conditions.palm, conditions.world_scale) }?;
         Some(Seated {
             vehicle,
             door,

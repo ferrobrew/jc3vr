@@ -112,7 +112,7 @@ Record per item: the rate, the frame breakdown line over the test, what was meas
 
 ### The mod
 
-- Physical hands (VR): the hands' strength against a wall and a prop, pushes, pickups, and climbing a ledge with the mantle; the hand bodies' readout in the Controllers tab counts steps at the tick rate.
+- Physical hands (VR): the hands' strength against a wall and a prop, pushes, pickups, and climbing a ledge with the mantle; the hand bodies' readout, under Diagnostics in the Physical hands feature, counts steps at the tick rate.
 - The physical grapple pull (VR): a pull reads the same speed and depth.
 - The controller mode (VR): no flicker between modes during a blend, and a real mode change takes as long as at 30 (the debounce is scaled).
 - Headpose (VR and flatscreen): no camera stepping in a vehicle or under the parachute, and the on-foot latch holds while standing still.

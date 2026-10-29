@@ -17,7 +17,7 @@ use crate::{
         hands::CockpitHand,
         haptics::{self, Sustain},
         physical_hands::physics::{
-            blows, callback,
+            HAND_BODIES, blows, callback,
             drive::rig_jumped,
             guns,
             lifecycle::HANDS,
@@ -47,7 +47,7 @@ pub(crate) fn frame_tick() {
     if hooks::in_gameplay() {
         // The shoves come from the pickups, which hold characters with or without the bodies.
         // SAFETY: the game thread, ahead of the game's update.
-        let shoves = unsafe { blows::deliver_shoves(&config) };
+        let shoves = unsafe { blows::deliver_shoves() };
         if shoves.shoves > 0 {
             let mut shared = SHARED.lock();
             shared.status.shoves += shoves.shoves;
@@ -71,7 +71,7 @@ pub(crate) fn frame_tick() {
     let delivered = unsafe { blows::deliver(&config) };
     let mut shared = SHARED.lock();
     let now = Instant::now();
-    let follow_through = Duration::from_secs_f32(config.bodies.hits.follow_through_s.max(0.0));
+    let follow_through = Duration::from_secs_f32(HAND_BODIES.hits.follow_through_s.max(0.0));
     for (until, struck) in shared
         .follow_through
         .iter_mut()
@@ -151,7 +151,7 @@ pub(crate) fn observe(dt: f32) {
         shared.world_scale = world_scale;
         shared.published = palms.is_some().then_some(now);
         let stepped = shared.stepped_lately(now);
-        let show = stepped && config.bodies.render_at_body;
+        let show = stepped;
         let scale = world_scale.max(1e-3);
         let offsets = shared.world_offsets;
         for hand in Hand::BOTH {
@@ -206,11 +206,7 @@ pub(crate) unsafe fn sample_render_offsets() {
     let config = Config::lock_query(|c| c.controllers.physical_hands);
     let (targets, rotation, scale, shown, fallback) = {
         let shared = SHARED.lock();
-        if !enabled(&config)
-            || !config.bodies.render_at_body
-            || !shared.fresh(now)
-            || !shared.stepped_lately(now)
-        {
+        if !enabled(&config) || !shared.fresh(now) || !shared.stepped_lately(now) {
             *RENDER_OFFSETS.lock() = None;
             return;
         }
@@ -246,7 +242,7 @@ pub(crate) unsafe fn sample_render_offsets() {
                 position: motion.position,
                 orientation: motion.orientation,
             },
-            config.bodies.break_distance_m * scale,
+            HAND_BODIES.break_distance_m * scale,
             if on_gun[i] {
                 0.0
             } else {

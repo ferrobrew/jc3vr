@@ -15,6 +15,7 @@ use crate::controllers::{
         engine,
         shove::{self, ShoveTuning},
         sounds::{self, Impact, ImpactKind},
+        tuning::PALMS,
     },
 };
 
@@ -57,7 +58,7 @@ impl State {
             velocity,
         } = touch;
         let impact = impact_speed(velocity, hit.normal);
-        let share = (impact / config.full_hit_speed_mps.max(1e-3)).clamp(0.0, 1.0);
+        let share = (impact / PALMS.full_hit_speed_mps.max(1e-3)).clamp(0.0, 1.0);
         haptics::play_scaled(hand, Event::PalmTouch, 0.25 + 0.75 * share);
         let material = match hit.surface {
             Surface::Character { .. } => sounds::strike_material(true),
@@ -86,21 +87,14 @@ impl State {
         else {
             return;
         };
-        if !config.object_impulses {
-            return;
-        }
         let (Some(strength), Some(melee_impulse)) = (
-            strength(
-                impact,
-                config.min_object_speed_mps,
-                config.full_hit_speed_mps,
-            ),
+            strength(impact, PALMS.min_object_speed_mps, PALMS.full_hit_speed_mps),
             melee_impulse,
         ) else {
             return;
         };
         let direction = velocity.try_normalize().unwrap_or(-hit.normal);
-        let impulse = direction * (melee_impulse * config.object_impulse * strength.max(0.1));
+        let impulse = direction * (melee_impulse * PALMS.object_impulse * strength.max(0.1));
         // SAFETY: forwarded from the caller.
         match unsafe { engine::push_body(body, impulse, hit.position) } {
             Ok(()) => self.status.object_pushes += 1,
@@ -120,7 +114,6 @@ impl State {
         hand: Hand,
         input: ShoveInput,
         tuning: &ShoveTuning,
-        config: &PhysicalHandsConfig,
     ) -> Option<ShoveReport> {
         let i = hand.index();
         let Surface::Solid {
@@ -153,8 +146,7 @@ impl State {
             input.dt,
             tuning,
         );
-        let resistance =
-            self.gives[i].update(body, &shove, input.dt, config.shove.give_smoothing_s);
+        let resistance = self.gives[i].update(body, &shove, input.dt, tuning.give_smoothing_s);
         if shove.impulse != Vec3::ZERO {
             // SAFETY: forwarded from the caller.
             match unsafe { bodies::shove(body, object, shove.impulse, input.hit.position) } {

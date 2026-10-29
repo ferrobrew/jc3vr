@@ -70,12 +70,11 @@ features! {
         Presentation => ("body.presentation", "Hand presentation"),
     },
     Hands {
-        HandTracking => ("hands.tracking", "Hand tracking and poses"),
-        Fingers => ("hands.fingers", "Finger curls and grip poses"),
-        PhysicalHands => ("hands.physical", "Physical hands and held objects"),
+        GripFingers => ("hands.grip-fingers", "Grip and fingers"),
+        PhysicalHands => ("hands.physical", "Physical hands"),
         CharactersDoors => ("hands.characters-doors", "Characters and doors"),
-        Snatch => ("hands.snatch", "Reach and grapple snatch"),
-        Feedback => ("hands.feedback", "Feedback: haptics and impact sounds"),
+        Snatch => ("hands.snatch", "Snatch"),
+        Feedback => ("hands.feedback", "Feedback"),
     },
     Weapons {
         Hold => ("weapons.hold", "Hold, transfer, and grab regions"),

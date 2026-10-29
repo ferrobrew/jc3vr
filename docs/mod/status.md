@@ -52,7 +52,7 @@ The status rows say whether each of the mod's systems is live, for confirming a 
 | | `HINGED THINGS` | the articulated objects the hands took hold of, and whether one is in reach ([input/physical-hands.md](input/physical-hands.md#articulated-objects)) |
 | `FEEDBACK` | `HAPTIC CUES` | the haptic cues sent, and those the mixer masked under a heavier cue or bent under its ceiling ([input/haptics.md](input/haptics.md)) |
 | | `IMPACT SOUNDS` | the impact sounds played, the impacts the cooldowns held back, and the impacts whose material has no melee impact sound ([input/impact-sounds.md](input/impact-sounds.md)) |
-| `FINGERS` | `LEFT GRIP POSE`, `RIGHT GRIP POSE` | the pose each hand's fingers take and the source that declared it, its share, the fingers the contact fit placed, and whether a released pose is opening; `GAME'S GRIP` for a gun left to the game's grip ([input/grip-poses.md](input/grip-poses.md)) |
+| `FINGERS` | `LEFT GRIP POSE`, `RIGHT GRIP POSE` | the pose each hand's fingers take and the source that declared it, its share, the fingers the contact fit placed, and whether a released pose is opening ([input/grip-poses.md](input/grip-poses.md)) |
 | `GRAPPLE` | `GRAPPLE STATE` | where the grapple is: inactive, firing, in flight, attached, reeling in, hanging, reeled in, or a tether line; waiting while the controllers' input tick does not run |
 | | `ATTACHED TARGET` | an object or a surface, and the distance from the head to the attach point |
 | | `REEL FROM HAND` | the reel's scale from the grapple hand's pull while it drives a reel, whether a yank boosts it, and the reels and boosts since load |

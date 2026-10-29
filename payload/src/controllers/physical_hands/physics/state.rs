@@ -22,13 +22,15 @@ use crate::{
             palm::PalmBox,
             physics::{
                 callback,
-                config::HandBodiesConfig,
+                config::HandBodyTuning,
                 contact,
                 drive::{DriveTuning, Goal},
                 guns,
                 render::{OffsetTimeline, RenderOffset},
                 types::{BodyPhase, CallbackStatus, HandBodiesStatus, HandBodyStatus, HoldTarget},
             },
+            pickup::PICKUP,
+            tuning::PALMS,
         },
         scheme,
     },
@@ -314,7 +316,7 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
             cockpit.wrist,
             active.world_scale,
         );
-        Some(PalmBox::from_wrist(wrist, active.world_scale, config))
+        Some(PalmBox::from_wrist(wrist, active.world_scale, &PALMS))
     });
     Some(ActingPalms {
         palms,
@@ -338,20 +340,16 @@ pub(super) struct ActingPalms {
 }
 
 /// The drive of a hand that holds an object through a joint: a holding hand's pull and twist
-/// ([`PickupConfig::hand_force_n`], [`PickupConfig::hand_torque_nm`]), no stronger than the hand's
+/// ([`PickupTuning::hand_force_n`], [`PickupTuning::hand_torque_nm`]), no stronger than the hand's
 /// own, and with both hands on the object, the twist at
-/// [`PickupConfig::two_hand_angular_share`], so one hand lifts about what it carries and two hands
+/// [`PickupTuning::two_hand_angular_share`], so one hand lifts about what it carries and two hands
 /// twice that, and the two grab points set the object's line.
 ///
-/// [`PickupConfig::hand_force_n`]: crate::controllers::physical_hands::config::PickupConfig::hand_force_n
-/// [`PickupConfig::hand_torque_nm`]: crate::controllers::physical_hands::config::PickupConfig::hand_torque_nm
-/// [`PickupConfig::two_hand_angular_share`]: crate::controllers::physical_hands::config::PickupConfig::two_hand_angular_share
-pub(super) fn holding_tuning(
-    tuning: &DriveTuning,
-    config: &PhysicalHandsConfig,
-    shared: bool,
-) -> DriveTuning {
-    let pickup = &config.pickup;
+/// [`PickupTuning::hand_force_n`]: crate::controllers::physical_hands::pickup::PickupTuning::hand_force_n
+/// [`PickupTuning::hand_torque_nm`]: crate::controllers::physical_hands::pickup::PickupTuning::hand_torque_nm
+/// [`PickupTuning::two_hand_angular_share`]: crate::controllers::physical_hands::pickup::PickupTuning::two_hand_angular_share
+pub(super) fn holding_tuning(tuning: &DriveTuning, shared: bool) -> DriveTuning {
+    let pickup = &PICKUP;
     let twist_share = if shared {
         pickup.two_hand_angular_share.clamp(0.0, 1.0)
     } else {
@@ -381,7 +379,7 @@ pub(super) fn gun_tuning(tuning: &DriveTuning, gun_kg: Option<f32>) -> DriveTuni
 
 /// How hard a hand presses into what holds it back, `0..=1`: its lag past the push deadband, as a
 /// share of the lag that presses fully.
-pub(super) fn press_load(lag: Vec3, config: &HandBodiesConfig, scale: f32) -> f32 {
+pub(super) fn press_load(lag: Vec3, config: &HandBodyTuning, scale: f32) -> f32 {
     let full = config.pressure_full_lag_m * scale;
     if full <= 0.0 || !lag.is_finite() {
         return 0.0;

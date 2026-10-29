@@ -1,16 +1,16 @@
 //! A hand's target shape for a tick, pure: its measured curls, or what it holds wrapped by the
-//! grip pose, by the grip poses' settings.
+//! grip pose.
 
 use crate::controllers::{
     fingers::{
-        config::FingersConfig,
         curl::{CurlSource, FingerCurls},
         grip::{
-            Firmness, Grip, GripSource,
+            Grip, GripSource,
             blend::{self, BlendInputs},
             catalogue::GripPose,
         },
-        pose::{ALL_FINGERS, HandShape, TRIGGER_FINGER_ONLY},
+        pose::{ALL_FINGERS, HandShape},
+        tuning::FingerTuning,
     },
     frame::HandInputs,
 };
@@ -35,12 +35,6 @@ pub enum GripMode {
     Posed,
     /// The hand has let go, and the fingers open back to the measured curls.
     Releasing,
-    /// A weapon the game's grip wraps, with only the trigger finger driven (or every finger, with
-    /// `drive_all_when_holding`).
-    GameGrip,
-    /// The grip poses are off: a sticky hold closes the hand into a fist, and any other keeps the
-    /// measured curls.
-    PosesOff,
 }
 
 impl GripMode {
@@ -48,8 +42,6 @@ impl GripMode {
         match self {
             GripMode::Posed => "posed",
             GripMode::Releasing => "releasing",
-            GripMode::GameGrip => "game's grip",
-            GripMode::PosesOff => "poses off",
         }
     }
 }
@@ -57,7 +49,7 @@ impl GripMode {
 /// What a hand's target reads.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct TargetInputs<'a> {
-    pub config: &'a FingersConfig,
+    pub config: &'a FingerTuning,
     /// The grip the hand's sources declared.
     pub declared: Option<Grip>,
     pub measured: &'a FingerCurls,
@@ -86,8 +78,6 @@ impl GripMemory {
 pub struct HandTarget {
     pub shape: HandShape,
     pub driven: [bool; 5],
-    /// Whether the hand holds a weapon the game's grip wraps.
-    pub holding: bool,
     pub grip: Option<GripReport>,
 }
 
@@ -102,45 +92,6 @@ pub fn hand_target(inputs: &TargetInputs, memory: &mut GripMemory) -> HandTarget
         fitted: 0,
         mode,
     };
-    if let Some(grip) = inputs.declared
-        && grip.source.is_weapon()
-        && !(config.grip.enabled && config.grip.weapons)
-    {
-        *memory = GripMemory::EMPTY;
-        return HandTarget {
-            shape: measured,
-            driven: if config.drive_all_when_holding {
-                ALL_FINGERS
-            } else {
-                TRIGGER_FINGER_ONLY
-            },
-            holding: true,
-            grip: Some(report(grip, 0.0, GripMode::GameGrip)),
-        };
-    }
-    if !config.grip.enabled {
-        *memory = GripMemory::EMPTY;
-        let fist = inputs
-            .declared
-            .is_some_and(|g| g.firmness == Firmness::Held);
-        return HandTarget {
-            shape: if fist {
-                HandShape {
-                    curl: [1.0; 5],
-                    splay: [0.0; 5],
-                    ..measured
-                }
-            } else {
-                measured
-            },
-            driven: ALL_FINGERS,
-            holding: false,
-            grip: inputs
-                .declared
-                .map(|g| report(g, f32::from(u8::from(fist)), GripMode::PosesOff)),
-        };
-    }
-
     let wanted = inputs.declared.map_or(0.0, |grip| {
         blend::firmness_share(grip.firmness, inputs.inputs.squeeze, &config.grip) * grip.share
     });
@@ -155,15 +106,10 @@ pub fn hand_target(inputs: &TargetInputs, memory: &mut GripMemory) -> HandTarget
         return HandTarget {
             shape: measured,
             driven: ALL_FINGERS,
-            holding: false,
             grip: None,
         };
     };
-    let fit = if config.grip.contact_fit {
-        grip.fit
-    } else {
-        [None; 5]
-    };
+    let fit = grip.fit;
     let pose = grip.pose.shape();
     let shape = blend::blend(
         &BlendInputs {
@@ -185,7 +131,6 @@ pub fn hand_target(inputs: &TargetInputs, memory: &mut GripMemory) -> HandTarget
     HandTarget {
         shape,
         driven: ALL_FINGERS,
-        holding: false,
         grip: Some(GripReport {
             fitted: fit.iter().flatten().count(),
             ..report(grip, memory.share, mode)
@@ -199,9 +144,10 @@ const RELEASED_SHARE: f32 = 1e-3;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::fingers::tuning::FINGERS;
 
     fn inputs<'a>(
-        config: &'a FingersConfig,
+        config: &'a FingerTuning,
         declared: Option<Grip>,
         measured: &'a FingerCurls,
         hand: &'a HandInputs,
@@ -218,7 +164,7 @@ mod tests {
 
     #[test]
     fn a_free_hand_keeps_its_measured_curls() {
-        let config = FingersConfig::new();
+        let config = FINGERS;
         let measured = FingerCurls {
             curl: [0.3; 5],
             splay: [0.0; 5],
@@ -233,7 +179,7 @@ mod tests {
 
     #[test]
     fn a_hold_eases_the_pose_in_and_a_release_eases_it_out() {
-        let config = FingersConfig::new();
+        let config = FINGERS;
         let measured = FingerCurls::default();
         let hand = HandInputs::default();
         let wheel = Some(Grip::new(GripSource::Wheel));
@@ -261,7 +207,7 @@ mod tests {
 
     #[test]
     fn a_light_grip_takes_part_of_the_pose() {
-        let mut config = FingersConfig::new();
+        let mut config = FINGERS;
         config.grip.blend_s = 0.0;
         let measured = FingerCurls::default();
         let mut hand = HandInputs::default();
@@ -277,52 +223,8 @@ mod tests {
     }
 
     #[test]
-    fn a_weapon_left_to_the_game_drives_only_the_trigger_finger() {
-        let mut config = FingersConfig::new();
-        config.grip.weapons = false;
-        let measured = FingerCurls::default();
-        let hand = HandInputs::default();
-        let gun = Some(Grip::new(GripSource::Gun));
-        let mut memory = GripMemory::EMPTY;
-        let target = hand_target(&inputs(&config, gun, &measured, &hand), &mut memory);
-        assert_eq!(target.driven, TRIGGER_FINGER_ONLY);
-        assert!(target.holding);
-        assert_eq!(target.grip.unwrap().mode, GripMode::GameGrip);
-        config.drive_all_when_holding = true;
-        let all = hand_target(&inputs(&config, gun, &measured, &hand), &mut memory);
-        assert_eq!(all.driven, ALL_FINGERS);
-        config.grip.weapons = true;
-        let posed = hand_target(&inputs(&config, gun, &measured, &hand), &mut memory);
-        assert!(!posed.holding);
-        assert_eq!(posed.grip.unwrap().mode, GripMode::Posed);
-    }
-
-    #[test]
-    fn with_the_poses_off_a_sticky_hold_is_a_fist() {
-        let mut config = FingersConfig::new();
-        config.grip.enabled = false;
-        let measured = FingerCurls {
-            curl: [0.2; 5],
-            splay: [0.1; 5],
-        };
-        let hand = HandInputs::default();
-        let mut memory = GripMemory::EMPTY;
-        let line = Some(Grip::new(GripSource::GrappleLine));
-        let fist = hand_target(&inputs(&config, line, &measured, &hand), &mut memory);
-        assert_eq!(fist.shape.curl, [1.0; 5]);
-        assert_eq!(fist.shape.splay, [0.0; 5]);
-        assert_eq!(fist.grip.unwrap().mode, GripMode::PosesOff);
-        let pickup = Some(Grip::new(GripSource::Pickup));
-        let kept = hand_target(&inputs(&config, pickup, &measured, &hand), &mut memory);
-        assert_eq!(kept.shape.curl, measured.curl);
-        let gun = Some(Grip::new(GripSource::Gun));
-        let held = hand_target(&inputs(&config, gun, &measured, &hand), &mut memory);
-        assert_eq!(held.driven, TRIGGER_FINGER_ONLY);
-    }
-
-    #[test]
-    fn a_fit_is_used_only_with_the_contact_fit_on() {
-        let mut config = FingersConfig::new();
+    fn a_fit_replaces_the_posed_curl() {
+        let mut config = FINGERS;
         config.grip.blend_s = 0.0;
         let measured = FingerCurls::default();
         let hand = HandInputs {
@@ -335,12 +237,5 @@ mod tests {
         let fitted = hand_target(&inputs(&config, pickup, &measured, &hand), &mut memory);
         assert_eq!(fitted.grip.unwrap().fitted, 3);
         assert_eq!(fitted.shape.curl[1], 0.2);
-        config.grip.contact_fit = false;
-        let posed = hand_target(&inputs(&config, pickup, &measured, &hand), &mut memory);
-        assert_eq!(posed.grip.unwrap().fitted, 0);
-        assert_eq!(
-            posed.shape.curl[1],
-            GripSource::Pickup.pose().shape().curl[1]
-        );
     }
 }

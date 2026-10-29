@@ -10,10 +10,10 @@
 //! against flesh when it struck a character and against the default material otherwise.
 //!
 //! The game's sound events take no loudness, so a meeting's strength only gates whether it sounds:
-//! a palm must meet the surface at [`ImpactSoundsConfig::min_touch_speed_mps`] or faster, and a
-//! hand body's contact must carry [`ImpactSoundsConfig::min_strike_share`] of the strongest hit
-//! pulse. A hand sounds at most once per [`ImpactSoundsConfig::hand_cooldown_s`], and both hands
-//! together at most once per [`ImpactSoundsConfig::min_interval_s`], so that one slap, which the
+//! a palm must meet the surface at [`SoundsTuning::min_touch_speed_mps`] or faster, and a
+//! hand body's contact must carry [`SoundsTuning::min_strike_share`] of the strongest hit
+//! pulse. A hand sounds at most once per [`SoundsTuning::hand_cooldown_s`], and both hands
+//! together at most once per [`SoundsTuning::min_interval_s`], so that one slap, which the
 //! palm's cast and the hand body may both report, and a hand resting against a wall make one
 //! sound.
 //!
@@ -40,6 +40,23 @@ use crate::controllers::frame::Hand;
 pub struct ImpactSoundsConfig {
     /// Play the game's melee impact sound where a hand meets something hard enough.
     pub enabled: bool,
+}
+
+impl ImpactSoundsConfig {
+    pub const fn new() -> Self {
+        Self { enabled: true }
+    }
+}
+
+impl Default for ImpactSoundsConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The impact sounds' tuning, fixed at [`SOUNDS`].
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct SoundsTuning {
     /// The slowest a palm may meet a surface and still sound, metres per second.
     pub min_touch_speed_mps: f32,
     /// The least share of the strongest hit pulse a hand body's contact must carry to sound.
@@ -50,23 +67,13 @@ pub struct ImpactSoundsConfig {
     pub min_interval_s: f32,
 }
 
-impl ImpactSoundsConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            min_touch_speed_mps: 1.5,
-            min_strike_share: 0.35,
-            hand_cooldown_s: 0.25,
-            min_interval_s: 0.06,
-        }
-    }
-}
-
-impl Default for ImpactSoundsConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+/// The impact sounds' tuning.
+pub const SOUNDS: SoundsTuning = SoundsTuning {
+    min_touch_speed_mps: 1.5,
+    min_strike_share: 0.35,
+    hand_cooldown_s: 0.25,
+    min_interval_s: 0.06,
+};
 
 /// What a sound is for.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -120,7 +127,7 @@ pub fn status() -> SoundsStatus {
 }
 
 /// Whether `impact` is strong enough to sound under `config`.
-pub fn strong_enough(impact: &Impact, config: &ImpactSoundsConfig) -> bool {
+pub fn strong_enough(impact: &Impact, config: &SoundsTuning) -> bool {
     let min = match impact.kind {
         ImpactKind::Touch => config.min_touch_speed_mps,
         ImpactKind::Strike => config.min_strike_share,
@@ -144,7 +151,7 @@ impl Limiter {
     }
 
     /// Whether `hand` may sound at `now_s`, and if so, note that it does.
-    pub fn admit(&mut self, hand: Hand, now_s: f64, config: &ImpactSoundsConfig) -> bool {
+    pub fn admit(&mut self, hand: Hand, now_s: f64, config: &SoundsTuning) -> bool {
         let since = |last: Option<f64>| last.map_or(f64::INFINITY, |t| now_s - t);
         if since(self.last_hand[hand.index()]) < f64::from(config.hand_cooldown_s.max(0.0))
             || since(self.last_any) < f64::from(config.min_interval_s.max(0.0))
@@ -173,7 +180,7 @@ pub const fn strike_material(character: bool) -> u32 {
 ///
 /// The game thread, outside the physics step.
 pub(super) unsafe fn play(impact: Impact, config: &ImpactSoundsConfig) {
-    if !config.enabled || !strong_enough(&impact, config) {
+    if !config.enabled || !strong_enough(&impact, &SOUNDS) {
         return;
     }
     let mut state = STATE.lock();
@@ -182,7 +189,7 @@ pub(super) unsafe fn play(impact: Impact, config: &ImpactSoundsConfig) {
         .get_or_insert_with(Instant::now)
         .elapsed()
         .as_secs_f64();
-    if !state.limiter.admit(impact.hand, now_s, config) {
+    if !state.limiter.admit(impact.hand, now_s, &SOUNDS) {
         state.status.limited += 1;
         return;
     }
@@ -292,7 +299,7 @@ fn vector(v: Vec3) -> Vector3 {
 mod tests {
     use super::*;
 
-    const CONFIG: ImpactSoundsConfig = ImpactSoundsConfig::new();
+    const CONFIG: SoundsTuning = SOUNDS;
 
     fn impact(kind: ImpactKind, strength: f32) -> Impact {
         Impact {

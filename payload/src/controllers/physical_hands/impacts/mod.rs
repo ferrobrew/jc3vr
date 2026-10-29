@@ -308,7 +308,6 @@ fn enabled() -> Enabled {
         controllers: c.controllers.enabled,
         hands: c.controllers.physical_hands.enabled,
         pickup: c.controllers.physical_hands.pickup.enabled,
-        feature: c.controllers.physical_hands.held_impacts,
         gameplay: crate::hooks::in_gameplay(),
         running: !crate::is_shutting_down(),
     })

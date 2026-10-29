@@ -26,7 +26,7 @@ use crate::controllers::{
         remote,
     },
     snatch::{
-        FinishInput, Refusal, engine,
+        FinishInput, Refusal, SNATCH, engine,
         rules::{self, PullLimits, StallWatch, Verdict},
         sling::{RopeStep, Sling},
         sling_hooks,
@@ -201,7 +201,6 @@ pub(super) unsafe fn pull(
     stall: &mut StallWatch,
     input: &FinishInput,
 ) -> Result<Option<Arrival>, Refusal> {
-    let config = &input.config.weapons.snatch;
     let (reading, line_m) = unsafe { engine::read_wire(wire) };
     if reading == engine::WireReading::Gone {
         return Err(Refusal::LineLost);
@@ -222,12 +221,12 @@ pub(super) unsafe fn pull(
     let stalled = stall.step(
         input.dt,
         centre,
-        config.stall_window_s,
-        config.stall_distance_m,
+        SNATCH.stall_window_s,
+        SNATCH.stall_distance_m,
     );
     let limits = PullLimits {
-        capture_radius_m: config.capture_radius_m,
-        line_m: line_m.unwrap_or(config.range_m),
+        capture_radius_m: SNATCH.capture_radius_m,
+        line_m: line_m.unwrap_or(SNATCH.range_m),
     };
     match rules::verdict(distance, stalled, &limits) {
         Verdict::Pulling => {}
@@ -240,11 +239,11 @@ pub(super) unsafe fn pull(
     }
     let mass = state.mass_kg.unwrap_or(1.0);
     let tuning = HoldTuning {
-        stiffness_per_s: config.stiffness_per_s.max(0.0),
+        stiffness_per_s: SNATCH.stiffness_per_s.max(0.0),
         angular_stiffness_per_s: 0.0,
-        max_speed_mps: config.max_speed_mps.max(0.0),
+        max_speed_mps: SNATCH.max_speed_mps.max(0.0),
         max_angular_speed_rps: 0.0,
-        hand_force_n: mass * config.max_accel_mps2.max(0.0),
+        hand_force_n: mass * SNATCH.max_accel_mps2.max(0.0),
         hand_torque_nm: 0.0,
         two_hand_angular_share: 1.0,
         gravity: Vec3::new(0.0, -GRAVITY_MPS2, 0.0),
@@ -254,7 +253,7 @@ pub(super) unsafe fn pull(
     holds[hand.index()] = Some(HandHold {
         anchor: centre,
         target: HoldPoint {
-            point: rules::pull_point(centre, palm, config.arc),
+            point: rules::pull_point(centre, palm, SNATCH.arc),
             orientation: state.pose.orientation,
         },
         velocity: Vec3::ZERO,
@@ -326,16 +325,15 @@ pub(super) unsafe fn sling(
         slot @ None => slot.insert(Sling::new(state.pose.centre, anchor).ok_or(Refusal::Gone)?),
     };
     let rigid = state.rigid();
-    let config = &input.config.weapons.snatch;
     let velocity = rope
         .step(RopeStep {
             centre: state.pose.centre,
             velocity: rigid.velocities.linear,
             anchor,
             dt: input.dt,
-            stiffness: config.sling_stiffness,
-            damping: config.sling_damping,
-            max_accel: config.sling_max_accel_mps2,
+            stiffness: SNATCH.sling_stiffness,
+            damping: SNATCH.sling_damping,
+            max_accel: SNATCH.sling_max_accel_mps2,
         })
         .ok_or(Refusal::Gone)?;
     unsafe {

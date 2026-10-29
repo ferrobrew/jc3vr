@@ -49,7 +49,7 @@ use std::{fmt, num::NonZeroUsize};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-pub use crate::controllers::snatch::config::SnatchConfig;
+pub use crate::controllers::snatch::config::{SNATCH, SnatchConfig};
 use crate::controllers::{
     aim::{self, grapple_weapons},
     bindings::{
@@ -188,7 +188,7 @@ pub(crate) unsafe fn targets(input: &OfferInput) -> Provided {
     let takes_held = hold.steal && hold.direct_pickup && hold.either_hand;
     grapple_weapons::set_enabled(config.enabled);
     steal::widen_notice(if config.enabled && takes_held {
-        config.range_m
+        SNATCH.range_m
     } else {
         0.0
     });
@@ -552,7 +552,7 @@ impl State {
                 }
                 // The gun's body may take a tick to lie in the world.
                 Err(Refusal::NoBody | Refusal::Body(_) | Refusal::NotDropped)
-                    if waited_s + input.dt < config.free_timeout_s =>
+                    if waited_s + input.dt < SNATCH.free_timeout_s =>
                 {
                     Phase::Freeing {
                         hand,
@@ -570,7 +570,7 @@ impl State {
             } => match unsafe { engine::read_wire(wire) }.0 {
                 engine::WireReading::Attached => {
                     haptics::play(hand, Event::GrappleAttach);
-                    match unsafe { pull::attached(&target, config.door_swing_mps) } {
+                    match unsafe { pull::attached(&target, SNATCH.door_swing_mps) } {
                         Ok(Attached::Pull) => {
                             let mut rope = None;
                             let result = if input.modifier_held && config.sling {
@@ -607,7 +607,7 @@ impl State {
                         }
                     }
                 }
-                engine::WireReading::Flying if waited_s + input.dt < config.attach_timeout_s => {
+                engine::WireReading::Flying if waited_s + input.dt < SNATCH.attach_timeout_s => {
                     Phase::HookOut {
                         hand,
                         target,

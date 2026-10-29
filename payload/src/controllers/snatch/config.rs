@@ -1,19 +1,52 @@
-//! The grapple snatch's settings, held as `weapons.snatch`.
+//! The grapple snatch's settings, held as `weapons.snatch`, and its fixed tuning.
 
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::bindings::yank::YankConfig;
 
 /// The grapple snatch (see [`crate::controllers::snatch`]). Acts only under the controller scheme.
+/// Its tuning is fixed at [`SNATCH`], apart from the yank that fires it.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SnatchConfig {
     /// Snatch a weapon out of reach into the empty grapple hand: grip at it under the grapple's
     /// aim, then yank the hand back. Also lets the grapple's aim see weapons lying in the world,
-    /// which a tap of the grapple button then tosses to the player's feet, and a hold tethers.
+    /// which a tap of the grapple button then tosses to the player's feet, and a hold tethers. A
+    /// gun holstered on a character, a loose object one hand can carry, and a vehicle's closed door
+    /// are snatched too.
     pub enabled: bool,
     /// Hold B after gripping a remote target to keep its rope length and swing it physically.
     pub sling: bool,
+    /// The yank that fires the snatch.
+    pub yank: YankConfig,
+}
+
+impl SnatchConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            sling: true,
+            yank: YankConfig {
+                enabled: true,
+                min_distance_m: 0.12,
+                min_speed_mps: 1.5,
+                window_s: 0.25,
+                cooldown_s: 0.5,
+                body_drop_m: 0.3,
+            },
+        }
+    }
+}
+
+impl Default for SnatchConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The grapple snatch's tuning, fixed at [`SNATCH`].
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct SnatchTuning {
     /// The radial rope stiffness, per second squared.
     pub sling_stiffness: f32,
     /// The radial damping relative to the tracked anchor, per second.
@@ -25,8 +58,6 @@ pub struct SnatchConfig {
     /// How far off the grapple's ray a gun in a character's hands may be and still be chosen,
     /// degrees.
     pub cone_deg: f32,
-    /// The yank that fires the snatch.
-    pub yank: YankConfig,
     /// The fastest the pull carries the target, metres per second.
     pub max_speed_mps: f32,
     /// The hardest the pull accelerates the target, metres per second squared.
@@ -47,13 +78,6 @@ pub struct SnatchConfig {
     /// How long a gun a character lets go of may take to lie in the world before the snatch gives
     /// up on it, seconds.
     pub free_timeout_s: f32,
-    /// Snatch a gun holstered on a character's body, as from its hands: the character drops it
-    /// and staggers. Needs the steal (`weapons.hold.steal`).
-    pub holstered: bool,
-    /// Snatch a loose object one hand can carry, into the hand's ordinary hold.
-    pub props: bool,
-    /// Pull a vehicle's closed door open with the line, at its handle under the aim.
-    pub doors: bool,
     /// How near the grapple's aim must hit a door's handle area, metres.
     pub door_reach_m: f32,
     /// The fastest a vehicle may move for the line to pull its door open, metres per second.
@@ -63,48 +87,26 @@ pub struct SnatchConfig {
     pub door_swing_mps: f32,
 }
 
-impl SnatchConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            sling: true,
-            sling_stiffness: 400.0,
-            sling_damping: 30.0,
-            sling_max_accel_mps2: 120.0,
-            range_m: 20.0,
-            cone_deg: 6.0,
-            yank: YankConfig {
-                enabled: true,
-                min_distance_m: 0.12,
-                min_speed_mps: 1.5,
-                window_s: 0.25,
-                cooldown_s: 0.5,
-                body_drop_m: 0.3,
-            },
-            max_speed_mps: 16.0,
-            max_accel_mps2: 80.0,
-            stiffness_per_s: 4.0,
-            arc: 0.2,
-            capture_radius_m: 0.4,
-            stall_distance_m: 0.1,
-            stall_window_s: 0.5,
-            attach_timeout_s: 2.5,
-            free_timeout_s: 0.5,
-            holstered: true,
-            props: true,
-            doors: true,
-            door_reach_m: 0.5,
-            door_max_vehicle_speed_mps: 2.0,
-            door_swing_mps: 3.0,
-        }
-    }
-}
-
-impl Default for SnatchConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+/// The grapple snatch's tuning.
+pub const SNATCH: SnatchTuning = SnatchTuning {
+    sling_stiffness: 400.0,
+    sling_damping: 30.0,
+    sling_max_accel_mps2: 120.0,
+    range_m: 20.0,
+    cone_deg: 6.0,
+    max_speed_mps: 16.0,
+    max_accel_mps2: 80.0,
+    stiffness_per_s: 4.0,
+    arc: 0.2,
+    capture_radius_m: 0.4,
+    stall_distance_m: 0.1,
+    stall_window_s: 0.5,
+    attach_timeout_s: 2.5,
+    free_timeout_s: 0.5,
+    door_reach_m: 0.5,
+    door_max_vehicle_speed_mps: 2.0,
+    door_swing_mps: 3.0,
+};
 
 #[cfg(test)]
 mod tests {

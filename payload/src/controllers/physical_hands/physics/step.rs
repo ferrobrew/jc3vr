@@ -20,6 +20,7 @@ use crate::{
         physical_hands::{
             climb,
             physics::{
+                HAND_BODIES,
                 body::{BodyShape, BodySpec, Capsule, HandBody, player_system_group},
                 contact,
                 drive::{DriveTuning, Goal, PushTuning, contact_gain, lag_push, smooth_push},
@@ -124,22 +125,15 @@ pub(crate) unsafe fn step(given_dt: f32) {
     };
     let on_gun = gun_holds.hands();
     let mut joint_lost = [false; 2];
-    let holds = if !fresh {
-        [None; 2]
-    } else if config.bodies.joint_grabs {
-        holds
-    } else {
-        // A grip that holds through a joint while the joints are switched off holds nothing.
-        joint_lost = holds.map(|h| h.is_some());
-        [None; 2]
-    };
+    let holds = if !fresh { [None; 2] } else { holds };
     let age_s = published
         .map_or(0.0, |at| now.saturating_duration_since(at).as_secs_f32())
         .min(MAX_LEAD_S);
     let lead_s = age_s + step_s;
     // SAFETY: forwarded from the caller.
     let group = unsafe { player_system_group() };
-    let b = &config.bodies;
+    let b = &HAND_BODIES;
+    let strength = config.bodies.strength;
     let scale = if world_scale.is_finite() && world_scale > 0.0 {
         world_scale
     } else {
@@ -147,8 +141,8 @@ pub(crate) unsafe fn step(given_dt: f32) {
     };
     let tuning = DriveTuning {
         mass_kg: b.mass_kg,
-        max_force_n: b.force_n(),
-        max_torque_nm: b.torque_nm(),
+        max_force_n: b.force_n(strength),
+        max_torque_nm: b.torque_nm(strength),
         linear_gain: b.linear_gain,
         angular_gain: b.angular_gain,
         max_speed_mps: b.max_speed_mps,
@@ -166,7 +160,7 @@ pub(crate) unsafe fn step(given_dt: f32) {
     };
     let push_tuning = PushTuning {
         stiffness_n_per_m: b.push_stiffness_n_per_m,
-        max_force_n: b.force_n(),
+        max_force_n: b.force_n(strength),
         body_mass_kg: b.body_mass_kg,
         deadband_m: b.push_deadband_m * scale,
         min_horizontal: b.min_push_horizontal,
@@ -232,7 +226,7 @@ pub(crate) unsafe fn step(given_dt: f32) {
                     }),
                     mass_kg: b.mass_kg,
                     system_group: group,
-                    contact_events: b.hits.enabled,
+                    contact_events: true,
                     gravity: false,
                 };
                 let palm = Goal {
@@ -258,7 +252,7 @@ pub(crate) unsafe fn step(given_dt: f32) {
                 let held_tuning = if on_gun[i] {
                     gun_tuning(&tuning, guns::mass(hand))
                 } else {
-                    holding.map_or(tuning, |h| holding_tuning(&tuning, &config, h.shared))
+                    holding.map_or(tuning, |h| holding_tuning(&tuning, h.shared))
                 };
                 let hand_tuning = DriveTuning {
                     linear_gain,
@@ -291,7 +285,7 @@ pub(crate) unsafe fn step(given_dt: f32) {
                         if grips[i].is_none() && holds[i].is_none() && !on_gun[i] {
                             press_lags[i] = Some(acted.lag);
                         }
-                        if b.push {
+                        if config.push {
                             hand_push += lag_push(acted.lag, &push_tuning, step_s);
                         }
                     }
@@ -337,7 +331,7 @@ pub(crate) unsafe fn step(given_dt: f32) {
             GunStep {
                 holds: gun_holds,
                 config: &b.guns,
-                contact_events: b.hits.enabled,
+                contact_events: true,
                 group,
                 palms: targets.map(|target| {
                     target.filter(|_| fresh).map(|t| Pose {
@@ -362,7 +356,7 @@ pub(crate) unsafe fn step(given_dt: f32) {
     } else {
         vault::stand_down();
     }
-    push = if b.push && may_move {
+    push = if config.push && may_move {
         smooth_push(
             push,
             hand_push,

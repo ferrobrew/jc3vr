@@ -22,8 +22,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use serde::{Deserialize, Serialize};
-
 use crate::controllers::{frame::Hand, haptics::cues::Sustain};
 
 /// A vibration for one controller.
@@ -55,12 +53,11 @@ pub struct Sustained {
     pub hold: Duration,
 }
 
-/// How the mixer combines what arrives.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct MixConfig {
+/// How the mixer combines what arrives, fixed at [`MIX`].
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct MixTuning {
     /// The sustained sum passes unchanged up to this amplitude, then bends toward
-    /// [`MixConfig::sustain_ceiling`].
+    /// [`MixTuning::sustain_ceiling`].
     pub sustain_knee: f32,
     /// The most the sustained sources together reach.
     pub sustain_ceiling: f32,
@@ -77,24 +74,15 @@ pub struct MixConfig {
     pub refresh_s: f32,
 }
 
-impl MixConfig {
-    pub const fn new() -> Self {
-        Self {
-            sustain_knee: 0.45,
-            sustain_ceiling: 0.7,
-            knee: 0.85,
-            stack_share: 0.35,
-            duck_share: 0.5,
-            refresh_s: 0.1,
-        }
-    }
-}
-
-impl Default for MixConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+/// The mixer's tuning.
+pub const MIX: MixTuning = MixTuning {
+    sustain_knee: 0.45,
+    sustain_ceiling: 0.7,
+    knee: 0.85,
+    stack_share: 0.35,
+    duck_share: 0.5,
+    refresh_s: 0.1,
+};
 
 /// What the mixer did, since it was created or cleared.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -152,7 +140,7 @@ impl Mixer {
 
     /// What each hand plays from `now`, indexed by [`Hand::index`]: `None` leaves the hand as it
     /// is, playing out what it was last sent.
-    pub fn mix(&mut self, now: Instant, config: &MixConfig) -> [Option<HapticPulse>; 2] {
+    pub fn mix(&mut self, now: Instant, config: &MixTuning) -> [Option<HapticPulse>; 2] {
         let mut out = [None; 2];
         for hand in Hand::BOTH {
             out[hand.index()] = self.hands[hand.index()].mix(now, config, &mut self.stats);
@@ -241,7 +229,7 @@ impl HandMix {
     fn mix(
         &mut self,
         now: Instant,
-        config: &MixConfig,
+        config: &MixTuning,
         stats: &mut MixStats,
     ) -> Option<HapticPulse> {
         self.held.retain(|h| h.until > now);
@@ -297,7 +285,7 @@ impl HandMix {
         })
     }
 
-    fn sustained(&self, now: Instant, config: &MixConfig) -> SustainedMix {
+    fn sustained(&self, now: Instant, config: &MixTuning) -> SustainedMix {
         let live = self.held.iter().filter(|h| h.until > now);
         let total: f32 = live.clone().map(|h| h.amplitude).sum();
         let mods: f32 = live
@@ -324,7 +312,7 @@ impl HandMix {
 mod tests {
     use super::*;
 
-    const CONFIG: MixConfig = MixConfig::new();
+    const CONFIG: MixTuning = MIX;
 
     fn ms(n: u64) -> Duration {
         Duration::from_millis(n)

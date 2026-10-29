@@ -9,13 +9,6 @@ use serde::{Deserialize, Serialize};
 pub struct ColliderViewConfig {
     /// Draw the view.
     pub enabled: bool,
-    /// How far from the player a body's box may be and still be drawn, metres.
-    pub radius_m: f32,
-    /// The most bodies drawn, the nearest first.
-    pub max_bodies: u32,
-    /// The most overlay primitives the view submits in a frame. The overlay's own cap covers every
-    /// readout together, and the view's slot comes last, so the view gives way first.
-    pub max_primitives: u32,
     /// Draw each body's box, as the broad phase holds it.
     pub boxes: bool,
     /// Draw each body's shape where it is a sphere, a capsule, or a convex hull.
@@ -35,9 +28,6 @@ impl ColliderViewConfig {
     pub const fn new() -> Self {
         Self {
             enabled: false,
-            radius_m: 6.0,
-            max_bodies: 128,
-            max_primitives: 1536,
             boxes: true,
             shapes: true,
             static_bodies: true,

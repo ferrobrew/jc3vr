@@ -8,13 +8,12 @@ use crate::controllers::{
     grab::{GripTarget, Mark, MarkAt, PickupKind, target::Tier},
     physical_hands::{
         characters::CharactersConfig,
-        config::PickupConfig,
         doors::DoorsConfig,
         grasp::{PalmMotion, TargetKind},
         hold::{self, HandHold, HoldTuning},
         palm::PalmBox,
         pickup::{
-            ReachObservations, ReachTuning,
+            PICKUP, ReachObservations, ReachTuning,
             state::{Held, HeldKind, PickupState, Request},
             tick::{self, BodyGrab, JointInputs, TickInputs, TickOutcome, take_body},
         },
@@ -192,12 +191,12 @@ fn queue_replacement_and_no_palm_consumer_preserve_the_actual_request_key() {
                 joints: JointInputs::default(),
                 dt: 0.01,
                 unlatch_pull_m: 0.05,
-                tearing: crate::controllers::physical_hands::doors::config::TearConfig::new(),
+                tearing: crate::controllers::physical_hands::doors::config::TEARING,
                 world_scale: 1.0,
                 characters: CharactersConfig::default(),
                 reaches: [None; 2],
             },
-            &PickupConfig::default(),
+            &PICKUP,
         )
     };
     assert_eq!(record(key).consumer, ConsumerResult::NoPalm);
@@ -240,12 +239,12 @@ fn an_evicted_observed_request_consumes_the_same_target_as_a_remote_grab() {
                     joints: JointInputs::default(),
                     dt: 0.01,
                     unlatch_pull_m: 0.05,
-                    tearing: crate::controllers::physical_hands::doors::config::TearConfig::new(),
+                    tearing: crate::controllers::physical_hands::doors::config::TEARING,
                     world_scale: 1.0,
                     characters: CharactersConfig::default(),
                     reaches: [None; 2],
                 },
-                &PickupConfig::default(),
+                &PICKUP,
             )
         }
     };
@@ -266,7 +265,7 @@ fn an_evicted_observed_request_consumes_the_same_target_as_a_remote_grab() {
 
 #[test]
 fn real_body_consumer_acceptance_and_refusal_match_the_state_transition() {
-    let config = PickupConfig::default();
+    let config = PICKUP;
     let grab = |joined| BodyGrab {
         hand: Hand::Left,
         reach: target(),
@@ -338,7 +337,7 @@ fn real_body_consumer_acceptance_and_refusal_match_the_state_transition() {
 
 #[test]
 fn actual_prop_consumer_acquires_both_barrel_sides_and_only_assists_that_body() {
-    let config = PickupConfig::new();
+    let config = PICKUP;
     let mut state = PickupState::new();
     let mut outcome = TickOutcome::default();
     let body = BodyState {
@@ -421,7 +420,7 @@ fn actual_prop_consumer_acquires_both_barrel_sides_and_only_assists_that_body() 
 #[test]
 fn the_actual_ray_scan_records_misses_without_engine_reads() {
     let mut scan = scan::Scan::new();
-    let pickup = PickupConfig::default();
+    let pickup = PICKUP;
     let doors = DoorsConfig::default();
     let characters = CharactersConfig::default();
     let tuning = ReachTuning {

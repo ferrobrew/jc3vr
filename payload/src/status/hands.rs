@@ -74,7 +74,7 @@ pub(super) fn push_up() -> Line {
 pub(super) fn articulated() -> Line {
     let on = read_config(|c| {
         let p = &c.controllers.physical_hands;
-        p.enabled && p.pickup.enabled && p.pickup.articulated
+        p.enabled && p.pickup.enabled
     });
     let status = physical_hands::status();
     let reaching = status.hands.iter().any(|h| {

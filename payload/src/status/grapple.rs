@@ -62,7 +62,7 @@ pub(super) fn snatch() -> Line {
 }
 
 pub(super) fn haptics() -> Line {
-    if !read_config(|c| c.controllers.haptics.categories.traversal) {
+    if !read_config(|c| c.controllers.haptics.enabled) {
         return Line::off("");
     }
     let status = physical::status();

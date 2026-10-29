@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::controllers::{
     aim::sights::config::{SightTable, SightTuningConfig},
-    hands::{anchor::AnchorConfig, tiers::HandTierTable},
+    hands::anchor::AnchorConfig,
     presentation::PresentationConfig,
 };
 
@@ -48,23 +48,8 @@ pub struct HandsConfig {
     /// Hold a gun in a controller-driven hand fixed to the wrist at the hand's bind-pose grip,
     /// rather than where the animation puts the attach bone.
     pub rigid_grip: bool,
-    /// The wrist targets' positional reach, `0..=1`, before the tier weight scales it.
-    pub reach_t: f32,
-    /// The wrist targets' rotational reach, `0..=1`, before the tier weight scales it.
-    pub reach_r: f32,
-    /// How far a wrist target out of reach pulls the torso after it, `0..=1`.
-    pub pull: f32,
-    /// How strongly a wrist resists being dragged by other effectors' pull, `0..=1`.
-    pub resist: f32,
     /// Where the character's wrist sits relative to the controller's grip pose.
     pub grip: GripOffset,
-    /// How long a hand takes to blend from its controller to the animation when a state yields
-    /// it, seconds.
-    pub yield_blend_s: f32,
-    /// How long a hand takes to blend from the animation back to its controller, seconds.
-    pub return_blend_s: f32,
-    /// The hand tier of each scripted state.
-    pub tiers: HandTierTable,
     /// The anchored tier of the grapple states, and the hang movement it drives.
     pub anchor: AnchorConfig,
 }
@@ -76,14 +61,7 @@ impl HandsConfig {
             late_update: true,
             presentation: PresentationConfig::new(),
             rigid_grip: true,
-            reach_t: 1.0,
-            reach_r: 1.0,
-            pull: 0.0,
-            resist: 0.0,
             grip: GripOffset::INDEX_BEST_GUESS,
-            yield_blend_s: 0.25,
-            return_blend_s: 0.35,
-            tiers: HandTierTable::PLAN,
             anchor: AnchorConfig::new(),
         }
     }

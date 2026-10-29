@@ -1,7 +1,7 @@
 //! The doors near the hands, offered by their handles whatever the reach's rays hit: every door of
 //! every vehicle near the player is a target at its handle ([`door_handle`]: the embedded table's,
 //! or the box guess for a door the table lacks) for a palm within
-//! [`DoorsConfig::handle_reach_m`] of it. A latched door is merged into its vehicle's body, so the
+//! [`HANDLE_REACH_M`] of it. A latched door is merged into its vehicle's body, so the
 //! grip that takes it needs that body, which proves the vehicle alive while the hand holds the
 //! latch: a short cast from the palm to the handle finds it. What each door near a palm was, and
 //! why it was not offered, is noted for the grip press's log.
@@ -25,7 +25,7 @@ use crate::controllers::{
         bodies::is_type,
         contact::{Surface, SurfaceHit},
         doors::{
-            DoorTarget, DoorsConfig,
+            DoorTarget, DoorsConfig, HANDLE_REACH_M,
             engine::{self, DoorRead},
             geometry::{DoorKind, door_handle},
             slot_label, table,
@@ -113,7 +113,7 @@ pub(crate) unsafe fn handle_reach(
         return None;
     }
     let scale = world_scale.max(1e-3);
-    let reach_m = config.handle_reach_m.max(0.0) * scale;
+    let reach_m = HANDLE_REACH_M * scale;
     let mut best: Option<Reach> = None;
     for &vehicle in vehicles {
         let doors = unsafe { engine::doors(vehicle) };
@@ -165,7 +165,7 @@ pub(crate) unsafe fn handle_reach(
                         format!(
                             "{what}: handle {:.0} mm away, past the {:.0} mm reach",
                             mm(distance),
-                            config.handle_reach_m * 1000.0
+                            HANDLE_REACH_M * 1000.0
                         ),
                     );
                 }

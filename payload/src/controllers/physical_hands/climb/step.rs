@@ -23,6 +23,7 @@ use crate::{
                 },
             },
             physics::{self, drive::Goal},
+            pickup::PICKUP,
             stunt,
         },
         roomscale::teleport,
@@ -255,7 +256,7 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
             if support.is_some() || elapsed_s > config.climb.fling_carry_s {
                 state.carry = None;
             } else {
-                let velocity = fling_carry(carry.kept, elapsed_s, config.pickup.gravity_mps2);
+                let velocity = fling_carry(carry.kept, elapsed_s, PICKUP.gravity_mps2);
                 // SAFETY: forwarded from the caller.
                 match unsafe { engine::set_velocity(velocity) } {
                     Ok(()) => {

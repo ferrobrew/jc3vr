@@ -27,12 +27,9 @@ use jc3gi::{
 };
 
 use crate::controllers::physical_hands::{
-    collider_view::{
-        config::ColliderViewConfig,
-        model::{
-            Aabb, Body, Geometry, Ground, Joint, JointKind, KindInputs, Layer, ModBody, MotionKind,
-            Snapshot, capsule_radius, classify, hull_edges, nearest, restore_aabb,
-        },
+    collider_view::model::{
+        Aabb, Body, Geometry, Ground, Joint, JointKind, KindInputs, Layer, ModBody, MotionKind,
+        Snapshot, capsule_radius, classify, hull_edges, nearest, restore_aabb,
     },
     physics::havok_affine,
     world::World,
@@ -69,14 +66,17 @@ impl fmt::Display for ScanError {
 
 impl std::error::Error for ScanError {}
 
-/// Read the bodies within the configured radius of `centre` (game space).
+/// Read the bodies whose boxes come within `radius_m` of `centre` (game space), the nearest
+/// `max_bodies` of them; static bodies only with `static_bodies`, but for the player's ground.
 ///
 /// # Safety
 ///
 /// The game thread, outside the physics step.
 pub(super) unsafe fn scan(
     centre: Vec3,
-    config: &ColliderViewConfig,
+    radius_m: f32,
+    max_bodies: usize,
+    static_bodies: bool,
     mods: &ModIds,
 ) -> Result<Snapshot, ScanError> {
     let world = unsafe { World::get() }.ok_or(ScanError::NoPhysicsWorld)?;
@@ -88,7 +88,7 @@ pub(super) unsafe fn scan(
     let space = Space::of(w);
     let player = unsafe { player_proxy() };
     let ground = player.and_then(|p| p.ground);
-    let radius = config.radius_m.max(0.0);
+    let radius = radius_m.max(0.0);
 
     let slots = w.m_peakBodyIndex.saturating_add(1);
     let mut candidates = Vec::new();
@@ -98,16 +98,13 @@ pub(super) unsafe fn scan(
         let Some(motion) = motion_kind(slot) else {
             continue;
         };
-        if motion == MotionKind::Static
-            && !config.static_bodies
-            && ground.is_none_or(|g| g.body != id)
-        {
+        if motion == MotionKind::Static && !static_bodies && ground.is_none_or(|g| g.body != id) {
             continue;
         }
         let aabb = space.restore(slot, shift);
         candidates.push((aabb.distance(centre), id));
     }
-    let (kept, in_range) = nearest(candidates, radius, config.max_bodies as usize);
+    let (kept, in_range) = nearest(candidates, radius, max_bodies);
 
     let bodies = kept
         .into_iter()

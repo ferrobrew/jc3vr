@@ -8,7 +8,7 @@
 //! - [`grip`]: what each hand holds, as its sources declare it, and the pose for it;
 //! - [`target`]: a hand's target shape for the tick, from its curls and its grip;
 //! - [`pose`]: the shape turned into joint angles and the angles into model-space finger joints;
-//! - [`config`]: the finger-curl settings.
+//! - [`config`]: the finger-curl settings, and [`tuning`] their fixed tuning.
 //!
 //! The curls are written once per sim tick, at the end of the pose-finalization pass (the post-call
 //! `UpdatePropEffects` detour), with `AnimationController::SetJoint` over the finalized model-space
@@ -24,18 +24,14 @@
 //! A hand is curled only while the controllers drive it: its wrist target was queued this tick, and
 //! its fingers go from the animated pose to the curled one by the same tier weight, so a yielded
 //! hand blends back to the animated fingers. A hand that holds something its source declared
-//! ([`grip::declare`]) takes that thing's grip pose, blended in by how firmly it grips; with the
-//! grip poses off, or for a weapon when they leave weapons to the game, the earlier behaviour
-//! holds: a hand holding a weapon drives only its trigger finger unless
-//! [`drive_all_when_holding`](config::FingersConfig::drive_all_when_holding) is set, because the
-//! game's grip animation already wraps the other fingers round the weapon, and a hand on a sticky
-//! grab is curled closed, since the grab outlasts the grip press.
+//! ([`grip::declare`]) takes that thing's grip pose, blended in by how firmly it grips.
 
 pub mod config;
 pub mod curl;
 pub mod grip;
 pub mod pose;
 pub mod target;
+pub mod tuning;
 
 use std::time::Instant;
 
@@ -54,6 +50,7 @@ use crate::{
             },
             pose::{BoneJoint, HandShape, PalmFrame},
             target::{GripMemory, GripReport, TargetInputs},
+            tuning::FINGERS,
         },
         frame::{self, Hand},
         hands::ik,
@@ -72,8 +69,6 @@ pub struct HandFingersStatus {
     pub weight: f32,
     /// What the hand held and how its fingers took it.
     pub grip: Option<GripReport>,
-    /// Whether the hand held a weapon the game's grip wraps, so only its trigger finger was driven.
-    pub holding: bool,
     /// Which fingers were driven, indexed by [`Finger::index`].
     pub driven: [bool; 5],
     /// Whether the finger bones were written.
@@ -147,7 +142,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         };
         let target = target::hand_target(
             &TargetInputs {
-                config: &config,
+                config: &FINGERS,
                 declared,
                 measured: &measured,
                 source,
@@ -157,10 +152,10 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
             &mut state.memory[i],
         );
         let shape = state.smoothed[i].map_or(target.shape, |previous| {
-            previous.smooth(target.shape, dt, config.smoothing_s)
+            previous.smooth(target.shape, dt, FINGERS.smoothing_s)
         });
         state.smoothed[i] = Some(shape);
-        let bend = pose::hand_bend(&shape, &config, weight, target.driven);
+        let bend = pose::hand_bend(&shape, &FINGERS, weight, target.driven);
         let outcome = match controller.as_deref_mut() {
             Some(controller) => unsafe { apply_hand(controller, hand, &bend) },
             None => ApplyOutcome::NoController,
@@ -170,7 +165,6 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
             shape,
             weight,
             grip: target.grip,
-            holding: target.holding,
             driven: bend.driven,
             applied: outcome == ApplyOutcome::Applied,
             unresolved: outcome == ApplyOutcome::Unresolved,
@@ -287,7 +281,6 @@ impl FingerState {
             },
             weight: 0.0,
             grip: None,
-            holding: false,
             driven: [false; 5],
             applied: false,
             unresolved: false,

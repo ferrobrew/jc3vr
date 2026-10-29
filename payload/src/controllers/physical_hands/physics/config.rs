@@ -1,9 +1,10 @@
-//! The hand bodies' settings.
+//! The hand bodies' settings, and their fixed tuning.
 
 use serde::{Deserialize, Serialize};
 
 /// The hand bodies (see [`crate::controllers::physical_hands::physics`]): each empty hand is a body
-/// in the game's physics world, driven toward the controller within the hand's strength.
+/// in the game's physics world, driven toward the controller within the hand's strength. Their
+/// fixed tuning is [`HAND_BODIES`].
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HandBodiesConfig {
@@ -11,6 +12,29 @@ pub struct HandBodiesConfig {
     pub enabled: bool,
     /// The hands' strength, a scale on their force and twist: one is the default "Rico strength".
     pub strength: f32,
+    /// A character struck by a hand reacts to the blow: staggers, or is knocked down.
+    pub reactions: bool,
+}
+
+impl HandBodiesConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            strength: 1.0,
+            reactions: true,
+        }
+    }
+}
+
+impl Default for HandBodiesConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The hand bodies' tuning, fixed at [`HAND_BODIES`].
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct HandBodyTuning {
     /// A hand body's mass, kilograms. The hand's strength is its force and twist caps, not its mass:
     /// a light hand meets a light prop without throwing it, and still shoves a heavy one within its
     /// strength over a few steps, while a heavy hand makes a prop between it and the world jitter.
@@ -37,10 +61,6 @@ pub struct HandBodiesConfig {
     pub half_length_m: f32,
     /// How far a hand body may fall behind its controller before it is put back on it, metres.
     pub break_distance_m: f32,
-    /// Draw each hand where its body is, so that a hand stops at what stops its body.
-    pub render_at_body: bool,
-    /// Push the player away from what a hand presses into and cannot move.
-    pub push: bool,
     /// The mass the hands' reaction moves, kilograms: the lighter, the further a push carries the
     /// player.
     pub body_mass_kg: f32,
@@ -60,16 +80,50 @@ pub struct HandBodiesConfig {
     /// How far past the push deadband a hand is held back for the strongest pressure pulse, metres.
     pub pressure_full_lag_m: f32,
     /// What a hand body's contacts do: the pulse of a hit, and a character's reaction to it.
-    pub hits: HandHitsConfig,
-    /// Hold what a hand's grip takes by joining the hand's body to it with a fixed constraint, so
-    /// that a held object has mass and the hand's strength carries it, in place of driving the
-    /// object toward the hand. Off by default: the world does not end a constraint whose body is
-    /// destroyed, so an object broken apart inside a step leaves the joint on a dead body until
-    /// the next pre-simulation step ends it (`docs/mod/input/physical-hands.md`).
-    pub joint_grabs: bool,
+    pub hits: HandHitsTuning,
     /// A held gun as a body of its own, joined to the hand bodies that hold it.
-    pub guns: HeldGunsConfig,
+    pub guns: HeldGunsTuning,
 }
+
+impl HandBodyTuning {
+    /// The strongest pull of one hand at `strength`, newtons.
+    pub fn force_n(&self, strength: f32) -> f32 {
+        self.max_force_n * strength
+    }
+
+    /// The strongest twist of one hand at `strength`, newton metres.
+    pub fn torque_nm(&self, strength: f32) -> f32 {
+        self.max_torque_nm * strength
+    }
+}
+
+/// The hand bodies' tuning. Each hand draws where its body is, so that a hand stops at what stops
+/// its body, and holds what its grip takes by joining its body to it with a fixed constraint, so
+/// that a held object has mass and the hand's strength carries it. The world does not end a
+/// constraint whose body is destroyed, so an object broken apart inside a step leaves the joint on
+/// a dead body until the next pre-simulation step ends it.
+pub const HAND_BODIES: HandBodyTuning = HandBodyTuning {
+    mass_kg: 3.0,
+    max_force_n: 5000.0,
+    max_torque_nm: 400.0,
+    linear_gain: 1.0,
+    angular_gain: 0.8,
+    contact_gain: 0.4,
+    max_speed_mps: 20.0,
+    max_angular_speed_rps: 30.0,
+    radius_m: 0.04,
+    half_length_m: 0.035,
+    break_distance_m: 0.6,
+    body_mass_kg: 90.0,
+    push_stiffness_n_per_m: 9000.0,
+    push_deadband_m: 0.02,
+    max_push_speed_mps: 2.5,
+    min_push_horizontal: 0.3,
+    push_smoothing_s: 0.1,
+    pressure_full_lag_m: 0.1,
+    hits: HandHitsTuning::new(),
+    guns: HeldGunsTuning::new(),
+};
 
 /// Held guns as physics bodies (see [`crate::controllers::physical_hands::physics::guns`]): a gun
 /// in a hand whose body acts is a body of the gun's own shape and mass, joined to the holding
@@ -77,12 +131,8 @@ pub struct HandBodiesConfig {
 /// collides along its whole length, and it strikes what it is swung into. The gun is near-rigid in
 /// the hand: its body moves with the hand's on every step, its mass is held to its class's, and
 /// the drawn gun keeps within a couple of degrees of the hand's grip.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct HeldGunsConfig {
-    /// Make each held gun a body joined to the hands; off, a held gun has no body, and the
-    /// kinematic weight, recoil, and wall probe act instead.
-    pub enabled: bool,
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct HeldGunsTuning {
     /// The lightest a gun body is made, kilograms.
     pub min_mass_kg: f32,
     /// The heaviest a gun body of each weight class is made, kilograms. A gun's own body carries
@@ -112,8 +162,7 @@ pub struct HeldGunsConfig {
 }
 
 /// One value per gun weight class.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct GunClassValues {
     pub sidearm: f32,
     pub smg: f32,
@@ -132,16 +181,9 @@ impl GunClassValues {
     }
 }
 
-impl Default for GunClassValues {
-    fn default() -> Self {
-        Self::new(1.0, 1.0, 1.0, 1.0)
-    }
-}
-
-impl HeldGunsConfig {
+impl HeldGunsTuning {
     pub const fn new() -> Self {
         Self {
-            enabled: true,
             min_mass_kg: 0.5,
             max_mass_by_class_kg: GunClassValues::new(1.0, 2.5, 4.0, 6.0),
             fallback_mass_kg: GunClassValues::new(1.0, 2.5, 4.0, 6.0),
@@ -156,23 +198,12 @@ impl HeldGunsConfig {
     }
 }
 
-impl Default for HeldGunsConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// A hand body's hits (see [`crate::controllers::physical_hands::physics::hit`]): each contact a
 /// hand body starts pulses the hand by its impulse, and a character it strikes reacts as to a
 /// blow of that impulse, against its own stagger and knockdown thresholds; a hard enough blow deals
 /// damage.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct HandHitsConfig {
-    /// Listen for the hand bodies' contacts at all: the hit pulses and the characters' reactions.
-    pub enabled: bool,
-    /// A character struck by a hand reacts to the blow: staggers, or is knocked down.
-    pub reactions: bool,
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct HandHitsTuning {
     /// A blow at or above [`damage_impulse_ns`](Self::damage_impulse_ns) deals damage.
     pub damage: bool,
     /// The weakest contact impulse a character reacts to, newton seconds.
@@ -209,11 +240,9 @@ pub struct HandHitsConfig {
     pub full_pulse_impulse_ns: f32,
 }
 
-impl HandHitsConfig {
+impl HandHitsTuning {
     pub const fn new() -> Self {
         Self {
-            enabled: true,
-            reactions: true,
             damage: true,
             min_impulse_ns: 8.0,
             // An arm of 10 kg: a solid punch at 3 m/s staggers, a hard swing at 5.5 m/s ragdolls.
@@ -229,59 +258,5 @@ impl HandHitsConfig {
             follow_through_gain: 0.3,
             full_pulse_impulse_ns: 50.0,
         }
-    }
-}
-
-impl Default for HandHitsConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl HandBodiesConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            strength: 1.0,
-            mass_kg: 3.0,
-            max_force_n: 5000.0,
-            max_torque_nm: 400.0,
-            linear_gain: 1.0,
-            angular_gain: 0.8,
-            contact_gain: 0.4,
-            max_speed_mps: 20.0,
-            max_angular_speed_rps: 30.0,
-            radius_m: 0.04,
-            half_length_m: 0.035,
-            break_distance_m: 0.6,
-            render_at_body: true,
-            push: true,
-            body_mass_kg: 90.0,
-            push_stiffness_n_per_m: 9000.0,
-            push_deadband_m: 0.02,
-            max_push_speed_mps: 2.5,
-            min_push_horizontal: 0.3,
-            push_smoothing_s: 0.1,
-            pressure_full_lag_m: 0.1,
-            hits: HandHitsConfig::new(),
-            joint_grabs: true,
-            guns: HeldGunsConfig::new(),
-        }
-    }
-
-    /// The strongest pull of one hand at the configured strength, newtons.
-    pub fn force_n(&self) -> f32 {
-        self.max_force_n * self.strength
-    }
-
-    /// The strongest twist of one hand at the configured strength, newton metres.
-    pub fn torque_nm(&self) -> f32 {
-        self.max_torque_nm * self.strength
-    }
-}
-
-impl Default for HandBodiesConfig {
-    fn default() -> Self {
-        Self::new()
     }
 }

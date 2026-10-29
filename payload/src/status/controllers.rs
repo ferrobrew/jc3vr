@@ -103,10 +103,7 @@ pub(super) fn body_errors() -> Line {
 }
 
 pub(super) fn contact_events() -> Line {
-    let hits = read_config(|c| {
-        physics::enabled(&c.controllers.physical_hands)
-            && c.controllers.physical_hands.bodies.hits.enabled
-    });
+    let hits = read_config(|c| physics::enabled(&c.controllers.physical_hands));
     if !hits {
         return Line::off("");
     }
@@ -141,10 +138,7 @@ pub(super) fn blows() -> Line {
 }
 
 pub(super) fn joints() -> Line {
-    let on = read_config(|c| {
-        physics::enabled(&c.controllers.physical_hands)
-            && c.controllers.physical_hands.bodies.joint_grabs
-    });
+    let on = read_config(|c| physics::enabled(&c.controllers.physical_hands));
     if !on {
         return Line::off("");
     }

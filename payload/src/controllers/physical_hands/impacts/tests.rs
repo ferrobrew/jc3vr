@@ -19,7 +19,6 @@ fn active() -> Enabled {
         controllers: true,
         hands: true,
         pickup: true,
-        feature: true,
         gameplay: true,
         running: true,
     }
@@ -238,10 +237,6 @@ fn each_delivery_gate_rejects_a_contact_queued_before_disable() {
         },
         Enabled {
             pickup: false,
-            ..active()
-        },
-        Enabled {
-            feature: false,
             ..active()
         },
         Enabled {
@@ -553,7 +548,7 @@ fn a_disabled_step_invalidates_old_contacts_before_same_identity_reacquisition()
     let changes = state.plan_step(
         disabled_at,
         Enabled {
-            feature: false,
+            pickup: false,
             ..active()
         },
         &[observation],

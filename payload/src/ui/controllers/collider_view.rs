@@ -1,5 +1,5 @@
-//! The collider view: its switch, what it read and drew, the body under the gaze, and its
-//! settings.
+//! The collider view: its switch, what it read and drew, the body under the gaze, and what it
+//! draws.
 
 use egui::Ui;
 use jc3gi::physics::CustomGroupCollisionFilter;
@@ -72,15 +72,6 @@ pub(super) fn collider_view_readout(ui: &mut Ui, status: &ColliderViewStatus) {
 
 pub(super) fn collider_view_settings(ui: &mut Ui, v: &mut ColliderViewConfig) {
     ui.add_enabled_ui(v.enabled, |ui| {
-        ui.add(egui::Slider::new(&mut v.radius_m, 0.5..=50.0).text("Radius (m)"));
-        ui.add(egui::Slider::new(&mut v.max_bodies, 1..=512).text("Most bodies"));
-        ui.add(
-            egui::Slider::new(
-                &mut v.max_primitives,
-                16..=collider_view::draw::PRIMITIVE_CEILING as u32,
-            )
-            .text("Most primitives"),
-        );
         ui.checkbox(&mut v.boxes, "Boxes");
         ui.checkbox(&mut v.shapes, "Shapes (spheres, capsules, convex hulls)");
         ui.checkbox(&mut v.static_bodies, "Static bodies");

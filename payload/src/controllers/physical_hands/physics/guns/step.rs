@@ -18,7 +18,7 @@ use crate::controllers::{
     frame::{Hand, Pose},
     physical_hands::physics::{
         body::{BodyError, BodyShape, BodySpec, HandBody},
-        config::HeldGunsConfig,
+        config::HeldGunsTuning,
         contact::{self, Source},
         drive::BodyMotion,
         guns::{
@@ -53,7 +53,7 @@ pub(crate) struct GunSlot {
 pub(crate) struct GunStep<'a> {
     /// The guns in the hands, as last published; empty when stale or switched off.
     pub holds: GunHolds,
-    pub config: &'a HeldGunsConfig,
+    pub config: &'a HeldGunsTuning,
     /// Whether the gun bodies' contacts are listened for.
     pub contact_events: bool,
     /// The player's collision system group.

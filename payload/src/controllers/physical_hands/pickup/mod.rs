@@ -15,14 +15,14 @@
 //! object asks the next simulation tick to take hold of it; letting the grip go asks it to let go.
 //!
 //! A held object is held at the point the hand touched, in one of two ways. A hand its body drives
-//! holds it, with the hand bodies' `joint_grabs`, through a joint: a fixed constraint between the
+//! holds it through a joint: a fixed constraint between the
 //! hand's body and the object's, which the physics step makes and ends
 //! ([`crate::controllers::physical_hands::physics`]), so the object has mass, the hand's own
 //! strength carries it, and it leaves with the velocity the hand gave it. Otherwise the object is
 //! carried, not attached: each tick its body is given the velocities that carry the grab point to
 //! where the hand holds it and turn the body as the hand turns, within the hands' strength
 //! ([`crate::controllers::physical_hands::hold`]), and it is let go with the hand's velocity, so
-//! that it is thrown. One hand carries what weighs less than [`PickupConfig::hand_force_n`], and
+//! that it is thrown. One hand carries what weighs less than [`PickupTuning::hand_force_n`], and
 //! two hands twice that; a hand that holds what it cannot lift drags it, and a body hinged to the
 //! world swings about its hinge. A hand that holds something does not probe, push off surfaces, or
 //! strike.
@@ -38,6 +38,7 @@ mod reach;
 mod state;
 mod tearing;
 mod tick;
+mod tuning;
 
 use std::time::Instant;
 
@@ -50,6 +51,7 @@ pub(super) use reach::{REACH_DIRECTIONS, ReachObservations, ReachTuning, floor_w
 use state::{Held, HeldKind};
 pub(super) use state::{PickupState, Request};
 pub(super) use tick::{JointInputs, TickInputs, TickOutcome, tick};
+pub use tuning::{PICKUP, PickupTuning};
 
 use crate::{
     config::Config,

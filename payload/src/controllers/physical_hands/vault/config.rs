@@ -1,14 +1,31 @@
-//! The push-up's settings.
+//! The push-up's settings, and its fixed tuning.
 
 use serde::{Deserialize, Serialize};
 
 /// Pushing the body up with the hands (see [`crate::controllers::physical_hands::vault`]): a hand
 /// body pressed down on a surface lifts the player, a jump assist bounded by how far the hand
-/// presses and how high the player has risen.
+/// presses and how high the player has risen. Its tuning is fixed at [`VAULT`].
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct VaultConfig {
     pub enabled: bool,
+}
+
+impl VaultConfig {
+    pub const fn new() -> Self {
+        Self { enabled: true }
+    }
+}
+
+impl Default for VaultConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The push-up's tuning, fixed at [`VAULT`].
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct VaultTuning {
     /// The downward press left alone before it lifts, metres of the player's hand, so that a hand
     /// resting on a table lifts nothing.
     pub deadband_m: f32,
@@ -35,24 +52,14 @@ pub struct VaultConfig {
     pub fall_tolerance_mps: f32,
 }
 
-impl VaultConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            deadband_m: 0.06,
-            stiffness_per_s: 10.0,
-            max_lift_mps: 3.0,
-            min_vertical: 0.7,
-            max_rise_m: 1.4,
-            min_height_m: 0.3,
-            hold_s: 0.15,
-            fall_tolerance_mps: 0.5,
-        }
-    }
-}
-
-impl Default for VaultConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+/// The push-up's tuning.
+pub const VAULT: VaultTuning = VaultTuning {
+    deadband_m: 0.06,
+    stiffness_per_s: 10.0,
+    max_lift_mps: 3.0,
+    min_vertical: 0.7,
+    max_rise_m: 1.4,
+    min_height_m: 0.3,
+    hold_s: 0.15,
+    fall_tolerance_mps: 0.5,
+};

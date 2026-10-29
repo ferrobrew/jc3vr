@@ -22,6 +22,7 @@ use crate::controllers::{
                 math::{GunAxes, brace_contact, gun_axes},
             },
         },
+        tuning::PALMS,
         world::World,
     },
     weapons::{foregrip, heft::HeftClass, hold::act, regions},
@@ -74,7 +75,7 @@ pub(crate) unsafe fn read_holds(weapons: [Option<(usize, HeftClass)>; 2]) -> Gun
             holds.contacts[off.index()] = brace_contact(
                 &hold.geometry,
                 &hand,
-                active.config.physical_hands.palm_offset_m,
+                PALMS.palm_offset_m,
                 active.world_scale,
             );
             holds.braces[off.index()] = holds.contacts[off.index()].is_some();

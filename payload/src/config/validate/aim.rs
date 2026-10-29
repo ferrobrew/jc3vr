@@ -8,12 +8,6 @@ use crate::{
 
 /// Check the controller-owned hands' settings. Paths are relative to `controllers.hands`.
 pub(super) fn hands(c: &HandsConfig) -> Result<(), Invalid> {
-    range("hands.reach_t", c.reach_t, 0.0, 1.0)?;
-    range("hands.reach_r", c.reach_r, 0.0, 1.0)?;
-    range("hands.pull", c.pull, 0.0, 1.0)?;
-    range("hands.resist", c.resist, 0.0, 1.0)?;
-    nonnegative("hands.yield_blend_s", c.yield_blend_s, 60.0)?;
-    nonnegative("hands.return_blend_s", c.return_blend_s, 60.0)?;
     vec3("hands.grip.position_m", c.grip.position_m, 5.0)?;
     vec3("hands.grip.rotation_deg", c.grip.rotation_deg, 360.0)?;
     nonnegative("hands.anchor.blend_s", c.anchor.blend_s, 60.0)?;

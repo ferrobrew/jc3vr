@@ -80,8 +80,6 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.weapons.recoil.suppress_camera_kick = weapons;
     c.haptics.enabled = weapons;
     c.haptics.game_rumble = weapons;
-    c.haptics.categories.weapons = weapons;
-    c.haptics.categories.traversal = weapons;
     c.weapons.reload.enabled = weapons;
     c.weapons.grenade_throw = weapons;
     c.weapons.grenade.warning_overlay = weapons;

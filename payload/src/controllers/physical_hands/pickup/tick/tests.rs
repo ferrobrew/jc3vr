@@ -5,7 +5,7 @@ use glam::Quat;
 use super::*;
 use crate::controllers::{
     frame::Pose,
-    physical_hands::{doors::config::TearConfig, rigid::BodyPose},
+    physical_hands::{doors::config::TEARING, pickup::PICKUP, rigid::BodyPose},
 };
 
 struct FakeBodies {
@@ -76,7 +76,7 @@ fn inputs(enabled: bool) -> TickInputs {
         },
         dt: 1.0 / 30.0,
         unlatch_pull_m: 0.1,
-        tearing: TearConfig::default(),
+        tearing: TEARING,
         world_scale: 1.0,
         characters: CharactersConfig::default(),
         reaches: [None; 2],
@@ -85,7 +85,7 @@ fn inputs(enabled: bool) -> TickInputs {
 
 fn run(state: &mut PickupState, enabled: bool, fake: &mut FakeBodies) -> TickOutcome {
     state.input_at = Some(Instant::now());
-    unsafe { tick_with(state, inputs(enabled), &PickupConfig::default(), fake) }
+    unsafe { tick_with(state, inputs(enabled), &PICKUP, fake) }
 }
 
 #[test]

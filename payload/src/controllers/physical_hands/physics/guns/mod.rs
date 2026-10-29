@@ -151,9 +151,9 @@ pub fn status() -> GunsStatus {
     SHARED.lock().status.clone()
 }
 
-/// Whether held guns are bodies: their switch, under the hand bodies'.
+/// Whether held guns are bodies: whenever the hand bodies are.
 pub(crate) fn enabled(config: &PhysicalHandsConfig) -> bool {
-    super::enabled(config) && config.bodies.guns.enabled
+    super::enabled(config)
 }
 
 /// Publish the guns in the hands. Called from the weapon handling's input tick.

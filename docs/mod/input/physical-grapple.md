@@ -66,7 +66,7 @@ The input tick (the game thread, outside the world update) reads the hook, steps
 
 ## Settings and readouts
 
-The switches are in the debug UI's Controllers tab: `bindings.yank.enabled`, `grapple.reel.enabled` and `grapple.reel.max_scale`, `grapple.tether.enabled`, and `grapple.swing.pump` under "Bindings", and `hands.anchor.hang_swing` under "Hands"; the line's vibration is behind `haptics.categories.traversal` ([haptics.md](haptics.md)). Everything defaults on. The tuning is under "Physical grapple" in the debug UI's Controllers tab, beside the yank's, and the weapons readout shows the pump and a line for the physical grapple.
+The switches are in the debug UI's Controllers tab: `bindings.yank.enabled`, `grapple.reel.enabled` and `grapple.reel.max_scale`, `grapple.tether.enabled`, and `grapple.swing.pump` under "Bindings", and `hands.anchor.hang_swing` under "Hands"; the line's vibration is behind the haptics' master switch ([haptics.md](haptics.md)). Everything defaults on. The tuning is under "Physical grapple" in the debug UI's Controllers tab, beside the yank's, and the weapons readout shows the pump and a line for the physical grapple.
 
 The debug UI's Status tab has a `GRAPPLE` section:
 

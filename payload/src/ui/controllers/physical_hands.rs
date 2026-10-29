@@ -3,25 +3,15 @@
 
 use egui::Ui;
 
-use crate::{
-    controllers::{
-        frame::Hand,
-        physical_hands::{
-            PhysicalHandsConfig, PhysicalHandsStatus,
-            characters::CharactersConfig,
-            config::{PickupConfig, ShoveConfig},
-            doors::{self, DoorsConfig},
-            grasp::TargetKind,
-            human_hull,
-            pickup::diagnostics,
-            sounds::{ImpactSoundsConfig, SoundsStatus},
-            vault::{VaultConfig, VaultStatus},
-        },
+use crate::controllers::{
+    frame::Hand,
+    physical_hands::{
+        PhysicalHandsConfig, PhysicalHandsStatus, doors, grasp::TargetKind, human_hull, impacts,
+        pickup::diagnostics, sounds::SoundsStatus, vault::VaultStatus,
     },
-    ui::controllers::vec3_drag,
 };
 
-pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) {
+pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus, v: &VaultStatus) {
     ui.label(format!(
         "Human-hull adapter: {:?}; clearance: {:?}.",
         status.human_hull.adapter, status.human_hull.clearance,
@@ -161,6 +151,26 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
     if let Some(error) = &p.last_error {
         ui.label(format!("Last pickup error: {error}"));
     }
+    let impacts = impacts::status();
+    ui.label(format!(
+        "Held impacts: {} bodies, {} contacts, {} feedback, {} suppressed, {} dropped",
+        impacts.listening, impacts.contacts, impacts.feedback, impacts.suppressed, impacts.dropped
+    ));
+    ui.label(format!(
+        "Push up: {} pushes{}{}",
+        v.pushes,
+        if v.lifting {
+            format!(" · lifting {:.2} m/s", v.lift_mps)
+        } else {
+            String::new()
+        },
+        v.last_rise_m
+            .map_or(String::new(), |r| format!(" · last rise {r:.2} m"))
+    ));
+    ui.label(format!(
+        "Push up refused off the ground or moving down: {} · at the feet: {}",
+        v.refusals, v.at_the_feet
+    ));
     if let Some(error) = &status.last_error {
         ui.label(format!("Last error: {error}"));
     }
@@ -177,70 +187,38 @@ pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) 
     ui.label("Restoration waits for full-size clearance. The current hull remains installed while restoration is deferred.");
     ui.checkbox(&mut p.enabled, "Physical palms");
     ui.add_enabled_ui(p.enabled, |ui| {
-        vec3_drag(ui, "Palm half size (m)", &mut p.palm_half_extents_m, 0.002);
-        vec3_drag(
-            ui,
-            "Palm centre (wrist frame, m)",
-            &mut p.palm_offset_m,
-            0.002,
+        ui.checkbox(&mut p.bodies.enabled, "Hand bodies")
+            .on_hover_text(
+                "Give each empty hand a body in the physics world, in place of the palm probes.",
+            );
+        ui.checkbox(&mut p.push, "Push off surfaces");
+        ui.checkbox(&mut p.pickup.enabled, "Pick up objects with the grip");
+        ui.add_enabled_ui(p.pickup.enabled, |ui| {
+            ui.add(egui::Slider::new(&mut p.pickup.throw_scale, 0.0..=4.0).text("Throw (× hand)"));
+        });
+        ui.checkbox(
+            &mut p.vault.enabled,
+            "Push the body up with the hands pressed down",
         );
-        ui.checkbox(&mut p.show_boxes, "Draw the palm boxes");
-        ui.checkbox(&mut p.clamp_hand, "Hold the hand at surfaces");
-        ui.checkbox(&mut p.push, "Push the body off surfaces");
-        ui.add(egui::Slider::new(&mut p.push_deadband_m, 0.0..=0.1).text("Push deadband (m)"));
-        ui.add(
-            egui::Slider::new(&mut p.push_stiffness_per_s, 0.0..=29.0).text("Push stiffness (1/s)"),
-        );
-        ui.add(egui::Slider::new(&mut p.max_push_speed_mps, 0.0..=6.0).text("Fastest push (m/s)"));
-        ui.add(
-            egui::Slider::new(&mut p.min_push_horizontal, 0.0..=1.0)
-                .text("Least horizontal normal"),
-        );
-        ui.separator();
-        ui.add(
-            egui::Slider::new(&mut p.full_hit_speed_mps, 1.0..=12.0)
-                .text("Full-strength hit (m/s)"),
-        );
-        ui.separator();
-        shove_settings(ui, &mut p.shove);
-        ui.checkbox(&mut p.object_impulses, "Knock objects on fast hits");
-        ui.add(
-            egui::Slider::new(&mut p.min_object_speed_mps, 0.0..=6.0)
-                .text("Slowest object push (m/s)"),
-        );
-        ui.add(
-            egui::Slider::new(&mut p.object_impulse, 0.0..=4.0).text("Object impulse (× melee)"),
-        );
-        ui.separator();
-        pickup_settings(ui, &mut p.pickup);
-        ui.checkbox(&mut p.held_impacts, "Held-prop impact feedback");
-        let impacts = crate::controllers::physical_hands::impacts::status();
-        ui.label(format!(
-            "Held impacts: {} bodies, {} contacts, {} feedback, {} suppressed, {} dropped",
-            impacts.listening,
-            impacts.contacts,
-            impacts.feedback,
-            impacts.suppressed,
-            impacts.dropped
-        ));
-        ui.label("Held props retain native collision damage and material protection.");
+        ui.checkbox(&mut p.bodies.reactions, "Characters react to blows");
     });
 }
 
 pub(super) fn characters_doors_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) {
-    ui.label(
-        "Direct physical interactions. Reach and grapple snatch has separate acquisition settings.",
-    );
     ui.add_enabled_ui(p.enabled, |ui| {
-        doors_settings(ui, &mut p.doors);
-        ui.separator();
-        characters_settings(ui, &mut p.characters);
-        ui.separator();
-        vault_settings(ui, &mut p.vault);
+        ui.checkbox(&mut p.characters.grab, "Take hold of characters on foot");
+        ui.checkbox(
+            &mut p.characters.hijack,
+            "Pull occupants out through open doors",
+        );
+        ui.checkbox(&mut p.doors.enabled, "Open vehicle doors by hand");
+        ui.add_enabled_ui(p.doors.enabled, |ui| {
+            ui.checkbox(&mut p.doors.tear, "Tear detachable doors by hand");
+        });
     });
 }
 
-pub(super) fn characters_doors_readout(ui: &mut Ui, status: &PhysicalHandsStatus, v: &VaultStatus) {
+pub(super) fn characters_doors_readout(ui: &mut Ui, status: &PhysicalHandsStatus) {
     ui.columns(2, |columns| {
         for hand in Hand::BOTH {
             let ui = &mut columns[hand.index()];
@@ -301,25 +279,15 @@ pub(super) fn characters_doors_readout(ui: &mut Ui, status: &PhysicalHandsStatus
         "Characters: {} grips · {} yanked · {} ragdolls taken · {} pulled out of a seat",
         p.character_grips, p.yanks, p.regrips, p.hijacks
     ));
-    ui.label(format!(
-        "Push up: {} pushes{}{}",
-        v.pushes,
-        if v.lifting {
-            format!(" · lifting {:.2} m/s", v.lift_mps)
-        } else {
-            String::new()
-        },
-        v.last_rise_m
-            .map_or(String::new(), |r| format!(" · last rise {r:.2} m"))
-    ));
-    ui.label(format!(
-        "Push up refused off the ground or moving down: {} · at the feet: {}",
-        v.refusals, v.at_the_feet
-    ));
 }
 
 pub(super) fn impact_sounds_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) {
-    ui.add_enabled_ui(p.enabled, |ui| sounds_settings(ui, &mut p.sounds));
+    ui.add_enabled_ui(p.enabled, |ui| {
+        ui.checkbox(&mut p.sounds.enabled, "Impact sounds")
+            .on_hover_text(
+                "The game's melee impact sound where a hand meets something hard enough.",
+            );
+    });
 }
 
 pub(super) fn impact_sounds_readout(ui: &mut Ui, status: &SoundsStatus) {
@@ -356,146 +324,6 @@ fn save_evidence_button(
         }
     }
     response
-}
-
-fn vault_settings(ui: &mut Ui, v: &mut VaultConfig) {
-    ui.checkbox(
-        &mut v.enabled,
-        "Push the body up with the hands pressed down",
-    );
-    ui.add_enabled_ui(v.enabled, |ui| {
-        ui.add(egui::Slider::new(&mut v.deadband_m, 0.0..=0.2).text("Press left alone (m)"));
-        ui.add(egui::Slider::new(&mut v.stiffness_per_s, 0.0..=40.0).text("Lift stiffness (1/s)"));
-        ui.add(egui::Slider::new(&mut v.max_lift_mps, 0.0..=8.0).text("Fastest lift (m/s)"));
-        ui.add(egui::Slider::new(&mut v.min_vertical, 0.0..=1.0).text("Least downward press"));
-        ui.add(egui::Slider::new(&mut v.max_rise_m, 0.0..=3.0).text("Highest rise (m)"));
-        ui.add(
-            egui::Slider::new(&mut v.min_height_m, 0.0..=1.5)
-                .text("Lowest surface above the feet (m)"),
-        );
-        ui.add(egui::Slider::new(&mut v.hold_s, 0.0..=0.6).text("Press held before lifting (s)"));
-        ui.add(
-            egui::Slider::new(&mut v.fall_tolerance_mps, 0.0..=3.0)
-                .text("Fastest downward motion that still lifts (m/s)"),
-        );
-    });
-}
-
-fn characters_settings(ui: &mut Ui, c: &mut CharactersConfig) {
-    ui.checkbox(&mut c.grab, "Take hold of characters on foot");
-    ui.add_enabled_ui(c.grab, |ui| {
-        ui.add(egui::Slider::new(&mut c.yank_strength, 0.0..=3.0).text("Yank (× knockdown)"));
-        ui.add(egui::Slider::new(&mut c.regrip_s, 0.0..=5.0).text("Look for the ragdoll (s)"));
-        ui.add(
-            egui::Slider::new(&mut c.shove_min_speed_mps, 0.0..=8.0)
-                .text("Slowest shove on letting go (m/s)"),
-        );
-    });
-    ui.checkbox(&mut c.hijack, "Pull occupants out through open doors");
-    ui.add(egui::Slider::new(&mut c.yank_m, 0.02..=0.6).text("Yank past (m)"));
-    ui.add_enabled_ui(c.hijack, |ui| {
-        ui.add(
-            egui::Slider::new(&mut c.hijack_min_open_deg, 0.0..=90.0)
-                .text("Door open at least (°)"),
-        );
-        ui.add(
-            egui::Slider::new(&mut c.hijack_door_reach_m, 0.0..=3.0).text("Open door within (m)"),
-        );
-    });
-}
-
-fn doors_settings(ui: &mut Ui, d: &mut DoorsConfig) {
-    ui.checkbox(&mut d.enabled, "Open vehicle doors by hand");
-    ui.add_enabled_ui(d.enabled, |ui| {
-        ui.add(egui::Slider::new(&mut d.reach_m, 0.0..=0.3).text("Door reach (m)"));
-        ui.add(
-            egui::Slider::new(&mut d.handle_share, 0.0..=1.0).text("Handle area from the hinge"),
-        );
-        ui.add(egui::Slider::new(&mut d.unlatch_pull_m, 0.0..=0.3).text("Pull to unlatch (m)"));
-        let t = &mut d.tearing;
-        ui.checkbox(&mut t.enabled, "Tear detachable doors by hand");
-        ui.add(egui::Slider::new(&mut t.settle_s, 0.05..=1.0).text("Settle before tearing (s)"));
-        ui.add(egui::Slider::new(&mut t.reset_lag_m, 0.01..=0.1).text("Settled grip lag (m)"));
-        ui.add(egui::Slider::new(&mut t.yank_lag_m, 0.1..=0.5).text("Yank lag (m)"));
-        ui.add(egui::Slider::new(&mut t.yank_speed_mps, 0.5..=5.0).text("Yank speed (m/s)"));
-        ui.add(egui::Slider::new(&mut t.push_lag_m, 0.1..=0.5).text("Push beyond limit (m)"));
-        ui.add(egui::Slider::new(&mut t.push_hold_s, 0.05..=0.8).text("Push duration (s)"));
-        ui.add(egui::Slider::new(&mut t.push_load, 0.1..=1.0).text("Push grip load"));
-        ui.add(
-            egui::Slider::new(&mut t.limit_margin_rad, 0.0..=0.2)
-                .text("Opening limit margin (rad)"),
-        );
-    });
-}
-
-fn pickup_settings(ui: &mut Ui, p: &mut PickupConfig) {
-    ui.checkbox(&mut p.enabled, "Pick up objects with the grip");
-    ui.add_enabled_ui(p.enabled, |ui| {
-        ui.checkbox(&mut p.weapons, "Grab weapons to pick them up");
-        ui.add(egui::Slider::new(&mut p.reach_m, 0.0..=0.4).text("Reach (m)"));
-        ui.add(egui::Slider::new(&mut p.max_mass_kg, 0.0..=5000.0).text("Heaviest held (kg)"));
-        ui.checkbox(
-            &mut p.articulated,
-            "Take hinged and jointed objects whatever their weight",
-        );
-        ui.add(
-            egui::Slider::new(&mut p.max_articulated_mass_kg, 0.0..=50_000.0)
-                .text("Heaviest hinged object (kg)"),
-        );
-        ui.add(egui::Slider::new(&mut p.hand_force_n, 0.0..=2000.0).text("Hand pull (N)"));
-        ui.add(egui::Slider::new(&mut p.hand_torque_nm, 0.0..=200.0).text("Hand twist (N·m)"));
-        ui.add(
-            egui::Slider::new(&mut p.stiffness_per_s, 0.0..=60.0).text("Follow stiffness (1/s)"),
-        );
-        ui.add(egui::Slider::new(&mut p.max_speed_mps, 0.0..=60.0).text("Fastest follow (m/s)"));
-        ui.add(
-            egui::Slider::new(&mut p.angular_stiffness_per_s, 0.0..=60.0)
-                .text("Turn stiffness (1/s)"),
-        );
-        ui.add(
-            egui::Slider::new(&mut p.max_angular_speed_rps, 0.0..=60.0)
-                .text("Fastest turn (rad/s)"),
-        );
-        ui.add(
-            egui::Slider::new(&mut p.two_hand_angular_share, 0.0..=1.0)
-                .text("Twist share with two hands"),
-        );
-        ui.add(egui::Slider::new(&mut p.gravity_mps2, 0.0..=20.0).text("Gravity (m/s²)"));
-        ui.checkbox(&mut p.resist, "Push the body off what the hand cannot move");
-        ui.add(
-            egui::Slider::new(&mut p.keep_out_radius_m, 0.0..=1.0)
-                .text("Keep held objects out of the body (m)"),
-        );
-        ui.add(egui::Slider::new(&mut p.break_distance_m, 0.05..=3.0).text("Let go past (m)"));
-        ui.add(egui::Slider::new(&mut p.throw_scale, 0.0..=4.0).text("Throw (× hand)"));
-        ui.add(
-            egui::Slider::new(&mut p.max_throw_speed_mps, 0.0..=80.0).text("Fastest throw (m/s)"),
-        );
-    });
-}
-
-fn shove_settings(ui: &mut Ui, s: &mut ShoveConfig) {
-    ui.checkbox(&mut s.enabled, "Shove objects the palm presses into");
-    ui.add_enabled_ui(s.enabled, |ui| {
-        ui.add(egui::Slider::new(&mut s.stiffness_per_s, 0.0..=40.0).text("Shove stiffness (1/s)"));
-        ui.add(egui::Slider::new(&mut s.deadband_m, 0.0..=0.05).text("Shove deadband (m)"));
-        ui.add(egui::Slider::new(&mut s.max_speed_mps, 0.0..=10.0).text("Fastest shove (m/s)"));
-        ui.add(egui::Slider::new(&mut s.max_force_n, 0.0..=3000.0).text("Palm push (N)"));
-        ui.add(egui::Slider::new(&mut s.friction, 0.0..=2.0).text("Palm friction"));
-        ui.add(egui::Slider::new(&mut s.give_smoothing_s, 0.0..=0.5).text("Give smoothing (s)"));
-    });
-}
-
-fn sounds_settings(ui: &mut Ui, s: &mut ImpactSoundsConfig) {
-    ui.checkbox(&mut s.enabled, "Impact sounds")
-        .on_hover_text("The game's melee impact sound where a hand meets something hard enough.");
-    ui.add(
-        egui::Slider::new(&mut s.min_touch_speed_mps, 0.0..=8.0)
-            .text("Slowest sounding touch (m/s)"),
-    );
-    ui.add(egui::Slider::new(&mut s.min_strike_share, 0.0..=1.0).text("Weakest sounding strike"));
-    ui.add(egui::Slider::new(&mut s.hand_cooldown_s, 0.0..=2.0).text("Hand cooldown (s)"));
-    ui.add(egui::Slider::new(&mut s.min_interval_s, 0.0..=1.0).text("Shared interval (s)"));
 }
 
 #[cfg(test)]

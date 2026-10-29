@@ -7,7 +7,7 @@ use glam::Vec3;
 use crate::controllers::physical_hands::{
     bodies,
     doors::{
-        config::TearConfig,
+        config::TearTuning,
         tearing::{self, Acquisition, Gesture, TearGrip, TearResult},
     },
     grasp::PalmMotion,
@@ -75,7 +75,7 @@ pub(super) struct Frame {
 pub(super) unsafe fn step(
     state: &mut PickupState,
     frame: Frame,
-    config: &TearConfig,
+    config: &TearTuning,
     outcome: &mut TickOutcome,
 ) {
     step_with(state, frame, config, outcome, &mut NativeTearing);
@@ -84,7 +84,7 @@ pub(super) unsafe fn step(
 fn step_with(
     state: &mut PickupState,
     frame: Frame,
-    config: &TearConfig,
+    config: &TearTuning,
     outcome: &mut TickOutcome,
     engine: &mut impl TearEngine,
 ) {
@@ -261,11 +261,10 @@ mod tests {
     use crate::controllers::{
         frame::Pose,
         physical_hands::{
-            config::PickupConfig,
-            doors::DoorTarget,
+            doors::{DoorTarget, config::TEARING},
             grasp::Grip,
             hold::{self, HandHold},
-            pickup::{HeldReport, tick::carry_tuning},
+            pickup::{HeldReport, PICKUP, PickupTuning, tick::carry_tuning},
             rigid::{BodyPose, Velocities},
         },
     };
@@ -356,7 +355,7 @@ mod tests {
                 dt: 0.02,
                 world_scale: 1.0,
             },
-            &TearConfig::new(),
+            &TEARING,
             &mut out,
             &mut engine,
         );
@@ -377,9 +376,9 @@ mod tests {
             mass_kg: Some(10.0),
             inverse_inertia: Vec3::ONE,
         };
-        let config = PickupConfig {
+        let config = PickupTuning {
             gravity_mps2: 0.0,
-            ..PickupConfig::new()
+            ..PICKUP
         };
         let palm = PalmMotion {
             pose: Pose::default(),
@@ -409,7 +408,7 @@ mod tests {
             (solution.velocities.linear.x - 1.4).abs() < 0.001,
             "{solution:?}"
         );
-        assert!((3.0 - solution.velocities.linear.x) < TearConfig::new().yank_speed_mps);
+        assert!((3.0 - solution.velocities.linear.x) < TEARING.yank_speed_mps);
         let commanded = bodies::BodyState {
             velocities: solution.velocities,
             ..body
@@ -449,7 +448,7 @@ mod tests {
                             dt,
                             world_scale: 1.0,
                         },
-                        &TearConfig::new(),
+                        &TEARING,
                         &mut out,
                         &mut engine,
                     );
@@ -467,7 +466,7 @@ mod tests {
                         dt,
                         world_scale: 1.0,
                     },
-                    &TearConfig::new(),
+                    &TEARING,
                     &mut out,
                     &mut engine,
                 );

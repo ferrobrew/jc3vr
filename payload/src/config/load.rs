@@ -571,8 +571,8 @@ enabled = false
     #[test]
     fn a_validation_message_names_its_setting() {
         assert_eq!(
-            named_steps("hands.reach_t must be finite and in [0, 1], got 5"),
-            [key("hands"), key("reach_t")]
+            named_steps("aim.assist_strength must be finite and in [0, 1], got 5"),
+            [key("aim"), key("assist_strength")]
         );
         assert_eq!(
             named_steps("weapons.grenade.warning_interval_s[2] must be finite"),

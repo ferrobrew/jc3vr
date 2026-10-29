@@ -3,8 +3,7 @@
 //!
 //! The plan of record ("Hand tiers" in `docs/mod/input/controllers-and-roomscale.md`) assigns every
 //! scripted state one of four tiers. The assignments are data: [`HandTierTable`] holds one tier per
-//! [`TierState`], its default is the plan's table ([`HandTierTable::PLAN`]), and the config can
-//! override any row. The tiers:
+//! [`TierState`], fixed at the plan's table ([`HandTierTable::PLAN`]). The tiers:
 //!
 //! - [`HandTier::Free`]: the hand follows its controller;
 //! - [`HandTier::ActionRuns`]: the game plays the action (a reload's timer and the weapon model's
@@ -23,7 +22,7 @@
 //!   seated state's free tier ([`crate::controllers::vehicles::physical`]), because a hand holds a
 //!   control only while the player grips it;
 //! - [`HandTier::Yielded`]: the animation owns the hand, which blends out from the controller over
-//!   [`HandsConfig::yield_blend_s`] and back over [`HandsConfig::return_blend_s`].
+//!   [`YIELD_BLEND_S`] and back over [`RETURN_BLEND_S`].
 //!
 //! The classification runs once per input tick ([`tick`]), on the main thread, from the mode
 //! detector's snapshot plus a few state-machine predicates, and publishes one weight per hand for
@@ -40,8 +39,8 @@ use crate::{
     config::Config,
     controllers::{
         body::procedural::config::ProceduralMode,
-        config::HandsConfig,
         frame::Hand,
+        hands::anchor::AnchorConfig,
         loadout::live,
         mode::{
             self, AirborneVariant, CharacterSnapshot, Detection, Mode, OnFootVariant, Traversal,
@@ -64,14 +63,6 @@ pub enum HandTier {
 }
 
 impl HandTier {
-    /// Every tier, in the plan's order.
-    pub const ALL: [HandTier; 4] = [
-        HandTier::Free,
-        HandTier::ActionRuns,
-        HandTier::Anchored,
-        HandTier::Yielded,
-    ];
-
     /// The tier the hands actually take in `state`: the anchored tier where it is built and
     /// switched on (`anchor`), and the yielded tier in its place elsewhere, as the plan starts every
     /// scripted state yielded until its tier is built.
@@ -146,6 +137,7 @@ pub enum TierState {
 
 impl TierState {
     /// Every state, in the table's order.
+    #[cfg(test)]
     pub const ALL: [TierState; 16] = [
         TierState::OnFoot,
         TierState::GrappleReel,
@@ -213,8 +205,8 @@ pub enum TierScope {
     GrappleHand,
 }
 
-/// The tier of each [`TierState`]: the plan's table as data, overridable from the config.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// The tier of each [`TierState`]: the plan's table as data.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct HandTierTable {
     pub on_foot: HandTier,
     pub grapple_reel: HandTier,
@@ -275,11 +267,6 @@ impl HandTierTable {
         *self.slot(state)
     }
 
-    /// The mutable slot for `state`, for the debug UI's table editor.
-    pub fn tier_mut(&mut self, state: TierState) -> &mut HandTier {
-        self.slot_mut(state)
-    }
-
     /// The tier of `hand` in `state`, given which hand is dominant.
     pub fn hand_tier(&self, state: TierState, hand: Hand, dominant: Hand) -> HandTier {
         match state.scope() {
@@ -307,27 +294,6 @@ impl HandTierTable {
             TierState::WeaponAction => &self.weapon_action,
             TierState::Ragdoll => &self.ragdoll,
             TierState::Cutscene => &self.cutscene,
-        }
-    }
-
-    fn slot_mut(&mut self, state: TierState) -> &mut HandTier {
-        match state {
-            TierState::OnFoot => &mut self.on_foot,
-            TierState::GrappleReel => &mut self.grapple_reel,
-            TierState::GrappleHang => &mut self.grapple_hang,
-            TierState::StuntTraversal => &mut self.stunt_traversal,
-            TierState::StuntHang => &mut self.stunt_hang,
-            TierState::VehicleTransition => &mut self.vehicle_transition,
-            TierState::VehicleSeated => &mut self.vehicle_seated,
-            TierState::MountedGun => &mut self.mounted_gun,
-            TierState::Parachute => &mut self.parachute,
-            TierState::Wingsuit => &mut self.wingsuit,
-            TierState::Swimming => &mut self.swimming,
-            TierState::Interaction => &mut self.interaction,
-            TierState::Melee => &mut self.melee,
-            TierState::WeaponAction => &mut self.weapon_action,
-            TierState::Ragdoll => &mut self.ragdoll,
-            TierState::Cutscene => &mut self.cutscene,
         }
     }
 }
@@ -489,16 +455,18 @@ pub fn weights() -> [f32; 2] {
 /// Classify this input tick and advance the blends. Called from the input tick after the mode
 /// detector, while the controllers are enabled.
 pub(crate) fn tick(dt: f32) {
-    let (mut hands, dominant, mounted_anchor, swim_arms) = Config::lock_query(|c| {
+    let (config, dominant, mounted_anchor) = Config::lock_query(|c| {
         let procedural = &c.controllers.body.procedural;
+        let swim_arms = procedural.swim_torso && procedural.mode == ProceduralMode::Full;
         (
-            c.controllers.hands,
+            TierConfig {
+                table: HandTierTable::PLAN.with_swim_arms(swim_arms),
+                anchor: c.controllers.hands.anchor,
+            },
             c.controllers.acting_hand(),
             c.controllers.vehicles.mounted.anchor_hands,
-            procedural.swim_torso && procedural.mode == ProceduralMode::Full,
         )
     });
-    hands.tiers = hands.tiers.with_swim_arms(swim_arms);
     // SAFETY: the input tick runs on the main thread outside the world update, as the mode
     // detector's own reads require.
     let signals = unsafe { read_signals() };
@@ -518,23 +486,39 @@ pub(crate) fn tick(dt: f32) {
         *status,
         classify(&signals),
         dt,
-        &hands,
+        &config,
         dominant,
         mounted_anchor,
         holding,
     );
 }
 
+/// What [`advance`] reads of the settings: the tier table, with its swimming row as
+/// [`HandTierTable::with_swim_arms`] sets it, and the grapple hand's anchor.
+#[derive(Copy, Clone)]
+pub struct TierConfig {
+    pub table: HandTierTable,
+    pub anchor: AnchorConfig,
+}
+
+#[cfg(test)]
+impl TierConfig {
+    const PLAN: TierConfig = TierConfig {
+        table: HandTierTable::PLAN,
+        anchor: AnchorConfig::new(),
+    };
+}
+
 /// Fold one tick into the status: a new state (or the held one) assigns each hand its tier, and
 /// the weights step toward the tiers' targets. `mounted_anchor` is the mounted guns' own anchor
-/// switch; the grapple states follow [`HandsConfig::anchor`]. `holding` says which hands hold
+/// switch; the grapple states follow [`TierConfig::anchor`]. `holding` says which hands hold
 /// something, indexed by [`Hand::index`]: a grapple hand holding anything stays free rather than
 /// taking the line, so that what it holds stays where the controller puts it.
 pub fn advance(
     previous: TierStatus,
     state: Option<TierState>,
     dt: f32,
-    config: &HandsConfig,
+    config: &TierConfig,
     dominant: Hand,
     mounted_anchor: bool,
     holding: [bool; 2],
@@ -542,7 +526,7 @@ pub fn advance(
     let state = state.or(previous.state);
     let tiers = Hand::BOTH.map(|hand| {
         state.map_or(HandTier::Free, |s| {
-            config.tiers.hand_tier(s, hand, dominant)
+            config.table.hand_tier(s, hand, dominant)
         })
     });
     let anchor = match state {
@@ -561,8 +545,8 @@ pub fn advance(
             previous.weights[hand.index()],
             effective[hand.index()].controller_weight(),
             dt,
-            config.yield_blend_s,
-            config.return_blend_s,
+            YIELD_BLEND_S,
+            RETURN_BLEND_S,
         )
     });
     let anchor_weights = Hand::BOTH.map(|hand| {
@@ -589,6 +573,13 @@ pub fn advance(
 }
 
 static STATUS: Mutex<TierStatus> = Mutex::new(TierStatus::INITIAL);
+
+/// How long a hand takes to blend from its controller to the animation when a state yields it,
+/// seconds.
+const YIELD_BLEND_S: f32 = 0.25;
+
+/// How long a hand takes to blend from the animation back to its controller, seconds.
+const RETURN_BLEND_S: f32 = 0.35;
 
 /// Read the signals: the mode detector's detection and snapshot from this tick, plus the
 /// state-machine predicates, each only while the character is readable.
@@ -751,7 +742,7 @@ mod tests {
         s.character.as_mut().unwrap().vehicle = Some(seat);
         s.mounted_gun = true;
         assert_eq!(classify(&s), Some(TierState::MountedGun));
-        let config = HandsConfig::new();
+        let config = TierConfig::PLAN;
         let status = advance(
             TierStatus::INITIAL,
             Some(TierState::MountedGun),
@@ -823,7 +814,7 @@ mod tests {
 
     #[test]
     fn a_hang_anchors_the_grapple_hand_and_leaves_the_other_free() {
-        let config = HandsConfig::new();
+        let config = TierConfig::PLAN;
         let status = advance(
             TierStatus::INITIAL,
             Some(TierState::GrappleHang),
@@ -850,7 +841,7 @@ mod tests {
 
     #[test]
     fn a_grapple_hand_holding_anything_stays_free() {
-        let config = HandsConfig::new();
+        let config = TierConfig::PLAN;
         for state in [TierState::GrappleReel, TierState::GrappleHang] {
             // The left hand is the grapple hand; empty, it takes the line.
             let empty = advance(
@@ -932,11 +923,11 @@ mod tests {
 
     #[test]
     fn a_yielding_state_blends_both_hands_and_a_held_state_persists() {
-        let config = HandsConfig::new();
+        let config = TierConfig::PLAN;
         let status = advance(
             TierStatus::INITIAL,
             Some(TierState::Swimming),
-            config.yield_blend_s,
+            YIELD_BLEND_S,
             &config,
             Hand::Right,
             true,
@@ -951,15 +942,11 @@ mod tests {
 
     #[test]
     fn every_state_has_its_own_row() {
-        let mut table = HandTierTable::PLAN;
-        for state in TierState::ALL {
-            *table.tier_mut(state) = HandTier::ActionRuns;
-            assert_eq!(table.tier(state), HandTier::ActionRuns);
+        let table = HandTierTable::PLAN;
+        for (i, &a) in TierState::ALL.iter().enumerate() {
+            for &b in &TierState::ALL[i + 1..] {
+                assert!(!std::ptr::eq(table.slot(a), table.slot(b)), "{a:?} {b:?}");
+            }
         }
-        assert!(
-            TierState::ALL
-                .iter()
-                .all(|&s| table.tier(s) == HandTier::ActionRuns)
-        );
     }
 }

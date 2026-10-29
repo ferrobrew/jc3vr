@@ -55,10 +55,7 @@ use crate::{
         loadout::{live as loadout_live, sandbox as loadout_sandbox},
         locomotion as controller_locomotion, map as controller_map, mode as controller_mode,
         overlay as controller_overlay,
-        physical_hands::{
-            self as controller_physical_hands, collider_view::ColliderViewConfig,
-            grab_view::GrabViewConfig,
-        },
+        physical_hands::{self as controller_physical_hands, collider_view::ColliderViewConfig},
         roomscale as controller_roomscale, scheme, summary as controller_summary,
         weapons::inventory as controller_inventory,
     },
@@ -94,18 +91,16 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
         FeatureId::Presentation => {
             |ui, _| hands::presentation_settings(ui, &mut config::edit().controllers.hands)
         }
-        FeatureId::HandTracking => {
-            |ui, _| hands::hands_settings(ui, &mut config::edit().controllers.hands)
-        }
-        FeatureId::Fingers => {
-            |ui, _| fingers::fingers_settings(ui, &mut config::edit().controllers.fingers)
-        }
-        FeatureId::PhysicalHands => |ui, _| {
+        FeatureId::GripFingers => |ui, _| {
             let mut cfg = config::edit();
-            physical_hands::physical_hands_settings(ui, &mut cfg.controllers.physical_hands);
-            ui.collapsing("Advanced tuning", |ui| {
-                hand_bodies::hand_bodies_settings(ui, &mut cfg.controllers.physical_hands.bodies);
-            });
+            hands::grip_settings(ui, &mut cfg.controllers.hands);
+            fingers::fingers_settings(ui, &mut cfg.controllers.fingers);
+        },
+        FeatureId::PhysicalHands => |ui, _| {
+            physical_hands::physical_hands_settings(
+                ui,
+                &mut config::edit().controllers.physical_hands,
+            );
         },
         FeatureId::CharactersDoors => |ui, _| {
             physical_hands::characters_doors_settings(
@@ -247,7 +242,7 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
         FeatureId::Presentation => {
             |ui, _| hands::hands_readout(ui, &hand_ik::status(), &tiers::status(), &late::status())
         }
-        FeatureId::Fingers => |ui, _| {
+        FeatureId::GripFingers => |ui, _| {
             fingers::fingers_readout(
                 ui,
                 &controller_fingers::status(),
@@ -255,17 +250,17 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
             )
         },
         FeatureId::PhysicalHands => |ui, _| {
-            physical_hands::physical_hands_readout(ui, &controller_physical_hands::status());
+            physical_hands::physical_hands_readout(
+                ui,
+                &controller_physical_hands::status(),
+                &controller_physical_hands::vault::status(),
+            );
             ui.collapsing("Diagnostics", |ui| {
                 hand_bodies::hand_bodies_readout(ui, &controller_physical_hands::physics::status())
             });
         },
         FeatureId::CharactersDoors => |ui, _| {
-            physical_hands::characters_doors_readout(
-                ui,
-                &controller_physical_hands::status(),
-                &controller_physical_hands::vault::status(),
-            );
+            physical_hands::characters_doors_readout(ui, &controller_physical_hands::status());
         },
         FeatureId::Climbing => |ui, _| {
             climb::climb_readout(ui, &controller_physical_hands::climb::status());
@@ -333,16 +328,9 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
     Some(body)
 }
 
-/// The grab view's and collider view's tuning, edited by the global visualization drawer on copies
-/// of the saved configuration.
-pub(crate) fn view_settings(
-    ui: &mut Ui,
-    grab: &mut GrabViewConfig,
-    collider: &mut ColliderViewConfig,
-) {
-    ui.label("Grab view");
-    grab_view::grab_view_settings(ui, grab);
-    ui.label("Collider view");
+/// What the collider view draws, edited by the global visualization drawer on a copy of the saved
+/// configuration.
+pub(crate) fn collider_view_settings(ui: &mut Ui, collider: &mut ColliderViewConfig) {
     collider_view::collider_view_settings(ui, collider);
 }
 

@@ -10,10 +10,10 @@ use crate::controllers::{
     grab::{PickupKind, latch::GripLatch},
     physical_hands::{
         characters::{CharacterTarget, CharactersConfig, Regrip, Seize},
-        config::PickupConfig,
-        doors::{DoorTarget, Latch, config::TearConfig, tearing::TearGrip},
+        doors::{DoorTarget, Latch, config::TEARING, tearing::TearGrip},
         grasp::Grip,
         pickup::{
+            PICKUP,
             diagnostics::InputState,
             state::{Held, HeldKind},
             tick::{self, JointInputs, TickInputs},
@@ -123,7 +123,7 @@ fn stale_input_cancellation_discards_a_queued_entry_click() {
     let mut state = PickupState::new();
     state.hijack_clicks = [true; 2];
     // SAFETY: stale input clears all owners before any native access.
-    unsafe { tick::tick(&mut state, tick_inputs(), &PickupConfig::default()) };
+    unsafe { tick::tick(&mut state, tick_inputs(), &PICKUP) };
     let mut desired = Vec::new();
     produce(&mut state, false, [None; 2], &mut desired);
     assert!(desired.is_empty());
@@ -200,7 +200,7 @@ fn produce_hands(
 fn consume_without_native(state: &mut PickupState) {
     state.input_at = Some(Instant::now());
     // SAFETY: generated releases remove all owners; no palms means no throws or shoves.
-    unsafe { tick::tick(state, tick_inputs(), &PickupConfig::default()) };
+    unsafe { tick::tick(state, tick_inputs(), &PICKUP) };
 }
 
 fn tick_inputs() -> TickInputs {
@@ -210,7 +210,7 @@ fn tick_inputs() -> TickInputs {
         joints: JointInputs::default(),
         dt: 0.01,
         unlatch_pull_m: 0.05,
-        tearing: TearConfig::new(),
+        tearing: TEARING,
         world_scale: 1.0,
         characters: CharactersConfig::default(),
         reaches: [None; 2],

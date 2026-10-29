@@ -18,13 +18,15 @@ use crate::controllers::{
             self,
             model::{Aabb, BodyKind},
         },
-        config::PickupConfig,
         contact::{Surface, SurfaceHit},
         doors::{self, DoorsConfig},
         grab_view::model::{RayOutcome, ReachRay},
         grasp::{self, Reach, TargetKind},
         palm::PalmBox,
-        pickup::diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
+        pickup::{
+            PickupTuning,
+            diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
+        },
     },
 };
 
@@ -40,7 +42,7 @@ pub(crate) struct ReachObservations<'a> {
 pub(crate) struct ReachTuning<'a> {
     /// The VR world scale, which scales the reaches.
     pub world_scale: f32,
-    pub pickup: &'a PickupConfig,
+    pub pickup: &'a PickupTuning,
     pub doors: &'a DoorsConfig,
     pub characters: &'a CharactersConfig,
     /// The hand bodies, whose grip joints do not make what they hold articulated.
@@ -117,7 +119,7 @@ pub(crate) const REACH_DIRECTIONS: [Vec3; 5] = [
 /// What a hand could take: the nearest grabbable object hit by short rays out of the palm (from the
 /// back of the hand, through the palm, out to the pickup's reach at the VR world scale
 /// `world_scale`), or the object the palm presses into, or a vehicle's door ([`doors::reach`]). An
-/// object heavier than [`PickupConfig::max_mass_kg`] is not one, nor the body `standing_on` the
+/// object heavier than [`PickupTuning::max_mass_kg`] is not one, nor the body `standing_on` the
 /// player stands on, which a hand would lift from under the player. `cast` returns the first hit
 /// between two points. What each hit was, and why it was not taken, goes into `notes` for the grip
 /// press's log, and each ray, with what it hit and whether that was taken, into `rays` when given,
@@ -417,7 +419,7 @@ unsafe fn judge(
             body,
             hit,
             palm.centre,
-            door_config.reach_m * world_scale,
+            doors::REACH_M * world_scale,
             door_config,
             judged.scan,
         )
@@ -495,7 +497,7 @@ unsafe fn articulated_kind(
     body: u32,
     tuning: &ReachTuning,
 ) -> Option<TargetKind> {
-    if !tuning.pickup.articulated || unsafe { doors::engine::vehicle_of(object) }.is_some() {
+    if unsafe { doors::engine::vehicle_of(object) }.is_some() {
         return None;
     }
     let mass_kg = unsafe { bodies::read(body, object) }.ok()?.mass_kg?;
@@ -514,6 +516,7 @@ mod tests {
     use crate::controllers::{
         frame::Hand,
         grab::{GrabVolume, GripTarget, Mark, MarkAt, PickupKind, RemoteKind, resolve},
+        physical_hands::pickup::PICKUP,
     };
 
     fn weapon() -> FloorWeapon {
@@ -541,7 +544,7 @@ mod tests {
 
     #[test]
     fn floor_surface_reach_does_not_depend_on_the_five_wrist_directions() {
-        let pickup = PickupConfig::default();
+        let pickup = PICKUP;
         let doors = DoorsConfig::default();
         let characters = CharactersConfig::default();
         let tuning = ReachTuning {
@@ -596,7 +599,7 @@ mod tests {
 
     #[test]
     fn a_broadphase_box_is_not_a_hit_and_another_body_cannot_validate_the_weapon() {
-        let pickup = PickupConfig::default();
+        let pickup = PICKUP;
         let doors = DoorsConfig::default();
         let characters = CharactersConfig::default();
         let tuning = ReachTuning {

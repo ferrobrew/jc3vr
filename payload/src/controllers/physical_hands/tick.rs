@@ -22,10 +22,13 @@ use crate::{
             raycast::{self, CastOptions},
         },
         body,
-        fingers::grip::{
-            self, Grip, GripSource,
-            catalogue::GripPose,
-            contact::{self as finger_contact, CastHit, FitTarget},
+        fingers::{
+            grip::{
+                self, Grip, GripSource,
+                catalogue::GripPose,
+                contact::{self as finger_contact, CastHit, FitTarget},
+            },
+            tuning::FINGERS,
         },
         frame::{Hand, Pose},
         hands::{self, pose as hand_pose, reach, tiers},
@@ -34,15 +37,22 @@ use crate::{
         physical_hands::{
             PhysicalHandsConfig, climb,
             contact::{HandContact, PointContact, PointProbe, Surface, SurfaceHit},
-            doors, draw, engine, grab_view, grasp,
+            doors::{
+                self,
+                config::{TEARING, TearTuning},
+            },
+            draw, engine, grab_view, grasp,
             grasp::PalmMotion,
             hold::{self, BodySpace, PlayerKeepOut},
             palm::{PROBE_POINTS, PalmBox},
-            physics, pickup, push,
-            shove::ShoveTuning,
+            physics,
+            pickup::{self, PICKUP},
+            push,
+            shove::SHOVE,
             state::{MAIN_THREAD, STATE, VELOCITY_SMOOTHING_S, stand_down},
             status::{HandStatus, Idle},
             touch::{ShoveInput, Touch, pressure_haptics},
+            tuning::PALMS,
         },
         roomscale::teleport,
         scheme,
@@ -130,20 +140,19 @@ unsafe fn run(owner: &Character, dt: f32) {
     .map(at);
     let free = free_hands();
     let to_world = Mat4::from(owner.m_WorldMatrixT1);
-    let space = (config.pickup.keep_out_radius_m > 0.0).then(|| {
+    let space = (PICKUP.keep_out_radius_m > 0.0).then(|| {
         body::procedural::torso_keep_out(to_world).map_or_else(
             || {
                 PlayerKeepOut::Cylinder(BodySpace {
                     base: to_world.w_axis.truncate(),
                     height_m: body::player().height * active.world_scale,
-                    radius_m: config.pickup.keep_out_radius_m * active.world_scale,
+                    radius_m: PICKUP.keep_out_radius_m * active.world_scale,
                     forward: body_rotation * Vec3::NEG_Z,
                 })
             },
             PlayerKeepOut::Torso,
         )
     });
-    let shove_tuning = ShoveTuning::of(&config.shove);
     // SAFETY: forwarded from the caller.
     let melee_impulse = unsafe { engine::melee_impulse(owner) };
     // SAFETY: forwarded from the caller.
@@ -152,10 +161,10 @@ unsafe fn run(owner: &Character, dt: f32) {
         .into_iter()
         .filter(|hand| free[hand.index()])
         .filter_map(|hand| active.hands[hand.index()])
-        .map(|hand| PalmBox::from_wrist(compose(hand.wrist), active.world_scale, &config).centre)
+        .map(|hand| PalmBox::from_wrist(compose(hand.wrist), active.world_scale, &PALMS).centre)
         .collect();
     let floor_radius =
-        (config.pickup.reach_m + config.palm_half_extents_m.abs().length()) * active.world_scale;
+        (PICKUP.reach_m + PALMS.palm_half_extents_m.abs().length()) * active.world_scale;
     let floor_weapons = if config.pickup.enabled {
         // SAFETY: this input phase runs outside the world step, before holding the hand-state lock.
         unsafe { pickup::floor_weapons(&floor_hands, floor_radius) }
@@ -210,7 +219,7 @@ unsafe fn run(owner: &Character, dt: f32) {
     let reach_tuning = pickup::ReachTuning {
         floor_weapons: &floor_weapons,
         world_scale: active.world_scale,
-        pickup: &config.pickup,
+        pickup: &PICKUP,
         doors: &config.doors,
         characters: &config.characters,
         hand_bodies: physics::status().hands.map(|h| h.body_id),
@@ -259,7 +268,7 @@ unsafe fn run(owner: &Character, dt: f32) {
             state.motion[i].1.reset();
             continue;
         };
-        let palm = PalmBox::from_wrist(compose(cockpit.wrist), active.world_scale, &config);
+        let palm = PalmBox::from_wrist(compose(cockpit.wrist), active.world_scale, &PALMS);
         let motion = PalmMotion {
             pose: Pose {
                 position: palm.centre,
@@ -340,7 +349,7 @@ unsafe fn run(owner: &Character, dt: f32) {
             if climb_on {
                 // The palm in the rig: its tracking-space place turned and scaled as the world
                 // palm is, but not carried by the head's world position, which the climb moves.
-                let rig = PalmBox::from_wrist(cockpit.wrist, 1.0, &config).centre;
+                let rig = PalmBox::from_wrist(cockpit.wrist, 1.0, &PALMS).centre;
                 climb_palms[i] = Some(body_rotation * rig * active.world_scale);
                 climb_pressing[i] = physics::pressing(hand);
                 // A loose object in reach wins over the world it rests on.
@@ -387,7 +396,7 @@ unsafe fn run(owner: &Character, dt: f32) {
         }
         state.pressed[i] = pressed;
         let shove = match contact.press {
-            Some((hit, depth)) if config.shove.enabled => {
+            Some((hit, depth)) => {
                 // SAFETY: the simulation phase outside the physics step; the hit was found by
                 // this tick's casts.
                 unsafe {
@@ -399,8 +408,7 @@ unsafe fn run(owner: &Character, dt: f32) {
                             hand_velocity: motion.velocity,
                             dt,
                         },
-                        &shove_tuning,
-                        &config,
+                        &SHOVE,
                     )
                 }
             }
@@ -411,7 +419,7 @@ unsafe fn run(owner: &Character, dt: f32) {
         };
         let resistance = shove.map_or(1.0, |s| s.resistance);
         let hand_push = contact.press.map_or(Vec2::ZERO, |(hit, depth)| {
-            push::hand_push(hit.normal, depth, &config) * resistance
+            push::hand_push(hit.normal, depth, &PALMS) * resistance
         });
         let offset = contact.clamp_offset();
         clamp[i] = (body_rotation.inverse() * offset) / active.world_scale.max(1e-3);
@@ -484,17 +492,23 @@ unsafe fn run(owner: &Character, dt: f32) {
             space,
             joints: joint_inputs(&config),
             dt,
-            unlatch_pull_m: config.doors.unlatch_pull_m * active.world_scale,
-            tearing: crate::controllers::physical_hands::doors::config::TearConfig {
-                enabled: config.doors.enabled && config.doors.tearing.enabled,
-                ..config.doors.tearing
+            unlatch_pull_m: doors::UNLATCH_PULL_M * active.world_scale,
+            tearing: TearTuning {
+                enabled: config.doors.enabled && config.doors.tear,
+                ..TEARING
             },
             world_scale: active.world_scale,
             characters: config.characters,
             reaches: hand_status.map(|h| h.reach),
         };
         // SAFETY: the simulation phase outside the physics step.
-        let outcome = unsafe { pickup::tick(&mut state.pickup, inputs, &config.pickup) };
+        let outcome = unsafe {
+            pickup::tick(
+                &mut state.pickup,
+                inputs,
+                &PICKUP.with_throw_scale(config.pickup.throw_scale),
+            )
+        };
         joined = outcome.joints;
         pins = outcome.pins;
         refused.clone_from(&outcome.refused);
@@ -507,8 +521,7 @@ unsafe fn run(owner: &Character, dt: f32) {
             if let (Some(pin), Some(palm)) = (pins[i], palms[i])
                 && !physics::drives(hand)
             {
-                let offset =
-                    (pin - palm.pose.position).clamp_length_max(config.pickup.break_distance_m);
+                let offset = (pin - palm.pose.position).clamp_length_max(PICKUP.break_distance_m);
                 clamp[i] = (body_rotation.inverse() * offset) / active.world_scale.max(1e-3);
             }
         }
@@ -519,13 +532,12 @@ unsafe fn run(owner: &Character, dt: f32) {
             };
             // Physical hand bodies follow carry pins; only nonphysical hands need this offset.
             if !physics::drives(hand) {
-                let offset =
-                    (held.anchor - held.target).clamp_length_max(config.pickup.break_distance_m);
+                let offset = (held.anchor - held.target).clamp_length_max(PICKUP.break_distance_m);
                 clamp[i] = (body_rotation.inverse() * offset) / active.world_scale.max(1e-3);
             }
-            if config.push && config.pickup.resist && state.pickup.props()[i].is_none() {
+            if config.push && state.pickup.props()[i].is_none() {
                 hand_status[i].push =
-                    hold::resist_push(held.anchor, held.target, held.load, &config);
+                    hold::resist_push(held.anchor, held.target, held.load, &PALMS);
             }
         }
     }
@@ -533,7 +545,7 @@ unsafe fn run(owner: &Character, dt: f32) {
         cast(from, to, &reach_options)
     });
     pressure_haptics(&hand_status);
-    let push = push::combine(hand_status.map(|h| h.push), &config);
+    let push = push::combine(hand_status.map(|h| h.push), &PALMS);
     for touch in touches {
         // SAFETY: forwarded from the caller; the touches' objects were found by this tick's casts.
         unsafe { state.touch(touch, melee_impulse, &config) };
@@ -590,8 +602,7 @@ fn declare_grips(
     wrists: [Option<Pose>; 2],
     cast: &mut dyn FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
 ) {
-    let fingers = Config::lock_query(|c| c.controllers.fingers);
-    let fit_on = fingers.enabled && fingers.grip.enabled && fingers.grip.contact_fit;
+    let fit_on = Config::lock_query(|c| c.controllers.fingers.enabled);
     for hand in Hand::BOTH {
         let i = hand.index();
         let Some((source, body)) = pickup.grip(hand) else {
@@ -618,7 +629,7 @@ fn declare_grips(
                     },
                     pose,
                 };
-                finger_contact::fit_contacts(hand, target, &fingers, &mut |from, to| {
+                finger_contact::fit_contacts(hand, target, &FINGERS, &mut |from, to| {
                     let hit = cast(from, to)?;
                     let (Surface::Solid { body, .. } | Surface::Character { body, .. }) =
                         hit.surface;
@@ -647,7 +658,7 @@ pub(crate) fn mode_acts(detection: Detection) -> bool {
 /// a joint, which lost theirs, and each body's load.
 fn joint_inputs(config: &PhysicalHandsConfig) -> pickup::JointInputs {
     let lost = physics::take_joint_losses();
-    let joining = physics::enabled(config) && config.bodies.joint_grabs;
+    let joining = physics::enabled(config);
     let bodies = physics::status();
     pickup::JointInputs {
         enabled: joining,

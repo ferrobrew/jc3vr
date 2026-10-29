@@ -8,7 +8,7 @@ use crate::controllers::{
     frame::Pose,
     hands::{CockpitHand, pose as hand_pose},
     physical_hands::physics::{
-        config::{GunClassValues, HeldGunsConfig},
+        config::{GunClassValues, HeldGunsTuning},
         guns::BraceContact,
     },
     weapons::{foregrip::GripGeometry, heft::HeftClass},
@@ -91,7 +91,7 @@ pub fn gun_mass(
     inverse_mass: f32,
     class: HeftClass,
     guns: usize,
-    config: &HeldGunsConfig,
+    config: &HeldGunsTuning,
 ) -> (f32, MassSource) {
     let lightest = config.min_mass_kg.max(0.01);
     let heaviest = class_value(&config.max_mass_by_class_kg, class).max(lightest);
@@ -315,7 +315,7 @@ mod tests {
 
     #[test]
     fn a_gun_takes_its_own_bodys_mass_within_bounds() {
-        let config = HeldGunsConfig::new();
+        let config = HeldGunsTuning::new();
         assert_eq!(
             gun_mass(0.4, HeftClass::Rifle, 1, &config),
             (2.5, MassSource::Body)
@@ -340,7 +340,7 @@ mod tests {
         );
         assert!(gun_mass(0.1, HeftClass::Rifle, 1, &config).0 <= 4.0);
         // Crossed bounds hold the lighter.
-        let crossed = HeldGunsConfig {
+        let crossed = HeldGunsTuning {
             min_mass_kg: 5.0,
             max_mass_by_class_kg: GunClassValues::new(2.0, 2.0, 2.0, 2.0),
             ..config
@@ -350,12 +350,12 @@ mod tests {
 
     #[test]
     fn a_dual_pair_shares_its_mass_and_each_pistol_is_held_to_a_sidearms() {
-        let config = HeldGunsConfig {
+        let config = HeldGunsTuning {
             max_mass_by_class_kg: GunClassValues::new(10.0, 10.0, 10.0, 10.0),
-            ..HeldGunsConfig::new()
+            ..HeldGunsTuning::new()
         };
         assert_eq!(gun_mass(0.2, HeftClass::Sidearm, 2, &config).0, 2.5);
-        let config = HeldGunsConfig::new();
+        let config = HeldGunsTuning::new();
         let (each, _) = gun_mass(0.2, HeftClass::Sidearm, 2, &config);
         assert!((0.9..=1.1).contains(&each), "{each}");
         // No guns counts as one.
