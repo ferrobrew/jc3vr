@@ -351,7 +351,8 @@ fn the_menu_folds_both_hands_and_lists_the_grip_modifier() {
             assert!(actions_of(&rows, Control::Grip(hand), Gesture::Press).is_empty());
             assert!(rows.iter().all(|r| r.control.hand() != Some(hand)
                 || matches!(r.control, Control::Trigger(_) | Control::StickClick(_))
-                || r.effect == Effect::Mod(ModAction::MapZoom)));
+                || r.effect == Effect::Mod(ModAction::MapZoom)
+                || r.effect == Effect::Mod(ModAction::ShowSummary)));
         }
         // The map's zoom is the off-hand stick's vertical axis.
         let zoom: Vec<_> = rows

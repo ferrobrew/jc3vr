@@ -2,7 +2,7 @@
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum PageId {
-    Overview,
+    Status,
     Body,
     Hands,
     Weapons,
@@ -15,7 +15,7 @@ pub(crate) enum PageId {
 
 impl PageId {
     pub(crate) const ALL: [Self; 9] = [
-        Self::Overview,
+        Self::Status,
         Self::Body,
         Self::Hands,
         Self::Weapons,
@@ -28,7 +28,7 @@ impl PageId {
 
     pub(crate) fn label(self) -> &'static str {
         match self {
-            Self::Overview => "Overview",
+            Self::Status => "Status",
             Self::Body => "Body/tracking",
             Self::Hands => "Hands/interaction",
             Self::Weapons => "Weapons",
@@ -60,10 +60,8 @@ macro_rules! features {
 }
 
 features! {
-    Overview {
-        Session => ("overview.session", "Session and input summary"),
-        AllStatus => ("overview.status", "All feature status / Needs attention"),
-        ActiveTools => ("overview.active-tools", "Performance monitor / Active captures / Active visualizations"),
+    Status {
+        Status => ("status", "Status"),
     },
     Body {
         HeadView => ("body.head-view", "Head and view"),

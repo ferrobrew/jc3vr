@@ -56,7 +56,7 @@ fn current_layout_repairs_active_unknown_detached_tab_and_out_of_range_focus() {
     wire["dock"]["surfaces"][1]["Window"][0]["focused_node"] = json!(999);
     let layout = Layout::decode(Some(&wire.to_string()));
     assert!(layout.save_enabled, "{}", layout.notice);
-    assert_eq!(layout.selection.feature, FeatureId::Session);
+    assert_eq!(layout.selection.feature, FeatureId::Status);
     assert_eq!(layout.dock.iter_all_tabs().count(), 2);
     let leaf = layout.dock[egui_dock::SurfaceIndex(1)]
         .root_node()

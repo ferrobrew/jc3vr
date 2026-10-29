@@ -89,7 +89,7 @@ pub(crate) struct NavigationState {
 impl Default for NavigationState {
     fn default() -> Self {
         Self {
-            feature: FeatureId::Session,
+            feature: FeatureId::Status,
         }
     }
 }

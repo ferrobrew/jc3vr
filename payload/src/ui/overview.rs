@@ -1,4 +1,5 @@
-//! Read-only Overview projections over published subsystem snapshots.
+//! The Status feature: a read-only projection over the published subsystem snapshots, with the
+//! rows that need attention first.
 
 #[cfg(test)]
 #[path = "overview/tests.rs"]
@@ -24,9 +25,9 @@ use crate::{
     vr::input::{self, InputStatus},
 };
 
-pub(crate) fn render(ui: &mut Ui, feature: FeatureId, selection: &mut NavigationState) {
+pub(crate) fn render(ui: &mut Ui, selection: &mut NavigationState) {
     let snapshot = Snapshot::live();
-    render_snapshot(ui, feature, selection, &snapshot);
+    render_snapshot(ui, selection, &snapshot);
 }
 
 #[derive(Debug)]
@@ -113,7 +114,8 @@ struct ProfilerCapture {
     last_result: Option<Result<PathBuf, String>>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A row's identity, which also keeps its widgets' ids stable as the ranking reorders the rows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum RowId {
     Input,
     Controllers,
@@ -167,20 +169,20 @@ impl Row {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-enum StatusFilter {
-    #[default]
-    All,
-    NeedsAttention,
-}
-
-fn project(rows: &[Row], filter: StatusFilter) -> Vec<&Row> {
-    let mut visible: Vec<_> = rows
-        .iter()
-        .filter(|row| filter == StatusFilter::All || row.needs_attention())
-        .collect();
+/// Every row, failures first, then active captures, waiting and unavailable states, healthy rows,
+/// and intentionally off rows, each group in publication order.
+fn ranked(rows: &[Row]) -> Vec<&Row> {
+    let mut visible: Vec<_> = rows.iter().collect();
     visible.sort_by_key(|row| row.priority());
     visible
+}
+
+/// The rows that need attention, ranked.
+fn attention(rows: &[Row]) -> Vec<&Row> {
+    ranked(rows)
+        .into_iter()
+        .filter(|row| row.needs_attention())
+        .collect()
 }
 
 fn input_row(input: &InputStatus) -> Row {
@@ -463,99 +465,83 @@ fn blocker_label(blocker: Option<OwnershipBlocker>) -> &'static str {
     }
 }
 
-fn render_snapshot(
-    ui: &mut Ui,
-    feature: FeatureId,
-    selection: &mut NavigationState,
-    snapshot: &Snapshot,
-) {
+fn render_snapshot(ui: &mut Ui, selection: &mut NavigationState, snapshot: &Snapshot) {
     let rows = snapshot.rows();
-    match feature {
-        FeatureId::Session => {
-            ui.heading("Session and input summary");
+    ui.heading("Needs attention");
+    render_rows(
+        ui,
+        attention(&rows),
+        "No failures, active captures, waiting states, or unavailable snapshots are reported.",
+    );
+    egui::CollapsingHeader::new("Everything else")
+        .default_open(true)
+        .show(ui, |ui| {
             render_rows(
                 ui,
-                rows.iter().filter(|row| {
-                    matches!(row.id, RowId::Input | RowId::Controllers | RowId::Ownership)
-                }),
+                ranked(&rows)
+                    .into_iter()
+                    .filter(|row| !row.needs_attention()),
+                "Every row needs attention.",
             );
-            ui.separator();
-            ui.heading("Needs attention and active captures");
-            render_rows(ui, project(&rows, StatusFilter::NeedsAttention));
-        }
-        FeatureId::AllStatus => {
-            let key = ui.id().with("overview-status-filter");
-            let mut filter =
-                ui.data_mut(|data| data.get_temp::<StatusFilter>(key).unwrap_or_default());
-            ui.horizontal_wrapped(|ui| {
-                ui.selectable_value(&mut filter, StatusFilter::All, "All status");
-                ui.selectable_value(&mut filter, StatusFilter::NeedsAttention, "Needs attention");
-            });
-            ui.data_mut(|data| data.insert_temp(key, filter));
-            ui.label("Failures and active captures appear first. Waiting and unavailable states remain distinct; Off is intentional or unused in this setup.");
-            render_rows(ui, project(&rows, filter));
-        }
-        FeatureId::ActiveTools => {
-            ui.heading("Performance, captures, and visualization readouts");
-            render_rows(ui, active_tool_rows(&rows));
-            ui.label("A configured visualization switch does not establish that a view is currently drawing; preview renderer availability is reported by its owning view.");
-        }
-        _ => return,
-    }
+        });
+    ui.label(
+        "Waiting and unavailable states remain distinct; Off is intentional or unused in this \
+         setup. A configured visualization switch does not establish that a view is currently \
+         drawing.",
+    );
     ui.separator();
     ui.horizontal_wrapped(|ui| {
         for (label, feature) in [
-            ("All feature status", FeatureId::AllStatus),
             ("Open performance", FeatureId::Previews),
             ("Open tracking capture", FeatureId::TrackingCapture),
             ("Open video recording", FeatureId::Video),
         ] {
             destination(ui, label, NavigationState { feature }, selection);
         }
+        if ui
+            .button("Log the summary")
+            .on_hover_text("Write every row, with the notes the rows have no room for, to the log.")
+            .clicked()
+        {
+            tracing::info!("status: {}", status::summary());
+        }
     });
 }
 
-fn active_tool_rows(rows: &[Row]) -> Vec<&Row> {
-    project(rows, StatusFilter::All)
-        .into_iter()
-        .filter(|row| match row.id {
-            RowId::Video | RowId::Tracking | RowId::Timing | RowId::Overlay => true,
-            #[cfg(feature = "profiler")]
-            RowId::Profiler => true,
-            _ => false,
-        })
-        .collect()
-}
-
-fn render_rows<'a>(ui: &mut Ui, rows: impl IntoIterator<Item = &'a Row>) {
+fn render_rows<'a>(ui: &mut Ui, rows: impl IntoIterator<Item = &'a Row>, empty: &str) {
     let mut shown = false;
     for row in rows {
         shown = true;
-        ui.group(|ui| {
-            ui.label(format!("{} / {}", row.group, row.label));
-            let (word, color) = match row.state {
-                RowState::Health(Health::Failed) => ("Failed", ui.visuals().error_fg_color),
-                RowState::Health(Health::Waiting) => ("Waiting", ui.visuals().warn_fg_color),
-                RowState::Health(Health::Ok) => ("Ok", Color32::from_rgb(90, 190, 90)),
-                RowState::Health(Health::Off) => ("Off", ui.visuals().weak_text_color()),
-                RowState::Unavailable => ("Unavailable", ui.visuals().warn_fg_color),
-            };
-            ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new(word).color(color));
-                if row.active_capture {
-                    ui.label("Active capture");
+        ui.push_id(row.id, |ui| {
+            ui.group(|ui| {
+                ui.label(format!("{} / {}", row.group, row.label));
+                let (word, color) = match row.state {
+                    RowState::Health(health) => (
+                        health.display_word(),
+                        match health {
+                            Health::Failed => ui.visuals().error_fg_color,
+                            Health::Waiting => ui.visuals().warn_fg_color,
+                            Health::Ok => Color32::from_rgb(90, 190, 90),
+                            Health::Off => ui.visuals().weak_text_color(),
+                        },
+                    ),
+                    RowState::Unavailable => ("Unavailable", ui.visuals().warn_fg_color),
+                };
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new(word).color(color));
+                    if row.active_capture {
+                        ui.label("Active capture");
+                    }
+                });
+                ui.label(&row.detail);
+                if let Some(note) = &row.note {
+                    ui.label(note);
                 }
             });
-            ui.label(&row.detail);
-            if let Some(note) = &row.note {
-                ui.label(note);
-            }
         });
     }
     if !shown {
-        ui.label(
-            "No failures, active captures, waiting states, or unavailable snapshots are reported.",
-        );
+        ui.label(empty);
     }
 }
 

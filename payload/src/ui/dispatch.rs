@@ -15,7 +15,7 @@ use crate::ui::{
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum FeatureRoute {
-    Overview,
+    Status,
     Controller,
     HeadView,
     Runtime,
@@ -37,9 +37,7 @@ pub(crate) type FeatureBody = fn(&mut Ui, FeatureId);
 
 pub(crate) fn route(id: FeatureId) -> FeatureRoute {
     match id {
-        FeatureId::Session | FeatureId::AllStatus | FeatureId::ActiveTools => {
-            FeatureRoute::Overview
-        }
+        FeatureId::Status => FeatureRoute::Status,
         FeatureId::HeadView => FeatureRoute::HeadView,
         FeatureId::Runtime => FeatureRoute::Runtime,
         FeatureId::Stereo
@@ -111,7 +109,7 @@ fn controls(
 ) {
     let id = selection.feature;
     match route(id) {
-        FeatureRoute::Overview => overview::render(ui, id, selection),
+        FeatureRoute::Status => overview::render(ui, selection),
         FeatureRoute::Controller => {
             if let Some(body) = controllers::controls(id) {
                 body(ui, id);
@@ -134,7 +132,7 @@ fn controls(
 
 fn readouts(id: FeatureId) -> impl Iterator<Item = FeatureBody> {
     let routed: Option<FeatureBody> = match route(id) {
-        FeatureRoute::Overview | FeatureRoute::RenderRe => None,
+        FeatureRoute::Status | FeatureRoute::RenderRe => None,
         FeatureRoute::HeadView => Some(|ui, _| camera::head_view_status(ui)),
         FeatureRoute::Controller => controllers::status(id),
         FeatureRoute::Runtime => Some(|ui, _| vr::status(ui)),

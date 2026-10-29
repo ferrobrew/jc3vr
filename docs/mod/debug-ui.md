@@ -2,7 +2,9 @@
 
 ## Navigation
 
-The debug window opens on Overview. The nine pages are Overview, Body/tracking, Hands/interaction, Weapons, Movement/vehicles, Rendering, Input/bindings, Tools, and Experimental. A wide window keeps the page list and feature list beside the selected feature. A narrow window uses page and feature selectors. Feature labels remain outside the content scroll area.
+The debug window opens on Status. The nine pages are Status, Body/tracking, Hands/interaction, Weapons, Movement/vehicles, Rendering, Input/bindings, Tools, and Experimental. A wide window keeps the page list and feature list beside the selected feature. A narrow window uses page and feature selectors. Feature labels remain outside the content scroll area.
+
+The Status page has one feature, Status (`payload/src/ui/overview.rs`). It lists the rows that need attention first (failures, active captures, and waiting or unavailable snapshots), then everything else under a collapsible header, each group ranked failures first. The rows are the session rows (the OpenXR input, the session focus and controllers, and the debug panel ownership), the capture and tool rows (video, tracking, the profiler trace, the performance monitor, and the world overlay), and every status row ([status.md](status.md)). Its buttons open the performance, tracking capture, and video features, and log the status summary.
 
 Each feature renders its controls followed by a collapsible Live status readout, open by default. A feature without controls shows only its readout, and a feature without a readout shows no Live status header. Readouts run after the controls return, so they hold no configuration edit guard. Content scroll state uses the stable feature key rather than a displayed label or list position. Diagnostics groups are closed by default where a feature has one. Visualization switches and the shared overlay settings live only in the global drawer described below. Existing configuration fields, actions, and defaults remain the domain modules' responsibility.
 
@@ -40,7 +42,7 @@ Renderer-free tests cover the concrete configuration fields, edit isolation, fil
 
 ## Layout persistence and recovery
 
-The workspace and detached feature views use `ui_layout_v2.json`. Feature views store stable catalog keys. Detach this view opens the selected feature in a dock window. Dragging its tab back to the main dock re-docks it. Closing a detached view does not remove its feature from navigation. Recover detached views gathers saved views into the main dock. Restore default layout returns to one workspace on Overview.
+The workspace and detached feature views use `ui_layout_v2.json`. Feature views store stable catalog keys. Detach this view opens the selected feature in a dock window. Dragging its tab back to the main dock re-docks it. Closing a detached view does not remove its feature from navigation. Recover detached views gathers saved views into the main dock. Restore default layout returns to one workspace on Status.
 
 Layout edits submit a serialized snapshot every sixty editing frames to one owned writer. It keeps one in-flight replacement and only the newest pending snapshot. Atomic durable replacement runs outside the layout and egui locks. The saved snapshot cache advances only after a successful generation acknowledgement; a failed latest snapshot can retry on the next submission. Shutdown closes admission and drains the worker, and an unfinished worker keeps the payload mapped.
 

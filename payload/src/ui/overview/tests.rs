@@ -4,7 +4,7 @@ use super::*;
 use crate::{frame_timing::Totals, status::Line, ui::capture::EditCapture};
 
 #[test]
-fn all_status_retains_every_typed_row_and_stably_ranks_problems_and_captures() {
+fn ranking_retains_every_typed_row_and_stably_ranks_problems_and_captures() {
     let mut snapshot = fixture();
     snapshot.video.recording = true;
     snapshot.video.connected = false;
@@ -29,7 +29,7 @@ fn all_status_retains_every_typed_row_and_stably_ranks_problems_and_captures() {
         ],
     )];
     let rows = snapshot.rows();
-    let all = project(&rows, StatusFilter::All);
+    let all = ranked(&rows);
     assert_eq!(all.len(), rows.len());
     assert_eq!(all[0].label, "Failed first");
     assert_eq!(all[1].label, "Failed second");
@@ -75,7 +75,7 @@ fn needs_attention_keeps_active_waiting_and_unavailable_but_not_idle_or_off() {
         ],
     )];
     let rows = snapshot.rows();
-    let attention = project(&rows, StatusFilter::NeedsAttention);
+    let attention = attention(&rows);
     assert_eq!(attention[0].label, "Broken");
     assert_eq!(attention[1].id, RowId::Video);
     assert!(attention.iter().any(|row| row.label == "Waiting"));
@@ -186,11 +186,7 @@ fn recorder_activity_is_independent_of_connection_counters_and_last_error() {
         video.note.as_deref(),
         Some("Last writer error: Writer disconnected")
     );
-    assert!(
-        project(&rows, StatusFilter::NeedsAttention)
-            .iter()
-            .any(|row| row.id == RowId::Video)
-    );
+    assert!(attention(&rows).iter().any(|row| row.id == RowId::Video));
 }
 
 #[test]
@@ -250,35 +246,31 @@ fn timing_collecting_and_overlay_last_report_do_not_claim_current_visualization_
 }
 
 #[test]
-fn every_overview_destination_renders_without_a_renderer_or_live_producers() {
+fn status_renders_without_a_renderer_or_live_producers() {
     let snapshot = fixture();
     for width in [420.0, 1100.0] {
-        for feature in [
-            FeatureId::Session,
-            FeatureId::AllStatus,
-            FeatureId::ActiveTools,
-        ] {
-            let context = egui::Context::default();
-            let mut selection = NavigationState { feature };
-            let expected = selection;
-            let mut rendered = false;
-            let output = context.run_ui(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        egui::vec2(width, 1200.0),
-                    )),
-                    ..Default::default()
-                },
-                |ui| {
-                    render_snapshot(ui, feature, &mut selection, &snapshot);
-                    rendered = true;
-                },
-            );
-            assert!(rendered);
-            assert!(!output.shapes.is_empty());
-            assert_eq!(selection, expected);
-        }
+        let context = egui::Context::default();
+        let mut selection = NavigationState {
+            feature: FeatureId::Status,
+        };
+        let expected = selection;
+        let mut rendered = false;
+        let output = context.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(width, 1200.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                render_snapshot(ui, &mut selection, &snapshot);
+                rendered = true;
+            },
+        );
+        assert!(rendered);
+        assert!(!output.shapes.is_empty());
+        assert_eq!(selection, expected);
     }
 }
 
@@ -325,7 +317,7 @@ fn idle_profiler_result_does_not_establish_capture_activity() {
     let mut snapshot = fixture();
     snapshot.profiler.last_result = Some(Ok(PathBuf::from("profile/completed.json")));
     let rows = snapshot.rows();
-    let tools = active_tool_rows(&rows);
+    let tools = ranked(&rows);
     let profiler = tools.iter().find(|row| row.id == RowId::Profiler).unwrap();
     assert_eq!(profiler.state, RowState::Health(Health::Off));
     assert!(!profiler.active_capture);
@@ -338,23 +330,19 @@ fn idle_profiler_result_does_not_establish_capture_activity() {
         profiler.note.as_deref(),
         Some("Last trace written: profile/completed.json"),
     );
-    assert!(
-        !project(&rows, StatusFilter::NeedsAttention)
-            .iter()
-            .any(|row| row.id == RowId::Profiler)
-    );
+    assert!(!attention(&rows).iter().any(|row| row.id == RowId::Profiler));
     assert!(tools.iter().any(|row| row.id == RowId::Timing));
 }
 
 #[cfg(feature = "profiler")]
 #[test]
-fn recording_profiler_is_active_in_tools_and_attention_with_independent_progress_and_result() {
+fn recording_profiler_is_active_and_needs_attention_with_independent_progress_and_result() {
     let mut snapshot = fixture();
     snapshot.profiler.recording = true;
     snapshot.profiler.progress = Some((1.5, 5.0));
     snapshot.profiler.last_result = Some(Ok(PathBuf::from("profile/previous.json")));
     let rows = snapshot.rows();
-    let tools = active_tool_rows(&rows);
+    let tools = ranked(&rows);
     assert_eq!(tools[0].id, RowId::Profiler);
     let profiler = tools[0];
     assert_eq!(profiler.state, RowState::Health(Health::Ok));
@@ -368,10 +356,7 @@ fn recording_profiler_is_active_in_tools_and_attention_with_independent_progress
         profiler.note.as_deref(),
         Some("Last trace written: profile/previous.json"),
     );
-    assert_eq!(
-        project(&rows, StatusFilter::NeedsAttention)[0].id,
-        RowId::Profiler
-    );
+    assert_eq!(attention(&rows)[0].id, RowId::Profiler);
     assert!(!find(&rows, RowId::Timing).active_capture);
 
     snapshot.profiler.progress = None;
@@ -391,7 +376,7 @@ fn failed_inactive_profiler_remains_attention_without_claiming_recording() {
     snapshot.profiler.progress = Some((5.0, 5.0));
     snapshot.profiler.last_result = Some(Err("Trace write error".to_owned()));
     let rows = snapshot.rows();
-    let tools = active_tool_rows(&rows);
+    let tools = ranked(&rows);
     assert_eq!(tools[0].id, RowId::Profiler);
     let profiler = tools[0];
     assert_eq!(profiler.state, RowState::Health(Health::Failed));
@@ -405,10 +390,7 @@ fn failed_inactive_profiler_remains_attention_without_claiming_recording() {
         profiler.note.as_deref(),
         Some("Last trace error: Trace write error")
     );
-    assert_eq!(
-        project(&rows, StatusFilter::NeedsAttention)[0].id,
-        RowId::Profiler
-    );
+    assert_eq!(attention(&rows)[0].id, RowId::Profiler);
 
     snapshot.profiler.recording = true;
     let rows = snapshot.rows();
