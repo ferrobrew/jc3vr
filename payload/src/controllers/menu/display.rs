@@ -1,8 +1,7 @@
 //! The `VR: DISPLAY` page: the headset's render resolution, the sharpening, the foveated
 //! rendering, where the floating panel sits, and the HUD drawn at the hands. The rendering
-//! internals (the FSR anti-aliasing, jitter, and motion vectors, the foveation's radii, the
-//! mirror), the panel's reticle placement, follow, and depth tuning, and the HUD's parts are in the
-//! debug UI.
+//! internals (the FSR anti-aliasing, the foveation's radii, the mirror), the panel's reticle
+//! placement, follow, and depth tuning, and the HUD's parts are in the debug UI.
 //!
 //! Every setting applies on the next frame, except the size of the headset's own image: it keeps
 //! the size it was created at until the game restarts, so a resolution change resizes the scene at

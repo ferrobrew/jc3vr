@@ -58,8 +58,7 @@ pub(crate) struct Projection<'a> {
 /// Classify a point of interest's projection for the world markers. Called from the `Get2DInfo`
 /// detour after the original; a no-op outside `UpdatePOIs` or with the prototype off.
 ///
-/// With [`classify_with_headset_fov`](WorldMarkersConfig::classify_with_headset_fov), a point the
-/// panel projection put off screen (an edge arrow) but that is inside the headset's field of view
+/// A point the panel projection put off screen (an edge arrow) but that is inside the headset's field of view
 /// is reclassified on screen and its stage position clamped into the safe area, so the HUD draws
 /// its on-screen icon there for the crop. The final classification is recorded by world point for
 /// the capture seam.
@@ -67,9 +66,8 @@ pub(crate) fn classify(projection: Projection<'_>, cfg: &WorldMarkersConfig) {
     if !cfg.enabled || !IN_UPDATE_POIS.with(Cell::get) {
         return;
     }
-    if cfg.classify_with_headset_fov
-        && *projection.out_pos != ScreenPos::SCREEN_POS_ONSCREEN
-        && in_headset_fov(projection.camera, projection.world, cfg)
+    if *projection.out_pos != ScreenPos::SCREEN_POS_ONSCREEN
+        && in_headset_fov(projection.camera, projection.world)
     {
         let safe = &projection.manager.m_SafeArea;
         let inset = projection.margin;
@@ -150,6 +148,14 @@ struct Move {
     origin: Vec2,
 }
 
+/// The half-angle of the classification field of view, in degrees, used when no headset frame
+/// supplies one (the flat desktop).
+const FALLBACK_HALF_FOV_DEG: f32 = 50.0;
+
+/// How far inside the headset's field of view a marker must be to count as on screen, in degrees,
+/// so a marker at the very edge of the lenses keeps its arrow.
+const FOV_INSET_DEG: f32 = 2.0;
+
 /// A world point's exact bit pattern: `UpdatePOIs` projects a copy of the POI's transform
 /// translation, so the capture seam's read of the same translation matches it exactly.
 fn world_key(world: Vec3) -> [u32; 3] {
@@ -157,9 +163,12 @@ fn world_key(world: Vec3) -> [u32; 3] {
 }
 
 /// Whether `world` is inside the headset's field of view (both eyes' together) from the game
-/// camera, falling back to the configured symmetric field of view without a headset frame.
-fn in_headset_fov(camera: &Matrix4, world: Vec3, cfg: &WorldMarkersConfig) -> bool {
-    let inset = cfg.fov_inset_deg.max(0.0).to_radians();
+/// camera, falling back to [`FALLBACK_HALF_FOV_DEG`] without a headset frame. Deciding on the
+/// headset's field of view rather than the panel's narrower subtense keeps a marker the player can
+/// see in the world from being demoted to an edge arrow; markers outside it stay edge arrows on the
+/// panel.
+fn in_headset_fov(camera: &Matrix4, world: Vec3) -> bool {
+    let inset = FOV_INSET_DEG.to_radians();
     let fov = crate::vr::capture_views()
         .map(|views| {
             let [a, b] = views.eyes.map(|eye| {
@@ -167,7 +176,7 @@ fn in_headset_fov(camera: &Matrix4, world: Vec3, cfg: &WorldMarkersConfig) -> bo
             });
             a.union(b)
         })
-        .unwrap_or_else(|| FovTangents::symmetric(cfg.fallback_half_fov_deg.to_radians(), inset));
+        .unwrap_or_else(|| FovTangents::symmetric(FALLBACK_HALF_FOV_DEG.to_radians(), inset));
     let m = &camera.data;
     let row = |i: usize| Vec3::new(m[i * 4], m[i * 4 + 1], m[i * 4 + 2]);
     fov.contains(row(3), row(0), row(1), row(2), world)

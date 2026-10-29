@@ -74,6 +74,13 @@ const F32_ONE: [u8; 4] = [0x00, 0x00, 0x80, 0x3f];
 /// instead of dissolving -- stable under jitter).
 const DISSOLVE_NEVER: [u8; 4] = [0xe6, 0xb1, 0x61, 0xff];
 
+/// Patch the jitter-unstable material LOD dissolve out of the vegetation shaders at creation (see
+/// [`DISSOLVE_SEED`]). Bytecode-real, but it was not the issue-10 flicker and only matters while the
+/// FSR camera jitter is on, so it is off with the jitter. The patch makes the dissolve's discard
+/// unreachable (LOD transitions pop instead of dissolving), and like the PCF patch applies only to
+/// shaders created after the hook installs.
+const PATCH_LOD_DISSOLVE: bool = false;
+
 static PATCHED: AtomicUsize = AtomicUsize::new(0);
 static DISSOLVE_PATCHED: AtomicUsize = AtomicUsize::new(0);
 /// The number of screen-space decal permutations whose depth fetch has been biased since injection --
@@ -221,8 +228,8 @@ fn create_fragment_program(
     // for the duration of the (bytecode-copying) CreatePixelShader call, then restore the caller's
     // pointer. `saved` keeps the patched copy alive across the call.
     let mut saved: Option<(*const u8, u64, Vec<u8>)> = None;
-    let (patch_pcf, patch_dissolve) =
-        Config::lock_query(|c| (c.stereo.patch_shadow_pcf_hash, c.stereo.patch_lod_dissolve));
+    let patch_pcf = Config::lock_query(|c| c.stereo.patch_shadow_pcf_hash);
+    let patch_dissolve = PATCH_LOD_DISSOLVE;
     // The screen-space decal permutations' depth-UV bias, the one rewrite here that *grows* the blob.
     let bias_ssdecal = ss_decal::shader_rewrite_enabled();
     // Skip patching once eject begins, so the shader restore's bounce re-creates pristine fragment

@@ -16,7 +16,6 @@
 //! [`ButtonOutcome::Rebuild`](model::page::ButtonOutcome::Rebuild) when the step changes; the body
 //! calibration (`controllers/body/menu.rs`) is the example.
 
-mod config;
 pub(crate) mod gfx;
 pub(crate) mod model;
 pub(crate) mod pages;
@@ -24,7 +23,6 @@ mod runtime;
 
 use re_utilities::hook_library::HookLibrary;
 
-pub use crate::pause_menu::config::PauseMenuConfig;
 use crate::pause_menu::{model::state::MenuState, runtime::SESSION};
 
 /// The pause-menu detours.

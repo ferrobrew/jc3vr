@@ -40,7 +40,7 @@ fn current_wire() -> Value {
     let mut dock: Value = serde_json::from_str(DOCK_FIXTURE).expect("dock fixture JSON");
     dock["surfaces"][0]["Main"]["nodes"][0]["Leaf"]["tabs"] = json!(["Workspace"]);
     dock["surfaces"][1]["Window"][0]["nodes"][0]["Leaf"]["tabs"] = json!([
-        {"Feature": {"key": "rendering.performance", "section": "Status"}},
+        {"Feature": {"key": "rendering.previews", "section": "Status"}},
         {"Feature": {"key": "removed.feature", "section": "Controls"}}
     ]);
     dock["surfaces"][1]["Window"][0]["nodes"][0]["Leaf"]["active"] = json!(1);
@@ -72,8 +72,8 @@ fn current_layout_repairs_active_unknown_detached_tab_and_out_of_range_focus() {
 fn per_section_views_of_one_feature_load_as_one_view() {
     let mut wire = current_wire();
     wire["dock"]["surfaces"][1]["Window"][0]["nodes"][0]["Leaf"]["tabs"] = json!([
-        {"Feature": {"key": "rendering.performance", "section": "Status"}},
-        {"Feature": {"key": "rendering.performance", "section": "Controls"}}
+        {"Feature": {"key": "rendering.previews", "section": "Status"}},
+        {"Feature": {"key": "rendering.previews", "section": "Controls"}}
     ]);
     let layout = Layout::decode(Some(&wire.to_string()));
     assert!(layout.save_enabled, "{}", layout.notice);
@@ -82,7 +82,7 @@ fn per_section_views_of_one_feature_load_as_one_view() {
         layout
             .dock
             .find_tab(&View::Feature {
-                key: "rendering.performance".to_owned()
+                key: "rendering.previews".to_owned()
             })
             .is_some()
     );

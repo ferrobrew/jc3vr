@@ -1,5 +1,6 @@
-//! The Previews tab: the per-eye pipeline thumbnails, the fusable stereo pair, and the live
-//! render-target views, all fed by the capture state in [`crate::ui::render`].
+//! The Previews and performance feature's controls: the per-eye pipeline thumbnails, the fusable
+//! stereo pair, and the live render-target views, all fed by the capture state in
+//! [`crate::ui::render`]. The performance readout is in [`crate::ui::performance`].
 
 use std::sync::atomic::Ordering;
 
@@ -32,8 +33,9 @@ pub fn egui_debug_previews(ui: &mut egui::Ui, renderer: &mut egui_directx11::Ren
     // on them), so this tab only reads them.
     let mut state = EGUI_DEBUG_RENDER_STATE.lock();
 
+    // Shrinks vertically so the performance readout below the previews stays in view.
     egui::ScrollArea::both()
-        .auto_shrink([false, false])
+        .auto_shrink([false, true])
         .show(ui, |ui| {
             // Per-eye pipeline rows: each row is one eye, columns are pipeline stages.
             let aspect = unsafe {

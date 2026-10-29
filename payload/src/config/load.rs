@@ -468,22 +468,18 @@ mod tests {
             r#"
 [hud]
 distance = nan
-hud_aspect = -1.0
-render_resolution = 4294967295
 panel_scale = 0.7
 [hud.egui_panel]
 resolution = [0, 4294967295]
 aspect = inf
-[hud.follow]
-rotation_halflife = 0.0
-[pause_menu]
-enabled = false
+[vr]
+mirror = false
 "#,
         )
         .unwrap();
         validate::hud::hud(&loaded.config.hud).unwrap();
         assert_eq!(loaded.config.hud.panel_scale, 0.7);
-        assert!(!loaded.config.pause_menu.enabled);
+        assert!(!loaded.config.vr.mirror);
         assert!(
             loaded
                 .report
@@ -504,68 +500,6 @@ enabled = false
         assert_eq!(loaded.config.hud.panel_scale, 0.6);
         validate::hud::hud(&loaded.config.hud).unwrap();
         assert!(matches!(parse("[hud"), Err(LoadError::Syntax(_))));
-    }
-
-    #[test]
-    fn supported_hud_zeros_survive_settings_save_and_load_without_resets() {
-        let mut config = Config::new();
-        let h = &mut config.hud;
-        h.world_markers.depth_halflife_s = 0.0;
-        h.atlas.ammo.follow_halflife_s = 0.0;
-        h.atlas.tether.follow_halflife_s = 0.0;
-        h.atlas.wrist.fade_s = 0.0;
-        h.atlas.ammo.linger_s = 0.0;
-        h.atlas.wrist.after_damage_s = 0.0;
-        h.atlas.wrist.glance.dwell_s = 0.0;
-        h.atlas.wrist.glance.linger_s = 0.0;
-        for crop in [
-            &mut h.world_markers.crop,
-            &mut h.atlas.ammo.extents,
-            &mut h.atlas.tether.extents,
-            &mut h.atlas.wrist.heat_extents,
-        ] {
-            crop.left = 0.0;
-            crop.up = 0.0;
-            crop.right = 1.0;
-            crop.down = 1.0;
-        }
-        validate::hud::hud(h).unwrap();
-        let text = toml::to_string_pretty(&config).unwrap();
-        let path = std::env::temp_dir().join(format!(
-            "jc3vr-zero-hud-settings-{}.toml",
-            std::process::id()
-        ));
-        crate::config::write::replace(&path, text.as_bytes()).unwrap();
-        let loaded = parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        std::fs::remove_file(path).unwrap();
-        assert!(loaded.report.reset.is_empty(), "{:?}", loaded.report);
-        assert_eq!(toml::to_string_pretty(&loaded.config).unwrap(), text);
-    }
-
-    #[test]
-    fn invalid_crop_totals_and_nonfinite_sides_are_repaired_without_losing_other_settings() {
-        for value in [
-            "left = 0.0\nright = 0.0",
-            "up = 0.0\ndown = 0.0",
-            "left = nan",
-            "down = inf",
-            "right = -1.0",
-        ] {
-            let loaded = parse(&format!(
-                "[hud]\npanel_scale = 0.7\n[hud.atlas.ammo.extents]\n{value}"
-            ))
-            .unwrap();
-            validate::hud::hud(&loaded.config.hud).unwrap();
-            assert_eq!(loaded.config.hud.panel_scale, 0.7);
-            assert!(!loaded.report.reset.is_empty());
-            assert!(
-                loaded
-                    .report
-                    .reset
-                    .iter()
-                    .all(|reset| reset.path.starts_with("hud.atlas.ammo.extents"))
-            );
-        }
     }
 
     #[test]

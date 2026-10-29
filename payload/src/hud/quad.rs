@@ -39,6 +39,8 @@ use windows::{
     core::Interface as _,
 };
 
+use crate::hud::cursor::{CursorFrame, LIFT, SIZE};
+
 /// The committed, precompiled quad shaders (entry point `main`).
 const VERTEX_DXBC: &[u8] = include_bytes!("../shaders/hud_quad_vs.dxbc");
 const PIXEL_DXBC: &[u8] = include_bytes!("../shaders/hud_quad_ps.dxbc");
@@ -437,22 +439,16 @@ pub(crate) fn compute_world_corners(params: &PanelParams) -> Option<[Vec4; 4]> {
 
 /// Compute the virtual mouse cursor's world-space corners: a small square quad centered on the
 /// cursor's UV position on the panel, lifted off the panel surface toward the camera
-/// ([`CursorConfig::lift`](crate::hud::config::CursorConfig)), sized as a fraction of the panel
-/// distance so it keeps a constant apparent (angular) size like the panel. Call once per frame
+/// ([`LIFT`](crate::hud::cursor::LIFT)), sized as a fraction of the panel distance
+/// ([`SIZE`](crate::hud::cursor::SIZE)) so it keeps a constant apparent (angular) size like the
+/// panel. Call once per frame
 /// (eye 0) with the same [`PanelParams`] the panel's own corners were built from, so the cursor
-/// rides exactly the surface the UI is drawn on. Returns `None` for a degenerate aspect or size.
+/// rides exactly the surface the UI is drawn on. Returns `None` for a degenerate panel or position.
 pub(crate) fn compute_cursor_corners(
     params: &PanelParams,
-    frame: crate::hud::cursor::CursorFrame,
-    cfg: &crate::hud::config::CursorConfig,
+    frame: CursorFrame,
 ) -> Option<[Vec4; 4]> {
-    if !valid_panel(params)
-        || !cfg.size.is_finite()
-        || cfg.size <= 0.0
-        || !cfg.lift.is_finite()
-        || !frame.u.is_finite()
-        || !frame.v.is_finite()
-    {
+    if !valid_panel(params) || !frame.u.is_finite() || !frame.v.is_finite() {
         return None;
     }
 
@@ -468,9 +464,9 @@ pub(crate) fn compute_cursor_corners(
     let point = panel_center
         + right * ((frame.u - 0.5) * 2.0 * half_w)
         + up * ((0.5 - frame.v) * 2.0 * half_h)
-        - forward * cfg.lift;
+        - forward * LIFT;
 
-    let half = cfg.size * params.distance * 0.5;
+    let half = SIZE * params.distance * 0.5;
     let layout = [(-half, half), (half, half), (-half, -half), (half, -half)];
     let corners = layout.map(|(dx, dy)| (point + right * dx + up * dy).extend(1.0));
     corners

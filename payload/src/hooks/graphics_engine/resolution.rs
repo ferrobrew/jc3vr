@@ -1,30 +1,29 @@
 //! Raise the resolution of the engine's inherently reduced-resolution volumetric passes, whose coarse
 //! grids VR's wide field of view magnifies into the blocky "pixelation"/large-tile artifact around
-//! lights and explosions (issue #8). Three independent levers, each behind its own config toggle and
-//! each **off by default**: they cannot be verified in-headset from native tooling, and one can hide
-//! content, so they must be opt-in and inert when off. This is *not* a stereo-reconstruction fix (the
-//! per-eye matrices are already correct); it raises the froxel/particle/cone resolutions directly.
+//! lights and explosions (issue #8). Three independent levers, each behind its own constant and each
+//! **off**: they are not headset-verified, and one can hide content, so they stay inert until they
+//! are. This is *not* a stereo-reconstruction fix (the per-eye matrices are already correct); it
+//! raises the froxel/particle/cone resolutions directly.
 //!
 //! 1. **Fog volume** ([`fog_volume_resize_textures`]): the froxel volumetric-fog block recreates its
 //!    coarse volumetric-depth buffer at half of the full render resolution. Its
-//!    `ResizeTextures` halves the width and height with two `mulss xmm0, [0.5]` instructions; while the
-//!    toggle is on, both are no-op'd around the call so the coarse buffer is recreated at full
+//!    `ResizeTextures` halves the width and height with two `mulss xmm0, [0.5]` instructions; while
+//!    [`FOG_FULL_RES`] is on, both are no-op'd around the call so the coarse buffer is recreated at full
 //!    resolution, touching nothing else (the full-res colour and volume textures are unchanged).
-//!    Because `ResizeTextures` only runs when the fog textures are recreated (a resolution change), the
-//!    toggle takes effect at the next resolution change, not immediately.
+//!    `ResizeTextures` only runs when the fog textures are recreated (a resolution change).
 //! 2. **Low-res particles** ([`lr_particle_render_pass_draw`]): each particle draw is routed to the
 //!    low-resolution particle pass or the full-resolution transparent pass by the particle block
 //!    type's [`m_LowResRendering`](RenderBlockTypeParticle::m_LowResRendering)/
 //!    [`m_ForceLowResRendering`](RenderBlockTypeParticle::m_ForceLowResRendering) flags. Clearing both
 //!    routes every particle to the full-resolution transparent pass (which always draws, so — unlike
 //!    disabling the low-res pass's compositing — particles do not vanish). Applied one frame ahead (the
-//!    routing runs during the sim add-to-render, before this render-time pass draws) and reverted when
-//!    the toggle turns off.
+//!    routing runs during the sim add-to-render, before this render-time pass draws), behind
+//!    [`PARTICLES_FULL_RES`].
 //! 3. **Spotlight volumetrics** ([`copy_lights_to_update`]): the per-frame light gather routes the
 //!    volumetric spot-light cone through a quarter-resolution render setup when
-//!    [`enable_low_res_spot_light_volume`] is set. The toggle scopes that global to `false` around the
-//!    gather, so the engine's own full-resolution branch runs (main render setup, cone block type's
-//!    low-res flag cleared) — the lowest-risk lever.
+//!    [`enable_low_res_spot_light_volume`] is set. [`SPOTLIGHT_FULL_RES`] scopes that global to
+//!    `false` around the gather, so the engine's own full-resolution branch runs (main render setup,
+//!    cone block type's low-res flag cleared) — the lowest-risk lever.
 
 use std::ffi::c_void;
 
@@ -40,14 +39,30 @@ use windows::Win32::System::Memory::{
     PAGE_EXECUTE_READWRITE, PAGE_PROTECTION_FLAGS, VirtualProtect,
 };
 
-use crate::config::Config;
-
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&FOG_VOLUME_RESIZE_TEXTURES_BINDER)
         .with_static_binder(&LR_PARTICLE_RENDER_PASS_DRAW_BINDER)
         .with_static_binder(&COPY_LIGHTS_TO_UPDATE_BINDER)
 }
+
+/// Recreate the froxel volumetric-fog block's coarse volumetric-depth buffer at full render
+/// resolution instead of half. The fog block bilaterally upsamples that coarse buffer, and VR's wide
+/// FOV magnifies its grid into the blocky tiles around lights and explosions. Takes effect at the
+/// next resolution change and costs fog fill rate and memory. Off: not headset-verified, and a
+/// coarse-buffer format the shader assumes to be half-res could misregister.
+const FOG_FULL_RES: bool = false;
+
+/// Route particles to the full-resolution transparent pass instead of the low-resolution particle
+/// pass. The full-res transparent pass always draws, so particles reroute rather than vanish, but
+/// this is the riskiest lever: a particle family that does not survive the reroute could look wrong
+/// or drop out, and it costs transparent-pass fill rate. Off: not headset-verified.
+const PARTICLES_FULL_RES: bool = false;
+
+/// Render volumetric spot-light cones at full resolution instead of quarter resolution, through the
+/// engine's own full-resolution branch. The lowest-risk of the three levers, but it still costs cone
+/// fill rate. Off: not headset-verified.
+const SPOTLIGHT_FULL_RES: bool = false;
 
 // One of the two `mulss xmm0, cs:[0.5]` sites in `RenderBlockTypeFogVolume::ResizeTextures` that halve
 // the coarse volumetric-depth buffer's width/height. The RIP-relative displacement differs per site,
@@ -75,7 +90,7 @@ const FOG_HALVE_SITES: [FogHalveSite; 2] = [
 const FOG_HALVE_NOP: [u8; 8] = [0x0F, 0x1F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00];
 
 // `CRenderBlockTypeFogVolume::ResizeTextures` -- recreates the froxel fog textures at a resolution
-// change. While the fog full-res toggle is on, the two width/height halving multiplies are no-op'd
+// change. While `FOG_FULL_RES` is on, the two width/height halving multiplies are no-op'd
 // around the call so the coarse volumetric-depth buffer is recreated at full resolution. Scoped: the
 // patch is verified, applied, and reverted within this single call, which runs on the main thread with
 // no draw in flight (the registered resolution-change callback), so no other code sees the patched
@@ -83,7 +98,7 @@ const FOG_HALVE_NOP: [u8; 8] = [0x0F, 0x1F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00];
 #[detour(address = RenderBlockTypeFogVolume::ResizeTextures_ADDRESS)]
 fn fog_volume_resize_textures(this: *mut c_void, width: u32, height: u32) -> bool {
     let original = FOG_VOLUME_RESIZE_TEXTURES.get().unwrap();
-    if !Config::lock_query(|c| c.stereo.fog_full_res) {
+    if !FOG_FULL_RES {
         return original.call(this, width, height);
     }
     // SAFETY: the halving sites are constant code addresses; `nop_fog_halving` verifies each still
@@ -158,10 +173,10 @@ fn lr_particle_render_pass_draw(this: *mut LRParticleRenderPass) {
     LR_PARTICLE_RENDER_PASS_DRAW.get().unwrap().call(this);
 }
 
-/// Force the particle block type's low-res routing flags off while the full-res toggle is on (saving
-/// the engine's values on the first apply), and restore them when it turns off.
+/// Force the particle block type's low-res routing flags off while [`PARTICLES_FULL_RES`] is on
+/// (saving the engine's values on the first apply), and restore them when it is off.
 fn reconcile_low_res_particles() {
-    let full_res = Config::lock_query(|c| c.stereo.particles_full_res);
+    let full_res = PARTICLES_FULL_RES;
     // SAFETY: the particle block type is a process-lifetime singleton; the flags are plain bytes.
     let Some(block_type) = (unsafe { RenderBlockTypeParticle::get() }) else {
         return;
@@ -185,13 +200,13 @@ fn reconcile_low_res_particles() {
 
 // `CLightManager::CopyLightsToUpdate` -- the per-frame light gather that routes the volumetric
 // spot-light cone through a quarter-resolution render setup when `enable_low_res_spot_light_volume` is
-// set. While the spotlight full-res toggle is on, the global is scoped to `false` around the gather so
+// set. While `SPOTLIGHT_FULL_RES` is on, the global is scoped to `false` around the gather so
 // the engine's own full-resolution branch runs (main render setup, cone block type low-res flag
 // cleared); the saved value is restored after, so the engine's setting is untouched when off.
 #[detour(address = LightManager::CopyLightsToUpdate_ADDRESS)]
 fn copy_lights_to_update(this: *mut LightManager, reserved_slots: u32, dt: f32) {
     let original = COPY_LIGHTS_TO_UPDATE.get().unwrap();
-    if !Config::lock_query(|c| c.stereo.spotlight_full_res) {
+    if !SPOTLIGHT_FULL_RES {
         original.call(this, reserved_slots, dt);
         return;
     }

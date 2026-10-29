@@ -21,9 +21,16 @@ use crate::{
                 decline_warning, restore_viewport, unsplittable_context,
             },
         },
-        reconstruction,
+        reconstruction::{self, RECONSTRUCT_OFFAXIS_INVERSE},
     },
 };
+
+/// Replace the symmetric froxel tile-bounds constants that `DrawClustered` uploads to the
+/// light-assignment fragment shader with per-eye off-axis-derived values. The engine reconstructs a
+/// symmetric frustum from the vertical FOV and aspect ratio, which cannot encode the off-axis shift
+/// of the VR per-eye projections, so lights are otherwise assigned to the wrong tiles: blocky,
+/// screen-aligned lighting artifacts. VR only; a no-op when no VR frame is in flight.
+const FIX_CLUSTERED_LIGHT_FRUSTUM: bool = true;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&DRAW_CLUSTERED_BINDER)
@@ -49,27 +56,15 @@ fn draw_clustered(
     a3: *mut c_void,
     a4: *mut HTexture_t,
 ) {
-    let (fix_frustum, per_eye, clustered, light_view) = Config::lock_query(|c| {
+    let (per_eye, clustered, light_view) = Config::lock_query(|c| {
         (
-            c.stereo.fix_clustered_light_frustum,
-            c.stereo.single_pass.reconstruct_per_eye && c.stereo.reconstruct_offaxis_inverse,
+            c.stereo.single_pass.reconstruct_per_eye && RECONSTRUCT_OFFAXIS_INVERSE,
             c.stereo.single_pass.clustered_per_eye,
             c.stereo.single_pass.clustered_per_eye_light_view,
         )
     });
-    let run = |eye: Option<usize>| {
-        run_draw_clustered(
-            RunRequest {
-                fix_frustum,
-                eye,
-                light_view,
-            },
-            this,
-            rc,
-            a3,
-            a4,
-        )
-    };
+    let run =
+        |eye: Option<usize>| run_draw_clustered(RunRequest { eye, light_view }, this, rc, a3, a4);
 
     // SAFETY: `rc` is the live render context for this dispatch; the caller (the engine's draw
     // dispatch) guarantees it is valid for the duration of `DrawClustered`.
@@ -80,7 +75,7 @@ fn draw_clustered(
     // `decline_split_for_context`'s doc comment.
     let split_eye = |eye: usize| {
         let splittable = ctx.is_some_and(|ctx| !unsplittable_context(ctx as usize));
-        (clustered && fix_frustum && splittable).then_some(eye)
+        (clustered && FIX_CLUSTERED_LIGHT_FRUSTUM && splittable).then_some(eye)
     };
 
     // `demoted_engaged` is read only when `split_fullscreen_pass` reports `Demoted`, in which case
@@ -132,8 +127,6 @@ fn draw_clustered(
 /// What one `run_draw_clustered` is asked to do.
 #[derive(Clone, Copy)]
 struct RunRequest {
-    /// Whether to override the tile bounds at all.
-    fix_frustum: bool,
     /// The eye whose half of the tile grid this run should assign lights into, or `None` to build the
     /// whole grid as the un-split pass does.
     eye: Option<usize>,
@@ -151,7 +144,7 @@ fn run_draw_clustered(
     a4: *mut HTexture_t,
 ) -> bool {
     // When the fix is disabled, call through without setting the thread-local flag.
-    if !request.fix_frustum {
+    if !FIX_CLUSTERED_LIGHT_FRUSTUM {
         DRAW_CLUSTERED.get().unwrap().call(this, rc, a3, a4);
         return false;
     }

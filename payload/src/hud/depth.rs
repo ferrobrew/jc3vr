@@ -1,5 +1,9 @@
 //! Dynamic HUD distance from the scene depth distribution (issue #14).
 //!
+//! The shipped policy is deterministic: the panel eases toward the near distance while the player
+//! rides a vehicle and back to the base distance otherwise. The histogram policy below is kept
+//! behind [`DepthShiftTuning::use_depth_histogram`], which is off.
+//!
 //! A compute pass ([`depth_histogram_cs`](../shaders/depth_histogram_cs.hlsl)) samples the whole
 //! main depth buffer on a stride grid and accumulates a log-spaced histogram of linear view
 //! depths. The result reads back asynchronously (a small staging ring, never stalling the GPU),
@@ -9,8 +13,8 @@
 //! base distance. Full-screen UI (menus, movies) always reads as far. The panel's
 //! constant-apparent-size scaling makes the shift a pure depth change.
 //!
-//! The default policy is threshold occupancy with hysteresis; a continuous percentile-following
-//! policy is available behind [`DepthShiftConfig::continuous`] for experimentation.
+//! The histogram's policy is threshold occupancy with hysteresis; a continuous percentile-following
+//! policy is kept behind [`DepthShiftTuning::continuous`], which is off.
 
 use anyhow::Context as _;
 use jc3gi::graphics_engine::{device::Device, graphics_engine::GraphicsEngine};
@@ -27,7 +31,62 @@ use windows::Win32::Graphics::{
     Dxgi::Common::DXGI_FORMAT_R32_UINT,
 };
 
-use crate::hud::{HudMode, config::DepthShiftConfig};
+use crate::hud::HudMode;
+
+/// The dynamic distance's fixed tuning.
+pub(crate) const DEPTH_SHIFT: DepthShiftTuning = DepthShiftTuning {
+    use_depth_histogram: false,
+    near_threshold: 2.0,
+    near_occupancy: 0.2,
+    hysteresis: 0.05,
+    near_distance: 1.1,
+    halflife: 0.35,
+    continuous: false,
+    percentile: 0.10,
+    margin: 0.3,
+    sample_stride: 4,
+    mask_by_hud: true,
+    min_depth: 0.0,
+};
+
+/// How the panel distance follows the scene (see the module docs).
+#[derive(Copy, Clone)]
+pub(crate) struct DepthShiftTuning {
+    /// Drive the near shift from the scene depth histogram instead of the vehicle state. The
+    /// vehicle flag is deterministic -- near while riding, base otherwise -- and immune to the
+    /// histogram's false positives (a first-person weapon filling the view); the histogram
+    /// generalizes to corridors and interiors the flag cannot see.
+    pub use_depth_histogram: bool,
+    /// Depths nearer than this count as near-field, in meters.
+    pub near_threshold: f32,
+    /// The fraction of the frame that must be near-field to engage the near shift.
+    pub near_occupancy: f32,
+    /// The occupancy slack below the engage level before the shift releases (hysteresis, so the
+    /// panel does not flap at the boundary).
+    pub hysteresis: f32,
+    /// The panel distance while the near shift is engaged, in meters.
+    pub near_distance: f32,
+    /// The easing halflife between distances, in seconds.
+    pub halflife: f32,
+    /// Follow the scene continuously instead of the threshold policy: the panel sits
+    /// [`margin`](DepthShiftTuning::margin) inside the configured percentile of the depth
+    /// distribution, clamped to [`near_distance`](DepthShiftTuning::near_distance) and the base
+    /// distance.
+    pub continuous: bool,
+    /// The depth percentile the continuous policy follows (0-1).
+    pub percentile: f32,
+    /// How far inside the percentile depth the continuous policy sits, in meters.
+    pub margin: f32,
+    /// Sample every Nth pixel of the depth buffer on both axes.
+    pub sample_stride: u32,
+    /// Weight histogram samples by the HUD texture's alpha where the sample's camera ray meets
+    /// the panel, so the statistics describe the depth behind visible HUD content rather than
+    /// the whole frame.
+    pub mask_by_hud: bool,
+    /// Ignore depth samples nearer than this, in meters (a floor for first-person viewmodel
+    /// geometry; 0 disables).
+    pub min_depth: f32,
+}
 
 /// The committed, precompiled histogram compute shader (entry point `main`).
 const COMPUTE_DXBC: &[u8] = include_bytes!("../shaders/depth_histogram_cs.dxbc");
@@ -251,7 +310,7 @@ impl DepthShift {
         &mut self,
         context: &ID3D11DeviceContext,
         graphics_engine: &GraphicsEngine,
-        cfg: &DepthShiftConfig,
+        cfg: &DepthShiftTuning,
         mask: Option<MaskInputs<'_>>,
     ) {
         // SAFETY: the depth texture and its SRV belong to the live graphics engine; the buffers
@@ -394,7 +453,7 @@ impl DepthShift {
     /// The frame's panel distance: the policy target eased with a critically-damped exponential
     /// (`halflife` seconds). Falls back to `base` (the configured panel distance) until stats
     /// exist. Call once per frame (eye 0), after [`sample`](DepthShift::sample).
-    pub fn distance(&mut self, cfg: &DepthShiftConfig, mode: HudMode, base: f32) -> f32 {
+    pub fn distance(&mut self, cfg: &DepthShiftTuning, mode: HudMode, base: f32) -> f32 {
         let target = self.target(cfg, mode, base);
         let dt = self
             .last_update
@@ -412,7 +471,7 @@ impl DepthShift {
     }
 
     /// The policy's target distance for this frame, before smoothing.
-    fn target(&mut self, cfg: &DepthShiftConfig, mode: HudMode, base: f32) -> f32 {
+    fn target(&mut self, cfg: &DepthShiftTuning, mode: HudMode, base: f32) -> f32 {
         // Full-screen UI reads as far, always.
         if mode != HudMode::Hud {
             self.near_engaged = false;
@@ -484,7 +543,7 @@ impl DepthShift {
 }
 
 /// Derive the policy inputs from a read-back histogram.
-fn derive_stats(bins: &[u32; SLOT_COUNT], cfg: &DepthShiftConfig) -> Option<DepthStats> {
+fn derive_stats(bins: &[u32; SLOT_COUNT], cfg: &DepthShiftTuning) -> Option<DepthStats> {
     let total = bins[BIN_COUNT];
     if total == 0 {
         return None;

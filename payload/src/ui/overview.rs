@@ -506,7 +506,7 @@ fn render_snapshot(
     ui.horizontal_wrapped(|ui| {
         for (label, feature) in [
             ("All feature status", FeatureId::AllStatus),
-            ("Open performance", FeatureId::Performance),
+            ("Open performance", FeatureId::Previews),
             ("Open tracking capture", FeatureId::TrackingCapture),
             ("Open video recording", FeatureId::Video),
         ] {

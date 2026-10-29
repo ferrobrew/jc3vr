@@ -136,7 +136,7 @@ impl TriggerSample {
 }
 
 fn native_pointer_enabled() -> bool {
-    Config::lock_query(|c| c.hud.redirect && c.hud.quad && c.hud.cursor.enabled)
+    Config::lock_query(|c| c.hud.redirect && c.hud.quad)
 }
 
 /// One pointing hand's press state against a panel. The game-UI pointer keeps one in

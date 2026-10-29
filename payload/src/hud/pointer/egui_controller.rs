@@ -95,7 +95,7 @@ pub(crate) fn update_egui_controller(
         (
             panel.controller_pointer,
             ClickSlop {
-                radius: panel.click_slop,
+                radius: CLICK_SLOP,
                 aspect: panel.aspect,
             },
         )
@@ -178,6 +178,12 @@ pub(crate) fn scroll_delta(stick: Vec2, dt: f32) -> Vec2 {
     let dt = dt.min(MAX_SCROLL_DT);
     Vec2::new(-axis_rate(stick.x), axis_rate(stick.y)) * SCROLL_SPEED * dt
 }
+
+/// How far a controller's held trigger press may wander from where it began, as a fraction of the
+/// panel's height, and still click: until the hit leaves this radius the pointer stays at the
+/// press, so a hand's tremor never turns a press into a drag. Past it the press drags from the
+/// live hit.
+const CLICK_SLOP: f32 = 0.03;
 
 /// How far a held press's hit may wander from where the press began and still click.
 #[derive(Debug, Copy, Clone, PartialEq)]

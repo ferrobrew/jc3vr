@@ -14,7 +14,7 @@ feature off, the hooks and scopes do not exist.
 
 ## Using it
 
-- **Performance tab → "Profiler (issue #34)"**: a checkbox enables scope collection and shows
+- **Rendering > Previews and performance → "Profiler (issue #34)"**: a checkbox enables scope collection and shows
   puffin's live flame graph; a button captures ~5 s of frames. Two further checkboxes control the
   fine layers — the per-draw render-block scopes (off by default, because they inflate the
   draw-submission path they measure) and the GPU per-pass timestamps (on by default, because they
@@ -57,7 +57,7 @@ turns it on for the cases where the per-type timeline is actually the question.
 
 What survives unconditionally is the cheap part of its signal: the same hook adds each finished
 type run's block count to a per-type counter (a relaxed atomic add against a thread-memoized slot,
-no lock and no allocation), and those totals go to the Performance tab and the periodic log line.
+no lock and no allocation), and those totals go to the Previews and performance readout and the periodic log line.
 They undercount by the final run of each pass draw, which the engine closes at the pass tail rather
 than through a type switch.
 
@@ -96,7 +96,7 @@ recording the dispatch, measured between the dispatch's begin and end and report
 span that tracks the submit span dispatch after dispatch is a pipeline being fed just in time
 (submission-bound); a GPU span that outruns submission is real shading cost. The per-frame
 averages of all four numbers go to the log every five seconds while collection is on, and to the
-Performance tab, so a session can be read without opening a trace at all.
+Previews and performance readout, so a session can be read without opening a trace at all.
 
 The per-pass subdivision costs two timestamp queries per pass per dispatch and has its own
 checkbox; turning it off leaves the coarse seams, and busy degenerates to the whole span.

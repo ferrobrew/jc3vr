@@ -41,6 +41,18 @@ use crate::{
     thread_role::{self, ThreadRole},
 };
 
+/// Restore the TAA-jitter and shadow-phase frame counters between the stereo eyes, so every dispatch
+/// in a frame runs on the same jitter phase, shadow parity, and constant-buffer ring slot.
+pub(crate) const RESTORE_FRAME_COUNTERS: bool = true;
+
+/// Drain the engine's draw-dispatch CPU fragment after each eye's `Draw`, which
+/// `WaitForCPUDrawToFinish` does not. `DispatchDraw` kicks that fragment to run the render passes
+/// asynchronously, and the engine only waits on it at the next `Draw`'s entry, so without this eye
+/// 0's fragment is still in flight when the between-eye snapshot and restore mutates the shared
+/// render-frame state, and the fragment reads a torn per-camera context and faults: the
+/// intermittent open-world crash. See [`drain_draw_thread_fragment`].
+pub(crate) const DRAIN_DRAW_FRAGMENT: bool = true;
+
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&GAME_UPDATE_BINDER)
@@ -246,26 +258,14 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
 
         let game = game.as_mut().unwrap();
 
-        // Start of a frame: publish the master toggle (and restore_frame_counters) from config into
-        // the live stereo state, which the render hooks read via `crate::stereo`. Copy the config
-        // values out and drop the lock before driving the eye loop / engine work.
-        let (
-            stereo,
-            restore_counters,
-            present_eye_0,
-            restore_cb_ring,
-            restore_ssao,
-            restore_gi,
-            invalidate_terrain_cb,
-        ) = Config::lock_query(|c| {
+        // Start of a frame: publish the master toggle from config into the live stereo state, which
+        // the render hooks read via `crate::stereo`. Copy the config values out and drop the lock
+        // before driving the eye loop / engine work.
+        let (stereo, present_eye_0, restore_cb_ring) = Config::lock_query(|c| {
             (
                 c.stereo.enabled,
-                c.stereo.restore_frame_counters,
                 c.stereo.present_eye_0,
                 c.stereo.restore_cb_ring,
-                c.stereo.restore_ssao_history,
-                c.stereo.restore_gi_cascade,
-                c.stereo.invalidate_terrain_cb,
             )
         });
         // A running VR session always renders both eyes (the XR swapchain has a slice per eye), so
@@ -280,7 +280,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // eyes drained on this thread before the frame ends.
         let defer_tail = stereo
             && vr_frame.is_some()
-            && Config::lock_query(|c| c.stereo.defer_frame_tail)
+            && DEFER_FRAME_TAIL
             && !tracing_active()
             && !crate::capture::is_active()
             && !crate::debug::stereo_diff::is_active();
@@ -311,7 +311,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             // Snapshot the prologue frame counters so we can rewind them before each later
             // dispatch, keeping all dispatches on the same jitter phase / shadow parity / CB ring
             // (see RESTORE_FRAME_COUNTERS).
-            let frame_counters = restore_counters.then(snapshot_frame_counters);
+            let frame_counters = RESTORE_FRAME_COUNTERS.then(snapshot_frame_counters);
             // Snapshot the RenderEngine per-Draw constant-buffer ring index so we can rewind it
             // before each later dispatch: it advances once per Draw and is not part of the frame
             // counters above, so without this the dispatches select different CB pool slots (see
@@ -321,8 +321,8 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             // resolves against the same SSAO slot and refreshes the same LPV cascade -- the two
             // passes that carry an unsynchronized per-eye history (see RESTORE_SSAO_HISTORY /
             // RESTORE_GI_CASCADE).
-            let ssao_history = restore_ssao.then(snapshot_ssao_history).flatten();
-            let gi_cascade = restore_gi.then(snapshot_gi_cascade).flatten();
+            let ssao_history = RESTORE_SSAO_HISTORY.then(snapshot_ssao_history).flatten();
+            let gi_cascade = RESTORE_GI_CASCADE.then(snapshot_gi_cascade).flatten();
             // Diagnostic (only while a trace is collecting, so it costs nothing in normal play):
             // confirm the between-dispatch restores are actually reaching live state -- a
             // `None`/null here means the snapshot missed and the restore is a silent no-op.
@@ -358,7 +358,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             TraceState::record(TraceEvent::FrameBegin {
                 stereo: true,
                 present_eye: Some(present_eye),
-                restore_counters: Some(restore_counters),
+                restore_counters: Some(RESTORE_FRAME_COUNTERS),
             });
 
             // (eye index, far phase) per dispatch, in order.
@@ -392,7 +392,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
                     // the distant tessellated terrain (a sheared horizon wedge in VR). Only
                     // meaningful while the counters are restored -- otherwise each dispatch
                     // already gets a fresh frame number and re-uploads on its own.
-                    if restore_counters && invalidate_terrain_cb {
+                    if RESTORE_FRAME_COUNTERS && INVALIDATE_TERRAIN_CB {
                         invalidate_terrain_cbs();
                     }
                     if let Some(ring) = cb_ring {
@@ -573,6 +573,33 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
     }
 }
 
+/// Defer the frame tail (the final dispatch's draw-thread drain, the VR eye blit and submit, and
+/// the desktop mirror) onto a dedicated tail thread, so the next frame's sim tick runs on the main
+/// thread while the draw thread finishes eye 1 and the GPU drains its tail: the frame-boundary
+/// starvation bubble the profiler measures as "GPU idle". Safe by construction: the next frame's
+/// `vr::frame_begin` blocks on the VR runtime lock, which the tail releases only after the blit is
+/// recorded. The mirror moves before the XR submit in this mode, costing it a little HMD submit
+/// latency. See `crate::vr::tail`.
+const DEFER_FRAME_TAIL: bool = true;
+
+/// Restore the SSAO temporal history index between the two stereo eyes. The index advances once
+/// per SSAO draw and is not reset by the first-pass force, so the two eyes otherwise resolve against
+/// different history slots: half the per-eye MainColor divergence.
+const RESTORE_SSAO_HISTORY: bool = true;
+
+/// Restore the global-illumination cascade index between the two stereo eyes. It toggles which LPV
+/// cascade is refreshed each GI draw, so the two eyes otherwise leave the cascades in different
+/// freshness states: the other half of the per-eye MainColor divergence, with
+/// [`RESTORE_SSAO_HISTORY`].
+const RESTORE_GI_CASCADE: bool = true;
+
+/// Invalidate the terrain tessellation constant-buffer cache between the two eyes, so eye 1
+/// re-uploads it with its own projection. The terrain blocks cache the baked view-projection keyed
+/// on the render frame number, which [`RESTORE_FRAME_COUNTERS`] pins across both eyes, so eye 1
+/// otherwise reuses eye 0's projection for the distant tessellated terrain: a sheared horizon wedge
+/// in VR, where the per-eye off-axis projections differ.
+const INVALIDATE_TERRAIN_CB: bool = true;
+
 /// Last-seen thread id for [`game_update_render`]. See
 /// [`graphics_engine::graphics_engine::log_hook_thread`].
 static GAME_UPDATE_RENDER_THREAD: AtomicU32 = AtomicU32::new(0);
@@ -630,7 +657,7 @@ fn restore_effect_info(state: &EffectInfoState) {
 /// per-camera context and faults (the intermittent open-world crash). Mirrors the engine's own guard so
 /// it cannot spin on a build that draws inline.
 pub(crate) unsafe fn drain_draw_thread_fragment(ge: &mut GraphicsEngine) {
-    if !Config::lock_query(|c| c.stereo.drain_draw_fragment) {
+    if !DRAIN_DRAW_FRAGMENT {
         return;
     }
     unsafe {
@@ -776,7 +803,7 @@ fn snapshot_frame_counters() -> RenderFrameCounters {
 /// eye, by stamping every cache slot with a frame number that cannot match the current one. The
 /// blocks cache the baked (per-eye off-axis) view-projection keyed on `m_RenderFrameNo`; the previous
 /// frame's index is guaranteed to differ from any live frame's, so it invalidates every slot. See
-/// `stereo.invalidate_terrain_cb`.
+/// [`INVALIDATE_TERRAIN_CB`].
 fn invalidate_terrain_cbs() {
     unsafe {
         let sentinel = get_render_frame_counters().m_FrameIndex.wrapping_sub(1);

@@ -1,10 +1,10 @@
-//! Stereo, resolution, and graphics experiment controls, plus render-thread capture state.
+//! The Rendering page's stereo and foveation controls, the Experimental page's single-pass stereo,
+//! far field, and post-FX controls, plus render-thread capture state.
 //!
 //! The feature bodies use one section module per concern. The capture state lives in [`capture`],
 //! independent of whether a feature is drawn.
 
 mod capture;
-mod corrections;
 mod far_field;
 mod passes;
 mod post_fx;
@@ -32,21 +32,16 @@ pub(crate) fn controls(ui: &mut egui::Ui, id: FeatureId) {
     let mut cfg = config::edit();
     let cfg = &mut *cfg;
     match id {
-        FeatureId::Stereo => {
-            stereo::section(ui, cfg);
-            corrections::section(ui, cfg);
-        }
-        FeatureId::Resolution => resolution::section(ui, cfg),
-        FeatureId::Graphics => {
-            far_field::section(ui, cfg);
-            single_pass::section(ui, cfg);
-            post_fx::section(ui, cfg);
-        }
+        FeatureId::Stereo => stereo::section(ui, cfg),
+        FeatureId::Foveation => resolution::section(ui, cfg),
+        FeatureId::SinglePass => single_pass::section(ui, cfg),
+        FeatureId::FarField => far_field::section(ui, cfg),
+        FeatureId::PostFx => post_fx::section(ui, cfg),
         _ => {}
     }
 }
 
 pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
     let body: FeatureBody = |ui, _| far_field::readout(ui);
-    (id == FeatureId::Graphics).then_some(body)
+    (id == FeatureId::FarField).then_some(body)
 }

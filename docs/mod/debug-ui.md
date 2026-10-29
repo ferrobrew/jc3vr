@@ -2,13 +2,19 @@
 
 ## Navigation
 
-The debug window opens on Overview. The eight pages are Overview, Body/tracking, Hands/interaction, Weapons, Movement/vehicles, Rendering, Input/bindings, and Capture/testing. A wide window keeps the page list and feature list beside the selected feature. A narrow window uses page and feature selectors. Feature labels remain outside the content scroll area.
+The debug window opens on Overview. The nine pages are Overview, Body/tracking, Hands/interaction, Weapons, Movement/vehicles, Rendering, Input/bindings, Capture/testing, and Experimental. A wide window keeps the page list and feature list beside the selected feature. A narrow window uses page and feature selectors. Feature labels remain outside the content scroll area.
 
 Each feature renders its controls followed by a collapsible Live status readout, open by default. A feature without controls shows only its readout, and a feature without a readout shows no Live status header. Readouts run after the controls return, so they hold no configuration edit guard. Content scroll state uses the stable feature key rather than a displayed label or list position. Diagnostics groups are closed by default where a feature has one. Visualization switches and the shared overlay settings live only in the global drawer described below. Existing configuration fields, actions, and defaults remain the domain modules' responsibility.
 
-`payload/src/ui/dispatch.rs` routes every catalog feature (`payload/src/ui/catalog.rs`) to its renderer. The route match is exhaustive, so a new feature does not compile until it has a route. The controller, game, render, and diagnostics modules hand out each feature's controls and readout as plain functions, which lets a renderer-free test check that every feature renders something without drawing it.
+`payload/src/ui/dispatch.rs` routes every catalog feature (`payload/src/ui/catalog.rs`) to its renderer. The route match is exhaustive, so a new feature does not compile until it has a route. The controller, game, and render modules hand out each feature's controls and readout as plain functions, which lets a renderer-free test check that every feature renders something without drawing it.
 
-Director time, safety, heat, teleport, spawn, recording, and keyboard tools are features of Capture/testing. Environment time and weather remain under that page. The full controller binding reference and wrist-summary settings remain under Input/bindings. The pause menu retains calibration and the existing comfort, display, and core control settings.
+Director time, safety, heat, teleport, spawn, recording, and keyboard tools are features of Capture/testing. Environment time and weather remain under that page. The full controller binding reference and wrist-summary settings remain under Input/bindings. The pause menu retains calibration and the existing comfort, display, and core control settings. A setting the pause menu exposes has no copy in the debug UI.
+
+Rendering holds Runtime, Stereo, Foveation, HUD, and Previews and performance. Capture/testing's Render capture dumps the render trace, with its frame count and per-eye screenshots, and holds the live log filter. Experimental holds the single-pass stereo, far field, and post-FX skip controls, and a button that opens the render RE window.
+
+## Render RE window
+
+The render RE window is a separate egui window (`payload/src/ui/diagnostics.rs`) for single-pass stereo and render reverse-engineering. It holds the render-block type registry toggles, the per-eye skip toggles and the skip-pass range, the eye-1 gates, the exposure A/B, the render trace's options (the MainColor means at the stage brackets and per pass, the render-target hashes, the global constants, the per-eye draw diff, and the brightness-step auto-capture), the terrain and flicker diagnostics, and the per-eye render camera readout. The Experimental page's button opens it and its close button closes it. Its open state lives in the UI and is not persisted. It follows the main window's read-only boundary: while gameplay input owns the controls, its contents are disabled.
 
 ## Input ownership
 

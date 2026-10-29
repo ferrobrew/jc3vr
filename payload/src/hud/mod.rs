@@ -21,7 +21,7 @@
 //! The panel has two modes (see [`HudMode`], chosen per frame by [`current_mode`]): the gameplay HUD
 //! lazily follows the head's orientation with critically-damped quaternion slerp, while full-screen
 //! UI (movies, loading screens, menus) is world-static -- latched in place so the head can look away
-//! from it. Each mode also has its own aspect ([`HudConfig::hud_aspect`] / [`HudConfig::movie_aspect`]).
+//! from it. Each mode also has its own aspect ([`HUD_ASPECT`] / [`MOVIE_ASPECT`]).
 //! The panel's world-space corners are computed once per frame (eye 0) and projected through each
 //! eye's own per-eye VP, so it sits at a finite world position with correct stereo depth rather than
 //! being head-locked at infinity.
@@ -55,7 +55,7 @@ use std::{
     time::Instant,
 };
 
-pub use config::{HudConfig, ReticleAlign};
+pub use config::HudConfig;
 use glam::{Mat3, Mat4, Quat, Vec2, Vec3};
 use jc3gi::{
     camera::camera_manager::CameraManager,
@@ -78,10 +78,9 @@ use crate::{
 /// [`menu_world_lock`], which only freezes for in-game menus with a valid camera.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum HudMode {
-    /// Gameplay HUD: rendered at [`HudConfig::hud_aspect`], head-following.
+    /// Gameplay HUD: rendered at [`HUD_ASPECT`], head-following.
     Hud,
-    /// Full-screen UI -- movies, loading screens, and menus: rendered at
-    /// [`HudConfig::movie_aspect`].
+    /// Full-screen UI -- movies, loading screens, and menus: rendered at [`MOVIE_ASPECT`].
     Movie,
 }
 
@@ -122,12 +121,42 @@ pub fn menu_world_lock() -> bool {
         }
 }
 
-/// The effective HUD aspect (width / height) for `mode`: [`HudConfig::hud_aspect`] in gameplay,
-/// [`HudConfig::movie_aspect`] for full-screen UI.
-fn aspect_for(cfg: &HudConfig, mode: HudMode) -> f32 {
+/// Aspect ratio (width / height) for the gameplay HUD; `1.0` is square. The effective aspect for
+/// the current frame ([`HUD_ASPECT`] or [`MOVIE_ASPECT`], per the [`HudMode`]) is the single source
+/// of truth for the HUD's shape: the render-target dimensions, the floating panel, the marker
+/// projection ([`compute_panel_vp`]), and the Scaleform viewport all derive from it, so they cannot
+/// drift out of sync.
+pub(crate) const HUD_ASPECT: f32 = 1.3;
+
+/// Aspect ratio (width / height) for full-screen UI -- movies, loading screens, and menus
+/// ([`HudMode::Movie`]); `16:9`. See [`HUD_ASPECT`].
+pub(crate) const MOVIE_ASPECT: f32 = 16.0 / 9.0;
+
+/// HUD render-target scale, applied to the geometric mean of the **per-eye** render resolution.
+/// The texture's longer axis is `RENDER_SCALE * sqrt(eye_width * eye_height)` pixels; the shorter
+/// axis follows from the effective aspect. Ignored when [`RENDER_RESOLUTION`] pins the size
+/// outright.
+///
+/// The geometric mean, rather than the larger axis, keeps the HUD's pixel budget stable as the
+/// render target's shape changes: a per-eye target is much taller than it is wide, and keying off
+/// the longer axis would inflate the HUD for a shape the HUD does not share.
+const RENDER_SCALE: f32 = 1.5;
+
+/// A pin for the HUD render target's longer axis, in pixels, ignoring [`RENDER_SCALE`] and the
+/// render resolution entirely. `None` derives the size as described on [`RENDER_SCALE`].
+///
+/// The HUD is a flat panel viewed at a fixed apparent size, so what it actually needs is enough
+/// texels to look crisp at that size -- a property of the headset and the panel's angular size,
+/// not of how many pixels the scene happens to be rendered at. A pin makes that budget explicit
+/// and immune to render-resolution changes.
+const RENDER_RESOLUTION: Option<u32> = None;
+
+/// The effective HUD aspect (width / height) for `mode`: [`HUD_ASPECT`] in gameplay,
+/// [`MOVIE_ASPECT`] for full-screen UI.
+fn aspect_for(mode: HudMode) -> f32 {
     match mode {
-        HudMode::Hud => cfg.hud_aspect,
-        HudMode::Movie => cfg.movie_aspect,
+        HudMode::Hud => HUD_ASPECT,
+        HudMode::Movie => MOVIE_ASPECT,
     }
 }
 
@@ -148,7 +177,7 @@ pub(crate) unsafe fn sample_stage_safe_area(manager: &UIManager) {
         bounds: [safe.x1, safe.y1, safe.x2, safe.y2],
         percentage: manager.m_SafeAreaPercentage,
         stage: Vec2::new(manager.m_CachedStageWidth, manager.m_CachedStageHeight),
-        aspect: effective_aspect(Config::lock_query(|cfg| aspect_for(&cfg.hud, mode))),
+        aspect: effective_aspect(aspect_for(mode)),
     };
     publish_stage_safe_area(layout, Instant::now());
 }
@@ -156,8 +185,7 @@ pub(crate) unsafe fn sample_stage_safe_area(manager: &UIManager) {
 /// The effective HUD aspect for the current frame. Used by the marker hook and panel VP, which run
 /// outside [`tick`]/[`draw_quad`] and so re-derive the mode.
 pub fn current_aspect() -> f32 {
-    let cfg = Config::lock_query(|c| c.hud);
-    effective_aspect(aspect_for(&cfg, current_mode()))
+    effective_aspect(aspect_for(current_mode()))
 }
 
 fn effective_aspect(requested: f32) -> f32 {
@@ -195,23 +223,22 @@ pub fn tick(device: &Device, window_width: u32, window_height: u32) {
     let cfg = Config::lock_query(|c| c.hud);
     let render = crate::stereo::render_size().unwrap_or((window_width, window_height));
     if cfg.redirect {
-        let aspect = aspect_for(&cfg, current_mode());
+        let aspect = aspect_for(current_mode());
         // Size against one eye's render target: under single-pass the render target is double-wide,
         // and keying off it whole would inflate the HUD by 2x for a target only ever viewed one eye
         // at a time.
         let (eye_width, eye_height) = crate::stereo::per_eye_render_size().unwrap_or(render);
         let (width, height) = hud_target_size(
-            cfg.render_scale,
-            cfg.render_resolution,
+            RENDER_SCALE,
+            RENDER_RESOLUTION,
             aspect,
             eye_width,
             eye_height,
         );
-        // The atlas (and its viewport probe) lays the gameplay HUD out inside the stage only, so
-        // the bands above and below it are free for cells; menus keep the full layout, and a mode
-        // change re-applies the redirect with the right one.
-        let stage_safe_area = (cfg.atlas.enabled || cfg.world_markers.probe_stage_safe_area)
-            && current_mode() == HudMode::Hud;
+        // The atlas lays the gameplay HUD out inside the stage only, so the bands above and below
+        // it are free for cells; menus keep the full layout, and a mode change re-applies the
+        // redirect with the right one.
+        let stage_safe_area = cfg.atlas.enabled && current_mode() == HudMode::Hud;
         hud.ensure_redirected(device, width, height, render.0, render.1, stage_safe_area);
     } else {
         hud.restore(render.0, render.1);
@@ -222,9 +249,9 @@ pub fn tick(device: &Device, window_width: u32, window_height: u32) {
     cursor::set_geometry((window_width, window_height), hud.redirected_size());
 }
 
-/// Compute the HUD texture dimensions from the render scale, the configured aspect (width / height),
-/// and the back buffer's largest axis. The longer axis is `render_scale * largest_back_buffer_axis`;
-/// the shorter follows from the aspect. Both axes are clamped to at least 1 pixel so a zero-sized
+/// Compute the HUD texture dimensions from the render scale (or the pinned resolution), the aspect
+/// (width / height), and the per-eye render size, as described on [`RENDER_SCALE`]; the shorter
+/// axis follows from the aspect. Both axes are clamped to at least 1 pixel so a zero-sized
 /// back buffer or a degenerate aspect never reaches texture creation.
 fn hud_target_size(
     render_scale: f32,
@@ -281,21 +308,20 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
             .or_else(render_camera_pose)
     {
         let mode = current_mode();
-        let aspect = effective_aspect(aspect_for(&cfg, mode));
+        let aspect = effective_aspect(aspect_for(mode));
         // World-lock the panel while an in-game menu (pause / map) is open, or during a non-gameplay
         // transition in VR (loading screens / fast-travel, issue #27), so it stays put and the player
         // can look around it, reverting to head-follow on close/resume. During a loading transition the
         // panel latches to the head-tracked render pose (`render_camera_pose`), so it appears centered on
         // wherever the head was pointing as the load began and then holds that world spot while the head
         // looks around it.
-        let freeze = crate::hooks::camera::vr_loading_view_active()
-            || (cfg.world_lock_menus && menu_world_lock());
-        let (pos, rot) = hud.update_pose(freeze, head_pos, head_rotation, &cfg.follow);
-        // Dynamic panel distance: histogram the frame's depth distribution and ease the panel
-        // toward the near field when the scene is close (see `depth`). The base (far) distance
-        // is the manual slider; full-screen UI always reads far.
+        let freeze = crate::hooks::camera::vr_loading_view_active() || menu_world_lock();
+        let (pos, rot) = hud.update_pose(freeze, head_pos, head_rotation);
+        // Dynamic panel distance: ease the panel toward the near field while the scene is close
+        // (see `depth`). The base (far) distance is the configured one; full-screen UI always
+        // reads far.
         let panel_distance = if cfg.depth_shift.enabled {
-            hud.depth_distance(context, device, &cfg.depth_shift, mode, cfg.distance)
+            hud.depth_distance(context, device, mode, cfg.distance)
         } else {
             cfg.distance
         };
@@ -343,14 +369,8 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
         // The virtual cursor rides the panel at its UV position, lifted toward the camera; its
         // world-space corners are computed here (eye 0) like the panel's so both eyes project the
         // same dot with correct stereo disparity (see `cursor`).
-        let cursor_corners = cfg
-            .cursor
-            .enabled
-            .then(cursor::frame)
-            .flatten()
-            .and_then(|frame| {
-                quad::compute_cursor_corners(&params_at(panel_distance), frame, &cfg.cursor)
-            });
+        let cursor_corners = cursor::frame()
+            .and_then(|frame| quad::compute_cursor_corners(&params_at(panel_distance), frame));
         hud.set_cursor_corners(cursor_corners);
     } else if eye == 0 {
         // No panel pose this frame: the previous corners are not what the player sees.
@@ -417,7 +437,7 @@ pub(crate) fn render_camera_pose() -> Option<(Vec3, Quat)> {
 /// camera's FOV). This ensures markers are positioned correctly on the floating quad: a POI directly
 /// ahead of the camera but off-center from the panel's facing direction appears at the correct
 /// position on the panel surface, compensating for the follow-damping lag.
-pub fn compute_panel_vp(symmetric: bool) -> Option<(Matrix4, Matrix4)> {
+pub fn compute_panel_vp() -> Option<(Matrix4, Matrix4)> {
     // Reuse the pose chosen for the quad this frame (head-following or latched world-static), so
     // markers project onto exactly the panel the quad drew.
     let (pos, rot) = HUD_STATE.lock().panel_pose()?;
@@ -460,18 +480,14 @@ pub fn compute_panel_vp(symmetric: bool) -> Option<(Matrix4, Matrix4)> {
     // is symmetric and any off-center shear is dropped. The depth (`z`) and `w` columns are kept from
     // the game projection, preserving its reverse-Z convention and the behind-camera `w`-sign cull in
     // `Convert3DCoords`. The marker pass also sets `m_CachedViewportRatio = 1 / aspect` so
-    // `Convert3DCoords` does not re-apply the device aspect on top of this (see `hooks::ui`).
-    // With `symmetric` false (a reticle A/B option) the override is skipped and the game camera's own
-    // projection is kept, so the reticle follows the game's native screen-space aim mapping rather than
-    // the panel subtense -- an alternative for tuning the crosshair-vs-shot alignment. Markers always
-    // pass `symmetric` true (they misplace under the game FOV, per the note above).
-    if symmetric {
-        let cot_x = 2.0 / (panel_scale.max(f32::EPSILON) * PANEL_WIDTH_PER_DISTANCE);
-        glam_proj.x_axis.x = cot_x;
-        glam_proj.y_axis.y = cot_x * aspect.max(0.0);
-        glam_proj.z_axis.x = 0.0;
-        glam_proj.z_axis.y = 0.0;
-    }
+    // `Convert3DCoords` does not re-apply the device aspect on top of this (see `hooks::ui`). The
+    // grapple reticle takes the same projection, so it lands where the head-to-aim ray crosses the
+    // panel.
+    let cot_x = 2.0 / (panel_scale.max(f32::EPSILON) * PANEL_WIDTH_PER_DISTANCE);
+    glam_proj.x_axis.x = cot_x;
+    glam_proj.y_axis.y = cot_x * aspect.max(0.0);
+    glam_proj.z_axis.x = 0.0;
+    glam_proj.z_axis.y = 0.0;
 
     let glam_vp = glam_proj * panel_view;
 

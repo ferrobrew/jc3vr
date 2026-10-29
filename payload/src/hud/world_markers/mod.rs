@@ -39,8 +39,24 @@ pub(crate) use seam::{
     Projection, after_capture, begin_update_pois, classify, end_update_pois, on_capture,
 };
 
+use crate::hud::world_markers::layout::CropExtents;
+
 /// The most markers a frame places in the world; the rest stay on the panel.
 pub(crate) const MAX_MARKERS: usize = 24;
+
+/// The cropped rectangle around a marker clip's origin, in stage pixels.
+pub(crate) const CROP: CropExtents = CropExtents {
+    left: 40.0,
+    right: 90.0,
+    up: 44.0,
+    down: 44.0,
+};
+
+/// The labelled marker's crop: [`CROP`] widened to the left, where the label sits beside the icon.
+pub(crate) const LABEL_CROP: CropExtents = CropExtents {
+    left: CROP.left + 320.0,
+    ..CROP
+};
 
 /// A live snapshot of the prototype for the debug UI.
 #[derive(Clone, Default)]

@@ -13,8 +13,8 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 
 use crate::hud::{
-    binding,
-    config::FollowConfig,
+    HudMode, binding,
+    depth::{DEPTH_SHIFT, DepthShift, DepthShiftStatus, MaskInputs},
     quad::{HudQuad, PanelParams},
     state::resources::{Native, Retry, Surface},
     target::HudTarget,
@@ -116,7 +116,7 @@ pub struct HudState {
     /// The quad pass that draws the redirected HUD back into the scene, built lazily on first draw.
     quad: Option<HudQuad>,
     /// The dynamic-distance depth sampler, built lazily on the first enabled frame.
-    depth_shift: Option<crate::hud::depth::DepthShift>,
+    depth_shift: Option<DepthShift>,
     /// Lazy-follow damping state for the floating panel (gameplay HUD mode).
     follow: FollowState,
     /// The latched world-static pose `(position, rotation)` for [`HudMode::Movie`](crate::hud::HudMode::Movie):
@@ -133,6 +133,9 @@ pub struct HudState {
     /// the panel corners; `None` while the cursor is hidden (see [`crate::hud::cursor`]).
     cursor_corners: Option<[Vec4; 4]>,
 }
+
+/// The floating panel's rotation follow halflife, in seconds. Lower is a snappier follow.
+const FOLLOW_ROTATION_HALFLIFE_S: f32 = 0.2;
 
 /// Damped follow state: tracks the panel's eased orientation via quaternion slerp.
 struct FollowState {
@@ -154,7 +157,7 @@ impl FollowState {
     /// slerp: `alpha = 1 - 2^(-dt/halflife); current = slerp(current, target, alpha)`. No deadzone
     /// -- the panel always follows, with the halflife controlling the lag. Returns the damped
     /// quaternion for the quad's world-space orientation.
-    fn update(&mut self, head_rotation: Quat, config: &FollowConfig) -> Quat {
+    fn update(&mut self, head_rotation: Quat) -> Quat {
         let dt = self
             .last_time
             .map(|t| t.elapsed().as_secs_f32())
@@ -162,7 +165,7 @@ impl FollowState {
         self.last_time = Some(Instant::now());
         let dt = dt.min(0.1);
 
-        let alpha = (1.0 - 2.0_f32.powf(-dt / config.rotation_halflife)).min(1.0);
+        let alpha = (1.0 - 2.0_f32.powf(-dt / FOLLOW_ROTATION_HALFLIFE_S)).min(1.0);
         self.rotation = self.rotation.slerp(head_rotation, alpha);
 
         self.rotation
@@ -258,12 +261,11 @@ impl HudState {
         &mut self,
         context: &windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext,
         device: &jc3gi::graphics_engine::device::Device,
-        cfg: &crate::hud::config::DepthShiftConfig,
-        mode: crate::hud::HudMode,
+        mode: HudMode,
         base: f32,
     ) -> f32 {
         if self.depth_shift.is_none() {
-            match crate::hud::depth::DepthShift::new(device) {
+            match DepthShift::new(device) {
                 Ok(shift) => self.depth_shift = Some(shift),
                 Err(e) => {
                     // Log the build failure once, not per frame; the next attempt happens on the
@@ -283,37 +285,33 @@ impl HudState {
         // The histogram dispatch only runs for the histogram policy; the vehicle policy needs
         // no GPU work. The mask uses the previous frame's corners (this frame's depend on the
         // distance being computed) and the redirected HUD texture's alpha.
-        if cfg.use_depth_histogram
+        if DEPTH_SHIFT.use_depth_histogram
             && let Some(graphics_engine) =
                 // SAFETY: the graphics engine is the live singleton on the render thread.
                 unsafe { jc3gi::graphics_engine::graphics_engine::GraphicsEngine::get() }
         {
             let hud_srv = self.target.as_ref().map(|t| t.color_srv().clone());
             let mask = match (
-                cfg.mask_by_hud,
+                DEPTH_SHIFT.mask_by_hud,
                 self.cached_corners,
                 self.current_pose,
                 &hud_srv,
             ) {
-                (true, Some(corners), Some((pos, _)), Some(srv)) => {
-                    Some(crate::hud::depth::MaskInputs {
-                        camera_pos: pos,
-                        corners,
-                        hud_srv: srv,
-                    })
-                }
+                (true, Some(corners), Some((pos, _)), Some(srv)) => Some(MaskInputs {
+                    camera_pos: pos,
+                    corners,
+                    hud_srv: srv,
+                }),
                 _ => None,
             };
-            shift.sample(context, graphics_engine, cfg, mask);
+            shift.sample(context, graphics_engine, &DEPTH_SHIFT, mask);
         }
-        shift.distance(cfg, mode, base)
+        shift.distance(&DEPTH_SHIFT, mode, base)
     }
 
     /// The dynamic-distance state's live snapshot, for the debug UI.
-    pub fn depth_status(&self) -> Option<crate::hud::depth::DepthShiftStatus> {
-        self.depth_shift
-            .as_ref()
-            .map(crate::hud::depth::DepthShift::status)
+    pub fn depth_status(&self) -> Option<DepthShiftStatus> {
+        self.depth_shift.as_ref().map(DepthShift::status)
     }
 
     /// Choose the panel pose `(position, rotation)` for the current frame from the head pose, caching
@@ -329,13 +327,12 @@ impl HudState {
         freeze: bool,
         head_pos: Vec3,
         head_rotation: Quat,
-        follow: &FollowConfig,
     ) -> (Vec3, Quat) {
         let pose = if freeze {
             *self.latched_pose.get_or_insert((head_pos, head_rotation))
         } else {
             self.latched_pose = None;
-            (head_pos, self.follow.update(head_rotation, follow))
+            (head_pos, self.follow.update(head_rotation))
         };
         self.current_pose = Some(pose);
         pose

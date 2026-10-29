@@ -60,8 +60,9 @@ The design above is implemented, on by default, across:
   `projection_standard` principal point (`foveal_center_uv`), so canted/off-axis eyes fovea about their
   true optical centre, not screen centre.
 - **config + UI** — `foveation.{enabled, inner_fraction, outer_fraction, max_drop, mask_bit,
-  foveal_first_pass, foveal_last_pass}` (`config.rs`), surfaced in the "Foveation" debug section.
-  `enabled` defaults **true**.
+  debug_show_mask}` (`config.rs`); the radii, the drop, and the mask view are in the debug UI's
+  Foveation feature, and `enabled` (default **true**) is the pause menu's FOVEATED RENDERING. The
+  foveated pass range is the `FOVEAL_FIRST_PASS` / `FOVEAL_LAST_PASS` constants.
 
 ## The fill-in draw's pipeline state
 
@@ -77,12 +78,12 @@ state stage it depends on, not just the ones it obviously uses.
 ## Open items (needs in-headset validation)
 
 The feature ships on by default and touches the hottest render path, so it can be disabled (config
-or debug UI) if it perturbs concurrent validation work. What still needs confirming in a headset:
+or the pause menu) if it perturbs concurrent validation work. What still needs confirming in a headset:
 
 - The default foveated pass range ([`RenderPassId::RP_MODELS_DYNAMIC`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_MODELS_DYNAMIC) to [`RenderPassId::RP_CREATURES`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_CREATURES)) is a starting
   guess. It must sit *after* the depth prepass (so dropped pixels keep full-resolution depth) and cover
-  the expensive shading without breaking a pass that reads neighbour pixels. Tune `foveal_first_pass` /
-  `foveal_last_pass` against what actually saves frametime and what corrupts.
+  the expensive shading without breaking a pass that reads neighbour pixels. Tune `FOVEAL_FIRST_PASS` /
+  `FOVEAL_LAST_PASS` (in `payload/src/hooks/graphics_engine/render_pass.rs`) against what actually saves frametime and what corrupts.
 - **`DrawRenderPassRange` call structure.** The bracketing assumes the scene range arrives as one call (or
   a few sequential sub-ranges); the mask/fill are gated to run once each even if split. If the engine
   interleaves the range differently, the injection points need revisiting.

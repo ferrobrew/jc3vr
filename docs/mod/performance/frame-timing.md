@@ -29,7 +29,7 @@ The sim tick is timed apart from the rest of `Game::Update`, and split into its 
 
 The log line's `sim:` part counts the window's ticks and splits the frames by how many ticks each ran, as `<ticks>=<frames>/<mean ms>/<max ms>` for the counts that occurred (`0`, `1`, and `2+`), as in the example under [Where to read it](#where-to-read-it).
 
-A tick is counted against the frame whose `Game::Update` ran it. If the `1` frames are the slow ones and the `0` frames meet the display's period, a tick is what pushes a frame past its deadline, and `sim_tick` with its phases says by how much and where. The cost of one tick is the self time of `sim_tick` and its game-thread phases over the window, divided by `sim_tick`'s call count. The Performance tab shows the same split over the last second.
+A tick is counted against the frame whose `Game::Update` ran it. If the `1` frames are the slow ones and the `0` frames meet the display's period, a tick is what pushes a frame past its deadline, and `sim_tick` with its phases says by how much and where. The cost of one tick is the self time of `sim_tick` and its game-thread phases over the window, divided by `sim_tick`'s call count. Rendering > Previews and performance shows the same split over the last second.
 
 The hooks inside the engine's work are timed around the mod's part only, never around the engine call they wrap, so `engine_update` and `post_draw` lose exactly the time those slots gain. The pose-pass hooks and the solve gate run on whichever thread the engine updates the character on, so their time can land in `other` as well as in `game`; the UI capture hooks land in `other`.
 
@@ -47,7 +47,7 @@ A game frame longer than a second is also logged on its own, at warn level, as `
 
 Every time is milliseconds. The per-thread numbers are per frame. Each slot is listed as `name=<self time per frame>/<longest single call>`, the latter including nested scopes. Slots that did not run in the window are left out.
 
-The Performance tab's "Frame breakdown" section shows the same numbers over the last second, with the slots sorted by self time.
+The debug UI's Rendering > Previews and performance readout has a "Frame breakdown" section that shows the same numbers over the last second, with the slots sorted by self time.
 
 ## Reading it
 

@@ -141,8 +141,7 @@ pub(super) fn world_markers() -> Line {
 }
 
 pub(super) fn marker_depth() -> Line {
-    let on = read_config(|c| c.hud.world_markers.enabled && c.hud.world_markers.surface_placement);
-    if !on {
+    if !read_config(|c| c.hud.world_markers.enabled) {
         return Line::off("");
     }
     let Some(status) = world_markers::status() else {

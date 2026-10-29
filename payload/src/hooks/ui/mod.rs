@@ -65,8 +65,7 @@ fn convert_3d_coords_default(
     out_x: *mut f32,
     out_y: *mut f32,
 ) -> bool {
-    let (panel_enabled, reticle_align) =
-        Config::lock_query(|c| (c.hud.redirect && c.hud.quad, c.hud.reticle_align));
+    let panel_enabled = Config::lock_query(|c| c.hud.redirect && c.hud.quad);
 
     // SAFETY: `world` is the caller's live aim point; panel_pose only reads cached state.
     if let Some(world) = unsafe { world.as_ref() }
@@ -81,10 +80,8 @@ fn convert_3d_coords_default(
     }
 
     let aspect = current_aspect();
-    // The reticle's projection is a tunable A/B (issue #6): the panel subtense (default) or the game's
-    // own projection. Markers stay on the panel subtense.
-    let symmetric = reticle_align == crate::hud::ReticleAlign::PanelSubtense;
-    let panel = panel_enabled.then(|| compute_panel_vp(symmetric)).flatten();
+    // The reticle lands where the head-to-aim ray crosses the panel, like the markers (issue #6).
+    let panel = panel_enabled.then(compute_panel_vp).flatten();
     match panel {
         // Project through the panel VP with the aspect retarget, exactly like the Get2DInfo hook,
         // so the grapple reticle lands at the correct spot on the panel surface.
@@ -131,7 +128,7 @@ fn movie_capture(this: *mut MovieImpl, if_changed: bool) -> u64 {
         let hud = Config::lock_query(|c| c.hud);
         // SAFETY: this is the capture seam both callees require; `this` is the live main movie.
         unsafe {
-            crate::hud::scaleform::apply_overlay_suppression(hud.suppress_overlays);
+            crate::hud::scaleform::apply_overlay_suppression();
             hide_game_reticles();
             hide_game_hints();
             // The atlas moves its parts into their cells for this capture only, and the world
@@ -180,8 +177,7 @@ fn get_2d_info(
     let (panel_enabled, world_markers) =
         Config::lock_query(|c| (c.hud.redirect && c.hud.quad, c.hud.world_markers));
     let aspect = current_aspect();
-    // Markers always use the panel subtense; only the reticle exposes the game-projection A/B.
-    let panel = panel_enabled.then(|| compute_panel_vp(true)).flatten();
+    let panel = panel_enabled.then(compute_panel_vp).flatten();
     let (vp, camera) = panel
         .as_ref()
         .map(|(v, c)| (v as *const Matrix4, c as *const Matrix4))

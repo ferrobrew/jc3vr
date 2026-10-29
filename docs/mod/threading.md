@@ -53,7 +53,7 @@ The egui state lock is the other long one. The game thread holds it across the d
 | `vr::frame_begin` | Blocking, held for the frame | Game thread, top of the render update | It is the holder |
 | The frame tail | Owns the frame's guard | Frame tail | It is the holder, and takes no lock of its own |
 | `vr::status` (`ui::vr`) | `try_lock` | Game thread in the debug UI | Cannot block |
-| `vr::recenter`, through `headpose::recenter`, from F7 (`hooks::wndproc`) and the debug UI's Rendering > Runtime feature | None (atomic request) | The window procedure and the game thread in the debug UI | Rule 3. |
+| `vr::recenter`, through `headpose::recenter`, from F7 (`hooks::wndproc`) | None (atomic request) | The window procedure | Rule 3. |
 | `vr::request_recenter` from the pause menu's COMFORT page, the stick-click chord, and the seat transitions | None (atomic request) | UI capture thread, the input tick, and the roomscale update | Rule 3 |
 | `vr::uninstall`, from the lifecycle cleanups in `shutdown_from_game` | Blocking, brief | Game thread under the egui state lock | Rule 6 |
 | The COMFORT and BODY pages' session checks, `hud::egui_panel::is_active`, `hud::mirror_overlay::is_active` | `vr::render_params` | UI capture thread, draw task, frame tail | Rule 2 |

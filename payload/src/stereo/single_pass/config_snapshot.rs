@@ -66,7 +66,7 @@ impl ConfigFlags {
 /// start ([`refresh_config_flags`]).
 ///
 /// The frame snapshot deliberately does **not** reach the draw thread mid-dispatch. It is written on
-/// the game thread, which with `stereo.defer_frame_tail` on runs concurrently with the previous
+/// the game thread, which with the frame tail deferred runs concurrently with the previous
 /// frame's still-walking dispatch -- the same interleaving that made the game-thread G-buffer range
 /// clear tear a live range (see [`begin_dispatch`]). A flag changing there would land between an arm
 /// and its restore, which is why the draw thread reads a pinned copy instead.

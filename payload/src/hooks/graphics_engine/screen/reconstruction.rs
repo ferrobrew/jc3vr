@@ -16,7 +16,7 @@
 //! and samples the sun shadow cascade over it (with the depth basis correct, the off-axis inverse
 //! reconstructs the sky and distant terrain without swimming).
 //!
-//! See [`StereoConfig::reconstruct_offaxis_inverse`](crate::stereo::config::StereoConfig).
+//! See [`RECONSTRUCT_OFFAXIS_INVERSE`].
 //!
 //! Substituting one eye's inverse presumes the pass is drawing *for* one eye, which the single-pass
 //! collapse breaks: there the fullscreen quad covers both eye halves of the double-wide target in a
@@ -66,6 +66,15 @@ use crate::{
     stereo::engine_context::EngineContext,
     vr::render_params,
 };
+
+/// Reconstruct the screen-space passes' clip-to-view inverse from the true off-axis projection
+/// while rendering a VR eye. The reconstruction passes (SSR, deferred clustered lighting, SSAO,
+/// screen-space subsurface, atmospheric scattering, depth of field) rebuild it with
+/// [`Matrix4::PerspectiveFovInverse`](jc3gi::types::math::Matrix4), which can only encode a
+/// symmetric frustum: exact for the flatscreen stereo center projection but wrong, and
+/// mirror-opposite between eyes, under VR's off-axis projection, so specular and reflections on
+/// shiny surfaces diverge grossly per eye. VR only; a no-op on flatscreen frames.
+pub(crate) const RECONSTRUCT_OFFAXIS_INVERSE: bool = true;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&PERSPECTIVE_FOV_INVERSE_BINDER)
@@ -416,18 +425,12 @@ fn perspective_fov_inverse(
 }
 
 /// The engine-format inverse of the off-axis projection for the VR eye currently being drawn, or
-/// `None` when the override does not apply: the toggle is off, this is not a VR eye dispatch
+/// `None` when the override does not apply: it is switched off, this is not a VR eye dispatch
 /// (flatscreen frames carry no render params), or the requested near/far do not match the *live*
 /// main-camera planes (an auxiliary camera -- e.g. a reflection -- whose own symmetric rebuild is
 /// already correct).
 fn offaxis_inverse(near: f32, far: f32) -> Option<Matrix4> {
-    let (toggle, near_fallback, far_fallback) = Config::lock_query(|c| {
-        (
-            c.stereo.reconstruct_offaxis_inverse,
-            c.vr.near_clip,
-            c.vr.far_clip,
-        )
-    });
+    let (near_fallback, far_fallback) = Config::lock_query(|c| (c.vr.near_clip, c.vr.far_clip));
     // A per-eye half run reconstructs for *its* eye, not for the collapse's single dispatch index
     // (which is always eye 0); everything else keeps reading the dispatch's own eye.
     let half = PER_EYE.get();
@@ -438,7 +441,7 @@ fn offaxis_inverse(near: f32, far: f32) -> Option<Matrix4> {
     // eye 1's would draw across the whole target, compositing eye 0's half twice into an accumulating
     // pass. Outside a split the live read stands: that is the plain detour path, with no second run to
     // disagree with.
-    let enabled = toggle || half.is_some();
+    let enabled = RECONSTRUCT_OFFAXIS_INVERSE || half.is_some();
     let eye = half.map_or_else(crate::stereo::draw_index, |state| state.eye);
     let params = render_params(eye);
     // Recognize the main-view depth passes by the engine's ACTUAL active-camera planes, the single

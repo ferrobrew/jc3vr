@@ -46,7 +46,7 @@ The late update's palette edit draws a hand at the solved wrist moved by the han
 
 ## Cost
 
-The layer's work is timed in the `presentation` slot of the frame breakdown (`perf: frame breakdown`, and the debug UI's Performance tab), and the layer keeps its own per-frame total across threads: the snapshot on the game thread and the draws' solves on the draw workers. A solve measured about 0.6 microseconds in a release build (16 in a debug build) on the unit-test machine; a frame solves once per distinct instance matrix and fraction, so the frame's cost is a few microseconds, bounded by the number of the player's body draws in the frame. The chain's bend stops after six passes at most.
+The layer's work is timed in the `presentation` slot of the frame breakdown (`perf: frame breakdown`, and the debug UI's Rendering > Previews and performance readout), and the layer keeps its own per-frame total across threads: the snapshot on the game thread and the draws' solves on the draw workers. A solve measured about 0.6 microseconds in a release build (16 in a debug build) on the unit-test machine; a frame solves once per distinct instance matrix and fraction, so the frame's cost is a few microseconds, bounded by the number of the player's body draws in the frame. The chain's bend stops after six passes at most.
 
 ## Settings and readouts
 

@@ -162,7 +162,7 @@ impl DockHarness {
     fn new() -> Self {
         let mut dock = egui_dock::DockState::new(vec![View::Workspace]);
         let surface = dock.add_window(vec![View::Feature {
-            key: FeatureId::Performance.definition().key.to_owned(),
+            key: FeatureId::Previews.definition().key.to_owned(),
         }]);
         let window = dock.get_window_state_mut(surface).unwrap();
         window.set_position(egui::pos2(950.0, 80.0));
@@ -209,7 +209,7 @@ impl DockHarness {
                 editing,
                 |ui, selection| {
                     assert_eq!(frame_metadata(ui.ctx()), before);
-                    let index = usize::from(selection.feature == FeatureId::Performance);
+                    let index = usize::from(selection.feature == FeatureId::Previews);
                     self.reads[index] += 1;
                     if !editing {
                         let disabled_alpha = ui.visuals().disabled_alpha;
@@ -340,7 +340,6 @@ fn actual_runtime_dispatch_renders_controls_then_live_status_without_a_renderer(
                 .unwrap_or_else(|| panic!("missing Runtime label: {wanted}"))
         };
         for control in [
-            "Recenter",
             "Enabled (bring up the OpenXR session)",
             "Native per-eye resolution",
             "Desktop mirror",
@@ -411,8 +410,9 @@ fn actual_preview_route_reports_missing_renderer_without_a_device() {
     let mut selection = NavigationState {
         feature: FeatureId::Previews,
     };
+    // Only the controls: the performance readout reads the engine clock, which a test has not.
     let _ = context.run_ui(egui::RawInput::default(), |ui| {
-        feature(ui, &mut selection, None)
+        controls(ui, &mut selection, None)
     });
     assert_eq!(route(selection.feature), FeatureRoute::Previews);
 }

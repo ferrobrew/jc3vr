@@ -23,11 +23,10 @@ use windows::Win32::Graphics::Direct3D11::{D3D11_BOX, ID3D11DeviceContext};
 use crate::{
     config::Config,
     hud::{
-        config::{CropExtents, WorldMarkersConfig},
         quad::HudQuad,
         target::HudTarget,
         world_markers::{
-            DistanceSource, MarkerStatus, STATUS, Status,
+            CROP, DistanceSource, LABEL_CROP, MarkerStatus, STATUS, Status,
             depth::{DepthPoint, DepthProbe, RESULT_TTL_S, Timed},
             layout::{
                 Billboard, Crop, Sight, StageFrame, billboard_corners, crop, placement_distance,
@@ -58,11 +57,11 @@ pub(crate) fn prepare_frame(
     inputs: &FrameInputs<'_>,
 ) {
     let _timing = crate::frame_timing::scope(crate::frame_timing::Slot::WorldMarkers);
-    let (cfg, hud_cfg) = Config::lock_query(|c| (c.hud.world_markers, c.hud));
+    let cfg = Config::lock_query(|c| c.hud);
     let mut renderer = RENDERER.lock();
-    let active = cfg.enabled
-        && hud_cfg.redirect
-        && hud_cfg.quad
+    let active = cfg.world_markers.enabled
+        && cfg.redirect
+        && cfg.quad
         && crate::hud::current_mode() == crate::hud::HudMode::Hud
         && !crate::director::cinematic::active();
     let Some(hud) = inputs.hud.filter(|_| active) else {
@@ -85,7 +84,7 @@ pub(crate) fn prepare_frame(
     let Some(renderer) = renderer.as_mut() else {
         return;
     };
-    renderer.plan_frame(context, device, inputs, hud, &cfg);
+    renderer.plan_frame(context, device, inputs, hud);
 }
 
 /// Drop the frame's plan, so the eye passes draw nothing (eye 0, when no panel pose exists).
@@ -96,16 +95,14 @@ pub(crate) fn clear_frame() {
     *STATUS.lock() = None;
 }
 
-/// Crop this eye's markers out of the HUD texture into their slots and, when configured, cut them
-/// out of the panel. Call on every eye after the UI rendered into the HUD texture and before the
+/// Crop this eye's markers out of the HUD texture into their slots and cut them out of the panel. Call on every eye after the UI rendered into the HUD texture and before the
 /// panel draws.
 pub(crate) fn prepare_eye(context: &ID3D11DeviceContext, hud: Option<&HudTarget>) {
     let mut renderer = RENDERER.lock();
     let (Some(renderer), Some(hud)) = (renderer.as_mut(), hud) else {
         return;
     };
-    let hide = Config::lock_query(|c| c.hud.world_markers.hide_from_panel);
-    renderer.copy_crops(context, hud, hide);
+    renderer.copy_crops(context, hud);
 }
 
 /// Draw this eye's marker billboards over `target`, farthest first. Call on every eye after
@@ -201,7 +198,6 @@ impl Renderer {
         device: &Device,
         inputs: &FrameInputs<'_>,
         hud: &HudTarget,
-        cfg: &WorldMarkersConfig,
     ) {
         self.plan.clear();
         // SAFETY: the UI manager and its movie are live singletons; the snapshot ids are plain
@@ -224,14 +220,10 @@ impl Renderer {
             return;
         };
         let scale = frame.texels_per_unit(texture.0);
-        let label_extents = CropExtents {
-            left: cfg.crop.left + cfg.label_extra_left.max(0.0),
-            ..cfg.crop
-        };
         if let Err(e) = self.ensure_slots(
             device,
-            slot_size(&cfg.crop, scale),
-            slot_size(&label_extents, scale),
+            slot_size(&CROP, scale),
+            slot_size(&LABEL_CROP, scale),
             layout.markers.len(),
         ) {
             log_once(&e);
@@ -248,11 +240,11 @@ impl Renderer {
         for marker in &layout.markers {
             let labelled = marker.id != 0 && marker.id == layout.labelled_id;
             let (slot, size, extents) = if labelled {
-                (SlotId::Label, self.label_slot_size, &label_extents)
+                (SlotId::Label, self.label_slot_size, &LABEL_CROP)
             } else {
                 let slot = SlotId::Plain(next_plain);
                 next_plain += 1;
-                (slot, self.slot_size, &cfg.crop)
+                (slot, self.slot_size, &CROP)
             };
             let Some(crop) = crop(&frame, texture, size, marker.origin, marker.offset, extents)
             else {
@@ -268,24 +260,20 @@ impl Renderer {
                 world: marker.world,
                 true_distance,
             });
-            let (sight, source) = self.sight(marker.id, cfg, now);
-            if source != DistanceSource::Depth && cfg.surface_placement {
+            let (sight, source) = self.sight(marker.id, now);
+            if source != DistanceSource::Depth {
                 ray_requests.push((marker.id, marker.world));
             }
             let held = self.on_surface.contains(&marker.id);
-            let sight = surface_sight(sight, true_distance, cfg.surface_min_m, held);
+            let sight = surface_sight(sight, true_distance, SURFACE_MIN_M, held);
             if matches!(sight, Sight::Surface(_)) {
                 self.on_surface.insert(marker.id);
             } else {
                 self.on_surface.remove(&marker.id);
             }
-            let target = if cfg.surface_placement {
-                placement_distance(true_distance, sight, cfg.surface_pull_m, MIN_DISTANCE_M)
-            } else {
-                true_distance
-            };
-            let distance = self.smoothed(marker.id, target, cfg.depth_halflife_s, now);
-            let drawn = distance.min(cfg.max_distance_m.max(MIN_DISTANCE_M));
+            let target = placement_distance(true_distance, sight, SURFACE_PULL_M, MIN_DISTANCE_M);
+            let distance = self.smoothed(marker.id, target, DEPTH_HALFLIFE_S, now);
+            let drawn = distance.min(MAX_DISTANCE_M);
             let billboard = Billboard {
                 head: inputs.head,
                 head_rotation: inputs.head_rotation,
@@ -330,14 +318,8 @@ impl Renderer {
         self.depth_results
             .retain(|_, timed| now.duration_since(timed.at).as_secs_f32() < FORGET_S);
 
-        if cfg.surface_placement {
-            self.sample_depth(context, device, inputs, &depth_points, now);
-        }
-        raycast::request(if cfg.ray_fallback {
-            ray_requests
-        } else {
-            Vec::new()
-        });
+        self.sample_depth(context, device, inputs, &depth_points, now);
+        raycast::request(ray_requests);
 
         self.publish_status(Status {
             layout_snapshot: Some(layout.snapshot),
@@ -353,14 +335,12 @@ impl Renderer {
 
     /// The freshest line-of-sight result for a marker: the depth probe's, else the raycast's, else
     /// clear.
-    fn sight(&self, id: u32, cfg: &WorldMarkersConfig, now: Instant) -> (Sight, DistanceSource) {
+    fn sight(&self, id: u32, now: Instant) -> (Sight, DistanceSource) {
         let fresh = |timed: &Timed| now.duration_since(timed.at).as_secs_f32() < RESULT_TTL_S;
         if let Some(timed) = self.depth_results.get(&id).filter(|t| fresh(t)) {
             return (timed.sight, DistanceSource::Depth);
         }
-        if cfg.ray_fallback
-            && let Some(timed) = raycast::result(id).filter(|t| fresh(t))
-        {
+        if let Some(timed) = raycast::result(id).filter(|t| fresh(t)) {
             return (timed.sight, DistanceSource::Ray);
         }
         (Sight::Clear, DistanceSource::Point)
@@ -447,7 +427,7 @@ impl Renderer {
     /// Copy every planned marker's crop into its slot, then (with `hide`) blank the crops in the
     /// HUD texture. All crops are taken before any blanking, so overlapping markers each keep the
     /// other's pixels as the panel showed them.
-    fn copy_crops(&mut self, context: &ID3D11DeviceContext, hud: &HudTarget, hide: bool) {
+    fn copy_crops(&mut self, context: &ID3D11DeviceContext, hud: &HudTarget) {
         if self.plan.is_empty() {
             return;
         }
@@ -484,9 +464,6 @@ impl Renderer {
                     }),
                 );
             }
-            if !hide {
-                return;
-            }
             let Some(blank) = self.blank.as_ref() else {
                 return;
             };
@@ -520,6 +497,23 @@ impl Renderer {
 
 /// The nearest a marker is drawn, in metres.
 const MIN_DISTANCE_M: f32 = 0.5;
+
+/// Surfaces nearer the eye than this are ignored for the placement, in metres: the player's own
+/// gun and hands, and foliage brushing the head, would otherwise pull every marker behind them
+/// onto them.
+const SURFACE_MIN_M: f32 = 1.2;
+
+/// How far a surface-placed marker is pulled toward the eye from the surface, in metres, so it is
+/// not coplanar with it.
+const SURFACE_PULL_M: f32 = 0.3;
+
+/// The halflife of the placement distance's smoothing, in seconds, so a flickering occluder does
+/// not make the marker pop.
+const DEPTH_HALFLIFE_S: f32 = 0.15;
+
+/// The farthest a billboard is placed, in metres. A farther marker is drawn at this distance along
+/// its direction, where its stereo disparity is already indistinguishable from infinity.
+const MAX_DISTANCE_M: f32 = 300.0;
 
 /// How long a marker's placement state outlives its last sighting, in seconds.
 const FORGET_S: f32 = 2.0;

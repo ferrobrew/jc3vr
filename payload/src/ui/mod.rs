@@ -19,7 +19,7 @@ pub mod camera;
 pub(crate) mod capture;
 pub(crate) mod catalog;
 pub mod controllers;
-pub mod diagnostics;
+pub(crate) mod diagnostics;
 pub mod director;
 mod dispatch;
 pub mod environment;
@@ -31,6 +31,7 @@ mod overview;
 pub mod performance;
 pub mod previews;
 pub mod render;
+pub(crate) mod render_capture;
 pub mod status;
 pub mod testing;
 mod util;
@@ -368,6 +369,7 @@ fn egui_debug_window_body(ui: &mut egui::Ui, renderer: &mut egui_directx11::Rend
     feature_dock(ui, dock, selection, editing, |ui, selection| {
         dispatch::feature(ui, selection, Some(&mut *renderer));
     });
+    diagnostics::window(ui.ctx(), editing);
     if editing {
         state.save();
     }

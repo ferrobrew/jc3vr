@@ -266,12 +266,12 @@ fn get_movie_space_mouse_cursor(
     }
 }
 
-/// Whether the mod routes the game UI's mouse this frame: the HUD redirect and its cursor are on,
+/// Whether the mod routes the game UI's mouse this frame: the HUD redirect is on,
 /// the redirect's mapping geometry is published, egui does not own input, and the payload is not
 /// shutting down. The UI input boundary and the mouse delivery share this one gate.
 fn mouse_route_active() -> bool {
     !crate::is_shutting_down()
-        && Config::lock_query(|c| c.hud.redirect && c.hud.cursor.enabled)
+        && Config::lock_query(|c| c.hud.redirect)
         && debug_ui_capture().is_none_or(|snapshot| snapshot.gameplay_effective)
         && cursor::geometry().is_some()
 }

@@ -30,7 +30,7 @@
 //! the overflow crop; the resulting viewport deliberately extends past the buffer edges, and the
 //! rasterizer clips it against the render target -- so the crop costs nothing beyond a little overdraw,
 //! with no scissor, extra copy, or UV-transform shader. `Fit` scales down and letterboxes instead,
-//! showing the whole eye render. `vr.mirror_zoom` magnifies further about the centre in either mode.
+//! showing the whole eye render. A zoom magnifies further about the centre in either mode.
 //! The egui overlay composite always uses `Fit` at zoom `1.0`: a cropped UI panel would be unreadable.
 //!
 //! ## Gamma
@@ -78,7 +78,6 @@ use windows::{
 use crate::{
     config::{Config, Switch, disable_automatically},
     ui::render::{EGUI_DEBUG_RENDER_STATE, eye_capture_fresh},
-    vr::config::MirrorFraming,
 };
 
 /// The committed, precompiled shaders shared with the capture composite: the fullscreen-triangle
@@ -99,7 +98,7 @@ static MIRROR_FAILING: AtomicBool = AtomicBool::new(false);
 static MIRROR_FAIL_COUNT: AtomicU32 = AtomicU32::new(0);
 
 /// Draw the configured eye's capture into the game swapchain's back buffer (framed to the window
-/// aspect per `vr.mirror_framing`), composite the egui overlay on top, and present the game swapchain
+/// aspect per [`MIRROR_FRAMING`]), composite the egui overlay on top, and present the game swapchain
 /// unsynced.
 ///
 /// Called once per frame from the stereo Draw driver, after the eyes have drawn and drained and the
@@ -192,7 +191,6 @@ unsafe fn present_mirror_inner(eye: usize) -> anyhow::Result<()> {
     let (src_w, src_h) = unsafe { texture_size(&eye_texture) };
     let window_size = crate::vr::window::client_size()
         .context("vr: the game window client rect is unavailable")?;
-    let (framing, zoom) = Config::lock_query(|c| (c.vr.mirror_framing, c.vr.mirror_zoom));
     let viewport = mirror_viewport(
         AspectSize {
             width: src_w,
@@ -200,8 +198,8 @@ unsafe fn present_mirror_inner(eye: usize) -> anyhow::Result<()> {
         },
         buffer_size,
         window_size,
-        framing,
-        zoom,
+        MIRROR_FRAMING,
+        MIRROR_ZOOM,
     );
 
     // The engine wraps swapchain back buffer 0 (`docs/engine/rendering/rendering.md` §7); drawing into its resource and
@@ -291,6 +289,33 @@ struct AspectSize {
     height: u32,
 }
 
+/// How the desktop mirror frames one eye's image inside the game window.
+///
+/// While a session runs the swapchain buffers are the per-eye render resolution, which is near-square
+/// (often taller than wide), while the Win32 client rect keeps its original widescreen aspect. The two
+/// aspects have to be reconciled, and the choice is the same one every VR game's companion view makes.
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum MirrorFraming {
+    /// Scale the eye image up until it covers the whole window, cropping whatever falls outside
+    /// (centred). No bars; the periphery of the eye render -- most of which is outside the lens's
+    /// useful area anyway -- is cut off. This is what other VR titles' desktop views do.
+    Fill,
+    /// Scale the eye image down until all of it is visible, letterboxing the remainder with black
+    /// bars. Nothing is cropped, so it shows exactly what the eye rendered -- useful when checking
+    /// coverage at the edges of the frame -- but a near-square eye in a widescreen window wastes most
+    /// of the window.
+    Fit,
+}
+
+/// How the desktop mirror reconciles the eye image's aspect with the window's: filling the window,
+/// like other VR titles' desktop views.
+const MIRROR_FRAMING: MirrorFraming = MirrorFraming::Fill;
+
+/// The extra magnification applied to the desktop mirror image on top of its framing, about the
+/// centre. `1.0` is the plain fill; above that crops in further, tightening the desktop view onto
+/// the middle of the eye render.
+const MIRROR_ZOOM: f32 = 1.0;
+
 /// A viewport rectangle within the swapchain back buffer, in buffer pixels.
 #[derive(Copy, Clone, Debug, PartialEq)]
 struct Viewport {
@@ -300,11 +325,10 @@ struct Viewport {
     height: f32,
 }
 
-/// The range [`VrConfig::mirror_zoom`](crate::vr::config::VrConfig::mirror_zoom) is clamped to. The
-/// upper bound keeps the (deliberately oversized) `Fill` viewport well inside D3D11's viewport bounds
+/// The range [`mirror_viewport`]'s `zoom` is clamped to. The upper bound keeps the (deliberately oversized) `Fill` viewport well inside D3D11's viewport bounds
 /// and the rasterizer guard band for any plausible buffer size; the lower bound keeps the image
 /// visible at all.
-pub const MIRROR_ZOOM_RANGE: std::ops::RangeInclusive<f32> = 0.25..=4.0;
+const MIRROR_ZOOM_RANGE: std::ops::RangeInclusive<f32> = 0.25..=4.0;
 
 /// Compute the back-buffer viewport that, after DXGI stretches the whole buffer onto the window
 /// client rect, places the source image at its own aspect, centered, framed per `framing`.

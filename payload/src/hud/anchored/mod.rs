@@ -42,7 +42,10 @@ use crate::{
         frame::{Hand, Pose},
         hands::late,
         scheme,
-        summary::glance::{Glance, fade, looking},
+        summary::{
+            config::GlanceConfig,
+            glance::{Glance, fade, looking},
+        },
         weapons::wheel::{self, CROSS_LINGER},
     },
     hooks,
@@ -53,7 +56,7 @@ use crate::{
             place::{
                 AmmoHand, Attention, ammo_anchor, facing_corners, fade_out, follow, forearm_anchor,
                 gun_hand, inner_wrist_pose, pull_toward, sighting, stacked_corners,
-                upright_corners, wants_attention, wrist_wanted,
+                upright_corners, wants_attention,
             },
         },
         atlas::{self, Part},
@@ -149,6 +152,66 @@ const SIGHT_FADE_S: f32 = 0.15;
 
 /// The gap between the health bar and the heat readout on the wrist, metres.
 const WRIST_GAP_M: f32 = 0.006;
+
+/// How far above the gun hand's grip the weapon readout's lower edge sits, metres, straight up in
+/// the world whatever the hand's tilt, so the quad clears the hand and the gun in it.
+const AMMO_CLEARANCE_M: f32 = 0.10;
+
+/// How far the weapon readout is pulled from above the hand toward the head, metres.
+const AMMO_PULL_M: f32 = 0.02;
+
+/// The weapon readout's width, metres; its height follows the cell's aspect.
+const AMMO_WIDTH_M: f32 = 0.10;
+
+/// The halflife of the weapon readout's follow of the hand, seconds.
+const AMMO_FOLLOW_HALFLIFE_S: f32 = 0.05;
+
+/// How long the weapon readout stays on the last gun hand after no hand holds a gun, seconds, so
+/// the game's fade-out plays where the gun was.
+const AMMO_LINGER_S: f32 = 1.5;
+
+/// How far back along the forearm from the wrist the tether readout sits, metres.
+const TETHER_BACK_M: f32 = 0.12;
+
+/// How far above the forearm the tether readout's lower edge sits, metres, straight up in the
+/// world.
+const TETHER_CLEARANCE_M: f32 = 0.06;
+
+/// The tether readout's width, metres; its height follows the cell's aspect.
+const TETHER_WIDTH_M: f32 = 0.08;
+
+/// The halflife of the tether readout's follow of the forearm, seconds.
+const TETHER_FOLLOW_HALFLIFE_S: f32 = 0.05;
+
+/// The selection cross's width, metres; its height follows the cell's aspect.
+const CROSS_WIDTH_M: f32 = 0.18;
+
+/// How far the selection cross is pulled from the hand toward the head, metres, so the hand does
+/// not cover it.
+const CROSS_PULL_M: f32 = 0.08;
+
+/// The wrist panel's centre in the grip frame, metres: +X out of the palm, +Z back along the
+/// forearm (mirrored on X between the hands, so +X is the palm side of either). It sits toward the
+/// elbow from the C4 detonator button on the same side of the wrist.
+const WRIST_OFFSET_M: Vec3 = Vec3::new(0.04, 0.0, 0.16);
+
+/// The wrist panel's width, metres.
+const WRIST_WIDTH_M: f32 = 0.08;
+
+/// The health bar's width over its height.
+const WRIST_BAR_ASPECT: f32 = 10.0;
+
+/// The glance at the inside of the wrist that shows the wrist readout.
+const WRIST_GLANCE: GlanceConfig = GlanceConfig::new();
+
+/// The wrist readout's fade in and out, seconds.
+const WRIST_FADE_S: f32 = 0.15;
+
+/// How long the wrist readout shows on its own after damage, seconds.
+const WRIST_AFTER_DAMAGE_S: f32 = 4.0;
+
+/// The health fraction at and below which the wrist readout shows on its own.
+const WRIST_LOW_HEALTH: f32 = 0.35;
 
 struct State {
     last_prepare: Option<Instant>,
@@ -274,27 +337,27 @@ impl State {
         });
         let ammo_hand = self
             .ammo_hand
-            .step(gun_hand(holding, dominant), dt, cfg.ammo.linger_s);
+            .step(gun_hand(holding, dominant), dt, AMMO_LINGER_S);
         self.status.ammo_hand = None;
         if cfg.ammo.enabled
             && let (Some(hand), Some(head)) = (ammo_hand, head)
             && let Some(grip) = grip(hand)
             && let Some(cell) = atlas::part_texture(Part::Ammo, |part| part.cell)
         {
-            let width = cfg.ammo.width_m.max(0.01);
+            let width = AMMO_WIDTH_M;
             let height = width * cell.rect.size.y / cell.rect.size.x.max(1.0);
             let target = ammo_anchor(
                 grip.position,
                 head.position,
-                cfg.ammo.clearance_m,
+                AMMO_CLEARANCE_M,
                 height,
-                cfg.ammo.pull_m,
+                AMMO_PULL_M,
             );
             let position = follow(
                 self.ammo_position,
                 target,
                 dt,
-                cfg.ammo.follow_halflife_s,
+                AMMO_FOLLOW_HALFLIFE_S,
                 SNAP_M,
             );
             self.ammo_position = Some(position);
@@ -329,14 +392,14 @@ impl State {
             && let Some(wrist) = hands[off.index()].map(|h| h.wrist)
             && let Some(cell) = atlas::part_texture(Part::Tether, |part| part.cell)
         {
-            let width = cfg.tether.width_m.max(0.01);
+            let width = TETHER_WIDTH_M;
             let height = width * cell.rect.size.y / cell.rect.size.x.max(1.0);
-            let target = forearm_anchor(wrist, cfg.tether.back_m, cfg.tether.clearance_m, height);
+            let target = forearm_anchor(wrist, TETHER_BACK_M, TETHER_CLEARANCE_M, height);
             let position = follow(
                 self.tether_position,
                 target,
                 dt,
-                cfg.tether.follow_halflife_s,
+                TETHER_FOLLOW_HALFLIFE_S,
                 SNAP_M,
             );
             self.tether_position = Some(position);
@@ -362,7 +425,7 @@ impl State {
             (Some(anchor), Some(head), Some(cell)) => {
                 if anchor.open && (!self.cross_open || self.cross_offset.is_none()) {
                     self.cross_offset = grip(anchor.hand).map(|grip| {
-                        pull_toward(grip.position, head.position, cfg.cross.pull_m) - head.position
+                        pull_toward(grip.position, head.position, CROSS_PULL_M) - head.position
                     });
                 }
                 self.cross_open = anchor.open;
@@ -372,7 +435,7 @@ impl State {
                     fade_out(anchor.closed_s, CROSS_LINGER.as_secs_f32())
                 };
                 if let Some(offset) = self.cross_offset {
-                    let width = cfg.cross.width_m.max(0.01);
+                    let width = CROSS_WIDTH_M;
                     let height = width * cell.rect.size.y / cell.rect.size.x.max(1.0);
                     self.cross_corners = facing_corners(
                         head.position + offset,
@@ -392,8 +455,7 @@ impl State {
         }
 
         // The wrist: the health bar and the heat readout.
-        let wrist = &cfg.wrist;
-        let pose = grip(off).map(|grip| inner_wrist_pose(grip, off, wrist.offset_m));
+        let pose = grip(off).map(|grip| inner_wrist_pose(grip, off, WRIST_OFFSET_M));
         let fraction = sample
             .filter(|s| s.max_health > 0)
             .map(|s| (f32::from(s.health) / f32::from(s.max_health)).clamp(0.0, 1.0));
@@ -412,17 +474,18 @@ impl State {
                     .map(|at| now.duration_since(at).as_secs_f32()),
                 heat_level: sample.map_or(0, |s| s.heat_level),
             },
-            wrist.low_health,
-            wrist.after_damage_s,
+            WRIST_LOW_HEALTH,
+            WRIST_AFTER_DAMAGE_S,
         );
         let looked = match (head, pose) {
-            (Some(head), Some(pose)) => looking(head, &pose, &wrist.glance, self.glance.shown()),
+            (Some(head), Some(pose)) => looking(head, &pose, &WRIST_GLANCE, self.glance.shown()),
             _ => false,
         };
-        let glance = self.glance.step(looked, dt, &wrist.glance);
-        let shown =
-            wrist.enabled && pose.is_some() && wrist_wanted(wrist.visibility, glance, attention);
-        self.wrist_alpha = fade(self.wrist_alpha, shown, dt, wrist.fade_s);
+        let glance = self.glance.step(looked, dt, &WRIST_GLANCE);
+        // The wrist shows on a glance, and also on its own while the player's state wants
+        // attention.
+        let shown = cfg.wrist.enabled && pose.is_some() && (glance || attention);
+        self.wrist_alpha = fade(self.wrist_alpha, shown, dt, WRIST_FADE_S);
         let trail = fraction.map(|f| self.trail.step(f, dt));
         self.status.health = fraction.zip(trail);
         self.status.heat_level = sample.map_or(0, |s| s.heat_level);
@@ -433,12 +496,9 @@ impl State {
         let Some(pose) = pose.filter(|_| self.wrist_alpha > 0.0) else {
             return;
         };
-        let width = wrist.width_m.max(0.01);
-        let bar = (wrist.health && fraction.is_some()).then(|| width / wrist.bar_aspect.max(1.0));
-        let heat = wrist
-            .heat
-            .then(|| atlas::part_texture(Part::Heat, |part| part.cell))
-            .flatten()
+        let width = WRIST_WIDTH_M;
+        let bar = fraction.is_some().then_some(width / WRIST_BAR_ASPECT);
+        let heat = atlas::part_texture(Part::Heat, |part| part.cell)
             .map(|cell| width * cell.rect.size.y / cell.rect.size.x.max(1.0));
         let heights: Vec<f32> = bar.into_iter().chain(heat).collect();
         let mut quads = stacked_corners(&pose, width, &heights, WRIST_GAP_M)
@@ -452,7 +512,7 @@ impl State {
             self.status.heat_drawn = true;
         }
         if let (Some(gpu), Some(fraction), Some(trail)) = (self.gpu.as_mut(), fraction, trail) {
-            let low = fraction <= wrist.low_health;
+            let low = fraction <= WRIST_LOW_HEALTH;
             gpu.bar
                 .update(context, BarKey::new(BAR_TEXELS.0, fraction, trail, low));
         }

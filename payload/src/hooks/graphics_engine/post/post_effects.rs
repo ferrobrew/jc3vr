@@ -94,6 +94,12 @@ pub(crate) fn reset_post_block_gate() {
     WORLD_POST_BLOCK_RAN.store(false, Ordering::Relaxed);
 }
 
+/// Deduplicate the world post-effects block to once per dispatch. `ApplyWorldFilters` enqueues the
+/// block into the pass's draw list at draw time, which the between-eye list-parity restore cannot
+/// zero, so eye 1 otherwise draws eye 0's stale entry plus its own, running the whole post chain
+/// (and FSR) twice. The double-stepped FSR history is the residual per-eye flicker of issue #10.
+const DEDUPE_POST_BLOCK: bool = true;
+
 // RenderBlockPostEffects::Draw -- the world post-effect chain (histogram, blur, glare, DoF, motion
 // blur, tonemap, AA/FSR, sun halo, fade). `ApplyWorldFilters` enqueues the block into pass
 // RP_POSTEFFECTS's *draw* list at draw time, and the between-eye list-parity restore only zeroes the
@@ -109,7 +115,7 @@ pub(crate) fn reset_post_block_gate() {
 )]
 fn render_block_post_effects_draw(this: *mut c_void, ctx: *mut c_void, info: *mut c_void) -> u64 {
     let repeat = WORLD_POST_BLOCK_RAN.swap(true, Ordering::Relaxed);
-    let skip = repeat && Config::lock_query(|c| c.stereo.dedupe_post_block);
+    let skip = repeat && DEDUPE_POST_BLOCK;
     TraceState::record_eye(TraceEvent::PostEffectsBlockDraw { repeat, skip });
     if !repeat {
         crate::debug::pipeline_probes::record_main_color_mean("post_block_entry");
@@ -158,6 +164,10 @@ fn apply_global_filters(this: *mut c_void, dt: f32, ctx: *mut c_void) {
     APPLY_GLOBAL_FILTERS.get().unwrap().call(this, dt, ctx);
 }
 
+/// Force SMAA 1x in stereo: T2X's temporal resolve blends a single history shared across the two
+/// eye dispatches, so each eye ghosts the other.
+pub(crate) const FORCE_SMAA_1X: bool = true;
+
 // AntiAliasingEffect::Apply -- the AA stage of the post chain. Two roles:
 //   * FSR on: resolve the slot color ourselves (post-tonemap) via fsr_dispatch, then neutralize the
 //     engine AA to AA_NONE so it passthrough-blits our FSR result onward (docs/mod/rendering/fsr.md).
@@ -172,13 +182,11 @@ fn anti_aliasing_apply(
     mgr: *mut c_void,
     slot: *mut u32,
 ) -> u64 {
-    let (force_smaa_1x, fsr) = Config::lock_query(|c| {
-        (
-            stereo::active() && c.stereo.force_smaa_1x,
-            c.fsr
-                .enabled
-                .then_some(c.fsr.sharpen.then_some(c.fsr.sharpness)),
-        )
+    let force_smaa_1x = stereo::active() && FORCE_SMAA_1X;
+    let fsr = Config::lock_query(|c| {
+        c.fsr
+            .enabled
+            .then_some(c.fsr.sharpen.then_some(c.fsr.sharpness))
     });
 
     // When FSR is on, resolve into the current slot ourselves, then let the engine AA run as a

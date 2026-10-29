@@ -42,6 +42,12 @@ pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&SSAO_DRAW_BINDER)
 }
 
+/// Force the SSAO pass into its first-pass state before each stereo eye, so each eye computes AO
+/// fresh from its own depth instead of blending against the other eye's history. The SSAO history
+/// index advances once per dispatch, so without this a stereo render double-steps it and the two
+/// eyes compound.
+const FORCE_SSAO_FIRST_PASS: bool = true;
+
 // SSAOPass::Draw -- the per-dispatch SSAO pass. Its history double-steps across the two stereo
 // dispatches, so force m_FirstPass on (the engine's "compute fresh, ignore history" state) for each
 // eye while stereo is active. The apply still runs; only the cross-eye temporal blend is suppressed.
@@ -51,13 +57,8 @@ fn ssao_draw(this: *mut SSAOPass) {
     SSAO_PASS.store(this, Ordering::Relaxed);
 
     let stereo = stereo::active();
-    let (force_first_pass, disable, eye0_only) = Config::lock_query(|c| {
-        (
-            c.stereo.force_ssao_first_pass,
-            c.stereo.disable_ssao,
-            c.stereo.ssao_eye0_only,
-        )
-    });
+    let (disable, eye0_only) =
+        Config::lock_query(|c| (c.stereo.disable_ssao, c.stereo.ssao_eye0_only));
 
     // Diagnostic levers: skipping the pass leaves that eye's GBuffer-alpha AO untouched (material AO
     // only, no screen AO) and is fully reversible -- toggling off resumes the pass next dispatch with
@@ -69,7 +70,7 @@ fn ssao_draw(this: *mut SSAOPass) {
         return;
     }
 
-    let force = stereo && force_first_pass;
+    let force = stereo && FORCE_SSAO_FIRST_PASS;
     if let Some(pass) = unsafe { this.as_mut() } {
         pass.m_FirstPass |= force;
     }

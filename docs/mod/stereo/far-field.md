@@ -19,7 +19,7 @@ Two mechanisms, matched to how the engine organizes the work:
   the engine hands it off to other block types as the camera approaches.
 
 Dial-in modes: Collect (counters only), Skip far, Skip near, Skip far on eye 1. Counters in the
-Render/Performance tabs; a dump button logs the full per-pass classification state.
+Experimental page's Far field feature and in Rendering > Previews and performance; a dump button logs the full per-pass classification state.
 
 Accepted residuals for the baseline: minor distant bleed, and the non-ocean water tiles, which
 straddle the boundary — revisit after sharing lands.

@@ -1,43 +1,7 @@
 //! VR runtime configuration. See [`crate::vr`] and `docs/mod/vr-runtime.md`.
 
-use jc3gi::{camera::camera::Camera, graphics_engine::render_engine::RenderPassId};
+use jc3gi::camera::camera::Camera;
 use serde::{Deserialize, Serialize};
-
-/// Serialize a [`RenderPassId`] as its `i32` discriminant, matching the pre-typing on-disk format
-/// (e.g. [`RenderPassId::RP_MODELS_DYNAMIC`]'s discriminant) so existing config files stay readable.
-fn serialize_render_pass_id<S: serde::Serializer>(
-    pass: &RenderPassId,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    serializer.serialize_i32(*pass as i32)
-}
-
-/// Deserialize a [`RenderPassId`] from an `i32`, accepting any value that falls within the enum's
-/// range. The config file stores the integer; an out-of-range value is a deserialization error.
-fn deserialize_render_pass_id<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<RenderPassId, D::Error> {
-    let raw = i32::deserialize(deserializer)?;
-    render_pass_id_from_i32(raw).ok_or_else(|| {
-        serde::de::Error::custom(format!(
-            "render pass id {raw:#x} is out of the RenderPassId range"
-        ))
-    })
-}
-
-/// Map an `i32` to the matching [`RenderPassId`] variant, or `None` if it is outside the enum range.
-///
-/// `RenderPassId` is `#[repr(i32)]` with contiguous discriminants `0..=157`
-/// (`RP_NONE` through `RP_RENDERPASS_COUNT`), so every value in that range is a valid variant.
-fn render_pass_id_from_i32(raw: i32) -> Option<RenderPassId> {
-    if (0..=157).contains(&raw) {
-        // SAFETY: `RenderPassId` is `#[repr(i32)]` and every value in `0..=157` is a named variant,
-        // so transmuting an in-range `i32` is sound.
-        Some(unsafe { std::mem::transmute::<i32, RenderPassId>(raw) })
-    } else {
-        None
-    }
-}
 
 /// Which depth convention the per-eye off-axis projection is written in, and where in the
 /// `SetupRenderCamera` sequence it lands (`docs/engine/rendering/rendering.md` §2.7, `docs/mod/vr-runtime.md` blocker 1).
@@ -114,26 +78,6 @@ pub enum BlitGamma {
     Passthrough,
 }
 
-/// How the desktop mirror frames one eye's image inside the game window.
-///
-/// While a session runs the swapchain buffers are the per-eye render resolution, which is near-square
-/// (often taller than wide), while the Win32 client rect keeps its original widescreen aspect. The two
-/// aspects have to be reconciled, and the choice is the same one every VR game's companion view makes.
-#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum MirrorFraming {
-    /// Scale the eye image up until it covers the whole window, cropping whatever falls outside
-    /// (centred). No bars; the periphery of the eye render -- most of which is outside the lens's
-    /// useful area anyway -- is cut off. This is what other VR titles' desktop views do, and the
-    /// default.
-    #[default]
-    Fill,
-    /// Scale the eye image down until all of it is visible, letterboxing the remainder with black
-    /// bars. Nothing is cropped, so it shows exactly what the eye rendered -- useful when checking
-    /// coverage at the edges of the frame -- but a near-square eye in a widescreen window wastes most
-    /// of the window.
-    Fit,
-}
-
 /// OpenXR runtime settings. `Clone` (not `Copy`) because [`loader_path`](VrConfig::loader_path) owns
 /// a `String`.
 #[derive(Clone, Serialize, Deserialize)]
@@ -195,17 +139,6 @@ pub struct VrConfig {
     /// a valid eye at use.
     #[serde(default)]
     pub mirror_eye: u8,
-    /// How the desktop [`mirror`](VrConfig::mirror) reconciles the eye image's aspect with the window's
-    /// (see [`MirrorFraming`]). Defaults to filling the window.
-    #[serde(default)]
-    pub mirror_framing: MirrorFraming,
-    /// Extra magnification applied to the desktop [`mirror`](VrConfig::mirror) image on top of its
-    /// framing, about the centre. `1.0` is the plain fill/fit; above that crops in further, which
-    /// tightens the desktop view onto the middle of the eye render (the eye covers a much wider field
-    /// of view than a flat game would frame). Clamped to a sane range at use; a non-finite value falls
-    /// back to `1.0`.
-    #[serde(default = "default_mirror_zoom")]
-    pub mirror_zoom: f32,
     /// Persist the OpenXR **instance and session** across inject/uninject cycles instead of destroying
     /// them on teardown. The runtime allows only a small number of instances *and* sessions per
     /// process (often one each), and Proton's own startup VR probe contends for that budget, so a
@@ -264,11 +197,6 @@ fn default_true() -> bool {
     true
 }
 
-/// The serde default for [`VrConfig::mirror_zoom`] (see [`default_true`] for why this is needed).
-fn default_mirror_zoom() -> f32 {
-    1.0
-}
-
 impl VrConfig {
     pub const fn new() -> Self {
         Self {
@@ -284,8 +212,6 @@ impl VrConfig {
             native_resolution: true,
             mirror: true,
             mirror_eye: 0,
-            mirror_framing: MirrorFraming::Fill,
-            mirror_zoom: 1.0,
             persist_instance: true,
             auto_recenter_on_gameplay: true,
             own_back_buffer: true,
@@ -323,24 +249,6 @@ pub struct FoveationConfig {
     /// stencil use is bits 0, 1, 5, 6, so bit 7 is free; change it if an effect corrupts with foveation
     /// on (a data-driven pass may write it).
     pub mask_bit: u32,
-    /// The first [`RenderPassId`](jc3gi::graphics_engine::render_engine::RenderPassId) (inclusive) of the
-    /// foveated shading range: the mask-write runs just before it, and the peripheral stencil test is
-    /// forced on from here. Default `RP_MODELS_DYNAMIC` -- after the depth prepass, so the
-    /// dropped pixels keep full-resolution depth. A tuning knob; widen it toward the lighting passes to
-    /// save more, narrow it if an effect misbehaves.
-    #[serde(
-        serialize_with = "serialize_render_pass_id",
-        deserialize_with = "deserialize_render_pass_id"
-    )]
-    pub foveal_first_pass: RenderPassId,
-    /// The last [`RenderPassId`](jc3gi::graphics_engine::render_engine::RenderPassId) (inclusive) of the
-    /// foveated shading range: the peripheral stencil test is forced through it, and the fill-in runs just
-    /// after. Default `RP_CREATURES`.
-    #[serde(
-        serialize_with = "serialize_render_pass_id",
-        deserialize_with = "deserialize_render_pass_id"
-    )]
-    pub foveal_last_pass: RenderPassId,
     /// Diagnostic: paint the dropped peripheral pixels magenta (in the fill-in pass) instead of
     /// reconstructing them, so the mask is directly visible. Off by default.
     pub debug_show_mask: bool,
@@ -353,22 +261,13 @@ impl FoveationConfig {
             outer_fraction: 0.55,
             max_drop: 0.8,
             mask_bit: 0x80,
-            foveal_first_pass: RenderPassId::RP_MODELS_DYNAMIC,
-            foveal_last_pass: RenderPassId::RP_CREATURES,
             debug_show_mask: false,
         }
     }
 
-    /// Validate the foveation configuration: the first pass must not exceed the last, and the mask
-    /// bit must be a single set bit (a power of two). Returns `Err` with a description of the first
-    /// problem found.
+    /// Validate the foveation configuration: the mask bit must be a single set bit (a power of
+    /// two).
     pub fn validate(&self) -> Result<(), FoveationConfigError> {
-        if self.foveal_first_pass > self.foveal_last_pass {
-            return Err(FoveationConfigError::PassRange {
-                first: self.foveal_first_pass as i32,
-                last: self.foveal_last_pass as i32,
-            });
-        }
         if self.mask_bit == 0 || (self.mask_bit & (self.mask_bit - 1)) != 0 {
             return Err(FoveationConfigError::MaskNotPowerOfTwo {
                 mask_bit: self.mask_bit,
@@ -386,8 +285,6 @@ impl Default for FoveationConfig {
 /// A configuration error found by [`FoveationConfig::validate`].
 #[derive(Debug)]
 pub enum FoveationConfigError {
-    /// The foveal pass range is inverted (`first > last`).
-    PassRange { first: i32, last: i32 },
     /// The stencil mask bit is zero or not a single set bit.
     MaskNotPowerOfTwo { mask_bit: u32 },
 }
@@ -395,10 +292,6 @@ pub enum FoveationConfigError {
 impl std::fmt::Display for FoveationConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FoveationConfigError::PassRange { first, last } => write!(
-                f,
-                "foveation: foveal_first_pass ({first:#x}) is greater than foveal_last_pass ({last:#x})"
-            ),
             FoveationConfigError::MaskNotPowerOfTwo { mask_bit } => write!(
                 f,
                 "foveation: mask_bit ({mask_bit:#x}) must be a single set bit (a power of two)"
@@ -418,14 +311,6 @@ mod tests {
     }
 
     #[test]
-    fn foveation_config_validate_rejects_inverted_range() {
-        let mut cfg = FoveationConfig::new();
-        cfg.foveal_first_pass = RenderPassId::RP_CREATURES;
-        cfg.foveal_last_pass = RenderPassId::RP_MODELS_DYNAMIC;
-        assert!(cfg.validate().is_err());
-    }
-
-    #[test]
     fn foveation_config_validate_rejects_zero_mask_bit() {
         let mut cfg = FoveationConfig::new();
         cfg.mask_bit = 0;
@@ -437,13 +322,5 @@ mod tests {
         let mut cfg = FoveationConfig::new();
         cfg.mask_bit = 0x60;
         assert!(cfg.validate().is_err());
-    }
-
-    #[test]
-    fn foveation_config_validate_accepts_equal_range() {
-        let mut cfg = FoveationConfig::new();
-        cfg.foveal_first_pass = RenderPassId::RP_CREATURES;
-        cfg.foveal_last_pass = RenderPassId::RP_CREATURES;
-        assert!(cfg.validate().is_ok());
     }
 }

@@ -130,7 +130,7 @@ pub fn armed_brightness_probe() {
             .lock()
             .stereo
             .auto_trace_brightness_step = false;
-        let frames = crate::ui::diagnostics::TRACE_FRAME_COUNT
+        let frames = crate::ui::render_capture::TRACE_FRAME_COUNT
             .load(std::sync::atomic::Ordering::Relaxed)
             .max(30);
         tracing::info!(

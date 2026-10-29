@@ -27,6 +27,7 @@ use crate::{
         stereo_diff::op_total,
         trace::{TraceEvent, TraceState, tracing_active},
     },
+    hooks::game::RESTORE_FRAME_COUNTERS,
     stereo::{STEREO_STATE, draw_index, is_second_eye},
     vr::foveation::{FORCE_STENCIL_TEST, FoveationParams},
 };
@@ -297,6 +298,20 @@ struct FoveationPlan {
     params: FoveationParams,
 }
 
+/// The first render pass (inclusive) of the foveated shading range: the mask-write runs just before
+/// it, and the peripheral stencil test is forced on from here. After the depth prepass, so the
+/// dropped pixels keep full-resolution depth.
+const FOVEAL_FIRST_PASS: RenderPassId = RenderPassId::RP_MODELS_DYNAMIC;
+
+/// The last render pass (inclusive) of the foveated shading range: the peripheral stencil test is
+/// forced through it, and the fill-in runs just after.
+const FOVEAL_LAST_PASS: RenderPassId = RenderPassId::RP_CREATURES;
+
+const _: () = assert!(
+    FOVEAL_FIRST_PASS as i32 <= FOVEAL_LAST_PASS as i32,
+    "the foveated pass range is inverted"
+);
+
 /// Build the [`FoveationPlan`] for a draw-range call, or `None` when foveation is disabled, this is not a
 /// VR eye render, or the foveated range does not intersect `[first, last)`. Publishes the per-draw stencil
 /// test bits ([`crate::vr::foveation::STENCIL_TEST_BITS`]) when active.
@@ -311,8 +326,8 @@ fn foveation_plan(first: i32, last: i32) -> Option<FoveationPlan> {
     }
     let eye = usize::from(is_second_eye());
     let center_uv = foveal_center_uv(eye)?;
-    let ff = cfg.foveal_first_pass as i32;
-    let fl = cfg.foveal_last_pass as i32;
+    let ff = FOVEAL_FIRST_PASS as i32;
+    let fl = FOVEAL_LAST_PASS as i32;
     let fov_start = first.max(ff);
     let fov_end = last.min(fl + 1);
     if fov_start >= fov_end {
@@ -407,16 +422,28 @@ fn setup_render_states(context: *mut HContext_t, a2: *mut c_void) {
     SETUP_RENDER_STATES.get().unwrap().call(context, a2);
 }
 
+/// Widen the sun-shadow cascade fit frustum to cover both eyes. The engine fits the cascaded shadow
+/// map once per frame to the centre camera's narrow projection, so the wider, laterally shifted VR
+/// eyes see distant and peripheral geometry outside the fitted coverage box, where shadows clamp to
+/// the atlas border or a wrong texel, differently per eye, and crawl as the fit boundary
+/// re-quantizes under motion. Complements [`FIX_SHADOW_CASCADE_ANCHOR`] (which re-anchors the
+/// sampling; this fixes the coverage). Costs some shadow resolution. VR only.
+const WIDEN_SHADOW_FIT: bool = true;
+
+/// Stabilize the sun-shadow cascade fit against head orientation, so shadows do not change when the
+/// view only rotates: the cascade centre follows heading but not head pitch or roll. VR only.
+const STABILIZE_SHADOW_FIT: bool = true;
+
 // ShadowManager::UpdateRender -- the sim-side sun-shadow update, which fits the scheduled cascades to
 // the active camera (the fit frustum comes from its m_ProjectionF via CFrustum::Compute). Two scoped
 // tweaks around the fit, both restored after:
-//   * widen_shadow_fit: widen the two FOV-scale terms (data[0]/data[5]) to the union FOV so the
+//   * WIDEN_SHADOW_FIT: widen the two FOV-scale terms (data[0]/data[5]) to the union FOV so the
 //     cascades are fit to cover BOTH eyes. The fit is once-per-frame from the narrow centre camera, so
 //     the wider, laterally shifted VR eyes otherwise exceed the fitted coverage box -- their distant
 //     shadows fall outside it and disagree between the eyes, and the boundary crawls under motion.
-//     This is the coverage half of the shadow fix; fix_shadow_cascade_anchor is the sampling half. The
+//     This is the coverage half of the shadow fix; FIX_SHADOW_CASCADE_ANCHOR is the sampling half. The
 //     centre, shear, and z (near/far/split) terms are left untouched, so split distances are unchanged.
-//   * stabilize_shadow_fit: horizontalize the active camera's forward vector (m_TransformT1 row 2,
+//   * STABILIZE_SHADOW_FIT: horizontalize the active camera's forward vector (m_TransformT1 row 2,
 //     data[8..10]) to yaw-only for the fit. The engine pushes each cascade box's centre forward along
 //     that vector, so head pitch/roll slides the cascade centre and the shadows shift, re-quantize, and
 //     scale as you look around (view-dependent shadows). Projecting the forward onto the ground plane
@@ -429,13 +456,7 @@ fn shadow_manager_update_render(this: *mut c_void, dt: f32, dtf: f32) -> u64 {
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("ShadowManager::UpdateRender");
     let original = SHADOW_MANAGER_UPDATE_RENDER.get().unwrap();
-    let (widen, stabilize, update_every_frame) = Config::lock_query(|c| {
-        (
-            c.stereo.widen_shadow_fit,
-            c.stereo.stabilize_shadow_fit,
-            c.stereo.shadow_update_every_frame,
-        )
-    });
+    let update_every_frame = Config::lock_query(|c| c.stereo.shadow_update_every_frame);
     // Defeat the cascade update-pattern amortization (issue #31): force every cascade to update level 0
     // so it re-fits and re-renders each frame instead of on its 2^L cadence, eliminating the periodic
     // re-fit snaps that surface as flicker with the mod's forced SMAA 1x (no T2X to average them). The
@@ -445,8 +466,10 @@ fn shadow_manager_update_render(this: *mut c_void, dt: f32, dtf: f32) -> u64 {
         manager.m_CascadeUpdateLevels = [0; 6];
     }
     // The widen reuses the union-FOV cull projection; `None` on flatscreen, so widening is VR-only.
-    let union = widen.then(crate::vr::cull_projection_standard).flatten();
-    if union.is_none() && !stabilize {
+    let union = WIDEN_SHADOW_FIT
+        .then(crate::vr::cull_projection_standard)
+        .flatten();
+    if union.is_none() && !STABILIZE_SHADOW_FIT {
         return original.call(this, dt, dtf);
     }
     // SAFETY: the camera-manager singleton and the active camera are live on the game thread for
@@ -464,7 +487,7 @@ fn shadow_manager_update_render(this: *mut c_void, dt: f32, dtf: f32) -> u64 {
             camera.m_ProjectionF.data[5] = union.data[5];
         }
         // Horizontalize the camera forward (row 2) so the cascade centre's forward-push is yaw-only.
-        let saved_row2 = stabilize.then(|| {
+        let saved_row2 = STABILIZE_SHADOW_FIT.then(|| {
             let row2 = [
                 camera.m_TransformT1.data[8],
                 camera.m_TransformT1.data[9],
@@ -521,6 +544,14 @@ fn commit_render_pass_settings(this: *mut ShadowManager, ctx: *mut c_void) {
     }
 }
 
+/// Render the view-independent pre-passes once and reuse them for the second eye (issue #30): on
+/// eye 1, `PreDraw` skips the reflection proxies, cloud shadows, the sun-shadow cascade atlas, and
+/// the water simulation, reusing eye 0's output. Halves the second eye's pre-pass cost, and renders
+/// the shared sun-shadow atlas once per frame instead of twice, which also removes the per-eye
+/// shadow flicker (issue #31). Requires [`RESTORE_FRAME_COUNTERS`] so both eyes share the
+/// shadow-atlas parity slot. Stereo only.
+const SHARE_PREPASSES: bool = true;
+
 // RenderEngine::PreDraw -- the pre-pass dispatch (sky-lighting LUT, planar/env reflections, cloud
 // shadows, vegetation, the sun-shadow cascade atlas, water sim, rain occluder). Most of these are driven
 // by the sun / reflection / world-space cameras -- never the per-eye render camera -- and write separate
@@ -531,7 +562,7 @@ fn commit_render_pass_settings(this: *mut ShadowManager, ctx: *mut c_void) {
 // frame instead of twice -- which also removes the per-eye shadow flicker (issue #31). PreDraw runs after
 // CommitRenderPassSettings (which re-enables the frame's scheduled shadow cascades), so the clear here is
 // the last word before the loop; the passes are re-enabled after so the next frame's first eye runs them.
-// Gated on `restore_frame_counters` so both eyes share the shadow-atlas parity slot (without it, eye 1
+// Gated on `RESTORE_FRAME_COUNTERS` so both eyes share the shadow-atlas parity slot (without it, eye 1
 // advances parity and would sample the other, unrendered slot).
 //
 // Under the single-pass collapse this whole path is inert, and correctly so: the collapse runs one
@@ -563,9 +594,11 @@ fn pre_draw(this: *mut RenderEngine, ctx: *mut HContext_t) -> u64 {
     // deferred.
     crate::stereo::single_pass::begin_dispatch();
     let original = PRE_DRAW.get().unwrap();
-    let share_cfg =
-        Config::lock_query(|c| c.stereo.share_prepasses && c.stereo.restore_frame_counters);
-    if crate::stereo::dispatch_ordinal() > 0 && crate::stereo::active() && share_cfg {
+    if SHARE_PREPASSES
+        && RESTORE_FRAME_COUNTERS
+        && crate::stereo::dispatch_ordinal() > 0
+        && crate::stereo::active()
+    {
         // SAFETY: `this` is the live render engine; its per-category `m_RenderPasses` vectors hold
         // engine-owned, null-checked pass pointers; the `m_Enabled` flag write mirrors the shadow
         // scheduler's own store in `commit_render_pass_settings`.
@@ -634,6 +667,12 @@ unsafe fn reenable_passes(passes: &[*mut RenderPass]) {
     }
 }
 
+/// Correct the sun-shadow cascade anchor per eye. The cascaded shadow map is fit to the shared
+/// center camera, but the material shaders anchor the cascade lookup at the per-eye camera
+/// position, so each eye's shadow is shifted by `M * (eyePos - centerPos)`: the visible per-eye
+/// sun-shadow mismatch (edge, length, and strength differing between eyes, only with disparity).
+const FIX_SHADOW_CASCADE_ANCHOR: bool = true;
+
 // RenderEngine::SetGlobalShaderConstants -- stages the per-eye render context into the cb0 GlobalConstants
 // (the shadow-cascade transform among them). The cascade transform is baked center-camera-relative, but
 // the material shader anchors the shadow lookup at the per-eye camera position (cb0[4]), shifting each
@@ -646,7 +685,7 @@ fn set_global_shader_constants(this: *mut c_void, ctx: *mut c_void) {
     if let Some(ctx) = unsafe { ctx.cast::<RenderContext>().as_mut() } {
         let delta = STEREO_STATE.lock().shadow_anchor_delta;
         record_shadow_state(ctx, delta);
-        if Config::lock_query(|c| c.stereo.fix_shadow_cascade_anchor) {
+        if FIX_SHADOW_CASCADE_ANCHOR {
             apply_shadow_cascade_anchor_fix(ctx, delta);
         }
     }

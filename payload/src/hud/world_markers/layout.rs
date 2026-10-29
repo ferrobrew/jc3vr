@@ -4,7 +4,14 @@
 
 use glam::{Quat, Vec2, Vec3, Vec4};
 
-use crate::hud::config::CropExtents;
+/// A rectangle around a point, as its extents on each side, in stage pixels.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub(crate) struct CropExtents {
+    pub left: f32,
+    pub right: f32,
+    pub up: f32,
+    pub down: f32,
+}
 
 /// How the movie stage maps onto the HUD texture.
 ///

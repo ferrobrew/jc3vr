@@ -26,8 +26,9 @@ use jc3gi::graphics_engine::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config, debug::pipeline_probes::record_main_color_mean,
-    hooks::graphics_engine::reconstruction,
+    config::Config,
+    debug::pipeline_probes::record_main_color_mean,
+    hooks::graphics_engine::reconstruction::{self, RECONSTRUCT_OFFAXIS_INVERSE},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -42,9 +43,8 @@ fn atmospheric_scattering_draw(
     rc: *mut RenderContext,
     info: *const RBIInfo,
 ) {
-    let enabled = Config::lock_query(|c| {
-        c.stereo.single_pass.atmospheric_per_eye && c.stereo.reconstruct_offaxis_inverse
-    });
+    let enabled = RECONSTRUCT_OFFAXIS_INVERSE
+        && Config::lock_query(|c| c.stereo.single_pass.atmospheric_per_eye);
     let call = || {
         ATMOSPHERIC_SCATTERING_DRAW
             .get()

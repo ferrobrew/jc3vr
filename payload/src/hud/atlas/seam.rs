@@ -28,10 +28,13 @@ use crate::{
             },
             publish,
         },
-        config::{CropExtents, HudConfig},
+        config::HudConfig,
         scaleform::{self, AtlasClip, CLIP_HANDLES, ClipHandle},
         state::applied_redirect,
-        world_markers::{self, layout::StageFrame},
+        world_markers::{
+            self,
+            layout::{CropExtents, StageFrame},
+        },
     },
 };
 
@@ -267,35 +270,68 @@ fn active_layout(cfg: &HudConfig) -> Option<(AtlasLayout, StageFrame)> {
     let request = LayoutRequest {
         stage,
         frame,
-        gutter: atlas.gutter_px,
-        ammo: (atlas.ammo.enabled && controllers).then_some(PartRequest {
-            extents: atlas.ammo.extents,
-            max_scale: atlas.ammo.max_scale,
-        }),
-        heat: (atlas.wrist.enabled && atlas.wrist.heat && controllers).then_some(PartRequest {
-            extents: atlas.wrist.heat_extents,
-            max_scale: atlas.wrist.heat_max_scale,
-        }),
+        gutter: GUTTER_PX,
+        ammo: (atlas.ammo.enabled && controllers).then_some(AMMO),
+        heat: (atlas.wrist.enabled && controllers).then_some(HEAT),
         cross: (atlas.cross.enabled && controllers)
-            .then(|| extents_from_edges(hud.m_SelectionWheelBB.data, atlas.cross.margin_px))
+            .then(|| extents_from_edges(hud.m_SelectionWheelBB.data, CROSS_MARGIN_PX))
             .flatten()
             .map(|extents| PartRequest {
                 extents,
-                max_scale: atlas.cross.max_scale,
+                max_scale: CROSS_MAX_SCALE,
             }),
-        tether: (atlas.tether.enabled && controllers).then_some(PartRequest {
-            extents: atlas.tether.extents,
-            max_scale: atlas.tether.max_scale,
-        }),
-        label: (markers.enabled && atlas.markers).then_some(CropExtents {
-            left: markers.crop.left + markers.label_extra_left.max(0.0),
-            ..markers.crop
-        }),
-        marker: (markers.enabled && atlas.markers).then_some(markers.crop),
+        tether: (atlas.tether.enabled && controllers).then_some(TETHER),
+        label: markers.enabled.then_some(world_markers::LABEL_CROP),
+        marker: markers.enabled.then_some(world_markers::CROP),
         max_markers: world_markers::MAX_MARKERS,
     };
     Some((layout(&request)?, frame))
 }
+
+/// The empty margin around every cell, in stage pixels, wider than the glows and shadows the moved
+/// parts draw past their bounds.
+const GUTTER_PX: f32 = 6.0;
+
+/// The weapon readout's extents around its clip's origin, in the clip's own pixels, and the largest
+/// scale it is captured at; it is scaled down further to fit a band.
+const AMMO: PartRequest = PartRequest {
+    extents: CropExtents {
+        left: 25.0,
+        right: 285.0,
+        up: 90.0,
+        down: 175.0,
+    },
+    max_scale: 1.0,
+};
+
+/// The heat readout's extents and largest scale, as [`AMMO`].
+const HEAT: PartRequest = PartRequest {
+    extents: CropExtents {
+        left: 140.0,
+        right: 170.0,
+        up: 110.0,
+        down: 30.0,
+    },
+    max_scale: 1.0,
+};
+
+/// Room added around the selection cross's own extent (which the game reports), in its own pixels,
+/// for its glows and its arms' highlight animations.
+const CROSS_MARGIN_PX: f32 = 12.0;
+
+/// The largest scale the selection cross is captured at; it is scaled down further to fit a band.
+const CROSS_MAX_SCALE: f32 = 1.0;
+
+/// The tether readout's extents and largest scale, as [`AMMO`].
+const TETHER: PartRequest = PartRequest {
+    extents: CropExtents {
+        left: 60.0,
+        right: 60.0,
+        up: 25.0,
+        down: 30.0,
+    },
+    max_scale: 1.0,
+};
 
 /// A clip's placement in stage coordinates, from its display info. The safe-area containers are
 /// children of the HUD clip, which sits at the stage's origin unscaled.

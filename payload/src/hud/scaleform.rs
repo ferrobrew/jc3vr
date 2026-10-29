@@ -1,37 +1,18 @@
-//! Scaleform display-tree plumbing: the clip-handle registry the capture-seam writers share, and
-//! the debug operations that dump the live clip tree and toggle clip visibility by path.
+//! Scaleform display-tree plumbing: the clip-handle registry the capture-seam writers share.
 //!
 //! The overlay suppression (issue #8), the controller scheme's reticle and hint hiding, and the
 //! HUD atlas address clips (`MCI_safe_area_center.MCI_reticles`, ...) through pinned handles
-//! resolved by a layout discovery. The UI thread queues debug requests, and [`process_requests`]
-//! executes them and the discovery on the game update thread (the Scaleform capture thread, where
-//! the display tree is stable and the engine makes its own AS3 calls).
-//!
-//! The tree dump walks [`Movie::GetDisplayObjectsTree`] and logs one line per clip; the toggle
-//! writes `<path>.visible` through [`Movie::SetVariable`]. Both are read-modify operations on the
-//! live movie, guarded by a vtable check so a mismatched `m_Movie` model logs instead of calling
-//! through a wrong vtable.
-
-use std::ffi::CString;
+//! resolved by a layout discovery. [`process_requests`] runs the discovery on the game update
+//! thread (the Scaleform capture thread, where the display tree is stable and the engine makes its
+//! own AS3 calls). The discovery walks [`Movie::GetDisplayObjectsTree`] on the live movie, guarded
+//! by a vtable check so a mismatched `m_Movie` model logs instead of calling through a wrong
+//! vtable.
 
 use jc3gi::ui::{
     scaleform::{AmpMovieObjectDesc, DisplayInfo, Movie, MovieImpl, Value},
     ui_manager::UIManager,
 };
 use parking_lot::Mutex;
-
-use crate::config::Config;
-
-/// A queued Scaleform debug operation. Queued from the UI thread, executed on the game thread.
-enum Request {
-    /// Log the movie's full display tree, one line per clip.
-    DumpTree,
-    /// Set `<path>.visible` on the clip at the dot-separated `path` (from the root timeline).
-    SetClipVisible { path: String, visible: bool },
-}
-
-/// The pending requests. UI thread pushes, game thread drains.
-static REQUESTS: Mutex<Vec<Request>> = Mutex::new(Vec::new());
 
 /// Whether a layout discovery is wanted (set by [`process_requests`] while the registry is needed
 /// and missing or due a refresh). Throttled to one walk per second.
@@ -40,11 +21,6 @@ static DISCOVERY_REQUESTED: std::sync::atomic::AtomicBool =
 
 /// The last discovery attempt, for the once-per-second throttle.
 static LAST_DISCOVERY: Mutex<Option<std::time::Instant>> = Mutex::new(None);
-
-/// The clip-path prefix from the root movie's timeline to the HUD movie's clips, ending in a dot
-/// when non-empty (e.g. `"hud."`). The HUD movie is attached by `root.gfx`'s ActionScript under a
-/// runtime name, so the layout discovery derives the prefix from the live tree.
-static HUD_PATH_PREFIX: Mutex<String> = Mutex::new(String::new());
 
 /// Whether a handle release is wanted (set at shutdown so the managed values are released on the
 /// capture thread before the hooks come down).
@@ -63,8 +39,8 @@ pub(crate) fn discovered_in_hud() -> bool {
 }
 
 /// The full-screen overlay clips of issue #8, all children of the center container: held
-/// invisible while [`HudConfig::suppress_overlays`](crate::hud::HudConfig::suppress_overlays) is
-/// on. Paths confirmed against an in-game display-tree dump; `MCI_omni_damage` (the screen-wide
+/// invisible by [`apply_overlay_suppression`], since they were authored to cover a flat screen and
+/// would cover the whole panel in VR instead. Paths confirmed against an in-game display-tree dump; `MCI_omni_damage` (the screen-wide
 /// damage flash) is a direct child of the center container, not of the health-damage manager.
 pub(crate) const OVERLAY_CLIPS: &[&str] = &[
     "MCI_safe_area_center.MCI_omni_damage",
@@ -181,13 +157,13 @@ unsafe impl Send for ClipHandle {}
 pub(crate) static CLIP_HANDLES: parking_lot::Mutex<Option<ClipHandles>> =
     parking_lot::Mutex::new(None);
 
-/// Hold the issue #8 overlay clips hidden while `suppress` is on, tracking the game's own
-/// visibility intent across our writes and restoring it on the off-transition. Runs at the
-/// capture seam (game update thread, deferred render lock held).
+/// Hold the issue #8 overlay clips hidden, tracking the game's own visibility intent across our
+/// writes (the handle release restores it). Runs at the capture seam (game update thread,
+/// deferred render lock held).
 ///
 /// # Safety
 /// Must be called from the [`MovieImpl::Capture`](jc3gi::ui::scaleform::MovieImpl) detour.
-pub unsafe fn apply_overlay_suppression(suppress: bool) {
+pub unsafe fn apply_overlay_suppression() {
     let mut handles = CLIP_HANDLES.lock();
     let Some(handles) = handles.as_mut() else {
         return;
@@ -196,13 +172,8 @@ pub unsafe fn apply_overlay_suppression(suppress: bool) {
     // values from the registry.
     unsafe {
         for handle in &mut handles.overlays {
-            if suppress {
-                refresh_intent(handle);
-                force_visible(handle, false);
-            } else if handle.forced.is_some() {
-                refresh_intent(handle);
-                unforce_visible(handle);
-            }
+            refresh_intent(handle);
+            force_visible(handle, false);
         }
     }
 }
@@ -374,80 +345,42 @@ fn release_clip_handles() {
     }
 }
 
-/// Queue a display-tree dump (from the debug UI).
-pub fn request_dump_tree() {
-    REQUESTS.lock().push(Request::DumpTree);
-}
-
-/// Queue a clip visibility change (from the debug UI). `path` is dot-separated from the root
-/// timeline, e.g. `MCI_hud.MCI_poi_stage`.
-pub fn request_set_clip_visible(path: String, visible: bool) {
-    REQUESTS
-        .lock()
-        .push(Request::SetClipVisible { path, visible });
-}
-
-/// Execute all pending requests. Call once per frame on the game update thread (the Scaleform
-/// capture thread), before the frame's UI advance.
+/// Execute the pending handle release and layout discovery. Call once per frame on the game update
+/// thread (the Scaleform capture thread), before the frame's UI advance.
 pub fn process_requests() {
     if RELEASE_REQUESTED.swap(false, std::sync::atomic::Ordering::Relaxed) {
         release_clip_handles();
     }
 
-    // The capture-seam writers need the handle registry; request the initial discovery when any
-    // of them wants it, and refresh it periodically.
-    let handles_needed = Config::lock_query(|c| {
-        c.hud.suppress_overlays
-            || c.hud.atlas.enabled
-            || (c.controllers.enabled
-                && (c.controllers.overlay.hide_game_reticle
-                    || c.controllers.summary.hide_game_hints))
-    });
+    // The capture-seam writers need the handle registry (the overlay suppression always does);
+    // request the initial discovery, and refresh it periodically.
     let handles_live = CLIP_HANDLES.lock().is_some();
-    if handles_needed
-        && (!handles_live
-            || LAST_DISCOVERY
-                .lock()
-                .is_some_and(|t| t.elapsed().as_secs_f32() >= 5.0))
+    if !handles_live
+        || LAST_DISCOVERY
+            .lock()
+            .is_some_and(|t| t.elapsed().as_secs_f32() >= 5.0)
     {
         // Menu-era handles resolve against a tree the game re-attaches on entering gameplay; the
         // periodic refresh here re-resolves until a discovery lands during gameplay.
         DISCOVERY_REQUESTED.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
-    let requests = std::mem::take(&mut *REQUESTS.lock());
-    if requests.is_empty() && !DISCOVERY_REQUESTED.load(std::sync::atomic::Ordering::Relaxed) {
+    if !DISCOVERY_REQUESTED.load(std::sync::atomic::Ordering::Relaxed) {
         return;
     }
     let Some((movie_impl, movie_root)) = live_movie() else {
-        if !requests.is_empty() {
-            tracing::warn!(
-                "scaleform: the UI movie is not available; dropping the queued requests"
-            );
-        }
         return;
     };
-    for request in requests {
-        match request {
-            Request::DumpTree => dump_tree(movie_impl, movie_root),
-            Request::SetClipVisible { path, visible } => {
-                set_clip_visible(movie_root, &path, visible)
-            }
+    let due = {
+        let mut last = LAST_DISCOVERY.lock();
+        let due = last.is_none_or(|t| t.elapsed().as_secs_f32() >= 1.0);
+        if due {
+            *last = Some(std::time::Instant::now());
         }
-    }
-
-    if DISCOVERY_REQUESTED.load(std::sync::atomic::Ordering::Relaxed) {
-        let due = {
-            let mut last = LAST_DISCOVERY.lock();
-            let due = last.is_none_or(|t| t.elapsed().as_secs_f32() >= 1.0);
-            if due {
-                *last = Some(std::time::Instant::now());
-            }
-            due
-        };
-        if due && discover_layout(movie_impl, movie_root) {
-            DISCOVERY_REQUESTED.store(false, std::sync::atomic::Ordering::Relaxed);
-        }
+        due
+    };
+    if due && discover_layout(movie_impl, movie_root) {
+        DISCOVERY_REQUESTED.store(false, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -474,51 +407,6 @@ fn live_movie() -> Option<(&'static mut MovieImpl, &'static Movie)> {
     }
 }
 
-/// Log the movie's display tree, one line per clip, as `path`-style names with child counts.
-fn dump_tree(movie_impl: &MovieImpl, movie_root: &Movie) {
-    // SAFETY: called on the capture thread; the movie's heap is live for the whole frame. The
-    // returned tree is a fresh allocation we release when done.
-    unsafe {
-        if movie_impl.pHeap.is_null() {
-            tracing::warn!("scaleform: the movie's heap is null; cannot dump the tree");
-            return;
-        }
-        let root = movie_root.GetDisplayObjectsTree(movie_impl.pHeap);
-        let Some(root_ref) = root.as_ref() else {
-            tracing::warn!("scaleform: GetDisplayObjectsTree returned no tree");
-            return;
-        };
-        tracing::info!("scaleform: display tree dump begins");
-        let mut lines = 0usize;
-        dump_node(root_ref, &mut String::new(), &mut lines);
-        tracing::info!("scaleform: display tree dump ends ({lines} clips)");
-        root_ref.Release();
-
-        // Probe the known clip paths: whether each resolves and its current visibility, with the
-        // discovered prefix applied. This is the ground truth for the suppressions and the atlas
-        // (a suppressed clip that still shows means the effect lives at a different path).
-        let prefix = HUD_PATH_PREFIX.lock().clone();
-        tracing::info!("scaleform: clip path probe (prefix {prefix:?})");
-        for path in OVERLAY_CLIPS
-            .iter()
-            .chain(RETICLE_CLIPS.iter())
-            .chain(HINT_CLIPS.iter())
-            .chain(ATLAS_CLIPS.iter())
-        {
-            let full = format!("{prefix}{path}.visible\0");
-            let mut value = Value::new_boolean(true);
-            let ok = movie_root.GetVariable(&mut value, full.as_ptr());
-            if ok && let Some(visible) = value.as_bool() {
-                tracing::info!("scaleform: probe {path}: visible={visible}");
-            } else if ok {
-                tracing::info!("scaleform: probe {path}: resolves (non-boolean visible)");
-            } else {
-                tracing::warn!("scaleform: probe {path}: does not resolve");
-            }
-        }
-    }
-}
-
 /// A tree node's instance name. The `name` field is a `Scaleform::String`: its `pData` carries
 /// heap flags in the pointer's low bits, and the characters live at
 /// [`StringDataDesc::m_Data`](jc3gi::ui::scaleform::StringDataDesc::m_Data), NUL-terminated.
@@ -531,39 +419,6 @@ unsafe fn node_name(node: &AmpMovieObjectDesc) -> String {
         std::ffi::CStr::from_ptr(desc.as_ptr())
             .to_string_lossy()
             .into_owned()
-    }
-}
-
-/// Log one tree node and recurse into its children. `prefix` is the dot-joined path of the
-/// ancestors; `lines` counts emitted nodes.
-unsafe fn dump_node(node: &AmpMovieObjectDesc, prefix: &mut String, lines: &mut usize) {
-    // SAFETY (whole body): the node came from a live GetDisplayObjectsTree result that is not
-    // released until the walk completes; `name` points into the node's own string allocation.
-    unsafe {
-        let name = node_name(node);
-        let path = if prefix.is_empty() {
-            name.clone()
-        } else {
-            format!("{prefix}.{name}")
-        };
-        tracing::info!("scaleform: {path} ({} children)", node.child_count);
-        *lines += 1;
-
-        if node.children.is_null() {
-            return;
-        }
-        for i in 0..node.child_count as usize {
-            let child = *node.children.add(i);
-            if let Some(child) = child.as_ref() {
-                let saved = prefix.len();
-                if !prefix.is_empty() {
-                    prefix.push('.');
-                }
-                prefix.push_str(&name);
-                dump_node(child, prefix, lines);
-                prefix.truncate(saved);
-            }
-        }
     }
 }
 
@@ -586,7 +441,6 @@ fn discover_layout(movie_impl: &MovieImpl, movie_root: &Movie) -> bool {
         let Some(prefix) = found else {
             return false;
         };
-        HUD_PATH_PREFIX.lock().clone_from(&prefix);
 
         // Resolve a pinned managed handle per clip, on this (capture) thread. The Value is an
         // intrusive list node on the movie's external-references list once filled, so it is
@@ -665,23 +519,5 @@ unsafe fn find_hud_clip(node: &AmpMovieObjectDesc, path: &mut String) -> Option<
             path.truncate(saved);
         }
         None
-    }
-}
-
-/// Set `<path>.visible` through `Movie::SetVariable`, logging the outcome.
-fn set_clip_visible(movie: &Movie, path: &str, visible: bool) {
-    let full_path = format!("{path}.visible");
-    let Ok(c_path) = CString::new(full_path.clone()) else {
-        tracing::warn!("scaleform: the clip path {full_path:?} contains a NUL; ignoring");
-        return;
-    };
-    let value = Value::new_boolean(visible);
-    // SAFETY: called on the capture thread with a checked live movie; the value is an unmanaged
-    // stack boolean the movie copies.
-    let ok = unsafe { movie.SetVariable(c_path.as_ptr() as *const u8, &value, 0) };
-    if ok {
-        tracing::info!("scaleform: set {full_path} = {visible}");
-    } else {
-        tracing::warn!("scaleform: SetVariable failed for {full_path} (path not found?)");
     }
 }

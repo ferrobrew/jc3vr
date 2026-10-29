@@ -9,7 +9,8 @@ use egui::Ui;
 
 use crate::ui::{
     camera, catalog::FeatureId, controllers, diagnostics, director, environment, game, hud,
-    navigation::NavigationState, overview, performance, previews, render, testing, vr,
+    navigation::NavigationState, overview, performance, previews, render, render_capture, testing,
+    vr,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -21,8 +22,8 @@ pub(crate) enum FeatureRoute {
     Render,
     Hud,
     Previews,
-    Performance,
-    RenderDiagnostics,
+    RenderCapture,
+    RenderRe,
     Tracking,
     Replay,
     Director,
@@ -42,11 +43,15 @@ pub(crate) fn route(id: FeatureId) -> FeatureRoute {
         }
         FeatureId::HeadView => FeatureRoute::HeadView,
         FeatureId::Runtime => FeatureRoute::Runtime,
-        FeatureId::Stereo | FeatureId::Resolution | FeatureId::Graphics => FeatureRoute::Render,
+        FeatureId::Stereo
+        | FeatureId::Foveation
+        | FeatureId::SinglePass
+        | FeatureId::FarField
+        | FeatureId::PostFx => FeatureRoute::Render,
         FeatureId::Hud => FeatureRoute::Hud,
         FeatureId::Previews => FeatureRoute::Previews,
-        FeatureId::Performance => FeatureRoute::Performance,
-        FeatureId::RenderDiagnostics | FeatureId::RenderCapture => FeatureRoute::RenderDiagnostics,
+        FeatureId::RenderCapture => FeatureRoute::RenderCapture,
+        FeatureId::RenderRe => FeatureRoute::RenderRe,
         FeatureId::TrackingCapture => FeatureRoute::Tracking,
         FeatureId::Replay => FeatureRoute::Replay,
         FeatureId::DirectorSafety
@@ -126,8 +131,8 @@ fn controls(
         FeatureRoute::Render => render::controls(ui, id),
         FeatureRoute::Hud => with_renderer(ui, renderer, hud::egui_debug_hud),
         FeatureRoute::Previews => with_renderer(ui, renderer, previews::egui_debug_previews),
-        FeatureRoute::Performance => {}
-        FeatureRoute::RenderDiagnostics => diagnostics::controls(ui, id),
+        FeatureRoute::RenderCapture => render_capture::controls(ui),
+        FeatureRoute::RenderRe => diagnostics::open_button(ui),
         FeatureRoute::Tracking => testing::tracking_feature(ui),
         FeatureRoute::Replay => testing::replay_feature(ui),
         FeatureRoute::Director => director::feature(ui, id),
@@ -138,14 +143,14 @@ fn controls(
 
 fn readouts(id: FeatureId) -> impl Iterator<Item = FeatureBody> {
     let routed: Option<FeatureBody> = match route(id) {
-        FeatureRoute::Overview | FeatureRoute::Previews | FeatureRoute::Engine => None,
+        FeatureRoute::Overview | FeatureRoute::RenderRe | FeatureRoute::Engine => None,
         FeatureRoute::HeadView => Some(|ui, _| camera::head_view_status(ui)),
         FeatureRoute::Controller => controllers::status(id),
         FeatureRoute::Runtime => Some(|ui, _| vr::status(ui)),
         FeatureRoute::Render => render::status(id),
         FeatureRoute::Hud => Some(|ui, _| hud::status(ui)),
-        FeatureRoute::Performance => Some(|ui, _| performance::egui_debug_performance(ui)),
-        FeatureRoute::RenderDiagnostics => diagnostics::status(id),
+        FeatureRoute::Previews => Some(|ui, _| performance::egui_debug_performance(ui)),
+        FeatureRoute::RenderCapture => Some(|ui, _| render_capture::status(ui)),
         FeatureRoute::Tracking => Some(|ui, _| testing::tracking_status(ui)),
         FeatureRoute::Replay => Some(|ui, _| testing::replay_status(ui)),
         FeatureRoute::Director => director_status(id),

@@ -61,7 +61,6 @@ fn recording_compression_defaults_on_and_explicit_false_is_preserved() {
 fn changed_settings_round_trip() {
     let mut original = Config::new();
     // Options whose default is `None`, set: the defaults leave the key out, the file has it.
-    original.hud.render_resolution = Some(2048);
     original.vr.loader_path = Some("C:/openxr/openxr_loader.dll".to_owned());
     original.director.heat_cap = Some(3);
     original.body.seated_eye_height = Some(1.2);
@@ -113,14 +112,14 @@ fn a_missing_optional_setting_loads_as_none() {
 #[test]
 fn a_missing_setting_takes_its_default() {
     let mut table = defaults_table();
-    remove(&mut table, &["stereo", "ipd"]);
+    remove(&mut table, &["fsr", "sharpness"]);
     remove(&mut table, &["recorder"]);
     set(&mut table, &["controllers", "dominant_hand"], "Left".into());
     let Loaded { config, report } = load(table);
-    assert_eq!(config.stereo.ipd, Config::new().stereo.ipd);
+    assert_eq!(config.fsr.sharpness, Config::new().fsr.sharpness);
     assert_eq!(config.recorder.port, Config::new().recorder.port);
     assert_eq!(config.controllers.dominant_hand, Hand::Left);
-    assert_eq!(report.defaulted, ["recorder", "stereo.ipd"]);
+    assert_eq!(report.defaulted, ["recorder", "fsr.sharpness"]);
     assert!(report.ignored.is_empty() && report.reset.is_empty());
 }
 
@@ -258,14 +257,14 @@ fn a_mistyped_setting_is_reset_alone() {
         &["controllers", "aim", "assist_strength"],
         "far".into(),
     );
-    set(&mut table, &["stereo", "ipd"], 0.07.into());
+    set(&mut table, &["fsr", "sharpness"], 0.07.into());
     set(&mut table, &["controllers", "dominant_hand"], "Left".into());
     let Loaded { config, report } = load(table);
     assert_eq!(
         config.controllers.aim.assist_strength,
         Config::new().controllers.aim.assist_strength
     );
-    assert_eq!(config.stereo.ipd, 0.07);
+    assert_eq!(config.fsr.sharpness, 0.07);
     assert_eq!(config.controllers.dominant_hand, Hand::Left);
     assert_eq!(reset_paths(&report), ["controllers.aim.assist_strength"]);
 }
@@ -311,16 +310,13 @@ fn several_bad_settings_are_each_reset() {
     let mut table = defaults_table();
     set(&mut table, &["controllers", "scheme"], 3.into());
     set(&mut table, &["vr", "mirror"], "yes".into());
-    set(&mut table, &["hud", "render_resolution"], "high".into());
+    set(&mut table, &["hud", "distance"], "far".into());
     let Loaded { config, report } = load(table);
     assert!(config.vr.mirror);
-    assert_eq!(config.hud.render_resolution, None);
+    assert_eq!(config.hud.distance, Config::new().hud.distance);
     let mut paths = reset_paths(&report);
     paths.sort();
-    assert_eq!(
-        paths,
-        ["controllers.scheme", "hud.render_resolution", "vr.mirror"]
-    );
+    assert_eq!(paths, ["controllers.scheme", "hud.distance", "vr.mirror"]);
 }
 
 #[test]
@@ -479,7 +475,7 @@ fn an_automatic_switch_off_keeps_the_saved_choice_until_the_user_changes_it() {
 
     // An edit that leaves the switch alone keeps the override.
     let before = automatic::observe(&mut config);
-    config.stereo.ipd = 0.07;
+    config.fsr.sharpness = 0.07;
     automatic::settle(&mut config, &before);
     let mut snapshot = config.clone();
     automatic::apply(&mut snapshot);

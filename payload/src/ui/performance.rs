@@ -1,5 +1,6 @@
-//! The Performance tab: the engine clock's frame-rate readouts and pacing controls, kept small so
-//! it can be dragged out into its own window and watched while tuning render features.
+//! The Previews and performance feature's readout: the engine clock's frame-rate readouts and
+//! pacing controls, and the profiler, kept small so the feature can be dragged out into its own
+//! window and watched while tuning render features.
 
 use std::{collections::VecDeque, time::Instant};
 
@@ -125,7 +126,7 @@ fn frame_breakdown(ui: &mut egui::Ui) {
 }
 
 /// The far-field split totals (issue #32), mirrored here so they can be watched alongside the
-/// frame rate while tuning in the Render tab.
+/// frame rate while tuning the Experimental page's far field.
 fn far_field_summary(ui: &mut egui::Ui) {
     let mut stats = crate::far_field::stats_snapshot();
     stats.retain(|(_, s)| s.updated.elapsed().as_secs_f32() < 1.0);

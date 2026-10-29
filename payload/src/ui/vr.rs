@@ -1,18 +1,8 @@
 //! Runtime controls and a separate read-only OpenXR status snapshot.
 
-use crate::{config, headpose, vr, vr::MirrorFraming};
+use crate::{config, headpose, vr};
 
 pub fn egui_debug_vr(ui: &mut egui::Ui) {
-    if ui
-        .button("Recenter")
-        .on_hover_text("Re-base the cockpit baseline to the current head pose (also bound to F7).")
-        .clicked()
-    {
-        headpose::recenter();
-    }
-
-    ui.separator();
-
     // Live-editable, mutating the shared config directly (the frame loop reads it each frame), the
     // same pattern the other tabs use.
     let mut cfg = config::edit();
@@ -23,21 +13,6 @@ pub fn egui_debug_vr(ui: &mut egui::Ui) {
             "Drive the engine to render each eye at the HMD-recommended resolution; disabled \
              automatically on a resize fault.",
         );
-    ui.add_enabled_ui(cfg.vr.native_resolution, |ui| {
-        ui.indent("resolution", |ui| {
-            ui.add(
-                egui::Slider::new(&mut cfg.vr.resolution_scale, 0.25..=2.0)
-                    .text("Per-eye resolution scale"),
-            )
-            .on_hover_text(
-                "Multiplies the runtime's recommended per-eye size to give the engine's render \
-                 resolution. Takes effect on the next frame -- the driver notices the target size \
-                 changed and issues a resize. The OpenXR swapchain keeps the size it was created \
-                 at, so a lower scale renders smaller and the blit upscales into it; that is what \
-                 makes this an honest A/B for whether GPU cost tracks pixel count.",
-            );
-        });
-    });
     ui.checkbox(&mut cfg.vr.mirror, "Desktop mirror")
         .on_hover_text("Show one eye in the game window while a session runs.");
     ui.add_enabled_ui(cfg.vr.mirror, |ui| {
@@ -47,30 +22,6 @@ pub fn egui_debug_vr(ui: &mut egui::Ui) {
                 ui.selectable_value(&mut cfg.vr.mirror_eye, 0, "Left");
                 ui.selectable_value(&mut cfg.vr.mirror_eye, 1, "Right");
             });
-            ui.horizontal(|ui| {
-                ui.label("Framing").on_hover_text(
-                    "How the near-square eye image is reconciled with the widescreen window.",
-                );
-                ui.selectable_value(&mut cfg.vr.mirror_framing, MirrorFraming::Fill, "Fill")
-                    .on_hover_text(
-                        "Crop to the window and fill it edge to edge, like other VR titles' desktop \
-                         views.",
-                    );
-                ui.selectable_value(&mut cfg.vr.mirror_framing, MirrorFraming::Fit, "Fit")
-                    .on_hover_text(
-                        "Letterbox the whole eye render, showing everything the eye drew including \
-                         the edges.",
-                    );
-            });
-            ui.add(
-                egui::Slider::new(&mut cfg.vr.mirror_zoom, vr::MIRROR_ZOOM_RANGE)
-                    .text("Zoom"),
-            )
-                .on_hover_text(
-                    "Magnify about the centre on top of the framing. Above 1.0 crops in further, \
-                     tightening the desktop view onto the middle of the eye's much wider field of \
-                     view.",
-                );
         });
     });
     ui.checkbox(&mut cfg.vr.own_back_buffer, "Mod-owned back buffer")
@@ -82,7 +33,10 @@ pub fn egui_debug_vr(ui: &mut egui::Ui) {
         );
     ui.checkbox(&mut cfg.vr.direct_eye_blit, "Direct eye blit")
         .on_hover_text(
-            "Blit each eye straight from the engine's back buffer into the headset swapchain on              the eye's own draw, skipping the full-size copy into the eye capture unless the              mirror, a screenshot, the recorder, or the previews need that eye. Off copies every              eye and blits at the frame submit.",
+            "Blit each eye straight from the engine's back buffer into the headset swapchain on \
+             the eye's own draw, skipping the full-size copy into the eye capture unless the \
+             mirror, a screenshot, the recorder, or the previews need that eye. Off copies every \
+             eye and blits at the frame submit.",
         );
 }
 

@@ -4,10 +4,7 @@
 
 use glam::Vec2;
 
-use crate::hud::{
-    config::CropExtents,
-    world_markers::layout::{StageFrame, TexelRect},
-};
+use crate::hud::world_markers::layout::{CropExtents, StageFrame, TexelRect};
 
 /// A rectangle in stage coordinates.
 #[derive(Debug, Copy, Clone, PartialEq)]

@@ -19,10 +19,8 @@
 //! untouched, and every correction is scoped to the main cull camera by its exact identity
 //! ([`camera == this + OccluderCollectionManager::CULLING_CAMERA_OFFSET`]) -- shadow and reflection
 //! culls use different functions, and any other
-//! camera through this hook fails the check. See
-//! [`StereoConfig::widen_cull_frustum`](crate::stereo::config::StereoConfig),
-//! [`cull_size_fov_deg`](crate::stereo::config::StereoConfig::cull_size_fov_deg), and
-//! [`disable_bfbc_occlusion`](crate::stereo::config::StereoConfig::disable_bfbc_occlusion).
+//! camera through this hook fails the check. See [`WIDEN_CULL_FRUSTUM`], [`CULL_SIZE_FOV_DEG`], and
+//! [`DISABLE_BFBC_OCCLUSION`].
 //!
 //! A second path widens the active camera's projection for callers that pass `m_ActiveCamera` instead
 //! of the cull camera -- `CSpawnSystem::Update` and
@@ -61,6 +59,41 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&CAMERA_UPDATE_FRUSTUM_BINDER)
         .with_static_binder(&SPAWN_SYSTEM_UPDATE_BINDER)
 }
+
+/// Widen the scene visibility-cull frustum to cover both eyes' off-axis frusta. The engine culls the
+/// scene (terrain, models, streaming) once per frame against the center camera's narrower, symmetric
+/// frustum, so geometry an eye can see past that frustum's edge is otherwise never drawn: the black
+/// voids and pop-in at the outer edges of each eye in VR. This writes a symmetric union-FOV
+/// projection over the shared cull camera's projection, leaving the per-eye render projections
+/// untouched. VR only.
+const WIDEN_CULL_FRUSTUM: bool = true;
+
+/// The FOV (degrees) the scene size-cull uses, overriding the mod's injected 90° on the main cull
+/// camera. The engine's screen-space size cull drops an object whose angular size falls below a
+/// threshold that scales with `tan(FOV/2)`, and the injected 90° camera FOV makes it about twice as
+/// aggressive as flat JC3's, dropping small and distant geometry and vehicle sub-meshes at double
+/// the distance. A flatter FOV on the cull camera's size-cull field restores flat-equivalent
+/// density; `0` would leave it untouched. Gated by [`WIDEN_CULL_FRUSTUM`].
+const CULL_SIZE_FOV_DEG: f32 = 50.0;
+
+/// Disable software occlusion for the main view. On top of the frustum cull, the engine tests each
+/// object against occluder silhouette frustums cast from the single centre viewpoint, so geometry an
+/// offset eye could see past an occluder's edge is culled for both eyes. Dropping the occluder
+/// frustums for the main cull camera leaves only view-frustum culling, at the cost of some overdraw
+/// of centre-occluded geometry. VR only.
+const DISABLE_BFBC_OCCLUSION: bool = true;
+
+/// Make the landscape terrain patch system cull against the binocular union camera. Terrain patches
+/// are decided by a separate landscape system that culls against its own copy of the centre camera,
+/// which the scene-cull widen does not reach, so the narrow centre fit otherwise leaves bottom and
+/// edge patch holes when flying. VR only.
+const WIDEN_TERRAIN_CULL: bool = true;
+
+/// Widen the active camera's cull frustum planes to cover both eyes. Model instances re-cull each
+/// render block against the active camera's frustum planes, a second gate the scene-cull widen does
+/// not touch, so large buildings otherwise pop out at the combined-eye edge (see
+/// `docs/engine/rendering/model-culling.md`). VR only.
+const WIDEN_MODEL_CULL: bool = true;
 
 #[detour(
     address = jc3gi::graphics_engine::graphics_engine::OccluderCollectionManager::GetBFBCFrustumParamsForCameraAndTime_ADDRESS
@@ -112,7 +145,7 @@ fn get_bfbc_frustum_params(
     }
 
     // Drop the software-occlusion frustums after the params are built.
-    if main && Config::lock_query(|c| c.stereo.disable_bfbc_occlusion) {
+    if main && DISABLE_BFBC_OCCLUSION {
         unsafe { relax_main_view_occlusion(out_params) };
     }
 }
@@ -155,13 +188,11 @@ fn stamp_union_projection(camera: *const Camera) -> Option<Matrix4> {
 
 /// Overwrite the (already-identified main) cull camera's `m_ProjectionF` with the union-FOV projection
 /// so the frustum the engine builds covers both eyes, and relax its `m_FOVT1` so the screen-space size
-/// cull stops over-dropping. A no-op on flatscreen (no cull projection published) or with the toggle
-/// off. Rewriting to the same union value is idempotent, so re-entry from parallel cull jobs is
+/// cull stops over-dropping. A no-op on flatscreen (no cull projection published) or with
+/// [`WIDEN_CULL_FRUSTUM`] off. Rewriting to the same union value is idempotent, so re-entry from parallel cull jobs is
 /// harmless.
 fn widen_main_cull_camera(camera: *const Camera) {
-    let (widen, size_fov_deg) =
-        Config::lock_query(|c| (c.stereo.widen_cull_frustum, c.stereo.cull_size_fov_deg));
-    if !widen {
+    if !WIDEN_CULL_FRUSTUM {
         return;
     }
     // Stamp the union projection (permanent overwrite on the cull camera -- the saved value is
@@ -170,13 +201,13 @@ fn widen_main_cull_camera(camera: *const Camera) {
     stamp_union_projection(camera);
     // Relax the screen-space size cull, which reads `m_FOVT1` and is otherwise ~2x too aggressive under
     // the mod's injected 90 deg FOV -- dropping small/distant geometry and vehicle sub-meshes at double
-    // the distance (see `StereoConfig::cull_size_fov_deg`). `m_FOVT1` is radians, matching the injected
+    // the distance (see [`CULL_SIZE_FOV_DEG`]). `m_FOVT1` is radians, matching the injected
     // `context.m_FOV`. Only the size and AO-volume culls read it on the cull camera, so this leaves the
     // frustum cull and LOD untouched.
-    if size_fov_deg > 0.0 {
+    if CULL_SIZE_FOV_DEG > 0.0 {
         // SAFETY: `camera` is the live main cull camera; only the `m_FOVT1` field is written.
         if let Some(cam) = unsafe { (camera as *mut Camera).as_mut() } {
-            cam.m_FOVT1 = size_fov_deg.to_radians();
+            cam.m_FOVT1 = CULL_SIZE_FOV_DEG.to_radians();
         }
     }
 }
@@ -192,7 +223,7 @@ fn widen_main_cull_camera(camera: *const Camera) {
 #[detour(address = jc3gi::graphics_engine::render_engine::TerrainPatchSystemUpdate_ADDRESS)]
 fn terrain_patch_system_update(handle: *mut STerrainPatchSystem, ctx: *mut c_void) {
     TERRAIN_PATCH_SYSTEM_UPDATE.get().unwrap().call(handle, ctx);
-    if !Config::lock_query(|c| c.stereo.widen_terrain_cull) {
+    if !WIDEN_TERRAIN_CULL {
         return;
     }
     let Some(cull) = cull_projection_standard() else {
@@ -236,7 +267,7 @@ fn make_union_camera(camera: &mut Camera, union: Matrix4) {
 fn camera_update_frustum(this: *mut Camera, transform: *const Matrix4) {
     let original = CAMERA_UPDATE_FRUSTUM.get().unwrap();
     original.call(this, transform);
-    if !Config::lock_query(|c| c.stereo.widen_model_cull) {
+    if !WIDEN_MODEL_CULL {
         return;
     }
     let Some(union) = cull_projection_standard() else {

@@ -32,7 +32,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 .on_hover_text(
                     "Registry type names (comma-separated) whose draws are inherently distant \
                      and skip with the far field, with no distance split — find candidates by \
-                     bisecting the Diagnostics tab's render-block-type registry",
+                     bisecting the render RE window's render-block-type registry",
                 );
         });
         let gated = crate::far_field::gated_type_names();

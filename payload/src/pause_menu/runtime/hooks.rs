@@ -10,13 +10,10 @@
 //! deactivating by any route, the movie unloading, a failed or off-thread reinstall) goes through
 //! [`transition`], which runs the page's `on_close` once, after the session lock is released.
 //!
-//! Adding the entry (H1, and H6 for `InitMenu`) is the only work gated on
-//! [`PauseMenuConfig::enabled`](crate::pause_menu::PauseMenuConfig): without the entry the session
-//! stays closed, and H2, H4, and H6 do nothing in a closed session,
-//! so the toggle takes effect at the next activation of the menu and never pulls a page out from
-//! under the player. H3 routes every command regardless, which for a closed session passes
-//! everything through except a command carrying a VR row id, a tab command, or the VR entry's
-//! event (only possible if an entry was added or a page installed).
+//! Without the entry (added by H1, and H6 for `InitMenu`) the session stays closed, and H2, H4, and
+//! H6 do nothing in a closed session. H3 routes every command regardless, which for a closed
+//! session passes everything through except a command carrying a VR row id, a tab command, or the
+//! VR entry's event (only possible if an entry was added or a page installed).
 
 use std::{
     ffi::CStr,
@@ -40,7 +37,6 @@ use jc3gi::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
     frame_timing::{self, Slot},
     pause_menu::{
         gfx::{CaptureThread, GfxValue, Screen, decode_arg},
@@ -96,7 +92,7 @@ fn on_active(this: *mut PauseUI) {
     ON_ACTIVE.get().unwrap().call(this);
     ACTIVATING.store(std::ptr::null_mut(), Ordering::Relaxed);
 
-    if SESSION.lock().state != MenuState::Closed || !Config::lock_query(|c| c.pause_menu.enabled) {
+    if SESSION.lock().state != MenuState::Closed {
         return;
     }
     // SAFETY: the detour's own `this`, the live pause screen, or null.
@@ -431,9 +427,6 @@ fn init_menu(
     num_args: u32,
     original: impl Fn() -> bool,
 ) -> bool {
-    if !Config::lock_query(|c| c.pause_menu.enabled) {
-        return original();
-    }
     // SAFETY: `pause` is the live pause screen whose activation is running.
     let Some(plan) = (unsafe { root_plan(pause) }) else {
         return original();

@@ -10,10 +10,11 @@ pub(crate) enum PageId {
     Rendering,
     Input,
     Capture,
+    Experimental,
 }
 
 impl PageId {
-    pub(crate) const ALL: [Self; 8] = [
+    pub(crate) const ALL: [Self; 9] = [
         Self::Overview,
         Self::Body,
         Self::Hands,
@@ -22,6 +23,7 @@ impl PageId {
         Self::Rendering,
         Self::Input,
         Self::Capture,
+        Self::Experimental,
     ];
 
     pub(crate) fn label(self) -> &'static str {
@@ -34,6 +36,7 @@ impl PageId {
             Self::Rendering => "Rendering",
             Self::Input => "Input/bindings",
             Self::Capture => "Capture/testing",
+            Self::Experimental => "Experimental",
         }
     }
 }
@@ -93,14 +96,11 @@ features! {
         Air => ("movement.air", "Air"),
     },
     Rendering {
-        Runtime => ("rendering.runtime", "Runtime and eye output"),
-        Stereo => ("rendering.stereo", "Stereo and image corrections"),
-        Resolution => ("rendering.resolution", "Resolution, FSR, and foveation"),
-        Hud => ("rendering.hud", "HUD and panels"),
-        Graphics => ("rendering.experiments", "Graphics experiments"),
-        Previews => ("rendering.previews", "Previews"),
-        Performance => ("rendering.performance", "Performance"),
-        RenderDiagnostics => ("rendering.diagnostics", "Render diagnostics"),
+        Runtime => ("rendering.runtime", "Runtime"),
+        Stereo => ("rendering.stereo", "Stereo"),
+        Foveation => ("rendering.foveation", "Foveation"),
+        Hud => ("rendering.hud", "HUD"),
+        Previews => ("rendering.previews", "Previews and performance"),
     },
     Input {
         Devices => ("input.devices", "Scheme, handedness, and devices"),
@@ -113,7 +113,7 @@ features! {
     Capture {
         TrackingCapture => ("capture.tracking", "Tracking recording"),
         ControllerCapture => ("capture.controllers", "Controller diagnostics capture"),
-        RenderCapture => ("capture.render", "Render trace capture"),
+        RenderCapture => ("capture.render", "Render capture"),
         Replay => ("capture.replay", "Replay, scenarios, and signals"),
         DirectorSafety => ("capture.director-safety", "Director: time, safety, and heat"),
         DirectorSpawn => ("capture.director-spawn", "Director: teleport and spawn"),
@@ -122,6 +122,12 @@ features! {
         Keyboard => ("capture.keyboard", "Keyboard shortcuts"),
         Presets => ("capture.presets", "Test presets"),
         Engine => ("capture.engine", "Engine experiments"),
+    },
+    Experimental {
+        SinglePass => ("experimental.single-pass", "Single-pass stereo"),
+        FarField => ("experimental.far-field", "Far field"),
+        PostFx => ("experimental.post-fx", "Post-FX skips"),
+        RenderRe => ("experimental.render-re", "Render RE window"),
     },
 }
 

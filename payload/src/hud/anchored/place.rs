@@ -2,12 +2,9 @@
 
 use glam::{Mat3, Quat, Vec3};
 
-use crate::{
-    controllers::{
-        frame::{Hand, Pose},
-        summary::glance::PanelPose,
-    },
-    hud::config::WristVisibility,
+use crate::controllers::{
+    frame::{Hand, Pose},
+    summary::glance::PanelPose,
 };
 
 /// The hand the weapon readout rides: the dominant hand when it holds a gun, otherwise the other
@@ -181,17 +178,7 @@ pub(crate) fn stacked_corners(
         .collect()
 }
 
-/// Whether the wrist readout should show: always, on a glance, or (`Auto`) on a glance or while
-/// the player's state wants attention.
-pub(crate) fn wrist_wanted(visibility: WristVisibility, glance: bool, attention: bool) -> bool {
-    match visibility {
-        WristVisibility::Always => true,
-        WristVisibility::Glance => glance,
-        WristVisibility::Auto => glance || attention,
-    }
-}
-
-/// What the wrist readout's `Auto` visibility watches.
+/// What makes the wrist readout show on its own, without a glance.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct Attention {
     /// The health fraction, when known.
@@ -441,17 +428,6 @@ mod tests {
         assert!((fade_out(0.25, 0.5) - 0.5).abs() < 1e-6);
         assert_eq!(fade_out(1.0, 0.5), 0.0);
         assert_eq!(fade_out(0.0, 0.0), 0.0);
-    }
-
-    #[test]
-    fn the_wrist_shows_by_policy() {
-        use WristVisibility::*;
-        assert!(wrist_wanted(Always, false, false));
-        assert!(!wrist_wanted(Glance, false, true));
-        assert!(wrist_wanted(Glance, true, false));
-        assert!(wrist_wanted(Auto, false, true));
-        assert!(wrist_wanted(Auto, true, false));
-        assert!(!wrist_wanted(Auto, false, false));
     }
 
     #[test]

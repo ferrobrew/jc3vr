@@ -176,9 +176,7 @@ fn run_tail(job: TailJob) {
                     DRAIN_TIMEOUT.as_millis() as u32,
                 );
             }
-            if crate::config::Config::lock_query(|c| c.stereo.drain_draw_fragment)
-                && CpuPrimaryCount() > 1
-            {
+            if crate::hooks::game::DRAIN_DRAW_FRAGMENT && CpuPrimaryCount() > 1 {
                 poll_signal(
                     &raw const ge.m_DrawThreadWorkSignal,
                     deadline,

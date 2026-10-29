@@ -22,6 +22,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     debug::trace::{TraceEvent, TraceState},
+    hooks::graphics_engine::post_effects::FORCE_SMAA_1X,
     stereo::STEREO_STATE,
 };
 
@@ -55,6 +56,10 @@ pub fn last_dtf() -> f32 {
     f32::from_bits(LAST_DTF.load(Ordering::Relaxed))
 }
 
+/// The interpupillary distance, in metres, of the flatscreen stereo per-eye camera offset. A VR
+/// session takes each eye's offset from the runtime's eye poses instead.
+const FLATSCREEN_IPD: f32 = 0.068;
+
 /// The scene render camera is the engine-owned copy (`GraphicsEngine::m_RenderCamera`), rebuilt
 /// each Draw by `SetupRenderCamera` (reverse-Z + jitter, then `m_ViewProjection`/`m_ViewProjectionF`
 /// from `m_View`). For the stereo double-Draw we offset that copy's `m_View` laterally per eye,
@@ -80,23 +85,13 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
     }
 
     // Snapshot the stereo + FSR config once; drop the lock before the engine call below.
-    let (stereo_active, force_smaa_1x, stereo_cameras, ipd, fsr_enabled) = {
-        let active = crate::stereo::active();
-        Config::lock_query(|c| {
-            (
-                active,
-                c.stereo.force_smaa_1x,
-                c.stereo.cameras,
-                c.stereo.ipd,
-                c.fsr.enabled,
-            )
-        })
-    };
+    let stereo_active = crate::stereo::active();
+    let (stereo_cameras, fsr_enabled) = Config::lock_query(|c| (c.stereo.cameras, c.fsr.enabled));
 
     // The engine's TAA jitter only feeds its own SMAA T2X. Drop it when that resolve is gone --
     // either because we force SMAA 1x in stereo, or because FSR has replaced the engine AA. FSR still
     // needs jitter, but its own Halton sequence, applied below.
-    let jitter = jitter && !fsr_enabled && !(stereo_active && force_smaa_1x);
+    let jitter = jitter && !fsr_enabled && !(stereo_active && FORCE_SMAA_1X);
 
     // The VR per-eye off-axis projection and world offset (docs/mod/vr-runtime.md blockers 1 & 3).
     // Fetch this eye's parameters once; `None` on flatscreen frames. Under the preferred convention,
@@ -229,7 +224,7 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
             unsafe {
                 if let Some(camera) = camera.as_mut() {
                     let eye1 = crate::stereo::draw_index() == 1;
-                    let half_ipd = ipd * 0.5;
+                    let half_ipd = FLATSCREEN_IPD * 0.5;
                     // Eye 0 is the LEFT eye (shift -right), eye 1 the RIGHT (shift +right), so view 0
                     // == left (OpenXR convention). The reverse assignment fuses the debug pair
                     // cross-eyed when the "parallel" toggle is off.

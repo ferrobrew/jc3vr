@@ -42,7 +42,7 @@ use crate::{
     controllers::frame::{self, Hand, Pose},
     egui_impl::{EguiState, debug_ui_capture, request_debug_ui},
     hud::{
-        config::{CursorConfig, EguiPanelConfig},
+        config::EguiPanelConfig,
         cursor::CursorFrame,
         egui_panel::{
             placement::world_panel,
@@ -54,6 +54,14 @@ use crate::{
     },
     ui::capture::PanelRequest,
 };
+
+/// How far in front of the head the panel is placed when it is summoned, in meters. The panel's
+/// physical size is the one that gives it the apparent size [`SCALE`] at this distance.
+const SUMMON_DISTANCE: f32 = 2.5;
+
+/// Apparent-size multiplier for the panel at the summoning distance; `1.0` is the comfortable
+/// baseline (see [`crate::hud::panel_height`]).
+const SCALE: f32 = 0.85;
 
 /// The panel pipeline and per-frame cache. Locked briefly on the render thread (and, for the SRV
 /// handoff, on the game thread from the mirror).
@@ -166,10 +174,10 @@ pub(crate) fn draw_quad(
     if !WAS_ACTIVE.swap(true, Ordering::Relaxed) {
         slot::summon(Summon::Shown);
     }
-    let cfg = Config::lock_query(|c| c.hud);
+    let cfg = Config::lock_query(|c| c.hud.egui_panel);
     let mut panel = EGUI_PANEL.lock();
     if eye == 0 {
-        panel.prepare(context, device, &cfg.egui_panel, &cfg.cursor);
+        panel.prepare(context, device, &cfg);
     }
     panel.draw(context, device, target);
 }
@@ -197,13 +205,7 @@ impl EguiPanelState {
     /// Eye-0 setup: (re)create the panel target at the configured resolution, render this frame's egui
     /// output into it, settle the placement, compute + cache the panel and cursor corners, and
     /// publish the corners for the controller pointer.
-    fn prepare(
-        &mut self,
-        context: &ID3D11DeviceContext,
-        device: &Device,
-        cfg: &EguiPanelConfig,
-        cursor_cfg: &CursorConfig,
-    ) {
+    fn prepare(&mut self, context: &ID3D11DeviceContext, device: &Device, cfg: &EguiPanelConfig) {
         self.cached_corners = None;
         self.cursor_corners = None;
         pointer::publish_egui_panel(None);
@@ -244,14 +246,14 @@ impl EguiPanelState {
         let held = slot::grabbing().and_then(|hand| Some((hand, latest_aim(hand)?)));
         let pose = slot::resolve(ResolveInput {
             head: camera.cockpit_head,
-            distance: cfg.distance,
+            distance: SUMMON_DISTANCE,
             held,
             recenters: crate::vr::recenter_count(),
         });
         let aspect = cfg.aspect.max(f32::EPSILON);
         // The panel's physical size is the size that gives the configured apparent size at the
         // summoning distance, so pushing it away shrinks it in view as a real window would.
-        let panel_height = crate::hud::panel_height(cfg.scale, cfg.distance, aspect);
+        let panel_height = crate::hud::panel_height(SCALE, SUMMON_DISTANCE, aspect);
         let params = world_panel(&camera, pose, panel_height, aspect);
         self.cached_corners = compute_world_corners(&params);
         pointer::publish_egui_panel(self.cached_corners.map(|corners| RenderedPanel {
@@ -263,7 +265,7 @@ impl EguiPanelState {
         self.cursor_corners = accepts_edit_input()
             .then(pointer::egui_cursor_uv)
             .flatten()
-            .and_then(|(u, v)| compute_cursor_corners(&params, CursorFrame { u, v }, cursor_cfg));
+            .and_then(|(u, v)| compute_cursor_corners(&params, CursorFrame { u, v }));
     }
 
     /// Draw the cached panel and cursor corners over `target` for the current eye. A no-op until the
