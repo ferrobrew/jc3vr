@@ -126,6 +126,9 @@ pub(super) fn recording_from_file(recording: file::Recording) -> Recording {
         header,
         frames,
         input,
+        // A replay publishes what the runtime gave the mod; the mod's own decisions are evidence
+        // for tools, not something to publish again.
+        events: _,
         version,
         truncated,
         skipped_records,

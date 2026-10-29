@@ -21,8 +21,10 @@
 //!    bytes with CRC-32. The expanded records retain their original bytes and order.
 //!    Version 4 accepts direct frame/input records and the same chunks. It preserves independent
 //!    position/orientation validity and tracking for each hand joint without requiring compression.
+//!    Version 5 keeps the version 4 layouts and adds [`TAG_EVENT`] records, direct or inside
+//!    chunks, each carrying an [`event::Event`] stamped on the frames' timeline.
 //!
-//! Versions 1 and 2 skip unknown tags. Versions 3 and 4 reject unknown required tags; only unknown
+//! Versions 1 and 2 skip unknown tags. Versions 3 through 5 reject unknown required tags; only unknown
 //! tags with [`OPTIONAL_TAG_BIT`] set are skippable. Chunks cannot contain chunks or required unknown
 //! records. A cut final outer record leaves all earlier records readable and marks
 //! [`Recording::truncated`]. A complete malformed chunk, unread inner bytes, a bad checksum, or a
@@ -44,6 +46,10 @@
 
 mod chunk;
 mod codec;
+pub mod event;
+mod event_codec;
+#[cfg(test)]
+mod event_tests;
 pub mod input;
 mod input_codec;
 #[cfg(test)]
@@ -69,14 +75,14 @@ use crate::{
 pub const EXTENSION: &str = "jc3trk";
 
 /// The newest supported format version. Legacy entry points retain versions 1 through 3.
-pub const VERSION: u16 = 4;
+pub const VERSION: u16 = 5;
 
 /// The joint-flag schema of a frame, independent of the input and decision schemas.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum FrameSchema {
     /// Versions 1 through 3 store only the conjunctions of the component flags.
     Legacy,
-    /// Version 4 preserves each component flag and validates the aggregate bits.
+    /// Versions 4 and 5 preserve each component flag and validate the aggregate bits.
     V4,
 }
 
@@ -85,7 +91,7 @@ impl FrameSchema {
     pub fn for_version(version: u16) -> Result<Self, DecodeError> {
         match version {
             1..=3 => Ok(Self::Legacy),
-            4 => Ok(Self::V4),
+            4 | 5 => Ok(Self::V4),
             _ => Err(DecodeError {
                 offset: 0,
                 kind: DecodeErrorKind::UnsupportedVersion(version),
@@ -101,6 +107,8 @@ pub struct Recording {
     pub frames: Vec<Frame>,
     /// Ordered input records, absent in legacy snapshots. No order is inferred from frame order.
     pub input: Vec<input::CapturedInput>,
+    /// The events, in file order, absent before version 5.
+    pub events: Vec<event::Event>,
     /// The decoded container version; version 1 cannot reproduce ordered input decisions.
     pub version: u16,
     /// Whether the last record was cut short and left out.
@@ -233,13 +241,13 @@ pub fn encode_chunked_preamble(header: &Header) -> Vec<u8> {
     preamble(header, 3)
 }
 
-/// A version 4 preamble for uncompressed records or independently recoverable chunks.
-/// Compression is a writer choice, not a requirement of this version.
+/// A preamble of the newest version, for uncompressed records or independently recoverable
+/// chunks. Compression is a writer choice, not a requirement of this version.
 pub fn encode_latest_preamble(header: &Header) -> Vec<u8> {
     preamble(header, VERSION)
 }
 
-/// A version 4 preamble for a writer that stores capture batches in chunks.
+/// A preamble of the newest version for a writer that stores capture batches in chunks.
 /// The container is identical to [`encode_latest_preamble`]; each chunk selects its storage.
 pub fn encode_latest_chunked_preamble(header: &Header) -> Vec<u8> {
     encode_latest_preamble(header)
@@ -268,7 +276,7 @@ pub fn encode_legacy_frame(frame: &Frame) -> Vec<u8> {
     encode_frame_with_schema(frame, FrameSchema::Legacy)
 }
 
-/// One version 4 frame record, preserving every independent joint flag.
+/// One frame record of the newest version, preserving every independent joint flag.
 pub fn encode_latest_frame(frame: &Frame) -> Vec<u8> {
     encode_frame_with_schema(frame, FrameSchema::V4)
 }
@@ -332,6 +340,30 @@ pub fn encode_input(captured: &input::CapturedInput) -> Result<Vec<u8>, DecodeEr
     input_codec::encode(&mut payload, captured);
     let mut out = Encoder::default();
     out.u8(TAG_INPUT);
+    out.u32(payload.bytes.len() as u32);
+    out.bytes.extend_from_slice(&payload.bytes);
+    Ok(out.bytes)
+}
+
+/// The event record tag, version 5 onwards.
+pub const TAG_EVENT: u8 = 4;
+
+/// Encode one event record. An event whose lists exceed the format's bound is refused rather
+/// than silently truncated.
+pub fn encode_event(event: &event::Event) -> Result<Vec<u8>, DecodeError> {
+    if !event_codec::is_bounded(event) {
+        return Err(DecodeError {
+            offset: 0,
+            kind: DecodeErrorKind::InvalidValue {
+                field: "event list bounds",
+                value: event_codec::MAX_LIST as u64,
+            },
+        });
+    }
+    let mut payload = Encoder::default();
+    event_codec::encode(&mut payload, event);
+    let mut out = Encoder::default();
+    out.u8(TAG_EVENT);
     out.u32(payload.bytes.len() as u32);
     out.bytes.extend_from_slice(&payload.bytes);
     Ok(out.bytes)

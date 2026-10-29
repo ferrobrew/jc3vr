@@ -230,14 +230,14 @@ fn invalid(offset: usize, field: &'static str, value: u64) -> DecodeError {
     }
 }
 
-fn hand_code(hand: Hand) -> u8 {
+pub(crate) fn hand_code(hand: Hand) -> u8 {
     match hand {
         Hand::Left => 0,
         Hand::Right => 1,
     }
 }
 
-fn read_hand(input: &mut Decoder, field: &'static str) -> Result<Hand, DecodeError> {
+pub(crate) fn read_hand(input: &mut Decoder, field: &'static str) -> Result<Hand, DecodeError> {
     let offset = input.offset();
     match input.u8()? {
         0 => Ok(Hand::Left),

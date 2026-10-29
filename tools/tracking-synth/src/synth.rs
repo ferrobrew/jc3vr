@@ -122,6 +122,7 @@ pub fn recording(
         header: header(script, schema),
         frames,
         input: Vec::new(),
+        events: Vec::new(),
         version: tracking_format::VERSION,
         truncated: false,
         skipped_records: 0,

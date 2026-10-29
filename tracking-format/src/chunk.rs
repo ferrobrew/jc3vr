@@ -3,20 +3,20 @@
 use lz4_flex::block::{compress, decompress_into};
 
 use crate::{
-    DecodeError, DecodeErrorKind, RECORD_FRAMING, TAG_FRAME, TAG_INPUT,
+    DecodeError, DecodeErrorKind, RECORD_FRAMING, TAG_EVENT, TAG_FRAME, TAG_INPUT,
     wire::{Decoder, Encoder},
 };
 
-/// The version 3 and 4 atomic capture chunk tag. Its payload cannot contain another chunk.
+/// The version 3 through 5 atomic capture chunk tag. Its payload cannot contain another chunk.
 pub const TAG_CHUNK: u8 = 3;
-/// Unknown version 3 and 4 tags with this bit set are optional and can be skipped.
+/// Unknown version 3 through 5 tags with this bit set are optional and can be skipped.
 pub const OPTIONAL_TAG_BIT: u8 = 0x80;
 /// Maximum expanded bytes in one independently recoverable chunk.
 pub const MAX_CHUNK_BYTES: usize = 4 * 1024 * 1024;
 /// Maximum complete records in one chunk.
 pub const MAX_CHUNK_RECORDS: usize = 4096;
 
-/// Store complete frame/input records without changing any serialized byte. LZ4 is used only
+/// Store complete frame, input, and event records without changing any serialized byte. LZ4 is used only
 /// when its block is smaller than the original bytes. This function belongs on the writer thread.
 pub fn encode_chunk(records: &[u8]) -> Result<Vec<u8>, DecodeError> {
     bounded(records.len(), MAX_CHUNK_BYTES, "chunk expanded bytes", 0)?;
@@ -136,7 +136,7 @@ pub(crate) fn validate_records(bytes: &[u8]) -> Result<usize, DecodeError> {
     let mut count = 0;
     while !reader.is_empty() {
         let tag = reader.u8()?;
-        if tag != TAG_FRAME && tag != TAG_INPUT && tag & OPTIONAL_TAG_BIT == 0 {
+        if tag != TAG_FRAME && tag != TAG_INPUT && tag != TAG_EVENT && tag & OPTIONAL_TAG_BIT == 0 {
             return Err(invalid(
                 "chunk inner tag",
                 u64::from(tag),

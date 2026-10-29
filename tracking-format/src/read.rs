@@ -3,12 +3,14 @@
 use std::mem::size_of;
 
 use crate::{
-    DecodeError, DecodeErrorKind, Frame, FrameSchema, MAGIC, RECORD_FRAMING, Recording, TAG_FRAME,
-    TAG_INPUT, VERSION,
+    DecodeError, DecodeErrorKind, Frame, FrameSchema, MAGIC, RECORD_FRAMING, Recording, TAG_EVENT,
+    TAG_FRAME, TAG_INPUT, VERSION,
     chunk::{
         CHUNK_HEADER_BYTES, Chunk, MAX_CHUNK_BYTES, OPTIONAL_TAG_BIT, TAG_CHUNK, bounded, invalid,
     },
     codec,
+    event::Event,
+    event_codec,
     input::{CapturedInput, MAX_INPUT_PAYLOAD},
     input_codec,
     wire::Decoder,
@@ -77,6 +79,7 @@ pub fn decode_with_limits(bytes: &[u8], limits: DecodeLimits) -> Result<Recordin
         header,
         frames: Vec::new(),
         input: Vec::new(),
+        events: Vec::new(),
         version,
         truncated: false,
         skipped_records: 0,
@@ -89,15 +92,15 @@ pub fn decode_with_limits(bytes: &[u8], limits: DecodeLimits) -> Result<Recordin
         let tag = reader.u8()?;
         let len = reader.u32()? as usize;
         if version >= 3 {
-            let direct_v4 = version == 4 && (tag == TAG_FRAME || tag == TAG_INPUT);
-            if tag != TAG_CHUNK && !direct_v4 && tag & OPTIONAL_TAG_BIT == 0 {
+            let direct = direct_tag(version, tag);
+            if tag != TAG_CHUNK && !direct && tag & OPTIONAL_TAG_BIT == 0 {
                 return Err(invalid(
                     "required outer tag",
                     u64::from(tag),
                     reader.offset() - RECORD_FRAMING,
                 ));
             }
-            if direct_v4 {
+            if direct {
                 record_bound(tag, len, reader.offset())?;
             } else {
                 bounded(
@@ -133,11 +136,31 @@ pub fn decode_with_limits(bytes: &[u8], limits: DecodeLimits) -> Result<Recordin
 
 const MAX_HEADER_BYTES: usize = 256 * 1024;
 const MAX_FRAME_BYTES: usize = 2 * 1024 * 1024;
+const MAX_EVENT_BYTES: usize = 1024 * 1024;
+
+/// Whether a version 3 or later container stores `tag` as a record of its own, outside a chunk.
+fn direct_tag(version: u16, tag: u8) -> bool {
+    match tag {
+        TAG_FRAME | TAG_INPUT => version >= 4,
+        TAG_EVENT => version >= 5,
+        _ => false,
+    }
+}
+
+/// Whether a chunk in a container of `version` may hold `tag`.
+fn chunk_tag(version: u16, tag: u8) -> bool {
+    match tag {
+        TAG_FRAME | TAG_INPUT => true,
+        TAG_EVENT => version >= 5,
+        _ => tag & OPTIONAL_TAG_BIT != 0,
+    }
+}
 
 pub(crate) fn record_bound(tag: u8, len: usize, offset: usize) -> Result<(), DecodeError> {
     let (max, field) = match tag {
         TAG_INPUT => (MAX_INPUT_PAYLOAD, "input payload length"),
         TAG_FRAME => (MAX_FRAME_BYTES, "frame payload length"),
+        TAG_EVENT => (MAX_EVENT_BYTES, "event payload length"),
         _ => (MAX_CHUNK_BYTES, "record payload bytes"),
     };
     bounded(len, max, field, offset)
@@ -151,7 +174,7 @@ fn read_chunk_records(
     let mut inner = Decoder::new(bytes);
     for _ in 0..count {
         let tag = inner.u8()?;
-        if tag != TAG_FRAME && tag != TAG_INPUT && tag & OPTIONAL_TAG_BIT == 0 {
+        if !chunk_tag(recording.version, tag) {
             return Err(invalid("chunk inner tag", u64::from(tag), inner.offset()));
         }
         let len = inner.u32()? as usize;
@@ -172,6 +195,10 @@ fn append(tag: u8, payload: &mut Decoder, recording: &mut Recording) -> Result<(
         TAG_INPUT if recording.version >= 2 => {
             recording.input.push(input_codec::decode(payload)?);
             payload.finish("input")?;
+        }
+        TAG_EVENT if recording.version >= 5 => {
+            recording.events.push(event_codec::decode(payload)?);
+            payload.finish("event")?;
         }
         _ => {
             recording.skipped_records = recording
@@ -216,7 +243,9 @@ impl Budget {
             .checked_mul(32)
             .ok_or_else(|| invalid("allocation projection", u64::MAX, offset))?;
         let fixed = (count as u64)
-            .checked_mul((4 * (size_of::<Frame>() + size_of::<CapturedInput>())) as u64)
+            .checked_mul(
+                (4 * (size_of::<Frame>() + size_of::<CapturedInput>() + size_of::<Event>())) as u64,
+            )
             .ok_or_else(|| invalid("allocation projection", u64::MAX, offset))?;
         let projected = checked_add(dynamic, fixed, "allocation projection", offset)?;
         self.projected = checked_add(self.projected, projected, "allocation projection", offset)?;
