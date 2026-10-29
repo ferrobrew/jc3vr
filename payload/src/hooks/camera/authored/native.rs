@@ -15,7 +15,7 @@ use crate::hooks::camera::authored::{
     Refusal,
     composition::Trs,
     evidence::{self, Animation, Clip, ClipSource},
-    policy::{GraphState, HangingState, LandingState, RecoveryState},
+    policy::{GraphState, HangingState},
 };
 
 /// All native pointers are used only during capture; publication contains owned values.
@@ -426,56 +426,17 @@ pub(super) fn trs(matrix: Mat4) -> Result<Trs, Refusal> {
     Ok(value)
 }
 
-// The shipped AFSM and its explicit ASB state map supply these names. Grapple inversion uses
-// the pre-upside-down and attached-upside-down sequence, not the native S_GRAPPLE_HANG name.
-// Its rico_grpl_newhang_land and rico_grpl_newhang_idle clips bind CharacterCam1; the idle
-// preserves the land endpoint, so the verified handoff retains the entry-relative correction.
+// The shipped AFSM and its explicit ASB state map supply these names. Only states whose bound
+// clips move CharacterCam1 beyond the clip's own root motion are admitted. In most of Rico's clips
+// that carry the marker (the landings, the boosted takeoff, the wingsuit and parachute landing
+// slides), its model-space transform is the exact inverse of the clip's extracted root motion: the
+// marker stays where the clip started while the body travels, so following it would leave the view
+// behind the body. Others (the hard and idle landings, the get-ups, the floor pickup, the reeled-in
+// attach) hold it at identity. Grapple inversion uses the pre-upside-down and attached-upside-down
+// sequence, not the native S_GRAPPLE_HANG name: rico_grpl_newhang_land pitches and raises the
+// marker with no root motion, and rico_grpl_newhang_idle (also bound by S_IDLE_HANG_STUNT) holds
+// its endpoint, so the verified handoff retains the entry-relative correction.
 const EXACT_STATES: &[(&[u8], GraphState)] = &[
-    (
-        b"S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND_INTO",
-        GraphState::GroundInto,
-    ),
-    (
-        b"S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND",
-        GraphState::GroundFollowOn,
-    ),
-    (
-        b"S_LAND_FAST_FALL",
-        GraphState::Landing(LandingState::FastFall),
-    ),
-    (b"S_LAND_HARD", GraphState::Landing(LandingState::Hard)),
-    (b"S_LAND_IDLE_0", GraphState::Landing(LandingState::Idle)),
-    (
-        b"S_LAND_IDLE_90L",
-        GraphState::Landing(LandingState::IdleLeft),
-    ),
-    (
-        b"S_LAND_IDLE_90R",
-        GraphState::Landing(LandingState::IdleRight),
-    ),
-    (
-        b"S_LAND_IDLE_180L",
-        GraphState::Landing(LandingState::IdleBackLeft),
-    ),
-    (
-        b"S_LAND_IDLE_180R",
-        GraphState::Landing(LandingState::IdleBackRight),
-    ),
-    (b"S_LAND_RUN_0", GraphState::Landing(LandingState::Run)),
-    (
-        b"S_GETUP_POSEMATCHING",
-        GraphState::Recovery(RecoveryState::PoseMatching),
-    ),
-    (
-        b"S_GETUP_BLENDIN",
-        GraphState::Recovery(RecoveryState::BlendIn),
-    ),
-    (b"S_GETUP", GraphState::Recovery(RecoveryState::GetUp)),
-    (b"S_IDLE_PICKUP", GraphState::FloorPickup),
-    (
-        b"S_GRAPPLE_ATTACH_0",
-        GraphState::Hanging(HangingState::GrappleAttached),
-    ),
     (
         b"S_GRAPPLE_PRE_UPSIDEDOWN",
         GraphState::Hanging(HangingState::GrapplePreUpsideDown),
@@ -487,18 +448,6 @@ const EXACT_STATES: &[(&[u8], GraphState)] = &[
     (
         b"S_IDLE_HANG_STUNT",
         GraphState::Hanging(HangingState::StuntIdle),
-    ),
-    (
-        b"S_IDLE_HANG_STUNT_120L",
-        GraphState::Hanging(HangingState::StuntIdleLeft),
-    ),
-    (
-        b"S_IDLE_HANG_STUNT_120R",
-        GraphState::Hanging(HangingState::StuntIdleRight),
-    ),
-    (
-        b"S_IDLE_HANG_STUNT2",
-        GraphState::Hanging(HangingState::StuntIdleAlternate),
     ),
 ];
 
@@ -654,25 +603,29 @@ mod tests {
     }
 
     #[test]
-    fn classifier_admits_the_exact_ground_sequence_and_rejects_ordinary_states() {
+    fn classifier_rejects_ordinary_and_root_motion_only_states() {
         let id = |name: &[u8]| {
             name.iter().fold(0_u32, |id, byte| {
                 id.wrapping_mul(31).wrapping_add(u32::from(*byte))
             })
         };
-        for (name, expected) in [
-            (
-                b"S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND_INTO".as_slice(),
-                GraphState::GroundInto,
-            ),
-            (
-                b"S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND".as_slice(),
-                GraphState::GroundFollowOn,
-            ),
-        ] {
-            assert_eq!(classify_with(Some(id(name)), id), Ok(expected));
-        }
         for name in [
+            // The marker only cancels the clip's root motion, or holds identity.
+            b"S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND_INTO".as_slice(),
+            b"S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND".as_slice(),
+            b"S_JC_BOOST_WINGSUIT_BREAK_TO_LAND".as_slice(),
+            b"S_JC_PARACHUTE_SLIDE_LAND".as_slice(),
+            b"S_LAND_FAST_FALL".as_slice(),
+            b"S_LAND_HARD".as_slice(),
+            b"S_LAND_IDLE_0".as_slice(),
+            b"S_LAND_RUN_0".as_slice(),
+            b"S_GETUP_POSEMATCHING".as_slice(),
+            b"S_GETUP".as_slice(),
+            b"S_IDLE_PICKUP".as_slice(),
+            b"S_GRAPPLE_ATTACH_0".as_slice(),
+            // These bind no clip.
+            b"S_IDLE_HANG_STUNT_120L".as_slice(),
+            b"S_IDLE_HANG_STUNT2".as_slice(),
             b"S_IDLE".as_slice(),
             b"S_JUMP".as_slice(),
             b"S_RUN".as_slice(),
@@ -711,62 +664,13 @@ mod tests {
     }
 
     #[test]
-    fn classifier_admits_exact_landing_recovery_pickup_and_hanging_states() {
+    fn classifier_admits_the_states_whose_marker_moves() {
         let id = |name: &[u8]| {
             name.iter().fold(0_u32, |id, byte| {
                 id.wrapping_mul(31).wrapping_add(u32::from(*byte))
             })
         };
         for (name, expected) in [
-            (
-                b"S_LAND_FAST_FALL".as_slice(),
-                GraphState::Landing(LandingState::FastFall),
-            ),
-            (
-                b"S_LAND_HARD".as_slice(),
-                GraphState::Landing(LandingState::Hard),
-            ),
-            (
-                b"S_LAND_IDLE_0".as_slice(),
-                GraphState::Landing(LandingState::Idle),
-            ),
-            (
-                b"S_LAND_IDLE_90L".as_slice(),
-                GraphState::Landing(LandingState::IdleLeft),
-            ),
-            (
-                b"S_LAND_IDLE_90R".as_slice(),
-                GraphState::Landing(LandingState::IdleRight),
-            ),
-            (
-                b"S_LAND_IDLE_180L".as_slice(),
-                GraphState::Landing(LandingState::IdleBackLeft),
-            ),
-            (
-                b"S_LAND_IDLE_180R".as_slice(),
-                GraphState::Landing(LandingState::IdleBackRight),
-            ),
-            (
-                b"S_LAND_RUN_0".as_slice(),
-                GraphState::Landing(LandingState::Run),
-            ),
-            (
-                b"S_GETUP_POSEMATCHING".as_slice(),
-                GraphState::Recovery(RecoveryState::PoseMatching),
-            ),
-            (
-                b"S_GETUP_BLENDIN".as_slice(),
-                GraphState::Recovery(RecoveryState::BlendIn),
-            ),
-            (
-                b"S_GETUP".as_slice(),
-                GraphState::Recovery(RecoveryState::GetUp),
-            ),
-            (b"S_IDLE_PICKUP".as_slice(), GraphState::FloorPickup),
-            (
-                b"S_GRAPPLE_ATTACH_0".as_slice(),
-                GraphState::Hanging(HangingState::GrappleAttached),
-            ),
             (
                 b"S_GRAPPLE_PRE_UPSIDEDOWN".as_slice(),
                 GraphState::Hanging(HangingState::GrapplePreUpsideDown),
@@ -778,18 +682,6 @@ mod tests {
             (
                 b"S_IDLE_HANG_STUNT".as_slice(),
                 GraphState::Hanging(HangingState::StuntIdle),
-            ),
-            (
-                b"S_IDLE_HANG_STUNT_120L".as_slice(),
-                GraphState::Hanging(HangingState::StuntIdleLeft),
-            ),
-            (
-                b"S_IDLE_HANG_STUNT_120R".as_slice(),
-                GraphState::Hanging(HangingState::StuntIdleRight),
-            ),
-            (
-                b"S_IDLE_HANG_STUNT2".as_slice(),
-                GraphState::Hanging(HangingState::StuntIdleAlternate),
             ),
         ] {
             assert_eq!(classify_with(Some(id(name)), id), Ok(expected));

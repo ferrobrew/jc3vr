@@ -22,13 +22,22 @@ pub(crate) struct AcceptedRun {
     pub run: u64,
 }
 
+/// The graph states the policy distinguishes. The classifier admits only the upside-down grapple
+/// family (see `native::EXACT_STATES`); the takeoff, landing, recovery, pickup, and reeled-in
+/// attach cases remain as policy fixtures for the run, handoff, and tail rules, since their
+/// shipped markers only cancel root motion or hold identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GraphState {
+    #[cfg_attr(not(test), allow(dead_code))]
     GroundInto,
+    #[cfg_attr(not(test), allow(dead_code))]
     GroundFollowOn,
     WingsuitIdle,
+    #[cfg_attr(not(test), allow(dead_code))]
     Landing(LandingState),
+    #[cfg_attr(not(test), allow(dead_code))]
     Recovery(RecoveryState),
+    #[cfg_attr(not(test), allow(dead_code))]
     FloorPickup,
     Hanging(HangingState),
     #[cfg(test)]
@@ -38,18 +47,14 @@ pub(crate) enum GraphState {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) enum LandingState {
     FastFall,
     Hard,
-    Idle,
-    IdleLeft,
-    IdleRight,
-    IdleBackLeft,
-    IdleBackRight,
-    Run,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) enum RecoveryState {
     PoseMatching,
     BlendIn,
@@ -58,13 +63,11 @@ pub(crate) enum RecoveryState {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum HangingState {
+    #[cfg_attr(not(test), allow(dead_code))]
     GrappleAttached,
     GrapplePreUpsideDown,
     GrappleUpsideDown,
     StuntIdle,
-    StuntIdleLeft,
-    StuntIdleRight,
-    StuntIdleAlternate,
 }
 
 impl GraphState {

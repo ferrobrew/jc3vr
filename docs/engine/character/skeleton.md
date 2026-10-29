@@ -37,6 +37,16 @@ The generic male skeleton the game ships (`animations/jc_skeletons/characters/ge
 
 Rico's skeleton (`rico.bsk`, packed inside `main_character.ee`) has at least the eye bones besides (`fLeftEye` and `fRightEye`, children of `Head`, looked up by name hash), and two back dock bones under `sm_BackAttachParent`, which hangs from `sm_UprBackHarness`, a child of `Sternum`: `BackAttach` on the right of the back below the shoulder, and `BackAttach02` on the left, a little higher. The generic male skeleton has only `BackAttach`. Which of them a holstered weapon rides is in [`WeaponBase::UpdatePostFinalizePose`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##func-UpdatePostFinalizePose). Which other bones Rico adds is to be read from a live dump.
 
+### The camera markers in Rico's clips
+
+Rico's skeleton has four camera markers, `CharacterCam1` to `CharacterCam4`, each a direct child of `Reference` with an identity rest pose; it has no bone named `CharacterCam` or `CAMERA`. Only the split lower-body clips carry tracks for them. Across the clips Rico's base graph binds (read from the shipped `.ban` files with the packfile reader in `tools/door_handles`, the states mapped to clips through the base animation set's state-to-animation records), `CharacterCam1` falls into three classes:
+
+- In most clips that move it, its model-space transform (`Reference` composed with the marker) is the inverse of the clip's extracted root motion at every frame, to within a few millimetres and degrees: the marker stays where the clip started while the body travels. The locomotion landings, the boosted takeoff from the ground, the wingsuit and parachute landing slides, the ledge and climb clips, and the vehicle stunt and exit clips, including the upside-down rotations and the wingsuit barrel rolls, are of this class.
+- In many others it holds identity or a constant offset: the hard and idle landings, the get-ups, the idle floor pickup, the reeled-in grapple idles, and `rico_grpl_newhang_idle`.
+- In a few it moves beyond the root motion. `rico_grpl_newhang_land` (bound by `S_GRAPPLE_PRE_UPSIDEDOWN`, with no root motion) pitches the marker a quarter-turn back to identity while raising it about 1.4 m over its first 0.7 s, and the newhang idle then holds that endpoint. The boosted takeoff from water adds about 20° of pitch to its inverse root motion, the boosted underwater frog kick a half-turn of roll, one grapple reel onto a motorbike a few degrees of roll, and the wingsuit flinches a sideways sway of under 10 cm.
+
+Thirty base-graph states bind no clip through their animation node's direct children and modifiers, among them the full and crash ragdolls, `S_JC_WINGSUIT_TO_FALL`, `S_JC_PARACHUTE_RUN_LAND`, and the left, right, and alternate hang-stunt idles; whether they reach clips through nested blend nodes is unverified. How the engine consumes the marker is not established.
+
 Bone rest frames are not aligned with the model axes. An absolute model-space orientation written to a bone therefore does not describe a neutral pose, and an orientation change is composed onto the animated orientation instead. `SetJoint(HEAD)` carries the facial children along, including `fLeftEye` and `fRightEye`, as verified in-game.
 
 ## Frame order, and where to override

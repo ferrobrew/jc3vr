@@ -1,6 +1,7 @@
 //! Selective native camera-channel following for controlled gameplay testing.
 //!
-//! Exact named takeoff, landing, recovery, pickup, and hanging states admit the adapter.
+//! Exact named states whose clips move the camera marker beyond their own root motion (the
+//! upside-down grapple and its hang) admit the adapter.
 //! The native model-space channel retains its Reference hierarchy; the character world
 //! root remains in the view base.
 
