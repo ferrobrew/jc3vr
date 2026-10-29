@@ -1,8 +1,7 @@
 //! Publishing a replay's recorded controller and semantic frames in place of the sampled ones.
 //!
 //! The recorded frames are what the input update published live, so they are published the same
-//! way: one after another, each folding its button edges into the latch, with the scheme tick
-//! seeing each. The publish stamps the sequence and the publish time; the display time is the
+//! way: one after another, each folding its button edges into the latch. The publish stamps the sequence and the publish time; the display time is the
 //! recording's own clock, which the hands' motion history spaces the frames by.
 
 use std::{
@@ -14,7 +13,6 @@ use crate::{
     controllers::{
         config::ControllersConfig,
         frame::{self, ButtonSet, ControllerFrame},
-        scheme,
     },
     testing::replay,
     vr::input::semantic::frame::{self as semantic_frame, SemanticFrame},
@@ -54,7 +52,6 @@ pub(crate) fn publish_replayed(cfg: &ControllersConfig) -> bool {
             action_set: controllers.action_set,
             hands: controllers.hands,
         };
-        scheme::tick(&published, cfg);
         let (_, published_at) = frame::publish(published);
         match recorded.semantic {
             Some(semantic) => semantic_frame::publish(SemanticFrame {

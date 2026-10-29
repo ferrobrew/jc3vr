@@ -134,7 +134,6 @@ pub(crate) mod tests {
     use super::*;
     use crate::{
         config::validate,
-        controllers::config::SchemeSetting,
         pause_menu::model::page::{Item, Page},
     };
 
@@ -196,9 +195,9 @@ pub(crate) mod tests {
 
     #[test]
     fn indices_map_values_and_fall_back_to_the_first() {
-        let values = [SchemeSetting::Auto, SchemeSetting::Controllers];
-        assert_eq!(index_of(&values, &SchemeSetting::Controllers), 1);
-        assert_eq!(index_of(&values, &SchemeSetting::Gamepad), 0);
+        let values = [10, 20];
+        assert_eq!(index_of(&values, &20), 1);
+        assert_eq!(index_of(&values, &30), 0);
         let angles = [15.0, 30.0, 45.0];
         assert_eq!(nearest_index(&angles, 30.0), 1);
         assert_eq!(nearest_index(&angles, 40.0), 2);

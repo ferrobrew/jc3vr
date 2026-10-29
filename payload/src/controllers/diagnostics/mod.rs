@@ -35,7 +35,7 @@ pub const SAMPLE_RATE_HZ: u32 = 30;
 /// The interval between scheduled diagnostic samples.
 pub const SAMPLE_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / SAMPLE_RATE_HZ as u64);
 /// The schema version written by [`capture`].
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 /// The UI-facing state of the collector and its most recent capture attempt.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CaptureStatus {
@@ -441,7 +441,6 @@ mod tests {
             frame_sequence: None,
             scheme: SchemeDiagnostic {
                 effective: "controllers",
-                selected: "controllers",
             },
             mode: ModeDiagnostic {
                 mode: "on_foot",

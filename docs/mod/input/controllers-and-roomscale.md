@@ -463,10 +463,10 @@ A setting marked "off" below is off by default and has to be switched on to test
 
 | Part | Settings | State |
 |---|---|---|
-| OpenXR actions, poses, haptics queue, and hand tracking | `enabled`, `input.trigger_press`, `input.squeeze_press`, `input.stick_deadzone`, `input.hand_tracking` | Built. The hand-tracking joints are published for the finger curls. |
-| Scheme selection | `scheme` (`Auto`, `Controllers`, or `Gamepad`) | Built. |
+| OpenXR actions, poses, haptics queue, and hand tracking | `enabled`, `input.trigger_press`, `input.squeeze_press`, `input.squeeze_force_press`, `input.trackpad_press`, `input.hand_tracking` | Built. The hand-tracking joints are published for the finger curls. |
+| Scheme selection | `enabled`; the controller scheme is in effect while a controller is active | Built. |
 | Body dimensions and remap | the settings file's `[body]` section; `body.remap_hands` (on), `body.remap_head` (on) | Built. The head remap feeds the view through the posture (milestone 2). |
-| Mode detection | `mode.debounce_ticks` | Built. The headpose sim keeps its own on-foot test. |
+| Mode detection | none (`mode::DEBOUNCE_TICKS`) | Built. The headpose sim keeps its own on-foot test. |
 | Bindings and injection | `bindings.enabled`, `bindings.move_deadzone`, `bindings.trigger_deadzone`, `bindings.long_press_s`, `dominant_hand`, `locomotion.direction` (`Head` or `OffHand`) | Built for every mode. An off-hand grip press inside a grab volume (milestone 3) grabs, and elsewhere fires the grapple. Falling and under the parachute the dominant hand keeps the on-foot fire, reload, and grenade bindings. The wingsuit's evade is unbound. |
 | Gamepad semantics | none; always on under the controller scheme | Built. |
 | Aim-state pin and mental-state cuts | `aim_state.skip_arm_ik`; the pins, the neutral aim point, the wall-block clear, and the mental-state cuts act whenever the controller scheme is in effect | Built, except the strafe reference correction (see "The aim-state pin"). |
@@ -549,7 +549,6 @@ The implementation rests on the following assumptions, each of which needs check
 Input and scheme:
 
 - The Touch suggested bindings and the press thresholds are untested; the Index layout is the target.
-- `GetLastInputInfo` reports keyboard and mouse input under Proton, and XInput does not expose the VR controllers as a gamepad. If XInput does expose them, the scheme flips to the gamepad on controller input.
 - The behaviour while the session is not focused.
 - A persisted session whose action layout differs from the payload's cannot attach the new actions, so the controllers stay unavailable until the game restarts.
 - The character's proportions are an estimate from his stated height until they are measured from the skeleton.

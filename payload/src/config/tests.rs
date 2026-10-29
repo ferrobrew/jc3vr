@@ -10,7 +10,7 @@ use super::*;
 use crate::{
     config::load::{LoadReport, Loaded, parse},
     controllers::{
-        config::{Posture, SchemeSetting, SightOverride},
+        config::{LocomotionDirection, Posture, SightOverride},
         frame::Hand,
     },
     director::keymap::{Action, Binding, Chord},
@@ -272,12 +272,19 @@ fn a_mistyped_setting_is_reset_alone() {
 #[test]
 fn an_unknown_enum_variant_is_reset_alone() {
     let mut table = defaults_table();
-    set(&mut table, &["controllers", "scheme"], "Telepathy".into());
+    set(
+        &mut table,
+        &["controllers", "locomotion", "direction"],
+        "Telepathy".into(),
+    );
     set(&mut table, &["controllers", "dominant_hand"], "Left".into());
     let Loaded { config, report } = load(table);
-    assert_eq!(config.controllers.scheme, SchemeSetting::Controllers);
+    assert_eq!(
+        config.controllers.locomotion.direction,
+        LocomotionDirection::Head
+    );
     assert_eq!(config.controllers.dominant_hand, Hand::Left);
-    assert_eq!(reset_paths(&report), ["controllers.scheme"]);
+    assert_eq!(reset_paths(&report), ["controllers.locomotion.direction"]);
 }
 
 #[test]
@@ -308,7 +315,11 @@ fn a_list_of_the_wrong_length_is_reset_alone() {
 #[test]
 fn several_bad_settings_are_each_reset() {
     let mut table = defaults_table();
-    set(&mut table, &["controllers", "scheme"], 3.into());
+    set(
+        &mut table,
+        &["controllers", "locomotion", "direction"],
+        3.into(),
+    );
     set(&mut table, &["vr", "mirror"], "yes".into());
     set(&mut table, &["hud", "distance"], "far".into());
     let Loaded { config, report } = load(table);
@@ -316,7 +327,14 @@ fn several_bad_settings_are_each_reset() {
     assert_eq!(config.hud.distance, Config::new().hud.distance);
     let mut paths = reset_paths(&report);
     paths.sort();
-    assert_eq!(paths, ["controllers.scheme", "hud.distance", "vr.mirror"]);
+    assert_eq!(
+        paths,
+        [
+            "controllers.locomotion.direction",
+            "hud.distance",
+            "vr.mirror"
+        ]
+    );
 }
 
 #[test]

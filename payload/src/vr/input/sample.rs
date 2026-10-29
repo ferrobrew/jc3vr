@@ -19,7 +19,6 @@ use crate::{
             HandJoint, InteractionProfile, Pose, TrackedPose, derive_buttons,
         },
         haptics::{self, mixer::HapticPulse},
-        scheme,
     },
     vr::{
         input::{
@@ -170,7 +169,6 @@ impl InputState {
             action_set: mode,
             hands,
         };
-        scheme::tick(&frame, cfg);
 
         let mut semantic = SemanticFrame {
             published_at: Instant::now(),

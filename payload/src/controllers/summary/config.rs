@@ -1,5 +1,5 @@
-//! The controls summary's settings: the panel, when it shows, where it sits on the wrist, and the
-//! suppression of the game's own button hints.
+//! The controls summary's settings (the panel, its glance trigger, and the suppression of the
+//! game's own button hints), and the glance and wrist placement parameter types.
 
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
@@ -16,26 +16,6 @@ pub struct SummaryConfig {
     pub hide_game_hints: bool,
     /// Show the panel while the player glances at the wrist.
     pub show_on_glance: bool,
-    /// The glance's geometry and timing.
-    pub glance: GlanceConfig,
-    /// Show the panel for this long after the mode changes to one the player settles in, seconds;
-    /// zero never does. Falling does not count
-    /// ([`shows_mode_change`](crate::controllers::summary::shows_mode_change)).
-    pub show_on_mode_change_s: f32,
-    /// Show the panel while the off-hand's trackpad is touched (Index controllers only).
-    pub show_on_trackpad_touch: bool,
-    /// The panel's place on the wrist.
-    pub placement: WristPlacement,
-    /// The panel texture's width, pixels. The texture's height follows the summary's content, and
-    /// the panel's height in metres follows the texture's aspect.
-    pub width_px: u32,
-    /// A row's height on the panel texture before its text wraps, pixels, which sets the text's
-    /// size against the panel's width.
-    pub row_px: f32,
-    /// The page-height budget, pixels. Overflow uses more pages at the same readable row size.
-    pub max_height_px: u32,
-    /// The fade in and out, seconds.
-    pub fade_s: f32,
 }
 
 impl SummaryConfig {
@@ -44,14 +24,6 @@ impl SummaryConfig {
             enabled: true,
             hide_game_hints: true,
             show_on_glance: true,
-            glance: GlanceConfig::new(),
-            show_on_mode_change_s: 3.0,
-            show_on_trackpad_touch: true,
-            placement: WristPlacement::new(),
-            width_px: 480,
-            row_px: 32.0,
-            max_height_px: 1280,
-            fade_s: 0.15,
         }
     }
 }
@@ -63,8 +35,7 @@ impl Default for SummaryConfig {
 }
 
 /// When a look at the wrist counts as a glance.
-#[derive(Copy, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Copy, Clone)]
 pub struct GlanceConfig {
     /// The largest angle between the head's forward and the direction to the panel, degrees.
     pub view_cone_deg: f32,
@@ -99,8 +70,7 @@ impl Default for GlanceConfig {
 }
 
 /// The panel's place on the off-hand.
-#[derive(Copy, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Copy, Clone)]
 pub struct WristPlacement {
     /// The panel's centre in the controller's grip frame, metres: -X out of the back of the hand,
     /// +Z back along the forearm.

@@ -27,7 +27,7 @@
 //! 5. to 7. The wingsuit, the parachute, and falling: [`Mode::Airborne`].
 //! 8. and 9. Swimming and everything else: [`Mode::OnFoot`].
 //!
-//! A change between gameplay modes must persist for [`ModeConfig::debounce_ticks`] ticks before it
+//! A change between gameplay modes must persist for [`DEBOUNCE_TICKS`] ticks before it
 //! takes effect, so a one-tick flicker during an animation blend does not switch the action set.
 //! Entering and leaving the UI is immediate: the UI signals do not flicker, and a late switch would
 //! send a menu press to the gameplay bindings.
@@ -44,8 +44,7 @@ use parking_lot::Mutex;
 
 pub(crate) use crate::egui_impl::DebugUiInput;
 use crate::{
-    config::Config,
-    controllers::{config::ModeConfig, frame::ActionSetKind},
+    controllers::frame::ActionSetKind,
     hooks::animation::active_state_type_id,
     sim_rate::scale_ticks,
     ui::capture::{CaptureUpdate, OwnershipSnapshot},
@@ -284,7 +283,7 @@ impl ModeDetector {
     }
 
     /// Fold one tick's snapshot in and return the detection.
-    pub fn observe(&mut self, snapshot: &ModeSnapshot, config: &ModeConfig) -> Detection {
+    pub fn observe(&mut self, snapshot: &ModeSnapshot, debounce_ticks: u32) -> Detection {
         if snapshot.ui.any() {
             self.candidate = None;
             self.current = Detection {
@@ -326,7 +325,7 @@ impl ModeDetector {
                 Some((mode, ticks)) if mode == classified => ticks + 1,
                 _ => 1,
             };
-            if seen >= config.debounce_ticks.max(1) {
+            if seen >= debounce_ticks.max(1) {
                 self.candidate = None;
                 classified
             } else {
@@ -394,15 +393,14 @@ pub fn traversal(character: &CharacterSnapshot) -> Option<Traversal> {
 /// set, and publish the detection for [`current`]. Called from the input tick while the controllers
 /// are enabled.
 pub(crate) fn tick() -> Detection {
-    let mut config = Config::lock_query(|c| c.controllers.mode);
     // The debounce rides out a flicker of the animation, which lasts a time, not a tick count.
-    config.debounce_ticks = scale_ticks(config.debounce_ticks);
+    let debounce_ticks = scale_ticks(DEBOUNCE_TICKS);
     // SAFETY: called on the main thread from the input tick, outside the world update that writes
     // the state read here.
     let snapshot = unsafe { read_snapshot() };
     let mut detector = DETECTOR.lock();
     let before = detector.current().mode;
-    let detection = detector.observe(&snapshot, &config);
+    let detection = detector.observe(&snapshot, debounce_ticks);
     drop(detector);
     if before != detection.mode {
         tracing::debug!(target: "controllers", ?before, after = ?detection.mode, "mode change");
@@ -446,6 +444,12 @@ pub unsafe fn read_snapshot() -> ModeSnapshot {
         character,
     }
 }
+
+/// How many consecutive ticks a new gameplay mode must be detected before it takes effect. One
+/// switches at once; two rides out a one-tick flicker during an animation blend. Counted at the
+/// game's 30 Hz tick, and scaled to the same duration at another sim rate
+/// ([`crate::sim_rate::scale_ticks`]).
+const DEBOUNCE_TICKS: u32 = 2;
 
 /// The detector state, advanced by [`tick`].
 static DETECTOR: Mutex<ModeDetector> = Mutex::new(ModeDetector::new());
@@ -511,8 +515,6 @@ unsafe fn read_vehicle(character: &Character) -> VehicleSeat {
 mod tests {
     use super::*;
 
-    const CONFIG: ModeConfig = ModeConfig { debounce_ticks: 2 };
-
     fn bits(flags: &[StateBitFlag]) -> [u64; 3] {
         let mut words = [0u64; 3];
         for &f in flags {
@@ -544,8 +546,8 @@ mod tests {
 
     /// Observe `snapshot` until the debounce lets it through.
     fn settle(detector: &mut ModeDetector, snapshot: &ModeSnapshot) -> Detection {
-        for _ in 0..CONFIG.debounce_ticks {
-            detector.observe(snapshot, &CONFIG);
+        for _ in 0..DEBOUNCE_TICKS {
+            detector.observe(snapshot, DEBOUNCE_TICKS);
         }
         detector.current()
     }
@@ -612,10 +614,10 @@ mod tests {
         settle(&mut d, &in_vehicle(VehicleClass::Car, true));
         let mut paused = in_vehicle(VehicleClass::Car, true);
         paused.ui.clock_stopped = true;
-        assert_eq!(d.observe(&paused, &CONFIG).mode, Mode::Ui);
+        assert_eq!(d.observe(&paused, DEBOUNCE_TICKS).mode, Mode::Ui);
         let resumed = in_vehicle(VehicleClass::Car, true);
         assert!(matches!(
-            d.observe(&resumed, &CONFIG).mode,
+            d.observe(&resumed, DEBOUNCE_TICKS).mode,
             Mode::Vehicle(_)
         ));
     }
@@ -641,7 +643,7 @@ mod tests {
                 ui,
                 ..Default::default()
             };
-            assert_eq!(d.observe(&snapshot, &CONFIG).mode, Mode::Ui);
+            assert_eq!(d.observe(&snapshot, DEBOUNCE_TICKS).mode, Mode::Ui);
         }
     }
 
@@ -651,17 +653,17 @@ mod tests {
         let ground = with_flags(&[]);
         let falling = with_flags(&[StateBitFlag::SB_IS_FALLING]);
         settle(&mut d, &ground);
-        let flicker = d.observe(&falling, &CONFIG);
+        let flicker = d.observe(&falling, DEBOUNCE_TICKS);
         assert_eq!(flicker.mode, Mode::OnFoot(OnFootVariant::Ground));
         assert_eq!(flicker.held, Some(HoldReason::Debouncing));
         assert_eq!(
-            d.observe(&ground, &CONFIG).mode,
+            d.observe(&ground, DEBOUNCE_TICKS).mode,
             Mode::OnFoot(OnFootVariant::Ground)
         );
         // The interrupted candidate starts over.
-        d.observe(&falling, &CONFIG);
+        d.observe(&falling, DEBOUNCE_TICKS);
         assert_eq!(
-            d.observe(&falling, &CONFIG).mode,
+            d.observe(&falling, DEBOUNCE_TICKS).mode,
             Mode::Airborne(AirborneVariant::Falling)
         );
     }
@@ -669,10 +671,9 @@ mod tests {
     #[test]
     fn a_zero_debounce_switches_at_once() {
         let mut d = ModeDetector::new();
-        let config = ModeConfig { debounce_ticks: 0 };
         let falling = with_flags(&[StateBitFlag::SB_IS_FALLING]);
         assert_eq!(
-            d.observe(&falling, &config).mode,
+            d.observe(&falling, 0).mode,
             Mode::Airborne(AirborneVariant::Falling)
         );
     }
@@ -682,13 +683,13 @@ mod tests {
         let mut d = ModeDetector::new();
         settle(&mut d, &in_vehicle(VehicleClass::Helicopter, true));
         let spawn = ModeSnapshot::default();
-        let held = d.observe(&spawn, &CONFIG);
+        let held = d.observe(&spawn, DEBOUNCE_TICKS);
         assert!(matches!(held.mode, Mode::Vehicle(_)));
         assert_eq!(held.held, Some(HoldReason::CharacterUnavailable));
 
         let mut teleport = with_flags(&[]);
         teleport.teleporting = true;
-        let held = d.observe(&teleport, &CONFIG);
+        let held = d.observe(&teleport, DEBOUNCE_TICKS);
         assert!(matches!(held.mode, Mode::Vehicle(_)));
         assert_eq!(held.held, Some(HoldReason::Teleporting));
     }

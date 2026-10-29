@@ -524,7 +524,6 @@ mod tests {
         let mut input = InputConfig::new();
         input.trigger_press.release = 0.4;
         input.squeeze_press.release = 0.6;
-        input.stick_deadzone = 0.25;
         let mut bindings = BindingsConfig::new();
         bindings.trigger_deadzone = 0.35;
         bindings.move_deadzone = 0.3;

@@ -33,11 +33,10 @@ pub struct ControllerDiagnostic {
     pub roomscale: RoomscaleDiagnostic,
 }
 
-/// The effective and auto-selected controller schemes.
+/// The controller scheme in effect.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct SchemeDiagnostic {
     pub effective: &'static str,
-    pub selected: &'static str,
 }
 
 /// The mode detector's result and the action set selected for the next input frame.
@@ -199,7 +198,6 @@ pub(super) fn snapshot() -> ControllerDiagnostic {
     let roomscale_status = roomscale::status();
     let scheme = SchemeDiagnostic {
         effective: scheme_label(scheme::current()),
-        selected: scheme_label(scheme::selected()),
     };
     ControllerDiagnostic {
         elapsed_ms: 0,

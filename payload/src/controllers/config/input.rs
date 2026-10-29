@@ -1,5 +1,5 @@
-//! On-foot stick locomotion, the per-tick mode detector, and the raw input interpretation and
-//! controller-to-game bindings that drive them.
+//! On-foot stick locomotion, and the raw input interpretation and controller-to-game bindings that
+//! drive it.
 
 use std::time::Duration;
 
@@ -39,9 +39,6 @@ pub struct InputConfig {
     /// [`Button::TrackpadPressRight`](crate::controllers::frame::Button::TrackpadPressRight), on
     /// a controller with a trackpad. A resting thumb reads no force, so a light press is enough.
     pub trackpad_press: PressThresholds,
-    /// Thumbstick and trackpad magnitudes below this count as centred when deciding whether the
-    /// controllers are in use (see [`crate::controllers::scheme`]).
-    pub stick_deadzone: f32,
     /// Locate the hand skeleton through `XR_EXT_hand_tracking` when the runtime offers it. The
     /// joints feed the finger curls; with this off, or without runtime support, the curls are
     /// estimated from the inputs.
@@ -70,7 +67,6 @@ impl InputConfig {
                 press: 0.4,
                 release: 0.2,
             },
-            stick_deadzone: 0.3,
             hand_tracking: true,
             self_check: true,
         }
@@ -141,31 +137,6 @@ pub enum LocomotionDirection {
     Head,
     /// Forward is where the off-hand controller points (yaw only).
     OffHand,
-}
-
-/// The per-tick mode detector (see [`crate::controllers::mode`]). It reads the game's state and
-/// selects the OpenXR action set whenever the controllers are enabled, and changes nothing the game
-/// sees.
-#[derive(Copy, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ModeConfig {
-    /// How many consecutive ticks a new gameplay mode must be detected before it takes effect. One
-    /// switches at once; the default rides out a one-tick flicker during an animation blend.
-    /// Counted at the game's 30 Hz tick, and scaled to the same duration at another sim rate
-    /// ([`crate::sim_rate::scale_ticks`]).
-    pub debounce_ticks: u32,
-}
-
-impl ModeConfig {
-    pub const fn new() -> Self {
-        Self { debounce_ticks: 2 }
-    }
-}
-
-impl Default for ModeConfig {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 /// The controller-to-game bindings (see [`crate::controllers::bindings`]). They inject only under

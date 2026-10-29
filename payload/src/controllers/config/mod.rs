@@ -1,4 +1,4 @@
-//! The motion-controller configuration: the master switch, the scheme, and one sub-struct per
+//! The motion-controller configuration: the master switch and one sub-struct per
 //! subsystem of the plan of record (`docs/mod/input/controllers-and-roomscale.md`), each holding its
 //! toggle and the tuning beside it.
 //!
@@ -13,8 +13,7 @@
 //! [`VrTurnConfig`](crate::headpose::config::VrTurnConfig) (`headpose.vr_turn`) rather than keeping
 //! a second copy of the smooth and snap settings.
 //!
-//! One file per subsystem cluster: [`input`] (raw input, locomotion, the mode detector, and the
-//! bindings), [`aim`] (controller-owned hands and per-hand aiming), [`overlay`], [`weapons`],
+//! One file per subsystem cluster: [`input`] (raw input, locomotion, and the bindings), [`aim`] (controller-owned hands and per-hand aiming), [`overlay`], [`weapons`],
 //! [`body`], and [`roomscale`].
 
 mod aim;
@@ -29,7 +28,7 @@ use serde::{Deserialize, Serialize};
 pub use self::{
     aim::{AimConfig, AimStateConfig, GripOffset, HandsConfig},
     body::BodyRemapConfig,
-    input::{BindingsConfig, InputConfig, LocomotionConfig, LocomotionDirection, ModeConfig},
+    input::{BindingsConfig, InputConfig, LocomotionConfig, LocomotionDirection},
     overlay::{GunReadout, OverlayConfig},
     roomscale::{Posture, RoomscaleConfig, SeatTransition},
     weapons::WeaponsConfig,
@@ -53,8 +52,6 @@ pub struct ControllersConfig {
     /// are still created and attached with the session, because attachment is possible only once
     /// per session and turning this on later must not require a new one.
     pub enabled: bool,
-    /// Which control scheme is in effect (see [`SchemeSetting`]).
-    pub scheme: SchemeSetting,
     /// The hand that holds and fires the guns. The other hand fires the grapple. Mirroring swaps the
     /// bindings and the dual-wield pistols' attach bones; a single gun stays on the model's right
     /// hand, and the grapple gauntlet on the model's left arm. The hand roles follow
@@ -64,8 +61,6 @@ pub struct ControllersConfig {
     pub input: InputConfig,
     /// On-foot stick locomotion.
     pub locomotion: LocomotionConfig,
-    /// The per-tick mode detector.
-    pub mode: ModeConfig,
     /// The controller-to-game bindings.
     pub bindings: BindingsConfig,
     /// The aim-state pin and the mental-state cuts.
@@ -112,11 +107,9 @@ impl ControllersConfig {
     pub const fn new() -> Self {
         Self {
             enabled: true,
-            scheme: SchemeSetting::Controllers,
             dominant_hand: Hand::Right,
             input: InputConfig::new(),
             locomotion: LocomotionConfig::new(),
-            mode: ModeConfig::new(),
             bindings: BindingsConfig::new(),
             aim_state: AimStateConfig::new(),
             hands: HandsConfig::new(),
@@ -139,21 +132,6 @@ impl Default for ControllersConfig {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Which control scheme is in effect: the controller scheme (hand aiming, controller bindings,
-/// controller-owned hands) or the gamepad scheme (gaze aiming, the game's own gamepad and keyboard
-/// input, animated hands).
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum SchemeSetting {
-    /// Switch on the most recent input: controller input selects the controller scheme, and
-    /// gamepad, keyboard, or mouse input selects the gamepad scheme.
-    #[default]
-    Auto,
-    /// Always the controller scheme, even when no controller is present.
-    Controllers,
-    /// Always the gamepad scheme.
-    Gamepad,
 }
 
 /// The hand the roles follow for a configured `dominant` hand and the hand the attached bindings

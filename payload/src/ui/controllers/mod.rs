@@ -65,14 +65,7 @@ use crate::{
 pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
     let body: FeatureBody = match id {
         FeatureId::ControllerCapture => |ui, _| diagnostics::diagnostics(ui),
-        FeatureId::Devices => |ui, _| {
-            let input_status = vr_input::status();
-            let recovery = bindings::recovery_status();
-            settings::devices(ui, &mut config::edit(), &input_status, recovery);
-        },
-        FeatureId::Thresholds => |ui, _| settings::thresholds(ui, &mut config::edit()),
-        FeatureId::Bindings => |ui, _| settings::bindings_settings(ui, &mut config::edit()),
-        FeatureId::MenuPanel => |ui, _| settings::menu_panel(ui, &mut config::edit()),
+        FeatureId::Devices => |ui, _| settings::devices(ui, &mut config::edit()),
         FeatureId::OnFoot => |ui, _| settings::locomotion_settings(ui, &mut config::edit()),
         FeatureId::Grapple => |ui, _| {
             let mut cfg = config::edit();
@@ -169,12 +162,8 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
 pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
     let body: FeatureBody = match id {
         FeatureId::Devices => |ui, _| {
-            let current = scheme::current();
-            let selected = scheme::selected();
             let status = vr_input::status();
-            ui.label(format!(
-                "Scheme: {current:?} (auto-selection last chose {selected:?})"
-            ));
+            ui.label(format!("Scheme: {:?}", scheme::current()));
             ui.label(format!("Action set: {:?}", vr_input::active_action_set()));
             ui.label(match (&status.error, status.attached, status.origin) {
                 (Some(error), _, _) => format!("OpenXR input: unavailable: {error}"),
@@ -195,20 +184,19 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
                 yes_no(ht.system_supported),
                 yes_no(ht.trackers_created)
             ));
-        },
-        FeatureId::Bindings => |ui, _| {
+            settings::devices_readout(ui, bindings::recovery_status());
+            ui.separator();
             let detection = controller_mode::current();
             let snapshot = controller_mode::last_snapshot();
             let report = bindings::last_report();
             mode::mode_readout(ui, detection, snapshot.as_ref(), &report);
-        },
-        FeatureId::MenuPanel => |ui, _| {
+            ui.separator();
             map::map_readout(
                 ui,
                 &controller_map::report(),
                 pointer::selected_controller(),
                 pointer::owns_menu_trigger(),
-            )
+            );
         },
         FeatureId::AnimationIk => |ui, _| {
             body_ik::body_ik_readout(ui);
@@ -299,7 +287,6 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
                 frame::live_frame(ui, controller_frame::latest().as_ref())
             });
         },
-        FeatureId::Thresholds => |ui, _| frame::live_frame(ui, controller_frame::latest().as_ref()),
         _ => return None,
     };
     Some(body)

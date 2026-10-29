@@ -63,11 +63,7 @@ Once per session (and per reinject), at the first focused frame at which a hand 
 
 ## Scheme selection
 
-The controller scheme and the gamepad scheme switch on the most recent deliberate input while `controllers.scheme` is `Auto`. A controller button press (a capacitive touch does not count), a trigger or grip press, or a stick or trackpad past `controllers.input.stick_deadzone` selects the controller scheme. A gamepad button, trigger, or stick, or any keyboard or mouse input, selects the gamepad scheme. Input from both in the same frame, or from neither, keeps the current scheme. Without a controller snapshot, `Auto` is always the gamepad scheme. `Controllers` and `Gamepad` pin the scheme regardless of whether a controller is present or active.
-
-`controllers.scheme` defaults to `Controllers`, as part of the full gameplay preset. `Controllers` pins the controller scheme while a controller is present, so a keyboard hotkey or a touch of the gamepad does not take it away; with no controller frame it falls back to the gamepad scheme, so a player who never connects motion controllers keeps the game's own behaviour. `Gamepad` pins the gamepad scheme regardless.
-
-The observation runs once per rendered frame, right after the snapshot is published. Gamepad input is read from XInput directly, and keyboard and mouse input from `GetLastInputInfo`, which the OS updates on every hardware input event. The engine's own effectors are not used for this, because once the bindings inject controller input into them they no longer tell the devices apart. While the mod's panel is up, keyboard and mouse input drives the panel and does not count.
+The controller scheme is in effect while `controllers.enabled` is on and a controller is active in the published snapshot (`scheme::current`). With the controllers switched off (the pause menu's motion controllers switch) or no controller frame, the gamepad scheme is in effect, so a player who never connects motion controllers, or who puts them down and switches them off, keeps the game's own behaviour with the head-tracked view. Every controller subsystem gates on the scheme.
 
 ## Body dimensions
 
@@ -92,7 +88,7 @@ The detector runs once per engine input tick, from the post-call detour on [`Inp
 
 The mode selects the semantic mode set: `onfoot` and the falling and parachute variants of `airborne` select `on_foot`, the wingsuit `wingsuit`, a vehicle its class's set (`helicopter`, `plane`, or `land_vehicle` for the rest), and `ui` the `menu` set.
 
-A change between gameplay modes must persist for `controllers.mode.debounce_ticks` ticks (two by default) before it takes effect. The count is at the game's 30 Hz tick; under the sim-rate experiment ([performance/sim-rate.md](../performance/sim-rate.md)) it is scaled to the same duration. Entering and leaving `ui` is immediate, because the UI signals do not flicker and a late switch would send a menu press to the gameplay bindings. The detector selects the OpenXR action set whenever the controllers are enabled, and changes nothing the game sees. The headpose sim keeps its own on-foot test.
+A change between gameplay modes must persist for `mode::DEBOUNCE_TICKS` ticks (two) before it takes effect. The count is at the game's 30 Hz tick; under the sim-rate experiment ([performance/sim-rate.md](../performance/sim-rate.md)) it is scaled to the same duration. Entering and leaving `ui` is immediate, because the UI signals do not flicker and a late switch would send a menu press to the gameplay bindings. The detector selects the OpenXR action set whenever the controllers are enabled, and changes nothing the game sees. The headpose sim keeps its own on-foot test.
 
 ## Bindings and injection
 

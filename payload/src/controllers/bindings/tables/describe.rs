@@ -308,8 +308,6 @@ pub struct Features {
     pub wrist_detonator: bool,
     /// The sight tuning capture chord is armed.
     pub sight_chord: bool,
-    /// The trackpad touch shows the summary.
-    pub trackpad_shows_summary: bool,
     /// The weapon-select trackpad press opens the weapon wheel.
     pub wheel_trackpad: bool,
     /// The `weapon_wheel` action opens the weapon wheel.
@@ -884,10 +882,8 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
             add(Control::EitherGrip, Gesture::Press, modded(action));
         }
     }
-    if features.trackpad_shows_summary {
-        for (control, gesture) in controls(GlobalAction::ShowControlsSummary.id()) {
-            add(control, gesture, modded(ModAction::ShowSummary));
-        }
+    for (control, gesture) in controls(GlobalAction::ShowControlsSummary.id()) {
+        add(control, gesture, modded(ModAction::ShowSummary));
     }
     add(
         Control::BothStickClicks,

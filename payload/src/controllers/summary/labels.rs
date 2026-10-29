@@ -509,7 +509,6 @@ mod tests {
             c4_throw: true,
             wrist_detonator: true,
             sight_chord: true,
-            trackpad_shows_summary: true,
             wheel_trackpad: true,
             wheel_stick: true,
             parachute_handles: true,

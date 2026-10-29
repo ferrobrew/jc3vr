@@ -103,12 +103,9 @@ features! {
         Previews => ("rendering.previews", "Previews and performance"),
     },
     Input {
-        Devices => ("input.devices", "Scheme, handedness, and devices"),
-        Thresholds => ("input.thresholds", "Input thresholds and recovery"),
-        Bindings => ("input.bindings", "Context and binding reference"),
-        MenuPanel => ("input.menu-panel", "Menu and panel input"),
-        Wrist => ("input.wrist", "Wrist controls summary"),
-        Semantic => ("input.semantic", "Semantic actions and self-check"),
+        Devices => ("input.devices", "Devices and thresholds"),
+        Wrist => ("input.wrist", "Wrist summary"),
+        Semantic => ("input.semantic", "Self-check"),
     },
     Capture {
         TrackingCapture => ("capture.tracking", "Tracking recording"),

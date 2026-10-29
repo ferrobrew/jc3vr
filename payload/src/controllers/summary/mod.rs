@@ -159,7 +159,6 @@ pub(crate) fn refresh(
             c4_throw: weapons.c4_throw,
             wrist_detonator: weapons.wrist_detonator,
             sight_chord: controls.sight_chord,
-            trackpad_shows_summary: config.summary.show_on_trackpad_touch,
             wheel_trackpad: weapons.wheel.enabled && WHEEL.trackpad,
             wheel_stick: weapons.wheel.enabled && WHEEL.stick,
             parachute_handles: config.vehicles.parachute_handles.enabled,

@@ -3,9 +3,7 @@
 //! vehicles) or dropping back to the gamepad baseline. A preset changes switches only; tuning,
 //! sight calibration, and optional preferences stay as they are.
 
-use crate::controllers::config::{
-    ControllersConfig, GunReadout, Posture, SchemeSetting, SeatTransition,
-};
+use crate::controllers::config::{ControllersConfig, GunReadout, Posture, SeatTransition};
 
 /// The named controller switch presets shown by the Controllers tab.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -51,11 +49,6 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     let room = matches!(preset, Preset::Roomscale | Preset::VehiclesAndAdvanced);
     let vehicles = preset == Preset::VehiclesAndAdvanced;
     c.enabled = input;
-    c.scheme = if input {
-        SchemeSetting::Controllers
-    } else {
-        SchemeSetting::Gamepad
-    };
     c.input.hand_tracking = input;
     c.bindings.enabled = input;
     c.bindings.yank.enabled = hands;
@@ -173,7 +166,6 @@ mod tests {
         let mut c = ControllersConfig::new();
         apply_preset(&mut c, Preset::GamepadBaseline);
         assert!(!c.enabled);
-        assert_eq!(c.scheme, SchemeSetting::Gamepad);
         assert!(!c.body.rig.chase.enabled);
         assert!(!c.body.rig.lean.enabled);
         assert!(!c.roomscale.crouch.capsule);

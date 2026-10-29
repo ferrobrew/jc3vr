@@ -1,4 +1,4 @@
-//! Pointer interaction with the actual paired sliders and chord controls.
+//! Pointer interaction with the actual paired sliders.
 
 use super::*;
 
@@ -6,7 +6,6 @@ fn frame(
     context: &egui::Context,
     cfg: &mut config::Config,
     events: Vec<egui::Event>,
-    chord: bool,
 ) -> Vec<egui::Rect> {
     let output = context.run_ui(
         egui::RawInput {
@@ -17,21 +16,12 @@ fn frame(
             )),
             ..Default::default()
         },
-        |ui| {
-            if chord {
-                menu_panel(ui, cfg);
-            } else {
-                thresholds(ui, cfg);
-            }
-        },
+        |ui| devices(ui, cfg),
     );
     let mut rows = Vec::new();
     for shape in output.shapes {
         if let egui::Shape::Text(text) = shape.shape
-            && text
-                .galley
-                .text()
-                .contains(if chord { "chord window" } else { "Trigger" })
+            && text.galley.text().contains("Trigger")
         {
             rows.push(text.visual_bounding_rect());
         }
@@ -39,7 +29,7 @@ fn frame(
     rows
 }
 
-fn click(context: &egui::Context, cfg: &mut config::Config, pos: egui::Pos2, chord: bool) {
+fn click(context: &egui::Context, cfg: &mut config::Config, pos: egui::Pos2) {
     for pressed in [true, false] {
         frame(
             context,
@@ -53,47 +43,29 @@ fn click(context: &egui::Context, cfg: &mut config::Config, pos: egui::Pos2, cho
                     modifiers: Default::default(),
                 },
             ],
-            chord,
         );
     }
 }
 
 #[test]
-fn actual_widgets_keep_pair_order_and_chord_windows_positive() {
+fn actual_widgets_keep_pair_order() {
     let context = egui::Context::default();
     let mut cfg = config::Config::new();
     cfg.controllers.input.trigger_press = PressThresholds {
         press: 0.9,
         release: 0.8,
     };
-    let rows = frame(&context, &mut cfg, vec![], false);
+    let rows = frame(&context, &mut cfg, vec![]);
     assert_eq!(rows.len(), 2);
-    click(
-        &context,
-        &mut cfg,
-        egui::pos2(20.0, rows[0].center().y),
-        false,
-    );
+    click(&context, &mut cfg, egui::pos2(20.0, rows[0].center().y));
     assert!(cfg.controllers.input.trigger_press.press < 0.8);
     assert!(
         cfg.controllers.input.trigger_press.release <= cfg.controllers.input.trigger_press.press
     );
-    click(
-        &context,
-        &mut cfg,
-        egui::pos2(100.0, rows[1].center().y),
-        false,
-    );
+    click(&context, &mut cfg, egui::pos2(100.0, rows[1].center().y));
     assert!(cfg.controllers.input.trigger_press.release > 0.5);
     assert!(
         cfg.controllers.input.trigger_press.release <= cfg.controllers.input.trigger_press.press
     );
-    let rows = frame(&context, &mut cfg, vec![], true);
-    assert_eq!(rows.len(), 2);
-    for row in rows {
-        click(&context, &mut cfg, egui::pos2(10.0, row.center().y), true);
-    }
-    assert!(cfg.controllers.bindings.stick_chord_window_s > 0.0);
-    assert!(cfg.controllers.bindings.panel_chord_window_s > 0.0);
     config::validate::controllers(&cfg.controllers).unwrap();
 }

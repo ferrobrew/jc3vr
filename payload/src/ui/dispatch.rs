@@ -82,9 +82,6 @@ pub(crate) fn route(id: FeatureId) -> FeatureRoute {
         | FeatureId::Vehicles
         | FeatureId::Air
         | FeatureId::Devices
-        | FeatureId::Thresholds
-        | FeatureId::Bindings
-        | FeatureId::MenuPanel
         | FeatureId::Wrist
         | FeatureId::Semantic
         | FeatureId::ControllerCapture

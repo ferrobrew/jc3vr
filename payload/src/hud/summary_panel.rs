@@ -37,6 +37,7 @@ use crate::{
         scheme,
         summary::{
             self, Published, SummaryConfig,
+            config::{GlanceConfig, WristPlacement},
             content::Metrics,
             current::{CellKind, CurrentSummary, Hint},
             glance::{Glance, TrackpadPin, fade, looking, wrist_pose},
@@ -96,6 +97,30 @@ pub fn status() -> PanelStatus {
     PANEL.lock().status
 }
 
+/// When a look at the wrist counts as a glance.
+const GLANCE: GlanceConfig = GlanceConfig::new();
+
+/// The panel's place on the off-hand.
+const PLACEMENT: WristPlacement = WristPlacement::new();
+
+/// How long the panel shows after the mode changes to one the player settles in. Falling does not
+/// count ([`shows_mode_change`](crate::controllers::summary::shows_mode_change)).
+const SHOW_ON_MODE_CHANGE: Duration = Duration::from_secs(3);
+
+/// The fade in and out, seconds.
+const FADE_S: f32 = 0.15;
+
+/// The panel texture's width, pixels. The texture's height follows the summary's content, and the
+/// panel's height in metres follows the texture's aspect.
+const WIDTH_PX: u32 = 480;
+
+/// A row's height on the panel texture before its text wraps, pixels, which sets the text's size
+/// against the panel's width.
+const ROW_PX: f32 = 32.0;
+
+/// The page-height budget, pixels. Overflow uses more pages at the same readable row size.
+const MAX_HEIGHT_PX: u32 = 1280;
+
 static PANEL: Mutex<Panel> = Mutex::new(Panel::new());
 
 struct Panel {
@@ -152,35 +177,29 @@ impl Panel {
             orientation,
         });
         let grip = late::drawn_hands(hooks::camera::last_dtf())[off.index()].map(|h| h.grip);
-        let pose = grip.map(|grip| wrist_pose(grip, off, &config.placement));
+        let pose = grip.map(|grip| wrist_pose(grip, off, &PLACEMENT));
         let published = summary::published();
 
         let looked = match (active && config.show_on_glance, head, pose) {
-            (true, Some(head), Some(pose)) => {
-                looking(head, &pose, &config.glance, self.glance.shown())
-            }
+            (true, Some(head), Some(pose)) => looking(head, &pose, &GLANCE, self.glance.shown()),
             _ => false,
         };
-        let glance = self.glance.step(looked, dt, &config.glance);
-        let (touched, pressed) = if active && config.show_on_trackpad_touch {
+        let glance = self.glance.step(looked, dt, &GLANCE);
+        let (touched, pressed) = if active {
             summary::hold::current()
         } else {
             (false, false)
         };
         let pinned = self.trackpad_pin.step(touched, pressed, dt);
         let mode_recent = active
-            && published.as_ref().is_some_and(|p| {
-                summary::mode_changed_within(
-                    p,
-                    now,
-                    Duration::from_secs_f32(config.show_on_mode_change_s.max(0.0)),
-                )
-            });
+            && published
+                .as_ref()
+                .is_some_and(|p| summary::mode_changed_within(p, now, SHOW_ON_MODE_CHANGE));
         let shown = active && pose.is_some() && (glance || pinned || mode_recent);
         if !shown || published.is_none() {
             self.pages.pause();
         }
-        self.alpha = fade(self.alpha, shown, dt, config.fade_s);
+        self.alpha = fade(self.alpha, shown, dt, FADE_S);
         self.status = PanelStatus {
             alpha: self.alpha,
             glance,
@@ -209,11 +228,11 @@ impl Panel {
         };
         let key = LayoutKey {
             revision: published.wrist_revision,
-            width: config.width_px,
-            row_px_bits: config.row_px.to_bits(),
-            max_height: config.max_height_px,
+            width: WIDTH_PX,
+            row_px_bits: ROW_PX.to_bits(),
+            max_height: MAX_HEIGHT_PX,
         };
-        gpu.measure(&published.current, key, config.row_px);
+        gpu.measure(&published.current, key, ROW_PX);
         let count = gpu
             .measured
             .as_ref()
@@ -230,7 +249,7 @@ impl Panel {
         };
         self.status.layout = Some(layout);
         let (width, height) = layout.size;
-        let panel_width = config.placement.width_m.max(0.01);
+        let panel_width = PLACEMENT.width_m;
         let panel_height = panel_width * height as f32 / width as f32;
         self.corners = Some(
             pose.corners(panel_width, panel_height)

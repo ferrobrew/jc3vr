@@ -237,7 +237,6 @@ fn features_add_their_gestures_where_the_hand_weapons_are_used() {
     let features = Features {
         yank: true,
         holsters: true,
-        trackpad_shows_summary: true,
         ..Features::default()
     };
     let on_foot = describe(&DescribeCtx {
@@ -410,7 +409,6 @@ fn the_trackpad_touch_row_stays_on_the_off_hand_beside_the_paging() {
         ..TableCtx::default()
     };
     let features = Features {
-        trackpad_shows_summary: true,
         ..Features::default()
     };
     let rows = describe(&DescribeCtx {

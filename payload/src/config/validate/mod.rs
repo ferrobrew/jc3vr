@@ -50,7 +50,6 @@ pub(crate) fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
     c.body.rig.validate()?;
     input::input(&c.input)?;
     input::bindings(&c.bindings)?;
-    input::mode(&c.mode)?;
     aim::hands(&c.hands)?;
     aim::aim(&c.aim)?;
     aim::overlay(&c.overlay)?;

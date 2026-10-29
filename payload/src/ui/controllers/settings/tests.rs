@@ -28,8 +28,6 @@ fn threshold_edits_remain_valid_and_survive_the_settings_file() {
             assert_eq!(pair.release, before.release);
         }
     }
-    cfg.controllers.bindings.stick_chord_window_s = 0.001;
-    cfg.controllers.bindings.panel_chord_window_s = 0.001;
     config::validate::controllers(&cfg.controllers).unwrap();
     let text = toml::to_string_pretty(&cfg).unwrap();
     let path = std::env::temp_dir().join(format!(
