@@ -1,3 +1,4 @@
+mod fallback;
 mod terrain;
 
 use super::*;
@@ -94,7 +95,8 @@ fn committed_fit_reaches_the_pose_consumer_and_both_consumers_share_the_step() {
     let mut runtime = Runtime::default();
     let fit = runtime
         .commit(Some(tracking(now, 1)), input(&rig, now))
-        .unwrap();
+        .unwrap()
+        .snapshot;
     assert_eq!(runtime.status.step, fit.provenance.current.step);
     assert_eq!(runtime.status.fallback, None);
     let observed = runtime.estimator.snapshot().unwrap();
@@ -115,9 +117,13 @@ fn committed_fit_reaches_the_pose_consumer_and_both_consumers_share_the_step() {
             .abs_diff_eq(fit.body.pelvis, 1.0e-5)
     );
     assert!(pose.is_finite());
-    let mut accepted = runtime.accepted.unwrap();
-    accepted.0.root.displacement = Vec3::new(0.08, 0.0, 0.0);
-    runtime.accepted = Some(accepted);
+    runtime
+        .hold
+        .held_mut_for_test()
+        .unwrap()
+        .snapshot
+        .root
+        .displacement = Vec3::new(0.08, 0.0, 0.0);
     let velocity = runtime.take_root(now, 1.0 / 30.0, Mat4::IDENTITY, true);
     assert!(velocity.x > 0.0 && velocity.length() <= 1.5);
     assert_eq!(runtime.consumed, fit.provenance.current.step);
@@ -175,7 +181,7 @@ fn sampler_flags_with_finite_head_withdraw_pose_and_root() {
                 .is_none()
         );
     }
-    assert!(runtime.accepted.is_none());
+    assert!(runtime.hold.presented().is_none());
     assert!(matches!(
         runtime.status.fallback,
         Some(Fallback::Rejected(_))
@@ -193,10 +199,15 @@ fn disabled_root_consumes_fit_request_without_replaying_when_reenabled() {
     let mut runtime = Runtime::default();
     let fit = runtime
         .commit(Some(tracking(now, 1)), input(&rig, now))
-        .unwrap();
-    let mut accepted = runtime.accepted.unwrap();
-    accepted.0.root.displacement = Vec3::new(0.08, 0.0, 0.0);
-    runtime.accepted = Some(accepted);
+        .unwrap()
+        .snapshot;
+    runtime
+        .hold
+        .held_mut_for_test()
+        .unwrap()
+        .snapshot
+        .root
+        .displacement = Vec3::new(0.08, 0.0, 0.0);
 
     assert_eq!(
         runtime.take_root(now, 1.0 / 30.0, Mat4::IDENTITY, false),
@@ -229,7 +240,7 @@ fn stale_or_invalid_tracking_withdraws_pose_and_root_without_mutating_inputs() {
         runtime.status.fallback,
         Some(Fallback::Rejected(_))
     ));
-    assert!(runtime.accepted.is_none());
+    assert!(runtime.hold.presented().is_none());
     assert_eq!(original.pose, packet.head.pose);
     assert_eq!(
         runtime.take_root(later, 0.03, Mat4::IDENTITY, true),
@@ -254,7 +265,8 @@ fn owner_handback_requires_a_new_commit_and_does_not_reuse_a_root_request() {
     let later = now + Duration::from_millis(33);
     let next = runtime
         .commit(Some(tracking(later, 2)), input(&rig, later))
-        .unwrap();
+        .unwrap()
+        .snapshot;
     assert_eq!(next.provenance.transition, Transition::Reseed);
     assert_eq!(next.provenance.current.step, 2);
 }
@@ -270,7 +282,10 @@ fn changed_dimensions_reseed_and_missing_packets_clear_authority() {
     let later = now + Duration::from_millis(33);
     let mut changed = input(&rig, later);
     changed.player.shoulder_width *= 0.98;
-    let fit = runtime.commit(Some(tracking(later, 2)), changed).unwrap();
+    let fit = runtime
+        .commit(Some(tracking(later, 2)), changed)
+        .unwrap()
+        .snapshot;
     assert_eq!(fit.provenance.transition, Transition::Reseed);
     assert!(runtime.commit(None, input(&rig, later)).is_none());
     assert_eq!(runtime.status.fallback, Some(Fallback::TrackingUnavailable));
@@ -295,7 +310,8 @@ fn changed_teleport_origin_reseeds_without_crediting_root_travel() {
     teleported.head_world += teleported.root.w_axis.truncate();
     let fit = runtime
         .commit(Some(tracking(later, 2)), teleported)
-        .unwrap();
+        .unwrap()
+        .snapshot;
     assert_eq!(fit.provenance.transition, Transition::Teleport);
     assert_eq!(fit.provenance.previous, fit.provenance.current);
     assert_eq!(fit.gait.completed_across_support, Vec3::ZERO);
@@ -320,7 +336,8 @@ fn continuing_gate_commits_preserve_the_temporal_stream() {
     let later = now + Duration::from_millis(33);
     let fit = runtime
         .commit(Some(tracking(later, 2)), input(&rig, later))
-        .unwrap();
+        .unwrap()
+        .snapshot;
     assert_eq!(fit.provenance.transition, Transition::Continue);
     assert_eq!(fit.provenance.previous.step, 1);
     assert_eq!(fit.provenance.current.step, 2);

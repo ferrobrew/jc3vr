@@ -83,9 +83,11 @@ fn commit(
     gate.head_world = root.transform_point3(Vec3::new(0.0, 1.63, -0.085));
     gate.view = root.to_scale_rotation_translation().1;
     gate.support = support;
-    runtime
+    let fit = runtime
         .commit_terrain(Some(tracking(now, sequence)), gate, terrain)
-        .unwrap()
+        .unwrap();
+    assert_eq!(runtime.status.presented, Some(Phase::Accepted));
+    fit.snapshot
 }
 
 #[test]
@@ -274,7 +276,9 @@ fn observed_terrain_constraint_recovery_does_not_restore_a_missed_plant() {
     assert!(endpoint.position.x > 0.1);
     let recovered = runtime
         .commit_terrain(Some(tracked), gate, &mut terrain)
-        .unwrap();
+        .unwrap()
+        .snapshot;
+    assert_eq!(runtime.status.presented, Some(Phase::Accepted));
     assert_eq!(recovered.provenance.support, Some((3, 1)));
     assert_eq!(recovered.provenance.transition, Transition::Continue);
     runtime.estimator.assert_constraint_recovery_for_test();

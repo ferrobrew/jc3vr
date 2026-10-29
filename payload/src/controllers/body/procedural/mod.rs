@@ -461,14 +461,17 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                 state.status.ground = caster.tally;
                 state.ground_log.record(&caster.tally, now);
                 state.status.fit = crate::controllers::body::rig::runtime::status();
-                let Some(fit) = fit else {
+                let Some(gate_fit) = fit else {
                     state.status.weight = 0.0;
                     state.status.legs_weight = 0.0;
                     return false;
                 };
+                let fit = gate_fit.snapshot;
                 let rotation = body_relative_rotation();
+                // A held fit is realized against the root it was made in, so it rides along with
+                // the character until a fit is accepted again.
                 let Some(mut solved) =
-                    solver::constrained::realize(rig, &animated, &fit, world, rotation)
+                    solver::constrained::realize(rig, &animated, &fit, gate_fit.root, rotation)
                 else {
                     crate::controllers::body::rig::runtime::realization_failed();
                     state.status.fit = crate::controllers::body::rig::runtime::status();
@@ -480,6 +483,12 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                 for side in Side::BOTH {
                     clavicles::apply(&mut solved, rig, side, turns[side.index()]);
                 }
+                let weights = Weights {
+                    legs: weights.legs * gate_fit.weight,
+                    torso: weights.torso * gate_fit.weight,
+                };
+                state.status.weight = weights.torso;
+                state.status.legs_weight = weights.legs;
                 let pose = animated.blend_regions(&solved, weights.legs, weights.torso);
                 unsafe { live.write(controller, &pose) };
                 finish_write(&mut state, character, &pose, &weights, &config);
@@ -837,6 +846,8 @@ const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
         sample: None,
         quality: None,
         fallback: Some(crate::controllers::body::rig::runtime::Fallback::NotUpdated),
+        presented: None,
+        weight: 0.0,
         evaluations: 0,
     },
     at: None,

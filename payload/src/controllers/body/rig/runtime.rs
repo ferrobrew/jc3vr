@@ -1,13 +1,18 @@
 //! Simulation-time body fitting from copied tracking and the solve gate's reference rig.
 //!
-//! A commit supplies the pose writer and the next locomotion task from one result. Unavailable
-//! tracking and rejected fits withdraw inferred authority without changing the view or hand input.
+//! A commit supplies the pose writer and the next locomotion task from one result. A fit that
+//! misses its feasibility tolerance leaves the last accepted fit standing through [`hold`], which
+//! fades it out only when rejection persists. Unavailable tracking and failed updates withdraw
+//! inferred authority without changing the view or hand input.
+
+mod hold;
 
 use std::time::{Duration, Instant};
 
 use glam::{Mat4, Quat, Vec2, Vec3};
 use parking_lot::Mutex;
 
+pub(crate) use crate::controllers::body::rig::runtime::hold::Phase;
 #[cfg(test)]
 use crate::controllers::{body::rig::estimate::MissingTerrain, frame::Pose};
 use crate::controllers::{
@@ -24,6 +29,7 @@ use crate::controllers::{
                 SampleStamp, StepStamp,
             },
             root::{owner::RootOwner, shift::CockpitBasis},
+            runtime::hold::{Hold, Presentation},
             torso::{TorsoEstimate, wrap, yaw_of},
         },
     },
@@ -51,6 +57,21 @@ pub(crate) struct FitStatus {
     pub quality: Option<Quality>,
     pub fallback: Option<Fallback>,
     pub evaluations: usize,
+    /// Which fit the latest gate presented, if any.
+    pub presented: Option<Phase>,
+    /// The presented fit's share of the drawn pose.
+    pub weight: f32,
+}
+
+/// The fit one gate presents to the pose writer.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct GateFit {
+    pub snapshot: Snapshot,
+    /// The character root the fit was made against. A held fit is realized against it, so it moves
+    /// rigidly with the character while it stands in for rejected fits.
+    pub root: Mat4,
+    /// The fit's share of the drawn pose, `0..=1`; the animation has the rest.
+    pub weight: f32,
 }
 
 /// Copied simulation inputs. Neither the adapter nor the estimator holds an engine pointer.
@@ -89,7 +110,7 @@ impl From<crate::controllers::body::rig::live_observation::RawPacket> for Tracki
 }
 
 /// Commit once at the local solve gate and publish exactly that result for the movement owner.
-pub(crate) fn at_gate(input: GateInput<'_>, terrain: &mut dyn Terrain) -> Option<Snapshot> {
+pub(crate) fn at_gate(input: GateInput<'_>, terrain: &mut dyn Terrain) -> Option<GateFit> {
     let tracking = *TRACKING.lock();
     STATE.lock().commit_terrain(tracking, input, terrain)
 }
@@ -101,11 +122,11 @@ pub(crate) fn hand_back() {
     state.withdraw(Fallback::Owner);
 }
 
-/// Keep a rejected on-foot update on the migrated path while withdrawing its inferred output.
+/// Keep a rejected on-foot update on the migrated path while withdrawing its inferred output. A
+/// fit that only missed its tolerance keeps the estimator's stream, so the next gate continues it
+/// rather than reseeding from a neutral pose with the feet at rest.
 pub(crate) fn gate_failed() {
-    let mut state = STATE.lock();
-    let reason = state.status.fallback.unwrap_or(Fallback::Owner);
-    state.withdraw(reason);
+    STATE.lock().gate_failed();
 }
 
 pub(crate) fn realization_failed() {
@@ -123,8 +144,11 @@ pub(crate) fn migrated_path() -> bool {
 /// The fitted stance heading in the cockpit frame, for the existing orientation executor.
 pub(crate) fn follow_yaw() -> Option<f32> {
     let state = STATE.lock();
-    let (snapshot, _, view, ..) = state.fresh(Instant::now())?;
-    yaw_of(view.inverse() * (Quat::from_rotation_y(snapshot.stance.yaw) * Vec3::NEG_Z))
+    let accepted = state.fresh(Instant::now())?.fit;
+    yaw_of(
+        accepted.view.inverse()
+            * (Quat::from_rotation_y(accepted.snapshot.stance.yaw) * Vec3::NEG_Z),
+    )
 }
 
 pub(crate) fn invalidate() {
@@ -135,7 +159,7 @@ pub(crate) fn invalidate() {
 pub(crate) fn status() -> FitStatus {
     let state = STATE.lock();
     let mut status = state.status;
-    if state.accepted.is_some() && state.fresh(Instant::now()).is_none() {
+    if state.hold.presented().is_some() && state.fresh(Instant::now()).is_none() {
         status.fallback = Some(Fallback::Stale);
     }
     status
@@ -146,10 +170,25 @@ pub(crate) fn root_velocity(now: Instant, dt: f32, current_root: Mat4, enabled: 
     STATE.lock().take_root(now, dt, current_root, enabled)
 }
 
-/// The same committed chest heading and landmarks used by the live procedural pose.
+/// The same committed chest heading and landmarks used by the live procedural pose. A held fit
+/// supplies them through the grace; once it fades out, the hands fall back to their own shoulders.
 pub(crate) fn torso() -> Option<TorsoEstimate> {
-    let state = STATE.lock();
-    let (snapshot, _, view, head_world, head_cockpit, scale) = state.fresh(Instant::now())?;
+    STATE.lock().torso(Instant::now())
+}
+
+const MAX_AGE: Duration = Duration::from_millis(250);
+const MAX_GAP: Duration = Duration::from_millis(500);
+
+/// The fit's torso, carried into the cockpit frame of the head it was fit to.
+fn torso_of(accepted: &Accepted) -> Option<TorsoEstimate> {
+    let Accepted {
+        snapshot,
+        view,
+        head_world,
+        head_cockpit,
+        scale,
+        ..
+    } = *accepted;
     let cockpit = |point| head_cockpit + view.inverse() * (point - head_world) / scale;
     let yaw =
         yaw_of(view.inverse() * (Quat::from_rotation_y(snapshot.body.chest_yaw) * Vec3::NEG_Z))?;
@@ -167,9 +206,6 @@ pub(crate) fn torso() -> Option<TorsoEstimate> {
     })
 }
 
-const MAX_AGE: Duration = Duration::from_millis(250);
-const MAX_GAP: Duration = Duration::from_millis(500);
-
 #[derive(Debug, Copy, Clone)]
 struct Tracking {
     head: TrackedPose,
@@ -180,7 +216,26 @@ struct Tracking {
     focused: bool,
 }
 
-type Accepted = (Snapshot, Instant, Quat, Vec3, Vec3, f32);
+/// A fit that met its tolerance, with the frames it was made in.
+#[derive(Debug, Copy, Clone)]
+struct Accepted {
+    snapshot: Snapshot,
+    root: Mat4,
+    view: Quat,
+    head_world: Vec3,
+    head_cockpit: Vec3,
+    scale: f32,
+}
+
+impl Presentation<Accepted> {
+    fn gate_fit(self) -> GateFit {
+        GateFit {
+            snapshot: self.fit.snapshot,
+            root: self.fit.root,
+            weight: self.weight,
+        }
+    }
+}
 
 #[derive(Default)]
 struct Runtime {
@@ -188,7 +243,7 @@ struct Runtime {
     anatomy: Option<Anatomy>,
     previous: Option<CompositionSide>,
     support: Option<SupportSample>,
-    accepted: Option<Accepted>,
+    hold: Hold<Accepted>,
     last_gate: Option<Instant>,
     migrated_at: Option<Instant>,
     consumed: u64,
@@ -201,7 +256,7 @@ static STATE: Mutex<Runtime> = Mutex::new(Runtime {
     anatomy: None,
     previous: None,
     support: None,
-    accepted: None,
+    hold: Hold::new(),
     last_gate: None,
     migrated_at: None,
     consumed: 0,
@@ -211,19 +266,28 @@ static STATE: Mutex<Runtime> = Mutex::new(Runtime {
         quality: None,
         fallback: Some(Fallback::NotUpdated),
         evaluations: 0,
+        presented: None,
+        weight: 0.0,
     },
 });
 
 impl Runtime {
     fn withdraw(&mut self, reason: Fallback) {
-        self.accepted = None;
+        self.hold.forget();
         self.previous = None;
         self.support = None;
         self.status.fallback = Some(reason);
     }
 
+    fn gate_failed(&mut self) {
+        match self.status.fallback {
+            Some(Fallback::Residual) => self.hold.forget(),
+            reason => self.withdraw(reason.unwrap_or(Fallback::Owner)),
+        }
+    }
+
     #[cfg(test)]
-    fn commit(&mut self, tracking: Option<Tracking>, input: GateInput<'_>) -> Option<Snapshot> {
+    fn commit(&mut self, tracking: Option<Tracking>, input: GateInput<'_>) -> Option<GateFit> {
         self.commit_terrain(tracking, input, &mut MissingTerrain)
     }
 
@@ -232,12 +296,14 @@ impl Runtime {
         tracking: Option<Tracking>,
         input: GateInput<'_>,
         terrain: &mut dyn Terrain,
-    ) -> Option<Snapshot> {
+    ) -> Option<GateFit> {
         self.migrated_at = Some(input.now);
         self.status.step = self.status.step.wrapping_add(1);
         self.status.sample = None;
         self.status.quality = None;
         self.status.evaluations = 0;
+        self.status.presented = None;
+        self.status.weight = 0.0;
         let Some(tracking) = tracking else {
             self.withdraw(Fallback::TrackingUnavailable);
             return None;
@@ -246,31 +312,36 @@ impl Runtime {
         let result = self.fit(tracking, &input, terrain);
         self.status.evaluations = self.estimator.last_work().evaluations;
         self.last_gate = Some(input.now);
-        match result {
+        let presented = match result {
             Ok(snapshot) => {
                 self.status.quality = Some(snapshot.quality);
                 if snapshot.quality.feasible {
                     self.status.fallback = None;
-                    self.accepted = Some((
+                    let accepted = Accepted {
                         snapshot,
-                        input.now,
-                        input.view,
-                        input.head_world,
-                        tracking.head.pose.position,
-                        input.world_scale,
-                    ));
-                    Some(snapshot)
+                        root: input.root,
+                        view: input.view,
+                        head_world: input.head_world,
+                        head_cockpit: tracking.head.pose.position,
+                        scale: input.world_scale,
+                    };
+                    Some(self.hold.accept(accepted, input.dt))
                 } else {
-                    self.accepted = None;
+                    // The estimator keeps the rejected fit as its warm start, which stays within
+                    // the temporal envelope of the accepted one and keeps catching up with a
+                    // fast duck; only the presentation holds the accepted fit.
                     self.status.fallback = Some(Fallback::Residual);
-                    None
+                    self.hold.reject(input.dt)
                 }
             }
             Err(error) => {
                 self.withdraw(Fallback::Rejected(error));
                 None
             }
-        }
+        };
+        self.status.presented = presented.map(|presented| presented.phase);
+        self.status.weight = presented.map_or(0.0, |presented| presented.weight);
+        presented.map(Presentation::gate_fit)
     }
 
     fn fit(
@@ -393,16 +464,35 @@ impl Runtime {
         Ok(snapshot)
     }
 
-    fn fresh(&self, now: Instant) -> Option<Accepted> {
-        self.accepted
-            .filter(|(_, at, ..)| now >= *at && now.duration_since(*at) <= MAX_AGE)
+    /// The presented fit while the gate that presented it is recent.
+    fn fresh(&self, now: Instant) -> Option<Presentation<Accepted>> {
+        let at = self.last_gate?;
+        if now < at || now.duration_since(at) > MAX_AGE {
+            return None;
+        }
+        self.hold.presented()
     }
 
+    fn torso(&self, now: Instant) -> Option<TorsoEstimate> {
+        let presented = self.fresh(now)?;
+        if presented.phase == Phase::FadingOut {
+            return None;
+        }
+        torso_of(&presented.fit)
+    }
+
+    /// The chase toward the presented stance, once per gate. A held fit keeps the root following
+    /// its stance, scaled by its fading weight.
     fn take_root(&mut self, now: Instant, dt: f32, root: Mat4, enabled: bool) -> Vec2 {
-        let Some((snapshot, ..)) = self.fresh(now) else {
+        let Some(presented) = self.fresh(now) else {
             return Vec2::ZERO;
         };
-        let step = snapshot.provenance.current.step;
+        let Accepted {
+            snapshot,
+            root: source_root,
+            ..
+        } = presented.fit;
+        let step = self.status.step;
         if self.consumed == step {
             return Vec2::ZERO;
         }
@@ -414,10 +504,9 @@ impl Runtime {
             return Vec2::ZERO;
         }
         self.consumed = step;
-        let source_root = self.previous.expect("an accepted fit has its root").root;
         let completed = root.w_axis.truncate() - source_root.w_axis.truncate();
         let gap = snapshot.root.displacement - completed;
-        (Vec2::new(gap.x, gap.z) / dt.max(0.08)).clamp_length_max(1.5)
+        (Vec2::new(gap.x, gap.z) / dt.max(0.08)).clamp_length_max(1.5) * presented.weight
     }
 }
 
