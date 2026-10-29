@@ -16,7 +16,7 @@ pub(crate) use crate::egui_impl::desktop_input::{
     consume_desktop_shortcut, desktop_input_observation, observe_desktop_message,
 };
 use crate::{
-    config::Config,
+    director::clean_view::hides_desktop,
     hud::{egui_panel, pointer},
     ui::capture::{
         CapturePolicy, CaptureUpdate, DeviceEffect, InputObservation, OwnershipSnapshot, PanelMode,
@@ -299,9 +299,7 @@ impl EguiState {
     /// to the game window (the flat back-buffer overlay). Call from the game thread before [`run`].
     pub fn set_panel_mode(&mut self, size: Option<(u32, u32)>) {
         let desktop_visible = crate::hud::mirror_overlay::is_active()
-            || (crate::vr::render_params(0).is_none()
-                && Config::lock_query(|config| config.hud.flat_overlay_visible)
-                && !crate::director::cinematic::active());
+            || (crate::vr::render_params(0).is_none() && !hides_desktop());
         self.reconcile_surfaces(size.is_some() || desktop_visible);
         if size.is_some()
             && self.panel.is_none()
@@ -321,7 +319,7 @@ impl EguiState {
         }
     }
 
-    /// F4 changes the desktop surface only; a live VR panel retains its own ownership.
+    /// The clean view (F4) changed the desktop surface; a live VR panel retains its own ownership.
     pub(crate) fn desktop_visibility_changed(&mut self, visible: bool) {
         if !egui_panel::is_active() {
             self.request_capture(PanelRequest::Hide);
@@ -487,7 +485,7 @@ impl EguiState {
         if egui_panel::is_active() {
             return;
         }
-        if !Config::lock_query(|config| config.hud.flat_overlay_visible) {
+        if hides_desktop() {
             self.request_capture(PanelRequest::Hide);
             return;
         }

@@ -282,9 +282,7 @@ fn contain_fatal_failure() {
 fn debug_ui_visible(panel_active: bool) -> bool {
     panel_active
         || crate::hud::mirror_overlay::is_active()
-        || (crate::vr::render_params(0).is_none()
-            && !crate::director::cinematic::active()
-            && config::Config::lock_query(|c| c.hud.flat_overlay_visible))
+        || (crate::vr::render_params(0).is_none() && !crate::director::clean_view::hides_desktop())
 }
 
 fn update() {

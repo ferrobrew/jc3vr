@@ -83,7 +83,7 @@ static WAS_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// runtime lock.
 pub(crate) fn is_active() -> bool {
     Config::lock_query(|c| c.hud.egui_panel.enabled)
-        && !crate::director::cinematic::active()
+        && !crate::director::clean_view::hides_everything()
         && crate::vr::render_params(0).is_some()
 }
 
@@ -115,7 +115,7 @@ pub(crate) fn hide() {
     if is_active() {
         config::edit().hud.egui_panel.enabled = false;
     } else {
-        config::edit().hud.flat_overlay_visible = false;
+        crate::director::clean_view::hide();
     }
     request_debug_ui(PanelRequest::Hide);
 }

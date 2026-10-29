@@ -31,7 +31,6 @@ use crate::{
 /// Everything a key can trigger.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Action {
-    ToggleCinematic,
     ToggleSlowMotion,
     TogglePause,
     TimeScaleUp,
@@ -55,7 +54,6 @@ impl Action {
     /// A short label for the debug tab.
     pub fn label(self) -> &'static str {
         match self {
-            Action::ToggleCinematic => "Toggle cinematic mode",
             Action::ToggleSlowMotion => "Toggle slow motion",
             Action::TogglePause => "Toggle pause",
             Action::TimeScaleUp => "Time scale up",
@@ -201,10 +199,6 @@ pub fn on_key_down(key: u16, first_press: bool) -> bool {
 pub fn run(action: Action) {
     tracing::info!("director: {}", action.label());
     match action {
-        Action::ToggleCinematic => {
-            let mut cfg = config::edit();
-            cfg.director.cinematic = !cfg.director.cinematic;
-        }
         Action::ToggleSlowMotion => time::toggle_slow_motion(&mut config::edit().director),
         Action::TogglePause => {
             let mut cfg = config::edit();
@@ -238,11 +232,7 @@ pub fn run(action: Action) {
 }
 
 /// The stock layout [`Keymap::new`] borrows.
-const DEFAULT_BINDINGS: [Binding; 19] = [
-    Binding {
-        action: Action::ToggleCinematic,
-        chord: Chord::plain(VK_NUMPAD0.0),
-    },
+const DEFAULT_BINDINGS: [Binding; 18] = [
     Binding {
         action: Action::ToggleSlowMotion,
         chord: Chord::plain(VK_NUMPAD1.0),

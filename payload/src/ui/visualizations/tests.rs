@@ -396,10 +396,10 @@ fn runtime_blockers_do_not_rewrite_requested_settings() {
         snapshot.state(ViewId::ControllerGizmos),
         ViewState::Blocked(Blocker::Gameplay)
     );
-    snapshot.runtime.cinematic = true;
+    snapshot.runtime.clean_view = true;
     assert_eq!(
         snapshot.state(ViewId::ControllerGizmos),
-        ViewState::Blocked(Blocker::Cinematic)
+        ViewState::Blocked(Blocker::CleanView)
     );
     assert!(snapshot.config.controllers.overlay.debug_gizmos);
 }

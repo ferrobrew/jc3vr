@@ -34,28 +34,18 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if matches!(msg, WM_ACTIVATEAPP | WM_KILLFOCUS | WM_SETFOCUS) {
         return WNDPROC.get().unwrap().call(hwnd, msg, wparam, lparam);
     }
-    // F4 hides the flat egui debug overlay from the desktop window only (both the direct
-    // back-buffer path and the deferred mirror-overlay path honour `hud.flat_overlay_visible`):
-    // useful while recording the side-by-side stereo preview without the overlay in frame. The VR
-    // floating panel (F8), the headset image, and the in-world overlays are untouched. With no live
-    // VR panel, hiding releases editing and showing requests Editing through device/neutral gates.
-    // The consumed key episode remains blocked through its release.
+    // F4 toggles the clean view at its scope (`crate::director::clean_view`): the flat egui debug
+    // overlay leaves the desktop window, and at the everything scope every other overlay goes too.
+    // With no live VR panel, hiding releases editing and showing requests Editing through
+    // device/neutral gates. The consumed key episode remains blocked through its release.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F4.0 as usize {
         consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
-            let visible = {
-                let mut cfg = config::edit();
-                cfg.hud.flat_overlay_visible = !cfg.hud.flat_overlay_visible;
-                cfg.hud.flat_overlay_visible
-            };
+            let clean = crate::director::clean_view::toggle();
             if let Some(egui_state) = EguiState::get().as_mut() {
-                egui_state.desktop_visibility_changed(visible);
+                egui_state.desktop_visibility_changed(!clean);
             }
-            tracing::info!(
-                "F4: flat debug overlay {}",
-                if visible { "ON" } else { "OFF" }
-            );
         }
         return LRESULT(0);
     }

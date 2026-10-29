@@ -9,6 +9,7 @@ use parking_lot::Mutex;
 use crate::{
     config,
     director::{
+        clean_view::CleanViewScope,
         heat, keymap, markers, safety, spawn,
         teleport::{self, TeleportMode},
         time,
@@ -21,7 +22,7 @@ use crate::{
 pub(crate) fn feature(ui: &mut egui::Ui, id: FeatureId) {
     match id {
         FeatureId::Director => {
-            cinematic_ui(ui);
+            clean_view_ui(ui);
             time_ui(ui);
             safety_ui(ui);
             heat_ui(ui);
@@ -101,17 +102,28 @@ pub(crate) fn video_status(ui: &mut egui::Ui) {
     }
 }
 
-fn cinematic_ui(ui: &mut egui::Ui) {
+fn clean_view_ui(ui: &mut egui::Ui) {
     let mut cfg = config::edit();
-    ui.checkbox(
-        &mut cfg.director.cinematic,
-        "Cinematic mode (hide the HUD, the panel, and the overlay)",
-    )
-    .on_hover_text(
-        "Skips the floating HUD quad, the egui panel, the desktop overlay, and the flat debug \
-         overlay without changing their settings. With the HUD redirect off (flatscreen) the \
-         game's own HUD stays; turn the redirect on in Rendering > HUD to hide it too.",
-    );
+    let d = &mut cfg.director;
+    ui.horizontal(|ui| {
+        ui.checkbox(&mut d.clean_view, "Clean view (F4)")
+            .on_hover_text(
+                "Hides the mod's overlays at the chosen scope without changing their settings. At \
+             the desktop scope this hides the debug overlay, so F4 brings it back.",
+            );
+        ui.selectable_value(&mut d.clean_view_scope, CleanViewScope::Desktop, "Desktop")
+            .on_hover_text("Hide the flat debug overlay from the desktop window only.");
+        ui.selectable_value(
+            &mut d.clean_view_scope,
+            CleanViewScope::Everything,
+            "Everything",
+        )
+        .on_hover_text(
+            "Also hide the floating HUD, the floating panel, and the in-world overlays. With \
+                 the HUD redirect off (flatscreen) the game's own HUD stays; turn the redirect on \
+                 in Rendering > HUD to hide it too.",
+        );
+    });
 }
 
 fn time_ui(ui: &mut egui::Ui) {

@@ -93,7 +93,7 @@ pub(crate) fn tick(eye: usize) {
 /// engine's context lock and, under the collapse, has selected the eye with
 /// `set_collapse_ui_eye`.
 pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
-    if crate::stereo::far_phase() || crate::director::cinematic::active() {
+    if crate::stereo::far_phase() || crate::director::clean_view::hides_everything() {
         return;
     }
     let (enabled, config) = Config::lock_query(|c| {

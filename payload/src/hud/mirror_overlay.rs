@@ -15,8 +15,9 @@
 //! as it is on the frame that finds the output gone, rather than blanking it.
 //!
 //! Only active while a VR session renders, the mirror is on, the floating panel is off (with the
-//! panel on, the mirror composites the panel texture instead), and the flat overlay is visible
-//! (`hud.flat_overlay_visible`, toggled with F4). Off, every path is the untouched flat overlay.
+//! panel on, the mirror composites the panel texture instead), and the clean view is off
+//! ([`crate::director::clean_view`], toggled with F4). Off, every path is the untouched flat
+//! overlay.
 
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use parking_lot::Mutex;
@@ -28,15 +29,13 @@ use crate::hud::target::HudTarget;
 static OVERLAY: Mutex<Option<HudTarget>> = Mutex::new(None);
 
 /// Whether the flat overlay should be redirected into the offscreen texture this frame: a VR frame is
-/// rendering, the mirror is on, and the floating panel is off. Read on the draw thread (the render
+/// rendering, the mirror is on, the floating panel is off, and the clean view is off. Read on the draw thread (the render
 /// gate) and the mirror thread (the composite gate), so it uses the draw-safe render-params signal,
 /// not the VR runtime lock (see [`crate::hud::egui_panel::is_active`] for why).
 pub(crate) fn is_active() -> bool {
     crate::vr::render_params(0).is_some()
-        && !crate::director::cinematic::active()
-        && crate::config::Config::lock_query(|c| {
-            c.vr.mirror && !c.hud.egui_panel.enabled && c.hud.flat_overlay_visible
-        })
+        && !crate::director::clean_view::hides_desktop()
+        && crate::config::Config::lock_query(|c| c.vr.mirror && !c.hud.egui_panel.enabled)
 }
 
 /// Render this frame's egui output into the overlay texture. Called from the post-draw hook of the

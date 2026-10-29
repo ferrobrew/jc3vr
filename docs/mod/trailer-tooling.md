@@ -1,6 +1,6 @@
 # Trailer tooling
 
-Tools for directing and capturing a first-person trailer from inside the headset. Two groups: directing tools in the debug menu (spawn, teleport, heat, time, cinematic mode), and an in-process capture path that records one eye at full resolution with audio. This doc is the working todo list for that work; each item becomes normal mod code and docs as it lands, and the item here is ticked off.
+Tools for directing and capturing a first-person trailer from inside the headset. Two groups: directing tools in the debug menu (spawn, teleport, heat, time, the clean view), and an in-process capture path that records one eye at full resolution with audio. This doc is the working todo list for that work; each item becomes normal mod code and docs as it lands, and the item here is ticked off.
 
 ## Decisions
 
@@ -17,7 +17,7 @@ Tools for directing and capturing a first-person trailer from inside the headset
 - [x] Time control in the debug menu: a time-scale slider and a pause toggle, with hotkeys. The rate goes through the slow-motion manager's normal game speed rather than the clock field, which that manager rewrites every frame.
 - [x] Spawner: a tag field, presets (car, bike, boat, helicopter, jet, tank, soldier, barrel), a distance slider, and a "face the player" toggle. Fuel tanks are world geometry, not spawn definitions, so there is no preset for them; the mech is DLC content the shipped tables do not list.
 - [x] Spawn definition picker: the shipped `settings/spawn_*_defs.bin` tables, extracted with `tools/spawn_defs/extract_spawn_defs.py` and embedded, listed by pool with a text filter. A definition's full tag set selects it outright.
-- [x] Cinematic mode: one toggle that hides the HUD quad, the floating panel, and the overlays together, with a hotkey. With the HUD redirect off (flatscreen) the game's own HUD stays.
+- [x] Clean view: one toggle (F4) that hides the mod's overlays at a scope picked in the Director feature: the desktop debug overlay alone, or everything, the HUD quad, the floating panel, and the in-world overlays included. With the HUD redirect off (flatscreen) the game's own HUD stays.
 - [x] Take markers: a hotkey and a labelled button that record the wallclock, the game-run time, and a label. While the video recorder runs they go into its sidecar at the frame they fall on; otherwise they are appended to `markers.jsonl` in the session folder.
 - [x] Bindable keymap: `director.keymap` in the settings file ([settings.md](settings.md)), defaulting to the numeric keypad, fed from the window procedure. Controller chords are not bound yet; the in-headset panel covers that case.
 
@@ -42,9 +42,9 @@ Tools for directing and capturing a first-person trailer from inside the headset
 
 From the draft script, the tools each shot needs:
 
-- Cliff at golden hour, twice: time of day, weather pinned sunny, teleport bookmark, cinematic mode.
+- Cliff at golden hour, twice: time of day, weather pinned sunny, teleport bookmark, clean view at the everything scope.
 - Coast road convertible, bike, boat, tank: spawner, heat lock at zero.
 - Wingsuit into chute into grapple onto a moving car: spawner for the car, actor safety, slow motion for the landing.
 - Base assault, fuel tanks, chopper, sniper tower, gravity gun: spawner (fuel tanks, mech), heat lock, slow motion, actor safety.
 - Jet barrel roll and wing walk: spawner, actor safety.
-- UI beat: cinematic mode off for two seconds.
+- UI beat: clean view off for two seconds.

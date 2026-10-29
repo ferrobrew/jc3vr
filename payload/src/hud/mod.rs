@@ -396,7 +396,7 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
     // and the hand and wrist readouts in front of it.
     world_markers::prepare_eye(context, hud.redirected_target());
     atlas::prepare_eye(context, hud.redirected_target());
-    if !crate::director::cinematic::active() {
+    if !crate::director::clean_view::hides_everything() {
         world_markers::draw_billboards(context, device, target);
     }
     hud.draw_quad(context, device, target, eye);

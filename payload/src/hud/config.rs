@@ -25,14 +25,6 @@ pub struct HudConfig {
     /// only takes effect while an OpenXR session is running.
     #[serde(default)]
     pub egui_panel: EguiPanelConfig,
-    /// Whether the flat egui debug overlay draws onto the desktop window: both the direct
-    /// back-buffer path (`EguiState::render`, no VR session or the panel path inactive) and the
-    /// deferred mirror-overlay texture (`crate::hud::mirror_overlay`, a VR session with the mirror
-    /// on and [`egui_panel`](HudConfig::egui_panel) off). Off by default; F4 toggles it. Off hides the
-    /// overlay from the desktop image only -- the VR floating panel, the headset image, and the in-world
-    /// overlays are unaffected.
-    #[serde(default)]
-    pub flat_overlay_visible: bool,
     /// The world-marker prototype: the game's on-screen point-of-interest markers drawn as
     /// billboards at their world points instead of on the floating panel. See
     /// [`crate::hud::world_markers`].
@@ -54,7 +46,6 @@ impl HudConfig {
             panel_scale: 0.8,
             depth_shift: DepthShiftConfig::new(),
             egui_panel: EguiPanelConfig::new(),
-            flat_overlay_visible: false,
             world_markers: WorldMarkersConfig::new(),
             atlas: AtlasConfig::new(),
         }

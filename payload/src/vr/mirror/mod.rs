@@ -260,15 +260,15 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
         }
 
         // Bring the debug UI to the desktop while a session runs -- the flat overlay normally rides
-        // the engine flip path, which `BLOCK_FLIP` suppresses in VR. Hidden in cinematic mode so
-        // recordings stay clean.
+        // the engine flip path, which `BLOCK_FLIP` suppresses in VR. The clean view hides it: the
+        // flat overlay at either scope, the floating panel's copy at the everything scope.
         //
         // The egui frame is tessellated once per frame on eye 0 into an offscreen texture -- the
         // panel texture with the floating panel up (issue #24), else the flat mirror-overlay texture
         // (`crate::hud::mirror_overlay`) -- so here we only composite that texture as an
         // alpha-blended overlay. Never `EguiState::render` (a second egui pass that mutates shared
         // state), so this is safe from the deferred frame tail's thread as well as inline.
-        if !crate::director::cinematic::active() {
+        if !crate::director::clean_view::hides_everything() {
             let panel = Config::lock_query(|c| c.hud.egui_panel);
             if panel.enabled {
                 // With `show_on_mirror` off, the panel stays in the headset only, leaving the desktop
@@ -290,7 +290,9 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
                     );
                     mirror.draw_overlay(&context.m_Context, &rtv, &srv, overlay);
                 }
-            } else if let Some(srv) = crate::hud::mirror_overlay::overlay_srv() {
+            } else if !crate::director::clean_view::hides_desktop()
+                && let Some(srv) = crate::hud::mirror_overlay::overlay_srv()
+            {
                 // The flat overlay texture is window-sized, so stretching it across the whole buffer
                 // is exactly inverted by the present's buffer→window stretch: it lands on the window
                 // at 1:1, undistorted, whatever the render resolution is.

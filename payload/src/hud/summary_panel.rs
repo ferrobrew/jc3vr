@@ -63,7 +63,7 @@ pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Text
         });
         let active = enabled
             && scheme::is_controllers()
-            && !crate::director::cinematic::active()
+            && !crate::director::clean_view::hides_everything()
             && crate::vr::render_params(0).is_some();
         panel.prepare(context, device, active, dominant.other(), &config);
     }

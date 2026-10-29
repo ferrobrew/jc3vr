@@ -101,7 +101,7 @@ pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Text
             && cfg.quad
             && crate::hud::current_mode() == HudMode::Hud
             && scheme::is_controllers()
-            && !crate::director::cinematic::active()
+            && !crate::director::clean_view::hides_everything()
             && crate::vr::render_params(0).is_some();
         state.prepare(context, device, active, dominant, &cfg.atlas);
     }

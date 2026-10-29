@@ -8,7 +8,7 @@ The pause menu's VR pages ([pause-menu.md](pause-menu.md)) hold only the essenti
 
 ## Debug UI gameplay overlay
 
-The debug window's top bar contains `Allow gameplay input`. Opening the panel requests Editing. Enabling gameplay input requests a read-only overlay: live values remain visible, but pointer clicks, controller triggers, panel grip dragging, keyboard input, text, clipboard input, and scroll cannot edit controls. The game does not automatically pause or unpause. Hiding and reopening through the existing panel shortcut returns to Editing; there is no separate return-to-edit chord. F4 controls desktop-overlay visibility, and F8 or the controller panel shortcut controls the floating panel.
+The debug window's top bar contains `Allow gameplay input`. Opening the panel requests Editing. Enabling gameplay input requests a read-only overlay: live values remain visible, but pointer clicks, controller triggers, panel grip dragging, keyboard input, text, clipboard input, and scroll cannot edit controls. The game does not automatically pause or unpause. Hiding and reopening through the existing panel shortcut returns to Editing; there is no separate return-to-edit chord. F4 toggles the clean view, which at its desktop scope controls desktop-overlay visibility ([hud.md](hud.md)), and F8 or the controller panel shortcut controls the floating panel.
 
 The header reports the requested mode separately from effective input ownership. A focus, tracking/recovery, neutral-input, or game-device acknowledgement blocker remains visible instead of reporting that gameplay is active. Editing saves the prior game-device state, and releasing editing restores that state, including a previously disabled device. Restoration never forces the device enabled while the application lacks focus. Ownership transitions clear queued events and egui's remembered pointer/key state, end panel dragging, and wait for a destination-device acknowledgement followed by a neutral input sample. The input tick must consume the held source episodes during that wait; filtering egui events alone does not establish gameplay safety.
 
@@ -61,7 +61,7 @@ The debug window shows the file's state (`UP TO DATE`, `SAVING`, `FAILED, SEE LO
 
 ## What is not saved
 
-Fields that hold state for the session rather than a choice are `#[serde(skip)]`: they load as their defaults and a key for them in the file is skipped and reported. They are the director's time scale, pause, and cinematic mode; the VR pose freeze (`vr.freeze_mode`), so a launch never starts with the view locked; and the render diagnostics armed for one capture (`stereo.skip_pass_range_enabled`, `stereo.auto_trace_brightness_step`, and `stereo.single_pass.dump_vs_name_census`).
+Fields that hold state for the session rather than a choice are `#[serde(skip)]`: they load as their defaults and a key for them in the file is skipped and reported. They are the director's time scale, pause, and clean view scope; the VR pose freeze (`vr.freeze_mode`), so a launch never starts with the view locked; and the render diagnostics armed for one capture (`stereo.skip_pass_range_enabled`, `stereo.auto_trace_brightness_step`, and `stereo.single_pass.dump_vs_name_census`).
 
 ## TOML and the configuration types
 

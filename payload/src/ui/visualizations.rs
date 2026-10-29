@@ -85,8 +85,8 @@ impl Snapshot {
         if id.grab_child() && !self.config.controllers.physical_hands.grab_view.enabled {
             return ViewState::Blocked(Blocker::GrabView);
         }
-        if self.runtime.cinematic {
-            return ViewState::Blocked(Blocker::Cinematic);
+        if self.runtime.clean_view {
+            return ViewState::Blocked(Blocker::CleanView);
         }
         if id.overlay_producer() && !self.runtime.controllers_scheme {
             return ViewState::Blocked(Blocker::Scheme);
@@ -104,7 +104,7 @@ pub(crate) fn snapshot() -> Snapshot {
     let runtime = Runtime {
         controllers_scheme: scheme::is_controllers(),
         gameplay: crate::hooks::in_gameplay(),
-        cinematic: crate::director::cinematic::active(),
+        clean_view: crate::director::clean_view::hides_everything(),
         temporarily_hidden: TEMPORARY_HIDE.lock().requested_at_hide.is_some(),
         overlay: overlay::status(),
     };
@@ -454,7 +454,7 @@ fn temporary_controls(ui: &mut Ui, snapshot: &Snapshot) {
 struct Runtime {
     controllers_scheme: bool,
     gameplay: bool,
-    cinematic: bool,
+    clean_view: bool,
     temporarily_hidden: bool,
     overlay: overlay::OverlayStatus,
 }
@@ -484,7 +484,7 @@ enum Blocker {
     Controllers,
     Overlay,
     GrabView,
-    Cinematic,
+    CleanView,
     Scheme,
     Gameplay,
 }
@@ -496,7 +496,7 @@ impl Blocker {
             Self::Controllers => "Requested; blocked: controllers are disabled.",
             Self::Overlay => "Requested; blocked: the world-space overlay is disabled.",
             Self::GrabView => "Requested; blocked: the grab view is disabled.",
-            Self::Cinematic => "Requested; blocked: cinematic capture suppresses the overlay.",
+            Self::CleanView => "Requested; blocked: the clean view hides every overlay.",
             Self::Scheme => "Requested; blocked: the controller scheme is inactive.",
             Self::Gameplay => "Requested; blocked: gameplay is inactive.",
         }

@@ -63,7 +63,7 @@ pub(crate) fn prepare_frame(
         && cfg.redirect
         && cfg.quad
         && crate::hud::current_mode() == crate::hud::HudMode::Hud
-        && !crate::director::cinematic::active();
+        && !crate::director::clean_view::hides_everything();
     let Some(hud) = inputs.hud.filter(|_| active) else {
         if let Some(renderer) = renderer.as_mut() {
             renderer.plan.clear();

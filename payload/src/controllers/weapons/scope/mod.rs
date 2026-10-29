@@ -73,7 +73,7 @@ pub(crate) fn hook_library() -> HookLibrary {
 pub enum LensIdle {
     /// The controllers or the lens are off.
     Disabled,
-    /// The gamepad scheme is in effect, outside gameplay, or in cinematic mode.
+    /// The gamepad scheme is in effect, outside gameplay, or under the clean view.
     Inactive,
     /// No gun in the hands is a scoped one.
     NoScope,
@@ -87,7 +87,7 @@ impl LensIdle {
     pub fn label(self) -> &'static str {
         match self {
             LensIdle::Disabled => "off",
-            LensIdle::Inactive => "gamepad scheme, outside gameplay, or cinematic",
+            LensIdle::Inactive => "gamepad scheme, outside gameplay, or clean view",
             LensIdle::NoScope => "no scoped weapon",
             LensIdle::NoSightLine => "no sight line",
             LensIdle::NotAtEye => "no eye at the eyepiece",
@@ -225,7 +225,7 @@ pub(crate) fn capture(
 /// context lock after the world-space overlay; under the collapse, the caller has selected the eye
 /// with `set_collapse_ui_eye`.
 pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
-    if crate::stereo::far_phase() || crate::director::cinematic::active() {
+    if crate::stereo::far_phase() || crate::director::clean_view::hides_everything() {
         return;
     }
     let mut state = STATE.lock();
@@ -371,7 +371,10 @@ fn plan(enabled: bool, config: &LensTuning, anchors: &mut [Option<(u64, SightAnc
     if !enabled {
         return idle(LensIdle::Disabled);
     }
-    if !scheme::is_controllers() || !hooks::in_gameplay() || crate::director::cinematic::active() {
+    if !scheme::is_controllers()
+        || !hooks::in_gameplay()
+        || crate::director::clean_view::hides_everything()
+    {
         return idle(LensIdle::Inactive);
     }
     let scoped = SCOPED

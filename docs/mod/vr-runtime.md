@@ -62,7 +62,7 @@ While a session runs the compositor owns the HMD present and the engine's own pr
 
 ## Recenter and the runtime controls
 
-Recenter is bound to **F7** (`payload/src/hooks/wndproc.rs`), edge-detected like the other function-key toggles (F4 flat overlay visibility, F5 uninject, F6 egui capture, F10 mirror stereo pair, F11 shadow-PCF A/B) — F7 was the free key in that block. The same action is the pause menu's RECENTER VIEW. The debug UI's Rendering page has the runtime controls (`payload/src/ui/vr.rs`): `vr.enabled`, `vr.native_resolution`, `vr.mirror` with its view, `vr.own_back_buffer`, and `vr.direct_eye_blit`, and a status readout with the session state, the runtime name, the effective per-eye resolution, and the live headpose source.
+Recenter is bound to **F7** (`payload/src/hooks/wndproc.rs`), edge-detected like the other function-key toggles (F4 clean view, F5 uninject, F6 egui capture, F10 mirror stereo pair, F11 shadow-PCF A/B) — F7 was the free key in that block. The same action is the pause menu's RECENTER VIEW. The debug UI's Rendering page has the runtime controls (`payload/src/ui/vr.rs`): `vr.enabled`, `vr.native_resolution`, `vr.mirror` with its view, `vr.own_back_buffer`, and `vr.direct_eye_blit`, and a status readout with the session state, the runtime name, the effective per-eye resolution, and the live headpose source.
 
 ## Config reference
 

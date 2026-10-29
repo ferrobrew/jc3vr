@@ -13,7 +13,10 @@ use crate::{
         config::{LocomotionDirection, Posture, SightOverride},
         frame::Hand,
     },
-    director::keymap::{Action, Binding, Chord},
+    director::{
+        clean_view::CleanViewScope,
+        keymap::{Action, Binding, Chord},
+    },
     vr::MirrorView,
 };
 
@@ -122,6 +125,28 @@ fn the_mirror_view_loads_and_the_retired_mirror_eye_is_skipped() {
     let Loaded { config, report } = load(table);
     assert_eq!(config.vr.mirror_view, MirrorView::Left);
     assert_eq!(reset_paths(&report), ["vr.mirror_view"]);
+}
+
+#[test]
+fn the_clean_view_starts_on_and_its_scope_is_not_loaded() {
+    let mut table = defaults_table();
+    set(&mut table, &["hud", "flat_overlay_visible"], true.into());
+    remove(&mut table, &["director", "clean_view"]);
+    let Loaded { config, report } = load(table);
+    assert!(config.director.clean_view);
+    assert_eq!(report.ignored, ["hud.flat_overlay_visible"]);
+
+    // The scope is chosen for the shot at hand: a saved one is skipped, so a launch never starts
+    // with every overlay hidden.
+    let mut table = defaults_table();
+    set(
+        &mut table,
+        &["director", "clean_view_scope"],
+        "Everything".into(),
+    );
+    let Loaded { config, report } = load(table);
+    assert_eq!(config.director.clean_view_scope, CleanViewScope::Desktop);
+    assert_eq!(report.ignored, ["director.clean_view_scope"]);
 }
 
 #[test]

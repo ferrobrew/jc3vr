@@ -1,6 +1,5 @@
 //! Directing tools for staging footage from inside the headset: time control, actor safety, heat
-//! control, teleport bookmarks, a spawner, a cinematic mode that hides every overlay, take
-//! markers, and the key bindings that drive them without opening the debug panel.
+//! control, teleport bookmarks, a spawner, a clean view that hides the overlays, take markers, and the key bindings that drive them without opening the debug panel.
 //!
 //! Everything here is applied from [`update`], which runs on the game's main thread at the top of
 //! `CGame::Update` (`crate::update`), so the engine setters that assert the main thread (the heat
@@ -13,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::CONFIG;
 
-pub mod cinematic;
+pub mod clean_view;
 pub mod heat;
 pub mod keymap;
 pub mod markers;
@@ -45,10 +44,14 @@ pub struct DirectorConfig {
     pub heat_lock: bool,
     /// Cap the heat level at this value (`0..=5`), or `None` to leave the game's own cap alone.
     pub heat_cap: Option<i32>,
-    /// Hide the floating HUD, the debug panel, and the desktop overlay together; see
-    /// [`cinematic`]. A mode for the shot at hand, so it is not saved.
+    /// Hide the mod's overlays at [`clean_view_scope`](Self::clean_view_scope); see
+    /// [`clean_view`]. On by default, which keeps the flat debug overlay off the desktop window
+    /// until F4 shows it.
+    pub clean_view: bool,
+    /// How much the [`clean_view`](Self::clean_view) hides. A choice for the shot at hand, so it is
+    /// not saved: a launch never starts with the HUD hidden.
     #[serde(skip)]
-    pub cinematic: bool,
+    pub clean_view_scope: clean_view::CleanViewScope,
     /// The spawner's request: what to spawn and where relative to the view.
     pub spawn: spawn::SpawnConfig,
     /// The key bindings that drive the directing tools; see [`keymap`].
@@ -64,7 +67,8 @@ impl DirectorConfig {
             unlimited_ammo: false,
             heat_lock: false,
             heat_cap: None,
-            cinematic: false,
+            clean_view: true,
+            clean_view_scope: clean_view::CleanViewScope::Desktop,
             spawn: spawn::SpawnConfig::new(),
             keymap: keymap::Keymap::new(),
         }
@@ -75,7 +79,7 @@ impl DirectorConfig {
 /// so a hotkey and a panel click in the same frame are applied in one place.
 pub fn update() {
     let cfg = CONFIG.lock().director.clone();
-    cinematic::set(cfg.cinematic);
+    clean_view::update(&cfg);
     time::apply(&cfg);
     safety::apply(&cfg);
     heat::apply(&cfg);
