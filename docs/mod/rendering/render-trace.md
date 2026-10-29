@@ -10,7 +10,7 @@ While a trace runs, the frame tail always runs inline on the game thread, so eac
 
 ## Output
 
-A trace writes to `traces/<stamp>/` in the session folder ([sessions.md](../sessions.md)). `trace.ndjson` holds one record per line, each with `time_ns` (since the trace started), `frame` (the real-frame index within the trace), `eye` for per-dispatch events, and the `event` itself, tagged by its `ev` field. The first record is the `manifest`, a snapshot of the whole runtime configuration, so a capture says which gates, skips, and probes were on. With the per-eye screenshot probe on, the folder also holds `frameNNN_eye0.png` and `frameNNN_eye1.png`, each eye's final `BackBufferLinear` per frame.
+A trace writes to `traces/<stamp>/` in the session folder ([sessions.md](../sessions.md)). `trace.ndjson` holds one record per line, each with `time_ns` (since the trace started), `frame` (the real-frame index within the trace), `eye` for per-dispatch events, and the `event` itself, tagged by its `ev` field. The first record is the `manifest`, a snapshot of the whole runtime configuration, so a capture says which gates, skips, and probes were on. With the per-eye screenshot probe on, the folder also holds `frameNNN_eye0.png` and `frameNNN_eye1.png`, each eye's final `BackBufferLinear` per frame with its alpha forced opaque. The game thread only copies the pixels out; the shared image writer that also writes F12 screenshots encodes and writes them on its own thread, and blocks the next submit while its queue is full, so a long screenshot trace is bounded in memory and costs no more than writing inline.
 
 The trace is held in memory and written when its last frame ends, so a crash mid-trace loses it.
 

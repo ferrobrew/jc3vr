@@ -395,19 +395,15 @@ impl TraceState {
         }
     }
 
-    /// The collecting trace's folder (created) and current real-frame index for a diagnostic
-    /// screenshot, or `None` when no trace is collecting. Used by [`crate::debug::rt_hash`] to write
-    /// per-frame render-target images into the same folder as the trace NDJSON.
-    pub fn screenshot_target() -> Option<(std::path::PathBuf, u32)> {
+    /// The collecting trace's stamp and current real-frame index, or `None` when no trace is
+    /// collecting. Used by [`crate::debug::rt_hash`] to name per-frame render-target images into the
+    /// same folder as the trace NDJSON.
+    pub fn current_frame() -> Option<(String, u32)> {
         if !tracing_active() {
             return None;
         }
-        let (stamp, frame) = {
-            let state = TRACE_STATE.lock();
-            (state.stamp.clone(), state.frame)
-        };
-        let dir = crate::session::capture_folder(CaptureFolder::Trace, &stamp).ok()?;
-        Some((dir, frame))
+        let state = TRACE_STATE.lock();
+        Some((state.stamp.clone(), state.frame))
     }
 
     /// Append a frame/driver marker record (no dispatch eye) while a trace is active (auto-locks).

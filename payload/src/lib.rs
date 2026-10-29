@@ -33,6 +33,7 @@ mod grapple;
 mod headpose;
 mod hooks;
 mod hud;
+mod image_writer;
 mod lifecycle;
 mod logging;
 mod pause_menu;
@@ -133,10 +134,11 @@ fn shutdown_startup() {
         module::pin();
     }
 
-    // And for an F12 screenshot's writer. The PNG encode of a double-wide capture runs off-thread
-    // precisely because it is too slow to do inline, so the same unjoined-thread hazard applies --
-    // and unlike the profiler's, this one is not behind a feature.
-    if !screenshot::shutdown() {
+    // And for the image writer that encodes the F12 screenshots and the render trace's frames. The
+    // PNG encode of a double-wide capture runs off-thread precisely because it is too slow to do
+    // inline, so the same unjoined-thread hazard applies -- and unlike the profiler's, this one is
+    // not behind a feature.
+    if !image_writer::shutdown() {
         module::pin();
     }
 

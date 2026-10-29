@@ -307,7 +307,7 @@ pub unsafe fn capture_frame(
 }
 
 /// Stop the recording and wait for the writer to exit, for eject. Returns whether the writer is
-/// confirmed stopped; `false` means the payload must stay mapped (see `screenshot::shutdown`).
+/// confirmed stopped; `false` means the payload must stay mapped (see `image_writer::shutdown`).
 #[must_use = "a writer that did not finish means the payload must stay mapped"]
 pub fn shutdown() -> bool {
     stop();

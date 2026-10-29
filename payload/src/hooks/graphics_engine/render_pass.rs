@@ -62,7 +62,7 @@ fn render_pass_draw(this: *mut RenderPass) {
     if !SWEEP_PASS_RANGE.contains(&id) {
         return;
     }
-    let even_frame = TraceState::screenshot_target().is_some_and(|(_, frame)| frame % 2 == 0);
+    let even_frame = TraceState::current_frame().is_some_and(|(_, frame)| frame % 2 == 0);
     if !even_frame {
         return;
     }
