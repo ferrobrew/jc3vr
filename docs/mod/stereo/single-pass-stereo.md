@@ -63,7 +63,7 @@ must run there too — it does, in the `PreDraw` prologue (`single_pass::begin_d
 in that thread's sequence where no range can be live.
 
 It cannot run on the game thread at the top of [`Game::UpdateRender`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::Game##func-UpdateRender), which is safe only while every
-dispatch is drained before `UpdateRender` returns. With the frame tail deferred (`DEFER_FRAME_TAIL`, on) the
+dispatch is drained before `UpdateRender` returns. With the frame tail deferred (`defer_tail` in `hooks/game.rs`) the
 last dispatch is *not* drained: the draw thread keeps walking the previous frame's ~20k draws while
 the game thread runs the next frame's sim and re-enters `UpdateRender`. A clear there lands in the
 middle of a live range, and every draw after it is treated as out of range — no eye split, `cb13`
@@ -618,7 +618,7 @@ extending the collapse over `PreDraw` is **zero**.
 The measurement agrees, and is the reason to trust this rather than the reading above. In the
 off/on comparison in `performance.md`, `PreDraw` is 2.29 ms with two dispatches and 2.25 ms with one.
 If it were duplicated per eye, halving the dispatch count would have roughly halved it. It does not,
-because `SHARE_PREPASSES` (on) already elides the view-independent categories on the
+because the shared pre-passes (`pre_draw` in `hooks/graphics_engine/render_pass.rs`) already elide the view-independent categories on the
 second eye of the double-draw path. The ~0.04 ms difference is the residual: the categories that path
 still runs twice.
 
@@ -648,7 +648,7 @@ game's own baseline shadow, reflection and vegetation cost, the same as flatscre
 a shadow/reflection quality decision (cascade count, atlas resolution, update cadence), not a stereo
 one. Two stereo-attributable riders are worth knowing about, both small and both deliberate:
 
-- `WIDEN_SHADOW_FIT` (**on**) widens the cascade fit to the union FOV of both eyes, which puts more
+- `shadow_manager_update_render` widens the cascade fit to the union FOV of both eyes, which puts more
   geometry inside each cascade and so costs some shadow draws. That is the price of the cascades
   covering both eyes at all.
 - `shadow_update_every_frame` (off) would defeat the engine's `2^L` cascade update amortization and

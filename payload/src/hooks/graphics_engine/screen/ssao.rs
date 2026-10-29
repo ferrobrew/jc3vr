@@ -42,15 +42,11 @@ pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&SSAO_DRAW_BINDER)
 }
 
-/// Force the SSAO pass into its first-pass state before each stereo eye, so each eye computes AO
-/// fresh from its own depth instead of blending against the other eye's history. The SSAO history
-/// index advances once per dispatch, so without this a stereo render double-steps it and the two
-/// eyes compound.
-const FORCE_SSAO_FIRST_PASS: bool = true;
-
 // SSAOPass::Draw -- the per-dispatch SSAO pass. Its history double-steps across the two stereo
-// dispatches, so force m_FirstPass on (the engine's "compute fresh, ignore history" state) for each
-// eye while stereo is active. The apply still runs; only the cross-eye temporal blend is suppressed.
+// dispatches and the eyes would compound, so force m_FirstPass on (the engine's "compute fresh,
+// ignore history" state) for each eye while stereo is active, so each eye computes AO from its own
+// depth instead of blending against the other eye's history. The apply still runs; only the
+// cross-eye temporal blend is suppressed.
 #[detour(address = jc3gi::graphics_engine::ssao::SSAOPass::Draw_ADDRESS)]
 fn ssao_draw(this: *mut SSAOPass) {
     // Record the pass instance for the between-eye history-index restore in `game.rs`.
@@ -70,12 +66,11 @@ fn ssao_draw(this: *mut SSAOPass) {
         return;
     }
 
-    let force = stereo && FORCE_SSAO_FIRST_PASS;
     if let Some(pass) = unsafe { this.as_mut() } {
-        pass.m_FirstPass |= force;
+        pass.m_FirstPass |= stereo;
     }
     TraceState::record_eye(TraceEvent::SsaoDraw {
-        forced_first_pass: force,
+        forced_first_pass: stereo,
     });
     SSAO_DRAW.get().unwrap().call(this);
 }

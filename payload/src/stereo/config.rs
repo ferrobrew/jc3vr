@@ -150,7 +150,7 @@ pub struct SinglePassConfig {
     /// that eye's half of the double-wide target and reconstructing with that eye's own basis.
     ///
     /// The resolve is a fullscreen quad that rebuilds world positions from depth through the
-    /// `ViewProjInv` the off-axis reconstruction (`RECONSTRUCT_OFFAXIS_INVERSE`) substitutes,
+    /// `ViewProjInv` the off-axis reconstruction (`hooks::graphics_engine::reconstruction`) substitutes,
     /// and samples the sun-shadow cascade over them. Collapsed, that single quad covers both eye halves
     /// while the basis describes one eye's frustum: the left half gets that eye's frustum compressed 2x
     /// horizontally and the right half a basis unrelated to it. The error is a function of the view
@@ -161,7 +161,7 @@ pub struct SinglePassConfig {
     /// one-to-one NDC-to-pixel mapping and its G-buffer sampling stays correct; the half's basis comes
     /// from folding the full-target-NDC to eye-NDC remap into the substituted inverse. The whole render
     /// block is re-issued, so its light-assignment phase runs twice (identically) as well. Requires the
-    /// collapse and `RECONSTRUCT_OFFAXIS_INVERSE`. On by default: sliding shadows are a worse defect
+    /// collapse. On by default: sliding shadows are a worse defect
     /// than the extra light-assignment pass is a cost, and the flag remains for an A/B in the headset.
     pub reconstruct_per_eye: bool,
     /// The same per-eye split for the **atmospheric-scattering / aerial-perspective** pass, the other
@@ -172,7 +172,7 @@ pub struct SinglePassConfig {
     /// carries exactly the defect
     /// [`single_pass_reconstruct_per_eye`](Self::reconstruct_per_eye) describes, and
     /// splitting only the deferred resolve leaves this pass painting the same sliding error back over
-    /// it. Requires `RECONSTRUCT_OFFAXIS_INVERSE`; on by default, for the same reason.
+    /// it. On by default, for the same reason.
     pub atmospheric_per_eye: bool,
     /// Bias the legacy (non-WaveWorks) water blocks' screen-space reflection/refraction lookup into
     /// each eye's half of the double-wide target, by re-issuing their `Draw` once per eye.
@@ -302,8 +302,8 @@ pub struct SinglePassConfig {
     /// matrix (which wants the per-eye value) and the depth fetch (which wants the double-wide one), so
     /// they must stay separate. On by default.
     pub ssdecal_per_eye: bool,
-    /// Requires [`single_pass_reconstruct_per_eye`](Self::reconstruct_per_eye) and
-    /// the off-axis froxel tile bounds (`FIX_CLUSTERED_LIGHT_FRUSTUM`): build the clustered
+    /// Requires [`single_pass_reconstruct_per_eye`](Self::reconstruct_per_eye), and rides on the
+    /// off-axis froxel tile-bounds override: build the clustered
     /// (froxel) light grid **per eye** as well, instead of building it once with eye 0's projection
     /// against the double-wide tile count.
     ///
@@ -413,7 +413,7 @@ pub struct StereoConfig {
     pub ssao_eye0_only: bool,
     /// Diagnostic: restore the `RenderEngine` back-buffer copy ring index (`m_CurrBackBufferCopy`)
     /// between the two stereo eyes. This ring advances once per `Draw` and is *not* one of the engine
-    /// frame counters the between-eye restore (`RESTORE_FRAME_COUNTERS`) rewinds, so the two eyes
+    /// frame counters the between-eye restore rewinds, so the two eyes
     /// otherwise land on different back-buffer copies -- any pass that reads the previous copy then
     /// sees different data per eye. Test whether pinning it converges the per-eye MainColor.
     pub restore_cb_ring: bool,

@@ -21,16 +21,9 @@ use crate::{
                 decline_warning, restore_viewport, unsplittable_context,
             },
         },
-        reconstruction::{self, RECONSTRUCT_OFFAXIS_INVERSE},
+        reconstruction,
     },
 };
-
-/// Replace the symmetric froxel tile-bounds constants that `DrawClustered` uploads to the
-/// light-assignment fragment shader with per-eye off-axis-derived values. The engine reconstructs a
-/// symmetric frustum from the vertical FOV and aspect ratio, which cannot encode the off-axis shift
-/// of the VR per-eye projections, so lights are otherwise assigned to the wrong tiles: blocky,
-/// screen-aligned lighting artifacts. VR only; a no-op when no VR frame is in flight.
-const FIX_CLUSTERED_LIGHT_FRUSTUM: bool = true;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&DRAW_CLUSTERED_BINDER)
@@ -42,7 +35,7 @@ thread_local! {
     pub(super) static CLUSTERED_ACTIVE: Cell<bool> = const { Cell::new(false) };
 
     /// The pre-computed whole-grid off-axis cb1 values for the current `DrawClustered` call, or `None`
-    /// when no VR frame is in flight (flatscreen, or the fix is disabled). Used whenever the per-eye
+    /// when no VR frame is in flight (flatscreen). Used whenever the per-eye
     /// split is not engaged, including when a split run demotes itself.
     pub(super) static OFF_AXIS_CB1: Cell<Option<[f32; 8]>> = const { Cell::new(None) };
 }
@@ -58,7 +51,7 @@ fn draw_clustered(
 ) {
     let (per_eye, clustered, light_view) = Config::lock_query(|c| {
         (
-            c.stereo.single_pass.reconstruct_per_eye && RECONSTRUCT_OFFAXIS_INVERSE,
+            c.stereo.single_pass.reconstruct_per_eye,
             c.stereo.single_pass.clustered_per_eye,
             c.stereo.single_pass.clustered_per_eye_light_view,
         )
@@ -75,7 +68,7 @@ fn draw_clustered(
     // `decline_split_for_context`'s doc comment.
     let split_eye = |eye: usize| {
         let splittable = ctx.is_some_and(|ctx| !unsplittable_context(ctx as usize));
-        (clustered && FIX_CLUSTERED_LIGHT_FRUSTUM && splittable).then_some(eye)
+        (clustered && splittable).then_some(eye)
     };
 
     // `demoted_engaged` is read only when `split_fullscreen_pass` reports `Demoted`, in which case
@@ -134,8 +127,14 @@ struct RunRequest {
     light_view: bool,
 }
 
-/// One `DrawClustered`, with the off-axis tile-bounds override armed around it when enabled, and the
-/// per-eye froxel split armed when requested. Reports whether the split actually engaged.
+/// One `DrawClustered`, with the off-axis tile-bounds override armed around it, and the per-eye
+/// froxel split armed when requested. Reports whether the split actually engaged.
+///
+/// The override replaces the symmetric froxel tile-bounds constants that `DrawClustered` uploads to
+/// the light-assignment fragment shader with per-eye off-axis-derived values. The engine
+/// reconstructs a symmetric frustum from the vertical FOV and aspect ratio, which cannot encode the
+/// off-axis shift of the per-eye projections, so lights would otherwise be assigned to the wrong
+/// tiles: blocky, screen-aligned lighting artifacts. A no-op when no VR frame is in flight.
 fn run_draw_clustered(
     request: RunRequest,
     this: *const RenderBlockDeferredLighting,
@@ -143,12 +142,6 @@ fn run_draw_clustered(
     a3: *mut c_void,
     a4: *mut HTexture_t,
 ) -> bool {
-    // When the fix is disabled, call through without setting the thread-local flag.
-    if !FIX_CLUSTERED_LIGHT_FRUSTUM {
-        DRAW_CLUSTERED.get().unwrap().call(this, rc, a3, a4);
-        return false;
-    }
-
     // SAFETY: `rc` is the live render context for this dispatch; the caller (the engine's draw
     // dispatch) guarantees it is valid for the duration of `DrawClustered`.
     let rc_ref = unsafe { rc.as_ref() };

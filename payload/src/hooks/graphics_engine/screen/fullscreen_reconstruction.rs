@@ -71,10 +71,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     config::Config,
-    hooks::graphics_engine::{
-        reconstruction::{self, RECONSTRUCT_OFFAXIS_INVERSE},
-        ssao,
-    },
+    hooks::graphics_engine::{reconstruction, ssao},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -92,8 +89,7 @@ pub(super) fn hook_library() -> HookLibrary {
 /// target) leaves the history exactly where the un-split pass would.
 #[detour(address = jc3gi::graphics_engine::render_block::RenderBlockSSAO::Draw_ADDRESS)]
 fn ssao_block_draw(this: *mut RenderBlockSSAO, rc: *mut RenderContext, info: *const RBIInfo) {
-    let enabled =
-        RECONSTRUCT_OFFAXIS_INVERSE && Config::lock_query(|c| c.stereo.single_pass.ssao_per_eye);
+    let enabled = Config::lock_query(|c| c.stereo.single_pass.ssao_per_eye);
     let call = || SSAO_BLOCK_DRAW.get().unwrap().call(this, rc, info);
 
     let mut history = None;
@@ -134,8 +130,7 @@ fn ssr_draw(
     rc: *mut RenderContext,
     info: *const RBIInfo,
 ) {
-    let enabled =
-        RECONSTRUCT_OFFAXIS_INVERSE && Config::lock_query(|c| c.stereo.single_pass.ssr_per_eye);
+    let enabled = Config::lock_query(|c| c.stereo.single_pass.ssr_per_eye);
     let call = || SSR_DRAW.get().unwrap().call(this, rc, info);
     split_or_issue_with(
         reconstruction::DispatchPhase::LastRun,
@@ -159,8 +154,7 @@ fn subsurface_draw(
     rc: *mut RenderContext,
     info: *const RBIInfo,
 ) {
-    let enabled = RECONSTRUCT_OFFAXIS_INVERSE
-        && Config::lock_query(|c| c.stereo.single_pass.subsurface_per_eye);
+    let enabled = Config::lock_query(|c| c.stereo.single_pass.subsurface_per_eye);
     let call = || SUBSURFACE_DRAW.get().unwrap().call(this, rc, info);
     split_or_issue(enabled, render_context_ctx(rc), call);
 }
@@ -191,8 +185,7 @@ fn dof_downscale_apply(
     pec: *mut PostEffectContext,
     mgr: *mut PostEffectsManager,
 ) {
-    let enabled =
-        RECONSTRUCT_OFFAXIS_INVERSE && Config::lock_query(|c| c.stereo.single_pass.dof_per_eye);
+    let enabled = Config::lock_query(|c| c.stereo.single_pass.dof_per_eye);
     let call = || DOF_DOWNSCALE_APPLY.get().unwrap().call(this, ctx, pec, mgr);
     split_or_issue_with(
         reconstruction::DispatchPhase::FirstRun,

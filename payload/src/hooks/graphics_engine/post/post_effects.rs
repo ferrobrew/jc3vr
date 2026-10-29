@@ -94,12 +94,6 @@ pub(crate) fn reset_post_block_gate() {
     WORLD_POST_BLOCK_RAN.store(false, Ordering::Relaxed);
 }
 
-/// Deduplicate the world post-effects block to once per dispatch. `ApplyWorldFilters` enqueues the
-/// block into the pass's draw list at draw time, which the between-eye list-parity restore cannot
-/// zero, so eye 1 otherwise draws eye 0's stale entry plus its own, running the whole post chain
-/// (and FSR) twice. The double-stepped FSR history is the residual per-eye flicker of issue #10.
-const DEDUPE_POST_BLOCK: bool = true;
-
 // RenderBlockPostEffects::Draw -- the world post-effect chain (histogram, blur, glare, DoF, motion
 // blur, tonemap, AA/FSR, sun halo, fade). `ApplyWorldFilters` enqueues the block into pass
 // RP_POSTEFFECTS's *draw* list at draw time, and the between-eye list-parity restore only zeroes the
@@ -115,14 +109,14 @@ const DEDUPE_POST_BLOCK: bool = true;
 )]
 fn render_block_post_effects_draw(this: *mut c_void, ctx: *mut c_void, info: *mut c_void) -> u64 {
     let repeat = WORLD_POST_BLOCK_RAN.swap(true, Ordering::Relaxed);
-    let skip = repeat && DEDUPE_POST_BLOCK;
-    TraceState::record_eye(TraceEvent::PostEffectsBlockDraw { repeat, skip });
-    if !repeat {
-        crate::debug::pipeline_probes::record_main_color_mean("post_block_entry");
-    }
-    if skip {
+    TraceState::record_eye(TraceEvent::PostEffectsBlockDraw {
+        repeat,
+        skip: repeat,
+    });
+    if repeat {
         return 0;
     }
+    crate::debug::pipeline_probes::record_main_color_mean("post_block_entry");
     RENDER_BLOCK_POST_EFFECTS_DRAW
         .get()
         .unwrap()
