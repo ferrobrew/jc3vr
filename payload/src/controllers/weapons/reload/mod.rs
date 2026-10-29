@@ -93,7 +93,7 @@ use crate::controllers::{
             plan::ReloadPlan,
             records::{RecordKey, Records, gun_entry},
             travel::ActionTravel,
-            tuning::{Reload, ReloadButton},
+            tuning::Reload,
         },
         volumes::{self, BodyFrame, POUCHES},
     },
@@ -377,7 +377,6 @@ pub(super) struct FinishInputs {
 /// The second half of the reload's input tick: eject, load, push, and work the action, and decide
 /// which guns may fire. The copied finish facts are consumed after weapon ownership settles.
 pub(super) fn finish_tick(inputs: &FinishInputs, config: &ControllersConfig) -> FinishResult {
-    let reload = &Reload::of(&config.weapons.reload);
     let mut state = STATE.lock();
     let Some(tick) = state.tick else {
         state.stand_down();
@@ -396,12 +395,8 @@ pub(super) fn finish_tick(inputs: &FinishInputs, config: &ControllersConfig) -> 
     let weapons = Hand::BOTH.map(|hand| tick.gun(hand).map(|(weapon, _)| weapon));
     gate::publish(Some(gate::Published {
         weapons: weapons.map(|w| w.map_or(0, |w| w.address)),
-        button_native: reload.button == ReloadButton::Native,
-        manual_action: weapons.map(|w| {
-            w.is_some_and(|w| {
-                reload.manual_action && w.plan.action.manual() && steps::chambering(&w.plan, reload)
-            })
-        }),
+        manual_action: weapons
+            .map(|w| w.is_some_and(|w| w.plan.action.manual() && steps::chambering(&w.plan))),
         held,
     }));
     FinishResult {

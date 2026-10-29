@@ -16,9 +16,6 @@ pub(crate) mod config;
 #[allow(clippy::module_inception)]
 pub mod graphics_engine;
 mod render_pass;
-// The three VR resolution levers (`ResizeTextures`, LR-particle, spot-light cone) for issue #8's
-// pixelation.
-mod resolution;
 // `shader` is public so the debug UI can read its patched-shader count.
 pub mod shader;
 // Single-pass stereo render-thread detours (the cb13 mirror; experimental, gated off by default).
@@ -42,7 +39,6 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(screen::hook_library())
         .with_hook_library(post::hook_library())
         .with_hook_library(render_pass::hook_library())
-        .with_hook_library(resolution::hook_library())
         .with_hook_library(shader::hook_library())
         .with_hook_library(single_pass::hook_library())
 }

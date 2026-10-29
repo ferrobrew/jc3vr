@@ -6,7 +6,7 @@ The mod edits some of the game's shaders as the engine creates them. The edits a
 
 `payload/src/hooks/graphics_engine/shader.rs` detours the four `Graphics::Create*Program` functions. Each hook reads the DXBC from the params (`m_Code`, `m_Size`), builds a patched copy when a patch applies, points the params at the copy for the call to the original, and restores the caller's pointer and size afterwards. The D3D `Create*Shader` call copies the bytecode ([shaders.md, "How the engine creates shaders"](../../engine/rendering/shaders.md#how-the-engine-creates-shaders)), so the copy only has to outlive that call. `m_Size` moves with `m_Code` because some rewrites grow the blob. A stale size would hand D3D a container whose chunk table runs past the declared length.
 
-- `CreateFragmentProgram` applies the sun-shadow PCF hash patch and the LOD dissolve patch (both below), and the screen-space decal depth-UV bias of single-pass stereo ([single-pass-stereo.md, "2. One eye-0 reconstruction basis over the whole double-wide target"](../stereo/single-pass-stereo.md#2-one-eye-0-reconstruction-basis-over-the-whole-double-wide-target)).
+- `CreateFragmentProgram` applies the sun-shadow PCF hash patch (below) and the screen-space decal depth-UV bias of single-pass stereo ([single-pass-stereo.md, "2. One eye-0 reconstruction basis over the whole double-wide target"](../stereo/single-pass-stereo.md#2-one-eye-0-reconstruction-basis-over-the-whole-double-wide-target)).
 - `CreateVertexProgram` applies the single-pass vertex-shader transform ([single-pass-stereo.md, "The vertex-shader transform"](../stereo/single-pass-stereo.md#the-vertex-shader-transform)).
 - `CreateHullProgram` and `CreateDomainProgram` apply the single-pass terrain rewrites ([single-pass-stereo.md, "The terrain tessellation path"](../stereo/single-pass-stereo.md#the-terrain-tessellation-path)).
 
@@ -30,7 +30,7 @@ Three triggers cause a reload:
 
 The button and F11 set a request flag. `process_reload_request` services it at the top of the next frame on the game thread, before the frame's draws.
 
-The debug UI shows the number of patched PCF and dissolve sites next to each toggle. A count of zero means that no matching shader has been created since injection, and a reload is needed.
+The debug UI shows the number of patched PCF sites next to the shader reload. A count of zero means that no matching shader has been created since injection, and a reload is needed.
 
 ## Restoring the originals on eject
 
@@ -44,6 +44,3 @@ In stereo, sun shadows and alpha-tested foliage shimmered and grained differentl
 
 The patch does not address shadows that look uniformly stronger or longer in one eye, because a rotated disk changes the noise and not the mean. That residual is view-dependence inherent to screen-space AO: each eye computes SSAO from its own depth, so near an occluder one eye sees more of it. It is not an accumulation bug. The sun-shadow map and its cascades are computed once per frame from the shared camera and are identical between the eyes, and the SSAO temporal history is handled per eye (`FORCE_SSAO_FIRST_PASS` and `RESTORE_SSAO_HISTORY` in [lighting-shadow-vr-interactions.md](../stereo/lighting-shadow-vr-interactions.md#saverestore-ledger--default-on-modifications)). The per-eye render-target hash diagnostic (`stereo.diagnose_rt_hashes`, `payload/src/debug/rt_hash.rs`) confirms that there is no cross-eye accumulator. AO shared between the eyes would require reprojecting one eye's result into the other.
 
-## The jitter-unstable LOD dissolve
-
-`PATCH_LOD_DISSOLVE` (off, in `payload/src/hooks/graphics_engine/shader.rs`) targets the material LOD-dissolve screen-door pattern, whose `dp2` immediate starts with `l(0.467944, -0.703648, ...)` (119 shaders per bundle). Most of these shaders key the pattern to `SV_Position`, which is stable from frame to frame. The vegetation family keys it to the interpolated clip-space position, which carries the FSR camera jitter, so the pattern slides by a sub-pixel amount every frame and mid-fade regions flip coverage together. The patch identifies that family by the operand type of the `dp2` source (a temp register rather than an input), and replaces the `1.0` immediate of the fade `add`, 64 bytes after the seed, with `-3.0e38`. The dissolve's discard then never fires, and LOD transitions pop instead of dissolving. The defect appears only with FSR jitter on, and it was not the cause of the issue #10 flicker, so the patch is off.

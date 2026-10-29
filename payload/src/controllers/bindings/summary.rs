@@ -39,10 +39,7 @@ use crate::{
         weapons::{
             self,
             capabilities::{GunHand, GunOwner},
-            reload::{
-                BeltEligibility, ReloadStatus,
-                tuning::{RELOAD, ReloadButton},
-            },
+            reload::{BeltEligibility, ReloadStatus},
         },
     },
     vr::input::semantic::{bound::PhysicalSet, vocabulary::ActionId},
@@ -362,7 +359,7 @@ fn read_reload_permissions(config: &ControllersConfig) -> ReloadPermissions {
     let weapon = unsafe { owner.GetWieldingWeapon(false).as_ref() }
         .and_then(|weapon| unsafe { weapon.px.as_ref() });
     reload_permission(ReloadPermissionRead {
-        native_button: !config.weapons.reload.enabled || RELOAD.button == ReloadButton::Native,
+        native_button: !config.weapons.reload.enabled,
         wielded: weapon.is_some(),
         // SAFETY: the inventory and wielded weapon remain live for this input-thread read.
         reload_animation: unsafe { owner.m_Inventory.GetAnimationAllowsReloading() },

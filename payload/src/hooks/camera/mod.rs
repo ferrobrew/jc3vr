@@ -32,7 +32,6 @@ pub mod height;
 pub(crate) use config::CameraConfig;
 
 use crate::{
-    fsr::apply_jitter_to_projection,
     headpose::{
         HeadPose, Source, anchor, anchor_prev, is_active, query, query_prev, source,
         xr::follow_turn,
@@ -89,8 +88,7 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
     let (stereo_cameras, fsr_enabled) = Config::lock_query(|c| (c.stereo.cameras, c.fsr.enabled));
 
     // The engine's TAA jitter only feeds its own SMAA T2X. Drop it when that resolve is gone --
-    // either because we force SMAA 1x in stereo, or because FSR has replaced the engine AA. FSR still
-    // needs jitter, but its own Halton sequence, applied below.
+    // either because we force SMAA 1x in stereo, or because FSR has replaced the engine AA.
     let jitter = jitter && !fsr_enabled && !(stereo_active && FORCE_SMAA_1X);
 
     // The VR per-eye off-axis projection and world offset (docs/mod/vr-runtime.md blockers 1 & 3).
@@ -155,30 +153,6 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
             pointer_cockpit,
             pointer_scale,
         );
-    }
-
-    // FSR is a temporal reconstructor: it needs the camera jittered by its sequence, with the same
-    // offset fed to the dispatch. Apply it to the render camera's projections after SetupRenderCamera
-    // has built them (reverse-Z done), then rebuild the view-projections from the jittered proj.
-    if is_render_camera && fsr_enabled {
-        unsafe {
-            if let Some(camera) = camera.as_mut()
-                && let Some(ge) = GraphicsEngine::get()
-                && let Some(mc) = ge.m_MainColorBuffer.as_ref()
-            {
-                let (w, h) = (u32::from(mc.m_Width), u32::from(mc.m_Height));
-                apply_jitter_to_projection(&mut camera.m_Projection, w, h);
-                apply_jitter_to_projection(&mut camera.m_ProjectionF, w, h);
-                // Publish the UV-space shift this jitter applies to every projected position, for
-                // the motion-vector jitter cancellation (the velocity pass measures curUV under the
-                // jittered projection, so every vector carries this shift as a constant offset).
-                let jitter_uv = crate::fsr::current_camera_jitter_ndc(w, h)
-                    .map_or((0.0, 0.0), |(x, y)| (0.5 * x, -0.5 * y));
-                STEREO_STATE.lock().vp_history.cur_jitter_uv = jitter_uv;
-                camera.m_ViewProjection = camera.m_View * camera.m_Projection;
-                camera.m_ViewProjectionF = camera.m_View * camera.m_ProjectionF;
-            }
-        }
     }
 
     // Per-eye parallax: shift the camera world position (`m_TransformF` translation, the

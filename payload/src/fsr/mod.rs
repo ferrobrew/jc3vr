@@ -16,10 +16,7 @@ pub use config::FsrConfig;
 mod velocity_decode;
 
 use fsr_sys::{Context, DispatchInfo, Extent, init_flags};
-use jc3gi::{
-    graphics_engine::{device::Device, texture::Texture},
-    types::math::Matrix4,
-};
+use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use parking_lot::Mutex;
 use velocity_decode::VelocityDecode;
 use windows::{
@@ -108,7 +105,7 @@ pub fn dispatch_eye(
 
     let output_res: ID3D11Resource = eye_state.output.cast().expect("texture is a resource");
 
-    let mv_correction = MV_STEREO_CORRECTION && Config::lock_query(|c| c.stereo.cameras);
+    let mv_correction = Config::lock_query(|c| c.stereo.cameras);
 
     // The stereo motion-vector correction's reprojection matrices for this eye (None outside stereo
     // disparity, or until a full frame of view-projection history exists -- the decode then runs
@@ -117,28 +114,6 @@ pub fn dispatch_eye(
         STEREO_STATE.lock().vp_history.reprojection_matrices(eye)
     } else {
         None
-    };
-
-    // The constant camera-jitter UV offset carried by the stored vectors: the engine measures
-    // `curUV` under the jittered projection against an unjittered previous VP, so every vector is
-    // off by this frame's jitter shift -- and when the stereo correction re-anchors at the
-    // (jittered) per-eye previous VP, by the delta against the previous frame's shift instead. FSR
-    // wants jitter-free motion; at native-AA the +/-0.5 px wobble is enough to flip its
-    // history-validation verdicts over steep depth gradients (region-scale one-frame pops at the
-    // Halton cadence).
-    let jitter_uv = if MV_JITTER_CANCEL {
-        let state = STEREO_STATE.lock();
-        let (jc, jp) = (
-            state.vp_history.cur_jitter_uv,
-            state.vp_history.prev_jitter_uv,
-        );
-        if reprojection.is_some() {
-            (jc.0 - jp.0, jc.1 - jp.1)
-        } else {
-            jc
-        }
-    } else {
-        (0.0, 0.0)
     };
 
     let camera = camera_params();
@@ -153,23 +128,18 @@ pub fn dispatch_eye(
         // eye's own previous pose when the stereo correction is active); on success FSR reads the
         // decoded buffer, otherwise it falls back to the raw velocity (still biased -- only used if
         // the decode is unavailable or disabled, as a degraded path).
-        let decoded_mv = if MOTION_VECTORS {
-            eye_state.decode.as_ref().filter(|d| {
-                d.dispatch(
-                    &context.m_Context,
-                    device,
-                    &velocity_decode::DecodeInputs {
-                        velocity,
-                        depth,
-                        sign: MV_SIGN,
-                        reprojection,
-                        jitter_uv,
-                    },
-                )
-            })
-        } else {
-            None
-        };
+        let decoded_mv = eye_state.decode.as_ref().filter(|d| {
+            d.dispatch(
+                &context.m_Context,
+                device,
+                &velocity_decode::DecodeInputs {
+                    velocity,
+                    depth,
+                    sign: MV_SIGN,
+                    reprojection,
+                },
+            )
+        });
         let mv_res: ID3D11Resource = match decoded_mv {
             Some(d) => d.output.cast().expect("texture is a resource"),
             None => velocity.m_Texture.clone(),
@@ -183,9 +153,8 @@ pub fn dispatch_eye(
             exposure: None,
             output: &output_res,
             render_size: Extent { width, height },
-            // The same per-frame jitter applied to the camera projection (apply_jitter_to_projection),
-            // in FSR's pixel space.
-            jitter: current_jitter(width, height).unwrap_or((0.0, 0.0)),
+            // The camera is not jittered.
+            jitter: (0.0, 0.0),
             // The decode emits motion in UV space; FSR wants pixels, so scale by the render size. The
             // sign/Y convention is already applied inside the decode shader.
             motion_vector_scale: if decoded_mv.is_some() {
@@ -216,30 +185,11 @@ pub fn dispatch_eye(
     }
 }
 
-/// Feed motion vectors to FSR. Without them FSR reprojects with zero motion, which ghosts moving
-/// objects.
-const MOTION_VECTORS: bool = true;
-
 /// The sign and axis convention applied to the decoded UV motion before FSR. The decode math
 /// follows the engine's velocity encoding (see `docs/mod/rendering/fsr.md`); only FSR's expected
 /// sign and Y direction is empirical, and a wrong sign is visually obvious (trails point
 /// backwards). UV is Y-down, hence the flipped Y.
 const MV_SIGN: (f32, f32) = (1.0, -1.0);
-
-/// Correct the motion vectors for stereo in the decode pass. The engine's velocity encodes
-/// `curUV - prevUV` with the per-eye current view-projection but the single sim-side center
-/// previous view-projection, so every static pixel carries a spurious depth-dependent parallax
-/// vector of opposite sign per eye, and FSR mis-reprojects each eye's temporal history: the
-/// per-eye shadow-edge flicker under head motion (issue #10). The correction re-anchors each
-/// vector at the eye's own previous pose ([`crate::stereo::VpHistory`]); a no-op without stereo
-/// disparity.
-const MV_STEREO_CORRECTION: bool = true;
-
-/// Cancel the camera jitter from the motion vectors in the decode pass. The engine measures
-/// `curUV` under the jittered projection, so every stored vector carries the frame's sub-pixel
-/// jitter as a constant offset, while FSR expects jitter-free motion. A correctness fix for
-/// whenever [`JITTER`] is on; a no-op while it is off.
-const MV_JITTER_CANCEL: bool = true;
 
 /// Build one eye's FSR context + UAV output texture at `width`x`height`, matching the chain color's
 /// format. Returns `None` on any failure (the caller then falls back to engine AA for this eye).
@@ -305,7 +255,7 @@ const FALLBACK_FRAME_MS: f32 = 1000.0 / 60.0;
 
 /// Read the live render camera's near/far/FOV and the real frame time. The vertical FOV is derived
 /// from the projection's `data[5]` (`= 1/tan(fovV/2)`) rather than `m_FOV`, which sidesteps the
-/// horizontal-vs-vertical question and is invariant under the jitter/reverse-Z we apply.
+/// horizontal-vs-vertical question and is invariant under the reverse-Z we apply.
 fn camera_params() -> CameraParams {
     // SAFETY: the camera-manager and clock singletons are valid once the engine is initialised; both
     // accessors null-check the underlying pointer.
@@ -333,88 +283,4 @@ fn camera_params() -> CameraParams {
         }
         params
     }
-}
-
-/// Apply the temporal sub-pixel jitter (camera projection and dispatch). FSR needs it to
-/// reconstruct sub-pixel detail, but it also excites a blob-scale shadow-term flicker whose
-/// mechanism is not identified (issue #10): every identified jitter coupling is fixed or ruled out
-/// (motion vectors, the post-chain double-run, the LOD dissolve, the shadow fit) and the flicker
-/// still tracks the jitter, so it is off: stability over sharpness.
-const JITTER: bool = false;
-
-/// The sign convention of the camera-side jitter (the clip-space translation on the projection);
-/// the dispatch side always reports FSR's canonical offset. The two sides must agree, or FSR
-/// de-jitters in the wrong direction and high-contrast detail pulses at the Halton cadence (the
-/// localised one-frame flicker of issue #10). `(1, 1)` is the FSR-documented `(2*jx/w, -2*jy/h)`
-/// mapping.
-const JITTER_SIGN: (f32, f32) = (1.0, 1.0);
-
-/// The scale on the jitter amplitude, applied consistently to the camera and the dispatch.
-const JITTER_SCALE: f32 = 1.0;
-
-/// FSR's sub-pixel jitter offset for the current frame, in **pixel space** (FSR's native unit, fed
-/// straight to the dispatch's `jitter`). `None` when the resolution is degenerate.
-///
-/// The phase index is the engine's per-real-frame counter (`m_FrameIndex`), so both eye dispatches in
-/// one frame share the same offset -- each eye's own FSR history then sees a clean per-frame-advancing
-/// Halton sequence. The applied camera jitter ([`apply_jitter_to_projection`]) reads the same counter,
-/// so the two always agree.
-pub fn current_jitter(render_width: u32, render_height: u32) -> Option<(f32, f32)> {
-    if render_width == 0 || render_height == 0 {
-        return None;
-    }
-    if !JITTER {
-        return None;
-    }
-    let phase_count = fsr_sys::jitter_phase_count(render_width as i32, render_width as i32);
-    if phase_count <= 0 {
-        return None;
-    }
-    // SAFETY: the render-frame counters live for the process; advanced once per frame in the prologue.
-    let index = unsafe {
-        jc3gi::graphics_engine::graphics_engine::get_render_frame_counters().m_FrameIndex as i32
-    };
-    // The amplitude scale applies here so the camera and the dispatch stay consistent (both read
-    // this function).
-    let (jx, jy) = fsr_sys::jitter_offset(index, phase_count);
-    Some((jx * JITTER_SCALE, jy * JITTER_SCALE))
-}
-
-/// Post-multiply FSR's sub-pixel jitter onto `proj` (in place), converting FSR's pixel-space offset to
-/// a clip-space translation: `proj' = proj * translate(2*jx/w, -2*jy/h, 0)`. This matches the engine's
-/// own `ApplySubsampleJitter` idiom (translation on the right, row-major), so it slots in where the
-/// engine's TAA jitter would have gone. The FSR docs' `-2*jy/h` sign (negative Y) is preserved.
-/// The clip-space (NDC) translation the camera jitter applies this frame, with the sign
-/// convention ([`JITTER_SIGN`]) folded in -- the exact value [`apply_jitter_to_projection`]
-/// adds to the projection. `None` when jitter is inactive. Also the source for the motion-vector
-/// jitter cancellation: the engine's velocity pass measures `curUV` under this translation, so every
-/// vector carries it as a constant per-frame offset.
-pub fn current_camera_jitter_ndc(render_width: u32, render_height: u32) -> Option<(f32, f32)> {
-    let (jx, jy) = current_jitter(render_width, render_height)?;
-    let (sign_x, sign_y) = JITTER_SIGN;
-    Some((
-        sign_x * 2.0 * jx / render_width as f32,
-        sign_y * -2.0 * jy / render_height as f32,
-    ))
-}
-
-pub fn apply_jitter_to_projection(proj: &mut Matrix4, render_width: u32, render_height: u32) {
-    // The camera-side sign convention ([`JITTER_SIGN`]) must agree with the canonical offset
-    // reported to the dispatch, or FSR de-jitters in the wrong direction and fine detail pulses at
-    // the Halton cadence.
-    let Some((ndc_x, ndc_y)) = current_camera_jitter_ndc(render_width, render_height) else {
-        return;
-    };
-
-    // Identity with the jitter in the row-major translation row (data[12], data[13]).
-    let jitter = Matrix4 {
-        #[rustfmt::skip]
-        data: [
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            ndc_x, ndc_y, 0.0, 1.0,
-        ],
-    };
-    *proj = *proj * jitter;
 }

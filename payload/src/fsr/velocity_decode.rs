@@ -59,9 +59,6 @@ pub struct DecodeInputs<'a> {
     pub sign: (f32, f32),
     /// The stereo clip-to-previous-clip reprojection matrices (center, eye), when active.
     pub reprojection: Option<(Matrix4, Matrix4)>,
-    /// The constant camera-jitter UV offset to cancel from every vector (FSR wants jitter-free
-    /// motion).
-    pub jitter_uv: (f32, f32),
 }
 
 /// The decode pass: the compute shader plus the per-eye output buffer (the MV target FSR reads) and a
@@ -184,7 +181,6 @@ impl VelocityDecode {
             depth,
             sign,
             reprojection,
-            jitter_uv,
         } = inputs;
         // SAFETY: `device.m_Device` is live; `velocity.m_Texture` / `depth.m_Texture` are the live
         // engine buffers.
@@ -241,7 +237,9 @@ impl VelocityDecode {
                 reproj_center: reproj_center.data,
                 reproj_eye: reproj_eye.data,
                 correction_enabled: u32::from(correction.is_some()),
-                jitter_uv: [jitter_uv.0, jitter_uv.1],
+                // The shader's jitter cancellation: the camera is not jittered, so there is no
+                // jitter offset to cancel.
+                jitter_uv: [0.0, 0.0],
                 _padding: 0,
             };
             std::ptr::copy_nonoverlapping(&params, mapped.pData as *mut Params, 1);

@@ -260,16 +260,15 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     {
         targets.push(target);
     }
-    let empty_handed =
-        SOCKETS.long_guns_dominant && gun_hands == [false; 2] && ticked.table_hands == [false; 2];
+    let empty_handed = gun_hands == [false; 2] && ticked.table_hands == [false; 2];
     if capabilities.dock {
         let draw = socket_candidates::DrawContext {
             dominant: config.acting_hand(),
             occupied: Hand::BOTH
                 .map(|hand| gun_hands[hand.index()] || ticked.table_hands[hand.index()]),
         };
-        let (draws, others) = socket_candidates(&ticked, &active, body.as_ref(), draw);
-        state.status.docks_followed = if SOCKETS.follow_docks { draws.len() } else { 0 };
+        let (draws, others) = socket_candidates(&ticked, &active, draw);
+        state.status.docks_followed = draws.len();
         targets.extend(draws.iter().map(|c| place.on_skeleton(c)));
         targets.extend(others.iter().map(|(c, usage)| match usage {
             SocketUse::NoFit => place.no_fit(c),
@@ -753,21 +752,18 @@ fn hands_holding(snapshot: &LoadoutSnapshot) -> [bool; 2] {
 
 /// The sockets' grab volumes in the cockpit frame, each its socket's size: the weapons on the
 /// sockets for the hands that may draw them, and apart from those, the free sockets that take a
-/// held weapon and the ones that do not, for the hand holding it. Off
-/// [`SocketTuning::follow_docks`](crate::controllers::weapons::volumes::SocketTuning::follow_docks),
-/// a socket with a landmark on the body (the hips, the shoulders, and the chest) is reached there
-/// rather than where its weapon is seen.
+/// held weapon and the ones that do not, for the hand holding it. Each socket is reached where its
+/// weapon is seen on the character's body, or where a held weapon would sit on it, as drawn (see
+/// [`crate::controllers::weapons::docks`]).
 fn socket_candidates(
     ticked: &Ticked,
     active: &ActiveHands,
-    body: Option<&BodyFrame>,
     draw: socket_candidates::DrawContext,
 ) -> (Vec<Candidate>, Vec<(Candidate, SocketUse)>) {
     socket_candidates::socket_candidates(
         ticked.sockets.as_ref(),
         active,
         ticked.character,
-        body,
         &SOCKETS,
         draw,
     )

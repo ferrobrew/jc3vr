@@ -278,7 +278,6 @@ impl ActionTravel {
         match inputs.kind {
             ActionKind::Slide | ActionKind::ChargingHandle => {
                 let catches = inputs.kind == ActionKind::Slide
-                    && config.lock_back
                     && inputs.magazine_in
                     && !inputs.feeds
                     && self.position >= config.pull_fraction;

@@ -14,7 +14,7 @@ use windows::Win32::Graphics::Direct3D11::{
 
 use crate::hud::{
     HudMode, binding,
-    depth::{DEPTH_SHIFT, DepthShift, DepthShiftStatus, MaskInputs},
+    depth::{DEPTH_SHIFT, DepthShift, DepthShiftStatus},
     quad::{HudQuad, PanelParams},
     state::resources::{Native, Retry, Surface},
     target::HudTarget,
@@ -253,60 +253,12 @@ impl HudState {
         *APPLIED_REDIRECT.lock() = None;
     }
 
-    /// The frame's dynamic panel distance: dispatch the depth-histogram pass, pick up the async
-    /// readback, and ease toward the policy's target (see [`crate::hud::depth`]). Falls back to
-    /// `base` when the pipeline cannot be built. Call once per frame (eye 0) with the engine
-    /// context mutex held.
-    pub fn depth_distance(
-        &mut self,
-        context: &windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext,
-        device: &jc3gi::graphics_engine::device::Device,
-        mode: HudMode,
-        base: f32,
-    ) -> f32 {
-        if self.depth_shift.is_none() {
-            match DepthShift::new(device) {
-                Ok(shift) => self.depth_shift = Some(shift),
-                Err(e) => {
-                    // Log the build failure once, not per frame; the next attempt happens on the
-                    // next frame regardless.
-                    static LOGGED: std::sync::atomic::AtomicBool =
-                        std::sync::atomic::AtomicBool::new(false);
-                    if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                        tracing::error!("hud depth: {e:#}");
-                    }
-                    return base;
-                }
-            }
-        }
-        let Some(shift) = self.depth_shift.as_mut() else {
-            return base;
-        };
-        // The histogram dispatch only runs for the histogram policy; the vehicle policy needs
-        // no GPU work. The mask uses the previous frame's corners (this frame's depend on the
-        // distance being computed) and the redirected HUD texture's alpha.
-        if DEPTH_SHIFT.use_depth_histogram
-            && let Some(graphics_engine) =
-                // SAFETY: the graphics engine is the live singleton on the render thread.
-                unsafe { jc3gi::graphics_engine::graphics_engine::GraphicsEngine::get() }
-        {
-            let hud_srv = self.target.as_ref().map(|t| t.color_srv().clone());
-            let mask = match (
-                DEPTH_SHIFT.mask_by_hud,
-                self.cached_corners,
-                self.current_pose,
-                &hud_srv,
-            ) {
-                (true, Some(corners), Some((pos, _)), Some(srv)) => Some(MaskInputs {
-                    camera_pos: pos,
-                    corners,
-                    hud_srv: srv,
-                }),
-                _ => None,
-            };
-            shift.sample(context, graphics_engine, &DEPTH_SHIFT, mask);
-        }
-        shift.distance(&DEPTH_SHIFT, mode, base)
+    /// The frame's dynamic panel distance, eased toward the policy's target (see
+    /// [`crate::hud::depth`]). Call once per frame (eye 0).
+    pub fn depth_distance(&mut self, mode: HudMode, base: f32) -> f32 {
+        self.depth_shift
+            .get_or_insert_with(DepthShift::default)
+            .distance(&DEPTH_SHIFT, mode, base)
     }
 
     /// The dynamic-distance state's live snapshot, for the debug UI.

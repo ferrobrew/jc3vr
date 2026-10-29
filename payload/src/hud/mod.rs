@@ -317,11 +317,11 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
         // looks around it.
         let freeze = crate::hooks::camera::vr_loading_view_active() || menu_world_lock();
         let (pos, rot) = hud.update_pose(freeze, head_pos, head_rotation);
-        // Dynamic panel distance: ease the panel toward the near field while the scene is close
+        // Dynamic panel distance: ease the panel toward the near field while riding a vehicle
         // (see `depth`). The base (far) distance is the configured one; full-screen UI always
         // reads far.
         let panel_distance = if cfg.depth_shift.enabled {
-            hud.depth_distance(context, device, mode, cfg.distance)
+            hud.depth_distance(mode, cfg.distance)
         } else {
             cfg.distance
         };

@@ -33,8 +33,6 @@ pub(super) struct Published {
     /// The address of the weapon of each hand's gun that the input tick reloads by hand, or zero,
     /// by [`Hand::index`].
     pub weapons: [usize; 2],
-    /// The reload button is left to the game's own reload.
-    pub button_native: bool,
     /// Each hand's weapon's bolt or pump is worked by hand after every shot, in place of the game's
     /// cycling, by [`Hand::index`].
     pub manual_action: [bool; 2],
@@ -77,9 +75,9 @@ pub(super) fn refused() -> u64 {
     SHARED.lock().refused
 }
 
-/// Whether to refuse a reload start for `character` (the local player's when it equals `local`),
-/// with the reload input at `reload_input`. Counts a refusal.
-pub(super) fn stops_reload(character: usize, local: usize, reload_input: f32) -> bool {
+/// Whether to refuse a reload start for `character` (the local player's when it equals `local`): the
+/// weapon is reloaded by hand. Counts a refusal.
+pub(super) fn stops_reload(character: usize, local: usize) -> bool {
     if character == 0 || character != local {
         return false;
     }
@@ -87,11 +85,7 @@ pub(super) fn stops_reload(character: usize, local: usize, reload_input: f32) ->
     let Some(p) = shared.fresh() else {
         return false;
     };
-    let stop = decide_stop(
-        p.weapons.iter().any(|&w| w != 0),
-        p.button_native,
-        reload_input > 0.0,
-    );
+    let stop = p.weapons.iter().any(|&w| w != 0);
     if stop {
         shared.refused += 1;
     }
@@ -131,12 +125,6 @@ pub(super) fn on_shot(weapon: usize, hand: Hand, magazine: i32) {
         hand,
         magazine,
     });
-}
-
-/// Whether to stop a reload start: the weapon is reloaded by hand, unless the reload button is
-/// left to the game and held.
-pub(super) fn decide_stop(reloaded_by_hand: bool, button_native: bool, button_held: bool) -> bool {
-    reloaded_by_hand && !(button_native && button_held)
 }
 
 /// Whether `published` holds the gun of `weapon` in `hand` from firing.
@@ -181,7 +169,6 @@ impl Shared {
 static SHARED: Mutex<Shared> = Mutex::new(Shared {
     published: Published {
         weapons: [0; 2],
-        button_native: false,
         manual_action: [false; 2],
         held: [false; 2],
     },
@@ -194,22 +181,12 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_reload_start_is_stopped_unless_the_button_is_left_to_the_game() {
-        assert!(decide_stop(true, false, false));
-        assert!(decide_stop(true, false, true));
-        assert!(decide_stop(true, true, false));
-        assert!(!decide_stop(true, true, true));
-        assert!(!decide_stop(false, false, false));
-    }
-
     const WIELDED: usize = 0x1000;
     const SECOND: usize = 0x2000;
 
     fn two_weapons() -> Published {
         Published {
             weapons: [SECOND, WIELDED],
-            button_native: false,
             manual_action: [true, false],
             held: [false, true],
         }

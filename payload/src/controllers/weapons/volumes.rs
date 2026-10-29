@@ -48,8 +48,6 @@ pub const SOCKETS: SocketTuning = SocketTuning {
         offset_m: Vec3::new(0.0, -0.16, -0.14),
         radius_m: 0.09,
     },
-    follow_docks: true,
-    long_guns_dominant: true,
 };
 
 /// The pouches' fixed placement. Each pouch's centre is a few centimetres out from the body's
@@ -64,22 +62,13 @@ pub const POUCHES: PouchTuning = PouchTuning {
 /// The body's sockets: how near a hand must come to each, and where they are.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct SocketTuning {
-    /// The sockets on both hips: how near a hand must come, and where they are on the body
-    /// without `follow_docks`.
+    /// The sockets on both hips: how near a hand must come.
     pub hip: VolumeSpec,
     /// The sockets over the shoulders, the right one where the game docks the two-handed slot and
     /// the left one where it docks the special slot, and the outer back's reach.
     pub shoulder: VolumeSpec,
     /// The socket on the chest.
     pub chest: VolumeSpec,
-    /// Reach each socket where its weapon is seen on the character's body, or where a held weapon
-    /// would sit on it, as drawn (see [`crate::controllers::weapons::docks`]). Off, the hips, the
-    /// shoulders, and the chest are reached at the body's landmarks.
-    pub follow_docks: bool,
-    /// With no weapon in either hand, only the dominant hand draws a long gun off the back, so the
-    /// trigger that fires it, the tethers' retract, the pouches, and the wrist detonator stay where
-    /// they were. The off-hand still draws one while the other hand holds a weapon.
-    pub long_guns_dominant: bool,
 }
 
 /// The pouches on the front of the body: the magazine pouch at the front of the belt on the free
@@ -147,43 +136,6 @@ impl BodyFrame {
     fn shoulder_width(&self) -> f32 {
         self.skeleton.shoulders[0].distance(self.skeleton.shoulders[1])
     }
-}
-
-/// The sockets' volumes at the body's landmarks on `frame`: each hip, each shoulder, and the chest,
-/// in that order, for either hand. The outer back has no landmark of its own. The sockets are
-/// placed here only while they do not sit on their weapons
-/// ([`SocketTuning::follow_docks`]).
-pub fn socket_landmarks(frame: &BodyFrame, config: &SocketTuning) -> Vec<Candidate> {
-    let mut out = Vec::with_capacity(5);
-    for side in Hand::BOTH {
-        out.push(place(
-            GrabVolume::Socket(Socket::Hip(side)),
-            hip(frame, side),
-            frame.pelvis,
-            &config.hip,
-            side,
-            None,
-        ));
-    }
-    for side in Hand::BOTH {
-        out.push(place(
-            GrabVolume::Socket(Socket::Shoulder(side)),
-            frame.skeleton.shoulders[side.index()],
-            frame.chest,
-            &config.shoulder,
-            side,
-            None,
-        ));
-    }
-    out.push(place(
-        GrabVolume::Socket(Socket::Chest),
-        frame.skeleton.chest(),
-        frame.chest,
-        &config.chest,
-        Hand::Right,
-        None,
-    ));
-    out
 }
 
 /// Keep the draws off the back for the dominant hand while neither hand holds a weapon (`empty`):
@@ -351,12 +303,6 @@ const CHEST_POUCH_OUT_FRACTION: f32 = 0.52;
 /// How far in front of the shoulder joints' line the front of the chest is, metres: a little deeper
 /// than the belly.
 const CHEST_FRONT_M: f32 = 0.02 + body::EYES_FORWARD_OF_SHOULDERS;
-
-/// The hip landmark on `side`: as far out as the shoulder joint, at the hip joints.
-fn hip(frame: &BodyFrame, side: Hand) -> Vec3 {
-    let out = frame.shoulder_width() * 0.5 * side_sign(side);
-    frame.skeleton.hip_centre() + frame.pelvis * Vec3::new(out, 0.0, 0.0)
-}
 
 /// The belt's front landmark on `side`: on the belly's surface at the belt's height, at the front
 /// of the hip on that side.

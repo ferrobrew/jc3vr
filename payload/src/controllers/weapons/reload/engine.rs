@@ -19,10 +19,7 @@ use detours_macro::detour;
 use glam::Mat4;
 use jc3gi::{
     animation::symbol_table::EventIdSymbolTable,
-    character::{
-        character::{Character, WeaponInput},
-        inventory::Inventory,
-    },
+    character::{character::Character, inventory::Inventory},
     equipment::weapon::{
         AmmunitionType, DoActWeaponComponent, ModelAttachementWeaponComponent, ReloadType,
         SniperWeapon, WeaponBase, WeaponComponentType, WeaponData, WeaponInputs,
@@ -537,14 +534,9 @@ pub unsafe fn gun_address(address: usize, index: usize) -> Option<usize> {
 /// The local player's reload start, refused while the weapon is reloaded by hand (see [`gate`]).
 #[detour(address = jc3gi::character::character::Character::StartReloadingWieldingWeapon_ADDRESS)]
 fn start_reloading_wielding_weapon(character: *mut Character) {
-    let reload_input = unsafe { character.as_ref() }.map_or(0.0, |c| {
-        c.m_WeaponInputs[WeaponInput::E_INPUT_RELOAD as usize]
-    });
     let local = crate::controllers::hands::ik::local_character();
     // The per-hand tick's guns each ask for the wielded weapon's reload from their own check.
-    if empty::refuses_check_request(character)
-        || gate::stops_reload(character as usize, local, reload_input)
-    {
+    if empty::refuses_check_request(character) || gate::stops_reload(character as usize, local) {
         return;
     }
     START_RELOADING_WIELDING_WEAPON

@@ -1,16 +1,16 @@
-//! `NStateTask_InputLoco*` detours: the scoped aim-state shim behind [`FORCE_FPS_MOVEMENT`].
+//! The on-foot locomotion task detours: the task counters, the jump's aim-facing suppression, the
+//! idle fidget hold, the fall steering, and the orientation, displacement, start, and speed
+//! overrides that pin the body to the camera or the headpose's heading.
 //!
 //! The on-foot locomotion tasks choose between run/steer (the body rotates toward the movement
 //! direction) and aim-relative strafe (the body faces the aim reference, the directional keys
 //! strafe) by reading [`Character::m_AimFlags`] -- the same flags that drive the weapon raise, the
-//! reticle, and auto-aim. Forcing the flags globally would drag all of that in, so the shim forces
-//! them only for the duration of each locomotion task's `Update` and restores them afterwards: the
-//! movement branch always sees "aiming", the aim system never does.
+//! reticle, and auto-aim -- so the overrides here act on the orientation and displacement
+//! evaluators rather than on the flags.
 
 use std::{
     ffi::c_void,
     sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, Instant},
 };
 
 use detours_macro::detour;
@@ -18,7 +18,6 @@ use jc3gi::{
     blackboard::{ObjectBlackboard, PersistenceType},
     camera::game_camera_manager::GameCameraManager,
     character::character::{AimState, Character},
-    equipment::weapon::WeaponBase,
     input::{
         input_action_map::{Action, LocalPlayerActionMap},
         locomotion::{CharacterMovementSettings, get_NCharacter_ActMoveNoAim},
@@ -31,11 +30,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     config::Config,
-    controllers::{aim::gun::held_weapon, scheme},
-    headpose::{
-        self,
-        sim::{HeadMode, LatchState},
-    },
+    headpose::sim::{HeadMode, LatchState},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -54,15 +49,6 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&GET_AIM_MOVE_ANGLE_BINDER)
 }
 
-/// Force the aim-relative (strafe) locomotion acts on foot, instead of the third-person run mode
-/// where the directional keys rotate the whole body: the local player's aim flags are forced to the
-/// aim-relative state only while each locomotion task's update runs, and restored afterwards, so the
-/// aim system (reticle, auto-aim, ADS) never sees the forced state. Off: the aim-loco acts are
-/// combat-stance animations (arms raised, body bladed, the pose baked into the animations), and the
-/// continuous body-yaw-tracks-camera behaviour of real aiming is driven by a separate aim-gated
-/// system the shim does not activate. Kept as the acts half of an eventual solution.
-const FORCE_FPS_MOVEMENT: bool = false;
-
 /// The tracking turn rate: the maximum yaw step, in degrees per orientation update (one per frame),
 /// passed to the orientation executor while the body is pinned to the camera or the headpose's
 /// heading. Positive, since the executor divides by it.
@@ -73,16 +59,15 @@ const FACE_CAMERA_TURN_STEP: f32 = 10.0;
 /// slide strafe moves the body along lateral and backward input.
 const FACE_CAMERA_INPUT_CONE_DEG: f32 = 180.0;
 
-/// Diagnostic counters for the Game tab, so hook liveness and the shim's activity are visible
-/// in-game: how often each shimmed task ran, how often the shim actually forced the aim state,
-/// and how often the orientation executor was forced into face-dir tracking.
+/// Diagnostic counters for the debug UI, so hook liveness and the overrides' activity are visible
+/// in-game: how often each locomotion task ran, and how often the orientation executor was forced
+/// into face-dir tracking.
 pub static MOVE_TASK_CALLS: AtomicU64 = AtomicU64::new(0);
 pub static AIM_RELATIVE_TASK_CALLS: AtomicU64 = AtomicU64::new(0);
 /// How often the orientation evaluator ran for the local player. Unlike the task counters above,
 /// this advances every on-foot frame including idle (the move/aim tasks stop running while idle),
 /// which is what makes it usable as the headpose sim's on-foot signal.
 pub static ORIENTATION_EVAL_CALLS: AtomicU64 = AtomicU64::new(0);
-pub static SHIMMED_CALLS: AtomicU64 = AtomicU64::new(0);
 pub static FACE_CAMERA_CALLS: AtomicU64 = AtomicU64::new(0);
 pub static SLIDE_CALLS: AtomicU64 = AtomicU64::new(0);
 pub static SKIPPED_STARTS: AtomicU64 = AtomicU64::new(0);
@@ -93,11 +78,7 @@ pub static INSTANT_SPEED_FLOORS: AtomicU64 = AtomicU64::new(0);
 )]
 fn input_loco_move_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) {
     MOVE_TASK_CALLS.fetch_add(1, Ordering::Relaxed);
-    with_forced_aim_state(ctx, || {
-        with_head_forward_weapon_aim(ctx, || {
-            INPUT_LOCO_MOVE_TASK_UPDATE.get().unwrap().call(ctx, p1, p2);
-        });
-    });
+    INPUT_LOCO_MOVE_TASK_UPDATE.get().unwrap().call(ctx, p1, p2);
 }
 
 #[detour(
@@ -105,22 +86,17 @@ fn input_loco_move_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut
 )]
 fn input_loco_aim_relative_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) {
     AIM_RELATIVE_TASK_CALLS.fetch_add(1, Ordering::Relaxed);
-    with_forced_aim_state(ctx, || {
-        with_head_forward_weapon_aim(ctx, || {
-            INPUT_LOCO_AIM_RELATIVE_TASK_UPDATE
-                .get()
-                .unwrap()
-                .call(ctx, p1, p2);
-        });
-    });
+    INPUT_LOCO_AIM_RELATIVE_TASK_UPDATE
+        .get()
+        .unwrap()
+        .call(ctx, p1, p2);
 }
 
 /// The airborne (jump) actuator. Its aim-target-facing branch turns the body toward the weapon-aim
 /// target while [`AimState::m_AimingWeapon`] is set, and in VR that target follows the HMD gaze, so a
 /// head turn yaws the body mid-jump with no stick input. While the head is decoupled (the VR source),
 /// clear the aim bit around the update for the local player so the jump takes its non-aiming fallback
-/// (current forward plus the stick-gated steer) -- the mirror of [`with_forced_aim_state`], clearing
-/// rather than forcing. Restored immediately; the character updates on its own worker thread, so the
+/// (current forward plus the stick-gated steer). Restored immediately; the character updates on its own worker thread, so the
 /// temporary clear is invisible to the aim system. Passes straight through with the toggle off, off
 /// the VR source, or for a non-local character.
 #[detour(
@@ -133,8 +109,7 @@ fn movement_jump_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c
         None
     };
     // Clear the weapon-aim bit around the update so its aim-target-facing branch takes the
-    // non-aiming fallback (mirror of `with_forced_aim_state`, clearing rather than forcing). This
-    // covers only the aim-target facing path; the stick-gated air-steer is handled separately in
+    // non-aiming fallback. This covers only the aim-target facing path; the stick-gated air-steer is handled separately in
     // `update_fall_steering`.
     match character {
         Some(character) => {
@@ -213,228 +188,6 @@ fn update_fall_steering(
     }
     result
 }
-
-/// Run `call` (the wrapped task update) with the local player's aim flags forced to the
-/// aim-relative state, restoring them afterwards. Passes straight through when the toggle is off,
-/// the context has no character, or the character is not the local player. The restore makes the
-/// force invisible to everything outside the wrapped call; the character updates on its own worker
-/// thread, so nothing else reads the flags mid-task.
-fn with_forced_aim_state(ctx: *mut StateContext, call: impl FnOnce()) {
-    let character = if FORCE_FPS_MOVEMENT {
-        unsafe { character_from_context(ctx) }
-            .filter(|c| c.m_IsLocalCharacter)
-            .map(|c| c as *mut Character)
-    } else {
-        None
-    };
-    let Some(character) = character else {
-        call();
-        return;
-    };
-
-    // No Rust reference is retained while the task and its nested scopes access the character.
-    let saved = unsafe { (*character).m_AimFlags };
-    let mut forced = saved | AimState::m_AimingWeapon;
-    // Mimic the game's own "was aiming last frame" latch: on the first shimmed frame after a gap
-    // (loco tasks stopped running -- idle, vehicle, toggle off), leave `m_WasAiming` clear so the
-    // task queues the one-shot transition act that moves the animation state machine into the
-    // aim-relative family; on contiguous frames set it so the steady acts are queued instead. The
-    // steady acts alone are dropped by the rule system unless that transition has run, which is
-    // what made the strafe engage only sporadically. When really aiming, the saved flags already
-    // carry the game's own latch and are left alone.
-    let now = Instant::now();
-    let contiguous = LAST_SHIM_AT
-        .lock()
-        .replace(now)
-        .is_some_and(|last| now.duration_since(last) < SHIM_CONTINUITY);
-    if !saved.intersects(AimState::m_AimingWeapon | AimState::m_AimingGrapple) && contiguous {
-        forced |= AimState::m_WasAiming;
-    }
-
-    unsafe { (*character).m_AimFlags = forced };
-    let _restore = AimFlagsGuard { character, saved };
-    SHIMMED_CALLS.fetch_add(1, Ordering::Relaxed);
-    call();
-}
-
-/// Temporarily aim the local player's wielded weapon at a point level ahead of the head while
-/// the FPS locomotion task evaluates its strafe direction. The task reads the weapon's stored aim
-/// point, while the controller gun hook normally writes a hand point there; keeping the original
-/// value outside this scope prevents the locomotion shim from changing firing or aim state.
-fn with_head_forward_weapon_aim(ctx: *mut StateContext, call: impl FnOnce()) {
-    let eligible = Config::lock_query(|c| {
-        FORCE_FPS_MOVEMENT && c.controllers.enabled && c.controllers.aim.gun
-    }) && scheme::is_controllers();
-    let Some(character) = (eligible.then(|| unsafe { character_from_context(ctx) }))
-        .flatten()
-        .filter(|c| c.m_IsLocalCharacter)
-    else {
-        call();
-        return;
-    };
-    let Some(weapon) = (unsafe { held_weapon_ptr(character) }) else {
-        call();
-        return;
-    };
-    let head = headpose::query();
-    let body_forward = -glam::Mat4::from(character.m_WorldMatrixT1)
-        .z_axis
-        .truncate();
-    let distance = crate::controllers::aim_state::NEUTRAL_AIM_DISTANCE_M;
-    let Some(point) =
-        strafe_reference_point(head.position, head.orientation, body_forward, distance)
-    else {
-        call();
-        return;
-    };
-    // SAFETY: `held_weapon_ptr` returned the live selected weapon, and no reference to it is held.
-    let original = unsafe { (*weapon).m_AimTargetPosition };
-    unsafe {
-        (*weapon).m_AimTargetPosition = Vector3 {
-            data: point.to_array(),
-        };
-    }
-    let _restore = WeaponAimPointGuard { weapon, original };
-    call();
-}
-
-/// The selected weapon in the local player's hands, as the inventory's own pointer for the scoped
-/// target override. The ownership and wielding rules are [`held_weapon`]'s.
-///
-/// # Safety
-///
-/// `character` must be the live local player character.
-unsafe fn held_weapon_ptr(character: &Character) -> Option<*mut WeaponBase> {
-    let held = unsafe { held_weapon(character) }?;
-    character
-        .m_Inventory
-        .m_Weapons
-        .iter()
-        .map(|weapon| weapon.px)
-        .find(|&px| std::ptr::eq(px, held))
-}
-
-/// The point the locomotion shim aims the weapon at: `distance` metres (at least
-/// [`MIN_STRAFE_REFERENCE_M`]) ahead of the head along the head's forward flattened onto the
-/// horizontal plane, or the body's when the head looks straight up or down. The engine takes the
-/// strafe direction from this point minus the character's position, so a point that keeps the
-/// head's pitch would shrink toward the head as the player looks down, leaving only the head's
-/// small offset from the body to pick the strafe act. `None` when neither forward is horizontal
-/// enough to use.
-fn strafe_reference_point(
-    head_position: glam::Vec3,
-    head_orientation: glam::Quat,
-    body_forward: glam::Vec3,
-    distance: f32,
-) -> Option<glam::Vec3> {
-    let flat = |v: glam::Vec3| {
-        glam::Vec3::new(v.x, 0.0, v.z)
-            .try_normalize()
-            .filter(|f| f.is_finite())
-    };
-    let head_forward = flat(head_orientation * glam::Vec3::NEG_Z)
-        .filter(|_| (head_orientation * glam::Vec3::NEG_Z).y.abs() < MAX_HEAD_FORWARD_Y);
-    let forward = head_forward.or_else(|| flat(body_forward))?;
-    let point = head_position + forward * distance.max(MIN_STRAFE_REFERENCE_M);
-    point.is_finite().then_some(point)
-}
-
-/// The nearest the strafe reference may sit ahead of the head, metres: far enough that the head's
-/// offset from the body cannot turn the direction the engine derives from it.
-const MIN_STRAFE_REFERENCE_M: f32 = 5.0;
-/// The vertical component of the head's unit forward beyond which its horizontal heading is too
-/// short to trust (about 85° of pitch), and the body's forward is used instead.
-const MAX_HEAD_FORWARD_Y: f32 = 0.996;
-
-struct AimFlagsGuard {
-    character: *mut Character,
-    saved: AimState,
-}
-
-impl Drop for AimFlagsGuard {
-    fn drop(&mut self) {
-        // SAFETY: the local character remains live for the synchronous task call.
-        unsafe { (*self.character).m_AimFlags = self.saved };
-    }
-}
-
-struct WeaponAimPointGuard {
-    weapon: *mut WeaponBase,
-    original: Vector3,
-}
-
-impl Drop for WeaponAimPointGuard {
-    fn drop(&mut self) {
-        // SAFETY: the guard is created only for the live selected weapon and does not outlive the
-        // wrapped task call that owns the character update.
-        unsafe {
-            (*self.weapon).m_AimTargetPosition = self.original;
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const BODY_FORWARD: glam::Vec3 = glam::Vec3::X;
-
-    #[test]
-    fn the_strafe_reference_follows_the_head_heading() {
-        let position = glam::Vec3::new(1.0, 1.7, -2.0);
-        let orientation = glam::Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
-        let point = strafe_reference_point(position, orientation, BODY_FORWARD, 25.0).unwrap();
-
-        assert!((point - glam::Vec3::new(-24.0, 1.7, -2.0)).length() < 1e-5);
-    }
-
-    #[test]
-    fn the_strafe_reference_is_level_when_looking_down() {
-        let position = glam::Vec3::new(-2.0, 1.6, 3.0);
-        let heading = glam::Quat::from_rotation_y(0.4);
-        let level = strafe_reference_point(position, heading, BODY_FORWARD, 25.0).unwrap();
-        for pitch in [-0.3, -1.0, -1.4, 0.8] {
-            let orientation = heading * glam::Quat::from_rotation_x(pitch);
-            let point = strafe_reference_point(position, orientation, BODY_FORWARD, 25.0).unwrap();
-            assert!(point.distance(level) < 1e-4, "pitch {pitch}");
-            assert_eq!(point.y, position.y);
-        }
-    }
-
-    #[test]
-    fn a_vertical_head_falls_back_to_the_body_forward() {
-        let position = glam::Vec3::new(0.0, 1.6, 0.0);
-        let down = glam::Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2);
-        let point = strafe_reference_point(position, down, BODY_FORWARD, 10.0).unwrap();
-        assert!(point.distance(glam::Vec3::new(10.0, 1.6, 0.0)) < 1e-4);
-        let tilted_body = glam::Vec3::new(0.0, -0.5, -0.5);
-        let point = strafe_reference_point(position, down, tilted_body, 10.0).unwrap();
-        assert!(point.distance(glam::Vec3::new(0.0, 1.6, -10.0)) < 1e-4);
-        assert_eq!(
-            strafe_reference_point(position, down, glam::Vec3::Y, 10.0),
-            None
-        );
-    }
-
-    #[test]
-    fn the_strafe_reference_is_never_at_the_head() {
-        let position = glam::Vec3::new(-2.0, 0.4, 3.0);
-        for distance in [0.0, -3.0, f32::NAN] {
-            let point =
-                strafe_reference_point(position, glam::Quat::IDENTITY, BODY_FORWARD, distance)
-                    .unwrap();
-            assert!((point.distance(position) - MIN_STRAFE_REFERENCE_M).abs() < 1e-5);
-        }
-    }
-}
-
-/// The longest gap between shimmed task updates still treated as one contiguous run of forcing;
-/// anything longer re-queues the transition act. Comfortably above one frame at any playable frame
-/// rate, and short enough that a real interruption (vehicle, idle) restarts the transition.
-const SHIM_CONTINUITY: Duration = Duration::from_millis(250);
-
-/// When the shim last forced the local player's flags; `None` until the first shimmed call.
-static LAST_SHIM_AT: Mutex<Option<Instant>> = Mutex::new(None);
 
 /// Recover the [`Character`] from a state-task context. The context's first pointer addresses a
 /// sub-object at character + 8; the game type-checks that sub-object against `CCharacter::TYPE_ID`

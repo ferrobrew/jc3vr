@@ -72,27 +72,21 @@ impl StereoState {
 /// velocity-decode pass uses these snapshots to re-anchor each vector at the eye's own previous pose
 /// (`fsr::velocity_decode`).
 pub struct VpHistory {
-    /// The previous frame's center (un-offset, unjittered) view-projection -- the matrix the engine's
+    /// The previous frame's center (un-offset) view-projection -- the matrix the engine's
     /// velocity pass reprojects with.
     pub prev_center: Option<glam::Mat4>,
-    /// The previous frame's final per-eye view-projections (jitter and eye offset applied).
+    /// The previous frame's final per-eye view-projections (eye offset applied).
     pub prev_eye: [Option<glam::Mat4>; 2],
     /// This frame's center view-projection, snapshotted before the per-eye patches.
     pub cur_center: Option<glam::Mat4>,
     /// This frame's final per-eye view-projections (the matrices each dispatch rasterizes with).
     pub cur_eye: [Option<glam::Mat4>; 2],
-    /// This frame's final per-eye view matrices (jitter and eye offset applied). Used by CPU-side
+    /// This frame's final per-eye view matrices (eye offset applied). Used by CPU-side
     /// projection paths such as the light-glow sprite, which cannot be fixed by shader constant remaps.
     pub cur_eye_view: [Option<glam::Mat4>; 2],
-    /// This frame's final per-eye reverse-Z projections (jitter and eye offset applied). Paired with
+    /// This frame's final per-eye reverse-Z projections (eye offset applied). Paired with
     /// [`cur_eye_view`](Self::cur_eye_view) for rebuilding the per-eye offset view-projection.
     pub cur_eye_projection_f: [Option<glam::Mat4>; 2],
-    /// The UV-space shift the previous frame's camera jitter applied to every projected position
-    /// (zero when jitter was off) -- the previous-frame half of the motion-vector jitter
-    /// cancellation.
-    pub prev_jitter_uv: (f32, f32),
-    /// This frame's camera-jitter UV shift.
-    pub cur_jitter_uv: (f32, f32),
 }
 impl VpHistory {
     const fn new() -> Self {
@@ -103,8 +97,6 @@ impl VpHistory {
             cur_eye: [None, None],
             cur_eye_view: [None, None],
             cur_eye_projection_f: [None, None],
-            prev_jitter_uv: (0.0, 0.0),
-            cur_jitter_uv: (0.0, 0.0),
         }
     }
 
@@ -115,7 +107,6 @@ impl VpHistory {
         self.prev_eye = [self.cur_eye[0].take(), self.cur_eye[1].take()];
         self.cur_eye_view = [None, None];
         self.cur_eye_projection_f = [None, None];
-        self.prev_jitter_uv = std::mem::take(&mut self.cur_jitter_uv);
     }
 
     /// The two clip-to-previous-clip reprojection matrices for `eye`: the center reprojection the

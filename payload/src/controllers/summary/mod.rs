@@ -70,7 +70,7 @@ use crate::{
             eligibility::{Eligibility, Omission},
             labels::{HOLD_KEY, ModText, Text},
         },
-        weapons::{reload::tuning::RELOAD, wheel::tuning::WHEEL},
+        weapons::wheel::tuning::WHEEL,
     },
     vr::input::sources,
 };
@@ -154,7 +154,7 @@ pub(crate) fn refresh(
             magazine: weapons.reload.enabled,
             belt_reload: weapons.reload.enabled && weapons.reload.belt.enabled,
             flick_eject: weapons.reload.enabled && weapons.reload.flick_eject,
-            work_action: weapons.reload.enabled && RELOAD.chamber,
+            work_action: weapons.reload.enabled,
             grenade_throw: weapons.grenade_throw,
             c4_throw: weapons.c4_throw,
             wrist_detonator: weapons.wrist_detonator,

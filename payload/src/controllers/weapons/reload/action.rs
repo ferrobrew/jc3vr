@@ -97,7 +97,7 @@ impl State {
         // action to work.
         let workable_gun = |hand: Hand| {
             tick.gun(hand)
-                .filter(|(w, _)| workable(&w.plan, reload))
+                .filter(|(w, _)| workable(&w.plan))
                 .map(|(w, g)| (hand, w, g))
         };
         let target = Hand::BOTH
@@ -185,7 +185,7 @@ impl State {
         });
         let guns = Hand::BOTH.map(|hand| {
             tick.gun(hand)
-                .filter(|(w, _)| workable(&w.plan, reload))
+                .filter(|(w, _)| workable(&w.plan))
                 .map(|(w, g)| (*w, *g, *self.records.get(w.key)))
         });
         let with_gun = || Hand::BOTH.into_iter().filter(|h| guns[h.index()].is_some());
@@ -361,15 +361,14 @@ impl State {
                 .map(|(weapon, gun)| (*self.records.get(weapon.key), gun.entry()))
         });
         let worked_gun = Hand::BOTH.into_iter().find(|&hand| {
-            tick.gun(hand)
-                .is_some_and(|(w, _)| workable(&w.plan, reload))
+            tick.gun(hand).is_some_and(|(w, _)| workable(&w.plan))
                 && records[hand.index()].is_some_and(|(r, e)| r.chambers[e] == Chamber::Empty)
         });
         let actions = Hand::BOTH.map(|hand| {
             let i = hand.index();
             let (weapon, gun) = tick.gun(hand)?;
             let (record, e) = records[i]?;
-            if !chambering(&weapon.plan, reload) {
+            if !chambering(&weapon.plan) {
                 return None;
             }
             let kind = weapon.plan.action;
@@ -433,12 +432,12 @@ impl State {
 
 /// Whether the plan's slide catches at the rear on an empty magazine.
 pub(super) fn locks_back(plan: &ReloadPlan, reload: &Reload) -> bool {
-    plan.action == ActionKind::Slide && reload.action.physical && reload.action.lock_back
+    plan.action == ActionKind::Slide && reload.action.physical
 }
 
 /// Whether the plan's action is the mod's to work.
-fn workable(plan: &ReloadPlan, reload: &Reload) -> bool {
-    chambering(plan, reload) && plan.action != ActionKind::None
+fn workable(plan: &ReloadPlan) -> bool {
+    chambering(plan) && plan.action != ActionKind::None
 }
 
 /// Where a gun's action lies in the cockpit frame.

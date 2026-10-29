@@ -188,15 +188,7 @@ fn action_candidates_preserve_magazine_claims_settings_and_geometry_requirements
             .is_none()
     );
     state.extraction_blocks_belt[Hand::Right.index()] = false;
-    let mut reload = Reload::of(&config.weapons.reload);
-    reload.chamber = false;
-    reload.manual_action = false;
-    assert!(
-        state
-            .handle_candidate(&tick, Some(Hand::Left), &reload)
-            .is_none()
-    );
-    reload.chamber = true;
+    let reload = Reload::of(&config.weapons.reload);
     tick.guns[Hand::Right.index()].as_mut().unwrap().handle = None;
     assert!(
         state
@@ -557,9 +549,10 @@ fn a_magazine_out_cycle_neither_discards_refunds_nor_feeds() {
 
 #[test]
 fn an_initially_empty_gun_cycles_without_producing_a_round() {
-    let (config, mut state, mut tick, mut engine) = fixture(ActionKind::Slide, Hand::Right, 0);
-    let mut reload = Reload::of(&config.weapons.reload);
-    reload.action.lock_back = false;
+    // A charging handle, which does not catch at the rear on an empty magazine as a slide does.
+    let (config, mut state, mut tick, mut engine) =
+        fixture(ActionKind::ChargingHandle, Hand::Right, 0);
+    let reload = Reload::of(&config.weapons.reload);
     let rear = Vec3::Z * tick.weapons[0].unwrap().plan.travel_m;
     step_with(
         &mut state,

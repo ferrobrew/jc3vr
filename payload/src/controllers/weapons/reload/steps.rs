@@ -36,7 +36,7 @@ use crate::controllers::{
             retained::{self, SeatOutcome},
             serial,
             travel::ActionTravel,
-            tuning::{LooseTuning, RELOAD, Reload, ReloadButton},
+            tuning::{LooseTuning, Reload},
             wells,
         },
     },
@@ -175,10 +175,7 @@ impl State {
                 let topology = unsafe { engine::gun_topology(base) };
                 let gun_map = Hand::BOTH.map(|hand| {
                     let gun = guns[hand.index()].filter(|gun| gun.weapon == slot)?;
-                    Some((
-                        gun.entry(),
-                        RELOAD.manual_action && weapon_tick.plan.action.manual(),
-                    ))
+                    Some((gun.entry(), weapon_tick.plan.action.manual()))
                 });
                 let partition = ammo::observe(
                     weapon.address,
@@ -192,7 +189,7 @@ impl State {
                         chambers: record.chambers,
                         topology,
                         guns: gun_map,
-                        active: chambering(&weapon_tick.plan, &Reload::of(&config.weapons.reload)),
+                        active: chambering(&weapon_tick.plan),
                     },
                 );
                 weapon_tick.ammo_owned = partition.is_some();
@@ -238,7 +235,7 @@ impl State {
             return None;
         }
         let (weapon, gun) = tick.gun(free.other())?;
-        if !chambering(&weapon.plan, reload) || weapon.plan.action == ActionKind::Pump {
+        if !chambering(&weapon.plan) || weapon.plan.action == ActionKind::Pump {
             return None;
         }
         let record = *self.records.get(weapon.key);
@@ -337,7 +334,7 @@ impl State {
             unlimited: weapon.reading.unlimited,
             out: weapon.reading.out,
             chamber: record.chambers[e],
-            action: (chambering(&weapon.plan, reload) && reload.action.physical)
+            action: (chambering(&weapon.plan) && reload.action.physical)
                 .then_some(record.travels[e]),
         })
     }
@@ -350,7 +347,7 @@ impl State {
         };
         let record = *self.records.get(weapon.key);
         let e = gun.entry();
-        let chambering = chambering(&weapon.plan, reload);
+        let chambering = chambering(&weapon.plan);
         self.belts[hand.index()].holds_fire()
             || self.pending_ejects[hand.index()].is_some()
             || self.extraction_hand() == Some(hand.other())
@@ -383,13 +380,12 @@ impl State {
                 .filter(|(w, _)| w.address == shot.weapon)
                 .map(|(_, gun)| gun.entry());
             let record = self.records.get(weapon.key);
-            if chambering(&weapon.plan, reload)
+            if chambering(&weapon.plan)
                 && let Some(entry) = entry
             {
                 let left = shot.magazine;
                 if !weapon.ammo_owned {
-                    record.chambers[entry] =
-                        chamber::after_shot(left, weapon.plan.action, reload.manual_action);
+                    record.chambers[entry] = chamber::after_shot(left, weapon.plan.action);
                 }
                 if locks_back(&weapon.plan, reload) && left <= 0 {
                     record.travels[entry].lock_back();
@@ -438,7 +434,7 @@ impl State {
         let reload = &Reload::of(&config.weapons.reload);
         let tapped = self.tap.step(inputs.reload_button, inputs.dt, reload.tap_s);
         let mut targets = [false; 2];
-        if tapped && reload.button == ReloadButton::Eject {
+        if tapped {
             let guns = Hand::BOTH.map(|hand| tick.guns[hand.index()].is_some());
             targets = eject::tap_targets(guns, tick.dominant);
         }
@@ -867,16 +863,16 @@ impl State {
     }
 }
 
-/// Whether the plan's chamber is the mod's to gate: the chamber is worked after running dry, or a
-/// bolt or a pump after every shot, and the action can be worked, by a handle the table places or
-/// on the foregrip.
-pub(super) fn chambering(plan: &ReloadPlan, reload: &Reload) -> bool {
-    let workable = match plan.action {
+/// Whether the plan's chamber is the mod's to gate: the action is worked by hand after the gun runs
+/// dry (a tactical reload skips it, and the belt reload works the action itself), and a bolt or a
+/// pump after every shot, so the gate needs an action that can be worked, by a handle the table
+/// places or on the foregrip.
+pub(super) fn chambering(plan: &ReloadPlan) -> bool {
+    match plan.action {
         ActionKind::None => false,
         ActionKind::Pump => true,
         _ => plan.handle.is_some(),
-    };
-    workable && (reload.chamber || (reload.manual_action && plan.action.manual()))
+    }
 }
 
 /// The tick's view of `weapon`, which `base` is, and its plan. `None` for a weapon the reload

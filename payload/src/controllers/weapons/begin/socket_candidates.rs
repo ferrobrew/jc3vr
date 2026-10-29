@@ -10,7 +10,7 @@ use crate::controllers::{
     loadout::Socket,
     weapons::{
         docks::{self, SocketUse, attachments::Sample},
-        volumes::{self, BodyFrame, SocketTuning},
+        volumes::{self, SocketTuning},
     },
 };
 
@@ -26,7 +26,6 @@ pub(super) fn socket_candidates(
     native: Option<&Sample>,
     active: &ActiveHands,
     character: Option<Mat4>,
-    body: Option<&BodyFrame>,
     holsters: &SocketTuning,
     draw: DrawContext,
 ) -> (Vec<Candidate>, Vec<(Candidate, SocketUse)>) {
@@ -34,7 +33,6 @@ pub(super) fn socket_candidates(
     provide_and_publish(
         native,
         frames.as_ref(),
-        body,
         holsters,
         draw,
         docks::publish_targets,
@@ -45,12 +43,11 @@ pub(super) fn socket_candidates(
 pub(crate) fn provide(
     native: &Sample,
     frames: &Frames,
-    body: Option<&BodyFrame>,
     holsters: &SocketTuning,
     draw: DrawContext,
 ) -> (Sample, Vec<Candidate>, Vec<(Candidate, SocketUse)>) {
-    let mut targets = native.targets(frames, body, holsters);
-    select_draw_offers(&mut targets, holsters, draw);
+    let mut targets = native.clone();
+    select_draw_offers(&mut targets, draw);
     let (draws, others) = candidates_from_sample(&targets, frames, holsters);
     (targets, draws, others)
 }
@@ -58,7 +55,6 @@ pub(crate) fn provide(
 fn provide_and_publish(
     native: Option<&Sample>,
     frames: Option<&Frames>,
-    body: Option<&BodyFrame>,
     holsters: &SocketTuning,
     draw: DrawContext,
     publish: impl FnOnce(Option<Sample>),
@@ -67,13 +63,13 @@ fn provide_and_publish(
         publish(None);
         return (Vec::new(), Vec::new());
     };
-    let (targets, draws, others) = provide(native, frames, body, holsters, draw);
+    let (targets, draws, others) = provide(native, frames, holsters, draw);
     publish(Some(targets));
     (draws, others)
 }
 
-fn select_draw_offers(sample: &mut Sample, holsters: &SocketTuning, draw: DrawContext) {
-    if !holsters.long_guns_dominant || draw.occupied != [false; 2] {
+fn select_draw_offers(sample: &mut Sample, draw: DrawContext) {
+    if draw.occupied != [false; 2] {
         return;
     }
     // The restriction depends on the socket and hand, not on pose availability.

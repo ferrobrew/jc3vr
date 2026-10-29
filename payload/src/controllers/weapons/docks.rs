@@ -37,9 +37,7 @@ use crate::{
             grab::{self, GrabRules, SocketMove},
         },
         weapons::{
-            docks::attachments::{
-                Attachment, Missing, Occupancy, Placement, PoseSource, Sample, TargetPolicy,
-            },
+            docks::attachments::{Attachment, Missing, Occupancy, Placement, PoseSource, Sample},
             grenade,
             hold::{act, armed, steal},
             inventory::{
@@ -131,7 +129,6 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
         owner: owner as *const Character as usize,
         at: Instant::now(),
         character: to_world,
-        policy: TargetPolicy::Native,
         attachments: Vec::new(),
     };
     let mut seen = Vec::new();
@@ -209,7 +206,6 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
             item: occupant.map(|item| item.id),
             source,
             pose,
-            native: None,
         };
         sample.attachments.push(attachment);
         if safe_occupant

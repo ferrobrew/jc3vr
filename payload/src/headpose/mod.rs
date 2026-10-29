@@ -88,7 +88,7 @@ pub fn query_prev() -> HeadPose {
 }
 
 /// The head's rotation *relative to the body frame*: how far the head is turned from neutral, with
-/// the body's own facing (and, under the sim source, its animation-posture swing) divided out. The
+/// the body's own facing divided out. The
 /// identity means the head faces exactly where the body does.
 ///
 /// Both sources compose their published world orientation as `body × (…) × this`, so this is the

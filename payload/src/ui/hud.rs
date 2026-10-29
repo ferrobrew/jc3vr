@@ -5,7 +5,7 @@ use std::time::Instant;
 use crate::{
     config,
     hud::{
-        HUD_STATE, StageSafeAreaReadout, aim, depth::DEPTH_SHIFT, stage_safe_area_readout,
+        HUD_STATE, StageSafeAreaReadout, aim, stage_safe_area_readout,
         world_markers::layout::StageFrame,
     },
 };
@@ -88,7 +88,6 @@ pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer
 
 pub(crate) fn status(ui: &mut egui::Ui) {
     let depth_status = HUD_STATE.lock().depth_status();
-    let use_depth_histogram = DEPTH_SHIFT.use_depth_histogram;
     ui.heading("Dynamic distance");
     match depth_status {
         Some(status) => {
@@ -96,31 +95,14 @@ pub(crate) fn status(ui: &mut egui::Ui) {
             let distance = status
                 .smoothed
                 .map_or("-".to_string(), |d| format!("{d:.2} m"));
-            match status.stats {
-                // The histogram statistics only exist while that policy runs.
-                Some(stats) if use_depth_histogram => {
-                    ui.label(format!(
-                        "Live: {state} at {distance} (near {:.0}%, p{:.2} m)",
-                        stats.near_occupancy * 100.0,
-                        stats.percentile_depth,
-                    ));
-                }
-                _ if use_depth_histogram => {
-                    ui.label(format!(
-                        "Live: {state} at {distance} (no depth samples yet)"
-                    ));
-                }
-                _ => {
-                    ui.label(format!(
-                        "Live: {state} at {distance} ({})",
-                        if status.near_engaged {
-                            "in a vehicle"
-                        } else {
-                            "not in a vehicle"
-                        },
-                    ));
-                }
-            }
+            ui.label(format!(
+                "Live: {state} at {distance} ({})",
+                if status.near_engaged {
+                    "in a vehicle"
+                } else {
+                    "not in a vehicle"
+                },
+            ));
         }
         None => {
             ui.label("Live: not sampled yet");

@@ -11,7 +11,7 @@ use crate::{
         input::{
             locomotion::{
                 AIM_RELATIVE_TASK_CALLS, FACE_CAMERA_CALLS, INSTANT_SPEED_FLOORS, MOVE_TASK_CALLS,
-                SHIMMED_CALLS, SKIPPED_STARTS, SLIDE_CALLS,
+                SKIPPED_STARTS, SLIDE_CALLS,
             },
             parachute::PARACHUTE_LOOK_STEER_SUPPRESSIONS,
             swim::{
@@ -83,11 +83,10 @@ fn swimming_readout(ui: &mut egui::Ui) {
 
 fn locomotion_readout(ui: &mut egui::Ui) {
     ui.label(format!(
-        "Loco task calls: move {}  aim-relative {}  shimmed {}  face-camera {}  slide {}  \
+        "Loco task calls: move {}  aim-relative {}  face-camera {}  slide {}  \
          starts-skipped {}  speed-floors {}",
         MOVE_TASK_CALLS.load(Ordering::Relaxed),
         AIM_RELATIVE_TASK_CALLS.load(Ordering::Relaxed),
-        SHIMMED_CALLS.load(Ordering::Relaxed),
         FACE_CAMERA_CALLS.load(Ordering::Relaxed),
         SLIDE_CALLS.load(Ordering::Relaxed),
         SKIPPED_STARTS.load(Ordering::Relaxed),

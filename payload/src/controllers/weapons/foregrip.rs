@@ -52,7 +52,6 @@ pub const FOREGRIP: ForegripTuning = ForegripTuning {
     fallback_distance_m: 0.32,
     min_span_m: 0.08,
     max_turn_deg: 70.0,
-    hold: true,
 };
 
 /// The foregrip's reach, blend, and limits, fixed at [`FOREGRIP`].
@@ -78,9 +77,6 @@ pub struct ForegripTuning {
     /// the foregrip, and the hold lets go once that passes the release distance, so an off-hand
     /// that crosses behind the holding hand cannot spin the weapon round.
     pub max_turn_deg: f32,
-    /// Hold the foregrip only while the off-hand's grip is held, letting go when it opens, as a
-    /// real foregrip is held. Off, the grip is a toggle: a press grabs and the next press lets go.
-    pub hold: bool,
 }
 
 /// The weapon's geometry in the holding hand's wrist frame.
@@ -121,9 +117,8 @@ pub struct Hold {
 /// Why a hold ended.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Release {
-    /// The off-hand pressed its grip again, with the grip a toggle.
-    GripPress,
-    /// The off-hand let go of its grip, with the grip held to hold ([`ForegripTuning::hold`]).
+    /// The off-hand let go of its grip: the foregrip is held only while the grip is, as a real
+    /// foregrip is held.
     GripLetGo,
     /// The off-hand moved away from the foregrip.
     MovedAway,
@@ -136,7 +131,6 @@ pub enum Release {
 impl Release {
     pub const fn label(self) -> &'static str {
         match self {
-            Release::GripPress => "grip press",
             Release::GripLetGo => "grip let go",
             Release::MovedAway => "moved away",
             Release::WeaponGone => "weapon gone",
@@ -431,8 +425,7 @@ pub fn step(
             inputs.hands[h.holder.index()],
             inputs.hands[h.holder.other().index()],
         ) {
-            _ if config.hold && !inputs.grip_held => Some(Release::GripLetGo),
-            _ if !config.hold && inputs.grab_pressed => Some(Release::GripPress),
+            _ if !inputs.grip_held => Some(Release::GripLetGo),
             (Some(holder), Some(off)) => moved_away(h, holder, off, config),
             _ => Some(Release::HandsGone),
         },
@@ -606,7 +599,6 @@ mod tests {
     fn config() -> ForegripTuning {
         ForegripTuning {
             blend_s: 0.0,
-            hold: false,
             ..FOREGRIP
         }
     }
@@ -741,30 +733,8 @@ mod tests {
     }
 
     #[test]
-    fn a_grab_engages_and_a_second_press_releases() {
-        let config = config();
-        let near = Vec3::new(0.0, 0.0, -0.4);
-        let (hold, t) = step(None, &inputs(near, true), DT, &config);
-        assert_eq!(t, Some(Transition::Grabbed));
-        let hold = hold.unwrap();
-        assert!(hold.engaged);
-        assert_eq!(hold.weight, 1.0);
-
-        let (still, t) = step(Some(hold), &inputs(near, false), DT, &config);
-        assert_eq!(t, None);
-        assert!(still.unwrap().engaged);
-
-        let (gone, t) = step(still, &inputs(near, true), DT, &config);
-        assert_eq!(t, Some(Transition::Released(Release::GripPress)));
-        assert_eq!(gone, None);
-    }
-
-    #[test]
     fn a_held_grip_holds_and_letting_go_releases() {
-        let config = ForegripTuning {
-            hold: true,
-            ..config()
-        };
+        let config = config();
         let near = Vec3::new(0.0, 0.0, -0.4);
         let held = |grab, grip_held| Inputs {
             grip_held,
@@ -840,7 +810,11 @@ mod tests {
         assert!((hold.unwrap().weight - 0.5).abs() < 1e-5);
         let (hold, _) = step(hold, &inputs(near, false), 0.05, &config);
         assert_eq!(hold.unwrap().weight, 1.0);
-        let (hold, _) = step(hold, &inputs(near, true), 0.05, &config);
+        let opened = Inputs {
+            grip_held: false,
+            ..inputs(near, false)
+        };
+        let (hold, _) = step(hold, &opened, 0.05, &config);
         let hold = hold.unwrap();
         assert!(!hold.engaged);
         assert!((hold.weight - 0.5).abs() < 1e-5);

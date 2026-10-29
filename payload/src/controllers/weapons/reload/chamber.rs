@@ -72,12 +72,14 @@ impl ActionKind {
     }
 }
 
-/// The chamber after a shot that left `magazine` rounds, for a gun worked by `action`.
-pub fn after_shot(magazine: i32, action: ActionKind, manual_action: bool) -> Chamber {
+/// The chamber after a shot that left `magazine` rounds, for a gun worked by `action`: empty once
+/// the gun runs dry, and after every shot of a bolt or a pump, which are worked by hand in place of
+/// the game's own cycling.
+pub fn after_shot(magazine: i32, action: ActionKind) -> Chamber {
     if action == ActionKind::None {
         return Chamber::Chambered;
     }
-    if magazine <= 0 || (manual_action && action.manual()) {
+    if magazine <= 0 || action.manual() {
         Chamber::Empty
     } else {
         Chamber::Chambered
@@ -246,11 +248,10 @@ mod tests {
 
     #[test]
     fn a_dry_gun_empties_its_chamber_and_a_manual_action_after_every_shot() {
-        assert_eq!(after_shot(0, ActionKind::Slide, true), Chamber::Empty);
-        assert_eq!(after_shot(5, ActionKind::Slide, true), Chamber::Chambered);
-        assert_eq!(after_shot(5, ActionKind::Bolt, true), Chamber::Empty);
-        assert_eq!(after_shot(5, ActionKind::Bolt, false), Chamber::Chambered);
-        assert_eq!(after_shot(0, ActionKind::None, true), Chamber::Chambered);
+        assert_eq!(after_shot(0, ActionKind::Slide), Chamber::Empty);
+        assert_eq!(after_shot(5, ActionKind::Slide), Chamber::Chambered);
+        assert_eq!(after_shot(5, ActionKind::Bolt), Chamber::Empty);
+        assert_eq!(after_shot(0, ActionKind::None), Chamber::Chambered);
         assert_eq!(after_work(5, true), Chamber::Chambered);
         assert_eq!(after_work(0, true), Chamber::Empty);
         assert_eq!(after_work(5, false), Chamber::Empty);

@@ -37,7 +37,6 @@ use crate::{
                 attachments::{Occupancy, PoseSource, Sample},
             },
             pouch_models::attachments::{RenderSample as PouchRenderSample, SampleId},
-            volumes::SOCKETS,
         },
     },
     headpose,
@@ -197,8 +196,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         &mut primitives,
     );
     let now = Instant::now();
-    let attachments = docks::attachment_sample(character as *const Character as usize, world, now)
-        .filter(|sample| sample.matches_policy(SOCKETS.follow_docks));
+    let attachments = docks::attachment_sample(character as *const Character as usize, world, now);
     if let Some(sample) = &attachments {
         attachment_markers(sample, plane, head, &mut primitives);
     }
@@ -455,12 +453,7 @@ pub(crate) fn attachment_markers(
             }
         };
         let at = |point| Anchor::Head(plane.reflect(point) - head);
-        let radius = if attachment.source == PoseSource::BodyLandmark {
-            ATTACHMENT_RING_M * 0.7
-        } else {
-            ATTACHMENT_RING_M
-        };
-        out.push(ring(at(pose.position), radius, color));
+        out.push(ring(at(pose.position), ATTACHMENT_RING_M, color));
         out.push(line(
             at(pose.position),
             at(pose.position + pose.orientation * Vec3::NEG_Z * ATTACHMENT_AXIS_M),

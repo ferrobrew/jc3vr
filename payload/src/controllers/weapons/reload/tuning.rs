@@ -15,8 +15,6 @@ pub struct Reload {
     /// magazine is ejected, taken from the belt pouch, seated in the well, and chambered by hand.
     /// Off, the game's timed reload plays from the reload button as it does on a gamepad.
     pub enabled: bool,
-    /// What a tap of the reload button does.
-    pub button: ReloadButton,
     /// The longest press of the reload button that counts as a tap, seconds. The game holsters on
     /// a longer hold of the same button, so a hold never ejects.
     pub tap_s: f32,
@@ -43,13 +41,6 @@ pub struct Reload {
     pub timeout_s: f32,
     /// The one-handed belt reload: push the gun's well down onto the pouch.
     pub belt: BeltTuning,
-    /// Require the action to be worked by hand after the gun runs dry: the slide, the charging
-    /// handle, the bolt, or the pump. A tactical reload (an eject with rounds left) skips it, and
-    /// the belt reload works the action itself.
-    pub chamber: bool,
-    /// Require the bolt of a bolt-action rifle and the pump of a pump-action shotgun to be worked
-    /// by hand after every shot, in place of the game's own cycling.
-    pub manual_action: bool,
     /// The slide, charging handle, bolt, and pump.
     pub action: ActionTuning,
     /// Ejected magazines that stay in the world with their rounds.
@@ -62,7 +53,6 @@ impl Reload {
     const fn new() -> Self {
         Self {
             enabled: true,
-            button: ReloadButton::Eject,
             tap_s: 0.3,
             flick_eject: false,
             flick_speed_dps: 900.0,
@@ -74,8 +64,6 @@ impl Reload {
             seat_depth_m: 0.025,
             timeout_s: 8.0,
             belt: BeltTuning::new(),
-            chamber: true,
-            manual_action: true,
             action: ActionTuning::new(),
             loose: LooseTuning::new(),
             extraction: ExtractionConfig::new(),
@@ -103,16 +91,6 @@ impl Reload {
             ..RELOAD
         }
     }
-}
-
-/// What a tap of the reload button does under the true reload.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ReloadButton {
-    /// Eject the magazine of the dominant gun, or of both dual-wielded pistols.
-    Eject,
-    /// The game's own timed reload, as on a gamepad: a fallback for players who cannot reload by
-    /// hand. The pouch, the flick, and the belt still work.
-    Native,
 }
 
 /// Magazines in the world (see [`crate::controllers::weapons::reload::loose`]).
@@ -199,9 +177,6 @@ pub struct ActionTuning {
     /// How long a released slide or charging handle takes to run home from the rear on its
     /// spring, seconds.
     pub spring_s: f32,
-    /// A slide catches at the rear when the magazine in the gun is empty: after the last shot, or
-    /// racked over an empty magazine. It stays back until it is racked again.
-    pub lock_back: bool,
     /// How far a bolt's handle turns up to unlock it, degrees.
     pub bolt_lift_deg: f32,
     /// How far a bolt's handle is from the bolt's axis, metres.
@@ -221,7 +196,6 @@ impl ActionTuning {
             default_travel_m: 0.06,
             physical: true,
             spring_s: 0.05,
-            lock_back: true,
             bolt_lift_deg: 60.0,
             bolt_radius_m: 0.03,
             lift_fraction: 0.85,
