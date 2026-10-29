@@ -44,7 +44,7 @@ The depth convention is settled but kept switchable as a headset escape hatch:
 - **`vr.projection_convention`** (`EnginePreReverseZ`, default and verified-correct, vs `ManualReverseZ`). The preferred path writes a standard (non-reverse-Z) off-axis projection *before* `SetupRenderCamera`, so the engine applies its own reverse-Z remap and TAA jitter to it exactly once, matching every other camera (rendering §2.7). This is confirmed against the decompile (rendering §2.9): `SetupRenderCamera` *consumes* whatever is in `m_Projection`, remapping it in place with `z' = w − z` — it never rebuilds from FOV/near/far — so the pre-call write reaches the GPU. The `ManualReverseZ` fallback (write an already-reverse-Z'd projection *after* `SetupRenderCamera` and rebuild the view-projections manually) is retained only as a runtime escape hatch in case the depth still reads wrong in-headset for a reason the desktop could not surface. The §2.7 wedge bug (a thin valid depth band, black elsewhere) would be the tell.
 - **`vr.blit_srgb_gamma`** (`Linearize`, default, vs `Passthrough`). The captured eye texture is a `CopyResource` of `m_BackBufferLinear` as `R8G8B8A8_UNORM` (non-sRGB) holding display-referred bytes; the negotiated OpenXR swapchain is `_SRGB`, whose render-target view applies a hardware linear→sRGB encode on write. To reproduce the original bytes the blit shader linearizes the sampled color first, so the hardware re-encode cancels it out. `Passthrough` is for a genuinely-linear source or a non-sRGB swapchain. (The desktop mirror is a separate path with no gamma conversion — it writes into the game's own non-sRGB back buffer, which applies no encode, so passthrough there is a correctness conclusion, not a knob; see `mirror.rs`.)
 
-Before trusting a real HMD *rotation*, clear the coordinate-frame gate: the `coord_frame` diagnostic (`RUST_LOG=coord_frame=debug`) logs the render camera's `m_TransformF` basis rows and the travel-direction dot products, so one walk-forward session confirms JC3's world frame (almost certainly right-handed Y-up, but unverified). See `docs/mod/body/head-and-body.md`'s RE notes.
+Before trusting a real HMD *rotation*, clear the coordinate-frame gate: every [render trace](rendering/render-trace.md) records the render camera's `m_TransformF` basis rows and the travel-direction dot products as `CoordFrame` events, so one trace captured while walking forward confirms JC3's world frame (almost certainly right-handed Y-up, but unverified). See `docs/mod/body/head-and-body.md`'s RE notes.
 
 ## Per-eye native resolution
 
@@ -94,7 +94,7 @@ Everything below needs a headset in the loop; the desktop build could not settle
 
 **Coordinate frame and pose.**
 
-- Run the `coord_frame` diagnostic (`RUST_LOG=coord_frame=debug`) and walk forward to confirm the world frame before trusting HMD rotation (blocker 3, `docs/mod/body/head-and-body.md`).
+- Capture a render trace while walking forward and read its `CoordFrame` summary (`tools/analyze_trace_frames.py`, or the `coord_frame` log line at the trace's end) to confirm the world frame before trusting HMD rotation (blocker 3, `docs/mod/body/head-and-body.md`).
 - Confirm head rotation and roomscale translation track 1:1 with no perceptible lag or smoothing.
 - Confirm Recenter (F7 or the pause menu's RECENTER VIEW) re-bases heading only, leaving pitch and roll (real head tilt) intact.
 - Confirm the stereo separation reads as depth (not a flat or hyperstereo image) and that near/far objects fuse — the true per-eye `locate_views` delta, not the synthetic IPD.
