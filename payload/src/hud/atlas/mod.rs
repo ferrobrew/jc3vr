@@ -13,6 +13,9 @@
 //!   weapon wheel ([`crate::controllers::weapons::wheel`]) while the wheel shows it;
 //! - the tether readout (`MCI_dual_tether`), drawn above the off-hand's forearm, where the
 //!   grapple sits;
+//! - the aim part: the weapon reticle group, the grapple reticle, and the hit marker
+//!   (`MCI_inflict_damage`), gathered around the aim point and drawn there at the aim depth
+//!   ([`crate::hud::reticle`]);
 //! - the visible world-placed markers ([`crate::hud::world_markers`]), each in a cell of its own
 //!   instead of cropped from the panel, so a marker's quad never carries a neighbour or a centre
 //!   notice.
@@ -75,6 +78,7 @@ pub(crate) struct FrameStatus {
     pub heat: Option<Cell>,
     pub cross: Option<Cell>,
     pub tether: Option<Cell>,
+    pub aim: Option<Cell>,
     /// The texture the cells were copied from.
     pub texture: (u32, u32),
 }
@@ -99,6 +103,8 @@ pub(crate) struct AtlasCapture {
     pub cross: Option<Cell>,
     /// The tether readout's cell, when it was moved into it.
     pub tether: Option<Cell>,
+    /// The aim part's cell, when its clips were moved into it.
+    pub aim: Option<Cell>,
     pub layout: AtlasLayout,
 }
 

@@ -50,6 +50,8 @@ pub(crate) struct LayoutRequest {
     pub cross: Option<PartRequest>,
     /// The tether readout.
     pub tether: Option<PartRequest>,
+    /// The aim part: the reticles and the hit marker, around the aim point.
+    pub aim: Option<PartRequest>,
     /// The labelled marker's extents (its label sits to the left of its icon).
     pub label: Option<CropExtents>,
     /// Every other marker's extents.
@@ -69,6 +71,7 @@ pub(crate) struct AtlasLayout {
     pub heat: Option<Cell>,
     pub cross: Option<Cell>,
     pub tether: Option<Cell>,
+    pub aim: Option<Cell>,
     pub label: Option<Cell>,
     pub markers: Vec<Cell>,
 }
@@ -95,8 +98,8 @@ pub(crate) fn bands(stage: Vec2, frame: &StageFrame) -> Option<[StageRect; 2]> {
 }
 
 /// Pack the request's parts into the bands: the ammunition and heat readouts, the selection cross,
-/// and the tether readout first, then the label cell, then as many marker cells as fit, up to the
-/// request's cap. A part that fits nowhere gets no cell. `None` without bands.
+/// the tether readout, and the aim part first, then the label cell, then as many marker cells as
+/// fit, up to the request's cap. A part that fits nowhere gets no cell. `None` without bands.
 pub(crate) fn layout(request: &LayoutRequest) -> Option<AtlasLayout> {
     let bands = bands(request.stage, &request.frame)?;
     let gutter = request.gutter.max(0.0);
@@ -109,6 +112,7 @@ pub(crate) fn layout(request: &LayoutRequest) -> Option<AtlasLayout> {
     let tether = request
         .tether
         .and_then(|part| place_part(&mut packer, &part));
+    let aim = request.aim.and_then(|part| place_part(&mut packer, &part));
     let label = request
         .label
         .and_then(|extents| place_marker(&mut packer, extents));
@@ -128,6 +132,7 @@ pub(crate) fn layout(request: &LayoutRequest) -> Option<AtlasLayout> {
         heat,
         cross,
         tether,
+        aim,
         label,
         markers,
     })
@@ -204,6 +209,36 @@ pub(crate) fn local_placement(parent: Placement, origin: Vec2, scale: f32) -> Op
     Some(Placement {
         position: (origin - parent.position) / parent.scale,
         scale: Vec2::splat(scale) / parent.scale,
+    })
+}
+
+/// The stage placement of a clip placed at `local` in a parent placed at `parent` (in stage
+/// coordinates).
+pub(crate) fn compose(parent: Placement, local: Placement) -> Placement {
+    Placement {
+        position: parent.position + local.position * parent.scale,
+        scale: parent.scale * local.scale,
+    }
+}
+
+/// The placement that carries a clip placed at `own` in a parent placed at `parent` (in stage
+/// coordinates) into `cell`: the stage point `anchor` lands on the cell's origin, and the clip
+/// keeps its offset from the anchor and its own scale, both scaled by the cell's scale. `None` for
+/// a degenerate parent scale.
+pub(crate) fn carried_placement(
+    parent: Placement,
+    own: Placement,
+    anchor: Vec2,
+    cell: &Cell,
+) -> Option<Placement> {
+    if parent.scale.x.abs() < f32::EPSILON || parent.scale.y.abs() < f32::EPSILON {
+        return None;
+    }
+    let stage = compose(parent, own).position;
+    let target = cell.origin + (stage - anchor) * cell.scale;
+    Some(Placement {
+        position: (target - parent.position) / parent.scale,
+        scale: own.scale * cell.scale,
     })
 }
 
@@ -438,6 +473,15 @@ mod tests {
                 },
                 max_scale: 1.0,
             }),
+            aim: Some(PartRequest {
+                extents: CropExtents {
+                    left: 60.0,
+                    right: 60.0,
+                    up: 125.0,
+                    down: 60.0,
+                },
+                max_scale: 1.0,
+            }),
             label: Some(CropExtents {
                 left: 360.0,
                 ..marker()
@@ -465,6 +509,7 @@ mod tests {
             .chain(layout.heat.iter())
             .chain(layout.cross.iter())
             .chain(layout.tether.iter())
+            .chain(layout.aim.iter())
             .chain(layout.label.iter())
             .chain(layout.markers.iter())
             .copied()
@@ -489,7 +534,7 @@ mod tests {
         let layout = layout(&request(1.3)).unwrap();
         let cells = all_cells(&layout);
         assert!(layout.ammo.is_some() && layout.heat.is_some() && layout.label.is_some());
-        assert!(layout.cross.is_some() && layout.tether.is_some());
+        assert!(layout.cross.is_some() && layout.tether.is_some() && layout.aim.is_some());
         assert!(!layout.markers.is_empty());
         for (i, a) in cells.iter().enumerate() {
             assert!(
@@ -596,6 +641,47 @@ mod tests {
             ..parent
         };
         assert_eq!(local_placement(flat, Vec2::ZERO, 1.0), None);
+    }
+
+    /// A carried clip keeps its offset from the anchor and its own scale, scaled by the cell's, and
+    /// a clip at the anchor lands on the cell's origin.
+    #[test]
+    fn carried_placement_maps_the_anchor_to_the_origin() {
+        let parent = Placement {
+            position: Vec2::new(640.0, 360.0),
+            scale: Vec2::new(1.0, 2.0),
+        };
+        let cell = Cell {
+            rect: StageRect {
+                min: Vec2::new(100.0, -120.0),
+                size: Vec2::new(80.0, 120.0),
+            },
+            origin: Vec2::new(140.0, -40.0),
+            scale: 0.5,
+        };
+        let own = Placement {
+            position: Vec2::new(0.0, -10.0),
+            scale: Vec2::splat(1.5),
+        };
+        let anchor = Vec2::new(640.0, 360.0);
+        let carried = carried_placement(parent, own, anchor, &cell).unwrap();
+        // The clip sat 20 stage pixels above the anchor; it now sits 10 above the cell's origin.
+        let stage = compose(parent, carried);
+        assert!((stage.position - Vec2::new(140.0, -50.0)).length() < 1e-4);
+        assert_eq!(carried.scale, Vec2::splat(0.75));
+        // A clip whose own origin is the anchor lands on the cell's origin.
+        let at_anchor = Placement {
+            position: Vec2::new(30.0, 5.0),
+            scale: Vec2::ONE,
+        };
+        let anchor = compose(parent, at_anchor).position;
+        let carried = carried_placement(parent, at_anchor, anchor, &cell).unwrap();
+        assert!((compose(parent, carried).position - cell.origin).length() < 1e-4);
+        let flat = Placement {
+            scale: Vec2::new(1.0, 0.0),
+            ..parent
+        };
+        assert_eq!(carried_placement(flat, own, anchor, &cell), None);
     }
 
     #[test]

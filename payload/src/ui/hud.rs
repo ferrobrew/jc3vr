@@ -112,7 +112,7 @@ pub(crate) fn status(ui: &mut egui::Ui) {
     ui.heading("Aim depth");
     ui.label(format!(
         "Live: {:.2} m (rests at {:.1} m while nothing is aimed at)",
-        aim::current(aim::REST_DISTANCE),
+        aim::smoothed(),
         aim::REST_DISTANCE,
     ));
     ui.separator();
@@ -274,6 +274,7 @@ fn atlas_status_ui(ui: &mut egui::Ui) {
                 ("Heat readout", frame.heat),
                 ("Selection cross", frame.cross),
                 ("Tether readout", frame.tether),
+                ("Reticles and hit marker", frame.aim),
             ] {
                 ui.label(match cell {
                     Some(cell) => format!(

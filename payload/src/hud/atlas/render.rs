@@ -8,6 +8,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use glam::Vec2;
 use jc3gi::{graphics_engine::device::Device, ui::ui_manager::UIManager};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{D3D11_BOX, ID3D11DeviceContext};
@@ -28,10 +29,11 @@ pub(crate) enum Part {
     Heat,
     Cross,
     Tether,
+    Aim,
 }
 
 impl Part {
-    const ALL: [Part; PARTS] = [Part::Ammo, Part::Heat, Part::Cross, Part::Tether];
+    const ALL: [Part; PARTS] = [Part::Ammo, Part::Heat, Part::Cross, Part::Tether, Part::Aim];
 
     const fn index(self) -> usize {
         match self {
@@ -39,12 +41,13 @@ impl Part {
             Part::Heat => 1,
             Part::Cross => 2,
             Part::Tether => 3,
+            Part::Aim => 4,
         }
     }
 }
 
 /// How many parts there are.
-const PARTS: usize = 4;
+const PARTS: usize = 5;
 
 /// Choose the frame's capture (eye 0). `active` is false while the HUD texture is not the gameplay
 /// HUD's (not redirected, or full-screen UI), which drops the frame.
@@ -72,11 +75,14 @@ pub(crate) fn prepare_frame(device: &Device, hud: Option<&HudTarget>, active: bo
         return;
     };
     let mut parts = [None; PARTS];
-    for (part, cell) in
-        Part::ALL
-            .iter()
-            .zip([capture.ammo, capture.heat, capture.cross, capture.tether])
-    {
+    let cells = [
+        capture.ammo,
+        capture.heat,
+        capture.cross,
+        capture.tether,
+        capture.aim,
+    ];
+    for (part, cell) in Part::ALL.iter().zip(cells) {
         let Some(cell) = cell else {
             continue;
         };
@@ -87,7 +93,10 @@ pub(crate) fn prepare_frame(device: &Device, hud: Option<&HudTarget>, active: bo
             log_once(&e);
             continue;
         }
-        parts[part.index()] = Some((rect, cell));
+        let size = Vec2::new(texture.0 as f32, texture.1 as f32);
+        let anchor =
+            capture.frame.to_uv(cell.origin) * size - Vec2::new(rect.x0 as f32, rect.y0 as f32);
+        parts[part.index()] = Some(Placed { rect, cell, anchor });
     }
     if let Err(e) =
         renderer.ensure_blank(device, texture.0, bands[0].height().max(bands[1].height()))
@@ -95,7 +104,11 @@ pub(crate) fn prepare_frame(device: &Device, hud: Option<&HudTarget>, active: bo
         log_once(&e);
         return;
     }
-    renderer.frame = Some(Frame { bands, parts });
+    renderer.frame = Some(Frame {
+        bands,
+        parts,
+        texture,
+    });
     STATUS.lock().frame = Some(FrameStatus {
         snapshot: capture.snapshot,
         displayed_snapshot: displayed,
@@ -105,6 +118,7 @@ pub(crate) fn prepare_frame(device: &Device, hud: Option<&HudTarget>, active: bo
         heat: capture.heat,
         cross: capture.cross,
         tether: capture.tether,
+        aim: capture.aim,
         texture,
     });
 }
@@ -132,7 +146,7 @@ pub(crate) fn prepare_eye(context: &ID3D11DeviceContext, hud: Option<&HudTarget>
             context.ClearRenderTargetView(blank.color_rtv(), &[0.0; 4]);
         }
         for part in Part::ALL {
-            let (Some((rect, _)), Some(slot)) = (
+            let (Some(Placed { rect, .. }), Some(slot)) = (
                 frame.parts[part.index()],
                 renderer.slots[part.index()].as_ref(),
             ) else {
@@ -178,20 +192,30 @@ pub(crate) fn prepare_eye(context: &ID3D11DeviceContext, hud: Option<&HudTarget>
 pub(crate) struct PartTexture<'a> {
     pub target: &'a HudTarget,
     pub cell: Cell,
+    /// Where the clip's origin (the cell's origin) falls in the copy, in texels from its top-left.
+    pub anchor: Vec2,
+    /// The size of the HUD texture the copy was taken from, whose texels the copy's match.
+    pub hud_texture: (u32, u32),
 }
 
 /// Run `f` with a moved part's texture, or return `None` when the displayed capture did not move
 /// the part.
 pub(crate) fn part_texture<R>(part: Part, f: impl FnOnce(PartTexture<'_>) -> R) -> Option<R> {
     let renderer = RENDERER.lock();
-    let (_, cell) = renderer.frame.as_ref()?.parts[part.index()]?;
+    let frame = renderer.frame.as_ref()?;
+    let placed = frame.parts[part.index()]?;
     let target = renderer.slots[part.index()].as_ref()?;
-    Some(f(PartTexture { target, cell }))
+    Some(f(PartTexture {
+        target,
+        cell: placed.cell,
+        anchor: placed.anchor,
+        hud_texture: frame.texture,
+    }))
 }
 
 /// The render-side state.
 static RENDERER: Mutex<Renderer> = Mutex::new(Renderer {
-    slots: [None, None, None, None],
+    slots: [const { None }; PARTS],
     blank: None,
     blank_dirty: AtomicBool::new(false),
     frame: None,
@@ -211,8 +235,20 @@ struct Renderer {
 /// The frame's texel rectangles in the HUD texture.
 struct Frame {
     bands: [TexelRect; 2],
-    /// Each moved part's texels and cell, indexed by [`Part::index`].
-    parts: [Option<(TexelRect, Cell)>; PARTS],
+    /// Each moved part's placement, indexed by [`Part::index`].
+    parts: [Option<Placed>; PARTS],
+    /// The HUD texture's size.
+    texture: (u32, u32),
+}
+
+/// A moved part's place in the HUD texture.
+#[derive(Debug, Copy, Clone)]
+struct Placed {
+    /// The cell's texels.
+    rect: TexelRect,
+    cell: Cell,
+    /// The cell's origin in the copy, in texels from its top-left.
+    anchor: Vec2,
 }
 
 impl Renderer {

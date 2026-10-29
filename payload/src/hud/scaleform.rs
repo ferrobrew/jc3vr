@@ -40,25 +40,27 @@ pub(crate) fn discovered_in_hud() -> bool {
 
 /// The full-screen overlay clips of issue #8, all children of the center container: held
 /// invisible by [`apply_overlay_suppression`], since they were authored to cover a flat screen and
-/// would cover the whole panel in VR instead. Paths confirmed against an in-game display-tree dump; `MCI_omni_damage` (the screen-wide
-/// damage flash) is a direct child of the center container, not of the health-damage manager.
+/// would cover the whole panel in VR instead. Paths confirmed against an in-game display-tree dump;
+/// `MCI_omni_damage` (the screen-wide damage flash) is a direct child of the center container, not
+/// of the health-damage manager.
 pub(crate) const OVERLAY_CLIPS: &[&str] = &[
     "MCI_safe_area_center.MCI_omni_damage",
     "MCI_safe_area_center.MCI_drowning_container",
     "MCI_safe_area_center.MCI_health_damage_manager",
     "MCI_safe_area_center.MCI_character_damage_indicators",
     "MCI_safe_area_center.MCI_vehicle_damage_indicators",
-    "MCI_safe_area_center.MCI_inflict_damage",
     "MCI_safe_area_center.MCI_sniper",
 ];
 
 /// The HUD's weapon and grapple reticle groups, children of the center container's reticle
-/// container, in that order: held invisible by [`apply_reticle_suppression`]. The movie's own
-/// `UpdateWeaponReticle` writes the weapon group's visibility on every HUD update, which the intent
-/// tracking absorbs; nothing in the movie writes the grapple group's.
-pub(crate) const RETICLE_CLIPS: [&str; 2] = [
+/// container, and the hit marker, in that order: held invisible by [`apply_reticle_suppression`],
+/// the hit marker with the weapon group, since it plays at the weapon reticle. The movie's own
+/// `UpdateWeaponReticle` writes the weapon group's and the hit marker's visibility on every HUD
+/// update, which the intent tracking absorbs; nothing in the movie writes the grapple group's.
+pub(crate) const RETICLE_CLIPS: [&str; 3] = [
     "MCI_safe_area_center.MCI_reticles.MCI_weapon_reticle_group",
     "MCI_safe_area_center.MCI_reticles.MCI_grapple_reticle_group",
+    "MCI_safe_area_center.MCI_inflict_damage",
 ];
 
 /// The HUD's two button-hint stages: the bottom-right stage of systemic and context hints and the
@@ -70,17 +72,32 @@ pub(crate) const HINT_CLIPS: [&str; 2] = [
     "MCI_safe_area_center.MCI_button_hints_stage",
 ];
 
-/// The HUD parts the atlas moves into cells, and the container the moved ones sit in, in
-/// [`AtlasClip`] order (see [`crate::hud::atlas`]). Every moved part is a child of the
-/// bottom-right safe-area container, whose placement converts a cell's stage position into theirs.
-/// `MCI_dual_tether` is the tether readout: the count of tethers in use and the retract state. The
-/// movie also builds a per-tether list in `MCI_dualtether_stage` beside it, but holds that stage
-/// invisible, so it is left alone.
-pub(crate) const ATLAS_CLIPS: [&str; 4] = [
+/// The HUD clips the atlas moves into cells, and the containers it reads their parents' placements
+/// from, in [`AtlasClip`] order (see [`crate::hud::atlas`]).
+///
+/// The readouts are children of the bottom-right safe-area container, whose placement converts a
+/// cell's stage position into theirs. `MCI_dual_tether` is the tether readout: the count of tethers
+/// in use and the retract state. The movie also builds a per-tether list in
+/// `MCI_dualtether_stage` beside it, but holds that stage invisible, so it is left alone.
+///
+/// The aim part gathers the weapon reticle group, the grapple reticle's clips, and the hit marker
+/// from under the center container. The movie places the grapple reticle's base clip at the
+/// projected grapple aim point, its ghost there too while a wire is attached, and its attached clip
+/// at the projected attach point while a wire is attached and at the base otherwise; the weapon
+/// reticle group and the hit marker stay at the center.
+pub(crate) const ATLAS_CLIPS: [&str; 12] = [
     "MCI_safe_area_bottom_right",
     "MCI_safe_area_bottom_right.MCI_weapons_parent",
     "MCI_safe_area_bottom_right.MCI_heat_container",
     "MCI_safe_area_bottom_right.MCI_dual_tether",
+    "MCI_safe_area_center",
+    "MCI_safe_area_center.MCI_reticles",
+    "MCI_safe_area_center.MCI_reticles.MCI_weapon_reticle_group",
+    "MCI_safe_area_center.MCI_reticles.MCI_grapple_reticle_group",
+    "MCI_safe_area_center.MCI_reticles.MCI_grapple_reticle_group.MCI_reticle_grapple_base",
+    "MCI_safe_area_center.MCI_reticles.MCI_grapple_reticle_group.MCI_reticle_grapple_ghost",
+    "MCI_safe_area_center.MCI_reticles.MCI_grapple_reticle_group.MCI_reticle_grapple_attached",
+    "MCI_safe_area_center.MCI_inflict_damage",
 ];
 
 /// The index of each clip in [`ATLAS_CLIPS`].
@@ -90,6 +107,14 @@ pub(crate) enum AtlasClip {
     Weapons = 1,
     Heat = 2,
     Tether = 3,
+    Center = 4,
+    Reticles = 5,
+    WeaponReticle = 6,
+    GrappleReticle = 7,
+    GrappleBase = 8,
+    GrappleGhost = 9,
+    GrappleAttached = 10,
+    HitMarker = 11,
 }
 
 /// A heap-pinned managed [`Value`] handle to a clip, plus the game-intent tracking the mask needs.
@@ -178,13 +203,14 @@ pub unsafe fn apply_overlay_suppression() {
     }
 }
 
-/// Hold the weapon reticle group hidden while `weapon` is set and the grapple reticle group while
-/// `grapple` is, tracking the game's own visibility intent across our writes and restoring it when
-/// released. Runs at the capture seam, like [`apply_overlay_suppression`].
+/// Hold the weapon reticle group and the hit marker hidden while `weapon` is set and the grapple
+/// reticle group while `grapple` is, tracking the game's own visibility intent across our writes
+/// and restoring it when released. Runs at the capture seam, like [`apply_overlay_suppression`].
 ///
 /// # Safety
 /// Must be called from the [`MovieImpl::Capture`](jc3gi::ui::scaleform::MovieImpl) detour.
 pub unsafe fn apply_reticle_suppression(weapon: bool, grapple: bool) {
+    GRAPPLE_RETICLE_HIDDEN.store(grapple, std::sync::atomic::Ordering::Relaxed);
     let mut handles = CLIP_HANDLES.lock();
     let Some(handles) = handles.as_mut() else {
         return;
@@ -192,7 +218,7 @@ pub unsafe fn apply_reticle_suppression(weapon: bool, grapple: bool) {
     // SAFETY: capture-seam threading per the function contract; the handles are pinned managed
     // values from the registry.
     unsafe {
-        for (handle, suppress) in handles.reticles.iter_mut().zip([weapon, grapple]) {
+        for (handle, suppress) in handles.reticles.iter_mut().zip([weapon, grapple, weapon]) {
             if suppress {
                 refresh_intent(handle);
                 force_visible(handle, false);
@@ -203,6 +229,15 @@ pub unsafe fn apply_reticle_suppression(weapon: bool, grapple: bool) {
         }
     }
 }
+
+/// Whether the grapple reticle group is held hidden, for the aim part's placement.
+pub(crate) fn grapple_reticle_hidden() -> bool {
+    GRAPPLE_RETICLE_HIDDEN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Whether [`apply_reticle_suppression`] last held the grapple reticle group hidden.
+static GRAPPLE_RETICLE_HIDDEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 /// Hold the HUD's button-hint stages hidden while `suppress` is on, tracking the game's own
 /// visibility intent across our writes and restoring it when released. Runs at the capture seam,

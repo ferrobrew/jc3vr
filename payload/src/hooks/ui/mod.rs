@@ -67,12 +67,16 @@ fn convert_3d_coords_default(
 ) -> bool {
     let panel_enabled = Config::lock_query(|c| c.hud.redirect && c.hud.quad);
 
+    // Only the frame's first call projects the aim position; claiming the frame's recording before
+    // reading the point keeps the later calls (the attach point, the grip-radius sample) out of it.
     // SAFETY: `world` is the caller's live aim point; panel_pose only reads cached state.
-    if let Some(world) = unsafe { world.as_ref() }
+    if !AIM_RECORDED_THIS_FRAME.swap(true, Ordering::Relaxed)
+        && let Some(world) = unsafe { world.as_ref() }
         && let Some((anchor, _)) = HUD_STATE.lock().panel_pose()
     {
         let world = glam::Vec3::new(world.data[0], world.data[1], world.data[2]);
         aim::record(
+            world,
             (world - anchor)
                 .length()
                 .clamp(aim::MIN_DEPTH, aim::MAX_DEPTH),

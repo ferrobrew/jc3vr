@@ -29,8 +29,8 @@
 //! The module is split into the GPU resources ([`target`]), the game-side UI rebind operations
 //! ([`binding`]), the quad draw pass ([`quad`]), the [`state`] machine that drives them, and the
 //! [`config`] types for tuning parameters. Parts of the gameplay HUD leave the panel through the
-//! [`atlas`]: the [`world_markers`] at their world points, and the [`anchored`] readouts at the
-//! gun hand and the off-hand's wrist.
+//! [`atlas`]: the [`world_markers`] at their world points, the [`anchored`] readouts at the
+//! gun hand and the off-hand's wrist, and the reticles at the aim point ([`reticle`]).
 
 pub mod aim;
 pub(crate) mod anchored;
@@ -44,6 +44,7 @@ pub(crate) mod mirror_overlay;
 pub(crate) mod pointer;
 mod quad;
 pub(crate) mod restart_notice;
+mod reticle;
 pub mod scaleform;
 mod state;
 pub(crate) mod summary_panel;
@@ -350,6 +351,14 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
                 graphics_engine: graphics_engine.as_deref(),
             },
         );
+        reticle::prepare_frame(
+            device,
+            &reticle::FrameInputs {
+                head: head_pos,
+                head_rotation,
+                panel_height_over_distance: panel_height(cfg.panel_scale, 1.0, aspect),
+            },
+        );
         pointer::publish_panel(pointer_camera.and_then(|camera| {
             Some(pointer::RenderedPanel {
                 head: camera.head,
@@ -377,19 +386,21 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
         pointer::publish_panel(None);
         world_markers::clear_frame();
         atlas::clear_frame();
+        reticle::clear_frame();
     }
 
     // The world markers are cropped out of this eye's HUD render (from their atlas cells, or cut
     // out of the panel) and the atlas's parts copied out of their cells before the panel draws;
     // the bands that held the cells are then cleared, so the panel shows the stage alone. The
-    // markers draw behind the panel (they are anchored in the world, beyond it), and the hand and
-    // wrist readouts in front of it.
+    // markers draw behind the panel (they are anchored in the world, beyond it), and the reticles
+    // and the hand and wrist readouts in front of it.
     world_markers::prepare_eye(context, hud.redirected_target());
     atlas::prepare_eye(context, hud.redirected_target());
     if !crate::director::cinematic::active() {
         world_markers::draw_billboards(context, device, target);
     }
     hud.draw_quad(context, device, target, eye);
+    reticle::draw(context, device, target);
     anchored::draw(context, device, target, eye);
     hud.clear(context);
 }

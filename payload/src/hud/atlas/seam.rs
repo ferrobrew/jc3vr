@@ -1,6 +1,6 @@
 //! The game side of the atlas: at the capture seam, lay out the cells, move the weapon, heat, and
-//! tether readouts into theirs, and after the capture move them back and publish the layout keyed by the
-//! snapshot the capture produced.
+//! tether readouts and the aim part's clips into theirs, and after the capture move them back and
+//! publish the layout keyed by the snapshot the capture produced.
 //!
 //! Both halves run in the `MovieImpl::Capture` detour, on the thread that runs
 //! `CUIManager::PreRender`, with every display-tree writer quiescent. The moves are display-info
@@ -23,8 +23,8 @@ use crate::{
         atlas::{
             AtlasCapture, STATUS,
             layout::{
-                AtlasLayout, Cell, LayoutRequest, PartRequest, Placement, extents_from_edges,
-                layout, local_placement,
+                AtlasLayout, Cell, LayoutRequest, PartRequest, Placement, carried_placement,
+                compose, extents_from_edges, layout, local_placement,
             },
             publish,
         },
@@ -80,11 +80,20 @@ pub(crate) unsafe fn begin_capture(cfg: &HudConfig) -> Option<AtlasLayout> {
                             AtlasClip::Weapons => moved.ammo = Some(cell),
                             AtlasClip::Heat => moved.heat = Some(cell),
                             AtlasClip::Tether => moved.tether = Some(cell),
-                            AtlasClip::BottomRight => {}
+                            _ => {}
                         }
                     }
                     None => failures += 1,
                 }
+            }
+            if let Some(cell) = layout.aim {
+                // SAFETY: as above.
+                let carried = unsafe { carry_aim(atlas, &cell) };
+                failures += carried.failures;
+                if !carried.moves.is_empty() {
+                    moved.aim = Some(cell);
+                }
+                moves.extend(carried.moves);
             }
         }
     }
@@ -147,8 +156,10 @@ pub(crate) unsafe fn after_capture(movie: &MovieImpl) {
                 && unsafe { write_info(value, &saved.write()) }
             {
                 restored += 1;
-                if let Target::Clip(clip) = target {
-                    LAST_RESTORED.lock()[clip_index(*clip)] = Some(saved.position);
+                if let Target::Clip(clip) = target
+                    && let Some(index) = drift_index(*clip)
+                {
+                    LAST_RESTORED.lock()[index] = Some(saved.position);
                 }
             } else {
                 failed += 1;
@@ -167,6 +178,7 @@ pub(crate) unsafe fn after_capture(movie: &MovieImpl) {
         heat: pending.moved.heat,
         cross: pending.moved.cross,
         tether: pending.moved.tether,
+        aim: pending.moved.aim,
         layout: pending.layout,
     }));
 }
@@ -178,6 +190,7 @@ struct MovedParts {
     heat: Option<Cell>,
     cross: Option<Cell>,
     tether: Option<Cell>,
+    aim: Option<Cell>,
 }
 
 /// A clip the atlas moves.
@@ -231,14 +244,16 @@ const STAGE: Placement = Placement {
 static PENDING: Mutex<Option<Pending>> = Mutex::new(None);
 
 /// The position each moved readout was last restored to, to notice a restore something else
-/// overrode. The cross is left out: the HUD places it every update.
+/// overrode. The cross and the aim part's clips are left out: the HUD places them every update.
 static LAST_RESTORED: Mutex<[Option<Vec2>; 3]> = Mutex::new([None, None, None]);
 
-fn clip_index(clip: AtlasClip) -> usize {
+/// The readout's slot in [`LAST_RESTORED`], for the clips whose placement only the atlas changes.
+fn drift_index(clip: AtlasClip) -> Option<usize> {
     match clip {
-        AtlasClip::Heat => 1,
-        AtlasClip::Tether => 2,
-        AtlasClip::Weapons | AtlasClip::BottomRight => 0,
+        AtlasClip::Weapons => Some(0),
+        AtlasClip::Heat => Some(1),
+        AtlasClip::Tether => Some(2),
+        _ => None,
     }
 }
 
@@ -281,6 +296,7 @@ fn active_layout(cfg: &HudConfig) -> Option<(AtlasLayout, StageFrame)> {
                 max_scale: CROSS_MAX_SCALE,
             }),
         tether: (atlas.tether.enabled && controllers).then_some(TETHER),
+        aim: Some(AIM),
         label: markers.enabled.then_some(world_markers::LABEL_CROP),
         marker: markers.enabled.then_some(world_markers::CROP),
         max_markers: world_markers::MAX_MARKERS,
@@ -333,6 +349,118 @@ const TETHER: PartRequest = PartRequest {
     max_scale: 1.0,
 };
 
+/// The aim part's extents around the aim point, in the center container's own pixels, and the
+/// largest scale it is captured at, as [`AMMO`]. They hold every weapon reticle shape (the vehicle
+/// cannon's and the mech's sit above the center, the grenade launcher's below it), the hit marker
+/// at either of the heights the movie gives it, and the grapple reticle's halves spinning about the
+/// aim point.
+const AIM: PartRequest = PartRequest {
+    extents: CropExtents {
+        left: 60.0,
+        right: 60.0,
+        up: 125.0,
+        down: 60.0,
+    },
+    max_scale: 1.0,
+};
+
+/// How near the grapple reticle's attached clip must sit to its base clip to count as at the base,
+/// in the clips' parent's pixels.
+const AT_BASE_PX: f32 = 0.5;
+
+/// The aim part's moves for one capture.
+#[derive(Default)]
+struct CarriedAim {
+    moves: Vec<(Target, Saved)>,
+    failures: u64,
+}
+
+/// Carry the aim part's clips into `cell`: the weapon reticle group and the hit marker keep their
+/// offsets from the center container's origin, the screen center the camera aims through, and the
+/// grapple reticle's base and ghost land with their own origins, the projected grapple aim point,
+/// on the cell's origin. The attached clip goes with them only while the movie holds it at the
+/// base; while a wire is attached it marks the attach point and stays where the movie put it.
+///
+/// # Safety
+/// The capture seam; `atlas` is the registry's atlas handles, in [`ATLAS_CLIPS`] order.
+///
+/// [`ATLAS_CLIPS`]: crate::hud::scaleform::ATLAS_CLIPS
+unsafe fn carry_aim(atlas: &mut [ClipHandle], cell: &Cell) -> CarriedAim {
+    let mut carried = CarriedAim::default();
+    // SAFETY: forwarded from the caller.
+    let (Some(center), Some(reticles), Some(grapple)) = (unsafe {
+        (
+            placement(&mut atlas[AtlasClip::Center as usize]),
+            placement(&mut atlas[AtlasClip::Reticles as usize]),
+            placement(&mut atlas[AtlasClip::GrappleReticle as usize]),
+        )
+    }) else {
+        carried.failures += 1;
+        return carried;
+    };
+    let reticles = compose(center, reticles);
+    let grapple = compose(reticles, grapple);
+    // SAFETY: forwarded from the caller.
+    let (base, attached) = unsafe {
+        (
+            placement(&mut atlas[AtlasClip::GrappleBase as usize]),
+            placement(&mut atlas[AtlasClip::GrappleAttached as usize]),
+        )
+    };
+    let attached_at_base = base
+        .zip(attached)
+        .is_some_and(|(base, attached)| base.position.distance(attached.position) <= AT_BASE_PX);
+    let mut clips = vec![
+        (AtlasClip::WeaponReticle, reticles, Some(center.position)),
+        (AtlasClip::HitMarker, center, Some(center.position)),
+        (AtlasClip::GrappleBase, grapple, None),
+        (AtlasClip::GrappleGhost, grapple, None),
+    ];
+    if attached_at_base {
+        clips.push((AtlasClip::GrappleAttached, grapple, None));
+    }
+    for (clip, parent, anchor) in clips {
+        let Some(value) = atlas[clip as usize].value.as_deref_mut() else {
+            carried.failures += 1;
+            continue;
+        };
+        // SAFETY: forwarded from the caller; the value is the registry's live clip handle.
+        match unsafe { carry_into(value, parent, anchor, cell) } {
+            Some(saved) => carried.moves.push((Target::Clip(clip), saved)),
+            None => carried.failures += 1,
+        }
+    }
+    carried
+}
+
+/// Carry a clip in a parent placed at `parent` into `cell`, the stage point `anchor` (the clip's
+/// own origin when `None`) landing on the cell's origin, returning its own placement to restore, or
+/// `None` when it could not be read or written.
+///
+/// # Safety
+/// `value` must be a live managed display-object value, on the capture seam.
+unsafe fn carry_into(
+    value: &mut Value,
+    parent: Placement,
+    anchor: Option<Vec2>,
+    cell: &Cell,
+) -> Option<Saved> {
+    // SAFETY: forwarded from the caller.
+    let info = unsafe { read_info(value)? };
+    let saved = Saved {
+        position: Vec2::new(info.X as f32, info.Y as f32),
+        scale: Vec2::new(info.XScale as f32, info.YScale as f32),
+    };
+    let own = Placement {
+        position: saved.position,
+        scale: saved.scale / 100.0,
+    };
+    let anchor = anchor.unwrap_or_else(|| compose(parent, own).position);
+    let local = carried_placement(parent, own, anchor, cell)?;
+    // SAFETY: forwarded from the caller.
+    unsafe { write_placement(value, local) }.then_some(saved)
+}
+
 /// A clip's placement in stage coordinates, from its display info. The safe-area containers are
 /// children of the HUD clip, which sits at the stage's origin unscaled.
 ///
@@ -365,12 +493,22 @@ unsafe fn move_into(
         scale: Vec2::new(info.XScale as f32, info.YScale as f32),
     };
     if let Target::Clip(clip) = target
-        && let Some(last) = LAST_RESTORED.lock()[clip_index(clip)]
+        && let Some(index) = drift_index(clip)
+        && let Some(last) = LAST_RESTORED.lock()[index]
         && last != saved.position
     {
         STATUS.lock().drift += 1;
     }
     let local = local_placement(parent, cell.origin, cell.scale)?;
+    // SAFETY: forwarded from the caller.
+    unsafe { write_placement(value, local) }.then_some(saved)
+}
+
+/// Write a clip's position and scale in its parent through its managed value.
+///
+/// # Safety
+/// `value` must be a live managed display-object value, on the capture seam.
+unsafe fn write_placement(value: &mut Value, local: Placement) -> bool {
     let mut write = DisplayInfo::default();
     write.X = f64::from(local.position.x);
     write.Y = f64::from(local.position.y);
@@ -378,7 +516,7 @@ unsafe fn move_into(
     write.YScale = f64::from(local.scale.y) * 100.0;
     write.VarsSet = PLACEMENT_VARS as u16;
     // SAFETY: forwarded from the caller.
-    unsafe { write_info(value, &write) }.then_some(saved)
+    unsafe { write_info(value, &write) }
 }
 
 /// Read a clip's display info through its managed value.
