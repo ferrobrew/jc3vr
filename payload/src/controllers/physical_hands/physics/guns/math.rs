@@ -167,6 +167,40 @@ pub fn limit(deviation: Pose, max_shift_m: f32, max_turn_rad: f32) -> Pose {
     }
 }
 
+/// The velocities, world space, that steer a gun body at `gun` back within the drawn clamps of its
+/// seated pose `seated` in one step of `step_s` seconds: from its deviation to the same deviation
+/// held to a shift of `max_shift_m` and a turn of `max_turn_rad` ([`limit`]). `None` while the
+/// body is within them, or for a step or pose that is not finite. Added to the velocities the
+/// hand carries the gun with, they keep the body where the drawn gun is drawn, so a shot's muzzle
+/// rise or a knock moves the body no further than the render shows.
+pub fn clamp_velocity(
+    seated: Pose,
+    gun: Pose,
+    max_shift_m: f32,
+    max_turn_rad: f32,
+    step_s: f32,
+) -> Option<(Vec3, Vec3)> {
+    if !(step_s.is_finite() && step_s > 0.0) {
+        return None;
+    }
+    let drift = hand_pose::mul(hand_pose::inverse(seated), gun);
+    if !(drift.position.is_finite() && drift.orientation.is_finite())
+        || !strayed(drift, max_shift_m, max_turn_rad)
+    {
+        return None;
+    }
+    let target = hand_pose::mul(seated, limit(drift, max_shift_m, max_turn_rad));
+    let turn = (target.orientation * gun.orientation.inverse()).normalize();
+    let turn = if turn.w < 0.0 { -turn } else { turn };
+    let (axis, angle) = turn.to_axis_angle();
+    let angular = if axis.is_finite() && angle.is_finite() {
+        axis * angle / step_s
+    } else {
+        Vec3::ZERO
+    };
+    Some(((target.position - gun.position) / step_s, angular))
+}
+
 /// The gun's seat on the holding hand, from where the hand is meant to be: the gun's pose `gun`,
 /// as its placement on the tick put it in the hand, in the frame of the controller's palm `palm`,
 /// which the hand's body is driven to. The hand's body may lag its palm while it carries the gun
@@ -323,6 +357,35 @@ mod tests {
             seat(gun, brace_palm(gun, Pose::IDENTITY, slid)),
             &rebuild
         ));
+    }
+
+    #[test]
+    fn a_body_past_the_drawn_clamps_is_steered_back_to_them_in_one_step() {
+        let config = HeldGunsTuning::new();
+        let (shift, turn) = (
+            config.drawn_max_shift_m,
+            config.drawn_max_turn_deg.to_radians(),
+        );
+        let seated = pose(Vec3::new(0.3, 1.4, -0.2), Quat::from_rotation_y(0.7));
+        let step_s = 1.0 / 60.0;
+        // Within the clamps the hand alone carries the body.
+        let near = hand_pose::mul(seated, pose(Vec3::X * shift * 0.5, Quat::IDENTITY));
+        assert_eq!(clamp_velocity(seated, near, shift, turn, step_s), None);
+        // A shot's muzzle rise past the clamp: one step of the correction lands on the clamp.
+        let rise = Quat::from_rotation_x(turn * 3.0);
+        let kicked = hand_pose::mul(seated, pose(Vec3::Z * shift * 2.0, rise));
+        let (linear, angular) = clamp_velocity(seated, kicked, shift, turn, step_s).unwrap();
+        let next = Pose {
+            position: kicked.position + linear * step_s,
+            orientation: (Quat::from_scaled_axis(angular * step_s) * kicked.orientation)
+                .normalize(),
+        };
+        let drift = hand_pose::mul(hand_pose::inverse(seated), next);
+        assert!((drift.position.length() - shift).abs() < 1e-4);
+        assert!((turn_rad(drift.orientation) - turn).abs() < 1e-3);
+        assert!(!strayed(drift, shift + 1e-4, turn + 1e-3));
+        assert_eq!(clamp_velocity(seated, kicked, shift, turn, 0.0), None);
+        assert_eq!(clamp_velocity(seated, kicked, shift, turn, f32::NAN), None);
     }
 
     #[test]

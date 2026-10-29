@@ -168,7 +168,7 @@ pub const HAND_BODIES: HandBodyTuning = HandBodyTuning {
 /// hand's body (and to the bracing hand's on its foregrip), so its weight drags the hands, it
 /// collides along its whole length, and it strikes what it is swung into. The gun is near-rigid in
 /// the hand: its body moves with the hand's on every step, its mass is held to its class's, and
-/// the drawn gun keeps within a couple of degrees of the hand's grip.
+/// both the body and the drawn gun keep within a couple of degrees of the hand's grip.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct HeldGunsTuning {
     /// The lightest a gun body is made, kilograms.
@@ -185,14 +185,17 @@ pub struct HeldGunsTuning {
     /// The share of a shot's impulse that also lifts the muzzle, `0..=1`.
     pub muzzle_rise: f32,
     /// How far a gun body may stray from its place in the holding hand before it is put back
-    /// there, metres.
+    /// there at once, metres: past what the steering back to the drawn clamps can recover, as when
+    /// the gun is pressed into a wall.
     pub stray_distance_m: f32,
-    /// How far a gun body may turn from its place in the holding hand before it is put back there,
-    /// degrees.
+    /// How far a gun body may turn from its place in the holding hand before it is put back there
+    /// at once, degrees.
     pub stray_turn_deg: f32,
-    /// The furthest the drawn gun is carried off the hand's grip by its body's stray, metres.
+    /// The furthest the drawn gun is carried off the hand's grip by its body's stray, metres. The
+    /// body is steered back within it on every step, so the body and the drawn gun agree.
     pub drawn_max_shift_m: f32,
-    /// The furthest the drawn gun is turned off the hand's grip by its body's stray, degrees.
+    /// The furthest the drawn gun is turned off the hand's grip by its body's stray, degrees. The
+    /// body is steered back within it on every step, which bounds a shot's muzzle rise too.
     pub drawn_max_turn_deg: f32,
     /// The least time between two pulses of a gun body's contacts in one hand, seconds: a gun
     /// rubbing along a wall touches it on every step.
@@ -227,8 +230,8 @@ impl HeldGunsTuning {
             fallback_mass_kg: GunClassValues::new(1.0, 2.5, 4.0, 6.0),
             recoil_impulse_ns: GunClassValues::new(1.5, 1.5, 3.0, 6.0),
             muzzle_rise: 0.4,
-            stray_distance_m: 0.05,
-            stray_turn_deg: 8.0,
+            stray_distance_m: 0.03,
+            stray_turn_deg: 4.0,
             drawn_max_shift_m: 0.015,
             drawn_max_turn_deg: 2.0,
             contact_pulse_interval_s: 0.2,

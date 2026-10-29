@@ -11,6 +11,7 @@
 
 use std::time::Instant;
 
+use glam::Vec3;
 use jc3gi::physics::CustomGroupCollisionFilter;
 use parking_lot::Mutex;
 
@@ -26,8 +27,8 @@ use crate::controllers::{
             engine::{GunError, GunSource, check_own_body, read_source},
             math::{
                 GunAxes, MAX_GRIP_SEAT_M, MassSource, brace_due, brace_palm, carried_velocity,
-                class_value, deviation, gun_mass, intended_seat, limit, seat, seated, settled,
-                shot_impulse, strayed, turn_rad,
+                clamp_velocity, class_value, deviation, gun_mass, intended_seat, limit, seat,
+                seated, settled, shot_impulse, strayed, turn_rad,
             },
         },
         joint::Joint,
@@ -70,6 +71,8 @@ pub(crate) struct GunStep<'a> {
     /// Where each controller's palm is, which its hand's body is driven to, game space; `None`
     /// while stale.
     pub palms: [Option<Pose>; 2],
+    /// The physics step's length, seconds.
+    pub step_s: f32,
 }
 
 /// Make, join, keep, and destroy the gun bodies for this step, after the hands acted.
@@ -273,7 +276,9 @@ unsafe fn make(
     let placed = unsafe {
         body.add()
             .and_then(|()| body.place(at.position, at.orientation))
-            .and_then(|()| carry_with_hand(&mut body, hand_body, &hand_motion))
+            .and_then(|()| {
+                carry_with_hand(&mut body, hand_body, &hand_motion, (Vec3::ZERO, Vec3::ZERO))
+            })
     };
     if placed.is_err() {
         unsafe { body.destroy() };
@@ -408,12 +413,21 @@ unsafe fn keep(
         tally.reseats += 1;
     }
     // The gun moves with the hand's body as one rigid body, so the joint holds it on its seat
-    // rather than catching it up a step late; what it meets still stops it within the step.
+    // rather than catching it up a step late; what it meets still stops it within the step. A
+    // body past the drawn clamps is steered back to them, so it is where the drawn gun is.
     let hand_body = hands.bodies[i]
         .as_ref()
         .ok_or("the holding hand's body is gone")?;
+    let correction = clamp_velocity(
+        seated(hand_pose, holder_seat),
+        gun_pose,
+        input.config.drawn_max_shift_m,
+        input.config.drawn_max_turn_deg.to_radians(),
+        input.step_s,
+    )
+    .unwrap_or((Vec3::ZERO, Vec3::ZERO));
     // SAFETY: forwarded from the caller.
-    unsafe { carry_with_hand(&mut slot.body, hand_body, &hand_motion) }
+    unsafe { carry_with_hand(&mut slot.body, hand_body, &hand_motion, correction) }
         .map_err(|_| "the gun body could not be moved with its hand")?;
     if let Some((_, count)) = shots.filter(|(w, _)| *w == slot.held.weapon.get())
         && let Some(axes) = slot.axes
@@ -473,8 +487,10 @@ unsafe fn keep(
         // SAFETY: forwarded from the caller.
         let jump = unsafe { off_hand.motion() }
             .map_or(f32::INFINITY, |m| m.position.distance(target.position));
-        let placed = unsafe { off_hand.place(target.position, target.orientation) }
-            .and_then(|()| unsafe { carry_with_hand(off_hand, &slot.body, &gun_motion) });
+        let placed =
+            unsafe { off_hand.place(target.position, target.orientation) }.and_then(|()| unsafe {
+                carry_with_hand(off_hand, &slot.body, &gun_motion, (Vec3::ZERO, Vec3::ZERO))
+            });
         if placed.is_err() {
             tally.error = Some(
                 "held guns: the support palm could not be seated on its gun region".to_owned(),
@@ -610,7 +626,8 @@ unsafe fn end_quietly(joint: Joint, hand: Hand) {
 const QUIET_REBRACE_M: f32 = 0.05;
 
 /// Give the gun body `gun` the velocity it has as part of the hand's body `hand`, which moves as
-/// `hand_motion`: the hand's linear velocity at the gun's centre of mass, and the hand's turn.
+/// `hand_motion`: the hand's linear velocity at the gun's centre of mass, and the hand's turn,
+/// with `correction`'s linear and angular velocities added.
 ///
 /// # Safety
 ///
@@ -619,6 +636,7 @@ unsafe fn carry_with_hand(
     gun: &mut HandBody,
     hand: &HandBody,
     hand_motion: &BodyMotion,
+    correction: (Vec3, Vec3),
 ) -> Result<(), BodyError> {
     // SAFETY: forwarded from the caller.
     let (gun_centre, hand_centre) = unsafe { (gun.centre_of_mass()?, hand.centre_of_mass()?) };
@@ -628,8 +646,14 @@ unsafe fn carry_with_hand(
         hand_motion.angular,
         gun_centre,
     );
+    let (linear_correction, angular_correction) = correction;
     // SAFETY: forwarded from the caller.
-    unsafe { gun.set_velocities(linear, hand_motion.angular) }
+    unsafe {
+        gun.set_velocities(
+            linear + linear_correction,
+            hand_motion.angular + angular_correction,
+        )
+    }
 }
 
 /// How far along the gun a hand may hold it by a part other than its grip: the gun's muzzle's
