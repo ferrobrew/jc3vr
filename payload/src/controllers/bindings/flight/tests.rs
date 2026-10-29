@@ -75,7 +75,6 @@ impl History {
                 gameplay: true,
                 canopy_requested: false,
                 pose: Some(pose),
-                occupied: [false; 2],
                 claims: [HandClaims::default(); 2],
             },
             &CONFIG,
@@ -266,7 +265,6 @@ fn commit_history(
             gameplay: true,
             canopy_requested: canopy(desired),
             pose: Some(BRAKE),
-            occupied: [false; 2],
             claims,
         }),
         &CONFIG,
@@ -305,7 +303,7 @@ fn late_canopy_and_new_claims_cancel_otherwise_publishable_braking_and_reset_his
             let claim = &mut claims[(cancellation - 1) / 4];
             match (cancellation - 1) % 4 {
                 0 => claim.grip = true,
-                1 => claim.trigger = true,
+                1 => claim.slot = true,
                 2 => claim.mechanical = true,
                 3 => claim.grapple = true,
                 _ => unreachable!(),
@@ -383,6 +381,7 @@ fn missing_packet_still_resets_the_wrapper_without_a_default_frame_fixture() {
         ragdoll: false,
         grapple: false,
         grabs: [None; 2],
+        reaches: [&[], &[]],
         dt: 0.01,
     };
     let mut h = History::new();
@@ -392,4 +391,35 @@ fn missing_packet_still_resets_the_wrapper_without_a_default_frame_fixture() {
         GestureCommands::default()
     );
     assert_eq!(h.repeat(BRAKE), GestureCommands::default());
+}
+
+#[test]
+fn a_held_item_rides_along_and_a_body_slot_in_reach_claims_the_hand() {
+    for source in [
+        GripSource::Gun,
+        GripSource::Grenade,
+        GripSource::C4,
+        GripSource::Pickup,
+    ] {
+        assert!(holds_item(source), "{source:?}");
+    }
+    for source in [
+        GripSource::Magazine,
+        GripSource::Foregrip,
+        GripSource::Climb,
+        GripSource::Door,
+        GripSource::ParachuteHandle,
+    ] {
+        assert!(!holds_item(source), "{source:?}");
+    }
+    for volume in [
+        GrabVolume::GrenadePouch,
+        GrabVolume::MagazinePouch,
+        GrabVolume::C4Pouch,
+    ] {
+        assert!(on_body(volume), "{volume:?}");
+    }
+    for volume in [GrabVolume::Foregrip, GrabVolume::Handle, GrabVolume::Climb] {
+        assert!(!on_body(volume), "{volume:?}");
+    }
 }

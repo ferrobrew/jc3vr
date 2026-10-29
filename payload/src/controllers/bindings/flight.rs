@@ -9,10 +9,9 @@ use crate::{
         bindings::hold::{Desired, MapKind},
         body::BodyDimensions,
         config::{ControllersConfig, GripOffset},
-        fingers::grip,
+        fingers::grip::{self, GripSource},
         frame::{ControllerFrame, Hand},
         grab::GrabVolume,
-        loadout::live,
         mode::{Detection, Mode},
         vehicles::{
             config::WingsuitGesturesConfig,
@@ -62,6 +61,8 @@ pub(super) struct Tick<'a> {
     pub ragdoll: bool,
     pub grapple: bool,
     pub grabs: [Option<GrabVolume>; 2],
+    /// What each hand is within reach of this tick, by [`Hand::index`].
+    pub reaches: [&'a [GrabVolume]; 2],
     pub dt: f32,
 }
 
@@ -151,7 +152,6 @@ fn observation(tick: &Tick<'_>, desired: &[Desired], now: Instant) -> Option<Ges
             },
             now,
         ),
-        occupied: Hand::BOTH.map(|hand| live::held_kind(hand).is_some()),
         claims: claims(tick, now),
     })
 }
@@ -215,16 +215,15 @@ fn canopy(desired: &[Desired]) -> bool {
 fn claims(tick: &Tick<'_>, now: Instant) -> [HandClaims; 2] {
     let reload = weapons::reload::status();
     let foregrip = weapons::foregrip::two_hand_grip();
-    let gun = weapons::capabilities::gun_owners_now();
     Hand::BOTH.map(|hand| {
         let i = hand.index();
-        let grip = grip::current(hand, now, grip::max_age(tick.dt)).is_some();
+        let grip = grip::current(hand, now, grip::max_age(tick.dt))
+            .is_some_and(|grip| !holds_item(grip.source));
         HandClaims {
             grip: grip
-                || live::held_kind(hand).is_some()
                 || tick.grabs[i].is_some()
                 || foregrip.is_some_and(|hold| hold.holder.other() == hand),
-            trigger: gun[i].is_some(),
+            slot: tick.reaches[i].iter().copied().any(on_body),
             mechanical: reload.fire_held[i]
                 || reload
                     .insert_hands
@@ -232,6 +231,26 @@ fn claims(tick: &Tick<'_>, now: Instant) -> [HandClaims; 2] {
             grapple: tick.grapple || tick.detection.traversal.is_some(),
         }
     })
+}
+
+/// Whether a grip of `source` is a held item, which rides along in the hand rather than claiming
+/// it. A magazine is the reload's, which claims the hand itself.
+const fn holds_item(source: GripSource) -> bool {
+    matches!(
+        source,
+        GripSource::Gun | GripSource::Grenade | GripSource::C4 | GripSource::Pickup
+    )
+}
+
+/// Whether `volume` is a slot on the body: a socket, or a pouch.
+const fn on_body(volume: GrabVolume) -> bool {
+    matches!(
+        volume,
+        GrabVolume::Socket(_)
+            | GrabVolume::GrenadePouch
+            | GrabVolume::MagazinePouch
+            | GrabVolume::C4Pouch
+    )
 }
 
 #[cfg(test)]

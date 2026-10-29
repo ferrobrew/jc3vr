@@ -41,7 +41,6 @@ struct History {
     mode: Mode,
     gameplay: bool,
     canopy: bool,
-    occupied: [bool; 2],
     claims: [HandClaims; 2],
 }
 
@@ -57,7 +56,6 @@ impl History {
             mode,
             gameplay: true,
             canopy: false,
-            occupied: [false; 2],
             claims: [HandClaims::default(); 2],
         }
     }
@@ -72,7 +70,6 @@ impl History {
                 gameplay: self.gameplay,
                 canopy_requested: self.canopy,
                 pose,
-                occupied: self.occupied,
                 claims: self.claims,
             },
             &CONFIG,
@@ -204,7 +201,7 @@ fn missing_invalid_and_stale_tracking_never_become_withdrawal() {
 }
 
 #[test]
-fn either_gun_hand_and_each_transient_claim_suspend_and_require_a_fresh_pose() {
+fn each_transient_claim_suspends_and_requires_a_fresh_pose() {
     for hand in Hand::BOTH {
         for claim in [
             HandClaims {
@@ -212,7 +209,7 @@ fn either_gun_hand_and_each_transient_claim_suspend_and_require_a_fresh_pose() {
                 ..Default::default()
             },
             HandClaims {
-                trigger: true,
+                slot: true,
                 ..Default::default()
             },
             HandClaims {
@@ -241,14 +238,6 @@ fn either_gun_hand_and_each_transient_claim_suspend_and_require_a_fresh_pose() {
                     .any(|c| c.transition == Some(SuitTransition::Close))
             );
         }
-        let mut h = History::new(SUIT);
-        h.arm();
-        h.occupied[hand.index()] = true;
-        h.hold(FOLDED, 12);
-        h.occupied = [false; 2];
-        assert!(h.hold(FOLDED, 12).iter().all(|c| c.transition.is_none()));
-        h.hold(FLIGHT, 6);
-        assert!(h.state.armed);
     }
 }
 
@@ -326,7 +315,6 @@ fn menus_focus_and_repeated_samples_do_not_accumulate_pose_dwell() {
                 gameplay: true,
                 canopy_requested: false,
                 pose: Some(FOLDED),
-                occupied: [false; 2],
                 claims: [HandClaims::default(); 2],
             },
             &CONFIG,
@@ -420,7 +408,6 @@ fn tuning_rejects_nonfinite_values_and_overlapping_pose_ranges() {
                 gameplay: true,
                 canopy_requested: false,
                 pose: Some(FOLDED),
-                occupied: [false; 2],
                 claims: [HandClaims::default(); 2],
             },
             &invalid

@@ -125,7 +125,6 @@ fn gesture_actions(mode: Mode) -> BTreeSet<Action> {
                     gameplay: true,
                     canopy_requested: false,
                     pose: Some(pose),
-                    occupied: [false; 2],
                     claims: [HandClaims::default(); 2],
                 },
                 &config,

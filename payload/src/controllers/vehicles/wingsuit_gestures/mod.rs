@@ -44,12 +44,17 @@ pub(crate) enum GestureAvailability {
 
 /// Current physical input claims, indexed by `Hand::index`.
 ///
-/// These describe actual interactions, not the suit's own weapon triggers. A support or reload
-/// hand reports only the inputs its interaction owns. Grip release remains the owner's concern.
+/// These describe actual interactions, not what a hand holds: a held gun, grenade, charge, or prop
+/// rides along in the hand while the arm pose drives the suit. A support or reload hand reports
+/// only the inputs its interaction owns. Grip release remains the owner's concern.
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
 pub(crate) struct HandClaims {
+    /// The grip works something other than a held item: a grab this tick, a support hold on the
+    /// other hand's gun, or a hold on the world or a vehicle.
     pub grip: bool,
-    pub trigger: bool,
+    /// The hand is within reach of a slot on the body (a socket or pouch), so an arm drawn in is a
+    /// reach for it, not a closure.
+    pub slot: bool,
     pub mechanical: bool,
     pub grapple: bool,
 }
@@ -224,7 +229,6 @@ pub(crate) struct GestureInput {
     /// A contextual canopy request, including a held request, cancels pending suit gestures.
     pub canopy_requested: bool,
     pub pose: Option<FlightPose>,
-    pub occupied: [bool; 2],
     pub claims: [HandClaims; 2],
 }
 
@@ -427,7 +431,6 @@ impl GestureInput {
             || self.canopy_requested
             || !config.enabled
             || !config.valid()
-            || self.occupied.into_iter().any(|occupied| occupied)
             || self.claims.into_iter().any(HandClaims::interacting)
             || !self.pose.is_some_and(FlightPose::valid)
         {
@@ -443,7 +446,7 @@ impl GestureInput {
 
 impl HandClaims {
     fn interacting(self) -> bool {
-        self.grip || self.trigger || self.mechanical || self.grapple
+        self.grip || self.slot || self.mechanical || self.grapple
     }
 }
 

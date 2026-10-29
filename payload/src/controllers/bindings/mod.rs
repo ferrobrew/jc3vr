@@ -548,6 +548,13 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         &summary_sources,
     );
     crate::controllers::summary::hold::publish(summary_hold, summary_cancel);
+    let reach_volumes = targets.resolved.each_ref().map(|resolved| {
+        resolved
+            .reaches
+            .iter()
+            .map(|r| r.volume)
+            .collect::<Vec<_>>()
+    });
     let flight_tick = flight::Tick {
         frame: &original,
         config: &config,
@@ -557,6 +564,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         ragdoll: controls.ragdolling,
         grapple: grapple_held || line || physical_grapple.tethers > 0,
         grabs: step.grabs,
+        reaches: reach_volumes.each_ref().map(Vec::as_slice),
         dt,
     };
     let flight_commands = flight::evaluate(

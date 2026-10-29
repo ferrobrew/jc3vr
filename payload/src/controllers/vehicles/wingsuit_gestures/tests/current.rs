@@ -36,12 +36,12 @@ fn current_availability_uses_the_recognizers_whole_input_gate() {
         match denial {
             0 => h.gameplay = false,
             1 => h.canopy = true,
-            2 | 3 => h.occupied[denial - 2] = true,
+            2 | 3 => h.claims[denial - 2].grapple = true,
             4..=11 => {
                 let claim = &mut h.claims[(denial - 4) / 4];
                 match (denial - 4) % 4 {
                     0 => claim.grip = true,
-                    1 => claim.trigger = true,
+                    1 => claim.slot = true,
                     2 => claim.mechanical = true,
                     _ => claim.grapple = true,
                 }
@@ -79,7 +79,6 @@ fn backward_samples_and_large_gaps_remove_current_availability() {
                 gameplay: true,
                 canopy_requested: false,
                 pose: Some(FLIGHT),
-                occupied: [false; 2],
                 claims: [HandClaims::default(); 2],
             },
             &CONFIG,

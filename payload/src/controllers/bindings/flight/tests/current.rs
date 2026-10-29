@@ -23,7 +23,6 @@ fn input(mode: Mode) -> GestureInput {
         gameplay: true,
         canopy_requested: false,
         pose: Some(FLIGHT),
-        occupied: [false; 2],
         claims: [HandClaims::default(); 2],
     }
 }
@@ -86,12 +85,12 @@ fn late_input_changes_remove_current_and_cancel_pending_commands() {
             3 => late.as_mut().unwrap().pose.as_mut().unwrap().reach[0] = f32::NAN,
             4 => late.as_mut().unwrap().gameplay = false,
             5 => late.as_mut().unwrap().canopy_requested = true,
-            6 | 7 => late.as_mut().unwrap().occupied[denial - 6] = true,
+            6 | 7 => late.as_mut().unwrap().claims[denial - 6].grapple = true,
             8..=15 => {
                 let claim = &mut late.as_mut().unwrap().claims[(denial - 8) / 4];
                 match (denial - 8) % 4 {
                     0 => claim.grip = true,
-                    1 => claim.trigger = true,
+                    1 => claim.slot = true,
                     2 => claim.mechanical = true,
                     _ => claim.grapple = true,
                 }
@@ -225,6 +224,7 @@ fn actual_packet_evaluate_and_commit_apply_late_canopy_staleness_and_claims() {
         ragdoll: false,
         grapple: false,
         grabs: [None; 2],
+        reaches: [&[], &[]],
         dt: 0.01,
     };
     let mut state = FlightState::default();

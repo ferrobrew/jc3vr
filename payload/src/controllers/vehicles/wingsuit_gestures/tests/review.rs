@@ -9,7 +9,6 @@ fn observation(sample: GestureSample, pose: Option<FlightPose>) -> GestureInput 
         gameplay: true,
         canopy_requested: false,
         pose,
-        occupied: [false; 2],
         claims: [HandClaims::default(); 2],
     }
 }
@@ -107,7 +106,6 @@ enum Interruption {
     Falling,
     Epoch,
     Gap,
-    Occupied(Hand),
     Claim(Hand, HandClaims),
 }
 
@@ -151,11 +149,6 @@ fn interrupt(h: &mut History, interruption: Interruption) {
         Interruption::Gap => {
             h.sample.time_ns += 1_000_000_000;
         }
-        Interruption::Occupied(hand) => {
-            h.occupied[hand.index()] = true;
-            assert_eq!(h.observe(Some(BRAKE)), GestureCommands::default());
-            h.occupied = [false; 2];
-        }
         Interruption::Claim(hand, claim) => {
             h.claims[hand.index()] = claim;
             assert_eq!(h.observe(Some(BRAKE)), GestureCommands::default());
@@ -178,14 +171,13 @@ fn brake_entry_and_release_require_fresh_arming_after_every_interruption() {
         Interruption::Gap,
     ];
     for hand in Hand::BOTH {
-        interruptions.push(Interruption::Occupied(hand));
         for claim in [
             HandClaims {
                 grip: true,
                 ..Default::default()
             },
             HandClaims {
-                trigger: true,
+                slot: true,
                 ..Default::default()
             },
             HandClaims {
@@ -353,9 +345,9 @@ fn old_observations_cannot_lower_the_watermark_on_any_cancellation_path() {
         paths.push(input);
     }
     for hand in Hand::BOTH {
-        let mut occupied = observation(old, Some(FOLDED));
-        occupied.occupied[hand.index()] = true;
-        paths.push(occupied);
+        let mut slot = observation(old, Some(FOLDED));
+        slot.claims[hand.index()].slot = true;
+        paths.push(slot);
         let mut claim = observation(old, Some(FOLDED));
         claim.claims[hand.index()].mechanical = true;
         paths.push(claim);
