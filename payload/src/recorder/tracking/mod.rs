@@ -16,10 +16,18 @@
 //! is serviced on the game thread at the top of the next frame ([`frame_tick`]), which is where the
 //! player's transform can be read for the start marker. Nothing is recorded while a replay drives
 //! the game. The file format is [`format`]; see `docs/mod/testing/recorder.md`.
+//!
+//! Beside each frame the recorder writes the mod-side [`events`] noted since the previous one. The
+//! [`lookback`] keeps the last few seconds of the same capture batches while motion controllers are
+//! enabled, whether or not a recording runs, and saves them as a recording on request.
 
+pub(crate) mod events;
 pub(crate) mod format;
+pub(crate) mod lookback;
 #[cfg(test)]
 mod query_tests;
+#[cfg(test)]
+mod tests;
 mod writer;
 
 use std::{
@@ -29,16 +37,21 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use tracking_format::input::{CapturedInput, InputRecord};
+use tracking_format::{
+    event::Event,
+    input::{CapturedInput, DiscontinuityReason, InputRecord},
+};
 
 use crate::{
     config::Config,
     controllers::frame as controller_frame,
     recorder::tracking::{
+        events::Noted,
         format::{
             ControllerSample, EyeSample, Frame, HeadSample, Header, RecenterEvent, SemanticSample,
             SessionSample, StartMarker,
         },
+        lookback::{Entry, Lookback, LookbackStatus},
         writer::{CaptureBatch, SendOutcome, Writer},
     },
     vr::{
@@ -83,9 +96,11 @@ pub(crate) struct TrackingStatus {
     pub(crate) error: Option<String>,
 }
 
-/// Why a recording did not start.
+/// Why a recording, or a save of the lookback, did not start.
 #[derive(Debug)]
 pub(crate) enum StartError {
+    /// The lookback holds no frames to save.
+    LookbackEmpty,
     /// The test tools are switched off.
     Disabled,
     /// A replay is driving the game, so there is nothing live to record.
@@ -106,6 +121,7 @@ impl std::fmt::Display for StartError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "recorder: tracking: ")?;
         match self {
+            StartError::LookbackEmpty => write!(f, "lookback: the window holds no frames"),
             StartError::Disabled => write!(f, "the test tools are switched off (testing.enabled)"),
             StartError::Replaying => write!(f, "a replay is running"),
             StartError::NoPlayer => write!(f, "there is no player character to mark the start at"),
@@ -158,7 +174,22 @@ pub(crate) fn peek_status() -> TrackingStatus {
     STATE.lock().snapshot()
 }
 
-/// Service a start or stop request. Game thread, once per frame, outside the VR runtime lock.
+/// The lookback's state after collecting completed writers.
+pub(crate) fn lookback_status() -> LookbackStatus {
+    let mut state = STATE.lock();
+    state.reap();
+    let mut status = state.lookback_save.clone();
+    if let Some(lookback) = &state.lookback {
+        status.running = true;
+        status.frames = lookback.ring.len();
+        status.seconds = lookback.ring.span().as_secs_f32();
+        status.bytes = lookback.ring.bytes();
+    }
+    status
+}
+
+/// Service a start or stop request, and keep the lookback. Game thread, once per frame, outside
+/// the VR runtime lock.
 pub(crate) fn frame_tick() {
     STATE.lock().reap();
     match REQUEST.swap(REQUEST_NONE, Ordering::Relaxed) {
@@ -166,6 +197,7 @@ pub(crate) fn frame_tick() {
         REQUEST_STOP => stop(),
         _ => {}
     }
+    lookback_tick();
     // A writer that failed on its own is noticed here even on a frame no sample reaches it.
     let failed = STATE.lock().active.as_ref().and_then(|active| {
         active.writer.error().or_else(|| {
@@ -180,12 +212,13 @@ pub(crate) fn frame_tick() {
     }
 }
 
-/// Record one frame. Called by the frame loop on the game thread under the runtime lock, after
-/// the views are located and the controllers are sampled; it takes only leaf locks. A no-op
-/// unless recording.
+/// Record one frame, into the running recording and the lookback. Called by the frame loop on the
+/// game thread under the runtime lock, after the views are located and the controllers are
+/// sampled; it takes only leaf locks. A no-op unless either collects.
 pub(crate) fn capture(sample: CaptureSample) {
     let publications = history::take_capture();
-    if !is_recording() {
+    let noted = events::take();
+    if !is_recording() && !lookback::is_running() {
         return;
     }
     let captured_at = Instant::now();
@@ -193,47 +226,38 @@ pub(crate) fn capture(sample: CaptureSample) {
     let semantic = semantic_frame::latest();
     let session_state = crate::vr::published_status().session_state;
     let stage = stage::stage();
-    let mut state = STATE.lock();
+    let mut guard = STATE.lock();
+    let state = &mut *guard;
+    let captured = Captured {
+        sample,
+        captured_at,
+        publications: &publications,
+        noted: &noted,
+        controllers: controllers.as_ref(),
+        semantic: semantic.as_ref(),
+        session_state,
+        stage,
+        recenters: std::mem::take(&mut state.recenters),
+    };
+    if let Some(lookback) = state.lookback.as_mut() {
+        match captured.batch(lookback.epoch, lookback.hand_joints) {
+            Ok(batch) => lookback.ring.push(Entry {
+                time_ns: batch.capture_time_ns,
+                bytes: batch.bytes.into(),
+                input_records: batch.input_records,
+                transform: lookback.transform,
+            }),
+            Err(error) => tracing::warn!("recorder: tracking: lookback: {error}; frame left out"),
+        }
+    }
     let Some(active) = state.active.as_mut() else {
         return;
     };
-    let input = capture_publications(publications, active.started);
-    let (controllers, semantic) = matching_snapshots(controllers, semantic, &input);
-    let frame = Frame {
-        time_ns: nanos_since(captured_at, active.started),
-        display_time_ns: sample.display_time_ns,
-        session: SessionSample {
-            state: session_state,
-            should_render: sample.should_render,
-            head_tracked: sample.head_tracked,
-        },
-        head: sample.eyes.map(|eyes| HeadSample { eyes }),
-        stage,
-        controllers: controllers.map(|controller| {
-            let mut hands = controller.hands.clone();
-            if !active.hand_joints {
-                for hand in &mut hands {
-                    hand.joints = None;
-                }
-            }
-            ControllerSample {
-                focused: controller.focused,
-                action_set: controller.action_set,
-                hands,
-            }
-        }),
-        semantic: semantic.map(|semantic| SemanticSample {
-            action_set: semantic.action_set,
-            global: semantic.global,
-            mode: semantic.mode,
-        }),
-        recenters: std::mem::take(&mut active.recenters),
-    };
-    let batch = match encode_capture(&frame, &input) {
+    let batch = match captured.batch(active.started, active.hand_joints) {
         Ok(batch) => batch,
         Err(error) => {
             let error = error.to_string();
-            drop(state);
+            drop(guard);
             fail(&error);
             return;
         }
@@ -246,19 +270,75 @@ pub(crate) fn capture(sample: CaptureSample) {
             DROPPED.fetch_add(1, Ordering::Relaxed);
         }
         SendOutcome::Failed(error) => {
-            drop(state);
+            drop(guard);
             fail(&error);
         }
     }
 }
 
-fn matching_snapshots(
-    controllers: Option<controller_frame::ControllerFrame>,
-    semantic: Option<semantic_frame::SemanticFrame>,
+/// What one capture read, for encoding against each collector's time origin.
+struct Captured<'a> {
+    sample: CaptureSample,
+    captured_at: Instant,
+    publications: &'a [Publication],
+    noted: &'a [Noted],
+    controllers: Option<&'a controller_frame::ControllerFrame>,
+    semantic: Option<&'a semantic_frame::SemanticFrame>,
+    session_state: Option<openxr::SessionState>,
+    stage: stage::StageInfo,
+    recenters: Vec<RecenterEvent>,
+}
+
+impl Captured<'_> {
+    /// The frame, its input records, and its events, timed from `origin`.
+    fn batch(
+        &self,
+        origin: Instant,
+        hand_joints: bool,
+    ) -> Result<CaptureBatch, format::DecodeError> {
+        let input = capture_publications(self.publications, origin);
+        let (controllers, semantic) = matching_snapshots(self.controllers, self.semantic, &input);
+        let frame = Frame {
+            time_ns: nanos_since(self.captured_at, origin),
+            display_time_ns: self.sample.display_time_ns,
+            session: SessionSample {
+                state: self.session_state,
+                should_render: self.sample.should_render,
+                head_tracked: self.sample.head_tracked,
+            },
+            head: self.sample.eyes.map(|eyes| HeadSample { eyes }),
+            stage: self.stage,
+            controllers: controllers.map(|controller| {
+                let mut hands = controller.hands.clone();
+                if !hand_joints {
+                    for hand in &mut hands {
+                        hand.joints = None;
+                    }
+                }
+                ControllerSample {
+                    focused: controller.focused,
+                    action_set: controller.action_set,
+                    hands,
+                }
+            }),
+            semantic: semantic.map(|semantic| SemanticSample {
+                action_set: semantic.action_set,
+                global: semantic.global.clone(),
+                mode: semantic.mode.clone(),
+            }),
+            recenters: self.recenters.clone(),
+        };
+        encode_capture(&frame, &input, &events::stamp(self.noted, origin))
+    }
+}
+
+fn matching_snapshots<'a>(
+    controllers: Option<&'a controller_frame::ControllerFrame>,
+    semantic: Option<&'a semantic_frame::SemanticFrame>,
     input: &[CapturedInput],
 ) -> (
-    Option<controller_frame::ControllerFrame>,
-    Option<semantic_frame::SemanticFrame>,
+    Option<&'a controller_frame::ControllerFrame>,
+    Option<&'a semantic_frame::SemanticFrame>,
 ) {
     let controllers = controllers.filter(|frame| {
         input
@@ -266,41 +346,34 @@ fn matching_snapshots(
             .any(|entry| entry.frame_sequence == Some(frame.sequence))
     });
     let semantic = semantic.filter(|semantic| {
-        controllers
-            .as_ref()
-            .is_some_and(|frame| frame.published_at == semantic.published_at)
+        controllers.is_some_and(|frame| frame.published_at == semantic.published_at)
     });
     (controllers, semantic)
 }
 
-fn capture_publications(publications: Vec<Publication>, started: Instant) -> Vec<CapturedInput> {
+fn capture_publications(publications: &[Publication], origin: Instant) -> Vec<CapturedInput> {
     publications
-        .into_iter()
-        .filter(|entry| entry.observed_at >= started)
+        .iter()
+        .filter(|entry| entry.observed_at >= origin)
         .map(|entry| CapturedInput {
-            capture_time_ns: nanos_since(entry.observed_at, started),
+            capture_time_ns: nanos_since(entry.observed_at, origin),
             frame_sequence: entry.frame_sequence,
-            record: entry.record,
+            record: entry.record.clone(),
         })
         .collect()
 }
 
-fn nanos_since(at: Instant, origin: Instant) -> u64 {
+pub(super) fn nanos_since(at: Instant, origin: Instant) -> u64 {
     u64::try_from(at.saturating_duration_since(origin).as_nanos()).unwrap_or(u64::MAX)
 }
 
 fn encode_capture(
     frame: &Frame,
     input: &[CapturedInput],
+    events: &[Event],
 ) -> Result<CaptureBatch, format::DecodeError> {
     let mut bytes = Vec::new();
-    let mut input_records = 0u64;
-    for entry in input {
-        input_records = input_records.saturating_add(match &entry.record {
-            InputRecord::Group(_) | InputRecord::Policy(_) => 1,
-            InputRecord::Discontinuity { discarded, .. } => *discarded,
-        });
-        let encoded = tracking_format::encode_input(entry)?;
+    let mut append = |encoded: Vec<u8>| {
         if bytes.len().saturating_add(encoded.len()) > writer::MAX_BATCH_BYTES {
             return Err(format::DecodeError {
                 offset: 0,
@@ -311,18 +384,20 @@ fn encode_capture(
             });
         }
         bytes.extend(encoded);
+        Ok(())
+    };
+    for event in events {
+        append(tracking_format::encode_event(event)?)?;
     }
-    let encoded_frame = format::encode_frame(frame);
-    if bytes.len().saturating_add(encoded_frame.len()) > writer::MAX_BATCH_BYTES {
-        return Err(format::DecodeError {
-            offset: 0,
-            kind: tracking_format::DecodeErrorKind::InvalidValue {
-                field: "capture batch byte bound",
-                value: bytes.len().saturating_add(encoded_frame.len()) as u64,
-            },
+    let mut input_records = 0u64;
+    for entry in input {
+        input_records = input_records.saturating_add(match &entry.record {
+            InputRecord::Group(_) | InputRecord::Policy(_) => 1,
+            InputRecord::Discontinuity { discarded, .. } => *discarded,
         });
+        append(tracking_format::encode_input(entry)?)?;
     }
-    bytes.extend(encoded_frame);
+    append(format::encode_frame(frame))?;
     Ok(CaptureBatch {
         bytes,
         capture_time_ns: frame.time_ns,
@@ -332,11 +407,8 @@ fn encode_capture(
 
 /// Note a recenter of the cockpit baseline, recorded on the next frame. Game thread.
 pub(crate) fn note_recenter(event: RecenterEvent) {
-    if !is_recording() {
-        return;
-    }
-    if let Some(active) = STATE.lock().active.as_mut() {
-        active.recenters.push(event);
+    if events::collecting() {
+        STATE.lock().recenters.push(event);
     }
 }
 
@@ -347,11 +419,14 @@ pub(crate) fn shutdown() -> bool {
     let mut state = STATE.lock();
     REQUEST.store(REQUEST_NONE, Ordering::Relaxed);
     RECORDING.store(false, Ordering::Relaxed);
+    state.lookback = None;
+    lookback::set_running(false);
     state.shutdown()
 }
 
-/// Includes the active writer. Saturation refuses a start rather than discarding an owner.
-const MAX_WRITERS: usize = 2;
+/// Includes the active writer, and leaves room for a lookback save beside it. Saturation refuses a
+/// start rather than discarding an owner.
+const MAX_WRITERS: usize = 3;
 
 /// How close to a director bookmark the player must stand for the start marker to name it.
 const BOOKMARK_RADIUS_M: f32 = 2.0;
@@ -370,6 +445,11 @@ struct State {
     finishing: Vec<Finishing>,
     shutting_down: bool,
     status: TrackingStatus,
+    /// Recenters since the last captured frame.
+    recenters: Vec<RecenterEvent>,
+    lookback: Option<Lookback>,
+    /// The last lookback save's file and error; the window's own fields stay default.
+    lookback_save: LookbackStatus,
 }
 
 struct Finishing {
@@ -382,11 +462,37 @@ struct Active {
     path: PathBuf,
     started: Instant,
     hand_joints: bool,
-    /// Recenters since the last recorded frame.
-    recenters: Vec<RecenterEvent>,
 }
 
 impl State {
+    const fn idle() -> Self {
+        Self {
+            active: None,
+            finishing: Vec::new(),
+            shutting_down: false,
+            status: TrackingStatus {
+                recording: false,
+                path: None,
+                frames: 0,
+                dropped: 0,
+                bytes: 0,
+                logical_bytes: 0,
+                duration: Duration::ZERO,
+                error: None,
+            },
+            recenters: Vec::new(),
+            lookback: None,
+            lookback_save: LookbackStatus {
+                running: false,
+                frames: 0,
+                seconds: 0.0,
+                bytes: 0,
+                path: None,
+                error: None,
+            },
+        }
+    }
+
     fn snapshot(&self) -> TrackingStatus {
         let mut status = self.status.clone();
         status.recording = is_recording();
@@ -439,6 +545,9 @@ impl State {
             if let Some(completion) = writer.writer.poll_completion() {
                 if let Some(error) = &completion.error {
                     tracing::error!(path = %writer.path.display(), "recorder: tracking: {error}");
+                    if self.lookback_save.path.as_ref() == Some(&writer.path) {
+                        self.lookback_save.error = Some(error.clone());
+                    }
                 }
                 if self.status.path.as_ref() == Some(&writer.path) {
                     self.status.bytes = completion.bytes;
@@ -462,21 +571,7 @@ impl State {
     }
 }
 
-static STATE: Mutex<State> = Mutex::new(State {
-    active: None,
-    finishing: Vec::new(),
-    shutting_down: false,
-    status: TrackingStatus {
-        recording: false,
-        path: None,
-        frames: 0,
-        dropped: 0,
-        bytes: 0,
-        logical_bytes: 0,
-        duration: Duration::ZERO,
-        error: None,
-    },
-});
+static STATE: Mutex<State> = Mutex::new(State::idle());
 
 fn start() {
     if is_recording() {
@@ -499,41 +594,10 @@ fn begin() -> Result<PathBuf, StartError> {
         return Err(StartError::Replaying);
     }
     let transform = crate::director::teleport::player_transform().ok_or(StartError::NoPlayer)?;
-    let marker = StartMarker {
-        transform,
-        bookmark: None,
-    };
-    let bookmark = crate::director::teleport::bookmarks()
-        .into_iter()
-        .map(|b| {
-            let p = b.position();
-            (b.name, (glam::Vec3::from(p) - marker.position()).length())
-        })
-        .filter(|(_, distance)| *distance <= BOOKMARK_RADIUS_M)
-        .min_by(|a, b| a.1.total_cmp(&b.1))
-        .map(|(name, _)| name);
-    let (dominant_hand, world_scale, time_scale, hand_joints) = Config::lock_query(|c| {
-        (
-            c.controllers.dominant_hand,
-            c.vr.world_scale,
-            c.director.time_scale,
-            c.testing.record_hand_joints,
-        )
-    });
+    let hand_joints = Config::lock_query(|c| c.testing.record_hand_joints);
     let stamp = crate::session::stamp();
-    let header = Header {
-        build: crate::BUILD_STAMP.to_owned(),
-        recorded_at: stamp.clone(),
-        action_schema: crate::vr::input::semantic::SCHEMA_VERSION,
-        start: StartMarker { bookmark, ..marker },
-        dominant_hand,
-        world_scale,
-        time_scale,
-    };
-    let folder = crate::session::subdir("tracking")
-        .ok_or(StartError::NoSessionFolder)?
-        .map_err(StartError::Folder)?;
-    let path = folder.join(format!("{stamp}.{}", format::EXTENSION));
+    let header = header_at(transform, stamp.clone());
+    let path = tracking_folder()?.join(format!("{stamp}.{}", format::EXTENSION));
     let mut state = STATE.lock();
     state.can_start()?;
     let writer = Writer::start(&path, &header).map_err(StartError::Writer)?;
@@ -543,7 +607,6 @@ fn begin() -> Result<PathBuf, StartError> {
         path: path.clone(),
         started: Instant::now(),
         hand_joints,
-        recenters: Vec::new(),
     });
     state.status = TrackingStatus {
         path: Some(path.clone()),
@@ -558,8 +621,130 @@ fn begin() -> Result<PathBuf, StartError> {
     Ok(path)
 }
 
+/// The header of a recording whose start marker is `transform`, stamped `stamp`.
+fn header_at(transform: [f32; 16], stamp: String) -> Header {
+    let marker = StartMarker {
+        transform,
+        bookmark: None,
+    };
+    let bookmark = crate::director::teleport::bookmarks()
+        .into_iter()
+        .map(|b| {
+            let p = b.position();
+            (b.name, (glam::Vec3::from(p) - marker.position()).length())
+        })
+        .filter(|(_, distance)| *distance <= BOOKMARK_RADIUS_M)
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(name, _)| name);
+    let (dominant_hand, world_scale, time_scale) = Config::lock_query(|c| {
+        (
+            c.controllers.dominant_hand,
+            c.vr.world_scale,
+            c.director.time_scale,
+        )
+    });
+    Header {
+        build: crate::BUILD_STAMP.to_owned(),
+        recorded_at: stamp,
+        action_schema: crate::vr::input::semantic::SCHEMA_VERSION,
+        start: StartMarker { bookmark, ..marker },
+        dominant_hand,
+        world_scale,
+        time_scale,
+    }
+}
+
+fn tracking_folder() -> Result<PathBuf, StartError> {
+    crate::session::subdir("tracking")
+        .ok_or(StartError::NoSessionFolder)?
+        .map_err(StartError::Folder)
+}
+
 fn discard_before_start() {
     history::begin_capture();
+}
+
+/// Run the lookback while motion controllers are enabled, the OpenXR runtime is up, and no replay
+/// drives the game, and service a save request. Without a runtime no frame is captured, so the
+/// player's transform is not read for one.
+fn lookback_tick() {
+    let (enabled, hand_joints) =
+        Config::lock_query(|c| (c.controllers.enabled, c.testing.record_hand_joints));
+    let run =
+        enabled && crate::vr::published_status().runtime_up && !crate::testing::replay::is_active();
+    let transform = run
+        .then(crate::director::teleport::player_transform)
+        .flatten();
+    let save = lookback::take_save_request();
+    {
+        let mut state = STATE.lock();
+        if run && !state.shutting_down {
+            let lookback = state
+                .lookback
+                .get_or_insert_with(|| Lookback::new(hand_joints));
+            lookback.hand_joints = hand_joints;
+            lookback.transform = transform;
+        } else {
+            state.lookback = None;
+        }
+        lookback::set_running(state.lookback.is_some());
+    }
+    if save {
+        match save_lookback() {
+            Ok(path) => {
+                tracing::info!("recorder: tracking: lookback: saving to {}", path.display());
+                STATE.lock().lookback_save = LookbackStatus {
+                    path: Some(path),
+                    ..LookbackStatus::default()
+                };
+            }
+            Err(error) => {
+                tracing::warn!("{error}");
+                STATE.lock().lookback_save.error = Some(error.to_string());
+            }
+        }
+    }
+}
+
+/// Write the lookback's window to a new recording on a writer thread of its own.
+fn save_lookback() -> Result<PathBuf, StartError> {
+    let snapshot = STATE
+        .lock()
+        .lookback
+        .as_ref()
+        .and_then(|lookback| lookback.ring.snapshot())
+        .ok_or(StartError::LookbackEmpty)?;
+    let transform = snapshot
+        .transform
+        .or_else(crate::director::teleport::player_transform)
+        .ok_or(StartError::NoPlayer)?;
+    let stamp = crate::session::stamp();
+    let header = header_at(transform, stamp.clone());
+    let path = tracking_folder()?.join(format!("{stamp}_lookback.{}", format::EXTENSION));
+    // The evicted batches took their input history with them: say so before the first record.
+    let lead = snapshot
+        .evicted_inputs
+        .map(|discarded| {
+            tracking_format::encode_input(&CapturedInput {
+                capture_time_ns: snapshot.first_time_ns,
+                frame_sequence: None,
+                record: InputRecord::Discontinuity {
+                    reason: DiscontinuityReason::Overflow,
+                    discarded,
+                },
+            })
+        })
+        .transpose()
+        .map_err(|error| StartError::Writer(writer::WriterError::Encode(error)))?;
+    let mut state = STATE.lock();
+    state.can_start()?;
+    let writer =
+        Writer::dump(&path, &header, lead, snapshot.batches).map_err(StartError::Writer)?;
+    state.finishing.push(Finishing {
+        writer,
+        path: path.clone(),
+    });
+    Ok(path)
 }
 
 fn stop() {
@@ -579,272 +764,4 @@ fn fail(error: &str) {
     tracing::error!("recorder: tracking: {error}; stopping");
     STATE.lock().status.error = Some(error.to_owned());
     stop();
-}
-
-#[cfg(test)]
-fn assert_active_failure_transition(completion: writer::Completion) {
-    let _serial = history::TEST_LOCK.lock();
-    let expected_bytes = completion.bytes;
-    let expected_error = completion.error.clone();
-    let path = PathBuf::from("failed-active.tracking");
-    let (writer, completed) = Writer::controlled();
-    *completed.lock() = Some(completion);
-    let previous = {
-        let mut state = STATE.lock();
-        std::mem::replace(
-            &mut *state,
-            State {
-                active: Some(Active {
-                    writer,
-                    path: path.clone(),
-                    started: Instant::now(),
-                    hand_joints: false,
-                    recenters: Vec::new(),
-                }),
-                finishing: Vec::new(),
-                shutting_down: false,
-                status: TrackingStatus {
-                    path: Some(path.clone()),
-                    ..TrackingStatus::default()
-                },
-            },
-        )
-    };
-    let previous_recording = RECORDING.swap(true, Ordering::Relaxed);
-    let previous_request = REQUEST.swap(REQUEST_NONE, Ordering::Relaxed);
-    frame_tick();
-    let observed = status();
-    let (active, finishing) = {
-        let mut state = STATE.lock();
-        let active = state.active.is_some();
-        let finishing = state.finishing.len();
-        *state = previous;
-        (active, finishing)
-    };
-    RECORDING.store(previous_recording, Ordering::Relaxed);
-    REQUEST.store(previous_request, Ordering::Relaxed);
-    assert!(!active);
-    assert_eq!(finishing, 0);
-    assert!(!observed.recording);
-    assert_eq!(observed.path, Some(path));
-    assert_eq!(observed.bytes, expected_bytes);
-    assert_eq!(observed.error, expected_error);
-}
-
-#[cfg(test)]
-mod tests {
-    use tracking_format::input::DiscontinuityReason;
-
-    use super::*;
-    use crate::{controllers::frame::Hand, vr::stage::StageInfo};
-
-    fn local_state() -> State {
-        State {
-            active: None,
-            finishing: Vec::new(),
-            shutting_down: false,
-            status: TrackingStatus::default(),
-        }
-    }
-
-    fn activate(state: &mut State, writer: Writer, name: &str) {
-        state.can_start().unwrap();
-        let path = PathBuf::from(name);
-        state.status = TrackingStatus {
-            path: Some(path.clone()),
-            ..TrackingStatus::default()
-        };
-        state.active = Some(Active {
-            writer,
-            path,
-            started: Instant::now(),
-            hand_joints: false,
-            recenters: Vec::new(),
-        });
-    }
-
-    #[test]
-    fn rapid_stops_retain_all_pending_owners_and_refuse_a_saturated_start() {
-        let mut state = local_state();
-        let (a, complete_a) = Writer::controlled();
-        let (b, complete_b) = Writer::controlled();
-        activate(&mut state, a, "a.tracking");
-        state.stop_active();
-        activate(&mut state, b, "b.tracking");
-        state.stop_active();
-        assert_eq!(state.finishing.len(), MAX_WRITERS);
-        assert!(matches!(state.can_start(), Err(StartError::WritersBusy)));
-        *complete_b.lock() = Some(writer::Completion {
-            bytes: 22,
-            error: Some("tracking writer: sync: fixture".into()),
-        });
-        state.reap();
-        assert_eq!(state.finishing.len(), 1);
-        assert_eq!(state.status.path, Some(PathBuf::from("b.tracking")));
-        assert_eq!(state.status.bytes, 22);
-        assert!(state.status.error.as_ref().unwrap().contains("sync"));
-        assert!(!state.shutdown());
-        assert_eq!(state.finishing[0].path, PathBuf::from("a.tracking"));
-        assert!(matches!(state.can_start(), Err(StartError::ShuttingDown)));
-        *complete_a.lock() = Some(writer::Completion {
-            bytes: 11,
-            error: Some("tracking writer: record write: older".into()),
-        });
-        assert!(state.shutdown());
-        assert!(state.finishing.is_empty());
-        assert_eq!(state.status.bytes, 22);
-        assert!(state.status.error.as_ref().unwrap().contains("sync"));
-    }
-
-    #[test]
-    fn completion_frees_capacity_and_updates_the_matching_stopped_recording() {
-        let mut state = local_state();
-        let (a, complete_a) = Writer::controlled();
-        activate(&mut state, a, "a.tracking");
-        state.stop_active();
-        state.reap();
-        assert_eq!(state.status.bytes, 0);
-        *complete_a.lock() = Some(writer::Completion {
-            bytes: 100,
-            error: None,
-        });
-        state.can_start().unwrap();
-        assert!(state.finishing.is_empty());
-        assert_eq!(state.status.bytes, 100);
-        assert!(state.status.error.is_none());
-        assert!(state.shutdown());
-    }
-
-    #[test]
-    fn actual_idle_capture_and_start_boundary_drain_pending_publications() {
-        let _serial = history::TEST_LOCK.lock();
-        history::take_capture();
-        history::interrupt(DiscontinuityReason::Unavailable);
-        capture(CaptureSample {
-            display_time_ns: 90,
-            should_render: true,
-            head_tracked: false,
-            eyes: None,
-        });
-        assert!(history::take_capture().is_empty());
-        history::interrupt(DiscontinuityReason::Unavailable);
-        discard_before_start();
-        assert!(history::take_capture().is_empty());
-    }
-
-    #[test]
-    fn snapshot_matching_requires_publication_identity_even_with_equal_display_times() {
-        let now = Instant::now();
-        let frame = controller_frame::ControllerFrame {
-            sequence: 11,
-            display_time_ns: 90,
-            published_at: now,
-            focused: true,
-            action_set: controller_frame::ActionSetKind::OnFoot,
-            hands: Default::default(),
-        };
-        let set = |set| semantic_frame::SetState {
-            set,
-            actions: Vec::new(),
-        };
-        let semantic = semantic_frame::SemanticFrame {
-            published_at: now,
-            action_set: frame.action_set,
-            global: set(crate::vr::input::semantic::SemanticSet::Global),
-            mode: set(crate::vr::input::semantic::SemanticSet::OnFoot),
-        };
-        let input = [CapturedInput {
-            capture_time_ns: 1,
-            frame_sequence: Some(12),
-            record: InputRecord::Discontinuity {
-                reason: DiscontinuityReason::Unavailable,
-                discarded: 0,
-            },
-        }];
-        let (raw, actions) =
-            matching_snapshots(Some(frame.clone()), Some(semantic.clone()), &input);
-        assert!(raw.is_none());
-        assert!(actions.is_none());
-        let current = controller_frame::ControllerFrame {
-            sequence: 12,
-            ..frame
-        };
-        assert_eq!(current.display_time_ns, 90);
-        let (raw, actions) =
-            matching_snapshots(Some(current.clone()), Some(semantic.clone()), &input);
-        assert_eq!(raw.unwrap().sequence, 12);
-        assert!(actions.is_some());
-        let stale = semantic_frame::SemanticFrame {
-            published_at: now - Duration::from_nanos(1),
-            ..semantic
-        };
-        let (raw, actions) = matching_snapshots(Some(current), Some(stale), &input);
-        assert!(raw.is_some());
-        assert!(actions.is_none());
-    }
-
-    #[test]
-    fn capture_wire_preserves_exact_publication_time_and_missing_associations() {
-        let started = Instant::now();
-        let record = InputRecord::Discontinuity {
-            reason: DiscontinuityReason::Unavailable,
-            discarded: 0,
-        };
-        let publications = vec![
-            Publication {
-                observed_at: started - Duration::from_nanos(1),
-                frame_sequence: Some(1),
-                record: record.clone(),
-            },
-            Publication {
-                observed_at: started + Duration::from_nanos(7),
-                frame_sequence: Some(12),
-                record: record.clone(),
-            },
-            Publication {
-                observed_at: started + Duration::from_nanos(9),
-                frame_sequence: None,
-                record,
-            },
-        ];
-        let captured = capture_publications(publications, started);
-        assert_eq!(captured.len(), 2);
-        assert_eq!(captured[0].capture_time_ns, 7);
-        assert_eq!(captured[0].frame_sequence, Some(12));
-        assert_eq!(captured[1].capture_time_ns, 9);
-        assert_eq!(captured[1].frame_sequence, None);
-        let frame = Frame {
-            time_ns: 15,
-            display_time_ns: 90,
-            session: SessionSample {
-                state: None,
-                should_render: true,
-                head_tracked: false,
-            },
-            head: None,
-            stage: StageInfo::default(),
-            controllers: None,
-            semantic: None,
-            recenters: Vec::new(),
-        };
-        let batch = encode_capture(&frame, &captured).unwrap();
-        let header = Header {
-            build: "fixture".into(),
-            recorded_at: "fixture".into(),
-            action_schema: 4,
-            start: StartMarker {
-                transform: [0.0; 16],
-                bookmark: None,
-            },
-            dominant_hand: Hand::Right,
-            world_scale: 1.0,
-            time_scale: 1.0,
-        };
-        let mut bytes = format::encode_input_preamble(&header);
-        bytes.extend(batch.bytes);
-        let decoded = format::decode(&bytes).unwrap();
-        assert_eq!(decoded.version, tracking_format::VERSION);
-        assert_eq!(decoded.input, captured);
-        assert_eq!(decoded.frames, vec![frame]);
-    }
 }

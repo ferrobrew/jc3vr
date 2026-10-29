@@ -41,10 +41,7 @@ fn local_snapshot_reads_active_progress_without_stopping_the_writer() {
             path: path.clone(),
             started,
             hand_joints: true,
-            recenters: Vec::new(),
         }),
-        finishing: Vec::new(),
-        shutting_down: false,
         status: TrackingStatus {
             path: Some(path.clone()),
             bytes: 4096,
@@ -52,6 +49,7 @@ fn local_snapshot_reads_active_progress_without_stopping_the_writer() {
             duration: Duration::from_secs(1),
             ..TrackingStatus::default()
         },
+        ..State::idle()
     };
     let snapshot = state.snapshot();
     assert_eq!(snapshot.path, Some(path));
@@ -121,7 +119,6 @@ fn completed_state() -> (State, ControlledCompletion) {
                 writer,
                 path: path.clone(),
             }],
-            shutting_down: false,
             status: TrackingStatus {
                 recording: true,
                 path: Some(path),
@@ -132,6 +129,7 @@ fn completed_state() -> (State, ControlledCompletion) {
                 duration: Duration::from_secs(3),
                 error: Some("tracking writer: previous fixture".to_owned()),
             },
+            ..State::idle()
         },
         completion,
     )

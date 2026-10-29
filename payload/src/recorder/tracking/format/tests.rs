@@ -339,7 +339,7 @@ fn version4_chunk_wire_survives_payload_conversion() {
     let mut bytes = encode_chunked_preamble(&header());
     bytes.extend(tracking_format::encode_chunk(&inner).unwrap());
     let recording = decode(&bytes).unwrap();
-    assert_eq!(recording.version, 4);
+    assert_eq!(recording.version, tracking_format::VERSION);
     assert_eq!(recording.input, vec![record]);
     assert_eq!(encode_frame(&recording.frames[0]), encoded_frame);
 }
@@ -392,7 +392,7 @@ fn version4_runtime_wire_preserves_all_joint_float_bits_and_input_records() {
             bytes.extend(&inner);
         }
         let decoded = decode(&bytes).unwrap();
-        assert_eq!(decoded.version, 4);
+        assert_eq!(decoded.version, tracking_format::VERSION);
         assert_eq!(decoded.input, vec![input.clone()]);
         assert_eq!(encode_frame(&decoded.frames[0]), encoded_frame);
         let actual = decoded.frames[0].controllers.as_ref().unwrap();

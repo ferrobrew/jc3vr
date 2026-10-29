@@ -141,7 +141,7 @@ fn input_batch(time: u64) -> CaptureBatch {
         semantic: None,
         recenters: Vec::new(),
     };
-    encode_capture(&frame, &[record]).unwrap()
+    encode_capture(&frame, &[record], &[]).unwrap()
 }
 
 #[test]
@@ -159,7 +159,10 @@ fn recordings_start_with_the_version_4_chunked_preamble() {
         time_scale: 1.0,
     };
     let bytes = crate::recorder::tracking::format::encode_chunked_preamble(&payload_header);
-    assert_eq!(tracking_format::decode(&bytes).unwrap().version, 4);
+    assert_eq!(
+        tracking_format::decode(&bytes).unwrap().version,
+        tracking_format::VERSION
+    );
 }
 
 #[test]
@@ -193,7 +196,7 @@ fn chunks_preserve_batches_final_loss_and_preamble_counters() {
         (preamble_len + first.len() + final_loss.len()) as u64
     );
     let decoded = tracking_format::decode(&bytes.lock()).unwrap();
-    assert_eq!(decoded.version, 4);
+    assert_eq!(decoded.version, tracking_format::VERSION);
     assert_eq!(decoded.frames.len(), 1);
     assert_eq!(decoded.input.len(), 2);
     assert_eq!(
@@ -225,12 +228,12 @@ fn chunks_run_through_the_started_writer_thread() {
     let result = completion(handle.join(), writer.bytes_written());
     assert!(result.error.is_none(), "{:?}", result.error);
     let decoded = tracking_format::decode(&bytes.lock()).unwrap();
-    assert_eq!(decoded.version, 4);
+    assert_eq!(decoded.version, tracking_format::VERSION);
     assert_eq!(decoded.frames.len(), 1);
     assert_eq!(decoded.input.len(), 1);
     let payload = format::decode(&bytes.lock()).unwrap();
     assert_eq!(
-        encode_capture(&payload.frames[0], &payload.input)
+        encode_capture(&payload.frames[0], &payload.input, &[])
             .unwrap()
             .bytes,
         original
@@ -530,7 +533,7 @@ fn stopped_writer_reports_accepted_write_marker_flush_and_sync_failures() {
         };
         assert_eq!(writer.bytes_written(), expected_bytes as u64);
         assert_eq!(bytes.lock().len(), expected_bytes);
-        crate::recorder::tracking::assert_active_failure_transition(completion(
+        crate::recorder::tracking::tests::assert_active_failure_transition(completion(
             Ok(Err(error)),
             writer.bytes_written(),
         ));
@@ -585,5 +588,5 @@ fn active_sink_panic_preserves_exact_cause_and_bytes_through_fail_stop_reap() {
     );
     assert_eq!(completion.bytes, expected.len() as u64);
     assert_eq!(*bytes.lock(), expected);
-    crate::recorder::tracking::assert_active_failure_transition(completion);
+    crate::recorder::tracking::tests::assert_active_failure_transition(completion);
 }

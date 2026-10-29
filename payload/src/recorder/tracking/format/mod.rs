@@ -176,6 +176,12 @@ pub(crate) fn encode_legacy_frame(frame: &Frame) -> Vec<u8> {
     tracking_format::encode_legacy_frame(&convert::frame_to_file(frame))
 }
 
+/// A hand in the file's own type, for the producers of events, which build the file's types
+/// directly.
+pub(crate) fn hand_to_file(hand: Hand) -> tracking_format::model::Hand {
+    convert::hand_to_file(hand)
+}
+
 /// Read a whole file.
 pub(crate) fn decode(bytes: &[u8]) -> Result<Recording, DecodeError> {
     tracking_format::decode(bytes).map(convert::recording_from_file)

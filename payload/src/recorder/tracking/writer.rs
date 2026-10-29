@@ -32,6 +32,8 @@ pub(crate) enum WriterError {
         error: std::io::Error,
     },
     Spawn(std::io::Error),
+    /// A record the writer was handed to store could not be encoded.
+    Encode(format::DecodeError),
 }
 
 impl std::fmt::Display for WriterError {
@@ -41,6 +43,7 @@ impl std::fmt::Display for WriterError {
                 write!(f, "writer: could not create {}: {error}", path.display())
             }
             WriterError::Spawn(error) => write!(f, "writer: could not spawn the thread: {error}"),
+            WriterError::Encode(error) => write!(f, "writer: could not encode a record: {error}"),
         }
     }
 }
@@ -102,6 +105,46 @@ impl Writer {
             error,
         })?;
         Self::spawn_sink(file, preamble.len() as u64)
+    }
+
+    /// Create the recording at `path` from already-encoded capture batches and write them on a
+    /// thread of its own, which exits once they are on disk. `lead`, when given, is stored in the
+    /// first batch's chunk ahead of its records.
+    pub(crate) fn dump(
+        path: &Path,
+        header: &Header,
+        lead: Option<Vec<u8>>,
+        batches: Vec<Arc<[u8]>>,
+    ) -> Result<Self, WriterError> {
+        let preamble = format::encode_chunked_preamble(header);
+        let create = || -> std::io::Result<BufWriter<File>> {
+            let mut file = BufWriter::new(File::create_new(path)?);
+            file.write_all(&preamble)?;
+            Ok(file)
+        };
+        let mut file = create().map_err(|error| WriterError::Create {
+            path: path.to_owned(),
+            error,
+        })?;
+        let shared = Arc::new(Shared::new(preamble.len() as u64));
+        let thread_shared = Arc::clone(&shared);
+        let handle = std::thread::Builder::new()
+            .name("jc3vr-tracking-lookback".to_owned())
+            .spawn(move || {
+                let result = write_dump(&mut file, lead, &batches, &thread_shared);
+                if let Err(message) = &result {
+                    tracing::error!("recorder: tracking: writer: {message}");
+                    *thread_shared.error.lock() = Some(message.clone());
+                }
+                result
+            })
+            .map_err(WriterError::Spawn)?;
+        Ok(Self {
+            sender: None,
+            handle: Some(Owner::Thread(handle)),
+            shared,
+            pending_loss: None,
+        })
     }
 
     fn spawn_sink(file: impl Sink + Send + 'static, bytes: u64) -> Result<Self, WriterError> {
@@ -301,6 +344,30 @@ fn drain(
     if let Some(loss) = shared.final_loss.lock().take() {
         write_batch(file, &encode_loss(loss), shared)
             .map_err(|error| format!("tracking writer: final input loss write: {error}"))?;
+    }
+    file.flush()
+        .map_err(|e| format!("tracking writer: flush: {e}"))?;
+    file.sync()
+        .map_err(|e| format!("tracking writer: sync: {e}"))
+}
+
+fn write_dump(
+    file: &mut impl Sink,
+    lead: Option<Vec<u8>>,
+    batches: &[Arc<[u8]>],
+    shared: &Shared,
+) -> Result<(), String> {
+    let mut batches = batches.iter();
+    if let Some(mut first) = lead {
+        if let Some(batch) = batches.next() {
+            first.extend_from_slice(batch);
+        }
+        write_batch(file, &first, shared)
+            .map_err(|error| format!("tracking writer: record write: {error}"))?;
+    }
+    for batch in batches {
+        write_batch(file, batch, shared)
+            .map_err(|error| format!("tracking writer: record write: {error}"))?;
     }
     file.flush()
         .map_err(|e| format!("tracking writer: flush: {e}"))?;

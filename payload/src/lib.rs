@@ -162,9 +162,6 @@ fn shutdown_startup() {
     if !config::shutdown() {
         module::pin();
     }
-    if !controllers::diagnostics::shutdown() {
-        module::pin();
-    }
     // Sidecar replacement and its status publication must finish before the DLL can unmap.
     if !controllers::weapons::inventory::sidecar::shutdown() {
         module::pin();

@@ -124,10 +124,51 @@ fn recording_ui(ui: &mut egui::Ui) {
         "Record the tracked hand joints",
     )
     .on_hover_text("They triple a frame's size, and only the finger curls read them.");
+    drop(cfg);
     ui.label(
-        "Records the head, both controllers, their inputs, and the semantic actions each VR \
-         frame, starting from where the player stands. Ctrl+Numpad/ toggles it.",
+        "Records the head, both controllers, their inputs, the semantic actions, and the mod's \
+         controller, grip, and gun release events each VR frame, starting from where the player \
+         stands. Ctrl+Numpad/ toggles it.",
     );
+    ui.separator();
+    lookback_ui(ui);
+}
+
+fn lookback_ui(ui: &mut egui::Ui) {
+    let status = tracking::lookback_status();
+    ui.horizontal(|ui| {
+        let label = format!("Save the last {} s", tracking::lookback::WINDOW.as_secs());
+        if ui
+            .add_enabled(status.frames > 0, egui::Button::new(label))
+            .on_hover_text(
+                "Write the rolling window of recent frames and events to a new recording in this \
+                 session's tracking folder.",
+            )
+            .clicked()
+        {
+            tracking::lookback::request_save();
+        }
+        ui.label(if status.running {
+            format!(
+                "{} frames, {:.1} s, {} KiB held",
+                status.frames,
+                status.seconds,
+                status.bytes / 1024
+            )
+        } else {
+            "kept only while motion controllers are enabled".to_owned()
+        });
+    });
+    let dropped = tracking::events::dropped();
+    if dropped > 0 {
+        ui.label(format!("{dropped} events dropped waiting for a frame"));
+    }
+    if let Some(path) = &status.path {
+        path_line(ui, "Last lookback", path);
+    }
+    if let Some(error) = &status.error {
+        ui.colored_label(Color32::LIGHT_RED, error);
+    }
 }
 
 /// The replay form's fields.

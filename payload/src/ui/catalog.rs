@@ -107,7 +107,6 @@ features! {
     },
     Tools {
         TrackingCapture => ("tools.tracking", "Tracking capture"),
-        ControllerCapture => ("tools.controllers", "Controller capture"),
         RenderCapture => ("tools.render", "Render capture"),
         Replay => ("tools.replay", "Replay"),
         Director => ("tools.director", "Director"),

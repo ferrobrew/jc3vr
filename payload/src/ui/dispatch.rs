@@ -77,7 +77,6 @@ pub(crate) fn route(id: FeatureId) -> FeatureRoute {
         | FeatureId::Devices
         | FeatureId::Wrist
         | FeatureId::Semantic
-        | FeatureId::ControllerCapture
         | FeatureId::Presets => FeatureRoute::Controller,
     }
 }

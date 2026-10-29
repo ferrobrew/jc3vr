@@ -143,7 +143,7 @@ pub(super) fn recording_from_file(recording: file::Recording) -> Recording {
     }
 }
 
-fn hand_to_file(hand: Hand) -> wire::Hand {
+pub(super) fn hand_to_file(hand: Hand) -> wire::Hand {
     match hand {
         Hand::Left => wire::Hand::Left,
         Hand::Right => wire::Hand::Right,

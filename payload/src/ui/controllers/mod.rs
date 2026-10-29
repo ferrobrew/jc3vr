@@ -5,7 +5,6 @@ mod aim_state;
 mod body_ik;
 mod climb;
 mod collider_view;
-mod diagnostics;
 mod explosives;
 mod fingers;
 mod frame;
@@ -64,7 +63,6 @@ use crate::{
 /// guard itself, after reading any snapshot providers that read configuration.
 pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
     let body: FeatureBody = match id {
-        FeatureId::ControllerCapture => |ui, _| diagnostics::diagnostics(ui),
         FeatureId::Devices => |ui, _| settings::devices(ui, &mut config::edit()),
         FeatureId::OnFoot => |ui, _| settings::locomotion_settings(ui, &mut config::edit()),
         FeatureId::Grapple => |ui, _| {

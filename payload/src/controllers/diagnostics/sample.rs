@@ -1,273 +1,62 @@
-//! The diagnostic sample: a compact, serializable, pointer-free copy of each controller
-//! subsystem's status, and its construction from the subsystems' live readouts.
+//! The controller state event's construction from each subsystem's live readout.
+//!
+//! The event holds only what the tracking frames do not: the frames already carry the
+//! controllers' poses, validity and tracking flags, focus, and action set, and the STAGE
+//! information, so none of those are read here.
 
-use serde::Serialize;
+use tracking_format::event::{
+    AimState, ControllerState, GrappleAim, HandAim, HandLate, HandTier, IkState, Label, LateState,
+    RoomscaleState, TierState, WeaponAim,
+};
 
 use crate::{
     controllers::{
         aim::{self, AimIdle, HandSource, raycast::RaycastError, sights::SightSource},
         body::rig::collision::probe::ProbeResult,
-        frame::{self, ActionSetKind, Hand},
+        frame::{self, Hand},
         hands::{ik, late, tiers},
         mode::{self, AirborneVariant, HoldReason, Mode, OnFootVariant, Traversal},
         roomscale,
         scheme::{self, Scheme},
     },
+    recorder::tracking::format::hand_to_file,
     vr::input as vr_input,
 };
 
-/// A compact, pointer-free snapshot of the controller subsystems.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct ControllerDiagnostic {
-    /// Milliseconds since recording was enabled.
-    pub elapsed_ms: u64,
-    /// The published OpenXR frame sequence, when a frame is available.
-    pub frame_sequence: Option<u64>,
-    pub scheme: SchemeDiagnostic,
-    pub mode: ModeDiagnostic,
-    pub tracking: TrackingDiagnostic,
-    pub ik: [IkDiagnostic; 2],
-    pub tiers: TierDiagnostic,
-    pub late: LateDiagnostic,
-    pub aim: AimDiagnostic,
-    pub roomscale: RoomscaleDiagnostic,
-}
-
-/// The controller scheme in effect.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct SchemeDiagnostic {
-    pub effective: &'static str,
-}
-
-/// The mode detector's result and the action set selected for the next input frame.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct ModeDiagnostic {
-    pub mode: &'static str,
-    pub action_set: &'static str,
-    pub traversal: Option<&'static str>,
-    pub held: Option<&'static str>,
-}
-
-/// Controller frame age, focus, action set, and per-hand tracking flags.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct TrackingDiagnostic {
-    pub age_ms: Option<u64>,
-    pub focused: bool,
-    pub action_set: &'static str,
-    pub input_error: Option<String>,
-    pub left: HandTrackingDiagnostic,
-    pub right: HandTrackingDiagnostic,
-}
-
-/// Validity and measured-tracking state for one hand's grip and aim poses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
-pub struct HandTrackingDiagnostic {
-    pub active: bool,
-    pub grip_position_valid: bool,
-    pub grip_orientation_valid: bool,
-    pub grip_position_tracked: bool,
-    pub grip_orientation_tracked: bool,
-    pub aim_position_valid: bool,
-    pub aim_orientation_valid: bool,
-    pub aim_position_tracked: bool,
-    pub aim_orientation_tracked: bool,
-}
-
-/// One hand's HumanIK result.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub struct IkDiagnostic {
-    pub queued: bool,
-    pub skip: Option<&'static str>,
-    pub weight: f32,
-    pub reach_distance_m: f32,
-    pub rotation_deg: f32,
-    pub secondary_wrist_off: bool,
-    pub secondary_grip_off: bool,
-    pub overrode_live_target: bool,
-}
-
-/// The classified hand tier and its blend state.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct TierDiagnostic {
-    pub state: Option<&'static str>,
-    pub left: HandTierDiagnostic,
-    pub right: HandTierDiagnostic,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub struct HandTierDiagnostic {
-    pub assigned: &'static str,
-    pub effective: &'static str,
-    pub controller_weight: f32,
-    pub anchor_weight: f32,
-}
-
-/// One hand's render-time late correction status and physical pose samples.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub struct HandLateDiagnostic {
-    pub reason: &'static str,
-    pub physical_displacement_m: Option<f32>,
-    pub relative_rotation_deg: Option<f32>,
-    pub requested_wrist_position: Option<[f32; 3]>,
-    pub reference_wrist_position: Option<[f32; 3]>,
-    pub latest_wrist_position: Option<[f32; 3]>,
-    pub achieved_wrist_position_model: Option<[f32; 3]>,
-}
-
-/// Render-time late correction status and cumulative counters.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub struct LateDiagnostic {
-    pub hands: [HandLateDiagnostic; 2],
-    pub weapons_updated: u64,
-    pub palettes_edited: u64,
-}
-
-/// Aim rays, hit results, weapon sight selection, and structured error information.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct AimDiagnostic {
-    pub idle: Option<&'static str>,
-    pub left: Option<HandAimDiagnostic>,
-    pub right: Option<HandAimDiagnostic>,
-    pub grapple: Option<GrappleDiagnostic>,
-    pub weapon: Option<WeaponDiagnostic>,
-    pub raycast_error: Option<&'static str>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub struct HandAimDiagnostic {
-    pub source: &'static str,
-    pub gun_index: Option<usize>,
-    pub hit: bool,
-    pub hit_distance_m: Option<f32>,
-    pub hit_object: bool,
-    pub target: [f32; 3],
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub struct GrappleDiagnostic {
-    pub hit: bool,
-    pub valid: bool,
-    pub tetherable: bool,
-    pub point: [f32; 3],
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct WeaponDiagnostic {
-    pub name_hash: u32,
-    pub gun_hands: [Option<&'static str>; 4],
-    pub sight_source: &'static str,
-    pub sight_offset_m: Option<[f32; 3]>,
-    pub sight_angles_deg: [f32; 2],
-}
-
-/// The posture, the stage, the rig's root and chase, the seat, the fade, and the requested velocities.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct RoomscaleDiagnostic {
-    pub active: bool,
-    pub posture: &'static str,
-    pub stage_available: bool,
-    pub stage_bounds_m: Option<[f32; 2]>,
-    pub stage_head_height_m: Option<f32>,
-    pub eye_drop_m: f32,
-    /// Who owned the root on the last on-foot tick.
-    pub root_owner: Option<&'static str>,
-    /// How far the ground point under the upright eyes is from the root, and how far it is outside
-    /// the lean, world metres.
-    pub gap_m: f32,
-    pub residual_m: f32,
-    /// How far the push-back has slid the view in its current episode, metres.
-    pub pushback_m: f32,
-    pub cockpit_shift_m: [f32; 3],
-    pub requested_chase_velocity_mps: [f32; 2],
-    pub requested_task_velocity_mps: [f32; 2],
-    pub crouched: bool,
-    pub seated_crouch: bool,
-    pub seat: &'static str,
-    pub probe: Option<&'static str>,
-    pub fade_level: f32,
-}
-
-/// Read every subsystem's status into one sample, with `elapsed_ms` left for the caller.
-pub(super) fn snapshot() -> ControllerDiagnostic {
+/// Read every subsystem's status into one event.
+pub(super) fn snapshot() -> ControllerState {
     let detection = mode::current();
-    let input = tracking_snapshot();
+    let (frame_sequence, publication_age_us) = frame::with_latest(|frame| {
+        (
+            Some(frame.sequence),
+            Some(u64::try_from(frame.age().as_micros()).unwrap_or(u64::MAX)),
+        )
+    })
+    .unwrap_or((None, None));
     let ik_status = ik::status();
-    let tier_status = tiers::status();
-    let late_status = late::status();
-    let aim_status = aim::status();
-    let roomscale_status = roomscale::status();
-    let scheme = SchemeDiagnostic {
-        effective: scheme_label(scheme::current()),
-    };
-    ControllerDiagnostic {
-        elapsed_ms: 0,
-        frame_sequence: input.sequence,
-        scheme,
-        mode: ModeDiagnostic {
-            mode: mode_label(detection.mode),
-            action_set: action_set_label(detection.mode.action_set()),
-            traversal: detection.traversal.map(traversal_label),
-            held: detection.held.map(hold_label),
-        },
-        tracking: input.tracking,
-        ik: Hand::BOTH.map(|hand| ik_diagnostic(ik_status[hand.index()])),
-        tiers: tier_diagnostic(tier_status),
-        late: late_diagnostic(late_status),
-        aim: aim_diagnostic(aim_status),
-        roomscale: roomscale_diagnostic(roomscale_status),
+    ControllerState {
+        frame_sequence,
+        publication_age_us,
+        scheme: Label::Borrowed(scheme_label(scheme::current())),
+        mode: Label::Borrowed(mode_label(detection.mode)),
+        traversal: detection
+            .traversal
+            .map(traversal_label)
+            .map(Label::Borrowed),
+        held: detection.held.map(hold_label).map(Label::Borrowed),
+        input_error: vr_input::status().error.map(Label::Owned),
+        ik: Hand::BOTH.map(|hand| ik_state(ik_status[hand.index()])),
+        tiers: tier_state(tiers::status()),
+        late: late_state(late::status()),
+        aim: aim_state(aim::status()),
+        roomscale: roomscale_state(roomscale::status()),
     }
 }
 
-struct TrackingSnapshot {
-    sequence: Option<u64>,
-    tracking: TrackingDiagnostic,
-}
-
-fn tracking_snapshot() -> TrackingSnapshot {
-    let input_error = vr_input::status().error;
-    frame::with_latest(|frame| TrackingSnapshot {
-        sequence: Some(frame.sequence),
-        tracking: TrackingDiagnostic {
-            age_ms: Some(frame.age().as_millis().try_into().unwrap_or(u64::MAX)),
-            focused: frame.focused,
-            action_set: action_set_label(frame.action_set),
-            input_error: input_error.clone(),
-            left: hand_tracking(frame, Hand::Left),
-            right: hand_tracking(frame, Hand::Right),
-        },
-    })
-    .unwrap_or_else(|| TrackingSnapshot {
-        sequence: None,
-        tracking: TrackingDiagnostic {
-            age_ms: None,
-            focused: false,
-            action_set: action_set_label(vr_input::active_action_set()),
-            input_error,
-            left: HandTrackingDiagnostic::default(),
-            right: HandTrackingDiagnostic::default(),
-        },
-    })
-}
-
-fn hand_tracking(frame: &frame::ControllerFrame, hand: Hand) -> HandTrackingDiagnostic {
-    let hand = frame.hand(hand);
-    HandTrackingDiagnostic {
-        active: hand.active,
-        grip_position_valid: hand.grip.position_valid,
-        grip_orientation_valid: hand.grip.orientation_valid,
-        grip_position_tracked: hand.grip.position_tracked,
-        grip_orientation_tracked: hand.grip.orientation_tracked,
-        aim_position_valid: hand.aim.position_valid,
-        aim_orientation_valid: hand.aim.orientation_valid,
-        aim_position_tracked: hand.aim.position_tracked,
-        aim_orientation_tracked: hand.aim.orientation_tracked,
-    }
-}
-
-fn ik_diagnostic(status: ik::HandIkStatus) -> IkDiagnostic {
-    IkDiagnostic {
+fn ik_state(status: ik::HandIkStatus) -> IkState {
+    IkState {
         queued: status.queued,
-        skip: status.skip.map(|skip| skip.label()),
+        skip: status.skip.map(|skip| Label::Borrowed(skip.label())),
         weight: status.weight,
         reach_distance_m: status.reach_distance,
         rotation_deg: status.rotation_deg,
@@ -277,104 +66,92 @@ fn ik_diagnostic(status: ik::HandIkStatus) -> IkDiagnostic {
     }
 }
 
-fn tier_diagnostic(status: tiers::TierStatus) -> TierDiagnostic {
-    TierDiagnostic {
-        state: status.state.map(|state| state.label()),
-        left: hand_tier_diagnostic(status, Hand::Left),
-        right: hand_tier_diagnostic(status, Hand::Right),
+fn tier_state(status: tiers::TierStatus) -> TierState {
+    TierState {
+        state: status.state.map(|state| Label::Borrowed(state.label())),
+        hands: Hand::BOTH.map(|hand| {
+            let index = hand.index();
+            HandTier {
+                assigned: Label::Borrowed(status.tiers[index].label()),
+                effective: Label::Borrowed(status.effective[index].label()),
+                controller_weight: status.weights[index],
+                anchor_weight: status.anchor_weights[index],
+            }
+        }),
     }
 }
 
-fn hand_tier_diagnostic(status: tiers::TierStatus, hand: Hand) -> HandTierDiagnostic {
-    let index = hand.index();
-    HandTierDiagnostic {
-        assigned: status.tiers[index].label(),
-        effective: status.effective[index].label(),
-        controller_weight: status.weights[index],
-        anchor_weight: status.anchor_weights[index],
-    }
-}
-
-fn late_diagnostic(status: late::LateStatus) -> LateDiagnostic {
-    let hands = status.hands.map(|hand| HandLateDiagnostic {
-        reason: hand.reason.label(),
-        physical_displacement_m: hand.physical_displacement_m,
-        relative_rotation_deg: hand.relative_rotation_deg,
-        requested_wrist_position: hand.requested_wrist_position.map(|p| p.to_array()),
-        reference_wrist_position: hand.reference_wrist_position.map(|p| p.to_array()),
-        latest_wrist_position: hand.latest_wrist_position.map(|p| p.to_array()),
-        achieved_wrist_position_model: hand.achieved_wrist_position_model.map(|p| p.to_array()),
-    });
-    LateDiagnostic {
-        hands,
+fn late_state(status: late::LateStatus) -> LateState {
+    LateState {
+        hands: status.hands.map(|hand| HandLate {
+            reason: Label::Borrowed(hand.reason.label()),
+            physical_displacement_m: hand.physical_displacement_m,
+            relative_rotation_deg: hand.relative_rotation_deg,
+            requested_wrist: hand.requested_wrist_position,
+            reference_wrist: hand.reference_wrist_position,
+            latest_wrist: hand.latest_wrist_position,
+            achieved_wrist_model: hand.achieved_wrist_position_model,
+        }),
         weapons_updated: status.weapons_updated,
         palettes_edited: status.palettes_edited,
     }
 }
 
-fn aim_diagnostic(status: aim::AimStatus) -> AimDiagnostic {
-    AimDiagnostic {
-        idle: status.idle.map(idle_label),
-        left: status.hands[Hand::Left.index()]
-            .as_ref()
-            .map(hand_aim_diagnostic),
-        right: status.hands[Hand::Right.index()]
-            .as_ref()
-            .map(hand_aim_diagnostic),
-        grapple: status.grapple.map(|grapple| GrappleDiagnostic {
+fn aim_state(status: aim::AimStatus) -> AimState {
+    AimState {
+        idle: status.idle.map(idle_label).map(Label::Borrowed),
+        hands: Hand::BOTH.map(|hand| status.hands[hand.index()].as_ref().map(hand_aim)),
+        grapple: status.grapple.map(|grapple| GrappleAim {
             hit: grapple.hit,
             valid: grapple.valid,
             tetherable: grapple.tetherable,
-            point: grapple.point.to_array(),
+            point: grapple.point,
         }),
-        weapon: status.weapon.map(|weapon| WeaponDiagnostic {
+        weapon: status.weapon.map(|weapon| WeaponAim {
             name_hash: weapon.hash,
-            gun_hands: weapon.gun_hands.map(|hand| hand.map(Hand::label)),
-            sight_source: sight_source_label(weapon.sight.source),
-            sight_offset_m: weapon.sight.sight.map(|sight| sight.offset_m.to_array()),
-            sight_angles_deg: weapon.sight.angles_deg().to_array(),
+            gun_hands: weapon.gun_hands.map(|hand| hand.map(hand_to_file)),
+            sight_source: Label::Borrowed(sight_source_label(weapon.sight.source)),
+            sight_offset_m: weapon.sight.sight.map(|sight| sight.offset_m),
+            sight_angles_deg: weapon.sight.angles_deg(),
         }),
-        raycast_error: status.raycast_error.map(raycast_error_label),
+        raycast_error: status
+            .raycast_error
+            .map(raycast_error_label)
+            .map(Label::Borrowed),
     }
 }
 
-fn hand_aim_diagnostic(aim: &aim::HandAim) -> HandAimDiagnostic {
-    HandAimDiagnostic {
-        source: match aim.source {
-            HandSource::AimPose => "aim_pose",
-            HandSource::Gun { .. } => "gun_sight",
-        },
-        gun_index: match aim.source {
-            HandSource::AimPose => None,
-            HandSource::Gun { gun } => Some(gun),
-        },
-        hit: aim.hit.is_some(),
+fn hand_aim(aim: &aim::HandAim) -> HandAim {
+    let (source, gun_index) = match aim.source {
+        HandSource::AimPose => ("aim_pose", None),
+        HandSource::Gun { gun } => ("gun_sight", u32::try_from(gun).ok()),
+    };
+    HandAim {
+        source: Label::Borrowed(source),
+        gun_index,
         hit_distance_m: aim.hit.map(|hit| hit.distance),
         hit_object: aim.hit.is_some_and(|hit| hit.object.is_some()),
-        target: aim.target.to_array(),
+        target: aim.target,
     }
 }
 
-fn roomscale_diagnostic(status: roomscale::RoomscaleStatus) -> RoomscaleDiagnostic {
+fn roomscale_state(status: roomscale::RoomscaleStatus) -> RoomscaleState {
     let frame = status.frame;
-    RoomscaleDiagnostic {
+    RoomscaleState {
         active: status.active,
-        posture: frame.posture.label(),
-        stage_available: frame.stage.available,
-        stage_bounds_m: frame.stage.bounds.map(|bounds| bounds.to_array()),
-        stage_head_height_m: frame.stage.head_height,
+        posture: Label::Borrowed(frame.posture.label()),
         eye_drop_m: frame.eye_drop_m,
-        root_owner: status.root.sim.owner.map(|o| o.label()),
+        root_owner: status.root.sim.owner.map(|o| Label::Borrowed(o.label())),
         gap_m: status.root.frame.gap_m(),
         residual_m: status.root.frame.residual_m(),
         pushback_m: status.root.frame.debt_m,
-        cockpit_shift_m: status.root.frame.shift.to_array(),
-        requested_chase_velocity_mps: status.root.sim.chase_velocity.to_array(),
-        requested_task_velocity_mps: status.root.sim.task_velocity.to_array(),
+        cockpit_shift_m: status.root.frame.shift,
+        chase_velocity_mps: status.root.sim.chase_velocity,
+        task_velocity_mps: status.root.sim.task_velocity,
         crouched: frame.crouched,
         seated_crouch: frame.seated_crouch,
-        seat: frame.seat.label(),
-        probe: frame.probe.map(probe_label),
+        seat: Label::Borrowed(frame.seat.label()),
+        probe: frame.probe.map(probe_label).map(Label::Borrowed),
         fade_level: status.fade.level,
     }
 }
@@ -384,10 +161,6 @@ fn scheme_label(scheme: Scheme) -> &'static str {
         Scheme::Controllers => "controllers",
         Scheme::Gamepad => "gamepad",
     }
-}
-
-fn action_set_label(action_set: ActionSetKind) -> &'static str {
-    action_set.name()
 }
 
 fn mode_label(mode: Mode) -> &'static str {
