@@ -2,28 +2,41 @@
 //!
 //! Records contain copied observations only. Missing provider identity is distinct from a provider
 //! reporting no target. The leaf slot never logs and never calls an engine reader.
+//!
+//! While a tracking recording or the lookback collects, each acquisition stage is also noted as a
+//! [`GripAcquisition`] event: a grip press or a queued request with the resolver's candidates and
+//! the consumer's branch, the simulation consumer's result for a request, and the first drive of
+//! what a request took. The event is built after the slot's lock is released.
 
-pub(crate) mod export;
 pub(crate) mod scan;
 #[cfg(test)]
 mod tests;
 
 use parking_lot::Mutex;
+use tracking_format::event::{
+    GripAcquisition, GripCandidate, GripDrive, GripScan, GripScanEntry, GripStage, Label,
+};
 
-use crate::controllers::{
-    bindings::controls::ButtonControl,
-    frame::Hand,
-    grab::{
-        GrabVolume,
-        latch::GripLatch,
-        resolve::{self, Lost},
-        tick::Tick,
+use crate::{
+    controllers::{
+        bindings::controls::ButtonControl,
+        frame::Hand,
+        grab::{
+            GrabVolume,
+            latch::GripLatch,
+            resolve::{self, Lost},
+            tick::Tick,
+        },
+        physical_hands::{
+            bodies::{BodyError, BodyState},
+            grasp::Reach,
+            pickup::HeldReport,
+            rigid::Velocities,
+        },
     },
-    physical_hands::{
-        bodies::{BodyError, BodyState},
-        grasp::Reach,
-        pickup::HeldReport,
-        rigid::Velocities,
+    recorder::tracking::{
+        events::{self, EventKind},
+        format::hand_to_file,
     },
 };
 
@@ -179,26 +192,157 @@ pub(crate) fn status() -> Status {
     *STATUS.lock()
 }
 
-/// Record a branch in the actual pickup input consumer.
+/// Record a branch in the actual pickup input consumer. A press's branch is noted as an event.
 pub(crate) fn input_consumer(hand: Hand, input: InputRecord, result: InputConsumer) {
     STATUS.lock().hands[hand.index()].input_consumer(input, result);
+    if input.grip.pressed && events::collecting() {
+        let input = InputRecord {
+            consumer: result,
+            ..input
+        };
+        note(event(hand, GripStage::Input, &input, None));
+    }
 }
 
-/// Record the reach that the actual pickup input consumer places in its queue.
+/// Record the reach that the actual pickup input consumer places in its queue, and note it.
 pub(crate) fn queued(hand: Hand, input: InputRecord, target: Reach) -> RequestKey {
-    STATUS.lock().hands[hand.index()].queued(input, target)
+    let key = STATUS.lock().hands[hand.index()].queued(input, target);
+    if events::collecting() {
+        let input = InputRecord {
+            consumer: InputConsumer::Queued,
+            ..input
+        };
+        note(event(
+            hand,
+            GripStage::Input,
+            &input,
+            Some(&request_record(key, input)),
+        ));
+    }
+    key
 }
 
-/// Attach the actual consumer result only to the request carrying this key.
+/// Attach the actual consumer result only to the request carrying this key, and note it.
 pub(crate) fn consumed(hand: Hand, key: RequestKey, result: ConsumerResult) {
-    STATUS.lock().hands[hand.index()].consumed(key, result);
+    let record = {
+        let mut status = STATUS.lock();
+        status.hands[hand.index()].consumed(key, result);
+        status.hands[hand.index()].request_mut(key).copied()
+    };
+    if let Some(record) = record.filter(|_| events::collecting()) {
+        note(event(
+            hand,
+            GripStage::Request,
+            &record.input,
+            Some(&record),
+        ));
+    }
 }
 
-/// Retain already-read body values and the outcome of the existing drive call.
+/// Retain already-read body values and the outcome of the existing drive call. A request's first
+/// drive is noted as an event.
 pub(crate) fn driven(hand: Hand, key: RequestKey, drive: DriveRecord) {
-    let mut status = STATUS.lock();
-    if let Some(record) = status.hands[hand.index()].request_mut(key) {
-        record.drive = Some(drive);
+    let first = {
+        let mut status = STATUS.lock();
+        status.hands[hand.index()]
+            .request_mut(key)
+            .and_then(|record| {
+                let first = record.drive.is_none();
+                record.drive = Some(drive);
+                first.then_some(*record)
+            })
+    };
+    if let Some(record) = first.filter(|_| events::collecting()) {
+        note(event(hand, GripStage::Drive, &record.input, Some(&record)));
+    }
+}
+
+fn request_record(key: RequestKey, input: InputRecord) -> RequestRecord {
+    RequestRecord {
+        key,
+        input,
+        consumer: ConsumerResult::Queued,
+        drive: None,
+    }
+}
+
+fn note(event: GripAcquisition) {
+    events::note(EventKind::GripAcquisition(Box::new(event)));
+}
+
+/// The event for one acquisition stage. Nested runtime values are recorded as their Debug text.
+fn event(
+    hand: Hand,
+    stage: GripStage,
+    input: &InputRecord,
+    request: Option<&RequestRecord>,
+) -> GripAcquisition {
+    let debug = |value: &dyn std::fmt::Debug| Label::Owned(format!("{value:?}"));
+    GripAcquisition {
+        hand: hand_to_file(hand),
+        stage,
+        sequence: input.sequence,
+        observation: input.observation,
+        episode: input.episode,
+        request: request.map(|record| record.key.request),
+        grip_down: input.grip.down,
+        grip_pressed: input.grip.pressed,
+        grip_released: input.grip.released,
+        latch: debug(&input.latch),
+        grab: input.grab.map(|grab| debug(&grab)),
+        chosen: input.chosen.as_ref().map(candidate),
+        candidates: input.candidates.iter().flatten().map(candidate).collect(),
+        candidates_omitted: u32::try_from(input.candidates_omitted).unwrap_or(u32::MAX),
+        scan: input.scan.as_ref().map(|scan| GripScan {
+            entries: scan
+                .entries
+                .iter()
+                .flatten()
+                .map(|entry| GripScanEntry {
+                    branch: debug(&entry.branch),
+                    object: entry.object.map(|object| object.get() as u64),
+                    body: entry.body,
+                    door: entry.door.map(|door| debug(&door)),
+                    point: entry.point,
+                    distance_m: entry.distance,
+                    mass_kg: entry.mass_kg,
+                    result: debug(&entry.result),
+                })
+                .collect(),
+            omitted: u32::try_from(scan.omitted).unwrap_or(u32::MAX),
+            ray_ran: scan.ray_ran,
+            handles_ran: scan.handles_ran,
+            ray_selected: scan.ray_selected.map(|reach| debug(&reach)),
+            handle_selected: scan.handle_selected.map(|reach| debug(&reach)),
+            selected: scan.selected.map(|reach| debug(&reach)),
+        }),
+        consumer: debug(&input.consumer),
+        target: request.map(|record| debug(&record.key.target)),
+        result: request
+            .filter(|_| stage != GripStage::Input)
+            .map(|record| debug(&record.consumer)),
+        drive: request
+            .and_then(|record| record.drive)
+            .map(|drive| GripDrive {
+                object: drive.object as u64,
+                body: drive.body,
+                before: debug(&drive.before),
+                commanded: drive.commanded.map(|commanded| debug(&commanded)),
+                result: drive.result.map(|result| debug(&result)),
+                report: drive.report.map(|report| debug(&report)),
+            }),
+    }
+}
+
+fn candidate(candidate: &Candidate) -> GripCandidate {
+    let debug = |value: &dyn std::fmt::Debug| Label::Owned(format!("{value:?}"));
+    GripCandidate {
+        resolver_index: u32::try_from(candidate.resolved.index).unwrap_or(u32::MAX),
+        distance_m: candidate.resolved.distance,
+        tier: debug(&candidate.resolved.tier),
+        volume: debug(&candidate.resolved.volume),
+        observed: candidate.observed.map(|reach| debug(&reach)),
+        lost: candidate.lost.map(|lost| Label::Owned(lost.describe())),
     }
 }
 

@@ -492,6 +492,49 @@ fn scan_is_bounded_and_the_input_retains_the_providers_copy() {
     assert!(scan.selected.is_none());
 }
 
+#[test]
+fn the_acquisition_event_carries_the_winner_every_candidate_and_why_each_lost() {
+    let tick = observed_tick(CANDIDATE_CAPACITY + 2);
+    let mut hand = HandEvidence::new();
+    let input = hand.input(61, &tick, input_state(), Hand::Left);
+    let key = hand.queued(input, target());
+    let request = hand.request_mut(key).copied().unwrap();
+    let grip = event(Hand::Left, GripStage::Input, &request.input, Some(&request));
+    assert_eq!(grip.hand, tracking_format::model::Hand::Left);
+    assert_eq!((grip.sequence, grip.episode), (61, 1));
+    assert_eq!(grip.request, Some(key.request));
+    assert!(grip.grip_pressed && grip.grip_down && !grip.grip_released);
+    assert_eq!(grip.consumer, "Queued");
+    assert_eq!(grip.candidates.len(), CANDIDATE_CAPACITY);
+    assert_eq!(grip.candidates_omitted, 2);
+    let chosen = tick.resolved[0].chosen.unwrap();
+    let winner = grip.chosen.as_ref().unwrap();
+    assert_eq!(winner.resolver_index as usize, chosen.index);
+    assert_eq!(winner.distance_m, chosen.distance);
+    assert!(winner.lost.is_none());
+    let lost = request.input.candidates[1]
+        .unwrap()
+        .lost
+        .unwrap()
+        .describe();
+    assert_eq!(grip.candidates[1].lost.as_deref(), Some(lost.as_str()));
+    // The input stage has no simulation result yet; the request stage does.
+    assert!(grip.result.is_none());
+    assert!(grip.target.is_some());
+    let consumed = event(
+        Hand::Left,
+        GripStage::Request,
+        &request.input,
+        Some(&request),
+    );
+    assert_eq!(consumed.result.as_deref(), Some("Queued"));
+    let encoded = tracking_format::encode_event(&tracking_format::event::Event {
+        time_ns: 1,
+        kind: EventKind::GripAcquisition(Box::new(grip)),
+    });
+    assert!(encoded.is_ok());
+}
+
 fn record(key: RequestKey) -> RequestRecord {
     status().hands[0]
         .requests

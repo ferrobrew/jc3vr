@@ -381,9 +381,6 @@ fn update() {
             }
         }
 
-        // The UI callbacks and their layout guards, then egui_state_guard, end before disk I/O.
-        controllers::physical_hands::pickup::diagnostics::export::service_pending();
-
         // After the debug UI, whose controls are the most frequent edits, and outside its lock.
         config::tick();
     });

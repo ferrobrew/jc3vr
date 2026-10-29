@@ -2,17 +2,24 @@
 //!
 //! Native identifiers are correlation values only. No reader dereferences them, and no record
 //! retains a weapon reference or a native body. Cached gun motion has no known producer timestamp.
+//!
+//! Each attempt is also a tracking-recording event ([`ReleaseRecord::event`]) while a recording or
+//! the lookback collects.
 
 use std::time::Duration;
 
 use glam::{Quat, Vec3};
 use jc3gi::character::inventory::WeaponSlot;
+use tracking_format::event::{self as file, GunRelease, Label, ReleaseController, ReleaseDrop};
 
-use crate::controllers::{
-    frame::{self, ControllerFrame, Hand},
-    motion::{self, MotionSample, ReleaseEstimate},
-    physical_hands::BodyError,
-    weapons::hold::equip::DockRefusal,
+use crate::{
+    controllers::{
+        frame::{self, ControllerFrame, Hand},
+        motion::{self, MotionSample, ReleaseEstimate},
+        physical_hands::BodyError,
+        weapons::hold::equip::DockRefusal,
+    },
+    recorder::tracking::format::hand_to_file,
 };
 
 /// The cockpit-to-world transform sampled on an input tick, without controller translation.
@@ -316,6 +323,50 @@ impl ReleaseRecord {
             refusal: None,
             before_disarm_sample: Unavailable::NoExistingObservation,
             native_readback: NativeReadback::UNAVAILABLE,
+        }
+    }
+}
+
+impl ReleaseRecord {
+    /// The attempt as a tracking-recording event. The controller's poses and flags are left to the
+    /// frame of the same display time; nested runtime values are recorded as their Debug text.
+    pub(crate) fn event(&self) -> GunRelease {
+        let debug = |value: &dyn std::fmt::Debug| Label::Owned(format!("{value:?}"));
+        let motion = |motion: WorldMotion| file::WorldMotion {
+            linear: motion.linear,
+            angular: motion.angular,
+        };
+        GunRelease {
+            hand: hand_to_file(self.hand),
+            attempt: self.sequence,
+            weapon: self.weapon.map(|weapon| weapon as u64),
+            route: debug(&self.route),
+            max_speed_mps: self.max_speed_mps,
+            refusal: self.refusal.map(|refusal| debug(&refusal)),
+            before_disarm: self.stages.before_disarm,
+            disarm_returned: self.stages.disarm_returned,
+            slot_clear_returned: self.stages.slot_clear_returned,
+            reconcile_returned: self.stages.reconcile_returned,
+            controller: self.controller.map(|controller| ReleaseController {
+                frame_sequence: controller.frame_sequence,
+                display_time_ns: controller.display_time_ns,
+                publication_age_ns: u64::try_from(controller.publication_age.as_nanos())
+                    .unwrap_or(u64::MAX),
+            }),
+            drop: self.drop.map(|drop| ReleaseDrop {
+                weapon: drop.weapon as u64,
+                slot: drop.slot.map(|slot| debug(&slot)),
+                sample_stage: debug(&drop.sample_stage),
+                sample_source: debug(&drop.sample_source),
+                cached_motion: drop.cached_world_motion.map(motion),
+                native_body: drop.native_body_id,
+                requested_motion: drop.requested_world_motion.map(motion),
+                release_source: debug(&drop.release_source),
+                history_age_s: drop.history_age_s,
+                write: debug(&drop.write),
+                on_drop_returned: drop.on_drop_returned,
+                slot_clear_returned: drop.slot_clear_returned,
+            }),
         }
     }
 }
