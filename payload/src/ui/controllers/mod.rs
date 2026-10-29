@@ -52,7 +52,7 @@ use crate::{
         gamepad_setting,
         hands::{ik as hand_ik, late, tiers},
         haptics as controller_haptics,
-        loadout::{live as loadout_live, sandbox as loadout_sandbox},
+        loadout::live as loadout_live,
         locomotion as controller_locomotion, map as controller_map, mode as controller_mode,
         overlay as controller_overlay,
         physical_hands::{self as controller_physical_hands, collider_view::ColliderViewConfig},
@@ -69,10 +69,6 @@ use crate::{
 pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
     let body: FeatureBody = match id {
         FeatureId::ControllerCapture => |ui, _| diagnostics::diagnostics(ui),
-        FeatureId::Sandbox => |ui, _| {
-            let sandbox = loadout_sandbox::status();
-            loadout::controls(ui, &sandbox);
-        },
         FeatureId::Devices => |ui, _| {
             let input_status = vr_input::status();
             let recovery = bindings::recovery_status();
@@ -281,7 +277,6 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
             ui.separator();
             loadout::live_readout(ui, &loadout_live::status());
         },
-        FeatureId::Sandbox => |ui, _| loadout::sandbox_readout(ui, &loadout_sandbox::status()),
         FeatureId::Feedback => |ui, _| {
             haptics::haptics_readout(ui, &controller_haptics::status());
             physical_hands::impact_sounds_readout(ui, &controller_physical_hands::sounds::status());

@@ -18,8 +18,7 @@
 //! - [`grab`]: what a hand does at a socket, decided against the table's snapshot;
 //! - [`take`]: where a weapon taken from the world goes, decided against the table's snapshot;
 //! - [`live`]: the one live table of the local player's items, dual-written beside the old weapon
-//!   handling and published each input tick;
-//! - [`sandbox`]: a table of the debug UI's own, driven by hand with made-up objects.
+//!   handling and published each input tick.
 //!
 //! Only the readouts and the pins of the weapons lying in the world read the live table yet: the
 //! old weapon handling ([`crate::controllers::weapons`]) still moves the weapons, and moves onto
@@ -34,7 +33,6 @@ mod projection;
 mod reset;
 pub(crate) mod restore;
 pub mod safe_items;
-pub mod sandbox;
 mod socket;
 pub(crate) mod spawn_transport;
 mod table;
@@ -59,6 +57,4 @@ pub use socket::{BodyLayout, Socket};
 #[cfg(test)]
 pub(crate) use table::Loadout;
 pub use table::{Departure, LoadoutSnapshot, Place};
-pub use transition::{
-    Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, Take, TakeSource,
-};
+pub use transition::{GiveSource, LostWhy, Restored, TakeSource};

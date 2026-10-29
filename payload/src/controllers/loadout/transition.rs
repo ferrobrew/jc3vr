@@ -52,6 +52,7 @@ pub enum TakeSource {
 }
 
 impl TakeSource {
+    #[cfg(test)]
     pub const ALL: [TakeSource; 9] = [
         TakeSource::World,
         TakeSource::Rack,
@@ -104,6 +105,7 @@ pub enum Release {
 }
 
 impl Release {
+    #[cfg(test)]
     pub const ALL: [Release; 2] = [Release::Dropped, Release::AtSpeed];
 
     const fn departure(self) -> Departure {
@@ -124,6 +126,7 @@ pub enum LostWhy {
 }
 
 impl LostWhy {
+    #[cfg(test)]
     pub const ALL: [LostWhy; 2] = [LostWhy::OutOfWorld, LostWhy::LeftBehind];
 
     pub const fn label(self) -> &'static str {
@@ -145,14 +148,6 @@ pub struct Give {
 /// What gives a weapon.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum GiveSource {
-    /// A mission's give or give-back.
-    Mission,
-    /// A challenge's loadout.
-    Challenge,
-    /// A supply drop.
-    SupplyDrop,
-    /// A new game's starting loadout.
-    NewGame,
     /// A give the game's respawn table delivers whose caller is not told apart: a mission's, a
     /// challenge's, the graph script's, an event's, or a reward.
     Game,
@@ -161,21 +156,11 @@ pub enum GiveSource {
 }
 
 impl GiveSource {
-    pub const ALL: [GiveSource; 6] = [
-        GiveSource::Mission,
-        GiveSource::Challenge,
-        GiveSource::SupplyDrop,
-        GiveSource::NewGame,
-        GiveSource::Game,
-        GiveSource::RackCopy,
-    ];
+    #[cfg(test)]
+    pub const ALL: [GiveSource; 2] = [GiveSource::Game, GiveSource::RackCopy];
 
     pub const fn label(self) -> &'static str {
         match self {
-            GiveSource::Mission => "a mission's give",
-            GiveSource::Challenge => "a challenge's loadout",
-            GiveSource::SupplyDrop => "a supply drop",
-            GiveSource::NewGame => "a new game's loadout",
             GiveSource::Game => "the game's give",
             GiveSource::RackCopy => "a rack's copy",
         }
@@ -199,6 +184,7 @@ pub enum Removal {
     /// The item bound to this object.
     Object(ObjectAddress),
     /// This item, bound or not.
+    #[cfg_attr(not(test), allow(dead_code))]
     Item(ItemId),
     /// Every weapon on the body, the hands' included. The weapons lying in the world stay: the game
     /// takes what the player holds, not what lies near them.
@@ -218,18 +204,16 @@ pub enum RemovalWhy {
     Forgotten,
     /// Another character took it.
     TakenByOther,
-    /// Its spawn never came.
-    NeverSpawned,
 }
 
 impl RemovalWhy {
-    pub const ALL: [RemovalWhy; 6] = [
+    #[cfg(test)]
+    pub const ALL: [RemovalWhy; 5] = [
         RemovalWhy::Mission,
         RemovalWhy::Challenge,
         RemovalWhy::Gone,
         RemovalWhy::Forgotten,
         RemovalWhy::TakenByOther,
-        RemovalWhy::NeverSpawned,
     ];
 
     pub const fn label(self) -> &'static str {
@@ -239,7 +223,6 @@ impl RemovalWhy {
             RemovalWhy::Gone => "the object is gone",
             RemovalWhy::Forgotten => "left to the game",
             RemovalWhy::TakenByOther => "another character took it",
-            RemovalWhy::NeverSpawned => "its spawn never came",
         }
     }
 }

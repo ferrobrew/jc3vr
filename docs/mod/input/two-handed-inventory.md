@@ -138,7 +138,7 @@ Switching the control scheme away from the controllers (or turning the mod's wea
 
 ## The core as built
 
-The code is `payload/src/controllers/loadout/`. It is pure, apart from the object address an item is bound to. The debug UI's Controllers tab has a `Loadout` section whose `Sandbox` header drives a table of its own with made-up objects, showing the items, the primary, the slots in play, the last store's sidecar, and the latest transitions and refusals.
+The code is `payload/src/controllers/loadout/`. It is pure, apart from the object address an item is bound to.
 
 ### Items and their identity
 

@@ -38,6 +38,7 @@ pub enum ResetKind {
 }
 
 impl ResetKind {
+    #[cfg(test)]
     pub const ALL: [ResetKind; 3] = [ResetKind::Respawn, ResetKind::Travel, ResetKind::Load];
 
     pub const fn label(self) -> &'static str {

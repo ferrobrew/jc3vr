@@ -122,6 +122,7 @@ impl BodyLayout {
     }
 
     /// A layout of `back` places on the back and `hips` hips, each clamped to what the body has.
+    #[cfg(test)]
     pub fn new(dominant: Hand, back: u8, hips: u8, chest: bool) -> BodyLayout {
         BodyLayout {
             dominant,

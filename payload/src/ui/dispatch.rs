@@ -86,8 +86,7 @@ pub(crate) fn route(id: FeatureId) -> FeatureRoute {
         | FeatureId::Wrist
         | FeatureId::Semantic
         | FeatureId::ControllerCapture
-        | FeatureId::Presets
-        | FeatureId::Sandbox => FeatureRoute::Controller,
+        | FeatureId::Presets => FeatureRoute::Controller,
     }
 }
 

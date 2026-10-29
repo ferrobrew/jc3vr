@@ -125,7 +125,6 @@ features! {
         Video => ("capture.video", "Video recording and take markers"),
         Keyboard => ("capture.keyboard", "Keyboard shortcuts"),
         Presets => ("capture.presets", "Test presets"),
-        Sandbox => ("capture.inventory", "Inventory sandbox"),
         Engine => ("capture.engine", "Engine experiments"),
     },
 }

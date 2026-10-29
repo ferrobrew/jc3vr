@@ -369,7 +369,7 @@ fn give(t: &mut Loadout, n: usize, kind: WeaponType) -> Result<ItemId, Transitio
     t.give(Give {
         object: object(n),
         weapon: kind,
-        source: GiveSource::Mission,
+        source: GiveSource::Game,
     })
     .map(|transitions| transitions[0].item)
 }
