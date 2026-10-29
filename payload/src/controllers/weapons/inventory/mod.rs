@@ -627,7 +627,7 @@ fn publish_status() {
     let (status, game, revision) = {
         let state = STATE.lock();
         let revision = UI_REVISION.fetch_add(1, Ordering::Relaxed);
-        (state.status.clone(), state.game, revision)
+        (state.status.clone(), state.game.clone(), revision)
     };
     let world_singles = status
         .world

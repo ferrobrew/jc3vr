@@ -109,7 +109,11 @@ fn body_note(item: Option<&ItemView>, game: Option<&GameInventory>) -> String {
     };
     game.slots
         .iter()
-        .find(|slot| slot.weapon.is_some_and(|weapon| weapon.object == object))
+        .find(|slot| {
+            slot.weapon
+                .as_ref()
+                .is_some_and(|weapon| weapon.object == object)
+        })
         .map_or_else(
             || "beyond the slots (carry set)".to_owned(),
             |slot| format!("in the {} slot", slot_label(slot.slot)),

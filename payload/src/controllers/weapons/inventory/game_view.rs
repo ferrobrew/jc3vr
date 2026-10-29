@@ -2,21 +2,33 @@
 //! selected slot, the wielded weapon, the pistol slot's pair or single pistol, and the grenade and
 //! explosive stock. Captured on the input tick and published with the inventory's readout, so the
 //! debug UI never reads the game's memory.
+//!
+//! A weapon's display name is looked up on the same tick ([`weapon_name`]), on the hypothesis that
+//! the HUD names a weapon by passing [`WeaponBase::m_WeaponNameHash`] to the localisation store as
+//! a key hash, as [`HUDUI::OnPickupWeapon`](jc3gi::ui::hud_ui::HUDUI::OnPickupWeapon) takes its name
+//! from that field. The hypothesis is unverified in-game; a hash the store does not have shows as
+//! the bare hash.
+
+use std::collections::BTreeMap;
 
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{AmmunitionType, WeaponBase, WeaponState},
+    ui::locator::Locale,
 };
+use parking_lot::Mutex;
+use smol_str::SmolStr;
 
 use crate::controllers::{
     loadout::ObjectAddress,
+    summary::localise::{current_locale, game_string_by_hash, renders},
     weapons::{
         dual_wield::single, engine as weapons_engine, engine::slot_from_raw, inventory::traversal,
     },
 };
 
 /// The game's inventory as of one input tick.
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct GameInventory {
     /// Each slot, in the slots' index order.
     pub slots: [GameSlot; SLOT_COUNT],
@@ -34,7 +46,7 @@ pub(crate) struct GameInventory {
 }
 
 /// One of the game's slots.
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct GameSlot {
     pub slot: WeaponSlot,
     pub weapon: Option<GameWeapon>,
@@ -43,11 +55,14 @@ pub(crate) struct GameSlot {
 }
 
 /// A weapon in one of the game's slots.
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct GameWeapon {
     pub object: ObjectAddress,
     /// The weapon type's name hash.
     pub name_hash: u32,
+    /// The weapon type's display name in the game's language ([`weapon_name`]), or `None` when the
+    /// lookup finds none or the debug UI's fonts cannot draw the language.
+    pub name: Option<SmolStr>,
     /// The weapon class and the weapon state, read as raw values: an unset one is out of the
     /// enum's range.
     pub class: i32,
@@ -98,6 +113,8 @@ pub(crate) unsafe fn capture(owner: &Character) -> GameInventory {
             Some(GameWeapon {
                 object: ObjectAddress::from_address(weapon as *const WeaponBase as usize)?,
                 name_hash: weapon.m_WeaponNameHash,
+                // SAFETY: the input tick is a game thread past startup.
+                name: unsafe { weapon_name(weapon.m_WeaponNameHash) },
                 class: raw((&raw const weapon.m_Class).cast()),
                 state: raw((&raw const weapon.m_State).cast()),
                 magazine: weapon.m_MagazineAmmo,
@@ -110,7 +127,7 @@ pub(crate) unsafe fn capture(owner: &Character) -> GameInventory {
             pending_spawn: inventory.m_WeaponPendingSpawn[index],
         }
     });
-    let pistols = match slots[WeaponSlot::E_SLOT_DUAL_WIELD as usize].weapon {
+    let pistols = match &slots[WeaponSlot::E_SLOT_DUAL_WIELD as usize].weapon {
         None => Pistols::Empty,
         Some(weapon) if single::is(weapon.object.get()) => Pistols::Single,
         Some(_) => Pistols::Pair,
@@ -132,3 +149,41 @@ pub(crate) unsafe fn capture(owner: &Character) -> GameInventory {
 }
 
 const SLOT_COUNT: usize = WeaponSlot::E_NUM_WEAPON_SLOTS as usize;
+
+/// The display name for the weapon type whose name hash is `hash`, looked up once per hash and
+/// language: the localisation store's string for `hash` used as a key hash. Unverified in-game (see
+/// the module docs).
+///
+/// # Safety
+///
+/// Call from a game thread past startup.
+unsafe fn weapon_name(hash: u32) -> Option<SmolStr> {
+    // SAFETY: per the contract.
+    let locale = unsafe { current_locale() }?;
+    if !renders(locale) {
+        return None;
+    }
+    let mut cache = NAMES.lock();
+    if cache.locale != Some(locale) {
+        cache.locale = Some(locale);
+        cache.names.clear();
+    }
+    cache
+        .names
+        .entry(hash)
+        // SAFETY: per the contract.
+        .or_insert_with(|| unsafe { game_string_by_hash(hash) }.map(SmolStr::from))
+        .clone()
+}
+
+/// The names [`weapon_name`] has looked up, by name hash, for the language they were looked up in;
+/// a change of language empties it. A miss is kept too, so a hash the store lacks is asked once.
+struct NameCache {
+    locale: Option<Locale>,
+    names: BTreeMap<u32, Option<SmolStr>>,
+}
+
+static NAMES: Mutex<NameCache> = Mutex::new(NameCache {
+    locale: None,
+    names: BTreeMap::new(),
+});

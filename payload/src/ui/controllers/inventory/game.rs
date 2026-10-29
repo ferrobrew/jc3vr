@@ -10,7 +10,7 @@ use crate::{
         loadout::{LoadoutSnapshot, SlotContent, slot_label},
         weapons::inventory::{
             InventoryReadout,
-            game_view::{GameSlot, Pistols},
+            game_view::{GameSlot, GameWeapon, Pistols},
         },
     },
     ui::controllers::inventory::mismatch::Mismatches,
@@ -76,14 +76,14 @@ fn slot_row(ui: &mut Ui, slot: &GameSlot, table: Option<&LoadoutSnapshot>, misma
         let text = RichText::new(text);
         ui.label(if mismatch { text.color(warn) } else { text });
     };
-    let name = match (slot.weapon, slot.pending_spawn) {
+    let name = match (&slot.weapon, slot.pending_spawn) {
         (None, true) => "spawning".to_owned(),
         (None, false) => "empty".to_owned(),
-        (Some(weapon), _) => format!("{:#010x}", weapon.name_hash),
+        (Some(weapon), _) => weapon_label(weapon),
     };
     cell(ui, slot_label(slot.slot).to_owned());
     cell(ui, name);
-    match slot.weapon {
+    match &slot.weapon {
         Some(weapon) => {
             cell(ui, class_label(weapon.class).to_owned());
             cell(ui, state_label(weapon.state).to_owned());
@@ -99,6 +99,14 @@ fn slot_row(ui: &mut Ui, slot: &GameSlot, table: Option<&LoadoutSnapshot>, misma
     }
     cell(ui, projected(table, slot));
     ui.end_row();
+}
+
+/// A weapon's display name beside its name hash, or the bare hash when the game names none.
+fn weapon_label(weapon: &GameWeapon) -> String {
+    match &weapon.name {
+        Some(name) => format!("{name} ({:#010x})", weapon.name_hash),
+        None => format!("{:#010x}", weapon.name_hash),
+    }
 }
 
 /// What the table projects into `slot`: an item, nothing, or the slot left to the game.

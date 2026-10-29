@@ -93,7 +93,7 @@ pub(super) fn expected(table: &LoadoutSnapshot, slot: WeaponSlot) -> Expected {
 }
 
 fn actual(slot: &GameSlot) -> Actual {
-    match slot.weapon {
+    match &slot.weapon {
         _ if slot.pending_spawn => Actual::Settling,
         Some(weapon) if weapon.mounted() => Actual::Settling,
         Some(weapon) => Actual::Weapon(weapon.object),
