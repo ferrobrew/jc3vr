@@ -30,11 +30,6 @@ cbuffer Params : register(b0)
     float4x4 ReprojCenter;  // current clip -> previous-frame clip, center camera (what the engine encoded)
     float4x4 ReprojEye;     // current clip -> previous-frame clip, this eye's camera (what FSR wants)
     uint CorrectionEnabled; // 0 = pass the decode through (no stereo disparity, or no history yet)
-    // The constant UV offset the camera jitter contributed to every stored vector (FSR wants
-    // jitter-free motion; the engine measures curUV under the jittered projection). Subtracted from
-    // the decoded motion; zero when jitter is off or the cancellation is disabled.
-    float2 JitterUv;
-    uint Padding;
 };
 
 [numthreads(8, 8, 1)]
@@ -45,7 +40,7 @@ void main(uint3 id : SV_DispatchThreadID)
         return;
     }
     float2 stored = Velocity.Load(int3(id.xy, 0)).xy;
-    float2 motion_uv = (stored - 0.5) * 0.25 - JitterUv;
+    float2 motion_uv = (stored - 0.5) * 0.25;
     if (CorrectionEnabled != 0)
     {
         // Reconstruct the pixel's clip position from the raster depth (the matrices match the raster

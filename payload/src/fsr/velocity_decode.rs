@@ -75,7 +75,8 @@ pub struct VelocityDecode {
 }
 
 /// Matches the HLSL `Params` cbuffer: one register of size/sign, then the two column-major
-/// reprojection matrices, then the correction flag padded to a full register.
+/// reprojection matrices, then the correction flag padded to a full register (a constant buffer's
+/// size is a whole number of registers).
 #[repr(C)]
 struct Params {
     width: u32,
@@ -85,9 +86,12 @@ struct Params {
     reproj_center: [f32; 16],
     reproj_eye: [f32; 16],
     correction_enabled: u32,
-    jitter_uv: [f32; 2],
-    _padding: u32,
+    _padding: [u32; 3],
 }
+
+// The HLSL `Params` cbuffer spans ten registers: size and sign, two matrices of four, and the
+// correction flag.
+const _: () = assert!(size_of::<Params>() == 10 * 16);
 
 impl VelocityDecode {
     /// Build the decode pass at `width`x`height`. `None` on any D3D failure (the caller then skips
@@ -237,10 +241,7 @@ impl VelocityDecode {
                 reproj_center: reproj_center.data,
                 reproj_eye: reproj_eye.data,
                 correction_enabled: u32::from(correction.is_some()),
-                // The shader's jitter cancellation: the camera is not jittered, so there is no
-                // jitter offset to cancel.
-                jitter_uv: [0.0, 0.0],
-                _padding: 0,
+                _padding: [0; 3],
             };
             std::ptr::copy_nonoverlapping(&params, mapped.pData as *mut Params, 1);
             context.Unmap(&self.constants, 0);
