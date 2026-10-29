@@ -26,6 +26,9 @@ fn selected_bend_and_squat_prior_allocates_continuously_at_multiple_rates() {
                 .unwrap();
             assert_anatomy(bent, fixture.anatomy);
             assert_anatomy(low, fixture.anatomy);
+            // Every step meets the runtime's acceptance, so no part of the motion is withdrawn.
+            assert!(bent.quality.feasible, "rate {rate}, step {step}: {bent:?}");
+            assert!(low.quality.feasible, "rate {rate}, step {step}: {low:?}");
             if let Some(previous) = last_bend {
                 assert!((bent.body.hip_flexion - previous).abs() <= 3.5 * dt + 1.0e-4);
             }
@@ -72,8 +75,6 @@ fn selected_bend_and_squat_prior_allocates_continuously_at_multiple_rates() {
             low.body.pelvis.y < bent.body.pelvis.y,
             "rate {rate}: bend={bent:?}, squat={low:?}"
         );
-        assert!(bent.quality.neck_residual_m < 0.09, "rate {rate}: {bent:?}");
-        assert!(low.quality.neck_residual_m < 0.09, "rate {rate}: {low:?}");
         endpoints.push((bent, low));
     }
     for pair in endpoints.windows(2) {
