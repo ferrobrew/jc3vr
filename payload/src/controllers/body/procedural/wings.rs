@@ -61,11 +61,7 @@ pub fn wing_arms() -> [bool; 2] {
 /// before it takes its own state.
 pub(super) fn read_player_arms() -> Option<PlayerArms> {
     let config = Config::lock_query(|c| c.controllers);
-    if !config.enabled
-        || !config.body.procedural.wingsuit_arms
-        || !scheme::is_controllers()
-        || headpose::source() != Source::Vr
-    {
+    if !config.enabled || !scheme::is_controllers() || headpose::source() != Source::Vr {
         return None;
     }
     let cockpit = headpose::xr::cockpit_pose()?;
@@ -113,7 +109,7 @@ impl State {
             world,
             dt,
         } = *request;
-        let wanted = case == Case::Wingsuit && config.wingsuit_arms && player.is_some();
+        let wanted = case == Case::Wingsuit && player.is_some();
         let weight = self.wings.step(
             if wanted { 1.0 } else { 0.0 },
             dt,

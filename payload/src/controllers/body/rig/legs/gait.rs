@@ -114,20 +114,17 @@ pub struct CrouchGait {
 }
 
 impl CrouchGait {
-    /// The crouch gait the settings ask for: no change with `crouch_gait` off.
+    /// The crouch gait the settings ask for.
     pub fn of(config: &ProceduralBodyConfig) -> Self {
-        if config.crouch_gait {
-            Self {
-                stride_share: config.crouch_stride_share,
-                lift_share: config.crouch_lift_share,
-                duty: config.crouch_duty,
-            }
-        } else {
-            Self::UPRIGHT
+        Self {
+            stride_share: config.crouch_stride_share,
+            lift_share: config.crouch_lift_share,
+            duty: config.crouch_duty,
         }
     }
 
-    /// A crouch that changes nothing.
+    /// A crouch that changes nothing, for tests of the upright walk.
+    #[cfg(test)]
     pub const UPRIGHT: Self = Self {
         stride_share: 1.0,
         lift_share: 1.0,

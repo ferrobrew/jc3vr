@@ -13,18 +13,18 @@
 //! | dead | animation, at once | animation, at once |
 //! | ragdoll | animation, at once | animation, at once |
 //! | getting up from a ragdoll | animation | animation |
-//! | seated and riding in a vehicle | animation | procedural on the seat's hips (animation with `seated_torso` off) |
-//! | standing in a vehicle's stunt area (a roof, a deck) | animation (the stunt idle's balance) | procedural on the stunt idle's hips (animation with `stunt_torso` off) |
+//! | seated and riding in a vehicle | animation | procedural on the seat's hips |
+//! | standing in a vehicle's stunt area (a roof, a deck) | animation (the stunt idle's balance) | procedural on the stunt idle's hips |
 //! | in or on a vehicle otherwise (entering, leaving, a mounted gun, a helicopter's hang, a stunt traversal) | animation | animation |
 //! | grapple traversal, hanging, stunt traversal, grapple struggle | animation | animation |
 //! | the grapple's ledge climb | animation | animation |
-//! | swimming | animation (the kick) | procedural on the swim's hips (animation with `swim_torso` off) |
-//! | the wingsuit (the arms follow the player's, `wingsuit_arms`) | animation | animation |
-//! | the parachute | procedural, hanging from the harness (animation with `parachute_body` off) | procedural on the harness's hips (animation with `parachute_body` off) |
+//! | swimming | animation (the kick) | procedural on the swim's hips |
+//! | the wingsuit (the arms follow the player's) | animation | animation |
+//! | the parachute | procedural, hanging from the harness | procedural on the harness's hips |
 //! | a fall past the jump's grace | animation | animation |
 //! | a hit reaction (a stumble or a knock-back), for a hold after its act | animation | animation |
-//! | climbing with the hands | procedural, hanging in the air (animation with `air_legs` off) | procedural |
-//! | a jump, within the grace | procedural, hanging in the air (animation with `air_legs` off) | procedural |
+//! | climbing with the hands | procedural, hanging in the air | procedural |
+//! | a jump, within the grace | procedural, hanging in the air | procedural |
 //! | an authored one-off (a locomotion one-off, a hard landing, a context action, a full-body pickup, cover) | animation | animation |
 //! | on foot without the movement task running | animation | animation |
 //! | on foot on the ground | procedural | procedural |
@@ -100,18 +100,12 @@ impl Case {
     }
 
     /// The weights the case asks for: the legs', then the torso's. In a jump and a hand climb the
-    /// legs are the procedural body's, hanging in the air, when `air_legs`, and the animation's
-    /// otherwise. Seated, the torso is the procedural body's when `seated_torso`, and the legs keep
-    /// the seat's animation.
-    pub const fn targets(self, config: &ProceduralBodyConfig) -> [f32; 2] {
+    /// legs are the procedural body's, hanging in the air. Seated, the torso is the procedural
+    /// body's, and the legs keep the seat's animation.
+    pub const fn targets(self) -> [f32; 2] {
         match self {
-            Self::OnFoot => [1.0, 1.0],
-            Self::Jump | Self::HandClimb if config.air_legs => [1.0, 1.0],
-            Self::Jump | Self::HandClimb => [0.0, 1.0],
-            Self::Seated if config.seated_torso => [0.0, 1.0],
-            Self::StuntStanding if config.stunt_torso => [0.0, 1.0],
-            Self::Parachute if config.parachute_body => [1.0, 1.0],
-            Self::Swimming if config.swim_torso => [0.0, 1.0],
+            Self::OnFoot | Self::Jump | Self::HandClimb | Self::Parachute => [1.0, 1.0],
+            Self::Seated | Self::StuntStanding | Self::Swimming => [0.0, 1.0],
             _ => [0.0, 0.0],
         }
     }
@@ -244,7 +238,7 @@ impl RegionBlend {
 
     /// Ease toward `case`'s weights over `dt` seconds.
     pub fn step(&mut self, case: Case, dt: f32, config: &ProceduralBodyConfig) -> Weights {
-        let targets = case.targets(config);
+        let targets = case.targets();
         for (spring, target) in self.springs.iter_mut().zip(targets) {
             if case.snaps() {
                 *spring = Spring {
@@ -469,13 +463,7 @@ mod tests {
             }),
             Case::HitReaction
         );
-        let config = ProceduralBodyConfig::new();
-        let animated_legs = ProceduralBodyConfig {
-            air_legs: false,
-            ..config
-        };
-        assert_eq!(Case::HandClimb.targets(&config), [1.0, 1.0]);
-        assert_eq!(Case::HandClimb.targets(&animated_legs), [0.0, 1.0]);
+        assert_eq!(Case::HandClimb.targets(), [1.0, 1.0]);
     }
 
     #[test]
@@ -509,8 +497,7 @@ mod tests {
             }),
             Case::Ragdoll
         );
-        let config = ProceduralBodyConfig::new();
-        assert_eq!(Case::Seated.targets(&config), [0.0, 1.0]);
+        assert_eq!(Case::Seated.targets(), [0.0, 1.0]);
         assert!(Case::Seated.anchored() && !Case::OnFoot.anchored());
         let roof = CharacterState {
             seated: false,
@@ -518,13 +505,8 @@ mod tests {
             ..seated
         };
         assert_eq!(classify(&roof), Case::StuntStanding);
-        assert_eq!(Case::StuntStanding.targets(&config), [0.0, 1.0]);
+        assert_eq!(Case::StuntStanding.targets(), [0.0, 1.0]);
         assert!(Case::StuntStanding.anchored());
-        let roof_off = ProceduralBodyConfig {
-            stunt_torso: false,
-            ..config
-        };
-        assert_eq!(Case::StuntStanding.targets(&roof_off), [0.0, 0.0]);
         // A ragdoll thrown off the roof is the ragdoll.
         assert_eq!(
             classify(&CharacterState {
@@ -533,11 +515,6 @@ mod tests {
             }),
             Case::Ragdoll
         );
-        let off = ProceduralBodyConfig {
-            seated_torso: false,
-            ..config
-        };
-        assert_eq!(Case::Seated.targets(&off), [0.0, 0.0]);
     }
 
     #[test]
@@ -551,25 +528,14 @@ mod tests {
         assert_eq!(classify(&flying(true, false, true)), Case::Wingsuit);
         assert_eq!(classify(&flying(false, true, true)), Case::Parachute);
         assert_eq!(classify(&flying(false, false, true)), Case::Flight);
-        let config = ProceduralBodyConfig::new();
         // The wingsuit's arms are not a region: the body stays the flight pose.
-        assert_eq!(Case::Wingsuit.targets(&config), [0.0, 0.0]);
+        assert_eq!(Case::Wingsuit.targets(), [0.0, 0.0]);
         // Under the parachute the torso is on the harness's hips and the legs hang.
-        assert_eq!(Case::Parachute.targets(&config), [1.0, 1.0]);
+        assert_eq!(Case::Parachute.targets(), [1.0, 1.0]);
         assert!(Case::Parachute.anchored());
-        let off = ProceduralBodyConfig {
-            parachute_body: false,
-            ..config
-        };
-        assert_eq!(Case::Parachute.targets(&off), [0.0, 0.0]);
         // Swimming, the torso is on the swim's hips and the legs keep the kick.
-        assert_eq!(Case::Swimming.targets(&config), [0.0, 1.0]);
+        assert_eq!(Case::Swimming.targets(), [0.0, 1.0]);
         assert!(Case::Swimming.anchored());
-        let dry = ProceduralBodyConfig {
-            swim_torso: false,
-            ..config
-        };
-        assert_eq!(Case::Swimming.targets(&dry), [0.0, 0.0]);
         assert_eq!(
             classify(&CharacterState {
                 swimming: true,
@@ -615,12 +581,6 @@ mod tests {
         );
         let w = blend.step(Case::Jump, 1.0 / 30.0, &config);
         assert!(w.legs == 1.0 && w.torso == 1.0);
-        let animated_legs = ProceduralBodyConfig {
-            air_legs: false,
-            ..config
-        };
-        let w = blend.step(Case::Jump, 1.0 / 30.0, &animated_legs);
-        assert!(w.legs < 1.0 && w.torso == 1.0);
     }
 
     #[test]

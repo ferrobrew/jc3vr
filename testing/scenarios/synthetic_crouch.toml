@@ -1,7 +1,7 @@
 # Synthetic: the recording is written by `cargo run -p tracking-synth` to
 # testing/recordings/synthetic/crouch.jc3trk. See docs/mod/testing/recorder.md.
 name = "synthetic: squatting"
-description = "Replayed with BODY FROM YOUR HEAD on FULL. Squat down by 45 cm at the hips, hold, and stand up."
+description = "Replayed with the procedural body on. Squat down by 45 cm at the hips, hold, and stand up."
 recording = "../recordings/synthetic/crouch.jc3trk"
 start = "in_place"
 pacing = "real_time"

@@ -119,7 +119,6 @@ pub(super) struct State {
     pub(super) ground_log: GroundLog,
     /// This tick's arm context, for the hand IK the gate runs next.
     pub(super) arms: Option<ArmContext>,
-    pub(super) logged_at: Option<Instant>,
     pub(super) gait_logged_at: Option<Instant>,
     pub(super) status: ProceduralStatus,
 }
@@ -353,7 +352,7 @@ impl State {
         dt: f32,
         config: &ProceduralBodyConfig,
     ) -> [ClavicleTurn; 2] {
-        let wanted = if config.clavicles {
+        let wanted = {
             let targets = unsafe { deferred_wrist_targets(character) };
             let tuning = ClavicleTuning {
                 elevation: config.clavicle_elevation_deg.to_radians(),
@@ -366,8 +365,6 @@ impl State {
                     clavicles::wanted(pose, rig, side, target, weight, &tuning)
                 })
             })
-        } else {
-            [ClavicleTurn::ZERO; 2]
         };
         let turns = self.clavicles.step(wanted, dt, config.clavicle_follow_s);
         self.status.clavicles = turns;
@@ -446,12 +443,7 @@ impl State {
     }
 
     /// Log a change of the hand-over table's case, with the weights it leaves.
-    pub(super) fn log_case(
-        &mut self,
-        case: Case,
-        weights: &Weights,
-        config: &ProceduralBodyConfig,
-    ) {
+    pub(super) fn log_case(&mut self, case: Case, weights: &Weights) {
         if self.status.case == case && self.case_logged {
             return;
         }
@@ -460,8 +452,8 @@ impl State {
             target: "body",
             from = self.status.case.label(),
             to = case.label(),
-            legs = case.targets(config)[0],
-            torso = case.targets(config)[1],
+            legs = case.targets()[0],
+            torso = case.targets()[1],
             legs_now = weights.legs,
             torso_now = weights.torso,
             "procedural body: the hand-over case changes",
@@ -527,7 +519,6 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     fall: None,
     ground_log: GroundLog::new(),
     arms: None,
-    logged_at: None,
     gait_logged_at: None,
     status: INITIAL_STATUS,
 });

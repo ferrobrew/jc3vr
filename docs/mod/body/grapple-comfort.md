@@ -67,7 +67,7 @@ Both advances share one mutex, and it is the innermost lock in the headpose's SI
 
 ## Configuration
 
-`headpose.grapple.mode` (default `HoldView`) selects the body-frame filter mode; it has no debug-UI control. The timing is fixed in `crate::grapple`, and the debug UI's Grapple feature shows the live blend in its live status:
+`headpose.grapple.mode` (default `HoldView`) selects the body-frame filter mode; the pause menu's `VR: COMFORT` page offers it as `VIEW ON THE GRAPPLE` (`HOLD STEADY` for `HoldView`, `KEEP LEVEL` for `LevelPitch`, and `SWING WITH THE BODY` for `Off`). The timing is fixed in `crate::grapple`, and the debug UI's Grapple feature shows the live blend in its live status:
 
 | Constant | Value | Meaning |
 |---|---|---|

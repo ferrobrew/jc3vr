@@ -87,7 +87,7 @@ fn a_scenario_reads_with_its_defaults() {
             signal = "climb.grips"
 
             [[expect]]
-            signal = "procedural.pass_through_error_m"
+            signal = "procedural.neck_error_m"
             below = 0.001
 
             [[expect]]
@@ -127,7 +127,7 @@ fn a_scenario_reads_with_its_defaults() {
                 Condition::AtLeast(1.0)
             ),
             (
-                "procedural.pass_through_error_m below 0.001",
+                "procedural.neck_error_m below 0.001",
                 Check::Always,
                 Condition::Below(0.001)
             ),
@@ -321,7 +321,6 @@ fn the_shipped_templates_read() {
         "passenger_aim.toml",
         "physical_guns.toml",
         "procedural_full_body.toml",
-        "procedural_pass_through.toml",
         "push_up.toml",
         "recenter.toml",
         "seated_torso.toml",

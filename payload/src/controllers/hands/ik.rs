@@ -732,7 +732,7 @@ unsafe fn queue_hand(
     let to_world = Mat4::from(character.m_WorldMatrixT1);
     // The hand rests on the procedural torso rather than in it; the recorded target is the
     // pushed one, so the late update corrects toward where the hand was asked to go.
-    let keep_out = torso.and_then(|t| t.keep_out);
+    let keep_out = torso.map(|t| t.keep_out);
     let target_position = keep_out.map_or(wanted_position, |k| k.push_out(wanted_position));
     let kept_out_m = target_position.distance(wanted_position);
     let world = Pose {

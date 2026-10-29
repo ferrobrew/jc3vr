@@ -53,12 +53,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     let Some(character) = (unsafe { character.as_mut() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };
-    let (enabled, mode) = Config::lock_query(|c| {
-        (
-            c.controllers.body.procedural.twist_bones,
-            c.controllers.body.procedural.mode,
-        )
-    });
+    let mode = Config::lock_query(|c| c.controllers.body.procedural.mode);
     let body = published_status();
     let weights = [body.weight, body.legs_weight];
     let mut status = TwistStatus {
@@ -67,8 +62,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     };
     status.wrote = false;
     status.largest_twist = 0.0;
-    if enabled
-        && mode == ProceduralMode::Full
+    if mode == ProceduralMode::Full
         && weights.iter().any(|w| *w > 0.0)
         && let Some(controller) =
             unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() }

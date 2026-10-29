@@ -63,7 +63,7 @@ With `physical_hands.climb.enabled` on:
 3. Hand over hand up a wall: each new grip takes over smoothly, and the body follows the average of two gripping hands.
 4. Let go while pulling hard: `let go of the world` with a fling speed, and the player flies on and falls normally.
 5. Climb to a ledge, grip its top with both hands, and push down: `mantling over a ledge`, the body rises over the edge and onto the top, then `mantled onto the ledge`, and the player stands there with no landing animation.
-6. With `BODY FROM YOUR HEAD` on `FULL`: hanging logs the case `climbing with the hands`, the legs hang and tuck, and a mantle ends with the feet planted on the ledge.
+6. With the procedural body on: hanging logs the case `climbing with the hands`, the legs hang and tuck, and a mantle ends with the feet planted on the ledge.
 7. Grip, then draw a gun with the other hand or enter a vehicle: the grip lets go with its reason.
 8. Pause while hanging, resume: the grip still holds.
 9. Grip the side of a parked truck: `a hand gripped the world` with `moving=true`, and climb onto its roof. Have it driven off while hanging from it: the player travels with it, the rendered hands stay on it, and `MOVING CLIMBS` says `HOLDING ON`. Let go at speed: the player leaves with the truck's speed.

@@ -85,9 +85,6 @@ pub(super) fn animation_settings(ui: &mut Ui, cfg: &mut config::Config) {
         .on_hover_text("Drive the upper body toward the headpose via the engine's HumanIK solver.");
     let c = &mut cfg.controllers;
     ui.checkbox(&mut c.aim_state.skip_arm_ik, "Skip the game's arm aim IK");
-    ui.checkbox(&mut c.body.remap_head, "Remap head height")
-        .on_hover_text("Moves the view for every player, controllers or not.");
-    ui.checkbox(&mut c.body.remap_hands, "Remap hand reach");
     unarmed::unarmed_settings(ui, &mut c.body.unarmed);
 }
 

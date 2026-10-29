@@ -17,9 +17,8 @@ use crate::{
                     source_label, status,
                 },
             },
-            procedural::config::ProceduralMode,
         },
-        menu::{config_choice, config_toggle},
+        menu::config_toggle,
     },
     pause_menu::model::{
         page::{Button, ButtonOutcome, Choice, Page, Readout, Slider},
@@ -29,13 +28,6 @@ use crate::{
 
 /// The `STANCE` choice's options, in [`Stance::ALL`]'s order.
 pub(super) const STANCE_OPTIONS: [&str; 2] = ["STANDING", "SEATED"];
-
-pub(super) const PROCEDURAL_MODES: [ProceduralMode; 3] = [
-    ProceduralMode::Off,
-    ProceduralMode::PassThrough,
-    ProceduralMode::Full,
-];
-pub(super) const PROCEDURAL_MODE_LABELS: [&str; 3] = ["OFF", "TEST", "FULL"];
 
 /// The range of the seated review's height slider, metres, a centimetre a notch: the heights whose
 /// standing eye heights a standing calibration accepts.
@@ -87,88 +79,6 @@ pub(super) fn summary(page: Page) -> Page {
             .controllers
             .body
             .remap_hands))
-        .header("PROCEDURAL BODY")
-        .item(config_choice!(
-            "BODY FROM YOUR HEAD",
-            &PROCEDURAL_MODES,
-            &PROCEDURAL_MODE_LABELS,
-            |c| c.controllers.body.procedural.mode
-        ))
-        .item(config_toggle!("WALKING LEGS", |c| c
-            .controllers
-            .body
-            .rig
-            .legs
-            .gait))
-        .item(config_toggle!("SHORT STEPS IN A CROUCH", |c| c
-            .controllers
-            .body
-            .procedural
-            .crouch_gait))
-        .item(config_toggle!("LEGS IN THE AIR", |c| c
-            .controllers
-            .body
-            .procedural
-            .air_legs))
-        .item(config_toggle!("LEGS REACH FOR LANDINGS", |c| c
-            .controllers
-            .body
-            .procedural
-            .landing_reach))
-        .item(config_toggle!("HANDS OUT OF THE BODY", |c| c
-            .controllers
-            .body
-            .procedural
-            .keep_out))
-        .item(config_toggle!("SHOULDERS FOLLOW THE HANDS", |c| c
-            .controllers
-            .body
-            .procedural
-            .clavicles))
-        .item(config_toggle!("SPREAD THE LIMB TWIST", |c| c
-            .controllers
-            .body
-            .procedural
-            .twist_bones))
-        .item(config_toggle!("BODY AT THE FRAME RATE", |c| c
-            .controllers
-            .hands
-            .presentation
-            .enabled))
-        .item(config_toggle!("TORSO IN VEHICLES", |c| c
-            .controllers
-            .body
-            .procedural
-            .seated_torso))
-        .item(config_toggle!("ARMS AS WINGS", |c| c
-            .controllers
-            .body
-            .procedural
-            .wingsuit_arms))
-        .item(config_toggle!("BODY UNDER THE PARACHUTE", |c| c
-            .controllers
-            .body
-            .procedural
-            .parachute_body))
-        .item(config_toggle!("TORSO AND ARMS SWIMMING", |c| c
-            .controllers
-            .body
-            .procedural
-            .swim_torso))
-        .item(config_toggle!("TORSO ON VEHICLE ROOFS", |c| c
-            .controllers
-            .body
-            .procedural
-            .stunt_torso))
-        .text("TEST WRITES THE POSE BACK AS IS.")
-        .header("ALIGNMENT")
-        .item(config_toggle!("BODY FACES YOUR TORSO", |c| c
-            .controllers
-            .body
-            .rig
-            .torso
-            .follow))
-        .text("ONLY THE TURN INPUT TURNS THE VIEW.")
 }
 
 pub(super) fn stand(page: Page) -> Page {

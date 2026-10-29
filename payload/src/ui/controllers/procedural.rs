@@ -17,7 +17,6 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
         "Mode {} · torso {:.2} · legs {:.2} · owns the body {}",
         match status.mode {
             ProceduralMode::Off => "off",
-            ProceduralMode::PassThrough => "pass-through",
             ProceduralMode::Full => "full body",
         },
         status.weight,
@@ -43,12 +42,6 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
     ui.label(format!("Constrained body fit: {:?}", status.fit));
     if let Some(error) = status.rig_error {
         ui.label(format!("Not rigged: {error}"));
-    }
-    if let Some((metres, degrees)) = status.round_trip {
-        ui.label(format!(
-            "Pass-through read-back error: {:.5} m · {:.3}°",
-            metres, degrees
-        ));
     }
     if status.mode == ProceduralMode::Full {
         ui.label(format!(

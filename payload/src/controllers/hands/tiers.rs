@@ -456,8 +456,7 @@ pub fn weights() -> [f32; 2] {
 /// detector, while the controllers are enabled.
 pub(crate) fn tick(dt: f32) {
     let (config, dominant, mounted_anchor) = Config::lock_query(|c| {
-        let procedural = &c.controllers.body.procedural;
-        let swim_arms = procedural.swim_torso && procedural.mode == ProceduralMode::Full;
+        let swim_arms = c.controllers.body.procedural.mode == ProceduralMode::Full;
         (
             TierConfig {
                 table: HandTierTable::PLAN.with_swim_arms(swim_arms),

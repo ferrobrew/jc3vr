@@ -139,9 +139,7 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
         FeatureId::Posture => {
             |ui, _| roomscale::roomscale_settings(ui, &mut config::edit().controllers.roomscale)
         }
-        FeatureId::BodyFit => {
-            |ui, _| rig::rig_settings(ui, &mut config::edit().controllers.body.rig)
-        }
+        FeatureId::BodyFit => |ui, _| rig::rig_settings(ui, &mut config::edit().controllers.body),
         FeatureId::Wrist => {
             |ui, _| summary::summary_settings(ui, &mut config::edit().controllers.summary)
         }

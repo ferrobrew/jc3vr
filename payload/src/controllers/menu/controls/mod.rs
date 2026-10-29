@@ -237,13 +237,13 @@ mod tests {
             config.controllers.bindings.move_deadzone = 0.3;
             config.controllers.locomotion.stick.enabled = false;
             config.headpose.vr_turn.snap_angle_deg = 45.0;
+            config.headpose.grapple.mode = GrappleComfortMode::Off;
             // Not on either page: the debug UI's switches and tuning, the body page, and the
             // display.
             config.controllers.input.hand_tracking = false;
             config.controllers.locomotion.stick.run_speed_mps = 3.0;
-            config.headpose.grapple.mode = GrappleComfortMode::Off;
             config.controllers.roomscale.crouch.enter_drop_m = 0.5;
-            config.controllers.body.rig.legs.gait = false;
+            config.controllers.body.remap_head = false;
             config.controllers.body.rig.lean.enabled = false;
             config.hud.distance = 2.0;
         });
@@ -266,10 +266,10 @@ mod tests {
             assert_eq!(config.controllers.dominant_hand, Hand::Left);
             assert!(!config.controllers.input.hand_tracking);
             assert_eq!(config.controllers.locomotion.stick.run_speed_mps, 3.0);
-            assert_eq!(config.headpose.grapple.mode, GrappleComfortMode::Off);
+            assert_eq!(config.headpose.grapple.mode, defaults.headpose.grapple.mode);
             assert_eq!(config.controllers.aim.sights.get(7), Some(&sight));
             assert_eq!(config.controllers.roomscale.crouch.enter_drop_m, 0.5);
-            assert!(!config.controllers.body.rig.legs.gait);
+            assert!(!config.controllers.body.remap_head);
             assert!(!config.controllers.body.rig.lean.enabled);
             assert_eq!(config.hud.distance, 2.0);
         });

@@ -35,9 +35,6 @@ pub struct ProceduralBodyConfig {
     /// Hold the feet in the world, stepping when the body moves or turns away from them, instead
     /// of leaving them where the animation puts them.
     pub plant_feet: bool,
-    /// Shorten and lower the steps in a crouch by how far the hips have dropped, so a crouched
-    /// walk takes short, quick, low steps instead of the upright walk's strides.
-    pub crouch_gait: bool,
     /// The stride at the hips' lowest, as a share of the upright walk's.
     pub crouch_stride_share: f32,
     /// The lift of a step at the hips' lowest, as a share of the upright walk's.
@@ -66,9 +63,6 @@ pub struct ProceduralBodyConfig {
     /// How quickly the hips drop for a foot the legs cannot otherwise reach, seconds: the time
     /// constant of the drop's follower (it rises back at a third of the pace).
     pub reach_drop_s: f32,
-    /// Keep the wrist and elbow targets out of the procedural torso (a chest and an abdomen
-    /// capsule along the spine), so the arms do not pass through the body.
-    pub keep_out: bool,
     /// The chest capsule's radius, metres.
     pub chest_radius_m: f32,
     /// The abdomen capsule's radius, metres.
@@ -79,9 +73,6 @@ pub struct ProceduralBodyConfig {
     pub elbow_hints: bool,
     /// The elbow hint's reach: how strongly the solve pulls the elbow toward the hint.
     pub elbow_hint_reach: f32,
-    /// Turn each clavicle toward its hand when the hand is raised above the shoulder or reaches
-    /// toward the end of the arm, so the shoulder goes with an overhead or far reach.
-    pub clavicles: bool,
     /// How far a clavicle lifts for a hand overhead, at most, degrees.
     pub clavicle_elevation_deg: f32,
     /// How far a clavicle drops for a hand reaching far down, at most, degrees.
@@ -94,9 +85,6 @@ pub struct ProceduralBodyConfig {
     pub clavicle_reach_start: f32,
     /// How quickly the clavicles follow the hands, seconds: the time constant of their follower.
     pub clavicle_follow_s: f32,
-    /// Pose the legs in a jump or a short fall: tucked under the hips while rising and let down
-    /// while falling, instead of the animation's legs under the procedural hips.
-    pub air_legs: bool,
     /// The hip-to-ankle height while rising, as a share of the standing leg's.
     pub air_tuck: f32,
     /// The hip-to-ankle height while falling fast, as a share of the standing leg's.
@@ -105,9 +93,6 @@ pub struct ProceduralBodyConfig {
     pub air_fall_speed_mps: f32,
     /// How far the toes point down with the legs let down, degrees.
     pub air_toe_drop_deg: f32,
-    /// Reach the legs down for the ground below while falling in a jump, so a landing meets the
-    /// ground with the legs already stretched toward it.
-    pub landing_reach: bool,
     /// How long before touching down the legs reach fully for the ground, seconds; they start
     /// reaching twice as long before.
     pub landing_reach_s: f32,
@@ -122,28 +107,6 @@ pub struct ProceduralBodyConfig {
     pub landing_dip_min_speed_mps: f32,
     /// How long after landing the dip is deepest, seconds; it recovers over a few times that.
     pub landing_dip_s: f32,
-    /// Share each limb's twist out over its twist bones after the solve, so a large twist of a
-    /// hand or a foot does not wring the skin at one joint.
-    pub twist_bones: bool,
-    /// Pose the torso while seated and riding in a vehicle: the spine, the neck, and the shoulders
-    /// follow the player's head and hands over the seat's hips, and the legs keep the seat's
-    /// animation. Off, the seat's animation and the body IK's lean pose the torso.
-    pub seated_torso: bool,
-    /// Pose Rico's arms in the wingsuit from the player's, carried over as the arm steering reads
-    /// them: the spread, a hand lowered for a bank, a hand swept forward, and the wrists' tilt. The
-    /// body keeps the flight pose.
-    pub wingsuit_arms: bool,
-    /// Pose the body under the parachute: the torso follows the player's head over the harness's
-    /// hips, and the legs hang from them (`air_hang`, `air_toe_drop_deg`), swinging forward for the
-    /// handles' two-handed brake.
-    pub parachute_body: bool,
-    /// Pose the torso and the arms while swimming: the spine follows the player's head over the
-    /// swim's hips, the arms follow the controllers (the swimming hand tier is free while this is
-    /// on), and the legs keep the swim's kick.
-    pub swim_torso: bool,
-    /// Pose the torso standing in a vehicle's stunt area (a car's roof, a boat's deck): the spine
-    /// follows the player's head over the stunt idle's hips, and the legs keep the idle's balance.
-    pub stunt_torso: bool,
     /// How far the hanging legs swing forward at a full brake of the parachute's handles, degrees.
     pub parachute_flare_deg: f32,
     /// How quickly the legs follow the brake, seconds: the smoothing time of their follower.
@@ -166,7 +129,6 @@ impl ProceduralBodyConfig {
             lean_limit_deg: 60.0,
             neutralize_targets: true,
             plant_feet: true,
-            crouch_gait: true,
             crouch_stride_share: 0.55,
             crouch_lift_share: 0.6,
             crouch_duty: 0.7,
@@ -180,36 +142,26 @@ impl ProceduralBodyConfig {
             max_step_down_m: 0.6,
             ankle_tilt_limit_deg: 25.0,
             reach_drop_s: 0.05,
-            keep_out: true,
             chest_radius_m: 0.14,
             abdomen_radius_m: 0.13,
             hand_margin_m: 0.03,
             elbow_hints: true,
             elbow_hint_reach: 0.3,
-            clavicles: true,
             clavicle_elevation_deg: 30.0,
             clavicle_depression_deg: 10.0,
             clavicle_protraction_deg: 25.0,
             clavicle_reach_start: 0.8,
             clavicle_follow_s: 0.1,
-            air_legs: true,
             air_tuck: 0.72,
             air_hang: 0.94,
             air_fall_speed_mps: 4.0,
             air_toe_drop_deg: 20.0,
-            landing_reach: true,
             landing_reach_s: 0.25,
             landing_dip: true,
             landing_dip_per_mps: 0.02,
             landing_dip_max_m: 0.15,
             landing_dip_min_speed_mps: 1.5,
             landing_dip_s: 0.1,
-            twist_bones: true,
-            seated_torso: true,
-            wingsuit_arms: true,
-            parachute_body: true,
-            swim_torso: true,
-            stunt_torso: true,
             parachute_flare_deg: 40.0,
             parachute_flare_s: 0.25,
             hit_reaction_hold_s: 1.2,
@@ -311,10 +263,6 @@ pub enum ProceduralMode {
     /// Nothing: the game's animation and the mod's IK targets pose the body as before.
     #[default]
     Off,
-    /// Read the animated pose of the driven bones and write it back unchanged, and log how far the
-    /// written pose reads back from what was written: proves the write path without moving
-    /// anything.
-    PassThrough,
     /// Build the body under the player's head while Rico is on foot on the ground, standing and
     /// moving. Saved files from before the moving body name it `Body`.
     #[serde(alias = "Body")]

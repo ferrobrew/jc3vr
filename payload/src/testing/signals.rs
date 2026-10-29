@@ -174,8 +174,6 @@ signals! {
     CharacterRegrips => "characters.regrips", Counter, "Fallen characters' ragdolls a hand took hold of after a yank.";
     CharacterKnockdowns => "characters.knockdowns", Counter, "Yanks and shoves that knocked a character down.";
     ProceduralRigError => "procedural.rig_error", Flag, "The procedural body could not rig the skeleton.";
-    PassThroughErrorM => "procedural.pass_through_error_m", Measure, "The pass-through's largest read-back error, metres.";
-    PassThroughErrorDeg => "procedural.pass_through_error_deg", Measure, "The pass-through's largest read-back error, degrees.";
     ProceduralOnFoot => "procedural.on_foot", Flag, "The hand-over table's case is on foot.";
     StanceMeasured => "procedural.stance_measured", Flag, "The neutral stance has been measured.";
     ProceduralSeated => "procedural.seated", Flag, "The torso is posed on the seat's hips in a vehicle.";
@@ -345,12 +343,6 @@ impl Signal {
             Signal::CharacterRegrips => count(physical_hands::status().pickup.regrips),
             Signal::CharacterKnockdowns => count(physics::status().knockdowns),
             Signal::ProceduralRigError => flag(procedural::published_status().rig_error.is_some()),
-            Signal::PassThroughErrorM => procedural::published_status()
-                .round_trip
-                .map_or(Value::Missing, |(m, _)| Value::Number(f64::from(m))),
-            Signal::PassThroughErrorDeg => procedural::published_status()
-                .round_trip
-                .map_or(Value::Missing, |(_, deg)| Value::Number(f64::from(deg))),
             Signal::ProceduralOnFoot => flag(procedural::published_status().case == Case::OnFoot),
             Signal::StanceMeasured => flag(procedural::published_status().stance_measured),
             Signal::ProceduralSeated => {
@@ -660,10 +652,7 @@ mod tests {
     #[test]
     fn status_rows_are_found_by_their_label_in_any_case() {
         assert_eq!(status_row_label("callback"), Some("CALLBACK"));
-        assert_eq!(
-            status_row_label("PASS-THROUGH ERROR"),
-            Some("PASS-THROUGH ERROR")
-        );
+        assert_eq!(status_row_label("twist bones"), Some("TWIST BONES"));
         assert_eq!(status_row_label("NO SUCH ROW"), None);
     }
 

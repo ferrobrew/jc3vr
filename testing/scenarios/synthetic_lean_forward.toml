@@ -1,7 +1,7 @@
 # Synthetic: the recording is written by `cargo run -p tracking-synth` to
 # testing/recordings/synthetic/lean_forward.jc3trk. See docs/mod/testing/recorder.md.
 name = "synthetic: leaning over a table"
-description = "Replayed with BODY FROM YOUR HEAD on FULL. Lean from the hips over a table, the head 35 cm forward and 20 cm down, hold, and return."
+description = "Replayed with the procedural body on. Lean from the hips over a table, the head 35 cm forward and 20 cm down, hold, and return."
 recording = "../recordings/synthetic/lean_forward.jc3trk"
 start = "in_place"
 pacing = "real_time"

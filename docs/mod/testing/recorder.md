@@ -106,9 +106,9 @@ status = "CALLBACK"                    # a status row
 detail = "GAME THREAD"
 
 [[expect]]
-signal = "procedural.pass_through_error_m"
+signal = "procedural.neck_error_m"
 check = "always"
-below = 0.001
+below = 0.05
 ```
 
 Each `[[expect]]` names exactly one probe:
@@ -160,7 +160,6 @@ Scenario signals read the snapshots the mod's systems publish for the status row
 | `doors.on_latch` | flag | A hand grips a latched vehicle door. |
 | `characters.grips`, `.yanks`, `.knockdowns`, `.regrips`, `.hijacks` | counter | Grips taken on characters, the yanks, the yanks and shoves that knocked a character down, the fallen characters' ragdolls taken, and the seated characters pulled out through an open door ([character-grabs.md](../input/character-grabs.md)). |
 | `procedural.rig_error`, `.on_foot`, `.stance_measured` | flag | The procedural body's rig failed; its case is on foot; the stance is measured. |
-| `procedural.pass_through_error_m`, `.pass_through_error_deg` | measure | The pass-through's largest read-back error. |
 | `procedural.seated` | flag | The torso is posed on the seat's hips in a vehicle ([body/procedural-states.md](../body/procedural-states.md)). |
 | `procedural.wing_arms` | flag | Rico's arms follow the player's in the wingsuit, with both hands queued. |
 | `procedural.parachute` | flag | The torso is posed on the harness's hips under the parachute, the legs hanging. |

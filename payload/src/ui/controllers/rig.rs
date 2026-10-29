@@ -1,13 +1,20 @@
 //! The body rig: who owns the root, the gap to the ground point under the upright eyes and what the
 //! chase does about it, the lean it leaves alone, the push-back at walls, the cockpit shift, and the
-//! ledger's attribution, and the push-back and lean switches.
+//! ledger's attribution, and the body fit's switches: the procedural body, the body facing the
+//! torso, the push-back, and the lean.
 
 use std::time::Instant;
 
 use egui::Ui;
 
 use crate::{
-    controllers::body::rig::{collision::probe::STALE_AFTER, config::RigConfig, root::RootStatus},
+    controllers::{
+        body::{
+            procedural::config::ProceduralMode,
+            rig::{collision::probe::STALE_AFTER, root::RootStatus},
+        },
+        config::BodyRemapConfig,
+    },
     ui::controllers::{vec3, yes_no},
 };
 
@@ -74,7 +81,24 @@ pub(super) fn rig_readout(ui: &mut Ui, status: &RootStatus) {
     ));
 }
 
-pub(super) fn rig_settings(ui: &mut Ui, r: &mut RigConfig) {
+pub(super) fn rig_settings(ui: &mut Ui, body: &mut BodyRemapConfig) {
+    let mut procedural = body.procedural.mode == ProceduralMode::Full;
+    if ui
+        .checkbox(&mut procedural, "Procedural body")
+        .on_hover_text(
+            "Build the body under the player's head and hand it over to the animation by state.",
+        )
+        .changed()
+    {
+        body.procedural.mode = if procedural {
+            ProceduralMode::Full
+        } else {
+            ProceduralMode::Off
+        };
+    }
+    let r = &mut body.rig;
+    ui.checkbox(&mut r.torso.follow, "Body faces the torso")
+        .on_hover_text("Turn the body under the view to face the player's measured torso.");
     ui.checkbox(&mut r.pushback.enabled, "Stop at walls")
         .on_hover_text(
             "Hold the view at a wall the body cannot pass; off, only the fade answers it.",

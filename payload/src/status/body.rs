@@ -19,13 +19,7 @@ use crate::{
 };
 
 pub(super) fn seated_torso() -> Line {
-    let (enabled, mode) = read_config(|c| {
-        (
-            c.controllers.body.procedural.seated_torso,
-            c.controllers.body.procedural.mode,
-        )
-    });
-    if !enabled || mode != ProceduralMode::Full {
+    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
         return Line::off("");
     }
     seated_line(&procedural::published_status())
@@ -57,13 +51,7 @@ fn torso_on_hips_line(status: &ProceduralStatus) -> Line {
 }
 
 pub(super) fn wingsuit_arms() -> Line {
-    let (enabled, mode) = read_config(|c| {
-        (
-            c.controllers.body.procedural.wingsuit_arms,
-            c.controllers.body.procedural.mode,
-        )
-    });
-    if !enabled || mode != ProceduralMode::Full {
+    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
         return Line::off("");
     }
     wings_line(&procedural::published_status())
@@ -89,13 +77,7 @@ fn wings_line(status: &ProceduralStatus) -> Line {
 }
 
 pub(super) fn parachute_body() -> Line {
-    let (enabled, mode) = read_config(|c| {
-        (
-            c.controllers.body.procedural.parachute_body,
-            c.controllers.body.procedural.mode,
-        )
-    });
-    if !enabled || mode != ProceduralMode::Full {
+    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
         return Line::off("");
     }
     parachute_line(&procedural::published_status())
@@ -124,13 +106,7 @@ fn parachute_line(status: &ProceduralStatus) -> Line {
 }
 
 pub(super) fn swim_torso() -> Line {
-    let (enabled, mode) = read_config(|c| {
-        (
-            c.controllers.body.procedural.swim_torso,
-            c.controllers.body.procedural.mode,
-        )
-    });
-    if !enabled || mode != ProceduralMode::Full {
+    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
         return Line::off("");
     }
     let status = procedural::published_status();
@@ -141,13 +117,7 @@ pub(super) fn swim_torso() -> Line {
 }
 
 pub(super) fn roof_torso() -> Line {
-    let (enabled, mode) = read_config(|c| {
-        (
-            c.controllers.body.procedural.stunt_torso,
-            c.controllers.body.procedural.mode,
-        )
-    });
-    if !enabled || mode != ProceduralMode::Full {
+    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
         return Line::off("");
     }
     roof_line(&procedural::published_status())
@@ -164,7 +134,7 @@ fn roof_line(status: &ProceduralStatus) -> Line {
 pub(super) fn body_mirror() -> Line {
     if !read_config(|c| c.controllers.overlay.body_mirror) {
         return Line::off(prose("Switch on in debug UI"))
-            .with_note("the Controllers tab's overlay section, Body mirror");
+            .with_note("the visualization drawer's Body mirror");
     }
     mirror_line(&mirror::status(), Instant::now())
 }

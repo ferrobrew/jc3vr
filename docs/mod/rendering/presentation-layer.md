@@ -50,9 +50,9 @@ The layer's work is timed in the `presentation` slot of the frame breakdown (`pe
 
 ## Settings and readouts
 
-`controllers.hands.presentation`: `enabled` (on; `BODY AT THE FRAME RATE` on the `VR: BODY` page), `torso` (on), and `arms` (on); the debug UI's Controllers tab has all three next to the late update's switch, with a readout of the layer's state, the draws it re-posed, and its cost. Off, the late update re-poses the hands and the forearms alone, as before. The hand bodies' blended offset always applies.
+`controllers.hands.presentation.enabled` (on; `Render-rate upper body` in the debug UI's Body > Hand presentation feature, next to the late update's switch, with a readout of the layer's state, the draws it re-posed, and its cost). Off, the late update re-poses the hands and the forearms alone, as before. The hand bodies' blended offset always applies.
 
-The `RENDER-RATE BODY` status row (under `RENDERING` in the debug UI's Status tab) reads `OK` with the number of the player's body draws the layer re-posed in its last active frame and its smoothed cost per frame in milliseconds; `WAITING` with why it is idle before it has run (not in the headset, no recent tick); `FAILED, NO RIG` for a skeleton without the bones; and `OFF` when switched off. The skeleton's rig is logged once (`presentation: rigged the player's skeleton for the render-rate body`).
+The `RENDER-RATE BODY` status row (under `RENDERING` on the debug UI's Status page) reads `OK` with the number of the player's body draws the layer re-posed in its last active frame and its smoothed cost per frame in milliseconds; `WAITING` with why it is idle before it has run (not in the headset, no recent tick); `FAILED, NO RIG` for a skeleton without the bones; and `OFF` when switched off. The skeleton's rig is logged once (`presentation: rigged the player's skeleton for the render-rate body`).
 
 ## Limits
 
@@ -64,7 +64,7 @@ The `RENDER-RATE BODY` status row (under `RENDERING` in the debug UI's Status ta
 ## What to check in the headset
 
 1. The `RENDER-RATE BODY` row reads `OK` with a few draws and well under a tenth of a millisecond, and the log has the rig line once.
-2. Look down at your chest and move your head quickly forward, back, and sideways: the chest and shoulders follow without trailing, and the body's shadow matches. Switch `BODY AT THE FRAME RATE` off and compare: the torso should then lag a tick.
+2. Look down at your chest and move your head quickly forward, back, and sideways: the chest and shoulders follow without trailing, and the body's shadow matches. Switch `Render-rate upper body` off and compare: the torso should then lag a tick.
 3. Swing the arms quickly and punch: the elbows and upper arms move with the hands rather than catching up with them, the forearms stay attached at both ends, and the elbows point the way they did before.
 4. Press a hand flat on a wall and push into it, then slide it along the wall: the hand stays on the wall without stuttering in and out. Move it off the wall: it follows the controller again with no lag.
 5. Hold a primed grenade, a C4 charge, and a magazine during a reload, and reach as far as the arm goes: each stays in the hand. The wrist readouts and the controls summary stay on the wrist.

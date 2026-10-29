@@ -25,8 +25,7 @@
 //! - [`wings`]: Rico's arms in the wingsuit, carried over from the player's.
 //! - [`config`]: the mode and the tuning.
 //!
-//! [`at_solve_gate`] runs the mode: `PassThrough` writes the animated pose back unchanged and logs
-//! how it reads back, the proof that the write path is sound; `Full` builds the body, handing each
+//! [`at_solve_gate`] runs the mode: `Full` builds the body, handing each
 //! region (the legs, the torso) between it and the animation by the table in [`authority`], and
 //! zeroes the game's own IK targets on the bones it owns. While it has any weight, [`owns_body`] tells the
 //! pre-solve IK (the body IK's torso) to stand down.
@@ -50,7 +49,7 @@ pub mod wings;
 
 use std::{
     sync::atomic::{AtomicU32, Ordering},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use glam::{Mat4, Vec2, Vec3};
@@ -106,8 +105,6 @@ pub struct ProceduralStatus {
     pub case: Case,
     /// Why the skeleton could not be rigged, if it could not.
     pub rig_error: Option<RigError>,
-    /// The pass-through's largest read-back error over the driven bones: metres and degrees.
-    pub round_trip: Option<(f32, f32)>,
     /// How far the solved hips sit below the animated ones, metres.
     pub hips_drop_m: f32,
     /// How far the hips drop for the legs to reach the feet, metres.
@@ -169,7 +166,7 @@ pub struct ProceduralStatus {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct ArmContext {
     /// The torso the wrist and elbow targets are kept out of.
-    pub keep_out: Option<TorsoKeepOut>,
+    pub keep_out: TorsoKeepOut,
     /// The elbow hints' reach, already scaled by the procedural pose's weight.
     pub elbow_reach: Option<f32>,
     /// The written chest's turn about +Y from Rico's facing, radians: the elbow hints turn with it.
@@ -182,14 +179,11 @@ pub fn arm_context() -> Option<ArmContext> {
 }
 
 /// This tick's torso keep-out, carried into world space by `to_world` (the character's own world
-/// transform): `None` when the procedural body did not pose the torso this tick, or posed it with
-/// the keep-out switched off. A caller that keeps its own carried target out of the player's body,
+/// transform): `None` when the procedural body did not pose the torso this tick. A caller that keeps its own carried target out of the player's body,
 /// such as the physical hands' held-object keep-out, queries this instead of rebuilding the torso's
 /// shape, so the two keep-outs never drift apart.
 pub fn torso_keep_out(to_world: Mat4) -> Option<TorsoKeepOut> {
-    arm_context()?
-        .keep_out
-        .map(|keep_out| keep_out.to_world(to_world))
+    arm_context().map(|arms| arms.keep_out.to_world(to_world))
 }
 
 /// The last gate's status.
@@ -360,26 +354,6 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         .intersects(AimState::m_AimingWeapon | AimState::m_AimingGrapple);
     state.observe_stance(&animated, rig, locomotion.standing_still() && !aiming, dt);
     match config.mode {
-        ProceduralMode::PassThrough => {
-            unsafe { live.write(controller, &animated) };
-            let read_back = unsafe { live.read(controller) };
-            let error = round_trip_error(&animated, &read_back);
-            state.status.round_trip = Some(error);
-            if state
-                .logged_at
-                .is_none_or(|at| now.saturating_duration_since(at) >= PASS_THROUGH_LOG_INTERVAL)
-            {
-                state.logged_at = Some(now);
-                tracing::info!(
-                    target: "body",
-                    bones = RigBone::COUNT,
-                    max_error_m = error.0,
-                    max_error_deg = error.1,
-                    "procedural body: pass-through wrote the animated pose back",
-                );
-            }
-            false
-        }
         ProceduralMode::Off | ProceduralMode::Full => {
             let read = unsafe {
                 state
@@ -397,7 +371,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             }
             let previous = state.blend.weights();
             let weights = state.blend.step(case, dt, &config);
-            state.log_case(case, &weights, &config);
+            state.log_case(case, &weights);
             state.status.case = case;
             state.status.on_animated_hips = case.anchored() && weights.any();
             state.status.switch_fading = false;
@@ -528,12 +502,11 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             let mut caster = GroundCaster::new(character, world.w_axis.y, &config);
             // The legs come back from the animation with the feet where it left them, and step
             // from there; while the animation has them, the feet are its own.
-            let legs_procedural = weights.legs > 0.0 || case.targets(&config)[0] > 0.0;
-            let airborne = config.air_legs
-                && matches!(
-                    case,
-                    Case::Jump | Case::HandClimb | Case::Flight | Case::Wingsuit | Case::Parachute
-                );
+            let legs_procedural = weights.legs > 0.0 || case.targets()[0] > 0.0;
+            let airborne = matches!(
+                case,
+                Case::Jump | Case::HandClimb | Case::Flight | Case::Wingsuit | Case::Parachute
+            );
             let player = head::read(&world, scale);
             let standing = case == Case::OnFoot && legs_procedural && !airborne;
             let hips_head_y = state.hips_head(rig, &player, standing, dt, &config);
@@ -576,7 +549,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                     };
                     let hips = hips_height(rig, hips_head_y, &config);
                     let air = air_feet(rig, stance, hips, vertical, &tuning);
-                    let air = if config.landing_reach && airborne && vertical < 0.0 {
+                    let air = if airborne && vertical < 0.0 {
                         let landing = Landing {
                             world: &world,
                             rig,
@@ -785,14 +758,12 @@ fn finish_write(
         .try_normalize()
         .is_some_and(|axis| upright_share(axis) > ELBOW_HINT_UPRIGHT);
     state.arms = (weights.torso > 0.0).then(|| ArmContext {
-        keep_out: config.keep_out.then(|| {
-            TorsoKeepOut::around(
-                pose,
-                config.chest_radius_m,
-                config.abdomen_radius_m,
-                config.hand_margin_m,
-            )
-        }),
+        keep_out: TorsoKeepOut::around(
+            pose,
+            config.chest_radius_m,
+            config.abdomen_radius_m,
+            config.hand_margin_m,
+        ),
         elbow_reach: (config.elbow_hints && upright)
             .then_some(config.elbow_hint_reach * weights.torso),
         chest_yaw: line_yaw(
@@ -813,9 +784,6 @@ const ELBOW_HINT_UPRIGHT: f32 = 0.5;
 
 /// The longest step the body takes, seconds: a hitch is not a long blend.
 const MAX_STEP_S: f32 = 0.1;
-
-/// How often the pass-through logs its read-back.
-const PASS_THROUGH_LOG_INTERVAL: Duration = Duration::from_secs(5);
 
 /// The fastest the root moves vertically between two gates and still counts as moving, metres per
 /// second; anything faster is a teleport.
@@ -877,7 +845,6 @@ const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
     legs_weight: 0.0,
     case: Case::NotInHeadset,
     rig_error: None,
-    round_trip: None,
     hips_drop_m: 0.0,
     reach_drop_m: 0.0,
     neck_error_m: 0.0,
@@ -905,20 +872,6 @@ const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
     wing_queued: [false; 2],
     flare: 0.0,
 };
-
-/// The largest position (metres) and rotation (degrees) difference between two poses.
-fn round_trip_error(written: &RigPose, read: &RigPose) -> (f32, f32) {
-    written
-        .bones
-        .iter()
-        .zip(&read.bones)
-        .fold((0.0f32, 0.0f32), |(m, d), (a, b)| {
-            (
-                m.max(a.translation.distance(b.translation)),
-                d.max(a.rotation.angle_between(b.rotation).to_degrees()),
-            )
-        })
-}
 
 /// The root's horizontal velocity over the pass, world space, from the previous tick's root to
 /// this one's: whatever moved it (the stick, the rig's chase, a push, a wall that stopped it).

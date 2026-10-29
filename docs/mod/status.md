@@ -66,19 +66,18 @@ The status rows say whether each of the mod's systems is live, for confirming a 
 | | `STEADY VIEW` | the root-fixed view anchor: engaged, blending, measuring, waiting for the player to stand still, or idle |
 | | `NEUTRAL HEAD` | the measured neutral eye height in model space |
 | `PROCEDURAL BODY` | `MODE` | the procedural body's mode, and whether its gate has run in it (the log adds how long ago); a rig error fails it |
-| | `PASS-THROUGH ERROR` | in the test mode, the largest read-back error over the driven bones, failed past a millimetre or a tenth of a degree |
 | | `HAND-OVER CASE` | in the full mode, the hand-over table's current case; `OK` on foot, `WAITING` while the animation has the body |
 | | `GROUND CASTS` | in the full mode, the last gate's ground casts that hit, and any errors |
 | | `STANCE` | whether the neutral stance has been measured |
 | | `LOWER BODY` | in the full mode, reports that knee and ground-sit inference is unavailable |
 | | `POSE INPUTS` | in the full mode, the current crouch depth |
 | | `TWIST BONES` | in the full mode, how many twist bones the limbs' twist is shared over, on how many segments, and the largest twist on the last pass; `WAITING` while the body has no weight, `NONE FOUND` fails it |
-| | `WINGSUIT ARMS` | in the full mode with `ARMS AS WINGS` on, the wingsuit's arms' weight and the hands queued; `OK` with both at full weight, `NOT IN THE WINGSUIT` otherwise |
-| | `PARACHUTE BODY` | in the full mode with `BODY UNDER THE PARACHUTE` on, the torso's weight under the parachute and how far the legs flare for the handles' brake; `OK` at full weight, `NOT UNDER THE CANOPY` otherwise |
-| | `SWIM TORSO` | in the full mode with `TORSO AND ARMS SWIMMING` on, the torso's weight in the water and the neck's distance from the point under the player's head; `OK` at full weight, `NOT SWIMMING` otherwise |
-| | `ROOF TORSO` | in the full mode with `TORSO ON VEHICLE ROOFS` on, the torso's weight standing in a vehicle's stunt area and the neck's distance from the point under the player's head; `OK` at full weight, `NOT ON A ROOF` otherwise |
+| | `WINGSUIT ARMS` | in the full mode, the wingsuit's arms' weight and the hands queued; `OK` with both at full weight, `NOT IN THE WINGSUIT` otherwise |
+| | `PARACHUTE BODY` | in the full mode, the torso's weight under the parachute and how far the legs flare for the handles' brake; `OK` at full weight, `NOT UNDER THE CANOPY` otherwise |
+| | `SWIM TORSO` | in the full mode, the torso's weight in the water and the neck's distance from the point under the player's head; `OK` at full weight, `NOT SWIMMING` otherwise |
+| | `ROOF TORSO` | in the full mode, the torso's weight standing in a vehicle's stunt area and the neck's distance from the point under the player's head; `OK` at full weight, `NOT ON A ROOF` otherwise |
 | | `BODY MIRROR` | the body mirror, a diagnostic switched on in the debug UI: how many of its stick figure's bones it found; `NO BONES FOUND` fails it |
-| | `SEATED TORSO` | in the full mode with `TORSO IN VEHICLES` on, the seated torso's weight and the neck's distance from the point under the player's head; `OK` at full weight, `NOT SEATED` outside a seat |
+| | `SEATED TORSO` | in the full mode, the seated torso's weight and the neck's distance from the point under the player's head; `OK` at full weight, `NOT SEATED` outside a seat |
 
 The Status feature reads every row each frame it is drawn, and lays each out as its section and label, its state word, its detail, and the row's longer note, where it has one, with the rows that need attention first. Its `Log the summary` button logs every row once at info, as one line starting `status:`, each row as `label: value` and sections separated by `|`; where a value is cut short for its row (the full fingerprint, an error's text, the hand-over case's full name), the log line adds the whole of it in parentheses.
 

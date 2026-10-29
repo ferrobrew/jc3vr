@@ -168,8 +168,6 @@ impl Default for TorsoConfig {
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LegsConfig {
-    /// Walk the feet while the body moves; off, they only step standing.
-    pub gait: bool,
     /// The measured speed above which the feet start walking, metres per second.
     pub moving_mps: f32,
     /// The measured speed below which they stand again, metres per second.
@@ -193,7 +191,6 @@ pub struct LegsConfig {
 impl LegsConfig {
     pub const fn new() -> Self {
         Self {
-            gait: true,
             moving_mps: 0.35,
             standing_mps: 0.15,
             rest_error_m: 0.22,

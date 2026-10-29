@@ -1,8 +1,8 @@
 //! The `VR: COMFORT` page: recentering the view, the posture, the body following the head, the
-//! fade when the head is in a wall, turning, the stick movement, and the view in vehicles: getting
-//! in, and the driver's view at the wheel. The recenter is an action, not a setting. The comfort
-//! tuning (the fades' times, the crouch, the lean, the stick's rates, the view on the grapple) is
-//! in the debug UI.
+//! fade when the head is in a wall, turning, the stick movement, the view on the grapple, and the
+//! view in vehicles: getting in, and the driver's view at the wheel. The recenter is an action,
+//! not a setting. The comfort tuning (the fades' times, the crouch, the lean, the stick's rates)
+//! is in the debug UI.
 
 use crate::{
     controllers::{
@@ -12,6 +12,7 @@ use crate::{
         },
         roomscale::manual_recenter_kind,
     },
+    grapple::GrappleComfortMode,
     headpose::config::{VrTurnConfig, VrTurnMode},
     pause_menu::model::{
         page::{Button, ButtonOutcome, Choice, Page, PageDef},
@@ -88,6 +89,12 @@ fn build() -> Page {
             .locomotion
             .stick
             .enabled))
+        .item(config_choice!(
+            "VIEW ON THE GRAPPLE",
+            &GRAPPLE_VIEWS,
+            &GRAPPLE_VIEW_LABELS,
+            |c| c.headpose.grapple.mode
+        ))
         .header("VEHICLES")
         .item(config_choice!(
             "VEHICLE ENTRY",
@@ -109,6 +116,14 @@ fn recenter_now() -> ButtonOutcome {
     request_recenter(manual_recenter_kind());
     ButtonOutcome::Stay
 }
+
+/// The grapple's view modes, the default first.
+const GRAPPLE_VIEWS: [GrappleComfortMode; 3] = [
+    GrappleComfortMode::HoldView,
+    GrappleComfortMode::LevelPitch,
+    GrappleComfortMode::Off,
+];
+const GRAPPLE_VIEW_LABELS: [&str; 3] = ["HOLD STEADY", "KEEP LEVEL", "SWING WITH THE BODY"];
 
 const POSTURES: [Posture; 3] = [Posture::Auto, Posture::Seated, Posture::Standing];
 const POSTURE_LABELS: [&str; 3] = ["AUTO", "SEATED", "STANDING"];
@@ -160,6 +175,7 @@ mod tests {
     #[test]
     fn the_choice_lists_line_up() {
         assert_eq!(POSTURES.len(), POSTURE_LABELS.len());
+        assert_eq!(GRAPPLE_VIEWS.len(), GRAPPLE_VIEW_LABELS.len());
         assert_eq!(SEAT_TRANSITIONS.len(), SEAT_TRANSITION_LABELS.len());
         assert_eq!(TURN_MODES.len(), TURN_MODE_LABELS.len());
         assert_eq!(SNAP_ANGLES.len(), SNAP_ANGLE_LABELS.len());

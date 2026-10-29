@@ -459,11 +459,6 @@ const SECTIONS: &[Section] = &[
         display_title: "Procedural body",
         rows: &[
             row!("MODE", "Mode", controllers::procedural_mode),
-            row!(
-                "PASS-THROUGH ERROR",
-                "Pass-through error",
-                controllers::pass_through
-            ),
             row!("HAND-OVER CASE", "Hand-over case", controllers::hand_over),
             row!("GROUND CASTS", "Ground casts", controllers::ground_casts),
             row!("STANCE", "Stance", controllers::stance),

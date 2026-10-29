@@ -26,7 +26,6 @@ fn each_inventory_switch_edits_only_its_concrete_config_field() {
             "/controllers/overlay/debug_gizmos",
         ),
         (ViewId::GhostHands, "/controllers/overlay/ghost_hands"),
-        (ViewId::GripMarkers, "/controllers/overlay/markers"),
         (
             ViewId::GrappleHighlight,
             "/controllers/overlay/grapple_highlight",
@@ -259,7 +258,6 @@ fn the_inventory_maps_every_switch_to_the_exact_nine_output_sources() {
         (ViewId::BodyMirror, Source::BodyMirror),
         (ViewId::ControllerGizmos, Source::DebugGizmos),
         (ViewId::GhostHands, Source::GhostHands),
-        (ViewId::GripMarkers, Source::GrabMarkers),
         (ViewId::GrappleHighlight, Source::GrappleHighlight),
         (ViewId::GrappleBeam, Source::GrappleBeam),
         (ViewId::GrabView, Source::GrabView),
@@ -272,7 +270,7 @@ fn the_inventory_maps_every_switch_to_the_exact_nine_output_sources() {
         (ViewId::PalmBoxes, Source::PhysicalHands),
         (ViewId::WristDetonator, Source::WristDetonator),
     ];
-    assert_eq!(ENTRIES.len(), 15);
+    assert_eq!(ENTRIES.len(), 14);
     assert_eq!(expected.len(), ENTRIES.len());
     for (id, source) in expected {
         assert_eq!(ENTRIES.iter().filter(|entry| entry.id == id).count(), 1);
@@ -292,7 +290,7 @@ fn the_inventory_maps_every_switch_to_the_exact_nine_output_sources() {
             .into_iter()
             .filter(|source| mask.contains(*source))
             .count(),
-        11
+        10
     );
     for source in Source::ALL {
         assert_eq!(

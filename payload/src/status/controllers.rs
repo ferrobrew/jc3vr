@@ -207,13 +207,6 @@ pub(super) fn procedural_mode() -> Line {
     procedural_mode_line(mode, &procedural::published_status(), Instant::now())
 }
 
-pub(super) fn pass_through() -> Line {
-    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::PassThrough {
-        return Line::off(prose("Not in test"));
-    }
-    pass_through_line(procedural::published_status().round_trip)
-}
-
 pub(super) fn hand_over() -> Line {
     if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
         return Line::off("");
@@ -240,13 +233,7 @@ pub(super) fn stance() -> Line {
 }
 
 pub(super) fn twist_bones() -> Line {
-    let (enabled, mode) = read_config(|c| {
-        (
-            c.controllers.body.procedural.twist_bones,
-            c.controllers.body.procedural.mode,
-        )
-    });
-    if !enabled || mode != ProceduralMode::Full {
+    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
         return Line::off("");
     }
     twist_line(&procedural::twist::status())
@@ -288,9 +275,6 @@ pub(super) fn lower_inputs() -> Line {
     let status = procedural::published_status();
     Line::ok(text!("Crouch ", format!("{:.2}", status.crouch_depth)))
 }
-
-/// The largest pass-through error that still proves the write path: metres, then degrees.
-const PASS_THROUGH_TOLERANCE: (f32, f32) = (0.001, 0.1);
 
 fn rigid_grip_line(pinned: [Option<bool>; 2], pins: u64) -> Line {
     let pins = text!(pins.to_string(), " pins");
@@ -472,7 +456,6 @@ fn steady_view_line(status: &AnchorStatus) -> Line {
 fn procedural_mode_line(mode: ProceduralMode, status: &ProceduralStatus, now: Instant) -> Line {
     let label = match mode {
         ProceduralMode::Off => return Line::off(""),
-        ProceduralMode::PassThrough => prose("Test"),
         ProceduralMode::Full => prose("Full body"),
     };
     if let Some(error) = status.rig_error {
@@ -486,24 +469,6 @@ fn procedural_mode_line(mode: ProceduralMode, status: &ProceduralStatus, now: In
             now.saturating_duration_since(at).as_secs_f32()
         )),
         _ => Line::waiting(text!(label, " idle")),
-    }
-}
-
-fn pass_through_line(round_trip: Option<(f32, f32)>) -> Line {
-    let Some((metres, degrees)) = round_trip else {
-        return Line::waiting(prose("Not measured"));
-    };
-    let detail = text!(
-        format!("{:.1}", metres * 1000.0),
-        " mm, ",
-        format!("{degrees:.2}"),
-        " deg"
-    );
-    let (max_m, max_deg) = PASS_THROUGH_TOLERANCE;
-    if metres <= max_m && degrees <= max_deg {
-        Line::ok(detail)
-    } else {
-        Line::failed(detail)
     }
 }
 
@@ -818,10 +783,6 @@ mod tests {
             procedural_mode_line(ProceduralMode::Full, &ran, now).text(),
             "OK, FULL BODY"
         );
-        assert_eq!(
-            procedural_mode_line(ProceduralMode::PassThrough, &ran, now).text(),
-            "WAITING, TEST IDLE"
-        );
         let later = now + Duration::from_secs(60);
         assert_eq!(
             procedural_mode_line(ProceduralMode::Full, &ran, later)
@@ -837,16 +798,6 @@ mod tests {
             procedural_mode_line(ProceduralMode::Off, &ran, now).health,
             Health::Off
         );
-    }
-
-    #[test]
-    fn the_pass_through_fails_past_its_tolerance() {
-        assert_eq!(
-            pass_through_line(Some((0.0002, 0.01))).text(),
-            "OK, 0.2 MM, 0.01 DEG"
-        );
-        assert_eq!(pass_through_line(Some((0.02, 0.01))).health, Health::Failed);
-        assert_eq!(pass_through_line(None).health, Health::Waiting);
     }
 
     #[test]

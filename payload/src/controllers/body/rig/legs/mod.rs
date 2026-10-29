@@ -67,8 +67,6 @@ pub struct LegsInput {
 /// The legs' tuning.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct LegsTuning {
-    /// Whether the feet walk; off, they only step standing.
-    pub gait: bool,
     pub crouch: CrouchGait,
     pub step: StepTuning,
     /// The measured speed above which the feet start walking, metres per second.
@@ -85,7 +83,6 @@ impl LegsTuning {
     /// The tuning the settings ask for, with the crouch's gait and the ankle's tilt limit.
     pub fn of(config: &LegsConfig, crouch: CrouchGait, tilt_limit_rad: f32) -> Self {
         Self {
-            gait: config.gait,
             crouch,
             step: StepTuning {
                 rest_m: config.rest_error_m,
@@ -263,7 +260,7 @@ impl Legs {
         let speed = velocity.length();
         let moving = self
             .regime
-            .update(speed, tuning.gait, tuning.moving_mps, tuning.standing_mps);
+            .update(speed, tuning.moving_mps, tuning.standing_mps);
         let gait = gait::tuning(speed, input.crouch, &tuning.crouch);
         let input = LegsInput { velocity, ..*input };
         if moving {
