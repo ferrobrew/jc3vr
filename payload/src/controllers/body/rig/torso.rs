@@ -97,10 +97,17 @@ const EYES_TO_NECK_PIVOT_BACK: f32 = 0.085;
 /// A generic anthropometric figure.
 pub const HIP_SPACING_FRACTION: f32 = 0.45;
 
+/// How far the torso may turn from the character's facing before the character turns to face it,
+/// degrees. The chest turn covers what is left.
+pub const FOLLOW_DEADBAND_DEG: f32 = 10.0;
+
+/// The furthest the chest is turned from the character's facing, degrees.
+pub const CHEST_LIMIT_DEG: f32 = 45.0;
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::body::{BodyDimensions, rig::config::TorsoConfig};
+    use crate::controllers::body::BodyDimensions;
 
     const DIMS: BodyDimensions = BodyDimensions::GENERIC_ADULT;
     const DT: f32 = 1.0 / 90.0;
@@ -126,10 +133,9 @@ mod tests {
 
     /// Run `seconds` of updates with the same inputs and return the last estimate.
     fn settle(estimator: &mut TorsoEstimator, inputs: &TorsoInputs, seconds: f32) -> TorsoEstimate {
-        let config = TorsoConfig::new();
         let mut last = None;
         for _ in 0..(seconds / DT).round().max(1.0) as usize {
-            last = estimator.update(inputs, DT, &DIMS, &config);
+            last = estimator.update(inputs, DT, &DIMS);
         }
         last.unwrap()
     }
@@ -226,9 +232,7 @@ mod tests {
             hands: hands_forward(),
             ..head(deg(120.0))
         };
-        let estimate = estimator
-            .update(&turned, DT, &DIMS, &TorsoConfig::new())
-            .unwrap();
+        let estimate = estimator.update(&turned, DT, &DIMS).unwrap();
         assert!(
             (estimate.neck_twist.abs() - deg(65.0)).abs() < 1e-3,
             "{}",
@@ -242,9 +246,7 @@ mod tests {
         settle(&mut estimator, &head(0.0), 0.5);
         let mut previous = 0.0;
         for _ in 0..90 {
-            let estimate = estimator
-                .update(&head(deg(40.0)), DT, &DIMS, &TorsoConfig::new())
-                .unwrap();
+            let estimate = estimator.update(&head(deg(40.0)), DT, &DIMS).unwrap();
             assert!(estimate.yaw >= previous - 1e-6);
             assert!(estimate.yaw <= deg(40.0) + 1e-4);
             previous = estimate.yaw;
@@ -256,13 +258,9 @@ mod tests {
     fn resetting_the_filter_starts_at_the_next_target() {
         let mut estimator = TorsoEstimator::new();
         settle(&mut estimator, &head(0.0), 0.5);
-        estimator
-            .update(&head(deg(40.0)), DT, &DIMS, &TorsoConfig::new())
-            .unwrap();
+        estimator.update(&head(deg(40.0)), DT, &DIMS).unwrap();
         estimator.reset();
-        let estimate = estimator
-            .update(&head(deg(-30.0)), 0.0, &DIMS, &TorsoConfig::new())
-            .unwrap();
+        let estimate = estimator.update(&head(deg(-30.0)), 0.0, &DIMS).unwrap();
         assert!((estimate.yaw - deg(-30.0)).abs() < 1e-5);
     }
 
@@ -272,9 +270,7 @@ mod tests {
         settle(&mut estimator, &head(0.0), 0.5);
         let turn = Quat::from_rotation_y(deg(30.0));
         estimator.rotate(turn);
-        let estimate = estimator
-            .update(&head(deg(30.0)), 0.0, &DIMS, &TorsoConfig::new())
-            .unwrap();
+        let estimate = estimator.update(&head(deg(30.0)), 0.0, &DIMS).unwrap();
         assert!((estimate.yaw - deg(30.0)).abs() < 1e-4);
     }
 
@@ -289,9 +285,6 @@ mod tests {
             head_position: Vec3::NAN,
             ..head(0.0)
         };
-        assert_eq!(
-            TorsoEstimator::new().update(&nan, DT, &DIMS, &TorsoConfig::new()),
-            None
-        );
+        assert_eq!(TorsoEstimator::new().update(&nan, DT, &DIMS), None);
     }
 }

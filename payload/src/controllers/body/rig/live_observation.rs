@@ -256,6 +256,7 @@ impl FrameMatchObservation {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn availability(self) -> FrameMatchAvailability {
         self.availability
     }

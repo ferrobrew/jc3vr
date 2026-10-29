@@ -1,6 +1,5 @@
 //! The rig's torso: the player's estimated torso, the body turning under the view, the chest turn,
-//! and how far the character's skeleton is from the player's body; and the torso's and the
-//! pelvis's settings.
+//! and how far the character's skeleton is from the player's body.
 
 use std::time::Duration;
 
@@ -9,30 +8,12 @@ use egui::Ui;
 use crate::{
     controllers::body::{
         procedural,
-        rig::{
-            TorsoStatus,
-            config::{PelvisConfig, TorsoConfig},
-            skeleton::{SKELETON_TARGET, SkeletonStatus},
-        },
+        rig::{TorsoStatus, skeleton::SkeletonStatus},
     },
-    logging,
     ui::controllers::{vec3, yes_no},
 };
 
 pub(super) fn torso_readout(ui: &mut Ui, status: &TorsoStatus, skeleton: &SkeletonStatus) {
-    let mut verbose = logging::is_target_debug(SKELETON_TARGET);
-    if ui
-        .checkbox(&mut verbose, "Log the divergence to the session log (1 Hz)")
-        .on_hover_text(
-            "Turns this subsystem up to DEBUG. Equivalent to a body_divergence=debug directive in \
-             the Diagnostics tab's filter box.",
-        )
-        .changed()
-        && let Err(error) = logging::set_target_debug(SKELETON_TARGET, verbose)
-    {
-        tracing::warn!(%error, "could not change the body-divergence log level");
-    }
-
     let deg = |r: f32| format!("{:+.1}°", r.to_degrees());
     let opt_deg = |r: Option<f32>| r.map_or_else(|| "n/a".to_owned(), deg);
     match &status.estimate {
@@ -101,30 +82,5 @@ pub(super) fn torso_readout(ui: &mut Ui, status: &TorsoStatus, skeleton: &Skelet
         _ => {
             ui.label("Divergence: no fresh skeleton (not on foot in gameplay under the headset).");
         }
-    }
-}
-
-pub(super) fn torso_settings(ui: &mut Ui, t: &mut TorsoConfig, p: &mut PelvisConfig) {
-    ui.checkbox(&mut t.follow, "Body faces the torso")
-        .on_hover_text("On foot, turn the character to face the player's torso under the view.");
-    ui.add(egui::Slider::new(&mut t.follow_deadband_deg, 0.0..=45.0).text("Follow deadband (°)"));
-    ui.add(egui::Slider::new(&mut t.chest_limit_deg, 0.0..=90.0).text("Chest turn limit (°)"));
-    ui.add(egui::Slider::new(&mut t.head_weight, 0.0..=2.0).text("Head weight against the hands"));
-    ui.add(egui::Slider::new(&mut t.neck_limit_deg, 20.0..=120.0).text("Neck limit (°)"));
-    ui.add(egui::Slider::new(&mut t.follow_s, 0.0..=0.5).text("Torso follow time (s)"));
-    ui.separator();
-    ui.add(egui::Slider::new(&mut p.follow_s, 0.0..=0.5).text("Pelvis follow time (s)"));
-    ui.add(egui::Slider::new(&mut p.hinge_share, 0.0..=1.0).text("Hip hinge share of the lean"));
-    ui.add(egui::Slider::new(&mut p.speed_lean, 0.0..=0.2).text("Lean per m/s (rad)"));
-    ui.add(egui::Slider::new(&mut p.max_speed_lean, 0.0..=0.5).text("Most speed lean (rad)"));
-    ui.add(egui::Slider::new(&mut p.accel_lean, 0.0..=0.1).text("Lean per m/s² (rad)"));
-    ui.add(
-        egui::Slider::new(&mut p.max_accel_lean, 0.0..=0.5).text("Most acceleration lean (rad)"),
-    );
-    ui.add(egui::Slider::new(&mut p.max_roll, 0.0..=0.3).text("Most roll (rad)"));
-    ui.add(egui::Slider::new(&mut p.motion_smoothing_s, 0.0..=0.5).text("Motion smoothing (s)"));
-    if ui.button("Reset the torso and the pelvis").clicked() {
-        *t = TorsoConfig::new();
-        *p = PelvisConfig::new();
     }
 }

@@ -2,7 +2,7 @@
 //! arm, the pull ramp that lets the character's shoulder and chest follow a hand near full
 //! extension, and the capped detach of the rendered hand from a wrist the solve left short.
 //!
-//! The pieces, each behind its toggle in [`ReachConfig`]:
+//! The pieces, each behind its toggle in [`REACH`]:
 //!
 //! - [`ArmRemap`]: a wrist's offset from the player's shoulder, scaled by the ratio of the two arm
 //!   lengths and placed at the character's shoulder. With the character's arm measured
@@ -17,19 +17,16 @@
 //!   small threshold and up to a cap.
 
 use glam::{Quat, Vec3};
-use serde::{Deserialize, Serialize};
 
 use crate::controllers::{
     body::{self, BodyDimensions},
     frame::{Hand, Pose},
 };
 
-/// The arm-reach settings, held in [`HandsConfig`](crate::controllers::config::HandsConfig). Each
-/// part acts only under the controller scheme with the hand IK or the late update on, so they
-/// default on.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ReachConfig {
+/// The arm-reach tuning, fixed at [`REACH`]. Each part acts only under the controller scheme with
+/// the hand IK or the late update on.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct ReachTuning {
     /// Remap the wrists about the character's measured shoulder joints by the ratio of his measured
     /// arm length to the player's, instead of about estimated shoulders by the arm-span ratio. Acts
     /// whether or not `body.remap_hands` is on; that setting governs only the estimated fallback.
@@ -55,28 +52,19 @@ pub struct ReachConfig {
     pub stretch_forearm: bool,
 }
 
-impl ReachConfig {
-    pub const fn new() -> Self {
-        Self {
-            measured_remap: true,
-            shoulder_smoothing_s: 0.1,
-            reach_pull: true,
-            pull_start: 0.9,
-            pull_full: 1.0,
-            pull_max: 0.4,
-            detach: true,
-            detach_threshold_m: 0.01,
-            detach_cap_m: 0.1,
-            stretch_forearm: true,
-        }
-    }
-}
-
-impl Default for ReachConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+/// The arm-reach tuning.
+pub const REACH: ReachTuning = ReachTuning {
+    measured_remap: true,
+    shoulder_smoothing_s: 0.1,
+    reach_pull: true,
+    pull_start: 0.9,
+    pull_full: 1.0,
+    pull_max: 0.4,
+    detach: true,
+    detach_threshold_m: 0.01,
+    detach_cap_m: 0.1,
+    stretch_forearm: true,
+};
 
 /// The remap of one arm's wrist: the offset from `player_shoulder`, scaled by `scale`, placed at
 /// `character_shoulder`. All positions are in the cockpit frame.

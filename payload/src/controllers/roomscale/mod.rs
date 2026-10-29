@@ -55,14 +55,14 @@ use crate::{
         },
         config::{Posture, RoomscaleConfig},
         roomscale::{
-            crouch::CrouchTracker,
-            fade::FadeSource,
+            crouch::{CROUCH_EXIT_DROP_M, CrouchTracker},
+            fade::{FADE_TIMING, FadeSource},
             posture::{
-                ClassifierInput, ClassifierStatus, DetectedPosture, EffectivePosture, HeadHeight,
-                HeadHeightInput, PostureClassifier,
+                AUTO_POSTURE, ClassifierInput, ClassifierStatus, DetectedPosture, EffectivePosture,
+                HeadHeight, HeadHeightInput, PostureClassifier, SEATED_CROUCH_DROP_M,
             },
-            seat::{SeatEvent, SeatTracker},
-            seated::{SeatedReference, SeatedReferenceStatus},
+            seat::{SEAT_FADE_HOLD_S, SeatEvent, SeatTracker},
+            seated::{SEATED_REFERENCE, SeatedReference, SeatedReferenceStatus},
         },
         vehicles::driving_view,
     },
@@ -129,7 +129,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
         Some(
             frame
                 .classifier
-                .update(&classifier_input(&stage, &player), dt, &config.auto_posture),
+                .update(&classifier_input(&stage, &player), dt, &AUTO_POSTURE),
         )
     } else {
         frame.classifier.reset();
@@ -160,7 +160,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
             stage.head_height,
             player.seated_eye_height,
             dt,
-            &config.seated_reference,
+            &SEATED_REFERENCE,
         )
     } else {
         frame.seated_reference.current()
@@ -179,7 +179,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
                     .then_some(seated_reference)
                     .flatten(),
                 seated_crouch,
-                seated_drop_m: config.crouch.seated_drop_m,
+                seated_drop_m: SEATED_CROUCH_DROP_M,
             },
             &player,
             &BodyDimensions::CHARACTER_ESTIMATE,
@@ -189,7 +189,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let vertical = head_height.map_or_else(
         || {
             inputs.cockpit.y
-                - posture::seated_crouch_drop(posture, seated_crouch, config.crouch.seated_drop_m)
+                - posture::seated_crouch_drop(posture, seated_crouch, SEATED_CROUCH_DROP_M)
         },
         |h| h.cockpit_y,
     );
@@ -215,10 +215,9 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     } else {
         0.0
     };
-    let crouch = config.crouch;
     let crouched = frame
         .crouch
-        .update(eye_drop_m, crouch.enter_drop_m, crouch.exit_drop_m);
+        .update(eye_drop_m, config.crouch.enter_drop_m, CROUCH_EXIT_DROP_M);
 
     if in_gameplay {
         // SAFETY: the game thread, outside the world update.
@@ -241,13 +240,15 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
         .filter(|p| now.duration_since(p.at) < probe::STALE_AFTER)
         .map(|p| p.result);
     let head_fade = match probe {
-        Some(result) if config.head_fade.enabled && in_gameplay => {
-            probe::fade_for_depth(result.depth(), &config.head_fade)
-        }
+        Some(result) if config.head_fade.enabled && in_gameplay => probe::fade_for_depth(
+            result.depth(),
+            probe::HEAD_FADE_START_DEPTH_M,
+            probe::HEAD_FADE_FULL_DEPTH_M,
+        ),
         _ => 0.0,
     };
     fade::set_target(FadeSource::HeadInGeometry, head_fade);
-    fade::advance(dt, &config.fade);
+    fade::advance(dt, &FADE_TIMING);
 
     let sim_stale = sim
         .at
@@ -573,7 +574,7 @@ unsafe fn seat_tick(frame: &mut FrameState, config: &RoomscaleConfig, now: Insta
     };
     frame.last_seat_event = Some(event);
     tracing::debug!(target: "controllers", ?event, ?phase, "roomscale: seat transition");
-    let action = seat::action(config.seat_transition, event, config.seat_fade_hold_s);
+    let action = seat::action(config.seat_transition, event, SEAT_FADE_HOLD_S);
     if let Some(kind) = action.recenter {
         vr::request_seat_recenter(kind);
     }

@@ -256,14 +256,6 @@ pub struct VrConfig {
     /// in place. **Default off**, and not saved, so a launch never starts with the view locked.
     #[serde(skip)]
     pub freeze_mode: FreezeMode,
-    /// The translation step, in metres, of one nudge of the frozen pose's position (see
-    /// [`crate::vr::pose_control`]). Nudges snap to this grid, so a step is exactly repeatable.
-    #[serde(default = "default_freeze_pose_step_m")]
-    pub freeze_pose_step_m: f32,
-    /// The rotation step, in degrees, of one nudge of the frozen pose's yaw/pitch/roll (see
-    /// [`crate::vr::pose_control`]). Nudges snap to this grid, so a step is exactly repeatable.
-    #[serde(default = "default_freeze_pose_step_deg")]
-    pub freeze_pose_step_deg: f32,
 }
 
 /// The serde default for [`VrConfig::native_resolution`] (the manual [`Default`] via
@@ -274,16 +266,6 @@ fn default_true() -> bool {
 
 /// The serde default for [`VrConfig::mirror_zoom`] (see [`default_true`] for why this is needed).
 fn default_mirror_zoom() -> f32 {
-    1.0
-}
-
-/// The serde default for [`VrConfig::freeze_pose_step_m`] (see [`default_true`] for why this is needed).
-fn default_freeze_pose_step_m() -> f32 {
-    0.1
-}
-
-/// The serde default for [`VrConfig::freeze_pose_step_deg`] (see [`default_true`] for why this is needed).
-fn default_freeze_pose_step_deg() -> f32 {
     1.0
 }
 
@@ -309,8 +291,6 @@ impl VrConfig {
             own_back_buffer: true,
             direct_eye_blit: true,
             freeze_mode: FreezeMode::Off,
-            freeze_pose_step_m: 0.1,
-            freeze_pose_step_deg: 1.0,
         }
     }
 }

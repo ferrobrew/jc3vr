@@ -19,6 +19,10 @@ use jc3gi::hash::hashlittle;
 
 use crate::{controllers::config::SeatTransition, vr::RecenterKind};
 
+/// Under [`SeatTransition::Fade`], how long the view stays dark after the seat locks, so that the
+/// re-based view settles before it clears, seconds.
+pub const SEAT_FADE_HOLD_S: f32 = 0.3;
+
 /// Where the character is in a vehicle sequence.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum SeatPhase {

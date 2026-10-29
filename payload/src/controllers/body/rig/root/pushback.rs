@@ -90,14 +90,13 @@ impl Pushback {
             Vec2::ZERO
         };
         let r = gap.length();
-        let obstructed =
-            input.owner == Some(RootOwner::Player) && input.stopped && r > config.min_gap_m;
-        let threshold = threshold(input.owner, obstructed, config);
+        let obstructed = input.owner == Some(RootOwner::Player) && input.stopped && r > MIN_GAP_M;
+        let threshold = threshold(input.owner, obstructed);
 
         // The episode ends once the gap has been calm for a moment, measured against the tight
         // threshold when none is in force, so a slide that flickers in and out of obstruction does
         // not start a fresh episode each time.
-        let calm_below = threshold.unwrap_or(config.obstructed_m) * 0.5;
+        let calm_below = threshold.unwrap_or(OBSTRUCTED_M) * 0.5;
         let dt = if input.dt.is_finite() {
             input.dt.max(0.0)
         } else {
@@ -105,7 +104,7 @@ impl Pushback {
         };
         if r < calm_below {
             self.calm_s += dt;
-            if self.calm_s >= config.reset_s {
+            if self.calm_s >= RESET_S {
                 self.debt = 0.0;
             }
         } else {
@@ -118,11 +117,7 @@ impl Pushback {
                 ..PushbackOutcome::default()
             };
         };
-        let cap = if config.enabled {
-            config.debt_cap_m.max(0.0)
-        } else {
-            0.0
-        };
+        let cap = if config.enabled { DEBT_CAP_M } else { 0.0 };
         let mut push = Vec2::ZERO;
         let mut left = r;
         if r > t && self.debt < cap {
@@ -135,7 +130,7 @@ impl Pushback {
             left = r - p;
         }
         let fade = if self.debt >= cap - CAP_EPSILON_M {
-            smoothstep((left - t) / config.fade_span_m.max(1e-3))
+            smoothstep((left - t) / FADE_SPAN_M)
         } else {
             0.0
         };
@@ -150,18 +145,36 @@ impl Pushback {
 
 /// The threshold for the root's owner, metres, or `None` when the chase owns the gap or the game
 /// owns the root.
-pub fn threshold(
-    owner: Option<RootOwner>,
-    obstructed: bool,
-    config: &PushbackConfig,
-) -> Option<f32> {
+pub fn threshold(owner: Option<RootOwner>, obstructed: bool) -> Option<f32> {
     match owner? {
-        RootOwner::Player => obstructed.then_some(config.obstructed_m),
-        RootOwner::Authored => Some(config.authored_m),
-        RootOwner::Climb | RootOwner::Seated => Some(config.reach_m),
+        RootOwner::Player => obstructed.then_some(OBSTRUCTED_M),
+        RootOwner::Authored => Some(AUTHORED_M),
+        RootOwner::Climb | RootOwner::Seated => Some(REACH_M),
         RootOwner::Game => None,
     }
 }
+
+/// How far past the root the view may go while the player's chase is obstructed, metres.
+const OBSTRUCTED_M: f32 = 0.10;
+
+/// How far while the animation carries the body and the chase is suspended, metres: only a runaway
+/// gap.
+const AUTHORED_M: f32 = 0.30;
+
+/// How far while climbing or seated, metres: about an arm's-length lean.
+const REACH_M: f32 = 0.45;
+
+/// The smallest gap that counts as obstructed, metres.
+const MIN_GAP_M: f32 = 0.05;
+
+/// The most the view is slid back in one episode, metres; past it the view fades.
+const DEBT_CAP_M: f32 = 0.30;
+
+/// How far past the threshold, with the cap spent, the fade reaches black, metres.
+const FADE_SPAN_M: f32 = 0.15;
+
+/// How long the gap must stay under half the threshold for the episode to end, seconds.
+const RESET_S: f32 = 0.2;
 
 /// How close to the cap the debt counts as spent, metres.
 const CAP_EPSILON_M: f32 = 1e-5;
@@ -246,10 +259,7 @@ mod tests {
 
     #[test]
     fn off_it_only_fades() {
-        let off = PushbackConfig {
-            enabled: false,
-            ..CONFIG
-        };
+        let off = PushbackConfig { enabled: false };
         let mut pushback = Pushback::new();
         let out = pushback.step(&into_wall(0.10 + 0.075), &off);
         assert_eq!(out.push, Vec2::ZERO);
@@ -258,24 +268,12 @@ mod tests {
 
     #[test]
     fn the_thresholds_follow_the_owner() {
-        assert_eq!(
-            threshold(Some(RootOwner::Player), true, &CONFIG),
-            Some(0.10)
-        );
-        assert_eq!(threshold(Some(RootOwner::Player), false, &CONFIG), None);
-        assert_eq!(
-            threshold(Some(RootOwner::Authored), false, &CONFIG),
-            Some(0.30)
-        );
-        assert_eq!(
-            threshold(Some(RootOwner::Climb), false, &CONFIG),
-            Some(0.45)
-        );
-        assert_eq!(
-            threshold(Some(RootOwner::Seated), false, &CONFIG),
-            Some(0.45)
-        );
-        assert_eq!(threshold(Some(RootOwner::Game), true, &CONFIG), None);
-        assert_eq!(threshold(None, true, &CONFIG), None);
+        assert_eq!(threshold(Some(RootOwner::Player), true), Some(0.10));
+        assert_eq!(threshold(Some(RootOwner::Player), false), None);
+        assert_eq!(threshold(Some(RootOwner::Authored), false), Some(0.30));
+        assert_eq!(threshold(Some(RootOwner::Climb), false), Some(0.45));
+        assert_eq!(threshold(Some(RootOwner::Seated), false), Some(0.45));
+        assert_eq!(threshold(Some(RootOwner::Game), true), None);
+        assert_eq!(threshold(None, true), None);
     }
 }

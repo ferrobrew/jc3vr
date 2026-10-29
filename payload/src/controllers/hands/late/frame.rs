@@ -25,7 +25,7 @@ use crate::{
             },
             palette::{self, PaletteLayout},
             pose as hand_pose,
-            reach::{self, ReachConfig},
+            reach::{self, REACH, ReachTuning},
         },
         physical_hands::{DrawTime, physics},
     },
@@ -295,7 +295,7 @@ pub(crate) fn begin_frame() {
         transport: character_transport(),
         solved,
         enabled: active.config.hands.late_update,
-        reach: active.config.hands.reach,
+        reach: REACH,
     });
 }
 
@@ -398,7 +398,7 @@ pub(super) struct LateFrame {
     /// The late update's toggle; the render hands are published for the overlay either way.
     enabled: bool,
     /// The detach's settings.
-    reach: ReachConfig,
+    reach: ReachTuning,
 }
 
 impl LateFrame {
@@ -633,7 +633,7 @@ mod tests {
             transport: None,
             solved: Solved::default(),
             enabled: true,
-            reach: ReachConfig::new(),
+            reach: REACH,
         }
     }
 

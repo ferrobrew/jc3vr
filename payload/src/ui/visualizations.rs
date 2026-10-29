@@ -290,13 +290,13 @@ const ENTRIES: &[Entry] = &[
         id: ViewId::BodyMirror,
         label: "Body mirror",
         group: Group::DebugGeometry,
-        feature: FeatureId::RootWalls,
+        feature: FeatureId::BodyFit,
     },
     Entry {
         id: ViewId::ControllerGizmos,
         label: "Controller gizmos",
         group: Group::DebugGeometry,
-        feature: FeatureId::RootWalls,
+        feature: FeatureId::BodyFit,
     },
     Entry {
         id: ViewId::GhostHands,

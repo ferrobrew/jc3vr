@@ -2,6 +2,8 @@
 //! captures the headpose anchors from the freshly animated pose and queues the HumanIK head, torso,
 //! and hand-pin targets on the `MAIN` pass (see `docs/engine/character/humanik.md`).
 
+pub(crate) mod tuning;
+
 use std::{
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
@@ -30,7 +32,7 @@ use crate::{
         locomotion::{anchor::stabilize as stabilize_anchors, view::Neutral},
     },
     headpose,
-    hooks::{self, animation::active_state_type_id},
+    hooks::{self, animation::active_state_type_id, character::body_ik::tuning::BODY_IK_TUNING},
 };
 
 /// A snapshot of what the body-IK path did on its last frame, for the debug UI. The engine-side
@@ -375,8 +377,9 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         // gameplay owns the character: outside E_GAME_RUN the engine repositions Rico for a teleport,
         // so queuing head-follow targets would fight that (issue #27). The anchor capture above still
         // runs so the pose stays fresh for the auto-recenter rebase on resume.
-        let cfg = Config::lock_query(|c| c.body_ik);
-        if let Some(skip) = (!cfg.enabled)
+        let enabled = Config::lock_query(|c| c.body_ik.enabled);
+        let tuning = BODY_IK_TUNING;
+        if let Some(skip) = (!enabled)
             .then_some(BodyIkSkip::Disabled)
             .or((!headpose::is_active()).then_some(BodyIkSkip::HeadposeInactive))
             .or(headpose::anchor().is_none().then_some(BodyIkSkip::NoAnchor))
@@ -420,14 +423,14 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         // AddEffectorTargetPosition expects (docs/engine/character/humanik.md) — plus the optional tuning offset.
         let target_world = headpose::query().position;
         let target_model =
-            character_world.inverse().transform_point3(target_world) + cfg.target_offset;
+            character_world.inverse().transform_point3(target_world) + tuning.target_offset;
         let pos = Vector3 {
             data: [target_model.x, target_model.y, target_model.z],
         };
 
-        let weight = cfg.weight.clamp(0.0, 1.0);
-        let reach_t = (cfg.head_reach_t * weight).clamp(0.0, 1.0);
-        let pull = (cfg.head_pull * weight).clamp(0.0, 1.0);
+        let weight = tuning.weight.clamp(0.0, 1.0);
+        let reach_t = (tuning.head_reach_t * weight).clamp(0.0, 1.0);
+        let pull = (tuning.head_pull * weight).clamp(0.0, 1.0);
 
         // Only the head effector's control slots are written; other effectors (aim IK, hands) are
         // left untouched, so this coexists with the game's own MAIN-pass targets — the pass's solve
@@ -441,10 +444,10 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
             &pos,
             SolveStep::SPINE_HEAD_ONLY,
             Pass::MAIN,
-            cfg.interpolation,
-            cfg.interpolation_rate,
-            cfg.blend_out,
-            cfg.blend_out_rate,
+            tuning.interpolation,
+            tuning.interpolation_rate,
+            tuning.blend_out,
+            tuning.blend_out_rate,
         );
         character.m_HIK.m_TargetReachT[eff] = reach_t;
         // Reach alone makes the head *arrive* at the target; pull is what propagates that
@@ -494,7 +497,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         let pivot = bone_for_effector(&character.m_HIK, Effector::HIPS as i32)
             .and_then(joint_position)
             .map_or(spine_pivot, |hips| {
-                spine_pivot.lerp(hips, cfg.pivot_drop.clamp(0.0, 1.0))
+                spine_pivot.lerp(hips, tuning.pivot_drop.clamp(0.0, 1.0))
             });
         let head_offset_model = character_rotation.inverse()
             * (target_world - headpose::anchor().unwrap_or(animated_head_world));
@@ -514,8 +517,8 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
                 // it in. Saturating is still the wrong pose for a deep crouch (that is lower-body
                 // articulation, not a spine bend — see docs/mod/body/head-and-body.md), but it is
                 // bounded and stable rather than a flip.
-                let limit = cfg.lean_max_deg.max(0.0).to_radians();
-                let angle = (angle * cfg.lean_share.clamp(0.0, 1.0)).clamp(-limit, limit);
+                let limit = tuning.lean_max_deg.max(0.0).to_radians();
+                let angle = (angle * tuning.lean_share.clamp(0.0, 1.0)).clamp(-limit, limit);
                 if angle.abs() > 1.0e-4 && axis.is_finite() {
                     glam::Quat::from_axis_angle(axis, angle)
                 } else {
@@ -533,7 +536,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         // The chest turns to the player's estimated torso instead while the rig has one: the
         // head's turn is a poor stand-in for the chest's once the player looks over a shoulder.
         let torso_yaw = rig::chest_turn(character_rotation).unwrap_or_else(|| {
-            headpose::sim::body_yaw_of(headpose::body_relative_rotation()) * cfg.yaw_share
+            headpose::sim::body_yaw_of(headpose::body_relative_rotation()) * tuning.yaw_share
         });
         let torso = lean * glam::Quat::from_rotation_y(torso_yaw);
 
@@ -541,7 +544,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         // remains). The aim IK claims only the one arm effector it rotates but needs the whole
         // chain free to swing — per-effector deferral left the other pins clamping aim to the
         // authored sweep cone (~±30°).
-        let defer_to_aim = cfg.defer_while_aiming
+        let defer_to_aim = tuning.defer_while_aiming
             && character
                 .m_AimFlags
                 .intersects(AimState::m_AimingWeapon | AimState::m_AimingGrapple);
@@ -582,8 +585,8 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
 
         let mut shoulders_driven = 0;
         if drive_torso {
-            let shoulder_reach_t = (cfg.shoulder_reach_t * weight).clamp(0.0, 1.0);
-            let shoulder_pull = (cfg.shoulder_pull * weight).clamp(0.0, 1.0);
+            let shoulder_reach_t = (tuning.shoulder_reach_t * weight).clamp(0.0, 1.0);
+            let shoulder_pull = (tuning.shoulder_pull * weight).clamp(0.0, 1.0);
             for (hand, shoulder_effector, index) in shoulder_bones {
                 let Some(index) = index else {
                     continue;
@@ -603,10 +606,10 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
                     &target,
                     SolveStep::UPPER_BODY,
                     Pass::MAIN,
-                    cfg.interpolation,
-                    cfg.interpolation_rate,
-                    cfg.blend_out,
-                    cfg.blend_out_rate,
+                    tuning.interpolation,
+                    tuning.interpolation_rate,
+                    tuning.blend_out,
+                    tuning.blend_out_rate,
                 );
                 character.m_HIK.m_TargetReachT[shoulder_effector as usize] = shoulder_reach_t;
                 character.m_HIK.m_TargetPull[shoulder_effector as usize] = shoulder_pull;
@@ -638,13 +641,13 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
                         &axis_v,
                         SolveStep::UPPER_BODY,
                         Pass::MAIN,
-                        cfg.interpolation,
-                        cfg.interpolation_rate,
-                        cfg.blend_out,
-                        cfg.blend_out_rate,
+                        tuning.interpolation,
+                        tuning.interpolation_rate,
+                        tuning.blend_out,
+                        tuning.blend_out_rate,
                     );
                     character.m_HIK.m_TargetReachR[chest_effector as usize] =
-                        (cfg.chest_reach_r * weight).clamp(0.0, 1.0);
+                        (tuning.chest_reach_r * weight).clamp(0.0, 1.0);
                     // A rotation target promotes `m_TargetResist` to live resist, so the slot
                     // must be written or a past writer's value leaks in.
                     character.m_HIK.m_TargetResist[chest_effector as usize] = 0.0;
@@ -665,8 +668,8 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         // SPINE_HEAD_ONLY step keeps the arms out of the solve entirely, and a standing wrist
         // target would only compete with the game's own grip IK.
         let mut hands_pinned = 0;
-        if cfg.pin_hands && (shoulders_driven > 0 || chest_driven) {
-            let hand_reach_t = (cfg.hand_reach_t * weight).clamp(0.0, 1.0);
+        if tuning.pin_hands && (shoulders_driven > 0 || chest_driven) {
+            let hand_reach_t = (tuning.hand_reach_t * weight).clamp(0.0, 1.0);
             for (hand, hand_effector) in [
                 (Hand::Left, Effector::LEFT_WRIST),
                 (Hand::Right, Effector::RIGHT_WRIST),
@@ -698,10 +701,10 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
                     &target,
                     SolveStep::UPPER_BODY,
                     Pass::MAIN,
-                    cfg.interpolation,
-                    cfg.interpolation_rate,
-                    cfg.blend_out,
-                    cfg.blend_out_rate,
+                    tuning.interpolation,
+                    tuning.interpolation_rate,
+                    tuning.blend_out,
+                    tuning.blend_out_rate,
                 );
                 character.m_HIK.m_TargetReachT[hand_effector as usize] = hand_reach_t;
                 character.m_HIK.m_TargetPull[hand_effector as usize] = 0.0;
@@ -724,15 +727,15 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
                     RotationAxis::Y,
                     SolveStep::UPPER_BODY,
                     Pass::MAIN,
-                    cfg.interpolation,
-                    cfg.interpolation_rate,
-                    cfg.blend_out,
-                    cfg.blend_out_rate,
+                    tuning.interpolation,
+                    tuning.interpolation_rate,
+                    tuning.blend_out,
+                    tuning.blend_out_rate,
                 );
                 character.m_HIK.m_TargetReachR[hand_effector as usize] =
-                    (cfg.hand_reach_r * weight).clamp(0.0, 1.0);
+                    (tuning.hand_reach_r * weight).clamp(0.0, 1.0);
                 character.m_HIK.m_TargetResist[hand_effector as usize] =
-                    (cfg.hand_resist * weight).clamp(0.0, 1.0);
+                    (tuning.hand_resist * weight).clamp(0.0, 1.0);
                 hands_pinned += 1;
             }
         }
@@ -745,7 +748,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         let head_delta = headpose::body_relative_rotation();
 
         let mut reach_r = 0.0;
-        if cfg.rotation_target {
+        if tuning.rotation_target {
             // Aim the head's model-space frame at the headpose orientation, mirroring the aim IK's
             // AddEffectorTargetRotationVector(axis, angle) call. SPINE_HEAD_ONLY for the same
             // reason as the position target above: turning the head must never recruit the arms.
@@ -760,17 +763,17 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
                     &axis_v,
                     SolveStep::SPINE_HEAD_ONLY,
                     Pass::MAIN,
-                    cfg.interpolation,
-                    cfg.interpolation_rate,
-                    cfg.blend_out,
-                    cfg.blend_out_rate,
+                    tuning.interpolation,
+                    tuning.interpolation_rate,
+                    tuning.blend_out,
+                    tuning.blend_out_rate,
                 );
-                reach_r = (cfg.head_reach_r * weight).clamp(0.0, 1.0);
+                reach_r = (tuning.head_reach_r * weight).clamp(0.0, 1.0);
                 character.m_HIK.m_TargetReachR[eff] = reach_r;
                 // Resist is the rotation list's counterpart to pull: the engine copies
                 // `m_TargetResist` into `m_Resist` only for effectors carrying a queued *rotation*
                 // target, so it belongs here rather than beside the position target above.
-                character.m_HIK.m_TargetResist[eff] = (cfg.head_resist * weight).clamp(0.0, 1.0);
+                character.m_HIK.m_TargetResist[eff] = (tuning.head_resist * weight).clamp(0.0, 1.0);
             }
         }
 

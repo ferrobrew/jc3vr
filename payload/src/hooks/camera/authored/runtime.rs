@@ -30,16 +30,10 @@ pub(crate) struct TrackedView {
 }
 
 /// Capture at the native camera-tree read phase. No pointer escapes this call.
-pub(crate) unsafe fn capture(
-    character: &Character,
-    views: [TrackedView; 2],
-    always_use_t1: bool,
-) -> Option<[Mat4; 2]> {
+pub(crate) unsafe fn capture(character: &Character, views: [TrackedView; 2]) -> Option<[Mat4; 2]> {
     let now = Instant::now();
     let native = unsafe { read(character) };
-    STATE
-        .lock()
-        .capture(native, views, always_use_t1, now, teleport::epoch())
+    STATE.lock().capture(native, views, now, teleport::epoch())
 }
 
 /// The render hook consumes the tree's result instead of resampling or applying another delta.
@@ -110,7 +104,6 @@ impl Runtime {
         &mut self,
         native: Result<NativeSample, Refusal>,
         views: [TrackedView; 2],
-        always_use_t1: bool,
         now: Instant,
         teleport_epoch: u64,
     ) -> Option<[Mat4; 2]> {
@@ -122,7 +115,7 @@ impl Runtime {
                 teleport_epoch,
             };
             self.validate_continuity(continuity)?;
-            let result = self.update(native, views, always_use_t1);
+            let result = self.update(native, views);
             self.continuity = Some(continuity);
             result
         });
@@ -137,7 +130,7 @@ impl Runtime {
                             | Refusal::NativeTailComplete
                     ) =>
             {
-                self.release(reason, views, always_use_t1, now)
+                self.release(reason, views, now)
             }
             Err(reason) => {
                 self.clear();
@@ -169,7 +162,6 @@ impl Runtime {
         &mut self,
         native: NativeSample,
         views: [TrackedView; 2],
-        always_use_t1: bool,
     ) -> Result<Option<[Mat4; 2]>, Refusal> {
         native.animation.validate()?;
         // A pending handoff retains admitted clips; coherence compares the unchanged native input.
@@ -402,9 +394,6 @@ impl Runtime {
                 views[side],
             )?;
         }
-        if always_use_t1 {
-            result[0] = result[1];
-        }
         self.correction = Some(trs(views[1].world.inverse() * result[1])?);
         self.handback = None;
         self.collapse_normal = false;
@@ -421,7 +410,6 @@ impl Runtime {
         &mut self,
         reason: Refusal,
         views: [TrackedView; 2],
-        always_use_t1: bool,
         now: Instant,
     ) -> Option<[Mat4; 2]> {
         if self.handback.is_none() {
@@ -467,10 +455,7 @@ impl Runtime {
             scale: Vec3::ONE.lerp(handback.correction.scale, amount),
         };
         let result = correction.matrix().ok().and_then(|correction| {
-            let mut result = views.map(|view| view.world * correction);
-            if always_use_t1 {
-                result[0] = result[1];
-            }
+            let result = views.map(|view| view.world * correction);
             result
                 .iter()
                 .all(|matrix| trs(*matrix).is_ok())
@@ -647,40 +632,24 @@ mod tests {
         }; 2];
         assert!(
             state
-                .update(
-                    native(100, GraphState::GroundInto, Vec3::ZERO),
-                    views,
-                    false
-                )
+                .update(native(100, GraphState::GroundInto, Vec3::ZERO), views)
                 .unwrap()
                 .is_none()
         );
         assert!(
             state
-                .update(
-                    native(100, GraphState::GroundInto, Vec3::ZERO),
-                    views,
-                    false
-                )
+                .update(native(100, GraphState::GroundInto, Vec3::ZERO), views)
                 .unwrap()
                 .is_none()
         );
         let pair = state
-            .update(
-                native(200, GraphState::GroundFollowOn, Vec3::X),
-                views,
-                false,
-            )
+            .update(native(200, GraphState::GroundFollowOn, Vec3::X), views)
             .unwrap()
             .unwrap();
         assert!(pair[0].w_axis.truncate().abs_diff_eq(Vec3::ZERO, 0.0001));
         assert!(pair[1].w_axis.truncate().abs_diff_eq(Vec3::X, 0.0001));
         let repeated = state
-            .update(
-                native(200, GraphState::GroundFollowOn, Vec3::X),
-                views,
-                false,
-            )
+            .update(native(200, GraphState::GroundFollowOn, Vec3::X), views)
             .unwrap()
             .unwrap();
         assert_eq!(pair, repeated);
@@ -697,21 +666,13 @@ mod tests {
         for _ in 0..3 {
             assert!(
                 state
-                    .update(
-                        native(100, GraphState::GroundInto, Vec3::ZERO),
-                        views,
-                        false
-                    )
+                    .update(native(100, GraphState::GroundInto, Vec3::ZERO), views)
                     .unwrap()
                     .is_none()
             );
             assert!(
                 state
-                    .update(
-                        native(200, GraphState::GroundFollowOn, Vec3::X),
-                        views,
-                        false
-                    )
+                    .update(native(200, GraphState::GroundFollowOn, Vec3::X), views)
                     .unwrap()
                     .is_some()
             );
@@ -728,12 +689,8 @@ mod tests {
             tracking_translation: Vec3::ZERO,
         }; 2];
         let first = GraphState::Landing(LandingState::Hard);
-        state
-            .update(native(100, first, Vec3::ZERO), views, false)
-            .unwrap();
-        state
-            .update(native(200, first, Vec3::X), views, false)
-            .unwrap();
+        state.update(native(100, first, Vec3::ZERO), views).unwrap();
+        state.update(native(200, first, Vec3::X), views).unwrap();
         for graph in [
             GraphState::Landing(LandingState::FastFall),
             GraphState::FloorPickup,
@@ -743,7 +700,7 @@ mod tests {
             let previous_run = state.run;
             assert!(
                 state
-                    .update(native(200, graph, Vec3::Y * 3.0), views, false)
+                    .update(native(200, graph, Vec3::Y * 3.0), views)
                     .unwrap()
                     .is_none()
             );
@@ -753,7 +710,7 @@ mod tests {
                 Vec3::Y * 3.0
             );
             let pair = state
-                .update(native(300, graph, Vec3::Y * 4.0), views, false)
+                .update(native(300, graph, Vec3::Y * 4.0), views)
                 .unwrap()
                 .unwrap();
             assert!(pair[0].w_axis.truncate().abs_diff_eq(Vec3::ZERO, 0.0001));
@@ -781,7 +738,6 @@ mod tests {
                         Vec3::X * buffer as f32,
                     ),
                     views,
-                    false,
                 )
                 .unwrap();
         }
@@ -797,8 +753,7 @@ mod tests {
                         GraphState::Recovery(RecoveryState::PoseMatching),
                         Vec3::ZERO
                     ),
-                    views,
-                    false
+                    views
                 )
                 .unwrap()
                 .is_none()
@@ -817,28 +772,24 @@ mod tests {
             world: Mat4::IDENTITY,
             tracking_translation: Vec3::ZERO,
         }; 2];
-        state
-            .update(native(100, graph, Vec3::ZERO), views, false)
-            .unwrap();
-        state
-            .update(native(200, graph, Vec3::X), views, false)
-            .unwrap();
+        state.update(native(100, graph, Vec3::ZERO), views).unwrap();
+        state.update(native(200, graph, Vec3::X), views).unwrap();
         let now = Instant::now();
         let reason = Refusal::OrdinaryOrUnsupportedState;
-        let start = state.release(reason, views, false, now).unwrap();
+        let start = state.release(reason, views, now).unwrap();
         assert!(start[1].w_axis.truncate().abs_diff_eq(Vec3::X, 0.0001));
         let moving = [TrackedView {
             world: Mat4::from_rotation_translation(Quat::from_rotation_y(0.3), Vec3::Y * 2.0),
             tracking_translation: Vec3::Y * 2.0,
         }; 2];
         let middle = state
-            .release(reason, moving, false, now + HANDBACK_DURATION / 2)
+            .release(reason, moving, now + HANDBACK_DURATION / 2)
             .unwrap();
         let expected = moving[1].world * Mat4::from_translation(Vec3::X * 0.5);
         assert!(middle[1].abs_diff_eq(expected, 0.0001));
         assert!(
             state
-                .release(reason, moving, false, now + HANDBACK_DURATION)
+                .release(reason, moving, now + HANDBACK_DURATION)
                 .is_none()
         );
         assert!(state.selected.is_none());
@@ -861,7 +812,6 @@ mod tests {
                     let _ = state.capture(
                         Ok(native(buffer, GraphState::FloorPickup, translation)),
                         views,
-                        false,
                         now,
                         epoch,
                     );
@@ -872,7 +822,7 @@ mod tests {
                 exit.animation.samplers[0].weight = 0.0;
                 exit.animation.playing[0].weight = 0.0;
                 if during_handback {
-                    assert!(state.capture(Ok(exit), views, false, now, epoch).is_some());
+                    assert!(state.capture(Ok(exit), views, now, epoch).is_some());
                     assert!(state.handback.is_some());
                     assert!(state.continuity.is_some());
                     exit = native(400, GraphState::FloorPickup, Vec3::X);
@@ -890,13 +840,7 @@ mod tests {
                 }
                 assert!(
                     state
-                        .capture(
-                            Ok(exit),
-                            views,
-                            false,
-                            now + HANDBACK_DURATION / 4,
-                            next_epoch,
-                        )
+                        .capture(Ok(exit), views, now + HANDBACK_DURATION / 4, next_epoch,)
                         .is_none()
                 );
                 assert!(state.selected.is_none());
@@ -920,7 +864,6 @@ mod tests {
             let _ = state.capture(
                 Ok(native(buffer, GraphState::FloorPickup, translation)),
                 views,
-                false,
                 now,
                 0,
             );
@@ -936,7 +879,6 @@ mod tests {
                     .capture(
                         Ok(exit),
                         views,
-                        false,
                         now + Duration::from_millis(step as u64 * 10),
                         0,
                     )
@@ -952,7 +894,6 @@ mod tests {
                 .capture(
                     Err(Refusal::MissingChannel),
                     views,
-                    false,
                     now + Duration::from_millis(40),
                     0,
                 )

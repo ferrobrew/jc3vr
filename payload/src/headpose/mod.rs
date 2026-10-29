@@ -171,11 +171,8 @@ pub(crate) fn set_anchor_pair(pair: [anchors::Geometry; 2]) {
         withdraw_anchors();
         return;
     }
-    let offset = Config::lock_query(|c| c.headpose.position_offset);
     let sim_orientation = (source() == Source::Sim).then(|| sim::orientation_at(pair[1].root));
-    state()
-        .lock()
-        .publish_anchors(pair, offset, sim_orientation);
+    state().lock().publish_anchors(pair, sim_orientation);
 }
 
 /// Read both complete endpoints from the same publication.
@@ -268,7 +265,6 @@ impl HeadPoseState {
     pub(crate) fn publish_anchors(
         &mut self,
         pair: [anchors::Geometry; 2],
-        offset: Vec3,
         sim_orientation: Option<Quat>,
     ) {
         let [previous, current] = pair;
@@ -280,7 +276,7 @@ impl HeadPoseState {
         self.anchor_pair = Some(pair);
         if let Some(orientation) = sim_orientation {
             self.pose = HeadPose {
-                position: current.head + orientation * offset,
+                position: current.head,
                 orientation,
             };
             if current.collapsed {

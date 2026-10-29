@@ -145,7 +145,7 @@ The `TWIST BONES` status row shows how many twist bones were found on how many s
 
 ### Diagnostics
 
-The Controllers tab's "Procedural body" section shows the mode, the weight, whether the body owns the pose, a rigging error, the pass-through's read-back error, how far the hips sit below the animation's and the neck from its target, whether a foot is stepping, the body's speed and the walk's phase, the crouch's depth, the unavailable knee/ground-sit inference notice, the reach drop, whether the stance is measured, the last tick's ground casts, each clavicle's turn up and forward, and the legs' weight in the air, the root's vertical speed, and the landing dip. While walking, `procedural body: walking` is logged every two seconds at debug level with the speed, the crouch's depth, the stride, the duty factor, the lift, the phase, the reach drop, and the neck's error.
+The debug UI's Body > Body fit live status shows the mode, the weight, whether the body owns the pose, a rigging error, the pass-through's read-back error, how far the hips sit below the animation's and the neck from its target, whether a foot is stepping, the body's speed and the walk's phase, the crouch's depth, the unavailable knee/ground-sit inference notice, the reach drop, whether the stance is measured, the last tick's ground casts, each clavicle's turn up and forward, and the legs' weight in the air, the root's vertical speed, and the landing dip. While walking, `procedural body: walking` is logged every two seconds at debug level with the speed, the crouch's depth, the stride, the duty factor, the lift, the phase, the reach drop, and the neck's error.
 
 ## Not yet
 

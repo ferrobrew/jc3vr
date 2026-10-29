@@ -73,8 +73,6 @@ pub fn egui_debug_vr(ui: &mut egui::Ui) {
                 );
         });
     });
-    ui.checkbox(&mut cfg.body_ik.enabled, "Body IK")
-        .on_hover_text("Drive the upper body toward the headpose via the engine's HumanIK solver.");
     ui.checkbox(&mut cfg.vr.own_back_buffer, "Mod-owned back buffer")
         .on_hover_text(
             "Render into a mod-owned target so the DXGI swapchain stays at the window size instead \

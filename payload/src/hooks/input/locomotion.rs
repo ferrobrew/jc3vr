@@ -262,7 +262,7 @@ fn with_head_forward_weapon_aim(ctx: *mut StateContext, call: impl FnOnce()) {
     let body_forward = -glam::Mat4::from(character.m_WorldMatrixT1)
         .z_axis
         .truncate();
-    let distance = Config::lock_query(|c| c.controllers.aim_state.neutral_aim_distance_m);
+    let distance = crate::controllers::aim_state::NEUTRAL_AIM_DISTANCE_M;
     let Some(point) =
         strafe_reference_point(head.position, head.orientation, body_forward, distance)
     else {

@@ -31,10 +31,7 @@ pub use self::{
     body::BodyRemapConfig,
     input::{BindingsConfig, InputConfig, LocomotionConfig, LocomotionDirection, ModeConfig},
     overlay::{GunReadout, OverlayConfig},
-    roomscale::{
-        AutoPostureConfig, FadeConfig, HeadFadeConfig, Posture, RoomscaleConfig, SeatTransition,
-        SeatedReferenceConfig,
-    },
+    roomscale::{Posture, RoomscaleConfig, SeatTransition},
     weapons::WeaponsConfig,
 };
 pub use crate::controllers::aim::sights::config::{SightOverride, SightTable, SightTuningConfig};

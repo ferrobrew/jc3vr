@@ -2,7 +2,7 @@
 
 mod aim;
 mod aim_state;
-mod body;
+mod body_ik;
 mod climb;
 mod collider_view;
 mod diagnostics;
@@ -165,14 +165,9 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
         FeatureId::Posture => {
             |ui, _| roomscale::roomscale_settings(ui, &mut config::edit().controllers.roomscale)
         }
-        FeatureId::RootWalls => {
+        FeatureId::BodyFit => {
             |ui, _| rig::rig_settings(ui, &mut config::edit().controllers.body.rig)
         }
-        FeatureId::Torso => |ui, _| {
-            let mut cfg = config::edit();
-            let rig = &mut cfg.controllers.body.rig;
-            torso::torso_settings(ui, &mut rig.torso, &mut rig.pelvis);
-        },
         FeatureId::Wrist => {
             |ui, _| summary::summary_settings(ui, &mut config::edit().controllers.summary)
         }
@@ -235,6 +230,8 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
             )
         },
         FeatureId::AnimationIk => |ui, _| {
+            body_ik::body_ik_readout(ui);
+            ui.separator();
             aim_state::aim_state_readout(ui, &controller_aim_state::status());
             unarmed::unarmed_readout(ui, &controller_unarmed::status(), &hand_ik::status());
         },
@@ -313,18 +310,17 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
         FeatureId::Posture => {
             |ui, _| roomscale::roomscale_readout(ui, &controller_roomscale::status())
         }
-        FeatureId::RootWalls => |ui, _| rig::rig_readout(ui, &controller_roomscale::status().root),
-        FeatureId::Torso => |ui, _| {
+        FeatureId::BodyFit => |ui, _| {
+            procedural::procedural_readout(ui, &controller_body::procedural::status());
+            ui.separator();
+            rig::rig_readout(ui, &controller_roomscale::status().root);
+            ui.separator();
             torso::torso_readout(
                 ui,
                 &controller_rig::torso_status(),
                 &controller_rig::skeleton::status(),
-            )
+            );
         },
-        FeatureId::Procedural => {
-            |ui, _| procedural::procedural_readout(ui, &controller_body::procedural::status())
-        }
-        FeatureId::Calibration => |ui, _| body::body_readout(ui, &controller_body::player()),
         FeatureId::Semantic => |ui, _| {
             semantic::semantic_readout(ui);
             ui.collapsing("Diagnostics", |ui| {

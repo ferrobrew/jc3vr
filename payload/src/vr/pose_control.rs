@@ -192,6 +192,14 @@ pub fn reset() {
     }
 }
 
+/// The translation step, in metres, of one nudge of the frozen pose's position. Nudges snap to this
+/// grid, so a step is exactly repeatable.
+pub const STEP_M: f32 = 0.1;
+
+/// The rotation step, in degrees, of one nudge of the frozen pose's yaw, pitch, or roll. Nudges snap
+/// to this grid, so a step is exactly repeatable.
+pub const STEP_DEG: f32 = 1.0;
+
 /// Step `value` by `steps` increments of `step`, snapped to the `step` grid.
 ///
 /// Snapping is what makes a nudge exact and repeatable: the result is always an integer multiple of

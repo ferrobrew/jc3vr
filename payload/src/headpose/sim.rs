@@ -145,9 +145,8 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
 
     // Negated: a positive net LOOK_RIGHT delta must turn the head clockwise from above, which is
     // a negative rotation about +Y (established in-game; the unnegated form turned the wrong way).
-    let yaw_delta = -(look_x * config.mouse_sensitivity).to_radians();
-    let pitch_delta =
-        (if config.invert_y { -look_y } else { look_y } * config.mouse_sensitivity).to_radians();
+    let yaw_delta = -(look_x * MOUSE_SENSITIVITY).to_radians();
+    let pitch_delta = (look_y * MOUSE_SENSITIVITY).to_radians();
 
     match s.mode {
         HeadMode::OnFoot => {
@@ -160,19 +159,19 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
             s.yaw = wrap_angle(s.yaw + yaw_delta);
         }
         HeadMode::Other => {
-            let yaw_limit = config.free_look_yaw_limit_deg.to_radians();
+            let yaw_limit = FREE_LOOK_YAW_LIMIT_DEG.to_radians();
             s.yaw = (s.yaw + yaw_delta).clamp(-yaw_limit, yaw_limit);
         }
     }
     // The pitch is clamped in every mode: a real head cannot pitch past vertical, and letting the
     // euler pitch cross ±90° flips the yaw/roll decomposition.
-    let pitch_limit = config.free_look_pitch_limit_deg.to_radians();
+    let pitch_limit = FREE_LOOK_PITCH_LIMIT_DEG.to_radians();
     s.pitch = (s.pitch + pitch_delta).clamp(-pitch_limit, pitch_limit);
     s.last_body_yaw = body_yaw;
 
     match s.mode {
         HeadMode::OnFoot => {
-            s.latch = update_latch(s.latch, s.yaw.to_degrees(), s.mode, &config);
+            s.latch = update_latch(s.latch, s.yaw.to_degrees(), s.mode);
             s.body_yaw_target = (s.latch == LatchState::BodyFollowing)
                 .then(|| body_yaw.map(|b| yaw_forward(b + s.yaw)))
                 .flatten();
@@ -191,16 +190,12 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     // never sees, so the animated neck axis's swing away from body-up is folded in as an extra
     // posture factor — measured from the published anchors (joint translations, whose conventions
     // are proven in-game), not from joint orientations (whose rest frames are not). The position
-    // anchors to the animated head bone plus the configured roomscale-testing offset.
-    let posture_target = if config.posture_enabled {
+    // anchors to the animated head bone.
+    let posture_target = if POSTURE_ENABLED {
         let up_body = body_rotation
             .map(|rotation| rotation.inverse() * -crate::headpose::neck_delta())
             .unwrap_or(Vec3::Y);
-        posture_swing(
-            up_body,
-            config.posture_deadband_deg,
-            config.posture_full_deg,
-        )
+        posture_swing(up_body, POSTURE_DEADBAND_DEG, POSTURE_FULL_DEG)
     } else {
         Quat::IDENTITY
     };
@@ -209,8 +204,8 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     // product and flaps tick to tick (the view's yaw spun wildly while hanging). The exponential
     // smoothing keeps only the low-frequency component — a hang settles into the inverted view
     // over the time constant, while animation-rate motion is attenuated away.
-    let alpha = if config.posture_smoothing_s > f32::EPSILON {
-        1.0 - (-dt.max(0.0) / config.posture_smoothing_s).exp()
+    let alpha = if POSTURE_SMOOTHING_S > f32::EPSILON {
+        1.0 - (-dt.max(0.0) / POSTURE_SMOOTHING_S).exp()
     } else {
         1.0
     };
@@ -221,7 +216,7 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     let body_rotation = grapple::filter_body_rotation(body_rotation.unwrap_or(Quat::IDENTITY));
     let orientation = body_rotation * s.posture * head_offset;
     let anchor = grapple::filter_anchor(crate::headpose::anchor().unwrap_or(Vec3::ZERO));
-    let position = anchor + orientation * config.position_offset;
+    let position = anchor;
     drop(s);
     crate::headpose::set_pose(HeadPose {
         position,
@@ -287,6 +282,48 @@ struct SimState {
     body_yaw_target: Option<Vec3>,
 }
 
+/// Mouse-look sensitivity, degrees per unit of look-effector delta.
+pub(crate) const MOUSE_SENSITIVITY: f32 = 7.5;
+
+/// On foot: the half-angle, degrees, of the decoupled cone. Beyond it, body yaw begins following
+/// the head.
+const LATCH_THRESHOLD_DEG: f32 = 75.0;
+
+/// On foot: the half-angle, degrees, below which the latch disengages. Lower than
+/// [`LATCH_THRESHOLD_DEG`] to provide hysteresis and prevent jitter at the boundary.
+const LATCH_DISENGAGE_THRESHOLD_DEG: f32 = 65.0;
+
+/// Off foot: the most body-relative yaw, degrees, in either direction. Ranges beyond a real head's
+/// ~80° are made anatomically plausible by the neck twist in [`crate::hooks::character::head`].
+const FREE_LOOK_YAW_LIMIT_DEG: f32 = 135.0;
+
+/// The most pitch, degrees, in either direction, applied in every mode: a real head cannot pitch
+/// past vertical, and letting the euler pitch cross ±90° flips the yaw/roll decomposition.
+const FREE_LOOK_PITCH_LIMIT_DEG: f32 = 70.0;
+
+/// Fold the animation-driven body posture into the view. Hanging, ledge grabs, and similar
+/// authored animations invert the body in the *bone pose* over a root matrix that stays upright,
+/// so the body-frame composition alone never sees them (unlike the wingsuit, whose bank rotates
+/// the root itself). The posture is measured as the animated neck axis's swing away from body-up.
+/// Off: even smoothed and deadbanded, the single-axis translation-derived measurement needs more
+/// dialling in (and likely a proper bone-basis treatment) before it reads well outside of hangs,
+/// so the view stays upright until then.
+const POSTURE_ENABLED: bool = false;
+
+/// Neck-axis deviations, degrees, below this are ignored, so idle sway and locomotion lean never
+/// wobble the view.
+const POSTURE_DEADBAND_DEG: f32 = 25.0;
+
+/// The neck-axis deviation, degrees, at which the posture is applied in full; between the deadband
+/// and this, the swing ramps in.
+const POSTURE_FULL_DEG: f32 = 60.0;
+
+/// The posture low-pass time constant, seconds. The raw swing carries the walk cycle's torso
+/// oscillation and, near full inversion, a tick-to-tick axis flap; the smoothing keeps only the
+/// low-frequency component, so a hang settles into the inverted view over this constant while
+/// animation-rate motion is attenuated away.
+const POSTURE_SMOOTHING_S: f32 = 0.5;
+
 const SIM_DEFAULT: SimState = SimState {
     yaw: 0.0,
     pitch: 0.0,
@@ -314,25 +351,20 @@ fn detect_mode(old: u64, new: u64) -> HeadMode {
 
 /// Update the latch state given the body-relative yaw and the current mode. On-foot uses the
 /// hysteresis latch; other modes are always decoupled.
-fn update_latch(
-    latch: LatchState,
-    relative_yaw_deg: f32,
-    mode: HeadMode,
-    config: &crate::headpose::HeadPoseConfig,
-) -> LatchState {
+fn update_latch(latch: LatchState, relative_yaw_deg: f32, mode: HeadMode) -> LatchState {
     if mode != HeadMode::OnFoot {
         return LatchState::Decoupled;
     }
     match latch {
         LatchState::Decoupled => {
-            if relative_yaw_deg.abs() >= config.latch_threshold_deg {
+            if relative_yaw_deg.abs() >= LATCH_THRESHOLD_DEG {
                 LatchState::BodyFollowing
             } else {
                 LatchState::Decoupled
             }
         }
         LatchState::BodyFollowing => {
-            if relative_yaw_deg.abs() <= config.latch_disengage_threshold_deg {
+            if relative_yaw_deg.abs() <= LATCH_DISENGAGE_THRESHOLD_DEG {
                 LatchState::Decoupled
             } else {
                 LatchState::BodyFollowing

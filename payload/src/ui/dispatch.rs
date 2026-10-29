@@ -55,11 +55,8 @@ pub(crate) fn route(id: FeatureId) -> FeatureRoute {
         | FeatureId::Keyboard => FeatureRoute::Director,
         FeatureId::Environment => FeatureRoute::Environment,
         FeatureId::Engine | FeatureId::Swimming => FeatureRoute::Engine,
-        FeatureId::Calibration
-        | FeatureId::Posture
-        | FeatureId::RootWalls
-        | FeatureId::Torso
-        | FeatureId::Procedural
+        FeatureId::Posture
+        | FeatureId::BodyFit
         | FeatureId::AnimationIk
         | FeatureId::Presentation
         | FeatureId::HandTracking
@@ -129,7 +126,6 @@ fn controls(
             }
             game::controls(ui, id);
             match id {
-                FeatureId::AnimationIk => camera::body_ik(ui),
                 FeatureId::Grapple => camera::grapple_comfort(ui),
                 FeatureId::Locomotion => {
                     ui.collapsing("Advanced tuning", camera::turn_advanced);
@@ -154,10 +150,8 @@ fn controls(
 
 fn readouts(id: FeatureId) -> impl Iterator<Item = FeatureBody> {
     let routed: Option<FeatureBody> = match route(id) {
-        FeatureRoute::Overview
-        | FeatureRoute::HeadView
-        | FeatureRoute::Previews
-        | FeatureRoute::Engine => None,
+        FeatureRoute::Overview | FeatureRoute::Previews | FeatureRoute::Engine => None,
+        FeatureRoute::HeadView => Some(|ui, _| camera::head_view_status(ui)),
         FeatureRoute::Controller => controllers::status(id),
         FeatureRoute::Runtime => Some(|ui, _| vr::status(ui)),
         FeatureRoute::Render => render::status(id),

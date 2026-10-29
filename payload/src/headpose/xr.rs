@@ -192,8 +192,8 @@ pub fn advance_body_yaw(
                 );
             } else if look_x.abs() >= turn.deadzone {
                 // Stick: an absolute axis integrated as a per-tick rate.
-                let delta = (look_x * config.mouse_sensitivity * turn.smooth_scale * rate_scale)
-                    .to_radians();
+                let delta =
+                    (look_x * sim::MOUSE_SENSITIVITY * turn.smooth_scale * rate_scale).to_radians();
                 yaw = sim::wrap_angle(yaw - delta);
             }
         }

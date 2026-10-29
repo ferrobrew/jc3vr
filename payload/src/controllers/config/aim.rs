@@ -4,54 +4,24 @@ use serde::{Deserialize, Serialize};
 
 use crate::controllers::{
     aim::sights::config::{SightTable, SightTuningConfig},
-    hands::{anchor::AnchorConfig, reach::ReachConfig, tiers::HandTierTable},
+    hands::{anchor::AnchorConfig, tiers::HandTierTable},
     presentation::PresentationConfig,
 };
 
-/// The aim-state pin and the mental-state cuts (see [`crate::controllers::aim_state`]). Each part
-/// has its own toggle so that it can be tested alone, and all of them act only under the
-/// controller scheme unless [`without_controllers`](Self::without_controllers) is set.
+/// The aim-state work (see [`crate::controllers::aim_state`]): the pins, the neutral aim point, the
+/// wall-block clear, and the mental-state cuts act under the controller scheme whenever it is in
+/// effect; the arm aim IK skip has a switch.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AimStateConfig {
-    /// Pin the local player's weapon aim clear, so that the body stays in the no-aim animation
-    /// family while firing still works.
-    pub pin: bool,
-    /// Also pin the grapple aim clear, which the weapon pin does not reach. It changes how the
-    /// body behaves on a held tether: the body does not turn to face the hook.
-    pub pin_grapple: bool,
     /// Skip the local player's arm and upper-body aim IK tasks, because the controllers own the
     /// arms.
     pub skip_arm_ik: bool,
-    /// Hold the body's aim point neutral, ahead of the body, so that nothing turns or twists the
-    /// body toward where the gun points. The weapons keep aiming where the game aims them.
-    pub neutral_aim_point: bool,
-    /// How far ahead of the head the neutral aim point sits, metres.
-    pub neutral_aim_distance_m: f32,
-    /// Clear the wall-penetration block on the player's held weapon, which the game computes from
-    /// where the animation would put the barrel rather than where the hand holds it.
-    pub clear_wall_block: bool,
-    /// Remove the combat mental state's effects on the player's body: no automatic draw when
-    /// combat starts and no automatic holster when it ends. The mental state itself keeps running
-    /// for AI perception, and a deliberate holster still works.
-    pub mental_state_cuts: bool,
-    /// Apply every enabled part above under the gamepad scheme too, for testing the pin without
-    /// controllers. Off by default: it changes how the body behaves for every player.
-    pub without_controllers: bool,
 }
 
 impl AimStateConfig {
     pub const fn new() -> Self {
-        Self {
-            pin: true,
-            pin_grapple: true,
-            skip_arm_ik: true,
-            neutral_aim_point: true,
-            neutral_aim_distance_m: 25.0,
-            clear_wall_block: true,
-            mental_state_cuts: true,
-            without_controllers: false,
-        }
+        Self { skip_arm_ik: true }
     }
 }
 
@@ -75,9 +45,6 @@ pub struct HandsConfig {
     /// Re-pose the upper body (the spine, the head, and the arms) at render time from the latest
     /// tracking, on top of the late update's hands.
     pub presentation: PresentationConfig,
-    /// Switch off the game's secondary hand IK (the weapon's off-hand grip, the grapple fire arm,
-    /// and the parachute handles) for every hand the controllers drive.
-    pub suppress_secondary_ik: bool,
     /// Hold a gun in a controller-driven hand fixed to the wrist at the hand's bind-pose grip,
     /// rather than where the animation puts the attach bone.
     pub rigid_grip: bool,
@@ -100,9 +67,6 @@ pub struct HandsConfig {
     pub tiers: HandTierTable,
     /// The anchored tier of the grapple states, and the hang movement it drives.
     pub anchor: AnchorConfig,
-    /// How the character's arm reaches for the controllers: the remap about his measured shoulders,
-    /// the pull near full extension, and the render-time detach.
-    pub reach: ReachConfig,
 }
 
 impl HandsConfig {
@@ -111,7 +75,6 @@ impl HandsConfig {
             ik: true,
             late_update: true,
             presentation: PresentationConfig::new(),
-            suppress_secondary_ik: true,
             rigid_grip: true,
             reach_t: 1.0,
             reach_r: 1.0,
@@ -122,7 +85,6 @@ impl HandsConfig {
             return_blend_s: 0.35,
             tiers: HandTierTable::PLAN,
             anchor: AnchorConfig::new(),
-            reach: ReachConfig::new(),
         }
     }
 }

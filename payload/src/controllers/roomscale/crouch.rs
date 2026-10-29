@@ -10,6 +10,11 @@
 
 use jc3gi::physics::ProxyState;
 
+/// How far the head must come back up, metres below the standing eye height at the character's
+/// scale, before the character counts as standing again. Clamped to the crouch's entry depth, so
+/// the hysteresis never inverts.
+pub const CROUCH_EXIT_DROP_M: f32 = 0.30;
+
 /// Whether the character counts as crouched, with hysteresis on the head's drop.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct CrouchTracker {

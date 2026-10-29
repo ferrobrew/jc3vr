@@ -60,7 +60,7 @@ use crate::{
             rig::torso::EYES_TO_NECK_PIVOT,
         },
         frame::{Hand, Pose},
-        hands::{late, pose as hand_pose},
+        hands::{late, pose as hand_pose, reach::REACH},
         presentation::{
             rig::{Group, GroupMap, PresentationRig},
             solve::{ArmJoints, Motion, UpperBody, head_motion, solve},
@@ -201,13 +201,8 @@ pub(crate) fn begin_frame() {
     let start = Instant::now();
     let _timing = frame_timing::scope(Slot::Presentation);
     roll_cost();
-    let (config, reach, world_scale) = Config::lock_query(|c| {
-        (
-            c.controllers.hands.presentation,
-            c.controllers.hands.reach,
-            c.vr.world_scale,
-        )
-    });
+    let (config, world_scale) =
+        Config::lock_query(|c| (c.controllers.hands.presentation, c.vr.world_scale));
     let rig_failed = RIG.lock().as_ref().is_some_and(|(_, rig)| rig.is_err());
     let ticks = *TICKS.lock();
     let fresh = ticks
@@ -232,7 +227,7 @@ pub(crate) fn begin_frame() {
         };
         let frame = Frame {
             config,
-            stretch_forearm: reach.detach && reach.stretch_forearm,
+            stretch_forearm: REACH.detach && REACH.stretch_forearm,
             pivot_offset: EYES_TO_NECK_PIVOT * scale,
             head: [head(headpose::query_prev()), head(headpose::query())],
             ticks: [previous, current],
@@ -401,31 +396,27 @@ fn solve_frame(frame: &Frame, instance: Mat4, dtf: f32) -> Option<BodyEdit> {
     let model = |world: Mat4| to_model * world * instance;
     let [previous, current] = &frame.ticks;
     let body = previous.body.lerp(&current.body, t);
-    let head = frame
-        .config
-        .torso
-        .then(|| {
-            let pivot = |pose: Pose| Pose {
-                position: pose.position + pose.orientation * frame.pivot_offset,
-                orientation: pose.orientation,
-            };
-            let now = pivot(hand_pose::interp(frame.head[0], frame.head[1], t));
-            let reference = pivot(hand_pose::interp(previous.head, current.head, t));
-            late::plausible(now, reference).then(|| {
-                model(head_motion(
-                    reference.position,
-                    reference.orientation,
-                    now.position,
-                    now.orientation,
-                ))
-            })
+    let head = {
+        let pivot = |pose: Pose| Pose {
+            position: pose.position + pose.orientation * frame.pivot_offset,
+            orientation: pose.orientation,
+        };
+        let now = pivot(hand_pose::interp(frame.head[0], frame.head[1], t));
+        let reference = pivot(hand_pose::interp(previous.head, current.head, t));
+        late::plausible(now, reference).then(|| {
+            model(head_motion(
+                reference.position,
+                reference.orientation,
+                now.position,
+                now.orientation,
+            ))
         })
-        .flatten();
+    };
     let motion = Motion {
         head,
         torso: previous.torso + (current.torso - previous.torso) * t,
         hands: Hand::BOTH.map(|hand| late::hand_correction(hand, t).map(model)),
-        arms: frame.config.arms,
+        arms: true,
         stretch_forearm: frame.stretch_forearm,
     };
     let edits = solve(&body, &motion);

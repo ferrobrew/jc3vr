@@ -12,7 +12,20 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use parking_lot::Mutex;
 
-use crate::controllers::config::FadeConfig;
+/// The comfort fade's timing, shared by every source (the head in geometry, the seat transitions).
+#[derive(Copy, Clone, Debug)]
+pub struct FadeTuning {
+    /// How long a fade from clear to fully dark takes, seconds.
+    pub out_s: f32,
+    /// How long a fade from fully dark to clear takes, seconds.
+    pub in_s: f32,
+}
+
+/// The comfort fade's timing.
+pub const FADE_TIMING: FadeTuning = FadeTuning {
+    out_s: 0.15,
+    in_s: 0.3,
+};
 
 /// Who wants the view darkened.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -75,7 +88,7 @@ pub fn set_target(source: FadeSource, target: f32) {
 
 /// Advance the fade by `dt` seconds of real time toward the darkest target. Called once per
 /// rendered VR frame.
-pub fn advance(dt: f32, config: &FadeConfig) {
+pub fn advance(dt: f32, config: &FadeTuning) {
     let target = FADE.lock().targets.iter().copied().fold(0.0, f32::max);
     let next = step(level(), target, dt, config);
     LEVEL.store(next.to_bits(), Ordering::Relaxed);
@@ -89,7 +102,7 @@ pub fn reset() {
 
 /// One step of the easing: toward `target` at `1 / out_s` per second while darkening and
 /// `1 / in_s` per second while clearing. A zero duration jumps.
-pub fn step(level: f32, target: f32, dt: f32, config: &FadeConfig) -> f32 {
+pub fn step(level: f32, target: f32, dt: f32, config: &FadeTuning) -> f32 {
     let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
     let duration = if target > level {
         config.out_s
@@ -118,7 +131,7 @@ static LEVEL: AtomicU32 = AtomicU32::new(0);
 mod tests {
     use super::*;
 
-    const CONFIG: FadeConfig = FadeConfig {
+    const CONFIG: FadeTuning = FadeTuning {
         out_s: 0.2,
         in_s: 0.4,
     };
@@ -140,7 +153,7 @@ mod tests {
 
     #[test]
     fn a_zero_duration_jumps_and_a_bad_dt_holds() {
-        let instant = FadeConfig {
+        let instant = FadeTuning {
             out_s: 0.0,
             in_s: 0.0,
         };

@@ -63,14 +63,11 @@ features! {
         ActiveTools => ("overview.active-tools", "Performance monitor / Active captures / Active visualizations"),
     },
     Body {
-        Calibration => ("body.calibration", "Calibration"),
         HeadView => ("body.head-view", "Head and view"),
-        Posture => ("body.posture", "Posture and roomscale"),
-        RootWalls => ("body.root-walls", "Body root and walls"),
-        Torso => ("body.torso", "Torso and pelvis"),
-        Procedural => ("body.procedural", "Procedural body"),
+        Posture => ("body.posture", "Posture"),
+        BodyFit => ("body.fit", "Body fit"),
         AnimationIk => ("body.animation-ik", "Animation and IK"),
-        Presentation => ("body.presentation", "Body presentation"),
+        Presentation => ("body.presentation", "Hand presentation"),
     },
     Hands {
         HandTracking => ("hands.tracking", "Hand tracking and poses"),

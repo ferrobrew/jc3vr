@@ -17,9 +17,40 @@ use glam::Vec3;
 
 use crate::controllers::{
     body::{BodyDimensions, remap_head_height, remap_head_translation},
-    config::{AutoPostureConfig, Posture},
+    config::Posture,
     roomscale::seated::{SeatedEyeReference, SeatedReferenceSource},
 };
+
+/// The automatic posture's seated and standing detection
+/// ([`crate::controllers::roomscale::posture::PostureClassifier`]). The thresholds sit between the
+/// calibrated seated eye height (or an estimate from the standing eye height) and the standing eye
+/// height; the dwell times decide how long the head must stay past them.
+#[derive(Copy, Clone, Debug)]
+pub struct AutoPostureTuning {
+    /// How long a seated player's head must stay at standing height before the posture becomes
+    /// standing, seconds. Short: a seated player cannot raise the head that far without standing
+    /// up.
+    pub stand_after_s: f32,
+    /// How long a standing player's head must stay at seated height before the posture becomes
+    /// seated, seconds. Long, so that a standing player crouching behind cover keeps the physical
+    /// crouch.
+    pub sit_after_s: f32,
+    /// Count the sit wait only while a standing player's head is steady at a chair's height: a
+    /// head at floor level (sitting or kneeling on the floor of the play area) or one that bobs
+    /// (a crouch peeking out of cover) stays standing.
+    pub chair_height_only: bool,
+}
+
+/// The automatic posture's tuning.
+pub const AUTO_POSTURE: AutoPostureTuning = AutoPostureTuning {
+    stand_after_s: 1.0,
+    sit_after_s: 20.0,
+    chair_height_only: true,
+};
+
+/// In the seated posture, how far the crouch toggle lowers the eyes, metres at the character's
+/// scale.
+pub const SEATED_CROUCH_DROP_M: f32 = 0.6;
 
 /// The posture in effect after the automatic setting is resolved.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -206,7 +237,7 @@ impl PostureClassifier {
         &mut self,
         input: &ClassifierInput,
         dt: f32,
-        config: &AutoPostureConfig,
+        config: &AutoPostureTuning,
     ) -> ClassifierStatus {
         let thresholds = Thresholds::new(input.standing_eye_m, input.calibrated_seated_eye_m);
         let head = input.head_height.filter(|h| h.is_finite());
@@ -504,7 +535,7 @@ mod tests {
         head_height: f32,
         seconds: f32,
     ) -> ClassifierStatus {
-        let config = AutoPostureConfig::new();
+        let config = AUTO_POSTURE;
         let mut status = classifier.update(&at(head_height), 0.0, &config);
         for _ in 0..(seconds / FRAME_S).round() as usize {
             status = classifier.update(&at(head_height), FRAME_S, &config);
@@ -542,7 +573,7 @@ mod tests {
     #[test]
     fn the_logged_seated_head_is_seated_from_the_first_frame() {
         let mut classifier = PostureClassifier::new();
-        let status = classifier.update(&at(1.057), FRAME_S, &AutoPostureConfig::new());
+        let status = classifier.update(&at(1.057), FRAME_S, &AUTO_POSTURE);
         assert_eq!(status.detected, DetectedPosture::Seated);
         assert_eq!(status.reason, DetectionReason::FirstSample);
         for logged in [1.0496, 1.0094, 1.0892, 0.896, 1.0255, 1.1414] {
@@ -557,11 +588,11 @@ mod tests {
     #[test]
     fn before_any_head_height_the_player_counts_as_seated() {
         let mut classifier = PostureClassifier::new();
-        let status = classifier.update(&LOGGED, FRAME_S, &AutoPostureConfig::new());
+        let status = classifier.update(&LOGGED, FRAME_S, &AUTO_POSTURE);
         assert_eq!(status.detected, DetectedPosture::Seated);
         assert_eq!(status.reason, DetectionReason::NoEvidence);
         // The first located height still classifies at once.
-        let status = classifier.update(&at(1.68), FRAME_S, &AutoPostureConfig::new());
+        let status = classifier.update(&at(1.68), FRAME_S, &AUTO_POSTURE);
         assert_eq!(status.detected, DetectedPosture::Standing);
         assert_eq!(status.reason, DetectionReason::FirstSample);
     }
@@ -627,9 +658,9 @@ mod tests {
         assert_eq!(status.detected, DetectedPosture::Seated);
         assert_eq!(status.reason, DetectionReason::SatDown);
         // Switched off, the floor sits after the wait, as any low head does.
-        let config = AutoPostureConfig {
+        let config = AutoPostureTuning {
             chair_height_only: false,
-            ..AutoPostureConfig::new()
+            ..AUTO_POSTURE
         };
         let mut classifier = PostureClassifier::new();
         classifier.update(&at(1.68), FRAME_S, &config);
@@ -681,7 +712,7 @@ mod tests {
     #[test]
     fn a_stall_does_not_complete_a_dwell() {
         let mut classifier = PostureClassifier::new();
-        let config = AutoPostureConfig::new();
+        let config = AUTO_POSTURE;
         classifier.update(&at(1.68), FRAME_S, &config);
         let status = classifier.update(&at(1.05), 3600.0, &config);
         assert_eq!(status.detected, DetectedPosture::Standing);

@@ -47,7 +47,7 @@ For column-vector matrices, with model-space channel `L`, entry `L_b`, world-roo
 
 ## Consumers and handback
 
-The tree hook writes the selected previous/current matrices to camera contexts, render contexts, listeners, and alternate aim. The render hook consumes the same owned pair without resampling or applying another authored transform. `always_use_t1` collapses only after composition. The simulation-camera cache publishes the selected current matrix, and scoped grapple aim retains precedence.
+The tree hook writes the selected previous/current matrices to camera contexts, render contexts, listeners, and alternate aim. The render hook consumes the same owned pair without resampling or applying another authored transform. The simulation-camera cache publishes the selected current matrix, and scoped grapple aim retains precedence.
 
 After native contribution ends, handback starts from the current applied correction over the live normal tracked view. Translation, scale, and rotation interpolate to identity with a smooth endpoint. This is a mod-side transition, not an outgoing animation weight. Character or source replacement, teleport epoch change, a large root discontinuity, invalid transforms, tracking loss, loading, and read failure clear both authored history and handback immediately. The continuity guard remains active throughout handback and updates its checked root each capture.
 

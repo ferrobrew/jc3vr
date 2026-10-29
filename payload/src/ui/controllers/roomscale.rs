@@ -1,5 +1,5 @@
 //! Posture and roomscale: the posture in effect, the play area, the head height, the teleports, the
-//! comfort fade, the crouch, and the seat phase, and their settings. The chase and the lean are the
+//! comfort fade, the crouch, and the seat phase, and the crouch settings. The chase and the lean are the
 //! rig's ([`crate::ui::controllers::rig`]).
 
 use egui::Ui;
@@ -7,7 +7,7 @@ use egui::Ui;
 use crate::{
     controllers::{
         body::rig::collision::probe::ProbeResult,
-        config::{Posture, RoomscaleConfig, SeatTransition},
+        config::RoomscaleConfig,
         roomscale::{self, FrameStatus, RoomscaleStatus, posture::EffectivePosture},
     },
     hooks::camera::height,
@@ -125,71 +125,10 @@ fn posture_inputs(ui: &mut Ui, f: &FrameStatus) {
 }
 
 pub(super) fn roomscale_settings(ui: &mut Ui, r: &mut RoomscaleConfig) {
-    ui.horizontal(|ui| {
-        ui.label("Posture");
-        ui.selectable_value(&mut r.posture, Posture::Auto, "Auto")
-            .on_hover_text("Seated or standing by the head's height above the floor.");
-        ui.selectable_value(&mut r.posture, Posture::Seated, "Seated");
-        ui.selectable_value(&mut r.posture, Posture::Standing, "Standing");
-    });
-    ui.add(
-        egui::Slider::new(&mut r.auto_posture.stand_after_s, 0.0..=5.0)
-            .text("Auto: standing after (s)"),
-    );
-    ui.add(
-        egui::Slider::new(&mut r.auto_posture.sit_after_s, 1.0..=120.0)
-            .text("Auto: seated after (s)"),
-    );
-    ui.checkbox(
-        &mut r.auto_posture.chair_height_only,
-        "Auto: seated only at a chair's height",
-    )
-    .on_hover_text(
-        "Count the wait only while a standing head is steady at a chair's height: a head at floor \
-         level, or one that bobs, stays standing.",
-    );
-    let s = &mut r.seated_reference;
-    ui.checkbox(&mut s.adaptive, "Adaptive seated eye reference")
-        .on_hover_text("Move the seated eye reference slowly toward the median head height.");
-    ui.add_enabled_ui(s.adaptive, |ui| {
-        ui.indent("seated_reference", |ui| {
-            ui.add(egui::Slider::new(&mut s.window_s, 10.0..=600.0).text("Window (s)"));
-            ui.add(egui::Slider::new(&mut s.rate_mps, 0.001..=0.05).text("Rate (m/s)"));
-            ui.add(egui::Slider::new(&mut s.deadband_m, 0.0..=0.1).text("Deadband (m)"));
-        });
-    });
-
     let c = &mut r.crouch;
     ui.checkbox(&mut c.capsule, "Crouch capsule")
         .on_hover_text("Shorten the collision capsule while crouched.");
     ui.add(egui::Slider::new(&mut c.enter_drop_m, 0.1..=1.2).text("Crouched below (m)"));
-    ui.add(egui::Slider::new(&mut c.exit_drop_m, 0.05..=1.2).text("Standing above (m)"));
-    ui.add(egui::Slider::new(&mut c.seated_drop_m, 0.1..=1.0).text("Seated crouch drop (m)"));
-
-    let h = &mut r.head_fade;
-    ui.checkbox(&mut h.enabled, "Head-through-geometry fade");
-    ui.add_enabled_ui(h.enabled, |ui| {
-        ui.indent("head_fade", |ui| {
-            ui.add(egui::Slider::new(&mut h.start_depth_m, 0.0..=0.5).text("Fade starts (m)"));
-            ui.add(egui::Slider::new(&mut h.full_depth_m, 0.05..=1.0).text("Fully dark (m)"));
-        });
-    });
-    ui.add(egui::Slider::new(&mut r.fade.out_s, 0.0..=1.0).text("Fade out (s)"));
-    ui.add(egui::Slider::new(&mut r.fade.in_s, 0.0..=2.0).text("Fade in (s)"));
-
-    ui.horizontal(|ui| {
-        ui.label("Seat transition");
-        ui.selectable_value(&mut r.seat_transition, SeatTransition::Instant, "Instant")
-            .on_hover_text("Re-base at the seat lock; the entry plays behind a fade.");
-        ui.selectable_value(&mut r.seat_transition, SeatTransition::Fade, "Fade")
-            .on_hover_text("Fade through the entry and exit, clearing once seated or out.");
-        ui.selectable_value(&mut r.seat_transition, SeatTransition::Ride, "Ride")
-            .on_hover_text("Ride the animation with nothing hidden.");
-    });
-    ui.add_enabled(
-        r.seat_transition == SeatTransition::Fade,
-        egui::Slider::new(&mut r.seat_fade_hold_s, 0.0..=2.0).text("Seat fade hold (s)"),
-    );
 }
 
 /// The camera's height against Rico's animated eyes, both above his root, and what sets the

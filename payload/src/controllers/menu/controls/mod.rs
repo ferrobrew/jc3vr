@@ -242,9 +242,9 @@ mod tests {
             config.controllers.scheme = SchemeSetting::Gamepad;
             config.controllers.locomotion.stick.acceleration_mps2 = 3.0;
             config.headpose.grapple.mode = GrappleComfortMode::Off;
-            config.controllers.hands.reach.pull_max = 0.5;
+            config.controllers.roomscale.crouch.enter_drop_m = 0.5;
             config.controllers.body.rig.legs.gait = false;
-            config.headpose.mouse_sensitivity = 3.0;
+            config.controllers.body.rig.lean.enabled = false;
             config.hud.distance = 2.0;
         });
         reset_shown_settings();
@@ -268,9 +268,9 @@ mod tests {
             assert_eq!(config.controllers.locomotion.stick.acceleration_mps2, 3.0);
             assert_eq!(config.headpose.grapple.mode, GrappleComfortMode::Off);
             assert_eq!(config.controllers.aim.sights.get(7), Some(&sight));
-            assert_eq!(config.controllers.hands.reach.pull_max, 0.5);
+            assert_eq!(config.controllers.roomscale.crouch.enter_drop_m, 0.5);
             assert!(!config.controllers.body.rig.legs.gait);
-            assert_eq!(config.headpose.mouse_sensitivity, 3.0);
+            assert!(!config.controllers.body.rig.lean.enabled);
             assert_eq!(config.hud.distance, 2.0);
         });
     }

@@ -49,7 +49,7 @@ mod stunt;
 pub(crate) mod wielded;
 
 pub(crate) use acts::resolve_act_id;
-pub(crate) use body_ik::{BODY_IK_TARGET, body_ik_status};
+pub(crate) use body_ik::body_ik_status;
 pub(crate) use config::BodyIkConfig;
 
 pub(super) fn hook_library() -> HookLibrary {

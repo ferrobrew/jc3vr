@@ -9,12 +9,9 @@ use glam::{Quat, Vec2, Vec3};
 use crate::controllers::{
     body::{
         self, BodyDimensions,
-        rig::{
-            config::TorsoConfig,
-            torso::{
-                EYES_TO_NECK_PIVOT, EYES_TO_NECK_PIVOT_BACK, EYES_TO_NECK_PIVOT_DROP,
-                HIP_SPACING_FRACTION, TorsoEstimate, head_heading, wrap, yaw_forward, yaw_of,
-            },
+        rig::torso::{
+            EYES_TO_NECK_PIVOT, EYES_TO_NECK_PIVOT_BACK, EYES_TO_NECK_PIVOT_DROP,
+            HIP_SPACING_FRACTION, TorsoEstimate, head_heading, wrap, yaw_forward, yaw_of,
         },
     },
     weapons::volumes::HIP_HEIGHT_FRACTION,
@@ -63,7 +60,6 @@ impl TorsoEstimator {
         inputs: &TorsoInputs,
         dt: f32,
         dims: &BodyDimensions,
-        config: &TorsoConfig,
     ) -> Option<TorsoEstimate> {
         let head = inputs.head_position;
         let orientation = inputs.head_orientation.normalize();
@@ -77,10 +73,10 @@ impl TorsoEstimator {
             0.0
         };
         let neck = head + orientation * EYES_TO_NECK_PIVOT;
-        let limit = config.neck_limit_deg.clamp(0.0, 180.0).to_radians();
+        let limit = NECK_LIMIT_DEG.to_radians();
 
         let (hands, hands_weight) = hands_pull(inputs.hands, neck);
-        let pull = flat(yaw_forward(head_yaw)) * config.head_weight.max(0.0) + hands;
+        let pull = flat(yaw_forward(head_yaw)) * HEAD_WEIGHT + hands;
         let target = yaw_of(Vec3::new(pull.x, 0.0, pull.y)).unwrap_or(head_yaw);
         let target = within_neck(target, head_yaw, limit);
 
@@ -88,7 +84,7 @@ impl TorsoEstimator {
             yaw: target,
             rate: 0.0,
         });
-        follow(state, target, dt, config.follow_s);
+        follow(state, target, dt, FOLLOW_S);
         let twist = wrap(head_yaw - state.yaw);
         if twist.abs() > limit {
             // The neck limit is anatomy, not a preference: it holds at once, whatever the filter.
@@ -132,6 +128,15 @@ struct State {
     yaw: f32,
     rate: f32,
 }
+
+/// How much the head's heading counts against the hands', which count up to one each.
+const HEAD_WEIGHT: f32 = 0.3;
+
+/// The furthest the head may be turned from the torso, degrees.
+const NECK_LIMIT_DEG: f32 = 65.0;
+
+/// How quickly the heading follows, seconds (the time constant of a critically damped filter).
+const FOLLOW_S: f32 = 0.08;
 
 /// The hands' weight below which they have no heading of their own.
 const MIN_HANDS_WEIGHT: f32 = 1e-3;

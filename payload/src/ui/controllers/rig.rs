@@ -1,6 +1,6 @@
 //! The body rig: who owns the root, the gap to the ground point under the upright eyes and what the
 //! chase does about it, the lean it leaves alone, the push-back at walls, the cockpit shift, and the
-//! ledger's attribution, and their settings.
+//! ledger's attribution, and the push-back and lean switches.
 
 use std::time::Instant;
 
@@ -75,50 +75,10 @@ pub(super) fn rig_readout(ui: &mut Ui, status: &RootStatus) {
 }
 
 pub(super) fn rig_settings(ui: &mut Ui, r: &mut RigConfig) {
-    let c = &mut r.chase;
-    ui.checkbox(&mut c.enabled, "Body follows the head")
-        .on_hover_text("In the standing posture, walk the body toward the physical head.");
-    ui.add_enabled_ui(c.enabled, |ui| {
-        ui.indent("rig_chase", |ui| {
-            ui.add(egui::Slider::new(&mut c.gain, 0.05..=1.0).text("Gain per tick"));
-            ui.add(
-                egui::Slider::new(&mut c.feed_forward, 0.0..=1.5)
-                    .text("Head velocity feed-forward"),
-            );
-            ui.add(egui::Slider::new(&mut c.max_speed_mps, 0.5..=12.0).text("Max speed (m/s)"));
-            ui.add(
-                egui::Slider::new(&mut c.warp_min_m, 1.0..=50.0)
-                    .text("Unannounced teleport distance (m)"),
-            );
-        });
-    });
-    let l = &mut r.lean;
-    ui.checkbox(&mut l.enabled, "Lean without stepping")
+    ui.checkbox(&mut r.pushback.enabled, "Stop at walls")
+        .on_hover_text(
+            "Hold the view at a wall the body cannot pass; off, only the fade answers it.",
+        );
+    ui.checkbox(&mut r.lean.enabled, "Lean without stepping")
         .on_hover_text("Leave a lean over the feet unchased, by how far the head has dropped.");
-    ui.add_enabled_ui(l.enabled, |ui| {
-        ui.indent("rig_lean", |ui| {
-            ui.add(egui::Slider::new(&mut l.gain, 0.0..=10.0).text("Lean per metre of drop"));
-            ui.add(egui::Slider::new(&mut l.deadband_m, 0.0..=0.2).text("Drop deadband (m)"));
-            ui.add(egui::Slider::new(&mut l.max_m, 0.0..=1.0).text("Max lean (m)"));
-            ui.add(egui::Slider::new(&mut l.side_share, 0.0..=1.0).text("Sideways share"));
-            ui.add(egui::Slider::new(&mut l.back_share, 0.0..=1.0).text("Backward share"));
-        });
-    });
-    let p = &mut r.pushback;
-    ui.checkbox(&mut p.enabled, "Stop at walls").on_hover_text(
-        "Hold the view at a wall the body cannot pass; off, only the fade answers it.",
-    );
-    ui.indent("rig_pushback", |ui| {
-        ui.add(egui::Slider::new(&mut p.obstructed_m, 0.0..=0.5).text("Obstructed threshold (m)"));
-        ui.add(egui::Slider::new(&mut p.authored_m, 0.0..=1.0).text("Authored threshold (m)"));
-        ui.add(egui::Slider::new(&mut p.reach_m, 0.0..=1.0).text("Climb and seated threshold (m)"));
-        ui.add(egui::Slider::new(&mut p.min_gap_m, 0.0..=0.3).text("Least obstructed gap (m)"));
-        ui.add(egui::Slider::new(&mut p.debt_cap_m, 0.0..=1.0).text("Slide cap per episode (m)"));
-        ui.add(
-            egui::Slider::new(&mut p.fade_span_m, 0.01..=0.5).text("Fade span past the cap (m)"),
-        );
-        ui.add(
-            egui::Slider::new(&mut p.reset_s, 0.0..=2.0).text("Calm time to end an episode (s)"),
-        );
-    });
 }

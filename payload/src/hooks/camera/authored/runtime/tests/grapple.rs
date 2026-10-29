@@ -6,11 +6,11 @@ fn identity_hanging_channel_still_has_an_active_runtime_pair() {
     let graph = GraphState::Hanging(HangingState::GrappleAttached);
     let tracked = views(Quat::IDENTITY, Vec3::ZERO);
     state
-        .update(native(100, graph, Vec3::ZERO), tracked, false)
+        .update(native(100, graph, Vec3::ZERO), tracked)
         .unwrap();
     assert_eq!(
         state
-            .update(native(200, graph, Vec3::ZERO), tracked, false)
+            .update(native(200, graph, Vec3::ZERO), tracked)
             .unwrap(),
         Some([Mat4::IDENTITY; 2])
     );
@@ -46,7 +46,7 @@ fn upside_down_camera_handoff_keeps_both_local_components_and_tracking_once() {
     };
     assert!(
         runtime
-            .update(sample(1, false, 0.0, entry_local), tracked, false)
+            .update(sample(1, false, 0.0, entry_local), tracked)
             .unwrap()
             .is_none()
     );
@@ -60,14 +60,14 @@ fn upside_down_camera_handoff_keeps_both_local_components_and_tracking_once() {
             ..Trs::IDENTITY
         },
     );
-    assert!(runtime.update(moving, tracked, false).unwrap().is_some());
+    assert!(runtime.update(moving, tracked).unwrap().is_some());
     let baseline = runtime.baseline;
     let run = runtime.run;
     let head_rotation = Quat::from_rotation_y(0.3);
     let head_translation = Vec3::new(0.1, 0.2, -0.1);
     let tracked = views(head_rotation, head_translation);
     let selected = runtime
-        .update(sample(3, true, 0.0, idle_local), tracked, false)
+        .update(sample(3, true, 0.0, idle_local), tracked)
         .unwrap()
         .unwrap();
     let delta = entry_local.matrix().unwrap().inverse() * idle_local.matrix().unwrap();
@@ -77,14 +77,14 @@ fn upside_down_camera_handoff_keeps_both_local_components_and_tracking_once() {
     assert_eq!(runtime.run, run);
     assert!(!runtime.outgoing);
     let held = runtime
-        .update(sample(4, true, 0.5, idle_local), tracked, false)
+        .update(sample(4, true, 0.5, idle_local), tracked)
         .unwrap()
         .unwrap();
     assert!(held[1].abs_diff_eq(selected[1], 0.0001));
     assert_eq!(runtime.baseline, baseline);
     assert!(
         runtime
-            .update(sample(5, false, 0.0, entry_local), tracked, false)
+            .update(sample(5, false, 0.0, entry_local), tracked)
             .unwrap()
             .is_none()
     );
@@ -100,13 +100,7 @@ fn upside_down_handoff_uses_the_admitted_land_control_until_the_idle_control_con
     let mut runtime = Runtime::default();
     let tracked = views(Quat::IDENTITY, Vec3::ZERO);
     let now = Instant::now();
-    runtime.capture(
-        Ok(sample(1, false, 0.0, Trs::IDENTITY)),
-        tracked,
-        false,
-        now,
-        0,
-    );
+    runtime.capture(Ok(sample(1, false, 0.0, Trs::IDENTITY)), tracked, now, 0);
     let local = Trs {
         translation: Vec3::X,
         rotation: Quat::from_rotation_x(0.4),
@@ -114,7 +108,7 @@ fn upside_down_handoff_uses_the_admitted_land_control_until_the_idle_control_con
     };
     let land = sample(2, false, 0.5, local);
     let outgoing = land.animation.samplers[0];
-    assert!(runtime.capture(Ok(land), tracked, false, now, 0).is_some());
+    assert!(runtime.capture(Ok(land), tracked, now, 0).is_some());
     let baseline = runtime.baseline;
     let run = runtime.run;
     for (index, serial) in [3, 3, 4, 4].into_iter().enumerate() {
@@ -125,7 +119,7 @@ fn upside_down_handoff_uses_the_admitted_land_control_until_the_idle_control_con
         let previous_pair = runtime.pair;
         let previous_serial = runtime.finalized;
         let selected = runtime
-            .capture(Ok(pending(serial, local, outgoing)), head, false, now, 0)
+            .capture(Ok(pending(serial, local, outgoing)), head, now, 0)
             .unwrap();
         assert!(selected[1].abs_diff_eq(local.matrix().unwrap() * head[1].world, 0.0001));
         assert_eq!(runtime.selected, Some(selected));
@@ -139,7 +133,7 @@ fn upside_down_handoff_uses_the_admitted_land_control_until_the_idle_control_con
     }
     let head = views(Quat::from_rotation_y(0.6), Vec3::Y * 0.5);
     let selected = runtime
-        .capture(Ok(sample(5, true, 0.1, local)), head, false, now, 0)
+        .capture(Ok(sample(5, true, 0.1, local)), head, now, 0)
         .unwrap();
     assert!(selected[1].abs_diff_eq(local.matrix().unwrap() * head[1].world, 0.0001));
     assert_eq!(runtime.baseline, baseline);
@@ -157,23 +151,17 @@ fn pending_handoff_rejects_changed_native_data_at_the_same_finalized_serial() {
         let mut runtime = Runtime::default();
         let tracked = views(Quat::IDENTITY, Vec3::ZERO);
         let now = Instant::now();
-        runtime.capture(
-            Ok(sample(1, false, 0.0, Trs::IDENTITY)),
-            tracked,
-            false,
-            now,
-            0,
-        );
+        runtime.capture(Ok(sample(1, false, 0.0, Trs::IDENTITY)), tracked, now, 0);
         let local = Trs {
             translation: Vec3::X,
             ..Trs::IDENTITY
         };
         let land = sample(2, false, 0.5, local);
         let outgoing = land.animation.samplers[0];
-        runtime.capture(Ok(land), tracked, false, now, 0);
+        runtime.capture(Ok(land), tracked, now, 0);
         assert!(
             runtime
-                .capture(Ok(pending(3, local, outgoing)), tracked, false, now, 0)
+                .capture(Ok(pending(3, local, outgoing)), tracked, now, 0)
                 .is_some()
         );
         let mut changed = pending(3, local, outgoing);
@@ -189,11 +177,7 @@ fn pending_handoff_rejects_changed_native_data_at_the_same_finalized_serial() {
             5 => changed.local.translation = Vec3::Y,
             _ => changed.root.rotation = Quat::from_rotation_x(0.1),
         }
-        assert!(
-            runtime
-                .capture(Ok(changed), tracked, false, now, 0)
-                .is_none()
-        );
+        assert!(runtime.capture(Ok(changed), tracked, now, 0).is_none());
         assert!(runtime.baseline.is_none());
         assert!(runtime.pair.is_none());
         assert!(runtime.selected.is_none());
@@ -221,19 +205,13 @@ fn upside_down_states_require_a_contributing_camera_track_before_entry_and_while
                 }
             }
             assert_eq!(
-                runtime.update(missing, views(Quat::IDENTITY, Vec3::ZERO), false),
+                runtime.update(missing, views(Quat::IDENTITY, Vec3::ZERO)),
                 Err(Refusal::MissingChannel)
             );
             assert!(runtime.baseline.is_none());
             let now = Instant::now();
             let tracked = views(Quat::IDENTITY, Vec3::ZERO);
-            runtime.capture(
-                Ok(sample(2, idle, 0.0, Trs::IDENTITY)),
-                tracked,
-                false,
-                now,
-                0,
-            );
+            runtime.capture(Ok(sample(2, idle, 0.0, Trs::IDENTITY)), tracked, now, 0);
             assert!(
                 runtime
                     .capture(
@@ -247,7 +225,6 @@ fn upside_down_states_require_a_contributing_camera_track_before_entry_and_while
                             },
                         )),
                         tracked,
-                        false,
                         now,
                         0,
                     )
@@ -256,7 +233,7 @@ fn upside_down_states_require_a_contributing_camera_track_before_entry_and_while
             let mut lost = sample(4, idle, 0.6, Trs::IDENTITY);
             lost.animation.playing[0].camera_track_weight = 0.0;
             lost.animation.samplers[0].camera_track_weight = 0.0;
-            runtime.capture(Ok(lost), tracked, false, now, 0);
+            runtime.capture(Ok(lost), tracked, now, 0);
             assert!(runtime.baseline.is_none());
             assert!(runtime.pair.is_none());
         }
@@ -269,20 +246,8 @@ fn upside_down_handoff_rejects_reused_finalization_and_changed_source_continuity
         let mut runtime = Runtime::default();
         let tracked = views(Quat::IDENTITY, Vec3::ZERO);
         let now = Instant::now();
-        runtime.capture(
-            Ok(sample(1, false, 0.0, Trs::IDENTITY)),
-            tracked,
-            false,
-            now,
-            0,
-        );
-        runtime.capture(
-            Ok(sample(2, false, 0.5, Trs::IDENTITY)),
-            tracked,
-            false,
-            now,
-            0,
-        );
+        runtime.capture(Ok(sample(1, false, 0.0, Trs::IDENTITY)), tracked, now, 0);
+        runtime.capture(Ok(sample(2, false, 0.5, Trs::IDENTITY)), tracked, now, 0);
         let mut next = sample(3, true, 0.0, Trs::IDENTITY);
         let epoch = match change {
             0 => {
@@ -303,11 +268,7 @@ fn upside_down_handoff_rejects_reused_finalization_and_changed_source_continuity
             }
             _ => 1,
         };
-        assert!(
-            runtime
-                .capture(Ok(next), tracked, false, now, epoch)
-                .is_none()
-        );
+        assert!(runtime.capture(Ok(next), tracked, now, epoch).is_none());
         assert!(runtime.pair.is_none());
         assert!(runtime.baseline.is_none());
         assert!(runtime.handback.is_none());

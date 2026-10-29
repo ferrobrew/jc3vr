@@ -24,8 +24,9 @@
 //! - The mental-state cuts block the automatic draw on entering combat and swallow both automatic
 //!   holsters, letting a deliberate holster through.
 //!
-//! Every part has its own toggle in [`AimStateConfig`] and acts only under the controller scheme
-//! (or with [`AimStateConfig::without_controllers`]), so the game behaves as before otherwise.
+//! Every part acts only under the controller scheme, so the game behaves as before otherwise. The
+//! arm aim IK skip alone has a switch,
+//! [`skip_arm_ik`](crate::controllers::config::AimStateConfig::skip_arm_ik).
 
 use std::{
     cell::Cell,
@@ -62,9 +63,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     controllers::{
-        aim,
-        config::AimStateConfig,
-        hands,
+        aim, hands,
         mode::{self, Mode},
         scheme, weapons,
     },
@@ -177,12 +176,6 @@ pub fn status() -> AimStateStatus {
     *STATUS.lock()
 }
 
-/// Whether a part of the aim-state work acts now: its toggle is on, and the controller scheme is in
-/// effect or the parts are set to act without it.
-pub fn part_active(toggle: bool, without_controllers: bool, controllers: bool) -> bool {
-    toggle && (without_controllers || controllers)
-}
-
 /// A state bit's position in the state words: the word index and the mask within it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct StateBit {
@@ -257,29 +250,15 @@ pub(crate) fn swallow_local_act(id: i32) -> bool {
     // The weapon-handling scope is set only while the cuts act. Outside it, nothing is swallowed
     // unless the cuts act, so that check comes before resolving the act ids through the engine's
     // symbol table.
-    if !in_weapon_handling {
-        let cfg = aim_state_config();
-        if !part_active(
-            cfg.mental_state_cuts,
-            cfg.without_controllers,
-            controllers(),
-        ) {
-            return false;
-        }
+    if !in_weapon_handling && !controllers() {
+        return false;
     }
     let Some(act) = watched_act(id) else {
         return false;
     };
     // A holster inside the scope needs no second gate; the slow unequip does.
-    if in_weapon_handling && act == WatchedAct::UnequipSlow {
-        let cfg = aim_state_config();
-        if !part_active(
-            cfg.mental_state_cuts,
-            cfg.without_controllers,
-            controllers(),
-        ) {
-            return false;
-        }
+    if in_weapon_handling && act == WatchedAct::UnequipSlow && !controllers() {
+        return false;
     }
     let verdict = act_verdict(
         act,
@@ -335,18 +314,13 @@ thread_local! {
     static IN_LOCAL_WEAPON_HANDLING: Cell<bool> = const { Cell::new(false) };
 }
 
-fn aim_state_config() -> AimStateConfig {
-    Config::lock_query(|c| c.controllers.aim_state)
-}
-
 fn controllers() -> bool {
     scheme::is_controllers()
 }
 
-/// Whether the part selected by `toggle` acts now.
-fn active(toggle: impl Fn(&AimStateConfig) -> bool) -> bool {
-    let cfg = aim_state_config();
-    part_active(toggle(&cfg), cfg.without_controllers, controllers())
+/// Whether the arm aim IK skip acts now: its switch is on, under the controller scheme.
+fn skip_arm_ik() -> bool {
+    Config::lock_query(|c| c.controllers.aim_state.skip_arm_ik) && controllers()
 }
 
 /// The local player character behind `character`, or `None` for any other character.
@@ -412,7 +386,7 @@ fn handle_aiming_input_player(character: *mut Character, dt: f32) {
         return original();
     };
     let words = unsafe { StateWords::of(c) };
-    let Some(words) = words.filter(|_| active(|cfg| cfg.pin)) else {
+    let Some(words) = words.filter(|_| controllers()) else {
         STATUS.lock().pin.active = false;
         return original();
     };
@@ -446,7 +420,7 @@ fn pre_sim_update_grapple(character: *mut Character, dt: f32) {
     let Some(c) = (unsafe { local(character) }) else {
         return;
     };
-    let pinned = active(|cfg| cfg.pin_grapple);
+    let pinned = controllers();
     let was_aiming = c.m_AimFlags.contains(AimState::m_AimingGrapple);
     if pinned {
         c.m_AimFlags.remove(AimState::m_AimingGrapple);
@@ -460,7 +434,7 @@ fn pre_sim_update_grapple(character: *mut Character, dt: f32) {
 /// Skipping `Update` alone keeps the tasks' enter and exit bookkeeping.
 fn skip_ik_task(ctx: *mut StateContext, task: IkTask) -> bool {
     let local = unsafe { character_from_context(ctx) }.is_some_and(|c| c.m_IsLocalCharacter);
-    if !local || !active(|cfg| cfg.skip_arm_ik) {
+    if !local || !skip_arm_ik() {
         return false;
     }
     if !ik_task_owned(task, hands::ik_owned()) {
@@ -554,18 +528,10 @@ fn update_weapon_aiming(character: *mut Character, target: *const Vector3) {
             data: point.to_array(),
         };
     }
-    let cfg = aim_state_config();
     let on_foot =
         matches!(mode::current().mode, Mode::OnFoot(_)) && !unsafe { c.IsInMountedGunState() };
     let control = unsafe { c.m_ControlParameters.as_mut() };
-    let Some(control) = control.filter(|_| {
-        on_foot
-            && part_active(
-                cfg.neutral_aim_point,
-                cfg.without_controllers,
-                controllers(),
-            )
-    }) else {
+    let Some(control) = control.filter(|_| on_foot && controllers()) else {
         STATUS.lock().neutral_point = None;
         return;
     };
@@ -576,7 +542,7 @@ fn update_weapon_aiming(character: *mut Character, target: *const Vector3) {
     let point = neutral_aim_point(
         headpose::anchor().unwrap_or(position),
         forward,
-        cfg.neutral_aim_distance_m.max(0.0),
+        NEUTRAL_AIM_DISTANCE_M,
     );
     control.m_AimTargetWeapons = Vector3 {
         data: point.to_array(),
@@ -605,7 +571,7 @@ fn wall_penetration_update(
     };
     // `m_User` is a `weak_ptr<CCharacter>`; its first word is the character.
     let user = weapon.m_User[0] as *mut Character;
-    if unsafe { local(user) }.is_none() || !active(|cfg| cfg.clear_wall_block) {
+    if unsafe { local(user) }.is_none() || !controllers() {
         return;
     }
     let was_blocked = weapon.m_IsWeaponPenetratingWallIfInAim
@@ -645,7 +611,7 @@ fn update_weapon_handling(inventory: *mut Inventory, dt: f32) {
 
 /// The mental-state cuts around the local player's weapon handling, `original`.
 fn update_local_weapon_handling(c: &mut Character, words: Option<StateWords>, original: impl Fn()) {
-    let Some(words) = words.filter(|_| active(|cfg| cfg.mental_state_cuts)) else {
+    let Some(words) = words.filter(|_| controllers()) else {
         STATUS.lock().mental.draw_blocked = false;
         return original();
     };
@@ -701,19 +667,14 @@ fn watched_act(id: i32) -> Option<WatchedAct> {
     }
 }
 
+/// How far ahead of the head the neutral aim point sits, metres.
+pub(crate) const NEUTRAL_AIM_DISTANCE_M: f32 = 25.0;
+
 static WATCHED_ACT_IDS: OnceLock<[i32; 2]> = OnceLock::new();
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parts_act_under_the_controller_scheme_or_when_forced() {
-        assert!(part_active(true, false, true));
-        assert!(!part_active(true, false, false));
-        assert!(part_active(true, true, false));
-        assert!(!part_active(false, true, true));
-    }
 
     #[test]
     fn state_bits_split_into_words() {

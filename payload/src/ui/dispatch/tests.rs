@@ -344,7 +344,6 @@ fn actual_runtime_dispatch_renders_controls_then_live_status_without_a_renderer(
             "Enabled (bring up the OpenXR session)",
             "Native per-eye resolution",
             "Desktop mirror",
-            "Body IK",
             "Mod-owned back buffer",
             "Direct eye blit",
         ] {

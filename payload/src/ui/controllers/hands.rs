@@ -11,9 +11,7 @@ use crate::{
             held,
             ik::HandIkStatus,
             late::{HandLateStatus, LateStatus},
-            parts,
-            reach::{self, ReachConfig},
-            rig,
+            parts, reach, rig,
             tiers::{HandTier, HandTierTable, TierState, TierStatus},
         },
         presentation,
@@ -165,43 +163,6 @@ fn mm(metres: Option<f32>) -> String {
     metres.map_or("none".to_owned(), |m| format!("{:.0} mm", m * 1000.0))
 }
 
-fn reach_settings(ui: &mut Ui, r: &mut ReachConfig) {
-    ui.checkbox(
-        &mut r.measured_remap,
-        "Remap about Rico's measured shoulders",
-    )
-    .on_hover_text(
-        "Scale the hands' offsets from your shoulders by Rico's measured arm length over yours, \
-             about his animated shoulder joints. Off, the estimated remap applies when \
-             \"Remap hand reach\" is on.",
-    );
-    ui.add(
-        egui::Slider::new(&mut r.shoulder_smoothing_s, 0.0..=1.0).text("Shoulder smoothing (s)"),
-    );
-    ui.checkbox(&mut r.reach_pull, "Pull the torso near full extension")
-        .on_hover_text("Ramp the wrist pull up so Rico's shoulder and chest follow a reach.");
-    ui.add_enabled_ui(r.reach_pull, |ui| {
-        ui.add(egui::Slider::new(&mut r.pull_start, 0.5..=1.2).text("Pull starts at (× arm)"));
-        ui.add(egui::Slider::new(&mut r.pull_full, 0.5..=1.5).text("Full pull at (× arm)"));
-        ui.add(egui::Slider::new(&mut r.pull_max, 0.0..=1.0).text("Pull at full extension"));
-    });
-    ui.checkbox(&mut r.detach, "Detach the rendered hand from a short arm")
-        .on_hover_text(
-            "Move the rendered hand off the end of an arm that cannot reach, toward the \
-             controller, up to the cap. Needs the render-time late update.",
-        );
-    ui.add_enabled_ui(r.detach, |ui| {
-        ui.add(
-            egui::Slider::new(&mut r.detach_threshold_m, 0.0..=0.05).text("Detach threshold (m)"),
-        );
-        ui.add(egui::Slider::new(&mut r.detach_cap_m, 0.0..=0.3).text("Detach cap (m)"));
-        ui.checkbox(&mut r.stretch_forearm, "Stretch the forearm to the hand");
-    });
-    if ui.button("Reset reach").clicked() {
-        *r = ReachConfig::new();
-    }
-}
-
 pub(super) fn presentation_settings(ui: &mut Ui, h: &mut HandsConfig) {
     ui.checkbox(&mut h.ik, "Hand IK")
         .on_hover_text("Drive the wrists to the controllers with HumanIK.");
@@ -211,22 +172,9 @@ pub(super) fn presentation_settings(ui: &mut Ui, h: &mut HandsConfig) {
         .on_hover_text(
             "Re-pose the spine, the head, and the arms every frame from the latest tracking.",
         );
-    ui.add_enabled_ui(h.presentation.enabled, |ui| {
-        ui.checkbox(&mut h.presentation.torso, "Bend the torso after the head");
-        ui.checkbox(
-            &mut h.presentation.arms,
-            "Solve the arms again to the hands",
-        );
-    });
-    egui::CollapsingHeader::new("Arm reach").show(ui, |ui| reach_settings(ui, &mut h.reach));
 }
 
 pub(super) fn hands_settings(ui: &mut Ui, h: &mut HandsConfig) {
-    ui.checkbox(
-        &mut h.suppress_secondary_ik,
-        "Switch off the game's secondary hand IK",
-    )
-    .on_hover_text("The weapon off-hand grip, the grapple fire arm, and the parachute handles.");
     ui.checkbox(&mut h.rigid_grip, "Rigid grip").on_hover_text(
         "Hold a gun fixed in a controller-driven hand, whatever the animation does.",
     );

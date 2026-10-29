@@ -1,19 +1,10 @@
-//! Checks for the aim-state pin, the controller-owned hands, per-hand aiming, and the world-space
+//! Checks for the controller-owned hands, per-hand aiming, and the world-space
 //! overlay.
 
 use crate::{
     config::validate::{Invalid, nonnegative, positive, range, vec3},
-    controllers::config::{AimConfig, AimStateConfig, HandsConfig, OverlayConfig},
+    controllers::config::{AimConfig, HandsConfig, OverlayConfig},
 };
-
-/// Check the aim-state pin's settings. Paths are relative to `controllers.aim_state`.
-pub(super) fn aim_state(c: &AimStateConfig) -> Result<(), Invalid> {
-    nonnegative(
-        "aim_state.neutral_aim_distance_m",
-        c.neutral_aim_distance_m,
-        10_000.0,
-    )
-}
 
 /// Check the controller-owned hands' settings. Paths are relative to `controllers.hands`.
 pub(super) fn hands(c: &HandsConfig) -> Result<(), Invalid> {
@@ -37,22 +28,7 @@ pub(super) fn hands(c: &HandsConfig) -> Result<(), Invalid> {
         c.anchor.swing_scale,
         -100.0,
         100.0,
-    )?;
-    let reach = &c.reach;
-    nonnegative(
-        "hands.reach.shoulder_smoothing_s",
-        reach.shoulder_smoothing_s,
-        60.0,
-    )?;
-    nonnegative("hands.reach.pull_start", reach.pull_start, 10.0)?;
-    nonnegative("hands.reach.pull_full", reach.pull_full, 10.0)?;
-    range("hands.reach.pull_max", reach.pull_max, 0.0, 1.0)?;
-    nonnegative(
-        "hands.reach.detach_threshold_m",
-        reach.detach_threshold_m,
-        1.0,
-    )?;
-    nonnegative("hands.reach.detach_cap_m", reach.detach_cap_m, 1.0)
+    )
 }
 
 /// Check the per-hand aiming settings. Paths are relative to `controllers.aim`.

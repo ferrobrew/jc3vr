@@ -18,16 +18,15 @@ pub(crate) mod runtime;
 pub mod skeleton;
 pub mod torso;
 
-#[cfg(test)]
-pub(crate) mod harness;
-
 use glam::Quat;
 use parking_lot::Mutex;
 
 pub use crate::controllers::body::rig::{config::RigConfig, root::lean_allowance};
 use crate::{
     config::Config,
-    controllers::body::rig::torso::{TorsoEstimate, wrap, yaw_forward, yaw_of},
+    controllers::body::rig::torso::{
+        CHEST_LIMIT_DEG, FOLLOW_DEADBAND_DEG, TorsoEstimate, wrap, yaw_forward, yaw_of,
+    },
     headpose::{self, xr::FollowSettings},
     hooks,
 };
@@ -39,8 +38,8 @@ pub fn estimate() -> Option<TorsoEstimate> {
 
 /// Follow only a committed fit. A missing fit must not turn into a raw head-yaw request.
 pub fn follow_settings() -> FollowSettings {
-    let config = Config::lock_query(|c| c.controllers.body.rig.torso);
-    if !config.follow || headpose::source() != headpose::Source::Vr || !hooks::in_gameplay() {
+    let follow = Config::lock_query(|c| c.controllers.body.rig.torso.follow);
+    if !follow || headpose::source() != headpose::Source::Vr || !hooks::in_gameplay() {
         return FollowSettings::OFF;
     }
     let Some(yaw) = runtime::follow_yaw() else {
@@ -49,7 +48,7 @@ pub fn follow_settings() -> FollowSettings {
     FollowSettings {
         enabled: true,
         torso: Some(yaw),
-        deadband_deg: config.follow_deadband_deg,
+        deadband_deg: FOLLOW_DEADBAND_DEG,
     }
 }
 
@@ -70,9 +69,7 @@ pub fn torso_turn(character_rotation: Quat) -> Option<f32> {
 
 /// The committed chest turn, bounded for the remaining pre-solve IK consumers.
 pub fn chest_turn(character_rotation: Quat) -> Option<f32> {
-    let limit = Config::lock_query(|c| c.controllers.body.rig.torso.chest_limit_deg)
-        .max(0.0)
-        .to_radians();
+    let limit = CHEST_LIMIT_DEG.to_radians();
     let turn = torso_turn(character_rotation).map(|turn| wrap(turn).clamp(-limit, limit));
     *CHEST_TURN.lock() = turn;
     turn

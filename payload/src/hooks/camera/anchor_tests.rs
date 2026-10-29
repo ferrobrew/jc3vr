@@ -23,15 +23,6 @@ fn roots() -> [Mat4; 2] {
     ]
 }
 
-fn settings() -> CameraConfig {
-    CameraConfig {
-        use_eye_matrices: true,
-        head_offset: Vec3::ZERO,
-        body_offset: Vec3::ZERO,
-        ..CameraConfig::new()
-    }
-}
-
 fn capture_pair(discontinuous: bool) -> Pair {
     let mut history = History::new();
     let id = identity_fixture();
@@ -51,7 +42,7 @@ fn history_publication_camera_uses_each_nonidentity_moving_root_and_complete_geo
     let pair = capture_pair(false);
     let geometry = pair.geometry();
     let mut publication = HeadPoseState::default();
-    publication.publish_anchors(geometry, Vec3::ZERO, None);
+    publication.publish_anchors(geometry, None);
     let cockpit = Vec3::new(0.1, -0.03, 0.02);
     let follow = [Quat::from_rotation_y(0.3), Quat::from_rotation_y(-0.5)];
     let positions = std::array::from_fn::<_, 2, _>(|i| {
@@ -63,7 +54,7 @@ fn history_publication_camera_uses_each_nonidentity_moving_root_and_complete_geo
             geometry[i].head,
             1.0,
         );
-        camera_position(&pose, follow[i], &settings(), geometry[i], Source::Vr)
+        camera_position(&pose, follow[i], geometry[i], Source::Vr)
     });
     let expected = std::array::from_fn::<_, 2, _>(|i| {
         let (_, body, _) = geometry[i].root.to_scale_rotation_translation();
@@ -97,14 +88,9 @@ fn discontinuity_collapses_whole_sim_pose_before_camera_interpolation() {
     let input = Quat::from_euler(glam::EulerRot::YXZ, 0.8, -0.3, 0.2);
     let (_, body, _) = pair.current.root.to_scale_rotation_translation();
     let current_orientation = body * input;
-    let offset = Vec3::new(0.2, -0.1, 0.3);
-    publication.publish_anchors(geometry, offset, Some(current_orientation));
+    publication.publish_anchors(geometry, Some(current_orientation));
     let poses = publication.test_poses();
-    assert!(
-        poses[0]
-            .position
-            .abs_diff_eq(geometry[1].head + current_orientation * offset, 1.0e-5)
-    );
+    assert!(poses[0].position.abs_diff_eq(geometry[1].head, 1.0e-5));
     assert!(
         poses[0]
             .orientation
@@ -112,13 +98,7 @@ fn discontinuity_collapses_whole_sim_pose_before_camera_interpolation() {
     );
     assert!(!poses[0].orientation.abs_diff_eq(old.orientation, 1.0e-4));
     let positions = std::array::from_fn::<_, 2, _>(|i| {
-        camera_position(
-            &poses[i],
-            Quat::IDENTITY,
-            &settings(),
-            geometry[i],
-            Source::Sim,
-        )
+        camera_position(&poses[i], Quat::IDENTITY, geometry[i], Source::Sim)
     });
     for alpha in [0.0, 0.25, 0.5, 0.9, 1.0] {
         assert!(
@@ -165,26 +145,14 @@ fn collapsed_vr_geometry_uses_current_follow_and_frame_for_both_endpoints() {
         compose(cockpit, orientation, current_frame, geometry[1].head, 1.0),
     ];
     let mut publication = HeadPoseState::default();
-    publication.publish_anchors(geometry, Vec3::ZERO, None);
+    publication.publish_anchors(geometry, None);
     publication.test_set_poses(poses);
     let positions = [
-        camera_position(
-            &poses[0],
-            previous_follow,
-            &settings(),
-            geometry[0],
-            Source::Vr,
-        ),
-        camera_position(
-            &poses[1],
-            current_follow,
-            &settings(),
-            geometry[1],
-            Source::Vr,
-        ),
+        camera_position(&poses[0], previous_follow, geometry[0], Source::Vr),
+        camera_position(&poses[1], current_follow, geometry[1], Source::Vr),
     ];
     assert!(geometry[0].neck_delta.length() > 0.0 && geometry[0].eye_arm.length() > 0.0);
-    let wrong = camera_position(&poses[0], old_follow, &settings(), geometry[0], Source::Vr);
+    let wrong = camera_position(&poses[0], old_follow, geometry[0], Source::Vr);
     assert!(!wrong.abs_diff_eq(positions[1], 1.0e-4));
     for alpha in [0.0, 0.25, 0.5, 0.9, 1.0] {
         assert!(
@@ -214,7 +182,7 @@ fn reused_receipt_changed_root_cannot_reach_publication_or_movement_then_fresh_r
         panic!("duplicate root change rereads joints")
     }) {
         let mut state = HeadPoseState::default();
-        state.publish_anchors(pair.geometry(), Vec3::ZERO, None);
+        state.publish_anchors(pair.geometry(), None);
         panic!("incoherent pair reached native capture or movement completion");
     }
     assert_eq!(publications, 0);

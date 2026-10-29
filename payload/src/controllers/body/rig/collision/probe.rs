@@ -21,12 +21,9 @@ use std::time::{Duration, Instant};
 
 use glam::Vec3;
 
-use crate::controllers::{
-    aim::{
-        ray::Ray,
-        raycast::{self, CastOptions, RaycastError},
-    },
-    config::HeadFadeConfig,
+use crate::controllers::aim::{
+    ray::Ray,
+    raycast::{self, CastOptions, RaycastError},
 };
 
 /// The probe's result for one tick.
@@ -97,11 +94,17 @@ impl HeadProbe {
     }
 }
 
-/// The fade for a head `depth` metres into geometry: clear up to the start depth, black from the
-/// full depth, smooth between.
-pub fn fade_for_depth(depth: f32, config: &HeadFadeConfig) -> f32 {
-    let start = config.start_depth_m.max(0.0);
-    let full = config.full_depth_m.max(start + 1e-3);
+/// How deep, metres, past the obstruction the head may go before the view starts to darken.
+pub const HEAD_FADE_START_DEPTH_M: f32 = 0.05;
+
+/// How deep, metres, past the obstruction the view is fully dark.
+pub const HEAD_FADE_FULL_DEPTH_M: f32 = 0.25;
+
+/// The fade for a head `depth` metres into geometry: clear up to `start_m`, black from `full_m`,
+/// smooth between.
+pub fn fade_for_depth(depth: f32, start_m: f32, full_m: f32) -> f32 {
+    let start = start_m.max(0.0);
+    let full = full_m.max(start + 1e-3);
     let t = ((depth - start) / (full - start)).clamp(0.0, 1.0);
     if t.is_finite() {
         t * t * (3.0 - 2.0 * t)
@@ -241,13 +244,8 @@ mod tests {
 
     #[test]
     fn the_fade_ramps_between_the_depths() {
-        let config = HeadFadeConfig {
-            enabled: true,
-            start_depth_m: 0.1,
-            full_depth_m: 0.3,
-        };
-        assert_eq!(fade_for_depth(0.05, &config), 0.0);
-        assert!((fade_for_depth(0.2, &config) - 0.5).abs() < 1e-5);
-        assert_eq!(fade_for_depth(0.5, &config), 1.0);
+        assert_eq!(fade_for_depth(0.05, 0.1, 0.3), 0.0);
+        assert!((fade_for_depth(0.2, 0.1, 0.3) - 0.5).abs() < 1e-5);
+        assert_eq!(fade_for_depth(0.5, 0.1, 0.3), 1.0);
     }
 }

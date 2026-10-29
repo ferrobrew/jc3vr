@@ -11,16 +11,13 @@
 //! The frame half measures the gap once per rendered frame ([`measure`]) and publishes it with the
 //! completed chase movement it had folded into the cockpit shift then ([`ChaseFrame`]). Each
 //! simulation tick takes away what the chase has completed since ([`ChaseFrame::effective_gap`]).
-//! The test-only reference velocity combines the remaining gap with the head's velocity. Live
-//! movement uses the simulation-time body fit through the existing movement owner.
+//! Live movement uses the simulation-time body fit through the existing movement owner.
 //!
 //! Cockpit vectors are `(x, z)` in the cockpit frame (+X right, -Z forward); world vectors are
 //! world `(x, z)`.
 
 use glam::{Quat, Vec2, Vec3};
 
-#[cfg(test)]
-use crate::controllers::body::rig::{config::ChaseConfig, root::ledger::CompletedMovement};
 use crate::controllers::body::rig::{
     config::LeanConfig,
     lean::{Lean, lean},
@@ -54,30 +51,6 @@ impl ChaseFrame {
     pub fn effective_gap(&self, completed: Vec2) -> Vec2 {
         let gap = self.gap - (completed - self.observed);
         if gap.is_finite() { gap } else { Vec2::ZERO }
-    }
-}
-
-/// The chase velocity for a tick of `dt` seconds, world `(x, z)`: the configured share of the
-/// effective gap per tick, plus the head's velocity weighted by the feed-forward, at most the speed
-/// limit. Zero with the chase off.
-#[cfg(test)]
-pub fn velocity(
-    frame: &ChaseFrame,
-    completed: CompletedMovement,
-    dt: f32,
-    config: &ChaseConfig,
-) -> Vec2 {
-    if !config.enabled || !dt.is_finite() || dt <= 0.0 {
-        return Vec2::ZERO;
-    }
-    let gap = frame.effective_gap(completed.current);
-    let velocity = frame.head_velocity * config.feed_forward.max(0.0)
-        + gap * (config.gain.clamp(0.0, 1.0) / dt);
-    let velocity = velocity.clamp_length_max(config.max_speed_mps.max(0.0));
-    if velocity.is_finite() {
-        velocity
-    } else {
-        Vec2::ZERO
     }
 }
 
@@ -232,6 +205,10 @@ const WITHIN_LEAN_M: f32 = 1e-4;
 /// A gap between frames longer than this restarts the head's velocity, seconds.
 const HEAD_VELOCITY_GAP_S: f32 = 0.25;
 
+/// The shortest single-tick jump of the body, metres, that counts as a teleport the game made
+/// without announcing it. The threshold also grows with the body's speed ([`is_warp`]).
+pub const WARP_MIN_M: f32 = 8.0;
+
 /// Whether a single-tick body displacement of `distance` metres, at `speed` metres per second over
 /// `dt` seconds, is a teleport rather than movement: further than `min_m`, and further than three
 /// times what the speed covers, so that fast vehicles and dives never trip it.
@@ -248,7 +225,6 @@ pub fn is_warp(distance: f32, speed: f32, dt: f32, min_m: f32) -> bool {
 mod tests {
     use super::*;
 
-    const CONFIG: ChaseConfig = ChaseConfig::new();
     const DT: f32 = 1.0 / 30.0;
 
     #[test]
@@ -269,49 +245,6 @@ mod tests {
             assert!((at(head) - neutral).length() < 1e-5, "{head}");
         }
         assert_eq!(target(Vec3::NAN, Quat::IDENTITY, 0.0), Vec2::ZERO);
-    }
-
-    #[test]
-    fn the_chase_closes_a_share_of_the_gap_per_tick() {
-        let frame = ChaseFrame {
-            gap: Vec2::new(0.0, 0.1),
-            ..ChaseFrame::default()
-        };
-        let v = velocity(&frame, CompletedMovement::default(), DT, &CONFIG);
-        assert!((v * DT - Vec2::new(0.0, 0.04)).length() < 1e-6, "{v}");
-        let off = ChaseConfig {
-            enabled: false,
-            ..CONFIG
-        };
-        assert_eq!(
-            velocity(&frame, CompletedMovement::default(), DT, &off),
-            Vec2::ZERO
-        );
-    }
-
-    #[test]
-    fn there_is_no_deadzone() {
-        let frame = ChaseFrame {
-            gap: Vec2::new(0.005, 0.0),
-            ..ChaseFrame::default()
-        };
-        assert!(velocity(&frame, CompletedMovement::default(), DT, &CONFIG).x > 0.0);
-    }
-
-    #[test]
-    fn the_chase_is_capped_and_adds_the_head_velocity() {
-        let far = ChaseFrame {
-            gap: Vec2::new(5.0, 0.0),
-            ..ChaseFrame::default()
-        };
-        let v = velocity(&far, CompletedMovement::default(), DT, &CONFIG);
-        assert!((v.length() - CONFIG.max_speed_mps).abs() < 1e-5);
-        let walking = ChaseFrame {
-            head_velocity: Vec2::new(0.0, -1.4),
-            ..ChaseFrame::default()
-        };
-        let v = velocity(&walking, CompletedMovement::default(), DT, &CONFIG);
-        assert!((v - Vec2::new(0.0, -1.4)).length() < 1e-6);
     }
 
     #[test]

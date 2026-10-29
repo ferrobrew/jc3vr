@@ -14,13 +14,45 @@
 
 use glam::{Quat, Vec2, Vec3};
 
-use crate::controllers::body::{
-    procedural::{
-        config::ProceduralBodyConfig,
-        rig::{Rig, RigBone},
-        solver::{SolveInput, hips_height, hips_yaw},
-    },
-    rig::config::PelvisConfig,
+use crate::controllers::body::procedural::{
+    config::ProceduralBodyConfig,
+    rig::{Rig, RigBone},
+    solver::{SolveInput, hips_height, hips_yaw},
+};
+
+/// The pelvis: held under the neck pivot by a stiff spring, hinged back by a share of the lean, and
+/// leaning into the body's motion.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct PelvisTuning {
+    /// How quickly the pelvis follows its target, seconds (the time constant of a critically damped
+    /// spring): short, so a quick lean bends the spine first and the pelvis is otherwise held.
+    pub follow_s: f32,
+    /// How far back the pelvis goes per metre of lean, as a share: the hip hinge.
+    pub hinge_share: f32,
+    /// The forward lean per metre per second of speed, radians.
+    pub speed_lean: f32,
+    /// The most the speed leans the body, radians.
+    pub max_speed_lean: f32,
+    /// The forward lean per metre per second squared of acceleration, radians.
+    pub accel_lean: f32,
+    /// The most the acceleration leans the body either way, radians.
+    pub max_accel_lean: f32,
+    /// The most a sideways acceleration rolls the body, radians.
+    pub max_roll: f32,
+    /// How much the measured velocity and acceleration are smoothed, seconds.
+    pub motion_smoothing_s: f32,
+}
+
+/// The pelvis's tuning.
+pub const PELVIS: PelvisTuning = PelvisTuning {
+    follow_s: 0.06,
+    hinge_share: 0.3,
+    speed_lean: 0.035,
+    max_speed_lean: 0.14,
+    accel_lean: 0.02,
+    max_accel_lean: 0.1,
+    max_roll: 0.08,
+    motion_smoothing_s: 0.1,
 };
 
 /// Where the pelvis rests before the hinge and the motion: over the middle of the stance the root
@@ -47,7 +79,7 @@ pub fn rest(rig: &Rig, input: &SolveInput, config: &ProceduralBodyConfig) -> Vec
 
 /// The pelvis's target: the rest place, moved back by the configured share of the `lean` the chase
 /// leaves alone (the hip hinge) and by the motion lean's `motion` offset.
-pub fn target(rest: Vec2, lean: Vec2, motion: Vec2, config: &PelvisConfig) -> Vec2 {
+pub fn target(rest: Vec2, lean: Vec2, motion: Vec2, config: &PelvisTuning) -> Vec2 {
     let lean = if lean.is_finite() { lean } else { Vec2::ZERO };
     let motion = if motion.is_finite() {
         motion
@@ -100,7 +132,7 @@ impl MotionLean {
         velocity: Vec2,
         dt: f32,
         spine_m: f32,
-        config: &PelvisConfig,
+        config: &PelvisTuning,
     ) -> MotionLeanOut {
         let velocity = if velocity.is_finite() {
             velocity
@@ -124,7 +156,7 @@ pub fn lean(
     velocity: Vec2,
     acceleration: Vec2,
     spine_m: f32,
-    config: &PelvisConfig,
+    config: &PelvisTuning,
 ) -> MotionLeanOut {
     let speed = velocity.length();
     let forward = if speed > MIN_LEAN_SPEED_MPS {
@@ -236,7 +268,7 @@ fn ease(dt: f32, tau: f32) -> f32 {
 mod tests {
     use super::*;
 
-    const CONFIG: PelvisConfig = PelvisConfig::new();
+    const CONFIG: PelvisTuning = PELVIS;
     const SPINE: f32 = 0.55;
 
     #[test]

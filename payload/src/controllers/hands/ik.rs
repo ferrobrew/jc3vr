@@ -454,7 +454,7 @@ unsafe fn queue(character: *mut Character, plan: &HandPlan, arms: Option<&ArmCon
     }
     LOCAL_CHARACTER.store(character as *mut Character as usize, Ordering::Relaxed);
 
-    let smoothing = Config::lock_query(|c| c.controllers.hands.reach.shoulder_smoothing_s);
+    let smoothing = reach::REACH.shoulder_smoothing_s;
     let measured = match unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() } {
         Some(controller) => unsafe { rig::measure(character, controller, smoothing) },
         None => {
@@ -494,17 +494,19 @@ unsafe fn queue(character: *mut Character, plan: &HandPlan, arms: Option<&ArmCon
         };
     }
 
-    // The switch acts for every driven hand, whether or not its target could be queued: the
-    // controllers own the arm either way, and the game's secondary targets would otherwise move a
-    // hand the player is holding elsewhere. It acts at the `SECONDARY` pass's entry, after the
-    // state tasks that write the keys inside this pass.
-    let suppress = plan
-        .active
-        .as_ref()
-        .is_some_and(|active| active.config.hands.suppress_secondary_ik);
+    // The game's secondary hand IK (the weapon's off-hand grip, the grapple fire arm, and the
+    // parachute handles) is switched off for every driven hand, whether or not its target could be
+    // queued: the controllers own the arm either way, and the game's secondary targets would
+    // otherwise move a hand the player is holding elsewhere. It acts at the `SECONDARY` pass's
+    // entry, after the state tasks that write the keys inside this pass.
+    let driven = if plan.active.is_some() {
+        plan.driven()
+    } else {
+        [false; 2]
+    };
     SECONDARY_PLAN.set(Some(SecondaryPlan {
         character: character as *mut Character as usize,
-        driven: if suppress { plan.driven() } else { [false; 2] },
+        driven,
     }));
 
     let mut ticks = TICKS.lock();
@@ -744,7 +746,7 @@ unsafe fn queue_hand(
     }
 
     let cfg = &active.config.hands;
-    let reach_cfg = &cfg.reach;
+    let reach_cfg = &reach::REACH;
     let extension = arm
         .filter(|a| a.length > 0.0)
         .map(|a| target_position.distance(a.shoulder_model) / a.length);

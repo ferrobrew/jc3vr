@@ -29,7 +29,7 @@
 //! draws run concurrently on multiple render worker threads, so the spoof flag and the palette
 //! copy are thread-local.
 
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
 use detours_macro::detour;
 use jc3gi::{
@@ -47,7 +47,6 @@ use jc3gi::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
     controllers::{
         hands::palette::PaletteLayout,
         presentation::{self, DrawEdit},
@@ -64,18 +63,6 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&RENDER_BLOCK_CHARACTER_SET_MATRIX_PALETTE_BINDER)
         .with_static_binder(&RENDER_BLOCK_CHARACTER_SKIN_SET_MATRIX_PALETTE_BINDER)
         .with_static_binder(&RENDER_BLOCK_LIGHT_GLOW_DRAW_BINDER)
-}
-
-/// One-shot diagnostics: while positive, each character-block draw near the player logs its
-/// class, instance transform, and per-batch skeleton lookups, then decrements. Armed from the
-/// debug UI to establish ground truth about the batch bone-index space and transform placement.
-pub static DUMP_DRAWS: AtomicI32 = AtomicI32::new(0);
-
-/// Publish the local player's root position pair (the T0 and T1 world-matrix translations), from
-/// the character hook. Diagnostics only (the dump's distance columns and focus filter); ownership
-/// uses the exact instance-info pointers below.
-pub fn publish_player_root(t0: glam::Vec3, t1: glam::Vec3) {
-    *PLAYER_ROOT.lock() = Some((t0, t1));
 }
 
 /// Publish the `CRBIInfo` pointers of the local player's model instances, slot-for-slot (zero for
@@ -142,8 +129,6 @@ fn render_block_character_draw(
     rc: *mut RenderContext,
     info: *const RBIInfo,
 ) {
-    let batches = unsafe { this.as_ref() }.map(|b| (b.m_SkinBatchesBegin, b.m_SkinBatchesEnd));
-    unsafe { maybe_dump("Character::Draw", this as usize, batches, rc, info) };
     unsafe { begin_player_draw(rc, info) };
     RENDER_BLOCK_CHARACTER_DRAW
         .get()
@@ -160,8 +145,6 @@ fn render_block_character_draw_z(
     rc: *mut RenderContext,
     info: *const RBIInfo,
 ) {
-    let batches = unsafe { this.as_ref() }.map(|b| (b.m_SkinBatchesBegin, b.m_SkinBatchesEnd));
-    unsafe { maybe_dump("Character::DrawZ", this as usize, batches, rc, info) };
     unsafe { begin_player_draw(rc, info) };
     RENDER_BLOCK_CHARACTER_DRAW_Z
         .get()
@@ -178,8 +161,6 @@ fn render_block_character_skin_draw(
     rc: *mut RenderContext,
     info: *const RBIInfo,
 ) {
-    let batches = unsafe { this.as_ref() }.map(|b| (b.m_SkinBatchesBegin, b.m_SkinBatchesEnd));
-    unsafe { maybe_dump("CharacterSkin::Draw", this as usize, batches, rc, info) };
     unsafe { begin_player_draw(rc, info) };
     RENDER_BLOCK_CHARACTER_SKIN_DRAW
         .get()
@@ -196,8 +177,6 @@ fn render_block_character_skin_draw_z(
     rc: *mut RenderContext,
     info: *const RBIInfo,
 ) {
-    let batches = unsafe { this.as_ref() }.map(|b| (b.m_SkinBatchesBegin, b.m_SkinBatchesEnd));
-    unsafe { maybe_dump("CharacterSkin::DrawZ", this as usize, batches, rc, info) };
     unsafe { begin_player_draw(rc, info) };
     RENDER_BLOCK_CHARACTER_SKIN_DRAW_Z
         .get()
@@ -270,11 +249,6 @@ static COLLAPSE_BONE_LEN: AtomicUsize = AtomicUsize::new(0);
 static COLLAPSE_TARGET: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
 static COLLAPSE_TARGET_VALID: AtomicBool = AtomicBool::new(false);
 
-/// The local player's root position pair, published by the character hook for the dump's
-/// distance display; `None` until a local character exists.
-static PLAYER_ROOT: parking_lot::Mutex<Option<(glam::Vec3, glam::Vec3)>> =
-    parking_lot::Mutex::new(None);
-
 /// The `CRBIInfo` pointers of the local player's model instances, slot-for-slot (zero = empty).
 static PLAYER_RBI_INFOS: [AtomicUsize; PLAYER_MODEL_SLOTS] =
     [const { AtomicUsize::new(0) }; PLAYER_MODEL_SLOTS];
@@ -308,10 +282,10 @@ unsafe fn hand_palette_edit(rc: *mut RenderContext, info: *const RBIInfo) -> Opt
     presentation::draw_edit(glam::Mat4::from(instance), crate::hooks::camera::last_dtf())
 }
 
-/// Whether this draw belongs to the local player's body model in a non-shadow pass with the hide
-/// enabled. Ownership is pointer identity: the draw's `info` is the owning model instance's
-/// embedded `CRBIInfo`, matched against the body slot's published pointer. Fail-safe: any missing
-/// piece (config off, shadow pass, nothing published) means "draw normally".
+/// Whether this draw belongs to the local player's body model in a non-shadow pass. Ownership is
+/// pointer identity: the draw's `info` is the owning model instance's embedded `CRBIInfo`, matched
+/// against the body slot's published pointer. Fail-safe: any missing piece (a shadow pass, nothing
+/// published) means "draw normally".
 unsafe fn should_hide_facial(rc: *mut RenderContext, info: *const RBIInfo) -> bool {
     // The pointer identity first: it rules out every draw but the player's body without a lock,
     // and this runs for every character draw.
@@ -329,7 +303,7 @@ unsafe fn should_hide_facial(rc: *mut RenderContext, info: *const RBIInfo) -> bo
     {
         return false;
     }
-    Config::lock_query(|c| c.camera.hide_head_draws)
+    true
 }
 
 const PALETTE_BUF_LEN: usize = 256;
@@ -489,100 +463,11 @@ unsafe fn spoofed_matrices(
                 collapse_bone(slot.load(Ordering::Relaxed) as usize, &mut buf[..]);
             }
         }
-        if DUMP_DRAWS.load(Ordering::Relaxed) > 0 {
-            tracing::info!(
-                target: "render_block_dump",
-                "  spoof batch={:?} size={} collapse_hits={} hand_hits={} \
-                 target=({:.2},{:.2},{:.2}) whole={} layout={} (col_err={:.2} row_err={:.2})",
-                batch,
-                b.BatchSize,
-                collapse_hits,
-                hand_hits,
-                target[0],
-                target[1],
-                target[2],
-                collapse_whole_batch,
-                if row_layout { "row" } else { "col" },
-                col_error,
-                row_error,
-            );
-        }
         // The pointer stays valid for the original call below: the thread-local outlives the
         // draw, and the engine copies the constants into the command stream at call time (its
         // own callers pass stack buffers).
         Some(buf.as_ptr())
     })
-}
-
-/// Log one draw's ground truth while [`DUMP_DRAWS`] is armed: the block class and pointer, the
-/// pass status, the instance transform against the player roots, the collapse indices in use, and
-/// every batch's skeleton lookup (capped). Draws further than 10 m from the player are skipped so
-/// the dump stays focused.
-unsafe fn maybe_dump(
-    class: &str,
-    block: usize,
-    batches: Option<(*mut SkinBatch, *mut SkinBatch)>,
-    rc: *mut RenderContext,
-    info: *const RBIInfo,
-) {
-    if DUMP_DRAWS.load(Ordering::Relaxed) <= 0 {
-        return;
-    }
-    let Some((rc_ref, info_ref)) = (unsafe { rc.as_ref() }).zip(unsafe { info.as_ref() }) else {
-        return;
-    };
-    let Some((root_t0, root_t1)) = *PLAYER_ROOT.lock() else {
-        return;
-    };
-    let mut matrix = Matrix4::default();
-    unsafe { info_ref.GetMatrix(&mut matrix, rc_ref.m_RenderFrameIndex as i32) };
-    let translation = glam::Vec3::new(matrix.data[12], matrix.data[13], matrix.data[14]);
-    let d0 = translation.distance(root_t0);
-    let d1 = translation.distance(root_t1);
-    if d0.min(d1) > 10.0 {
-        return;
-    }
-    // Which of the player's model-instance slots (if any) this draw belongs to.
-    let slot = PLAYER_RBI_INFOS
-        .iter()
-        .position(|slot| slot.load(Ordering::Relaxed) == info as usize && info as usize != 0)
-        .map(|i| i as isize)
-        .unwrap_or(-1);
-    if DUMP_DRAWS.fetch_sub(1, Ordering::Relaxed) <= 0 {
-        return;
-    }
-    let len = COLLAPSE_BONE_LEN.load(Ordering::Relaxed);
-    let collapse: Vec<u32> = COLLAPSE_BONES[..len]
-        .iter()
-        .map(|c| c.load(Ordering::Relaxed))
-        .collect();
-    let mut lines = String::new();
-    if let Some((begin, end)) = batches {
-        let mut batch = begin;
-        while !batch.is_null() && batch < end {
-            let b = unsafe { &*batch };
-            let mut bones = Vec::new();
-            if !b.BatchToSkeletonLookup.is_null() {
-                for i in 0..(b.BatchSize.max(0) as usize).min(48) {
-                    bones.push(unsafe { *b.BatchToSkeletonLookup.add(i) });
-                }
-            }
-            lines.push_str(&format!(
-                "\n  batch size={} indices={} offset={} bones={:?}",
-                b.BatchSize, b.Size, b.Offset, bones
-            ));
-            batch = unsafe { batch.add(1) };
-        }
-    }
-    tracing::info!(
-        target: "render_block_dump",
-        "{class} block={block:#x} status={:#x} tidx={} pos=({:.2},{:.2},{:.2}) d0={d0:.2} d1={d1:.2} slot={slot} collapse={collapse:?}{lines}",
-        rc_ref.m_RenderStatus,
-        rc_ref.m_RenderFrameIndex,
-        translation.x,
-        translation.y,
-        translation.z,
-    );
 }
 
 /// The light-glow sprite is a screen-space billboard whose vertices are placed on the CPU by

@@ -1,398 +1,32 @@
-//! The Camera tab: VR head/body camera settings, plus the shared matrix-grid widget.
+//! The head and view feature: the camera switch and the frozen-pose diagnostic, the headpose
+//! readout, the grapple comfort and turn settings it shares with other features, and the shared
+//! matrix-grid widget.
 
 use egui::Slider;
 use jc3gi::types::math::Matrix4;
 
 use crate::{
-    config,
-    controllers::body::rig::{
-        live_observation::{
-            self, CompletionAvailability, CompletionRejection, FrameMatchAvailability,
-            MissingEvidence, NativeAvailability, RawAvailability, TrackingOriginAvailability,
-            Unavailable,
-        },
-        root::CompletionUnavailable,
-    },
-    grapple, headpose,
+    config, grapple, headpose,
     headpose::config::VrTurnMode,
     hooks,
-    hooks::character::BodyIkConfig,
-    logging, vr,
-    vr::FreezeMode,
+    vr::{self, FreezeMode, pose_control},
 };
 
 pub(crate) fn head_view(ui: &mut egui::Ui) {
-    ui.label(format!(
-        "Authored sequence camera: {:?}.",
-        hooks::camera::authored::status()
-    ));
     let mut cfg = config::edit();
-    let cs = &mut cfg.camera;
-    ui.checkbox(&mut cs.enabled, "Enabled");
-    ui.checkbox(&mut cs.always_use_t1, "Always use T1");
-    ui.checkbox(&mut cs.blurs_enabled, "Blurs");
-    ui.checkbox(&mut cs.use_eye_matrices, "Use eye matrices");
-    ui.checkbox(
-        &mut cs.hide_head_draws,
-        "Hide head (collapse facial bones; shadow keeps it)",
-    );
-    ui.checkbox(&mut cs.hide_head_scale, "Hide head (legacy bone scale)");
-    if ui.button("Dump character block draws (log)").clicked() {
-        hooks::graphics_engine::render_block::DUMP_DRAWS
-            .store(48, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    // With eye matrices on, the head sliders are a correction relative to the measured eye
-    // position; with them off, they are the whole arm from the neck pivot.
-    let head_label = if cs.use_eye_matrices {
-        "Head (from eyes)"
-    } else {
-        "Head (from neck)"
-    };
-    ui.add(Slider::new(&mut cs.head_offset.x, -1.0..=1.0).text(format!("{head_label} X")));
-    ui.add(Slider::new(&mut cs.head_offset.y, -1.0..=1.0).text(format!("{head_label} Y")));
-    ui.add(Slider::new(&mut cs.head_offset.z, -1.0..=1.0).text(format!("{head_label} Z")));
-
-    ui.add(Slider::new(&mut cs.body_offset.x, -1.0..=1.0).text("Body X"));
-    ui.add(Slider::new(&mut cs.body_offset.y, -1.0..=1.0).text("Body Y"));
-    ui.add(Slider::new(&mut cs.body_offset.z, -1.0..=1.0).text("Body Z"));
-
-    ui.collapsing("Headpose", |ui| egui_debug_headpose(ui, &mut cfg.headpose));
+    ui.checkbox(&mut cfg.camera.enabled, "Enabled");
     ui.collapsing("Frozen pose (diagnostic)", |ui| {
         egui_frozen_pose(ui, &mut cfg.vr);
     });
 }
 
-pub(crate) fn grapple_comfort(ui: &mut egui::Ui) {
-    egui_grapple(ui, &mut config::edit().headpose.grapple);
-}
-
-pub(crate) fn body_ik(ui: &mut egui::Ui) {
-    egui_debug_body_ik(ui, &mut config::edit().body_ik);
-    ui.collapsing(
-        "Body observation evidence (read-only)",
-        body_observation_evidence,
-    );
-}
-
-fn body_observation_evidence(ui: &mut egui::Ui) {
-    let status = live_observation::status();
-    match status.raw.availability {
-        RawAvailability::Unavailable(reason) => {
-            ui.label(format!("Live tracking: {}.", unavailable_label(reason)));
-        }
-        RawAvailability::Observed { age } => {
-            ui.label(format!(
-                "Live tracking: captured {:.0} ms ago.",
-                age.as_secs_f64() * 1000.0
-            ));
-        }
-    }
-    if let Some(packet) = status.raw.packet {
-        ui.label(format!(
-            "Controller sequence: {}; predicted display time: {} ns; focused: {}.",
-            packet.sequence, packet.display_time_ns, packet.focused
-        ));
-        ui.label(format!(
-            "Head position/orientation valid: {}/{}; tracked: {}/{}. Present grips: {}/2.",
-            packet.head.position_valid,
-            packet.head.orientation_valid,
-            packet.head.position_tracked,
-            packet.head.orientation_tracked,
-            packet.grips.iter().flatten().count(),
-        ));
-    }
-    match status.native.availability() {
-        NativeAvailability::Unavailable(reason) => {
-            ui.label(format!(
-                "Native pre-IK capture: {}.",
-                unavailable_label(reason)
-            ));
-        }
-        NativeAvailability::Observed { age } => {
-            ui.label(format!(
-                "Native pre-IK capture: captured {:.0} ms ago.",
-                age.as_secs_f64() * 1000.0
-            ));
-        }
-    }
-    match status.completion.availability() {
-        CompletionAvailability::Unavailable(reason) => {
-            let label = match reason {
-                CompletionRejection::Diagnostic(reason) => unavailable_label(reason),
-                CompletionRejection::Source(reason) => match reason {
-                    CompletionUnavailable::NotCompleted => "not completed",
-                    CompletionUnavailable::Cleared => "movement ledger cleared",
-                    CompletionUnavailable::Teleported => "teleport transition pending",
-                    CompletionUnavailable::SourceUnavailable => "movement source unavailable",
-                    CompletionUnavailable::SequenceExhausted => {
-                        "local completion sequence exhausted"
-                    }
-                },
-            };
-            ui.label(format!("Movement completion: {label}."));
-        }
-        CompletionAvailability::Observed { age } => {
-            if let Some(completion) = status.completion.completion() {
-                ui.label(format!(
-                    "Movement completion: local sequence {}; captured {:.0} ms ago.",
-                    completion.sequence,
-                    age.as_secs_f64() * 1000.0,
-                ));
-            }
-        }
-    }
-    if let Some(completion) = status.completion.completion() {
-        let previous = completion.previous_root.w_axis.truncate();
-        let current = completion.current_root.w_axis.truncate();
-        ui.label(format!("Root positions T0/T1: {previous:?} / {current:?}."));
-        let ledger = completion.ledger;
-        ui.label(format!(
-            "Completed chase ledger previous/current: {:?} / {:?}; exact/projected: {}/{}.",
-            ledger.movement.previous,
-            ledger.movement.current,
-            ledger.counts.exact,
-            ledger.counts.projected,
-        ));
-        match ledger.request {
-            Some(request) => {
-                ui.label(format!(
-                    "Consumed request owner: {}; task/chase: {:?} / {:?}; credited: {:?} ({:?}).",
-                    request.owner.map_or("unavailable", |owner| owner.label()),
-                    request.movement.task,
-                    request.movement.chase,
-                    request.credited,
-                    request.attribution,
-                ));
-            }
-            None => {
-                ui.label("Consumed request: none; no request owner or credit.");
-            }
-        }
-    }
-    match status.frame_match.availability() {
-        FrameMatchAvailability::Unavailable(reason) => {
-            ui.label(format!("Frame/completion match: unavailable ({reason:?})."));
-        }
-        FrameMatchAvailability::Matched => {
-            if let Some(matched) = status.frame_match.matched_source() {
-                let source = matched.source;
-                let movement = source.movement();
-                let shift = source.shift();
-                let basis = source.current_basis();
-                ui.label("Frame/completion match: native capture and frame source have the same local completion token.");
-                ui.label(format!(
-                    "Frame completed movement previous/current: {:?} / {:?}.",
-                    movement.previous, movement.current,
-                ));
-                ui.label(format!(
-                    "Frame shift previous/current: {:?} / {:?}.",
-                    shift.previous, shift.current,
-                ));
-                ui.label(format!(
-                    "Current reconstruction basis: {:?}; world metres per cockpit metre: {}.",
-                    basis.body, basis.world_scale,
-                ));
-            }
-        }
-    }
-    match status.tracking_origin {
-        TrackingOriginAvailability::SameOrigin(_) => {
-            ui.label("Live tracking acquisition through composition: the held origin and exact controller receipt match.");
-        }
-        TrackingOriginAvailability::Unavailable(reason) => {
-            ui.label(format!(
-                "Live tracking acquisition through composition: unavailable ({reason:?})."
-            ));
-        }
-        TrackingOriginAvailability::DifferentOrigins => {
-            ui.label("Live tracking acquisition through composition: origin generations differ.");
-        }
-        TrackingOriginAvailability::DifferentTrackingPacket => {
-            ui.label("Live tracking acquisition through composition: controller receipts differ.");
-        }
-    }
-    ui.small("This tracking-origin evidence does not identify the independently captured root/native historical sides. Their complete origin epoch remains missing.");
-    ui.small("The completion token is local to this hook. Its request owner does not establish owners for both composition sides. The single current reconstruction basis is not a historical basis pair.");
-    ui.small("These independent captures do not form a checked body observation and do not activate body estimation or movement authority.");
-    ui.label("Missing checked-observation evidence:");
-    for missing in status.missing {
-        ui.label(match missing {
-            MissingEvidence::CompletedLedgerAndShiftPair => {
-                "Completed movement ledger and shift pair"
-            }
-            MissingEvidence::CompositionBasisPair => "Composition basis pair",
-            MissingEvidence::OwnerAtCompletion => {
-                "Transform owners for both matched composition sides"
-            }
-            MissingEvidence::OriginEpoch => "Complete tracking-origin epoch",
-            MissingEvidence::CalibrationAndScaleEpochs => "Calibration and scale epochs",
-            MissingEvidence::AuthorityEpoch => "Authority epoch",
-            MissingEvidence::PreviousNativePose => "Previous native skeleton pose",
-            MissingEvidence::SupportIdentity => "Support identity",
-        });
-    }
-}
-
-fn unavailable_label(reason: Unavailable) -> &'static str {
-    match reason {
-        Unavailable::NotCaptured => "not captured",
-        Unavailable::NoLiveTracking => "no live tracking",
-        Unavailable::MixedDisplayTimes => "head and controllers have different display times",
-        Unavailable::InvalidCapture => "invalid capture",
-        Unavailable::FuturePublication => "publication time is in the future",
-        Unavailable::Stale { .. } => "capture has expired",
-        Unavailable::OriginCountersChanged => "teleport or recenter counter changed",
-    }
-}
-
-pub(crate) fn turn_advanced(ui: &mut egui::Ui) {
-    egui_vr_turn(ui, &mut config::edit().headpose.vr_turn);
-}
-
-fn egui_debug_body_ik(ui: &mut egui::Ui, ik: &mut BodyIkConfig) {
-    ui.checkbox(&mut ik.enabled, "Enabled")
-        .on_hover_text("Drive the upper body toward the headpose via the engine's HumanIK solver.");
-    ui.checkbox(
-        &mut ik.rotation_target,
-        "Rotation target (aim head at headpose)",
-    );
-    ui.add(Slider::new(&mut ik.weight, 0.0..=1.0).text("Master weight"));
-    ui.add(Slider::new(&mut ik.head_reach_t, 0.0..=1.0).text("Head reach (translation)"));
-    ui.add(Slider::new(&mut ik.head_reach_r, 0.0..=1.0).text("Head reach (rotation)"));
-    ui.add(Slider::new(&mut ik.head_pull, 0.0..=1.0).text("Head pull (body follow)"))
-        .on_hover_text(
-            "How much reaching the head target carries into the shoulders, chest, and spine. At \
-             zero the neck absorbs it all and the torso does not move.",
-        );
-    ui.add(Slider::new(&mut ik.head_resist, 0.0..=1.0).text("Head resist"))
-        .on_hover_text("How much the head resists being displaced by other effectors' pull.");
-    ui.checkbox(&mut ik.interpolation, "Interpolation (ease reach in)");
-    ui.add(Slider::new(&mut ik.interpolation_rate, 0.0..=10.0).text("Interpolation rate"));
-    ui.checkbox(&mut ik.blend_out, "Blend out").on_hover_text(
-        "Ease the reach back out when a target stops being supplied. Off by default: the \
-             engine keeps a blending-out target alive with the stale pose it was queued with, so \
-             every gate flip leaves the hands chasing an old animation frame for the decay tail.",
-    );
-    ui.add(Slider::new(&mut ik.blend_out_rate, 0.0..=10.0).text("Blend-out rate"));
-    ui.add(Slider::new(&mut ik.lean_share, 0.0..=1.0).text("Torso lean share"))
-        .on_hover_text(
-            "How much of your lean the spine takes, as a swing about its base. This is what keeps \
-             the torso under the camera; the rest is absorbed by the neck.",
-        );
-    ui.add(Slider::new(&mut ik.pivot_drop, 0.0..=1.0).text("Pivot drop (spine → hips)"))
-        .on_hover_text(
-            "Where the torso bends. 0 is the base of the spine, right for a sideways lean; higher \
-             moves it toward the hips, which is what a forward lean actually hinges about. Lower \
-             pivot means less angle but more shoulder travel.",
-        );
-    ui.add(Slider::new(&mut ik.lean_max_deg, 0.0..=90.0).text("Torso lean max (deg)"))
-        .on_hover_text(
-            "The spine's range of motion. Also bounds the lean model where it stops being valid: \
-             with the head near or below the pivot's height there is no sane spine bend, so it \
-             saturates here rather than folding over.",
-        );
-    ui.add(Slider::new(&mut ik.yaw_share, 0.0..=1.0).text("Torso yaw share"))
-        .on_hover_text("How much of the head's turn the torso takes, about the same pivot.");
-    ui.add(Slider::new(&mut ik.shoulder_reach_t, 0.0..=1.0).text("Shoulder reach (translation)"));
-    ui.add(Slider::new(&mut ik.shoulder_pull, 0.0..=1.0).text("Shoulder pull (into the spine)"));
-    ui.add(Slider::new(&mut ik.chest_reach_r, 0.0..=1.0).text("Chest reach (rotation)"));
-    ui.checkbox(&mut ik.defer_while_aiming, "Defer to the game while aiming")
-        .on_hover_text(
-            "Stand the torso targets and hand pins down while aiming a weapon or the grapple, \
-             leaving only the head target. The game's aim IK needs the arm chain free to swing the \
-             weapon onto the aim direction; holding the wrists and girdle clamps aiming to the \
-             authored sweep cone.",
-        );
-    ui.checkbox(&mut ik.pin_hands, "Pin hands to the animated pose")
-        .on_hover_text(
-            "Hold the hands where the animation put them while the shoulders move, so the arms \
-             articulate instead of the hands sliding off the wheel.",
-        );
-    ui.add(Slider::new(&mut ik.hand_reach_t, 0.0..=1.0).text("Hand pin (position)"));
-    ui.add(Slider::new(&mut ik.hand_reach_r, 0.0..=1.0).text("Hand pin (rotation)"))
-        .on_hover_text(
-            "Holds the hands' animated orientation as well as their place. Without it they keep \
-             station but spin, and the wielded weapon's aim spins with them.",
-        );
-    ui.add(Slider::new(&mut ik.hand_resist, 0.0..=1.0).text("Hand resist"))
-        .on_hover_text("How much the hands refuse to be dragged by the shoulders' pull.");
-    ui.add(Slider::new(&mut ik.target_offset.x, -1.0..=1.0).text("Target offset X (m)"));
-    ui.add(Slider::new(&mut ik.target_offset.y, -1.0..=1.0).text("Target offset Y (m)"));
-    ui.add(Slider::new(&mut ik.target_offset.z, -1.0..=1.0).text("Target offset Z (m)"));
-
-    ui.separator();
-    let target = hooks::character::BODY_IK_TARGET;
-    let mut verbose = logging::is_target_debug(target);
-    if ui
-        .checkbox(&mut verbose, "Log body-IK state to the session log (1 Hz)")
-        .on_hover_text(
-            "Turns this subsystem up to DEBUG, for reading the numbers below after the fact \
-             instead of mid-lean. Equivalent to a body_ik=debug directive in the Diagnostics tab's \
-             filter box, without the typing.",
-        )
-        .changed()
-        && let Err(error) = logging::set_target_debug(target, verbose)
-    {
-        tracing::warn!(%error, "could not change the body-IK log level");
-    }
-
-    match hooks::character::body_ik_status() {
-        None => {
-            ui.label("Status: the character hook has not run yet.");
-        }
-        Some(status) => match status.skip {
-            Some(skip) => {
-                ui.label(format!(
-                    "Status: queuing nothing — {} (mode {:?}).",
-                    skip.label(),
-                    status.mode
-                ));
-            }
-            None => {
-                ui.label(format!(
-                    "Mode: {:?}   State id: {:#010x}",
-                    status.mode, status.state_id
-                ));
-                ui.label(format!(
-                    "Effectors: head {}, chest end {}",
-                    status.head_effector, status.chest_effector
-                ));
-                ui.label(format!(
-                    "Head target delta: {:.3} m   Room-scale offset: {:.3} m ({:+.2}, {:+.2}, \
-                     {:+.2})",
-                    status.target_delta,
-                    status.head_offset.length(),
-                    status.head_offset.x,
-                    status.head_offset.y,
-                    status.head_offset.z
-                ));
-                ui.label(format!(
-                    "Torso lean: {:.1}°   Torso yaw: {:+.1}°   Shoulders: {}/2 driven, {}/2 \
-                     mapped   Chest driven: {}   Hands pinned: {}/2{}",
-                    status.torso_lean_deg,
-                    status.torso_yaw_deg,
-                    status.shoulders_driven,
-                    status.shoulders_mapped,
-                    if status.chest_driven { "yes" } else { "no" },
-                    status.hands_pinned,
-                    if status.deferred_to_aim {
-                        "   (deferring to the game's aim)"
-                    } else {
-                        ""
-                    }
-                ));
-                ui.label(format!(
-                    "Engine-side head values: reachT {:.2}, reachR {:.2}, pull {:.2}",
-                    status.engine_reach_t, status.engine_reach_r, status.engine_pull
-                ));
-            }
-        },
-    }
-}
-
-fn egui_debug_headpose(ui: &mut egui::Ui, hp: &mut headpose::HeadPoseConfig) {
-    ui.checkbox(&mut hp.enabled, "Enabled");
+/// The camera and headpose readout: the authored camera, the headpose mode and latch, the
+/// body-relative rotation, the published position and anchors, and the engine's camera blend.
+pub(crate) fn head_view_status(ui: &mut egui::Ui) {
+    ui.label(format!(
+        "Authored sequence camera: {:?}.",
+        hooks::camera::authored::status()
+    ));
     ui.label(format!("Mode: {:?}", headpose::sim::mode()));
     ui.label(format!("Latch: {:?}", headpose::sim::latch_state()));
 
@@ -429,42 +63,14 @@ fn egui_debug_headpose(ui: &mut egui::Ui, hp: &mut headpose::HeadPoseConfig) {
     // The engine's sub-frame interpolation fraction (issue #20): stuck at 0 or 1 means the
     // engine's camera lerp is inert and the sim-tick cadence shows as judder.
     ui.label(format!("Camera dtf: {:.3}", hooks::camera::last_dtf()));
+}
 
-    if ui.button("Recenter").clicked() {
-        headpose::recenter();
-    }
+pub(crate) fn grapple_comfort(ui: &mut egui::Ui) {
+    egui_grapple(ui, &mut config::edit().headpose.grapple);
+}
 
-    ui.add(Slider::new(&mut hp.latch_threshold_deg, 0.0..=180.0).text("Latch threshold (°)"));
-    ui.add(
-        Slider::new(&mut hp.latch_disengage_threshold_deg, 0.0..=180.0)
-            .text("Latch disengage threshold (°)"),
-    );
-    ui.add(
-        Slider::new(&mut hp.free_look_yaw_limit_deg, 0.0..=180.0).text("Free-look yaw limit (°)"),
-    );
-    ui.add(
-        Slider::new(&mut hp.free_look_pitch_limit_deg, 0.0..=180.0)
-            .text("Free-look pitch limit (°)"),
-    );
-    ui.add(
-        Slider::new(&mut hp.mouse_sensitivity, 1.0..=20.0)
-            .step_by(1.0)
-            .text("Mouse sensitivity (°/unit)"),
-    );
-    ui.checkbox(&mut hp.invert_y, "Invert Y");
-    ui.add(Slider::new(&mut hp.neck_twist_start_deg, 0.0..=120.0).text("Neck twist start (°)"));
-    ui.add(Slider::new(&mut hp.neck_twist_max_deg, 0.0..=90.0).text("Neck twist max (°)"));
-    ui.checkbox(&mut hp.posture_enabled, "Body posture (invert with hangs)")
-        .on_hover_text(
-            "Fold the animated neck axis's swing away from body-up into the view, so hanging \
-             upside down inverts the camera. Deadband keeps idle sway out.",
-        );
-    ui.add(Slider::new(&mut hp.posture_deadband_deg, 0.0..=90.0).text("Posture deadband (°)"));
-    ui.add(Slider::new(&mut hp.posture_full_deg, 0.0..=180.0).text("Posture full at (°)"));
-    ui.add(Slider::new(&mut hp.posture_smoothing_s, 0.0..=2.0).text("Posture smoothing (s)"));
-    ui.add(Slider::new(&mut hp.position_offset.x, -1.0..=1.0).text("Roomscale offset X (m)"));
-    ui.add(Slider::new(&mut hp.position_offset.y, -1.0..=1.0).text("Roomscale offset Y (m)"));
-    ui.add(Slider::new(&mut hp.position_offset.z, -1.0..=1.0).text("Roomscale offset Z (m)"));
+pub(crate) fn turn_advanced(ui: &mut egui::Ui) {
+    egui_vr_turn(ui, &mut config::edit().headpose.vr_turn);
 }
 
 /// The frozen-pose diagnostic ([`crate::vr::pose_control`]): pin the rendered pose, then drive it by
@@ -507,12 +113,12 @@ fn egui_frozen_pose(ui: &mut egui::Ui, vr: &mut vr::VrConfig) {
     // the live cockpit pose stands in as a readout -- but only in the modes whose numbers are in that
     // frame. The full-camera mode has no live stand-in (the cockpit pose is a different quantity in a
     // different frame, and showing it here would read as a world position), so it says so instead.
-    let frozen = vr::pose_control::current();
+    let frozen = pose_control::current();
     let values = match (frozen, vr.freeze_mode) {
         (Some(values), _) => Some(values),
         (None, FreezeMode::FullCamera) => None,
         (None, _) => headpose::xr::cockpit_pose()
-            .map(|p| vr::pose_control::PoseValues::from_pose(p.position, p.orientation)),
+            .map(|p| pose_control::PoseValues::from_pose(p.position, p.orientation)),
     };
     // The two frames are not interchangeable: cockpit metres are head travel from the recenter
     // baseline, world metres are the camera's position in the game world. A number whose frame is
@@ -532,8 +138,8 @@ fn egui_frozen_pose(ui: &mut egui::Ui, vr: &mut vr::VrConfig) {
         return;
     };
 
-    let step_m = vr.freeze_pose_step_m;
-    let step_deg = vr.freeze_pose_step_deg;
+    let step_m = pose_control::STEP_M;
+    let step_deg = pose_control::STEP_DEG;
     let mut changed = false;
     ui.add_enabled_ui(frozen.is_some(), |ui| {
         egui::Grid::new("frozen_pose_grid")
@@ -547,12 +153,12 @@ fn egui_frozen_pose(ui: &mut egui::Ui, vr: &mut vr::VrConfig) {
                 changed |= pose_row(ui, "Roll", &mut values.roll_deg, step_deg, "°");
             });
         if changed {
-            vr::pose_control::set_current(values);
+            pose_control::set_current(values);
         }
 
         if ui
             .button("Reset to captured pose")
-            .on_hover_text(match vr::pose_control::base() {
+            .on_hover_text(match pose_control::base() {
                 Some(base) => format!(
                     "Return to the pose captured when the freeze engaged: ({:+.3}, {:+.3}, {:+.3}) m, \
                      yaw {:+.2}°, pitch {:+.2}°, roll {:+.2}°.",
@@ -567,24 +173,9 @@ fn egui_frozen_pose(ui: &mut egui::Ui, vr: &mut vr::VrConfig) {
             })
             .clicked()
         {
-            vr::pose_control::reset();
+            pose_control::reset();
         }
     });
-
-    ui.add(
-        egui::DragValue::new(&mut vr.freeze_pose_step_m)
-            .speed(0.01)
-            .range(0.001..=10.0)
-            .prefix("Translation step: ")
-            .suffix(" m"),
-    );
-    ui.add(
-        egui::DragValue::new(&mut vr.freeze_pose_step_deg)
-            .speed(0.1)
-            .range(0.01..=90.0)
-            .prefix("Rotation step: ")
-            .suffix("°"),
-    );
 }
 
 /// One editable pose component: direct numeric entry plus exact `-`/`+` nudges of `step`. Returns
@@ -604,7 +195,7 @@ fn pose_row(ui: &mut egui::Ui, label: &str, value: &mut f32, step: f32, suffix: 
         .on_hover_text("Step down by exactly one step, snapped to the step grid.")
         .clicked()
     {
-        *value = vr::pose_control::nudge(*value, step, -1);
+        *value = pose_control::nudge(*value, step, -1);
         changed = true;
     }
     if ui
@@ -612,7 +203,7 @@ fn pose_row(ui: &mut egui::Ui, label: &str, value: &mut f32, step: f32, suffix: 
         .on_hover_text("Step up by exactly one step, snapped to the step grid.")
         .clicked()
     {
-        *value = vr::pose_control::nudge(*value, step, 1);
+        *value = pose_control::nudge(*value, step, 1);
         changed = true;
     }
     ui.end_row();
@@ -681,7 +272,7 @@ fn egui_grapple(ui: &mut egui::Ui, grapple: &mut grapple::GrappleComfortConfig) 
 }
 
 /// The on-foot body-turn knobs used while the HMD owns the head (mouse and right stick turn the body,
-/// not the head). Separate from the flatscreen latch above, which never runs under an OpenXR session.
+/// not the head). Separate from the flatscreen latch, which never runs under an OpenXR session.
 fn egui_vr_turn(ui: &mut egui::Ui, turn: &mut headpose::config::VrTurnConfig) {
     ui.horizontal(|ui| {
         ui.label("Mode:");

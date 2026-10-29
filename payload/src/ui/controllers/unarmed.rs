@@ -1,5 +1,5 @@
 //! The weapon-agnostic body: whether it applies, which layers it leaves out of the pose, and its
-//! settings.
+//! switch.
 
 use std::time::Duration;
 
@@ -72,31 +72,6 @@ pub(super) fn unarmed_settings(ui: &mut Ui, c: &mut UnarmedBodyConfig) {
         "Unarmed: the body plays its unarmed animation whatever is held, and the controllers \
          alone place the arms and the guns. Native: the game's weapon stances and actions.",
     );
-    ui.add_enabled_ui(c.weapon_animations == WeaponAnimations::Unarmed, |ui| {
-        ui.indent("unarmed", |ui| {
-            ui.checkbox(&mut c.mask_actions, "Hide the upper-body actions")
-                .on_hover_text(
-                    "Draw, holster, switch, reload, pump, bolt, pickup, and throws still run \
-                     and keep their timing, but leave the body alone.",
-                );
-            ui.checkbox(&mut c.mask_synced_partial, "Hide the synced upper body")
-                .on_hover_text("The turns toward the aim target and the locomotion partials.");
-            ui.checkbox(&mut c.mask_additive, "Hide the additive layer")
-                .on_hover_text(
-                    "Leans, landings, and the grapple, grenade, and launcher fire additives.",
-                );
-            ui.checkbox(&mut c.release_weapon_grip, "Release the game's weapon grip")
-                .on_hover_text(
-                    "Never put a hand on a two-handed weapon's grip; only the foregrip grab does.",
-                );
-            ui.checkbox(&mut c.relaxed_locomotion, "Relaxed locomotion")
-                .on_hover_text(
-                    "The body walks, turns, and stands as it does unarmed whatever is held: the \
-                     graph's weapon-wielded check reads false on every layer but the upper-body \
-                     actions.",
-                );
-        });
-    });
 }
 
 /// How old a readout may be before it counts as inactive.

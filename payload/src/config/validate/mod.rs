@@ -54,7 +54,6 @@ pub(crate) fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
     input::input(&c.input)?;
     input::bindings(&c.bindings)?;
     input::mode(&c.mode)?;
-    aim::aim_state(&c.aim_state)?;
     aim::hands(&c.hands)?;
     aim::aim(&c.aim)?;
     aim::overlay(&c.overlay)?;

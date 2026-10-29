@@ -219,9 +219,7 @@ fn shoulder_joints(
 /// Each hand's remap: about the character's measured shoulder when that is on and the arm is
 /// measured, else about the estimated shoulders when `body.remap_hands` is on, else none.
 fn arm_remaps(config: &ControllersConfig, head: Pose, world_scale: f32) -> [Option<ArmRemap>; 2] {
-    let measured = config
-        .hands
-        .reach
+    let measured = reach::REACH
         .measured_remap
         .then(rig::arms)
         .unwrap_or([None; 2]);

@@ -226,10 +226,7 @@ mod tests {
     use super::*;
     use crate::controllers::body::{
         BodyDimensions,
-        rig::{
-            config::TorsoConfig,
-            torso::{TorsoEstimator, TorsoInputs},
-        },
+        rig::torso::{TorsoEstimator, TorsoInputs},
     };
 
     fn deg(d: f32) -> f32 {
@@ -247,7 +244,7 @@ mod tests {
         };
         let mut estimate = None;
         for _ in 0..400 {
-            estimate = estimator.update(&inputs, 0.01, dims, &TorsoConfig::new());
+            estimate = estimator.update(&inputs, 0.01, dims);
         }
         let estimate = estimate.unwrap();
         let rotation = Quat::from_rotation_y(turn);
@@ -321,7 +318,7 @@ mod tests {
         };
         let mut estimate = None;
         for _ in 0..400 {
-            estimate = estimator.update(&inputs, 0.01, &dims, &TorsoConfig::new());
+            estimate = estimator.update(&inputs, 0.01, &dims);
         }
         let estimate = estimate.unwrap();
         let eyes = frames.world_to_model(frames.head_world);
@@ -354,7 +351,7 @@ mod tests {
         };
         let mut estimate = None;
         for _ in 0..100 {
-            estimate = estimator.update(&inputs, 0.01, &dims, &TorsoConfig::new());
+            estimate = estimator.update(&inputs, 0.01, &dims);
         }
         let eyes = frames.world_to_model(frames.head_world);
         let mut skeleton = skeleton(&dims, eyes, 0.0);
@@ -407,7 +404,6 @@ mod tests {
                 },
                 0.01,
                 &dims,
-                &TorsoConfig::new(),
             )
             .unwrap();
         let bad = Frames {

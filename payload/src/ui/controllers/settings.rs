@@ -242,35 +242,13 @@ pub(super) fn locomotion_settings(ui: &mut Ui, cfg: &mut config::Config) {
 }
 
 pub(super) fn animation_settings(ui: &mut Ui, cfg: &mut config::Config) {
+    ui.checkbox(&mut cfg.body_ik.enabled, "Body IK")
+        .on_hover_text("Drive the upper body toward the headpose via the engine's HumanIK solver.");
     let c = &mut cfg.controllers;
-    egui::CollapsingHeader::new("Body and aiming").default_open(true).show(ui, |ui| {
-        let a = &mut c.aim_state;
-        ui.checkbox(&mut a.pin, "Aim-state pin (weapon)").on_hover_text(
-            "Keep the body in the no-aim animation family while firing still works.",
-        );
-        ui.checkbox(&mut a.pin_grapple, "Aim-state pin (grapple)").on_hover_text(
-            "Also clear the grapple aim: the body stops turning to face the hook on a held tether.",
-        );
-        ui.checkbox(&mut a.skip_arm_ik, "Skip the game's arm aim IK");
-        ui.checkbox(&mut a.neutral_aim_point, "Neutral body aim point").on_hover_text(
-            "Hold the point the body turns toward ahead of the body. The weapons keep their own aim.",
-        );
-        ui.add_enabled(
-            a.neutral_aim_point,
-            egui::Slider::new(&mut a.neutral_aim_distance_m, 5.0..=100.0)
-                .text("Neutral point distance (m)"),
-        );
-        ui.checkbox(&mut a.clear_wall_block, "Clear the wall-penetration block");
-        ui.checkbox(&mut a.mental_state_cuts, "Mental-state cuts").on_hover_text(
-            "No automatic draw when combat starts and no automatic holster when it ends.",
-        );
-        ui.checkbox(&mut a.without_controllers, "Apply the above without controllers")
-            .on_hover_text("For testing with a gamepad: changes the body for every player.");
-        ui.checkbox(&mut c.body.remap_head, "Remap head height")
-            .on_hover_text("Moves the view for every player, controllers or not.");
-        ui.checkbox(&mut c.body.remap_hands, "Remap hand reach");
-    });
-
+    ui.checkbox(&mut c.aim_state.skip_arm_ik, "Skip the game's arm aim IK");
+    ui.checkbox(&mut c.body.remap_head, "Remap head height")
+        .on_hover_text("Moves the view for every player, controllers or not.");
+    ui.checkbox(&mut c.body.remap_hands, "Remap hand reach");
     unarmed::unarmed_settings(ui, &mut c.body.unarmed);
 }
 

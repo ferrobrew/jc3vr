@@ -11,7 +11,7 @@ use jc3gi::{
         camera_manager::CameraManager,
         game_camera_manager::GameCameraManager,
     },
-    character::character::{Character, SafeBoneIndex},
+    character::character::Character,
     graphics_engine::graphics_engine::GraphicsEngine,
     hash::hashlittle,
     types::math::Matrix4,
@@ -318,8 +318,7 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
             // hardcoded plane silently misses every main pass (see `main_camera_planes`).
             *MAIN_CAMERA_PLANES.lock() = Some((camera.m_Near, camera.m_Far));
 
-            let camera_settings = Config::lock_query(|c| c.camera);
-            if !camera_settings.enabled {
+            if !Config::lock_query(|c| c.camera.enabled) {
                 authored::reset(authored::Refusal::Disabled);
                 *LAST_CAMERA_WORLD.lock() = None;
                 CAMERA_UPDATE_RENDER.get().unwrap().call(camera, dt, dtf);
@@ -370,67 +369,38 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
                 let [previous_geometry, current_geometry] =
                     crate::headpose::anchor_pair().unwrap_or_default();
                 let character_t1_matrix = glam::Mat4::from(local_character.m_WorldMatrixT1);
-                let position = camera_position(
-                    &cur,
-                    follow_turn(true),
-                    &camera_settings,
-                    current_geometry,
-                    source(),
-                );
+                let position = camera_position(&cur, follow_turn(true), current_geometry, source());
                 write_camera_transform(&mut camera.m_TransformT1, cur.orientation, position);
                 height::record(character_t1_matrix, position);
                 // Republish the transform for the sim-phase readers (see the GetCameraMatrix
                 // hook below).
                 *LAST_CAMERA_WORLD.lock() = Some(camera.m_TransformT1);
 
-                if camera_settings.always_use_t1 {
-                    camera.m_TransformT0 = camera.m_TransformT1;
-                } else {
-                    write_camera_transform(
-                        &mut camera.m_TransformT0,
-                        prev.orientation,
-                        camera_position(
-                            &prev,
-                            previous_geometry
-                                .previous_endpoint(follow_turn(false), follow_turn(true)),
-                            &camera_settings,
-                            previous_geometry,
-                            source(),
-                        ),
-                    );
-                }
+                write_camera_transform(
+                    &mut camera.m_TransformT0,
+                    prev.orientation,
+                    camera_position(
+                        &prev,
+                        previous_geometry.previous_endpoint(follow_turn(false), follow_turn(true)),
+                        previous_geometry,
+                        source(),
+                    ),
+                );
             } else {
-                let head_matrix = head_matrix(local_character);
                 let (left_eye_matrix, right_eye_matrix) = eye_matrices(local_character);
                 let character_t1_matrix = glam::Mat4::from(local_character.m_WorldMatrixT1);
-                let head_position = calculate_head_position(
-                    character_t1_matrix,
-                    head_matrix,
-                    left_eye_matrix,
-                    right_eye_matrix,
-                    camera_settings.use_eye_matrices,
-                    &camera_settings,
-                );
+                let head_position =
+                    eye_midpoint(character_t1_matrix, left_eye_matrix, right_eye_matrix);
                 camera.m_TransformT1.data[12] = head_position.x;
                 camera.m_TransformT1.data[13] = head_position.y;
                 camera.m_TransformT1.data[14] = head_position.z;
 
-                if camera_settings.always_use_t1 {
-                    camera.m_TransformT0 = camera.m_TransformT1;
-                } else {
-                    let character_t0_matrix = glam::Mat4::from(local_character.m_WorldMatrixT0);
-                    let head_position_t0 = calculate_head_position(
-                        character_t0_matrix,
-                        head_matrix,
-                        left_eye_matrix,
-                        right_eye_matrix,
-                        camera_settings.use_eye_matrices,
-                        &camera_settings,
-                    );
-                    camera.m_TransformT0.data[12] = head_position_t0.x;
-                    camera.m_TransformT0.data[13] = head_position_t0.y;
-                    camera.m_TransformT0.data[14] = head_position_t0.z;
-                }
+                let character_t0_matrix = glam::Mat4::from(local_character.m_WorldMatrixT0);
+                let head_position_t0 =
+                    eye_midpoint(character_t0_matrix, left_eye_matrix, right_eye_matrix);
+                camera.m_TransformT0.data[12] = head_position_t0.x;
+                camera.m_TransformT0.data[13] = head_position_t0.y;
+                camera.m_TransformT0.data[14] = head_position_t0.z;
             }
 
             if authored::take_normal_reset() {
@@ -452,10 +422,8 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
 }
 
 /// The camera position for a headpose: the eye point hung off the published head position through
-/// the [`EyeRig`], plus the body-frame offset. The arm's base is the *measured* neck-to-eye-midpoint
-/// arm from the animated eye bones with `use_eye_matrices` on, with `head_offset` a correction on top
-/// of it; with it off, `head_offset` is the whole arm. Both the arm and the body-frame offset use the
-/// character matrix matching the pose's side of the T0/T1 pair.
+/// the [`EyeRig`]. The arm is the *measured* neck-to-eye-midpoint arm from the animated eye bones,
+/// turned by the character matrix matching the pose's side of the T0/T1 pair.
 ///
 /// How the arm turns with the head depends on the source (see [`NeckModel`]): the sim pivots it
 /// about the neck by the head orientation, while the VR source holds it at rest in the body frame
@@ -467,20 +435,13 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
 fn camera_position(
     pose: &HeadPose,
     view_turn: glam::Quat,
-    camera_settings: &config::CameraConfig,
     geometry: crate::headpose::anchors::Geometry,
     pose_source: Source,
 ) -> glam::Vec3 {
     let (_, character_rotation, _) = geometry.root.to_scale_rotation_translation();
-    let measured_arm = if camera_settings.use_eye_matrices {
-        geometry.eye_arm
-    } else {
-        glam::Vec3::ZERO
-    };
     let rig = EyeRig {
         neck_delta: geometry.neck_delta,
-        arm: measured_arm + camera_settings.head_offset,
-        body_offset: camera_settings.body_offset,
+        arm: geometry.eye_arm,
         view_turn,
     };
     eye_position(
@@ -498,8 +459,6 @@ struct EyeRig {
     neck_delta: glam::Vec3,
     /// The neck-to-eyes arm in the body frame.
     arm: glam::Vec3,
-    /// A further offset in the body frame, applied after the arm.
-    body_offset: glam::Vec3,
     /// The turn from the body frame to the view frame. The tracked neck model holds the arm at rest
     /// in the view frame: the HMD's translation already carries the player's eyes round with a
     /// turn of their torso, so the arm must not turn again with a body that turns under the view
@@ -531,7 +490,7 @@ impl NeckModel {
 }
 
 /// The eye point for `pose`: the head position, plus the neck delta, plus the arm rotated per
-/// `neck`, plus the body-frame offset. Under [`NeckModel::Tracked`] the head anchor to eye offset
+/// `neck`. Under [`NeckModel::Tracked`] the head anchor to eye offset
 /// is a pure function of the body frame, so the eye point moves exactly as the pose position does.
 fn eye_position(
     pose: &HeadPose,
@@ -543,7 +502,7 @@ fn eye_position(
         NeckModel::Synthetic => pose.orientation,
         NeckModel::Tracked => character_rotation * rig.view_turn,
     };
-    pose.position + rig.neck_delta + arm_rotation * rig.arm + character_rotation * rig.body_offset
+    pose.position + rig.neck_delta + arm_rotation * rig.arm
 }
 
 /// Write a full world transform (rotation + translation) into a camera transform slot.
@@ -726,8 +685,7 @@ fn camera_tree_update_render_contexts(
             return;
         };
 
-        let camera_settings = Config::lock_query(|c| c.camera);
-        if !camera_settings.enabled {
+        if !Config::lock_query(|c| c.camera.enabled) {
             authored::reset(authored::Refusal::Disabled);
             return;
         }
@@ -741,11 +699,7 @@ fn camera_tree_update_render_contexts(
             return;
         }
 
-        let character_t0_matrix = glam::Mat4::from(if camera_settings.always_use_t1 {
-            local_character.m_WorldMatrixT1
-        } else {
-            local_character.m_WorldMatrixT0
-        });
+        let character_t0_matrix = glam::Mat4::from(local_character.m_WorldMatrixT0);
         let character_t1_matrix = glam::Mat4::from(local_character.m_WorldMatrixT1);
 
         // The previous contexts get the previous-tick headpose placement and the next contexts
@@ -762,40 +716,18 @@ fn camera_tree_update_render_contexts(
                     camera_position(
                         &prev,
                         previous_geometry.previous_endpoint(follow_turn(false), follow_turn(true)),
-                        &camera_settings,
                         previous_geometry,
                         source(),
                     ),
-                    camera_position(
-                        &cur,
-                        follow_turn(true),
-                        &camera_settings,
-                        current_geometry,
-                        source(),
-                    ),
+                    camera_position(&cur, follow_turn(true), current_geometry, source()),
                     Some(prev.orientation),
                     Some(cur.orientation),
                 )
             } else {
-                let head_matrix = head_matrix(local_character);
                 let (left_eye_matrix, right_eye_matrix) = eye_matrices(local_character);
                 (
-                    calculate_head_position(
-                        character_t0_matrix,
-                        head_matrix,
-                        left_eye_matrix,
-                        right_eye_matrix,
-                        camera_settings.use_eye_matrices,
-                        &camera_settings,
-                    ),
-                    calculate_head_position(
-                        character_t1_matrix,
-                        head_matrix,
-                        left_eye_matrix,
-                        right_eye_matrix,
-                        camera_settings.use_eye_matrices,
-                        &camera_settings,
-                    ),
+                    eye_midpoint(character_t0_matrix, left_eye_matrix, right_eye_matrix),
+                    eye_midpoint(character_t1_matrix, left_eye_matrix, right_eye_matrix),
                     None,
                     None,
                 )
@@ -821,32 +753,16 @@ fn camera_tree_update_render_contexts(
                     tracking_translation: current.position - anchor().unwrap_or(current.position),
                 },
             ];
-            authored::capture(local_character, views, camera_settings.always_use_t1)
+            authored::capture(local_character, views)
         } else {
             authored::reset(authored::Refusal::NoTrackedHead);
             None
         };
         if let Some([previous, current]) = selected {
-            patch_authored_context(
-                &mut ccc.m_PreviousCameraContext,
-                previous,
-                camera_settings.blurs_enabled,
-            );
-            patch_authored_context(
-                &mut ccc.m_PreviousRenderContext,
-                previous,
-                camera_settings.blurs_enabled,
-            );
-            patch_authored_context(
-                &mut ccc.m_NextCameraContext,
-                current,
-                camera_settings.blurs_enabled,
-            );
-            patch_authored_context(
-                &mut ccc.m_NextRenderContext,
-                current,
-                camera_settings.blurs_enabled,
-            );
+            patch_authored_context(&mut ccc.m_PreviousCameraContext, previous);
+            patch_authored_context(&mut ccc.m_PreviousRenderContext, previous);
+            patch_authored_context(&mut ccc.m_NextCameraContext, current);
+            patch_authored_context(&mut ccc.m_NextRenderContext, current);
             *LAST_CAMERA_WORLD.lock() = Some(Matrix4::from(current));
             return;
         }
@@ -869,45 +785,36 @@ fn camera_tree_update_render_contexts(
             &mut ccc.m_PreviousCameraContext,
             previous_position,
             previous_orientation,
-            camera_settings.blurs_enabled,
         );
         patch_context(
             &mut ccc.m_PreviousRenderContext,
             previous_position,
             previous_orientation,
-            camera_settings.blurs_enabled,
         );
         patch_context(
             &mut ccc.m_NextCameraContext,
             next_position,
             next_orientation,
-            camera_settings.blurs_enabled,
         );
         patch_context(
             &mut ccc.m_NextRenderContext,
             next_position,
             next_orientation,
-            camera_settings.blurs_enabled,
         );
     }
 
-    fn patch_authored_context(context: &mut CameraContext, world: glam::Mat4, blurs_enabled: bool) {
+    fn patch_authored_context(context: &mut CameraContext, world: glam::Mat4) {
         context.m_CameraTransform = Matrix4::from(world);
         context.m_AlternateAimTransform = context.m_CameraTransform;
         context.m_ListenerTransform = context.m_CameraTransform;
         context.m_FOV = 90.0_f32.to_radians();
-        if !blurs_enabled {
-            context.m_MaxMotionBlur = 0.0;
-            context.m_MotionBlurFactor = 0.0;
-            context.m_RadialBlurFactor = 0.0;
-        }
+        clear_blurs(context);
     }
 
     fn patch_context(
         context: &mut CameraContext,
         head_position: glam::Vec3,
         headpose_orientation: Option<glam::Quat>,
-        blurs_enabled: bool,
     ) {
         if let Some(orientation) = headpose_orientation {
             let camera_world = glam::Mat4::from_rotation_translation(orientation, head_position);
@@ -923,21 +830,16 @@ fn camera_tree_update_render_contexts(
         context.m_AlternateAimTransform = context.m_CameraTransform;
         context.m_ListenerTransform = context.m_CameraTransform;
         context.m_FOV = 90.0_f32.to_radians();
-
-        if !blurs_enabled {
-            context.m_MaxMotionBlur = 0.0;
-            context.m_MotionBlurFactor = 0.0_f32;
-            context.m_RadialBlurFactor = 0.0;
-        }
+        clear_blurs(context);
     }
-}
 
-fn head_matrix(character: &mut Character) -> glam::Mat4 {
-    let mut head_matrix = Matrix4::default();
-    unsafe {
-        character.GetSafeBoneMatrix(SafeBoneIndex::HEAD, &mut head_matrix);
+    /// Zero the context's motion and radial blur: both smear the view with the camera's motion,
+    /// which in the headset is the player's own head motion.
+    fn clear_blurs(context: &mut CameraContext) {
+        context.m_MaxMotionBlur = 0.0;
+        context.m_MotionBlurFactor = 0.0;
+        context.m_RadialBlurFactor = 0.0;
     }
-    glam::Mat4::from(head_matrix)
 }
 
 fn eye_matrices(character: &mut Character) -> (glam::Mat4, glam::Mat4) {
@@ -961,36 +863,18 @@ fn eye_matrices(character: &mut Character) -> (glam::Mat4, glam::Mat4) {
     )
 }
 
-fn calculate_head_position(
+/// The midpoint of the animated eye bones in the world, for the character's world matrix
+/// `character_matrix`.
+fn eye_midpoint(
     character_matrix: glam::Mat4,
-    head_matrix: glam::Mat4,
     left_eye_matrix: glam::Mat4,
     right_eye_matrix: glam::Mat4,
-    use_eye_matrices: bool,
-    camera_settings: &config::CameraConfig,
 ) -> glam::Vec3 {
-    let (_, character_rotation, _character_position) =
-        character_matrix.to_scale_rotation_translation();
-
-    if use_eye_matrices {
-        let left_eye_worldspace_matrix = character_matrix * left_eye_matrix;
-        let (_, _, left_eye_position) = left_eye_worldspace_matrix.to_scale_rotation_translation();
-
-        let right_eye_worldspace_matrix = character_matrix * right_eye_matrix;
-        let (_, _, right_eye_position) =
-            right_eye_worldspace_matrix.to_scale_rotation_translation();
-
-        (left_eye_position + right_eye_position) / 2.0
-    } else {
-        let head_worldspace_matrix = character_matrix * head_matrix;
-        let (_, head_rotation, mut head_position) =
-            head_worldspace_matrix.to_scale_rotation_translation();
-
-        head_position += head_rotation * camera_settings.head_offset;
-        head_position += character_rotation * camera_settings.body_offset;
-
-        head_position
-    }
+    let (_, _, left_eye_position) =
+        (character_matrix * left_eye_matrix).to_scale_rotation_translation();
+    let (_, _, right_eye_position) =
+        (character_matrix * right_eye_matrix).to_scale_rotation_translation();
+    (left_eye_position + right_eye_position) / 2.0
 }
 
 #[cfg(test)]
@@ -1056,7 +940,6 @@ mod tests {
         EyeRig {
             neck_delta: glam::Vec3::new(0.0, -0.08, 0.02),
             arm: glam::Vec3::new(0.0, 0.12, -0.1),
-            body_offset: glam::Vec3::ZERO,
             view_turn: glam::Quat::IDENTITY,
         }
     }

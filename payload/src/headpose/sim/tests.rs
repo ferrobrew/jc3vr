@@ -1,87 +1,66 @@
 use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
 use super::*;
-use crate::headpose::HeadPoseConfig;
-
-fn test_config() -> HeadPoseConfig {
-    HeadPoseConfig::new()
-}
 
 #[test]
 fn test_latch_engages_at_threshold() {
-    let config = test_config();
-    let latch = update_latch(
-        LatchState::Decoupled,
-        config.latch_threshold_deg,
-        HeadMode::OnFoot,
-        &config,
-    );
+    let latch = update_latch(LatchState::Decoupled, LATCH_THRESHOLD_DEG, HeadMode::OnFoot);
     assert_eq!(latch, LatchState::BodyFollowing);
 }
 
 #[test]
 fn test_latch_does_not_engage_below_threshold() {
-    let config = test_config();
     let latch = update_latch(
         LatchState::Decoupled,
-        config.latch_threshold_deg - 1.0,
+        LATCH_THRESHOLD_DEG - 1.0,
         HeadMode::OnFoot,
-        &config,
     );
     assert_eq!(latch, LatchState::Decoupled);
 }
 
 #[test]
 fn test_latch_engages_at_negative_threshold() {
-    let config = test_config();
     let latch = update_latch(
         LatchState::Decoupled,
-        -config.latch_threshold_deg,
+        -LATCH_THRESHOLD_DEG,
         HeadMode::OnFoot,
-        &config,
     );
     assert_eq!(latch, LatchState::BodyFollowing);
 }
 
 #[test]
 fn test_latch_disengages_below_hysteresis() {
-    let config = test_config();
     let latch = update_latch(
         LatchState::BodyFollowing,
-        config.latch_disengage_threshold_deg,
+        LATCH_DISENGAGE_THRESHOLD_DEG,
         HeadMode::OnFoot,
-        &config,
     );
     assert_eq!(latch, LatchState::Decoupled);
 }
 
 #[test]
 fn test_latch_hysteresis_prevents_jitter() {
-    let config = test_config();
     // Between disengage and engage thresholds: should stay in current state.
-    let mid = (config.latch_disengage_threshold_deg + config.latch_threshold_deg) / 2.0;
-    let latch = update_latch(LatchState::BodyFollowing, mid, HeadMode::OnFoot, &config);
+    let mid = (LATCH_DISENGAGE_THRESHOLD_DEG + LATCH_THRESHOLD_DEG) / 2.0;
+    let latch = update_latch(LatchState::BodyFollowing, mid, HeadMode::OnFoot);
     assert_eq!(latch, LatchState::BodyFollowing);
-    let latch = update_latch(LatchState::Decoupled, mid, HeadMode::OnFoot, &config);
+    let latch = update_latch(LatchState::Decoupled, mid, HeadMode::OnFoot);
     assert_eq!(latch, LatchState::Decoupled);
 }
 
 #[test]
 fn test_latch_always_decoupled_in_other_mode() {
-    let config = test_config();
     let latch = update_latch(
         LatchState::BodyFollowing,
-        config.latch_threshold_deg + 10.0,
+        LATCH_THRESHOLD_DEG + 10.0,
         HeadMode::Other,
-        &config,
     );
     assert_eq!(latch, LatchState::Decoupled);
 }
 
 #[test]
 fn test_free_look_clamping_yaw() {
-    let config = test_config();
-    let limit = config.free_look_yaw_limit_deg.to_radians();
+    let limit = FREE_LOOK_YAW_LIMIT_DEG.to_radians();
     let clamped = (limit + 1.0).clamp(-limit, limit);
     assert_eq!(clamped, limit);
     let clamped = (-limit - 1.0).clamp(-limit, limit);
@@ -90,8 +69,7 @@ fn test_free_look_clamping_yaw() {
 
 #[test]
 fn test_free_look_clamping_pitch() {
-    let config = test_config();
-    let limit = config.free_look_pitch_limit_deg.to_radians();
+    let limit = FREE_LOOK_PITCH_LIMIT_DEG.to_radians();
     let clamped = (limit + 1.0).clamp(-limit, limit);
     assert_eq!(clamped, limit);
     let clamped = (-limit - 1.0).clamp(-limit, limit);

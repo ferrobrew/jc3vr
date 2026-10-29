@@ -44,28 +44,29 @@ pub fn lean(gap: Vec2, yaw: f32, drop_m: f32, config: &LeanConfig) -> Lean {
     Lean {
         drop_m,
         allowance_m,
-        vector: within(gap, yaw, allowance_m, config),
+        vector: within(gap, yaw, allowance_m),
     }
 }
 
 /// How far forward the neck pivot may be out over the feet when it has dropped `drop_m` below the
-/// standing height: `gain · (drop − deadband)`, between zero and the cap. Zero with the lean off.
+/// standing height: [`GAIN`] `· (drop −` [`DEADBAND_M`]`)`, between zero and [`MAX_M`]. Zero with
+/// the lean off.
 pub fn allowance(drop_m: f32, config: &LeanConfig) -> f32 {
     if !config.enabled {
         return 0.0;
     }
-    let allowance = config.gain * (drop_m - config.deadband_m);
+    let allowance = GAIN * (drop_m - DEADBAND_M);
     if allowance.is_finite() {
-        allowance.clamp(0.0, config.max_m.max(0.0))
+        allowance.clamp(0.0, MAX_M)
     } else {
         0.0
     }
 }
 
-/// The part of `gap` inside the lean ellipse of a torso facing `yaw`: `allowance` forward, its
-/// side share to either side, and its back share behind. A gap inside it is all lean; a gap
-/// outside it is scaled back along itself onto the ellipse.
-pub fn within(gap: Vec2, yaw: f32, allowance: f32, config: &LeanConfig) -> Vec2 {
+/// The part of `gap` inside the lean ellipse of a torso facing `yaw`: `allowance` forward,
+/// [`SIDE_SHARE`] of it to either side, and [`BACK_SHARE`] of it behind. A gap inside it is all
+/// lean; a gap outside it is scaled back along itself onto the ellipse.
+pub fn within(gap: Vec2, yaw: f32, allowance: f32) -> Vec2 {
     if !gap.is_finite() || !allowance.is_finite() || allowance <= 0.0 {
         return Vec2::ZERO;
     }
@@ -73,9 +74,9 @@ pub fn within(gap: Vec2, yaw: f32, allowance: f32, config: &LeanConfig) -> Vec2 
     let right = flat(Quat::from_rotation_y(yaw) * Vec3::X);
     let along = gap.dot(forward);
     let across = gap.dot(right);
-    let share = if along >= 0.0 { 1.0 } else { config.back_share };
-    let forward_axis = (allowance * share.clamp(0.0, 1.0)).max(MIN_AXIS_M);
-    let side_axis = (allowance * config.side_share.clamp(0.0, 1.0)).max(MIN_AXIS_M);
+    let share = if along >= 0.0 { 1.0 } else { BACK_SHARE };
+    let forward_axis = (allowance * share).max(MIN_AXIS_M);
+    let side_axis = (allowance * SIDE_SHARE).max(MIN_AXIS_M);
     let extent = (along / forward_axis).powi(2) + (across / side_axis).powi(2);
     if extent <= 1.0 {
         gap
@@ -125,6 +126,21 @@ impl StandingHeight {
     }
 }
 
+/// Metres of lean allowed per metre of drop past [`DEADBAND_M`].
+const GAIN: f32 = 4.0;
+
+/// The drop below the standing height that allows no lean, metres: a standing head's bob.
+const DEADBAND_M: f32 = 0.04;
+
+/// The furthest lean allowed, metres, forward of the torso.
+const MAX_M: f32 = 0.35;
+
+/// The lean allowed to the side, as a share of the forward lean.
+const SIDE_SHARE: f32 = 0.5;
+
+/// The lean allowed backward, as a share of the forward lean.
+const BACK_SHARE: f32 = 0.25;
+
 /// The smallest semi-axis the ellipse is given, metres, so that a share of zero clamps that
 /// direction to nothing rather than dividing by zero.
 const MIN_AXIS_M: f32 = 1e-6;
@@ -148,10 +164,7 @@ mod tests {
         assert!((allowance(0.1, &CONFIG) - 0.24).abs() < 1e-6);
         assert_eq!(allowance(1.0, &CONFIG), 0.35);
         assert_eq!(allowance(f32::NAN, &CONFIG), 0.0);
-        let off = LeanConfig {
-            enabled: false,
-            ..CONFIG
-        };
+        let off = LeanConfig { enabled: false };
         assert_eq!(allowance(0.3, &off), 0.0);
     }
 
@@ -159,16 +172,16 @@ mod tests {
     fn the_ellipse_is_widest_forward() {
         let a = 0.2;
         // Inside: all of it is lean.
-        assert_eq!(within(FORWARD * 0.15, 0.0, a, &CONFIG), FORWARD * 0.15);
+        assert_eq!(within(FORWARD * 0.15, 0.0, a), FORWARD * 0.15);
         // Outside forward, sideways, and backward: clamped to each semi-axis.
-        assert!((within(FORWARD * 0.5, 0.0, a, &CONFIG) - FORWARD * 0.2).length() < 1e-6);
-        assert!((within(RIGHT * 0.5, 0.0, a, &CONFIG) - RIGHT * 0.1).length() < 1e-6);
-        assert!((within(-FORWARD * 0.5, 0.0, a, &CONFIG) - -FORWARD * 0.05).length() < 1e-6);
+        assert!((within(FORWARD * 0.5, 0.0, a) - FORWARD * 0.2).length() < 1e-6);
+        assert!((within(RIGHT * 0.5, 0.0, a) - RIGHT * 0.1).length() < 1e-6);
+        assert!((within(-FORWARD * 0.5, 0.0, a) - -FORWARD * 0.05).length() < 1e-6);
         // A torso turned a quarter left faces -X.
         let left = std::f32::consts::FRAC_PI_2;
-        assert!((within(-RIGHT * 0.5, left, a, &CONFIG) - -RIGHT * 0.2).length() < 1e-5);
-        assert_eq!(within(FORWARD, 0.0, 0.0, &CONFIG), Vec2::ZERO);
-        assert_eq!(within(Vec2::NAN, 0.0, a, &CONFIG), Vec2::ZERO);
+        assert!((within(-RIGHT * 0.5, left, a) - -RIGHT * 0.2).length() < 1e-5);
+        assert_eq!(within(FORWARD, 0.0, 0.0), Vec2::ZERO);
+        assert_eq!(within(Vec2::NAN, 0.0, a), Vec2::ZERO);
     }
 
     #[test]

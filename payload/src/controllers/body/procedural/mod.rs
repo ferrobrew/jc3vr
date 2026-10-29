@@ -306,14 +306,14 @@ fn dispatcher_keeps_on_foot_in_constrained_fit_and_airborne_in_under_head() {
 ///
 /// As [`at_solve_gate`].
 unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
-    let (config, pelvis_config, legs_config, scale) = Config::lock_query(|c| {
+    let (config, legs_config, scale) = Config::lock_query(|c| {
         (
             c.controllers.body.procedural,
-            c.controllers.body.rig.pelvis,
             c.controllers.body.rig.legs,
             c.vr.world_scale,
         )
     });
+    let pelvis_config = pelvis::PELVIS;
     let now = Instant::now();
     // Read before the gate's own state too: it takes the configuration and the controller frame.
     let mode = current_mode().mode;

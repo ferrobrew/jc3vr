@@ -15,11 +15,37 @@
 //!
 //! Deliberate head movement stays one to one (scaled by the height ratio): a lean, a duck, or a
 //! look over the shoulder held for less than half the window does not move the median, and the
-//! reference never moves faster than the configured rate.
+//! reference never moves faster than [`SEATED_REFERENCE`]'s rate.
 //!
 //! [`capture`]: SeatedReference::capture
 
-use crate::controllers::config::SeatedReferenceConfig;
+/// The seated eye reference ([`crate::controllers::roomscale::seated`]): the head height above the
+/// floor that the seated posture puts at the character's eyes. It starts at the calibrated seated
+/// eye height, a manual recenter while seated captures the head's height, and the adaptive
+/// baseline moves it toward how the player actually sits.
+#[derive(Copy, Clone, Debug)]
+pub struct SeatedReferenceTuning {
+    /// Move the reference toward the median head height over the window. On: without it
+    /// a reference that does not match how the player sits holds the view above or below the
+    /// character's eyes until the next manual recenter.
+    pub adaptive: bool,
+    /// The window the median is taken over, seconds. Head movement held for less than half of it
+    /// (a lean, a duck, a look around) does not move the median.
+    pub window_s: f32,
+    /// The fastest the adaptive baseline moves the reference, metres per second.
+    pub rate_mps: f32,
+    /// How far the median must be from the reference before the adaptive baseline moves it,
+    /// metres.
+    pub deadband_m: f32,
+}
+
+/// The seated eye reference's tuning.
+pub const SEATED_REFERENCE: SeatedReferenceTuning = SeatedReferenceTuning {
+    adaptive: true,
+    window_s: 120.0,
+    rate_mps: 0.01,
+    deadband_m: 0.02,
+};
 
 /// The seated eye reference in effect, and where it came from.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -100,7 +126,7 @@ impl SeatedReference {
         head_height: Option<f32>,
         calibrated: Option<f32>,
         dt: f32,
-        config: &SeatedReferenceConfig,
+        config: &SeatedReferenceTuning,
     ) -> Option<SeatedEyeReference> {
         let calibrated = calibrated.filter(|h| plausible(*h));
         let previous = self.calibration.replace(calibrated);
@@ -174,7 +200,7 @@ impl SeatedReference {
         self.median_m = None;
     }
 
-    fn adapt(&mut self, dt: f32, config: &SeatedReferenceConfig) {
+    fn adapt(&mut self, dt: f32, config: &SeatedReferenceTuning) {
         let (Some(reference), Some(median)) = (self.reference.as_mut(), self.median_m) else {
             return;
         };
@@ -235,7 +261,7 @@ fn sample_interval(window_s: f32) -> f32 {
     let window_s = if window_s.is_finite() {
         window_s.max(MIN_WINDOW_S)
     } else {
-        SeatedReferenceConfig::new().window_s
+        SEATED_REFERENCE.window_s
     };
     window_s / CAPACITY as f32
 }
@@ -302,8 +328,8 @@ mod tests {
     const SITTING: f32 = 1.07;
     const FRAME_S: f32 = 1.0 / 90.0;
 
-    fn config() -> SeatedReferenceConfig {
-        SeatedReferenceConfig::new()
+    fn config() -> SeatedReferenceTuning {
+        SEATED_REFERENCE
     }
 
     /// Run `seconds` of frames with the head at `head(t)`.
@@ -441,7 +467,7 @@ mod tests {
 
     #[test]
     fn with_the_adaptive_baseline_off_the_reference_holds() {
-        let off = SeatedReferenceConfig {
+        let off = SeatedReferenceTuning {
             adaptive: false,
             ..config()
         };

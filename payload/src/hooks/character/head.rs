@@ -10,7 +10,7 @@ use crate::{
     headpose,
     hooks::{
         self,
-        character::body_ik::{PRE_IK_POSE, body_ik_status},
+        character::body_ik::{PRE_IK_POSE, body_ik_status, tuning::BODY_IK_TUNING},
         graphics_engine::render_block,
     },
 };
@@ -59,7 +59,7 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
         };
 
         // Publish the render-block head-hide inputs (the draws run on the render thread and only
-        // load these): the player root pair for ownership, and the collapse set — the HEAD bone
+        // load these): the instance-info pointers for ownership, and the collapse set — the HEAD bone
         // plus the facial bones, so every vertex weighted anywhere on the head (face, eyes, ears,
         // and the hair riding HEAD) collapses. Invalid lookups are filtered by the publish (a
         // missing name must not collapse the root).
@@ -74,14 +74,6 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
                 }
             });
         render_block::publish_player_rbi_infos(&rbi_infos);
-        render_block::publish_player_root(
-            glam::Mat4::from(character.m_WorldMatrixT0)
-                .w_axis
-                .truncate(),
-            glam::Mat4::from(character.m_WorldMatrixT1)
-                .w_axis
-                .truncate(),
-        );
         let bone = |name: &[u8]| pose.named(name).unwrap_or(u32::MAX);
         render_block::publish_collapse_bones(&[
             head_index,
@@ -102,15 +94,11 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
             bone(b"fRightEar"),
         ]);
 
-        // HEAD: optionally the scale head-hide, plus the full headpose pose, in a single
-        // SetJoint. The head/neck/eye anchors are captured PRE-IK in
+        // HEAD: the full headpose pose, in a single SetJoint. The head/neck/eye anchors are captured PRE-IK in
         // `character_update_pass_finalize_pose_parallel`: this hook runs last, after the HumanIK
         // solve *and* after CalculateModelSpacePose, so a capture here would read the IK-solved head
         // and chase the very target HIK pulls it toward (the feedback loop). This hook only consumes
         // the published anchors and applies the head override on top of the solved pose.
-        let hide_scale = Config::lock_query(|c| c.camera.hide_head_scale);
-        let scale = 0.001;
-
         let character_world = glam::Mat4::from(character.m_WorldMatrixT1);
         let (_, character_rotation, _) = character_world.to_scale_rotation_translation();
         let joint_translation = |joint: &Joint| {
@@ -130,9 +118,8 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
         // "set the exact head orientation" — identical to the no-IK case — with HIK's spine/neck
         // bend sitting underneath it. When body_ik is off the pre-IK and post-IK orientations match,
         // so the fallback to the freshly read orientation preserves the flatscreen path exactly.
-        let body_ik = Config::lock_query(|c| c.body_ik);
-        let pre_ik = body_ik
-            .enabled
+        let body_ik_enabled = Config::lock_query(|c| c.body_ik.enabled);
+        let pre_ik = body_ik_enabled
             .then(|| {
                 PRE_IK_POSE
                     .lock()
@@ -141,17 +128,13 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
             })
             .flatten();
 
-        if hide_scale {
-            joint.m_Scale.data = [scale, scale, scale];
-        }
-
         // Only drive the head/neck from the headpose while gameplay owns the character. Outside
         // E_GAME_RUN the engine repositions Rico for a teleport (issue #27), so the mod stops driving
-        // his pose and lets the animation/engine place him; the head-hide above still applies.
+        // his pose and lets the animation/engine place him.
         let in_gameplay = hooks::in_gameplay();
 
         // Only override the pose once a valid anchor exists; until then (loading screens, garbage
-        // bone data) the bone keeps its animated pose and only the scale head-hide applies.
+        // bone data) the bone keeps its animated pose.
         if in_gameplay && headpose::is_active() && headpose::anchor().is_some() {
             // Compose the player's body-relative offset onto the *animated* model-space
             // orientation, exactly like the neck twist below. An absolute write is not used because
@@ -174,8 +157,8 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
             // applying both displaces it twice. "Placing" requires an effective reach, not just a
             // queued target — with the reach dialled to zero the solve moves nothing and this add
             // must take over, or roomscale placement silently dies.
-            let hik_places_head = body_ik.enabled
-                && body_ik.head_reach_t * body_ik.weight > 0.0
+            let hik_places_head = body_ik_enabled
+                && BODY_IK_TUNING.head_reach_t * BODY_IK_TUNING.weight > 0.0
                 && body_ik_status().is_some_and(|s| s.skip.is_none());
             let animated_head_world = headpose::anchor().unwrap_or(glam::Vec3::ZERO);
             let world_offset = headpose::query().position - animated_head_world;
@@ -192,7 +175,7 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
 
         pose.write(head_index, &mut joint);
 
-        // Twist the neck along with the head beyond the configured start: the head bone carries
+        // Twist the neck along with the head beyond [`NECK_TWIST_START_DEG`]: the head bone carries
         // the whole body-relative yaw, and past a real head's range the neck must follow or the
         // skinning between the (hidden) head and the animated neck knots up — this is what makes
         // the extended free-look yaw range anatomically plausible. Body-relative yaw is exactly a
@@ -201,13 +184,8 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
         // (its own origin) is untouched.
         if in_gameplay && headpose::is_active() && headpose::anchor().is_some() {
             let yaw = headpose::sim::body_yaw_of(headpose::body_relative_rotation());
-            let (start_deg, max_deg) = Config::lock_query(|c| {
-                (
-                    c.headpose.neck_twist_start_deg,
-                    c.headpose.neck_twist_max_deg,
-                )
-            });
-            let excess_deg = (yaw.abs().to_degrees() - start_deg).clamp(0.0, max_deg.max(0.0));
+            let excess_deg =
+                (yaw.abs().to_degrees() - NECK_TWIST_START_DEG).clamp(0.0, NECK_TWIST_MAX_DEG);
             if excess_deg > 0.0 {
                 let twist = excess_deg.to_radians().copysign(yaw);
                 // Pre-multiply onto the pre-IK neck orientation for the same reason as the head
@@ -222,37 +200,15 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
                 pose.write(neck_index, &mut neck_joint);
             }
         }
-
-        // Facial bones: scale only (the scale head-hide).
-        if !hide_scale {
-            return;
-        }
-        let facial_indices = [
-            // "offset_facialOrienter",
-            "fJaw",
-            "fMidLwrLip",
-            "fLeftMouthCorner",
-            "fRightMouthCorner",
-            // "fNose",
-            "fMidUprLip",
-            // "fUprLids",
-            // "fLwrLids",
-            // "fLeftBrowMidA",
-            // "fRightBrowMidA",
-            // "fLeftEye",
-            // "fRightEye",
-            // "fLeftEar",
-            // "fRightEar",
-        ];
-        for s in facial_indices {
-            let Some(index) = pose.named(s.as_bytes()) else {
-                continue;
-            };
-            let Some(mut joint) = pose.read(index) else {
-                continue;
-            };
-            joint.m_Scale.data = [scale, scale, scale];
-            pose.write(index, &mut joint);
-        }
     }
 }
+
+/// The body-relative yaw, degrees, beyond which the neck bone twists along with the head. A real
+/// head only turns so far before the neck must follow, and with the hidden head bone carrying the
+/// whole yaw, leaving the neck animated knots the visible neck skinning once the head turns past
+/// it.
+const NECK_TWIST_START_DEG: f32 = 60.0;
+
+/// The most yaw the neck takes, degrees: the excess beyond [`NECK_TWIST_START_DEG`] goes to the
+/// neck up to this cap.
+const NECK_TWIST_MAX_DEG: f32 = 55.0;

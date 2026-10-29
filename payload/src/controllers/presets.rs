@@ -60,17 +60,10 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.input.hand_tracking = input;
     c.bindings.enabled = input;
     c.bindings.yank.enabled = hands;
-    c.aim_state.pin = hands;
-    c.aim_state.pin_grapple = hands;
     c.aim_state.skip_arm_ik = hands;
-    c.aim_state.neutral_aim_point = hands;
-    c.aim_state.clear_wall_block = hands;
-    c.aim_state.mental_state_cuts = hands;
-    c.aim_state.without_controllers = false;
     c.hands.ik = hands;
     c.hands.late_update = hands;
     c.hands.presentation.enabled = hands;
-    c.hands.suppress_secondary_ik = hands;
     c.hands.rigid_grip = hands;
     c.aim.gun = hands;
     c.aim.grapple = hands;

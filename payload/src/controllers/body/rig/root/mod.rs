@@ -614,7 +614,7 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
     let teleported = teleport::epoch() != sim.seen_epoch;
     if let (Some(last), false) = (sim.last_position, teleported) {
         let speed = proxy.map_or(0.0, |p| unsafe { velocity(p) }.length());
-        if chase::is_warp((position - last).length(), speed, dt, rig.chase.warp_min_m) {
+        if chase::is_warp((position - last).length(), speed, dt, chase::WARP_MIN_M) {
             teleport::record_warp();
         }
     }

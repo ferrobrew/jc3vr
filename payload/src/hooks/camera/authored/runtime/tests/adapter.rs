@@ -33,12 +33,12 @@ fn every_named_family_runs_the_same_native_sample_path() {
         let mut state = Runtime::default();
         assert!(
             state
-                .update(native(100, graph, Vec3::ZERO), views(), false)
+                .update(native(100, graph, Vec3::ZERO), views())
                 .unwrap()
                 .is_none()
         );
         let pair = state
-            .update(native(200, graph, Vec3::X), views(), false)
+            .update(native(200, graph, Vec3::X), views())
             .unwrap()
             .unwrap();
         assert!(pair[0].w_axis.truncate().abs_diff_eq(Vec3::ZERO, 0.0001));
@@ -54,17 +54,13 @@ fn every_case_rebases_same_state_restart_on_the_same_pose_buffer() {
             let serial = run * 3 + 1;
             assert!(
                 runtime
-                    .update(
-                        timed(serial, graph, 0.0, Vec3::Y * run as f32),
-                        views(),
-                        false
-                    )
+                    .update(timed(serial, graph, 0.0, Vec3::Y * run as f32), views())
                     .unwrap()
                     .is_none()
             );
             assert!(
                 runtime
-                    .update(timed(serial + 1, graph, 0.8, Vec3::X), views(), false)
+                    .update(timed(serial + 1, graph, 0.8, Vec3::X), views())
                     .unwrap()
                     .is_some()
             );
@@ -91,22 +87,22 @@ fn native_forward_wrap_keeps_baseline_but_unexplained_reverse_restarts() {
         value
     };
     runtime
-        .update(looping(1, 1.8, 0, Vec3::ZERO), views(), false)
+        .update(looping(1, 1.8, 0, Vec3::ZERO), views())
         .unwrap();
     runtime
-        .update(looping(2, 1.9, 0, Vec3::X), views(), false)
+        .update(looping(2, 1.9, 0, Vec3::X), views())
         .unwrap();
     let run = runtime.run;
     assert!(
         runtime
-            .update(looping(3, 0.1, 1, Vec3::Y), views(), false)
+            .update(looping(3, 0.1, 1, Vec3::Y), views())
             .unwrap()
             .is_some()
     );
     assert_eq!(runtime.run, run);
     assert!(
         runtime
-            .update(looping(4, 0.0, 1, Vec3::Z), views(), false)
+            .update(looping(4, 0.0, 1, Vec3::Z), views())
             .unwrap()
             .is_none()
     );
@@ -122,10 +118,10 @@ fn native_outgoing_sources_survive_interrupts_and_are_not_weighted_twice() {
     for graph in all_cases() {
         let mut runtime = Runtime::default();
         runtime
-            .update(timed(1, graph, 0.0, Vec3::ZERO), views(), false)
+            .update(timed(1, graph, 0.0, Vec3::ZERO), views())
             .unwrap();
         runtime
-            .update(timed(2, graph, 0.5, Vec3::X), views(), false)
+            .update(timed(2, graph, 0.5, Vec3::X), views())
             .unwrap();
         for (serial, weight) in [(3, 0.75), (4, 0.25)] {
             let mut tail = timed(serial, graph, 0.6 + serial as f32 * 0.1, Vec3::X * weight);
@@ -137,7 +133,7 @@ fn native_outgoing_sources_survive_interrupts_and_are_not_weighted_twice() {
             tail.animation.playing = vec![incoming];
             tail.animation.samplers[0].weight = weight;
             tail.animation.samplers.push(incoming);
-            let pair = runtime.update(tail, views(), false).unwrap().unwrap();
+            let pair = runtime.update(tail, views()).unwrap().unwrap();
             assert!(
                 pair[1]
                     .w_axis
@@ -151,7 +147,7 @@ fn native_outgoing_sources_survive_interrupts_and_are_not_weighted_twice() {
         done.animation.samplers[0].camera_track_weight = 0.0;
         done.animation.playing[0].camera_track_weight = 0.0;
         assert_eq!(
-            runtime.update(done, views(), false),
+            runtime.update(done, views()),
             Err(Refusal::NativeTailComplete)
         );
     }
@@ -165,14 +161,12 @@ fn missing_or_invalid_source_time_and_stale_serial_clear_capture() {
         runtime.capture(
             Ok(timed(1, GraphState::FloorPickup, 0.0, Vec3::ZERO)),
             views(),
-            false,
             now,
             0,
         );
         runtime.capture(
             Ok(timed(2, GraphState::FloorPickup, 0.1, Vec3::X)),
             views(),
-            false,
             now,
             0,
         );
@@ -185,7 +179,7 @@ fn missing_or_invalid_source_time_and_stale_serial_clear_capture() {
             4 => next.source.producer_owner += 1,
             _ => next.source.skeleton_resource += 1,
         }
-        assert!(runtime.capture(Ok(next), views(), false, now, 0).is_none());
+        assert!(runtime.capture(Ok(next), views(), now, 0).is_none());
         assert!(runtime.selected.is_none());
         assert!(runtime.handback.is_none());
         assert!(runtime.continuity.is_none());
@@ -197,10 +191,10 @@ fn same_state_binding_replacement_restarts_without_reusing_the_baseline() {
     let graph = GraphState::FloorPickup;
     let mut runtime = Runtime::default();
     runtime
-        .update(timed(1, graph, 0.0, Vec3::ZERO), views(), false)
+        .update(timed(1, graph, 0.0, Vec3::ZERO), views())
         .unwrap();
     runtime
-        .update(timed(2, graph, 0.5, Vec3::X), views(), false)
+        .update(timed(2, graph, 0.5, Vec3::X), views())
         .unwrap();
     let mut replaced = timed(3, graph, 0.6, Vec3::Y);
     for clip in replaced
@@ -211,7 +205,7 @@ fn same_state_binding_replacement_restarts_without_reusing_the_baseline() {
     {
         clip.source.binding += 1;
     }
-    assert!(runtime.update(replaced, views(), false).unwrap().is_none());
+    assert!(runtime.update(replaced, views()).unwrap().is_none());
     assert_eq!(
         runtime.baseline.unwrap().sample.local.transform.translation,
         Vec3::Y
@@ -223,10 +217,10 @@ fn native_tail_composes_the_current_head_transform_once() {
     let graph = GraphState::FloorPickup;
     let mut runtime = Runtime::default();
     runtime
-        .update(timed(1, graph, 0.0, Vec3::ZERO), views(), false)
+        .update(timed(1, graph, 0.0, Vec3::ZERO), views())
         .unwrap();
     runtime
-        .update(timed(2, graph, 0.5, Vec3::X), views(), false)
+        .update(timed(2, graph, 0.5, Vec3::X), views())
         .unwrap();
     let mut tail = timed(3, graph, 0.6, Vec3::X * 0.5);
     tail.state = Err(Refusal::OrdinaryOrUnsupportedState);
@@ -237,8 +231,7 @@ fn native_tail_composes_the_current_head_transform_once() {
         world: head,
         tracking_translation: Vec3::Y * 0.3,
     }; 2];
-    let pair = runtime.update(tail, tracked, true).unwrap().unwrap();
+    let pair = runtime.update(tail, tracked).unwrap().unwrap();
     let expected = Mat4::from_translation(Vec3::X * 0.5) * head;
     assert!(pair[1].abs_diff_eq(expected, 0.0001));
-    assert_eq!(pair[0], pair[1]);
 }

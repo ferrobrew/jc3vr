@@ -70,37 +70,21 @@ impl WeaponAnimations {
 
 /// The weapon-agnostic body. Acts only under the controller scheme with the headset driving the
 /// view, in gameplay, while the hand tiers classify the character as on foot (including a reload,
-/// draw, or holster), so it defaults on.
+/// draw, or holster), so it defaults on. While it applies, it leaves every layer in
+/// [`MASKABLE_LAYERS`] out of the pose, switches the game's off-hand weapon grip off for both
+/// hands, driven or not, so that only the foregrip grab puts a hand on a two-handed weapon, and
+/// keeps the body's relaxed locomotion, turns, and stance whatever is held: the graph's
+/// weapon-wielded condition reads false on every layer but the upper-body actions.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct UnarmedBodyConfig {
     pub weapon_animations: WeaponAnimations,
-    /// Leave the upper-body action layer (draw, holster, switch, reload, pump, bolt, pickup, and
-    /// throws) out of the pose.
-    pub mask_actions: bool,
-    /// Leave the synchronised upper-body layer (the turns toward the aim target, and the locomotion
-    /// partials) out of the pose.
-    pub mask_synced_partial: bool,
-    /// Leave the synchronised additive layer (leans, landings, and the grapple, grenade, and launcher
-    /// fire additives) out of the pose.
-    pub mask_additive: bool,
-    /// Switch the game's off-hand weapon grip off for both hands, driven or not, so that only the
-    /// foregrip grab puts a hand on a two-handed weapon.
-    pub release_weapon_grip: bool,
-    /// Keep the body's relaxed locomotion, turns, and stance whatever is held: the graph's
-    /// weapon-wielded condition reads false on every layer but the upper-body actions.
-    pub relaxed_locomotion: bool,
 }
 
 impl UnarmedBodyConfig {
     pub const fn new() -> Self {
         Self {
             weapon_animations: WeaponAnimations::Unarmed,
-            mask_actions: true,
-            mask_synced_partial: true,
-            mask_additive: true,
-            release_weapon_grip: true,
-            relaxed_locomotion: true,
         }
     }
 }
@@ -183,17 +167,9 @@ pub const MASKABLE_LAYERS: [AnimationLayer; 3] = [
     AnimationLayer::SYNCED_ADDITIVE,
 ];
 
-/// Which of [`MASKABLE_LAYERS`] are left out of the pose.
-pub fn masked_layers(
-    config: &UnarmedBodyConfig,
-    verdict: UnarmedVerdict,
-) -> [bool; MASKABLE_LAYERS.len()] {
-    let applies = verdict == UnarmedVerdict::Applies;
-    [
-        applies && config.mask_actions,
-        applies && config.mask_synced_partial,
-        applies && config.mask_additive,
-    ]
+/// Which of [`MASKABLE_LAYERS`] are left out of the pose: all of them while the body applies.
+pub fn masked_layers(verdict: UnarmedVerdict) -> [bool; MASKABLE_LAYERS.len()] {
+    [verdict == UnarmedVerdict::Applies; MASKABLE_LAYERS.len()]
 }
 
 pub const fn layer_label(layer: AnimationLayer) -> &'static str {
@@ -282,15 +258,15 @@ pub unsafe fn tick(character: *mut Character) {
     let Some(character) = (unsafe { character.as_ref() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };
-    let config = Config::lock_query(|c| c.controllers.body.unarmed);
+    let weapon_animations = Config::lock_query(|c| c.controllers.body.unarmed.weapon_animations);
     let inputs = GateInputs {
         controllers: scheme::is_controllers(),
         vr: headpose::source() == headpose::Source::Vr,
         gameplay: hooks::in_gameplay(),
         tier: tiers::status().state,
     };
-    let verdict = decide(config.weapon_animations, &inputs);
-    let masked = masked_layers(&config, verdict);
+    let verdict = decide(weapon_animations, &inputs);
+    let masked = masked_layers(verdict);
     let blenders = unsafe { layer_blenders(character) };
     let published = std::array::from_fn(|i| {
         if masked[i] {
@@ -303,7 +279,7 @@ pub unsafe fn tick(character: *mut Character) {
         }
     });
     hooks::character::layers::publish(published);
-    let relaxed = config.relaxed_locomotion && verdict == UnarmedVerdict::Applies;
+    let relaxed = verdict == UnarmedVerdict::Applies;
     WIELDED_RELAXED.store(relaxed, Ordering::Relaxed);
     let mut state = STATE.lock();
     *state = UnarmedStatus {
@@ -333,7 +309,7 @@ pub fn applies() -> bool {
 
 /// Whether the game's off-hand weapon grip is switched off for both hands this tick.
 pub fn release_grip() -> bool {
-    Config::lock_query(|c| c.controllers.body.unarmed.release_weapon_grip) && applies()
+    applies()
 }
 
 /// How long a decision holds for the modifier pass, which runs earlier in the next tick.
@@ -481,26 +457,13 @@ mod tests {
     }
 
     #[test]
-    fn masks_only_while_applying_and_switched_on() {
-        let all = UnarmedBodyConfig::new();
+    fn masks_only_while_applying() {
+        assert_eq!(masked_layers(UnarmedVerdict::Applies), [true, true, true]);
         assert_eq!(
-            masked_layers(&all, UnarmedVerdict::Applies),
-            [true, true, true]
-        );
-        assert_eq!(
-            masked_layers(&all, UnarmedVerdict::StandDown(UnarmedStandDown::NotOnFoot)),
+            masked_layers(UnarmedVerdict::StandDown(UnarmedStandDown::NotOnFoot)),
             [false; 3]
         );
-        assert_eq!(masked_layers(&all, UnarmedVerdict::NotRun), [false; 3]);
-        let actions_only = UnarmedBodyConfig {
-            mask_synced_partial: false,
-            mask_additive: false,
-            ..UnarmedBodyConfig::new()
-        };
-        assert_eq!(
-            masked_layers(&actions_only, UnarmedVerdict::Applies),
-            [true, false, false]
-        );
+        assert_eq!(masked_layers(UnarmedVerdict::NotRun), [false; 3]);
     }
 
     #[test]
