@@ -12,6 +12,12 @@
 //! the stream frame index (what the video's frame number is), the capture index from the render
 //! thread, the wall clock, the engine's game-run time, whether the frame is a duplicate, and the
 //! located HMD views for the frame.
+//!
+//! Take markers made while the recording runs go into `frames.jsonl` too, as lines with a
+//! `marker` object and the `stream_frame` of the first fresh frame captured after the marker. They
+//! arrive on their own unbounded channel, so a full frame queue never loses one, and each carries
+//! the capture ordinal the render thread was about to assign, which is what places it among the
+//! frames regardless of how far the writer lags behind.
 
 use std::{
     io::Write as _,
@@ -20,7 +26,7 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver, SyncSender, TrySendError},
+        mpsc::{self, Receiver, Sender, SyncSender, TrySendError},
     },
     thread::JoinHandle,
     time::{Duration, Instant},
@@ -30,7 +36,7 @@ use anyhow::Context as _;
 use parking_lot::Mutex;
 use serde::Serialize;
 
-use crate::{recorder::RecorderConfig, vr::CaptureViews};
+use crate::{director::markers::Marker, recorder::RecorderConfig, vr::CaptureViews};
 
 /// What the render thread knows about a frame at capture time.
 #[derive(Clone, Copy, Debug)]
@@ -54,6 +60,14 @@ pub enum Frame {
     Duplicate,
 }
 
+/// A take marker on its way to the sidecar.
+pub struct PendingMarker {
+    /// The capture ordinal of the next frame the render thread captures after the marker: the
+    /// marker is written before the first fresh frame whose ordinal is at least this.
+    pub capture_frame: u32,
+    pub marker: Marker,
+}
+
 /// The result of queueing a frame.
 pub enum SendOutcome {
     Queued,
@@ -66,6 +80,7 @@ pub enum SendOutcome {
 /// The writer thread's handle, owned by the recorder state.
 pub struct Writer {
     sender: Option<SyncSender<Frame>>,
+    markers: Option<Sender<PendingMarker>>,
     pool: Receiver<Vec<u8>>,
     handle: Option<JoinHandle<()>>,
     shared: Arc<Shared>,
@@ -85,7 +100,7 @@ impl Writer {
             .with_context(|| format!("could not create the sidecar in {}", folder.display()))?;
         let target = format!("{}:{}", cfg.host(), cfg.port);
         let frame_rate = cfg.frame_rate.max(1);
-        Self::spawn_thread(move |receiver, pool, shared| {
+        Self::spawn_thread(move |receiver, markers, pool, shared| {
             let mut session = WriterThread {
                 target,
                 frame_rate,
@@ -97,6 +112,8 @@ impl Writer {
                 last_fresh: None,
                 stream_frame: 0,
                 dropped_before_connect: 0,
+                markers,
+                pending_markers: Vec::new(),
                 pool,
                 shared,
             };
@@ -105,9 +122,12 @@ impl Writer {
     }
 
     fn spawn_thread(
-        run: impl FnOnce(Receiver<Frame>, SyncSender<Vec<u8>>, Arc<Shared>) + Send + 'static,
+        run: impl FnOnce(Receiver<Frame>, Receiver<PendingMarker>, SyncSender<Vec<u8>>, Arc<Shared>)
+        + Send
+        + 'static,
     ) -> anyhow::Result<Self> {
         let (sender, receiver) = mpsc::sync_channel(QUEUE_DEPTH);
+        let (marker_sender, marker_receiver) = mpsc::channel();
         let (pool_sender, pool) = mpsc::sync_channel(QUEUE_DEPTH + 2);
         let shared = Arc::new(Shared {
             connected: AtomicBool::new(false),
@@ -117,10 +137,11 @@ impl Writer {
         let thread_shared = Arc::clone(&shared);
         let handle = std::thread::Builder::new()
             .name("jc3vr-recorder".to_owned())
-            .spawn(move || run(receiver, pool_sender, thread_shared))
+            .spawn(move || run(receiver, marker_receiver, pool_sender, thread_shared))
             .context("could not spawn the recorder writer thread")?;
         Ok(Self {
             sender: Some(sender),
+            markers: Some(marker_sender),
             pool,
             handle: Some(handle),
             shared,
@@ -151,6 +172,21 @@ impl Writer {
         }
     }
 
+    /// Queue a take marker for the sidecar. Never blocks and never drops for want of room; hands
+    /// the marker back when the writer is finishing or has failed, so the caller can keep it
+    /// elsewhere.
+    pub fn send_marker(&self, marker: PendingMarker) -> Result<(), PendingMarker> {
+        if self.shared.error.lock().is_some() {
+            return Err(marker);
+        }
+        let Some(sender) = self.markers.as_ref() else {
+            return Err(marker);
+        };
+        sender
+            .send(marker)
+            .map_err(|mpsc::SendError(marker)| marker)
+    }
+
     /// Whether the thread holds a live connection to the host.
     pub fn connected(&self) -> bool {
         self.shared.connected.load(Ordering::Relaxed)
@@ -158,6 +194,7 @@ impl Writer {
 
     /// Close the queue and allow its accepted frames to drain within the network grace period.
     pub fn finish(&mut self) {
+        self.markers = None;
         if self.sender.take().is_some() {
             *self.shared.finish_deadline.lock() = Some(Instant::now() + FINISH_GRACE);
         }
@@ -189,7 +226,7 @@ impl Writer {
     pub(super) fn spawn_controlled(
         run: impl FnOnce(Receiver<Frame>) -> Result<(), String> + Send + 'static,
     ) -> Self {
-        Self::spawn_thread(move |receiver, _pool, shared| {
+        Self::spawn_thread(move |receiver, _markers, _pool, shared| {
             if let Err(error) = run(receiver) {
                 *shared.error.lock() = Some(error);
             }
@@ -241,6 +278,9 @@ struct WriterThread {
     /// The next stream frame index: the frame number the video will have for the next write.
     stream_frame: u32,
     dropped_before_connect: u32,
+    markers: Receiver<PendingMarker>,
+    /// Markers received but not yet due: their frame has not reached the writer.
+    pending_markers: Vec<PendingMarker>,
     pool: SyncSender<Vec<u8>>,
     shared: Arc<Shared>,
 }
@@ -256,6 +296,14 @@ struct SidecarLine<'a> {
     eye: usize,
     predicted_display_time_ns: Option<i64>,
     views: Option<[SidecarView<'a>; 2]>,
+}
+
+/// One sidecar line for a take marker.
+#[derive(Serialize)]
+struct SidecarMarkerLine<'a> {
+    /// The stream frame the marker falls at: the next frame written after it.
+    stream_frame: u32,
+    marker: &'a Marker,
 }
 
 #[derive(Serialize)]
@@ -283,6 +331,9 @@ impl WriterThread {
     fn run(&mut self, receiver: Receiver<Frame>) {
         let mut next_attempt = Instant::now();
         for frame in receiver {
+            if let Frame::Fresh(_, metadata) = &frame {
+                self.write_due_markers(Some(metadata.frame));
+            }
             if self.stream.is_none() {
                 if Instant::now() >= next_attempt {
                     self.try_connect();
@@ -307,6 +358,8 @@ impl WriterThread {
                 break;
             }
         }
+        // Markers made after the last frame the writer saw fall at the end of the stream.
+        self.write_due_markers(None);
         if let Some(mut stream) = self.stream.take() {
             let _ = stream.flush();
             let _ = stream.shutdown(std::net::Shutdown::Write);
@@ -324,6 +377,28 @@ impl WriterThread {
             self.stream_frame,
             self.target
         );
+    }
+
+    /// Write the markers due before the fresh frame with capture ordinal `capture_frame`, or every
+    /// received marker when `None`, at the current stream frame.
+    fn write_due_markers(&mut self, capture_frame: Option<u32>) {
+        self.pending_markers.extend(self.markers.try_iter());
+        let due =
+            |pending: &PendingMarker| capture_frame.is_none_or(|c| pending.capture_frame <= c);
+        if !self.pending_markers.iter().any(due) {
+            return;
+        }
+        let (due, waiting): (Vec<_>, Vec<_>) = std::mem::take(&mut self.pending_markers)
+            .into_iter()
+            .partition(due);
+        self.pending_markers = waiting;
+        for pending in due {
+            let line = SidecarMarkerLine {
+                stream_frame: self.stream_frame,
+                marker: &pending.marker,
+            };
+            self.append_sidecar(&line);
+        }
     }
 
     fn try_connect(&mut self) {
@@ -463,7 +538,11 @@ impl WriterThread {
             predicted_display_time_ns: metadata.views.map(|v| v.predicted_display_time_ns),
             views,
         };
-        let result = serde_json::to_writer(&mut self.sidecar, &line)
+        self.append_sidecar(&line);
+    }
+
+    fn append_sidecar(&mut self, line: &impl Serialize) {
+        let result = serde_json::to_writer(&mut self.sidecar, line)
             .map_err(std::io::Error::other)
             .and_then(|()| self.sidecar.write_all(b"\n"));
         if let Err(e) = result {

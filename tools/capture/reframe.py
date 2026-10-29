@@ -24,6 +24,10 @@ the frame counts of the earlier segments (or use the sidecar's `stream_frame` of
 first frame). Segments are cut at a fixed duration, so for a constant-rate stream the offset is
 `segment index * segment seconds * frame rate`.
 
+Take markers made during the recording are lines of the same sidecar with a `marker` object and
+the `stream_frame` they fall at. The tool lists the ones from the segment's start on, with their
+time in the output, before the warp (and in the dry run), so a take can be found without scrubbing.
+
 Requires ffmpeg on PATH, and numpy and OpenCV (`opencv-python`) for the warp. Audio is copied
 from the segment unchanged.
 """
@@ -43,13 +47,36 @@ except ImportError:  # The dry run does not need it.
 
 
 def read_sidecar(path):
+    """The sidecar's frame lines (one per stream frame, in order) and its take-marker lines."""
     frames = []
+    markers = []
     with open(path) as f:
         for line in f:
             line = line.strip()
             if line:
-                frames.append(json.loads(line))
-    return frames
+                record = json.loads(line)
+                (markers if "marker" in record else frames).append(record)
+    return frames, markers
+
+
+def segment_markers(markers, offset, rate):
+    """The markers at or after the segment's first frame, as (segment frame, seconds, marker)."""
+    out = []
+    for record in markers:
+        frame = record["stream_frame"] - offset
+        if frame >= 0:
+            out.append((frame, frame / rate, record["marker"]))
+    return out
+
+
+def print_markers(markers, offset, rate):
+    found = segment_markers(markers, offset, rate)
+    if not found:
+        return
+    print("take markers from the segment's start (ones past its end belong to later segments):", file=sys.stderr)
+    for frame, seconds, marker in found:
+        label = marker.get("label") or "(unlabelled)"
+        print(f"  #{marker['index']} frame {frame} at {seconds:.2f} s: {label}", file=sys.stderr)
 
 
 def intrinsics_from_fov(fov, width, height):
@@ -149,7 +176,7 @@ def main(argv):
     out_w = args.width & ~1
     out_h = int(round(out_w * ah / aw)) & ~1
     in_w, in_h, rate = probe(args.segment)
-    frames = read_sidecar(args.sidecar)
+    frames, markers = read_sidecar(args.sidecar)
     if not frames:
         print("the sidecar is empty", file=sys.stderr)
         return 1
@@ -166,6 +193,7 @@ def main(argv):
         dtype=np.float64,
     )
     targets = smooth_orientations(quats, args.smooth * rate)
+    print_markers(markers, args.offset, rate)
 
     if args.dry_run:
         src_hfov = math.degrees(math.atan(math.tan(fov[1])) - math.atan(math.tan(fov[0])))

@@ -13,7 +13,8 @@
 //! The writer thread ([`stream`]) owns a TCP connection to a host-side listener (an `ffmpeg`
 //! reading `yuv4mpegpipe`, see `scripts/capture_host.sh`), writes the y4m stream header once and a
 //! frame per buffer, and appends one JSON line per frame to a sidecar in the session folder with
-//! the wall clock, the engine's game time, and the located HMD views for that frame.
+//! the wall clock, the engine's game time, and the located HMD views for that frame. Take markers
+//! made during the recording ([`mark`]) go into the same sidecar at the frame they fall on.
 //!
 //! ## Frame accounting
 //!
@@ -36,6 +37,7 @@ use serde::{Deserialize, Serialize};
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D};
 
 use crate::{
+    director::markers::Marker,
     recorder::owners::{Completion, VideoWriters},
     stereo::{far_phase, single_pass::collapse_active},
 };
@@ -169,6 +171,22 @@ pub fn toggle() {
     } else {
         start();
     }
+}
+
+/// Put a take marker into the running recording's sidecar, at the next frame the render thread
+/// captures. Any thread. Hands the marker back when no recording is running (or its writer is
+/// finishing or has failed), so the caller can record it elsewhere.
+pub fn mark(marker: Marker) -> Result<(), Marker> {
+    let state = STATE.lock();
+    let Some(writer) = state.writers.active().filter(|_| state.recording) else {
+        return Err(marker);
+    };
+    writer
+        .send_marker(stream::PendingMarker {
+            capture_frame: state.frame_index,
+            marker,
+        })
+        .map_err(|pending| pending.marker)
 }
 
 /// Whether a recording is running. Cheap; read from the render thread each frame.

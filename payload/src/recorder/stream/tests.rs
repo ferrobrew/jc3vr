@@ -83,57 +83,12 @@ fn pending_poll_retains_handle_and_completion_is_consumed_once() {
 
 #[test]
 fn finish_drains_queued_frames_with_original_stream_and_sidecar_order() {
-    let folder = TempFolder::new();
-    let path = folder.0.clone();
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
-    stream.set_write_timeout(Some(WRITE_TIMEOUT)).unwrap();
-    let (mut peer, _) = listener.accept().unwrap();
-    peer.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-    let reader = std::thread::spawn(move || {
-        let mut bytes = Vec::new();
-        peer.read_to_end(&mut bytes).unwrap();
-        bytes
-    });
-    let (entered, ready) = mpsc::sync_channel(1);
-    let (release, wait) = mpsc::sync_channel(1);
-    let mut writer = Writer::spawn_thread(move |receiver, pool, shared| {
-        let mut session = WriterThread {
-            target: "local test".into(),
-            frame_rate: 72,
-            sidecar: std::io::BufWriter::new(File::create(path.join("frames.jsonl")).unwrap()),
-            folder: path,
-            stream: Some(stream),
-            next_address: 0,
-            header_written: false,
-            last_fresh: None,
-            stream_frame: 0,
-            dropped_before_connect: 0,
-            pool,
-            shared,
-        };
-        entered.send(()).unwrap();
-        let _ = wait.recv();
-        session.run(receiver);
-    })
-    .unwrap();
-    ready.recv_timeout(Duration::from_secs(5)).unwrap();
-    let metadata = |frame| FrameMetadata {
-        frame,
-        unix_ms: 1000 + i64::from(frame),
-        game_run_time_us: Some(2000 + u64::from(frame)),
-        eye: 1,
-        width: 2,
-        height: 2,
-        views: Some(CaptureViews {
-            predicted_display_time_ns: i64::from(frame) * 100,
-            eyes: [CaptureEyeView {
-                position: [frame as f32, 0.0, 0.0],
-                orientation: [0.0, 0.0, 0.0, 1.0],
-                fov: [-0.7, 0.7, 0.7, -0.7],
-            }; 2],
-        }),
-    };
+    let HeldWriter {
+        mut writer,
+        release,
+        reader,
+        folder,
+    } = HeldWriter::new();
     assert!(matches!(
         writer.send(Frame::Fresh(vec![1; 6], metadata(0))),
         SendOutcome::Queued
@@ -274,6 +229,165 @@ fn network_write_preserves_partial_progress_and_reports_io_failure() {
         .kind(),
         io::ErrorKind::TimedOut
     );
+}
+
+#[test]
+fn markers_land_before_the_first_fresh_frame_captured_after_them() {
+    let HeldWriter {
+        mut writer,
+        release,
+        reader,
+        folder,
+    } = HeldWriter::new();
+    // The writer is held, so every send lands before it runs: only the capture ordinals order
+    // the markers among the frames, as when the writer lags behind the render thread.
+    for (index, capture_frame) in [(1, 0), (2, 2), (3, 9)] {
+        assert!(
+            writer
+                .send_marker(PendingMarker {
+                    capture_frame,
+                    marker: marker(index),
+                })
+                .is_ok()
+        );
+    }
+    assert!(matches!(
+        writer.send(Frame::Fresh(vec![1; 6], metadata(0))),
+        SendOutcome::Queued
+    ));
+    assert!(matches!(writer.send(Frame::Duplicate), SendOutcome::Queued));
+    assert!(matches!(
+        writer.send(Frame::Fresh(vec![2; 6], metadata(2))),
+        SendOutcome::Queued
+    ));
+    writer.finish();
+    // A finishing writer hands a marker back for the caller to keep elsewhere.
+    let refused = writer.send_marker(PendingMarker {
+        capture_frame: 3,
+        marker: marker(4),
+    });
+    assert_eq!(refused.err().map(|pending| pending.marker.index), Some(4));
+    release.send(()).unwrap();
+    assert!(await_completion(&mut writer).error.is_none());
+    reader.join().unwrap();
+
+    let sidecar = fs::read_to_string(folder.0.join("frames.jsonl")).unwrap();
+    let lines: Vec<serde_json::Value> = sidecar
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let shape: Vec<(String, u64)> = lines
+        .iter()
+        .map(|line| {
+            let kind = match line.get("marker") {
+                Some(marker) => format!("marker {}", marker["index"]),
+                None => format!("frame {}", line["capture_frame"]),
+            };
+            (kind, line["stream_frame"].as_u64().unwrap())
+        })
+        .collect();
+    let expected = [
+        ("marker 1", 0),
+        ("frame 0", 0),
+        ("frame 0", 1),
+        ("marker 2", 2),
+        ("frame 2", 2),
+        // Due after the last frame: it falls at the end of the stream.
+        ("marker 3", 3),
+    ]
+    .map(|(kind, frame)| (kind.to_owned(), frame));
+    assert_eq!(shape, expected);
+    let first = &lines[0]["marker"];
+    assert_eq!(first["label"], "take 1");
+    assert_eq!(first["unix_ms"], 5001);
+    assert_eq!(first["game_run_time_us"], 6001);
+    assert_eq!(lines[0].as_object().unwrap().len(), 2, "marker line fields");
+}
+
+/// A writer thread with a live loopback connection, held before its loop until `release` fires so
+/// a test can queue frames and markers first. `reader` collects what the peer received.
+struct HeldWriter {
+    writer: Writer,
+    release: SyncSender<()>,
+    reader: JoinHandle<Vec<u8>>,
+    folder: TempFolder,
+}
+
+impl HeldWriter {
+    fn new() -> Self {
+        let folder = TempFolder::new();
+        let path = folder.0.clone();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        stream.set_write_timeout(Some(WRITE_TIMEOUT)).unwrap();
+        let (mut peer, _) = listener.accept().unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let reader = std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            peer.read_to_end(&mut bytes).unwrap();
+            bytes
+        });
+        let (entered, ready) = mpsc::sync_channel(1);
+        let (release, wait) = mpsc::sync_channel(1);
+        let writer = Writer::spawn_thread(move |receiver, markers, pool, shared| {
+            let mut session = WriterThread {
+                target: "local test".into(),
+                frame_rate: 72,
+                sidecar: std::io::BufWriter::new(File::create(path.join("frames.jsonl")).unwrap()),
+                folder: path,
+                stream: Some(stream),
+                next_address: 0,
+                header_written: false,
+                last_fresh: None,
+                stream_frame: 0,
+                dropped_before_connect: 0,
+                markers,
+                pending_markers: Vec::new(),
+                pool,
+                shared,
+            };
+            entered.send(()).unwrap();
+            let _ = wait.recv();
+            session.run(receiver);
+        })
+        .unwrap();
+        ready.recv_timeout(Duration::from_secs(5)).unwrap();
+        Self {
+            writer,
+            release,
+            reader,
+            folder,
+        }
+    }
+}
+
+fn metadata(frame: u32) -> FrameMetadata {
+    FrameMetadata {
+        frame,
+        unix_ms: 1000 + i64::from(frame),
+        game_run_time_us: Some(2000 + u64::from(frame)),
+        eye: 1,
+        width: 2,
+        height: 2,
+        views: Some(CaptureViews {
+            predicted_display_time_ns: i64::from(frame) * 100,
+            eyes: [CaptureEyeView {
+                position: [frame as f32, 0.0, 0.0],
+                orientation: [0.0, 0.0, 0.0, 1.0],
+                fov: [-0.7, 0.7, 0.7, -0.7],
+            }; 2],
+        }),
+    }
+}
+
+fn marker(index: u32) -> Marker {
+    Marker {
+        index,
+        stamp: format!("stamp-{index}"),
+        unix_ms: 5000 + i64::from(index),
+        game_run_time_us: Some(6000 + u64::from(index)),
+        label: format!("take {index}"),
+    }
 }
 
 fn new_shared() -> Shared {

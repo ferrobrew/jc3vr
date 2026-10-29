@@ -474,7 +474,10 @@ fn markers_ui(ui: &mut egui::Ui) {
             }
         ));
     }
-    ui.label("Appended to markers.jsonl in the session folder.");
+    ui.label(
+        "Written into the video sidecar while recording; otherwise appended to markers.jsonl in \
+         the session folder.",
+    );
 }
 
 fn keymap_ui(ui: &mut egui::Ui) {
