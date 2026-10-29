@@ -1,5 +1,5 @@
 //! On-demand trace capture: records ~5 s of puffin frames into memory, then dumps them to a
-//! timestamped Chrome trace-event JSON file in the session's `profile/` directory (see
+//! Chrome trace-event JSON file in the session's profiles (see
 //! [`crate::session`]) for offline analysis (`ui.perfetto.dev` or `chrome://tracing`).
 //!
 //! A capture is a puffin frame *sink*: while recording, every finished frame's data is cloned into
@@ -20,7 +20,7 @@ use std::{
 use parking_lot::Mutex;
 use puffin::{FrameData, FrameSinkId, GlobalProfiler};
 
-use crate::profiler::apply_scopes_on;
+use crate::{profiler::apply_scopes_on, session::CaptureFile};
 
 /// The default capture duration, in seconds (~450 frames at 90 Hz).
 pub const DEFAULT_CAPTURE_SECS: f32 = 5.0;
@@ -212,13 +212,8 @@ fn write_capture(frames: &[Arc<FrameData>]) -> anyhow::Result<PathBuf> {
     Ok(path)
 }
 
-/// A timestamped output path in the session's `profile/` directory,
-/// `jc3vr-profile-<stamp>.json` (the per-file stamp disambiguates several captures in one run).
+/// A fresh stamped output path in the session's profiles.
 fn capture_path() -> anyhow::Result<PathBuf> {
-    let dir = crate::session::subdir("profile")
-        .and_then(|r| r.ok())
-        .ok_or_else(|| {
-            anyhow::anyhow!("profiler: could not resolve the session profile directory")
-        })?;
-    Ok(dir.join(format!("jc3vr-profile-{}.json", crate::session::stamp())))
+    crate::session::capture_file(CaptureFile::Profile, &crate::session::stamp(), None)
+        .map_err(|e| anyhow::anyhow!("profiler: {e}"))
 }

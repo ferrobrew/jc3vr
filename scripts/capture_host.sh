@@ -12,7 +12,7 @@
 #
 # The stream carries its size and rate in its own header, so nothing here needs to match the
 # in-game settings. The per-frame pose sidecar lives in the game's session folder
-# (`sessions/<stamp>/capture/<stamp>/frames.jsonl`), not here; the segment timestamps in the file
+# (`sessions/<session>/videos/<stamp>/frames.jsonl`), not here; the segment timestamps in the file
 # names and the wall clock in the sidecar are what line the two up.
 #
 # Environment overrides:

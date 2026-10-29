@@ -13,6 +13,7 @@ use dxbc_stereo::DxbcError;
 use parking_lot::Mutex;
 
 use super::*;
+use crate::session::CaptureFile;
 
 /// Vertex-shader name prefixes whose no-`cb0` shaders are reprojected for single-pass: the scene
 /// geometry that writes clip as `scene-VP · world` (skinned characters/NPCs, static and dynamic
@@ -383,11 +384,11 @@ enum PatchClass {
 }
 
 /// Every censused vertex shader's name and its rewrite class (populated only while
-/// [`vs_name_census_enabled`] is on), dumped to `vs-name-census.txt` on a shader reload to build the
+/// [`vs_name_census_enabled`] is on), dumped to the session's shader dumps on a shader reload to build the
 /// reprojection allowlist from real data.
 static VS_NAME_CENSUS: Mutex<BTreeMap<String, PatchClass>> = Mutex::new(BTreeMap::new());
 
-/// Write the vertex-shader name census (see [`VS_NAME_CENSUS`]) to the session directory, grouped by
+/// Write the vertex-shader name census (see [`VS_NAME_CENSUS`]) to a new session shader dump, grouped by
 /// rewrite class with the reprojection candidates first. A no-op unless [`vs_name_census_enabled`] was on
 /// (the census is empty otherwise). Called after a shader reload, once the bounce has re-created every
 /// shader through the census hook.
@@ -396,9 +397,15 @@ pub fn dump_vs_name_census() {
     if census.is_empty() {
         return;
     }
-    let Some(dir) = crate::session::dir().and_then(|r| r.ok()) else {
-        return;
-    };
+    let path =
+        match crate::session::capture_file(CaptureFile::ShaderDump, &crate::session::stamp(), None)
+        {
+            Ok(path) => path,
+            Err(e) => {
+                tracing::warn!("vs name census: {e}");
+                return;
+            }
+        };
     let mut out = String::new();
     for (label, class) in [
         (
@@ -421,7 +428,6 @@ pub fn dump_vs_name_census() {
         }
         out.push('\n');
     }
-    let path = dir.join("vs-name-census.txt");
     match std::fs::write(&path, out) {
         Ok(()) => tracing::info!("vs name census -> {}", path.display()),
         Err(e) => tracing::warn!("vs name census: failed to write {}: {e}", path.display()),

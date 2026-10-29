@@ -378,7 +378,7 @@ pub struct StereoConfig {
     /// the "stronger in one eye" bug. See [`crate::debug::rt_hash`].
     pub diagnose_rt_hashes: bool,
     /// Diagnostic: while a render trace collects, encode each eye's final `BackBufferLinear` to a PNG
-    /// each frame into the trace's `traces/<stamp>/` folder (alongside `trace.ndjson`), named by
+    /// each frame into the trace's session folder (alongside `trace.ndjson`), named by
     /// frame index so the sequence reassembles and aligns 1:1 with the per-frame trace events. For
     /// localizing per-frame visual artifacts (e.g. the shadow flicker) the numeric trace cannot
     /// place spatially.

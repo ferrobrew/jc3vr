@@ -2,7 +2,7 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Analyze a jc3vr profiler capture (`jc3vr-profile-*.json`, issue #34).
+"""Analyze a jc3vr profiler capture (`sessions/<session>/profiles/<stamp>.json`, issue #34).
 
 Reads the Chrome trace-event JSON the in-game profiler dumps (F9 / the Performance tab) and
 reports where the frame budget goes:
@@ -28,7 +28,7 @@ Reading notes baked into the numbers:
   * The per-render-block-type scopes are off by default (they inflate the draw path they measure),
     so a capture may have no render-block ranking; the block counts go to the log instead.
 
-Usage: uv run tools/analyze_profile.py <jc3vr-profile-*.json> [--worst N] [--top N] [--csv out.csv]
+Usage: uv run tools/analyze_profile.py <profiles/stamp.json> [--worst N] [--top N] [--csv out.csv]
 """
 
 import argparse
@@ -124,7 +124,7 @@ class Frames:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("trace", help="a jc3vr-profile-*.json capture")
+    ap.add_argument("trace", help="a capture from the session's profiles/ folder")
     ap.add_argument("--worst", type=int, default=5, help="worst frames to detail (default 5)")
     ap.add_argument("--top", type=int, default=15, help="rows in the pass/type rankings (default 15)")
     ap.add_argument("--csv", help="also write a per-frame CSV to this path")

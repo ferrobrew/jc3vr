@@ -1,4 +1,4 @@
-//! Logging: stdout + a `jc3vr.log` in the session's `log/` directory (see [`crate::session`]),
+//! Logging: stdout + the session's `session.log` (see [`crate::session`]),
 //! filtered by `RUST_LOG` from the game
 //! process's environment (fixed at game launch), with a live reload path so the filter can be
 //! changed from the debug UI without relaunching the game.
@@ -9,6 +9,8 @@ use parking_lot::Mutex;
 use tracing_subscriber::{
     EnvFilter, Layer as _, layer::SubscriberExt as _, reload, util::SubscriberInitExt as _,
 };
+
+use crate::session::SessionFile;
 
 /// Replace the active log filter with `spec` (standard `RUST_LOG` directive syntax, e.g.
 /// `warn,vr=debug,stereo=debug`). Applies to both the stdout and file layers. Returns a
@@ -47,9 +49,9 @@ pub(super) fn install() {
                 .with_filter(stdout_filter),
         )
         .with(
-            crate::session::dir()
-                .and_then(|r| r.ok())
-                .map(|dir| dir.join("jc3vr.log"))
+            crate::session::file(SessionFile::Log)
+                .map_err(|e| eprintln!("logging: {e}"))
+                .ok()
                 .and_then(|path| match std::fs::File::create(&path) {
                     Ok(file) => Some(file),
                     Err(e) => {

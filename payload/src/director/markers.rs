@@ -13,6 +13,8 @@ use jc3gi::clock::Clock;
 use parking_lot::Mutex;
 use serde::Serialize;
 
+use crate::session::SessionFile;
+
 /// One take marker.
 #[derive(Serialize, Clone)]
 pub struct Marker {
@@ -80,13 +82,10 @@ static STATE: Mutex<State> = Mutex::new(State {
 });
 
 fn write_line(marker: &Marker) {
-    let Some(dir) = crate::session::dir() else {
-        return;
-    };
-    let path = match dir {
-        Ok(dir) => dir.join("markers.jsonl"),
+    let path = match crate::session::file(SessionFile::Markers) {
+        Ok(path) => path,
         Err(e) => {
-            tracing::warn!("director: could not create the session folder for markers: {e}");
+            tracing::warn!("director: markers: {e}");
             return;
         }
     };

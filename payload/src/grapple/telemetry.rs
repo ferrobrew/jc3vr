@@ -2,8 +2,8 @@
 //! analysis of comfort issues that are hard to judge from inside the headset.
 //!
 //! While enabled (from the debug UI's Camera tab; off by default), one row is written per input
-//! tick (`tick`) and per rendered VR frame (`frame`) to a timestamped
-//! `jc3vr-grapple-<yyyymmdd-hhmmss>.csv` beside the payload DLL. The file is created lazily on
+//! tick (`tick`) and per rendered VR frame (`frame`) to a new file in the session's grapple logs
+//! (see [`crate::session`]). The file is created lazily on
 //! the first row, and toggling off and on starts a fresh file, so captures with different settings
 //! stay separate. A dedicated file rather than the tracing stack because the capture is a dense
 //! machine-read stream that must survive log-filter changes and re-injection.
@@ -17,7 +17,7 @@ use std::{
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
-use crate::grapple::filter_snapshot;
+use crate::{grapple::filter_snapshot, session::CaptureFile};
 
 /// Whether the capture is running.
 pub fn log_enabled() -> bool {
@@ -143,13 +143,15 @@ fn write_row(kind: &str, fields: &str) {
 /// Create a fresh timestamped capture file with its header, or `None` (with a warning logged) when
 /// the path cannot be resolved or created.
 fn open_capture() -> Option<TelemetryWriter> {
-    let Some(path) = crate::session::subdir("grapple")
-        .and_then(|r| r.ok())
-        .map(|dir| dir.join(format!("jc3vr-grapple-{}.csv", crate::session::stamp())))
-    else {
-        tracing::warn!("grapple telemetry: could not resolve the session grapple directory");
-        return None;
-    };
+    let path =
+        match crate::session::capture_file(CaptureFile::GrappleLog, &crate::session::stamp(), None)
+        {
+            Ok(path) => path,
+            Err(e) => {
+                tracing::warn!("grapple telemetry: {e}");
+                return None;
+            }
+        };
     match std::fs::File::create(&path) {
         Ok(mut file) => {
             let _ = file.write_all(TELEMETRY_HEADER.as_bytes());

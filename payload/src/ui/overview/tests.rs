@@ -315,7 +315,7 @@ fn real_destination_widget_changes_only_navigation_on_click() {
 #[test]
 fn idle_profiler_result_does_not_establish_capture_activity() {
     let mut snapshot = fixture();
-    snapshot.profiler.last_result = Some(Ok(PathBuf::from("profile/completed.json")));
+    snapshot.profiler.last_result = Some(Ok(PathBuf::from("profiles/completed.json")));
     let rows = snapshot.rows();
     let tools = ranked(&rows);
     let profiler = tools.iter().find(|row| row.id == RowId::Profiler).unwrap();
@@ -328,7 +328,7 @@ fn idle_profiler_result_does_not_establish_capture_activity() {
     );
     assert_eq!(
         profiler.note.as_deref(),
-        Some("Last trace written: profile/completed.json"),
+        Some("Last trace written: profiles/completed.json"),
     );
     assert!(!attention(&rows).iter().any(|row| row.id == RowId::Profiler));
     assert!(tools.iter().any(|row| row.id == RowId::Timing));
@@ -340,7 +340,7 @@ fn recording_profiler_is_active_and_needs_attention_with_independent_progress_an
     let mut snapshot = fixture();
     snapshot.profiler.recording = true;
     snapshot.profiler.progress = Some((1.5, 5.0));
-    snapshot.profiler.last_result = Some(Ok(PathBuf::from("profile/previous.json")));
+    snapshot.profiler.last_result = Some(Ok(PathBuf::from("profiles/previous.json")));
     let rows = snapshot.rows();
     let tools = ranked(&rows);
     assert_eq!(tools[0].id, RowId::Profiler);
@@ -354,7 +354,7 @@ fn recording_profiler_is_active_and_needs_attention_with_independent_progress_an
     );
     assert_eq!(
         profiler.note.as_deref(),
-        Some("Last trace written: profile/previous.json"),
+        Some("Last trace written: profiles/previous.json"),
     );
     assert_eq!(attention(&rows)[0].id, RowId::Profiler);
     assert!(!find(&rows, RowId::Timing).active_capture);

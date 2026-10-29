@@ -14,7 +14,7 @@ Every captured display frame produces exactly one stream frame. A readback that 
 
 The host script writes `jc3vr_<stamp>_<n>.mkv` segments of ten minutes into its output directory, encoded with the first hardware H.264 encoder ffmpeg reports (NVENC, VAAPI, QSV, AMF) or libx264, with audio from the default sink's monitor unless overridden. Video and audio both take wall-clock timestamps at arrival, which is what lines them up; the take markers give a second reference.
 
-The game writes the sidecar to `sessions/<stamp>/capture/<stamp>/` beside the payload DLL:
+The game writes the sidecar to `videos/<stamp>/` in the session folder ([sessions.md](sessions.md)):
 
 - `stream.json`: the stream size, rate, eye, pixel format, colour space and range, the host target, and the start wall clock.
 - `frames.jsonl`: one line per stream frame, and one per take marker, in file order. A frame line has `stream_frame` (the frame number in the video), `capture_frame` (the render thread's ordinal), `duplicate`, `unix_ms`, `game_run_time_us`, `eye`, `predicted_display_time_ns`, and `views`: both eyes' raw located pose (position, orientation as `x, y, z, w`) in the runtime's LOCAL space and field of view as `left, right, up, down` angles in radians.

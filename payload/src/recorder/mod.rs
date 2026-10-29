@@ -39,6 +39,7 @@ use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext, ID
 use crate::{
     director::markers::Marker,
     recorder::owners::{Completion, VideoWriters},
+    session::CaptureFolder,
     stereo::{far_phase, single_pass::collapse_active},
 };
 
@@ -112,7 +113,7 @@ pub fn start() {
         return;
     }
     let stamp = crate::session::stamp();
-    let folder = format!("capture/{stamp}");
+    let folder = CaptureFolder::Video.relative(&stamp).display().to_string();
     let (completions, result) = state
         .writers
         .start(folder.clone(), || stream::Writer::spawn(&cfg, &stamp));
@@ -120,7 +121,7 @@ pub fn start() {
     match result {
         Ok(()) => {
             state.recording = true;
-            state.folder = Some(folder);
+            state.folder = Some(folder.clone());
             state.error = None;
             state.size = None;
             state.frame_index = 0;
@@ -131,7 +132,7 @@ pub fn start() {
             FRAMES_DROPPED.store(0, Ordering::Relaxed);
             RECORDING.store(true, Ordering::Release);
             tracing::info!(
-                "recorder: recording eye {} at scale {} to {}:{} (sidecar capture/{stamp})",
+                "recorder: recording eye {} at scale {} to {}:{} (sidecar {folder})",
                 state.eye,
                 state.scale,
                 cfg.host(),

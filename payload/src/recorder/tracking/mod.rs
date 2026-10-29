@@ -54,6 +54,7 @@ use crate::{
         lookback::{Entry, Lookback, LookbackStatus},
         writer::{CaptureBatch, SendOutcome, Writer},
     },
+    session::{CaptureFile, SessionError},
     vr::{
         input::semantic::{
             frame as semantic_frame,
@@ -107,10 +108,8 @@ pub(crate) enum StartError {
     Replaying,
     /// There is no player character to mark the start at.
     NoPlayer,
-    /// The session folder is unavailable.
-    NoSessionFolder,
-    /// The session folder's `tracking` directory could not be created.
-    Folder(std::io::Error),
+    /// The recording's session path could not be produced.
+    Session(SessionError),
     Writer(writer::WriterError),
     /// The bounded owner set is full of writers that have not exited.
     WritersBusy,
@@ -125,10 +124,7 @@ impl std::fmt::Display for StartError {
             StartError::Disabled => write!(f, "the test tools are switched off (testing.enabled)"),
             StartError::Replaying => write!(f, "a replay is running"),
             StartError::NoPlayer => write!(f, "there is no player character to mark the start at"),
-            StartError::NoSessionFolder => write!(f, "the session folder is unavailable"),
-            StartError::Folder(e) => {
-                write!(f, "could not create the session's tracking folder: {e}")
-            }
+            StartError::Session(e) => write!(f, "{e}"),
             StartError::Writer(e) => write!(f, "{e}"),
             StartError::WritersBusy => write!(f, "previous recording writers are still finishing"),
             StartError::ShuttingDown => write!(f, "the recorder is shutting down"),
@@ -597,7 +593,8 @@ fn begin() -> Result<PathBuf, StartError> {
     let hand_joints = Config::lock_query(|c| c.testing.record_hand_joints);
     let stamp = crate::session::stamp();
     let header = header_at(transform, stamp.clone());
-    let path = tracking_folder()?.join(format!("{stamp}.{}", format::EXTENSION));
+    let path = crate::session::capture_file(CaptureFile::Recording, &stamp, None)
+        .map_err(StartError::Session)?;
     let mut state = STATE.lock();
     state.can_start()?;
     let writer = Writer::start(&path, &header).map_err(StartError::Writer)?;
@@ -652,12 +649,6 @@ fn header_at(transform: [f32; 16], stamp: String) -> Header {
         world_scale,
         time_scale,
     }
-}
-
-fn tracking_folder() -> Result<PathBuf, StartError> {
-    crate::session::subdir("tracking")
-        .ok_or(StartError::NoSessionFolder)?
-        .map_err(StartError::Folder)
 }
 
 fn discard_before_start() {
@@ -720,7 +711,8 @@ fn save_lookback() -> Result<PathBuf, StartError> {
         .ok_or(StartError::NoPlayer)?;
     let stamp = crate::session::stamp();
     let header = header_at(transform, stamp.clone());
-    let path = tracking_folder()?.join(format!("{stamp}_lookback.{}", format::EXTENSION));
+    let path = crate::session::capture_file(CaptureFile::Recording, &stamp, Some("lookback"))
+        .map_err(StartError::Session)?;
     // The evicted batches took their input history with them: say so before the first record.
     let lead = snapshot
         .evicted_inputs

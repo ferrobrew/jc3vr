@@ -1,4 +1,5 @@
-//! On-demand screenshots to the session's `screenshots/` folder (F12), for in-headset diagnosis.
+//! On-demand screenshots to the session's screenshots (F12; see [`crate::session`]), for in-headset
+//! diagnosis.
 //! Every capture shows
 //! both eyes side by side in a single PNG: under single-pass collapse the linear back buffer *is*
 //! that side-by-side render and is captured directly, while in two-pass stereo the back buffer only
@@ -22,10 +23,7 @@
 
 use std::{
     path::PathBuf,
-    sync::{
-        OnceLock,
-        atomic::{AtomicBool, AtomicU32, Ordering},
-    },
+    sync::atomic::{AtomicBool, AtomicU32, Ordering},
 };
 
 use anyhow::{Context as _, bail};
@@ -45,7 +43,7 @@ use windows::{
     core::Interface as _,
 };
 
-use crate::stereo::single_pass::FrameDiagnostics;
+use crate::{session::CaptureFile, stereo::single_pass::FrameDiagnostics};
 
 /// What a capture reads its pixels from. Both variants produce one PNG containing both eyes; they
 /// differ in whether the GPU already laid the eyes out side by side.
@@ -125,10 +123,6 @@ pub fn shutdown() -> bool {
 }
 
 static REQUESTED: AtomicBool = AtomicBool::new(false);
-static COUNTER: AtomicU32 = AtomicU32::new(0);
-/// The stamp for this run's `screenshots/<stamp>/` subfolder, taken on the first capture so every
-/// screenshot of the run shares one folder.
-static SCREENSHOT_STAMP: OnceLock<String> = OnceLock::new();
 
 /// One read-back frame waiting to be encoded: everything the writer needs, owned, so nothing it
 /// touches is engine state.
@@ -143,9 +137,9 @@ struct PendingWrite {
     /// The capture's source format, for the sidecar (already formatted: `DXGI_FORMAT` is not `Send`-safe
     /// to reason about across the hand-off and the sidecar only ever prints it).
     format: String,
-    /// The file name within this run's screenshot folder; numbered on the render thread so the
-    /// sequence follows the order the frames were captured in, not the order the writers finish in.
-    file_name: String,
+    /// The capture's stamp, which names its file; taken on the render thread so the names follow
+    /// the order the frames were captured in, not the order the writers finish in.
+    stamp: String,
     /// The single-pass state of the captured frame, snapshotted here because by the time the writer
     /// runs the engine is several frames on.
     diagnostics: Option<FrameDiagnostics>,
@@ -267,14 +261,13 @@ unsafe fn map_out(
         }
         context.Unmap(staging, 0);
 
-        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
         Ok(PendingWrite {
             pixels,
             width: desc.Width,
             height: desc.Height,
             bgra,
             format: format!("{:?}", desc.Format),
-            file_name: format!("jc3vr-{n:04}.png"),
+            stamp: crate::session::stamp(),
             diagnostics: crate::stereo::single_pass::last_frame_diagnostics(),
         })
     }
@@ -315,15 +308,7 @@ const SHUTDOWN_POLLS: u32 = 1000;
 fn write_screenshot(mut pending: PendingWrite) -> anyhow::Result<PathBuf> {
     to_rgba8_opaque(&mut pending.pixels, pending.bgra);
 
-    // All of a run's screenshots share one stamped subfolder (`screenshots/<stamp>/`), mirroring
-    // the render-trace layout; the stamp is taken once, on the first capture.
-    let stamp = SCREENSHOT_STAMP.get_or_init(crate::session::stamp);
-    let dir = crate::session::subdir("screenshots")
-        .and_then(|r| r.ok())
-        .map(|base| base.join(stamp))
-        .context("could not resolve the session screenshots directory")?;
-    std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
-    let path = dir.join(&pending.file_name);
+    let path = crate::session::capture_file(CaptureFile::Screenshot, &pending.stamp, None)?;
 
     let file =
         std::fs::File::create(&path).with_context(|| format!("creating {}", path.display()))?;

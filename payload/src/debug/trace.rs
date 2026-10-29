@@ -1,13 +1,17 @@
 //! Render-call tracing subsystem: collects per-call NDJSON records over a fixed number of frames and
-//! dumps them next to the injected DLL, with a self-describing manifest as the first record.
+//! dumps them into the trace's session folder (see [`crate::session`]), with a self-describing
+//! manifest as the first record.
 
 use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
 use parking_lot::Mutex;
 
-use crate::debug::{
-    coord_frame::{self, CoordFrameSample},
-    stereo_diff::{self, DrawDiff},
+use crate::{
+    debug::{
+        coord_frame::{self, CoordFrameSample},
+        stereo_diff::{self, DrawDiff},
+    },
+    session::CaptureFolder,
 };
 
 /// Frames left in the active trace; 0 = inactive. Kept as a standalone atomic so the hot-path
@@ -23,7 +27,7 @@ pub static CAPTURE_FRAMES: AtomicI32 = AtomicI32::new(60);
 pub struct TraceState {
     /// NDJSON records collected so far.
     log: Vec<String>,
-    /// Local-time stamp (YYYYMMDD-HHMMSS) for this trace's filename, set at [`TraceState::start`].
+    /// The trace's [`crate::session::stamp`], naming its session folder, set at [`TraceState::start`].
     stamp: String,
     /// Absolute path of the most recent dump, shown in the UI so it's findable.
     last_path: Option<String>,
@@ -93,7 +97,7 @@ pub enum TraceEvent {
     /// self-describing (which gates / skips / the exposure pin were on) without external notes.
     #[serde(rename = "manifest")]
     Manifest {
-        /// Local capture time (YYYYMMDD-HHMMSS), matching the trace filename.
+        /// The trace's [`crate::session::stamp`], matching its folder name.
         timestamp: String,
         /// The full runtime configuration snapshot (nests cleanly via its own `Serialize`). Boxed
         /// so the one-off manifest doesn't inflate every event in the enum
@@ -330,14 +334,6 @@ pub fn active_frames() -> i32 {
     TRACE_FRAMES.load(Ordering::Relaxed)
 }
 
-/// The per-trace output directory `traces/<stamp>` in the session directory (see [`crate::session`]),
-/// collecting one capture's NDJSON and its per-frame screenshots together. `None` when the session
-/// directory is unavailable.
-fn trace_dir(stamp: &str) -> Option<std::path::PathBuf> {
-    let base = crate::session::subdir("traces")?.ok()?;
-    Some(base.join(if stamp.is_empty() { "latest" } else { stamp }))
-}
-
 impl Default for TraceState {
     /// Delegates to the const [`TraceState::new`] -- the `TRACE_STATE` static needs a const
     /// initializer, which a derived `Default` can't provide, so `new` stays the single source.
@@ -374,17 +370,16 @@ impl TraceState {
         }
     }
 
-    /// Write the collected log to an NDJSON file next to the injected DLL (same place as `jc3vr.log`)
-    /// and record its path for the UI (caller holds the lock).
+    /// Write the collected log to `trace.ndjson` in the trace's session folder and record its path
+    /// for the UI (caller holds the lock).
     fn dump(&mut self) {
-        let Some(dir) = trace_dir(&self.stamp) else {
-            tracing::error!("Failed to write render trace: module path unavailable");
-            return;
+        let dir = match crate::session::capture_folder(CaptureFolder::Trace, &self.stamp) {
+            Ok(dir) => dir,
+            Err(e) => {
+                tracing::error!("render trace: {e}");
+                return;
+            }
         };
-        if let Err(e) = std::fs::create_dir_all(&dir) {
-            tracing::error!("Failed to create trace dir {}: {e}", dir.display());
-            return;
-        }
         let path = dir.join("trace.ndjson");
         match std::fs::write(&path, self.log.join("\n")) {
             Ok(()) => {
@@ -400,9 +395,9 @@ impl TraceState {
         }
     }
 
-    /// The per-trace output directory (created) and current real-frame index for a diagnostic
+    /// The collecting trace's folder (created) and current real-frame index for a diagnostic
     /// screenshot, or `None` when no trace is collecting. Used by [`crate::debug::rt_hash`] to write
-    /// per-frame render-target dumps into the same `traces/<stamp>/` folder as the trace NDJSON.
+    /// per-frame render-target images into the same folder as the trace NDJSON.
     pub fn screenshot_target() -> Option<(std::path::PathBuf, u32)> {
         if !tracing_active() {
             return None;
@@ -411,8 +406,7 @@ impl TraceState {
             let state = TRACE_STATE.lock();
             (state.stamp.clone(), state.frame)
         };
-        let dir = trace_dir(&stamp)?;
-        std::fs::create_dir_all(&dir).ok()?;
+        let dir = crate::session::capture_folder(CaptureFolder::Trace, &stamp).ok()?;
         Some((dir, frame))
     }
 

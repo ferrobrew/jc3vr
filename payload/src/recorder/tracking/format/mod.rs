@@ -16,7 +16,7 @@ mod tests;
 
 use glam::Quat;
 use openxr as xr;
-pub(crate) use tracking_format::{DecodeError, EXTENSION};
+pub(crate) use tracking_format::DecodeError;
 // Only the tests name these.
 #[cfg(test)]
 use tracking_format::{DecodeErrorKind, VERSION};

@@ -24,6 +24,7 @@ use serde::Serialize;
 
 use crate::{
     config::Config,
+    session::{CaptureFile, SessionError},
     testing::{
         log_tap::{self, LogLine},
         replay::{self, Observation, ReplayOutcome, RunId},
@@ -453,8 +454,7 @@ impl State {
 /// Why the summary file could not be written.
 #[derive(Debug)]
 enum SummaryError {
-    NoSessionFolder,
-    Folder(std::io::Error),
+    Session(SessionError),
     Serialize(toml::ser::Error),
     Write {
         path: PathBuf,
@@ -466,10 +466,7 @@ impl std::fmt::Display for SummaryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "scenario: summary: ")?;
         match self {
-            SummaryError::NoSessionFolder => write!(f, "the session folder is unavailable"),
-            SummaryError::Folder(e) => {
-                write!(f, "could not create the session's testing folder: {e}")
-            }
+            SummaryError::Session(e) => write!(f, "{e}"),
             SummaryError::Serialize(e) => write!(f, "could not serialize it: {e}"),
             SummaryError::Write { path, error } => {
                 write!(f, "could not write {}: {error}", path.display())
@@ -503,17 +500,16 @@ struct SummaryExpectation<'a> {
     detail: &'a str,
 }
 
-/// Write the summary to the session's `testing` folder. A small file once per scenario, so it is
+/// Write the summary to the session's scenario summaries. A small file once per scenario, so it is
 /// written on the game thread.
 fn write_summary(run: &Run, report: &Report) -> Result<PathBuf, SummaryError> {
-    let folder = crate::session::subdir("testing")
-        .ok_or(SummaryError::NoSessionFolder)?
-        .map_err(SummaryError::Folder)?;
     let stem = run.scenario.path.file_stem().map_or_else(
         || "scenario".to_owned(),
         |s| s.to_string_lossy().into_owned(),
     );
-    let path = folder.join(format!("{}_{stem}.toml", run.started_at));
+    let path =
+        crate::session::capture_file(CaptureFile::ScenarioSummary, &run.started_at, Some(&stem))
+            .map_err(SummaryError::Session)?;
     let summary = Summary {
         scenario: &report.name,
         file: report.path.display().to_string(),

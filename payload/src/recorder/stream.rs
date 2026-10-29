@@ -7,7 +7,7 @@
 //! retries, so the recording can be started before the host listener is up; frames that arrive
 //! before the connection exists are dropped and counted.
 //!
-//! The sidecar lives in `capture/<stamp>/` under the session folder: `stream.json` with the
+//! The sidecar lives in the recording's session video folder (see [`crate::session`]): `stream.json` with the
 //! stream parameters, and `frames.jsonl` with one line per frame written to the stream, carrying
 //! the stream frame index (what the video's frame number is), the capture index from the render
 //! thread, the wall clock, the engine's game-run time, whether the frame is a duplicate, and the
@@ -36,7 +36,9 @@ use anyhow::Context as _;
 use parking_lot::Mutex;
 use serde::Serialize;
 
-use crate::{director::markers::Marker, recorder::RecorderConfig, vr::CaptureViews};
+use crate::{
+    director::markers::Marker, recorder::RecorderConfig, session::CaptureFolder, vr::CaptureViews,
+};
 
 /// What the render thread knows about a frame at capture time.
 #[derive(Clone, Copy, Debug)]
@@ -90,12 +92,7 @@ impl Writer {
     /// Create the sidecar folder and spawn the writer thread, which connects to the host in the
     /// background.
     pub fn spawn(cfg: &RecorderConfig, stamp: &str) -> anyhow::Result<Self> {
-        let folder = crate::session::subdir("capture")
-            .context("the session folder is unavailable")?
-            .context("could not create the session capture folder")?
-            .join(stamp);
-        std::fs::create_dir_all(&folder)
-            .with_context(|| format!("could not create {}", folder.display()))?;
+        let folder = crate::session::capture_folder(CaptureFolder::Video, stamp)?;
         let sidecar = std::fs::File::create(folder.join("frames.jsonl"))
             .with_context(|| format!("could not create the sidecar in {}", folder.display()))?;
         let target = format!("{}:{}", cfg.host(), cfg.port);

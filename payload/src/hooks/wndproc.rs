@@ -63,7 +63,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     }
 
     // F9 starts a profiler trace capture (issue #34): records a few seconds of CPU and GPU frames
-    // and dumps them to the session's profile/ folder as Chrome trace-event JSON, so a capture can be
+    // and dumps them to the session's `profiles/` folder as Chrome trace-event JSON, so a capture can be
     // taken in-headset without the overlay. Edge-detected; consumed. A no-op while one is already
     // recording.
     #[cfg(feature = "profiler")]
