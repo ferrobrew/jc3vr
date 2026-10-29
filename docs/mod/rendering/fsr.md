@@ -1,6 +1,6 @@
 # FSR anti-aliasing and upscaling
 
-The flat game's anti-aliasing is from 2015: SMAA, with an optional T2X temporal variant. The mod already disables T2X in stereo (its shared history ghosts across the two eye dispatches — `FORCE_SMAA_1X`, rendering §5.7) and falls back to SMAA 1x, which is a passable edge filter but nothing more. AMD's FidelityFX Super Resolution (FSR) is the modern replacement: a temporal reconstruction pass that does substantially better anti-aliasing than SMAA, and — with one extra piece of plumbing — doubles as a resolution upscaler, which VR will want badly.
+The flat game's anti-aliasing is from 2015: SMAA, with an optional T2X temporal variant. The mod already disables T2X in stereo (its shared history ghosts across the two eye dispatches; see `anti_aliasing_apply` and rendering §5.7) and falls back to SMAA 1x, which is a passable edge filter but nothing more. AMD's FidelityFX Super Resolution (FSR) is the modern replacement: a temporal reconstruction pass that does substantially better anti-aliasing than SMAA, and — with one extra piece of plumbing — doubles as a resolution upscaler, which VR will want badly.
 
 This document records how FSR is integrated: which version, where it dispatches, and the order it was built in. The concrete reverse-engineering it leans on lives in `rendering.md` (the post-effects chain, the buffers, the stereo double-dispatch) and the pyxis-defs.
 
@@ -31,7 +31,7 @@ The mod dispatches FSR post-tonemap, at the engine's anti-aliasing hook. There w
 
 Note that FSR's usual "before tonemap" placement is driven mostly by *upscaling*: an upscaler must run before resolution-dependent effects so they execute once at display resolution. That argument does not apply at native AA res, so it does not force the early position here; the remaining pre-tonemap argument is purely the highlight-quality one, which is modest.
 
-The engine's own AA is suppressed wherever FSR is active: the `FORCE_SMAA_1X` logic also drops [`AntiAliasingEffect::m_Mode`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::AntiAliasingEffect##field-m_Mode) to off ([`AAMode::AA_NONE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::AAMode##variant-AA_NONE) is the passthrough branch in `Apply`).
+The engine's own AA is suppressed wherever FSR is active: the same `anti_aliasing_apply` detour that forces SMAA 1x in stereo drops [`AntiAliasingEffect::m_Mode`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::AntiAliasingEffect##field-m_Mode) to off ([`AAMode::AA_NONE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::AAMode##variant-AA_NONE) is the passthrough branch in `Apply`).
 
 ## Design for upscaling, build for AA
 

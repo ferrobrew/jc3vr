@@ -64,7 +64,7 @@ sharing one per-frame value, or does something advance/diverge across the two dr
 | Post block dedupe (unconditional) | `render_block_post_effects_draw` (`hooks/graphics_engine/post_effects.rs`) | Gates `RenderBlockPostEffects::Draw` to once per dispatch via `WORLD_POST_BLOCK_RAN` (reset each dispatch by the driver) | Per-dispatch gate; the between-eye add-list restore cannot zero the *draw*-list entry `ApplyWorldFilters` enqueues, so eye 1 would otherwise run the whole post chain (and FSR) twice | Yes — the duplicate post-chain run (which double-steps FSR history and the post slot ring) is suppressed. |
 | `gate_eye1_dt` = true | `apply_world_filters` / `apply_global_filters` (`post_effects.rs`) | Zeroes `dt` on eye 1 for `ApplyWorldFilters` (world-fade accumulator) and `ApplyGlobalFilters` (screen-fade alpha, sun-direction / heat-haze accumulators) | Eye 1 passes `dt = 0`, so the dt-driven accumulators step once per real frame | Yes — dt accumulators advance once per real frame. |
 | `exposure.gate` = true | `smoothed_exposure_update`, `calc_histogram_mid_bright`, `tonemapping_apply`, `generate_final_histogram` (`hooks/graphics_engine/tone_mapping.rs`) | Skips exposure smoother + both histogram meters on eye 1 (`SmoothedExposure::Update`, `ToneMappingEffect::Apply`, `GenerateHistogramForFinalScene`) | Eye 1 skips them; both eyes share eye 0's exposure | Once per real frame for the metering. **But** `m_HistogramPingPong` (the exposure histogram double buffer) still alternates per real frame — see candidate E. |
-| `FORCE_SMAA_1X` = true | `anti_aliasing_apply` (`post_effects.rs`) + jitter drop in `setup_render_camera` | Drops `AntiAliasingEffect.m_Mode` T2X→SMAA 1x (restored after); disables the engine TAA jitter | Per dispatch, restored | Yes for the mode. Consequence: **no T2X temporal averaging**, so any per-frame ping-pong that base JC3 would average is visible (this is why a global shadow ping-pong surfaces at all). |
+| Forced SMAA 1x (stereo, unconditional) | `anti_aliasing_apply` (`post_effects.rs`) + jitter drop in `setup_render_camera` | Drops `AntiAliasingEffect.m_Mode` T2X→SMAA 1x (restored after); disables the engine TAA jitter | Per dispatch, restored | Yes for the mode. Consequence: **no T2X temporal averaging**, so any per-frame ping-pong that base JC3 would average is visible (this is why a global shadow ping-pong surfaces at all). |
 | Off-axis reconstruction inverse (VR only; + `offaxis_inverse_skip_atmospheric` = true) | `perspective_fov_inverse` (`hooks/graphics_engine/reconstruction.rs`) | Substitutes the exact per-eye off-axis inverse for `Matrix4::PerspectiveFovInverse` in the deferred/SSR/SSAO/atmospheric reconstruction, gated on the live main-camera planes; the atmospheric-scattering pass (which reconstructs the sky and samples the sun cascade) falls back to the symmetric rebuild | Per-eye by design (each eye's own projection); flagged via `IN_ATMOSPHERIC` per pass | Yes — per-eye correction, no shared state advanced. The atmospheric fallback exists specifically because the off-axis sky reconstruction swims across the sun-cascade box boundary (a *contributor* to the distant per-eye shadow flip). |
 | Terrain CB invalidation (unconditional) | `invalidate_terrain_cbs` (`game.rs`) | Stamps `RenderBlockTypeTerrain(Patch).m_WasCBApplied` with a stale frame number before eye 1 | Forces eye 1 to re-upload its terrain-tessellation CB (else it reuses eye 0's baked view-projection, keyed on the pinned frame number) | Yes — corrects an artifact *created by* the counter restore; each eye gets its own terrain projection. |
 | `patch_shadow_pcf_hash` = true | shader patch (`hooks/graphics_engine/shader`) | Removes the screen-space PCF rotation hash from the sun-shadow shaders at creation | Static shader patch, not per-frame | n/a — removes a per-eye/per-pixel PCF rotation so both eyes use the same unrotated 38-tap PCF. |
@@ -108,7 +108,7 @@ once-per-real-frame and their save/restore is scoped, not between-eye:
 This is the list to cross-reference against the engine-side "ping-pong surface" table. Ordered
 roughly by how well each matches the reported symptom — a **terrain-wide sun-shadow intensity that
 alternates frame-to-frame with a stationary HMD, landing on either eye by phase** — and by whether
-the double-draw specifically disturbs it (versus a base-game per-frame toggle that `FORCE_SMAA_1X`
+the double-draw specifically disturbs it (versus a base-game per-frame toggle that the forced SMAA 1x
 merely un-averages).
 
 ### B. Sun-shadow atlas parity double buffer — strongest symptom match
@@ -126,7 +126,7 @@ merely un-averages).
   flicker source in combination with candidate C (amortized cascade content that differs between the
   two halves' render frames) or any per-frame perturbation of the fit/content. The `m_FrameIndex`
   parity sequence itself is **not** disturbed by the double-draw (see the ledger), so if this is the
-  culprit it is a base-game latent toggle that `FORCE_SMAA_1X` un-averages, not a double-draw-created
+  culprit it is a base-game latent toggle that the forced SMAA 1x un-averages, not a double-draw-created
   divergence.
 
 ### C. Cascade update-pattern amortization — content churn feeding B
@@ -197,7 +197,7 @@ merely un-averages).
   restores between eyes (frame counters, SSAO, GI, EffectInfo, add-buffer) or renders once per frame
   (shared pre-passes / shadow atlas), so their per-frame *phase* matches the base game.
 - The likeliest source of a *terrain-wide sun-shadow* ping-pong is therefore not a double-draw
-  divergence but a **base-game per-frame toggle that `FORCE_SMAA_1X` stops averaging**: the
+  divergence but a **base-game per-frame toggle that the forced SMAA 1x stops averaging**: the
   **shadow-atlas parity double buffer** (B), fed by **cascade amortization content churn** (C), with
   the **shadow-fade scalar** (D) as a direct per-frame multiplier to rule in or out. The three
   shipped-off levers that would each independently pin one of these — `sync_shadow_atlas`,

@@ -158,15 +158,11 @@ fn apply_global_filters(this: *mut c_void, dt: f32, ctx: *mut c_void) {
     APPLY_GLOBAL_FILTERS.get().unwrap().call(this, dt, ctx);
 }
 
-/// Force SMAA 1x in stereo: T2X's temporal resolve blends a single history shared across the two
-/// eye dispatches, so each eye ghosts the other.
-pub(crate) const FORCE_SMAA_1X: bool = true;
-
 // AntiAliasingEffect::Apply -- the AA stage of the post chain. Two roles:
 //   * FSR on: resolve the slot color ourselves (post-tonemap) via fsr_dispatch, then neutralize the
 //     engine AA to AA_NONE so it passthrough-blits our FSR result onward (docs/mod/rendering/fsr.md).
-//   * else, force-SMAA-1x in stereo: drop T2X (mode 3) to SMAA 1x (mode 2) -- T2X's temporal resolve
-//     blends a single history shared across the two eye dispatches, so each eye ghosts the other.
+//   * else, in stereo, drop T2X to SMAA 1x -- T2X's temporal resolve blends a single history shared
+//     across the two eye dispatches, so each eye ghosts the other.
 // Either way, restore the real mode afterwards so the engine's own state stays intact.
 #[detour(address = jc3gi::graphics_engine::post_effects::AntiAliasingEffect::Apply_ADDRESS)]
 fn anti_aliasing_apply(
@@ -176,7 +172,7 @@ fn anti_aliasing_apply(
     mgr: *mut c_void,
     slot: *mut u32,
 ) -> u64 {
-    let force_smaa_1x = stereo::active() && FORCE_SMAA_1X;
+    let force_smaa_1x = stereo::active();
     let fsr = Config::lock_query(|c| {
         c.fsr
             .enabled
