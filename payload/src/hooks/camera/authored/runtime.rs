@@ -88,6 +88,7 @@ struct Runtime {
 struct Handback {
     correction: Trs,
     started: Instant,
+    duration: Duration,
     case: NamedCase,
 }
 
@@ -420,6 +421,7 @@ impl Runtime {
                     state.named_case().map(|case| Handback {
                         correction,
                         started: now,
+                        duration: handback_duration(correction),
                         case,
                     })
                 });
@@ -441,7 +443,7 @@ impl Runtime {
             - (now
                 .saturating_duration_since(handback.started)
                 .as_secs_f32()
-                / HANDBACK_DURATION.as_secs_f32())
+                / handback.duration.as_secs_f32())
             .min(1.0);
         if remaining <= 0.0 {
             self.clear();
@@ -499,6 +501,27 @@ impl Runtime {
     }
 }
 
+/// The handback eases out the correction at a bounded average rate, so a large residual (an
+/// interrupted inversion can leave up to a half-turn of roll) returns over proportionally longer
+/// than a small one, and no correction returns faster than the minimum.
+fn handback_duration(correction: Trs) -> Duration {
+    let angle = correction
+        .rotation
+        .normalize()
+        .angle_between(Quat::IDENTITY);
+    let distance = correction.translation.length();
+    if !angle.is_finite() || !distance.is_finite() {
+        return HANDBACK_MAX_DURATION;
+    }
+    let seconds = (angle / HANDBACK_ROTATION_RATE)
+        .max(distance / HANDBACK_TRANSLATION_RATE)
+        .clamp(
+            HANDBACK_MIN_DURATION.as_secs_f32(),
+            HANDBACK_MAX_DURATION.as_secs_f32(),
+        );
+    Duration::from_secs_f32(seconds)
+}
+
 /// Freeze the animated eye offset, not the tracked displacement or the character root.
 fn compose_tracked(
     root: Trs,
@@ -522,7 +545,13 @@ fn compose_tracked(
 
 // A mod-side discontinuity limit, not a native movement threshold.
 const MAX_ROOT_STEP: f32 = 8.0;
-const HANDBACK_DURATION: Duration = Duration::from_millis(250);
+const HANDBACK_MIN_DURATION: Duration = Duration::from_millis(250);
+const HANDBACK_MAX_DURATION: Duration = Duration::from_millis(1500);
+/// The average handback rotation rate in radians per second; the smoothstep peak is half again
+/// as fast.
+const HANDBACK_ROTATION_RATE: f32 = std::f32::consts::FRAC_PI_2 / 0.75;
+/// The average handback translation rate in metres per second.
+const HANDBACK_TRANSLATION_RATE: f32 = 1.0;
 
 static STATE: Mutex<Runtime> = Mutex::new(Runtime {
     policy: Policy::new(),
@@ -765,6 +794,34 @@ mod tests {
     }
 
     #[test]
+    fn handback_duration_scales_with_the_correction() {
+        let rotated = |angle: f32| Trs {
+            rotation: Quat::from_rotation_z(angle),
+            ..Trs::IDENTITY
+        };
+        assert_eq!(handback_duration(Trs::IDENTITY), HANDBACK_MIN_DURATION);
+        let quarter = handback_duration(rotated(std::f32::consts::FRAC_PI_2));
+        let half = handback_duration(rotated(std::f32::consts::PI));
+        assert!((quarter.as_secs_f32() - 0.75).abs() < 0.001);
+        assert!(half > quarter);
+        assert_eq!(
+            handback_duration(rotated(3.0 * std::f32::consts::PI / 2.0)),
+            quarter
+        );
+        assert!(half <= HANDBACK_MAX_DURATION);
+        let far = Trs {
+            translation: Vec3::X * 10.0,
+            ..Trs::IDENTITY
+        };
+        assert_eq!(handback_duration(far), HANDBACK_MAX_DURATION);
+        let nan = Trs {
+            translation: Vec3::NAN,
+            ..Trs::IDENTITY
+        };
+        assert_eq!(handback_duration(nan), HANDBACK_MAX_DURATION);
+    }
+
+    #[test]
     fn handback_starts_at_the_current_correction_and_keeps_tracking_live() {
         let mut state = Runtime::default();
         let graph = GraphState::FloorPickup;
@@ -778,20 +835,16 @@ mod tests {
         let reason = Refusal::OrdinaryOrUnsupportedState;
         let start = state.release(reason, views, now).unwrap();
         assert!(start[1].w_axis.truncate().abs_diff_eq(Vec3::X, 0.0001));
+        let duration = state.handback.unwrap().duration;
+        assert_eq!(duration, Duration::from_secs(1));
         let moving = [TrackedView {
             world: Mat4::from_rotation_translation(Quat::from_rotation_y(0.3), Vec3::Y * 2.0),
             tracking_translation: Vec3::Y * 2.0,
         }; 2];
-        let middle = state
-            .release(reason, moving, now + HANDBACK_DURATION / 2)
-            .unwrap();
+        let middle = state.release(reason, moving, now + duration / 2).unwrap();
         let expected = moving[1].world * Mat4::from_translation(Vec3::X * 0.5);
         assert!(middle[1].abs_diff_eq(expected, 0.0001));
-        assert!(
-            state
-                .release(reason, moving, now + HANDBACK_DURATION)
-                .is_none()
-        );
+        assert!(state.release(reason, moving, now + duration).is_none());
         assert!(state.selected.is_none());
         assert!(state.collapse_normal);
         assert_eq!(state.graph_state, None);
@@ -840,7 +893,7 @@ mod tests {
                 }
                 assert!(
                     state
-                        .capture(Ok(exit), views, now + HANDBACK_DURATION / 4, next_epoch,)
+                        .capture(Ok(exit), views, now + HANDBACK_MIN_DURATION / 4, next_epoch,)
                         .is_none()
                 );
                 assert!(state.selected.is_none());
