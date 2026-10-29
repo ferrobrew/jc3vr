@@ -40,7 +40,7 @@ use crate::{
     controllers::{
         body::procedural::config::ProceduralMode,
         frame::Hand,
-        hands::anchor::AnchorConfig,
+        hands::anchor::{ANCHOR_BLEND_S, AnchorConfig},
         loadout::live,
         mode::{
             self, AirborneVariant, CharacterSnapshot, Detection, Mode, OnFootVariant, Traversal,
@@ -428,7 +428,7 @@ pub struct TierStatus {
     /// hand below one is where the overlay draws the ghost of the controller-driven hand.
     pub weights: [f32; 2],
     /// Each hand's share of the anchored pose: one while anchored, blending over
-    /// [`AnchorConfig::blend_s`](crate::controllers::hands::anchor::AnchorConfig::blend_s).
+    /// [`ANCHOR_BLEND_S`](crate::controllers::hands::anchor::ANCHOR_BLEND_S).
     pub anchor_weights: [f32; 2],
 }
 
@@ -464,7 +464,7 @@ pub(crate) fn tick(dt: f32) {
                 anchor: c.controllers.hands.anchor,
             },
             c.controllers.acting_hand(),
-            c.controllers.vehicles.mounted.anchor_hands,
+            c.controllers.vehicles.mounted.aim_by_hands,
         )
     });
     // SAFETY: the input tick runs on the main thread outside the world update, as the mode
@@ -559,8 +559,8 @@ pub fn advance(
             previous.anchor_weights[hand.index()],
             target,
             dt,
-            config.anchor.blend_s,
-            config.anchor.blend_s,
+            ANCHOR_BLEND_S,
+            ANCHOR_BLEND_S,
         )
     });
     TierStatus {

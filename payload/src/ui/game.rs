@@ -1,10 +1,10 @@
-//! Movement tuning, live game state, and engine experiment controls.
+//! The on-foot swim settings, the movement hooks' live readouts, and the engine experiment
+//! controls.
 
 use std::sync::atomic::Ordering;
 
 use jc3gi::{
-    character::character::{AimState, Character, get_Character_EnableLocoStrafing},
-    input::locomotion::{get_LocoUtil_NoAimStrafeMaxAngle, get_LocoUtil_NoAimStrafeMaxAngleAlt},
+    character::character::{AimState, Character},
     spawn_system::SpawnSystem,
     types::math::Matrix4,
 };
@@ -27,23 +27,12 @@ use crate::{
         },
     },
     sim_rate::{self, SimRate},
-    ui::{
-        catalog::FeatureId,
-        dispatch::FeatureBody,
-        util::{patch_slider, patchbox},
-    },
+    ui::{catalog::FeatureId, dispatch::FeatureBody, util::patchbox},
 };
 
 pub(crate) fn controls(ui: &mut egui::Ui, id: FeatureId) {
     match id {
-        FeatureId::Swimming => swimming_controls(ui, &mut config::edit()),
-        FeatureId::Locomotion => {
-            locomotion_controls(ui, &mut config::edit());
-            relaxed_strafe_controls(ui);
-        }
-        FeatureId::Driving => driving_controls(ui, &mut config::edit()),
-        FeatureId::Parachute => parachute_controls(ui, &mut config::edit()),
-        FeatureId::Wingsuit => wingsuit_controls(ui, &mut config::edit()),
+        FeatureId::OnFoot => swimming_controls(ui, &mut config::edit()),
         FeatureId::Engine => egui_debug_game(ui),
         _ => {}
     }
@@ -51,10 +40,14 @@ pub(crate) fn controls(ui: &mut egui::Ui, id: FeatureId) {
 
 pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
     let body: FeatureBody = match id {
-        FeatureId::Swimming => |ui, _| swimming_readout(ui),
-        FeatureId::Locomotion => |ui, _| locomotion_readout(ui),
-        FeatureId::Parachute => |ui, _| parachute_readout(ui),
-        FeatureId::Wingsuit => |ui, _| wingsuit_readout(ui),
+        FeatureId::OnFoot => |ui, _| {
+            locomotion_readout(ui);
+            swimming_readout(ui);
+        },
+        FeatureId::Air => |ui, _| {
+            wingsuit_readout(ui);
+            parachute_readout(ui);
+        },
         FeatureId::Engine => |ui, _| game_readout(ui),
         _ => return None,
     };
@@ -137,50 +130,14 @@ fn swimming_controls(ui: &mut egui::Ui, cfg: &mut Config) {
          and the game's act-quantized turn steps never trigger. Inert on flatscreen or \
          before the right-stick yaw target seeds.",
     );
-    ui.checkbox(
-        &mut cfg.headpose.swim_level_view,
-        "Level the view while swimming (camera follows the head only)",
-    )
-    .on_hover_text(
-        "Compose the head onto the body's yaw only while swimming, so the camera moves \
-         exactly with your head and the body's dive pitch just steers the swim. Off, \
-         the body's pitch adds to your head's and the view swings further than you \
-         moved. Costs the surface bob and roll.",
-    );
-    ui.add(
-        egui::Slider::new(&mut cfg.headpose.vr_turn.swim_scale, 0.1..=2.0)
-            .text("Swim turn sensitivity (x on-foot look rate)"),
-    )
-    .on_hover_text(
-        "Scales the right-stick turn rate while swimming. In water the body tracks the \
-         look input one-for-one, where on foot the game's own executor rate smooths it, \
-         so the same input turns faster there.",
-    );
     ui.add(
         egui::Slider::new(&mut cfg.movement.swim_turn_rate_deg_s, 180.0..=540.0)
             .text("Swim body turn rate (deg/s)"),
     )
     .on_hover_text(
         "How fast the body is allowed to rotate toward the heading you own with the \
-         right stick. Below the look input's own rate (roughly 250 deg/s times the \
-         sensitivity above) the body lags the target and the turn keeps going after \
-         you let go.",
-    );
-    ui.add(
-        egui::Slider::new(&mut cfg.movement.swim_pitch_limit_deg, 0.0..=80.0)
-            .text("Swim dive pitch limit (deg)"),
-    )
-    .on_hover_text(
-        "How far underwater diving and surfacing may pitch the body. Zero pins the \
-         swimmer level; the control is the head's pitch relative to the body.",
-    );
-    ui.add(
-        egui::Slider::new(&mut cfg.movement.swim_pitch_rate_deg_s, 10.0..=180.0)
-            .text("Swim dive pitch rate (deg/s)"),
-    );
-    ui.add(
-        egui::Slider::new(&mut cfg.movement.swim_pitch_deadzone_deg, 0.0..=45.0)
-            .text("Swim dive pitch deadzone (deg)"),
+         right stick. Below the look input's own rate the body lags the target and the turn \
+         keeps going after you let go.",
     );
 }
 
@@ -195,123 +152,6 @@ fn swimming_readout(ui: &mut egui::Ui) {
         SWIM_BACKWARD_REFUSALS.load(Ordering::Relaxed),
         SWIM_UNTARGETED.load(Ordering::Relaxed),
     ));
-}
-
-fn locomotion_controls(ui: &mut egui::Ui, cfg: &mut Config) {
-    ui.checkbox(
-        &mut cfg.movement.force_fps_movement,
-        "FPS movement (force aim-relative locomotion on foot)",
-    )
-    .on_hover_text(
-        "Force the aim flags only while each locomotion task updates, so movement queues \
-         the aim-relative (strafe) acts. Known gaps: the acts are combat-stance \
-         animations (arms raised), and the no-aim strafe animations are cut content, so \
-         holstered legs stay forward-run.",
-    );
-    ui.checkbox(
-        &mut cfg.movement.suppress_idle_fidget,
-        "Suppress idle fidget (one-off idle variations)",
-    )
-    .on_hover_text(
-        "Drop ACT_TO_IDLE_ONE_OFF so Rico stays in the base idle instead of playing the \
-         periodic weight-shift/look-around fidget, which reads as the body moving on its \
-         own under the HMD-driven head. NPCs keep their fidgets.",
-    );
-    ui.checkbox(
-        &mut cfg.movement.suppress_idle_breathing,
-        "Suppress idle breathing (freeze the base idle pose)",
-    )
-    .on_hover_text(
-        "Hold the animation clock (dt=0) for the player while standing in the base idle \
-         state, so the subtle breathing/sway of the idle clip freezes. Movement and other \
-         states are unaffected. Off by default -- needs in-headset validation.",
-    );
-    ui.checkbox(
-        &mut cfg.movement.face_camera,
-        "Face camera (drive the body yaw from the camera)",
-    )
-    .on_hover_text(
-        "Write the camera's ground-plane forward to the target-face-dir blackboard value \
-         and force the game's orientation executor into its face-dir tracking mode for \
-         the local player -- the native rate-limited turn code does the rotating, in \
-         every on-foot state, holstered included.",
-    );
-    ui.add(
-        egui::Slider::new(&mut cfg.movement.face_camera_turn_step, 0.5..=45.0)
-            .text("Face-camera turn step (deg/update)"),
-    );
-    ui.add(
-        egui::Slider::new(&mut cfg.movement.face_camera_input_cone_deg, 0.0..=180.0)
-            .text("Face-camera input cone (deg; 180 = always pin)"),
-    )
-    .on_hover_text(
-        "While moving, the pin only applies when the move direction is within this cone \
-         of camera-forward; outside it, the native steer runs (turn-and-run). Idle \
-         always pins. 180 pins everything; pair with slide strafe.",
-    );
-    ui.checkbox(
-        &mut cfg.movement.slide_strafe,
-        "Slide strafe (redirect movement along input while pinned)",
-    )
-    .on_hover_text(
-        "Override the movement task's displacement direction with the input direction \
-         (the native speed envelope still applies) and keep the legs in the plain \
-         forward-run act. Lateral/backward movement slides without matching leg \
-         animations -- the game ships no neutral strafe clips.",
-    );
-    ui.add(
-        egui::Slider::new(&mut cfg.movement.slide_rotation_deg, -180.0..=180.0)
-            .text("Slide rotation (deg)"),
-    )
-    .on_hover_text(
-        "Yaw correction applied to the slide direction. Dial until W slides away from \
-         the camera and D slides right; the consuming frame's convention is unpinned.",
-    );
-    ui.checkbox(
-        &mut cfg.movement.slide_instant_speed,
-        "Instant speed (skip the ramp-up while sliding)",
-    )
-    .on_hover_text(
-        "Floor the movement speed to the blackboard target while sliding. The native \
-         speed is the animation's root velocity, so the run-start clips ramp it from \
-         zero; the floor makes the motion uniform from the first frame.",
-    );
-    ui.checkbox(
-        &mut cfg.movement.slide_skip_starts,
-        "Skip start wind-up (queue the run cycle directly)",
-    )
-    .on_hover_text(
-        "Replace the directional run-start acts with the plain forward move act while \
-         sliding, when the animation state machine accepts it (the game's own TryAct \
-         pre-flight guards the swap; the native starts run as the fallback).",
-    );
-}
-
-fn relaxed_strafe_controls(ui: &mut egui::Ui) {
-    unsafe {
-        if jc3gi::game::Game::get().is_some() {
-            // The game's relaxed strafe acts depend on these native debug flags.
-            patchbox(
-                ui,
-                "Relaxed strafe (the game's no-aim strafe acts)",
-                get_Character_EnableLocoStrafing(),
-            );
-            patch_slider(
-                ui,
-                "Relaxed strafe window (deg)",
-                get_LocoUtil_NoAimStrafeMaxAngle(),
-                0.0..=180.0,
-            );
-            patch_slider(
-                ui,
-                "Relaxed strafe window, alt rule state (deg)",
-                get_LocoUtil_NoAimStrafeMaxAngleAlt(),
-                0.0..=180.0,
-            );
-        } else {
-            ui.label("Unavailable: the game state is not initialized.");
-        }
-    }
 }
 
 fn locomotion_readout(ui: &mut egui::Ui) {
@@ -378,58 +218,11 @@ fn locomotion_readout(ui: &mut egui::Ui) {
     }
 }
 
-fn driving_controls(ui: &mut egui::Ui, cfg: &mut Config) {
-    ui.checkbox(
-        &mut cfg.movement.suppress_reverse_look,
-        "Suppress reverse look-behind (vehicles)",
-    )
-    .on_hover_text(
-        "Drop the ACT_REVERSE acts so Rico keeps facing forward while reversing; looking \
-         behind is the player's job with a player-driven head.",
-    );
-}
-
-fn parachute_controls(ui: &mut egui::Ui, cfg: &mut Config) {
-    ui.checkbox(
-        &mut cfg.movement.suppress_parachute_look_steer,
-        "Suppress parachute look-steer (head must not turn the chute)",
-    )
-    .on_hover_text(
-        "Remove the camera-relative look-steer from the parachute's steering while \
-         the head is decoupled (VR). The parachute steering helper mixes the camera \
-         input matrix into the chute's steering and its yaw/pitch velocity springs, \
-         so turning the head past the deadzone turns the chute with no stick input. \
-         Stick steering and velocity banking stay.",
-    );
-}
-
 fn parachute_readout(ui: &mut egui::Ui) {
     ui.label(format!(
         "Parachute: look-steer suppressions {}",
         PARACHUTE_LOOK_STEER_SUPPRESSIONS.load(Ordering::Relaxed),
     ));
-}
-
-fn wingsuit_controls(ui: &mut egui::Ui, cfg: &mut Config) {
-    ui.checkbox(
-        &mut cfg.movement.suppress_wingsuit_stall_flip,
-        "Suppress the wingsuit's stall flip (the body must not loop on its own)",
-    )
-    .on_hover_text(
-        "Stop the wingsuit's blend state from stalling while the head pose comes \
-         from the headset, so it never plays the stall clip or the loop that \
-         recovers from it over a physics body that never loops. Pitching up and \
-         slowing loses lift and drops instead.",
-    );
-    ui.checkbox(
-        &mut cfg.movement.suppress_wingsuit_barrel_roll,
-        "Suppress the wingsuit's barrel roll (the body must not roll on its own)",
-    )
-    .on_hover_text(
-        "Drop the wingsuit's evade, a barrel roll, for the local player while the head \
-         pose comes from the headset. Its clip rolls the body a full turn and carries \
-         it sideways, which the player's own body never does.",
-    );
 }
 
 fn wingsuit_readout(ui: &mut egui::Ui) {

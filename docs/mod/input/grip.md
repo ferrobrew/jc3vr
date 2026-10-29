@@ -103,7 +103,7 @@ Nothing else draws a marker, logs a press, or decides between two subsystems' ta
 
 ## Settings
 
-`overlay.markers` switches the markers. The reach margins are `POUCHES.reach_margin_m` (`controllers::weapons::volumes`) and `vehicles.parachute_handles.reach_m`. The fist's speed is fixed (`grab::tick::SLOW_HAND_MPS`).
+`overlay.markers` switches the markers. The reach margins are `POUCHES.reach_margin_m` (`controllers::weapons::volumes`) and `parachute::REACH_M` (`controllers::vehicles`). The fist's speed is fixed (`grab::tick::SLOW_HAND_MPS`).
 
 ## In the headset
 

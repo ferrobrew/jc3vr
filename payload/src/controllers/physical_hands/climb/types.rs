@@ -5,7 +5,7 @@ use glam::{Quat, Vec3};
 
 use crate::controllers::physical_hands::climb::engine::{self, BodyIdentity};
 
-/// A surface a hand can grip: the static world, or with [`ClimbConfig::moving`], a moving body.
+/// A surface a hand can grip: the static world, or with [`HandClimbTuning::moving`](crate::controllers::physical_hands::climb::config::HandClimbTuning::moving), a moving body.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Hold {
     /// Where the surface is, game space.

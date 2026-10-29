@@ -10,11 +10,6 @@ use crate::grapple::GrappleComfortConfig;
 pub struct HeadPoseConfig {
     /// Master switch for headpose-driven head control.
     pub enabled: bool,
-    /// Hold the view level while swimming: compose the head onto the body's *yaw* only, dropping its
-    /// pitch and roll. The body frame otherwise carries both into the view -- right for a banking
-    /// wingsuit, wrong in water, where the dive control pitches the body toward where the player is
-    /// looking and the two add, so the view moves further than the head did. Costs the surface bob.
-    pub swim_level_view: bool,
     /// VR on-foot body-yaw (turning) settings. In VR the HMD owns the head, so the look input
     /// (mouse and right stick) is free to turn the body instead (see [`VrTurnConfig`]).
     #[serde(default)]
@@ -28,7 +23,6 @@ impl HeadPoseConfig {
     pub const fn new() -> Self {
         Self {
             enabled: true,
-            swim_level_view: true,
             vr_turn: VrTurnConfig::new(),
             grapple: GrappleComfortConfig::new(),
         }
@@ -70,20 +64,6 @@ pub struct VrTurnConfig {
     /// (stick) input only; delta-based (mouse) input skips it, since a slow mouse move is a small but
     /// meaningful per-tick delta, not drift.
     pub deadzone: f32,
-    /// Degrees of body yaw per unit of *delta-based* (mouse) look input. The mouse LOOK effector is a
-    /// per-tick displacement, not an absolute axis, so it is added directly at this scale rather than
-    /// run through the stick [`smooth_scale`](Self::smooth_scale) /
-    /// [`MOUSE_SENSITIVITY`](crate::headpose::sim::MOUSE_SENSITIVITY) rate (which oversteers on a mouse and
-    /// is gated by the stick deadzone -- the stop-start, overshoot, and runaway spin).
-    pub mouse_turn_scale: f32,
-    /// The maximum the yaw accumulator may lead the body's current facing, in degrees. The body chases
-    /// the accumulated target at a rate limit, so a big input jump (a mouse flick) otherwise pushes the
-    /// target far ahead and the body keeps turning for many ticks after the input stops -- and once the
-    /// lead exceeds 180° the shortest-arc catch-up reverses direction. Clamping the lead caps both.
-    pub max_body_lead_deg: f32,
-    /// Scales the turn rate while swimming, where the body tracks the accumulator one-for-one
-    /// rather than through the game's own executor rate, so the same look input turns faster.
-    pub swim_scale: f32,
 }
 
 impl VrTurnConfig {
@@ -94,9 +74,6 @@ impl VrTurnConfig {
             snap_angle_deg: 30.0,
             snap_threshold: 0.6,
             deadzone: 0.02,
-            mouse_turn_scale: 5.0,
-            max_body_lead_deg: 120.0,
-            swim_scale: 0.5,
         }
     }
 }

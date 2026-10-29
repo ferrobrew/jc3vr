@@ -34,7 +34,6 @@
 
 pub mod aim;
 pub(crate) mod anchored;
-pub(crate) mod arm_readout;
 pub(crate) mod atlas;
 mod binding;
 pub(crate) mod config;

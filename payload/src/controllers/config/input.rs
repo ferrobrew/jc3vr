@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     controllers::{
-        bindings::{policy_a::PolicyAConfig, yank::YankConfig},
+        bindings::{policy_a::PolicyAConfig, yank::GrappleYankConfig},
         frame::{GripPress, Hand, InteractionProfile, PressRules, PressThresholds},
         locomotion::config::{ActFilterConfig, StableViewConfig, StickConfig},
     },
@@ -199,7 +199,7 @@ pub struct BindingsConfig {
     pub panel_chord_window_s: f32,
     /// The yank gesture: a sharp pull of the grapple hand toward the body zips along an attached
     /// line.
-    pub yank: YankConfig,
+    pub yank: GrappleYankConfig,
 }
 
 impl BindingsConfig {
@@ -214,7 +214,7 @@ impl BindingsConfig {
             stick_chord_window_s: 0.1,
             recenter_hold_s: 1.0,
             panel_chord_window_s: 0.35,
-            yank: YankConfig::new(),
+            yank: GrappleYankConfig::new(),
         }
     }
 

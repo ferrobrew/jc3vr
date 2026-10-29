@@ -35,9 +35,9 @@ use smol_str::SmolStr;
 use crate::controllers::{
     mode::{VehicleClass, VehicleSeat},
     vehicles::{
-        config::{DrivingViewConfig, PhysicalControlsConfig},
         driving_view::{self, Correction, Entry, Target},
         entry::VehicleEntry,
+        tuning::PhysicalControlsTuning,
         wheel::{
             self, BarsFrame, CockpitTransform, PartWheel, WheelFrame, WheelPartView, WheelSource,
         },
@@ -67,8 +67,10 @@ pub struct Fit {
 /// What the fit reads besides the vehicle.
 #[derive(Debug, Copy, Clone)]
 pub struct FitInputs<'a> {
-    pub physical: &'a PhysicalControlsConfig,
-    pub view: &'a DrivingViewConfig,
+    pub physical: &'a PhysicalControlsTuning,
+    /// Whether the driving view is switched on
+    /// ([`DrivingViewConfig::enabled`](crate::controllers::vehicles::config::DrivingViewConfig::enabled)).
+    pub view_enabled: bool,
     pub seat: Option<VehicleSeat>,
     pub xf: &'a CockpitTransform,
     /// The head pose's anchor, the character's animated head, world space; `None` until published.
@@ -173,7 +175,7 @@ unsafe fn fit_vehicle(
     latch: &mut Option<VehicleLatch>,
     specs: Fit,
 ) -> Fit {
-    let (config, xf) = (inputs.physical, inputs.xf);
+    let xf = inputs.xf;
     let world = Mat4::from(vehicle.m_WorldMatrixT1);
     let parts = unsafe { vehicle.m_PfxVehicle.as_ref() }
         .map(|pfx| unsafe { find_parts(pfx) })
@@ -184,7 +186,7 @@ unsafe fn fit_vehicle(
         bounds: p.bounds,
         broken_off: p.broken_off,
     });
-    let (part_wheel, mut source) = wheel::choose_wheel(wheel_view, config.from_vehicle);
+    let (part_wheel, mut source) = wheel::choose_wheel(wheel_view);
     let fitted = part_wheel.zip(parts.wheel.as_ref()).and_then(|(w, p)| {
         let frame = xf.wheel(world * p.root, &w)?;
         Some((frame, w, p))
@@ -205,7 +207,7 @@ unsafe fn fit_vehicle(
             if part_wheel.is_some() {
                 source = WheelSource::Fallback(wheel::Fallback::NoModel);
             }
-            let frame = match latch.as_mut().filter(|_| config.from_vehicle) {
+            let frame = match latch.as_mut() {
                 Some(l) => {
                     if l.local.is_none() && l.since.elapsed() >= SETTLE {
                         l.local = xf.wheel_into(world, &specs.wheel);
@@ -221,25 +223,17 @@ unsafe fn fit_vehicle(
         }
     };
 
-    let fork_bars = parts
-        .fork
-        .as_ref()
-        .filter(|p| config.from_vehicle && !p.broken_off)
-        .and_then(|p| {
-            let (centre, half_width) = wheel::bars_from_box(p.bounds?.0, p.bounds?.1)?;
-            xf.bars(world * p.rest_root, centre, half_width)
-        });
+    let fork_bars = parts.fork.as_ref().filter(|p| !p.broken_off).and_then(|p| {
+        let (centre, half_width) = wheel::bars_from_box(p.bounds?.0, p.bounds?.1)?;
+        xf.bars(world * p.rest_root, centre, half_width)
+    });
 
     let hub_from_eyes = inputs
         .anchor
         .map(|anchor| xf.offset_to_cockpit(xf.point_to_world(wheel.centre) - anchor))
         .filter(|h| h.is_finite());
     let measured = matches!(source, WheelSource::Part | WheelSource::Override);
-    let class_corrected = inputs.seat.is_some_and(|s| match s.class {
-        VehicleClass::Car => true,
-        VehicleClass::Sea => inputs.view.boats,
-        _ => false,
-    });
+    let class_corrected = inputs.seat.is_some_and(|s| s.class == VehicleClass::Car);
     let wheel_part = parts.wheel.as_ref().map(|p| p.name.as_str());
     let mut closed = false;
     let mut correction = None;
@@ -248,11 +242,7 @@ unsafe fn fit_vehicle(
             .view
             .observe(l.since.elapsed(), hub_from_eyes.filter(|_| measured));
         correction = l.view.mean().filter(|_| measured).map(|mean| {
-            driving_view::derive(
-                mean,
-                inputs.view,
-                wheel_part.and_then(driving_view::find_override),
-            )
+            driving_view::derive(mean, wheel_part.and_then(driving_view::find_override))
         });
     }
     let seat = SeatReadout {
@@ -272,8 +262,7 @@ unsafe fn fit_vehicle(
             wheel_part,
             source,
             seat: &seat,
-            corrected: view.is_some() && inputs.view.enabled,
-            standard: inputs.view.hub_from_eyes_m,
+            corrected: view.is_some() && inputs.view_enabled,
         });
     }
 
@@ -305,7 +294,6 @@ struct DrivingPosition<'a> {
     seat: &'a SeatReadout,
     /// Whether the view is corrected in this seat: the setting is on and the class is corrected.
     corrected: bool,
-    standard: Vec3,
 }
 
 fn log_driving_position(p: &DrivingPosition) {
@@ -317,7 +305,7 @@ fn log_driving_position(p: &DrivingPosition) {
         source = p.source.label(),
         hub_from_eyes = ?c.map(|c| c.hub_from_eyes),
         hub_from_head = ?p.seat.hub_from_head,
-        standard = ?p.standard,
+        standard = ?driving_view::HUB_FROM_EYES_M,
         wanted = ?c.map(|c| c.wanted),
         applied = ?c.filter(|_| p.corrected).map(|c| c.applied),
         origin = c.map(|c| c.origin.label()),

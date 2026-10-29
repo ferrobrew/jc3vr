@@ -22,7 +22,7 @@ use crate::controllers::{
         mounted_recoil,
         parachute::{self, HandleEvent, HandleHold, HandleState},
         physical::{self, ControlEvent, ControlState, Hold, Outputs, Placement},
-        types::{ArmReadout, VehicleSummary, VehiclesStatus},
+        types::{VehicleSummary, VehiclesStatus},
         wheel_render::{self, RenderWheel},
     },
     weapons::hold::refs::Strong,
@@ -37,12 +37,6 @@ pub fn wrist_tilt_now_deg() -> Option<f32> {
     let [left, right] = active.hands;
     let tilt = arm::wrists_tilt(left?.wrist.orientation, right?.wrist.orientation).to_degrees();
     tilt.is_finite().then_some(tilt)
-}
-
-/// The arm steering's readout for the headset panel, while that panel is switched on and the arms
-/// act in the wingsuit. A leaf slot: the panel reads it on the draw task.
-pub fn arm_panel() -> Option<ArmReadout> {
-    *ARM_PANEL.lock()
 }
 
 pub fn status() -> VehiclesStatus {
@@ -163,7 +157,6 @@ pub(crate) fn stand_down() {
     push_events(&mut state.status, events);
     drop(state);
     drop(retired_owner);
-    *ARM_PANEL.lock() = None;
     log_handle_events(&handle_events);
     store::clear(Source::WingGuide);
 }
@@ -184,7 +177,7 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2]) {
     let state = STATE.lock();
     let kick = state
         .mounted_barrel
-        .filter(|_| state.mounted_config.recoil)
+        .filter(|_| state.mounted_config.aim_by_hands)
         .map_or(Vec3::ZERO, |barrel| {
             mounted_recoil::handle_shift(kick_offset, barrel)
         });
@@ -352,9 +345,6 @@ impl State {
 }
 
 pub(super) static STATE: Mutex<State> = Mutex::new(State::new());
-
-/// The arm steering's readout for the headset panel ([`arm_panel`]).
-pub(super) static ARM_PANEL: Mutex<Option<ArmReadout>> = Mutex::new(None);
 
 /// The address of the weapon in [`State::mounted_target`], or zero: a lock-free copy for
 /// [`is_mounted_weapon`].

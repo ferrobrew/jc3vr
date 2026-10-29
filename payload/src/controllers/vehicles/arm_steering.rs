@@ -126,14 +126,14 @@ pub fn pitch_input(pose: &ArmPose, config: &ArmSteeringConfig) -> PitchInput {
 /// The stick vector the pose steers with, or `None` while the arms are not spread. `engaged` is
 /// whether the arms steered on the last tick, which narrows the spread they need to keep steering.
 pub fn steer(pose: &ArmPose, config: &ArmSteeringConfig, engaged: bool) -> Option<Vec2> {
-    if pose.spread.is_nan() || pose.spread < needed_spread(config, engaged) {
+    if pose.spread.is_nan() || pose.spread < needed_spread(engaged) {
         return None;
     }
     let bank = shape(pose.bank_m, config.deadzone_m, config.full_bank_m);
     let pitch = match pitch_input(pose, config) {
-        PitchInput::Height(height) => shape(-height, config.deadzone_m, config.full_pitch_m),
-        PitchInput::TiltDeg(tilt) => shape(tilt, config.tilt_deadzone_deg, config.full_tilt_deg),
-        PitchInput::Sweep(sweep) => shape(-sweep, config.deadzone_m, config.full_sweep_m),
+        PitchInput::Height(height) => shape(-height, config.deadzone_m, FULL_PITCH_M),
+        PitchInput::TiltDeg(tilt) => shape(tilt, TILT_DEADZONE_DEG, FULL_TILT_DEG),
+        PitchInput::Sweep(sweep) => shape(-sweep, config.deadzone_m, FULL_SWEEP_M),
     };
     let pitch = if config.invert_pitch { -pitch } else { pitch };
     Some(Vec2::new(bank, pitch))
@@ -141,11 +141,11 @@ pub fn steer(pose: &ArmPose, config: &ArmSteeringConfig, engaged: bool) -> Optio
 
 /// The spread, as a share of the arm span, the arms need to steer: the engaging spread, or the
 /// narrower one while they already steer (`engaged`).
-pub fn needed_spread(config: &ArmSteeringConfig, engaged: bool) -> f32 {
+pub fn needed_spread(engaged: bool) -> f32 {
     if engaged {
-        config.min_spread - SPREAD_HYSTERESIS
+        MIN_SPREAD - SPREAD_HYSTERESIS
     } else {
-        config.min_spread
+        MIN_SPREAD
     }
 }
 
@@ -168,9 +168,28 @@ pub fn combine(stick: Vec2, arms: Option<Vec2>) -> Vec2 {
     (stick + arms.unwrap_or(Vec2::ZERO)).clamp(Vec2::NEG_ONE, Vec2::ONE)
 }
 
+/// How far apart the hands must be, as a share of the arm span, for the arms to count as spread.
+/// Closer together, the arms steer nothing and the stick steers alone.
+pub const MIN_SPREAD: f32 = 0.5;
+
 /// How much narrower than the engaging spread the arms may come in, as a share of the arm span,
 /// before they stop steering.
 pub const SPREAD_HYSTERESIS: f32 = 0.1;
+
+/// How far both hands must be above or below the shoulders to pitch fully, metres, under
+/// [`ArmPitch::Height`].
+pub const FULL_PITCH_M: f32 = 0.30;
+
+/// How far the wrists must tilt from the neutral to pitch fully, degrees, under
+/// [`ArmPitch::WristTilt`].
+pub const FULL_TILT_DEG: f32 = 30.0;
+
+/// Wrist tilts within this of the neutral pitch nothing, degrees.
+pub const TILT_DEADZONE_DEG: f32 = 5.0;
+
+/// How far both hands must be swept ahead of or behind the shoulders to pitch fully, metres, under
+/// [`ArmPitch::Sweep`].
+pub const FULL_SWEEP_M: f32 = 0.35;
 
 /// The tilt of a wrist at `wrist`, radians: its roll about the fingers' axis from the pose with the
 /// back of the hand as near straight up as that axis allows, positive with the leading edge down.
@@ -285,18 +304,18 @@ mod tests {
 
     #[test]
     fn the_leading_edges_tilted_down_dive_and_up_climb() {
-        let full = CONFIG.full_tilt_deg.to_radians();
+        let full = FULL_TILT_DEG.to_radians();
         let dive = steer(&tilted(0.0, 0.0, 1.6, full), &CONFIG, false).unwrap();
         assert!((dive.y - 1.0).abs() < 1e-4, "{dive}");
         assert!(dive.x.abs() < 1e-5, "a level tilt banks nothing: {dive}");
         let climb = steer(&tilted(0.0, 0.0, 1.6, -full), &CONFIG, false).unwrap();
         assert!((climb.y + 1.0).abs() < 1e-4, "{climb}");
         // Halfway between the deadzone and full deflection pitches half.
-        let half = (CONFIG.tilt_deadzone_deg + CONFIG.full_tilt_deg) * 0.5;
+        let half = (TILT_DEADZONE_DEG + FULL_TILT_DEG) * 0.5;
         let v = steer(&tilted(0.0, 0.0, 1.6, half.to_radians()), &CONFIG, false).unwrap();
         assert!((v.y - 0.5).abs() < 1e-3, "{v}");
         // Inside the deadzone, nothing.
-        let small = (CONFIG.tilt_deadzone_deg * 0.5).to_radians();
+        let small = (TILT_DEADZONE_DEG * 0.5).to_radians();
         let v = steer(&tilted(0.0, 0.0, 1.6, small), &CONFIG, false).unwrap();
         assert_eq!(v.y, 0.0);
         let inverted = ArmSteeringConfig {
@@ -370,9 +389,9 @@ mod tests {
             let level = at(0.0, facing);
             assert!(level.sweep_m.abs() < 1e-4, "{level:?}");
             assert_eq!(steer(&level, &sweep, false).unwrap().y, 0.0);
-            let back = steer(&at(sweep.full_sweep_m, facing), &sweep, false).unwrap();
+            let back = steer(&at(FULL_SWEEP_M, facing), &sweep, false).unwrap();
             assert!((back.y - 1.0).abs() < 1e-4, "{back}");
-            let forward = steer(&at(-sweep.full_sweep_m, facing), &sweep, false).unwrap();
+            let forward = steer(&at(-FULL_SWEEP_M, facing), &sweep, false).unwrap();
             assert!((forward.y + 1.0).abs() < 1e-4, "{forward}");
         }
     }
@@ -389,12 +408,12 @@ mod tests {
 
     #[test]
     fn spread_arms_keep_steering_until_they_come_in_past_the_hysteresis() {
-        let between = CONFIG.min_spread - SPREAD_HYSTERESIS * 0.5;
+        let between = MIN_SPREAD - SPREAD_HYSTERESIS * 0.5;
         let arm_span = BODY.arm_span;
         let at = |spread: f32| pose(0.0, 0.0, spread * arm_span);
         assert_eq!(steer(&at(between), &CONFIG, false), None);
         assert!(steer(&at(between), &CONFIG, true).is_some());
-        let narrow = CONFIG.min_spread - SPREAD_HYSTERESIS * 1.5;
+        let narrow = MIN_SPREAD - SPREAD_HYSTERESIS * 1.5;
         assert_eq!(steer(&at(narrow), &CONFIG, true), None);
     }
 
@@ -414,7 +433,7 @@ mod tests {
             |x: f32, z: f32| hand(Vec3::new(x, shoulder_y, z), x.signum(), 0.0, Quat::IDENTITY);
         for config in [CONFIG, HEIGHT] {
             let level = arm_pose([flat(-half, 0.0), flat(half, 0.0)], &body);
-            assert!(level.spread > config.min_spread, "{level:?}");
+            assert!(level.spread > MIN_SPREAD, "{level:?}");
             assert_eq!(steer(&level, &config, false), Some(Vec2::ZERO));
             // Elbows bent, hands out to the sides of a chair: still a wing.
             let bent = arm_pose([flat(-0.5, -0.1), flat(0.5, -0.1)], &body);

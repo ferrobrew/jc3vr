@@ -1,5 +1,4 @@
-//! The wingsuit's head look-steer removed, reusing the parachute's toggle
-//! ([`MovementConfig::suppress_parachute_look_steer`](crate::hooks::input::MovementConfig::suppress_parachute_look_steer)).
+//! The wingsuit's head look-steer removed, as the parachute's is ([`crate::hooks::input::parachute`]).
 //!
 //! The air movement core adds a camera look-steer to the stick's steering: the camera's pitch and
 //! yaw against the character's, shaped by the look-steer tuning. In VR the camera follows the head,
@@ -66,16 +65,11 @@ fn update_std_look_steering(
     }
 }
 
-/// Whether to remove the look-steer: the toggle is on, the controller scheme is in effect, the
-/// player flies the wingsuit or the parachute, and the local player's head is decoupled.
+/// Whether to remove the look-steer: the controller scheme is in effect, the player flies the
+/// wingsuit or the parachute, and the local player's head is decoupled.
 fn should_suppress() -> bool {
-    let (enabled, toggle) = Config::lock_query(|c| {
-        (
-            c.controllers.enabled,
-            c.movement.suppress_parachute_look_steer,
-        )
-    });
-    if !(enabled && toggle && scheme::is_controllers()) {
+    let enabled = Config::lock_query(|c| c.controllers.enabled);
+    if !(enabled && scheme::is_controllers()) {
         return false;
     }
     let flying = matches!(

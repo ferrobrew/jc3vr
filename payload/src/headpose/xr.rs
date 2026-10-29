@@ -44,7 +44,6 @@ use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
 use crate::{
-    config::Config,
     grapple,
     headpose::{
         HeadPose,
@@ -170,11 +169,7 @@ pub fn advance_body_yaw(
     let turn = &config.vr_turn;
     // Swimming tracks the accumulator one-for-one, where on foot the game's executor rate smooths
     // it, so the same input turns faster. Snap keeps its step: a scaled snap is a different size.
-    let rate_scale = if swimming {
-        turn.swim_scale.max(0.0)
-    } else {
-        1.0
-    };
+    let rate_scale = if swimming { SWIM_TURN_SCALE } else { 1.0 };
     // Seeded at the view's heading: the body's, less however far it was turned under the view.
     let mut yaw = s
         .yaw
@@ -187,9 +182,7 @@ pub fn advance_body_yaw(
                 // scale with no deadzone (a slow mouse move is a small real delta, not stick drift).
                 // Running it through the stick rate (sensitivity * smooth_scale) oversteers and the
                 // deadzone drops slow motion -- the reported overshoot and stop-start.
-                yaw = sim::wrap_angle(
-                    yaw - (look_x * turn.mouse_turn_scale * rate_scale).to_radians(),
-                );
+                yaw = sim::wrap_angle(yaw - (look_x * MOUSE_TURN_SCALE * rate_scale).to_radians());
             } else if look_x.abs() >= turn.deadzone {
                 // Stick: an absolute axis integrated as a per-tick rate.
                 let delta =
@@ -225,13 +218,30 @@ pub fn advance_body_yaw(
     // longer rides the body, so a lagging body leaves the view alone and there is nothing to clamp.
     if !s.follow.following() {
         let offset = s.follow.target();
-        let max_lead = turn.max_body_lead_deg.max(0.0).to_radians();
+        let max_lead = MAX_BODY_LEAD_DEG.to_radians();
         let lead = sim::wrap_angle(yaw + offset - body).clamp(-max_lead, max_lead);
         yaw = sim::wrap_angle(body - offset + lead);
     }
 
     s.yaw = Some(yaw);
 }
+
+/// Degrees of body yaw per unit of *delta-based* (mouse) look input. The mouse LOOK effector is a
+/// per-tick displacement, not an absolute axis, so it is added directly at this scale rather than run
+/// through the stick [`smooth_scale`](crate::headpose::config::VrTurnConfig::smooth_scale) /
+/// [`MOUSE_SENSITIVITY`](crate::headpose::sim::MOUSE_SENSITIVITY) rate (which oversteers on a mouse
+/// and is gated by the stick deadzone -- the stop-start, overshoot, and runaway spin).
+const MOUSE_TURN_SCALE: f32 = 5.0;
+
+/// The maximum the yaw accumulator may lead the body's current facing, in degrees. The body chases
+/// the accumulated target at a rate limit, so a big input jump (a mouse flick) otherwise pushes the
+/// target far ahead and the body keeps turning for many ticks after the input stops -- and once the
+/// lead exceeds 180° the shortest-arc catch-up reverses direction. Clamping the lead caps both.
+const MAX_BODY_LEAD_DEG: f32 = 120.0;
+
+/// Scales the turn rate while swimming, where the body tracks the accumulator one-for-one rather
+/// than through the game's own executor rate, so the same look input turns faster.
+const SWIM_TURN_SCALE: f32 = 0.5;
 
 /// How the body follows the player's torso on this input tick, for [`advance_body_yaw`].
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -384,10 +394,13 @@ pub fn body_rotation_prev() -> Quat {
 }
 
 /// Drop the body's pitch and roll from the view frame while swimming, leaving its yaw, so the camera
-/// moves with the head alone and the body's dive pitch only steers the swim. Deliberately scoped to
-/// swimming: a banking wingsuit wants its pitch and roll in the view.
+/// moves with the head alone and the body's dive pitch only steers the swim. The body frame
+/// otherwise carries both into the view, and in water the dive control pitches the body toward
+/// where the player is looking, so the two add and the view moves further than the head did. This
+/// costs the surface bob. Deliberately scoped to swimming: a banking wingsuit wants its pitch and
+/// roll in the view.
 fn level_while_swimming(rotation: Quat) -> Quat {
-    if !Config::lock_query(|c| c.headpose.swim_level_view) || !swimming() {
+    if !swimming() {
         return rotation;
     }
     yaw_only(rotation)

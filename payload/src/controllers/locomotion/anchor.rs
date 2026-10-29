@@ -70,8 +70,8 @@ pub(crate) unsafe fn stabilize(
     model: Neutral,
     dt: f32,
 ) -> Anchors {
-    let (config, controllers_enabled) =
-        Config::lock_query(|c| (c.controllers.locomotion.view, c.controllers.enabled));
+    let (enabled, controllers_enabled) =
+        Config::lock_query(|c| (c.controllers.locomotion.view.enabled, c.controllers.enabled));
     let now = Instant::now();
     let locomotion = locomotion_status();
     let grounded = locomotion.fresh(now);
@@ -99,9 +99,8 @@ pub(crate) unsafe fn stabilize(
     }
     let in_grace = state
         .grounded_at
-        .is_some_and(|at| now.saturating_duration_since(at).as_secs_f32() <= config.jump_grace_s);
-    let eligible =
-        config.enabled && in_gameplay() && !ragdoll && (on_ground || (falling && in_grace));
+        .is_some_and(|at| now.saturating_duration_since(at).as_secs_f32() <= JUMP_GRACE_S);
+    let eligible = enabled && in_gameplay() && !ragdoll && (on_ground || (falling && in_grace));
 
     let measuring = state.neutral.is_none()
         && eligible
@@ -110,7 +109,7 @@ pub(crate) unsafe fn stabilize(
         && !aiming
         && locomotion.standing_still();
     if measuring {
-        if let Some(neutral) = state.capture.push(model, dt, config.capture_s) {
+        if let Some(neutral) = state.capture.push(model, dt, CAPTURE_S) {
             log_neutral(&neutral);
             state.neutral = Some(neutral);
         }
@@ -125,11 +124,9 @@ pub(crate) unsafe fn stabilize(
     let supported = on_ground && !unsafe { character.IsInAir() };
     let height = state
         .height
-        .step(world_t1.w_axis.y, dt, eligible && supported, &config);
+        .step(world_t1.w_axis.y, dt, eligible && supported);
     let measured = state.neutral.is_some();
-    let weight = state
-        .handover
-        .step(eligible && measured, dt, config.blend_s);
+    let weight = state.handover.step(eligible && measured, dt, BLEND_S);
     state.status = AnchorStatus {
         weight,
         eligible,
@@ -156,6 +153,16 @@ pub(crate) unsafe fn stabilize(
         weight,
     )
 }
+
+/// How long Rico must have stood still for his neutral head to be measured, seconds.
+const CAPTURE_S: f32 = 1.5;
+
+/// How long the anchor takes to hand over between the animated head and the root, seconds.
+const BLEND_S: f32 = 0.25;
+
+/// How long after leaving the ground the anchor stays on the root, seconds, so a jump keeps the view
+/// steady while a long fall hands it back to the animation.
+pub(crate) const JUMP_GRACE_S: f32 = 1.0;
 
 struct State {
     neutral: Option<Neutral>,

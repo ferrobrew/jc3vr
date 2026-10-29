@@ -19,15 +19,22 @@
 //! which rides the seat and so the vehicle.
 //!
 //! Only a wheel fitted from the vehicle's own part, or the part's override, is measured: the
-//! configured fallback wheel says nothing about the seat. Only cars are corrected by default,
-//! since some boats are driven standing at the helm and the seated standard does not fit them.
+//! fallback wheel says nothing about the seat. Only cars are corrected, since some boats are driven
+//! standing at the helm and the seated standard does not fit them.
 
 use std::time::{Duration, Instant};
 
 use glam::Vec3;
 use parking_lot::Mutex;
 
-use crate::controllers::vehicles::{config::DrivingViewConfig, fit::SETTLE};
+use crate::controllers::vehicles::fit::SETTLE;
+
+/// Where the hub sits from the eyes in the standard driving position, cockpit frame (+X right, +Y
+/// up, +Z back), metres. The standard is the middle of a road car's ergonomic range: the wheel's
+/// centre about a quarter to a third of a metre below the driver's eyes and about half a metre
+/// ahead of them. It is a little nearer than a road car's, because a VR rim holds no weight and a
+/// long reach tires the arms.
+pub const HUB_FROM_EYES_M: Vec3 = Vec3::new(0.0, -0.30, -0.45);
 
 /// A seat whose derived correction is replaced, keyed by the wheel part's name (see
 /// [`SEAT_OVERRIDES`]).
@@ -36,7 +43,7 @@ pub struct SeatOverride {
     /// The steering wheel part's name.
     pub part: &'static str,
     /// The correction to apply instead of the derived one, cockpit frame, metres, still limited to
-    /// [`DrivingViewConfig::max_m`]; `None` leaves the seat's view where it is.
+    /// [`MAX_M`]; `None` leaves the seat's view where it is.
     pub correction: Option<Vec3>,
 }
 
@@ -95,12 +102,8 @@ impl CorrectionOrigin {
 ///
 /// Moving the view by `c` moves the hub by `-c` relative to it, so the correction that puts the
 /// hub at the standard place is the hub's offset from it.
-pub fn derive(
-    hub_from_eyes: Vec3,
-    config: &DrivingViewConfig,
-    seat_override: Option<&SeatOverride>,
-) -> Correction {
-    let wanted = hub_from_eyes - config.hub_from_eyes_m;
+pub fn derive(hub_from_eyes: Vec3, seat_override: Option<&SeatOverride>) -> Correction {
+    let wanted = hub_from_eyes - HUB_FROM_EYES_M;
     let wanted = if wanted.is_finite() {
         wanted
     } else {
@@ -111,12 +114,7 @@ pub fn derive(
         Some(Some(fixed)) if fixed.is_finite() => (fixed, CorrectionOrigin::Override),
         Some(_) => (Vec3::ZERO, CorrectionOrigin::Skipped),
     };
-    let max = if config.max_m.is_finite() {
-        config.max_m.max(0.0)
-    } else {
-        0.0
-    };
-    let applied = unlimited.clamp_length_max(max);
+    let applied = unlimited.clamp_length_max(MAX_M);
     let origin = if origin == CorrectionOrigin::Derived && applied != unlimited {
         CorrectionOrigin::Limited
     } else {
@@ -209,16 +207,16 @@ pub struct FrameInputs {
 /// Ease the correction toward the published target and return it, cockpit frame, metres, to add
 /// to the composed cockpit position. Called once per rendered VR frame by the pose composition,
 /// under the roomscale frame lock; takes only this module's slot.
-pub fn advance(config: &DrivingViewConfig, inputs: FrameInputs, now: Instant) -> Vec3 {
+pub fn advance(enabled: bool, inputs: FrameInputs, now: Instant) -> Vec3 {
     let mut shared = SHARED.lock();
     let fresh = shared
         .published_at
         .is_some_and(|at| now.saturating_duration_since(at) < STALE_AFTER);
     let goal = match shared.target {
-        Some(target) if config.enabled && inputs.seated && fresh => target.correction.applied,
+        Some(target) if enabled && inputs.seated && fresh => target.correction.applied,
         _ => Vec3::ZERO,
     };
-    let offset = shared.ease.advance(goal, inputs.dt, config.blend_s);
+    let offset = shared.ease.advance(goal, inputs.dt, BLEND_S);
     shared.offset = offset;
     shared.goal = goal;
     offset
@@ -243,6 +241,12 @@ pub fn status() -> DrivingViewStatus {
         offset: shared.offset,
     }
 }
+
+/// The longest correction applied, metres; a longer one is shortened to this along its direction.
+const MAX_M: f32 = 0.25;
+
+/// How long the view takes to ease to a new correction, seconds.
+const BLEND_S: f32 = 1.0;
 
 /// A target older than this is ignored: the input tick stopped publishing, so the view eases back.
 const STALE_AFTER: Duration = Duration::from_millis(500);
@@ -336,14 +340,9 @@ mod tests {
 
     const EPS: f32 = 1e-5;
 
-    fn config() -> DrivingViewConfig {
-        DrivingViewConfig::new()
-    }
-
     #[test]
     fn a_seat_at_the_standard_is_left_alone() {
-        let c = config();
-        let correction = derive(c.hub_from_eyes_m, &c, None);
+        let correction = derive(HUB_FROM_EYES_M, None);
         assert!(correction.applied.length() < EPS);
         assert_eq!(correction.origin, CorrectionOrigin::Derived);
     }
@@ -351,20 +350,18 @@ mod tests {
     /// Moving the view by the correction puts the hub at the standard place.
     #[test]
     fn the_correction_puts_the_hub_at_the_standard() {
-        let c = config();
-        let hub = c.hub_from_eyes_m + Vec3::new(0.02, -0.08, -0.06);
-        let correction = derive(hub, &c, None);
-        assert!((hub - correction.applied - c.hub_from_eyes_m).length() < EPS);
+        let hub = HUB_FROM_EYES_M + Vec3::new(0.02, -0.08, -0.06);
+        let correction = derive(hub, None);
+        assert!((hub - correction.applied - HUB_FROM_EYES_M).length() < EPS);
         assert_eq!(correction.origin, CorrectionOrigin::Derived);
     }
 
     /// A seat further off than the limit is moved the limit's length toward the standard.
     #[test]
     fn a_long_correction_is_limited_along_its_direction() {
-        let c = config();
         let off = Vec3::new(0.0, 0.3, -0.4);
-        let correction = derive(c.hub_from_eyes_m + off, &c, None);
-        assert!((correction.applied.length() - c.max_m).abs() < EPS);
+        let correction = derive(HUB_FROM_EYES_M + off, None);
+        assert!((correction.applied.length() - MAX_M).abs() < EPS);
         assert!(correction.applied.normalize().dot(off.normalize()) > 1.0 - EPS);
         assert!((correction.wanted - off).length() < EPS);
         assert_eq!(correction.origin, CorrectionOrigin::Limited);
@@ -372,34 +369,24 @@ mod tests {
 
     #[test]
     fn overrides_replace_or_skip_the_correction() {
-        let c = config();
-        let hub = c.hub_from_eyes_m + Vec3::new(0.0, -0.1, 0.0);
+        let hub = HUB_FROM_EYES_M + Vec3::new(0.0, -0.1, 0.0);
         let seat = |correction| SeatOverride {
             part: "a_steeringwheel",
             correction,
         };
-        let fixed = derive(hub, &c, Some(&seat(Some(Vec3::new(0.0, 0.05, 0.0)))));
+        let fixed = derive(hub, Some(&seat(Some(Vec3::new(0.0, 0.05, 0.0)))));
         assert!((fixed.applied - Vec3::new(0.0, 0.05, 0.0)).length() < EPS);
         assert_eq!(fixed.origin, CorrectionOrigin::Override);
-        let too_far = derive(hub, &c, Some(&seat(Some(Vec3::new(0.0, 1.0, 0.0)))));
-        assert!((too_far.applied.length() - c.max_m).abs() < EPS);
-        let skipped = derive(hub, &c, Some(&seat(None)));
+        let too_far = derive(hub, Some(&seat(Some(Vec3::new(0.0, 1.0, 0.0)))));
+        assert!((too_far.applied.length() - MAX_M).abs() < EPS);
+        let skipped = derive(hub, Some(&seat(None)));
         assert_eq!(skipped.applied, Vec3::ZERO);
         assert_eq!(skipped.origin, CorrectionOrigin::Skipped);
     }
 
     #[test]
-    fn a_bad_measurement_or_limit_corrects_nothing() {
-        let c = config();
-        assert_eq!(derive(Vec3::NAN, &c, None).applied, Vec3::ZERO);
-        let no_limit = DrivingViewConfig {
-            max_m: f32::NAN,
-            ..c
-        };
-        assert_eq!(
-            derive(Vec3::new(0.0, 0.0, -1.0), &no_limit, None).applied,
-            Vec3::ZERO
-        );
+    fn a_bad_measurement_corrects_nothing() {
+        assert_eq!(derive(Vec3::NAN, None).applied, Vec3::ZERO);
     }
 
     /// The entry measures nothing before the driver settles, averages over the window, closes

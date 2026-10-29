@@ -240,7 +240,7 @@ mod tests {
             // Not on either page: the debug UI's switches and tuning, the body page, and the
             // display.
             config.controllers.scheme = SchemeSetting::Gamepad;
-            config.controllers.locomotion.stick.acceleration_mps2 = 3.0;
+            config.controllers.locomotion.stick.run_speed_mps = 3.0;
             config.headpose.grapple.mode = GrappleComfortMode::Off;
             config.controllers.roomscale.crouch.enter_drop_m = 0.5;
             config.controllers.body.rig.legs.gait = false;
@@ -265,7 +265,7 @@ mod tests {
 
             assert_eq!(config.controllers.dominant_hand, Hand::Left);
             assert_eq!(config.controllers.scheme, SchemeSetting::Gamepad);
-            assert_eq!(config.controllers.locomotion.stick.acceleration_mps2, 3.0);
+            assert_eq!(config.controllers.locomotion.stick.run_speed_mps, 3.0);
             assert_eq!(config.headpose.grapple.mode, GrappleComfortMode::Off);
             assert_eq!(config.controllers.aim.sights.get(7), Some(&sight));
             assert_eq!(config.controllers.roomscale.crouch.enter_drop_m, 0.5);

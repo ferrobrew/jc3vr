@@ -9,7 +9,7 @@ use crate::controllers::{
     grab::{Candidate, GrabVolume},
     vehicles::{
         config::ParachuteHandlesConfig,
-        parachute::{HandleEvent, HandleHold, HandleState, StepInputs},
+        parachute::{HandleEvent, HandleHold, HandleState, RADIUS_M, REACH_M, StepInputs},
         physical::Release,
     },
 };
@@ -33,18 +33,17 @@ mod parachute {
             centre.is_finite().then_some(Candidate {
                 volume: GrabVolume::ParachuteHandle(hand),
                 centre,
-                radius: config.radius_m,
+                radius: RADIUS_M,
                 hand: Some(hand),
             })
         })
     }
 
     pub(super) fn reach_candidates(
-        config: &ParachuteHandlesConfig,
         state: &HandleState,
         centres: [Option<Vec3>; 2],
     ) -> impl Iterator<Item = Candidate> {
-        let radius = config.reach_m.max(config.radius_m);
+        let radius = REACH_M;
         Hand::BOTH
             .into_iter()
             .filter(move |hand| state.holds[hand.index()].is_none())
@@ -355,19 +354,13 @@ fn free_held_and_released_handles_use_native_rest_grip_and_native_rest() {
     let mut state = HandleState::new();
     let free = parachute::candidates(&CONFIG, &state, native, [None; 2]);
     assert_eq!(free.map(|c| c.unwrap().centre), native.map(Option::unwrap));
-    assert_eq!(
-        parachute::reach_candidates(&CONFIG, &state, native).count(),
-        2
-    );
+    assert_eq!(parachute::reach_candidates(&state, native).count(), 2);
     let rests = [Vec3::new(-0.2, 0.8, -0.4), Vec3::new(0.3, 0.9, -0.5)];
     state.holds = rests.map(|rest| Some(HandleHold { rest }));
     let grips = rests.map(|rest| Some(rest - Vec3::Y * 0.1));
     let held = parachute::candidates(&CONFIG, &state, [None; 2], grips);
     assert_eq!(held.map(|c| c.unwrap().centre), grips.map(Option::unwrap));
-    assert_eq!(
-        parachute::reach_candidates(&CONFIG, &state, native).count(),
-        0
-    );
+    assert_eq!(parachute::reach_candidates(&state, native).count(), 0);
     let mut events = Vec::new();
     parachute::step(
         &mut state,
@@ -391,10 +384,7 @@ fn free_held_and_released_handles_use_native_rest_grip_and_native_rest() {
         released.map(|c| c.unwrap().centre),
         native.map(Option::unwrap)
     );
-    assert_eq!(
-        parachute::reach_candidates(&CONFIG, &state, native).count(),
-        2
-    );
+    assert_eq!(parachute::reach_candidates(&state, native).count(), 2);
 }
 
 #[test]
@@ -404,16 +394,13 @@ fn unavailable_free_rest_never_substitutes_a_shoulder_or_a_held_rest() {
         parachute::candidates(&CONFIG, &state, [None; 2], [Some(Vec3::ZERO); 2]),
         [None; 2]
     );
-    assert_eq!(
-        parachute::reach_candidates(&CONFIG, &state, [None; 2]).count(),
-        0
-    );
+    assert_eq!(parachute::reach_candidates(&state, [None; 2]).count(), 0);
     state.holds[0] = Some(HandleHold { rest: Vec3::Y });
     let native = [None, Some(Vec3::X)];
     let mixed = parachute::candidates(&CONFIG, &state, native, [Some(Vec3::Y), None]);
     assert_eq!(mixed[0].unwrap().centre, Vec3::Y);
     assert_eq!(mixed[1].unwrap().centre, Vec3::X);
-    let reach: Vec<_> = parachute::reach_candidates(&CONFIG, &state, native).collect();
+    let reach: Vec<_> = parachute::reach_candidates(&state, native).collect();
     assert_eq!(reach.len(), 1);
     assert_eq!(reach[0].hand, Some(Hand::Right));
     assert!(parachute::candidates(&CONFIG, &state, [Some(Vec3::ZERO); 2], [None; 2])[0].is_none());

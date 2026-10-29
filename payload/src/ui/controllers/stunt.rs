@@ -54,23 +54,9 @@ pub(super) fn stunt_settings(ui: &mut Ui, c: &mut StuntConfig) {
     ui.checkbox(
         &mut c.enabled,
         "Hold stunt positions with the grip (needs the hand climbing)",
+    )
+    .on_hover_text(
+        "Physical grips stay at the handhold, a mantle onto a roof enters its stunt area, and \
+         opening every grip lets go of a hang; the normal grapple can still enter a hang.",
     );
-    ui.add_enabled_ui(c.enabled, |ui| {
-        ui.label("Physical grips stay at the handhold; the normal grapple can still enter a hang.");
-        ui.checkbox(&mut c.enter_roof, "Enter a roof's stunt area from a mantle");
-        ui.add(
-            egui::Slider::new(&mut c.roof_offer_m, 0.0..=2.0).text("Feet from the stunt area (m)"),
-        );
-        ui.checkbox(&mut c.let_go, "Opening every grip lets go of the hang");
-        ui.add(
-            egui::Slider::new(&mut c.release_grace_s, 0.0..=1.0)
-                .text("Grips open before letting go (s)"),
-        );
-        ui.add(egui::Slider::new(&mut c.retry_s, 0.0..=5.0).text("Wait after a refusal (s)"));
-        ui.add(
-            egui::Slider::new(&mut c.hold_full_speed_mps, 1.0..=100.0)
-                .text("Speed of the strongest hold pulse (m/s)"),
-        );
-        ui.add(egui::Slider::new(&mut c.skid_diameter_m, 0.01..=0.1).text("Skid diameter (m)"));
-    });
 }

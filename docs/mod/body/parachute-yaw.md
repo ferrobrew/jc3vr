@@ -1,6 +1,6 @@
 # Parachute head-yaw suppression
 
-Why the parachute turned with the head in VR, and how the mod stops it. The engine-side mechanism is [engine/gameplay/parachute-locomotion.md](../../engine/gameplay/parachute-locomotion.md); the implementation is `payload/src/hooks/input/parachute.rs` behind `MovementConfig::suppress_parachute_look_steer` (default on).
+Why the parachute turned with the head in VR, and how the mod stops it. The engine-side mechanism is [engine/gameplay/parachute-locomotion.md](../../engine/gameplay/parachute-locomotion.md); the implementation is `payload/src/hooks/input/parachute.rs`.
 
 ## The problem
 
@@ -19,4 +19,4 @@ Gated on the same `head_decoupled` predicate as the other VR body-turn suppressi
 
 ## Validation
 
-The Game tab's movement section shows `Parachute: look-steer suppressions`. In-headset checks: deploy the chute, hold the stick at rest, and turn the head past 90° — the chute should fly straight; the stick should still steer; and the velocity banking and the drift-toward-velocity alignment should still work. The suppression counter advances while the chute is deployed in VR and its output is rewritten; it stays put on flat ground.
+The debug UI's Air feature shows `Parachute: look-steer suppressions` in its live status. In-headset checks: deploy the chute, hold the stick at rest, and turn the head past 90° — the chute should fly straight; the stick should still steer; and the velocity banking and the drift-toward-velocity alignment should still work. The suppression counter advances while the chute is deployed in VR and its output is rewritten; it stays put on flat ground.

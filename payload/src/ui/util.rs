@@ -14,23 +14,3 @@ pub(super) fn patchbox(ui: &mut egui::Ui, label: &str, value: *mut bool) {
         }
     }
 }
-
-/// A slider over a game float global, written through the patcher like [`patchbox`] so pages that
-/// are not plainly writable still take the edit.
-pub(super) fn patch_slider(
-    ui: &mut egui::Ui,
-    label: &str,
-    value: *mut f32,
-    range: std::ops::RangeInclusive<f32>,
-) {
-    let mut v = unsafe { *value };
-    if ui
-        .add(egui::Slider::new(&mut v, range).text(label))
-        .changed()
-        && let Some(mut patcher) = hooks::patcher()
-    {
-        unsafe {
-            patcher.patch(value as *const _ as usize, &v.to_le_bytes());
-        }
-    }
-}

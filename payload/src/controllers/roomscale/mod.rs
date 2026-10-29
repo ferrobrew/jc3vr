@@ -101,12 +101,12 @@ pub struct ComposedCockpit {
 /// correction, returning the cockpit positions to compose with. Called once per rendered VR frame
 /// on the game thread, outside the world update.
 pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
-    let (config, rig, remap_head, driving_view_config) = Config::lock_query(|c| {
+    let (config, rig, remap_head, driving_view_on) = Config::lock_query(|c| {
         (
             c.controllers.roomscale,
             c.controllers.body.rig,
             c.controllers.body.remap_head,
-            c.controllers.vehicles.driving_view,
+            c.controllers.vehicles.driving_view.enabled,
         )
     });
     let stage = vr::stage::stage();
@@ -263,7 +263,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     // A driving state missing from the seat tables reads as out, so only a transition holds the
     // correction back.
     let driving_view = driving_view::advance(
-        &driving_view_config,
+        driving_view_on,
         driving_view::FrameInputs {
             seated: !matches!(
                 seat,

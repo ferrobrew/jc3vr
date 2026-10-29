@@ -17,7 +17,7 @@
 
 use glam::{Mat4, Vec3};
 
-use crate::{controllers::locomotion::config::StableViewConfig, headpose::Anchors};
+use crate::headpose::Anchors;
 
 /// The neutral standing head, neck, and eye midpoint, in Rico's model space.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -127,20 +127,14 @@ impl HeightFilter {
     /// on the ground this tick. Off it, what the smoothing still hides winds down to nothing over
     /// [`RELEASE_S`], so leaving the ground never jumps the view; a change beyond the snap distance
     /// (a drop, a teleport) passes at once.
-    pub fn step(
-        &mut self,
-        raw: f32,
-        dt: f32,
-        supported: bool,
-        config: &StableViewConfig,
-    ) -> HeightPair {
+    pub fn step(&mut self, raw: f32, dt: f32, supported: bool) -> HeightPair {
         let previous = self.last.unwrap_or(raw);
-        let current = self.advance(raw, dt, supported, config);
+        let current = self.advance(raw, dt, supported);
         self.last = Some(current);
         HeightPair { previous, current }
     }
 
-    fn advance(&mut self, raw: f32, dt: f32, supported: bool, config: &StableViewConfig) -> f32 {
+    fn advance(&mut self, raw: f32, dt: f32, supported: bool) -> f32 {
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         if !raw.is_finite() {
             self.state = HeightState::Idle;
@@ -151,18 +145,18 @@ impl HeightFilter {
             HeightState::Following { height, .. } => height,
             HeightState::Releasing { offset, .. } => raw + offset,
         };
-        if (smoothed - raw).abs() > config.height_snap_m {
+        if (smoothed - raw).abs() > HEIGHT_SNAP_M {
             self.state = HeightState::Idle;
             return raw;
         }
-        if supported && config.height_smoothing_s > 0.0 {
+        if supported {
             let rate = match self.state {
                 HeightState::Following { rate, .. } => rate,
                 _ => 0.0,
             };
             let (mut y, mut rate) =
-                smooth_critically_damped(smoothed, rate, raw, config.height_smoothing_s, dt);
-            let lag = config.max_height_lag_m.max(0.0);
+                smooth_critically_damped(smoothed, rate, raw, HEIGHT_SMOOTHING_S, dt);
+            let lag = MAX_HEIGHT_LAG_M;
             if (y - raw).abs() > lag {
                 y = raw + (y - raw).clamp(-lag, lag);
                 rate = 0.0;
@@ -187,6 +181,16 @@ impl HeightFilter {
 /// How long the offset the smoothing hid takes to wind down once the body leaves the ground,
 /// seconds.
 pub const RELEASE_S: f32 = 0.1;
+
+/// The time constant of the smoothing of the root's height while grounded, seconds. Turns a
+/// staircase's steps into a ramp.
+const HEIGHT_SMOOTHING_S: f32 = 0.06;
+
+/// The furthest the smoothed height may trail the root's, metres.
+pub const MAX_HEIGHT_LAG_M: f32 = 0.25;
+
+/// A height change beyond this in one tick is a teleport or a drop, and is taken at once, metres.
+const HEIGHT_SNAP_M: f32 = 0.75;
 
 /// The handover between the animated anchor (`0`) and the stable one (`1`).
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -323,49 +327,46 @@ mod tests {
 
     #[test]
     fn the_height_filter_ramps_a_step_and_snaps_a_drop() {
-        let config = StableViewConfig::new();
         let mut filter = HeightFilter::new();
-        filter.step(0.0, DT, true, &config);
-        let first = filter.step(0.2, DT, true, &config);
+        filter.step(0.0, DT, true);
+        let first = filter.step(0.2, DT, true);
         assert!(first.current > 0.0 && first.current < 0.2);
         assert_eq!(first.previous, 0.0);
         let mut last = first.current;
         for _ in 0..30 {
-            let pair = filter.step(0.2, DT, true, &config);
+            let pair = filter.step(0.2, DT, true);
             assert!(pair.current >= last - 1e-6 && pair.current <= 0.2 + 1e-6);
             last = pair.current;
         }
         assert!((last - 0.2).abs() < 1e-3);
-        let drop = filter.step(-5.0, DT, true, &config);
+        let drop = filter.step(-5.0, DT, true);
         assert_eq!(drop.current, -5.0);
     }
 
     #[test]
     fn the_height_filter_never_lags_beyond_its_limit() {
-        let config = StableViewConfig::new();
         let mut filter = HeightFilter::new();
         let mut raw = 0.0;
         for _ in 0..120 {
             raw += 3.0 * DT;
-            let pair = filter.step(raw, DT, true, &config);
-            assert!(raw - pair.current <= config.max_height_lag_m + 1e-5);
+            let pair = filter.step(raw, DT, true);
+            assert!(raw - pair.current <= MAX_HEIGHT_LAG_M + 1e-5);
         }
     }
 
     #[test]
     fn leaving_the_ground_winds_the_hidden_offset_down_without_a_jump() {
-        let config = StableViewConfig::new();
         let mut filter = HeightFilter::new();
-        filter.step(0.0, DT, true, &config);
+        filter.step(0.0, DT, true);
         // A jump's first tick still on the ground: the smoothing trails the rising root.
         let mut root = 0.1;
-        let trailing = filter.step(root, DT, true, &config).current;
+        let trailing = filter.step(root, DT, true).current;
         assert!(trailing < root);
         let mut last_gap = f32::INFINITY;
         let mut last = trailing;
         for _ in 0..10 {
             root += 0.1;
-            let pair = filter.step(root, DT, false, &config);
+            let pair = filter.step(root, DT, false);
             // Continuous with the last tick, rising with the root, and closing on it without
             // passing it.
             assert_eq!(pair.previous, last);
@@ -380,10 +381,7 @@ mod tests {
         }
         assert_eq!(last, root);
         // With nothing hidden, the air's heights pass through.
-        assert_eq!(
-            filter.step(root + 0.3, DT, false, &config).current,
-            root + 0.3
-        );
+        assert_eq!(filter.step(root + 0.3, DT, false).current, root + 0.3);
     }
 
     #[test]

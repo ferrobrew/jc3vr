@@ -78,8 +78,8 @@ fn begin_adapter_missing_observation_clears_old_entry_and_reentry_is_fresh() {
     };
     let fitted = fit::fit(
         &FitInputs {
-            physical: &config.vehicles.physical,
-            view: &config.vehicles.driving_view,
+            physical: &PhysicalControlsTuning::of(&config.vehicles.physical),
+            view_enabled: config.vehicles.driving_view.enabled,
             seat: driver(),
             xf: &xf,
             anchor: None,

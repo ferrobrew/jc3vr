@@ -1,5 +1,4 @@
-//! The driven vehicle's rendered steering wheel turned with the steering, behind
-//! [`PhysicalControlsConfig::animate_wheel`](crate::controllers::vehicles::config::PhysicalControlsConfig::animate_wheel).
+//! The driven vehicle's rendered steering wheel turned with the steering.
 //!
 //! The game never turns a car's or a boat's steering wheel: the wheel is a part fixed to the body
 //! (`docs/engine/gameplay/vehicle-parts.md`). Every render update,

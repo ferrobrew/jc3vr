@@ -65,58 +65,9 @@ pub(super) fn climb_settings(ui: &mut Ui, c: &mut ClimbConfig) {
         "Climb by gripping the world (needs the hand bodies)",
     );
     ui.add_enabled_ui(c.enabled, |ui| {
-        ui.add(egui::Slider::new(&mut c.reach_m, 0.0..=0.3).text("Reach past the palm (m)"));
-        ui.add(egui::Slider::new(&mut c.gain, 0.0..=1.0).text("Follow gain"));
-        ui.add(egui::Slider::new(&mut c.max_speed_mps, 0.0..=20.0).text("Fastest climb (m/s)"));
-        ui.add(egui::Slider::new(&mut c.break_distance_m, 0.1..=3.0).text("Let go beyond (m)"));
-        ui.separator();
-        ui.checkbox(&mut c.fling, "Keep the speed on release");
-        ui.add(egui::Slider::new(&mut c.fling_scale, 0.0..=3.0).text("Fling (×)"));
-        ui.add(
-            egui::Slider::new(&mut c.max_fling_speed_mps, 0.0..=30.0).text("Fastest fling (m/s)"),
-        );
-        ui.add(egui::Slider::new(&mut c.fling_smoothing_s, 0.0..=0.5).text("Fling smoothing (s)"));
-        ui.separator();
         ui.checkbox(&mut c.mantle, "Mantle over ledges");
-        ui.add(
-            egui::Slider::new(&mut c.mantle_start_m, 0.0..=2.0)
-                .text("Start with the feet below the top (m)"),
-        );
-        ui.add(egui::Slider::new(&mut c.mantle_clearance_m, 0.0..=0.5).text("Clearance (m)"));
-        ui.add(egui::Slider::new(&mut c.mantle_forward_m, 0.0..=1.5).text("Over the top (m)"));
-        ui.add(egui::Slider::new(&mut c.mantle_speed_mps, 0.1..=6.0).text("Mantle speed (m/s)"));
-        ui.add(
-            egui::Slider::new(&mut c.mantle_min_speed_mps, 0.0..=3.0)
-                .text("Least pull to mantle (m/s)"),
-        );
-        ui.add(
-            egui::Slider::new(&mut c.mantle_min_climb_m, 0.0..=1.5)
-                .text("Climb before a standing mantle (m)"),
-        );
-        ui.add(
-            egui::Slider::new(&mut c.mantle_land_past_m, 0.0..=1.0).text("Land past the edge (m)"),
-        );
-        ui.add(egui::Slider::new(&mut c.fling_carry_s, 0.0..=1.0).text("Fling carried for (s)"));
-        ui.add(
-            egui::Slider::new(&mut c.tension_full_speed_mps, 0.1..=10.0)
-                .text("Speed of the strongest tension pulse (m/s)"),
-        );
-        ui.add(
-            egui::Slider::new(&mut c.min_ledge_normal_y, 0.0..=1.0)
-                .text("Least upward normal of a ledge"),
-        );
-        ui.separator();
-        ui.checkbox(&mut c.moving, "Climb moving bodies (vehicles, platforms)");
-        ui.add_enabled_ui(c.moving, |ui| {
-            ui.add(
-                egui::Slider::new(&mut c.min_moving_mass_kg, 0.0..=5000.0)
-                    .text("Lightest body climbed (kg)"),
-            );
-            ui.add(
-                egui::Slider::new(&mut c.max_carry_speed_mps, 0.0..=200.0)
-                    .text("Fastest carry (m/s)"),
-            );
-        });
+        ui.add(egui::Slider::new(&mut c.fling_scale, 0.0..=3.0).text("Fling (×)"))
+            .on_hover_text("The share of the climbing speed the body keeps when the grips let go.");
     });
 }
 

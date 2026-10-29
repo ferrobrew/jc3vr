@@ -6,11 +6,11 @@ use super::*;
 use crate::controllers::{
     bindings::hold::{Desired, MapKind, Target, Want},
     vehicles::{
-        config::CockpitButtonsConfig,
         physical::buttons::{
             Button, ButtonEvent, PushButton, PushPhase, THROTTLE_DEADZONE_DEG, TwistGrip,
             grip_twist, push_step, twist_throttle,
         },
+        tuning::PHYSICAL,
         write_outputs,
     },
 };
@@ -128,7 +128,7 @@ fn the_nitrous_button_sits_beside_the_wheel_and_holds_the_vehicle_mod() {
 
     let off = placement(|c| {
         c.wheel.enabled = true;
-        c.buttons.nitrous_button = false;
+        c.nitrous_button = false;
     });
     let mut state = ControlState::default();
     step_with(
@@ -150,7 +150,7 @@ fn the_nitrous_button_sits_beside_the_wheel_and_holds_the_vehicle_mod() {
 
 #[test]
 fn the_throttle_opens_with_the_twist_past_a_deadzone() {
-    let config = CockpitButtonsConfig::new();
+    let config = PHYSICAL.buttons;
     let deg = |d: f32| d.to_radians();
     assert_eq!(twist_throttle(0.0, &config), 0.0);
     assert_eq!(twist_throttle(deg(THROTTLE_DEADZONE_DEG), &config), 0.0);
@@ -167,7 +167,7 @@ fn the_throttle_opens_with_the_twist_past_a_deadzone() {
 
 #[test]
 fn twisting_the_right_grip_back_opens_the_throttle_on_the_bars_and_burns_no_nitrous() {
-    let config = CockpitButtonsConfig::new();
+    let config = PHYSICAL.buttons;
     let grab = Quat::from_rotation_y(0.2);
     // Rolling the grip's top back toward the rider is a positive turn about the bars' line.
     let back = Quat::from_rotation_x((config.throttle_twist_deg + 5.0).to_radians()) * grab;
@@ -180,7 +180,7 @@ fn twisting_the_right_grip_back_opens_the_throttle_on_the_bars_and_burns_no_nitr
     let either = Quat::from_rotation_z(-0.7) * grab;
     assert!(grip_twist(TwistGrip::Collective, grab, either, Vec3::X) > 0.6);
 
-    let p = placement(|c| c.handlebars.enabled = true);
+    let p = placement(|c| c.handlebars = true);
     let kinds = [ControlKind::Handlebars];
     let ends = bar_ends(p.bars.centre, p.bars.half_width, Vec2::ZERO);
     let mut state = ControlState::default();

@@ -14,7 +14,7 @@ use crate::{
         physical_hands::{
             PhysicalHandsConfig,
             climb::{
-                config::ClimbConfig,
+                config::CLIMB,
                 engine,
                 solve::tension,
                 state::{Event, MIN_TENSION, STATE, enabled},
@@ -39,7 +39,6 @@ use crate::{
 pub(crate) unsafe fn reach(
     palm: &PalmBox,
     reach_m: f32,
-    config: &ClimbConfig,
     cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
 ) -> Option<Hold> {
     let origin = palm.point(Vec3::new(0.0, 1.0, 0.0));
@@ -54,7 +53,7 @@ pub(crate) unsafe fn reach(
             };
             // SAFETY: forwarded from the caller; the hit was found this tick.
             let frame = unsafe { engine::body_frame(body) }?;
-            engine::climbable(&frame, config.moving, config.min_moving_mass_kg).then_some(Hold {
+            engine::climbable(&frame, CLIMB.moving, CLIMB.min_moving_mass_kg).then_some(Hold {
                 point: hit.position,
                 normal: hit.normal,
                 body,
@@ -119,12 +118,8 @@ pub(crate) fn observe(observed: Observed, config: &PhysicalHandsConfig) {
             state.warned_mode = false;
         }
         // The gripping hands feel the pull while the hands move the body.
-        let strain = (climbing && !state.held_by_game).then(|| {
-            tension(
-                state.status.velocity.length(),
-                config.climb.tension_full_speed_mps,
-            )
-        });
+        let strain = (climbing && !state.held_by_game)
+            .then(|| tension(state.status.velocity.length(), CLIMB.tension_full_speed_mps));
         let gripping = state.grips.map(|g| g.is_some());
         (std::mem::take(&mut state.events), strain, gripping)
     };

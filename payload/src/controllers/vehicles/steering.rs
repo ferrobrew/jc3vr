@@ -44,10 +44,7 @@ use std::f32::consts::{PI, TAU};
 
 use glam::{Quat, Vec3};
 
-use crate::controllers::vehicles::{
-    config::{WheelSpec, WheelTracking},
-    wheel::WheelFrame,
-};
+use crate::controllers::vehicles::{config::WheelTracking, tuning::WheelSpec, wheel::WheelFrame};
 
 /// A hand on the wheel: the wheel as it took hold, and where the hand was on the last tick.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -372,10 +369,10 @@ mod tests {
     use std::f32::consts::FRAC_PI_2;
 
     use super::*;
-    use crate::controllers::vehicles::config::PhysicalControlsConfig;
+    use crate::controllers::vehicles::tuning::PHYSICAL;
 
     fn spec() -> WheelSpec {
-        PhysicalControlsConfig::new().wheel
+        PHYSICAL.wheel
     }
 
     fn frame() -> WheelFrame {
@@ -705,7 +702,7 @@ mod tests {
             }
         }
         // A response above one steers less than linearly near centre.
-        let half = angle_for_steer(0.5, &PhysicalControlsConfig::new().wheel);
+        let half = angle_for_steer(0.5, &PHYSICAL.wheel);
         assert!(steer_for_angle(half, &spec) < 0.5);
     }
 

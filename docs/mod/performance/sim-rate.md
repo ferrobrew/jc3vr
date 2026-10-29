@@ -76,7 +76,7 @@ Record per item: the rate, the frame breakdown line over the test, what was meas
 
 - Reel-in speed and stop distance, tether tension and retract timing, the hang's swing period.
 - The wire does not jitter or break early, and the reel's trajectory prediction still aims where it lands.
-- VR: the grapple comfort filter engages and releases as at 30 (its CSV telemetry, "Log reel telemetry" in the Camera tab, shows the anchor steps and any absorbed snaps).
+- VR: the grapple comfort filter engages and releases as at 30 (its CSV telemetry, "Log reel telemetry" in the debug UI's Grapple feature, shows the anchor steps and any absorbed snaps).
 
 ### Wingsuit and parachute
 

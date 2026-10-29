@@ -501,8 +501,8 @@ The settings are under `weapons` unless named otherwise. The description is in [
 | Recoil | `recoil.enabled`, `recoil.kick_scale`; the spring tuning is fixed in `controllers::weapons::recoil`, and the game's camera kick is always suppressed while the guns aim by hand | Built. |
 | Haptics | `haptics.enabled`, `haptics.intensity`, `haptics.game_rumble`, `haptics.gamepad_rumble` ([haptics.md](haptics.md)) | Built. |
 | Separate pistols | `separate_pistols` | Built, as part of the two-handed inventory: each pistol its own weapon, a pistol in each hand ([physical-weapons.md, "Separate pistols"](physical-weapons.md#separate-pistols)). |
-| The anchored tier for the grapple line and the hang push | `hands.anchor.enabled`, `hands.anchor.hang_swing`, and the swing tuning under `hands.anchor` | Built for the reel and hang states. A grapple hand that holds anything (a gun, a prop, a grenade, or a charge) stays free. |
-| The yank gesture | `bindings.yank.enabled` | Built. It is disarmed while the line carries the character (the reel-in and the hang). |
+| The anchored tier for the grapple line and the hang push | `hands.anchor.enabled`, which also carries the hang push; the swing tuning is fixed in `controllers::hands::anchor` | Built for the reel and hang states. A grapple hand that holds anything (a gun, a prop, a grenade, or a charge) stays free. |
+| The yank gesture | `bindings.yank.enabled`; the detector is fixed at `GRAPPLE_YANK` | Built. It is disarmed while the line carries the character (the reel-in and the hang). |
 | F7 during the chase | none | Re-bases yaw and height only while the chase is active ([rig.md, "Recentering"](../body/rig.md#recentering)). |
 
 ### Milestone 4: vehicles and flight
@@ -513,11 +513,11 @@ The settings are under `vehicles`. The description is in [controllers.md, "Vehic
 |---|---|---|
 | Per-class vehicle bindings | the milestone 1 bindings | Built in milestone 1; each class needs its own playtest. Boats and jetskis share one class. |
 | Driver weapons by hand | `driver_weapons_by_hand` (on) | Built. The dominant hand aims the driver's weapons by default. |
-| Mounted guns and gunner seats | `mounted.aim_by_hands`, `mounted.anchor_hands`, `mounted.min_lever_m` | Built. |
-| Physical controls | `physical.wheel` (with its lock, response, deadzone, tracking, and return), `physical.handlebars`, `physical.cyclic`, `physical.collective`, `physical.flight_stick`, and `physical.throttle` (each on), `physical.grab_radius_m`, `physical.release_distance_m` | Built. The placement and ranges are untuned. A hand on a control cannot fire the vehicle's weapons with its grip; another fire input while a control is held is not built. |
-| Arm steering | `arm_steering.wingsuit` (on), `arm_steering.min_spread`, `arm_steering.deadzone_m`, `arm_steering.full_bank_m`, `arm_steering.full_pitch_m`, `arm_steering.invert_pitch`, `arm_steering.show_guide` (on) | Built for the wingsuit. The hand tier stays yielded; Rico's arms follow the player's through the procedural body (`body.procedural.wingsuit_arms`). |
-| Parachute handles | `parachute_handles.enabled` (on), `parachute_handles.offset_m`, `parachute_handles.radius_m`, `parachute_handles.full_pull_m`, `parachute_handles.deadzone_m`, `parachute_handles.brake_threshold`, `parachute_handles.let_go_distance_m` | Built. They replace the parachute's arm steering. The placement and the pull are untuned, and whether the stick-back slow-down the handles brake with is a strong brake depends on shipped tuning that was not read. |
-| The wingsuit's head look-steer removal | `movement.suppress_parachute_look_steer`, outside the `controllers` section | Built. |
+| Mounted guns and gunner seats | `mounted.aim_by_hands`, which also anchors the hands on the handles; the minimum lever is fixed (`MIN_LEVER_M` in `controllers::vehicles::mounted_tick`) | Built. |
+| Physical controls | `physical.wheel` (with its lock, response, and tracking), `physical.handlebars`, `physical.sticks`, and `physical.levers` (each on); the placement, ranges, and grab are fixed in `PhysicalControlsTuning` | Built. The placement and ranges are untuned. A hand on a control cannot fire the vehicle's weapons with its grip; another fire input while a control is held is not built. |
+| Arm steering | `arm_steering.wingsuit` (on), `arm_steering.deadzone_m`, `arm_steering.full_bank_m`, `arm_steering.invert_pitch`; the spread to engage and the full pitches are fixed in `controllers::vehicles::arm_steering` | Built for the wingsuit. The hand tier stays yielded; Rico's arms follow the player's through the procedural body (`body.procedural.wingsuit_arms`). |
+| Parachute handles | `parachute_handles.enabled` (on), `parachute_handles.full_pull_m`, `parachute_handles.brake_threshold`; the placement, deadzone, and let-go distance are fixed in `controllers::vehicles::parachute` | Built. They replace the parachute's arm steering. The placement and the pull are untuned, and whether the stick-back slow-down the handles brake with is a strong brake depends on shipped tuning that was not read. |
+| The wingsuit's head look-steer removal | none; always on | Built. |
 | Weaponized wingsuit guns aimed by the right hand | none | Not built. They aim by the gaze, because the gun aim covers only the wielded slot. |
 
 ### Milestone 5: breadth

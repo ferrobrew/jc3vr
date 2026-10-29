@@ -89,7 +89,7 @@ pub fn candidates(config: &MountedConfig, handles: [Option<Vec3>; 2]) -> Vec<Can
             Some(Candidate {
                 volume: GrabVolume::MountedHandle(hand),
                 centre: handles[hand.index()]?,
-                radius: config.grab_radius_m,
+                radius: GRAB_RADIUS_M,
                 hand: Some(hand),
             })
         })
@@ -108,7 +108,7 @@ pub fn step(state: &mut MountedGrip, inputs: &GripStep, events: &mut Vec<Mounted
             (Some(handle), Some(grip)) => {
                 (was || inputs.grabs[i])
                     && inputs.held[i]
-                    && grip.distance(handle) <= inputs.config.release_distance_m
+                    && grip.distance(handle) <= RELEASE_DISTANCE_M
             }
             _ => false,
         };
@@ -128,6 +128,12 @@ pub fn step(state: &mut MountedGrip, inputs: &GripStep, events: &mut Vec<Mounted
         );
     }
 }
+
+/// How far from a handle a hand's grip may be for a grip press to take it, metres.
+pub(super) const GRAB_RADIUS_M: f32 = 0.12;
+
+/// How far a holding hand may move from its handle before it lets go, metres.
+const RELEASE_DISTANCE_M: f32 = 0.3;
 
 #[cfg(test)]
 mod tests {

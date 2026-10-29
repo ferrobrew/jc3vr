@@ -6,7 +6,7 @@ use crate::{
     config,
     controllers::{
         bindings::{Blocker, HandRecovery},
-        config::{InputConfig, LocomotionDirection, SchemeSetting},
+        config::{InputConfig, SchemeSetting},
         frame::{self, Button, GripPress, Hand, PressThresholds},
     },
     ui::controllers::{locomotion, unarmed},
@@ -171,74 +171,20 @@ pub(super) fn menu_panel(ui: &mut Ui, cfg: &mut config::Config) {
 
 pub(super) fn grapple_settings(ui: &mut Ui, cfg: &mut config::Config) {
     let c = &mut cfg.controllers;
-    let y = &mut c.bindings.yank;
-    ui.checkbox(&mut y.enabled, "Yank to zip").on_hover_text(
+    ui.checkbox(&mut c.bindings.yank.enabled, "Yank to zip").on_hover_text(
         "A sharp pull of the grapple hand toward the body taps the grapple while a line is live.",
     );
-    ui.add_enabled_ui(y.enabled, |ui| {
-        ui.indent("yank", |ui| {
-            ui.add(egui::Slider::new(&mut y.min_distance_m, 0.05..=0.5).text("Yank pull (m)"));
-            ui.add(egui::Slider::new(&mut y.min_speed_mps, 0.5..=5.0).text("Yank speed (m/s)"));
-            ui.add(egui::Slider::new(&mut y.window_s, 0.05..=0.5).text("Yank window (s)"));
-            ui.add(egui::Slider::new(&mut y.cooldown_s, 0.0..=2.0).text("Yank cooldown (s)"));
-            ui.add(
-                egui::Slider::new(&mut y.body_drop_m, 0.0..=0.6)
-                    .text("Body point below the head (m)"),
-            );
-        });
-    });
-    let g = &mut c.grapple;
-    ui.label("Physical grapple");
-    ui.indent("physical_grapple", |ui| {
-        ui.add(
-            egui::Slider::new(&mut g.pull.speed_hold_s, 0.0..=3.0).text("Pull speed memory (s)"),
+    ui.checkbox(&mut c.grapple.pull_to_reel, "Pull to reel")
+        .on_hover_text(
+            "The grapple hand's pull speeds the reel, a yank during it boosts it, and a pull back \
+             tightens attached tethers.",
         );
-        ui.add(egui::Slider::new(&mut g.pull.relax_mps, 0.0..=1.0).text("Pull depth relax (m/s)"));
-        ui.checkbox(&mut g.reel.enabled, "Pull to speed the reel");
-        ui.add(egui::Slider::new(&mut g.reel.min_scale, 0.5..=1.5).text("Reel scale, no pull"));
-        ui.add(egui::Slider::new(&mut g.reel.max_scale, 1.0..=2.5).text("Reel scale, full pull"));
-        ui.add(
-            egui::Slider::new(&mut g.reel.full_speed_mps, 0.5..=5.0).text("Full pull speed (m/s)"),
-        );
-        ui.add(egui::Slider::new(&mut g.reel.boost_s, 0.0..=2.0).text("Yank boost (s)"));
-        ui.checkbox(
-            &mut g.reel.boost_needs_upgrade,
-            "Boost needs the retract boost upgrade",
-        );
-        ui.checkbox(&mut g.tether.enabled, "Pull to tighten tethers");
-        ui.add(
-            egui::Slider::new(&mut g.tether.deadzone_m, 0.0..=0.3).text("Tether pull deadzone (m)"),
-        );
-        ui.add(egui::Slider::new(&mut g.tether.full_m, 0.1..=0.8).text("Tether full pull (m)"));
-        ui.checkbox(&mut g.swing.pump, "Pump the hang swing");
-        ui.add(egui::Slider::new(&mut g.swing.deadzone_mps, 0.0..=1.5).text("Pump deadzone (m/s)"));
-        ui.add(egui::Slider::new(&mut g.swing.full_mps, 0.2..=4.0).text("Pump full speed (m/s)"));
-        ui.add(egui::Slider::new(&mut g.swing.scale, -3.0..=3.0).text("Pump strength"));
-        ui.add(egui::Slider::new(&mut g.swing.max_scale, 0.0..=4.0).text("Swing cap"));
-    });
+    ui.checkbox(&mut c.grapple.pump, "Pump the hang swing");
 }
 
 pub(super) fn locomotion_settings(ui: &mut Ui, cfg: &mut config::Config) {
-    let c = &mut cfg.controllers;
-    egui::CollapsingHeader::new("Locomotion and turning")
-        .default_open(true)
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Move relative to");
-                ui.selectable_value(
-                    &mut c.locomotion.direction,
-                    LocomotionDirection::Head,
-                    "Head",
-                );
-                ui.selectable_value(
-                    &mut c.locomotion.direction,
-                    LocomotionDirection::OffHand,
-                    "Off-hand",
-                );
-            });
-            let l = &mut c.locomotion;
-            locomotion::locomotion_settings(ui, &mut l.stick, &mut l.acts, &mut l.view);
-        });
+    let l = &mut cfg.controllers.locomotion;
+    locomotion::locomotion_settings(ui, &mut l.stick, &mut l.acts, &mut l.view);
 }
 
 pub(super) fn animation_settings(ui: &mut Ui, cfg: &mut config::Config) {

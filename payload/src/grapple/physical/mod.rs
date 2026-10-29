@@ -28,7 +28,7 @@ pub mod tether;
 
 use std::time::{Duration, Instant};
 
-pub use config::PhysicalGrappleConfig;
+pub use config::{PhysicalGrappleConfig, PhysicalGrappleTuning};
 use jc3gi::{
     character::character::Character,
     equipment::grappling_hook::{GrapplingHook, GrapplingHookState},
@@ -38,7 +38,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     controllers::{
-        bindings::yank::{YankConfig, YankDetector},
+        bindings::yank::{GRAPPLE_YANK, YankDetector},
         config::ControllersConfig,
         hands::anchor,
         haptics::{self, Event, Sustain},
@@ -173,7 +173,7 @@ pub fn status() -> GrappleStatus {
 ///
 /// Main thread, outside the world update.
 pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
-    let config = &input.config.grapple;
+    let config = &PhysicalGrappleTuning::of(&input.config.grapple);
     let hand = input.config.acting_hand().other();
     let hook = unsafe { read_hook() };
     let anchor = anchor::status().anchor;
@@ -190,12 +190,9 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
         Some(Traversal::PreReel | Traversal::ReelingIn)
     );
     let drive_reel = reeling && config.reel.enabled;
-    let boost = state.boost.step(
-        input.dt,
-        input.distance,
-        drive_reel,
-        &boost_detector_config(&input.config.bindings.yank),
-    );
+    let boost = state
+        .boost
+        .step(input.dt, input.distance, drive_reel, &GRAPPLE_YANK);
     if let Some(yank) = boost {
         state.boost_until = Some(now + Duration::from_secs_f32(config.reel.boost_s.max(0.0)));
         state.status.boosts += 1;
@@ -470,15 +467,6 @@ unsafe fn read_hook() -> Option<HookRead> {
     })
 }
 
-/// The yank detector's settings for the reel's boost: the bindings' own yank, always on (the
-/// boost has its own switch, the reel's).
-fn boost_detector_config(yank: &YankConfig) -> YankConfig {
-    YankConfig {
-        enabled: true,
-        ..*yank
-    }
-}
-
 /// The readout's phase from the hook's fields and the mode detector's traversal.
 fn phase(
     state: GrapplingHookState,
@@ -620,15 +608,5 @@ mod tests {
             ),
             GrapplePhase::ScriptedWire
         );
-    }
-
-    #[test]
-    fn the_boost_detector_is_always_on() {
-        let off = YankConfig {
-            enabled: false,
-            ..YankConfig::new()
-        };
-        assert!(boost_detector_config(&off).enabled);
-        assert_eq!(boost_detector_config(&off).min_speed_mps, off.min_speed_mps);
     }
 }

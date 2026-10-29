@@ -85,7 +85,7 @@ use crate::{
             },
             rig::{legs::swing::FootPose, pelvis, torso_turn},
         },
-        locomotion::status as locomotion_status,
+        locomotion::{anchor::JUMP_GRACE_S, status as locomotion_status},
         mode::{AirborneVariant, Mode, current as current_mode},
         vehicles::parachute_brake,
     },
@@ -381,11 +381,10 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             false
         }
         ProceduralMode::Off | ProceduralMode::Full => {
-            let jump_grace_s = Config::lock_query(|c| c.controllers.locomotion.view.jump_grace_s);
             let read = unsafe {
                 state
                     .tracker
-                    .read(character, &locomotion, now, dt, jump_grace_s, &config)
+                    .read(character, &locomotion, now, dt, JUMP_GRACE_S, &config)
             };
             let case = if config.mode == ProceduralMode::Off {
                 Case::SwitchedOff

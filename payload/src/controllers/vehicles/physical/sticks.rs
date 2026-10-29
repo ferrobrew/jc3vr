@@ -14,11 +14,11 @@ use glam::{Quat, Vec2, Vec3};
 use crate::controllers::{
     frame::Hand,
     vehicles::{
-        config::{FlightControlsConfig, StickSpec},
         physical::{
             ControlKind, ControlState, Holding, Placement,
             cues::{self, ControlCue, TravelCues},
         },
+        tuning::{FlightControlsTuning, StickSpec},
     },
 };
 
@@ -62,7 +62,7 @@ pub fn spring_back(spec: &StickSpec, deflection: Vec2, dt: f32) -> Vec2 {
 /// The rudder, `-1..=1` with positive right, for a hand that took the stick at orientation `grab`
 /// and holds it at `now`: its twist about the shaft (the cockpit frame's vertical), turning the top
 /// to the right for a right rudder, past the deadzone and fully at the full twist.
-pub fn twist_rudder(config: &FlightControlsConfig, grab: Quat, now: Quat) -> f32 {
+pub fn twist_rudder(config: &FlightControlsTuning, grab: Quat, now: Quat) -> f32 {
     let twist = -twist_about(now * grab.inverse(), Vec3::Y);
     let deadzone = config.twist_deadzone_deg.to_radians().max(0.0);
     let full = config.twist_full_deg.to_radians().max(deadzone + 1e-3);
@@ -148,10 +148,10 @@ pub(super) fn twist_about(delta: Quat, axis: Vec3) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::vehicles::config::PhysicalControlsConfig;
+    use crate::controllers::vehicles::tuning::PHYSICAL;
 
     fn spec() -> StickSpec {
-        PhysicalControlsConfig::new().flight_stick
+        PHYSICAL.flight_stick
     }
 
     #[test]
@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn twisting_the_top_right_is_right_rudder_past_the_deadzone() {
-        let config = FlightControlsConfig::new();
+        let config = PHYSICAL.flight;
         let grab = Quat::from_rotation_x(0.4);
         let small = Quat::from_rotation_y(-(config.twist_deadzone_deg * 0.5).to_radians()) * grab;
         assert_eq!(twist_rudder(&config, grab, small), 0.0);

@@ -1,4 +1,4 @@
-//! The hand climbing's settings.
+//! The hand climbing's settings and its fixed tuning.
 
 use serde::{Deserialize, Serialize};
 
@@ -10,6 +10,38 @@ use serde::{Deserialize, Serialize};
 pub struct ClimbConfig {
     /// Grip the static world with an empty hand and climb.
     pub enabled: bool,
+    /// Carry the body over a ledge the hands grip the top of, once they have pulled it near the
+    /// top, and let go when it stands there.
+    pub mantle: bool,
+    /// The share of the climbing speed the body keeps when the last grip lets go, so that a pull
+    /// flings the player. Zero keeps none.
+    pub fling_scale: f32,
+}
+
+impl ClimbConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            mantle: true,
+            fling_scale: 1.0,
+        }
+    }
+}
+
+impl Default for ClimbConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The hand climbing's tuning with the default switches.
+pub const CLIMB: HandClimbTuning = HandClimbTuning::new();
+
+/// The hand climbing's tuning, fixed at [`CLIMB`] apart from the switches in [`ClimbConfig`].
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct HandClimbTuning {
+    /// [`ClimbConfig::enabled`].
+    pub enabled: bool,
     /// How far past the palm a surface may be for the grip to take it, metres of the player's hand.
     pub reach_m: f32,
     /// The share of the gap between where the hands would have the body and where it is that one
@@ -20,16 +52,13 @@ pub struct ClimbConfig {
     /// How far the body may be from where the hands would have it before the grips let go, metres:
     /// a hand pulled much further than the body can follow, through a wall or out of reach.
     pub break_distance_m: f32,
-    /// Keep the body's speed when the last grip lets go, so that a pull flings the player.
-    pub fling: bool,
-    /// The share of the climbing speed a release keeps.
+    /// [`ClimbConfig::fling_scale`].
     pub fling_scale: f32,
     /// The fastest fling, metres per second.
     pub max_fling_speed_mps: f32,
     /// How long the climbing speed a fling keeps is smoothed over, seconds.
     pub fling_smoothing_s: f32,
-    /// Carry the body over a ledge the hands grip the top of, once they have pulled it near the
-    /// top, and let go when it stands there.
+    /// [`ClimbConfig::mantle`].
     pub mantle: bool,
     /// How far below the gripped top the feet may be for the mantle to start, metres.
     pub mantle_start_m: f32,
@@ -67,15 +96,14 @@ pub struct ClimbConfig {
     pub max_carry_speed_mps: f32,
 }
 
-impl ClimbConfig {
-    pub const fn new() -> Self {
+impl HandClimbTuning {
+    const fn new() -> Self {
         Self {
             enabled: true,
             reach_m: 0.05,
             gain: 0.8,
             max_speed_mps: 6.0,
             break_distance_m: 1.2,
-            fling: true,
             fling_scale: 1.0,
             max_fling_speed_mps: 8.0,
             fling_smoothing_s: 0.08,
@@ -95,10 +123,14 @@ impl ClimbConfig {
             max_carry_speed_mps: 80.0,
         }
     }
-}
 
-impl Default for ClimbConfig {
-    fn default() -> Self {
-        Self::new()
+    /// The fixed tuning with the switches `config` sets.
+    pub const fn of(config: &ClimbConfig) -> Self {
+        Self {
+            enabled: config.enabled,
+            mantle: config.mantle,
+            fling_scale: config.fling_scale,
+            ..CLIMB
+        }
     }
 }

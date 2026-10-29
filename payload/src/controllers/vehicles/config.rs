@@ -1,16 +1,7 @@
 //! The vehicle, mounted-gun, wingsuit, and parachute settings, held in
-//! [`ControllersConfig::vehicles`](crate::controllers::config::ControllersConfig::vehicles).
-//!
-//! The physical controls are placed in the seated character's body frame (+X right, +Y up, +Z back,
-//! metres) with the character's eyes at the origin: the cockpit frame, whose origin the head pose
-//! pins to the character's animated head, which rides the seat. Offsets are given for a
-//! right-handed layout, and the sticks' and levers' X is mirrored for a left-handed one, so the
-//! stick that sits by the dominant knee moves with the dominant hand. The wheel and the handlebars
-//! are centred on the vehicle and never mirrored; where the vehicle's own wheel or handlebars are
-//! found, they are placed from it instead ([`crate::controllers::vehicles::wheel`]), and the specs
-//! here are the fallback.
+//! [`ControllersConfig::vehicles`](crate::controllers::config::ControllersConfig::vehicles). The
+//! physical controls' fixed placement and tuning are [`crate::controllers::vehicles::tuning`]'s.
 
-use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Vehicles, mounted guns, the wingsuit, and the parachute. Stick bindings always work; the
@@ -26,11 +17,6 @@ pub struct VehiclesConfig {
     /// of the gaze's, so the body leans and points the gun where the hand does. Off, the body turns
     /// toward the gaze as the game's does, while the gun still aims by the hand.
     pub passenger_body_by_hand: bool,
-    /// A hand holding anything of the loadout table's (a weapon, a prop, a grenade, or a charge)
-    /// takes no control, button, mounted gun's handle, or parachute handle, and the wingsuit's arms
-    /// steer only while neither hand holds anything: the player drives one-handed, or docks first.
-    /// Off, a holding hand takes them as an empty one does.
-    pub free_hands_only: bool,
     /// Mounted guns and gunner seats aimed by the hands on the handles.
     pub mounted: MountedConfig,
     /// The physical controls of the driver's seat.
@@ -50,7 +36,6 @@ impl VehiclesConfig {
         Self {
             driver_weapons_by_hand: true,
             passenger_body_by_hand: true,
-            free_hands_only: true,
             mounted: MountedConfig::new(),
             physical: PhysicalControlsConfig::new(),
             arm_steering: ArmSteeringConfig::new(),
@@ -67,38 +52,18 @@ impl Default for VehiclesConfig {
     }
 }
 
-/// The driving view's settings, in
-/// [`VehiclesConfig::driving_view`] (see [`crate::controllers::vehicles::driving_view`]).
+/// The driving view's settings, in [`VehiclesConfig::driving_view`] (see
+/// [`crate::controllers::vehicles::driving_view`]).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DrivingViewConfig {
-    /// Move the view per vehicle so the eyes sit at the standard offset from the wheel's hub.
+    /// Move a car's view per vehicle so the eyes sit at the standard offset from the wheel's hub.
     pub enabled: bool,
-    /// Where the hub sits from the eyes in the standard driving position, cockpit frame (+X right,
-    /// +Y up, +Z back), metres.
-    pub hub_from_eyes_m: Vec3,
-    /// The longest correction applied, metres; a longer one is shortened to this along its
-    /// direction.
-    pub max_m: f32,
-    /// How long the view takes to ease to a new correction, seconds.
-    pub blend_s: f32,
-    /// Correct boats too. Off, only cars are corrected.
-    pub boats: bool,
 }
 
 impl DrivingViewConfig {
-    /// The standard is the middle of a road car's ergonomic range: the wheel's centre about a
-    /// quarter to a third of a metre below the driver's eyes and about half a metre ahead of them.
-    /// It is a little nearer than a road car's, because a VR rim holds no weight and a long reach
-    /// tires the arms.
     pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            hub_from_eyes_m: Vec3::new(0.0, -0.30, -0.45),
-            max_m: 0.25,
-            blend_s: 1.0,
-            boats: false,
-        }
+        Self { enabled: true }
     }
 }
 
@@ -113,44 +78,23 @@ impl Default for DrivingViewConfig {
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MountedConfig {
-    /// Aim the mounted gun from the hands' positions on its handles. Off, it aims along the gaze.
+    /// Put the rendered hands on the gun's handles (the anchored tier), aim the mounted gun from
+    /// their positions there, and kick the handles, and the hands on them, with each shot (see
+    /// [`crate::controllers::vehicles::mounted_recoil`]). Off, the gun aims along the gaze and the
+    /// mounted-gun state yields the hands to the animation, which also holds the handles.
     pub aim_by_hands: bool,
-    /// Put the rendered hands on the gun's handles (the anchored tier). Off, the mounted-gun state
-    /// yields the hands to the animation, which also holds the handles.
-    pub anchor_hands: bool,
-    /// The shortest lever from the handles to the gun's pivot, metres. A gun whose handles the
-    /// game does not place, or places at the pivot, swings about a pivot this far ahead of them.
-    pub min_lever_m: f32,
     /// Take the handles with the grip (see [`crate::controllers::vehicles::mounted_grip`]): only a
     /// hand holding its handle is drawn on it and aims the gun, and with both let go the gun
     /// stays where they left it. Off, both hands sit on the handles and aim the gun whenever the
     /// character mans it.
     pub grip_handles: bool,
-    /// How far from a handle a hand's grip may be for a grip press to take it, metres.
-    pub grab_radius_m: f32,
-    /// How far a holding hand may move from its handle before it lets go, metres.
-    pub release_distance_m: f32,
-    /// Kick the handles, and the hands on them, with each shot, and pulse the holding hands (see
-    /// [`crate::controllers::vehicles::mounted_recoil`]).
-    pub recoil: bool,
-    /// How far a shot kicks the handles back along the barrel, metres.
-    pub kick_back_m: f32,
-    /// How far a shot kicks the handles down as the muzzle climbs, metres.
-    pub kick_dip_m: f32,
 }
 
 impl MountedConfig {
     pub const fn new() -> Self {
         Self {
             aim_by_hands: true,
-            anchor_hands: true,
-            min_lever_m: 0.4,
             grip_handles: true,
-            grab_radius_m: 0.12,
-            release_distance_m: 0.3,
-            recoil: true,
-            kick_back_m: 0.02,
-            kick_dip_m: 0.008,
         }
     }
 }
@@ -163,107 +107,46 @@ impl Default for MountedConfig {
 
 /// The physical controls of the driver's seat (see [`crate::controllers::vehicles::physical`]).
 /// Each is on by default, as part of the full gameplay preset; a control in reach swallows the
-/// grip presses that would fire the vehicle's weapons.
+/// grip presses that would fire the vehicle's weapons. Where they sit and how they move is
+/// [`PhysicalControlsTuning`](crate::controllers::vehicles::tuning::PhysicalControlsTuning)'s.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PhysicalControlsConfig {
-    /// The car's and the boat's wheel.
-    pub wheel: WheelSpec,
+    /// The car's and the boat's wheel, with the horn on its hub.
+    pub wheel: WheelConfig,
     /// The handlebars of the motorcycles, the ATV, the jetski, and the duck.
-    pub handlebars: HandlebarsSpec,
-    /// The helicopter's cyclic, by the dominant knee.
-    pub cyclic: StickSpec,
-    /// The helicopter's collective, by the off-hand hip.
-    pub collective: LeverSpec,
-    /// The plane's flight stick, by the dominant knee.
-    pub flight_stick: StickSpec,
-    /// The plane's throttle, by the off-hand hip.
-    pub throttle: LeverSpec,
-    /// What the plane's flight stick and throttle add to a plain stick and lever: the stick's
-    /// twist for the rudder and the throttle's afterburner gate.
-    pub flight: FlightControlsConfig,
-    /// The horn and the nitrous worked by hand.
-    pub buttons: CockpitButtonsConfig,
-    /// How far from a control a hand's grip may be for a grip press to grab it, metres.
-    pub grab_radius_m: f32,
-    /// How far a holding hand may move from the control before it lets go, metres.
-    pub release_distance_m: f32,
-    /// Place the wheel and the handlebars where the vehicle's own are. Off, or where the vehicle
-    /// has none, the specs place them.
-    pub from_vehicle: bool,
-    /// Turn the vehicle's rendered steering wheel with the steering: by the held wheel's angle, or
-    /// otherwise by the vehicle's own steering, so the stick turns it too.
-    pub animate_wheel: bool,
+    pub handlebars: bool,
+    /// The helicopter's cyclic and the plane's flight stick, by the dominant knee.
+    pub sticks: bool,
+    /// The helicopter's collective, twisted for the nitrous, and the plane's throttle with its
+    /// afterburner gate, by the off-hand hip.
+    pub levers: bool,
+    /// A nitrous button on the dash beside the wheel, pushed with a free hand.
+    pub nitrous_button: bool,
+    /// Open the throttle by twisting the handlebars' right grip back, as a motorcycle's throttle
+    /// is twisted. The trigger still accelerates; the larger of the two wins.
+    pub twist_throttle: bool,
+    /// Twist the held flight stick about its shaft to work the rudder: turning the top to the
+    /// right yaws right.
+    pub twist_rudder: bool,
 }
 
 impl PhysicalControlsConfig {
     pub const fn new() -> Self {
         Self {
-            wheel: WheelSpec {
-                enabled: true,
-                centre_m: Vec3::new(0.0, -0.42, -0.40),
-                radius_m: 0.19,
-                tilt_deg: 25.0,
-                lock_deg: 135.0,
-                response: 1.0,
-                deadzone_deg: 2.0,
-                turned_by: WheelTracking::Position,
-                return_deg_per_s: 360.0,
-            },
-            handlebars: HandlebarsSpec {
-                enabled: true,
-                centre_m: Vec3::new(0.0, -0.50, -0.45),
-                half_width_m: 0.34,
-                max_steer_deg: 30.0,
-                max_lean_deg: 25.0,
-            },
-            cyclic: StickSpec {
-                enabled: true,
-                top_m: Vec3::new(0.12, -0.78, -0.30),
-                max_deflection_m: 0.12,
-                deadzone: 0.05,
-                return_s: 0.12,
-            },
-            collective: LeverSpec {
-                enabled: true,
-                rest_m: Vec3::new(-0.28, -0.80, -0.10),
-                axis: LeverAxis::Vertical,
-                travel_m: 0.30,
-                detent: 0.1,
-                hold_on_release: false,
-            },
-            flight_stick: StickSpec {
-                enabled: true,
-                top_m: Vec3::new(0.10, -0.75, -0.32),
-                max_deflection_m: 0.10,
-                deadzone: 0.05,
-                return_s: 0.12,
-            },
-            throttle: LeverSpec {
-                enabled: true,
-                rest_m: Vec3::new(-0.28, -0.70, -0.20),
-                axis: LeverAxis::ForeAft,
-                travel_m: 0.24,
-                detent: 0.1,
-                hold_on_release: true,
-            },
-            flight: FlightControlsConfig::new(),
-            buttons: CockpitButtonsConfig::new(),
-            grab_radius_m: 0.09,
-            release_distance_m: 0.25,
-            from_vehicle: true,
-            animate_wheel: true,
+            wheel: WheelConfig::new(),
+            handlebars: true,
+            sticks: true,
+            levers: true,
+            nitrous_button: true,
+            twist_throttle: true,
+            twist_rudder: true,
         }
     }
 
     /// Whether any control is switched on.
     pub const fn any(&self) -> bool {
-        self.wheel.enabled
-            || self.handlebars.enabled
-            || self.cyclic.enabled
-            || self.collective.enabled
-            || self.flight_stick.enabled
-            || self.throttle.enabled
+        self.wheel.enabled || self.handlebars || self.sticks || self.levers
     }
 }
 
@@ -273,19 +156,12 @@ impl Default for PhysicalControlsConfig {
     }
 }
 
-/// A steering wheel: a rim in a plane facing the driver, tilted back with its column. The hub,
-/// radius, and tilt place the wheel where the vehicle's own is not found; the lock, the response,
-/// the tracking, and the return apply to every wheel (see
-/// [`crate::controllers::vehicles::steering`]).
+/// The steering wheel's switch and the settings that apply to every wheel, whether placed from the
+/// vehicle's own or from the fallback (see [`crate::controllers::vehicles::steering`]).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub struct WheelSpec {
+pub struct WheelConfig {
     pub enabled: bool,
-    /// The wheel's hub.
-    pub centre_m: Vec3,
-    pub radius_m: f32,
-    /// How far the wheel's face tilts up from vertical toward the driver, degrees.
-    pub tilt_deg: f32,
     /// The wheel angle that steers fully, degrees either way: half the lock-to-lock turn. The wheel
     /// stops there. A road car's is several times this; a game's arcade steering wants full lock in
     /// reach without letting go.
@@ -293,18 +169,25 @@ pub struct WheelSpec {
     /// The exponent the share of the lock is raised to: one is linear, above one steers more gently
     /// around centre and as fully at the lock.
     pub response: f32,
-    /// Wheel angles within this of centre steer nothing, degrees.
-    pub deadzone_deg: f32,
     /// What a holding hand turns the wheel by. Named apart from the `tracking` key that saved the
     /// earlier twist default, so that a saved file takes the travel default once.
     pub turned_by: WheelTracking,
-    /// How fast the released wheel returns to centre, degrees per second.
-    pub return_deg_per_s: f32,
 }
 
-impl Default for WheelSpec {
+impl WheelConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            lock_deg: 135.0,
+            response: 1.0,
+            turned_by: WheelTracking::Position,
+        }
+    }
+}
+
+impl Default for WheelConfig {
     fn default() -> Self {
-        PhysicalControlsConfig::new().wheel
+        Self::new()
     }
 }
 
@@ -318,177 +201,6 @@ pub enum WheelTracking {
     /// Independent of where the hand is, so a wheel fitted slightly off still turns truly, but it
     /// reads only the wrist's roll.
     Twist,
-}
-
-impl WheelTracking {
-    pub const fn label(self) -> &'static str {
-        match self {
-            WheelTracking::Position => "the hand's travel around the hub",
-            WheelTracking::Twist => "the hand's twist",
-        }
-    }
-}
-
-/// Handlebars, pivoting about their centre. The middle and half width place them where the
-/// vehicle's own are not found.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct HandlebarsSpec {
-    pub enabled: bool,
-    /// The middle of the bars.
-    pub centre_m: Vec3,
-    /// From the middle to each grip, metres.
-    pub half_width_m: f32,
-    /// The bars' turn that steers fully, degrees.
-    pub max_steer_deg: f32,
-    /// The bars' roll that leans fully, degrees.
-    pub max_lean_deg: f32,
-}
-
-/// A joystick whose top moves in the horizontal plane. Let go, a spring returns it to centre.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct StickSpec {
-    pub enabled: bool,
-    /// The stick's top at rest, given on the dominant side.
-    pub top_m: Vec3,
-    /// How far the top moves for a full deflection, metres.
-    pub max_deflection_m: f32,
-    /// The share of the full deflection around centre that outputs nothing, `0..1`, so that a
-    /// resting hand's tremor does not fly the vehicle.
-    pub deadzone: f32,
-    /// The released stick's centring spring: the time constant it returns to centre with, seconds.
-    /// Zero snaps it back.
-    pub return_s: f32,
-}
-
-/// The horn and the nitrous worked by hand (see
-/// [`crate::controllers::vehicles::physical::buttons`]): the horn pressed on the wheel's hub, a
-/// nitrous button on the dash beside the wheel, and the handlebars' right grip or the collective
-/// twisted for the nitrous. The plane's afterburner is its throttle's gate
-/// ([`FlightControlsConfig::afterburner_gate`]). The buttons stay alongside the controller's.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct CockpitButtonsConfig {
-    /// Sound the horn by pushing a free hand into the wheel's hub.
-    pub horn: bool,
-    /// The hub's share of the wheel's radius that presses the horn.
-    pub hub_share: f32,
-    /// A nitrous button on the dash beside the wheel, pushed with a free hand.
-    pub nitrous_button: bool,
-    /// The nitrous button from the wheel's rim on its right: along the wheel's right, its up, and
-    /// its axis toward the driver, metres.
-    pub nitrous_from_rim_m: Vec3,
-    pub nitrous_radius_m: f32,
-    /// How far past a button's face a hand pushes to press it, metres.
-    pub press_depth_m: f32,
-    /// Burn the nitrous by twisting the collective's grip either way.
-    pub twist_nitrous: bool,
-    /// How far the collective's grip is twisted from where the hand took it to burn the nitrous,
-    /// degrees: well past the roll a wrist makes while it raises and lowers the lever.
-    pub twist_deg: f32,
-    /// Open the throttle by twisting the handlebars' right grip back, as a motorcycle's throttle
-    /// is twisted. The trigger still accelerates; the larger of the two wins.
-    pub twist_throttle: bool,
-    /// How far the handlebars' right grip is twisted back for full throttle, degrees.
-    pub throttle_twist_deg: f32,
-}
-
-impl CockpitButtonsConfig {
-    pub const fn new() -> Self {
-        Self {
-            horn: true,
-            hub_share: 0.35,
-            nitrous_button: true,
-            nitrous_from_rim_m: Vec3::new(0.12, 0.02, 0.0),
-            nitrous_radius_m: 0.045,
-            press_depth_m: 0.02,
-            twist_nitrous: true,
-            twist_deg: 40.0,
-            twist_throttle: true,
-            throttle_twist_deg: 30.0,
-        }
-    }
-
-    /// Whether any button is switched on.
-    pub const fn any(&self) -> bool {
-        self.horn || self.nitrous_button || self.twist_nitrous || self.twist_throttle
-    }
-}
-
-impl Default for CockpitButtonsConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The plane's flight stick and throttle beyond a plain stick and lever (see
-/// [`crate::controllers::vehicles::physical`]).
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct FlightControlsConfig {
-    /// Twist the held flight stick about its shaft to work the rudder: turning the top to the
-    /// right yaws right.
-    pub twist_rudder: bool,
-    /// Twists within this of where the hand took the stick work nothing, degrees.
-    pub twist_deadzone_deg: f32,
-    /// The twist that gives a full rudder, degrees.
-    pub twist_full_deg: f32,
-    /// Give the throttle a gate at the top of its travel: below it the throttle stops short of the
-    /// thrust that lights the afterburner, and pushed through it, the throttle is full and the
-    /// afterburner burns where the game allows it. Off, the throttle runs straight to full.
-    pub afterburner_gate: bool,
-    /// Where the gate starts, as a share of the throttle's forward travel, `0..1`.
-    pub gate_at: f32,
-}
-
-impl FlightControlsConfig {
-    pub const fn new() -> Self {
-        Self {
-            twist_rudder: true,
-            twist_deadzone_deg: 6.0,
-            twist_full_deg: 35.0,
-            afterburner_gate: true,
-            gate_at: 0.85,
-        }
-    }
-}
-
-impl Default for FlightControlsConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// A lever that slides along one axis.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct LeverSpec {
-    pub enabled: bool,
-    /// The handle's neutral position, given on the off-hand side.
-    pub rest_m: Vec3,
-    pub axis: LeverAxis,
-    /// The handle's whole travel, from full negative to full positive, metres.
-    pub travel_m: f32,
-    /// The share of the travel around neutral that outputs nothing, `0..1`.
-    pub detent: f32,
-    /// Keep the lever where it was let go, as a throttle does, rather than returning it to neutral.
-    pub hold_on_release: bool,
-}
-
-/// The direction a lever's handle travels in for a positive output.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum LeverAxis {
-    /// Up.
-    Vertical,
-    /// Forward.
-    ForeAft,
-}
-
-impl LeverAxis {
-    pub const fn direction(self) -> Vec3 {
-        match self {
-            LeverAxis::Vertical => Vec3::Y,
-            LeverAxis::ForeAft => Vec3::NEG_Z,
-        }
-    }
 }
 
 /// The bilateral wingsuit gestures. Distances are shares of the calibrated arm span.
@@ -579,14 +291,12 @@ impl Default for WingsuitGesturesConfig {
 /// The arm-pose steering of the wingsuit (see [`crate::controllers::vehicles::arm_steering`]):
 /// with the arms spread, the difference in the hands' heights banks, and the wrists' tilt, the
 /// hands' height, or the arms' sweep pitches ([`ArmPitch`]). On by default, as part of the full
-/// gameplay preset, alongside the stick steering it adds to.
+/// gameplay preset, alongside the stick steering it adds to. With the overlay on, the overlay
+/// rings each hand in the wingsuit, lit while the arms steer.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ArmSteeringConfig {
     pub wingsuit: bool,
-    /// How far apart the hands must be, as a share of the arm span, for the arms to count as
-    /// spread. Closer together, the arms steer nothing and the stick steers alone.
-    pub min_spread: f32,
     /// Height differences and offsets below this steer nothing, metres. The bank, and the height
     /// and sweep pitches, share it.
     pub deadzone_m: f32,
@@ -594,49 +304,23 @@ pub struct ArmSteeringConfig {
     pub full_bank_m: f32,
     /// What pitches the wingsuit.
     pub pitch_by: ArmPitch,
-    /// How far both hands must be above or below the shoulders to pitch fully, metres, under
-    /// [`ArmPitch::Height`].
-    pub full_pitch_m: f32,
-    /// How far the wrists must tilt from the neutral to pitch fully, degrees, under
-    /// [`ArmPitch::WristTilt`].
-    pub full_tilt_deg: f32,
-    /// Wrist tilts within this of the neutral pitch nothing, degrees.
-    pub tilt_deadzone_deg: f32,
     /// The wrist tilt that pitches nothing, degrees, positive with the leading edges down: zero is
     /// the palms held flat.
     pub tilt_neutral_deg: f32,
-    /// How far both hands must be swept ahead of or behind the shoulders to pitch fully, metres,
-    /// under [`ArmPitch::Sweep`].
-    pub full_sweep_m: f32,
     /// Reverse the pitch: by default, the leading edges tilted down, the hands lowered, or the arms
     /// swept back dive.
     pub invert_pitch: bool,
-    /// Ring each hand in the wingsuit, lit while the arms steer, with a line between them.
-    pub show_guide: bool,
-    /// Show a panel below the view in the wingsuit with what the arm steering reads and writes:
-    /// the spread, whether the arms steer, the bank and pitch inputs, the arms' stick vector, the
-    /// player's stick, and the sum written. On by default, as a feature still being tuned in the
-    /// headset. Named apart from the `show_readout` key that saved the earlier default, which was
-    /// off, so that a saved file takes this default once.
-    pub show_readout_panel: bool,
 }
 
 impl ArmSteeringConfig {
     pub const fn new() -> Self {
         Self {
             wingsuit: true,
-            min_spread: 0.5,
             deadzone_m: 0.04,
             full_bank_m: 0.45,
             pitch_by: ArmPitch::WristTilt,
-            full_pitch_m: 0.30,
-            full_tilt_deg: 30.0,
-            tilt_deadzone_deg: 5.0,
             tilt_neutral_deg: 0.0,
-            full_sweep_m: 0.35,
             invert_pitch: false,
-            show_guide: true,
-            show_readout_panel: true,
         }
     }
 }
@@ -661,14 +345,6 @@ pub enum ArmPitch {
 
 impl ArmPitch {
     pub const ALL: [ArmPitch; 3] = [ArmPitch::WristTilt, ArmPitch::Height, ArmPitch::Sweep];
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            ArmPitch::WristTilt => "the wrists' tilt",
-            ArmPitch::Height => "the hands' height",
-            ArmPitch::Sweep => "the arms' sweep",
-        }
-    }
 }
 
 /// The parachute's handles (see [`crate::controllers::vehicles::parachute`]): one grab volume per
@@ -680,42 +356,19 @@ impl ArmPitch {
 #[serde(default)]
 pub struct ParachuteHandlesConfig {
     pub enabled: bool,
-    /// The right handle's centre from the right shoulder joint along the torso's axes (+X out, +Y
-    /// up, +Z back), metres; the left handle mirrors it. Named apart from the `offset_m` key that
-    /// saved the earlier place above eye level, so that a saved file takes this default once.
-    pub from_shoulder_m: Vec3,
-    /// How far from a handle's centre a hand's grip may be for a grip press to take it over every
-    /// other volume, metres.
-    pub radius_m: f32,
-    /// How far from a handle's centre a grip press outside every other volume still takes it
-    /// rather than firing the grapple, metres. At least the radius.
-    pub reach_m: f32,
     /// How far down from where it was taken a handle is pulled to act fully, metres.
     pub full_pull_m: f32,
-    /// Pulls shorter than this act on nothing, metres.
-    pub deadzone_m: f32,
     /// How far both handles must be pulled, as a share of a full pull, before they brake. Below it,
     /// both pulled together only bank by their difference.
     pub brake_threshold: f32,
-    /// How far a holding hand may move from its handle's pull line (straight below where it took
-    /// the handle, down to a full pull) before it lets go, metres. Generous, since a natural pull
-    /// goes down and back and the grip opening is what lets go; this only catches a hand that has
-    /// clearly left the handle without opening. Named apart from the `release_distance_m` key that
-    /// saved the earlier, tight distance, so that a saved file takes this default once.
-    pub let_go_distance_m: f32,
 }
 
 impl ParachuteHandlesConfig {
     pub const fn new() -> Self {
         Self {
             enabled: true,
-            from_shoulder_m: Vec3::new(0.15, 0.12, -0.12),
-            radius_m: 0.14,
-            reach_m: 0.30,
             full_pull_m: 0.30,
-            deadzone_m: 0.03,
             brake_threshold: 0.2,
-            let_go_distance_m: 0.6,
         }
     }
 }

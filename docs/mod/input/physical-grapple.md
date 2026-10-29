@@ -21,8 +21,8 @@ The pulls act only while the button is held: a hand moved back in the course of 
 | Situation | Hand | Effect |
 |---|---|---|
 | A line is attached, nothing carries the character, and the grapple button is held | A sharp pull back toward the body (the yank) | The grapple's tap, which zips |
-| Reeling in | The pull's speed | The reel's speed and acceleration scale from `reel.min_scale` to `reel.max_scale` |
-| Reeling in | A yank | The reel takes the game's retract boost for `reel.boost_s` |
+| Reeling in | The pull's speed | The reel's speed and acceleration scale from `GRAPPLE.reel.min_scale` to `GRAPPLE.reel.max_scale` |
+| Reeling in | A yank | The reel takes the game's retract boost for `GRAPPLE.reel.boost_s` |
 | Tethers attached, on foot or falling, no line of the grapple's own, the grapple button held | Pulling back from where the hand reached | The game's retract input, which tightens the tethers |
 | Hanging from the line | Holding the hand off where it took the line, and moving it | The body swings against the hand: the hold, plus a pump while the hand moves |
 | On foot, the grapple hand empty, no line out, the grapple button up, the grip pressed at a thing out of reach under the aim | A yank while the grip is held | The grapple snatch: the hook pulls the thing into the hand ([grapple-snatch.md](grapple-snatch.md)) |
@@ -33,28 +33,28 @@ The snatch's yank is its own detector, with its own thresholds (`weapons.snatch.
 
 ## The pull
 
-The grapple hand's distance from the body point the yank uses (the head, lowered by `bindings.yank.body_drop_m`, in the cockpit frame) is sampled every input tick. The pull tracker (`grapple::physical::pull`) reads two things from it:
+The grapple hand's distance from the body point the yank uses (the head, lowered by `GRAPPLE_YANK.body_drop_m`, in the cockpit frame) is sampled every input tick. The pull tracker (`grapple::physical::pull`) reads two things from it:
 
-- the pull's speed: how fast the hand comes toward the body, peak-held and decaying with `pull.speed_hold_s` as its time constant, so that a pull at the start of a reel still counts through a reel longer than the arm's reach;
-- the pull's depth: how far the hand is back from a reference that jumps out with the hand and creeps toward a hand held still at `pull.relax_mps`. Reaching out and pulling back deepens it, holding the hand back lets it fade, and a hand-over-hand pull keeps it up.
+- the pull's speed: how fast the hand comes toward the body, peak-held and decaying with `GRAPPLE.pull.speed_hold_s` as its time constant, so that a pull at the start of a reel still counts through a reel longer than the arm's reach;
+- the pull's depth: how far the hand is back from a reference that jumps out with the hand and creeps toward a hand held still at `GRAPPLE.pull.relax_mps`. Reaching out and pulling back deepens it, holding the hand back lets it fade, and a hand-over-hand pull keeps it up.
 
 An untracked hand forgets the pull.
 
 ## The reel
 
-While the mode detector sees the character in the reel's wind-up or reeling in, the input tick publishes a drive: the scale from the pull's speed (`reel.min_scale` with no pull, rising linearly to `reel.max_scale` at `reel.full_speed_mps`) and whether a boost runs. A detour on the reel's velocity update ([`NStateTask_ReelIn::UpdateReelVelocity`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::NStateTask_ReelIn##func-UpdateReelVelocity)) hands the local player's update a copy of the [`GrappleTuning`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrappleTuning) with the top speeds and accelerations scaled; the shared tuning resource is never written, and other characters' reels are untouched. The copy covers the bound reel fields, which are all the update reads of the tuning. A drive older than a quarter of a second is ignored, so the reel falls back to the game's own as soon as the input tick stops publishing. With the default `reel.min_scale` of one, a reel the hand does not pull runs at the game's speed, and pulling only makes it faster.
+While the mode detector sees the character in the reel's wind-up or reeling in, the input tick publishes a drive: the scale from the pull's speed (`GRAPPLE.reel.min_scale` with no pull, rising linearly to `GRAPPLE.reel.max_scale` at `GRAPPLE.reel.full_speed_mps`) and whether a boost runs. A detour on the reel's velocity update ([`NStateTask_ReelIn::UpdateReelVelocity`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::NStateTask_ReelIn##func-UpdateReelVelocity)) hands the local player's update a copy of the [`GrappleTuning`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrappleTuning) with the top speeds and accelerations scaled; the shared tuning resource is never written, and other characters' reels are untouched. The copy covers the bound reel fields, which are all the update reads of the tuning. A drive older than a quarter of a second is ignored, so the reel falls back to the game's own as soon as the input tick stops publishing. With `GRAPPLE.reel.min_scale` at one, a reel the hand does not pull runs at the game's speed, and pulling only makes it faster.
 
-A second yank detector, with the bindings' yank thresholds, is armed only during the reel. A yank there runs the boost for `reel.boost_s`: the copy takes the tuning's retract top speed and acceleration in place of the plain ones, which is what holding the retract does for the game's boost. With `reel.boost_needs_upgrade` (the default) it applies only when [`GrapplingHook::GetRetractAcceleratesReelIn`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-GetRetractAcceleratesReelIn) says the game's boost is unlocked. The boost does not touch the retract input, so it does not squeeze tethers. A long, fast pull that starts a zip can count as a boost too once the reel's wind-up arms the detector.
+A second yank detector, with the grapple's yank thresholds (`GRAPPLE_YANK`), is armed only during the reel. A yank there runs the boost for `GRAPPLE.reel.boost_s`: the copy takes the tuning's retract top speed and acceleration in place of the plain ones, which is what holding the retract does for the game's boost. It applies only when [`GrapplingHook::GetRetractAcceleratesReelIn`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-GetRetractAcceleratesReelIn) says the game's boost is unlocked. The boost does not touch the retract input, so it does not squeeze tethers. A long, fast pull that starts a zip can count as a boost too once the reel's wind-up arms the detector.
 
 ## The tether retract
 
 The retract arms while the grapple button is held and the hook holds dual tethers ([`GrapplingHook::GetNumDualTethers`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-GetNumDualTethers)), the grapple has no line of its own, nothing carries the character along a line, and the character is on the ground or falling. A line of the grapple's own is left out because the retract input pulls a light object on it toward the player, and a line being placed belongs to a tether not formed yet. The wingsuit and the parachute are left out because the retract input boosts them, and their arm steering and handles use the hands. On the tick it arms, the pull's depth starts from the hand where it is.
 
-While armed, the pull's depth is turned into the retract value: nothing inside `tether.deadzone_m`, then the cube root of the pull's fraction of the span to `tether.full_m`. The game squeezes by the cube of the retract value, so the squeeze follows the pull's depth in proportion; its own ramp over the hold time still applies. The value goes into the bindings' writes as an analog `RETRACT_GRAPPLE`, merged with the trigger's, the larger winning.
+While armed, the pull's depth is turned into the retract value: nothing inside `GRAPPLE.tether.deadzone_m`, then the cube root of the pull's fraction of the span to `GRAPPLE.tether.full_m`. The game squeezes by the cube of the retract value, so the squeeze follows the pull's depth in proportion; its own ramp over the hold time still applies. The value goes into the bindings' writes as an analog `RETRACT_GRAPPLE`, merged with the trigger's, the larger winning.
 
 ## The hang swing
 
-The hang task's detour already pushes a hanging body against the grapple hand's displacement from where it took the line (`hands.anchor.hang_swing`, the hold). The pump adds a push against the hand's velocity relative to the head, smoothed over `swing.smoothing_s`: zero below `swing.deadzone_mps`, rising to `swing.scale` times the game's own full-stick swing impulse ([`GrapplingHangTask_SmallImpulseSwingMagnitude`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHangTask_SmallImpulseSwingMagnitude)) at `swing.full_mps`. Pulling the hand back as the body swings forward and reaching out as it swings back feeds the swing. The hold and the pump together are capped at `swing.max_scale` times the game's impulse per hang tick, and each goes to the hang body at the hips as before. Either can be switched off on its own.
+The hang task's detour already pushes a hanging body against the grapple hand's displacement from where it took the line (the hold, part of `hands.anchor.enabled`). The pump adds a push against the hand's velocity relative to the head, smoothed over `GRAPPLE.swing.smoothing_s`: zero below `GRAPPLE.swing.deadzone_mps`, rising to `GRAPPLE.swing.scale` times the game's own full-stick swing impulse ([`GrapplingHangTask_SmallImpulseSwingMagnitude`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHangTask_SmallImpulseSwingMagnitude)) at `GRAPPLE.swing.full_mps`. Pulling the hand back as the body swings forward and reaching out as it swings back feeds the swing. The hold and the pump together are capped at `GRAPPLE.swing.max_scale` times the game's impulse per hang tick, and each goes to the hang body at the hips as before. The hold goes with `hands.anchor.enabled` and the pump with `controllers.grapple.pump`.
 
 ## Haptics
 
@@ -66,7 +66,7 @@ The input tick (the game thread, outside the world update) reads the hook, steps
 
 ## Settings and readouts
 
-The switches are in the debug UI's Controllers tab: `bindings.yank.enabled`, `grapple.reel.enabled` and `grapple.reel.max_scale`, `grapple.tether.enabled`, and `grapple.swing.pump` under "Bindings", and `hands.anchor.hang_swing` under "Hands"; the line's vibration is behind the haptics' master switch ([haptics.md](haptics.md)). Everything defaults on. The tuning is under "Physical grapple" in the debug UI's Controllers tab, beside the yank's, and the weapons readout shows the pump and a line for the physical grapple.
+The switches are in the debug UI's Grapple feature, under Movement/vehicles: yank to zip (`bindings.yank.enabled`), pull to reel (`controllers.grapple.pull_to_reel`, which drives both the reel and the tether retract), the pump (`controllers.grapple.pump`), and the anchor hand (`hands.anchor.enabled`, which carries the hang swing's hold); the line's vibration is behind the haptics' master switch ([haptics.md](haptics.md)). Everything defaults on. The tuning is fixed in `GRAPPLE` (`PhysicalGrappleTuning`) and the yank's in `GRAPPLE_YANK`, and the Grapple feature's live status shows the pump and a line for the physical grapple.
 
 The debug UI's Status tab has a `GRAPPLE` section:
 
@@ -101,7 +101,7 @@ With the physical grapple's switches on (the defaults):
 ## Unverified in the headset
 
 - That the reel's velocity update reads nothing of the tuning beyond the bound reel fields in every path, including the vehicle entries and the hang approach.
-- How the scaled reel feels at the defaults, and whether `reel.min_scale` below one (a reel that slows when not pulled) is better.
+- How the scaled reel feels at the defaults, and whether `GRAPPLE.reel.min_scale` below one (a reel that slows when not pulled) is better.
 - That the retract input's analog value drives the squeeze from the bindings' write as it does from the trigger.
 - How hard the pump should push, and whether the hand's velocity relative to the head rather than to the line is the right measure while the body itself swings.
 - Whether a hand pulled hard during the zip's wind-up gives an unwanted boost.

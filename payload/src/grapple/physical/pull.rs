@@ -4,13 +4,13 @@
 //! input tick:
 //!
 //! - the pull's speed: how fast the hand comes toward the body, peak-held and decaying over
-//!   [`PullConfig::speed_hold_s`], so that one sharp pull is still felt across a reel that lasts
+//!   [`PullTuning::speed_hold_s`], so that one sharp pull is still felt across a reel that lasts
 //!   longer than the arm's reach;
 //! - the pull's depth: how far the hand has come back from a reference that jumps out with the hand
-//!   and relaxes toward a hand held still at [`PullConfig::relax_mps`]. Reaching out and pulling
+//!   and relaxes toward a hand held still at [`PullTuning::relax_mps`]. Reaching out and pulling
 //!   back deepens the pull; holding the hand back lets it fade; a hand-over-hand pull keeps it up.
 
-use crate::grapple::physical::config::PullConfig;
+use crate::grapple::physical::config::PullTuning;
 
 /// One tick's reading of the pull.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -42,7 +42,7 @@ impl PullTracker {
 
     /// Advance by `dt` seconds with the hand's distance from the body, or `None` while the hand is
     /// untracked, which forgets the pull.
-    pub fn step(&mut self, dt: f32, distance: Option<f32>, config: &PullConfig) -> PullReading {
+    pub fn step(&mut self, dt: f32, distance: Option<f32>, config: &PullTuning) -> PullReading {
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         let Some(distance) = distance.filter(|d| d.is_finite()) else {
             *self = Self::new();
@@ -80,11 +80,12 @@ impl PullTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::grapple::physical::config::GRAPPLE;
 
     const DT: f32 = 1.0 / 30.0;
 
     fn run(tracker: &mut PullTracker, distances: &[f32]) -> Vec<PullReading> {
-        let config = PullConfig::new();
+        let config = GRAPPLE.pull;
         distances
             .iter()
             .map(|&d| tracker.step(DT, Some(d), &config))
@@ -152,7 +153,7 @@ mod tests {
     fn an_untracked_hand_forgets_the_pull() {
         let mut t = PullTracker::new();
         run(&mut t, &[0.6, 0.4]);
-        let config = PullConfig::new();
+        let config = GRAPPLE.pull;
         assert_eq!(t.step(DT, None, &config), PullReading::default());
         let resumed = run(&mut t, &[0.2]);
         assert_eq!(resumed[0], PullReading::default());

@@ -35,7 +35,7 @@ pub struct Tick {
     pub dt: f32,
 }
 
-/// The tracker's tuning, from [`StuntConfig`](crate::controllers::physical_hands::stunt::config::StuntConfig).
+/// The tracker's tuning, fixed in [`crate::controllers::physical_hands::stunt`].
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Tuning {
     pub enter_roof: bool,

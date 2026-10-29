@@ -30,7 +30,7 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::grapple::physical::config::ReelConfig;
+use crate::grapple::physical::config::ReelPullTuning;
 
 /// The reel's hooks, aggregated by [`crate::grapple::physical::hook_library`].
 pub(super) fn hook_library() -> HookLibrary {
@@ -112,9 +112,9 @@ impl ReelTuning {
     }
 }
 
-/// The reel's scale for a pull of `speed_mps`: [`ReelConfig::min_scale`] with no pull, rising
-/// linearly to [`ReelConfig::max_scale`] at [`ReelConfig::full_speed_mps`].
-pub fn scale_for(speed_mps: f32, config: &ReelConfig) -> f32 {
+/// The reel's scale for a pull of `speed_mps`: [`ReelPullTuning::min_scale`] with no pull, rising
+/// linearly to [`ReelPullTuning::max_scale`] at [`ReelPullTuning::full_speed_mps`].
+pub fn scale_for(speed_mps: f32, config: &ReelPullTuning) -> f32 {
     let speed = if speed_mps.is_finite() {
         speed_mps.max(0.0)
     } else {
@@ -243,6 +243,7 @@ unsafe fn speed_along(velocity: *const Vector3, direction: *const Vector3) -> Op
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::grapple::physical::config::GRAPPLE;
 
     const BASE: ReelTuning = ReelTuning {
         speed_max: 30.0,
@@ -253,7 +254,7 @@ mod tests {
 
     #[test]
     fn the_scale_rises_with_the_pull_and_saturates() {
-        let config = ReelConfig::new();
+        let config = GRAPPLE.reel;
         assert_eq!(scale_for(0.0, &config), config.min_scale);
         assert_eq!(scale_for(-3.0, &config), config.min_scale);
         assert_eq!(scale_for(f32::NAN, &config), config.min_scale);

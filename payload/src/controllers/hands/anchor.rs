@@ -50,7 +50,7 @@ use crate::{
         hands::{self, CockpitHand, pose as hand_pose, tiers},
         haptics::{self, Event},
     },
-    grapple::physical::swing,
+    grapple::physical::{PhysicalGrappleTuning, swing},
     headpose,
     hooks::input::locomotion::character_from_context,
 };
@@ -62,32 +62,29 @@ use crate::{
 pub struct AnchorConfig {
     /// Anchor the grapple hand to the line in the grapple states. Off, those states yield the hand
     /// to the animation.
+    /// Swinging a hanging character by moving the grapple hand comes with it.
     pub enabled: bool,
-    /// How long the hand takes to turn onto the line and back off it, seconds.
-    pub blend_s: f32,
-    /// Swing a hanging character by moving the grapple hand.
-    pub hang_swing: bool,
-    /// The hand displacement below which the hang is left alone, metres.
-    pub swing_deadzone_m: f32,
-    /// The hand displacement that swings at full strength, metres.
-    pub swing_full_m: f32,
-    /// The full-strength swing impulse per hang tick, as a multiple of the game's own continuous
-    /// stick swing at full deflection. Negative swings the body the way the hand moves.
-    pub swing_scale: f32,
 }
 
 impl AnchorConfig {
     pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            blend_s: 0.15,
-            hang_swing: true,
-            swing_deadzone_m: 0.05,
-            swing_full_m: 0.3,
-            swing_scale: 1.0,
-        }
+        Self { enabled: true }
     }
 }
+
+/// How long the hand takes to turn onto the line and back off it, seconds. The vehicle controls'
+/// and handles' anchored poses blend over it too.
+pub(crate) const ANCHOR_BLEND_S: f32 = 0.15;
+
+/// The hand displacement below which the hang is left alone, metres.
+const SWING_DEADZONE_M: f32 = 0.05;
+
+/// The hand displacement that swings at full strength, metres.
+const SWING_FULL_M: f32 = 0.3;
+
+/// The full-strength swing impulse per hang tick, as a multiple of the game's own continuous stick
+/// swing at full deflection.
+const SWING_SCALE: f32 = 1.0;
 
 impl Default for AnchorConfig {
     fn default() -> Self {
@@ -129,14 +126,14 @@ pub fn hold_line(hand: CockpitHand, line: Vec3, weight: f32) -> CockpitHand {
 /// The swing impulse for a grapple hand displaced by `displacement` (horizontal, body frame,
 /// metres) from where it held the line when the hang began: against the displacement, from zero at
 /// the deadzone to `full_impulse` at the full displacement, and zero inside the deadzone.
-pub fn swing_impulse(displacement: Vec2, full_impulse: f32, config: &AnchorConfig) -> Vec2 {
+pub fn swing_impulse(displacement: Vec2, full_impulse: f32) -> Vec2 {
     let length = displacement.length();
-    let span = (config.swing_full_m - config.swing_deadzone_m).max(1e-3);
-    if !length.is_finite() || length <= config.swing_deadzone_m {
+    let span = SWING_FULL_M - SWING_DEADZONE_M;
+    if !length.is_finite() || length <= SWING_DEADZONE_M {
         return Vec2::ZERO;
     }
-    let strength = ((length - config.swing_deadzone_m) / span).clamp(0.0, 1.0);
-    -displacement / length * strength * full_impulse * config.swing_scale
+    let strength = ((length - SWING_DEADZONE_M) / span).clamp(0.0, 1.0);
+    -displacement / length * strength * full_impulse * SWING_SCALE
 }
 
 /// Put the anchored hands on the line. `hands` are the cockpit-frame hands indexed by
@@ -302,13 +299,13 @@ fn hang_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) {
 unsafe fn swing(character: &mut Character) {
     let config = Config::lock_query(|c| c.controllers);
     let anchor = config.hands.anchor;
-    let pump = config.grapple.swing;
+    let pump = PhysicalGrappleTuning::of(&config.grapple).swing;
     let hand = config.acting_hand().other();
     let now = Instant::now();
     // Read before this module's state is locked, so that no other lock is taken while it is held.
     let anchored = tiers::status().effective[hand.index()] == tiers::HandTier::Anchored;
     let offset = hands::active_hands_raw()
-        .filter(|_| anchor.enabled && (anchor.hang_swing || pump.pump) && anchored)
+        .filter(|_| anchor.enabled && anchored)
         .and_then(|active| {
             let grip = active.hands[hand.index()]?.grip.position;
             let offset = grip - active.head.position;
@@ -346,11 +343,7 @@ unsafe fn swing(character: &mut Character) {
     state.hang_offset = Some(offset);
 
     let full = unsafe { *get_GrapplingHangTask_SmallImpulseSwingMagnitude() };
-    let hold = if anchor.hang_swing {
-        swing_impulse(displacement, full, &anchor)
-    } else {
-        Vec2::ZERO
-    };
+    let hold = swing_impulse(displacement, full);
     let pumped = swing::pump_impulse(state.hang_velocity, full, &pump);
     let impulse = swing::combine(hold, pumped, full, &pump);
     if impulse == Vec2::ZERO {
@@ -428,24 +421,12 @@ mod tests {
 
     #[test]
     fn the_swing_pushes_against_the_hand_and_saturates() {
-        let config = AnchorConfig::new();
-        assert_eq!(
-            swing_impulse(Vec2::new(0.03, 0.0), 10.0, &config),
-            Vec2::ZERO
-        );
-        let half = swing_impulse(Vec2::new(0.0, -0.175), 10.0, &config);
+        assert_eq!(swing_impulse(Vec2::new(0.03, 0.0), 10.0), Vec2::ZERO);
+        let half = swing_impulse(Vec2::new(0.0, -0.175), 10.0);
         assert!((half.y - 5.0).abs() < 1e-3, "{half}");
         assert!(half.x.abs() < 1e-6);
-        let full = swing_impulse(Vec2::new(0.9, 0.0), 10.0, &config);
+        let full = swing_impulse(Vec2::new(0.9, 0.0), 10.0);
         assert!((full.x + 10.0).abs() < 1e-4);
-        let inverted = AnchorConfig {
-            swing_scale: -1.0,
-            ..config
-        };
-        assert!(swing_impulse(Vec2::new(0.9, 0.0), 10.0, &inverted).x > 0.0);
-        assert_eq!(
-            swing_impulse(Vec2::new(f32::NAN, 0.0), 10.0, &config),
-            Vec2::ZERO
-        );
+        assert_eq!(swing_impulse(Vec2::new(f32::NAN, 0.0), 10.0), Vec2::ZERO);
     }
 }

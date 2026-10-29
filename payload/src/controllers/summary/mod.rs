@@ -166,9 +166,9 @@ pub(crate) fn refresh(
             arm_steering: config.vehicles.arm_steering.wingsuit,
             physical: PhysicalFeatures {
                 wheel: physical.wheel.enabled,
-                handlebars: physical.handlebars.enabled,
-                helicopter: physical.cyclic.enabled || physical.collective.enabled,
-                plane: physical.flight_stick.enabled || physical.throttle.enabled,
+                handlebars: physical.handlebars,
+                helicopter: physical.sticks || physical.levers,
+                plane: physical.sticks || physical.levers,
             },
         },
     };

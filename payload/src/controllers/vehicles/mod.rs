@@ -2,7 +2,8 @@
 //! record's "Vehicle, mounted, and wingsuit weapons", its vehicle and wingsuit binding tables, and
 //! its decisions on physical controls and arm steering (`docs/mod/input/controllers-and-roomscale.md`).
 //!
-//! - [`config`]: the settings, all under [`ControllersConfig::vehicles`];
+//! - [`config`]: the settings, all under [`ControllersConfig::vehicles`], and [`tuning`]: the
+//!   physical controls' fixed placement and tuning;
 //! - [`physical`]: the wheel, handlebars, cyclic, collective, flight stick, and throttle of
 //!   the driver's seat, grabbed with the grip, which write the vehicle's analog axes and hold the
 //!   hands;
@@ -68,6 +69,7 @@ pub mod passenger;
 pub mod physical;
 mod state;
 pub mod steering;
+pub mod tuning;
 mod types;
 pub mod wheel;
 pub mod wheel_render;
@@ -79,10 +81,10 @@ use re_utilities::hook_library::HookLibrary;
 pub use self::{
     axis_output::write_outputs,
     state::{
-        apply, arm_panel, is_mounted_weapon, mounted_aim_point, mounted_target, parachute_brake,
-        status, summary, wrist_tilt_now_deg,
+        apply, is_mounted_weapon, mounted_aim_point, mounted_target, parachute_brake, status,
+        summary, wrist_tilt_now_deg,
     },
-    types::{ArmReadout, HandlesReadout, TickVolumes, VehicleSummary, VehiclesStatus},
+    types::{HandlesReadout, TickVolumes, VehicleSummary, VehiclesStatus},
 };
 pub(crate) use self::{
     begin::begin_tick,
@@ -112,11 +114,11 @@ mod tests {
         hands::CockpitHand,
         mode::{VehicleClass, VehicleSeat},
         vehicles::{
-            config::PhysicalControlsConfig,
             finish::rendered_angle,
             mounted_tick::offered,
             physical::{ControlKind, ControlState, Hold, Outputs},
             state::move_grip,
+            tuning::PHYSICAL,
         },
     };
 
@@ -178,21 +180,19 @@ mod tests {
         // only the one this test means to exercise.
         let mut config = ControllersConfig::new();
         config.vehicles.physical.wheel.enabled = false;
-        config.vehicles.physical.handlebars.enabled = false;
-        config.vehicles.physical.cyclic.enabled = false;
-        config.vehicles.physical.collective.enabled = false;
-        config.vehicles.physical.flight_stick.enabled = false;
-        config.vehicles.physical.throttle.enabled = false;
+        config.vehicles.physical.handlebars = false;
+        config.vehicles.physical.sticks = false;
+        config.vehicles.physical.levers = false;
         let seat = |class, driver| Some(VehicleSeat { class, driver });
         assert!(offered(seat(VehicleClass::Car, true), &config, false).is_empty());
-        config.vehicles.physical.collective.enabled = true;
+        config.vehicles.physical.levers = true;
         assert_eq!(
             offered(seat(VehicleClass::Helicopter, true), &config, false),
             &[ControlKind::Collective]
         );
         assert!(offered(seat(VehicleClass::Helicopter, false), &config, false).is_empty());
         assert!(offered(None, &config, false).is_empty());
-        config.vehicles.physical.handlebars.enabled = true;
+        config.vehicles.physical.handlebars = true;
         assert_eq!(
             offered(seat(VehicleClass::Sea, true), &config, true),
             &[ControlKind::Handlebars]
@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn the_rendered_wheel_follows_the_held_wheel_and_otherwise_the_steering() {
-        let config = PhysicalControlsConfig::new();
+        let config = PHYSICAL;
         let lock = config.wheel.lock_deg.to_radians();
         let mut controls = ControlState::new();
         let half = rendered_angle(&controls, &config, Some(0.5));

@@ -1,6 +1,4 @@
-//! The wingsuit's stall flip and barrel roll removed, under
-//! [`suppress_wingsuit_stall_flip`](crate::hooks::input::MovementConfig::suppress_wingsuit_stall_flip)
-//! and [`suppress_wingsuit_barrel_roll`](crate::hooks::input::MovementConfig::suppress_wingsuit_barrel_roll).
+//! The wingsuit's stall flip and barrel roll removed while the head pose comes from the headset.
 //!
 //! When the wingsuit slows with its nose raised, the wingsuit's blend state plays a stall clip in
 //! place of the flight blend, and with the nose raised further a full loop that recovers from it.
@@ -13,14 +11,14 @@
 //! physics has them.
 //!
 //! The patch is a byte in the game's code, so it acts for every character in a wingsuit; only the
-//! player flies one. It is applied while the toggle is on and the head pose comes from the headset,
+//! player flies one. It is applied while the head pose comes from the headset,
 //! and reverted otherwise, through the hooks' patcher, which also reverts it on unload.
 //!
 //! The evade is a barrel roll ([`ACT_BOOST_WINGSUIT_BARREL_ROLL`]): the clip rolls the body a full
 //! turn and carries it sideways, a roll the player's own body never makes. The air physics queues
 //! it straight on the animated model, so the `Character::QueueAct` filters never see it; the
 //! animated model's act queue asks [`drops_act`] instead, which drops it for the local player's
-//! model while the toggle is on and the head pose comes from the headset. The roll's directions
+//! model while the head pose comes from the headset. The roll's directions
 //! and recovery are segments of its clip, so the one act covers every evade.
 //!
 //! [`WingsuitBlendState_StallFlagSet`]: jc3gi::input::parachute::get_WingsuitBlendState_StallFlagSet
@@ -37,7 +35,6 @@ use jc3gi::{
 };
 
 use crate::{
-    config::Config,
     controllers::body::procedural::signals::is_local_model,
     headpose::{self, Source},
     hooks::character::resolve_act_id,
@@ -54,15 +51,13 @@ pub fn barrel_rolls_dropped() -> u64 {
 }
 
 /// Whether the animated model's act queue should drop `act`, queued on `model`: the barrel roll,
-/// on the local player's model, while the toggle is on and the head pose comes from the headset.
+/// on the local player's model, while the head pose comes from the headset.
 /// Called for every model's every act, so another model is turned away by its address first.
 pub(crate) fn drops_act(model: *const AnimatedModel, act: i32) -> bool {
     if !is_local_model(model) || barrel_roll_id() != Some(act) {
         return false;
     }
-    let wanted = Config::lock_query(|c| c.movement.suppress_wingsuit_barrel_roll)
-        && headpose::is_active()
-        && headpose::source() == Source::Vr;
+    let wanted = headpose::is_active() && headpose::source() == Source::Vr;
     if wanted {
         BARREL_ROLLS_DROPPED.fetch_add(1, Ordering::Relaxed);
         tracing::info!(target: "controllers", "wingsuit: dropped the barrel roll");
@@ -70,12 +65,10 @@ pub(crate) fn drops_act(model: *const AnimatedModel, act: i32) -> bool {
     wanted
 }
 
-/// Apply or revert the patch to match the toggle and the head pose's source. Called once per
+/// Apply or revert the patch to match the head pose's source. Called once per
 /// frame on the game thread; it writes only when the wanted state changes.
 pub(crate) fn sync() {
-    let wanted = Config::lock_query(|c| c.movement.suppress_wingsuit_stall_flip)
-        && headpose::is_active()
-        && headpose::source() == Source::Vr;
+    let wanted = headpose::is_active() && headpose::source() == Source::Vr;
     if wanted == PATCHED.load(Ordering::Relaxed) {
         return;
     }

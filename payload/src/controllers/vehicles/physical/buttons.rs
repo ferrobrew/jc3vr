@@ -18,8 +18,8 @@ use glam::{Quat, Vec2, Vec3};
 use crate::controllers::{
     frame::Hand,
     vehicles::{
-        config::CockpitButtonsConfig,
         physical::{ControlKind, Hold, bar_ends, sticks::twist_about},
+        tuning::CockpitButtonsTuning,
         wheel::{BarsFrame, WheelFrame},
     },
 };
@@ -65,7 +65,7 @@ pub struct PushButton {
 
 impl PushButton {
     /// The horn on `wheel`'s hub.
-    pub fn horn(wheel: &WheelFrame, config: &CockpitButtonsConfig) -> Self {
+    pub fn horn(wheel: &WheelFrame, config: &CockpitButtonsTuning) -> Self {
         Self {
             centre: wheel.centre,
             normal: wheel.normal(),
@@ -76,7 +76,7 @@ impl PushButton {
 
     /// The nitrous button on the dash, beside `wheel` to its right and a little up, facing the
     /// driver as the wheel does.
-    pub fn nitrous(wheel: &WheelFrame, config: &CockpitButtonsConfig) -> Self {
+    pub fn nitrous(wheel: &WheelFrame, config: &CockpitButtonsTuning) -> Self {
         let from = config.nitrous_from_rim_m;
         Self {
             centre: wheel.centre
@@ -154,8 +154,8 @@ pub fn grip_twist(grip: TwistGrip, grab: Quat, now: Quat, across: Vec3) -> f32 {
 
 /// The throttle a handlebars' right grip twisted back by `twist` radians opens, `0..=1`: nothing
 /// within [`THROTTLE_DEADZONE_DEG`], so a hand that settles on the grip does not creep, and full at
-/// [`CockpitButtonsConfig::throttle_twist_deg`]. A grip rolled forward is closed.
-pub fn twist_throttle(twist: f32, config: &CockpitButtonsConfig) -> f32 {
+/// [`CockpitButtonsTuning::throttle_twist_deg`]. A grip rolled forward is closed.
+pub fn twist_throttle(twist: f32, config: &CockpitButtonsTuning) -> f32 {
     let deadzone = THROTTLE_DEADZONE_DEG.to_radians();
     let full = config
         .throttle_twist_deg
@@ -169,7 +169,7 @@ pub fn twist_throttle(twist: f32, config: &CockpitButtonsConfig) -> f32 {
 
 /// Whether a twist grip at `twist` radians burns the nitrous, given whether it did on the last
 /// tick: past the twist to engage, and until it comes back by a margin.
-pub fn twist_engaged(twist: f32, was: bool, config: &CockpitButtonsConfig) -> bool {
+pub fn twist_engaged(twist: f32, was: bool, config: &CockpitButtonsTuning) -> bool {
     let engage = config.twist_deg.to_radians();
     let release = (config.twist_deg - TWIST_HYSTERESIS_DEG)
         .max(0.0)
@@ -257,7 +257,7 @@ impl ButtonPlacement {
     /// collective.
     pub fn for_seat(
         kinds: &[ControlKind],
-        config: &CockpitButtonsConfig,
+        config: &CockpitButtonsTuning,
         wheel: &WheelFrame,
     ) -> Self {
         let wheel_seat = kinds.contains(&ControlKind::Wheel);
@@ -290,7 +290,7 @@ pub struct ButtonOutputs {
 /// One tick's inputs for the buttons.
 pub struct ButtonInputs<'a> {
     pub placement: &'a ButtonPlacement,
-    pub config: &'a CockpitButtonsConfig,
+    pub config: &'a CockpitButtonsTuning,
     pub bars: &'a BarsFrame,
     /// Each hand's grip position, `None` while untracked.
     pub grips: [Option<Vec3>; 2],

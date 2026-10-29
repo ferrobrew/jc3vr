@@ -23,20 +23,20 @@ pub(super) fn target() -> Line {
 }
 
 pub(super) fn reel() -> Line {
-    let enabled = read_config(|c| c.controllers.grapple.reel.enabled);
+    let enabled = read_config(|c| c.controllers.grapple.pull_to_reel);
     reel_line(enabled, &physical::status())
 }
 
 pub(super) fn tethers() -> Line {
-    let enabled = read_config(|c| c.controllers.grapple.tether.enabled);
+    let enabled = read_config(|c| c.controllers.grapple.pull_to_reel);
     tethers_line(enabled, &physical::status())
 }
 
 pub(super) fn swing() -> Line {
     let (hold, pump) = read_config(|c| {
         (
-            c.controllers.hands.anchor.hang_swing,
-            c.controllers.grapple.swing.pump,
+            c.controllers.hands.anchor.enabled,
+            c.controllers.grapple.pump,
         )
     });
     let status = anchor::status();

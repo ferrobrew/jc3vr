@@ -46,7 +46,7 @@ pub(super) fn mounted_tick(active: &ActiveHands, aiming: [bool; 2]) -> MountedTi
         handle_points: [None; 2],
         barrel: None,
     };
-    if !(config.vehicles.mounted.aim_by_hands || config.vehicles.mounted.anchor_hands) {
+    if !config.vehicles.mounted.aim_by_hands {
         let mut state = STATE.lock();
         state.mounted_reference = None;
         state.mounted_last = None;
@@ -93,7 +93,7 @@ pub(super) fn mounted_tick(active: &ActiveHands, aiming: [bool; 2]) -> MountedTi
                     to_cockpit(gun.pivot),
                     handles_mid,
                     body.inverse() * gun.barrel,
-                    config.vehicles.mounted.min_lever_m,
+                    MIN_LEVER_M,
                 )
             });
             state.mounted_reference = reference;
@@ -126,7 +126,7 @@ pub(super) fn mounted_tick(active: &ActiveHands, aiming: [bool; 2]) -> MountedTi
             target: target.map(|t| t.point),
         }),
         target,
-        handles: config.vehicles.mounted.anchor_hands.then_some(handles),
+        handles: Some(handles),
         handle_points: handles,
         barrel: Some(body.inverse() * gun.barrel),
     }
@@ -155,3 +155,7 @@ pub(super) fn offered(
         _ => &[],
     }
 }
+
+/// The shortest lever from the handles to the gun's pivot, metres. A gun whose handles the game
+/// does not place, or places at the pivot, swings about a pivot this far ahead of them.
+const MIN_LEVER_M: f32 = 0.4;

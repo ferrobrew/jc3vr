@@ -12,9 +12,48 @@ use std::collections::VecDeque;
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
-/// The yank gesture's settings, held in
-/// [`BindingsConfig`](crate::controllers::config::BindingsConfig). Acts only under the controller
-/// scheme, so it defaults on.
+/// The grapple yank's switch, held in
+/// [`BindingsConfig`](crate::controllers::config::BindingsConfig): a sharp pull of the grapple hand
+/// toward the body zips along an attached line. Acts only under the controller scheme, so it
+/// defaults on. Its detector is tuned at [`GRAPPLE_YANK`].
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GrappleYankConfig {
+    pub enabled: bool,
+}
+
+impl GrappleYankConfig {
+    pub const fn new() -> Self {
+        Self { enabled: true }
+    }
+
+    /// The detector's settings: [`GRAPPLE_YANK`] with this switch.
+    pub const fn detector(&self) -> YankConfig {
+        YankConfig {
+            enabled: self.enabled,
+            ..GRAPPLE_YANK
+        }
+    }
+}
+
+impl Default for GrappleYankConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The grapple yank's detector settings, with the switch on.
+pub const GRAPPLE_YANK: YankConfig = YankConfig {
+    enabled: true,
+    min_distance_m: 0.15,
+    min_speed_mps: 1.8,
+    window_s: 0.2,
+    cooldown_s: 0.6,
+    body_drop_m: 0.3,
+};
+
+/// A yank detector's settings: the grapple's ([`GRAPPLE_YANK`]), or the snatch's, held in
+/// [`SnatchConfig`](crate::controllers::snatch::config::SnatchConfig).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct YankConfig {
     pub enabled: bool,
@@ -28,25 +67,6 @@ pub struct YankConfig {
     pub cooldown_s: f32,
     /// How far below the head the body point the hand is pulled toward sits, metres.
     pub body_drop_m: f32,
-}
-
-impl YankConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            min_distance_m: 0.15,
-            min_speed_mps: 1.8,
-            window_s: 0.2,
-            cooldown_s: 0.6,
-            body_drop_m: 0.3,
-        }
-    }
-}
-
-impl Default for YankConfig {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 /// The body point a yank pulls toward: below the head, in the cockpit frame.
@@ -143,7 +163,7 @@ mod tests {
     const DT: f32 = 1.0 / 30.0;
 
     fn run(detector: &mut YankDetector, distances: &[f32], armed: bool) -> Vec<bool> {
-        let config = YankConfig::new();
+        let config = GRAPPLE_YANK;
         distances
             .iter()
             .map(|&d| detector.step(DT, Some(d), armed, &config).is_some())

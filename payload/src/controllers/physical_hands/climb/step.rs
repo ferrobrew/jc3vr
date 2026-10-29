@@ -12,6 +12,7 @@ use crate::{
         frame::Hand,
         physical_hands::{
             climb::{
+                config::HandClimbTuning,
                 engine, native,
                 solve::{
                     ClimbTuning, Follow, MantleTuning, body_target, carry_velocity, climb_velocity,
@@ -41,6 +42,7 @@ use crate::{
 /// updates (the pre-simulation callback).
 pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
     let config = Config::lock_query(|c| c.controllers.physical_hands);
+    let climb = HandClimbTuning::of(&config.climb);
     let context = unsafe { engine::gate_context() };
     native::observe(context);
     let mut state = STATE.lock();
@@ -100,13 +102,13 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
     let support = unsafe { engine::support() };
     let step_s = physics::step_seconds();
     let mantle_tuning = MantleTuning {
-        start_m: config.climb.mantle_start_m,
-        clearance_m: config.climb.mantle_clearance_m,
-        forward_m: config.climb.mantle_forward_m,
-        speed_mps: config.climb.mantle_speed_mps,
-        min_speed_mps: config.climb.mantle_min_speed_mps,
-        min_climb_m: config.climb.mantle_min_climb_m,
-        land_past_m: config.climb.mantle_land_past_m,
+        start_m: climb.mantle_start_m,
+        clearance_m: climb.mantle_clearance_m,
+        forward_m: climb.mantle_forward_m,
+        speed_mps: climb.mantle_speed_mps,
+        min_speed_mps: climb.mantle_min_speed_mps,
+        min_climb_m: climb.mantle_min_climb_m,
+        land_past_m: climb.mantle_land_past_m,
         step_s,
     };
     let rig_epoch = state.rig_epoch;
@@ -125,9 +127,8 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
                 if state.grips[i].is_none() && state.input_held[i] && unsafe { hold.valid() } =>
             {
                 // SAFETY: forwarded from the caller.
-                let frame = unsafe { engine::body_frame(hold.body) }.filter(|f| {
-                    engine::climbable(f, config.climb.moving, config.climb.min_moving_mass_kg)
-                });
+                let frame = unsafe { engine::body_frame(hold.body) }
+                    .filter(|f| engine::climbable(f, climb.moving, climb.min_moving_mass_kg));
                 let grip = match (bodies[i], state.palms[i], place, frame) {
                     (Some(pin), Some(palm), Ok(place), Some(frame)) => Some(Grip {
                         hand,
@@ -136,7 +137,7 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
                             hold.point.y,
                             place.feet.y,
                             support.is_some(),
-                            config.climb.min_ledge_normal_y,
+                            climb.min_ledge_normal_y,
                             &mantle_tuning,
                         ),
                         hold,
@@ -217,24 +218,23 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
         if let Some(hand) = released_by_grip
             && !held_by_game
             && state.climbing
-            && (config.climb.fling || state.smoothed_carry != Vec3::ZERO)
         {
             let kept = release_velocity(
                 state.smoothed,
                 state.smoothed_carry,
-                if config.climb.fling && state.mantle.is_none() {
-                    config.climb.fling_scale
+                if state.mantle.is_none() {
+                    climb.fling_scale
                 } else {
                     0.0
                 },
-                config.climb.max_fling_speed_mps,
+                climb.max_fling_speed_mps,
             );
             // SAFETY: forwarded from the caller.
             match unsafe { engine::set_velocity(kept) } {
                 Ok(()) => {
                     state.status.last_fling_mps = Some(kept.length());
                     state.carry = Some(Carry { kept, steps: 0 });
-                    let max = config.climb.max_fling_speed_mps;
+                    let max = climb.max_fling_speed_mps;
                     let share = if max > 0.0 {
                         (kept.length() / max).min(1.0)
                     } else {
@@ -253,7 +253,7 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
             // The game may take a fling's velocity back on the steps after the release, so the
             // fling keeps carrying the body as a throw for a moment, until it stands somewhere.
             let elapsed_s = (carry.steps + 1) as f32 * step_s;
-            if support.is_some() || elapsed_s > config.climb.fling_carry_s {
+            if support.is_some() || elapsed_s > climb.fling_carry_s {
                 state.carry = None;
             } else {
                 let velocity = fling_carry(carry.kept, elapsed_s, PICKUP.gravity_mps2);
@@ -297,8 +297,8 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
         tracing::info!(feet = ?place.feet, "hand climbing: climbing starts");
     }
     let tuning = ClimbTuning {
-        gain: config.climb.gain,
-        max_speed_mps: config.climb.max_speed_mps,
+        gain: climb.gain,
+        max_speed_mps: climb.max_speed_mps,
         step_s,
     };
     let palms = state.palms;
@@ -328,7 +328,7 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
             state.grips.iter().enumerate().filter_map(|(i, grip)| {
                 grip.map(|_| carried[i].map_or(Vec3::ZERO, |c| c.velocity))
             }),
-            config.climb.max_carry_speed_mps,
+            climb.max_carry_speed_mps,
         );
     let follows = Hand::BOTH.map(|hand| {
         let i = hand.index();
@@ -346,7 +346,7 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
     let gap = target - place.body;
     state.status.gap_m = gap.length();
     // The mantle carries the body away from where the hands would have it, on purpose.
-    if state.mantle.is_none() && gap.length() > config.climb.break_distance_m {
+    if state.mantle.is_none() && gap.length() > climb.break_distance_m {
         state.drop_all("the body could not follow the hands");
         state.finish_climb();
         return [None; 2];
@@ -354,8 +354,8 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
     let mut velocity = climb_velocity(target, place.body, &tuning) + carry;
     let mut ground = state.grips.iter().flatten().next().map(|g| g.hold);
 
-    let stands = support.is_some_and(|y| y >= config.climb.min_ledge_normal_y);
-    if config.climb.mantle || state.mantle.is_some() {
+    let stands = support.is_some_and(|y| y >= climb.min_ledge_normal_y);
+    if climb.mantle || state.mantle.is_some() {
         let mantle = state.step_mantle(
             MantleTick {
                 feet: place.feet,
@@ -363,7 +363,7 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
                 stands,
                 tuning: &mantle_tuning,
                 max_steps: scale_ticks(MAX_MANTLE_STEPS),
-                max_carry_speed_mps: config.climb.max_carry_speed_mps,
+                max_carry_speed_mps: climb.max_carry_speed_mps,
                 context,
             },
             |hold| {
@@ -419,7 +419,7 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
         (velocity, carry),
         motion_grips != state.motion_grips,
         step_s,
-        config.climb.fling_smoothing_s,
+        climb.fling_smoothing_s,
     );
     state.motion_grips = motion_grips;
     if let Some(context) = context {

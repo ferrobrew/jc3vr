@@ -33,21 +33,21 @@ Two of these gates exist because the obvious signal lies. The fire flags matter 
 
 Engagement is instant and seamless by construction: on the engage edge, the filter holds the frame the view *last composed* — the previous advance's body under the current blend. The previous advance's body, because the fire snap lands in the same step the state flips (capturing the current body bakes 5–27° of it into the hold). Under the current blend, because a re-grapple during a release tail must hold the partially blended frame you're already looking through.
 
-Release blends the accumulated rotation back over `release_s` (0.4 s), and the release tail snaps to fully disarmed below 0.1% blend — the decay is exponential and would otherwise linger near-zero for many seconds, leaving stale state for the next engage.
+Release blends the accumulated rotation back over 0.4 s (`RELEASE_S` in `crate::grapple`), and the release tail snaps to fully disarmed below 0.1% blend — the decay is exponential and would otherwise linger near-zero for many seconds, leaving stale state for the next engage.
 
 ## The yaw handoff
 
-An on-foot landing leaves the body heading 10–25° off the held view, and returning that through the release blend is 34–61° of rotation path at sustained vection. With `yaw_handoff` (default on, VR on-foot hold-view only), the view never sweeps through it: at reel end the held heading is posted for the VR body-turn accumulator (`grapple::take_body_yaw_retarget`, consumed on its next on-foot tick), the *character* turns to face where you're looking via the game's own rate-limited turn machinery, and the hold stays engaged until the heading converges within 3° — leaving only a small pitch/roll residual for the blend. This is the design doc's body-follows-head scheme applied at the landing.
+An on-foot landing leaves the body heading 10–25° off the held view, and returning that through the release blend is 34–61° of rotation path at sustained vection. Under hold view, for a VR player on foot, the view never sweeps through it: at reel end the held heading is posted for the VR body-turn accumulator (`grapple::take_body_yaw_retarget`, consumed on its next on-foot tick), the *character* turns to face where you're looking via the game's own rate-limited turn machinery, and the hold stays engaged until the heading converges within 3° — leaving only a small pitch/roll residual for the blend. This is the design doc's body-follows-head scheme applied at the landing.
 
-The handoff falls back to the plain blend release on a timeout (`handoff_timeout_s`, the body can be blocked from turning) and skips entirely for airborne releases: the body-yaw accumulator only steers on foot, so holding the view while flying away would pin it against a moving world.
+The handoff falls back to the plain blend release on a timeout (`HANDOFF_TIMEOUT_S`, since the body can be blocked from turning) and skips entirely for airborne releases: the body-yaw accumulator only steers on foot, so holding the view while flying away would pin it against a moving world.
 
 Because the held frame's yaw stops tracking the real body, everything that steers the actual character reads the raw rotation (`headpose::xr::body_rotation_raw`); only the view composition reads the filtered one.
 
 ## The landing-snap absorber
 
-The attach/landing animation teleports the head anchor up to a metre in a single sim tick — a 50–100+ m/s velocity spike, against ~43 m/s for the fastest real zips. `filter_anchor` absorbs that spike into an offset that decays out of the view over `anchor_snap_ease_s`, leaving sustained motion of any speed untouched.
+The attach/landing animation teleports the head anchor up to a metre in a single sim tick — a 50–100+ m/s velocity spike, against ~43 m/s for the fastest real zips. `filter_anchor` absorbs that spike into an offset that decays out of the view over `ANCHOR_SNAP_EASE_S`, leaving sustained motion of any speed untouched.
 
-The detection compares each anchor step against a smoothed velocity estimate and absorbs only single-step changes beyond `anchor_snap_threshold_mps`. Three details carry the correctness, each the fix for a failure telemetry caught:
+The detection compares each anchor step against a smoothed velocity estimate and absorbs only single-step changes beyond `ANCHOR_SNAP_THRESHOLD_MPS`. Three details carry the correctness, each the fix for a failure telemetry caught:
 
 - **Steps, not advances.** The anchor is tick-sampled, constant across the frames between sim ticks, so per-advance deltas form a `0, 0, full-step` staircase that a per-advance model misreads as perpetual excess at ordinary movement speeds. Detection runs only when the anchor actually changes, with the step interval measured between changes.
 - **The estimate always tracks.** Excluding absorbed steps from the velocity estimate turns the absorber into a speed governor — every zip step reads as excess against a frozen estimate, and the view settles metres behind the body.
@@ -63,18 +63,16 @@ Both advances share one mutex, and it is the innermost lock in the headpose's SI
 
 ## Telemetry
 
-`payload/src/grapple/telemetry.rs` captures the filter's inputs and outputs — hook phase, blend, raw/filtered/held body frames, HMD cockpit pose, composed head pose, anchor — to a timestamped `jc3vr-grapple-<stamp>.csv` beside the payload DLL, one row per input tick and per rendered VR frame. Toggle it from the Camera tab ("Log reel telemetry"; off by default); each enable starts a fresh file. Every behaviour above was diagnosed and verified against these captures, and they remain the tool of choice when a comfort report is hard to reproduce by feel.
+`payload/src/grapple/telemetry.rs` captures the filter's inputs and outputs — hook phase, blend, raw/filtered/held body frames, HMD cockpit pose, composed head pose, anchor — to a timestamped `jc3vr-grapple-<stamp>.csv` beside the payload DLL, one row per input tick and per rendered VR frame. Toggle it from the debug UI's Grapple feature, in its live status ("Log reel telemetry"; off by default); each enable starts a fresh file. Every behaviour above was diagnosed and verified against these captures, and they remain the tool of choice when a comfort report is hard to reproduce by feel.
 
 ## Configuration
 
-`headpose.grapple`, live-editable in the debug UI's Camera tab under "Grapple reel-in comfort" (with a live blend readout):
+`headpose.grapple.mode` (default `HoldView`) selects the body-frame filter mode; it has no debug-UI control. The timing is fixed in `crate::grapple`, and the debug UI's Grapple feature shows the live blend in its live status:
 
-| Field | Default | Meaning |
+| Constant | Value | Meaning |
 |---|---|---|
-| `mode` | `HoldView` | Body-frame filter mode (see above). |
-| `engage_s` | `0` | Blend-in time constant. Instant is seamless; a ramp only leaks the opening rotation. |
-| `release_s` | `0.4` | Blend-out time constant for the accumulated rotation. |
-| `yaw_handoff` | `true` | Turn the character to the view at an on-foot landing instead of sweeping the view. |
-| `handoff_timeout_s` | `1.5` | Fallback to the blend release if the body cannot converge. |
-| `anchor_snap_threshold_mps` | `25` | Single-step anchor velocity change treated as a landing snap. `0` disables. |
-| `anchor_snap_ease_s` | `0.15` | How long an absorbed snap takes to ease back out. |
+| `ENGAGE_S` | `0` | Blend-in time constant. Instant is seamless; a ramp only leaks the opening rotation. |
+| `RELEASE_S` | `0.4` | Blend-out time constant for the accumulated rotation. |
+| `HANDOFF_TIMEOUT_S` | `1.5` | Fallback to the blend release if the body cannot converge. |
+| `ANCHOR_SNAP_THRESHOLD_MPS` | `25` | Single-step anchor velocity change treated as a landing snap. |
+| `ANCHOR_SNAP_EASE_S` | `0.15` | How long an absorbed snap takes to ease back out. |

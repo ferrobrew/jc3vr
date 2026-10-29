@@ -40,10 +40,8 @@ pub(super) fn arm_tick(
     if !arms_act(mode, &active.config) {
         return None;
     }
-    // An arm holding something is not spread to steer by: the stick steers until both are free.
-    if active.config.vehicles.free_hands_only
-        && Hand::BOTH.into_iter().any(|h| live::held_kind(h).is_some())
-    {
+    // An arm holding something of the table's is not a wing: the stick steers until both are free.
+    if Hand::BOTH.into_iter().any(|h| live::held_kind(h).is_some()) {
         return None;
     }
     let hand = |hand: Hand| {
@@ -69,7 +67,7 @@ pub(super) fn arm_tick(
     write_move(desired, written);
     Some(ArmReadout {
         pose,
-        needed_spread: arm::needed_spread(config, engaged),
+        needed_spread: arm::needed_spread(engaged),
         shoulder_y: body.head.y - body.eyes_above_shoulders,
         pitch: arm::pitch_input(&pose, config),
         arms,

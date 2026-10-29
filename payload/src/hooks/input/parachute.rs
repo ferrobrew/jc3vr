@@ -1,6 +1,5 @@
 //! Parachute locomotion detours: drop the camera-relative look-steer from the parachute's
-//! steering while the head is decoupled, behind
-//! [`suppress_parachute_look_steer`](crate::hooks::input::MovementConfig::suppress_parachute_look_steer).
+//! steering while the head is decoupled.
 //!
 //! The parachute steering helper `NParachuteMovement::GetParachuteSteeringValues` mixes the
 //! *camera input matrix* (`GameCameraManager::GetInputMatrix`) into the parachute's steering.
@@ -28,7 +27,7 @@ use jc3gi::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{config::Config, hooks::input::locomotion::head_decoupled};
+use crate::hooks::input::locomotion::head_decoupled;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&GET_PARACHUTE_STEERING_VALUES_BINDER)
@@ -62,12 +61,9 @@ fn get_parachute_steering_values(
     }
 }
 
-/// Whether to remove the parachute look-steer this call: the toggle is on and the character is a
-/// head-decoupled (VR) local player.
+/// Whether to remove the parachute look-steer this call: the character is a head-decoupled (VR)
+/// local player.
 fn should_suppress(character: *mut Character) -> bool {
-    if !Config::lock_query(|c| c.movement.suppress_parachute_look_steer) {
-        return false;
-    }
     unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter && head_decoupled(c))
 }
 

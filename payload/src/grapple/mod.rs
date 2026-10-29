@@ -17,15 +17,15 @@
 //!   [`GrappleComfortMode`] — by default the frame the previous render composed with, held from
 //!   fire to landing so the view stays world-stable. The hold engages the moment a fire is
 //!   committed (the fire act whips the body toward the target before the wire even spawns) and
-//!   releases by blending the accumulated rotation back over `release_s`.
+//!   releases by blending the accumulated rotation back over [`RELEASE_S`].
 //! - **The yaw handoff**: an on-foot landing would otherwise return 10–25° of accumulated yaw to
 //!   the view through the release blend. Instead the held heading is posted for the VR body-turn
 //!   accumulator ([`take_body_yaw_retarget`]), the character turns to face where the player is
 //!   looking via the game's own rate-limited turn machinery, and the hold stays engaged until the
 //!   heading converges — the view never sweeps through the yaw.
 //! - **The landing-snap absorber** ([`filter_anchor`]): the attach/landing animation teleports the
-//!   head anchor up to a metre in one sim tick. Single-step velocity spikes beyond the configured
-//!   threshold are absorbed into an offset that decays out of the view; sustained motion of any
+//!   head anchor up to a metre in one sim tick. Single-step velocity spikes beyond
+//!   [`ANCHOR_SNAP_THRESHOLD_MPS`] are absorbed into an offset that decays out of the view; sustained motion of any
 //!   speed passes through 1:1, and the filtered anchor is always `raw + offset`, so the engine's
 //!   tick interpolation is undisturbed.
 //!
@@ -89,13 +89,11 @@ pub fn advance(body: Quat, anchor: Vec3, on_foot: bool, config: &GrappleComfortC
     if s.was_active
         && !active
         && on_foot
-        && config.yaw_handoff
         && config.mode == GrappleComfortMode::HoldView
         && headpose::source() == headpose::Source::Vr
     {
         s.pending_retarget = Some((headpose::sim::body_yaw_of(s.held), now));
-        s.handoff_deadline =
-            Some(now + std::time::Duration::from_secs_f32(config.handoff_timeout_s.max(0.0)));
+        s.handoff_deadline = Some(now + std::time::Duration::from_secs_f32(HANDOFF_TIMEOUT_S));
     }
     s.was_active = active;
 
@@ -129,9 +127,9 @@ pub fn advance(body: Quat, anchor: Vec3, on_foot: bool, config: &GrappleComfortC
 
     let target = if hold { 1.0 } else { 0.0 };
     let tau = if target > s.factor {
-        config.engage_s
+        ENGAGE_S
     } else {
-        config.release_s
+        RELEASE_S
     };
     let alpha = if tau > f32::EPSILON {
         1.0 - (-dt / tau).exp()
@@ -146,7 +144,7 @@ pub fn advance(body: Quat, anchor: Vec3, on_foot: bool, config: &GrappleComfortC
     }
     FACTOR_BITS.store(s.factor.to_bits(), Ordering::Relaxed);
 
-    advance_absorber(&mut s, anchor, reeling, now, dt, config);
+    advance_absorber(&mut s, anchor, reeling, now, dt);
 }
 
 /// Apply the body-frame hold to a body rotation. At blend `0` the rotation passes through
@@ -186,15 +184,8 @@ pub fn take_body_yaw_retarget() -> Option<f32> {
 /// per-advance deltas read as a `0, 0, full-tick-step` staircase that a per-advance velocity model
 /// misreads as perpetual excess at ordinary fast-movement speeds. Steps are detected by the anchor
 /// actually changing, with the step `dt` measured between changes.
-fn advance_absorber(
-    s: &mut GrappleFilter,
-    anchor: Vec3,
-    reeling: bool,
-    now: Instant,
-    dt: f32,
-    config: &GrappleComfortConfig,
-) {
-    let threshold = config.anchor_snap_threshold_mps;
+fn advance_absorber(s: &mut GrappleFilter, anchor: Vec3, reeling: bool, now: Instant, dt: f32) {
+    let threshold = ANCHOR_SNAP_THRESHOLD_MPS;
     if let Some(prev) = s.prev_anchor {
         let delta = anchor - prev;
         if delta.length_squared() > 0.0 {
@@ -214,7 +205,7 @@ fn advance_absorber(
                 // positional snap the grapple produces is at the landing, so the zip — including
                 // its launch acceleration, which a fresh velocity estimate would misread as
                 // excess — passes through untouched.
-                let armed = s.factor > f32::EPSILON && !reeling && threshold > 0.0;
+                let armed = s.factor > f32::EPSILON && !reeling;
                 if armed && excess.length() > threshold * step_dt {
                     s.anchor_offset -= excess;
                     // Hard-capped so a mis-estimate degrades into a bounded, decaying lag, never
@@ -229,13 +220,32 @@ fn advance_absorber(
         }
     }
     s.prev_anchor = Some(anchor);
-    let ease = config.anchor_snap_ease_s;
-    s.anchor_offset = if ease > f32::EPSILON {
-        s.anchor_offset * (-dt / ease).exp()
-    } else {
-        Vec3::ZERO
-    };
+    s.anchor_offset *= (-dt / ANCHOR_SNAP_EASE_S).exp();
 }
+
+/// The blend-in time constant (seconds) when the filter engages. The filter holds the frame the
+/// previous render composed with, so an instant engage is seamless; a ramp here would only let the
+/// grapple's opening rotation leak through.
+const ENGAGE_S: f32 = 0.0;
+
+/// The blend-out time constant (seconds) when the grapple ends, easing the body rotation
+/// accumulated over the reel back into the view instead of snapping to it. Under the yaw handoff
+/// this carries only the small pitch and roll residual.
+const RELEASE_S: f32 = 0.4;
+
+/// How long (seconds) the post-reel yaw handoff may hold the view while the body turns toward it,
+/// before falling back to the blend release (the body can be blocked from turning).
+const HANDOFF_TIMEOUT_S: f32 = 1.5;
+
+/// The single-step velocity change (m/s) of the body-driven head anchor beyond which the change is
+/// treated as a landing or attach snap and absorbed. The snap teleports the head up to a metre in
+/// one step (a velocity spike of 50-100+ m/s); real motion changes velocity a few m/s per step at
+/// most, so any sustained speed passes through 1:1 and only the discontinuity is absorbed, into an
+/// offset that decays over [`ANCHOR_SNAP_EASE_S`]. The HMD's own tracking is unaffected.
+const ANCHOR_SNAP_THRESHOLD_MPS: f32 = 25.0;
+
+/// How long (seconds) an absorbed landing snap takes to ease back out of the view.
+const ANCHOR_SNAP_EASE_S: f32 = 0.15;
 
 /// The heading convergence (radians) below which the post-reel yaw handoff completes.
 const HANDOFF_CONVERGED_RAD: f32 = 3.0 * std::f32::consts::PI / 180.0;

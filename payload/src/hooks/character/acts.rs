@@ -37,15 +37,9 @@ fn character_queue_act(character: *mut Character, act: *const u32) {
         && let Some(&id) = (unsafe { act.as_ref() })
     {
         let id = id as i32;
-        let (suppress_reverse_look, controllers_enabled, locomotion) = Config::lock_query(|c| {
-            (
-                c.movement.suppress_reverse_look,
-                c.controllers.enabled,
-                c.controllers.locomotion,
-            )
-        });
-        let reverse =
-            suppress_reverse_look && reverse_act_ids().is_some_and(|ids| ids.contains(&id));
+        let (controllers_enabled, locomotion) =
+            Config::lock_query(|c| (c.controllers.enabled, c.controllers.locomotion));
+        let reverse = reverse_act_ids().is_some_and(|ids| ids.contains(&id));
         if reverse || aim_state::swallow_local_act(id) {
             return;
         }

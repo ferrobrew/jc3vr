@@ -142,8 +142,7 @@ pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
         roof_landing: landing.map(|(_, _, distance)| distance),
         dt,
     };
-    let tuning = tuning(&config.stunt);
-    let decision = state.tracker.step(&tick, &tuning);
+    let decision = state.tracker.step(&tick, &TUNING);
     state.status.armed = state.tracker.armed();
     state.status.on_helicopter = helicopters;
     state.status.holding = if read.kind == Some(StuntKind::Hanging) {
@@ -159,7 +158,7 @@ pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
             if let Some((Some(vehicle), feet, distance)) = landing {
                 // SAFETY: as above.
                 let entered = unsafe { engine::enter(vehicle, feet) };
-                if state.entered(entered, &tuning) {
+                if state.entered(entered, &TUNING) {
                     tracing::info!(
                         feet = ?feet,
                         distance_m = ?distance,
@@ -188,9 +187,9 @@ pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
         }
     }
     let skid = GripPose::Cylinder {
-        diameter_m: config.stunt.skid_diameter_m,
+        diameter_m: SKID_DIAMETER_M,
     };
-    let strain = hold_strain(read.vehicle_speed_mps, config.stunt.hold_full_speed_mps);
+    let strain = hold_strain(read.vehicle_speed_mps, HOLD_FULL_SPEED_MPS);
     for hand in Hand::BOTH {
         let i = hand.index();
         let in_hang = state.status.holding[i];
@@ -234,15 +233,24 @@ unsafe fn helicopter_grip(grip: Option<climb::Hold>) -> bool {
         .is_some_and(|vehicle| unsafe { engine::is_helicopter(vehicle) })
 }
 
-fn tuning(config: &StuntConfig) -> Tuning {
-    Tuning {
-        enter_roof: config.enter_roof,
-        roof_offer_m: config.roof_offer_m,
-        let_go: config.let_go,
-        release_grace_s: config.release_grace_s,
-        retry_s: config.retry_s,
-    }
-}
+/// The tracker's tuning: enter a vehicle's stunt area when a mantle lands on its roof within
+/// [`Tuning::roof_offer_m`] of the nearest one, and let go of the helicopter once both grips have
+/// stayed open in its hang for [`Tuning::release_grace_s`] after a grip held there, so that a hand
+/// moved from one grip to the other does not. An entry the game refused is tried again after
+/// [`Tuning::retry_s`].
+const TUNING: Tuning = Tuning {
+    enter_roof: true,
+    roof_offer_m: 0.6,
+    let_go: true,
+    release_grace_s: 0.2,
+    retry_s: 1.0,
+};
+
+/// The diameter of the bar the fingers close round on a helicopter's skid, metres.
+const SKID_DIAMETER_M: f32 = 0.05;
+
+/// The helicopter's speed of the strongest hold pulse, metres per second.
+const HOLD_FULL_SPEED_MPS: f32 = 40.0;
 
 /// The share of the hold pulse at the vehicle's speed, `0..=1`.
 fn hold_strain(speed_mps: f32, full_speed_mps: f32) -> f32 {

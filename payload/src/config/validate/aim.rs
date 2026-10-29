@@ -9,20 +9,7 @@ use crate::{
 /// Check the controller-owned hands' settings. Paths are relative to `controllers.hands`.
 pub(super) fn hands(c: &HandsConfig) -> Result<(), Invalid> {
     vec3("hands.grip.position_m", c.grip.position_m, 5.0)?;
-    vec3("hands.grip.rotation_deg", c.grip.rotation_deg, 360.0)?;
-    nonnegative("hands.anchor.blend_s", c.anchor.blend_s, 60.0)?;
-    nonnegative(
-        "hands.anchor.swing_deadzone_m",
-        c.anchor.swing_deadzone_m,
-        10.0,
-    )?;
-    positive("hands.anchor.swing_full_m", c.anchor.swing_full_m, 10.0)?;
-    range(
-        "hands.anchor.swing_scale",
-        c.anchor.swing_scale,
-        -100.0,
-        100.0,
-    )
+    vec3("hands.grip.rotation_deg", c.grip.rotation_deg, 360.0)
 }
 
 /// Check the per-hand aiming settings. Paths are relative to `controllers.aim`.

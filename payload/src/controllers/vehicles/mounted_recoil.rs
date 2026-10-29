@@ -1,5 +1,5 @@
 //! A mounted gun's recoil in the handles, behind
-//! [`MountedConfig::recoil`](crate::controllers::vehicles::config::MountedConfig::recoil).
+//! [`MountedConfig::aim_by_hands`](crate::controllers::vehicles::config::MountedConfig::aim_by_hands).
 //!
 //! Every shot of the mounted gun the hands aim (seen by the per-shot seam,
 //! [`crate::controllers::weapons::fire`]) kicks a damped spring: back along the barrel and down,
@@ -32,7 +32,7 @@ use crate::controllers::{
 
 /// Kick the handles by one shot of the mounted gun, and pulse the hands holding them.
 pub(crate) fn on_shot(config: &MountedConfig) {
-    if !config.recoil {
+    if !config.aim_by_hands {
         return;
     }
     SHOTS.fetch_add(1, Ordering::Relaxed);
@@ -40,7 +40,7 @@ pub(crate) fn on_shot(config: &MountedConfig) {
         let mut kick = KICK.lock();
         let now = Instant::now();
         advance(&mut kick, now);
-        let peak = Vec3::new(config.kick_back_m, config.kick_dip_m, 0.0);
+        let peak = Vec3::new(KICK_BACK_M, KICK_DIP_M, 0.0);
         kick.spring.kick(peak, STIFFNESS);
         let cap = peak * MAX_SHOTS;
         kick.spring.velocity = kick.spring.velocity.clamp(-cap * 40.0, cap * 40.0);
@@ -102,6 +102,12 @@ static KICK: Mutex<Kick> = Mutex::new(Kick {
 });
 static HOLDS: AtomicU8 = AtomicU8::new(0);
 static SHOTS: AtomicU64 = AtomicU64::new(0);
+
+/// How far a shot kicks the handles back along the barrel, metres.
+const KICK_BACK_M: f32 = 0.02;
+
+/// How far a shot kicks the handles down as the muzzle climbs, metres.
+const KICK_DIP_M: f32 = 0.008;
 
 /// The handles' spring: stiff, so a single shot settles within a tenth of a second or so.
 const STIFFNESS: f32 = 900.0;

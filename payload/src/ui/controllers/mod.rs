@@ -56,7 +56,7 @@ use crate::{
         roomscale as controller_roomscale, scheme, summary as controller_summary,
     },
     hud::{pointer, summary_panel},
-    ui::{catalog::FeatureId, dispatch::FeatureBody},
+    ui::{camera, catalog::FeatureId, dispatch::FeatureBody},
     vr::input::{self as vr_input, ActionsOrigin},
 };
 
@@ -73,7 +73,7 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
         FeatureId::Thresholds => |ui, _| settings::thresholds(ui, &mut config::edit()),
         FeatureId::Bindings => |ui, _| settings::bindings_settings(ui, &mut config::edit()),
         FeatureId::MenuPanel => |ui, _| settings::menu_panel(ui, &mut config::edit()),
-        FeatureId::Locomotion => |ui, _| settings::locomotion_settings(ui, &mut config::edit()),
+        FeatureId::OnFoot => |ui, _| settings::locomotion_settings(ui, &mut config::edit()),
         FeatureId::Grapple => |ui, _| {
             let mut cfg = config::edit();
             settings::grapple_settings(ui, &mut cfg);
@@ -140,11 +140,7 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
             climb::climb_settings(ui, &mut cfg.controllers.physical_hands.climb);
             stunt::stunt_settings(ui, &mut cfg.controllers.physical_hands.stunt);
         },
-        FeatureId::Driving
-        | FeatureId::VehicleControls
-        | FeatureId::Mounted
-        | FeatureId::Wingsuit
-        | FeatureId::Parachute => |ui, id| {
+        FeatureId::Vehicles | FeatureId::Air => |ui, id| {
             vehicles::feature_settings(ui, &mut config::edit().controllers.vehicles, id);
         },
         FeatureId::Posture => {
@@ -257,11 +253,13 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
             stunt::stunt_readout(ui, &controller_physical_hands::stunt::status());
         },
         FeatureId::Hold => |ui, _| weapons::weapons_readout(ui, &weapons::WeaponsReadout::read()),
-        FeatureId::Support | FeatureId::Reload | FeatureId::Explosives | FeatureId::Grapple => {
-            |ui, id| {
-                weapons::feature_readout(ui, &weapons::WeaponsReadout::read(), id);
-            }
-        }
+        FeatureId::Support | FeatureId::Reload | FeatureId::Explosives => |ui, id| {
+            weapons::feature_readout(ui, &weapons::WeaponsReadout::read(), id);
+        },
+        FeatureId::Grapple => |ui, id| {
+            weapons::feature_readout(ui, &weapons::WeaponsReadout::read(), id);
+            camera::grapple_comfort_readout(ui);
+        },
         FeatureId::Inventory => {
             |ui, _| inventory::inventory_view(ui, &inventory::InventoryView::read())
         }
@@ -269,17 +267,13 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
             haptics::haptics_readout(ui, &controller_haptics::status());
             physical_hands::impact_sounds_readout(ui, &controller_physical_hands::sounds::status());
         },
-        FeatureId::Driving
-        | FeatureId::VehicleControls
-        | FeatureId::Mounted
-        | FeatureId::Wingsuit
-        | FeatureId::Parachute => |ui, id| {
+        FeatureId::Vehicles | FeatureId::Air => |ui, id| {
             vehicles::feature_readout(ui, &vehicles::VehiclesReadout::read(), id);
         },
         FeatureId::Wrist => |ui, _| {
             summary::summary_readout(ui, &controller_summary::status(), &summary_panel::status())
         },
-        FeatureId::Locomotion => |ui, _| {
+        FeatureId::OnFoot => |ui, _| {
             let stick = controller_locomotion::status();
             let acts = controller_locomotion::acts::status();
             let anchor = controller_locomotion::anchor::status();

@@ -8,7 +8,6 @@
 //! its specializations) are shared by every area.
 
 mod aim;
-mod grapple;
 mod haptics;
 pub(crate) mod hud;
 mod input;
@@ -46,7 +45,7 @@ impl std::error::Error for Invalid {}
 /// Check every controller setting except the sight corrections ([`sights`]), returning the first
 /// that is out of range or inconsistent. Paths are relative to `controllers`.
 pub(crate) fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
-    locomotion(&c.locomotion.stick, &c.locomotion.acts, &c.locomotion.view)?;
+    locomotion(&c.locomotion.stick)?;
     c.body.procedural.validate()?;
     c.body.rig.validate()?;
     input::input(&c.input)?;
@@ -59,7 +58,6 @@ pub(crate) fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
     roomscale::roomscale(&c.roomscale)?;
     vehicles::vehicles(&c.vehicles)?;
     physical_hands::physical_hands(&c.physical_hands)?;
-    grapple::grapple(&c.grapple)?;
     haptics::haptics(&c.haptics)
 }
 
@@ -85,9 +83,6 @@ pub(crate) fn vr_turn(turn: &VrTurnConfig) -> Result<(), Invalid> {
     range("snap_angle_deg", turn.snap_angle_deg, 0.0, 180.0)?;
     range("snap_threshold", turn.snap_threshold, 0.0, 1.0)?;
     range("deadzone", turn.deadzone, 0.0, 1.0)?;
-    range("mouse_turn_scale", turn.mouse_turn_scale, 0.0, 100.0)?;
-    range("max_body_lead_deg", turn.max_body_lead_deg, 0.0, 180.0)?;
-    range("swim_scale", turn.swim_scale, 0.0, 10.0)?;
     Ok(())
 }
 

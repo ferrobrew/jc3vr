@@ -192,21 +192,9 @@ pub(super) fn grip_settings(ui: &mut Ui, h: &mut HandsConfig) {
 }
 
 pub(super) fn anchor_settings(ui: &mut Ui, h: &mut HandsConfig) {
-    let a = &mut h.anchor;
-    ui.checkbox(&mut a.enabled, "Anchor the grapple hand to the line")
-        .on_hover_text("Off, the grapple states yield the hand to the animation.");
-    ui.add_enabled_ui(a.enabled, |ui| {
-        ui.indent("anchor", |ui| {
-            ui.add(egui::Slider::new(&mut a.blend_s, 0.0..=1.0).text("Anchor blend (s)"));
-            ui.checkbox(&mut a.hang_swing, "Swing a hang with the hand");
-            ui.add(
-                egui::Slider::new(&mut a.swing_deadzone_m, 0.0..=0.2).text("Swing deadzone (m)"),
-            );
-            ui.add(egui::Slider::new(&mut a.swing_full_m, 0.05..=0.6).text("Full swing at (m)"));
-            ui.add(
-                egui::Slider::new(&mut a.swing_scale, -3.0..=3.0)
-                    .text("Swing strength (× the game's)"),
-            );
-        });
-    });
+    ui.checkbox(&mut h.anchor.enabled, "Anchor the grapple hand to the line")
+        .on_hover_text(
+            "Hold the grapple hand on the line and swing a hang by moving it. Off, the grapple \
+             states yield the hand to the animation.",
+        );
 }

@@ -21,12 +21,12 @@ pub struct Rates {
 }
 
 impl Rates {
-    pub fn of(config: &StickConfig) -> Self {
-        Self {
-            accelerate: config.acceleration_mps2,
-            decelerate: config.deceleration_mps2,
-        }
-    }
+    /// The integrator's fixed rates. The deceleration is higher than the acceleration, so stopping
+    /// is crisp.
+    pub const FIXED: Self = Self {
+        accelerate: 10.0,
+        decelerate: 14.0,
+    };
 }
 
 /// Move `velocity` toward `target` by at most the applicable rate times `dt`. Non-finite inputs

@@ -11,12 +11,12 @@
 
 use glam::Vec2;
 
-use crate::grapple::physical::config::SwingConfig;
+use crate::grapple::physical::config::SwingTuning;
 
 /// The pump for a grapple hand moving at `velocity` (horizontal, body frame, metres per second)
 /// relative to the head: against the motion, from zero at the deadzone to `full_impulse` times
-/// [`SwingConfig::scale`] at the full speed, and zero inside the deadzone or with the pump off.
-pub fn pump_impulse(velocity: Vec2, full_impulse: f32, config: &SwingConfig) -> Vec2 {
+/// [`SwingTuning::scale`] at the full speed, and zero inside the deadzone or with the pump off.
+pub fn pump_impulse(velocity: Vec2, full_impulse: f32, config: &SwingTuning) -> Vec2 {
     let speed = velocity.length();
     if !config.pump || !speed.is_finite() || speed <= config.deadzone_mps {
         return Vec2::ZERO;
@@ -26,8 +26,8 @@ pub fn pump_impulse(velocity: Vec2, full_impulse: f32, config: &SwingConfig) -> 
     -velocity / speed * strength * full_impulse * config.scale
 }
 
-/// The hold and the pump together, capped at `full_impulse` times [`SwingConfig::max_scale`].
-pub fn combine(hold: Vec2, pump: Vec2, full_impulse: f32, config: &SwingConfig) -> Vec2 {
+/// The hold and the pump together, capped at `full_impulse` times [`SwingTuning::max_scale`].
+pub fn combine(hold: Vec2, pump: Vec2, full_impulse: f32, config: &SwingTuning) -> Vec2 {
     let total = hold + pump;
     if !total.is_finite() {
         return Vec2::ZERO;
@@ -36,7 +36,7 @@ pub fn combine(hold: Vec2, pump: Vec2, full_impulse: f32, config: &SwingConfig) 
 }
 
 /// Smooth the hand's velocity toward `sample` over `dt` seconds.
-pub fn smooth_velocity(previous: Vec2, sample: Vec2, dt: f32, config: &SwingConfig) -> Vec2 {
+pub fn smooth_velocity(previous: Vec2, sample: Vec2, dt: f32, config: &SwingTuning) -> Vec2 {
     if !sample.is_finite() {
         return previous;
     }
@@ -50,17 +50,18 @@ pub fn smooth_velocity(previous: Vec2, sample: Vec2, dt: f32, config: &SwingConf
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::grapple::physical::config::GRAPPLE;
 
     #[test]
     fn the_pump_pushes_against_the_motion_and_saturates() {
-        let config = SwingConfig::new();
+        let config = GRAPPLE.swing;
         assert_eq!(pump_impulse(Vec2::new(0.1, 0.0), 10.0, &config), Vec2::ZERO);
         let half_speed = (config.deadzone_mps + config.full_mps) / 2.0;
         let half = pump_impulse(Vec2::new(0.0, half_speed), 10.0, &config);
         assert!((half.y + 5.0 * config.scale).abs() < 1e-3, "{half}");
         let full = pump_impulse(Vec2::new(-9.0, 0.0), 10.0, &config);
         assert!((full.x - 10.0 * config.scale).abs() < 1e-3, "{full}");
-        let off = SwingConfig {
+        let off = SwingTuning {
             pump: false,
             ..config
         };
@@ -73,7 +74,7 @@ mod tests {
 
     #[test]
     fn the_sum_is_capped() {
-        let config = SwingConfig::new();
+        let config = GRAPPLE.swing;
         let total = combine(Vec2::new(10.0, 0.0), Vec2::new(30.0, 0.0), 10.0, &config);
         assert!((total.length() - 10.0 * config.max_scale).abs() < 1e-3);
         let small = combine(Vec2::new(1.0, 0.0), Vec2::new(0.0, 1.0), 10.0, &config);
@@ -86,7 +87,7 @@ mod tests {
 
     #[test]
     fn the_velocity_settles_on_the_samples() {
-        let config = SwingConfig::new();
+        let config = GRAPPLE.swing;
         let mut v = Vec2::ZERO;
         for _ in 0..30 {
             v = smooth_velocity(v, Vec2::new(1.0, 0.0), 1.0 / 30.0, &config);

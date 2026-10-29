@@ -59,7 +59,7 @@ use crate::controllers::{
     grab::{Candidate, GrabVolume},
     mode::VehicleClass,
     vehicles::{
-        config::{LeverSpec, PhysicalControlsConfig, StickSpec},
+        config::PhysicalControlsConfig,
         physical::{
             buttons::{ButtonEvent, ButtonInputs, ButtonPlacement, ButtonState, step_buttons},
             cues::TravelCues,
@@ -69,6 +69,7 @@ use crate::controllers::{
             sticks::{deflection3, step_stick},
         },
         steering::{CueArming, WheelCue, WheelGrip},
+        tuning::{LeverSpec, PhysicalControlsTuning, StickSpec},
         wheel::{BarsFrame, WheelFrame},
     },
 };
@@ -117,11 +118,9 @@ impl ControlKind {
     pub const fn enabled(self, config: &PhysicalControlsConfig) -> bool {
         match self {
             ControlKind::Wheel => config.wheel.enabled,
-            ControlKind::Handlebars => config.handlebars.enabled,
-            ControlKind::Cyclic => config.cyclic.enabled,
-            ControlKind::Collective => config.collective.enabled,
-            ControlKind::FlightStick => config.flight_stick.enabled,
-            ControlKind::Throttle => config.throttle.enabled,
+            ControlKind::Handlebars => config.handlebars,
+            ControlKind::Cyclic | ControlKind::FlightStick => config.sticks,
+            ControlKind::Collective | ControlKind::Throttle => config.levers,
         }
     }
 
@@ -281,7 +280,7 @@ impl Outputs {
 /// sticks and levers from the specs with their sides mirrored for the handedness.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Placement {
-    pub config: PhysicalControlsConfig,
+    pub config: PhysicalControlsTuning,
     pub dominant: Hand,
     pub wheel: WheelFrame,
     pub bars: BarsFrame,
@@ -289,7 +288,7 @@ pub struct Placement {
 
 impl Placement {
     /// Every control placed from the specs.
-    pub fn new(config: PhysicalControlsConfig, dominant: Hand) -> Self {
+    pub fn new(config: PhysicalControlsTuning, dominant: Hand) -> Self {
         Self {
             wheel: WheelFrame::from_spec(&config.wheel),
             bars: BarsFrame::from_spec(&config.handlebars),

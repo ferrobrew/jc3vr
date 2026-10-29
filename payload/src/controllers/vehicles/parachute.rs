@@ -100,6 +100,28 @@ pub fn torso_heading(estimate: Option<Quat>, last: Option<Quat>, head_yaw: Quat,
     }
 }
 
+/// The right handle's centre from the right shoulder joint along the torso's axes (+X out, +Y up,
+/// +Z back), metres; the left handle mirrors it.
+#[cfg(test)]
+pub const FROM_SHOULDER_M: Vec3 = Vec3::new(0.15, 0.12, -0.12);
+
+/// How far from a handle's centre a hand's grip may be for a grip press to take it over every other
+/// volume, metres.
+pub const RADIUS_M: f32 = 0.14;
+
+/// How far from a handle's centre a grip press outside every other volume still takes it rather
+/// than firing the grapple, metres. At least [`RADIUS_M`].
+pub const REACH_M: f32 = 0.30;
+
+/// Pulls shorter than this act on nothing, metres.
+pub const DEADZONE_M: f32 = 0.03;
+
+/// How far a holding hand may move from its handle's pull line (straight below where it took the
+/// handle, down to a full pull) before it lets go, metres. Generous, since a natural pull goes down
+/// and back and the grip opening is what lets go; this only catches a hand that has clearly left
+/// the handle without opening.
+pub const LET_GO_DISTANCE_M: f32 = 0.6;
+
 /// The time constant over which a stale torso heading eases toward the head's, seconds.
 #[cfg(test)]
 pub const TORSO_FALLBACK_S: f32 = 2.0;
@@ -108,12 +130,8 @@ pub const TORSO_FALLBACK_S: f32 = 2.0;
 /// [`Hand::index`], for a torso turned by `torso` in the cockpit frame: each shoulder's offset
 /// along the torso's axes, mirrored for the left.
 #[cfg(test)]
-pub fn handle_centres(
-    config: &ParachuteHandlesConfig,
-    shoulders: [Vec3; 2],
-    torso: Quat,
-) -> [Vec3; 2] {
-    let right = config.from_shoulder_m;
+pub fn handle_centres(shoulders: [Vec3; 2], torso: Quat) -> [Vec3; 2] {
+    let right = FROM_SHOULDER_M;
     let left = Vec3::new(-right.x, right.y, right.z);
     [shoulders[0] + torso * left, shoulders[1] + torso * right]
 }
@@ -132,7 +150,7 @@ pub fn candidates(
         Candidate {
             volume: GrabVolume::ParachuteHandle(hand),
             centre: held.unwrap_or(centres[i]),
-            radius: config.radius_m,
+            radius: RADIUS_M,
             hand: Some(hand),
         }
     })
@@ -141,18 +159,16 @@ pub fn candidates(
 /// The handles' wider reach: the free handles' volumes grown to the reach, which take a press that
 /// no other volume claims.
 pub fn reach_candidates(
-    config: &ParachuteHandlesConfig,
     state: &HandleState,
     centres: [Vec3; 2],
 ) -> impl Iterator<Item = Candidate> {
-    let radius = config.reach_m.max(config.radius_m);
     Hand::BOTH
         .into_iter()
         .filter(move |hand| state.holds[hand.index()].is_none())
         .map(move |hand| Candidate {
             volume: GrabVolume::ParachuteHandle(hand),
             centre: centres[hand.index()],
-            radius,
+            radius: REACH_M,
             hand: Some(hand),
         })
 }
@@ -182,7 +198,7 @@ pub fn step(
             release(state, hand, Release::GripReleased, events);
         }
         if let Some(hold) = state.holds[i]
-            && anchor_point(config, hold, grip).distance(grip) > config.let_go_distance_m
+            && anchor_point(config, hold, grip).distance(grip) > LET_GO_DISTANCE_M
         {
             release(state, hand, Release::MovedAway, events);
         }
@@ -206,11 +222,11 @@ pub fn release_all(state: &mut HandleState, events: &mut Vec<HandleEvent>) {
 /// below where it was taken, over the deadzone, as a share of the rest of a full pull.
 pub fn pull(config: &ParachuteHandlesConfig, hold: HandleHold, grip: Vec3) -> f32 {
     let drop = hold.rest.y - grip.y;
-    if !drop.is_finite() || drop <= config.deadzone_m {
+    if !drop.is_finite() || drop <= DEADZONE_M {
         return 0.0;
     }
-    let span = (config.full_pull_m - config.deadzone_m).max(1e-3);
-    ((drop - config.deadzone_m) / span).min(1.0)
+    let span = (config.full_pull_m - DEADZONE_M).max(1e-3);
+    ((drop - DEADZONE_M) / span).min(1.0)
 }
 
 /// The stick vector the pulls steer with (+X right, +Y forward): the right pull less the left one
@@ -272,7 +288,7 @@ mod tests {
     }
 
     fn centres() -> [Vec3; 2] {
-        handle_centres(&CONFIG, SHOULDERS, Quat::IDENTITY)
+        handle_centres(SHOULDERS, Quat::IDENTITY)
     }
 
     /// A tick with every tracked hand's grip held.
@@ -320,9 +336,9 @@ mod tests {
     #[test]
     fn the_handles_turn_with_the_torso() {
         let torso = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
-        let turned = handle_centres(&CONFIG, [Vec3::ZERO; 2], torso);
+        let turned = handle_centres([Vec3::ZERO; 2], torso);
         // Facing -X: the right handle is out toward -Z and ahead toward -X.
-        let right = CONFIG.from_shoulder_m;
+        let right = FROM_SHOULDER_M;
         assert!((turned[1] - Vec3::new(right.z, right.y, -right.x)).length() < 1e-5);
         assert!(turned[0].z > 0.0 && turned[1].z < 0.0);
     }
@@ -331,20 +347,20 @@ mod tests {
     fn a_press_near_a_free_handle_reaches_it_but_not_over_the_body() {
         let centres = centres();
         let state = HandleState::new();
-        let near = centres[1] + Vec3::X * (CONFIG.radius_m + CONFIG.reach_m) * 0.5;
+        let near = centres[1] + Vec3::X * (RADIUS_M + REACH_M) * 0.5;
         let placed = candidates(&CONFIG, &state, centres, [None; 2]);
         assert_eq!(grab_volume(near, Hand::Right, &placed), None);
-        let reach: Vec<_> = reach_candidates(&CONFIG, &state, centres).collect();
+        let reach: Vec<_> = reach_candidates(&state, centres).collect();
         assert_eq!(
             grab_volume(near, Hand::Right, &reach),
             Some(GrabVolume::ParachuteHandle(Hand::Right))
         );
         assert_eq!(grab_volume(near, Hand::Left, &reach), None);
-        let far = centres[1] + Vec3::X * CONFIG.reach_m * 1.1;
+        let far = centres[1] + Vec3::X * REACH_M * 1.1;
         assert_eq!(grab_volume(far, Hand::Right, &reach), None);
         // A held handle has no reach of its own: its hand is in its volume already.
         let (state, _) = both_taken();
-        assert_eq!(reach_candidates(&CONFIG, &state, centres).count(), 0);
+        assert_eq!(reach_candidates(&state, centres).count(), 0);
     }
 
     #[test]
@@ -388,7 +404,7 @@ mod tests {
     #[test]
     fn a_hand_that_leaves_its_handle_or_tracking_lets_go() {
         let (mut state, centres) = both_taken();
-        let away = centres[0] + Vec3::new(0.0, 0.0, CONFIG.let_go_distance_m + 0.1);
+        let away = centres[0] + Vec3::new(0.0, 0.0, LET_GO_DISTANCE_M + 0.1);
         let (_, events) = tick(&mut state, [Some(away), None], [false; 2]);
         assert_eq!(
             events,
@@ -404,8 +420,8 @@ mod tests {
     fn the_pull_is_measured_from_where_the_handle_was_taken() {
         let hold = HandleHold { rest: Vec3::ZERO };
         assert_eq!(pull(&CONFIG, hold, Vec3::Y * 0.2), 0.0, "raising is slack");
-        assert_eq!(pull(&CONFIG, hold, -Vec3::Y * CONFIG.deadzone_m), 0.0);
-        let half = CONFIG.deadzone_m + (CONFIG.full_pull_m - CONFIG.deadzone_m) * 0.5;
+        assert_eq!(pull(&CONFIG, hold, -Vec3::Y * DEADZONE_M), 0.0);
+        let half = DEADZONE_M + (CONFIG.full_pull_m - DEADZONE_M) * 0.5;
         assert!((pull(&CONFIG, hold, -Vec3::Y * half) - 0.5).abs() < 1e-5);
         assert_eq!(pull(&CONFIG, hold, -Vec3::Y), 1.0);
         assert_eq!(pull(&CONFIG, hold, Vec3::NAN), 0.0);

@@ -4,8 +4,8 @@ use super::*;
 
 fn plane() -> Placement {
     placement(|c| {
-        c.flight_stick.enabled = true;
-        c.throttle.enabled = true;
+        c.sticks = true;
+        c.levers = true;
     })
 }
 

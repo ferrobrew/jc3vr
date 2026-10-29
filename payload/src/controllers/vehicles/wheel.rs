@@ -19,7 +19,7 @@
 
 use glam::{Mat4, Quat, Vec3};
 
-use crate::controllers::vehicles::config::{HandlebarsSpec, WheelSpec};
+use crate::controllers::vehicles::tuning::{HandlebarsSpec, WheelSpec};
 
 /// A steering wheel in the cockpit frame: its hub, its in-plane axes, and its rim's radius.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -252,8 +252,6 @@ impl WheelSource {
 /// Why the wheel falls back to the configured spec.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Fallback {
-    /// Placing the wheel from the vehicle is switched off.
-    Disabled,
     /// The vehicle has no steering wheel part, as the modern bus, the old truck, and the tanks do.
     NoPart,
     /// The steering wheel part, or a part it hangs from, has broken off.
@@ -265,10 +263,9 @@ pub enum Fallback {
 impl Fallback {
     pub const fn label(self) -> &'static str {
         match self {
-            Fallback::Disabled => "the configured wheel (placing from the vehicle is off)",
-            Fallback::NoPart => "the configured wheel (the vehicle has no wheel part)",
-            Fallback::BrokenOff => "the configured wheel (the wheel part broke off)",
-            Fallback::NoModel => "the configured wheel (the wheel part has no usable model)",
+            Fallback::NoPart => "the fallback wheel (the vehicle has no wheel part)",
+            Fallback::BrokenOff => "the fallback wheel (the wheel part broke off)",
+            Fallback::NoModel => "the fallback wheel (the wheel part has no usable model)",
         }
     }
 }
@@ -284,13 +281,7 @@ pub struct WheelPartView<'a> {
 
 /// The wheel to use for a vehicle whose steering wheel part is `part`: the override for the part,
 /// else the fit to its box, else the configured spec.
-pub fn choose_wheel(
-    part: Option<WheelPartView>,
-    enabled: bool,
-) -> (Option<PartWheel>, WheelSource) {
-    if !enabled {
-        return (None, WheelSource::Fallback(Fallback::Disabled));
-    }
+pub fn choose_wheel(part: Option<WheelPartView>) -> (Option<PartWheel>, WheelSource) {
     let Some(part) = part else {
         return (None, WheelSource::Fallback(Fallback::NoPart));
     };
@@ -444,7 +435,7 @@ mod tests {
     use std::f32::consts::FRAC_PI_2;
 
     use super::*;
-    use crate::controllers::vehicles::config::PhysicalControlsConfig;
+    use crate::controllers::vehicles::tuning::PHYSICAL;
 
     fn close(a: Vec3, b: Vec3) -> bool {
         a.distance(b) < 1e-4
@@ -452,7 +443,7 @@ mod tests {
 
     #[test]
     fn angles_around_the_wheel_run_clockwise_from_the_top() {
-        let frame = WheelFrame::from_spec(&PhysicalControlsConfig::new().wheel);
+        let frame = WheelFrame::from_spec(&PHYSICAL.wheel);
         assert!(frame.hand_angle(frame.rim_point(0.0)).unwrap().abs() < 1e-5);
         let right = frame.rim_point(FRAC_PI_2);
         assert!(right.x > frame.centre.x);
@@ -508,8 +499,7 @@ mod tests {
             bounds,
             broken_off,
         };
-        let (wheel, source) =
-            choose_wheel(Some(view("moderncircuitracer_steeringwheel", false)), true);
+        let (wheel, source) = choose_wheel(Some(view("moderncircuitracer_steeringwheel", false)));
         assert_eq!(source, WheelSource::Override);
         assert_eq!(
             wheel.unwrap().hub,
@@ -517,27 +507,23 @@ mod tests {
                 .unwrap()
                 .hub
         );
-        let (wheel, source) = choose_wheel(Some(view("modernsuv_steeringwheel", false)), true);
+        let (wheel, source) = choose_wheel(Some(view("modernsuv_steeringwheel", false)));
         assert_eq!(source, WheelSource::Part);
         assert!(close(wheel.unwrap().hub, Vec3::new(0.0, 0.54, -0.835)));
         assert_eq!(
-            choose_wheel(Some(view("modernsuv_steeringwheel", true)), true).1,
+            choose_wheel(Some(view("modernsuv_steeringwheel", true))).1,
             WheelSource::Fallback(Fallback::BrokenOff)
         );
         assert_eq!(
-            choose_wheel(None, true).1,
+            choose_wheel(None).1,
             WheelSource::Fallback(Fallback::NoPart)
-        );
-        assert_eq!(
-            choose_wheel(Some(view("modernsuv_steeringwheel", false)), false).1,
-            WheelSource::Fallback(Fallback::Disabled)
         );
         let no_model = WheelPartView {
             bounds: None,
             ..view("modernsuv_steeringwheel", false)
         };
         assert_eq!(
-            choose_wheel(Some(no_model), true).1,
+            choose_wheel(Some(no_model)).1,
             WheelSource::Fallback(Fallback::NoModel)
         );
     }

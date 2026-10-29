@@ -358,8 +358,7 @@ unsafe fn run(owner: &Character, dt: f32) {
                     unsafe {
                         climb::reach(
                             &body_palm,
-                            config.climb.reach_m * active.world_scale,
-                            &config.climb,
+                            climb::config::CLIMB.reach_m * active.world_scale,
                             &mut |from, to| cast(from, to, &probe_options),
                         )
                     }

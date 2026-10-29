@@ -19,8 +19,6 @@ use jc3gi::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::config::Config;
-
 pub(crate) mod publication;
 
 /// The type id (`hashlittle("S_IDLE")`, the engine's own `HashString`) of the on-foot base idle rule
@@ -111,9 +109,17 @@ unsafe fn is_local_controller(controller: *mut AnimationController) -> bool {
     selected.is_some_and(|selected| std::ptr::eq(selected, controller))
 }
 
+/// Freeze the local player's idle breathing: the subtle chest and shoulder motion the base idle clip
+/// (`S_IDLE`) plays while standing still, distinct from the periodic idle fidget. There is no act to
+/// drop, so the animation clock's advance is held (`dt = 0`) for the local player's controller while
+/// it is in `S_IDLE`, freezing the pose at its current frame; movement, every other state, and NPCs
+/// run at normal speed. Off: a held pose is a bigger visual change than dropping the fidget, and the
+/// freeze wants validating in the headset before it is on.
+const SUPPRESS_IDLE_BREATHING: bool = false;
+
 /// Whether this controller belongs to the local player, that player's body rule state is the
 /// on-foot `S_IDLE`, and breathing suppression is enabled. Controller identity is checked before
-/// the config lock and state walk.
+/// the state walk.
 unsafe fn should_freeze(controller: *mut AnimationController) -> bool {
     unsafe {
         let Some(player) = Character::GetLocalPlayerCharacter().as_ref() else {
@@ -124,7 +130,7 @@ unsafe fn should_freeze(controller: *mut AnimationController) -> bool {
                 player.m_AnimatedModel.m_AnimationController as *const AnimationController,
                 controller,
             ),
-            || Config::lock_query(|c| c.movement.suppress_idle_breathing),
+            || SUPPRESS_IDLE_BREATHING,
             || (active_state_type_id(player), *S_IDLE_TYPE_ID),
         )
     }

@@ -1,14 +1,11 @@
 //! The head and view feature: the camera switch and the frozen-pose diagnostic, the headpose
-//! readout, the grapple comfort and turn settings it shares with other features, and the shared
+//! readout, the grapple comfort's readout it shares with the grapple feature, and the shared
 //! matrix-grid widget.
 
-use egui::Slider;
 use jc3gi::types::math::Matrix4;
 
 use crate::{
-    config, grapple, headpose,
-    headpose::config::VrTurnMode,
-    hooks,
+    config, grapple, headpose, hooks,
     vr::{self, FreezeMode, pose_control},
 };
 
@@ -65,12 +62,20 @@ pub(crate) fn head_view_status(ui: &mut egui::Ui) {
     ui.label(format!("Camera dtf: {:.3}", hooks::camera::last_dtf()));
 }
 
-pub(crate) fn grapple_comfort(ui: &mut egui::Ui) {
-    egui_grapple(ui, &mut config::edit().headpose.grapple);
-}
-
-pub(crate) fn turn_advanced(ui: &mut egui::Ui) {
-    egui_vr_turn(ui, &mut config::edit().headpose.vr_turn);
+/// The grapple comfort filter's blend (issue #36), and the switch for its reel telemetry log.
+pub(crate) fn grapple_comfort_readout(ui: &mut egui::Ui) {
+    ui.label(format!("Comfort blend: {:.2}", grapple::blend_factor()));
+    let mut log = grapple::telemetry::log_enabled();
+    if ui
+        .checkbox(&mut log, "Log reel telemetry")
+        .on_hover_text(
+            "Write per-tick filter state and per-frame pose composition to the log \
+             (`grapple_telemetry` target) for offline analysis.",
+        )
+        .changed()
+    {
+        grapple::telemetry::set_log_enabled(log);
+    }
 }
 
 /// The frozen-pose diagnostic ([`crate::vr::pose_control`]): pin the rendered pose, then drive it by
@@ -208,101 +213,6 @@ fn pose_row(ui: &mut egui::Ui, label: &str, value: &mut f32, step: f32, suffix: 
     }
     ui.end_row();
     changed
-}
-
-/// The grapple reel-in body-frame filter (issue #36): which rotation the reel is allowed to
-/// compose into the view, and the blend constants around the reel window.
-fn egui_grapple(ui: &mut egui::Ui, grapple: &mut grapple::GrappleComfortConfig) {
-    use crate::grapple::GrappleComfortMode;
-
-    let mode_label = |mode: GrappleComfortMode| match mode {
-        GrappleComfortMode::Off => "Off",
-        GrappleComfortMode::HoldView => "Hold view",
-        GrappleComfortMode::LevelPitch => "Level pitch",
-    };
-    egui::ComboBox::from_label("Mode")
-        .selected_text(mode_label(grapple.mode))
-        .show_ui(ui, |ui| {
-            ui.selectable_value(&mut grapple.mode, GrappleComfortMode::Off, "Off");
-            ui.selectable_value(&mut grapple.mode, GrappleComfortMode::HoldView, "Hold view")
-                .on_hover_text(
-                    "Cancel the body rotation the reel adds: the view stays where you were \
-                     looking at reel start, and only the HMD (or mouse) moves it.",
-                );
-            ui.selectable_value(
-                &mut grapple.mode,
-                GrappleComfortMode::LevelPitch,
-                "Level pitch",
-            )
-            .on_hover_text(
-                "Keep the view level while reeling: the body's pitch and roll are dropped, but \
-                 its yaw toward the target still composes.",
-            );
-        });
-    ui.add(Slider::new(&mut grapple.engage_s, 0.0..=1.0).text("Engage (s)"));
-    ui.add(Slider::new(&mut grapple.release_s, 0.0..=2.0).text("Release (s)"));
-    ui.checkbox(&mut grapple.yaw_handoff, "Yaw handoff (body turns to view)")
-        .on_hover_text(
-            "At reel end, turn the character toward where you are looking instead of sweeping \
-             the view toward the character's landing heading. VR, on foot, hold-view only.",
-        );
-    ui.add(Slider::new(&mut grapple.handoff_timeout_s, 0.0..=3.0).text("Handoff timeout (s)"));
-    ui.add(
-        Slider::new(&mut grapple.anchor_snap_threshold_mps, 0.0..=120.0)
-            .text("Landing snap threshold (m/s)"),
-    )
-    .on_hover_text(
-        "Single-step velocity change of the body-driven head position beyond which it is \
-         treated as a landing snap and absorbed; steady motion of any speed passes through. \
-         0 disables.",
-    );
-    ui.add(Slider::new(&mut grapple.anchor_snap_ease_s, 0.0..=1.0).text("Landing snap ease (s)"));
-    ui.label(format!("Blend: {:.2}", grapple::blend_factor()));
-    let mut log = grapple::telemetry::log_enabled();
-    if ui
-        .checkbox(&mut log, "Log reel telemetry")
-        .on_hover_text(
-            "Write per-tick filter state and per-frame pose composition to the log \
-             (`grapple_telemetry` target) for offline analysis.",
-        )
-        .changed()
-    {
-        grapple::telemetry::set_log_enabled(log);
-    }
-}
-
-/// The on-foot body-turn knobs used while the HMD owns the head (mouse and right stick turn the body,
-/// not the head). Separate from the flatscreen latch, which never runs under an OpenXR session.
-fn egui_vr_turn(ui: &mut egui::Ui, turn: &mut headpose::config::VrTurnConfig) {
-    ui.horizontal(|ui| {
-        ui.label("Mode:");
-        ui.radio_value(&mut turn.mode, VrTurnMode::Smooth, "Smooth");
-        ui.radio_value(&mut turn.mode, VrTurnMode::Snap, "Snap");
-    });
-    match turn.mode {
-        VrTurnMode::Smooth => {
-            ui.add(
-                Slider::new(&mut turn.mouse_turn_scale, 0.5..=20.0)
-                    .text("Mouse turn scale (°/unit)"),
-            )
-            .on_hover_text(
-                "Body yaw per unit of mouse-look delta. The whole-body turn is still rate-limited \
-                 by the Game tab's face-camera turn step.",
-            );
-            ui.add(Slider::new(&mut turn.smooth_scale, 0.0..=4.0).text("Stick turn scale (×)"))
-                .on_hover_text("Right-stick turn rate as a multiple of the mouse sensitivity.");
-            ui.add(Slider::new(&mut turn.deadzone, 0.0..=0.5).text("Stick deadzone"));
-        }
-        VrTurnMode::Snap => {
-            ui.add(Slider::new(&mut turn.snap_angle_deg, 5.0..=90.0).text("Snap angle (°)"));
-            ui.add(Slider::new(&mut turn.snap_threshold, 0.1..=1.0).text("Snap threshold"));
-        }
-    }
-    ui.add(Slider::new(&mut turn.max_body_lead_deg, 0.0..=180.0).text("Max body lead (°)"))
-        .on_hover_text(
-            "How far the turn target may lead the body's facing. Caps how long the body keeps \
-             turning after a fast flick stops.",
-        );
 }
 
 pub fn matrix_grid(ui: &mut egui::Ui, id: &str, label: &str, m: &Matrix4, other: Option<&Matrix4>) {

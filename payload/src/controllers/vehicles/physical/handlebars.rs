@@ -12,8 +12,8 @@ use std::f32::consts::{PI, TAU};
 use glam::{Quat, Vec2, Vec3};
 
 use crate::controllers::vehicles::{
-    config::HandlebarsSpec,
     physical::{ControlState, Holding, Placement},
+    tuning::HandlebarsSpec,
 };
 
 /// The handlebars as the holding hands took them.

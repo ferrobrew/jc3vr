@@ -54,7 +54,7 @@ pub(crate) fn route(id: FeatureId) -> FeatureRoute {
         | FeatureId::Video
         | FeatureId::Keyboard => FeatureRoute::Director,
         FeatureId::Environment => FeatureRoute::Environment,
-        FeatureId::Engine | FeatureId::Swimming => FeatureRoute::Engine,
+        FeatureId::Engine => FeatureRoute::Engine,
         FeatureId::Posture
         | FeatureId::BodyFit
         | FeatureId::AnimationIk
@@ -71,14 +71,11 @@ pub(crate) fn route(id: FeatureId) -> FeatureRoute {
         | FeatureId::Inventory
         | FeatureId::Explosives
         | FeatureId::WeaponSelection
-        | FeatureId::Locomotion
+        | FeatureId::OnFoot
         | FeatureId::Grapple
         | FeatureId::Climbing
-        | FeatureId::Driving
-        | FeatureId::VehicleControls
-        | FeatureId::Mounted
-        | FeatureId::Wingsuit
-        | FeatureId::Parachute
+        | FeatureId::Vehicles
+        | FeatureId::Air
         | FeatureId::Devices
         | FeatureId::Thresholds
         | FeatureId::Bindings
@@ -123,13 +120,6 @@ fn controls(
                 body(ui, id);
             }
             game::controls(ui, id);
-            match id {
-                FeatureId::Grapple => camera::grapple_comfort(ui),
-                FeatureId::Locomotion => {
-                    ui.collapsing("Advanced tuning", camera::turn_advanced);
-                }
-                _ => {}
-            }
         }
         FeatureRoute::HeadView => camera::head_view(ui),
         FeatureRoute::Runtime => vr::egui_debug_vr(ui),

@@ -8,9 +8,10 @@ use std::f32::consts::FRAC_PI_2;
 
 use super::*;
 use crate::controllers::vehicles::{
-    config::LeverAxis,
+    config::PhysicalControlsConfig,
     physical::{handlebars::bar_angles, levers::detent, sticks},
     steering,
+    tuning::{LeverAxis, PhysicalControlsTuning},
 };
 
 const DT: f32 = 1.0 / 30.0;
@@ -18,7 +19,7 @@ const DT: f32 = 1.0 / 30.0;
 fn placement(set: impl FnOnce(&mut PhysicalControlsConfig)) -> Placement {
     let mut config = PhysicalControlsConfig::new();
     set(&mut config);
-    Placement::new(config, Hand::Right)
+    Placement::new(PhysicalControlsTuning::of(&config), Hand::Right)
 }
 
 /// A tick with every tracked hand's grip held.
@@ -259,7 +260,7 @@ fn the_handlebars_steer_with_a_pulled_back_grip_and_lean_with_a_lowered_one() {
 
 #[test]
 fn grabbing_the_handlebars_off_their_ends_neither_jumps_nor_biases_them() {
-    let p = placement(|c| c.handlebars.enabled = true);
+    let p = placement(|c| c.handlebars = true);
     let kinds = [ControlKind::Handlebars];
     let ends = bar_ends(p.bars.centre, p.bars.half_width, Vec2::ZERO);
     let mut state = ControlState::default();
@@ -321,7 +322,7 @@ fn grabbing_the_handlebars_off_their_ends_neither_jumps_nor_biases_them() {
 
 #[test]
 fn a_stick_follows_the_hand_within_its_travel_and_springs_back() {
-    let p = placement(|c| c.cyclic.enabled = true);
+    let p = placement(|c| c.sticks = true);
     let kinds = [ControlKind::Cyclic];
     let top = p.config.cyclic.top_m;
     let mut state = ControlState::default();
@@ -373,10 +374,7 @@ fn a_stick_follows_the_hand_within_its_travel_and_springs_back() {
 
 #[test]
 fn a_throttle_stays_where_it_is_let_go_and_a_collective_returns() {
-    let p = placement(|c| {
-        c.throttle.enabled = true;
-        c.collective.enabled = true;
-    });
+    let p = placement(|c| c.levers = true);
     for (kind, holds) in [
         (ControlKind::Throttle, true),
         (ControlKind::Collective, false),
@@ -419,7 +417,7 @@ fn a_throttle_stays_where_it_is_let_go_and_a_collective_returns() {
 
 #[test]
 fn a_one_handed_control_passes_to_the_hand_that_takes_it() {
-    let p = placement(|c| c.cyclic.enabled = true);
+    let p = placement(|c| c.sticks = true);
     let kinds = [ControlKind::Cyclic];
     let top = p.config.cyclic.top_m;
     let mut state = ControlState::default();
@@ -447,7 +445,7 @@ fn a_one_handed_control_passes_to_the_hand_that_takes_it() {
 
 #[test]
 fn a_left_handed_layout_mirrors_the_sticks_but_not_the_wheel() {
-    let mut config = PhysicalControlsConfig::new();
+    let mut config = PhysicalControlsTuning::of(&PhysicalControlsConfig::new());
     config.wheel.centre_m.x = -0.3;
     let p = Placement::new(config, Hand::Left);
     let state = ControlState::default();

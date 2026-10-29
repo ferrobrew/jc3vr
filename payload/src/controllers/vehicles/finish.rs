@@ -8,20 +8,21 @@ use crate::controllers::{
     bindings::{controls::Controls, hold::Desired},
     frame::Hand,
     grab::GrabVolume,
-    hands::{self, tiers},
+    hands::{self, anchor::ANCHOR_BLEND_S, tiers},
     haptics::{self, Event},
     mode::Mode,
     vehicles::{
         arm_tick::arm_tick,
         axis_output::{axis_wanted, lever_axes_wanted, stick_axes_wanted},
-        config::PhysicalControlsConfig,
         control_haptics,
         handle_tick::handles_tick,
         mounted_grip::{self, MountedGripEvent},
         mounted_recoil, parachute, parachute_rig,
         physical::{self, ControlEvent, ControlKind, ControlState, buttons::ButtonEvent},
-        state::{ARM_PANEL, STATE, log_handle_events, push_events},
-        steering, wheel_render, write_outputs,
+        state::{STATE, log_handle_events, push_events},
+        steering,
+        tuning::PhysicalControlsTuning,
+        wheel_render, write_outputs,
     },
 };
 
@@ -65,7 +66,7 @@ pub(crate) fn finish_tick(
             held,
             grabs: mounted_grabs,
             dt,
-            blend_s: config.hands.anchor.blend_s,
+            blend_s: ANCHOR_BLEND_S,
         },
         &mut mounted_events,
     );
@@ -125,7 +126,7 @@ pub(crate) fn finish_tick(
             .handles_on
             .then(|| state.handles.holds.map(|hold| hold.is_some())),
     );
-    let blend = config.hands.anchor.blend_s;
+    let blend = ANCHOR_BLEND_S;
     for hand in Hand::BOTH {
         let i = hand.index();
         let hold = state.controls.holds[i];
@@ -205,7 +206,6 @@ pub(crate) fn finish_tick(
     state.status.button_presses += button_events.iter().filter(|e| e.engages()).count() as u64;
     push_events(&mut state.status, events);
     drop(state);
-    *ARM_PANEL.lock() = arms.filter(|_| config.vehicles.arm_steering.show_readout_panel);
     log_handle_events(&handle_events);
     control_haptics::pulse(&outputs, holds_now, &button_events);
     for event in button_events.iter().filter(|e| e.engages()) {
@@ -245,7 +245,7 @@ fn log_mounted_events(events: &[MountedGripEvent]) {
 /// otherwise the wheel angle that would give the vehicle's own steering, so the stick turns it too.
 pub(super) fn rendered_angle(
     controls: &ControlState,
-    config: &PhysicalControlsConfig,
+    config: &PhysicalControlsTuning,
     steering_turn: Option<f32>,
 ) -> f32 {
     let held = controls

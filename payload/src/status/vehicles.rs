@@ -7,10 +7,11 @@ use crate::{
         mode::{VehicleClass, VehicleSeat},
         vehicles::{
             self, VehicleSummary,
-            config::{CockpitButtonsConfig, MountedConfig},
+            config::MountedConfig,
             mounted_recoil,
             passenger::{self, PassengerStatus},
             physical::ControlKind,
+            tuning::{CockpitButtonsTuning, PhysicalControlsTuning},
         },
     },
     status::{Health, Line, Text, prose, text},
@@ -19,7 +20,7 @@ use crate::{
 pub(super) fn flight_controls() -> Line {
     let on = read_config(|c| {
         let p = &c.controllers.vehicles.physical;
-        p.flight_stick.enabled || p.throttle.enabled
+        p.sticks || p.levers
     });
     flight_controls_line(on, &vehicles::summary())
 }
@@ -30,7 +31,7 @@ pub(super) fn mounted_gun() -> Line {
 }
 
 fn mounted_gun_line(config: &MountedConfig, summary: &VehicleSummary, shots: u64) -> Line {
-    if !(config.aim_by_hands || config.anchor_hands) {
+    if !config.aim_by_hands {
         return Line::off("");
     }
     if !summary.mounted {
@@ -43,17 +44,13 @@ fn mounted_gun_line(config: &MountedConfig, summary: &VehicleSummary, shots: u64
         (true, [false, true]) => "Right hand on",
         (true, [false, false]) => "Hands off, gun held",
     });
-    let recoil = if config.recoil {
-        text!(", ", shots.to_string(), " kicks")
-    } else {
-        Text::default()
-    };
     Line::ok(text!(
         hands,
         ", ",
         summary.mounted_grip_events.to_string(),
-        " grabs and releases",
-        recoil
+        " grabs and releases, ",
+        shots.to_string(),
+        " kicks"
     ))
 }
 
@@ -84,11 +81,19 @@ fn passenger_aim_line(on: bool, seat: Option<VehicleSeat>, status: PassengerStat
 }
 
 pub(super) fn cockpit_buttons() -> Line {
-    let config = read_config(|c| c.controllers.vehicles.physical.buttons);
-    cockpit_buttons_line(&config, &vehicles::summary())
+    let physical = read_config(|c| c.controllers.vehicles.physical);
+    // The horn and the collective's twist come with their controls, so with every control off no
+    // button is reachable.
+    if !physical.any() {
+        return Line::off("");
+    }
+    cockpit_buttons_line(
+        &PhysicalControlsTuning::of(&physical).buttons,
+        &vehicles::summary(),
+    )
 }
 
-fn cockpit_buttons_line(config: &CockpitButtonsConfig, summary: &VehicleSummary) -> Line {
+fn cockpit_buttons_line(config: &CockpitButtonsTuning, summary: &VehicleSummary) -> Line {
     if !config.any() {
         return Line::off("");
     }
@@ -181,7 +186,7 @@ fn flight_controls_line(on: bool, summary: &VehicleSummary) -> Line {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::vehicles::physical::Outputs;
+    use crate::controllers::vehicles::{physical::Outputs, tuning::PHYSICAL};
 
     fn flying() -> VehicleSummary {
         VehicleSummary {
@@ -227,12 +232,11 @@ mod tests {
         );
         let off = MountedConfig {
             grip_handles: false,
-            recoil: false,
             ..config
         };
         assert_eq!(
             mounted_gun_line(&off, &manned, 12).text(),
-            "OK, HANDS ALWAYS ON, 3 GRABS AND RELEASES"
+            "OK, HANDS ALWAYS ON, 3 GRABS AND RELEASES, 12 KICKS"
         );
     }
 
@@ -271,8 +275,8 @@ mod tests {
 
     #[test]
     fn the_cockpit_buttons_name_what_the_seat_has() {
-        let config = CockpitButtonsConfig::new();
-        let off = CockpitButtonsConfig {
+        let config = PHYSICAL.buttons;
+        let off = CockpitButtonsTuning {
             horn: false,
             nitrous_button: false,
             twist_nitrous: false,

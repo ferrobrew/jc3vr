@@ -94,28 +94,20 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.vehicles.driver_weapons_by_hand = vehicles;
     c.vehicles.passenger_body_by_hand = vehicles;
     c.vehicles.mounted.aim_by_hands = vehicles;
-    c.vehicles.mounted.anchor_hands = vehicles;
     c.vehicles.mounted.grip_handles = vehicles;
-    c.vehicles.mounted.recoil = vehicles;
     c.vehicles.physical.wheel.enabled = vehicles;
-    c.vehicles.physical.handlebars.enabled = vehicles;
-    c.vehicles.physical.cyclic.enabled = vehicles;
-    c.vehicles.physical.collective.enabled = vehicles;
-    c.vehicles.physical.flight_stick.enabled = vehicles;
-    c.vehicles.physical.throttle.enabled = vehicles;
-    c.vehicles.physical.flight.twist_rudder = vehicles;
-    c.vehicles.physical.flight.afterburner_gate = vehicles;
-    c.vehicles.physical.buttons.horn = vehicles;
-    c.vehicles.physical.buttons.nitrous_button = vehicles;
-    c.vehicles.physical.buttons.twist_nitrous = vehicles;
-    c.vehicles.physical.buttons.twist_throttle = vehicles;
+    c.vehicles.physical.handlebars = vehicles;
+    c.vehicles.physical.sticks = vehicles;
+    c.vehicles.physical.levers = vehicles;
+    c.vehicles.physical.twist_rudder = vehicles;
+    c.vehicles.physical.nitrous_button = vehicles;
+    c.vehicles.physical.twist_throttle = vehicles;
     c.vehicles.arm_steering.wingsuit = vehicles;
     c.vehicles.driving_view.enabled = vehicles;
     c.vehicles.parachute_handles.enabled = vehicles;
     c.fingers.enabled = hands;
-    c.grapple.reel.enabled = hands;
-    c.grapple.tether.enabled = hands;
-    c.grapple.swing.pump = hands;
+    c.grapple.pull_to_reel = hands;
+    c.grapple.pump = hands;
 }
 
 /// Whether applying the preset changes any of its owned switches.

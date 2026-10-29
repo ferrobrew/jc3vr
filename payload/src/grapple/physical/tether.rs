@@ -12,7 +12,7 @@
 
 use crate::{
     controllers::mode::{AirborneVariant, Detection, Mode, OnFootVariant},
-    grapple::physical::config::TetherConfig,
+    grapple::physical::config::TetherTuning,
 };
 
 /// What the tether retract needs to know of the tick.
@@ -30,7 +30,7 @@ pub struct TetherTick {
 /// has no line of its own, nothing carries the character along a line, and the character is on
 /// the ground or falling. The wingsuit and the parachute are left out: the retract input boosts
 /// them too, and their arm steering and handles already use the hands.
-pub fn armed(tick: &TetherTick, config: &TetherConfig) -> bool {
+pub fn armed(tick: &TetherTick, config: &TetherTuning) -> bool {
     config.enabled
         && tick.tethers > 0
         && !tick.active_wire
@@ -42,9 +42,9 @@ pub fn armed(tick: &TetherTick, config: &TetherConfig) -> bool {
 }
 
 /// The retract value for a pull `depth_m` metres deep: zero inside the deadzone, then the cube
-/// root of the pull's fraction of the span to [`TetherConfig::full_m`], so that the game's cube
+/// root of the pull's fraction of the span to [`TetherTuning::full_m`], so that the game's cube
 /// of it is the fraction itself.
-pub fn retract_value(depth_m: f32, config: &TetherConfig) -> f32 {
+pub fn retract_value(depth_m: f32, config: &TetherTuning) -> f32 {
     if !depth_m.is_finite() || depth_m <= config.deadzone_m {
         return 0.0;
     }
@@ -57,7 +57,7 @@ pub fn retract_value(depth_m: f32, config: &TetherConfig) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::mode::Traversal;
+    use crate::{controllers::mode::Traversal, grapple::physical::config::GRAPPLE};
 
     fn tick(tethers: u32) -> TetherTick {
         TetherTick {
@@ -72,7 +72,7 @@ mod tests {
 
     #[test]
     fn the_retract_arms_only_with_free_tethers_on_foot_or_falling() {
-        let config = TetherConfig::new();
+        let config = GRAPPLE.tether;
         assert!(armed(&tick(1), &config));
         assert!(!armed(&tick(0), &config));
         assert!(!armed(
@@ -98,7 +98,7 @@ mod tests {
         let mut reeling = tick(1);
         reeling.detection.traversal = Some(Traversal::ReelingIn);
         assert!(!armed(&reeling, &config));
-        let off = TetherConfig {
+        let off = TetherTuning {
             enabled: false,
             ..config
         };
@@ -107,7 +107,7 @@ mod tests {
 
     #[test]
     fn the_squeeze_follows_the_pull_in_proportion() {
-        let config = TetherConfig::new();
+        let config = GRAPPLE.tether;
         assert_eq!(retract_value(0.0, &config), 0.0);
         assert_eq!(retract_value(config.deadzone_m, &config), 0.0);
         assert_eq!(retract_value(f32::NAN, &config), 0.0);

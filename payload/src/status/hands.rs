@@ -46,10 +46,7 @@ pub(super) fn characters() -> Line {
 }
 
 pub(super) fn moving_climbs() -> Line {
-    let on = read_config(|c| {
-        let p = &c.controllers.physical_hands;
-        climb::enabled(p) && p.climb.moving
-    });
+    let on = read_config(|c| climb::enabled(&c.controllers.physical_hands));
     let status = climb::status();
     let on_moving = status
         .hands

@@ -12,11 +12,11 @@ use glam::Vec3;
 use jc3gi::vehicle::vehicle::AirPlane;
 
 use crate::controllers::vehicles::{
-    config::LeverSpec,
     physical::{
         ControlKind, ControlState, Holding, Placement,
         cues::{self, ControlCue, TravelCues},
     },
+    tuning::LeverSpec,
 };
 
 /// A lever's position, `-1..=1`, for its handle pulled to `handle_now`.

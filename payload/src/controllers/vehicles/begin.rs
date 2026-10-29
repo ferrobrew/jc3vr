@@ -32,6 +32,7 @@ use crate::{
                 buttons::{Button, ButtonPlacement, PushPhase},
             },
             state::{MOUNTED_WEAPON, STATE, State, log_handle_events, push_events},
+            tuning::PhysicalControlsTuning,
             types::TickVolumes,
             wheel::CockpitTransform,
             wing_guide,
@@ -53,7 +54,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         Mode::Vehicle(seat) => Some(seat),
         _ => None,
     };
-    let physical_config = config.vehicles.physical;
+    let physical_config = PhysicalControlsTuning::of(&config.vehicles.physical);
     let xf = CockpitTransform {
         head_world: headpose::query().position,
         head_cockpit: active.head.position,
@@ -76,7 +77,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     let fit = fit::fit(
         &FitInputs {
             physical: &physical_config,
-            view: &config.vehicles.driving_view,
+            view_enabled: config.vehicles.driving_view.enabled,
             seat,
             xf: &xf,
             anchor: headpose::anchor(),
@@ -132,19 +133,20 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
                 handle_target(
                     GrabVolume::MountedHandle(hand),
                     mounted.handle_points[i].unwrap_or(point),
-                    mounted_config.grab_radius_m,
+                    mounted_grip::GRAB_RADIUS_M,
                     hand,
                 )
                 .held(hand),
             );
         }
     }
-    // A hand holding something of the table's takes no new control or handle: it keeps only the
-    // one it holds.
+    // A hand holding something of the table's (a weapon, a prop, a grenade, or a charge) takes no
+    // new control, button, or handle: it keeps only the one it holds, so the player drives
+    // one-handed or docks first.
     let holding = Hand::BOTH.map(|hand| {
         state.controls.holds[hand.index()].is_some()
             || state.mounted_grip.holds[hand.index()]
-            || (config.vehicles.free_hands_only && live::held_kind(hand).is_some())
+            || live::held_kind(hand).is_some()
     });
     let controls = physical::candidates(&placement, &state.controls, offered, grips);
     targets.extend(
@@ -227,7 +229,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         // A hand that misses a free handle by a little still takes it when nothing else is in
         // reach.
         targets.extend(
-            parachute::reach_candidates(&handles_config, &state.handles, centres)
+            parachute::reach_candidates(&state.handles, centres)
                 .filter(|c| {
                     c.hand.is_some_and(|hand| {
                         !holding[hand.index()] && native_centres[hand.index()].is_some()
@@ -245,7 +247,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     state.handles_config = handles_config;
     state.placement = Some(placement);
     state.latch = latch;
-    state.render = fit.render.filter(|_| physical_config.animate_wheel);
+    state.render = fit.render;
     state.steering_turn = fit.steering_turn;
     state.status.fit = fit.readout;
     state.status.wheel = seat.is_some_and(|s| s.driver).then_some(fit.wheel);
@@ -279,9 +281,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         }
     }
     wing_guide::submit(
-        config.overlay.enabled
-            && arms_act(mode, &config)
-            && config.vehicles.arm_steering.show_guide,
+        config.overlay.enabled && arms_act(mode, &config),
         arms_engaged,
     );
     TickVolumes { targets }

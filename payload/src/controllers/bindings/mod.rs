@@ -76,7 +76,7 @@ use crate::{
             summary::yank_armed_in,
             tables::Bindings,
             trigger_ownership::{Owner as TriggerOwner, RawTrigger, TriggerOwnership},
-            yank::{Yank, YankConfig, YankDetector},
+            yank::{GRAPPLE_YANK, Yank, YankConfig, YankDetector},
         },
         config::LocomotionDirection,
         frame::{self, Button, ControllerFrame, Hand},
@@ -493,7 +493,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     controls.ragdolling = mode::last_snapshot()
         .and_then(|snapshot| snapshot.character)
         .is_some_and(|character| character.has(StateBitFlag::SB_IN_RAGDOLL));
-    let grapple_distance = grapple_hand_distance(grapple_hand, &config.bindings.yank);
+    let grapple_distance = grapple_hand_distance(grapple_hand, &GRAPPLE_YANK);
     let snatch_button_owned = state.bindings.claim_snatch(
         raw_grapple_button,
         snatch::can_claim_button() && config.weapons.snatch.sling,
@@ -507,7 +507,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         dt,
         grapple_distance,
         yank_armed_in(line, &detection) && grapple_held,
-        &config.bindings.yank,
+        &config.bindings.yank.detector(),
     );
     if let Some(yank) = yank {
         controls.yank = true;

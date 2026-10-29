@@ -337,6 +337,18 @@ thread_local! {
     static IN_PROCESS_MOTION: Cell<bool> = const { Cell::new(false) };
 }
 
+/// The head pitch, in degrees, within which the underwater dive control does nothing, so a resting
+/// head does not slowly dive or surface the swimmer.
+const SWIM_PITCH_DEADZONE_DEG: f32 = 12.0;
+
+/// The furthest the underwater dive control will pitch the body, in degrees. Kept short of vertical,
+/// where a heading is undefined.
+const SWIM_PITCH_LIMIT_DEG: f32 = 55.0;
+
+/// How fast, in degrees per second, the underwater dive pitch follows the head. Slower than the yaw
+/// rate on purpose: a dive that snaps as fast as a turn reads as the world tipping over.
+const SWIM_PITCH_RATE_DEG_S: f32 = 60.0;
+
 /// The held underwater dive pitch, radians. Zero at the surface.
 static SWIM_PITCH: Mutex<f32> = Mutex::new(0.0);
 
@@ -346,13 +358,11 @@ static SWIM_PITCH: Mutex<f32> = Mutex::new(0.0);
 /// change. Taking it from the camera's world pitch instead is a runaway, because the view rides the
 /// body frame: pitching the body toward where the camera points pitches the camera further.
 fn advance_swim_pitch(dt: f32) -> f32 {
-    let (deadzone, limit, rate) = Config::lock_query(|c| {
-        (
-            c.movement.swim_pitch_deadzone_deg.to_radians(),
-            c.movement.swim_pitch_limit_deg.to_radians(),
-            c.movement.swim_pitch_rate_deg_s.to_radians(),
-        )
-    });
+    let (deadzone, limit, rate) = (
+        SWIM_PITCH_DEADZONE_DEG.to_radians(),
+        SWIM_PITCH_LIMIT_DEG.to_radians(),
+        SWIM_PITCH_RATE_DEG_S.to_radians(),
+    );
     let head = crate::headpose::body_relative_rotation() * Vec3::NEG_Z;
     let head_pitch = head.normalize_or_zero().y.clamp(-1.0, 1.0).asin();
     let wanted =

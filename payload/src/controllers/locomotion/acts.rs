@@ -25,8 +25,8 @@
 //! receives. The [`Watchdog`] watches for that on foot (the stunt area's acts are queued every tick
 //! the stick is held toward a side with no stunt area, and their replacement is the act the game
 //! itself queues at the same point when no turn is needed, so the watchdog never releases them): the filter normally acts in short bursts (a start,
-//! a stop), so when it has acted without a break for [`ActFilterConfig::watchdog_s`] the watchdog
-//! lets every act through for [`ActFilterConfig::release_s`] and logs a warning.
+//! a stop), so when it has acted without a break for [`WATCHDOG_S`] the watchdog lets every act
+//! through for [`RELEASE_S`] and logs a warning.
 
 use std::{
     ffi::CStr,
@@ -40,7 +40,6 @@ use parking_lot::Mutex;
 use crate::{
     controllers::{
         config::LocomotionConfig,
-        locomotion::config::ActFilterConfig,
         mode::{Mode, OnFootVariant, current as current_mode},
     },
     headpose::{Source, source},
@@ -121,8 +120,7 @@ pub(crate) unsafe fn filter(
     locomotion: &LocomotionConfig,
     controllers_enabled: bool,
 ) -> ActDecision {
-    let config = &locomotion.acts;
-    if !config.enabled {
+    if !locomotion.acts.enabled {
         return ActDecision::Pass;
     }
     let Some(table) = table() else {
@@ -147,13 +145,13 @@ pub(crate) unsafe fn filter(
             return ActDecision::Pass;
         }
         state.status.released = false;
-        if let Some(release) = state.watchdog.record(now, config) {
+        if let Some(release) = state.watchdog.record(now) {
             state.status.releases += 1;
             state.status.released = true;
             tracing::warn!(
                 target: "controllers",
                 acted_for_s = release.acted_for.as_secs_f32(),
-                release_s = config.release_s,
+                release_s = RELEASE_S,
                 "locomotion: the act filter acted without a break; letting every act through",
             );
             return ActDecision::Pass;
@@ -223,7 +221,7 @@ impl Watchdog {
 
     /// Record that the filter is about to act at `now`, and decide whether this is a burst that has
     /// gone on too long.
-    pub fn record(&mut self, now: Instant, config: &ActFilterConfig) -> Option<Release> {
+    pub fn record(&mut self, now: Instant) -> Option<Release> {
         let continues = self
             .last
             .is_some_and(|last| now.saturating_duration_since(last) <= BURST_GAP);
@@ -233,9 +231,8 @@ impl Watchdog {
         self.last = Some(now);
         let start = self.burst_start.unwrap_or(now);
         let acted_for = now.saturating_duration_since(start);
-        if acted_for.as_secs_f32() >= config.watchdog_s {
-            self.released_until =
-                Some(now + Duration::from_secs_f32(config.release_s.clamp(0.0, 60.0)));
+        if acted_for.as_secs_f32() >= WATCHDOG_S {
+            self.released_until = Some(now + Duration::from_secs_f32(RELEASE_S));
             self.burst_start = None;
             self.last = None;
             Some(Release { acted_for })
@@ -434,6 +431,13 @@ const STUNT_TURNS: [&CStr; 3] = [
     EventIdSymbolTable::ACT_STUNT_TURN_120L,
 ];
 
+/// How long the filter may act without a break before the watchdog decides the animation state
+/// machine is waiting on an act the filter keeps from it, in seconds.
+pub const WATCHDOG_S: f32 = 2.5;
+
+/// How long the watchdog then lets every act through, in seconds.
+pub const RELEASE_S: f32 = 2.0;
+
 /// Acts closer together than this belong to one burst.
 const BURST_GAP: Duration = Duration::from_millis(400);
 
@@ -499,21 +503,16 @@ mod tests {
 
     use super::*;
 
-    fn config() -> ActFilterConfig {
-        ActFilterConfig::new()
-    }
-
     #[test]
     fn short_bursts_never_release() {
         let mut dog = Watchdog::new();
         let start = Instant::now();
-        let config = config();
         // A start's worth of filtering every two seconds, with quiet between.
         for burst in 0..10u64 {
             for tick in 0..10u64 {
                 let now = start + Duration::from_millis(burst * 2_000 + tick * 33);
                 assert!(dog.admit(now));
-                assert_eq!(dog.record(now, &config), None);
+                assert_eq!(dog.record(now), None);
             }
         }
     }
@@ -522,26 +521,25 @@ mod tests {
     fn an_unbroken_burst_releases_then_rearms() {
         let mut dog = Watchdog::new();
         let start = Instant::now();
-        let config = config();
         let mut released_at = None;
         for tick in 0..200u64 {
             let now = start + Duration::from_millis(tick * 33);
             if !dog.admit(now) {
                 continue;
             }
-            if dog.record(now, &config).is_some() {
+            if dog.record(now).is_some() {
                 released_at = Some(now);
                 break;
             }
         }
         let released_at = released_at.expect("the watchdog never released");
         let acted = released_at.duration_since(start).as_secs_f32();
-        assert!(acted >= config.watchdog_s && acted < config.watchdog_s + 0.1);
-        let during = released_at + Duration::from_secs_f32(config.release_s / 2.0);
+        assert!((WATCHDOG_S..WATCHDOG_S + 0.1).contains(&acted));
+        let during = released_at + Duration::from_secs_f32(RELEASE_S / 2.0);
         assert!(!dog.admit(during));
-        let after = released_at + Duration::from_secs_f32(config.release_s + 0.01);
+        let after = released_at + Duration::from_secs_f32(RELEASE_S + 0.01);
         assert!(dog.admit(after));
-        assert_eq!(dog.record(after, &config), None);
+        assert_eq!(dog.record(after), None);
     }
 
     /// Every name in the tables, resolved to a distinct id.
