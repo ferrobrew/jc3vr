@@ -468,11 +468,11 @@ A setting marked "off" below is off by default and has to be switched on to test
 | Body dimensions and remap | the settings file's `[body]` section; `body.remap_hands` (on), `body.remap_head` (on) | Built. The head remap feeds the view through the posture (milestone 2). |
 | Mode detection | `mode.debounce_ticks` | Built. The headpose sim keeps its own on-foot test. |
 | Bindings and injection | `bindings.enabled`, `bindings.move_deadzone`, `bindings.trigger_deadzone`, `bindings.long_press_s`, `dominant_hand`, `locomotion.direction` (`Head` or `OffHand`) | Built for every mode. An off-hand grip press inside a grab volume (milestone 3) grabs, and elsewhere fires the grapple. Falling and under the parachute the dominant hand keeps the on-foot fire, reload, and grenade bindings. The wingsuit's evade is unbound. |
-| Gamepad semantics | `gamepad_semantics` | Built. |
+| Gamepad semantics | none; always on under the controller scheme | Built. |
 | Aim-state pin and mental-state cuts | `aim_state.skip_arm_ik`; the pins, the neutral aim point, the wall-block clear, and the mental-state cuts act whenever the controller scheme is in effect | Built, except the strafe reference correction (see "The aim-state pin"). |
 | Hands | `hands.ik`, `hands.late_update`, `hands.grip`; the tier table is fixed at `HandTierTable::PLAN` | The free and yielded tiers are built; milestones 3 and 4 add the action-runs and anchored tiers. A state assigned a tier that is not built for it yields. A left-handed layout mirrors the bindings but does not move a single gun to the left hand: the gun stays on the attach bone the game gives it, and the pouches and the wrist detonator are laid out around whichever hand holds it rather than the dominant hand. Swapping a single gun's attach bone to the dominant hand, as the dual-wield layout already does for the pistols, is a future item; it needs the two-handed weapons' foregrip geometry and the sight corrections checked for the mirrored hold. The grapple wire's render-time correction and elbow pole hints are not built. |
-| Gun aiming | `aim.gun`, `aim.max_distance_m`, `aim.min_target_distance_m`, `aim.sights` | Built. The sight line starts from the fire point, corrected by the config entry or the embedded table (milestone 5). |
-| Grapple aiming | `aim.grapple`, `aim.grapple_origin_m` | Built. |
+| Gun aiming | `aim.gun`, `aim.sights`; the ray length is `RAY_LENGTH_M` in `controllers::aim` | Built. The sight line starts from the fire point, corrected by the config entry or the embedded table (milestone 5). |
+| Grapple aiming | `aim.grapple`; the ray's origin is `GRAPPLE_ORIGIN_M` in `controllers::aim` | Built. |
 | World-space overlay | `overlay.enabled`, `overlay.gun_readout` (`None` by default, `Dot`, or `Laser`), `overlay.grapple_highlight`, `overlay.grapple_beam`, `overlay.hide_game_reticle`, `overlay.markers` (on), `overlay.ghost_hands`, `overlay.debug_gizmos`, and `overlay.body_mirror` with `overlay.body_mirror_distance_m` (the last three debugging aids, off), `overlay.depth_tolerance_m`, `overlay.depth_tolerance_rel`, `overlay.min_line_px`, `overlay.xray_alpha` | Built. |
 
 ### Milestone 2: posture and roomscale
@@ -495,10 +495,10 @@ The settings are under `weapons` unless named otherwise. The description is in [
 
 | Part | Settings | State |
 |---|---|---|
-| Sockets and pouches | `holsters.enabled`, `holsters.hip` (radius 0.12 m), `holsters.shoulder` (0.17 m), `holsters.chest` (0.09 m), `holsters.stick_click_cycles` (on); the pouches under `pouches`: `grenade` and `c4` (0.075 m, on either side of the chest, for either hand with no gun drawn and the free hand otherwise; `grenade_side` picks the grenades' side by the gun hand), `magazine` (0.075 m, at the front of the free hand's hip, for the free hand), and `reach_margin_m` (0.05 m) | Built, with a seated placement keyed on the roomscale posture (`roomscale.posture`). The volume offsets and radii are untuned. |
-| The two-handed foregrip | `foregrip.enabled`, `foregrip.hold`, `foregrip.radius_m`, `foregrip.release_distance_m`, `foregrip.blend_s`, `foregrip.fallback_distance_m`, `foregrip.min_span_m` | Built. |
-| The action-runs tier | `block_fire_during_actions` | Built for the game's reloads, draws, and holsters. |
-| Recoil | `recoil.enabled`, `recoil.suppress_camera_kick`, and the kick and spring tuning under `recoil` | Built. |
+| Sockets and pouches | `holsters.stick_click_cycles` (on); the sockets are always on, fixed at `SOCKETS` in `controllers::weapons::volumes`: the hips (radius 0.12 m), the shoulders (0.17 m), and the chest (0.09 m); the pouches are fixed at `POUCHES` there: the grenade and C4 pouches (0.075 m, on either side of the chest, for either hand with no gun drawn and the free hand otherwise, the grenades on the gun hand's side), the magazine pouch (0.075 m, at the front of the free hand's hip, for the free hand), and a reach margin of 0.05 m | Built, with a seated placement keyed on the roomscale posture (`roomscale.posture`). The volume offsets and radii are untuned. |
+| The two-handed foregrip | `foregrip.enabled`; the tuning is `FOREGRIP` in `controllers::weapons::foregrip` | Built. |
+| The action-runs tier | none; always on | Built for the game's reloads, draws, and holsters. |
+| Recoil | `recoil.enabled`, `recoil.kick_scale`; the spring tuning is fixed in `controllers::weapons::recoil`, and the game's camera kick is always suppressed while the guns aim by hand | Built. |
 | Haptics | `haptics.enabled`, `haptics.intensity`, `haptics.game_rumble`, `haptics.gamepad_rumble` ([haptics.md](haptics.md)) | Built. |
 | Separate pistols | `separate_pistols` | Built, as part of the two-handed inventory: each pistol its own weapon, a pistol in each hand ([physical-weapons.md, "Separate pistols"](physical-weapons.md#separate-pistols)). |
 | The anchored tier for the grapple line and the hang push | `hands.anchor.enabled`, `hands.anchor.hang_swing`, and the swing tuning under `hands.anchor` | Built for the reel and hang states. A grapple hand that holds anything (a gun, a prop, a grenade, or a charge) stays free. |
@@ -526,14 +526,14 @@ The settings are under `weapons` unless named otherwise. The description is in [
 
 | Part | Settings | State |
 |---|---|---|
-| The physical grenade throw | `grenade_throw`, and the release, warning, and fallback tuning under `grenade` | Built. No button throws a grenade. |
-| The C4 throw and the wrist detonator | `c4_throw` and `wrist_detonator` (both on), and the pouch, release, and button tuning under `c4` | Built. The R stick click detonates. |
-| Precision aim suppression | `scope.suppress_precision_aim` | Built. |
-| Scope lenses | `scopes`, `scope.source` (`OtherEye` by default, or `OwnEye`), `scope.path` (`Resample`; `SceneRender` falls back to it), and the lens tuning under `scope` | The resampled lens is built. The narrow-field scene render is not. |
-| Per-hand aim assist | `aim.assist_strength` (0, which is off), `aim.assist_max_distance_m`, `aim.assist_occlusion_tolerance_m` | Built. |
-| The true reload | `reload` (on): the button, the flick, the pouch (`pouches.magazine`), the well, the belt reload, the chamber, the manual action, and the dual split | Built, not run in the headset. See [reload.md](reload.md). |
+| The physical grenade throw | `grenade_throw`; the release, warning, and fallback tuning is `GRENADE` in `controllers::weapons::grenade` | Built. No button throws a grenade. |
+| The C4 throw and the wrist detonator | `c4_throw` and `wrist_detonator` (both on); the release and button tuning is `C4` in `controllers::weapons::c4` | Built. The R stick click detonates. |
+| Precision aim suppression | none; always on under the controller scheme | Built. |
+| Scope lenses | `scopes`; the lens reads the other eye's image when it has one, and the lens tuning is `LENS` in `controllers::weapons::scope` | The resampled lens is built. The narrow-field scene render is not. |
+| Per-hand aim assist | `aim.assist_strength` (0, which is off); the reach and occlusion tolerance are fixed in `controllers::aim::assist` | Built. |
+| The true reload | `reload` (on), with `reload.flick_eject`, `reload.belt.enabled`, `reload.action.physical`, `reload.loose.enabled`, and `reload.extraction`; the button, the flick, the well, the belt, the chamber, the manual action, and the dual split are tuned by `RELOAD` in `controllers::weapons::reload`, and the magazine pouch by `POUCHES` | Built, not run in the headset. See [reload.md](reload.md). |
 | The embedded sight table | `aim.sights` entries override it | Built. Only the `scoped`, `pistol`, and `tuned` grades are used. |
-| The sight tuning tool | `aim.sight_tuning.enabled` (off), `aim.sight_tuning.marker_distance_m` | Built. A tuned entry lasts until the payload unloads unless it is copied into the table. |
+| The sight tuning tool | `aim.sight_tuning.enabled` (off); the marker distance is fixed in `controllers::aim::sights::tuning` | Built. A tuned entry lasts until the payload unloads unless it is copied into the table. |
 | Hand-tier promotions | none | Not built beyond the anchored grapple and mounted-gun rows. |
 
 ### Tools

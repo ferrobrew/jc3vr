@@ -27,25 +27,7 @@ pub(super) fn hands(c: &HandsConfig) -> Result<(), Invalid> {
 
 /// Check the per-hand aiming settings. Paths are relative to `controllers.aim`.
 pub(super) fn aim(c: &AimConfig) -> Result<(), Invalid> {
-    range("aim.assist_strength", c.assist_strength, 0.0, 1.0)?;
-    nonnegative(
-        "aim.assist_max_distance_m",
-        c.assist_max_distance_m,
-        10_000.0,
-    )?;
-    nonnegative(
-        "aim.assist_occlusion_tolerance_m",
-        c.assist_occlusion_tolerance_m,
-        100.0,
-    )?;
-    positive("aim.max_distance_m", c.max_distance_m, 100_000.0)?;
-    nonnegative("aim.min_target_distance_m", c.min_target_distance_m, 100.0)?;
-    vec3("aim.grapple_origin_m", c.grapple_origin_m, 5.0)?;
-    nonnegative(
-        "aim.sight_tuning.marker_distance_m",
-        c.sight_tuning.marker_distance_m,
-        10_000.0,
-    )
+    range("aim.assist_strength", c.assist_strength, 0.0, 1.0)
 }
 
 /// Check the world-space overlay's settings. Paths are relative to `controllers.overlay`.

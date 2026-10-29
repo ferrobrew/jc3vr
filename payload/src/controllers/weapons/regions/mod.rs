@@ -47,6 +47,19 @@ pub use self::{
 };
 use crate::controllers::frame::Hand;
 
+/// How far outside the gun's model box a hand still touches the gun, metres.
+pub const REACH_M: f32 = 0.05;
+
+/// How far from the pistol grip a hand still holds the grip, metres.
+pub const GRIP_RADIUS_M: f32 = 0.07;
+
+/// How long the hand that let go of the grip for the other may keep hold of the gun where it was
+/// before its brace is given up: the brace waits for the gun to be measured in its new hand.
+pub const REBRACE: Duration = Duration::from_secs(1);
+
+/// How long a draw taken at a docked gun's barrel or stock waits for the gun to come into the hand.
+pub const DRAW_WAIT: Duration = Duration::from_secs(3);
+
 /// What a hand does on a gun.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum HandRole {

@@ -133,7 +133,7 @@ Every cancellation goes through one path: the redirect or cursor turning off, eg
 
 [`UIManager::PreUpdate`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##func-PreUpdate) is the frame's input boundary. Its detour peeks the route and prepares the map's controller sample before the input dispatch, so the map and the Scaleform delivery see the same sample, and each is committed only when its consumer runs: the engine skips both the dispatch and `SendMouseEvents` on a frame with no input-priority UI, and such a frame consumes no transition.
 
-[`UIManager::m_IsUsingGamepad`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##field-m_IsUsingGamepad) stays set under the default `controllers.gamepad_semantics`, and the engine forwards it to every menu movie as the ActionScript `OnUseGamepad` call. The native delivery has no other gate on it, and the mod bypasses the gamepad park while the controller owns the UI, but whether each menu's ActionScript still honours mouse rollover and press in gamepad mode cannot be read from the binary; it needs checking menu by menu in the headset.
+[`UIManager::m_IsUsingGamepad`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##field-m_IsUsingGamepad) stays set under the controller scheme, and the engine forwards it to every menu movie as the ActionScript `OnUseGamepad` call. The native delivery has no other gate on it, and the mod bypasses the gamepad park while the controller owns the UI, but whether each menu's ActionScript still honours mouse rollover and press in gamepad mode cannot be read from the binary; it needs checking menu by menu in the headset.
 
 ### The native map
 

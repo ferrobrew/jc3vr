@@ -33,7 +33,7 @@ fn process_camera_context(
 ) {
     let suppress = Config::lock_query(|c| {
         let c = &c.controllers;
-        c.enabled && c.aim.gun && c.weapons.recoil.suppress_camera_kick
+        c.enabled && c.aim.gun
     }) && scheme::is_controllers();
     // Without a local player the modifier does nothing at all, so the transform is written only
     // when it would have been.

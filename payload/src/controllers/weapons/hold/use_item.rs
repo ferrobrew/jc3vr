@@ -43,7 +43,7 @@ use crate::{
         weapons::{
             dual_wield::single,
             hold::{
-                self, Cause,
+                self, Cause, SNAP_S,
                 pickup::{self, TakeOptions},
                 rack,
                 refs::Strong,
@@ -113,12 +113,10 @@ static QUEUED: Mutex<Vec<Strong>> = Mutex::new(Vec::new());
 unsafe fn take(owner: &mut Character, weapon: &mut WeaponBase) {
     let activator = pickup::activator(owner);
     let route = unsafe { pickup::route(weapon, None) };
-    let hold = Config::lock_query(|c| c.controllers.weapons.hold);
     let result = match route {
         Ok(TakeRoute::Table { hand }) => {
             let options = TakeOptions {
-                drop_replaced: hold.drop_replaced,
-                slide_s: if hold.take_slide { hold.snap_s } else { 0.0 },
+                slide_s: SNAP_S,
                 cause: Cause::Pickup,
                 touch: None,
             };

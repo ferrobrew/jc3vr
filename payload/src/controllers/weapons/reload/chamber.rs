@@ -17,7 +17,7 @@
 
 use glam::Vec3;
 
-use crate::controllers::weapons::reload::config::ActionConfig;
+use crate::controllers::weapons::reload::tuning::ActionTuning;
 
 /// The mod's chamber.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -155,7 +155,7 @@ impl ActionWork {
     }
 
     /// Fold in one tick (`None` without a gun whose action can be worked).
-    pub fn step(&mut self, inputs: Option<WorkInputs>, config: &ActionConfig) -> Option<WorkEvent> {
+    pub fn step(&mut self, inputs: Option<WorkInputs>, config: &ActionTuning) -> Option<WorkEvent> {
         let Some(i) = inputs.filter(|i| {
             i.kind != ActionKind::None
                 && i.hand.is_finite()
@@ -225,8 +225,9 @@ impl ActionWork {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::weapons::reload::tuning::RELOAD;
 
-    const CONFIG: ActionConfig = ActionConfig::new();
+    const CONFIG: ActionTuning = RELOAD.action;
     const HANDLE: Vec3 = Vec3::new(0.1, -0.2, -0.3);
 
     fn inputs(kind: ActionKind, back: f32, pressed: bool, held: bool) -> Option<WorkInputs> {

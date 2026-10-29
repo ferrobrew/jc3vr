@@ -13,9 +13,8 @@ use crate::controllers::{
     grab::GrabVolume,
     loadout::{ItemId, Socket},
     weapons::{
-        config::HolstersConfig,
         docks::{SocketPoint, SocketUse},
-        volumes::{self, BodyFrame},
+        volumes::{self, BodyFrame, SocketTuning},
     },
 };
 
@@ -108,7 +107,7 @@ impl Sample {
         &self,
         frames: &Frames,
         body: Option<&BodyFrame>,
-        holsters: &HolstersConfig,
+        holsters: &SocketTuning,
     ) -> Self {
         let mut sample = self.clone();
         sample.policy = if holsters.follow_docks {

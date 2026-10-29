@@ -146,10 +146,7 @@ fn hand_on_gun(hand: Hand) -> Line {
 }
 
 pub(super) fn armed() -> Line {
-    if !read_config(|c| {
-        let hold = c.controllers.weapons.hold;
-        hold.either_hand && hold.second_weapon
-    }) {
+    if !read_config(|c| c.controllers.weapons.hold.either_hand) {
         return Line::off("");
     }
     let armed = armed::status();
@@ -174,12 +171,6 @@ pub(super) fn armed() -> Line {
 }
 
 pub(super) fn docks() -> Line {
-    if !read_config(|c| {
-        let holsters = c.controllers.weapons.holsters;
-        holsters.enabled && holsters.follow_docks
-    }) {
-        return Line::off("");
-    }
     Line::ok(text!(
         weapons::status().docks_followed.to_string(),
         " on their weapons"
@@ -210,7 +201,7 @@ pub(super) fn last_refusal() -> Line {
 }
 
 pub(super) fn takes() -> Line {
-    if !read_config(|c| c.controllers.weapons.hold.steal) {
+    if !read_config(|c| c.controllers.weapons.hold.either_hand) {
         return Line::off("");
     }
     let take = hold::status().take;
@@ -223,7 +214,7 @@ pub(super) fn takes() -> Line {
 }
 
 pub(super) fn racks() -> Line {
-    if !read_config(|c| c.controllers.weapons.hold.racks) {
+    if !read_config(|c| c.controllers.weapons.hold.either_hand) {
         return Line::off("");
     }
     let take = hold::status().take;

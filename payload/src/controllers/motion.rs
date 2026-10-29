@@ -240,7 +240,7 @@ fn velocities(samples: &[MotionSample], offset: Vec3) -> impl Iterator<Item = (f
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::weapons::config::GrenadeConfig;
+    use crate::controllers::weapons::grenade::tuning::GRENADE;
 
     const DT: f64 = 1.0 / 90.0;
 
@@ -279,7 +279,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let release_s = 59.0 * DT;
-        let tuning = GrenadeConfig::new();
+        let tuning = GRENADE;
         let wide = release_velocity(
             &samples,
             release_s,

@@ -4,10 +4,7 @@
 //! Everything here runs on the input tick, on the main thread outside the world update, unless a
 //! function says otherwise.
 
-use std::{
-    ptr::NonNull,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use std::ptr::NonNull;
 
 use glam::{Mat4, Vec3};
 use jc3gi::{
@@ -62,7 +59,8 @@ pub enum Fate {
 }
 
 /// The slots whose weapons the inventory tracks and carries: the pistols, the two-handed weapons,
-/// and the special weapons, and the heavy weapons while [`heavy_tracked`] holds. The grenade, the
+/// the special weapons, and the heavy weapons, which it keeps beyond the slots, docks on the back,
+/// and arms in a hand, never wielding them from their slot, whose unequip drops them. The grenade, the
 /// planted explosive, and the beacon are in use while holstered, and the sun gun drops itself, so
 /// the game keeps those.
 pub(crate) const TRACKED_SLOTS: [WeaponSlot; 4] = [
@@ -72,31 +70,15 @@ pub(crate) const TRACKED_SLOTS: [WeaponSlot; 4] = [
     WeaponSlot::E_SLOT_HEAVY,
 ];
 
-/// Whether the inventory tracks the heavy slot's weapons as it does the others': kept beyond the
-/// slots, docked on the back, and armed in a hand, never wielded from their slot, whose unequip
-/// drops them. Published each input tick from `weapons.inventory.heavy_on_back`.
-pub(crate) fn heavy_tracked() -> bool {
-    HEAVY_TRACKED.load(Ordering::Relaxed)
-}
-
-pub(crate) fn set_heavy_tracked(on: bool) {
-    HEAVY_TRACKED.store(on, Ordering::Relaxed);
-}
-
 /// Whether the inventory tracks `slot`'s weapons now.
 pub(crate) fn tracks(slot: WeaponSlot) -> bool {
-    match slot {
-        WeaponSlot::E_SLOT_HEAVY => heavy_tracked(),
-        _ => TRACKED_SLOTS.contains(&slot),
-    }
+    TRACKED_SLOTS.contains(&slot)
 }
 
 /// The slots the inventory tracks now.
 pub(crate) fn tracked_slots() -> impl Iterator<Item = WeaponSlot> {
     TRACKED_SLOTS.into_iter().filter(|&slot| tracks(slot))
 }
-
-static HEAVY_TRACKED: AtomicBool = AtomicBool::new(true);
 
 /// The original native slot pointer matching an identity, without a pointee borrow.
 /// The caller must retain the slot source and serialize native access while using the handle.

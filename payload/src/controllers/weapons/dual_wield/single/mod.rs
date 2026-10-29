@@ -715,7 +715,7 @@ unsafe fn share_hands(pair: ObjectKey, twin: ObjectKey) {
     let other = hand.other();
     let both_hands = Config::lock_query(|c| {
         let hold = c.controllers.weapons.hold;
-        hold.either_hand && hold.second_weapon
+        hold.either_hand
     });
     if both_hands && live::in_hand(other).is_none() && !unsafe { hold::take_into(other, twin) } {
         tracing::info!(target: "controllers", "single pistols: the second pistol stays on its hip");

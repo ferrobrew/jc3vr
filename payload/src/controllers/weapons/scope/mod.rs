@@ -7,14 +7,13 @@
 //! - [`renderer`]: the D3D11 pipeline that copies the eyes' images and draws the lens.
 //!
 //! The lens is a magnified resample of a rendered eye image, drawn as a disc at the scope's eyepiece
-//! while an eye is within [`ScopeConfig::max_eye_distance_m`] of it. The scene is not rendered a
+//! while an eye is within [`LensTuning::max_eye_distance_m`](lens::LensTuning::max_eye_distance_m)
+//! of it. The scene is not rendered a
 //! third time: the scope is at the eye and looks along almost the same line, so the region around
 //! the sight line's projection, magnified, is the scope's view, correct in parallax at the aim
 //! point. The sighting eye's own image has the scope's model in front of that region, so by default
-//! the lens reads the other eye's image, which the scope does not block
-//! ([`LensSource::OtherEye`](crate::controllers::weapons::config::LensSource::OtherEye)). The narrow-field scene render
-//! ([`LensPath::SceneRender`](crate::controllers::weapons::config::LensPath::SceneRender)) is not
-//! built, and selecting it uses the resample.
+//! the lens reads the other eye's image, which the scope does not block ([`lens::source_eye`]). A
+//! narrow-field scene render of its own is not built.
 //!
 //! The frame runs in three steps at the end of `RenderEngine::PostDraw`, beside the world-space
 //! overlay:
@@ -55,12 +54,9 @@ use crate::{
         hands::late,
         overlay::view::{self, EyeView},
         scheme,
-        weapons::{
-            config::{LensPath, ScopeConfig},
-            scope::{
-                lens::{EyeCamera, Lens, SightAnchor},
-                renderer::{EyeRegion, Renderer},
-            },
+        weapons::scope::{
+            lens::{EyeCamera, LENS, Lens, LensTuning, SightAnchor},
+            renderer::{EyeRegion, Renderer},
         },
     },
     hooks,
@@ -122,8 +118,6 @@ pub struct ScopeStatus {
     pub idle: Option<LensIdle>,
     /// The eye that sights through the lens and the eye whose image it reads.
     pub eyes: Option<(usize, usize)>,
-    /// The scene render was asked for; the resample is drawn instead.
-    pub scene_render_fallback: bool,
     /// Frames the lens was drawn in, since the payload loaded.
     pub frames: u64,
     /// The last failure to build the pipeline, copy an eye, or draw.
@@ -164,24 +158,17 @@ pub(crate) fn tick(eye: usize) {
     if eye != 0 || crate::stereo::far_phase() {
         return;
     }
-    let (enabled, config) = Config::lock_query(|c| {
-        (
-            c.controllers.enabled && c.controllers.weapons.scopes,
-            c.controllers.weapons.scope,
-        )
-    });
+    let enabled = Config::lock_query(|c| c.controllers.enabled && c.controllers.weapons.scopes);
     let mut state = STATE.lock();
-    let plan = plan(enabled, &config, &mut state.anchors);
+    let plan = plan(enabled, &LENS, &mut state.anchors);
     let mut status = STATUS.lock();
     status.scope = plan.scope;
     status.eyepiece_distance_m = plan.eyepiece_distance_m;
     status.idle = plan.idle;
-    status.scene_render_fallback = config.path == LensPath::SceneRender;
     if plan.idle.is_some() {
         status.eyes = None;
     }
     state.plan = plan;
-    state.config = config;
 }
 
 /// Copy the dispatch's eye images for the lens while a scoped weapon is held. Called under the
@@ -248,7 +235,6 @@ pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Text
     if sighting != eye {
         return;
     }
-    let config = state.config;
     let Some((v, viewport)) = view::current(eye) else {
         return;
     };
@@ -262,7 +248,7 @@ pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Text
             .map(|c| c.camera)
     };
     let other = fresh(1 - eye.min(1));
-    let source = lens::source_eye(eye, config.source, other.is_some());
+    let source = lens::source_eye(eye, other.is_some());
     let source_camera = if source == eye {
         // The own image is this dispatch's copy, taken with this eye's camera.
         fresh(eye).map(|_| camera_of(&v))
@@ -272,7 +258,7 @@ pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Text
     let Some(source_camera) = source_camera else {
         return;
     };
-    let constants = lens::constants(&lens, &camera_of(&v), &source_camera, &config);
+    let constants = lens::constants(&lens, &camera_of(&v), &source_camera, &LENS);
     let viewport = viewport.unwrap_or(D3D11_VIEWPORT {
         TopLeftX: 0.0,
         TopLeftY: 0.0,
@@ -322,7 +308,6 @@ struct State {
     /// from, by [`Hand::index`].
     anchors: [Option<(u64, SightAnchor)>; 2],
     plan: Plan,
-    config: ScopeConfig,
 }
 
 impl State {
@@ -357,7 +342,6 @@ static STATE: Mutex<State> = Mutex::new(State {
         eyepiece_distance_m: None,
         idle: Some(LensIdle::Disabled),
     },
-    config: ScopeConfig::new(),
 });
 
 static STATUS: Mutex<ScopeStatus> = Mutex::new(ScopeStatus {
@@ -365,7 +349,6 @@ static STATUS: Mutex<ScopeStatus> = Mutex::new(ScopeStatus {
     eyepiece_distance_m: None,
     idle: None,
     eyes: None,
-    scene_render_fallback: false,
     frames: 0,
     error: None,
 });
@@ -384,11 +367,7 @@ const MAX_COPY_AGE: Duration = Duration::from_millis(100);
 
 /// Plan the frame's lens, re-anchoring each scoped gun's sight line to its wrist when the aim has
 /// run since its anchor was taken, and taking the lens of the scope raised to the eye.
-fn plan(
-    enabled: bool,
-    config: &ScopeConfig,
-    anchors: &mut [Option<(u64, SightAnchor)>; 2],
-) -> Plan {
+fn plan(enabled: bool, config: &LensTuning, anchors: &mut [Option<(u64, SightAnchor)>; 2]) -> Plan {
     if !enabled {
         return idle(LensIdle::Disabled);
     }
@@ -435,7 +414,7 @@ struct FrameInputs<'a> {
     wrists: [Option<Pose>; 2],
     /// Both eyes' world positions.
     eyes: [Option<Vec3>; 2],
-    config: &'a ScopeConfig,
+    config: &'a LensTuning,
 }
 
 /// The aim's view of the scoped gun at `address` in `hand`: the wielded weapon when its first gun
@@ -561,7 +540,7 @@ mod tests {
             lens: Some(Lens::new(
                 &aim::ray::Ray::new(Vec3::ZERO, Vec3::NEG_Z).unwrap(),
                 100.0,
-                &ScopeConfig::new(),
+                &LENS,
             )),
             sighting: sighting.then_some(0),
             eyepiece_distance_m: Some(distance),

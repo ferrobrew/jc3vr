@@ -12,6 +12,7 @@ use jc3gi::{
 
 use crate::controllers::{
     aim::{
+        GRAPPLE_ORIGIN_M,
         ray::Ray,
         raycast::{self, CastOptions},
     },
@@ -33,7 +34,7 @@ use crate::controllers::{
         target::{Offer, OfferKind},
     },
     weapons::hold::{
-        Cause,
+        Cause, SNAP_S,
         pickup::{self, TakeOptions},
         refs::{Strong, Weak},
         steal,
@@ -232,7 +233,7 @@ pub(super) unsafe fn pull(
         Verdict::Pulling => {}
         Verdict::Arrived => {
             unsafe { engine::cancel(wire) };
-            return unsafe { arrive(hand, grabbed, body, centre, palm, input) }.map(Some);
+            return unsafe { arrive(hand, grabbed, body, centre, palm) }.map(Some);
         }
         Verdict::Stalled => return Err(Refusal::Stalled),
         Verdict::OutOfLine => return Err(Refusal::OutOfLine),
@@ -278,15 +279,11 @@ pub(super) unsafe fn pull(
 /// # Safety
 ///
 /// The main thread, outside the world update.
-pub(super) unsafe fn prepare_sling(
-    hand: Hand,
-    wire: NonZeroUsize,
-    input: &FinishInput,
-) -> Result<Vec3, Refusal> {
+pub(super) unsafe fn prepare_sling(hand: Hand, wire: NonZeroUsize) -> Result<Vec3, Refusal> {
     let wrist = ik::tick_records().current[hand.index()]
         .ok_or(Refusal::Gone)?
         .wrist;
-    let anchor = wrist.position + wrist.orientation * input.config.aim.grapple_origin_m;
+    let anchor = wrist.position + wrist.orientation * GRAPPLE_ORIGIN_M;
     let transform = Mat4::from_rotation_translation(wrist.orientation, anchor);
     if !transform.is_finite() {
         return Err(Refusal::Gone);
@@ -319,7 +316,7 @@ pub(super) unsafe fn sling(
     };
     let state =
         unsafe { physical_hands::body_state(body, grabbed.object) }.map_err(Refusal::Body)?;
-    let anchor = unsafe { prepare_sling(hand, wire, input) }?;
+    let anchor = unsafe { prepare_sling(hand, wire) }?;
     let rope = match rope {
         Some(rope) => rope,
         slot @ None => slot.insert(Sling::new(state.pose.centre, anchor).ok_or(Refusal::Gone)?),
@@ -369,15 +366,12 @@ unsafe fn arrive(
     body: u32,
     centre: Vec3,
     palm: Vec3,
-    input: &FinishInput,
 ) -> Result<Arrival, Refusal> {
     match grabbed.kind {
         Pulled::Weapon => {
             let (weapon, _) = unsafe { engine::dropped(grabbed.object) }?;
-            let hold = &input.config.weapons.hold;
             let options = TakeOptions {
-                drop_replaced: hold.drop_replaced,
-                slide_s: if hold.take_slide { hold.snap_s } else { 0.0 },
+                slide_s: SNAP_S,
                 cause: Cause::Snatch,
                 touch: None,
             };

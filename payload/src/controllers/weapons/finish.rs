@@ -1,7 +1,7 @@
 //! The second half of the weapon handling's input tick: act on the tick's grabs, run the grenade
 //! throw and the reload, and hold the fire inputs back during a weapon action.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use jc3gi::{
     character::inventory::WeaponSlot, equipment::weapon::WeaponBase,
@@ -32,13 +32,13 @@ use crate::{
         mode,
         weapons::{
             begin::with_holder,
-            c4,
+            c4::{self, tuning::C4Tuning},
             capabilities::{
                 Capabilities, gun_hands_now, gun_owners_now, tracked_hands, trigger_claims,
             },
             dual_wield::single,
             engine,
-            foregrip::{self, GripGeometry, Inputs, Transition, TwoHandedWeapon},
+            foregrip::{self, FOREGRIP, GripGeometry, Inputs, Transition, TwoHandedWeapon},
             grenade,
             hold::{self, armed, tick},
             inventory::engine::slot_of,
@@ -149,9 +149,7 @@ pub(crate) fn finish_tick(
             regions::drop_rebrace();
             return None;
         }
-        let wait =
-            Duration::try_from_secs_f32(config.weapons.regions.rebrace_s).unwrap_or(Duration::ZERO);
-        let (region, anchor) = regions::take_rebrace(w.address, off, now, wait)?;
+        let (region, anchor) = regions::take_rebrace(w.address, off, now, regions::REBRACE)?;
         Some((
             region,
             regions::out_of_gun(geometry.gun, anchor, world_scale),
@@ -183,7 +181,7 @@ pub(crate) fn finish_tick(
         grip_held: two_handed.is_some_and(|w| grips[w.holder.other().index()].held()),
         slide,
     };
-    let transition = foregrip::tick(&inputs, dt, &config.weapons.foregrip);
+    let transition = foregrip::tick(&inputs, dt, &FOREGRIP);
     if let (Some(Transition::Grabbed), Some(w)) = (transition, two_handed)
         && config.weapons.regions.enabled
     {
@@ -347,7 +345,7 @@ pub(crate) fn finish_tick(
             dominant: config.acting_hand(),
             world_scale: active.as_ref().map_or(1.0, |a| a.world_scale),
         },
-        &config.weapons.c4,
+        &C4Tuning::of(&config.weapons.c4),
     );
     c4::wrist::input_tick(
         &c4::wrist::TickInputs {
@@ -418,8 +416,7 @@ pub(crate) fn finish_tick(
         holder,
         carrying: carries.map(|c| c.is_some()),
         docking,
-        action_running: Hand::BOTH
-            .map(|h| config.weapons.block_fire_during_actions && weapon_action_running(h)),
+        action_running: Hand::BOTH.map(weapon_action_running),
     }));
     let explosive_blocked = Hand::BOTH.into_iter().any(|hand| {
         (grenade::holds(hand) || c4::throwing_hand() == Some(hand))
@@ -430,12 +427,7 @@ pub(crate) fn finish_tick(
         || carried.is_some()
         || holder.is_some_and(|h| docking[h.index()])
         || primary_trigger_idle(current, &triggers)
-        || primary_action_blocked(
-            holder,
-            Hand::BOTH.map(|hand| {
-                config.weapons.block_fire_during_actions && weapon_action_running(hand)
-            }),
-        );
+        || primary_action_blocked(holder, Hand::BOTH.map(weapon_action_running));
     if fire_blocked {
         hold_fire_back(desired);
     }
@@ -664,19 +656,19 @@ fn grab_socket(hand: Hand, socket: Socket, config: &ControllersConfig) -> Option
     let snapshot = live::snapshot_now()?;
     let settings = &config.weapons.hold;
     let rules = GrabRules {
-        both_hands: settings.either_hand && settings.second_weapon,
+        both_hands: settings.either_hand,
     };
     let outcome = match grab::grab(&snapshot, hand, socket, rules) {
         // SAFETY: the input tick runs on the main thread outside the world update.
         Ok(SocketMove::Draw { .. }) => {
-            match unsafe { hold::act::draw(hand, socket, settings.snap_s) } {
+            match unsafe { hold::act::draw(hand, socket, hold::SNAP_S) } {
                 Ok(()) => SocketOutcome::Drew,
                 Err(refusal) => SocketOutcome::Failed(refusal),
             }
         }
         // SAFETY: as above.
         Ok(SocketMove::Dock { .. }) => {
-            match unsafe { hold::act::dock(hand, socket, settings.snap_s) } {
+            match unsafe { hold::act::dock(hand, socket, hold::SNAP_S) } {
                 Ok(()) => SocketOutcome::Docked,
                 Err(refusal) => SocketOutcome::Failed(refusal),
             }
@@ -718,12 +710,11 @@ fn release(
         GrabVolume::Socket(socket) => Some(socket),
         _ => None,
     });
-    let settings = &config.weapons.hold;
     // SAFETY: the input tick runs on the main thread outside the world update.
     match grab::release(&snapshot, hand, over, unsafe { droppable(object) }) {
         Release::Dock(socket) => {
             // SAFETY: as above.
-            match unsafe { hold::act::dock(hand, socket, settings.snap_s) } {
+            match unsafe { hold::act::dock(hand, socket, hold::SNAP_S) } {
                 // A dock by opening the grip confirms as a dock by a grab does.
                 Ok(()) => haptics::play(hand, Event::VolumeGrab),
                 Err(refusal) => {
@@ -740,7 +731,7 @@ fn release(
                 return;
             }
             // SAFETY: as above.
-            if let Err(refusal) = unsafe { hold::act::let_go(hand, settings.max_throw_mps) } {
+            if let Err(refusal) = unsafe { hold::act::let_go(hand, hold::MAX_THROW_MPS) } {
                 tracing::debug!(target: "controllers", %refusal, "hold: the weapon was not let go of");
             }
         }

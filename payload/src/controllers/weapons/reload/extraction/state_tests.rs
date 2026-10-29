@@ -18,6 +18,7 @@ use crate::controllers::{
         insert::{InsertStage, Well},
         plan::ReloadPlan,
         records::{RecordKey, Records},
+        tuning::{RELOAD, Reload},
     },
 };
 
@@ -183,18 +184,8 @@ fn state_refuses_unavailable_adapter_without_queueing_or_mutating_records() {
     let mut state = state();
     let before = *state.records.get(RecordKey::Object(1));
     let mut engine = FakeEngine::default();
-    state.extract_with(
-        &tick(0.0, 17),
-        &inputs(true, true),
-        &ReloadConfig::new(),
-        &mut engine,
-    );
-    state.extract_with(
-        &tick(0.2, 17),
-        &inputs(false, true),
-        &ReloadConfig::new(),
-        &mut engine,
-    );
+    state.extract_with(&tick(0.0, 17), &inputs(true, true), &RELOAD, &mut engine);
+    state.extract_with(&tick(0.2, 17), &inputs(false, true), &RELOAD, &mut engine);
     assert!(engine.submitted.is_empty());
     assert_eq!(state.extraction_hand(), None);
     assert_eq!(*state.records.get(RecordKey::Object(1)), before);
@@ -211,7 +202,7 @@ fn state_waits_for_actual_result_and_no_throw_keeps_readiness_and_ownership_unch
         authority: true,
         ..FakeEngine::default()
     };
-    let config = ReloadConfig::new();
+    let config = RELOAD;
     state.extract_with(&tick(0.0, 17), &inputs(true, true), &config, &mut engine);
     state.extract_with(&tick(0.1, 17), &inputs(false, true), &config, &mut engine);
     assert_eq!(engine.submitted.len(), 1);
@@ -239,7 +230,7 @@ fn state_mode_cancellation_cannot_resume_a_held_claim() {
         authority: true,
         ..FakeEngine::default()
     };
-    let config = ReloadConfig::new();
+    let config = RELOAD;
     state.extract_with(&tick(0.0, 17), &inputs(true, true), &config, &mut engine);
     state.extract_with(&tick(0.04, 17), &inputs(false, true), &config, &mut engine);
     state.cancel_extraction();
@@ -275,7 +266,7 @@ fn state_retained_result_enters_nonexpiring_insertion_once_without_chamber_chang
             authority: true,
             ..FakeEngine::default()
         };
-        let config = ReloadConfig::new();
+        let config = RELOAD;
         state.extract_with(
             &tick(0.0, rounds),
             &inputs(true, true),
@@ -312,7 +303,7 @@ fn state_unretained_result_and_pending_hand_or_weapon_loss_do_not_create_inserti
             authority: true,
             ..FakeEngine::default()
         };
-        let config = ReloadConfig::new();
+        let config = RELOAD;
         state.extract_with(&tick(0.0, 17), &inputs(true, true), &config, &mut engine);
         state.extract_with(&tick(0.1, 17), &inputs(false, true), &config, &mut engine);
         engine.result = Some(DetachOutcome::DroppedUnretained);
@@ -340,7 +331,7 @@ fn delayed_retained_result_cannot_replace_changed_input_context() {
             authority: true,
             ..FakeEngine::default()
         };
-        let config = ReloadConfig::new();
+        let config = RELOAD;
         let key = RecordKey::Object(1);
         state.records.get(key).chambers = [Chamber::Chambered; 2];
         let record = *state.records.get(key);
@@ -399,7 +390,7 @@ fn state_active_pull_cancels_fresh_and_already_pushing_belt_without_engine_work(
         state.extract_with(
             &tick,
             &inputs(true, true),
-            &config.weapons.reload,
+            &Reload::of(&config.weapons.reload),
             &mut engine,
         );
         let record = *state.records.get(RecordKey::Object(1));

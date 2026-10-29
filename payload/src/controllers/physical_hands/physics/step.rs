@@ -331,6 +331,7 @@ pub(crate) unsafe fn step(given_dt: f32) {
             GunStep {
                 holds: gun_holds,
                 config: &b.guns,
+                brace: config.bodies.brace,
                 contact_events: true,
                 group,
                 palms: targets.map(|target| {

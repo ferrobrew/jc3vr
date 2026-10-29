@@ -185,7 +185,7 @@ pub(crate) struct OfferInput<'a> {
 pub(crate) unsafe fn targets(input: &OfferInput) -> Provided {
     let config = &input.config.weapons.snatch;
     let hold = &input.config.weapons.hold;
-    let takes_held = hold.steal && hold.direct_pickup && hold.either_hand;
+    let takes_held = hold.either_hand;
     grapple_weapons::set_enabled(config.enabled);
     steal::widen_notice(if config.enabled && takes_held {
         SNATCH.range_m
@@ -698,7 +698,7 @@ impl State {
                 ..
             } = self.phase
                 && !matches!(target.kind, pull::Pulled::Door { .. })
-                && let Err(refusal) = unsafe { pull::prepare_sling(hand, wire, input) }
+                && let Err(refusal) = unsafe { pull::prepare_sling(hand, wire) }
             {
                 unsafe { engine::cancel(wire) };
                 sling_hooks::clear();

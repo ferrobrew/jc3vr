@@ -117,24 +117,22 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
             |ui, _| weapons::hold_feature_settings(ui, &mut config::edit().controllers.weapons)
         }
         FeatureId::Support => {
-            |ui, _| weapons::support_settings(ui, &mut config::edit().controllers.weapons)
+            |ui, _| weapons::support_settings(ui, &mut config::edit().controllers)
         }
         FeatureId::Aim => |ui, _| {
             let mut cfg = config::edit();
             aim::aim_settings(ui, &mut cfg.controllers);
             let w = &mut cfg.controllers.weapons;
-            scope::scope_settings(ui, &mut w.scopes, &mut w.scope);
+            scope::scope_settings(ui, &mut w.scopes);
             scope::ads_settings(ui, &mut w.ads);
             scope::collide_settings(ui, &mut w.collide);
         },
         FeatureId::Reload => {
             |ui, _| weapons::reload_feature_settings(ui, &mut config::edit().controllers.weapons)
         }
-        FeatureId::Inventory => |ui, _| {
-            let mut cfg = config::edit();
-            weapons::body_slots_settings(ui, &mut cfg.controllers.weapons);
-            inventory::inventory_settings(ui, &mut cfg.controllers.weapons.inventory);
-        },
+        FeatureId::Inventory => {
+            |ui, _| inventory::inventory_settings(ui, &mut config::edit().controllers.weapons)
+        }
         FeatureId::Explosives => {
             |ui, _| weapons::explosive_feature_settings(ui, &mut config::edit().controllers.weapons)
         }

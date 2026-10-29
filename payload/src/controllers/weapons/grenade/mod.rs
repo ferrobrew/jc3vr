@@ -7,10 +7,10 @@
 //! live grenades can still be caught and thrown on.
 
 pub mod catch;
-pub mod config;
 mod locker;
 mod native;
 pub(crate) mod safe;
+pub mod tuning;
 
 use std::{cell::Cell, time::Duration};
 
@@ -54,9 +54,11 @@ use crate::{
         },
         physical_hands, scheme,
         weapons::{
-            config::GrenadeConfig,
             docks, engine,
-            grenade::catch::{CatchCounts, Caught, Sighting},
+            grenade::{
+                catch::{CatchCounts, Caught, Sighting},
+                tuning::{GRENADE, GrenadeTuning},
+            },
         },
     },
     headpose,
@@ -162,7 +164,7 @@ pub(super) struct BeginInputs<'a> {
 /// # Safety
 ///
 /// The game thread, outside the world update.
-pub(super) unsafe fn begin_tick(inputs: &BeginInputs, tuning: &GrenadeConfig) -> Vec<Candidate> {
+pub(super) unsafe fn begin_tick(inputs: &BeginInputs, tuning: &GrenadeTuning) -> Vec<Candidate> {
     {
         let mut state = STATE.lock();
         state.sightings.clear();
@@ -243,7 +245,7 @@ pub(super) fn input_tick(
         stand_down();
         return;
     }
-    let tuning = &config.weapons.grenade;
+    let tuning = &GrenadeTuning::of(&config.weapons.grenade);
     let _ = (inputs.triggers, inputs.dominant);
     for hand in Hand::BOTH {
         if inputs.locker_grabs[hand.index()] && !holds(hand) {
@@ -353,7 +355,9 @@ pub(crate) fn observe_hands(grips: [Option<Pose>; 2]) {
     STATE.lock().grips = grips;
     safe::observe(
         grips,
-        &Config::lock_query(|config| config.controllers.weapons.grenade),
+        &GrenadeTuning::of(&Config::lock_query(|config| {
+            config.controllers.weapons.grenade
+        })),
     );
 }
 
@@ -370,8 +374,7 @@ pub(crate) fn fallback_target(
     config: &ControllersConfig,
     dominant_target: Option<Vec3>,
 ) -> Option<Vec3> {
-    dominant_target
-        .filter(|_| config.weapons.grenade_throw && config.weapons.grenade.hand_aimed_fallback)
+    dominant_target.filter(|_| config.weapons.grenade_throw && GRENADE.hand_aimed_fallback)
 }
 
 pub(super) fn report_native_throw(hand: Hand, release: Release) {
@@ -439,7 +442,7 @@ thread_local! {
     static LAUNCH: Cell<Option<PlannedLaunch>> = const { Cell::new(None) };
 }
 
-fn release(hand: Hand, world_scale: f32, tuning: &GrenadeConfig) -> Option<Release> {
+fn release(hand: Hand, world_scale: f32, tuning: &GrenadeTuning) -> Option<Release> {
     let samples = motion::history(hand);
     let now = motion::latest_time()?;
     let velocity = motion::release_velocity(
@@ -457,7 +460,7 @@ fn release(hand: Hand, world_scale: f32, tuning: &GrenadeConfig) -> Option<Relea
     })
 }
 
-fn hold_offset(hand: Hand, tuning: &GrenadeConfig) -> Vec3 {
+fn hold_offset(hand: Hand, tuning: &GrenadeTuning) -> Vec3 {
     let offset = tuning.hold_offset_m;
     match hand {
         Hand::Left => Vec3::new(-offset.x, offset.y, offset.z),
@@ -471,7 +474,7 @@ fn warning(
     dt: f32,
     config: &ControllersConfig,
 ) -> Option<(Vec<Primitive>, Option<Hand>)> {
-    let tuning = &config.weapons.grenade;
+    let tuning = &GrenadeTuning::of(&config.weapons.grenade);
     let Some((hand, fuse)) = caught else {
         state.next_pulse_s = 0.0;
         return None;
@@ -600,7 +603,7 @@ unsafe fn primed_explosive(weapon: &ThrownGrenadeWeapon) -> Option<*mut Explosiv
     )
 }
 
-fn catch_one(hand: Hand, grip: Vec3, seen: &[Sighting], tuning: &GrenadeConfig) {
+fn catch_one(hand: Hand, grip: Vec3, seen: &[Sighting], tuning: &GrenadeTuning) {
     if let Some(sighting) = catch::nearest(seen, grip, tuning.catch.radius_m) {
         catch::set_caught(Some(Caught {
             hand,
@@ -612,7 +615,7 @@ fn catch_one(hand: Hand, grip: Vec3, seen: &[Sighting], tuning: &GrenadeConfig) 
     }
 }
 
-unsafe fn carry_caught(inputs: &TickInputs, tuning: &GrenadeConfig) -> Option<(Hand, Fuse)> {
+unsafe fn carry_caught(inputs: &TickInputs, tuning: &GrenadeTuning) -> Option<(Hand, Fuse)> {
     let caught = catch::caught()?;
     let hand = caught.hand;
     let Ok((centre, _)) = (unsafe { physical_hands::body_pose(caught.body, caught.owner) }) else {
@@ -681,9 +684,9 @@ mod tests {
 
     #[test]
     fn the_hold_offset_mirrors_for_the_left_hand() {
-        let tuning = GrenadeConfig {
+        let tuning = GrenadeTuning {
             hold_offset_m: Vec3::new(0.02, -0.01, -0.03),
-            ..GrenadeConfig::new()
+            ..GRENADE
         };
         assert_eq!(hold_offset(Hand::Right, &tuning), tuning.hold_offset_m);
         assert_eq!(

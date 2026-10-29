@@ -9,9 +9,8 @@ use crate::controllers::{
     hands::ActiveHands,
     loadout::Socket,
     weapons::{
-        config::HolstersConfig,
         docks::{self, SocketUse, attachments::Sample},
-        volumes::{self, BodyFrame},
+        volumes::{self, BodyFrame, SocketTuning},
     },
 };
 
@@ -28,7 +27,7 @@ pub(super) fn socket_candidates(
     active: &ActiveHands,
     character: Option<Mat4>,
     body: Option<&BodyFrame>,
-    holsters: &HolstersConfig,
+    holsters: &SocketTuning,
     draw: DrawContext,
 ) -> (Vec<Candidate>, Vec<(Candidate, SocketUse)>) {
     let frames = character.and_then(|character| docks::cockpit_frames(active, character));
@@ -47,7 +46,7 @@ pub(crate) fn provide(
     native: &Sample,
     frames: &Frames,
     body: Option<&BodyFrame>,
-    holsters: &HolstersConfig,
+    holsters: &SocketTuning,
     draw: DrawContext,
 ) -> (Sample, Vec<Candidate>, Vec<(Candidate, SocketUse)>) {
     let mut targets = native.targets(frames, body, holsters);
@@ -60,11 +59,11 @@ fn provide_and_publish(
     native: Option<&Sample>,
     frames: Option<&Frames>,
     body: Option<&BodyFrame>,
-    holsters: &HolstersConfig,
+    holsters: &SocketTuning,
     draw: DrawContext,
     publish: impl FnOnce(Option<Sample>),
 ) -> (Vec<Candidate>, Vec<(Candidate, SocketUse)>) {
-    let Some((native, frames)) = native.zip(frames).filter(|_| holsters.enabled) else {
+    let Some((native, frames)) = native.zip(frames) else {
         publish(None);
         return (Vec::new(), Vec::new());
     };
@@ -73,7 +72,7 @@ fn provide_and_publish(
     (draws, others)
 }
 
-fn select_draw_offers(sample: &mut Sample, holsters: &HolstersConfig, draw: DrawContext) {
+fn select_draw_offers(sample: &mut Sample, holsters: &SocketTuning, draw: DrawContext) {
     if !holsters.long_guns_dominant || draw.occupied != [false; 2] {
         return;
     }
@@ -105,7 +104,7 @@ fn select_draw_offers(sample: &mut Sample, holsters: &HolstersConfig, draw: Draw
 fn candidates_from_sample(
     sample: &Sample,
     frames: &Frames,
-    holsters: &HolstersConfig,
+    holsters: &SocketTuning,
 ) -> (Vec<Candidate>, Vec<(Candidate, SocketUse)>) {
     let mut draws = Vec::new();
     let mut others = Vec::new();
@@ -124,7 +123,7 @@ fn candidates_from_sample(
     (draws, others)
 }
 
-fn socket_radius(socket: Socket, holsters: &HolstersConfig) -> f32 {
+fn socket_radius(socket: Socket, holsters: &SocketTuning) -> f32 {
     match socket {
         Socket::Hip(_) => holsters.hip.radius_m,
         Socket::Shoulder(_) | Socket::BackOuter => holsters.shoulder.radius_m,

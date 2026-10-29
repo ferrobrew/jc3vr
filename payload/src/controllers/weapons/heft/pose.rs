@@ -9,9 +9,8 @@ use crate::controllers::{
     frame::Hand,
     hands::CockpitHand,
     weapons::{
-        config::{BracedTuning, HeftConfig, HeftTuning},
         foregrip,
-        heft::{HeftClass, lerp, shortest, smoothstep},
+        heft::{BracedTuning, Heft, HeftClass, HeftTuning, lerp, shortest, smoothstep},
     },
 };
 
@@ -55,7 +54,7 @@ impl Weight {
     /// by the share. The sag and the limits blend linearly; the spring blends by its natural
     /// frequency, a rigid side counting as a very stiff spring, so that the lag shrinks smoothly as
     /// the foregrip engages.
-    pub fn of(class: HeftClass, config: &HeftConfig, share: f32) -> Self {
+    pub fn of(class: HeftClass, config: &Heft, share: f32) -> Self {
         let one = if config.enabled {
             class.tuning(config)
         } else {
@@ -72,7 +71,7 @@ impl Weight {
     }
 
     /// The blend of the one-handed `one` and the braced `braced` by the unbraced `share`.
-    pub fn blend(one: &HeftTuning, braced: &BracedTuning, share: f32, config: &HeftConfig) -> Self {
+    pub fn blend(one: &HeftTuning, braced: &BracedTuning, share: f32, config: &Heft) -> Self {
         let share = if share.is_finite() {
             share.clamp(0.0, 1.0)
         } else {
@@ -112,7 +111,7 @@ pub fn weighted_pose(
     hand: &CockpitHand,
     head: Vec3,
     weight: &Weight,
-    config: &HeftConfig,
+    config: &Heft,
     sway: Vec2,
 ) -> WeightedPose {
     let grip = hand.grip;

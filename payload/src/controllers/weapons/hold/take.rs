@@ -26,7 +26,7 @@ use crate::controllers::{
         config::HoldConfig,
         docks, engine,
         hold::{
-            self, Cause,
+            self, Cause, SNAP_S, TAKE_RADIUS_M,
             pickup::TakeOptions,
             rack::{self, RackRefusal},
             steal::{self, StealRefusal},
@@ -177,14 +177,10 @@ pub(crate) struct TakeInputs<'a> {
 pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
     let settings = inputs.settings;
     rack::tick();
-    let acting = inputs.gameplay && settings.either_hand && settings.direct_pickup;
+    let acting = inputs.gameplay && settings.either_hand;
     let owner = unsafe { engine::local_player() }.filter(|_| acting);
     let player = owner.as_ref().map(|o| Mat4::from(o.m_WorldMatrixT1));
-    steal::publish_probe(
-        player
-            .filter(|_| settings.steal)
-            .map(|m| m.w_axis.truncate()),
-    );
+    steal::publish_probe(player.map(|m| m.w_axis.truncate()));
     let mut state = STATE.lock();
     state.targets.clear();
     state.offered.clear();
@@ -197,13 +193,9 @@ pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
         return Vec::new();
     };
     let to_cockpit = |p: Vec3| frames.world_to_cockpit(p);
-    if settings.steal {
-        state.targets.extend(steal::targets(to_cockpit));
-    }
+    state.targets.extend(steal::targets(to_cockpit));
     let held = state.targets.len();
-    if settings.racks
-        && let Some(owner) = owner
-    {
+    if let Some(owner) = owner {
         state
             .targets
             .extend(unsafe { rack::targets(owner, to_cockpit) });
@@ -211,9 +203,8 @@ pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
     state.status.held_targets = held;
     state.status.rack_targets = state.targets.len() - held;
     let points = inputs.active.hands.map(|h| h.map(|h| h.grip.position));
-    state.offered =
-        world::Offers::gather(&state.targets, settings.take_radius_m, inputs.free, points);
-    world::candidates(&state.targets, settings.take_radius_m, inputs.free, points)
+    state.offered = world::Offers::gather(&state.targets, TAKE_RADIUS_M, inputs.free, points);
+    world::candidates(&state.targets, TAKE_RADIUS_M, inputs.free, points)
 }
 
 /// Take the weapon `hand`'s grab of a
@@ -226,18 +217,10 @@ pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
 /// The main thread, outside the world update, after [`begin_tick`] on the same input tick.
 pub(crate) unsafe fn finish_grab(hand: Hand, inputs: &TakeInputs) -> bool {
     let point = inputs.active.hands[hand.index()].map(|h| h.grip.position);
-    let target = STATE
-        .lock()
-        .offered
-        .take(hand, point, inputs.settings.take_radius_m);
+    let target = STATE.lock().offered.take(hand, point, TAKE_RADIUS_M);
     let result = world::complete_offer(target, |target| {
         let options = TakeOptions {
-            drop_replaced: inputs.settings.drop_replaced,
-            slide_s: if inputs.settings.take_slide {
-                inputs.settings.snap_s
-            } else {
-                0.0
-            },
+            slide_s: SNAP_S,
             cause: match target.kind {
                 TargetKind::Held { .. } => Cause::Steal,
                 TargetKind::Rack { .. } | TargetKind::RackMember { .. } => Cause::Rack,

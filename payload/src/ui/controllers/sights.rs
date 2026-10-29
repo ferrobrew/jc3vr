@@ -26,7 +26,6 @@ pub(super) fn sight_tuning(ui: &mut Ui, c: &mut ControllersConfig) {
     if !t.enabled {
         return;
     }
-    ui.add(egui::Slider::new(&mut t.marker_distance_m, 2.0..=50.0).text("Marker distance (m)"));
 
     let status = tuning::status();
     ui.horizontal(|ui| {

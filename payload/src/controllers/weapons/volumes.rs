@@ -32,8 +32,84 @@ use crate::controllers::{
     frame::Hand,
     grab::{Candidate, GrabVolume},
     loadout::Socket,
-    weapons::config::{HolstersConfig, PouchSide, PouchesConfig, VolumeSpec},
 };
+
+/// The sockets' fixed placement.
+pub const SOCKETS: SocketTuning = SocketTuning {
+    hip: VolumeSpec {
+        offset_m: Vec3::new(0.04, 0.04, 0.0),
+        radius_m: 0.12,
+    },
+    shoulder: VolumeSpec {
+        offset_m: Vec3::new(0.0, 0.10, 0.10),
+        radius_m: 0.17,
+    },
+    chest: VolumeSpec {
+        offset_m: Vec3::new(0.0, -0.16, -0.14),
+        radius_m: 0.09,
+    },
+    follow_docks: true,
+    long_guns_dominant: true,
+};
+
+/// The pouches' fixed placement. Each pouch's centre is a few centimetres out from the body's
+/// surface, where a hand laid flat on the body closes.
+pub const POUCHES: PouchTuning = PouchTuning {
+    grenade: POUCH,
+    c4: POUCH,
+    magazine: POUCH,
+    reach_margin_m: 0.05,
+};
+
+/// The body's sockets: how near a hand must come to each, and where they are.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct SocketTuning {
+    /// The sockets on both hips: how near a hand must come, and where they are on the body
+    /// without `follow_docks`.
+    pub hip: VolumeSpec,
+    /// The sockets over the shoulders, the right one where the game docks the two-handed slot and
+    /// the left one where it docks the special slot, and the outer back's reach.
+    pub shoulder: VolumeSpec,
+    /// The socket on the chest.
+    pub chest: VolumeSpec,
+    /// Reach each socket where its weapon is seen on the character's body, or where a held weapon
+    /// would sit on it, as drawn (see [`crate::controllers::weapons::docks`]). Off, the hips, the
+    /// shoulders, and the chest are reached at the body's landmarks.
+    pub follow_docks: bool,
+    /// With no weapon in either hand, only the dominant hand draws a long gun off the back, so the
+    /// trigger that fires it, the tethers' retract, the pouches, and the wrist detonator stay where
+    /// they were. The off-hand still draws one while the other hand holds a weapon.
+    pub long_guns_dominant: bool,
+}
+
+/// The pouches on the front of the body: the magazine pouch at the front of the belt on the free
+/// hand's side, and the grenade and C4 pouches on either side of the chest. Each is placed only
+/// while its feature is on: the grenade pouch with the grenade throw, the C4 pouch with the C4
+/// throw, and the magazine pouch while the true reload reloads the held weapon. Offsets are given
+/// for the right side and mirrored for the left.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct PouchTuning {
+    /// The grenade pouch, offset from the chest's front on its side.
+    pub grenade: VolumeSpec,
+    /// The C4 pouch, offset from the chest's front on its side.
+    pub c4: VolumeSpec,
+    /// The universal reload pouch, offset from the belt's front on the free hand's side. It hands
+    /// out what the held weapon takes: a magazine, a shell, a rocket, or a pod.
+    pub magazine: VolumeSpec,
+    /// How far outside a pouch's surface a grip press still takes from it, metres, when the hand
+    /// is in no other volume: a hand feeling for a pouch lands a little off it, and a press there
+    /// must not fire the grapple instead.
+    pub reach_margin_m: f32,
+}
+
+/// A spherical grab volume placed relative to a body landmark.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct VolumeSpec {
+    /// The centre's offset from the landmark in the body frame (+X right, +Y up, +Z back), metres,
+    /// given for the right side and mirrored across the body's midline for the left.
+    pub offset_m: Vec3,
+    pub radius_m: f32,
+}
 
 /// The body the volumes ride: the character's skeleton in the cockpit frame, with its girdles'
 /// orientations.
@@ -76,8 +152,8 @@ impl BodyFrame {
 /// The sockets' volumes at the body's landmarks on `frame`: each hip, each shoulder, and the chest,
 /// in that order, for either hand. The outer back has no landmark of its own. The sockets are
 /// placed here only while they do not sit on their weapons
-/// ([`HolstersConfig::follow_docks`](crate::controllers::weapons::config::HolstersConfig::follow_docks)).
-pub fn socket_landmarks(frame: &BodyFrame, config: &HolstersConfig) -> Vec<Candidate> {
+/// ([`SocketTuning::follow_docks`]).
+pub fn socket_landmarks(frame: &BodyFrame, config: &SocketTuning) -> Vec<Candidate> {
     let mut out = Vec::with_capacity(5);
     for side in Hand::BOTH {
         out.push(place(
@@ -143,16 +219,11 @@ pub struct ChestSides {
 }
 
 /// The chest's sides for a player whose guns ride `gun_side` (see [`gun_side`]): the grenade pouch
-/// on the side `pouches.grenade_side` names, and the C4 pouch on the other, so the two never share
-/// a side.
-pub fn chest_sides(pouches: &PouchesConfig, gun_side: Hand) -> ChestSides {
-    let grenade = match pouches.grenade_side {
-        PouchSide::Dominant => gun_side,
-        PouchSide::OffHand => gun_side.other(),
-    };
+/// on the gun hand's side, and the C4 pouch on the free hand's, so the two never share a side.
+pub fn chest_sides(gun_side: Hand) -> ChestSides {
     ChestSides {
-        grenade,
-        c4: grenade.other(),
+        grenade: gun_side,
+        c4: gun_side.other(),
     }
 }
 
@@ -202,11 +273,11 @@ impl ChestGrabbers {
 /// throws), or `None` while no hand may take from it.
 pub fn grenade_pouch(
     frame: &BodyFrame,
-    pouches: &PouchesConfig,
+    pouches: &PouchTuning,
     gun_side: Hand,
     grabbers: ChestGrabbers,
 ) -> Option<Candidate> {
-    let side = chest_sides(pouches, gun_side).grenade;
+    let side = chest_sides(gun_side).grenade;
     let pouch = chest_pouch(GrabVolume::GrenadePouch, frame, &pouches.grenade, side);
     grabbers.hand().map(|hand| Candidate { hand, ..pouch })
 }
@@ -215,11 +286,11 @@ pub fn grenade_pouch(
 /// `grabbers` (whichever grabs it throws), or `None` while no hand may take from it.
 pub fn c4_pouch(
     frame: &BodyFrame,
-    pouches: &PouchesConfig,
+    pouches: &PouchTuning,
     gun_side: Hand,
     grabbers: ChestGrabbers,
 ) -> Option<Candidate> {
-    let side = chest_sides(pouches, gun_side).c4;
+    let side = chest_sides(gun_side).c4;
     let pouch = chest_pouch(GrabVolume::C4Pouch, frame, &pouches.c4, side);
     grabbers.hand().map(|hand| Candidate { hand, ..pouch })
 }
@@ -230,7 +301,7 @@ pub fn c4_pouch(
 /// placed whether or not a hand is free.
 pub fn magazine_pouch(
     frame: &BodyFrame,
-    pouches: &PouchesConfig,
+    pouches: &PouchTuning,
     gun_side: Hand,
     grabber: Option<Hand>,
 ) -> Candidate {
@@ -250,6 +321,12 @@ pub fn magazine_pouch(
 /// adults.
 #[cfg(test)]
 pub const HIP_HEIGHT_FRACTION: f32 = 0.53;
+
+/// Each pouch's volume: its centre a few centimetres out from the body's surface.
+const POUCH: VolumeSpec = VolumeSpec {
+    offset_m: Vec3::new(0.0, 0.0, -0.04),
+    radius_m: 0.075,
+};
 
 /// How far above the hip joints the belt's front is, where the magazine pouch hangs, as a fraction
 /// of the torso: the waist.

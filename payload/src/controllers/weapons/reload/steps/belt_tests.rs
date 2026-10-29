@@ -3,7 +3,12 @@ use crate::controllers::{
     bindings::tables::describe::{Control, Effect, Gesture, ModAction, Row},
     weapons::{
         capabilities::{GunHand, GunOwner, NativePair},
-        reload::{BeltEligibility, belt::PushStage, steps::insertion_tests},
+        reload::{
+            BeltEligibility,
+            belt::PushStage,
+            steps::insertion_tests,
+            tuning::{RELOAD, Reload},
+        },
     },
 };
 
@@ -14,7 +19,7 @@ fn fixture() -> (ControllersConfig, State, Tick, [Option<GunOwner>; 2]) {
     let mut state = insertion_tests::state(InsertStage::Idle);
     state.status.insert_hands = None;
     state.pouch = Some((Vec3::ZERO, 0.1));
-    let mut tick = insertion_tests::tick(false, &config);
+    let mut tick = insertion_tests::tick(false);
     let hand = config.acting_hand();
     if hand != tick.dominant {
         tick.guns.swap(0, 1);
@@ -65,13 +70,21 @@ fn actual_belt_gate_requires_ammo_space_delay_and_no_other_reload_claim() {
     let (config, mut state, mut tick, guns) = fixture();
     let hand = tick.dominant;
     let weapon_slot = tick.guns[hand.index()].unwrap().weapon;
-    assert!(state.belt_gate(&tick, hand).allows(&config.weapons.reload));
+    assert!(
+        state
+            .belt_gate(&tick, hand)
+            .allows(&Reload::of(&config.weapons.reload))
+    );
     assert!(offer(&state, &tick, &config, guns).is_some());
 
-    state.since_draw_s = config.weapons.reload.belt.after_draw_s;
+    state.since_draw_s = RELOAD.belt.after_draw_s;
     assert!(offer(&state, &tick, &config, guns).is_some());
-    state.since_draw_s = config.weapons.reload.belt.after_draw_s - 0.001;
-    assert!(!state.belt_gate(&tick, hand).allows(&config.weapons.reload));
+    state.since_draw_s = RELOAD.belt.after_draw_s - 0.001;
+    assert!(
+        !state
+            .belt_gate(&tick, hand)
+            .allows(&Reload::of(&config.weapons.reload))
+    );
     assert!(offer(&state, &tick, &config, guns).is_none());
     state.since_draw_s = 10.0;
     state.status.insert_hands = Some((hand.other(), hand));
@@ -107,7 +120,7 @@ fn actual_belt_gate_requires_ammo_space_delay_and_no_other_reload_claim() {
     }
     let mut gate = state.belt_gate(&tick, hand);
     gate.extracting = true;
-    assert!(!gate.allows(&config.weapons.reload));
+    assert!(!gate.allows(&Reload::of(&config.weapons.reload)));
 }
 
 #[test]
@@ -129,7 +142,7 @@ fn shell_pouch_and_belt_gates_count_magazine_rounds_without_the_chamber() {
     assert!(
         state
             .belt_gate(&tick, tick.dominant)
-            .allows(&config.weapons.reload)
+            .allows(&Reload::of(&config.weapons.reload))
     );
     assert!(offer(&state, &tick, &config, guns).is_some());
 
@@ -143,7 +156,7 @@ fn shell_pouch_and_belt_gates_count_magazine_rounds_without_the_chamber() {
     assert!(
         !state
             .belt_gate(&tick, tick.dominant)
-            .allows(&config.weapons.reload)
+            .allows(&Reload::of(&config.weapons.reload))
     );
     assert!(offer(&state, &tick, &config, guns).is_none());
     assert!(

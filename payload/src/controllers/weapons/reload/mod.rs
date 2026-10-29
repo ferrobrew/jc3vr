@@ -57,6 +57,7 @@ mod retained;
 pub(crate) mod serial;
 mod steps;
 pub mod travel;
+pub mod tuning;
 pub mod wells;
 
 use glam::Vec3;
@@ -80,11 +81,10 @@ use crate::controllers::{
         dual_wield::single::magazine::Dealt,
         engine::HeldWeapon,
         inventory::engine::strong_to,
-        pouch_models,
+        pouch_models::{self, MODEL_PLACEMENT},
         reload::{
             belt::{BeltPush, PushStage},
             chamber::{ActionWork, Chamber},
-            config::{ReloadButton, ReloadConfig},
             eject::{FlickDetector, TapDetector},
             engine::Reading,
             extraction::{DetachRequest, PendingDetach, Pull},
@@ -93,8 +93,9 @@ use crate::controllers::{
             plan::ReloadPlan,
             records::{RecordKey, Records, gun_entry},
             travel::ActionTravel,
+            tuning::{Reload, ReloadButton},
         },
-        volumes::{self, BodyFrame},
+        volumes::{self, BodyFrame, POUCHES},
     },
 };
 
@@ -205,7 +206,7 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
         gun_side,
         gameplay,
     } = *inputs;
-    let reload = &config.weapons.reload;
+    let reload = &Reload::of(&config.weapons.reload);
     // SAFETY: bounded world-record maintenance runs on the input thread before eligibility exits.
     unsafe { loose::maintain(&reload.loose) };
     let mut state = STATE.lock();
@@ -227,12 +228,7 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     let loading_hand = insert::loading_hand(gun_hands, free, tick.dominant);
     let pouch_side = loading_hand.map_or(gun_side.other(), Hand::other);
     let pouch = body.map(|b| {
-        let pouch = volumes::magazine_pouch(
-            b,
-            &config.weapons.pouches,
-            pouch_side.other(),
-            Some(pouch_side),
-        );
+        let pouch = volumes::magazine_pouch(b, &POUCHES, pouch_side.other(), Some(pouch_side));
         Candidate {
             hand: free,
             ..pouch
@@ -253,7 +249,7 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
                     position: pouch.centre,
                     orientation: body.pelvis,
                 },
-                &config.weapons.pouches.models.magazine,
+                &MODEL_PLACEMENT,
                 pouch_side,
                 tick.world_scale,
             );
@@ -381,7 +377,7 @@ pub(super) struct FinishInputs {
 /// The second half of the reload's input tick: eject, load, push, and work the action, and decide
 /// which guns may fire. The copied finish facts are consumed after weapon ownership settles.
 pub(super) fn finish_tick(inputs: &FinishInputs, config: &ControllersConfig) -> FinishResult {
-    let reload = &config.weapons.reload;
+    let reload = &Reload::of(&config.weapons.reload);
     let mut state = STATE.lock();
     let Some(tick) = state.tick else {
         state.stand_down();
@@ -512,7 +508,7 @@ impl BeltFinish {
             can_belt: reading.out || reading.has_space(),
             ..self.gate
         };
-        gate.allows(&config.weapons.reload)
+        gate.allows(&Reload::of(&config.weapons.reload))
             .then_some(BeltEligibility {
                 sequence,
                 hand: self.hand,
@@ -533,7 +529,7 @@ struct BeltGate {
 }
 
 impl BeltGate {
-    fn allows(self, reload: &ReloadConfig) -> bool {
+    fn allows(self, reload: &Reload) -> bool {
         reload.belt.enabled
             && !self.holding
             && !self.extracting
@@ -576,7 +572,7 @@ unsafe fn loose_sightings(
     tick: &Tick,
     free: Option<Hand>,
     active: &ActiveHands,
-    reload: &ReloadConfig,
+    reload: &Reload,
 ) -> (Vec<loose::Sighting>, Option<Frames>) {
     let Some((weapon, gun)) = free.and_then(|free| tick.gun(free.other())) else {
         return (Vec::new(), None);
@@ -606,7 +602,7 @@ unsafe fn loose_sightings(
 
 /// The hand holding the gun, and the well's mouth and capture radius, while the other hand holds a
 /// round for it.
-pub(super) fn well(config: &ReloadConfig) -> Option<(Hand, Vec3, f32)> {
+pub(super) fn well(config: &Reload) -> Option<(Hand, Vec3, f32)> {
     let state = STATE.lock();
     let (_, gun_hand) = state.status.insert_hands?;
     let tick = state.tick.as_ref()?;

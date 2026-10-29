@@ -428,10 +428,7 @@ unsafe fn hands(owner: &mut Character, snapshot: &LoadoutSnapshot) {
         };
         // SAFETY: the input phase retains the revalidated original slot or carry-set source.
         let weapon = unsafe { handle.as_mut() };
-        let heavy = unsafe { inventory_engine::slot_of(weapon) } == Some(WeaponSlot::E_SLOT_HEAVY);
-        if (heavy && !inventory_engine::heavy_tracked())
-            || weapon.m_State != WeaponState::E_WS_HOLSTERED
-        {
+        if weapon.m_State != WeaponState::E_WS_HOLSTERED {
             continue;
         }
         match unsafe { armed::arm(owner, weapon, hand) } {

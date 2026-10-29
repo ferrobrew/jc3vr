@@ -8,7 +8,7 @@ use crate::controllers::{
     frame::Pose,
     hands::{CockpitHand, pose as hand_pose},
     physical_hands::physics::{
-        config::{GunClassValues, HeldGunsTuning},
+        config::{BraceRebuildConfig, GunClassValues, HeldGunsTuning},
         guns::BraceContact,
     },
     weapons::{foregrip::GripGeometry, heft::HeftClass},
@@ -48,11 +48,11 @@ pub fn brace_palm(gun: Pose, palm: Pose, contact: BraceContact) -> Pose {
     }
 }
 
-/// Whether a brace's palm frame changed enough to remake the fixed joint. A fixed joint otherwise
-/// keeps a stale contact when the hand slides or rotates its grip around the gun.
-pub fn brace_changed(before: Pose, after: Pose) -> bool {
-    before.position.distance(after.position) > 0.002
-        || turn_rad(before.orientation.inverse() * after.orientation) > 0.01
+/// Whether a brace's palm frame changed enough, past `rebuild`, to remake the fixed joint. A fixed
+/// joint otherwise keeps a stale contact when the hand slides or rotates its grip around the gun.
+pub fn brace_changed(before: Pose, after: Pose, rebuild: &BraceRebuildConfig) -> bool {
+    before.position.distance(after.position) > rebuild.distance_m
+        || turn_rad(before.orientation.inverse() * after.orientation) > rebuild.angle_rad
 }
 
 /// The value of `values` for a gun of weight class `class`.
@@ -301,15 +301,17 @@ mod tests {
         let before = seat(gun, brace_palm(gun, Pose::IDENTITY, contact));
         let rotated = pose(Vec3::ZERO, Quat::from_rotation_x(0.2));
         let after = seat(gun, brace_palm(gun, rotated, contact));
-        assert!(brace_changed(before, after));
-        assert!(!brace_changed(before, before));
+        let rebuild = BraceRebuildConfig::new();
+        assert!(brace_changed(before, after, &rebuild));
+        assert!(!brace_changed(before, before, &rebuild));
         let slid = BraceContact {
             point: contact.point + Vec3::NEG_Z * 0.04,
             ..contact
         };
         assert!(brace_changed(
             before,
-            seat(gun, brace_palm(gun, Pose::IDENTITY, slid))
+            seat(gun, brace_palm(gun, Pose::IDENTITY, slid)),
+            &rebuild
         ));
     }
 

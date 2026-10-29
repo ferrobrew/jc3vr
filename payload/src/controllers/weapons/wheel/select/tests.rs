@@ -1,5 +1,5 @@
 use super::*;
-use crate::controllers::bindings::tables::declare::WEAPON_SELECT;
+use crate::controllers::{bindings::tables::declare::WEAPON_SELECT, weapons::wheel::tuning::WHEEL};
 
 const ALL_OFFERED: [bool; 4] = [true; 4];
 
@@ -24,8 +24,8 @@ const TAPPED: ButtonControl = ButtonControl {
     released: true,
 };
 
-fn config() -> WheelConfig {
-    WheelConfig::new()
+fn config() -> WheelTuning {
+    WHEEL
 }
 
 /// An aim pose turned `right_deg` to the right and `up_deg` up from straight ahead.

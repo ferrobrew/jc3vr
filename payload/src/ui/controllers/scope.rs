@@ -1,26 +1,22 @@
 //! Scoped weapons: whether a scope is detected, the eyepiece's distance from the nearest eye, the
-//! lens path in use, the precision-aim suppression's counts, and the scope settings.
+//! lens's eyes, the precision-aim suppression's counts, and the aim-and-sights switches.
 
 use egui::Ui;
 
-use crate::{
-    controllers::{
-        aim::sights::SightSource,
-        frame::Hand,
-        weapons::{
-            ads::{
-                self, AdsStatus,
-                config::{AdsConfig, AimingEye},
-            },
-            collide::{self, HandCollideStatus, config::CollideConfig},
-            config::{LensPath, LensSource, ScopeConfig},
-            scope::{
-                self, ScopeStatus,
-                suppress::{self, SuppressCounters},
-            },
+use crate::controllers::{
+    aim::sights::SightSource,
+    frame::Hand,
+    weapons::{
+        ads::{
+            self, AdsStatus,
+            config::{AdsConfig, AimingEye},
+        },
+        collide::{self, HandCollideStatus, config::CollideConfig},
+        scope::{
+            self, ScopeStatus,
+            suppress::{self, SuppressCounters},
         },
     },
-    ui::controllers::vec3_drag,
 };
 
 /// Everything the scope section shows, read before the config is locked for editing.
@@ -111,20 +107,15 @@ pub(super) fn scope_readout(ui: &mut Ui, readout: &ScopeReadout) {
         Some(d) => format!("Eyepiece distance: {:.3} m from the nearest eye", d),
         None => "Eyepiece distance: none".to_owned(),
     });
-    let path = if status.scene_render_fallback {
-        "resample (the scene render is not implemented)"
-    } else {
-        "resample"
-    };
     ui.label(match (status.idle, status.eyes) {
-        (Some(idle), _) => format!("Lens: {} · path {path}", idle.label()),
+        (Some(idle), _) => format!("Lens: {}", idle.label()),
         (None, Some((sighting, source))) if sighting == source => {
-            format!("Lens: eye {sighting} through its own image · path {path}")
+            format!("Lens: eye {sighting} through its own image")
         }
         (None, Some((sighting, source))) => {
-            format!("Lens: eye {sighting} through eye {source}'s image · path {path}")
+            format!("Lens: eye {sighting} through eye {source}'s image")
         }
-        (None, None) => format!("Lens: at the eye, waiting for an eye image · path {path}"),
+        (None, None) => "Lens: at the eye, waiting for an eye image".to_owned(),
     });
     ui.label(format!("Frames drawn: {}", status.frames));
     if let Some(error) = &status.error {
@@ -132,41 +123,9 @@ pub(super) fn scope_readout(ui: &mut Ui, readout: &ScopeReadout) {
     }
 }
 
-pub(super) fn scope_settings(ui: &mut Ui, scopes: &mut bool, s: &mut ScopeConfig) {
-    ui.checkbox(&mut s.suppress_precision_aim, "Suppress precision aim")
-        .on_hover_text(
-            "Refuse the game's precision aim (its zoom, sniper overlay, and hidden body) under the \
-             controller scheme.",
-        );
+pub(super) fn scope_settings(ui: &mut Ui, scopes: &mut bool) {
     ui.checkbox(scopes, "Scope lenses")
         .on_hover_text("Draw a magnified image on a scoped weapon's lens while it is at an eye.");
-    ui.add_enabled_ui(*scopes, |ui| {
-        ui.horizontal(|ui| {
-            ui.label("Path");
-            ui.selectable_value(&mut s.path, LensPath::Resample, "Resample");
-            ui.selectable_value(&mut s.path, LensPath::SceneRender, "Scene render")
-                .on_hover_text("Not implemented: the resample is drawn instead.");
-        });
-        ui.horizontal(|ui| {
-            ui.label("Image");
-            ui.selectable_value(&mut s.source, LensSource::OtherEye, "Other eye")
-                .on_hover_text("The other eye's image, which the scope does not block.");
-            ui.selectable_value(&mut s.source, LensSource::OwnEye, "Own eye")
-                .on_hover_text("The sighting eye's own image, which shows the scope's model.");
-        });
-        ui.add(egui::Slider::new(&mut s.zoom, 1.0..=12.0).text("Zoom"));
-        ui.add(egui::Slider::new(&mut s.lens_radius_m, 0.005..=0.05).text("Lens radius (m)"));
-        ui.add(
-            egui::Slider::new(&mut s.eyepiece_back_m, 0.0..=1.5)
-                .text("Eyepiece behind the sight origin (m)"),
-        );
-        ui.add(
-            egui::Slider::new(&mut s.max_eye_distance_m, 0.02..=0.5)
-                .text("Eye distance to show the lens (m)"),
-        );
-        ui.add(egui::Slider::new(&mut s.vignette_start, 0.0..=0.99).text("Vignette start"));
-        ui.checkbox(&mut s.reticle, "Reticle");
-    });
 }
 
 /// The settings of aiming a long gun down its sights.
@@ -184,42 +143,12 @@ pub(super) fn ads_settings(ui: &mut Ui, a: &mut AdsConfig) {
                     ui.selectable_value(&mut a.eye, eye, eye.label());
                 }
             });
-        ui.add(egui::Slider::new(&mut a.half_ipd_m, 0.02..=0.045).text("Half the eye spacing (m)"));
-        ui.add(egui::Slider::new(&mut a.engage_m, 0.01..=0.15).text("Engage (m)"));
-        ui.add(egui::Slider::new(&mut a.lock_m, 0.0..=0.1).text("Lock (m)"));
-        ui.add(
-            egui::Slider::new(&mut a.max_eye_behind_m, 0.1..=0.8).text("Eye behind the grip (m)"),
-        );
-        ui.add(egui::Slider::new(&mut a.max_view_angle_deg, 5.0..=60.0).text("View angle (°)"));
-        ui.add(
-            egui::Slider::new(&mut a.pivot_ahead_m, 0.1..=0.8).text("Pivot ahead of the grip (m)"),
-        );
         ui.checkbox(&mut a.shoulder, "Seat the stock in the shoulder");
-        ui.add(
-            egui::Slider::new(&mut a.butt_behind_grip_m, 0.05..=0.5)
-                .text("Butt behind the grip (m)"),
-        );
-        vec3_drag(
-            ui,
-            "Pocket offset (torso frame, m)",
-            &mut a.pocket_offset_m,
-            0.005,
-        );
-        ui.add(egui::Slider::new(&mut a.shoulder_engage_m, 0.02..=0.3).text("Shoulder engage (m)"));
-        ui.add(egui::Slider::new(&mut a.shoulder_lock_m, 0.0..=0.2).text("Shoulder lock (m)"));
         ui.checkbox(&mut a.cheek_weld, "Cheek weld for scopes");
-        ui.add(egui::Slider::new(&mut a.weld_engage_m, 0.01..=0.15).text("Weld engage (m)"));
-        ui.add(egui::Slider::new(&mut a.weld_lock_m, 0.0..=0.1).text("Weld lock (m)"));
     });
 }
 
 /// The settings of held guns against walls.
 pub(super) fn collide_settings(ui: &mut Ui, c: &mut CollideConfig) {
     ui.checkbox(&mut c.enabled, "Held long guns stop at walls");
-    ui.add_enabled_ui(c.enabled, |ui| {
-        ui.add(egui::Slider::new(&mut c.tip_margin_m, 0.0..=0.15).text("Past the muzzle (m)"));
-        ui.add(egui::Slider::new(&mut c.max_turn_deg, 0.0..=90.0).text("Furthest turn (°)"));
-        ui.add(egui::Slider::new(&mut c.max_retract_m, 0.0..=0.6).text("Furthest pull back (m)"));
-        ui.add(egui::Slider::new(&mut c.keep_s, 0.0..=1.0).text("Wall kept for (s)"));
-    });
 }

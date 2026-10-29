@@ -1,21 +1,18 @@
 //! The true reload: each hand's reloaded weapon, its magazine and chamber, the round in hand, the
-//! belt pushes, the action's work, the counters, and the reload's settings.
+//! belt pushes, the action's work, the counters, and the reload's switches.
 
 use egui::Ui;
 
-use crate::{
-    controllers::{
-        frame::Hand,
-        weapons::reload::{
-            ReloadStatus, WeaponReadout,
-            belt::PushStage,
-            chamber::{ActionKind, Chamber, WorkStage},
-            config::{ActionConfig, BeltConfig, ReloadButton, ReloadConfig},
-            insert::InsertStage,
-            loose, wells,
-        },
+use crate::controllers::{
+    frame::Hand,
+    weapons::reload::{
+        ReloadStatus, WeaponReadout,
+        belt::PushStage,
+        chamber::{ActionKind, Chamber, WorkStage},
+        config::ReloadConfig,
+        insert::InsertStage,
+        loose, wells,
     },
-    ui::controllers::vec3_drag,
 };
 
 pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
@@ -157,92 +154,17 @@ fn weapon_lines(ui: &mut Ui, w: &WeaponReadout) {
 }
 
 pub(super) fn reload_settings(ui: &mut Ui, r: &mut ReloadConfig) {
-    ui.checkbox(&mut r.enabled, "True reload").on_hover_text(
-        "Eject, load from the belt pouch, and chamber by hand. Off, the reload button plays the \
-         game's timed reload.",
-    );
-    ui.add_enabled_ui(r.enabled, |ui| {
-        ui.indent("reload", |ui| settings(ui, r));
-    });
-}
-
-fn settings(ui: &mut Ui, r: &mut ReloadConfig) {
-    egui::ComboBox::from_label("Reload button")
-        .selected_text(r.button.label())
-        .show_ui(ui, |ui| {
-            for button in ReloadButton::ALL {
-                ui.selectable_value(&mut r.button, button, button.label());
-            }
-        });
-    ui.add(egui::Slider::new(&mut r.tap_s, 0.1..=0.6).text("Tap length (s)"));
-    ui.checkbox(&mut r.flick_eject, "Flick the gun to eject");
-    ui.add_enabled_ui(r.flick_eject, |ui| {
-        ui.add(egui::Slider::new(&mut r.flick_speed_dps, 300.0..=2000.0).text("Flick speed (°/s)"));
-        ui.add(egui::Slider::new(&mut r.flick_cooldown_s, 0.1..=2.0).text("Flick cooldown (s)"));
-    });
-    vec3_drag(
-        ui,
-        "Fallback well (wrist frame, m)",
-        &mut r.well_offset_m,
-        0.005,
-    );
-    ui.add(egui::Slider::new(&mut r.held_top_m, 0.0..=0.2).text("Held round's top (m)"));
-    ui.add(egui::Slider::new(&mut r.capture_radius_m, 0.01..=0.15).text("Capture radius (m)"));
-    ui.add(egui::Slider::new(&mut r.capture_angle_deg, 5.0..=90.0).text("Capture angle (°)"));
-    ui.add(egui::Slider::new(&mut r.seat_depth_m, 0.005..=0.1).text("Seat depth (m)"));
-    ui.add(egui::Slider::new(&mut r.timeout_s, 1.0..=30.0).text("Round timeout (s)"));
-    belt_settings(ui, &mut r.belt);
-    ui.checkbox(&mut r.chamber, "Work the action after running dry");
-    ui.checkbox(
-        &mut r.manual_action,
-        "Work the bolt and the pump after every shot",
-    );
-    action_settings(ui, &mut r.action);
+    ui.checkbox(&mut r.flick_eject, "Flick the gun to eject")
+        .on_hover_text("A sharp flick of the hand holding a gun ejects its magazine.");
     ui.checkbox(&mut r.loose.enabled, "Magazines stay in the world")
         .on_hover_text(
             "An ejected magazine keeps its rounds, and a magazine on the ground that fits the gun \
              can be picked up and seated with them.",
         );
-    ui.add_enabled_ui(r.loose.enabled, |ui| {
-        let l = &mut r.loose;
-        ui.add(egui::Slider::new(&mut l.radius_m, 0.03..=0.3).text("Grab radius (m)"));
-        ui.add(egui::Slider::new(&mut l.range_m, 0.5..=5.0).text("Reach (m)"));
-        ui.add(egui::Slider::new(&mut l.half_length_m, 0.0..=0.2).text("Half length (m)"));
-        ui.add(egui::Slider::new(&mut l.max_carry_mps, 1.0..=60.0).text("Fastest carry (m/s)"));
-        ui.add(egui::Slider::new(&mut l.keep_s, 10.0..=1200.0).text("Remembered for (s)"));
-    });
-}
-
-fn belt_settings(ui: &mut Ui, b: &mut BeltConfig) {
-    ui.checkbox(&mut b.enabled, "Belt reload");
-    ui.add_enabled_ui(b.enabled, |ui| {
-        ui.add(egui::Slider::new(&mut b.max_tilt_deg, 5.0..=90.0).text("Belt: largest tilt (°)"));
-        ui.add(
-            egui::Slider::new(&mut b.min_push_speed_mps, 0.0..=2.0).text("Belt: push speed (m/s)"),
-        );
-        ui.add(egui::Slider::new(&mut b.depth_m, 0.0..=0.2).text("Belt: push depth (m)"));
-        ui.add(egui::Slider::new(&mut b.after_draw_s, 0.0..=3.0).text("Belt: after a draw (s)"));
-    });
-}
-
-fn action_settings(ui: &mut Ui, a: &mut ActionConfig) {
-    ui.checkbox(&mut a.physical, "Physical action").on_hover_text(
+    ui.checkbox(&mut r.belt.enabled, "Belt reload")
+        .on_hover_text("Push the gun's well down onto the belt pouch to reload it one-handed.");
+    ui.checkbox(&mut r.action.physical, "Physical action").on_hover_text(
         "The slide, charging handle, bolt, or pump follows the hand through its travel. Off, the \
          action is a pull-and-release gesture.",
     );
-    ui.add_enabled_ui(a.physical, |ui| {
-        ui.add(egui::Slider::new(&mut a.spring_s, 0.01..=0.5).text("Spring return (s)"));
-        ui.checkbox(&mut a.lock_back, "Slide locks back on an empty magazine");
-        ui.add(egui::Slider::new(&mut a.bolt_lift_deg, 10.0..=120.0).text("Bolt lift (°)"));
-        ui.add(egui::Slider::new(&mut a.bolt_radius_m, 0.005..=0.1).text("Bolt handle radius (m)"));
-        ui.add(egui::Slider::new(&mut a.lift_fraction, 0.5..=1.0).text("Bolt lift share"));
-    });
-    ui.add(egui::Slider::new(&mut a.grab_radius_m, 0.02..=0.2).text("Action grab radius (m)"));
-    ui.add(egui::Slider::new(&mut a.pull_fraction, 0.3..=1.0).text("Action pull share"));
-    ui.add(egui::Slider::new(&mut a.return_fraction, 0.0..=0.8).text("Action return share"));
-    ui.add(
-        egui::Slider::new(&mut a.release_distance_m, 0.05..=0.4)
-            .text("Action release distance (m)"),
-    );
-    ui.add(egui::Slider::new(&mut a.default_travel_m, 0.01..=0.2).text("Default travel (m)"));
 }

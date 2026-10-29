@@ -11,7 +11,7 @@
 
 use glam::{Quat, Vec3};
 
-use crate::controllers::{frame::Hand, weapons::reload::config::ReloadConfig};
+use crate::controllers::{frame::Hand, weapons::reload::tuning::Reload};
 
 /// Where the insertion is.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -110,7 +110,7 @@ impl Insertion {
 
     /// Fold one tick in for a pouch round.
     #[cfg(test)]
-    pub fn step(&mut self, inputs: InsertInputs, config: &ReloadConfig) -> Option<InsertEvent> {
+    pub fn step(&mut self, inputs: InsertInputs, config: &Reload) -> Option<InsertEvent> {
         self.step_with_source(inputs, InsertionSource::Pouch, config)
     }
 
@@ -119,7 +119,7 @@ impl Insertion {
         &mut self,
         inputs: InsertInputs,
         source: InsertionSource,
-        config: &ReloadConfig,
+        config: &Reload,
     ) -> Option<InsertEvent> {
         let dt = if inputs.dt.is_finite() {
             inputs.dt.max(0.0)
@@ -162,7 +162,7 @@ impl Insertion {
         inputs: InsertInputs,
         elapsed_s: f32,
         source: InsertionSource,
-        config: &ReloadConfig,
+        config: &Reload,
     ) -> Option<InsertEvent> {
         let captured = match self.stage {
             InsertStage::Captured { depth_m, .. } => Some(depth_m),
@@ -304,10 +304,11 @@ pub fn loading_hand(gun_hands: [bool; 2], taker: Option<Hand>, dominant: Hand) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::weapons::reload::tuning::RELOAD;
 
     #[test]
     fn retained_magazines_keep_the_grip_beyond_pouch_and_world_lifetimes() {
-        let config = ReloadConfig::new();
+        let config = RELOAD;
         for source in [InsertionSource::Pouch, InsertionSource::RetainedMagazine] {
             let mut insertion = Insertion::new();
             let mut sample = inputs(true, WELL.mouth - Vec3::Y, Vec3::ZERO);
@@ -339,7 +340,7 @@ mod tests {
         }
     }
 
-    const CONFIG: ReloadConfig = ReloadConfig::new();
+    const CONFIG: Reload = RELOAD;
     const WELL: Well = Well {
         mouth: Vec3::new(0.2, -0.3, -0.4),
         axis: Vec3::Y,

@@ -40,6 +40,7 @@ mod class;
 mod pose;
 #[cfg(test)]
 mod test_support;
+pub mod tuning;
 use std::{
     sync::OnceLock,
     time::{Duration, Instant},
@@ -53,15 +54,18 @@ use re_utilities::hook_library::HookLibrary;
 #[cfg(test)]
 pub(crate) use test_support::TestWeight;
 
-pub use self::class::HeftClass;
 use self::pose::{Weight, clamp_angle, sway, unbraced_share};
+pub use self::{
+    class::HeftClass,
+    tuning::{BracedHeft, BracedTuning, Heft, HeftTuning},
+};
 use crate::{
     config::Config,
     controllers::{
         frame::Hand,
         hands::CockpitHand,
         scheme,
-        weapons::{config::HeftConfig, foregrip, recoil::Motion},
+        weapons::{foregrip, recoil::Motion},
     },
 };
 
@@ -141,7 +145,7 @@ pub fn freeze(hands: [bool; 2]) {
 /// Turn each gun hand's poses by its gun's weight. `hands` are the cockpit-frame hands, already in
 /// any two-handed pose, indexed by [`Hand::index`]; `head` is the head's cockpit position. The
 /// off-hand of an engaged foregrip moves with the gun by the grip's weight, so the gun carries it.
-pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &HeftConfig) {
+pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &Heft) {
     let now = Instant::now();
     let grip = foregrip::two_hand_grip();
     let mut guard = STATE.lock();
@@ -205,7 +209,7 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &HeftConf
 /// for a gun the weight acts on in that hand, one otherwise. The recoil blends it toward its own
 /// two-hand kick scale by the foregrip's weight.
 pub fn one_hand_kick(hand: Hand) -> f32 {
-    let config = Config::lock_query(|c| c.controllers.weapons.heft);
+    let config = Heft::of(&Config::lock_query(|c| c.controllers.weapons.heft));
     let target = STATE.lock().hands[hand.index()].target.map(|(t, _)| t);
     match target {
         Some(t) if config.enabled => t.class.tuning(&config).kick_scale,
@@ -216,8 +220,8 @@ pub fn one_hand_kick(hand: Hand) -> f32 {
 /// The multiplier on the scatter of a shot from `weapon`: the class's spread scale, scaled by the
 /// unbraced share, for a weapon the weight acts on in either hand, one otherwise.
 pub fn spread_scale(weapon: usize) -> f32 {
-    let config = Config::lock_query(|c| c.controllers.weapons.heft);
-    if !(config.enabled && config.spread) {
+    let config = Heft::of(&Config::lock_query(|c| c.controllers.weapons.heft));
+    if !config.enabled {
         return 1.0;
     }
     let target = STATE
@@ -254,7 +258,7 @@ struct HandInputs<'a> {
     hand: &'a CockpitHand,
     head: Vec3,
     weight: &'a Weight,
-    config: &'a HeftConfig,
+    config: &'a Heft,
     /// The seconds since the last read.
     dt: f32,
     /// The sway's clock, seconds.
@@ -430,15 +434,18 @@ mod tests {
         frame::{Hand, Pose},
         hands::{CockpitHand, pose as hand_pose},
         weapons::{
-            config::{BracedTuning, HeftConfig, HeftTuning},
             foregrip,
-            heft::pose::{RotSpring, Weight, WeightedPose, sway, unbraced_share, weighted_pose},
+            heft::{
+                BracedTuning, Heft, HeftTuning,
+                pose::{RotSpring, Weight, WeightedPose, sway, unbraced_share, weighted_pose},
+                tuning::HEFT,
+            },
             regions::GunRegion,
         },
     };
 
-    fn config() -> HeftConfig {
-        HeftConfig::new()
+    fn config() -> Heft {
+        HEFT
     }
 
     const OFFSET: GripOffset = GripOffset::INDEX_BEST_GUESS;

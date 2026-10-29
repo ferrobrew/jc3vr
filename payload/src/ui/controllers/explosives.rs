@@ -1,20 +1,17 @@
 //! C4 by hand: the throw from the chest pouch, the placed charges, the detonations, the wrist
-//! detonator's press, and their settings.
+//! detonator's press, and their switches.
 
 use egui::Ui;
 
 use crate::{
     controllers::{
         config::WeaponsConfig,
-        weapons::{
-            c4::{
-                self, C4Status,
-                wrist::{self, WristStatus},
-            },
-            config::{C4Config, WristDetonatorConfig},
+        weapons::c4::{
+            self, C4Status,
+            wrist::{self, WristStatus},
         },
     },
-    ui::controllers::{vec3, vec3_drag, yes_no},
+    ui::controllers::{vec3, yes_no},
 };
 
 /// Everything the C4 readout shows, read before the config is locked for editing.
@@ -114,79 +111,16 @@ pub(super) fn explosives_readout(ui: &mut Ui, readout: &ExplosivesReadout) {
     }
 }
 
-/// The C4 throw's and the wrist detonator's settings.
+/// The switches of the C4 throw, the press onto surfaces, and the wrist detonator.
 pub(super) fn explosives_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     ui.checkbox(&mut w.c4_throw, "Physical C4 throw").on_hover_text(
         "A grip press at the chest pouch primes a C4 charge; opening the grip throws it, and it \
          sticks where it lands.",
     );
-    ui.add_enabled_ui(w.c4_throw, |ui| {
-        ui.indent("c4", |ui| c4_settings(ui, &mut w.c4));
-    });
+    ui.checkbox(&mut w.c4.stick.enabled, "Press C4 onto surfaces")
+        .on_hover_text("A held charge pressed onto a surface sticks there.");
     ui.checkbox(&mut w.wrist_detonator, "Wrist detonator").on_hover_text(
         "Push the dominant index fingertip into the button on the inside of the off-hand's wrist \
          to detonate the placed charges.",
     );
-    ui.add_enabled_ui(w.wrist_detonator, |ui| {
-        ui.indent("wrist detonator", |ui| {
-            detonator_settings(ui, &mut w.c4.detonator)
-        });
-    });
-}
-
-fn c4_settings(ui: &mut Ui, c: &mut C4Config) {
-    vec3_drag(
-        ui,
-        "Hold offset (grip frame, m)",
-        &mut c.hold_offset_m,
-        0.005,
-    );
-    ui.add(egui::Slider::new(&mut c.release_window_s, 0.02..=0.3).text("Release window (s)"));
-    ui.add(egui::Slider::new(&mut c.release_peak_span_s, 0.0..=0.05).text("Release peak span (s)"));
-    ui.add(egui::Slider::new(&mut c.velocity_scale, 0.25..=3.0).text("Velocity scale"));
-    ui.add(egui::Slider::new(&mut c.max_speed_mps, 5.0..=60.0).text("Fastest throw (m/s)"));
-    let s = &mut c.stick;
-    ui.checkbox(&mut s.enabled, "Press C4 onto surfaces")
-        .on_hover_text("A held charge pressed onto a surface sticks there.");
-    ui.add_enabled_ui(s.enabled, |ui| {
-        ui.indent("c4 stick", |ui| {
-            ui.add(egui::Slider::new(&mut s.contact_m, 0.005..=0.15).text("Contact distance (m)"));
-            ui.add(egui::Slider::new(&mut s.standoff_m, 0.0..=0.15).text("Standoff (m)"));
-            ui.add(egui::Slider::new(&mut s.push_mps, 0.1..=5.0).text("Push speed (m/s)"));
-            ui.add(
-                egui::Slider::new(&mut s.after_prime_s, 0.0..=2.0)
-                    .text("Sticks after the prime (s)"),
-            );
-            ui.add(egui::Slider::new(&mut s.preview_m, 0.0..=1.0).text("Preview reach (m)"));
-        });
-    });
-}
-
-fn detonator_settings(ui: &mut Ui, d: &mut WristDetonatorConfig) {
-    vec3_drag(ui, "Button (left grip frame, m)", &mut d.offset_m, 0.002);
-    vec3_drag(ui, "Button normal (left grip frame)", &mut d.normal, 0.01);
-    ui.add(egui::Slider::new(&mut d.radius_m, 0.01..=0.08).text("Button radius (m)"));
-    ui.add(egui::Slider::new(&mut d.touch_radius_m, 0.005..=0.08).text("Touch radius (m)"));
-    ui.add(
-        egui::Slider::new(&mut d.release_radius_m, d.touch_radius_m..=0.15)
-            .text("Release radius (m)"),
-    );
-    ui.add(egui::Slider::new(&mut d.max_behind_m, 0.0..=0.05).text("Deepest behind the face (m)"));
-    ui.add(
-        egui::Slider::new(&mut d.min_entry_speed_mps, 0.0..=1.0).text("Quick press speed (m/s)"),
-    );
-    ui.add(egui::Slider::new(&mut d.dwell_s, 0.0..=1.0).text("Slow press dwell (s)"));
-    vec3_drag(
-        ui,
-        "Fingertip pointing (right aim frame, m)",
-        &mut d.fingertip_pointing_m,
-        0.002,
-    );
-    vec3_drag(
-        ui,
-        "Fingertip on the trigger (right aim frame, m)",
-        &mut d.fingertip_resting_m,
-        0.002,
-    );
-    ui.checkbox(&mut d.overlay, "Draw the button");
 }

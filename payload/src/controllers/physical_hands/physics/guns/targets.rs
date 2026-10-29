@@ -10,39 +10,30 @@ use crate::controllers::{
     physical_hands::physics::guns::{self, GunHolds},
     vehicles,
     weapons::{
-        config::{ForegripConfig, HeftConfig},
-        foregrip, heft,
+        config::HeftConfig,
+        foregrip::{self, FOREGRIP},
+        heft::{self, Heft},
     },
 };
 
 /// Compose support and weight once, before either driving a gun hand or drawing its body offset.
 /// The physical drive keeps only the hands of current gun holds; ordinary active-hand composition
 /// uses this same operation for every hand. The body supplies collisions and recoil afterward.
-pub(crate) fn apply(
-    hands: &mut [Option<CockpitHand>; 2],
-    head: Vec3,
-    foregrip: &ForegripConfig,
-    heft: &HeftConfig,
-) {
-    foregrip::apply(hands, foregrip);
-    heft::apply(hands, head, heft);
+pub(crate) fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, heft: &HeftConfig) {
+    foregrip::apply(hands, &FOREGRIP);
+    heft::apply(hands, head, &Heft::of(heft));
 }
 
 /// Give the physical drive the support and weight targets of the currently published guns.
 /// Reads no native objects and does not compose active hands recursively.
-pub(crate) fn apply_physical(
-    hands: &mut [Option<CockpitHand>; 2],
-    head: Vec3,
-    foregrip: &ForegripConfig,
-    heft: &HeftConfig,
-) {
+pub(crate) fn apply_physical(hands: &mut [Option<CockpitHand>; 2], head: Vec3, heft: &HeftConfig) {
     let holds = guns::SHARED
         .lock()
         .fresh_holds(Instant::now())
         .unwrap_or_default();
     let raw = *hands;
     vehicles::apply(hands);
-    apply(hands, head, foregrip, heft);
+    apply(hands, head, heft);
     retain_gun_targets(hands, raw, holds);
 }
 
@@ -77,10 +68,7 @@ mod tests {
             },
             tuning::PALMS,
         },
-        weapons::{
-            config::BracedHeftConfig,
-            heft::{HeftClass, TestWeight},
-        },
+        weapons::heft::{BracedHeft, Heft, HeftClass, TestWeight, tuning::HEFT},
     };
 
     fn hand(position: Vec3) -> CockpitHand {
@@ -97,7 +85,7 @@ mod tests {
 
     #[test]
     fn heavy_weight_drives_the_palm_and_gun_once_for_both_hands() {
-        let config = HeftConfig::new();
+        let config = HEFT;
         for holder in Hand::BOTH {
             let mut spring = TestWeight::default();
             let mut shown = hand(Vec3::new(0.0, -0.2, -0.6));
@@ -140,9 +128,9 @@ mod tests {
                 );
             }
             assert!((shown.wrist.orientation * Vec3::NEG_Z).y > one_hand_pitch + 0.1);
-            let disabled = HeftConfig {
+            let disabled = Heft {
                 enabled: false,
-                braced: BracedHeftConfig {
+                braced: BracedHeft {
                     enabled: false,
                     ..config.braced
                 },

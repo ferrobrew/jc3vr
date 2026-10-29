@@ -1,13 +1,13 @@
-//! The pouches' models: whether each is drawn, and where each sits on its pouch.
+//! The pouches' models: whether they are drawn, and which are.
 
 use egui::Ui;
 
 use crate::controllers::weapons::{
-    config::{ModelPlacement, PouchModelsConfig},
+    config::PouchModelsConfig,
     pouch_models::{self, Prop},
 };
 
-/// The pouches' models' switch, readout, and placements.
+/// The pouches' models' switch and readout.
 pub(super) fn pouch_model_settings(ui: &mut Ui, m: &mut PouchModelsConfig) {
     ui.checkbox(&mut m.enabled, "Draw the pouches' models")
         .on_hover_text(
@@ -30,33 +30,4 @@ pub(super) fn pouch_model_settings(ui: &mut Ui, m: &mut PouchModelsConfig) {
         status.created,
         status.drawn
     ));
-    ui.label("Each model's place on its pouch, right side (+X right, +Y up the spine, +Z back)");
-    placement_settings(ui, "Grenade", &mut m.grenade);
-    placement_settings(ui, "C4 charge", &mut m.charge);
-    placement_settings(ui, "Magazine", &mut m.magazine);
-    if ui.button("Reset the models' places").clicked() {
-        *m = PouchModelsConfig {
-            enabled: m.enabled,
-            ..PouchModelsConfig::new()
-        };
-    }
-}
-
-fn placement_settings(ui: &mut Ui, label: &str, p: &mut ModelPlacement) {
-    for (axis, value) in [
-        ("x", &mut p.offset_m.x),
-        ("y", &mut p.offset_m.y),
-        ("z", &mut p.offset_m.z),
-    ] {
-        ui.add(egui::Slider::new(value, -0.2..=0.2).text(format!("{label} offset {axis} (m)")));
-    }
-    for (axis, value) in [
-        ("x", &mut p.rotation_deg.x),
-        ("y", &mut p.rotation_deg.y),
-        ("z", &mut p.rotation_deg.z),
-    ] {
-        ui.add(
-            egui::Slider::new(value, -180.0..=180.0).text(format!("{label} turn about {axis} (°)")),
-        );
-    }
 }

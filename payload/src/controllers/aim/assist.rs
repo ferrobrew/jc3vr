@@ -33,6 +33,13 @@ use crate::controllers::{
     config::AimConfig,
 };
 
+/// The farthest a candidate may be from the hand for aim assist, metres.
+const MAX_DISTANCE_M: f32 = 150.0;
+
+/// How far short of a candidate's body position the line of sight to it may be blocked and still
+/// count as clear, metres: the line ends inside the target's own body.
+const OCCLUSION_TOLERANCE_M: f32 = 0.75;
+
 /// One hand's correction on the last aim update.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct AssistCorrection {
@@ -83,7 +90,7 @@ pub(super) unsafe fn assist(
     if config.assist_strength.is_nan() || config.assist_strength <= 0.0 {
         return None;
     }
-    let candidate = unsafe { best_candidate(aim, ray, options, config) }?;
+    let candidate = unsafe { best_candidate(aim, ray, options) }?;
     let point = assisted_point(ray.origin, aim_point, candidate, config.assist_strength)?;
     let angle_rad = (aim_point - ray.origin)
         .try_normalize()
@@ -108,7 +115,6 @@ unsafe fn best_candidate(
     aim: *mut PlayerAimControl,
     ray: &Ray,
     options: &CastOptions,
-    config: &AimConfig,
 ) -> Option<Vec3> {
     let aim = unsafe { aim.as_mut() }?;
     let included = unsafe { targets::included_sets() };
@@ -121,7 +127,7 @@ unsafe fn best_candidate(
             .filter(|(_, included)| *included)
         {
             for target in unsafe { targets::targets(set) } {
-                if let Some(candidate) = unsafe { score(aim, target, ray, config) } {
+                if let Some(candidate) = unsafe { score(aim, target, ray) } {
                     scored.push(candidate);
                 }
             }
@@ -132,12 +138,7 @@ unsafe fn best_candidate(
     scored
         .into_iter()
         .find(|(_, position)| unsafe {
-            raycast::line_of_sight(
-                ray.origin,
-                *position,
-                config.assist_occlusion_tolerance_m,
-                options,
-            )
+            raycast::line_of_sight(ray.origin, *position, OCCLUSION_TOLERANCE_M, options)
         })
         .map(|(_, position)| position)
 }
@@ -148,12 +149,7 @@ unsafe fn best_candidate(
 /// # Safety
 ///
 /// As [`assist`], inside the view override.
-unsafe fn score(
-    aim: &mut PlayerAimControl,
-    target: *mut Target,
-    ray: &Ray,
-    config: &AimConfig,
-) -> Option<(f32, Vec3)> {
+unsafe fn score(aim: &mut PlayerAimControl, target: *mut Target, ray: &Ray) -> Option<(f32, Vec3)> {
     unsafe { targets::game_object(target) }?;
     // Read as an integer: the relation is refreshed by the game and may hold a value the enum does
     // not name.
@@ -167,7 +163,7 @@ unsafe fn score(
     }
     let position = unsafe { targets::body_position(target) }?;
     let offset = position - ray.origin;
-    if offset.length() > config.assist_max_distance_m || offset.dot(ray.direction) <= 0.0 {
+    if offset.length() > MAX_DISTANCE_M || offset.dot(ray.direction) <= 0.0 {
         return None;
     }
     let mut fitness = 0.0f32;

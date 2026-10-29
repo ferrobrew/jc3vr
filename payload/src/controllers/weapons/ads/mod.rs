@@ -130,7 +130,7 @@ pub fn apply(
             eye: aiming_eye(head, hand, config),
             forward: head.orientation * Vec3::NEG_Z,
             pocket: shoulders[hand.index()]
-                .map(|s| s + torso * pocket_offset(hand, config.pocket_offset_m)),
+                .map(|s| s + torso * pocket_offset(hand, POCKET_OFFSET_M)),
             scoped: weapon.scoped,
         };
         Some(solve::solve(&inputs, config))
@@ -190,17 +190,24 @@ pub fn aiming_eye(head: Pose, holder: Hand, config: &AdsConfig) -> Vec3 {
         Hand::Left => -1.0,
         Hand::Right => 1.0,
     };
-    head.position + head.orientation * Vec3::new(sign * config.half_ipd_m, 0.0, 0.0)
+    head.position + head.orientation * Vec3::new(sign * HALF_IPD_M, 0.0, 0.0)
 }
 
-/// The pocket's offset from `hand`'s shoulder in the torso's frame: the configured right-side
-/// offset, mirrored for the left.
+/// The pocket's offset from `hand`'s shoulder in the torso's frame: the right-side offset `right`,
+/// mirrored for the left.
 pub fn pocket_offset(hand: Hand, right: Vec3) -> Vec3 {
     match hand {
         Hand::Left => Vec3::new(-right.x, right.y, right.z),
         Hand::Right => right,
     }
 }
+
+/// How far each eye sits from the eyes' midpoint, metres.
+const HALF_IPD_M: f32 = 0.032;
+
+/// The shoulder pocket's offset from the shoulder joint in the torso's frame (+X right, +Y up, -Z
+/// forward), metres, given for the right shoulder and mirrored for the left.
+const POCKET_OFFSET_M: Vec3 = Vec3::new(-0.06, -0.04, -0.04);
 
 /// A step counts as taken once its share passes this.
 const TAKEN: f32 = 0.99;

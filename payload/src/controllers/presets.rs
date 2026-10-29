@@ -56,7 +56,6 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     } else {
         SchemeSetting::Gamepad
     };
-    c.gamepad_semantics = input;
     c.input.hand_tracking = input;
     c.bindings.enabled = input;
     c.bindings.yank.enabled = hands;
@@ -73,23 +72,16 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.overlay.grapple_highlight = hands;
     c.overlay.grapple_beam = hands;
     c.overlay.hide_game_reticle = hands;
-    c.weapons.holsters.enabled = weapons;
     c.weapons.foregrip.enabled = weapons;
-    c.weapons.block_fire_during_actions = weapons;
     c.weapons.recoil.enabled = weapons;
-    c.weapons.recoil.suppress_camera_kick = weapons;
     c.haptics.enabled = weapons;
     c.haptics.game_rumble = weapons;
     c.weapons.reload.enabled = weapons;
     c.weapons.grenade_throw = weapons;
-    c.weapons.grenade.warning_overlay = weapons;
-    c.weapons.grenade.warning_haptics = weapons;
     c.weapons.c4_throw = weapons;
     c.weapons.wrist_detonator = weapons;
     c.weapons.c4.detonator.overlay = weapons;
     c.weapons.scopes = weapons;
-    c.weapons.scope.suppress_precision_aim = weapons;
-    c.weapons.scope.reticle = weapons;
     c.weapons.auto_switch_when_empty = !weapons;
     c.body.remap_head = room;
     c.body.remap_hands = hands;

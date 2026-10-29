@@ -23,7 +23,10 @@ use glam::Vec3;
 use crate::{
     config::Config,
     controllers::{
-        aim::{self, GrappleAim, HandAim, HandSource, raycast::RayHit, sights::tuning},
+        aim::{
+            self, GRAPPLE_ORIGIN_M, GrappleAim, HandAim, HandSource, raycast::RayHit,
+            sights::tuning,
+        },
         config::{GunReadout, OverlayConfig},
         frame::Hand,
         hands::tiers,
@@ -44,7 +47,7 @@ pub fn tick(active: bool, hands: &[Option<HandPoses>; 2]) {
         (
             c.controllers.overlay,
             c.controllers.acting_hand(),
-            c.controllers.aim.grapple_origin_m,
+            GRAPPLE_ORIGIN_M,
             c.controllers.aim.sight_tuning.enabled,
         )
     });

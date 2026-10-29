@@ -3,9 +3,12 @@ use std::{num::NonZeroUsize, time::Instant};
 use super::*;
 use crate::controllers::{
     frame::Hand,
-    weapons::reload::loose::{
-        Captured, LooseCounts,
-        records::{DropKey, Records},
+    weapons::reload::{
+        loose::{
+            Captured, LooseCounts,
+            records::{DropKey, Records},
+        },
+        tuning::RELOAD,
     },
 };
 
@@ -56,7 +59,7 @@ fn state() -> (State, Loose) {
     (state, magazine)
 }
 
-fn carry<'a>(config: &'a LooseMagazineConfig) -> Carry<'a> {
+fn carry<'a>(config: &'a LooseTuning) -> Carry<'a> {
     Carry {
         top: Vec3::Y,
         axis: Vec3::Y,
@@ -67,7 +70,7 @@ fn carry<'a>(config: &'a LooseMagazineConfig) -> Carry<'a> {
 
 #[test]
 fn reownership_from_carry_read_seat_read_or_velocity_write_is_sticky_between_maintenance_calls() {
-    let config = LooseMagazineConfig::default();
+    let config = RELOAD.loose;
     for operation in 0..3 {
         for error in [BodyError::NoBody, BodyError::Reowned] {
             let (mut state, magazine) = state();
@@ -113,7 +116,7 @@ fn reownership_from_carry_read_seat_read_or_velocity_write_is_sticky_between_mai
 
 #[test]
 fn temporary_pose_or_write_errors_defer_and_recover_without_consuming_rounds() {
-    let config = LooseMagazineConfig::default();
+    let config = RELOAD.loose;
     for error in [
         BodyError::NoPhysicsWorld,
         BodyError::NotDynamic,

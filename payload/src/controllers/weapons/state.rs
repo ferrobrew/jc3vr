@@ -147,13 +147,7 @@ impl State {
         let target = ik::tick_records().current[holder.index()];
         // SAFETY: the weapon was read this tick on the main thread outside the world update.
         let fresh = target.and_then(|target| unsafe {
-            engine::measure_geometry(
-                weapon,
-                target,
-                &config.aim,
-                &config.weapons.foregrip,
-                world_scale,
-            )
+            engine::measure_geometry(weapon, target, &config.aim, world_scale)
         });
         match fresh {
             Some(geometry) => {

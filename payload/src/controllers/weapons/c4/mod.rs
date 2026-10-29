@@ -53,10 +53,10 @@
 //! [`Inventory::GetAnimationAllowsPlantingExplosives`]: jc3gi::character::inventory::Inventory::GetAnimationAllowsPlantingExplosives
 //! [`Character::HolsterWeapon`]: jc3gi::character::character::Character::HolsterWeapon
 
-pub mod config;
 pub mod press;
 pub mod stage;
 pub mod stick;
+pub mod tuning;
 pub mod wheel;
 pub mod wrist;
 
@@ -88,9 +88,9 @@ use crate::{
             c4::{
                 stage::{InputEvent, Outcome, Refusal, Stage, WeaponAction, WeaponView},
                 stick::{self as stick_by_hand, StickAt},
+                tuning::{C4, C4Tuning},
                 wheel::{WheelHands, WheelStep},
             },
-            config::C4Config,
             engine,
             grenade::Release,
         },
@@ -210,7 +210,7 @@ pub(crate) fn take_thrown() -> [bool; 2] {
 
 /// The hand holding a charge that may be pressed onto a surface now, with the hand's grip in the
 /// world: the charge is held, has been out of the pouch long enough, and the hand has not opened.
-pub(crate) fn stick_candidate(tuning: &C4Config) -> Option<(Hand, Pose)> {
+pub(crate) fn stick_candidate(tuning: &C4Tuning) -> Option<(Hand, Pose)> {
     let state = STATE.lock();
     let Stage::Held { hand, release } = state.stage else {
         return None;
@@ -281,7 +281,7 @@ pub(super) struct TickInputs {
 }
 
 /// The input tick's half of the throw: fold the grab and the release into the stage.
-pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Config) {
+pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Tuning) {
     if !inputs.acting {
         stand_down();
         return;
@@ -489,7 +489,7 @@ static STATE: Mutex<State> = Mutex::new(State {
 
 /// The release of a throw by `hand`: the velocity of the held charge's point over the samples just
 /// before now, turned into world axes and scaled. `None` without samples.
-fn release(hand: Hand, world_scale: f32, tuning: &C4Config) -> Option<Release> {
+fn release(hand: Hand, world_scale: f32, tuning: &C4Tuning) -> Option<Release> {
     let samples = motion::history(hand);
     let now = motion::latest_time()?;
     let velocity = motion::release_velocity(
@@ -509,7 +509,7 @@ fn release(hand: Hand, world_scale: f32, tuning: &C4Config) -> Option<Release> {
 
 /// The held charge's offset in `hand`'s grip frame: the configured right-hand offset, mirrored for
 /// the left.
-pub(crate) fn hold_offset(hand: Hand, tuning: &C4Config) -> Vec3 {
+pub(crate) fn hold_offset(hand: Hand, tuning: &C4Tuning) -> Vec3 {
     let o = tuning.hold_offset_m;
     match hand {
         Hand::Left => Vec3::new(-o.x, o.y, o.z),
@@ -559,8 +559,9 @@ fn update_from_user_serial(
     let Some(user) = (unsafe { local_user(weapon) }) else {
         return original();
     };
-    let (enabled, tuning) =
+    let (enabled, config) =
         Config::lock_query(|c| (c.controllers.enabled, c.controllers.weapons.c4));
+    let tuning = C4Tuning::of(&config);
     let acting = enabled && scheme::is_controllers();
 
     // SAFETY: the weapon and its user are live, on the thread that updates the weapon; the
@@ -742,7 +743,7 @@ fn update_attachment_transforms(
         held::hold(Slot::Charge, None);
         return;
     };
-    let offset = hold_offset(hand, &Config::lock_query(|c| c.controllers.weapons.c4));
+    let offset = hold_offset(hand, &C4);
     let matrix = held_matrix(grip, offset);
     // SAFETY: the primed charge is live while the weak reference locks, on this thread.
     let charge = unsafe { primed_charge(&*weapon) };

@@ -15,13 +15,13 @@ use crate::controllers::{
         reload::{
             FinishInputs, GunTick, State, Tick, WeaponTick,
             chamber::{self, ActionKind, Chamber, WorkEvent, WorkInputs},
-            config::ReloadConfig,
             engine,
             insert::InsertStage,
             plan::ReloadPlan,
             render,
             steps::chambering,
             travel::{ActionTravel, TravelEvents, TravelInputs},
+            tuning::Reload,
         },
     },
 };
@@ -85,7 +85,7 @@ impl ActionEngine for NativeAction {
 impl State {
     /// The action's work by the free hand.
     pub(super) fn work(&mut self, tick: &Tick, inputs: &FinishInputs, config: &ControllersConfig) {
-        let reload = &config.weapons.reload;
+        let reload = &Reload::of(&config.weapons.reload);
         if reload.action.physical {
             self.status.work.reset();
             self.work_travel(tick, inputs, reload, &mut NativeAction);
@@ -173,7 +173,7 @@ impl State {
         &mut self,
         tick: &Tick,
         inputs: &FinishInputs,
-        reload: &ReloadConfig,
+        reload: &Reload,
         engine: &mut impl ActionEngine,
     ) {
         let action = &reload.action;
@@ -353,7 +353,7 @@ impl State {
 
     /// Publish each hand's action part with its own weapon, and the held magazine part with the
     /// weapon its round is for, for the render thread.
-    fn publish_render(&mut self, tick: &Tick, reload: &ReloadConfig) {
+    fn publish_render(&mut self, tick: &Tick, reload: &Reload) {
         let physical = reload.action.physical;
         let working = matches!(self.status.work.stage, chamber::WorkStage::Held { .. });
         let records = Hand::BOTH.map(|hand| {
@@ -432,12 +432,12 @@ impl State {
 }
 
 /// Whether the plan's slide catches at the rear on an empty magazine.
-pub(super) fn locks_back(plan: &ReloadPlan, reload: &ReloadConfig) -> bool {
+pub(super) fn locks_back(plan: &ReloadPlan, reload: &Reload) -> bool {
     plan.action == ActionKind::Slide && reload.action.physical && reload.action.lock_back
 }
 
 /// Whether the plan's action is the mod's to work.
-fn workable(plan: &ReloadPlan, reload: &ReloadConfig) -> bool {
+fn workable(plan: &ReloadPlan, reload: &Reload) -> bool {
     chambering(plan, reload) && plan.action != ActionKind::None
 }
 

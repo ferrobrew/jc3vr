@@ -51,12 +51,10 @@ use crate::{
             store,
         },
         physical_hands::DrawTime,
-        weapons::{
-            c4::{
-                self, DetonationSource,
-                press::{self, FingertipSource, PressDetector, PressPhase, PressReading},
-            },
-            config::WristDetonatorConfig,
+        weapons::c4::{
+            self, DetonationSource,
+            press::{self, FingertipSource, PressDetector, PressPhase, PressReading},
+            tuning::{C4Tuning, DetonatorTuning},
         },
     },
     headpose, hooks,
@@ -128,7 +126,7 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
         stand_down();
         return;
     };
-    let tuning = &config.weapons.c4.detonator;
+    let tuning = &C4Tuning::of(&config.weapons.c4).detonator;
     let presser = inputs.presser;
     let off = presser.other();
     let grips = sample.grips;
@@ -244,7 +242,7 @@ impl HandSample {
     fn fingertip(
         &self,
         hand: Hand,
-        tuning: &WristDetonatorConfig,
+        tuning: &DetonatorTuning,
     ) -> Option<(Vec3, FingertipSourceKind)> {
         let input = self.sources.hands[hand.index()]?;
         let source = FingertipSource {
@@ -445,7 +443,7 @@ struct Look {
 
 /// How far a fingertip `distance_m` from the button's centre has come from the approach radius to
 /// the touch sphere, `0..=1`.
-fn closeness(distance_m: f32, tuning: &WristDetonatorConfig) -> f32 {
+fn closeness(distance_m: f32, tuning: &DetonatorTuning) -> f32 {
     let touch = tuning.touch_radius_m.max(0.0);
     let span = tuning.approach_radius_m - touch;
     if span <= 0.0 {
@@ -456,7 +454,7 @@ fn closeness(distance_m: f32, tuning: &WristDetonatorConfig) -> f32 {
 
 /// The button's sprites on the off-hand's wrist, lying on the wrist facing out of it: a disc and
 /// its rim, and a pip for each placed charge in a row along the forearm toward the elbow.
-fn button(look: &Look, tuning: &WristDetonatorConfig) -> Vec<Primitive> {
+fn button(look: &Look, tuning: &DetonatorTuning) -> Vec<Primitive> {
     let centre = mirrored(look.off, tuning.offset_m);
     let radius = tuning.radius_m.max(0.005);
     let lit = look.charges > 0;
@@ -557,6 +555,7 @@ fn mix(a: Rgba, b: Rgba, t: f32) -> Rgba {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::weapons::c4::tuning::C4;
 
     fn fingertip_source(
         joints: Option<&[frame::HandJoint; frame::HAND_JOINT_COUNT]>,
@@ -594,7 +593,7 @@ mod tests {
         let tip = &mut joints[press::INDEX_TIP_JOINT];
         tip.position_valid = true;
         tip.pose.position = Vec3::new(0.1, 0.2, 0.3);
-        let tuning = WristDetonatorConfig::new();
+        let tuning = C4.detonator;
         assert_eq!(
             FingertipSourceKind::from_source(fingertip_source(Some(&joints))),
             FingertipSourceKind::Skeleton
@@ -686,7 +685,7 @@ mod tests {
             joints[press::INDEX_TIP_JOINT].pose.position += Vec3::Y;
             source.hands[hand.index()].grip.pose.position += Vec3::Y * 0.5;
         }
-        let tuning = WristDetonatorConfig::new();
+        let tuning = C4.detonator;
         for hand in Hand::BOTH {
             let copied = sample.sources.hands[hand.index()].unwrap();
             let tip = copied.joints.unwrap()[press::INDEX_TIP_JOINT].pose.position;
@@ -721,7 +720,7 @@ mod tests {
             sources: late::HandSources::from_frame(&source, 1.0, origin),
             rendered: true,
         };
-        let tuning = WristDetonatorConfig::new();
+        let tuning = C4.detonator;
         let previous = Some(sample.stamp());
         assert!(sample.follows(previous));
         sample.rendered = false;
@@ -758,7 +757,7 @@ mod tests {
 
     #[test]
     fn a_pip_shows_each_placed_charge() {
-        let t = WristDetonatorConfig::new();
+        let t = C4.detonator;
         // The disc, its rim, and the touch sphere's ring, then one pip per charge, up to the most
         // drawn.
         assert_eq!(button(&look(0, None), &t).len(), 3);
@@ -768,7 +767,7 @@ mod tests {
 
     #[test]
     fn the_button_lights_with_charges_and_flashes_on_events() {
-        let t = WristDetonatorConfig::new();
+        let t = C4.detonator;
         assert_eq!(colour(&button(&look(0, None), &t)[0]), DIM);
         assert_eq!(colour(&button(&look(2, None), &t)[0]), LIT);
         assert_eq!(
@@ -783,7 +782,7 @@ mod tests {
 
     #[test]
     fn an_approaching_fingertip_shows_its_dot_and_a_closing_ring() {
-        let t = WristDetonatorConfig::new();
+        let t = C4.detonator;
         let near = Look {
             closeness: Some(closeness(t.approach_radius_m * 0.5, &t)),
             tip: Some(Vec3::X * 0.05),
@@ -803,7 +802,7 @@ mod tests {
 
     #[test]
     fn closeness_runs_from_the_approach_radius_to_the_touch_sphere() {
-        let t = WristDetonatorConfig::new();
+        let t = C4.detonator;
         assert_eq!(closeness(t.approach_radius_m, &t), 0.0);
         assert_eq!(closeness(t.touch_radius_m, &t), 1.0);
         assert_eq!(closeness(0.0, &t), 1.0);
@@ -813,7 +812,7 @@ mod tests {
 
     #[test]
     fn a_blocked_touch_turns_the_rims_and_the_dot_red() {
-        let t = WristDetonatorConfig::new();
+        let t = C4.detonator;
         let blocked = Look {
             blocked: true,
             tip: Some(Vec3::ZERO),
@@ -827,7 +826,7 @@ mod tests {
 
     #[test]
     fn the_button_lies_on_the_wrist_facing_out() {
-        let t = WristDetonatorConfig::new();
+        let t = C4.detonator;
         for prim in button(&look(2, None), &t) {
             let Primitive::Sprite { facing, .. } = prim else {
                 panic!("{prim:?}");

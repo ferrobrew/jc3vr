@@ -30,7 +30,7 @@
 //! is ([`set_pump_slide`]), and the foregrip moves back with it, so the drawn off-hand rides the
 //! pump.
 //!
-//! The grip ends when the off-hand lets go of its grip ([`ForegripConfig::hold`], the default), or
+//! The grip ends when the off-hand lets go of its grip ([`ForegripTuning::hold`], the default), or
 //! with the grip a toggle, on its next grip press; when the off-hand moves further than the release
 //! distance from the foregrip; or when the weapon leaves the hands. Engaging and releasing blend
 //! over the configured time.
@@ -41,8 +41,47 @@ use parking_lot::Mutex;
 use crate::controllers::{
     frame::{Hand, Pose},
     hands::{CockpitHand, pose as hand_pose},
-    weapons::{config::ForegripConfig, regions::GunRegion},
+    weapons::regions::GunRegion,
 };
+
+/// The foregrip's fixed tuning.
+pub const FOREGRIP: ForegripTuning = ForegripTuning {
+    radius_m: 0.10,
+    release_distance_m: 0.25,
+    blend_s: 0.12,
+    fallback_distance_m: 0.32,
+    min_span_m: 0.08,
+    max_turn_deg: 70.0,
+    hold: true,
+};
+
+/// The foregrip's reach, blend, and limits, fixed at [`FOREGRIP`].
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct ForegripTuning {
+    /// The foregrip volume's radius around the weapon's grip point, metres.
+    pub radius_m: f32,
+    /// How far the off-hand may move from the foregrip before it lets go, metres.
+    pub release_distance_m: f32,
+    /// How long the weapon takes to turn onto the line between the hands after a grab, and back
+    /// onto the dominant hand after a release, seconds.
+    pub blend_s: f32,
+    /// Where the foregrip sits along the barrel from the dominant wrist, metres, for a weapon with
+    /// no grip point of its own for the off-hand.
+    pub fallback_distance_m: f32,
+    /// The shortest distance between the hands that still sets a direction, metres. Closer, the
+    /// line between them is too short to aim along, and the weapon stays on the dominant hand; the
+    /// two-handed pose fades out over the next `min_span_m` as the hands close in, so the weapon
+    /// does not jump between the two.
+    pub min_span_m: f32,
+    /// The furthest the line between the hands may turn the weapon away from where the holding
+    /// hand points it, degrees. Past it the weapon stops turning, the off-hand falls away from
+    /// the foregrip, and the hold lets go once that passes the release distance, so an off-hand
+    /// that crosses behind the holding hand cannot spin the weapon round.
+    pub max_turn_deg: f32,
+    /// Hold the foregrip only while the off-hand's grip is held, letting go when it opens, as a
+    /// real foregrip is held. Off, the grip is a toggle: a press grabs and the next press lets go.
+    pub hold: bool,
+}
 
 /// The weapon's geometry in the holding hand's wrist frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -84,7 +123,7 @@ pub struct Hold {
 pub enum Release {
     /// The off-hand pressed its grip again, with the grip a toggle.
     GripPress,
-    /// The off-hand let go of its grip, with the grip held to hold ([`ForegripConfig::hold`]).
+    /// The off-hand let go of its grip, with the grip held to hold ([`ForegripTuning::hold`]).
     GripLetGo,
     /// The off-hand moved away from the foregrip.
     MovedAway,
@@ -124,7 +163,7 @@ pub struct Turn {
     /// The angle between where the holding hand points the foregrip and the line to the off-hand,
     /// degrees.
     pub wanted_deg: f32,
-    /// Whether the limit ([`ForegripConfig::max_turn_deg`]) held the weapon back.
+    /// Whether the limit ([`ForegripTuning::max_turn_deg`]) held the weapon back.
     pub limited: bool,
     /// The share of the pose the span between the hands lets through, `0..=1`.
     pub span_fade: f32,
@@ -159,7 +198,7 @@ pub fn status() -> ForegripStatus {
 
 /// Put the hands into the two-handed pose of the current hold, if any. `hands` are the
 /// cockpit-frame hands indexed by [`Hand::index`].
-pub fn apply(hands: &mut [Option<CockpitHand>; 2], config: &ForegripConfig) {
+pub fn apply(hands: &mut [Option<CockpitHand>; 2], config: &ForegripTuning) {
     let Some(hold) = posed_hold() else {
         return;
     };
@@ -212,7 +251,7 @@ pub fn hold_pose(
     hold: &Hold,
     holder: CockpitHand,
     off: CockpitHand,
-    config: &ForegripConfig,
+    config: &ForegripTuning,
 ) -> Option<TwoHandPose> {
     if hold.region.steers()
         && let Some(pose) = two_hand(holder, off, &hold.geometry, hold.weight, config)
@@ -261,7 +300,7 @@ pub fn two_hand(
     off: CockpitHand,
     geometry: &GripGeometry,
     weight: f32,
-    config: &ForegripConfig,
+    config: &ForegripTuning,
 ) -> Option<TwoHandPose> {
     let pivot = holder.grip.position;
     let to_off = off.grip.position - pivot;
@@ -343,7 +382,7 @@ pub struct Inputs {
     /// Whether the off-hand pressed its grip in the foregrip volume this tick.
     pub grab_pressed: bool,
     /// Whether the off-hand's grip is held, which keeps a hold under
-    /// [`ForegripConfig::hold`].
+    /// [`ForegripTuning::hold`].
     pub grip_held: bool,
     /// Where an engaged hold's off-hand has slid to along the gun, in the holding wrist's frame,
     /// and the region it is in there: a hold on a region the hand slides along follows it.
@@ -374,7 +413,7 @@ pub fn step(
     hold: Option<Hold>,
     inputs: &Inputs,
     dt: f32,
-    config: &ForegripConfig,
+    config: &ForegripTuning,
 ) -> (Option<Hold>, Option<Transition>) {
     let rate = if config.blend_s > 0.0 {
         dt.max(0.0) / config.blend_s
@@ -438,7 +477,7 @@ fn moved_away(
     hold: Hold,
     holder: CockpitHand,
     off: CockpitHand,
-    config: &ForegripConfig,
+    config: &ForegripTuning,
 ) -> Option<Release> {
     let holder = if hold.region.steers() {
         two_hand(holder, off, &hold.geometry, 1.0, config).map_or(holder, |p| p.holder)
@@ -479,7 +518,7 @@ fn fade(hold: Option<Hold>, rate: f32) -> Option<Hold> {
 }
 
 /// Advance the shared hold by one input tick, and record what happened.
-pub(super) fn tick(inputs: &Inputs, dt: f32, config: &ForegripConfig) -> Option<Transition> {
+pub(super) fn tick(inputs: &Inputs, dt: f32, config: &ForegripTuning) -> Option<Transition> {
     let mut state = STATE.lock();
     let (hold, transition) = step(state.hold, inputs, dt, config);
     state.hold = hold;
@@ -564,11 +603,11 @@ mod tests {
         assert_eq!(slid_foregrip(&RIFLE, 0.0), RIFLE.foregrip);
     }
 
-    fn config() -> ForegripConfig {
-        ForegripConfig {
+    fn config() -> ForegripTuning {
+        ForegripTuning {
             blend_s: 0.0,
             hold: false,
-            ..ForegripConfig::new()
+            ..FOREGRIP
         }
     }
 
@@ -722,7 +761,7 @@ mod tests {
 
     #[test]
     fn a_held_grip_holds_and_letting_go_releases() {
-        let config = ForegripConfig {
+        let config = ForegripTuning {
             hold: true,
             ..config()
         };
@@ -792,7 +831,7 @@ mod tests {
 
     #[test]
     fn the_grip_blends_in_and_out() {
-        let config = ForegripConfig {
+        let config = ForegripTuning {
             blend_s: 0.1,
             ..config()
         };

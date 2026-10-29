@@ -16,12 +16,13 @@ use crate::controllers::{
         reload::{
             FinishInputs, GunTick, State, Tick, WeaponTick,
             chamber::WorkStage,
-            config::{ExtractionConfig, ReloadConfig},
+            config::ExtractionConfig,
             engine,
             insert::{InsertInputs, InsertionSource},
             loose,
             plan::{LoadKind, WellFrame},
             serial,
+            tuning::Reload,
         },
     },
 };
@@ -202,7 +203,7 @@ impl State {
         &mut self,
         tick: &Tick,
         free: Option<Hand>,
-        reload: &ReloadConfig,
+        reload: &Reload,
     ) -> Option<Candidate> {
         let hand = free?;
         if !engine::physical_detach_available()
@@ -238,7 +239,7 @@ impl State {
 
     /// Complete extraction after the ordinary insertion step so it cannot consume a stale
     /// magazine-in snapshot on the tick the engine prop enters the hand.
-    pub(super) fn extract(&mut self, tick: &Tick, inputs: &FinishInputs, reload: &ReloadConfig) {
+    pub(super) fn extract(&mut self, tick: &Tick, inputs: &FinishInputs, reload: &Reload) {
         if !tracked_hands().into_iter().all(|tracked| tracked) {
             self.cancel_extraction();
             return;
@@ -264,7 +265,7 @@ impl State {
         &mut self,
         tick: &Tick,
         inputs: &FinishInputs,
-        reload: &ReloadConfig,
+        reload: &Reload,
         adapter: &mut impl DetachEngine,
     ) {
         if let Some(hand) = self.extraction_hand() {
@@ -441,7 +442,7 @@ fn sample(
     weapon: &WeaponTick,
     gun: &GunTick,
     holder: Hand,
-    reload: &ReloadConfig,
+    reload: &Reload,
 ) -> Option<Sample> {
     if !eligible(weapon.plan.load, weapon.reading.out, reload)
         || !matches!(weapon.plan.well, WellFrame::Gun { .. })
@@ -477,7 +478,7 @@ fn sample(
     valid(&sample, &reload.extraction).then_some(sample)
 }
 
-pub(super) fn eligible(load: LoadKind, out: bool, reload: &ReloadConfig) -> bool {
+pub(super) fn eligible(load: LoadKind, out: bool, reload: &Reload) -> bool {
     reload.enabled
         && reload.extraction.enabled
         && reload.loose.enabled

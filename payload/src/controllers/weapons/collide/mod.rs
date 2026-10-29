@@ -126,7 +126,7 @@ pub fn apply(
     let frame = WorldFrame::now(head, world_scale);
     let support = foregrip::status().hold.filter(|h| h.engaged);
     for hand in Hand::BOTH {
-        let Some(push) = push_hand(hand, hands, &frame, config) else {
+        let Some(push) = push_hand(hand, hands, &frame) else {
             continue;
         };
         if let Some(held) = hands[hand.index()] {
@@ -185,26 +185,37 @@ pub(crate) unsafe fn probe(owner: &Character) {
     }
 }
 
+/// How far past the muzzle the gun's probe reaches, metres, so the muzzle stops just short of a
+/// wall.
+const TIP_MARGIN_M: f32 = 0.03;
+
+/// The furthest the gun turns away from a wall about its grip, degrees.
+const MAX_TURN_DEG: f32 = 70.0;
+
+/// The furthest the gun is pulled back into the hands, metres.
+const MAX_RETRACT_M: f32 = 0.35;
+
+/// How long a wall is kept after the probe last met it, seconds.
+const KEEP_S: f32 = 0.15;
+
 /// The push of `hand`'s gun out of its wall, noting the probe for the next cast and the readout.
 fn push_hand(
     hand: Hand,
     hands: &[Option<CockpitHand>; 2],
     frame: &WorldFrame,
-    config: &CollideConfig,
 ) -> Option<RigidMove> {
     let mut guard = STATE.lock();
     let state = &mut *guard;
     let h = &mut state.hands[hand.index()];
     let weapon = h.weapon?;
     let holder = hands[hand.index()]?;
-    let barrel = barrel_of(holder, &weapon, config);
+    let barrel = barrel_of(holder, &weapon);
     h.probe = Some(frame.barrel_to_world(barrel));
     let wall = h
         .wall
-        .filter(|w| w.at.elapsed() <= Duration::from_secs_f32(config.keep_s.max(0.0)))
+        .filter(|w| w.at.elapsed() <= Duration::from_secs_f32(KEEP_S))
         .map(|w| frame.wall_to_cockpit(w.wall));
-    let push =
-        wall.and_then(|w| solve::solve(barrel, w, config.max_turn_deg, config.max_retract_m));
+    let push = wall.and_then(|w| solve::solve(barrel, w, MAX_TURN_DEG, MAX_RETRACT_M));
     let touching = push.is_some();
     let status = &mut state.status.hands[hand.index()];
     if touching && !status.touching {
@@ -226,7 +237,7 @@ fn push_hand(
 }
 
 /// The gun's segment in the cockpit frame: from the holding grip to past the muzzle.
-fn barrel_of(holder: CockpitHand, weapon: &CollideWeapon, config: &CollideConfig) -> Barrel {
+fn barrel_of(holder: CockpitHand, weapon: &CollideWeapon) -> Barrel {
     let wrist = holder.wrist;
     let grip = holder.grip.position;
     let direction = (wrist.orientation * weapon.barrel).normalize_or_zero();
@@ -234,7 +245,7 @@ fn barrel_of(holder: CockpitHand, weapon: &CollideWeapon, config: &CollideConfig
     Barrel {
         grip,
         direction,
-        length: ((muzzle - grip).dot(direction) + config.tip_margin_m).max(0.0),
+        length: ((muzzle - grip).dot(direction) + TIP_MARGIN_M).max(0.0),
     }
 }
 
@@ -389,9 +400,8 @@ mod tests {
             world_scale: 1.0,
         };
         let hands = [Some(at(-0.3)), Some(at(0.3))];
-        let config = CollideConfig::new();
-        assert!(push_hand(Hand::Right, &hands, &frame, &config).is_some());
-        assert!(push_hand(Hand::Left, &hands, &frame, &config).is_none());
+        assert!(push_hand(Hand::Right, &hands, &frame).is_some());
+        assert!(push_hand(Hand::Left, &hands, &frame).is_none());
         let s = status();
         assert!(s.hands[Hand::Right.index()].touching);
         assert!(!s.hands[Hand::Left.index()].touching);
@@ -417,9 +427,8 @@ mod tests {
             muzzle: Vec3::new(0.0, 0.05, -0.75),
             barrel: Vec3::NEG_Z,
         };
-        let config = CollideConfig::new();
-        let b = barrel_of(hand, &weapon, &config);
-        assert!((b.length - (0.7 + config.tip_margin_m)).abs() < 1e-5);
+        let b = barrel_of(hand, &weapon);
+        assert!((b.length - (0.7 + TIP_MARGIN_M)).abs() < 1e-5);
         assert_eq!(b.direction, Vec3::NEG_Z);
     }
 }

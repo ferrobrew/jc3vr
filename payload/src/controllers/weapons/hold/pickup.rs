@@ -121,10 +121,6 @@ impl std::error::Error for Refusal {}
 /// How a direct pickup treats the weapons around it.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct TakeOptions {
-    /// On the game's pickup, a weapon already in the slot that the table does not keep is dropped
-    /// to the ground first, rather than dropped or despawned by the game's inventory add. A take
-    /// through the table leaves the slot's weapon where it is.
-    pub drop_replaced: bool,
     /// How long the gun slides from where it was into the hand, seconds; zero puts it there at
     /// once.
     pub slide_s: f32,
@@ -217,8 +213,8 @@ pub(crate) unsafe fn route(weapon: &WeaponBase, hand: Option<Hand>) -> Result<Ta
         },
         TakeRules {
             either_hand: hold.either_hand,
-            both_hands: hold.either_hand && hold.second_weapon,
-            heavy: inventory_engine::heavy_tracked(),
+            both_hands: hold.either_hand,
+            heavy: true,
         },
     )
     .map_err(Refusal::Hands)
@@ -319,8 +315,9 @@ unsafe fn take_by_game(
     let carried = occupant != 0
         && occupant != address
         && unsafe { inventory::reconcile::vacate(owner, slot) };
-    if options.drop_replaced
-        && !carried
+    // On the game's pickup, a weapon already in the slot that the table does not keep is dropped to
+    // the ground first, rather than dropped or despawned by the game's inventory add.
+    if !carried
         && occupant != 0
         && occupant != address
         && unsafe { equip::drop_occupant(owner, slot) }

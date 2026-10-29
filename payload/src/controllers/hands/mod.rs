@@ -103,7 +103,6 @@ pub(crate) fn active_hands_from_frame(
     guns::targets::apply(
         &mut active.hands,
         active.head.position,
-        &active.config.weapons.foregrip,
         &active.config.weapons.heft,
     );
     let torso = reach::torso_heading(active.head, shoulder_heading());

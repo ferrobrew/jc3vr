@@ -8,6 +8,7 @@ use jc3gi::character::character::Character;
 
 use crate::{
     controllers::{
+        aim::RAY_LENGTH_M,
         config::ControllersConfig,
         frame::Hand,
         hands::ActiveHands,
@@ -115,7 +116,7 @@ pub(super) fn mounted_tick(active: &ActiveHands, aiming: [bool; 2]) -> MountedTi
     };
     let target = direction.map(|d| MountedTarget {
         weapon: gun.address,
-        point: gun.pivot + d * config.aim.max_distance_m.max(1.0),
+        point: gun.pivot + d * RAY_LENGTH_M,
         at: Instant::now(),
     });
     MountedTick {

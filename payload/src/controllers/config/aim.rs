@@ -101,7 +101,8 @@ impl GripOffset {
     };
 }
 
-/// Per-hand aiming (see [`crate::controllers::aim`]). Acts only under the controller scheme.
+/// Per-hand aiming (see [`crate::controllers::aim`]). Acts only under the controller scheme. The
+/// rays' fixed reach is [`RAY_LENGTH_M`](crate::controllers::aim::RAY_LENGTH_M).
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AimConfig {
@@ -113,22 +114,6 @@ pub struct AimConfig {
     /// How strongly the written aim point is pulled toward the best candidate target along each
     /// hand ray, `0..=1`. Zero disables aim assist.
     pub assist_strength: f32,
-    /// The farthest a candidate may be from the hand for aim assist, metres.
-    pub assist_max_distance_m: f32,
-    /// How far short of an aim-assist candidate's body position the line of sight to it may be
-    /// blocked and still count as clear, metres: the line ends inside the target's own body.
-    pub assist_occlusion_tolerance_m: f32,
-    /// How far the hand rays are cast, metres. A gun ray that hits nothing aims at this distance
-    /// along the ray.
-    pub max_distance_m: f32,
-    /// The nearest a gun's aim point may be to the sight's origin, metres. A nearer hit is pushed
-    /// out along the ray, because the game fires along the barrel instead of at an aim point near
-    /// the muzzle, and skips the weapon's update entirely for one almost at the muzzle.
-    pub min_target_distance_m: f32,
-    /// Where the grapple ray starts relative to the off-hand's wrist, in the wrist frame (-Z toward
-    /// the fingers, +Y out of the back of the hand), metres. The gauntlet sits on the forearm just
-    /// behind the wrist.
-    pub grapple_origin_m: glam::Vec3,
     /// Per-weapon corrections to the sight line derived from the fire point. An entry here takes
     /// precedence over the embedded sight table
     /// ([`crate::controllers::aim::sights`]); a weapon in neither aims from the fire point.
@@ -143,11 +128,6 @@ impl AimConfig {
             gun: true,
             grapple: true,
             assist_strength: 0.0,
-            assist_max_distance_m: 150.0,
-            assist_occlusion_tolerance_m: 0.75,
-            max_distance_m: 500.0,
-            min_target_distance_m: 2.0,
-            grapple_origin_m: glam::Vec3::ZERO,
             sights: SightTable::EMPTY,
             sight_tuning: SightTuningConfig::new(),
         }

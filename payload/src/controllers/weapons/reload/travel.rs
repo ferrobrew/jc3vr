@@ -21,7 +21,7 @@
 
 use glam::Vec3;
 
-use crate::controllers::weapons::reload::{chamber::ActionKind, config::ActionConfig};
+use crate::controllers::weapons::reload::{chamber::ActionKind, tuning::ActionTuning};
 
 /// One gun's action as a part on its travel.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -111,7 +111,7 @@ impl ActionTravel {
 
     /// Whether the action is closed: the part home, and a bolt turned down. A gun fires only from
     /// battery.
-    pub fn in_battery(&self, config: &ActionConfig) -> bool {
+    pub fn in_battery(&self, config: &ActionTuning) -> bool {
         self.position <= config.return_fraction && self.lift <= 0.0
     }
 
@@ -147,7 +147,7 @@ impl ActionTravel {
     }
 
     /// Fold in one tick.
-    pub fn step(&mut self, inputs: &TravelInputs, config: &ActionConfig) -> TravelEvents {
+    pub fn step(&mut self, inputs: &TravelInputs, config: &ActionTuning) -> TravelEvents {
         let mut events = TravelEvents::default();
         let valid = inputs.kind != ActionKind::None
             && inputs.handle.is_finite()
@@ -221,7 +221,7 @@ impl ActionTravel {
     }
 
     /// Whether a hand at `hand` takes the handle this tick.
-    fn takes(&self, inputs: &TravelInputs, hand: Vec3, config: &ActionConfig) -> bool {
+    fn takes(&self, inputs: &TravelInputs, hand: Vec3, config: &ActionTuning) -> bool {
         let wanted = inputs.kind.ready_rack()
             || inputs.needed
             || !self.in_battery(config)
@@ -237,7 +237,7 @@ impl ActionTravel {
 
     /// Whether the hand still holds the handle: its grip held and not strayed from the gun's axis,
     /// or for the pump, the foregrip held, which has its own release.
-    fn holding(&self, inputs: &TravelInputs, hand: Vec3, config: &ActionConfig) -> bool {
+    fn holding(&self, inputs: &TravelInputs, hand: Vec3, config: &ActionTuning) -> bool {
         if inputs.kind == ActionKind::Pump {
             return inputs.on_foregrip;
         }
@@ -248,7 +248,7 @@ impl ActionTravel {
 
     /// A held bolt toward the hand's pull `target` and turn `turn`: turned up before it is pulled
     /// back, and turned down only once it is home.
-    fn bolt(&mut self, target: f32, turn: f32, config: &ActionConfig) {
+    fn bolt(&mut self, target: f32, turn: f32, config: &ActionTuning) {
         let unlock = config.lift_fraction.clamp(0.5, 1.0);
         if self.lift >= 1.0 && (self.position > config.return_fraction || target > 0.0) {
             self.position = target;
@@ -274,7 +274,7 @@ impl ActionTravel {
     /// The part with no hand on it: a slide caught at the rear by an empty magazine, a slide or a
     /// charging handle run home by its spring, and a pump or a bolt left where it is, settling
     /// home once forward of the return share.
-    fn settle(&mut self, inputs: &TravelInputs, config: &ActionConfig, events: &mut TravelEvents) {
+    fn settle(&mut self, inputs: &TravelInputs, config: &ActionTuning, events: &mut TravelEvents) {
         match inputs.kind {
             ActionKind::Slide | ActionKind::ChargingHandle => {
                 let catches = inputs.kind == ActionKind::Slide
@@ -314,7 +314,7 @@ fn along(inputs: &TravelInputs, hand: Vec3) -> f32 {
 
 /// The hand's turn about a bolt's axis from the handle's rest toward the gun's top, radians. The
 /// axis lies `bolt_radius_m` from the handle's rest, opposite its side.
-fn angle(inputs: &TravelInputs, hand: Vec3, config: &ActionConfig) -> f32 {
+fn angle(inputs: &TravelInputs, hand: Vec3, config: &ActionTuning) -> f32 {
     let pivot = inputs.handle - inputs.side * config.bolt_radius_m;
     let offset = hand - pivot;
     let across = offset - inputs.rearward * offset.dot(inputs.rearward);
@@ -324,8 +324,9 @@ fn angle(inputs: &TravelInputs, hand: Vec3, config: &ActionConfig) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::weapons::reload::tuning::RELOAD;
 
-    const CONFIG: ActionConfig = ActionConfig::new();
+    const CONFIG: ActionTuning = RELOAD.action;
     const HANDLE: Vec3 = Vec3::new(0.04, 0.1, -0.05);
     const TRAVEL: f32 = 0.05;
 

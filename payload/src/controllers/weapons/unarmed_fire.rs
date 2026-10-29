@@ -5,7 +5,7 @@
 //! precision-aim input with nothing wielded. With the holsters, a weapon comes out of a holster or
 //! not at all, so for the length of that call the local player's fire and precision-aim inputs read
 //! zero whenever they would draw, and are put back afterwards for everything that reads them later
-//! in the tick. `weapons.fire_draws_weapon` restores the game's draw.
+//! in the tick.
 //!
 //! [`Inventory::UpdateWeaponHandling`]: jc3gi::character::inventory::Inventory::UpdateWeaponHandling
 
@@ -61,13 +61,8 @@ pub(crate) unsafe fn hold_back(
     character: &mut Character,
     holstering: bool,
 ) -> Option<HeldDrawInputs> {
-    let (enabled, draws) = Config::lock_query(|c| {
-        (
-            c.controllers.enabled,
-            c.controllers.weapons.fire_draws_weapon,
-        )
-    });
-    if !enabled || draws || !scheme::is_controllers() {
+    let enabled = Config::lock_query(|c| c.controllers.enabled);
+    if !enabled || !scheme::is_controllers() {
         return None;
     }
     let wielding =

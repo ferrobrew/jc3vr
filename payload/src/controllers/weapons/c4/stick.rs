@@ -2,20 +2,20 @@
 //!
 //! While a charge from the pouch is held, each aim update (the simulation phase outside the physics
 //! step, where the game casts its own aim ray) casts short rays from the held charge along the six
-//! axes of the hand's grip frame ([`probe`]). A surface within [`C4StickConfig::contact_m`] of the
+//! axes of the hand's grip frame ([`probe`]). A surface within [`StickTuning::contact_m`] of the
 //! charge's centre is touching it: the charge is pressed onto it. The press is a placement rather
 //! than a throw: the charge is made live as a throw makes it, but it leaves from just off the
-//! surface ([`C4StickConfig::standoff_m`]) and is pushed onto it along the surface's normal
-//! ([`C4StickConfig::push_mps`]), so that the charge's own collision handler sticks it where it
+//! surface ([`StickTuning::standoff_m`]) and is pushed onto it along the surface's normal
+//! ([`StickTuning::push_mps`]), so that the charge's own collision handler sticks it where it
 //! touches, oriented by the surface and attached to the object it touched, as a thrown charge
 //! sticks where it lands. The player's own character is never a surface.
 //!
-//! The same probes, reaching [`C4StickConfig::preview_m`], find the surface the charge is coming
+//! The same probes, reaching [`StickTuning::preview_m`], find the surface the charge is coming
 //! to, which is marked where the charge would stick ([`c4::preview`]).
 //!
-//! [`C4StickConfig::contact_m`]: crate::controllers::weapons::c4::config::C4StickConfig::contact_m
-//! [`C4StickConfig::standoff_m`]: crate::controllers::weapons::c4::config::C4StickConfig::standoff_m
-//! [`C4StickConfig::push_mps`]: crate::controllers::weapons::c4::config::C4StickConfig::push_mps
+//! [`StickTuning::contact_m`]: crate::controllers::weapons::c4::tuning::StickTuning::contact_m
+//! [`StickTuning::standoff_m`]: crate::controllers::weapons::c4::tuning::StickTuning::standoff_m
+//! [`StickTuning::push_mps`]: crate::controllers::weapons::c4::tuning::StickTuning::push_mps
 
 use glam::Vec3;
 use jc3gi::character::character::Character;
@@ -27,7 +27,10 @@ use crate::controllers::{
     },
     config::ControllersConfig,
     frame::Pose,
-    weapons::c4::{self, config::C4StickConfig},
+    weapons::c4::{
+        self,
+        tuning::{C4Tuning, StickTuning},
+    },
 };
 
 /// A surface touching the held charge.
@@ -59,7 +62,7 @@ pub struct StickAt {
 ///
 /// The simulation thread outside the physics step, with `owner` the live local player character.
 pub(crate) unsafe fn probe(owner: &Character, config: &ControllersConfig) {
-    let tuning = &config.weapons.c4;
+    let tuning = &C4Tuning::of(&config.weapons.c4);
     if !(config.weapons.c4_throw && tuning.stick.enabled) {
         c4::publish_preview(None);
         return;
@@ -135,7 +138,7 @@ pub fn nearest_contact(
 }
 
 /// Where a charge pressed onto `contact` leaves from, and its push onto the surface.
-pub fn placement(contact: Contact, tuning: &C4StickConfig) -> StickAt {
+pub fn placement(contact: Contact, tuning: &StickTuning) -> StickAt {
     StickAt {
         position: contact.point + contact.normal * tuning.standoff_m.max(0.0),
         push: -contact.normal * tuning.push_mps.max(0.0),
@@ -145,7 +148,7 @@ pub fn placement(contact: Contact, tuning: &C4StickConfig) -> StickAt {
 
 /// Whether a held charge may stick: it has been in the hand `held_s` seconds, and the hand has not
 /// opened.
-pub fn may_stick(held_s: f32, released: bool, tuning: &C4StickConfig) -> bool {
+pub fn may_stick(held_s: f32, released: bool, tuning: &StickTuning) -> bool {
     !released && held_s >= tuning.after_prime_s
 }
 
@@ -160,6 +163,7 @@ mod tests {
     use glam::Quat;
 
     use super::*;
+    use crate::controllers::weapons::c4::tuning::C4;
 
     #[test]
     fn the_nearest_surface_in_reach_is_the_contact() {
@@ -190,7 +194,7 @@ mod tests {
 
     #[test]
     fn the_charge_leaves_off_the_surface_pushed_onto_it() {
-        let tuning = C4StickConfig::new();
+        let tuning = C4.stick;
         let at = placement(
             Contact {
                 point: Vec3::new(1.0, 0.0, 0.0),
@@ -207,7 +211,7 @@ mod tests {
 
     #[test]
     fn a_charge_sticks_only_after_it_leaves_the_pouch() {
-        let tuning = C4StickConfig::new();
+        let tuning = C4.stick;
         assert!(!may_stick(0.1, false, &tuning));
         assert!(may_stick(tuning.after_prime_s, false, &tuning));
         assert!(!may_stick(1.0, true, &tuning));

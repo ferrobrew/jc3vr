@@ -254,7 +254,7 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
         Holstered(usize),
     }
     let hold = &config.weapons.hold;
-    let takes_held = hold.steal && hold.direct_pickup && hold.either_hand;
+    let takes_held = hold.either_hand;
     let aimed = grapple_weapons::aimed().and_then(|(aimed, alive)| {
         unsafe { aimed_offer(&aimed, config) }.map(|k| (aimed, k, alive))
     });

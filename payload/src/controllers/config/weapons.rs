@@ -9,7 +9,7 @@ use crate::controllers::{
         collide::config::CollideConfig,
         config::{
             C4Config, ForegripConfig, GrenadeConfig, HeftConfig, HoldConfig, HolstersConfig,
-            PouchesConfig, RecoilConfig, ScopeConfig,
+            PouchesConfig, RecoilConfig,
         },
         inventory::config::InventoryConfig,
         regions::config::RegionsConfig,
@@ -29,9 +29,6 @@ pub struct WeaponsConfig {
     /// Let the off-hand grab a two-handed weapon's foregrip, which then sets the weapon's
     /// direction.
     pub foregrip: ForegripConfig,
-    /// Hold the fire inputs back while a reload, a draw, or a holster plays (the action-runs hand
-    /// tier), so the weapon cannot fire for the action's duration.
-    pub block_fire_during_actions: bool,
     /// The recoil offset between the controller and the rendered weapon.
     pub recoil: RecoilConfig,
     /// The one-handed weight of long guns: sag, lag, sway, a stronger kick, and a wider spread,
@@ -66,19 +63,13 @@ pub struct WeaponsConfig {
     /// The C4 pouch, the throw's release, and the wrist detonator's placement and press tuning.
     pub c4: C4Config,
     /// Draw a magnified image on a scoped weapon's lens while the scope is at an eye, in place of
-    /// the game's precision-aim zoom, which is suppressed separately
-    /// ([`ScopeConfig::suppress_precision_aim`]).
+    /// the game's precision-aim zoom, which is suppressed under the controller scheme whatever this
+    /// says ([`crate::controllers::weapons::scope::suppress`]).
     pub scopes: bool,
-    /// The scopes' precision-aim suppression and the lens's tuning.
-    pub scope: ScopeConfig,
     /// Let the game switch to another weapon when the trigger of an empty weapon that cannot
     /// reload is pulled. Off, the empty weapon stays in the hand until it is holstered or another
     /// is drawn, and the pull only dry-fires.
     pub auto_switch_when_empty: bool,
-    /// Let the fire input draw the selected weapon with nothing in the hands, as the game does.
-    /// Off, a weapon comes out only from a holster, the weapon wheel, or a slot select, and the
-    /// precision-aim input does not draw either.
-    pub fire_draws_weapon: bool,
     /// The weapon wheel: the game's selection cross, opened with a held input and steered by the
     /// hand.
     pub wheel: WheelConfig,
@@ -101,7 +92,6 @@ impl WeaponsConfig {
             holsters: HolstersConfig::new(),
             pouches: PouchesConfig::new(),
             foregrip: ForegripConfig::new(),
-            block_fire_during_actions: true,
             recoil: RecoilConfig::new(),
             heft: HeftConfig::new(),
             separate_pistols: true,
@@ -114,9 +104,7 @@ impl WeaponsConfig {
             wrist_detonator: true,
             c4: C4Config::new(),
             scopes: true,
-            scope: ScopeConfig::new(),
             auto_switch_when_empty: false,
-            fire_draws_weapon: false,
             wheel: WheelConfig::new(),
             ads: AdsConfig::new(),
             collide: CollideConfig::new(),

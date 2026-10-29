@@ -69,9 +69,9 @@ fn an_unanswered_request_times_out() {
 
 #[test]
 fn the_held_charge_sits_at_the_mirrored_offset() {
-    let tuning = C4Config {
+    let tuning = C4Tuning {
         hold_offset_m: Vec3::new(0.02, 0.0, -0.05),
-        ..C4Config::new()
+        ..C4
     };
     assert_eq!(
         hold_offset(Hand::Left, &tuning),

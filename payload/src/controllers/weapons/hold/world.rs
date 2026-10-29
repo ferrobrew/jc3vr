@@ -288,7 +288,11 @@ mod tests {
     use crate::controllers::{
         body::rig::frames::Frames,
         grab::{Mark, MarkAt, PickupKind, RemoteKind, Tier, resolve},
-        weapons::{config::HoldConfig, engine::Wielded, heft::HeftClass},
+        weapons::{
+            engine::Wielded,
+            heft::HeftClass,
+            hold::{HANDLE_RADIUS_M, TAKE_RADIUS_M},
+        },
     };
 
     fn target(kind: TargetKind, a: Vec3, b: Vec3) -> WorldTarget {
@@ -373,7 +377,7 @@ mod tests {
     #[test]
     fn acquisition_and_completion_share_the_capsule_boundary() {
         let gun = target(TargetKind::Rack { weapon: 3 }, Vec3::ZERO, Vec3::NEG_Z);
-        let radius = HoldConfig::new().take_radius_m;
+        let radius = TAKE_RADIUS_M;
         for (point, inside) in [
             (Vec3::new(radius - 0.001, 0.0, -0.5), true),
             (Vec3::new(radius, 0.0, -0.5), true),
@@ -588,7 +592,7 @@ mod tests {
         Handover {
             holder: Hand::Right,
             grip: Vec3::ZERO,
-            radius: HoldConfig::new().handle_radius_m,
+            radius: HANDLE_RADIUS_M,
             free: [true, false],
             points: [Some(point), Some(Vec3::ZERO)],
             contact: None,
@@ -597,7 +601,7 @@ mod tests {
 
     #[test]
     fn transfer_reach_includes_its_boundary_but_not_the_foregrip() {
-        let radius = HoldConfig::new().handle_radius_m;
+        let radius = HANDLE_RADIUS_M;
         for (distance, inside) in [
             (radius - 0.001, true),
             (radius, true),
@@ -800,7 +804,7 @@ mod tests {
     #[test]
     fn world_acquisition_is_invariant_under_the_cockpit_transform() {
         let point = Vec3::new(0.29, 0.0, -0.5);
-        let radius = HoldConfig::new().take_radius_m;
+        let radius = TAKE_RADIUS_M;
         for scale in [0.5, 1.0, 2.0] {
             let frames = Frames {
                 head_world: Vec3::new(80.0, 12.0, -30.0),
@@ -821,31 +825,6 @@ mod tests {
                 frames.cockpit_to_world(Vec3::NEG_Z),
             );
             assert!((world_distance / scale - 0.29).abs() < 1e-5);
-        }
-    }
-
-    #[test]
-    fn saved_reach_is_respected_and_missing_reach_uses_the_new_defaults() {
-        let defaults: HoldConfig = toml::from_str("").unwrap();
-        let saved: HoldConfig =
-            toml::from_str("take_radius_m = 0.10\nhandle_radius_m = 0.07\n").unwrap();
-        assert_eq!(defaults.take_radius_m, 0.3);
-        assert_eq!(defaults.handle_radius_m, 0.14);
-        let gun = target(TargetKind::Rack { weapon: 3 }, Vec3::ZERO, Vec3::NEG_Z);
-        let point = Vec3::new(0.2, 0.0, -0.5);
-        assert!(chosen(&[gun], point, defaults.take_radius_m).is_some());
-        assert_eq!(chosen(&[gun], point, saved.take_radius_m), None);
-        let point = Vec3::X * 0.1;
-        for (radius, inside) in [
-            (defaults.handle_radius_m, true),
-            (saved.handle_radius_m, false),
-        ] {
-            let offer = handover_candidate(Handover {
-                radius,
-                ..handover(point)
-            })
-            .unwrap();
-            assert_eq!(resolved_index(&[offer], point).is_some(), inside);
         }
     }
 

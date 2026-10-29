@@ -103,6 +103,21 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(use_item::hook_library())
 }
 
+/// How long a draw off a socket, a dock onto one, or a take from the world slides the gun between
+/// where it was and the hand, seconds.
+pub const SNAP_S: f32 = 0.12;
+
+/// The fastest a let-go gun leaves the hand, metres per second, against tracking glitches.
+pub const MAX_THROW_MPS: f32 = 15.0;
+
+/// The radius around the held gun's pistol grip for the free hand to take it, in player-scale
+/// metres. A touch on another gun region keeps that region's action.
+pub const HANDLE_RADIUS_M: f32 = 0.14;
+
+/// The reach from the nearest point of a gun's grip-to-grip segment in a character's hands or on a
+/// rack, in player-scale metres. Acquisition and completion use the same boundary.
+pub const TAKE_RADIUS_M: f32 = 0.3;
+
 /// What a grab that brings a weapon into a hand is.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Cause {

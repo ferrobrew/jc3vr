@@ -302,7 +302,6 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
         guns::targets::apply_physical(
             &mut active.hands,
             active.head.position,
-            &active.config.weapons.foregrip,
             &active.config.weapons.heft,
         );
     }

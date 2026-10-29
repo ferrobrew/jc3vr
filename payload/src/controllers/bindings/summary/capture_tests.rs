@@ -21,13 +21,12 @@ fn owner_state(guns: [Option<GunOwner>; 2]) -> BeforeFinish {
 #[test]
 fn capture_revalidates_belt_against_physical_guns_without_per_hand_trigger_substitution() {
     let mut config = ControllersConfig::default();
-    config.weapons.hold.either_hand = true;
-    config.weapons.hold.per_hand_tick = false;
+    config.weapons.hold.either_hand = false;
     let hand = config.acting_hand();
     let mode = Mode::OnFoot(OnFootVariant::Ground);
     let (lease, guns) = eligible_belt_for_test(&config);
     let before = owner_state(guns);
-    let gun_triggers = config.weapons.hold.either_hand && config.weapons.hold.per_hand_tick;
+    let gun_triggers = config.weapons.hold.either_hand;
     let owners = guns.map(|gun| Owner {
         mode,
         gun: gun.filter(|_| gun_triggers),

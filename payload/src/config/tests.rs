@@ -252,11 +252,11 @@ fn a_file_from_before_the_two_handed_inventory_skips_the_retired_weapon_settings
     }
     set(
         &mut table,
-        &["controllers", "weapons", "hold", "second_weapon"],
+        &["controllers", "weapons", "hold", "grip_to_hold"],
         false.into(),
     );
     let Loaded { config, report } = load(table);
-    assert!(!config.controllers.weapons.hold.second_weapon);
+    assert!(!config.controllers.weapons.hold.grip_to_hold);
     assert_eq!(
         report.ignored,
         [
@@ -391,16 +391,16 @@ fn an_invalid_vector_component_resets_the_vector() {
 fn an_inconsistency_the_default_does_not_fix_resets_the_group() {
     let mut config = Config::new();
     config.controllers.dominant_hand = Hand::Left;
-    // The far reach keeps its default, which is below this near reach: resetting the setting the
-    // check names does not help, so the group around it is reset.
-    config.controllers.weapons.heft.reach_near_m = 9.0;
+    // The release keeps its default, which is above this press: resetting the setting the check
+    // names does not help, so the group around it is reset.
+    config.controllers.input.trigger_press.press = 0.05;
     let Loaded { config, report } = parse(&toml::to_string(&config).unwrap()).unwrap();
     assert_eq!(
-        config.controllers.weapons.heft.reach_near_m,
-        Config::new().controllers.weapons.heft.reach_near_m
+        config.controllers.input.trigger_press,
+        Config::new().controllers.input.trigger_press
     );
     assert_eq!(config.controllers.dominant_hand, Hand::Left);
-    assert_eq!(reset_paths(&report), ["controllers.weapons.heft"]);
+    assert_eq!(reset_paths(&report), ["controllers.input.trigger_press"]);
 }
 
 #[test]

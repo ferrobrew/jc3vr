@@ -7,7 +7,7 @@
 //! removed), so the input tick reads each noted grenade's body through that check and forgets the
 //! ones whose check fails.
 //!
-//! On the input tick, each live grenade within [`GrenadeCatchConfig::range_m`] of the player is a
+//! On the input tick, each live grenade within [`CatchTuning::range_m`] of the player is a
 //! grab volume ([`GrabVolume::LiveGrenade`]) for each free hand, in the cockpit frame the volumes
 //! live in. A grip press there catches the grenade nearest the hand: from then on, each tick gives
 //! its body the velocity that carries it to the hand's grip, so it stays in the hand with its own
@@ -16,7 +16,7 @@
 //!
 //! [`Grenade::PropelToward`]: jc3gi::equipment::explosive::Grenade::PropelToward
 //! [`GrabVolume::LiveGrenade`]: crate::controllers::grab::GrabVolume::LiveGrenade
-//! [`GrenadeCatchConfig::range_m`]: crate::controllers::weapons::grenade::config::GrenadeCatchConfig::range_m
+//! [`CatchTuning::range_m`]: crate::controllers::weapons::grenade::tuning::CatchTuning::range_m
 
 use std::{num::NonZeroUsize, time::Instant};
 
@@ -29,7 +29,7 @@ use crate::controllers::{
     grab::{Candidate, GrabVolume},
     hands::held::{self, Slot},
     physical_hands,
-    weapons::grenade::config::GrenadeCatchConfig,
+    weapons::grenade::tuning::CatchTuning,
 };
 
 /// A live grenade the input tick saw, in the cockpit frame.
@@ -108,7 +108,7 @@ pub(crate) unsafe fn register(explosive: *const Explosive, own: bool) {
 /// The main thread, outside the world update.
 pub(crate) unsafe fn sightings(
     player: Vec3,
-    config: &GrenadeCatchConfig,
+    config: &CatchTuning,
     to_cockpit: impl Fn(Vec3) -> Vec3,
 ) -> Vec<Sighting> {
     let now = Instant::now();

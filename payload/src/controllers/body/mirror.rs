@@ -37,6 +37,7 @@ use crate::{
                 attachments::{Occupancy, PoseSource, Sample},
             },
             pouch_models::attachments::{RenderSample as PouchRenderSample, SampleId},
+            volumes::SOCKETS,
         },
     },
     headpose,
@@ -156,12 +157,10 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     let Some(character) = (unsafe { character.as_ref() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };
-    let (enabled, distance, show_attachments, follow_docks) = Config::lock_query(|c| {
+    let (enabled, distance) = Config::lock_query(|c| {
         (
             c.controllers.overlay.body_mirror,
             c.controllers.overlay.body_mirror_distance_m,
-            c.controllers.weapons.holsters.enabled,
-            c.controllers.weapons.holsters.follow_docks,
         )
     });
     if !enabled {
@@ -198,12 +197,8 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         &mut primitives,
     );
     let now = Instant::now();
-    let attachments = if show_attachments {
-        docks::attachment_sample(character as *const Character as usize, world, now)
-            .filter(|sample| sample.matches_policy(follow_docks))
-    } else {
-        None
-    };
+    let attachments = docks::attachment_sample(character as *const Character as usize, world, now)
+        .filter(|sample| sample.matches_policy(SOCKETS.follow_docks));
     if let Some(sample) = &attachments {
         attachment_markers(sample, plane, head, &mut primitives);
     }

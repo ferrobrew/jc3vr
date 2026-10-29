@@ -24,7 +24,6 @@ use crate::controllers::{
             ammo::{self, NativeAmmo, Observation},
             belt::{BeltPush, PushInputs},
             chamber::{self, ActionKind, Chamber},
-            config::{LooseMagazineConfig, ReloadButton, ReloadConfig},
             eject::{self, FlickDetector},
             engine,
             extraction::{DetachKind, MagazineId},
@@ -37,6 +36,7 @@ use crate::controllers::{
             retained::{self, SeatOutcome},
             serial,
             travel::ActionTravel,
+            tuning::{LooseTuning, RELOAD, Reload, ReloadButton},
             wells,
         },
     },
@@ -50,7 +50,7 @@ trait MagazineInsertion {
         top: Vec3,
         axis: Vec3,
         dt: f32,
-        config: &LooseMagazineConfig,
+        config: &LooseTuning,
     ) -> loose::Operation<()>;
     fn seat(&mut self, weapon: usize) -> SeatOutcome;
     fn release(&mut self);
@@ -70,7 +70,7 @@ impl MagazineInsertion for NativeMagazine {
         top: Vec3,
         axis: Vec3,
         dt: f32,
-        config: &LooseMagazineConfig,
+        config: &LooseTuning,
     ) -> loose::Operation<()> {
         unsafe { loose::carry(top, axis, dt, config) }
     }
@@ -177,7 +177,7 @@ impl State {
                     let gun = guns[hand.index()].filter(|gun| gun.weapon == slot)?;
                     Some((
                         gun.entry(),
-                        config.weapons.reload.manual_action && weapon_tick.plan.action.manual(),
+                        RELOAD.manual_action && weapon_tick.plan.action.manual(),
                     ))
                 });
                 let partition = ammo::observe(
@@ -192,7 +192,7 @@ impl State {
                         chambers: record.chambers,
                         topology,
                         guns: gun_map,
-                        active: chambering(&weapon_tick.plan, &config.weapons.reload),
+                        active: chambering(&weapon_tick.plan, &Reload::of(&config.weapons.reload)),
                     },
                 );
                 weapon_tick.ammo_owned = partition.is_some();
@@ -226,7 +226,7 @@ impl State {
         &mut self,
         tick: &Tick,
         free: Option<Hand>,
-        reload: &ReloadConfig,
+        reload: &Reload,
     ) -> Option<Candidate> {
         let free = free?;
         let action = &reload.action;
@@ -273,7 +273,7 @@ impl State {
         inputs: &FinishInputs,
         config: &ControllersConfig,
     ) -> [bool; 2] {
-        let reload = &config.weapons.reload;
+        let reload = &Reload::of(&config.weapons.reload);
         let dt = if inputs.dt.is_finite() {
             inputs.dt.max(0.0)
         } else {
@@ -322,7 +322,7 @@ impl State {
     }
 
     /// `hand`'s gun and its weapon, for the readout.
-    fn readout(&mut self, tick: &Tick, hand: Hand, reload: &ReloadConfig) -> Option<WeaponReadout> {
+    fn readout(&mut self, tick: &Tick, hand: Hand, reload: &Reload) -> Option<WeaponReadout> {
         let (weapon, gun) = tick.gun(hand)?;
         let record = *self.records.get(weapon.key);
         let e = gun.entry();
@@ -344,7 +344,7 @@ impl State {
 
     /// Whether `hand`'s gun may not fire: it sits in the belt pouch, its chamber is empty, its
     /// action is out of battery, or its magazine is out.
-    fn fire_hold(&mut self, tick: &Tick, hand: Hand, reload: &ReloadConfig) -> bool {
+    fn fire_hold(&mut self, tick: &Tick, hand: Hand, reload: &Reload) -> bool {
         let Some((weapon, gun)) = tick.gun(hand) else {
             return false;
         };
@@ -368,11 +368,11 @@ impl State {
     }
 
     /// Apply queued shot effects, deriving readiness only for weapons without an active partition.
-    fn fold_shots(&mut self, tick: &Tick, reload: &ReloadConfig) {
+    fn fold_shots(&mut self, tick: &Tick, reload: &Reload) {
         self.apply_shots(tick, reload, gate::take_shots());
     }
 
-    fn apply_shots(&mut self, tick: &Tick, reload: &ReloadConfig, shots: Vec<gate::Shot>) {
+    fn apply_shots(&mut self, tick: &Tick, reload: &Reload, shots: Vec<gate::Shot>) {
         let mut locked = false;
         for shot in shots {
             let Some(weapon) = tick.weapon(shot.weapon) else {
@@ -406,7 +406,7 @@ impl State {
 
     /// Bring each weapon's record in line with the game: empty the chambers of a weapon first seen
     /// with an empty magazine.
-    fn sync(&mut self, tick: &Tick, reload: &ReloadConfig) {
+    fn sync(&mut self, tick: &Tick, reload: &Reload) {
         for weapon in tick.weapons.iter().flatten() {
             let magazine = weapon.reading.magazine;
             let record = self.records.get(weapon.key);
@@ -435,7 +435,7 @@ impl State {
 
     /// The eject triggers.
     fn ejects(&mut self, tick: &Tick, inputs: &FinishInputs, config: &ControllersConfig) {
-        let reload = &config.weapons.reload;
+        let reload = &Reload::of(&config.weapons.reload);
         let tapped = self.tap.step(inputs.reload_button, inputs.dt, reload.tap_s);
         let mut targets = [false; 2];
         if tapped && reload.button == ReloadButton::Eject {
@@ -495,7 +495,7 @@ impl State {
         config: &ControllersConfig,
         adapter: &mut impl MagazineInsertion,
     ) {
-        let reload = &config.weapons.reload;
+        let reload = &Reload::of(&config.weapons.reload);
         if !reload.loose.enabled && adapter.held() {
             adapter.release();
             self.status.insertion.reset();
@@ -713,7 +713,7 @@ impl State {
 
     /// The belt pushes of each hand's gun.
     pub(super) fn belt(&mut self, tick: &Tick, config: &ControllersConfig, dt: f32) {
-        let reload = &config.weapons.reload;
+        let reload = &Reload::of(&config.weapons.reload);
         for hand in Hand::BOTH {
             let i = hand.index();
             let target = tick.gun(hand);
@@ -870,7 +870,7 @@ impl State {
 /// Whether the plan's chamber is the mod's to gate: the chamber is worked after running dry, or a
 /// bolt or a pump after every shot, and the action can be worked, by a handle the table places or
 /// on the foregrip.
-pub(super) fn chambering(plan: &ReloadPlan, reload: &ReloadConfig) -> bool {
+pub(super) fn chambering(plan: &ReloadPlan, reload: &Reload) -> bool {
     let workable = match plan.action {
         ActionKind::None => false,
         ActionKind::Pump => true,
@@ -890,7 +890,7 @@ unsafe fn weapon_tick(
     base: &WeaponBase,
     config: &ControllersConfig,
 ) -> Option<WeaponTick> {
-    let reload = &config.weapons.reload;
+    let reload = &Reload::of(&config.weapons.reload);
     weapon.holder?;
     let reading = unsafe { engine::read(base) };
     let entry = wells::lookup(reading.name_hash);

@@ -21,10 +21,7 @@ use std::time::Instant;
 
 use glam::Mat4;
 use jc3gi::{
-    character::{
-        character::{Character, SafeBoneIndex},
-        inventory::WeaponSlot,
-    },
+    character::character::{Character, SafeBoneIndex},
     equipment::weapon::{WeaponBase, WeaponState},
 };
 use parking_lot::Mutex;
@@ -50,11 +47,7 @@ use crate::{
                     estimate_release,
                 },
             },
-            inventory::{
-                self, carry,
-                engine::{heavy_tracked, slot_of},
-                reconcile, sockets,
-            },
+            inventory::{self, carry, engine::slot_of, reconcile, sockets},
         },
     },
     headpose,
@@ -200,10 +193,8 @@ pub(crate) unsafe fn let_go(hand: Hand, max_speed_mps: f32) -> Result<Thrown, Do
     }
 }
 
-/// Whether the weapon at `object` docks on a socket at all. A heavy weapon does only while the
-/// inventory keeps heavy weapons beyond the slots
-/// ([`heavy_tracked`]): the game drops a heavy
-/// weapon it unequips from its slot, so docked from the slot it would fall off the body.
+/// Whether the weapon at `object` docks on a socket at all: any weapon with a slot, the heavy
+/// weapons too, which the inventory keeps beyond the slots.
 ///
 /// # Safety
 ///
@@ -212,7 +203,7 @@ pub(crate) unsafe fn dockable(object: usize) -> bool {
     // SAFETY: forwarded from the caller.
     unsafe { (object as *const WeaponBase).as_ref() }
         .and_then(|weapon| unsafe { slot_of(weapon) })
-        .is_some_and(|slot| slot != WeaponSlot::E_SLOT_HEAVY || heavy_tracked())
+        .is_some()
 }
 
 /// Slide the gun of `weapon` in `hand` into the hand from `from`, its pose in the world before the

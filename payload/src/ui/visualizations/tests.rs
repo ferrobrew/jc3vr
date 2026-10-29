@@ -61,6 +61,10 @@ fn each_inventory_switch_edits_only_its_concrete_config_field() {
             "/controllers/physical_hands/collider_view/enabled",
         ),
         (ViewId::PalmBoxes, "/controllers/physical_hands/show_boxes"),
+        (
+            ViewId::WristDetonator,
+            "/controllers/weapons/c4/detonator/overlay",
+        ),
     ];
     assert_eq!(paths.len(), ENTRIES.len());
     for (id, path) in paths {
@@ -266,8 +270,9 @@ fn the_inventory_maps_every_switch_to_the_exact_nine_output_sources() {
         (ViewId::GrabCandidates, Source::GrabView),
         (ViewId::ColliderView, Source::ColliderView),
         (ViewId::PalmBoxes, Source::PhysicalHands),
+        (ViewId::WristDetonator, Source::WristDetonator),
     ];
-    assert_eq!(ENTRIES.len(), 14);
+    assert_eq!(ENTRIES.len(), 15);
     assert_eq!(expected.len(), ENTRIES.len());
     for (id, source) in expected {
         assert_eq!(ENTRIES.iter().filter(|entry| entry.id == id).count(), 1);
@@ -287,7 +292,7 @@ fn the_inventory_maps_every_switch_to_the_exact_nine_output_sources() {
             .into_iter()
             .filter(|source| mask.contains(*source))
             .count(),
-        10
+        11
     );
     for source in Source::ALL {
         assert_eq!(

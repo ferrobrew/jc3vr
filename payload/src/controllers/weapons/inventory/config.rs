@@ -3,33 +3,19 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::weapons::inventory::{
-    lost::LostRules, pins::PinSettings, sockets::Offsets,
-};
-
-/// The VR inventory. Acts only under the controller scheme.
+/// The VR inventory. Acts only under the controller scheme. Its fixed tuning is in
+/// [`crate::controllers::weapons::inventory`]: the pins ([`PINS`](crate::controllers::weapons::inventory::PINS)),
+/// the lost-weapon return, and the sockets' offsets.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct InventoryConfig {
     /// Track the weapons the player owns, holds, and lets go of in the loadout table, which
     /// everything else here builds on.
     pub enabled: bool,
-    /// Keep the weapons the player let go of nearby from the game's despawn while they are near.
-    pub pin_world: bool,
-    /// A weapon in the world this near the player is kept, metres.
-    pub pin_radius_m: f32,
-    /// A kept weapon is let go of once it is this far away, metres.
-    pub unpin_radius_m: f32,
-    /// The most weapons in the world kept at once, the nearest first.
-    pub max_pinned: usize,
-    /// A weapon in the world this far away and not kept is left to the game, metres.
-    pub forget_m: f32,
     /// Keep weapons beyond the slots on the body's sockets: a weapon picked up into a taken slot
     /// leaves the slot's weapon where it is on the body, and any weapon docks on any free socket
     /// that fits it. Off, every weapon on the body beyond what the slots hold falls where it is.
     pub carry: bool,
-    /// Where each socket's weapon sits relative to its bone.
-    pub offsets: Offsets,
     /// Keep the carried weapons across saves and loads, in a sidecar file beside the settings,
     /// tied to the save by a fingerprint of its slots and reserves.
     pub persist: bool,
@@ -39,71 +25,21 @@ pub struct InventoryConfig {
     /// put back into the slots and stops, and the game's own one-weapon model runs, as with the
     /// inventory off.
     pub project_slots: bool,
-    /// Leave the hands and the body as they are through traversal: the base layer's tasks that put
-    /// the wielded weapon away, hide the slots' weapons in a seat, stop a weapon's use, or drop a
-    /// heavy weapon are refused for the local player, the forced neutral state's unequip is undone,
-    /// and where the game's update skips the wielded weapon (a seat, the boost wingsuit) the gun in
-    /// a hand is fired by the mod's. Off, the game's tasks run and the table follows them.
-    pub keep_through_traversal: bool,
-    /// Keep the heavy weapons beyond the slots like the long guns: taken into a hand through the
-    /// table, armed there, docked on the back, and never wielded from the heavy slot, whose unequip
-    /// drops them. Off, a heavy weapon is the game's: its pickup wields it from its slot and puts
-    /// the other hand's weapon away, it docks nowhere, and it is dropped when put away.
-    pub heavy_on_back: bool,
     /// Bring a lost weapon back to a free socket that fits it, else the player's feet: one out of
-    /// the world (below the sea's level by `lost_depth_m`), or one let go of while the player
-    /// travelled at `lost_speed_mps` or faster and left farther than `left_behind_m` behind. Off,
-    /// a lost weapon stays where it is, and is forgotten once far enough away.
+    /// the world, or one let go of at speed and left far behind
+    /// ([`LOST_RULES`](crate::controllers::weapons::inventory::LOST_RULES)). Off, a lost weapon
+    /// stays where it is, and is forgotten once far enough away.
     pub return_lost: bool,
-    /// The speed from which the player travels fast, so a let-go is one at speed, metres per
-    /// second.
-    pub lost_speed_mps: f32,
-    /// How far from the player a weapon let go of at speed is left behind, metres.
-    pub left_behind_m: f32,
-    /// How far below the sea's level a weapon is out of the world, metres.
-    pub lost_depth_m: f32,
 }
 
 impl InventoryConfig {
     pub const fn new() -> Self {
         Self {
             enabled: true,
-            pin_world: true,
-            pin_radius_m: 8.0,
-            unpin_radius_m: 12.0,
-            max_pinned: 6,
-            forget_m: 60.0,
             carry: true,
-            offsets: Offsets::new(),
             persist: true,
             project_slots: true,
-            keep_through_traversal: true,
-            heavy_on_back: true,
             return_lost: true,
-            lost_speed_mps: 10.0,
-            left_behind_m: 30.0,
-            lost_depth_m: 10.0,
-        }
-    }
-
-    /// The lost-weapon return's rules these settings give.
-    pub const fn lost_rules(&self) -> LostRules {
-        LostRules {
-            sea_level_m: SEA_LEVEL_M,
-            lost_depth_m: self.lost_depth_m,
-            left_behind_m: self.left_behind_m,
-        }
-    }
-
-    /// The pin policy these settings give.
-    pub const fn pins(&self) -> PinSettings {
-        PinSettings {
-            enabled: self.pin_world,
-            radius_m: self.pin_radius_m,
-            release_m: self.unpin_radius_m,
-            max_pinned: self.max_pinned,
-            forget_m: self.forget_m,
-            max_tracked: MAX_TRACKED,
         }
     }
 }
@@ -113,10 +49,3 @@ impl Default for InventoryConfig {
         Self::new()
     }
 }
-
-/// The height of the world's sea, metres: the game's water plane is at the world's zero height
-/// (unverified).
-const SEA_LEVEL_M: f32 = 0.0;
-
-/// The most weapons lying in the world the table keeps.
-const MAX_TRACKED: usize = 24;

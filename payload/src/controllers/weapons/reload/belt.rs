@@ -9,7 +9,7 @@
 
 use glam::Vec3;
 
-use crate::controllers::weapons::reload::config::BeltConfig;
+use crate::controllers::weapons::reload::tuning::BeltTuning;
 
 /// Where one gun's push is.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -52,7 +52,7 @@ impl BeltPush {
     }
 
     /// Fold in one tick (`None` without a gun to push); true when the push reloads.
-    pub fn step(&mut self, inputs: Option<PushInputs>, config: &BeltConfig) -> bool {
+    pub fn step(&mut self, inputs: Option<PushInputs>, config: &BeltTuning) -> bool {
         let Some(i) = inputs.filter(|i| i.mouth.is_finite() && i.velocity.is_finite()) else {
             self.stage = PushStage::Outside;
             return false;
@@ -91,7 +91,7 @@ impl BeltPush {
         self.stage != PushStage::Outside
     }
 
-    fn reach(&mut self, distance: f32, radius: f32, config: &BeltConfig) -> bool {
+    fn reach(&mut self, distance: f32, radius: f32, config: &BeltTuning) -> bool {
         if self.stage == PushStage::Pushing && radius - distance >= config.depth_m {
             self.stage = PushStage::Spent;
             return true;
@@ -103,8 +103,9 @@ impl BeltPush {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::weapons::reload::tuning::RELOAD;
 
-    const CONFIG: BeltConfig = BeltConfig::new();
+    const CONFIG: BeltTuning = RELOAD.belt;
     const POUCH: Vec3 = Vec3::new(0.2, -0.6, -0.1);
 
     fn at(height: f32, velocity_y: f32) -> Option<PushInputs> {

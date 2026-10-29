@@ -64,10 +64,10 @@ use crate::{
         weapons::{
             self, FinishInputs,
             hold::{
-                Cause,
+                Cause, SNAP_S,
                 pickup::{Refusal, TakeOptions},
             },
-            regions::WorldTouch,
+            regions::{GRIP_RADIUS_M, REACH_M, WorldTouch},
         },
     },
 };
@@ -146,18 +146,12 @@ pub(crate) fn finish_tick(
     state.status.pickup.weapons += weapons.len() as u64;
     let pulses: Vec<_> = weapons.iter().map(|(hand, _)| *hand).collect();
     drop(state);
-    let (holding, regions) =
-        Config::lock_query(|c| (c.controllers.weapons.hold, c.controllers.weapons.regions));
+    let regions = Config::lock_query(|c| c.controllers.weapons.regions);
     let targets = ik::tick_records().current;
     for (hand, reach) in weapons {
-        let refusal = if holding.direct_pickup {
+        let refusal = {
             let options = TakeOptions {
-                drop_replaced: holding.drop_replaced,
-                slide_s: if holding.take_slide {
-                    holding.snap_s
-                } else {
-                    0.0
-                },
+                slide_s: SNAP_S,
                 cause: Cause::Pickup,
                 // A long gun is taken where the hand closed on it.
                 touch: targets[hand.index()]
@@ -165,8 +159,8 @@ pub(crate) fn finish_tick(
                     .map(|target| WorldTouch {
                         point: reach.point,
                         wrist: target.wrist.orientation,
-                        grip_radius: regions.grip_radius_m,
-                        reach: regions.reach_m,
+                        grip_radius: GRIP_RADIUS_M,
+                        reach: REACH_M,
                     }),
             };
             // SAFETY: the input tick runs on the main thread outside the world update.
@@ -177,10 +171,8 @@ pub(crate) fn finish_tick(
                 grab_view::refused(hand, Some(reach.point), &refusal.to_string());
             }
             refusal
-        } else {
-            None
         };
-        if !holding.direct_pickup || refusal.is_some_and(Refusal::falls_back) {
+        if refusal.is_some_and(Refusal::falls_back) {
             desired.push(Desired {
                 target: Target {
                     map: MapKind::Player,

@@ -9,6 +9,7 @@ use crate::controllers::{
     hands::pose::CockpitHand,
     weapons::reload::{
         ReloadStatus, eject::TapDetector, extraction::Pull, plan::WellFrame, records::Records,
+        tuning::RELOAD,
     },
 };
 
@@ -37,7 +38,7 @@ impl MagazineInsertion for FakeMagazine {
         self.takes.push((hand, sighting));
         true
     }
-    fn carry(&mut self, _: Vec3, _: Vec3, _: f32, _: &LooseMagazineConfig) -> loose::Operation<()> {
+    fn carry(&mut self, _: Vec3, _: Vec3, _: f32, _: &LooseTuning) -> loose::Operation<()> {
         self.carries += 1;
         if self.held {
             self.carry
@@ -115,17 +116,17 @@ pub(super) fn state(stage: InsertStage) -> State {
     }
 }
 
-pub(super) fn tick(seating: bool, config: &ControllersConfig) -> Tick {
+pub(super) fn tick(seating: bool) -> Tick {
     let grip = Pose::IDENTITY;
     let top = insert::held_round(
         grip.position,
         frames::pointing(grip),
-        config.weapons.reload.held_top_m,
+        RELOAD.held_top_m,
         Vec3::ZERO,
     )
     .unwrap();
     let depth = if seating {
-        config.weapons.reload.seat_depth_m * 1.1
+        RELOAD.seat_depth_m * 1.1
     } else {
         -0.2
     };
@@ -258,7 +259,7 @@ fn rejected_oversized_seat_keeps_rounds_and_chamber_and_obeys_grip_release() {
         });
         let mut adapter = adapter();
         adapter.rejected = true;
-        let tick = tick(true, &config);
+        let tick = tick(true);
         let key = tick.weapons[0].unwrap().key;
         state.records.get(key).chambers = [Chamber::Chambered, Chamber::Empty];
         let before = state.records.get(key).chambers;
@@ -284,7 +285,7 @@ fn escaped_capture_never_transfers_retained_rounds_or_changes_chamber() {
             depth_m: 0.0,
         });
         let mut adapter = adapter();
-        let mut escaped = tick(true, &config);
+        let mut escaped = tick(true);
         escaped.hands[Hand::Left.index()]
             .as_mut()
             .unwrap()
@@ -310,7 +311,7 @@ fn first_deferred_world_carry_recovers_and_seats_exactly_once() {
     assert_eq!(state.status.insertion.stage, InsertStage::Idle);
     assert!(state.status.insert_hands.is_none());
     assert!(!adapter.held);
-    state.insert_with(&tick(false, &config), &pickup, &config, &mut adapter);
+    state.insert_with(&tick(false), &pickup, &config, &mut adapter);
     assert_eq!(adapter.takes, vec![(Hand::Left, sighting)]);
     assert_eq!(adapter.carries, 1);
     assert!(adapter.held);
@@ -325,7 +326,7 @@ fn first_deferred_world_carry_recovers_and_seats_exactly_once() {
     assert!(adapter.transfers.is_empty());
 
     adapter.carry = loose::Operation::Ready(());
-    state.insert_with(&tick(false, &config), &inputs(true), &config, &mut adapter);
+    state.insert_with(&tick(false), &inputs(true), &config, &mut adapter);
     assert!(matches!(
         state.status.insertion.stage,
         InsertStage::Holding { .. }
@@ -334,14 +335,14 @@ fn first_deferred_world_carry_recovers_and_seats_exactly_once() {
     assert!(adapter.held);
     assert_eq!(adapter.carries, 2);
     assert!(adapter.transfers.is_empty());
-    let mut capture = tick(true, &config);
+    let mut capture = tick(true);
     let well = capture.guns[Hand::Right.index()]
         .as_mut()
         .unwrap()
         .well
         .as_mut()
         .unwrap();
-    well.mouth += well.axis * config.weapons.reload.seat_depth_m * 1.1;
+    well.mouth += well.axis * RELOAD.seat_depth_m * 1.1;
     state.last_grips[Hand::Left.index()] = Some(-well.axis * 0.001);
     state.insert_with(&capture, &inputs(true), &config, &mut adapter);
     assert!(matches!(
@@ -349,7 +350,7 @@ fn first_deferred_world_carry_recovers_and_seats_exactly_once() {
         InsertStage::Captured { .. }
     ));
     assert_eq!(adapter.seats, 0);
-    state.insert_with(&tick(true, &config), &inputs(true), &config, &mut adapter);
+    state.insert_with(&tick(true), &inputs(true), &config, &mut adapter);
     assert!(!adapter.held);
     assert!(adapter.available.is_none());
     assert_eq!(state.status.insertion.stage, InsertStage::Idle);
@@ -360,8 +361,8 @@ fn first_deferred_world_carry_recovers_and_seats_exactly_once() {
     assert_eq!(state.status.insertion.taken, 1);
     assert_eq!(state.status.insertion.seated, 1);
     assert_eq!(state.status.counts.seats, 1);
-    state.insert_with(&tick(true, &config), &inputs(false), &config, &mut adapter);
-    state.insert_with(&tick(true, &config), &pickup, &config, &mut adapter);
+    state.insert_with(&tick(true), &inputs(false), &config, &mut adapter);
+    state.insert_with(&tick(true), &pickup, &config, &mut adapter);
     assert_eq!(adapter.takes.len(), 1);
     assert_eq!(adapter.seats, 1);
     assert_eq!(adapter.transfers, vec![sighting.magazine.rounds]);
@@ -373,7 +374,7 @@ fn first_deferred_world_carry_recovers_and_seats_exactly_once() {
 fn first_deferred_world_carry_releases_without_transfer() {
     let config = ControllersConfig::default();
     let (mut state, mut adapter, pickup) = world_pickup();
-    state.insert_with(&tick(false, &config), &pickup, &config, &mut adapter);
+    state.insert_with(&tick(false), &pickup, &config, &mut adapter);
     assert_eq!(adapter.takes, vec![(Hand::Left, state.loose_seen[0])]);
     assert_eq!(adapter.carries, 1);
     assert!(adapter.held);
@@ -383,7 +384,7 @@ fn first_deferred_world_carry_releases_without_transfer() {
     );
     assert_eq!(state.status.insertion.taken, 1);
     assert_eq!(state.status.insert_hands, Some((Hand::Left, Hand::Right)));
-    state.insert_with(&tick(false, &config), &inputs(false), &config, &mut adapter);
+    state.insert_with(&tick(false), &inputs(false), &config, &mut adapter);
     assert!(!adapter.held);
     assert_eq!(state.status.insertion.stage, InsertStage::Idle);
     assert!(state.status.insert_hands.is_none());
@@ -392,7 +393,7 @@ fn first_deferred_world_carry_releases_without_transfer() {
     assert_eq!(adapter.releases, 1);
     assert_eq!(adapter.seats, 0);
     assert!(adapter.transfers.is_empty());
-    state.insert_with(&tick(true, &config), &inputs(false), &config, &mut adapter);
+    state.insert_with(&tick(true), &inputs(false), &config, &mut adapter);
     assert_eq!(adapter.takes.len(), 1);
     assert_eq!(adapter.releases, 1);
     assert_eq!(adapter.seats, 0);
@@ -411,7 +412,7 @@ fn unavailable_carry_preserves_hand_occupancy_then_recovers_or_releases() {
         let mut adapter = adapter();
         adapter.carry = loose::Operation::Deferred;
         let before = state.status.insertion;
-        state.insert_with(&tick(false, &config), &inputs(true), &config, &mut adapter);
+        state.insert_with(&tick(false), &inputs(true), &config, &mut adapter);
         assert_eq!(state.status.insertion, before);
         assert_eq!(
             state.status.insert_hands.map(|(hand, _)| hand),
@@ -421,17 +422,12 @@ fn unavailable_carry_preserves_hand_occupancy_then_recovers_or_releases() {
         if !release {
             adapter.carry = loose::Operation::Ready(());
         }
-        state.insert_with(
-            &tick(false, &config),
-            &inputs(!release),
-            &config,
-            &mut adapter,
-        );
+        state.insert_with(&tick(false), &inputs(!release), &config, &mut adapter);
         assert_eq!(adapter.held, !release);
         assert_eq!(state.status.insert_hands.is_some(), !release);
         assert!(adapter.transfers.is_empty());
         if !release {
-            state.insert_with(&tick(false, &config), &inputs(false), &config, &mut adapter);
+            state.insert_with(&tick(false), &inputs(false), &config, &mut adapter);
             assert!(!adapter.held);
             assert!(state.status.insert_hands.is_none());
         }
@@ -449,7 +445,7 @@ fn unavailable_seat_rolls_back_idle_and_transfers_rounds_only_once_after_recover
         let mut adapter = adapter();
         adapter.seat = loose::Operation::Deferred;
         let before = state.status.insertion;
-        state.insert_with(&tick(true, &config), &inputs(true), &config, &mut adapter);
+        state.insert_with(&tick(true), &inputs(true), &config, &mut adapter);
         assert_eq!(state.status.insertion, before);
         assert_eq!(state.status.insert_hands, Some((Hand::Left, Hand::Right)));
         assert!(adapter.held);
@@ -457,16 +453,11 @@ fn unavailable_seat_rolls_back_idle_and_transfers_rounds_only_once_after_recover
         if !release {
             adapter.seat = loose::Operation::Ready(17);
         }
-        state.insert_with(
-            &tick(true, &config),
-            &inputs(!release),
-            &config,
-            &mut adapter,
-        );
+        state.insert_with(&tick(true), &inputs(!release), &config, &mut adapter);
         assert!(!adapter.held);
         assert!(state.status.insert_hands.is_none());
         assert_eq!(adapter.transfers, if release { vec![] } else { vec![17] });
-        state.insert_with(&tick(true, &config), &inputs(false), &config, &mut adapter);
+        state.insert_with(&tick(true), &inputs(false), &config, &mut adapter);
         assert_eq!(adapter.transfers.len(), usize::from(!release));
         assert_eq!(state.status.counts.seats, u64::from(!release));
     }

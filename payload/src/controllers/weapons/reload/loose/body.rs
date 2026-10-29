@@ -6,8 +6,8 @@ use jc3gi::{game::GameObject, physics::PhysicsGameObject};
 use crate::controllers::{
     physical_hands::{self, BodyError},
     weapons::reload::{
-        config::LooseMagazineConfig,
         loose::{Loose, Operation, State, body_status, carry_velocities, upright_toward},
+        tuning::LooseTuning,
     },
 };
 
@@ -45,7 +45,7 @@ pub(super) struct Carry<'a> {
     pub top: Vec3,
     pub axis: Vec3,
     pub dt: f32,
-    pub config: &'a LooseMagazineConfig,
+    pub config: &'a LooseTuning,
 }
 
 impl State {

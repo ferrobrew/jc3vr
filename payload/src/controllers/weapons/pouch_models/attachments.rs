@@ -8,9 +8,8 @@ use crate::controllers::{
     body::rig::frames::Frames,
     frame::{Hand, Pose},
     weapons::{
-        config::ModelPlacement,
         docks::attachments::MAX_AGE,
-        pouch_models::{Prop, ShownPouch, on_pouch},
+        pouch_models::{ModelPlacement, Prop, ShownPouch, on_pouch},
     },
 };
 

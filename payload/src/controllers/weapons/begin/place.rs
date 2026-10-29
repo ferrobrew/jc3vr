@@ -2,12 +2,11 @@
 
 use crate::{
     controllers::{
-        config::ControllersConfig,
         frame::Hand,
         grab::{Candidate, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
         hands::ActiveHands,
         vehicles::wheel::CockpitTransform,
-        weapons::foregrip,
+        weapons::foregrip::{self, FOREGRIP},
     },
     headpose,
 };
@@ -88,19 +87,15 @@ impl Place {
 }
 
 /// The braced foregrip, held by the bracing hand, marked where it holds the gun.
-pub(super) fn held_foregrip(
-    hold: &foregrip::Hold,
-    active: &ActiveHands,
-    config: &ControllersConfig,
-) -> Option<GripTarget> {
+pub(super) fn held_foregrip(hold: &foregrip::Hold, active: &ActiveHands) -> Option<GripTarget> {
     let mut posed = active.hands;
-    foregrip::apply(&mut posed, &config.weapons.foregrip);
+    foregrip::apply(&mut posed, &FOREGRIP);
     let brace = hold.holder.other();
     let point = posed[brace.index()]?.grip.position;
     let target = Candidate {
         volume: GrabVolume::Foregrip,
         centre: point,
-        radius: config.weapons.foregrip.radius_m,
+        radius: FOREGRIP.radius_m,
         hand: Some(brace),
     }
     .target(Mark::ring(

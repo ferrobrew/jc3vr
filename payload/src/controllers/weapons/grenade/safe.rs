@@ -29,12 +29,12 @@ use crate::controllers::{
         safe_items::{ItemLeaseId, SafeItemView},
     },
     weapons::{
-        config::GrenadeConfig,
         engine,
         grenade::{
             Release, hold_offset,
             native::{self, Actor},
             release,
+            tuning::GrenadeTuning,
         },
     },
 };
@@ -58,7 +58,7 @@ pub(crate) fn counts() -> Counts {
 /// # Safety
 ///
 /// The serialized input fragment before ammunition pre-simulation, or the render boundary.
-pub(crate) unsafe fn draw(hand: Hand, tuning: &GrenadeConfig) -> bool {
+pub(crate) unsafe fn draw(hand: Hand, tuning: &GrenadeTuning) -> bool {
     let Some(owner) = (unsafe { engine::local_player() }) else {
         return false;
     };
@@ -147,7 +147,7 @@ pub(crate) fn place_stowed(socket: Socket, world: Mat4) {
 
 /// Release a safe grenade. Only a tracked, deliberate release arms it; anything else leaves the item
 /// inert and lets the simulation take it.
-pub(crate) fn opened(hand: Hand, world_scale: f32, tuning: &GrenadeConfig) {
+pub(crate) fn opened(hand: Hand, world_scale: f32, tuning: &GrenadeTuning) {
     let Some(item) = in_hand(hand) else {
         return;
     };
@@ -176,7 +176,7 @@ pub(crate) fn take_loose(
     hand: Hand,
     cockpit_grip: Vec3,
     frames: &Frames,
-    tuning: &GrenadeConfig,
+    tuning: &GrenadeTuning,
 ) -> bool {
     let Some(item) = nearest_loose(cockpit_grip, frames, tuning.catch.radius_m) else {
         return false;
@@ -274,7 +274,7 @@ pub(super) fn lost(item: SafeItemView) {
 }
 
 /// Note tracked world grips for the item transforms.
-pub(crate) fn observe(grips: [Option<Pose>; 2], tuning: &GrenadeConfig) {
+pub(crate) fn observe(grips: [Option<Pose>; 2], tuning: &GrenadeTuning) {
     let items = live::safe_items();
     let mut state = STATE.lock();
     state.grips = grips;
@@ -401,7 +401,7 @@ fn membership(place: Option<Place>, alive: bool) -> Membership {
     }
 }
 
-fn deliberate(release: Option<Release>, tuning: &GrenadeConfig) -> bool {
+fn deliberate(release: Option<Release>, tuning: &GrenadeTuning) -> bool {
     release.is_some_and(|release| {
         release.velocity.is_finite() && release.velocity.length() >= tuning.arm_speed_mps.max(0.0)
     })
@@ -493,7 +493,7 @@ fn new_model_id() -> Option<ItemLeaseId> {
         .map(ItemLeaseId::new)
 }
 
-fn matrix(grip: Pose, hand: Hand, tuning: &GrenadeConfig) -> Mat4 {
+fn matrix(grip: Pose, hand: Hand, tuning: &GrenadeTuning) -> Mat4 {
     Mat4::from_rotation_translation(
         grip.orientation,
         grip.position + grip.orientation * hold_offset(hand, tuning),
@@ -501,7 +501,7 @@ fn matrix(grip: Pose, hand: Hand, tuning: &GrenadeConfig) -> Mat4 {
 }
 
 /// The transform a held item takes in a tracked hand.
-fn grip_world(hand: Hand, tuning: &GrenadeConfig) -> Option<Mat4> {
+fn grip_world(hand: Hand, tuning: &GrenadeTuning) -> Option<Mat4> {
     STATE.lock().grips[hand.index()].map(|grip| matrix(grip, hand, tuning))
 }
 
@@ -617,7 +617,10 @@ mod tests {
     use glam::Quat;
 
     use super::*;
-    use crate::controllers::loadout::{BodyLayout, Loadout};
+    use crate::controllers::{
+        loadout::{BodyLayout, Loadout},
+        weapons::grenade::tuning::GRENADE,
+    };
 
     #[test]
     fn loose_completion_matches_offer_boundary_at_every_world_scale() {
@@ -689,7 +692,7 @@ mod tests {
 
     #[test]
     fn only_a_tracked_deliberate_release_arms_a_grenade() {
-        let tuning = GrenadeConfig::new();
+        let tuning = GRENADE;
         assert!(!deliberate(None, &tuning));
         for velocity in [
             Vec3::ZERO,
@@ -705,13 +708,13 @@ mod tests {
 
     #[test]
     fn the_arming_speed_comes_from_the_tuning() {
-        let slow = GrenadeConfig {
+        let slow = GrenadeTuning {
             arm_speed_mps: 0.25,
-            ..GrenadeConfig::new()
+            ..GRENADE
         };
-        let fast = GrenadeConfig {
+        let fast = GrenadeTuning {
             arm_speed_mps: 4.0,
-            ..GrenadeConfig::new()
+            ..GRENADE
         };
         let gentle = Release {
             velocity: Vec3::X * 0.5,

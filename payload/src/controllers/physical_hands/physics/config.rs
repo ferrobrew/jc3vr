@@ -14,6 +14,8 @@ pub struct HandBodiesConfig {
     pub strength: f32,
     /// A character struck by a hand reacts to the blow: staggers, or is knocked down.
     pub reactions: bool,
+    /// When the joint between a held gun and its bracing hand is remade.
+    pub brace: BraceRebuildConfig,
 }
 
 impl HandBodiesConfig {
@@ -22,11 +24,42 @@ impl HandBodiesConfig {
             enabled: true,
             strength: 1.0,
             reactions: true,
+            brace: BraceRebuildConfig::new(),
         }
     }
 }
 
 impl Default for HandBodiesConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// How far a brace's palm frame on the gun may move before the fixed joint between the gun and the
+/// bracing hand is remade (see
+/// [`brace_changed`](crate::controllers::physical_hands::physics::guns::math::brace_changed)). A
+/// joint kept through a larger change holds a stale contact as the hand slides or turns its grip
+/// around the gun; a joint remade on every small change churns. These stay settings while the brace
+/// churn in `docs/issues/gameplay-review-followup.md` is open.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BraceRebuildConfig {
+    /// The palm frame's furthest move, metres.
+    pub distance_m: f32,
+    /// The palm frame's largest turn, radians.
+    pub angle_rad: f32,
+}
+
+impl BraceRebuildConfig {
+    pub const fn new() -> Self {
+        Self {
+            distance_m: 0.002,
+            angle_rad: 0.01,
+        }
+    }
+}
+
+impl Default for BraceRebuildConfig {
     fn default() -> Self {
         Self::new()
     }

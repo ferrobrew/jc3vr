@@ -3,7 +3,7 @@
 //!
 //! The sight line is kept in the holding hand's wrist frame between aim updates, so the lens follows
 //! the controller at frame rate while the sight line itself is refreshed at the sim rate. The
-//! eyepiece is on the sight line, [`ScopeConfig::eyepiece_back_m`] behind its origin, and the lens
+//! eyepiece is on the sight line, [`LensTuning::eyepiece_back_m`] behind its origin, and the lens
 //! is a disc there, facing back along the sight line.
 //!
 //! The lens magnifies the view around the sight line: a point of the lens that the eye sees at a
@@ -17,8 +17,33 @@ use crate::controllers::{
     aim::ray::Ray,
     frame::{Hand, Pose},
     hands::pose as hand_pose,
-    weapons::config::{LensSource, ScopeConfig},
 };
+
+/// The lens's fixed tuning.
+pub const LENS: LensTuning = LensTuning {
+    zoom: 4.0,
+    lens_radius_m: 0.02,
+    eyepiece_back_m: 0.8,
+    max_eye_distance_m: 0.15,
+    vignette_start: 0.7,
+};
+
+/// The lens's geometry and look, fixed at [`LENS`].
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct LensTuning {
+    /// The lens's magnification.
+    pub zoom: f32,
+    /// The lens's radius, metres.
+    pub lens_radius_m: f32,
+    /// How far behind the sight line's origin the eyepiece sits along the sight line, metres. The
+    /// sight line's origin is above the muzzle (with the weapon's sight-table entry), so this is
+    /// roughly the distance from the muzzle back to the scope's rear lens.
+    pub eyepiece_back_m: f32,
+    /// How close an eye must be to the eyepiece for the lens to draw, metres.
+    pub max_eye_distance_m: f32,
+    /// Where the dark rim starts, as a fraction of the lens radius.
+    pub vignette_start: f32,
+}
 
 /// The sight line in the holding hand's wrist frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -66,7 +91,7 @@ pub struct Lens {
 
 impl Lens {
     /// The lens of the scope on `sight`, focused at `focus_m`.
-    pub fn new(sight: &Ray, focus_m: f32, config: &ScopeConfig) -> Lens {
+    pub fn new(sight: &Ray, focus_m: f32, config: &LensTuning) -> Lens {
         Lens {
             eyepiece: sight.at(-config.eyepiece_back_m),
             direction: sight.direction,
@@ -92,12 +117,15 @@ pub fn sighting_eye(lens: &Lens, eyes: [Option<Vec3>; 2], max_distance: f32) -> 
     (distance <= max_distance && behind).then_some(eye)
 }
 
-/// The eye whose image the lens reads: the other eye when `source` asks for it and its image is
-/// available, the sighting eye's own otherwise.
-pub fn source_eye(sighting: usize, source: LensSource, other_available: bool) -> usize {
-    match source {
-        LensSource::OtherEye if other_available => 1 - sighting.min(1),
-        _ => sighting,
+/// The eye whose image the lens reads: the other eye when its image is available, since the scope
+/// does not block it (in two-pass stereo the second eye's image is the previous frame's when the
+/// first eye sights, reprojected by its own camera), and the sighting eye's own otherwise, whose
+/// magnified region shows the scope's own model.
+pub fn source_eye(sighting: usize, other_available: bool) -> usize {
+    if other_available {
+        1 - sighting.min(1)
+    } else {
+        sighting
     }
 }
 
@@ -153,7 +181,7 @@ pub fn constants(
     lens: &Lens,
     eye: &EyeCamera,
     source: &EyeCamera,
-    config: &ScopeConfig,
+    config: &LensTuning,
 ) -> LensConstants {
     let (right, up) = lens_basis(lens.direction);
     let eyepiece_from_eye = lens.eyepiece - eye.position;
@@ -173,7 +201,7 @@ pub fn constants(
         direction: lens.direction.to_array(),
         vignette_start: config.vignette_start.clamp(0.0, 0.99),
         eyepiece_from_source: (lens.eyepiece - source.position).to_array(),
-        reticle: if config.reticle { 1.0 } else { 0.0 },
+        reticle: 1.0,
     }
 }
 
@@ -199,8 +227,8 @@ mod tests {
         eyepiece_from_source + direction * lens.focus_m
     }
 
-    fn config() -> ScopeConfig {
-        ScopeConfig::new()
+    fn config() -> LensTuning {
+        LENS
     }
 
     #[test]
@@ -266,10 +294,9 @@ mod tests {
 
     #[test]
     fn the_source_is_the_other_eye_only_when_available() {
-        assert_eq!(source_eye(0, LensSource::OtherEye, true), 1);
-        assert_eq!(source_eye(1, LensSource::OtherEye, true), 0);
-        assert_eq!(source_eye(1, LensSource::OtherEye, false), 1);
-        assert_eq!(source_eye(0, LensSource::OwnEye, true), 0);
+        assert_eq!(source_eye(0, true), 1);
+        assert_eq!(source_eye(1, true), 0);
+        assert_eq!(source_eye(1, false), 1);
     }
 
     #[test]

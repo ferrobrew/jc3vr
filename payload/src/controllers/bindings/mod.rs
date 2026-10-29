@@ -444,7 +444,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         controls.hands[hand.index()].grab_slow = targets.slow[hand.index()];
     }
     controls.masked_hands = Hand::BOTH.map(|hand| !state.recovery.ready(hand));
-    let gun_triggers = config.weapons.hold.either_hand && config.weapons.hold.per_hand_tick;
+    let gun_triggers = config.weapons.hold.either_hand;
     let gun_owners = weapons::capabilities::gun_owners_now();
     let trigger_owners = gun_owners.map(|gun| TriggerOwner {
         mode: detection.mode,
@@ -483,8 +483,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             controls.hands[hand.index()].trigger = 0.0;
         }
     }
-    controls.weapon_cycle =
-        !config.weapons.holsters.enabled || config.weapons.holsters.stick_click_cycles;
+    controls.weapon_cycle = config.weapons.holsters.stick_click_cycles;
     controls.pointer_hand = owns_menu_trigger();
     // The off-hand's trigger fires the gun it holds, in a mode whose triggers fire the hand weapons.
     let fires_guns = tables::triggers_fire_hand_weapons(detection.mode);

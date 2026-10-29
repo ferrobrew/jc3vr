@@ -182,6 +182,7 @@ enum ViewId {
     GrabCandidates,
     ColliderView,
     PalmBoxes,
+    WristDetonator,
 }
 
 impl ViewId {
@@ -201,6 +202,7 @@ impl ViewId {
             | Self::GrabCandidates => Source::GrabView,
             Self::ColliderView => Source::ColliderView,
             Self::PalmBoxes => Source::PhysicalHands,
+            Self::WristDetonator => Source::WristDetonator,
         }
     }
 
@@ -222,6 +224,7 @@ impl ViewId {
             Self::GrabCandidates => grab.candidates,
             Self::ColliderView => config.controllers.physical_hands.collider_view.enabled,
             Self::PalmBoxes => config.controllers.physical_hands.show_boxes,
+            Self::WristDetonator => config.controllers.weapons.c4.detonator.overlay,
         }
     }
 
@@ -245,6 +248,7 @@ impl ViewId {
                 config.controllers.physical_hands.collider_view.enabled = requested
             }
             Self::PalmBoxes => config.controllers.physical_hands.show_boxes = requested,
+            Self::WristDetonator => config.controllers.weapons.c4.detonator.overlay = requested,
         }
     }
 
@@ -373,6 +377,12 @@ const ENTRIES: &[Entry] = &[
         label: "Grapple beam",
         group: Group::GameplayCues,
         feature: FeatureId::Grapple,
+    },
+    Entry {
+        id: ViewId::WristDetonator,
+        label: "Wrist detonator button",
+        group: Group::GameplayCues,
+        feature: FeatureId::Explosives,
     },
 ];
 

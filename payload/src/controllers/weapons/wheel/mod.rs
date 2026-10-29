@@ -26,6 +26,7 @@ pub mod config;
 mod placement;
 pub mod select;
 mod steer;
+pub mod tuning;
 
 use std::time::{Duration, Instant};
 
@@ -51,7 +52,10 @@ use crate::{
         mode::Mode,
         weapons::{
             engine, gameplay,
-            wheel::select::{Close, HandPose, Wheel, WheelInput, WheelPress, WheelSlot, resting},
+            wheel::{
+                select::{Close, HandPose, Wheel, WheelInput, WheelPress, WheelSlot, resting},
+                tuning::WheelTuning,
+            },
         },
     },
 };
@@ -78,7 +82,7 @@ pub(crate) struct WheelTick {
 /// One input tick of the wheel: read the game, step the wheel, and put its slot-select hold in
 /// `desired`. Called while the bindings inject, outside the menus.
 pub(crate) fn input_tick(inputs: &TickInputs, desired: &mut Vec<Desired>) -> WheelTick {
-    let config = Config::lock_query(|c| c.controllers.weapons.wheel);
+    let config = WheelTuning::of(&Config::lock_query(|c| c.controllers.weapons.wheel));
     // SAFETY: the input tick runs on the main thread outside the world update.
     let owner = unsafe { engine::local_player() };
     let acting = config.enabled && gameplay(inputs.mode) && owner.is_some();

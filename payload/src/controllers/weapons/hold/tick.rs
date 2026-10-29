@@ -14,7 +14,7 @@
 //!   fire input and aim point. The shooting permission gates only the input the inventory's own
 //!   fan-out passes down, so it is checked here for the mod's own
 //!   ([`Inventory::GetAnimationAllowsShooting`]), as is the true reload's hold on the gun;
-//! - with `weapons.hold.per_hand_tick` (on), the weapon the game wields, which the fan-out updates,
+//! - with the hold in either hand on, the weapon the game wields, which the fan-out updates,
 //!   is handed its hand's fire input in place of the game's own ([`substitute`], from the gun aim's
 //!   per-weapon detour), so both hands fire the same way; the ammunition check's reload request
 //!   and its cancel are refused for the local player
@@ -23,7 +23,7 @@
 //!   use camera hint a gun in a hand still needs is put back when another weapon of its hint stops
 //!   being used ([`stopped_using`]).
 //!
-//! With the switch off, the wielded weapon fires from the game's own fire input, and an armed
+//! With the hold in either hand off, the wielded weapon fires from the game's own fire input, and an armed
 //! weapon fires only while its magazine holds a round, since its ammunition check would otherwise
 //! ask the character to reload, which reloads the wielded weapon. The game's dual-wield pair, one
 //! weapon with a gun in each hand, fires from the game's own fire input, which alternates its guns

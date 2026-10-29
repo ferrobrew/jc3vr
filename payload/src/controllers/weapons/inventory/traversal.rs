@@ -19,9 +19,9 @@
 //! keeps it in its hand rather than taking it for a holster, and the reconcile wields or arms it
 //! again.
 //!
-//! With `weapons.inventory.keep_through_traversal` off, or while the table does not run, the tasks
-//! and the forced neutral state are the game's, and the table follows what they do: a weapon put
-//! away docks on its socket, and a heavy weapon dropped lies in the world.
+//! While the table does not run, the tasks and the forced neutral state are the game's, and the
+//! table follows what they do: a weapon put away docks on its socket, and a heavy weapon dropped
+//! lies in the world.
 //!
 //! The tasks run on the animation's update and the forced neutral state wherever the game calls
 //! it; the detours read a published switch and the character, and fold the table's one event.

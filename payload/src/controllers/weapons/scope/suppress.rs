@@ -45,9 +45,7 @@ pub fn counters() -> SuppressCounters {
 
 /// Whether precision aim is refused now.
 pub fn suppressing() -> bool {
-    Config::lock_query(|c| {
-        c.controllers.enabled && c.controllers.weapons.scope.suppress_precision_aim
-    }) && scheme::is_controllers()
+    Config::lock_query(|c| c.controllers.enabled) && scheme::is_controllers()
 }
 
 /// The player's aim-mode setter. Passed through unless it would enter precision aim while the

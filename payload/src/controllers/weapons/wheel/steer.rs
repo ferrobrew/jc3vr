@@ -3,13 +3,10 @@
 
 use glam::{Quat, Vec2, Vec3};
 
-use crate::controllers::{
-    frame::Pose,
-    weapons::wheel::{config::SteerMode, select::WheelSlot},
-};
+use crate::controllers::{frame::Pose, weapons::wheel::select::WheelSlot};
 
-/// The steering hand's frame when the wheel opened: where it pointed, where it was, and the
-/// directions the cross's arms lie in.
+/// The steering hand's frame when the wheel opened: where it pointed, and the directions the
+/// cross's arms lie in.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct SteerOrigin {
     /// The controller's aim direction at the open.
@@ -18,11 +15,6 @@ pub struct SteerOrigin {
     /// them is the pointed deflection.
     aim_right: Vec3,
     aim_up: Vec3,
-    /// The controller's grip position at the open.
-    grip: Vec3,
-    /// The head's level right at the open: the moved deflection's horizontal axis. Its vertical
-    /// axis is the cockpit frame's up.
-    head_right: Vec3,
 }
 
 impl SteerOrigin {
@@ -44,29 +36,19 @@ impl SteerOrigin {
             forward,
             aim_right,
             aim_up,
-            grip,
-            head_right,
         })
     }
 
     /// The hand's deflection from the origin, +X toward the cross's right arm and +Y toward its
-    /// up arm: the aim's turn in degrees under [`SteerMode::Point`], the grip's offset in metres
-    /// under [`SteerMode::Offset`]. Zero for a non-finite pose.
-    pub fn deflection(&self, mode: SteerMode, aim: Pose, grip: Vec3) -> Vec2 {
-        let deflection = match mode {
-            SteerMode::Point => {
-                let f = aim.orientation * Vec3::NEG_Z;
-                let ahead = f.dot(self.forward);
-                Vec2::new(
-                    f.dot(self.aim_right).atan2(ahead).to_degrees(),
-                    f.dot(self.aim_up).atan2(ahead).to_degrees(),
-                )
-            }
-            SteerMode::Offset => {
-                let d = grip - self.grip;
-                Vec2::new(d.dot(self.head_right), d.y)
-            }
-        };
+    /// up arm: the turn of the controller's aim from where it pointed when the wheel opened,
+    /// degrees. Zero for a non-finite pose.
+    pub fn deflection(&self, aim: Pose) -> Vec2 {
+        let f = aim.orientation * Vec3::NEG_Z;
+        let ahead = f.dot(self.forward);
+        let deflection = Vec2::new(
+            f.dot(self.aim_right).atan2(ahead).to_degrees(),
+            f.dot(self.aim_up).atan2(ahead).to_degrees(),
+        );
         if deflection.is_finite() {
             deflection
         } else {
@@ -197,10 +179,10 @@ mod tests {
         let origin = SteerOrigin::new(Quat::IDENTITY, pose(Quat::IDENTITY), Vec3::ZERO).unwrap();
         // A turn of the aim to the right (a negative yaw about +Y) and up (a positive pitch).
         let right = Quat::from_rotation_y(-20f32.to_radians());
-        let d = origin.deflection(SteerMode::Point, pose(right), Vec3::ZERO);
+        let d = origin.deflection(pose(right));
         assert!((d.x - 20.0).abs() < 1e-3 && d.y.abs() < 1e-3, "{d:?}");
         let up = Quat::from_rotation_x(15f32.to_radians());
-        let d = origin.deflection(SteerMode::Point, pose(up), Vec3::ZERO);
+        let d = origin.deflection(pose(up));
         assert!(d.x.abs() < 1e-3 && (d.y - 15.0).abs() < 1e-3, "{d:?}");
     }
 
@@ -210,25 +192,8 @@ mod tests {
         let down = Quat::from_rotation_x(-FRAC_PI_2);
         let origin = SteerOrigin::new(Quat::IDENTITY, pose(down), Vec3::ZERO).unwrap();
         let turned = Quat::from_rotation_z(-10f32.to_radians()) * down;
-        let d = origin.deflection(SteerMode::Point, pose(turned), Vec3::ZERO);
+        let d = origin.deflection(pose(turned));
         assert!(d.is_finite() && d.length() > 5.0, "{d:?}");
-    }
-
-    #[test]
-    fn moving_reads_in_the_heads_level_frame() {
-        // The head turned to face +X: its right is +Z.
-        let head = Quat::from_rotation_y(-FRAC_PI_2);
-        let origin =
-            SteerOrigin::new(head, pose(Quat::IDENTITY), Vec3::new(0.1, 1.0, 0.0)).unwrap();
-        let d = origin.deflection(
-            SteerMode::Offset,
-            pose(Quat::IDENTITY),
-            Vec3::new(0.1, 1.03, 0.05),
-        );
-        assert!(
-            (d.x - 0.05).abs() < 1e-5 && (d.y - 0.03).abs() < 1e-5,
-            "{d:?}"
-        );
     }
 
     #[test]

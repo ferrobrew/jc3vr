@@ -28,9 +28,8 @@ use crate::controllers::{
     frame::Hand,
     grab::{Candidate, GrabVolume},
     weapons::{
-        config::GrenadeConfig,
         engine,
-        grenade::safe,
+        grenade::{safe, tuning::GrenadeTuning},
         hold::refs::{Strong, Weak},
     },
 };
@@ -142,7 +141,7 @@ pub(super) unsafe fn take(
     hand: Hand,
     grip: Option<Vec3>,
     to_cockpit: impl Fn(Vec3) -> Vec3,
-    tuning: &GrenadeConfig,
+    tuning: &GrenadeTuning,
 ) -> Result<(), Refusal> {
     let offered = OFFERS.lock()[hand.index()].take();
     let owner = unsafe { engine::local_player() }.ok_or(Refusal::SourceChanged)?;

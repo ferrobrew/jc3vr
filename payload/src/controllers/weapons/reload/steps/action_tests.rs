@@ -4,7 +4,11 @@ use super::*;
 use crate::controllers::{
     bindings::controls::ButtonControl,
     hands::pose::CockpitHand,
-    weapons::reload::{action::ActionEngine, chamber::WorkStage},
+    weapons::reload::{
+        action::ActionEngine,
+        chamber::WorkStage,
+        tuning::{RELOAD, Reload},
+    },
 };
 
 struct FakeAction {
@@ -52,7 +56,7 @@ fn fixture(
     let mut state = insertion_tests::state(InsertStage::Idle);
     state.status.insert_hands = None;
     state.free = Some(hand.other());
-    let mut tick = insertion_tests::tick(false, &config);
+    let mut tick = insertion_tests::tick(false);
     if hand == Hand::Left {
         tick.guns.swap(0, 1);
         tick.hands.swap(0, 1);
@@ -104,6 +108,19 @@ fn step(
     position: Vec3,
     grip: (bool, bool),
 ) {
+    let reload = Reload::of(&config.weapons.reload);
+    step_with(state, tick, engine, &reload, position, grip);
+}
+
+/// [`step`], with the reload's tuning given.
+fn step_with(
+    state: &mut State,
+    tick: &mut Tick,
+    engine: &mut FakeAction,
+    reload: &Reload,
+    position: Vec3,
+    grip: (bool, bool),
+) {
     let worker = state.free.unwrap();
     move_hand(tick, worker, position);
     let (pressed, down) = grip;
@@ -120,7 +137,7 @@ fn step(
         pressed,
         released: !down,
     };
-    state.work_travel(tick, &inputs, &config.weapons.reload, engine);
+    state.work_travel(tick, &inputs, reload, engine);
 }
 
 fn chamber(state: &mut State, tick: &Tick, hand: Hand) -> Chamber {
@@ -134,19 +151,27 @@ fn runtime_candidates_offer_ready_slide_and_bolt_to_either_free_hand() {
         for kind in [ActionKind::Slide, ActionKind::Bolt] {
             let (config, mut state, tick, _) = fixture(kind, hand, 5);
             let candidate = state
-                .handle_candidate(&tick, Some(hand.other()), &config.weapons.reload)
+                .handle_candidate(
+                    &tick,
+                    Some(hand.other()),
+                    &Reload::of(&config.weapons.reload),
+                )
                 .unwrap();
             assert_eq!(candidate.volume, GrabVolume::WeaponAction);
             assert_eq!(candidate.hand, Some(hand.other()));
             assert!(
                 state
-                    .handle_candidate(&tick, None, &config.weapons.reload)
+                    .handle_candidate(&tick, None, &Reload::of(&config.weapons.reload))
                     .is_none()
             );
             state.status.insertion.stage = InsertStage::Holding { elapsed_s: 0.0 };
             assert!(
                 state
-                    .handle_candidate(&tick, Some(hand.other()), &config.weapons.reload)
+                    .handle_candidate(
+                        &tick,
+                        Some(hand.other()),
+                        &Reload::of(&config.weapons.reload)
+                    )
                     .is_none()
             );
         }
@@ -155,26 +180,27 @@ fn runtime_candidates_offer_ready_slide_and_bolt_to_either_free_hand() {
 
 #[test]
 fn action_candidates_preserve_magazine_claims_settings_and_geometry_requirements() {
-    let (mut config, mut state, mut tick, _) = fixture(ActionKind::Slide, Hand::Right, 5);
+    let (config, mut state, mut tick, _) = fixture(ActionKind::Slide, Hand::Right, 5);
     state.extraction_blocks_belt[Hand::Right.index()] = true;
     assert!(
         state
-            .handle_candidate(&tick, Some(Hand::Left), &config.weapons.reload)
+            .handle_candidate(&tick, Some(Hand::Left), &Reload::of(&config.weapons.reload))
             .is_none()
     );
     state.extraction_blocks_belt[Hand::Right.index()] = false;
-    config.weapons.reload.chamber = false;
-    config.weapons.reload.manual_action = false;
+    let mut reload = Reload::of(&config.weapons.reload);
+    reload.chamber = false;
+    reload.manual_action = false;
     assert!(
         state
-            .handle_candidate(&tick, Some(Hand::Left), &config.weapons.reload)
+            .handle_candidate(&tick, Some(Hand::Left), &reload)
             .is_none()
     );
-    config.weapons.reload.chamber = true;
+    reload.chamber = true;
     tick.guns[Hand::Right.index()].as_mut().unwrap().handle = None;
     assert!(
         state
-            .handle_candidate(&tick, Some(Hand::Left), &config.weapons.reload)
+            .handle_candidate(&tick, Some(Hand::Left), &reload)
             .is_none()
     );
 }
@@ -189,7 +215,7 @@ fn ready_charging_handles_and_pumps_do_not_gain_a_handle_candidate() {
         let (config, mut state, tick, _) = fixture(kind, Hand::Right, 5);
         assert!(
             state
-                .handle_candidate(&tick, Some(Hand::Left), &config.weapons.reload)
+                .handle_candidate(&tick, Some(Hand::Left), &Reload::of(&config.weapons.reload))
                 .is_none()
         );
     }
@@ -197,7 +223,7 @@ fn ready_charging_handles_and_pumps_do_not_gain_a_handle_candidate() {
     config.weapons.reload.action.physical = false;
     assert!(
         state
-            .handle_candidate(&tick, Some(Hand::Left), &config.weapons.reload)
+            .handle_candidate(&tick, Some(Hand::Left), &Reload::of(&config.weapons.reload))
             .is_none()
     );
     assert_eq!(state.status.work.stage, WorkStage::Idle);
@@ -226,7 +252,7 @@ fn runtime_ready_slide_discards_once_at_the_rear_and_feeds_without_adding_ammo()
         );
         assert_eq!(engine.rounds, 4);
         assert_eq!(chamber(&mut state, &tick, hand), Chamber::Empty);
-        assert!(state.fire_hold(&tick, hand, &config.weapons.reload));
+        assert!(state.fire_hold(&tick, hand, &Reload::of(&config.weapons.reload)));
         for _ in 0..4 {
             step(
                 &mut state,
@@ -250,7 +276,7 @@ fn runtime_ready_slide_discards_once_at_the_rear_and_feeds_without_adding_ammo()
         assert_eq!(engine.cycles, 1);
         assert_eq!(engine.rounds, 4);
         assert_eq!(chamber(&mut state, &tick, hand), Chamber::Chambered);
-        assert!(!state.fire_hold(&tick, hand, &config.weapons.reload));
+        assert!(!state.fire_hold(&tick, hand, &Reload::of(&config.weapons.reload)));
         assert_eq!(state.status.counts.racks, 1);
         assert!(engine.reads > 0);
     }
@@ -398,8 +424,8 @@ fn pump_and_bolt_hold_open_without_repeated_debits_and_close_after_reacquisition
             let (config, mut state, mut tick, mut engine) = fixture(kind, hand, 3);
             let rear = Vec3::Z * tick.weapons[0].unwrap().plan.travel_m;
             let lifted = Vec3::new(
-                -config.weapons.reload.action.bolt_radius_m,
-                config.weapons.reload.action.bolt_radius_m,
+                -RELOAD.action.bolt_radius_m,
+                RELOAD.action.bolt_radius_m,
                 0.0,
             );
             step(
@@ -526,35 +552,36 @@ fn a_magazine_out_cycle_neither_discards_refunds_nor_feeds() {
     );
     assert_eq!(engine.discarded, 0);
     assert_eq!(chamber(&mut state, &tick, Hand::Right), Chamber::Empty);
-    assert!(state.fire_hold(&tick, Hand::Right, &config.weapons.reload));
+    assert!(state.fire_hold(&tick, Hand::Right, &Reload::of(&config.weapons.reload)));
 }
 
 #[test]
 fn an_initially_empty_gun_cycles_without_producing_a_round() {
-    let (mut config, mut state, mut tick, mut engine) = fixture(ActionKind::Slide, Hand::Right, 0);
-    config.weapons.reload.action.lock_back = false;
+    let (config, mut state, mut tick, mut engine) = fixture(ActionKind::Slide, Hand::Right, 0);
+    let mut reload = Reload::of(&config.weapons.reload);
+    reload.action.lock_back = false;
     let rear = Vec3::Z * tick.weapons[0].unwrap().plan.travel_m;
-    step(
+    step_with(
         &mut state,
         &mut tick,
         &mut engine,
-        &config,
+        &reload,
         Vec3::ZERO,
         (true, true),
     );
-    step(
+    step_with(
         &mut state,
         &mut tick,
         &mut engine,
-        &config,
+        &reload,
         rear,
         (false, true),
     );
-    step(
+    step_with(
         &mut state,
         &mut tick,
         &mut engine,
-        &config,
+        &reload,
         rear,
         (false, false),
     );

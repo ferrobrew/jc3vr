@@ -18,7 +18,7 @@ use crate::controllers::{
     frame::{Hand, Pose},
     physical_hands::physics::{
         body::{BodyError, BodyShape, BodySpec, HandBody},
-        config::HeldGunsTuning,
+        config::{BraceRebuildConfig, HeldGunsTuning},
         contact::{self, Source},
         drive::BodyMotion,
         guns::{
@@ -54,6 +54,8 @@ pub(crate) struct GunStep<'a> {
     /// The guns in the hands, as last published; empty when stale or switched off.
     pub holds: GunHolds,
     pub config: &'a HeldGunsTuning,
+    /// When the brace's joint is remade.
+    pub brace: BraceRebuildConfig,
     /// Whether the gun bodies' contacts are listened for.
     pub contact_events: bool,
     /// The player's collision system group.
@@ -430,7 +432,7 @@ unsafe fn keep(
     let local = target
         .map(|palm| crate::controllers::physical_hands::physics::guns::math::seat(gun_pose, palm));
     if let Some((brace, before)) = slot.brace.take() {
-        let keep = local.is_some_and(|after| !brace_changed(before, after))
+        let keep = local.is_some_and(|after| !brace_changed(before, after, &input.brace))
             && !placed[off.index()]
             && unsafe { brace.intact() };
         if keep {

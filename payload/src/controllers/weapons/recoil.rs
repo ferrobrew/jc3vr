@@ -86,16 +86,15 @@ pub fn kick_offset(
     two_hand_weight: f32,
     one_hand_scale: f32,
 ) -> Vec3 {
-    let scale =
-        config.kick_scale * lerp(one_hand_scale, config.two_hand_kick_scale, two_hand_weight);
+    let scale = config.kick_scale * lerp(one_hand_scale, TWO_HAND_KICK_SCALE, two_hand_weight);
     let (pitch, yaw) = (pitch * scale, yaw * scale);
-    let kick = Vec3::new(pitch, yaw, pitch.abs() * config.kick_back_m_per_rad);
+    let kick = Vec3::new(pitch, yaw, pitch.abs() * KICK_BACK_M_PER_RAD);
     if kick.is_finite() { kick } else { Vec3::ZERO }
 }
 
 /// The spring's stiffness under a two-hand grip of `weight`.
-pub fn stiffness(config: &RecoilConfig, two_hand_weight: f32) -> f32 {
-    config.spring_stiffness * lerp(1.0, config.two_hand_stiffness_scale, two_hand_weight)
+pub fn stiffness(two_hand_weight: f32) -> f32 {
+    SPRING_STIFFNESS * lerp(1.0, TWO_HAND_STIFFNESS_SCALE, two_hand_weight)
 }
 
 /// Limit an offset's rotation to `max_angle_deg` on each axis.
@@ -172,9 +171,9 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], config: &RecoilConfig) {
         return;
     }
     let grip = foregrip::two_hand_grip();
-    let offsets = advance(Instant::now(), config, grip);
+    let offsets = advance(Instant::now(), grip);
     for hand in Hand::BOTH {
-        let offset = clamp_offset(offsets[hand.index()], config.max_angle_deg);
+        let offset = clamp_offset(offsets[hand.index()], MAX_ANGLE_DEG);
         if offset == Vec3::ZERO {
             continue;
         }
@@ -199,12 +198,12 @@ pub fn kick(hand: Hand, pitch: f32, yaw: f32, config: &RecoilConfig, one_hand_sc
     }
     let grip = foregrip::two_hand_grip();
     let now = Instant::now();
-    advance(now, config, grip);
+    advance(now, grip);
     let weight = grip_weight(grip, hand);
     let kick = kick_offset(pitch, yaw, config, weight, one_hand_scale);
     let mut state = STATE.lock();
     let h = &mut state.hands[hand.index()];
-    h.spring.kick(kick, stiffness(config, weight));
+    h.spring.kick(kick, stiffness(weight));
     h.kicks += 1;
     h.last_kick = kick;
     kick
@@ -238,6 +237,19 @@ pub fn status() -> RecoilStatus {
     }
 }
 
+/// How far the gun moves back along the grip per radian of pitch kick, metres.
+const KICK_BACK_M_PER_RAD: f32 = 0.5;
+/// The largest rotation the offset reaches, degrees, however fast the shots come.
+const MAX_ANGLE_DEG: f32 = 25.0;
+/// The return spring's stiffness, per second squared.
+const SPRING_STIFFNESS: f32 = 400.0;
+/// The return spring's damping ratio: `1` is critically damped, below `1` overshoots.
+const SPRING_DAMPING_RATIO: f32 = 0.8;
+/// Multiplies the stiffness while the off-hand holds the foregrip.
+const TWO_HAND_STIFFNESS_SCALE: f32 = 2.0;
+/// Multiplies the kick while the off-hand holds the foregrip.
+const TWO_HAND_KICK_SCALE: f32 = 0.5;
+
 /// The longest sub-step the spring integrates in one go, seconds.
 const MAX_SUBSTEP: f32 = 1.0 / 480.0;
 /// A gap longer than this between reads settles the springs at once.
@@ -269,7 +281,7 @@ static STATE: Mutex<State> = Mutex::new(State {
 });
 
 /// Advance the springs to `now` and return their offsets.
-fn advance(now: Instant, config: &RecoilConfig, grip: Option<foregrip::TwoHandGrip>) -> [Vec3; 2] {
+fn advance(now: Instant, grip: Option<foregrip::TwoHandGrip>) -> [Vec3; 2] {
     let mut state = STATE.lock();
     let dt = state
         .at
@@ -283,11 +295,8 @@ fn advance(now: Instant, config: &RecoilConfig, grip: Option<foregrip::TwoHandGr
             h.spring = Spring::default();
         } else {
             let weight = grip_weight(grip, hand);
-            h.spring.step(
-                dt.as_secs_f32(),
-                stiffness(config, weight),
-                config.spring_damping_ratio,
-            );
+            h.spring
+                .step(dt.as_secs_f32(), stiffness(weight), SPRING_DAMPING_RATIO);
         }
         if h.spring.settled() {
             h.spring = Spring::default();
@@ -317,22 +326,18 @@ mod tests {
 
     #[test]
     fn a_kick_peaks_near_its_size_and_returns_to_rest() {
-        let config = RecoilConfig {
-            spring_damping_ratio: 1.0,
-            ..config()
-        };
         let mut spring = Spring::default();
         let kick = Vec3::new(0.05, 0.0, 0.0);
-        spring.kick(kick, config.spring_stiffness);
+        spring.kick(kick, SPRING_STIFFNESS);
         let mut peak = 0.0f32;
         for _ in 0..600 {
-            spring.step(1.0 / 600.0, config.spring_stiffness, 1.0);
+            spring.step(1.0 / 600.0, SPRING_STIFFNESS, 1.0);
             peak = peak.max(spring.position.x);
         }
         assert!((peak - 0.05).abs() < 0.005, "peak {peak}");
         assert!(spring.position.x.abs() < 0.002);
         for _ in 0..10 {
-            spring.step(0.1, config.spring_stiffness, 1.0);
+            spring.step(0.1, SPRING_STIFFNESS, 1.0);
         }
         assert!(spring.settled());
     }
@@ -366,18 +371,15 @@ mod tests {
         let c = config();
         let one = kick_offset(0.04, 0.01, &c, 0.0, 1.0);
         let two = kick_offset(0.04, 0.01, &c, 1.0, 1.0);
-        assert!((two.x - one.x * c.two_hand_kick_scale).abs() < 1e-6);
+        assert!((two.x - one.x * TWO_HAND_KICK_SCALE).abs() < 1e-6);
         assert!(one.z > 0.0 && two.z < one.z);
         // A heavy gun kicks harder in one hand, and braced it kicks as any braced gun does.
         let heavy = kick_offset(0.04, 0.01, &c, 0.0, 1.8);
         assert!((heavy.x - one.x * 1.8).abs() < 1e-6);
         let braced = kick_offset(0.04, 0.01, &c, 1.0, 1.8);
         assert!((braced.x - two.x).abs() < 1e-6);
-        assert_eq!(
-            stiffness(&c, 1.0),
-            c.spring_stiffness * c.two_hand_stiffness_scale
-        );
-        assert_eq!(stiffness(&c, 0.0), c.spring_stiffness);
+        assert_eq!(stiffness(1.0), SPRING_STIFFNESS * TWO_HAND_STIFFNESS_SCALE);
+        assert_eq!(stiffness(0.0), SPRING_STIFFNESS);
     }
 
     const OFFSET: GripOffset = GripOffset::INDEX_BEST_GUESS;

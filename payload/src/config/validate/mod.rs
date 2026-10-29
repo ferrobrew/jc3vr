@@ -26,7 +26,6 @@ use crate::{
         config::{ControllersConfig, SightTable},
         frame::PressThresholds,
         locomotion::config::validate as locomotion,
-        weapons::config::VolumeSpec,
     },
     headpose::config::VrTurnConfig,
 };
@@ -118,11 +117,6 @@ fn vec3(name: &str, value: Vec3, max: f32) -> Result<(), Invalid> {
     range(&format!("{name}.x"), value.x, -max, max)?;
     range(&format!("{name}.y"), value.y, -max, max)?;
     range(&format!("{name}.z"), value.z, -max, max)
-}
-
-fn volume(name: &str, value: &VolumeSpec) -> Result<(), Invalid> {
-    vec3(&format!("{name}.offset_m"), value.offset_m, 10.0)?;
-    positive(&format!("{name}.radius_m"), value.radius_m, 10.0)
 }
 
 pub(crate) fn press_thresholds(name: &str, thresholds: PressThresholds) -> Result<(), Invalid> {

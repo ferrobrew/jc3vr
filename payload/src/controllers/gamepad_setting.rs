@@ -77,7 +77,7 @@ pub fn status() -> SettingStatus {
 /// main thread.
 pub(crate) fn input_tick() {
     let config = Config::lock_query(|c| c.controllers);
-    let active = config.enabled && config.gamepad_semantics && scheme::is_controllers();
+    let active = config.enabled && scheme::is_controllers();
     let Some(manager) = (unsafe { SettingsManager::get() }) else {
         let mut state = STATE.lock();
         state.pin = SettingPin::new();

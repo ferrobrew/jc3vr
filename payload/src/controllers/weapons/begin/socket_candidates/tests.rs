@@ -12,7 +12,7 @@ use crate::controllers::{
     overlay::primitive::{Anchor, Primitive},
     weapons::{
         docks::attachments::{Attachment, MAX_AGE, Missing, Occupancy, PoseSource, TargetPolicy},
-        volumes,
+        volumes::{self, SOCKETS},
     },
 };
 
@@ -179,7 +179,7 @@ fn published_offers_match_final_candidates_for_long_gun_restrictions() {
         for enabled in [false, true] {
             for occupied in [[false; 2], [true, false], [false, true], [true; 2]] {
                 for follow_docks in [false, true] {
-                    let mut holsters = HolstersConfig::new();
+                    let mut holsters = SOCKETS;
                     holsters.long_guns_dominant = enabled;
                     holsters.follow_docks = follow_docks;
                     let draw = DrawContext { dominant, occupied };
@@ -234,7 +234,7 @@ fn restricted_draws_preserve_base_observations_and_missing_pose_diagnostics() {
             attachment.pose = Err(Missing::Weapon);
         }
     }
-    let holsters = HolstersConfig::new();
+    let holsters = SOCKETS;
     for dominant in Hand::BOTH {
         let mut published = None;
         let (draws, others) = provide_and_publish(
@@ -285,7 +285,7 @@ fn restricted_draws_preserve_base_observations_and_missing_pose_diagnostics() {
 #[test]
 fn removing_the_only_hand_offer_keeps_the_base_socket_marker() {
     let frames = frames(Mat4::IDENTITY);
-    let holsters = HolstersConfig::new();
+    let holsters = SOCKETS;
     for dominant in Hand::BOTH {
         let mut native = offer_sample(&frames);
         native.attachments.retain(|attachment| {
@@ -328,20 +328,14 @@ fn removing_the_only_hand_offer_keeps_the_base_socket_marker() {
 fn unavailable_provider_clears_published_offers_and_candidates() {
     let frames = frames(Mat4::IDENTITY);
     let native = offer_sample(&frames);
-    for (enabled, have_native, have_frames) in [
-        (false, true, true),
-        (true, false, true),
-        (true, true, false),
-    ] {
-        let mut holsters = HolstersConfig::new();
-        holsters.enabled = enabled;
+    for (have_native, have_frames) in [(false, true), (true, false)] {
         let mut published = Some(native.clone());
         let mut publications = 0;
         let (draws, others) = provide_and_publish(
             have_native.then_some(&native),
             have_frames.then_some(&frames),
             None,
-            &holsters,
+            &SOCKETS,
             occupied_context(),
             |sample| {
                 publications += 1;
@@ -368,7 +362,7 @@ fn landmark_provider_and_mirror_share_bent_body_targets_and_configured_offsets()
     ] {
         for offset in [Vec3::ZERO, Vec3::new(0.04, -0.03, 0.12)] {
             let body = body(bend);
-            let mut holsters = HolstersConfig::new();
+            let mut holsters = SOCKETS;
             holsters.follow_docks = false;
             holsters.hip.offset_m = offset;
             holsters.shoulder.offset_m = offset;
@@ -419,7 +413,7 @@ fn missing_native_poses_do_not_create_landmark_offers_and_no_fit_keeps_occupancy
     native.attachments[0].pose = Err(Missing::Weapon);
     native.attachments[1].pose = Err(Missing::Bone);
     native.attachments[2].usage = Some(SocketUse::NoFit);
-    let mut holsters = HolstersConfig::new();
+    let mut holsters = SOCKETS;
     holsters.follow_docks = false;
     let (sample, draws, others) = provide(
         &native,
@@ -443,7 +437,7 @@ fn missing_body_and_follow_docks_keep_the_existing_native_targets() {
     let frames = frames(Mat4::IDENTITY);
     let native = native_sample(&frames);
     for follow_docks in [false, true] {
-        let mut holsters = HolstersConfig::new();
+        let mut holsters = SOCKETS;
         holsters.follow_docks = follow_docks;
         let (sample, draws, others) =
             provide(&native, &frames, None, &holsters, occupied_context());
@@ -465,7 +459,7 @@ fn missing_body_and_follow_docks_keep_the_existing_native_targets() {
 fn platform_rebase_carries_target_and_native_observations_without_refreshing_age() {
     let source = frames(Mat4::from_translation(Vec3::new(3.0, 0.0, 1.0)));
     let native = native_sample(&source);
-    let mut holsters = HolstersConfig::new();
+    let mut holsters = SOCKETS;
     holsters.follow_docks = false;
     let (sample, _, _) = provide(
         &native,

@@ -77,11 +77,38 @@ use crate::{
             engine as weapons_engine, grenade,
             hold::{armed, refs::Strong, use_item},
             inventory::{
-                config::InventoryConfig, engine::ObjectKey, pins::WorldWeapon, world::World,
+                config::InventoryConfig,
+                engine::ObjectKey,
+                lost::LostRules,
+                pins::{PinSettings, WorldWeapon},
+                sockets::Offsets,
+                world::World,
             },
         },
     },
 };
+
+/// The pin policy: the weapons the player let go of nearby are kept from the game's despawn while
+/// they are near, the nearest first, and left to the game once far away.
+pub const PINS: PinSettings = PinSettings {
+    enabled: true,
+    radius_m: 8.0,
+    release_m: 12.0,
+    max_pinned: 6,
+    forget_m: 60.0,
+    max_tracked: MAX_TRACKED,
+};
+
+/// The lost-weapon return's rules: a weapon is out of the world below the sea's level by ten
+/// metres, and one let go of at speed is left behind past thirty metres.
+pub const LOST_RULES: LostRules = LostRules {
+    sea_level_m: SEA_LEVEL_M,
+    lost_depth_m: 10.0,
+    left_behind_m: 30.0,
+};
+
+/// Where each socket's weapon sits relative to its bone.
+pub const OFFSETS: Offsets = Offsets::new();
 
 /// The inventory's hooks, aggregated by [`crate::controllers::weapons::hook_library`].
 pub(crate) fn hook_library() -> HookLibrary {
@@ -194,8 +221,7 @@ pub(crate) unsafe fn input_tick(
     inputs: &TickInputs,
 ) -> Option<live::Arrival> {
     let on = inputs.settings.enabled && inputs.settings.project_slots;
-    traversal::publish(on && inputs.settings.keep_through_traversal);
-    engine::set_heavy_tracked(inputs.settings.heavy_on_back);
+    traversal::publish(on);
     // Read before the inventory's lock: each is behind its own subsystem's lock.
     let others = held_others();
     if on {
@@ -223,7 +249,7 @@ pub(crate) unsafe fn input_tick(
         // SAFETY: the slot keeps the weapon alive.
         unsafe { state.world.watch(weapon) };
     }
-    let offsets = inputs.settings.offsets;
+    let offsets = OFFSETS;
     // A pistol on a hip sits in its holster, unless the game's pair takes both holsters.
     let pair = slots
         .iter()
@@ -304,8 +330,8 @@ pub(crate) unsafe fn input_tick(
             owner,
             lost::LostTick {
                 enabled: inputs.settings.return_lost && inputs.settings.carry,
-                lost_speed_mps: inputs.settings.lost_speed_mps,
-                rules: inputs.settings.lost_rules(),
+                lost_speed_mps: LOST_SPEED_MPS,
+                rules: LOST_RULES,
                 player,
                 lying: returning,
             },
@@ -316,7 +342,7 @@ pub(crate) unsafe fn input_tick(
         .filter(|(_, place)| matches!(place, Place::World(_)))
         .map(|(object, _)| object)
         .collect();
-    let plan = pins::plan(&state.world.world(&lying), &inputs.settings.pins());
+    let plan = pins::plan(&state.world.world(&lying), &PINS);
     state.status.pins += state.world.apply(&plan);
     if !plan.forget.is_empty() {
         state.status.forgotten += plan.forget.len() as u64;
@@ -334,8 +360,7 @@ pub(crate) unsafe fn input_tick(
         .filter(|(_, fate)| *fate == live::Fate::HeldByOther)
         .map(|(object, _)| *object)
         .collect();
-    let forget_m = inputs.settings.pins().forget_m;
-    state.world.settle(&kept, &lying, &taken, forget_m);
+    state.world.settle(&kept, &lying, &taken, PINS.forget_m);
     let world = state.world.world(&lying);
     state.status.owned = bound.len() - world.len();
     state.status.world = world;
@@ -482,6 +507,16 @@ unsafe fn resume() {
 }
 
 /// Whether the last stop kept the weapons beyond the slots for the table's next start.
+/// The speed from which the player travels fast, so a let-go is one at speed, metres per second.
+const LOST_SPEED_MPS: f32 = 10.0;
+
+/// The height of the world's sea, metres: the game's water plane is at the world's zero height
+/// (unverified).
+const SEA_LEVEL_M: f32 = 0.0;
+
+/// The most weapons lying in the world the table keeps.
+const MAX_TRACKED: usize = 24;
+
 static KEPT_STOPPED: AtomicBool = AtomicBool::new(false);
 
 /// The weapon at `object`, read live this tick, as the table takes one into a hand: a weapon of

@@ -101,10 +101,7 @@ pub(super) fn separate_pistols() -> Line {
 }
 
 pub(super) fn pinned() -> Line {
-    if !read_config(|c| {
-        let inventory = c.controllers.weapons.inventory;
-        inventory.enabled && inventory.pin_world
-    }) {
+    if !read_config(|c| c.controllers.weapons.inventory.enabled) {
         return Line::off("");
     }
     let s = inventory::status();

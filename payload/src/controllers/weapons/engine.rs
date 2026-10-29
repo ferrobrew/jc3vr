@@ -14,7 +14,10 @@ use crate::controllers::{
     config::AimConfig,
     frame::{Hand, Pose},
     hands::{ik::TickTarget, late, pose as hand_pose},
-    weapons::{config::ForegripConfig, foregrip::GripGeometry, heft::HeftClass},
+    weapons::{
+        foregrip::{FOREGRIP, GripGeometry},
+        heft::HeftClass,
+    },
 };
 
 /// A weapon in the hands: its slot and the hands holding one of its guns.
@@ -131,7 +134,6 @@ pub unsafe fn measure_geometry(
     weapon: &HeldWeapon,
     target: TickTarget,
     aim: &AimConfig,
-    foregrip: &ForegripConfig,
     world_scale: f32,
 ) -> Option<GripGeometry> {
     const FULL_WEIGHT: f32 = 0.999;
@@ -173,7 +175,7 @@ pub unsafe fn measure_geometry(
         );
         local.position / world_scale
     } else {
-        barrel * foregrip.fallback_distance_m
+        barrel * FOREGRIP.fallback_distance_m
     };
     let (_, gun_rotation, gun_position) =
         Mat4::from(first.m_WorldMatrixT1).to_scale_rotation_translation();

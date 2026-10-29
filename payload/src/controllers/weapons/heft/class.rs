@@ -2,7 +2,7 @@
 
 use jc3gi::equipment::weapon::WeaponClass;
 
-use crate::controllers::weapons::config::{BracedHeftConfig, BracedTuning, HeftConfig, HeftTuning};
+use crate::controllers::weapons::heft::{BracedHeft, BracedTuning, Heft, HeftTuning};
 
 /// The weight class a weapon's one-handed tuning comes from.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -78,7 +78,7 @@ impl HeftClass {
     }
 
     /// This class's one-handed tuning in `config`.
-    pub fn tuning(self, config: &HeftConfig) -> HeftTuning {
+    pub fn tuning(self, config: &Heft) -> HeftTuning {
         match self {
             HeftClass::Sidearm | HeftClass::Smg => config.sidearm,
             HeftClass::Rifle => config.rifle,
@@ -87,7 +87,7 @@ impl HeftClass {
     }
 
     /// This class's braced tuning in `config`, before its strength.
-    pub fn braced(self, config: &BracedHeftConfig) -> BracedTuning {
+    pub fn braced(self, config: &BracedHeft) -> BracedTuning {
         match self {
             HeftClass::Sidearm => BracedTuning::NONE,
             HeftClass::Smg => config.smg,

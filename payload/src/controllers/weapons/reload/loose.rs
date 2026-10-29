@@ -44,8 +44,8 @@ use crate::{
         grab::{Candidate, GrabVolume},
         physical_hands,
         weapons::reload::{
-            config::LooseMagazineConfig,
             loose::records::{DropKey, Records, Token, WorldHandle},
+            tuning::LooseTuning,
         },
     },
 };
@@ -231,7 +231,7 @@ impl EjectRounds {
 /// # Safety
 ///
 /// The main thread, outside the world update.
-pub(super) unsafe fn maintain(config: &LooseMagazineConfig) {
+pub(super) unsafe fn maintain(config: &LooseTuning) {
     let mut state = STATE.lock();
     state.maintain(Instant::now(), config.keep_s, |m| {
         body_status(unsafe { physical_hands::body_pose(m.body, m.owner) }.map(|_| ()))
@@ -248,7 +248,7 @@ pub(super) unsafe fn sightings(
     player: Vec3,
     tag: i32,
     frames: &Frames,
-    config: &LooseMagazineConfig,
+    config: &LooseTuning,
 ) -> Vec<Sighting> {
     let mut state = STATE.lock();
     let held = state.held.map(|h| h.magazine.handle);
@@ -324,12 +324,7 @@ pub(super) fn held() -> Option<Loose> {
 /// # Safety
 ///
 /// The main thread, outside the world update.
-pub(super) unsafe fn carry(
-    top: Vec3,
-    axis: Vec3,
-    dt: f32,
-    config: &LooseMagazineConfig,
-) -> Operation<()> {
+pub(super) unsafe fn carry(top: Vec3, axis: Vec3, dt: f32, config: &LooseTuning) -> Operation<()> {
     STATE.lock().carry_with(
         Carry {
             top,

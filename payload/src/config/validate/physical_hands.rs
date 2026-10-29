@@ -1,4 +1,5 @@
-//! Checks for physical hand handling: the throw, the hands' strength, and climbing.
+//! Checks for physical hand handling: the throw, the hands' strength, the brace's rebuild, and
+//! climbing.
 
 use crate::{
     config::validate::{Invalid, nonnegative, positive, range},
@@ -17,6 +18,17 @@ pub(super) fn physical_hands(p: &PhysicalHandsConfig) -> Result<(), Invalid> {
         p.bodies.strength,
         0.0,
         10.0,
+    )?;
+    nonnegative(
+        "physical_hands.bodies.brace.distance_m",
+        p.bodies.brace.distance_m,
+        1.0,
+    )?;
+    range(
+        "physical_hands.bodies.brace.angle_rad",
+        p.bodies.brace.angle_rad,
+        0.0,
+        std::f32::consts::PI,
     )?;
     climb(&p.climb)
 }

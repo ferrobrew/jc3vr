@@ -31,7 +31,7 @@ use glam::Vec3;
 use crate::controllers::{
     body::rig::frames::Frames,
     frame::{HAND_JOINT_COUNT, Hand, HandJoint, Pose},
-    weapons::config::WristDetonatorConfig,
+    weapons::c4::tuning::DetonatorTuning,
 };
 
 /// The button's face in the caller's frame.
@@ -44,7 +44,7 @@ pub struct ButtonFace {
 
 /// The button's face on the `off` hand whose grip is at `grip`: the configured left-hand placement,
 /// mirrored for the right hand. `None` for a degenerate normal.
-pub fn button_face(off: Hand, grip: Pose, tuning: &WristDetonatorConfig) -> Option<ButtonFace> {
+pub fn button_face(off: Hand, grip: Pose, tuning: &DetonatorTuning) -> Option<ButtonFace> {
     let local_normal = mirror_from_left(off, tuning.normal).try_normalize()?;
     let local_centre = mirror_from_left(off, tuning.offset_m);
     let orientation = grip.orientation.normalize();
@@ -93,7 +93,7 @@ pub struct FingertipSource<'a> {
 /// skeleton's index tip when its position is valid and finite, and otherwise an estimate in the
 /// controller's aim frame, ahead of the controller while the finger points and at the trigger while
 /// it rests there.
-pub fn fingertip(hand: Hand, source: FingertipSource<'_>, tuning: &WristDetonatorConfig) -> Vec3 {
+pub fn fingertip(hand: Hand, source: FingertipSource<'_>, tuning: &DetonatorTuning) -> Vec3 {
     if let Some(position) = skeleton_fingertip(source.joints) {
         return position;
     }
@@ -156,7 +156,7 @@ impl PressPhase {
     }
 
     /// How far a slow touch is through its dwell, `0..=1`; zero when not touching.
-    pub fn dwell_progress(self, tuning: &WristDetonatorConfig) -> f32 {
+    pub fn dwell_progress(self, tuning: &DetonatorTuning) -> f32 {
         match self {
             PressPhase::Touching { dwell_s, .. } if tuning.dwell_s > 0.0 => {
                 (dwell_s / tuning.dwell_s).clamp(0.0, 1.0)
@@ -202,7 +202,7 @@ impl PressDetector {
         tip: Option<Vec3>,
         face: Option<ButtonFace>,
         dt: f32,
-        tuning: &WristDetonatorConfig,
+        tuning: &DetonatorTuning,
     ) -> PressReading {
         let (Some(tip), Some(face)) = (tip.filter(|t| t.is_finite()), face) else {
             *self = Self::new();
@@ -265,12 +265,7 @@ impl PressDetector {
 
     /// A touch that has lasted `dwell_s`: it presses at once when it came in fast, and otherwise
     /// once the dwell is reached.
-    fn touch(
-        fast: bool,
-        dwell_s: f32,
-        tuning: &WristDetonatorConfig,
-        pressed: &mut bool,
-    ) -> PressPhase {
+    fn touch(fast: bool, dwell_s: f32, tuning: &DetonatorTuning, pressed: &mut bool) -> PressPhase {
         if fast || dwell_s >= tuning.dwell_s.max(0.0) {
             *pressed = true;
             PressPhase::Pressed
@@ -296,11 +291,12 @@ mod tests {
     use glam::Quat;
 
     use super::*;
+    use crate::controllers::weapons::c4::tuning::C4;
 
     const DT: f32 = 1.0 / 90.0;
 
-    fn tuning() -> WristDetonatorConfig {
-        WristDetonatorConfig::new()
+    fn tuning() -> DetonatorTuning {
+        C4.detonator
     }
 
     /// A button at the origin facing +X.
@@ -563,7 +559,7 @@ mod tests {
         };
         let face = button_face(Hand::Left, turned, &t).unwrap();
         assert!(face.normal.distance(Vec3::NEG_Z) < 1e-5, "{face:?}");
-        let degenerate = WristDetonatorConfig {
+        let degenerate = DetonatorTuning {
             normal: Vec3::ZERO,
             ..t
         };

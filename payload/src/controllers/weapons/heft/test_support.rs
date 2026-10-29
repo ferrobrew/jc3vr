@@ -5,8 +5,7 @@ use glam::Vec3;
 use crate::controllers::{
     hands::CockpitHand,
     weapons::{
-        config::HeftConfig,
-        heft::{HandHeft, HandInputs, HeftClass, pose::Weight},
+        heft::{HandHeft, HandInputs, Heft, HeftClass, pose::Weight},
         recoil::Motion,
     },
 };
@@ -22,7 +21,7 @@ impl TestWeight {
         hand: CockpitHand,
         class: HeftClass,
         unbraced: f32,
-        config: &HeftConfig,
+        config: &Heft,
         time_s: f32,
     ) -> CockpitHand {
         let state = self.hand.get_or_insert(HandHeft::IDLE);

@@ -39,7 +39,10 @@ use crate::{
         weapons::{
             self,
             capabilities::{GunHand, GunOwner},
-            reload::{BeltEligibility, ReloadStatus, config::ReloadButton},
+            reload::{
+                BeltEligibility, ReloadStatus,
+                tuning::{RELOAD, ReloadButton},
+            },
         },
     },
     vr::input::semantic::{bound::PhysicalSet, vocabulary::ActionId},
@@ -153,7 +156,7 @@ pub(super) fn capture(input: Refresh<'_>) -> Eligibility {
     let parachute = input.parachute;
     let guns = weapons::capabilities::gun_owners_now();
     let reload = current_reload(guns);
-    let fire = fire_ready(input.ready, input.config, guns);
+    let fire = fire_ready(input.ready, guns);
     let reload_permissions = read_reload_permissions(input.config);
     let doors = Hand::BOTH.map(|hand| {
         input.selected[hand.index()]
@@ -359,8 +362,7 @@ fn read_reload_permissions(config: &ControllersConfig) -> ReloadPermissions {
     let weapon = unsafe { owner.GetWieldingWeapon(false).as_ref() }
         .and_then(|weapon| unsafe { weapon.px.as_ref() });
     reload_permission(ReloadPermissionRead {
-        native_button: !config.weapons.reload.enabled
-            || config.weapons.reload.button == ReloadButton::Native,
+        native_button: !config.weapons.reload.enabled || RELOAD.button == ReloadButton::Native,
         wielded: weapon.is_some(),
         // SAFETY: the inventory and wielded weapon remain live for this input-thread read.
         reload_animation: unsafe { owner.m_Inventory.GetAnimationAllowsReloading() },
@@ -469,16 +471,11 @@ pub(super) fn yank_armed_in(wire: bool, detection: &Detection) -> bool {
         && matches!(detection.mode, Mode::OnFoot(_) | Mode::Airborne(_))
 }
 
-fn fire_ready(
-    ready: [bool; 2],
-    config: &ControllersConfig,
-    guns: [Option<GunOwner>; 2],
-) -> [bool; 2] {
+fn fire_ready(ready: [bool; 2], guns: [Option<GunOwner>; 2]) -> [bool; 2] {
     let base = weapons::capabilities::fire_ready_now(ready, false);
     let action = tiers::status();
     let action_running = Hand::BOTH.map(|hand| {
-        config.weapons.block_fire_during_actions
-            && action.state == Some(TierState::WeaponAction)
+        action.state == Some(TierState::WeaponAction)
             && action.effective[hand.index()] == HandTier::ActionRuns
     });
     // SAFETY: the input tick reads the current local character and wielded weapon.

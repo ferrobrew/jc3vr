@@ -26,8 +26,8 @@ use crate::controllers::{
     bindings::{controls::ButtonControl, tables::sink::PadZone},
     frame::{Hand, Pose},
     weapons::wheel::{
-        config::WheelConfig,
         steer::{Aimed, SteerOrigin, aim},
+        tuning::WheelTuning,
     },
 };
 
@@ -205,7 +205,7 @@ impl Wheel {
     }
 
     /// Step the wheel by one tick.
-    pub fn step(&mut self, input: &WheelInput, config: &WheelConfig) -> WheelOutput {
+    pub fn step(&mut self, input: &WheelInput, config: &WheelTuning) -> WheelOutput {
         if !input.acting {
             let closed = self.is_open().then_some(Close::Cancel);
             self.phase = Phase::Idle;
@@ -233,7 +233,7 @@ impl Wheel {
         open
     }
 
-    fn open(&mut self, input: &WheelInput, config: &WheelConfig) -> WheelOutput {
+    fn open(&mut self, input: &WheelInput, config: &WheelTuning) -> WheelOutput {
         let Some((opener, hand)) = find_opener(input, config) else {
             return WheelOutput::default();
         };
@@ -268,7 +268,7 @@ impl Wheel {
         &mut self,
         mut session: Session,
         input: &WheelInput,
-        config: &WheelConfig,
+        config: &WheelTuning,
     ) -> WheelOutput {
         let hand = session.hand;
         let press = input.presses[hand.index()];
@@ -293,8 +293,8 @@ impl Wheel {
         if let Some(pose) = input.hands[hand.index()] {
             match session.origin {
                 Some(origin) => {
-                    let (leave, back) = config.deadzone();
-                    let deflection = origin.deflection(config.steer, pose.aim, pose.grip);
+                    let (leave, back) = (config.point_leave_deg, config.point_return_deg);
+                    let deflection = origin.deflection(pose.aim);
                     session.aimed = aim(
                         session.aimed,
                         deflection,
@@ -368,7 +368,7 @@ struct Session {
 }
 
 /// The first opener held, the trackpad before the stick and the left hand before the right.
-fn find_opener(input: &WheelInput, config: &WheelConfig) -> Option<(Opener, Hand)> {
+fn find_opener(input: &WheelInput, config: &WheelTuning) -> Option<(Opener, Hand)> {
     [Opener::Trackpad, Opener::Stick]
         .into_iter()
         .flat_map(|opener| Hand::BOTH.map(|hand| (opener, hand)))
@@ -377,7 +377,7 @@ fn find_opener(input: &WheelInput, config: &WheelConfig) -> Option<(Opener, Hand
 
 /// Whether `opener` is held on a hand whose inputs are `press`. An open stick stays held down to
 /// its release threshold.
-fn held(opener: Opener, press: &WheelPress, config: &WheelConfig, open: bool) -> bool {
+fn held(opener: Opener, press: &WheelPress, config: &WheelTuning, open: bool) -> bool {
     match opener {
         Opener::Trackpad => config.trackpad && press.pad.held(),
         Opener::Stick => {

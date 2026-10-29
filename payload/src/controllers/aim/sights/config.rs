@@ -15,16 +15,11 @@ pub struct SightTuningConfig {
     /// Offer the tuning tool: the line-up marker, the capture, and the capture chord (both grips
     /// held and the dominant A pressed, on foot, while the marker is placed).
     pub enabled: bool,
-    /// How far ahead of the head the marker is placed, metres.
-    pub marker_distance_m: f32,
 }
 
 impl SightTuningConfig {
     pub const fn new() -> Self {
-        Self {
-            enabled: false,
-            marker_distance_m: 10.0,
-        }
+        Self { enabled: false }
     }
 }
 

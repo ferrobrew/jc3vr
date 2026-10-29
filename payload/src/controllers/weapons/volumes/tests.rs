@@ -15,7 +15,6 @@ const TALL: BodyDimensions = BodyDimensions {
     seated_eye_height: None,
 };
 const BODIES: [BodyDimensions; 3] = [DIMS, BodyDimensions::GENERIC_ADULT, TALL];
-const POUCHES: PouchesConfig = PouchesConfig::new();
 
 /// A skeleton built to the dimensions, with its eyes at the origin, turned by `yaw`.
 fn ideal_skeleton(dims: &BodyDimensions, yaw: f32) -> SkeletonLandmarks {
@@ -45,11 +44,11 @@ fn standing(dims: &BodyDimensions) -> BodyFrame {
 }
 
 fn landmarks(frame: &BodyFrame) -> Vec<Candidate> {
-    socket_landmarks(frame, &HolstersConfig::new())
+    socket_landmarks(frame, &SOCKETS)
 }
 
 /// Every volume, the sockets and the pouches, for a player whose dominant hand is `dominant`.
-fn every_volume_for(frame: &BodyFrame, pouches: &PouchesConfig, dominant: Hand) -> Vec<Candidate> {
+fn every_volume_for(frame: &BodyFrame, pouches: &PouchTuning, dominant: Hand) -> Vec<Candidate> {
     let mut c = landmarks(frame);
     c.extend(grenade_pouch(
         frame,
@@ -141,21 +140,15 @@ fn the_sockets_sit_where_the_body_has_them() {
 
 #[test]
 fn the_default_volumes_keep_apart() {
-    let swapped = PouchesConfig {
-        grenade_side: PouchSide::OffHand,
-        ..POUCHES
-    };
     for dims in BODIES {
         for yaw in [0.0, -0.6] {
             let frame = frame_of(ideal_skeleton(&dims, yaw));
             for dominant in Hand::BOTH {
-                for pouches in [POUCHES, swapped] {
-                    let c = every_volume_for(&frame, &pouches, dominant);
-                    assert_apart(
-                        &c,
-                        &format!("height {}, yaw {yaw}, dominant {dominant:?}", dims.height),
-                    );
-                }
+                let c = every_volume_for(&frame, &POUCHES, dominant);
+                assert_apart(
+                    &c,
+                    &format!("height {}, yaw {yaw}, dominant {dominant:?}", dims.height),
+                );
             }
         }
     }
@@ -235,19 +228,13 @@ fn the_pouches_are_laid_out_around_the_gun_hand_not_the_dominant_hand() {
 }
 
 #[test]
-fn the_grenade_side_can_be_overridden_and_the_c4_takes_the_other() {
+fn the_grenade_takes_the_gun_side_and_the_c4_the_other() {
     for dominant in Hand::BOTH {
-        let sides = chest_sides(&POUCHES, dominant);
+        let sides = chest_sides(dominant);
         assert_eq!((sides.grenade, sides.c4), (dominant, dominant.other()));
-        let swapped = PouchesConfig {
-            grenade_side: PouchSide::OffHand,
-            ..POUCHES
-        };
-        let sides = chest_sides(&swapped, dominant);
-        assert_eq!((sides.grenade, sides.c4), (dominant.other(), dominant));
-        let c = every_volume_for(&standing(&DIMS), &swapped, dominant);
+        let c = every_volume_for(&standing(&DIMS), &POUCHES, dominant);
         let grenade = centre(&c, GrabVolume::GrenadePouch);
-        assert_eq!(grenade.x > 0.0, dominant == Hand::Left);
+        assert_eq!(grenade.x > 0.0, dominant == Hand::Right);
     }
 }
 

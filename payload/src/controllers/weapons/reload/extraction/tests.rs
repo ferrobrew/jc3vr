@@ -2,7 +2,10 @@ use glam::Quat;
 use test_case::test_case;
 
 use super::*;
-use crate::controllers::grab::{Mark, MarkAt, resolve::resolve};
+use crate::controllers::{
+    grab::{Mark, MarkAt, resolve::resolve},
+    weapons::reload::tuning::RELOAD,
+};
 
 const CONFIG: ExtractionConfig = ExtractionConfig::new();
 
@@ -141,7 +144,7 @@ fn hand_loss_removal_identity_scale_and_mode_changes_require_a_new_claim() {
 
 #[test]
 fn only_an_inserted_detachable_magazine_is_eligible() {
-    let mut reload = ReloadConfig::new();
+    let mut reload = RELOAD;
     assert!(eligible(LoadKind::Magazine, false, &reload));
     assert!(!eligible(LoadKind::Magazine, true, &reload));
     for load in [LoadKind::Shell, LoadKind::Rocket, LoadKind::Cylinder] {

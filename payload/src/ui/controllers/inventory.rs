@@ -1,19 +1,21 @@
 //! The VR inventory: the carried weapons, the weapons lying in the world and their pins, and its
-//! settings.
+//! switches.
 
 use std::sync::Arc;
 
 use egui::Ui;
 
-use crate::controllers::{
-    frame::Hand,
-    loadout::{Socket, slot_label, spawn_transport},
-    weapons::inventory::{
-        InventoryReadout, StatusUnavailable,
-        config::InventoryConfig,
-        restore::{PathStatus, RestoreReadout},
-        traversal::Task,
+use crate::{
+    controllers::{
+        config::WeaponsConfig,
+        loadout::{slot_label, spawn_transport},
+        weapons::inventory::{
+            InventoryReadout, StatusUnavailable,
+            restore::{PathStatus, RestoreReadout},
+            traversal::Task,
+        },
     },
+    ui::controllers::pouch_models::pouch_model_settings,
 };
 
 pub(super) fn inventory_readout(
@@ -171,7 +173,8 @@ pub(super) fn inventory_readout(
     }
 }
 
-pub(super) fn inventory_settings(ui: &mut Ui, c: &mut InventoryConfig) {
+pub(super) fn inventory_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
+    let c = &mut w.inventory;
     ui.checkbox(&mut c.enabled, "Track the player's weapons");
     ui.add_enabled_ui(c.enabled, |ui| {
         ui.checkbox(
@@ -180,75 +183,21 @@ pub(super) fn inventory_settings(ui: &mut Ui, c: &mut InventoryConfig) {
         )
         .on_hover_text(
             "The loadout table alone moves the weapons, and the game's slots, its wielded \
-                 weapon, and the weapons armed in the hands follow it. Off, the table is put back \
-                 into the slots and the game's own one-weapon model runs.",
+             weapon, and the weapons armed in the hands follow it. Off, the table is put back \
+             into the slots and the game's own one-weapon model runs.",
         );
-        ui.checkbox(
-            &mut c.keep_through_traversal,
-            "Keep the hands as they are through traversal",
-        )
-        .on_hover_text(
-            "Vehicles, seats, the wingsuit, falls, dives, and the ragdoll put nothing away: the \
-                 graph's holster, hide, stop-use, and heavy-weapon drop tasks are refused for the \
-                 player, and a gun in a hand in a seat fires. Off, the game puts the wielded weapon \
-                 away and the table follows.",
-        );
-        ui.checkbox(&mut c.heavy_on_back, "Heavy weapons dock on the back")
-            .on_hover_text(
-                "A heavy weapon is taken into a hand through the table, armed there, and docked on \
-                 the back like a long gun, never wielded from the heavy slot. Off, it is the \
-                 game's: wielded from its slot and dropped when put away.",
-            );
         ui.checkbox(&mut c.return_lost, "Bring lost weapons back")
             .on_hover_text(
                 "A weapon that fell out of the world, or that was let go of at speed and left \
                  behind, comes back to a free socket, else the feet.",
             );
-        ui.add_enabled_ui(c.return_lost, |ui| {
-            ui.add(
-                egui::Slider::new(&mut c.lost_speed_mps, 2.0..=40.0)
-                    .text("Travelling fast from (m/s)"),
-            );
-            ui.add(egui::Slider::new(&mut c.left_behind_m, 5.0..=100.0).text("Left behind past (m)"));
-            ui.add(
-                egui::Slider::new(&mut c.lost_depth_m, 1.0..=50.0)
-                    .text("Out of the world below the sea by (m)"),
-            );
-        });
-        ui.checkbox(
-            &mut c.pin_world,
-            "Keep dropped weapons nearby from despawning",
-        );
-        ui.add_enabled_ui(c.pin_world, |ui| {
-            ui.add(egui::Slider::new(&mut c.pin_radius_m, 0.0..=30.0).text("Kept within (m)"));
-            ui.add(egui::Slider::new(&mut c.unpin_radius_m, 0.0..=40.0).text("Let go of past (m)"));
-            ui.add(egui::Slider::new(&mut c.max_pinned, 0..=16).text("Most kept at once"));
-        });
-        ui.add(egui::Slider::new(&mut c.forget_m, 10.0..=200.0).text("Left to the game past (m)"));
         ui.checkbox(&mut c.carry, "Carry weapons beyond the slots on the body");
         ui.checkbox(
             &mut c.persist,
             "Keep the carried weapons across saves and loads",
         );
-        ui.add_enabled_ui(c.carry, |ui| {
-            for socket in Socket::ALL {
-                let offset = match socket {
-                    Socket::Shoulder(Hand::Right) => &mut c.offsets.back_first,
-                    Socket::Shoulder(Hand::Left) => &mut c.offsets.back_second,
-                    Socket::BackOuter => &mut c.offsets.back_outer,
-                    Socket::Hip(Hand::Left) => &mut c.offsets.hip_left,
-                    Socket::Hip(Hand::Right) => &mut c.offsets.hip_right,
-                    Socket::Chest => &mut c.offsets.chest,
-                };
-                super::vec3_drag(
-                    ui,
-                    &format!("Offset on the {} (m)", socket.label()),
-                    offset,
-                    0.005,
-                );
-            }
-        });
     });
+    pouch_model_settings(ui, &mut w.pouches.models);
 }
 
 fn unavailable_readout(ui: &mut Ui, owner: &str, reason: StatusUnavailable) {

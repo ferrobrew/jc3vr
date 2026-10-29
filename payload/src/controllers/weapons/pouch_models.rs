@@ -47,7 +47,7 @@ use crate::{
         frame::{Hand, Pose},
         hands::{grip, late::lerp_transform},
         weapons::{
-            config::{ModelPlacement, PouchModelsConfig},
+            config::PouchModelsConfig,
             engine,
             pouch_models::attachments::{RenderSample, Sample, SampleId, placement},
         },
@@ -90,14 +90,23 @@ impl Prop {
             Self::Grenade | Self::Charge => SafeBoneIndex::STERNUM,
         }
     }
+}
 
-    fn placement(self, config: &PouchModelsConfig) -> ModelPlacement {
-        match self {
-            Prop::Grenade => config.grenade,
-            Prop::Charge => config.charge,
-            Prop::Magazine => config.magazine,
-        }
-    }
+/// Where every prop's model sits on its pouch: at the pouch's centre, square to the girdle.
+pub const MODEL_PLACEMENT: ModelPlacement = ModelPlacement {
+    offset_m: Vec3::ZERO,
+    rotation_deg: Vec3::ZERO,
+};
+
+/// Where a model sits relative to its pouch's centre, in the frame of the girdle the pouch rides
+/// (+X right, +Y up the spine, +Z back), given for the right side and mirrored across the body's
+/// midline for the left.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct ModelPlacement {
+    /// Metres.
+    pub offset_m: Vec3,
+    /// The model's turn from the girdle's axes: about X, then Y, then Z, degrees.
+    pub rotation_deg: Vec3,
 }
 
 /// A pouch to draw a model on this tick: its centre and the orientation of the girdle it rides, in
@@ -233,7 +242,7 @@ pub(crate) unsafe fn input_tick(
             slot.weapon,
             slot.model,
         );
-        let mut attachment = placement(prop, wanted, source, &frames, &prop.placement(config));
+        let mut attachment = placement(prop, wanted, source, &frames, &MODEL_PLACEMENT);
         let local = attachment.local.ok();
         let slot = &mut state.slots[prop.index()];
         let previous_source = slot.model;

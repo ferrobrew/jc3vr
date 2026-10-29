@@ -60,10 +60,6 @@ pub struct ControllersConfig {
     /// hand, and the grapple gauntlet on the model's left arm. The hand roles follow
     /// [`ControllersConfig::acting_hand`], which differs from this until a restart after a change.
     pub dominant_hand: Hand,
-    /// Pin the game's "the gamepad is the active input device" setting to the gamepad while the
-    /// controller scheme is in effect, so that the game applies its gamepad rules (aim assist,
-    /// tap-style melee) and shows gamepad prompts. The setting is restored when the scheme ends.
-    pub gamepad_semantics: bool,
     /// Raw input interpretation: the derived press thresholds and hand tracking.
     pub input: InputConfig,
     /// On-foot stick locomotion.
@@ -118,7 +114,6 @@ impl ControllersConfig {
             enabled: true,
             scheme: SchemeSetting::Controllers,
             dominant_hand: Hand::Right,
-            gamepad_semantics: true,
             input: InputConfig::new(),
             locomotion: LocomotionConfig::new(),
             mode: ModeConfig::new(),
