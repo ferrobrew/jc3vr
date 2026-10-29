@@ -16,12 +16,6 @@ The overlay state belongs to the current editing session. `Allow gameplay input`
 
 The capture adapter and header are implemented in `payload/src/egui_impl.rs`, `controllers/mode.rs`, and `ui/mod.rs`. The production adapter notifies the input owner, observes neutral input, gates gameplay and controller-pointer input, and handles desktop F4 visibility separately from the VR panel. Renderer-free tests cover these ownership transitions. No headset verification is recorded.
 
-## Debug UI verification foundation
-
-`payload/src/ui/capture.rs` supplies the production ownership policy. The approved catalog and `navigation::feature_body` drive production page and feature selection. `dispatch.rs` connects feature routes to existing controls and readouts. The source inventory and the original injected-snapshot navigation harness remain test-only. The migration's current coverage and remaining section splits are recorded in [debug-ui.md](debug-ui.md#migration-coverage).
-
-Renderer-free tests exercise the production selector callback, feature routes, independent scroll keys, the disabled edit boundary, and explicit saved-layout migration and recovery. Route tests use one scoped CONFIG/EDITS fixture across both status observers and control mutators. The injected-snapshot harness tests pointer and wheel selection; the production-selector callback tests do not establish equivalent pointer coverage. The historical source inventory records control-call assignments, not behavioral parity. No live DX11 or headset verification is recorded.
-
 ## Where the files live
 
 The payload keeps its files in the per-user configuration directory that the `directories` crate names for jc3vr (`ProjectDirs::from("me", "philpax", "jc3vr")`, see `config::paths`). On Windows that is `%APPDATA%\philpax\jc3vr\config`. Under Proton it is inside the game's prefix, `steamapps/compatdata/<app id>/pfx/drive_c/users/steamuser/AppData/Roaming/philpax/jc3vr/config/`. The directory is created on first use. The startup log names the settings file's path, and the debug window shows it under the build stamp as selectable text, with whether the file is up to date.

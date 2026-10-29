@@ -7,10 +7,7 @@
 
 use std::ffi::CStr;
 
-use ::jc3gi::{
-    self as native_jc3gi,
-    environment::{LandscapeManager, Weather, WeatherController, WorldTime},
-};
+use jc3gi::environment::{LandscapeManager, Weather, WeatherController, WorldTime};
 
 /// Render the Environment tab body.
 pub(crate) fn render(ui: &mut egui::Ui) {
@@ -45,7 +42,7 @@ pub(crate) fn render(ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             for (label, event) in WEATHER_EVENTS {
                 if ui.button(*label).clicked() {
-                    jc3gi::event::send_event_msg(event);
+                    send_weather_event(event);
                 }
             }
         });
@@ -160,23 +157,13 @@ fn weather() -> Option<&'static mut Weather> {
     unsafe { weather.as_mut() }
 }
 
-// The wrapper retains the historical command expression and the native fallback in test builds.
-mod jc3gi {
-    pub(crate) mod event {
-        use std::ffi::CStr;
-
-        use crate::ui::environment::native_jc3gi;
-        #[cfg(test)]
-        use crate::ui::environment::test_game;
-
-        pub(crate) fn send_event_msg(event: &CStr) {
-            #[cfg(test)]
-            if test_game::record_event(event) {
-                return;
-            }
-            native_jc3gi::event::send_event_msg(event);
-        }
+/// Fire a named weather event, or record it instead while a test fixture is installed.
+fn send_weather_event(event: &CStr) {
+    #[cfg(test)]
+    if test_game::record_event(event) {
+        return;
     }
+    jc3gi::event::send_event_msg(event);
 }
 
 #[cfg(test)]

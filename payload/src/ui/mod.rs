@@ -18,7 +18,6 @@ use crate::{
 
 pub mod camera;
 pub(crate) mod capture;
-#[path = "inventory/catalog.rs"]
 pub(crate) mod catalog;
 pub mod controllers;
 pub mod diagnostics;
@@ -27,8 +26,6 @@ mod dispatch;
 pub mod environment;
 pub mod game;
 pub mod hud;
-#[cfg(test)]
-pub(crate) mod inventory;
 pub(crate) mod layout;
 pub(crate) mod navigation;
 mod overview;
