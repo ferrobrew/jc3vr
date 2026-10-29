@@ -85,10 +85,10 @@ pub(crate) struct Baseline {
 /// Only established root semantics can select a composition operation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RootTreatment {
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     Unknown,
     SeparateFromAuthoredLocal,
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     ComposeWithAuthoredLocal,
 }
 
@@ -96,7 +96,7 @@ pub(crate) enum RootTreatment {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum DeltaRequest {
     AuthoredLocalRelativeToBaseline,
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     RootCompensatedRelativeToBaseline,
 }
 
@@ -109,7 +109,9 @@ pub(crate) enum InvalidPair {
     RepeatedOrReversedSample,
     BaselineChanged,
     InvalidTransform,
+    #[cfg(test)]
     RootTreatmentUnknown,
+    #[cfg(test)]
     RootTreatmentMismatch,
     Teleport,
     Interrupted,
@@ -153,18 +155,7 @@ impl Pair {
         request: DeltaRequest,
         root_treatment: RootTreatment,
     ) -> Result<[Mat4; 2], InvalidPair> {
-        match (request, root_treatment) {
-            (_, RootTreatment::Unknown) => return Err(InvalidPair::RootTreatmentUnknown),
-            (
-                DeltaRequest::AuthoredLocalRelativeToBaseline,
-                RootTreatment::SeparateFromAuthoredLocal,
-            )
-            | (
-                DeltaRequest::RootCompensatedRelativeToBaseline,
-                RootTreatment::ComposeWithAuthoredLocal,
-            ) => {}
-            _ => return Err(InvalidPair::RootTreatmentMismatch),
-        }
+        check_root_semantics(request, root_treatment)?;
         let baseline = channel(self.baseline.sample, request)?;
         let inverse = baseline.inverse();
         let deltas = [
@@ -191,6 +182,28 @@ pub(crate) fn compose_view(
     Ok(result)
 }
 
+/// Each delta request composes only under the root semantics it was established for.
+pub(crate) fn check_root_semantics(
+    request: DeltaRequest,
+    root_treatment: RootTreatment,
+) -> Result<(), InvalidPair> {
+    match (request, root_treatment) {
+        #[cfg(test)]
+        (_, RootTreatment::Unknown) => Err(InvalidPair::RootTreatmentUnknown),
+        (
+            DeltaRequest::AuthoredLocalRelativeToBaseline,
+            RootTreatment::SeparateFromAuthoredLocal,
+        ) => Ok(()),
+        #[cfg(test)]
+        (
+            DeltaRequest::RootCompensatedRelativeToBaseline,
+            RootTreatment::ComposeWithAuthoredLocal,
+        ) => Ok(()),
+        #[cfg(test)]
+        _ => Err(InvalidPair::RootTreatmentMismatch),
+    }
+}
+
 pub(crate) fn same_continuity(left: Stamp, right: Stamp) -> Result<(), InvalidPair> {
     if left.character != right.character {
         return Err(InvalidPair::CharacterChanged);
@@ -206,6 +219,7 @@ fn channel(sample: Sample, request: DeltaRequest) -> Result<Mat4, InvalidPair> {
     let local = sample.local.transform.matrix()?;
     match request {
         DeltaRequest::AuthoredLocalRelativeToBaseline => Ok(local),
+        #[cfg(test)]
         DeltaRequest::RootCompensatedRelativeToBaseline => {
             Ok(sample.root.transform.matrix()? * local)
         }

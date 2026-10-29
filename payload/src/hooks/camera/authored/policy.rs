@@ -1,14 +1,19 @@
 //! Pure ownership for explicitly named authored-camera runs.
 
 use crate::hooks::camera::authored::composition::{
-    Baseline, DeltaRequest, InvalidPair, Pair, RootTreatment, Sample, Stamp, same_continuity,
+    Baseline, DeltaRequest, InvalidPair, Pair, RootTreatment, Sample, Stamp, check_root_semantics,
+    same_continuity,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum NamedCase {
+    #[cfg(test)]
     BoostedGroundTakeoff,
+    #[cfg(test)]
     Landing,
+    #[cfg(test)]
     Recovery,
+    #[cfg(test)]
     FloorPickup,
     Hanging,
 }
@@ -23,21 +28,22 @@ pub(crate) struct AcceptedRun {
 }
 
 /// The graph states the policy distinguishes. The classifier admits only the upside-down grapple
-/// family (see `native::EXACT_STATES`); the takeoff, landing, recovery, pickup, and reeled-in
-/// attach cases remain as policy fixtures for the run, handoff, and tail rules, since their
-/// shipped markers only cancel root motion or hold identity.
+/// family (see `native::EXACT_STATES`). The takeoff, landing, recovery, pickup, and reeled-in
+/// attach cases exist only in tests, as fixtures for the run, handoff, and tail rules: their
+/// shipped markers only cancel root motion or hold identity, so the classifier never admits them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GraphState {
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     GroundInto,
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     GroundFollowOn,
+    #[cfg(test)]
     WingsuitIdle,
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     Landing(LandingState),
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     Recovery(RecoveryState),
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     FloorPickup,
     Hanging(HangingState),
     #[cfg(test)]
@@ -47,14 +53,14 @@ pub(crate) enum GraphState {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 pub(crate) enum LandingState {
     FastFall,
     Hard,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 pub(crate) enum RecoveryState {
     PoseMatching,
     BlendIn,
@@ -63,7 +69,7 @@ pub(crate) enum RecoveryState {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum HangingState {
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     GrappleAttached,
     GrapplePreUpsideDown,
     GrappleUpsideDown,
@@ -73,11 +79,15 @@ pub(crate) enum HangingState {
 impl GraphState {
     pub fn named_case(self) -> Option<NamedCase> {
         match self {
+            #[cfg(test)]
             Self::GroundInto | Self::GroundFollowOn | Self::WingsuitIdle => {
                 Some(NamedCase::BoostedGroundTakeoff)
             }
+            #[cfg(test)]
             Self::Landing(_) => Some(NamedCase::Landing),
+            #[cfg(test)]
             Self::Recovery(_) => Some(NamedCase::Recovery),
+            #[cfg(test)]
             Self::FloorPickup => Some(NamedCase::FloorPickup),
             Self::Hanging(_) => Some(NamedCase::Hanging),
             #[cfg(test)]
@@ -86,7 +96,11 @@ impl GraphState {
     }
 
     pub fn can_enter(self) -> bool {
-        !matches!(self, Self::GroundFollowOn | Self::WingsuitIdle) && self.named_case().is_some()
+        #[cfg(test)]
+        if matches!(self, Self::GroundFollowOn | Self::WingsuitIdle) {
+            return false;
+        }
+        self.named_case().is_some()
     }
 
     /// Only explicit graph handoffs share an entry baseline across distinct motions.
@@ -94,24 +108,27 @@ impl GraphState {
         if self.named_case().is_none() {
             return false;
         }
-        self == next
-            || matches!(
-                (self, next),
-                (Self::GroundInto, Self::GroundFollowOn)
-                    | (Self::GroundFollowOn, Self::WingsuitIdle)
-                    | (
-                        Self::Recovery(RecoveryState::PoseMatching),
-                        Self::Recovery(RecoveryState::BlendIn | RecoveryState::GetUp)
-                    )
-                    | (
-                        Self::Recovery(RecoveryState::BlendIn),
-                        Self::Recovery(RecoveryState::GetUp)
-                    )
-                    | (
-                        Self::Hanging(HangingState::GrapplePreUpsideDown),
-                        Self::Hanging(HangingState::GrappleUpsideDown)
-                    )
+        self == next || self.hands_off_to(next)
+    }
+
+    fn hands_off_to(self, next: Self) -> bool {
+        match (self, next) {
+            #[cfg(test)]
+            (Self::GroundInto, Self::GroundFollowOn)
+            | (Self::GroundFollowOn, Self::WingsuitIdle)
+            | (
+                Self::Recovery(RecoveryState::PoseMatching),
+                Self::Recovery(RecoveryState::BlendIn | RecoveryState::GetUp),
             )
+            | (Self::Recovery(RecoveryState::BlendIn), Self::Recovery(RecoveryState::GetUp)) => {
+                true
+            }
+            (
+                Self::Hanging(HangingState::GrapplePreUpsideDown),
+                Self::Hanging(HangingState::GrappleUpsideDown),
+            ) => true,
+            _ => false,
+        }
     }
 }
 
@@ -242,14 +259,11 @@ impl Policy {
             Err(reason) => return self.clear(Phase::Interrupted, Some(reason)),
         };
         self.previous = Some(frame);
+        let tail = frame.native.is_some_and(|native| native.outgoing);
+        #[cfg(test)]
+        let tail = tail || frame.state == GraphState::WingsuitIdle;
         Decision {
-            phase: if frame.state == GraphState::WingsuitIdle
-                || frame.native.is_some_and(|native| native.outgoing)
-            {
-                Phase::Tail
-            } else {
-                Phase::Live
-            },
+            phase: if tail { Phase::Tail } else { Phase::Live },
             pair: Some(pair),
             reset: false,
             reason: None,
@@ -302,7 +316,9 @@ fn validate(frame: Frame) -> Result<(), InvalidPair> {
         if !blend.weight.is_finite() || !(0.0..=1.0).contains(&blend.weight) {
             return Err(InvalidPair::InvalidBlendWeight);
         }
-    } else if frame.state == GraphState::WingsuitIdle {
+    }
+    #[cfg(test)]
+    if frame.blend.is_none() && frame.state == GraphState::WingsuitIdle {
         return Err(InvalidPair::MissingSample);
     }
     if frame
@@ -314,18 +330,7 @@ fn validate(frame: Frame) -> Result<(), InvalidPair> {
     if origin.finalized > stamp.finalized {
         return Err(InvalidPair::RepeatedOrReversedSample);
     }
-    match (frame.request, frame.root_treatment) {
-        (_, RootTreatment::Unknown) => Err(InvalidPair::RootTreatmentUnknown),
-        (
-            DeltaRequest::AuthoredLocalRelativeToBaseline,
-            RootTreatment::SeparateFromAuthoredLocal,
-        )
-        | (
-            DeltaRequest::RootCompensatedRelativeToBaseline,
-            RootTreatment::ComposeWithAuthoredLocal,
-        ) => Ok(()),
-        _ => Err(InvalidPair::RootTreatmentMismatch),
-    }
+    check_root_semantics(frame.request, frame.root_treatment)
 }
 
 fn continue_pair(previous: Frame, current: Frame) -> Result<Pair, InvalidPair> {
