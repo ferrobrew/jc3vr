@@ -21,6 +21,7 @@ use crate::model::Hand;
 pub type Label = Cow<'static, str>;
 
 /// One event on the recording's frame timeline.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Event {
     /// Nanoseconds since the recording started, on the clock of the frames' `time_ns`.
@@ -29,6 +30,7 @@ pub struct Event {
 }
 
 /// What happened.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum EventKind {
     /// The controller subsystems' derived state for one game frame.
@@ -54,6 +56,7 @@ impl EventKind {
 /// The controller subsystems' derived state, read once per game frame after the engine's render
 /// update. It holds only what the frames do not: the frames already carry the controllers' poses,
 /// validity and tracking flags, focus, action set, and the STAGE information.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ControllerState {
     /// The controller publication the subsystems read, when one was available.
@@ -77,6 +80,7 @@ pub struct ControllerState {
 }
 
 /// One hand's HumanIK result.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct IkState {
     pub queued: bool,
@@ -90,6 +94,7 @@ pub struct IkState {
 }
 
 /// The classified hand tiers and their blend.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct TierState {
     pub state: Option<Label>,
@@ -97,6 +102,7 @@ pub struct TierState {
     pub hands: [HandTier; 2],
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct HandTier {
     pub assigned: Label,
@@ -106,6 +112,7 @@ pub struct HandTier {
 }
 
 /// The render-time late hand correction.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct LateState {
     /// Indexed by [`Hand::index`].
@@ -115,6 +122,7 @@ pub struct LateState {
     pub palettes_edited: u64,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct HandLate {
     pub reason: Label,
@@ -128,6 +136,7 @@ pub struct HandLate {
 }
 
 /// The aim rays, their hits, and the weapon sight.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct AimState {
     pub idle: Option<Label>,
@@ -138,6 +147,7 @@ pub struct AimState {
     pub raycast_error: Option<Label>,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct HandAim {
     pub source: Label,
@@ -148,6 +158,7 @@ pub struct HandAim {
     pub target: Vec3,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct GrappleAim {
     pub hit: bool,
@@ -156,6 +167,7 @@ pub struct GrappleAim {
     pub point: Vec3,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct WeaponAim {
     pub name_hash: u32,
@@ -168,6 +180,7 @@ pub struct WeaponAim {
 }
 
 /// The posture, the body rig's root and chase, the seat, and the fade.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct RoomscaleState {
     pub active: bool,
@@ -192,6 +205,7 @@ pub struct RoomscaleState {
 }
 
 /// Which stage of an acquisition a [`GripAcquisition`] records.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum GripStage {
     /// A grip press, or a queued request, with what the resolver offered and what the pickup
@@ -216,6 +230,7 @@ impl GripStage {
 }
 
 /// A stage of one hand's grip acquisition, with the resolver's decision behind it.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct GripAcquisition {
     pub hand: Hand,
@@ -251,6 +266,7 @@ pub struct GripAcquisition {
 }
 
 /// One resolver candidate.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct GripCandidate {
     /// Its index in the tick's targets.
@@ -265,6 +281,7 @@ pub struct GripCandidate {
 }
 
 /// The branches a reach provider evaluated.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct GripScan {
     pub entries: Vec<GripScanEntry>,
@@ -276,6 +293,7 @@ pub struct GripScan {
     pub selected: Option<Label>,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct GripScanEntry {
     pub branch: Label,
@@ -290,6 +308,7 @@ pub struct GripScanEntry {
 }
 
 /// The first carried-body write or joined-body report for an accepted request.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct GripDrive {
     pub object: u64,
@@ -302,6 +321,7 @@ pub struct GripDrive {
 }
 
 /// One attempt to let an inventory gun fall from the hand.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct GunRelease {
     /// The physical controller hand.
@@ -324,6 +344,7 @@ pub struct GunRelease {
     pub drop: Option<ReleaseDrop>,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReleaseController {
     pub frame_sequence: u64,
@@ -333,6 +354,7 @@ pub struct ReleaseController {
 }
 
 /// The native drop: the gun motion read before it, and the velocity the release requested.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReleaseDrop {
     /// The address read at the drop site, a correlation identity only.
@@ -352,6 +374,7 @@ pub struct ReleaseDrop {
 }
 
 /// World-space linear (metres per second) and angular (radians per second) velocities.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct WorldMotion {
     pub linear: Vec3,

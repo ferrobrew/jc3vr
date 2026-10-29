@@ -3,11 +3,14 @@
 //! ```text
 //! tracking-synth [--out <dir>] [--rate <hz>] [<script>...]
 //! tracking-synth --list
+//! tracking-synth dump [--json] <recording>
 //! ```
 //!
 //! With no script named, every built-in script is written. The recordings go to `<dir>/<script>.jc3trk`,
 //! by default `testing/recordings/synthetic/` in the repository, where the synthetic scenarios look
 //! for them. `--list` prints each built-in script's name and summary, tab-separated, one per line.
+//! `dump` prints any recording's frames and events to stdout, as text or, with `--json`, as JSON
+//! lines.
 
 use std::{
     fmt,
@@ -17,6 +20,7 @@ use std::{
 
 use tracing_subscriber::EnvFilter;
 use tracking_synth::{
+    dump::{self, DumpFormat},
     script::Script,
     scripts,
     synth::{DEFAULT_RATE_HZ, Options, SynthError},
@@ -48,13 +52,18 @@ fn main() -> ExitCode {
     }
 }
 
-const USAGE: &str = "usage: tracking-synth [--out <dir>] [--rate <hz>] [<script>...] | --list";
+const USAGE: &str = "usage: tracking-synth [--out <dir>] [--rate <hz>] [<script>...] | --list | \
+                     dump [--json] <recording>";
 
 /// What the command line asks for.
 #[derive(Debug, Clone, PartialEq)]
 enum Command {
     Help,
     List,
+    Dump {
+        path: PathBuf,
+        format: DumpFormat,
+    },
     Write {
         out: PathBuf,
         options: Options,
@@ -74,6 +83,17 @@ enum CliError {
     BadRate(String),
     /// A script that is not built in.
     UnknownScript(String),
+    /// `dump` without a recording, or with more than one.
+    DumpPath,
+    Read {
+        path: PathBuf,
+        error: std::io::Error,
+    },
+    Decode {
+        path: PathBuf,
+        error: tracking_format::DecodeError,
+    },
+    Print(std::io::Error),
     Synth {
         script: &'static str,
         error: SynthError,
@@ -95,6 +115,12 @@ impl fmt::Display for CliError {
                 f,
                 "there is no built-in script `{name}`; `--list` lists them"
             ),
+            CliError::DumpPath => write!(f, "dump: name exactly one recording"),
+            CliError::Read { path, error } => {
+                write!(f, "dump: could not read {}: {error}", path.display())
+            }
+            CliError::Decode { path, error } => write!(f, "dump: {}: {error}", path.display()),
+            CliError::Print(error) => write!(f, "dump: could not print: {error}"),
             CliError::Synth { script, error } => write!(f, "{script}: {error}"),
             CliError::Write { path, error } => {
                 write!(f, "could not write {}: {error}", path.display())
@@ -106,6 +132,11 @@ impl fmt::Display for CliError {
 impl std::error::Error for CliError {}
 
 fn parse(args: impl Iterator<Item = String>) -> Result<Command, CliError> {
+    let mut args = args.peekable();
+    if args.peek().map(String::as_str) == Some("dump") {
+        args.next();
+        return parse_dump(args);
+    }
     let mut out = default_out();
     let mut options = Options::default();
     let mut names = Vec::new();
@@ -132,6 +163,24 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Command, CliError> {
     })
 }
 
+fn parse_dump(args: impl Iterator<Item = String>) -> Result<Command, CliError> {
+    let mut format = DumpFormat::Text;
+    let mut paths = Vec::new();
+    for arg in args {
+        match arg.as_str() {
+            "--json" => format = DumpFormat::JsonLines,
+            option if option.starts_with('-') => {
+                return Err(CliError::UnknownOption(option.to_owned()));
+            }
+            path => paths.push(PathBuf::from(path)),
+        }
+    }
+    match <[PathBuf; 1]>::try_from(paths) {
+        Ok([path]) => Ok(Command::Dump { path, format }),
+        Err(_) => Err(CliError::DumpPath),
+    }
+}
+
 fn run(command: Command) -> Result<(), CliError> {
     match command {
         Command::Help => {
@@ -148,6 +197,23 @@ fn run(command: Command) -> Result<(), CliError> {
                 println!("{}\t{}", script.name, script.summary);
             }
             Ok(())
+        }
+        Command::Dump { path, format } => {
+            let bytes = std::fs::read(&path).map_err(|error| CliError::Read {
+                path: path.clone(),
+                error,
+            })?;
+            let recording = tracking_format::decode(&bytes)
+                .map_err(|error| CliError::Decode { path, error })?;
+            let stdout = std::io::stdout();
+            let mut out = std::io::BufWriter::new(stdout.lock());
+            match dump::dump(&recording, format, &mut out)
+                .and_then(|()| std::io::Write::flush(&mut out))
+            {
+                // A reader that stops early (`head`) has all it wanted.
+                Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+                result => result.map_err(CliError::Print),
+            }
         }
         Command::Write {
             out,

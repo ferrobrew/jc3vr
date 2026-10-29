@@ -14,3 +14,8 @@ lz4_flex = { version = "=0.13.1", default-features = false, features = ["std", "
 # The session state's type only: the payload's `openxr` re-exports the same type from this crate,
 # so a recorded state needs no conversion.
 openxr-sys = "0.13"
+# Serialization of the frame and event model, for tools that print recordings as JSON.
+serde = { version = "1", features = ["derive"], optional = true }
+
+[features]
+serde = ["dep:serde"]

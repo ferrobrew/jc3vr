@@ -10,7 +10,9 @@
 //!   controller.
 //! - [`schema`] reads the payload's semantic action schema, which the semantic states index.
 //! - [`synth`] samples a script into a recording, frame by frame.
+//! - [`dump`] prints a recording's frames and events.
 
+pub mod dump;
 pub mod inputs;
 pub mod rig;
 pub mod schema;

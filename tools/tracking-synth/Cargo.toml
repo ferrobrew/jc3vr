@@ -2,12 +2,13 @@
 name = "tracking-synth"
 version = "0.1.0"
 edition = "2024"
-description = "Writes synthetic tracking recordings (.jc3trk) from scripted head and controller paths, so the body rig can be tested without a headset."
+description = "Writes synthetic tracking recordings (.jc3trk) from scripted head and controller paths, so the body rig can be tested without a headset, and prints recordings as text or JSON lines."
 publish = false
 
 [dependencies]
 glam = { workspace = true }
-tracking-format = { path = "../../tracking-format" }
+serde_json = "1"
+tracking-format = { path = "../../tracking-format", features = ["serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

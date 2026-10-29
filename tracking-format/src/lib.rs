@@ -118,6 +118,7 @@ pub struct Recording {
 }
 
 /// What a recording knows about itself and where it started.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Header {
     /// The build that recorded it.
@@ -136,6 +137,7 @@ pub struct Header {
 }
 
 /// Where the player was when the recording started.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct StartMarker {
     /// The player character's world matrix, row-major, translation in elements 12 to 14.
@@ -152,6 +154,7 @@ impl StartMarker {
 }
 
 /// One rendered frame's tracking.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Frame {
     /// Nanoseconds since the recording started, on the host's monotonic clock.
@@ -171,9 +174,11 @@ pub struct Frame {
 }
 
 /// The session's state for one frame.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct SessionSample {
     /// The session state the runtime last reported.
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_session_state"))]
     pub state: Option<SessionState>,
     /// Whether the runtime asked for the frame to be rendered.
     pub should_render: bool,
@@ -182,6 +187,7 @@ pub struct SessionSample {
 }
 
 /// Both eyes' located views in the cockpit frame.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct HeadSample {
     /// Indexed left, right.
@@ -189,6 +195,7 @@ pub struct HeadSample {
 }
 
 /// One eye's located view.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct EyeSample {
     /// The eye pose in the cockpit frame.
@@ -198,6 +205,7 @@ pub struct EyeSample {
 }
 
 /// The published controller frame, less the fields a publish stamps.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ControllerSample {
     pub focused: bool,
@@ -207,6 +215,7 @@ pub struct ControllerSample {
 }
 
 /// The published semantic frame, less its publish stamp.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct SemanticSample {
     pub action_set: ActionSetKind,
@@ -215,6 +224,7 @@ pub struct SemanticSample {
 }
 
 /// A recenter of the cockpit baseline.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct RecenterEvent {
     pub kind: RecenterKind,
@@ -372,6 +382,15 @@ pub fn encode_event(event: &event::Event) -> Result<Vec<u8>, DecodeError> {
 /// Read a whole file within [`DecodeLimits::default`].
 pub fn decode(bytes: &[u8]) -> Result<Recording, DecodeError> {
     decode_with_limits(bytes, DecodeLimits::default())
+}
+
+/// A session state as its raw `XrSessionState` value, since the OpenXR type has no serialization.
+#[cfg(feature = "serde")]
+fn serialize_session_state<S: serde::Serializer>(
+    state: &Option<SessionState>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serde::Serialize::serialize(&state.map(SessionState::into_raw), serializer)
 }
 
 /// The bytes a file starts with.

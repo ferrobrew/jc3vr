@@ -2592,6 +2592,7 @@ dependencies = [
  "glam",
  "lz4_flex",
  "openxr-sys",
+ "serde",
 ]
 
 [[package]]
@@ -2600,6 +2601,7 @@ version = "0.1.0"
 dependencies = [
  "glam",
  "pretty_assertions",
+ "serde_json",
  "tracing",
  "tracing-subscriber",
  "tracking-format",

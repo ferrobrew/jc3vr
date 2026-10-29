@@ -10,6 +10,7 @@
 use glam::{Quat, Vec2, Vec3};
 
 /// A hand, and the index of its entry in the per-hand arrays. The left hand is index 0.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Hand {
     Left,
@@ -30,6 +31,7 @@ impl Hand {
 }
 
 /// The mode action set that was active when a frame was sampled.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ActionSetKind {
     /// On foot, swimming, falling, and the parachute.
@@ -61,6 +63,7 @@ impl ActionSetKind {
 }
 
 /// The interaction profile the runtime bound a hand to.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum InteractionProfile {
     /// No profile is bound.
@@ -75,6 +78,7 @@ pub enum InteractionProfile {
 }
 
 /// A rigid transform in the cockpit frame.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Pose {
     /// Metres.
@@ -96,6 +100,7 @@ impl Default for Pose {
 }
 
 /// A located controller space with its validity and tracking flags.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct TrackedPose {
     pub pose: Pose,
@@ -110,6 +115,7 @@ pub struct TrackedPose {
 }
 
 /// Every raw input of one controller.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct HandInputs {
     pub trigger: f32,
@@ -135,6 +141,7 @@ pub struct HandInputs {
 
 /// A digital input of one controller, as a bit in a [`ButtonSet`], including the presses derived
 /// from the analog inputs.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum Button {
@@ -179,6 +186,7 @@ impl Button {
 }
 
 /// A set of [`Button`]s, one bit each.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
 pub struct ButtonSet(u16);
 
@@ -202,6 +210,7 @@ impl ButtonSet {
 pub const HAND_JOINT_COUNT: usize = 26;
 
 /// One tracked hand joint, in the `XrHandJointEXT` order.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct HandJoint {
     /// The joint pose in the cockpit frame.
@@ -227,6 +236,7 @@ impl HandJoint {
 }
 
 /// One controller's snapshot.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct HandFrame {
     /// Whether the runtime reports this hand's controller as present.
@@ -244,6 +254,7 @@ pub struct HandFrame {
 }
 
 /// What the runtime reported about its STAGE space.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct Stage {
     /// Whether the session has a STAGE space at all.
@@ -256,6 +267,7 @@ pub struct Stage {
 }
 
 /// What a recenter re-based.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum RecenterKind {
     /// Position and yaw.
@@ -265,6 +277,7 @@ pub enum RecenterKind {
 }
 
 /// Who asked for a recenter.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum RecenterCause {
     /// The player.
@@ -274,6 +287,7 @@ pub enum RecenterCause {
 }
 
 /// A semantic action set.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum SemanticSet {
     Global,
@@ -304,6 +318,7 @@ impl SemanticSet {
 }
 
 /// One action's value on one hand.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum ActionValue {
     Bool(bool),
@@ -312,6 +327,7 @@ pub enum ActionValue {
 }
 
 /// One action's state on one hand.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct ActionState {
     pub value: ActionValue,
@@ -323,6 +339,7 @@ pub struct ActionState {
 
 /// Every action of one set, each per hand, indexed by the action's index in its set and then by
 /// [`Hand::index`].
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct SetState {
     pub set: SemanticSet,
