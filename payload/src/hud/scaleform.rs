@@ -43,12 +43,16 @@ pub(crate) fn discovered_in_hud() -> bool {
 /// would cover the whole panel in VR instead. Paths confirmed against an in-game display-tree dump;
 /// `MCI_omni_damage` (the screen-wide damage flash) is a direct child of the center container, not
 /// of the health-damage manager.
+///
+/// The directional damage indicators are not among them. The movie builds them at runtime as
+/// children of the HUD document itself, beside the point-of-interest pool, and leaves the center
+/// container's `MCI_character_damage_indicators` and `MCI_vehicle_damage_indicators` stages empty.
+/// They are small arrows on an ellipse around the stage centre that give only the attacker's
+/// direction, so they stay on the panel.
 pub(crate) const OVERLAY_CLIPS: &[&str] = &[
     "MCI_safe_area_center.MCI_omni_damage",
     "MCI_safe_area_center.MCI_drowning_container",
     "MCI_safe_area_center.MCI_health_damage_manager",
-    "MCI_safe_area_center.MCI_character_damage_indicators",
-    "MCI_safe_area_center.MCI_vehicle_damage_indicators",
     "MCI_safe_area_center.MCI_sniper",
 ];
 
