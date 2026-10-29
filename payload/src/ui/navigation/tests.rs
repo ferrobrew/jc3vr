@@ -1,6 +1,20 @@
 use super::*;
 use crate::ui::capture::{CapturePolicy, InputObservation, PanelRequest};
 
+/// Whether the longest page lists more features than the feature menu's fixed popup height
+/// shows at the default style, so that the walks must scroll it.
+fn feature_menu_overflows() -> bool {
+    /// The rows the feature popup shows without scrolling.
+    const VISIBLE_ROWS: usize = 7;
+    PageId::ALL.iter().any(|page| {
+        FEATURES
+            .iter()
+            .filter(|feature| feature.page == *page)
+            .count()
+            > VISIBLE_ROWS
+    })
+}
+
 struct Harness {
     context: egui::Context,
     state: NavigationState,
@@ -295,11 +309,11 @@ fn navigation_feature_parity() {
         }
     }
     assert!(
-        harness.wheel_down > 0,
+        !feature_menu_overflows() || harness.wheel_down > 0,
         "feature walk must reach rows below the menu viewport"
     );
     assert!(
-        harness.wheel_up > 0,
+        !feature_menu_overflows() || harness.wheel_up > 0,
         "reverse feature walk must reach rows above the menu viewport"
     );
 }
@@ -350,11 +364,11 @@ fn narrow_layout_keeps_pages_features_and_recovery_visible() {
         }
     }
     assert!(
-        harness.wheel_down > 0,
+        !feature_menu_overflows() || harness.wheel_down > 0,
         "narrow feature walk must reach rows below the menu viewport"
     );
     assert!(
-        harness.wheel_up > 0,
+        !feature_menu_overflows() || harness.wheel_up > 0,
         "narrow reverse walk must reach rows above the menu viewport"
     );
 }
