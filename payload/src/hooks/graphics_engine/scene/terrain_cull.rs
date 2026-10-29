@@ -31,7 +31,7 @@
 //! type's own bake, so the baked constants carry `0`, and restores the engine's values immediately
 //! afterwards (the engine's own settings, and its debug UI's view of them, are untouched). The LOD
 //! clip and the cull-by-detail term are left alone -- neither is view-dependent. Scoped to stereo
-//! frames and to [`RELAX_TERRAIN_PATCH_HULL_CULLS`].
+//! frames.
 //!
 //! Cost: the patches in the margin are tessellated and rasterized instead of dropped, bounded by
 //! whatever the CPU-side patch cull already admitted (itself widened to the binocular union in
@@ -48,12 +48,6 @@ pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&TERRAIN_PATCH_SETUP_CONSTANT_BUFFERS_BINDER)
 }
 
-/// Relax the volumetric-patch terrain's two view-dependent hull culls in stereo (issue #40): the
-/// back-patch cull against the render camera's single forward axis, and the frustum cull against a
-/// view-projection baked once per frame. Neither survives a headset's field of view, and a
-/// discarded patch resolves as a world-locked black patch that flips with head rotation. VR only.
-const RELAX_TERRAIN_PATCH_HULL_CULLS: bool = true;
-
 #[detour(
     address = jc3gi::graphics_engine::render_block::RenderBlockTypeTerrainPatch::SetupConstantBuffers_ADDRESS
 )]
@@ -62,8 +56,7 @@ fn terrain_patch_setup_constant_buffers(
     render_context: *mut RenderContext,
 ) {
     let original = TERRAIN_PATCH_SETUP_CONSTANT_BUFFERS.get().unwrap();
-    let relax = crate::stereo::active() && RELAX_TERRAIN_PATCH_HULL_CULLS;
-    if !relax || this.is_null() {
+    if !crate::stereo::active() || this.is_null() {
         original.call(this, render_context);
         return;
     }
