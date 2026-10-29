@@ -23,7 +23,7 @@ use crate::profiler::gpu::seam;
 use crate::{
     config::Config,
     debug::{
-        stereo_diff::op_total,
+        stereo_diff::{op_total, record_pass, recording},
         trace::{TraceEvent, TraceState, tracing_active},
     },
     stereo::{STEREO_STATE, draw_index, is_second_eye},
@@ -115,8 +115,9 @@ fn do_draw(this: *mut RenderPass, ctx: *mut RenderContext, color_mask: u32) -> b
     // SAFETY: `this` is the live render pass being drawn.
     let _pass = unsafe { crate::profiler::pass_scope(this) };
     // Single-pass-stereo feasibility probe: record this pass's per-eye GPU-op count so the two
-    // eyes' draw sequences can be diffed at frame end. Off by default; two atomic loads when on.
-    let diff = crate::debug::stereo_diff::is_active();
+    // eyes' draw sequences can be diffed at frame end. Armed per traced stereo frame; two atomic
+    // loads when on.
+    let diff = recording();
     let ops_before = if diff { op_total() } else { 0 };
     // SAFETY: `this` and `ctx` are the live pass and render context of this draw call.
     let window = unsafe { crate::far_field::before_do_draw(this, ctx) };
@@ -131,7 +132,7 @@ fn do_draw(this: *mut RenderPass, ctx: *mut RenderContext, color_mask: u32) -> b
         let ops = op_total().wrapping_sub(ops_before);
         // SAFETY: `this` is the live render pass; `m_Index` is its render-pass id.
         let pass_id = unsafe { (*this).m_Index };
-        crate::debug::stereo_diff::record_pass(pass_id, draw_index(), ops);
+        record_pass(pass_id, draw_index(), ops);
     }
     // Close the final render-block-type run's scope before the pass scope closes.
     #[cfg(feature = "profiler")]

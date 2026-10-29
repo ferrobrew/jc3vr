@@ -367,20 +367,21 @@ pub struct StereoConfig {
     pub gate_hand_back_buffers: bool,
     /// Zero the post-effect dt on eye 1 (so once-per-frame accumulators do not double-step).
     pub gate_eye1_dt: bool,
-    /// Diagnostic: during a stereo frame, record each eye's per-pass GPU-op count and log a diff --
-    /// which passes draw identically between eyes (replayable from one walk) and which diverge (the
-    /// per-eye special-casing burden). The feasibility probe for single-pass stereo; see
-    /// [`crate::debug::stereo_diff`]. Logs on target `"stereo_diff"`.
+    /// Diagnostic: while a render trace collects, record each eye's per-pass GPU-op count during a
+    /// stereo frame and trace the diff -- which passes draw identically between eyes (replayable
+    /// from one walk) and which diverge (the per-eye special-casing burden). The feasibility probe
+    /// for single-pass stereo; see [`crate::debug::stereo_diff`].
     pub diagnose_stereo_draw_diff: bool,
     /// Diagnostic: hash a curated set of engine render targets after each eye's Draw and record the
     /// per-eye hashes into the active render trace. Run with `cameras` off (both eyes share one
     /// camera) so any RT whose two eyes' hashes differ is being accumulated across the two Draws --
     /// the "stronger in one eye" bug. See [`crate::debug::rt_hash`].
     pub diagnose_rt_hashes: bool,
-    /// Diagnostic: while a render trace collects, encode eye 0's final `BackBufferLinear` to a PNG each
-    /// frame into the trace's `traces/<stamp>/` folder (alongside `trace.ndjson`), named by frame index
-    /// so the sequence reassembles and aligns 1:1 with the per-frame trace events. For localizing
-    /// per-frame visual artifacts (e.g. the shadow flicker) the numeric trace cannot place spatially.
+    /// Diagnostic: while a render trace collects, encode each eye's final `BackBufferLinear` to a PNG
+    /// each frame into the trace's `traces/<stamp>/` folder (alongside `trace.ndjson`), named by
+    /// frame index so the sequence reassembles and aligns 1:1 with the per-frame trace events. For
+    /// localizing per-frame visual artifacts (e.g. the shadow flicker) the numeric trace cannot
+    /// place spatially.
     /// Heavy (a full readback + PNG encode per frame); only meaningful during a manual trace.
     pub diagnose_rt_screenshots: bool,
     /// Diagnostic: while tracing, record the MainColor mean at the fixed pipeline stage brackets

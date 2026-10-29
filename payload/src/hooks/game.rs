@@ -267,12 +267,9 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // as "GPU idle". Safe by construction: the next frame's `vr::frame_begin` blocks on the VR
         // runtime lock, which the tail releases only after the blit is recorded. The mirror moves
         // before the XR submit in this mode, costing it a little HMD submit latency. Requires a VR
-        // frame to hand over, and falls back to the inline tail while a render trace or the
-        // stereo-diff probe needs the eyes drained on this thread before the frame ends.
-        let defer_tail = stereo
-            && vr_frame.is_some()
-            && !tracing_active()
-            && !crate::debug::stereo_diff::is_active();
+        // frame to hand over, and falls back to the inline tail while a render trace needs the
+        // eyes drained on this thread before the frame ends.
+        let defer_tail = stereo && vr_frame.is_some() && !tracing_active();
 
         // Each eye's post-draw blits it straight into the swapchain when this frame's image is
         // acquired now (see `vr::blit`). Not under the collapse: its one dispatch leaves both eyes
@@ -289,6 +286,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         }
 
         if stereo {
+            crate::debug::stereo_diff::begin_frame(!defer_tail);
             #[cfg(feature = "profiler")]
             let snapshot_scope = puffin::profile_scope_custom!("Stereo snapshots");
             mark(Phase::Eye0Snapshot);
@@ -465,11 +463,10 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
                     counts: DRAW_COUNTS.snapshot(),
                 });
             }
+            // Before the frame tick, so the diff lands in this frame of the trace (and the final
+            // frame's diff precedes the dump).
+            crate::debug::stereo_diff::finish_frame();
             TraceState::end_frame();
-
-            // Both eyes are drained inline here (the probe forces the inline tail), so their
-            // recorded draw sequences are complete: diff and log.
-            crate::debug::stereo_diff::report_and_clear();
 
             // The draw thread reads the per-dispatch stereo state (draw_index, far_phase) for the
             // final dispatch asynchronously. Resetting it here would race that read when the tail

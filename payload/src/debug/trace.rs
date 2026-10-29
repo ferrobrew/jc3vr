@@ -5,10 +5,19 @@ use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
 use parking_lot::Mutex;
 
+use crate::debug::{
+    coord_frame::{self, CoordFrameSample},
+    stereo_diff::{self, DrawDiff},
+};
+
 /// Frames left in the active trace; 0 = inactive. Kept as a standalone atomic so the hot-path
 /// [`tracing_active`] gate is lock-free -- the heavier state lives in [`TRACE_STATE`]. Driven by the
-/// "Dump render trace" button.
+/// render capture's button.
 static TRACE_FRAMES: AtomicI32 = AtomicI32::new(0);
+
+/// The frame count a manual trace covers, edited from the render capture and reused as the floor
+/// of the brightness-step auto-capture.
+pub static CAPTURE_FRAMES: AtomicI32 = AtomicI32::new(60);
 
 /// The in-progress trace's collected-but-unwritten state.
 pub struct TraceState {
@@ -283,6 +292,14 @@ pub enum TraceEvent {
     /// per-dispatch reset -- the "stronger in one eye" accumulation bug.
     #[serde(rename = "rt_hash")]
     RtHash { rt: RtKind, hash: u64 },
+    /// One stereo frame's per-pass draw-sequence diff between the eyes, recorded after both eyes
+    /// drain (see [`crate::debug::stereo_diff`]). Gated on `stereo.diagnose_stereo_draw_diff`.
+    #[serde(rename = "StereoDrawDiff")]
+    StereoDrawDiff(DrawDiff),
+    /// The render camera's world frame and travel direction, once per real frame (see
+    /// [`crate::debug::coord_frame`]).
+    #[serde(rename = "CoordFrame")]
+    CoordFrame(CoordFrameSample),
 }
 
 /// The engine render targets hashed by the per-eye RT-doubling diagnostic. The colour/material buffers
@@ -430,6 +447,8 @@ impl TraceState {
             };
             state.push_event(None, build_manifest(stamp));
         }
+        stereo_diff::begin_run();
+        coord_frame::begin_run();
         TRACE_FRAMES.store(frames, Ordering::Relaxed);
         tracing::info!("Render trace started ({frames} frames)");
     }
@@ -445,6 +464,9 @@ impl TraceState {
         state.frame += 1;
         if finished {
             state.dump();
+            drop(state);
+            stereo_diff::finish_run();
+            coord_frame::finish_run();
         }
     }
 

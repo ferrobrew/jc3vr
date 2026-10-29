@@ -67,6 +67,7 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
     let is_render_camera = unsafe {
         GraphicsEngine::get().is_some_and(|ge| std::ptr::eq(&raw const ge.m_RenderCamera, camera))
     };
+    let mut first_dispatch = false;
     if is_render_camera {
         TraceState::record_eye(TraceEvent::SetupRenderCamera);
         let mut stereo = STEREO_STATE.lock();
@@ -77,7 +78,8 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
         // snapshots become "previous". Keyed on the dispatch ordinal, not the eye index — a share
         // frame's far dispatch and eye 0's near dispatch both carry eye index 0, and rotating
         // twice would collapse the FSR reprojection history to intra-frame deltas.
-        if stereo.dispatch_ordinal == 0 {
+        first_dispatch = stereo.dispatch_ordinal == 0;
+        if first_dispatch {
             stereo.vp_history.rotate();
         }
     }
@@ -139,9 +141,12 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
     // -- the engine jitter is disabled above whenever we patch), which the velocity pass reprojects
     // with; the FSR motion-vector correction needs it as its "what the engine encoded" matrix.
     if is_render_camera && let Some(camera) = unsafe { camera.as_ref() } {
-        // Coordinate-frame verification (docs/mod/vr-runtime.md "Blocker 3"): log the pristine center
-        // camera's basis + travel direction before the per-eye offset below mutates m_TransformF.
-        crate::debug::coord_frame::log_render_camera_frame(camera);
+        // Coordinate-frame verification (docs/mod/vr-runtime.md "Blocker 3"): trace the pristine
+        // center camera's basis + travel direction before the per-eye offset below mutates
+        // m_TransformF, once per real frame (every dispatch sees the same center).
+        if first_dispatch {
+            crate::debug::coord_frame::record_render_camera_frame(camera);
+        }
 
         STEREO_STATE.lock().vp_history.cur_center =
             Some(glam::Mat4::from(camera.m_ViewProjectionF));

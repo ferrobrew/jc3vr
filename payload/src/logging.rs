@@ -11,7 +11,7 @@ use tracing_subscriber::{
 };
 
 /// Replace the active log filter with `spec` (standard `RUST_LOG` directive syntax, e.g.
-/// `warn,vr=debug,coord_frame=debug`). Applies to both the stdout and file layers. Returns a
+/// `warn,vr=debug,stereo=debug`). Applies to both the stdout and file layers. Returns a
 /// user-displayable error when the spec does not parse or logging is not installed.
 pub fn set_filter(spec: &str) -> Result<(), String> {
     let handles = RELOAD_HANDLES
