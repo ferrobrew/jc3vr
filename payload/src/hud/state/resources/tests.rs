@@ -5,7 +5,6 @@ use super::*;
 struct Fake {
     fail_create: bool,
     fail_bind: bool,
-    fail_at: Option<usize>,
     matches: bool,
     creates: usize,
     restores: usize,
@@ -18,10 +17,7 @@ impl Adapter for Fake {
     }
     fn create(&mut self, size: (u32, u32)) -> anyhow::Result<Self::Target> {
         self.creates += 1;
-        anyhow::ensure!(
-            !self.fail_create && self.fail_at != Some(self.creates),
-            "injected allocation"
-        );
+        anyhow::ensure!(!self.fail_create, "injected allocation");
         Ok(size)
     }
     fn matches(&mut self, _: (u32, u32)) -> bool {
@@ -48,7 +44,6 @@ fn allocation_failure_preserves_the_applied_surface_and_bounds_retry() {
     let mut fake = Fake {
         fail_create: true,
         fail_bind: false,
-        fail_at: None,
         matches: true,
         creates: 0,
         restores: 0,
@@ -111,7 +106,6 @@ fn partial_binding_failure_restores_native_state_and_keeps_old_ownership() {
     let mut fake = Fake {
         fail_create: false,
         fail_bind: true,
-        fail_at: None,
         matches: true,
         creates: 0,
         restores: 0,
@@ -140,67 +134,14 @@ fn partial_binding_failure_restores_native_state_and_keeps_old_ownership() {
 }
 
 #[test]
-fn split_failure_preserves_both_layers_until_complete_retry() {
-    let old = [Some((100, 80)), Some((100, 80))];
-    let mut targets = old;
-    let mut retry = Retry::new();
-    let mut fake = Fake {
-        fail_create: false,
-        fail_bind: false,
-        fail_at: Some(2),
-        matches: true,
-        creates: 0,
-        restores: 0,
-        bound: None,
-    };
-    let now = Instant::now();
-    assert_eq!(
-        layers(&mut targets, &mut fake, (200, 160), &mut retry, now),
-        [false; 2]
-    );
-    assert_eq!(targets, old);
-    assert_eq!(
-        layers(&mut targets, &mut fake, (200, 160), &mut retry, now),
-        [false; 2]
-    );
-    assert_eq!(fake.creates, 2);
-    fake.fail_at = None;
-    assert_eq!(
-        layers(
-            &mut targets,
-            &mut fake,
-            (200, 160),
-            &mut retry,
-            now + Duration::from_secs(1)
-        ),
-        [true; 2]
-    );
-    assert_eq!(targets, [Some((200, 160)); 2]);
-}
-
-#[test]
 fn preview_retirement_keeps_ids_until_the_owner_drains_them_once() {
     let mut state = crate::hud::state::HudState::new();
     state.preview_id = Some(egui::TextureId::User(1));
-    state.layer_preview_ids = [
-        Some(egui::TextureId::User(2)),
-        Some(egui::TextureId::User(3)),
-    ];
     retire(&mut state.preview_id, &mut state.pending_unregisters);
-    for id in &mut state.layer_preview_ids {
-        retire(id, &mut state.pending_unregisters);
-    }
     retire(&mut state.preview_id, &mut state.pending_unregisters);
     let mut ids = Vec::new();
     drain(&mut state.pending_unregisters, |id| ids.push(id));
     drain(&mut state.pending_unregisters, |id| ids.push(id));
-    assert_eq!(
-        ids,
-        [
-            egui::TextureId::User(1),
-            egui::TextureId::User(2),
-            egui::TextureId::User(3)
-        ]
-    );
+    assert_eq!(ids, [egui::TextureId::User(1)]);
     assert!(state.pending_unregisters.is_empty());
 }

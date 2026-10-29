@@ -18,11 +18,6 @@ pub(crate) fn hud(c: &HudConfig) -> Result<(), Invalid> {
     positive("distance", c.distance, 1000.0)?;
     positive("panel_scale", c.panel_scale, 100.0)?;
     positive("follow.rotation_halflife", c.follow.rotation_halflife, 60.0)?;
-    positive("marker_distance", c.marker_distance, 1000.0)?;
-    positive("center_distance", c.center_distance, 1000.0)?;
-    positive("center_bubble_radius", c.center_bubble_radius, 1.0)?;
-    positive("marker_radius", c.marker_radius, 1.0)?;
-    positive("marker_max_depth", c.marker_max_depth, 100000.0)?;
     let e = &c.egui_panel;
     positive("egui_panel.distance", e.distance, 1000.0)?;
     positive("egui_panel.scale", e.scale, 100.0)?;

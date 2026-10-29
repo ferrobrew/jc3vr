@@ -1,7 +1,7 @@
-//! UI manager detours: world-to-screen compensation for the floating HUD panel, the render-root
-//! partition's capture and render seams, the HUD atlas's moves and the world markers'
-//! classification and capture snapshot,
-//! (in [`hud`]) the HUD's point-of-interest update, and (in [`mouse`]) the game UI's mouse input.
+//! UI manager detours: world-to-screen compensation for the floating HUD panel, the aim-depth
+//! recording, the capture seam's clip writes, the HUD atlas's moves and the world markers'
+//! classification and capture snapshot, (in [`hud`]) the HUD's point-of-interest update, and (in
+//! [`mouse`]) the game UI's mouse input.
 //!
 //! [`get_2d_info`](UIManager::Get2DInfo) is the gameplay marker placement function. When the HUD
 //! is redirected and drawn as a floating quad, the VP and camera matrix are replaced with the
@@ -11,21 +11,16 @@
 mod hud;
 mod mouse;
 
-use std::{
-    sync::atomic::{AtomicBool, AtomicU64, Ordering},
-    time::Instant,
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use detours_macro::detour;
 use jc3gi::{
-    graphics_engine::graphics_engine::HContext_t,
     types::math::{Matrix4, Vector2, Vector3},
     ui::{
         scaleform::MovieImpl,
         ui_manager::{ScreenPos, UIManager},
     },
 };
-use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 pub(crate) use crate::hooks::ui::mouse::cancel_pointer_on_game_thread;
@@ -35,13 +30,12 @@ use crate::{
         overlay::game_reticle::hide_game_reticles, summary::game_hints::hide_game_hints,
     },
     frame_timing::{self, Slot},
-    hud::{HUD_STATE, compute_panel_vp, current_aspect, split::roots},
+    hud::{HUD_STATE, aim, compute_panel_vp, current_aspect},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&GET_2D_INFO_BINDER)
-        .with_static_binder(&UI_RENDER_BINDER)
         .with_static_binder(&CONVERT_3D_COORDS_DEFAULT_BINDER)
         .with_static_binder(&MOVIE_CAPTURE_BINDER)
         .with_hook_library(hud::hook_library())
@@ -63,7 +57,7 @@ static AIM_RECORDED_THIS_FRAME: AtomicBool = AtomicBool::new(false);
 /// `CHUDUI::UpdateGrappleReticle`). Two jobs: reproject the reticle onto the floating panel (the
 /// wrapper's internal VP is not a parameter, so the reticle bypasses the `Get2DInfo` hook's panel
 /// reprojection), and record the aim point's depth -- from the first call of the frame only, the
-/// game's own smoothed aim position -- for the center layer's aim-driven distance.
+/// game's own smoothed aim position -- into [`crate::hud::aim`].
 #[detour(address = UIManager::Convert3DCoordsDefault_ADDRESS)]
 fn convert_3d_coords_default(
     this: *mut UIManager,
@@ -71,22 +65,19 @@ fn convert_3d_coords_default(
     out_x: *mut f32,
     out_y: *mut f32,
 ) -> bool {
-    let (panel_enabled, record_aim, max_depth, reticle_align) = Config::lock_query(|c| {
-        (
-            c.hud.redirect && c.hud.quad,
-            c.hud.center_depth_from_aim,
-            c.hud.marker_max_depth,
-            c.hud.reticle_align,
-        )
-    });
+    let (panel_enabled, reticle_align) =
+        Config::lock_query(|c| (c.hud.redirect && c.hud.quad, c.hud.reticle_align));
 
     // SAFETY: `world` is the caller's live aim point; panel_pose only reads cached state.
-    if record_aim
-        && let Some(world) = unsafe { world.as_ref() }
+    if let Some(world) = unsafe { world.as_ref() }
         && let Some((anchor, _)) = HUD_STATE.lock().panel_pose()
     {
         let world = glam::Vec3::new(world.data[0], world.data[1], world.data[2]);
-        crate::hud::aim::record((world - anchor).length().clamp(0.5, max_depth.max(0.5)));
+        aim::record(
+            (world - anchor)
+                .length()
+                .clamp(aim::MIN_DEPTH, aim::MAX_DEPTH),
+        );
     }
 
     let aspect = current_aspect();
@@ -116,13 +107,12 @@ fn convert_3d_coords_default(
 
 /// The capture seam: `CUIManager::PreRender` calls `MovieImpl::Capture` right after `Advance`,
 /// on the game update thread with the deferred render lock held -- the only point in the frame
-/// where every display-tree writer is quiescent. The render-root partition maintains itself here
-/// (build, per-frame reconcile against pool churn, teardown), and the issue #8 overlay suppression
-/// and the controller scheme's reticle and button-hint hiding write here, so the engine's own
-/// capture carries everything; the original then runs unchanged. The HUD atlas and the world
+/// where every display-tree writer is quiescent. The issue #8 overlay suppression and the
+/// controller scheme's reticle and button-hint hiding write here, so the engine's own capture
+/// carries everything; the original then runs unchanged. The HUD atlas and the world
 /// markers move their clips into atlas cells for this capture only and move them back after it.
 /// Movies other than the main UI movie (the render-to-texture instances) pass through untouched.
-/// See [`crate::hud::split::roots`], [`crate::hud::scaleform`], and [`crate::hud::atlas`].
+/// See [`crate::hud::scaleform`] and [`crate::hud::atlas`].
 #[detour(address = MovieImpl::CaptureImpl_ADDRESS)]
 fn movie_capture(this: *mut MovieImpl, if_changed: bool) -> u64 {
     // SAFETY: the existing main-movie lookup runs at the game-thread capture boundary under the
@@ -138,29 +128,12 @@ fn movie_capture(this: *mut MovieImpl, if_changed: bool) -> u64 {
     };
     let timing = frame_timing::scope(Slot::UiCapture);
     if is_main_movie {
-        let (split_enabled, suppress_overlays, hud) = Config::lock_query(|c| {
-            (
-                c.hud.redirect && c.hud.quad && c.hud.split,
-                c.hud.suppress_overlays,
-                c.hud,
-            )
-        });
-        // The partition persists across menus and pauses: the render detour only composites
-        // per-layer in gameplay, and the main root (where menus live) renders normally either
-        // way. Tearing down per mode change would churn the render tree with hundreds of
-        // structural ops per pause, for no benefit.
-        let split_active = split_enabled
-            && crate::hud::scaleform::handles_hud_fresh()
-            && crate::hud::split_layers_ready();
+        let hud = Config::lock_query(|c| c.hud);
         // SAFETY: this is the capture seam both callees require; `this` is the live main movie.
         unsafe {
-            crate::hud::scaleform::apply_overlay_suppression(suppress_overlays);
+            crate::hud::scaleform::apply_overlay_suppression(hud.suppress_overlays);
             hide_game_reticles();
             hide_game_hints();
-            if let Some(movie) = this.as_mut() {
-                roots::on_capture(movie, split_active);
-                log_pipeline_lag(movie, split_active);
-            }
             // The atlas moves its parts into their cells for this capture only, and the world
             // markers move into the atlas's marker cells.
             let atlas = crate::hud::atlas::begin_capture(&hud);
@@ -181,53 +154,6 @@ fn movie_capture(this: *mut MovieImpl, if_changed: bool) -> u64 {
         }
     }
     result
-}
-
-/// Log the snapshot pipeline's produced-vs-displayed gap every few seconds: the displayed UI
-/// trailing the update thread by a growing number of captures means the render side is not
-/// consuming them (the "elements update late" symptom); a steady small gap acquits the snapshot
-/// pipeline and points at the update side instead.
-fn log_pipeline_lag(movie: &MovieImpl, split_active: bool) {
-    static LAST_LOG: Mutex<Option<Instant>> = Mutex::new(None);
-    static LAST_ACTIVE: AtomicU64 = AtomicU64::new(0);
-    let due = {
-        let mut last = LAST_LOG.lock();
-        let due = last.is_none_or(|t| t.elapsed().as_secs_f32() >= 5.0);
-        if due {
-            *last = Some(Instant::now());
-        }
-        due
-    };
-    if !due {
-        return;
-    }
-    let ids = movie.RenderContext.SnapshotFrameIds;
-    let produced_in_window = ids[0].wrapping_sub(LAST_ACTIVE.swap(ids[0], Ordering::Relaxed));
-    tracing::debug!(
-        "scaleform pipeline: active {} displaying {} (lag {}), {} captures in window, \
-         partition {}",
-        ids[0],
-        ids[2],
-        ids[0].saturating_sub(ids[2]),
-        produced_in_window,
-        if split_active { "active" } else { "inactive" },
-    );
-}
-
-/// Render the partitioned HUD (each render root into its own layer texture, full rate) while the
-/// partition is live; otherwise pass through. Runs on the UI render worker (kicked by
-/// `StartRender`). See [`crate::hud::split::roots`].
-#[detour(address = UIManager::RenderImpl_ADDRESS)]
-fn ui_render(this: *mut UIManager, context: *mut HContext_t) {
-    let original = UI_RENDER.get().unwrap();
-    if let Some(views) = crate::hud::split_inputs() {
-        // SAFETY: called from the detour with the detour's own arguments, on the UI render
-        // worker.
-        if unsafe { roots::render_partitioned(this, &views) } {
-            return;
-        }
-    }
-    original.call(this, context);
 }
 
 /// Replace the VP and camera matrix in `Get2DInfo` with the floating panel's orientation, so
@@ -251,16 +177,8 @@ fn get_2d_info(
     a10: bool,
     offset: Vector2,
 ) {
-    let (panel_enabled, record_depths, max_depth, marker_radius, world_markers) =
-        Config::lock_query(|c| {
-            (
-                c.hud.redirect && c.hud.quad,
-                c.hud.redirect && c.hud.quad && c.hud.marker_warp,
-                c.hud.marker_max_depth,
-                c.hud.marker_radius,
-                c.hud.world_markers,
-            )
-        });
+    let (panel_enabled, world_markers) =
+        Config::lock_query(|c| (c.hud.redirect && c.hud.quad, c.hud.world_markers));
     let aspect = current_aspect();
     // Markers always use the panel subtense; only the reticle exposes the game-projection A/B.
     let panel = panel_enabled.then(|| compute_panel_vp(true)).flatten();
@@ -297,8 +215,8 @@ fn get_2d_info(
         }
     }
 
-    // The world markers classify the points of interest's projections (and may move one the
-    // panel put off screen but the headset can see back on screen) before anything records them.
+    // The world markers classify the points of interest's projections, and may move one the panel
+    // put off screen but the headset can see back on screen.
     // SAFETY: the original call populated the out pointers; the camera is the caller's own.
     unsafe {
         if let (Some(manager), Some(world), Some(camera), Some(out_x), Some(out_y), Some(out_pos)) = (
@@ -321,33 +239,6 @@ fn get_2d_info(
                 },
                 &world_markers,
             );
-        }
-    }
-
-    // Record on-screen markers for the marker-layer depth warp: where the marker landed on the
-    // panel texture (stage coordinates over the cached stage size) and how far its world point is
-    // from the panel anchor. Edge-clamped markers are directional indicators, not world points,
-    // and stay at the layer's base depth.
-    // SAFETY: the original call populated the out pointers; `this` and `world` are the caller's
-    // live arguments.
-    if record_depths && panel.is_some() {
-        unsafe {
-            if let (Some(manager), Some(world), Some(&pos)) =
-                (this.as_ref(), world.as_ref(), out_pos.as_ref())
-                && pos == ScreenPos::SCREEN_POS_ONSCREEN
-                && manager.m_CachedStageWidth > 0.0
-                && manager.m_CachedStageHeight > 0.0
-                && let Some((anchor, _)) = HUD_STATE.lock().panel_pose()
-            {
-                let world = glam::Vec3::new(world.data[0], world.data[1], world.data[2]);
-                let depth = (world - anchor).length().clamp(0.5, max_depth.max(0.5));
-                crate::hud::markers::record(crate::hud::markers::MarkerDepth {
-                    u: *out_x / manager.m_CachedStageWidth,
-                    v: *out_y / manager.m_CachedStageHeight,
-                    depth,
-                    radius: marker_radius,
-                });
-            }
         }
     }
 }

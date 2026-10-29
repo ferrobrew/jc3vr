@@ -1,19 +1,31 @@
-//! The aim depth for the center (reticle) layer, smoothed with a critically-damped exponential.
+//! The aim depth: the distance from the panel anchor to the point the player aims at, smoothed with
+//! a critically-damped exponential. It is the depth source for the planned aim-depth atlas cell
+//! (`docs/issues/hud-depth-followup.md`); until that lands, only the HUD's live status reads it.
 //!
 //! The source is the game's own aim system: `CHUDUI::UpdateGrappleReticle` projects the smoothed
 //! aim position (`CPlayerAimControl`'s `m_AimPos`, lerped) as the *first* world-to-screen call of
 //! its frame, every frame the HUD reticle updates -- the base grapple reticle is the general aim
 //! cursor, present whether or not the grapple is in use. Only that first call is recorded; the
 //! function's later calls (the wire-attachment point and the grip-radius sample) are different
-//! points entirely. When no aim point has been recorded recently, the depth eases back to the
-//! configured center-layer distance.
+//! points entirely. When no aim point has been recorded recently, the depth eases back to
+//! [`REST_DISTANCE`].
 
 use std::time::Instant;
 
 use parking_lot::Mutex;
 
+/// The nearest recorded aim depth, in meters.
+pub const MIN_DEPTH: f32 = 0.5;
+
+/// The farthest recorded aim depth, in meters: beyond it, disparity is indistinguishable from
+/// infinity.
+pub const MAX_DEPTH: f32 = 150.0;
+
+/// The distance the aim depth eases back to while nothing has been aimed at recently, in meters.
+pub const REST_DISTANCE: f32 = 3.0;
+
 /// How long a recorded aim depth stays authoritative. Beyond this, the smoothed depth eases back
-/// to the configured base distance (the reticle is not targeting anything).
+/// to the caller's base distance (the reticle is not targeting anything).
 const STALE_AFTER_SECONDS: f32 = 0.5;
 
 /// The smoothing halflife, in seconds: long enough to swallow surface noise as the aim sweeps
@@ -47,8 +59,9 @@ pub fn record(depth: f32) {
     state.recorded_at = Some(Instant::now());
 }
 
-/// The smoothed aim depth for the center layer (render thread, eye 0). Eases toward the last
-/// recorded aim depth, or toward `base_distance` when the recording has gone stale.
+/// The smoothed aim depth. Eases toward the last recorded aim depth, or toward `base_distance` when
+/// the recording has gone stale. Each call advances the smoothing, so one consumer should call it
+/// once per frame.
 pub fn current(base_distance: f32) -> f32 {
     let mut state = STATE.lock();
     let now = Instant::now();

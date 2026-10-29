@@ -46,9 +46,7 @@ Tools. The capture, replay, environment, and video features stay as they are. Re
 
 ## HUD depth paths
 
-Three HUD depth mechanisms exist. The HUD atlas (`hud.atlas.enabled`, on by default) is the shipped path: markers receive their own cells and draw at the depth of the surface they label, and readouts move to the hands. The render-root split (`payload/src/hud/split/`, `hud.split`) is off by default and wedges the UI on the first pause. The single-panel marker warp (`payload/src/hud/warp.rs`, `hud.marker_warp`) is off by default and places its depth bubbles vertically off their markers. `docs/mod/rendering/ui-decoupling.md` already plans to retire the split once the atlas covers the depth layers.
-
-The first step of the HUD work establishes whether the atlas places the centre group (crosshair and centre notices) at aim depth, as the warp's centre bubble did. If it does, the split, the warp, their shaders, their configuration, and their UI are deleted, and `docs/mod/hud.md` and the post-mortem are updated to describe the atlas as the only depth path. If it does not, the centre-group gap is recorded and the split and warp stay behind the Experimental page until the atlas covers it.
+Done. The HUD atlas (`hud.atlas.enabled`, on by default) is the only HUD depth path: markers receive their own cells and draw at the depth of the surface they label, and readouts move to the hands. The render-root split (`hud.split`), which wedged the UI on the first pause, and the single-panel marker warp (`hud.marker_warp`), which placed its depth bubbles vertically off their markers, are deleted with their shader, configuration, and UI. The atlas does not place the centre group (crosshair and centre notices) at aim depth; that gap and the work after it are tracked in [hud-depth-followup.md](hud-depth-followup.md). The aim-depth recording stays for the planned aim-depth cell, and HUD Live status shows its current value.
 
 ## Inventory view
 

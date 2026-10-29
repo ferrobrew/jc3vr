@@ -121,40 +121,6 @@ pub(super) fn redirect<A: Adapter>(
     replacing
 }
 
-/// Build every missing layer before replacing any live layer.
-pub(super) fn layers<A: Adapter>(
-    targets: &mut [Option<A::Target>; 2],
-    native: &mut A,
-    size: (u32, u32),
-    retry: &mut Retry,
-    now: Instant,
-) -> [bool; 2] {
-    if !retry.ready(size, now) {
-        return [false; 2];
-    }
-    let mut candidates = [None, None];
-    for (target, candidate) in targets.iter().zip(&mut candidates) {
-        if target.as_ref().map(A::size) != Some(size) {
-            match native.create(size) {
-                Ok(target) => *candidate = Some(target),
-                Err(error) => {
-                    retry.failed(size, now, || tracing::error!("HUD split layer: {error:#}"));
-                    return [false; 2];
-                }
-            }
-        }
-    }
-    let mut changed = [false; 2];
-    for ((target, candidate), changed) in targets.iter_mut().zip(candidates).zip(&mut changed) {
-        if let Some(candidate) = candidate {
-            *target = Some(candidate);
-            *changed = true;
-        }
-    }
-    retry.succeeded();
-    changed
-}
-
 pub(super) struct Retry {
     failed: Option<((u32, u32), Instant)>,
 }

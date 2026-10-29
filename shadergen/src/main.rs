@@ -90,7 +90,6 @@ const PAYLOAD_SHADERS: &[(&str, &str)] = &[
     ("depth_histogram_cs", "cs_5_0"),
     ("marker_depth_cs", "cs_5_0"),
     ("hud_quad_vs", "vs_5_0"),
-    ("hud_layer_vs", "vs_5_0"),
     ("hud_quad_ps", "ps_5_0"),
     ("hud_quad_fade_ps", "ps_5_0"),
     ("cursor_ps", "ps_5_0"),

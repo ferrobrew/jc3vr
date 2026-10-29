@@ -40,17 +40,14 @@ pub(crate) mod config;
 pub mod cursor;
 pub mod depth;
 pub(crate) mod egui_panel;
-pub mod markers;
 pub(crate) mod mirror_overlay;
 pub(crate) mod pointer;
 mod quad;
 pub(crate) mod restart_notice;
 pub mod scaleform;
-pub mod split;
 mod state;
 pub(crate) mod summary_panel;
 mod target;
-mod warp;
 pub(crate) mod world_markers;
 
 use std::{
@@ -216,34 +213,13 @@ pub fn tick(device: &Device, window_width: u32, window_height: u32) {
         let stage_safe_area = (cfg.atlas.enabled || cfg.world_markers.probe_stage_safe_area)
             && current_mode() == HudMode::Hud;
         hud.ensure_redirected(device, width, height, render.0, render.1, stage_safe_area);
-        hud.ensure_layers(device, cfg.split);
     } else {
         hud.restore(render.0, render.1);
-        hud.ensure_layers(device, false);
     }
     // Publish the frame's mouse-mapping geometry for the cursor injection (the `SendMouseEvents`
     // detour): window-client pixels normalize against the window, and rescale to the movie
     // rectangle -- our texture -- once the redirect is applied.
     cursor::set_geometry((window_width, window_height), hud.redirected_size());
-}
-
-/// The layer views the `CUIManager::Render` detour needs for a partitioned frame, or `None` when
-/// the split must not run this frame (disabled, not redirected, layer targets missing,
-/// full-screen UI, or the partition not live yet). Snapshotted under the state lock so the
-/// detour never holds it across the render.
-pub fn split_inputs() -> Option<split::LayerViews> {
-    let cfg = Config::lock_query(|c| c.hud);
-    if !cfg.redirect || !cfg.split || current_mode() != HudMode::Hud || !split::roots::live() {
-        return None;
-    }
-    HUD_STATE.lock().split_views()
-}
-
-/// Whether the redirect and every layer target are in place, so the game-thread capture mask has
-/// textures to land in. Gates the masking itself: masking without the redirected layer textures
-/// would strip the visible HUD down to one layer's clips.
-pub fn split_layers_ready() -> bool {
-    HUD_STATE.lock().split_views().is_some()
 }
 
 /// Compute the HUD texture dimensions from the render scale, the configured aspect (width / height),
@@ -376,64 +352,6 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
                 quad::compute_cursor_corners(&params_at(panel_distance), frame, &cfg.cursor)
             });
         hud.set_cursor_corners(cursor_corners);
-        // The split composites in gameplay while the render-root partition is live (the layer
-        // textures then contain per-layer content, redrawn every frame).
-        let split_active = cfg.split && mode == HudMode::Hud && split::roots::live();
-        // The reticle depth (the split's center layer, or the single panel's center bubble)
-        // follows the smoothed aim depth when enabled, easing back to a flat rest distance while
-        // nothing is targeted: the center-layer distance under the split, the panel distance
-        // otherwise (so a stale bubble flattens into the panel instead of poking out of it).
-        let center_rest = if split_active {
-            cfg.center_distance
-        } else {
-            panel_distance
-        };
-        let center_distance = if cfg.center_depth_from_aim && mode == HudMode::Hud {
-            aim::current(center_rest)
-        } else {
-            center_rest
-        };
-        // The frame's recorded marker depths for the warp (recorded on the game thread by the
-        // Get2DInfo hook); taken whether or not the warp draws, so stale markers never linger.
-        let mut frame_markers = markers::take_frame();
-        let warp_active = cfg.marker_warp && mode == HudMode::Hud;
-        if split_active {
-            // Every layer redraws every frame, so every corner set (and the marker warp) is
-            // fresh per frame; only the stereo depth differs between layers.
-            hud.set_split_frame(
-                true,
-                Some([
-                    params_at(cfg.distance),
-                    params_at(cfg.marker_distance),
-                    params_at(center_distance),
-                ]),
-            );
-            hud.set_warp_frame(warp_active.then(|| state::WarpFrame {
-                anchor: pos,
-                markers: frame_markers.clone(),
-                base_distance: cfg.marker_distance,
-            }));
-        } else {
-            hud.set_split_frame(false, None);
-            // Single-panel mode: the reticle region joins the depth field as a center bubble at
-            // the aim depth (under the split, the center layer carries the aim depth instead).
-            if warp_active && cfg.center_depth_from_aim {
-                frame_markers.insert(
-                    0,
-                    markers::MarkerDepth {
-                        u: 0.5,
-                        v: 0.5,
-                        depth: center_distance,
-                        radius: cfg.center_bubble_radius,
-                    },
-                );
-            }
-            hud.set_warp_frame(warp_active.then_some(state::WarpFrame {
-                anchor: pos,
-                markers: frame_markers,
-                base_distance: panel_distance,
-            }));
-        }
     } else if eye == 0 {
         // No panel pose this frame: the previous corners are not what the player sees.
         pointer::publish_panel(None);
