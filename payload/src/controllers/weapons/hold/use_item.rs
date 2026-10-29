@@ -21,10 +21,7 @@
 //! The pickup runs wherever the character's track messages are handled, so the detour takes only
 //! its own queue's lock and reads only the weapon's own fields.
 
-use std::{
-    cell::Cell,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::cell::Cell;
 
 use detours_macro::detour;
 use jc3gi::{
@@ -175,17 +172,9 @@ pub(crate) unsafe fn before_weapon_handling(owner: &mut Character) {
         return;
     };
     if unsafe { reconcile::vacate(owner, slot) } {
-        SWIM_VACATES.fetch_add(1, Ordering::Relaxed);
         tracing::info!(target: "controllers", ?slot, "hold: a swimming pickup's slot was emptied first, its weapon kept where the table has it");
     }
 }
-
-/// The swimming pickups whose slot was emptied first, since the payload loaded.
-pub fn swim_vacates() -> u64 {
-    SWIM_VACATES.load(Ordering::Relaxed)
-}
-
-static SWIM_VACATES: AtomicU64 = AtomicU64::new(0);
 
 /// Whether `activator` is the local player's `CGameObject` subobject.
 fn is_local_player(activator: *mut GameObject) -> bool {

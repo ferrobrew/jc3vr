@@ -69,8 +69,6 @@ pub struct LiveStatus {
     /// Transitions applied and events refused since the payload loaded.
     pub transitions: u64,
     pub refusals: u64,
-    /// The last store's slots and sidecar.
-    pub last_store: Option<StoreProjection>,
     /// The latest transitions and refusals, the newest last.
     pub log: Vec<String>,
 }
@@ -688,7 +686,6 @@ struct Live {
     challenge: Hold,
     transitions: u64,
     refusals: u64,
-    last_store: Option<StoreProjection>,
     log: Vec<String>,
 }
 
@@ -765,7 +762,6 @@ impl Live {
             challenge: Hold::Idle,
             transitions: 0,
             refusals: 0,
-            last_store: None,
             log: Vec::new(),
         }
     }
@@ -788,7 +784,6 @@ impl Live {
     /// Fold `event`, logging what it did or why it was refused. Returns, for a store or a cache,
     /// the slots and the sidecar the game should be given.
     fn fold(&mut self, event: Event) -> Option<StoreProjection> {
-        let store = matches!(event, Event::StoreImminent);
         match self.table.fold(event) {
             Ok(folded) => {
                 for transition in &folded.transitions {
@@ -796,9 +791,6 @@ impl Live {
                     self.push(transition.to_string());
                 }
                 self.transitions += folded.transitions.len() as u64;
-                if store {
-                    self.last_store.clone_from(&folded.store);
-                }
                 folded.store
             }
             Err(error) => {
@@ -978,7 +970,6 @@ impl Live {
             snapshot: None,
             transitions: self.transitions,
             refusals: self.refusals,
-            last_store: self.last_store.clone(),
             log: self.log.clone(),
         }
     }
@@ -1003,7 +994,6 @@ static STATUS: Mutex<LiveStatus> = Mutex::new(LiveStatus {
     snapshot: None,
     transitions: 0,
     refusals: 0,
-    last_store: None,
     log: Vec::new(),
 });
 

@@ -4,9 +4,9 @@
 //! controlled executor reuses `lifecycle_source::RequestBook` in tests. Native activation requires
 //! verified strong-reference wrappers, a bounded complete-group proof, ranking-job quiescence,
 //! callback retirement, and reset ordering. Source qualification, ammunition, and staging remain
-//! unavailable independently of transport progress.
+//! unavailable independently of transport progress. The gate has no production surface, so the
+//! whole module is compiled for its tests alone.
 
-#[cfg(test)]
 use std::fmt;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -23,18 +23,15 @@ pub(crate) enum Admission {
     Closed,
 }
 
-#[cfg(test)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct AdmissionClosed;
 
-#[cfg(test)]
 impl fmt::Display for AdmissionClosed {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("loadout spawn transport: production admission is closed")
     }
 }
 
-#[cfg(test)]
 impl std::error::Error for AdmissionClosed {}
 
 /// This gate has no production enable operation. A refusal leaves ordinary gameplay untouched.
@@ -52,7 +49,6 @@ impl Controller {
         }
     }
 
-    #[cfg(test)]
     pub fn request(&self) -> Result<std::convert::Infallible, AdmissionClosed> {
         Err(AdmissionClosed)
     }
@@ -64,14 +60,11 @@ pub(crate) fn controller() -> &'static Controller {
 
 static CONTROLLER: Controller = Controller;
 
-#[cfg(test)]
 #[path = "spawn_transport/ownership.rs"]
 mod ownership;
 
-#[cfg(test)]
 #[path = "spawn_transport/controlled.rs"]
 mod controlled;
 
-#[cfg(test)]
 #[path = "spawn_transport/tests.rs"]
 mod tests;

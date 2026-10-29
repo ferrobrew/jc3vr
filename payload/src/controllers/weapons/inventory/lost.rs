@@ -85,23 +85,6 @@ pub fn speed(last: Option<(Vec3, f32)>, player: Vec3, dt_s: f32) -> f32 {
     smoothed + (now - smoothed) * blend
 }
 
-/// The lost-weapon return's readout.
-#[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct LostStatus {
-    /// The player's measured speed, metres per second, and whether it counts as fast.
-    pub speed_mps: f32,
-    pub fast: bool,
-    /// Weapons returned since the payload loaded: out of the world, left behind, and of those
-    /// brought to the feet with no socket free.
-    pub out_of_world: u64,
-    pub left_behind: u64,
-    pub to_feet: u64,
-}
-
-pub fn status() -> LostStatus {
-    STATE.lock().status
-}
-
 /// What the adapter is handed each tick.
 pub(crate) struct LostTick {
     pub enabled: bool,
@@ -129,8 +112,6 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, tick: LostTick) {
         state.last = Some((tick.player, smoothed));
         state.last_at = Some(now);
         let fast = tick.enabled && smoothed >= tick.lost_speed_mps;
-        state.status.speed_mps = smoothed;
-        state.status.fast = fast;
         (fast, std::mem::take(&mut state.falling))
     };
     live::set_fast(fast);
@@ -180,20 +161,12 @@ struct State {
     last_at: Option<Instant>,
     /// The weapons brought to the feet, carried until the next tick lets them fall.
     falling: Vec<ObjectAddress>,
-    status: LostStatus,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
     last: None,
     last_at: None,
     falling: Vec::new(),
-    status: LostStatus {
-        speed_mps: 0.0,
-        fast: false,
-        out_of_world: 0,
-        left_behind: 0,
-        to_feet: 0,
-    },
 });
 
 /// Return the lost weapon at `object`, kept alive by `strong`: tell the table, then take it into
@@ -224,16 +197,9 @@ unsafe fn bring_back(owner: &mut Character, object: ObjectAddress, why: LostWhy,
         tracing::info!(target: "controllers", %refusal, "inventory: a lost weapon could not be brought back");
         return;
     }
-    let mut state = STATE.lock();
-    match why {
-        LostWhy::OutOfWorld => state.status.out_of_world += 1,
-        LostWhy::LeftBehind => state.status.left_behind += 1,
-    }
     if matches!(place, Place::World(_)) {
-        state.status.to_feet += 1;
-        state.falling.push(object);
+        STATE.lock().falling.push(object);
     }
-    std::mem::drop(state);
     tracing::info!(
         target: "controllers",
         why = why.label(),

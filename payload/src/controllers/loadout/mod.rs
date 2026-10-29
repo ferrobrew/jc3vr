@@ -17,12 +17,9 @@
 //! - [`event`]: what the hooks and the hands tell the table, folded into transitions;
 //! - [`grab`]: what a hand does at a socket, decided against the table's snapshot;
 //! - [`take`]: where a weapon taken from the world goes, decided against the table's snapshot;
-//! - [`live`]: the one live table of the local player's items, dual-written beside the old weapon
-//!   handling and published each input tick.
-//!
-//! Only the readouts and the pins of the weapons lying in the world read the live table yet: the
-//! old weapon handling ([`crate::controllers::weapons`]) still moves the weapons, and moves onto
-//! this core step by step in phase 3b.
+//! - [`live`]: the one live table of the local player's items, fed by the game and the hands and
+//!   published each input tick. It is the only writer of where the player's weapons are: the
+//!   game's slots, the placement, and the pins follow it.
 
 mod binding;
 mod event;
@@ -34,7 +31,6 @@ mod reset;
 pub(crate) mod restore;
 pub mod safe_items;
 mod socket;
-pub(crate) mod spawn_transport;
 mod table;
 pub mod take;
 mod transition;
@@ -46,9 +42,11 @@ mod lifecycle_grenade;
 #[cfg(test)]
 mod lifecycle_source;
 #[cfg(test)]
+mod spawn_transport;
+#[cfg(test)]
 mod tests;
 
-pub use binding::ObjectAddress;
+pub use binding::{Binding, ObjectAddress};
 pub use event::Event;
 pub use item::{ItemId, ItemKind, WeaponType, slot_label};
 pub use projection::{Projection, SlotContent, StoreProjection};
@@ -56,5 +54,5 @@ pub use reset::{CacheKind, ResetKind, SlotObject};
 pub use socket::{BodyLayout, Socket};
 #[cfg(test)]
 pub(crate) use table::Loadout;
-pub use table::{Departure, LoadoutSnapshot, Place};
+pub use table::{Departure, ItemView, LoadoutSnapshot, Place};
 pub use transition::{GiveSource, LostWhy, Restored, TakeSource};

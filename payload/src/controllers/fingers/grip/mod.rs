@@ -250,6 +250,16 @@ pub(crate) fn current(hand: Hand, now: Instant, max_age: Duration) -> Option<Gri
     winner(&declared, now, max_age)
 }
 
+/// Every source declaring for `hand` at `now`, in the order the declarations win, for the
+/// readouts. A declaration counts within the longest age [`max_age`] gives, since the readouts do
+/// not know the finger curls' tick interval.
+pub(crate) fn declared(hand: Hand, now: Instant) -> Vec<GripSource> {
+    let declared = DECLARED.lock()[hand.index()];
+    fresh(&declared, now, Duration::from_secs_f32(MAX_AGE_S))
+        .map(|grip| grip.source)
+        .collect()
+}
+
 /// How long a declaration lasts after the finger curls' tick interval `dt` in seconds: a few of
 /// their ticks, so that a source ticking at another rate (the input tick, once a frame) is not lost
 /// between two of them, and short enough that a hand let go opens at once.
@@ -331,10 +341,19 @@ static DECLARED: Mutex<[Declarations; 2]> = Mutex::new([[None; GripSource::ALL.l
 
 /// The first source's declaration made within `max_age` of `now`.
 fn winner(declared: &Declarations, now: Instant, max_age: Duration) -> Option<Grip> {
+    fresh(declared, now, max_age).next()
+}
+
+/// The declarations made within `max_age` of `now`, in the order they win.
+fn fresh(
+    declared: &Declarations,
+    now: Instant,
+    max_age: Duration,
+) -> impl Iterator<Item = Grip> + '_ {
     declared
         .iter()
         .flatten()
-        .find(|(_, at)| now.saturating_duration_since(*at) <= max_age)
+        .filter(move |(_, at)| now.saturating_duration_since(*at) <= max_age)
         .map(|(grip, _)| *grip)
 }
 
@@ -372,6 +391,19 @@ mod tests {
             Some(GripSource::Grenade),
             "what the fingers hold wins"
         );
+    }
+
+    #[test]
+    fn every_fresh_source_is_listed_in_winning_order() {
+        let now = Instant::now();
+        let age = Duration::from_millis(50);
+        let mut declared: Declarations = [None; GripSource::ALL.len()];
+        declared[GripSource::Climb.index()] = Some((Grip::new(GripSource::Climb), now));
+        declared[GripSource::Magazine.index()] = Some((Grip::new(GripSource::Magazine), now));
+        declared[GripSource::Door.index()] =
+            Some((Grip::new(GripSource::Door), now - Duration::from_millis(80)));
+        let sources: Vec<GripSource> = fresh(&declared, now, age).map(|g| g.source).collect();
+        assert_eq!(sources, [GripSource::Magazine, GripSource::Climb]);
     }
 
     #[test]

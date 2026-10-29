@@ -28,7 +28,7 @@
 
 use std::{
     ffi::c_void,
-    sync::atomic::{AtomicBool, AtomicU64, Ordering},
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use detours_macro::detour;
@@ -59,64 +59,6 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&FORCE_NEUTRAL_STATE_BINDER)
 }
 
-/// The base-layer weapon tasks the detours refuse.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Task {
-    Unequip,
-    HideInVehicle,
-    StopUsing,
-    Drop,
-}
-
-impl Task {
-    pub const ALL: [Task; 4] = [
-        Task::Unequip,
-        Task::HideInVehicle,
-        Task::StopUsing,
-        Task::Drop,
-    ];
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            Task::Unequip => "unequip",
-            Task::HideInVehicle => "hide in vehicle",
-            Task::StopUsing => "stop using",
-            Task::Drop => "heavy weapon drop",
-        }
-    }
-
-    const fn index(self) -> usize {
-        match self {
-            Task::Unequip => 0,
-            Task::HideInVehicle => 1,
-            Task::StopUsing => 2,
-            Task::Drop => 3,
-        }
-    }
-}
-
-/// The traversal patches' readout.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct TraversalStatus {
-    /// Whether the tasks are refused, as of the last input tick.
-    pub keeping: bool,
-    /// Each task's refusals since the payload loaded, by [`Task::ALL`]'s order.
-    pub refused: [u64; 4],
-    /// The forced neutral states seen for the local player, and the weapons they unequipped that
-    /// the table kept in their hand.
-    pub neutral: u64,
-    pub neutral_kept: u64,
-}
-
-pub fn status() -> TraversalStatus {
-    TraversalStatus {
-        keeping: KEEP.load(Ordering::Relaxed),
-        refused: Task::ALL.map(|t| REFUSED[t.index()].load(Ordering::Relaxed)),
-        neutral: NEUTRAL.load(Ordering::Relaxed),
-        neutral_kept: NEUTRAL_KEPT.load(Ordering::Relaxed),
-    }
-}
-
 /// Publish whether the tasks are refused: the setting is on and the table runs. Called each input
 /// tick.
 pub(crate) fn publish(keep: bool) {
@@ -124,30 +66,21 @@ pub(crate) fn publish(keep: bool) {
 }
 
 static KEEP: AtomicBool = AtomicBool::new(false);
-static REFUSED: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
-static NEUTRAL: AtomicU64 = AtomicU64::new(0);
-static NEUTRAL_KEPT: AtomicU64 = AtomicU64::new(0);
 
-/// Whether `task`, run for the character of `context`, is refused: the local player's, while the
+/// Whether a task run for the character of `context` is refused: the local player's, while the
 /// tasks are refused.
 ///
 /// # Safety
 ///
 /// `context` must be the state context the task was given.
-unsafe fn refuse(context: *mut StateContext, task: Task) -> bool {
-    if !KEEP.load(Ordering::Relaxed) {
-        return false;
-    }
-    let local = unsafe { character_from_context(context) }.is_some_and(|c| c.m_IsLocalCharacter);
-    if local {
-        REFUSED[task.index()].fetch_add(1, Ordering::Relaxed);
-    }
-    local
+unsafe fn refuse(context: *mut StateContext) -> bool {
+    KEEP.load(Ordering::Relaxed)
+        && unsafe { character_from_context(context) }.is_some_and(|c| c.m_IsLocalCharacter)
 }
 
 #[detour(address = NWeaponUnequipTask_OnEnter_ADDRESS)]
 fn weapon_unequip_task(context: *mut StateContext, properties: *mut c_void, instance: *mut c_void) {
-    if !unsafe { refuse(context, Task::Unequip) } {
+    if !unsafe { refuse(context) } {
         WEAPON_UNEQUIP_TASK
             .get()
             .unwrap()
@@ -163,7 +96,7 @@ fn weapon_hide_in_vehicle_task(
     properties: *mut c_void,
     instance: *mut c_void,
 ) {
-    if !unsafe { refuse(context, Task::HideInVehicle) } {
+    if !unsafe { refuse(context) } {
         WEAPON_HIDE_IN_VEHICLE_TASK
             .get()
             .unwrap()
@@ -177,7 +110,7 @@ fn stop_using_weapon_task(
     properties: *mut c_void,
     instance: *mut c_void,
 ) {
-    if !unsafe { refuse(context, Task::StopUsing) } {
+    if !unsafe { refuse(context) } {
         STOP_USING_WEAPON_TASK
             .get()
             .unwrap()
@@ -187,7 +120,7 @@ fn stop_using_weapon_task(
 
 #[detour(address = NDropWeaponStateTask_OnEnter_ADDRESS)]
 fn drop_weapon_task(context: *mut StateContext, properties: *mut c_void, instance: *mut c_void) {
-    if !unsafe { refuse(context, Task::Drop) } {
+    if !unsafe { refuse(context) } {
         DROP_WEAPON_TASK
             .get()
             .unwrap()
@@ -206,15 +139,11 @@ fn force_neutral_state(character: *mut Character) {
         .and_then(|weapon| unsafe { weapon.px.as_ref() })
         .and_then(|weapon: &WeaponBase| engine::object_address(weapon));
     FORCE_NEUTRAL_STATE.get().unwrap().call(character);
-    if let Some(object) = wielded {
-        NEUTRAL.fetch_add(1, Ordering::Relaxed);
-        if live::neutral_forced(object) {
-            NEUTRAL_KEPT.fetch_add(1, Ordering::Relaxed);
-            tracing::info!(
-                target: "controllers",
-                "inventory: the forced neutral state put the wielded weapon away; its hand keeps it"
-            );
-        }
+    if wielded.is_some_and(live::neutral_forced) {
+        tracing::info!(
+            target: "controllers",
+            "inventory: the forced neutral state put the wielded weapon away; its hand keeps it"
+        );
     }
 }
 

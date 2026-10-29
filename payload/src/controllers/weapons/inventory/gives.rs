@@ -126,10 +126,6 @@ impl MemberClosure {
     }
 }
 
-pub(crate) fn member_closure() -> Option<MemberClosure> {
-    STATE.lock().members_closed
-}
-
 /// Whether a native source request still owns the pistol callback, including a canceled request.
 pub(crate) fn member_pending() -> bool {
     let state = STATE.lock();

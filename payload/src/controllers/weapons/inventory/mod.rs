@@ -18,6 +18,7 @@
 //! - [`gives`]: the game's gives, placed by the table rather than equipped;
 //! - [`ammo`]: the ammunition auto-pickup, for every weapon the table has on the body;
 //! - [`engine`]: the engine reads behind them;
+//! - [`game_view`]: the game's own inventory, captured for the readouts;
 //! - [`reset`]: the spawn system's reset, which replaces or removes every weapon;
 //! - [`config`]: the settings.
 //!
@@ -36,6 +37,7 @@ pub(crate) mod carry;
 mod challenges;
 pub mod config;
 pub(crate) mod engine;
+pub(crate) mod game_view;
 pub(crate) mod gives;
 pub mod lost;
 mod missions;
@@ -79,6 +81,7 @@ use crate::{
             inventory::{
                 config::InventoryConfig,
                 engine::ObjectKey,
+                game_view::GameInventory,
                 lost::LostRules,
                 pins::{PinSettings, WorldWeapon},
                 sockets::Offsets,
@@ -173,11 +176,8 @@ pub(crate) struct InventoryReadout {
     pub status: InventoryStatus,
     pub published_at: Instant,
     revision: u64,
-    pub lost: lost::LostStatus,
-    pub traversal: traversal::TraversalStatus,
-    pub swim_vacates: u64,
-    pub single: single::SingleStatus,
-    pub member_closure: Option<gives::MemberClosure>,
+    /// The game's own inventory, as of the last input tick that read it.
+    pub game: Option<GameInventory>,
     /// The single pistols in `status.world`, captured with the readout.
     pub world_singles: Vec<ObjectAddress>,
 }
@@ -234,6 +234,8 @@ pub(crate) unsafe fn input_tick(
         unsafe { gives::input_tick(owner) };
         unsafe { resume() };
     } else {
+        // Captured before the stop, whose publication carries it.
+        STATE.lock().game = Some(unsafe { game_view::capture(owner) });
         unsafe { stop(owner, "the inventory is off", inputs.settings.carry) };
         return None;
     }
@@ -410,6 +412,7 @@ pub(crate) unsafe fn input_tick(
         .collect();
     // SAFETY: the slots were read live this tick.
     unsafe { ammo::publish(&slot_objects) };
+    STATE.lock().game = Some(unsafe { game_view::capture(owner) });
     publish_status();
     arrival
 }
@@ -425,6 +428,8 @@ pub(crate) unsafe fn stand_down() {
         return;
     };
     let carry = Config::lock_query(|c| c.controllers.weapons.inventory.carry);
+    // SAFETY: as this function's own contract.
+    STATE.lock().game = Some(unsafe { game_view::capture(owner) });
     unsafe { stop(owner, "the controllers are not in use", carry) };
 }
 
@@ -619,10 +624,10 @@ fn count_carried_replaced() {
 }
 
 fn publish_status() {
-    let (status, revision) = {
+    let (status, game, revision) = {
         let state = STATE.lock();
         let revision = UI_REVISION.fetch_add(1, Ordering::Relaxed);
-        (state.status.clone(), revision)
+        (state.status.clone(), state.game, revision)
     };
     let world_singles = status
         .world
@@ -634,11 +639,7 @@ fn publish_status() {
         status,
         published_at: Instant::now(),
         revision,
-        lost: lost::status(),
-        traversal: traversal::status(),
-        swim_vacates: use_item::swim_vacates(),
-        single: single::status(),
-        member_closure: gives::member_closure(),
+        game,
         world_singles,
     };
     let readout = Arc::new(readout);
@@ -660,6 +661,7 @@ static UI_REVISION: AtomicU64 = AtomicU64::new(0);
 struct State {
     world: World,
     status: InventoryStatus,
+    game: Option<GameInventory>,
 }
 
 impl State {
@@ -690,6 +692,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         stashed: false,
         carried_replaced: 0,
     },
+    game: None,
 });
 
 #[cfg(test)]

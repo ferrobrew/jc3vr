@@ -1,7 +1,5 @@
 //! Restored callback adoption uses one table admission for the physical and table destination.
 
-use std::sync::atomic::Ordering;
-
 use jc3gi::{character::character::Character, equipment::weapon::WeaponBase};
 
 use crate::controllers::{
@@ -16,7 +14,7 @@ use crate::controllers::{
             carry::{self, CarryRefusal},
             engine::{self, kind_of, weapon_of},
             persist::Record,
-            restore::{PLAN, SPAWNED, SPAWNING, STATUS, expire_spawning},
+            restore::{PLAN, SPAWNED, STATUS, expire_spawning},
         },
     },
 };
@@ -107,9 +105,7 @@ pub(super) unsafe fn adopt(owner: &mut Character) {
                 .spawning
                 .iter()
                 .position(|s| s.record.tag_hash == kind.tag_hash);
-            let record = index.map(|i| plan.spawning.remove(i).record);
-            SPAWNING.store(plan.spawning.len(), Ordering::Relaxed);
-            record
+            index.map(|i| plan.spawning.remove(i).record)
         };
         let Some(record) = record else {
             continue;

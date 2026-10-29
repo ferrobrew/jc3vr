@@ -36,7 +36,6 @@ fn actual_clear_reset_and_expiry_never_erase_callback_exposure() {
     });
     assert_eq!(expire_spawning(), vec![record]);
     assert!(PLAN.lock().spawning.is_empty());
-    assert_eq!(SPAWNING.load(Ordering::Relaxed), 0);
     blocked();
     clear();
 }

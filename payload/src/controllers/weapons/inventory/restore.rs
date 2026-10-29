@@ -28,10 +28,7 @@ use std::{
     fmt, fs, io,
     io::Read,
     path::PathBuf,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
-    },
+    sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant},
 };
 
@@ -53,7 +50,7 @@ use crate::{
             dual_wield::single,
             hold::refs::Strong,
             inventory::{
-                StatusUnavailable, carry,
+                carry,
                 config::InventoryConfig,
                 engine::{self as inventory_engine, kind_of},
                 persist::{Fingerprint, MAX_BYTES, RESERVES, Record, SLOTS, Sidecar},
@@ -146,32 +143,6 @@ pub fn status() -> RestoreStatus {
     status_with_owner_fields(status, path, spawning)
 }
 
-/// The sidecar path observed by a store or a load, without resolving it from the UI.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum PathStatus {
-    Uninitialized,
-    Unavailable,
-    Available,
-}
-
-/// The last restore readout published by an existing owner operation.
-#[derive(Debug)]
-pub(crate) struct RestoreReadout {
-    pub status: RestoreStatus,
-    pub path: PathStatus,
-    pub published_at: Instant,
-    revision: u64,
-}
-
-/// Read only the publication; never resolve a path, read a file, or acquire the restore plan.
-pub(crate) fn peek_status() -> Result<Arc<RestoreReadout>, StatusUnavailable> {
-    let publication = UI_STATUS.try_lock().ok_or(StatusUnavailable::Busy)?;
-    publication
-        .as_ref()
-        .map(Arc::clone)
-        .ok_or(StatusUnavailable::Uninitialized)
-}
-
 /// The spawn system is resetting: record the carried weapons, which the reset's release of the
 /// carry set lets go, for the respawn, and whether the pistol slot held one pistol. Any spawn still
 /// on its way belongs to the world before the reset and is forgotten.
@@ -184,7 +155,6 @@ pub(crate) fn on_pre_reset(records: Vec<Record>, slot_pistol_single: bool, stash
     let mut plan = PLAN.lock();
     plan.generation = plan.generation.wrapping_add(1);
     plan.spawning.clear();
-    SPAWNING.store(0, Ordering::Relaxed);
     let (records, slot_pistol_single) = match plan.checkpoint_next.take() {
         Some(checkpoint) => checkpoint,
         None => (records, slot_pistol_single),
@@ -208,7 +178,6 @@ pub(crate) fn on_pre_reset(records: Vec<Record>, slot_pistol_single: bool, stash
     std::mem::drop(plan);
     SPAWNED.lock().clear();
     TWINS.lock().clear();
-    publish_status();
 }
 
 /// The spawn system has reset: the next input tick with the player respawns the carried weapons.
@@ -269,7 +238,7 @@ pub(crate) unsafe fn on_store(save_data: *const PlayerSaveData, settings: &Inven
     let fingerprint = unsafe { stored_fingerprint(character) };
     let carried = carry::records();
     let path = paths::file(SIDECAR_FILE_NAME);
-    observe_path(path.clone());
+    STATUS.lock().path.clone_from(&path);
     let Some(path) = path else {
         return;
     };
@@ -321,7 +290,6 @@ pub(crate) unsafe fn on_load(save_data: *const PlayerSaveData, settings: &Invent
         character: 0,
     });
     STATUS.lock().last_load = Some(outcome);
-    publish_status();
 }
 
 /// After a reset, respawn the carried weapons; and adopt each spawned one that has come back onto
@@ -343,7 +311,6 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, settings: &InventoryConfi
         unsafe { request(owner, chosen.origin, chosen.records) };
     }
     unsafe { adoption::adopt(owner) };
-    publish_status();
 }
 
 /// Ask the spawn system for the second pistol of a pair of the type `tag_hash`, at the player, for
@@ -393,7 +360,6 @@ pub(crate) fn clear() {
     let mut plan = PLAN.lock();
     plan.generation = plan.generation.wrapping_add(1);
     plan.spawning.clear();
-    SPAWNING.store(0, Ordering::Relaxed);
     plan.from_load = None;
     plan.from_reset = None;
     plan.held = None;
@@ -403,7 +369,6 @@ pub(crate) fn clear() {
     std::mem::drop(plan);
     SPAWNED.lock().clear();
     TWINS.lock().clear();
-    publish_status();
 }
 
 /// A set of carried weapons waiting for the respawn.
@@ -481,10 +446,6 @@ static STATUS: Mutex<RestoreStatus> = Mutex::new(RestoreStatus {
     restored: 0,
     spawning: 0,
 });
-static UI_STATUS: Mutex<Option<Arc<RestoreReadout>>> = Mutex::new(None);
-static UI_REVISION: AtomicU64 = AtomicU64::new(0);
-static PATH_OBSERVED: AtomicBool = AtomicBool::new(false);
-static SPAWNING: AtomicUsize = AtomicUsize::new(0);
 
 fn status_with_owner_fields(
     mut status: RestoreStatus,
@@ -494,46 +455,6 @@ fn status_with_owner_fields(
     status.path = path;
     status.spawning = spawning;
     status
-}
-
-fn observe_path(path: Option<PathBuf>) {
-    STATUS.lock().path = path;
-    PATH_OBSERVED.store(true, Ordering::Release);
-    publish_status();
-}
-
-pub(super) fn publish_status() {
-    let (mut status, revision) = {
-        let status = STATUS.lock();
-        let revision = UI_REVISION.fetch_add(1, Ordering::Relaxed);
-        (status.clone(), revision)
-    };
-    merge_write_status(&mut status);
-    let path_observed = PATH_OBSERVED.load(Ordering::Acquire);
-    status.spawning = SPAWNING.load(Ordering::Relaxed);
-    let path = if !path_observed {
-        PathStatus::Uninitialized
-    } else if status.path.is_some() {
-        PathStatus::Available
-    } else {
-        PathStatus::Unavailable
-    };
-    let readout = Arc::new(RestoreReadout {
-        status,
-        path,
-        published_at: Instant::now(),
-        revision,
-    });
-    let mut publication = UI_STATUS.lock();
-    if publication
-        .as_ref()
-        .is_some_and(|current| current.revision > revision)
-    {
-        return;
-    }
-    let previous = publication.replace(readout);
-    drop(publication);
-    drop(previous);
 }
 
 fn merge_write_status(status: &mut RestoreStatus) {
@@ -606,7 +527,7 @@ unsafe fn read_for_load(
         return (LoadOutcome::NoCharacter, Vec::new(), None);
     };
     let path = paths::file(SIDECAR_FILE_NAME);
-    observe_path(path.clone());
+    STATUS.lock().path.clone_from(&path);
     let Some(path) = path else {
         return (LoadOutcome::Missing, Vec::new(), None);
     };
@@ -741,7 +662,6 @@ unsafe fn request(owner: &Character, origin: Origin, records: Vec<Record>) {
         });
         outcome.requested += 1;
     }
-    SPAWNING.store(plan.spawning.len(), Ordering::Relaxed);
     std::mem::drop(plan);
     tracing::info!(
         target: "controllers",
@@ -759,7 +679,6 @@ fn expire_spawning() -> Vec<Record> {
         .into_iter()
         .partition(|s| s.at.elapsed() <= SPAWN_WAIT);
     plan.spawning = waiting;
-    SPAWNING.store(plan.spawning.len(), Ordering::Relaxed);
     expired.into_iter().map(|s| s.record).collect()
 }
 

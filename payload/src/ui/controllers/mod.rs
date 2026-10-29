@@ -14,7 +14,6 @@ mod hand_bodies;
 mod hands;
 mod haptics;
 mod inventory;
-mod loadout;
 mod locomotion;
 mod map;
 mod mode;
@@ -51,13 +50,10 @@ use crate::{
         frame::{self as controller_frame, InteractionProfile},
         gamepad_setting,
         hands::{ik as hand_ik, late, tiers},
-        haptics as controller_haptics,
-        loadout::live as loadout_live,
-        locomotion as controller_locomotion, map as controller_map, mode as controller_mode,
-        overlay as controller_overlay,
+        haptics as controller_haptics, locomotion as controller_locomotion, map as controller_map,
+        mode as controller_mode, overlay as controller_overlay,
         physical_hands::{self as controller_physical_hands, collider_view::ColliderViewConfig},
         roomscale as controller_roomscale, scheme, summary as controller_summary,
-        weapons::inventory as controller_inventory,
     },
     hud::{pointer, summary_panel},
     ui::{catalog::FeatureId, dispatch::FeatureBody},
@@ -266,15 +262,9 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
                 weapons::feature_readout(ui, &weapons::WeaponsReadout::read(), id);
             }
         }
-        FeatureId::Inventory => |ui, _| {
-            inventory::inventory_readout(
-                ui,
-                controller_inventory::peek_status(),
-                controller_inventory::restore::peek_status(),
-            );
-            ui.separator();
-            loadout::live_readout(ui, &loadout_live::status());
-        },
+        FeatureId::Inventory => {
+            |ui, _| inventory::inventory_view(ui, &inventory::InventoryView::read())
+        }
         FeatureId::Feedback => |ui, _| {
             haptics::haptics_readout(ui, &controller_haptics::status());
             physical_hands::impact_sounds_readout(ui, &controller_physical_hands::sounds::status());

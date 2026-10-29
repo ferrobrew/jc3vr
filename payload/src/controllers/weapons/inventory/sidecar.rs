@@ -2,7 +2,7 @@
 //!
 //! The queue holds one in-flight snapshot and only the newest pending sequence. Shutdown closes
 //! admission and drains both before a confirmed join permits unload. A timeout retains the owner;
-//! the caller must pin the module. The worker publishes only after releasing its queue lock.
+//! the caller must pin the module. The worker reports each attempt only after releasing its queue lock.
 
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
@@ -14,7 +14,7 @@ use std::{
 
 use parking_lot::{Condvar, Mutex};
 
-use crate::{config::write, controllers::weapons::inventory::restore};
+use crate::config::write;
 
 pub(super) struct Snapshot {
     pub(super) path: PathBuf,
@@ -49,9 +49,7 @@ pub(super) fn status() -> WriteStatus {
 #[must_use = "an unfinished sidecar writer requires the payload to stay mapped"]
 pub(crate) fn shutdown() -> bool {
     let stopped = shutdown_owner(&OWNER, SHUTDOWN_BUDGET);
-    if stopped {
-        restore::publish_status();
-    } else {
+    if !stopped {
         tracing::error!(target: "controllers", "inventory: sidecar writer has not exited; keeping the payload mapped");
     }
     stopped
@@ -98,14 +96,16 @@ impl SidecarWriter {
     }
 
     fn submit(&mut self, snapshot: Snapshot) -> Result<(), String> {
-        self.submit_with(snapshot, replace, restore::publish_status)
+        self.submit_with(snapshot, replace, || {})
     }
 
+    /// Queue `snapshot` for `write`, starting the worker if it is not running. The worker calls
+    /// `attempted` after each attempt, once its queue lock is released.
     fn submit_with(
         &mut self,
         snapshot: Snapshot,
         write: impl FnMut(&Snapshot) -> Result<(), String> + Send + 'static,
-        publish: impl FnMut() + Send + 'static,
+        attempted: impl FnMut() + Send + 'static,
     ) -> Result<(), String> {
         self.reap();
         if self.closed {
@@ -130,7 +130,7 @@ impl SidecarWriter {
             let thread_shared = Arc::clone(shared);
             match std::thread::Builder::new()
                 .name("jc3vr-inventory-sidecar".into())
-                .spawn(move || run(thread_shared, write, publish))
+                .spawn(move || run(thread_shared, write, attempted))
             {
                 Ok(handle) => self.handle = Some(handle),
                 Err(error) => {
@@ -198,7 +198,7 @@ fn replace(snapshot: &Snapshot) -> Result<(), String> {
 fn run(
     shared: Arc<Shared>,
     mut write: impl FnMut(&Snapshot) -> Result<(), String>,
-    mut publish: impl FnMut(),
+    mut attempted: impl FnMut(),
 ) {
     loop {
         let snapshot = {
@@ -237,7 +237,7 @@ fn run(
                 tracing::warn!(target: "controllers", %error, "inventory: the save sidecar was not written")
             }
         }
-        publish();
+        attempted();
     }
 }
 
