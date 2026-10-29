@@ -1,19 +1,16 @@
-//! Placing the body's grab volumes: the sockets' landmarks, the grenade pouch, the magazine pouch,
-//! and the C4 pouch. Pure.
+//! Placing the body's grab volumes: the grenade pouch, the magazine pouch, and the C4 pouch, beside
+//! the sockets' reach ([`SOCKETS`]; a socket's volume sits where the socket's weapon is placed).
+//! Pure.
 //!
 //! The volumes ride the character's skeleton, the body the player sees, carried into the cockpit
 //! frame: what the player sees on the body is what they reach for, and the hands reach it as they
-//! are drawn. The hip and belt volumes ride the pelvis (the line through the hip joints) and the
-//! shoulder, chest, and chest-pouch volumes ride the chest (the line through the shoulder joints),
-//! both turned up along the spine ([`BodyFrame`]), so the volumes follow the body through a crouch,
+//! are drawn. The belt pouch rides the pelvis (the line through the hip joints) and the chest
+//! pouches ride the chest (the line through the shoulder joints), both turned up along the spine ([`BodyFrame`]), so the volumes follow the body through a crouch,
 //! a lean, a fall, or the parachute as the animation and the procedural body pose it. Lengths that
 //! scale with the body are fractions of the skeleton's own torso.
 //!
 //! Each volume sits at an offset from a landmark of the skeleton:
 //!
-//! - the hips, level with the shoulder joints' width, at the hip joints;
-//! - the shoulder joints;
-//! - the chest, at the middle of the shoulder joints, for the chest socket;
 //! - the chest's front on each side, below and inside the shoulder joint, for the grenade and C4
 //!   pouches ([`chest_sides`] says which pouch takes which side);
 //! - the belt's front on the side of the hand without a gun, for the magazine pouch: above the hip
@@ -34,20 +31,11 @@ use crate::controllers::{
     loadout::Socket,
 };
 
-/// The sockets' fixed placement.
+/// The sockets' fixed reach.
 pub const SOCKETS: SocketTuning = SocketTuning {
-    hip: VolumeSpec {
-        offset_m: Vec3::new(0.04, 0.04, 0.0),
-        radius_m: 0.12,
-    },
-    shoulder: VolumeSpec {
-        offset_m: Vec3::new(0.0, 0.10, 0.10),
-        radius_m: 0.17,
-    },
-    chest: VolumeSpec {
-        offset_m: Vec3::new(0.0, -0.16, -0.14),
-        radius_m: 0.09,
-    },
+    hip_radius_m: 0.12,
+    shoulder_radius_m: 0.17,
+    chest_radius_m: 0.09,
 };
 
 /// The pouches' fixed placement. Each pouch's centre is a few centimetres out from the body's
@@ -59,16 +47,17 @@ pub const POUCHES: PouchTuning = PouchTuning {
     reach_margin_m: 0.05,
 };
 
-/// The body's sockets: how near a hand must come to each, and where they are.
+/// The body's sockets: how near a hand must come to each, metres. A socket's grab volume is centred
+/// where the socket places its weapon, so the socket has no placement of its own here.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct SocketTuning {
-    /// The sockets on both hips: how near a hand must come.
-    pub hip: VolumeSpec,
+    /// The sockets on both hips.
+    pub hip_radius_m: f32,
     /// The sockets over the shoulders, the right one where the game docks the two-handed slot and
-    /// the left one where it docks the special slot, and the outer back's reach.
-    pub shoulder: VolumeSpec,
+    /// the left one where it docks the special slot, and the outer back.
+    pub shoulder_radius_m: f32,
     /// The socket on the chest.
-    pub chest: VolumeSpec,
+    pub chest_radius_m: f32,
 }
 
 /// The pouches on the front of the body: the magazine pouch at the front of the belt on the free
