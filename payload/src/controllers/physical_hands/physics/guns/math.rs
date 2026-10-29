@@ -55,6 +55,16 @@ pub fn brace_changed(before: Pose, after: Pose, rebuild: &BraceRebuildConfig) ->
         || turn_rad(before.orientation.inverse() * after.orientation) > rebuild.angle_rad
 }
 
+/// Whether a brace's fixed joint, made `age_s` seconds ago holding the palm frame `built` in the
+/// gun, is remade for the palm frame `wanted`: the frame changed past `rebuild` from the one the
+/// joint holds (not from the last step's, so a slow slide is caught and jitter is not), and the
+/// joint has stood for `rebuild.min_interval_s`, so a hand sliding along the gun remakes it at a
+/// bounded rate.
+pub fn brace_due(built: Pose, wanted: Pose, age_s: f32, rebuild: &BraceRebuildConfig) -> bool {
+    let stood = !age_s.is_finite() || age_s >= rebuild.min_interval_s;
+    stood && brace_changed(built, wanted, rebuild)
+}
+
 /// The value of `values` for a gun of weight class `class`.
 pub fn class_value(values: &GunClassValues, class: HeftClass) -> f32 {
     match class {
@@ -313,6 +323,36 @@ mod tests {
             seat(gun, brace_palm(gun, Pose::IDENTITY, slid)),
             &rebuild
         ));
+    }
+
+    #[test]
+    fn a_brace_is_remade_against_its_built_frame_at_a_bounded_rate() {
+        let rebuild = BraceRebuildConfig::new();
+        let built = pose(Vec3::new(0.0, 0.0, -0.4), Quat::IDENTITY);
+        let step = |by: f32| pose(built.position + Vec3::NEG_Z * by, Quat::IDENTITY);
+        // Aim jitter within the thresholds never remakes the joint, however long it stands.
+        assert!(!brace_due(
+            built,
+            step(rebuild.distance_m * 0.5),
+            10.0,
+            &rebuild
+        ));
+        let turned = pose(
+            built.position,
+            Quat::from_rotation_x(rebuild.angle_rad * 0.5),
+        );
+        assert!(!brace_due(built, turned, 10.0, &rebuild));
+        // A slow slide adds up against the built frame, where step-to-step changes would not.
+        let slid = step(rebuild.distance_m * 1.5);
+        assert!(brace_due(built, slid, rebuild.min_interval_s, &rebuild));
+        // A joint just made waits out the interval.
+        assert!(!brace_due(
+            built,
+            slid,
+            rebuild.min_interval_s * 0.5,
+            &rebuild
+        ));
+        assert!(brace_due(built, slid, f32::NAN, &rebuild));
     }
 
     #[test]

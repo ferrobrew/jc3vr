@@ -31,6 +31,11 @@ pub(super) fn physical_hands(p: &PhysicalHandsConfig) -> Result<(), Invalid> {
         std::f32::consts::PI,
     )?;
     nonnegative(
+        "physical_hands.bodies.brace.min_interval_s",
+        p.bodies.brace.min_interval_s,
+        5.0,
+    )?;
+    nonnegative(
         "physical_hands.climb.fling_scale",
         p.climb.fling_scale,
         10.0,

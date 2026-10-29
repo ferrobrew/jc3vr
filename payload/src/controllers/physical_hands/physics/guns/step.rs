@@ -25,7 +25,7 @@ use crate::controllers::{
             GunBodyStatus, GunHolds, HeldGun, SHARED,
             engine::{GunError, GunSource, check_own_body, read_source},
             math::{
-                GunAxes, MAX_GRIP_SEAT_M, MassSource, brace_changed, brace_palm, carried_velocity,
+                GunAxes, MAX_GRIP_SEAT_M, MassSource, brace_due, brace_palm, carried_velocity,
                 class_value, deviation, gun_mass, intended_seat, limit, seat, seated, settled,
                 shot_impulse, strayed, turn_rad,
             },
@@ -45,8 +45,15 @@ pub(crate) struct GunSlot {
     axes: Option<GunAxes>,
     /// The joint to the holding hand's body, and the gun's seat on it.
     holder: Option<(Joint, Pose)>,
-    /// The joint to the bracing hand's body and its palm frame in the gun.
-    brace: Option<(Joint, Pose)>,
+    /// The joint to the bracing hand's body.
+    brace: Option<Brace>,
+}
+
+/// A brace's joint, with the palm frame in the gun it holds and when it was made.
+struct Brace {
+    joint: Joint,
+    frame: Pose,
+    made: Instant,
 }
 
 /// What one step's gun phase works from.
@@ -136,7 +143,7 @@ pub(crate) unsafe fn step(hands: &mut Hands, input: GunStep<'_>) {
             }
         }
         // SAFETY: forwarded from the caller.
-        let kept = unsafe { keep(hands, hand, &input, shots[i], &mut tally) };
+        let kept = unsafe { keep(hands, hand, &input, shots[i], &mut tally, now) };
         match kept {
             Ok(kept) => {
                 statuses[i] = Some(kept.status);
@@ -192,10 +199,10 @@ pub(crate) unsafe fn drop_hand(guns: &mut [Option<GunSlot>; 2], hand: Hand, reas
         SHARED.lock().status.destroyed += u64::from(destroyed);
     }
     if let Some(slot) = guns[hand.other().index()].as_mut()
-        && let Some((brace, _)) = slot.brace.take()
+        && let Some(brace) = slot.brace.take()
     {
         // SAFETY: forwarded from the caller.
-        unsafe { end_joint(brace, hand, "brace", reason) };
+        unsafe { end_joint(brace.joint, hand, "brace", reason) };
     }
 }
 
@@ -342,6 +349,7 @@ unsafe fn keep(
     input: &GunStep<'_>,
     shots: Option<(usize, u32)>,
     tally: &mut Tally,
+    now: Instant,
 ) -> Result<Kept, &'static str> {
     let i = hand.index();
     let off = hand.other();
@@ -362,17 +370,17 @@ unsafe fn keep(
         Err(GunError::OwnBodyInWorld) => return Err("the gun's own body is back in the world"),
         Err(_) => return Err("the gun is gone"),
     }
-    let (joint, seat) = slot.holder.as_ref().ok_or("the gun body has no joint")?;
+    let (joint, holder_seat) = slot.holder.as_ref().ok_or("the gun body has no joint")?;
     // SAFETY: forwarded from the caller.
     if !unsafe { joint.intact() } {
         return Err("the joint to the holding hand went away");
     }
-    let seat = *seat;
+    let holder_seat = *holder_seat;
     // SAFETY: forwarded from the caller.
     let gun_motion = unsafe { slot.body.motion() }.map_err(|_| "the gun body was lost")?;
     let hand_pose = pose_of(&hand_motion);
     let mut gun_pose = pose_of(&gun_motion);
-    let mut drift = deviation(hand_pose, seat, gun_pose);
+    let mut drift = deviation(hand_pose, holder_seat, gun_pose);
     let reseat = if placed[i] {
         Some("its hand was put somewhere")
     } else if strayed(
@@ -385,7 +393,7 @@ unsafe fn keep(
         None
     };
     if let Some(reason) = reseat {
-        let back = seated(hand_pose, seat);
+        let back = seated(hand_pose, holder_seat);
         // SAFETY: forwarded from the caller.
         unsafe { slot.body.place(back.position, back.orientation) }
             .map_err(|_| "the gun body could not be put back on its seat")?;
@@ -429,17 +437,31 @@ unsafe fn keep(
     let target = contact
         .zip(input.palms[off.index()])
         .map(|(contact, palm)| brace_palm(gun_pose, palm, contact));
-    let local = target
-        .map(|palm| crate::controllers::physical_hands::physics::guns::math::seat(gun_pose, palm));
-    if let Some((brace, before)) = slot.brace.take() {
-        let keep = local.is_some_and(|after| !brace_changed(before, after, &input.brace))
-            && !placed[off.index()]
-            && unsafe { brace.intact() };
-        if keep {
-            slot.brace = Some((brace, before));
-        } else {
+    let local = target.map(|palm| seat(gun_pose, palm));
+    // Whether the joint is remade for a moved palm, rather than made afresh.
+    let mut remade = false;
+    if let Some(brace) = slot.brace.take() {
+        let ended = local.is_none() || placed[off.index()] || !unsafe { brace.joint.intact() };
+        let due = local.is_some_and(|wanted| {
+            let age_s = now.saturating_duration_since(brace.made).as_secs_f32();
+            brace_due(brace.frame, wanted, age_s, &input.brace)
+        });
+        if ended {
             // SAFETY: forwarded from the caller.
-            unsafe { end_joint(brace, off, "brace", "the support contact changed or ended") };
+            unsafe {
+                end_joint(
+                    brace.joint,
+                    off,
+                    "brace",
+                    "the support contact changed or ended",
+                )
+            };
+        } else if due {
+            // SAFETY: forwarded from the caller.
+            unsafe { end_quietly(brace.joint, off) };
+            remade = true;
+        } else {
+            slot.brace = Some(brace);
         }
     }
     if slot.brace.is_none()
@@ -448,6 +470,9 @@ unsafe fn keep(
     {
         // A fixed joint captures the bodies' present frames, not the selected region. Seat the
         // support palm first, or an acquisition miss becomes the permanent brace offset.
+        // SAFETY: forwarded from the caller.
+        let jump = unsafe { off_hand.motion() }
+            .map_or(f32::INFINITY, |m| m.position.distance(target.position));
         let placed = unsafe { off_hand.place(target.position, target.orientation) }
             .and_then(|()| unsafe { carry_with_hand(off_hand, &slot.body, &gun_motion) });
         if placed.is_err() {
@@ -455,17 +480,33 @@ unsafe fn keep(
                 "held guns: the support palm could not be seated on its gun region".to_owned(),
             );
         } else {
-            contact::mute_for(Source::Hand(off), PLACED_MUTE_STEPS);
+            // A palm remade a little along the gun it already holds meets nothing new.
+            if !(remade && jump <= QUIET_REBRACE_M) {
+                contact::mute_for(Source::Hand(off), PLACED_MUTE_STEPS);
+            }
             // SAFETY: forwarded from the caller; both bodies are in the simulation.
             match unsafe { Joint::create_between(off_id, slot.body.body_id()) } {
-                Ok(brace) => {
-                    tracing::info!(
-                        hand = off.label(),
-                        constraint = brace.id(),
-                        gun_body = slot.body.body_id(),
-                        "held guns: joined the bracing hand to the selected gun region"
-                    );
-                    slot.brace = Some((brace, local));
+                Ok(joint) => {
+                    if remade {
+                        tracing::debug!(
+                            hand = off.label(),
+                            constraint = joint.id(),
+                            jump_m = jump,
+                            "held guns: remade the brace for the moved support palm"
+                        );
+                    } else {
+                        tracing::info!(
+                            hand = off.label(),
+                            constraint = joint.id(),
+                            gun_body = slot.body.body_id(),
+                            "held guns: joined the bracing hand to the selected gun region"
+                        );
+                    }
+                    slot.brace = Some(Brace {
+                        joint,
+                        frame: local,
+                        made: now,
+                    });
                 }
                 Err(e) => {
                     tracing::warn!(hand = off.label(), error = %e, "held guns: could not join the bracing hand to the gun");
@@ -483,7 +524,7 @@ unsafe fn keep(
             mass_kg: slot.mass_kg,
             mass_source: slot.mass_source,
             holder_joint,
-            brace_joint: slot.brace.as_ref().map(|(joint, _)| joint.id()),
+            brace_joint: slot.brace.as_ref().map(|brace| brace.joint.id()),
             deviation_m: drift.position.length(),
             deviation_rad: turn_rad(drift.orientation),
             speed_mps: gun_motion.linear.length(),
@@ -506,9 +547,9 @@ unsafe fn destroy_slot(slot: GunSlot, hand: Hand, reason: &str) -> bool {
         held,
         ..
     } = slot;
-    if let Some((brace, _)) = brace {
+    if let Some(brace) = brace {
         // SAFETY: forwarded from the caller.
-        unsafe { end_joint(brace, hand.other(), "brace", reason) };
+        unsafe { end_joint(brace.joint, hand.other(), "brace", reason) };
     }
     if let Some((joint, _)) = holder {
         // SAFETY: forwarded from the caller.
@@ -546,6 +587,27 @@ unsafe fn end_joint(joint: Joint, hand: Hand, role: &str, reason: &str) {
         "held guns: ended a gun's joint"
     );
 }
+
+/// End a brace's joint to remake it for a moved palm: a routine change, logged below info.
+///
+/// # Safety
+///
+/// As [`step`].
+unsafe fn end_quietly(joint: Joint, hand: Hand) {
+    let constraint = joint.id();
+    // SAFETY: forwarded from the caller.
+    let destroyed = unsafe { joint.destroy() };
+    tracing::trace!(
+        hand = hand.label(),
+        constraint,
+        destroyed,
+        "held guns: ended the brace to remake it"
+    );
+}
+
+/// How far a remade brace may move the support palm without muting its contacts, metres: a palm
+/// seated a little along the gun it already holds is no placement into the world.
+const QUIET_REBRACE_M: f32 = 0.05;
 
 /// Give the gun body `gun` the velocity it has as part of the hand's body `hand`, which moves as
 /// `hand_motion`: the hand's linear velocity at the gun's centre of mass, and the hand's turn.

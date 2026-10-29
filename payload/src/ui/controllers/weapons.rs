@@ -593,14 +593,16 @@ pub(super) fn support_settings(ui: &mut Ui, c: &mut ControllersConfig) {
         );
     let brace = &mut c.physical_hands.bodies.brace;
     ui.label("Brace joint rebuild").on_hover_text(
-        "How far the bracing palm's frame on a held gun may move before its joint is remade.",
+        "How far the bracing palm's frame on a held gun may move before its joint is remade, \
+         and how long a joint stands at least.",
     );
-    ui.add(egui::Slider::new(&mut brace.distance_m, 0.0..=0.02).text("Moved past (m)"));
+    ui.add(egui::Slider::new(&mut brace.distance_m, 0.0..=0.05).text("Moved past (m)"));
     ui.add(
-        egui::Slider::new(&mut brace.angle_rad, 0.0..=0.1)
+        egui::Slider::new(&mut brace.angle_rad, 0.0..=0.3)
             .text("Turned past (rad)")
             .fixed_decimals(3),
     );
+    ui.add(egui::Slider::new(&mut brace.min_interval_s, 0.0..=1.0).text("Stands at least (s)"));
 }
 
 pub(super) fn reload_feature_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
