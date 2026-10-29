@@ -1,6 +1,6 @@
 # Scaleform HUD overlays and depth in VR
 
-Note: the render-root split and the single-panel warp have since been deleted; the HUD atlas is the only HUD depth path (see [hud-depth-followup.md](hud-depth-followup.md)). The status and code paths below are historical.
+Note: the render-root split and the single-panel warp have since been deleted; the HUD atlas is the only HUD depth path (see [hud.md, "HUD depth"](../mod/hud.md#hud-depth)). The status and code paths below are historical.
 
 Research covering issue #8 (full-screen HUD overlays that break on a floating
 panel) and issue #14 (dynamic HUD depth/scale based on scene geometry). The two

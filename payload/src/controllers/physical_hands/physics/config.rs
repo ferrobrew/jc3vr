@@ -41,7 +41,7 @@ impl Default for HandBodiesConfig {
 /// and no sooner than [`min_interval_s`](Self::min_interval_s) after the joint was made. A joint
 /// kept through a larger change holds a stale contact as the hand slides or turns its grip around
 /// the gun; a joint remade on every small change churns, since ordinary two-handed aim moves the
-/// support hand on the gun all the time. These stay settings while the brace's feel is tuned in
+/// support hand on the gun all the time. These are settings so the brace's feel can be tuned in
 /// the headset.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]

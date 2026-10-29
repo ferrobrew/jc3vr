@@ -57,7 +57,18 @@ Every panel composite blends premultiplied alpha, because the HUD texture and th
 
 ## HUD depth
 
-The HUD atlas is the only HUD depth path. With one HUD texture, every element shares the panel's depth, and Scaleform has already composited overlapping clips into it, so nothing on the texture side can separate them. The atlas moves the parts that describe one world object into their own cells before the capture instead, and draws each cell on its own quad: markers at the depth of the surface they label, readouts at the hands, and the reticles and the hit marker at the aim point. An element that describes one specific world object receives depth; a general element, one that describes no single object, stays on the panel. The centre notices (pickup counters, out of ammo, too far, the planted-explosives meter, the wingsuit notifications), the directional damage indicators, objectives, timers, the chaos feed, edge arrows, and subtitles stay on the panel.
+The HUD atlas is the only HUD depth path. With one HUD texture, every element shares the panel's depth, and Scaleform has already composited overlapping clips into it, so nothing on the texture side can separate them. The atlas moves the parts that describe one world object into their own cells before the capture instead, and draws each cell on its own quad.
+
+The placement rule: an element tied to one specific world object receives depth, as an atlas cell at the object's depth, a placement on the hands or body, or a placement at the aim depth. A general element, one that describes no single object, stays on the panel. A group that mixes both kinds is split per child, as the centre group is.
+
+What is placed where:
+
+- World markers: an atlas cell each, at the depth of the surface they label.
+- The weapon readout: above the gun hand. The tether readout: above the off-hand's forearm. The weapon selection cross: at the hand steering the weapon wheel. Health, heat, and grenades: on the inside of the off-hand's wrist, as a health bar the mod draws (the game's health vignette is suppressed) over the game's heat and grenade readouts. The readouts move under the controller scheme.
+- The weapon and grapple reticles and the hit marker: one atlas cell at the aim depth, under either scheme. Under the controller scheme the hand-aimed reticles are hidden and the world overlay draws a depth-tested gun dot or laser and the grapple beam instead, so the cell shows for the gamepad scheme and for driver and mounted weapons with hand aim off.
+- The centre notices (pickup counters, out of ammo, too far, the planted-explosives meter, the wingsuit notifications), the directional damage indicators (they give the attacker's direction only), objectives, timers, notifications, the chaos feed, edge arrows, subtitles, and the cutscene skip prompt: the panel.
+
+How each part is moved and drawn is in [ui-decoupling.md](rendering/ui-decoupling.md#the-atlas-as-built).
 
 Two earlier mechanisms were deleted: a render-root split that drew the static HUD, the markers, and the centre group into three textures at their own depths, and a single-panel warp that displaced each marker's neighbourhood of the panel to the marker's depth. The split stopped the UI update pump on the first pause, and the warp placed its depth bubbles vertically off their markers. The split's history and constraints are in the post-mortem, `docs/issues/08-14-hud-overlays-and-depth.md`.
 
@@ -141,6 +152,6 @@ Pure tests cover the panel intersection with a transformed basis, press arming a
 
 Shipped: the redirect, the in-scene floating quad per eye, the lazy-follow damping, constant-apparent-size scaling, and the per-eye marker reprojection. The base distance is a slider in the pause menu's VR display page.
 
-Shipped from the issue #14 branch: the overlay suppression (#8) and the aim-depth recording. Per-element depth is the HUD atlas's, including the aim part at the aim depth.
+Shipped from the issue #14 branch: the overlay suppression (#8) and the aim-depth recording. Per-element depth is the HUD atlas's: the marker cells, the readouts at the hands and wrist (the grenade readout included), and the aim part at the aim depth.
 
 Future work: swap the static panel to an `XrCompositionLayerQuad` once in-headset for final sharpness; temporal damping for per-marker depths; automatic panel distance from scene depth; re-enabling the world-static full-screen panel once the head pose is valid outside gameplay (issue #5).

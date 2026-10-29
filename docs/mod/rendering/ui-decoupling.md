@@ -124,7 +124,6 @@ Items 1 to 4 and 6 are built (see [The atlas as built](#the-atlas-as-built)), wi
 1. pyxis: the UI manager's system-ready flag.
 2. `Get2DInfo` clamping edge arrows to the stage explicitly, if the stage-shaped safe area turns out not to keep them there.
 3. A cell overlay drawn into a copy of the texture for the debug UI.
-4. The aim-depth cell for the reticles and the hit marker, and the rest of the placement work in [hud-depth-followup.md](../../issues/hud-depth-followup.md).
 
 ## Confidence
 

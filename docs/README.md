@@ -66,7 +66,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [threading.md](mod/threading.md) — the threads mod code runs on, who holds the VR runtime lock across a frame, the lock rules, and the thread-role guard that checks them.
 - [lifecycle.md](mod/lifecycle.md): shutdown preparation, deferred retries, one-shot teardown, and the uninstalled magazine executor restriction.
 - [settings.md](mod/settings.md) — the settings file: where it and the other kept files live, the tolerant load, the `config::edit()` rule and the debounced save, what is not saved, and the TOML representation of optional values and lists.
-- [hud.md](mod/hud.md) — the floating-panel HUD: the redirect, compositing, and cursor interaction.
+- [hud.md](mod/hud.md) — the floating-panel HUD: the redirect, compositing, cursor interaction, and the placement rule for HUD depth (elements tied to one world object receive depth, general elements stay on the panel) with where each element is placed.
 - [pause-menu.md](mod/pause-menu.md) — the VR menu inside the game's pause menu: one `VR` entry below the root menu's options entry, whose pages are tabs on the settings screen's own tab bar, section headers in the list title's style, the six hooks, command routing, the value wrappers, the page model and row encoding, step pages, live values, the `BODY`, `CONTROLS`, `COMFORT`, and `DISPLAY` pages, which hold only the settings a player reaches for in the headset, with the body calibration and saving, and the in-game status list.
 - [status.md](mod/status.md) — the status rows: each system's state word and detail, row by row, shown by the debug UI's Status tab and read by the scenario runner's status-row probes, the logged summary, and what each module publishes for the rows to read on any thread.
 - [environment.md](mod/environment.md) — debug-UI control of time of day and weather.
@@ -153,9 +153,6 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 ## issues/
 
-- [gameplay-review-followup.md](issues/gameplay-review-followup.md) — the appraisal of the work on the 2026-10-24 gameplay feedback: per-item verdicts, the ranked corrective work, and the cross-cutting observations.
-- [debug-ui-prune.md](issues/debug-ui-prune.md) — the debug UI prune: the target page structure, per-feature dispositions, the HUD depth paths, the inventory view, and the parity gate removal.
-- [hud-depth-followup.md](issues/hud-depth-followup.md) — the HUD placement rule (elements tied to one world object receive depth, general elements stay on the panel), the placement of each HUD element, and the remaining work after the split and warp deletion.
 - [08-14-hud-overlays-and-depth.md](issues/08-14-hud-overlays-and-depth.md) — HUD overlays and depth (issues #8, #14).
 - [15-enclosed-vehicles.md](issues/15-enclosed-vehicles.md) — enclosed vehicles (issue #15).
 - [20-animation-judder.md](issues/20-animation-judder.md) — animation judder (issue #20).
