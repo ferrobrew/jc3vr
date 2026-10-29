@@ -156,6 +156,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 - [gameplay-review-followup.md](issues/gameplay-review-followup.md) — the appraisal of the work on the 2026-10-24 gameplay feedback: per-item verdicts, the ranked corrective work, and the cross-cutting observations.
 - [debug-ui-prune.md](issues/debug-ui-prune.md) — the debug UI prune: the target page structure, per-feature dispositions, the HUD depth paths, the inventory view, and the parity gate removal.
+- [hud-depth-followup.md](issues/hud-depth-followup.md) — the HUD placement rule (elements tied to one world object receive depth, general elements stay on the panel), the placement of each HUD element, and the remaining work after the split and warp deletion.
 - [08-14-hud-overlays-and-depth.md](issues/08-14-hud-overlays-and-depth.md) — HUD overlays and depth (issues #8, #14).
 - [15-enclosed-vehicles.md](issues/15-enclosed-vehicles.md) — enclosed vehicles (issue #15).
 - [20-animation-judder.md](issues/20-animation-judder.md) — animation judder (issue #20).
