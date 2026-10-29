@@ -33,7 +33,7 @@ use windows::{
 
 use crate::{
     config::Config,
-    debug::trace::{TraceEvent, TraceState, tracing_active},
+    debug::trace::{CAPTURE_FRAMES, TraceEvent, TraceState, tracing_active},
 };
 
 /// Record the render engine's CPU staging copies of the global shader constant buffers into the
@@ -130,7 +130,7 @@ pub fn armed_brightness_probe() {
             .lock()
             .stereo
             .auto_trace_brightness_step = false;
-        let frames = crate::ui::render_capture::TRACE_FRAME_COUNT
+        let frames = CAPTURE_FRAMES
             .load(std::sync::atomic::Ordering::Relaxed)
             .max(30);
         tracing::info!(

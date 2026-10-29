@@ -1,7 +1,7 @@
 //! The render RE window: a separate egui window, opened from the Experimental page, holding the
 //! tools that serve single-pass stereo and render reverse-engineering. These are the render-block
 //! type registry, the per-eye skips and the skip-pass range, the eye-1 gates, the exposure A/B, the
-//! render trace's options, the terrain and flicker diagnostics, and the per-eye camera readout.
+//! render trace's probes, the terrain and flicker diagnostics, and the per-eye camera readout.
 
 use std::{
     collections::BTreeSet,
@@ -31,8 +31,8 @@ pub(crate) fn open_button(ui: &mut egui::Ui) {
     if ui
         .add_enabled(!open, egui::Button::new("Open the render RE window"))
         .on_hover_text(
-            "The render-block type registry, per-eye skips, eye-1 gates, exposure A/B, trace \
-             options, terrain and flicker diagnostics, and the per-eye camera readout.",
+            "The render-block type registry, per-eye skips, eye-1 gates, exposure A/B, render trace \
+             probes, terrain and flicker diagnostics, and the per-eye camera readout.",
         )
         .clicked()
     {
@@ -66,11 +66,16 @@ pub(crate) fn window(ctx: &egui::Context, editing: bool) {
 /// button closes it; it is not persisted.
 static OPEN: AtomicBool = AtomicBool::new(false);
 
-/// The render trace's investigation options; the trace itself is dumped from the Tools page's
-/// render capture ([`crate::ui::render_capture`]).
+/// The render trace's probes and the brightness-step auto-capture; a manual trace is started from
+/// the Tools page's render capture ([`crate::ui::render_capture`]). The render camera's coordinate
+/// frame is recorded into every trace and has no toggle.
 fn trace_options(ui: &mut egui::Ui) {
     let mut cfg = config::edit();
-    ui.collapsing("Render trace options", |ui| {
+    ui.collapsing("Render trace probes", |ui| {
+        ui.checkbox(
+            &mut cfg.stereo.diagnose_rt_screenshots,
+            "Write each eye's BackBufferLinear to a PNG per frame into the trace folder",
+        );
         ui.checkbox(
             &mut cfg.stereo.auto_trace_brightness_step,
             "Auto-capture a trace when the frame brightness steps (one-shot; disarms after firing)",
@@ -93,12 +98,12 @@ fn trace_options(ui: &mut egui::Ui) {
         );
         ui.checkbox(
             &mut cfg.stereo.diagnose_stereo_draw_diff,
-            "Diff the two eyes' per-pass draw counts (single-pass-stereo feasibility)",
+            "Diff the two eyes' per-pass draw counts into the trace (single-pass-stereo feasibility)",
         )
         .on_hover_text(
-            "Logs (target \"stereo_diff\") which passes draw identically between eyes vs diverge, \
-             and what fraction of draws are replayable from one walk. Forces the inline frame tail \
-             while on.",
+            "Records a StereoDrawDiff event per stereo frame: which passes draw identically between \
+             eyes vs diverge, and what fraction of draws are replayable from one walk. The log gets \
+             one summary line when the trace ends.",
         );
     });
 }
