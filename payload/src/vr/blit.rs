@@ -14,7 +14,7 @@
 //! through `vr.direct_eye_blit`) acquires the swapchain image at the top of the render update and
 //! blits each eye from the engine's back buffer in that eye's own post-draw ([`blit_direct`]), so the
 //! full-size copy into the eye capture is made only when something else reads that capture (the
-//! desktop mirror's eye, a screenshot, the recorder, the previews). The capture route copies every
+//! desktop mirror's eyes, a screenshot, the recorder, the previews). The capture route copies every
 //! eye into its capture in the post-draw and blits the captures at the frame submit; it remains for
 //! the single-pass collapse, whose one back buffer holds both eyes side by side and so has no
 //! per-eye source the blit can sample whole, for a back buffer the blit cannot sample, and for any

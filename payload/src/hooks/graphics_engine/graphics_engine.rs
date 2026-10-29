@@ -430,10 +430,10 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
 }
 
 /// Whether anything besides the headset reads eye `eye`'s capture this frame, so its post-draw must
-/// copy the eye into it even when the eye went straight to the swapchain: the desktop mirror's eye,
+/// copy the eye into it even when the eye went straight to the swapchain: the desktop mirror's eyes,
 /// the recorder, a pending screenshot, and the Previews tab.
 fn eye_capture_wanted(eye: usize) -> bool {
-    Config::lock_query(|c| c.vr.mirror && usize::from(c.vr.mirror_eye).min(1) == eye)
+    Config::lock_query(|c| c.vr.mirror && c.vr.mirror_view.shows_eye(eye))
         || crate::recorder::is_recording()
         || crate::screenshot::is_requested()
         || previews_visible()

@@ -78,6 +78,47 @@ pub enum BlitGamma {
     Passthrough,
 }
 
+/// What the desktop mirror draws into the game window.
+#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default, Debug)]
+pub enum MirrorView {
+    /// The left eye alone, filling the window.
+    #[default]
+    Left,
+    /// The right eye alone, filling the window.
+    Right,
+    /// Both eyes side by side, letterboxed as a pair so neither is cropped, in cross-eyed order: the
+    /// right eye's image on the left and the left eye's on the right, so the pair fuses by crossing
+    /// the eyes.
+    StereoPair,
+}
+
+impl MirrorView {
+    /// Whether this view reads eye `eye`'s capture.
+    pub fn shows_eye(self, eye: usize) -> bool {
+        match self {
+            Self::Left => eye == 0,
+            Self::Right => eye == 1,
+            Self::StereoPair => eye <= 1,
+        }
+    }
+
+    /// The F10 toggle: a single eye switches to the stereo pair, and the pair switches back to
+    /// `last_mono`. Returns the new view and the single eye to return to next time, which is the
+    /// eye being left when that is a single eye, so the toggle round-trips.
+    pub fn toggled(self, last_mono: Self) -> (Self, Self) {
+        match self {
+            Self::StereoPair => {
+                let back = match last_mono {
+                    Self::StereoPair => Self::Left,
+                    eye => eye,
+                };
+                (back, back)
+            }
+            eye => (Self::StereoPair, eye),
+        }
+    }
+}
+
 /// OpenXR runtime settings. `Clone` (not `Copy`) because [`loader_path`](VrConfig::loader_path) owns
 /// a `String`.
 #[derive(Clone, Serialize, Deserialize)]
@@ -128,17 +169,17 @@ pub struct VrConfig {
     /// [`resolution_scale`]: VrConfig::resolution_scale
     #[serde(default = "default_true")]
     pub native_resolution: bool,
-    /// Mirror one eye to the game's own desktop window while a session is running. The engine's
-    /// present stays blocked (`BLOCK_FLIP`); the mirror draws the configured eye's capture into the
+    /// Mirror the eyes to the game's own desktop window while a session is running. The engine's
+    /// present stays blocked (`BLOCK_FLIP`); the mirror draws the configured view's captures into the
     /// game swapchain's back buffer, framed to the window aspect, and presents it unsynced (see
     /// [`crate::vr::mirror`]). On by default; disabled automatically at runtime on any draw/present
     /// fault, after which the game window simply shows the last mirrored (or stale) frame.
     #[serde(default = "default_true")]
     pub mirror: bool,
-    /// Which eye the desktop [`mirror`](VrConfig::mirror) shows (`0` = left, `1` = right). Clamped to
-    /// a valid eye at use.
+    /// What the desktop [`mirror`](VrConfig::mirror) shows: one eye, or both side by side (see
+    /// [`MirrorView`]). F10 toggles between the stereo pair and the last single eye.
     #[serde(default)]
-    pub mirror_eye: u8,
+    pub mirror_view: MirrorView,
     /// Persist the OpenXR **instance and session** across inject/uninject cycles instead of destroying
     /// them on teardown. The runtime allows only a small number of instances *and* sessions per
     /// process (often one each), and Proton's own startup VR probe contends for that budget, so a
@@ -211,7 +252,7 @@ impl VrConfig {
             blit_srgb_gamma: BlitGamma::Linearize,
             native_resolution: true,
             mirror: true,
-            mirror_eye: 0,
+            mirror_view: MirrorView::Left,
             persist_instance: true,
             auto_recenter_on_gameplay: true,
             own_back_buffer: true,
@@ -303,6 +344,32 @@ impl std::fmt::Display for FoveationConfigError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mirror_view_toggle_round_trips_through_the_pair() {
+        for eye in [MirrorView::Left, MirrorView::Right] {
+            let (pair, remembered) = eye.toggled(MirrorView::Left);
+            assert_eq!(pair, MirrorView::StereoPair);
+            assert_eq!(remembered, eye);
+            assert_eq!(pair.toggled(remembered).0, eye);
+        }
+    }
+
+    #[test]
+    fn mirror_view_toggle_from_the_pair_defaults_to_left() {
+        // A pair chosen in the debug UI with no F10 press before it returns to the left eye.
+        assert_eq!(
+            MirrorView::StereoPair.toggled(MirrorView::StereoPair),
+            (MirrorView::Left, MirrorView::Left)
+        );
+    }
+
+    #[test]
+    fn mirror_view_reads_the_eyes_it_draws() {
+        assert!(MirrorView::Left.shows_eye(0) && !MirrorView::Left.shows_eye(1));
+        assert!(!MirrorView::Right.shows_eye(0) && MirrorView::Right.shows_eye(1));
+        assert!(MirrorView::StereoPair.shows_eye(0) && MirrorView::StereoPair.shows_eye(1));
+    }
 
     #[test]
     fn foveation_config_validate_accepts_defaults() {

@@ -1,11 +1,12 @@
-//! The desktop mirror: while an OpenXR session runs, show one eye in the game's own window.
+//! The desktop mirror: while an OpenXR session runs, show one eye, or both side by side, in the
+//! game's own window.
 //!
 //! ## Why a mirror is needed
 //!
 //! While a session runs the compositor owns the HMD present and the engine's own present is
 //! suppressed for both eyes (`BLOCK_FLIP`, `docs/engine/rendering/rendering.md` §7), so the game window would freeze
 //! on a stale frame. This module presents the game's own swapchain itself -- exactly once per frame,
-//! unsynced -- with one eye's capture drawn into the back buffer.
+//! unsynced -- with the configured [`MirrorView`]'s eye captures drawn into the back buffer.
 //!
 //! ## Framing and the stretch pre-compensation
 //!
@@ -25,13 +26,14 @@
 //! WM only changes the client rect, so the viewport recomputes next frame; the VR path is never
 //! touched.
 //!
-//! Within that, [`MirrorFraming`] picks which way the two aspects are reconciled. `Fill` (the default,
-//! and what other VR titles' desktop views do) scales the eye up until it covers the window and lets
-//! the overflow crop; the resulting viewport deliberately extends past the buffer edges, and the
-//! rasterizer clips it against the render target -- so the crop costs nothing beyond a little overdraw,
-//! with no scissor, extra copy, or UV-transform shader. `Fit` scales down and letterboxes instead,
-//! showing the whole eye render. A zoom magnifies further about the centre in either mode.
-//! The egui overlay composite always uses `Fit` at zoom `1.0`: a cropped UI panel would be unreadable.
+//! Within that, [`MirrorFraming`] picks which way the two aspects are reconciled. `Fill` (what other
+//! VR titles' desktop views do) scales the image up until it covers the window and lets the overflow
+//! crop; the resulting viewport deliberately extends past the buffer edges, and the rasterizer clips
+//! it against the render target -- so the crop costs nothing beyond a little overdraw, with no
+//! scissor, extra copy, or UV-transform shader. `Fit` scales down and letterboxes instead, showing the
+//! whole image. A zoom magnifies further about the centre in either mode. [`mirror_layout`] fills a
+//! single eye and fits the stereo pair, and the egui overlay composite always uses `Fit` at zoom
+//! `1.0`: a cropped pair would not fuse, and a cropped UI panel would be unreadable.
 //!
 //! ## Gamma
 //!
@@ -76,14 +78,20 @@ use windows::{
 };
 
 use crate::{
-    config::{Config, Switch, disable_automatically},
+    config::{self, Config, Switch, disable_automatically},
     ui::render::{EGUI_DEBUG_RENDER_STATE, eye_capture_fresh},
+    vr::{
+        MirrorView,
+        mirror::layout::{AspectSize, MirrorFraming, Viewport, mirror_layout, mirror_viewport},
+    },
 };
 
-/// The committed, precompiled shaders shared with the capture composite: the fullscreen-triangle
+mod layout;
+
+/// The committed, precompiled shaders shared with the VR blit, the recorder, and others: the fullscreen-triangle
 /// vertex shader and the plain-sample (no gamma) pixel shader. See the module gamma note.
-const VERTEX_DXBC: &[u8] = include_bytes!("../shaders/capture_vs.dxbc");
-const PIXEL_DXBC: &[u8] = include_bytes!("../shaders/capture_ps.dxbc");
+const VERTEX_DXBC: &[u8] = include_bytes!("../../shaders/capture_vs.dxbc");
+const PIXEL_DXBC: &[u8] = include_bytes!("../../shaders/capture_ps.dxbc");
 
 /// The mirror pipeline singleton, built lazily on the first mirrored frame and torn down with the
 /// runtime. Holds COM objects, which `windows` marks `Send`/`Sync`, so a `Mutex` static is sound.
@@ -97,9 +105,8 @@ static MIRROR_FAILING: AtomicBool = AtomicBool::new(false);
 /// [`MIRROR_FAILING`].
 static MIRROR_FAIL_COUNT: AtomicU32 = AtomicU32::new(0);
 
-/// Draw the configured eye's capture into the game swapchain's back buffer (framed to the window
-/// aspect per [`MIRROR_FRAMING`]), composite the egui overlay on top, and present the game swapchain
-/// unsynced.
+/// Draw `view`'s eye captures into the game swapchain's back buffer (laid out per
+/// [`mirror_layout`]), composite the egui overlay on top, and present the game swapchain unsynced.
 ///
 /// Called once per frame from the stereo Draw driver, after the eyes have drawn and drained and the
 /// XR frame has been submitted, only while a session is running and `vr.mirror` is on. Any failure
@@ -110,8 +117,8 @@ static MIRROR_FAIL_COUNT: AtomicU32 = AtomicU32::new(0);
 /// would block the game thread until the monitor's next scanout and throttle the whole frame loop --
 /// including the 90 Hz HMD submit -- down to the monitor's refresh. The compositor, not this present,
 /// paces the HMD.
-pub fn present_mirror(eye: usize) {
-    if let Err(e) = unsafe { present_mirror_inner(eye) } {
+pub fn present_mirror(view: MirrorView) {
+    if let Err(e) = unsafe { present_mirror_inner(view) } {
         // Device-removed errors are fatal: the D3D11 device is gone, so the mirror cannot recover.
         // Other errors (e.g. a transient occlusion, surface loss) may clear on the next frame, so
         // rate-limit the warning (transition + periodic reminder) rather than flooding the log.
@@ -155,25 +162,42 @@ pub fn teardown() {
     *MIRROR.lock() = None;
 }
 
+/// Toggle `vr.mirror_view` between the stereo pair and the single eye it was last switched away
+/// from (the left eye before any toggle), returning the new view. Bound to F10.
+pub fn toggle_stereo_pair() -> MirrorView {
+    let mut last_mono = LAST_MONO_VIEW.lock();
+    let mut cfg = config::edit();
+    let (view, remembered) = cfg.vr.mirror_view.toggled(*last_mono);
+    cfg.vr.mirror_view = view;
+    *last_mono = remembered;
+    view
+}
+
+/// The single eye [`toggle_stereo_pair`] returns to from the stereo pair.
+static LAST_MONO_VIEW: Mutex<MirrorView> = Mutex::new(MirrorView::Left);
+
 /// # Safety
 /// Reads engine singletons via raw pointer dereference; the graphics engine, device, and context must
 /// be live (they are while the hooks are installed and a frame is in flight on the game thread).
-unsafe fn present_mirror_inner(eye: usize) -> anyhow::Result<()> {
-    let eye = eye.min(1);
-    // The eye went straight to the headset without refreshing its capture (the mirror eye changed
-    // after its dispatch decided): leave the window on the previous frame rather than show a stale
+unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
+    // An eye went straight to the headset without refreshing its capture (the view changed after
+    // its dispatch decided): leave the window on the previous frame rather than show a stale
     // capture.
-    if !eye_capture_fresh(eye) {
+    if !(0..2).all(|eye| !view.shows_eye(eye) || eye_capture_fresh(eye)) {
         return Ok(());
     }
 
-    // Clone (AddRef) the captured eye texture under a brief EGUI lock, dropped before the mirror
-    // state / context work, mirroring the blit's lock discipline.
-    let eye_texture: Option<ID3D11Texture2D> = {
+    // Clone (AddRef) the captured eye textures under a brief EGUI lock, dropped before the mirror
+    // state / context work, mirroring the blit's lock discipline. Both eye captures share one size.
+    let eye_textures: [Option<ID3D11Texture2D>; 2] = {
         let lock = EGUI_DEBUG_RENDER_STATE.lock();
-        lock.texture(eye).cloned()
+        [0, 1].map(|eye| view.shows_eye(eye).then(|| lock.texture(eye).cloned())?)
     };
-    let eye_texture = eye_texture.context("vr: the mirror eye capture is unavailable")?;
+    let size_texture = eye_textures
+        .iter()
+        .flatten()
+        .next()
+        .context("vr: the mirror eye capture is unavailable")?;
 
     let ge = unsafe { jc3gi::graphics_engine::graphics_engine::GraphicsEngine::get() }
         .context("vr: the graphics engine is unavailable for the mirror")?;
@@ -188,18 +212,17 @@ unsafe fn present_mirror_inner(eye: usize) -> anyhow::Result<()> {
         u32::from(back_buffer.m_Width),
         u32::from(back_buffer.m_Height),
     );
-    let (src_w, src_h) = unsafe { texture_size(&eye_texture) };
+    let (src_w, src_h) = unsafe { texture_size(size_texture) };
     let window_size = crate::vr::window::client_size()
         .context("vr: the game window client rect is unavailable")?;
-    let viewport = mirror_viewport(
+    let layout = mirror_layout(
+        view,
         AspectSize {
             width: src_w,
             height: src_h,
         },
         buffer_size,
         window_size,
-        MIRROR_FRAMING,
-        MIRROR_ZOOM,
     );
 
     // The engine wraps swapchain back buffer 0 (`docs/engine/rendering/rendering.md` §7); drawing into its resource and
@@ -215,14 +238,26 @@ unsafe fn present_mirror_inner(eye: usize) -> anyhow::Result<()> {
         .expect("the mirror pipeline was just ensured");
 
     let rtv = mirror.rtv_for(device, back_texture)?;
-    let srv = mirror.srv_for(device, &eye_texture)?;
+    let mut srvs: [Option<ID3D11ShaderResourceView>; 2] = [None, None];
+    for (eye, texture) in eye_textures.iter().enumerate() {
+        if let Some(texture) = texture {
+            srvs[eye] = Some(mirror.srv_for(device, eye, texture)?);
+        }
+    }
 
-    // The letterbox draw, egui composite, and present run under one critical-section hold, serialized
+    // The eye draws, egui composite, and present run under one critical-section hold, serialized
     // with the engine's render work. The section is recursive, so a re-entrant take inside egui (there
     // is none today) would be safe.
     unsafe {
         EnterCriticalSection(context.m_Mutex);
-        mirror.draw(&context.m_Context, &rtv, &srv, viewport);
+        mirror.clear(&context.m_Context, &rtv);
+        for draw in layout.draws() {
+            // A view's eye whose capture is missing (the pair is being rebuilt across a resize)
+            // leaves its part of the window black for the frame.
+            if let Some(srv) = &srvs[draw.eye] {
+                mirror.draw(&context.m_Context, &rtv, srv, draw.viewport);
+            }
+        }
 
         // Bring the debug UI to the desktop while a session runs -- the flat overlay normally rides
         // the engine flip path, which `BLOCK_FLIP` suppresses in VR. Hidden in cinematic mode so
@@ -282,127 +317,6 @@ unsafe fn present_mirror_inner(eye: usize) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A width/height pair whose aspect (`width / height`) is preserved by the letterbox fit.
-#[derive(Copy, Clone)]
-struct AspectSize {
-    width: u32,
-    height: u32,
-}
-
-/// How the desktop mirror frames one eye's image inside the game window.
-///
-/// While a session runs the swapchain buffers are the per-eye render resolution, which is near-square
-/// (often taller than wide), while the Win32 client rect keeps its original widescreen aspect. The two
-/// aspects have to be reconciled, and the choice is the same one every VR game's companion view makes.
-#[derive(Copy, Clone, PartialEq, Eq)]
-enum MirrorFraming {
-    /// Scale the eye image up until it covers the whole window, cropping whatever falls outside
-    /// (centred). No bars; the periphery of the eye render -- most of which is outside the lens's
-    /// useful area anyway -- is cut off. This is what other VR titles' desktop views do.
-    Fill,
-    /// Scale the eye image down until all of it is visible, letterboxing the remainder with black
-    /// bars. Nothing is cropped, so it shows exactly what the eye rendered -- useful when checking
-    /// coverage at the edges of the frame -- but a near-square eye in a widescreen window wastes most
-    /// of the window.
-    Fit,
-}
-
-/// How the desktop mirror reconciles the eye image's aspect with the window's: filling the window,
-/// like other VR titles' desktop views.
-const MIRROR_FRAMING: MirrorFraming = MirrorFraming::Fill;
-
-/// The extra magnification applied to the desktop mirror image on top of its framing, about the
-/// centre. `1.0` is the plain fill; above that crops in further, tightening the desktop view onto
-/// the middle of the eye render.
-const MIRROR_ZOOM: f32 = 1.0;
-
-/// A viewport rectangle within the swapchain back buffer, in buffer pixels.
-#[derive(Copy, Clone, Debug, PartialEq)]
-struct Viewport {
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
-}
-
-/// The range [`mirror_viewport`]'s `zoom` is clamped to. The upper bound keeps the (deliberately oversized) `Fill` viewport well inside D3D11's viewport bounds
-/// and the rasterizer guard band for any plausible buffer size; the lower bound keeps the image
-/// visible at all.
-const MIRROR_ZOOM_RANGE: std::ops::RangeInclusive<f32> = 0.25..=4.0;
-
-/// Compute the back-buffer viewport that, after DXGI stretches the whole buffer onto the window
-/// client rect, places the source image at its own aspect, centered, framed per `framing`.
-///
-/// The mapping is: a fullscreen triangle fills the returned viewport with the source image, so in
-/// *window* space the image must occupy the aspect-fit (or aspect-fill) rect of `source` inside
-/// `window`. DXGI stretches buffer→window linearly and independently per axis, so a window rect
-/// `(wx, wy, tw, th)` is produced by the buffer rect `(wx·bw/ww, wy·bh/wh, tw·bw/ww, th·bh/wh)`.
-/// Substituting that rect gives the result.
-///
-/// Under [`MirrorFraming::Fill`] (and under any `zoom` above `1.0`) the returned viewport extends
-/// beyond the buffer on the overflowing axis, with a negative origin: that is the crop, and it is
-/// intentional. D3D11 rasterizes only within the render target regardless of the viewport, so the
-/// out-of-bounds part is simply never shaded.
-///
-/// A degenerate size returns the full buffer (a straight, possibly-stretched draw -- the safe
-/// fallback), as does a non-finite `zoom`.
-fn mirror_viewport(
-    source: AspectSize,
-    buffer: (u32, u32),
-    window: (u32, u32),
-    framing: MirrorFraming,
-    zoom: f32,
-) -> Viewport {
-    let (bw, bh) = (buffer.0 as f32, buffer.1 as f32);
-    let (ww, wh) = (window.0 as f32, window.1 as f32);
-    let full = Viewport {
-        x: 0.0,
-        y: 0.0,
-        width: bw,
-        height: bh,
-    };
-    if source.width == 0
-        || source.height == 0
-        || buffer.0 == 0
-        || buffer.1 == 0
-        || window.0 == 0
-        || window.1 == 0
-    {
-        return full;
-    }
-    let zoom = if zoom.is_finite() {
-        zoom.clamp(*MIRROR_ZOOM_RANGE.start(), *MIRROR_ZOOM_RANGE.end())
-    } else {
-        1.0
-    };
-
-    let image_aspect = source.width as f32 / source.height as f32;
-    let window_aspect = ww / wh;
-
-    // Fit the shorter way round, fill the longer: an image wider than the window fits to width and
-    // fills to height, and vice versa. Both keep the image's own aspect; they differ only in which
-    // axis is matched exactly and which one gets bars (fit) or overflows and crops (fill).
-    let match_width = (image_aspect > window_aspect) == matches!(framing, MirrorFraming::Fit);
-    let (target_w, target_h) = if match_width {
-        (ww, ww / image_aspect)
-    } else {
-        (wh * image_aspect, wh)
-    };
-    let (target_w, target_h) = (target_w * zoom, target_h * zoom);
-    let target_x = (ww - target_w) * 0.5;
-    let target_y = (wh - target_h) * 0.5;
-
-    // Pre-compensate for the per-axis buffer→window stretch.
-    let sx = bw / ww;
-    let sy = bh / wh;
-    Viewport {
-        x: target_x * sx,
-        y: target_y * sy,
-        width: target_w * sx,
-        height: target_h * sy,
-    }
-}
-
 /// The pixel dimensions of a texture from its descriptor.
 ///
 /// # Safety
@@ -428,8 +342,8 @@ struct Mirror {
     overlay_blend: ID3D11BlendState,
     /// The RTV over the game back buffer, keyed on the back-buffer texture pointer.
     rtv_cache: Option<(usize, ID3D11RenderTargetView)>,
-    /// The SRV over the captured eye texture, keyed on the capture texture pointer.
-    srv_cache: Option<(usize, ID3D11ShaderResourceView)>,
+    /// Per eye, the SRV over its captured texture, keyed on the capture texture pointer.
+    srv_cache: [Option<(usize, ID3D11ShaderResourceView)>; 2],
 }
 
 impl Mirror {
@@ -508,13 +422,25 @@ impl Mirror {
                 rasterizer,
                 overlay_blend,
                 rtv_cache: None,
-                srv_cache: None,
+                srv_cache: [None, None],
             })
         }
     }
 
-    /// Clear the whole back buffer to black (the letterbox bars, if the framing leaves any), then draw
-    /// the eye into `viewport`. The caller must hold the context mutex.
+    /// Clear the whole back buffer to opaque black: the letterbox bars around the stereo pair. Under
+    /// a single eye's fill the draw covers the whole target and the clear is redundant, but it costs
+    /// nothing next to the present. The caller must hold the context mutex.
+    ///
+    /// # Safety
+    /// `context` must be the live engine immediate context; `rtv` must be a live view over the game
+    /// back buffer.
+    unsafe fn clear(&self, context: &ID3D11DeviceContext, rtv: &ID3D11RenderTargetView) {
+        unsafe {
+            context.ClearRenderTargetView(rtv, &[0.0, 0.0, 0.0, 1.0]);
+        }
+    }
+
+    /// Draw one eye into `viewport`, opaque. The caller must hold the context mutex.
     ///
     /// # Safety
     /// `context` must be the live engine immediate context; `rtv`/`srv` must be live views over the
@@ -528,11 +454,6 @@ impl Mirror {
     ) {
         unsafe {
             context.OMSetRenderTargets(Some(&[Some(rtv.clone())]), None);
-            // Clear the full target to opaque black first: this paints the letterbox bars outside the
-            // eye viewport. Under a filling framing the draw covers the whole target and the clear is
-            // redundant, but it costs nothing next to the present and keeps the fitting path correct.
-            context.ClearRenderTargetView(rtv, &[0.0, 0.0, 0.0, 1.0]);
-
             context.RSSetViewports(Some(&[D3D11_VIEWPORT {
                 TopLeftX: viewport.x,
                 TopLeftY: viewport.y,
@@ -624,15 +545,17 @@ impl Mirror {
         Ok(rtv)
     }
 
-    /// Get (creating and caching on first use, rebuilding on a texture change) the SRV over the
-    /// captured eye texture.
+    /// Get (creating and caching on first use, rebuilding on a texture change) the SRV over eye
+    /// `eye`'s captured texture.
     fn srv_for(
         &mut self,
         device: &Device,
+        eye: usize,
         src: &ID3D11Texture2D,
     ) -> anyhow::Result<ID3D11ShaderResourceView> {
         let ptr = src.as_raw() as usize;
-        if let Some((cached, srv)) = self.srv_cache.as_ref()
+        let cache = &mut self.srv_cache[eye];
+        if let Some((cached, srv)) = cache.as_ref()
             && *cached == ptr
         {
             return Ok(srv.clone());
@@ -645,317 +568,7 @@ impl Mirror {
         }
         .context("vr: creating the mirror eye shader-resource view")?;
         let srv = srv.context("vr: the mirror eye shader-resource view was not created")?;
-        self.srv_cache = Some((ptr, srv.clone()));
+        *cache = Some((ptr, srv.clone()));
         Ok(srv)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn vp(x: f32, y: f32, width: f32, height: f32) -> Viewport {
-        Viewport {
-            x,
-            y,
-            width,
-            height,
-        }
-    }
-
-    fn approx(a: Viewport, b: Viewport) {
-        let eps = 1e-3;
-        assert!(
-            (a.x - b.x).abs() < eps
-                && (a.y - b.y).abs() < eps
-                && (a.width - b.width).abs() < eps
-                && (a.height - b.height).abs() < eps,
-            "viewport mismatch: {a:?} != {b:?}",
-        );
-    }
-
-    /// The core check: after the buffer→window stretch, the viewport must map back to the aspect-fit
-    /// window rect. Re-derives the window rect from the viewport and compares against an independent
-    /// aspect-fit, so the test does not just restate the formula.
-    fn assert_letterboxes(source: AspectSize, buffer: (u32, u32), window: (u32, u32)) {
-        let v = mirror_viewport(source, buffer, window, MirrorFraming::Fit, 1.0);
-        let (bw, bh) = (buffer.0 as f32, buffer.1 as f32);
-        let (ww, wh) = (window.0 as f32, window.1 as f32);
-        // Stretch the viewport back into window space.
-        let win_x = v.x * ww / bw;
-        let win_y = v.y * wh / bh;
-        let win_w = v.width * ww / bw;
-        let win_h = v.height * wh / bh;
-
-        // Independent aspect-fit in window space.
-        let a = source.width as f32 / source.height as f32;
-        let (want_w, want_h) = if a > ww / wh {
-            (ww, ww / a)
-        } else {
-            (wh * a, wh)
-        };
-        let want_x = (ww - want_w) * 0.5;
-        let want_y = (wh - want_h) * 0.5;
-
-        let eps = 1e-2;
-        assert!((win_x - want_x).abs() < eps, "x: {win_x} != {want_x}");
-        assert!((win_y - want_y).abs() < eps, "y: {win_y} != {want_y}");
-        assert!((win_w - want_w).abs() < eps, "w: {win_w} != {want_w}");
-        assert!((win_h - want_h).abs() < eps, "h: {win_h} != {want_h}");
-        // The presented image keeps the source aspect.
-        assert!(
-            (win_w / win_h - a).abs() < eps,
-            "presented aspect {} != source {a}",
-            win_w / win_h,
-        );
-        // The viewport must stay inside the buffer.
-        assert!(
-            v.x >= -eps && v.y >= -eps,
-            "viewport origin outside buffer: {v:?}"
-        );
-        assert!(
-            v.x + v.width <= bw + eps && v.y + v.height <= bh + eps,
-            "viewport exceeds buffer: {v:?} in {bw}x{bh}",
-        );
-    }
-
-    /// Stretch a viewport back into window space, undoing the buffer→window compensation, so a test
-    /// can assert about what the user actually sees.
-    fn to_window(v: Viewport, buffer: (u32, u32), window: (u32, u32)) -> Viewport {
-        let (bw, bh) = (buffer.0 as f32, buffer.1 as f32);
-        let (ww, wh) = (window.0 as f32, window.1 as f32);
-        vp(
-            v.x * ww / bw,
-            v.y * wh / bh,
-            v.width * ww / bw,
-            v.height * wh / bh,
-        )
-    }
-
-    /// The `Fill` counterpart to [`assert_letterboxes`]: the presented image must keep the source
-    /// aspect, cover the window on both axes, and stay centred -- i.e. crop rather than bar.
-    fn assert_fills(source: AspectSize, buffer: (u32, u32), window: (u32, u32), zoom: f32) {
-        let v = mirror_viewport(source, buffer, window, MirrorFraming::Fill, zoom);
-        let w = to_window(v, buffer, window);
-        let (ww, wh) = (window.0 as f32, window.1 as f32);
-        let a = source.width as f32 / source.height as f32;
-        let eps = 1e-2;
-
-        assert!(
-            (w.width / w.height - a).abs() < eps,
-            "presented aspect {} != source {a}",
-            w.width / w.height,
-        );
-        // Covers the window: the image starts at or before the origin and ends at or past the far edge.
-        assert!(
-            w.x <= eps && w.y <= eps,
-            "image does not reach the window origin: {w:?}",
-        );
-        assert!(
-            w.x + w.width >= ww - eps && w.y + w.height >= wh - eps,
-            "image does not cover the window: {w:?} in {ww}x{wh}",
-        );
-        // Centred: equal overflow on both sides of each axis.
-        assert!(
-            (w.x - (ww - w.width) * 0.5).abs() < eps && (w.y - (wh - w.height) * 0.5).abs() < eps,
-            "image is not centred: {w:?} in {ww}x{wh}",
-        );
-    }
-
-    #[test]
-    fn square_eye_into_widescreen_window_letterboxes_sideways() {
-        // Near-square per-eye buffer, 16:9 window: bars left and right.
-        let v = mirror_viewport(
-            AspectSize {
-                width: 1600,
-                height: 1600,
-            },
-            (1600, 1600),
-            (1920, 1080),
-            MirrorFraming::Fit,
-            1.0,
-        );
-        // Fit to height: window rect is 1080x1080 centered, x=(1920-1080)/2=420. In buffer: the full
-        // height (1600) and width 1080*1600/1920=900 at x=420*1600/1920=350.
-        approx(v, vp(350.0, 0.0, 900.0, 1600.0));
-    }
-
-    #[test]
-    fn matching_aspect_fills_the_buffer() {
-        // When the source, buffer, and window all share an aspect there are no bars and the viewport
-        // is the whole buffer (a straight full-buffer draw) -- under either framing.
-        for framing in [MirrorFraming::Fit, MirrorFraming::Fill] {
-            let v = mirror_viewport(
-                AspectSize {
-                    width: 1920,
-                    height: 1080,
-                },
-                (1920, 1080),
-                (1920, 1080),
-                framing,
-                1.0,
-            );
-            approx(v, vp(0.0, 0.0, 1920.0, 1080.0));
-        }
-    }
-
-    #[test]
-    fn square_eye_into_widescreen_window_fills_by_cropping_vertically() {
-        // The real VR case: a near-square per-eye buffer in a 16:9 window. Filling scales to width, so
-        // the image overflows top and bottom and the viewport leaves the buffer -- that overflow is
-        // the crop, and it is what distinguishes this from the letterboxed fit.
-        let source = AspectSize {
-            width: 1600,
-            height: 1600,
-        };
-        let v = mirror_viewport(source, (1600, 1600), (1920, 1080), MirrorFraming::Fill, 1.0);
-        // Fit to width: window rect is 1920x1920 centred, y = (1080-1920)/2 = -420. In buffer space:
-        // full width (1600), height 1920*1600/1080 = 2844.44 at y = -420*1600/1080 = -622.22.
-        approx(v, vp(0.0, -622.222, 1600.0, 2844.444));
-        assert_fills(source, (1600, 1600), (1920, 1080), 1.0);
-    }
-
-    #[test]
-    fn fill_crops_whichever_axis_overflows() {
-        // Portrait eye (the shape the engine actually resizes to) and an ultra-wide source, in a
-        // couple of window aspects: the fill must crop, never bar, in every combination.
-        for source in [
-            AspectSize {
-                width: 1832,
-                height: 1920,
-            },
-            AspectSize {
-                width: 3440,
-                height: 1440,
-            },
-        ] {
-            for window in [(1920, 1080), (2560, 1440), (1024, 768)] {
-                for zoom in [1.0, 1.5] {
-                    assert_fills(source, (1832, 1920), window, zoom);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn zoom_scales_about_the_centre_and_clamps() {
-        let source = AspectSize {
-            width: 1600,
-            height: 1600,
-        };
-        let (buffer, window) = ((1600, 1600), (1920, 1080));
-        let base = mirror_viewport(source, buffer, window, MirrorFraming::Fit, 1.0);
-        let zoomed = mirror_viewport(source, buffer, window, MirrorFraming::Fit, 2.0);
-
-        // Twice the size, same centre.
-        approx(
-            zoomed,
-            vp(
-                base.x - base.width * 0.5,
-                base.y - base.height * 0.5,
-                base.width * 2.0,
-                base.height * 2.0,
-            ),
-        );
-
-        // Out-of-range and non-finite zooms are tamed rather than producing a degenerate viewport.
-        approx(
-            mirror_viewport(source, buffer, window, MirrorFraming::Fit, 1e9),
-            mirror_viewport(
-                source,
-                buffer,
-                window,
-                MirrorFraming::Fit,
-                *MIRROR_ZOOM_RANGE.end(),
-            ),
-        );
-        approx(
-            mirror_viewport(source, buffer, window, MirrorFraming::Fit, f32::NAN),
-            base,
-        );
-    }
-
-    #[test]
-    fn source_wider_than_window_bars_top_and_bottom() {
-        // An ultra-wide source in a 4:3 window: fit to width, bars top and bottom.
-        assert_letterboxes(
-            AspectSize {
-                width: 3440,
-                height: 1440,
-            },
-            (2048, 2048),
-            (1024, 768),
-        );
-    }
-
-    #[test]
-    fn stretched_buffer_recovers_correct_aspect() {
-        // The buffer aspect differs from both the source and the window; the compensation must still
-        // land the source at its own aspect on the window.
-        assert_letterboxes(
-            AspectSize {
-                width: 1832,
-                height: 1920,
-            },
-            (1832, 1920),
-            (2560, 1440),
-        );
-        assert_letterboxes(
-            AspectSize {
-                width: 1440,
-                height: 1600,
-            },
-            (1440, 1600),
-            (1600, 900),
-        );
-    }
-
-    /// With the mod owning the back buffer the swapchain matches the window, and the buffer→window
-    /// pre-compensation degenerates to the identity: the viewport is simply the window-space rect.
-    /// Pins that so the compensation can be removed once ownership is the only mode.
-    #[test]
-    fn equal_buffer_and_window_needs_no_compensation() {
-        let source = AspectSize {
-            width: 2015,
-            height: 2240,
-        };
-        let window = (1714u32, 1405u32);
-        for framing in [MirrorFraming::Fit, MirrorFraming::Fill] {
-            let v = mirror_viewport(source, window, window, framing, 1.0);
-            // `sx` and `sy` are both 1, so the buffer-space viewport equals the window-space one.
-            let w = to_window(v, window, window);
-            approx(v, w);
-        }
-    }
-
-    #[test]
-    fn degenerate_sizes_fall_back_to_full_buffer() {
-        let full = vp(0.0, 0.0, 1280.0, 720.0);
-        approx(
-            mirror_viewport(
-                AspectSize {
-                    width: 0,
-                    height: 0,
-                },
-                (1280, 720),
-                (1920, 1080),
-                MirrorFraming::Fill,
-                1.0,
-            ),
-            full,
-        );
-        approx(
-            mirror_viewport(
-                AspectSize {
-                    width: 100,
-                    height: 100,
-                },
-                (1280, 720),
-                (0, 1080),
-                MirrorFraming::Fill,
-                1.0,
-            ),
-            full,
-        );
     }
 }

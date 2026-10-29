@@ -96,7 +96,7 @@ Nothing is suppressed, so the flow after substitution is the engine's own, one t
 2. The mod's `RenderEngine::PostDraw` hook captures from `m_BackBufferLinear` into the per-eye capture textures — the same code as without the substitution, reading the substitute.
 3. `BLOCK_FLIP` suppresses `Graphics::Flip`, so the engine never presents.
 4. `vr/blit.rs` blits the captures into the OpenXR swapchain slices and submits.
-5. `vr/mirror.rs` draws the chosen eye into `device.m_BackBuffer` — genuinely window-sized under the substitution — composites the egui panel or the flat overlay, and presents.
+5. `vr/mirror/` draws the chosen view into `device.m_BackBuffer` — genuinely window-sized under the substitution — composites the egui panel or the flat overlay, and presents.
 
 The mirror is the composite. The substitution adds no present path; it makes the existing one 1:1.
 
@@ -110,7 +110,7 @@ The HUD texture is neither. It is a flat panel at a fixed apparent size, so what
 
 **`vr/resolution.rs`** keeps the engine's trigger — it writes `m_WindowWidth`, `m_WindowHeight`, and `m_HasNewWindowSettings`, and lets `HandleModeChange` service the request from the `Draw` prologue, the one frame position where the idle-context assumption holds by construction. Its completion detection works, because the `ResizeBuffers` substitute writes the same device-info fields it polls, and its window-rect cross-check becomes *more* meaningful, since nothing in the chain has any business touching the window. On top of that it runs the ownership state machine (§5).
 
-**`vr/mirror.rs`**'s buffer→window pre-compensation self-neutralises: with the swapchain equal to the client rect, its `sx` and `sy` are both 1 and the buffer-space viewport is the window-space one. It is still live whenever `vr.own_back_buffer` is off, so it stays; a unit test pins the equal-size case so it can be deleted outright once ownership stops being a flag. `hud::mirror_overlay` is window-sized and stretched across the whole buffer to invert the present's stretch, which with buffer == window is at last pixel-exact rather than round-tripped.
+**`vr/mirror/layout.rs`**'s buffer→window pre-compensation self-neutralises: with the swapchain equal to the client rect, its `sx` and `sy` are both 1 and the buffer-space viewport is the window-space one. It is still live whenever `vr.own_back_buffer` is off, so it stays; a unit test pins the equal-size case so it can be deleted outright once ownership stops being a flag. `hud::mirror_overlay` is window-sized and stretched across the whole buffer to invert the present's stretch, which with buffer == window is at last pixel-exact rather than round-tripped.
 
 **The HUD redirect** (`hud/binding.rs`) is unaffected: it replaces Scaleform's RTV and DSV with mod-owned views regardless of what `m_BackBufferLinear` points at, and `hud::tick` re-applies it every frame from the render thread.
 

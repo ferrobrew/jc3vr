@@ -36,7 +36,8 @@
 pub mod projection;
 
 pub use config::{
-    BlitGamma, FoveationConfig, FoveationConfigError, FreezeMode, ProjectionConvention, VrConfig,
+    BlitGamma, FoveationConfig, FoveationConfigError, FreezeMode, MirrorView, ProjectionConvention,
+    VrConfig,
 };
 use frame::begin_replay_frame;
 pub use frame::{
@@ -76,7 +77,7 @@ pub(crate) use blit::{DirectArm, DirectStatus, blit_direct, direct_status};
 pub use blit::{arm_direct, disarm_direct, present_and_submit};
 pub use eye_resolution::{engine_render_resolution, native_eye_resolution};
 pub use frame_loop::{EyeImage, EyeView, FrameContext, frame_begin};
-pub use mirror::present_mirror;
+pub use mirror::{present_mirror, toggle_stereo_pair};
 pub(crate) use recenter::apply_replayed_recenter;
 pub use recenter::{
     RecenterCause, RecenterKind, auto_recenter_tick, recenter, recenter_count, request_recenter,

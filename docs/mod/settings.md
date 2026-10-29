@@ -49,7 +49,7 @@ The input threshold editor changes each press/release pair together. Lowering pr
 
 ## Saving
 
-A change the user meant goes through `config::edit()`, a guard that derefs to the `Config` and marks the configuration changed when it drops. Every debug UI feature that binds controls to the configuration, the pause menu's VR pages, the hotkeys (F4, F8, F11, and the director's key bindings), the body calibration's save, the sight tuning tool's capture, and the director tab's key binding reset use it. Reads, and changes the payload makes on its own, take the plain `CONFIG` lock and are never a reason to save: a value discovered at runtime, a diagnostic that disarms itself, or a fallback.
+A change the user meant goes through `config::edit()`, a guard that derefs to the `Config` and marks the configuration changed when it drops. Every debug UI feature that binds controls to the configuration, the pause menu's VR pages, the hotkeys (F4, F8, F10, F11, and the director's key bindings), the body calibration's save, the sight tuning tool's capture, and the director tab's key binding reset use it. Reads, and changes the payload makes on its own, take the plain `CONFIG` lock and are never a reason to save: a value discovered at runtime, a diagnostic that disarms itself, or a fallback.
 
 A fallback that switches off a setting the user chose (the mirror after a removed device, native resolution after a resize fault, the mod-owned back buffer after a failed substitution, and the HUD redirect at teardown) goes through `config::disable_automatically`. The live setting turns off at once, but a save writes the user's value until the user changes that setting through `edit()`; otherwise a later save for an unrelated change would make the fallback permanent.
 

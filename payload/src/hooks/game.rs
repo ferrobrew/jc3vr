@@ -545,7 +545,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             #[cfg(feature = "profiler")]
             puffin::profile_scope!("Desktop mirror");
             let _timing = frame_timing::scope(Slot::Mirror);
-            crate::vr::present_mirror(usize::from(vr_cfg.mirror_eye));
+            crate::vr::present_mirror(vr_cfg.mirror_view);
         }
         mark(Phase::FrameEnd);
     }

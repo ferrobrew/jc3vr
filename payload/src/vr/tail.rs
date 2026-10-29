@@ -199,7 +199,7 @@ fn run_tail(job: TailJob) {
         #[cfg(feature = "profiler")]
         puffin::profile_scope!("Desktop mirror (tail)");
         let _timing = frame_timing::scope(Slot::Mirror);
-        crate::vr::present_mirror(usize::from(job.vr_cfg.mirror_eye));
+        crate::vr::present_mirror(job.vr_cfg.mirror_view);
     }
 
     let should_render = job.frame.should_render();

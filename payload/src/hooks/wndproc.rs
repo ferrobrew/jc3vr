@@ -5,7 +5,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::VK_F9;
 use windows::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
     UI::{
-        Input::KeyboardAndMouse::{VK_F4, VK_F7, VK_F8, VK_F11, VK_F12},
+        Input::KeyboardAndMouse::{VK_F4, VK_F7, VK_F8, VK_F10, VK_F11, VK_F12},
         WindowsAndMessaging::{
             GetClientRect, SIZE_MINIMIZED, SIZE_RESTORED, WM_ACTIVATEAPP, WM_KEYDOWN, WM_KILLFOCUS,
             WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN,
@@ -99,6 +99,19 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
                 "F8: egui floating panel {}",
                 if enabled { "ON" } else { "OFF" }
             );
+        }
+        return LRESULT(0);
+    }
+
+    // F10 switches the desktop mirror between the stereo pair and the last single eye
+    // (`crate::vr::toggle_stereo_pair`). Edge-detected; consumed, which also keeps the system's
+    // menu activation off it.
+    if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F10.0 as usize {
+        consume_desktop_shortcut(wparam.0);
+        let previous_down = (lparam.0 & 0x4000_0000) != 0;
+        if !previous_down {
+            let view = crate::vr::toggle_stereo_pair();
+            tracing::info!("F10: desktop mirror view {view:?}");
         }
         return LRESULT(0);
     }

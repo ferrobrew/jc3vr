@@ -14,6 +14,7 @@ use crate::{
         frame::Hand,
     },
     director::keymap::{Action, Binding, Chord},
+    vr::MirrorView,
 };
 
 #[test]
@@ -104,6 +105,23 @@ fn an_unknown_setting_is_skipped_and_reported() {
         ["director.paused", "obsolete", "stereo.retired_setting"]
     );
     assert!(report.defaulted.is_empty() && report.reset.is_empty());
+}
+
+#[test]
+fn the_mirror_view_loads_and_the_retired_mirror_eye_is_skipped() {
+    let mut table = defaults_table();
+    set(&mut table, &["vr", "mirror_eye"], 1.into());
+    set(&mut table, &["vr", "mirror_view"], "StereoPair".into());
+    let Loaded { config, report } = load(table);
+    assert_eq!(config.vr.mirror_view, MirrorView::StereoPair);
+    assert_eq!(report.ignored, ["vr.mirror_eye"]);
+    assert!(report.reset.is_empty());
+
+    let mut table = defaults_table();
+    set(&mut table, &["vr", "mirror_view"], "Both".into());
+    let Loaded { config, report } = load(table);
+    assert_eq!(config.vr.mirror_view, MirrorView::Left);
+    assert_eq!(reset_paths(&report), ["vr.mirror_view"]);
 }
 
 #[test]

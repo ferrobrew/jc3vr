@@ -1,6 +1,6 @@
 //! Runtime controls and a separate read-only OpenXR status snapshot.
 
-use crate::{config, headpose, vr};
+use crate::{config, headpose, vr, vr::MirrorView};
 
 pub fn egui_debug_vr(ui: &mut egui::Ui) {
     // Live-editable, mutating the shared config directly (the frame loop reads it each frame), the
@@ -14,13 +14,22 @@ pub fn egui_debug_vr(ui: &mut egui::Ui) {
              automatically on a resize fault.",
         );
     ui.checkbox(&mut cfg.vr.mirror, "Desktop mirror")
-        .on_hover_text("Show one eye in the game window while a session runs.");
+        .on_hover_text("Show the headset view in the game window while a session runs.");
     ui.add_enabled_ui(cfg.vr.mirror, |ui| {
         ui.indent("mirror", |ui| {
             ui.horizontal(|ui| {
-                ui.label("Eye");
-                ui.selectable_value(&mut cfg.vr.mirror_eye, 0, "Left");
-                ui.selectable_value(&mut cfg.vr.mirror_eye, 1, "Right");
+                ui.label("View");
+                ui.selectable_value(&mut cfg.vr.mirror_view, MirrorView::Left, "Left");
+                ui.selectable_value(&mut cfg.vr.mirror_view, MirrorView::Right, "Right");
+                ui.selectable_value(
+                    &mut cfg.vr.mirror_view,
+                    MirrorView::StereoPair,
+                    "Stereo pair",
+                )
+                .on_hover_text(
+                    "Both eyes side by side, uncropped, in cross-eyed order (the right eye on \
+                     the left). F10 toggles between this and the last single eye.",
+                );
             });
         });
     });
