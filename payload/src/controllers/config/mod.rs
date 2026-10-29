@@ -3,7 +3,7 @@
 //! toggle and the tuning beside it.
 //!
 //! `ControllersConfig::new()` ships as the full gameplay preset
-//! ([`presets::Preset::VehiclesAndAdvanced`](crate::controllers::presets::Preset::VehiclesAndAdvanced)),
+//! ([`presets::Preset::Controllers`](crate::controllers::presets::Preset::Controllers)),
 //! so that hand aiming, roomscale, weapon handling, vehicle steering (including the wingsuit's arm
 //! steering and the parachute's handles), and the debug gizmos all work, and show, out of the box.
 //! `presets::preset_modified` checked against that preset stays false for the defaults.

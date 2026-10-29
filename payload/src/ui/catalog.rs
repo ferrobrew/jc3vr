@@ -9,7 +9,7 @@ pub(crate) enum PageId {
     Movement,
     Rendering,
     Input,
-    Capture,
+    Tools,
     Experimental,
 }
 
@@ -22,7 +22,7 @@ impl PageId {
         Self::Movement,
         Self::Rendering,
         Self::Input,
-        Self::Capture,
+        Self::Tools,
         Self::Experimental,
     ];
 
@@ -35,7 +35,7 @@ impl PageId {
             Self::Movement => "Movement/vehicles",
             Self::Rendering => "Rendering",
             Self::Input => "Input/bindings",
-            Self::Capture => "Capture/testing",
+            Self::Tools => "Tools",
             Self::Experimental => "Experimental",
         }
     }
@@ -107,18 +107,15 @@ features! {
         Wrist => ("input.wrist", "Wrist summary"),
         Semantic => ("input.semantic", "Self-check"),
     },
-    Capture {
-        TrackingCapture => ("capture.tracking", "Tracking recording"),
-        ControllerCapture => ("capture.controllers", "Controller diagnostics capture"),
-        RenderCapture => ("capture.render", "Render capture"),
-        Replay => ("capture.replay", "Replay, scenarios, and signals"),
-        DirectorSafety => ("capture.director-safety", "Director: time, safety, and heat"),
-        DirectorSpawn => ("capture.director-spawn", "Director: teleport and spawn"),
-        Environment => ("capture.environment", "Environment: time of day and weather"),
-        Video => ("capture.video", "Video recording and take markers"),
-        Keyboard => ("capture.keyboard", "Keyboard shortcuts"),
-        Presets => ("capture.presets", "Test presets"),
-        Engine => ("capture.engine", "Engine experiments"),
+    Tools {
+        TrackingCapture => ("tools.tracking", "Tracking capture"),
+        ControllerCapture => ("tools.controllers", "Controller capture"),
+        RenderCapture => ("tools.render", "Render capture"),
+        Replay => ("tools.replay", "Replay"),
+        Director => ("tools.director", "Director"),
+        Environment => ("tools.environment", "Environment"),
+        Video => ("tools.video", "Video"),
+        Presets => ("tools.presets", "Presets"),
     },
     Experimental {
         SinglePass => ("experimental.single-pass", "Single-pass stereo"),

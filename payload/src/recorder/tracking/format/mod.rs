@@ -154,12 +154,13 @@ pub(crate) fn encode_preamble(header: &Header) -> Vec<u8> {
     tracking_format::encode_preamble(&convert::header_to_file(header))
 }
 
-/// The uncompressed comparison option uses the version 4 container with input records.
+/// The uncompressed version 4 container with input records, which the reader still accepts.
+#[cfg(test)]
 pub(crate) fn encode_input_preamble(header: &Header) -> Vec<u8> {
     tracking_format::encode_latest_preamble(&convert::header_to_file(header))
 }
 
-/// Default recordings store lossless atomic capture batches in the version 4 chunked container.
+/// Recordings store lossless atomic capture batches in the version 4 chunked container.
 pub(crate) fn encode_chunked_preamble(header: &Header) -> Vec<u8> {
     tracking_format::encode_latest_chunked_preamble(&convert::header_to_file(header))
 }

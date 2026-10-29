@@ -512,16 +512,14 @@ fn begin() -> Result<PathBuf, StartError> {
         .filter(|(_, distance)| *distance <= BOOKMARK_RADIUS_M)
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(name, _)| name);
-    let (dominant_hand, world_scale, time_scale, hand_joints, compression) =
-        Config::lock_query(|c| {
-            (
-                c.controllers.dominant_hand,
-                c.vr.world_scale,
-                c.director.time_scale,
-                c.testing.record_hand_joints,
-                c.testing.record_compression,
-            )
-        });
+    let (dominant_hand, world_scale, time_scale, hand_joints) = Config::lock_query(|c| {
+        (
+            c.controllers.dominant_hand,
+            c.vr.world_scale,
+            c.director.time_scale,
+            c.testing.record_hand_joints,
+        )
+    });
     let stamp = crate::session::stamp();
     let header = Header {
         build: crate::BUILD_STAMP.to_owned(),
@@ -538,8 +536,7 @@ fn begin() -> Result<PathBuf, StartError> {
     let path = folder.join(format!("{stamp}.{}", format::EXTENSION));
     let mut state = STATE.lock();
     state.can_start()?;
-    let recording_format = writer::RecordingFormat::from_compression_setting(compression);
-    let writer = Writer::start(&path, &header, recording_format).map_err(StartError::Writer)?;
+    let writer = Writer::start(&path, &header).map_err(StartError::Writer)?;
     discard_before_start();
     state.active = Some(Active {
         writer,

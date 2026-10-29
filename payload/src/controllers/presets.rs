@@ -1,38 +1,24 @@
-//! Named in-headset test presets: bundles of controller feature switches for bringing the
-//! subsystems up in stages (input only, then hands and aim, weapon handling, roomscale, and
-//! vehicles) or dropping back to the gamepad baseline. A preset changes switches only; tuning,
-//! sight calibration, and optional preferences stay as they are.
+//! Named in-headset test presets: the controller feature switches all on, as they ship, or all off
+//! for the head-tracked gamepad baseline. A preset changes switches only; tuning, sight
+//! calibration, and optional preferences stay as they are.
 
 use crate::controllers::config::{ControllersConfig, GunReadout, Posture, SeatTransition};
 
-/// The named controller switch presets shown by the Controllers tab.
+/// The named controller switch presets shown by the Tools page.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Preset {
-    InputOnly,
-    HandsAndAim,
-    WeaponHandling,
-    Roomscale,
-    VehiclesAndAdvanced,
+    /// Every controller feature on, as `ControllersConfig::new()` ships.
+    Controllers,
+    /// Every controller and roomscale feature off: the head-tracked gamepad game.
     GamepadBaseline,
 }
 
 impl Preset {
-    pub const ALL: [Self; 6] = [
-        Self::InputOnly,
-        Self::HandsAndAim,
-        Self::WeaponHandling,
-        Self::Roomscale,
-        Self::VehiclesAndAdvanced,
-        Self::GamepadBaseline,
-    ];
+    pub const ALL: [Self; 2] = [Self::Controllers, Self::GamepadBaseline];
 
     pub const fn label(self) -> &'static str {
         match self {
-            Self::InputOnly => "Input only",
-            Self::HandsAndAim => "Hands and aim",
-            Self::WeaponHandling => "Weapon handling",
-            Self::Roomscale => "Roomscale",
-            Self::VehiclesAndAdvanced => "Vehicles and advanced",
+            Self::Controllers => "Controllers",
             Self::GamepadBaseline => "Gamepad baseline",
         }
     }
@@ -40,67 +26,60 @@ impl Preset {
 
 /// Apply feature switches without changing tuning, calibration, or optional preferences.
 pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
-    let input = preset != Preset::GamepadBaseline;
-    let hands = input && preset != Preset::InputOnly;
-    let weapons = matches!(
-        preset,
-        Preset::WeaponHandling | Preset::Roomscale | Preset::VehiclesAndAdvanced
-    );
-    let room = matches!(preset, Preset::Roomscale | Preset::VehiclesAndAdvanced);
-    let vehicles = preset == Preset::VehiclesAndAdvanced;
-    c.enabled = input;
-    c.input.hand_tracking = input;
-    c.bindings.enabled = input;
-    c.bindings.yank.enabled = hands;
-    c.aim_state.skip_arm_ik = hands;
-    c.hands.ik = hands;
-    c.hands.late_update = hands;
-    c.hands.presentation.enabled = hands;
-    c.hands.rigid_grip = hands;
-    c.aim.gun = hands;
-    c.aim.grapple = hands;
+    let on = preset == Preset::Controllers;
+    c.enabled = on;
+    c.input.hand_tracking = on;
+    c.bindings.enabled = on;
+    c.bindings.yank.enabled = on;
+    c.aim_state.skip_arm_ik = on;
+    c.hands.ik = on;
+    c.hands.late_update = on;
+    c.hands.presentation.enabled = on;
+    c.hands.rigid_grip = on;
+    c.aim.gun = on;
+    c.aim.grapple = on;
     c.aim.sight_tuning.enabled = false;
-    c.overlay.enabled = hands;
+    c.overlay.enabled = on;
     c.overlay.gun_readout = GunReadout::None;
-    c.overlay.grapple_highlight = hands;
-    c.overlay.grapple_beam = hands;
-    c.overlay.hide_game_reticle = hands;
-    c.weapons.foregrip.enabled = weapons;
-    c.weapons.recoil.enabled = weapons;
-    c.haptics.enabled = weapons;
-    c.haptics.game_rumble = weapons;
-    c.weapons.reload.enabled = weapons;
-    c.weapons.grenade_throw = weapons;
-    c.weapons.c4_throw = weapons;
-    c.weapons.wrist_detonator = weapons;
-    c.weapons.c4.detonator.overlay = weapons;
-    c.weapons.scopes = weapons;
-    c.weapons.auto_switch_when_empty = !weapons;
-    c.body.remap_head = room;
-    c.body.remap_hands = hands;
-    c.roomscale.posture = if room { Posture::Auto } else { Posture::Seated };
-    c.body.rig.chase.enabled = room;
-    c.body.rig.lean.enabled = room;
-    c.roomscale.crouch.capsule = room;
-    c.roomscale.head_fade.enabled = room;
+    c.overlay.grapple_highlight = on;
+    c.overlay.grapple_beam = on;
+    c.overlay.hide_game_reticle = on;
+    c.weapons.foregrip.enabled = on;
+    c.weapons.recoil.enabled = on;
+    c.haptics.enabled = on;
+    c.haptics.game_rumble = on;
+    c.weapons.reload.enabled = on;
+    c.weapons.grenade_throw = on;
+    c.weapons.c4_throw = on;
+    c.weapons.wrist_detonator = on;
+    c.weapons.c4.detonator.overlay = on;
+    c.weapons.scopes = on;
+    c.weapons.auto_switch_when_empty = !on;
+    c.body.remap_head = on;
+    c.body.remap_hands = on;
+    c.roomscale.posture = if on { Posture::Auto } else { Posture::Seated };
+    c.body.rig.chase.enabled = on;
+    c.body.rig.lean.enabled = on;
+    c.roomscale.crouch.capsule = on;
+    c.roomscale.head_fade.enabled = on;
     c.roomscale.seat_transition = SeatTransition::Ride;
-    c.vehicles.driver_weapons_by_hand = vehicles;
-    c.vehicles.passenger_body_by_hand = vehicles;
-    c.vehicles.mounted.aim_by_hands = vehicles;
-    c.vehicles.mounted.grip_handles = vehicles;
-    c.vehicles.physical.wheel.enabled = vehicles;
-    c.vehicles.physical.handlebars = vehicles;
-    c.vehicles.physical.sticks = vehicles;
-    c.vehicles.physical.levers = vehicles;
-    c.vehicles.physical.twist_rudder = vehicles;
-    c.vehicles.physical.nitrous_button = vehicles;
-    c.vehicles.physical.twist_throttle = vehicles;
-    c.vehicles.arm_steering.wingsuit = vehicles;
-    c.vehicles.driving_view.enabled = vehicles;
-    c.vehicles.parachute_handles.enabled = vehicles;
-    c.fingers.enabled = hands;
-    c.grapple.pull_to_reel = hands;
-    c.grapple.pump = hands;
+    c.vehicles.driver_weapons_by_hand = on;
+    c.vehicles.passenger_body_by_hand = on;
+    c.vehicles.mounted.aim_by_hands = on;
+    c.vehicles.mounted.grip_handles = on;
+    c.vehicles.physical.wheel.enabled = on;
+    c.vehicles.physical.handlebars = on;
+    c.vehicles.physical.sticks = on;
+    c.vehicles.physical.levers = on;
+    c.vehicles.physical.twist_rudder = on;
+    c.vehicles.physical.nitrous_button = on;
+    c.vehicles.physical.twist_throttle = on;
+    c.vehicles.arm_steering.wingsuit = on;
+    c.vehicles.driving_view.enabled = on;
+    c.vehicles.parachute_handles.enabled = on;
+    c.fingers.enabled = on;
+    c.grapple.pull_to_reel = on;
+    c.grapple.pump = on;
 }
 
 /// Whether applying the preset changes any of its owned switches.
@@ -133,7 +112,7 @@ mod tests {
         let grip = config.controllers.hands.grip;
         let sight = config.controllers.aim.sights.get(99).copied();
         let turn = config.headpose.vr_turn.snap_angle_deg;
-        apply_preset(&mut config.controllers, Preset::VehiclesAndAdvanced);
+        apply_preset(&mut config.controllers, Preset::Controllers);
         assert_eq!(config.controllers.hands.grip, grip);
         assert_eq!(config.controllers.aim.sights.get(99).copied(), sight);
         assert_eq!(config.headpose.vr_turn.snap_angle_deg, turn);
@@ -142,22 +121,21 @@ mod tests {
     #[test]
     fn preset_modified_reports_switch_differences_without_tuning_differences() {
         let mut c = ControllersConfig::new();
-        apply_preset(&mut c, Preset::VehiclesAndAdvanced);
-        assert!(!preset_modified(&c, Preset::VehiclesAndAdvanced));
+        apply_preset(&mut c, Preset::Controllers);
+        assert!(!preset_modified(&c, Preset::Controllers));
         c.hands.grip.position_m.x += 0.1;
-        assert!(!preset_modified(&c, Preset::VehiclesAndAdvanced));
+        assert!(!preset_modified(&c, Preset::Controllers));
         c.vehicles.physical.wheel.enabled = false;
-        assert!(preset_modified(&c, Preset::VehiclesAndAdvanced));
+        assert!(preset_modified(&c, Preset::Controllers));
     }
 
     #[test]
     fn defaults_are_the_full_gameplay_preset() {
-        // `ControllersConfig::new()` ships as the full "Vehicles and advanced" preset, so that
-        // wingsuit and parachute arm steering, roomscale, and every other subsystem work out of
-        // the box.
+        // `ControllersConfig::new()` ships as the full "Controllers" preset, so that wingsuit and
+        // parachute arm steering, roomscale, and every other subsystem work out of the box.
         assert!(!preset_modified(
             &ControllersConfig::new(),
-            Preset::VehiclesAndAdvanced
+            Preset::Controllers
         ));
     }
 
@@ -172,18 +150,6 @@ mod tests {
         assert!(!c.roomscale.head_fade.enabled);
         assert!(!c.body.remap_head);
         assert!(!c.body.remap_hands);
-    }
-
-    #[test]
-    fn preset_stages_enable_the_required_support() {
-        for preset in Preset::ALL {
-            let mut c = Config::new().controllers;
-            apply_preset(&mut c, preset);
-            let hands = !matches!(preset, Preset::InputOnly | Preset::GamepadBaseline);
-            assert_eq!(c.bindings.yank.enabled, hands);
-            assert_eq!(c.body.remap_hands, hands);
-            assert_eq!(c.overlay.enabled, hands);
-        }
     }
 
     #[test]
@@ -235,7 +201,7 @@ mod tests {
                 owned += usize::from(is_owned);
             }
         }
-        assert!(owned > 300);
+        assert!(owned > 100);
     }
 
     fn collect_leaves(value: &serde_json::Value, path: String, leaves: &mut Vec<String>) {

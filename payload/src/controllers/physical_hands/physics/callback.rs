@@ -106,7 +106,7 @@ unsafe extern "system" fn destructor(_this: *mut PfxPreSimulationCallback, _flag
 unsafe extern "system" fn pre_simulation(
     _this: *mut PfxPreSimulationCallback,
     _world: *mut hknpWorld,
-    dt: f32,
+    _dt: f32,
 ) {
     FIRES.fetch_add(1, Ordering::Relaxed);
     // SAFETY: reads the calling thread's own id.
@@ -135,7 +135,7 @@ unsafe extern "system" fn pre_simulation(
     // SAFETY: the engine calls this before a step, on the thread that steps the world.
     unsafe {
         crate::controllers::physical_hands::human_hull::step(_world);
-        crate::controllers::physical_hands::physics::step(dt);
+        crate::controllers::physical_hands::physics::step();
         crate::controllers::physical_hands::impacts::step();
     }
 }

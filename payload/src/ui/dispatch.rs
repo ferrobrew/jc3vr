@@ -28,7 +28,6 @@ pub(crate) enum FeatureRoute {
     Replay,
     Director,
     Environment,
-    Engine,
 }
 
 /// A feature body that needs neither the renderer nor the navigation state. Controller, game,
@@ -54,12 +53,8 @@ pub(crate) fn route(id: FeatureId) -> FeatureRoute {
         FeatureId::RenderRe => FeatureRoute::RenderRe,
         FeatureId::TrackingCapture => FeatureRoute::Tracking,
         FeatureId::Replay => FeatureRoute::Replay,
-        FeatureId::DirectorSafety
-        | FeatureId::DirectorSpawn
-        | FeatureId::Video
-        | FeatureId::Keyboard => FeatureRoute::Director,
+        FeatureId::Director | FeatureId::Video => FeatureRoute::Director,
         FeatureId::Environment => FeatureRoute::Environment,
-        FeatureId::Engine => FeatureRoute::Engine,
         FeatureId::Posture
         | FeatureId::BodyFit
         | FeatureId::AnimationIk
@@ -134,13 +129,12 @@ fn controls(
         FeatureRoute::Replay => testing::replay_feature(ui),
         FeatureRoute::Director => director::feature(ui, id),
         FeatureRoute::Environment => environment::render(ui),
-        FeatureRoute::Engine => game::controls(ui, id),
     }
 }
 
 fn readouts(id: FeatureId) -> impl Iterator<Item = FeatureBody> {
     let routed: Option<FeatureBody> = match route(id) {
-        FeatureRoute::Overview | FeatureRoute::RenderRe | FeatureRoute::Engine => None,
+        FeatureRoute::Overview | FeatureRoute::RenderRe => None,
         FeatureRoute::HeadView => Some(|ui, _| camera::head_view_status(ui)),
         FeatureRoute::Controller => controllers::status(id),
         FeatureRoute::Runtime => Some(|ui, _| vr::status(ui)),
@@ -158,10 +152,8 @@ fn readouts(id: FeatureId) -> impl Iterator<Item = FeatureBody> {
 
 fn director_status(id: FeatureId) -> Option<FeatureBody> {
     let body: FeatureBody = match id {
-        FeatureId::DirectorSafety => |ui, _| director::safety_status(ui),
-        FeatureId::DirectorSpawn => |ui, _| director::spawn_status(ui),
+        FeatureId::Director => |ui, _| director::director_status(ui),
         FeatureId::Video => |ui, _| director::video_status(ui),
-        FeatureId::Keyboard => |ui, _| director::keyboard_status(ui),
         _ => return None,
     };
     Some(body)

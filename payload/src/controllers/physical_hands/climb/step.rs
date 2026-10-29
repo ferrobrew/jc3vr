@@ -29,7 +29,6 @@ use crate::{
         },
         roomscale::teleport,
     },
-    sim_rate::scale_ticks,
 };
 
 /// The climb's part of the hand bodies' pre-simulation step: take and end the grips, and move the
@@ -81,7 +80,7 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
             > crate::controllers::physical_hands::climb::state::STALE_AFTER
     }) {
         Some("the hand input stopped publishing")
-    } else if state.stale_steps > scale_ticks(MAX_STALE_STEPS) {
+    } else if state.stale_steps > MAX_STALE_STEPS {
         Some("the hands stopped publishing")
     } else {
         None
@@ -188,7 +187,7 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
             } else {
                 grip.missing_steps.saturating_add(1)
             };
-            if grip.missing_steps > scale_ticks(MAX_STALE_STEPS) {
+            if grip.missing_steps > MAX_STALE_STEPS {
                 state.drop_hand(hand, "the hand's body stopped acting");
             }
         }
@@ -362,7 +361,7 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
                 supported: support.is_some(),
                 stands,
                 tuning: &mantle_tuning,
-                max_steps: scale_ticks(MAX_MANTLE_STEPS),
+                max_steps: MAX_MANTLE_STEPS,
                 max_carry_speed_mps: climb.max_carry_speed_mps,
                 context,
             },

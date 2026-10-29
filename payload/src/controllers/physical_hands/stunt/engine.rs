@@ -24,12 +24,10 @@ use jc3gi::{
     },
 };
 
-use crate::{
-    controllers::physical_hands::{
-        bodies::{is_type, owner_of},
-        stunt::solve::StuntKind,
-    },
-    sim_rate,
+use crate::controllers::physical_hands::{
+    bodies::{is_type, owner_of},
+    physics,
+    stunt::solve::StuntKind,
 };
 
 /// Why the game did not take the player into a stunt position.
@@ -101,7 +99,7 @@ unsafe fn position_ready(character: &Character) -> PositionRead {
             let from = Mat4::from(vehicle.m_WorldMatrixT0).w_axis.truncate();
             let to = Mat4::from(vehicle.m_WorldMatrixT1).w_axis.truncate();
             // The two transforms are a tick apart, over which the world takes one step.
-            let speed = from.distance(to) / sim_rate::world_step_seconds(None);
+            let speed = from.distance(to) / physics::step_seconds();
             if speed.is_finite() { speed } else { 0.0 }
         });
     PositionRead {

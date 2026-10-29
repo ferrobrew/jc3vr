@@ -4,11 +4,11 @@ The motion-controller implementation as it stands: the input foundation, scheme 
 
 The code is in `payload/src/controllers/` (everything built on the controller snapshot), `payload/src/vr/input/` (the OpenXR side), and `payload/src/ui/controllers/` (the Controllers tab of the debug UI). Every setting is in the `controllers` section of the mod's config (`ControllersConfig`), and the Controllers tab shows each setting and a live readout of each subsystem. The master switch `controllers.enabled` gates the per-frame input sync and the publication of the controller snapshot, so with it off every subsystem is inert. Each subsystem that changes how the character behaves also acts only under the controller scheme, so the mod behaves as it did before controllers existed whenever no controller is in use.
 
-The defaults are the full `Vehicles and advanced` preset (see "Test controls and saved tuning"), so every subsystem, including the wingsuit's arm steering and the parachute's handles, works out of the box.
+The defaults are the full `Controllers` preset (see "Test controls and saved tuning"), so every subsystem, including the wingsuit's arm steering and the parachute's handles, works out of the box.
 
 ## Test controls and saved tuning
 
-The Controllers tab offers `Input only`, `Hands and aim`, `Weapon handling`, `Roomscale`, `Vehicles and advanced`, and `Gamepad baseline` presets. Presets change feature switches while preserving numeric tuning, handedness, grip offsets, and sight entries. Hand remapping remains consistent from `Hands and aim` through the later presets. The selected preset is marked modified when its owned switches differ. Optional stick-click weapon cycling, hand-aimed grenade fallback, finger source, and finger drive-all settings remain unchanged. `Gamepad baseline` disables the controller and roomscale features.
+Tools > Presets offers the `Controllers` and `Gamepad baseline` presets. Presets change feature switches while preserving numeric tuning, handedness, grip offsets, and sight entries. `Controllers` turns every controller feature on, as the defaults ship. The selected preset is marked modified when its owned switches differ. Optional stick-click weapon cycling, hand-aimed grenade fallback, finger source, and finger drive-all settings remain unchanged. `Gamepad baseline` disables the controller and roomscale features, which leaves the head-tracked gamepad game.
 
 The controller settings, the shared VR turn settings, and the body dimensions are saved in the settings file with the rest of the configuration, whenever they change and without a save control ([settings.md](../settings.md)). The load validates them: a group whose values are out of range or inconsistent resets to its defaults, and a failure elsewhere in the controller settings keeps the per-weapon sight calibration.
 
@@ -88,7 +88,7 @@ The detector runs once per engine input tick, from the post-call detour on [`Inp
 
 The mode selects the semantic mode set: `onfoot` and the falling and parachute variants of `airborne` select `on_foot`, the wingsuit `wingsuit`, a vehicle its class's set (`helicopter`, `plane`, or `land_vehicle` for the rest), and `ui` the `menu` set.
 
-A change between gameplay modes must persist for `mode::DEBOUNCE_TICKS` ticks (two) before it takes effect. The count is at the game's 30 Hz tick; under the sim-rate experiment ([performance/sim-rate.md](../performance/sim-rate.md)) it is scaled to the same duration. Entering and leaving `ui` is immediate, because the UI signals do not flicker and a late switch would send a menu press to the gameplay bindings. The detector selects the OpenXR action set whenever the controllers are enabled, and changes nothing the game sees. The headpose sim keeps its own on-foot test.
+A change between gameplay modes must persist for `mode::DEBOUNCE_TICKS` ticks (two) before it takes effect. The count is at the game's 30 Hz tick. Entering and leaving `ui` is immediate, because the UI signals do not flicker and a late switch would send a menu press to the gameplay bindings. The detector selects the OpenXR action set whenever the controllers are enabled, and changes nothing the game sees. The headpose sim keeps its own on-foot test.
 
 ## Bindings and injection
 

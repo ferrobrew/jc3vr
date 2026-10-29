@@ -46,7 +46,6 @@ pub(crate) use crate::egui_impl::DebugUiInput;
 use crate::{
     controllers::frame::ActionSetKind,
     hooks::animation::active_state_type_id,
-    sim_rate::scale_ticks,
     ui::capture::{CaptureUpdate, OwnershipSnapshot},
 };
 
@@ -393,14 +392,12 @@ pub fn traversal(character: &CharacterSnapshot) -> Option<Traversal> {
 /// set, and publish the detection for [`current`]. Called from the input tick while the controllers
 /// are enabled.
 pub(crate) fn tick() -> Detection {
-    // The debounce rides out a flicker of the animation, which lasts a time, not a tick count.
-    let debounce_ticks = scale_ticks(DEBOUNCE_TICKS);
     // SAFETY: called on the main thread from the input tick, outside the world update that writes
     // the state read here.
     let snapshot = unsafe { read_snapshot() };
     let mut detector = DETECTOR.lock();
     let before = detector.current().mode;
-    let detection = detector.observe(&snapshot, debounce_ticks);
+    let detection = detector.observe(&snapshot, DEBOUNCE_TICKS);
     drop(detector);
     if before != detection.mode {
         tracing::debug!(target: "controllers", ?before, after = ?detection.mode, "mode change");
@@ -447,8 +444,7 @@ pub unsafe fn read_snapshot() -> ModeSnapshot {
 
 /// How many consecutive ticks a new gameplay mode must be detected before it takes effect. One
 /// switches at once; two rides out a one-tick flicker during an animation blend. Counted at the
-/// game's 30 Hz tick, and scaled to the same duration at another sim rate
-/// ([`crate::sim_rate::scale_ticks`]).
+/// game's 30 Hz tick.
 const DEBOUNCE_TICKS: u32 = 2;
 
 /// The detector state, advanced by [`tick`].

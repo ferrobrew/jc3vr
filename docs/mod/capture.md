@@ -32,7 +32,7 @@ Segments after the first need `--offset`, the stream frame index the segment sta
 ## Operating it
 
 1. Start `scripts/capture_host.sh [output dir]` on the host. It listens on port 47172 unless `JC3VR_CAPTURE_PORT` says otherwise.
-2. In the headset, start the recording from the Director tab's Recording section or its hotkey (Numpad / by default). The tab shows the stream size, the frames sent, repeated, and dropped, and whether the host is connected.
+2. In the headset, start the recording from Tools > Video in the debug UI or its hotkey (Numpad / by default). It shows the stream size, the frames sent, repeated, and dropped, and whether the host is connected.
 3. Stop the recording the same way, or stop the host script; either closes the stream and finalises the last segment.
 
 The recorder config (eye, scale, header frame rate, host, port) is in the same section and applies to the next recording. Scale below one shrinks the stream in the pack pass, which is the lever if the readback or the loopback cannot keep up at full eye resolution.

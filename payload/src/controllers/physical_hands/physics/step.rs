@@ -1,10 +1,7 @@
 //! The pre-simulation half of the hand bodies' tick: make, add, park, and drive the bodies toward
 //! where their palms will be at the end of the step, then keep the held guns' bodies on them.
 
-use std::{
-    sync::atomic::{AtomicU32, Ordering},
-    time::Instant,
-};
+use std::time::Instant;
 
 use glam::{Quat, Vec2, Vec3};
 use jc3gi::{character::character::Character, physics::PhysicsSystem};
@@ -38,21 +35,18 @@ use crate::{
             stunt, vault,
         },
     },
-    hooks, sim_rate,
+    hooks,
 };
 
-/// The pre-simulation step: make, add, park, and drive the hand bodies. Called by the callback with
-/// the time the physics update was given, `given_dt`.
+/// The pre-simulation step: make, add, park, and drive the hand bodies. Called by the
+/// pre-simulation callback.
 ///
 /// # Safety
 ///
 /// The thread that steps the physics world, outside the step.
-pub(crate) unsafe fn step(given_dt: f32) {
+pub(crate) unsafe fn step() {
     let now = Instant::now();
-    // The step the world is about to take, which the drives, the climb, and the proxy's velocity
-    // read: the engine's 30 Hz constant, or the tick's step under the sim-rate experiment.
-    let step_s = sim_rate::world_step_seconds(Some(given_dt));
-    STEP_S.store(step_s.to_bits(), Ordering::Relaxed);
+    let step_s = step_seconds();
     let config = Config::lock_query(|c| c.controllers.physical_hands);
     contact::step_tick();
     let mut hands = HANDS.lock();
@@ -416,15 +410,11 @@ pub(crate) fn physical_locomotion_allowed(climbing: bool, native_owns_movement: 
     !climbing && !native_owns_movement
 }
 
-/// The step the physics world takes this step, seconds, as [`step`] published it before driving
-/// anything. Read by the code the step calls (the climb and the proxy's velocity), on the thread
-/// that steps the world.
-pub(crate) fn step_seconds() -> f32 {
-    f32::from_bits(STEP_S.load(Ordering::Relaxed))
+/// The step the physics world takes, seconds: the engine's 30 Hz constant, to which the physics
+/// update pins whatever time it is given. Read by the drives, the climb, and the proxy's velocity.
+pub(crate) const fn step_seconds() -> f32 {
+    PhysicsSystem::STEP_SECONDS
 }
-
-/// The bits of [`step_seconds`]; the engine's constant until the first step.
-static STEP_S: AtomicU32 = AtomicU32::new(PhysicsSystem::STEP_SECONDS.to_bits());
 
 /// Whether nothing solid lies between `from` and `to`, game space, for the aim's ray filter, which
 /// never hits the player nor the hand bodies; `held` is an object a hand holds, also passed

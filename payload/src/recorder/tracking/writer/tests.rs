@@ -91,7 +91,7 @@ fn writer() -> (Writer, Receiver<Vec<u8>>) {
             sender: Some(sender),
             handle: None,
             pending_loss: None,
-            shared: Arc::new(Shared::new(0, RecordingFormat::ChunkedV4)),
+            shared: Arc::new(Shared::new(0)),
         },
         receiver,
     )
@@ -145,16 +145,7 @@ fn input_batch(time: u64) -> CaptureBatch {
 }
 
 #[test]
-fn format_defaults_to_chunked_v4_and_false_selects_uncompressed_v4() {
-    assert_eq!(RecordingFormat::default(), RecordingFormat::ChunkedV4);
-    assert_eq!(
-        RecordingFormat::from_compression_setting(false),
-        RecordingFormat::UncompressedV4
-    );
-    assert_eq!(
-        RecordingFormat::from_compression_setting(true),
-        RecordingFormat::ChunkedV4
-    );
+fn recordings_start_with_the_version_4_chunked_preamble() {
     let payload_header = crate::recorder::tracking::format::Header {
         build: "fixture".into(),
         recorded_at: "fixture".into(),
@@ -167,143 +158,106 @@ fn format_defaults_to_chunked_v4_and_false_selects_uncompressed_v4() {
         world_scale: 1.0,
         time_scale: 1.0,
     };
-    for (format, version) in [
-        (RecordingFormat::UncompressedV4, 4),
-        (RecordingFormat::ChunkedV4, 4),
-    ] {
-        let bytes = format.preamble(&payload_header);
-        assert_eq!(tracking_format::decode(&bytes).unwrap().version, version);
-    }
+    let bytes = crate::recorder::tracking::format::encode_chunked_preamble(&payload_header);
+    assert_eq!(tracking_format::decode(&bytes).unwrap().version, 4);
 }
 
 #[test]
-fn both_formats_preserve_batches_final_loss_and_preamble_counters() {
-    for (format, version) in [
-        (RecordingFormat::UncompressedV4, 4),
-        (RecordingFormat::ChunkedV4, 4),
-    ] {
-        let (mut writer, receiver) = writer();
-        let preamble = match format {
-            RecordingFormat::UncompressedV4 => tracking_format::encode_latest_preamble(&header()),
-            RecordingFormat::ChunkedV4 => preamble(),
-        };
-        let preamble_len = preamble.len();
-        writer.shared = Arc::new(Shared::new(preamble_len as u64, format));
-        let first = input_batch(10).bytes;
-        assert!(matches!(writer.send(input_batch(10)), SendOutcome::Queued));
-        assert!(matches!(writer.send(batch(20, 7)), SendOutcome::Full));
-        writer.finish();
-        let bytes = Arc::new(Mutex::new(preamble.clone()));
-        let sink = TestSink {
-            bytes: Arc::clone(&bytes),
-            fault: Fault::None,
-            writes: 0,
-        };
-        run(sink, &receiver, &writer.shared).unwrap();
-        let final_loss = encode_loss(Loss {
-            time_ns: 20,
-            groups: 7,
-        });
-        let mut expected = preamble;
-        match format {
-            RecordingFormat::UncompressedV4 => {
-                expected.extend(&first);
-                expected.extend(&final_loss);
-            }
-            RecordingFormat::ChunkedV4 => {
-                expected.extend(tracking_format::encode_chunk(&first).unwrap());
-                expected.extend(tracking_format::encode_chunk(&final_loss).unwrap());
-            }
+fn chunks_preserve_batches_final_loss_and_preamble_counters() {
+    let (mut writer, receiver) = writer();
+    let preamble = preamble();
+    let preamble_len = preamble.len();
+    writer.shared = Arc::new(Shared::new(preamble_len as u64));
+    let first = input_batch(10).bytes;
+    assert!(matches!(writer.send(input_batch(10)), SendOutcome::Queued));
+    assert!(matches!(writer.send(batch(20, 7)), SendOutcome::Full));
+    writer.finish();
+    let bytes = Arc::new(Mutex::new(preamble.clone()));
+    let sink = TestSink {
+        bytes: Arc::clone(&bytes),
+        fault: Fault::None,
+        writes: 0,
+    };
+    run(sink, &receiver, &writer.shared).unwrap();
+    let final_loss = encode_loss(Loss {
+        time_ns: 20,
+        groups: 7,
+    });
+    let mut expected = preamble;
+    expected.extend(tracking_format::encode_chunk(&first).unwrap());
+    expected.extend(tracking_format::encode_chunk(&final_loss).unwrap());
+    assert_eq!(*bytes.lock(), expected);
+    assert_eq!(writer.bytes_written(), expected.len() as u64);
+    assert_eq!(
+        writer.logical_bytes_written(),
+        (preamble_len + first.len() + final_loss.len()) as u64
+    );
+    let decoded = tracking_format::decode(&bytes.lock()).unwrap();
+    assert_eq!(decoded.version, 4);
+    assert_eq!(decoded.frames.len(), 1);
+    assert_eq!(decoded.input.len(), 2);
+    assert_eq!(
+        decoded.input[1].record,
+        InputRecord::Discontinuity {
+            reason: DiscontinuityReason::Overflow,
+            discarded: 7
         }
-        assert_eq!(*bytes.lock(), expected);
-        assert_eq!(writer.bytes_written(), expected.len() as u64);
-        assert_eq!(
-            writer.logical_bytes_written(),
-            (preamble_len + first.len() + final_loss.len()) as u64
-        );
-        let decoded = tracking_format::decode(&bytes.lock()).unwrap();
-        assert_eq!(decoded.version, version);
-        assert_eq!(decoded.frames.len(), 1);
-        assert_eq!(decoded.input.len(), 2);
-        assert_eq!(
-            decoded.input[1].record,
-            InputRecord::Discontinuity {
-                reason: DiscontinuityReason::Overflow,
-                discarded: 7
-            }
-        );
-    }
+    );
 }
 
 #[test]
-fn both_formats_run_through_the_started_writer_thread() {
-    for (format, version) in [
-        (RecordingFormat::UncompressedV4, 4),
-        (RecordingFormat::ChunkedV4, 4),
-    ] {
-        let preamble = match format {
-            RecordingFormat::UncompressedV4 => tracking_format::encode_latest_preamble(&header()),
-            RecordingFormat::ChunkedV4 => preamble(),
-        };
-        let bytes = Arc::new(Mutex::new(preamble.clone()));
-        let sink = TestSink {
-            bytes: Arc::clone(&bytes),
-            fault: Fault::None,
-            writes: 0,
-        };
-        let mut writer = Writer::spawn_sink(sink, preamble.len() as u64, format).unwrap();
-        let original = input_batch(10).bytes;
-        assert!(matches!(writer.send(input_batch(10)), SendOutcome::Queued));
-        writer.finish();
-        let owner = writer.handle.take().unwrap();
-        let Owner::Thread(handle) = owner else {
-            panic!("expected the real writer thread");
-        };
-        let result = completion(handle.join(), writer.bytes_written());
-        assert!(result.error.is_none(), "{:?}", result.error);
-        let decoded = tracking_format::decode(&bytes.lock()).unwrap();
-        assert_eq!(decoded.version, version);
-        assert_eq!(decoded.frames.len(), 1);
-        assert_eq!(decoded.input.len(), 1);
-        let payload = format::decode(&bytes.lock()).unwrap();
-        assert_eq!(
-            encode_capture(&payload.frames[0], &payload.input)
-                .unwrap()
-                .bytes,
-            original
-        );
-        assert_eq!(result.bytes, bytes.lock().len() as u64);
-        assert_eq!(
-            writer.logical_bytes_written(),
-            (preamble.len() + original.len()) as u64
-        );
-    }
+fn chunks_run_through_the_started_writer_thread() {
+    let preamble = preamble();
+    let bytes = Arc::new(Mutex::new(preamble.clone()));
+    let sink = TestSink {
+        bytes: Arc::clone(&bytes),
+        fault: Fault::None,
+        writes: 0,
+    };
+    let mut writer = Writer::spawn_sink(sink, preamble.len() as u64).unwrap();
+    let original = input_batch(10).bytes;
+    assert!(matches!(writer.send(input_batch(10)), SendOutcome::Queued));
+    writer.finish();
+    let owner = writer.handle.take().unwrap();
+    let Owner::Thread(handle) = owner else {
+        panic!("expected the real writer thread");
+    };
+    let result = completion(handle.join(), writer.bytes_written());
+    assert!(result.error.is_none(), "{:?}", result.error);
+    let decoded = tracking_format::decode(&bytes.lock()).unwrap();
+    assert_eq!(decoded.version, 4);
+    assert_eq!(decoded.frames.len(), 1);
+    assert_eq!(decoded.input.len(), 1);
+    let payload = format::decode(&bytes.lock()).unwrap();
+    assert_eq!(
+        encode_capture(&payload.frames[0], &payload.input)
+            .unwrap()
+            .bytes,
+        original
+    );
+    assert_eq!(result.bytes, bytes.lock().len() as u64);
+    assert_eq!(
+        writer.logical_bytes_written(),
+        (preamble.len() + original.len()) as u64
+    );
 }
 
 #[test]
-fn both_formats_count_partial_storage_without_completing_logical_batch() {
-    for format in [RecordingFormat::UncompressedV4, RecordingFormat::ChunkedV4] {
-        let (mut writer, receiver) = writer();
-        writer.shared = Arc::new(Shared::new(0, format));
-        let first = input_batch(10).bytes;
-        assert!(matches!(writer.send(input_batch(10)), SendOutcome::Queued));
-        writer.finish();
-        let bytes = Arc::new(Mutex::new(Vec::new()));
-        let sink = TestSink {
-            bytes: Arc::clone(&bytes),
-            fault: Fault::PartialWrite,
-            writes: 0,
-        };
-        assert!(run(sink, &receiver, &writer.shared).is_err());
-        assert_eq!(writer.bytes_written(), 1);
-        assert_eq!(writer.logical_bytes_written(), 0);
-        let expected = if format == RecordingFormat::UncompressedV4 {
-            first[0]
-        } else {
-            tracking_format::TAG_CHUNK
-        };
-        assert_eq!(*bytes.lock(), [expected]);
-    }
+fn partial_storage_counts_without_completing_the_logical_batch() {
+    let (mut writer, receiver) = writer();
+    writer.shared = Arc::new(Shared::new(0));
+    assert!(matches!(writer.send(input_batch(10)), SendOutcome::Queued));
+    writer.finish();
+    let bytes = Arc::new(Mutex::new(Vec::new()));
+    let sink = TestSink {
+        bytes: Arc::clone(&bytes),
+        fault: Fault::PartialWrite,
+        writes: 0,
+    };
+    assert!(run(sink, &receiver, &writer.shared).is_err());
+    assert_eq!(writer.bytes_written(), 1);
+    assert_eq!(writer.logical_bytes_written(), 0);
+    assert_eq!(*bytes.lock(), [tracking_format::TAG_CHUNK]);
 }
 
 #[test]

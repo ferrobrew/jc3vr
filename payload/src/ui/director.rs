@@ -1,5 +1,6 @@
-//! The Director tab: the directing tools for staging footage (`crate::director`), grouped by
-//! what a shot needs: time, the actor, heat, where you are, what is in frame, and the overlays.
+//! The Director and Video features: the directing tools for staging footage (`crate::director`),
+//! grouped by what a shot needs: time, the actor, heat, where you are, what is in frame, and the
+//! keyboard shortcuts; and the video recorder with its take markers.
 
 use egui::Slider;
 use jc3gi::heat_manager::HeatManager;
@@ -13,38 +14,36 @@ use crate::{
         time,
     },
     recorder,
+    ui::catalog::FeatureId,
 };
 
-/// Render the Director tab body.
-pub(crate) fn feature(ui: &mut egui::Ui, id: crate::ui::catalog::FeatureId) {
+/// Render the Director or Video feature's controls.
+pub(crate) fn feature(ui: &mut egui::Ui, id: FeatureId) {
     match id {
-        crate::ui::catalog::FeatureId::DirectorSafety => {
+        FeatureId::Director => {
             cinematic_ui(ui);
             time_ui(ui);
             safety_ui(ui);
             heat_ui(ui);
-        }
-        crate::ui::catalog::FeatureId::DirectorSpawn => {
+            ui.separator();
             teleport_ui(ui);
+            ui.separator();
             spawn_ui(ui);
+            ui.collapsing("Keyboard shortcuts", keymap_ui);
         }
-        crate::ui::catalog::FeatureId::Video => {
+        FeatureId::Video => {
             recording_ui(ui);
             markers_ui(ui);
         }
-        crate::ui::catalog::FeatureId::Keyboard => keymap_ui(ui),
         _ => {}
     }
 }
 
-/// Render the actor and heat-manager facts without settings or commands.
-pub(crate) fn safety_status(ui: &mut egui::Ui) {
+/// Render the actor, heat-manager, teleport, and spawn-request facts without settings or
+/// commands.
+pub(crate) fn director_status(ui: &mut egui::Ui) {
     safety_readout(ui);
     heat_readout(ui);
-}
-
-/// Render owned teleport and spawn-request facts without settings or commands.
-pub(crate) fn spawn_status(ui: &mut egui::Ui) {
     let position = teleport::player_position();
     let in_flight = teleport::in_flight();
     let bookmark_count = teleport::bookmarks().len();
@@ -100,18 +99,6 @@ pub(crate) fn video_status(ui: &mut egui::Ui) {
     if let Some(error) = &status.error {
         ui.colored_label(egui::Color32::LIGHT_RED, format!("Last error: {error}"));
     }
-}
-
-/// Render the effective keyboard bindings without settings or commands.
-pub(crate) fn keyboard_status(ui: &mut egui::Ui) {
-    let map = keymap::current();
-    egui::Grid::new("director_keyboard_status").show(ui, |ui| {
-        for binding in map.effective() {
-            ui.label(binding.chord.describe());
-            ui.label(binding.action.label());
-            ui.end_row();
-        }
-    });
 }
 
 fn cinematic_ui(ui: &mut egui::Ui) {

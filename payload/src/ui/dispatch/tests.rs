@@ -46,7 +46,7 @@ fn production_navigation_dispatches_every_catalog_feature_with_independent_scrol
         }
     }
     assert_eq!(keys.len(), FEATURES.len());
-    assert_eq!(FeatureId::Environment.definition().page, PageId::Capture);
+    assert_eq!(FeatureId::Environment.definition().page, PageId::Tools);
 }
 
 #[test]

@@ -1,13 +1,8 @@
-//! The on-foot swim settings, the movement hooks' live readouts, and the engine experiment
-//! controls.
+//! The on-foot swim settings and the movement hooks' live readouts.
 
 use std::sync::atomic::Ordering;
 
-use jc3gi::{
-    character::character::{AimState, Character},
-    spawn_system::SpawnSystem,
-    types::math::Matrix4,
-};
+use jc3gi::character::character::{AimState, Character};
 
 use crate::{
     config::{self, Config},
@@ -26,15 +21,12 @@ use crate::{
             wingsuit::{barrel_rolls_dropped, suppressed as stall_flip_suppressed},
         },
     },
-    sim_rate::{self, SimRate},
-    ui::{catalog::FeatureId, dispatch::FeatureBody, util::patchbox},
+    ui::{catalog::FeatureId, dispatch::FeatureBody},
 };
 
 pub(crate) fn controls(ui: &mut egui::Ui, id: FeatureId) {
-    match id {
-        FeatureId::OnFoot => swimming_controls(ui, &mut config::edit()),
-        FeatureId::Engine => egui_debug_game(ui),
-        _ => {}
+    if id == FeatureId::OnFoot {
+        swimming_controls(ui, &mut config::edit());
     }
 }
 
@@ -48,74 +40,9 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
             wingsuit_readout(ui);
             parachute_readout(ui);
         },
-        FeatureId::Engine => |ui, _| game_readout(ui),
         _ => return None,
     };
     Some(body)
-}
-
-pub fn egui_debug_game(ui: &mut egui::Ui) {
-    sim_rate_controls(ui);
-    unsafe {
-        if let Some(game) = jc3gi::game::Game::get() {
-            ui.collapsing("Game", |ui| {
-                let mut interpolation_override = game.m_InterpolationOverride;
-                let before = interpolation_override;
-                egui::ComboBox::from_label("Interpolation override")
-                    .selected_text(interpolation_override.to_string())
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut interpolation_override, -1, "Really None");
-                        ui.selectable_value(&mut interpolation_override, 0, "None");
-                        ui.selectable_value(&mut interpolation_override, 1, "1");
-                        ui.selectable_value(&mut interpolation_override, 2, "2");
-                        ui.selectable_value(&mut interpolation_override, 3, "3");
-                    });
-
-                if before != interpolation_override
-                    && let Some(mut patcher) = hooks::patcher()
-                {
-                    patcher.patch(
-                        &mut game.m_InterpolationOverride as *mut _ as usize,
-                        &interpolation_override.to_le_bytes(),
-                    );
-                }
-                patchbox(ui, "Decouple enabled", &mut game.m_DecoupleEnabled);
-            });
-
-            ui.collapsing("Spawn", |ui| {
-                if ui
-                    .button("Spawn exploding barrel")
-                    .on_hover_text(
-                        "Queue a spawn request for the shipped \"Exploding Barrel\" prop definition \
-                         a few metres along the current view direction. The spawn is asynchronous; \
-                         the barrel appears once its entity has streamed in.",
-                    )
-                    .clicked()
-                    && let Some(spawn_system) = SpawnSystem::get()
-                {
-                    let pos = &spawn_system.m_ViewPos;
-                    let dir = &spawn_system.m_ViewDir;
-                    let mut transform = Matrix4::IDENTITY;
-                    for axis in 0..3 {
-                        transform.data[12 + axis] =
-                            pos.data[axis] + dir.data[axis] * BARREL_SPAWN_DISTANCE;
-                    }
-                    spawn_system.Spawn(
-                        // The only prop definition tagged "barrel" is the exploding fuel barrel.
-                        c"barrel".as_ptr().cast(),
-                        &transform,
-                        // Skip the LOS/proximity/spawn-block checks: the point is to spawn where
-                        // the player is looking, which those checks exist to prevent.
-                        SpawnSystem::FF_HIGH_PRIO_SPAWN_CHECKS,
-                        std::ptr::null(),
-                        std::ptr::null_mut(),
-                    );
-                }
-            });
-        } else {
-            ui.label("Unavailable: the game state is not initialized.");
-        }
-    }
 }
 
 fn swimming_controls(ui: &mut egui::Ui, cfg: &mut Config) {
@@ -232,78 +159,6 @@ fn wingsuit_readout(ui: &mut egui::Ui) {
         "Stall flip: the game's"
     });
     ui.label(format!("Barrel rolls dropped: {}", barrel_rolls_dropped()));
-}
-
-fn game_readout(ui: &mut egui::Ui) {
-    unsafe {
-        if let Some(game) = jc3gi::game::Game::get() {
-            ui.label(format!("Update frequency: {}Hz", game.m_UpdateFrequency));
-            ui.label(format!("Update flags: {:X}", game.m_UpdateFlags));
-            ui.label(format!(
-                "Interpolation method: {:X}",
-                game.m_InterpolationMethod
-            ));
-        } else {
-            ui.label("Unavailable: the game state is not initialized.");
-        }
-    }
-    sim_rate_readout(ui);
-}
-
-/// How far along the view direction to place a debug-spawned object. Far enough that the object
-/// does not overlap the player, close enough to land in front of them.
-const BARREL_SPAWN_DISTANCE: f32 = 4.0;
-
-/// The sim-rate experiment (`crate::sim_rate`, `docs/mod/performance/sim-rate.md`).
-fn sim_rate_controls(ui: &mut egui::Ui) {
-    ui.separator();
-    let configured = Config::lock_query(|c| c.sim_rate.rate);
-    let mut chosen = configured;
-    egui::ComboBox::from_label("Sim rate (experiment)")
-        .selected_text(format!("{} Hz", chosen.hz()))
-        .show_ui(ui, |ui| {
-            for rate in SimRate::ALL {
-                let label = if rate == SimRate::DEFAULT {
-                    format!("{} Hz (the game's own)", rate.hz())
-                } else {
-                    format!("{} Hz", rate.hz())
-                };
-                ui.selectable_value(&mut chosen, rate, label);
-            }
-        })
-        .response
-        .on_hover_text(
-            "Run the sim tick at another rate, to measure what it costs and what it breaks. Above \
-             30 Hz the game's update frequency is set to the rate, the physics step's pin to \
-             30 Hz is removed so the world steps by the tick, and the interpolation override is \
-             forced to the accumulated method, replacing any override chosen above. Back at \
-             30 Hz all three are restored. The test procedure is in \
-             docs/mod/performance/sim-rate.md.",
-        );
-    if chosen != configured {
-        config::edit().sim_rate.rate = chosen;
-    }
-}
-
-fn sim_rate_readout(ui: &mut egui::Ui) {
-    let status = sim_rate::status();
-    ui.label(format!(
-        "Applied {} Hz, physics pin {}, game update frequency {}, interpolation override {}, at \
-         most {} ticks a frame when accumulating",
-        status.applied_hz,
-        if status.pin_removed {
-            "removed"
-        } else {
-            "in place"
-        },
-        status
-            .game_hz
-            .map_or_else(|| "?".to_owned(), |hz| format!("{hz} Hz")),
-        status
-            .interpolation_override
-            .map_or_else(|| "?".to_owned(), |o| o.to_string()),
-        status.max_ticks_per_frame,
-    ));
 }
 
 #[cfg(test)]

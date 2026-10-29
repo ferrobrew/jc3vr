@@ -4,7 +4,7 @@ The runtime configuration (`Config` in `payload/src/config/`, behind the `CONFIG
 
 ## Where a setting is exposed
 
-The pause menu's VR pages ([pause-menu.md](pause-menu.md)) hold only the essentials a player reaches for in the headset: comfort (the recenter, the posture, turning, the stick movement, the fade when the head is in a wall, and the view in vehicles), the display (the resolution, the sharpening, the foveation, the panel), the core controls (the hand, movement, and the few weapon, haptic, and vehicle settings that depend on the player's body or taste, such as a steering lock or a haptic strength), and the body calibration. Everything else is in the debug UI: each feature's switch, its tuning, the internals (offsets, gains, thresholds that need a developer to judge), and the diagnostic readouts, the status rows among them ([status.md](status.md)). A feature ships enabled by default, so a player meets it without reaching for the debug UI, and its switch is there for turning it off. Experiments are the exception: the sim-rate experiment (`sim_rate.rate`, [performance/sim-rate.md](performance/sim-rate.md)) defaults to the game's own behaviour and only the debug UI reaches it.
+The pause menu's VR pages ([pause-menu.md](pause-menu.md)) hold only the essentials a player reaches for in the headset: comfort (the recenter, the posture, turning, the stick movement, the fade when the head is in a wall, and the view in vehicles), the display (the resolution, the sharpening, the foveation, the panel), the core controls (the hand, movement, and the few weapon, haptic, and vehicle settings that depend on the player's body or taste, such as a steering lock or a haptic strength), and the body calibration. Everything else is in the debug UI: each feature's switch, its tuning, the internals (offsets, gains, thresholds that need a developer to judge), and the diagnostic readouts, the status rows among them ([status.md](status.md)). A feature ships enabled by default, so a player meets it without reaching for the debug UI, and its switch is there for turning it off.
 
 ## Debug UI gameplay overlay
 
@@ -61,7 +61,7 @@ The debug window shows the file's state (`UP TO DATE`, `SAVING`, `FAILED, SEE LO
 
 ## What is not saved
 
-Fields that hold state for the session rather than a choice are `#[serde(skip)]`: they load as their defaults and a key for them in the file is skipped and reported. They are the director's time scale, pause, and cinematic mode; the VR pose freeze (`vr.freeze_mode`), so a launch never starts with the view locked; the sim-rate experiment's tick rate (`sim_rate.rate`), so a session never starts at an experimental rate; and the render diagnostics armed for one capture (`stereo.skip_pass_range_enabled`, `stereo.auto_trace_brightness_step`, and `stereo.single_pass.dump_vs_name_census`).
+Fields that hold state for the session rather than a choice are `#[serde(skip)]`: they load as their defaults and a key for them in the file is skipped and reported. They are the director's time scale, pause, and cinematic mode; the VR pose freeze (`vr.freeze_mode`), so a launch never starts with the view locked; and the render diagnostics armed for one capture (`stereo.skip_pass_range_enabled`, `stereo.auto_trace_brightness_step`, and `stereo.single_pass.dump_vs_name_census`).
 
 ## TOML and the configuration types
 

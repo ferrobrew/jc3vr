@@ -17,31 +17,6 @@ use tracking_format::input::{CapturedInput, DiscontinuityReason, InputRecord};
 
 use crate::recorder::tracking::format::{self, Header};
 
-/// The container selected once at recording start.
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum RecordingFormat {
-    UncompressedV4,
-    #[default]
-    ChunkedV4,
-}
-
-impl RecordingFormat {
-    pub(crate) fn from_compression_setting(enabled: bool) -> Self {
-        if enabled {
-            Self::ChunkedV4
-        } else {
-            Self::UncompressedV4
-        }
-    }
-
-    fn preamble(self, header: &Header) -> Vec<u8> {
-        match self {
-            Self::UncompressedV4 => format::encode_input_preamble(header),
-            Self::ChunkedV4 => format::encode_chunked_preamble(header),
-        }
-    }
-}
-
 /// A frame and all input records captured beside it occupy one queue slot.
 pub(crate) struct CaptureBatch {
     pub(crate) bytes: Vec<u8>,
@@ -113,12 +88,10 @@ impl Owner {
 }
 
 impl Writer {
-    pub(crate) fn start(
-        path: &Path,
-        header: &Header,
-        format: RecordingFormat,
-    ) -> Result<Self, WriterError> {
-        let preamble = format.preamble(header);
+    /// Create the recording at `path` in the lossless version 4 chunked container and start its
+    /// writer thread.
+    pub(crate) fn start(path: &Path, header: &Header) -> Result<Self, WriterError> {
+        let preamble = format::encode_chunked_preamble(header);
         let create = || -> std::io::Result<BufWriter<File>> {
             let mut file = BufWriter::new(File::create_new(path)?);
             file.write_all(&preamble)?;
@@ -128,16 +101,12 @@ impl Writer {
             path: path.to_owned(),
             error,
         })?;
-        Self::spawn_sink(file, preamble.len() as u64, format)
+        Self::spawn_sink(file, preamble.len() as u64)
     }
 
-    fn spawn_sink(
-        file: impl Sink + Send + 'static,
-        bytes: u64,
-        format: RecordingFormat,
-    ) -> Result<Self, WriterError> {
+    fn spawn_sink(file: impl Sink + Send + 'static, bytes: u64) -> Result<Self, WriterError> {
         let (sender, receiver) = mpsc::sync_channel(QUEUE_DEPTH);
-        let shared = Arc::new(Shared::new(bytes, format));
+        let shared = Arc::new(Shared::new(bytes));
         let thread_shared = Arc::clone(&shared);
         let handle = std::thread::Builder::new()
             .name("jc3vr-tracking-writer".to_owned())
@@ -245,7 +214,7 @@ impl Writer {
             Self {
                 sender: None,
                 handle: Some(Owner::Controlled(Arc::clone(&result))),
-                shared: Arc::new(Shared::new(0, RecordingFormat::default())),
+                shared: Arc::new(Shared::new(0)),
                 pending_loss: None,
             },
             result,
@@ -284,7 +253,6 @@ fn encode_loss(loss: Loss) -> Vec<u8> {
 }
 
 struct Shared {
-    format: RecordingFormat,
     error: Mutex<Option<String>>,
     bytes: AtomicU64,
     logical_bytes: AtomicU64,
@@ -292,9 +260,8 @@ struct Shared {
 }
 
 impl Shared {
-    fn new(bytes: u64, format: RecordingFormat) -> Self {
+    fn new(bytes: u64) -> Self {
         Self {
-            format,
             error: Mutex::new(None),
             bytes: AtomicU64::new(bytes),
             logical_bytes: AtomicU64::new(bytes),
@@ -342,15 +309,8 @@ fn drain(
 }
 
 fn write_batch(file: &mut impl Sink, records: &[u8], shared: &Shared) -> Result<(), String> {
-    let chunk;
-    let stored = match shared.format {
-        RecordingFormat::UncompressedV4 => records,
-        RecordingFormat::ChunkedV4 => {
-            chunk = tracking_format::encode_chunk(records).map_err(|error| error.to_string())?;
-            chunk.as_slice()
-        }
-    };
-    write_record(file, stored, shared).map_err(|error| error.to_string())?;
+    let chunk = tracking_format::encode_chunk(records).map_err(|error| error.to_string())?;
+    write_record(file, &chunk, shared).map_err(|error| error.to_string())?;
     shared
         .logical_bytes
         .fetch_add(records.len() as u64, Ordering::Relaxed);

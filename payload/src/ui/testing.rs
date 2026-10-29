@@ -123,13 +123,6 @@ fn recording_ui(ui: &mut egui::Ui) {
         "Record the tracked hand joints",
     )
     .on_hover_text("They triple a frame's size, and only the finger curls read them.");
-    ui.checkbox(
-        &mut cfg.testing.record_compression,
-        "Use lossless chunked recording",
-    )
-    .on_hover_text(
-        "On by default. Applies to the next recording and stores the same full samples in lossless version 4 chunks; no joints or sample rate are dropped. Turn off for uncompressed version 4. Real-capture performance has not been benchmarked.",
-    );
     ui.label(
         "Records the head, both controllers, their inputs, and the semantic actions each VR \
          frame, starting from where the player stands. Ctrl+Numpad/ toggles it.",
