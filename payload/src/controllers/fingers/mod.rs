@@ -33,7 +33,7 @@ pub mod pose;
 pub mod target;
 pub mod tuning;
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use glam::{Quat, Vec3};
 use jc3gi::character::character::{AnimationController, Character, Joint};
@@ -83,6 +83,18 @@ pub fn status() -> [HandFingersStatus; 2] {
     *PUBLISHED.lock()
 }
 
+/// `hand`'s index fingertip as last drawn, in the wrist frame the bones give
+/// ([`crate::controllers::hands::pose::wrist_frame_from_bones`], origin at the wrist bone):
+/// Rico's posed index finger, bent by the curls, extended past its distal joint
+/// ([`pose::fingertip`]). The render-time late update carries the finger bones rigidly with the
+/// wrist, so the point holds its place in the drawn wrist frame. `None` when the hand's fingers
+/// were not written within `max_age` of `now`.
+pub fn index_tip(hand: Hand, now: Instant, max_age: Duration) -> Option<Vec3> {
+    INDEX_TIPS.lock()[hand.index()]
+        .filter(|tip| now.saturating_duration_since(tip.at) <= max_age)
+        .map(|tip| tip.wrist_local)
+}
+
 /// Curl the local player's fingers. Called at the end of the pose-finalization pass, after the
 /// solve and the hands' wrist targets for the tick.
 ///
@@ -99,6 +111,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     if !config.enabled || !enabled || !scheme::is_controllers() {
         *state = FingerState::EMPTY;
         *PUBLISHED.lock() = state.status;
+        *INDEX_TIPS.lock() = [None; 2];
         return;
     }
 
@@ -120,6 +133,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     .unwrap_or([None; 2]);
     let max_age = grip::max_age(dt);
     let mut controller = unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() };
+    let mut tips = [None; 2];
 
     for hand in Hand::BOTH {
         let i = hand.index();
@@ -156,10 +170,14 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         });
         state.smoothed[i] = Some(shape);
         let bend = pose::hand_bend(&shape, &FINGERS, weight, target.driven);
-        let outcome = match controller.as_deref_mut() {
+        let (outcome, tip) = match controller.as_deref_mut() {
             Some(controller) => unsafe { apply_hand(controller, hand, &bend) },
-            None => ApplyOutcome::NoController,
+            None => (ApplyOutcome::NoController, None),
         };
+        tips[i] = tip.map(|wrist_local| DrawnTip {
+            wrist_local,
+            at: now,
+        });
         state.status[i] = HandFingersStatus {
             source: Some(source),
             shape,
@@ -171,6 +189,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         };
     }
     *PUBLISHED.lock() = state.status;
+    *INDEX_TIPS.lock() = tips;
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -183,23 +202,24 @@ enum ApplyOutcome {
 }
 
 /// Write one hand's bent fingers over the finalized pose, and publish the hand's proportions for
-/// the contact fit. Every finger's joints are read before any is written, and each finger's are
+/// the contact fit. Returns the outcome and, once written, the index fingertip in the bones' wrist
+/// frame ([`index_tip`]). Every finger's joints are read before any is written, and each finger's are
 /// written root outward, so the result does not depend on whether a write carries the bones beyond
 /// it along.
 unsafe fn apply_hand(
     controller: &mut AnimationController,
     hand: Hand,
     bend: &pose::HandBend,
-) -> ApplyOutcome {
+) -> (ApplyOutcome, Option<Vec3>) {
     let bone = |name| unsafe { ik::bone_index(controller, name) };
     let Some(wrist) = bone(WRIST_NAMES[hand.index()]) else {
-        return ApplyOutcome::Unresolved;
+        return (ApplyOutcome::Unresolved, None);
     };
     let mut chains = [[0u32; 3]; 5];
     for finger in Finger::ALL {
         for (k, name) in CHAIN_NAMES[hand.index()][finger.index()].iter().enumerate() {
             let Some(index) = bone(name) else {
-                return ApplyOutcome::Unresolved;
+                return (ApplyOutcome::Unresolved, None);
             };
             chains[finger.index()][k] = index;
         }
@@ -207,19 +227,21 @@ unsafe fn apply_hand(
     let read = chains.map(|chain| chain.map(|b| unsafe { read_joint(controller, b) }));
     let joints = read.map(|chain| chain.map(|(_, j)| j));
     let knuckle = |finger: Finger| joints[finger.index()][0];
+    let wrist_position = unsafe { read_joint(controller, wrist) }.1.position;
     let Some(palm) = PalmFrame::from_bones(
         hand,
-        unsafe { read_joint(controller, wrist) }.1.position,
+        wrist_position,
         knuckle(Finger::Index).position,
         knuckle(Finger::Middle).position,
         knuckle(Finger::Little).position,
     ) else {
-        return ApplyOutcome::Degenerate;
+        return (ApplyOutcome::Degenerate, None);
     };
     if let Some(geometry) = HandGeometry::measure(&palm, &joints) {
         contact::publish_geometry(hand, geometry);
     }
 
+    let mut written = joints;
     for finger in Finger::ALL.into_iter().filter(|f| bend.driven[f.index()]) {
         let i = finger.index();
         let bent = match finger {
@@ -232,13 +254,24 @@ unsafe fn apply_hand(
             ),
             _ => pose::bend_finger(joints[i], &palm, bend.bend[i], bend.splay[i], bend.weight),
         };
+        written[i] = bent;
         for ((&index, (mut joint, _)), new) in chains[i].iter().zip(read[i]).zip(bent) {
             joint.m_Translation.data = new.position.to_array();
             joint.m_Orientation.data = new.orientation.to_array();
             unsafe { controller.SetJoint(index, &mut joint) };
         }
     }
-    ApplyOutcome::Applied
+    // The knuckles are the bend's pivots, so the wrist frame is the same before and after.
+    let tip = pose::fingertip(&written[Finger::Index.index()]).and_then(|tip| {
+        pose::in_wrist_frame(
+            hand,
+            wrist_position,
+            knuckle(Finger::Index).position,
+            knuckle(Finger::Middle).position,
+            tip,
+        )
+    });
+    (ApplyOutcome::Applied, tip)
 }
 
 /// A bone's model-space joint, whole (to write back with its scale) and as a [`BoneJoint`].
@@ -292,6 +325,17 @@ static STATE: Mutex<FingerState> = Mutex::new(FingerState::EMPTY);
 
 /// The last tick's status, published for any thread.
 static PUBLISHED: Mutex<[HandFingersStatus; 2]> = Mutex::new(FingerState::EMPTY.status);
+
+/// The last tick's index fingertips, indexed by [`Hand::index`] ([`index_tip`]). A leaf slot of
+/// its own, so that the input tick may read it.
+static INDEX_TIPS: Mutex<[Option<DrawnTip>; 2]> = Mutex::new([None; 2]);
+
+/// One hand's index fingertip in its bones' wrist frame, and when it was written.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct DrawnTip {
+    wrist_local: Vec3,
+    at: Instant,
+}
 
 /// The wrist bone per side.
 const WRIST_NAMES: [&str; 2] = ["LeftHand", "RightHand"];

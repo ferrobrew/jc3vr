@@ -27,6 +27,7 @@ use glam::{Quat, Vec3};
 use crate::controllers::{
     fingers::{
         curl::{Finger, FingerCurls},
+        grip::contact::DISTAL_SHARE,
         tuning::FingerTuning,
     },
     frame::Hand,
@@ -281,6 +282,32 @@ pub fn bend_thumb(
     pose_chain(chain, axes, targets, weight)
 }
 
+/// The fingertip of a finger's three joints (root outward): past the distal joint along the distal
+/// bone's axis by the distal bone's length. The distal bone has no joint beyond it, so its axis is
+/// read as the middle bone's, as the bend reads it, and its length is a share of the middle bone's
+/// ([`DISTAL_SHARE`]). `None` for a chain with coincident joints.
+pub fn fingertip(chain: &[BoneJoint; 3]) -> Option<Vec3> {
+    let axes = bone_axes(chain)?;
+    let length = chain[1].position.distance(chain[2].position) * DISTAL_SHARE;
+    let tip = chain[2].position + (chain[2].orientation * axes[2]).normalize() * length;
+    tip.is_finite().then_some(tip)
+}
+
+/// `point` in `hand`'s wrist frame as the bones give it
+/// ([`hand_pose::wrist_frame_from_bones`], with its origin at the wrist bone), all in one model
+/// space, or `None` for a degenerate hand.
+pub fn in_wrist_frame(
+    hand: Hand,
+    wrist: Vec3,
+    index: Vec3,
+    middle: Vec3,
+    point: Vec3,
+) -> Option<Vec3> {
+    let frame = hand_pose::wrist_frame_from_bones(hand, wrist, index, middle)?;
+    let local = frame.inverse() * (point - wrist);
+    local.is_finite().then_some(local)
+}
+
 /// Each bone's axis along its length in its own frame, or `None` for a chain with coincident joints.
 fn bone_axes(chain: &[BoneJoint; 3]) -> Option<[Vec3; 3]> {
     let local = |k: usize| {
@@ -410,6 +437,52 @@ mod tests {
             // The distal bone's length runs along +X in `chain_along`.
             _ => chain[2].orientation * Vec3::X,
         }
+    }
+
+    #[test]
+    fn the_fingertip_lies_past_the_distal_joint_along_the_finger() {
+        let open = (RIGHT_INDEX - RIGHT_WRIST).normalize();
+        let straight = chain_along(RIGHT_INDEX, [open; 3], 0.4);
+        let tip = fingertip(&straight).unwrap();
+        let expected = RIGHT_INDEX + open * (0.045 + 0.03 + 0.03 * DISTAL_SHARE);
+        assert!(tip.abs_diff_eq(expected, EPS), "{tip}");
+        // A curled finger's tip follows its distal bone, toward the palm.
+        let curled = animated_finger(RIGHT_INDEX, 0.4);
+        let tip = fingertip(&curled).unwrap();
+        let along = direction(&curled, 2);
+        assert!(
+            tip.abs_diff_eq(curled[2].position + along * 0.03 * DISTAL_SHARE, EPS),
+            "{tip}"
+        );
+        assert!(tip.y < curled[2].position.y);
+        let collapsed = [straight[0]; 3];
+        assert_eq!(fingertip(&collapsed), None);
+    }
+
+    #[test]
+    fn a_point_in_the_wrist_frame_follows_the_hand() {
+        // The test hand is already in the wrist frame's convention.
+        let point = Vec3::new(0.01, -0.02, -0.15);
+        let local =
+            in_wrist_frame(Hand::Right, RIGHT_WRIST, RIGHT_INDEX, RIGHT_MIDDLE, point).unwrap();
+        assert!(local.abs_diff_eq(point, EPS), "{local}");
+        // Moved and turned with the hand, the point keeps its place in the frame.
+        let turn = Quat::from_rotation_y(0.8) * Quat::from_rotation_x(0.3);
+        let at = Vec3::new(1.0, 2.0, 3.0);
+        let carry = |v: Vec3| at + turn * v;
+        let moved = in_wrist_frame(
+            Hand::Right,
+            carry(RIGHT_WRIST),
+            carry(RIGHT_INDEX),
+            carry(RIGHT_MIDDLE),
+            carry(point),
+        )
+        .unwrap();
+        assert!(moved.abs_diff_eq(point, EPS), "{moved}");
+        assert_eq!(
+            in_wrist_frame(Hand::Right, RIGHT_WRIST, RIGHT_WRIST, RIGHT_WRIST, point),
+            None
+        );
     }
 
     fn full_curl() -> FingerCurls {

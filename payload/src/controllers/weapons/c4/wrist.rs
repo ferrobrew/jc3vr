@@ -7,10 +7,14 @@
 //! On each input tick the press is tested in the off hand's grip frame as that hand is drawn
 //! ([`late::drawn_hands`], the hands the palette edit renders, which fall short of the controllers
 //! where an arm cannot reach or a hand blends with the animation). The button sits at a fixed place
-//! in that frame, as the overlay draws it, and the pressing fingertip is read from the controller
-//! snapshot that composed those rendered hands (its tracked skeleton, or an estimate from its
-//! controller), carried with its hand to
-//! where that hand is drawn ([`press::carry`]), and brought into the off hand's frame. The press
+//! in that frame, as the overlay draws it. The pressing fingertip is the tip of Rico's drawn index
+//! finger: the finger curls publish it in the wrist frame of the posed bones each sim tick
+//! ([`fingers::index_tip`]), and the late update carries the finger bones rigidly with the drawn
+//! wrist, so placed on the drawn wrist it is where the finger is drawn. While the curls do not
+//! write that hand, the fingertip is read from the controller snapshot that composed the rendered
+//! hands instead (its tracked skeleton, or an estimate from its controller), carried with its hand
+//! to where that hand is drawn ([`press::carry`]). Either way it is brought into the off hand's
+//! frame. The press
 //! detector ([`press`]) and the drawn button therefore share one frame: the finger the player sees
 //! touching the button is the one that presses it, whatever the body-scale remap, the two-handed
 //! pose, or an arm's reach does to the hands, and the approach speed is the finger's against the
@@ -41,6 +45,7 @@ use crate::{
             origin_provenance::{self, OriginEvidence},
         },
         config::ControllersConfig,
+        fingers,
         frame::{self, Hand, Pose},
         hands::{self, late},
         haptics::{self, Event},
@@ -63,6 +68,8 @@ use crate::{
 /// Where the fingertip was read from.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum FingertipSourceKind {
+    /// The tip of Rico's index finger as it is drawn.
+    DrawnFinger,
     /// The tracked hand skeleton's index tip.
     Skeleton,
     /// The estimate from the controller's aim pose.
@@ -72,6 +79,7 @@ pub enum FingertipSourceKind {
 impl FingertipSourceKind {
     pub const fn label(self) -> &'static str {
         match self {
+            FingertipSourceKind::DrawnFinger => "drawn index finger",
             FingertipSourceKind::Skeleton => "hand skeleton",
             FingertipSourceKind::Estimate => "controller estimate",
         }
@@ -234,6 +242,10 @@ pub(crate) fn stand_down() {
 
 struct HandSample {
     grips: [Option<Pose>; 2],
+    /// The drawn wrist frames, which carry the drawn fingertips.
+    wrists: [Option<Pose>; 2],
+    /// Each hand's drawn index fingertip in its wrist frame ([`fingers::index_tip`]).
+    drawn_tips: [Option<Vec3>; 2],
     sources: late::HandSources,
     rendered: bool,
 }
@@ -244,6 +256,13 @@ impl HandSample {
         hand: Hand,
         tuning: &DetonatorTuning,
     ) -> Option<(Vec3, FingertipSourceKind)> {
+        let off_grip = self.grips[hand.other().index()]?;
+        if let Some(point) = self.drawn_fingertip(hand) {
+            let point = press::carry(point, off_grip, Pose::IDENTITY);
+            if point.is_finite() {
+                return Some((point, FingertipSourceKind::DrawnFinger));
+            }
+        }
         let input = self.sources.hands[hand.index()]?;
         let source = FingertipSource {
             joints: input.joints.as_ref(),
@@ -268,8 +287,17 @@ impl HandSample {
             self.grips[hand.index()]?,
             &frames,
         )?;
-        let point = press::carry(point, self.grips[hand.other().index()]?, Pose::IDENTITY);
+        let point = press::carry(point, off_grip, Pose::IDENTITY);
         point.is_finite().then_some((point, kind))
+    }
+
+    /// `hand`'s drawn index fingertip in the world: its wrist-frame point on the drawn wrist. Rico's
+    /// finger is already Rico's size, so no body scale applies.
+    fn drawn_fingertip(&self, hand: Hand) -> Option<Vec3> {
+        let wrist = self.wrists[hand.index()]?;
+        let local = self.drawn_tips[hand.index()]?;
+        let point = wrist.position + wrist.orientation.normalize() * local;
+        point.is_finite().then_some(point)
     }
 
     fn stamp(&self) -> SampleStamp {
@@ -311,6 +339,8 @@ fn sample_hands() -> Option<HandSample> {
     if let Some((drawn, sources)) = late::drawn_hands_with_sources(hooks::camera::last_dtf()) {
         return sources.is_usable_at(Instant::now()).then_some(HandSample {
             grips: drawn.map(|hand| hand.map(|h| h.grip)),
+            wrists: drawn.map(|hand| hand.map(|h| h.wrist)),
+            drawn_tips: drawn_tips(),
             sources,
             rendered: true,
         });
@@ -328,19 +358,31 @@ fn sample_hands() -> Option<HandSample> {
     if !frames.is_usable() {
         return None;
     }
-    let grips = active.hands.map(|hand| {
-        hand.map(|h| Pose {
-            position: frames.cockpit_to_world(h.grip.position),
-            orientation: (frames.view * h.grip.orientation).normalize(),
-        })
-    });
+    let to_world = |pose: Pose| Pose {
+        position: frames.cockpit_to_world(pose.position),
+        orientation: (frames.view * pose.orientation).normalize(),
+    };
+    let grips = active.hands.map(|hand| hand.map(|h| to_world(h.grip)));
+    let wrists = active.hands.map(|hand| hand.map(|h| to_world(h.wrist)));
     let sources = late::HandSources::from_frame(&source, active.world_scale, origin.finish());
     sources.is_usable_at(Instant::now()).then_some(HandSample {
         grips,
+        wrists,
+        drawn_tips: drawn_tips(),
         sources,
         rendered: false,
     })
 }
+
+/// The drawn index fingertips the finger curls last published, while fresh.
+fn drawn_tips() -> [Option<Vec3>; 2] {
+    let now = Instant::now();
+    Hand::BOTH.map(|hand| fingers::index_tip(hand, now, DRAWN_TIP_MAX_AGE))
+}
+
+/// How old a published drawn fingertip may be: a few sim ticks, so a hand whose curls stopped falls
+/// back to the controller's fingertip promptly.
+const DRAWN_TIP_MAX_AGE: Duration = Duration::from_millis(100);
 
 /// The overlay slot lives a little past one input tick.
 const TTL: Duration = Duration::from_millis(150);
@@ -676,6 +718,8 @@ mod tests {
                     ..Pose::IDENTITY
                 }),
             ],
+            wrists: [None; 2],
+            drawn_tips: [None; 2],
             sources,
             rendered: true,
         };
@@ -711,12 +755,62 @@ mod tests {
     }
 
     #[test]
+    fn the_drawn_finger_presses_in_preference_to_the_controller() {
+        let now = Instant::now();
+        let origin = origin_provenance::begin(Ok(()));
+        let source = controller_frame(now);
+        let off_grip = Pose {
+            position: Vec3::new(0.0, 1.0, 0.0),
+            orientation: glam::Quat::from_rotation_z(0.5),
+        };
+        let wrist = Pose {
+            position: Vec3::new(0.3, 1.1, -0.2),
+            orientation: glam::Quat::from_rotation_y(1.1),
+        };
+        let local = Vec3::new(0.01, -0.02, -0.17);
+        let mut sample = HandSample {
+            grips: [Some(off_grip), Some(Pose::IDENTITY)],
+            wrists: [None, Some(wrist)],
+            drawn_tips: [None, Some(local)],
+            sources: late::HandSources::from_frame(&source, 2.0, origin),
+            rendered: true,
+        };
+        let tuning = C4.detonator;
+        let (tip, kind) = sample.fingertip(Hand::Right, &tuning).unwrap();
+        assert_eq!(kind, FingertipSourceKind::DrawnFinger);
+        let world = wrist.position + wrist.orientation * local;
+        let expected = off_grip.orientation.inverse() * (world - off_grip.position);
+        assert!(tip.abs_diff_eq(expected, 1e-5), "{tip}");
+        // Without a drawn fingertip, or without a drawn wrist to place it on, the controller's
+        // fingertip stands in.
+        for (wrists, tips) in [
+            ([None, Some(wrist)], [None; 2]),
+            ([None; 2], [None, Some(local)]),
+        ] {
+            sample.wrists = wrists;
+            sample.drawn_tips = tips;
+            assert_eq!(
+                sample.fingertip(Hand::Right, &tuning).unwrap().1,
+                FingertipSourceKind::Skeleton
+            );
+        }
+        sample.wrists = [None, Some(wrist)];
+        sample.drawn_tips = [None, Some(Vec3::NAN)];
+        assert_eq!(
+            sample.fingertip(Hand::Right, &tuning).unwrap().1,
+            FingertipSourceKind::Skeleton
+        );
+    }
+
+    #[test]
     fn source_validity_and_sample_discontinuities_do_not_share_press_history() {
         let now = Instant::now();
         let origin = origin_provenance::begin(Ok(()));
         let mut source = controller_frame(now);
         let mut sample = HandSample {
             grips: [Some(Pose::IDENTITY); 2],
+            wrists: [None; 2],
+            drawn_tips: [None; 2],
             sources: late::HandSources::from_frame(&source, 1.0, origin),
             rendered: true,
         };
