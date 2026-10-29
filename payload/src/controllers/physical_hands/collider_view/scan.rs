@@ -160,6 +160,40 @@ pub(super) unsafe fn scan(
     })
 }
 
+/// The ids and boxes of the dynamic bodies in the simulation whose boxes `keep` accepts, at most
+/// `max_bodies` of them in id order, without reading their shapes.
+///
+/// # Safety
+///
+/// The game thread, outside the physics step.
+pub(super) unsafe fn dynamic_boxes(
+    mut keep: impl FnMut(&Aabb) -> bool,
+    max_bodies: usize,
+) -> Result<Vec<(u32, Aabb)>, ScanError> {
+    let world = unsafe { World::get() }.ok_or(ScanError::NoPhysicsWorld)?;
+    let w = world.world();
+    if w.m_bodies.is_null() {
+        return Err(ScanError::NoBodies);
+    }
+    let space = Space::of(w);
+    let mut kept = Vec::new();
+    for id in 0..w.m_peakBodyIndex.saturating_add(1) {
+        if kept.len() >= max_bodies {
+            break;
+        }
+        // SAFETY: every id up to the peak has a slot.
+        let slot = unsafe { &*w.m_bodies.add(id as usize) };
+        if motion_kind(slot) != Some(MotionKind::Dynamic) {
+            continue;
+        }
+        let aabb = space.restore(slot, world.shift);
+        if keep(&aabb) {
+            kept.push((id, aabb));
+        }
+    }
+    Ok(kept)
+}
+
 /// Refresh retained bodies at render time without re-reading their shape geometry.
 /// Reused or removed body slots are discarded instead of displaying the old body's outline.
 ///

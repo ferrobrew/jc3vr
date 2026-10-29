@@ -24,13 +24,14 @@ pub struct Chosen<K> {
     pub angle: f32,
 }
 
-/// The candidate of `candidates` within `cone` radians of `ray` and `range` metres of its origin
-/// whose line makes the smallest angle with the ray; of equal angles, the nearer. A candidate at
+/// The candidate of `candidates` within its cone of `ray` and `range` metres of its origin whose
+/// line makes the smallest angle with the ray; of equal angles, the nearer. `cone` gives a
+/// candidate's cone, radians, from its kind and its distance from the ray's origin. A candidate at
 /// the ray's origin, or with a point that is not finite, is never chosen.
 pub fn choose<K: Copy>(
     ray: &Ray,
     candidates: impl IntoIterator<Item = Candidate<K>>,
-    cone: f32,
+    cone: impl Fn(&K, f32) -> f32,
     range: f32,
 ) -> Option<Chosen<K>> {
     candidates
@@ -42,7 +43,7 @@ pub fn choose<K: Copy>(
                 return None;
             }
             let angle = ray.direction.angle_between(offset / distance);
-            (angle.is_finite() && angle <= cone).then_some(Chosen {
+            (angle.is_finite() && angle <= cone(&candidate.kind, distance)).then_some(Chosen {
                 candidate,
                 distance,
                 angle,
@@ -53,6 +54,19 @@ pub fn choose<K: Copy>(
                 .total_cmp(&b.angle)
                 .then(a.distance.total_cmp(&b.distance))
         })
+}
+
+/// The cone, radians, inside which a weapon lying in the world `distance` metres from the ray's
+/// origin is chosen: `base`, widened by up to `widen` as the weapon nears `range`. A gun lying flat
+/// subtends a fraction of a degree at range, so the ray's own hit cannot be asked of it, and the
+/// farther it lies the more the hand's tremor and the ground's grazing angle throw the ray off it.
+pub fn floor_cone(distance: f32, base: f32, widen: f32, range: f32) -> f32 {
+    let share = if range > 0.0 && distance.is_finite() {
+        (distance / range).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    base + widen.max(0.0) * share
 }
 
 /// The point the pull carries the target's centre toward: the hand, raised by `arc` of the
@@ -185,7 +199,7 @@ mod tests {
                 at(2, Vec3::new(0.1, 0.0, -10.0)),
                 at(3, Vec3::new(0.0, 0.0, 10.0)),
             ],
-            cone,
+            |_, _| cone,
             20.0,
         )
         .unwrap();
@@ -195,7 +209,7 @@ mod tests {
 
     #[test]
     fn the_aim_ignores_what_is_out_of_the_cone_or_the_range() {
-        let cone = 6f32.to_radians();
+        let cone = |_: &u32, _: f32| 6f32.to_radians();
         assert_eq!(
             choose(&ray(), [at(1, Vec3::new(3.0, 0.0, -10.0))], cone, 20.0),
             None,
@@ -221,11 +235,38 @@ mod tests {
                 at(1, Vec3::new(0.0, 0.0, -12.0)),
                 at(2, Vec3::new(0.0, 0.0, -4.0)),
             ],
-            0.1,
+            |_, _| 0.1,
             20.0,
         )
         .unwrap();
         assert_eq!(chosen.candidate.kind, 2);
+    }
+
+    #[test]
+    fn a_far_weapon_on_the_ground_is_chosen_off_the_ray_where_a_near_one_is_not() {
+        let (base, widen, range) = (6f32.to_radians(), 4f32.to_radians(), 20.0);
+        let cone = |_: &u32, distance: f32| floor_cone(distance, base, widen, range);
+        // Eight degrees off the ray: outside the base cone, inside the cone widened at range.
+        let off = |distance: f32| {
+            let angle = 8f32.to_radians();
+            Vec3::new(angle.sin(), 0.0, -angle.cos()) * distance
+        };
+        assert_eq!(
+            choose(&ray(), [at(1, off(18.0))], cone, range).map(|c| c.candidate.kind),
+            Some(1)
+        );
+        assert_eq!(choose(&ray(), [at(1, off(3.0))], cone, range), None);
+    }
+
+    #[test]
+    fn the_floor_cone_widens_with_distance_and_stops_at_the_range() {
+        let (base, widen) = (0.1, 0.05);
+        assert_eq!(floor_cone(0.0, base, widen, 20.0), base);
+        assert!((floor_cone(10.0, base, widen, 20.0) - 0.125).abs() < 1e-6);
+        assert_eq!(floor_cone(40.0, base, widen, 20.0), base + widen);
+        assert_eq!(floor_cone(f32::NAN, base, widen, 20.0), base);
+        assert_eq!(floor_cone(10.0, base, widen, 0.0), base);
+        assert_eq!(floor_cone(10.0, base, -1.0, 20.0), base);
     }
 
     #[test]

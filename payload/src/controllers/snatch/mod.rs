@@ -10,8 +10,9 @@
 //! 1. [`targets`] offers the grip one remote target ([`GrabVolume::Snatch`], ranked
 //!    [`Tier::Remote`](crate::controllers::grab::Tier::Remote), taken only when nothing at all is
 //!    in reach) for the empty grapple hand on foot, with the hook free and the grapple button up
-//!    ([`target`]): the weapon, loose object, or car door under the grapple's aim, or the gun in a
-//!    character's hands or holster nearest the aim's line within its cone and in sight.
+//!    ([`target`]): the weapon, loose object, or car door under the grapple's aim, or the weapon
+//!    lying in the world or gun in a character's hands or holster nearest the aim's line within its
+//!    cone and in sight.
 //! 2. [`finish_tick`] acts on the grip's grab of it, which arms the snatch on that target. A yank
 //!    of the hand back toward the body while the grip is held fires it ([`pull`]): a gun on a
 //!    character is first let go of, with the steal's drop and stagger; then the game's hook flies

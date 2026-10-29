@@ -3,8 +3,8 @@
 //! `docs/mod/input/controllers-and-roomscale.md`). Pure.
 //!
 //! The detector keeps the grapple hand's distance from the body over a short window, sampled at
-//! the input tick. A yank is a drop in that distance of at least the configured length, from the
-//! farthest sample in the window to the current one, covered at the configured speed or faster.
+//! the input tick. A yank is a drop in that distance of at least the configured length, from any
+//! sample in the window to the current one, covered at the configured speed or faster.
 //! After a yank the history is cleared and a cooldown runs, so one pull issues one tap.
 
 use std::collections::VecDeque;
@@ -134,20 +134,21 @@ impl YankDetector {
         if self.cooldown > 0.0 {
             return None;
         }
-        let &(t0, farthest) = self.history.iter().max_by(|a, b| a.1.total_cmp(&b.1))?;
-        let pulled = farthest - distance;
-        let elapsed = self.time - t0;
-        if elapsed <= 0.0 || pulled < config.min_distance_m {
-            return None;
-        }
-        let speed = pulled / elapsed;
-        if speed < config.min_speed_mps {
-            return None;
-        }
-        let yank = Yank {
-            distance_m: pulled,
-            speed_mps: speed,
-        };
+        // Every sample in the window may start the pull, so a hand held still before it pulls
+        // does not slow the pull's measured speed with the pause.
+        let yank = self
+            .history
+            .iter()
+            .filter_map(|&(t, from)| {
+                let pulled = from - distance;
+                let elapsed = self.time - t;
+                (elapsed > 0.0 && pulled >= config.min_distance_m).then(|| Yank {
+                    distance_m: pulled,
+                    speed_mps: pulled / elapsed,
+                })
+            })
+            .filter(|yank| yank.speed_mps >= config.min_speed_mps)
+            .max_by(|a, b| a.distance_m.total_cmp(&b.distance_m))?;
         self.history.clear();
         self.cooldown = config.cooldown_s;
         self.last = Some(yank);
@@ -184,6 +185,15 @@ mod tests {
         let mut d = YankDetector::new();
         let slow: Vec<f32> = (0..30).map(|i| 0.6 - i as f32 * 0.01).collect();
         assert!(run(&mut d, &slow, true).iter().all(|f| !f));
+    }
+
+    #[test]
+    fn a_pause_before_the_pull_does_not_slow_it() {
+        let mut d = YankDetector::new();
+        // Still for most of the window, then 0.16 m in two ticks.
+        let fired = run(&mut d, &[0.6, 0.6, 0.6, 0.6, 0.52, 0.44], true);
+        assert_eq!(fired, [false, false, false, false, false, true]);
+        assert!(d.last.unwrap().speed_mps >= 2.0);
     }
 
     #[test]

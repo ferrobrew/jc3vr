@@ -29,7 +29,7 @@ impl SnatchConfig {
             yank: YankConfig {
                 enabled: true,
                 min_distance_m: 0.12,
-                min_speed_mps: 1.5,
+                min_speed_mps: 1.0,
                 window_s: 0.25,
                 cooldown_s: 0.5,
                 body_drop_m: 0.3,
@@ -55,9 +55,12 @@ pub struct SnatchTuning {
     pub sling_max_accel_mps2: f32,
     /// The farthest a target may be, metres. The hook's line caps it.
     pub range_m: f32,
-    /// How far off the grapple's ray a gun in a character's hands may be and still be chosen,
-    /// degrees.
+    /// How far off the grapple's ray a gun in a character's hands or holster, or a weapon lying in
+    /// the world, may be and still be chosen, degrees.
     pub cone_deg: f32,
+    /// How much wider the cone is for a weapon lying in the world at the range, degrees, in
+    /// proportion to its distance ([`floor_cone`](crate::controllers::snatch::rules::floor_cone)).
+    pub floor_cone_widen_deg: f32,
     /// The fastest the pull carries the target, metres per second.
     pub max_speed_mps: f32,
     /// The hardest the pull accelerates the target, metres per second squared.
@@ -94,6 +97,7 @@ pub const SNATCH: SnatchTuning = SnatchTuning {
     sling_max_accel_mps2: 120.0,
     range_m: 20.0,
     cone_deg: 6.0,
+    floor_cone_widen_deg: 4.0,
     max_speed_mps: 16.0,
     max_accel_mps2: 80.0,
     stiffness_per_s: 4.0,
@@ -127,6 +131,12 @@ mod tests {
     #[test]
     fn the_snatch_fires_on_a_sharp_pull_toward_the_body() {
         assert_eq!(yanks(&[0.6, 0.6, 0.52, 0.42, 0.34, 0.33]), 1);
+    }
+
+    #[test]
+    fn a_deliberate_moderate_pull_fires_it() {
+        // About 1.2 m/s over 0.16 m, after a pause at the grip.
+        assert_eq!(yanks(&[0.6, 0.6, 0.6, 0.56, 0.52, 0.48, 0.44, 0.44]), 1);
     }
 
     #[test]

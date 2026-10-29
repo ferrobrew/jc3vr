@@ -10,6 +10,7 @@ use crate::controllers::{
     frame::Hand,
     physical_hands::{
         STATE, bodies,
+        collider_view::{self, model::Aabb},
         contact::{Surface, SurfaceHit},
         doors::{self, DoorTarget, DoorsConfig, engine as door_engine},
         engine,
@@ -38,6 +39,52 @@ pub(crate) unsafe fn loose_prop(object: NonZeroUsize, body: u32) -> Option<f32> 
     (grasp::can_hold(mass_kg, &PICKUP) && mass_kg * PICKUP.gravity_mps2 <= PICKUP.hand_force_n)
         .then_some(mass_kg)
 }
+
+/// A weapon lying in the world, found by its box rather than by a cast.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct DroppedWeapon {
+    /// The weapon (its physics game object, a `CWeaponBase`).
+    pub object: NonZeroUsize,
+    pub body: u32,
+    /// The body's centre, world space.
+    pub centre: Vec3,
+}
+
+/// The weapons lying in the world whose dynamic bodies' boxes `keep` accepts, at most
+/// [`MAX_DROPPED_WEAPONS`] boxes considered. A weapon's body is on a layer the ordinary casts never
+/// meet, so a thin gun far off is found by its box and then checked as a dropped weapon whose body
+/// still reads as its own.
+///
+/// # Safety
+///
+/// The main thread, outside the physics step.
+pub(crate) unsafe fn dropped_weapons(keep: impl FnMut(&Aabb) -> bool) -> Vec<DroppedWeapon> {
+    let Ok(boxes) = (unsafe { collider_view::dynamic_boxes(keep, MAX_DROPPED_WEAPONS) }) else {
+        return Vec::new();
+    };
+    boxes
+        .into_iter()
+        .filter_map(|(body, _)| {
+            let object = unsafe { bodies::owner_of(body) }?;
+            if !matches!(
+                unsafe { bodies::classify(object, body) },
+                Ok(TargetKind::Weapon)
+            ) {
+                return None;
+            }
+            let state = unsafe { bodies::read(body, object) }.ok()?;
+            Some(DroppedWeapon {
+                object,
+                body,
+                centre: state.pose.centre,
+            })
+        })
+        .collect()
+}
+
+/// The most boxes [`dropped_weapons`] considers: its filter keeps only boxes near the aim, so this
+/// bounds a pathological pile of debris, not an ordinary scene.
+const MAX_DROPPED_WEAPONS: usize = 32;
 
 /// The closed door of the vehicle `object` (or the vehicle a part of it belongs to) whose handle
 /// area is within `reach_m` of `point`, a point the grapple's aim hit on its body `body` with the

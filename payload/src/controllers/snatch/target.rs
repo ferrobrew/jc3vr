@@ -15,7 +15,12 @@ use crate::controllers::{
     config::ControllersConfig,
     grab::RemoteKind,
     mode::Mode,
-    physical_hands::{self, doors::DoorTarget, remote},
+    physical_hands::{
+        self,
+        collider_view::model::Aabb,
+        doors::DoorTarget,
+        remote::{self, DroppedWeapon},
+    },
     snatch::{
         OfferInput, Refusal, SNATCH, engine,
         rules::{self, Candidate},
@@ -142,10 +147,11 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
             point
         }
     };
+    let ground = matches!(offer.kind, OfferKind::Ground { .. });
     let chosen = rules::choose(
         ray,
         [Candidate { kind: (), point }],
-        (SNATCH.cone_deg + RETAIN_CONE_DEG).to_radians(),
+        |_, distance| cone(ground, distance) + RETAIN_CONE_DEG.to_radians(),
         SNATCH.range_m,
     );
     let Some(chosen) = chosen else { return false };
@@ -241,7 +247,8 @@ pub(super) unsafe fn offerable(input: &OfferInput) -> Result<(), &'static str> {
 }
 
 /// The target the grapple's aim picks along `ray`: the weapon, object, or car door under it, or a
-/// gun in a character's hands or holster near its line, within the range, in sight.
+/// weapon lying in the world or a gun in a character's hands or holster near its line, within the
+/// range, in sight.
 ///
 /// # Safety
 ///
@@ -250,6 +257,7 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
     #[derive(Copy, Clone)]
     enum Kind {
         Aimed,
+        Floor(usize),
         Held(usize),
         Holstered(usize),
     }
@@ -258,6 +266,13 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
     let aimed = grapple_weapons::aimed().and_then(|(aimed, alive)| {
         unsafe { aimed_offer(&aimed, config) }.map(|k| (aimed, k, alive))
     });
+    let aimed_weapon = aimed
+        .as_ref()
+        .and_then(|(aimed, _, _)| aimed.weapon.then_some(aimed.object));
+    let floor: Vec<DroppedWeapon> = unsafe { remote::dropped_weapons(|aabb| near_aim(ray, aabb)) }
+        .into_iter()
+        .filter(|weapon| Some(weapon.object) != aimed_weapon)
+        .collect();
     // A rack's weapons are the grab's alone.
     let held: Vec<WorldTarget> = if takes_held {
         steal::targets(|p| p)
@@ -281,6 +296,10 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
                 _ => aimed.point,
             },
         })
+        .chain(floor.iter().enumerate().map(|(i, weapon)| Candidate {
+            kind: Kind::Floor(i),
+            point: weapon.centre,
+        }))
         .chain(held.iter().enumerate().map(|(i, target)| Candidate {
             kind: Kind::Held(i),
             point: target.points[0],
@@ -292,12 +311,22 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
     let chosen = rules::choose(
         ray,
         candidates,
-        SNATCH.cone_deg.to_radians(),
+        |kind, distance| cone(matches!(kind, Kind::Floor(_)), distance),
         SNATCH.range_m,
     )?;
     let point = chosen.candidate.point;
     let kind = match chosen.candidate.kind {
         Kind::Aimed => aimed.map(|(_, kind, _alive)| kind)?,
+        Kind::Floor(i) => {
+            let weapon = floor[i];
+            unsafe { in_sight(ray, point, weapon.object.get()) }.then(|| OfferKind::Ground {
+                weapon: weapon.object,
+                body: weapon.body,
+                local_point: Vec3::ZERO,
+                // SAFETY: its body was read as its own on this thread this tick.
+                weak: unsafe { weak_of(weapon.object) },
+            })?
+        }
         Kind::Held(i) => {
             let target = held[i];
             let TargetKind::Held { character } = target.kind else {
@@ -321,6 +350,39 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
 /// How far short of a gun on a character its line of sight may be blocked, metres: the line ends
 /// inside the character.
 const SIGHT_TOLERANCE_M: f32 = 0.3;
+
+/// The cone, radians, of a candidate `distance` metres off: a weapon lying in the world's widens
+/// with its distance ([`rules::floor_cone`]), and every other's is the snatch's cone.
+fn cone(on_ground: bool, distance: f32) -> f32 {
+    let base = SNATCH.cone_deg.to_radians();
+    if on_ground {
+        rules::floor_cone(
+            distance,
+            base,
+            SNATCH.floor_cone_widen_deg.to_radians(),
+            SNATCH.range_m,
+        )
+    } else {
+        base
+    }
+}
+
+/// Whether a dynamic body's box could hold a weapon lying in the world that [`choose`] would take
+/// from `ray`: within the range and the widest floor cone, allowing for the box's own size.
+fn near_aim(ray: &Ray, aabb: &Aabb) -> bool {
+    let offset = aabb.centre() - ray.origin;
+    let distance = offset.length();
+    let half_size = (aabb.max - aabb.min).length() * 0.5;
+    if !(distance.is_finite() && half_size.is_finite()) || distance - half_size > SNATCH.range_m {
+        return false;
+    }
+    if distance <= half_size {
+        return true;
+    }
+    let slack = (half_size / distance).asin();
+    let widest = (SNATCH.cone_deg + SNATCH.floor_cone_widen_deg).to_radians();
+    ray.direction.angle_between(offset / distance) <= widest + slack
+}
 
 /// What the object under the aim is to the snatch: a weapon lying in the world, a loose object a
 /// hand can carry, or a vehicle's closed door near the aim's point.

@@ -31,7 +31,7 @@ use parking_lot::Mutex;
 pub use self::{config::ColliderViewConfig, scan::ScanError};
 use self::{
     draw::{DrawInputs, Drawn, FLASH_S, Flash},
-    model::{BodyKind, JointKind, MotionKind, Snapshot, gazed},
+    model::{Aabb, BodyKind, JointKind, MotionKind, Snapshot, gazed},
     scan::ModIds,
 };
 use crate::{
@@ -314,6 +314,21 @@ pub(crate) unsafe fn scan_moving(
 ) -> Result<Snapshot, ScanError> {
     // SAFETY: forwarded from the caller.
     unsafe { scan::scan(centre, radius_m, max_bodies as usize, false, &mod_ids()) }
+}
+
+/// The ids and boxes (game space) of the dynamic bodies whose boxes `keep` accepts, at most
+/// `max_bodies` of them, whether or not the view is on. Reads no shapes, so it is cheap enough to
+/// run every tick over the whole world.
+///
+/// # Safety
+///
+/// The game thread, outside the physics step.
+pub(crate) unsafe fn dynamic_boxes(
+    keep: impl FnMut(&Aabb) -> bool,
+    max_bodies: usize,
+) -> Result<Vec<(u32, Aabb)>, ScanError> {
+    // SAFETY: forwarded from the caller.
+    unsafe { scan::dynamic_boxes(keep, max_bodies) }
 }
 
 /// Flash a contact a hand body or a held gun's body started: where the body was before the step
