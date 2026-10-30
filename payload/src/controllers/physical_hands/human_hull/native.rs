@@ -29,6 +29,10 @@ pub(super) struct NativeState {
     pub(super) migrated_bodies: usize,
     pub(super) original_active: bool,
     pub(super) clearance: ClearanceUnavailableReason,
+    /// Shutdown attempts deferred while restoration was incomplete.
+    pub(super) shutdown_attempts: u32,
+    /// The clearance reason last reported for a deferred shutdown attempt.
+    pub(super) reported_clearance: Option<ClearanceUnavailableReason>,
     generation: u64,
     mutation_fault: bool,
 }
@@ -47,6 +51,8 @@ impl NativeState {
             migrated_bodies: 0,
             original_active: false,
             clearance: ClearanceUnavailableReason::NotRequested,
+            shutdown_attempts: 0,
+            reported_clearance: None,
             generation: 0,
             mutation_fault: false,
         }
@@ -70,7 +76,17 @@ impl NativeState {
         .then_some(self.generation)
     }
 
+    /// The current bookkeeping generation: any adoption, forgetting, or native pass changes it.
+    pub(super) fn generation(&self) -> u64 {
+        self.generation
+    }
+
     /// The native phase has restored every tracked body, and pending hooks cannot install shapes.
+    ///
+    /// The retained originals are released: every slot and restored body holds its own reference.
+    /// The replacements are deliberately kept: a body made from a slot read before the restoration
+    /// may still name one, and a kept convex shape is inert after unload, while a released one
+    /// could be freed under a live body.
     pub(super) unsafe fn commit_shutdown(&mut self) {
         assert!(
             self.shutdown_generation().is_some(),
@@ -78,8 +94,22 @@ impl NativeState {
         );
         self.committed = true;
         for table in &mut self.tables {
-            unsafe { table.release_pairs() };
+            unsafe { table.release_originals() };
         }
+        self.tables.clear();
+    }
+
+    /// Restoration did not complete in time: stop adopting and leave every table and live body
+    /// with the shapes it has now.
+    ///
+    /// Every retained reference, original and replacement, is kept, so no shape a slot or a body
+    /// names can be freed: the shapes are the engine's own convex shapes on its own heap, with no
+    /// pointer into the payload, and a settings table's destructor releases its slots' own
+    /// references as for any shape. Pending construction hooks see the commit and keep the
+    /// authored geometry.
+    pub(super) fn commit_in_place(&mut self) {
+        self.committed = true;
+        // Dropping the tables drops the retained pointers without releasing them.
         self.tables.clear();
     }
 
@@ -155,7 +185,7 @@ impl NativeState {
     ) -> Result<(), ClearanceUnavailableReason> {
         self.original_active = false;
         self.advance_generation();
-        let bodies = unsafe { inventory(world, &self.tables)? };
+        let bodies = unsafe { inventory(world)? };
         let mut owners = HashSet::new();
         let type_id = unsafe { Character::TYPE_ID() };
         let settings = bodies.into_iter().filter_map(|id| {
@@ -210,7 +240,7 @@ impl NativeState {
         if self.mutation_fault {
             return Err(ClearanceUnavailableReason::RollbackRejected);
         }
-        let bodies = unsafe { inventory(world, &self.tables)? };
+        let bodies = unsafe { inventory(world)? };
         for table in &self.tables {
             unsafe { table.validate_slots()? };
         }
@@ -239,7 +269,7 @@ impl NativeState {
             self.migrated_bodies = unsafe { self.count_migrated(world, &bodies) };
             return Err(reason);
         }
-        let bodies = unsafe { inventory(world, &self.tables)? };
+        let bodies = unsafe { inventory(world)? };
         self.migrated_bodies = unsafe { self.count_migrated(world, &bodies) };
         if restore && self.migrated_bodies != 0 {
             return Err(ClearanceUnavailableReason::MutationRejected);
@@ -411,6 +441,12 @@ impl Table {
         self.installed = install;
     }
 
+    unsafe fn release_originals(&mut self) {
+        for pair in self.pairs.drain(..) {
+            unsafe { release(pair.original) };
+        }
+    }
+
     unsafe fn release_pairs(&mut self) {
         for pair in self.pairs.drain(..) {
             unsafe {
@@ -433,32 +469,50 @@ struct Change {
     to: NonNull<hknpShape>,
 }
 
-unsafe fn inventory(
-    world: &hknpWorld,
-    tables: &[Table],
-) -> Result<Vec<u32>, ClearanceUnavailableReason> {
+unsafe fn inventory(world: &hknpWorld) -> Result<Vec<u32>, ClearanceUnavailableReason> {
     if world.m_bodies.is_null() || world.m_peakBodyIndex > MAXIMUM_BODY_INDEX {
         return Err(ClearanceUnavailableReason::IncompleteInventory);
     }
     let mut bodies = Vec::new();
     for id in 0..=world.m_peakBodyIndex {
         let body = unsafe { &*world.m_bodies.add(id as usize) };
-        if body.m_motionId == hknpBody::INVALID_MOTION_ID {
-            if tables
-                .iter()
-                .flat_map(|table| &table.pairs)
-                .any(|pair| body.m_shape == pair.replacement.as_ptr())
-            {
-                return Err(ClearanceUnavailableReason::PendingBody);
-            }
-            continue;
+        match slot_kind(body.m_flags, body.m_motionId, !body.m_shape.is_null()) {
+            SlotKind::Free => {}
+            SlotKind::Malformed => return Err(ClearanceUnavailableReason::IncompleteInventory),
+            SlotKind::Live => bodies.push(id),
         }
-        if body.m_shape.is_null() {
-            return Err(ClearanceUnavailableReason::IncompleteInventory);
-        }
-        bodies.push(id);
     }
     Ok(bodies)
+}
+
+/// What a body slot holds.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum SlotKind {
+    /// No body: a slot never used, or one whose body was destroyed or freed.
+    Free,
+    /// A live body without a shape, which the inventory cannot account for.
+    Malformed,
+    /// A live body with a shape.
+    Live,
+}
+
+/// Classify a slot by the engine's own validity test, a static or dynamic flag, and its motion.
+///
+/// Destroying a body clears its type flags at once and freeing the slot later invalidates its
+/// motion, but neither clears its shape ([`hknpBody::INVALID_MOTION_ID`]), so a dead human's slot
+/// keeps naming the narrowed replacement until the slot is reused. Its shape is therefore never
+/// evidence of a body: such a slot has nothing to restore, and the body it once held released its
+/// reference when it was destroyed.
+fn slot_kind(flags: u32, motion_id: u32, has_shape: bool) -> SlotKind {
+    if flags & (hknpBody::IS_STATIC | hknpBody::IS_DYNAMIC) == 0
+        || motion_id == hknpBody::INVALID_MOTION_ID
+    {
+        SlotKind::Free
+    } else if !has_shape {
+        SlotKind::Malformed
+    } else {
+        SlotKind::Live
+    }
 }
 
 unsafe fn apply(
@@ -690,6 +744,44 @@ mod tests {
         };
         assert_eq!(result, Err(ClearanceUnavailableReason::IncompleteInventory));
         assert_eq!(state.shutdown_generation(), None);
+    }
+
+    #[test]
+    fn a_destroyed_or_freed_slot_is_free_whatever_shape_it_still_names() {
+        let dynamic = hknpBody::IS_DYNAMIC;
+        // Destroyed: the type flags are cleared while the motion and stale shape remain.
+        assert_eq!(slot_kind(0, 7, true), SlotKind::Free);
+        // Freed: the motion is invalidated and the stale shape remains.
+        assert_eq!(
+            slot_kind(0, hknpBody::INVALID_MOTION_ID, true),
+            SlotKind::Free
+        );
+        assert_eq!(
+            slot_kind(dynamic, hknpBody::INVALID_MOTION_ID, true),
+            SlotKind::Free
+        );
+        assert_eq!(slot_kind(dynamic, 7, true), SlotKind::Live);
+        // A static body has the static motion.
+        assert_eq!(slot_kind(hknpBody::IS_STATIC, 0, true), SlotKind::Live);
+        assert_eq!(slot_kind(dynamic, 7, false), SlotKind::Malformed);
+    }
+
+    #[test]
+    fn leaving_the_hulls_in_place_commits_whatever_restoration_reached() {
+        let mut state = NativeState::new();
+        state.request_shutdown();
+        state.migrated_bodies = 3;
+        state.mutation_fault = true;
+        assert_eq!(state.shutdown_generation(), None);
+        let settings = NonNull::dangling();
+        // SAFETY: pending adoption only records this identity and never dereferences it.
+        unsafe { state.adopt(settings) }.unwrap();
+        state.commit_in_place();
+        assert!(state.committed);
+        assert!(state.tables.is_empty());
+        // Construction after the commit keeps the authored geometry and records nothing.
+        unsafe { state.adopt(settings) }.unwrap();
+        assert!(state.tables.is_empty());
     }
 
     #[test]

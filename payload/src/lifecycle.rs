@@ -124,7 +124,9 @@ pub(crate) trait PreparedParticipant {
 /// Register before enabling the participant's engine policy or accepting its work.
 ///
 /// The collider participant must restore every affected body transactionally during preparation,
-/// retain the proven reader barrier, and roll back on guard drop until the whole attempt commits.
+/// retain the proven reader barrier, and roll back on guard drop until the whole attempt commits;
+/// after a bounded wait it may instead commit with the bodies as they are, keeping every shape
+/// reference so nothing a body names can be freed.
 pub(crate) fn register_participant(
     id: ParticipantId,
     participant: Arc<dyn ShutdownParticipant>,

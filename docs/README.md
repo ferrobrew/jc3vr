@@ -108,7 +108,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 - [runtime-testing.md](mod/body/runtime-testing.md) — active replacement paths, integrated gameplay checks, and known runtime limitations.
 - [terrain-gait.md](mod/body/terrain-gait.md) — observed support and terrain at the body solve gate, moving-support transport, foot contact recovery, and runtime limits.
-- [human-hull-restoration.md](mod/body/human-hull-restoration.md) — live human settings discovery, native shape clearance, transactional restoration, and deferred unload.
+- [human-hull-restoration.md](mod/body/human-hull-restoration.md) — live human settings discovery, native shape clearance, transactional restoration, and the bounded wait at eject.
 - [camera-authored.md](mod/body/camera-authored.md) — native authored-camera following for exact takeoff, landing, recovery, pickup, and hanging states, with tracked composition and handback.
 - [attachments.md](mod/body/attachments.md) — copied socket interaction targets, native placement observations, and exact render-phase pouch markers in the body mirror.
 - [head-and-body.md](mod/body/head-and-body.md) — how head and body yaw relate in VR: coupling schemes, the headpose abstraction, the head-bone override, head hiding, and body IK.

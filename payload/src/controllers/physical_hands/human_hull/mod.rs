@@ -178,20 +178,33 @@ impl ShutdownParticipant for HumanHullShutdown {
         // The request survives a deferred attempt; only the native phase can restore live bodies.
         state.request_shutdown();
         SHUTDOWN_REQUESTED.store(true, Ordering::Release);
-        let Some(generation) = state.shutdown_generation() else {
-            return PrepareOutcome::Deferred(DeferReason::ParticipantBusy(
-                ParticipantId::HumanCollider,
-            ));
-        };
-        if active_entries() != 0 {
-            return PrepareOutcome::Deferred(DeferReason::ParticipantBusy(
-                ParticipantId::HumanCollider,
-            ));
+        let resolution = resolve(
+            state.shutdown_generation(),
+            state.generation(),
+            state.shutdown_attempts,
+            active_entries(),
+        );
+        match resolution {
+            Resolution::Wait => {
+                state.shutdown_attempts = state.shutdown_attempts.saturating_add(1);
+                if state.reported_clearance != Some(state.clearance) {
+                    state.reported_clearance = Some(state.clearance);
+                    tracing::info!(
+                        clearance = ?state.clearance,
+                        attempt = state.shutdown_attempts,
+                        of = RESTORE_ATTEMPTS,
+                        "human hull: restoration incomplete; the eject waits"
+                    );
+                }
+                PrepareOutcome::Deferred(DeferReason::ParticipantBusy(ParticipantId::HumanCollider))
+            }
+            Resolution::Restored { .. } | Resolution::LeaveInPlace { .. } => {
+                PrepareOutcome::Ready(Box::new(PreparedHull {
+                    resolution,
+                    preparation,
+                }))
+            }
         }
-        PrepareOutcome::Ready(Box::new(RestoredHull {
-            generation,
-            preparation,
-        }))
     }
 }
 
@@ -200,22 +213,79 @@ static PHYSICS_THREAD: AtomicU32 = AtomicU32::new(0);
 static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 static ACTIVE_ENTRIES: AtomicUsize = AtomicUsize::new(0);
 
-struct RestoredHull {
+/// How many shutdown attempts wait for the native phase to restore every narrowed body before the
+/// eject leaves the hulls in place. The lifecycle retries every few frames, so this is a second or
+/// two: restoration needs one native pass that finds the whole world clear, which a crowded scene
+/// may never offer, and an idle subsystem must not hold the eject indefinitely.
+const RESTORE_ATTEMPTS: u32 = 8;
+
+/// How a shutdown attempt settles the narrowed hulls.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Resolution {
+    /// The native phase restored every tracked body in this generation.
+    Restored { generation: u64 },
+    /// Restoration did not complete within [`RESTORE_ATTEMPTS`]: commit with the shapes as they
+    /// are in this generation ([`NativeState::commit_in_place`]).
+    LeaveInPlace { generation: u64 },
+    /// Wait for the native phase, or for a settings hook still running payload code.
+    Wait,
+}
+
+/// Decide a shutdown attempt from the restoration receipt, the bookkeeping generation, the
+/// attempts already deferred, and the settings hooks in flight. A hook in flight always waits:
+/// its detour is payload code and returns within the call.
+fn resolve(
+    restored: Option<u64>,
     generation: u64,
+    deferred_attempts: u32,
+    entries: usize,
+) -> Resolution {
+    if entries != 0 {
+        Resolution::Wait
+    } else if let Some(generation) = restored {
+        Resolution::Restored { generation }
+    } else if deferred_attempts >= RESTORE_ATTEMPTS {
+        Resolution::LeaveInPlace { generation }
+    } else {
+        Resolution::Wait
+    }
+}
+
+struct PreparedHull {
+    resolution: Resolution,
     preparation: Preparation,
 }
 
-impl PreparedParticipant for RestoredHull {
+impl PreparedParticipant for PreparedHull {
     fn validate(&self, preparation: Preparation) -> bool {
-        preparation == self.preparation
-            && active_entries() == 0
-            && STATE.lock().shutdown_generation() == Some(self.generation)
+        if preparation != self.preparation || active_entries() != 0 {
+            return false;
+        }
+        let state = STATE.lock();
+        match self.resolution {
+            Resolution::Restored { generation } => state.shutdown_generation() == Some(generation),
+            Resolution::LeaveInPlace { generation } => {
+                !state.committed && state.generation() == generation
+            }
+            Resolution::Wait => false,
+        }
     }
 
     fn commit(&mut self) {
         let mut state = STATE.lock();
         // Pending constructors retain authored geometry, including between validation and commit.
-        unsafe { state.commit_shutdown() };
+        match self.resolution {
+            Resolution::Restored { .. } => unsafe { state.commit_shutdown() },
+            Resolution::LeaveInPlace { .. } => {
+                tracing::warn!(
+                    clearance = ?state.clearance,
+                    migrated_bodies = state.migrated_bodies,
+                    "human hull: restoration did not complete; the narrowed hulls stay in place"
+                );
+                state.commit_in_place();
+            }
+            Resolution::Wait => unreachable!("human hull: a waiting attempt is never prepared"),
+        }
     }
 }
 
@@ -260,4 +330,38 @@ fn settings_destruct(settings: *mut SharedPfxCharacterSettings) {
         STATE.lock().forget(settings);
     }
     SETTINGS_DESTRUCT.get().unwrap().call(settings);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_completed_restoration_commits_at_once() {
+        assert_eq!(
+            resolve(Some(4), 9, 0, 0),
+            Resolution::Restored { generation: 4 }
+        );
+    }
+
+    #[test]
+    fn an_incomplete_restoration_waits_a_bounded_number_of_attempts() {
+        for attempts in 0..RESTORE_ATTEMPTS {
+            assert_eq!(resolve(None, 9, attempts, 0), Resolution::Wait);
+        }
+        assert_eq!(
+            resolve(None, 9, RESTORE_ATTEMPTS, 0),
+            Resolution::LeaveInPlace { generation: 9 }
+        );
+        assert_eq!(
+            resolve(None, 9, u32::MAX, 0),
+            Resolution::LeaveInPlace { generation: 9 }
+        );
+    }
+
+    #[test]
+    fn a_settings_hook_in_flight_always_waits() {
+        assert_eq!(resolve(Some(4), 9, 0, 1), Resolution::Wait);
+        assert_eq!(resolve(None, 9, u32::MAX, 2), Resolution::Wait);
+    }
 }

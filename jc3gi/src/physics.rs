@@ -2077,7 +2077,12 @@ impl hknpBody {
     /// The [`m_broadPhaseId`](crate::physics::hknpBody::m_broadPhaseId) of a body that is not in the broad phase: one
     /// created but not added to the simulation, or removed from it.
     pub const INVALID_BROAD_PHASE_ID: u32 = 4294967295;
-    /// The [`m_motionId`](crate::physics::hknpBody::m_motionId) of a freed body slot.
+    /// The [`m_motionId`](crate::physics::hknpBody::m_motionId) of a freed body slot. `hknpWorld::destroyBodies`
+    /// clears the slot's [`IS_STATIC`](crate::physics::hknpBody::IS_STATIC) and [`IS_DYNAMIC`](crate::physics::hknpBody::IS_DYNAMIC) bits
+    /// and releases its shape reference at once, but frees the slot later
+    /// (`hknpBodyManager::freeDestroyedBodyIds`), which writes this id and links the slot into the
+    /// free list. Neither step clears [`m_shape`](crate::physics::hknpBody::m_shape), so a destroyed or freed slot keeps
+    /// pointing at the shape it last had until the slot is reused.
     pub const INVALID_MOTION_ID: u32 = 2147483647;
     /// The [`m_flags`](crate::physics::hknpBody::m_flags) bit of a dynamic body, the only kind the velocity and impulse
     /// setters ([`hknpWorld::setBodyVelocity`](crate::physics::hknpWorld::setBodyVelocity), [`hknpWorld::applyBodyImpulseAt`](crate::physics::hknpWorld::applyBodyImpulseAt)) act on.

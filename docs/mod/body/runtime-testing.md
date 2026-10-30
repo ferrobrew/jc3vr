@@ -17,7 +17,7 @@ The replacement paths run under the existing enabled controller, full-body, weap
 
 ## Collider restoration
 
-Disable and shutdown request restoration through the native pre-simulation phase. Native convex distance queries and bounded compressed-terrain leaf traversal check each original shape before any body changes. Equivalent shallow floor contact can remain; new wall or ceiling penetration blocks restoration. Unsupported geometry, incomplete traversal, invalid query output, or an exhausted budget defers restoration and keeps normal gameplay and hooks running. No teleport or forced expansion is used. See [human-hull-restoration.md](human-hull-restoration.md).
+Disable and shutdown request restoration through the native pre-simulation phase. Native convex distance queries and bounded compressed-terrain leaf traversal check each original shape before any body changes. Equivalent shallow floor contact can remain; new wall or ceiling penetration blocks restoration. Unsupported geometry, incomplete traversal, invalid query output, or an exhausted budget defers restoration and keeps normal gameplay and hooks running. An eject waits only a bounded number of attempts for restoration, then leaves the hulls as they are with every shape reference kept. No teleport or forced expansion is used. See [human-hull-restoration.md](human-hull-restoration.md).
 
 After successful restoration, shutdown validates the copied preparation generation before teardown. A rejected body write rolls back all attempted changes. A rejected rollback refuses unload. An active native callback after hook removal keeps the image mapped. Unsupported or large terrain can still defer ejection. A process restart is not counted as successful live restoration.
 
