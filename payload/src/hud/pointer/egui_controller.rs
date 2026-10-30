@@ -838,6 +838,7 @@ mod tests {
                 ("/user/hand/left/input/thumbstick/click", click),
                 ("/user/hand/right/input/thumbstick/click", false),
                 ("/user/hand/right/input/b/click", b),
+                ("/user/hand/right/input/a/click", false),
             ]
             .into_iter()
             .enumerate()
@@ -917,6 +918,7 @@ mod tests {
                 "/user/hand/left/input/thumbstick/click",
                 "/user/hand/right/input/thumbstick/click",
                 "/user/hand/right/input/b/click",
+                "/user/hand/right/input/a/click",
             ]
             .into_iter()
             .enumerate()

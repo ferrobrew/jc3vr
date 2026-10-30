@@ -35,7 +35,7 @@ F1 starts a session recording: the video recorder and a tracking recording ([tes
 
 The two halves line up by the OpenXR predicted display time, which the video sidecar's `predicted_display_time_ns` and the tracking frames' `display_time_ns` share; `tracking-synth dump --from xr:<ns>` prints the tracking around a video frame.
 
-F2 is the take-marker action: an unlabelled marker into whatever records (above). With no tracking recording running it also saves the tracking lookback, the last ten seconds, to `recordings/<stamp>_lookback.jc3trk`, so a moment is kept even when no session recording was started.
+F2 is the take-marker action: an unlabelled marker into whatever records (above); in the headset the left stick click and then right A does the same ([input/controllers.md](input/controllers.md)). With no tracking recording running it also saves the tracking lookback, the last ten seconds, to `recordings/<stamp>_lookback.jc3trk`, so a moment is kept even when no session recording was started.
 
 ## Operating it
 

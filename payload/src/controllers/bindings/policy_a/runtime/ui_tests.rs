@@ -17,7 +17,7 @@ use crate::{
 
 fn menu_tick(runtime: &mut Runtime, sequence: u64, select: bool, source: &str) -> Tick {
     let id = MenuAction::PointerSelect.id();
-    let mut sample = group(sequence, sequence, [false; 3], &[]);
+    let mut sample = group(sequence, sequence, [false; CONTROLS], &[]);
     sample.samples.retain(|sample| !matches!(sample.route, InputRoute::Semantic { set, .. } if set == SemanticSet::OnFoot.index() as u8));
     for (action, definition) in SemanticSet::Menu.actions().iter().enumerate() {
         for hand in Hand::BOTH {
@@ -42,6 +42,16 @@ fn menu_tick(runtime: &mut Runtime, sequence: u64, select: bool, source: &str) -
         }
     }
     sample.context = 5;
+    // The physical A is down whenever the select bound to it is.
+    if source == A
+        && let Some(raw) = sample
+            .samples
+            .iter_mut()
+            .find(|sample| sample.route == InputRoute::Raw(Control::RightA.index() as u8))
+    {
+        raw.down = select;
+        raw.value = ValueBits::Bool(select);
+    }
     let frame = ControllerFrame {
         sequence,
         display_time_ns: 0,
@@ -126,7 +136,12 @@ fn commlink_remap_uses_accepted_press_and_existing_native_toggle_targets() {
     ] {
         let tick = evaluate(
             &mut runtime,
-            group(sequence, sequence, [false; 3], &[(id, down, paths(&[A]))]),
+            group(
+                sequence,
+                sequence,
+                [false; CONTROLS],
+                &[(id, down, paths(&[A]))],
+            ),
             true,
         );
         let mut input = SemanticInput::rest(SemanticSet::OnFoot, Default::default(), Hand::Right);
@@ -301,7 +316,7 @@ fn summary_tick(id: ActionId, sources: &[&str], hand: Hand) -> (Tick, SemanticIn
         let mut sample = group(
             sequence,
             sequence,
-            [false; 3],
+            [false; CONTROLS],
             &[(id, sequence == 3, paths(sources))],
         );
         for route in &mut sample.samples {
@@ -338,7 +353,7 @@ fn summary_remap_is_a_boolean_hold_and_claimed_or_unresolved_sources_are_inert()
                 group(
                     sequence,
                     sequence,
-                    [false; 3],
+                    [false; CONTROLS],
                     &[(id, down, paths(&[source]))],
                 ),
                 true,
@@ -350,13 +365,23 @@ fn summary_remap_is_a_boolean_hold_and_claimed_or_unresolved_sources_are_inert()
     for sequence in 1..=2 {
         evaluate(
             &mut runtime,
-            group(sequence, sequence, [false; 3], &[(id, false, paths(&[RB]))]),
+            group(
+                sequence,
+                sequence,
+                [false; CONTROLS],
+                &[(id, false, paths(&[RB]))],
+            ),
             true,
         );
     }
     let tick = evaluate(
         &mut runtime,
-        group(3, 3, [true, false, true], &[(id, true, paths(&[RB]))]),
+        group(
+            3,
+            3,
+            [true, false, true, false],
+            &[(id, true, paths(&[RB]))],
+        ),
         true,
     );
     assert!(!tick.button(id, Hand::Right).held());

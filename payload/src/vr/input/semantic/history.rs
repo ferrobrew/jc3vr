@@ -9,7 +9,8 @@ use std::{collections::VecDeque, sync::LazyLock, time::Instant};
 use parking_lot::Mutex;
 use tracking_format::input::{
     CapturedInput, ClockDomain, DiscontinuityReason, GroupOrder, HISTORY_CAPACITY, InputGroup,
-    InputRecord, InputStamp, RouteSample, policy::PolicyEvaluation,
+    InputRecord, InputStamp, RouteSample,
+    policy::{PROTECTED_CONTROLS, PolicyEvaluation},
 };
 
 use crate::vr::input::{
@@ -184,11 +185,12 @@ impl Published {
                 evaluation.outcome =
                     tracking_format::input::policy::PolicyOutcome::UnavailablePrefix;
             }
-            evaluation.singles = [tracking_format::input::policy::AcceptedSingle::None; 3];
-            evaluation.single_down = [false; 3];
-            evaluation.withheld = [true; 3];
+            evaluation.singles =
+                [tracking_format::input::policy::AcceptedSingle::None; PROTECTED_CONTROLS];
+            evaluation.single_down = [false; PROTECTED_CONTROLS];
+            evaluation.withheld = [true; PROTECTED_CONTROLS];
             evaluation.command = tracking_format::input::policy::AcceptedCommand::None;
-            evaluation.raw = [0; 3];
+            evaluation.raw = [0; PROTECTED_CONTROLS];
             evaluation.direct = Default::default();
             evaluation.claims = 0;
             evaluation.commands = 0;
@@ -509,11 +511,11 @@ mod tests {
                 gameplay: false,
                 outcome: tracking_format::input::policy::PolicyOutcome::Cancelled,
                 neutral: false,
-                singles: [tracking_format::input::policy::AcceptedSingle::None; 3],
-                single_down: [false; 3],
-                withheld: [true; 3],
+                singles: [tracking_format::input::policy::AcceptedSingle::None; PROTECTED_CONTROLS],
+                single_down: [false; PROTECTED_CONTROLS],
+                withheld: [true; PROTECTED_CONTROLS],
                 command: tracking_format::input::policy::AcceptedCommand::None,
-                raw: [0; 3],
+                raw: [0; PROTECTED_CONTROLS],
                 direct: Default::default(),
                 claims: 0,
                 commands: 0,

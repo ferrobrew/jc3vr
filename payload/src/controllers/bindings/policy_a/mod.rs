@@ -1,4 +1,5 @@
-//! Bounded policy-A arbitration for the physical left stick, right stick, and right B.
+//! Bounded policy-A arbitration for the physical left stick click, right stick click, right B, and
+//! right A.
 //!
 //! Each observation is one coherent, unmasked timestamp group. Changes within a group have
 //! unknown internal order. All changes at an equal timestamp belong in one group; splitting
@@ -16,22 +17,32 @@ pub(crate) mod runtime;
 
 use std::{error::Error, fmt, time::Duration};
 
+/// How many physical controls the arbiter covers, the recorded decision's width.
+pub(crate) const CONTROLS: usize = tracking_format::input::policy::PROTECTED_CONTROLS;
+
 /// The only physical controls in this arbiter's overlap domain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Control {
     LeftStick,
     RightStick,
     RightB,
+    RightA,
 }
 
 impl Control {
-    pub(crate) const ALL: [Self; 3] = [Self::LeftStick, Self::RightStick, Self::RightB];
+    pub(crate) const ALL: [Self; CONTROLS] = [
+        Self::LeftStick,
+        Self::RightStick,
+        Self::RightB,
+        Self::RightA,
+    ];
 
     pub(crate) const fn index(self) -> usize {
         match self {
             Self::LeftStick => 0,
             Self::RightStick => 1,
             Self::RightB => 2,
+            Self::RightA => 3,
         }
     }
 }
@@ -71,6 +82,7 @@ pub(crate) struct PressIdentity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PolicyAConfig {
     pub(crate) recenter_join: Duration,
+    /// The join window of both left-stick-first chords, the panel's and the mark's.
     pub(crate) panel_join: Duration,
     pub(crate) recenter_hold: Duration,
 }
@@ -128,7 +140,7 @@ pub(crate) struct Observation {
     pub(crate) context: GameplayContext,
     pub(crate) singles_enabled: bool,
     /// Real, unmasked levels, indexed by `Control::index`.
-    pub(crate) down: [bool; 3],
+    pub(crate) down: [bool; CONTROLS],
     #[cfg(test)]
     pub(crate) evidence: InputEvidence,
 }
@@ -185,13 +197,14 @@ pub(crate) struct SourceDecision {
 pub(crate) enum SystemCommand {
     Recenter,
     TogglePanel,
+    Mark,
 }
 
 /// Member identities also identify the request; holding cannot generate duplicates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SystemRequest {
     pub(crate) command: SystemCommand,
-    pub(crate) members: [Option<PressIdentity>; 3],
+    pub(crate) members: [Option<PressIdentity>; CONTROLS],
     pub(crate) formed_at: Duration,
     pub(crate) accepted_at: Duration,
 }
@@ -201,7 +214,9 @@ pub(crate) enum RefusalReason {
     CommittedSingle,
     ClaimedPress,
     JoinExpired,
-    AmbiguousPanelOrder,
+    /// Both members of a left-stick-first chord were first seen in one group, so their order is
+    /// unknown.
+    AmbiguousOrder,
     CompetingChord,
 }
 
@@ -217,28 +232,28 @@ pub(crate) enum ObservationStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Arbitration {
     pub(crate) status: ObservationStatus,
-    pub(crate) singles: [Option<SingleEvent>; 3],
-    pub(crate) sources: [SourceDecision; 3],
+    pub(crate) singles: [Option<SingleEvent>; CONTROLS],
+    pub(crate) sources: [SourceDecision; CONTROLS],
     /// Suppress raw and attributable constituent edges for this entire group, including neutral.
     /// `singles` is the only accepted edge stream; a true flag never cancels an earlier commit.
-    pub(crate) withheld: [bool; 3],
+    pub(crate) withheld: [bool; CONTROLS],
     pub(crate) request: Option<SystemRequest>,
-    pub(crate) refused: [Option<RefusalReason>; 3],
+    pub(crate) refused: [Option<RefusalReason>; CONTROLS],
 }
 
-/// Three source episodes, one exclusive chord, and one common-neutral consumption set.
+/// Four source episodes, one exclusive chord, and one common-neutral consumption set.
 #[derive(Debug, Clone)]
 pub(crate) struct PolicyA {
     config: PolicyAConfig,
     epoch: ClockEpoch,
     last: Option<ObservationStamp>,
     interpretation: Option<(BindingGeneration, GameplayContext, bool)>,
-    down: [bool; 3],
-    presses: [Option<Press>; 3],
+    down: [bool; CONTROLS],
+    presses: [Option<Press>; CONTROLS],
     locked: Members,
     chord: Option<Chord>,
     awaiting_neutral: bool,
-    unavailable: [bool; 3],
+    unavailable: [bool; CONTROLS],
 }
 
 impl PolicyA {
@@ -255,12 +270,12 @@ impl PolicyA {
             epoch,
             last: None,
             interpretation: None,
-            down: [false; 3],
-            presses: [None; 3],
+            down: [false; CONTROLS],
+            presses: [None; CONTROLS],
             locked: Members::EMPTY,
             chord: None,
             awaiting_neutral: true,
-            unavailable: [true; 3],
+            unavailable: [true; CONTROLS],
         })
     }
 
@@ -270,12 +285,12 @@ impl PolicyA {
         let mut out = Arbitration::empty(ObservationStatus::Reset(request.reason));
         self.release_owned(self.last.map_or(Duration::ZERO, |last| last.at), &mut out);
         self.interpretation = None;
-        self.down = [false; 3];
-        self.presses = [None; 3];
+        self.down = [false; CONTROLS];
+        self.presses = [None; CONTROLS];
         self.locked = Members::EMPTY;
         self.chord = None;
         self.awaiting_neutral = true;
-        self.unavailable = [true; 3];
+        self.unavailable = [true; CONTROLS];
         self.describe(&mut out);
         out
     }
@@ -301,14 +316,14 @@ impl PolicyA {
     /// Gameplay context changes invalidate singles but retain system-chord ownership.
     #[cfg(test)]
     pub(crate) fn observe(&mut self, input: Observation) -> Arbitration {
-        self.observe_available(input, [true; 3])
+        self.observe_available(input, [true; CONTROLS])
     }
 
     /// Availability is observed with each group. A missing control never supplies an up level.
     pub(crate) fn observe_available(
         &mut self,
         input: Observation,
-        available: [bool; 3],
+        available: [bool; CONTROLS],
     ) -> Arbitration {
         if input.stamp.epoch != self.epoch
             || self.last.is_some_and(|last| {
@@ -344,10 +359,10 @@ impl PolicyA {
             self.invalidate_singles(input.stamp.at, &mut out);
         }
         self.interpretation = Some((input.generation, input.context, input.singles_enabled));
-        if self.awaiting_neutral && available == [true; 3] {
-            if input.down == [false; 3] {
+        if self.awaiting_neutral && available == [true; CONTROLS] {
+            if input.down == [false; CONTROLS] {
                 self.awaiting_neutral = false;
-                self.unavailable = [false; 3];
+                self.unavailable = [false; CONTROLS];
                 out.status = ObservationStatus::Recovered;
             } else {
                 out.status = ObservationStatus::AwaitingNeutral;
@@ -357,12 +372,12 @@ impl PolicyA {
         }
         let was_awaiting = self.awaiting_neutral;
         self.awaiting_neutral = false;
-        let mut recovered = [false; 3];
+        let mut recovered = [false; CONTROLS];
         for control in Control::ALL {
             let i = control.index();
             if !available[i] {
                 if !self.unavailable[i] {
-                    for pair in [Members::RECENTER, Members::PANEL] {
+                    for pair in Members::PAIRS {
                         if pair.contains(control)
                             && Control::ALL.into_iter().any(|member| {
                                 pair.contains(member)
@@ -390,14 +405,14 @@ impl PolicyA {
             }
         }
         if was_awaiting {
-            out.status = if self.unavailable == [true; 3] {
+            out.status = if self.unavailable == [true; CONTROLS] {
                 ObservationStatus::AwaitingNeutral
             } else {
                 ObservationStatus::Recovered
             };
         }
         let previous = self.down;
-        for i in 0..3 {
+        for i in 0..CONTROLS {
             if available[i] && !self.unavailable[i] && !recovered[i] {
                 self.down[i] = input.down[i];
             }
@@ -441,15 +456,15 @@ impl Arbitration {
     fn empty(status: ObservationStatus) -> Self {
         Self {
             status,
-            singles: [None; 3],
+            singles: [None; CONTROLS],
             sources: [SourceDecision {
                 press: None,
                 disposition: Disposition::Idle,
                 single_down: false,
-            }; 3],
-            withheld: [true; 3],
+            }; CONTROLS],
+            withheld: [true; CONTROLS],
             request: None,
-            refused: [None; 3],
+            refused: [None; CONTROLS],
         }
     }
 }
@@ -526,8 +541,8 @@ impl PolicyA {
         }
     }
 
-    fn refuse_committed_overlaps(&mut self, previous: [bool; 3], out: &mut Arbitration) {
-        for pair in [Members::RECENTER, Members::PANEL] {
+    fn refuse_committed_overlaps(&mut self, previous: [bool; CONTROLS], out: &mut Arbitration) {
+        for pair in Members::PAIRS {
             if !pair.all_down(self.down)
                 || !pair.all_up(self.unavailable)
                 || !Control::ALL
@@ -561,20 +576,20 @@ impl PolicyA {
     }
 
     fn resolve_chords(&mut self, stamp: ObservationStamp, out: &mut Arbitration) {
-        let recenter = self.pending_pair(Members::RECENTER);
-        let panel = self.pending_pair(Members::PANEL);
-        let recenter_eligible = recenter
-            .is_some_and(|[left, right]| onset_gap(left, right) < self.config.recenter_join);
-        let panel_eligible = panel.is_some_and(|[left, b]| {
-            left.onset.sequence < b.onset.sequence
-                && b.onset.at - left.onset.at < self.config.panel_join
+        // Recenter takes priority, then the panel, then the mark: a group that makes two of them
+        // eligible at once forms the first and refuses the others as competing.
+        let eligible = Members::PAIRS.into_iter().find(|&members| {
+            self.pending_pair(members).is_some_and(|[left, other]| {
+                if members == Members::RECENTER {
+                    onset_gap(left, other) < self.config.recenter_join
+                } else {
+                    left.onset.sequence < other.onset.sequence
+                        && other.onset.at - left.onset.at < self.config.panel_join
+                }
+            })
         });
-        if recenter_eligible || panel_eligible {
-            let (command, members) = if recenter_eligible {
-                (SystemCommand::Recenter, Members::RECENTER)
-            } else {
-                (SystemCommand::TogglePanel, Members::PANEL)
-            };
+        if let Some(members) = eligible {
+            let command = members.command();
             let identities = Control::ALL.map(|c| {
                 if members.contains(c) {
                     self.presses[c.index()].map(|press| press.identity)
@@ -591,15 +606,20 @@ impl PolicyA {
                 fired: false,
                 cancelled: false,
             });
-            for pair in [Members::RECENTER, Members::PANEL] {
+            for pair in Members::PAIRS {
                 if pair != members && pair.all_down(self.down) {
                     self.consume(pair, RefusalReason::CompetingChord, out);
                 }
             }
             return;
         }
-        if panel.is_some_and(|[left, b]| left.onset.sequence == b.onset.sequence) {
-            self.consume(Members::PANEL, RefusalReason::AmbiguousPanelOrder, out);
+        for pair in [Members::PANEL, Members::MARK] {
+            if self
+                .pending_pair(pair)
+                .is_some_and(|[left, other]| left.onset.sequence == other.onset.sequence)
+            {
+                self.consume(pair, RefusalReason::AmbiguousOrder, out);
+            }
         }
         // Expired older singles commit before a late partner is refused. A newly joining B
         // cannot commit here and escape consumption through its zero single-button delay.
@@ -614,7 +634,7 @@ impl PolicyA {
                 self.commit_single(control, stamp.at, out);
             }
         }
-        for pair in [Members::RECENTER, Members::PANEL] {
+        for pair in Members::PAIRS {
             if pair.all_down(self.down)
                 && pair.all_up(self.unavailable)
                 && Control::ALL.into_iter().any(|c| {
@@ -644,13 +664,8 @@ impl PolicyA {
         if !members.all_down(self.down) || !members.all_up(self.unavailable) {
             return None;
         }
-        let partner = if members == Members::RECENTER {
-            Control::RightStick
-        } else {
-            Control::RightB
-        };
         let left = self.presses[Control::LeftStick.index()]?;
-        let other = self.presses[partner.index()]?;
+        let other = self.presses[members.partner().index()]?;
         (left.kind == PressKind::Pending && other.kind == PressKind::Pending)
             .then_some([left.identity, other.identity])
     }
@@ -680,7 +695,10 @@ impl PolicyA {
         match control {
             Control::LeftStick => self.config.recenter_join.max(self.config.panel_join),
             Control::RightStick => self.config.recenter_join,
-            Control::RightB => Duration::ZERO,
+            // Neither face button leads a chord, so either commits at once while the left click is
+            // neutral; the left click's own wait covers the mark chord, which shares the panel's
+            // window.
+            Control::RightB | Control::RightA => Duration::ZERO,
         }
     }
 
@@ -727,7 +745,7 @@ impl PolicyA {
         };
         if !chord.cancelled
             && !chord.fired
-            && (chord.command == SystemCommand::TogglePanel
+            && (chord.command != SystemCommand::Recenter
                 || at - chord.formed_at >= self.config.recenter_hold)
         {
             chord.fired = true;
@@ -777,8 +795,29 @@ struct Members(u8);
 
 impl Members {
     const EMPTY: Self = Self(0);
-    const RECENTER: Self = Self(0b011);
-    const PANEL: Self = Self(0b101);
+    const RECENTER: Self = Self(0b0011);
+    const PANEL: Self = Self(0b0101);
+    const MARK: Self = Self(0b1001);
+    /// Every chord pair, in priority order.
+    const PAIRS: [Self; 3] = [Self::RECENTER, Self::PANEL, Self::MARK];
+
+    /// The member that joins the left stick click in this pair.
+    fn partner(self) -> Control {
+        match self {
+            Self::RECENTER => Control::RightStick,
+            Self::PANEL => Control::RightB,
+            _ => Control::RightA,
+        }
+    }
+
+    /// The command this pair issues.
+    fn command(self) -> SystemCommand {
+        match self {
+            Self::RECENTER => SystemCommand::Recenter,
+            Self::PANEL => SystemCommand::TogglePanel,
+            _ => SystemCommand::Mark,
+        }
+    }
 
     const fn of(control: Control) -> Self {
         Self(1 << control.index())
@@ -792,13 +831,13 @@ impl Members {
         Self(self.0 | other.0)
     }
 
-    fn all_down(self, down: [bool; 3]) -> bool {
+    fn all_down(self, down: [bool; CONTROLS]) -> bool {
         Control::ALL
             .into_iter()
             .all(|c| !self.contains(c) || down[c.index()])
     }
 
-    fn all_up(self, down: [bool; 3]) -> bool {
+    fn all_up(self, down: [bool; CONTROLS]) -> bool {
         Control::ALL
             .into_iter()
             .all(|c| !self.contains(c) || !down[c.index()])
@@ -809,7 +848,7 @@ impl Members {
 struct Chord {
     command: SystemCommand,
     members: Members,
-    identities: [Option<PressIdentity>; 3],
+    identities: [Option<PressIdentity>; CONTROLS],
     formed_at: Duration,
     fired: bool,
     cancelled: bool,

@@ -4,13 +4,22 @@ use super::*;
 fn inactive_missing_and_wrong_kind_raw_never_prove_neutral() {
     for damage in 0..4 {
         let mut runtime = Runtime::default();
-        evaluate(&mut runtime, group(1, 1, [false; 3], &[]), true);
-        evaluate(&mut runtime, group(10, 2, [true, false, false], &[]), true);
+        evaluate(&mut runtime, group(1, 1, [false; CONTROLS], &[]), true);
+        evaluate(
+            &mut runtime,
+            group(10, 2, [true, false, false, false], &[]),
+            true,
+        );
         assert_eq!(
-            evaluate(&mut runtime, group(20, 3, [true, false, true], &[]), true).commands,
+            evaluate(
+                &mut runtime,
+                group(20, 3, [true, false, true, false], &[]),
+                true
+            )
+            .commands,
             [SystemCommand::TogglePanel]
         );
-        let mut unavailable = group(30, 4, [false; 3], &[]);
+        let mut unavailable = group(30, 4, [false; CONTROLS], &[]);
         match damage {
             0 => unavailable.samples[0].active = false,
             1 => unavailable.samples[2].active = false,
@@ -25,14 +34,27 @@ fn inactive_missing_and_wrong_kind_raw_never_prove_neutral() {
                 .is_empty()
         );
         assert!(
-            evaluate(&mut runtime, group(40, 5, [true, false, true], &[]), true)
-                .commands
-                .is_empty()
+            evaluate(
+                &mut runtime,
+                group(40, 5, [true, false, true, false], &[]),
+                true
+            )
+            .commands
+            .is_empty()
         );
-        evaluate(&mut runtime, group(50, 6, [false; 3], &[]), true);
-        evaluate(&mut runtime, group(60, 7, [true, false, false], &[]), true);
+        evaluate(&mut runtime, group(50, 6, [false; CONTROLS], &[]), true);
+        evaluate(
+            &mut runtime,
+            group(60, 7, [true, false, false, false], &[]),
+            true,
+        );
         assert_eq!(
-            evaluate(&mut runtime, group(70, 8, [true, false, true], &[]), true).commands,
+            evaluate(
+                &mut runtime,
+                group(70, 8, [true, false, true, false], &[]),
+                true
+            )
+            .commands,
             [SystemCommand::TogglePanel]
         );
     }
@@ -49,7 +71,7 @@ fn accepted_taps_survive_new_pending_episode_at_every_batch_split() {
             group(
                 index as u64 * 10 + 1,
                 index as u64 + 1,
-                [false, down, false],
+                [false, down, false, false],
                 &[(id, down, paths(&[RS]))],
             )
         })
@@ -105,14 +127,22 @@ fn direct_commands_conflict_on_one_component_and_alias_claims_mask_all_consumers
     let jump = OnFootAction::Jump.id();
     let samples = |down| {
         vec![
-            (recenter, down, paths(&[A])),
-            (panel, down, paths(&[A])),
+            (recenter, down, paths(&[RIGHT_SQUEEZE])),
+            (panel, down, paths(&[RIGHT_SQUEEZE])),
             (jump, down, paths(&["/user/hand/right/input/trigger/value"])),
         ]
     };
     let mut runtime = Runtime::default();
-    evaluate(&mut runtime, group(1, 1, [false; 3], &samples(false)), true);
-    let tick = evaluate(&mut runtime, group(2, 2, [false; 3], &samples(true)), true);
+    evaluate(
+        &mut runtime,
+        group(1, 1, [false; CONTROLS], &samples(false)),
+        true,
+    );
+    let tick = evaluate(
+        &mut runtime,
+        group(2, 2, [false; CONTROLS], &samples(true)),
+        true,
+    );
     assert!(tick.commands.is_empty());
     assert!(button(&tick, jump).held());
     let samples = |down| {
@@ -126,8 +156,16 @@ fn direct_commands_conflict_on_one_component_and_alias_claims_mask_all_consumers
         ]
     };
     let mut runtime = Runtime::default();
-    evaluate(&mut runtime, group(1, 1, [false; 3], &samples(false)), true);
-    let tick = evaluate(&mut runtime, group(2, 2, [false; 3], &samples(true)), true);
+    evaluate(
+        &mut runtime,
+        group(1, 1, [false; CONTROLS], &samples(false)),
+        true,
+    );
+    let tick = evaluate(
+        &mut runtime,
+        group(2, 2, [false; CONTROLS], &samples(true)),
+        true,
+    );
     assert_eq!(tick.commands, [SystemCommand::Recenter]);
     assert!(!button(&tick, jump).held());
     let mut frame = ControllerFrame {
@@ -157,13 +195,21 @@ fn independent_direct_commands_survive_and_unknown_component_is_unavailable() {
     ] {
         let samples = |down| {
             vec![
-                (recenter, down, paths(&[A])),
+                (recenter, down, paths(&[RIGHT_SQUEEZE])),
                 (panel, down, paths(&[source])),
             ]
         };
         let mut runtime = Runtime::default();
-        evaluate(&mut runtime, group(1, 1, [false; 3], &samples(false)), true);
-        let tick = evaluate(&mut runtime, group(2, 2, [false; 3], &samples(true)), true);
+        evaluate(
+            &mut runtime,
+            group(1, 1, [false; CONTROLS], &samples(false)),
+            true,
+        );
+        let tick = evaluate(
+            &mut runtime,
+            group(2, 2, [false; CONTROLS], &samples(true)),
+            true,
+        );
         assert_eq!(
             tick.commands.contains(&SystemCommand::Recenter),
             source.ends_with("/click")
@@ -179,8 +225,18 @@ fn independent_direct_commands_survive_and_unknown_component_is_unavailable() {
 fn replay_checks_direct_decision_before_dispatch_and_recovers_only_at_neutral() {
     let command = GlobalAction::RecenterView.id();
     let trace = [
-        group(1, 1, [false; 3], &[(command, false, paths(&[A]))]),
-        group(2, 2, [false; 3], &[(command, true, paths(&[A]))]),
+        group(
+            1,
+            1,
+            [false; CONTROLS],
+            &[(command, false, paths(&[RIGHT_SQUEEZE]))],
+        ),
+        group(
+            2,
+            2,
+            [false; CONTROLS],
+            &[(command, true, paths(&[RIGHT_SQUEEZE]))],
+        ),
     ];
     let original = captured_trace(&trace);
     let mut changed = original.clone();
@@ -213,12 +269,12 @@ fn replay_checks_direct_decision_before_dispatch_and_recovers_only_at_neutral() 
 #[test]
 fn replay_gap_missing_tail_duplicate_and_out_of_order_cancel_holds_and_resync() {
     let trace = [
-        group(1, 1, [false; 3], &[]),
-        group(10, 2, [false, true, false], &[]),
-        group(120, 3, [false, true, false], &[]),
-        group(130, 4, [false; 3], &[]),
-        group(140, 5, [true, false, false], &[]),
-        group(150, 6, [true, false, true], &[]),
+        group(1, 1, [false; CONTROLS], &[]),
+        group(10, 2, [false, true, false, false], &[]),
+        group(120, 3, [false, true, false, false], &[]),
+        group(130, 4, [false; CONTROLS], &[]),
+        group(140, 5, [true, false, false, false], &[]),
+        group(150, 6, [true, false, true, false], &[]),
     ];
     let original = captured_trace(&trace);
     for damage in 0..4 {
@@ -234,7 +290,8 @@ fn replay_gap_missing_tail_duplicate_and_out_of_order_cancel_holds_and_resync() 
                 records.swap(3, 5);
             }
             _ => {
-                records[2].record = InputRecord::Group(group(10, 2, [false, true, false], &[]));
+                records[2].record =
+                    InputRecord::Group(group(10, 2, [false, true, false, false], &[]));
                 records.remove(3);
             }
         }
@@ -257,8 +314,18 @@ fn replay_gap_missing_tail_duplicate_and_out_of_order_cancel_holds_and_resync() 
 fn malformed_policy_and_skipped_group_outcomes_never_dispatch_before_boundary() {
     let command = GlobalAction::RecenterView.id();
     let trace = [
-        group(1, 1, [false; 3], &[(command, false, paths(&[A]))]),
-        group(2, 2, [false; 3], &[(command, true, paths(&[A]))]),
+        group(
+            1,
+            1,
+            [false; CONTROLS],
+            &[(command, false, paths(&[RIGHT_SQUEEZE]))],
+        ),
+        group(
+            2,
+            2,
+            [false; CONTROLS],
+            &[(command, true, paths(&[RIGHT_SQUEEZE]))],
+        ),
     ];
     for damage in 0..5 {
         let mut records = captured_trace(&trace);
@@ -279,7 +346,7 @@ fn malformed_policy_and_skipped_group_outcomes_never_dispatch_before_boundary() 
     for damage in 0..3 {
         history::begin_capture();
         let mut runtime = Runtime::default();
-        let mut rejected = group(1, 1, [false; 3], &[]);
+        let mut rejected = group(1, 1, [false; CONTROLS], &[]);
         if damage == 0 {
             rejected.action_schema += 1;
         }
@@ -325,17 +392,29 @@ fn recording_mid_pending_single_and_chord_waits_for_real_neutral_without_live_re
     let _serial = history::TEST_LOCK.lock();
     for state in 0..3 {
         let mut runtime = Runtime::default();
-        evaluate(&mut runtime, group(1, 1, [false; 3], &[]), true);
-        evaluate(&mut runtime, group(10, 2, [false, true, false], &[]), true);
+        evaluate(&mut runtime, group(1, 1, [false; CONTROLS], &[]), true);
+        evaluate(
+            &mut runtime,
+            group(10, 2, [false, true, false, false], &[]),
+            true,
+        );
         let held = match state {
-            0 => [false, true, false],
+            0 => [false, true, false, false],
             1 => {
-                evaluate(&mut runtime, group(120, 3, [false, true, false], &[]), true);
-                [false, true, false]
+                evaluate(
+                    &mut runtime,
+                    group(120, 3, [false, true, false, false], &[]),
+                    true,
+                );
+                [false, true, false, false]
             }
             _ => {
-                evaluate(&mut runtime, group(20, 3, [true, true, false], &[]), true);
-                [true, true, false]
+                evaluate(
+                    &mut runtime,
+                    group(20, 3, [true, true, false, false], &[]),
+                    true,
+                );
+                [true, true, false, false]
             }
         };
         history::begin_capture();
@@ -346,7 +425,7 @@ fn recording_mid_pending_single_and_chord_waits_for_real_neutral_without_live_re
         assert!(
             matches!(prefix.last().map(|entry| &entry.record), Some(InputRecord::Policy(policy)) if policy.outcome == PolicyOutcome::UnavailablePrefix)
         );
-        evaluate(&mut runtime, group(210, 5, [false; 3], &[]), true);
+        evaluate(&mut runtime, group(210, 5, [false; CONTROLS], &[]), true);
         let boundary = history::take_capture();
         assert!(
             matches!(boundary.last().map(|entry| &entry.record), Some(InputRecord::Policy(policy)) if policy.outcome == PolicyOutcome::NeutralBoundary && policy.neutral)

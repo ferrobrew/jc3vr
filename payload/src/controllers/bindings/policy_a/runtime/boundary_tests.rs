@@ -37,9 +37,9 @@ fn hands() -> [HandFrame; 2] {
 fn sampled(sequence: u64, id: ActionId, down: bool, hand: Hand) -> InputGroup {
     let path = match hand {
         Hand::Left => "/user/hand/left/input/a/click",
-        Hand::Right => A,
+        Hand::Right => RIGHT_SQUEEZE,
     };
-    let mut group = group(sequence * 10, sequence, [false; 3], &[]);
+    let mut group = group(sequence * 10, sequence, [false; CONTROLS], &[]);
     let sample = group
         .samples
         .iter_mut()
@@ -156,14 +156,14 @@ fn missing_reserved_raw_source_does_not_disable_unrelated_semantic_route() {
 
 fn chord_loss_trace() -> Vec<InputGroup> {
     let mut trace = vec![
-        group(1, 1, [false; 3], &[]),
-        group(10, 2, [true, false, false], &[]),
-        group(20, 3, [true, false, false], &[]),
-        group(30, 4, [true, false, true], &[]),
-        group(40, 5, [true, false, true], &[]),
-        group(50, 6, [false; 3], &[]),
-        group(60, 7, [true, false, false], &[]),
-        group(70, 8, [true, false, true], &[]),
+        group(1, 1, [false; CONTROLS], &[]),
+        group(10, 2, [true, false, false, false], &[]),
+        group(20, 3, [true, false, false, false], &[]),
+        group(30, 4, [true, false, true, false], &[]),
+        group(40, 5, [true, false, true, false], &[]),
+        group(50, 6, [false; CONTROLS], &[]),
+        group(60, 7, [true, false, false, false], &[]),
+        group(70, 8, [true, false, true, false], &[]),
     ];
     for (index, group) in trace.iter_mut().enumerate() {
         let mut hands = hands();
@@ -192,20 +192,36 @@ fn pending_chord_middle_loss_is_retained_even_when_latest_pose_recovers() {
 #[test]
 fn pending_chord_member_loss_cannot_commit_a_delayed_single_or_held_command() {
     let mut runtime = Runtime::default();
-    evaluate(&mut runtime, group(1, 1, [false; 3], &[]), true);
-    evaluate(&mut runtime, group(10, 2, [true, false, false], &[]), true);
-    let mut loss = group(20, 3, [true, false, false], &[]);
+    evaluate(&mut runtime, group(1, 1, [false; CONTROLS], &[]), true);
+    evaluate(
+        &mut runtime,
+        group(10, 2, [true, false, false, false], &[]),
+        true,
+    );
+    let mut loss = group(20, 3, [true, false, false, false], &[]);
     loss.samples[2].active = false;
     assert!(evaluate(&mut runtime, loss, true).commands.is_empty());
-    for (ms, sequence, down) in [(200, 4, [true, false, false]), (210, 5, [false; 3])] {
+    for (ms, sequence, down) in [
+        (200, 4, [true, false, false, false]),
+        (210, 5, [false; CONTROLS]),
+    ] {
         let tick = evaluate(&mut runtime, group(ms, sequence, down, &[]), true);
         assert!(tick.commands.is_empty());
         assert!(!tick.raw[0].held());
     }
-    evaluate(&mut runtime, group(220, 6, [false; 3], &[]), true);
-    evaluate(&mut runtime, group(230, 7, [true, false, false], &[]), true);
+    evaluate(&mut runtime, group(220, 6, [false; CONTROLS], &[]), true);
+    evaluate(
+        &mut runtime,
+        group(230, 7, [true, false, false, false], &[]),
+        true,
+    );
     assert_eq!(
-        evaluate(&mut runtime, group(240, 8, [true, false, true], &[]), true).commands,
+        evaluate(
+            &mut runtime,
+            group(240, 8, [true, false, true, false], &[]),
+            true
+        )
+        .commands,
         [SystemCommand::TogglePanel]
     );
 }
@@ -213,11 +229,11 @@ fn pending_chord_member_loss_cannot_commit_a_delayed_single_or_held_command() {
 #[test]
 fn unavailable_unused_raw_control_does_not_cancel_a_disjoint_chord() {
     let mut runtime = Runtime::default();
-    evaluate(&mut runtime, group(1, 1, [false; 3], &[]), true);
-    let mut start = group(10, 2, [true, false, false], &[]);
+    evaluate(&mut runtime, group(1, 1, [false; CONTROLS], &[]), true);
+    let mut start = group(10, 2, [true, false, false, false], &[]);
     start.samples[1].active = false;
     evaluate(&mut runtime, start, true);
-    let mut joined = group(20, 3, [true, false, true], &[]);
+    let mut joined = group(20, 3, [true, false, true, false], &[]);
     joined.samples[1].active = false;
     assert_eq!(
         evaluate(&mut runtime, joined, true).commands,
@@ -360,7 +376,12 @@ fn analog_grapple_without_default_uses_sampler_hysteresis_through_policy_and_tab
                 was_down,
             );
             was_down = down;
-            let mut group = group((index as u64 + 1) * 10, index as u64 + 1, [false; 3], &[]);
+            let mut group = group(
+                (index as u64 + 1) * 10,
+                index as u64 + 1,
+                [false; CONTROLS],
+                &[],
+            );
             if id.set == SemanticSet::Wingsuit {
                 group.samples.retain(|sample| !matches!(sample.route, InputRoute::Semantic { set, .. } if set == SemanticSet::OnFoot.index() as u8));
                 for (action, definition) in id.set.actions().iter().enumerate() {

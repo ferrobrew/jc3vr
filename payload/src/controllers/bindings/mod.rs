@@ -831,6 +831,11 @@ fn system_command(command: SystemCommand) {
             tracing::info!(target: "controllers", enabled, "controller input: toggled the debug panel");
             chord_pulse([Hand::Right]);
         }
+        SystemCommand::Mark => {
+            tracing::info!(target: "controllers", "controller input: take marker");
+            crate::recorder::session_recording::mark();
+            chord_pulse(Hand::BOTH);
+        }
     }
 }
 

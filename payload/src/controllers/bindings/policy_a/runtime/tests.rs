@@ -24,6 +24,8 @@ const LS: &str = "/user/hand/left/input/thumbstick/click";
 const RS: &str = "/user/hand/right/input/thumbstick/click";
 const RB: &str = "/user/hand/right/input/b/click";
 const A: &str = "/user/hand/right/input/a/click";
+/// A right-hand source outside the arbiter's protected controls.
+const RIGHT_SQUEEZE: &str = "/user/hand/right/input/squeeze/click";
 
 fn paths(paths: &[&str]) -> SourceQuery {
     SourceQuery::Paths(Arc::from(
@@ -37,10 +39,15 @@ fn paths(paths: &[&str]) -> SourceQuery {
 fn group(
     ms: u64,
     sequence: u64,
-    down: [bool; 3],
+    down: [bool; CONTROLS],
     semantic: &[(ActionId, bool, SourceQuery)],
 ) -> InputGroup {
-    let mut samples = [LS, RS, RB]
+    // The physical A is down whenever a semantic action bound to it is, as it is live.
+    let mut down = down;
+    down[Control::RightA.index()] |= semantic.iter().any(|(_, pressed, sources)| {
+        *pressed && matches!(sources, SourceQuery::Paths(paths) if paths.iter().any(|p| p == A))
+    });
+    let mut samples = [LS, RS, RB, A]
         .into_iter()
         .enumerate()
         .map(|(index, path)| RouteSample {
@@ -213,12 +220,22 @@ fn complete_inventory_delivers_the_provided_hand_through_semantic_filter() {
     let mut runtime = Runtime::default();
     evaluate(
         &mut runtime,
-        group(1, 1, [false; 3], &[(id, false, paths(&[A]))]),
+        group(
+            1,
+            1,
+            [false; CONTROLS],
+            &[(id, false, paths(&[RIGHT_SQUEEZE]))],
+        ),
         true,
     );
     let tick = evaluate(
         &mut runtime,
-        group(2, 2, [false; 3], &[(id, true, paths(&[A]))]),
+        group(
+            2,
+            2,
+            [false; CONTROLS],
+            &[(id, true, paths(&[RIGHT_SQUEEZE]))],
+        ),
         true,
     );
     assert_eq!(button_hand(&tick, id, Hand::Left), ButtonControl::default());
@@ -253,13 +270,25 @@ fn complete_inventory_delivers_the_provided_hand_through_semantic_filter() {
 #[test]
 fn unordered_panel_is_consumed_but_ordered_panel_works_while_gameplay_stands_down() {
     let mut runtime = Runtime::default();
-    evaluate(&mut runtime, group(1, 1, [false; 3], &[]), false);
-    let ambiguous = evaluate(&mut runtime, group(20, 2, [true, false, true], &[]), false);
+    evaluate(&mut runtime, group(1, 1, [false; CONTROLS], &[]), false);
+    let ambiguous = evaluate(
+        &mut runtime,
+        group(20, 2, [true, false, true, false], &[]),
+        false,
+    );
     assert!(ambiguous.commands.is_empty());
     assert!(ambiguous.raw.iter().all(|button| !button.held()));
-    evaluate(&mut runtime, group(30, 3, [false; 3], &[]), false);
-    evaluate(&mut runtime, group(40, 4, [true, false, false], &[]), false);
-    let formed = evaluate(&mut runtime, group(50, 5, [true, false, true], &[]), false);
+    evaluate(&mut runtime, group(30, 3, [false; CONTROLS], &[]), false);
+    evaluate(
+        &mut runtime,
+        group(40, 4, [true, false, false, false], &[]),
+        false,
+    );
+    let formed = evaluate(
+        &mut runtime,
+        group(50, 5, [true, false, true, false], &[]),
+        false,
+    );
     assert_eq!(formed.commands, [SystemCommand::TogglePanel]);
     assert!(formed.raw.iter().all(|button| !button.held()));
 }
@@ -270,19 +299,29 @@ fn raw_click_never_asserts_false_semantics_and_accepted_hold_starts_with_a_press
     let mut runtime = Runtime::default();
     evaluate(
         &mut runtime,
-        group(1, 1, [false; 3], &[(id, false, paths(&[RS]))]),
+        group(1, 1, [false; CONTROLS], &[(id, false, paths(&[RS]))]),
         true,
     );
     evaluate(
         &mut runtime,
-        group(10, 2, [false, true, false], &[(id, false, paths(&[RS]))]),
+        group(
+            10,
+            2,
+            [false, true, false, false],
+            &[(id, false, paths(&[RS]))],
+        ),
         true,
     );
     assert!(
         !button(
             &evaluate(
                 &mut runtime,
-                group(120, 3, [false, true, false], &[(id, false, paths(&[RS]))]),
+                group(
+                    120,
+                    3,
+                    [false, true, false, false],
+                    &[(id, false, paths(&[RS]))]
+                ),
                 true
             ),
             id
@@ -291,17 +330,27 @@ fn raw_click_never_asserts_false_semantics_and_accepted_hold_starts_with_a_press
     );
     evaluate(
         &mut runtime,
-        group(130, 4, [false; 3], &[(id, false, paths(&[RS]))]),
+        group(130, 4, [false; CONTROLS], &[(id, false, paths(&[RS]))]),
         true,
     );
     evaluate(
         &mut runtime,
-        group(140, 5, [false, true, false], &[(id, true, paths(&[RS]))]),
+        group(
+            140,
+            5,
+            [false, true, false, false],
+            &[(id, true, paths(&[RS]))],
+        ),
         true,
     );
     let accepted = evaluate(
         &mut runtime,
-        group(250, 6, [false, true, false], &[(id, true, paths(&[RS]))]),
+        group(
+            250,
+            6,
+            [false, true, false, false],
+            &[(id, true, paths(&[RS]))],
+        ),
         true,
     );
     assert!(button(&accepted, id).pressed);
@@ -315,23 +364,23 @@ fn merged_semantic_requires_its_own_neutral_and_independent_route_survives() {
     let mut runtime = Runtime::default();
     let sample = |merged, independent| {
         vec![
-            (detonate, merged, paths(&[RS, A])),
-            (jump, independent, paths(&[A])),
+            (detonate, merged, paths(&[RS, RIGHT_SQUEEZE])),
+            (jump, independent, paths(&[RIGHT_SQUEEZE])),
         ]
     };
     evaluate(
         &mut runtime,
-        group(1, 1, [false; 3], &sample(false, false)),
+        group(1, 1, [false; CONTROLS], &sample(false, false)),
         true,
     );
     evaluate(
         &mut runtime,
-        group(10, 2, [true, true, false], &sample(true, true)),
+        group(10, 2, [true, true, false, false], &sample(true, true)),
         true,
     );
     let consumed = evaluate(
         &mut runtime,
-        group(20, 3, [false; 3], &sample(true, true)),
+        group(20, 3, [false; CONTROLS], &sample(true, true)),
         true,
     );
     assert!(!button(&consumed, detonate).held());
@@ -340,7 +389,7 @@ fn merged_semantic_requires_its_own_neutral_and_independent_route_survives() {
         !button(
             &evaluate(
                 &mut runtime,
-                group(30, 4, [false; 3], &sample(true, true)),
+                group(30, 4, [false; CONTROLS], &sample(true, true)),
                 true
             ),
             detonate
@@ -349,14 +398,14 @@ fn merged_semantic_requires_its_own_neutral_and_independent_route_survives() {
     );
     evaluate(
         &mut runtime,
-        group(40, 5, [false; 3], &sample(false, false)),
+        group(40, 5, [false; CONTROLS], &sample(false, false)),
         true,
     );
     assert!(
         button(
             &evaluate(
                 &mut runtime,
-                group(50, 6, [false; 3], &sample(true, true)),
+                group(50, 6, [false; CONTROLS], &sample(true, true)),
                 true
             ),
             detonate
@@ -377,12 +426,12 @@ fn failed_and_unknown_queries_quarantine_but_successful_empty_never_uses_default
         let mut runtime = Runtime::default();
         evaluate(
             &mut runtime,
-            group(1, 1, [false; 3], &[(id, false, source.clone())]),
+            group(1, 1, [false; CONTROLS], &[(id, false, source.clone())]),
             true,
         );
         let tick = evaluate(
             &mut runtime,
-            group(2, 2, [false; 3], &[(id, true, source)]),
+            group(2, 2, [false; CONTROLS], &[(id, true, source)]),
             true,
         );
         assert!(!button(&tick, id).held());
@@ -396,21 +445,33 @@ fn direct_command_claims_exact_source_without_canceling_an_unrelated_route() {
     let jump = OnFootAction::Jump.id();
     let sample = |down| {
         vec![
-            (command, down, paths(&[A])),
-            (detonate, down, paths(&[A])),
+            (command, down, paths(&[RIGHT_SQUEEZE])),
+            (detonate, down, paths(&[RIGHT_SQUEEZE])),
             (jump, down, paths(&["/user/hand/right/input/trigger/click"])),
         ]
     };
     let mut runtime = Runtime::default();
-    evaluate(&mut runtime, group(1, 1, [false; 3], &sample(false)), true);
-    let accepted = evaluate(&mut runtime, group(2, 2, [false; 3], &sample(true)), true);
+    evaluate(
+        &mut runtime,
+        group(1, 1, [false; CONTROLS], &sample(false)),
+        true,
+    );
+    let accepted = evaluate(
+        &mut runtime,
+        group(2, 2, [false; CONTROLS], &sample(true)),
+        true,
+    );
     assert_eq!(accepted.commands, [SystemCommand::Recenter]);
     assert!(!button(&accepted, detonate).held());
     assert!(button(&accepted, jump).held());
     assert!(
-        evaluate(&mut runtime, group(3, 3, [false; 3], &sample(true)), true)
-            .commands
-            .is_empty()
+        evaluate(
+            &mut runtime,
+            group(3, 3, [false; CONTROLS], &sample(true)),
+            true
+        )
+        .commands
+        .is_empty()
     );
 }
 
@@ -420,17 +481,22 @@ fn short_semantic_tap_is_an_ordered_press_then_release() {
     let mut runtime = Runtime::default();
     evaluate(
         &mut runtime,
-        group(1, 1, [false; 3], &[(id, false, paths(&[RS]))]),
+        group(1, 1, [false; CONTROLS], &[(id, false, paths(&[RS]))]),
         true,
     );
     evaluate(
         &mut runtime,
-        group(10, 2, [false, true, false], &[(id, true, paths(&[RS]))]),
+        group(
+            10,
+            2,
+            [false, true, false, false],
+            &[(id, true, paths(&[RS]))],
+        ),
         true,
     );
     let tap = evaluate(
         &mut runtime,
-        group(20, 3, [false; 3], &[(id, false, paths(&[RS]))]),
+        group(20, 3, [false; CONTROLS], &[(id, false, paths(&[RS]))]),
         true,
     );
     assert_eq!(
@@ -443,7 +509,7 @@ fn short_semantic_tap_is_an_ordered_press_then_release() {
     );
     let release = evaluate(
         &mut runtime,
-        group(30, 4, [false; 3], &[(id, false, paths(&[RS]))]),
+        group(30, 4, [false; CONTROLS], &[(id, false, paths(&[RS]))]),
         true,
     );
     assert_eq!(
@@ -462,19 +528,29 @@ fn a_committed_single_is_not_withdrawn_for_a_late_partner() {
     let mut runtime = Runtime::default();
     evaluate(
         &mut runtime,
-        group(1, 1, [false; 3], &[(id, false, paths(&[RS]))]),
+        group(1, 1, [false; CONTROLS], &[(id, false, paths(&[RS]))]),
         true,
     );
     evaluate(
         &mut runtime,
-        group(10, 2, [false, true, false], &[(id, true, paths(&[RS]))]),
+        group(
+            10,
+            2,
+            [false, true, false, false],
+            &[(id, true, paths(&[RS]))],
+        ),
         true,
     );
     assert!(
         button(
             &evaluate(
                 &mut runtime,
-                group(120, 3, [false, true, false], &[(id, true, paths(&[RS]))]),
+                group(
+                    120,
+                    3,
+                    [false, true, false, false],
+                    &[(id, true, paths(&[RS]))]
+                ),
                 true
             ),
             id
@@ -483,7 +559,12 @@ fn a_committed_single_is_not_withdrawn_for_a_late_partner() {
     );
     let late = evaluate(
         &mut runtime,
-        group(130, 4, [true, true, false], &[(id, true, paths(&[RS]))]),
+        group(
+            130,
+            4,
+            [true, true, false, false],
+            &[(id, true, paths(&[RS]))],
+        ),
         true,
     );
     assert!(late.commands.is_empty());
@@ -494,9 +575,9 @@ fn a_committed_single_is_not_withdrawn_for_a_late_partner() {
 fn replay_uses_recorded_policy_timing_before_dispatch() {
     let config = BindingsConfig::new();
     let groups = [
-        group(1, 1, [false; 3], &[]),
-        group(10, 2, [true, false, false], &[]),
-        group(20, 3, [true, false, true], &[]),
+        group(1, 1, [false; CONTROLS], &[]),
+        group(10, 2, [true, false, false, false], &[]),
+        group(20, 3, [true, false, true, false], &[]),
     ];
     let publications = captured_trace(&groups);
     let mut runtime = Runtime::default();
@@ -572,4 +653,73 @@ fn accepted_transitions_are_delivered_in_order_without_physical_dwell_credit() {
         }
     );
     assert_eq!(delivery.take(), ButtonControl::default());
+}
+
+#[test]
+fn the_right_a_jumps_at_once_alone_and_marks_after_the_left_click() {
+    let jump = OnFootAction::Jump.id();
+    let pressed = |down| [(jump, down, paths(&[A]))];
+    let mut runtime = Runtime::default();
+    evaluate(
+        &mut runtime,
+        group(1, 1, [false; CONTROLS], &pressed(false)),
+        true,
+    );
+    evaluate(
+        &mut runtime,
+        group(2, 2, [false; CONTROLS], &pressed(false)),
+        true,
+    );
+    let alone = evaluate(
+        &mut runtime,
+        group(10, 3, [false; CONTROLS], &pressed(true)),
+        true,
+    );
+    assert!(
+        button(&alone, jump).pressed,
+        "the jump lands on the A's own tick"
+    );
+    assert!(alone.commands.is_empty());
+    evaluate(
+        &mut runtime,
+        group(20, 4, [false; CONTROLS], &pressed(false)),
+        true,
+    );
+
+    evaluate(
+        &mut runtime,
+        group(100, 5, [true, false, false, false], &pressed(false)),
+        true,
+    );
+    let chord = evaluate(
+        &mut runtime,
+        group(150, 6, [true, false, false, false], &pressed(true)),
+        true,
+    );
+    assert_eq!(chord.commands, [SystemCommand::Mark]);
+    assert!(!button(&chord, jump).held());
+    assert!(!chord.raw[Control::RightA.index()].held());
+    assert!(!chord.raw[Control::LeftStick.index()].held());
+    // Letting go of the left click alone does not free the A.
+    let partial = evaluate(
+        &mut runtime,
+        group(200, 7, [false; CONTROLS], &pressed(true)),
+        true,
+    );
+    assert!(partial.commands.is_empty());
+    assert!(!button(&partial, jump).held());
+    // The common neutral frees the members, and the route's own next neutral rearms it.
+    for (ms, sequence) in [(250, 8), (260, 9)] {
+        evaluate(
+            &mut runtime,
+            group(ms, sequence, [false; CONTROLS], &pressed(false)),
+            true,
+        );
+    }
+    let fresh = evaluate(
+        &mut runtime,
+        group(300, 10, [false; CONTROLS], &pressed(true)),
+        true,
+    );
+    assert!(button(&fresh, jump).pressed);
 }

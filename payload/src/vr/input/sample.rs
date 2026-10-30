@@ -9,7 +9,9 @@ use std::{ptr, sync::atomic::Ordering, time::Instant};
 use glam::{Quat, Vec3};
 use openxr as xr;
 use openxr::sys;
-use tracking_format::input::{DiscontinuityReason, InputRoute, RouteSample, ValueBits};
+use tracking_format::input::{
+    DiscontinuityReason, InputRoute, RouteSample, ValueBits, policy::PROTECTED_CONTROLS,
+};
 
 use crate::{
     controllers::{
@@ -117,11 +119,13 @@ impl InputState {
         let mut joints_error = None;
         let generation = sources::observation_generation(self.profiles, self.dominant);
         let mut observed = Vec::new();
-        let mut raw = [State::<bool>::default(); 3];
+        // The chord arbiter's protected controls, in its order (`policy_a::Control`).
+        let mut raw = [State::<bool>::default(); PROTECTED_CONTROLS];
         for (index, (hand, input)) in [
             (Hand::Left, BoolInput::ThumbstickClick),
             (Hand::Right, BoolInput::ThumbstickClick),
             (Hand::Right, BoolInput::BClick),
+            (Hand::Right, BoolInput::AClick),
         ]
         .into_iter()
         .enumerate()
@@ -337,7 +341,7 @@ impl InputState {
         &self,
         sampling: &Sampling,
         hand: Hand,
-        raw: &[State<bool>; 3],
+        raw: &[State<bool>; PROTECTED_CONTROLS],
     ) -> anyhow::Result<(HandFrame, Option<anyhow::Error>)> {
         let Sampling {
             session,
@@ -352,6 +356,7 @@ impl InputState {
             let state = match input {
                 BoolInput::ThumbstickClick => raw[hand.index()],
                 BoolInput::BClick if hand == Hand::Right => raw[2],
+                BoolInput::AClick if hand == Hand::Right => raw[3],
                 _ => actions.bool_state(session, input, hand)?,
             };
             active |= state.active;

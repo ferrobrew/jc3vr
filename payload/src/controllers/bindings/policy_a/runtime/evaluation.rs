@@ -14,9 +14,9 @@ use crate::{
         bindings::{
             controls::ButtonControl,
             policy_a::{
-                Arbitration, BindingGeneration, ClockEpoch, Control, Disposition, GameplayContext,
-                Observation, ObservationStamp, ObservationStatus, PolicyA, ResetReason,
-                SingleEvent, SystemCommand,
+                Arbitration, BindingGeneration, CONTROLS, ClockEpoch, Control, Disposition,
+                GameplayContext, Observation, ObservationStamp, ObservationStatus, PolicyA,
+                ResetReason, SingleEvent, SystemCommand,
                 attribution::{SourceIdentity, raw_location},
                 recording,
                 runtime::{
@@ -332,13 +332,14 @@ fn ordered_after(watermark: Option<(InputStamp, GroupOrder)>, group: &InputGroup
     })
 }
 
-fn physical_is_neutral(decision: &Arbitration, down: [bool; 3], index: usize) -> bool {
+fn physical_is_neutral(decision: &Arbitration, down: [bool; CONTROLS], index: usize) -> bool {
     !down[index] && !matches!(decision.status, ObservationStatus::Reset(_))
 }
 fn command_bit(command: SystemCommand) -> u8 {
     match command {
         SystemCommand::Recenter => 1,
         SystemCommand::TogglePanel => 2,
+        SystemCommand::Mark => 4,
     }
 }
 fn flags(button: ButtonControl) -> u8 {

@@ -231,7 +231,7 @@ impl InputGroup {
         self.samples.len() <= MAX_ROUTES
             && self.samples.iter().all(|sample| {
                 let route_valid = match sample.route {
-                    InputRoute::Raw(control) => control < 3,
+                    InputRoute::Raw(control) => usize::from(control) < policy::PROTECTED_CONTROLS,
                     InputRoute::Semantic { set, hand, .. } => set < 7 && hand < 2,
                 };
                 route_valid

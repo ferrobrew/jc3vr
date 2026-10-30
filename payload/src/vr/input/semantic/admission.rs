@@ -11,7 +11,7 @@ pub(crate) fn apply(hands: &[HandFrame; 2], samples: &mut [RouteSample]) {
     for sample in samples {
         let hand = match sample.route {
             InputRoute::Raw(0) => Some(Hand::Left),
-            InputRoute::Raw(1 | 2) => Some(Hand::Right),
+            InputRoute::Raw(1..=3) => Some(Hand::Right),
             InputRoute::Raw(_) => None,
             InputRoute::Semantic { hand, .. } => Hand::BOTH.get(hand as usize).copied(),
         };

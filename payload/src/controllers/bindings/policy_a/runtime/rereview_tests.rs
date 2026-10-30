@@ -107,7 +107,7 @@ fn capture_transaction_excludes_foreign_policy_publications() {
     let serial = history::TEST_LOCK.lock();
     history::begin_capture();
     let mut runtime = Runtime::default();
-    evaluate(&mut runtime, group(1, 1, [false; 3], &[]), true);
+    evaluate(&mut runtime, group(1, 1, [false; CONTROLS], &[]), true);
     let mut foreign = match history::take_capture().pop().unwrap().record {
         InputRecord::Policy(policy) => policy,
         _ => unreachable!(),
@@ -121,7 +121,7 @@ fn capture_transaction_excludes_foreign_policy_publications() {
         done.send(()).unwrap();
     });
     started_rx.recv().unwrap();
-    evaluate(&mut runtime, group(2, 2, [false; 3], &[]), true);
+    evaluate(&mut runtime, group(2, 2, [false; CONTROLS], &[]), true);
     let captured = history::take_capture();
     assert_eq!(captured.len(), 1);
     assert!(
@@ -150,8 +150,8 @@ fn actual_capture_deadlines_between_group_and_policy_preserve_complete_units() {
             group(
                 index as u64 + 1,
                 index as u64 + 1,
-                [false; 3],
-                &[(command, down, paths(&[A]))],
+                [false; CONTROLS],
+                &[(command, down, paths(&[RIGHT_SQUEEZE]))],
             ),
         );
     }
@@ -195,13 +195,17 @@ fn direct_trigger_claims_cover_press_release_and_quiet_in_one_edges_window() {
     let trigger = "/user/hand/right/input/trigger/click";
     let sample = |down| [(command, down, paths(&[trigger]))];
     let mut runtime = Runtime::default();
-    evaluate(&mut runtime, group(1, 1, [false; 3], &sample(false)), true);
+    evaluate(
+        &mut runtime,
+        group(1, 1, [false; CONTROLS], &sample(false)),
+        true,
+    );
     let tick = batch(
         &mut runtime,
         &[
-            group(2, 2, [false; 3], &sample(true)),
-            group(3, 3, [false; 3], &sample(false)),
-            group(4, 4, [false; 3], &sample(false)),
+            group(2, 2, [false; CONTROLS], &sample(true)),
+            group(3, 3, [false; CONTROLS], &sample(false)),
+            group(4, 4, [false; CONTROLS], &sample(false)),
         ],
     );
     assert_eq!(tick.commands, [SystemCommand::Recenter]);
@@ -225,11 +229,11 @@ fn direct_trigger_claims_cover_press_release_and_quiet_in_one_edges_window() {
     assert_eq!(batch(&mut runtime, &[]).claims, 0);
 }
 
-fn protected_group(ms: u64, sequence: u64, down: [bool; 3], control: Control) -> InputGroup {
+fn protected_group(ms: u64, sequence: u64, down: [bool; CONTROLS], control: Control) -> InputGroup {
     let command = GlobalAction::RecenterView.id();
     let mut group = group(ms, sequence, down, &[]);
     let (hand, _) = raw_location(control);
-    let source = [LS, RS, RB][control.index()];
+    let source = [LS, RS, RB, A][control.index()];
     for id in [command, OnFootAction::Jump.id()] {
         let sample = group
             .samples
@@ -259,26 +263,27 @@ fn protected_direct_commands_accept_taps_and_expired_singles_but_not_chord_membe
             let mut runtime = Runtime::default();
             evaluate(
                 &mut runtime,
-                protected_group(1, 1, [false; 3], control),
+                protected_group(1, 1, [false; CONTROLS], control),
                 true,
             );
-            let mut down = [false; 3];
+            let mut down = [false; CONTROLS];
             down[index] = true;
             let pending = evaluate(&mut runtime, protected_group(10, 2, down, control), true);
-            assert_eq!(pending.commands.is_empty(), control != Control::RightB);
+            let immediate = matches!(control, Control::RightB | Control::RightA);
+            assert_eq!(pending.commands.is_empty(), !immediate);
             let accepted = evaluate(
                 &mut runtime,
                 protected_group(
                     if expire { 400 } else { 20 },
                     3,
-                    if expire { down } else { [false; 3] },
+                    if expire { down } else { [false; CONTROLS] },
                     control,
                 ),
                 true,
             );
             assert_eq!(
                 accepted.commands.len(),
-                usize::from(control != Control::RightB),
+                usize::from(!immediate),
                 "{control:?}, expiry {expire}"
             );
             assert!(!accepted.raw[index].held());
@@ -292,12 +297,12 @@ fn protected_direct_commands_accept_taps_and_expired_singles_but_not_chord_membe
         let mut runtime = Runtime::default();
         evaluate(
             &mut runtime,
-            protected_group(1, 1, [false; 3], control),
+            protected_group(1, 1, [false; CONTROLS], control),
             true,
         );
         evaluate(
             &mut runtime,
-            protected_group(10, 2, [true, false, false], control),
+            protected_group(10, 2, [true, false, false, false], control),
             true,
         );
         let chord = evaluate(
@@ -305,10 +310,10 @@ fn protected_direct_commands_accept_taps_and_expired_singles_but_not_chord_membe
             protected_group(
                 20,
                 3,
-                if control == Control::RightStick {
-                    [true, true, false]
-                } else {
-                    [true, false, true]
+                match control {
+                    Control::RightStick => [true, true, false, false],
+                    Control::RightA => [true, false, false, true],
+                    Control::LeftStick | Control::RightB => [true, false, true, false],
                 },
                 control,
             ),
@@ -316,10 +321,10 @@ fn protected_direct_commands_accept_taps_and_expired_singles_but_not_chord_membe
         );
         assert_eq!(
             chord.commands,
-            if control == Control::RightStick {
-                vec![]
-            } else {
-                vec![SystemCommand::TogglePanel]
+            match control {
+                Control::RightStick => vec![],
+                Control::RightA => vec![SystemCommand::Mark],
+                Control::LeftStick | Control::RightB => vec![SystemCommand::TogglePanel],
             }
         );
     }
@@ -331,7 +336,7 @@ fn every_reset_discards_earlier_commands_and_accepted_edges_in_the_drain() {
     let action = OnFootAction::Jump.id();
     let sample = |down| {
         [
-            (command, down, paths(&[A])),
+            (command, down, paths(&[RIGHT_SQUEEZE])),
             (
                 action,
                 down,
@@ -341,9 +346,13 @@ fn every_reset_discards_earlier_commands_and_accepted_edges_in_the_drain() {
     };
     for damage in 0..4 {
         let mut runtime = Runtime::default();
-        evaluate(&mut runtime, group(1, 1, [false; 3], &sample(false)), true);
-        let first = group(2, 2, [false; 3], &sample(true));
-        let mut reset = group(3, 3, [false; 3], &sample(false));
+        evaluate(
+            &mut runtime,
+            group(1, 1, [false; CONTROLS], &sample(false)),
+            true,
+        );
+        let first = group(2, 2, [false; CONTROLS], &sample(true));
+        let mut reset = group(3, 3, [false; CONTROLS], &sample(false));
         if damage == 0 {
             reset.stamp.epoch += 1;
         }
@@ -400,7 +409,10 @@ fn every_reset_discards_earlier_commands_and_accepted_edges_in_the_drain() {
 
 #[test]
 fn replay_neutral_recovery_retains_full_sync_and_group_order_watermark() {
-    let trace = [group(1, 1, [false; 3], &[]), group(2, 2, [false; 3], &[])];
+    let trace = [
+        group(1, 1, [false; CONTROLS], &[]),
+        group(2, 2, [false; CONTROLS], &[]),
+    ];
     let records = captured_trace(&trace);
     for damage in 0..3 {
         let mut runtime = Runtime::default();
@@ -432,7 +444,7 @@ fn replay_neutral_recovery_retains_full_sync_and_group_order_watermark() {
 
 #[test]
 fn rejected_neutral_priming_never_marks_replay_ready() {
-    let mut records = captured_trace(&[group(1, 1, [false; 3], &[])]);
+    let mut records = captured_trace(&[group(1, 1, [false; CONTROLS], &[])]);
     if let InputRecord::Policy(policy) = &mut records[1].record {
         policy.context = 5;
     }
@@ -449,10 +461,10 @@ fn neutral_boundary_requires_complete_active_attributable_route_inventory() {
     let complete = group(
         1,
         1,
-        [false; 3],
+        [false; CONTROLS],
         &[
-            (command, false, paths(&[A])),
-            (merged, false, paths(&[RS, A])),
+            (command, false, paths(&[RIGHT_SQUEEZE])),
+            (merged, false, paths(&[RS, RIGHT_SQUEEZE])),
         ],
     );
     assert!(group_neutral(&complete, &BindingsConfig::new()));
@@ -503,8 +515,8 @@ fn actual_capture_mid_pending_single_and_chord_waits_for_direct_and_merged_neutr
     let merged = OnFootAction::Detonate.id();
     let sample = |direct, semantic| {
         [
-            (command, direct, paths(&[A])),
-            (merged, semantic, paths(&[RS, A])),
+            (command, direct, paths(&[RIGHT_SQUEEZE])),
+            (merged, semantic, paths(&[RS, RIGHT_SQUEEZE])),
         ]
     };
     for state in 0..3 {
@@ -516,18 +528,18 @@ fn actual_capture_mid_pending_single_and_chord_waits_for_direct_and_merged_neutr
         }
         publish_configured(
             &mut runtime,
-            group(1, 1, [false; 3], &sample(false, false)),
+            group(1, 1, [false; CONTROLS], &sample(false, false)),
             &config,
         );
         publish_configured(
             &mut runtime,
-            group(10, 2, [false, true, false], &sample(true, true)),
+            group(10, 2, [false, true, false, false], &sample(true, true)),
             &config,
         );
         let held = if state == 2 {
-            [true, true, false]
+            [true, true, false, false]
         } else {
-            [false, true, false]
+            [false, true, false, false]
         };
         publish_configured(
             &mut runtime,
@@ -547,7 +559,7 @@ fn actual_capture_mid_pending_single_and_chord_waits_for_direct_and_merged_neutr
         );
         publish_configured(
             &mut runtime,
-            group(210, 5, [false; 3], &sample(true, true)),
+            group(210, 5, [false; CONTROLS], &sample(true, true)),
             &config,
         );
         capture.extend(history::take_capture());
@@ -556,7 +568,7 @@ fn actual_capture_mid_pending_single_and_chord_waits_for_direct_and_merged_neutr
         );
         publish_configured(
             &mut runtime,
-            group(220, 6, [false; 3], &sample(false, true)),
+            group(220, 6, [false; CONTROLS], &sample(false, true)),
             &config,
         );
         capture.extend(history::take_capture());
@@ -565,7 +577,7 @@ fn actual_capture_mid_pending_single_and_chord_waits_for_direct_and_merged_neutr
         );
         publish_configured(
             &mut runtime,
-            group(230, 7, [false; 3], &sample(false, false)),
+            group(230, 7, [false; CONTROLS], &sample(false, false)),
             &config,
         );
         capture.extend(history::take_capture());
@@ -574,7 +586,7 @@ fn actual_capture_mid_pending_single_and_chord_waits_for_direct_and_merged_neutr
         );
         publish_configured(
             &mut runtime,
-            group(240, 8, [false; 3], &sample(true, true)),
+            group(240, 8, [false; CONTROLS], &sample(true, true)),
             &config,
         );
         capture.extend(history::take_capture());

@@ -4,8 +4,8 @@ use crate::{
     input::{
         ClockDomain, InputStamp,
         policy::{
-            AcceptedCommand, AcceptedSingle, DirectAcceptance, DirectDecision, PolicyATiming,
-            PolicyEvaluation, PolicyOutcome,
+            AcceptedCommand, AcceptedSingle, DirectAcceptance, DirectDecision, PROTECTED_CONTROLS,
+            PolicyATiming, PolicyEvaluation, PolicyOutcome,
         },
     },
     input_codec::invalid,
@@ -32,7 +32,7 @@ pub(super) fn encode(out: &mut Encoder, policy: &PolicyEvaluation) {
     }
     out.u64(policy.context);
     out.bool(policy.gameplay);
-    for i in 0..3 {
+    for i in 0..PROTECTED_CONTROLS {
         out.u8(match policy.singles[i] {
             AcceptedSingle::None => 0,
             AcceptedSingle::Pressed => 1,
@@ -46,6 +46,7 @@ pub(super) fn encode(out: &mut Encoder, policy: &PolicyEvaluation) {
         AcceptedCommand::None => 0,
         AcceptedCommand::Recenter => 1,
         AcceptedCommand::TogglePanel => 2,
+        AcceptedCommand::Mark => 3,
     });
     out.u8(match policy.outcome {
         PolicyOutcome::Evaluated => 0,
@@ -101,10 +102,10 @@ pub(super) fn decode(input: &mut Decoder) -> Result<PolicyEvaluation, DecodeErro
     };
     let context = input.u64()?;
     let gameplay = input.bool("policy gameplay")?;
-    let mut singles = [AcceptedSingle::None; 3];
-    let mut single_down = [false; 3];
-    let mut withheld = [false; 3];
-    for i in 0..3 {
+    let mut singles = [AcceptedSingle::None; PROTECTED_CONTROLS];
+    let mut single_down = [false; PROTECTED_CONTROLS];
+    let mut withheld = [false; PROTECTED_CONTROLS];
+    for i in 0..PROTECTED_CONTROLS {
         singles[i] = match input.u8()? {
             0 => AcceptedSingle::None,
             1 => AcceptedSingle::Pressed,
@@ -119,6 +120,7 @@ pub(super) fn decode(input: &mut Decoder) -> Result<PolicyEvaluation, DecodeErro
         0 => AcceptedCommand::None,
         1 => AcceptedCommand::Recenter,
         2 => AcceptedCommand::TogglePanel,
+        3 => AcceptedCommand::Mark,
         value => return Err(invalid(input, "policy command", u64::from(value))),
     };
     let outcome = match input.u8()? {
@@ -129,7 +131,10 @@ pub(super) fn decode(input: &mut Decoder) -> Result<PolicyEvaluation, DecodeErro
         value => return Err(invalid(input, "policy outcome", u64::from(value))),
     };
     let neutral = input.bool("policy neutral")?;
-    let raw = [input.u8()?, input.u8()?, input.u8()?];
+    let mut raw = [0; PROTECTED_CONTROLS];
+    for flags in &mut raw {
+        *flags = input.u8()?;
+    }
     let mut direct = [DirectDecision::default(); 4];
     for entry in &mut direct {
         entry.sources = input.u32()?;

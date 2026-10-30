@@ -14,7 +14,7 @@ use crate::{
 #[test]
 fn input_order_and_decision_wire_are_independent_of_the_frame_container_version() {
     assert_eq!(INPUT_VERSION, 2);
-    assert_eq!(POLICY_A_VERSION, 3);
+    assert_eq!(POLICY_A_VERSION, 4);
     let stamp = InputStamp {
         epoch: 13,
         clock: ClockDomain::Synthetic,
@@ -59,11 +59,11 @@ fn input_order_and_decision_wire_are_independent_of_the_frame_container_version(
             gameplay: true,
             outcome: PolicyOutcome::Evaluated,
             neutral: false,
-            singles: [AcceptedSingle::None; 3],
-            single_down: [false; 3],
-            withheld: [false; 3],
+            singles: [AcceptedSingle::None; 4],
+            single_down: [false; 4],
+            withheld: [false; 4],
             command: AcceptedCommand::None,
-            raw: [0; 3],
+            raw: [0; 4],
             direct: Default::default(),
             claims: 0,
             commands: 0,

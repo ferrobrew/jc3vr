@@ -2,7 +2,10 @@
 
 use crate::input::InputStamp;
 
-pub const POLICY_A_VERSION: u16 = 3;
+pub const POLICY_A_VERSION: u16 = 4;
+/// The protected physical controls a decision covers: the left stick click, the right stick click,
+/// the right B, and the right A, in that order.
+pub const PROTECTED_CONTROLS: usize = 4;
 pub const SOURCE_MASK: u32 = 0xffff;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -36,6 +39,7 @@ pub enum AcceptedCommand {
     None,
     Recenter,
     TogglePanel,
+    Mark,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -65,7 +69,8 @@ pub struct DirectDecision {
 }
 
 /// Direct routes are recenter-left, recenter-right, panel-left, and panel-right. Raw flags are
-/// down, pressed, and released. Command bits are recenter and panel; disjoint sources may coexist.
+/// down, pressed, and released. Command bits are recenter, panel, and mark; disjoint sources may
+/// coexist. The mark chord shares the panel join window, so the timing carries no window of its own.
 /// Playback compares the resolved decision before exposing any command or accepted transition.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct PolicyEvaluation {
@@ -77,11 +82,11 @@ pub struct PolicyEvaluation {
     pub gameplay: bool,
     pub outcome: PolicyOutcome,
     pub neutral: bool,
-    pub singles: [AcceptedSingle; 3],
-    pub single_down: [bool; 3],
-    pub withheld: [bool; 3],
+    pub singles: [AcceptedSingle; PROTECTED_CONTROLS],
+    pub single_down: [bool; PROTECTED_CONTROLS],
+    pub withheld: [bool; PROTECTED_CONTROLS],
     pub command: AcceptedCommand,
-    pub raw: [u8; 3],
+    pub raw: [u8; PROTECTED_CONTROLS],
     pub direct: [DirectDecision; 4],
     pub claims: u32,
     pub commands: u8,
@@ -101,7 +106,7 @@ impl PolicyEvaluation {
                 PolicyOutcome::Evaluated | PolicyOutcome::NeutralBoundary
             ) || self.timing.is_some())
             && self.raw.iter().all(|flags| flags & !7 == 0)
-            && self.commands & !3 == 0
+            && self.commands & !7 == 0
             && self.claims & !SOURCE_MASK == 0
             && self
                 .direct
@@ -110,11 +115,11 @@ impl PolicyEvaluation {
             && (!matches!(self.outcome, PolicyOutcome::NeutralBoundary) || self.neutral)
             && (matches!(self.outcome, PolicyOutcome::Evaluated)
                 || (self.commands == 0
-                    && self.raw == [0; 3]
+                    && self.raw == [0; PROTECTED_CONTROLS]
                     && self.claims == 0
                     && self.command == AcceptedCommand::None
-                    && self.singles == [AcceptedSingle::None; 3]
-                    && self.single_down == [false; 3]
+                    && self.singles == [AcceptedSingle::None; PROTECTED_CONTROLS]
+                    && self.single_down == [false; PROTECTED_CONTROLS]
                     && self.direct == [DirectDecision::default(); 4]))
     }
 }

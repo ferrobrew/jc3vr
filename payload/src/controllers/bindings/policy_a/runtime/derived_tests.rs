@@ -31,12 +31,12 @@ enum Loss {
 fn source(hand: Hand) -> &'static str {
     match hand {
         Hand::Left => "/user/hand/left/input/b/click",
-        Hand::Right => A,
+        Hand::Right => RIGHT_SQUEEZE,
     }
 }
 
 fn sample(sequence: u64, routes: &[(ActionId, Hand, bool)]) -> InputGroup {
-    let mut group = group(sequence * 10, sequence, [false; 3], &[]);
+    let mut group = group(sequence * 10, sequence, [false; CONTROLS], &[]);
     for &(id, hand, down) in routes {
         let route = group
             .samples

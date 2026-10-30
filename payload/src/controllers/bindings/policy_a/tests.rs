@@ -1,14 +1,16 @@
 use super::*;
 
+mod mark;
 mod recovery;
 
-const UP: [bool; 3] = [false; 3];
-const LS: [bool; 3] = [true, false, false];
-const RS: [bool; 3] = [false, true, false];
-const B: [bool; 3] = [false, false, true];
-const LR: [bool; 3] = [true, true, false];
-const LB: [bool; 3] = [true, false, true];
-const ALL: [bool; 3] = [true; 3];
+const UP: [bool; CONTROLS] = [false; CONTROLS];
+const LS: [bool; CONTROLS] = [true, false, false, false];
+const RS: [bool; CONTROLS] = [false, true, false, false];
+const B: [bool; CONTROLS] = [false, false, true, false];
+const LR: [bool; CONTROLS] = [true, true, false, false];
+const LB: [bool; CONTROLS] = [true, false, true, false];
+/// Every member of the recenter and panel chords down.
+const ALL: [bool; CONTROLS] = [true, true, true, false];
 
 struct History {
     arbiter: PolicyA,
@@ -41,11 +43,16 @@ impl History {
         history
     }
 
-    fn step(&mut self, at: u64, down: [bool; 3]) -> Arbitration {
+    fn step(&mut self, at: u64, down: [bool; CONTROLS]) -> Arbitration {
         self.evidence(at, down, InputEvidence::VerifiedUnmasked)
     }
 
-    fn evidence(&mut self, at: u64, down: [bool; 3], evidence: InputEvidence) -> Arbitration {
+    fn evidence(
+        &mut self,
+        at: u64,
+        down: [bool; CONTROLS],
+        evidence: InputEvidence,
+    ) -> Arbitration {
         self.sequence += 1;
         self.stamped(
             ObservationStamp {
@@ -62,7 +69,7 @@ impl History {
     fn stamped(
         &mut self,
         stamp: ObservationStamp,
-        down: [bool; 3],
+        down: [bool; CONTROLS],
         evidence: InputEvidence,
     ) -> Arbitration {
         self.arbiter.observe(Observation {
@@ -81,7 +88,7 @@ fn ms(value: u64) -> Duration {
 }
 
 fn no_singles(out: &Arbitration) {
-    assert_eq!(out.singles, [None; 3], "{out:?}");
+    assert_eq!(out.singles, [None; CONTROLS], "{out:?}");
     assert!(out.sources.iter().all(|source| !source.single_down));
 }
 
@@ -216,15 +223,15 @@ fn committed_stick_singles_cannot_promote_or_restart_the_late_partner() {
         assert_eq!(accepted_at, ms(expiry));
         let joined = history.step(expiry + 1, LR);
         assert_eq!(joined.request, None);
-        assert_eq!(joined.singles, [None; 3]);
+        assert_eq!(joined.singles, [None; CONTROLS]);
         assert!(joined.sources[index].single_down);
         assert_eq!(joined.sources[index].press, Some(press));
         assert_eq!(command(history.step(expiry + 1001, LR)), None);
         let partial = history.step(expiry + 1002, first);
-        assert_eq!(partial.singles, [None; 3]);
+        assert_eq!(partial.singles, [None; CONTROLS]);
         assert!(partial.sources[index].single_down);
         let retry = history.step(expiry + 1003, LR);
-        assert_eq!(retry.singles, [None; 3]);
+        assert_eq!(retry.singles, [None; CONTROLS]);
         assert_eq!(retry.request, None);
         assert!(!retry.sources[1 - index].single_down);
         assert!(matches!(
@@ -260,7 +267,7 @@ fn ls_reservation_is_the_maximum_eligible_window() {
                 committed.singles[control.index()],
                 Some(SingleEvent::Pressed { accepted_at, .. }) if accepted_at == ms(window + 1)
             ));
-            assert_eq!(history.step(window + 2, down).singles, [None; 3]);
+            assert_eq!(history.step(window + 2, down).singles, [None; CONTROLS]);
         }
     }
 }
@@ -271,7 +278,7 @@ fn ls_keeps_waiting_for_panel_after_recenter_expiry() {
     history.step(1, LS);
     no_singles(&history.step(101, LS));
     let panel = history.step(300, LB);
-    assert_eq!(panel.singles, [None; 3]);
+    assert_eq!(panel.singles, [None; CONTROLS]);
     assert_eq!(command(panel), Some(SystemCommand::TogglePanel));
 }
 
@@ -281,14 +288,8 @@ fn ambiguous_ls_b_group_is_consumed_without_guessing_order() {
     let ambiguous = history.step(1, LB);
     no_singles(&ambiguous);
     assert_eq!(ambiguous.request, None);
-    assert_eq!(
-        ambiguous.refused[0],
-        Some(RefusalReason::AmbiguousPanelOrder)
-    );
-    assert_eq!(
-        ambiguous.refused[2],
-        Some(RefusalReason::AmbiguousPanelOrder)
-    );
+    assert_eq!(ambiguous.refused[0], Some(RefusalReason::AmbiguousOrder));
+    assert_eq!(ambiguous.refused[2], Some(RefusalReason::AmbiguousOrder));
     no_singles(&history.step(5000, LB));
     no_singles(&history.step(5001, B));
     no_singles(&history.step(5002, LB));
@@ -366,7 +367,7 @@ fn pending_released_singles_are_single_zero_hold_taps() {
         assert_eq!(press.onset.at, ms(1));
         assert_eq!(accepted_at, ms(2));
         assert!(!released.sources[index].single_down);
-        assert_eq!(history.step(3, UP).singles, [None; 3]);
+        assert_eq!(history.step(3, UP).singles, [None; CONTROLS]);
     }
 }
 
@@ -817,11 +818,11 @@ fn generated_short_histories_never_emit_claimed_constituents() {
     }
 }
 
-fn assert_source_history_contract(inputs: &[(u64, [bool; 3])], outputs: &[Arbitration]) {
+fn assert_source_history_contract(inputs: &[(u64, [bool; CONTROLS])], outputs: &[Arbitration]) {
     assert_eq!(inputs.len(), outputs.len());
     let mut claimed = Vec::new();
     let mut requested = Vec::new();
-    let mut enrolled = [false; 3];
+    let mut enrolled = [false; CONTROLS];
     let mut requests_since_neutral = 0;
     for ((_, down), output) in inputs.iter().zip(outputs) {
         for control in Control::ALL {
@@ -864,7 +865,7 @@ fn assert_source_history_contract(inputs: &[(u64, [bool; 3])], outputs: &[Arbitr
             .into_iter()
             .all(|c| !enrolled[c.index()] || !down[c.index()])
         {
-            enrolled = [false; 3];
+            enrolled = [false; CONTROLS];
             requests_since_neutral = 0;
         }
     }

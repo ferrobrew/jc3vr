@@ -42,7 +42,7 @@ pub(super) fn fixture_mode(entries: &[(ActionId, &[&str])], mode: SemanticSet) -
             .iter()
             .map(|(id, sources)| (*id, pressed, paths(sources)))
             .collect();
-        let mut group = group(sequence, sequence, [false; 3], &semantics);
+        let mut group = group(sequence, sequence, [false; CONTROLS], &semantics);
         if mode != SemanticSet::OnFoot {
             group.samples.retain(|sample| !matches!(sample.route, InputRoute::Semantic { set, .. } if set == SemanticSet::OnFoot.index() as u8));
             for (action, definition) in mode.actions().iter().enumerate() {

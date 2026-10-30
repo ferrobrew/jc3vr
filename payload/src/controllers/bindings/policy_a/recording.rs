@@ -5,8 +5,8 @@ use std::time::Duration;
 use tracking_format::input::{
     InputGroup,
     policy::{
-        AcceptedCommand, AcceptedSingle, POLICY_A_VERSION, PolicyATiming, PolicyEvaluation,
-        PolicyOutcome,
+        AcceptedCommand, AcceptedSingle, POLICY_A_VERSION, PROTECTED_CONTROLS, PolicyATiming,
+        PolicyEvaluation, PolicyOutcome,
     },
 };
 
@@ -47,11 +47,11 @@ pub(super) fn cancelled(
         gameplay,
         outcome: PolicyOutcome::Cancelled,
         neutral: false,
-        singles: [AcceptedSingle::None; 3],
-        single_down: [false; 3],
-        withheld: [true; 3],
+        singles: [AcceptedSingle::None; PROTECTED_CONTROLS],
+        single_down: [false; PROTECTED_CONTROLS],
+        withheld: [true; PROTECTED_CONTROLS],
         command: AcceptedCommand::None,
-        raw: [0; 3],
+        raw: [0; PROTECTED_CONTROLS],
         direct: Default::default(),
         claims: 0,
         commands: 0,
@@ -79,6 +79,7 @@ pub(super) fn evaluation(
         None => AcceptedCommand::None,
         Some(SystemCommand::Recenter) => AcceptedCommand::Recenter,
         Some(SystemCommand::TogglePanel) => AcceptedCommand::TogglePanel,
+        Some(SystemCommand::Mark) => AcceptedCommand::Mark,
     };
     out
 }

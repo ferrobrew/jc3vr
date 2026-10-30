@@ -18,8 +18,8 @@ use crate::{
             controls::ButtonControl,
             intents::{Intent, SemanticInput, shape},
             policy_a::{
-                Arbitration, ClockEpoch, Control, Disposition, PolicyA, PolicyAConfig, ResetReason,
-                ResetRequest, SingleEvent, SystemCommand,
+                Arbitration, CONTROLS, ClockEpoch, Control, Disposition, PolicyA, PolicyAConfig,
+                ResetReason, ResetRequest, SingleEvent, SystemCommand,
                 attribution::{Attribution, SourceIdentity, raw_location, raw_verified},
                 recording,
                 runtime::evaluation::EvaluationInput,
@@ -61,11 +61,11 @@ pub(crate) struct Runtime {
     interpretation: Option<(u64, u64, bool)>,
     consumer_context: Option<(u64, bool)>,
     routes: Vec<Route>,
-    raw: [Delivery; 3],
+    raw: [Delivery; CONTROLS],
     claims: u32,
     replay_groups: VecDeque<InputGroup>,
     replay_ready: bool,
-    raw_neutral: [bool; 3],
+    raw_neutral: [bool; CONTROLS],
     reset_serial: u64,
     watermark: Option<(InputStamp, GroupOrder)>,
 }
@@ -73,7 +73,7 @@ pub(crate) struct Runtime {
 #[derive(Default)]
 pub(crate) struct Tick {
     pub(crate) commands: Vec<SystemCommand>,
-    raw: [ButtonControl; 3],
+    raw: [ButtonControl; CONTROLS],
     routes: Vec<(ActionId, Hand, Intent)>,
     permitted: Vec<(ActionId, Hand)>,
     cancelled: Vec<(ActionId, Hand)>,
@@ -267,13 +267,13 @@ impl Runtime {
                 route.delivery.cancel();
             }
         }
-        self.raw_neutral = [true; 3];
+        self.raw_neutral = [true; CONTROLS];
         self.raw = Default::default();
     }
 
     fn reset(&mut self, reason: ResetReason) {
         self.reset_serial = self.reset_serial.wrapping_add(1);
-        self.raw_neutral = [true; 3];
+        self.raw_neutral = [true; CONTROLS];
         self.replay_ready = false;
         if let Some(policy) = &mut self.policy {
             policy.reset(ResetRequest { reason });
@@ -481,10 +481,10 @@ impl Tick {
     pub(crate) fn filter_raw(&self, frame: &mut ControllerFrame, edges: &mut Edges) {
         for control in Control::ALL {
             let (hand, _) = raw_location(control);
-            let button = if control == Control::RightB {
-                Button::BClick
-            } else {
-                Button::ThumbstickClick
+            let button = match control {
+                Control::LeftStick | Control::RightStick => Button::ThumbstickClick,
+                Control::RightB => Button::BClick,
+                Control::RightA => Button::AClick,
             };
             let state = self.raw[control.index()];
             frame.hands[hand.index()].buttons.set(button, state.down);
@@ -552,7 +552,7 @@ impl Tick {
     }
 }
 
-fn raw_evidence(group: &InputGroup) -> [Option<bool>; 3] {
+fn raw_evidence(group: &InputGroup) -> [Option<bool>; CONTROLS] {
     Control::ALL.map(|control| {
         if group.source_generation != group.binding_generation {
             return None;
@@ -579,7 +579,9 @@ fn complete_inventory(group: &InputGroup) -> bool {
         5 => SemanticSet::Menu,
         _ => return false,
     };
-    if group.samples.len() != 3 + 2 * (SemanticSet::Global.actions().len() + mode.actions().len()) {
+    if group.samples.len()
+        != CONTROLS + 2 * (SemanticSet::Global.actions().len() + mode.actions().len())
+    {
         return false;
     }
     for set in [SemanticSet::Global, mode] {
@@ -619,7 +621,7 @@ pub(crate) fn group_neutral(group: &InputGroup, config: &BindingsConfig) -> bool
         && group.focused
         && group.is_bounded()
         && complete_inventory(group)
-        && raw_evidence(group) == [Some(false); 3]
+        && raw_evidence(group) == [Some(false); CONTROLS]
         && group.samples.iter().all(|sample| {
             let InputRoute::Semantic { hand, .. } = sample.route else {
                 return true;

@@ -3,7 +3,10 @@
 use tracking_format::input::SourceQuery;
 
 use crate::{
-    controllers::{bindings::policy_a::Control, frame::Hand},
+    controllers::{
+        bindings::policy_a::{CONTROLS, Control},
+        frame::Hand,
+    },
     vr::input::semantic::bound::Physical,
 };
 
@@ -22,7 +25,7 @@ impl SourceIdentity {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Attribution {
     pub(super) identities: Vec<SourceIdentity>,
-    pub(super) controls: [bool; 3],
+    pub(super) controls: [bool; CONTROLS],
     pub(super) unresolved: bool,
 }
 
@@ -30,7 +33,7 @@ impl Attribution {
     pub(super) fn of(query: &SourceQuery, hand: Hand) -> Self {
         let mut out = Self {
             identities: Vec::new(),
-            controls: [false; 3],
+            controls: [false; CONTROLS],
             unresolved: false,
         };
         let SourceQuery::Paths(paths) = query else {
@@ -92,6 +95,7 @@ pub(super) fn raw_verified(query: &SourceQuery, control: Control) -> bool {
                 let suffix = match control {
                     Control::LeftStick | Control::RightStick => "/input/thumbstick/click",
                     Control::RightB => "/input/b/click",
+                    Control::RightA => "/input/a/click",
                 };
                 if source.physical != physical || !path.ends_with(suffix) {
                     return false;
@@ -110,6 +114,7 @@ pub(super) fn raw_location(control: Control) -> (Hand, Physical) {
         Control::LeftStick => (Hand::Left, Physical::ThumbstickClick),
         Control::RightStick => (Hand::Right, Physical::ThumbstickClick),
         Control::RightB => (Hand::Right, Physical::UpperFace),
+        Control::RightA => (Hand::Right, Physical::LowerFace),
     }
 }
 
@@ -139,6 +144,7 @@ fn protected(source: SourceIdentity) -> Option<Control> {
         (Hand::Left, Physical::ThumbstickClick) => Some(Control::LeftStick),
         (Hand::Right, Physical::ThumbstickClick) => Some(Control::RightStick),
         (Hand::Right, Physical::UpperFace) => Some(Control::RightB),
+        (Hand::Right, Physical::LowerFace) => Some(Control::RightA),
         _ => None,
     }
 }
