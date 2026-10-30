@@ -37,9 +37,10 @@ pub(crate) enum ThreadRole {
     /// Whatever thread runs the engine's input job (`RunInputThread_Proxy`, scoped in
     /// [`crate::hooks::sim`]): a CPU fragment worker, or the game thread when it steals the
     /// fragment while it waits on another signal. Either way the job overlaps the game thread's
-    /// pre-simulation work that mutates the world, so it may touch only input and UI state. The
-    /// role narrows [`Self::Game`] on a stolen run, so a guard that admits only `Game` does not
-    /// admit the overlap.
+    /// pre-simulation work that mutates the world, so it may touch only input and UI state; the
+    /// world-mutating half of the input tick runs later, in the game stage
+    /// ([`crate::controllers::bindings::stage`]). The role narrows [`Self::Game`] on a stolen run,
+    /// so a guard that admits only `Game` does not admit the overlap.
     InputJob,
 }
 

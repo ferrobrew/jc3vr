@@ -1,4 +1,5 @@
-//! Applying effector writes to the game's action maps, on the input tick after the device poll.
+//! Applying effector writes to the game's action maps, in the input tick's poll stage after the
+//! device poll ([`crate::controllers::bindings::stage`]).
 //!
 //! Each write resolves its action through the same lookup the game's readers use (device `-1`),
 //! so it lands in the effector the next reader picks: the one with the largest value among the
@@ -40,8 +41,8 @@ pub struct Landing {
 ///
 /// # Safety
 ///
-/// Must run on the main thread, on the input tick after `InputDeviceManager::Update`, while the
-/// action maps exist.
+/// Must run inside the input update after `InputDeviceManager::Update` (in play, in the input job),
+/// while the action maps exist.
 pub unsafe fn apply(writes: &[ActionWrite]) -> Vec<Landing> {
     // SAFETY: the null effector is a static the lookups return by address.
     let null: *mut InputDeviceEffector = unsafe { get_null_effector() };

@@ -73,8 +73,9 @@ pub fn status() -> SettingStatus {
     STATE.lock().status
 }
 
-/// Hold or restore the setting for this input tick. Called from the engine's input tick on the
-/// main thread.
+/// Hold or restore the setting for this input tick. Called from the input tick's game stage
+/// ([`crate::controllers::bindings::stage::game_stage`]), on the game thread outside the input
+/// job, so the write never overlaps the settings manager's own update.
 pub(crate) fn input_tick() {
     let config = Config::lock_query(|c| c.controllers);
     let active = config.enabled && scheme::is_controllers();

@@ -1,10 +1,18 @@
-//! Timing detours around the sim tick and its phases, for the always-on frame breakdown
-//! (`crate::frame_timing`) and, under the `profiler` feature, the profiler's flame graph.
+//! Detours around the sim tick and its phases: timing for the always-on frame breakdown
+//! (`crate::frame_timing`) and, under the `profiler` feature, the profiler's flame graph; the input
+//! job's thread role; and the input tick's game stage.
 //!
-//! These hooks change nothing the game does: each opens a [`frame_timing::scope`] around the
-//! original call, except the input job's body (`RunInputThread_Proxy`), which holds
-//! [`ThreadRole::InputJob`] for its extent so the input tick can tell the job, which overlaps the
-//! game thread's world-mutating work, from an inline input update on the game thread. The tick itself ([`Game::UpdateGame`]) also counts against the frame it runs in,
+//! The timing hooks change nothing the game does: each opens a [`frame_timing::scope`] around the
+//! original call. Two hooks do more. The input job's body (`RunInputThread_Proxy`) holds
+//! [`ThreadRole::InputJob`] for its extent, so the input tick can tell the job, which overlaps the
+//! game thread's world-mutating work, from an inline input update on the game thread. The world's
+//! pre-simulation queue runs the input tick's game stage
+//! ([`crate::controllers::bindings::stage::game_stage`]) before the original: on the game thread,
+//! after the input job's completion wait, and before any character, weapon, or vehicle update and
+//! the physics step, so the stage's acts see no concurrent world mutation and still precede the
+//! world update that reads them.
+//!
+//! The tick itself ([`Game::UpdateGame`]) also counts against the frame it runs in,
 //! so the breakdown can split the frames by how many ticks they carried. Inside the tick, the run
 //! state's phases are timed at the nearest functions the engine calls for them: the game world's
 //! two update queues, the physics phase, and the three calls of the time-budgeted streaming block.
@@ -23,6 +31,7 @@ use jc3gi::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
+    controllers::bindings::stage::{self, Delivery},
     frame_timing::{self, Slot},
     thread_role::{self, ThreadRole},
 };
@@ -55,6 +64,7 @@ fn world_update_pre_sim(this: *mut GameWorld, context: *mut GameObjectUpdateCont
     let _timing = frame_timing::scope(Slot::SimWorldPreSim);
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("GameWorld::UpdatePreSim");
+    stage::game_stage(Delivery::Deferred);
     WORLD_UPDATE_PRE_SIM.get().unwrap().call(this, context);
 }
 

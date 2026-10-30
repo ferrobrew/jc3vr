@@ -6,14 +6,15 @@
 //! deltas the game's camera system reads. We intercept them post-call: read the values, clear the
 //! effectors so the game's camera doesn't respond, and feed the deltas into the headpose simulation.
 //! The same seam is where [`crate::hooks::input::swim`] refuses backward movement in water, and
-//! where the motion controllers detect the mode and inject their bindings
-//! ([`crate::controllers::bindings::input_tick`]): after the poll, so the injected state survives
-//! until the game reads it, and before the swim refusal, so it covers the controllers' input too.
-//! The same tick holds the game's active-input-device setting at the gamepad under the controller
-//! scheme ([`crate::controllers::gamepad_setting`]).
-//! The controllers' right stick turns the body through the same VR turn scheme as the look
-//! effectors, and the bindings are told whether this call polled the devices, since they stand down
-//! while it does not.
+//! where the motion controllers' poll stage lands their bindings' writes
+//! ([`crate::controllers::bindings::stage::poll_stage`]): after the poll, so the injected state
+//! survives until the game reads it, and before the swim refusal, so it covers the controllers'
+//! input too. The bindings' decisions and acts run in the game stage, on the game thread before the
+//! world update; in play this detour runs in the engine's input job, which overlaps the game
+//! thread's world-mutating work, so it touches only the action maps and the mod's own state. The
+//! controllers' right stick turns the body through the same VR turn scheme as the look effectors,
+//! and the bindings are told whether this call polled the devices, since they stand down while it
+//! does not.
 
 use detours_macro::detour;
 use jc3gi::input::{
@@ -45,11 +46,7 @@ fn input_device_manager_update(manager: *mut InputDeviceManager, dt: f32) {
     INPUT_DEVICE_MANAGER_UPDATE.get().unwrap().call(manager, dt);
 
     let _timing = frame_timing::scope(Slot::InputTick);
-    let controllers = {
-        let _timing = frame_timing::scope(Slot::Bindings);
-        controllers::bindings::input_tick(dt, poll)
-    };
-    controllers::gamepad_setting::input_tick();
+    let body_turn = controllers::bindings::stage::poll_stage(dt, poll);
 
     if !headpose::is_active() {
         return;
@@ -73,7 +70,7 @@ fn input_device_manager_update(manager: *mut InputDeviceManager, dt: f32) {
         // A deflected controller stick takes the turn over from the look effectors: the two are
         // different kinds of input (a stick rate against a possible mouse delta), and summing them
         // would scale neither correctly.
-        if let Some(turn) = controllers.body_turn
+        if let Some(turn) = body_turn
             && turn != 0.0
         {
             look_x = turn;

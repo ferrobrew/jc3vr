@@ -44,6 +44,8 @@ pub struct TickReport {
     /// Why nothing was injected, when nothing was.
     pub idle: Option<Idle>,
     pub body_turn: f32,
+    /// The writes that landed since the last game stage: in play, those the previous game stage
+    /// produced, landed by this tick's poll stage; inline, this tick's own.
     pub writes: Vec<ReportedWrite>,
 }
 

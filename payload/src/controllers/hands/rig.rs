@@ -31,6 +31,11 @@ use crate::{
 };
 
 /// The measured arms, indexed by [`Hand::index`]; `None` for an arm not yet measured.
+///
+/// On the game thread the measurements are first revalidated against the live local character
+/// ([`prepare`]). Elsewhere, including the input job (which overlaps the character manager's
+/// pre-simulation step even when the game thread runs it), the retained measurements are composed
+/// as they are; the input tick's callers run in the game stage, which revalidates every tick.
 pub fn arms() -> [Option<MeasuredArm>; 2] {
     if matches!(
         crate::thread_role::current(),

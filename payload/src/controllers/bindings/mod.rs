@@ -18,15 +18,21 @@
 //! - `recovery` masks a hand after a loss of its pose or of injection until its controls rest
 //!   ([`HandRecovery`]): its raw controls, and every semantic action on it;
 //! - [`inject`] applies the writes to the player and UI action maps;
+//! - [`stage`] splits the tick between the input job and the game thread, and hands the writes and
+//!   the body turn between them;
 //! - [`policy_a`] arbitrates the shared system chords before raw, semantic, and pointer consumers,
 //!   retaining ownership while gameplay stands down.
 //!
-//! [`input_tick`] runs from the `InputDeviceManager::Update` post-call detour
+//! The tick runs in two stages ([`stage`]). [`game_tick`], the decisions and the subsystems' acts,
+//! runs in the game stage, on the game thread at the top of the world's pre-simulation queue in
+//! play (inline in the input update in the load state and the frontend's loading). Its writes land
+//! in the next poll stage, in the `InputDeviceManager::Update` post-call detour
 //! ([`crate::hooks::input::look`]), after the device poll and before the game reads its actions.
 //! It injects only while the bindings are enabled, the controller scheme is in effect, a controller
 //! is active, the game's device poll runs, and the mod's panel is down; otherwise it writes nothing,
 //! so a real gamepad under the gamepad scheme is never fought. The right stick's body turn is not an
-//! action: it is returned to the look detour, which feeds it to the headpose's VR turn scheme.
+//! action: it goes to the look detour's next poll stage, which feeds it to the headpose's VR turn
+//! scheme.
 //!
 //! Whenever injection stops, the bindings undo what they wrote rather than leave it to the device
 //! poll ([`HoldTracker::release_all`]): the poll does not run while the device manager is disabled,
@@ -43,6 +49,7 @@ mod loss;
 pub(crate) mod policy_a;
 mod recovery;
 mod report;
+pub(crate) mod stage;
 mod summary;
 pub mod tables;
 mod trigger_ownership;
@@ -73,6 +80,7 @@ use crate::{
             },
             recovery::{MaskEvent, MaskLog, NeutralPolicy, Recovery},
             report::{publish_recovery_status, report_writes},
+            stage::{Delivery, GameStageOutput, LandedSegment, PollRecord, Segment},
             summary::yank_armed_in,
             tables::Bindings,
             trigger_ownership::{Owner as TriggerOwner, RawTrigger, TriggerOwnership},
@@ -99,18 +107,52 @@ use crate::{
     },
 };
 
-/// What the input tick hands back to the look detour.
-#[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct InputTickOutput {
-    /// The controllers' body-turn input for the VR turn scheme, `-1..=1`, positive turning right,
-    /// or `None` when the controllers are not injecting.
-    pub body_turn: Option<f32>,
+/// The bindings' game stage ([`stage::game_stage`]): take in where the last writes landed, detect
+/// the mode (which selects the action set), evaluate the bindings, run the subsystems' acts, and
+/// produce this tick's writes. Under [`Delivery::Inline`] the writes land before this returns;
+/// under [`Delivery::Deferred`] they are returned for the next poll stage to land.
+pub(crate) fn game_tick(
+    record: PollRecord,
+    landed: Vec<LandedSegment>,
+    delivery: Delivery,
+) -> GameStageOutput {
+    let mut reported = absorb_landed(landed);
+    let mut sink = Vec::new();
+    let body_turn = tick(record.dt, record.poll, &mut sink);
+    let deferred = match delivery {
+        Delivery::Inline => {
+            // SAFETY: an inline game stage runs inside the input update right after the device
+            // poll, outside the input job.
+            reported.extend(absorb_landed(unsafe { stage::land(sink) }));
+            Vec::new()
+        }
+        Delivery::Deferred => sink,
+    };
+    STATE.lock().report.writes = reported;
+    GameStageOutput {
+        deferred,
+        body_turn,
+    }
 }
 
-/// Run the controllers' part of the input tick: detect the mode (which selects the action set),
-/// then evaluate and inject the bindings. `dt` is the engine's tick delta, seconds, and `poll` is
-/// whether the device poll that preceded the tick ran.
-pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
+/// Tell the hold tracker where its tracked writes landed, and report every write's outcome.
+fn absorb_landed(landed: Vec<LandedSegment>) -> Vec<ReportedWrite> {
+    let mut state = STATE.lock();
+    let mut reported = Vec::new();
+    for LandedSegment { segment, landings } in landed {
+        if segment.tracked {
+            let effectors: Vec<_> = landings.iter().map(|l| l.effector).collect();
+            state.tracker.landed(&segment.writes, &effectors);
+        }
+        reported.extend(report_writes(&segment.writes, &landings));
+    }
+    reported
+}
+
+/// One tick of the bindings, pushing its writes to `sink` in order. `dt` is the engine's tick
+/// delta, seconds, and `poll` is whether the device poll that preceded the tick ran. Returns the
+/// controllers' body turn, or `None` when they are not injecting.
+fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     let (config, neutral_policy, flight_dimensions) = Config::lock_query(|c| {
         (
             c.controllers,
@@ -149,8 +191,8 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
                         .filter(|hand| hand.active)
                         .all(|hand| hand.grip.is_valid())
             }),
-        // An unavailable desktop sample (the window unfocused, or the input tick on another thread
-        // than the window's) cannot show a held key, and it cannot block gameplay in the headset:
+        // An unavailable desktop sample (the window unfocused, or an inline tick off the window's
+        // thread) cannot show a held key, and it cannot block gameplay in the headset:
         // the editing owner is gated on desktop focus, under which the sample is observed.
         controls_neutral: controller_neutral && desktop.controls_neutral() != Some(false),
     };
@@ -161,14 +203,14 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
                 || update.effects.cancel_pointer_and_drag
         });
     if capture_cancelled {
-        cancel_capture_routes(poll);
+        cancel_capture_routes(poll, sink);
     }
     if !config.enabled {
         clear_controller();
         update_egui_controller(None, config.acting_hand(), Default::default());
         let mut state = STATE.lock();
         state.observe_poll(poll);
-        state.stand_down(poll);
+        state.stand_down(poll, sink);
         state.recovery.suspend();
         state.publish_recovery();
         frame::take_edges();
@@ -185,17 +227,17 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             dominant: config.acting_hand(),
         });
         weapons::stand_down();
-        // SAFETY: the input tick runs on the main thread outside the world update.
+        // SAFETY: the game stage runs on the game thread before the world update.
         unsafe { weapons::inventory::stand_down() };
         vehicles::stand_down();
         grapple::physical::stand_down();
         snatch::stand_down();
         grab::tick::stand_down();
-        return InputTickOutput::default();
+        return None;
     }
     let mut detection = mode::tick();
     tiers::tick(dt);
-    // SAFETY: the input tick runs on the main thread outside the world update.
+    // SAFETY: the game stage runs on the game thread before the world update.
     unsafe { hands::anchor::input_tick(&config) };
 
     let frame = frame::latest()
@@ -245,7 +287,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
                     || update.effects.cancel_pointer_and_drag
             }) {
                 capture_cancelled = true;
-                cancel_capture_routes(poll);
+                cancel_capture_routes(poll, sink);
             }
             detection = mode::tick();
             if mode::debug_ui_capture().is_some_and(|snapshot| !snapshot.gameplay_effective) {
@@ -295,14 +337,14 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     state.observe_poll(poll);
     let (Some(mut frame), None) = (frame, idle) else {
         clear_controller();
-        let writes = state.stand_down(poll);
+        state.stand_down(poll, sink);
         state.recovery.suspend();
         state.publish_recovery();
         weapons::stand_down();
         // Leaving the controllers puts the loadout table back into the game's slots; a pause of
         // the controllers (the debug panel, a lost frame) keeps it.
         if matches!(idle, Some(Idle::Disabled | Idle::GamepadScheme)) {
-            // SAFETY: the input tick runs on the main thread outside the world update.
+            // SAFETY: the game stage runs on the game thread before the world update.
             unsafe { weapons::inventory::stand_down() };
         }
         vehicles::stand_down();
@@ -312,15 +354,13 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         state.report = TickReport {
             detection,
             idle,
-            writes,
             ..Default::default()
         };
-        return InputTickOutput::default();
+        return None;
     };
 
     state.recovery.observe(&frame);
     loss::cancel_throws(Hand::BOTH.map(|hand| !state.recovery.ready(hand)));
-    let mut reported = Vec::new();
     // Mode selection precedes the next OpenXR sample. Preserve paused holds while waiting for it;
     // the poll runs here, so it releases their effectors, and only the clicks need undoing.
     let set_pending = frame.action_set != detection.mode.action_set()
@@ -334,17 +374,16 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         }
         clear_controller();
         weapons::hold::tick::publish_fire([false; 2]);
-        let paused = state.tracker.pause();
-        // SAFETY: the input tick runs on the main thread after the device poll.
-        let landings = unsafe { inject::apply(&paused) };
-        reported.extend(report_writes(&paused, &landings));
+        sink.push(Segment {
+            writes: state.tracker.pause(),
+            tracked: false,
+        });
         state.publish_recovery();
         state.report = TickReport {
             detection,
-            writes: reported,
             ..Default::default()
         };
-        return InputTickOutput::default();
+        return None;
     }
     let original = frame.clone();
     let original_edges = edges;
@@ -419,7 +458,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     // The hand's pulls act only while the grapple button is held.
     let mut grapple_held = grapple_button_held(&semantic_input, detection.mode);
     if !in_menu {
-        // SAFETY: the input tick runs on the main thread outside the world update.
+        // SAFETY: the game stage runs on the game thread before the world update.
         provided.extend(unsafe {
             snatch::targets(&snatch::OfferInput {
                 hand: grapple_hand,
@@ -521,7 +560,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         tracing::debug!(target: "controllers", ?yank, "yank");
         haptics::play(grapple_hand, Event::Yank);
     }
-    // SAFETY: the input tick runs on the main thread outside the world update.
+    // SAFETY: the game stage runs on the game thread before the world update.
     let physical_grapple = unsafe {
         grapple::physical::input_tick(&grapple::physical::TickInput {
             dt,
@@ -668,7 +707,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             });
         }
         let button_holds = snatch::ButtonHolds::routed(step.grapple_held, snatch_button_owned);
-        // SAFETY: the input tick runs on the main thread outside the world update.
+        // SAFETY: the game stage runs on the game thread before the world update.
         unsafe {
             snatch::finish_tick(
                 &snatch::FinishInput {
@@ -784,20 +823,17 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     eligibility.routes = routes;
     crate::controllers::summary::refresh(detection.mode, &controls, &config, &eligibility);
     let writes = state.tracker.resolve(&step.desired, dt);
-    // SAFETY: the input tick runs on the main thread after the device poll.
-    let landings = unsafe { inject::apply(&writes) };
-    let effectors: Vec<_> = landings.iter().map(|l| l.effector).collect();
-    state.tracker.landed(&writes, &effectors);
-    reported.extend(report_writes(&writes, &landings));
+    sink.push(Segment {
+        writes,
+        tracked: true,
+    });
     state.report = TickReport {
         detection,
         idle: None,
         body_turn: step.body_turn,
-        writes: reported,
+        writes: Vec::new(),
     };
-    InputTickOutput {
-        body_turn: Some(step.body_turn),
-    }
+    Some(step.body_turn)
 }
 
 /// Where the markers are placed for the hands of `active` at this tick.
@@ -856,7 +892,7 @@ fn policy_context(mode: Mode) -> u64 {
     (detail << 8) | mode.action_set() as u64
 }
 
-fn cancel_capture_routes(poll: DevicePoll) {
+fn cancel_capture_routes(poll: DevicePoll, sink: &mut Vec<Segment>) {
     let (replay, publications) = history::take_gameplay();
     INPUT_POLICY
         .lock()
@@ -871,7 +907,7 @@ fn cancel_capture_routes(poll: DevicePoll) {
         Default::default(),
     );
     let mut state = STATE.lock();
-    state.stand_down(poll);
+    state.stand_down(poll, sink);
     state.recovery.disarm();
     state.publish_recovery();
     drop(state);
@@ -942,13 +978,12 @@ impl State {
         self.tracker.release_all(poll)
     }
 
-    /// [`reset`](Self::reset), applying the writes that undo the last tick's, which are returned
-    /// for the report.
-    fn stand_down(&mut self, poll: DevicePoll) -> Vec<ReportedWrite> {
-        let writes = self.reset(poll);
-        // SAFETY: the input tick runs on the main thread after the device poll.
-        let landings = unsafe { inject::apply(&writes) };
-        report_writes(&writes, &landings)
+    /// [`reset`](Self::reset), pushing the writes that undo the last tick's to `sink`.
+    fn stand_down(&mut self, poll: DevicePoll, sink: &mut Vec<Segment>) {
+        sink.push(Segment {
+            writes: self.reset(poll),
+            tracked: false,
+        });
     }
 
     /// Log a change of the device poll: while it is disabled the bindings stand down, which
