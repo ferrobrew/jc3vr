@@ -446,6 +446,30 @@ impl GameState {
     }
 }
 impl GameState {
+    pub const PreUpdate_ADDRESS: usize = 0x1409AC0E0;
+    /// `CGameState::PreUpdate`: the input update. In order, it sets the UI manager's capture thread
+    /// to the calling thread, starts the sound library's pre-simulation job, updates the message
+    /// boxes and the account manager, restores the steering objects' action maps when the device
+    /// manager has marked them dirty, runs the device poll
+    /// ([`InputDeviceManager::Update`](crate::input::input_device_manager::InputDeviceManager::Update))
+    /// and [`UpdateForceClicks`](crate::input::input_device_manager::InputDeviceManager::UpdateForceClicks)
+    /// unless the out-of-focus input setting is on and the window is out of focus, runs the UI's
+    /// input update (`CUIManager::PreUpdate`, which reads the pause and commlink actions from the
+    /// player action map and dispatches the screens' input handlers), waits for the sound job, and
+    /// reverts the capture thread. It touches input devices, the action maps, the UI, the message
+    /// boxes, the accounts, and the sound job, and nothing of the world.
+    ///
+    /// Callers: the input job ([`RunInputThread_Proxy`](crate::game::RunInputThread_Proxy)), [`GameStateLoad::Update`](crate::game::GameStateLoad::Update), and
+    /// [`GameStateFrontend::Update`](crate::game::GameStateFrontend::Update) before its main-menu sub-states. The disassembler mislabels
+    /// the capture thread's revert as `ProfilerInitThread`.
+    pub unsafe fn PreUpdate(update_contexts: *mut crate::game::UpdateContexts) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                update_contexts: *mut crate::game::UpdateContexts,
+            ) = ::std::mem::transmute(Self::PreUpdate_ADDRESS);
+            f(update_contexts)
+        }
+    }
     pub const PostUpdateRender_ADDRESS: usize = 0x140A00E90;
     pub unsafe fn PostUpdateRender(update_contexts: *const crate::game::UpdateContexts) {
         unsafe {
@@ -490,6 +514,21 @@ impl GameState {
 /// The game's frontend state (`CGameStateFrontend`), the main menu. Its layout is unmapped.
 pub struct GameStateFrontend {}
 impl GameStateFrontend {
+    pub const Update_ADDRESS: usize = 0x140A15A40;
+    /// `CGameStateFrontend::Update`: the frontend's tick, stepping its sub-state machine (waiting
+    /// for IO, the title, login, language, loading the global data, the spawn, landscape, and
+    /// location loads, and the main menu). Before the main menu's sub-states it calls
+    /// [`GameState::PreUpdate`](crate::game::GameState::PreUpdate) inline on the game thread with its own reduced update. Once the
+    /// world is loaded behind the main menu it calls [`GameStateRun::Update`](crate::game::GameStateRun::Update) instead, so the input
+    /// job runs as it does in play.
+    pub unsafe fn Update(update_contexts: *mut crate::game::UpdateContexts) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                update_contexts: *mut crate::game::UpdateContexts,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(update_contexts)
+        }
+    }
     pub const ResetSystems_ADDRESS: usize = 0x1409AC700;
     /// The frontend's reset of the game systems on the quit to the menu, which resets the spawn
     /// system ([`SpawnSystem::ResetSystem`](crate::spawn_system::SpawnSystem::ResetSystem)).
@@ -518,6 +557,17 @@ impl std::convert::AsMut<GameStateFrontend> for GameStateFrontend {
 /// ([`GameWorld::TeleportPlayer`](crate::game_world::GameWorld::TeleportPlayer)). Its layout is unmapped.
 pub struct GameStateLoad {}
 impl GameStateLoad {
+    pub const Update_ADDRESS: usize = 0x140A11CC0;
+    /// `CGameStateLoad::Update`: the load state's tick. It calls [`GameState::PreUpdate`](crate::game::GameState::PreUpdate) inline on
+    /// the game thread.
+    pub unsafe fn Update(update_contexts: *mut crate::game::UpdateContexts) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                update_contexts: *mut crate::game::UpdateContexts,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(update_contexts)
+        }
+    }
     pub const OnEnter_ADDRESS: usize = 0x1409FEC80;
     /// The load state's entry. It runs [`ResetSystems`](crate::game::GameStateLoad::ResetSystems), so every entry to
     /// the load state resets the spawn system.
@@ -560,6 +610,42 @@ impl std::convert::AsMut<GameStateLoad> for GameStateLoad {
 /// `CGameStateRun`: the in-game state's static update functions.
 pub struct GameStateRun {}
 impl GameStateRun {
+    pub const Update_ADDRESS: usize = 0x1409F0EE0;
+    /// `CGameStateRun::Update`: the run state's sim tick, called by [`Game::UpdateGame`](crate::game::Game::UpdateGame) once per
+    /// tick in play and by [`GameStateFrontend::Update`](crate::game::GameStateFrontend::Update) once its sub-state reaches the main menu
+    /// with the world loaded behind it. It queues the frame's raycast fragments, then the input
+    /// job ([`RunInputThread`](crate::game::RunInputThread)), and runs the network, traffic and ambient-spawn starts, the task
+    /// pool's continuations, the road decorations, the water, the effects' pre-simulation update,
+    /// the world time, the render cameras' transform history, the character manager's
+    /// pre-simulation step, the settings, the AI's queued messages and path requests, and the
+    /// effects' physics-model spawn while the input job runs. It then spins on the input job's
+    /// completion signal (yielding, without running queued fragments), and runs the dialogue,
+    /// the sound post-simulation update, the vehicles' pre-update, the operations, login, rebel
+    /// support, ammunition, and mission updates, the traffic and ambient-spawn sync halves, the
+    /// posted-event dispatch, the challenge (ROM), encounter, heat, and spawn-system updates, and
+    /// the video's pre-simulation update before the game world's pre-simulation queue
+    /// ([`GameWorld::UpdatePreSim`](crate::game_world::GameWorld::UpdatePreSim)), the physics phase
+    /// ([`GameState::UpdatePhysics`](crate::game::GameState::UpdatePhysics)), and the post-simulation queue. Nothing between the
+    /// completion spin and the pre-simulation queue returns early. The challenge update reads the
+    /// player action map there: an active race reads how long
+    /// [`CHALLENGE_RESET_VEHICLE`](crate::input::input_action_map::Action::CHALLENGE_RESET_VEHICLE) has
+    /// been held.
+    ///
+    /// The disassembler mislabels several callees: the effects' pre-simulation update as
+    /// `CCharacterManager::UpdateVDB`, the ambient-spawn sync as
+    /// `CGameCameraManager::UpdateBeforeGameWorld`, the posted-event dispatch as
+    /// `CPropertyUtil::RegisterEvent`, the continuation pump as `CGameStateInit::UpdateDone`, the
+    /// network pre-simulation update as `CNetworkManager::Update_PostSim`, the pathfinder's message
+    /// processing as `CAiPathfinder2::UpdatePathRequest`, and [`GameState::UpdatePhysics`](crate::game::GameState::UpdatePhysics) as
+    /// `IsStillAlive`.
+    pub unsafe fn Update(update_contexts: *mut crate::game::UpdateContexts) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                update_contexts: *mut crate::game::UpdateContexts,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(update_contexts)
+        }
+    }
     pub const UpdateRenderPaused_ADDRESS: usize = 0x1409AE200;
     /// The render-side update the run state performs while the game is paused: drives the
     /// landscape, UI prerender, video, water simulation, and resource streaming, and waits for the
@@ -689,6 +775,36 @@ pub unsafe fn RunLightThread(dt: f32) {
             RunLightThread_ADDRESS,
         );
         f(dt)
+    }
+}
+pub const RunInputThread_ADDRESS: usize = 0x1409AE130;
+/// `RunInputThread`: clears the input job's completion signal and queues [`RunInputThread_Proxy`](crate::game::RunInputThread_Proxy)
+/// as a `CallProxy` CPU fragment, with `update_contexts` as its argument and the signal attached.
+/// [`GameStateRun::Update`](crate::game::GameStateRun::Update) calls it once per tick and spins on the signal before the world's
+/// pre-simulation queue.
+pub unsafe fn RunInputThread(update_contexts: *mut crate::game::UpdateContexts) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            update_contexts: *mut crate::game::UpdateContexts,
+        ) = ::std::mem::transmute(RunInputThread_ADDRESS);
+        f(update_contexts)
+    }
+}
+pub const RunInputThread_Proxy_ADDRESS: usize = 0x1409AE110;
+/// The input job's body: calls [`GameState::PreUpdate`](crate::game::GameState::PreUpdate) with `update_contexts` and returns 1. It
+/// runs on whichever CPU fragment worker takes the fragment, or on the game thread when that
+/// thread runs queued fragments while it waits on the previous frame's signals
+/// (`CGameStateRun::WaitForLocksFromPreviousFrame`), concurrently with the rest of
+/// [`GameStateRun::Update`](crate::game::GameStateRun::Update) up to the completion spin. The engine keeps the two apart by partition:
+/// the job touches only input, the UI, the message boxes, the accounts, and the sound job.
+pub unsafe fn RunInputThread_Proxy(
+    update_contexts: *mut crate::game::UpdateContexts,
+) -> i32 {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            update_contexts: *mut crate::game::UpdateContexts,
+        ) -> i32 = ::std::mem::transmute(RunInputThread_Proxy_ADDRESS);
+        f(update_contexts)
     }
 }
 pub const RunAIThread1_ADDRESS: usize = 0x1409F0D40;

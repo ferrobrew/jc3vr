@@ -204,7 +204,9 @@ fn thread_class() -> ThreadClass {
     match thread_role::current() {
         ThreadRole::Game | ThreadRole::GameFrame | ThreadRole::GameDebugUi => ThreadClass::Game,
         ThreadRole::FrameTail => ThreadClass::Tail,
-        ThreadRole::Unmarked => ThreadClass::Other,
+        // The input job runs on a fragment worker on most ticks; a stolen run on the game thread is
+        // filed with the workers too, since the role no longer says which thread it is.
+        ThreadRole::Unmarked | ThreadRole::InputJob => ThreadClass::Other,
     }
 }
 

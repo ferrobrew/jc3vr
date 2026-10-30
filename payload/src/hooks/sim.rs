@@ -2,7 +2,9 @@
 //! (`crate::frame_timing`) and, under the `profiler` feature, the profiler's flame graph.
 //!
 //! These hooks change nothing the game does: each opens a [`frame_timing::scope`] around the
-//! original call. The tick itself ([`Game::UpdateGame`]) also counts against the frame it runs in,
+//! original call, except the input job's body (`RunInputThread_Proxy`), which holds
+//! [`ThreadRole::InputJob`] for its extent so the input tick can tell the job, which overlaps the
+//! game thread's world-mutating work, from an inline input update on the game thread. The tick itself ([`Game::UpdateGame`]) also counts against the frame it runs in,
 //! so the breakdown can split the frames by how many ticks they carried. Inside the tick, the run
 //! state's phases are timed at the nearest functions the engine calls for them: the game world's
 //! two update queues, the physics phase, and the three calls of the time-budgeted streaming block.
@@ -10,8 +12,8 @@
 //! thread that runs queued fragments while it waits), so their time lands in the breakdown's other
 //! threads unless the game thread ran them itself.
 //!
-//! Threading: everything here except the AI thread bodies runs on the game thread, inside the
-//! engine's `Game::Update`.
+//! Threading: everything here except the AI thread bodies and the input job runs on the game thread,
+//! inside the engine's `Game::Update`.
 
 use detours_macro::detour;
 use jc3gi::{
@@ -20,7 +22,10 @@ use jc3gi::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::frame_timing::{self, Slot};
+use crate::{
+    frame_timing::{self, Slot},
+    thread_role::{self, ThreadRole},
+};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -33,6 +38,7 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&UPDATE_DELETION_OF_OBJECTS_BINDER)
         .with_static_binder(&AI_THREAD_1_BINDER)
         .with_static_binder(&AI_THREAD_2_BINDER)
+        .with_static_binder(&INPUT_JOB_BINDER)
 }
 
 #[detour(address = jc3gi::game::Game::UpdateGame_ADDRESS)]
@@ -106,4 +112,10 @@ fn ai_thread_2(dt: *mut f32) -> i32 {
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("AI thread 2");
     AI_THREAD_2.get().unwrap().call(dt)
+}
+
+#[detour(address = jc3gi::game::RunInputThread_Proxy_ADDRESS)]
+fn input_job(update_contexts: *mut UpdateContexts) -> i32 {
+    let _role = thread_role::enter(ThreadRole::InputJob);
+    INPUT_JOB.get().unwrap().call(update_contexts)
 }

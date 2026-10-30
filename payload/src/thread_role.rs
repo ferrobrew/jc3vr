@@ -34,6 +34,13 @@ pub(crate) enum ThreadRole {
     /// The frame-tail worker ([`crate::vr::tail`]): it owns the frame's VR runtime lock until it
     /// submits.
     FrameTail,
+    /// Whatever thread runs the engine's input job (`RunInputThread_Proxy`, scoped in
+    /// [`crate::hooks::sim`]): a CPU fragment worker, or the game thread when it steals the
+    /// fragment while it waits on another signal. Either way the job overlaps the game thread's
+    /// pre-simulation work that mutates the world, so it may touch only input and UI state. The
+    /// role narrows [`Self::Game`] on a stolen run, so a guard that admits only `Game` does not
+    /// admit the overlap.
+    InputJob,
 }
 
 impl ThreadRole {
@@ -52,6 +59,7 @@ impl ThreadRole {
             Self::GameFrame => "the game thread inside the frame",
             Self::GameDebugUi => "the game thread inside the debug UI",
             Self::FrameTail => "the frame-tail worker",
+            Self::InputJob => "the engine's input job (overlapping the game thread's update)",
         }
     }
 }
@@ -167,6 +175,21 @@ mod tests {
     }
 
     #[test]
+    fn the_input_job_narrows_a_stolen_run_on_the_game_thread() {
+        std::thread::spawn(|| {
+            mark_thread(ThreadRole::Game);
+            {
+                let _job = enter(ThreadRole::InputJob);
+                assert_eq!(current(), ThreadRole::InputJob);
+                assert!(!current().may_block_on_vr_state());
+            }
+            assert_eq!(current(), ThreadRole::Game);
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[test]
     fn only_the_game_thread_outside_its_scopes_may_block_on_the_vr_state() {
         let allowed: Vec<_> = [
             ThreadRole::Unmarked,
@@ -174,6 +197,7 @@ mod tests {
             ThreadRole::GameFrame,
             ThreadRole::GameDebugUi,
             ThreadRole::FrameTail,
+            ThreadRole::InputJob,
         ]
         .into_iter()
         .filter(|role| role.may_block_on_vr_state())

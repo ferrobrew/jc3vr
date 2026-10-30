@@ -157,18 +157,20 @@ impl InputDeviceManager {
     }
     pub const Update_ADDRESS: usize = 0x1402F20C0;
     /// The per-frame device poll: reads all devices and refreshes their effector states (see
-    /// [`InputDeviceEffector`](crate::input::input_action_map::InputDeviceEffector)). `CGameState::PreUpdate`
-    /// calls it through the manager's virtual table, then
-    /// [`UpdateForceClicks`](crate::input::input_device_manager::InputDeviceManager::UpdateForceClicks), before the frame's world update. The poll
-    /// overwrites effector values written before it runs, and skips the devices when the clock's real
-    /// time is unchanged since the previous poll.
+    /// [`InputDeviceEffector`](crate::input::input_action_map::InputDeviceEffector)).
+    /// [`GameState::PreUpdate`](crate::game::GameState::PreUpdate) calls it through the manager's virtual
+    /// table, then [`UpdateForceClicks`](crate::input::input_device_manager::InputDeviceManager::UpdateForceClicks), before the UI's input update and
+    /// the frame's world update. The poll overwrites effector values written before it runs, and
+    /// skips the devices when the clock's real time is unchanged since the previous poll.
     ///
-    /// The thread depends on the game state. The frontend and loading states call `PreUpdate`
-    /// inline on the game thread. The run state (`CGameStateRun::Update`) queues it as a CPU fragment
-    /// (`RunInputThread`), so it runs on whichever fragment worker takes it, or on the game thread
-    /// if that thread steals it while it waits on another signal, concurrently with the game
-    /// thread's update until the game thread spins on the fragment's completion signal, before the
-    /// world update. `UIManager::PreUpdate` runs inside the same call.
+    /// The thread depends on the caller of `PreUpdate`. The load state and the frontend before its
+    /// main-menu sub-states call it inline on the game thread. The run state
+    /// ([`GameStateRun::Update`](crate::game::GameStateRun::Update)), which also runs the main menu once
+    /// the world is loaded behind it, queues it as the input job
+    /// ([`RunInputThread_Proxy`](crate::game::RunInputThread_Proxy)), so it runs on whichever fragment
+    /// worker takes it, or on the game thread if that thread steals it while it waits on another
+    /// signal, concurrently with the game thread's update until the game thread spins on the job's
+    /// completion signal, before the world update.
     pub unsafe fn Update(&mut self, dt: f32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
@@ -178,7 +180,9 @@ impl InputDeviceManager {
         }
     }
     pub const UpdateForceClicks_ADDRESS: usize = 0x1402F2050;
-    /// Applies the force-click flags latched on effectors so an injected click survives the poll.
+    /// Applies the force-click flags latched on effectors so an injected click survives the poll:
+    /// every effector of every device with its force-click flag set is made clicked at full value,
+    /// and the flag is cleared. Effectors without the flag are untouched.
     pub unsafe fn UpdateForceClicks(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
