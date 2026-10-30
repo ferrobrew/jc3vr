@@ -5,15 +5,21 @@
 //! recorder runs, it goes into the recording's per-frame sidecar at the frame it falls on
 //! ([`crate::recorder::mark`]), so post finds the take by stream frame. Otherwise it is appended to
 //! `markers.jsonl` in the session folder, one JSON object per line, where the wall clock is what
-//! lines it up against a host-side recording.
+//! lines it up against a host-side recording. Either way, while a tracking recording or the
+//! lookback collects, the same marker is also noted as a `take_marker` event on the tracking
+//! timeline, joinable to the other copy by its index and stamp.
 
 use std::io::Write as _;
 
 use jc3gi::clock::Clock;
 use parking_lot::Mutex;
 use serde::Serialize;
+use tracking_format::event::{Label, TakeMarker};
 
-use crate::session::SessionFile;
+use crate::{
+    recorder::tracking::events::{self, EventKind},
+    session::SessionFile,
+};
 
 /// One take marker.
 #[derive(Serialize, Clone)]
@@ -58,6 +64,13 @@ pub fn mark(label: &str) {
         state.recent.remove(0);
     }
     drop(state);
+    events::note(EventKind::TakeMarker(Box::new(TakeMarker {
+        index: marker.index,
+        stamp: Label::Owned(marker.stamp.clone()),
+        unix_ms: marker.unix_ms,
+        game_run_time_us: marker.game_run_time_us,
+        label: Label::Owned(marker.label.clone()),
+    })));
     if let Err(marker) = crate::recorder::mark(marker) {
         write_line(&marker);
     }

@@ -5,7 +5,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::VK_F9;
 use windows::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
     UI::{
-        Input::KeyboardAndMouse::{VK_F4, VK_F7, VK_F8, VK_F10, VK_F11, VK_F12},
+        Input::KeyboardAndMouse::{VK_F1, VK_F2, VK_F4, VK_F7, VK_F8, VK_F10, VK_F11, VK_F12},
         WindowsAndMessaging::{
             GetClientRect, SIZE_MINIMIZED, SIZE_RESTORED, WM_ACTIVATEAPP, WM_KEYDOWN, WM_KILLFOCUS,
             WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN,
@@ -34,6 +34,28 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if matches!(msg, WM_ACTIVATEAPP | WM_KILLFOCUS | WM_SETFOCUS) {
         return WNDPROC.get().unwrap().call(hwnd, msg, wparam, lparam);
     }
+    // F1 starts or stops a session recording: the video recorder and a tracking recording together,
+    // under one stamp (`crate::recorder::session_recording`). Edge-detected; consumed.
+    if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F1.0 as usize {
+        consume_desktop_shortcut(wparam.0);
+        let previous_down = (lparam.0 & 0x4000_0000) != 0;
+        if !previous_down {
+            crate::recorder::session_recording::toggle();
+        }
+        return LRESULT(0);
+    }
+
+    // F2 drops a take marker into whatever records, and saves the lookback when no tracking
+    // recording runs (`crate::recorder::session_recording::mark`). Edge-detected; consumed.
+    if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F2.0 as usize {
+        consume_desktop_shortcut(wparam.0);
+        let previous_down = (lparam.0 & 0x4000_0000) != 0;
+        if !previous_down {
+            crate::recorder::session_recording::mark();
+        }
+        return LRESULT(0);
+    }
+
     // F4 toggles the clean view at its scope (`crate::director::clean_view`): the flat egui debug
     // overlay leaves the desktop window, and at the everything scope every other overlay goes too.
     // With no live VR panel, hiding releases editing and showing requests Editing through

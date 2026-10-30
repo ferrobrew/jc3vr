@@ -136,6 +136,14 @@ impl std::error::Error for StartError {}
 
 /// Ask for a recording to start at the top of the next frame. Any thread.
 pub(crate) fn request_start() {
+    *REQUESTED_STAMP.lock() = None;
+    REQUEST.store(REQUEST_START, Ordering::Relaxed);
+}
+
+/// Ask for a recording stamped `stamp` to start at the top of the next frame, so it pairs with a
+/// video recording of the same stamp. Any thread.
+pub(crate) fn request_start_stamped(stamp: String) {
+    *REQUESTED_STAMP.lock() = Some(stamp);
     REQUEST.store(REQUEST_START, Ordering::Relaxed);
 }
 
@@ -432,6 +440,8 @@ const REQUEST_START: u8 = 1;
 const REQUEST_STOP: u8 = 2;
 
 static REQUEST: AtomicU8 = AtomicU8::new(REQUEST_NONE);
+/// The stamp a pending start request asks for; a fresh one when `None`.
+static REQUESTED_STAMP: Mutex<Option<String>> = Mutex::new(None);
 static RECORDING: AtomicBool = AtomicBool::new(false);
 static FRAMES: AtomicU32 = AtomicU32::new(0);
 static DROPPED: AtomicU32 = AtomicU32::new(0);
@@ -570,10 +580,14 @@ impl State {
 static STATE: Mutex<State> = Mutex::new(State::idle());
 
 fn start() {
+    let stamp = REQUESTED_STAMP
+        .lock()
+        .take()
+        .unwrap_or_else(crate::session::stamp);
     if is_recording() {
         return;
     }
-    match begin() {
+    match begin(stamp) {
         Ok(path) => tracing::info!("recorder: tracking: recording to {}", path.display()),
         Err(error) => {
             tracing::warn!("{error}");
@@ -582,7 +596,7 @@ fn start() {
     }
 }
 
-fn begin() -> Result<PathBuf, StartError> {
+fn begin(stamp: String) -> Result<PathBuf, StartError> {
     if !Config::lock_query(|c| c.testing.enabled) {
         return Err(StartError::Disabled);
     }
@@ -591,7 +605,6 @@ fn begin() -> Result<PathBuf, StartError> {
     }
     let transform = crate::director::teleport::player_transform().ok_or(StartError::NoPlayer)?;
     let hand_joints = Config::lock_query(|c| c.testing.record_hand_joints);
-    let stamp = crate::session::stamp();
     let header = header_at(transform, stamp.clone());
     let path = crate::session::capture_file(CaptureFile::Recording, &stamp, None)
         .map_err(StartError::Session)?;

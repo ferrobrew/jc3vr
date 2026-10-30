@@ -14,7 +14,7 @@ use crate::{
         teleport::{self, TeleportMode},
         time,
     },
-    recorder,
+    recorder::{self, session_recording},
     ui::catalog::FeatureId,
 };
 
@@ -33,6 +33,8 @@ pub(crate) fn feature(ui: &mut egui::Ui, id: FeatureId) {
             ui.collapsing("Keyboard shortcuts", keymap_ui);
         }
         FeatureId::Video => {
+            session_ui(ui);
+            ui.separator();
             recording_ui(ui);
             markers_ui(ui);
         }
@@ -78,6 +80,7 @@ pub(crate) fn director_status(ui: &mut egui::Ui) {
 
 /// Render the recorder snapshot without settings or commands.
 pub(crate) fn video_status(ui: &mut egui::Ui) {
+    ui.label(session_line(&session_recording::status()));
     let status = recorder::status();
     ui.label(if status.recording {
         if status.connected {
@@ -418,6 +421,56 @@ fn spawn_ui(ui: &mut egui::Ui) {
                 }
             }
         });
+}
+
+fn session_ui(ui: &mut egui::Ui) {
+    let status = session_recording::status();
+    ui.horizontal(|ui| {
+        let running = status.video || status.tracking;
+        let label = if running {
+            "Stop session recording (F1)"
+        } else {
+            "Start session recording (F1)"
+        };
+        if ui.button(label).clicked() {
+            session_recording::toggle();
+        }
+        if ui
+            .button("Mark (F2)")
+            .on_hover_text(
+                "Drops an unlabelled take marker; with no tracking recording running, also saves \
+                 the lookback.",
+            )
+            .clicked()
+        {
+            session_recording::mark();
+        }
+    });
+    ui.label(session_line(&status));
+    if let Some(error) = &status.tracking_error {
+        ui.colored_label(
+            egui::Color32::LIGHT_RED,
+            format!("Tracking recording: {error}"),
+        );
+    }
+    ui.label(
+        "Starts the video recorder and a tracking recording together under one stamp: \
+         videos/<stamp>/ and recordings/<stamp>.jc3trk in the session folder.",
+    );
+}
+
+/// The session recording's one-line state.
+fn session_line(status: &session_recording::SessionStatus) -> String {
+    let running = match (status.video, status.tracking) {
+        (true, true) => "video and tracking",
+        (true, false) => "video only",
+        (false, true) => "tracking only",
+        (false, false) => "stopped",
+    };
+    match &status.stamp {
+        Some(stamp) => format!("Session recording: {running} ({stamp})"),
+        None => format!("Session recording: {running}"),
+    }
 }
 
 fn recording_ui(ui: &mut egui::Ui) {

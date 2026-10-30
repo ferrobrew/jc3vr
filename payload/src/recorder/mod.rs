@@ -45,6 +45,7 @@ use crate::{
 
 pub mod convert;
 mod owners;
+pub(crate) mod session_recording;
 pub mod stream;
 pub(crate) mod tracking;
 
@@ -103,6 +104,12 @@ pub struct Status {
 
 /// Start a recording with the current config. Any thread. A no-op while one runs.
 pub fn start() {
+    start_stamped(&crate::session::stamp());
+}
+
+/// Start a recording whose sidecar folder is stamped `stamp`, so a session recording can give its
+/// tracking recording the same stamp. Any thread. A no-op while one runs.
+pub fn start_stamped(stamp: &str) {
     let cfg = crate::config::Config::lock_query(|c| c.recorder.clone());
     let mut state = STATE.lock();
     state.reap();
@@ -112,11 +119,10 @@ pub fn start() {
     if crate::is_shutting_down() {
         return;
     }
-    let stamp = crate::session::stamp();
-    let folder = CaptureFolder::Video.relative(&stamp).display().to_string();
+    let folder = CaptureFolder::Video.relative(stamp).display().to_string();
     let (completions, result) = state
         .writers
-        .start(folder.clone(), || stream::Writer::spawn(&cfg, &stamp));
+        .start(folder.clone(), || stream::Writer::spawn(&cfg, stamp));
     state.report(completions);
     match result {
         Ok(()) => {
