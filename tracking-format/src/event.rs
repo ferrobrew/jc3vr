@@ -40,6 +40,8 @@ pub enum EventKind {
     GripAcquisition(Box<GripAcquisition>),
     /// An attempt to let an inventory gun fall from the hand.
     GunRelease(Box<GunRelease>),
+    /// A take marker the player dropped to find a moment again.
+    TakeMarker(Box<TakeMarker>),
 }
 
 impl EventKind {
@@ -49,6 +51,7 @@ impl EventKind {
             EventKind::ControllerState(_) => "controller_state",
             EventKind::GripAcquisition(_) => "grip_acquisition",
             EventKind::GunRelease(_) => "gun_release",
+            EventKind::TakeMarker(_) => "take_marker",
         }
     }
 }
@@ -379,4 +382,21 @@ pub struct ReleaseDrop {
 pub struct WorldMotion {
     pub linear: Vec3,
     pub angular: Vec3,
+}
+
+/// A take marker: the same marker the mod writes to a video recording's sidecar or to the session's
+/// marker log, so the two can be joined by `index` and `stamp`.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct TakeMarker {
+    /// The marker's session-local ordinal, from 1.
+    pub index: u32,
+    /// The local wall-clock stamp the marker was made at.
+    pub stamp: Label,
+    /// Milliseconds since the Unix epoch.
+    pub unix_ms: i64,
+    /// The engine's game-run time in microseconds, when its clock was up.
+    pub game_run_time_us: Option<u64>,
+    /// The marker's label, empty for an unlabelled marker.
+    pub label: Label,
 }

@@ -9,8 +9,8 @@ use crate::{
     event::{
         AimState, ControllerState, Event, EventKind, GrappleAim, GripAcquisition, GripCandidate,
         GripDrive, GripScan, GripScanEntry, GripStage, GunRelease, HandAim, HandLate, HandTier,
-        IkState, Label, LateState, ReleaseController, ReleaseDrop, RoomscaleState, TierState,
-        WeaponAim, WorldMotion,
+        IkState, Label, LateState, ReleaseController, ReleaseDrop, RoomscaleState, TakeMarker,
+        TierState, WeaponAim, WorldMotion,
     },
     model::Hand,
     wire::{DecodeError, DecodeErrorKind, Decoder, Encoder},
@@ -34,6 +34,10 @@ pub(crate) fn encode(out: &mut Encoder, event: &Event) {
             out.u8(KIND_GUN_RELEASE);
             gun_release(out, release);
         }
+        EventKind::TakeMarker(marker) => {
+            out.u8(KIND_TAKE_MARKER);
+            take_marker(out, marker);
+        }
     }
 }
 
@@ -48,6 +52,7 @@ pub(crate) fn decode(input: &mut Decoder) -> Result<Event, DecodeError> {
             EventKind::GripAcquisition(Box::new(read_grip_acquisition(input)?))
         }
         KIND_GUN_RELEASE => EventKind::GunRelease(Box::new(read_gun_release(input)?)),
+        KIND_TAKE_MARKER => EventKind::TakeMarker(Box::new(read_take_marker(input)?)),
         kind => return Err(invalid(offset, "the event kind", kind.into())),
     };
     Ok(Event { time_ns, kind })
@@ -63,13 +68,14 @@ pub(crate) fn is_bounded(event: &Event) -> bool {
                     .as_ref()
                     .is_none_or(|scan| scan.entries.len() <= MAX_LIST)
         }
-        EventKind::ControllerState(_) | EventKind::GunRelease(_) => true,
+        EventKind::ControllerState(_) | EventKind::GunRelease(_) | EventKind::TakeMarker(_) => true,
     }
 }
 
 const KIND_CONTROLLER_STATE: u8 = 1;
 const KIND_GRIP_ACQUISITION: u8 = 2;
 const KIND_GUN_RELEASE: u8 = 3;
+const KIND_TAKE_MARKER: u8 = 4;
 
 fn invalid(offset: usize, field: &'static str, value: u64) -> DecodeError {
     DecodeError {
@@ -709,5 +715,23 @@ fn read_world_motion(input: &mut Decoder) -> Result<WorldMotion, DecodeError> {
     Ok(WorldMotion {
         linear: input.vec3()?,
         angular: input.vec3()?,
+    })
+}
+
+fn take_marker(out: &mut Encoder, marker: &TakeMarker) {
+    out.u32(marker.index);
+    label(out, &marker.stamp);
+    out.i64(marker.unix_ms);
+    opt_u64(out, marker.game_run_time_us);
+    label(out, &marker.label);
+}
+
+fn read_take_marker(input: &mut Decoder) -> Result<TakeMarker, DecodeError> {
+    Ok(TakeMarker {
+        index: input.u32()?,
+        stamp: read_label(input, "the marker stamp")?,
+        unix_ms: input.i64()?,
+        game_run_time_us: read_opt_u64(input, "the marker game time flag")?,
+        label: read_label(input, "the marker label")?,
     })
 }

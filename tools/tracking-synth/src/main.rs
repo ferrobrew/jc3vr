@@ -3,14 +3,16 @@
 //! ```text
 //! tracking-synth [--out <dir>] [--rate <hz>] [<script>...]
 //! tracking-synth --list
-//! tracking-synth dump [--json] <recording>
+//! tracking-synth dump [--json] [--from <time>] [--to <time>] <recording>
 //! ```
 //!
 //! With no script named, every built-in script is written. The recordings go to `<dir>/<script>.jc3trk`,
 //! by default `testing/recordings/synthetic/` in the repository, where the synthetic scenarios look
 //! for them. `--list` prints each built-in script's name and summary, tab-separated, one per line.
 //! `dump` prints any recording's frames and events to stdout, as text or, with `--json`, as JSON
-//! lines.
+//! lines. `--from` and `--to` limit it to an inclusive stretch; a `<time>` is seconds on the
+//! recording's clock (`12.5`) or an OpenXR predicted display time in nanoseconds (`xr:<ns>`), the
+//! clock a video recording's sidecar shares.
 
 use std::{
     fmt,
@@ -20,7 +22,7 @@ use std::{
 
 use tracing_subscriber::EnvFilter;
 use tracking_synth::{
-    dump::{self, DumpFormat},
+    dump::{self, Bound, DumpFormat, Range},
     script::Script,
     scripts,
     synth::{DEFAULT_RATE_HZ, Options, SynthError},
@@ -53,7 +55,8 @@ fn main() -> ExitCode {
 }
 
 const USAGE: &str = "usage: tracking-synth [--out <dir>] [--rate <hz>] [<script>...] | --list | \
-                     dump [--json] <recording>";
+                     dump [--json] [--from <time>] [--to <time>] <recording>, where <time> is \
+                     seconds or xr:<display time ns>";
 
 /// What the command line asks for.
 #[derive(Debug, Clone, PartialEq)]
@@ -63,6 +66,7 @@ enum Command {
     Dump {
         path: PathBuf,
         format: DumpFormat,
+        range: Range,
     },
     Write {
         out: PathBuf,
@@ -81,6 +85,8 @@ enum CliError {
     MissingValue(&'static str),
     /// A frame rate that is not a number.
     BadRate(String),
+    /// A `dump` range bound that is neither seconds nor `xr:<ns>`.
+    BadTime(String),
     /// A script that is not built in.
     UnknownScript(String),
     /// `dump` without a recording, or with more than one.
@@ -111,6 +117,10 @@ impl fmt::Display for CliError {
             CliError::UnknownOption(option) => write!(f, "there is no option `{option}`"),
             CliError::MissingValue(option) => write!(f, "`{option}` needs a value"),
             CliError::BadRate(value) => write!(f, "the frame rate `{value}` is not a number"),
+            CliError::BadTime(value) => write!(
+                f,
+                "dump: the time `{value}` is neither seconds nor `xr:<display time ns>`"
+            ),
             CliError::UnknownScript(name) => write!(
                 f,
                 "there is no built-in script `{name}`; `--list` lists them"
@@ -163,12 +173,15 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Command, CliError> {
     })
 }
 
-fn parse_dump(args: impl Iterator<Item = String>) -> Result<Command, CliError> {
+fn parse_dump(mut args: impl Iterator<Item = String>) -> Result<Command, CliError> {
     let mut format = DumpFormat::Text;
+    let mut range = Range::default();
     let mut paths = Vec::new();
-    for arg in args {
+    while let Some(arg) = args.next() {
         match arg.as_str() {
             "--json" => format = DumpFormat::JsonLines,
+            "--from" => range.from = Some(parse_bound(args.next(), "--from")?),
+            "--to" => range.to = Some(parse_bound(args.next(), "--to")?),
             option if option.starts_with('-') => {
                 return Err(CliError::UnknownOption(option.to_owned()));
             }
@@ -176,9 +189,18 @@ fn parse_dump(args: impl Iterator<Item = String>) -> Result<Command, CliError> {
         }
     }
     match <[PathBuf; 1]>::try_from(paths) {
-        Ok([path]) => Ok(Command::Dump { path, format }),
+        Ok([path]) => Ok(Command::Dump {
+            path,
+            format,
+            range,
+        }),
         Err(_) => Err(CliError::DumpPath),
     }
+}
+
+fn parse_bound(value: Option<String>, option: &'static str) -> Result<Bound, CliError> {
+    let value = value.ok_or(CliError::MissingValue(option))?;
+    value.parse().map_err(|()| CliError::BadTime(value))
 }
 
 fn run(command: Command) -> Result<(), CliError> {
@@ -198,7 +220,11 @@ fn run(command: Command) -> Result<(), CliError> {
             }
             Ok(())
         }
-        Command::Dump { path, format } => {
+        Command::Dump {
+            path,
+            format,
+            range,
+        } => {
             let bytes = std::fs::read(&path).map_err(|error| CliError::Read {
                 path: path.clone(),
                 error,
@@ -207,7 +233,7 @@ fn run(command: Command) -> Result<(), CliError> {
                 .map_err(|error| CliError::Decode { path, error })?;
             let stdout = std::io::stdout();
             let mut out = std::io::BufWriter::new(stdout.lock());
-            match dump::dump(&recording, format, &mut out)
+            match dump::dump(&recording, format, range, &mut out)
                 .and_then(|()| std::io::Write::flush(&mut out))
             {
                 // A reader that stops early (`head`) has all it wanted.

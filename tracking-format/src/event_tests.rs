@@ -8,8 +8,8 @@ use crate::{
     event::{
         AimState, ControllerState, Event, EventKind, GrappleAim, GripAcquisition, GripCandidate,
         GripDrive, GripScan, GripScanEntry, GripStage, GunRelease, HandAim, HandLate, HandTier,
-        IkState, Label, LateState, ReleaseController, ReleaseDrop, RoomscaleState, TierState,
-        WeaponAim, WorldMotion,
+        IkState, Label, LateState, ReleaseController, ReleaseDrop, RoomscaleState, TakeMarker,
+        TierState, WeaponAim, WorldMotion,
     },
     model::{Hand, Stage},
     wire::Encoder,
@@ -41,6 +41,14 @@ fn v5_events_round_trip_direct_and_chunked_beside_frames() {
         Event {
             time_ns: 9,
             kind: EventKind::GunRelease(Box::new(release(false))),
+        },
+        Event {
+            time_ns: 10,
+            kind: EventKind::TakeMarker(Box::new(take_marker(true))),
+        },
+        Event {
+            time_ns: 10,
+            kind: EventKind::TakeMarker(Box::new(take_marker(false))),
         },
     ];
     let records: Vec<Vec<u8>> = events.iter().map(|e| encode_event(e).unwrap()).collect();
@@ -427,5 +435,15 @@ fn release(full: bool) -> GunRelease {
             on_drop_returned: true,
             slot_clear_returned: false,
         }),
+    }
+}
+
+fn take_marker(full: bool) -> TakeMarker {
+    TakeMarker {
+        index: if full { 7 } else { 1 },
+        stamp: Label::Borrowed("2026-01-02_03-04-05_006"),
+        unix_ms: -5,
+        game_run_time_us: full.then_some(123_456),
+        label: Label::Borrowed(if full { "door handle" } else { "" }),
     }
 }
