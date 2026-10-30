@@ -71,6 +71,20 @@ pub fn install() {
 /// frames). OpenXR failures degrade to flatscreen stereo and are retried; the one exception is a
 /// loader that will not load, which aborts the process (see [`LoaderUnavailable`]).
 pub fn update() -> bool {
+    let running = update_runtime();
+    SESSION_RUNNING.store(running, Ordering::Relaxed);
+    running
+}
+
+/// Whether an OpenXR session was running when the game thread last pumped the runtime ([`update`]).
+/// An atomic, so any thread may read it, including the main loop outside `Game::Update`, where
+/// [`is_running`] may not take the runtime lock. One frame stale at most.
+pub(crate) fn is_running_published() -> bool {
+    SESSION_RUNNING.load(Ordering::Relaxed)
+}
+
+/// The body of [`update`]: pumps the runtime and returns whether a session is running.
+fn update_runtime() -> bool {
     // Once eject has begun, do nothing: the shutdown cleanup tears the runtime down (persisting the
     // instance/session handles for the next injection), and an ungated re-entry here would see
     // `instance.is_none()`, re-acquire those persisted handles, and rebuild the swapchain -- racing
@@ -231,6 +245,9 @@ static SESSION_STATE: AtomicI32 = AtomicI32::new(0);
 
 /// Whether the last bring-up attempt failed.
 static BRING_UP_FAILED: AtomicBool = AtomicBool::new(false);
+
+/// Whether a session was running at the last [`update`] ([`is_running_published`]).
+static SESSION_RUNNING: AtomicBool = AtomicBool::new(false);
 
 /// The live VR runtime state. Blocking locks go through [`lock_state`], which checks the caller's
 /// thread role; [`status`] alone uses `try_lock`, which cannot deadlock and so is not checked. A
@@ -701,6 +718,7 @@ impl VrState {
         self.runtime_name = None;
         RUNTIME_UP.store(false, Ordering::Relaxed);
         SESSION_STATE.store(0, Ordering::Relaxed);
+        SESSION_RUNNING.store(false, Ordering::Relaxed);
     }
 }
 

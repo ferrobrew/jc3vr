@@ -98,7 +98,16 @@ pub struct InputDeviceManager {
     /// activity, and every effector keeps the value and state it last had. `SetEnabled` and
     /// `IsEnabled` (virtual) write and read it.
     pub m_Enabled: bool,
-    _field_d: [u8; 107],
+    _field_d: [u8; 99],
+    /// Whether the game window holds the foreground, as the input devices see it.
+    /// [`Update`](crate::input::input_device_manager::InputDeviceManager::Update) passes it to every device's object-state update next to
+    /// [`m_Enabled`](crate::input::input_device_manager::InputDeviceManager::m_Enabled); the keyboard and mouse read their DirectInput state only
+    /// while both are set, and zero it otherwise. Gamepads ignore it. The mouse is acquired with a
+    /// background cooperative level, so this flag, not DirectInput, is what stops it reading motion
+    /// while another window has the foreground. [`LoseFocus`](crate::window::LoseFocus) clears it and
+    /// [`GainFocus`](crate::window::GainFocus) sets it.
+    pub m_IsInFocus: bool,
+    _field_71: [u8; 7],
 }
 fn _InputDeviceManager_size_check() {
     unsafe {

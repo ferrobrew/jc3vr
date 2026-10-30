@@ -28,6 +28,7 @@ pub mod input;
 pub mod profiler;
 pub mod sim;
 pub mod ui;
+pub mod window_focus;
 pub mod wndproc;
 
 /// Whether the game is in interactive gameplay (`GameState::E_GAME_RUN`), as opposed to any
@@ -83,6 +84,7 @@ pub(super) fn install() {
             .with_hook_library(draw_count::hook_library())
             .with_hook_library(camera::hook_library())
             .with_hook_library(wndproc::hook_library())
+            .with_hook_library(window_focus::hook_library())
             .with_hook_library(character::hook_library())
             .with_hook_library(animation::hook_library())
             .with_hook_library(input::hook_library())

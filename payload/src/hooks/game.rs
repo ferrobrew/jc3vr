@@ -65,6 +65,7 @@ fn game_update(game: *const Game) -> bool {
     // Start of a real frame: re-arm the once-per-frame CClock::Update gate.
     crate::hooks::clock::UPDATED_THIS_FRAME.store(false, Ordering::Relaxed);
     frame_timing::frame_tick();
+    crate::hooks::window_focus::resume_for_vr();
     // `crate::update` advances the puffin frame (closing the previous one); the frame scope opens
     // after it so it belongs to the new frame and spans the whole original update.
     {

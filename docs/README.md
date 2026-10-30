@@ -9,6 +9,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [button-hints-and-localisation.md](engine/button-hints-and-localisation.md) — the localisation store and its string lookup, the button-mapping table's prompt keys, the HUD's button-hint pipeline and its two hint stages, and how a prompt picks its gamepad glyph.
 - [pause-menu.md](engine/pause-menu.md) — the pause and options menu: the Scaleform screen lifecycle and the ExternalInterface traffic, the `pause.gfx` movie's menus and folders and how the root menus' entries are ordered, settings screen, tab bar, and row widgets, the commands it sends, its input and navigation, and which parts code outside the movie can reach; reading movies with FFDec.
 - [scaleform.md](engine/scaleform.md) — the Scaleform runtime: version and language, the loader and its states, the file opener and the VFS mounts, standalone movies (`CRenderToTextureUI`), fonts, widgets, and localisation, the movie files, and building a movie the loader accepts.
+- [window-focus.md](engine/window-focus.md) — how the game notices its window losing the desktop foreground (a main-loop poll, not the activation messages), what the loss suspends (the whole frame during gameplay, the audio, the keyboard and mouse, fullscreen), and how the resume undoes it.
 
 ### rendering/
 
@@ -74,6 +75,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [capture.md](mod/capture.md) — the in-process recorder: the GPU pack and readback ring, the y4m stream to the host relay and encoder, the pose sidecar, and the reframe tool.
 - [trailer-tooling.md](mod/trailer-tooling.md) — directing tools and the in-process eye capture for the trailer: decisions and the working todo list.
 - [weapon-selector.md](mod/weapon-selector.md) — the weapon wheel: the game's selection cross opened with the trackpad or the stick held up, steered by pointing the hand, its commit and cancel, its placement on the panel behind the hand, and the in-game unknowns.
+- [window-focus.md](mod/window-focus.md) — keeping the game running when the desktop window loses focus during a VR session: the skipped suspension and its paired resume, the keyboard and mouse that still follow the desktop focus, and lifting a suspension that predates the session.
 - [scaleform-movie.md](mod/scaleform-movie.md) — a mod-owned Scaleform movie (not built): why the VR settings use the pause menu instead, the hosting routes, binding and input, and the risks.
 
 ### stereo/

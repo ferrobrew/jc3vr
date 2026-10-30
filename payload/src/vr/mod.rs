@@ -86,7 +86,7 @@ pub use recenter::{
 pub use replay::drive_replay_frame;
 pub use resolution::apply_native_resolution;
 pub(crate) use resolution::{ResolutionStatus, status as resolution_status};
-pub(crate) use state::{PublishedStatus, published_status};
+pub(crate) use state::{PublishedStatus, is_running_published, published_status};
 pub use state::{VrStatus, install, is_running, status, uninstall, update, wait_for_frame_tail};
 
 /// The OpenXR view configuration: standard stereo, two views (one per eye).

@@ -210,10 +210,11 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     WNDPROC.get().unwrap().call(hwnd, msg, wparam, lparam)
 }
 
-/// Log the game window gaining or losing the foreground, and being minimized or restored. The
-/// engine's main loop can sit outside `Game::Update` for as long as the window is in the
-/// background, which the frame breakdown can only report as untracked time, so these lines are
-/// what places a long frame against what the window was doing.
+/// Log the game window gaining or losing the foreground, and being minimized or restored. Outside a
+/// VR session the engine's main loop skips `Game::Update` for as long as the window is in the
+/// background (`window::AVAMainLoop`, `crate::hooks::window_focus`), which the frame breakdown can
+/// only report as untracked time, so these lines are what places a long frame against what the
+/// window was doing. The engine itself ignores these messages and polls the foreground window.
 fn log_window_state(msg: u32, wparam: WPARAM) {
     match msg {
         WM_ACTIVATEAPP => {
