@@ -101,7 +101,19 @@ unsafe fn run(owner: &Character, dt: f32) {
     let config = Config::lock_query(|c| c.controllers.physical_hands);
     let idle = if !config.enabled || !scheme::is_controllers() || !hooks::in_gameplay() {
         Some(Idle::Disabled)
-    } else if MAIN_THREAD.load(Ordering::Relaxed) != unsafe { GetCurrentThreadId() } {
+    } else if let main = MAIN_THREAD.load(Ordering::Relaxed)
+        // SAFETY: reads the calling thread's own id.
+        && let current = unsafe { GetCurrentThreadId() }
+        && main != current
+    {
+        if STATE.lock().status.idle != Some(Idle::OffThread) {
+            tracing::warn!(
+                target: "controllers",
+                input_tick_thread = main,
+                palms_thread = current,
+                "palms: the tick runs on another thread than the input tick; the palms stand down"
+            );
+        }
         Some(Idle::OffThread)
     } else {
         (!mode_acts(mode::current())).then_some(Idle::Mode)
