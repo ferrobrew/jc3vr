@@ -130,16 +130,19 @@ impl CapturePolicy {
             _ => self.mode,
         };
         let transitioned = next_mode != self.mode;
-        let gates_ready = input.focused && input.tracking_ready;
-        let lost_gate = self.gates_were_ready && !gates_ready;
         self.mode = next_mode;
-        self.gates_were_ready = gates_ready;
-
         let requested_owner = if self.mode == PanelMode::Editing {
             InputOwner::Editing
         } else {
             InputOwner::Gameplay
         };
+        // Desktop focus gates only the editing owner, which captures the desktop keyboard and
+        // mouse. Gameplay in the headset follows the OpenXR session, whose focus the tracking gate
+        // and the controller frame carry, so a desktop window without focus does not stop it.
+        let focus_ready = input.focused || requested_owner == InputOwner::Gameplay;
+        let gates_ready = focus_ready && input.tracking_ready;
+        let lost_gate = self.gates_were_ready && !gates_ready;
+        self.gates_were_ready = gates_ready;
         let wants_device_capture = requested_owner == InputOwner::Editing && gates_ready;
         let prior_for_snapshot = self.prior_game_device_enabled.or(self.restore_pending);
         let game_device = if wants_device_capture {
@@ -199,7 +202,7 @@ impl CapturePolicy {
             text: can_edit,
             scroll: can_edit,
         };
-        let blocker = if !input.focused {
+        let blocker = if !focus_ready {
             Some(OwnershipBlocker::Unfocused)
         } else if !input.tracking_ready {
             Some(OwnershipBlocker::TrackingRecovery)

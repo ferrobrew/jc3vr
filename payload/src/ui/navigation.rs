@@ -138,7 +138,7 @@ pub(crate) fn navigation(
             ui.label(match snapshot.ownership.blocker {
                 None => "Gameplay input active",
                 Some(OwnershipBlocker::Editing) => "Gameplay input captured by the debug UI",
-                Some(OwnershipBlocker::Unfocused) => "Gameplay requested; waiting for focus",
+                Some(OwnershipBlocker::Unfocused) => "Editing waiting for desktop window focus",
                 Some(OwnershipBlocker::TrackingRecovery) => {
                     "Gameplay requested; waiting for tracking recovery"
                 }

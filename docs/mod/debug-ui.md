@@ -24,6 +24,8 @@ The header remains outside the feature body. Allow gameplay input requests a rea
 
 The read-only boundary is only the UI side of input ownership. The input adapter remains responsible for clearing pending events, consuming held inputs through release, restoring the previous game-device state, and admitting events only with effective capture.
 
+Desktop window focus gates only the editing owner, which captures the desktop keyboard and mouse: the game window must be the foreground window, and the desktop sample must be taken on the window's thread. Gameplay in the headset does not wait for desktop focus; the OpenXR session's focus, carried by the controller frame and the tracking gate, gates it instead, and an unavailable desktop sample does not hold gameplay ownership back from neutral. The first sample that is unavailable because it was taken off the window's thread, or because the window is not in the foreground, logs which check failed and on which thread.
+
 ## Visualizations
 
 The global Visualizations button opens a persistent drawer without changing the selected feature. Its bounded inventory edits the existing body mirror, controller gizmo, ghost hand, grip marker, grapple highlight, grapple beam, grab view, grab view contents, collider view, palm box, and wrist detonator button configuration fields in place. Requested switches appear first, grouped as Debug geometry or Gameplay cues. The filter matches view names, group names, and owning feature names. The shared settings group retains the overlay master switch, gun readout selector, mirror distance, and depth policy. Changing pages or input mode does not rewrite saved switches.

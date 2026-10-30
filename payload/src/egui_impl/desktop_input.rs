@@ -1,6 +1,12 @@
 //! Physical desktop input evidence, independent of egui and the game's device polling.
 
-use std::{ffi::c_void, sync::OnceLock};
+use std::{
+    ffi::c_void,
+    sync::{
+        OnceLock,
+        atomic::{AtomicU8, Ordering},
+    },
+};
 
 use parking_lot::Mutex;
 use windows::{
@@ -196,11 +202,23 @@ fn native_snapshot(window: Option<usize>) -> Result<NativeSnapshot, DesktopInput
     if thread == 0 {
         return Err(DesktopInputUnavailable::WindowNotObserved);
     }
-    // SAFETY: the native keyboard queue belongs to the calling window thread.
-    if thread != unsafe { GetCurrentThreadId() } {
+    // SAFETY: reads the calling thread's own id.
+    let current = unsafe { GetCurrentThreadId() };
+    // The native keyboard queue belongs to the calling window thread.
+    if thread != current {
+        note_unavailable(DesktopInputUnavailable::WrongThread, || {
+            tracing::info!(
+                target: "desktop_input",
+                window_thread = thread,
+                calling_thread = current,
+                "desktop input: the sample is taken off the window's thread, so desktop focus and \
+                 keys are unavailable to it"
+            );
+        });
         return Err(DesktopInputUnavailable::WrongThread);
     }
     if !native_focus(hwnd) {
+        note_unfocused(hwnd, current);
         return Err(DesktopInputUnavailable::Unfocused);
     }
     let mut keyboard = [0; VIRTUAL_KEY_COUNT];
@@ -223,6 +241,7 @@ fn native_snapshot(window: Option<usize>) -> Result<NativeSnapshot, DesktopInput
     }
     let composition_active = native_composition(hwnd)?;
     if !native_focus(hwnd) {
+        note_unfocused(hwnd, current);
         return Err(DesktopInputUnavailable::Unfocused);
     }
     Ok(NativeSnapshot {
@@ -231,11 +250,41 @@ fn native_snapshot(window: Option<usize>) -> Result<NativeSnapshot, DesktopInput
     })
 }
 
+/// Whether `hwnd` is the foreground window. The active and focus windows are the calling thread's
+/// own, so they read as none off the window's thread, and wine does not keep them in step with the
+/// foreground window under every compositor; they are only logged ([`note_unfocused`]).
 pub(super) fn native_focus(hwnd: HWND) -> bool {
-    !hwnd.0.is_null()
-        // SAFETY: these calls return handles owned by the OS, without dereferencing game memory.
-        && unsafe { GetForegroundWindow() == hwnd && GetActiveWindow() == hwnd && GetFocus() == hwnd }
+    // SAFETY: the call returns a handle owned by the OS, without dereferencing game memory.
+    !hwnd.0.is_null() && unsafe { GetForegroundWindow() } == hwnd
 }
+
+/// Run `log` the first time `reason` makes a sample unavailable.
+fn note_unavailable(reason: DesktopInputUnavailable, log: impl FnOnce()) {
+    let bit = 1 << (reason as u8);
+    if NOTED_UNAVAILABLE.fetch_or(bit, Ordering::Relaxed) & bit == 0 {
+        log();
+    }
+}
+
+/// Log, once, which of the window focus checks fails, and on which thread.
+fn note_unfocused(hwnd: HWND, thread: u32) {
+    note_unavailable(DesktopInputUnavailable::Unfocused, || {
+        // SAFETY: these calls return handles owned by the OS, without dereferencing game memory.
+        let (foreground, active, focus) =
+            unsafe { (GetForegroundWindow(), GetActiveWindow(), GetFocus()) };
+        tracing::info!(
+            target: "desktop_input",
+            thread,
+            foreground = foreground == hwnd,
+            active = active == hwnd,
+            focus = focus == hwnd,
+            "desktop input: the game window is not the foreground window"
+        );
+    });
+}
+
+/// The [`DesktopInputUnavailable`] reasons already logged, one bit each.
+static NOTED_UNAVAILABLE: AtomicU8 = AtomicU8::new(0);
 
 /// IMM is resolved from the system module without adding a new workspace dependency feature.
 /// The retained module reference keeps the cached public Win32 API pointers valid.

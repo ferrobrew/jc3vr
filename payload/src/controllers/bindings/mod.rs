@@ -149,7 +149,10 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
                         .filter(|hand| hand.active)
                         .all(|hand| hand.grip.is_valid())
             }),
-        controls_neutral: controller_neutral && desktop.controls_neutral() == Some(true),
+        // An unavailable desktop sample (the window unfocused, or the input tick on another thread
+        // than the window's) cannot show a held key, and it cannot block gameplay in the headset:
+        // the editing owner is gated on desktop focus, under which the sample is observed.
+        controls_neutral: controller_neutral && desktop.controls_neutral() != Some(false),
     };
     let mut capture_cancelled =
         mode::update_debug_ui_capture(capture_input).is_some_and(|update| {

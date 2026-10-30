@@ -416,3 +416,39 @@ fn read_only_filters_pointer_keyboard_text_scroll_and_clipboard_events() {
     assert!(!input.focused);
     assert_eq!(snapshot.edit_capture, EditCapture::default());
 }
+
+#[test]
+fn gameplay_does_not_wait_for_desktop_focus_but_editing_does() {
+    let unfocused = |neutral, enabled| InputObservation {
+        focused: false,
+        ..ready(neutral, enabled)
+    };
+    let mut policy = CapturePolicy::default();
+    policy.update(None, unfocused(true, true));
+    let gameplay = policy.update(None, unfocused(true, true));
+    assert!(gameplay.snapshot.gameplay_effective);
+    assert_eq!(gameplay.snapshot.blocker, None);
+
+    let editing = policy.update(Some(PanelRequest::Open), unfocused(true, true));
+    assert_eq!(editing.snapshot.blocker, Some(OwnershipBlocker::Unfocused));
+    assert!(!editing.snapshot.edit_capture.any());
+    assert_eq!(editing.effects.game_device, DeviceEffect::Unchanged);
+
+    let mut policy = CapturePolicy::default();
+    policy.update(None, ready(true, true));
+    assert!(
+        policy
+            .update(None, ready(true, true))
+            .snapshot
+            .gameplay_effective
+    );
+    let tracking_lost = InputObservation {
+        tracking_ready: false,
+        ..unfocused(true, true)
+    };
+    let lost = policy.update(None, tracking_lost);
+    assert_eq!(
+        lost.snapshot.blocker,
+        Some(OwnershipBlocker::TrackingRecovery)
+    );
+}
