@@ -3,17 +3,20 @@
 # it with a hardware encoder where one is available, cut it into ten-minute segments, and record
 # the game's audio alongside.
 #
-# Usage: scripts/capture_host.sh [output dir]
+# Usage: scripts/capture_host.sh [fallback output dir]
 #
-# Start this, then start the recording from the Director tab (or its hotkey); the payload retries
-# the connection every half second until this listener is up, so either order works, but frames
-# rendered before the connection are dropped. Stop with Ctrl+C or by stopping the recording in
-# game: the stream closes and ffmpeg finalizes the last segment.
+# Start this, then start the recording in game (F1, or Tools > Video); the payload retries the
+# connection every half second until this listener is up, so either order works, but frames
+# rendered before the connection are dropped. Stopping the recording in game closes the stream:
+# ffmpeg finalizes the last segment and the listener waits for the next recording. Ctrl+C stops
+# the listener, finalizing the segment in progress.
 #
-# The stream carries its size and rate in its own header, so nothing here needs to match the
-# in-game settings. The per-frame pose sidecar lives in the game's session folder
-# (`sessions/<session>/videos/<stamp>/frames.jsonl`), not here; the segment timestamps in the file
-# names and the wall clock in the sidecar are what line the two up.
+# The listener is tools/capture/relay.py, which starts one ffmpeg per recording and writes its
+# `video_NNN.mkv` segments into the recording's own folder in the session
+# (`<session>/recordings/<stamp>/`, beside `frames.jsonl`), named by the stream header. A stream
+# whose header names no folder (the payload on native Windows) goes to a stamped folder under the
+# fallback output dir, `captures/` by default. The stream carries its size and rate in its own
+# header, so nothing here needs to match the in-game settings.
 #
 # Environment overrides:
 #   JC3VR_CAPTURE_PORT    the listen port (default 47172, the payload's default).
@@ -25,12 +28,11 @@
 
 set -euo pipefail
 
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
 out_dir="${1:-captures}"
 port="${JC3VR_CAPTURE_PORT:-47172}"
 quality="${JC3VR_CAPTURE_QUALITY:-18}"
 segment_seconds="${JC3VR_SEGMENT_SECONDS:-600}"
-mkdir -p "$out_dir"
-stamp="$(date +%Y-%m-%d_%H-%M-%S)"
 
 # Pick the first hardware H.264 encoder ffmpeg reports, falling back to libx264. H.264 rather than
 # HEVC because every editor imports it without transcoding; at the quality set here the size
@@ -92,17 +94,20 @@ if [ "$audio_source" != none ]; then
     audio_args=(-c:a aac -b:a 256k)
 fi
 
-echo "capture: listening on tcp port $port, encoder $encoder, audio ${audio_source}, segments of ${segment_seconds}s in $out_dir" >&2
+echo "capture: encoder $encoder, audio ${audio_source}, segments of ${segment_seconds}s" >&2
 
-# The video input is the listening socket. `-use_wallclock_as_timestamps` on both inputs lets the
-# muxer line the audio up against the moment each frame arrived, and the y4m header's rate keeps
-# the video itself constant-rate. `-fps_mode passthrough` keeps one output frame per input frame:
-# the payload already emits exactly one frame per display refresh (repeating on a late readback),
-# so nothing should be dropped or duplicated here.
-exec ffmpeg -hide_banner -loglevel warning -stats \
+# The video input is the relay's pipe, which carries the stream as it arrives from the socket.
+# `-use_wallclock_as_timestamps` on both inputs lets the muxer line the audio up against the moment
+# each frame arrived, and the y4m header's rate keeps the video itself constant-rate.
+# `-fps_mode passthrough` keeps one output frame per input frame: the payload already emits exactly
+# one frame per display refresh (repeating on a late readback), so nothing should be dropped or
+# duplicated here. The relay replaces @OUTPUT@ with the segment start number and the recording
+# folder's `video_%03d.mkv`.
+exec python3 -I "$DIR/tools/capture/relay.py" --port "$port" --fallback-dir "$out_dir" -- \
+    ffmpeg -hide_banner -loglevel warning -stats \
     "${device_args[@]}" \
     -use_wallclock_as_timestamps 1 -thread_queue_size 64 \
-    -f yuv4mpegpipe -i "tcp://127.0.0.1:${port}?listen=1" \
+    -f yuv4mpegpipe -i pipe:0 \
     "${audio_in[@]}" \
     -map 0:v "${audio_map[@]}" \
     -fps_mode passthrough \
@@ -110,4 +115,4 @@ exec ffmpeg -hide_banner -loglevel warning -stats \
     "${audio_args[@]}" \
     -f segment -segment_time "$segment_seconds" -reset_timestamps 1 -segment_format matroska \
     -strftime 0 \
-    "${out_dir}/jc3vr_${stamp}_%03d.mkv"
+    @OUTPUT@
