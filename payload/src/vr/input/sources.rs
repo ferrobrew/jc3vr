@@ -162,8 +162,9 @@ static OBSERVATION_SOURCES: Mutex<ObservationSources> = Mutex::new(ObservationSo
     entries: Vec::new(),
 });
 
-fn refresh_observation_sources(cache: &[SetSources]) {
-    OBSERVATION_SOURCES.lock().refresh(cache);
+/// Whether the paths changed, which advances the interpretation generation.
+fn refresh_observation_sources(cache: &[SetSources]) -> bool {
+    OBSERVATION_SOURCES.lock().refresh(cache)
 }
 
 impl ObservationSources {
@@ -174,7 +175,7 @@ impl ObservationSources {
             .map_or(SourceQuery::NotEnumerated, |entry| entry.2.clone())
     }
 
-    fn refresh(&mut self, cache: &[SetSources]) {
+    fn refresh(&mut self, cache: &[SetSources]) -> bool {
         let entries = cache
             .iter()
             .flat_map(|entry| {
@@ -190,7 +191,9 @@ impl ObservationSources {
                 .checked_add(1)
                 .expect("input: source revision exhausted");
             self.entries = entries;
+            return true;
         }
+        false
     }
 }
 
@@ -474,7 +477,9 @@ impl SourcesRefresh {
             return;
         }
         let table = source_table(&cache);
-        refresh_observation_sources(&cache);
+        if refresh_observation_sources(&cache) {
+            note_opaque(&cache);
+        }
         drop(cache);
         publish_table(table);
     }
@@ -495,19 +500,43 @@ type Enumerated = Vec<Option<[PhysicalSet; 2]>>;
 static ENUMERATED: Mutex<[Option<Enumerated>; SemanticSet::ALL.len()]> =
     Mutex::new([const { None }; SemanticSet::ALL.len()]);
 
-/// Each action's physical inputs per hand, from its enumerated sources.
+/// Each action's physical inputs per hand, from its enumerated sources. An opaque enumeration
+/// ([`bound::opaque`]) is `None`, as a failed one is, so the default binding stands in.
 fn physical_inputs(entry: &SetSources) -> Enumerated {
     entry
         .actions
         .iter()
         .map(|action| {
+            action.sources.as_ref().ok().and_then(|sources| {
+                let paths = || sources.iter().map(|s| s.path.as_str());
+                (!bound::opaque(paths())).then(|| bound::of_sources(paths()))
+            })
+        })
+        .collect()
+}
+
+/// Log, once per interpretation generation, that the runtime reports some semantic actions'
+/// sources as opaque paths, so their default bindings stand in for them.
+fn note_opaque(cache: &[SetSources]) {
+    let opaque = cache
+        .iter()
+        .filter(|entry| matches!(entry.set, SetId::Semantic(_)))
+        .flat_map(|entry| &entry.actions)
+        .filter(|action| {
             action
                 .sources
                 .as_ref()
-                .ok()
-                .map(|sources| bound::of_sources(sources.iter().map(|s| s.path.as_str())))
+                .is_ok_and(|sources| bound::opaque(sources.iter().map(|s| s.path.as_str())))
         })
-        .collect()
+        .count();
+    if opaque > 0 {
+        tracing::info!(
+            target: "vr",
+            opaque_actions = opaque,
+            "input: the runtime's bound sources are opaque paths; the default bindings stand in \
+             for those actions' physical inputs"
+        );
+    }
 }
 
 static VIEWED_AT: Mutex<Option<Instant>> = Mutex::new(None);

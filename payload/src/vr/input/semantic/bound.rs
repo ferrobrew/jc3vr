@@ -10,6 +10,12 @@
 //! enumerated, or for an action whose enumeration failed, the default bindings stand in
 //! ([`BoundSet::defaults`]).
 //!
+//! Some runtimes report sources under no user path at all (Monado names them `/mnd/<n>`). Such an
+//! enumeration ([`opaque`]) says nothing the mod can read, so it counts as a failed one: the
+//! default bindings stand in for it here, and the shared chord arbiter
+//! (`controllers::bindings::policy_a`) attributes the action to its default binding by the same
+//! rule.
+//!
 //! The same matching, at the finer grain of a [`Component`], gives the controls summary its glyphs
 //! ([`SourceTable`]): a recognised source is drawn with its glyph, and any other with the
 //! runtime's localized name for it.
@@ -129,6 +135,21 @@ pub(crate) fn classify_component(path: &str) -> Option<(Hand, Option<Component>)
         _ => None,
     };
     Some((hand, known))
+}
+
+/// Whether an action's enumerated sources are opaque: there is at least one, and none is under a
+/// user path. An opaque enumeration counts as a failed one, and the default binding stands in for
+/// it. An enumeration that mixes user paths with others is read path by path, and the others are
+/// unknown.
+pub(crate) fn opaque<'a>(paths: impl IntoIterator<Item = &'a str>) -> bool {
+    let mut any = false;
+    for path in paths {
+        if path.starts_with(USER_PATH) {
+            return false;
+        }
+        any = true;
+    }
+    any
 }
 
 /// The physical inputs of the sources of one action, by [`Hand::index`].
@@ -324,6 +345,9 @@ pub(crate) const fn profile_of(profile: InteractionProfile) -> Profile {
 
 const UNKNOWN: u16 = 1 << 15;
 
+/// The prefix every top-level user path shares.
+const USER_PATH: &str = "/user/";
+
 fn default_sources(
     set: SemanticSet,
     index: usize,
@@ -406,6 +430,16 @@ mod tests {
         assert_eq!(sets[0], PhysicalSet::of(Physical::LowerFace).with_unknown());
         assert_eq!(sets[1], PhysicalSet::EMPTY.with_unknown());
         assert_eq!(of_sources([]), [PhysicalSet::EMPTY; 2]);
+    }
+
+    #[test]
+    fn only_sources_under_no_user_path_are_opaque() {
+        assert!(opaque(["/mnd/2351", "/mnd/2353"]));
+        assert!(opaque(["/unknown/device/button"]));
+        assert!(!opaque([]));
+        assert!(!opaque(["/user/hand/right/input/a/click"]));
+        assert!(!opaque(["/user/gamepad/input/a/click"]));
+        assert!(!opaque(["/mnd/2351", "/user/hand/right/input/a/click"]));
     }
 
     #[test]

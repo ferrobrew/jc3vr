@@ -81,6 +81,7 @@ fn publish_configured(
         gameplay: true,
         usable: true,
         config,
+        dominant: Hand::Right,
     })
 }
 
@@ -395,6 +396,7 @@ fn every_reset_discards_earlier_commands_and_accepted_edges_in_the_drain() {
             gameplay: true,
             usable: true,
             config: &BindingsConfig::new(),
+            dominant: Hand::Right,
         });
         assert!(tick.commands.is_empty(), "damage {damage}");
         assert!(!button(&tick, action).held(), "damage {damage}");
@@ -467,7 +469,11 @@ fn neutral_boundary_requires_complete_active_attributable_route_inventory() {
             (merged, false, paths(&[RS, RIGHT_SQUEEZE])),
         ],
     );
-    assert!(group_neutral(&complete, &BindingsConfig::new()));
+    assert!(group_neutral(
+        &complete,
+        &BindingsConfig::new(),
+        Hand::Right
+    ));
     for damage in 0..8 {
         let mut candidate = complete.clone();
         let index = candidate
@@ -500,7 +506,7 @@ fn neutral_boundary_requires_complete_active_attributable_route_inventory() {
             _ => candidate.samples[index].value = ValueBits::Float(0),
         }
         assert!(
-            !group_neutral(&candidate, &BindingsConfig::new()),
+            !group_neutral(&candidate, &BindingsConfig::new(), Hand::Right),
             "damage {damage}"
         );
     }

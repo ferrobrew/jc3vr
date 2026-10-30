@@ -128,7 +128,9 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     let source_neutral = raw_frame
         .as_ref()
         .and_then(|frame| history::original_group(frame.sequence))
-        .is_some_and(|group| policy_a::runtime::group_neutral(&group, &config.bindings));
+        .is_some_and(|group| {
+            policy_a::runtime::group_neutral(&group, &config.bindings, config.acting_hand())
+        });
     let controller_neutral = !config.enabled
         || !scheme::is_controllers()
         || raw_frame
@@ -177,6 +179,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             gameplay: false,
             usable: false,
             config: &config.bindings,
+            dominant: config.acting_hand(),
         });
         weapons::stand_down();
         // SAFETY: the input tick runs on the main thread outside the world update.
@@ -221,6 +224,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         gameplay: idle.is_none(),
         usable: config.bindings.enabled && scheme::is_controllers(),
         config: &config.bindings,
+        dominant: config.acting_hand(),
     });
     crate::controllers::summary::hold::publish(false, false);
     let mut panel_toggled = false;

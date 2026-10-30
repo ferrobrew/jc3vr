@@ -97,7 +97,7 @@ impl Runtime {
                 self.reset(ResetReason::InvalidHistory);
                 return;
             }
-            if !expected.neutral || !group_neutral(&group, config) {
+            if !expected.neutral || !group_neutral(&group, config, self.dominant) {
                 self.reset(ResetReason::InvalidHistory);
                 return;
             }
@@ -234,7 +234,7 @@ impl Runtime {
             available,
         );
         evaluation = recording::evaluation(group, self.config, context, gameplay, &decision);
-        evaluation.neutral = group_neutral(group, config);
+        evaluation.neutral = group_neutral(group, config, self.dominant);
         if let ObservationStatus::Reset(reason) = decision.status {
             self.reset(reason);
             tick.commands.clear();

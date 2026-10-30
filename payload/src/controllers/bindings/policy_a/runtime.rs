@@ -48,6 +48,9 @@ pub(crate) struct TickInput<'a> {
     pub(crate) gameplay: bool,
     pub(crate) usable: bool,
     pub(crate) config: &'a BindingsConfig,
+    /// The dominant hand the actions' default bindings were suggested for, which places the
+    /// default binding standing in for an opaque enumeration.
+    pub(crate) dominant: Hand,
 }
 
 #[derive(Default)]
@@ -68,6 +71,7 @@ pub(crate) struct Runtime {
     raw_neutral: [bool; CONTROLS],
     reset_serial: u64,
     watermark: Option<(InputStamp, GroupOrder)>,
+    dominant: Hand,
 }
 
 #[derive(Default)]
@@ -130,6 +134,7 @@ impl Runtime {
             }
             self.consumer_context = Some((input.context, input.gameplay));
         }
+        self.dominant = input.dominant;
         let mut tick = Tick::default();
         for publication in input.publications {
             let reset_before = self.reset_serial;
@@ -339,7 +344,7 @@ impl Runtime {
                 });
             let route = &mut self.routes[index];
             route.present = true;
-            let attribution = Attribution::of(&sample.sources, hand);
+            let attribution = Attribution::of(&sample.sources, id, hand, self.dominant);
             if route.attribution != attribution {
                 route.neutral = true;
                 route.claimed = true;
@@ -616,20 +621,32 @@ fn complete_inventory(group: &InputGroup) -> bool {
     })
 }
 
-pub(crate) fn group_neutral(group: &InputGroup, config: &BindingsConfig) -> bool {
+/// Whether every route of `group` proves its input neutral, for a player whose dominant hand is
+/// `dominant` (see [`TickInput::dominant`]).
+pub(crate) fn group_neutral(group: &InputGroup, config: &BindingsConfig, dominant: Hand) -> bool {
     group.action_schema == SCHEMA_VERSION
         && group.focused
         && group.is_bounded()
         && complete_inventory(group)
         && raw_evidence(group) == [Some(false); CONTROLS]
         && group.samples.iter().all(|sample| {
-            let InputRoute::Semantic { hand, .. } = sample.route else {
+            let InputRoute::Semantic { set, action, hand } = sample.route else {
                 return true;
             };
-            let Some(&hand) = Hand::BOTH.get(hand as usize) else {
+            let (Some(&set), Some(&hand)) = (
+                SemanticSet::ALL.get(set as usize),
+                Hand::BOTH.get(hand as usize),
+            ) else {
                 return false;
             };
-            let attribution = Attribution::of(&sample.sources, hand);
+            if action as usize >= set.actions().len() {
+                return false;
+            }
+            let id = ActionId {
+                set,
+                index: action as u8,
+            };
+            let attribution = Attribution::of(&sample.sources, id, hand, dominant);
             // Successful-empty is an unbound route. Inactive bound actions cannot prove neutral.
             !attribution.unresolved
                 && !sample.down
@@ -681,7 +698,7 @@ impl Route {
         Self {
             id,
             hand,
-            attribution: Attribution::of(&tracking_format::input::SourceQuery::NotEnumerated, hand),
+            attribution: Attribution::unresolved(),
             neutral: true,
             blocked: true,
             sample_down: false,

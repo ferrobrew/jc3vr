@@ -114,6 +114,7 @@ pub(super) fn fixture_mode(entries: &[(ActionId, &[&str])], mode: SemanticSet) -
             gameplay: true,
             usable: true,
             config: &BindingsConfig::new(),
+            dominant: Hand::Right,
         })
     };
     evaluate_mode(make_group(1, false));

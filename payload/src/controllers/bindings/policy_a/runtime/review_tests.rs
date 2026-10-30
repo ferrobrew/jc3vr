@@ -377,6 +377,7 @@ fn malformed_policy_and_skipped_group_outcomes_never_dispatch_before_boundary() 
             gameplay: true,
             usable: true,
             config: &BindingsConfig::new(),
+            dominant: Hand::Right,
         });
         let outcomes = history::take_capture();
         assert!(

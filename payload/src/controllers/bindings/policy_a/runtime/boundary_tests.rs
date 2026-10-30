@@ -307,6 +307,7 @@ fn queued_live_publications_keep_middle_loss_through_capture_and_replay() {
         gameplay: true,
         usable: true,
         config: &BindingsConfig::new(),
+        dominant: Hand::Right,
     });
     assert!(tick.commands.is_empty());
     for group in trace[5..].iter().cloned() {
@@ -444,6 +445,7 @@ fn analog_grapple_without_default_uses_sampler_hysteresis_through_policy_and_tab
                 gameplay: true,
                 usable: true,
                 config: &BindingsConfig::new(),
+                dominant: Hand::Right,
             });
             let mut input =
                 SemanticInput::rest(id.set, [InteractionProfile::ValveIndex; 2], Hand::Right);

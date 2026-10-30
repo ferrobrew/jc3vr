@@ -4,6 +4,8 @@ mod boundary_tests;
 mod derived_tests;
 #[path = "hint_tests.rs"]
 mod hint_tests;
+#[path = "opaque_tests.rs"]
+mod opaque_tests;
 #[path = "rereview_tests.rs"]
 mod rereview_tests;
 #[path = "review_tests.rs"]
@@ -127,6 +129,7 @@ fn evaluate(runtime: &mut Runtime, group: InputGroup, gameplay: bool) -> Tick {
         gameplay,
         usable: true,
         config: &BindingsConfig::new(),
+        dominant: Hand::Right,
     })
 }
 
@@ -180,6 +183,7 @@ fn batch(runtime: &mut Runtime, groups: &[InputGroup]) -> Tick {
         gameplay: true,
         usable: true,
         config: &BindingsConfig::new(),
+        dominant: Hand::Right,
     })
 }
 
@@ -200,6 +204,7 @@ fn replay(runtime: &mut Runtime, publications: Vec<Publication>) -> Tick {
         gameplay: true,
         usable: true,
         config: &BindingsConfig::new(),
+        dominant: Hand::Right,
     })
 }
 
@@ -420,7 +425,7 @@ fn failed_and_unknown_queries_quarantine_but_successful_empty_never_uses_default
     for source in [
         SourceQuery::Failed,
         SourceQuery::NotEnumerated,
-        paths(&["/unknown/device/button"]),
+        paths(&["/user/hand/right/input/pinch_ext/value"]),
         paths(&[]),
     ] {
         let mut runtime = Runtime::default();
@@ -599,6 +604,7 @@ fn replay_uses_recorded_policy_timing_before_dispatch() {
         gameplay: true,
         usable: true,
         config: &changed,
+        dominant: Hand::Right,
     });
     assert_eq!(tick.commands, [SystemCommand::TogglePanel]);
 }

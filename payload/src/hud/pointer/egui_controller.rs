@@ -902,6 +902,7 @@ mod tests {
                 gameplay: true,
                 usable: true,
                 config: &BindingsConfig::new(),
+                dominant: Hand::Right,
             });
             tick.filter_raw(&mut frame, &mut edges);
             let samples = Hand::BOTH.map(|hand| read_hand(&frame, &edges, hand, INSIDE));
@@ -1000,6 +1001,7 @@ mod tests {
             gameplay: true,
             usable: true,
             config: &BindingsConfig::new(),
+            dominant: Hand::Right,
         });
         frame.sequence = 4;
         let publications = [(2, true), (3, false), (4, false)]
@@ -1018,6 +1020,7 @@ mod tests {
             gameplay: true,
             usable: true,
             config: &BindingsConfig::new(),
+            dominant: Hand::Right,
         });
         assert_eq!(tick.commands.len(), 1);
         let mut edges = Edges::default();

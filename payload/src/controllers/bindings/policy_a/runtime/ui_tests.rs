@@ -72,6 +72,7 @@ fn menu_tick(runtime: &mut Runtime, sequence: u64, select: bool, source: &str) -
         gameplay: false,
         usable: true,
         config: &BindingsConfig::new(),
+        dominant: Hand::Right,
     })
 }
 
