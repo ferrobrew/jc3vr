@@ -1,10 +1,14 @@
 # Input
 
-Just Cause 3's local-player input runs through a single action-effector map plus a separate movie-facing mouse pipeline for the Scaleform UI. The sections below cover the effector accessors, the action enumeration, the write API, an anti-tamper protection in the camera input path, the mouse and UI pipeline, and the semantic button-mapping layer above the raw actions.
+Just Cause 3's local-player input runs through a single action-effector map plus a separate movie-facing mouse pipeline for the Scaleform UI. The sections below cover the effector accessors, where the device poll runs, the action enumeration, the write API, an anti-tamper protection in the camera input path, the mouse and UI pipeline, and the semantic button-mapping layer above the raw actions.
 
 ## Action effectors
 
 The engine exposes input through action effectors: [`LocalPlayerActionMap::GetActionEffector`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_action_map::LocalPlayerActionMap##func-GetActionEffector) returns an `SEffectorElement` per action, and there is a `Freeze` path. The camera look axes are `LOOK_LEFT` / `LOOK_RIGHT` / `LOOK_UP` / `LOOK_DOWN` (net `yaw = right − left`, `pitch = up − down`), and the move axes are `MOVE_LEFT` / `MOVE_RIGHT` / `MOVE_FORWARD` / `MOVE_BACKWARD`. All of these resolve through the [`Action`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_action_map::Action) enum (see below). The gameplay buttons (fire, jump, grapple, reload, enter-vehicle, …) are likewise enumerated.
+
+## Where the device poll runs
+
+[`InputDeviceManager::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_device_manager::InputDeviceManager##func-Update), the per-frame device poll, has one caller, `CGameState::PreUpdate`, which reaches it through the manager's virtual table and also runs `UIManager::PreUpdate`. Which thread that is depends on the game state. The frontend and loading states call `PreUpdate` inline on the game thread. The run state does not: `CGameStateRun::Update` queues it as a CPU fragment (`RunInputThread`), then carries on with its own pre-simulation work (waiting on the previous frame's jobs, the network, world time, the camera manager, the settings, pathfinding requests, and spawning effect physics models) and only then spins on the fragment's completion signal, before the world update. So in play the poll and everything hooked after it run on a CPU fragment worker, concurrently with that stretch of the game thread's update, and only occasionally on the game thread itself, when it steals the fragment while it waits on one of the previous frame's signals. Code that must run on the game thread cannot use the poll's thread as its reference.
 
 ## The action enumeration
 

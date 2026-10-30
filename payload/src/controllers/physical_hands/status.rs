@@ -27,7 +27,7 @@ pub enum Idle {
     Mode,
     /// No tracked hands.
     NoHands,
-    /// The palms' tick ran on another thread than the input tick.
+    /// The palms' tick ran off the game thread, or inside one of its frame scopes.
     OffThread,
 }
 
@@ -37,7 +37,7 @@ impl Idle {
             Idle::Disabled => "off",
             Idle::Mode => "not on foot on the ground or falling",
             Idle::NoHands => "no tracked hands",
-            Idle::OffThread => "the tick ran off the main thread",
+            Idle::OffThread => "the tick ran off the game thread",
         }
     }
 }
@@ -91,7 +91,7 @@ pub struct PhysicalHandsStatus {
     pub object_pushes: u64,
     /// Ticks a palm shoved an object.
     pub shoves: u64,
-    /// Palms' ticks that ran off the main thread.
+    /// Palms' ticks that ran off the game thread.
     pub off_thread: u64,
     /// The last cast or engine failure.
     pub last_error: Option<String>,

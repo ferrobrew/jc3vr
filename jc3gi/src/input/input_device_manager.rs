@@ -158,9 +158,17 @@ impl InputDeviceManager {
     pub const Update_ADDRESS: usize = 0x1402F20C0;
     /// The per-frame device poll: reads all devices and refreshes their effector states (see
     /// [`InputDeviceEffector`](crate::input::input_action_map::InputDeviceEffector)). `CGameState::PreUpdate`
-    /// calls it, then [`UpdateForceClicks`](crate::input::input_device_manager::InputDeviceManager::UpdateForceClicks), before the frame's world
-    /// update. The poll overwrites effector values written before it runs, and skips the devices when
-    /// the clock's real time is unchanged since the previous poll.
+    /// calls it through the manager's virtual table, then
+    /// [`UpdateForceClicks`](crate::input::input_device_manager::InputDeviceManager::UpdateForceClicks), before the frame's world update. The poll
+    /// overwrites effector values written before it runs, and skips the devices when the clock's real
+    /// time is unchanged since the previous poll.
+    ///
+    /// The thread depends on the game state. The frontend and loading states call `PreUpdate`
+    /// inline on the game thread. The run state (`CGameStateRun::Update`) queues it as a CPU fragment
+    /// (`RunInputThread`), so it runs on whichever fragment worker takes it, or on the game thread
+    /// if that thread steals it while it waits on another signal, concurrently with the game
+    /// thread's update until the game thread spins on the fragment's completion signal, before the
+    /// world update. `UIManager::PreUpdate` runs inside the same call.
     pub unsafe fn Update(&mut self, dt: f32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(

@@ -50,10 +50,6 @@ fn input_device_manager_update(manager: *mut InputDeviceManager, dt: f32) {
         controllers::bindings::input_tick(dt, poll)
     };
     controllers::gamepad_setting::input_tick();
-    {
-        let _timing = frame_timing::scope(Slot::PhysicalHands);
-        controllers::physical_hands::input_tick();
-    }
 
     if !headpose::is_active() {
         return;

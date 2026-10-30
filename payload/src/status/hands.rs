@@ -195,10 +195,10 @@ fn palms_line(on: bool, idle: Option<Idle>, casts: u32, off_thread: u64) -> Line
         return Line::off("");
     }
     let off_thread_note =
-        (off_thread > 0).then(|| text!(off_thread.to_string(), " ticks ran off the main thread"));
+        (off_thread > 0).then(|| text!(off_thread.to_string(), " ticks ran off the game thread"));
     match (idle, off_thread_note) {
         (Some(Idle::OffThread), _) => Line::failed(text!(
-            "Idle, off the main thread (",
+            "Idle, off the game thread (",
             off_thread.to_string(),
             " ticks)"
         )),
@@ -240,7 +240,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_palms_row_fails_when_a_tick_ran_off_the_main_thread() {
+    fn the_palms_row_fails_when_a_tick_ran_off_the_game_thread() {
         assert_eq!(palms_line(false, None, 4, 0).health, Health::Off);
         let acting = palms_line(true, None, 4, 0);
         assert_eq!(acting.text(), "OK, ACTING, 4 CASTS");
@@ -251,12 +251,12 @@ mod tests {
         );
         assert_eq!(
             palms_line(true, Some(Idle::OffThread), 0, 12).text(),
-            "FAILED, IDLE, OFF THE MAIN THREAD (12 TICKS)"
+            "FAILED, IDLE, OFF THE GAME THREAD (12 TICKS)"
         );
-        // Acting now, but a tick ran off the main thread since the payload loaded.
+        // Acting now, but a tick ran off the game thread since the payload loaded.
         assert_eq!(
             palms_line(true, None, 4, 3).text(),
-            "FAILED, 3 TICKS RAN OFF THE MAIN THREAD"
+            "FAILED, 3 TICKS RAN OFF THE GAME THREAD"
         );
     }
 

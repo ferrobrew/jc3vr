@@ -4,10 +4,12 @@
 //! The tick is due after the player aim control's post-simulation update, which the game world's
 //! update queue may run on one of its worker threads, so the update only notes that a tick is due
 //! ([`after_aim`]), and the tick runs on the game thread at the start of the frame's render update
-//! ([`main_thread_tick`]): after the simulation the aim update belongs to, before the input tick that
-//! reads the palms' targets, and outside the world update and the physics step.
+//! ([`main_thread_tick`]): after the simulation the aim update belongs to, and outside the world
+//! update and the physics step. "The game thread" is the thread the game's frame runs on, as
+//! [`thread_role`] marks it; the input tick is no proxy for it, since the game's input pre-update
+//! runs on a CPU fragment worker during the simulation (`docs/engine/gameplay/input.md`).
 
-use std::{sync::atomic::Ordering, time::Instant};
+use std::time::Instant;
 
 use glam::{Mat4, Quat, Vec2, Vec3};
 use jc3gi::character::character::Character;
@@ -49,7 +51,7 @@ use crate::{
             pickup::{self, PICKUP},
             push,
             shove::SHOVE,
-            state::{MAIN_THREAD, STATE, VELOCITY_SMOOTHING_S, stand_down},
+            state::{STATE, VELOCITY_SMOOTHING_S, stand_down},
             status::{HandStatus, Idle},
             touch::{ShoveInput, Touch, pressure_haptics},
             tuning::PALMS,
@@ -59,6 +61,7 @@ use crate::{
         weapons::{self, c4, foregrip, grenade},
     },
     headpose, hooks,
+    thread_role::{self, ThreadRole},
 };
 
 /// Note that a palms' tick is due, `dt` seconds of simulation after the last: called from the
@@ -99,25 +102,20 @@ static PENDING: Mutex<Option<f32>> = Mutex::new(None);
 unsafe fn run(owner: &Character, dt: f32) {
     physics::observe(dt);
     let config = Config::lock_query(|c| c.controllers.physical_hands);
-    let idle = if !config.enabled || !scheme::is_controllers() || !hooks::in_gameplay() {
-        Some(Idle::Disabled)
-    } else if let main = MAIN_THREAD.load(Ordering::Relaxed)
-        // SAFETY: reads the calling thread's own id.
-        && let current = unsafe { GetCurrentThreadId() }
-        && main != current
-    {
-        if STATE.lock().status.idle != Some(Idle::OffThread) {
-            tracing::warn!(
-                target: "controllers",
-                input_tick_thread = main,
-                palms_thread = current,
-                "palms: the tick runs on another thread than the input tick; the palms stand down"
-            );
-        }
-        Some(Idle::OffThread)
-    } else {
-        (!mode_acts(mode::current())).then_some(Idle::Mode)
+    let gate = Gate {
+        active: config.enabled && scheme::is_controllers() && hooks::in_gameplay(),
+        role: thread_role::current(),
     };
+    let idle = stand_down_reason(gate, || mode_acts(mode::current()));
+    if idle == Some(Idle::OffThread) && STATE.lock().status.idle != Some(Idle::OffThread) {
+        tracing::warn!(
+            target: "controllers",
+            role = gate.role.describe(),
+            // SAFETY: reads the calling thread's own id.
+            thread = unsafe { GetCurrentThreadId() },
+            "palms: the tick runs off the game thread; the palms stand down"
+        );
+    }
     if let Some(idle) = idle {
         stand_down(idle);
         return;
@@ -655,6 +653,28 @@ fn declare_grips(
     }
 }
 
+/// What decides whether the palms act at all this tick, before they look at the hands.
+#[derive(Debug, Copy, Clone)]
+struct Gate {
+    /// The physical hands are on, the controller scheme is in effect, and the game is in gameplay.
+    active: bool,
+    /// The calling thread's role.
+    role: ThreadRole,
+}
+
+/// Why the palms stand down this tick, if they do. The palms change the main thread's engine
+/// state, so they act only on the game thread outside its frame scopes ([`ThreadRole::Game`]); the
+/// mode is read only once the rest allows a tick.
+fn stand_down_reason(gate: Gate, mode_acts: impl FnOnce() -> bool) -> Option<Idle> {
+    if !gate.active {
+        Some(Idle::Disabled)
+    } else if gate.role != ThreadRole::Game {
+        Some(Idle::OffThread)
+    } else {
+        (!mode_acts()).then_some(Idle::Mode)
+    }
+}
+
 /// Whether the hands act in the mode `detection`: on foot on the ground, or falling, so that a
 /// hand flung or jumped at a ledge can catch it; not swimming, in a vehicle, in the wingsuit or
 /// under the parachute, nor while the grapple carries the player.
@@ -701,4 +721,53 @@ pub(crate) fn free_hands() -> [bool; 2] {
             && charge != Some(hand)
             && weights[hand.index()] > 0.0
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn gate(active: bool, role: ThreadRole) -> Gate {
+        Gate { active, role }
+    }
+
+    #[test]
+    fn the_palms_act_only_on_the_game_thread_outside_its_frame_scopes() {
+        assert_eq!(
+            stand_down_reason(gate(true, ThreadRole::Game), || true),
+            None
+        );
+        for role in [
+            ThreadRole::Unmarked,
+            ThreadRole::GameFrame,
+            ThreadRole::GameDebugUi,
+            ThreadRole::FrameTail,
+        ] {
+            assert_eq!(
+                stand_down_reason(gate(true, role), || true),
+                Some(Idle::OffThread),
+                "{role:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_inactive_gate_reads_neither_the_thread_nor_the_mode() {
+        let reason = stand_down_reason(gate(false, ThreadRole::Unmarked), || {
+            panic!("the mode is read only for a tick that may act")
+        });
+        assert_eq!(reason, Some(Idle::Disabled));
+    }
+
+    #[test]
+    fn the_mode_decides_last() {
+        assert_eq!(
+            stand_down_reason(gate(true, ThreadRole::Game), || false),
+            Some(Idle::Mode)
+        );
+        let reason = stand_down_reason(gate(true, ThreadRole::Unmarked), || {
+            panic!("an off-thread tick does not read the mode")
+        });
+        assert_eq!(reason, Some(Idle::OffThread));
+    }
 }

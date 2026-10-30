@@ -43,8 +43,8 @@
 //! being thrown.
 //!
 //! The knocks, the shoves, and the holds change engine state that is the main thread's, so they
-//! are made only when the aim update runs on the thread the input tick runs on
-//! ([`state::input_tick`] notes it); otherwise the palms stand down and the readout says why.
+//! are made only from the palms' tick on the game thread, outside its frame scopes
+//! ([`tick::main_thread_tick`]); a tick anywhere else stands down and the readout says why.
 //!
 //! The module is split by concern: [`status`] holds the readout types, [`state`] the palms' state
 //! across ticks and its stand-down, and [`tick`] the simulation tick that drives it all.
@@ -90,7 +90,6 @@ pub(crate) use bodies::BodyState;
 pub use config::PhysicalHandsConfig;
 use glam::{Quat, Vec3};
 use jc3gi::{character::character::Character, types::math::Vector3};
-pub(crate) use state::input_tick;
 use state::{STALE_AFTER, State};
 pub use status::{HandStatus, Idle, PhysicalHandsStatus, ShoveReport, status};
 pub(crate) use status::{PalmReadout, palm_readout, press_summary};

@@ -91,8 +91,8 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
 
         // The palms' tick the simulation's aim update left due, on the game thread: the world
         // object manager's update queue may run the aim update on a worker, and the palms change
-        // the world. After the simulation, before the VR frame takes the runtime lock, and before
-        // the input tick inside the render update, which reads the palms' targets.
+        // the world. After the simulation and before the VR frame takes the runtime lock; the next
+        // simulation's input tick reads the palms' targets.
         {
             let _timing = frame_timing::scope(Slot::PhysicalHands);
             crate::controllers::physical_hands::main_thread_tick();

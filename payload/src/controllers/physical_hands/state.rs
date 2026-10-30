@@ -1,14 +1,10 @@
 //! The palms' state across ticks: each hand's probes, its pressed and held state, and its motion,
 //! with the stand-down that forgets it all when the palms stop acting.
 
-use std::{
-    sync::atomic::{AtomicU32, Ordering},
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use glam::{Vec2, Vec3};
 use parking_lot::Mutex;
-use windows::Win32::System::Threading::GetCurrentThreadId;
 
 use crate::controllers::{
     frame::Hand,
@@ -26,12 +22,6 @@ use crate::controllers::{
         status::{HandStatus, Idle, PhysicalHandsStatus},
     },
 };
-
-/// Note the input tick's thread, the main thread. Called from the input tick.
-pub(crate) fn input_tick() {
-    // SAFETY: reads the calling thread's own id.
-    MAIN_THREAD.store(unsafe { GetCurrentThreadId() }, Ordering::Relaxed);
-}
 
 /// Stop: forget the probes and the push, and say why.
 pub(super) fn stand_down(idle: Idle) {
@@ -155,9 +145,6 @@ pub(super) const STALE_AFTER: Duration = Duration::from_millis(200);
 /// How long the palms' velocities are smoothed over, seconds: short, so that a throw keeps the
 /// flick.
 pub(super) const VELOCITY_SMOOTHING_S: f32 = 0.03;
-
-/// The main thread's id, as the input tick last saw it; zero before the first.
-pub(super) static MAIN_THREAD: AtomicU32 = AtomicU32::new(0);
 
 pub(super) static STATE: Mutex<State> = Mutex::new(State {
     status: PhysicalHandsStatus {
