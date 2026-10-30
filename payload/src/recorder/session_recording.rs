@@ -1,7 +1,7 @@
 //! Session recording: the video recorder and a tracking recording started and stopped as one, under
-//! one stamp, so a long play session is captured whole and its two halves pair by name
-//! (`videos/<stamp>/` and `recordings/<stamp>.jc3trk`). Both stamp their frames with the OpenXR
-//! predicted display time, which is what lines them up afterwards.
+//! one stamp, so a long play session is captured whole and its two halves share one folder
+//! (`recordings/<stamp>/`). Both stamp their frames with the OpenXR predicted display time, which is
+//! what lines them up afterwards.
 //!
 //! The take-marker action ([`mark`]) belongs with it: a marker lands in both recordings while they
 //! run, and with no tracking recording running it also saves the lookback, so a moment is kept

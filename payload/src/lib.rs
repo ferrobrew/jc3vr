@@ -106,6 +106,7 @@ fn initialize_startup() {
 
     logging::install();
     tracing::info!(build = BUILD_STAMP, "jc3vr startup");
+    session::log_location();
     crash::install();
     // Before the hooks: VR initialization, on the game thread's first frame, reads the configuration
     // (the dominant hand and the input layout among it), so it must already hold the saved settings.

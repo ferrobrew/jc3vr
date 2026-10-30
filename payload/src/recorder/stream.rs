@@ -7,7 +7,13 @@
 //! retries, so the recording can be started before the host listener is up; frames that arrive
 //! before the connection exists are dropped and counted.
 //!
-//! The sidecar lives in the recording's session video folder (see [`crate::session`]): `stream.json` with the
+//! When the recording's folder has a known host path (under wine), the header carries it as an
+//! [`HOST_FOLDER_TAG`] parameter, percent-encoded since header parameters are space-separated, so
+//! the capture host (`tools/capture/relay.py`) writes the video segments into the same folder. The
+//! relay strips the tag before handing the header to ffmpeg, whose y4m demuxer ignores unknown `X`
+//! parameters but refuses a header longer than about a hundred bytes.
+//!
+//! The sidecar lives in the recording's folder (see [`crate::session`]): `stream.json` with the
 //! stream parameters, and `frames.jsonl` with one line per frame written to the stream, carrying
 //! the stream frame index (what the video's frame number is), the capture index from the render
 //! thread, the wall clock, the engine's game-run time, whether the frame is a duplicate, and the
@@ -37,8 +43,14 @@ use parking_lot::Mutex;
 use serde::Serialize;
 
 use crate::{
-    director::markers::Marker, recorder::RecorderConfig, session::CaptureFolder, vr::CaptureViews,
+    director::markers::Marker,
+    recorder::RecorderConfig,
+    session::{CaptureFolder, RecordingFile},
+    vr::CaptureViews,
 };
+
+/// The y4m header parameter naming the recording folder's host path for the capture host.
+pub const HOST_FOLDER_TAG: &str = "XJC3VR_DIR=";
 
 /// What the render thread knows about a frame at capture time.
 #[derive(Clone, Copy, Debug)]
@@ -92,8 +104,9 @@ impl Writer {
     /// Create the sidecar folder and spawn the writer thread, which connects to the host in the
     /// background.
     pub fn spawn(cfg: &RecorderConfig, stamp: &str) -> anyhow::Result<Self> {
-        let folder = crate::session::capture_folder(CaptureFolder::Video, stamp)?;
-        let sidecar = std::fs::File::create(folder.join("frames.jsonl"))
+        let folder = crate::session::capture_folder(CaptureFolder::Recording, stamp)?;
+        let host_folder = crate::session::host_capture_folder(CaptureFolder::Recording, stamp);
+        let sidecar = std::fs::File::create(folder.join(RecordingFile::Frames.name()))
             .with_context(|| format!("could not create the sidecar in {}", folder.display()))?;
         let target = format!("{}:{}", cfg.host(), cfg.port);
         let frame_rate = cfg.frame_rate.max(1);
@@ -102,6 +115,7 @@ impl Writer {
                 target,
                 frame_rate,
                 folder,
+                host_folder,
                 sidecar: std::io::BufWriter::new(sidecar),
                 stream: None,
                 next_address: 0,
@@ -266,6 +280,8 @@ struct WriterThread {
     target: String,
     frame_rate: u32,
     folder: PathBuf,
+    /// The folder's host path, for the stream header.
+    host_folder: Option<String>,
     sidecar: std::io::BufWriter<std::fs::File>,
     stream: Option<TcpStream>,
     next_address: usize,
@@ -472,9 +488,11 @@ impl WriterThread {
     ) -> anyhow::Result<()> {
         let deadline = Instant::now() + FRAME_WRITE_BUDGET;
         if !self.header_written {
-            let header = format!(
-                "YUV4MPEG2 W{} H{} F{}:1 Ip A1:1 C420jpeg XYSCSS=420JPEG XCOLORRANGE=LIMITED\n",
-                metadata.width, metadata.height, self.frame_rate
+            let header = stream_header(
+                metadata.width,
+                metadata.height,
+                self.frame_rate,
+                self.host_folder.as_deref(),
             );
             write_network(
                 self.stream.as_mut().context("no stream")?,
@@ -508,7 +526,7 @@ impl WriterThread {
             target: &self.target,
             started_unix_ms: metadata.unix_ms,
         };
-        let path = self.folder.join("stream.json");
+        let path = self.folder.join(RecordingFile::StreamInfo.name());
         let result = serde_json::to_string_pretty(&info)
             .map_err(std::io::Error::other)
             .and_then(|json| std::fs::write(&path, json));
@@ -546,6 +564,36 @@ impl WriterThread {
             tracing::warn!("recorder: could not append to the sidecar: {e}");
         }
     }
+}
+
+/// The y4m stream header line: the size, the rate, progressive 4:2:0 in limited range, and the host
+/// folder tag when there is one.
+fn stream_header(width: u32, height: u32, frame_rate: u32, host_folder: Option<&str>) -> String {
+    let mut header = format!(
+        "YUV4MPEG2 W{width} H{height} F{frame_rate}:1 Ip A1:1 C420jpeg XYSCSS=420JPEG \
+         XCOLORRANGE=LIMITED"
+    );
+    if let Some(folder) = host_folder {
+        header.push(' ');
+        header.push_str(HOST_FOLDER_TAG);
+        header.push_str(&percent_encode(folder.as_bytes()));
+    }
+    header.push('\n');
+    header
+}
+
+/// Percent-encode every byte but the URI unreserved characters and `/`, so a path survives as one
+/// space-free header token whatever it holds.
+fn percent_encode(bytes: &[u8]) -> String {
+    let mut encoded = String::with_capacity(bytes.len());
+    for &byte in bytes {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~' | b'/') {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
 }
 
 /// Advance before each attempt so an address that uses the whole budget cannot starve later ones.

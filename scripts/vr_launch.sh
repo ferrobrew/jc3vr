@@ -55,10 +55,18 @@ if [ -z "${VR_OVERRIDE:-}" ]; then
   fi
 fi
 
+# Where the payload writes its session folders (logs, recordings, captures):
+# sessions/ in this workspace, outside target/, so cleaning the build does not
+# take them. The payload converts it to a Windows path through wine; the
+# container shares $HOME, so the same path works on both sides. Created here so
+# wine can map it. Honour a caller-set value. See docs/mod/sessions.md.
+export JC3VR_SESSIONS_DIR="${JC3VR_SESSIONS_DIR:-$DIR/sessions}"
+mkdir -p "$JC3VR_SESSIONS_DIR"
+
 # steam-run scrubs the ambient environment before the sniper entry point, so
 # PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES (read by pressure-vessel itself) never
 # reaches it via a plain export; jc3boot must pass it in its explicit env list.
 # Name the variables for jc3boot to forward there.
-export JC3BOOT_FORWARD_ENV="PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES${VR_OVERRIDE:+ VR_OVERRIDE}"
+export JC3BOOT_FORWARD_ENV="PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES JC3VR_SESSIONS_DIR${VR_OVERRIDE:+ VR_OVERRIDE}"
 
 exec "$LAUNCHER" "$@"

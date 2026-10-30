@@ -335,6 +335,7 @@ impl HeldWriter {
                 frame_rate: 72,
                 sidecar: std::io::BufWriter::new(File::create(path.join("frames.jsonl")).unwrap()),
                 folder: path,
+                host_folder: None,
                 stream: Some(stream),
                 next_address: 0,
                 header_written: false,
@@ -485,4 +486,34 @@ impl Drop for TempFolder {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
+}
+
+#[test]
+fn the_header_without_a_host_folder_is_plain_y4m() {
+    assert_eq!(
+        stream_header(2, 2, 72, None),
+        "YUV4MPEG2 W2 H2 F72:1 Ip A1:1 C420jpeg XYSCSS=420JPEG XCOLORRANGE=LIMITED\n"
+    );
+}
+
+#[test]
+fn the_host_folder_rides_as_one_encoded_token_at_the_end() {
+    let header = stream_header(
+        2,
+        2,
+        72,
+        Some("/home/user/jc3vr sessions/2026-01-02_03-04-05_006/recordings/s"),
+    );
+    assert_eq!(
+        header,
+        "YUV4MPEG2 W2 H2 F72:1 Ip A1:1 C420jpeg XYSCSS=420JPEG XCOLORRANGE=LIMITED \
+         XJC3VR_DIR=/home/user/jc3vr%20sessions/2026-01-02_03-04-05_006/recordings/s\n"
+    );
+}
+
+#[test]
+fn percent_encoding_keeps_unreserved_bytes_and_escapes_the_rest() {
+    assert_eq!(percent_encode(b"/a-b.c_d~e/F9"), "/a-b.c_d~e/F9");
+    assert_eq!(percent_encode(b"a b%c\n"), "a%20b%25c%0A");
+    assert_eq!(percent_encode("caf\u{e9}".as_bytes()), "caf%C3%A9");
 }

@@ -2,7 +2,7 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Analyze a jc3vr profiler capture (`sessions/<session>/profiles/<stamp>.json`, issue #34).
+"""Analyze a jc3vr profiler capture (`<sessions root>/<session>/profiles/<stamp>.json`, issue #34).
 
 Reads the Chrome trace-event JSON the in-game profiler dumps (F9 / the Performance tab) and
 reports where the frame budget goes:

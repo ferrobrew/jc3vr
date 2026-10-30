@@ -447,6 +447,7 @@ fn fixture() -> Snapshot {
             ..Default::default()
         },
         sections: Vec::new(),
+        session: None,
     }
 }
 

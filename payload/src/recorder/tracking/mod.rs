@@ -54,7 +54,7 @@ use crate::{
         lookback::{Entry, Lookback, LookbackStatus},
         writer::{CaptureBatch, SendOutcome, Writer},
     },
-    session::{CaptureFile, SessionError},
+    session::{RecordingFile, SessionError},
     vr::{
         input::semantic::{
             frame as semantic_frame,
@@ -606,7 +606,7 @@ fn begin(stamp: String) -> Result<PathBuf, StartError> {
     let transform = crate::director::teleport::player_transform().ok_or(StartError::NoPlayer)?;
     let hand_joints = Config::lock_query(|c| c.testing.record_hand_joints);
     let header = header_at(transform, stamp.clone());
-    let path = crate::session::capture_file(CaptureFile::Recording, &stamp, None)
+    let path = crate::session::recording_file(RecordingFile::Tracking, &stamp)
         .map_err(StartError::Session)?;
     let mut state = STATE.lock();
     state.can_start()?;
@@ -724,7 +724,7 @@ fn save_lookback() -> Result<PathBuf, StartError> {
         .ok_or(StartError::NoPlayer)?;
     let stamp = crate::session::stamp();
     let header = header_at(transform, stamp.clone());
-    let path = crate::session::capture_file(CaptureFile::Recording, &stamp, Some("lookback"))
+    let path = crate::session::recording_file(RecordingFile::Lookback, &stamp)
         .map_err(StartError::Session)?;
     // The evicted batches took their input history with them: say so before the first record.
     let lead = snapshot

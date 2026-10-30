@@ -10,9 +10,10 @@
 //! texture written two frames earlier with a no-wait map, so the GPU is never stalled for a
 //! readback. The mapped bytes are memcpy'd into a buffer and handed to the writer thread.
 //!
-//! The writer thread ([`stream`]) owns a TCP connection to a host-side listener (an `ffmpeg`
-//! reading `yuv4mpegpipe`, see `scripts/capture_host.sh`), writes the y4m stream header once and a
-//! frame per buffer, and appends one JSON line per frame to a sidecar in the session folder with
+//! The writer thread ([`stream`]) owns a TCP connection to a host-side listener (the capture relay
+//! started by `scripts/capture_host.sh`, which feeds an `ffmpeg` reading `yuv4mpegpipe`), writes the
+//! y4m stream header once and a frame per buffer, and appends one JSON line per frame to a sidecar
+//! in the recording's folder with
 //! the wall clock, the engine's game time, and the located HMD views for that frame. Take markers
 //! made during the recording ([`mark`]) go into the same sidecar at the frame they fall on.
 //!
@@ -98,7 +99,7 @@ pub struct Status {
     pub connected: bool,
     /// The last writer error, if the recording stopped on one.
     pub error: Option<String>,
-    /// The session-relative sidecar folder of the current or last recording.
+    /// The session-relative folder of the current or last recording.
     pub folder: Option<String>,
 }
 
@@ -107,8 +108,8 @@ pub fn start() {
     start_stamped(&crate::session::stamp());
 }
 
-/// Start a recording whose sidecar folder is stamped `stamp`, so a session recording can give its
-/// tracking recording the same stamp. Any thread. A no-op while one runs.
+/// Start a recording whose folder is stamped `stamp`, so a session recording's tracking half lands
+/// in the same folder. Any thread. A no-op while one runs.
 pub fn start_stamped(stamp: &str) {
     let cfg = crate::config::Config::lock_query(|c| c.recorder.clone());
     let mut state = STATE.lock();
@@ -119,7 +120,10 @@ pub fn start_stamped(stamp: &str) {
     if crate::is_shutting_down() {
         return;
     }
-    let folder = CaptureFolder::Video.relative(stamp).display().to_string();
+    let folder = CaptureFolder::Recording
+        .relative(stamp)
+        .display()
+        .to_string();
     let (completions, result) = state
         .writers
         .start(folder.clone(), || stream::Writer::spawn(&cfg, stamp));

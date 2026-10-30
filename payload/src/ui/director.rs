@@ -98,7 +98,7 @@ pub(crate) fn video_status(ui: &mut egui::Ui) {
         ));
     }
     if let Some(folder) = &status.folder {
-        ui.label(format!("Sidecar in the session folder under {folder}"));
+        ui.label(format!("Recording folder in the session folder: {folder}"));
     }
     if let Some(error) = &status.error {
         ui.colored_label(egui::Color32::LIGHT_RED, format!("Last error: {error}"));
@@ -454,8 +454,8 @@ fn session_ui(ui: &mut egui::Ui) {
         );
     }
     ui.label(
-        "Starts the video recorder and a tracking recording together under one stamp: \
-         videos/<stamp>/ and recordings/<stamp>.jc3trk in the session folder.",
+        "Starts the video recorder and a tracking recording together, both into \
+         recordings/<stamp>/ in the session folder.",
     );
 }
 
@@ -510,8 +510,8 @@ fn recording_ui(ui: &mut egui::Ui) {
         });
     }
     ui.label(
-        "Run scripts/capture_host.sh on the host to listen; the stream is yuv4mpegpipe over TCP \
-         and the per-frame pose sidecar goes to the session folder.",
+        "Run scripts/capture_host.sh on the host to listen; the stream is yuv4mpegpipe over TCP, \
+         and the host writes the video into the recording's folder beside the pose sidecar.",
     );
 }
 

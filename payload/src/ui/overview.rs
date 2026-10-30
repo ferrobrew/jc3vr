@@ -16,6 +16,7 @@ use crate::{
     controllers::{frame, overlay},
     egui_impl, frame_timing, recorder,
     recorder::tracking::TrackingStatus,
+    session,
     status::{self, Health},
     ui::{
         capture::{OwnershipBlocker, OwnershipSnapshot, PanelMode},
@@ -42,6 +43,7 @@ struct Snapshot {
     timing: Option<frame_timing::Report>,
     overlay: overlay::OverlayStatus,
     sections: Vec<StatusSection>,
+    session: Option<session::Location>,
 }
 
 impl Snapshot {
@@ -65,6 +67,7 @@ impl Snapshot {
             timing: frame_timing::latest(),
             overlay: overlay::status(),
             sections: status::read_all().collect(),
+            session: session::location(),
         }
     }
 
@@ -490,6 +493,8 @@ fn render_snapshot(ui: &mut Ui, selection: &mut NavigationState, snapshot: &Snap
          drawing.",
     );
     ui.separator();
+    session_location(ui, snapshot.session);
+    ui.separator();
     ui.horizontal_wrapped(|ui| {
         for (label, feature) in [
             ("Open performance", FeatureId::Previews),
@@ -506,6 +511,28 @@ fn render_snapshot(ui: &mut Ui, selection: &mut NavigationState, snapshot: &Snap
             tracing::info!("status: {}", status::summary());
         }
     });
+}
+
+/// Where this session's files go, in both namespaces under wine, so they can be found on the host.
+fn session_location(ui: &mut Ui, location: Option<session::Location>) {
+    let Some(location) = location else {
+        ui.colored_label(
+            ui.visuals().error_fg_color,
+            "Session folder: unavailable; nothing is saved (see the log).",
+        );
+        return;
+    };
+    let source = match location.source {
+        session::Source::Environment => session::ENV_VAR,
+        session::Source::LocalData => "the local data directory",
+    };
+    ui.label(format!(
+        "Session folder (from {source}): {}",
+        location.windows.display()
+    ));
+    if let Some(unix) = location.unix {
+        ui.label(format!("On the host: {unix}"));
+    }
 }
 
 fn render_rows<'a>(ui: &mut Ui, rows: impl IntoIterator<Item = &'a Row>, empty: &str) {
