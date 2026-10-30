@@ -258,7 +258,11 @@ const QUEUE_DEPTH: usize = 6;
 const CONNECT_RETRY: Duration = Duration::from_millis(500);
 
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
-const WRITE_TIMEOUT: Duration = Duration::from_millis(250);
+/// How long the writer waits before retrying a write the socket's buffer could not take. The socket
+/// is non-blocking, so a host that stops reading for a moment (the relay starting its encoder)
+/// costs retries within [`FRAME_WRITE_BUDGET`] rather than a timed-out send, which Winsock leaves
+/// in an indeterminate state.
+const WOULD_BLOCK_RETRY: Duration = Duration::from_millis(1);
 const FRAME_WRITE_BUDGET: Duration = Duration::from_secs(5);
 const FINISH_GRACE: Duration = Duration::from_secs(5);
 
@@ -438,7 +442,7 @@ impl WriterThread {
                 },
             );
             if let Some(stream) = stream {
-                stream.set_write_timeout(Some(WRITE_TIMEOUT))?;
+                stream.set_nonblocking(true)?;
                 let _ = stream.set_nodelay(true);
                 Ok(Some(stream))
             } else {
@@ -617,7 +621,7 @@ fn connect_resolved<T>(
     None
 }
 
-/// The socket has a per-call timeout; the deadline also bounds a peer making slow progress.
+/// The socket is non-blocking; the deadline bounds a peer that stops reading or makes slow progress.
 fn write_network(
     stream: &mut impl std::io::Write,
     mut bytes: &[u8],
@@ -635,6 +639,9 @@ fn write_network(
             Ok(0) => return Err(std::io::ErrorKind::WriteZero.into()),
             Ok(count) => bytes = &bytes[count..],
             Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(WOULD_BLOCK_RETRY);
+            }
             Err(error) => return Err(error),
         }
     }

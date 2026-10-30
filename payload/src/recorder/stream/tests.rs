@@ -232,6 +232,37 @@ fn network_write_preserves_partial_progress_and_reports_io_failure() {
 }
 
 #[test]
+fn network_write_retries_a_full_socket_buffer_until_the_deadline() {
+    let shared = new_shared();
+    let mut sink = WouldBlockSink {
+        refusals: 3,
+        bytes: Vec::new(),
+    };
+    write_network(
+        &mut sink,
+        &[1, 2],
+        &shared,
+        Instant::now() + FRAME_WRITE_BUDGET,
+    )
+    .unwrap();
+    assert_eq!(sink.bytes, [1, 2]);
+
+    let mut sink = WouldBlockSink {
+        refusals: usize::MAX,
+        bytes: Vec::new(),
+    };
+    let error = write_network(
+        &mut sink,
+        &[1],
+        &shared,
+        Instant::now() + Duration::from_millis(20),
+    )
+    .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+    assert!(sink.bytes.is_empty());
+}
+
+#[test]
 fn markers_land_before_the_first_fresh_frame_captured_after_them() {
     let HeldWriter {
         mut writer,
@@ -319,7 +350,7 @@ impl HeldWriter {
         let path = folder.0.clone();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
-        stream.set_write_timeout(Some(WRITE_TIMEOUT)).unwrap();
+        stream.set_nonblocking(true).unwrap();
         let (mut peer, _) = listener.accept().unwrap();
         peer.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
         let reader = std::thread::spawn(move || {
@@ -450,6 +481,26 @@ struct BrokenSink;
 impl Write for BrokenSink {
     fn write(&mut self, _: &[u8]) -> io::Result<usize> {
         Err(io::ErrorKind::BrokenPipe.into())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Refuses the first `refusals` writes as a full non-blocking socket does, then accepts.
+struct WouldBlockSink {
+    refusals: usize,
+    bytes: Vec<u8>,
+}
+
+impl Write for WouldBlockSink {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if self.refusals > 0 {
+            self.refusals -= 1;
+            return Err(io::ErrorKind::WouldBlock.into());
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(bytes.len())
     }
     fn flush(&mut self) -> io::Result<()> {
         Ok(())

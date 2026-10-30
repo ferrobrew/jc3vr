@@ -21,8 +21,8 @@
 # Environment overrides:
 #   JC3VR_CAPTURE_PORT    the listen port (default 47172, the payload's default).
 #   JC3VR_CAPTURE_ENCODER the ffmpeg video encoder (default: auto, see pick_encoder).
-#   JC3VR_CAPTURE_AUDIO   the PulseAudio/PipeWire source to record (default: the default sink's
-#                         monitor); set to "none" to record video only.
+#   JC3VR_CAPTURE_AUDIO   the PulseAudio/PipeWire source to record (default: `@DEFAULT_MONITOR@`,
+#                         the default sink's monitor); set to "none" to record video only.
 #   JC3VR_CAPTURE_QUALITY the encoder quality knob: a CQ/CRF-style value (default 18).
 #   JC3VR_SEGMENT_SECONDS the segment length (default 600).
 
@@ -74,17 +74,10 @@ case "$encoder" in
         ;;
 esac
 
-# The audio source: the default sink's monitor unless overridden. `pactl` speaks to PipeWire's
-# PulseAudio shim as well as to PulseAudio itself.
-audio_source="${JC3VR_CAPTURE_AUDIO:-}"
-if [ -z "$audio_source" ]; then
-    default_sink="$(pactl get-default-sink 2>/dev/null || true)"
-    if [ -n "$default_sink" ]; then
-        audio_source="${default_sink}.monitor"
-    else
-        audio_source=none
-    fi
-fi
+# The audio source: the default sink's monitor unless overridden. `@DEFAULT_MONITOR@` is resolved
+# by the server (PulseAudio, or PipeWire's PulseAudio shim), so no client tool such as `pactl` is
+# needed to look the sink up, and it follows the default sink as it is when the recording starts.
+audio_source="${JC3VR_CAPTURE_AUDIO:-@DEFAULT_MONITOR@}"
 audio_in=()
 audio_map=()
 audio_args=()
