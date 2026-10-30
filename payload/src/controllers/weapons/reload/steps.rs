@@ -100,7 +100,7 @@ impl State {
     ///
     /// # Safety
     ///
-    /// Main thread, outside the world update, with `weapons` read this tick.
+    /// Game thread, before the world update, with `weapons` read this tick.
     pub(super) unsafe fn read_tick(
         &mut self,
         weapons: [Option<&HeldWeapon>; 2],
@@ -625,7 +625,7 @@ impl State {
             && !world_magazine
         {
             match event {
-                // SAFETY (both): main thread, outside the world update; the weapon was read this
+                // SAFETY (both): game thread before the world update; the weapon was read this
                 // tick.
                 Some(InsertEvent::Taken) => unsafe {
                     engine::show_magazine_part(weapon.address, true)
@@ -642,7 +642,7 @@ impl State {
             }
             Some(InsertEvent::Seated) => {
                 let loaded = match target {
-                    // SAFETY (both): main thread, outside the world update; the weapon was read
+                    // SAFETY (both): game thread before the world update; the weapon was read
                     // this tick.
                     Some((weapon, gun)) if world_magazine => match adapter.seat(weapon.address) {
                         SeatOutcome::Loaded => {
@@ -805,7 +805,7 @@ impl State {
     /// Load `gun` of `weapon`: a whole magazine or one shell. Returns whether anything loaded.
     pub(super) fn load(&mut self, weapon: &WeaponTick, gun: &GunTick) -> bool {
         let record = self.records.get(weapon.key);
-        // SAFETY (each engine call): main thread, outside the world update; the weapon was read
+        // SAFETY (each engine call): game thread before the world update; the weapon was read
         // this tick.
         let loaded = match weapon.plan.load {
             LoadKind::Shell => unsafe { engine::load_one(weapon.address) },

@@ -105,7 +105,7 @@ pub(crate) unsafe fn register(explosive: *const Explosive, own: bool) {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn sightings(
     player: Vec3,
     config: &CatchTuning,

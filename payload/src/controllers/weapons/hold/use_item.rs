@@ -64,7 +64,7 @@ pub(crate) fn hook_library() -> HookLibrary {
 ///
 /// # Safety
 ///
-/// As [`WeaponBase::PickupItem`]: `weapon` live, on the main thread outside the world update.
+/// As [`WeaponBase::PickupItem`]: `weapon` live, on the game thread before the world update.
 pub(crate) unsafe fn own_pickup(weapon: &mut WeaponBase, activator: *mut GameObject) {
     OWN.with(|own| own.set(true));
     unsafe { weapon.PickupItem(activator) };
@@ -76,7 +76,7 @@ pub(crate) unsafe fn own_pickup(weapon: &mut WeaponBase, activator: *mut GameObj
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn input_tick(owner: &mut Character) {
     let queued = std::mem::take(&mut *QUEUED.lock());
     for strong in queued {
@@ -89,7 +89,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character) {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn stand_down() {
     let queued = std::mem::take(&mut *QUEUED.lock());
     for strong in queued {

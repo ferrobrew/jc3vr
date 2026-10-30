@@ -199,6 +199,8 @@ fn get_action_effector(
     effector
 }
 
+/// The map's input handler. It runs inside the engine's input update (`CUIManager::PreUpdate`): in
+/// play, in the input job (a CPU fragment worker), before the world update.
 #[detour(address = CommMapUI::OnManageInput_ADDRESS)]
 fn on_manage_input(this: *mut CommMapUI, steering: *mut Steering, dt: f32, check_for_freeze: bool) {
     // SAFETY: the engine passes its live map and steering for the duration of the call.

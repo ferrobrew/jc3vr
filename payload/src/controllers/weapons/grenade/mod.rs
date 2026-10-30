@@ -163,7 +163,7 @@ pub(super) struct BeginInputs<'a> {
 ///
 /// # Safety
 ///
-/// The game thread, outside the world update.
+/// The game thread, before the world update.
 pub(super) unsafe fn begin_tick(inputs: &BeginInputs, tuning: &GrenadeTuning) -> Vec<Candidate> {
     {
         let mut state = STATE.lock();
@@ -253,7 +253,7 @@ pub(super) fn input_tick(
             let result = frames
                 .ok_or(locker::Refusal::SourceChanged)
                 .and_then(|frames| {
-                    // SAFETY: the weapon input tick runs on the game thread outside the world update.
+                    // SAFETY: the game stage runs on the game thread before the world update.
                     unsafe {
                         locker::take(
                             hand,
@@ -275,7 +275,7 @@ pub(super) fn input_tick(
     if let Some(hand) = inputs.pouch_grab
         && !holds(hand)
     {
-        // SAFETY: the weapon input tick runs on the game thread outside the world update.
+        // SAFETY: the game stage runs on the game thread before the world update.
         if unsafe { safe::draw(hand, tuning) } {
             haptics::play(hand, Event::GrenadePrime);
         } else {
@@ -308,7 +308,7 @@ pub(super) fn input_tick(
                 && desired.target.action == Action::THROW_GRENADE)
         });
     }
-    // SAFETY: the input tick runs on the game thread outside the world update.
+    // SAFETY: the game stage runs on the game thread before the world update.
     let caught = unsafe { carry_caught(inputs, tuning) };
     let mut state = STATE.lock();
     state.status.fuse = caught.map(|(_, fuse)| fuse);
@@ -365,7 +365,7 @@ pub(crate) fn observe_hands(grips: [Option<Pose>; 2]) {
 ///
 /// # Safety
 ///
-/// The game thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn render_frame() {
     unsafe { safe::render_frame() };
 }
@@ -657,7 +657,7 @@ unsafe fn carry_caught(inputs: &TickInputs, tuning: &GrenadeTuning) -> Option<(H
             physical_hands::set_body_velocities(caught.body, caught.owner, velocity, Vec3::ZERO)
         };
     }
-    // SAFETY: body_pose proved the native grenade live outside the world update.
+    // SAFETY: body_pose proved the native grenade live on the game thread before the world update.
     let explosive = unsafe { &*(caught.explosive as *const Explosive) };
     Some((
         hand,

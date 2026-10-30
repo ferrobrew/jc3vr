@@ -14,7 +14,7 @@
 //! and one returned to the feet is taken into the carry set for a tick, placed on the body, and let
 //! fall from it at the next.
 //!
-//! Everything here runs on the input tick, on the main thread outside the world update.
+//! Everything here runs in the game stage, on the game thread before the world update.
 
 use std::time::Instant;
 
@@ -100,7 +100,7 @@ pub(crate) struct LostTick {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn input_tick(owner: &mut Character, tick: LostTick) {
     let now = Instant::now();
     let (fast, falling) = {

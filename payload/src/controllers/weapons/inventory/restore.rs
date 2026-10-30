@@ -297,7 +297,7 @@ pub(crate) unsafe fn on_load(save_data: *const PlayerSaveData, settings: &Invent
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn input_tick(owner: &mut Character, settings: &InventoryConfig, ready: bool) {
     if !ready {
         return;
@@ -319,7 +319,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, settings: &InventoryConfi
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn request_twin(owner: &Character, tag_hash: u32) -> bool {
     let Some(system) = (unsafe { SpawnSystem::get() }) else {
         return false;

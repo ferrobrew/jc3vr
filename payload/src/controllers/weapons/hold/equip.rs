@@ -11,7 +11,7 @@
 //!   removal its unequip can perform inside `OnDrop`. The immediate drop fulfils any deferred
 //!   drop queued by that recursive unequip.
 //!
-//! Everything here runs on the input tick, on the main thread outside the world update, with the
+//! Everything here runs in the game stage, on the game thread before the world update, with the
 //! local player's character.
 
 use std::{fmt, num::NonZeroUsize, ptr::NonNull};
@@ -85,7 +85,7 @@ impl std::error::Error for DockRefusal {}
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn holster(owner: &Character, weapon: usize) -> Result<(), DockRefusal> {
     let mut handle = unsafe { wielded_mut(owner) }.ok_or(DockRefusal::NothingHeld)?;
     // SAFETY: the input phase retains the slot's source and serializes native mutation.
@@ -166,7 +166,7 @@ pub(crate) unsafe fn drop_held(
 /// # Safety
 ///
 /// `weapon` must be live, and `diagnostic` must contain its first gun's motion and body as read
-/// before the drop, on the main thread outside the world update.
+/// before the drop, on the game thread before the world update.
 unsafe fn throw(
     weapon: &mut WeaponBase,
     max_speed_mps: f32,
@@ -184,7 +184,7 @@ unsafe fn throw(
     let angular = requested.angular;
     match (body, NonZeroUsize::new(address)) {
         (Some(body), Some(owner_object)) => {
-            // SAFETY: the input tick runs outside the physics step.
+            // SAFETY: the game stage runs on the game thread before the world update.
             let result = unsafe {
                 physical_hands::set_body_velocities(body, owner_object, linear, angular)
             }
@@ -224,7 +224,7 @@ unsafe fn throw(
 ///
 /// # Safety
 ///
-/// `weapon` must be live, on the main thread outside the world update.
+/// `weapon` must be live, on the game thread before the world update.
 pub(crate) unsafe fn drop_loose(weapon: &mut WeaponBase, max_speed_mps: f32) -> Thrown {
     unsafe { release_loose(weapon, max_speed_mps, ReleaseMotion::REST) }
 }
@@ -277,7 +277,7 @@ pub(crate) unsafe fn drop_occupant(owner: &mut Character, slot: WeaponSlot) -> b
 ///
 /// # Safety
 ///
-/// `owner` and `weapon` must be live, on the main thread outside the world update.
+/// `owner` and `weapon` must be live, on the game thread before the world update.
 pub(crate) unsafe fn pose_on_bone(
     owner: &Character,
     weapon: &WeaponBase,

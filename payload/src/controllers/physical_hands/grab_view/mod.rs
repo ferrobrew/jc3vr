@@ -10,10 +10,10 @@
 //!
 //! The palms' simulation tick records what its reach cast ([`record`]) and reads the candidates
 //! from the world a few times a second ([`scan_candidates`]); a grab that a subsystem refuses is
-//! noted as it is refused ([`refused`]). The input tick draws it all with the grip model's
-//! resolution of the same tick ([`submit`]). Everything here runs on the main thread; the view's
-//! state is a leaf lock, with the overlay store's and the readout's leaf locks briefly under it,
-//! and the readout may be read from any thread.
+//! noted as it is refused ([`refused`]). The game stage draws it all with the grip model's
+//! resolution of the same tick ([`submit`]). Everything here runs in the game stage, on the game
+//! thread; the view's state is a leaf lock, with the overlay store's and the readout's leaf locks
+//! briefly under it, and the readout may be read from any thread.
 
 pub mod candidates;
 pub mod config;
@@ -110,7 +110,7 @@ pub(crate) fn record(recorded: Recorded) {
 ///
 /// # Safety
 ///
-/// The main thread, outside the physics step.
+/// The game thread, before the world update.
 pub(crate) unsafe fn scan_candidates(
     hands: [Option<Vec3>; 2],
     standing_on: Option<u32>,
@@ -161,7 +161,7 @@ pub(crate) unsafe fn scan_candidates(
 }
 
 /// Note that a grab by `hand` was refused, `why`, flashing at `at` (game space) or, without it, at
-/// the target the hand's grip chose on the last input tick. Called on the main thread where the
+/// the target the hand's grip chose on the last input tick. Called on the game thread where the
 /// refusal is made, outside the view's own lock.
 pub(crate) fn refused(hand: Hand, at: Option<Vec3>, why: &str) {
     {

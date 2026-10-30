@@ -90,7 +90,7 @@ impl std::error::Error for RackRefusal {}
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn targets(
     owner: &Character,
     to_cockpit: impl Fn(Vec3) -> Vec3,
@@ -128,7 +128,7 @@ pub(crate) unsafe fn targets(
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn take(
     hand: Hand,
     target: &WorldTarget,
@@ -313,7 +313,7 @@ struct Copy {
 impl Copy {
     /// Fade the rack's weapon back in, when it is still on its rack.
     fn restore(self) {
-        // SAFETY: the strong reference keeps the weapon alive; called on the main thread outside
+        // SAFETY: the strong reference keeps the weapon alive; called on the game thread before
         // the world update.
         let weapon = unsafe { &mut *inventory_engine::weapon_of(&self.display) };
         if weapon.m_State == WeaponState::E_WS_WEAPON_RACK {

@@ -30,11 +30,13 @@ pub(crate) enum Slot {
     /// The second AI thread's body (`RunAIThread2_Proxy`), on the fragment worker that runs it. It
     /// is kicked at the end of a tick and runs alongside the render update.
     AiThread2,
-    /// The mod's work after the engine's input-device poll, excluding the bindings and the
-    /// physical hands: the gamepad-setting hold and the headpose look handling.
+    /// The mod's work after the engine's input-device poll, the input tick's poll stage: landing
+    /// the bindings' writes and the headpose look handling. In play it runs in the engine's input
+    /// job; an inline game stage nests its [`Self::Bindings`] time inside it.
     InputTick,
-    /// The controller bindings' input tick (`controllers::bindings::input_tick`), which drives the
-    /// controller subsystems.
+    /// The input tick's game stage (`controllers::bindings::stage::game_stage`): the bindings,
+    /// the controller subsystems they drive, and the gamepad-setting hold. In play it runs at the
+    /// top of the world's pre-simulation queue, inside [`Self::SimWorldPreSim`].
     Bindings,
     /// The physical hands' input tick and post-aim update (`controllers::physical_hands`): the palm
     /// probes, pushes, and pickups.

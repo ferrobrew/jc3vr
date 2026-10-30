@@ -348,7 +348,7 @@ mod tests {
             .split_once("if set_pending {")
             .unwrap()
             .1
-            .split_once("let paused =")
+            .split_once("writes: state.tracker.pause(),")
             .unwrap()
             .0;
         assert!(pending_branch.contains("clear_controller();"));

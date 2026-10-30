@@ -53,9 +53,10 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&GET_MOVIE_SPACE_MOUSE_CURSOR_BINDER)
 }
 
-/// The frame's UI input boundary. The route and the native map's controller sample are prepared
-/// before the original dispatches input, and discarded after it returns, so a frame on which the
-/// engine skips the dispatch (no input-priority UI) consumes no transition.
+/// The frame's UI input boundary, run inside the engine's input update: in the input job in play (a
+/// CPU fragment worker), not the window or game thread. The route and the native map's controller
+/// sample are prepared before the original dispatches input, and discarded after it returns, so a
+/// frame on which the engine skips the dispatch (no input-priority UI) consumes no transition.
 #[detour(address = UIManager::PreUpdate_ADDRESS)]
 fn pre_update(this: *mut UIManager, dt: f32) {
     let pending = mouse_route_active().then(|| {
@@ -90,7 +91,8 @@ fn pre_update(this: *mut UIManager, dt: f32) {
 /// render side (see [`crate::hud::cursor`]).
 ///
 /// Like the original, it runs both from `WndProc` (via `SetMousePos`) and once per frame from
-/// `CUIManager::PreUpdate`, so the state stays fresh even while the physical mouse is still.
+/// `CUIManager::PreUpdate` (in the input job in play), so the state stays fresh even while the
+/// physical mouse is still.
 #[detour(address = UIManager::SendMouseEvents_ADDRESS)]
 fn send_mouse_events(this: *mut UIManager, steering: *mut c_void) -> bool {
     let original = SEND_MOUSE_EVENTS.get().unwrap();

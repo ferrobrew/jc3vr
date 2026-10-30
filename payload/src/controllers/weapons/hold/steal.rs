@@ -234,7 +234,7 @@ pub(crate) fn holstered_targets() -> Vec<HolsteredTarget> {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn take(
     hand: Hand,
     target: &WorldTarget,
@@ -268,7 +268,7 @@ pub(crate) struct Freed {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn release(hand: Hand, target: &WorldTarget) -> Result<Freed, StealRefusal> {
     let TargetKind::Held { character } = target.kind else {
         return Err(StealRefusal::Gone);
@@ -317,7 +317,7 @@ pub(crate) unsafe fn release(hand: Hand, target: &WorldTarget) -> Result<Freed, 
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn release_holstered(
     hand: Hand,
     target: &HolsteredTarget,

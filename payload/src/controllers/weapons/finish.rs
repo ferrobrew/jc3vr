@@ -240,7 +240,7 @@ pub(crate) fn finish_tick(
                     free: [true; 2],
                     gameplay,
                 };
-                // SAFETY: the input tick runs on the main thread outside the world update.
+                // SAFETY: the game stage runs on the game thread before the world update.
                 let taken = unsafe { hold::take::finish_grab(hand, &inputs) };
                 GrabOutcome::Take { taken }
             }
@@ -380,7 +380,7 @@ pub(crate) fn finish_tick(
             release(hand, gun, active.as_ref(), world_scale, &config);
         }
     }
-    // SAFETY: actions have completed on the input thread, outside the world update.
+    // SAFETY: the game stage runs on the game thread before the world update.
     let current = unsafe { engine::local_player().and_then(|owner| engine::held_weapon(owner)) }
         .map(|weapon| with_holder(weapon, hold::owned_holder(weapon.address)));
     let gun_hands = current.map_or([false; 2], |weapon| {
@@ -659,7 +659,7 @@ fn grab_socket(hand: Hand, socket: Socket, config: &ControllersConfig) -> Option
         both_hands: settings.either_hand,
     };
     let outcome = match grab::grab(&snapshot, hand, socket, rules) {
-        // SAFETY: the input tick runs on the main thread outside the world update.
+        // SAFETY: the game stage runs on the game thread before the world update.
         Ok(SocketMove::Draw { .. }) => {
             match unsafe { hold::act::draw(hand, socket, hold::SNAP_S) } {
                 Ok(()) => SocketOutcome::Drew,
@@ -699,7 +699,7 @@ fn release(
     let Some(object) = live::in_hand(hand) else {
         return;
     };
-    // SAFETY: the input tick runs on the main thread outside the world update, and a slot or the
+    // SAFETY: the game stage runs on the game thread before the world update, and a slot or the
     // carry set keeps the table's weapon in the hand alive.
     let dockable = unsafe { hold::act::dockable(object) };
     let over = docked_at(
@@ -710,7 +710,7 @@ fn release(
         GrabVolume::Socket(socket) => Some(socket),
         _ => None,
     });
-    // SAFETY: the input tick runs on the main thread outside the world update.
+    // SAFETY: the game stage runs on the game thread before the world update.
     match grab::release(&snapshot, hand, over, unsafe { droppable(object) }) {
         Release::Dock(socket) => {
             // SAFETY: as above.
@@ -744,7 +744,7 @@ fn release(
 ///
 /// # Safety
 ///
-/// `object` must be a weapon a slot or the carry set keeps alive, on the main thread outside the
+/// `object` must be a weapon a slot or the carry set keeps alive, on the game thread before the
 /// world update.
 unsafe fn droppable(object: usize) -> bool {
     // SAFETY: forwarded from the caller.

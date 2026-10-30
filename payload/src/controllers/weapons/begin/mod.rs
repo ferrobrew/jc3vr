@@ -61,7 +61,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let gameplay = gameplay(mode);
     let capabilities = Capabilities::of(mode);
     let holding = config.weapons.hold;
-    // SAFETY: the input tick runs on the main thread outside the world update.
+    // SAFETY: the game stage runs on the game thread before the world update.
     let ticked = unsafe {
         engine::local_player().map_or(Ticked::default(), |owner| {
             armed::show_magazines(Some(owner), capabilities.reload);
@@ -133,7 +133,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     };
     let (weapon, beside) = (ticked.weapon, ticked.beside);
     scope::input_tick(ticked.guns.map(|g| g.map(|w| w.address)));
-    // SAFETY: the weapon was read this tick, on the main thread outside the world update.
+    // SAFETY: the weapon was read this tick, on the game thread before the world update.
     if let Some(w) = weapon
         && let Some(base) = unsafe { (w.address as *const WeaponBase).as_ref() }
     {
@@ -184,7 +184,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         .and_then(|hand| geometries[hand.index()]);
     let regions_config = config.weapons.regions;
     let long = braced.filter(|_| regions_config.enabled);
-    // SAFETY: the weapon was read this tick, on the main thread outside the world update.
+    // SAFETY: the weapon was read this tick, on the game thread before the world update.
     let shape = long.and_then(|w| unsafe {
         region_engine::shape(
             (w.address as *const WeaponBase).as_ref()?,
@@ -302,7 +302,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     }
     if config.weapons.grenade_throw {
         let charge = c4::throwing_hand();
-        // SAFETY: the input tick runs on the main thread outside the world update.
+        // SAFETY: the game stage runs on the game thread before the world update.
         let grenades = unsafe {
             grenade::begin_tick(
                 &grenade::BeginInputs {
@@ -316,7 +316,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         };
         targets.extend(grenades.iter().map(|c| place.world(c)));
     }
-    // SAFETY: the input tick runs on the main thread outside the world update.
+    // SAFETY: the game stage runs on the game thread before the world update.
     let taken = unsafe {
         hold::take::begin_tick(&hold::take::TakeInputs {
             active: &active,
@@ -360,7 +360,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             }
             shown
         });
-    // SAFETY: the input tick runs on the main thread outside the world update.
+    // SAFETY: the game stage runs on the game thread before the world update.
     unsafe { pouch_models::input_tick(&config.weapons.pouches.models, frames, &shown) };
     if let Some((gun_hand, mouth, radius)) =
         reload::well(&reload::tuning::Reload::of(&config.weapons.reload))
@@ -480,7 +480,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         && let Some(holder) = hold::owned_holder(w.address)
         && let Some(current) = weighted_hands(&active)[holder.index()]
     {
-        // SAFETY: The owned held weapon is read on the main thread outside the world update.
+        // SAFETY: The owned held weapon is read on the game thread before the world update.
         let grip = unsafe {
             hold::take::measured_handle_point(w.address, holder, &current, active.world_scale)
         }

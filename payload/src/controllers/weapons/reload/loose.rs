@@ -230,7 +230,7 @@ impl EjectRounds {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(super) unsafe fn maintain(config: &LooseTuning) {
     let mut state = STATE.lock();
     state.maintain(Instant::now(), config.keep_s, |m| {
@@ -243,7 +243,7 @@ pub(super) unsafe fn maintain(config: &LooseTuning) {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(super) unsafe fn sightings(
     player: Vec3,
     tag: i32,
@@ -323,7 +323,7 @@ pub(super) fn held() -> Option<Loose> {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(super) unsafe fn carry(top: Vec3, axis: Vec3, dt: f32, config: &LooseTuning) -> Operation<()> {
     STATE.lock().carry_with(
         Carry {
@@ -347,7 +347,7 @@ pub(super) fn let_go() {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(super) unsafe fn seat() -> Operation<i32> {
     let result = STATE.lock().seat_with(&mut NativeBodies);
     match result {

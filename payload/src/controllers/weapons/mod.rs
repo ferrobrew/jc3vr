@@ -33,8 +33,9 @@
 //!   hand;
 //! - [`config`]: the weapon-handling settings.
 //!
-//! The weapon handling runs on the input tick, in two halves around the bindings' tables
-//! ([`crate::controllers::bindings::input_tick`]):
+//! The weapon handling runs in the input tick's game stage
+//! ([`crate::controllers::bindings::stage`]), in two halves around the bindings' tables
+//! ([`crate::controllers::bindings::game_tick`]):
 //!
 //! 1. [`begin_tick`] reads the wielded weapon and provides the weapon handling's grip targets
 //!    ([`crate::controllers::grab`]): the sockets and pouches on the body, reached by the player's

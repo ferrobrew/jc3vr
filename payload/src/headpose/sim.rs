@@ -22,12 +22,12 @@
 //!
 //! Input arrives on the engine's fixed-rate sim tick (the device poll in
 //! `InputDeviceManager::Update`), not per rendered frame. The whole sim step ([`on_input_tick`])
-//! runs inside that hook, on the engine's own tick timeline: the published pose pair
-//! ([`crate::headpose::snapshot_prev`]) rotates at the exact moment the engine resets its sub-frame
-//! interpolation fraction, so the camera hook's previous/current pair is phase-aligned with the
-//! `dtf` lerp that smooths it across the frames between ticks. (Deferring the step to the next
-//! frame's update left the render lerping a stale pair at `dtf ≈ 0` on every tick frame — a
-//! per-tick jerk.)
+//! runs inside that hook, in the engine's input job in play, on the engine's own tick timeline: the
+//! published pose pair ([`crate::headpose::snapshot_prev`]) rotates at the exact moment the engine
+//! resets its sub-frame interpolation fraction, so the camera hook's previous/current pair is
+//! phase-aligned with the `dtf` lerp that smooths it across the frames between ticks. (Deferring
+//! the step to the next frame's update left the render lerping a stale pair at `dtf ≈ 0` on every
+//! tick frame — a per-tick jerk.)
 
 use std::sync::atomic::Ordering;
 
@@ -57,8 +57,9 @@ pub enum HeadMode {
     Other,
 }
 
-/// Handle one engine input tick, called from the `InputDeviceManager::Update` hook (on the game
-/// thread, inside the engine's fixed-rate sim tick): detect the mode, rotate the published pose
+/// Handle one engine input tick, called from the `InputDeviceManager::Update` hook (in the poll
+/// stage, [`crate::controllers::bindings::stage`]: the engine's input job in play, inside the
+/// engine's fixed-rate sim tick): detect the mode, rotate the published pose
 /// pair, integrate the look deltas, update the latch, and publish the headpose.
 pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     let config = Config::lock_query(|c| c.headpose);

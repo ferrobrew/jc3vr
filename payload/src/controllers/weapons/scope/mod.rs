@@ -129,10 +129,10 @@ pub fn status() -> ScopeStatus {
     STATUS.lock().clone()
 }
 
-/// Identify the gun in each hand, by [`Hand::index`], as scoped or not. Called on the input tick,
-/// on the main thread outside the world update, while the bindings inject.
+/// Identify the gun in each hand, by [`Hand::index`], as scoped or not. Called in the game stage,
+/// on the game thread before the world update, while the bindings inject.
 pub(crate) fn input_tick(guns: [Option<usize>; 2]) {
-    // SAFETY: each address is a local player's weapon in a hand, read on the main thread outside
+    // SAFETY: each address is a local player's weapon in a hand, read on the game thread before
     // the world update; the class is read as its raw value.
     let scoped = guns.map(|gun| {
         gun.filter(|&address| {

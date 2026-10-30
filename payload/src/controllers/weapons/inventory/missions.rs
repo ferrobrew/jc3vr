@@ -55,7 +55,7 @@ pub(super) fn hook_library() -> HookLibrary {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(super) unsafe fn input_tick() {
     match TOOK_PISTOL.swap(TOOK_NOTHING, Ordering::Relaxed) {
         TOOK_PAIR => single::cover_mission(false),
@@ -129,7 +129,7 @@ fn cache_all_weapon_slots(cache: *mut NodeWeaponCache, inventory: *mut Inventory
         .map(|slot| slot.px as usize)
         .filter(|&object| object != 0);
     if ours && let Some(store) = live::mission_caching() {
-        // SAFETY: the graph script runs on the game thread, outside the world update.
+        // SAFETY: the graph script runs on the game thread before the world update.
         unsafe { reconcile::store(&store) };
     }
     CACHE_ALL_WEAPON_SLOTS
@@ -165,7 +165,7 @@ fn restore_weapons(cache: *mut NodeWeaponCache, inventory: *mut Inventory) {
 #[detour(address = jc3gi::mission::MissionManager::CacheWeapons_ADDRESS)]
 fn cache_weapons(manager: *mut MissionManager) {
     if let Some(store) = live::checkpoint_caching() {
-        // SAFETY: the mission manager runs on the game thread, outside the world update.
+        // SAFETY: the mission manager runs on the game thread before the world update.
         unsafe { reconcile::store(&store) };
         restore::checkpoint_cached(carry::records(), single::slot_single());
         tracing::info!(target: "controllers", "inventory: a mission checkpoint snapshots the player's weapons");

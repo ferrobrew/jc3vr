@@ -16,7 +16,7 @@
 //! interpolation fraction, so it rides the body as the body is drawn rather than a tick behind
 //! it ([render-time-anchoring.md](../../../../docs/mod/rendering/render-time-anchoring.md)).
 //!
-//! The instances are created, shown, hidden, and released on the game thread, outside the world
+//! The instances are created, shown, hidden, and released on the game thread before the world
 //! update, as the engine requires. A model whose pouch is not offered is hidden; every instance is
 //! released outside gameplay, when its source model changes (another gun's magazine), and when the
 //! payload unloads.
@@ -190,7 +190,7 @@ pub(crate) fn render_character(character: [Mat4; 2], dtf: f32) -> Option<Mat4> {
 ///
 /// # Safety
 ///
-/// The game thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn input_tick(
     config: &PouchModelsConfig,
     frames: Option<Frames>,
@@ -262,7 +262,7 @@ pub(crate) unsafe fn input_tick(
         };
         slot.weapon = wanted.and_then(|wanted| wanted.weapon);
         slot.bone_local = local.and_then(|local| {
-            // SAFETY: the input thread owns this live character observation.
+            // SAFETY: the game stage owns this live character observation.
             let bone = unsafe { grip::bone_model_pose(owner, prop.bone()) }?;
             let bone = Mat4::from_rotation_translation(bone.orientation, bone.position);
             let local = bone.inverse() * local;
@@ -285,7 +285,7 @@ pub(crate) unsafe fn input_tick(
 ///
 /// # Safety
 ///
-/// The game thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn render_frame(dtf: f32) {
     mirror::clear_pouch_render();
     let mut state = STATE.lock();
@@ -350,7 +350,7 @@ pub(crate) unsafe fn render_frame(dtf: f32) {
 ///
 /// # Safety
 ///
-/// The game thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn stand_down() {
     unsafe { STATE.lock().release_all() };
 }
@@ -399,7 +399,7 @@ impl Slot {
     ///
     /// # Safety
     ///
-    /// The game thread, outside the world update; `model` is a live shared model.
+    /// The game thread, before the world update; `model` is a live shared model.
     unsafe fn show(
         &mut self,
         model: *const SharedPtr<Model>,
@@ -453,7 +453,7 @@ impl Slot {
     ///
     /// # Safety
     ///
-    /// The game thread, outside the world update.
+    /// The game thread, before the world update.
     unsafe fn hide(&mut self) {
         if let (Some(instance), true) = (self.instance, self.visible)
             && let Some(manager) = unsafe { ModelInstanceManager::get() }
@@ -469,7 +469,7 @@ impl Slot {
     ///
     /// # Safety
     ///
-    /// The game thread, outside the world update.
+    /// The game thread, before the world update.
     unsafe fn release(&mut self) {
         if let Some(instance) = self.instance.take()
             && let Some(manager) = unsafe { ModelInstanceManager::get() }
@@ -493,7 +493,7 @@ struct State {
 impl State {
     /// # Safety
     ///
-    /// The game thread, outside the world update.
+    /// The game thread, before the world update.
     unsafe fn release_all(&mut self) {
         for slot in &mut self.slots {
             unsafe { slot.release() };
@@ -547,7 +547,7 @@ fn ensure_cleanup() {
 /// # Safety
 ///
 /// `owner` must be the live local player character, and `weapon` null or a live weapon of its, on
-/// the game thread outside the world update.
+/// the game thread before the world update.
 unsafe fn source_model(
     owner: &Character,
     prop: Prop,

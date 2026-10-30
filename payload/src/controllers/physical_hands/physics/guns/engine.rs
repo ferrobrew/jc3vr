@@ -34,7 +34,7 @@ use crate::controllers::{
 ///
 /// # Safety
 ///
-/// The weapon handling's input tick, on the main thread outside the world update, with `weapons`
+/// The weapon handling's input tick, on the game thread before the world update, with `weapons`
 /// the weapons read live on it.
 pub(crate) unsafe fn read_holds(weapons: [Option<(usize, HeftClass)>; 2]) -> GunHolds {
     let grips = grip::status().hands;

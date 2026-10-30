@@ -44,12 +44,12 @@ pub(crate) fn stand_down() {
     grip_watch::clear();
     recoil::clear();
     grenade::stand_down();
-    // SAFETY: the weapon handling stands down on the input tick, on the game thread outside the
+    // SAFETY: the weapon handling stands down in the game stage, on the game thread before the
     // world update.
     unsafe { pouch_models::stand_down() };
     c4::stand_down();
     c4::wrist::stand_down();
-    // SAFETY: the input tick runs on the main thread outside the world update.
+    // SAFETY: the game stage runs on the game thread before the world update.
     unsafe { dual_wield::single::stand_down() };
     hold::clear();
     hold::act::clear();
@@ -57,7 +57,7 @@ pub(crate) fn stand_down() {
     hold::take::stand_down();
     hold::pips::submit([None; 2]);
     regions::stand_down();
-    // SAFETY: the input tick runs on the main thread outside the world update.
+    // SAFETY: the game stage runs on the game thread before the world update.
     unsafe { armed::stand_down() };
     reload::stand_down();
     wheel::stand_down();
@@ -145,7 +145,7 @@ impl State {
             return None;
         }
         let target = ik::tick_records().current[holder.index()];
-        // SAFETY: the weapon was read this tick on the main thread outside the world update.
+        // SAFETY: the weapon was read this tick on the game thread before the world update.
         let fresh = target.and_then(|target| unsafe {
             engine::measure_geometry(weapon, target, &config.aim, world_scale)
         });

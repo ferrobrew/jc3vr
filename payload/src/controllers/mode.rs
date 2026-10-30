@@ -1,8 +1,8 @@
 //! The per-tick mode detector: which of the game's control modes the player is in, and so which
 //! OpenXR action set and which bindings apply.
 //!
-//! It runs once per engine input tick, from the `InputDeviceManager::Update` detour
-//! ([`crate::hooks::input::look`]), in two halves:
+//! It runs once per engine input tick, in the input tick's game stage
+//! ([`crate::controllers::bindings::stage`]), in two halves:
 //!
 //! - [`read_snapshot`], the imperative shell: one read of the local character's state words, the
 //!   vehicle predicates only while a vehicle state is indicated, the grapple traversal bits, and the
@@ -389,11 +389,11 @@ pub fn traversal(character: &CharacterSnapshot) -> Option<Traversal> {
 }
 
 /// Run the detector for this input tick: read the engine, fold the snapshot in, select the action
-/// set, and publish the detection for [`current`]. Called from the input tick while the controllers
+/// set, and publish the detection for [`current`]. Called from the game stage while the controllers
 /// are enabled.
 pub(crate) fn tick() -> Detection {
-    // SAFETY: called on the main thread from the input tick, outside the world update that writes
-    // the state read here.
+    // SAFETY: the game stage runs on the game thread before the world update that writes the state
+    // read here.
     let snapshot = unsafe { read_snapshot() };
     let mut detector = DETECTOR.lock();
     let before = detector.current().mode;
@@ -421,7 +421,7 @@ pub fn last_snapshot() -> Option<ModeSnapshot> {
 ///
 /// # Safety
 ///
-/// Must run on the main thread outside the world update (the input tick): the vehicle predicates
+/// Must run on the game thread before the world update (the game stage): the vehicle predicates
 /// walk the animation rule system and the interaction graph, which the world update mutates.
 pub unsafe fn read_snapshot() -> ModeSnapshot {
     let ui = UiSignals {

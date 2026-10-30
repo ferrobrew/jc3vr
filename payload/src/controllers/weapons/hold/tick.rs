@@ -142,7 +142,7 @@ pub(crate) fn publish_targets(owner: usize, targets: [Option<(usize, Vec3)>; 2])
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn input_tick(owner: &mut Character, wielded: Option<usize>, per_hand: bool) {
     PER_HAND.store(per_hand, Ordering::Relaxed);
     let stopped = std::mem::take(&mut *STOPPED.lock());

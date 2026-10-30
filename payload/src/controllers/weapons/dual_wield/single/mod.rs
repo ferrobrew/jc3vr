@@ -132,7 +132,7 @@ pub(crate) fn active() -> bool {
 ///
 /// # Safety
 ///
-/// `weapon` must be live, on the main thread outside the world update or on a thread updating
+/// `weapon` must be live, on the game thread before the world update or on a thread updating
 /// its holder.
 pub(crate) unsafe fn designate(weapon: &mut WeaponBase, why: &str) -> bool {
     // A weapon of one gun is one weapon already.
@@ -189,7 +189,7 @@ pub(crate) unsafe fn magazine_size(weapon: &WeaponBase) -> i32 {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character and `weapon` live, on the main thread outside
+/// `owner` must be the live local player character and `weapon` live, on the game thread before
 /// the world update.
 pub(crate) unsafe fn clamp_magazine(owner: &mut Character, weapon: &mut WeaponBase) {
     if !set::contains(weapon as *mut WeaponBase as usize) {
@@ -217,7 +217,7 @@ pub(crate) unsafe fn clamp_magazine(owner: &mut Character, weapon: &mut WeaponBa
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character and `weapon` live, on the main thread outside
+/// `owner` must be the live local player character and `weapon` live, on the game thread before
 /// the world update.
 pub(crate) unsafe fn taken_from_world(owner: &mut Character, weapon: &mut WeaponBase) {
     let stored = weapon.m_StoredNonMagazineAmmo;
@@ -257,7 +257,7 @@ pub(crate) fn on_reset(slot_single: Option<bool>) {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn pistol_not_restored(owner: &mut Character, tag_hash: u32) {
     let reverted = slot_handle(owner).filter(|handle| {
         // SAFETY: the input phase retains this slot source for this read.
@@ -317,7 +317,7 @@ pub(crate) struct Tick<'a> {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn input_tick(owner: &mut Character, tick: &Tick) {
     let enabled = tick.separate && tick.settings.enabled && tick.settings.carry;
     ACTIVE.store(enabled, Ordering::Relaxed);
@@ -380,7 +380,7 @@ pub(crate) fn clear() {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn stand_down() {
     ACTIVE.store(false, Ordering::Relaxed);
     if set::len() == 0 {
@@ -400,7 +400,7 @@ pub(crate) unsafe fn stand_down() {
 ///
 /// # Safety
 ///
-/// `weapon` must be live, on the main thread outside the world update or on a thread updating its
+/// `weapon` must be live, on the game thread before the world update or on a thread updating its
 /// holder.
 pub(crate) unsafe fn hide_extra(weapon: &mut WeaponBase) {
     let count = unsafe { gun_count(weapon) };

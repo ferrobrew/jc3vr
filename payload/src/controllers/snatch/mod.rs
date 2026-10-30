@@ -182,7 +182,7 @@ pub(crate) struct OfferInput<'a> {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn targets(input: &OfferInput) -> Provided {
     let config = &input.config.weapons.snatch;
     let hold = &input.config.weapons.hold;
@@ -288,7 +288,7 @@ pub(crate) struct FinishInput<'a> {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn finish_tick(input: &FinishInput, desired: &mut Vec<Desired>) {
     let config = &input.config.weapons.snatch;
     hooks::publish(config.enabled, input.ordinary_button_held);
@@ -326,7 +326,7 @@ pub(crate) fn stand_down() {
     if !matches!(state.phase, Phase::Idle) {
         tracing::info!(target: "controllers", phase = state.phase.label(), "snatch: stood down");
     }
-    // SAFETY: the input tick runs on the main thread outside the world update.
+    // SAFETY: the game stage runs on the game thread before the world update.
     unsafe { state.phase.end_line() };
     state.phase = Phase::Idle;
     state.prearm.clear();
@@ -737,7 +737,7 @@ impl State {
     /// Cancel the snatch under way: the line comes away, and the target keeps its motion.
     fn cancel(&mut self, why: &str) {
         let phase = std::mem::replace(&mut self.phase, Phase::Idle);
-        // SAFETY: the input tick runs on the main thread outside the world update.
+        // SAFETY: the game stage runs on the game thread before the world update.
         unsafe { phase.end_line() };
         tracing::info!(target: "controllers", phase = phase.label(), why, "snatch: cancelled");
     }

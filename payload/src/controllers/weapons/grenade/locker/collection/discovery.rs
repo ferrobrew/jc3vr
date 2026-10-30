@@ -15,7 +15,7 @@ use crate::controllers::weapons::grenade::locker::{
 ///
 /// # Safety
 ///
-/// The caller runs outside the world update on the game thread and excludes collection retirement.
+/// The caller runs on the game thread before the world update and excludes collection retirement.
 pub(super) unsafe fn observe() -> Vec<Observation> {
     let Some(context) = (unsafe { GameLocationSystemContext::get() }) else {
         return Vec::new();

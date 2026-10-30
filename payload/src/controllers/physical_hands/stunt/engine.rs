@@ -9,7 +9,7 @@
 //! vehicle [`Character::AutoAttachToStuntAreaOnVehicleBelow`]), which the game's graph scripts and
 //! on-foot movement tasks call from the game update.
 //!
-//! Every function here runs on the game thread outside the world update (the input tick): the
+//! Every function here runs on the game thread before the world update (the game stage): the
 //! predicates walk the character's rule system and interaction graph, and the entry changes them.
 
 use std::{fmt, num::NonZeroUsize, ptr};
@@ -66,7 +66,7 @@ pub struct PositionRead {
 ///
 /// # Safety
 ///
-/// The game thread, outside the world update.
+/// The game thread, before the world update.
 pub(super) unsafe fn position() -> Option<PositionRead> {
     let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
     unsafe {
@@ -113,7 +113,7 @@ unsafe fn position_ready(character: &Character) -> PositionRead {
 ///
 /// # Safety
 ///
-/// The game thread, outside the physics step.
+/// The game thread, before the world update.
 pub(super) unsafe fn vehicle_of(body: u32) -> Option<NonZeroUsize> {
     let owner = unsafe { owner_of(body) }?;
     unsafe { is_type(owner, Vehicle::TYPE_ID()) }.then_some(owner)
@@ -133,7 +133,7 @@ pub(super) unsafe fn is_helicopter(vehicle: NonZeroUsize) -> bool {
 ///
 /// # Safety
 ///
-/// `vehicle` must be a live vehicle, on the game thread outside the world update.
+/// `vehicle` must be a live vehicle, on the game thread before the world update.
 pub(super) unsafe fn stunt_area_distance(vehicle: NonZeroUsize, at: Vec3) -> Option<f32> {
     let vehicle = vehicle.get() as *const Vehicle;
     let position = Vector3::from(at);
@@ -182,7 +182,7 @@ impl Entry {
 ///
 /// # Safety
 ///
-/// `vehicle` must be a live vehicle, on the game thread outside the world update.
+/// `vehicle` must be a live vehicle, on the game thread before the world update.
 pub(super) unsafe fn enter(vehicle: NonZeroUsize, from: Vec3) -> Result<Entry, StuntError> {
     let character =
         unsafe { Character::GetLocalPlayerCharacter().as_mut() }.ok_or(StuntError::NoPlayer)?;

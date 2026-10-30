@@ -52,7 +52,7 @@ pub(super) fn mounted_tick(active: &ActiveHands, aiming: [bool; 2]) -> MountedTi
         state.mounted_last = None;
         return none;
     }
-    // SAFETY: the input tick runs on the main thread outside the world update.
+    // SAFETY: the game stage runs on the game thread before the world update.
     let Some(gun) = (unsafe {
         Character::GetLocalPlayerCharacter()
             .as_ref()

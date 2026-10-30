@@ -62,7 +62,7 @@ The fire, the attach (the snap as the hook takes hold), and the yank play their 
 
 ## Threading
 
-The input tick (the game thread, outside the world update) reads the hook, steps the pull, publishes the drive, and sends the pulses after releasing its own lock. The reel's detour runs in the character's update on the game thread and reads the drive from a leaf lock. The readout is published to its own leaf lock, so the `GRAPPLE` status rows never wait on the input tick ([threading.md](../threading.md)).
+The input tick's game stage (the game thread, before the world update; [controllers.md](controllers.md#bindings-and-injection)) reads the hook, steps the pull, publishes the drive, and sends the pulses after releasing its own lock. The reel's detour runs in the character's update on the game thread and reads the drive from a leaf lock. The readout is published to its own leaf lock, so the `GRAPPLE` status rows never wait on the input tick ([threading.md](../threading.md)).
 
 ## Settings and readouts
 

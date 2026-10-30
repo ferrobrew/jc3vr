@@ -112,7 +112,7 @@ pub(crate) struct SocketInputs<'a> {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> Sample {
     let snapshot = inputs.snapshot;
     let to_world = Mat4::from(owner.m_WorldMatrixT1);
@@ -337,7 +337,7 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn socket_weapons(
     owner: &Character,
     snapshot: &LoadoutSnapshot,

@@ -163,7 +163,7 @@ pub(crate) fn finish_tick(
                         reach: REACH_M,
                     }),
             };
-            // SAFETY: the input tick runs on the main thread outside the world update.
+            // SAFETY: the game stage runs on the game thread before the world update.
             let refusal = unsafe { take_weapon(hand, reach, options) }.err();
             weapons::hold::record_pickup(refusal.map(|r| r.to_string()));
             if let Some(refusal) = refusal {
@@ -193,7 +193,7 @@ pub(crate) fn finish_tick(
 ///
 /// # Safety
 ///
-/// Main thread, outside the world update.
+/// Game thread, before the world update.
 unsafe fn take_weapon(hand: Hand, reach: Reach, options: TakeOptions) -> Result<(), Refusal> {
     // A weapon's body leaves the world when it is picked up or despawned, so a body that still
     // belongs to the reached object proves the object is alive.

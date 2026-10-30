@@ -35,7 +35,7 @@ pub(super) fn hook_library() -> HookLibrary {
 ///
 /// # Safety
 ///
-/// `slots` must be the local player's live slot weapons, on the main thread outside the world
+/// `slots` must be the local player's live slot weapons, on the game thread before the world
 /// update.
 pub(crate) unsafe fn publish(slots: &[usize]) {
     let mut mask = 0;

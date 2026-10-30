@@ -214,7 +214,7 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
         state.clear_tick();
         return Vec::new();
     }
-    // SAFETY: the input tick runs on the main thread outside the world update, and the weapons
+    // SAFETY: the game stage runs on the game thread before the world update, and the weapons
     // were read this tick.
     let Some(tick) = (unsafe { state.read_tick(weapons, active, config) }) else {
         state.clear_tick();
@@ -562,7 +562,7 @@ pub(super) fn stand_down() {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update, with the tick's weapons read this tick.
+/// The game thread, before the world update, with the tick's weapons read this tick.
 unsafe fn loose_sightings(
     tick: &Tick,
     free: Option<Hand>,

@@ -20,7 +20,7 @@ impl VehicleEntry {
     ///
     /// # Safety
     ///
-    /// The caller runs on the main thread outside the world update.
+    /// The caller runs on the game thread before the world update.
     pub(super) unsafe fn read() -> Option<Self> {
         let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
         let owner = unsafe {

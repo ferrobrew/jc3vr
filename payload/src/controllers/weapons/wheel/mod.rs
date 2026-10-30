@@ -11,8 +11,8 @@
 //! - [`steer`] (pure) reads the steering hand's turn or offset from where the wheel opened;
 //! - [`placement`] moves the cross on the floating panel to where the hand was when the wheel
 //!   opened;
-//! - this module runs on the input tick, after the binding tables and the weapon handling
-//!   ([`crate::controllers::bindings::input_tick`]): it reads the game's state, steps the wheel,
+//! - this module runs in the game stage, after the binding tables and the weapon handling
+//!   ([`crate::controllers::bindings::game_tick`]): it reads the game's state, steps the wheel,
 //!   puts its slot-select hold in the tick's wanted actions (dropping the tables' own trackpad
 //!   quadrant holds, which the wheel takes over), pulses the steering hand, and clears the game's
 //!   pending selection when the wheel cancels ([`Inventory::m_SlotToSelectOnRelease`]).
@@ -83,7 +83,7 @@ pub(crate) struct WheelTick {
 /// `desired`. Called while the bindings inject, outside the menus.
 pub(crate) fn input_tick(inputs: &TickInputs, desired: &mut Vec<Desired>) -> WheelTick {
     let config = WheelTuning::of(&Config::lock_query(|c| c.controllers.weapons.wheel));
-    // SAFETY: the input tick runs on the main thread outside the world update.
+    // SAFETY: the game stage runs on the game thread before the world update.
     let owner = unsafe { engine::local_player() };
     let acting = config.enabled && gameplay(inputs.mode) && owner.is_some();
     // SAFETY: as above.
@@ -246,7 +246,7 @@ struct GameState {
 /// Read the game's state for the wheel.
 ///
 /// # Safety
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 unsafe fn read_game(owner: &Character) -> GameState {
     let inventory: &Inventory = &owner.m_Inventory;
     // SAFETY: forwarded from the caller.
@@ -314,7 +314,7 @@ fn close_as_cancel() {
         placement::publish(None, false);
         publish_anchor(None, true);
     }
-    // SAFETY: the input tick runs on the main thread outside the world update.
+    // SAFETY: the game stage runs on the game thread before the world update.
     let owner = unsafe { engine::local_player() };
     service_cancel(&mut shell, owner);
 }

@@ -298,7 +298,7 @@ pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Tuning) {
     match state.step_wheel(hands, Instant::now()) {
         WheelStep::Leave(hand) => {
             drop(state);
-            // SAFETY: the input tick runs on the main thread outside the world update.
+            // SAFETY: the game stage runs on the game thread before the world update.
             if let Some(owner) = unsafe { engine::local_player() } {
                 unsafe { engine::holster(owner) };
             }

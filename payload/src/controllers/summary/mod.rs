@@ -173,7 +173,7 @@ pub(crate) fn refresh(
     };
     // The game's context hints are relabelled on the wrist only while the HUD's are hidden.
     let hints = if config.summary.hide_game_hints {
-        // SAFETY: the input tick runs on the main thread past startup.
+        // SAFETY: the game stage runs on the game thread past startup.
         let read = unsafe { context::read() };
         let mut state = STATE.lock();
         if let Some(read) = read {
@@ -183,7 +183,7 @@ pub(crate) fn refresh(
     } else {
         Vec::new()
     };
-    // SAFETY: the input tick runs on the main thread past startup.
+    // SAFETY: the game stage runs on the game thread past startup.
     let locale = unsafe { localise::current_locale() };
     let key = Key {
         ctx,

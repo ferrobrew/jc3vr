@@ -94,7 +94,7 @@ pub(crate) enum Pistols {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn capture(owner: &Character) -> GameInventory {
     let inventory = &owner.m_Inventory;
     let reserve = |raw: i32| {
@@ -113,7 +113,7 @@ pub(crate) unsafe fn capture(owner: &Character) -> GameInventory {
             Some(GameWeapon {
                 object: ObjectAddress::from_address(weapon as *const WeaponBase as usize)?,
                 name_hash: weapon.m_WeaponNameHash,
-                // SAFETY: the input tick is a game thread past startup.
+                // SAFETY: the game stage runs on the game thread past startup.
                 name: unsafe { weapon_name(weapon.m_WeaponNameHash) },
                 class: raw((&raw const weapon.m_Class).cast()),
                 state: raw((&raw const weapon.m_State).cast()),

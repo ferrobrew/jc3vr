@@ -136,7 +136,7 @@ pub struct TakeOptions {
 /// # Safety
 ///
 /// `weapon` must be a live weapon (its body checked to belong to it this tick, or its holder held
-/// alive), on the main thread outside the world update.
+/// alive), on the game thread before the world update.
 pub(crate) unsafe fn take(
     hand: Hand,
     weapon: &mut WeaponBase,
@@ -198,7 +198,7 @@ pub(crate) unsafe fn preflight(
 ///
 /// # Safety
 ///
-/// `weapon` must be live, on the main thread outside the world update.
+/// `weapon` must be live, on the game thread before the world update.
 pub(crate) unsafe fn route(weapon: &WeaponBase, hand: Option<Hand>) -> Result<TakeRoute, Refusal> {
     let weapon_type =
         unsafe { inventory_engine::weapon_type(weapon) }.ok_or(Refusal::UnknownSlot)?;
@@ -371,7 +371,7 @@ unsafe fn take_by_game(
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character and `weapon` live, on the main thread outside
+/// `owner` must be the live local player character and `weapon` live, on the game thread before
 /// the world update.
 pub(crate) unsafe fn credit_stored(owner: &mut Character, weapon: &mut WeaponBase) {
     let stored = weapon.m_StoredNonMagazineAmmo;
@@ -396,7 +396,7 @@ static EMBEDDED_POWER_CORE: LazyLock<u32> =
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character and `weapon` live, on the main thread outside
+/// `owner` must be the live local player character and `weapon` live, on the game thread before
 /// the world update.
 pub(crate) unsafe fn takeable(
     _owner: &Character,

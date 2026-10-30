@@ -13,7 +13,7 @@
 //! no reset is under way, by slot and spawn tag, with whether it is a rack's copy (a give made
 //! inside the pickup start of a weapon with unlimited stock). The arrival's detour, for a weapon
 //! that matches a record, does not run the hand-over at once: it keeps the weapon and queues it,
-//! and the next input tick hands it over on the main thread ([`input_tick`]), with the slot's
+//! and the next game stage hands it over on the game thread ([`input_tick`]), with the slot's
 //! occupant first taken out of the slot onto the body where the table has it, and the entry's
 //! equip turned off. The weapon is then in its slot, not equipped, and the table places it: a hand
 //! that asked a rack for a copy takes it, and anything else goes by the table's give rule, an empty
@@ -95,7 +95,7 @@ pub(crate) fn within_member_start(member: Member, start: impl FnOnce()) {
 ///
 /// # Safety
 ///
-/// The owner is the live local player on the main thread outside the world update, and no pistol
+/// The owner is the live local player on the game thread before the world update, and no pistol
 /// spawn is pending. The tag is read from the live native source, not a placement-rule selector.
 pub(crate) unsafe fn request_member_copy(owner: &Character, member: Member, tag: i32) {
     within_member_start(member, || unsafe {
@@ -150,7 +150,7 @@ pub(crate) fn on_reset() {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn input_tick(owner: &mut Character) {
     let inventory = &raw mut owner.m_Inventory;
     observe_inventory(inventory);
@@ -167,7 +167,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character) {
 ///
 /// # Safety
 ///
-/// The owner must be the live local player on the main thread outside the world update.
+/// The owner must be the live local player on the game thread before the world update.
 pub(crate) unsafe fn stand_down(owner: &mut Character) {
     let inventory = &raw mut owner.m_Inventory;
     observe_inventory(inventory);

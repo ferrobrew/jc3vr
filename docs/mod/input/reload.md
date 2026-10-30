@@ -181,7 +181,7 @@ None of this has been run in the headset. In particular:
 - that the magazine prop's model points its top along its +Y, which the carry turns out of the hand;
 - that a magazine body carried by velocities every tick sits steadily in the hand, and does not knock against the hand bodies (it is in the character's collision group, on another layer);
 
-- that calling the weapon's reload, the magazine drop, and the magazine setter from the input tick, on the main thread outside the world update, is safe: the game calls them from an animation track message inside the character's update, and the drop writes a physics body;
+- that calling the weapon's reload, the magazine drop, and the magazine setter from the input tick's game stage, on the game thread before the world update, is safe: the game calls them from an animation track message inside the character's update, and the drop writes a physics body;
 - that the HUD's ammunition counter follows the reload and the setter from the input tick;
 - the wells table's points, the grab radius of the handles, and the flick speed;
 - that a hidden magazine part shows again when a magazine seats, and that the held magazine looks right;

@@ -23,7 +23,7 @@
 //!
 //! The detours run on the simulation's worker threads for every character, so the armed weapons
 //! are published as one address per hand, compared before any lock. Arming and disarming run on
-//! the input tick, on the main thread outside the world update.
+//! the input tick, on the game thread before the world update.
 
 use std::{
     fmt,
@@ -118,7 +118,7 @@ pub(crate) fn in_hand(hand: Hand) -> Option<usize> {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character and `weapon` live, on the main thread outside
+/// `owner` must be the live local player character and `weapon` live, on the game thread before
 /// the world update.
 pub(crate) unsafe fn arm(
     owner: &mut Character,
@@ -152,7 +152,7 @@ pub(crate) unsafe fn arm(
 /// # Safety
 ///
 /// `owner` must be the live local player character, and `weapon` the weapon armed in `hand` when
-/// given, on the main thread outside the world update. No weapon borrow may overlap this call;
+/// given, on the game thread before the world update. No weapon borrow may overlap this call;
 /// the slot or carry-set source must remain retained until restoration and `StopUsing` return.
 pub(crate) unsafe fn disarm(
     owner: &mut Character,
@@ -271,7 +271,7 @@ pub(crate) unsafe fn carried_for(inventory: &Inventory) -> Vec<&WeaponBase> {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn held_weapon(owner: &Character, hand: Hand) -> Option<HeldWeapon> {
     let weapon = unsafe { weapon_of(owner, hand) }?;
     let slot = unsafe { slot_of(weapon) }?;
@@ -295,7 +295,7 @@ pub(crate) unsafe fn held_weapon(owner: &Character, hand: Hand) -> Option<HeldWe
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character when given, on the main thread outside the
+/// `owner` must be the live local player character when given, on the game thread before the
 /// world update.
 pub(crate) unsafe fn show_magazines(owner: Option<&Character>, shown: bool) {
     let read = Hand::BOTH.map(|hand| {
@@ -323,7 +323,7 @@ pub(crate) unsafe fn show_magazines(owner: Option<&Character>, shown: bool) {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn stand_down() {
     *READOUTS.lock() = [None; 2];
     let Some(owner) = (unsafe { engine::local_player() }) else {
@@ -368,7 +368,7 @@ mod tests;
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update or
+/// `owner` must be the live local player character, on the game thread before the world update or
 /// on the thread updating it. The phase must retain the slot or carry-set source without native
 /// mutation for the returned shared borrow.
 pub(crate) unsafe fn weapon_of(owner: &Character, hand: Hand) -> Option<&WeaponBase> {

@@ -13,7 +13,7 @@
 //! it and a single pistol stays one pistol in their hands
 //! ([`crate::controllers::weapons::dual_wield::single`]).
 //!
-//! Everything here runs on the input tick, on the main thread outside the world update.
+//! Everything here runs in the game stage, on the game thread before the world update.
 
 use glam::Vec3;
 use jc3gi::{character::character::Character, equipment::weapon::WeaponBase};

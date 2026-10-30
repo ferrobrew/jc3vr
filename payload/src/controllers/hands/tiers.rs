@@ -24,9 +24,9 @@
 //! - [`HandTier::Yielded`]: the animation owns the hand, which blends out from the controller over
 //!   [`YIELD_BLEND_S`] and back over [`RETURN_BLEND_S`].
 //!
-//! The classification runs once per input tick ([`tick`]), on the main thread, from the mode
-//! detector's snapshot plus a few state-machine predicates, and publishes one weight per hand for
-//! the IK and the late update to read ([`weights`]).
+//! The classification runs once per input tick ([`tick`]), in the game stage on the game
+//! thread, from the mode detector's snapshot plus a few state-machine predicates, and publishes one
+//! weight per hand for the IK and the late update to read ([`weights`]).
 
 use jc3gi::{
     camera::game_camera_manager::GameCameraManager, character::character::Character,
@@ -452,7 +452,7 @@ pub fn weights() -> [f32; 2] {
     STATUS.lock().weights
 }
 
-/// Classify this input tick and advance the blends. Called from the input tick after the mode
+/// Classify this input tick and advance the blends. Called from the game stage after the mode
 /// detector, while the controllers are enabled.
 pub(crate) fn tick(dt: f32) {
     let (config, dominant, mounted_anchor) = Config::lock_query(|c| {
@@ -466,7 +466,7 @@ pub(crate) fn tick(dt: f32) {
             c.controllers.vehicles.mounted.aim_by_hands,
         )
     });
-    // SAFETY: the input tick runs on the main thread outside the world update, as the mode
+    // SAFETY: the game stage runs on the game thread before the world update, as the mode
     // detector's own reads require.
     let signals = unsafe { read_signals() };
     // The weapon handling's last tick: one tick behind, which the anchor's blend absorbs.
@@ -585,7 +585,7 @@ const RETURN_BLEND_S: f32 = 0.35;
 ///
 /// # Safety
 ///
-/// Must run on the main thread outside the world update, like [`mode::read_snapshot`].
+/// Must run on the game thread before the world update, like [`mode::read_snapshot`].
 unsafe fn read_signals() -> TierSignals {
     let detection = mode::current();
     let character = mode::last_snapshot().and_then(|s| s.character);

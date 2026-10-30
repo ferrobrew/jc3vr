@@ -29,7 +29,7 @@
 //! its slot on is placed there too ([`place_slots`] and [`place`]).
 //!
 //! The placement and visibility detours run on the simulation's threads for the local player's
-//! inventory only, and take the set's lock; the input tick changes the set only outside the world
+//! inventory only, and take the set's lock; the game stage changes the set only before the world
 //! update, and makes no engine call while holding the lock.
 
 mod drop;
@@ -98,7 +98,7 @@ impl std::error::Error for CarryRefusal {}
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn seen() -> Vec<(Seen, Socket)> {
     CARRY
         .lock()
@@ -158,7 +158,7 @@ pub(crate) fn release(object: ObjectKey) -> Option<Strong> {
 ///
 /// # Safety
 ///
-/// `weapon` must be live, on the main thread outside the world update.
+/// `weapon` must be live, on the game thread before the world update.
 pub(crate) unsafe fn keep(weapon: &WeaponBase, socket: Socket) -> bool {
     let object = weapon as *const WeaponBase as ObjectKey;
     if contains(object) {
@@ -180,7 +180,7 @@ pub(crate) unsafe fn keep(weapon: &WeaponBase, socket: Socket) -> bool {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn set_stashed(stashed: bool) -> bool {
     if STASHED.swap(stashed, Ordering::Relaxed) == stashed {
         return false;
@@ -216,7 +216,7 @@ pub(crate) fn set_offsets(offset_of: impl Fn(Socket) -> Vec3) {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn carry_loose(
     owner: &mut Character,
     strong: Strong,
@@ -294,7 +294,7 @@ pub(crate) fn release_all() -> usize {
 ///
 /// # Safety
 ///
-/// The owner must be the live local player on the main thread outside the world update.
+/// The owner must be the live local player on the game thread before the world update.
 pub(crate) unsafe fn drop_all(owner: &mut Character) {
     let all = std::mem::take(&mut *CARRY.lock());
     COUNT.store(0, Ordering::Relaxed);

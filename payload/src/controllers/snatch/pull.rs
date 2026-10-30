@@ -73,7 +73,7 @@ pub(super) enum Fired {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal> {
     let freed = match offer.kind {
         OfferKind::Ground { weapon, weak, .. } => {
@@ -141,7 +141,7 @@ pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal>
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(super) unsafe fn fire_hook(grabbed: &Grabbed) -> Result<NonZeroUsize, Refusal> {
     match grabbed.kind {
         Pulled::Weapon => {
@@ -172,7 +172,7 @@ pub(super) enum Attached {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update and the physics step.
+/// The game thread, before the world update and the physics step.
 pub(super) unsafe fn attached(grabbed: &Grabbed, swing_mps: f32) -> Result<Attached, Refusal> {
     let Pulled::Door { door, handle } = grabbed.kind else {
         return Ok(Attached::Pull);
@@ -194,7 +194,7 @@ pub(super) enum Arrival {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update and the physics step.
+/// The game thread, before the world update and the physics step.
 pub(super) unsafe fn pull(
     hand: Hand,
     grabbed: &Grabbed,
@@ -278,7 +278,7 @@ pub(super) unsafe fn pull(
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(super) unsafe fn prepare_sling(hand: Hand, wire: NonZeroUsize) -> Result<Vec3, Refusal> {
     let wrist = ik::tick_records().current[hand.index()]
         .ok_or(Refusal::Gone)?
@@ -298,7 +298,7 @@ pub(super) unsafe fn prepare_sling(hand: Hand, wire: NonZeroUsize) -> Result<Vec
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update and physics step.
+/// The game thread, before the world update and physics step.
 pub(super) unsafe fn sling(
     hand: Hand,
     grabbed: &Grabbed,
@@ -359,7 +359,7 @@ const TOSS_FLIGHT_S: (f32, f32) = (0.45, 1.2);
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update and the physics step.
+/// The game thread, before the world update and the physics step.
 unsafe fn arrive(
     hand: Hand,
     grabbed: &Grabbed,
@@ -393,7 +393,7 @@ unsafe fn arrive(
 ///
 /// # Safety
 ///
-/// The main thread, outside the physics step.
+/// The game thread, before the world update.
 unsafe fn surface_toward(object: NonZeroUsize, centre: Vec3, palm: Vec3) -> Vec3 {
     let player = unsafe { Character::GetLocalPlayerCharacter() } as usize;
     let options = CastOptions {
@@ -416,7 +416,7 @@ unsafe fn surface_toward(object: NonZeroUsize, centre: Vec3, palm: Vec3) -> Vec3
 ///
 /// # Safety
 ///
-/// The main thread, outside the physics step.
+/// The game thread, before the world update.
 unsafe fn body_centre(body: u32, object: NonZeroUsize) -> Result<Vec3, Refusal> {
     unsafe { physical_hands::body_state(body, object) }
         .map(|state| state.pose.centre)
@@ -427,7 +427,7 @@ unsafe fn body_centre(body: u32, object: NonZeroUsize) -> Result<Vec3, Refusal> 
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update and the physics step.
+/// The game thread, before the world update and the physics step.
 pub(super) unsafe fn toss(weak: &Weak) -> Result<(), Refusal> {
     let alive = weak.lock().ok_or(Refusal::Gone)?;
     let address = alive.object() as usize - WeaponBase::GAME_OBJECT_BASE_OFFSET as usize;

@@ -102,7 +102,7 @@ pub fn status() -> DockStatus {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn draw(hand: Hand, socket: Socket, snap_s: f32) -> Result<(), DockRefusal> {
     let result = unsafe { draw_off(hand, socket) };
     let mut state = STATE.lock();
@@ -136,7 +136,7 @@ pub(crate) unsafe fn draw(hand: Hand, socket: Socket, snap_s: f32) -> Result<(),
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn dock(hand: Hand, socket: Socket, snap_s: f32) -> Result<(), DockRefusal> {
     let result = unsafe { start_dock(hand, socket) };
     let object = match result {
@@ -161,7 +161,7 @@ pub(crate) unsafe fn dock(hand: Hand, socket: Socket, snap_s: f32) -> Result<(),
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn let_go(hand: Hand, max_speed_mps: f32) -> Result<Thrown, DockRefusal> {
     let mut diagnostic = ReleaseRecord::new(hand, max_speed_mps);
     let result = unsafe { drop_from(hand, max_speed_mps, &mut diagnostic) };
@@ -202,7 +202,7 @@ pub(crate) unsafe fn let_go(hand: Hand, max_speed_mps: f32) -> Result<Thrown, Do
 ///
 /// # Safety
 ///
-/// `object` must be a live weapon, on the main thread outside the world update.
+/// `object` must be a live weapon, on the game thread before the world update.
 pub(crate) unsafe fn dockable(object: usize) -> bool {
     // SAFETY: forwarded from the caller.
     unsafe { (object as *const WeaponBase).as_ref() }
@@ -289,7 +289,7 @@ pub(crate) fn snap_view(weapon: usize, hand: Hand) -> Option<SnapView> {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn tick(dt: f32) {
     sample_release_transport(dt);
     for hand in Hand::BOTH {
@@ -658,7 +658,8 @@ unsafe fn drop_from(
         diagnostic.stages.before_disarm = true;
         unsafe { armed::disarm(owner, hand, Some(handle), true) };
         diagnostic.stages.disarm_returned = true;
-        // SAFETY: the slot or carry set retains the source until release finishes, outside the world update.
+        // SAFETY: the slot or carry set retains the source until release finishes, and the game
+        // stage runs before the world update.
         let weapon = unsafe { handle.as_mut() };
         if weapon.m_State != WeaponState::E_WS_HOLSTERED {
             return Err(DockRefusal::NotHolstered);
@@ -697,6 +698,6 @@ unsafe fn drop_from(
 
 /// Whether `owner` wields the weapon at `object`.
 fn is_wielded(owner: &Character, object: usize) -> bool {
-    // SAFETY: the caller holds the live local player on the main thread outside the world update.
+    // SAFETY: the caller holds the live local player on the game thread before the world update.
     unsafe { gun::held_weapon(owner) }.is_some_and(|w| w as *const WeaponBase as usize == object)
 }

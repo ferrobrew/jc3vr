@@ -1,6 +1,7 @@
 //! The weapon handling's engine reads and calls: the local player's wielded weapon, the foregrip
-//! geometry measured from the gun's placement, and the holster call. Everything here runs on the
-//! input tick, on the main thread outside the world update.
+//! geometry measured from the gun's placement, and the holster call. Everything here runs in the
+//! game stage ([`crate::controllers::bindings::stage`]), on the game thread before the world
+//! update.
 
 use glam::{Mat4, Quat};
 use jc3gi::{
@@ -83,7 +84,7 @@ pub fn long_slot(slot: WeaponSlot) -> bool {
 ///
 /// # Safety
 ///
-/// Main thread, outside the world update.
+/// Game thread, before the world update.
 pub unsafe fn local_player() -> Option<&'static mut Character> {
     unsafe { Character::GetLocalPlayerCharacter().as_mut() }
 }
@@ -92,7 +93,7 @@ pub unsafe fn local_player() -> Option<&'static mut Character> {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub unsafe fn held_weapon(owner: &Character) -> Option<HeldWeapon> {
     let weapon = unsafe { gun::held_weapon(owner) }?;
     let slot = unsafe { (&raw const owner.m_SelectedWeaponSlot).cast::<i32>().read() };
@@ -128,7 +129,7 @@ pub unsafe fn held_weapon(owner: &Character) -> Option<HeldWeapon> {
 ///
 /// # Safety
 ///
-/// `weapon` must be the live weapon [`held_weapon`] returned, read on the main thread outside the
+/// `weapon` must be the live weapon [`held_weapon`] returned, read on the game thread before the
 /// world update.
 pub unsafe fn measure_geometry(
     weapon: &HeldWeapon,
@@ -209,7 +210,7 @@ pub unsafe fn measure_geometry(
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub unsafe fn holster(owner: &mut Character) {
     unsafe { owner.HolsterWeapon() };
 }

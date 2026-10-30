@@ -30,7 +30,7 @@ use crate::controllers::{
 ///
 /// # Safety
 ///
-/// `weapon` must be live, read on the main thread outside the world update.
+/// `weapon` must be live, read on the game thread before the world update.
 pub(crate) unsafe fn shape(weapon: &WeaponBase, hand: Hand) -> Option<GunShape> {
     let first = unsafe { gun::guns(weapon) }.next().flatten()?;
     let model = unsafe { first.m_BaseModelInstance.as_ref() }?;
@@ -88,7 +88,7 @@ pub(crate) fn is_long(slot: WeaponSlot) -> bool {
 ///
 /// # Safety
 ///
-/// `weapon` must be live, read on the main thread outside the world update.
+/// `weapon` must be live, read on the game thread before the world update.
 pub(crate) unsafe fn world_carry(
     weapon: &WeaponBase,
     hand: Hand,
@@ -126,7 +126,7 @@ pub(crate) struct DockedLongGun {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn docked_long_guns(
     owner: &Character,
     snapshot: &LoadoutSnapshot,

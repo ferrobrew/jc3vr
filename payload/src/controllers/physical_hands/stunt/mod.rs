@@ -13,7 +13,7 @@
 //! player in a stunt position ([`game_holds`]), the climb's grips hold the hands on the vehicle
 //! and move nothing: the game moves the player with the vehicle.
 //!
-//! Everything runs on the input tick ([`finish_tick`]), on the game thread outside the world
+//! Everything runs in the game stage ([`finish_tick`]), on the game thread before the world
 //! update, where the game's own entries are safe to call. [`game_holds`] reads a short-lived,
 //! lifecycle-matched observation; missing observations conservatively yield movement.
 
@@ -106,7 +106,7 @@ pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
         .map_or(0.0, |at| now.saturating_duration_since(at).as_secs_f32())
         .min(MAX_TICK_S);
     state.ticked = Some(now);
-    // SAFETY: the input tick runs on the game thread outside the world update.
+    // SAFETY: the game stage runs on the game thread before the world update.
     let read = unsafe { engine::position() };
     state.observe_read(read, enabled(&config));
     observation::publish(read, now);
@@ -223,7 +223,7 @@ const MIN_STRAIN: f32 = 0.1;
 ///
 /// # Safety
 ///
-/// The game thread, outside the world update.
+/// The game thread, before the world update.
 unsafe fn helicopter_grip(grip: Option<climb::Hold>) -> bool {
     let Some(grip) = grip else { return false };
     if !grip.moving || !unsafe { grip.valid() } {

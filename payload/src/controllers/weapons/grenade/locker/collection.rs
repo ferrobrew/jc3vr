@@ -47,7 +47,7 @@ pub(super) fn active_entries() -> usize {
 ///
 /// # Safety
 ///
-/// The caller runs outside the world update on the game thread. Native location borrows stay
+/// The caller runs on the game thread before the world update. Native location borrows stay
 /// within this call, while the registry's lock excludes collection destruction.
 pub(super) unsafe fn with_sources<T>(
     to_cockpit: &impl Fn(Vec3) -> Vec3,

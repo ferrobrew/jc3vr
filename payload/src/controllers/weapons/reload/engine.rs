@@ -93,7 +93,7 @@ fn magazine_rounds(total: i32, chambers: i32) -> i32 {
 ///
 /// # Safety
 ///
-/// `weapon` must be live; main thread, outside the world update.
+/// `weapon` must be live; game thread before the world update.
 pub unsafe fn read(weapon: &WeaponBase) -> Reading {
     // Read as raw values: an unset class or reload type is out of its enum's range.
     let class = unsafe { (&raw const weapon.m_Class).cast::<i32>().read() };
@@ -360,7 +360,7 @@ pub unsafe fn magazine_tag(address: usize, index: usize) -> Option<i32> {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub unsafe fn local_player_matrix() -> Option<Mat4> {
     let player = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
     Some(Mat4::from(player.m_WorldMatrixT1))

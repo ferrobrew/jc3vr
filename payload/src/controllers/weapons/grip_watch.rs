@@ -87,7 +87,7 @@ pub fn change_deg(previous: Quat, current: Quat) -> f32 {
 ///
 /// # Safety
 ///
-/// `weapon` must be live, read on the main thread outside the world update.
+/// `weapon` must be live, read on the game thread before the world update.
 pub(super) unsafe fn observe(weapon: &WeaponBase, class: HeftClass) {
     let now = Instant::now();
     let records = grip::status().hands;

@@ -51,7 +51,7 @@ pub(crate) struct CopyRequest {
 ///
 /// # Safety
 ///
-/// The source is live on the main thread outside the world update.
+/// The source is live on the game thread before the world update.
 pub(crate) unsafe fn targets(
     owner: &Character,
     weapon: &WeaponBase,
@@ -185,7 +185,7 @@ pub(crate) fn waiting(member: Member) -> bool {
 ///
 /// # Safety
 ///
-/// `actor` owns a live weapon on the main thread outside the world update.
+/// `actor` owns a live weapon on the game thread before the world update.
 pub(crate) unsafe fn staged(member: Member, actor: Strong) {
     if finite::owns(member) {
         unsafe { finite::staged(member, actor) };
@@ -235,7 +235,7 @@ pub(crate) unsafe fn staged(member: Member, actor: Strong) {
 ///
 /// # Safety
 ///
-/// The local player and source are live on the main thread outside the world update.
+/// The local player and source are live on the game thread before the world update.
 pub(crate) unsafe fn take(
     owner: &mut Character,
     hand: Hand,

@@ -34,7 +34,7 @@ use crate::controllers::{
 ///
 /// # Safety
 ///
-/// The source and owner are live on the main thread outside the world update.
+/// The source and owner are live on the game thread before the world update.
 pub(super) unsafe fn targets(
     owner: &Character,
     weapon: &WeaponBase,
@@ -147,7 +147,7 @@ pub(super) fn waiting(member: Member) -> bool {
 ///
 /// # Safety
 ///
-/// The actor is live on the main thread outside the world update.
+/// The actor is live on the game thread before the world update.
 pub(super) unsafe fn staged(member: Member, actor: Strong) {
     let weapon = unsafe { &mut *engine::weapon_of(&actor) };
     unsafe { single::designate(weapon, "a finite rack member") };
@@ -181,7 +181,7 @@ pub(super) unsafe fn staged(member: Member, actor: Strong) {
 ///
 /// # Safety
 ///
-/// The source and local player are live on the main thread outside the world update.
+/// The source and local player are live on the game thread before the world update.
 pub(super) unsafe fn take(
     owner: &mut Character,
     hand: Hand,

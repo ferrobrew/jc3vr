@@ -561,7 +561,8 @@ impl EguiState {
             focused: input.focused && native_game_focus(),
             tracking_ready: input.tracking_ready,
             controls_neutral: input.controls_neutral && !self.capture.input_notification_pending,
-            // SAFETY: capture is stepped on the engine input/game thread while the singleton is live.
+            // SAFETY: capture is stepped on the game thread (the input tick's game stage) while the
+            // singleton is live.
             game_device_enabled: unsafe { InputDeviceManager::get() }
                 .is_some_and(|device| device.m_Enabled),
         };

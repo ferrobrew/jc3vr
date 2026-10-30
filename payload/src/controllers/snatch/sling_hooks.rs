@@ -35,7 +35,7 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&GET_VISUAL_TRANSFORM_WS_BINDER)
 }
 
-/// Publish on the main thread before native simulation; workers read only the copied value.
+/// Publish on the game thread before native simulation; workers read only the copied value.
 pub(super) fn publish(wire: usize, proxy: usize, transform: Mat4) {
     *SNAPSHOT.lock() = Some(Snapshot {
         wire,

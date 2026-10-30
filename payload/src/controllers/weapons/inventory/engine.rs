@@ -1,7 +1,7 @@
 //! The VR inventory's engine reads: a weapon's kind and magazine, what became of a weapon outside
 //! the slots, and the strong and weak references the inventory keeps weapons by.
 //!
-//! Everything here runs on the input tick, on the main thread outside the world update, unless a
+//! Everything here runs in the game stage, on the game thread before the world update, unless a
 //! function says otherwise.
 
 use std::ptr::NonNull;

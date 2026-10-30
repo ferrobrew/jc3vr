@@ -173,7 +173,7 @@ pub(crate) struct TakeInputs<'a> {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
     let settings = inputs.settings;
     rack::tick();
@@ -214,7 +214,7 @@ pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update, after [`begin_tick`] on the same input tick.
+/// The game thread, before the world update, after [`begin_tick`] on the same input tick.
 pub(crate) unsafe fn finish_grab(hand: Hand, inputs: &TakeInputs) -> bool {
     let point = inputs.active.hands[hand.index()].map(|h| h.grip.position);
     let target = STATE.lock().offered.take(hand, point, TAKE_RADIUS_M);

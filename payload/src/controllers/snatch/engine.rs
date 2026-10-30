@@ -21,7 +21,7 @@ use crate::controllers::{aim::gun, snatch::Refusal};
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(super) unsafe fn local_hook() -> Option<&'static mut GrapplingHook> {
     let character = unsafe { Character::GetLocalPlayerCharacter().as_mut() }?;
     unsafe { character.m_Inventory.m_GrapplingHook.as_mut() }
@@ -43,7 +43,7 @@ pub(super) fn busy(hook: &GrapplingHook) -> Option<Refusal> {
 ///
 /// # Safety
 ///
-/// `object` must be a live physics game object held alive, on the main thread outside the world
+/// `object` must be a live physics game object held alive, on the game thread before the world
 /// update.
 pub(super) unsafe fn fire(
     object: NonZeroUsize,
@@ -90,7 +90,7 @@ pub(super) enum WireReading {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(super) unsafe fn read_wire(wire: NonZeroUsize) -> (WireReading, Option<f32>) {
     let Some(active) = (unsafe { active_wire(wire) }) else {
         return (WireReading::Gone, None);
@@ -112,7 +112,7 @@ pub(super) unsafe fn read_wire(wire: NonZeroUsize) -> (WireReading, Option<f32>)
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(super) unsafe fn cancel(wire: NonZeroUsize) {
     if unsafe { active_wire(wire) }.is_none() {
         return;
@@ -139,7 +139,7 @@ pub(super) unsafe fn remove_constraint(wire: NonZeroUsize) {
 ///
 /// # Safety
 ///
-/// `address` must be a weapon held alive, on the main thread outside the world update.
+/// `address` must be a weapon held alive, on the game thread before the world update.
 pub(super) unsafe fn dropped(
     address: NonZeroUsize,
 ) -> Result<(&'static mut WeaponBase, u32), Refusal> {
@@ -162,7 +162,7 @@ pub(super) unsafe fn dropped(
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(super) unsafe fn player_position() -> Option<Vec3> {
     let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
     let position = glam::Mat4::from(character.m_WorldMatrixT1)

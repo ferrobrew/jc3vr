@@ -121,7 +121,7 @@ const MAX_AGE: Duration = Duration::from_millis(250);
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub unsafe fn read(owner: &Character) -> Option<MountedGun> {
     if !unsafe { owner.IsInMountedGunState() } {
         return None;

@@ -157,7 +157,7 @@ pub(super) fn fit(
         return specs;
     };
     latch.get_or_insert_with(VehicleLatch::new);
-    // SAFETY: the input tick retains the observed vehicle outside the world update.
+    // SAFETY: the game stage retains the observed vehicle outside the world update.
     unsafe { fit_vehicle(inputs, entry.vehicle(), latch, specs) }
 }
 
@@ -167,7 +167,7 @@ pub(crate) const SETTLE: Duration = Duration::from_millis(1500);
 
 /// # Safety
 ///
-/// `vehicle` must be the live vehicle the local player drives, on the main thread outside the
+/// `vehicle` must be the live vehicle the local player drives, on the game thread before the
 /// world update.
 unsafe fn fit_vehicle(
     inputs: &FitInputs,
@@ -340,7 +340,7 @@ struct Parts {
 ///
 /// # Safety
 ///
-/// `pfx` must be the live vehicle's physics body, on the main thread outside the world update.
+/// `pfx` must be the live vehicle's physics body, on the game thread before the world update.
 unsafe fn find_parts(pfx: &PfxBreakable) -> Parts {
     let mut parts = Parts::default();
     if pfx.m_PartInstances.is_null() || pfx.m_ValidPartIndices.is_null() {

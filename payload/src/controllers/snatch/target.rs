@@ -36,7 +36,7 @@ use crate::controllers::{
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update and the physics step.
+/// The game thread, before the world update and the physics step.
 pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersConfig) -> bool {
     let point = match &mut offer.kind {
         OfferKind::Ground {
@@ -226,7 +226,7 @@ impl OfferKind {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(super) unsafe fn offerable(input: &OfferInput) -> Result<(), &'static str> {
     if !matches!(input.detection.mode, Mode::OnFoot(_)) || input.detection.traversal.is_some() {
         return Err("NOT ON FOOT");
@@ -252,7 +252,7 @@ pub(super) unsafe fn offerable(input: &OfferInput) -> Result<(), &'static str> {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Offer> {
     #[derive(Copy, Clone)]
     enum Kind {
@@ -389,7 +389,7 @@ fn near_aim(ray: &Ray, aabb: &Aabb) -> bool {
 ///
 /// # Safety
 ///
-/// The main thread, outside the physics step; the object must be held alive.
+/// The game thread, before the world update; the object must be held alive.
 unsafe fn aimed_offer(
     aimed: &grapple_weapons::Aimed,
     config: &ControllersConfig,
@@ -456,7 +456,7 @@ pub(super) unsafe fn weak_of(object: NonZeroUsize) -> Weak {
 ///
 /// # Safety
 ///
-/// The main thread, outside the physics step.
+/// The game thread, before the world update.
 unsafe fn in_sight(ray: &Ray, point: Vec3, character: usize) -> bool {
     let player = unsafe { Character::GetLocalPlayerCharacter() } as usize;
     let options = CastOptions {

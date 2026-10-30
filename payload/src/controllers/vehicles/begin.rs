@@ -61,7 +61,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         body: headpose::xr::body_rotation(),
         world_scale: active.world_scale,
     };
-    // SAFETY: the input tick runs on the main thread outside the world update.
+    // SAFETY: the game stage runs on the game thread before the world update.
     let entry = seat.and_then(|_| unsafe { VehicleEntry::read() });
     let mut events = Vec::new();
     let mut state = STATE.lock();

@@ -63,11 +63,11 @@ use crate::headpose;
 /// machine, and update the anchor absorber. `body` and `anchor` are the raw body rotation and
 /// head-bone anchor as of this advance; `on_foot` gates the yaw handoff.
 ///
-/// Called from both cadences — the input tick ([`crate::headpose::sim::on_input_tick`], game
-/// thread) and the VR frame loop (render thread) — under one mutex, with the step `dt` measured
-/// internally. `on_foot` arrives as a parameter because the input-tick caller already holds the
-/// sim lock, and reading `sim::mode()` here would deadlock (SIM → FILTER is the only legal lock
-/// order).
+/// Called from both cadences — the input tick ([`crate::headpose::sim::on_input_tick`], the poll
+/// stage, in the engine's input job in play) and the VR frame loop (render thread) — under one
+/// mutex, with the step `dt` measured internally. `on_foot` arrives as a parameter because the
+/// input-tick caller already holds the sim lock, and reading `sim::mode()` here would deadlock (SIM
+/// → FILTER is the only legal lock order).
 pub fn advance(body: Quat, anchor: Vec3, on_foot: bool, config: &GrappleComfortConfig) {
     let mut s = FILTER.lock();
     let now = Instant::now();
@@ -267,8 +267,8 @@ const ANCHOR_VELOCITY_EMA_S: f32 = 0.05;
 /// The absorbed offset never exceeds this (metres).
 const ANCHOR_OFFSET_MAX_M: f32 = 1.0;
 
-/// The filter's state: written by [`advance`] on the game thread's input tick and the render
-/// thread's frame loop, read per-eye on the render thread.
+/// The filter's state: written by [`advance`] in the input tick's poll stage (the engine's
+/// input job in play) and the render thread's frame loop, read per-eye on the render thread.
 struct GrappleFilter {
     /// The smoothed blend factor in `[0, 1]`.
     factor: f32,

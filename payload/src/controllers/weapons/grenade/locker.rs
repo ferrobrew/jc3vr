@@ -100,7 +100,7 @@ impl std::error::Error for Refusal {}
 ///
 /// # Safety
 ///
-/// `owner` is the local character on the game thread, outside the world update.
+/// `owner` is the local character on the game thread before the world update.
 pub(super) unsafe fn begin(
     owner: &Character,
     free: [bool; 2],
@@ -136,7 +136,7 @@ pub(super) unsafe fn begin(
 ///
 /// # Safety
 ///
-/// The game thread, outside the world update.
+/// The game thread, before the world update.
 pub(super) unsafe fn take(
     hand: Hand,
     grip: Option<Vec3>,

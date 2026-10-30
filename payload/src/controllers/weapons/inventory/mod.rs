@@ -29,7 +29,7 @@
 //!
 //! A weapon is kept alive and out of the game's despawn by a strong reference: an inventory slot
 //! is one, and the inventory takes its own for a weapon it pins. Everything here runs on the input
-//! tick on the main thread outside the world update, except the reset's detour, which takes the
+//! tick on the game thread before the world update, except the reset's detour, which takes the
 //! state's lock only for the local player's inventory.
 
 mod ammo;
@@ -215,7 +215,7 @@ pub(crate) struct TickInputs {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn input_tick(
     owner: &mut Character,
     inputs: &TickInputs,
@@ -422,7 +422,7 @@ pub(crate) unsafe fn input_tick(
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn stand_down() {
     let Some(owner) = (unsafe { weapons_engine::local_player() }) else {
         return;
@@ -440,7 +440,7 @@ pub(crate) unsafe fn stand_down() {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 unsafe fn stop(owner: &mut Character, why: &str, keep: bool) {
     unsafe { use_item::stand_down() };
     unsafe { gives::stand_down(owner) };
@@ -479,7 +479,7 @@ unsafe fn stop(owner: &mut Character, why: &str, keep: bool) {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update, after the table's start.
+/// The game thread, before the world update, after the table's start.
 unsafe fn resume() {
     if !KEPT_STOPPED.swap(false, Ordering::Relaxed) {
         return;

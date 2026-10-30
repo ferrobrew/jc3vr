@@ -1,5 +1,6 @@
 //! The native map's readout: what the latest map input dispatch was given, and what the map did
-//! with it. The map hooks write it on the game thread; the debug panel reads a copy.
+//! with it. The map hooks write it in the input update (the engine's input job in play); the debug
+//! panel reads a copy.
 
 use std::time::Instant;
 

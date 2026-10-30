@@ -187,11 +187,11 @@ pub fn status() -> AnchorStatus {
 }
 
 /// Read the grapple line for the tick, and pulse the grapple hand when the hook leaves the gauntlet
-/// or attaches. Called from the input tick while the controllers are enabled.
+/// or attaches. Called from the game stage while the controllers are enabled.
 ///
 /// # Safety
 ///
-/// Main thread, outside the world update.
+/// The game stage: the game thread, before the world update.
 pub(crate) unsafe fn input_tick(config: &ControllersConfig) {
     let hook = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
         .and_then(|c| unsafe { c.m_Inventory.m_GrapplingHook.px.as_ref() });

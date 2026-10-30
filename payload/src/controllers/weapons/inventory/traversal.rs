@@ -153,7 +153,7 @@ fn force_neutral_state(character: *mut Character) {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread.
+/// `owner` must be the live local player character, on the game thread.
 pub(crate) unsafe fn wield_skipped(owner: &Character) -> bool {
     if !KEEP.load(Ordering::Relaxed) {
         return false;

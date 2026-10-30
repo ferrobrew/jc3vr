@@ -22,7 +22,7 @@
 //!   ([`crate::controllers::weapons::hold::armed`]), and a hand that no longer holds its armed
 //!   weapon disarms it.
 //!
-//! Everything here runs on the input tick, on the main thread outside the world update.
+//! Everything here runs in the game stage, on the game thread before the world update.
 
 use std::{
     ptr::NonNull,
@@ -90,7 +90,7 @@ pub fn status() -> ReconcileStatus {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn apply(owner: &mut Character) {
     let Some(snapshot) = live::snapshot_now() else {
         return;
@@ -107,7 +107,7 @@ pub(crate) unsafe fn apply(owner: &mut Character) {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn now() {
     if let Some(owner) = unsafe { engine::local_player() } {
         unsafe { apply(owner) };
@@ -121,7 +121,7 @@ pub(crate) unsafe fn now() {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn vacate(owner: &mut Character, slot: WeaponSlot) -> bool {
     let Some(snapshot) = live::snapshot_now() else {
         return false;
@@ -146,7 +146,7 @@ pub(crate) unsafe fn vacate(owner: &mut Character, slot: WeaponSlot) -> bool {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn project_back(owner: &mut Character) {
     let (Some(snapshot), Some(store)) = (live::snapshot_now(), live::store_projection_now()) else {
         return;
@@ -168,7 +168,7 @@ pub(crate) unsafe fn project_back(owner: &mut Character) {
 ///
 /// # Safety
 ///
-/// On the game thread, outside the world update.
+/// On the game thread before the world update.
 pub(crate) unsafe fn store(store: &StoreProjection) {
     let Some(owner) = (unsafe { engine::local_player() }) else {
         return;

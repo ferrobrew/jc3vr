@@ -14,7 +14,7 @@
 //! coexists with the buttons: the retract the pull drives merges with the trigger's, the larger
 //! value winning, and a reel the hand does not drive runs on the game's own tuning.
 //!
-//! [`input_tick`] runs from the bindings' input tick ([`crate::controllers::bindings`]), which
+//! [`input_tick`] runs in the bindings' game stage ([`crate::controllers::bindings::stage`]), which
 //! hands it the grapple hand's distance from the body and injects the retract it returns. It reads
 //! the hook, steps the pull, publishes the reel's drive for the reel task's detour, vibrates the
 //! grapple hand, logs the grapple's events, and publishes the readout ([`status`]) for the
@@ -166,12 +166,12 @@ pub fn status() -> GrappleStatus {
     }
 }
 
-/// Run the physical grapple's part of the input tick. Called on the input tick while the bindings
+/// Run the physical grapple's part of the input tick. Called in the game stage while the bindings
 /// inject.
 ///
 /// # Safety
 ///
-/// Main thread, outside the world update.
+/// Game thread, before the world update.
 pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
     let config = &PhysicalGrappleTuning::of(&input.config.grapple);
     let hand = input.config.acting_hand().other();
@@ -451,7 +451,7 @@ struct HookRead {
 ///
 /// # Safety
 ///
-/// Main thread, outside the world update.
+/// Game thread, before the world update.
 unsafe fn read_hook() -> Option<HookRead> {
     let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
     let hook: &GrapplingHook = unsafe { character.m_Inventory.m_GrapplingHook.px.as_ref() }?;

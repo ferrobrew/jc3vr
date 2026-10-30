@@ -223,7 +223,7 @@ pub fn status() -> HoldStatus {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn wielded(owner: &Character) -> Option<usize> {
     unsafe { gun::held_weapon(owner) }
         .filter(|w| {
@@ -247,7 +247,7 @@ pub(crate) unsafe fn wielded(owner: &Character) -> Option<usize> {
 ///
 /// # Safety
 ///
-/// The main thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn input_tick(
     wielded: Option<usize>,
     enabled: bool,
@@ -290,7 +290,7 @@ pub(crate) fn begin(hand: Hand, cause: Cause, weapon: Option<usize>) {
 ///
 /// # Safety
 ///
-/// `weapon` must be the live weapon the game now wields, on the main thread outside the world
+/// `weapon` must be the live weapon the game now wields, on the game thread before the world
 /// update.
 pub(crate) unsafe fn adopt(weapon: usize) {
     if !ENABLED.load(Ordering::Relaxed) {
@@ -314,7 +314,7 @@ pub(crate) unsafe fn adopt(weapon: usize) {
 ///
 /// # Safety
 ///
-/// `object` must be a live weapon, on the main thread outside the world update.
+/// `object` must be a live weapon, on the game thread before the world update.
 pub(crate) unsafe fn take_into(hand: Hand, object: usize) -> bool {
     // SAFETY: forwarded from the caller.
     let Some(held) = (unsafe { inventory::held_of(object) }) else {
@@ -341,7 +341,7 @@ pub(crate) fn hand_over(hand: Hand, weapon: usize) -> bool {
     TICK.lock().handovers += 1;
     act::arm(hand);
     // The primary may have changed hands with it.
-    // SAFETY: handovers are made on the input tick, on the main thread outside the world update.
+    // SAFETY: handovers are made on the input tick, on the game thread before the world update.
     unsafe { inventory::reconcile::now() };
     tracing::info!(
         target: "controllers",

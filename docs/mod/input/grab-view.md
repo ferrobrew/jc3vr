@@ -72,7 +72,7 @@ The reach records five rays and a few handles per hand per tick, only while the 
 
 ## Threading
 
-Everything runs on the main thread. The view's own state is a leaf lock, taken by the palms' tick after it has let go of its own state, by the refusals where they are made, and by the input tick; the overlay store's and the readout's leaf locks are taken briefly under it. The palm readout, which takes the palms' own state, is read before the view's lock. The debug UI reads the readout's lock on its own thread.
+Everything runs on the game thread: the palms' tick, and the input tick's game stage. The view's own state is a leaf lock, taken by the palms' tick after it has let go of its own state, by the refusals where they are made, and by the input tick's game stage; the overlay store's and the readout's leaf locks are taken briefly under it. The palm readout, which takes the palms' own state, is read before the view's lock. The debug UI reads the readout's lock on its own thread.
 
 ## Headset checklist
 

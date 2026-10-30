@@ -156,7 +156,7 @@ impl State {
                 self.records.get(weapon.key).chambers[gun.entry()] = chamber;
                 self.status.counts.racks += 1;
                 self.event(format!("{} worked", kind.label()));
-                // SAFETY: main thread, outside the world update; the weapon was read this tick.
+                // SAFETY: game thread before the world update; the weapon was read this tick.
                 unsafe { engine::cycled(weapon.address, kind, true) };
                 if chamber == Chamber::Chambered {
                     haptics::play(gun_hand, Event::Chambered);
@@ -386,7 +386,7 @@ impl State {
             Some(render::ActionPart {
                 weapon: weapon.address,
                 gun: gun.index as u32,
-                // SAFETY: main thread, outside the world update; the weapon was read this tick.
+                // SAFETY: game thread before the world update; the weapon was read this tick.
                 gun_address: unsafe { engine::gun_address(weapon.address, gun.index) }.unwrap_or(0),
                 kind,
                 share,

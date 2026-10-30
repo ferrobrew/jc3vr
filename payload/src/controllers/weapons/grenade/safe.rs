@@ -296,7 +296,7 @@ pub(crate) fn observe(grips: [Option<Pose>; 2], tuning: &GrenadeTuning) {
 ///
 /// # Safety
 ///
-/// The game thread, outside the world update.
+/// The game thread, before the world update.
 pub(crate) unsafe fn render_frame() {
     let owner = if crate::hooks::in_gameplay() {
         (unsafe { engine::local_player() }).map(|owner| owner as *const Character as usize)
@@ -538,7 +538,7 @@ unsafe fn clear() {
 fn ensure_cleanup() {
     if !CLEANUP.swap(true, Ordering::AcqRel) {
         crate::lifecycle::on_cleanup(|_| {
-            // SAFETY: the shutdown cleanups run on the game thread outside the world update.
+            // SAFETY: the shutdown cleanups run on the game thread before the world update.
             unsafe { clear() };
         });
     }

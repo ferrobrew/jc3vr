@@ -168,8 +168,8 @@ static STATE: Mutex<State> = Mutex::new(State {
 });
 
 /// The cross-thread cursor state: geometry written on the render thread, the client rect from the
-/// `WndProc` detour, the frame written from the `SendMouseEvents` detour (window or game thread),
-/// all read wherever needed. Locked only for these short copies.
+/// `WndProc` detour, the frame written from the `SendMouseEvents` detour (the window thread, or the
+/// input job in play), all read wherever needed. Locked only for these short copies.
 struct State {
     window: (u32, u32),
     client: Option<(u32, u32)>,
