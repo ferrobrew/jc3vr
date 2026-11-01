@@ -34,6 +34,10 @@ pub struct Reload {
     /// How far ahead of the hand's grip the top of a held magazine sits, metres, along the
     /// direction the closed hand points.
     pub held_top_m: f32,
+    /// How far out of the palm a held magazine's centre line sits, metres: about half a rifle
+    /// magazine's depth from its back, which lies in the palm, to its front. The grip's origin is
+    /// about where Rico's palm is drawn, so a magazine centred on it sinks into the hand.
+    pub held_palm_gap_m: f32,
     /// How close the top of a held magazine must come to the well's mouth to catch it, metres: a
     /// little more than a magazine's own width, since nothing stops the hand at the well as the
     /// gun would, and the hand and the well each carry a centimetre or two of tracking and
@@ -75,6 +79,7 @@ impl Reload {
             flick_cooldown_s: 0.6,
             well_offset_m: Vec3::new(0.0, -0.08, -0.06),
             held_top_m: 0.07,
+            held_palm_gap_m: 0.03,
             capture_radius_m: 0.08,
             capture_angle_deg: 50.0,
             launcher_capture_radius_m: 0.12,

@@ -120,7 +120,7 @@ pub(super) fn state(stage: InsertStage) -> State {
 pub(super) fn tick(seating: bool) -> Tick {
     let grip = Pose::IDENTITY;
     let top = insert::held_round(
-        grip.position,
+        frames::held_line(grip, Hand::Left, RELOAD.held_palm_gap_m),
         frames::pointing(grip),
         RELOAD.held_top_m,
         Vec3::ZERO,

@@ -20,6 +20,8 @@ The grenade (`GRENADE.hold`) stands upright in the fist: its body runs up the fi
 
 The C4 charge (`C4.hold`) is a flat square brick. It lies with its top face on the palm, centred on it, so its sticking face looks out of the hand at whatever it is pressed onto ([physical-weapons.md, "C4 pressed onto a surface"](physical-weapons.md#c4-pressed-onto-a-surface)); the surface probes start at the brick's middle (`C4.centre_m`). The charge pose bends the fingers at the knuckles and middle joints over the brick's far edge onto its outer face, with the thumb along its side.
 
+The magazine's hold is in [reload.md](reload.md#load).
+
 ## Locker sources
 
 A free hand can draw a safe grenade from a registered native weapon display or a verified static collection display. Both source paths are enabled by default. Each hand receives its nearest qualifying display within reach. Completion checks the same source registration and distance before calling the safe-item draw used by the pouch. A missing or changed source refuses the grab instead of selecting another source. The draw leaves the display, native ammunition, the other hand, and holstered items unchanged, so either hand can draw repeatedly from the same display. A nearby gun rack, the player position, and the body pouch do not create a locker target.

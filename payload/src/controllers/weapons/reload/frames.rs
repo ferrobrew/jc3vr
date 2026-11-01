@@ -11,7 +11,7 @@ use glam::{Mat4, Vec3};
 
 use crate::controllers::{
     frame::{Hand, Pose},
-    hands::pose as hand_pose,
+    hands::{held::away_from_palm, pose as hand_pose},
     weapons::reload::plan::WellFrame,
 };
 
@@ -95,6 +95,12 @@ pub fn well(
             Some((wrist.position + wrist.orientation * local, axis))
         }
     }
+}
+
+/// The point of a round held in `hand` level with its grip at `grip`: on the round's centre line,
+/// `palm_gap_m` out of the palm.
+pub fn held_line(grip: Pose, hand: Hand, palm_gap_m: f32) -> Vec3 {
+    grip.position + grip.orientation * (away_from_palm(hand) * palm_gap_m)
 }
 
 /// The direction a closed hand at `grip` points: the grip pose's -Z.

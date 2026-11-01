@@ -15,7 +15,7 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use glam::{Mat4, Quat, Vec3};
+use glam::{Mat3, Mat4, Quat, Vec3};
 use jc3gi::equipment::weapon::{
     BarrelRecoilWeaponComponent, ModelAttachementWeaponComponent, WeaponComponentType,
 };
@@ -23,7 +23,7 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     frame::{Hand, Pose},
-    hands::late,
+    hands::{held::away_from_palm, late},
     weapons::reload::chamber::ActionKind,
 };
 
@@ -58,6 +58,8 @@ pub(super) struct HeldPart {
     pub hand: Hand,
     /// How far ahead of the grip the top of the held round is, in the world's metres.
     pub top_world_m: f32,
+    /// How far out of the palm the held round's centre line is, in the world's metres.
+    pub palm_gap_world_m: f32,
     /// How far the part's top is from its origin along [`part_axis`](Self::part_axis), in the
     /// model's metres.
     pub part_top_m: f32,
@@ -155,7 +157,7 @@ pub(crate) fn adjust(
         ));
     }
     let grip = drawn[held.hand.index()]?.grip;
-    Some(held_matrix(grip.position, grip.orientation, held))
+    Some(held_matrix(grip, held))
 }
 
 /// `matrix` moved along its own Z axis by the difference between the slide's wanted share and the
@@ -183,13 +185,25 @@ pub(super) fn is_round_part(name_hash: u32) -> bool {
     )
 }
 
-/// The round part carried by a hand whose grip is at `position` and `orientation` (world): the
-/// part's insertion axis along the way the closed hand points, its top the held round's top.
-pub(super) fn held_matrix(position: Vec3, orientation: Quat, held: HeldPart) -> Mat4 {
-    let pointing = orientation * Vec3::NEG_Z;
+/// The round part carried by a hand whose grip is `grip` (world): held as a magazine is for
+/// loading, its insertion axis up the finger tube (the way the closed hand points), its front
+/// (the gun model's -Z, square to the axis) out of the palm with its back against it, its centre
+/// line `palm_gap_world_m` out of the palm and its top `top_world_m` ahead of the grip.
+pub(super) fn held_matrix(grip: Pose, held: HeldPart) -> Mat4 {
     let axis = held.part_axis.try_normalize().unwrap_or(Vec3::Y);
-    let rotation = orientation * Quat::from_rotation_arc(axis, Vec3::NEG_Z);
-    let top = position + pointing * held.top_world_m;
+    // A part that goes in along the model's Z (a rocket) has no front square to it; its top faces
+    // out of the palm instead.
+    let square = |v: Vec3| (v - axis * axis.dot(v)).try_normalize();
+    let front = square(Vec3::NEG_Z)
+        .or_else(|| square(Vec3::Y))
+        .unwrap_or(Vec3::X);
+    let away = away_from_palm(held.hand);
+    let part = Mat3::from_cols(front, axis, front.cross(axis));
+    let in_grip = Mat3::from_cols(away, Vec3::NEG_Z, away.cross(Vec3::NEG_Z));
+    let local = Quat::from_mat3(&(in_grip * part.transpose())).normalize();
+    let rotation = (grip.orientation * local).normalize();
+    let top = grip.position
+        + grip.orientation * (away * held.palm_gap_world_m + Vec3::NEG_Z * held.top_world_m);
     Mat4::from_rotation_translation(rotation, top - rotation * (axis * held.part_top_m))
 }
 
@@ -256,19 +270,25 @@ mod tests {
 
     #[test]
     fn a_held_magazine_points_the_way_the_hand_does_with_its_top_ahead() {
-        let held = HeldPart {
-            weapon: 1,
-            hand: Hand::Left,
-            top_world_m: 0.07,
-            part_top_m: 0.05,
-            part_axis: Vec3::Y,
-            captured: None,
-        };
-        let m = held_matrix(Vec3::ZERO, Quat::IDENTITY, held);
-        let up = m.transform_vector3(Vec3::Y);
-        assert!((up - Vec3::NEG_Z).length() < 1e-6);
-        let top = m.transform_point3(Vec3::Y * 0.05);
-        assert!((top - Vec3::new(0.0, 0.0, -0.07)).length() < 1e-6);
+        for hand in Hand::BOTH {
+            let held = HeldPart {
+                weapon: 1,
+                hand,
+                top_world_m: 0.07,
+                palm_gap_world_m: 0.03,
+                part_top_m: 0.05,
+                part_axis: Vec3::Y,
+                captured: None,
+            };
+            let m = held_matrix(Pose::default(), held);
+            let up = m.transform_vector3(Vec3::Y);
+            assert!((up - Vec3::NEG_Z).length() < 1e-6);
+            let away = away_from_palm(hand);
+            // The magazine's front, the gun's -Z, faces out of the palm, its back against it.
+            assert!((m.transform_vector3(Vec3::NEG_Z) - away).length() < 1e-6);
+            let top = m.transform_point3(Vec3::Y * 0.05);
+            assert!((top - (away * 0.03 + Vec3::new(0.0, 0.0, -0.07))).length() < 1e-6);
+        }
     }
 
     #[test]
@@ -278,13 +298,17 @@ mod tests {
             weapon: 1,
             hand: Hand::Right,
             top_world_m: 0.07,
+            palm_gap_world_m: 0.0,
             part_top_m: 0.35,
             part_axis: Vec3::Z,
             captured: None,
         };
-        let grip = Quat::from_rotation_y(0.6);
-        let m = held_matrix(Vec3::ONE, grip, held);
-        let pointing = grip * Vec3::NEG_Z;
+        let grip = Pose {
+            position: Vec3::ONE,
+            orientation: Quat::from_rotation_y(0.6),
+        };
+        let m = held_matrix(grip, held);
+        let pointing = grip.orientation * Vec3::NEG_Z;
         assert!((m.transform_vector3(Vec3::Z) - pointing).length() < 1e-5);
         let top = m.transform_point3(Vec3::Z * 0.35);
         assert!((top - (Vec3::ONE + pointing * 0.07)).length() < 1e-5);

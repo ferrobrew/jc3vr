@@ -422,6 +422,7 @@ impl State {
                 weapon: weapon.address,
                 hand,
                 top_world_m: reload.held_top_m * tick.world_scale,
+                palm_gap_world_m: reload.held_palm_gap_m * tick.world_scale,
                 part_top_m: weapon.plan.part_top_m?,
                 part_axis: weapon.plan.part_axis,
                 captured,

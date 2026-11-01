@@ -560,7 +560,7 @@ impl State {
                 grip_held: inputs.grips[hand.index()].held(),
                 held: grip.and_then(|(pose, velocity)| {
                     insert::held_round(
-                        pose.position,
+                        frames::held_line(pose, hand, reload.held_palm_gap_m),
                         frames::pointing(pose),
                         reload.held_top_m,
                         velocity,
@@ -590,7 +590,7 @@ impl State {
         if world_magazine
             && let Some((pose, velocity)) = grip
             && let Some(round) = insert::held_round(
-                pose.position,
+                frames::held_line(pose, hand, reload.held_palm_gap_m),
                 frames::pointing(pose),
                 reload.held_top_m,
                 velocity,
