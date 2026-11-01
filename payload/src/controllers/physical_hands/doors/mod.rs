@@ -37,7 +37,11 @@ use crate::controllers::{
     frame::Pose,
     physical_hands::{
         contact::SurfaceHit,
-        doors::{acquisition::PanelBody, engine::DoorError, geometry::pull},
+        doors::{
+            acquisition::{PanelBody, PanelReach},
+            engine::DoorError,
+            geometry::pull,
+        },
         grasp::{Reach, TargetKind},
         pickup::diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
     },
@@ -71,8 +75,9 @@ pub(crate) const UNLATCH_PULL_M: f32 = 0.05;
 pub(crate) const HANDLE_REACH_M: f32 = 0.15;
 
 /// What a hand reaches of a vehicle through the ray hit `hit` on `object`'s body `body`, from a
-/// palm centred at `palm`: an open door it touches, or a closed door whose handle area the palm is
-/// at. `None` when the hit is on neither, so that the pickup treats it as anything else.
+/// palm centred at `palm`: an open door it touches within `reach`'s box reach, or a closed door
+/// whose handle the palm is within `reach`'s handle reach of. `None` when the hit is on neither, so
+/// that the pickup treats it as anything else.
 ///
 /// # Safety
 ///
@@ -82,11 +87,11 @@ pub(crate) unsafe fn reach(
     body: u32,
     hit: &SurfaceHit,
     palm: Vec3,
-    reach_m: f32,
+    reach: PanelReach,
     config: &DoorsConfig,
 ) -> Option<Reach> {
     // SAFETY: forwarded from the caller; the bounded output is discarded for remote reach.
-    unsafe { observed_reach(object, body, hit, palm, reach_m, config, &mut Scan::new()) }
+    unsafe { observed_reach(object, body, hit, palm, reach, config, &mut Scan::new()) }
 }
 
 /// The same production door reach, with a bounded copy of its evaluated panel refusals.
@@ -99,7 +104,7 @@ pub(crate) unsafe fn observed_reach(
     body: u32,
     hit: &SurfaceHit,
     palm: Vec3,
-    reach_m: f32,
+    reach: PanelReach,
     config: &DoorsConfig,
     scan: &mut Scan,
 ) -> Option<Reach> {
@@ -139,7 +144,7 @@ pub(crate) unsafe fn observed_reach(
             let acquired = acquisition::observed_panel(
                 d,
                 palm,
-                reach_m,
+                reach,
                 HANDLE_SHARE,
                 origin,
                 ScanEntry {

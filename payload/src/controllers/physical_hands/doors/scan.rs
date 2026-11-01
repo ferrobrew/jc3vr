@@ -7,8 +7,10 @@
 //! why it was not offered, is noted for the grip press's log.
 //!
 //! The vehicles come from the target system's vehicle set
-//! ([`crate::controllers::aim::targets`]), which the game keeps of every vehicle near the player,
-//! read on the aim update's thread as the palms' tick runs.
+//! ([`crate::controllers::aim::targets`]), read on the aim update's thread as the palms' tick runs,
+//! and from the vehicles a hand's reach rays hit this tick: the set does not keep every vehicle
+//! near the player (a parked car can be missing from it), and a door a hand is at is on a vehicle
+//! its rays meet.
 
 use std::num::NonZeroUsize;
 
@@ -83,8 +85,8 @@ pub(crate) struct HandleObservations<'a> {
 ///
 /// # Safety
 ///
-/// The game thread, outside the physics step; `vehicles` must be live vehicles from [`near`] this
-/// tick.
+/// The game thread, outside the physics step; `vehicles` must be live vehicles this tick: from
+/// [`near`], or hit by the reach's rays.
 pub(crate) unsafe fn handle_reach(
     palm: Vec3,
     vehicles: &[NonZeroUsize],

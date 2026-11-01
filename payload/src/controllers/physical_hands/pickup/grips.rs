@@ -47,6 +47,14 @@ pub(super) unsafe fn keep_latch(
                     let Some(acquired) =
                         (unsafe { doors::tearing::TearGrip::take(latch.door, object, body) })
                     else {
+                        tracing::info!(
+                            hand = hand.label(),
+                            slot = doors::slot_label(latch.door.slot),
+                            part = latch.door.part_index,
+                            body,
+                            "physical hands: doors: the latch gave, but the opened door's identity \
+                             changed; the hand lets go"
+                        );
                         crate::controllers::physical_hands::pickup::tearing::acquired(
                             state, i, None,
                         );
@@ -97,6 +105,15 @@ pub(super) unsafe fn keep_latch(
                         state.latches[i] = Some(latch);
                         outcome.pins[i] = Some(latch.handoff_palm(world).position);
                     } else {
+                        tracing::info!(
+                            hand = hand.label(),
+                            slot = doors::slot_label(latch.door.slot),
+                            part = latch.door.part_index,
+                            body,
+                            error = %e,
+                            "physical hands: doors: the latch gave, but the door's own body could \
+                             not be read; the hand lets go"
+                        );
                         outcome.released[i] = true;
                         outcome.lost += 1;
                         outcome.error = Some(e.to_string());

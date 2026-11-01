@@ -9,7 +9,7 @@
 //! [`thread_role`] marks it; the input tick is no proxy for it, since the game's input pre-update
 //! runs on a CPU fragment worker during the simulation (`docs/engine/gameplay/input.md`).
 
-use std::time::Instant;
+use std::{num::NonZeroUsize, time::Instant};
 
 use glam::{Mat4, Quat, Vec2, Vec3};
 use jc3gi::character::character::Character;
@@ -234,7 +234,8 @@ unsafe fn run(owner: &Character, dt: f32) {
         characters: &config.characters,
         hand_bodies: physics::status().hands.map(|h| h.body_id),
     };
-    // The vehicles whose doors the free palms might reach, offered by their handles.
+    // The vehicles whose doors the free palms might reach, offered by their handles; each hand adds
+    // the vehicles its own rays hit.
     let door_vehicles = if pickup_on && config.doors.enabled {
         let near: Vec<Vec3> = Hand::BOTH
             .into_iter()
@@ -320,6 +321,7 @@ unsafe fn run(owner: &Character, dt: f32) {
                     orientation,
                     half_extents: palm.half_extents,
                 });
+            let mut hit_vehicles = Vec::new();
             let reach = if pickup_on {
                 // SAFETY: the simulation phase outside the physics step.
                 unsafe {
@@ -333,6 +335,7 @@ unsafe fn run(owner: &Character, dt: f32) {
                             notes: &mut reach_notes[i],
                             rays: viewing.then(|| &mut rays[i]),
                             scan: &mut interaction_scans[i],
+                            vehicles: &mut hit_vehicles,
                         },
                     )
                 }
@@ -343,7 +346,7 @@ unsafe fn run(owner: &Character, dt: f32) {
             let door = unsafe {
                 doors::scan::handle_reach(
                     body_palm.centre,
-                    &door_vehicles,
+                    &with_hit_vehicles(&door_vehicles, &hit_vehicles),
                     active.world_scale,
                     &config.doors,
                     &mut |from, to| cast(from, to, &reach_options),
@@ -432,6 +435,7 @@ unsafe fn run(owner: &Character, dt: f32) {
         });
         let offset = contact.clamp_offset();
         clamp[i] = (body_rotation.inverse() * offset) / active.world_scale.max(1e-3);
+        let mut hit_vehicles = Vec::new();
         let reach = if pickup_on {
             // SAFETY: the simulation phase outside the physics step.
             unsafe {
@@ -445,6 +449,7 @@ unsafe fn run(owner: &Character, dt: f32) {
                         notes: &mut reach_notes[i],
                         rays: viewing.then(|| &mut rays[i]),
                         scan: &mut interaction_scans[i],
+                        vehicles: &mut hit_vehicles,
                     },
                 )
             }
@@ -455,7 +460,7 @@ unsafe fn run(owner: &Character, dt: f32) {
         let door = unsafe {
             doors::scan::handle_reach(
                 palm.centre,
-                &door_vehicles,
+                &with_hit_vehicles(&door_vehicles, &hit_vehicles),
                 active.world_scale,
                 &config.doors,
                 &mut |from, to| cast(from, to, &reach_options),
@@ -599,6 +604,18 @@ unsafe fn run(owner: &Character, dt: f32) {
         // main thread.
         unsafe { grab_view::scan_candidates(near_hands, standing_on, &config) };
     }
+}
+
+/// The vehicles the door scan looks at for one hand: those the target system keeps near the palms,
+/// and those the hand's rays hit this tick, each once.
+fn with_hit_vehicles(near: &[NonZeroUsize], hit: &[NonZeroUsize]) -> Vec<NonZeroUsize> {
+    let mut vehicles = near.to_vec();
+    for &vehicle in hit {
+        if !vehicles.contains(&vehicle) {
+            vehicles.push(vehicle);
+        }
+    }
+    vehicles
 }
 
 /// Declare what each hand holds, for its finger pose, with the contact fit's curls for a held body

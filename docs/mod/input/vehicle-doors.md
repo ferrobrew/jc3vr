@@ -6,7 +6,7 @@ The grapple snatch pulls a closed door open from range on the line, through the 
 
 ## Finding a door
 
-Every door of every vehicle near the player is offered by its handle, whatever the reach's rays hit (`doors/scan.rs`). The vehicles are those the game's target system keeps within 6 m of a free palm.
+Every door of every vehicle near the player is offered by its handle, whatever the reach's rays hit (`doors/scan.rs`). The vehicles are those the game's target system keeps within 6 m of a free palm, and, for each hand, the vehicles its reach rays hit that tick. The target system does not keep every vehicle: a parked civilian car can be missing from it, and without the rays its doors would never be scanned.
 
 A door's handle comes from the door handle table when its part is in it ([`door_handle`](../../../payload/src/controllers/physical_hands/doors/geometry.rs)). The table is `tools/door_handles/door_handles.json`, embedded at build time (`doors/table.rs`) and keyed by the part's name hash, which the live part's entry in the parts resource carries ([`Part::m_name`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::parts::Part##field-m_name)); every variant of a model shares its parts, so one entry serves them all. Each entry is a point and an outer-face normal in the part's own space, carried into the world as the door's box is. The tool places a front door's handle where the player's entry animation has its hand when it opens that door, on the door's outer surface (grade `clip`, or `clip_doubtful` when the hand is far off the door), and every other door's from its box with the hinge at its constraint point (grade `hinge`); [`tools/door_handles/README.md`](../../../tools/door_handles/README.md) has how, and the engine side is in [vehicle-doors.md](../../engine/gameplay/vehicle-doors.md#entering-through-a-door). Every grade is used.
 
@@ -17,9 +17,9 @@ The first time the doors of a vehicle model are scanned, the log has, at info le
 The pickup's reach rays ([physical-hands.md](physical-hands.md#picking-things-up)) also ask about every hit on a vehicle or a loosened vehicle part, before anything else, so a player standing on a car can still open its door:
 
 - A hit on a loosened part's object ([`VehiclePartGameObject`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::parts::VehiclePartGameObject)) that is one of its vehicle's doors, found through the object's vehicle and the door whose own body that object owns, is an open door, taken where the ray hit it.
-- A hit on the vehicle's own body evaluates each door box in world space ([vehicle-doors.md](../../engine/gameplay/vehicle-doors.md#the-loose-door)), using the part's model box, its root-space transform, and the vehicle's transform. The pure `doors::acquisition::panel` contract returns the reached box point, outward direction, and typed body: `PanelBody::LatchedHandle` for a closed door whose handle share meets 0.4, or `PanelBody::OpenPanel` for an open door's own body anywhere in reach. The handle share is measured from the part's origin, its hinge pivot. Missing boxes, out-of-reach palms, a closed-panel grip short of the handle area, and inconsistent door/body states refuse acquisition, as the prior branch did. The vehicle-body ray path maps those refusals to no door target; it does not alter the separate open-part ray path.
+- A hit on the vehicle's own body evaluates each door box in world space ([vehicle-doors.md](../../engine/gameplay/vehicle-doors.md#the-loose-door)), using the part's model box, its root-space transform, and the vehicle's transform. The pure `doors::acquisition::panel` contract returns the reached box point, outward direction, and typed body: `PanelBody::LatchedHandle` for a closed door whose handle the palm is within the handle reach of (the 0.15 m the scan uses, so a closed door is taken alike whichever path finds it), or whose handle share meets 0.4 when the door has no handle, or `PanelBody::OpenPanel` for an open door's own body within the box reach (`doors::REACH_M`). The handle share is measured from the part's origin, its hinge pivot. Missing boxes, out-of-reach palms, a closed-panel grip short of the handle area, and inconsistent door/body states refuse acquisition, as the prior branch did. The vehicle-body ray path maps those refusals to no door target; it does not alter the separate open-part ray path.
 
-A hit on a part object that is not a door, such as a piece broken off, is taken as any loose object. A reached door is marked green ([grip.md](grip.md#markers)).
+A hit on a part object that is not a door, such as a piece broken off, is taken as any loose object. A hit on the vehicle's own body that reaches no door takes nothing: however light, a vehicle is never carried (`bodies::classify` refuses it), so a grip near a handle that misses the door's reach does not lift the car. A reached door is marked green ([grip.md](grip.md#markers)).
 
 ## The latch
 
@@ -45,7 +45,7 @@ The debug readout counts confirmed tears and refused requests. Recorder signals 
 
 ## When the grip lets go
 
-A grip on a latched door lets go with the grip, when the hand stands down, when the vehicle is gone (its body no longer belongs to it), when the door broke off, and when the latch did not give the door a body; each but the first logs `a grip on a latched door was lost` with the reason.
+A grip on a latched door lets go with the grip, when the hand stands down, when the vehicle is gone (its body no longer belongs to it), when the door broke off, and when the latch did not give the door a body; each but the first logs `a grip on a latched door was lost` with the reason. A latch that gave a door whose own body then cannot be read within the body wait, or whose identity no longer matches the vehicle's door, lets go too, logging `the latch gave, but the door's own body could not be read` with the error or `the latch gave, but the opened door's identity changed`.
 
 ## Threading
 
@@ -75,3 +75,4 @@ With `physical_hands.doors.enabled` and `GRIP MARKERS` on:
 5. Shove the door shut hard: it latches, and the hold ends if the hand was still on it. Ease it shut: it rests against the frame, loose.
 6. Open the hood from its front edge, and the trunk from its back edge.
 7. Grip a door, then walk the car away (or have it driven away): the grip lets go with `the vehicle is gone` or the hand's break distance.
+8. Grip the door handle of a parked civilian car, such as the vintage sports car: the door is taken, not the car, and the grip press notes the door with its handle distance. Near the handle but off it, nothing is taken; the car is never lifted as an object.

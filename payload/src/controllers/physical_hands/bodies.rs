@@ -82,8 +82,8 @@ impl BodyState {
 }
 
 /// What the object at `object`, reached on its body `body`, is to a hand: a weapon lying in the
-/// world, or a loose object (a rigid object, or any other object whose reached body is dynamic and
-/// has a mass, such as a barrel), or why it is neither.
+/// world, or a loose object (a rigid object, or any other object but a vehicle whose reached body
+/// is dynamic and has a mass, such as a barrel), or why it is neither.
 ///
 /// # Safety
 ///
@@ -101,6 +101,11 @@ pub(super) unsafe fn classify(object: NonZeroUsize, body: u32) -> Result<TargetK
             Err(Unclassified::WeaponNotDropped(state))
         };
     }
+    // However light, a vehicle is driven or opened, never carried: its doors are taken at their
+    // handles by the doors' own reach.
+    if unsafe { (*game_object).IsType(Vehicle::TYPE_ID()) } {
+        return Err(Unclassified::Vehicle);
+    }
     let state = unsafe { read(body, object) }.map_err(Unclassified::Body)?;
     state
         .mass_kg
@@ -117,6 +122,8 @@ pub(crate) enum Unclassified {
     Body(BodyError),
     /// The body's mass is infinite.
     NoMass,
+    /// A vehicle's own body.
+    Vehicle,
 }
 
 impl fmt::Display for Unclassified {
@@ -127,6 +134,7 @@ impl fmt::Display for Unclassified {
             }
             Unclassified::Body(e) => write!(f, "{e}"),
             Unclassified::NoMass => write!(f, "its body's mass is infinite"),
+            Unclassified::Vehicle => write!(f, "a vehicle is never carried"),
         }
     }
 }

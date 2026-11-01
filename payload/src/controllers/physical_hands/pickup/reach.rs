@@ -4,7 +4,7 @@
 use std::num::NonZeroUsize;
 
 use glam::Vec3;
-use jc3gi::{character::character::Character, physics::PfxLayer};
+use jc3gi::{character::character::Character, physics::PfxLayer, vehicle::vehicle::Vehicle};
 
 use crate::controllers::{
     aim::{
@@ -19,7 +19,7 @@ use crate::controllers::{
             model::{Aabb, BodyKind},
         },
         contact::{Surface, SurfaceHit},
-        doors::{self, DoorsConfig},
+        doors::{self, DoorsConfig, acquisition::PanelReach},
         grab_view::model::{RayOutcome, ReachRay},
         grasp::{self, Reach, TargetKind},
         palm::PalmBox,
@@ -35,6 +35,9 @@ pub(crate) struct ReachObservations<'a> {
     pub notes: &'a mut Vec<String>,
     pub rays: Option<&'a mut Vec<ReachRay>>,
     pub scan: &'a mut Scan,
+    /// The vehicles the rays hit, at most [`MAX_HIT_VEHICLES`], for the door scan: a vehicle the
+    /// game's target system does not keep, such as a parked car, still has its doors offered.
+    pub vehicles: &'a mut Vec<NonZeroUsize>,
 }
 
 /// What a hand's reach takes, and how far it reaches.
@@ -140,6 +143,7 @@ pub(crate) unsafe fn reach(
         notes,
         mut rays,
         scan,
+        vehicles,
     } = observations;
     scan.ray_ran = true;
     let origin = palm.point(Vec3::new(0.0, 1.0, 0.0));
@@ -160,6 +164,7 @@ pub(crate) unsafe fn reach(
         reaches: Vec::new(),
         notes,
         scan,
+        vehicles,
         branch: Branch::Ray,
     };
     for (ray, to, hit) in hits {
@@ -314,6 +319,9 @@ fn floor_reach(
 /// The most notes one hand's reach keeps per tick.
 const MAX_REACH_NOTES: usize = 8;
 
+/// The most vehicles one hand's rays hand the door scan per tick.
+pub(crate) const MAX_HIT_VEHICLES: usize = 4;
+
 /// What the reach's hits have come to so far.
 struct Judged<'a> {
     /// The bodies already noted: the rays fan out from one palm, so most hit the same body.
@@ -322,6 +330,7 @@ struct Judged<'a> {
     reaches: Vec<Reach>,
     notes: &'a mut Vec<String>,
     scan: &'a mut Scan,
+    vehicles: &'a mut Vec<NonZeroUsize>,
     branch: Branch,
 }
 
@@ -409,6 +418,13 @@ unsafe fn judge(
         return;
     };
     // SAFETY: forwarded from the caller; the hit was found this tick.
+    if unsafe { bodies::is_type(object, Vehicle::TYPE_ID()) }
+        && !judged.vehicles.contains(&object)
+        && judged.vehicles.len() < MAX_HIT_VEHICLES
+    {
+        judged.vehicles.push(object);
+    }
+    // SAFETY: forwarded from the caller; the hit was found this tick.
     let what = unsafe { bodies::describe(object) };
     // A vehicle's door, open or at a closed door's handle area, before anything else: the
     // player may stand on the vehicle whose door they open.
@@ -419,7 +435,10 @@ unsafe fn judge(
             body,
             hit,
             palm.centre,
-            doors::REACH_M * world_scale,
+            PanelReach {
+                box_m: doors::REACH_M * world_scale,
+                handle_m: doors::HANDLE_REACH_M * world_scale,
+            },
             door_config,
             judged.scan,
         )

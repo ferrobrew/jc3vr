@@ -29,6 +29,26 @@ pub(crate) struct PanelAcquisition {
     pub body: PanelBody,
 }
 
+/// How near a palm must be to a door to reach it.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct PanelReach {
+    /// How far outside the door's box the palm still reaches the door, metres.
+    pub box_m: f32,
+    /// How far from a closed door's handle the palm takes the door, metres. The door scan offers a
+    /// handle at the same distance, so a closed door is taken alike whichever finds it.
+    pub handle_m: f32,
+}
+
+impl PanelReach {
+    /// One reach for both the box and the handle.
+    pub(crate) const fn uniform(reach_m: f32) -> Self {
+        Self {
+            box_m: reach_m,
+            handle_m: reach_m,
+        }
+    }
+}
+
 /// Why a vehicle-reported panel offers no door grip.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum PanelRefusal {
@@ -43,13 +63,14 @@ pub(crate) enum PanelRefusal {
 pub(crate) fn panel(
     door: &DoorRead,
     palm: Vec3,
-    reach_m: f32,
+    radii: PanelReach,
     handle_share: f32,
     vehicle_origin: Vec3,
 ) -> Result<PanelAcquisition, PanelRefusal> {
     let door_box = door.door_box.ok_or(PanelRefusal::NoBox)?;
+    let in_box = |m: f32| door_box.reach(palm, m).is_some();
     let mut reach = door_box
-        .reach(palm, reach_m)
+        .reach(palm, radii.box_m.max(radii.handle_m))
         .ok_or(PanelRefusal::OutOfReach)?;
     let handle = door_handle(
         &door_box,
@@ -59,15 +80,20 @@ pub(crate) fn panel(
     let body = match door.body {
         None if door.latched => {
             let at_handle = handle.map_or_else(
-                || reach.handle >= handle_share.clamp(0.0, 1.0),
-                |handle| palm.distance(handle.point) <= reach_m.max(0.0),
+                || in_box(radii.box_m) && reach.handle >= handle_share.clamp(0.0, 1.0),
+                |handle| palm.distance(handle.point) <= radii.handle_m.max(0.0),
             );
             if !at_handle {
                 return Err(PanelRefusal::HandleRequired);
             }
             PanelBody::LatchedHandle
         }
-        Some((object, body)) if !door.latched => PanelBody::OpenPanel { object, body },
+        Some((object, body)) if !door.latched => {
+            if !in_box(radii.box_m) {
+                return Err(PanelRefusal::OutOfReach);
+            }
+            PanelBody::OpenPanel { object, body }
+        }
         None => return Err(PanelRefusal::NoOpenBody),
         Some(_) => return Err(PanelRefusal::LatchedWithOwnBody),
     };
@@ -89,13 +115,13 @@ pub(crate) fn panel(
 pub(crate) fn observed_panel(
     door: &DoorRead,
     palm: Vec3,
-    reach_m: f32,
+    reach: PanelReach,
     handle_share: f32,
     vehicle_origin: Vec3,
     mut entry: ScanEntry,
     scan: &mut Scan,
 ) -> Result<PanelAcquisition, PanelRefusal> {
-    let result = panel(door, palm, reach_m, handle_share, vehicle_origin);
+    let result = panel(door, palm, reach, handle_share, vehicle_origin);
     match result {
         Ok(acquired) => {
             entry.point = Some(acquired.reach.point);
@@ -142,11 +168,26 @@ mod tests {
     fn a_far_panel_corner_is_not_a_closed_handle_candidate() {
         let closed = door(true);
         assert_eq!(
-            panel(&closed, Vec3::new(0.1, 1.0, 1.0), 0.1, 0.7, Vec3::ZERO),
+            panel(
+                &closed,
+                Vec3::new(0.1, 1.0, 1.0),
+                PanelReach::uniform(0.1),
+                0.7,
+                Vec3::ZERO
+            ),
             Err(PanelRefusal::HandleRequired)
         );
         let open = door(false);
-        assert!(panel(&open, Vec3::new(0.1, 1.0, 1.0), 0.1, 0.7, Vec3::ZERO).is_ok());
+        assert!(
+            panel(
+                &open,
+                Vec3::new(0.1, 1.0, 1.0),
+                PanelReach::uniform(0.1),
+                0.7,
+                Vec3::ZERO
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -164,7 +205,15 @@ mod tests {
             mass_kg: None,
             result: ScanResult::Offered,
         };
-        let refused = observed_panel(&door, Vec3::ZERO, 0.1, 0.7, Vec3::ZERO, entry, &mut scan);
+        let refused = observed_panel(
+            &door,
+            Vec3::ZERO,
+            PanelReach::uniform(0.1),
+            0.7,
+            Vec3::ZERO,
+            entry,
+            &mut scan,
+        );
         assert_eq!(refused, Err(PanelRefusal::HandleRequired));
         assert_eq!(
             scan.entries[0].unwrap().result,
@@ -173,7 +222,7 @@ mod tests {
         let accepted = observed_panel(
             &door,
             handle_point(&door),
-            0.1,
+            PanelReach::uniform(0.1),
             0.7,
             Vec3::ZERO,
             entry,
@@ -189,17 +238,61 @@ mod tests {
     fn a_closed_panel_requires_the_handle_area() {
         let door = door(true);
         assert_eq!(
-            panel(&door, Vec3::ZERO, 0.1, 0.7, Vec3::ZERO),
+            panel(&door, Vec3::ZERO, PanelReach::uniform(0.1), 0.7, Vec3::ZERO),
             Err(PanelRefusal::HandleRequired)
         );
-        let acquisition = panel(&door, handle_point(&door), 0.1, 0.7, Vec3::ZERO).unwrap();
+        let acquisition = panel(
+            &door,
+            handle_point(&door),
+            PanelReach::uniform(0.1),
+            0.7,
+            Vec3::ZERO,
+        )
+        .unwrap();
         assert_eq!(acquisition.reach.handle, 1.0);
         assert_eq!(acquisition.body, PanelBody::LatchedHandle);
     }
 
     #[test]
+    fn a_closed_door_is_taken_within_the_handle_reach_not_the_box_reach() {
+        let closed = door(true);
+        let near_handle = handle_point(&closed) + Vec3::Y * 0.1;
+        assert_eq!(
+            panel(
+                &closed,
+                near_handle,
+                PanelReach::uniform(0.06),
+                0.4,
+                Vec3::ZERO
+            ),
+            Err(PanelRefusal::HandleRequired)
+        );
+        let reach = PanelReach {
+            box_m: 0.06,
+            handle_m: 0.15,
+        };
+        let acquisition = panel(&closed, near_handle, reach, 0.4, Vec3::ZERO).unwrap();
+        assert_eq!(acquisition.body, PanelBody::LatchedHandle);
+        assert_eq!(acquisition.reach.point, handle_point(&closed));
+        // An open door is still reached only within the box reach.
+        let open = door(false);
+        let outside = Vec3::new(-0.1, 0.5, 0.5);
+        assert_eq!(
+            panel(&open, outside, reach, 0.4, Vec3::ZERO),
+            Err(PanelRefusal::OutOfReach)
+        );
+    }
+
+    #[test]
     fn an_open_panel_is_available_at_the_hinge_without_a_handle() {
-        let acquisition = panel(&door(false), Vec3::ZERO, 0.1, 1.0, Vec3::ZERO).unwrap();
+        let acquisition = panel(
+            &door(false),
+            Vec3::ZERO,
+            PanelReach::uniform(0.1),
+            1.0,
+            Vec3::ZERO,
+        )
+        .unwrap();
         assert_eq!(acquisition.reach.handle, 0.0);
         assert_eq!(
             acquisition.body,
@@ -215,19 +308,34 @@ mod tests {
     #[test]
     fn an_open_panel_still_requires_reach_and_its_own_body() {
         let mut door = door(false);
-        assert!(panel(&door, Vec3::new(-0.125, 0.0, 0.0), 0.125, 1.0, Vec3::ZERO).is_ok());
+        assert!(
+            panel(
+                &door,
+                Vec3::new(-0.125, 0.0, 0.0),
+                PanelReach::uniform(0.125),
+                1.0,
+                Vec3::ZERO
+            )
+            .is_ok()
+        );
         assert_eq!(
-            panel(&door, Vec3::new(-0.25, 0.0, 0.0), 0.125, 1.0, Vec3::ZERO),
+            panel(
+                &door,
+                Vec3::new(-0.25, 0.0, 0.0),
+                PanelReach::uniform(0.125),
+                1.0,
+                Vec3::ZERO
+            ),
             Err(PanelRefusal::OutOfReach)
         );
         door.body = None;
         assert_eq!(
-            panel(&door, Vec3::ZERO, 0.1, 1.0, Vec3::ZERO),
+            panel(&door, Vec3::ZERO, PanelReach::uniform(0.1), 1.0, Vec3::ZERO),
             Err(PanelRefusal::NoOpenBody)
         );
         door.door_box = None;
         assert_eq!(
-            panel(&door, Vec3::ZERO, 0.1, 1.0, Vec3::ZERO),
+            panel(&door, Vec3::ZERO, PanelReach::uniform(0.1), 1.0, Vec3::ZERO),
             Err(PanelRefusal::NoBox)
         );
     }
@@ -237,7 +345,13 @@ mod tests {
         let mut door = door(true);
         door.body = Some((NonZeroUsize::new(8).unwrap(), 3));
         assert_eq!(
-            panel(&door, Vec3::new(0.1, 1.0, 1.0), 0.1, 0.7, Vec3::ZERO,),
+            panel(
+                &door,
+                Vec3::new(0.1, 1.0, 1.0),
+                PanelReach::uniform(0.1),
+                0.7,
+                Vec3::ZERO,
+            ),
             Err(PanelRefusal::LatchedWithOwnBody)
         );
     }

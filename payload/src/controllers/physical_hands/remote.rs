@@ -12,7 +12,7 @@ use crate::controllers::{
         STATE, bodies,
         collider_view::{self, model::Aabb},
         contact::{Surface, SurfaceHit},
-        doors::{self, DoorTarget, DoorsConfig, engine as door_engine},
+        doors::{self, DoorTarget, DoorsConfig, acquisition::PanelReach, engine as door_engine},
         engine,
         grasp::{self, Reach, TargetKind},
         pickup::{PICKUP, Request},
@@ -110,7 +110,16 @@ pub(crate) unsafe fn closed_door(
         },
         material: None,
     };
-    let reach = unsafe { doors::reach(object, body, &hit, point, reach_m, config) }?;
+    let reach = unsafe {
+        doors::reach(
+            object,
+            body,
+            &hit,
+            point,
+            PanelReach::uniform(reach_m),
+            config,
+        )
+    }?;
     match reach.kind {
         TargetKind::Door(door) if door.latched => Some((door, reach.point)),
         _ => None,

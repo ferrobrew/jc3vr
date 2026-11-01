@@ -451,6 +451,7 @@ fn the_actual_ray_scan_records_misses_without_engine_reads() {
                 notes: &mut Vec::new(),
                 rays: None,
                 scan: &mut scan,
+                vehicles: &mut Vec::new(),
             },
         )
     };
