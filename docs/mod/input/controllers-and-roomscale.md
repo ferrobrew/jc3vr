@@ -306,7 +306,7 @@ The grapple slot, index [`TargetType::TARGET_GRAPPLE`](https://ferrobrew.github.
 
 The game's grapple reticle pins to the centre of the screen when the aim uses a direct position, so it cannot show a hand ray, and it is hidden while the grapple aims by hand. The grapple readout is drawn by the world-space overlay layer instead: a highlight on the surface or object the grapple would attach to, shown only when the target is valid and in range, with a distinct style for targets that support tethering, and a gauntlet beam from the wrist to the target point. Each is configurable.
 
-The yank gesture is a sharp pull of the left hand back toward the body while a line is attached and the grapple button is held. It issues the same `FIRE_GRAPPLE` tap that zips; a pull with the button up does nothing, so a hand moved back in the course of play never zips. The physical grapple builds on the pull: it speeds the reel, boosts it on a yank during the reel, tightens attached tethers, and pumps the hang swing ([physical-grapple.md](physical-grapple.md)).
+The yank gesture is a sharp pull of the left hand back along its aim while a line is attached and the grapple button is held, measured along the aim the hand had when the yank armed ([physical-grapple.md](physical-grapple.md#what-the-hand-does)), so that a seated player's pull back past their side counts. It issues the same `FIRE_GRAPPLE` tap that zips; a pull with the button up does nothing, so a hand moved back in the course of play never zips. The physical grapple builds on the pull: it speeds the reel, boosts it on a yank during the reel, tightens attached tethers, and pumps the hang swing ([physical-grapple.md](physical-grapple.md)).
 
 ### Dual-wield
 

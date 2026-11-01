@@ -181,7 +181,7 @@ pub fn toss_flight(distance: f32, speed: f32, shortest: f32, longest: f32) -> f3
 mod tests {
     use super::*;
     use crate::controllers::{
-        bindings::yank::{YankDetector, body_point, reach_along},
+        bindings::yank::{YankDetector, reach_along},
         snatch::config::SnatchConfig,
     };
 
@@ -224,8 +224,7 @@ mod tests {
         ));
         // The same pull keeps its distance from a point below the head, which is why the body's
         // distance is not the snatch's measure.
-        let config = SnatchConfig::new().yank;
-        let body = body_point(SEATED_HEAD, &config);
+        let body = SEATED_HEAD - Vec3::Y * 0.3;
         assert!(!fires(
             SEATED_PULL.iter().map(|&grip| Some(grip.distance(body)))
         ));

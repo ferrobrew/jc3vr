@@ -85,7 +85,7 @@ use crate::{
             summary::yank_armed_in,
             tables::Bindings,
             trigger_ownership::{Owner as TriggerOwner, RawTrigger, TriggerOwnership},
-            yank::{GRAPPLE_YANK, HandLine, LineYank, Yank, YankConfig},
+            yank::{HandLine, LineYank, Yank},
         },
         config::LocomotionDirection,
         frame::{self, Button, ControllerFrame, Hand},
@@ -540,7 +540,6 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     controls.ragdolling = mode::last_snapshot()
         .and_then(|snapshot| snapshot.character)
         .is_some_and(|character| character.has(StateBitFlag::SB_IN_RAGDOLL));
-    let grapple_distance = grapple_hand_distance(grapple_hand, &GRAPPLE_YANK);
     let snatch_button_owned = state.bindings.claim_snatch(
         raw_grapple_button,
         snatch::can_claim_button() && config.weapons.snatch.sling,
@@ -566,7 +565,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     let physical_grapple = unsafe {
         grapple::physical::input_tick(&grapple::physical::TickInput {
             dt,
-            distance: grapple_distance,
+            line: grapple_line,
             button_held: grapple_held && !snatch_button_owned,
             detection: &detection,
             config: &config,
@@ -1046,21 +1045,6 @@ fn off_hand_rotation(frame: &ControllerFrame, off: Hand) -> f32 {
         (Some(hand), Some(head)) => hand - head,
         _ => 0.0,
     }
-}
-
-/// The grapple hand's distance from the body point the physical grapple's pull and the reel's
-/// boost measure toward, in the cockpit frame, or `None` while the hand is untracked or the hands
-/// are inert.
-fn grapple_hand_distance(hand: Hand, config: &YankConfig) -> Option<f32> {
-    let tracked = frame::with_latest(|frame| {
-        frame.focused && frame.hand(hand).active && frame.hand(hand).grip.is_tracked()
-    })?;
-    if !tracked {
-        return None;
-    }
-    let active = hands::active_hands_raw()?;
-    let grip = active.hands[hand.index()]?.grip.position;
-    Some(grip.distance(yank::body_point(active.head.position, config)))
 }
 
 /// The grapple hand's grip position and aim direction, in the cockpit frame, or `None` while the

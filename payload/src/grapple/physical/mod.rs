@@ -2,7 +2,8 @@
 //! `docs/mod/input/physical-grapple.md` and the engine side in
 //! `docs/engine/gameplay/grapple-pipeline.md`.
 //!
-//! - [`pull`] measures the grapple hand's pull toward the body: its speed and its depth;
+//! - [`pull`] measures the grapple hand's pull back along its aim when the reel or the retract
+//!   armed: its speed and its depth;
 //! - [`reel`] scales the reel by the pull's speed, and boosts it on a yank during the reel;
 //! - [`tether`] turns the pull's depth into the game's retract input while tethers are attached;
 //! - [`swing`] is the hang swing's pump, which the hang task's detour applies
@@ -15,7 +16,7 @@
 //! value winning, and a reel the hand does not drive runs on the game's own tuning.
 //!
 //! [`input_tick`] runs in the bindings' game stage ([`crate::controllers::bindings::stage`]), which
-//! hands it the grapple hand's distance from the body and injects the retract it returns. It reads
+//! hands it the grapple hand's grip and aim and injects the retract it returns. It reads
 //! the hook, steps the pull, publishes the reel's drive for the reel task's detour, vibrates the
 //! grapple hand, logs the grapple's events, and publishes the readout ([`status`]) for the
 //! status rows ([`crate::status`]).
@@ -38,14 +39,14 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     controllers::{
-        bindings::yank::{GRAPPLE_YANK, YankDetector},
+        bindings::yank::{GRAPPLE_YANK, HandLine, LineYank},
         config::ControllersConfig,
         hands::anchor,
         haptics::{self, Event, Sustain},
         mode::{Detection, Traversal},
     },
     grapple::physical::{
-        pull::{PullReading, PullTracker},
+        pull::{LinePull, PullReading},
         reel::ReelDrive,
         tether::TetherTick,
     },
@@ -61,9 +62,8 @@ pub(crate) fn hook_library() -> HookLibrary {
 pub(crate) struct TickInput<'a> {
     /// The engine's tick delta, seconds.
     pub dt: f32,
-    /// The grapple hand's distance from the body point a yank pulls toward, metres, or `None`
-    /// while the hand is untracked.
-    pub distance: Option<f32>,
+    /// The grapple hand's grip and aim, in the cockpit frame, or `None` while the hand is untracked.
+    pub line: Option<HandLine>,
     /// Whether the grapple button is held: the pull retracts the tethers only while it is.
     pub button_held: bool,
     pub detection: &'a Detection,
@@ -182,17 +182,30 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
 
     let mut pulses = Vec::new();
     let mut state = STATE.lock();
-    let pull = state.pull.step(input.dt, input.distance, &config.pull);
-
     // The reel: driven while the line carries the character toward its target.
     let reeling = matches!(
         input.detection.traversal,
         Some(Traversal::PreReel | Traversal::ReelingIn)
     );
     let drive_reel = reeling && config.reel.enabled;
+    let tethers = hook.map_or(0, |h| h.tethers);
+    let armed = input.button_held
+        && tether::armed(
+            &TetherTick {
+                tethers,
+                active_wire: hook.is_some_and(|h| h.active_wire),
+                detection: *input.detection,
+            },
+            &config.tether,
+        );
+    // Each pull is measured along the aim the hand has when the reel or the retract arms, and the
+    // boost's yank along the aim it has when the reel starts.
+    let pull = state
+        .pull
+        .step(input.dt, input.line, drive_reel || armed, &config.pull);
     let boost = state
         .boost
-        .step(input.dt, input.distance, drive_reel, &GRAPPLE_YANK);
+        .step(input.dt, input.line, drive_reel, &GRAPPLE_YANK);
     if let Some(yank) = boost {
         state.boost_until = Some(now + Duration::from_secs_f32(config.reel.boost_s.max(0.0)));
         state.status.boosts += 1;
@@ -237,16 +250,6 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
     }
 
     // The tether retract: the pull's depth, while tethers are attached and free.
-    let tethers = hook.map_or(0, |h| h.tethers);
-    let armed = input.button_held
-        && tether::armed(
-            &TetherTick {
-                tethers,
-                active_wire: hook.is_some_and(|h| h.active_wire),
-                detection: *input.detection,
-            },
-            &config.tether,
-        );
     // A retract that arms with the hand already back starts from that hand, not from a pull.
     let arming = armed && !state.tether_armed;
     if arming {
@@ -356,8 +359,8 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
 /// Forget the pull and stop driving the reel: the bindings stand down.
 pub(crate) fn stand_down() {
     let mut state = STATE.lock();
-    state.pull = PullTracker::new();
-    state.boost = YankDetector::new();
+    state.pull = LinePull::new();
+    state.boost = LineYank::new();
     state.boost_until = None;
     state.tether_armed = false;
     reel::publish(None);
@@ -368,9 +371,9 @@ const STATUS_MAX_AGE: Duration = Duration::from_millis(500);
 
 /// The input tick's state.
 struct State {
-    pull: PullTracker,
+    pull: LinePull,
     /// The yank detector armed during a reel, whose yanks boost it.
-    boost: YankDetector,
+    boost: LineYank,
     boost_until: Option<Instant>,
     /// The highest scale of the reel the hand drives, while it does.
     reel_peak: Option<f32>,
@@ -382,8 +385,8 @@ struct State {
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
-    pull: PullTracker::new(),
-    boost: YankDetector::new(),
+    pull: LinePull::new(),
+    boost: LineYank::new(),
     boost_until: None,
     reel_peak: None,
     tether_armed: false,

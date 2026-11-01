@@ -7,11 +7,10 @@
 //! in the window to the current one, covered at the configured speed or faster. After a yank the
 //! history is cleared and a cooldown runs, so one pull issues one tap.
 //!
-//! The zip's and the snatch's measure is the hand's reach along its aim when the gesture armed
-//! ([`reach_along`], kept by [`LineYank`] for the zip): a pull away from what the hand pointed at,
-//! whichever way it goes. The hand's distance from a point below the head ([`body_point`]) misses
-//! the pull of a seated player, whose hand starts close to the body and pulls back past its side;
-//! the reel's boost still measures that distance.
+//! The measure is the hand's reach along its aim when the gesture armed ([`reach_along`], kept by
+//! [`LineYank`] for the zip and the reel's boost): a pull away from what the hand pointed at,
+//! whichever way it goes. The hand's distance from a point below the head would miss the pull of a
+//! seated player, whose hand starts close to the body and pulls back past its side.
 
 use std::collections::VecDeque;
 
@@ -55,7 +54,6 @@ pub const GRAPPLE_YANK: YankConfig = YankConfig {
     min_speed_mps: 1.8,
     window_s: 0.2,
     cooldown_s: 0.6,
-    body_drop_m: 0.3,
 };
 
 /// A yank detector's settings: the grapple's ([`GRAPPLE_YANK`]), or the snatch's, held in
@@ -71,9 +69,6 @@ pub struct YankConfig {
     pub window_s: f32,
     /// How long after a yank before another can count, seconds.
     pub cooldown_s: f32,
-    /// How far below the head the body point the hand is pulled toward sits, metres: used by the
-    /// reel's boost, not by the zip's or the snatch's yank, which measure along the aim.
-    pub body_drop_m: f32,
 }
 
 /// The grapple hand's grip position and aim direction, in the cockpit frame.
@@ -131,11 +126,6 @@ impl LineYank {
             .and_then(|(line, hand)| reach_along(hand.grip, line));
         self.detector.step(dt, reach, armed, config)
     }
-}
-
-/// The body point a yank pulls toward: below the head, in the cockpit frame.
-pub fn body_point(head: Vec3, config: &YankConfig) -> Vec3 {
-    head - Vec3::Y * config.body_drop_m
 }
 
 /// The yank detector's history.
@@ -267,7 +257,7 @@ mod tests {
             .count();
         assert_eq!(fired, 1);
         // The body point's distance barely changes over the same pull.
-        let body = body_point(SEATED_HEAD, &GRAPPLE_YANK);
+        let body = SEATED_HEAD - Vec3::Y * 0.3;
         let mut detector = YankDetector::new();
         assert!(SEATED_ZIP.iter().all(|grip| {
             detector

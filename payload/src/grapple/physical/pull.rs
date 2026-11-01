@@ -1,21 +1,83 @@
-//! The grapple hand's pull on the line, measured from its distance to the body. Pure.
+//! The grapple hand's pull on the line, measured from its reach along its aim when the pull armed.
+//! Pure.
 //!
-//! A hand on a rope pulls in two ways, and the tracker measures both from one distance sample per
+//! The pull arms when the reel starts or the tether retract arms ([`LinePull`]), and the aim the
+//! hand has then is the line it pulls back along ([`reach_along`]): a reel follows a fire or a tap
+//! along the line the hand pointed, and the retract follows a hold of the button at what the
+//! tethers hold. A pull back from where the hand pointed counts whichever way it goes, so a seated
+//! player's hand, which starts close to the chest and pulls back past its side, pulls; its distance
+//! from the body hardly changes over such a pull, and its reach forward of the head takes only the
+//! part of it that goes straight back.
+//!
+//! A hand on a rope pulls in two ways, and the tracker measures both from one reach sample per
 //! input tick:
 //!
-//! - the pull's speed: how fast the hand comes toward the body, peak-held and decaying over
+//! - the pull's speed: how fast the hand comes back along the line, peak-held and decaying over
 //!   [`PullTuning::speed_hold_s`], so that one sharp pull is still felt across a reel that lasts
 //!   longer than the arm's reach;
 //! - the pull's depth: how far the hand has come back from a reference that jumps out with the hand
 //!   and relaxes toward a hand held still at [`PullTuning::relax_mps`]. Reaching out and pulling
 //!   back deepens the pull; holding the hand back lets it fade; a hand-over-hand pull keeps it up.
 
-use crate::grapple::physical::config::PullTuning;
+use glam::Vec3;
+
+use crate::{
+    controllers::bindings::yank::{HandLine, reach_along},
+    grapple::physical::config::PullTuning,
+};
+
+/// A pull measured along the aim the hand had when it armed.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct LinePull {
+    /// The aim at the arming, once a tracked hand gave one; cleared while disarmed.
+    line: Option<Vec3>,
+    tracker: PullTracker,
+}
+
+impl LinePull {
+    pub const fn new() -> Self {
+        Self {
+            line: None,
+            tracker: PullTracker::new(),
+        }
+    }
+
+    /// Advance by `dt` seconds with the hand's grip and aim (`None` while untracked); `armed` is
+    /// whether the reel or the retract reads the pull. The first tracked tick of an arming keeps
+    /// its aim as the line and starts the pull from the hand there. Disarmed, the pull reads
+    /// nothing.
+    pub fn step(
+        &mut self,
+        dt: f32,
+        hand: Option<HandLine>,
+        armed: bool,
+        config: &PullTuning,
+    ) -> PullReading {
+        if !armed {
+            *self = Self::new();
+            return PullReading::default();
+        }
+        if self.line.is_none() {
+            self.line = hand.map(|hand| hand.aim).filter(|aim| aim.is_finite());
+            self.tracker = PullTracker::new();
+        }
+        let reach = self
+            .line
+            .zip(hand)
+            .and_then(|(line, hand)| reach_along(hand.grip, line));
+        self.tracker.step(dt, reach, config)
+    }
+
+    /// Start the pull's depth from the hand where it is ([`PullTracker::rebase`]).
+    pub fn rebase(&mut self) {
+        self.tracker.rebase();
+    }
+}
 
 /// One tick's reading of the pull.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct PullReading {
-    /// The peak-held speed of the hand toward the body, metres per second, never negative.
+    /// The peak-held speed of the hand back along the line, metres per second, never negative.
     pub speed_mps: f32,
     /// How far the hand is back from the reference, metres, never negative.
     pub depth_m: f32,
@@ -24,9 +86,9 @@ pub struct PullReading {
 /// The pull tracker's state.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct PullTracker {
-    /// The last tick's distance from the body, metres.
+    /// The last tick's reach along the line, metres.
     previous: Option<f32>,
-    /// The depth's reference distance, metres.
+    /// The depth's reference reach, metres.
     reference: Option<f32>,
     speed: f32,
 }
@@ -40,7 +102,7 @@ impl PullTracker {
         }
     }
 
-    /// Advance by `dt` seconds with the hand's distance from the body, or `None` while the hand is
+    /// Advance by `dt` seconds with the hand's reach along the line, or `None` while the hand is
     /// untracked, which forgets the pull.
     pub fn step(&mut self, dt: f32, distance: Option<f32>, config: &PullTuning) -> PullReading {
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
@@ -138,6 +200,80 @@ mod tests {
         run(&mut t, &[0.3, 0.6]);
         let back = run(&mut t, &[0.5]);
         assert!((back[0].depth_m - 0.1).abs() < 0.01, "{back:?}");
+    }
+
+    /// A seated player's grapple hand, the line out ahead and to the right, pulled back and out past
+    /// their left side at the game's tick, with its aim at the arming and the head; cockpit frame.
+    /// The shape of a recorded seated pull.
+    const SEATED_PULL: [Vec3; 7] = [
+        Vec3::new(-0.029, -0.274, -0.390),
+        Vec3::new(-0.060, -0.252, -0.381),
+        Vec3::new(-0.101, -0.235, -0.354),
+        Vec3::new(-0.150, -0.221, -0.329),
+        Vec3::new(-0.191, -0.216, -0.307),
+        Vec3::new(-0.216, -0.216, -0.288),
+        Vec3::new(-0.225, -0.219, -0.277),
+    ];
+    const SEATED_AIM: Vec3 = Vec3::new(0.51, -0.46, -0.73);
+    const SEATED_HEAD: Vec3 = Vec3::new(0.07, -0.046, 0.0);
+    const SEATED_DT: f32 = 0.053;
+
+    fn peak(readings: impl Iterator<Item = PullReading>) -> PullReading {
+        readings.fold(PullReading::default(), |peak, r| PullReading {
+            speed_mps: peak.speed_mps.max(r.speed_mps),
+            depth_m: peak.depth_m.max(r.depth_m),
+        })
+    }
+
+    #[test]
+    fn a_seated_pull_past_the_side_pulls_along_the_armed_aim() {
+        let config = GRAPPLE.pull;
+        let mut pull = LinePull::new();
+        let along = peak(SEATED_PULL.iter().map(|&grip| {
+            pull.step(
+                SEATED_DT,
+                Some(HandLine {
+                    grip,
+                    aim: SEATED_AIM,
+                }),
+                true,
+                &config,
+            )
+        }));
+        assert!(along.speed_mps > 0.7, "{along:?}");
+        assert!(along.depth_m > GRAPPLE.tether.deadzone_m, "{along:?}");
+        // The same pull hardly nears a point below the head.
+        let below_head = SEATED_HEAD - Vec3::Y * 0.3;
+        let mut tracker = PullTracker::new();
+        let body = peak(
+            SEATED_PULL
+                .iter()
+                .map(|&grip| tracker.step(SEATED_DT, Some(grip.distance(below_head)), &config)),
+        );
+        assert!(body.depth_m < 0.03, "{body:?}");
+    }
+
+    #[test]
+    fn a_disarmed_pull_reads_nothing_and_rearms_from_the_hand() {
+        let config = GRAPPLE.pull;
+        let mut pull = LinePull::new();
+        let hand = |z: f32| {
+            Some(HandLine {
+                grip: Vec3::new(0.0, 0.0, z),
+                aim: Vec3::NEG_Z,
+            })
+        };
+        pull.step(DT, hand(-0.6), true, &config);
+        assert!(pull.step(DT, hand(-0.4), true, &config).depth_m > 0.15);
+        assert_eq!(
+            pull.step(DT, hand(-0.3), false, &config),
+            PullReading::default()
+        );
+        // Re-armed with the hand already back, the pull starts from there.
+        assert_eq!(
+            pull.step(DT, hand(-0.3), true, &config),
+            PullReading::default()
+        );
     }
 
     #[test]
