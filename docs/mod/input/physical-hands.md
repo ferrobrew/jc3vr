@@ -184,7 +184,7 @@ The log has the lifecycle at info level: `hand bodies: registered the pre-simula
 
 The palms' settings are `physical_hands` in the controller settings, in the debug UI's Physical hands feature, with the readout (each palm's press, push, and speed, its shove's impulse, load, and resistance, what it reaches or holds with the mass, the lag, and the pull and twist used, and the counters). The feature has the master switch, `push`, the pickup's switch, and its throw scale (`pickup.throw_scale`); the rest of the palms', the shove's, and the pickup's tuning is fixed in `PALMS`, `SHOVE`, and `PICKUP`. `show_boxes`, the Palm boxes switch in the debug UI's visualization drawer, draws the palm boxes in the world-space overlay, coloured by whether they press into the world or an object, with a line along each shove, longer for a harder push and redder for a body that resists. The grab view ([grab-view.md](grab-view.md)) draws each hand's lines to the grip targets it may take.
 
-The collider view ([collider-view.md](collider-view.md), `physical_hands.collider_view`, Ctrl+Numpad0) draws the hand bodies with every other body near the player: their boxes and capsules, their joints, and the contacts they start.
+The collider view ([collider-view.md](collider-view.md), `physical_hands.collider_view`, F3) draws the hand bodies with every other body near the player: their boxes and capsules, their joints, and the contacts they start.
 
 ### Interaction evidence
 

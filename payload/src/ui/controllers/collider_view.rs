@@ -12,7 +12,7 @@ pub(super) fn collider_view_readout(ui: &mut Ui, status: &ColliderViewStatus) {
     let label = if status.enabled {
         "Hide the colliders"
     } else {
-        "Show the colliders (Ctrl+Numpad0)"
+        "Show the colliders (F3)"
     };
     if ui.button(label).clicked() {
         collider_view::toggle();

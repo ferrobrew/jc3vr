@@ -18,9 +18,9 @@ use std::borrow::Cow;
 
 use serde::{Deserialize, Serialize};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, VK_ADD, VK_CONTROL, VK_DECIMAL, VK_DIVIDE, VK_MENU, VK_MULTIPLY, VK_NUMPAD0,
-    VK_NUMPAD1, VK_NUMPAD2, VK_NUMPAD3, VK_NUMPAD4, VK_NUMPAD5, VK_NUMPAD6, VK_NUMPAD7, VK_NUMPAD8,
-    VK_NUMPAD9, VK_SHIFT, VK_SUBTRACT,
+    GetKeyState, VK_ADD, VK_CONTROL, VK_DECIMAL, VK_DIVIDE, VK_F3, VK_MENU, VK_MULTIPLY,
+    VK_NUMPAD0, VK_NUMPAD1, VK_NUMPAD2, VK_NUMPAD3, VK_NUMPAD4, VK_NUMPAD5, VK_NUMPAD6, VK_NUMPAD7,
+    VK_NUMPAD8, VK_NUMPAD9, VK_SHIFT, VK_SUBTRACT,
 };
 
 use crate::{
@@ -303,7 +303,7 @@ const DEFAULT_BINDINGS: [Binding; 18] = [
     },
     Binding {
         action: Action::ToggleColliderView,
-        chord: Chord::ctrl(VK_NUMPAD0.0),
+        chord: Chord::plain(VK_F3.0),
     },
 ];
 

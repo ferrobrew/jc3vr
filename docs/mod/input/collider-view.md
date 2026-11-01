@@ -4,7 +4,7 @@ The collider view draws the physics world's bodies near the player in the world-
 
 ## Using it
 
-Ctrl+Numpad0 (the director keymap's `ToggleColliderView`, [trailer-tooling.md](../trailer-tooling.md)) shows and hides it, as do the Collider view switch in the debug UI's visualization drawer and the button at the top of its readout under the drawer's View readouts. Its settings are `controllers.physical_hands.collider_view`: the switch, and switches for the boxes, the shapes, the static bodies, the contacts and ground, the joints, and the gaze, under the drawer's Collider view contents. It reads within 6 m of the player and draws at most 128 bodies and 1536 primitives (`RADIUS_M`, `MAX_BODIES`, and `MAX_PRIMITIVES` in `physical_hands::collider_view`). The view draws through the overlay, so it needs `controllers.overlay.enabled`, and it acts only in gameplay. The debug UI's Status page has a `COLLIDER VIEW` row under `HAND BODIES`: `OFF` with the key that shows it, `WAITING` until the first read after a physics step, `FAILED` when the world could not be read (the error is in the `status:` log line), and otherwise the bodies drawn out of those in range, the primitives, and how many bodies the budget left out.
+F3 (the director keymap's `ToggleColliderView`, [trailer-tooling.md](../trailer-tooling.md)) shows and hides it, as do the Collider view switch in the debug UI's visualization drawer and the button at the top of its readout under the drawer's View readouts. Its settings are `controllers.physical_hands.collider_view`: the switch, and switches for the boxes, the shapes, the static bodies, the contacts and ground, the joints, and the gaze, under the drawer's Collider view contents. It reads within 6 m of the player and draws at most 128 bodies and 1536 primitives (`RADIUS_M`, `MAX_BODIES`, and `MAX_PRIMITIVES` in `physical_hands::collider_view`). The view draws through the overlay, so it needs `controllers.overlay.enabled`, and it acts only in gameplay. The debug UI's Status page has a `COLLIDER VIEW` row under `HAND BODIES`: `OFF` with the key that shows it, `WAITING` until the first read after a physics step, `FAILED` when the world could not be read (the error is in the `status:` log line), and otherwise the bodies drawn out of those in range, the primitives, and how many bodies the budget left out.
 
 The colours:
 
@@ -58,7 +58,7 @@ The view's own state is a lock taken on the game thread only, by the render upda
 
 ## Headset checklist
 
-- Switch the view on with Ctrl+Numpad0 and check that the player's capsule (green) stands around Rico, that the ground's box is green under it, and that the normal line points up off flat ground.
+- Switch the view on with F3 and check that the player's capsule (green) stands around Rico, that the ground's box is green under it, and that the normal line points up off flat ground.
 - Walk up to a crate and a car and check that their boxes and shapes sit on them, and that the gaze readout names the one looked at, with a sensible mass.
 - Reach into a wall and swing at a crate: the hand bodies (orange) should stay at the wall, and each hit should flash a ring at the hand and the crate's box.
 - Pick up a prop, and hold a gun: a lime line should join the hand to the prop, and a yellow one the hand to the gun, with an orange one for a bracing hand.

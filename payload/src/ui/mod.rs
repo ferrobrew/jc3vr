@@ -337,9 +337,11 @@ fn egui_debug_window_body(ui: &mut egui::Ui, renderer: &mut egui_directx11::Rend
     let state = slot.get_or_insert_with(layout::Layout::load);
     let editing = debug_ui_capture().is_some_and(|snapshot| snapshot.edit_capture.any());
     ui.horizontal_wrapped(|ui| {
+        // Worded as an action, because a toggle reads as a plain label when it is off.
+        let verb = if state.drawer { "Hide" } else { "Show" };
         ui.toggle_value(
             &mut state.drawer,
-            format!("Visualizations: {}", visualizations.summary().label()),
+            format!("{verb} visualizations ({})", visualizations.summary().label()),
         );
         if ui.button("Detach this view").clicked() { state.detach(state.selection); }
         ui.menu_button("Layout", |ui| {
