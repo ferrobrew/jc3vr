@@ -1,7 +1,7 @@
 //! The pure pose and transform math the late update builds its correction from, independent of any
 //! frame state.
 
-use glam::Mat4;
+use glam::{Mat4, Quat, Vec3};
 
 use crate::controllers::{frame::Pose, hands::pose as hand_pose};
 
@@ -44,6 +44,33 @@ pub(crate) fn interpolate_attached(parent: [Mat4; 2], attachment: [Mat4; 2], t: 
     lerp_transform(parent[0], parent[1], t) * lerp_transform(local[0], local[1], t)
 }
 
+/// `d` with its translation shortened so that it carries `wrist` no further than `max_stretch`
+/// forearm lengths from `elbow`: the farthest the forearm's palette edit stretches to meet the
+/// hand ([`crate::controllers::hands::palette::MAX_FOREARM_STRETCH`]). Past it, the forearm would
+/// stop short and the hand would be drawn detached from the arm, its skin stretched across the gap.
+/// `d`'s turn is kept; a degenerate arm or a non-finite input leaves `d` as it is.
+pub(crate) fn keep_on_forearm(d: Pose, elbow: Vec3, wrist: Vec3, max_stretch: f32) -> Pose {
+    let reach = elbow.distance(wrist) * max_stretch;
+    let drawn = hand_pose::mul(
+        d,
+        Pose {
+            position: wrist,
+            orientation: Quat::IDENTITY,
+        },
+    )
+    .position;
+    let from_elbow = drawn - elbow;
+    if !(reach.is_finite() && reach > f32::EPSILON && from_elbow.is_finite())
+        || from_elbow.length() <= reach
+    {
+        return d;
+    }
+    Pose {
+        position: d.position + from_elbow.clamp_length_max(reach) - from_elbow,
+        ..d
+    }
+}
+
 pub(crate) fn pose_matrix(p: Pose) -> Mat4 {
     Mat4::from_rotation_translation(p.orientation, p.position)
 }
@@ -71,8 +98,6 @@ pub(super) const MAX_TURN_RAD: f32 = std::f32::consts::FRAC_PI_2;
 
 #[cfg(test)]
 mod tests {
-    use glam::{Quat, Vec3};
-
     use super::*;
 
     #[test]
@@ -131,6 +156,39 @@ mod tests {
                 assert!(interpolate_attached(parent, attachment, t).abs_diff_eq(expected, 1e-5));
             }
         }
+    }
+
+    #[test]
+    fn a_hand_carried_past_the_stretched_forearm_stops_at_its_end() {
+        let elbow = Vec3::new(0.35, 1.25, 0.02);
+        let wrist = elbow + Vec3::new(0.0, 0.0, -0.24);
+        let turn = Quat::from_rotation_x(0.3);
+        // Half a metre along the forearm: the drawn wrist stops at one and a half forearms.
+        let far = Pose {
+            position: Vec3::new(0.0, 0.0, -0.5),
+            orientation: turn,
+        };
+        let kept = keep_on_forearm(far, elbow, wrist, 1.5);
+        let drawn = hand_pose::mul(
+            kept,
+            Pose {
+                position: wrist,
+                orientation: Quat::IDENTITY,
+            },
+        );
+        assert!((drawn.position.distance(elbow) - 0.36).abs() < 1e-4);
+        assert!(kept.orientation.angle_between(turn) < 1e-5);
+        // A correction the stretch covers, or a sideways one within reach, is left alone.
+        for within in [Vec3::new(0.0, 0.0, -0.1), Vec3::new(0.0, 0.2, 0.0)] {
+            let d = Pose {
+                position: within,
+                orientation: Quat::IDENTITY,
+            };
+            assert_eq!(keep_on_forearm(d, elbow, wrist, 1.5), d);
+        }
+        // A degenerate arm or a non-finite input leaves the correction as it is.
+        assert_eq!(keep_on_forearm(far, elbow, elbow, 1.5), far);
+        assert_eq!(keep_on_forearm(far, Vec3::NAN, wrist, 1.5), far);
     }
 
     #[test]

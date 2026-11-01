@@ -21,7 +21,10 @@
 //! target moved back along the shortfall by the part of it the detach covers
 //! ([`reach::detach_offset`]: past a small threshold, up to a cap), so `D` carries the rendered hand
 //! that far off the end of the arm toward the controller, and the forearm stretches along its axis
-//! to stay attached ([`palette::forearm_reach`]). Past the cap, the hand stays at the cap.
+//! to stay attached ([`palette::forearm_reach`]). Past the cap, the hand stays at the cap. However
+//! far the controller has moved since the tick, `D` carries the wrist no further from the solved
+//! elbow than the forearm's stretch reaches ([`math::keep_on_forearm`]), so the hand, its gun, and
+//! what rides it stay on the end of the arm rather than separating from the forearm.
 //!
 //! Both render seams apply the same `D`, so the gun and the hand never separate:
 //!

@@ -19,8 +19,8 @@ use crate::{
             late::{
                 bones::{self, HandBones, Solved},
                 math::{
-                    MAX_SHIFT_M, MAX_TURN_RAD, correction, interpolate_attached, lerp_transform,
-                    pose_matrix, relative_metrics,
+                    MAX_SHIFT_M, MAX_TURN_RAD, correction, interpolate_attached, keep_on_forearm,
+                    lerp_transform, pose_matrix, relative_metrics,
                 },
             },
             palette::{self, PaletteLayout},
@@ -416,10 +416,26 @@ impl LateFrame {
             };
             // The detached reference can fail the plausibility bound the status passed only by the
             // cap's margin; the hand then stays on the arm rather than going uncorrected.
-            correction(now, detached, current.weight)
+            let d = correction(now, detached, current.weight)
                 .or_else(|| correction(now, reference, current.weight))
-                .unwrap()
+                .unwrap();
+            self.keep_on_forearm(hand, dtf, d)
         })
+    }
+
+    /// `d` held to what the forearm's stretch reaches from the solved elbow, so every seam that
+    /// draws from the correction (the palette, the gun, what rides the drawn hand) keeps the hand
+    /// on the end of the arm when the controller has gone further than the arm can follow.
+    fn keep_on_forearm(&self, hand: Hand, dtf: f32, d: Pose) -> Pose {
+        let (Some(transport), Some(joints)) = (self.transport, self.solved.current[hand.index()])
+        else {
+            return d;
+        };
+        let previous = self.solved.previous[hand.index()].unwrap_or(joints);
+        let to_world = lerp_transform(transport[0], transport[1], dtf);
+        let elbow = to_world.transform_point3(previous.elbow.lerp(joints.elbow, dtf));
+        let wrist = to_world.transform_point3(previous.wrist.lerp(joints.wrist, dtf));
+        keep_on_forearm(d, elbow, wrist, palette::MAX_FOREARM_STRETCH)
     }
 
     /// `hand`'s poses as drawn at `dtf` (see [`drawn_hands`]).
@@ -768,6 +784,31 @@ mod tests {
         f.enabled = false;
         let solved = f.drawn(Hand::Right, 0.5).unwrap();
         assert!((solved.wrist.position.x - 0.25).abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_controller_past_the_stretched_forearm_keeps_the_hand_and_its_gun_on_the_arm() {
+        // The tick solved the right wrist at its target, a forearm's length out from the elbow;
+        // the controller has since gone 40 cm further along the arm.
+        let target = pose(0.6, 0.0);
+        let mut f = frame(pose(1.0, 0.0), target, target, 1.0);
+        f.transport = Some([Mat4::IDENTITY; 2]);
+        let joints = Some(ArmJoints {
+            elbow: Vec3::new(0.36, 1.0, 0.0),
+            wrist: target.position,
+            miss: Some(Vec3::ZERO),
+        });
+        f.solved.previous[Hand::Right.index()] = joints;
+        f.solved.current[Hand::Right.index()] = joints;
+        let reach = 0.24 * palette::MAX_FOREARM_STRETCH;
+        let d = f.hand_delta(Hand::Right, 0.5).unwrap();
+        assert!((d.position.x - (reach - 0.24)).abs() < 1e-5);
+        let drawn = f.drawn(Hand::Right, 0.5).unwrap();
+        assert!((drawn.wrist.position.x - (0.36 + reach)).abs() < 1e-5);
+        // Within the stretch, the hand still goes all the way to the controller.
+        f.hands[Hand::Right.index()] = frame(pose(0.65, 0.0), target, target, 1.0).hands[1];
+        let near = f.drawn(Hand::Right, 0.5).unwrap();
+        assert!((near.wrist.position.x - 0.65).abs() < 1e-5);
     }
 
     #[test]
