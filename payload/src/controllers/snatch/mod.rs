@@ -40,6 +40,7 @@ pub mod config;
 mod engine;
 mod hooks;
 mod latch;
+mod moment;
 mod prearm;
 mod pull;
 pub mod rules;
@@ -70,6 +71,7 @@ use crate::controllers::{
     mode::{Detection, Mode},
     physical_hands::{self, BodyError},
     snatch::{
+        moment::Moment,
         prearm::Prearm,
         pull::{Arrival, Attached, Fired, Grabbed},
         rules::StallWatch,
@@ -311,7 +313,11 @@ pub(crate) unsafe fn finish_tick(input: &FinishInput, desired: &mut Vec<Desired>
         }
     }
     let mut state = STATE.lock();
+    let (from, hand) = (state.phase.label(), state.phase.hand());
     unsafe { state.step(input) };
+    let to = state.phase.label();
+    let hand = hand.or(state.phase.hand());
+    state.moment.note(hand, from, to);
     let overlay = &input.config.overlay;
     match &state.phase {
         Phase::Armed { hand, offer, .. } if overlay.enabled && overlay.markers => {
@@ -339,6 +345,11 @@ pub(crate) fn stand_down() {
     let mut state = STATE.lock();
     if !matches!(state.phase, Phase::Idle) {
         tracing::info!(target: "controllers", phase = state.phase.label(), "snatch: stood down");
+        let (from, hand) = (state.phase.label(), state.phase.hand());
+        state
+            .moment
+            .ended("stood down", "the bindings stood down".to_owned());
+        state.moment.note(hand, from, Phase::Idle.label());
     }
     // SAFETY: the game stage runs on the game thread before the world update.
     unsafe { state.phase.end_line() };
@@ -390,6 +401,7 @@ const MARK_SIZE_M: f32 = 0.3;
 
 static STATE: Mutex<State> = Mutex::new(State {
     phase: Phase::Idle,
+    moment: Moment::new(),
     prearm: Prearm::new(),
     status: SnatchStatus {
         live: false,
@@ -407,6 +419,8 @@ static STATE: Mutex<State> = Mutex::new(State {
 
 struct State {
     phase: Phase,
+    /// What the step under way saw, for its recorded phase change.
+    moment: Moment,
     /// The recent aimed target retained across the grip edge.
     prearm: Prearm<Offer>,
     status: SnatchStatus,
@@ -537,6 +551,8 @@ impl State {
                         yank_mps = pulled.speed_mps,
                         "snatch: yanked; firing"
                     );
+                    self.moment.target(offer.kind.label(), offer.distance);
+                    self.moment.yank(pulled.distance_m, pulled.speed_mps);
                     haptics::play(hand, Event::SnatchFire);
                     self.status.fired += 1;
                     match unsafe { pull::fire_at(hand, offer) } {
@@ -627,6 +643,8 @@ impl State {
                             unsafe { engine::cancel(wire) };
                             self.status.taken += 1;
                             tracing::info!(target: "controllers", hand = hand.label(), "snatch: the line pulled a car door open");
+                            self.moment
+                                .ended("taken", "the line pulled a car door open".to_owned());
                             Phase::Idle
                         }
                         Err(refusal) => {
@@ -689,6 +707,19 @@ impl State {
                     },
                     Ok(Some(arrival)) => {
                         self.status.taken += 1;
+                        self.moment.ended(
+                            "taken",
+                            match &arrival {
+                                Arrival::Weapon(slot) => {
+                                    format!(
+                                        "a weapon came into the hand's {} slot",
+                                        slot_label(*slot)
+                                    )
+                                }
+                                Arrival::Prop => "an object came into the hand's hold".to_owned(),
+                                Arrival::Grenade => "a grenade came to the hand".to_owned(),
+                            },
+                        );
                         haptics::play(hand, Event::Take);
                         match arrival {
                             Arrival::Weapon(slot) => tracing::info!(
@@ -763,6 +794,7 @@ impl State {
             distance_m = offer.distance,
             "snatch: armed; a yank fires"
         );
+        self.moment.target(offer.kind.label(), offer.distance);
         haptics::play(hand, Event::SnatchArm);
         Phase::Armed {
             hand,
@@ -778,11 +810,13 @@ impl State {
         // SAFETY: the game stage runs on the game thread before the world update.
         unsafe { phase.end_line() };
         tracing::info!(target: "controllers", phase = phase.label(), why, "snatch: cancelled");
+        self.moment.ended("cancelled", why.to_owned());
     }
 
     /// Record a failed snatch of `hand`, and go idle.
     fn failed(&mut self, hand: Hand, refusal: Refusal) -> Phase {
         tracing::info!(target: "controllers", hand = hand.label(), %refusal, "snatch: failed");
+        self.moment.ended("failed", refusal.to_string());
         haptics::play(hand, Event::SnatchRefused);
         self.status.failed += 1;
         self.status.last_refusal = Some(refusal.to_string());

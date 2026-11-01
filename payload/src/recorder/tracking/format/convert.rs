@@ -114,6 +114,7 @@ pub(super) fn frame_to_file(frame: &Frame) -> file::Frame {
                 cause: match cause {
                     RecenterCause::Manual => wire::RecenterCause::Manual,
                     RecenterCause::SeatTransition => wire::RecenterCause::SeatTransition,
+                    RecenterCause::FollowBank => wire::RecenterCause::FollowBank,
                 },
                 turn,
             })
@@ -446,6 +447,7 @@ fn frame_from_file(frame: file::Frame) -> Frame {
                 cause: match cause {
                     wire::RecenterCause::Manual => RecenterCause::Manual,
                     wire::RecenterCause::SeatTransition => RecenterCause::SeatTransition,
+                    wire::RecenterCause::FollowBank => RecenterCause::FollowBank,
                 },
                 turn,
             })

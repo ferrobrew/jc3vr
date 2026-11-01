@@ -56,31 +56,32 @@ pub enum RecenterCause {
     Manual,
     /// A seat transition's re-base, on the game's schedule rather than the player's.
     SeatTransition,
+    /// The follow bank ([`crate::headpose::follow`]): a frozen turn of the body under the view
+    /// folded into the baseline's yaw. Nobody requests it; it is noted so that a recording carries
+    /// it and a replay applies it on the frame it took effect in.
+    FollowBank,
 }
 
 /// Ask for a manual recenter of `kind` at the start of the next frame. [`recenter`] asks for the
 /// kind the posture calls for; this is for a caller that has chosen one. A full request outranks a
 /// yaw-and-height one.
 pub fn request_recenter(kind: RecenterKind) {
-    request(kind, RecenterCause::Manual);
+    request(kind, true);
 }
 
 /// Ask for a seat transition's recenter at the start of the next frame, as [`request_recenter`]
 /// does, without the manual recenter's re-base of the seated eye reference. A manual request in
 /// the same frame makes the merged recenter manual.
 pub fn request_seat_recenter(kind: RecenterKind) {
-    request(kind, RecenterCause::SeatTransition);
+    request(kind, false);
 }
 
-fn request(kind: RecenterKind, cause: RecenterCause) {
+fn request(kind: RecenterKind, manual: bool) {
     let kind_bit = match kind {
         RecenterKind::YawAndHeight => REQUEST_YAW_HEIGHT,
         RecenterKind::Full => REQUEST_FULL,
     };
-    let cause_bit = match cause {
-        RecenterCause::Manual => REQUEST_MANUAL,
-        RecenterCause::SeatTransition => 0,
-    };
+    let cause_bit = if manual { REQUEST_MANUAL } else { 0 };
     PENDING_RECENTER.fetch_or(kind_bit | cause_bit, Ordering::Relaxed);
 }
 
@@ -119,9 +120,22 @@ fn recenter_as(kind: RecenterKind, cause: RecenterCause) {
 }
 
 /// Apply a recenter a replay recorded: everything a recenter does besides re-basing the baseline,
-/// which the recorded poses already carry. Game thread, at the top of the frame, like a live
-/// recenter.
+/// which the recorded poses already carry. A recorded follow bank gives its turn back to the
+/// composition as the live bank did, since the replay services no bank of its own. Game thread, at
+/// the top of the frame, like a live recenter.
 pub(crate) fn apply_replayed_recenter(kind: RecenterKind, cause: RecenterCause, turn: glam::Quat) {
+    if cause == RecenterCause::FollowBank {
+        flight_pose::source_changed(EpochChange::FollowBank);
+        // The bank turned the frame by the inverse of its yaw: new frame from old.
+        let yaw = -turn.to_euler(glam::EulerRot::YXZ).0;
+        banked(yaw, turn);
+        tracing::debug!(
+            target: "vr",
+            yaw_deg = yaw.to_degrees(),
+            "replayed a follow bank of the cockpit baseline"
+        );
+        return;
+    }
     flight_pose::source_changed(EpochChange::Recenter);
     rebased(kind, cause, turn);
     tracing::info!(target: "vr", ?kind, ?cause, "replayed a recenter of the cockpit baseline");
@@ -194,18 +208,29 @@ fn service_follow_bank() {
     }
     // The cockpit frame turns by the inverse: new frame from old.
     let turn = rotation.conjugate();
-    crate::controllers::roomscale::on_recenter(
-        RecenterKind::YawAndHeight,
+    banked(yaw, turn);
+    crate::recorder::tracking::note_recenter(RecenterEvent {
+        kind: RecenterKind::YawAndHeight,
+        cause: RecenterCause::FollowBank,
         turn,
-        RecenterCause::SeatTransition,
-    );
-    crate::headpose::xr::bank(yaw);
-    crate::controllers::body::rig::on_bank(turn);
+    });
     tracing::debug!(
         target: "vr",
         yaw_deg = yaw.to_degrees(),
         "folded the body's turn under the view into the cockpit baseline"
     );
+}
+
+/// What follows a follow bank of `yaw` besides the baseline's own turn: the cockpit frame turned by
+/// `turn`, new frame from old, and the composition gives the turn back.
+fn banked(yaw: f32, turn: glam::Quat) {
+    crate::controllers::roomscale::on_recenter(
+        RecenterKind::YawAndHeight,
+        turn,
+        RecenterCause::FollowBank,
+    );
+    crate::headpose::xr::bank(yaw);
+    crate::controllers::body::rig::on_bank(turn);
 }
 
 /// The recenters done, for [`recenter_count`].

@@ -108,6 +108,7 @@ pub(crate) fn frame(out: &mut Encoder, frame: &Frame, schema: FrameSchema) {
         out.u8(match event.cause {
             RecenterCause::Manual => 0,
             RecenterCause::SeatTransition => 1,
+            RecenterCause::FollowBank => 2,
         });
         out.quat(event.turn);
     }
@@ -179,6 +180,7 @@ pub(crate) fn read_frame(input: &mut Decoder, schema: FrameSchema) -> Result<Fra
         let cause = match input.u8()? {
             0 => RecenterCause::Manual,
             1 => RecenterCause::SeatTransition,
+            2 => RecenterCause::FollowBank,
             value => return Err(invalid(offset, "a recenter's cause", value.into())),
         };
         let turn = input.quat()?;

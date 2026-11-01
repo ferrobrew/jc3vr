@@ -206,7 +206,13 @@ pub(crate) unsafe fn opened(hand: Hand) {
         (state.grips[hand.index()].is_some(), since_s)
     };
     let release = if tracked {
-        throw_release(hand, world.w_axis.truncate(), since_s)
+        throw_release(
+            hand,
+            world.w_axis.truncate(),
+            since_s,
+            "grenade",
+            Some(!pin_in(hand)),
+        )
     } else {
         Release::REST
     };

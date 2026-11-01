@@ -284,6 +284,9 @@ pub enum RecenterCause {
     Manual,
     /// A seat transition's re-base.
     SeatTransition,
+    /// The follow bank: a frozen turn of the body under the view folded into the cockpit frame,
+    /// from version 7. Recorded as a yaw-and-height re-base whose turn is the bank's.
+    FollowBank,
 }
 
 /// A semantic action set.

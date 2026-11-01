@@ -6,9 +6,10 @@
 
 use std::time::Instant;
 
+use jc3gi::character::character::Character;
 use tracking_format::event::{
-    AimState, ControllerState, GrappleAim, HandAim, HandLate, HandTier, IkState, Label, LateState,
-    RoomscaleState, RootTick, TierState, WeaponAim,
+    AimState, CharacterMotion, ControllerState, GrappleAim, GroundHeight, HandAim, HandLate,
+    HandTier, IkState, Label, LateState, RoomscaleState, RootTick, TierState, WeaponAim,
 };
 
 use crate::{
@@ -27,12 +28,13 @@ use crate::{
         roomscale,
         scheme::{self, Scheme},
     },
+    hooks::animation::body_rule_system,
     recorder::tracking::format::hand_to_file,
     vr::input as vr_input,
 };
 
-/// Read every subsystem's status into one event.
-pub(super) fn snapshot() -> ControllerState {
+/// Read every subsystem's status, and the player `character`'s measured motion, into one event.
+pub(super) fn snapshot(character: Option<&Character>) -> ControllerState {
     let detection = mode::current();
     let (frame_sequence, publication_age_us) = frame::with_latest(|frame| {
         (
@@ -60,6 +62,21 @@ pub(super) fn snapshot() -> ControllerState {
         aim: aim_state(aim::status()),
         roomscale: roomscale_state(roomscale_status),
         root: fresh_trace(&roomscale_status.root.sim, Instant::now()).map(root_tick),
+        character: character.map(character_motion),
+    }
+}
+
+/// The character's measured world velocity, and the height over the ground its ground information
+/// last wrote to its body rule system.
+fn character_motion(character: &Character) -> CharacterMotion {
+    // SAFETY: the caller's character is the live local player, read on the game thread.
+    let rules = unsafe { body_rule_system(character) };
+    CharacterMotion {
+        velocity_mps: character.m_MeasuredWorldVelocity.into(),
+        height: rules.map(|rules| GroundHeight {
+            nearest_m: rules.m_HeightOverGround,
+            ground_m: rules.m_HeightOverGroundExcludingWater,
+        }),
     }
 }
 

@@ -7,6 +7,7 @@ use glam::Vec3;
 use jc3gi::vehicle::vehicle::DoorSlot;
 
 use crate::controllers::{
+    diagnostics::{Released, Thrown, note_release, note_throw},
     frame::Hand,
     physical_hands::{
         STALE_AFTER, bodies,
@@ -20,7 +21,7 @@ use crate::controllers::{
             HeldReport, PickupTuning,
             diagnostics::{self, ConsumerResult, DriveRecord},
             grips::{keep_latch, keep_regrip, keep_seize, shove_on_release},
-            state::{Held, HeldKind, PickupState, Request},
+            state::{GripSubject, Held, HeldKind, PickupState, Request},
             tearing::{self, Frame as TearFrame, Observation},
         },
         rigid::Velocities,
@@ -74,6 +75,8 @@ pub(crate) struct TickOutcome {
     pub released: [bool; 2],
     /// The speed of an object thrown this tick.
     pub throw: Option<f32>,
+    /// The velocities each hand's release gave what it threw this tick.
+    pub thrown: [Option<Velocities>; 2],
     /// Holds lost this tick.
     pub lost: u64,
     pub error: Option<String>,
@@ -122,7 +125,59 @@ pub(crate) unsafe fn tick(
     inputs: TickInputs,
     config: &PickupTuning,
 ) -> TickOutcome {
-    unsafe { tick_with(state, inputs, config, &mut NativeBodies) }
+    let subjects = Hand::BOTH.map(|hand| state.grip_subject(hand));
+    let opened = state
+        .requests
+        .map(|request| matches!(request, Some(Request::Release)));
+    let time_scale = inputs.time_scale;
+    let outcome = unsafe { tick_with(state, inputs, config, &mut NativeBodies) };
+    note_releases(subjects, opened, time_scale, &outcome);
+    outcome
+}
+
+/// Record each hand that let go this tick: what it held, as the tick found it, why, and the motion
+/// of what it threw.
+fn note_releases(
+    subjects: [Option<GripSubject>; 2],
+    opened: [bool; 2],
+    time_scale: f32,
+    outcome: &TickOutcome,
+) {
+    for hand in Hand::BOTH {
+        let i = hand.index();
+        if !outcome.released[i] {
+            continue;
+        }
+        let thrown = outcome.thrown[i];
+        if let Some(velocities) = thrown {
+            note_throw(Thrown {
+                hand,
+                item: subjects[i].map_or("an object", |subject| subject.held),
+                linear: velocities.linear,
+                angular: velocities.angular,
+                time_scale,
+                source: None,
+                armed: None,
+            });
+        }
+        let Some(subject) = subjects[i] else {
+            continue;
+        };
+        note_release(Released {
+            hand,
+            held: subject.held,
+            object: subject.object,
+            body: subject.body,
+            cause: if opened[i] {
+                "the grip opened"
+            } else if outcome.lost > 0 {
+                "the hold was lost"
+            } else {
+                "the hold ended"
+            },
+            thrown: thrown.is_some(),
+        });
+    }
 }
 
 unsafe fn tick_with(
@@ -195,7 +250,11 @@ unsafe fn tick_with(
                     if !shared && !held.joined {
                         // SAFETY: forwarded from the caller.
                         match unsafe { throw(&held, palms[i], config) } {
-                            Ok(speed) => outcome.throw = Some(speed),
+                            Ok(Some((speed, velocities))) => {
+                                outcome.throw = Some(speed);
+                                outcome.thrown[i] = Some(velocities);
+                            }
+                            Ok(None) => outcome.throw = Some(0.0),
                             Err(e) => outcome.error = Some(e.to_string()),
                         }
                     }
@@ -710,27 +769,22 @@ unsafe fn throw(
     held: &Held,
     palm: Option<PalmMotion>,
     config: &PickupTuning,
-) -> Result<f32, bodies::BodyError> {
+) -> Result<Option<(f32, Velocities)>, bodies::BodyError> {
     let body = unsafe { bodies::read(held.body, held.object) }?;
     let Some(palm) = palm.filter(|_| grasp::can_lift(held.mass_kg, 1, config)) else {
-        return Ok(0.0);
+        return Ok(None);
     };
     let anchor = held.grip.anchor(body.pose);
     let point = grasp::throw_velocity(palm.point_velocity(anchor), config);
     let spin = body.velocities.angular;
     let linear = (point - spin.cross(anchor - body.pose.centre))
         .clamp_length_max(config.max_throw_speed_mps);
-    unsafe {
-        bodies::drive(
-            held.body,
-            held.object,
-            Velocities {
-                linear,
-                angular: spin,
-            },
-        )
-    }?;
-    Ok(point.length())
+    let velocities = Velocities {
+        linear,
+        angular: spin,
+    };
+    unsafe { bodies::drive(held.body, held.object, velocities) }?;
+    Ok(Some((point.length(), velocities)))
 }
 
 /// Let go of `held` in every hand that holds it, as a lost hold.

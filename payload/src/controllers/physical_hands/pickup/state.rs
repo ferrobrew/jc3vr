@@ -82,6 +82,35 @@ impl PickupState {
         }
     }
 
+    /// What `hand`'s grip holds, for a recorded release: what it is, and the held object and its
+    /// body when the hold names one.
+    pub(crate) fn grip_subject(&self, hand: Hand) -> Option<GripSubject> {
+        let i = hand.index();
+        if let Some(held) = self.held[i] {
+            return Some(GripSubject {
+                held: held.kind.label(),
+                object: Some(held.object.get()),
+                body: Some(held.body),
+            });
+        }
+        let held = if self.latches[i].is_some() {
+            "a latched door"
+        } else if self.doors[i].is_some() {
+            "a door being torn off"
+        } else if self.seizes[i].is_some() {
+            "a character"
+        } else if self.regrips[i].is_some() {
+            "a yanked character"
+        } else {
+            return None;
+        };
+        Some(GripSubject {
+            held,
+            object: None,
+            body: None,
+        })
+    }
+
     pub(crate) fn holding(&self, hand: Hand) -> bool {
         self.held[hand.index()].is_some()
     }
@@ -221,6 +250,15 @@ pub(crate) enum HeldKind {
 }
 
 impl HeldKind {
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::Prop => "a prop",
+            Self::Articulated => "an articulated object",
+            Self::Door => "a door",
+            Self::Ragdoll => "a ragdoll",
+        }
+    }
+
     /// Loose props use one carry solve for both hands, rather than fixed wrist joints.
     pub(crate) fn joined(self, requested: bool) -> bool {
         requested && self != Self::Prop
@@ -243,6 +281,14 @@ impl HeldKind {
             HeldKind::Ragdoll => GripSource::Character,
         }
     }
+}
+
+/// What a grip held, as [`PickupState::grip_subject`] names it.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct GripSubject {
+    pub(crate) held: &'static str,
+    pub(crate) object: Option<usize>,
+    pub(crate) body: Option<u32>,
 }
 
 /// What the input tick asked of a hand.

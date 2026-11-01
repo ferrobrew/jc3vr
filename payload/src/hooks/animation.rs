@@ -2,7 +2,10 @@
 //! camera, and the pose producer's asynchronous dispatch, which cannot certify completed output.
 
 use detours_macro::detour;
-use jc3gi::character::character::{AnimationController, Character};
+use jc3gi::{
+    animation::rule_system::AnimationRuleSystem,
+    character::character::{AnimationController, Character},
+};
 use re_utilities::hook_library::HookLibrary;
 
 pub(crate) mod publication;
@@ -85,12 +88,7 @@ unsafe fn is_local_controller(controller: *mut AnimationController) -> bool {
 pub(crate) unsafe fn active_state_type_id(character: &Character) -> Option<u32> {
     unsafe {
         Some(
-            character
-                .m_AnimatedModel
-                .m_RuleSystems
-                .as_slice()
-                .first()?
-                .as_ref()?
+            body_rule_system(character)?
                 .m_StateMachineInstance
                 .as_ref()?
                 .m_CurrentState
@@ -98,5 +96,18 @@ pub(crate) unsafe fn active_state_type_id(character: &Character) -> Option<u32> 
                 .m_HashID
                 .m_Hash,
         )
+    }
+}
+
+/// The character's first (body) rule system, which also holds the height over the ground its
+/// ground information last wrote. `None` while the character has none.
+pub(crate) unsafe fn body_rule_system(character: &Character) -> Option<&AnimationRuleSystem> {
+    unsafe {
+        character
+            .m_AnimatedModel
+            .m_RuleSystems
+            .as_slice()
+            .first()?
+            .as_ref()
     }
 }

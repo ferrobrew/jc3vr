@@ -38,6 +38,7 @@ use crate::{
         },
         body::rig::frames::Frames,
         config::ControllersConfig,
+        diagnostics::{self, Thrown},
         frame::{Hand, Pose},
         grab::{Candidate, GrabVolume},
         hands::{
@@ -113,11 +114,28 @@ impl Release {
     };
 }
 
-/// The release of the item `hand` holds at `point_world`, held since `since_s` (display time): the
+/// The release of the `item` `hand` holds at `point_world`, held since `since_s` (display time): the
 /// estimate and the cap a gun's let-go takes ([`act::release_at`], [`hold::MAX_THROW_MPS`]), so a
-/// grenade, a charge, and a gun leave the hand with the same motion for the same swing.
-pub(crate) fn throw_release(hand: Hand, point_world: Vec3, since_s: f64) -> Release {
-    let requested = act::release_at(hand, point_world, since_s).capped(hold::MAX_THROW_MPS);
+/// grenade, a charge, and a gun leave the hand with the same motion for the same swing. The release
+/// is recorded as a throw of `item`, `armed` when the item has a live state.
+pub(crate) fn throw_release(
+    hand: Hand,
+    point_world: Vec3,
+    since_s: f64,
+    item: &'static str,
+    armed: Option<bool>,
+) -> Release {
+    let estimate = act::release_at(hand, point_world, since_s);
+    let requested = estimate.capped(hold::MAX_THROW_MPS);
+    diagnostics::note_throw(Thrown {
+        hand,
+        item,
+        linear: requested.linear,
+        angular: requested.angular,
+        time_scale: estimate.time_scale.get(),
+        source: Some(estimate.source.label()),
+        armed,
+    });
     Release {
         velocity: requested.linear,
         angular: requested.angular,
@@ -699,7 +717,8 @@ unsafe fn carry_caught(inputs: &TickInputs, tuning: &GrenadeTuning) -> Option<(H
     if inputs.opened[hand.index()] {
         // The grenade's body is already in the simulation, so it is thrown as a gun is: its own
         // body takes the release motion at once.
-        let Release { velocity, angular } = throw_release(hand, centre, caught.since_s);
+        let Release { velocity, angular } =
+            throw_release(hand, centre, caught.since_s, "caught grenade", Some(true));
         let _ = unsafe {
             physical_hands::set_body_velocities(caught.body, caught.owner, velocity, angular)
         };

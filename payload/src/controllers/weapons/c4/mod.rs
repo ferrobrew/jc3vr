@@ -353,7 +353,13 @@ pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Tuning) {
         let release = state.grips[hand.index()].map_or(Release::REST, |grip| {
             let point =
                 held::held_matrix(grip, hold_local(hand, tuning)).transform_point3(tuning.centre_m);
-            throw_release(hand, point, state.held_since_s.unwrap_or(f64::INFINITY))
+            throw_release(
+                hand,
+                point,
+                state.held_since_s.unwrap_or(f64::INFINITY),
+                "c4",
+                None,
+            )
         });
         state.stage = stage::on_input(state.stage, InputEvent::Release(hand, release));
         state.status.last_release = Some(release.velocity);

@@ -15,6 +15,7 @@ use tracking_format::event::{self as file, GunRelease, Label, ReleaseController,
 use crate::{
     controllers::{
         clock::TimeScale,
+        diagnostics::Thrown,
         frame::{self, ControllerFrame, Hand},
         motion::{self, MotionSample, ReleaseEstimate},
         physical_hands::BodyError,
@@ -386,6 +387,21 @@ impl ReleaseRecord {
 }
 
 impl ReleaseRecord {
+    /// The gun's motion as a recorded throw, when the release requested one of the native drop.
+    pub(crate) fn thrown(&self) -> Option<Thrown> {
+        let drop = self.drop?;
+        let requested = drop.requested_world_motion?;
+        Some(Thrown {
+            hand: self.hand,
+            item: "gun",
+            linear: requested.linear,
+            angular: requested.angular,
+            time_scale: drop.time_scale,
+            source: Some(drop.release_source.label()),
+            armed: None,
+        })
+    }
+
     /// The attempt as a tracking-recording event. The controller's poses and flags are left to the
     /// frame of the same display time; nested runtime values are recorded as their Debug text.
     pub(crate) fn event(&self) -> GunRelease {
@@ -503,6 +519,8 @@ pub struct DropObservation {
     pub requested_world_motion: Option<WorldMotion>,
     pub release_source: SampleSource,
     pub history_age_s: Option<f32>,
+    /// The game's time scale the release was converted at.
+    pub time_scale: f32,
     pub write: NativeWrite,
     pub on_drop_returned: bool,
     pub slot_clear_returned: bool,
@@ -518,6 +536,7 @@ impl DropObservation {
         let requested = release.capped(max_speed_mps);
         self.release_source = release.source;
         self.history_age_s = release.history_age_s;
+        self.time_scale = release.time_scale.get();
         self.requested_world_motion = Some(requested);
         requested
     }
@@ -541,6 +560,7 @@ impl DropObservation {
             requested_world_motion: None,
             release_source: SampleSource::UnavailableAtRelease,
             history_age_s: None,
+            time_scale: 1.0,
             write: NativeWrite::NotAttempted,
             on_drop_returned: false,
             slot_clear_returned: false,
@@ -567,6 +587,18 @@ pub enum SampleSource {
     TimestampedHandHistory,
     RigTransportOnly,
     UnavailableAtRelease,
+}
+
+impl SampleSource {
+    /// The source's name, as a recorded throw carries it.
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::CachedWeaponDataWorldMatrices => "cached weapon world matrices",
+            Self::TimestampedHandHistory => "timestamped hand history",
+            Self::RigTransportOnly => "rig transport only",
+            Self::UnavailableAtRelease => "unavailable at release",
+        }
+    }
 }
 
 /// World-space linear and angular velocities, after any source-specific conversion.

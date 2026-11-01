@@ -311,7 +311,8 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
 /// A manual recenter is also the player saying "this is how I am": in the automatic posture it
 /// classifies seated or standing at once from the head height, and while seated it captures the
 /// head height as the seated eye reference ([`SeatedReference::capture`]). A seat transition's
-/// re-base does neither, because it happens on the game's schedule rather than the player's.
+/// re-base and a follow bank do neither, because they happen on the game's schedule rather than the
+/// player's.
 pub fn on_recenter(kind: RecenterKind, turn: Quat, cause: RecenterCause) {
     let setting = Config::lock_query(|c| c.controllers.roomscale.posture);
     let stage = vr::stage::stage();

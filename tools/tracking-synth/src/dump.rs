@@ -11,12 +11,12 @@
 
 use std::io::{self, Write};
 
-use glam::Vec3;
+use glam::{EulerRot, Vec3};
 use serde_json::{Value, json};
 use tracking_format::{
     Frame, Recording,
     event::{Event, EventKind},
-    model::{Button, Hand, HandFrame},
+    model::{Button, Hand, HandFrame, RecenterCause},
 };
 
 /// How [`dump`] prints.
@@ -178,6 +178,11 @@ fn json_event(event: &Event) -> serde_json::Result<Value> {
         EventKind::GripAcquisition(grip) => serde_json::to_value(grip)?,
         EventKind::GunRelease(release) => serde_json::to_value(release)?,
         EventKind::TakeMarker(marker) => serde_json::to_value(marker)?,
+        EventKind::BodyState(state) => serde_json::to_value(state)?,
+        EventKind::Throw(throw) => serde_json::to_value(throw)?,
+        EventKind::GripRelease(release) => serde_json::to_value(release)?,
+        EventKind::WingsuitGesture(gesture) => serde_json::to_value(gesture)?,
+        EventKind::Snatch(snatch) => serde_json::to_value(snatch)?,
     };
     Ok(json!({
         "type": "event",
@@ -255,11 +260,18 @@ fn text_frame(frame: &Frame, out: &mut impl Write) -> io::Result<()> {
         }
     }
     for recenter in &frame.recenters {
-        write!(
-            out,
-            " | recenter {:?} by {:?}",
-            recenter.kind, recenter.cause
-        )?;
+        match recenter.cause {
+            RecenterCause::FollowBank => write!(
+                out,
+                " | follow bank, the cockpit frame turned {:+.2} degrees",
+                recenter.turn.to_euler(EulerRot::YXZ).0.to_degrees()
+            )?,
+            _ => write!(
+                out,
+                " | recenter {:?} by {:?}",
+                recenter.kind, recenter.cause
+            )?,
+        }
     }
     writeln!(out)
 }
@@ -317,6 +329,94 @@ fn text_event(event: &Event, out: &mut impl Write) -> io::Result<()> {
                 format!(" {:?}", marker.label)
             },
         ),
+        EventKind::BodyState(state) => writeln!(
+            out,
+            "{} ({}){}",
+            match (&state.rule_state_name, state.rule_state) {
+                (Some(name), _) => name.to_string(),
+                (None, Some(hash)) => format!("{hash:#010x}"),
+                (None, None) => "no rule state".to_owned(),
+            },
+            state.case,
+            if state.repeat { ", repeated" } else { "" },
+        ),
+        EventKind::Throw(throw) => writeln!(
+            out,
+            "{} {} {:.2} m/s {} spin {:.2} rad/s {} per game second, \
+             {:.2} m/s per real second at time scale {}{}{}",
+            hand_name(throw.hand),
+            throw.item,
+            throw.motion.linear.length(),
+            vec3(throw.motion.linear),
+            throw.motion.angular.length(),
+            vec3(throw.motion.angular),
+            throw.motion.linear.length() * throw.time_scale,
+            throw.time_scale,
+            throw
+                .source
+                .as_ref()
+                .map_or(String::new(), |source| format!(", from {source}")),
+            match throw.armed {
+                Some(true) => ", armed",
+                Some(false) => ", not armed",
+                None => "",
+            },
+        ),
+        EventKind::GripRelease(release) => writeln!(
+            out,
+            "{} let go of {}{}{} ({}){}",
+            hand_name(release.hand),
+            release.held,
+            release
+                .object
+                .map_or(String::new(), |object| format!(" {object:#x}")),
+            release
+                .body
+                .map_or(String::new(), |body| format!(" body {body}")),
+            release.cause,
+            if release.thrown { ", thrown" } else { "" },
+        ),
+        EventKind::WingsuitGesture(gesture) => writeln!(
+            out,
+            "{}{}",
+            gesture
+                .phase
+                .as_deref()
+                .unwrap_or("idle, neither falling nor in the suit"),
+            gesture
+                .why
+                .as_ref()
+                .map_or(String::new(), |why| format!(" ({why})")),
+        ),
+        EventKind::Snatch(snatch) => {
+            write!(out, "{} -> {}", snatch.from, snatch.to)?;
+            if let Some(hand) = snatch.hand {
+                write!(out, " {}", hand_name(hand))?;
+            }
+            if let Some(outcome) = &snatch.outcome {
+                write!(out, ", {outcome}")?;
+            }
+            if let Some(reason) = &snatch.reason {
+                write!(out, ": {reason}")?;
+            }
+            if let Some(target) = &snatch.target {
+                write!(out, ", target {target}")?;
+            }
+            if let Some(distance) = snatch.distance_m {
+                write!(out, " at {distance:.2} m")?;
+            }
+            if let (Some(yank), Some(speed)) = (snatch.yank_m, snatch.yank_mps) {
+                write!(out, ", yanked {yank:.2} m at {speed:.2} m/s")?;
+            }
+            writeln!(out)
+        }
+    }
+}
+
+fn hand_name(hand: Hand) -> &'static str {
+    match hand {
+        Hand::Left => "left",
+        Hand::Right => "right",
     }
 }
 
@@ -336,9 +436,12 @@ fn vec3(v: Vec3) -> String {
 #[cfg(test)]
 mod tests {
     use tracking_format::{
-        Header, SessionSample, StartMarker,
-        event::{GunRelease, Label, TakeMarker},
-        model::Stage,
+        Header, RecenterEvent, SessionSample, StartMarker,
+        event::{
+            BodyState, GripRelease, GunRelease, Label, Snatch, TakeMarker, Throw, WingsuitGesture,
+            WorldMotion,
+        },
+        model::{RecenterKind, Stage},
     };
 
     use super::*;
@@ -553,5 +656,127 @@ mod tests {
         assert_eq!(event["kind"], "take_marker");
         assert_eq!(event["data"]["index"], 3);
         assert_eq!(event["data"]["stamp"], "2026-01-02_03-04-05_006");
+    }
+
+    fn moments() -> Vec<Event> {
+        let kinds = [
+            EventKind::BodyState(Box::new(BodyState {
+                rule_state: Some(0xabcd_0123),
+                rule_state_name: None,
+                case: Label::Borrowed("wingsuit"),
+                repeat: false,
+            })),
+            EventKind::BodyState(Box::new(BodyState {
+                rule_state: Some(1),
+                rule_state_name: Some(Label::Borrowed("S_JC_WINGSUIT_IDLE")),
+                case: Label::Borrowed("wingsuit"),
+                repeat: true,
+            })),
+            EventKind::Throw(Box::new(Throw {
+                hand: Hand::Left,
+                item: Label::Borrowed("grenade"),
+                motion: WorldMotion {
+                    linear: Vec3::new(0.0, 0.0, -8.0),
+                    angular: Vec3::ZERO,
+                },
+                time_scale: 0.5,
+                source: Some(Label::Borrowed("history")),
+                armed: Some(true),
+            })),
+            EventKind::GripRelease(Box::new(GripRelease {
+                hand: Hand::Right,
+                held: Label::Borrowed("prop"),
+                object: Some(0x10),
+                body: Some(7),
+                cause: Label::Borrowed("grip opened"),
+                thrown: true,
+            })),
+            EventKind::WingsuitGesture(Box::new(WingsuitGesture {
+                phase: Some(Label::Borrowed("armed")),
+                why: None,
+            })),
+            EventKind::Snatch(Box::new(Snatch {
+                hand: Some(Hand::Right),
+                from: Label::Borrowed("ARMED"),
+                to: Label::Borrowed("IDLE"),
+                outcome: Some(Label::Borrowed("cancelled")),
+                reason: Some(Label::Borrowed("the grip let go")),
+                target: None,
+                distance_m: None,
+                yank_m: None,
+                yank_mps: None,
+            })),
+        ];
+        kinds
+            .into_iter()
+            .enumerate()
+            .map(|(index, kind)| Event {
+                time_ns: 100 + index as u64,
+                kind,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_moments_print_as_text_and_json_within_the_range() {
+        let mut recording = recording();
+        recording.frames = vec![frame(100), frame(200)];
+        recording.frames[1].recenters = vec![RecenterEvent {
+            kind: RecenterKind::YawAndHeight,
+            cause: RecenterCause::FollowBank,
+            turn: glam::Quat::from_rotation_y(-0.5f32.to_radians()),
+        }];
+        recording.events = moments();
+        let range = Range {
+            from: Some(Bound::Seconds(101e-9)),
+            to: Some(Bound::Seconds(200e-9)),
+        };
+        let mut out = Vec::new();
+        dump(&recording, DumpFormat::Text, range, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        let body: Vec<&str> = text.lines().skip(3).collect();
+        assert_eq!(body.len(), 6, "{text}");
+        for expected in [
+            "event body_state: S_JC_WINGSUIT_IDLE (wingsuit), repeated",
+            "event throw: left grenade 8.00 m/s",
+            "4.00 m/s per real second at time scale 0.5, from history, armed",
+            "event grip_release: right let go of prop 0x10 body 7 (grip opened), thrown",
+            "event wingsuit_gesture: armed",
+            "event snatch: ARMED -> IDLE right, cancelled: the grip let go",
+            "follow bank, the cockpit frame turned -0.50 degrees",
+        ] {
+            assert!(text.contains(expected), "{expected:?} in {text}");
+        }
+        assert!(!text.contains("0xabcd0123"), "{text}");
+
+        let mut out = Vec::new();
+        let all = Range::default();
+        dump(&recording, DumpFormat::JsonLines, all, &mut out).unwrap();
+        let events: Vec<Value> = String::from_utf8(out)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .filter(|value| value["type"] == "event")
+            .collect();
+        let kinds: Vec<&str> = events
+            .iter()
+            .map(|event| event["kind"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                "body_state",
+                "body_state",
+                "throw",
+                "grip_release",
+                "wingsuit_gesture",
+                "snatch"
+            ]
+        );
+        assert_eq!(events[0]["data"]["rule_state"], 0xabcd_0123u32);
+        assert_eq!(events[2]["data"]["motion"]["linear"][2], -8.0);
+        assert_eq!(events[2]["data"]["armed"], true);
+        assert_eq!(events[3]["data"]["cause"], "grip opened");
+        assert_eq!(events[5]["data"]["reason"], "the grip let go");
     }
 }

@@ -6,10 +6,10 @@ use crate::{
     DecodeErrorKind, Frame, Header, SessionSample, StartMarker, TAG_EVENT, VERSION, decode,
     encode_chunk, encode_event, encode_latest_frame, encode_latest_preamble,
     event::{
-        AimState, ControllerState, Event, EventKind, GrappleAim, GripAcquisition, GripCandidate,
-        GripDrive, GripScan, GripScanEntry, GripStage, GunRelease, HandAim, HandLate, HandTier,
-        IkState, Label, LateState, ReleaseController, ReleaseDrop, RoomscaleState, RootTick,
-        TakeMarker, TierState, WeaponAim, WorldMotion,
+        AimState, CharacterMotion, ControllerState, Event, EventKind, GrappleAim, GripAcquisition,
+        GripCandidate, GripDrive, GripScan, GripScanEntry, GripStage, GroundHeight, GunRelease,
+        HandAim, HandLate, HandTier, IkState, Label, LateState, ReleaseController, ReleaseDrop,
+        RoomscaleState, RootTick, TakeMarker, TierState, WeaponAim, WorldMotion,
     },
     model::{Hand, Stage},
     wire::Encoder,
@@ -67,7 +67,7 @@ fn events_round_trip_direct_and_chunked_beside_frames() {
         }
         let decoded = decode(&bytes).unwrap();
         assert_eq!(decoded.version, VERSION);
-        assert_eq!(decoded.version, 6);
+        assert_eq!(decoded.version, 7);
         assert!(!decoded.truncated);
         assert_eq!(decoded.events, events);
         assert_eq!(decoded.frames, vec![frame.clone()]);
@@ -86,14 +86,17 @@ fn a_version_5_controller_state_reads_without_the_root_tick() {
         time_ns: 4,
         kind: EventKind::ControllerState(Box::new(ControllerState {
             root: None,
+            character: None,
             ..controller_state(true)
         })),
     };
     let mut record = encode_event(&event).unwrap();
-    // Version 5 ends the controller state at the roomscale state: drop the root tick's absent flag
-    // and shorten the record's length to match. The length follows the one-byte tag.
+    // Version 5 ends the controller state at the roomscale state: drop the root tick's and the
+    // character motion's absent flags and shorten the record's length to match. The length follows
+    // the one-byte tag.
     assert_eq!(record.pop(), Some(0));
-    let len = u32::from_le_bytes(record[1..5].try_into().unwrap()) - 1;
+    assert_eq!(record.pop(), Some(0));
+    let len = u32::from_le_bytes(record[1..5].try_into().unwrap()) - 2;
     record[1..5].copy_from_slice(&len.to_le_bytes());
     let mut bytes = encode_latest_preamble(&header());
     // The version follows the eight-byte magic.
@@ -366,6 +369,13 @@ fn controller_state(full: bool) -> ControllerState {
             capsule_blocked: true,
             jumps: 9,
         }),
+        character: full.then(|| CharacterMotion {
+            velocity_mps: Vec3::new(12.0, -3.5, 0.25),
+            height: Some(GroundHeight {
+                nearest_m: 4.5,
+                ground_m: 6.0,
+            }),
+        }),
     }
 }
 
@@ -495,3 +505,6 @@ fn take_marker(full: bool) -> TakeMarker {
         label: Label::Borrowed(if full { "door handle" } else { "" }),
     }
 }
+
+#[path = "event_tests/moments.rs"]
+mod moments;

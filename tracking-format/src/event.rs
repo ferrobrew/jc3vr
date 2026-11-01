@@ -1,5 +1,5 @@
-//! The events a version 5 recording carries beside its frames: what the mod decided, as opposed to
-//! what the runtime gave it.
+//! The events a recording carries beside its frames, from version 5: what the mod decided, as
+//! opposed to what the runtime gave it.
 //!
 //! An event is stamped on the recording's frame timeline ([`Event::time_ns`] shares the clock of
 //! [`Frame::time_ns`](crate::Frame::time_ns)), and a writer stores it before the first frame
@@ -42,6 +42,16 @@ pub enum EventKind {
     GunRelease(Box<GunRelease>),
     /// A take marker the player dropped to find a moment again.
     TakeMarker(Box<TakeMarker>),
+    /// The body's animation state changed, from version 7.
+    BodyState(Box<BodyState>),
+    /// An item left a hand with a requested motion, from version 7.
+    Throw(Box<Throw>),
+    /// A hand let go of what its grip held, from version 7.
+    GripRelease(Box<GripRelease>),
+    /// The wingsuit gesture recognizer's phase changed, from version 7.
+    WingsuitGesture(Box<WingsuitGesture>),
+    /// The grapple snatch's phase changed, from version 7.
+    Snatch(Box<Snatch>),
 }
 
 impl EventKind {
@@ -52,6 +62,11 @@ impl EventKind {
             EventKind::GripAcquisition(_) => "grip_acquisition",
             EventKind::GunRelease(_) => "gun_release",
             EventKind::TakeMarker(_) => "take_marker",
+            EventKind::BodyState(_) => "body_state",
+            EventKind::Throw(_) => "throw",
+            EventKind::GripRelease(_) => "grip_release",
+            EventKind::WingsuitGesture(_) => "wingsuit_gesture",
+            EventKind::Snatch(_) => "snatch",
         }
     }
 }
@@ -82,6 +97,31 @@ pub struct ControllerState {
     pub roomscale: RoomscaleState,
     /// The root's latest on-foot tick, while the root's hook runs; absent before version 6.
     pub root: Option<RootTick>,
+    /// The player character's measured motion and height over the ground, while there is a
+    /// player character; absent before version 7.
+    pub character: Option<CharacterMotion>,
+}
+
+/// The player character's motion as the game measures it, read once per game frame.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct CharacterMotion {
+    /// The character's measured world velocity, metres per second: what the animation graph's
+    /// speed conditions compare.
+    pub velocity_mps: Vec3,
+    /// The height over the ground the game last computed, when the body's rule system was there.
+    pub height: Option<GroundHeight>,
+}
+
+/// The character's height over the ground, metres, as the game's ground information last wrote
+/// it: zero while the proxy stands or slides on the ground.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct GroundHeight {
+    /// Over the ground or the water surface, whichever is nearer.
+    pub nearest_m: f32,
+    /// Over the ground alone.
+    pub ground_m: f32,
 }
 
 /// One hand's HumanIK result.
@@ -451,4 +491,88 @@ pub struct TakeMarker {
     pub game_run_time_us: Option<u64>,
     /// The marker's label, empty for an unlabelled marker.
     pub label: Label,
+}
+
+/// The body's animation state, noted when it changes and repeated now and then, so that a stretch
+/// of a recording, such as a lookback save, opens with the state it started in.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct BodyState {
+    /// The current state of the body's animation rule system, as the game's state-name hash, when
+    /// the chain to it was readable.
+    pub rule_state: Option<u32>,
+    /// The state's name, when the mod knows the name behind the hash.
+    pub rule_state_name: Option<Label>,
+    /// The procedural body's hand-over case: who poses the legs and the torso.
+    pub case: Label,
+    /// Whether nothing changed since the last note, and this one only repeats it.
+    pub repeat: bool,
+}
+
+/// An item that left a hand with a requested motion: a gun let go, a grenade, a charge, or a carried
+/// object thrown.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Throw {
+    pub hand: Hand,
+    /// What left the hand.
+    pub item: Label,
+    /// The motion the release requested of the item, in the world's units: metres and radians per
+    /// game second. The same motion per real second is this times [`time_scale`](Self::time_scale).
+    pub motion: WorldMotion,
+    /// The game's time scale at the release.
+    pub time_scale: f32,
+    /// Where the hand's part of the estimate came from, when the release estimated one.
+    pub source: Option<Label>,
+    /// Whether the item left live (a grenade with its pin out, or a caught grenade), when the item
+    /// has such a state.
+    pub armed: Option<bool>,
+}
+
+/// A hand that let go of what its grip held, whether the grip opened or the hold was lost.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct GripRelease {
+    pub hand: Hand,
+    /// What the hand held.
+    pub held: Label,
+    /// The held object's address, a correlation identity only, and its body.
+    pub object: Option<u64>,
+    pub body: Option<u32>,
+    /// Why it let go: the grip opened, or the hold was lost and how.
+    pub cause: Label,
+    /// Whether the release threw what it held (a [`Throw`] records the motion).
+    pub thrown: bool,
+}
+
+/// A change of the wingsuit gesture recognizer's phase, or of why it is unavailable.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct WingsuitGesture {
+    /// The phase, absent while the player is neither falling nor in the suit.
+    pub phase: Option<Label>,
+    /// Why the gestures are unavailable, while they are.
+    pub why: Option<Label>,
+}
+
+/// A change of the grapple snatch's phase.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Snatch {
+    /// The hand the snatch belongs to, when one does.
+    pub hand: Option<Hand>,
+    /// The phase it left and the phase it entered.
+    pub from: Label,
+    pub to: Label,
+    /// How the snatch ended, when it ended: `taken`, `failed`, `cancelled`, or `stood down`.
+    pub outcome: Option<Label>,
+    /// Why, for an ending that has a reason: the refusal, the cancellation, or what was taken.
+    pub reason: Option<Label>,
+    /// The offered target's kind and distance, metres, on arming and firing.
+    pub target: Option<Label>,
+    pub distance_m: Option<f32>,
+    /// The yank that fired it: how far back the hand pulled, metres, and how fast, metres per
+    /// second.
+    pub yank_m: Option<f32>,
+    pub yank_mps: Option<f32>,
 }

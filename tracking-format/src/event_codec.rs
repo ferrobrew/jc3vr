@@ -3,14 +3,18 @@
 //! An event's payload is its `time_ns` (`u64`), a kind byte, and the kind's fields in declaration
 //! order. A label is a string; an optional value is a presence byte and, when present, the value;
 //! a list is a `u16` count and its entries.
+//!
+//! The kinds a version 7 container adds are in [`moments`].
+
+mod moments;
 
 use crate::{
     codec::{hand_code, read_hand},
     event::{
-        AimState, ControllerState, Event, EventKind, GrappleAim, GripAcquisition, GripCandidate,
-        GripDrive, GripScan, GripScanEntry, GripStage, GunRelease, HandAim, HandLate, HandTier,
-        IkState, Label, LateState, ReleaseController, ReleaseDrop, RoomscaleState, RootTick,
-        TakeMarker, TierState, WeaponAim, WorldMotion,
+        AimState, CharacterMotion, ControllerState, Event, EventKind, GrappleAim, GripAcquisition,
+        GripCandidate, GripDrive, GripScan, GripScanEntry, GripStage, GroundHeight, GunRelease,
+        HandAim, HandLate, HandTier, IkState, Label, LateState, ReleaseController, ReleaseDrop,
+        RoomscaleState, RootTick, TakeMarker, TierState, WeaponAim, WorldMotion,
     },
     model::Hand,
     wire::{DecodeError, DecodeErrorKind, Decoder, Encoder},
@@ -38,6 +42,26 @@ pub(crate) fn encode(out: &mut Encoder, event: &Event) {
             out.u8(KIND_TAKE_MARKER);
             take_marker(out, marker);
         }
+        EventKind::BodyState(state) => {
+            out.u8(KIND_BODY_STATE);
+            moments::body_state(out, state);
+        }
+        EventKind::Throw(throw) => {
+            out.u8(KIND_THROW);
+            moments::throw(out, throw);
+        }
+        EventKind::GripRelease(release) => {
+            out.u8(KIND_GRIP_RELEASE);
+            moments::grip_release(out, release);
+        }
+        EventKind::WingsuitGesture(gesture) => {
+            out.u8(KIND_WINGSUIT_GESTURE);
+            moments::wingsuit_gesture(out, gesture);
+        }
+        EventKind::Snatch(snatch) => {
+            out.u8(KIND_SNATCH);
+            moments::snatch(out, snatch);
+        }
     }
 }
 
@@ -54,6 +78,21 @@ pub(crate) fn decode(input: &mut Decoder, version: u16) -> Result<Event, DecodeE
         }
         KIND_GUN_RELEASE => EventKind::GunRelease(Box::new(read_gun_release(input)?)),
         KIND_TAKE_MARKER => EventKind::TakeMarker(Box::new(read_take_marker(input)?)),
+        KIND_BODY_STATE if version >= MOMENTS_VERSION => {
+            EventKind::BodyState(Box::new(moments::read_body_state(input)?))
+        }
+        KIND_THROW if version >= MOMENTS_VERSION => {
+            EventKind::Throw(Box::new(moments::read_throw(input)?))
+        }
+        KIND_GRIP_RELEASE if version >= MOMENTS_VERSION => {
+            EventKind::GripRelease(Box::new(moments::read_grip_release(input)?))
+        }
+        KIND_WINGSUIT_GESTURE if version >= MOMENTS_VERSION => {
+            EventKind::WingsuitGesture(Box::new(moments::read_wingsuit_gesture(input)?))
+        }
+        KIND_SNATCH if version >= MOMENTS_VERSION => {
+            EventKind::Snatch(Box::new(moments::read_snatch(input)?))
+        }
         kind => return Err(invalid(offset, "the event kind", kind.into())),
     };
     Ok(Event { time_ns, kind })
@@ -69,7 +108,14 @@ pub(crate) fn is_bounded(event: &Event) -> bool {
                     .as_ref()
                     .is_none_or(|scan| scan.entries.len() <= MAX_LIST)
         }
-        EventKind::ControllerState(_) | EventKind::GunRelease(_) | EventKind::TakeMarker(_) => true,
+        EventKind::ControllerState(_)
+        | EventKind::GunRelease(_)
+        | EventKind::TakeMarker(_)
+        | EventKind::BodyState(_)
+        | EventKind::Throw(_)
+        | EventKind::GripRelease(_)
+        | EventKind::WingsuitGesture(_)
+        | EventKind::Snatch(_) => true,
     }
 }
 
@@ -77,6 +123,15 @@ const KIND_CONTROLLER_STATE: u8 = 1;
 const KIND_GRIP_ACQUISITION: u8 = 2;
 const KIND_GUN_RELEASE: u8 = 3;
 const KIND_TAKE_MARKER: u8 = 4;
+const KIND_BODY_STATE: u8 = 5;
+const KIND_THROW: u8 = 6;
+const KIND_GRIP_RELEASE: u8 = 7;
+const KIND_WINGSUIT_GESTURE: u8 = 8;
+const KIND_SNATCH: u8 = 9;
+
+/// The first version whose controller state carries the character's motion, and whose events
+/// include the [`moments`] kinds. An earlier container reads those kinds as unknown.
+const MOMENTS_VERSION: u16 = 7;
 
 fn invalid(offset: usize, field: &'static str, value: u64) -> DecodeError {
     DecodeError {
@@ -238,6 +293,7 @@ fn controller_state(out: &mut Encoder, state: &ControllerState) {
     aim_state(out, &state.aim);
     roomscale_state(out, &state.roomscale);
     opt(out, state.root.as_ref(), root_tick);
+    opt(out, state.character.as_ref(), character_motion);
 }
 
 fn read_controller_state(
@@ -267,6 +323,11 @@ fn read_controller_state(
     } else {
         None
     };
+    let character = if version >= MOMENTS_VERSION {
+        read_opt(input, "the character motion flag", read_character_motion)?
+    } else {
+        None
+    };
     Ok(ControllerState {
         frame_sequence,
         publication_age_us,
@@ -284,6 +345,27 @@ fn read_controller_state(
         aim,
         roomscale,
         root,
+        character,
+    })
+}
+
+fn character_motion(out: &mut Encoder, motion: &CharacterMotion) {
+    out.vec3(motion.velocity_mps);
+    opt(out, motion.height.as_ref(), |out, height| {
+        out.f32(height.nearest_m);
+        out.f32(height.ground_m);
+    });
+}
+
+fn read_character_motion(input: &mut Decoder) -> Result<CharacterMotion, DecodeError> {
+    Ok(CharacterMotion {
+        velocity_mps: input.vec3()?,
+        height: read_opt(input, "the ground height flag", |input| {
+            Ok(GroundHeight {
+                nearest_m: input.f32()?,
+                ground_m: input.f32()?,
+            })
+        })?,
     })
 }
 
