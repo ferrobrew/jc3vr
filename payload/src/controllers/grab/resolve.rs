@@ -6,7 +6,7 @@ use glam::Vec3;
 use crate::controllers::{
     frame::Hand,
     grab::{
-        GrabVolume,
+        GrabVolume, PickupKind,
         target::{GripTarget, TargetReach, Tier},
     },
 };
@@ -76,13 +76,31 @@ pub fn reaches(hand: Hand, targets: &[GripTarget], grip: Option<Vec3>) -> Vec<Re
 }
 
 /// The one of `reaches` a grip takes: the nearest target, or with no target, the nearest fallback.
-/// A target worked by the palm is never taken. Of equally near ones, the first.
+/// A character loses to a weapon to take within reach however much nearer the character is, so a
+/// hand closing by a gun in a character's hands takes the gun rather than the character holding
+/// it. A target worked by the palm is never taken. Of equally near ones, the first.
 pub fn choose(reaches: impl IntoIterator<Item = Reach>) -> Option<Reach> {
-    reaches
+    let takeable: Vec<Reach> = reaches
         .into_iter()
         .filter(|r| r.tier != Tier::Touch && !r.distance.is_nan())
-        .min_by(|a, b| a.tier.cmp(&b.tier).then(a.distance.total_cmp(&b.distance)))
+        .collect();
+    let nearest = takeable
+        .iter()
+        .copied()
+        .min_by(|a, b| a.tier.cmp(&b.tier).then(a.distance.total_cmp(&b.distance)))?;
+    if nearest.volume != CHARACTER {
+        return Some(nearest);
+    }
+    takeable
+        .iter()
+        .copied()
+        .filter(|r| r.volume == GrabVolume::WorldWeapon && r.tier == nearest.tier)
+        .min_by(|a, b| a.distance.total_cmp(&b.distance))
+        .or(Some(nearest))
 }
+
+/// A character the physical hands' reach found.
+const CHARACTER: GrabVolume = GrabVolume::Pickup(PickupKind::Character);
 
 /// Why a reach lost to the chosen one, for the grip press's log.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -93,6 +111,8 @@ pub enum Lost {
     Remote,
     /// The palm works it, not the grip.
     Touch,
+    /// A character, and a weapon to take is in reach.
+    Character,
     /// The chosen one's grab point is nearer, by this many metres.
     Farther(f32),
 }
@@ -103,6 +123,7 @@ impl Lost {
             Lost::Fallback => "a fallback, and a target is in reach".to_owned(),
             Lost::Remote => "out of reach, and something is in reach".to_owned(),
             Lost::Touch => "worked by the palm, not the grip".to_owned(),
+            Lost::Character => "a character, and a weapon to take is in reach".to_owned(),
             Lost::Farther(by) => format!("{:.0} mm farther", by * 1000.0),
         }
     }
@@ -125,6 +146,8 @@ pub(crate) fn lost_to(reach: Reach, chosen: Reach) -> Lost {
         Lost::Remote
     } else if reach.tier > chosen.tier {
         Lost::Fallback
+    } else if reach.volume == CHARACTER && chosen.volume == GrabVolume::WorldWeapon {
+        Lost::Character
     } else {
         Lost::Farther(reach.distance - chosen.distance)
     }

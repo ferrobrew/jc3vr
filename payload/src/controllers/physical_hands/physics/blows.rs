@@ -2,10 +2,12 @@
 //! thread's frame tick, outside the game's update.
 //!
 //! Each contact pulses its hand by how fast the hand met it. A contact with a character, other than
-//! the player, that the hand swung into is a blow ([`hit`]): the character reacts through its own
-//! hit reaction
-//! ([`Character::HitReaction`]) as to a melee blow ([`DamageFlags::DMG_TYPE_MELEE`]) of the
-//! contact's impulse along the hand's travel, which staggers it or knocks it down against its own
+//! the player, that the hand swung into, measured against the player's own motion, is a blow
+//! ([`hit`]), unless the hand is after the gun in that character's hands: an open hand within the
+//! gun's reach strikes only with a deliberate swing, and a closing one never. The character reacts
+//! through its own hit reaction ([`Character::HitReaction`]) as to a melee blow
+//! ([`DamageFlags::DMG_TYPE_MELEE`]) of the contact's impulse along the hand's swing, which
+//! staggers it or knocks it down against its own
 //! thresholds and carries the blow's momentum into the ragdoll it falls as. A blow hard enough to
 //! deal damage is a melee damage message ([`DamageMsg`]) to the character's damage virtual
 //! ([`PhysicsGameObject::OnDamage`]) instead, which takes the health and runs the same hit reaction
@@ -36,6 +38,7 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     frame::Hand,
+    grab::{self, latch::GripLatch},
     haptics::{self, Event},
     physical_hands::{
         PhysicalHandsConfig,
@@ -46,13 +49,14 @@ use crate::controllers::{
             contact::{self, Contact},
             guns,
             hit::{
-                ANY_HAND, Blow, BlowPlan, HitGate, VictimTuning, approach, blow, blow_impulse,
-                pulse_share, striking_with,
+                ANY_HAND, Blow, BlowPlan, HitGate, Intent, VictimTuning, approach, blow,
+                blow_impulse, pulse_share, striking_with, swing,
             },
         },
         sounds::{self, Impact, ImpactKind},
         world::World,
     },
+    weapons::hold::take,
 };
 
 /// A blow a hand dealt, for the readout.
@@ -173,14 +177,19 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         let victim = unsafe { &mut *victim };
         let victim_at = Mat4::from(victim.m_WorldMatrixT1).w_axis.truncate();
         let toward = victim_at + Vec3::Y * CHEST_HEIGHT_M - contact.hand_position;
-        let closing = approach(
+        let swung = swing(
             contact.hand_velocity,
+            Vec3::from_array(attacker.m_MeasuredWorldVelocity.data),
+        );
+        let closing = approach(
+            swung,
             Vec3::from_array(victim.m_MeasuredWorldVelocity.data),
             toward,
         );
-        // A hand that did not swing into the character, resting on it or met by it, strikes
-        // nothing.
-        let Some(impulse_ns) = blow_impulse(closing, hits) else {
+        let intent = intent(contact.hand, victim as *mut Character as usize);
+        // A hand that did not swing into the character, resting on it, met by it, or carried into
+        // it by the player's own motion, strikes nothing; nor does one closing on its gun.
+        let Some(impulse_ns) = blow_impulse(closing, intent, hits) else {
             continue;
         };
         if !gate.0.admit(
@@ -219,7 +228,7 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         {
             plan.damage = None;
         }
-        let direction = blow_direction(contact.hand_velocity, victim_at - contact.hand_position);
+        let direction = blow_direction(swung, victim_at - contact.hand_position);
         // Read before the strike, which may free the character's tuning with its ragdoll.
         let stagger_threshold = victim.m_HitReaction_ImpulseStumbleThreshold;
         // SAFETY: forwarded from the caller; both characters are live.
@@ -228,6 +237,7 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
             hand = contact.hand.label(),
             with_gun = contact.gun,
             impulse_ns,
+            ?intent,
             hand_mps = closing.hand_mps,
             victim_mps = closing.victim_mps,
             contact_impulse_ns = contact.impulse_ns,
@@ -443,6 +453,18 @@ unsafe fn victim(contact: &Contact, attacker: &Character) -> Option<*mut Charact
         return None;
     }
     Some(object.get() as *mut Character)
+}
+
+/// What `hand` means by meeting the character at `character`: its grip as the last input tick
+/// latched it, and whether that tick offered it the gun in the character's hands.
+fn intent(hand: Hand, character: usize) -> Intent {
+    let status = grab::tick::status();
+    let latch = if status.live {
+        status.hands[hand.index()].latch
+    } else {
+        GripLatch::Open
+    };
+    Intent::of(latch, take::steal_offer(hand) == Some(character))
 }
 
 /// The index of the melee type bit, the entry of a character's per-type impulse scales its hit

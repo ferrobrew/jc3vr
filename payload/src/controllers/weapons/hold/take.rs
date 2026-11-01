@@ -26,12 +26,12 @@ use crate::controllers::{
         config::HoldConfig,
         docks, engine,
         hold::{
-            self, Cause, SNAP_S, TAKE_RADIUS_M,
+            self, Cause, SNAP_S, STEAL_RADIUS_M, TAKE_RADIUS_M,
             pickup::TakeOptions,
             rack::{self, RackRefusal},
             steal::{self, StealRefusal},
             take::placement::{Identity, Records, Sample},
-            world::{self, TargetKind, WorldTarget},
+            world::{self, TakeRadii, TargetKind, WorldTarget},
         },
     },
 };
@@ -203,8 +203,8 @@ pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
     state.status.held_targets = held;
     state.status.rack_targets = state.targets.len() - held;
     let points = inputs.active.hands.map(|h| h.map(|h| h.grip.position));
-    state.offered = world::Offers::gather(&state.targets, TAKE_RADIUS_M, inputs.free, points);
-    world::candidates(&state.targets, TAKE_RADIUS_M, inputs.free, points)
+    state.offered = world::Offers::gather(&state.targets, TAKE_RADII, inputs.free, points);
+    world::candidates(&state.targets, TAKE_RADII, inputs.free, points)
 }
 
 /// Take the weapon `hand`'s grab of a
@@ -217,7 +217,7 @@ pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
 /// The game thread, before the world update, after [`begin_tick`] on the same input tick.
 pub(crate) unsafe fn finish_grab(hand: Hand, inputs: &TakeInputs) -> bool {
     let point = inputs.active.hands[hand.index()].map(|h| h.grip.position);
-    let target = STATE.lock().offered.take(hand, point, TAKE_RADIUS_M);
+    let target = STATE.lock().offered.take(hand, point, TAKE_RADII);
     let result = world::complete_offer(target, |target| {
         let options = TakeOptions {
             slide_s: SNAP_S,
@@ -266,6 +266,19 @@ pub(crate) fn stand_down() {
     state.status.held_targets = 0;
     state.status.rack_targets = 0;
 }
+
+/// The character whose gun the last input tick offered `hand`, as an address: the hand is within
+/// its steal reach. `None` when no gun in a character's hands was offered to it, or once a grab
+/// consumed the offer.
+pub(crate) fn steal_offer(hand: Hand) -> Option<usize> {
+    STATE.lock().offered.held_character(hand)
+}
+
+/// The take's reach around each kind of target.
+const TAKE_RADII: TakeRadii = TakeRadii {
+    held: STEAL_RADIUS_M,
+    rack: TAKE_RADIUS_M,
+};
 
 fn report_refusal(hand: Hand, refusal: TakeRefusal) {
     tracing::info!(target: "controllers", hand = hand.label(), %refusal, "hold: no weapon taken");

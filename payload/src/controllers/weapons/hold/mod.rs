@@ -114,9 +114,15 @@ pub const MAX_THROW_MPS: f32 = 15.0;
 /// metres. A touch on another gun region keeps that region's action.
 pub const HANDLE_RADIUS_M: f32 = 0.14;
 
-/// The reach from the nearest point of a gun's grip-to-grip segment in a character's hands or on a
-/// rack, in player-scale metres. Acquisition and completion use the same boundary.
+/// The reach from the nearest point of a gun's grip-to-grip segment on a rack or in a locker, in
+/// player-scale metres. Acquisition and completion use the same boundary.
 pub const TAKE_RADIUS_M: f32 = 0.3;
+
+/// The reach from the nearest point of a gun's grip-to-grip segment in a living character's hands,
+/// in player-scale metres: wider than a rack's, since the character moves and turns while the hand
+/// closes, and a hand within it takes the gun rather than the character holding it. Acquisition
+/// and completion use the same boundary.
+pub const STEAL_RADIUS_M: f32 = 0.4;
 
 /// What a grab that brings a weapon into a hand is.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

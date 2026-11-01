@@ -2,7 +2,7 @@
 
 Direct weapon offers in `controllers/weapons/hold/world.rs` cover guns in characters' hands and weapons offered by racks or lockers. They do not classify dropped physics bodies or remote grapple targets. Each offer uses a grip-to-grip segment, and each eligible free hand receives the nearest point on that segment. Acquisition and completion use the same distance boundary.
 
-`TAKE_RADIUS_M` in `controllers::weapons::hold` is 0.30 player-scale metres. `HANDLE_RADIUS_M` there is 0.14 player-scale metres for transfer around the pistol grip. The shared candidate resolver retains direct-target priority and the separate constraints of support, reload, action, and socket targets. A broad transfer offer does not replace an engaged foregrip or a touch on another gun region.
+`TAKE_RADIUS_M` in `controllers::weapons::hold` is 0.30 player-scale metres, for racks and lockers. `STEAL_RADIUS_M` there is 0.40 player-scale metres, for guns in characters' hands, since the character moves while the hand closes. `HANDLE_RADIUS_M` there is 0.14 player-scale metres for transfer around the pistol grip. The shared candidate resolver retains direct-target priority and the separate constraints of support, reload, action, and socket targets. A broad transfer offer does not replace an engaged foregrip or a touch on another gun region.
 
 ## Placement provenance
 

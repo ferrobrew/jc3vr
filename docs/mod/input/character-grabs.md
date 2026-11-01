@@ -4,7 +4,7 @@ An empty hand can take hold of a character. On foot, a grip holds on to them: a 
 
 ## Reaching a character
 
-The pickup's reach rays find characters as well as objects: a hit on a character carries the character and the body hit. A gun in the character's hands is the weapons' own target and wins over the character ([physical-weapons.md](physical-weapons.md)). What a hit is depends on the character:
+The pickup's reach rays find characters as well as objects: a hit on a character carries the character and the body hit. A gun in the character's hands is the weapons' own target and wins over the character whenever it is within its reach, however much nearer the character's capsule is ([physical-weapons.md](physical-weapons.md#taking-a-gun-from-a-characters-hands)); the hand takes the character only with the gun out of reach. What a hit is depends on the character:
 
 - A character on foot, hit on its proxy's capsule ([`PfxCharacterInstance::GetCharacterRigidBodyId`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PfxCharacterInstance##func-GetCharacterRigidBodyId)), is held on to (below).
 - A hit on any other body of the character is a body of its ragdoll: it is taken as a loose object, by the object that owns the body, when it is dynamic and light enough ([physical-hands.md](physical-hands.md#holding)), so a fallen character is dragged by the limb the hand took, through a joint with the hand bodies' joint grabs, and thrown by letting go while swinging.

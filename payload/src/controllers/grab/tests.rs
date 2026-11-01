@@ -183,6 +183,35 @@ fn a_held_target_is_kept_over_anything_nearer() {
 }
 
 #[test]
+fn a_gun_in_reach_is_taken_before_the_character_holding_it() {
+    const CHARACTER: GrabVolume = GrabVolume::Pickup(PickupKind::Character);
+    let mark = Mark::ring(MarkAt::Cockpit(Vec3::ZERO), 0.05);
+    // The hand is on the character's chest, the gun a little farther, still within its reach.
+    let character = GripTarget::measured(CHARACTER, Hand::Right, 0.05, mark);
+    let gun = sphere(GrabVolume::WorldWeapon, 0.26, 0.4, Some(Hand::Right));
+    assert_eq!(
+        takes(&[character, gun], Hand::Right, 0.0),
+        Some(GrabVolume::WorldWeapon)
+    );
+    assert_eq!(
+        takes(&[gun, character], Hand::Right, 0.0),
+        Some(GrabVolume::WorldWeapon),
+        "whatever the order"
+    );
+    let resolved = &resolve(&[character, gun], [None, at(0.0)])[1];
+    let lost = losers(&resolved.reaches, resolved.chosen.unwrap());
+    assert_eq!(lost[0].1, Lost::Character);
+    // With the gun out of reach, the hand takes the character.
+    assert_eq!(takes(&[character, gun], Hand::Right, -0.2), Some(CHARACTER));
+    // The gun outranks only the character: a nearer prop is still taken first.
+    let prop = sphere(GrabVolume::Pickup(PickupKind::Prop), 0.02, 0.1, None);
+    assert_eq!(
+        takes(&[prop, gun], Hand::Right, 0.0),
+        Some(GrabVolume::Pickup(PickupKind::Prop))
+    );
+}
+
+#[test]
 fn a_target_worked_by_the_palm_is_never_taken() {
     let horn = sphere(GrabVolume::CockpitButton(Button::Horn), 0.0, 0.1, None);
     let resolved = resolve(&[horn], [at(0.0), None]);

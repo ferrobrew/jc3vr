@@ -3,8 +3,12 @@
 //! blow one hit.
 //!
 //! A contact is a blow only when the hand swung into the character: its speed toward the character
-//! before the contact ([`approach`]) must reach [`HandHitsTuning::min_approach_speed_mps`], so a
-//! hand resting on a character, or a character walking into a still hand, strikes nothing. The
+//! before the contact ([`approach`]), measured against the player's own motion ([`swing`]) so that
+//! a hand carried into a character by the player running is not a swing, must reach
+//! [`HandHitsTuning::min_approach_speed_mps`], so a hand resting on a character, or a character
+//! walking into a still hand, strikes nothing. A hand reaching for the gun in a character's hands
+//! ([`Intent`]) strikes that character only with a deliberate swing, and a hand closing on it never
+//! does: the grab takes the gun instead. The
 //! blow's impulse is the momentum of an arm of [`HandHitsTuning::blow_mass_kg`] at the hand's own
 //! share of that closing speed ([`blow_impulse`]), not the solver's contact impulse, which grows
 //! with the hand body's own mass and with how fast the character moves into the hand. The character
@@ -19,7 +23,10 @@
 
 use glam::Vec3;
 
-use crate::controllers::physical_hands::physics::config::HandHitsTuning;
+use crate::controllers::{
+    grab::{GrabVolume, latch::GripLatch},
+    physical_hands::physics::config::HandHitsTuning,
+};
 
 /// How a hand and a character closed on each other before a contact: the hand's speed toward the
 /// character, and the character's toward the hand, metres per second, neither below zero.
@@ -45,11 +52,66 @@ pub fn approach(hand_velocity: Vec3, victim_velocity: Vec3, toward_victim: Vec3)
     }
 }
 
-/// The impulse of a blow closing as `approach`, newton seconds: an arm of `config.blow_mass_kg`
-/// at the hand's own speed into the character, which is the hand's share of the closing speed.
-/// `None` for a hand that did not swing at the character fast enough to strike.
-pub fn blow_impulse(approach: Approach, config: &HandHitsTuning) -> Option<f32> {
-    (approach.hand_mps >= config.min_approach_speed_mps.max(0.0) && approach.hand_mps > 0.0)
+/// The velocity a hand moving at `hand_velocity` swings at, for a player moving at
+/// `player_velocity`: the hand's own motion, without the player's that carries it. A player
+/// velocity that is not finite counts as none.
+pub fn swing(hand_velocity: Vec3, player_velocity: Vec3) -> Vec3 {
+    if player_velocity.is_finite() {
+        hand_velocity - player_velocity
+    } else {
+        hand_velocity
+    }
+}
+
+/// What a hand that met a character meant to do to it, from its grip and whether the gun in that
+/// character's hands is within the hand's reach to take.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Intent {
+    /// Nothing of the character's within reach to take, or a fist: a swing strikes.
+    Swing,
+    /// An open hand within reach of the gun in the character's hands, on its way to take it: only a
+    /// deliberate swing strikes.
+    Reach,
+    /// A hand closing on, or holding, the gun in the character's hands: it strikes nothing, and the
+    /// grab takes the gun.
+    Take,
+}
+
+impl Intent {
+    /// The intent of a hand whose grip is `latch`, with `gun_in_reach` whether the gun in the
+    /// struck character's hands is offered to it. A grip that took a weapon in the world takes,
+    /// whatever was offered after.
+    pub fn of(latch: GripLatch, gun_in_reach: bool) -> Self {
+        match (latch, gun_in_reach) {
+            (GripLatch::Grab(GrabVolume::WorldWeapon), _) => Intent::Take,
+            (_, false) | (GripLatch::Fist { .. }, true) => Intent::Swing,
+            (GripLatch::Open, true) => Intent::Reach,
+            (GripLatch::Grab(_) | GripLatch::Default, true) => Intent::Take,
+        }
+    }
+}
+
+/// The impulse of a blow closing as `approach`, by a hand meaning `intent`, newton seconds: an arm
+/// of `config.blow_mass_kg` at the hand's own speed into the character, which is the hand's share
+/// of the closing speed. `None` for a hand that did not swing at the character fast enough to
+/// strike: [`HandHitsTuning::min_approach_speed_mps`], or for a hand reaching for the character's
+/// gun, the speed of a solid punch ([`HandHitsTuning::stagger_impulse_ns`]); and `None` for a hand
+/// taking the gun.
+pub fn blow_impulse(approach: Approach, intent: Intent, config: &HandHitsTuning) -> Option<f32> {
+    let swing = config.min_approach_speed_mps.max(0.0);
+    let min_mps = match intent {
+        Intent::Swing => swing,
+        Intent::Reach => {
+            let punch = config.stagger_impulse_ns / config.blow_mass_kg;
+            if punch.is_finite() {
+                swing.max(punch)
+            } else {
+                swing
+            }
+        }
+        Intent::Take => return None,
+    };
+    (approach.hand_mps >= min_mps && approach.hand_mps > 0.0)
         .then(|| config.blow_mass_kg.max(0.0) * approach.hand_mps)
 }
 
@@ -244,6 +306,7 @@ const MAX_RECENT: usize = 32;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::grab::PickupKind;
 
     const CONFIG: HandHitsTuning = HandHitsTuning::new();
     const VICTIM: VictimTuning = VictimTuning {
@@ -271,7 +334,10 @@ mod tests {
             hand_mps: 4.0,
             victim_mps: 0.0,
         };
-        assert!(blow_impulse(swing, &with_rifle).unwrap() > blow_impulse(swing, &CONFIG).unwrap());
+        assert!(
+            blow_impulse(swing, Intent::Swing, &with_rifle).unwrap()
+                > blow_impulse(swing, Intent::Swing, &CONFIG).unwrap()
+        );
     }
 
     #[test]
@@ -355,24 +421,82 @@ mod tests {
         let swing = approach(Vec3::X * 5.0, Vec3::ZERO, toward);
         assert_eq!(swing.hand_mps, 5.0);
         assert_eq!(
-            blow_impulse(swing, &CONFIG),
+            blow_impulse(swing, Intent::Swing, &CONFIG),
             Some(CONFIG.blow_mass_kg * 5.0)
         );
         // A hand at rest, which a character walks into.
         let walked_into = approach(Vec3::ZERO, Vec3::NEG_X * 3.0, toward);
         assert_eq!(walked_into.victim_mps, 3.0);
-        assert_eq!(blow_impulse(walked_into, &CONFIG), None);
+        assert_eq!(blow_impulse(walked_into, Intent::Swing, &CONFIG), None);
         // A hand moving away, or resting on the character.
         assert_eq!(
-            blow_impulse(approach(Vec3::NEG_X, Vec3::ZERO, toward), &CONFIG),
+            blow_impulse(
+                approach(Vec3::NEG_X, Vec3::ZERO, toward),
+                Intent::Swing,
+                &CONFIG
+            ),
             None
         );
         let resting = approach(Vec3::X * 0.3, Vec3::ZERO, toward);
-        assert_eq!(blow_impulse(resting, &CONFIG), None);
+        assert_eq!(blow_impulse(resting, Intent::Swing, &CONFIG), None);
         // Only the hand's own speed counts: a character running into a swing adds nothing.
         let both = approach(Vec3::X * 5.0, Vec3::NEG_X * 4.0, toward);
-        assert_eq!(blow_impulse(both, &CONFIG), blow_impulse(swing, &CONFIG));
+        assert_eq!(
+            blow_impulse(both, Intent::Swing, &CONFIG),
+            blow_impulse(swing, Intent::Swing, &CONFIG)
+        );
         assert_eq!(approach(Vec3::X, Vec3::ZERO, Vec3::ZERO).hand_mps, 0.0);
+    }
+
+    #[test]
+    fn a_hand_carried_by_the_running_player_is_no_swing() {
+        let toward = Vec3::X;
+        // The player runs at the character at 6 m/s with the arm held out still: the hand body
+        // moves at the player's speed, and swings at none of it.
+        let running = Vec3::X * 6.0;
+        let carried = approach(swing(running, running), Vec3::ZERO, toward);
+        assert_eq!(blow_impulse(carried, Intent::Swing, &CONFIG), None);
+        // A punch thrown while running swings at the arm's own speed.
+        let punch = approach(swing(running + Vec3::X * 5.0, running), Vec3::ZERO, toward);
+        assert_eq!(
+            blow_impulse(punch, Intent::Swing, &CONFIG),
+            Some(CONFIG.blow_mass_kg * 5.0)
+        );
+        // A player velocity that is not finite counts as none.
+        assert_eq!(swing(Vec3::X, Vec3::NAN), Vec3::X);
+    }
+
+    #[test]
+    fn a_hand_after_the_gun_strikes_only_with_a_deliberate_swing() {
+        let toward = Vec3::X;
+        let at = |mps: f32| approach(Vec3::X * mps, Vec3::ZERO, toward);
+        let punch_mps = CONFIG.stagger_impulse_ns / CONFIG.blow_mass_kg;
+        // A brisk reach strikes a character the hand is not after the gun of.
+        assert!(blow_impulse(at(2.5), Intent::Swing, &CONFIG).is_some());
+        // Reaching for the gun, it does not; a solid punch still does.
+        assert_eq!(blow_impulse(at(2.5), Intent::Reach, &CONFIG), None);
+        assert!(blow_impulse(at(punch_mps + 0.1), Intent::Reach, &CONFIG).is_some());
+        // A hand closing on the gun never strikes, however fast.
+        assert_eq!(blow_impulse(at(20.0), Intent::Take, &CONFIG), None);
+    }
+
+    #[test]
+    fn the_grip_and_the_gun_in_reach_say_what_the_hand_means() {
+        let weapon = GripLatch::Grab(GrabVolume::WorldWeapon);
+        let other = GripLatch::Grab(GrabVolume::Pickup(PickupKind::Character));
+        let fist = GripLatch::Fist { closed_s: 0.5 };
+        assert_eq!(Intent::of(GripLatch::Open, false), Intent::Swing);
+        assert_eq!(Intent::of(fist, false), Intent::Swing);
+        assert_eq!(Intent::of(other, false), Intent::Swing);
+        assert_eq!(Intent::of(GripLatch::Open, true), Intent::Reach);
+        // A fist closed on nothing and swung by the gun is a punch.
+        assert_eq!(Intent::of(fist, true), Intent::Swing);
+        // A closing grip by the gun takes it.
+        assert_eq!(Intent::of(other, true), Intent::Take);
+        assert_eq!(Intent::of(GripLatch::Default, true), Intent::Take);
+        // A grip that took the gun takes, whatever is offered after.
+        assert_eq!(Intent::of(weapon, false), Intent::Take);
+        assert_eq!(Intent::of(weapon, true), Intent::Take);
     }
 
     #[test]

@@ -48,21 +48,56 @@ pub struct WorldTarget {
     pub gun: Pose,
 }
 
-/// The grip targets on `targets`, of `radius`, for each hand in `free` with its drawn point in
+/// How near a hand must come to a target weapon's segment to take it, in player-scale metres, by
+/// where the weapon is.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct TakeRadii {
+    /// A gun in a living character's hands.
+    pub held: f32,
+    /// A weapon on a rack or in a locker.
+    pub rack: f32,
+}
+
+impl TakeRadii {
+    /// The same radius wherever the weapon is.
+    pub const fn uniform(radius: f32) -> Self {
+        Self {
+            held: radius,
+            rack: radius,
+        }
+    }
+
+    /// The radius of a target of `kind`, or `None` for one that is not finite and positive.
+    pub fn of(&self, kind: TargetKind) -> Option<f32> {
+        let radius = match kind {
+            TargetKind::Held { .. } => self.held,
+            TargetKind::Rack { .. } | TargetKind::RackMember { .. } => self.rack,
+        };
+        (radius.is_finite() && radius > 0.0).then_some(radius)
+    }
+}
+
+impl From<f32> for TakeRadii {
+    fn from(radius: f32) -> Self {
+        Self::uniform(radius)
+    }
+}
+
+/// The grip targets on `targets`, of `radii`, for each hand in `free` with its drawn point in
 /// `points` (by [`Hand::index`]): each at the point of the gun's segment nearest the hand.
 pub fn candidates(
     targets: &[WorldTarget],
-    radius: f32,
+    radii: impl Into<TakeRadii>,
     free: [bool; 2],
     points: [Option<Vec3>; 2],
 ) -> Vec<Candidate> {
-    let radius = radius.max(0.0);
+    let radii = radii.into();
     let mut out = Vec::new();
-    if !radius.is_finite() || radius <= 0.0 {
-        return out;
-    }
     for target in targets {
         let [a, b] = target.points;
+        let Some(radius) = radii.of(target.kind) else {
+            continue;
+        };
         if !a.is_finite() || !b.is_finite() {
             continue;
         }
@@ -81,17 +116,25 @@ pub fn candidates(
     out
 }
 
-/// The target a grab at `point` took: the one whose segment is nearest it, within `reach` of the
-/// segment.
-pub fn chosen(targets: &[WorldTarget], point: Vec3, reach: f32) -> Option<WorldTarget> {
-    if !point.is_finite() || !reach.is_finite() || reach <= 0.0 {
+/// The target a grab at `point` took: the one whose segment is nearest it, within its radius of
+/// `reach` of the segment.
+pub fn chosen(
+    targets: &[WorldTarget],
+    point: Vec3,
+    reach: impl Into<TakeRadii>,
+) -> Option<WorldTarget> {
+    let reach = reach.into();
+    if !point.is_finite() {
         return None;
     }
     targets
         .iter()
         .filter(|t| t.points.iter().all(|p| p.is_finite()))
-        .map(|t| (t, segment_distance(point, t.points[0], t.points[1])))
-        .filter(|(_, d)| d.is_finite() && *d <= reach)
+        .filter_map(|t| {
+            let radius = reach.of(t.kind)?;
+            let distance = segment_distance(point, t.points[0], t.points[1]);
+            (distance.is_finite() && distance <= radius).then_some((t, distance))
+        })
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(t, _)| *t)
 }
@@ -113,10 +156,11 @@ impl Offers {
 
     pub(crate) fn gather(
         targets: &[WorldTarget],
-        reach: f32,
+        reach: impl Into<TakeRadii>,
         free: [bool; 2],
         points: [Option<Vec3>; 2],
     ) -> Self {
+        let reach = reach.into();
         Self {
             hands: Hand::BOTH.map(|hand| {
                 points[hand.index()]
@@ -131,10 +175,19 @@ impl Offers {
         &mut self,
         hand: Hand,
         point: Option<Vec3>,
-        reach: f32,
+        reach: impl Into<TakeRadii>,
     ) -> Option<WorldTarget> {
         let offered = self.hands[hand.index()].take()?;
         chosen(std::slice::from_ref(&offered), point?, reach)
+    }
+
+    /// The character whose gun is offered to `hand`, as an address, if the offer is of a gun in a
+    /// character's hands.
+    pub(crate) fn held_character(&self, hand: Hand) -> Option<usize> {
+        match self.hands[hand.index()]?.kind {
+            TargetKind::Held { character } => Some(character),
+            TargetKind::Rack { .. } | TargetKind::RackMember { .. } => None,
+        }
     }
 
     /// A completed finite source cannot also be taken by the other hand from this tick's cache.
@@ -372,6 +425,71 @@ mod tests {
         resolve::resolve(&targets, [Some(point), None])[Hand::Left.index()]
             .chosen
             .map(|r| r.index)
+    }
+
+    #[test]
+    fn a_gun_in_a_characters_hands_reaches_farther_than_a_racks() {
+        let radii = TakeRadii {
+            held: 0.4,
+            rack: 0.3,
+        };
+        let held = target(TargetKind::Held { character: 9 }, Vec3::ZERO, Vec3::NEG_Z);
+        let rack = WorldTarget {
+            kind: TargetKind::Rack { weapon: 4 },
+            weapon: 0x2000,
+            ..held
+        };
+        let point = Vec3::new(0.35, 0.0, -0.5);
+        assert_eq!(chosen(&[rack], point, radii), None);
+        assert_eq!(chosen(&[held, rack], point, radii), Some(held));
+        let offered = candidates(&[held, rack], radii, [true, false], [Some(point), None]);
+        assert_eq!(offered.len(), 2);
+        assert_eq!(offered[0].radius, 0.4);
+        assert_eq!(offered[1].radius, 0.3);
+        assert_eq!(resolved_index(&offered, point), Some(0));
+        // Past the held gun's reach, nothing.
+        assert_eq!(chosen(&[held], Vec3::new(0.41, 0.0, -0.5), radii), None);
+        // A kind with an unusable radius offers nothing, and leaves the other kind alone.
+        let broken = TakeRadii {
+            held: f32::NAN,
+            rack: 0.3,
+        };
+        assert_eq!(chosen(&[held], Vec3::X * 0.1, broken), None);
+        assert_eq!(
+            candidates(&[held, rack], broken, [true, false], [Some(point), None]).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn the_offer_names_the_character_whose_gun_it_is() {
+        let held = target(TargetKind::Held { character: 9 }, Vec3::ZERO, Vec3::NEG_Z);
+        let rack = target(
+            TargetKind::Rack { weapon: 4 },
+            Vec3::X,
+            Vec3::X + Vec3::NEG_Z,
+        );
+        let offers = Offers::gather(
+            &[held, rack],
+            0.3,
+            [true, true],
+            [
+                Some(Vec3::new(0.1, 0.0, -0.5)),
+                Some(Vec3::new(0.9, 0.0, -0.5)),
+            ],
+        );
+        assert_eq!(offers.held_character(Hand::Left), Some(9));
+        assert_eq!(offers.held_character(Hand::Right), None, "a rack's gun");
+        let mut offers = offers;
+        assert_eq!(
+            offers.take(Hand::Left, Some(Vec3::new(0.1, 0.0, -0.5)), 0.3),
+            Some(held)
+        );
+        assert_eq!(
+            offers.held_character(Hand::Left),
+            None,
+            "a grab consumed it"
+        );
     }
 
     #[test]
