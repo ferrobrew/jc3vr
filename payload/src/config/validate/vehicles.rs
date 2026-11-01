@@ -63,7 +63,7 @@ mod tests {
         let mut config = ControllersConfig::default();
         assert!(controllers(&config).is_ok());
         config.vehicles.wingsuit_gestures.enabled = false;
-        config.vehicles.wingsuit_gestures.brake_angle_deg = f32::NAN;
+        config.vehicles.wingsuit_gestures.brake_roll_deg = f32::NAN;
         let error = controllers(&config).unwrap_err();
         assert!(error.0.starts_with("vehicles.wingsuit_gestures "));
     }

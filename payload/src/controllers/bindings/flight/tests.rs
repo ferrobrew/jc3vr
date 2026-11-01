@@ -27,17 +27,17 @@ const FLIGHT: FlightPose = FlightPose {
     reach: [0.32; 2],
     height: [0.0; 2],
     angle_deg: [5.0; 2],
-    palm_forward: [0.0; 2],
+    palm_roll_deg: [0.0; 2],
 };
 const LOWERED: FlightPose = FlightPose {
     lateral: [0.03; 2],
     reach: [0.33; 2],
     height: [-0.30; 2],
     angle_deg: [90.0; 2],
-    palm_forward: [0.0; 2],
+    palm_roll_deg: [0.0; 2],
 };
 const BRAKE: FlightPose = FlightPose {
-    palm_forward: [1.0; 2],
+    palm_roll_deg: [90.0; 2],
     ..FLIGHT
 };
 
@@ -187,8 +187,6 @@ fn calibration_edits_disarm_flight_and_brake_without_reusing_the_packet() {
             assert_eq!(h.repeat(last), GestureCommands::default());
             assert_eq!(h.repeat(BRAKE), GestureCommands::default());
             assert_idle(&h.hold(BRAKE, 6));
-            assert_idle(&h.hold(FLIGHT, 6));
-            assert_idle(&h.hold(LOWERED, 6));
             assert_idle(&h.hold(FLIGHT, 5));
             assert!(h.observe(BRAKE).reserve_pitch);
             assert!(h.hold(BRAKE, 2).last().unwrap().brake);
@@ -197,33 +195,16 @@ fn calibration_edits_disarm_flight_and_brake_without_reusing_the_packet() {
 }
 
 #[test]
-fn calibration_edits_discard_partial_neutral_without_rewinding_the_watermark() {
-    for changed in edits() {
-        let mut h = History::new();
-        assert_idle(&h.hold(LOWERED, 2));
-        h.calibration = changed;
-        for _ in 0..4 {
-            assert_eq!(h.repeat(LOWERED), GestureCommands::default());
-        }
-        assert_idle(&h.hold(LOWERED, 2));
-        assert_idle(&h.hold(FLIGHT, 5));
-        assert_idle(&h.hold(BRAKE, 3));
-        h.arm();
-        assert!(h.observe(BRAKE).reserve_pitch);
-    }
-}
-
-#[test]
 fn calibration_edits_discard_partial_flight() {
     for changed in edits() {
         let mut h = History::new();
-        assert_idle(&h.hold(LOWERED, 3));
         assert_idle(&h.hold(FLIGHT, 3));
         h.calibration = changed;
         assert_eq!(h.repeat(FLIGHT), GestureCommands::default());
-        assert_idle(&h.hold(FLIGHT, 5));
-        assert_idle(&h.hold(BRAKE, 3));
-        h.arm();
+        assert_idle(&h.hold(FLIGHT, 4));
+        assert_eq!(h.state.gestures.phase(), GesturePhase::AwaitingFlight);
+        assert_idle(&h.hold(FLIGHT, 1));
+        assert_eq!(h.state.gestures.phase(), GesturePhase::Armed);
         assert!(h.observe(BRAKE).reserve_pitch);
     }
 }

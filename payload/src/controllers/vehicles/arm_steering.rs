@@ -196,7 +196,7 @@ pub const FULL_SWEEP_M: f32 = 0.35;
 /// Measured about the fingers rather than against the world, raising or sweeping the arm turns the
 /// reference with it, so only the wrist's roll reads. `lead` is `1` for the left hand and `-1` for
 /// the right, whose leading edges lie on opposite sides of the fingers.
-fn wrist_tilt(wrist: Quat, lead: f32) -> f32 {
+pub(crate) fn wrist_tilt(wrist: Quat, lead: f32) -> f32 {
     let fingers = wrist * Vec3::NEG_Z;
     let back = wrist * Vec3::Y;
     let Some(level) = (Vec3::Y - fingers * fingers.y).try_normalize() else {

@@ -1,5 +1,6 @@
 mod current;
 mod review;
+mod seated;
 
 use std::f32::consts::FRAC_PI_2;
 
@@ -21,17 +22,17 @@ const FLIGHT: FlightPose = FlightPose {
     reach: [0.32; 2],
     height: [0.0; 2],
     angle_deg: [5.0; 2],
-    palm_forward: [0.0; 2],
+    palm_roll_deg: [0.0; 2],
 };
 const FOLDED: FlightPose = FlightPose {
     lateral: [0.03; 2],
     reach: [0.20; 2],
     height: [-0.19; 2],
     angle_deg: [80.0; 2],
-    palm_forward: [0.0; 2],
+    palm_roll_deg: [0.0; 2],
 };
 const BRAKE: FlightPose = FlightPose {
-    palm_forward: [1.0; 2],
+    palm_roll_deg: [90.0; 2],
     ..FLIGHT
 };
 
@@ -133,7 +134,7 @@ fn braking_reserves_pitch_and_cannot_close_the_suit() {
             .all(|c| c.transition.is_none() && c.reserve_pitch)
     );
     let halfway = FlightPose {
-        palm_forward: [0.5; 2],
+        palm_roll_deg: [40.0; 2],
         ..FLIGHT
     };
     assert!(h.observe(Some(halfway)).reserve_pitch);
@@ -328,23 +329,28 @@ fn menus_focus_and_repeated_samples_do_not_accumulate_pose_dwell() {
     );
 }
 
+/// A wrist frame with the fingers out along `hand`'s arm and the palm rolled `roll_deg` from flat
+/// toward facing forward, for a player facing `facing` (the rotation from facing -Z).
+fn spread_wrist(hand: Hand, roll_deg: f32, facing: Quat) -> Quat {
+    let side = if hand == Hand::Left { -1.0 } else { 1.0 };
+    facing * Quat::from_rotation_x(roll_deg.to_radians()) * Quat::from_rotation_y(-side * FRAC_PI_2)
+}
+
 #[test]
-fn calibrated_measurement_uses_each_shoulders_side_and_the_wrist_palm_normal() {
+fn calibrated_measurement_uses_each_shoulders_side_and_the_wrists_roll() {
     let span = 1.8;
     let heading = Quat::from_rotation_y(FRAC_PI_2);
     // The player faces -X, with the left shoulder and wrist on +Z and the right on -Z.
     let shoulders = [Vec3::new(0.0, 0.0, 0.2), Vec3::new(0.0, 0.0, -0.2)];
     let positions = [Vec3::new(0.0, 0.0, 0.74), Vec3::new(0.0, 0.0, -0.74)];
-    let measure = |scale: f32, orientation: Quat| {
-        let wrists = positions.map(|position| Pose {
-            position: position * scale,
-            orientation,
+    let measure = |scale: f32, roll_deg: f32| {
+        let wrists = Hand::BOTH.map(|hand| Pose {
+            position: positions[hand.index()] * scale,
+            orientation: spread_wrist(hand, roll_deg, heading),
         });
         FlightPose::measure(wrists, shoulders.map(|p| p * scale), heading, span * scale).unwrap()
     };
-    // This rotation maps the wrist's -Y palm normal to world -X without using the heading.
-    let palms_forward = Quat::from_rotation_z(-FRAC_PI_2);
-    let pose = measure(1.0, palms_forward);
+    let pose = measure(1.0, 90.0);
     for i in 0..2 {
         assert!((pose.lateral[i] - 0.30).abs() <= f32::EPSILON, "{pose:?}");
         assert!((pose.reach[i] - 0.30).abs() <= f32::EPSILON, "{pose:?}");
@@ -355,25 +361,123 @@ fn calibrated_measurement_uses_each_shoulders_side_and_the_wrist_palm_normal() {
             (1.0 - pose.angle_deg[i].to_radians().cos()).abs() <= f32::EPSILON,
             "{pose:?}"
         );
+        assert!((pose.palm_roll_deg[i] - 90.0).abs() < 1e-3, "{pose:?}");
+    }
+    assert_eq!(pose, measure(2.0, 90.0));
+    for roll_deg in [0.0, 35.0, -90.0, 150.0] {
+        let rolled = measure(1.0, roll_deg);
         assert!(
-            (pose.palm_forward[i] - 1.0).abs() <= f32::EPSILON,
-            "{pose:?}"
+            rolled
+                .palm_roll_deg
+                .into_iter()
+                .all(|v| (v - roll_deg).abs() < 1e-3),
+            "{roll_deg}: {rolled:?}"
         );
     }
-    assert_eq!(pose, measure(2.0, palms_forward));
-    let palms_down = measure(1.0, Quat::IDENTITY);
+}
+
+#[test]
+fn the_palm_roll_ignores_raising_and_sweeping_the_arms() {
+    let heading = Quat::IDENTITY;
+    let shoulders = [Vec3::new(-0.2, 0.0, 0.0), Vec3::new(0.2, 0.0, 0.0)];
+    // Each arm raised 30 degrees and swept 30 degrees forward, the hand carried with it.
+    let carry = |hand: Hand| {
+        let side = if hand == Hand::Left { -1.0 } else { 1.0 };
+        Quat::from_rotation_y(side * 30_f32.to_radians())
+            * Quat::from_axis_angle(Vec3::Z, side * 30_f32.to_radians())
+    };
+    let wrists = Hand::BOTH.map(|hand| {
+        let carry = carry(hand);
+        let out = if hand == Hand::Left {
+            Vec3::NEG_X
+        } else {
+            Vec3::X
+        };
+        Pose {
+            position: shoulders[hand.index()] + carry * out * 0.6,
+            orientation: carry * spread_wrist(hand, 80.0, heading),
+        }
+    });
+    let pose = FlightPose::measure(wrists, shoulders, heading, 1.8).unwrap();
     assert!(
-        palms_down.palm_forward.into_iter().all(|v| v == 0.0),
-        "{palms_down:?}"
-    );
-    let palms_backward = measure(1.0, Quat::from_rotation_z(FRAC_PI_2));
-    assert!(
-        palms_backward
-            .palm_forward
+        pose.palm_roll_deg
             .into_iter()
-            .all(|v| (v + 1.0).abs() <= f32::EPSILON),
-        "{palms_backward:?}"
+            .all(|v| (v - 80.0).abs() < 1e-2),
+        "{pose:?}"
     );
+    assert!(pose.braking_palms(&CONFIG, false), "{pose:?}");
+}
+
+#[test]
+fn the_arms_face_the_body_while_the_head_looks_around() {
+    let head = |yaw_deg: f32| Pose {
+        position: Vec3::new(0.0, 1.2, 0.0),
+        orientation: Quat::from_rotation_y(yaw_deg.to_radians()),
+    };
+    let wrists = [Vec3::new(-0.8, 0.95, 0.1), Vec3::new(0.8, 0.95, 0.1)].map(|position| Pose {
+        position,
+        orientation: Quat::IDENTITY,
+    });
+    for yaw_deg in [-70.0, -30.0, 0.0, 45.0, 70.0] {
+        let heading = flight_heading(wrists, head(yaw_deg));
+        assert!(
+            heading.angle_between(Quat::IDENTITY) < 1e-3,
+            "{yaw_deg}: {heading:?}"
+        );
+    }
+    // Past a head's turn, and with the wrists together, the arms say nothing about the body.
+    let behind = flight_heading(wrists, head(120.0));
+    assert!(behind.angle_between(Quat::from_rotation_y(120_f32.to_radians())) < 1e-3);
+    let together = [Vec3::new(-0.05, 0.9, -0.4), Vec3::new(0.05, 0.9, -0.4)].map(|position| Pose {
+        position,
+        orientation: Quat::IDENTITY,
+    });
+    let alone = flight_heading(together, head(40.0));
+    assert!(alone.angle_between(Quat::from_rotation_y(40_f32.to_radians())) < 1e-3);
+    // A player turned to face the cockpit's back still stands upright.
+    let turned = wrists.map(|wrist| Pose {
+        position: wrist.position * Vec3::new(-1.0, 1.0, -1.0),
+        ..wrist
+    });
+    let heading = flight_heading(turned, head(180.0));
+    assert!(
+        (heading * Vec3::Y).abs_diff_eq(Vec3::Y, 1e-5),
+        "{heading:?}"
+    );
+    assert!(
+        (heading * Vec3::NEG_Z).abs_diff_eq(Vec3::Z, 1e-5),
+        "{heading:?}"
+    );
+}
+
+#[test]
+fn a_spread_flight_pose_arms_the_suit_without_a_neutral_first() {
+    let mut h = History::new(SUIT);
+    assert!(h.hold(FLIGHT, 6).iter().all(|c| c.transition.is_none()));
+    assert!(h.state.armed);
+    assert_eq!(h.state.phase(), GesturePhase::Armed);
+    assert!(h.hold(BRAKE, 6).iter().any(|c| c.brake));
+    assert_eq!(h.state.phase(), GesturePhase::Braking);
+    // Falling still needs the neutral first, so a held T-pose does not deploy the suit.
+    let mut h = History::new(FALLING);
+    assert!(h.hold(FLIGHT, 20).iter().all(|c| c.transition.is_none()));
+    assert_eq!(h.state.phase(), GesturePhase::AwaitingNeutral);
+}
+
+#[test]
+fn palms_past_the_brake_band_toward_palm_up_do_not_brake() {
+    let mut h = History::new(SUIT);
+    h.arm();
+    let palm_up = FlightPose {
+        palm_roll_deg: [CONFIG.brake_roll_max_deg + 1.0; 2],
+        ..FLIGHT
+    };
+    assert!(h.hold(palm_up, 12).iter().all(|c| !c.brake));
+    let one_hand = FlightPose {
+        palm_roll_deg: [90.0, 20.0],
+        ..FLIGHT
+    };
+    assert!(h.hold(one_hand, 12).iter().all(|c| !c.brake));
 }
 
 #[test]

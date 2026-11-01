@@ -133,7 +133,7 @@ fn evaluation_denies_missing_disabled_invalid_and_unsupported_inputs() {
                     .pose
                     .as_mut()
                     .unwrap()
-                    .palm_forward[0] = 2.0
+                    .palm_roll_deg[0] = 181.0
             }
             5 => observation.as_mut().unwrap().mode = Mode::Ui,
             6 => observation.as_mut().unwrap().mode = Mode::Airborne(AirborneVariant::Parachute),

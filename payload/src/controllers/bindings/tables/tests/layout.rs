@@ -88,17 +88,17 @@ fn gesture_actions(mode: Mode) -> BTreeSet<Action> {
         reach: [1.0 / 3.0; 2],
         height: [-1.0 / 3.0; 2],
         angle_deg: [90.0; 2],
-        palm_forward: [0.0; 2],
+        palm_roll_deg: [0.0; 2],
     };
     let flight = FlightPose {
         lateral: [0.30; 2],
         reach: [0.30; 2],
         height: [0.0; 2],
         angle_deg: [0.0; 2],
-        palm_forward: [0.0; 2],
+        palm_roll_deg: [0.0; 2],
     };
     let brake = FlightPose {
-        palm_forward: [1.0; 2],
+        palm_roll_deg: [90.0; 2],
         ..flight
     };
     let mut state = WingsuitGestures::default();

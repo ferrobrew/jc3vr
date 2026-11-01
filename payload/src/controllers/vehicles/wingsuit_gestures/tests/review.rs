@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use super::*;
+use crate::controllers::hands::pose::grip_to_wrist;
 
 fn observation(sample: GestureSample, pose: Option<FlightPose>) -> GestureInput {
     GestureInput {
@@ -485,32 +486,37 @@ fn repeated_samples_retain_only_held_commands_and_cancellation_does_not_rearm_th
 }
 
 #[test]
-fn falling_and_suit_boundaries_require_a_new_neutral_to_flight_sequence() {
-    for (start, next) in [(FALLING, SUIT), (SUIT, FALLING)] {
-        let mut h = History::new(start);
-        h.hold(FOLDED, 5);
-        h.hold(FLIGHT, 6);
-        h.mode = next;
-        assert!(
-            h.hold(FLIGHT, 20)
-                .iter()
-                .all(|command| *command == GestureCommands::default())
-        );
-        assert!(!h.state.armed && !h.state.ready);
-        h.hold(FOLDED, 5);
-        let commands = h.hold(FLIGHT, 6);
-        if next == SUIT {
-            assert!(h.state.armed);
-        } else {
-            assert_eq!(
-                commands
-                    .iter()
-                    .filter(|command| command.transition == Some(SuitTransition::Deploy))
-                    .count(),
-                1
-            );
-        }
-    }
+fn falling_and_suit_boundaries_restart_the_sequence() {
+    // Leaving the suit needs a new neutral before the flight pose deploys it again.
+    let mut h = History::new(SUIT);
+    h.hold(FLIGHT, 6);
+    assert!(h.state.armed);
+    h.mode = FALLING;
+    assert!(
+        h.hold(FLIGHT, 20)
+            .iter()
+            .all(|command| *command == GestureCommands::default())
+    );
+    assert!(!h.state.armed && !h.state.ready);
+    h.hold(FOLDED, 5);
+    let commands = h.hold(FLIGHT, 6);
+    assert_eq!(
+        commands
+            .iter()
+            .filter(|command| command.transition == Some(SuitTransition::Deploy))
+            .count(),
+        1
+    );
+    // Entering the suit discards the fall's pose history: a flight pose held through the entry
+    // arms only after its own dwell in the suit.
+    let mut h = History::new(FALLING);
+    h.hold(FOLDED, 5);
+    h.hold(FLIGHT, 3);
+    h.mode = SUIT;
+    h.hold(FLIGHT, 3);
+    assert!(!h.state.armed && !h.state.ready);
+    h.hold(FLIGHT, 3);
+    assert!(h.state.armed);
 }
 
 struct TrackingFixture {
@@ -543,13 +549,17 @@ impl TrackingFixture {
             orientation: Quat::IDENTITY,
         };
         let shoulders = body::shoulder_positions(head_pose.position, Quat::IDENTITY, &dimensions);
+        let offset = GripOffset {
+            position_m: Vec3::ZERO,
+            rotation_deg: Vec3::ZERO,
+        };
         let hands = Hand::BOTH.map(|hand| {
             let side = if hand == Hand::Left { -1.0 } else { 1.0 };
             HandFrame {
                 active: true,
                 grip: tracked(Pose {
                     position: shoulders[hand.index()] + Vec3::X * side * 0.60,
-                    orientation: Quat::from_rotation_y(-side * FRAC_PI_2),
+                    orientation: grip_for(hand, 90.0, &offset),
                 }),
                 ..Default::default()
             }
@@ -569,10 +579,7 @@ impl TrackingFixture {
                 action_set: ActionSetKind::Wingsuit,
                 hands,
             },
-            offset: GripOffset {
-                position_m: Vec3::ZERO,
-                rotation_deg: Vec3::ZERO,
-            },
+            offset,
             dimensions,
         }
     }
@@ -588,6 +595,12 @@ impl TrackingFixture {
             now: self.frame.published_at,
         })
     }
+}
+
+/// The grip orientation that puts `hand`'s wrist, under `offset`, out along a spread arm with the
+/// palm rolled `roll_deg` toward facing forward.
+fn grip_for(hand: Hand, roll_deg: f32, offset: &GripOffset) -> Quat {
+    spread_wrist(hand, roll_deg, Quat::IDENTITY) * grip_to_wrist(hand, offset).orientation.inverse()
 }
 
 #[test]
@@ -624,10 +637,17 @@ fn explicit_pose_adapter_rejects_mixed_untracked_and_stale_head_observations() {
 }
 
 #[test]
-fn grip_palm_basis_has_independent_expected_normals_for_both_hands_and_adjustments() {
+fn grip_palm_basis_has_independent_expected_rolls_for_both_hands_and_adjustments() {
+    let rolls = |fixture: &TrackingFixture| fixture.measure().unwrap().palm_roll_deg;
     let mut fixture = TrackingFixture::new();
     let forward = fixture.measure().unwrap();
-    assert!(forward.palm_forward.into_iter().all(|value| value > 0.999));
+    assert!(
+        forward
+            .palm_roll_deg
+            .into_iter()
+            .all(|value| (value - 90.0).abs() < 1e-3),
+        "{forward:?}"
+    );
     let mut changed_aim = fixture.frame.clone();
     for hand in &mut changed_aim.hands {
         hand.aim.pose.orientation = Quat::from_rotation_z(1.2);
@@ -635,42 +655,33 @@ fn grip_palm_basis_has_independent_expected_normals_for_both_hands_and_adjustmen
     }
     fixture.frame = changed_aim;
     assert_eq!(fixture.measure(), Some(forward));
-    fixture.offset.rotation_deg = Vec3::new(0.0, 30.0, 0.0);
-    let tilted = fixture.measure().unwrap();
-    assert!(
-        tilted
-            .palm_forward
-            .into_iter()
-            .all(|value| (value - 30.0_f32.to_radians().cos()).abs() < 1e-5)
-    );
-    fixture.offset.rotation_deg = Vec3::new(0.0, 90.0, 0.0);
-    assert!(
-        fixture
-            .measure()
-            .unwrap()
-            .palm_forward
-            .into_iter()
-            .all(|value| value.abs() < 1e-5)
-    );
+    // Turning the hand about the grip's Y turns it about the fingers, mirrored for the left hand,
+    // so both palms roll the same way.
+    for (adjust, expected) in [(30.0, 30.0), (90.0, 90.0)] {
+        fixture.offset.rotation_deg = Vec3::new(0.0, adjust, 0.0);
+        let [left, right] = rolls(&fixture);
+        assert!((left - right).abs() < 1e-3, "{adjust}: {left} {right}");
+        assert!(
+            ((left - 90.0).abs() - expected).abs() < 1e-3,
+            "{adjust}: {left}"
+        );
+    }
+    // The fitted offset turns the hand about the back of the hand, which leaves the palm facing
+    // forward.
     fixture.offset = GripOffset::INDEX_BEST_GUESS;
     assert!(
-        fixture
-            .measure()
-            .unwrap()
-            .palm_forward
+        rolls(&fixture)
             .into_iter()
-            .all(|value| value > 0.999)
+            .all(|value| (value - 90.0).abs() < 1e-3)
     );
-    for hand in &mut fixture.frame.hands {
-        hand.grip.pose.orientation = Quat::IDENTITY;
+    for hand in Hand::BOTH {
+        fixture.frame.hands[hand.index()].grip.pose.orientation =
+            grip_for(hand, -90.0, &fixture.offset);
     }
     assert!(
-        fixture
-            .measure()
-            .unwrap()
-            .palm_forward
+        rolls(&fixture)
             .into_iter()
-            .all(|value| value.abs() < 1e-5)
+            .all(|value| (value + 90.0).abs() < 1e-3)
     );
 }
 
@@ -684,9 +695,11 @@ fn config_endpoints_and_pose_hysteresis_boundaries_remain_separated() {
             withdraw_lowered_span: 0.10,
             withdraw_reach_span: 0.10,
             pose_hysteresis_span: 0.01,
-            brake_angle_deg: 15.0,
+            flight_roll_deg: 15.0,
+            brake_roll_deg: 40.0,
+            brake_roll_max_deg: 100.0,
             brake_hysteresis_deg: 2.0,
-            pitch_release_alignment: 0.0,
+            pitch_release_roll_deg: 0.0,
             neutral_dwell_s: 0.05,
             flight_dwell_s: 0.10,
             close_dwell_s: 0.15,
@@ -704,9 +717,11 @@ fn config_endpoints_and_pose_hysteresis_boundaries_remain_separated() {
             withdraw_lowered_span: 0.35,
             withdraw_reach_span: 0.35,
             pose_hysteresis_span: 0.08,
-            brake_angle_deg: 60.0,
-            brake_hysteresis_deg: 20.0,
-            pitch_release_alignment: 0.0,
+            flight_roll_deg: 60.0,
+            brake_roll_deg: 85.0,
+            brake_roll_max_deg: 165.0,
+            brake_hysteresis_deg: 14.0,
+            pitch_release_roll_deg: 60.0,
             neutral_dwell_s: 0.50,
             flight_dwell_s: 1.0,
             close_dwell_s: 1.0,
@@ -730,9 +745,16 @@ fn config_endpoints_and_pose_hysteresis_boundaries_remain_separated() {
             ..CONFIG
         },
         WingsuitGesturesConfig {
-            brake_angle_deg: 60.0,
-            brake_hysteresis_deg: 20.0,
-            pitch_release_alignment: 0.40,
+            pitch_release_roll_deg: CONFIG.flight_roll_deg + 1.0,
+            ..CONFIG
+        },
+        WingsuitGesturesConfig {
+            flight_roll_deg: CONFIG.brake_roll_deg - CONFIG.brake_hysteresis_deg,
+            ..CONFIG
+        },
+        WingsuitGesturesConfig {
+            brake_roll_max_deg: 165.0,
+            brake_hysteresis_deg: 15.0,
             ..CONFIG
         },
         WingsuitGesturesConfig {
@@ -758,16 +780,14 @@ fn config_endpoints_and_pose_hysteresis_boundaries_remain_separated() {
     let mut h = History::new(SUIT);
     h.arm();
     let below_entry = FlightPose {
-        palm_forward: [(CONFIG.brake_angle_deg + 0.01).to_radians().cos(); 2],
+        palm_roll_deg: [CONFIG.brake_roll_deg - 0.01; 2],
         ..FLIGHT
     };
     assert_eq!(h.observe(Some(below_entry)), GestureCommands::default());
     assert!(h.hold(BRAKE, 6).iter().any(|command| command.brake));
     let retained = FlightPose {
         lateral: [CONFIG.flight_lateral_span - CONFIG.pose_hysteresis_span; 2],
-        palm_forward: [(CONFIG.brake_angle_deg + CONFIG.brake_hysteresis_deg)
-            .to_radians()
-            .cos(); 2],
+        palm_roll_deg: [CONFIG.brake_roll_deg - CONFIG.brake_hysteresis_deg; 2],
         ..FLIGHT
     };
     assert!(h.observe(Some(retained)).brake);
@@ -780,9 +800,7 @@ fn config_endpoints_and_pose_hysteresis_boundaries_remain_separated() {
     assert!(!h.observe(Some(FLIGHT)).reserve_pitch);
     assert!(h.hold(BRAKE, 6).iter().any(|command| command.brake));
     let beyond_angle = FlightPose {
-        palm_forward: [(CONFIG.brake_angle_deg + CONFIG.brake_hysteresis_deg + 0.01)
-            .to_radians()
-            .cos(); 2],
+        palm_roll_deg: [CONFIG.brake_roll_deg - CONFIG.brake_hysteresis_deg - 0.01; 2],
         ..FLIGHT
     };
     let output = h.observe(Some(beyond_angle));

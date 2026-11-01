@@ -1,6 +1,10 @@
 //! Wingsuit gesture integration after hand interactions and before final action resolution.
+//!
+//! Each change of the recognizer's phase, and each transition it requests, is logged at info level
+//! with the gate that blocks it and the arm measures it saw, while the player is falling or in the
+//! suit, so a session's log shows what the recognizer made of the player's arms.
 
-use std::time::Instant;
+use std::{fmt, time::Instant};
 
 use jc3gi::input::input_action_map::Action::OPEN_PARACHUTE;
 
@@ -12,11 +16,12 @@ use crate::{
         fingers::grip::{self, GripSource},
         frame::{ControllerFrame, Hand},
         grab::GrabVolume,
-        mode::{Detection, Mode},
+        mode::{AirborneVariant, Detection, Mode},
         vehicles::{
             config::WingsuitGesturesConfig,
             wingsuit_gestures::{
-                GestureAvailability, GestureCommands, GestureInput, HandClaims, WingsuitGestures,
+                Blocked, FlightPose, GestureAvailability, GestureCommands, GestureInput,
+                GesturePhase, HandClaims, SuitTransition, WingsuitGestures,
             },
         },
         weapons,
@@ -29,6 +34,9 @@ use crate::{
 pub(super) struct FlightState {
     gestures: WingsuitGestures,
     calibration: Option<Calibration>,
+    /// The phase and its cause last logged, or `None` while the player is neither falling nor in
+    /// the suit.
+    logged: Option<(GesturePhase, Option<Why>)>,
 }
 
 impl FlightState {
@@ -71,15 +79,30 @@ pub(super) fn evaluate(
     tick: &Tick<'_>,
     desired: &[Desired],
 ) -> GestureCommands {
-    evaluate_input(
+    let input = observation(tick, desired, Instant::now());
+    let config = &tick.config.vehicles.wingsuit_gestures;
+    let commands = evaluate_input(
         state,
         Calibration {
             grip_offset: tick.config.hands.grip,
             dimensions: *tick.dimensions,
         },
-        observation(tick, desired, Instant::now()),
-        &tick.config.vehicles.wingsuit_gestures,
-    )
+        input,
+        config,
+    );
+    note(state, tick, input, config, Stage::Evaluate);
+    if let Some(transition) = commands.transition {
+        tracing::info!(
+            target: "controllers",
+            "wingsuit gestures: {} the suit {}",
+            match transition {
+                SuitTransition::Deploy => "deploying",
+                SuitTransition::Close => "closing",
+            },
+            Measures(input.and_then(|input| input.pose)),
+        );
+    }
+    commands
 }
 
 /// State actions can add a canopy request or acquire a hand after gesture evaluation.
@@ -94,13 +117,146 @@ pub(super) fn commit(
         dimensions: *tick.dimensions,
     };
     state.calibrate(calibration);
-    commit_input(
-        state,
-        commands,
-        observation(tick, desired, Instant::now()),
-        &tick.config.vehicles.wingsuit_gestures,
-        desired,
-    )
+    let input = observation(tick, desired, Instant::now());
+    let config = &tick.config.vehicles.wingsuit_gestures;
+    let reserve_pitch = commit_input(state, commands, input, config, desired);
+    note(state, tick, input, config, Stage::Commit);
+    reserve_pitch
+}
+
+/// Why the recognizer is unavailable, as far as the binding owner can tell.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Why {
+    /// No live head and controller packet matched this tick's controller frame.
+    NoSample,
+    /// The binding owner suspended gameplay input for the gestures.
+    Suspended(Suspension),
+    /// The recognizer's own gate.
+    Blocked(Blocked),
+    /// The samples went back in time or paused past the largest gap, which cancels the gestures.
+    Interrupted,
+    /// The observation changed between the gesture evaluation and the action commit.
+    Revalidated,
+}
+
+impl fmt::Display for Why {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoSample => f.write_str("no live head and controller sample matches the tick"),
+            Self::Suspended(suspension) => fmt::Display::fmt(suspension, f),
+            Self::Blocked(blocked) => fmt::Display::fmt(blocked, f),
+            Self::Interrupted => f.write_str("the samples went back or paused"),
+            Self::Revalidated => {
+                f.write_str("the sample changed before the actions were committed")
+            }
+        }
+    }
+}
+
+/// The binding owner's reason to suspend gameplay input for the gestures.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Suspension {
+    MaskedHands,
+    Menu,
+    ModeChanging,
+    Ragdoll,
+    Stashed,
+    FireBlocked,
+}
+
+impl fmt::Display for Suspension {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::MaskedHands => "a recovery mask holds a hand",
+            Self::Menu => "a menu is open",
+            Self::ModeChanging => "the mode is changing",
+            Self::Ragdoll => "the player is ragdolling",
+            Self::Stashed => "the inventory is stashed",
+            Self::FireBlocked => "weapon actions are blocked",
+        })
+    }
+}
+
+/// Where in the tick a phase is noted.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Stage {
+    Evaluate,
+    Commit,
+}
+
+/// Log the recognizer's phase when it, or the gate behind it, changed since the last log. Outside
+/// falling and the suit, only the first tick there is logged.
+fn note(
+    state: &mut FlightState,
+    tick: &Tick<'_>,
+    input: Option<GestureInput>,
+    config: &WingsuitGesturesConfig,
+    stage: Stage,
+) {
+    let airborne = matches!(
+        tick.detection.mode,
+        Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Wingsuit)
+    );
+    let phase = state.gestures.phase();
+    let entry = airborne.then(|| {
+        let why = (phase == GesturePhase::Unavailable).then(|| match input {
+            None => Why::NoSample,
+            Some(input) => suspension(tick)
+                .map(Why::Suspended)
+                .or_else(|| input.blocked(config).map(Why::Blocked))
+                .unwrap_or(match stage {
+                    Stage::Evaluate => Why::Interrupted,
+                    Stage::Commit => Why::Revalidated,
+                }),
+        });
+        (phase, why)
+    });
+    if entry == state.logged {
+        return;
+    }
+    state.logged = entry;
+    match entry {
+        None => tracing::info!(
+            target: "controllers",
+            "wingsuit gestures: idle, the player is neither falling nor in the suit"
+        ),
+        Some((phase, Some(why))) => tracing::info!(
+            target: "controllers",
+            "wingsuit gestures: {phase} ({why}) {}",
+            Measures(input.and_then(|input| input.pose)),
+        ),
+        Some((phase, None)) => tracing::info!(
+            target: "controllers",
+            "wingsuit gestures: {phase} {}",
+            Measures(input.and_then(|input| input.pose)),
+        ),
+    }
+}
+
+/// The arm measures of a pose, for the log.
+struct Measures(Option<FlightPose>);
+
+impl fmt::Display for Measures {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Some(pose) = self.0 else {
+            return f.write_str("with no arm pose");
+        };
+        write!(
+            f,
+            "with lateral [{:.2}, {:.2}] reach [{:.2}, {:.2}] height [{:.2}, {:.2}] spans, \
+             arm angle [{:.0}, {:.0}] and palm roll [{:.0}, {:.0}] degrees",
+            pose.lateral[0],
+            pose.lateral[1],
+            pose.reach[0],
+            pose.reach[1],
+            pose.height[0],
+            pose.height[1],
+            pose.angle_deg[0],
+            pose.angle_deg[1],
+            pose.palm_roll_deg[0],
+            pose.palm_roll_deg[1],
+        )
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -143,7 +299,7 @@ fn observation(tick: &Tick<'_>, desired: &[Desired], now: Instant) -> Option<Ges
     Some(GestureInput {
         sample: packet.sample(),
         mode: tick.detection.mode,
-        gameplay: available(tick),
+        gameplay: suspension(tick).is_none(),
         canopy_requested: canopy(desired),
         pose: packet.measure(
             &FlightCalibration {
@@ -197,13 +353,23 @@ fn commit_input(
     }
 }
 
-fn available(tick: &Tick<'_>) -> bool {
-    tick.ready
-        && tick.detection.mode != Mode::Ui
-        && tick.detection.held.is_none()
-        && !tick.ragdoll
-        && !weapons::inventory::status().stashed
-        && !weapons::status().fire_blocked
+/// The first reason the binding owner suspends gameplay input for the gestures, if any.
+fn suspension(tick: &Tick<'_>) -> Option<Suspension> {
+    if !tick.ready {
+        Some(Suspension::MaskedHands)
+    } else if tick.detection.mode == Mode::Ui {
+        Some(Suspension::Menu)
+    } else if tick.detection.held.is_some() {
+        Some(Suspension::ModeChanging)
+    } else if tick.ragdoll {
+        Some(Suspension::Ragdoll)
+    } else if weapons::inventory::status().stashed {
+        Some(Suspension::Stashed)
+    } else if weapons::status().fire_blocked {
+        Some(Suspension::FireBlocked)
+    } else {
+        None
+    }
 }
 
 fn canopy(desired: &[Desired]) -> bool {
