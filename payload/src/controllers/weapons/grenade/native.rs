@@ -14,6 +14,13 @@
 //! stowed, or dropped item stays inert for as long as it exists. Only a deliberate release arms it,
 //! by raising the flag once, and nothing here ever resets the flag or the timer it gates.
 //!
+//! A release gives the grenade's body the motion a gun's let-go gives a gun's
+//! ([`crate::controllers::weapons::grenade::throw_release`]), linear and angular. The difference is
+//! the engine's: a held grenade's body is not in the simulation, and only the engine's launch
+//! ([`Explosive::m_DeferredPropelTowards`]) puts it there, at the end of the tick, from
+//! [`Explosive::m_DeferredInitialVelocity`] and [`Explosive::m_InitialAngularVelocity`], so the
+//! release writes those rather than the body's velocities.
+//!
 //! Every release has to be a launch the engine actually applied. Both engine paths that put a
 //! grenade into the simulation start with a physics body
 //! ([`Explosive::m_PfxInstance`](jc3gi::equipment::explosive::Explosive::m_PfxInstance)): the
@@ -30,9 +37,10 @@
 //!
 //! [`Actor`] holds only a weak reference. A weak count check does not lock the object against
 //! forced pool erasure. Native accesses run on the game thread: in the input tick's game stage, at
-//! the top of the world's pre-simulation queue, and at the render boundary after the ammunition
-//! manager's post-simulation pass, where releases are serviced ([`update`]). The parallel weapon
-//! hook never services this queue.
+//! the top of the world's pre-simulation queue, where releases go through ([`release_now`]), and
+//! at the render boundary after the ammunition manager's post-simulation pass, where a release
+//! still waiting for its body is serviced ([`update`]). The parallel weapon hook never services
+//! this queue.
 //!
 //! An allocation has to come from the game stage at the top of that queue. The factory registers
 //! the grenade for the world's updates, and the world makes registrations live at its update-queue
@@ -84,7 +92,7 @@ pub(super) struct Launch {
     pub item: SafeItemView,
     pub hand: Hand,
     pub world: Mat4,
-    pub velocity: Vec3,
+    pub release: Release,
     /// Whether the release is a deliberate throw, which arms the fuse. An incidental release leaves
     /// the actor inert and only puts it into the simulation.
     pub arm: bool,
@@ -277,6 +285,31 @@ pub(super) fn submit(launch: Launch) -> bool {
     true
 }
 
+/// Release an item now when its actor has its physics body, and ask for the release otherwise.
+///
+/// A release in the input tick's game stage reaches the engine before the ammunition manager's
+/// pass at the end of the same tick, which applies the launch, so the item leaves from where the
+/// hand let go of it one tick after the hand did. Only a release in the tick of the draw, before
+/// the body exists, waits ([`update`]).
+///
+/// # Safety
+///
+/// `weapon` is the live local grenade weapon, and the caller runs on the game thread outside the
+/// world update.
+pub(super) unsafe fn release_now(weapon: &mut ThrownGrenadeWeapon, launch: Launch) {
+    let ready = safe::actor(launch.item).filter(Actor::physics_ready);
+    match ready {
+        Some(actor) if live::safe_item(launch.item.item) == Some(launch.item) => {
+            let base = (weapon as *mut ThrownGrenadeWeapon).cast::<WeaponBase>();
+            // SAFETY: forwarded from the caller; the actor is live and has its body.
+            unsafe { release(weapon, base, &launch, &actor) };
+        }
+        _ => {
+            submit(launch);
+        }
+    }
+}
+
 /// Make every waiting release an inert one.
 ///
 /// A release that has not launched cannot have armed anything, so withdrawing it leaves the item
@@ -364,12 +397,7 @@ unsafe fn release(
     // An armed release that cannot go ahead falls back to an inert one: the item was let go, so it
     // leaves the hand, and an actor is never armed anywhere it cannot leave.
     if launch.arm && unsafe { launch_armed(weapon, base, launch, actor) } {
-        report_native_throw(
-            launch.hand,
-            Release {
-                velocity: launch.velocity,
-            },
-        );
+        report_native_throw(launch.hand, launch.release);
         safe::launched(launch.item);
         return;
     }
@@ -405,7 +433,7 @@ unsafe fn launch_armed(
     LAUNCH.set(Some(PlannedLaunch {
         explosive: explosive as usize,
         transform: Some(launch.world.into()),
-        velocity: launch.velocity,
+        release: launch.release,
     }));
     // The launch reads the slot it was just given, applies the planned transform and velocity, and
     // clears the slot as it releases the grenade.
@@ -440,7 +468,11 @@ unsafe fn launch_armed(
 ///
 /// The actor is live and the caller holds the game thread.
 unsafe fn release_inert(launch: &Launch, actor: &Actor) -> bool {
-    if !launch.world.is_finite() || !launch.velocity.is_finite() || !actor.physics_ready() {
+    if !launch.world.is_finite()
+        || !launch.release.velocity.is_finite()
+        || !launch.release.angular.is_finite()
+        || !actor.physics_ready()
+    {
         return false;
     }
     let Some(explosive) = actor.explosive() else {
@@ -454,7 +486,10 @@ unsafe fn release_inert(launch: &Launch, actor: &Actor) -> bool {
 
 fn queue_inert(explosive: &mut Explosive, launch: &Launch) {
     let velocity = Vector3 {
-        data: launch.velocity.to_array(),
+        data: launch.release.velocity.to_array(),
+    };
+    explosive.m_InitialAngularVelocity = Vector3 {
+        data: launch.release.angular.to_array(),
     };
     explosive.m_WorldMatrixT0 = launch.world.into();
     explosive.m_WorldMatrixT1 = launch.world.into();
@@ -631,7 +666,10 @@ mod tests {
             item,
             hand: Hand::Right,
             world: Mat4::IDENTITY,
-            velocity: Vec3::X,
+            release: Release {
+                velocity: Vec3::X,
+                angular: Vec3::Y,
+            },
             arm,
         }
     }
@@ -741,6 +779,7 @@ mod tests {
         );
         assert!(explosive.m_DeferredPropelTowards);
         assert_eq!(explosive.m_DeferredInitialVelocity.data, Vec3::X.to_array());
+        assert_eq!(explosive.m_InitialAngularVelocity.data, Vec3::Y.to_array());
         assert_eq!(explosive.m_DetonationTimer, 3.5);
         assert_eq!(explosive.m_StartDetonationTimer, 4.0);
     }

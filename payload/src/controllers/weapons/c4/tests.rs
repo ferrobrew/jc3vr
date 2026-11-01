@@ -12,6 +12,7 @@ fn fresh() -> State {
         detonation: None,
         was_detonating: false,
         held_since: None,
+        held_since_s: None,
         stick: None,
         preview: None,
         wheel: None,

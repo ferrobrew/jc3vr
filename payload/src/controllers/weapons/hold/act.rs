@@ -19,7 +19,7 @@ mod release_tests;
 
 use std::time::Instant;
 
-use glam::Mat4;
+use glam::{Mat4, Vec3};
 use jc3gi::{
     character::character::{Character, SafeBoneIndex},
     equipment::weapon::{WeaponBase, WeaponState},
@@ -30,7 +30,7 @@ use crate::{
     config::Config,
     controllers::{
         aim::gun,
-        frame::{Hand, Pose},
+        frame::{self, Hand, Pose},
         loadout::{ObjectAddress, Socket, grab, live},
         motion,
         roomscale::teleport,
@@ -42,9 +42,9 @@ use crate::{
                 equip::{self, DockRefusal, Thrown},
                 layout,
                 release_diagnostics::{
-                    MAX_RELEASE_AGE_S, ReleaseFrame, ReleaseInput, ReleaseMotion, ReleaseRecord,
-                    ReleaseRoute, ReleaseStatus, ReleaseTransport, RigMotion, SampleStage,
-                    estimate_release,
+                    ControllerContext, MAX_RELEASE_AGE_S, ReleaseFrame, ReleaseInput,
+                    ReleaseMotion, ReleaseRecord, ReleaseRoute, ReleaseStatus, ReleaseTransport,
+                    RigMotion, SampleStage, estimate_release,
                 },
             },
             inventory::{self, carry, engine::slot_of, reconcile, sockets},
@@ -524,26 +524,45 @@ unsafe fn release_motion(
         return ReleaseMotion::REST;
     };
     let point_world = Mat4::from(gun.m_WorldMatrixT1).w_axis.truncate();
-    let (rig, since_s, history_after_s) = {
+    let since_s = {
+        let watch = STATE.lock().watches[hand.index()];
+        (watch.weapon == diagnostic.weapon)
+            .then_some(watch.since_s)
+            .flatten()
+            .unwrap_or(f64::INFINITY)
+    };
+    estimate(hand, point_world, since_s, diagnostic.controller.as_ref())
+}
+
+/// The world motion of the point at `point_world` that `hand` lets go of, for an item the hand has
+/// held since `since_s` (display time; earlier samples belong to whatever the hand did before).
+///
+/// This is the estimate a gun's let-go takes, so everything a hand throws leaves it the same way:
+/// the hand's timestamped history read at its fastest moment, the rotation's lever at the point,
+/// and the player's own movement through the rig, each once. A grenade, a caught grenade, and a
+/// charge use it as well.
+pub(crate) fn release_at(hand: Hand, point_world: Vec3, since_s: f64) -> ReleaseMotion {
+    let controller = frame::with_latest(|frame| ControllerContext::from_frame(frame, hand));
+    estimate(hand, point_world, since_s, controller.as_ref())
+}
+
+fn estimate(
+    hand: Hand,
+    point_world: Vec3,
+    since_s: f64,
+    controller: Option<&ControllerContext>,
+) -> ReleaseMotion {
+    let (rig, history_after_s) = {
         let state = STATE.lock();
         let rig = state
             .rig
             .filter(|(at, _)| at.elapsed().as_secs_f32() <= MAX_RELEASE_AGE_S);
-        let watch = state.watches[hand.index()];
-        let since_s = (watch.weapon == diagnostic.weapon)
-            .then_some(watch.since_s)
-            .flatten()
-            .unwrap_or(f64::INFINITY);
-        (
-            rig.map(|(_, rig)| rig),
-            since_s,
-            state.transport.history_after_s(),
-        )
+        (rig.map(|(_, rig)| rig), state.transport.history_after_s())
     };
     let samples = motion::history(hand);
     estimate_release(ReleaseInput {
         rig,
-        controller: diagnostic.controller.as_ref(),
+        controller,
         samples: &samples,
         since_s,
         history_after_s,

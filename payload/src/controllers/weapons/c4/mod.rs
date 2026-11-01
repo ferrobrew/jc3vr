@@ -15,10 +15,11 @@
 //!   transform at the hand instead of the character's right-hand bone.
 //! - Once the grip opens and the charge's physics body exists, the weapon makes it live
 //!   ([`PlantedExplosiveWeapon::Fire_Projectile`]), which counts it among the placed charges, and
-//!   the charge is then dropped from the hand ([`PlantedExplosive::DropExplosive`]) with the hand's
-//!   velocity plus the character's ([`PlantedExplosive::SetVelocity`]): the path the game takes for
-//!   a charge placed under the parachute, from the hand instead of the right-hand bone. The base
-//!   explosive's collision handler sticks it to what it hits.
+//!   the charge is then dropped from the hand ([`PlantedExplosive::DropExplosive`]): the path the
+//!   game takes for a charge placed under the parachute, from the hand instead of the right-hand
+//!   bone. Its body then takes the motion a gun's let-go gives a gun
+//!   ([`crate::controllers::weapons::grenade::throw_release`]), linear and angular, through the
+//!   same owned-body setter. The base explosive's collision handler sticks it to what it hits.
 //!
 //! The selected explosive is never touched: the throw does not need the C4 weapon selected or
 //! equipped. A charge is refused while as many are placed as may be
@@ -82,8 +83,7 @@ use crate::{
         frame::{Hand, Pose},
         hands::held::{self, Held, Slot},
         haptics::{self, Event},
-        motion::{self, ReleaseEstimate},
-        scheme,
+        motion, physical_hands, scheme,
         weapons::{
             c4::{
                 stage::{InputEvent, Outcome, Refusal, Stage, WeaponAction, WeaponView},
@@ -92,10 +92,9 @@ use crate::{
                 wheel::{WheelHands, WheelStep},
             },
             engine,
-            grenade::Release,
+            grenade::{Release, catch::body_of, throw_release},
         },
     },
-    headpose,
 };
 
 /// The C4 handling's hooks, aggregated by [`crate::controllers::weapons::hook_library`].
@@ -247,7 +246,13 @@ pub(crate) fn press(hand: Hand, at: StickAt) {
     }
     state.stage = stage::on_input(
         state.stage,
-        InputEvent::Release(hand, Release { velocity: at.push }),
+        InputEvent::Release(
+            hand,
+            Release {
+                velocity: at.push,
+                angular: Vec3::ZERO,
+            },
+        ),
     );
     state.status.stage = state.stage;
     state.stick = Some(at);
@@ -276,8 +281,6 @@ pub(super) struct TickInputs {
     pub free: [bool; 2],
     /// The dominant hand, which takes a charge from the weapon wheel when it is free.
     pub dominant: Hand,
-    /// The VR world scale the hands compose with.
-    pub world_scale: f32,
 }
 
 /// The input tick's half of the throw: fold the grab and the release into the stage.
@@ -323,8 +326,11 @@ pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Tuning) {
     {
         // Without a tracked sample of the throw, the charge is dropped where it is rather than kept
         // in a hand that has opened.
-        let release = release(hand, inputs.world_scale, tuning).unwrap_or(Release {
-            velocity: Vec3::ZERO,
+        let release = state.grips[hand.index()].map_or(Release::REST, |grip| {
+            let point = held::held_matrix(grip, hold_offset(hand, tuning))
+                .w_axis
+                .truncate();
+            throw_release(hand, point, state.held_since_s.unwrap_or(f64::INFINITY)).release
         });
         state.stage = stage::on_input(state.stage, InputEvent::Release(hand, release));
         state.status.last_release = Some(release.velocity);
@@ -388,6 +394,8 @@ struct State {
     was_detonating: bool,
     /// When the held charge came out of the pouch.
     held_since: Option<Instant>,
+    /// The same moment in display time, from which its throw reads the hand's motion.
+    held_since_s: Option<f64>,
     /// Where a charge pressed onto a surface leaves from, until it is placed.
     stick: Option<StickAt>,
     /// The surface the held charge is coming to, with its hand.
@@ -482,30 +490,11 @@ static STATE: Mutex<State> = Mutex::new(State {
     detonation: None,
     was_detonating: false,
     held_since: None,
+    held_since_s: None,
     stick: None,
     preview: None,
     wheel: None,
 });
-
-/// The release of a throw by `hand`: the velocity of the held charge's point over the samples just
-/// before now, turned into world axes and scaled. `None` without samples.
-fn release(hand: Hand, world_scale: f32, tuning: &C4Tuning) -> Option<Release> {
-    let samples = motion::history(hand);
-    let now = motion::latest_time()?;
-    let velocity = motion::release_velocity(
-        &samples,
-        now,
-        hold_offset(hand, tuning),
-        ReleaseEstimate {
-            window_s: tuning.release_window_s,
-            peak_span_s: tuning.release_peak_span_s,
-        },
-    )?;
-    let world = headpose::xr::body_rotation() * velocity * world_scale * tuning.velocity_scale;
-    Some(Release {
-        velocity: world.clamp_length_max(tuning.max_speed_mps.max(0.0)),
-    })
-}
 
 /// The held charge's offset in `hand`'s grip frame: the configured right-hand offset, mirrored for
 /// the left.
@@ -597,7 +586,7 @@ fn update_from_user_serial(
                 }
                 (None, grip) => grip,
             };
-            let primed = act(w, user, action, grip);
+            let primed = act(w, user, action, grip, stick.is_some());
             let charge = primed_charge(w).map(|charge| charge as usize);
             let (next, outcome) = stage::after_action(next, action, primed);
             state.stage = next;
@@ -608,6 +597,7 @@ fn update_from_user_serial(
                 pulses.extend(outcome_pulse(hand, outcome));
                 if outcome == Outcome::Primed {
                     state.held_since = Some(Instant::now());
+                    state.held_since_s = motion::latest_time();
                 }
                 if let (Outcome::Thrown(_), Some(at)) = (outcome, stick) {
                     state.status.stuck += 1;
@@ -621,6 +611,7 @@ fn update_from_user_serial(
             if !next.charge_in_hand() {
                 state.stick = None;
                 state.held_since = None;
+                state.held_since_s = None;
             }
         }
         // The detonate input is raised for the weapon's update only, and the game's own value is
@@ -831,6 +822,7 @@ unsafe fn act(
     user: &mut Character,
     action: WeaponAction,
     grip: Option<Matrix4>,
+    pressed: bool,
 ) -> bool {
     match action {
         WeaponAction::None => {}
@@ -850,14 +842,15 @@ unsafe fn act(
                 }
             }
         }
-        WeaponAction::Throw(release) => unsafe { throw(weapon, user, release, grip) },
+        WeaponAction::Throw(release) => unsafe { throw(weapon, user, release, grip, pressed) },
         WeaponAction::Cancel => unsafe { weapon.DespawnPrimedExplosive() },
     }
     unsafe { primed_charge(weapon) }.is_some()
 }
 
 /// Make the primed charge live and drop it from the hand at `grip` (or where it is) with the
-/// release velocity plus the character's.
+/// release's motion. A thrown release already carries the player's movement; a press's push is
+/// relative to the character, so it takes the character's velocity as well.
 ///
 /// # Safety
 ///
@@ -867,6 +860,7 @@ unsafe fn throw(
     user: &mut Character,
     release: Release,
     grip: Option<Matrix4>,
+    pressed: bool,
 ) {
     let Some(data) = (unsafe { first_weapon_data(weapon) }) else {
         return;
@@ -898,15 +892,27 @@ unsafe fn throw(
         unsafe { charge.DropExplosive() };
     }
     let velocity = release.velocity
-        + if carried.is_finite() {
+        + if pressed && carried.is_finite() {
             carried
         } else {
             Vec3::ZERO
         };
-    let velocity = Vector3 {
-        data: velocity.to_array(),
-    };
-    unsafe { charge.SetVelocity(&velocity) };
+    // The dropped charge's body is in the simulation, so it is set as a let-go gun's is; the
+    // engine's own setter, which sets only the linear part, is the fallback.
+    let explosive = unsafe { &*std::ptr::from_mut(charge).cast::<Explosive>() };
+    let set = unsafe { body_of(explosive) }.is_some_and(|(body, owner)| {
+        unsafe { physical_hands::set_body_velocities(body, owner, velocity, release.angular) }
+            .inspect_err(|error| {
+                tracing::debug!(target: "controllers", %error, "c4: the charge's body refused the release motion");
+            })
+            .is_ok()
+    });
+    if !set {
+        let velocity = Vector3 {
+            data: velocity.to_array(),
+        };
+        unsafe { charge.SetVelocity(&velocity) };
+    }
     if !parachute {
         let explosive = unsafe { &mut *std::ptr::from_mut(charge).cast::<Explosive>() };
         unsafe { explosive.PlayTrailEffect() };

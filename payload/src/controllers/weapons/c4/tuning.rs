@@ -16,15 +16,6 @@ pub struct C4Tuning {
     /// Where the held charge sits in the throwing controller's grip frame, metres, given for the
     /// right hand and mirrored for the left.
     pub hold_offset_m: Vec3,
-    /// How far back from the grip's release the throw's velocity is looked for, seconds.
-    pub release_window_s: f32,
-    /// The span around the fastest moment of the throw whose velocities are averaged, seconds on
-    /// each side.
-    pub release_peak_span_s: f32,
-    /// Scales the hand's release velocity: `1` throws exactly as fast as the hand moved.
-    pub velocity_scale: f32,
-    /// The fastest a charge may leave the hand, metres per second, against tracking glitches.
-    pub max_speed_mps: f32,
     /// The detonator button on the off-hand's wrist.
     pub detonator: DetonatorTuning,
     /// Pressing a held charge onto a surface sticks it there.
@@ -35,10 +26,6 @@ impl C4Tuning {
     const fn new() -> Self {
         Self {
             hold_offset_m: Vec3::ZERO,
-            release_window_s: 0.25,
-            release_peak_span_s: 0.03,
-            velocity_scale: 1.0,
-            max_speed_mps: 25.0,
             detonator: DetonatorTuning::new(),
             stick: StickTuning::new(),
         }

@@ -45,7 +45,7 @@ use crate::{
         },
         haptics::{self, Event},
         loadout::TakeSource,
-        motion::{self, ReleaseEstimate},
+        motion,
         overlay::{
             primitive::{
                 Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize,
@@ -59,9 +59,9 @@ use crate::{
                 catch::{CatchCounts, Caught, Sighting},
                 tuning::{GRENADE, GrenadeTuning},
             },
+            hold::{self, act},
         },
     },
-    headpose,
 };
 
 /// The grenade hooks, aggregated by the weapon controller.
@@ -94,10 +94,45 @@ pub struct Fuse {
     pub total_s: f32,
 }
 
-/// The velocity a release throws its item with.
+/// The motion a release throws its item with, world axes: what a gun's let-go gives the gun
+/// ([`throw_release`]).
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Release {
+    /// Metres per second, the player's own movement included.
     pub velocity: Vec3,
+    /// Radians per second.
+    pub angular: Vec3,
+}
+
+impl Release {
+    pub const REST: Self = Self {
+        velocity: Vec3::ZERO,
+        angular: Vec3::ZERO,
+    };
+}
+
+/// A hand's release of an item, with what a deliberate throw is judged by.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct Throw {
+    pub release: Release,
+    /// The hand's own speed at the item, without the player's movement, when the hand's tracked
+    /// history gave the estimate.
+    pub hand_speed_mps: Option<f32>,
+}
+
+/// The release of the item `hand` holds at `point_world`, held since `since_s` (display time): the
+/// estimate and the cap a gun's let-go takes ([`act::release_at`], [`hold::MAX_THROW_MPS`]), so a
+/// grenade, a charge, and a gun leave the hand with the same motion for the same swing.
+pub(crate) fn throw_release(hand: Hand, point_world: Vec3, since_s: f64) -> Throw {
+    let motion = act::release_at(hand, point_world, since_s);
+    let requested = motion.capped(hold::MAX_THROW_MPS);
+    Throw {
+        release: Release {
+            velocity: requested.linear,
+            angular: requested.angular,
+        },
+        hand_speed_mps: motion.hand_linear().map(Vec3::length),
+    }
 }
 
 /// One reported native throw step.
@@ -231,7 +266,6 @@ pub(super) struct TickInputs {
     pub triggers: [ButtonControl; 2],
     pub dominant: Hand,
     pub opened: [bool; 2],
-    pub world_scale: f32,
     pub dt: f32,
 }
 
@@ -299,7 +333,8 @@ pub(super) fn input_tick(
     }
     for hand in Hand::BOTH {
         if inputs.opened[hand.index()] {
-            safe::opened(hand, inputs.world_scale, tuning);
+            // SAFETY: the game stage runs on the game thread before the world update.
+            unsafe { safe::opened(hand, tuning) };
         }
     }
     if Hand::BOTH.into_iter().any(holds) {
@@ -435,29 +470,11 @@ static STATE: Mutex<State> = Mutex::new(State {
 struct PlannedLaunch {
     explosive: usize,
     transform: Option<Matrix4>,
-    velocity: Vec3,
+    release: Release,
 }
 
 thread_local! {
     static LAUNCH: Cell<Option<PlannedLaunch>> = const { Cell::new(None) };
-}
-
-fn release(hand: Hand, world_scale: f32, tuning: &GrenadeTuning) -> Option<Release> {
-    let samples = motion::history(hand);
-    let now = motion::latest_time()?;
-    let velocity = motion::release_velocity(
-        &samples,
-        now,
-        hold_offset(hand, tuning),
-        ReleaseEstimate {
-            window_s: tuning.release_window_s,
-            peak_span_s: tuning.release_peak_span_s,
-        },
-    )?;
-    let world = headpose::xr::body_rotation() * velocity * world_scale * tuning.velocity_scale;
-    Some(Release {
-        velocity: world.clamp_length_max(tuning.max_speed_mps.max(0.0)),
-    })
 }
 
 fn hold_offset(hand: Hand, tuning: &GrenadeTuning) -> Vec3 {
@@ -579,17 +596,16 @@ fn grenade_propel_toward(
         return;
     };
     if let Some(transform) = launch.transform {
+        explosive.m_WorldMatrixT1 = transform;
         unsafe { explosive.SetPhysicsTransform(&transform) };
     }
-    let carried = Vec3::from_array(explosive.m_RelativeVelocity.data);
-    let velocity = launch.velocity
-        + if carried.is_finite() {
-            carried
-        } else {
-            Vec3::ZERO
-        };
+    // The release already carries the player's movement, so the thrower's velocity the launch adds
+    // is replaced rather than added to, and the canned spin gives way to the hand's.
     explosive.m_DeferredInitialVelocity = Vector3 {
-        data: velocity.to_array(),
+        data: launch.release.velocity.to_array(),
+    };
+    explosive.m_InitialAngularVelocity = Vector3 {
+        data: launch.release.angular.to_array(),
     };
 }
 
@@ -610,6 +626,7 @@ fn catch_one(hand: Hand, grip: Vec3, seen: &[Sighting], tuning: &GrenadeTuning) 
             explosive: sighting.explosive,
             body: sighting.body,
             owner: sighting.owner,
+            since_s: motion::latest_time().unwrap_or(f64::NEG_INFINITY),
         }));
         haptics::play(hand, Event::GrenadeCatch);
     }
@@ -623,22 +640,14 @@ unsafe fn carry_caught(inputs: &TickInputs, tuning: &GrenadeTuning) -> Option<(H
         return None;
     };
     if inputs.opened[hand.index()] {
-        let relative = release(hand, inputs.world_scale, tuning)
-            .map_or(Vec3::ZERO, |release| release.velocity);
-        let carried = unsafe { engine::local_player() }
-            .map(|player| Vec3::from_array(player.m_MeasuredWorldVelocity.data))
-            .filter(|velocity| velocity.is_finite())
-            .unwrap_or(Vec3::ZERO);
+        // The grenade's body is already in the simulation, so it is thrown as a gun is: its own
+        // body takes the release motion at once.
+        let Release { velocity, angular } = throw_release(hand, centre, caught.since_s).release;
         let _ = unsafe {
-            physical_hands::set_body_velocities(
-                caught.body,
-                caught.owner,
-                relative + carried,
-                Vec3::ZERO,
-            )
+            physical_hands::set_body_velocities(caught.body, caught.owner, velocity, angular)
         };
         catch::let_go(true);
-        STATE.lock().status.last_release = Some(relative);
+        STATE.lock().status.last_release = Some(velocity);
         return None;
     }
     let world_grip = STATE.lock().grips[hand.index()];

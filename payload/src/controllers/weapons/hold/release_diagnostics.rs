@@ -125,23 +125,54 @@ impl ReleaseFrame {
     }
 }
 
-/// The copied release estimate used by the native drop adapter, captured before disarm.
+/// The copied release estimate used by the native drop adapter, captured before disarm, and by
+/// every other release of a held item.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct ReleaseMotion {
     pub world: WorldMotion,
+    /// The rig's own part of [`world`](Self::world): the player's movement at the released point,
+    /// without the tracked hand's.
+    pub inherited: WorldMotion,
     pub source: SampleSource,
     pub history_age_s: Option<f32>,
 }
 
 impl ReleaseMotion {
     pub(crate) const REST: Self = Self {
-        world: WorldMotion {
-            linear: Vec3::ZERO,
-            angular: Vec3::ZERO,
-        },
+        world: WorldMotion::ZERO,
+        inherited: WorldMotion::ZERO,
         source: SampleSource::UnavailableAtRelease,
         history_age_s: None,
     };
+
+    /// The motion a release requests: non-finite parts are zero, and the linear part is held to
+    /// `max_speed_mps` (zero when the cap is not a finite number).
+    pub(crate) fn capped(self, max_speed_mps: f32) -> WorldMotion {
+        let cap = if max_speed_mps.is_finite() {
+            max_speed_mps.max(0.0)
+        } else {
+            0.0
+        };
+        let finite = |velocity: Vec3| {
+            if velocity.is_finite() {
+                velocity
+            } else {
+                Vec3::ZERO
+            }
+        };
+        WorldMotion {
+            linear: finite(self.world.linear).clamp_length_max(cap),
+            angular: finite(self.world.angular),
+        }
+    }
+
+    /// The tracked hand's own linear velocity at the released point, world axes, without the
+    /// player's movement, when the estimate came from the hand's history.
+    pub(crate) fn hand_linear(self) -> Option<Vec3> {
+        (self.source == SampleSource::TimestampedHandHistory)
+            .then(|| self.world.linear - self.inherited.linear)
+            .filter(|velocity| velocity.is_finite())
+    }
 }
 
 /// The actual release selection, shared by both hands and the inventory and carried routes.
@@ -165,6 +196,7 @@ pub(crate) fn estimate_release(input: ReleaseInput<'_>) -> ReleaseMotion {
     };
     let fallback = ReleaseMotion {
         world: inherited,
+        inherited,
         source: SampleSource::RigTransportOnly,
         history_age_s: None,
     };
@@ -226,15 +258,12 @@ pub(crate) fn estimate_release(input: ReleaseInput<'_>) -> ReleaseMotion {
     let point_cockpit =
         rig.frame.rotation.inverse() * (input.point_world - rig.frame.origin) / rig.frame.scale;
     let offset = latest.orientation.inverse() * (point_cockpit - latest.position);
-    let estimate = ReleaseEstimate {
-        window_s: 0.25,
-        peak_span_s: 0.015,
-    };
-    let Some(linear) = motion::release_velocity(&samples, release_s, offset, estimate) else {
+    let Some(linear) = motion::release_velocity(&samples, release_s, offset, RELEASE_ESTIMATE)
+    else {
         return fallback;
     };
-    let angular =
-        motion::release_angular_velocity(&samples, release_s, estimate).unwrap_or(Vec3::ZERO);
+    let angular = motion::release_angular_velocity(&samples, release_s, RELEASE_ESTIMATE)
+        .unwrap_or(Vec3::ZERO);
     let world = WorldMotion {
         linear: rig.frame.rotation * linear * rig.frame.scale + inherited.linear,
         angular: rig.frame.rotation * angular + inherited.angular,
@@ -244,6 +273,7 @@ pub(crate) fn estimate_release(input: ReleaseInput<'_>) -> ReleaseMotion {
     }
     ReleaseMotion {
         world,
+        inherited,
         source: SampleSource::TimestampedHandHistory,
         history_age_s: Some(age_s),
     }
@@ -269,6 +299,13 @@ impl ReleaseInput<'_> {
 }
 
 pub(crate) const MAX_RELEASE_AGE_S: f32 = 0.15;
+
+/// How a release reads the hand's history: the fastest moment in the last quarter second, averaged
+/// with its immediate neighbours, because a throwing hand slows before the fingers finish opening.
+pub(crate) const RELEASE_ESTIMATE: ReleaseEstimate = ReleaseEstimate {
+    window_s: 0.25,
+    peak_span_s: 0.015,
+};
 
 /// A fixed-size readout containing only the latest release attempt.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -408,7 +445,7 @@ pub struct ControllerContext {
 }
 
 impl ControllerContext {
-    fn from_frame(frame: &ControllerFrame, hand: Hand) -> Self {
+    pub(crate) fn from_frame(frame: &ControllerFrame, hand: Hand) -> Self {
         let controller = frame.hand(hand);
         let grip = controller.grip;
         Self {
@@ -457,22 +494,7 @@ impl DropObservation {
         release: ReleaseMotion,
         max_speed_mps: f32,
     ) -> WorldMotion {
-        let cap = if max_speed_mps.is_finite() {
-            max_speed_mps.max(0.0)
-        } else {
-            0.0
-        };
-        let finite = |velocity: Vec3| {
-            if velocity.is_finite() {
-                velocity
-            } else {
-                Vec3::ZERO
-            }
-        };
-        let requested = WorldMotion {
-            linear: finite(release.world.linear).clamp_length_max(cap),
-            angular: finite(release.world.angular),
-        };
+        let requested = release.capped(max_speed_mps);
         self.release_source = release.source;
         self.history_age_s = release.history_age_s;
         self.requested_world_motion = Some(requested);
@@ -534,6 +556,11 @@ pub struct WorldMotion {
 }
 
 impl WorldMotion {
+    pub const ZERO: Self = Self {
+        linear: Vec3::ZERO,
+        angular: Vec3::ZERO,
+    };
+
     pub fn linear_is_finite(self) -> bool {
         self.linear.is_finite()
     }

@@ -240,7 +240,7 @@ fn velocities(samples: &[MotionSample], offset: Vec3) -> impl Iterator<Item = (f
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::weapons::grenade::tuning::GRENADE;
+    use crate::controllers::weapons::hold::release_diagnostics::RELEASE_ESTIMATE;
 
     const DT: f64 = 1.0 / 90.0;
 
@@ -266,7 +266,7 @@ mod tests {
     #[test]
     fn the_throws_window_reaches_a_peak_before_the_fingers_open() {
         // A throw peaks at 8 m/s, then slows over a fifth of a second before the fingers open: a
-        // relaxed squeeze lags the throw. The grenade's window still finds the peak; a window of a
+        // relaxed squeeze lags the throw. The release's window still finds the peak; a window of a
         // tenth of a second only finds the slowed hand.
         let peak = Vec3::new(0.0, 2.0, -8.0);
         let samples = (0..60)
@@ -279,17 +279,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let release_s = 59.0 * DT;
-        let tuning = GRENADE;
-        let wide = release_velocity(
-            &samples,
-            release_s,
-            Vec3::ZERO,
-            ReleaseEstimate {
-                window_s: tuning.release_window_s,
-                peak_span_s: tuning.release_peak_span_s,
-            },
-        )
-        .unwrap();
+        let wide = release_velocity(&samples, release_s, Vec3::ZERO, RELEASE_ESTIMATE).unwrap();
         let narrow = release_velocity(&samples, release_s, Vec3::ZERO, ESTIMATE).unwrap();
         assert!(wide.length() > 7.0, "{wide:?}");
         assert!(narrow.length() < wide.length() * 0.8, "{narrow:?}");

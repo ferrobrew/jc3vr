@@ -38,7 +38,13 @@ pub struct Explosive {
     _field_581: [u8; 3],
     /// The transform awaiting application to the physics body.
     pub m_DeferredPhysicsTransform: crate::types::math::Matrix4,
-    _field_5c4: [u8; 24],
+    /// The angular velocity, world axes, radians per second, that the pending launch
+    /// ([`m_DeferredPropelTowards`](crate::equipment::explosive::Explosive::m_DeferredPropelTowards)) gives the physics body. The
+    /// launch's application in [`UpdatePostSimFromManager`](crate::equipment::explosive::Explosive::UpdatePostSimFromManager) sets
+    /// it just before [`m_DeferredInitialVelocity`](crate::equipment::explosive::Explosive::m_DeferredInitialVelocity); nothing in
+    /// [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) writes it.
+    pub m_InitialAngularVelocity: crate::types::math::Vector3,
+    _field_5d0: [u8; 12],
     /// The velocity of the thrower when the explosive was launched, stored by
     /// [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward).
     pub m_RelativeVelocity: crate::types::math::Vector3,
@@ -234,7 +240,14 @@ impl Explosive {
     /// [`m_PfxInstance`](crate::equipment::explosive::Explosive::m_PfxInstance) when the body is still pending and returns false
     /// when that fails, applies a pending
     /// [`m_DeferredPhysicsTransform`](crate::equipment::explosive::Explosive::m_DeferredPhysicsTransform) and then a pending launch
-    /// ([`m_DeferredPropelTowards`](crate::equipment::explosive::Explosive::m_DeferredPropelTowards)), and returns true.
+    /// ([`m_DeferredPropelTowards`](crate::equipment::explosive::Explosive::m_DeferredPropelTowards)), and returns true. The body it
+    /// creates gets a high angular damping, so a spin dies out within a fraction of a second. The
+    /// launch sets the body's angular velocity from
+    /// [`m_InitialAngularVelocity`](crate::equipment::explosive::Explosive::m_InitialAngularVelocity), puts the body into the
+    /// simulation, sets its linear velocity from
+    /// [`m_DeferredInitialVelocity`](crate::equipment::explosive::Explosive::m_DeferredInitialVelocity), and disables collision
+    /// between it and a character thrower's body; the launch is applied at the end of the tick,
+    /// so the body first moves in the next tick's physics step.
     pub unsafe fn UpdatePostSimFromManager(&mut self, dt: f32) -> bool {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, dt: f32) -> bool = ::std::mem::transmute(

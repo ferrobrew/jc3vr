@@ -15,15 +15,6 @@ pub struct GrenadeTuning {
     /// right hand and mirrored for the left. The grip's origin is the centre of the closed fist and
     /// its -Z runs out of the front of the fist.
     pub hold_offset_m: Vec3,
-    /// How far back from the grip's release the throw's velocity is looked for, seconds.
-    pub release_window_s: f32,
-    /// The span around the fastest moment of the throw whose velocities are averaged, seconds on
-    /// each side.
-    pub release_peak_span_s: f32,
-    /// Scales the hand's release velocity: `1` throws exactly as fast as the hand moved.
-    pub velocity_scale: f32,
-    /// The fastest a grenade may leave the hand, metres per second, against tracking glitches.
-    pub max_speed_mps: f32,
     /// Aim the game's own throw at the point the dominant hand's ray reaches rather than at the
     /// gaze. No controller input binds the game's throw (grenades come from the pouch), so this
     /// matters only to a throw the game starts by other means.
@@ -49,10 +40,6 @@ impl GrenadeTuning {
     const fn new() -> Self {
         Self {
             hold_offset_m: Vec3::ZERO,
-            release_window_s: 0.25,
-            release_peak_span_s: 0.03,
-            velocity_scale: 1.0,
-            max_speed_mps: 30.0,
             hand_aimed_fallback: true,
             warning_s: 2.0,
             warning_overlay: true,

@@ -267,6 +267,7 @@ mod tests {
 
     const RELEASE: Release = Release {
         velocity: Vec3::new(0.0, 2.0, -6.0),
+        angular: Vec3::ZERO,
     };
 
     fn view(primed: bool, physics_ready: bool) -> WeaponView {

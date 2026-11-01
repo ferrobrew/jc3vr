@@ -11,8 +11,9 @@
 //! grab volume ([`GrabVolume::LiveGrenade`]) for each free hand, in the cockpit frame the volumes
 //! live in. A grip press there catches the grenade nearest the hand: from then on, each tick gives
 //! its body the velocity that carries it to the hand's grip, so it stays in the hand with its own
-//! physics, and its fuse keeps running. Opening the grip throws it: its body is given the hand's
-//! release velocity, estimated as a throw from the pouch is, plus the character's own velocity.
+//! physics, and its fuse keeps running. Opening the grip throws it as a gun is let go of: its body
+//! takes the hand's release motion, linear and angular, from the estimate a gun's let-go takes
+//! ([`crate::controllers::weapons::grenade::throw_release`]).
 //!
 //! [`Grenade::PropelToward`]: jc3gi::equipment::explosive::Grenade::PropelToward
 //! [`GrabVolume::LiveGrenade`]: crate::controllers::grab::GrabVolume::LiveGrenade
@@ -50,6 +51,8 @@ pub struct Caught {
     pub explosive: usize,
     pub body: u32,
     pub owner: NonZeroUsize,
+    /// When the hand caught it, display time: the throw reads the hand's motion from here.
+    pub since_s: f64,
 }
 
 /// The catch's counts, for the readout.
@@ -76,17 +79,12 @@ pub(crate) unsafe fn register(explosive: *const Explosive, own: bool) {
     let Some(e) = (unsafe { explosive.as_ref() }) else {
         return;
     };
-    let Some(body) = (unsafe { e.m_PfxInstance.as_ref() }) else {
-        return;
-    };
-    // The rigid body wrapper is an engine physics instance, whose owner a query reports.
-    let owner = unsafe { (*(e.m_PfxInstance as *const PfxInstance)).m_GameObject };
-    let Some(owner) = NonZeroUsize::new(owner as usize) else {
+    let Some((body, owner)) = (unsafe { body_of(e) }) else {
         return;
     };
     let entry = Tracked {
         explosive: explosive as usize,
-        body: body.m_BodyId,
+        body,
         owner,
         launched: Instant::now(),
         own,
@@ -97,6 +95,19 @@ pub(crate) unsafe fn register(explosive: *const Explosive, own: bool) {
         state.tracked.remove(0);
     }
     state.tracked.push(entry);
+}
+
+/// The physics body of `explosive` and the object that owns it, once the body exists: what the
+/// owned-body reads and writes check a body against.
+///
+/// # Safety
+///
+/// `explosive` must be live.
+pub(crate) unsafe fn body_of(explosive: &Explosive) -> Option<(u32, NonZeroUsize)> {
+    let body = unsafe { explosive.m_PfxInstance.as_ref() }?;
+    // The rigid body wrapper is an engine physics instance, whose owner a query reports.
+    let owner = unsafe { (*(explosive.m_PfxInstance as *const PfxInstance)).m_GameObject };
+    Some((body.m_BodyId, NonZeroUsize::new(owner as usize)?))
 }
 
 /// Read every noted grenade's body, forget the ones gone, and return the live ones within

@@ -311,7 +311,6 @@ pub(crate) fn finish_tick(
             triggers,
             dominant: config.acting_hand(),
             opened: grenade_opened,
-            world_scale: active.as_ref().map_or(1.0, |a| a.world_scale),
             dt,
         },
         &config,
@@ -343,7 +342,6 @@ pub(crate) fn finish_tick(
             opened,
             free: c4::wheel::WheelHands::available(free, unavailable, config.acting_hand()).free,
             dominant: config.acting_hand(),
-            world_scale: active.as_ref().map_or(1.0, |a| a.world_scale),
         },
         &C4Tuning::of(&config.weapons.c4),
     );

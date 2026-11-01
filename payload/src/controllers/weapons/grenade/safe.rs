@@ -25,15 +25,16 @@ use crate::controllers::{
     body::rig::frames::Frames,
     frame::{Hand, Pose},
     loadout::{
-        Departure, Place, Socket, live,
+        Departure, ItemId, Place, Socket, live,
         safe_items::{ItemLeaseId, SafeItemView},
     },
+    motion,
     weapons::{
         engine,
         grenade::{
-            Release, hold_offset,
+            Release, Throw, hold_offset,
             native::{self, Actor},
-            release,
+            throw_release,
             tuning::GrenadeTuning,
         },
     },
@@ -148,27 +149,44 @@ pub(crate) fn place_stowed(socket: Socket, world: Mat4) {
     }
 }
 
-/// Release a safe grenade. Only a tracked, deliberate release arms it; anything else leaves the item
-/// inert and lets the simulation take it.
-pub(crate) fn opened(hand: Hand, world_scale: f32, tuning: &GrenadeTuning) {
+/// Release a safe grenade with the motion a gun's let-go gives a gun ([`throw_release`]). Only a
+/// tracked, deliberate release arms it; anything else leaves the item inert and lets the
+/// simulation take it. The release goes through now when the actor has its physics body, and waits
+/// for the body otherwise ([`native::release_now`]).
+///
+/// # Safety
+///
+/// The input tick's game stage, on the game thread.
+pub(crate) unsafe fn opened(hand: Hand, tuning: &GrenadeTuning) {
     let Some(item) = in_hand(hand) else {
         return;
     };
-    let tracked = STATE.lock().grips[hand.index()].is_some();
-    let estimate = tracked
-        .then(|| release(hand, world_scale, tuning))
-        .flatten();
     let Some(world) = position(item.binding.lease) else {
         return;
     };
+    let (tracked, since_s) = {
+        let state = STATE.lock();
+        let since_s = state.held_since[hand.index()]
+            .filter(|(held, _)| *held == item.item)
+            .map_or(f64::INFINITY, |(_, since_s)| since_s);
+        (state.grips[hand.index()].is_some(), since_s)
+    };
+    let throw = tracked.then(|| throw_release(hand, world.w_axis.truncate(), since_s));
     let launch = native::Launch {
         item,
         hand,
         world,
-        velocity: estimate.map_or(Vec3::ZERO, |release| release.velocity),
-        arm: deliberate(estimate, tuning),
+        release: throw.map_or(Release::REST, |throw| throw.release),
+        arm: deliberate(throw, tuning),
     };
-    native::submit(launch);
+    let weapon = unsafe { engine::local_player() }.and_then(grenade_weapon);
+    match weapon {
+        // SAFETY: forwarded from the caller; the weapon is the local player's.
+        Some(weapon) => unsafe { native::release_now(weapon, launch) },
+        None => {
+            native::submit(launch);
+        }
+    }
 }
 
 /// Take up the nearest inert item within reach, giving it a fresh actor in the hand.
@@ -279,8 +297,21 @@ pub(super) fn lost(item: SafeItemView) {
 /// Note tracked world grips for the item transforms.
 pub(crate) fn observe(grips: [Option<Pose>; 2], tuning: &GrenadeTuning) {
     let items = live::safe_items();
+    let now_s = motion::latest_time();
     let mut state = STATE.lock();
     state.grips = grips;
+    for hand in Hand::BOTH {
+        let held = items
+            .iter()
+            .find(|item| item.place == Place::Hand(hand))
+            .map(|item| item.item);
+        let since = &mut state.held_since[hand.index()];
+        *since = match (held, *since) {
+            (Some(item), Some((was, since_s))) if was == item => Some((was, since_s)),
+            (Some(item), _) => Some((item, now_s.unwrap_or(f64::INFINITY))),
+            (None, _) => None,
+        };
+    }
     for item in items {
         if let Place::Hand(hand) = item.place
             && let Some(grip) = grips[hand.index()]
@@ -365,7 +396,7 @@ pub(crate) fn stand_down_hands(unavailable: [bool; 2]) {
             item,
             hand,
             world,
-            velocity: Vec3::ZERO,
+            release: Release::REST,
             arm: false,
         });
     }
@@ -404,10 +435,12 @@ fn membership(place: Option<Place>, alive: bool) -> Membership {
     }
 }
 
-fn deliberate(release: Option<Release>, tuning: &GrenadeTuning) -> bool {
-    release.is_some_and(|release| {
-        release.velocity.is_finite() && release.velocity.length() >= tuning.arm_speed_mps.max(0.0)
-    })
+/// Whether a release is a deliberate throw: the hand itself, not the player carrying it, moved the
+/// item at the arming speed or faster.
+fn deliberate(throw: Option<Throw>, tuning: &GrenadeTuning) -> bool {
+    throw
+        .and_then(|throw| throw.hand_speed_mps)
+        .is_some_and(|speed| speed.is_finite() && speed >= tuning.arm_speed_mps.max(0.0))
 }
 
 fn nearest_loose(grip: Vec3, frames: &Frames, radius_m: f32) -> Option<SafeItemView> {
@@ -595,6 +628,9 @@ struct Item<A = Actor> {
 struct State {
     owner: Option<usize>,
     grips: [Option<Pose>; 2],
+    /// The item each hand holds and when it came into the hand, display time: a throw reads the
+    /// hand's motion from then on, as a gun's let-go does.
+    held_since: [Option<(ItemId, f64)>; 2],
     items: Vec<Item>,
     retiring: Vec<Actor>,
 }
@@ -602,6 +638,7 @@ struct State {
 static STATE: Mutex<State> = Mutex::new(State {
     owner: None,
     grips: [None; 2],
+    held_since: [None; 2],
     items: Vec::new(),
     retiring: Vec::new(),
 });
@@ -693,20 +730,38 @@ mod tests {
         assert_eq!(table.safe_item(second.item), Some(recovered));
     }
 
+    fn throw(hand_speed_mps: Option<f32>, velocity: Vec3) -> Throw {
+        Throw {
+            release: Release {
+                velocity,
+                angular: Vec3::ZERO,
+            },
+            hand_speed_mps,
+        }
+    }
+
     #[test]
     fn only_a_tracked_deliberate_release_arms_a_grenade() {
         let tuning = GRENADE;
         assert!(!deliberate(None, &tuning));
-        for velocity in [
-            Vec3::ZERO,
-            Vec3::NAN,
-            Vec3::X * (tuning.arm_speed_mps * 0.5),
+        for speed in [
+            None,
+            Some(0.0),
+            Some(f32::NAN),
+            Some(tuning.arm_speed_mps * 0.5),
         ] {
-            assert!(!deliberate(Some(Release { velocity }), &tuning));
+            assert!(!deliberate(Some(throw(speed, Vec3::X)), &tuning));
         }
-        for velocity in [Vec3::X * tuning.arm_speed_mps, -Vec3::Y * 8.0] {
-            assert!(deliberate(Some(Release { velocity }), &tuning));
+        for speed in [tuning.arm_speed_mps, 8.0] {
+            assert!(deliberate(Some(throw(Some(speed), Vec3::X)), &tuning));
         }
+    }
+
+    #[test]
+    fn the_players_own_movement_does_not_arm_a_dropped_grenade() {
+        // A grenade let go of in a fast car leaves at the car's speed, but the hand barely moved.
+        let carried = throw(Some(0.2), Vec3::X * 20.0);
+        assert!(!deliberate(Some(carried), &GRENADE));
     }
 
     #[test]
@@ -719,9 +774,7 @@ mod tests {
             arm_speed_mps: 4.0,
             ..GRENADE
         };
-        let gentle = Release {
-            velocity: Vec3::X * 0.5,
-        };
+        let gentle = throw(Some(0.5), Vec3::X * 0.5);
         assert!(deliberate(Some(gentle), &slow));
         assert!(!deliberate(Some(gentle), &fast));
     }
