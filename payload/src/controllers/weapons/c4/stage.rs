@@ -70,6 +70,8 @@ pub enum InputEvent {
     Grab(Hand),
     /// The grip of `hand` opened.
     Release(Hand, Release),
+    /// The other hand took the held charge from the hand holding it: `to` holds it now.
+    HandOver(Hand),
     /// The throw cannot act: its toggle is off, the mode has no free hands, or the bindings stopped
     /// injecting.
     StandDown,
@@ -178,6 +180,16 @@ pub fn on_input(stage: Stage, event: InputEvent) -> Stage {
         ) if h == hand => Stage::Held {
             hand,
             release: Some(release),
+        },
+        (
+            Stage::Held {
+                hand,
+                release: None,
+            },
+            InputEvent::HandOver(to),
+        ) if to == hand.other() => Stage::Held {
+            hand: to,
+            release: None,
         },
         (Stage::Wanted { .. }, InputEvent::StandDown) => Stage::Idle,
         (Stage::Held { .. }, InputEvent::StandDown) => Stage::Cancelling,
@@ -327,6 +339,51 @@ mod tests {
             release: None,
         };
         assert_eq!(on_input(s, InputEvent::Release(Hand::Left, RELEASE)), s);
+    }
+
+    #[test]
+    fn a_held_charge_passes_to_the_other_hand_which_then_throws_it() {
+        let s = Stage::Held {
+            hand: Hand::Left,
+            release: None,
+        };
+        let s = on_input(s, InputEvent::HandOver(Hand::Right));
+        assert_eq!(
+            s,
+            Stage::Held {
+                hand: Hand::Right,
+                release: None,
+            }
+        );
+        // The hand that gave it up opening its fingers no longer throws it.
+        assert_eq!(on_input(s, InputEvent::Release(Hand::Left, RELEASE)), s);
+        let s = on_input(s, InputEvent::Release(Hand::Right, RELEASE));
+        assert_eq!(
+            s,
+            Stage::Held {
+                hand: Hand::Right,
+                release: Some(RELEASE),
+            }
+        );
+    }
+
+    #[test]
+    fn only_a_held_charge_not_yet_released_passes_between_hands() {
+        let wanted = on_input(Stage::Idle, InputEvent::Grab(Hand::Left));
+        assert_eq!(on_input(wanted, InputEvent::HandOver(Hand::Right)), wanted);
+        let released = Stage::Held {
+            hand: Hand::Left,
+            release: Some(RELEASE),
+        };
+        assert_eq!(
+            on_input(released, InputEvent::HandOver(Hand::Right)),
+            released
+        );
+        let held = Stage::Held {
+            hand: Hand::Left,
+            release: None,
+        };
+        assert_eq!(on_input(held, InputEvent::HandOver(Hand::Left)), held);
     }
 
     #[test]

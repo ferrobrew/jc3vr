@@ -211,6 +211,11 @@ pub(crate) fn finish_tick(
                 let gun = lone.map(|(w, _)| w.address);
                 let moved =
                     crate::controllers::weapons::grenade_moves::transfer(hand.other(), hand)
+                        .or_else(|| {
+                            c4::held()
+                                .filter(|&(holder, _)| holder == hand.other())
+                                .map(|_| c4::hand_over(hand))
+                        })
                         .unwrap_or_else(|| match gun {
                             Some(w) if regions::carrying(w).is_some() => {
                                 take_grip(w, hand, &grips, now)

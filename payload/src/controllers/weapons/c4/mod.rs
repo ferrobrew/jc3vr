@@ -83,6 +83,7 @@ use crate::{
         frame::{Hand, Pose},
         hands::held::{self, Held, Slot},
         haptics::{self, Event},
+        loadout::{ObjectAddress, live},
         motion, physical_hands, scheme,
         weapons::{
             c4::{
@@ -200,6 +201,29 @@ pub(crate) fn held() -> Option<(Hand, usize)> {
         .hand()
         .filter(|_| state.stage.charge_in_hand())?;
     Some((hand, state.primed?))
+}
+
+/// Pass the held charge from the other hand to `to`, as a held grenade or a gun is passed: the
+/// loadout table moves the charge first, and the throw then belongs to `to`, reading its motion
+/// from now. `false`, with nothing changed, when the other hand holds no charge or the table
+/// refuses the move.
+pub(crate) fn hand_over(to: Hand) -> bool {
+    let Some((_, object)) = held().filter(|&(hand, _)| hand == to.other()) else {
+        return false;
+    };
+    let Some(object) = ObjectAddress::from_address(object) else {
+        return false;
+    };
+    if !live::hand_over(to, object) {
+        return false;
+    }
+    let mut state = STATE.lock();
+    state.stage = stage::on_input(state.stage, InputEvent::HandOver(to));
+    state.held_since_s = motion::latest_time();
+    state.preview = None;
+    state.status.stage = state.stage;
+    tracing::info!(target: "controllers", hand = to.label(), "c4: the charge passed to the other hand");
+    true
 }
 
 /// The hands that threw or pressed on a charge since the last call, by [`Hand::index`].

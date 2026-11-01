@@ -251,7 +251,9 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     if capabilities.transfer && holding.either_hand {
         for holder in Hand::BOTH {
             let taker = holder.other();
-            if grenade::safe::in_hand(holder).is_some()
+            let explosive = grenade::safe::in_hand(holder).is_some()
+                || c4::held().is_some_and(|(hand, _)| hand == holder);
+            if explosive
                 && free[taker.index()]
                 && let Some(held) = active.hands[holder.index()]
             {
