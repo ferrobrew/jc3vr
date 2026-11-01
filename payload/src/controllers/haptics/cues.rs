@@ -192,8 +192,10 @@ pub enum Event {
     GrappleAttach,
     /// A yank of the grapple hand.
     Yank,
-    /// The grapple hand's grip arming a snatch on a target out of reach.
+    /// The grapple hand's grip arming a snatch on a target out of reach: the hand has latched on.
     SnatchArm,
+    /// The yank that fires an armed snatch, stronger than the arming.
+    SnatchFire,
     /// A snatch refused or failed.
     SnatchRefused,
     /// The tethers starting to retract under the grapple hand's pull.
@@ -215,7 +217,7 @@ pub enum Event {
 
 impl Event {
     #[cfg(test)]
-    pub const ALL: [Event; 52] = [
+    pub const ALL: [Event; 53] = [
         Event::PalmTouch,
         Event::HandStrike,
         Event::Take,
@@ -261,6 +263,7 @@ impl Event {
         Event::GrappleAttach,
         Event::Yank,
         Event::SnatchArm,
+        Event::SnatchFire,
         Event::SnatchRefused,
         Event::TetherRetract,
         Event::ClimbGrip,
@@ -318,7 +321,8 @@ impl Event {
             Event::GrappleFire => Cue::new(Primitive::Bump, 0.4, Category::Traversal),
             Event::GrappleAttach => Cue::new(Primitive::Thud, 0.5, Category::Traversal),
             Event::Yank => Cue::new(Primitive::Bump, 0.6, Category::Traversal),
-            Event::SnatchArm => Cue::new(Primitive::Tick, 0.5, Category::Traversal),
+            Event::SnatchArm => Cue::new(Primitive::Bump, 0.6, Category::Traversal),
+            Event::SnatchFire => Cue::new(Primitive::Thud, 0.8, Category::Traversal),
             Event::SnatchRefused => Cue::new(Primitive::Buzz, 0.6, Category::Traversal),
             Event::TetherRetract => Cue::new(Primitive::Bump, 0.75, Category::Traversal),
             Event::ClimbGrip => Cue::new(Primitive::Bump, 0.75, Category::Traversal),
@@ -377,6 +381,7 @@ impl Event {
             Event::GrappleAttach => "grapple attach",
             Event::Yank => "yank",
             Event::SnatchArm => "snatch armed",
+            Event::SnatchFire => "snatch fired",
             Event::SnatchRefused => "snatch refused",
             Event::TetherRetract => "tether retract",
             Event::ClimbGrip => "climb grip",

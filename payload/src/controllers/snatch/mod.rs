@@ -39,6 +39,7 @@
 pub mod config;
 mod engine;
 mod hooks;
+mod latch;
 mod prearm;
 mod pull;
 pub mod rules;
@@ -307,6 +308,13 @@ pub(crate) unsafe fn finish_tick(input: &FinishInput, desired: &mut Vec<Desired>
     }
     let mut state = STATE.lock();
     unsafe { state.step(input) };
+    let overlay = &input.config.overlay;
+    match &state.phase {
+        Phase::Armed { hand, offer, .. } if overlay.enabled && overlay.markers => {
+            latch::submit(*hand, offer.point)
+        }
+        _ => latch::clear(),
+    }
     let line_out = matches!(
         state.phase,
         Phase::Freeing { .. } | Phase::HookOut { .. } | Phase::Pulling { .. }
@@ -323,6 +331,7 @@ pub(crate) unsafe fn finish_tick(input: &FinishInput, desired: &mut Vec<Desired>
 pub(crate) fn stand_down() {
     hooks::publish(false, false);
     grapple_weapons::set_enabled(false);
+    latch::clear();
     let mut state = STATE.lock();
     if !matches!(state.phase, Phase::Idle) {
         tracing::info!(target: "controllers", phase = state.phase.label(), "snatch: stood down");
@@ -524,6 +533,7 @@ impl State {
                         yank_mps = pulled.speed_mps,
                         "snatch: yanked; firing"
                     );
+                    haptics::play(hand, Event::SnatchFire);
                     self.status.fired += 1;
                     match unsafe { pull::fire_at(hand, offer) } {
                         Ok(Fired::Freeing(target)) => Phase::Freeing {

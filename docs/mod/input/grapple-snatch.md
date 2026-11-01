@@ -34,14 +34,14 @@ The grapple hand is the off-hand of the acting hand. The game's grapple device i
 ## The interaction
 
 1. Aim: point the empty grapple hand at the target. The marker shows it.
-2. Grip: squeezing arms the snatch on the target under the aim. Nothing flies yet, and the target is held while the grip is.
+2. Grip: squeezing arms the snatch on the target under the aim. Nothing flies yet, and the target is held while the grip is. The target's ring gives way to the latch: a solid cyan dot ringed on the target and a line from the gripping hand to it, in-world, through the scene, for as long as the snatch is armed (`snatch::latch`, the overlay's `SnatchLatch` slot, shown with the grip markers, `overlay.markers`). The hand feels `Event::SnatchArm`. The latch goes when the yank fires or the snatch is cancelled.
 3. Yank: a pull of the hand back along its aim, faster than a threshold, while the grip is held, fires it. The pull is measured along the grapple hand's aim at the grip edge, in the cockpit frame (`bindings::yank::reach_along`), not as the hand nearing the body: seated, a hand already close to the body pulls back and out past its side, which neither nears the chest nor the head, and a measure toward a point below the head misses such a pull entirely. The speed is measured from whichever sample in the detector's window gives the pull its length, so a hand held still at the grip before it pulls is not slowed by the pause, and the snatch's threshold is lower than the grapple zip's, since only a hand already gripping a remote target can fire it. The yank is the confirmation, as with the gravity gloves of other games, and the motion matches what it does. Opening the grip before the yank disarms it, and a punch or a swing that closes the hand does not snatch, since the grip comes first. The grapple's line already uses a yank to zip ([physical-grapple.md](physical-grapple.md)); the snatch's yank is its own detector (`weapons.snatch.yank`, the bindings' yank gesture with its own thresholds), armed only while the grip holds a remote target with no line out.
 4. Flight: the hook flies from the left forearm to the target, attaches, and the target arcs into the hand.
 5. Arrival: the target lands in the hand in its held pose.
 
 Hold to hold holds: opening the grip at any point cancels. Mid-flight, the line comes away and the target keeps its momentum and falls, rather than snapping back to where it came from.
 
-Haptics: `Event::SnatchArm` when the grip arms it, the grapple's fire and attach cues on the snatching hand, the line's tension (`Sustain::GrappleTension`, by the pull's share of its strongest pull) while it pulls, and the take's cue on arrival; a refused or failed snatch plays `Event::SnatchRefused` ([haptics.md](haptics.md)).
+Haptics: `Event::SnatchArm` (a bump) when the grip arms it, `Event::SnatchFire` (a stronger thud) when the yank fires it, the grapple's fire and attach cues on the snatching hand, the line's tension (`Sustain::GrappleTension`, by the pull's share of its strongest pull) while it pulls, and the take's cue on arrival; a refused or failed snatch plays `Event::SnatchRefused` ([haptics.md](haptics.md)).
 
 Leaving the feet (a vehicle, a fall, a ragdoll, a reel) or turning the snatch off cancels it as opening the grip does.
 
@@ -112,7 +112,7 @@ In the headset:
 
 1. Point the empty grapple hand at a gun on the ground 10 m away: the marker shows on it. Move the hand onto a crate within reach: the crate's marker wins.
 2. Squeeze, then yank: the hook flies from the left forearm, takes hold of the gun, the gun arcs into the hand, the line comes away, and the gun sits in the held pose. Holster it, hand it over, drop it.
-3. Squeeze without yanking, then open the hand: nothing flies. Hold the grapple button on a gun, aim at a car, and let go: the gun is tethered to the car.
+3. Squeeze without yanking: a bump, and the cyan latch dot and line on the gun until the hand opens. Open the hand: the latch goes and nothing flies. Hold the grapple button on a gun, aim at a car, and let go: the gun is tethered to the car.
 4. Yank, then open the hand mid-flight: the line goes and the gun falls near you.
 5. Snatch a gun from a soldier at 10 m: the soldier staggers, and the gun flies in.
 6. Point at a gun behind a wall: no marker. Tap the grapple button at a gun on the ground: the hook takes hold of it, Rico stays put, and the gun lands at your feet.

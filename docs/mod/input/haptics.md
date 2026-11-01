@@ -101,7 +101,8 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | `Event::GrappleFire` | the grapple fires, or the snatch fires its hook | bump | 0.4 | traversal | `hands::anchor`, `snatch` |
 | `Event::GrappleAttach` | the hook takes hold, the snatch's hook takes hold of its weapon, or a tap tosses a gun | thud | 0.5 | traversal | `hands::anchor`, `snatch` |
 | `Event::Yank` | a yank of the grapple hand, or a yank that boosts the reel | bump | 0.6 | traversal | `bindings`, `grapple::physical` |
-| `Event::SnatchArm` | the grapple hand's grip arming a snatch on a target out of reach | tick | 0.5 | traversal | `snatch` |
+| `Event::SnatchArm` | the grapple hand's grip arming a snatch on a target out of reach: the hand has latched on | bump | 0.6 | traversal | `snatch` |
+| `Event::SnatchFire` | the yank that fires an armed snatch | thud | 0.8 | traversal | `snatch` |
 | `Event::SnatchRefused` | a snatch refused or failed | buzz | 0.6 | traversal | `snatch` |
 | `Event::TetherRetract` | the tethers start to retract under the hand's pull | bump | 0.75 | traversal | `grapple::physical` |
 | `Event::ClimbGrip` | a hand grips the world to climb | bump | 0.75 | traversal | `physical_hands::climb` |

@@ -29,6 +29,8 @@ pub enum Source {
     WingGuide,
     /// The ring at a hand holding a primed grenade, warning of its fuse.
     GrenadeWarning,
+    /// The armed grapple snatch's latch on its target ([`crate::controllers::snatch`]).
+    SnatchLatch,
     /// The sight tuning tool's line-up marker.
     SightTuning,
     /// The laser of the hand pointing at the mod's debug panel.
@@ -53,7 +55,7 @@ pub enum Source {
 }
 
 impl Source {
-    pub const COUNT: usize = 17;
+    pub const COUNT: usize = 18;
 
     /// Every source, in index order.
     pub const ALL: [Source; Source::COUNT] = [
@@ -65,6 +67,7 @@ impl Source {
         Source::DebugGizmos,
         Source::WingGuide,
         Source::GrenadeWarning,
+        Source::SnatchLatch,
         Source::SightTuning,
         Source::PanelPointer,
         Source::WristDetonator,
@@ -86,15 +89,16 @@ impl Source {
             Source::DebugGizmos => 5,
             Source::WingGuide => 6,
             Source::GrenadeWarning => 7,
-            Source::SightTuning => 8,
-            Source::PanelPointer => 9,
-            Source::WristDetonator => 10,
-            Source::PhysicalHands => 11,
-            Source::MagazinePips => 12,
-            Source::BodyMirror => 13,
-            Source::BodyMirrorPouches => 14,
-            Source::GrabView => 15,
-            Source::ColliderView => 16,
+            Source::SnatchLatch => 8,
+            Source::SightTuning => 9,
+            Source::PanelPointer => 10,
+            Source::WristDetonator => 11,
+            Source::PhysicalHands => 12,
+            Source::MagazinePips => 13,
+            Source::BodyMirror => 14,
+            Source::BodyMirrorPouches => 15,
+            Source::GrabView => 16,
+            Source::ColliderView => 17,
         }
     }
 
@@ -108,6 +112,7 @@ impl Source {
             Source::DebugGizmos => "controller gizmos",
             Source::WingGuide => "wingsuit guide",
             Source::GrenadeWarning => "grenade fuse warning",
+            Source::SnatchLatch => "snatch latch",
             Source::SightTuning => "sight tuning marker",
             Source::PanelPointer => "debug panel pointer",
             Source::WristDetonator => "wrist detonator",

@@ -25,7 +25,8 @@ pub struct OverlayConfig {
     pub ghost_hands: bool,
     /// Mark every grip target (the sockets and pouches on the body, the weapons, the vehicle
     /// controls, the objects and surfaces in reach), coloured by kind, the one each hand's squeeze
-    /// would take highlighted ([`crate::controllers::grab::markers`]).
+    /// would take highlighted ([`crate::controllers::grab::markers`]), and the armed grapple
+    /// snatch's latch on its target.
     pub markers: bool,
     /// Draw axes at the controllers' grip and aim poses, for debugging.
     pub debug_gizmos: bool,
