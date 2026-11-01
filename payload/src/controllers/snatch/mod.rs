@@ -15,7 +15,7 @@
 //!    cone and in sight.
 //! 2. [`finish_tick`] acts on the grip's grab of it, which arms the snatch on that target. A yank
 //!    of the hand back along its aim at the grip edge while the grip is held fires it
-//!    ([`rules::reach_along`], [`pull`]): a gun on a
+//!    ([`reach_along`], [`pull`]): a gun on a
 //!    character is first let go of, with the steal's drop and stagger; then the game's hook flies
 //!    to the target as a ghost wire through the custom fire ([`engine::fire`]). Once it holds a
 //!    weapon or an object, the hold solve pulls the body along an arc toward the hand
@@ -59,7 +59,7 @@ use crate::controllers::{
         controls::ButtonControl,
         hold::Desired,
         tables,
-        yank::{YankConfig, YankDetector},
+        yank::{HandLine, YankConfig, YankDetector, reach_along},
     },
     config::ControllersConfig,
     frame::Hand,
@@ -284,13 +284,6 @@ pub(crate) struct FinishInput<'a> {
     pub config: &'a ControllersConfig,
 }
 
-/// The grapple hand's grip position and aim direction, in the cockpit frame.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct HandLine {
-    pub grip: Vec3,
-    pub aim: Vec3,
-}
-
 /// Act on the tick's grab of a remote target, step the snatch, and hold the grapple button back from
 /// the game while its line is out.
 ///
@@ -471,9 +464,7 @@ impl Phase {
 
 /// The hand's reach along `line` this tick, for the armed yank.
 fn reach(input: &FinishInput, line: Vec3) -> Option<f32> {
-    input
-        .line
-        .and_then(|hand| rules::reach_along(hand.grip, line))
+    input.line.and_then(|hand| reach_along(hand.grip, line))
 }
 
 fn armed_yank(reach: Option<f32>, config: &YankConfig) -> YankDetector {

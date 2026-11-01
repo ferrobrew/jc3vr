@@ -20,7 +20,7 @@ The pulls act only while the button is held: a hand moved back in the course of 
 
 | Situation | Hand | Effect |
 |---|---|---|
-| A line is attached, nothing carries the character, and the grapple button is held | A sharp pull back toward the body (the yank) | The grapple's tap, which zips |
+| A line is attached, nothing carries the character, and the grapple button is held | A sharp pull back along the hand's aim (the yank) | The grapple's tap, which zips |
 | Reeling in | The pull's speed | The reel's speed and acceleration scale from `GRAPPLE.reel.min_scale` to `GRAPPLE.reel.max_scale` |
 | Reeling in | A yank | The reel takes the game's retract boost for `GRAPPLE.reel.boost_s` |
 | Tethers attached, on foot or falling, no line of the grapple's own, the grapple button held | Pulling back from where the hand reached | The game's retract input, which tightens the tethers |
@@ -29,11 +29,13 @@ The pulls act only while the button is held: a hand moved back in the course of 
 
 Pointing at the first object and firing, then at the second and firing, is the grapple's hand aim with the grapple button's held `FIRE_GRAPPLE` ([controllers-and-roomscale.md](controllers-and-roomscale.md#the-grapple)); the second fire comes from the same hand.
 
+The zip's yank is measured along the grapple hand's aim at the tick it armed, the first tracked tick with a line attached and the button held, in the cockpit frame (`bindings::yank::LineYank`): a drop of `GRAPPLE_YANK.min_distance_m` in the grip's reach along that line, at `GRAPPLE_YANK.min_speed_mps` or faster. A pull back from where the hand pointed counts whichever way it goes, so a seated player's hand, which starts close to the body and pulls back past its side, zips; its distance from a point below the head hardly changes over such a pull. The line is taken afresh at each arming, and the hand's turn during the pull does not move it.
+
 The snatch's yank is its own detector, with its own thresholds (`weapons.snatch.yank`), armed only while the grip holds a remote target with no line out, so it never meets the zip's yank, which needs the grapple button held on an attached line. The grapple's aim sees weapons lying in the world while the snatch is on, so the button works on a gun too: a hold tethers it through the game's tethers, and a tap tosses it to the player's feet rather than zip Rico to it ([grapple-snatch.md](grapple-snatch.md#the-grapple-button-at-a-gun)).
 
 ## The pull
 
-The grapple hand's distance from the body point the yank uses (the head, lowered by `GRAPPLE_YANK.body_drop_m`, in the cockpit frame) is sampled every input tick. The pull tracker (`grapple::physical::pull`) reads two things from it:
+The grapple hand's distance from a body point (the head, lowered by `GRAPPLE_YANK.body_drop_m`, in the cockpit frame) is sampled every input tick. The pull tracker (`grapple::physical::pull`) reads two things from it:
 
 - the pull's speed: how fast the hand comes toward the body, peak-held and decaying with `GRAPPLE.pull.speed_hold_s` as its time constant, so that a pull at the start of a reel still counts through a reel longer than the arm's reach;
 - the pull's depth: how far the hand is back from a reference that jumps out with the hand and creeps toward a hand held still at `GRAPPLE.pull.relax_mps`. Reaching out and pulling back deepens it, holding the hand back lets it fade, and a hand-over-hand pull keeps it up.
@@ -44,7 +46,7 @@ An untracked hand forgets the pull.
 
 While the mode detector sees the character in the reel's wind-up or reeling in, the input tick publishes a drive: the scale from the pull's speed (`GRAPPLE.reel.min_scale` with no pull, rising linearly to `GRAPPLE.reel.max_scale` at `GRAPPLE.reel.full_speed_mps`) and whether a boost runs. A detour on the reel's velocity update ([`NStateTask_ReelIn::UpdateReelVelocity`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::NStateTask_ReelIn##func-UpdateReelVelocity)) hands the local player's update a copy of the [`GrappleTuning`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrappleTuning) with the top speeds and accelerations scaled; the shared tuning resource is never written, and other characters' reels are untouched. The copy covers the bound reel fields, which are all the update reads of the tuning. A drive older than a quarter of a second is ignored, so the reel falls back to the game's own as soon as the input tick stops publishing. With `GRAPPLE.reel.min_scale` at one, a reel the hand does not pull runs at the game's speed, and pulling only makes it faster.
 
-A second yank detector, with the grapple's yank thresholds (`GRAPPLE_YANK`), is armed only during the reel. A yank there runs the boost for `GRAPPLE.reel.boost_s`: the copy takes the tuning's retract top speed and acceleration in place of the plain ones, which is what holding the retract does for the game's boost. It applies only when [`GrapplingHook::GetRetractAcceleratesReelIn`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-GetRetractAcceleratesReelIn) says the game's boost is unlocked. The boost does not touch the retract input, so it does not squeeze tethers. A long, fast pull that starts a zip can count as a boost too once the reel's wind-up arms the detector.
+A second yank detector, with the grapple's yank thresholds (`GRAPPLE_YANK`), is armed only during the reel. It measures that body distance, not the reach along the aim, so a seated pull past the side may not boost. A yank there runs the boost for `GRAPPLE.reel.boost_s`: the copy takes the tuning's retract top speed and acceleration in place of the plain ones, which is what holding the retract does for the game's boost. It applies only when [`GrapplingHook::GetRetractAcceleratesReelIn`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-GetRetractAcceleratesReelIn) says the game's boost is unlocked. The boost does not touch the retract input, so it does not squeeze tethers. A long, fast pull that starts a zip can count as a boost too once the reel's wind-up arms the detector.
 
 ## The tether retract
 

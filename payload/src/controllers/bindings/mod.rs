@@ -85,7 +85,7 @@ use crate::{
             summary::yank_armed_in,
             tables::Bindings,
             trigger_ownership::{Owner as TriggerOwner, RawTrigger, TriggerOwnership},
-            yank::{GRAPPLE_YANK, Yank, YankConfig, YankDetector},
+            yank::{GRAPPLE_YANK, HandLine, LineYank, Yank, YankConfig},
         },
         config::LocomotionDirection,
         frame::{self, Button, ControllerFrame, Hand},
@@ -550,9 +550,10 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         neutral_policy.frame_neutral(&original) && source_neutral,
     );
     let line = line_attached() && !snatch_button_owned;
+    let grapple_line = grapple_hand_line(grapple_hand);
     let yank = state.yank.step(
         dt,
-        grapple_distance,
+        grapple_line,
         yank_armed_in(line, &detection) && grapple_held,
         &config.bindings.yank.detector(),
     );
@@ -715,7 +716,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
                     hand: grapple_hand,
                     grabs: grabs_for(step.grabs, Consumer::Snatch),
                     grips: finish.grips,
-                    line: grapple_hand_line(grapple_hand),
+                    line: grapple_line,
                     ordinary_button_held: button_holds.ordinary,
                     modifier_held: button_holds.modifier,
                     detection: &detection,
@@ -858,7 +859,7 @@ pub fn last_report() -> TickReport {
 /// The yank gesture's readout: how many yanks were detected, and the last one.
 pub fn yank_status() -> (u64, Option<Yank>) {
     let state = STATE.lock();
-    (state.yank.count, state.yank.last)
+    (state.yank.detector.count, state.yank.detector.last)
 }
 
 /// Dispatch accepted system commands even while gameplay injection is stopped.
@@ -939,7 +940,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     trigger_ownership: TriggerOwnership::new(),
     tracker: HoldTracker::new(),
     flight: None,
-    yank: YankDetector::new(),
+    yank: LineYank::new(),
     report: TickReport {
         detection: Detection {
             mode: mode::Mode::OnFoot(mode::OnFootVariant::Ground),
@@ -961,7 +962,7 @@ struct State {
     trigger_ownership: TriggerOwnership,
     tracker: HoldTracker,
     flight: Option<flight::FlightState>,
-    yank: YankDetector,
+    yank: LineYank,
     report: TickReport,
 }
 
@@ -975,7 +976,7 @@ impl State {
         if let Some(flight) = &mut self.flight {
             flight.reset();
         }
-        self.yank = YankDetector::new();
+        self.yank = LineYank::new();
         self.tracker.release_all(poll)
     }
 
@@ -1047,8 +1048,9 @@ fn off_hand_rotation(frame: &ControllerFrame, off: Hand) -> f32 {
     }
 }
 
-/// The grapple hand's distance from the body point a yank pulls toward, in the cockpit frame, or
-/// `None` while the hand is untracked or the hands are inert.
+/// The grapple hand's distance from the body point the physical grapple's pull and the reel's
+/// boost measure toward, in the cockpit frame, or `None` while the hand is untracked or the hands
+/// are inert.
 fn grapple_hand_distance(hand: Hand, config: &YankConfig) -> Option<f32> {
     let tracked = frame::with_latest(|frame| {
         frame.focused && frame.hand(hand).active && frame.hand(hand).grip.is_tracked()
@@ -1062,8 +1064,9 @@ fn grapple_hand_distance(hand: Hand, config: &YankConfig) -> Option<f32> {
 }
 
 /// The grapple hand's grip position and aim direction, in the cockpit frame, or `None` while the
-/// hand is untracked or the hands are inert; the snatch's yank is measured along the aim.
-fn grapple_hand_line(hand: Hand) -> Option<snatch::HandLine> {
+/// hand is untracked or the hands are inert; the zip's and the snatch's yanks are measured along
+/// the aim.
+fn grapple_hand_line(hand: Hand) -> Option<HandLine> {
     let tracked = frame::with_latest(|frame| {
         frame.focused && frame.hand(hand).active && frame.hand(hand).grip.is_tracked()
     })?;
@@ -1071,7 +1074,7 @@ fn grapple_hand_line(hand: Hand) -> Option<snatch::HandLine> {
         return None;
     }
     let cockpit = hands::active_hands_raw()?.hands[hand.index()]?;
-    Some(snatch::HandLine {
+    Some(HandLine {
         grip: cockpit.grip.position,
         aim: cockpit.aim.orientation * Vec3::NEG_Z,
     })

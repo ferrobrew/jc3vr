@@ -2,10 +2,16 @@
 //! attached, which issues the same grapple tap that zips (the plan of record's "The grapple",
 //! `docs/mod/input/controllers-and-roomscale.md`). Pure.
 //!
-//! The detector keeps the grapple hand's distance from the body over a short window, sampled at
-//! the input tick. A yank is a drop in that distance of at least the configured length, from any
-//! sample in the window to the current one, covered at the configured speed or faster.
-//! After a yank the history is cleared and a cooldown runs, so one pull issues one tap.
+//! The detector keeps a measure of the grapple hand's reach over a short window, sampled at the
+//! input tick. A yank is a drop in that measure of at least the configured length, from any sample
+//! in the window to the current one, covered at the configured speed or faster. After a yank the
+//! history is cleared and a cooldown runs, so one pull issues one tap.
+//!
+//! The zip's and the snatch's measure is the hand's reach along its aim when the gesture armed
+//! ([`reach_along`], kept by [`LineYank`] for the zip): a pull away from what the hand pointed at,
+//! whichever way it goes. The hand's distance from a point below the head ([`body_point`]) misses
+//! the pull of a seated player, whose hand starts close to the body and pulls back past its side;
+//! the reel's boost still measures that distance.
 
 use std::collections::VecDeque;
 
@@ -65,8 +71,66 @@ pub struct YankConfig {
     pub window_s: f32,
     /// How long after a yank before another can count, seconds.
     pub cooldown_s: f32,
-    /// How far below the head the body point the hand is pulled toward sits, metres.
+    /// How far below the head the body point the hand is pulled toward sits, metres: used by the
+    /// reel's boost, not by the zip's or the snatch's yank, which measure along the aim.
     pub body_drop_m: f32,
+}
+
+/// The grapple hand's grip position and aim direction, in the cockpit frame.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct HandLine {
+    pub grip: Vec3,
+    pub aim: Vec3,
+}
+
+/// How far along `line`, the grapple hand's aim when its gesture armed, the hand's grip at `grip`
+/// reaches, metres; both in the cockpit frame. A yank back from what the hand pointed at is a drop
+/// in it, whichever way the line points and wherever the hand is held. `None` for a line with no
+/// direction.
+pub fn reach_along(grip: Vec3, line: Vec3) -> Option<f32> {
+    let line = line.try_normalize()?;
+    let reach = grip.dot(line);
+    reach.is_finite().then_some(reach)
+}
+
+/// A yank measured along the aim the hand had when the gesture armed: the zip's, armed while a line
+/// is attached and the grapple button is held.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct LineYank {
+    /// The aim at the arming, once a tracked hand gave one; cleared while disarmed.
+    line: Option<Vec3>,
+    pub detector: YankDetector,
+}
+
+impl LineYank {
+    pub const fn new() -> Self {
+        Self {
+            line: None,
+            detector: YankDetector::new(),
+        }
+    }
+
+    /// Advance by `dt` seconds with the hand's grip and aim (`None` while untracked); `armed` is
+    /// whether a yank may fire. The first tracked tick of an arming keeps its aim as the line.
+    /// Returns the yank detected this tick, if any.
+    pub fn step(
+        &mut self,
+        dt: f32,
+        hand: Option<HandLine>,
+        armed: bool,
+        config: &YankConfig,
+    ) -> Option<Yank> {
+        if !armed {
+            self.line = None;
+        } else if self.line.is_none() {
+            self.line = hand.map(|hand| hand.aim).filter(|aim| aim.is_finite());
+        }
+        let reach = self
+            .line
+            .zip(hand)
+            .and_then(|(line, hand)| reach_along(hand.grip, line));
+        self.detector.step(dt, reach, armed, config)
+    }
 }
 
 /// The body point a yank pulls toward: below the head, in the cockpit frame.
@@ -169,6 +233,99 @@ mod tests {
             .iter()
             .map(|&d| detector.step(DT, Some(d), armed, &config).is_some())
             .collect()
+    }
+
+    /// A seated player's grapple hand, the line out ahead and to the right, pulled sharply back and
+    /// out past their left side at the game's tick, with its aim at the arming and the head;
+    /// cockpit frame. The shape of a recorded seated pull, quickened to a zip's speed.
+    const SEATED_ZIP: [Vec3; 5] = [
+        Vec3::new(-0.029, -0.274, -0.390),
+        Vec3::new(-0.029, -0.274, -0.390),
+        Vec3::new(-0.101, -0.235, -0.354),
+        Vec3::new(-0.173, -0.217, -0.317),
+        Vec3::new(-0.225, -0.219, -0.277),
+    ];
+    const SEATED_AIM: Vec3 = Vec3::new(0.51, -0.46, -0.73);
+    const SEATED_HEAD: Vec3 = Vec3::new(0.07, -0.046, 0.0);
+    const SEATED_DT: f32 = 0.0266;
+
+    fn zip_hand(grip: Vec3, aim: Vec3) -> Option<HandLine> {
+        Some(HandLine { grip, aim })
+    }
+
+    #[test]
+    fn a_seated_zip_pull_past_the_side_yanks_along_the_armed_aim() {
+        let mut zip = LineYank::new();
+        // The hand's aim turns with the wrist during the pull; the line stays the arming's.
+        let fired = SEATED_ZIP
+            .iter()
+            .enumerate()
+            .filter_map(|(k, &grip)| {
+                let aim = SEATED_AIM + Vec3::new(-0.1, 0.1, 0.0) * k as f32;
+                zip.step(SEATED_DT, zip_hand(grip, aim), true, &GRAPPLE_YANK)
+            })
+            .count();
+        assert_eq!(fired, 1);
+        // The body point's distance barely changes over the same pull.
+        let body = body_point(SEATED_HEAD, &GRAPPLE_YANK);
+        let mut detector = YankDetector::new();
+        assert!(SEATED_ZIP.iter().all(|grip| {
+            detector
+                .step(SEATED_DT, Some(grip.distance(body)), true, &GRAPPLE_YANK)
+                .is_none()
+        }));
+    }
+
+    #[test]
+    fn the_zip_line_is_taken_afresh_at_each_arming() {
+        let mut zip = LineYank::new();
+        // Armed aiming down -Z: a pull along +X is across the line and no yank.
+        for k in 0..6 {
+            let grip = Vec3::new(0.06 * k as f32, -0.25, -0.4);
+            assert!(
+                zip.step(SEATED_DT, zip_hand(grip, Vec3::NEG_Z), true, &GRAPPLE_YANK)
+                    .is_none()
+            );
+        }
+        zip.step(
+            SEATED_DT,
+            zip_hand(Vec3::ZERO, Vec3::NEG_Z),
+            false,
+            &GRAPPLE_YANK,
+        );
+        // Re-armed aiming down -X, the same pull along +X is back from the line, and yanks.
+        let fired = (0..6)
+            .filter(|&k| {
+                let grip = Vec3::new(0.06 * k as f32, -0.25, -0.4);
+                zip.step(SEATED_DT, zip_hand(grip, Vec3::NEG_X), true, &GRAPPLE_YANK)
+                    .is_some()
+            })
+            .count();
+        assert_eq!(fired, 1);
+    }
+
+    #[test]
+    fn an_untracked_arming_takes_its_line_from_the_first_tracked_tick() {
+        let mut zip = LineYank::new();
+        assert!(zip.step(SEATED_DT, None, true, &GRAPPLE_YANK).is_none());
+        let fired = SEATED_ZIP
+            .iter()
+            .filter(|&&grip| {
+                zip.step(SEATED_DT, zip_hand(grip, SEATED_AIM), true, &GRAPPLE_YANK)
+                    .is_some()
+            })
+            .count();
+        assert_eq!(fired, 1);
+    }
+
+    #[test]
+    fn a_line_with_no_direction_measures_nothing() {
+        assert_eq!(reach_along(Vec3::ONE, Vec3::ZERO), None);
+        assert_eq!(reach_along(Vec3::ONE, Vec3::NAN), None);
+        assert_eq!(
+            reach_along(Vec3::new(0.0, 0.0, -0.4), Vec3::NEG_Z),
+            Some(0.4)
+        );
     }
 
     #[test]

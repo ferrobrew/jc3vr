@@ -302,7 +302,7 @@ mod tests {
             controls::Controls,
             hold::{Desired, DevicePoll, HoldTracker, Phase, Target, Want},
             tables::Bindings,
-            yank::YankDetector,
+            yank::LineYank,
         },
         config::BindingsConfig,
         frame::{ActionSetKind, Button, Hand, InteractionProfile, derive_buttons},
@@ -419,7 +419,7 @@ mod tests {
             bindings: Bindings::new(),
             trigger_ownership: Default::default(),
             flight: Default::default(),
-            yank: YankDetector::new(),
+            yank: LineYank::new(),
             report: TickReport::default(),
         };
         let samples = [

@@ -18,7 +18,7 @@ pub struct SnatchConfig {
     /// Hold B after gripping a remote target to keep its rope length and swing it physically.
     pub sling: bool,
     /// The yank that fires the snatch, measured along the grapple hand's aim at the grip edge
-    /// ([`reach_along`](crate::controllers::snatch::rules::reach_along)) rather than toward the
+    /// ([`reach_along`](crate::controllers::bindings::yank::reach_along)) rather than toward the
     /// body, so [`YankConfig::body_drop_m`] does not apply to it.
     pub yank: YankConfig,
 }

@@ -151,17 +151,6 @@ impl StallWatch {
     }
 }
 
-/// How far along `line`, the grapple hand's aim when the grip armed the snatch, the hand's grip at
-/// `grip` reaches, metres; both in the cockpit frame. A yank back from the target is a drop in it,
-/// whichever way the line points and wherever the hand is held: a seated player's hand pulled back
-/// past their side, which neither nears the body nor the head, is a yank all the same. `None` for a
-/// line with no direction.
-pub fn reach_along(grip: Vec3, line: Vec3) -> Option<f32> {
-    let line = line.try_normalize()?;
-    let reach = grip.dot(line);
-    reach.is_finite().then_some(reach)
-}
-
 /// The velocity that throws a body at `from` to land at `to` after `flight_s` seconds under
 /// `gravity`: the toss a tap of the grapple at a gun gives it.
 pub fn toss_velocity(from: Vec3, to: Vec3, flight_s: f32, gravity: Vec3) -> Vec3 {
@@ -192,7 +181,7 @@ pub fn toss_flight(distance: f32, speed: f32, shortest: f32, longest: f32) -> f3
 mod tests {
     use super::*;
     use crate::controllers::{
-        bindings::yank::{YankDetector, body_point},
+        bindings::yank::{YankDetector, body_point, reach_along},
         snatch::config::SnatchConfig,
     };
 
@@ -254,16 +243,6 @@ mod tests {
             reach_along(grip, Vec3::NEG_Z)
         });
         assert!(!fires(across));
-    }
-
-    #[test]
-    fn a_line_with_no_direction_measures_nothing() {
-        assert_eq!(reach_along(Vec3::ONE, Vec3::ZERO), None);
-        assert_eq!(reach_along(Vec3::ONE, Vec3::NAN), None);
-        assert_eq!(
-            reach_along(Vec3::new(0.0, 0.0, -0.4), Vec3::NEG_Z),
-            Some(0.4)
-        );
     }
 
     fn ray() -> Ray {
