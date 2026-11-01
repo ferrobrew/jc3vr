@@ -14,7 +14,7 @@ use crate::controllers::{
     physical_hands::physics::guns,
     weapons::{
         ads, c4, collide,
-        docks::attract::Attractor,
+        docks::attract::{Attractor, ZoneWatch},
         dual_wield,
         engine::{self, HeldWeapon},
         foregrip::{self, GripGeometry},
@@ -73,6 +73,7 @@ pub(crate) fn stand_down() {
     state.placed.clear();
     state.points = [None; 2];
     state.attractors.clear();
+    state.zones = ZoneWatch::new();
     state.last_volumes = [None; 2];
     state.touch = None;
     state.slide = None;
@@ -101,6 +102,8 @@ pub(super) struct State {
     pub(super) points: [Option<Vec3>; 2],
     /// The tick's free sockets' attractions, for a release outside every socket's reach.
     pub(super) attractors: Vec<Attractor>,
+    /// Which socket's attraction each hand is in, for the tick on coming into one.
+    pub(super) zones: ZoneWatch,
     /// The hand that last held a gun, kept while none is drawn.
     pub(super) last_holder: Option<Hand>,
     /// The volume each hand was in on the last tick, for the cue on entering one.
@@ -187,6 +190,7 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     placed: Vec::new(),
     points: [None; 2],
     attractors: Vec::new(),
+    zones: ZoneWatch::new(),
     last_holder: None,
     last_volumes: [None; 2],
     gun_side: Hand::Right,

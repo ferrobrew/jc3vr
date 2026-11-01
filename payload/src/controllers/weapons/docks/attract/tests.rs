@@ -215,3 +215,55 @@ fn the_travel_takes_longer_from_farther_within_its_bounds() {
     assert_eq!(travel_s(10.0, snap, &ATTRACTION), ATTRACTION.max_travel_s);
     assert_eq!(travel_s(f32::NAN, snap, &ATTRACTION), snap);
 }
+
+#[test]
+fn coming_into_an_attraction_ticks_once_until_the_hand_leaves_it() {
+    let attractors = attractors_for_both();
+    let mut watch = ZoneWatch::new();
+    let step = |watch: &mut ZoneWatch, grip: Option<Vec3>| {
+        watch.step(Hand::Right, &attractors, grip, &ATTRACTION)
+    };
+    let centre = Vec3::new(0.12, 1.3, 0.15);
+    let up = Vec3::Y;
+    // Out of every attraction, then into the back's: one tick.
+    assert!(!step(&mut watch, Some(centre + up * 0.6)));
+    assert!(step(&mut watch, Some(centre + up * 0.44)));
+    // Staying, and drifting just past the edge within the margin: no repeat.
+    assert!(!step(&mut watch, Some(centre + up * 0.3)));
+    assert!(!step(&mut watch, Some(centre + up * 0.47)));
+    assert!(!step(&mut watch, Some(centre + up * 0.44)));
+    // Out past the margin, then back in: it ticks again.
+    assert!(!step(&mut watch, Some(centre + up * 0.5)));
+    assert!(step(&mut watch, Some(centre + up * 0.44)));
+}
+
+#[test]
+fn the_tick_keeps_the_front_limit_and_stops_with_nothing_to_dock() {
+    let attractors = attractors_for_both();
+    let mut watch = ZoneWatch::new();
+    let step = |watch: &mut ZoneWatch, grip: Option<Vec3>| {
+        watch.step(Hand::Right, &attractors, grip, &ATTRACTION)
+    };
+    // In front of the chest, within the back's radius: no tick.
+    assert!(!step(&mut watch, Some(Vec3::new(0.2, 1.4, -0.25))));
+    // Over the shoulder: a tick. Losing the grip (the gun docked, braced, or the attraction off)
+    // forgets the zone, so the next time in ticks again.
+    let over = Some(Vec3::new(0.18, 1.62, 0.0));
+    assert!(step(&mut watch, over));
+    assert!(!step(&mut watch, None));
+    assert!(step(&mut watch, over));
+    // The other hand has no attraction here.
+    assert!(!watch.step(Hand::Left, &attractors, over, &ATTRACTION));
+}
+
+#[test]
+fn moving_from_one_attraction_straight_into_another_ticks_for_the_new_socket() {
+    let attractors = attractors_for_both();
+    let mut watch = ZoneWatch::new();
+    let step = |watch: &mut ZoneWatch, grip: Vec3| {
+        watch.step(Hand::Right, &attractors, Some(grip), &ATTRACTION)
+    };
+    assert!(step(&mut watch, Vec3::new(0.32, 0.95, 0.05)));
+    // Up to the shoulder, out of the hip's attraction by more than the margin.
+    assert!(step(&mut watch, Vec3::new(0.18, 1.62, 0.0)));
+}

@@ -554,10 +554,23 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     state.gameplay = gameplay;
     let entered = entered_body_volumes(state.last_volumes, volumes);
     state.last_volumes = volumes;
+    // A hand whose gun the other hand braces keeps it on letting go, so its socket does not call.
+    let braced = hold.map(|h| h.holder);
+    let attraction = config.weapons.hold.dock_attraction;
+    let tracked = &mut *state;
+    let attracted = Hand::BOTH.map(|hand| {
+        let grip = grips[hand.index()].filter(|_| attraction && braced != Some(hand));
+        tracked
+            .zones
+            .step(hand, &tracked.attractors, grip, &ATTRACTION)
+    });
     drop(state);
 
     for hand in Hand::BOTH.into_iter().filter(|h| entered[h.index()]) {
         haptics::play(hand, Event::VolumeEnter);
+    }
+    for hand in Hand::BOTH.into_iter().filter(|h| attracted[h.index()]) {
+        haptics::play(hand, Event::DockAttraction);
     }
     TickStart { targets, held }
 }

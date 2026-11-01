@@ -16,6 +16,11 @@
 //!
 //! The weapon then travels from the hand into the socket over a time set by the distance
 //! ([`travel_s`]), along the dock's own slide.
+//!
+//! A hand holding a weapon that comes into a socket's attraction feels one tick ([`ZoneWatch`]),
+//! which says that letting go there docks it: the back's sockets cannot be seen, so the hand finds
+//! them by feel. The tick does not repeat while the hand stays, and comes again only once the hand
+//! has left the attraction by a margin, so a hand resting on its edge does not buzz.
 
 use glam::Vec3;
 
@@ -37,6 +42,7 @@ pub(crate) const ATTRACTION: AttractionTuning = AttractionTuning {
     speed_window_s: 0.1,
     travel_mps: 1.5,
     max_travel_s: 0.35,
+    exit_margin_m: 0.03,
 };
 
 /// How far each kind of socket attracts a released weapon, where the hand must be, and how fast it
@@ -71,6 +77,9 @@ pub(crate) struct AttractionTuning {
     pub travel_mps: f32,
     /// The longest an attracted weapon's travel takes, seconds.
     pub max_travel_s: f32,
+    /// How far past a socket's attraction, or past its front limit, a hand must go to leave it,
+    /// metres, before coming back into it ticks again.
+    pub exit_margin_m: f32,
 }
 
 /// Where a hand must not be for a socket to attract it: further than `max_m` along `forward` from
@@ -85,7 +94,11 @@ pub(crate) struct FrontLimit {
 
 impl FrontLimit {
     fn allows(&self, point: Vec3) -> bool {
-        (point - self.origin).dot(self.forward) <= self.max_m
+        self.allows_within(point, 0.0)
+    }
+
+    fn allows_within(&self, point: Vec3, margin: f32) -> bool {
+        (point - self.origin).dot(self.forward) <= self.max_m + margin
     }
 }
 
@@ -211,6 +224,63 @@ pub(crate) fn travel_s(distance: f32, snap_s: f32, tuning: &AttractionTuning) ->
         travel.clamp(snap_s, tuning.max_travel_s.max(snap_s))
     } else {
         snap_s
+    }
+}
+
+/// Which socket's attraction each hand is in, for the tick on coming into one.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub(crate) struct ZoneWatch {
+    inside: [Option<Socket>; 2],
+}
+
+impl ZoneWatch {
+    pub(crate) const fn new() -> Self {
+        Self { inside: [None; 2] }
+    }
+
+    /// Follow `hand`, with its grip at `grip` (`None` while it has nothing to dock, or its gun is
+    /// braced, or the attraction is off), among `attractors`: whether it came into a socket's
+    /// attraction this tick, which plays the tick. The hand stays in the socket it is in until it
+    /// is past the attraction's radius or its front limit by the exit margin; coming into the
+    /// attraction of a socket it is not already in ticks.
+    pub(crate) fn step(
+        &mut self,
+        hand: Hand,
+        attractors: &[Attractor],
+        grip: Option<Vec3>,
+        tuning: &AttractionTuning,
+    ) -> bool {
+        let slot = &mut self.inside[hand.index()];
+        let Some(grip) = grip.filter(|g| g.is_finite()) else {
+            *slot = None;
+            return false;
+        };
+        let mine = || {
+            attractors
+                .iter()
+                .filter(|a| a.hand == hand && a.radius > 0.0)
+        };
+        let margin = tuning.exit_margin_m.max(0.0);
+        let stays = slot.is_some_and(|socket| {
+            mine().filter(|a| a.socket == socket).any(|a| {
+                grip.distance(a.centre) <= a.radius + margin
+                    && a.front
+                        .is_none_or(|front| front.allows_within(grip, margin))
+            })
+        });
+        if stays {
+            return false;
+        }
+        let entered = mine()
+            .filter(|a| a.front.is_none_or(|front| front.allows(grip)))
+            .filter_map(|a| {
+                let distance = grip.distance(a.centre);
+                (distance <= a.radius).then_some((distance / a.radius, a.socket))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, socket)| socket);
+        *slot = entered;
+        entered.is_some()
     }
 }
 
