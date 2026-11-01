@@ -224,6 +224,42 @@ impl Handover {
     }
 }
 
+/// What decides whether the view hangs from the root this tick.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct Eligibility {
+    /// The steady view's switch is on and the game is in play.
+    pub enabled: bool,
+    /// In a ragdoll or swimming, where the root is the physics body's.
+    pub ragdoll: bool,
+    /// The mode detection reads Rico on foot on the ground, outside a traversal.
+    pub on_ground: bool,
+    /// The on-foot movement task drives the root: it ran within [`MOVEMENT_TASK_GRACE_S`].
+    pub movement_task: bool,
+    /// Rico is jumping or off his support.
+    pub in_air: bool,
+    /// The mode detection reads a fall that began within the jump's grace.
+    pub falling_in_grace: bool,
+}
+
+impl Eligibility {
+    /// Whether the root-fixed anchor applies. On the ground it needs the movement task, since the
+    /// neutral head stands on a root the task moves at the stick's velocity. When the task stops
+    /// with Rico still on the ground, an animation the mode detection has not classified yet moves
+    /// the body (a wingsuit takeoff runs for over half a second before the wingsuit is detected),
+    /// and a standing head held over the root would leave the view behind the body. A jump stops
+    /// the task too, but keeps the root-fixed anchor through its grace.
+    pub fn root_fixed(&self) -> bool {
+        self.enabled
+            && !self.ragdoll
+            && ((self.on_ground && (self.movement_task || self.in_air)) || self.falling_in_grace)
+    }
+}
+
+/// How long after the movement task last ran it still counts as driving the root, seconds. It runs
+/// every sim tick on foot, so this covers a few ticks' jitter without letting an unclassified
+/// animation carry the body far from the view first.
+pub const MOVEMENT_TASK_GRACE_S: f32 = 0.1;
+
 /// The anchors of the neutral pose carried by the root: `world_t0` and `world_t1` are the
 /// character's previous- and current-tick world matrices, and `height` the smoothed root heights
 /// that replace theirs.
@@ -296,6 +332,69 @@ mod tests {
             neck: Vec3::new(0.0, 1.6, -0.02),
             eyes: Vec3::new(0.0, 1.72, -0.12),
         }
+    }
+
+    fn walking() -> Eligibility {
+        Eligibility {
+            enabled: true,
+            on_ground: true,
+            movement_task: true,
+            ..Eligibility::default()
+        }
+    }
+
+    #[test]
+    fn the_root_holds_the_view_while_the_movement_task_drives_it() {
+        assert!(walking().root_fixed());
+        assert!(
+            !Eligibility {
+                enabled: false,
+                ..walking()
+            }
+            .root_fixed()
+        );
+        assert!(
+            !Eligibility {
+                ragdoll: true,
+                ..walking()
+            }
+            .root_fixed()
+        );
+    }
+
+    #[test]
+    fn an_animation_on_the_ground_without_the_movement_task_takes_the_view() {
+        // A wingsuit takeoff: still detected on foot, on the ground, with the task stopped.
+        let takeoff = Eligibility {
+            movement_task: false,
+            ..walking()
+        };
+        assert!(!takeoff.root_fixed());
+    }
+
+    #[test]
+    fn a_jump_keeps_the_root_through_its_grace() {
+        let leaving = Eligibility {
+            movement_task: false,
+            in_air: true,
+            ..walking()
+        };
+        assert!(leaving.root_fixed());
+        let falling = Eligibility {
+            on_ground: false,
+            movement_task: false,
+            in_air: true,
+            falling_in_grace: true,
+            ..walking()
+        };
+        assert!(falling.root_fixed());
+        assert!(
+            !Eligibility {
+                falling_in_grace: false,
+                ..falling
+            }
+            .root_fixed()
+        );
     }
 
     #[test]

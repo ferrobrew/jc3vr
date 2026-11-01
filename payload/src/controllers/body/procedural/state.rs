@@ -42,6 +42,15 @@ pub(crate) unsafe fn animation_moves_body(character: &Character, now: Instant) -
     bits.authored_motion() || in_hit_reaction(now, hold_s)
 }
 
+/// Whether the character's state machine is in a jump.
+///
+/// # Safety
+///
+/// `character` must be the live local character, on the thread running its update.
+pub(crate) unsafe fn jumping(character: &Character) -> bool {
+    unsafe { StateBits::of(character) }.has(StateBitFlag::SB_IS_JUMPING)
+}
+
 /// The history the hand-over table's reads keep between gates.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct StateTracker {

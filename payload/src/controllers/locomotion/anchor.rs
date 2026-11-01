@@ -13,15 +13,20 @@ use parking_lot::Mutex;
 use crate::{
     config::Config,
     controllers::{
+        body::procedural::state::jumping,
         locomotion::{
             status as locomotion_status,
-            view::{Handover, HeightFilter, Neutral, NeutralCapture, blend, stable_anchors},
+            view::{
+                Eligibility, Handover, HeightFilter, MOVEMENT_TASK_GRACE_S, Neutral,
+                NeutralCapture, blend, stable_anchors,
+            },
         },
         mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
     },
     headpose::{
-        Anchors,
+        Anchors, Source,
         sim::{HeadMode, mode as head_mode},
+        source,
     },
     hooks::in_gameplay,
 };
@@ -85,6 +90,14 @@ pub(crate) unsafe fn stabilize(
     let falling = controllers_enabled
         && detection.mode == Mode::Airborne(AirborneVariant::Falling)
         && !traversing;
+    // The movement task's stamp is written only while the headset drives the view; elsewhere the
+    // mode alone decides, as it always has.
+    let movement_task = !(controllers_enabled && source() == Source::Vr)
+        || locomotion.at.is_some_and(|at| {
+            now.saturating_duration_since(at).as_secs_f32() <= MOVEMENT_TASK_GRACE_S
+        });
+    // SAFETY: the pass's entry, on the thread running it.
+    let in_air = unsafe { character.IsInAir() || jumping(character) };
     let ragdoll = character.m_CurrentMotionState == Character::MOTION_STATE_RAGDOLL
         || character.m_CurrentMotionState == Character::MOTION_STATE_SWIMMING;
     let aiming = character
@@ -100,7 +113,15 @@ pub(crate) unsafe fn stabilize(
     let in_grace = state
         .grounded_at
         .is_some_and(|at| now.saturating_duration_since(at).as_secs_f32() <= JUMP_GRACE_S);
-    let eligible = enabled && in_gameplay() && !ragdoll && (on_ground || (falling && in_grace));
+    let eligible = Eligibility {
+        enabled: enabled && in_gameplay(),
+        ragdoll,
+        on_ground,
+        movement_task,
+        in_air,
+        falling_in_grace: falling && in_grace,
+    }
+    .root_fixed();
 
     let measuring = state.neutral.is_none()
         && eligible
