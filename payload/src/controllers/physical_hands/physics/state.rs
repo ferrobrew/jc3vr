@@ -172,6 +172,16 @@ impl Target {
             orientation: self.orientation,
         }
     }
+
+    /// The palm carried `lead_s` seconds ahead by its own motion: where a step predicts the palm
+    /// for the end of the step, which is where it drives a free hand's body. The palm's velocity
+    /// is a world velocity, so the lead includes the carrier's travel as well as the hand's.
+    pub(super) fn led(&self, lead_s: f32) -> Goal {
+        Goal {
+            position: self.position + self.linear * lead_s,
+            orientation: Quat::from_scaled_axis(self.angular * lead_s) * self.orientation,
+        }
+    }
 }
 
 /// What the aim update and the step share.
@@ -425,5 +435,45 @@ mod tests {
         assert_eq!(on_gun.max_torque_nm, tuning.max_torque_nm);
         assert_eq!(gun_tuning(&tuning, None), tuning);
         assert_eq!(gun_tuning(&tuning, Some(f32::NAN)), tuning);
+    }
+
+    #[test]
+    fn a_body_that_kept_up_with_a_running_player_draws_no_offset_against_its_led_palm() {
+        // A sprint's carrier speed, and the lead of a step taken a frame after the palm was
+        // published.
+        let carrier = Vec3::new(0.0, 0.0, -5.5);
+        let target = Target {
+            position: Vec3::new(1900.0, 1090.0, 5170.0),
+            orientation: Quat::from_rotation_y(0.4),
+            linear: carrier,
+            angular: Vec3::new(0.0, 1.2, 0.0),
+            carrier,
+        };
+        let lead_s = 0.06;
+        let led = target.led(lead_s);
+        assert!(
+            led.position
+                .abs_diff_eq(target.position + carrier * lead_s, 1e-3)
+        );
+        let body = Pose {
+            position: led.position,
+            orientation: led.orientation,
+        };
+        let measure = |palm: Goal| {
+            RenderOffset::between(
+                Pose {
+                    position: palm.position,
+                    orientation: palm.orientation,
+                },
+                body,
+                0.6,
+                0.0,
+                1.5,
+            )
+        };
+        assert!(measure(led).shift.length() < 1e-3);
+        assert!(measure(led).turn.angle_between(Quat::IDENTITY) < 1e-3);
+        // Against the published palm, the same body reads as a hand a third of a metre ahead.
+        assert!((measure(target.goal()).shift.length() - 0.33).abs() < 1e-3);
     }
 }

@@ -223,11 +223,7 @@ pub(crate) unsafe fn step() {
                     contact_events: true,
                     gravity: false,
                 };
-                let palm = Goal {
-                    position: target.position + target.linear * lead_s,
-                    orientation: Quat::from_scaled_axis(target.angular * lead_s)
-                        * target.orientation,
-                };
+                let palm = target.led(lead_s);
                 // A hand that holds an object through a joint is moved by the keep-out, and pulls
                 // and twists with a holding hand's strength, the same budget as a carried hold.
                 let holding = holds[i];

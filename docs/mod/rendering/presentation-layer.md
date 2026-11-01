@@ -8,7 +8,7 @@ The game simulates at 30 Hz and the headset displays at 75 to 90 Hz. Rico's pose
 | --- | --- | --- |
 | The view | Render, from the latest headset pose | The camera's own interpolation with the head pose pair |
 | The hands, the fingers, and the held gun and its parts | Render, by the late update's correction | The hand's correction since the ticks, on the palette and on the models |
-| A hand body's offset (a hand held at a wall) | Render, blended between the physics steps | See [the hand bodies' offset](#the-hand-bodies-offset) |
+| A hand body's offset (a hand held at a wall) | Render, sampled after the simulation | See [the hand bodies' offset](#the-hand-bodies-offset) |
 | The arms | Render, solved again from the shoulders to the hands | See [the arms](#the-arms) |
 | The spine, the neck, and the head | Render, bent after the headset's motion since the ticks | See [the torso and the head](#the-torso-and-the-head) |
 | Held grenades and C4, a magazine in the hand, the scope's lens, and overlays on the hands | Render, on the hand as drawn | See [what rides the drawn hand](#what-rides-the-drawn-hand) |
@@ -38,7 +38,7 @@ With `arms` off, the arms ride the torso's edit and the forearm swings to the ha
 
 ### The hand bodies' offset
 
-A hand body's hand is drawn where its body is: the offset from the controller's palm to the body, measured at each physics step ([physical-hands.md](../input/physical-hands.md)). Added to the latest controller pose as one step's constant, it made a hand pressed into a wall sink in by the controller's travel since the step and spring back at the next, a visible stutter at the physics rate. The render-time hands (`hands::render_active_hands`, which the late update composes from) take the last two steps' offsets blended by the time since the latest step over the interval between them (`OffsetTimeline` in `physical_hands::physics::render`): the blend arrives at the latest step's offset as the next step lands, so the drawn hand moves continuously across the steps, one step behind them. The simulation's IK targets keep the latest step's offset. A hand pushed steadily into a wall is drawn as far into it as the controller travels in a step, without the stutter, and comes to rest on the wall when the controller stops.
+A hand body's hand is drawn where its body is: the offset from the palm the last physics step drove the body toward to where the body is after that step, sampled once per rendered frame after the simulation and added to the latest controller pose ([render-time-anchoring.md](render-time-anchoring.md#moving-frame-sampling)). A free hand's body keeps up with that palm, so its offset is near zero and the hand keeps the controller's latency; a hand pressed into a wall is drawn on the wall. The simulation's IK targets keep the step's own offset.
 
 ## What rides the drawn hand
 

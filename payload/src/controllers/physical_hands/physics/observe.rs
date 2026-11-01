@@ -234,19 +234,24 @@ pub(crate) unsafe fn sample_render_offsets() {
     let hands = HANDS.lock();
     let offsets = Hand::BOTH.map(|hand| {
         let i = hand.index();
-        let target = targets[i].filter(|_| shown[i])?;
+        targets[i].filter(|_| shown[i])?;
         let body = hands.bodies[i].as_ref()?;
         // SAFETY: the caller excludes the physics step; the owning body validates its slot.
         let motion = match unsafe { body.motion() } {
             Ok(motion) => motion,
             Err(_) => return fallback.map(|offsets| offsets[i].to_cockpit(rotation, scale)),
         };
-        // `acting_palms` publishes the support/weight-adjusted reference. Subtracting a raw
-        // controller palm here would cancel that target when this residual is applied to it.
+        // The step drove the body toward the published palm led by the palm's world velocity
+        // (`Target::led`), so the body leads the published palm by that motion even with nothing
+        // in its way: a hand moving fast, or a player running, would be drawn ahead of its
+        // controller by it. Measured against the led palm, the offset is only what holds the body
+        // back. The led palm comes from `acting_palms`' support/weight-adjusted target, so the
+        // residual does not cancel that target when it is applied.
+        let palm = hands.sent_palm(hand)?;
         let offset = RenderOffset::between(
             Pose {
-                position: target.position,
-                orientation: target.orientation,
+                position: palm.position,
+                orientation: palm.orientation,
             },
             Pose {
                 position: motion.position,

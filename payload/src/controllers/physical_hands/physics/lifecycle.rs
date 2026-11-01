@@ -104,6 +104,12 @@ pub(super) static HANDS: Mutex<Hands> = Mutex::new(Hands {
 });
 
 impl Hands {
+    /// Where the last step predicted `hand`'s palm for the end of the step, world space: what a
+    /// free hand's body was driven toward, so a post-step body that kept up sits on it.
+    pub(super) fn sent_palm(&self, hand: Hand) -> Option<Goal> {
+        self.palms[hand.index()]
+    }
+
     pub(super) fn phase(&self, hand: Hand) -> BodyPhase {
         let i = hand.index();
         match (&self.bodies[i], self.added[i]) {
