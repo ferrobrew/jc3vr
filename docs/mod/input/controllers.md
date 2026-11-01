@@ -423,7 +423,7 @@ The narrow-field scene render is not built. It would be a third dispatch in the 
 - a narrow-field camera in the `SetupRenderCamera` hook: the sighting eye's position, the sight line's orientation, and a projection of the lens's true field, with no upscaler jitter;
 - a smaller render: the scene targets' size is a re-initialisation, so the only cheap lever is a viewport in a corner of the full-size targets, with every full-screen pass (the post chain, the upscaler, the far-field composite, and foveation) either skipped or confined to it;
 - the temporal effects kept out of it: the upscaler's history, auto-exposure, and motion blur would take the narrow view as the next frame of an eye;
-- the `PostDraw` tail told apart: no HUD, overlay, capture copy, recorder, or screenshot for it, its image copied into the lens's texture instead, and its flip blocked;
+- the `PostDraw` tail told apart: no HUD, overlay, capture copy, recorder sidecar line, or screenshot for it, its image copied into the lens's texture instead, and its flip blocked;
 - the gate on the scope being at the eye, so the cost of a nearly full scene render is paid only while sighting.
 
 The Weapons > Aim, sights, and scopes live status shows whether precision aim is suppressed and the refusals and exits, the scoped weapon with the lens and its hand, the eyepiece's distance from the nearest eye, and the lens's state: why it is not drawn, or which eye sights and which eye's image it reads, and the path in use.

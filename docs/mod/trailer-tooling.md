@@ -1,13 +1,13 @@
 # Trailer tooling
 
-Tools for directing and capturing a first-person trailer from inside the headset. Two groups: directing tools in the debug menu (spawn, teleport, heat, time, the clean view), and an in-process capture path that records one eye at full resolution with audio. This doc is the working todo list for that work; each item becomes normal mod code and docs as it lands, and the item here is ticked off.
+Tools for directing and capturing a first-person trailer from inside the headset. Two groups: directing tools in the debug menu (spawn, teleport, heat, time, the clean view), and a capture path that records the desktop mirror window with audio on the host. This doc is the working todo list for that work; each item becomes normal mod code and docs as it lands, and the item here is ticked off.
 
 ## Decisions
 
-- Capture records the raw eye frame, uncropped, at the render resolution. Framing, FOV, and the vertical crop happen in post; recording the whole eye keeps that latitude. The per-frame HMD pose and projection go to a sidecar so post can also do a rotation-only reprojection stabilisation, which is a homography against ground truth rather than an optical-flow estimate.
-- Capture is in-process. OBS against the desktop mirror is assumed not to work well enough, so it is not the fallback. The payload reads the eye back, converts it on the GPU, and streams raw frames to a host-side ffmpeg, which encodes, segments into 10-minute chunks, and muxes audio.
-- Frames are recorded at the source rate (the Bigscreen Beyond at 72 Hz), with a timestamp per frame. Any temporal rescaling is decided later in post, not at capture time.
-- Audio comes from the host side first (the game's pipewire stream), synced by a shared start marker. An in-process FMOD capture DSP is the fallback if drift or sync turns out unacceptable.
+- Capture records the desktop mirror window from the screen, on the host, with gpu-screen-recorder. An in-process recorder that read the full eye render back from the GPU and streamed it to a host-side ffmpeg was tried and replaced: in real sessions it dropped frames, recorded no sound, and its colour conversion broke, while a screen recording of the window was smooth. The video is what the mirror shows at the window's size, so framing is set by the mirror view (F10) and by the window, and post works within that.
+- The per-frame HMD pose and projection, and the mirror's layout, go to a sidecar so post can crop about the optical axis and do a rotation-only reprojection stabilisation, which is a homography against ground truth rather than an optical-flow estimate. The sidecar and the video line up by wall clock.
+- The sidecar has a line per rendered frame at the source rate (the Bigscreen Beyond at 72 Hz); the video is recorded at 60 frames per second with a variable frame rate. Any temporal rescaling is decided later in post, not at capture time.
+- Audio comes from the host side, the default output, recorded by the same gpu-screen-recorder process as the video. An in-process FMOD capture DSP is the fallback if that turns out unacceptable.
 - No third smoothed spectator camera. The stabilisation sidecar covers the same need at no GPU cost.
 
 ## Todo
@@ -18,7 +18,7 @@ Tools for directing and capturing a first-person trailer from inside the headset
 - [x] Spawner: a tag field, presets (car, bike, boat, helicopter, jet, tank, soldier, barrel), a distance slider, and a "face the player" toggle. Fuel tanks are world geometry, not spawn definitions, so there is no preset for them; the mech is DLC content the shipped tables do not list.
 - [x] Spawn definition picker: the shipped `settings/spawn_*_defs.bin` tables, extracted with `tools/spawn_defs/extract_spawn_defs.py` and embedded, listed by pool with a text filter. A definition's full tag set selects it outright.
 - [x] Clean view: one toggle (F4) that hides the mod's overlays at a scope picked in the Director feature: the desktop debug overlay alone, or everything, the HUD quad, the floating panel, and the in-world overlays included. With the HUD redirect off (flatscreen) the game's own HUD stays.
-- [x] Take markers: a hotkey and a labelled button that record the wallclock, the game-run time, and a label. While the video recorder runs they go into its sidecar at the frame they fall on; otherwise they are appended to `markers.jsonl` in the session folder. F2 drops one from the keyboard, and F1 starts a session recording, the video and a tracking recording under one stamp ([capture.md](capture.md#session-recording)).
+- [x] Take markers: a hotkey and a labelled button that record the wallclock, the game-run time, and a label. While the video recorder runs they go into its sidecar before the next rendered frame; otherwise they are appended to `markers.jsonl` in the session folder. F2 drops one from the keyboard, and F1 starts a session recording, the video and a tracking recording under one stamp ([capture.md](capture.md#session-recording)).
 - [x] Bindable keymap: `director.keymap` in the settings file ([settings.md](settings.md)), defaulting to the numeric keypad, fed from the window procedure. Controller chords are not bound yet; the in-headset panel covers that case.
 
 ### Directing tools that need RE
@@ -29,13 +29,11 @@ Tools for directing and capturing a first-person trailer from inside the headset
 
 ### Capture
 
-- [x] Frame source: the chosen eye's capture packed on the GPU and copied into a ring of three staging textures, the oldest mapped with the no-wait flag two frames later, so the immediate context never stalls. A refused map repeats the previous frame.
-- [x] GPU conversion: `i420_pack_ps` writes planar 4:2:0 YUV (BT.709, limited range) into one `R8` target whose rows are the frame's exact byte layout, compiled with `shadergen`.
-- [x] Transport: a loopback TCP connection from a writer thread to the host listener, carrying `yuv4mpegpipe` (self-describing, so the host needs no dimensions). The per-frame index, wallclock, and game time go to the sidecar rather than into the stream, which keeps the stream a plain ffmpeg input.
-- [x] Host script: `scripts/capture_host.sh` runs a relay (`tools/capture/relay.py`) that listens for every recording of a session in turn and starts one ffmpeg per recording, which encodes with the first hardware H.264 encoder ffmpeg reports, segments at ten minutes into the recording's own folder in the session, and records the default sink's monitor with wall-clock timestamps on both inputs. Smoke-tested with a synthetic stream; untested against a live one so far.
-- [x] Pose sidecar: `frames.jsonl` with the stream frame, the raw located pose and field of view of both eyes, the predicted display time, the wallclock, and the game time, plus `stream.json` with the stream parameters.
-- [x] Debug menu and hotkey: Tools > Video (start, stop, eye, scale, rate, host, and the sent, repeated, and dropped counts) and a hotkey. The indicator is the tab itself; a headset-visible indicator outside the panel is still to do.
-- [x] Post tool: `tools/capture/reframe.py` crops to a chosen field of view about the optical axis and stabilises the rotation from the sidecar by a per-frame homography (numpy and OpenCV). The projection math is checked; the tool has not yet run on real footage.
+- [x] Host-side recording: `scripts/capture_host.sh` runs a relay (`tools/capture/relay.py`) that serves every take of a session in turn. For each it finds the game window under niri, records the window's region with gpu-screen-recorder and the default output's audio into the take's folder, and writes the first frame's wall clock and the region to `stream.json` ([capture.md](capture.md)). Smoke-tested against a real window with a stand-in client; not yet run against the game.
+- [x] Control protocol: a versioned line protocol over TCP from the payload's take thread to the relay, naming the take's folder and the game window, with the host's confirmation, error, and stop replies.
+- [x] Pose sidecar: `frames.jsonl` with a line per rendered frame (the raw located pose and field of view of both eyes, the predicted display time, the wallclock, and the game time), a line per mirror layout, and the take markers.
+- [x] Debug menu and hotkey: Tools > Video (start, stop, the capture host's address, its state and the recorded region) and a hotkey. The indicator is the tab itself; a headset-visible indicator outside the panel is still to do.
+- [x] Post tool: `tools/capture/reframe.py` crops to a chosen field of view about the optical axis and stabilises the rotation from the sidecar by a per-frame homography (numpy and OpenCV), using the mirror layout to place the eye image in the video. Run on a screen recording with a synthetic sidecar; not yet on real footage.
 - [ ] Audio fallback, only if host-side audio fails: an FMOD capture DSP on the master channel group streaming PCM with the video's timestamps. FMOD Studio is the game's audio engine (`fmod_studio_F.dll`).
 
 ## Shot list this serves
