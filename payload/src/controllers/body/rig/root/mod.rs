@@ -786,10 +786,11 @@ unsafe fn read_proxy(character: &Character) -> ProxyRead {
 }
 
 /// Log a tick whose root went further than the previous tick's wanted velocity explains, with what
-/// that tick asked for, so the log names what pushed the root. On its own target, so that
-/// `root_jump=debug` turns it on alone.
+/// that tick asked for, so the log names what pushed the root. At info level, since the rate limit
+/// keeps it quiet and a session should carry it without a filter change; on its own target, so a
+/// `root_jump=off` filter silences it alone.
 fn log_jump(jump: &Jump, owner: RootOwner) {
-    tracing::debug!(
+    tracing::info!(
         target: "root_jump",
         moved = ?jump.moved,
         expected = ?jump.expected,
