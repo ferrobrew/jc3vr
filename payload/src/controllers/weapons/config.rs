@@ -13,15 +13,16 @@ use serde::{Deserialize, Serialize};
 #[serde(default)]
 pub struct HolstersConfig {
     /// Keep the move stick's click cycling to the next weapon beside the sockets, as a fallback for
-    /// players who cannot reach them. With a gun in the off-hand the click retracts the tethers
-    /// instead.
+    /// players who cannot reach them. Off by default: the click is half of the debug panel's chord,
+    /// and cycling on it switched weapons each time the panel was opened. With a gun in the
+    /// off-hand the click retracts the tethers instead.
     pub stick_click_cycles: bool,
 }
 
 impl HolstersConfig {
     pub const fn new() -> Self {
         Self {
-            stick_click_cycles: true,
+            stick_click_cycles: false,
         }
     }
 }
