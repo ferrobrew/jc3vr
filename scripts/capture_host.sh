@@ -1,115 +1,50 @@
 #!/usr/bin/env bash
-# The host side of the in-process recorder: listen for the payload's yuv4mpegpipe stream, encode
-# it with a hardware encoder where one is available, cut it into ten-minute segments, and record
-# the game's audio alongside.
+# The host side of the session recorder: listen for the payload's takes and record the game's mirror
+# window with gpu-screen-recorder, with the default output's audio, into each take's folder.
 #
-# Usage: scripts/capture_host.sh [fallback output dir]
+# Usage: scripts/capture_host.sh [fallback output dir] [-- extra gpu-screen-recorder args]
 #
-# Start this, then start the recording in game (F1, or Tools > Video); the payload retries the
-# connection every half second until this listener is up, so either order works, but frames
-# rendered before the connection are dropped. Stopping the recording in game closes the stream:
-# ffmpeg finalizes the last segment and the listener waits for the next recording. Ctrl+C stops
-# the listener, finalizing the segment in progress.
+# Start this, then start a recording in game (F1, or Tools > Video); the payload retries the
+# connection every half second until this listener is up, so either order works. Each take finds the
+# game's window under niri, records its region on screen to `video.mkv` in the take's folder
+# (`<session>/recordings/<stamp>/`, beside `frames.jsonl`), and writes `stream.json` there with the
+# region and the first frame's wall-clock time. Stopping the recording in game finalizes the file
+# and the listener waits for the next take. Ctrl+C stops the listener, finalizing the take in
+# progress. A take whose folder the payload cannot name (the payload on native Windows) goes to a
+# stamped folder under the fallback output dir, `captures/` by default.
 #
-# The listener is tools/capture/relay.py, which starts one ffmpeg per recording and writes its
-# `video_NNN.mkv` segments into the recording's own folder in the session
-# (`<session>/recordings/<stamp>/`, beside `frames.jsonl`), named by the stream header. A stream
-# whose header names no folder (the payload on native Windows) goes to a stamped folder under the
-# fallback output dir, `captures/` by default. The stream carries its size and rate in its own
-# header, so nothing here needs to match the in-game settings.
+# The window must stay where it is and uncovered for the whole take: the region is fixed when the
+# take starts, and whatever is on screen there is what is recorded.
 #
 # Environment overrides:
 #   JC3VR_CAPTURE_PORT    the listen port (default 47172, the payload's default).
-#   JC3VR_CAPTURE_ENCODER the ffmpeg video encoder (default: auto, see pick_encoder).
-#   JC3VR_CAPTURE_AUDIO   the PulseAudio/PipeWire source to record (default: `@DEFAULT_MONITOR@`,
-#                         the default sink's monitor); set to "none" to record video only.
-#   JC3VR_CAPTURE_QUALITY the encoder quality knob: a CQ/CRF-style value (default 18).
-#   JC3VR_SEGMENT_SECONDS the segment length (default 600).
+#   JC3VR_CAPTURE_FPS     the recording frame rate (default 60).
+#   JC3VR_CAPTURE_QUALITY gpu-screen-recorder's quality preset (default high).
+#   JC3VR_CAPTURE_AUDIO   a gpu-screen-recorder audio input (default default_output); set to "none"
+#                         to record video only.
+#   JC3VR_CAPTURE_WINDOW  a niri window id to record instead of looking the game's window up.
+#   JC3VR_CAPTURE_REGION  a WxH+X+Y region to record without asking niri, for other compositors.
 
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
-out_dir="${1:-captures}"
-port="${JC3VR_CAPTURE_PORT:-47172}"
-quality="${JC3VR_CAPTURE_QUALITY:-18}"
-segment_seconds="${JC3VR_SEGMENT_SECONDS:-600}"
-
-# Pick the first hardware H.264 encoder ffmpeg reports, falling back to libx264. H.264 rather than
-# HEVC because every editor imports it without transcoding; at the quality set here the size
-# difference does not matter for source footage.
-pick_encoder() {
-    local encoders
-    encoders="$(ffmpeg -hide_banner -encoders 2>/dev/null)"
-    for candidate in h264_nvenc h264_vaapi h264_qsv h264_amf; do
-        if grep -q " $candidate " <<<"$encoders"; then
-            echo "$candidate"
-            return
-        fi
-    done
-    echo libx264
-}
-encoder="${JC3VR_CAPTURE_ENCODER:-$(pick_encoder)}"
-
-# Encoder-specific arguments. The colour tags mark the stream as BT.709 limited range, which is
-# what the payload's pack shader produces.
-video_args=(-color_primaries bt709 -color_trc bt709 -colorspace bt709 -color_range tv)
-device_args=()
-case "$encoder" in
-    h264_nvenc)
-        video_args+=(-c:v h264_nvenc -preset p5 -tune hq -rc vbr -cq "$quality" -b:v 0)
-        ;;
-    h264_vaapi)
-        # VAAPI wants the frames uploaded to the device; the filter does that from the CPU frames.
-        video_args+=(-vf 'format=nv12,hwupload' -c:v h264_vaapi -qp "$quality")
-        device_args=(-vaapi_device "${JC3VR_VAAPI_DEVICE:-/dev/dri/renderD128}")
-        ;;
-    h264_qsv)
-        video_args+=(-c:v h264_qsv -global_quality "$quality")
-        ;;
-    h264_amf)
-        video_args+=(-c:v h264_amf -quality quality -rc cqp -qp_i "$quality" -qp_p "$quality")
-        ;;
-    *)
-        video_args+=(-c:v libx264 -preset veryfast -crf "$quality")
-        ;;
-esac
-
-# The audio source: the default sink's monitor unless overridden. `@DEFAULT_MONITOR@` is resolved
-# by the server (PulseAudio, or PipeWire's PulseAudio shim), so no client tool such as `pactl` is
-# needed to look the sink up, and it follows the default sink as it is when the recording starts.
-audio_source="${JC3VR_CAPTURE_AUDIO:-@DEFAULT_MONITOR@}"
-audio_in=()
-audio_map=()
-audio_args=()
-if [ "$audio_source" != none ]; then
-    # The pulse demuxer already stamps each packet with the wall clock less the server's latency,
-    # the same clock the video's arrival stamps use. Stamping on arrival instead adds the delivery
-    # jitter, which runs packets backward in time and makes the encoder rewrite their timestamps.
-    # The resampler fills or trims samples to follow the stamps, so a capture gap stays a gap.
-    audio_in=(-f pulse -thread_queue_size 4096 -i "$audio_source")
-    audio_map=(-map 1:a)
-    audio_args=(-af aresample=async=1000 -c:a aac -b:a 256k)
+out_dir="captures"
+if [ $# -gt 0 ] && [ "$1" != "--" ]; then
+    out_dir="$1"
+    shift
 fi
 
-echo "capture: encoder $encoder, audio ${audio_source}, segments of ${segment_seconds}s" >&2
+args=(
+    --port "${JC3VR_CAPTURE_PORT:-47172}"
+    --fallback-dir "$out_dir"
+    --fps "${JC3VR_CAPTURE_FPS:-60}"
+    --quality "${JC3VR_CAPTURE_QUALITY:-high}"
+    --audio "${JC3VR_CAPTURE_AUDIO:-default_output}"
+)
+if [ -n "${JC3VR_CAPTURE_WINDOW:-}" ]; then
+    args+=(--window-id "$JC3VR_CAPTURE_WINDOW")
+elif [ -n "${JC3VR_CAPTURE_REGION:-}" ]; then
+    args+=(--region "$JC3VR_CAPTURE_REGION")
+fi
 
-# The video input is the relay's pipe, which carries the stream as it arrives from the socket.
-# `-use_wallclock_as_timestamps` on both inputs lets the muxer line the audio up against the moment
-# each frame arrived, and the y4m header's rate keeps the video itself constant-rate.
-# `-fps_mode passthrough` keeps one output frame per input frame: the payload already emits exactly
-# one frame per display refresh (repeating on a late readback), so nothing should be dropped or
-# duplicated here. The relay replaces @OUTPUT@ with the segment start number and the recording
-# folder's `video_%03d.mkv`.
-exec python3 -I "$DIR/tools/capture/relay.py" --port "$port" --fallback-dir "$out_dir" -- \
-    ffmpeg -hide_banner -loglevel warning -stats \
-    "${device_args[@]}" \
-    -use_wallclock_as_timestamps 1 -thread_queue_size 64 \
-    -f yuv4mpegpipe -i pipe:0 \
-    "${audio_in[@]}" \
-    -map 0:v "${audio_map[@]}" \
-    -fps_mode passthrough \
-    "${video_args[@]}" \
-    "${audio_args[@]}" \
-    -f segment -segment_time "$segment_seconds" -reset_timestamps 1 -segment_format matroska \
-    -strftime 0 \
-    @OUTPUT@
+exec python3 -I "$DIR/tools/capture/relay.py" "${args[@]}" "$@"
