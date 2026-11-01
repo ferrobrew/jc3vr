@@ -82,9 +82,13 @@ audio_in=()
 audio_map=()
 audio_args=()
 if [ "$audio_source" != none ]; then
-    audio_in=(-use_wallclock_as_timestamps 1 -f pulse -thread_queue_size 4096 -i "$audio_source")
+    # The pulse demuxer already stamps each packet with the wall clock less the server's latency,
+    # the same clock the video's arrival stamps use. Stamping on arrival instead adds the delivery
+    # jitter, which runs packets backward in time and makes the encoder rewrite their timestamps.
+    # The resampler fills or trims samples to follow the stamps, so a capture gap stays a gap.
+    audio_in=(-f pulse -thread_queue_size 4096 -i "$audio_source")
     audio_map=(-map 1:a)
-    audio_args=(-c:a aac -b:a 256k)
+    audio_args=(-af aresample=async=1000 -c:a aac -b:a 256k)
 fi
 
 echo "capture: encoder $encoder, audio ${audio_source}, segments of ${segment_seconds}s" >&2
