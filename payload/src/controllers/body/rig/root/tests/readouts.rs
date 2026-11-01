@@ -14,7 +14,9 @@ use crate::controllers::{
             owner::RootOwner,
             pushback::Pushback,
             shift::CockpitShift,
-            status_from, try_frame_readout_from, try_sim_readout_from,
+            status_from,
+            trace::RootTrace,
+            try_frame_readout_from, try_sim_readout_from,
         },
     },
     roomscale::SeatPhase,
@@ -120,6 +122,12 @@ fn local_sim() -> Mutex<Sim> {
         }),
         capsule_owned: true,
         capsule_blocked: true,
+        trace: Some(RootTrace {
+            tick: 17,
+            position: Vec3::new(1.0, 2.0, 3.0),
+            jumps: 2,
+            ..RootTrace::default()
+        }),
     };
     let movement = Movement {
         task: Vec2::ZERO,

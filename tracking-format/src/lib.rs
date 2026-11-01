@@ -23,8 +23,10 @@
 //!    position/orientation validity and tracking for each hand joint without requiring compression.
 //!    Version 5 keeps the version 4 layouts and adds [`TAG_EVENT`] records, direct or inside
 //!    chunks, each carrying an [`event::Event`] stamped on the frames' timeline.
+//!    Version 6 keeps the version 5 layouts and appends the root's tick to the controller state
+//!    event ([`event::RootTick`]).
 //!
-//! Versions 1 and 2 skip unknown tags. Versions 3 through 5 reject unknown required tags; only unknown
+//! Versions 1 and 2 skip unknown tags. Versions 3 through 6 reject unknown required tags; only unknown
 //! tags with [`OPTIONAL_TAG_BIT`] set are skippable. Chunks cannot contain chunks or required unknown
 //! records. A cut final outer record leaves all earlier records readable and marks
 //! [`Recording::truncated`]. A complete malformed chunk, unread inner bytes, a bad checksum, or a
@@ -75,14 +77,14 @@ use crate::{
 pub const EXTENSION: &str = "jc3trk";
 
 /// The newest supported format version. Legacy entry points retain versions 1 through 3.
-pub const VERSION: u16 = 5;
+pub const VERSION: u16 = 6;
 
 /// The joint-flag schema of a frame, independent of the input and decision schemas.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum FrameSchema {
     /// Versions 1 through 3 store only the conjunctions of the component flags.
     Legacy,
-    /// Versions 4 and 5 preserve each component flag and validate the aggregate bits.
+    /// Versions 4 through 6 preserve each component flag and validate the aggregate bits.
     V4,
 }
 
@@ -91,7 +93,7 @@ impl FrameSchema {
     pub fn for_version(version: u16) -> Result<Self, DecodeError> {
         match version {
             1..=3 => Ok(Self::Legacy),
-            4 | 5 => Ok(Self::V4),
+            4..=6 => Ok(Self::V4),
             _ => Err(DecodeError {
                 offset: 0,
                 kind: DecodeErrorKind::UnsupportedVersion(version),

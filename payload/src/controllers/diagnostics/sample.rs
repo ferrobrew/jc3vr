@@ -4,15 +4,23 @@
 //! controllers' poses, validity and tracking flags, focus, and action set, and the STAGE
 //! information, so none of those are read here.
 
+use std::time::Instant;
+
 use tracking_format::event::{
     AimState, ControllerState, GrappleAim, HandAim, HandLate, HandTier, IkState, Label, LateState,
-    RoomscaleState, TierState, WeaponAim,
+    RoomscaleState, RootTick, TierState, WeaponAim,
 };
 
 use crate::{
     controllers::{
         aim::{self, AimIdle, HandSource, raycast::RaycastError, sights::SightSource},
-        body::rig::collision::probe::ProbeResult,
+        body::rig::{
+            collision::probe::ProbeResult,
+            root::{
+                SimStatus,
+                trace::{RootTrace, STALE_AFTER as TRACE_STALE_AFTER},
+            },
+        },
         frame::{self, Hand},
         hands::{ik, late, tiers},
         mode::{self, AirborneVariant, HoldReason, Mode, OnFootVariant, Traversal},
@@ -34,6 +42,7 @@ pub(super) fn snapshot() -> ControllerState {
     })
     .unwrap_or((None, None));
     let ik_status = ik::status();
+    let roomscale_status = roomscale::status();
     ControllerState {
         frame_sequence,
         publication_age_us,
@@ -49,7 +58,8 @@ pub(super) fn snapshot() -> ControllerState {
         tiers: tier_state(tiers::status()),
         late: late_state(late::status()),
         aim: aim_state(aim::status()),
-        roomscale: roomscale_state(roomscale::status()),
+        roomscale: roomscale_state(roomscale_status),
+        root: fresh_trace(&roomscale_status.root.sim, Instant::now()).map(root_tick),
     }
 }
 
@@ -153,6 +163,41 @@ fn roomscale_state(status: roomscale::RoomscaleStatus) -> RoomscaleState {
         seat: Label::Borrowed(frame.seat.label()),
         probe: frame.probe.map(probe_label).map(Label::Borrowed),
         fade_level: status.fade.level,
+    }
+}
+
+/// The last on-foot tick's trace, while the root's hook still runs.
+fn fresh_trace(sim: &SimStatus, now: Instant) -> Option<RootTrace> {
+    sim.trace.filter(|_| {
+        sim.at
+            .is_some_and(|at| now.saturating_duration_since(at) <= TRACE_STALE_AFTER)
+    })
+}
+
+fn root_tick(trace: RootTrace) -> RootTick {
+    RootTick {
+        tick: trace.tick,
+        dt_s: trace.dt,
+        position: trace.position,
+        moved_m: trace.moved,
+        unexplained_m: trace.unexplained_m,
+        task_mps: trace.split.task,
+        stick_mps: trace.split.stick,
+        palms_mps: trace.split.palms,
+        chase_mps: trace.split.chase,
+        wanted_mps: trace.split.wanted,
+        proxy_mps: trace.proxy.velocity,
+        surface_mps: trace.proxy.surface_velocity,
+        support: Label::Borrowed(trace.proxy.support.label()),
+        surface_dynamic: trace.proxy.surface_dynamic,
+        ground_body: trace.proxy.ground_body,
+        proxy_state: trace.proxy.state,
+        pending_proxy_state: trace.proxy.pending_state,
+        default_proxy_state: trace.proxy.default_state,
+        authored: trace.authored,
+        capsule_owned: trace.capsule_owned,
+        capsule_blocked: trace.capsule_blocked,
+        jumps: trace.jumps,
     }
 }
 

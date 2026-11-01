@@ -6,7 +6,9 @@
 //! - [`chase`]: the gap to the ground point under the upright eyes and the velocity that closes it;
 //! - [`ledger`]: what each step asked for and how much of the completed movement was the chase's;
 //! - [`shift`]: the cockpit shift that takes the credited chase back out of the view;
-//! - [`pushback`]: holding the view at a wall the chase cannot pass.
+//! - [`pushback`]: holding the view at a wall the chase cannot pass;
+//! - [`trace`]: each tick's move against what the previous tick asked for, for the recorder and the
+//!   `rig: the root jumped` log.
 //!
 //! The simulation half runs from a post-call detour on the on-foot locomotion task
 //! (`NStateTask_MovementLocomotionTask::Update`), which writes the character proxy's wanted velocity
@@ -38,6 +40,7 @@ pub mod ledger;
 pub mod owner;
 pub mod pushback;
 pub mod shift;
+pub mod trace;
 
 #[cfg(test)]
 mod tests;
@@ -50,7 +53,9 @@ use std::{
 use detours_macro::detour;
 use glam::{Mat4, Quat, Vec2, Vec3};
 use jc3gi::{
-    character::character::Character, physics::PfxCharacterInstance, state::StateContext,
+    character::character::Character,
+    physics::{PfxCharacterInstance, hknpCharacterSurfaceInfo},
+    state::StateContext,
     types::math::Vector3,
 };
 use parking_lot::Mutex;
@@ -82,6 +87,7 @@ use crate::{
                     owner::{OwnerInput, RootOwner},
                     pushback::{Pushback, PushbackInput, PushbackOutcome},
                     shift::{CockpitBasis, CockpitShift},
+                    trace::{Jump, ProxyRead, RootTrace, Split, Support, TickInput, Tracer},
                 },
                 torso::head_heading,
             },
@@ -362,6 +368,8 @@ pub struct SimStatus {
     pub capsule_owned: bool,
     /// Whether the last release of the capsule was held back for lack of headroom.
     pub capsule_blocked: bool,
+    /// The last on-foot tick's trace, while the loop is live.
+    pub trace: Option<RootTrace>,
 }
 
 pub fn status() -> RootStatus {
@@ -519,6 +527,7 @@ struct Sim {
     /// The body's position on the last tick, for the warp test.
     last_position: Option<Vec3>,
     movement: Requests,
+    tracer: Tracer,
     completion_sequence: u64,
     completion: CompletionSnapshot,
     status: SimStatus,
@@ -531,6 +540,7 @@ impl Sim {
             seen_epoch: 0,
             last_position: None,
             movement: Requests::new(),
+            tracer: Tracer::new(),
             completion_sequence: 0,
             completion: CompletionSnapshot::unavailable(CompletionUnavailable::NotCompleted),
             status: SimStatus {
@@ -546,6 +556,7 @@ impl Sim {
                 probe: None,
                 capsule_owned: false,
                 capsule_blocked: false,
+                trace: None,
             },
         }
     }
@@ -598,6 +609,7 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
         .is_none_or(|at| now.duration_since(at) > probe::STALE_AFTER)
     {
         sim.last_position = None;
+        sim.tracer.forget();
         sim.clear_movement(CompletionUnavailable::SourceUnavailable);
     }
     sim.status.at = Some(now);
@@ -628,6 +640,8 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
         sim.seen_epoch = epoch;
         sim.clear_movement(CompletionUnavailable::Teleported);
         sim.probe.reset();
+        sim.tracer.forget();
+        sim.status.trace = None;
         stand_down(&mut sim.status, RootOwner::Game);
         return;
     }
@@ -635,6 +649,8 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
     let (Some(shared), true) = (shared, live) else {
         sim.clear_movement(CompletionUnavailable::SourceUnavailable);
         sim.probe.reset();
+        sim.tracer.forget();
+        sim.status.trace = None;
         stand_down(&mut sim.status, RootOwner::Game);
         sim.status.probe = None;
         // Without the headset driving the view, nothing asks for the crouch any more, and the frame
@@ -649,8 +665,11 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
     // The stick's velocity replaces the clip's root velocity first; the palms' push off what they
     // press into then counts as the task's own movement, so it is added before the chase reads the
     // task's velocity.
+    let task = horizontal(unsafe { wanted_velocity(character) });
     unsafe { after_task(character, dt) };
+    let stick = horizontal(unsafe { wanted_velocity(character) });
     unsafe { physical_hands::push_body(character) };
+    let palms = horizontal(unsafe { wanted_velocity(character) }) - stick;
 
     let owner = owner::select(&OwnerInput {
         task_wrote: true,
@@ -695,6 +714,101 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
     if capsule_enabled(&config) {
         unsafe { capsule_tick(&mut sim, character, shared.crouched, position) };
     }
+
+    let input = TickInput {
+        position,
+        dt,
+        split: Split {
+            task,
+            stick,
+            palms,
+            chase: sim.status.chase_velocity,
+            wanted: unsafe { wanted_velocity(character) },
+        },
+        proxy: unsafe { read_proxy(character) },
+        authored,
+        capsule_owned: sim.status.capsule_owned,
+        capsule_blocked: sim.status.capsule_blocked,
+    };
+    let (trace, jump) = sim.tracer.step(input, now);
+    sim.status.trace = Some(trace);
+    if let Some(jump) = jump {
+        log_jump(&jump, owner);
+    }
+}
+
+/// The character's wanted velocity, world metres per second.
+///
+/// # Safety
+///
+/// `character` must be live, on the thread running its state machines.
+unsafe fn wanted_velocity(character: &Character) -> Vec3 {
+    let mut wanted = Vector3 { data: [0.0; 3] };
+    unsafe { character.GetWantedWorldVelocity(&mut wanted) };
+    Vec3::from_array(wanted.data)
+}
+
+/// The world `(x, z)` part of `v`.
+fn horizontal(v: Vec3) -> Vec2 {
+    Vec2::new(v.x, v.z)
+}
+
+/// The proxy's velocity, support, ground, and states, for the tick's trace.
+///
+/// # Safety
+///
+/// `character` must be live, on the thread running its state machines.
+unsafe fn read_proxy(character: &Character) -> ProxyRead {
+    let base = ProxyRead {
+        pending_state: character.m_PendingProxyState,
+        default_state: character.m_DefaultProxyState,
+        ..ProxyRead::default()
+    };
+    let Some(proxy) = (unsafe { character.m_PfxCharacter.px.as_ref() }) else {
+        return base;
+    };
+    let ground = &proxy.m_GroundInformation;
+    ProxyRead {
+        velocity: unsafe { velocity(proxy) },
+        surface_velocity: Vec3::from_array(ground.m_surfaceVelocity.data),
+        support: match ground.m_supportedState {
+            hknpCharacterSurfaceInfo::UNSUPPORTED => Support::Unsupported,
+            hknpCharacterSurfaceInfo::SLIDING => Support::Sliding,
+            hknpCharacterSurfaceInfo::SUPPORTED => Support::Supported,
+            _ => Support::Unknown,
+        },
+        surface_dynamic: ground.m_isSurfaceDynamic,
+        ground_body: (proxy.m_GroundBodyId != PfxCharacterInstance::INVALID_BODY_ID)
+            .then_some(proxy.m_GroundBodyId),
+        state: proxy.m_ProxyState,
+        ..base
+    }
+}
+
+/// Log a tick whose root went further than the previous tick's wanted velocity explains, with what
+/// that tick asked for, so the log names what pushed the root. On its own target, so that
+/// `root_jump=debug` turns it on alone.
+fn log_jump(jump: &Jump, owner: RootOwner) {
+    tracing::debug!(
+        target: "root_jump",
+        moved = ?jump.moved,
+        expected = ?jump.expected,
+        task = ?jump.asked.task,
+        stick = ?jump.asked.stick,
+        palms = ?jump.asked.palms,
+        chase = ?jump.asked.chase,
+        wanted = ?jump.asked.wanted,
+        proxy_velocity = ?jump.proxy.velocity,
+        surface_velocity = ?jump.proxy.surface_velocity,
+        support = jump.proxy.support.label(),
+        surface_dynamic = jump.proxy.surface_dynamic,
+        ground_body = ?jump.proxy.ground_body,
+        proxy_state = jump.proxy.state,
+        pending_proxy_state = jump.proxy.pending_state,
+        owner = owner.label(),
+        suppressed = jump.suppressed,
+        "rig: the root jumped",
+    );
 }
 
 /// Zero the chase's readout for a tick it did not run on.

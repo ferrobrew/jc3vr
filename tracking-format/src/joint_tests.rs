@@ -30,7 +30,7 @@ fn all_component_combinations_have_exact_v4_frame_and_chunk_wire() {
         let mut bytes = encode_latest_preamble(&header());
         bytes.extend_from_slice(&stored);
         let decoded = decode(&bytes).unwrap();
-        assert_eq!(decoded.version, 5);
+        assert_eq!(decoded.version, VERSION);
         assert!(!decoded.truncated);
         assert_eq!(decoded.frames.len(), 1);
         assert_components(&decoded.frames[0], &source, false);
@@ -85,8 +85,8 @@ fn all_legacy_versions_down_convert_by_conjunction_and_ignore_upper_joint_bits()
 
 #[test]
 fn schema_selection_and_legacy_entry_points_stay_pinned() {
-    assert_eq!(VERSION, 5);
-    for version in 1..=5 {
+    assert_eq!(VERSION, 6);
+    for version in 1..=6 {
         assert_eq!(
             FrameSchema::for_version(version).unwrap(),
             if version >= 4 {
@@ -96,7 +96,7 @@ fn schema_selection_and_legacy_entry_points_stay_pinned() {
             }
         );
     }
-    for version in [0, 6, u16::MAX] {
+    for version in [0, 7, u16::MAX] {
         assert_eq!(
             FrameSchema::for_version(version).unwrap_err().kind,
             DecodeErrorKind::UnsupportedVersion(version)
@@ -106,8 +106,8 @@ fn schema_selection_and_legacy_entry_points_stay_pinned() {
         (encode_preamble(&header()), 1u16),
         (encode_input_preamble(&header()), 2),
         (encode_chunked_preamble(&header()), 3),
-        (encode_latest_preamble(&header()), 5),
-        (encode_latest_chunked_preamble(&header()), 5),
+        (encode_latest_preamble(&header()), 6),
+        (encode_latest_chunked_preamble(&header()), 6),
     ] {
         assert_eq!(&preamble[8..10], &version.to_le_bytes());
     }

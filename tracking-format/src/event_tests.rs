@@ -1,4 +1,4 @@
-//! Version 5 event records: their round trip, direct and chunked, and their version gate.
+//! Event records: their round trip, direct and chunked, and their version gates.
 
 use glam::{Vec2, Vec3};
 
@@ -8,15 +8,15 @@ use crate::{
     event::{
         AimState, ControllerState, Event, EventKind, GrappleAim, GripAcquisition, GripCandidate,
         GripDrive, GripScan, GripScanEntry, GripStage, GunRelease, HandAim, HandLate, HandTier,
-        IkState, Label, LateState, ReleaseController, ReleaseDrop, RoomscaleState, TakeMarker,
-        TierState, WeaponAim, WorldMotion,
+        IkState, Label, LateState, ReleaseController, ReleaseDrop, RoomscaleState, RootTick,
+        TakeMarker, TierState, WeaponAim, WorldMotion,
     },
     model::{Hand, Stage},
     wire::Encoder,
 };
 
 #[test]
-fn v5_events_round_trip_direct_and_chunked_beside_frames() {
+fn events_round_trip_direct_and_chunked_beside_frames() {
     let events = [
         Event {
             time_ns: 5,
@@ -67,7 +67,7 @@ fn v5_events_round_trip_direct_and_chunked_beside_frames() {
         }
         let decoded = decode(&bytes).unwrap();
         assert_eq!(decoded.version, VERSION);
-        assert_eq!(decoded.version, 5);
+        assert_eq!(decoded.version, 6);
         assert!(!decoded.truncated);
         assert_eq!(decoded.events, events);
         assert_eq!(decoded.frames, vec![frame.clone()]);
@@ -78,6 +78,30 @@ fn v5_events_round_trip_direct_and_chunked_beside_frames() {
             .collect();
         assert_eq!(again, records);
     }
+}
+
+#[test]
+fn a_version_5_controller_state_reads_without_the_root_tick() {
+    let event = Event {
+        time_ns: 4,
+        kind: EventKind::ControllerState(Box::new(ControllerState {
+            root: None,
+            ..controller_state(true)
+        })),
+    };
+    let mut record = encode_event(&event).unwrap();
+    // Version 5 ends the controller state at the roomscale state: drop the root tick's absent flag
+    // and shorten the record's length to match. The length follows the one-byte tag.
+    assert_eq!(record.pop(), Some(0));
+    let len = u32::from_le_bytes(record[1..5].try_into().unwrap()) - 1;
+    record[1..5].copy_from_slice(&len.to_le_bytes());
+    let mut bytes = encode_latest_preamble(&header());
+    // The version follows the eight-byte magic.
+    bytes[8..10].copy_from_slice(&5u16.to_le_bytes());
+    bytes.extend_from_slice(&record);
+    let decoded = decode(&bytes).unwrap();
+    assert_eq!(decoded.version, 5);
+    assert_eq!(decoded.events, vec![event]);
 }
 
 #[test]
@@ -318,6 +342,30 @@ fn controller_state(full: bool) -> ControllerState {
             probe: some_label(full, "obstructed"),
             fade_level: 0.75,
         },
+        root: full.then(|| RootTick {
+            tick: 1234,
+            dt_s: 1.0 / 30.0,
+            position: Vec3::new(1741.6, 1082.5, 4596.4),
+            moved_m: Vec3::new(0.0, 0.0, -0.11),
+            unexplained_m: 0.11,
+            task_mps: Vec2::new(0.1, 0.2),
+            stick_mps: Vec2::new(0.3, 0.4),
+            palms_mps: Vec2::new(0.5, 0.6),
+            chase_mps: Vec2::new(0.7, 0.8),
+            wanted_mps: Vec3::new(0.7, -0.1, 0.8),
+            proxy_mps: Vec3::new(0.6, 0.0, 0.9),
+            surface_mps: Vec3::new(0.0, 0.0, 0.25),
+            support: "supported".into(),
+            surface_dynamic: true,
+            ground_body: Some(77),
+            proxy_state: 1,
+            pending_proxy_state: 2,
+            default_proxy_state: -1,
+            authored: true,
+            capsule_owned: false,
+            capsule_blocked: true,
+            jumps: 9,
+        }),
     }
 }
 

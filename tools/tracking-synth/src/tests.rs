@@ -73,8 +73,8 @@ fn every_built_in_recording_reads_back_as_written() {
         let recording =
             synth::recording(&script, Options::default(), &schema).expect("the script samples");
         let bytes = synth::encode(&recording);
-        assert_eq!(recording.version, 5);
-        assert_eq!(&bytes[8..10], &5u16.to_le_bytes());
+        assert_eq!(recording.version, tracking_format::VERSION);
+        assert_eq!(&bytes[8..10], &tracking_format::VERSION.to_le_bytes());
         let first_record = tracking_format::encode_latest_preamble(&recording.header).len();
         assert_eq!(bytes[first_record], tracking_format::TAG_FRAME);
         let decoded = tracking_format::decode(&bytes).expect("the file reads");

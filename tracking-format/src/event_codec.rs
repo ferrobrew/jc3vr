@@ -9,8 +9,8 @@ use crate::{
     event::{
         AimState, ControllerState, Event, EventKind, GrappleAim, GripAcquisition, GripCandidate,
         GripDrive, GripScan, GripScanEntry, GripStage, GunRelease, HandAim, HandLate, HandTier,
-        IkState, Label, LateState, ReleaseController, ReleaseDrop, RoomscaleState, TakeMarker,
-        TierState, WeaponAim, WorldMotion,
+        IkState, Label, LateState, ReleaseController, ReleaseDrop, RoomscaleState, RootTick,
+        TakeMarker, TierState, WeaponAim, WorldMotion,
     },
     model::Hand,
     wire::{DecodeError, DecodeErrorKind, Decoder, Encoder},
@@ -41,12 +41,13 @@ pub(crate) fn encode(out: &mut Encoder, event: &Event) {
     }
 }
 
-pub(crate) fn decode(input: &mut Decoder) -> Result<Event, DecodeError> {
+/// Decode an event from a container of `version`.
+pub(crate) fn decode(input: &mut Decoder, version: u16) -> Result<Event, DecodeError> {
     let time_ns = input.u64()?;
     let offset = input.offset();
     let kind = match input.u8()? {
         KIND_CONTROLLER_STATE => {
-            EventKind::ControllerState(Box::new(read_controller_state(input)?))
+            EventKind::ControllerState(Box::new(read_controller_state(input, version)?))
         }
         KIND_GRIP_ACQUISITION => {
             EventKind::GripAcquisition(Box::new(read_grip_acquisition(input)?))
@@ -236,9 +237,13 @@ fn controller_state(out: &mut Encoder, state: &ControllerState) {
     out.u64(state.late.palettes_edited);
     aim_state(out, &state.aim);
     roomscale_state(out, &state.roomscale);
+    opt(out, state.root.as_ref(), root_tick);
 }
 
-fn read_controller_state(input: &mut Decoder) -> Result<ControllerState, DecodeError> {
+fn read_controller_state(
+    input: &mut Decoder,
+    version: u16,
+) -> Result<ControllerState, DecodeError> {
     let frame_sequence = read_opt_u64(input, "the controller state's frame sequence flag")?;
     let publication_age_us = read_opt_u64(input, "the controller state's age flag")?;
     let scheme = read_label(input, "the scheme")?;
@@ -257,6 +262,11 @@ fn read_controller_state(input: &mut Decoder) -> Result<ControllerState, DecodeE
     };
     let aim = read_aim_state(input)?;
     let roomscale = read_roomscale_state(input)?;
+    let root = if version >= ROOT_TICK_VERSION {
+        read_opt(input, "the root tick flag", read_root_tick)?
+    } else {
+        None
+    };
     Ok(ControllerState {
         frame_sequence,
         publication_age_us,
@@ -273,6 +283,82 @@ fn read_controller_state(input: &mut Decoder) -> Result<ControllerState, DecodeE
         late,
         aim,
         roomscale,
+        root,
+    })
+}
+
+/// The first version whose controller state carries the root's tick.
+const ROOT_TICK_VERSION: u16 = 6;
+
+fn root_tick(out: &mut Encoder, root: &RootTick) {
+    out.u64(root.tick);
+    out.f32(root.dt_s);
+    out.vec3(root.position);
+    out.vec3(root.moved_m);
+    out.f32(root.unexplained_m);
+    out.vec2(root.task_mps);
+    out.vec2(root.stick_mps);
+    out.vec2(root.palms_mps);
+    out.vec2(root.chase_mps);
+    out.vec3(root.wanted_mps);
+    out.vec3(root.proxy_mps);
+    out.vec3(root.surface_mps);
+    label(out, &root.support);
+    bools(
+        out,
+        [
+            root.surface_dynamic,
+            root.authored,
+            root.capsule_owned,
+            root.capsule_blocked,
+        ],
+    );
+    opt_u32(out, root.ground_body);
+    out.i32(root.proxy_state);
+    out.i32(root.pending_proxy_state);
+    out.i32(root.default_proxy_state);
+    out.u64(root.jumps);
+}
+
+fn read_root_tick(input: &mut Decoder) -> Result<RootTick, DecodeError> {
+    let tick = input.u64()?;
+    let dt_s = input.f32()?;
+    let position = input.vec3()?;
+    let moved_m = input.vec3()?;
+    let unexplained_m = input.f32()?;
+    let task_mps = input.vec2()?;
+    let stick_mps = input.vec2()?;
+    let palms_mps = input.vec2()?;
+    let chase_mps = input.vec2()?;
+    let wanted_mps = input.vec3()?;
+    let proxy_mps = input.vec3()?;
+    let surface_mps = input.vec3()?;
+    let support = read_label(input, "the root's support")?;
+    let [surface_dynamic, authored, capsule_owned, capsule_blocked] =
+        read_bools(input, "the root tick's flags")?;
+    Ok(RootTick {
+        tick,
+        dt_s,
+        position,
+        moved_m,
+        unexplained_m,
+        task_mps,
+        stick_mps,
+        palms_mps,
+        chase_mps,
+        wanted_mps,
+        proxy_mps,
+        surface_mps,
+        support,
+        surface_dynamic,
+        ground_body: read_opt_u32(input, "the root's ground body flag")?,
+        proxy_state: input.i32()?,
+        pending_proxy_state: input.i32()?,
+        default_proxy_state: input.i32()?,
+        authored,
+        capsule_owned,
+        capsule_blocked,
+        jumps: input.u64()?,
     })
 }
 

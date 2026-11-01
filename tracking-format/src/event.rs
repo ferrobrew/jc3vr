@@ -80,6 +80,8 @@ pub struct ControllerState {
     pub late: LateState,
     pub aim: AimState,
     pub roomscale: RoomscaleState,
+    /// The root's latest on-foot tick, while the root's hook runs; absent before version 6.
+    pub root: Option<RootTick>,
 }
 
 /// One hand's HumanIK result.
@@ -205,6 +207,56 @@ pub struct RoomscaleState {
     pub seat: Label,
     pub probe: Option<Label>,
     pub fade_level: f32,
+}
+
+/// The root's latest on-foot tick: where it went, what the tick asked it to do, and the proxy it
+/// moved through. A rendered frame samples the latest tick, so a frame without a tick repeats one
+/// and two ticks in one frame show the second; [`tick`](Self::tick) tells them apart.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct RootTick {
+    /// The on-foot ticks the root's hook has run since the payload loaded.
+    pub tick: u64,
+    /// The tick's step, seconds.
+    pub dt_s: f32,
+    /// The root's world position as the tick found it.
+    pub position: Vec3,
+    /// How far the root moved since the previous tick, world metres; zero after a gap.
+    pub moved_m: Vec3,
+    /// How far the horizontal move is from what the previous tick's wanted velocity and its
+    /// ground's velocity explain, metres.
+    pub unexplained_m: f32,
+    /// The wanted horizontal velocity, world `(x, z)` metres per second, at each stage of the tick,
+    /// in order: as the movement task wrote it (the clip's root speed), after the stick locomotion
+    /// (the stick's velocity, or the task's while the animation moves the body), the palms' push
+    /// added, and the chase added.
+    pub task_mps: Vec2,
+    pub stick_mps: Vec2,
+    pub palms_mps: Vec2,
+    pub chase_mps: Vec2,
+    /// The wanted velocity the tick left, world metres per second.
+    pub wanted_mps: Vec3,
+    /// The proxy's own velocity as the tick read it, world metres per second.
+    pub proxy_mps: Vec3,
+    /// The velocity of the surface the proxy stands on, world metres per second.
+    pub surface_mps: Vec3,
+    /// The proxy's support: `unsupported`, `sliding`, or `supported`.
+    pub support: Label,
+    /// Whether the surface is a dynamic body.
+    pub surface_dynamic: bool,
+    /// The body the proxy stands on.
+    pub ground_body: Option<u32>,
+    /// The proxy's current, pending, and default states, as the game numbers them.
+    pub proxy_state: i32,
+    pub pending_proxy_state: i32,
+    pub default_proxy_state: i32,
+    /// Whether the animation carried the body this tick, so the task's velocity passed through.
+    pub authored: bool,
+    /// Whether the mod holds the crouch capsule, and whether its release waits for headroom.
+    pub capsule_owned: bool,
+    pub capsule_blocked: bool,
+    /// The ticks whose move the wanted velocity did not explain, since the payload loaded.
+    pub jumps: u64,
 }
 
 /// Which stage of an acquisition a [`GripAcquisition`] records.

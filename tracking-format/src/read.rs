@@ -197,7 +197,9 @@ fn append(tag: u8, payload: &mut Decoder, recording: &mut Recording) -> Result<(
             payload.finish("input")?;
         }
         TAG_EVENT if recording.version >= 5 => {
-            recording.events.push(event_codec::decode(payload)?);
+            recording
+                .events
+                .push(event_codec::decode(payload, recording.version)?);
             payload.finish("event")?;
         }
         _ => {
