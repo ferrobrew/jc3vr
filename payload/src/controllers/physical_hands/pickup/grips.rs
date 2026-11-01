@@ -2,7 +2,7 @@
 //! character until a yank, and a yanked character until the hand takes hold of the ragdoll it falls
 //! as. Each runs from the pickup tick, on the main thread outside the physics step.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::controllers::{
     frame::Hand,
@@ -182,10 +182,7 @@ pub(super) unsafe fn keep_seize(
                     "physical hands: characters: a hand yanked a character"
                 );
                 if seize.target.hostile {
-                    state.regrips[i] = Some(Regrip {
-                        seize,
-                        until: Instant::now() + Duration::from_secs_f32(characters::REGRIP_S),
-                    });
+                    state.regrips[i] = Some(Regrip::new(seize));
                 } else {
                     outcome.released[i] = true;
                 }
@@ -247,8 +244,8 @@ pub(super) fn shove_on_release(hand: Hand, seize: &Seize, palm: &PalmMotion) {
 }
 
 /// Keep `hand` at the character it yanked while it falls: once the hand's reach finds a body of
-/// the character's ragdoll, hold that body as a loose object; give up when the regrip runs out or
-/// the character is gone.
+/// the character's ragdoll, hold that body as a loose object; give up when the regrip has run out
+/// ([`Regrip::run_down`]) or the character is gone.
 ///
 /// # Safety
 ///
@@ -301,7 +298,7 @@ pub(super) unsafe fn keep_regrip(
         }
         return;
     }
-    if Instant::now() >= regrip.until {
+    if regrip.expired() {
         state.regrips[i] = None;
         outcome.released[i] = true;
         tracing::info!(

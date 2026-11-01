@@ -75,6 +75,7 @@ fn inputs(enabled: bool) -> TickInputs {
             ..Default::default()
         },
         dt: 1.0 / 30.0,
+        time_scale: 1.0,
         unlatch_pull_m: 0.1,
         tearing: TEARING,
         world_scale: 1.0,

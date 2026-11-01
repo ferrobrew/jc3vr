@@ -22,7 +22,7 @@ mod acquisition;
 pub mod config;
 pub mod engine;
 
-use std::{num::NonZeroUsize, time::Instant};
+use std::num::NonZeroUsize;
 
 pub use config::CharactersConfig;
 use glam::{Mat4, Vec3};
@@ -69,7 +69,8 @@ pub(crate) const YANK_M: f32 = 0.2;
 /// [`HandHitsTuning::knockdown_impulse_ns`]: crate::controllers::physical_hands::physics::HandHitsTuning::knockdown_impulse_ns
 pub(crate) const YANK_STRENGTH: f32 = 1.3;
 
-/// How long after a yank the hand looks for the fallen character's ragdoll to hold, seconds.
+/// How long after a yank the hand looks for the fallen character's ragdoll to hold, seconds of
+/// game time: the fall takes as long as the game's clock says, so slow motion gives it longer.
 pub(crate) const REGRIP_S: f32 = 1.0;
 
 /// The slowest hand that shoves a character it lets go of, metres per second.
@@ -147,11 +148,31 @@ pub struct Seize {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Regrip {
     pub seize: Seize,
-    /// When the hand gives up.
-    pub until: Instant,
+    /// The game time left before the hand gives up, seconds.
+    pub remaining_s: f32,
 }
 
 impl Regrip {
+    /// A regrip of `seize` that waits [`REGRIP_S`].
+    pub fn new(seize: Seize) -> Self {
+        Self {
+            seize,
+            remaining_s: REGRIP_S,
+        }
+    }
+
+    /// Count `dt` seconds of game time off the wait, and return whether it has run out.
+    pub fn run_down(&mut self, dt: f32) -> bool {
+        let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+        self.remaining_s -= dt;
+        self.expired()
+    }
+
+    /// Whether the wait has run out.
+    pub fn expired(&self) -> bool {
+        self.remaining_s <= 0.0
+    }
+
     /// Whether `reach` is a body of the regripped character's ragdoll.
     pub fn takes(&self, reach: &Reach) -> bool {
         matches!(
@@ -306,13 +327,31 @@ mod tests {
                 target: target(32, false),
                 grab: Vec3::Y,
             },
-            until: Instant::now(),
+            remaining_s: REGRIP_S,
         };
         assert!(regrip.takes(&reach(TargetKind::Character(target(32, true)))));
         // Not the capsule, not another character's ragdoll, and not a prop.
         assert!(!regrip.takes(&reach(TargetKind::Character(target(32, false)))));
         assert!(!regrip.takes(&reach(TargetKind::Character(target(48, true)))));
         assert!(!regrip.takes(&reach(TargetKind::Prop { mass_kg: 5.0 })));
+    }
+
+    #[test]
+    fn a_regrip_waits_on_the_game_clock() {
+        let mut regrip = Regrip::new(Seize {
+            target: target(32, false),
+            grab: Vec3::Y,
+        });
+        // A second of real time at a quarter speed is a quarter of the wait.
+        for _ in 0..60 {
+            assert!(!regrip.run_down(0.25 / 60.0));
+        }
+        assert!((regrip.remaining_s - (REGRIP_S - 0.25)).abs() < 1e-4);
+        // A paused clock, or a broken time step, waits on.
+        assert!(!regrip.run_down(0.0));
+        assert!(!regrip.run_down(f32::NAN));
+        assert!(!regrip.run_down(-1.0));
+        assert!(regrip.run_down(REGRIP_S));
     }
 
     #[test]

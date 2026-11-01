@@ -12,7 +12,7 @@
 use std::{num::NonZeroUsize, time::Instant};
 
 use glam::{Mat4, Quat, Vec2, Vec3};
-use jc3gi::character::character::Character;
+use jc3gi::{character::character::Character, clock::Clock};
 use parking_lot::Mutex;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
@@ -506,6 +506,8 @@ unsafe fn run(owner: &Character, dt: f32) {
             space,
             joints: joint_inputs(&config),
             dt,
+            // SAFETY: the clock singleton is read on the game thread.
+            time_scale: unsafe { Clock::get() }.map_or(1.0, |clock| clock.m_UpdateSpeed),
             unlatch_pull_m: doors::UNLATCH_PULL_M * active.world_scale,
             tearing: TearTuning {
                 enabled: config.doors.enabled && config.doors.tear,
@@ -549,9 +551,10 @@ unsafe fn run(owner: &Character, dt: f32) {
                 let offset = (held.anchor - held.target).clamp_length_max(PICKUP.break_distance_m);
                 clamp[i] = (body_rotation.inverse() * offset) / active.world_scale.max(1e-3);
             }
-            if config.push && state.pickup.props()[i].is_none() {
+            if config.push {
+                let deadband = hold::resist_deadband_m(state.pickup.props()[i].is_some(), &PALMS);
                 hand_status[i].push =
-                    hold::resist_push(held.anchor, held.target, held.load, &PALMS);
+                    hold::resist_push(held.anchor, held.target, held.load, deadband, &PALMS);
             }
         }
     }

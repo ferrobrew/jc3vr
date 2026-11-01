@@ -48,7 +48,10 @@ pub(crate) struct TickInputs {
     /// The player's body, which a carried object is kept out of.
     pub space: Option<PlayerKeepOut>,
     pub joints: JointInputs,
+    /// The tick's length, seconds of game time.
     pub dt: f32,
+    /// The game's time scale, game seconds per real second: below one in slow motion.
+    pub time_scale: f32,
     /// How far a hand gripping a latched door pulls it before the latch gives, world metres.
     pub unlatch_pull_m: f32,
     pub tearing: doors::config::TearTuning,
@@ -133,6 +136,7 @@ unsafe fn tick_with(
         space,
         joints,
         dt,
+        time_scale,
         unlatch_pull_m,
         tearing,
         world_scale,
@@ -338,6 +342,10 @@ unsafe fn tick_with(
             state.regrips[i] = None;
             outcome.lost += 1;
         }
+        // The fallen character's wait runs on the game's clock, as the fall does.
+        if let Some(regrip) = state.regrips[i].as_mut() {
+            regrip.run_down(dt);
+        }
         // SAFETY: forwarded from the caller.
         unsafe {
             keep_regrip(
@@ -479,7 +487,7 @@ unsafe fn tick_with(
         if hands == 0 {
             continue;
         }
-        let tuning = carry_tuning(&held, &holds, config);
+        let tuning = carry_tuning(&held, &holds, config).in_real_time(time_scale);
         let solution = hold::solve(&body.rigid(), holds, dt, &tuning);
         // SAFETY: forwarded from the caller.
         engine.release_joints(&held);

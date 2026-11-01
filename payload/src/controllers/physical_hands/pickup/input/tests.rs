@@ -41,7 +41,7 @@ fn open_grip_produces_and_consumes_release_for_every_owner_on_either_hand() {
                 Owner::Regrip => {
                     state.regrips[i] = Some(Regrip {
                         seize: seize(),
-                        until: Instant::now(),
+                        remaining_s: 0.0,
                     });
                 }
                 Owner::Door => state.doors[i] = Some(TearGrip::fixture(door(), 3)),
@@ -209,6 +209,7 @@ fn tick_inputs() -> TickInputs {
         space: None,
         joints: JointInputs::default(),
         dt: 0.01,
+        time_scale: 1.0,
         unlatch_pull_m: 0.05,
         tearing: TEARING,
         world_scale: 1.0,

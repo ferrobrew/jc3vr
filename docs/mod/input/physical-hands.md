@@ -124,6 +124,8 @@ Unless a joint holds it ([holding through a joint](#holding-through-a-joint)), a
 - the grab point is asked to move with the palm (the palm's velocity at that point, from its linear and angular velocity) plus `PICKUP.stiffness_per_s` per metre it is off, up to `PICKUP.max_speed_mps`;
 - the body is asked to turn with the palm plus `PICKUP.angular_stiffness_per_s` per radian it is off, up to `PICKUP.max_angular_speed_rps`.
 
+The palm moves in real time while the world runs on the game's clock, so the hold is solved in real time (`HoldTuning::in_real_time`). Under the game's slow motion, at the clock's update speed ([`Clock::m_UpdateSpeed`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/clock::Clock##field-m_UpdateSpeed)), the palm moves faster in the game's seconds by as much as the world is slowed, so the stiffnesses and the top speeds are raised by that factor and the strength caps by its square, the acceleration it takes to keep up. A held object then follows the hand as it does at full speed rather than falling behind until it is torn away. Gravity stays the world's, so in slow motion a heavy object is easier to hold up, as it falls slower.
+
 The impulses that give those velocities are found together over a few passes: the pull at the grab point through the point's mass matrix, and the twist through the body's inertia, each accumulated and capped by the hand's strength over the tick, `PICKUP.hand_force_n` and `PICKUP.hand_torque_nm`. The solve starts from where gravity (`PICKUP.gravity_mps2`) will have the body after the next step, so the pull includes holding it up. The result is set as the body's velocities ([`hknpWorld::setBodyVelocity`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::hknpWorld##func-setBodyVelocity)) before the step, which integrates them, resolves the body's contacts, and resolves any joint it hangs from.
 
 What falls out of the strength caps:
@@ -132,7 +134,7 @@ What falls out of the strength caps:
 - a long object held at one end droops and swings from the hand when its weight's lever outweighs the wrist's twist, and turning the wrist swings its far end like a lever;
 - a heavy object comes up to speed slowly, since the pull's cap limits its acceleration.
 
-A hand takes hold of any loose object up to `PICKUP.max_mass_kg`; the reach ring is red when the hands could not lift it. With the rendered hand held at the grab point, the hand stays on the object wherever the object is: it stops at a crate the hand cannot move rather than passing through it. With `physical_hands.push`, a hand that pulls at near its strength without moving the object pushes the player toward the grab point, as a wall does, so pushing a held object that will not move pushes the player back, and walking away from one holds the player back. An object that lags more than `PICKUP.break_distance_m` behind the hand, caught on something, is let go.
+A hand takes hold of any loose object up to `PICKUP.max_mass_kg`; the reach ring is red when the hands could not lift it. With the rendered hand held at the grab point, the hand stays on the object wherever the object is: it stops at a crate the hand cannot move rather than passing through it. With `physical_hands.push`, a hand that pulls at near its strength without moving the object pushes the player toward the grab point, as a wall does, so pushing a held object that will not move pushes the player back, and walking away from one holds the player back. A carried object trails the hand a little whenever it is carried near the hands' strength, so its push starts only once it lags by `CARRY_RESIST_DEADBAND_M` (`physical_hands::hold`), well short of the break distance, and a barrel too heavy to keep up with holds back a player who walks away from it rather than being torn out of the hands. An object that lags more than `PICKUP.break_distance_m` behind the hand, caught on something, is let go.
 
 ### Holding through a joint
 
@@ -222,6 +224,7 @@ The Physical hands feature's readout shows the retained evidence under "Grip acq
 - Whether the shove's resistance settles without the body chattering between pushed and not, and whether its strength default moves a car at all against its brakes.
 - Which weapon the game picks up when several are in range, and that the use-item click alone starts the pickup.
 - Whether the hold's defaults hold a crate steadily at the game's simulation rate, and how a throw feels at `throw_scale` one.
+- That the clock's update speed is the time scale the aim update's step is scaled by, so a held object follows the hand in slow motion as at full speed; that a barrel too heavy to keep up with holds back a player who walks away from it, at the carried object's deadband, without drifting the player while it is carried normally; and how a held object moving at its slow-motion speed behaves the moment the slow motion ends.
 
 ## Headset checklist
 

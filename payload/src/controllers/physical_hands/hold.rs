@@ -66,6 +66,29 @@ impl HoldTuning {
         }
     }
 
+    /// This tuning for a world running at `time_scale` times real time (the game's slow motion
+    /// below one). The palm moves in real time, so in the game's seconds it moves `1 / time_scale`
+    /// times as fast and turns as fast, and to follow it a held body must be accelerated
+    /// `1 / time_scale²` times as hard. The hold therefore closes its error and caps its speeds per
+    /// real second, and its strength (an impulse over the tick, so an acceleration's worth) is
+    /// raised by the square: a held body follows the hand in slow motion as it does at full speed,
+    /// rather than falling behind as far as the world is slowed and being torn away at
+    /// [`PickupTuning::break_distance_m`]. Gravity is the world's, on the world's clock, so in slow
+    /// motion a heavy body is easier to hold up, as it falls slower. A `time_scale` that is not
+    /// finite and positive is taken as real time.
+    pub fn in_real_time(self, time_scale: f32) -> Self {
+        let rate = 1.0 / real_time_scale(time_scale);
+        Self {
+            stiffness_per_s: self.stiffness_per_s * rate,
+            angular_stiffness_per_s: self.angular_stiffness_per_s * rate,
+            max_speed_mps: self.max_speed_mps * rate,
+            max_angular_speed_rps: self.max_angular_speed_rps * rate,
+            hand_force_n: self.hand_force_n * rate * rate,
+            hand_torque_nm: self.hand_torque_nm * rate * rate,
+            ..self
+        }
+    }
+
     /// Add bounded lift reserve for a loose prop deliberately held at two separated points.
     /// One hand retains its configured strength; attached bodies never use this adapter.
     pub(crate) fn carrying(
@@ -95,6 +118,17 @@ impl HoldTuning {
                 .min(tuning.hand_force_n * ASSIST_FORCE_MULTIPLIER),
         );
         tuning
+    }
+}
+
+/// The game's time scale `update_speed` (game seconds per real second) as the hold uses it: one
+/// for a value that is not finite and positive, and otherwise bounded to the range the game's slow
+/// motion and fast-forward reach.
+pub fn real_time_scale(update_speed: f32) -> f32 {
+    if update_speed.is_finite() && update_speed > 0.0 {
+        update_speed.clamp(MIN_TIME_SCALE, MAX_TIME_SCALE)
+    } else {
+        1.0
     }
 }
 
@@ -215,23 +249,44 @@ pub fn solve(
 }
 
 /// The push of a hand that holds what it cannot move: the body is moved toward where the grab
-/// point is, as it is pushed off a wall, once the hand pulls at near its strength. `anchor` is the
-/// grab point, `target` where the hand would have it, and `load` the hand's
-/// [`HoldSolution::loads`]. World `(x, z)` metres per second.
-pub fn resist_push(anchor: Vec3, target: Vec3, load: f32, config: &PalmTuning) -> Vec2 {
+/// point is, as it is pushed off a wall, once the hand pulls at near its strength and the grab
+/// point lags the hand by more than `deadband_m` ([`resist_deadband_m`]). `anchor` is the grab
+/// point, `target` where the hand would have it, and `load` the hand's [`HoldSolution::loads`].
+/// World `(x, z)` metres per second.
+pub fn resist_push(
+    anchor: Vec3,
+    target: Vec3,
+    load: f32,
+    deadband_m: f32,
+    config: &PalmTuning,
+) -> Vec2 {
     let lag = anchor - target;
     let horizontal = Vec2::new(lag.x, lag.z);
     let Some(direction) = horizontal.try_normalize() else {
         return Vec2::ZERO;
     };
     let engage = ((load - RESIST_ONSET_LOAD) / (1.0 - RESIST_ONSET_LOAD)).clamp(0.0, 1.0);
-    let press = horizontal.length() - config.push_deadband_m.max(0.0);
+    let press = horizontal.length() - deadband_m.max(0.0);
     if !(press > 0.0 && engage > 0.0) {
         return Vec2::ZERO;
     }
     let speed =
         (press * config.push_stiffness_per_s.max(0.0)).min(config.max_push_speed_mps.max(0.0));
     direction * speed * engage
+}
+
+/// The lag a hold leaves alone before it pushes the player ([`resist_push`]), metres. A hand on
+/// something hinged, a door, or a character pushes past the palms' own deadband, as a wall does.
+/// A carried loose object (`prop`) trails the hand a little whenever it is carried near the hands'
+/// strength, which must not drift the player, so it pushes only once it lags by
+/// [`CARRY_RESIST_DEADBAND_M`]: a heavy object the hands cannot keep up with holds the player back
+/// before it trails far enough to be torn away at [`PickupTuning::break_distance_m`].
+pub fn resist_deadband_m(prop: bool, config: &PalmTuning) -> f32 {
+    if prop {
+        CARRY_RESIST_DEADBAND_M
+    } else {
+        config.push_deadband_m
+    }
 }
 
 /// The space the player's body takes, as a held body's centre sees it: an upright cylinder.
@@ -287,12 +342,20 @@ pub fn keep_out(point: Vec3, space: &BodySpace) -> Vec3 {
 /// The most of its error a constraint closes in one tick: below one, so that a stiff hold settles
 /// rather than overshoots at a slow tick.
 const MAX_CORRECTION: f32 = 0.8;
+/// The slowest time scale the hold scales its rates for: slower clocks hold at this one's rates,
+/// so a near-stopped world does not ask a body for near-infinite speeds.
+const MIN_TIME_SCALE: f32 = 0.05;
+/// The fastest time scale the hold scales its rates for.
+const MAX_TIME_SCALE: f32 = 4.0;
 const ASSIST_MAX_MASS_KG: f32 = 150.0;
 const ASSIST_MIN_SPAN_M: f32 = 0.12;
 const ASSIST_LIFT_RESERVE: f32 = 1.25;
 const ASSIST_FORCE_MULTIPLIER: f32 = 3.0;
 /// The solver's passes over the hands.
 const ITERATIONS: usize = 8;
+/// The lag a carried loose object leaves alone before it pushes the player, metres: past what a
+/// carry near the hands' strength trails by, and well short of the break distance.
+const CARRY_RESIST_DEADBAND_M: f32 = 0.15;
 /// The load from which a hold that cannot move its body starts pushing the player.
 const RESIST_ONSET_LOAD: f32 = 0.85;
 
@@ -389,6 +452,98 @@ mod tests {
         }
         assert!(body.pose.centre.y > 0.25, "{body:?}");
         assert!(body.pose.orientation.angle_between(Quat::IDENTITY) < 0.1);
+    }
+
+    /// How far a light crate held by its centre is still off a hand that came to rest 20 cm to its
+    /// side, a tenth of a real second after the hand stopped, with the world at `time_scale` and
+    /// its tuning scaled for that time scale when `scaled`.
+    fn left_after_a_step(time_scale: f32, scaled: bool) -> f32 {
+        let base = tuning();
+        let tuning = if scaled {
+            base.in_real_time(time_scale)
+        } else {
+            base
+        };
+        let mut body = crate_body(3.0, Vec3::splat(0.3), Vec3::ZERO, Quat::IDENTITY);
+        let game_dt = DT * time_scale;
+        let point = Vec3::X * 0.2;
+        for _ in 0..6 {
+            let hold = hold(body.pose.centre, point, Quat::IDENTITY);
+            let solution = solve(&body, [Some(hold), None], game_dt, &tuning);
+            body.velocities = solution.velocities;
+            body.velocities.linear += tuning.gravity * game_dt;
+            body.pose.centre += body.velocities.linear * game_dt;
+        }
+        body.pose.centre.distance(point)
+    }
+
+    #[test]
+    fn a_held_body_closes_on_the_hand_as_fast_in_slow_motion_as_at_full_speed() {
+        let full = left_after_a_step(1.0, true);
+        let slow = left_after_a_step(0.25, true);
+        assert!(full < 0.15, "full {full}");
+        assert!((full - slow).abs() < 0.01, "full {full} slow {slow}");
+        // Without the scaling, the slowed world leaves the body behind for longer.
+        let unscaled = left_after_a_step(0.25, false);
+        assert!(unscaled > full + 0.03, "unscaled {unscaled} full {full}");
+    }
+
+    /// The farthest a barrel just under the assisted carry's limit, held at both sides, trails
+    /// the hands as they lift it 40 cm over a real second, with the world at `time_scale`.
+    fn barrel_trail(time_scale: f32) -> f32 {
+        let mass = ASSIST_MAX_MASS_KG - 1.0;
+        let mut body = crate_body(mass, Vec3::new(0.6, 0.9, 0.6), Vec3::ZERO, Quat::IDENTITY);
+        let ends = [Vec3::new(-0.3, 0.2, 0.0), Vec3::new(0.3, 0.2, 0.0)];
+        let game_dt = DT * time_scale;
+        let lift_mps = 0.4;
+        let mut worst: f32 = 0.0;
+        for tick in 1..=60 {
+            let raised = Vec3::Y * lift_mps * DT * tick as f32;
+            let holds = [0, 1].map(|i| {
+                Some(HandHold {
+                    velocity: Vec3::Y * lift_mps / time_scale,
+                    ..hold(body.pose.point(ends[i]), ends[i] + raised, Quat::IDENTITY)
+                })
+            });
+            let tuning = HoldTuning::carrying(&PICKUP, mass, &holds).in_real_time(time_scale);
+            let solution = solve(&body, holds, game_dt, &tuning);
+            body.velocities = solution.velocities;
+            body.velocities.linear += tuning.gravity * game_dt;
+            body.pose.centre += body.velocities.linear * game_dt;
+            let lag = (body.pose.centre - raised).length();
+            worst = worst.max(lag);
+        }
+        worst
+    }
+
+    #[test]
+    fn a_heavy_barrel_follows_a_lift_in_slow_motion_as_at_full_speed() {
+        let full = barrel_trail(1.0);
+        let slow = barrel_trail(0.25);
+        assert!(full < PICKUP.break_distance_m * 0.5, "full {full}");
+        assert!(slow <= full + 0.01, "full {full} slow {slow}");
+    }
+
+    #[test]
+    fn the_time_scale_raises_the_rates_and_the_strength_and_takes_a_broken_clock_as_real_time() {
+        let base = tuning();
+        let slow = base.in_real_time(0.25);
+        assert_eq!(slow.stiffness_per_s, base.stiffness_per_s * 4.0);
+        assert_eq!(slow.max_speed_mps, base.max_speed_mps * 4.0);
+        assert_eq!(
+            slow.angular_stiffness_per_s,
+            base.angular_stiffness_per_s * 4.0
+        );
+        assert_eq!(slow.max_angular_speed_rps, base.max_angular_speed_rps * 4.0);
+        assert_eq!(slow.hand_force_n, base.hand_force_n * 16.0);
+        assert_eq!(slow.hand_torque_nm, base.hand_torque_nm * 16.0);
+        assert_eq!(slow.gravity, base.gravity);
+        for broken in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            assert_eq!(base.in_real_time(broken), base);
+        }
+        assert_eq!(real_time_scale(0.001), MIN_TIME_SCALE);
+        assert_eq!(real_time_scale(100.0), MAX_TIME_SCALE);
+        assert_eq!(real_time_scale(1.0), 1.0);
     }
 
     #[test]
@@ -550,21 +705,71 @@ mod tests {
     #[test]
     fn a_stuck_hold_pushes_the_player_toward_the_grab_point() {
         let config = PALMS;
+        let deadband = config.push_deadband_m;
         // The hand pushed 20 cm past a heavy crate's grab point along -Z: the body moves back +Z.
-        let push = resist_push(Vec3::ZERO, Vec3::new(0.0, 0.0, -0.2), 1.0, &config);
+        let push = resist_push(
+            Vec3::ZERO,
+            Vec3::new(0.0, 0.0, -0.2),
+            1.0,
+            deadband,
+            &config,
+        );
         assert!(push.y > 0.0 && push.x.abs() < 1e-6);
         // Below the onset load the hand is still moving the body: no push.
         assert_eq!(
-            resist_push(Vec3::ZERO, Vec3::new(0.0, 0.0, -0.2), 0.5, &config),
+            resist_push(
+                Vec3::ZERO,
+                Vec3::new(0.0, 0.0, -0.2),
+                0.5,
+                deadband,
+                &config
+            ),
             Vec2::ZERO
         );
         // Within the deadband: no push.
         assert_eq!(
-            resist_push(Vec3::ZERO, Vec3::new(0.0, 0.0, -0.01), 1.0, &config),
+            resist_push(
+                Vec3::ZERO,
+                Vec3::new(0.0, 0.0, -0.01),
+                1.0,
+                deadband,
+                &config
+            ),
             Vec2::ZERO
         );
-        let hard = resist_push(Vec3::ZERO, Vec3::new(0.0, 0.0, -5.0), 1.0, &config);
+        let hard = resist_push(
+            Vec3::ZERO,
+            Vec3::new(0.0, 0.0, -5.0),
+            1.0,
+            deadband,
+            &config,
+        );
         assert!((hard.length() - config.max_push_speed_mps).abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_carried_prop_holds_the_player_back_before_it_is_torn_away() {
+        let config = PALMS;
+        let carry = resist_deadband_m(true, &config);
+        assert_eq!(resist_deadband_m(false, &config), config.push_deadband_m);
+        assert!(carry > config.push_deadband_m && carry < PICKUP.break_distance_m);
+        // A heavy barrel carried at full strength, trailing the hands by a few centimetres: the
+        // player is left alone.
+        assert_eq!(
+            resist_push(Vec3::ZERO, Vec3::new(0.0, 0.0, -0.1), 1.0, carry, &config),
+            Vec2::ZERO
+        );
+        // The player walks away from it: well before the break distance, the player is held back
+        // toward it at full speed.
+        let walked = resist_push(
+            Vec3::ZERO,
+            Vec3::new(0.0, 0.0, -PICKUP.break_distance_m * 0.8),
+            1.0,
+            carry,
+            &config,
+        );
+        assert!(walked.y > 0.0);
+        assert!((walked.length() - config.max_push_speed_mps).abs() < 1e-5);
     }
 
     #[test]
