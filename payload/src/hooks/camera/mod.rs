@@ -54,6 +54,25 @@ pub fn last_dtf() -> f32 {
     f32::from_bits(LAST_DTF.load(Ordering::Relaxed))
 }
 
+/// How far the camera's eye point is from the published head position
+/// ([`crate::headpose::query`]) at the interpolation fraction `dtf`, in world axes: the arm from
+/// Rico's head joint, which the published position follows, to the eye midpoint the camera hangs
+/// from it ([`camera_position`]). `None` while the camera is not placed from the headpose (an
+/// authored view, no tracked head, outside gameplay).
+///
+/// The input tick places the hands, the body's grab volumes, and the overlay's head-anchored
+/// markers relative to the published head, so the render-time head they ride is the render
+/// camera's position less this.
+pub fn eye_offset(dtf: f32) -> Option<glam::Vec3> {
+    let [previous, current] = (*EYE_OFFSETS.lock())?;
+    let t = if dtf.is_finite() {
+        dtf.clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    Some(previous.lerp(current, t))
+}
+
 /// The interpupillary distance, in metres, of the flatscreen stereo per-eye camera offset. A VR
 /// session takes each eye's offset from the runtime's eye poses instead.
 const FLATSCREEN_IPD: f32 = 0.068;
@@ -285,6 +304,7 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
             && cm.m_ActiveCamera == camera
         {
             LAST_DTF.store(dtf.to_bits(), Ordering::Relaxed);
+            *EYE_OFFSETS.lock() = None;
 
             // Publish the engine's own near/far for the active camera so the reconstruction override
             // can recognize the main-view depth passes by their planes. The engine sets a runtime far
@@ -350,16 +370,19 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
                 // hook below).
                 *LAST_CAMERA_WORLD.lock() = Some(camera.m_TransformT1);
 
+                let previous_position = camera_position(
+                    &prev,
+                    previous_geometry.previous_endpoint(follow_turn(false), follow_turn(true)),
+                    previous_geometry,
+                    source(),
+                );
                 write_camera_transform(
                     &mut camera.m_TransformT0,
                     prev.orientation,
-                    camera_position(
-                        &prev,
-                        previous_geometry.previous_endpoint(follow_turn(false), follow_turn(true)),
-                        previous_geometry,
-                        source(),
-                    ),
+                    previous_position,
                 );
+                *EYE_OFFSETS.lock() =
+                    Some([previous_position - prev.position, position - cur.position]);
             } else {
                 let (left_eye_matrix, right_eye_matrix) = eye_matrices(local_character);
                 let character_t1_matrix = glam::Mat4::from(local_character.m_WorldMatrixT1);
@@ -611,6 +634,10 @@ fn game_camera_manager_get_camera_matrix(manager: *const GameCameraManager, matr
 
 /// The last `dtf` seen by the active camera's `UpdateRender`, as bits (see [`last_dtf`]).
 static LAST_DTF: AtomicU32 = AtomicU32::new(0);
+
+/// The camera's eye point less the published head position on each side of the T0/T1 pair, while
+/// the headpose places the camera (see [`eye_offset`]).
+static EYE_OFFSETS: Mutex<Option<[glam::Vec3; 2]>> = Mutex::new(None);
 
 /// The camera world transform last written to the active camera's `m_TransformT1` with the
 /// headpose active, republished by [`game_camera_manager_get_camera_matrix`] so sim-phase readers

@@ -6,9 +6,11 @@ The simulation ticks at 30 Hz and the engine draws each object between its last 
 
 Anything drawn relative to the player is anchored at render time:
 
-- an overlay primitive placed in the cockpit frame, or from a point that rides with the player, is anchored to the head (`Anchor::Head`, an offset in world axes from the head's render-time position) or to a hand (`Anchor::Hand`, an offset in one of the hand's poses as it is drawn at render time, `late::drawn_hands`, which stays on the hand where the hand falls short of the controller). `Anchor::World` is for points that lie in the world: a grapple target, a gun's hit point, a pickup on the ground;
+- an overlay primitive placed in the cockpit frame, or from a point that rides with the player, is anchored to the head (`Anchor::Head`, an offset in world axes from the published head's render-time position) or to a hand (`Anchor::Hand`, an offset in one of the hand's poses as it is drawn at render time, `late::drawn_hands`, which stays on the hand where the hand falls short of the controller). `Anchor::World` is for points that lie in the world: a grapple target, a gun's hit point, a pickup on the ground;
 - a model the mod holds in a hand is re-pushed at render time from the hand's render-time pose or correction, after the engine's own render update has pushed its interpolated matrix;
 - a model the mod places on the body keeps its interpolation: both of its cached matrices are written on the tick, so the engine draws it between them with the body it rides.
+
+The published head (`headpose::query`) follows Rico's head joint and the HMD's travel, and the input tick composes the hands, the body's grab volumes, and the cockpit-frame markers against it. The camera hangs its eye point off that position by the arm from the head joint to Rico's eye midpoint (`hooks::camera::camera_position`), ten to fifteen centimetres forward and up. A head anchor therefore resolves against the render camera's position less that arm, interpolated across the camera's T0/T1 pair by the frame's fraction (`hooks::camera::eye_offset`), not against the camera itself. Resolved against the camera, every marker on the body and in the cockpit would be drawn that arm ahead of and above what it marks: a pouch's ring floats in front of the pouch's model while the hand takes the pouch at the model. While the camera is not placed from the headpose (an authored view), the arm is unknown and the anchor resolves against the camera.
 
 ## Moving-frame sampling
 

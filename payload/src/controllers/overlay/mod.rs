@@ -217,14 +217,20 @@ fn render_poses() -> [Option<HandPoses>; 2] {
 }
 
 /// The frame's resolution inputs, with the head as the origin; `None` when no camera is readable.
+/// The head-anchored primitives ride the published head, the camera's eye point less its arm from
+/// the head joint ([`hooks::camera::eye_offset`]), so a marker the tick placed on the body is drawn where
+/// the body and the hands are rather than that arm ahead of them.
 fn frame_inputs() -> Option<Frame> {
     let (position, orientation) = crate::hud::render_camera_pose()?;
+    let rides =
+        position - hooks::camera::eye_offset(hooks::camera::last_dtf()).unwrap_or(Vec3::ZERO);
     Some(Frame {
         origin: position,
         head: Pose {
             position,
             orientation,
         },
+        rides,
         hands: render_poses(),
     })
 }
