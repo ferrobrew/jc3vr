@@ -79,16 +79,19 @@ use windows::{
 
 use crate::{
     config::{self, Config, Switch, disable_automatically},
+    recorder::{MirrorDraw, MirrorFrame},
     ui::render::{EGUI_DEBUG_RENDER_STATE, eye_capture_fresh},
     vr::{
         MirrorView,
-        mirror::layout::{AspectSize, MirrorFraming, Viewport, mirror_layout, mirror_viewport},
+        mirror::layout::{
+            AspectSize, MirrorFraming, MirrorLayout, Viewport, mirror_layout, mirror_viewport,
+        },
     },
 };
 
 mod layout;
 
-/// The committed, precompiled shaders shared with the VR blit, the recorder, and others: the fullscreen-triangle
+/// The committed, precompiled shaders shared with the VR blit and others: the fullscreen-triangle
 /// vertex shader and the plain-sample (no gamma) pixel shader. See the module gamma note.
 const VERTEX_DXBC: &[u8] = include_bytes!("../../shaders/capture_vs.dxbc");
 const PIXEL_DXBC: &[u8] = include_bytes!("../../shaders/capture_ps.dxbc");
@@ -316,7 +319,33 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
             .ok()
             .context("vr: the mirror swapchain present failed")?;
     }
+    crate::recorder::note_mirror(recorded_layout(view, &layout, buffer_size, window_size));
     Ok(())
+}
+
+/// The layout as the recorder's sidecar records it: each eye's viewport carried from buffer pixels
+/// to window pixels through the present's buffer→window stretch.
+fn recorded_layout(
+    view: MirrorView,
+    layout: &MirrorLayout,
+    buffer: (u32, u32),
+    window: (u32, u32),
+) -> MirrorFrame {
+    let sx = window.0 as f32 / buffer.0.max(1) as f32;
+    let sy = window.1 as f32 / buffer.1.max(1) as f32;
+    let mut draws = [None; 2];
+    for (slot, draw) in draws.iter_mut().zip(layout.draws()) {
+        let v = draw.viewport;
+        *slot = Some(MirrorDraw {
+            eye: draw.eye,
+            rect: [v.x * sx, v.y * sy, v.width * sx, v.height * sy],
+        });
+    }
+    MirrorFrame {
+        view,
+        window,
+        draws,
+    }
 }
 
 /// The pixel dimensions of a texture from its descriptor.
@@ -574,3 +603,6 @@ impl Mirror {
         Ok(srv)
     }
 }
+
+#[cfg(test)]
+mod tests;

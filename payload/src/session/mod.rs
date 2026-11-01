@@ -19,8 +19,8 @@
 //! - [`CaptureFolder`]: several files per capture, `<folder>/<stamp>/` holding files named by role:
 //!   `traces/<stamp>/` (a render trace's `trace.ndjson` and its `frameNNN_eye<N>.png` images) and
 //!   `recordings/<stamp>/` (a recording's halves, named by [`RecordingFile`]: the tracking
-//!   recording or lookback save, the video's `stream.json` and `frames.jsonl` sidecar, and the
-//!   capture host's `video_NNN.mkv` segments, which the host writes there itself).
+//!   recording or lookback save and the video's `frames.jsonl` sidecar, beside the capture host's
+//!   `video.mkv` and `stream.json`, which the host writes there itself).
 //!
 //! Folders are plural, and no file name repeats the kind its folder already names. Each folder is
 //! created when its first artifact is written, so a run only materializes the folders it uses. The
@@ -130,15 +130,13 @@ impl CaptureFolder {
 }
 
 /// The files a recording's folder can hold that the payload writes. The capture host adds the
-/// video's `video_NNN.mkv` segments beside them.
+/// video, `video.mkv`, and its metadata, `stream.json`, beside them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RecordingFile {
     /// A tracking recording, standalone or the tracking half of a session recording.
     Tracking,
     /// A save of the tracking lookback.
     Lookback,
-    /// The video stream's parameters.
-    StreamInfo,
     /// The video's per-frame sidecar, with the take markers made while it ran.
     Frames,
 }
@@ -148,7 +146,6 @@ impl RecordingFile {
         match self {
             Self::Tracking => "tracking.jc3trk",
             Self::Lookback => "lookback.jc3trk",
-            Self::StreamInfo => "stream.json",
             Self::Frames => "frames.jsonl",
         }
     }
@@ -356,10 +353,9 @@ mod tests {
         CaptureFile::ShaderDump,
     ];
     const ALL_FOLDERS: [CaptureFolder; 2] = [CaptureFolder::Trace, CaptureFolder::Recording];
-    const ALL_RECORDING_FILES: [RecordingFile; 4] = [
+    const ALL_RECORDING_FILES: [RecordingFile; 3] = [
         RecordingFile::Tracking,
         RecordingFile::Lookback,
-        RecordingFile::StreamInfo,
         RecordingFile::Frames,
     ];
 

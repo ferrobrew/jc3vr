@@ -1,76 +1,62 @@
-//! The in-process recorder: streams one eye's rendered frames, at the render resolution and the
-//! headset's own rate, to a host-side encoder, with a per-frame pose sidecar.
+//! The session recorder's video half: a take's per-frame sidecar, and the control connection that
+//! has the capture host record the game's mirror window.
 //!
-//! ## Pipeline
+//! ## What records what
 //!
-//! On the render thread, at the point where the per-eye capture textures hold the finished frame
-//! (`render_engine_post_draw`, under the engine's context critical section), [`capture_frame`]
-//! runs a pixel-shader pass that converts the chosen eye into planar 4:2:0 YUV packed into one
-//! `R8` texture ([`convert`]), copies that into a ring of staging textures, and maps the staging
-//! texture written two frames earlier with a no-wait map, so the GPU is never stalled for a
-//! readback. The mapped bytes are memcpy'd into a buffer and handed to the writer thread.
+//! The video is recorded outside the game process. The capture host (`scripts/capture_host.sh`,
+//! which runs `tools/capture/relay.py`) listens on a TCP port; for each take the payload connects,
+//! names the take's folder and the game window ([`protocol`]), and the host finds that window in the
+//! compositor and records its region on screen, with the desktop's audio, into the take's folder.
+//! What the video shows is therefore what the desktop mirror shows (`crate::vr::mirror`), at the
+//! window's size, so the mirror view decides what is recorded and the window must be on screen.
 //!
-//! The writer thread ([`stream`]) owns a TCP connection to a host-side listener (the capture relay
-//! started by `scripts/capture_host.sh`, which feeds an `ffmpeg` reading `yuv4mpegpipe`), writes the
-//! y4m stream header once and a frame per buffer, and appends one JSON line per frame to a sidecar
-//! in the recording's folder with
-//! the wall clock, the engine's game time, and the located HMD views for that frame. Take markers
-//! made during the recording ([`mark`]) go into the same sidecar at the frame they fall on.
-//!
-//! ## Frame accounting
-//!
-//! Every captured display frame produces exactly one stream frame, so the stream stays constant
-//! rate at the headset's refresh and lines up with the sidecar by index. A readback that is not
-//! ready (the no-wait map refusing) re-sends the previous frame's bytes and is counted as a
-//! duplicate; a writer that cannot keep up drops the frame entirely and is counted as a drop, and
-//! the sidecar records both so post can see where the video's timing is not real.
+//! The payload writes the take's sidecar, `frames.jsonl`: one line per rendered frame with the wall
+//! clock, the engine's game time, and the located HMD views, plus lines for take markers
+//! ([`mark`]) and for the mirror's layout whenever it changes ([`note_mirror`]). The host writes
+//! `stream.json` beside it with the wall-clock time of the video's first frame, which is what lines
+//! the two up.
 //!
 //! ## Threads and shutdown
 //!
-//! Active and draining writers share a bounded owner. Completed threads are joined before their
-//! slots are reused. [`shutdown`] waits for every retained writer and keeps the DLL mapped if any
-//! writer has not exited.
+//! Each take has one thread ([`take`]) that writes the sidecar and services the connection. Active
+//! and finishing takes share a bounded owner; completed threads are joined before their slots are
+//! reused. [`shutdown`] waits for every retained thread and keeps the DLL mapped if any has not
+//! exited.
 
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D};
 
 use crate::{
     director::markers::Marker,
-    recorder::owners::{Completion, VideoWriters},
+    recorder::{
+        owners::{Completion, Takes},
+        protocol::WindowHint,
+        take::{FrameRecord, Record, Take, TakeRequest},
+    },
     session::CaptureFolder,
-    stereo::{far_phase, single_pass::collapse_active},
+    vr::MirrorView,
 };
 
-pub mod convert;
 mod owners;
+pub(crate) mod protocol;
 pub(crate) mod session_recording;
-pub mod stream;
+mod take;
 pub(crate) mod tracking;
+
+pub use crate::recorder::protocol::Region;
 
 /// The recorder's settings. Read at the start of a recording; changes apply to the next one.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct RecorderConfig {
-    /// Which eye to record: `0` (left) or `1` (right).
-    pub eye: usize,
-    /// The output size as a fraction of the eye render size, `0.25..=1.0`. Rounded to even
-    /// dimensions.
-    pub scale: f32,
-    /// The frame rate written into the stream header, which is what the encoder times frames by.
-    /// Set to the headset's refresh rate.
-    pub frame_rate: u32,
-    /// The host listener the frames are streamed to.
+    /// The capture host to connect to.
     pub host: String,
     pub port: u16,
 }
 impl RecorderConfig {
     pub const fn new() -> Self {
         Self {
-            eye: 0,
-            scale: 1.0,
-            frame_rate: 72,
             host: String::new(),
             port: 47172,
         }
@@ -90,17 +76,59 @@ impl RecorderConfig {
 #[derive(Clone, Debug)]
 pub struct Status {
     pub recording: bool,
-    /// The stream size once the first frame has been captured.
-    pub size: Option<(u32, u32)>,
-    pub frames_sent: u32,
-    pub frames_duplicated: u32,
-    pub frames_dropped: u32,
-    /// Whether the writer has a live connection to the host.
-    pub connected: bool,
-    /// The last writer error, if the recording stopped on one.
+    /// The capture host's state for the running take, or `None` when none runs.
+    pub host: Option<HostState>,
+    /// The sidecar lines the running take has written.
+    pub lines: u32,
+    /// The last take's error, if the host refused or dropped it or the sidecar failed.
     pub error: Option<String>,
     /// The session-relative folder of the current or last recording.
     pub folder: Option<String>,
+}
+
+/// Where a take's connection to the capture host stands.
+#[derive(Clone, Debug, PartialEq)]
+pub enum HostState {
+    /// Waiting for the host to listen.
+    Waiting,
+    /// Connected; waiting for the host to confirm it records.
+    Starting,
+    /// The host records.
+    Capturing(Capture),
+    /// The take stopped; waiting for the host to finalize the video.
+    Finishing,
+    /// The connection is over: the take finished, or the host refused or dropped it.
+    Closed,
+}
+
+/// What the host reported when it started recording.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Capture {
+    /// The video file, as the host names it.
+    pub file: String,
+    pub region: Region,
+    pub output: Option<String>,
+    /// The wall-clock time of the video's first frame, when the host knew it at the start.
+    pub video_start_unix_ms: Option<f64>,
+}
+
+/// The desktop mirror's layout, as the sidecar records it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MirrorFrame {
+    pub view: MirrorView,
+    /// The window's client size.
+    pub window: (u32, u32),
+    /// Where each eye's image lands in the window, in on-screen order.
+    pub draws: [Option<MirrorDraw>; 2],
+}
+
+/// One eye's image in the mirror window.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct MirrorDraw {
+    pub eye: usize,
+    /// The whole eye image's rectangle (`x, y, width, height`) in window pixels. It extends past the
+    /// window where the mirror crops the image.
+    pub rect: [f32; 4],
 }
 
 /// Start a recording with the current config. Any thread. A no-op while one runs.
@@ -111,40 +139,46 @@ pub fn start() {
 /// Start a recording whose folder is stamped `stamp`, so a session recording's tracking half lands
 /// in the same folder. Any thread. A no-op while one runs.
 pub fn start_stamped(stamp: &str) {
+    if is_recording() || crate::is_shutting_down() {
+        return;
+    }
     let cfg = crate::config::Config::lock_query(|c| c.recorder.clone());
+    // Read before the state lock: neither call takes it, and the title read sends no message to the
+    // window's thread.
+    let window = WindowHint {
+        title: crate::vr::window::title(),
+        client_size: crate::vr::window::client_size().map(|(w, h)| [w, h]),
+    };
     let mut state = STATE.lock();
     state.reap();
     if state.recording {
-        return;
-    }
-    if crate::is_shutting_down() {
         return;
     }
     let folder = CaptureFolder::Recording
         .relative(stamp)
         .display()
         .to_string();
-    let (completions, result) = state
-        .writers
-        .start(folder.clone(), || stream::Writer::spawn(&cfg, stamp));
+    let spawn = || {
+        Take::spawn(TakeRequest {
+            stamp: stamp.to_owned(),
+            folder: crate::session::capture_folder(CaptureFolder::Recording, stamp)?,
+            host_folder: crate::session::host_capture_folder(CaptureFolder::Recording, stamp),
+            target: format!("{}:{}", cfg.host(), cfg.port),
+            window,
+        })
+    };
+    let (completions, result) = state.takes.start(folder.clone(), spawn);
     state.report(completions);
     match result {
         Ok(()) => {
             state.recording = true;
             state.folder = Some(folder.clone());
             state.error = None;
-            state.size = None;
             state.frame_index = 0;
-            state.eye = cfg.eye.min(1);
-            state.scale = cfg.scale.clamp(MIN_SCALE, 1.0);
-            FRAMES_SENT.store(0, Ordering::Relaxed);
-            FRAMES_DUPLICATED.store(0, Ordering::Relaxed);
-            FRAMES_DROPPED.store(0, Ordering::Relaxed);
+            state.last_mirror = None;
             RECORDING.store(true, Ordering::Release);
             tracing::info!(
-                "recorder: recording eye {} at scale {} to {}:{} (sidecar {folder})",
-                state.eye,
-                state.scale,
+                "recorder: recording to {folder}, capture host {}:{}",
                 cfg.host(),
                 cfg.port
             );
@@ -156,8 +190,8 @@ pub fn start_stamped(stamp: &str) {
     }
 }
 
-/// Stop the recording, if any. Any thread. The writer drains its queue while network deadlines
-/// permit and closes the stream. The converter is released on the render thread's next pass.
+/// Stop the recording, if any. Any thread. The take's thread flushes the sidecar and has the host
+/// finalize the video.
 pub fn stop() {
     let mut state = STATE.lock();
     state.reap();
@@ -166,38 +200,35 @@ pub fn stop() {
     }
     RECORDING.store(false, Ordering::Release);
     state.recording = false;
-    state.writers.stop();
-    tracing::info!(
-        "recorder: stopped after {} frames ({} duplicated, {} dropped)",
-        FRAMES_SENT.load(Ordering::Relaxed),
-        FRAMES_DUPLICATED.load(Ordering::Relaxed),
-        FRAMES_DROPPED.load(Ordering::Relaxed)
-    );
+    state.takes.stop();
+    tracing::info!("recorder: stopped after {} frames", state.frame_index);
 }
 
 /// Toggle between recording and stopped.
 pub fn toggle() {
-    if RECORDING.load(Ordering::Acquire) {
+    if is_recording() {
         stop();
     } else {
         start();
     }
 }
 
-/// Put a take marker into the running recording's sidecar, at the next frame the render thread
-/// captures. Any thread. Hands the marker back when no recording is running (or its writer is
-/// finishing or has failed), so the caller can record it elsewhere.
+/// Put a take marker into the running recording's sidecar, before the next rendered frame. Any
+/// thread. Hands the marker back when no recording is running (or its take is finishing), so the
+/// caller can record it elsewhere.
 pub fn mark(marker: Marker) -> Result<(), Marker> {
     let state = STATE.lock();
-    let Some(writer) = state.writers.active().filter(|_| state.recording) else {
+    let Some(take) = state.takes.active().filter(|_| state.recording) else {
         return Err(marker);
     };
-    writer
-        .send_marker(stream::PendingMarker {
-            capture_frame: state.frame_index,
-            marker,
-        })
-        .map_err(|pending| pending.marker)
+    take.send(Record::Marker {
+        frame: state.frame_index,
+        marker,
+    })
+    .map_err(|record| match record {
+        Record::Marker { marker, .. } => marker,
+        _ => unreachable!("recorder: a refused marker comes back as a marker"),
+    })
 }
 
 /// Whether a recording is running. Cheap; read from the render thread each frame.
@@ -209,155 +240,105 @@ pub fn is_recording() -> bool {
 pub fn status() -> Status {
     let mut state = STATE.lock();
     state.reap();
+    let active = state.takes.active().filter(|_| state.recording);
     Status {
         recording: state.recording,
-        size: state.size,
-        frames_sent: FRAMES_SENT.load(Ordering::Relaxed),
-        frames_duplicated: FRAMES_DUPLICATED.load(Ordering::Relaxed),
-        frames_dropped: FRAMES_DROPPED.load(Ordering::Relaxed),
-        connected: state
-            .writers
-            .active()
-            .is_some_and(stream::Writer::connected),
-        error: state.error.clone(),
+        host: active.map(Take::host),
+        lines: active.map_or(0, Take::lines),
+        error: active.and_then(Take::error).or_else(|| state.error.clone()),
         folder: state.folder.clone(),
     }
 }
 
-/// The render-thread half, called from `render_engine_post_draw` after the per-eye captures are
-/// copied, under the engine's context critical section. `eye_textures` are the per-eye captures
-/// and `index` the dispatch that just finished; the chosen eye is captured on the dispatch where
-/// its texture holds the new frame. A no-op unless recording.
-///
-/// # Safety
-/// `device` and `context` must be the live engine device and immediate context, and the eye
-/// textures live textures on that device whose GPU writes for this frame are complete.
-pub unsafe fn capture_frame(
-    device: &ID3D11Device,
-    context: &ID3D11DeviceContext,
-    eye_textures: &[Option<ID3D11Texture2D>; 2],
-    index: usize,
-) {
+/// Note a rendered frame, from `render_engine_post_draw` on the frame's last near dispatch, when
+/// every eye image of the frame is final. A no-op unless recording.
+pub fn frame_rendered() {
     if !is_recording() {
-        // Release the GPU resources once the recording ends, on the thread that made them.
-        CONVERTER.lock().take();
         return;
     }
-    let (eye, scale) = {
-        let state = STATE.lock();
-        (state.eye, state.scale)
-    };
-    if far_phase() || !(collapse_active() || index == eye) {
-        return;
-    }
-    let Some(source) = eye_textures[eye].as_ref() else {
-        return;
-    };
-    let mut converter = CONVERTER.lock();
-    let converter = match converter.as_mut() {
-        Some(c) => c,
-        None => match convert::Converter::new(device, source, scale) {
-            Ok(c) => {
-                let size = c.size();
-                STATE.lock().size = Some(size);
-                tracing::info!("recorder: stream size {}x{}", size.0, size.1);
-                converter.insert(c)
-            }
-            Err(e) => {
-                fail(format!("could not build the converter: {e:#}"));
-                return;
-            }
-        },
-    };
-    let size = converter.size();
+    let unix_ms = jiff::Timestamp::now().as_millisecond();
+    // SAFETY: a read of the clock singleton's counters, which the render thread only reads.
+    let game_run_time_us = unsafe { jc3gi::clock::Clock::get().map(|c| c.m_GameRunTimeMicro) };
+    let views = crate::vr::capture_views();
     let mut state = STATE.lock();
-    if state.writers.active().is_none() {
+    let frame = state.frame_index;
+    let Some(take) = state.takes.active().filter(|_| state.recording) else {
         return;
-    }
-    let metadata = stream::FrameMetadata {
-        frame: state.frame_index,
-        unix_ms: jiff::Timestamp::now().as_millisecond(),
-        // SAFETY: a read of the clock singleton's counters, which the render thread only reads.
-        game_run_time_us: unsafe { jc3gi::clock::Clock::get().map(|c| c.m_GameRunTimeMicro) },
-        eye,
-        width: size.0,
-        height: size.1,
-        views: crate::vr::capture_views(),
     };
-    state.frame_index = state.frame_index.saturating_add(1);
-    let writer = state.writers.active().unwrap();
-    let mut buffer = writer.take_buffer(converter.frame_len());
-    // SAFETY: forwarded from the caller's contract.
-    let frame = match unsafe { converter.convert(device, context, source, &mut buffer, metadata) } {
-        Ok(convert::Readback::Fresh(source)) => stream::Frame::Fresh(buffer, source),
-        Ok(convert::Readback::Priming | convert::Readback::Pending) => {
-            // Not ready (the ring is still priming, or the map refused): repeat the previous
-            // frame so the stream keeps its cadence.
-            FRAMES_DUPLICATED.fetch_add(1, Ordering::Relaxed);
-            stream::Frame::Duplicate
-        }
-        Err(e) => {
-            drop(state);
-            fail(format!("readback failed: {e:#}"));
-            return;
-        }
-    };
-    match writer.send(frame) {
-        stream::SendOutcome::Queued => {
-            FRAMES_SENT.fetch_add(1, Ordering::Relaxed);
-        }
-        stream::SendOutcome::Full => {
-            FRAMES_DROPPED.fetch_add(1, Ordering::Relaxed);
-        }
-        stream::SendOutcome::Failed(e) => {
-            drop(state);
-            fail(e);
-        }
+    let sent = take.send(Record::Frame(Box::new(FrameRecord {
+        frame,
+        unix_ms,
+        game_run_time_us,
+        views,
+    })));
+    if sent.is_ok() {
+        state.frame_index = frame.saturating_add(1);
+    } else {
+        drop(state);
+        fail("the take thread has exited".to_owned());
     }
 }
 
-/// Stop the recording and wait for the writer to exit, for eject. Returns whether the writer is
-/// confirmed stopped; `false` means the payload must stay mapped (see `image_writer::shutdown`).
-#[must_use = "a writer that did not finish means the payload must stay mapped"]
+/// Note the desktop mirror's layout after a present, so the sidecar records it whenever it changes.
+/// A no-op unless recording.
+pub fn note_mirror(mirror: MirrorFrame) {
+    if !is_recording() {
+        return;
+    }
+    let mut state = STATE.lock();
+    if state.last_mirror == Some(mirror) {
+        return;
+    }
+    let frame = state.frame_index;
+    let Some(take) = state.takes.active().filter(|_| state.recording) else {
+        return;
+    };
+    let record = Record::Mirror {
+        frame,
+        unix_ms: jiff::Timestamp::now().as_millisecond(),
+        mirror,
+    };
+    if take.send(record).is_ok() {
+        state.last_mirror = Some(mirror);
+    }
+}
+
+/// Stop the recording and wait for the take's thread to exit, for eject. Returns whether every take
+/// thread is confirmed stopped; `false` means the payload must stay mapped (see
+/// `image_writer::shutdown`).
+#[must_use = "a take thread that did not finish means the payload must stay mapped"]
 pub fn shutdown() -> bool {
     stop();
     let mut state = STATE.lock();
-    let result = state.writers.shutdown(SHUTDOWN_BUDGET);
+    let result = state.takes.shutdown(SHUTDOWN_BUDGET);
     state.report(result.completions);
     if !result.stopped {
         tracing::error!(
-            "recorder: video writers have not exited; leaving the payload mapped rather than \
+            "recorder: take threads have not exited; leaving the payload mapped rather than \
              unmapping under a live thread"
         );
     }
     result.stopped
 }
 
-/// The smallest output scale the config accepts.
-pub const MIN_SCALE: f32 = 0.25;
-
-/// How long eject waits for the writer to drain and exit.
+/// How long eject waits for the take's thread to finish with the host and exit.
 const SHUTDOWN_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
 
 static RECORDING: AtomicBool = AtomicBool::new(false);
-static FRAMES_SENT: AtomicU32 = AtomicU32::new(0);
-static FRAMES_DUPLICATED: AtomicU32 = AtomicU32::new(0);
-static FRAMES_DROPPED: AtomicU32 = AtomicU32::new(0);
 
 struct State {
     recording: bool,
-    writers: VideoWriters,
-    eye: usize,
-    scale: f32,
-    size: Option<(u32, u32)>,
+    takes: Takes,
     frame_index: u32,
+    /// The mirror layout the running take's sidecar last recorded.
+    last_mirror: Option<MirrorFrame>,
     error: Option<String>,
     folder: Option<String>,
 }
 
 impl State {
     fn reap(&mut self) {
-        let completions = self.writers.reap();
+        let completions = self.takes.reap();
         self.report(completions);
     }
 
@@ -372,22 +353,16 @@ impl State {
 
 static STATE: Mutex<State> = Mutex::new(State {
     recording: false,
-    writers: VideoWriters::new(),
-    eye: 0,
-    scale: 1.0,
-    size: None,
+    takes: Takes::new(),
     frame_index: 0,
+    last_mirror: None,
     error: None,
     folder: None,
 });
 
-/// The GPU-side converter, created on the render thread on the first recorded frame and released
-/// there once the recording stops.
-static CONVERTER: Mutex<Option<convert::Converter>> = Mutex::new(None);
-
 /// Stop the recording on an error, recording it for the debug tab.
 fn fail(message: String) {
     tracing::error!("recorder: {message}; stopping");
-    STATE.lock().error = Some(message);
+    STATE.lock().error = Some(format!("recorder: {message}"));
     stop();
 }

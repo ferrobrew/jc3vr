@@ -21,6 +21,7 @@ use crate::{
     ui::{
         capture::{OwnershipBlocker, OwnershipSnapshot, PanelMode},
         catalog::FeatureId,
+        director::host_line,
         navigation::NavigationState,
     },
     vr::input::{self, InputStatus},
@@ -303,35 +304,19 @@ fn ownership_row(ownership: Option<OwnershipSnapshot>) -> Row {
 }
 
 fn video_row(video: &recorder::Status) -> Row {
-    let state = capture_health(video.recording, video.error.is_some(), video.connected);
-    let activity = if video.recording && !video.connected {
-        "Recording; waiting for the host listener"
-    } else if video.recording {
-        "Recording"
-    } else {
-        "Not recording"
-    };
-    let size = video.size.map_or_else(
-        || "stream size unavailable".to_owned(),
-        |(width, height)| format!("{width}x{height}"),
-    );
+    let capturing = matches!(video.host, Some(recorder::HostState::Capturing(_)));
+    let state = capture_health(video.recording, video.error.is_some(), capturing);
     Row {
         id: RowId::Video,
         group: "Capture and tools",
         label: "Video recording",
         state: RowState::Health(state),
         active_capture: video.recording,
-        detail: format!(
-            "{activity}; connected: {}; {size}; sent: {}; duplicated: {}; dropped: {}.",
-            yes_no(video.connected),
-            video.frames_sent,
-            video.frames_duplicated,
-            video.frames_dropped,
-        ),
+        detail: format!("{}; sidecar lines: {}.", host_line(video), video.lines),
         note: video
             .error
             .as_ref()
-            .map(|error| format!("Last writer error: {error}")),
+            .map(|error| format!("Last error: {error}")),
     }
 }
 

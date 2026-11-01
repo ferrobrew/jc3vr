@@ -265,6 +265,9 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
             [lock.texture(0).cloned(), lock.texture(1).cloned()]
         };
         let index = crate::stereo::draw_index();
+        // The frame's last near dispatch: after it, every eye image of the frame is final.
+        let last_near_dispatch = !crate::stereo::far_phase()
+            && (collapse_active() || !crate::stereo::active() || index == 1);
         // The world-space overlay's producers, once per frame, outside the context lock: they read
         // the controller subsystems' published state under those subsystems' own locks.
         overlay::tick(index);
@@ -315,8 +318,6 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
             // deferred, the game thread waits on eye 0's walk but not on the last one, which the
             // tail drains before it composites the mirror. Nothing per-eye reads the overlay, and
             // the floating panel, which consumes the same egui output, is off whenever this runs.
-            let last_near_dispatch = !crate::stereo::far_phase()
-                && (collapse_active() || !crate::stereo::active() || index == 1);
             if last_near_dispatch {
                 hud::mirror_overlay::render(&context.m_Context, device, back_buffer);
             }
@@ -379,15 +380,10 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
                 mark_eye_capture(index, copied);
             }
 
-            // The in-process recorder: pack and read back the chosen eye's capture on the dispatch
-            // that refreshed it. A no-op unless recording.
-            if let Some(device) = graphics_engine.m_Device.as_ref() {
-                crate::recorder::capture_frame(
-                    &device.m_Device,
-                    &context.m_Context,
-                    &eye_textures,
-                    index,
-                );
+            // The recorder's sidecar line for the frame, on its last near dispatch, when every eye
+            // image of the frame is final. A no-op unless recording.
+            if last_near_dispatch {
+                crate::recorder::frame_rendered();
             }
 
             // Service an F12 screenshot request with a source that carries both eyes. Under
@@ -429,10 +425,9 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
 
 /// Whether anything besides the headset reads eye `eye`'s capture this frame, so its post-draw must
 /// copy the eye into it even when the eye went straight to the swapchain: the desktop mirror's eyes,
-/// the recorder, a pending screenshot, and the Previews tab.
+/// a pending screenshot, and the Previews tab.
 fn eye_capture_wanted(eye: usize) -> bool {
     Config::lock_query(|c| c.vr.mirror && c.vr.mirror_view.shows_eye(eye))
-        || crate::recorder::is_recording()
         || crate::screenshot::is_requested()
         || previews_visible()
 }

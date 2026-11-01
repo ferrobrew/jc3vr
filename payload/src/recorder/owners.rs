@@ -1,10 +1,10 @@
-//! Bounded ownership of active and draining video writers through confirmed thread termination.
+//! Bounded ownership of active and finishing takes through confirmed thread termination.
 
 use std::time::{Duration, Instant};
 
-use crate::recorder::stream::Writer;
+use crate::recorder::take::Take;
 
-pub(super) struct VideoWriters {
+pub(super) struct Takes {
     active: Option<Recording>,
     finishing: Vec<Recording>,
     shutting_down: bool,
@@ -20,7 +20,7 @@ pub(super) struct Shutdown {
     pub(super) completions: Vec<Completion>,
 }
 
-impl VideoWriters {
+impl Takes {
     pub(super) const fn new() -> Self {
         Self {
             active: None,
@@ -29,15 +29,15 @@ impl VideoWriters {
         }
     }
 
-    pub(super) fn active(&self) -> Option<&Writer> {
-        self.active.as_ref().map(|recording| &recording.writer)
+    pub(super) fn active(&self) -> Option<&Take> {
+        self.active.as_ref().map(|recording| &recording.take)
     }
 
     /// Admission precedes spawning, so a refusal cannot detach a new thread.
     pub(super) fn start(
         &mut self,
         folder: String,
-        spawn: impl FnOnce() -> anyhow::Result<Writer>,
+        spawn: impl FnOnce() -> anyhow::Result<Take>,
     ) -> (Vec<Completion>, anyhow::Result<()>) {
         let completions = self.reap();
         let result = (|| {
@@ -45,10 +45,10 @@ impl VideoWriters {
             anyhow::ensure!(self.active.is_none(), "recorder: a recording is active");
             anyhow::ensure!(
                 self.finishing.len() < MAX_WRITERS,
-                "recorder: previous video writers are still finishing; try again after they exit"
+                "recorder: previous takes are still finishing; try again after they exit"
             );
             self.active = Some(Recording {
-                writer: spawn()?,
+                take: spawn()?,
                 folder,
             });
             Ok(())
@@ -58,7 +58,7 @@ impl VideoWriters {
 
     pub(super) fn stop(&mut self) {
         if let Some(mut recording) = self.active.take() {
-            recording.writer.finish();
+            recording.take.finish();
             self.finishing.push(recording);
         }
     }
@@ -68,7 +68,7 @@ impl VideoWriters {
         let mut completions = Vec::new();
         let mut index = 0;
         while index < self.finishing.len() {
-            if let Some(completion) = self.finishing[index].writer.poll_completion() {
+            if let Some(completion) = self.finishing[index].take.poll_completion() {
                 let recording = self.finishing.swap_remove(index);
                 if let Some(error) = &completion.error {
                     tracing::error!(folder = %recording.folder, "recorder: {error}");
@@ -103,12 +103,12 @@ impl VideoWriters {
     }
 }
 
-/// Includes the active writer, as in the tracking recorder's admission policy.
+/// Includes the active take, as in the tracking recorder's admission policy.
 const MAX_WRITERS: usize = 2;
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 struct Recording {
-    writer: Writer,
+    take: Take,
     folder: String,
 }
 

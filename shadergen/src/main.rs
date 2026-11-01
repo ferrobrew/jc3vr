@@ -98,7 +98,6 @@ const PAYLOAD_SHADERS: &[(&str, &str)] = &[
     ("foveation_mask_ps", "ps_5_0"),
     ("foveation_fill_ps", "ps_5_0"),
     ("far_field_composite_ps", "ps_5_0"),
-    ("i420_pack_ps", "ps_5_0"),
     ("overlay_vs", "vs_5_0"),
     ("overlay_ps", "ps_5_0"),
     ("scope_lens_vs", "vs_5_0"),

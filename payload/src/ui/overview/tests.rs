@@ -7,7 +7,7 @@ use crate::{frame_timing::Totals, status::Line, ui::capture::EditCapture};
 fn ranking_retains_every_typed_row_and_stably_ranks_problems_and_captures() {
     let mut snapshot = fixture();
     snapshot.video.recording = true;
-    snapshot.video.connected = false;
+    snapshot.video.host = Some(recorder::HostState::Waiting);
     snapshot.tracking.recording = true;
     snapshot.sections = vec![(
         "features",
@@ -150,14 +150,11 @@ fn ownership_preserves_requested_effective_capture_and_recovery_readouts() {
 }
 
 #[test]
-fn recorder_activity_is_independent_of_connection_counters_and_last_error() {
+fn recorder_activity_follows_the_capture_host_and_the_last_error() {
     let mut snapshot = fixture();
     snapshot.video.recording = true;
-    snapshot.video.connected = false;
-    snapshot.video.size = Some((1920, 1080));
-    snapshot.video.frames_sent = 11;
-    snapshot.video.frames_duplicated = 3;
-    snapshot.video.frames_dropped = 2;
+    snapshot.video.host = Some(recorder::HostState::Waiting);
+    snapshot.video.lines = 11;
     let rows = snapshot.rows();
     let video = find(&rows, RowId::Video);
     assert_eq!(video.state, RowState::Health(Health::Waiting));
@@ -165,26 +162,36 @@ fn recorder_activity_is_independent_of_connection_counters_and_last_error() {
     assert!(
         video
             .detail
-            .contains("Recording; waiting for the host listener")
+            .contains("Video: waiting for the capture host to listen")
     );
-    assert!(video.detail.contains("connected: no; 1920x1080"));
-    assert!(video.detail.contains("sent: 11; duplicated: 3; dropped: 2"));
+    assert!(video.detail.contains("sidecar lines: 11"));
 
-    snapshot.video.connected = true;
+    snapshot.video.host = Some(recorder::HostState::Capturing(recorder::Capture {
+        file: "/s/video.mkv".to_owned(),
+        region: recorder::Region {
+            x: 4,
+            y: 31,
+            width: 1920,
+            height: 1080,
+        },
+        output: Some("DP-1".to_owned()),
+        video_start_unix_ms: Some(1.0),
+    }));
     let rows = snapshot.rows();
-    assert_eq!(
-        find(&rows, RowId::Video).state,
-        RowState::Health(Health::Ok)
-    );
+    let video = find(&rows, RowId::Video);
+    assert_eq!(video.state, RowState::Health(Health::Ok));
+    assert!(video.detail.contains("1920x1080 at 4,31 on DP-1"));
+
     snapshot.video.recording = false;
-    snapshot.video.error = Some("Writer disconnected".to_owned());
+    snapshot.video.host = None;
+    snapshot.video.error = Some("capture: the game window: not found".to_owned());
     let rows = snapshot.rows();
     let video = find(&rows, RowId::Video);
     assert_eq!(video.state, RowState::Health(Health::Failed));
     assert!(!video.active_capture);
     assert_eq!(
         video.note.as_deref(),
-        Some("Last writer error: Writer disconnected")
+        Some("Last error: capture: the game window: not found")
     );
     assert!(attention(&rows).iter().any(|row| row.id == RowId::Video));
 }
@@ -427,11 +434,8 @@ fn fixture() -> Snapshot {
         }),
         video: recorder::Status {
             recording: false,
-            size: None,
-            frames_sent: 0,
-            frames_duplicated: 0,
-            frames_dropped: 0,
-            connected: false,
+            host: None,
+            lines: 0,
             error: None,
             folder: None,
         },

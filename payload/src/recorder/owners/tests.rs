@@ -6,8 +6,8 @@ use std::{
 use super::*;
 
 #[test]
-fn rapid_stop_start_retains_all_blocked_writers_through_shutdown() {
-    let mut owners = VideoWriters::new();
+fn rapid_stop_start_retains_all_blocked_takes_through_shutdown() {
+    let mut owners = Takes::new();
     let first = blocked();
     owners.start("first".into(), || Ok(first.0)).1.unwrap();
     owners.stop();
@@ -24,7 +24,7 @@ fn rapid_stop_start_retains_all_blocked_writers_through_shutdown() {
     assert!(error.to_string().contains("still finishing"));
 
     second.1.send(()).unwrap();
-    await_termination(&owners.finishing[1].writer);
+    await_termination(&owners.finishing[1].take);
     let third = blocked();
     let (completions, result) = owners.start("third".into(), || Ok(third.0));
     result.unwrap();
@@ -62,10 +62,10 @@ fn rapid_stop_start_retains_all_blocked_writers_through_shutdown() {
 
 #[test]
 fn failure_and_panic_are_reported_after_join_and_release_capacity() {
-    let mut owners = VideoWriters::new();
+    let mut owners = Takes::new();
     owners
         .start("failed".into(), || {
-            Ok(Writer::spawn_controlled(|_| {
+            Ok(Take::spawn_controlled(|_| {
                 Err("recorder: controlled write failure".into())
             }))
         })
@@ -73,9 +73,7 @@ fn failure_and_panic_are_reported_after_join_and_release_capacity() {
         .unwrap();
     owners.stop();
     let (mut completions, result) = owners.start("panicked".into(), || {
-        Ok(Writer::spawn_controlled(|_| {
-            panic!("controlled writer panic")
-        }))
+        Ok(Take::spawn_controlled(|_| panic!("controlled take panic")))
     });
     result.unwrap();
     owners.stop();
@@ -93,7 +91,7 @@ fn failure_and_panic_are_reported_after_join_and_release_capacity() {
     assert!(owners.finishing.is_empty());
     owners
         .start("recovered".into(), || {
-            Ok(Writer::spawn_controlled(|_| Ok(())))
+            Ok(Take::spawn_controlled(|_| Ok(())))
         })
         .1
         .unwrap();
@@ -102,7 +100,7 @@ fn failure_and_panic_are_reported_after_join_and_release_capacity() {
 
 #[test]
 fn spawn_failure_does_not_consume_capacity() {
-    let mut owners = VideoWriters::new();
+    let mut owners = Takes::new();
     let error = owners
         .start("failed".into(), || {
             anyhow::bail!("recorder: controlled spawn failure")
@@ -115,32 +113,32 @@ fn spawn_failure_does_not_consume_capacity() {
     assert!(owners.shutdown(Duration::ZERO).stopped);
 }
 
-fn blocked() -> (Writer, SyncSender<()>) {
+fn blocked() -> (Take, SyncSender<()>) {
     let (entered, ready) = mpsc::sync_channel(1);
     let (release, wait) = mpsc::sync_channel(1);
-    let writer = Writer::spawn_controlled(move |_| {
+    let take = Take::spawn_controlled(move |_| {
         entered.send(()).unwrap();
         let _ = wait.recv();
         Ok(())
     });
     ready.recv_timeout(Duration::from_secs(5)).unwrap();
-    (writer, release)
+    (take, release)
 }
 
-fn await_termination(writer: &Writer) {
+fn await_termination(take: &Take) {
     let deadline = Instant::now() + Duration::from_secs(5);
-    while !writer.is_finished() {
-        assert!(Instant::now() < deadline, "video writer did not exit");
+    while !take.is_finished() {
+        assert!(Instant::now() < deadline, "take thread did not exit");
         std::thread::yield_now();
     }
 }
 
-fn await_completions(owners: &mut VideoWriters, count: usize) -> Vec<Completion> {
+fn await_completions(owners: &mut Takes, count: usize) -> Vec<Completion> {
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut completions = Vec::new();
     while completions.len() < count {
         completions.extend(owners.reap());
-        assert!(Instant::now() < deadline, "video writers did not exit");
+        assert!(Instant::now() < deadline, "take threads did not exit");
         std::thread::yield_now();
     }
     assert_eq!(completions.len(), count);

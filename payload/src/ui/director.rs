@@ -14,7 +14,7 @@ use crate::{
         teleport::{self, TeleportMode},
         time,
     },
-    recorder::{self, session_recording},
+    recorder::{self, HostState, session_recording},
     ui::catalog::FeatureId,
 };
 
@@ -82,26 +82,37 @@ pub(crate) fn director_status(ui: &mut egui::Ui) {
 pub(crate) fn video_status(ui: &mut egui::Ui) {
     ui.label(session_line(&session_recording::status()));
     let status = recorder::status();
-    ui.label(if status.recording {
-        if status.connected {
-            "recording"
-        } else {
-            "recording, waiting for the host listener"
-        }
-    } else {
-        "stopped"
-    });
-    if let Some((w, h)) = status.size {
-        ui.label(format!(
-            "Stream {w}x{h}: {} frames sent, {} repeated, {} dropped",
-            status.frames_sent, status.frames_duplicated, status.frames_dropped
-        ));
+    ui.label(host_line(&status));
+    if status.recording {
+        ui.label(format!("Sidecar lines written: {}", status.lines));
     }
     if let Some(folder) = &status.folder {
         ui.label(format!("Recording folder in the session folder: {folder}"));
     }
     if let Some(error) = &status.error {
         ui.colored_label(egui::Color32::LIGHT_RED, format!("Last error: {error}"));
+    }
+}
+
+/// The recorder's one-line state, naming what the capture host records.
+pub(crate) fn host_line(status: &recorder::Status) -> String {
+    match &status.host {
+        None => "Video: stopped".to_owned(),
+        Some(HostState::Waiting) => "Video: waiting for the capture host to listen".to_owned(),
+        Some(HostState::Starting) => "Video: the capture host is finding the window".to_owned(),
+        Some(HostState::Capturing(capture)) => {
+            let region = capture.region;
+            format!(
+                "Video: recording the mirror window, {}x{} at {},{} on {}",
+                region.width,
+                region.height,
+                region.x,
+                region.y,
+                capture.output.as_deref().unwrap_or("the screen")
+            )
+        }
+        Some(HostState::Finishing) => "Video: the capture host is finalizing the file".to_owned(),
+        Some(HostState::Closed) => "Video: not recording (see the error)".to_owned(),
     }
 }
 
@@ -489,19 +500,7 @@ fn recording_ui(ui: &mut egui::Ui) {
         let r = &mut cfg.recorder;
         ui.add_enabled_ui(!status.recording, |ui| {
             ui.horizontal(|ui| {
-                ui.label("Eye:");
-                ui.selectable_value(&mut r.eye, 0, "left");
-                ui.selectable_value(&mut r.eye, 1, "right");
-            });
-            ui.add(Slider::new(&mut r.scale, recorder::MIN_SCALE..=1.0).text("Scale"))
-                .on_hover_text("The stream size as a fraction of the eye render size.");
-            ui.add(Slider::new(&mut r.frame_rate, 24..=144).text("Frame rate (header)"))
-                .on_hover_text(
-                    "Written into the stream header, which is what the encoder times frames by. \
-                     Set it to the headset's refresh rate.",
-                );
-            ui.horizontal(|ui| {
-                ui.label("Host:");
+                ui.label("Capture host:");
                 ui.text_edit_singleline(&mut r.host)
                     .on_hover_text("Blank for loopback.");
                 ui.label("Port:");
@@ -510,8 +509,9 @@ fn recording_ui(ui: &mut egui::Ui) {
         });
     }
     ui.label(
-        "Run scripts/capture_host.sh on the host to listen; the stream is yuv4mpegpipe over TCP, \
-         and the host writes the video into the recording's folder beside the pose sidecar.",
+        "Run scripts/capture_host.sh on the host. It records the mirror window as it is on \
+         screen, so the mirror view (F10) decides what is recorded, and the window must stay \
+         visible and in place for the take.",
     );
 }
 
