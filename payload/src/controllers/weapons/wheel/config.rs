@@ -4,8 +4,9 @@
 
 use serde::{Deserialize, Serialize};
 
-/// The weapon wheel (see [`crate::controllers::weapons::wheel`]). It acts only under the controller
-/// scheme, so it defaults on.
+/// The weapon wheel (see [`crate::controllers::weapons::wheel`]). It defaults off: one shared cross
+/// opened from the panel breaks the body-held weapons the hands draw from the sockets, and it waits
+/// for a redesign as an independent wheel for each hand.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WheelConfig {
@@ -15,7 +16,7 @@ pub struct WheelConfig {
 
 impl WheelConfig {
     pub const fn new() -> Self {
-        Self { enabled: true }
+        Self { enabled: false }
     }
 }
 

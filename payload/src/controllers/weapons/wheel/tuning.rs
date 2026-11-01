@@ -3,7 +3,7 @@
 
 use crate::controllers::weapons::wheel::config::WheelConfig;
 
-/// The weapon wheel's tuning, switched on.
+/// The weapon wheel's tuning, switched off as [`WheelConfig`] ships it.
 pub const WHEEL: WheelTuning = WheelTuning::new();
 
 /// The weapon wheel (see [`crate::controllers::weapons::wheel`]): how it opens, how the hand steers
@@ -40,7 +40,7 @@ pub struct WheelTuning {
 impl WheelTuning {
     const fn new() -> Self {
         Self {
-            enabled: true,
+            enabled: false,
             trackpad: true,
             stick: true,
             stick_open: 0.7,
@@ -58,5 +58,17 @@ impl WheelTuning {
             enabled: config.enabled,
             ..WHEEL
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_wheel_ships_off_and_its_switch_still_turns_it_on() {
+        assert!(!WheelConfig::default().enabled);
+        assert!(!WheelTuning::of(&WheelConfig::default()).enabled);
+        assert!(WheelTuning::of(&WheelConfig { enabled: true }).enabled);
     }
 }

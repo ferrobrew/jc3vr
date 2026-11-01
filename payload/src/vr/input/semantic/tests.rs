@@ -441,14 +441,10 @@ fn the_defaults_mirror_the_gamepad_by_side() {
     ] {
         assert_eq!(path(set, exit, Hand::Right), Some("input/b/click"));
     }
-    assert_eq!(
-        on_foot(F::WeaponSelectPress, Hand::Left),
-        Some("input/trackpad/force")
-    );
-    assert_eq!(
-        on_foot(F::WeaponSelectPad, Hand::Left),
-        Some("input/trackpad")
-    );
+    // The off-hand trackpad is not the weapon select's: it sits under the thumb's way to the
+    // debug panel chord's stick click.
+    assert_eq!(on_foot(F::WeaponSelectPress, Hand::Left), None);
+    assert_eq!(on_foot(F::WeaponSelectPad, Hand::Left), None);
     for profile in Profile::ALL {
         assert_eq!(
             default_path(

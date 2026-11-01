@@ -1,12 +1,14 @@
 # Weapon wheel
 
+Status: off by default (`controllers.weapons.wheel.enabled`, in the debug UI). The code stays, but the wheel is not shipped on: one cross shared by both hands and drawn by the game breaks the artifice of weapons held on the body and drawn from its sockets, and in play it mostly stood in for socket draws that did not work. It waits for a redesign along the lines of Boneworks, with an independent wheel for each hand, if it comes back at all. The off-hand trackpad press that opened it no longer has a default binding (see "Opening").
+
 The weapon wheel opens the game's own selection cross with a held input and lets the hand choose an arm, in the manner of Half-Life: Alyx; the holsters stay the main way to draw. The game's selection logic and cross are in [weapon-selection.md](../engine/gameplay/weapon-selection.md): four float slot-select actions, the largest held one wins, the selection follows the input while held, and the release commits. The wheel produces exactly that input through the binding injection, so the game's own offer, highlight, sound, and commit rules stay in charge and no synthetic stick is needed. The code is `payload/src/controllers/weapons/wheel/`.
 
 ## Opening
 
 Two inputs open the wheel, and the hand that holds the opener steers it:
 
-- `weapon_select_press`, the off-hand Index trackpad pressed down. Before the wheel, a press latched to a quadrant held that quadrant's slot-select action until the release, as the gamepad's d-pad does. The wheel keeps that: a press in a quadrant starts on that quadrant's arm, so a tap still selects the slot at once, and a press in the centre starts on the centre. The binding tables still declare the quadrant holds (the controls summary describes them from there), and the wheel drops them from the tick's wanted actions and holds its own.
+- `weapon_select_press`, which has no default binding: the off-hand Index trackpad it was bound to lies under the thumb on its way to the off-hand stick click, which the debug panel's chord presses, so a reach for the chord pressed the pad and selected a weapon. A player who binds it gets the behaviour below. Before the wheel, a press latched to a quadrant held that quadrant's slot-select action until the release, as the gamepad's d-pad does. The wheel keeps that: a press in a quadrant starts on that quadrant's arm, so a tap still selects the slot at once, and a press in the centre starts on the centre. The binding tables still declare the quadrant holds (the controls summary describes them from there), and the wheel drops them from the tick's wanted actions and holds its own.
 - `weapon_wheel`, a new float action on the `on_foot` set, bound by default to the dominant stick's vertical axis. Pushing the stick up past `WHEEL.stick_open` opens the wheel, and it stays open until the push falls below `WHEEL.stick_release`. The Touch controller has no trackpad, so this is its way in; on the Index it works too.
 
 The dominant stick's up half was the one free stick direction. The off-hand stick is movement and its click is the weapon cycle (and the tether retract while dual-wielding, which is a hold, so a tap-or-hold could not share it); the face buttons all carry a hold of the game's already; the dominant stick's horizontal axis turns and its down flick is the seated crouch, which reads only the lower half of the axis. The wheel reads only the upper half. While the stick holds the wheel open, the body turn reads zero, so the stick's sideways drift does not turn the player. Being its own action, `weapon_wheel` can be rebound in the runtime, to a button for example: any value past `WHEEL.stick_open` opens it.
@@ -37,7 +39,7 @@ With the HUD atlas on (`hud.atlas.enabled` and `hud.atlas.cross.enabled`), the c
 
 ## Settings
 
-`controllers.weapons.wheel.enabled` switches the wheel. The rest is fixed in `WHEEL` (`controllers::weapons::wheel`): both openers on, the stick's open and release thresholds, the point thresholds, the hysteresis, and the placement at the hand. The controls summary lists the wheel on each opener ("HOLD" on the trackpad, "HOLD UP" on the stick) where it acts.
+`controllers.weapons.wheel.enabled` (off) switches the wheel. The rest is fixed in `WHEEL` (`controllers::weapons::wheel`): both openers on, the stick's open and release thresholds, the point thresholds, the hysteresis, and the placement at the hand. While it is on, the controls summary lists the wheel on each opener that is bound ("HOLD" on the trackpad, "HOLD UP" on the stick) where it acts; while it is off, the summary does not list it.
 
 ## In-game unknowns
 

@@ -198,7 +198,7 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 | Use item, enter vehicle (hold: gunner seat), open wingsuit | B; held, it also steps off a ledge the character would stop at (`BYPASS_FALL_PREVENTION`), and while a ragdoll keeps the character one (`CANCEL` held) |
 | Reload | X ejects the magazine (the game's reload as a setting); the belt pouch loads |
 | Holster | grip press with the weapon hand at the held weapon's holster; a short hold of X also holsters, as on the gamepad |
-| Weapon slot select | draw from a holster; press the L trackpad up, right, left, or down for the pistols, the two-handed, the special, or the explosives slot (Index); the L stick click cycles `NEXT_WEAPON` as a fallback (on by default; not while dual-wielding) |
+| Weapon slot select | draw from a holster; `weapon_select_press` with `weapon_select_pad` selects the pistols, the two-handed, the special, or the explosives slot by the pad's quadrant, with no default binding (the L trackpad lies under the thumb on its way to the debug panel chord's L stick click); the weapon wheel is off by default ([weapon-selector.md](../weapon-selector.md)); the L stick click cycles `NEXT_WEAPON` as a fallback (on by default; not while dual-wielding) |
 | Throw grenade | grab from the grenade pouch and throw; `throw_grenade` is an action with no default binding |
 | Throw C4 | grab from the C4 pouch on the chest and throw; it sticks where it lands; no button |
 | Detonate C4 | touch the button on the inside of the left wrist with the right index fingertip; or hold the R stick click (`DETONATE_EXPLOSIVE` alone) |

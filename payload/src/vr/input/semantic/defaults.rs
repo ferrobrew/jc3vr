@@ -247,10 +247,10 @@ fn on_foot(action: OnFootAction) -> Option<DefaultBinding> {
         Use => on(Dom, UpperFace),
         Reload => on(Off, LowerFace),
         Detonate => on(Dom, ThumbstickClick),
-        // A double tap of the grapple releases the tethers, and the grapple is on a button.
-        ReleaseTethers | ThrowGrenade | FireGrapple => None,
-        WeaponSelectPad => on(Off, Trackpad),
-        WeaponSelectPress => on(Off, TrackpadForce),
+        // A double tap of the grapple releases the tethers, and the grapple is on a button. The
+        // slot select on a pad stays unbound: the off-hand trackpad sits under the thumb's way to
+        // the off-hand stick click, which the debug panel's chord presses.
+        ReleaseTethers | ThrowGrenade | FireGrapple | WeaponSelectPad | WeaponSelectPress => None,
         WeaponWheel => on(Dom, ThumbstickY),
     }
 }

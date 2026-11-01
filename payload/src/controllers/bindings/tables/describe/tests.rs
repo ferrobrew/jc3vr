@@ -450,7 +450,8 @@ fn the_weapon_wheel_is_described_on_its_openers_where_the_weapons_are_handled() 
     assert_eq!(
         wheel_rows(ON_FOOT),
         vec![
-            (Control::Trackpad(Hand::Left), Gesture::Hold),
+            // The trackpad press ships unbound; the stick held up opens it by default.
+            (Control::Unbound, Gesture::Hold),
             (
                 Control::Stick(Hand::Right, StickDir::Vertical),
                 Gesture::HoldUp
@@ -568,7 +569,11 @@ fn actions_bound_to_nothing_share_one_unbound_row() {
             CANCEL,
             BYPASS_FALL_PREVENTION,
             BTN_B,
-            THROW_GRENADE
+            THROW_GRENADE,
+            SELECT_DUEL_WIELD,
+            SELECT_TWO_HANDED,
+            SELECT_TWO_HANDED_SPECIAL,
+            SELECT_EXPLOSIVES
         ]
     );
 }
