@@ -33,6 +33,7 @@ use crate::{
     config::Config,
     controllers::{
         aim::gun,
+        clock::TimeScale,
         frame::{self, Hand, Pose},
         hands::grip,
         loadout::{ObjectAddress, Socket, grab, live},
@@ -642,6 +643,8 @@ fn estimate(
         history_after_s,
         point_world,
     })
+    // SAFETY: a release happens while the game runs.
+    .in_game_time(unsafe { TimeScale::current() })
 }
 
 /// Draw the weapon on `socket` into `hand` through the loadout table, which the reconcile carries

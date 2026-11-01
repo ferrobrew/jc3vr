@@ -789,3 +789,32 @@ fn the_attempt_counter_saturates_without_preventing_replacement() {
     assert_eq!(status.latest.unwrap().sequence, u64::MAX);
     assert_eq!(status.latest.unwrap().weapon, Some(99));
 }
+
+#[test]
+fn a_slowed_world_takes_the_hands_part_of_a_throw_at_the_hands_real_speed() {
+    let slow = TimeScale::new(0.25);
+    let thrown = ReleaseMotion {
+        world: WorldMotion {
+            linear: Vec3::new(6.0, 2.0, 0.0),
+            angular: Vec3::Y * 3.0,
+        },
+        inherited: WorldMotion {
+            linear: Vec3::X * 2.0,
+            angular: Vec3::Y,
+        },
+        source: SampleSource::TimestampedHandHistory,
+        history_age_s: Some(0.01),
+        time_scale: TimeScale::REAL,
+    };
+    let game = thrown.in_game_time(slow);
+    // The hand's 4 m/s along X and 2 m/s up become four times as fast per game second; the
+    // player's own movement, already per game second, is kept.
+    assert_eq!(game.world.linear, Vec3::new(2.0 + 16.0, 8.0, 0.0));
+    assert_eq!(game.world.angular, Vec3::Y * (1.0 + 8.0));
+    assert_eq!(game.inherited, thrown.inherited);
+    assert_eq!(thrown.in_game_time(TimeScale::REAL), thrown);
+    // The cap holds the throw to the same real speed at any time scale.
+    let capped = game.capped(2.0);
+    assert!((capped.linear.length() - 8.0).abs() < 1e-4, "{capped:?}");
+    assert!((thrown.capped(2.0).linear.length() - 2.0).abs() < 1e-4);
+}

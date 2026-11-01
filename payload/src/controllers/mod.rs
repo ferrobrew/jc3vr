@@ -13,6 +13,7 @@
 //! - [`mode`]: the per-tick mode detector, which selects the OpenXR action set;
 //! - [`bindings`]: the per-mode mapping from the controllers to the game's actions, and its
 //!   injection on the input tick;
+//! - [`clock`]: the game's clock, which its slow motion slows, against the player's real one;
 //! - [`grab`]: the grip model: what each hand's grip would take among the targets every subsystem
 //!   provides, when it takes it, and the markers that show it;
 //! - [`body`]: the player's body dimensions, their calibration in the headset, and the remap onto
@@ -60,6 +61,7 @@ pub mod aim;
 pub mod aim_state;
 pub mod bindings;
 pub mod body;
+pub mod clock;
 pub mod config;
 pub mod diagnostics;
 pub mod fingers;

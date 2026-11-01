@@ -14,6 +14,7 @@ use tracking_format::event::{self as file, GunRelease, Label, ReleaseController,
 
 use crate::{
     controllers::{
+        clock::TimeScale,
         frame::{self, ControllerFrame, Hand},
         motion::{self, MotionSample, ReleaseEstimate},
         physical_hands::BodyError,
@@ -129,12 +130,15 @@ impl ReleaseFrame {
 /// every other release of a held item.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct ReleaseMotion {
+    /// Per game second: the world's.
     pub world: WorldMotion,
     /// The rig's own part of [`world`](Self::world): the player's movement at the released point,
     /// without the tracked hand's.
     pub inherited: WorldMotion,
     pub source: SampleSource,
     pub history_age_s: Option<f32>,
+    /// The game's time scale the hand's part of [`world`](Self::world) was converted at.
+    pub time_scale: TimeScale,
 }
 
 impl ReleaseMotion {
@@ -143,13 +147,36 @@ impl ReleaseMotion {
         inherited: WorldMotion::ZERO,
         source: SampleSource::UnavailableAtRelease,
         history_age_s: None,
+        time_scale: TimeScale::REAL,
     };
 
+    /// This release in a world running at `time_scale`. The hand's part, measured per real second
+    /// from the controller's display times, becomes the same motion per game second, `1 /
+    /// time_scale` as fast in the world's units: under slow motion the item leaves the hand as fast
+    /// as the hand moved, carrying on from the hold, which kept it with the hand in real time,
+    /// instead of slowing at the release. The player's own movement through the rig is already
+    /// per game second and is kept.
+    pub(crate) fn in_game_time(self, time_scale: TimeScale) -> Self {
+        let hand = WorldMotion {
+            linear: self.world.linear - self.inherited.linear,
+            angular: self.world.angular - self.inherited.angular,
+        };
+        Self {
+            world: WorldMotion {
+                linear: self.inherited.linear + time_scale.to_game_rate(hand.linear),
+                angular: self.inherited.angular + time_scale.to_game_rate(hand.angular),
+            },
+            time_scale,
+            ..self
+        }
+    }
+
     /// The motion a release requests: non-finite parts are zero, and the linear part is held to
-    /// `max_speed_mps` (zero when the cap is not a finite number).
+    /// `max_speed_mps` per real second (zero when the cap is not a finite number), so a tracking
+    /// glitch is capped alike at any time scale.
     pub(crate) fn capped(self, max_speed_mps: f32) -> WorldMotion {
         let cap = if max_speed_mps.is_finite() {
-            max_speed_mps.max(0.0)
+            max_speed_mps.max(0.0) / self.time_scale.get()
         } else {
             0.0
         };
@@ -191,6 +218,7 @@ pub(crate) fn estimate_release(input: ReleaseInput<'_>) -> ReleaseMotion {
         inherited,
         source: SampleSource::RigTransportOnly,
         history_age_s: None,
+        time_scale: TimeScale::REAL,
     };
     let Some(controller) = input.controller else {
         return fallback;
@@ -268,6 +296,7 @@ pub(crate) fn estimate_release(input: ReleaseInput<'_>) -> ReleaseMotion {
         inherited,
         source: SampleSource::TimestampedHandHistory,
         history_age_s: Some(age_s),
+        time_scale: TimeScale::REAL,
     }
 }
 

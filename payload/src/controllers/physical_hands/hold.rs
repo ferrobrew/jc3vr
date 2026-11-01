@@ -25,6 +25,7 @@ use glam::{Vec2, Vec3};
 
 use crate::controllers::{
     body::procedural::solver::arms::TorsoKeepOut,
+    clock::TimeScale,
     physical_hands::{
         grasp::{GripTarget, rotation_vector},
         pickup::PickupTuning,
@@ -77,7 +78,7 @@ impl HoldTuning {
     /// motion a heavy body is easier to hold up, as it falls slower. A `time_scale` that is not
     /// finite and positive is taken as real time.
     pub fn in_real_time(self, time_scale: f32) -> Self {
-        let rate = 1.0 / real_time_scale(time_scale);
+        let rate = 1.0 / TimeScale::new(time_scale).get();
         Self {
             stiffness_per_s: self.stiffness_per_s * rate,
             angular_stiffness_per_s: self.angular_stiffness_per_s * rate,
@@ -118,17 +119,6 @@ impl HoldTuning {
                 .min(tuning.hand_force_n * ASSIST_FORCE_MULTIPLIER),
         );
         tuning
-    }
-}
-
-/// The game's time scale `update_speed` (game seconds per real second) as the hold uses it: one
-/// for a value that is not finite and positive, and otherwise bounded to the range the game's slow
-/// motion and fast-forward reach.
-pub fn real_time_scale(update_speed: f32) -> f32 {
-    if update_speed.is_finite() && update_speed > 0.0 {
-        update_speed.clamp(MIN_TIME_SCALE, MAX_TIME_SCALE)
-    } else {
-        1.0
     }
 }
 
@@ -342,11 +332,6 @@ pub fn keep_out(point: Vec3, space: &BodySpace) -> Vec3 {
 /// The most of its error a constraint closes in one tick: below one, so that a stiff hold settles
 /// rather than overshoots at a slow tick.
 const MAX_CORRECTION: f32 = 0.8;
-/// The slowest time scale the hold scales its rates for: slower clocks hold at this one's rates,
-/// so a near-stopped world does not ask a body for near-infinite speeds.
-const MIN_TIME_SCALE: f32 = 0.05;
-/// The fastest time scale the hold scales its rates for.
-const MAX_TIME_SCALE: f32 = 4.0;
 const ASSIST_MAX_MASS_KG: f32 = 150.0;
 const ASSIST_MIN_SPAN_M: f32 = 0.12;
 const ASSIST_LIFT_RESERVE: f32 = 1.25;
@@ -541,9 +526,6 @@ mod tests {
         for broken in [0.0, -1.0, f32::NAN, f32::INFINITY] {
             assert_eq!(base.in_real_time(broken), base);
         }
-        assert_eq!(real_time_scale(0.001), MIN_TIME_SCALE);
-        assert_eq!(real_time_scale(100.0), MAX_TIME_SCALE);
-        assert_eq!(real_time_scale(1.0), 1.0);
     }
 
     #[test]
