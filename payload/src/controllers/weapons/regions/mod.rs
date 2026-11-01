@@ -17,7 +17,9 @@
 //!   turned as the hand took it, and its trigger fires nothing;
 //! - a hand that takes the grip from a carrying hand, or slides along to it from a brace, becomes
 //!   the firing hand, and the hand it took the gun from braces it where it was;
-//! - the holding hand letting go while the other braces leaves the gun carried by the brace.
+//! - the holding hand letting go while the other braces leaves the gun carried by the brace, except
+//!   at the handguard: there the bracing hand slides back onto the grip ([`grip_from_brace`]),
+//!   the gun gliding through the hand ([`slid_anchor`]) and keeping the way it points, and fires.
 //!
 //! The region definitions are the module's public surface, for any system that needs to know
 //! where on a gun a hand is (the action's region among them). Only long guns (the two-handed,
@@ -181,35 +183,43 @@ pub fn status() -> RegionsStatus {
     STATE.lock().status
 }
 
-/// How the hand carrying `weapon` holds it, for the rigid grip's placement of `hand`'s gun. A leaf
-/// lock, so the placement may read it from the thread that runs it.
+/// How the hand carrying `weapon` holds it, for the rigid grip's placement of `hand`'s gun: a
+/// carry by any part, the grip included while a gun slid onto it keeps its turn, with the anchor
+/// where a slide has it now. A leaf lock, so the placement may read it from the thread that runs
+/// it.
 pub fn carry_for(weapon: usize, hand: Hand) -> Option<Carry> {
+    let now = Instant::now();
     STATE.lock().carries[hand.index()]
         .filter(|c| c.weapon == weapon)
-        .map(|c| c.carry)
+        .map(|c| c.at(now))
 }
 
 /// Which carry of `weapon` in `hand` is under way, when one is: each carry has its own mark, so a
 /// gun body seated for one is not kept for another, or for the gun back at its grip. A leaf lock.
 pub(crate) fn carry_mark(weapon: usize, hand: Hand) -> Option<u32> {
+    let now = Instant::now();
     STATE.lock().carries[hand.index()]
         .filter(|c| c.weapon == weapon)
-        .map(|c| c.mark)
+        .map(|c| c.mark_at(now))
 }
 
-/// The hand carrying `weapon` by a part other than its grip, and how.
+/// The hand carrying `weapon` by a part other than its grip, and how. A gun slid onto the grip is
+/// held at its grip, and fires, so it is not carried.
 pub fn carrying(weapon: usize) -> Option<(Hand, Carry)> {
     let state = STATE.lock();
     Hand::BOTH.into_iter().find_map(|hand| {
         state.carries[hand.index()]
-            .filter(|c| c.weapon == weapon)
+            .filter(|c| c.weapon == weapon && !c.carry.region.fires())
             .map(|c| (hand, c.carry))
     })
 }
 
 /// How each hand carries its gun by a part other than its grip, by [`Hand::index`], when it does.
 pub fn carries() -> [Option<Carry>; 2] {
-    STATE.lock().carries.map(|c| c.map(|c| c.carry))
+    STATE
+        .lock()
+        .carries
+        .map(|c| c.map(|c| c.carry).filter(|carry| !carry.region.fires()))
 }
 
 /// Start carrying `weapon` in `hand` as `carry` says.
@@ -220,6 +230,7 @@ pub(crate) fn begin_carry(weapon: usize, hand: Hand, carry: Carry, cause: CarryC
         weapon,
         carry,
         mark: state.marks,
+        slide: None,
     });
     state.status.carries += 1;
     if cause == CarryCause::LetGo {
@@ -237,6 +248,51 @@ pub(crate) fn begin_carry(weapon: usize, hand: Hand, carry: Carry, cause: CarryC
         carry.region.label()
     );
 }
+
+/// The grip a bracing hand at the handguard slides onto when the holding hand lets go: the gun
+/// held at its grip (the attach point) and turned on the wrist as it was, so it keeps pointing the
+/// way it pointed. The hand reaches the grip over [`GRIP_SLIDE`] from `from`, the anchor it braced
+/// at ([`slid_anchor`]).
+pub(crate) fn grip_from_brace(weapon: usize, hand: Hand, turn: Quat, from: Vec3, now: Instant) {
+    let carry = Carry {
+        region: GunRegion::Grip,
+        anchor: Vec3::ZERO,
+        turn,
+    };
+    let mut state = STATE.lock();
+    state.marks = state.marks.wrapping_add(1);
+    state.carries[hand.index()] = Some(CarryHold {
+        weapon,
+        carry,
+        mark: state.marks,
+        slide: from.is_finite().then_some(AnchorSlide { from, since: now }),
+    });
+    state.status.let_go += 1;
+    state.status.grips_taken += 1;
+    drop(state);
+    tracing::info!(
+        target: "controllers",
+        hand = hand.label(),
+        from_m = ?from,
+        "regions: the holding hand let go, and the {} hand slides from the handguard onto the grip",
+        hand.label()
+    );
+}
+
+/// The anchor of a hand sliding from `from` to `to` along a gun, `elapsed` into a slide of length
+/// `over`: eased in and out, so the gun neither jumps into nor stops dead in the hand, and at `to`
+/// once the slide is over.
+pub fn slid_anchor(from: Vec3, to: Vec3, elapsed: Duration, over: Duration) -> Vec3 {
+    if over.is_zero() {
+        return to;
+    }
+    let t = (elapsed.as_secs_f32() / over.as_secs_f32()).clamp(0.0, 1.0);
+    let eased = t * t * (3.0 - 2.0 * t);
+    from.lerp(to, eased)
+}
+
+/// How long a bracing hand takes to slide from the handguard onto the grip.
+pub const GRIP_SLIDE: Duration = Duration::from_millis(250);
 
 /// Stop carrying `weapon`, for `reason`, when a hand carries it.
 pub(crate) fn end_carry(weapon: usize, reason: &str) {
@@ -448,6 +504,43 @@ struct CarryHold {
     weapon: usize,
     carry: Carry,
     mark: u32,
+    /// The hand's slide along the gun to the carry's anchor, while it lasts.
+    slide: Option<AnchorSlide>,
+}
+
+impl CarryHold {
+    /// The carry's mark at `now`. A slide that has ended counts as a carry of its own, so a gun body
+    /// seated while the gun was gliding through the hand is seated again where it came to rest.
+    fn mark_at(self, now: Instant) -> u32 {
+        let settled = self
+            .slide
+            .is_some_and(|slide| now.saturating_duration_since(slide.since) >= GRIP_SLIDE);
+        self.mark.wrapping_mul(2).wrapping_add(u32::from(settled))
+    }
+
+    /// The carry at `now`, its anchor where a slide has it.
+    fn at(self, now: Instant) -> Carry {
+        let Some(slide) = self.slide else {
+            return self.carry;
+        };
+        Carry {
+            anchor: slid_anchor(
+                slide.from,
+                self.carry.anchor,
+                now.saturating_duration_since(slide.since),
+                GRIP_SLIDE,
+            ),
+            ..self.carry
+        }
+    }
+}
+
+/// A hand sliding along a gun to its carry's anchor.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct AnchorSlide {
+    /// The anchor it started from, in the gun's frame.
+    from: Vec3,
+    since: Instant,
 }
 
 /// A brace waiting for the gun to be measured in its new holding hand.

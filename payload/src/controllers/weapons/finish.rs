@@ -534,8 +534,11 @@ fn take_grip(weapon: usize, hand: Hand, grips: &[ButtonControl; 2], now: Instant
     true
 }
 
-/// Leave the long gun `weapon`, whose holding hand `holder` let go, in the hand that braces it,
-/// carried where that hand holds it. Returns whether it did.
+/// Leave the long gun `weapon`, whose holding hand `holder` let go, in the hand that braces it.
+/// A hand bracing the handguard slides back onto the grip and fires the gun, which keeps pointing
+/// the way it pointed ([`regions::grip_from_brace`]): letting go of a braced gun there is passing
+/// it to the other hand. A hand braced anywhere else carries it where it holds it. Returns whether
+/// the gun stayed in the bracing hand.
 fn leave_in_brace(weapon: usize, holder: Hand, active: &ActiveHands, world_scale: f32) -> bool {
     let Some(hold) = foregrip::status()
         .hold
@@ -558,8 +561,19 @@ fn leave_in_brace(weapon: usize, holder: Hand, active: &ActiveHands, world_scale
         return false;
     }
     foregrip::clear();
-    regions::begin_carry(weapon, brace, carry, CarryCause::LetGo);
+    if passes_to_grip(carry.region) {
+        regions::grip_from_brace(weapon, brace, carry.turn, carry.anchor, Instant::now());
+    } else {
+        regions::begin_carry(weapon, brace, carry, CarryCause::LetGo);
+    }
     true
+}
+
+/// Whether a bracing hand at `region` takes the gun at its grip when the holding hand lets go: only
+/// at the handguard, where a hand bracing a gun is the hand it is being passed to. A hand on the
+/// barrel, the stock, the magazine, or the action carries it there.
+fn passes_to_grip(region: GunRegion) -> bool {
+    region == GunRegion::Handguard
 }
 
 /// Record the hands on the long guns for the readout: each hand holding one at its grip or the part
@@ -832,6 +846,20 @@ pub(super) fn cues_grab(outcome: GrabOutcome) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_brace_at_the_handguard_takes_the_grip_when_the_holder_lets_go() {
+        assert!(passes_to_grip(GunRegion::Handguard));
+        for region in [
+            GunRegion::Barrel,
+            GunRegion::Stock,
+            GunRegion::Magazine,
+            GunRegion::Action,
+            GunRegion::Grip,
+        ] {
+            assert!(!passes_to_grip(region), "{region:?}");
+        }
+    }
 
     #[test]
     fn each_hand_fires_from_its_own_trigger_unless_its_gun_is_held_back() {

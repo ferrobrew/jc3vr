@@ -339,3 +339,67 @@ fn a_carry_ends_when_its_hand_holds_another_gun_or_none() {
     assert!(carry_gone(0x10, Some(0x20)).is_some());
     assert!(carry_gone(0x10, None).is_some());
 }
+
+#[test]
+fn a_hand_slides_onto_the_grip_eased_and_ends_there() {
+    let from = Vec3::new(0.0, 0.02, -0.3);
+    let to = Vec3::ZERO;
+    let over = GRIP_SLIDE;
+    assert_eq!(slid_anchor(from, to, Duration::ZERO, over), from);
+    assert_eq!(slid_anchor(from, to, over, over), to);
+    assert_eq!(slid_anchor(from, to, over * 3, over), to);
+    let half = slid_anchor(from, to, over / 2, over);
+    assert!(half.distance(from.lerp(to, 0.5)) < 1e-5);
+    // Eased: the first tenth of the time covers less than a tenth of the way.
+    let early = slid_anchor(from, to, over / 10, over);
+    assert!(early.distance(from) < 0.1 * from.distance(to));
+    assert_eq!(slid_anchor(from, to, Duration::ZERO, Duration::ZERO), to);
+}
+
+#[test]
+fn a_held_slide_moves_only_the_anchor() {
+    let turn = Quat::from_rotation_x(0.7);
+    let since = Instant::now();
+    let hold = CarryHold {
+        weapon: 1,
+        carry: Carry {
+            region: GunRegion::Grip,
+            anchor: Vec3::ZERO,
+            turn,
+        },
+        mark: 1,
+        slide: Some(AnchorSlide {
+            from: Vec3::new(0.0, 0.0, -0.3),
+            since,
+        }),
+    };
+    let start = hold.at(since);
+    assert_eq!(start.anchor, Vec3::new(0.0, 0.0, -0.3));
+    assert_eq!(start.turn, turn);
+    assert_eq!(start.region, GunRegion::Grip);
+    assert_eq!(hold.at(since + GRIP_SLIDE).anchor, Vec3::ZERO);
+    // The gun body is seated again once the slide has ended, and not before.
+    assert_eq!(hold.mark_at(since), hold.mark_at(since + GRIP_SLIDE / 2));
+    assert_ne!(hold.mark_at(since), hold.mark_at(since + GRIP_SLIDE));
+}
+
+#[test]
+fn a_gun_slid_onto_the_grip_keeps_pointing_the_way_it_pointed() {
+    // The grip's attach frame on the wrist, and the gun's turn on the wrist when the hand braced.
+    let grip = Pose {
+        position: Vec3::new(0.01, -0.02, -0.07),
+        orientation: Quat::from_rotation_z(0.4),
+    };
+    let turn = Quat::from_rotation_y(1.2) * Quat::from_rotation_x(-0.3);
+    let carry = Carry {
+        region: GunRegion::Grip,
+        anchor: Vec3::ZERO,
+        turn,
+    };
+    let held = hand_pose::mul(grip, carry_offset(&carry, grip));
+    // The gun keeps its turn on the wrist, so its barrel points as it did, with its attach point
+    // in the palm where the grip's is.
+    assert!(held.orientation.dot(turn).abs() > 1.0 - 1e-5);
+    assert!(held.position.distance(grip.position) < 1e-6);
+    assert!(carry.region.fires());
+}
