@@ -4,7 +4,7 @@ The grab view draws, around each hand, what the grip and the palms' reach saw on
 
 ## Using it
 
-The Grab view switch in the debug UI's visualization drawer shows and hides it, and so does the button at the top of its readout under the drawer's View readouts; the drawer is reachable in the headset on the floating panel. No key toggles it. The readout sits beside the collider view's ([collider-view.md](collider-view.md)), and the two can be on together. Its settings are `controllers.physical_hands.grab_view`: the switch (`enabled`, on) and switches for each part (`rays`, `targets`, `wrist`, `refusals`, `candidates`), each a registered switch in the drawer. A target out of reach still gets a line within 2 m of a hand (`grab_view::draw::TARGET_RADIUS_M`), a candidate is drawn within 3 m of a hand (`grab_view::candidates::CANDIDATE_RADIUS_M`), and at most 24 candidates are drawn (`grab_view::candidates::MAX_CANDIDATES`). It is a diagnostic, so it has no pause menu entry ([settings.md](../settings.md)); switching `enabled` off is how a build for players hides it. The view draws through the overlay, so it needs `controllers.overlay.enabled`, and it is taken down while a menu is up.
+The Grab view switch in the debug UI's visualization drawer shows and hides it, and so does the button at the top of its readout under the drawer's View readouts; the drawer is reachable in the headset on the floating panel. No key toggles it. The readout sits beside the collider view's ([collider-view.md](collider-view.md)), and the two can be on together. Its settings are `controllers.physical_hands.grab_view`: the switch (`enabled`, on) and switches for each part (`rays`, `targets`, `wrist`, `refusals`, `candidates`), each a registered switch in the drawer. Every part is on by default except the palm marker on the wrist (`wrist`): a coloured disc on the wrist reads to a player as part of the wrist detonator, and the palm state it shows is in the readout and the grip press log. A target out of reach still gets a line within 2 m of a hand (`grab_view::draw::TARGET_RADIUS_M`), a candidate is drawn within 3 m of a hand (`grab_view::candidates::CANDIDATE_RADIUS_M`), and at most 24 candidates are drawn (`grab_view::candidates::MAX_CANDIDATES`). It is a diagnostic, so it has no pause menu entry ([settings.md](../settings.md)); switching `enabled` off is how a build for players hides it. The view draws through the overlay, so it needs `controllers.overlay.enabled`, and it is taken down while a menu is up.
 
 The readout names each hand's palm state, counts what the last tick drew and what the budget left out, the candidates by kind with the time the last read of the world took, and the refused grabs with the last one's hand and reason.
 
@@ -33,7 +33,7 @@ The lines to the targets. From each hand's grip a line runs to every grip target
 
 The marker at the target's end grows from 15 mm to 50 mm as the hand comes from 2 m away to the target's reach, so an approach is visible before the hand gets there.
 
-The palm marker. A disc over the back of each wrist shows the palms' state for that hand, ringed while the palm acts on the world. Its inputs are those of the grip press log's `palms` field (`physical_hands::palm_readout`):
+The palm marker, with `wrist` on. A disc over the back of each wrist shows the palms' state for that hand, ringed while the palm acts on the world. Its inputs are those of the grip press log's `palms` field (`physical_hands::palm_readout`):
 
 | State | Colour | Meaning |
 | --- | --- | --- |
@@ -76,7 +76,7 @@ Everything runs on the game thread: the palms' tick, and the input tick's game s
 
 ## Headset checklist
 
-1. With the view on (the default), look at a wrist: the palm marker is green and ringed on foot with an empty hand, yellow with a gun in the hand, cyan holding a crate, and blue in a vehicle.
+1. With the view and its `wrist` part on, look at a wrist: the palm marker is green and ringed on foot with an empty hand, yellow with a gun in the hand, cyan holding a crate, and blue in a vehicle.
 2. Hold an empty hand over the ground: five grey rays fan out of the palm. Lower it onto the ground: the rays that reach it turn orange, with dots where they hit.
 3. Hold the hand over a crate: the rays on the crate turn green, a magenta line runs from the hand to the crate's marker, and a squeeze takes it. Try one too heavy: its box is red, the rays orange, and no line.
 4. Drop a weapon and look at it: it has a gold box with a faint line to the nearer hand. Reach for it: the rays on it turn green and the line to its marker magenta. If the take is refused, a red ring flashes on it, and the readout names why.

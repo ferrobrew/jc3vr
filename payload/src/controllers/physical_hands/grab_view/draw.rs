@@ -405,7 +405,10 @@ mod tests {
 
     #[test]
     fn the_rays_follow_the_head_and_the_candidates_are_capped() {
-        let config = GrabViewConfig::new();
+        let config = GrabViewConfig {
+            wrist: true,
+            ..GrabViewConfig::new()
+        };
         let frame = test_frame();
         let tick = Tick::default();
         let candidate = Candidate {

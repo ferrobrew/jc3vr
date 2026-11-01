@@ -1,8 +1,9 @@
 //! The wrist detonator: a button on the inside of one wrist that the other hand's index fingertip
-//! presses to detonate the placed charges. The pressing hand is the hand the guns ride
-//! ([`crate::controllers::weapons::volumes::gun_side`], named by [`TickInputs::presser`]), and the
-//! button is on the other: a gun can ride the hand that is not the player's dominant one, and the
-//! button belongs on the hand that the pouches leave free.
+//! presses to detonate the placed charges. The button is always on the wrist of the hand that is
+//! not the player's dominant one, as a watch is, and the dominant hand presses it
+//! ([`TickInputs::presser`]), whatever either hand holds, so the player always finds it in the same
+//! place. A dominant hand closing on something with nothing in it (reaching to take a charge or a
+//! grenade from the other hand, say) does not press it ([`TickInputs::presser_reaching`]).
 //!
 //! On each input tick the press is tested in the off hand's grip frame as that hand is drawn
 //! ([`late::drawn_hands`], the hands the palette edit renders, which fall short of the controllers
@@ -117,9 +118,12 @@ pub fn status() -> WristStatus {
 pub(crate) struct TickInputs {
     /// Whether the detonator may act this tick: its toggle is on and the hands are active.
     pub acting: bool,
-    /// The hand whose fingertip presses the button, which sits on the other hand's wrist: the hand
-    /// the guns ride ([`crate::controllers::weapons::volumes::gun_side`]).
+    /// The hand whose fingertip presses the button, which sits on the other hand's wrist: the
+    /// player's dominant hand.
     pub presser: Hand,
+    /// Whether the pressing hand holds nothing and its grip is closed: it is reaching to take
+    /// something, and its fingertip is not read, so it cannot press the button on the way.
+    pub presser_reaching: bool,
     pub dt: f32,
 }
 
@@ -139,7 +143,9 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
     let off = presser.other();
     let grips = sample.grips;
     let face = grips[off.index()].and_then(|_| press::button_face(off, Pose::IDENTITY, tuning));
-    let tip = sample.fingertip(presser, tuning);
+    let tip = (!inputs.presser_reaching)
+        .then(|| sample.fingertip(presser, tuning))
+        .flatten();
     let charges = c4::charges().unwrap_or(0).max(0);
     let lit = charges > 0;
 

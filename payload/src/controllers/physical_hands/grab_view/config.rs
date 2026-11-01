@@ -14,7 +14,9 @@ pub struct GrabViewConfig {
     /// Draw a line from each hand to every grip target near it, coloured by how the hand stands to
     /// it.
     pub targets: bool,
-    /// Mark each hand's wrist with the palms' state for that hand.
+    /// Mark each hand's wrist with the palms' state for that hand. Off by default: a coloured disc
+    /// on the wrist reads to a player as part of the wrist detonator, and the state it shows is in
+    /// the readout and the grip press log.
     pub wrist: bool,
     /// Flash the target of a grab that was refused.
     pub refusals: bool,
@@ -29,7 +31,7 @@ impl GrabViewConfig {
             enabled: true,
             rays: true,
             targets: true,
-            wrist: true,
+            wrist: false,
             refusals: true,
             candidates: true,
         }

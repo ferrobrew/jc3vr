@@ -101,13 +101,12 @@ pub(crate) fn finish_tick(
         .lock()
         .opening
         .step_available(values, grips, unavailable);
-    let (weapon, lone, gameplay, gun_side, touch, slide, promote, docked_touch) = {
+    let (weapon, lone, gameplay, touch, slide, promote, docked_touch) = {
         let state = STATE.lock();
         (
             state.weapon,
             state.lone,
             state.gameplay,
-            state.gun_side,
             state.touch,
             state.slide,
             state.promote,
@@ -359,7 +358,9 @@ pub(crate) fn finish_tick(
     c4::wrist::input_tick(
         &c4::wrist::TickInputs {
             acting: config.weapons.wrist_detonator && active.is_some(),
-            presser: gun_side,
+            presser: config.acting_hand(),
+            presser_reaching: free[config.acting_hand().index()]
+                && grips[config.acting_hand().index()].held(),
             dt,
         },
         &config,
