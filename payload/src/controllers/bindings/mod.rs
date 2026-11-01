@@ -57,6 +57,7 @@ pub mod yank;
 
 use std::{sync::LazyLock, time::Instant};
 
+use glam::Vec3;
 use jc3gi::{input::input_action_map::Action, state::StateBitFlag};
 use parking_lot::Mutex;
 
@@ -714,7 +715,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
                     hand: grapple_hand,
                     grabs: grabs_for(step.grabs, Consumer::Snatch),
                     grips: finish.grips,
-                    distance: grapple_hand_distance(grapple_hand, &config.weapons.snatch.yank),
+                    line: grapple_hand_line(grapple_hand),
                     ordinary_button_held: button_holds.ordinary,
                     modifier_held: button_holds.modifier,
                     detection: &detection,
@@ -1058,6 +1059,22 @@ fn grapple_hand_distance(hand: Hand, config: &YankConfig) -> Option<f32> {
     let active = hands::active_hands_raw()?;
     let grip = active.hands[hand.index()]?.grip.position;
     Some(grip.distance(yank::body_point(active.head.position, config)))
+}
+
+/// The grapple hand's grip position and aim direction, in the cockpit frame, or `None` while the
+/// hand is untracked or the hands are inert; the snatch's yank is measured along the aim.
+fn grapple_hand_line(hand: Hand) -> Option<snatch::HandLine> {
+    let tracked = frame::with_latest(|frame| {
+        frame.focused && frame.hand(hand).active && frame.hand(hand).grip.is_tracked()
+    })?;
+    if !tracked {
+        return None;
+    }
+    let cockpit = hands::active_hands_raw()?.hands[hand.index()]?;
+    Some(snatch::HandLine {
+        grip: cockpit.grip.position,
+        aim: cockpit.aim.orientation * Vec3::NEG_Z,
+    })
 }
 
 /// Whether the grapple has a line of its own attached, as the mode detector's snapshot reads it.

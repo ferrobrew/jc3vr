@@ -151,6 +151,17 @@ impl StallWatch {
     }
 }
 
+/// How far along `line`, the grapple hand's aim when the grip armed the snatch, the hand's grip at
+/// `grip` reaches, metres; both in the cockpit frame. A yank back from the target is a drop in it,
+/// whichever way the line points and wherever the hand is held: a seated player's hand pulled back
+/// past their side, which neither nears the body nor the head, is a yank all the same. `None` for a
+/// line with no direction.
+pub fn reach_along(grip: Vec3, line: Vec3) -> Option<f32> {
+    let line = line.try_normalize()?;
+    let reach = grip.dot(line);
+    reach.is_finite().then_some(reach)
+}
+
 /// The velocity that throws a body at `from` to land at `to` after `flight_s` seconds under
 /// `gravity`: the toss a tap of the grapple at a gun gives it.
 pub fn toss_velocity(from: Vec3, to: Vec3, flight_s: f32, gravity: Vec3) -> Vec3 {
@@ -180,6 +191,80 @@ pub fn toss_flight(distance: f32, speed: f32, shortest: f32, longest: f32) -> f3
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::{
+        bindings::yank::{YankDetector, body_point},
+        snatch::config::SnatchConfig,
+    };
+
+    /// A seated player's grip on a weapon on the ground ahead and to the right, then a pull of the
+    /// hand back and out past their left side at about 0.9 m/s, sampled at the game's tick, with the
+    /// aim at the grip edge and the head; cockpit frame. The shape of a recorded attempt.
+    const SEATED_PULL: [Vec3; 13] = [
+        Vec3::new(-0.029, -0.274, -0.390),
+        Vec3::new(-0.047, -0.264, -0.386),
+        Vec3::new(-0.060, -0.252, -0.381),
+        Vec3::new(-0.078, -0.243, -0.368),
+        Vec3::new(-0.101, -0.235, -0.354),
+        Vec3::new(-0.126, -0.226, -0.341),
+        Vec3::new(-0.150, -0.221, -0.329),
+        Vec3::new(-0.173, -0.217, -0.317),
+        Vec3::new(-0.191, -0.216, -0.307),
+        Vec3::new(-0.205, -0.215, -0.297),
+        Vec3::new(-0.216, -0.216, -0.288),
+        Vec3::new(-0.221, -0.217, -0.282),
+        Vec3::new(-0.225, -0.219, -0.277),
+    ];
+    const SEATED_AIM: Vec3 = Vec3::new(0.51, -0.46, -0.73);
+    const SEATED_HEAD: Vec3 = Vec3::new(0.07, -0.046, 0.0);
+    const SEATED_DT: f32 = 0.0266;
+
+    fn fires(reaches: impl Iterator<Item = Option<f32>>) -> bool {
+        let config = SnatchConfig::new().yank;
+        let mut detector = YankDetector::new();
+        reaches
+            .map(|reach| detector.step(SEATED_DT, reach, true, &config))
+            .any(|yank| yank.is_some())
+    }
+
+    #[test]
+    fn a_seated_pull_past_the_side_is_a_yank_along_the_aim() {
+        assert!(fires(
+            SEATED_PULL
+                .iter()
+                .map(|&grip| reach_along(grip, SEATED_AIM))
+        ));
+        // The same pull keeps its distance from a point below the head, which is why the body's
+        // distance is not the snatch's measure.
+        let config = SnatchConfig::new().yank;
+        let body = body_point(SEATED_HEAD, &config);
+        assert!(!fires(
+            SEATED_PULL.iter().map(|&grip| Some(grip.distance(body)))
+        ));
+    }
+
+    #[test]
+    fn a_reach_toward_the_target_or_across_the_aim_is_no_yank() {
+        let toward = SEATED_PULL
+            .iter()
+            .rev()
+            .map(|&grip| reach_along(grip, SEATED_AIM));
+        assert!(!fires(toward));
+        let across = (0..12).map(|k| {
+            let grip = Vec3::new(0.0, -0.25, -0.4) + Vec3::X * 0.03 * k as f32;
+            reach_along(grip, Vec3::NEG_Z)
+        });
+        assert!(!fires(across));
+    }
+
+    #[test]
+    fn a_line_with_no_direction_measures_nothing() {
+        assert_eq!(reach_along(Vec3::ONE, Vec3::ZERO), None);
+        assert_eq!(reach_along(Vec3::ONE, Vec3::NAN), None);
+        assert_eq!(
+            reach_along(Vec3::new(0.0, 0.0, -0.4), Vec3::NEG_Z),
+            Some(0.4)
+        );
+    }
 
     fn ray() -> Ray {
         Ray::new(Vec3::ZERO, Vec3::NEG_Z).unwrap()

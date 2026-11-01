@@ -17,7 +17,9 @@ pub struct SnatchConfig {
     pub enabled: bool,
     /// Hold B after gripping a remote target to keep its rope length and swing it physically.
     pub sling: bool,
-    /// The yank that fires the snatch.
+    /// The yank that fires the snatch, measured along the grapple hand's aim at the grip edge
+    /// ([`reach_along`](crate::controllers::snatch::rules::reach_along)) rather than toward the
+    /// body, so [`YankConfig::body_drop_m`] does not apply to it.
     pub yank: YankConfig,
 }
 
@@ -28,8 +30,8 @@ impl SnatchConfig {
             sling: true,
             yank: YankConfig {
                 enabled: true,
-                min_distance_m: 0.12,
-                min_speed_mps: 1.0,
+                min_distance_m: 0.1,
+                min_speed_mps: 0.7,
                 window_s: 0.25,
                 cooldown_s: 0.5,
                 body_drop_m: 0.3,
@@ -129,7 +131,7 @@ mod tests {
     }
 
     #[test]
-    fn the_snatch_fires_on_a_sharp_pull_toward_the_body() {
+    fn the_snatch_fires_on_a_sharp_pull_back_along_the_aim() {
         assert_eq!(yanks(&[0.6, 0.6, 0.52, 0.42, 0.34, 0.33]), 1);
     }
 
