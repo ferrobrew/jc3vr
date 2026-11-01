@@ -3,7 +3,7 @@
 //! controllers take.
 
 use std::{
-    sync::atomic::AtomicBool,
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
     time::{Duration, Instant},
 };
 
@@ -120,9 +120,35 @@ pub(crate) fn push() -> Vec2 {
     }
 }
 
-/// How long a published pose stays current: the aim update runs every simulation tick while the
-/// hands act, so an older one means they have stopped.
+/// How long a published pose stays current for a reader between the steps: the aim update runs
+/// every simulation tick while the hands act, so an older one means they have stopped.
 pub(super) const STALE_AFTER: Duration = Duration::from_millis(200);
+
+/// How many physics steps a publication stays current for the step and for what decides whether a
+/// hand acts: six steps of the 30 Hz world, the same 200 ms as [`STALE_AFTER`] at the step's rate.
+/// Counted in steps rather than wall-clock time, so a hitch that holds up the whole simulation
+/// tick (a frame of a few hundred milliseconds) ages nothing, and a live hold is not torn down;
+/// only steps that run without a new publication do.
+pub(super) const STALE_STEPS: u64 = 6;
+
+/// The physics steps run since the payload loaded.
+static STEPS: AtomicU64 = AtomicU64::new(0);
+
+/// The physics steps run so far, for stamping a publication.
+pub(super) fn steps() -> u64 {
+    STEPS.load(Ordering::Acquire)
+}
+
+/// Count a physics step, returning its number. Called once at the start of each step.
+pub(super) fn count_step() -> u64 {
+    STEPS.fetch_add(1, Ordering::AcqRel) + 1
+}
+
+/// Whether a publication stamped at step `published` is still current at step `now`: no more
+/// than [`STALE_STEPS`] steps have run since.
+pub(super) fn current_at(published: Option<u64>, now: u64) -> bool {
+    published.is_some_and(|at| now.saturating_sub(at) <= STALE_STEPS)
+}
 
 /// How long a hand may stop acting before its body leaves the simulation, so that a moment's lost
 /// tracking or a flicker of the mode does not churn the world. A hand that takes a gun or carries
@@ -191,10 +217,13 @@ pub(super) struct Shared {
     /// Each hand on a gun's tracked palm centre, as last published, before the two-handed pose
     /// moved it onto the gun.
     pub(super) tracked: [Option<Vec3>; 2],
-    /// Which hands stopped acting on purpose, and park at once, and when that was published.
-    pub(super) park_now: Option<(Instant, [bool; 2])>,
+    /// Which hands stopped acting on purpose, and park at once, and the step that was published
+    /// at ([`steps`]).
+    pub(super) park_now: Option<(u64, [bool; 2])>,
     /// When the targets were published; `None` while no hand acts.
     pub(super) published: Option<Instant>,
+    /// The step the targets were published at ([`steps`]); `None` while no hand acts.
+    pub(super) published_step: Option<u64>,
     pub(super) world_scale: f32,
     pub(super) trackers: [(VelocityTracker, AngularTracker); 2],
     /// The motion of the frame that carries the palms.
@@ -249,6 +278,7 @@ pub(super) static SHARED: Mutex<Shared> = Mutex::new(Shared {
     tracked: [None; 2],
     park_now: None,
     published: None,
+    published_step: None,
     world_scale: 1.0,
     trackers: TRACKERS_AT_REST,
     carrier: VelocityTracker::new(),
@@ -434,6 +464,20 @@ pub(super) fn press_load(lag: Vec3, config: &HandBodyTuning, scale: f32) -> f32 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_publication_ages_by_steps_so_a_hitch_drops_nothing() {
+        // Published after step 40: the next steps find it current however long they took to come.
+        let published = Some(40);
+        assert!(current_at(published, 41));
+        assert!(current_at(published, 40 + STALE_STEPS));
+        // Only steps that run without a new publication age it.
+        assert!(!current_at(published, 41 + STALE_STEPS));
+        assert!(!current_at(None, 41));
+        // A step number behind the stamp (a publication between a step's count and its read)
+        // is current.
+        assert!(current_at(Some(42), 41));
+    }
 
     #[test]
     fn a_hand_on_a_gun_drives_the_hand_and_the_gun_with_its_full_strength() {

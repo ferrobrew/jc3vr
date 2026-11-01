@@ -25,7 +25,7 @@ use crate::{
             state::{
                 CLEANUP_REGISTERED, MIN_PRESSURE_LOAD, RENDER_MAX_TURN_RAD,
                 RENDER_TURN_DEADBAND_RAD, SHARED, STALE_AFTER, TRACKERS_AT_REST, Target,
-                VELOCITY_SMOOTHING_S, acting_palms, enabled,
+                VELOCITY_SMOOTHING_S, acting_palms, enabled, steps,
             },
         },
         roomscale::teleport,
@@ -98,7 +98,8 @@ pub(crate) fn observe(dt: f32) {
     let config = Config::lock_query(|c| c.controllers.physical_hands);
     let now = Instant::now();
     let acting = enabled(&config).then(|| acting_palms(&config)).flatten();
-    let park_now = acting.as_ref().map(|a| (now, a.park_now));
+    let step = steps();
+    let park_now = acting.as_ref().map(|a| (step, a.park_now));
     let tracked = acting.as_ref().map_or([None; 2], |a| a.tracked);
     let palms = acting
         .filter(|a| a.palms.iter().any(Option::is_some))
@@ -162,6 +163,7 @@ pub(crate) fn observe(dt: f32) {
         shared.park_now = park_now;
         shared.world_scale = world_scale;
         shared.published = palms.is_some().then_some(now);
+        shared.published_step = palms.is_some().then_some(step);
         let stepped = shared.stepped_lately(now);
         let show = stepped;
         let scale = world_scale.max(1e-3);

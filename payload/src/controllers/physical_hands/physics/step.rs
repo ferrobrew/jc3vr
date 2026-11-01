@@ -27,7 +27,7 @@ use crate::{
                 render::RenderOffset,
                 state::{
                     MAX_LEAD_S, PARK_AFTER, READOUT_PERIOD, RENDER_MAX_TURN_RAD,
-                    RENDER_TURN_DEADBAND_RAD, SHARED, STALE_AFTER, enabled, gun_tuning,
+                    RENDER_TURN_DEADBAND_RAD, SHARED, count_step, current_at, enabled, gun_tuning,
                     holding_tuning, press_load,
                 },
                 types::{BodyPhase, HandBodyStatus},
@@ -46,6 +46,7 @@ use crate::{
 /// The thread that steps the physics world, outside the step.
 pub(crate) unsafe fn step() {
     let now = Instant::now();
+    let step_number = count_step();
     let step_s = step_seconds();
     let config = Config::lock_query(|c| c.controllers.physical_hands);
     contact::step_tick();
@@ -84,6 +85,7 @@ pub(crate) unsafe fn step() {
         targets,
         tracked,
         published,
+        published_step,
         world_scale,
         mut push,
         (holds, pins),
@@ -97,13 +99,14 @@ pub(crate) unsafe fn step() {
             shared.targets,
             shared.tracked,
             shared.published,
+            shared.published_step,
             shared.world_scale,
             shared.push,
             (shared.holds, shared.pins),
             std::mem::take(&mut shared.rig_moves),
             shared
                 .park_now
-                .filter(|(at, _)| now.saturating_duration_since(*at) <= STALE_AFTER)
+                .filter(|(at, _)| current_at(Some(*at), step_number))
                 .map_or([false; 2], |(_, park)| park),
             shared
                 .follow_through
@@ -111,11 +114,12 @@ pub(crate) unsafe fn step() {
             shared.loads,
         )
     };
-    let fresh = published.is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER);
+    // Staleness counts steps, not time, so a hitch of the whole simulation tick drops no hold.
+    let fresh = current_at(published_step, step_number);
     let pins = if fresh { pins } else { [None; 2] };
     // The hands on a gun act to hold it, with a holding hand's strength.
     let gun_holds = if fresh {
-        guns::holds_for_step(&config)
+        guns::holds_for_step(&config, step_number)
     } else {
         guns::GunHolds::default()
     };

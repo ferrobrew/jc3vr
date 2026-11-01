@@ -60,7 +60,10 @@ pub(crate) use self::engine::read_holds;
 pub use self::math::MassSource;
 use crate::controllers::{
     frame::{Hand, Pose},
-    physical_hands::PhysicalHandsConfig,
+    physical_hands::{
+        PhysicalHandsConfig,
+        physics::state::{current_at, steps},
+    },
     weapons::heft::HeftClass,
 };
 
@@ -175,19 +178,16 @@ pub(crate) fn enabled(config: &PhysicalHandsConfig) -> bool {
 pub(crate) fn publish(holds: GunHolds) {
     let mut shared = SHARED.lock();
     shared.holds = holds;
-    shared.published = Some(Instant::now());
+    shared.published = Some(steps());
 }
 
-/// The guns in the hands for a step: the last publication while it is current and held guns are
-/// bodies, and none otherwise.
-pub(super) fn holds_for_step(config: &PhysicalHandsConfig) -> GunHolds {
+/// The guns in the hands for step `step`: the last publication while it is current and held guns
+/// are bodies, and none otherwise.
+pub(super) fn holds_for_step(config: &PhysicalHandsConfig, step: u64) -> GunHolds {
     if !enabled(config) {
         return GunHolds::default();
     }
-    SHARED
-        .lock()
-        .fresh_holds(Instant::now())
-        .unwrap_or_default()
+    SHARED.lock().fresh_holds(step).unwrap_or_default()
 }
 
 /// The hands that act because they hold or brace a gun, from the last publication: their bodies
@@ -198,7 +198,7 @@ pub(crate) fn acting_hands(config: &PhysicalHandsConfig) -> [bool; 2] {
     }
     SHARED
         .lock()
-        .fresh_holds(Instant::now())
+        .fresh_holds(steps())
         .map_or([false; 2], |h| h.hands())
 }
 
@@ -268,13 +268,16 @@ pub(crate) fn take_support_break(hand: Hand) -> bool {
     std::mem::take(&mut SHARED.lock().support_broke[hand.index()])
 }
 
-/// How long a publication or a step's results stay current.
+/// How long a step's results stay current for a reader between the steps. A publication's
+/// staleness counts steps instead ([`current_at`]), so a hitch of the whole simulation tick never
+/// drops a held gun.
 const STALE_AFTER: Duration = Duration::from_millis(200);
 
 /// What the input tick, the step, and the readers share.
 struct Shared {
     holds: GunHolds,
-    published: Option<Instant>,
+    /// The step the holds were published at ([`steps`]).
+    published: Option<u64>,
     /// Shots queued since the last step: each hand's weapon and the count.
     shots: [Option<(usize, u32)>; 2],
     /// Each holding hand's weapon and its gun body's deviation, from the last step.
@@ -286,10 +289,9 @@ struct Shared {
 }
 
 impl Shared {
-    fn fresh_holds(&self, now: Instant) -> Option<GunHolds> {
-        self.published
-            .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER)
-            .then_some(self.holds)
+    /// The holds while their publication is current at step `step`.
+    fn fresh_holds(&self, step: u64) -> Option<GunHolds> {
+        current_at(self.published, step).then_some(self.holds)
     }
 
     fn stepped_lately(&self, now: Instant) -> bool {

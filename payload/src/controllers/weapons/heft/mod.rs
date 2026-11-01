@@ -961,6 +961,29 @@ mod tests {
     }
 
     #[test]
+    fn readers_sharing_the_clock_advance_the_spring_by_wall_time_once() {
+        // The physical drive's tick and every render-path reader advance the one spring; however
+        // their reads interleave, the steps they take add up to the time that passed, not to a
+        // multiple of it.
+        let start = Instant::now();
+        let mut at = Some(start);
+        let mut total = 0.0;
+        for frame in 1..=90_u64 {
+            let tick = start + Duration::from_micros(frame * 11_111);
+            let render = tick + Duration::from_micros(3_000);
+            // The physics path reads at the tick, two render-path readers just after, one of them
+            // with a time taken before the other's.
+            total += advance_clock(&mut at, tick);
+            total += advance_clock(&mut at, render);
+            total += advance_clock(&mut at, render - Duration::from_micros(1_000));
+        }
+        let elapsed = (start + Duration::from_micros(90 * 11_111 + 3_000))
+            .duration_since(start)
+            .as_secs_f32();
+        assert!((total - elapsed).abs() < 1e-4, "{total} against {elapsed}");
+    }
+
+    #[test]
     fn the_offset_is_clamped_to_the_largest_angle() {
         let clamped = clamp_angle(Quat::from_rotation_x(1.0), 0.5);
         assert!((angle(clamped) - 0.5).abs() < 1e-5);

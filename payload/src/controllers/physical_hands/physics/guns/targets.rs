@@ -1,13 +1,14 @@
 //! The support and weight targets shared by the physical hand drive and its drawn reference.
 
-use std::time::Instant;
-
 use glam::Vec3;
 
 use crate::controllers::{
     frame::Hand,
     hands::CockpitHand,
-    physical_hands::physics::guns::{self, GunHolds},
+    physical_hands::physics::{
+        guns::{self, GunHolds},
+        state::steps,
+    },
     vehicles,
     weapons::{
         config::HeftConfig,
@@ -27,10 +28,7 @@ pub(crate) fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, heft: &Hef
 /// Give the physical drive the support and weight targets of the currently published guns.
 /// Reads no native objects and does not compose active hands recursively.
 pub(crate) fn apply_physical(hands: &mut [Option<CockpitHand>; 2], head: Vec3, heft: &HeftConfig) {
-    let holds = guns::SHARED
-        .lock()
-        .fresh_holds(Instant::now())
-        .unwrap_or_default();
+    let holds = guns::SHARED.lock().fresh_holds(steps()).unwrap_or_default();
     let raw = *hands;
     vehicles::apply(hands);
     apply(hands, head, heft);
