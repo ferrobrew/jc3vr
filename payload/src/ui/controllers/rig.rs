@@ -50,7 +50,7 @@ pub(super) fn rig_readout(ui: &mut Ui, status: &RootStatus) {
         m.frame.head_velocity.y,
     ));
     ui.label(format!(
-        "Lean ({:+.3}, {:+.3}) m · allowed {:.3} m forward · pivot drop {:.3} m below the standing height ({:+.3} m) · torso yaw {:+.1}°",
+        "Lean ({:+.3}, {:+.3}) m · allowed {:.3} m forward · pivot drop {:.3} m below the upright height ({:+.3} m) · torso yaw {:+.1}°",
         m.lean.vector.x,
         m.lean.vector.y,
         m.lean.allowance_m,

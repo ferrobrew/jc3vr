@@ -358,21 +358,16 @@ fn classifier_input(stage: &StageInfo, player: &BodyDimensions) -> ClassifierInp
 pub fn manual_recenter_kind() -> RecenterKind {
     let chase = Config::lock_query(|c| c.controllers.body.rig.chase.enabled);
     let frame = frame_shared().filter(|f| f.fresh(Instant::now()));
-    recenter_kind(chase, frame.map(|f| (f.posture, f.seat)))
+    recenter_kind(chase, frame.map(|f| f.seat))
 }
 
-/// The recenter for a chase toggle and the latest frame's posture and seat phase: the chase is
-/// active in the standing posture out of a seat, where it keeps the body under the head, so only
-/// the yaw and the height need re-basing. With the chase off nothing else brings the body back
-/// under the head, and without a recent frame nothing is known: the full re-base.
-pub fn recenter_kind(
-    chase_enabled: bool,
-    frame: Option<(EffectivePosture, SeatPhase)>,
-) -> RecenterKind {
-    match frame {
-        Some((EffectivePosture::Standing, SeatPhase::Out)) if chase_enabled => {
-            RecenterKind::YawAndHeight
-        }
+/// The recenter for a chase toggle and the latest frame's seat phase: the chase is active out of a
+/// seat in either posture, where it keeps the body under the head, so only the yaw and the height
+/// need re-basing. With the chase off nothing else brings the body back under the head, and without
+/// a recent frame nothing is known: the full re-base.
+pub fn recenter_kind(chase_enabled: bool, seat: Option<SeatPhase>) -> RecenterKind {
+    match seat {
+        Some(SeatPhase::Out) if chase_enabled => RecenterKind::YawAndHeight,
         _ => RecenterKind::Full,
     }
 }
@@ -596,20 +591,17 @@ mod tests {
 
     #[test]
     fn a_recenter_on_foot_keeps_the_position() {
-        let standing_out = Some((EffectivePosture::Standing, SeatPhase::Out));
-        assert_eq!(
-            recenter_kind(true, standing_out),
-            RecenterKind::YawAndHeight
-        );
-        assert_eq!(recenter_kind(false, standing_out), RecenterKind::Full);
-        assert_eq!(
-            recenter_kind(true, Some((EffectivePosture::Seated, SeatPhase::Out))),
-            RecenterKind::Full
-        );
-        assert_eq!(
-            recenter_kind(true, Some((EffectivePosture::Standing, SeatPhase::Locked))),
-            RecenterKind::Full
-        );
+        let out = Some(SeatPhase::Out);
+        assert_eq!(recenter_kind(true, out), RecenterKind::YawAndHeight);
+        assert_eq!(recenter_kind(false, out), RecenterKind::Full);
+        for seat in [
+            SeatPhase::Entering,
+            SeatPhase::Locked,
+            SeatPhase::Shuffle,
+            SeatPhase::Exiting,
+        ] {
+            assert_eq!(recenter_kind(true, Some(seat)), RecenterKind::Full);
+        }
         assert_eq!(recenter_kind(true, None), RecenterKind::Full);
     }
 }

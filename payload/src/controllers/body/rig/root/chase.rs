@@ -20,7 +20,7 @@ use glam::{Quat, Vec2, Vec3};
 
 use crate::controllers::body::rig::{
     config::LeanConfig,
-    lean::{Lean, lean},
+    lean::{Lean, LeanShape, lean},
     torso::EYES_TO_NECK_PIVOT,
 };
 
@@ -70,8 +70,10 @@ pub struct MeasureInput {
     pub view: Quat,
     /// World metres per cockpit metre.
     pub world_scale: f32,
-    /// How far the neck pivot is below the standing height, metres.
+    /// How far the neck pivot is below the posture's upright height, metres.
     pub drop_m: f32,
+    /// The posture's lean allowance.
+    pub shape: LeanShape,
     /// Seconds since the last frame.
     pub dt: f32,
 }
@@ -112,7 +114,13 @@ pub fn measure(
     let shift = Vec2::new(input.shift.x, input.shift.z);
     let shift = if shift.is_finite() { shift } else { Vec2::ZERO };
     let relative = raw_target - shift;
-    let lean = lean(relative, input.torso_yaw, input.drop_m, lean_config);
+    let lean = lean(
+        relative,
+        input.torso_yaw,
+        input.drop_m,
+        &input.shape,
+        lean_config,
+    );
     let velocity = head_velocity.update(raw_target, input.dt);
     // A head moving within the lean moves nothing below it, so its velocity feeds nothing forward;
     // only a head out past the lean pulls the feet after it.

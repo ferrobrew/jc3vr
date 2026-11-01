@@ -11,9 +11,9 @@
 //! span past the threshold. The episode ends once the gap has stayed under half the threshold for a
 //! moment; the slide it applied stays, as the room's new place against the world.
 //!
-//! The thresholds depend on the root's owner: tight while the player's chase is obstructed, loose
-//! while the animation carries the body (only a runaway gap), and an arm's length while climbing
-//! or seated, where a lean is all the head does.
+//! The thresholds depend on the root's owner: tight while the player's chase is obstructed, seated
+//! or standing, loose while the animation carries the body (only a runaway gap), and an arm's
+//! length while climbing, where a lean is all the head does.
 //!
 //! Vectors are world `(x, z)`, metres.
 
@@ -41,7 +41,7 @@ pub struct PushbackOutcome {
     pub push: Vec2,
     /// The threshold in force, metres, while there is one.
     pub threshold: Option<f32>,
-    /// Whether the player's chase counts as obstructed.
+    /// Whether the player's chase, seated or standing, counts as obstructed.
     pub obstructed: bool,
     /// The push-back fade's target, `0..=1`.
     pub fade: f32,
@@ -90,7 +90,8 @@ impl Pushback {
             Vec2::ZERO
         };
         let r = gap.length();
-        let obstructed = input.owner == Some(RootOwner::Player) && input.stopped && r > MIN_GAP_M;
+        let obstructed =
+            input.owner.is_some_and(RootOwner::chases) && input.stopped && r > MIN_GAP_M;
         let threshold = threshold(input.owner, obstructed);
 
         // The episode ends once the gap has been calm for a moment, measured against the tight
@@ -147,9 +148,9 @@ impl Pushback {
 /// owns the root.
 pub fn threshold(owner: Option<RootOwner>, obstructed: bool) -> Option<f32> {
     match owner? {
-        RootOwner::Player => obstructed.then_some(OBSTRUCTED_M),
+        RootOwner::Player | RootOwner::Seated => obstructed.then_some(OBSTRUCTED_M),
         RootOwner::Authored => Some(AUTHORED_M),
-        RootOwner::Climb | RootOwner::Seated => Some(REACH_M),
+        RootOwner::Climb => Some(REACH_M),
         RootOwner::Game => None,
     }
 }
@@ -161,7 +162,7 @@ const OBSTRUCTED_M: f32 = 0.10;
 /// gap.
 const AUTHORED_M: f32 = 0.30;
 
-/// How far while climbing or seated, metres: about an arm's-length lean.
+/// How far while climbing, metres: about an arm's-length lean.
 const REACH_M: f32 = 0.45;
 
 /// The smallest gap that counts as obstructed, metres.
@@ -220,6 +221,26 @@ mod tests {
     }
 
     #[test]
+    fn a_seated_chase_is_held_at_a_wall_like_a_standing_one() {
+        let seated = PushbackInput {
+            owner: Some(RootOwner::Seated),
+            ..into_wall(0.25)
+        };
+        let out = Pushback::new().step(&seated, &CONFIG);
+        assert!(out.obstructed);
+        assert_eq!(out.threshold, Some(0.10));
+        assert!((out.push - Vec2::new(0.0, 0.15)).length() < 1e-6, "{out:?}");
+        let free = PushbackInput {
+            stopped: false,
+            ..seated
+        };
+        assert_eq!(
+            Pushback::new().step(&free, &CONFIG),
+            PushbackOutcome::default()
+        );
+    }
+
+    #[test]
     fn an_obstruction_holds_the_view_at_the_threshold_up_to_the_cap() {
         let mut pushback = Pushback::new();
         let out = pushback.step(&into_wall(0.25), &CONFIG);
@@ -272,7 +293,8 @@ mod tests {
         assert_eq!(threshold(Some(RootOwner::Player), false), None);
         assert_eq!(threshold(Some(RootOwner::Authored), false), Some(0.30));
         assert_eq!(threshold(Some(RootOwner::Climb), false), Some(0.45));
-        assert_eq!(threshold(Some(RootOwner::Seated), false), Some(0.45));
+        assert_eq!(threshold(Some(RootOwner::Seated), true), Some(0.10));
+        assert_eq!(threshold(Some(RootOwner::Seated), false), None);
         assert_eq!(threshold(Some(RootOwner::Game), true), None);
         assert_eq!(threshold(None, true), None);
     }

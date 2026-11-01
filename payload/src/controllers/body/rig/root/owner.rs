@@ -3,7 +3,8 @@
 //! Several systems want the character's root: the game's own states, the hand climbing, the
 //! animation's authored motions, and the player's head through the chase. Exactly one owns it each
 //! tick, chosen once in the root hook by [`select`], so that the chase never runs, or is credited,
-//! on a tick something else moved the body.
+//! on a tick something else moved the body. The player's head owns it in either posture: a seated
+//! player's head moves only by the upper body, and the chase follows that the same way.
 
 use crate::controllers::roomscale::{SeatPhase, posture::EffectivePosture};
 
@@ -19,16 +20,18 @@ pub enum RootOwner {
     /// The animation carries the body: an authored one-off, a hard landing, cover, or a hit
     /// reaction's hold. Its root motion is the motion, so the view rides it.
     Authored,
-    /// The player's head, through the chase, on top of the stick and the hands.
+    /// The standing player's head, through the chase, on top of the stick and the hands.
     Player,
-    /// A seated player: the root moves only by the stick.
+    /// The seated player's head, through the chase, on top of the stick and the hands. It chases
+    /// as [`RootOwner::Player`] does; the lean over the feet is measured for a seated player
+    /// ([`crate::controllers::body::rig::lean::LeanShape::SEATED`]).
     Seated,
 }
 
 impl RootOwner {
     /// Whether the chase moves the root on this tick.
     pub fn chases(self) -> bool {
-        self == RootOwner::Player
+        matches!(self, RootOwner::Player | RootOwner::Seated)
     }
 
     pub fn label(self) -> &'static str {
@@ -114,7 +117,24 @@ mod tests {
             ..all
         };
         assert_eq!(select(&all), RootOwner::Seated);
-        assert!(!select(&all).chases());
+        assert!(select(&all).chases());
+    }
+
+    #[test]
+    fn a_seated_player_chases_on_foot() {
+        let seated = OwnerInput {
+            posture: EffectivePosture::Seated,
+            ..ON_FOOT
+        };
+        assert_eq!(select(&seated), RootOwner::Seated);
+        assert!(select(&seated).chases());
+    }
+
+    #[test]
+    fn only_the_players_head_chases() {
+        for owner in [RootOwner::Game, RootOwner::Climb, RootOwner::Authored] {
+            assert!(!owner.chases(), "{}", owner.label());
+        }
     }
 
     #[test]

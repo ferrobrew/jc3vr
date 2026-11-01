@@ -11,7 +11,7 @@ use crate::config::validate::Invalid;
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RigConfig {
-    /// The body walking after the player's head in the standing posture.
+    /// The body walking after the player's head on foot, seated or standing.
     pub chase: ChaseConfig,
     /// The lean over the feet that the chase leaves alone.
     pub lean: LeanConfig,
@@ -76,8 +76,9 @@ impl Default for RigConfig {
     }
 }
 
-/// The chase: in the standing posture, the root walks toward the ground point under the player's
-/// upright eyes, with no deadzone, on top of whatever the stick and the hands ask for.
+/// The chase: on foot out of a seat, seated or standing, the root walks toward the ground point
+/// under the player's upright eyes, with no deadzone, on top of whatever the stick and the hands
+/// ask for.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ChaseConfig {

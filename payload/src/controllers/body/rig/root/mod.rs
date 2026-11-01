@@ -73,7 +73,7 @@ use crate::{
             rig::{
                 collision::probe::{self, HeadProbe, TimedProbe},
                 config::RigConfig,
-                lean::{Lean, StandingHeight, pivot_height},
+                lean::{Lean, LeanShape, StandingHeight, pivot_height, seated_drop},
                 root::{
                     chase::{
                         ChaseFrame, HeadVelocity, MeasureInput, Measurement, measure, to_cockpit,
@@ -160,22 +160,24 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
         frame.shift.synchronize(completed);
         frame.head_velocity.reset();
         frame.pushback.end_episode();
-        if inputs.posture == EffectivePosture::Standing {
-            frame.shift.rebase_horizontal(inputs.raw);
-            frame.status.teleport_rebases += 1;
-        }
+        frame.shift.rebase_horizontal(inputs.raw);
+        frame.status.teleport_rebases += 1;
     }
     let movement = SIM.lock().frame_movement(now, epoch);
     frame.shift.observe(&basis, movement.movement());
 
+    let pivot = pivot_height(inputs.raw, inputs.head);
     let standing =
-        inputs.on_foot && inputs.posture != EffectivePosture::Seated && looks_level(inputs.head);
-    let drop_m = frame.standing.observe(
-        pivot_height(inputs.raw, inputs.head),
-        standing,
-        inputs.dt,
-        inputs.floor_jumps,
-    );
+        inputs.on_foot && inputs.posture == EffectivePosture::Standing && looks_level(inputs.head);
+    let standing_drop_m = frame
+        .standing
+        .observe(pivot, standing, inputs.dt, inputs.floor_jumps);
+    // A seated player's upright height is the seated eye reference, which the seated head height
+    // already follows, not the standing height.
+    let drop_m = match inputs.posture {
+        EffectivePosture::Standing => standing_drop_m,
+        EffectivePosture::Seated => seated_drop(pivot),
+    };
     let mut input = MeasureInput {
         raw: inputs.raw,
         shift: frame.shift.current(),
@@ -185,6 +187,7 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
         view: inputs.view,
         world_scale: inputs.world_scale,
         drop_m,
+        shape: LeanShape::for_posture(inputs.posture),
         dt: inputs.dt,
     };
     let state = &mut *frame;
@@ -194,10 +197,7 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
     // should cover is put back over the body.
     let exited = state.last_seat == SeatPhase::Exiting && inputs.seat == SeatPhase::Out;
     state.last_seat = inputs.seat;
-    if exited
-        && inputs.posture == EffectivePosture::Standing
-        && measurement.gap_m() * inputs.world_scale >= EXIT_REBASE_M
-    {
+    if exited && measurement.gap_m() * inputs.world_scale >= EXIT_REBASE_M {
         state.shift.rebase_horizontal(inputs.raw);
         state.status.exit_rebases += 1;
         input.shift = state.shift.current();
@@ -231,7 +231,10 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
         at: Some(now),
         measurement,
         torso_yaw,
-        standing_m: state.standing.reference(),
+        standing_m: match inputs.posture {
+            EffectivePosture::Standing => state.standing.reference(),
+            EffectivePosture::Seated => 0.0,
+        },
         world_scale: inputs.world_scale,
         shift: state.shift.current(),
         pushback,
@@ -302,7 +305,8 @@ pub struct FrameReadout {
     pub measurement: Measurement,
     /// The torso heading the target and the lean used, cockpit frame, radians.
     pub torso_yaw: f32,
-    /// The standing height the lean's drop is measured from, metres over the cockpit's origin.
+    /// The upright height the lean's drop is measured from, metres over the cockpit's origin: the
+    /// standing height standing, and zero, the seated eye reference, seated.
     pub standing_m: f32,
     pub world_scale: f32,
     /// The cockpit shift, cockpit frame, metres.

@@ -651,7 +651,7 @@ impl Estimator {
             .map_or(0.0, |old| old.snapshot.gait.distance)
             + completed.length();
         let stride = update.anatomy.character.leg(0) * 0.75;
-        let permitted = current.owner == RootOwner::Player;
+        let permitted = current.owner.chases();
         let snapshot = Snapshot {
             provenance: Provenance {
                 sample: raw.head.stamp,
