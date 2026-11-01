@@ -166,8 +166,9 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
         frame.seated_reference.current()
     };
     // The seated crouch is Rico crouching on foot; in a vehicle seat it would drop the view into
-    // the footwell. The toggle keeps its state for when he is out.
-    let seated_crouch = frame.seated_crouch && frame.seat.phase() == SeatPhase::Out;
+    // the footwell, and under a canopy, in the wingsuit, or swimming into his torso. The toggle
+    // keeps its state for when he is back on foot.
+    let seated_crouch = frame.seated_crouch && on_foot && frame.seat.phase() == SeatPhase::Out;
 
     let head_height = remap_head.then(|| {
         posture::head_height(
