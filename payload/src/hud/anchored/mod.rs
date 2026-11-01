@@ -12,12 +12,15 @@
 //! ([`crate::hud::atlas`]) and drawn here from their cells' copies, so they keep the game's values,
 //! icons, and fades: the game shows the weapon readout while a gun is out and fades it out when it
 //! is holstered, and the quad carries that fade. The health bar is the mod's own
-//! ([`health`]), from the player character's health, sampled at the capture seam.
+//! ([`health`]), from the player character's health, sampled at the capture seam. So is the
+//! ammunition counter above a hand holding a gun beside the wielded weapon ([`hand_ammo`]), which
+//! the game's readout does not show, sampled by the weapon handling's input tick.
 //!
 //! On eye 0 the anchors are placed from the render-time hand poses and the head
 //! ([`place`]); both eyes then draw the same corners through the shared quad pass, after the
 //! floating panel, since the readouts are nearer than it.
 
+pub(crate) mod hand_ammo;
 mod health;
 pub(crate) mod place;
 
@@ -52,6 +55,7 @@ use crate::{
     hud::{
         HudMode,
         anchored::{
+            hand_ammo::{COUNT_TEXELS, Count, CountKey, beside_hands},
             health::{BAR_TEXELS, Bar, BarKey, HealthTrail},
             place::{
                 AmmoHand, Attention, ammo_anchor, facing_corners, fade_out, follow, forearm_anchor,
@@ -113,6 +117,9 @@ pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Text
 pub(crate) struct AnchoredStatus {
     /// The hand the weapon readout rides, when it is drawn.
     pub ammo_hand: Option<Hand>,
+    /// The hands with an ammunition counter for a gun beside the wielded weapon, by
+    /// [`Hand::index`].
+    pub beside_counts: [bool; 2],
     /// The health fraction and the trail, when sampled.
     pub health: Option<(f32, f32)>,
     pub heat_level: i32,
@@ -167,6 +174,10 @@ const AMMO_WIDTH_M: f32 = 0.10;
 
 /// The halflife of the weapon readout's follow of the hand, seconds.
 const AMMO_FOLLOW_HALFLIFE_S: f32 = 0.05;
+
+/// The width of the ammunition counter above a hand holding a gun beside the wielded weapon,
+/// metres; its height follows the texture's aspect.
+const COUNT_WIDTH_M: f32 = 0.06;
 
 /// How long the weapon readout stays on the last gun hand after no hand holds a gun, seconds, so
 /// the game's fade-out plays where the gun was.
@@ -226,6 +237,8 @@ struct State {
     ammo_corners: Option<[Vec4; 4]>,
     /// The weapon readout's opacity: faded out while the gun is raised to the eye.
     ammo_alpha: f32,
+    /// Each hand's ammunition counter for a gun beside the wielded weapon, by [`Hand::index`].
+    beside: [BesideCount; 2],
     glance: Glance,
     wrist_alpha: f32,
     trail: HealthTrail,
@@ -245,10 +258,30 @@ struct State {
     gpu: Option<Gpu>,
 }
 
-/// The quad pass and the health bar's texture, created on the first active frame.
+/// One hand's ammunition counter: where it is, its corners this frame, and its opacity.
+#[derive(Copy, Clone)]
+struct BesideCount {
+    position: Option<Vec3>,
+    corners: Option<[Vec4; 4]>,
+    alpha: f32,
+}
+
+impl BesideCount {
+    const fn new() -> Self {
+        Self {
+            position: None,
+            corners: None,
+            alpha: 1.0,
+        }
+    }
+}
+
+/// The quad pass, the health bar's texture, and each hand's counter texture, created on the first
+/// active frame.
 struct Gpu {
     quad: HudQuad,
     bar: Bar,
+    counts: [Count; 2],
 }
 
 impl State {
@@ -259,6 +292,7 @@ impl State {
             ammo_position: None,
             ammo_corners: None,
             ammo_alpha: 1.0,
+            beside: [BesideCount::new(); 2],
             glance: Glance::new(),
             wrist_alpha: 0.0,
             trail: HealthTrail::new(),
@@ -275,6 +309,7 @@ impl State {
             tether_corners: None,
             status: AnchoredStatus {
                 ammo_hand: None,
+                beside_counts: [false; 2],
                 health: None,
                 heat_level: 0,
                 wrist_alpha: 0.0,
@@ -305,6 +340,9 @@ impl State {
             .map_or(0.0, |t| now.duration_since(t).as_secs_f32().min(0.25));
         self.last_prepare = Some(now);
         self.ammo_corners = None;
+        for count in &mut self.beside {
+            count.corners = None;
+        }
         self.bar_corners = None;
         self.heat_corners = None;
         self.grenade_corners = None;
@@ -313,6 +351,7 @@ impl State {
         let sample = *SAMPLE.lock();
         if !active {
             self.ammo_position = None;
+            self.beside = [BesideCount::new(); 2];
             self.cross_offset = None;
             self.cross_open = false;
             self.tether_position = None;
@@ -392,6 +431,54 @@ impl State {
         } else {
             self.ammo_position = None;
             self.ammo_alpha = 1.0;
+        }
+
+        // A counter above each hand holding a gun beside the wielded weapon.
+        let sampled = hand_ammo::sampled().filter(|_| cfg.ammo.enabled);
+        let beside = sampled.map_or([false; 2], |s| beside_hands(&s, self.status.ammo_hand));
+        self.status.beside_counts = [false; 2];
+        for hand in Hand::BOTH {
+            let count = &mut self.beside[hand.index()];
+            let ammo = sampled.and_then(|s| s.hands[hand.index()]);
+            let (Some(ammo), Some(head), Some(grip), true) =
+                (ammo, head, grip(hand), beside[hand.index()])
+            else {
+                count.position = None;
+                count.alpha = 1.0;
+                continue;
+            };
+            let width = COUNT_WIDTH_M;
+            let height = width * COUNT_TEXELS.1 as f32 / COUNT_TEXELS.0 as f32;
+            let target = ammo_anchor(
+                grip.position,
+                head.position,
+                AMMO_CLEARANCE_M,
+                height,
+                AMMO_PULL_M,
+            );
+            let position = follow(count.position, target, dt, AMMO_FOLLOW_HALFLIFE_S, SNAP_M);
+            count.position = Some(position);
+            count.corners = upright_corners(
+                position,
+                head.position,
+                head.orientation * Vec3::Y,
+                width,
+                height,
+            )
+            .map(|corners| corners.map(|c| c.extend(1.0)));
+            let sighted = hands[hand.index()].map(|h| h.aim).is_some_and(|aim| {
+                sighting(
+                    grip.position,
+                    aim.orientation * Vec3::NEG_Z,
+                    head.position,
+                    head.orientation * Vec3::NEG_Z,
+                )
+            });
+            count.alpha = fade(count.alpha, !sighted, dt, SIGHT_FADE_S);
+            if let Some(gpu) = self.gpu.as_mut() {
+                gpu.counts[hand.index()].update(context, CountKey::new(&ammo));
+            }
+            self.status.beside_counts[hand.index()] = count.corners.is_some();
         }
 
         // The tether readout, above the off-hand's forearm, where the grapple fires from.
@@ -570,6 +657,18 @@ impl State {
                 )
             });
         }
+        for (count, texture) in self.beside.iter().zip(&gpu.counts) {
+            if let Some(corners) = count.corners.filter(|_| count.alpha > 0.0) {
+                gpu.quad.draw_faded(
+                    context,
+                    device,
+                    target,
+                    texture.target().color_srv(),
+                    &corners,
+                    count.alpha,
+                );
+            }
+        }
         if let Some(corners) = self.tether_corners {
             atlas::part_texture(Part::Tether, |part| {
                 gpu.quad
@@ -618,6 +717,7 @@ impl Gpu {
         Ok(Self {
             quad: HudQuad::new(device)?,
             bar: Bar::new(device)?,
+            counts: [Count::new(device)?, Count::new(device)?],
         })
     }
 }
