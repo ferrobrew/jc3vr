@@ -21,24 +21,35 @@
 //! two update queues, the physics phase, and the three calls of the time-budgeted streaming block.
 //! The two AI threads are timed around their bodies, which run on CPU fragment workers (or on a
 //! thread that runs queued fragments while it waits), so their time lands in the breakdown's other
-//! threads unless the game thread ran them itself.
+//! threads unless the game thread ran them itself. The input job's body is timed the same way.
+//!
+//! The rest of the tick is split in two by [`frame_timing::interval`]s: the head, from the tick's
+//! start to the world's pre-simulation queue, and the tail, from the end of the streaming block to
+//! the tick's end. The online managers, which run in both and keep their own clocks, are timed on
+//! their own inside them: the Steam platform system's callbacks, the statistics, brags, and profile
+//! deadlines, and the online suite, operations, and login.
 //!
 //! Threading: everything here except the AI thread bodies and the input job runs on the game thread,
 //! inside the engine's `Game::Update`.
 
-use std::ffi::c_void;
+use std::{cell::RefCell, ffi::c_void};
 
 use detours_macro::detour;
 use jc3gi::{
     game::{Game, GameObjectUpdateContext, UpdateContexts},
     game_world::GameWorld,
+    online::{
+        AsynchronousBragManager, LoginManager, OnlinePlatformSystemSteam, OnlineSuiteManager,
+        OperationManager, StatisticManager,
+    },
+    profile_manager::ProfileManager,
     update_queue::UpdateQueue,
 };
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     controllers::bindings::stage,
-    frame_timing::{self, Slot},
+    frame_timing::{self, Interval, Slot},
     thread_role::{self, ThreadRole},
 };
 
@@ -55,6 +66,13 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&AI_THREAD_1_BINDER)
         .with_static_binder(&AI_THREAD_2_BINDER)
         .with_static_binder(&INPUT_JOB_BINDER)
+        .with_static_binder(&STATISTIC_MANAGER_UPDATE_BINDER)
+        .with_static_binder(&BRAG_MANAGER_UPDATE_BINDER)
+        .with_static_binder(&PROFILE_MANAGER_UPDATE_BINDER)
+        .with_static_binder(&ONLINE_SUITE_UPDATE_BINDER)
+        .with_static_binder(&STEAM_PLATFORM_UPDATE_BINDER)
+        .with_static_binder(&OPERATION_MANAGER_UPDATE_BINDER)
+        .with_static_binder(&LOGIN_MANAGER_UPDATE_BINDER)
 }
 
 #[detour(address = jc3gi::game::Game::UpdateGame_ADDRESS)]
@@ -63,11 +81,15 @@ fn update_game(this: *mut Game, update_contexts: *mut UpdateContexts) {
     let _timing = frame_timing::scope(Slot::SimTick);
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("CGame::UpdateGame");
+    tick_opened();
     UPDATE_GAME.get().unwrap().call(this, update_contexts);
+    tick_closed();
 }
 
 #[detour(address = jc3gi::game_world::GameWorld::UpdatePreSimImpl_ADDRESS)]
 fn world_update_pre_sim(this: *mut GameWorld, context: *mut GameObjectUpdateContext) {
+    // Before the scope opens, so the head closes as a child of the tick's scope.
+    tick_world_entered();
     let _timing = frame_timing::scope(Slot::SimWorldPreSim);
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("GameWorld::UpdatePreSim");
@@ -125,10 +147,14 @@ fn location_system_update(budget_us: u32) {
 
 #[detour(address = jc3gi::game::GameState::UpdateDeletionOfObjects_ADDRESS)]
 fn update_deletion_of_objects(budget_us: u32) {
-    let _timing = frame_timing::scope(Slot::SimStreaming);
-    #[cfg(feature = "profiler")]
-    puffin::profile_scope!("GameState::UpdateDeletionOfObjects");
-    UPDATE_DELETION_OF_OBJECTS.get().unwrap().call(budget_us);
+    {
+        let _timing = frame_timing::scope(Slot::SimStreaming);
+        #[cfg(feature = "profiler")]
+        puffin::profile_scope!("GameState::UpdateDeletionOfObjects");
+        UPDATE_DELETION_OF_OBJECTS.get().unwrap().call(budget_us);
+    }
+    // After the scope closes, so the tail opens in the tick's scope.
+    tick_streaming_left();
 }
 
 #[detour(address = jc3gi::game::RunAIThread1_Proxy_ADDRESS)]
@@ -150,5 +176,107 @@ fn ai_thread_2(dt: *mut f32) -> i32 {
 #[detour(address = jc3gi::game::RunInputThread_Proxy_ADDRESS)]
 fn input_job(update_contexts: *mut UpdateContexts) -> i32 {
     let _role = thread_role::enter(ThreadRole::InputJob);
+    let _timing = frame_timing::scope(Slot::InputJob);
     INPUT_JOB.get().unwrap().call(update_contexts)
+}
+
+#[detour(address = jc3gi::online::StatisticManager::Update_ADDRESS)]
+fn statistic_manager_update(this: *mut StatisticManager, dt: f32) {
+    let _timing = frame_timing::scope(Slot::SimStats);
+    STATISTIC_MANAGER_UPDATE.get().unwrap().call(this, dt);
+}
+
+#[detour(address = jc3gi::online::AsynchronousBragManager::Update_ADDRESS)]
+fn brag_manager_update(this: *mut AsynchronousBragManager, dt: f32) {
+    let _timing = frame_timing::scope(Slot::SimStats);
+    BRAG_MANAGER_UPDATE.get().unwrap().call(this, dt);
+}
+
+#[detour(address = jc3gi::profile_manager::ProfileManager::Update_ADDRESS)]
+fn profile_manager_update(this: *mut ProfileManager, dt: f32) {
+    let _timing = frame_timing::scope(Slot::SimStats);
+    PROFILE_MANAGER_UPDATE.get().unwrap().call(this, dt);
+}
+
+#[detour(address = jc3gi::online::OnlineSuiteManager::Update_ADDRESS)]
+fn online_suite_update(this: *mut OnlineSuiteManager, dt: f32) {
+    let _timing = frame_timing::scope(Slot::SimOnline);
+    ONLINE_SUITE_UPDATE.get().unwrap().call(this, dt);
+}
+
+#[detour(address = jc3gi::online::OnlinePlatformSystemSteam::Update_ADDRESS)]
+fn steam_platform_update(this: *mut OnlinePlatformSystemSteam, dt: f32) {
+    let _timing = frame_timing::scope(Slot::SimSteam);
+    STEAM_PLATFORM_UPDATE.get().unwrap().call(this, dt);
+}
+
+#[detour(address = jc3gi::online::OperationManager::Update_ADDRESS)]
+fn operation_manager_update(this: *mut OperationManager, dt: f32) {
+    let _timing = frame_timing::scope(Slot::SimOnline);
+    OPERATION_MANAGER_UPDATE.get().unwrap().call(this, dt);
+}
+
+#[detour(address = jc3gi::online::LoginManager::Update_ADDRESS)]
+fn login_manager_update(this: *mut LoginManager, dt: f32) {
+    let _timing = frame_timing::scope(Slot::SimOnline);
+    LOGIN_MANAGER_UPDATE.get().unwrap().call(this, dt);
+}
+
+/// A sim tick opened: start its head.
+fn tick_opened() {
+    TICK_PHASES.with_borrow_mut(|phases| {
+        *phases = TickPhases {
+            open: true,
+            head: Some(frame_timing::interval()),
+            tail: None,
+        };
+    });
+}
+
+/// The head and tail intervals of the sim tick open on the game thread.
+#[derive(Default)]
+struct TickPhases {
+    /// Whether a sim tick is running, so a streaming call outside one opens no tail.
+    open: bool,
+    head: Option<Interval>,
+    tail: Option<Interval>,
+}
+
+thread_local! {
+    static TICK_PHASES: RefCell<TickPhases> = RefCell::new(TickPhases::default());
+}
+
+/// The game world's pre-simulation queue is starting: the head ends here. A pre-simulation update
+/// outside a tick, or a second one in the same tick, finds no head.
+fn tick_world_entered() {
+    if let Some(head) = TICK_PHASES.with_borrow_mut(|phases| phases.head.take()) {
+        head.finish(Slot::SimHead);
+    }
+}
+
+/// The streaming block's last call returned: the tail starts here, or restarts if the block runs
+/// more than once in the tick.
+fn tick_streaming_left() {
+    let earlier = TICK_PHASES.with_borrow_mut(|phases| {
+        if !phases.open {
+            return None;
+        }
+        phases.tail.replace(frame_timing::interval())
+    });
+    // An earlier pass's tail ends where the next one starts, so its time is not lost.
+    if let Some(earlier) = earlier {
+        earlier.finish(Slot::SimTail);
+    }
+}
+
+/// The sim tick is returning. A tick that never reached the world update (a state other than the
+/// run state) is all head.
+fn tick_closed() {
+    let phases = TICK_PHASES.with_borrow_mut(std::mem::take);
+    if let Some(head) = phases.head {
+        head.finish(Slot::SimHead);
+    }
+    if let Some(tail) = phases.tail {
+        tail.finish(Slot::SimTail);
+    }
 }

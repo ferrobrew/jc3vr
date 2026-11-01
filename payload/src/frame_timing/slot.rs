@@ -9,9 +9,9 @@ pub(crate) enum Slot {
     /// The engine's `Game::Update`, excluding the mod scopes nested in it and the sim ticks: the
     /// tick scheduler, the update contexts, and the parts of the frame the mod does not hook.
     EngineUpdate,
-    /// One sim tick (`Game::UpdateGame`), excluding the scopes nested in it: the run state's
-    /// managers, its waits on the AI and light fragments, and everything in the tick this
-    /// breakdown does not time on its own.
+    /// One sim tick (`Game::UpdateGame`), excluding the scopes and intervals nested in it: what is
+    /// left between the game world's queues and the streaming block once [`Self::SimHead`] and
+    /// [`Self::SimTail`] take the stretches before and after them.
     SimTick,
     /// The game world's pre-simulation queue (`GameWorld::UpdatePreSim`): the registered objects'
     /// pre-simulation updates, the characters' state-machine and pre-physics passes among them.
@@ -25,11 +25,29 @@ pub(crate) enum Slot {
     /// The tick's time-budgeted streaming block: the resource streamer, the location system, and
     /// the deletion of queued objects.
     SimStreaming,
+    /// The run state's tick up to the game world's pre-simulation queue, excluding the scopes
+    /// nested in it: the managers before the world update, the spin on the input job's completion
+    /// among them. Timed as an interval of [`Self::SimTick`] rather than a hook of its own.
+    SimHead,
+    /// The run state's tick after its streaming block, excluding the scopes nested in it: the
+    /// post-simulation managers, the AI and light kicks and waits, and the online managers. Timed as
+    /// an interval of [`Self::SimTick`] rather than a hook of its own.
+    SimTail,
+    /// The online-suite manager, the online operations, and the login state machine.
+    SimOnline,
+    /// The statistic manager, the asynchronous brags, and the profile manager's deadlines.
+    SimStats,
+    /// The Steam platform system's update, which runs the Steam API's callbacks.
+    SimSteam,
     /// The first AI thread's body (`RunAIThread1_Proxy`), on the fragment worker that runs it.
     AiThread1,
     /// The second AI thread's body (`RunAIThread2_Proxy`), on the fragment worker that runs it. It
     /// is kicked at the end of a tick and runs alongside the render update.
     AiThread2,
+    /// The engine's input job (`RunInputThread_Proxy`), on the thread that runs it, excluding the
+    /// mod's [`Self::InputTick`] inside it. The run state's tick spins on its completion, so a long
+    /// job shows up in [`Self::SimHead`] too.
+    InputJob,
     /// The mod's work after the engine's input-device poll, the input tick's poll stage: landing
     /// the bindings' writes and the headpose look handling. In play it runs in the engine's input
     /// job; an inline game stage nests its [`Self::Bindings`] time inside it.
@@ -139,8 +157,14 @@ impl Slot {
         Slot::SimPhysics,
         Slot::SimWorldPostSim,
         Slot::SimStreaming,
+        Slot::SimHead,
+        Slot::SimTail,
+        Slot::SimOnline,
+        Slot::SimStats,
+        Slot::SimSteam,
         Slot::AiThread1,
         Slot::AiThread2,
+        Slot::InputJob,
         Slot::InputTick,
         Slot::Bindings,
         Slot::PhysicalHands,
@@ -170,7 +194,7 @@ impl Slot {
     ];
 
     /// The number of slots.
-    pub(crate) const COUNT: usize = 35;
+    pub(crate) const COUNT: usize = 41;
 
     /// The slot's position in [`Self::ALL`] and in the counter arrays.
     pub(crate) const fn index(self) -> usize {
@@ -187,8 +211,14 @@ impl Slot {
             Slot::SimPhysics => "sim_physics",
             Slot::SimWorldPostSim => "sim_world_post",
             Slot::SimStreaming => "sim_streaming",
+            Slot::SimHead => "sim_head",
+            Slot::SimTail => "sim_tail",
+            Slot::SimOnline => "sim_online",
+            Slot::SimStats => "sim_stats",
+            Slot::SimSteam => "sim_steam",
             Slot::AiThread1 => "ai_thread_1",
             Slot::AiThread2 => "ai_thread_2",
+            Slot::InputJob => "input_job",
             Slot::InputTick => "input_tick",
             Slot::Bindings => "bindings",
             Slot::PhysicalHands => "physical_hands",
@@ -245,8 +275,14 @@ impl Slot {
             | Slot::SimPhysics
             | Slot::SimWorldPostSim
             | Slot::SimStreaming
+            | Slot::SimHead
+            | Slot::SimTail
+            | Slot::SimOnline
+            | Slot::SimStats
+            | Slot::SimSteam
             | Slot::AiThread1
             | Slot::AiThread2
+            | Slot::InputJob
             | Slot::EngineUpdateRender
             | Slot::Dispatch => Kind::Engine,
             Slot::VrLock

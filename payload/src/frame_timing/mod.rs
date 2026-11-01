@@ -15,7 +15,9 @@
 //! thread's covered wall time without double counting. Each self time is also added to a bucket by
 //! the thread it ran on ([`ThreadClass`], from [`crate::thread_role`]) and by the slot's [`Kind`];
 //! the game thread's buckets against the frame interval are the headline numbers. Whatever the game
-//! thread spends outside every scope is reported as untracked.
+//! thread spends outside every scope is reported as untracked. A stretch of a scope that no hooked
+//! function bounds is timed with an [`interval`], which records into its slot as a child of the
+//! enclosing scope.
 //!
 //! The cost is two clock reads, a few thread-local accesses, and four relaxed atomic adds per scope,
 //! with a few dozen scopes a frame; the clock is `QueryPerformanceCounter` through [`Instant`]. Only
@@ -83,14 +85,45 @@ impl Drop for Scope {
     fn drop(&mut self) {
         let elapsed = duration_ns(self.start.elapsed());
         let children = CHILD_NS.with(|c| c.replace(self.outer_child_ns.saturating_add(elapsed)));
-        let self_ns = elapsed.saturating_sub(children);
+        record(self.slot, elapsed.saturating_sub(children), elapsed);
+    }
+}
 
-        let counters = &SLOTS[self.slot.index()];
-        counters.self_ns.fetch_add(self_ns, Ordering::Relaxed);
-        counters.calls.fetch_add(1, Ordering::Relaxed);
-        counters.max_ns.fetch_max(elapsed, Ordering::Relaxed);
-        BUCKETS[thread_class().index()][self.slot.kind().index()]
-            .fetch_add(self_ns, Ordering::Relaxed);
+/// Start timing a stretch of the innermost open scope that no function boundary marks, such as
+/// the part of a hooked function before the first hooked call inside it. Close it with
+/// [`Interval::finish`] on the same thread, inside the same scope, and outside any scope opened
+/// after it.
+#[must_use = "the stretch is attributed only when the interval is finished"]
+pub(crate) fn interval() -> Interval {
+    Interval {
+        start: Instant::now(),
+        child_ns_at_start: CHILD_NS.with(Cell::get),
+        _thread_bound: PhantomData,
+    }
+}
+
+/// A stretch of the innermost open scope, opened by [`interval`]. Bound to its thread, since it
+/// reads the thread's nesting.
+pub(crate) struct Interval {
+    start: Instant,
+    /// The enclosing scope's child time when the interval opened, so the scopes that close inside
+    /// the interval can be taken out of it.
+    child_ns_at_start: u64,
+    _thread_bound: PhantomData<*const ()>,
+}
+
+impl Interval {
+    /// Attribute the stretch to `slot` as a child of the enclosing scope: its time minus the scopes
+    /// that closed inside it becomes `slot`'s self time, and comes out of the enclosing scope's.
+    pub(crate) fn finish(self, slot: Slot) {
+        let elapsed = duration_ns(self.start.elapsed());
+        let self_ns = CHILD_NS.with(|c| {
+            let children = c.get().saturating_sub(self.child_ns_at_start);
+            let self_ns = elapsed.saturating_sub(children);
+            c.set(c.get().saturating_add(self_ns));
+            self_ns
+        });
+        record(slot, self_ns, elapsed);
     }
 }
 
@@ -194,6 +227,16 @@ static PERCENTILES: Mutex<Option<FramePercentiles>> = Mutex::new(None);
 
 /// The breakdown over the last complete [`UI_WINDOW`].
 static LATEST: Mutex<Option<Report>> = Mutex::new(None);
+
+/// Add one closed region of `slot` to the live counters: `self_ns` of its own time, and `elapsed`
+/// with its nested scopes for the maximum.
+fn record(slot: Slot, self_ns: u64, elapsed: u64) {
+    let counters = &SLOTS[slot.index()];
+    counters.self_ns.fetch_add(self_ns, Ordering::Relaxed);
+    counters.calls.fetch_add(1, Ordering::Relaxed);
+    counters.max_ns.fetch_max(elapsed, Ordering::Relaxed);
+    BUCKETS[thread_class().index()][slot.kind().index()].fetch_add(self_ns, Ordering::Relaxed);
+}
 
 fn duration_ns(d: Duration) -> u64 {
     u64::try_from(d.as_nanos()).unwrap_or(u64::MAX)
@@ -401,6 +444,40 @@ mod tests {
             let other = &BUCKETS[ThreadClass::Other.index()];
             assert!(other[Kind::Wait.index()].load(Ordering::Relaxed) >= inner_self);
             assert!(other[Kind::Mod.index()].load(Ordering::Relaxed) >= outer_self);
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[test]
+    fn an_interval_is_a_child_of_its_scope() {
+        // The only test that uses these three slots, so it has their counters to itself.
+        std::thread::spawn(|| {
+            {
+                let _outer = scope(Slot::SimTick);
+                let head = interval();
+                std::thread::sleep(Duration::from_millis(10));
+                {
+                    let _inner = scope(Slot::SimOnline);
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                head.finish(Slot::SimHead);
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            let outer = &SLOTS[Slot::SimTick.index()];
+            let head = &SLOTS[Slot::SimHead.index()];
+            let inner = &SLOTS[Slot::SimOnline.index()];
+            let outer_self = outer.self_ns.load(Ordering::Relaxed);
+            let head_self = head.self_ns.load(Ordering::Relaxed);
+            let inner_self = inner.self_ns.load(Ordering::Relaxed);
+            assert_eq!(head.calls.load(Ordering::Relaxed), 1);
+            assert!(inner_self >= 20 * MS, "{inner_self}");
+            // The interval's own time excludes the scope that closed inside it.
+            assert!((10 * MS..19 * MS).contains(&head_self), "{head_self}");
+            // The enclosing scope keeps only the time outside the interval.
+            assert!((2 * MS..9 * MS).contains(&outer_self), "{outer_self}");
+            // The interval's maximum is its whole length, the nested scope included.
+            assert!(head.max_ns.load(Ordering::Relaxed) >= head_self + inner_self);
         })
         .join()
         .unwrap();

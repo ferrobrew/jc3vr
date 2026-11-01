@@ -30,6 +30,20 @@ impl ProfileManager {
             f(self as *const Self as _, id)
         }
     }
+    pub const Update_ADDRESS: usize = 0x140CA8CD0;
+    /// `CProfileManager::Update` (virtual): fires the profile's real-time deadlines. A purchasable
+    /// or rewardable item whose expiry time has passed the clock's real time has the expiry cleared
+    /// and the profile observers notified; an upgrade whose research completion time has passed is
+    /// marked researched and the observers notified. [`GameStateRun::Update`](crate::game::GameStateRun::Update)
+    /// calls it through the manager's virtual table once per tick among the online managers.
+    pub unsafe fn Update(&mut self, dt: f32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
+                Self::Update_ADDRESS,
+            );
+            f(self as *mut Self as _, dt)
+        }
+    }
 }
 impl std::convert::AsRef<ProfileManager> for ProfileManager {
     fn as_ref(&self) -> &ProfileManager {
