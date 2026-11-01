@@ -65,8 +65,10 @@ pub(crate) struct FinishInputs {
     pub unavailable: [bool; 2],
     /// The reload action's press over the tick.
     pub reload_button: ButtonControl,
-    /// The engine's tick delta, seconds.
+    /// The engine's tick delta, game seconds.
     pub dt: f32,
+    /// The tick's length, real seconds: what times the player's body.
+    pub real_dt: f32,
 }
 
 /// The second half of the weapon handling's input tick: act on the tick's grabs, run the grenade
@@ -83,6 +85,7 @@ pub(crate) fn finish_tick(
         unavailable,
         reload_button,
         dt,
+        real_dt,
     } = *inputs;
     let config = Config::lock_query(|c| c.controllers);
     let active = hands::active_hands_raw();
@@ -361,7 +364,7 @@ pub(crate) fn finish_tick(
             presser: config.acting_hand(),
             presser_reaching: free[config.acting_hand().index()]
                 && grips[config.acting_hand().index()].held(),
-            dt,
+            dt: real_dt,
         },
         &config,
     );
@@ -371,7 +374,8 @@ pub(crate) fn finish_tick(
             grips,
             triggers,
             reload_button,
-            dt,
+            dt: real_dt,
+            game_dt: dt,
         },
         &config,
     );

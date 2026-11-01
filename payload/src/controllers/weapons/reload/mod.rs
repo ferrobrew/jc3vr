@@ -371,7 +371,11 @@ pub(super) struct FinishInputs {
     pub triggers: [ButtonControl; 2],
     /// The reload action's press over the tick.
     pub reload_button: ButtonControl,
+    /// The tick's length, real seconds: the player's taps, flicks, grips, and the rounds and the
+    /// action in the player's hands.
     pub dt: f32,
+    /// The tick's length, game seconds: a loose round carried as a body in the world.
+    pub game_dt: f32,
 }
 
 /// The second half of the reload's input tick: eject, load, push, and work the action, and decide

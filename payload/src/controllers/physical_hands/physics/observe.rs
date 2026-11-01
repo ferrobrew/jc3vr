@@ -13,6 +13,7 @@ use parking_lot::Mutex;
 use crate::{
     config::Config,
     controllers::{
+        clock::TimeScale,
         frame::{Hand, Pose},
         hands::CockpitHand,
         haptics::{self, Sustain},
@@ -124,8 +125,12 @@ pub(crate) fn observe(dt: f32) {
         }
         let previous = shared.targets;
         let world_scale = palms.as_ref().map_or(1.0, |(_, scale, _)| *scale);
+        // The palms move in real time, so their velocities, per game second, smooth over a real
+        // stretch of time.
+        // SAFETY: the observation runs while the game runs.
+        let smoothing_s = unsafe { TimeScale::current() }.game_s(VELOCITY_SMOOTHING_S);
         let carrier = match &palms {
-            Some((_, _, origin)) => shared.carrier.update(*origin, dt, VELOCITY_SMOOTHING_S),
+            Some((_, _, origin)) => shared.carrier.update(*origin, dt, smoothing_s),
             None => {
                 shared.carrier.reset();
                 Vec3::ZERO
@@ -140,12 +145,10 @@ pub(crate) fn observe(dt: f32) {
                 shared.trackers[i].1.reset();
                 continue;
             };
-            let linear = shared.trackers[i]
-                .0
-                .update(palm.centre, dt, VELOCITY_SMOOTHING_S);
+            let linear = shared.trackers[i].0.update(palm.centre, dt, smoothing_s);
             let angular = shared.trackers[i]
                 .1
-                .update(palm.orientation, dt, VELOCITY_SMOOTHING_S);
+                .update(palm.orientation, dt, smoothing_s);
             targets[i] = Some(Target {
                 position: palm.centre,
                 orientation: palm.orientation,

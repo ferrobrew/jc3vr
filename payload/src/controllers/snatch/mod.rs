@@ -177,6 +177,7 @@ pub(crate) struct OfferInput<'a> {
     pub button_held: bool,
     /// The grapple hand's grip after input filtering.
     pub grip: ButtonControl,
+    /// The tick's length, real seconds: how long the grapple hand's aim keeps a target.
     pub dt: f32,
     pub config: &'a ControllersConfig,
 }
@@ -281,7 +282,10 @@ pub(crate) struct FinishInput<'a> {
     /// The grapple hold owned by the snatch after a grip-first claim.
     pub modifier_held: bool,
     pub detection: &'a Detection,
+    /// The tick's length, game seconds: the wire's flight and the free target's wait.
     pub dt: f32,
+    /// The tick's length, real seconds: the hand's yank.
+    pub real_dt: f32,
     pub config: &'a ControllersConfig,
 }
 
@@ -522,7 +526,7 @@ impl State {
                 offer,
                 line,
                 mut yank,
-            } => match yank.step(input.dt, reach(input, line), true, &config.yank) {
+            } => match yank.step(input.real_dt, reach(input, line), true, &config.yank) {
                 Some(pulled) => {
                     tracing::info!(
                         target: "controllers",

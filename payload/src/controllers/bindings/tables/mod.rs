@@ -274,7 +274,8 @@ impl Bindings {
     }
 
     /// Evaluate the tables for `mode`: `controls` are the tick's raw controls, which the gestures,
-    /// grabs, and chords read, and `input` its semantic actions, which the tables read.
+    /// grabs, and chords read, and `input` its semantic actions, which the tables read. `dt` is the
+    /// tick's length in real seconds: it times the player's grips and long presses.
     pub fn step(
         &mut self,
         mode: Mode,

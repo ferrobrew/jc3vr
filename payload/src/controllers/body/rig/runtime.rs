@@ -33,6 +33,7 @@ use crate::controllers::{
             torso::{TorsoEstimate, wrap, yaw_of},
         },
     },
+    clock::TimeScale,
     frame::TrackedPose,
 };
 
@@ -182,9 +183,17 @@ pub(crate) fn status() -> FitStatus {
     status
 }
 
-/// Consume each committed request at most once, through the existing movement ledger.
+/// Consume each committed request at most once, through the existing movement ledger. `dt` is the
+/// locomotion task's step, game seconds, and the velocity is the world's, per game second. The
+/// chase closes the gap to the player's own stance, which moves in real time, so it is paced in
+/// real time and converted: in slow motion the body keeps up with the player's steps.
 pub(crate) fn root_velocity(now: Instant, dt: f32, current_root: Mat4, enabled: bool) -> Vec2 {
-    STATE.lock().take_root(now, dt, current_root, enabled)
+    // SAFETY: the locomotion task runs while the game runs.
+    let time_scale = unsafe { TimeScale::current() };
+    let real = STATE
+        .lock()
+        .take_root(now, time_scale.real_dt(dt), current_root, enabled);
+    real / time_scale.get()
 }
 
 /// The same committed chest heading and landmarks used by the live procedural pose. A held fit

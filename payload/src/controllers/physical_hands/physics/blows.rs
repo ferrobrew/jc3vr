@@ -37,6 +37,7 @@ use jc3gi::{
 use parking_lot::Mutex;
 
 use crate::controllers::{
+    clock::{GameClock, TimeScale},
     frame::Hand,
     grab::{self, latch::GripLatch},
     haptics::{self, Event},
@@ -105,10 +106,13 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
     let attacker = unsafe { Character::GetLocalPlayerCharacter().as_mut() };
     let mut gate = GATE.lock();
     let now_s = gate
-        .1
+        .epoch
         .get_or_insert_with(Instant::now)
         .elapsed()
         .as_secs_f64();
+    // SAFETY: forwarded from the caller: the game thread.
+    let time_scale = unsafe { TimeScale::current() };
+    let game_now_s = gate.game.at(now_s, time_scale);
     let pulse_interval_s = f64::from(HAND_BODIES.guns.contact_pulse_interval_s.max(0.0));
     for contact in contacts {
         // The player's own body, the hands, and the other gun are in the player's group, which
@@ -189,10 +193,10 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         let intent = intent(contact.hand, victim as *mut Character as usize);
         // A hand that did not swing into the character, resting on it, met by it, or carried into
         // it by the player's own motion, strikes nothing; nor does one closing on its gun.
-        let Some(impulse_ns) = blow_impulse(closing, intent, hits) else {
+        let Some(impulse_ns) = blow_impulse(closing, intent, time_scale, hits) else {
             continue;
         };
-        if !gate.0.admit(
+        if !gate.hands.admit(
             contact.hand.index(),
             victim as *mut Character as usize,
             now_s,
@@ -219,10 +223,10 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         let hostile = relation == FactionRelation::E_RELATION_HOSTILE;
         // One damaging blow per character a while, from either hand.
         if plan.damage.is_some()
-            && !gate.0.admit(
+            && !gate.damage.admit(
                 ANY_HAND,
                 victim as *mut Character as usize,
-                now_s,
+                game_now_s,
                 hits.damage_cooldown_s,
             )
         {
@@ -239,6 +243,7 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
             impulse_ns,
             ?intent,
             hand_mps = closing.hand_mps,
+            time_scale = time_scale.get(),
             victim_mps = closing.victim_mps,
             contact_impulse_ns = contact.impulse_ns,
             hostile,
@@ -282,7 +287,9 @@ static GUN_PULSES: Mutex<[Option<f64>; 2]> = Mutex::new([None; 2]);
 /// shoves queued.
 pub(super) fn discard() {
     let _ = contact::take();
-    GATE.lock().0.clear();
+    let mut gate = GATE.lock();
+    gate.hands.clear();
+    gate.damage.clear();
     *GUN_PULSES.lock() = [None; 2];
     SHOVES.lock().clear();
 }
@@ -427,8 +434,24 @@ const FOLLOW_THROUGH_STRENGTH: f32 = 0.5;
 /// The least share of the strongest hit pulse that pulses a hand.
 const MIN_PULSE_SHARE: f32 = 0.05;
 
-/// The characters each hand struck lately, and the time base of the gate.
-static GATE: Mutex<(HitGate, Option<Instant>)> = Mutex::new((HitGate::new(), None));
+/// The characters struck lately.
+struct Gates {
+    /// The characters each hand struck lately, in real seconds since `epoch`: one swing of the
+    /// player's arm is one hit, however slow the world.
+    hands: HitGate,
+    /// The characters a blow damaged lately, in game seconds: the world's own pace of harm.
+    damage: HitGate,
+    /// The real time base.
+    epoch: Option<Instant>,
+    game: GameClock,
+}
+
+static GATE: Mutex<Gates> = Mutex::new(Gates {
+    hands: HitGate::new(),
+    damage: HitGate::new(),
+    epoch: None,
+    game: GameClock::new(),
+});
 
 /// The character the contact `contact` met, found again from its body: `None` when the body's
 /// instance or its owner changed since the step, when the owner is not a character, or when it is

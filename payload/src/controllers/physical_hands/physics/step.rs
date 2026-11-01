@@ -13,6 +13,7 @@ use crate::{
             ray::Ray,
             raycast::{self, CastOptions},
         },
+        clock::TimeScale,
         frame::{Hand, Pose},
         physical_hands::{
             climb,
@@ -46,6 +47,8 @@ use crate::{
 /// The thread that steps the physics world, outside the step.
 pub(crate) unsafe fn step() {
     let now = Instant::now();
+    // SAFETY: the physics step runs while the game runs.
+    let time_scale = unsafe { TimeScale::current() };
     let step_number = count_step();
     let step_s = step_seconds();
     let config = Config::lock_query(|c| c.controllers.physical_hands);
@@ -133,7 +136,8 @@ pub(crate) unsafe fn step() {
     let age_s = published
         .map_or(0.0, |at| now.saturating_duration_since(at).as_secs_f32())
         .min(MAX_LEAD_S);
-    let lead_s = age_s + step_s;
+    // The palms' target ages in real time while its velocity is the world's, per game second.
+    let lead_s = age_s * time_scale.get() + step_s;
     // SAFETY: forwarded from the caller.
     let group = unsafe { player_system_group() };
     let b = &HAND_BODIES;
@@ -257,7 +261,8 @@ pub(crate) unsafe fn step() {
                 let hand_tuning = DriveTuning {
                     linear_gain,
                     ..held_tuning
-                };
+                }
+                .in_real_time(time_scale);
                 let request = ActRequest {
                     hand,
                     spec,

@@ -60,8 +60,10 @@ pub(crate) fn hook_library() -> HookLibrary {
 
 /// What the bindings hand the input tick.
 pub(crate) struct TickInput<'a> {
-    /// The engine's tick delta, seconds.
+    /// The engine's tick delta, game seconds: the boost's length in the reel it drives.
     pub dt: f32,
+    /// The tick's length, real seconds: the hand's pull and yank.
+    pub real_dt: f32,
     /// The grapple hand's grip and aim, in the cockpit frame, or `None` while the hand is untracked.
     pub line: Option<HandLine>,
     /// Whether the grapple button is held: the pull retracts the tethers only while it is.
@@ -202,12 +204,12 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
     // boost's yank along the aim it has when the reel starts.
     let pull = state
         .pull
-        .step(input.dt, input.line, drive_reel || armed, &config.pull);
+        .step(input.real_dt, input.line, drive_reel || armed, &config.pull);
     let boost = state
         .boost
-        .step(input.dt, input.line, drive_reel, &GRAPPLE_YANK);
+        .step(input.real_dt, input.line, drive_reel, &GRAPPLE_YANK);
     if let Some(yank) = boost {
-        state.boost_until = Some(now + Duration::from_secs_f32(config.reel.boost_s.max(0.0)));
+        state.boost_left_s = Some(config.reel.boost_s.max(0.0));
         state.status.boosts += 1;
         tracing::info!(
             target: "grapple",
@@ -217,7 +219,8 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
         );
         pulses.push(Event::Yank);
     }
-    let boosted = drive_reel && state.boost_until.is_some_and(|until| now < until);
+    let boosted = drive_reel && state.boost_left_s.is_some();
+    state.boost_left_s = count_down(state.boost_left_s, input.dt);
     let drive = drive_reel.then(|| ReelDrive {
         scale: reel::scale_for(pull.speed_mps, &config.reel),
         boost: boosted,
@@ -238,7 +241,7 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
         (Some(drive), Some(peak)) => state.reel_peak = Some(peak.max(drive.scale)),
         (None, Some(peak)) => {
             state.reel_peak = None;
-            state.boost_until = None;
+            state.boost_left_s = None;
             tracing::info!(
                 target: "grapple",
                 peak_scale = peak,
@@ -361,9 +364,15 @@ pub(crate) fn stand_down() {
     let mut state = STATE.lock();
     state.pull = LinePull::new();
     state.boost = LineYank::new();
-    state.boost_until = None;
+    state.boost_left_s = None;
     state.tether_armed = false;
     reel::publish(None);
+}
+
+/// `left_s` after a tick of `dt` seconds: `None` once it runs out, or for a tick that is not finite.
+fn count_down(left_s: Option<f32>, dt: f32) -> Option<f32> {
+    let left = left_s? - dt;
+    (dt.is_finite() && left > 0.0).then_some(left)
 }
 
 /// How long the readout counts as live after the last input tick.
@@ -374,7 +383,8 @@ struct State {
     pull: LinePull,
     /// The yank detector armed during a reel, whose yanks boost it.
     boost: LineYank,
-    boost_until: Option<Instant>,
+    /// The game seconds the boost still lasts: it speeds the reel, which runs on the game's clock.
+    boost_left_s: Option<f32>,
     /// The highest scale of the reel the hand drives, while it does.
     reel_peak: Option<f32>,
     /// Whether the tether retract was armed on the last tick.
@@ -387,7 +397,7 @@ struct State {
 static STATE: Mutex<State> = Mutex::new(State {
     pull: LinePull::new(),
     boost: LineYank::new(),
-    boost_until: None,
+    boost_left_s: None,
     reel_peak: None,
     tether_armed: false,
     retract_peak: None,
@@ -611,5 +621,25 @@ mod tests {
             ),
             GrapplePhase::ScriptedWire
         );
+    }
+
+    #[test]
+    fn the_boost_lasts_its_length_in_game_seconds() {
+        // In slow motion at a quarter, game ticks of a quarter of a 30 Hz frame: the boost lasts
+        // four times as many ticks as at full speed, the same stretch of the reel.
+        let ticks = |dt: f32| {
+            let mut left = Some(0.6);
+            let mut n = 0;
+            while left.is_some() {
+                left = count_down(left, dt);
+                n += 1;
+            }
+            n
+        };
+        let (fast, slow) = (ticks(1.0 / 30.0), ticks(0.25 / 30.0));
+        assert!((18..=19).contains(&fast), "{fast}");
+        assert!((72..=73).contains(&slow), "{slow}");
+        assert_eq!(count_down(None, 0.1), None);
+        assert_eq!(count_down(Some(0.5), f32::NAN), None);
     }
 }

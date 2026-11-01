@@ -87,6 +87,7 @@ use crate::{
             trigger_ownership::{Owner as TriggerOwner, RawTrigger, TriggerOwnership},
             yank::{HandLine, LineYank, Yank},
         },
+        clock::TimeScale,
         config::LocomotionDirection,
         frame::{self, Button, ControllerFrame, Hand},
         grab::{self, Consumer, Provided, grabs_for, markers::MarkerFrame},
@@ -154,6 +155,10 @@ fn absorb_landed(landed: Vec<LandedSegment>) -> Vec<ReportedWrite> {
 /// delta, seconds, and `poll` is whether the device poll that preceded the tick ran. Returns the
 /// controllers' body turn, or `None` when they are not injecting.
 fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
+    // What the player's body does is timed in real time, and `dt` is the game's step, which its
+    // slow motion shortens.
+    // SAFETY: the bindings tick runs while the game runs.
+    let real_dt = unsafe { TimeScale::current() }.real_dt(dt);
     let (config, neutral_policy, flight_dimensions) = Config::lock_query(|c| {
         (
             c.controllers,
@@ -473,7 +478,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
                     pressed: edges.pressed(grapple_hand, Button::SqueezePress),
                     released: edges.released(grapple_hand, Button::SqueezePress),
                 },
-                dt,
+                dt: real_dt,
                 config: &config,
             })
         });
@@ -551,7 +556,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     let line = line_attached() && !snatch_button_owned;
     let grapple_line = grapple_hand_line(grapple_hand);
     let yank = state.yank.step(
-        dt,
+        real_dt,
         grapple_line,
         yank_armed_in(line, &detection) && grapple_held,
         &config.bindings.yank.detector(),
@@ -565,6 +570,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     let physical_grapple = unsafe {
         grapple::physical::input_tick(&grapple::physical::TickInput {
             dt,
+            real_dt,
             line: grapple_line,
             button_held: grapple_held && !snatch_button_owned,
             detection: &detection,
@@ -580,7 +586,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         detection.mode,
         &controls,
         &semantic_input,
-        dt,
+        real_dt,
         &config.bindings,
     );
     let summary_masks = state
@@ -661,6 +667,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             unavailable: controls.masked_hands,
             reload_button: reload_button(&semantic_input),
             dt,
+            real_dt,
         };
         belt_reload = weapons::finish_tick(&finish, &mut step.desired);
         let after = weapons::capabilities::gun_owners_now().map(|gun| TriggerOwner {
@@ -720,6 +727,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
                     modifier_held: button_holds.modifier,
                     detection: &detection,
                     dt,
+                    real_dt,
                     config: &config,
                 },
                 &mut step.desired,

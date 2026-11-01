@@ -24,6 +24,7 @@
 use glam::Vec3;
 
 use crate::controllers::{
+    clock::TimeScale,
     grab::{GrabVolume, latch::GripLatch},
     physical_hands::physics::config::HandHitsTuning,
 };
@@ -91,13 +92,21 @@ impl Intent {
     }
 }
 
-/// The impulse of a blow closing as `approach`, by a hand meaning `intent`, newton seconds: an arm
-/// of `config.blow_mass_kg` at the hand's own speed into the character, which is the hand's share
-/// of the closing speed. `None` for a hand that did not swing at the character fast enough to
-/// strike: [`HandHitsTuning::min_approach_speed_mps`], or for a hand reaching for the character's
-/// gun, the speed of a solid punch ([`HandHitsTuning::stagger_impulse_ns`]); and `None` for a hand
-/// taking the gun.
-pub fn blow_impulse(approach: Approach, intent: Intent, config: &HandHitsTuning) -> Option<f32> {
+/// The impulse of a blow closing as `approach`, by a hand meaning `intent`, in a world running at
+/// `time_scale`, newton seconds: an arm of `config.blow_mass_kg` at the hand's own speed into the
+/// character, which is the hand's share of the closing speed. The speeds are the world's, per game
+/// second. Whether the hand swung fast enough to strike is the player's arm, so it is judged per
+/// real second: [`HandHitsTuning::min_approach_speed_mps`], or for a hand reaching for the
+/// character's gun, the speed of a solid punch ([`HandHitsTuning::stagger_impulse_ns`]). The blow
+/// itself is the hand's speed through the world, so in slow motion the player's arm, as fast as
+/// ever in real time, strikes as hard as it moves through the slowed world, as a throw leaves the
+/// hand. `None` for a hand too slow to strike, and for a hand taking the gun.
+pub fn blow_impulse(
+    approach: Approach,
+    intent: Intent,
+    time_scale: TimeScale,
+    config: &HandHitsTuning,
+) -> Option<f32> {
     let swing = config.min_approach_speed_mps.max(0.0);
     let min_mps = match intent {
         Intent::Swing => swing,
@@ -111,7 +120,8 @@ pub fn blow_impulse(approach: Approach, intent: Intent, config: &HandHitsTuning)
         }
         Intent::Take => return None,
     };
-    (approach.hand_mps >= min_mps && approach.hand_mps > 0.0)
+    let real_mps = approach.hand_mps * time_scale.get();
+    (real_mps >= min_mps && approach.hand_mps > 0.0)
         .then(|| config.blow_mass_kg.max(0.0) * approach.hand_mps)
 }
 
@@ -335,8 +345,8 @@ mod tests {
             victim_mps: 0.0,
         };
         assert!(
-            blow_impulse(swing, Intent::Swing, &with_rifle).unwrap()
-                > blow_impulse(swing, Intent::Swing, &CONFIG).unwrap()
+            blow_impulse(swing, Intent::Swing, TimeScale::REAL, &with_rifle).unwrap()
+                > blow_impulse(swing, Intent::Swing, TimeScale::REAL, &CONFIG).unwrap()
         );
     }
 
@@ -421,29 +431,36 @@ mod tests {
         let swing = approach(Vec3::X * 5.0, Vec3::ZERO, toward);
         assert_eq!(swing.hand_mps, 5.0);
         assert_eq!(
-            blow_impulse(swing, Intent::Swing, &CONFIG),
+            blow_impulse(swing, Intent::Swing, TimeScale::REAL, &CONFIG),
             Some(CONFIG.blow_mass_kg * 5.0)
         );
         // A hand at rest, which a character walks into.
         let walked_into = approach(Vec3::ZERO, Vec3::NEG_X * 3.0, toward);
         assert_eq!(walked_into.victim_mps, 3.0);
-        assert_eq!(blow_impulse(walked_into, Intent::Swing, &CONFIG), None);
+        assert_eq!(
+            blow_impulse(walked_into, Intent::Swing, TimeScale::REAL, &CONFIG),
+            None
+        );
         // A hand moving away, or resting on the character.
         assert_eq!(
             blow_impulse(
                 approach(Vec3::NEG_X, Vec3::ZERO, toward),
                 Intent::Swing,
+                TimeScale::REAL,
                 &CONFIG
             ),
             None
         );
         let resting = approach(Vec3::X * 0.3, Vec3::ZERO, toward);
-        assert_eq!(blow_impulse(resting, Intent::Swing, &CONFIG), None);
+        assert_eq!(
+            blow_impulse(resting, Intent::Swing, TimeScale::REAL, &CONFIG),
+            None
+        );
         // Only the hand's own speed counts: a character running into a swing adds nothing.
         let both = approach(Vec3::X * 5.0, Vec3::NEG_X * 4.0, toward);
         assert_eq!(
-            blow_impulse(both, Intent::Swing, &CONFIG),
-            blow_impulse(swing, Intent::Swing, &CONFIG)
+            blow_impulse(both, Intent::Swing, TimeScale::REAL, &CONFIG),
+            blow_impulse(swing, Intent::Swing, TimeScale::REAL, &CONFIG)
         );
         assert_eq!(approach(Vec3::X, Vec3::ZERO, Vec3::ZERO).hand_mps, 0.0);
     }
@@ -455,11 +472,14 @@ mod tests {
         // moves at the player's speed, and swings at none of it.
         let running = Vec3::X * 6.0;
         let carried = approach(swing(running, running), Vec3::ZERO, toward);
-        assert_eq!(blow_impulse(carried, Intent::Swing, &CONFIG), None);
+        assert_eq!(
+            blow_impulse(carried, Intent::Swing, TimeScale::REAL, &CONFIG),
+            None
+        );
         // A punch thrown while running swings at the arm's own speed.
         let punch = approach(swing(running + Vec3::X * 5.0, running), Vec3::ZERO, toward);
         assert_eq!(
-            blow_impulse(punch, Intent::Swing, &CONFIG),
+            blow_impulse(punch, Intent::Swing, TimeScale::REAL, &CONFIG),
             Some(CONFIG.blow_mass_kg * 5.0)
         );
         // A player velocity that is not finite counts as none.
@@ -472,12 +492,37 @@ mod tests {
         let at = |mps: f32| approach(Vec3::X * mps, Vec3::ZERO, toward);
         let punch_mps = CONFIG.stagger_impulse_ns / CONFIG.blow_mass_kg;
         // A brisk reach strikes a character the hand is not after the gun of.
-        assert!(blow_impulse(at(2.5), Intent::Swing, &CONFIG).is_some());
+        assert!(blow_impulse(at(2.5), Intent::Swing, TimeScale::REAL, &CONFIG).is_some());
         // Reaching for the gun, it does not; a solid punch still does.
-        assert_eq!(blow_impulse(at(2.5), Intent::Reach, &CONFIG), None);
-        assert!(blow_impulse(at(punch_mps + 0.1), Intent::Reach, &CONFIG).is_some());
+        assert_eq!(
+            blow_impulse(at(2.5), Intent::Reach, TimeScale::REAL, &CONFIG),
+            None
+        );
+        assert!(
+            blow_impulse(at(punch_mps + 0.1), Intent::Reach, TimeScale::REAL, &CONFIG).is_some()
+        );
         // A hand closing on the gun never strikes, however fast.
-        assert_eq!(blow_impulse(at(20.0), Intent::Take, &CONFIG), None);
+        assert_eq!(
+            blow_impulse(at(20.0), Intent::Take, TimeScale::REAL, &CONFIG),
+            None
+        );
+    }
+
+    #[test]
+    fn a_slowed_world_judges_the_swing_in_real_time_and_strikes_with_its_world_speed() {
+        let slow = TimeScale::new(0.25);
+        let toward = Vec3::X;
+        // A hand body following a real 1 m/s reach moves 4 m/s through the world at a quarter:
+        // a reach, not a swing.
+        let reach = approach(Vec3::X * 4.0, Vec3::ZERO, toward);
+        assert!(blow_impulse(reach, Intent::Swing, TimeScale::REAL, &CONFIG).is_some());
+        assert_eq!(blow_impulse(reach, Intent::Swing, slow, &CONFIG), None);
+        // A real 2 m/s swing strikes, with the world's 8 m/s.
+        let swing = approach(Vec3::X * 8.0, Vec3::ZERO, toward);
+        assert_eq!(
+            blow_impulse(swing, Intent::Swing, slow, &CONFIG),
+            Some(CONFIG.blow_mass_kg * 8.0)
+        );
     }
 
     #[test]

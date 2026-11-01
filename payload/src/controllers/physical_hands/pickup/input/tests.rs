@@ -182,6 +182,7 @@ fn produce_hands(
         unavailable: [false; 2],
         reload_button: ButtonControl::default(),
         dt: 0.01,
+        real_dt: 0.01,
     };
     let tick = crate::controllers::grab::tick::resolve(Vec::new(), Default::default(), None);
     let context = diagnostics::input(

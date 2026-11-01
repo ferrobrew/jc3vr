@@ -12,7 +12,7 @@
 use std::{num::NonZeroUsize, time::Instant};
 
 use glam::{Mat4, Quat, Vec2, Vec3};
-use jc3gi::{character::character::Character, clock::Clock};
+use jc3gi::character::character::Character;
 use parking_lot::Mutex;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
@@ -24,6 +24,7 @@ use crate::{
             raycast::{self, CastOptions},
         },
         body,
+        clock::TimeScale,
         fingers::{
             grip::{
                 self, Grip, GripSource,
@@ -101,6 +102,8 @@ static PENDING: Mutex<Option<f32>> = Mutex::new(None);
 /// and the physics step.
 unsafe fn run(owner: &Character, dt: f32) {
     physics::observe(dt);
+    // SAFETY: forwarded from the caller: the game runs.
+    let time_scale = unsafe { TimeScale::current() };
     let config = Config::lock_query(|c| c.controllers.physical_hands);
     let gate = Gate {
         active: config.enabled && scheme::is_controllers() && hooks::in_gameplay(),
@@ -285,12 +288,16 @@ unsafe fn run(owner: &Character, dt: f32) {
                 position: palm.centre,
                 orientation: palm.orientation,
             },
-            velocity: state.motion[i]
-                .0
-                .update(palm.centre, dt, VELOCITY_SMOOTHING_S),
-            angular_velocity: state.motion[i]
-                .1
-                .update(palm.orientation, dt, VELOCITY_SMOOTHING_S),
+            velocity: state.motion[i].0.update(
+                palm.centre,
+                dt,
+                time_scale.game_s(VELOCITY_SMOOTHING_S),
+            ),
+            angular_velocity: state.motion[i].1.update(
+                palm.orientation,
+                dt,
+                time_scale.game_s(VELOCITY_SMOOTHING_S),
+            ),
         };
         palms[i] = Some(motion);
         wrists[i] = Some(compose(cockpit.wrist));
@@ -507,7 +514,7 @@ unsafe fn run(owner: &Character, dt: f32) {
             joints: joint_inputs(&config),
             dt,
             // SAFETY: the clock singleton is read on the game thread.
-            time_scale: unsafe { Clock::get() }.map_or(1.0, |clock| clock.m_UpdateSpeed),
+            time_scale: time_scale.get(),
             unlatch_pull_m: doors::UNLATCH_PULL_M * active.world_scale,
             tearing: TearTuning {
                 enabled: config.doors.enabled && config.doors.tear,

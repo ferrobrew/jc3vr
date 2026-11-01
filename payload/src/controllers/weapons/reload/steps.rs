@@ -600,7 +600,7 @@ impl State {
             let round = self.status.insertion.carried(round, well);
             let top = world.cockpit_to_world(round.top);
             let axis = world.view * round.axis;
-            match adapter.carry(top, axis, inputs.dt, &reload.loose) {
+            match adapter.carry(top, axis, inputs.game_dt, &reload.loose) {
                 loose::Operation::Ready(()) => {}
                 loose::Operation::Deferred => {
                     if inputs.grips[hand.index()].held() {

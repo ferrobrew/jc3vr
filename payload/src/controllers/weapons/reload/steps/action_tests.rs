@@ -130,6 +130,7 @@ fn step_with(
         triggers: [ButtonControl::default(); 2],
         reload_button: ButtonControl::default(),
         dt: 1.0,
+        game_dt: 1.0,
     };
     inputs.grabs[worker.index()] = pressed.then_some(GrabVolume::WeaponAction);
     inputs.grips[worker.index()] = ButtonControl {

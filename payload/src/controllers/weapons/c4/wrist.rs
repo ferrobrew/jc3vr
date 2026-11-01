@@ -124,6 +124,7 @@ pub(crate) struct TickInputs {
     /// Whether the pressing hand holds nothing and its grip is closed: it is reaching to take
     /// something, and its fingertip is not read, so it cannot press the button on the way.
     pub presser_reaching: bool,
+    /// The tick's length, real seconds: a fingertip's dwell on the button.
     pub dt: f32,
 }
 

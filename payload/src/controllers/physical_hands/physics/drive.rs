@@ -17,6 +17,8 @@
 
 use glam::{Mat3, Quat, Vec2, Vec3};
 
+use crate::controllers::clock::TimeScale;
+
 /// How a hand body is driven.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct DriveTuning {
@@ -32,6 +34,24 @@ pub struct DriveTuning {
     /// The fastest a body is driven relative to its carrier, metres per second.
     pub max_speed_mps: f32,
     pub max_angular_speed_rps: f32,
+}
+
+impl DriveTuning {
+    /// This drive in a world running at `time_scale`. The palm a hand body follows moves in real
+    /// time, so in the game's seconds it moves `1 / time_scale` as fast, and to keep up the body's
+    /// top speeds rise by that and its strength, an acceleration's worth, by the square. The gains
+    /// close a share of the error per step and stay. A hand body in slow motion follows the hand
+    /// as at full speed, instead of lagging as far as the world is slowed.
+    pub fn in_real_time(self, time_scale: TimeScale) -> Self {
+        let rate = 1.0 / time_scale.get();
+        Self {
+            max_force_n: self.max_force_n * rate * rate,
+            max_torque_nm: self.max_torque_nm * rate * rate,
+            max_speed_mps: self.max_speed_mps * rate,
+            max_angular_speed_rps: self.max_angular_speed_rps * rate,
+            ..self
+        }
+    }
 }
 
 /// A hand body's state before a step, world space.
@@ -564,5 +584,29 @@ mod tests {
         assert!((smoothed - Vec2::X * 2.5).length() < 1e-3);
         let once = smooth_push(Vec2::ZERO, Vec2::X, STEP, 0.1, 2.5);
         assert!(once.x > 0.0 && once.x < 1.0);
+    }
+
+    #[test]
+    fn a_hand_body_keeps_up_with_a_real_swing_in_slow_motion() {
+        // A real 6 m/s swing is 24 m/s through a world at a quarter, past the drive's top speed;
+        // steps of a quarter of the length come between the same real frames.
+        let slow = TimeScale::new(0.25);
+        let step = STEP * slow.get();
+        let swing_game_mps = 24.0;
+        let goal_at = goal(Vec3::X * swing_game_mps * step);
+        let scaled = drive(
+            &at_rest(Vec3::ZERO),
+            &goal_at,
+            Vec3::ZERO,
+            &tuning().in_real_time(slow),
+            step,
+        );
+        assert!(
+            (scaled.linear.x - swing_game_mps).abs() < 1e-3,
+            "{scaled:?}"
+        );
+        let unscaled = drive(&at_rest(Vec3::ZERO), &goal_at, Vec3::ZERO, &tuning(), step);
+        assert!(unscaled.linear.x < swing_game_mps * 0.5, "{unscaled:?}");
+        assert_eq!(tuning().in_real_time(TimeScale::REAL), tuning());
     }
 }
