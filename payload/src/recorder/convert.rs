@@ -262,9 +262,17 @@ impl Converter {
                 MinDepth: 0.0,
                 MaxDepth: 1.0,
             }]));
+            // Opaque and unconditional: the pack shader writes only the red channel, so a blend
+            // state another pass left bound weighs it by an undefined alpha and can leave the
+            // target unchanged frame after frame.
+            context.OMSetBlendState(None, None, u32::MAX);
+            context.OMSetDepthStencilState(None, 0);
             context.IASetInputLayout(None);
             context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             context.VSSetShader(&self.vertex_shader, None);
+            context.GSSetShader(None, None);
+            context.HSSetShader(None, None);
+            context.DSSetShader(None, None);
             context.PSSetShader(&self.pixel_shader, None);
             context.PSSetConstantBuffers(0, Some(&[Some(self.params.clone())]));
             context.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
