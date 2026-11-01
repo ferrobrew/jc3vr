@@ -47,7 +47,7 @@ use crate::controllers::{
 /// The foregrip's fixed tuning.
 pub const FOREGRIP: ForegripTuning = ForegripTuning {
     radius_m: 0.10,
-    release_distance_m: 0.25,
+    release_distance_m: 0.15,
     blend_s: 0.12,
     fallback_distance_m: 0.32,
     min_span_m: 0.08,
@@ -122,6 +122,9 @@ pub enum Release {
     GripLetGo,
     /// The off-hand moved away from the foregrip.
     MovedAway,
+    /// The physical brace broke: the tracked off-hand left the gun its body holds, though the
+    /// two-handed pose still reached it.
+    LeftTheGun,
     /// The weapon left the hands, or another weapon was drawn.
     WeaponGone,
     /// A hand lost tracking, the controllers went inert, or the foregrip was switched off.
@@ -133,6 +136,7 @@ impl Release {
         match self {
             Release::GripLetGo => "grip let go",
             Release::MovedAway => "moved away",
+            Release::LeftTheGun => "left the gun",
             Release::WeaponGone => "weapon gone",
             Release::HandsGone => "hands gone",
         }
@@ -381,6 +385,9 @@ pub struct Inputs {
     /// Where an engaged hold's off-hand has slid to along the gun, in the holding wrist's frame,
     /// and the region it is in there: a hold on a region the hand slides along follows it.
     pub slide: Option<(Vec3, GunRegion)>,
+    /// Whether the physical brace of the off-hand broke since the last tick
+    /// ([`crate::controllers::physical_hands::physics::guns::take_support_break`]).
+    pub support_broke: bool,
 }
 
 /// A two-handed weapon in the hands.
@@ -426,6 +433,7 @@ pub fn step(
             inputs.hands[h.holder.other().index()],
         ) {
             _ if !inputs.grip_held => Some(Release::GripLetGo),
+            _ if inputs.support_broke => Some(Release::LeftTheGun),
             (Some(holder), Some(off)) => moved_away(h, holder, off, config),
             _ => Some(Release::HandsGone),
         },
@@ -619,6 +627,7 @@ mod tests {
             grab_pressed: grab,
             grip_held: true,
             slide: None,
+            support_broke: false,
         }
     }
 
@@ -768,6 +777,35 @@ mod tests {
         assert_eq!(t, None);
         let far = Vec3::new(0.0, 0.0, -0.4 - config.release_distance_m * 1.2);
         let (_, t) = step(hold, &inputs(far, false), DT, &config);
+        assert_eq!(t, Some(Transition::Released(Release::MovedAway)));
+    }
+
+    #[test]
+    fn a_broken_physical_brace_releases_however_close_the_pose_reaches() {
+        let config = config();
+        let near = Vec3::new(0.0, 0.0, -0.4);
+        let (hold, _) = step(None, &inputs(near, true), DT, &config);
+        let broke = Inputs {
+            support_broke: true,
+            ..inputs(near, false)
+        };
+        let (hold, t) = step(hold, &broke, DT, &config);
+        assert_eq!(t, Some(Transition::Released(Release::LeftTheGun)));
+        assert!(!hold.is_some_and(|h| h.engaged));
+        // A break reported with no hold engaged does nothing, and does not block a new grab.
+        let (hold, t) = step(None, &broke, DT, &config);
+        assert_eq!((hold, t), (None, None));
+    }
+
+    #[test]
+    fn an_off_hand_beside_the_gun_past_the_turn_limit_releases() {
+        let config = config();
+        let near = Vec3::new(0.0, 0.0, -0.4);
+        let (hold, _) = step(None, &inputs(near, true), DT, &config);
+        // Beside and behind the holding hand, the line between the hands asks a turn past the
+        // limit, and what the limit leaves is further than the release distance.
+        let beside = Vec3::new(-0.3, 0.0, 0.2);
+        let (_, t) = step(hold, &inputs(beside, false), DT, &config);
         assert_eq!(t, Some(Transition::Released(Release::MovedAway)));
     }
 

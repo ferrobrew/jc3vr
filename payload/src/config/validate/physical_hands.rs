@@ -1,4 +1,4 @@
-//! Checks for physical hand handling: the throw, the hands' strength, the brace's rebuild, and
+//! Checks for physical hand handling: the throw, the hands' strength, the brace's rebuild and break, and
 //! climbing.
 
 use crate::{
@@ -34,6 +34,11 @@ pub(super) fn physical_hands(p: &PhysicalHandsConfig) -> Result<(), Invalid> {
         "physical_hands.bodies.brace.min_interval_s",
         p.bodies.brace.min_interval_s,
         5.0,
+    )?;
+    nonnegative(
+        "physical_hands.bodies.brace.break_distance_m",
+        p.bodies.brace.break_distance_m,
+        1.0,
     )?;
     nonnegative(
         "physical_hands.climb.fling_scale",

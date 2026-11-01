@@ -1,9 +1,10 @@
 //! The gun bodies' lifecycle, owned by the pre-simulation step: each holding hand's gun body is
 //! made on its seat on the holding hand's body (the gun's last placement in the frame of the palm
 //! the hand is driven to), joined to the holding hand's body and to the bracing hand's where that
-//! hand holds it, moved with the holding hand's body as one rigid body and kept on its seat,
-//! kicked by the shots, and destroyed, its joints first, when the gun leaves the hand or the
-//! hand's body stops.
+//! hand holds it, moved with the holding hand's body as one rigid body (the bracing hand's body
+//! riding it) and kept on its seat, kicked by the shots, its brace broken when the tracked support
+//! palm leaves it, and destroyed, its joints first, when the gun leaves the hand or the hand's body
+//! stops.
 //!
 //! Every function here changes the physics world, so it runs only on the thread that steps it,
 //! outside the step: from the pre-simulation callback, or from the shutdown cleanup on the game
@@ -19,16 +20,16 @@ use crate::controllers::{
     frame::{Hand, Pose},
     physical_hands::physics::{
         body::{BodyError, BodyShape, BodySpec, HandBody},
-        config::{BraceRebuildConfig, HeldGunsTuning},
+        config::{BraceConfig, HeldGunsTuning},
         contact::{self, Source},
         drive::BodyMotion,
         guns::{
             GunBodyStatus, GunHolds, HeldGun, SHARED,
             engine::{GunError, GunSource, check_own_body, read_source},
             math::{
-                GunAxes, MAX_GRIP_SEAT_M, MassSource, brace_due, brace_palm, carried_velocity,
-                clamp_velocity, class_value, deviation, gun_mass, intended_seat, limit, seat,
-                seated, settled, shot_impulse, strayed, turn_rad,
+                BRACE_BREAK_STEPS, GunAxes, MAX_GRIP_SEAT_M, MassSource, brace_broken, brace_due,
+                brace_palm, carried_velocity, clamp_velocity, class_value, deviation, gun_mass,
+                intended_seat, limit, seat, seated, settled, shot_impulse, strayed, turn_rad,
             },
         },
         joint::Joint,
@@ -48,6 +49,9 @@ pub(crate) struct GunSlot {
     holder: Option<(Joint, Pose)>,
     /// The joint to the bracing hand's body.
     brace: Option<Brace>,
+    /// How many steps in a row the bracing hand's tracked palm has been past the break distance
+    /// from its place on the gun.
+    support_strays: u8,
 }
 
 /// A brace's joint, with the palm frame in the gun it holds and when it was made.
@@ -62,8 +66,8 @@ pub(crate) struct GunStep<'a> {
     /// The guns in the hands, as last published; empty when stale or switched off.
     pub holds: GunHolds,
     pub config: &'a HeldGunsTuning,
-    /// When the brace's joint is remade.
-    pub brace: BraceRebuildConfig,
+    /// When the brace's joint is remade, and when it breaks.
+    pub brace: BraceConfig,
     /// Whether the gun bodies' contacts are listened for.
     pub contact_events: bool,
     /// The player's collision system group.
@@ -71,6 +75,11 @@ pub(crate) struct GunStep<'a> {
     /// Where each controller's palm is, which its hand's body is driven to, game space; `None`
     /// while stale.
     pub palms: [Option<Pose>; 2],
+    /// Where each hand's tracked palm centre is before the two-handed pose moves it onto the gun,
+    /// game space; `None` while stale or for a hand off the guns.
+    pub tracked: [Option<Vec3>; 2],
+    /// The VR world scale, game units per metre.
+    pub scale: f32,
     /// The physics step's length, seconds.
     pub step_s: f32,
 }
@@ -85,6 +94,7 @@ pub(crate) unsafe fn step(hands: &mut Hands, input: GunStep<'_>) {
     let shots = std::mem::take(&mut SHARED.lock().shots);
     let mut statuses = [None; 2];
     let mut deviations = [None; 2];
+    let mut broken = [false; 2];
     let mut tally = Tally::default();
     for hand in Hand::BOTH {
         let i = hand.index();
@@ -150,6 +160,7 @@ pub(crate) unsafe fn step(hands: &mut Hands, input: GunStep<'_>) {
         match kept {
             Ok(kept) => {
                 statuses[i] = Some(kept.status);
+                broken[hand.other().index()] |= kept.support_broke;
                 let drawn = limit(
                     kept.deviation,
                     input.config.drawn_max_shift_m,
@@ -166,6 +177,9 @@ pub(crate) unsafe fn step(hands: &mut Hands, input: GunStep<'_>) {
         }
     }
     let mut shared = SHARED.lock();
+    for (flag, now_broken) in shared.support_broke.iter_mut().zip(broken) {
+        *flag |= now_broken;
+    }
     shared.deviations = deviations;
     shared.stepped = Some(now);
     let status = &mut shared.status;
@@ -278,6 +292,7 @@ unsafe fn make(
             .and_then(|()| body.place(at.position, at.orientation))
             .and_then(|()| {
                 carry_with_hand(&mut body, hand_body, &hand_motion, (Vec3::ZERO, Vec3::ZERO))
+                    .map(|_| ())
             })
     };
     if placed.is_err() {
@@ -332,6 +347,7 @@ unsafe fn make(
         axes: source.axes,
         holder: Some((joint, seat)),
         brace: None,
+        support_strays: 0,
     })
 }
 
@@ -339,11 +355,14 @@ unsafe fn make(
 struct Kept {
     status: GunBodyStatus,
     deviation: Pose,
+    /// Whether the bracing hand's tracked palm left the gun this step, breaking the brace.
+    support_broke: bool,
 }
 
 /// Keep `hand`'s gun body for this step: check its joint, put it back on its seat when its hand
-/// was put somewhere or it strayed, give it the shots queued for it, and make or end its brace.
-/// `Err` with the reason when the gun body must go.
+/// was put somewhere or it strayed, give it the shots queued for it, make, end, or break its
+/// brace, and carry the bracing hand's body with it. `Err` with the reason when the gun body must
+/// go.
 ///
 /// # Safety
 ///
@@ -408,6 +427,16 @@ unsafe fn keep(
             reason,
             "held guns: put a gun body back on its seat"
         );
+        // The bracing hand rides the gun, so it goes back on the gun with it.
+        if let Some(brace) = &slot.brace
+            && let Some(off_hand) = hands.bodies[off.index()].as_mut()
+        {
+            let palm = seated(back, brace.frame);
+            // SAFETY: forwarded from the caller.
+            if unsafe { off_hand.place(palm.position, palm.orientation) }.is_ok() {
+                contact::mute_for(Source::Hand(off), PLACED_MUTE_STEPS);
+            }
+        }
         gun_pose = back;
         drift = Pose::IDENTITY;
         tally.reseats += 1;
@@ -427,7 +456,7 @@ unsafe fn keep(
     )
     .unwrap_or((Vec3::ZERO, Vec3::ZERO));
     // SAFETY: forwarded from the caller.
-    unsafe { carry_with_hand(&mut slot.body, hand_body, &hand_motion, correction) }
+    let carried = unsafe { carry_with_hand(&mut slot.body, hand_body, &hand_motion, correction) }
         .map_err(|_| "the gun body could not be moved with its hand")?;
     if let Some((_, count)) = shots.filter(|(w, _)| *w == slot.held.weapon.get())
         && let Some(axes) = slot.axes
@@ -452,24 +481,45 @@ unsafe fn keep(
         .zip(input.palms[off.index()])
         .map(|(contact, palm)| brace_palm(gun_pose, palm, contact));
     let local = target.map(|palm| seat(gun_pose, palm));
+    // The tracked palm, not the one the two-handed pose moved onto the gun, says whether the hand
+    // is still on it.
+    let off_the_gun = target
+        .zip(input.tracked[off.index()])
+        .is_some_and(|(palm, tracked)| {
+            brace_broken(
+                tracked,
+                palm.position,
+                input.brace.break_distance_m * input.scale,
+            )
+        });
+    slot.support_strays = if off_the_gun {
+        slot.support_strays.saturating_add(1)
+    } else {
+        0
+    };
+    let support_broke = slot.support_strays >= BRACE_BREAK_STEPS;
     // Whether the joint is remade for a moved palm, rather than made afresh.
     let mut remade = false;
     if let Some(brace) = slot.brace.take() {
-        let ended = local.is_none() || placed[off.index()] || !unsafe { brace.joint.intact() };
+        let broke = support_broke;
+        let ended =
+            broke || local.is_none() || placed[off.index()] || !unsafe { brace.joint.intact() };
         let due = local.is_some_and(|wanted| {
             let age_s = now.saturating_duration_since(brace.made).as_secs_f32();
             brace_due(brace.frame, wanted, age_s, &input.brace)
         });
         if ended {
-            // SAFETY: forwarded from the caller.
-            unsafe {
-                end_joint(
-                    brace.joint,
-                    off,
-                    "brace",
-                    "the support contact changed or ended",
-                )
+            let reason = if broke {
+                "the support hand left the gun"
+            } else if local.is_none() {
+                "the support contact ended"
+            } else if placed[off.index()] {
+                "the support hand's body was put somewhere"
+            } else {
+                "the joint went away"
             };
+            // SAFETY: forwarded from the caller.
+            unsafe { end_joint(brace.joint, off, "brace", reason) };
         } else if due {
             // SAFETY: forwarded from the caller.
             unsafe { end_quietly(brace.joint, off) };
@@ -479,6 +529,7 @@ unsafe fn keep(
         }
     }
     if slot.brace.is_none()
+        && !support_broke
         && let (Some(off_id), Some(target), Some(local)) = (off_body, target, local)
         && let Some(off_hand) = hands.bodies[off.index()].as_mut()
     {
@@ -487,10 +538,8 @@ unsafe fn keep(
         // SAFETY: forwarded from the caller.
         let jump = unsafe { off_hand.motion() }
             .map_or(f32::INFINITY, |m| m.position.distance(target.position));
-        let placed =
-            unsafe { off_hand.place(target.position, target.orientation) }.and_then(|()| unsafe {
-                carry_with_hand(off_hand, &slot.body, &gun_motion, (Vec3::ZERO, Vec3::ZERO))
-            });
+        // SAFETY: forwarded from the caller.
+        let placed = unsafe { off_hand.place(target.position, target.orientation) };
         if placed.is_err() {
             tally.error = Some(
                 "held guns: the support palm could not be seated on its gun region".to_owned(),
@@ -530,6 +579,18 @@ unsafe fn keep(
             }
         }
     }
+    // The bracing hand rides the gun: its body moves with the gun's as one rigid body, whatever
+    // its own drive asked, so the two hands never pull the gun between them. The holding hand's
+    // drive steers the gun alone, toward the two-handed pose the line between the hands sets.
+    if slot.brace.is_some()
+        && let Some(off_hand) = hands.bodies[off.index()].as_mut()
+    {
+        // SAFETY: forwarded from the caller.
+        if unsafe { carry_with(off_hand, carried) }.is_err() {
+            tally.error =
+                Some("held guns: the bracing hand could not be moved with its gun".to_owned());
+        }
+    }
     let holder_joint = slot.holder.as_ref().map(|(j, _)| j.id());
     Ok(Kept {
         status: GunBodyStatus {
@@ -546,6 +607,7 @@ unsafe fn keep(
             speed_mps: gun_motion.linear.length(),
         },
         deviation: drift,
+        support_broke,
     })
 }
 
@@ -625,9 +687,17 @@ unsafe fn end_quietly(joint: Joint, hand: Hand) {
 /// seated a little along the gun it already holds is no placement into the world.
 const QUIET_REBRACE_M: f32 = 0.05;
 
+/// The motion a body was given: its centre of mass and its velocities, world space.
+#[derive(Copy, Clone)]
+struct Carried {
+    centre: Vec3,
+    linear: Vec3,
+    angular: Vec3,
+}
+
 /// Give the gun body `gun` the velocity it has as part of the hand's body `hand`, which moves as
 /// `hand_motion`: the hand's linear velocity at the gun's centre of mass, and the hand's turn,
-/// with `correction`'s linear and angular velocities added.
+/// with `correction`'s linear and angular velocities added. Returns the motion given.
 ///
 /// # Safety
 ///
@@ -637,7 +707,7 @@ unsafe fn carry_with_hand(
     hand: &HandBody,
     hand_motion: &BodyMotion,
     correction: (Vec3, Vec3),
-) -> Result<(), BodyError> {
+) -> Result<Carried, BodyError> {
     // SAFETY: forwarded from the caller.
     let (gun_centre, hand_centre) = unsafe { (gun.centre_of_mass()?, hand.centre_of_mass()?) };
     let linear = carried_velocity(
@@ -647,13 +717,28 @@ unsafe fn carry_with_hand(
         gun_centre,
     );
     let (linear_correction, angular_correction) = correction;
+    let given = Carried {
+        centre: gun_centre,
+        linear: linear + linear_correction,
+        angular: hand_motion.angular + angular_correction,
+    };
     // SAFETY: forwarded from the caller.
-    unsafe {
-        gun.set_velocities(
-            linear + linear_correction,
-            hand_motion.angular + angular_correction,
-        )
-    }
+    unsafe { gun.set_velocities(given.linear, given.angular) }?;
+    Ok(given)
+}
+
+/// Give `body` the velocity it has as part of a body moving as `carrier`: the carrier's velocity
+/// at `body`'s centre of mass, and the carrier's turn.
+///
+/// # Safety
+///
+/// As [`step`].
+unsafe fn carry_with(body: &mut HandBody, carrier: Carried) -> Result<(), BodyError> {
+    // SAFETY: forwarded from the caller.
+    let centre = unsafe { body.centre_of_mass() }?;
+    let linear = carried_velocity(carrier.centre, carrier.linear, carrier.angular, centre);
+    // SAFETY: forwarded from the caller.
+    unsafe { body.set_velocities(linear, carrier.angular) }
 }
 
 /// How far along the gun a hand may hold it by a part other than its grip: the gun's muzzle's

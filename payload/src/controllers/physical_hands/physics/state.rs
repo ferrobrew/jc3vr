@@ -13,7 +13,7 @@ use parking_lot::Mutex;
 use crate::{
     controllers::{
         frame::{Hand, Pose},
-        hands::{self, pose as hand_pose},
+        hands::{self, CockpitHand, pose as hand_pose},
         mode,
         physical_hands::{
             PhysicalHandsConfig, STATE, free_hands,
@@ -188,6 +188,9 @@ impl Target {
 pub(super) struct Shared {
     /// Each hand's palm, as last published; `None` for a hand that does not act.
     pub(super) targets: [Option<Target>; 2],
+    /// Each hand on a gun's tracked palm centre, as last published, before the two-handed pose
+    /// moved it onto the gun.
+    pub(super) tracked: [Option<Vec3>; 2],
     /// Which hands stopped acting on purpose, and park at once, and when that was published.
     pub(super) park_now: Option<(Instant, [bool; 2])>,
     /// When the targets were published; `None` while no hand acts.
@@ -243,6 +246,7 @@ impl Shared {
 
 pub(super) static SHARED: Mutex<Shared> = Mutex::new(Shared {
     targets: [None; 2],
+    tracked: [None; 2],
     park_now: None,
     published: None,
     world_scale: 1.0,
@@ -314,6 +318,7 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
         Hand::BOTH.map(|hand| state.pickup.carrying(hand))
     };
     let on_gun = guns::acting_hands(config);
+    let tracked_hands = active.hands;
     if guns::enabled(config) {
         guns::targets::apply_physical(
             &mut active.hands,
@@ -321,9 +326,7 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
             &active.config.weapons.heft,
         );
     }
-    let palms = Hand::BOTH.map(|hand| {
-        let i = hand.index();
-        let cockpit = active.hands[i].filter(|_| (free[i] && !carrying[i]) || on_gun[i])?;
+    let palm_of = |cockpit: CockpitHand| {
         let wrist = hand_pose::compose_world(
             head.position,
             body_rotation,
@@ -331,10 +334,21 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
             cockpit.wrist,
             active.world_scale,
         );
-        Some(PalmBox::from_wrist(wrist, active.world_scale, &PALMS))
+        PalmBox::from_wrist(wrist, active.world_scale, &PALMS)
+    };
+    let palms = Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        let cockpit = active.hands[i].filter(|_| (free[i] && !carrying[i]) || on_gun[i])?;
+        Some(palm_of(cockpit))
+    });
+    let tracked = Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        let cockpit = tracked_hands[i].filter(|_| on_gun[i])?;
+        Some(palm_of(cockpit).centre)
     });
     Some(ActingPalms {
         palms,
+        tracked,
         // The cockpit frame's origin in the world, composed as the palms are.
         origin: hand_pose::compose_world(
             head.position,
@@ -358,6 +372,9 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
 pub(super) struct ActingPalms {
     /// Each acting hand's palm, world space.
     pub(super) palms: [Option<PalmBox>; 2],
+    /// Each hand on a gun's tracked palm centre, before the two-handed pose moves it onto the
+    /// gun, world space.
+    pub(super) tracked: [Option<Vec3>; 2],
     /// Where the cockpit frame's origin is, world space: it moves only with what carries the
     /// player, not with the head or the hands.
     pub(super) origin: Vec3,
@@ -392,8 +409,8 @@ pub(super) fn holding_tuning(tuning: &DriveTuning, shared: bool) -> DriveTuning 
 }
 
 /// The drive of a hand on a gun: the hand's full strength, unlike a hand lifting a loose object,
-/// against the hand's and the gun's mass together (`gun_kg`, the gun body's mass when the hand
-/// holds one). The gun body moves with the hand's body as one rigid body, so the gun stays where
+/// against the hand's mass and what it carries together (`gun_kg`, the gun body's mass and a
+/// bracing hand's riding on it, when the hand holds a gun). The gun body moves with the hand's body as one rigid body, so the gun stays where
 /// the hand holds it, and its mass shows only where the strength runs out: a slight lag in a fast
 /// swing.
 pub(super) fn gun_tuning(tuning: &DriveTuning, gun_kg: Option<f32>) -> DriveTuning {

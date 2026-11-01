@@ -82,6 +82,7 @@ pub(crate) unsafe fn step() {
 
     let (
         targets,
+        tracked,
         published,
         world_scale,
         mut push,
@@ -94,6 +95,7 @@ pub(crate) unsafe fn step() {
         let mut shared = SHARED.lock();
         (
             shared.targets,
+            shared.tracked,
             shared.published,
             shared.world_scale,
             shared.push,
@@ -118,6 +120,10 @@ pub(crate) unsafe fn step() {
         guns::GunHolds::default()
     };
     let on_gun = gun_holds.hands();
+    // A bracing hand rides the gun it braces, so its controller's distance from the gun neither
+    // pushes the player nor presses the hand.
+    let bracing =
+        Hand::BOTH.map(|hand| on_gun[hand.index()] && gun_holds.guns[hand.index()].is_none());
     let mut joint_lost = [false; 2];
     let holds = if !fresh { [None; 2] } else { holds };
     let age_s = published
@@ -240,7 +246,7 @@ pub(crate) unsafe fn step() {
                     linear_gain *= b.hits.follow_through_gain.clamp(0.0, 1.0);
                 }
                 let held_tuning = if on_gun[i] {
-                    gun_tuning(&tuning, guns::mass(hand))
+                    gun_tuning(&tuning, guns::carried_mass(hand, b.mass_kg))
                 } else {
                     holding.map_or(tuning, |h| holding_tuning(&tuning, h.shared))
                 };
@@ -276,12 +282,16 @@ pub(crate) unsafe fn step() {
                         statuses[i] = acted.status;
                         statuses[i].joint = hands.joints[i].as_ref().map(Joint::id);
                         offsets[i] = acted.render;
-                        loads[i] = press_load(acted.lag, b, scale);
+                        loads[i] = if bracing[i] {
+                            0.0
+                        } else {
+                            press_load(acted.lag, b, scale)
+                        };
                         // A hand that grips or holds something does not push the body up.
                         if grips[i].is_none() && holds[i].is_none() && !on_gun[i] {
                             press_lags[i] = Some(acted.lag);
                         }
-                        if config.push {
+                        if config.push && !bracing[i] {
                             hand_push += lag_push(acted.lag, &push_tuning, step_s);
                         }
                     }
@@ -336,6 +346,8 @@ pub(crate) unsafe fn step() {
                         orientation: t.orientation,
                     })
                 }),
+                tracked: if fresh { tracked } else { [None; 2] },
+                scale,
                 step_s,
             },
         )

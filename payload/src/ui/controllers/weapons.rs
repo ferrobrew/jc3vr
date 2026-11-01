@@ -603,6 +603,11 @@ pub(super) fn support_settings(ui: &mut Ui, c: &mut ControllersConfig) {
             .fixed_decimals(3),
     );
     ui.add(egui::Slider::new(&mut brace.min_interval_s, 0.0..=1.0).text("Stands at least (s)"));
+    ui.add(egui::Slider::new(&mut brace.break_distance_m, 0.05..=0.5).text("Breaks past (m)"))
+        .on_hover_text(
+            "How far the tracked support hand may be from its place on the gun before the brace \
+             breaks and the two-handed hold lets go.",
+        );
 }
 
 pub(super) fn reload_feature_settings(ui: &mut Ui, w: &mut WeaponsConfig) {

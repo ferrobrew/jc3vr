@@ -27,10 +27,12 @@
 //!    gun's last placement in the frame of the controller's palm the hand is driven to, so a hand
 //!    body that lags its palm does not seat the gun off the hand. It waits for the hand body to
 //!    settle on its palm, joins the gun body to it, and joins the bracing hand's body where that
-//!    hand holds it. Each step it moves the gun body with the hand's as one rigid body, puts it
+//!    hand holds it. Each step it moves the gun body with the hand's as one rigid body, and the
+//!    bracing hand's body with the gun's, so only the holding hand's drive steers the gun; puts it
 //!    back on its seat past a few centimetres or degrees of stray, measures the stray
 //!    ([`deviation`]), which the rigid grip's pin carries the drawn gun by within a couple of
-//!    degrees, and gives the gun body each shot's kick ([`queue_shot`]).
+//!    degrees, and gives the gun body each shot's kick ([`queue_shot`]). A brace whose tracked
+//!    palm has left the gun breaks, and the foregrip lets go ([`take_support_break`]).
 //!
 //! The gun body's mass is its own body's (the weapon's pickup mass, shared between a dual-wield
 //! pair's two guns) held to its weight class's, so that a rifle does not outweigh the hand that
@@ -129,6 +131,19 @@ pub struct GunBodyStatus {
     pub deviation_m: f32,
     pub deviation_rad: f32,
     pub speed_mps: f32,
+}
+
+impl GunBodyStatus {
+    /// The mass the holding hand's drive carries besides its own: the gun body's, and the bracing
+    /// hand's (`bracing_hand_kg`) while a brace joins it.
+    pub fn carried_kg(&self, bracing_hand_kg: f32) -> f32 {
+        let bracing = if self.brace_joint.is_some() && bracing_hand_kg.is_finite() {
+            bracing_hand_kg.max(0.0)
+        } else {
+            0.0
+        };
+        self.mass_kg + bracing
+    }
 }
 
 /// The held guns' readout.
@@ -235,10 +250,22 @@ pub(super) fn count_contact(hand: Hand) {
     SHARED.lock().status.contacts[hand.index()] += 1;
 }
 
-/// The mass of `hand`'s gun body on the last step, for a blow it strikes and for the drive of the
-/// hand that holds it.
+/// The mass of `hand`'s gun body on the last step, for a blow it strikes.
 pub(super) fn mass(hand: Hand) -> Option<f32> {
     SHARED.lock().status.hands[hand.index()].map(|g| g.mass_kg)
+}
+
+/// The mass the drive of the hand holding `hand`'s gun carries besides its own, from the last
+/// step: the gun body's, and a bracing hand's of `bracing_hand_kg` while the brace holds it, since
+/// that hand rides the gun.
+pub(super) fn carried_mass(hand: Hand, bracing_hand_kg: f32) -> Option<f32> {
+    SHARED.lock().status.hands[hand.index()].map(|g| g.carried_kg(bracing_hand_kg))
+}
+
+/// Whether the brace `hand` held broke since the last call, because its tracked palm left the gun:
+/// the two-handed hold lets go. Called once per input tick by the foregrip.
+pub(crate) fn take_support_break(hand: Hand) -> bool {
+    std::mem::take(&mut SHARED.lock().support_broke[hand.index()])
 }
 
 /// How long a publication or a step's results stay current.
@@ -252,6 +279,8 @@ struct Shared {
     shots: [Option<(usize, u32)>; 2],
     /// Each holding hand's weapon and its gun body's deviation, from the last step.
     deviations: [Option<(usize, Pose)>; 2],
+    /// Each bracing hand whose brace broke since the foregrip last looked, by the bracing hand.
+    support_broke: [bool; 2],
     stepped: Option<Instant>,
     status: GunsStatus,
 }
@@ -278,6 +307,7 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     published: None,
     shots: [None; 2],
     deviations: [None; 2],
+    support_broke: [false; 2],
     stepped: None,
     status: GunsStatus {
         hands: [None; 2],
@@ -306,6 +336,30 @@ mod tests {
             guns: 1,
             carry: None,
         }
+    }
+
+    #[test]
+    fn the_holding_hand_carries_a_bracing_hand_with_its_gun() {
+        let held = GunBodyStatus {
+            weapon: 0x1000,
+            body_id: 7,
+            in_world: true,
+            mass_kg: 4.0,
+            mass_source: MassSource::Body,
+            holder_joint: Some(1),
+            brace_joint: None,
+            deviation_m: 0.0,
+            deviation_rad: 0.0,
+            speed_mps: 0.0,
+        };
+        assert_eq!(held.carried_kg(3.0), 4.0);
+        let braced = GunBodyStatus {
+            brace_joint: Some(2),
+            ..held
+        };
+        assert_eq!(braced.carried_kg(3.0), 7.0);
+        assert_eq!(braced.carried_kg(f32::NAN), 4.0);
+        assert_eq!(braced.carried_kg(-1.0), 4.0);
     }
 
     #[test]

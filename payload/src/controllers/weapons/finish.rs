@@ -30,6 +30,7 @@ use crate::{
             live,
         },
         mode,
+        physical_hands::physics::guns,
         weapons::{
             begin::with_holder,
             c4::{self, tuning::C4Tuning},
@@ -169,6 +170,8 @@ pub(crate) fn finish_tick(
         },
         None => w,
     });
+    // Taken every tick, so a break left over from an ended hold never lets go of the next.
+    let support_broke = Hand::BOTH.map(guns::take_support_break);
     let inputs = Inputs {
         active: config.weapons.foregrip.enabled && active.is_some(),
         hands: active.as_ref().map_or([None; 2], |a| a.hands),
@@ -180,6 +183,7 @@ pub(crate) fn finish_tick(
                     .is_some_and(|hand| two_handed.is_some_and(|w| w.holder.other() == hand))),
         grip_held: two_handed.is_some_and(|w| grips[w.holder.other().index()].held()),
         slide,
+        support_broke: two_handed.is_some_and(|w| support_broke[w.holder.other().index()]),
     };
     let transition = foregrip::tick(&inputs, dt, &FOREGRIP);
     if let (Some(Transition::Grabbed), Some(w)) = (transition, two_handed)

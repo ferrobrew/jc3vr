@@ -8,7 +8,7 @@ use crate::controllers::{
     frame::Pose,
     hands::{CockpitHand, pose as hand_pose},
     physical_hands::physics::{
-        config::{BraceRebuildConfig, GunClassValues, HeldGunsTuning},
+        config::{BraceConfig, GunClassValues, HeldGunsTuning},
         guns::BraceContact,
     },
     weapons::{foregrip::GripGeometry, heft::HeftClass},
@@ -50,7 +50,7 @@ pub fn brace_palm(gun: Pose, palm: Pose, contact: BraceContact) -> Pose {
 
 /// Whether a brace's palm frame changed enough, past `rebuild`, to remake the fixed joint. A fixed
 /// joint otherwise keeps a stale contact when the hand slides or rotates its grip around the gun.
-pub fn brace_changed(before: Pose, after: Pose, rebuild: &BraceRebuildConfig) -> bool {
+pub fn brace_changed(before: Pose, after: Pose, rebuild: &BraceConfig) -> bool {
     before.position.distance(after.position) > rebuild.distance_m
         || turn_rad(before.orientation.inverse() * after.orientation) > rebuild.angle_rad
 }
@@ -60,10 +60,22 @@ pub fn brace_changed(before: Pose, after: Pose, rebuild: &BraceRebuildConfig) ->
 /// joint holds (not from the last step's, so a slow slide is caught and jitter is not), and the
 /// joint has stood for `rebuild.min_interval_s`, so a hand sliding along the gun remakes it at a
 /// bounded rate.
-pub fn brace_due(built: Pose, wanted: Pose, age_s: f32, rebuild: &BraceRebuildConfig) -> bool {
+pub fn brace_due(built: Pose, wanted: Pose, age_s: f32, rebuild: &BraceConfig) -> bool {
     let stood = !age_s.is_finite() || age_s >= rebuild.min_interval_s;
     stood && brace_changed(built, wanted, rebuild)
 }
+
+/// Whether a brace has broken: the tracked support palm at `tracked` is further than `break_m`
+/// from `held`, where the brace holds the palm on the gun, both world space. A pose that is not
+/// finite breaks nothing here: a hand that lost tracking ends its hold elsewhere.
+pub fn brace_broken(tracked: Vec3, held: Vec3, break_m: f32) -> bool {
+    let gap = tracked.distance(held);
+    gap.is_finite() && break_m.is_finite() && gap > break_m.max(0.0)
+}
+
+/// How many steps in a row the tracked support palm must be past the break distance before the
+/// brace breaks: a single stray sample of the tracking breaks nothing.
+pub const BRACE_BREAK_STEPS: u8 = 3;
 
 /// The value of `values` for a gun of weight class `class`.
 pub fn class_value(values: &GunClassValues, class: HeftClass) -> f32 {
@@ -345,7 +357,7 @@ mod tests {
         let before = seat(gun, brace_palm(gun, Pose::IDENTITY, contact));
         let rotated = pose(Vec3::ZERO, Quat::from_rotation_x(0.2));
         let after = seat(gun, brace_palm(gun, rotated, contact));
-        let rebuild = BraceRebuildConfig::new();
+        let rebuild = BraceConfig::new();
         assert!(brace_changed(before, after, &rebuild));
         assert!(!brace_changed(before, before, &rebuild));
         let slid = BraceContact {
@@ -390,7 +402,7 @@ mod tests {
 
     #[test]
     fn a_brace_is_remade_against_its_built_frame_at_a_bounded_rate() {
-        let rebuild = BraceRebuildConfig::new();
+        let rebuild = BraceConfig::new();
         let built = pose(Vec3::new(0.0, 0.0, -0.4), Quat::IDENTITY);
         let step = |by: f32| pose(built.position + Vec3::NEG_Z * by, Quat::IDENTITY);
         // Aim jitter within the thresholds never remakes the joint, however long it stands.
@@ -416,6 +428,57 @@ mod tests {
             &rebuild
         ));
         assert!(brace_due(built, slid, f32::NAN, &rebuild));
+    }
+
+    #[test]
+    fn a_brace_breaks_once_the_tracked_palm_leaves_the_gun() {
+        let brace = BraceConfig::new();
+        let held = Vec3::new(0.2, 1.3, -0.5);
+        let at = |by: Vec3| held + by;
+        // A hand on the gun, or steering it with the usual slop, keeps the brace.
+        assert!(!brace_broken(held, held, brace.break_distance_m));
+        let slop = Vec3::new(0.0, 0.03, 0.06);
+        assert!(!brace_broken(at(slop), held, brace.break_distance_m));
+        // A hand beside the gun, as far off as the one the drawn line pointed at, breaks it, in any
+        // direction and at any world scale.
+        for side in [Vec3::X, Vec3::NEG_X, Vec3::Y, Vec3::NEG_Z] {
+            let away = at(side * brace.break_distance_m * 1.2);
+            assert!(brace_broken(away, held, brace.break_distance_m));
+            let scale = 1.7;
+            assert!(brace_broken(
+                held * scale + side * brace.break_distance_m * 1.2 * scale,
+                held * scale,
+                brace.break_distance_m * scale
+            ));
+        }
+        // Lost tracking breaks nothing here.
+        assert!(!brace_broken(
+            Vec3::splat(f32::NAN),
+            held,
+            brace.break_distance_m
+        ));
+        assert!(!brace_broken(at(Vec3::X), held, f32::NAN));
+    }
+
+    #[test]
+    fn a_bracing_hand_carried_with_the_gun_keeps_its_place_on_it() {
+        // The gun's centre of mass, its velocities, and the bracing palm on its handguard.
+        let centre = Vec3::new(0.1, 1.3, -0.3);
+        let (linear, angular) = (Vec3::new(0.4, -0.2, 0.9), Vec3::new(0.8, -1.5, 0.3));
+        let palm = centre + Vec3::new(-0.05, -0.04, -0.3);
+        let step_s = 1.0 / 30.0;
+        let off = carried_velocity(centre, linear, angular, palm);
+        let carried = palm + off * step_s;
+        // Where the palm would be as a rigid part of the gun after the step.
+        let turn = Quat::from_scaled_axis(angular * step_s);
+        let rigid = centre + linear * step_s + turn * (palm - centre);
+        // The two agree to the step's second order: no joint error for the brace to fight.
+        let bound = angular.length_squared() * (palm - centre).length() * step_s * step_s;
+        assert!(
+            carried.distance(rigid) <= bound,
+            "{}",
+            carried.distance(rigid)
+        );
     }
 
     #[test]

@@ -99,6 +99,7 @@ pub(crate) fn observe(dt: f32) {
     let now = Instant::now();
     let acting = enabled(&config).then(|| acting_palms(&config)).flatten();
     let park_now = acting.as_ref().map(|a| (now, a.park_now));
+    let tracked = acting.as_ref().map_or([None; 2], |a| a.tracked);
     let palms = acting
         .filter(|a| a.palms.iter().any(Option::is_some))
         .map(|a| (a.palms, a.world_scale, a.origin));
@@ -157,6 +158,7 @@ pub(crate) fn observe(dt: f32) {
             }
         }
         shared.targets = targets;
+        shared.tracked = tracked;
         shared.park_now = park_now;
         shared.world_scale = world_scale;
         shared.published = palms.is_some().then_some(now);

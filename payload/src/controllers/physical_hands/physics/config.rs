@@ -14,8 +14,8 @@ pub struct HandBodiesConfig {
     pub strength: f32,
     /// A character struck by a hand reacts to the blow: staggers, or is knocked down.
     pub reactions: bool,
-    /// When the joint between a held gun and its bracing hand is remade.
-    pub brace: BraceRebuildConfig,
+    /// When the joint between a held gun and its bracing hand is remade, and when it breaks.
+    pub brace: BraceConfig,
 }
 
 impl HandBodiesConfig {
@@ -24,7 +24,7 @@ impl HandBodiesConfig {
             enabled: true,
             strength: 1.0,
             reactions: true,
-            brace: BraceRebuildConfig::new(),
+            brace: BraceConfig::new(),
         }
     }
 }
@@ -35,36 +35,48 @@ impl Default for HandBodiesConfig {
     }
 }
 
-/// When the fixed joint between a held gun and its bracing hand is remade (see
-/// [`brace_due`](crate::controllers::physical_hands::physics::guns::math::brace_due)): once the
-/// palm frame the hand is driven to has moved or turned past these from the frame the joint holds,
-/// and no sooner than [`min_interval_s`](Self::min_interval_s) after the joint was made. A joint
-/// kept through a larger change holds a stale contact as the hand slides or turns its grip around
-/// the gun; a joint remade on every small change churns, since ordinary two-handed aim moves the
-/// support hand on the gun all the time. These are settings so the brace's feel can be tuned in
-/// the headset.
+/// The joint between a held gun and its bracing hand: when it is remade, and when it breaks.
+///
+/// It is remade (see
+/// [`brace_due`](crate::controllers::physical_hands::physics::guns::math::brace_due)) once the palm
+/// frame the hand is driven to has moved or turned past [`distance_m`](Self::distance_m) or
+/// [`angle_rad`](Self::angle_rad) from the frame the joint holds, and no sooner than
+/// [`min_interval_s`](Self::min_interval_s) after the joint was made. A joint kept through a larger
+/// change holds a stale contact as the hand slides or turns its grip around the gun; a joint
+/// remade on every small change churns, since ordinary two-handed aim moves the support hand on
+/// the gun all the time.
+///
+/// It breaks (see
+/// [`brace_broken`](crate::controllers::physical_hands::physics::guns::math::brace_broken)), and the
+/// two-handed hold lets go, once the tracked palm is further than
+/// [`break_distance_m`](Self::break_distance_m) from where the joint holds the palm on the gun.
+/// These are settings so the brace's feel can be tuned in the headset.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub struct BraceRebuildConfig {
+pub struct BraceConfig {
     /// The palm frame's furthest move, metres.
     pub distance_m: f32,
     /// The palm frame's largest turn, radians.
     pub angle_rad: f32,
     /// The shortest a joint stands before it is remade for a moved palm, seconds.
     pub min_interval_s: f32,
+    /// The furthest the tracked palm may be from its place on the gun before the brace breaks,
+    /// metres.
+    pub break_distance_m: f32,
 }
 
-impl BraceRebuildConfig {
+impl BraceConfig {
     pub const fn new() -> Self {
         Self {
             distance_m: 0.01,
             angle_rad: 0.08,
             min_interval_s: 0.25,
+            break_distance_m: 0.15,
         }
     }
 }
 
-impl Default for BraceRebuildConfig {
+impl Default for BraceConfig {
     fn default() -> Self {
         Self::new()
     }
