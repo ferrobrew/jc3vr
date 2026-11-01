@@ -201,6 +201,8 @@ pub enum ModAction {
     WorkAction,
     /// Take a grenade from its pouch, and throw it by letting go.
     Grenade,
+    /// Pull the pin of the grenade in the hand, starting its fuse.
+    PullPin,
     /// Take a C4 charge from its chest pouch, and throw it by letting go.
     C4,
     /// Grip an unheld climbing surface within reach.
@@ -824,6 +826,11 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
                 Control::Grip(dom),
                 Gesture::Press,
                 modded(ModAction::Grenade),
+            );
+            add(
+                Control::Trigger(dom),
+                Gesture::Press,
+                modded(ModAction::PullPin),
             );
         }
         if features.c4_throw {

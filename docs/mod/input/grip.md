@@ -30,7 +30,7 @@ The providers place their targets on every input tick:
 
 | Provider | Targets | Consumer |
 | --- | --- | --- |
-| The weapon handling (`weapons/begin/`) | The holsters, the grenade, C4, and reload pouches (each with a reach margin, and only while it has something to give: a grenade, room for another charge, or a round in reserve), a long gun docked on a shoulder where the hand touches it, the carried weapons' sockets, the held gun's grip, the held grenade, and the held charge (each to take it over from the other hand), foregrip, action, and magazine well, a braced foregrip as held, the guns in characters' hands, on racks, and in lockers (each at the point of the gun nearest the hand), the held grenade's pin, a live grenade, the surface a held charge would stick to, and a magazine in the world | `weapons::finish_tick` |
+| The weapon handling (`weapons/begin/`) | The holsters, the grenade, C4, and reload pouches (each with a reach margin, and only while it has something to give: a grenade, room for another charge, or a round in reserve), a long gun docked on a shoulder where the hand touches it, the carried weapons' sockets, the held gun's grip, the held grenade, and the held charge (each to take it over from the other hand), foregrip, action, and magazine well, a braced foregrip as held, the guns in characters' hands, on racks, and in lockers (each at the point of the gun nearest the hand), a live grenade or a dropped one, the surface a held charge would stick to, and a magazine in the world | `weapons::finish_tick` |
 | The vehicle handling (`vehicles/begin.rs`) | The driver's controls (one grab point per hand on each), the cockpit's buttons, the parachute's handles (each with a reach margin), and the mounted gun's handles, with what a hand holds as held | `vehicles::finish_tick` |
 | The physical hands (`physical_hands/targets.rs`) | What each empty hand's reach found (an object, a hinged object, a weapon, a door, a character), every door near the hand by its handle, what a hand holds, a surface to climb, and the helicopter the player hangs from | `pickup::finish_tick`, `climb::finish_tick`, `stunt::finish_tick` |
 
@@ -78,7 +78,7 @@ One renderer draws every target (`grab/markers.rs`), submitted to the overlay at
 | Vehicle | green | the driver's controls, the cockpit's buttons, the doors, the parachute's and the mounted gun's handles, and the helicopter to hang from |
 | Climb | orange | a surface to climb |
 | Character | violet | a character |
-| Explosive | red | a live grenade, the held grenade's pin, the surface a held charge would stick to |
+| Explosive | red | a live grenade, a dropped grenade, the surface a held charge would stick to |
 
 A marker shows as its target says: always, faintly while no hand is within reach (the sockets and pouches on the body, the vehicle's controls and buttons, the parachute's handles); only while a hand is within reach (everything in the world and on a gun); or never (a reach margin, which its pouch or handle already marks). It is brighter while a hand is within reach of it, brightest and a little larger on the target a squeeze would take, and solid while a hand holds it. Its styles are a ring around the grab point, a handle (a dot, ringed once a hand is near), and a button (a disc on its face, ringed while a hand is in front of it). A marker on something in the world lies on its surface where the reach knows the surface's normal, and one on a weapon in the world sits where the hand would take it.
 

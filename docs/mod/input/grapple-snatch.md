@@ -132,6 +132,8 @@ Built. The steal notes, with each character it notes, the guns holstered and vis
 
 A loose object under the aim is offered when one hand could carry it: not a character, a vehicle, or a weapon, dynamic, within the pickup's heaviest, and no heavier than the hand's strongest pull holds up. The hook takes hold of it as of a weapon, the same pull brings it in, and at the capture radius the wire ends and the object is handed to the hand's ordinary hold (`physical_hands::remote`), taken at its surface on the line from the palm to its centre: the next palms' tick takes hold of it as of a grab in reach, and the grip's release lets go of it, thrown with the hand's motion.
 
+A grenade lying inert in the world (dropped with its pin in, and still the loadout's) is offered as a grenade rather than as a loose object (`OfferKind::Grenade`, marked as an object, labelled `GRENADE`). The hook takes hold of it and the same pull brings it in, and at the capture radius the wire ends and the grenade is handed to the weapon handling, which takes it into the hand through the loadout at the next input tick, as a hand closing on it would ([grenades.md, "Dropped grenades"](grenades.md#dropped-grenades)); the take clicks the hand. A grenade whose pin is out is a live grenade and not a snatch target: a free hand catches it.
+
 In the headset:
 
 1. Snatch the pistol on a soldier's hip while it holds its rifle: the soldier staggers, keeps the rifle, and the pistol flies in.

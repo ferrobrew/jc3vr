@@ -700,6 +700,12 @@ impl State {
                                 "snatch: the object came into the {} hand's hold",
                                 hand.label()
                             ),
+                            Arrival::Grenade => tracing::info!(
+                                target: "controllers",
+                                hand = hand.label(),
+                                "snatch: the grenade came to the {} hand",
+                                hand.label()
+                            ),
                         }
                         Phase::Idle
                     }

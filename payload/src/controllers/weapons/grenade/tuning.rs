@@ -29,9 +29,6 @@ pub struct GrenadeTuning {
     /// The gap between warning pulses when the warning starts, and when the fuse is about to run
     /// out, seconds.
     pub warning_interval_s: [f32; 2],
-    /// The fastest hand release that counts as a deliberate throw rather than letting the grenade
-    /// go, metres per second. A release below it leaves the item inert in the world.
-    pub arm_speed_mps: f32,
     /// Catching live grenades.
     pub catch: CatchTuning,
 }
@@ -45,7 +42,6 @@ impl GrenadeTuning {
             warning_overlay: true,
             warning_haptics: true,
             warning_interval_s: [0.5, 0.08],
-            arm_speed_mps: 1.0,
             catch: CatchTuning::new(),
         }
     }

@@ -11,8 +11,10 @@
 //! A grenade's fuse runs from the moment it spawns
 //! ([`Grenade::m_ShouldTickDetonationTimer`]). The beacon weapon clears that flag on the beacons it
 //! primes, whose timers then never run; a drawn item's is cleared for the same reason, so a held,
-//! stowed, or dropped item stays inert for as long as it exists. Only a deliberate release arms it,
-//! by raising the flag once, and nothing here ever resets the flag or the timer it gates.
+//! stowed, or dropped item stays inert until the player pulls its pin. Pulling the pin
+//! ([`pull_pin`]) raises the flag once, on an item in a hand whose physics body exists, and nothing
+//! here ever resets the flag or the timer it gates. A release never raises it: an item let go of
+//! with its pin in stays inert, however it leaves the hand.
 //!
 //! A release gives the grenade's body the motion a gun's let-go gives a gun's
 //! ([`crate::controllers::weapons::grenade::throw_release`]), linear and angular. The difference is
@@ -27,7 +29,14 @@
 //! throw path's `SetPhysicsTransform` and `PropelToward` do nothing without one, and the deferred
 //! launch that the post-simulation update applies dereferences it unchecked. A release therefore
 //! waits until the body exists, proves that it landed ([`Explosive::m_DeferredPropelTowards`]), and
-//! only then arms or retires anything.
+//! only then retires anything.
+//!
+//! A release goes one of two ways, by the pin ([`settle`]). An item with its pin in is put into the
+//! simulation inertly and stays the loadout's, a world item a hand can take up again. An item whose
+//! pin is out is a live grenade: it leaves through the weapon's own launch, which owns the effects,
+//! or inertly when the launch cannot go ahead, and either way it retires from the loadout, because
+//! taking it up again would give it a fresh, inert actor and lose the running fuse. A live grenade
+//! in the world is caught as any other is.
 //!
 //! The draw and the launch are both ammunition-free by construction. The factory deducts a round
 //! through the weapon's `ConsumeAmmo` virtual; the grenade weapon's own launch never reaches that
@@ -93,9 +102,6 @@ pub(super) struct Launch {
     pub hand: Hand,
     pub world: Mat4,
     pub release: Release,
-    /// Whether the release is a deliberate throw, which arms the fuse. An incidental release leaves
-    /// the actor inert and only puts it into the simulation.
-    pub arm: bool,
 }
 
 /// A weak handle to an item's actor, which never keeps the pooled object alive.
@@ -162,6 +168,58 @@ impl Actor {
         self.explosive()
             .map(|explosive| explosive.cast::<Grenade>())
     }
+}
+
+/// What pulling an item's pin did.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(super) enum PinPull {
+    /// The fuse runs from now.
+    Pulled,
+    /// The pin was already out.
+    AlreadyOut,
+    /// The actor has no physics body yet, or is gone: the pin stays in until it has one, so a fuse
+    /// never runs on a grenade that no engine path could put into the simulation.
+    NotReady,
+}
+
+/// Pull the pin of the item behind `actor`: its fuse starts counting down.
+///
+/// # Safety
+///
+/// The caller holds the game thread.
+pub(super) unsafe fn pull_pin(actor: &Actor) -> PinPull {
+    let Some(grenade) = actor.grenade() else {
+        return PinPull::NotReady;
+    };
+    // SAFETY: the weak handle proved a strong reference to the object still exists.
+    let ticking = unsafe { (*grenade).m_ShouldTickDetonationTimer };
+    let pull = pin_pull(actor.physics_ready(), ticking);
+    if pull == PinPull::Pulled {
+        // SAFETY: as above; this is the only place an item's fuse is raised.
+        unsafe { (*grenade).m_ShouldTickDetonationTimer = true };
+    }
+    pull
+}
+
+/// Whether the item behind `actor` has had its pin pulled.
+pub(super) fn pin_out(actor: &Actor) -> bool {
+    // SAFETY: the weak handle proved a strong reference to the object still exists.
+    actor
+        .grenade()
+        .is_some_and(|grenade| unsafe { (*grenade).m_ShouldTickDetonationTimer })
+}
+
+/// The fuse of an item whose pin is out: the time left and the time it started with, seconds.
+pub(super) fn fuse(actor: &Actor) -> Option<(f32, f32)> {
+    if !pin_out(actor) {
+        return None;
+    }
+    // SAFETY: the weak handle proved a strong reference to the object still exists.
+    let explosive = unsafe { &*actor.explosive()? };
+    Some((
+        explosive.m_DetonationTimer,
+        explosive.m_StartDetonationTimer,
+    ))
 }
 
 /// Allocate an item's actor from the weapon's own factory and leave it inert.
@@ -310,22 +368,6 @@ pub(super) unsafe fn release_now(weapon: &mut ThrownGrenadeWeapon, launch: Launc
     }
 }
 
-/// Make every waiting release an inert one.
-///
-/// A release that has not launched cannot have armed anything, so withdrawing it leaves the item
-/// inert in the hand rather than cancelling an actor that may not be recoverable.
-pub(super) fn disarm() {
-    disarm_hands([true; 2]);
-}
-
-pub(super) fn disarm_hands(hands: [bool; 2]) {
-    for waiting in &mut STATE.lock().queue {
-        if hands[waiting.launch.hand.index()] {
-            waiting.launch.arm = false;
-        }
-    }
-}
-
 /// Drop every waiting release, so nothing this module queued outlives the items it names.
 pub(super) fn clear() {
     STATE.lock().queue.clear();
@@ -394,24 +436,63 @@ unsafe fn release(
     launch: &Launch,
     actor: &Actor,
 ) {
-    // An armed release that cannot go ahead falls back to an inert one: the item was let go, so it
-    // leaves the hand, and an actor is never armed anywhere it cannot leave.
-    if launch.arm && unsafe { launch_armed(weapon, base, launch, actor) } {
-        report_native_throw(launch.hand, launch.release);
-        safe::launched(launch.item);
-        return;
-    }
-    if unsafe { release_inert(launch, actor) } {
-        safe::dropped(launch.item);
+    let live = pin_out(actor);
+    // A live grenade that the launch cannot take falls back to an inert release: the item was let
+    // go, so it leaves the hand with its fuse still running.
+    let launched = live && unsafe { launch_live(weapon, base, launch, actor) };
+    let inert = !launched && unsafe { release_inert(launch, actor) };
+    match settle(live, launched, inert) {
+        Settle::Thrown => {
+            report_native_throw(launch.hand, launch.release);
+            safe::launched(launch.item);
+        }
+        Settle::Retired => safe::launched(launch.item),
+        Settle::Dropped => safe::dropped(launch.item),
+        Settle::Kept => {}
     }
 }
 
-/// Release the grenade through the weapon's own launch, then arm it once it is out of the hand.
+/// What a release leaves of an item.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Settle {
+    /// A live grenade left through the weapon's launch: counted as a throw and retired.
+    Thrown,
+    /// A live grenade left inertly: retired, its fuse still running.
+    Retired,
+    /// An item with its pin in is in the world, the loadout's still.
+    Dropped,
+    /// Nothing reached the simulation; the item stays where it is.
+    Kept,
+}
+
+/// Settle a release of an item whose pin is out (`live`) or in, from whether the weapon's launch
+/// took it and whether the inert release did.
+fn settle(live: bool, launched: bool, inert: bool) -> Settle {
+    match (live, launched, inert) {
+        (true, true, _) => Settle::Thrown,
+        (true, false, true) => Settle::Retired,
+        (false, _, true) => Settle::Dropped,
+        (_, _, false) => Settle::Kept,
+    }
+}
+
+/// Whether pulling the pin goes ahead, for an actor with or without its physics body and whose fuse
+/// does or does not already run.
+fn pin_pull(physics_ready: bool, ticking: bool) -> PinPull {
+    match (physics_ready, ticking) {
+        (_, true) => PinPull::AlreadyOut,
+        (false, false) => PinPull::NotReady,
+        (true, false) => PinPull::Pulled,
+    }
+}
+
+/// Release a live grenade through the weapon's own launch. Its fuse already runs; the launch only
+/// restores the grenade's own collision upgrades, which stay off while it is in the hand.
 ///
 /// # Safety
 ///
 /// `weapon` and `base` are the live local grenade weapon, and the actor is live and physics-ready.
-unsafe fn launch_armed(
+unsafe fn launch_live(
     weapon: &mut ThrownGrenadeWeapon,
     base: *mut WeaponBase,
     launch: &Launch,
@@ -454,13 +535,12 @@ unsafe fn launch_armed(
         unsafe { set_upgrade_policy(&mut *grenade, actor.upgrades, false) };
         return false;
     }
-    // SAFETY: the launched grenade is live in flight, and this is the only time its fuse is raised.
-    unsafe { (*grenade).m_ShouldTickDetonationTimer = true };
     true
 }
 
-/// Put an inert item into the simulation: the weapon's launch writes exactly these fields, so the
-/// body takes the release velocity on its next update while the fuse stays inert.
+/// Put an item into the simulation without the weapon's launch: the launch writes exactly these
+/// fields, so the body takes the release velocity on its next update, and the fuse is left as it
+/// is.
 ///
 /// Returns whether the item was put into the simulation, which needs a body to receive it.
 ///
@@ -513,7 +593,7 @@ enum Decision {
     Wait,
     /// Stop waiting and leave the item inert where it is.
     Abandon,
-    /// Release the item, through the weapon's launch when it is a deliberate throw.
+    /// Release the item, through the weapon's launch when its pin is out.
     Release,
 }
 
@@ -635,7 +715,7 @@ mod tests {
         let _guard = QUEUE_TEST.lock();
         clear();
         let item = view();
-        assert!(submit(launch(item, true)));
+        assert!(submit(launch(item)));
         reconcile(&[item]);
         assert!(waiting(item));
         let changed = SafeItemView {
@@ -646,10 +726,10 @@ mod tests {
         };
         reconcile(&[changed]);
         assert!(!waiting(item));
-        assert!(submit(launch(item, true)));
+        assert!(submit(launch(item)));
         clear();
         assert!(!waiting(item));
-        assert!(submit(launch(changed, false)));
+        assert!(submit(launch(changed)));
         reconcile(&[changed]);
         assert!(waiting(changed));
         clear();
@@ -661,7 +741,7 @@ mod tests {
         table.admit_safe_item(model, Hand::Right).unwrap()
     }
 
-    fn launch(item: SafeItemView, arm: bool) -> Launch {
+    fn launch(item: SafeItemView) -> Launch {
         Launch {
             item,
             hand: Hand::Right,
@@ -670,31 +750,26 @@ mod tests {
                 velocity: Vec3::X,
                 angular: Vec3::Y,
             },
-            arm,
         }
     }
 
     #[test]
-    fn unavailable_hand_disarms_only_its_queued_release() {
-        let _guard = QUEUE_TEST.lock();
-        clear();
-        let mut table = Loadout::new(BodyLayout::full(Hand::Right));
-        for hand in Hand::BOTH {
-            let lease =
-                ItemLeaseId::new(std::num::NonZeroU64::new(hand.index() as u64 + 1).unwrap());
-            let item = table.admit_safe_item(lease, hand).unwrap();
-            assert!(submit(Launch {
-                hand,
-                ..launch(item, true)
-            }));
-        }
-        disarm_hands([true, false]);
-        {
-            let state = STATE.lock();
-            assert!(!state.queue[0].launch.arm);
-            assert!(state.queue[1].launch.arm);
-        }
-        clear();
+    fn a_pin_comes_out_once_and_only_from_a_grenade_with_its_body() {
+        assert_eq!(pin_pull(true, false), PinPull::Pulled);
+        assert_eq!(pin_pull(false, false), PinPull::NotReady);
+        assert_eq!(pin_pull(true, true), PinPull::AlreadyOut);
+        assert_eq!(pin_pull(false, true), PinPull::AlreadyOut);
+    }
+
+    #[test]
+    fn only_a_pulled_pin_makes_a_release_live() {
+        // With its pin in, a release is a drop the loadout keeps, whatever the launch would do.
+        assert_eq!(settle(false, false, true), Settle::Dropped);
+        assert_eq!(settle(false, false, false), Settle::Kept);
+        // With its pin out, it leaves the loadout either way, so its running fuse is never reset.
+        assert_eq!(settle(true, true, false), Settle::Thrown);
+        assert_eq!(settle(true, false, true), Settle::Retired);
+        assert_eq!(settle(true, false, false), Settle::Kept);
     }
 
     #[test]
@@ -727,16 +802,14 @@ mod tests {
     }
 
     #[test]
-    fn a_release_waits_once_per_item_and_disarm_keeps_it_inert() {
+    fn a_release_waits_once_per_item() {
         let _guard = QUEUE_TEST.lock();
         clear();
         let item = view();
-        let request = launch(item, true);
+        let request = launch(item);
         assert!(submit(request));
         assert!(!submit(request));
-        disarm();
-        let queued = STATE.lock().queue.pop_front().expect("the release waits");
-        assert!(!queued.launch.arm);
+        clear();
     }
 
     #[test]
@@ -744,7 +817,7 @@ mod tests {
         let _guard = QUEUE_TEST.lock();
         clear();
         let item = view();
-        assert!(submit(launch(item, false)));
+        assert!(submit(launch(item)));
         clear();
         assert!(STATE.lock().queue.is_empty());
     }
@@ -769,7 +842,7 @@ mod tests {
         let mut explosive: Explosive = unsafe { std::mem::zeroed() };
         explosive.m_DetonationTimer = 3.5;
         explosive.m_StartDetonationTimer = 4.0;
-        let mut request = launch(view(), false);
+        let mut request = launch(view());
         request.world = Mat4::from_translation(Vec3::new(3.0, 2.0, 1.0));
         queue_inert(&mut explosive, &request);
         assert!(explosive.m_DeferredSetPhysicsTransform);

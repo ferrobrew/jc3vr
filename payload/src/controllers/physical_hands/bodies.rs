@@ -13,7 +13,10 @@ use std::{fmt, num::NonZeroUsize, ptr};
 use glam::{Quat, Vec3};
 use jc3gi::{
     character::character::Character,
-    equipment::weapon::{WeaponBase, WeaponState},
+    equipment::{
+        explosive::Grenade,
+        weapon::{WeaponBase, WeaponState},
+    },
     game::GameObject,
     physics::{
         PfxCharacterInstance, PfxInstance, PhysicsGameObject, RigidObject, hknpBody, hknpMotion,
@@ -106,6 +109,11 @@ pub(super) unsafe fn classify(object: NonZeroUsize, body: u32) -> Result<TargetK
     if unsafe { (*game_object).IsType(Vehicle::TYPE_ID()) } {
         return Err(Unclassified::Vehicle);
     }
+    // A grenade belongs to the weapon handling, which takes a dropped one into the loadout and
+    // catches a live one with its fuse running; held as a loose object it would be neither.
+    if unsafe { (*game_object).IsType(Grenade::TYPE_ID()) } {
+        return Err(Unclassified::Grenade);
+    }
     let state = unsafe { read(body, object) }.map_err(Unclassified::Body)?;
     state
         .mass_kg
@@ -124,6 +132,8 @@ pub(crate) enum Unclassified {
     NoMass,
     /// A vehicle's own body.
     Vehicle,
+    /// A grenade, which the weapon handling takes.
+    Grenade,
 }
 
 impl fmt::Display for Unclassified {
@@ -135,6 +145,7 @@ impl fmt::Display for Unclassified {
             Unclassified::Body(e) => write!(f, "{e}"),
             Unclassified::NoMass => write!(f, "its body's mass is infinite"),
             Unclassified::Vehicle => write!(f, "a vehicle is never carried"),
+            Unclassified::Grenade => write!(f, "a grenade is taken by the weapon handling"),
         }
     }
 }

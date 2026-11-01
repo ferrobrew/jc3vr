@@ -33,11 +33,14 @@ use crate::controllers::{
         sling_hooks,
         target::{Offer, OfferKind},
     },
-    weapons::hold::{
-        Cause, SNAP_S,
-        pickup::{self, TakeOptions},
-        refs::{Strong, Weak},
-        steal,
+    weapons::{
+        grenade,
+        hold::{
+            Cause, SNAP_S,
+            pickup::{self, TakeOptions},
+            refs::{Strong, Weak},
+            steal,
+        },
     },
 };
 
@@ -56,6 +59,8 @@ pub(super) enum Pulled {
     Weapon,
     /// A loose object, body `body` of `mass_kg`, into the hand's ordinary hold.
     Prop { body: u32, mass_kg: f32 },
+    /// An inert grenade, body `body`, into the hand through the loadout.
+    Grenade { body: u32 },
     /// A vehicle's closed door, pulled open at its handle, `handle` in the vehicle's frame.
     Door { door: DoorTarget, handle: Vec3 },
 }
@@ -105,6 +110,15 @@ pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal>
             let wire = unsafe { fire_hook(&grabbed) }?;
             return Ok(Fired::HookOut(grabbed, wire));
         }
+        OfferKind::Grenade { object, body, weak } => {
+            let grabbed = Grabbed {
+                object,
+                kind: Pulled::Grenade { body },
+                _alive: weak.lock().ok_or(Refusal::Gone)?,
+            };
+            let wire = unsafe { fire_hook(&grabbed) }?;
+            return Ok(Fired::HookOut(grabbed, wire));
+        }
         OfferKind::Door { door, handle, weak } => {
             let alive = weak.lock().ok_or(Refusal::Gone)?;
             let local = unsafe { vehicle_frame(door.vehicle) }
@@ -149,7 +163,7 @@ pub(super) unsafe fn fire_hook(grabbed: &Grabbed) -> Result<NonZeroUsize, Refusa
             let at = unsafe { body_centre(body, grabbed.object) }?;
             unsafe { engine::fire(grabbed.object, Vec3::ZERO, at) }
         }
-        Pulled::Prop { body, .. } => {
+        Pulled::Prop { body, .. } | Pulled::Grenade { body } => {
             let at = unsafe { body_centre(body, grabbed.object) }?;
             unsafe { engine::fire(grabbed.object, Vec3::ZERO, at) }
         }
@@ -188,6 +202,8 @@ pub(super) enum Arrival {
     Weapon(WeaponSlot),
     /// The object went into the hand's hold.
     Prop,
+    /// The grenade came to the hand, which takes it at the next input tick.
+    Grenade,
 }
 
 /// One tick of the pull: drive the target toward the hand, and hand it over once it arrives.
@@ -208,7 +224,7 @@ pub(super) unsafe fn pull(
     }
     let body = match grabbed.kind {
         Pulled::Weapon => unsafe { engine::dropped(grabbed.object) }?.1,
-        Pulled::Prop { body, .. } => body,
+        Pulled::Prop { body, .. } | Pulled::Grenade { body } => body,
         Pulled::Door { .. } => return Err(Refusal::Gone),
     };
     let state =
@@ -311,7 +327,7 @@ pub(super) unsafe fn sling(
     }
     let body = match grabbed.kind {
         Pulled::Weapon => unsafe { engine::dropped(grabbed.object) }?.1,
-        Pulled::Prop { body, .. } => body,
+        Pulled::Prop { body, .. } | Pulled::Grenade { body } => body,
         Pulled::Door { .. } => return Err(Refusal::Gone),
     };
     let state =
@@ -383,6 +399,13 @@ unsafe fn arrive(
             let point = unsafe { surface_toward(grabbed.object, centre, palm) };
             remote::hold_remote(hand, grabbed.object, body, point, mass_kg);
             Ok(Arrival::Prop)
+        }
+        Pulled::Grenade { body } => {
+            if grenade::snatched(hand, grabbed.object, body) {
+                Ok(Arrival::Grenade)
+            } else {
+                Err(Refusal::Gone)
+            }
         }
         Pulled::Door { .. } => Err(Refusal::Gone),
     }

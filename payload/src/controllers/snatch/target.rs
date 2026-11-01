@@ -25,10 +25,13 @@ use crate::controllers::{
         OfferInput, Refusal, SNATCH, engine,
         rules::{self, Candidate},
     },
-    weapons::hold::{
-        refs::Weak,
-        steal::{self, HolsteredTarget},
-        world::{TargetKind, WorldTarget},
+    weapons::{
+        grenade,
+        hold::{
+            refs::Weak,
+            steal::{self, HolsteredTarget},
+            world::{TargetKind, WorldTarget},
+        },
     },
 };
 
@@ -102,6 +105,21 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
                 return false;
             };
             if unsafe { remote::loose_prop(*object, *body) }.is_none() {
+                return false;
+            }
+            let Ok((point, _)) = (unsafe { physical_hands::body_pose(*body, *object) }) else {
+                return false;
+            };
+            if !unsafe { in_sight(ray, point, object.get()) } {
+                return false;
+            }
+            point
+        }
+        OfferKind::Grenade { object, body, weak } => {
+            let Some(_alive) = weak.lock() else {
+                return false;
+            };
+            if !grenade::inert_in_world(*object, *body) {
                 return false;
             }
             let Ok((point, _)) = (unsafe { physical_hands::body_pose(*body, *object) }) else {
@@ -191,6 +209,13 @@ pub(super) enum OfferKind {
         mass_kg: f32,
         weak: Weak,
     },
+    /// A grenade lying inert in the world, its pin in: the loadout's still, and taken into the
+    /// hand through it.
+    Grenade {
+        object: NonZeroUsize,
+        body: u32,
+        weak: Weak,
+    },
     /// A vehicle's closed door, pulled at its handle, world space.
     Door {
         door: DoorTarget,
@@ -206,7 +231,7 @@ impl OfferKind {
             OfferKind::Ground { .. } | OfferKind::Held(_) | OfferKind::Holstered(_) => {
                 RemoteKind::Weapon
             }
-            OfferKind::Prop { .. } => RemoteKind::Object,
+            OfferKind::Prop { .. } | OfferKind::Grenade { .. } => RemoteKind::Object,
             OfferKind::Door { .. } => RemoteKind::Door,
         }
     }
@@ -217,6 +242,7 @@ impl OfferKind {
             OfferKind::Held(_) => "WEAPON IN HANDS",
             OfferKind::Holstered(_) => "HOLSTERED WEAPON",
             OfferKind::Prop { .. } => "OBJECT",
+            OfferKind::Grenade { .. } => "GRENADE",
             OfferKind::Door { .. } => "CAR DOOR",
         }
     }
@@ -406,6 +432,13 @@ unsafe fn aimed_offer(
             weapon: aimed.object,
             body: aimed.body,
             local_point: orientation.inverse() * (aimed.point - centre),
+            weak: weak(),
+        });
+    }
+    if grenade::inert_in_world(aimed.object, aimed.body) {
+        return Some(OfferKind::Grenade {
+            object: aimed.object,
+            body: aimed.body,
             weak: weak(),
         });
     }

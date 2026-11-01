@@ -5,12 +5,14 @@
 //! the simulation owns world-item transforms. Drawing uses the grenade weapon's factory with pool
 //! reclamation disabled, so exhaustion refuses admission without removing another object.
 //!
-//! The actor is inert from the moment it is created: only a deliberate, tracked release arms it, and
-//! that happens after it has left the hand. A stowed or dropped item stays inert forever, so a lost
-//! grip, a lost tracker, or a lost input can end an item's time in a hand but never its safety.
+//! The actor is inert from the moment it is created: only pulling its pin in a hand ([`pull_pin`])
+//! starts its fuse. An item with its pin in stays inert however it leaves the hand, so a throw, a
+//! slow open, a lost tracker, or a lost input can end its time in a hand but never its safety; a
+//! dropped one is a world item a hand can take up again. An item whose pin is out cannot be stowed,
+//! and once let go it is a live grenade the loadout no longer owns ([`native`]).
 
 use std::{
-    num::NonZeroU64,
+    num::{NonZeroU64, NonZeroUsize},
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
@@ -33,8 +35,10 @@ use crate::controllers::{
     weapons::{
         engine,
         grenade::{
-            Release, Throw, hold_local,
-            native::{self, Actor},
+            Release,
+            catch::body_of,
+            hold_local,
+            native::{self, Actor, PinPull},
             throw_release,
             tuning::GrenadeTuning,
         },
@@ -112,7 +116,8 @@ pub(crate) fn transfer(from: Hand, to: Hand) -> bool {
     in_hand(from).is_some_and(|item| live::move_safe_item(item, Place::Hand(to)).is_ok())
 }
 
-/// Stow a safe grenade at an already resolved holster transform.
+/// Stow a safe grenade at an already resolved holster transform. An item whose pin is out is
+/// refused: its fuse would run out on the body.
 pub(crate) fn stow(hand: Hand, socket: Socket, world: Mat4) -> bool {
     if !world.is_finite() {
         return false;
@@ -120,6 +125,9 @@ pub(crate) fn stow(hand: Hand, socket: Socket, world: Mat4) -> bool {
     let Some(item) = in_hand(hand) else {
         return false;
     };
+    if actor(item).is_none_or(|actor| native::pin_out(&actor)) {
+        return false;
+    }
     if live::move_safe_item(item, Place::Socket(socket)).is_err() {
         return false;
     }
@@ -150,15 +158,40 @@ pub(crate) fn place_stowed(socket: Socket, world: Mat4) {
     }
 }
 
-/// Release a safe grenade with the motion a gun's let-go gives a gun ([`throw_release`]). Only a
-/// tracked, deliberate release arms it; anything else leaves the item inert and lets the
-/// simulation take it. The release goes through now when the actor has its physics body, and waits
-/// for the body otherwise ([`native::release_now`]).
+/// Pull the pin of the item in `hand`, starting its fuse. `None` when the hand holds no item.
 ///
 /// # Safety
 ///
 /// The input tick's game stage, on the game thread.
-pub(crate) unsafe fn opened(hand: Hand, tuning: &GrenadeTuning) {
+pub(super) unsafe fn pull_pin(hand: Hand) -> Option<PinPull> {
+    let item = in_hand(hand)?;
+    let actor = actor(item)?;
+    // SAFETY: forwarded from the caller.
+    Some(unsafe { native::pull_pin(&actor) })
+}
+
+/// Whether `hand` holds an item whose pin is still in.
+pub(crate) fn pin_in(hand: Hand) -> bool {
+    in_hand(hand)
+        .and_then(actor)
+        .is_some_and(|actor| !native::pin_out(&actor))
+}
+
+/// The running fuse of the item in `hand`, once its pin is out: the time left and the time it
+/// started with, seconds.
+pub(crate) fn fuse_in_hand(hand: Hand) -> Option<(f32, f32)> {
+    native::fuse(&actor(in_hand(hand)?)?)
+}
+
+/// Release a safe grenade with the motion a gun's let-go gives a gun ([`throw_release`]). The pin
+/// decides what the release is ([`native`]): with it in, the item lands inert and stays the
+/// loadout's; with it out, it is a live grenade. The release goes through now when the actor has
+/// its physics body, and waits for the body otherwise ([`native::release_now`]).
+///
+/// # Safety
+///
+/// The input tick's game stage, on the game thread.
+pub(crate) unsafe fn opened(hand: Hand) {
     let Some(item) = in_hand(hand) else {
         return;
     };
@@ -172,13 +205,16 @@ pub(crate) unsafe fn opened(hand: Hand, tuning: &GrenadeTuning) {
             .map_or(f64::INFINITY, |(_, since_s)| since_s);
         (state.grips[hand.index()].is_some(), since_s)
     };
-    let throw = tracked.then(|| throw_release(hand, world.w_axis.truncate(), since_s));
+    let release = if tracked {
+        throw_release(hand, world.w_axis.truncate(), since_s)
+    } else {
+        Release::REST
+    };
     let launch = native::Launch {
         item,
         hand,
         world,
-        release: throw.map_or(Release::REST, |throw| throw.release),
-        arm: deliberate(throw, tuning),
+        release,
     };
     let weapon = unsafe { engine::local_player() }.and_then(grenade_weapon);
     match weapon {
@@ -203,6 +239,17 @@ pub(crate) fn take_loose(
     let Some(item) = nearest_loose(cockpit_grip, frames, tuning.catch.radius_m) else {
         return false;
     };
+    take_item(hand, item, tuning)
+}
+
+/// Take up the inert item `item`, lying in the world, into `hand` with a fresh actor, wherever it
+/// is: the grapple's snatch brought it to the hand.
+///
+/// Refused outside the top of the world's pre-simulation queue, as a draw is ([`native::create`]).
+pub(crate) fn take_item(hand: Hand, item: SafeItemView, tuning: &GrenadeTuning) -> bool {
+    if !matches!(item.place, Place::World(_)) {
+        return false;
+    }
     let Some(old) = actor(item).filter(|actor| actor.explosive().is_some()) else {
         return false;
     };
@@ -241,6 +288,26 @@ pub(crate) fn take_loose(
     unsafe { native::remove(&landed) };
     COUNTS.lock().recovered += 1;
     true
+}
+
+/// The inert item lying in the world whose actor's physics body is `body`, owned by the physics
+/// game object `owner`: what the grapple's aim found.
+pub(crate) fn inert_in_world(owner: NonZeroUsize, body: u32) -> Option<SafeItemView> {
+    let items = live::safe_items();
+    let state = STATE.lock();
+    items
+        .into_iter()
+        .filter(|item| matches!(item.place, Place::World(_)))
+        .find(|item| {
+            state
+                .items
+                .iter()
+                .find(|entry| entry.model == item.binding.lease)
+                .and_then(|entry| entry.actor.explosive())
+                // SAFETY: the weak handle proved a strong reference to the object still exists.
+                .and_then(|explosive| unsafe { body_of(&*explosive) })
+                .is_some_and(|found| found == (body, owner))
+        })
 }
 
 /// World-space grab points for the inert loose items.
@@ -376,13 +443,11 @@ pub(crate) unsafe fn render_frame() {
 
 /// Leave held items to the world when input stops, without arming anything.
 pub(crate) fn stand_down() {
-    native::disarm();
     stand_down_hands([true; 2]);
 }
 
-/// A masked hand releases its own safe item inertly without changing the other hand's release.
+/// A masked hand releases its own safe item at rest without changing the other hand's release.
 pub(crate) fn stand_down_hands(unavailable: [bool; 2]) {
-    native::disarm_hands(unavailable);
     for hand in Hand::BOTH {
         if !unavailable[hand.index()] {
             continue;
@@ -398,7 +463,6 @@ pub(crate) fn stand_down_hands(unavailable: [bool; 2]) {
             hand,
             world,
             release: Release::REST,
-            arm: false,
         });
     }
 }
@@ -434,14 +498,6 @@ fn membership(place: Option<Place>, alive: bool) -> Membership {
             Some(_) => Membership::Simulated,
         }
     }
-}
-
-/// Whether a release is a deliberate throw: the hand itself, not the player carrying it, moved the
-/// item at the arming speed or faster.
-fn deliberate(throw: Option<Throw>, tuning: &GrenadeTuning) -> bool {
-    throw
-        .and_then(|throw| throw.hand_speed_mps)
-        .is_some_and(|speed| speed.is_finite() && speed >= tuning.arm_speed_mps.max(0.0))
 }
 
 fn nearest_loose(grip: Vec3, frames: &Frames, radius_m: f32) -> Option<SafeItemView> {
@@ -655,10 +711,7 @@ mod tests {
     use glam::Quat;
 
     use super::*;
-    use crate::controllers::{
-        loadout::{BodyLayout, Loadout},
-        weapons::grenade::tuning::GRENADE,
-    };
+    use crate::controllers::loadout::{BodyLayout, Loadout};
 
     #[test]
     fn loose_completion_matches_offer_boundary_at_every_world_scale() {
@@ -726,55 +779,6 @@ mod tests {
         assert_eq!(table.retire_safe_item(transferred), Ok(first.binding.lease));
         assert_eq!(table.safe_item(first.item), None);
         assert_eq!(table.safe_item(second.item), Some(recovered));
-    }
-
-    fn throw(hand_speed_mps: Option<f32>, velocity: Vec3) -> Throw {
-        Throw {
-            release: Release {
-                velocity,
-                angular: Vec3::ZERO,
-            },
-            hand_speed_mps,
-        }
-    }
-
-    #[test]
-    fn only_a_tracked_deliberate_release_arms_a_grenade() {
-        let tuning = GRENADE;
-        assert!(!deliberate(None, &tuning));
-        for speed in [
-            None,
-            Some(0.0),
-            Some(f32::NAN),
-            Some(tuning.arm_speed_mps * 0.5),
-        ] {
-            assert!(!deliberate(Some(throw(speed, Vec3::X)), &tuning));
-        }
-        for speed in [tuning.arm_speed_mps, 8.0] {
-            assert!(deliberate(Some(throw(Some(speed), Vec3::X)), &tuning));
-        }
-    }
-
-    #[test]
-    fn the_players_own_movement_does_not_arm_a_dropped_grenade() {
-        // A grenade let go of in a fast car leaves at the car's speed, but the hand barely moved.
-        let carried = throw(Some(0.2), Vec3::X * 20.0);
-        assert!(!deliberate(Some(carried), &GRENADE));
-    }
-
-    #[test]
-    fn the_arming_speed_comes_from_the_tuning() {
-        let slow = GrenadeTuning {
-            arm_speed_mps: 0.25,
-            ..GRENADE
-        };
-        let fast = GrenadeTuning {
-            arm_speed_mps: 4.0,
-            ..GRENADE
-        };
-        let gentle = throw(Some(0.5), Vec3::X * 0.5);
-        assert!(deliberate(Some(gentle), &slow));
-        assert!(!deliberate(Some(gentle), &fast));
     }
 
     #[test]

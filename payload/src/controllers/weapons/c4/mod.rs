@@ -351,9 +351,9 @@ pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Tuning) {
         // Without a tracked sample of the throw, the charge is dropped where it is rather than kept
         // in a hand that has opened.
         let release = state.grips[hand.index()].map_or(Release::REST, |grip| {
-            let point = held::held_matrix(grip, hold_local(hand, tuning))
-                .transform_point3(tuning.centre_m);
-            throw_release(hand, point, state.held_since_s.unwrap_or(f64::INFINITY)).release
+            let point =
+                held::held_matrix(grip, hold_local(hand, tuning)).transform_point3(tuning.centre_m);
+            throw_release(hand, point, state.held_since_s.unwrap_or(f64::INFINITY))
         });
         state.stage = stage::on_input(state.stage, InputEvent::Release(hand, release));
         state.status.last_release = Some(release.velocity);

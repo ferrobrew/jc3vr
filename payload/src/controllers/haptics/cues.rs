@@ -140,8 +140,10 @@ pub enum Event {
     ActionDetent,
     /// A round chambered.
     Chambered,
-    /// A grenade primed in the hand.
+    /// A grenade drawn into the hand, its pin still in.
     GrenadePrime,
+    /// A held grenade's pin pulled: its fuse runs from now.
+    GrenadePin,
     /// A cooking grenade's fuse warning.
     GrenadeWarning,
     /// A live grenade caught.
@@ -217,7 +219,7 @@ pub enum Event {
 
 impl Event {
     #[cfg(test)]
-    pub const ALL: [Event; 53] = [
+    pub const ALL: [Event; 54] = [
         Event::PalmTouch,
         Event::HandStrike,
         Event::Take,
@@ -238,6 +240,7 @@ impl Event {
         Event::ActionDetent,
         Event::Chambered,
         Event::GrenadePrime,
+        Event::GrenadePin,
         Event::GrenadeWarning,
         Event::GrenadeCatch,
         Event::PouchRefused,
@@ -296,6 +299,7 @@ impl Event {
             Event::ActionDetent => Cue::new(Primitive::Click, 0.35, Category::Weapons),
             Event::Chambered => Cue::new(Primitive::Click, 0.5, Category::Weapons),
             Event::GrenadePrime => Cue::new(Primitive::Click, 0.4, Category::Weapons),
+            Event::GrenadePin => Cue::new(Primitive::Bump, 0.8, Category::Weapons),
             Event::GrenadeWarning => Cue::new(Primitive::Click, 0.75, Category::Weapons),
             Event::GrenadeCatch => Cue::new(Primitive::Bump, 0.75, Category::Weapons),
             Event::PouchRefused => Cue::new(Primitive::Buzz, 0.75, Category::Weapons),
@@ -356,6 +360,7 @@ impl Event {
             Event::ActionDetent => "action detent",
             Event::Chambered => "chambered",
             Event::GrenadePrime => "grenade prime",
+            Event::GrenadePin => "grenade pin",
             Event::GrenadeWarning => "grenade warning",
             Event::GrenadeCatch => "grenade catch",
             Event::PouchRefused => "pouch refused",

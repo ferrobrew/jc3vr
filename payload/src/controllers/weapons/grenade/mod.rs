@@ -1,10 +1,11 @@
-//! Independent safe grenades and native deliberate throws.
+//! Independent safe grenades, their pins, and native live grenades.
 //!
 //! A pouch draw takes a native grenade from the grenade weapon's own pool and leaves it inert, so
 //! the item the player sees, carries, stows, and drops is the engine's own object from that moment
-//! on. Transfers, holster moves, and incidental releases keep that item and its actor; only a
-//! deliberate tracked throw arms the fuse, and it does so once the grenade has left the hand. Native
-//! live grenades can still be caught and thrown on.
+//! on. Transfers, holster moves, and releases keep that item and its actor while its pin is in. A
+//! trigger press on the hand holding it pulls the pin, which starts the fuse; nothing else does,
+//! and a grenade thrown or dropped with its pin in stays inert. Native live grenades can still be
+//! caught and thrown on.
 
 pub mod catch;
 mod locker;
@@ -12,7 +13,7 @@ mod native;
 pub(crate) mod safe;
 pub mod tuning;
 
-use std::{cell::Cell, time::Duration};
+use std::{cell::Cell, num::NonZeroUsize, time::Duration};
 
 use detours_macro::detour;
 use glam::{Mat4, Vec3};
@@ -44,7 +45,7 @@ use crate::{
             held::{self, Held, Slot},
         },
         haptics::{self, Event},
-        loadout::TakeSource,
+        loadout::{TakeSource, safe_items::SafeItemView},
         motion,
         overlay::{
             primitive::{
@@ -52,11 +53,12 @@ use crate::{
             },
             store,
         },
-        physical_hands, scheme,
+        physical_hands,
         weapons::{
             docks, engine,
             grenade::{
                 catch::{CatchCounts, Caught, Sighting},
+                native::PinPull,
                 tuning::{GRENADE, GrenadeTuning},
             },
             hold::{self, act},
@@ -111,27 +113,14 @@ impl Release {
     };
 }
 
-/// A hand's release of an item, with what a deliberate throw is judged by.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct Throw {
-    pub release: Release,
-    /// The hand's own speed at the item, without the player's movement, when the hand's tracked
-    /// history gave the estimate.
-    pub hand_speed_mps: Option<f32>,
-}
-
 /// The release of the item `hand` holds at `point_world`, held since `since_s` (display time): the
 /// estimate and the cap a gun's let-go takes ([`act::release_at`], [`hold::MAX_THROW_MPS`]), so a
 /// grenade, a charge, and a gun leave the hand with the same motion for the same swing.
-pub(crate) fn throw_release(hand: Hand, point_world: Vec3, since_s: f64) -> Throw {
-    let motion = act::release_at(hand, point_world, since_s);
-    let requested = motion.capped(hold::MAX_THROW_MPS);
-    Throw {
-        release: Release {
-            velocity: requested.linear,
-            angular: requested.angular,
-        },
-        hand_speed_mps: motion.hand_linear().map(Vec3::length),
+pub(crate) fn throw_release(hand: Hand, point_world: Vec3, since_s: f64) -> Release {
+    let requested = act::release_at(hand, point_world, since_s).capped(hold::MAX_THROW_MPS);
+    Release {
+        velocity: requested.linear,
+        angular: requested.angular,
     }
 }
 
@@ -181,6 +170,28 @@ pub(crate) fn take_thrown() -> [bool; 2] {
     let pouch = std::mem::take(&mut STATE.lock().thrown);
     let caught = catch::take_thrown();
     Hand::BOTH.map(|hand| pouch[hand.index()] || caught[hand.index()])
+}
+
+/// The grapple's snatch brought the inert grenade whose body is `body`, owned by `owner`, to
+/// `hand`: the next input tick takes it into that hand through the loadout, as a hand closing on it
+/// would. `false` when no inert grenade lying in the world has that body.
+pub(crate) fn snatched(hand: Hand, owner: NonZeroUsize, body: u32) -> bool {
+    let Some(item) = safe::inert_in_world(owner, body) else {
+        return false;
+    };
+    STATE.lock().snatched[hand.index()] = Some(item);
+    true
+}
+
+/// Whether the physics game object `owner`'s body `body` is an inert grenade lying in the world,
+/// which the snatch brings to the hand as a grenade rather than as a loose object.
+pub(crate) fn inert_in_world(owner: NonZeroUsize, body: u32) -> bool {
+    safe::inert_in_world(owner, body).is_some()
+}
+
+/// Whether `hand` holds a grenade from the pouch whose pin is still in.
+pub(crate) fn pin_in_hand(hand: Hand) -> bool {
+    safe::pin_in(hand)
 }
 
 /// Both hands can hold independent safe grenades.
@@ -280,7 +291,7 @@ pub(super) fn input_tick(
         return;
     }
     let tuning = &GrenadeTuning::of(&config.weapons.grenade);
-    let _ = (inputs.triggers, inputs.dominant);
+    let _ = inputs.dominant;
     for hand in Hand::BOTH {
         if inputs.locker_grabs[hand.index()] && !holds(hand) {
             let frames = STATE.lock().locker_frames;
@@ -316,6 +327,18 @@ pub(super) fn input_tick(
             haptics::play(hand, Event::PouchRefused);
         }
     }
+    let snatched = std::mem::take(&mut STATE.lock().snatched);
+    for (hand, item) in Hand::BOTH.into_iter().zip(snatched) {
+        if let Some(item) = item
+            && !holds(hand)
+        {
+            if safe::take_item(hand, item, tuning) {
+                haptics::play(hand, Event::GrenadeCatch);
+            } else {
+                tracing::debug!(target: "controllers", hand = hand.label(), "grenade: the snatched grenade could not be taken into the hand");
+            }
+        }
+    }
     if let Some(hand) = inputs.catch_grab
         && !holds(hand)
     {
@@ -332,9 +355,25 @@ pub(super) fn input_tick(
         }
     }
     for hand in Hand::BOTH {
+        if !inputs.triggers[hand.index()].pressed {
+            continue;
+        }
+        // SAFETY: the game stage runs on the game thread before the world update.
+        match unsafe { safe::pull_pin(hand) } {
+            Some(PinPull::Pulled) => {
+                haptics::play(hand, Event::GrenadePin);
+                tracing::info!(target: "controllers", hand = hand.label(), "grenade: the pin is pulled, and the fuse runs");
+            }
+            Some(PinPull::NotReady) => {
+                tracing::debug!(target: "controllers", hand = hand.label(), "grenade: the pin stays in until the grenade has its physics body");
+            }
+            Some(PinPull::AlreadyOut) | None => {}
+        }
+    }
+    for hand in Hand::BOTH {
         if inputs.opened[hand.index()] {
             // SAFETY: the game stage runs on the game thread before the world update.
-            unsafe { safe::opened(hand, tuning) };
+            unsafe { safe::opened(hand) };
         }
     }
     if Hand::BOTH.into_iter().any(holds) {
@@ -345,11 +384,26 @@ pub(super) fn input_tick(
     }
     // SAFETY: the game stage runs on the game thread before the world update.
     let caught = unsafe { carry_caught(inputs, tuning) };
+    let urgent = most_urgent(
+        caught
+            .into_iter()
+            .chain(Hand::BOTH.into_iter().filter_map(|hand| {
+                safe::fuse_in_hand(hand).map(|(remaining_s, total_s)| {
+                    (
+                        hand,
+                        Fuse {
+                            remaining_s,
+                            total_s,
+                        },
+                    )
+                })
+            })),
+    );
     let mut state = STATE.lock();
-    state.status.fuse = caught.map(|(_, fuse)| fuse);
+    state.status.fuse = urgent.map(|(_, fuse)| fuse);
     state.status.in_stock = Some(true);
     let (mut primitives, pulse) =
-        warning(&mut state, caught, inputs.dt, config).unwrap_or_default();
+        warning(&mut state, urgent, inputs.dt, config).unwrap_or_default();
     drop(state);
     if primitives.is_empty() {
         store::clear(Source::GrenadeWarning);
@@ -377,6 +431,7 @@ pub(super) fn stand_down() {
     state.next_pulse_s = 0.0;
     state.sightings.clear();
     state.locker_frames = None;
+    state.snatched = [None; 2];
     state.status.fuse = None;
     drop(state);
     if catch::caught().is_some() {
@@ -433,6 +488,8 @@ const WARNING_URGENT: Rgba = [1.0, 0.15, 0.1, 0.95];
 
 struct State {
     thrown: [bool; 2],
+    /// The inert grenades the snatch brought to each hand, for the next input tick to take.
+    snatched: [Option<SafeItemView>; 2],
     sightings: Vec<Sighting>,
     locker_frames: Option<Frames>,
     status: GrenadeStatus,
@@ -442,6 +499,7 @@ struct State {
 
 static STATE: Mutex<State> = Mutex::new(State {
     thrown: [false; 2],
+    snatched: [None; 2],
     sightings: Vec::new(),
     locker_frames: None,
     status: GrenadeStatus {
@@ -529,6 +587,14 @@ fn warning(
     Some((primitives, pulse))
 }
 
+/// The fuse in a hand nearest to running out, of a caught grenade's and the held items' whose pins
+/// are out: the one the warning shows.
+fn most_urgent(fuses: impl Iterator<Item = (Hand, Fuse)>) -> Option<(Hand, Fuse)> {
+    fuses
+        .filter(|(_, fuse)| fuse.remaining_s.is_finite())
+        .min_by(|a, b| a.1.remaining_s.total_cmp(&b.1.remaining_s))
+}
+
 pub fn fuse_urgency(remaining_s: f32, warning_s: f32) -> f32 {
     if warning_s.is_nan() || warning_s <= 0.0 || !remaining_s.is_finite() {
         return 0.0;
@@ -555,12 +621,6 @@ fn update_from_user(
         return;
     }
     STATE.lock().status.weapon_seen = true;
-    let acting = Config::lock_query(|config| {
-        config.controllers.enabled && config.controllers.weapons.grenade_throw
-    }) && scheme::is_controllers();
-    if !acting {
-        native::disarm();
-    }
     // Native item operations run at the render boundary, after the simulation workers join.
 }
 
@@ -639,7 +699,7 @@ unsafe fn carry_caught(inputs: &TickInputs, tuning: &GrenadeTuning) -> Option<(H
     if inputs.opened[hand.index()] {
         // The grenade's body is already in the simulation, so it is thrown as a gun is: its own
         // body takes the release motion at once.
-        let Release { velocity, angular } = throw_release(hand, centre, caught.since_s).release;
+        let Release { velocity, angular } = throw_release(hand, centre, caught.since_s);
         let _ = unsafe {
             physical_hands::set_body_velocities(caught.body, caught.owner, velocity, angular)
         };
@@ -691,6 +751,24 @@ mod tests {
         assert_eq!(fuse_urgency(-0.1, 2.0), 1.0);
         assert_eq!(fuse_urgency(1.0, 0.0), 0.0);
         assert_eq!(fuse_urgency(f32::NAN, 2.0), 0.0);
+    }
+
+    #[test]
+    fn the_warning_shows_the_fuse_nearest_to_running_out() {
+        let fuse = |remaining_s| Fuse {
+            remaining_s,
+            total_s: 4.0,
+        };
+        assert_eq!(most_urgent(std::iter::empty()), None);
+        let fuses = [
+            (Hand::Left, fuse(3.0)),
+            (Hand::Right, fuse(1.5)),
+            (Hand::Left, fuse(f32::NAN)),
+        ];
+        assert_eq!(
+            most_urgent(fuses.into_iter()),
+            Some((Hand::Right, fuse(1.5)))
+        );
     }
 
     #[test]

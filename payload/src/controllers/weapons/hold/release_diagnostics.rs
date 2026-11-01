@@ -165,14 +165,6 @@ impl ReleaseMotion {
             angular: finite(self.world.angular),
         }
     }
-
-    /// The tracked hand's own linear velocity at the released point, world axes, without the
-    /// player's movement, when the estimate came from the hand's history.
-    pub(crate) fn hand_linear(self) -> Option<Vec3> {
-        (self.source == SampleSource::TimestampedHandHistory)
-            .then(|| self.world.linear - self.inherited.linear)
-            .filter(|velocity| velocity.is_finite())
-    }
 }
 
 /// The actual release selection, shared by both hands and the inventory and carried routes.

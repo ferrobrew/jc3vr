@@ -233,6 +233,10 @@ fn capture_current(
     if let Some(row) = insert_row(&reload, input.ready) {
         mechanics.push(row);
     }
+    mechanics.extend(pin_rows(
+        Hand::BOTH.map(weapons::grenade::pin_in_hand),
+        input.ready,
+    ));
     if let Some(hand) = input.yank {
         mechanics.push(Row {
             control: Control::Motion(hand),
@@ -436,6 +440,19 @@ fn insert_row(reload: &ReloadStatus, ready: [bool; 2]) -> Option<Row> {
         gesture: Gesture::Press,
         effect: Effect::Mod(ModAction::InsertRound),
     })
+}
+
+/// The trigger pulling the pin of the grenade in each ready hand whose grenade still has its pin
+/// in, by [`Hand::index`].
+fn pin_rows(pin_in: [bool; 2], ready: [bool; 2]) -> impl Iterator<Item = Row> {
+    Hand::BOTH
+        .into_iter()
+        .filter(move |hand| pin_in[hand.index()] && ready[hand.index()])
+        .map(|hand| Row {
+            control: Control::Trigger(hand),
+            gesture: Gesture::Press,
+            effect: Effect::Mod(ModAction::PullPin),
+        })
 }
 
 fn flick_ready(reload: &ReloadStatus, guns: [Option<GunOwner>; 2], hand: Hand) -> bool {
@@ -669,6 +686,21 @@ mod tests {
             };
             assert_eq!(trigger_use(pair, false, true), TriggerUse::Reserved);
         }
+    }
+
+    #[test]
+    fn a_grenade_with_its_pin_in_offers_the_pin_on_its_own_hands_trigger() {
+        assert_eq!(pin_rows([false; 2], [true; 2]).count(), 0);
+        let rows: Vec<_> = pin_rows([true, false], [true; 2]).collect();
+        assert_eq!(
+            rows,
+            vec![Row {
+                control: Control::Trigger(Hand::Left),
+                gesture: Gesture::Press,
+                effect: Effect::Mod(ModAction::PullPin),
+            }]
+        );
+        assert_eq!(pin_rows([true, false], [false, true]).count(), 0);
     }
 
     #[test]
