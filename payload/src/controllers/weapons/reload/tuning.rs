@@ -31,7 +31,10 @@ pub struct Reload {
     /// How far ahead of the hand's grip the top of a held magazine sits, metres, along the
     /// direction the closed hand points.
     pub held_top_m: f32,
-    /// How close the top of a held magazine must come to the well's mouth to catch it, metres.
+    /// How close the top of a held magazine must come to the well's mouth to catch it, metres: a
+    /// little more than a magazine's own width, since nothing stops the hand at the well as the
+    /// gun would, and the hand and the well each carry a centimetre or two of tracking and
+    /// placement error.
     pub capture_radius_m: f32,
     /// How far a held magazine may be turned from the well's axis and still catch, degrees.
     pub capture_angle_deg: f32,
@@ -59,7 +62,7 @@ impl Reload {
             flick_cooldown_s: 0.6,
             well_offset_m: Vec3::new(0.0, -0.08, -0.06),
             held_top_m: 0.07,
-            capture_radius_m: 0.05,
+            capture_radius_m: 0.08,
             capture_angle_deg: 50.0,
             seat_depth_m: 0.025,
             timeout_s: 8.0,

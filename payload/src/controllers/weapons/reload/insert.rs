@@ -6,8 +6,10 @@
 //! held round catches the well when it is within the capture radius of the mouth, turned no more
 //! than the capture angle from the axis, and moving into the gun. A caught round slides only along
 //! the axis; once its top is the seat depth past the mouth it seats. Pulled back out of the capture
-//! it is held again. Letting go of the grip drops it, unless it is already more than half seated,
-//! which seats it.
+//! it is held again. Letting go of the grip seats a round already more than half seated. A round
+//! let go of near the mouth and pointing roughly into the well floats in ([`FLOAT`]): its top
+//! travels from where the hand left it onto the axis and down to the seat depth, turning onto the
+//! axis as it goes, and seats when it arrives. Anything else let go of drops.
 
 use glam::{Quat, Vec3};
 
@@ -90,6 +92,116 @@ pub struct Insertion {
     pub distance_m: Option<f32>,
     /// The previous held top in the well's rotating frame.
     pub(super) previous_local_top: Option<Vec3>,
+    /// The float of a round let go of near the well, while it travels in.
+    pub(super) float: Option<Float>,
+}
+
+/// How a round let go of near the well floats into it.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct FloatTuning {
+    /// How far from the mouth the top of a round let go of may be to float in, metres: about a
+    /// hand's breadth, so a magazine released while it is being brought to the well goes in, and
+    /// one let go of anywhere else drops. A well whose capture radius is large floats from twice
+    /// that instead.
+    pub radius_m: f32,
+    /// How far a round let go of may be turned from the well's axis and float in, degrees: wider
+    /// than the capture angle, as the round turns onto the axis on the way.
+    pub angle_deg: f32,
+    /// How fast the round travels in on average, metres per second.
+    pub speed_mps: f32,
+    /// The shortest and the longest the float takes, seconds.
+    pub min_s: f32,
+    pub max_s: f32,
+}
+
+/// The float's fixed tuning.
+pub const FLOAT: FloatTuning = FloatTuning {
+    radius_m: 0.15,
+    angle_deg: 70.0,
+    speed_mps: 0.8,
+    min_s: 0.08,
+    max_s: 0.3,
+};
+
+/// A round floating into the well, in the well's frame (+Y along the axis into the gun, the mouth
+/// at the origin).
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(super) struct Float {
+    /// Where the top was let go of.
+    from: Vec3,
+    /// The direction the round pointed when it was let go of, unit length.
+    from_axis: Vec3,
+    /// How far past the mouth the top seats.
+    seat_m: f32,
+    elapsed_s: f32,
+    duration_s: f32,
+}
+
+impl Float {
+    /// The float of a round let go of with its top at `local` pointing along `axis` (both in the
+    /// well's frame), or `None` when it is too far from the mouth, turned too far from the axis,
+    /// or beside the gun past the mouth.
+    fn start(local: Vec3, axis: Vec3, config: &Reload, tuning: &FloatTuning) -> Option<Self> {
+        let axis = axis.try_normalize()?;
+        let radius = tuning.radius_m.max(config.capture_radius_m * 2.0);
+        let distance = local.length();
+        let near = distance <= radius && local.y <= config.capture_radius_m;
+        let aligned = axis.y >= tuning.angle_deg.to_radians().cos();
+        if !(near && aligned && local.is_finite()) {
+            return None;
+        }
+        let travel = (distance + config.seat_depth_m) / tuning.speed_mps.max(f32::EPSILON);
+        Some(Self {
+            from: local,
+            from_axis: axis,
+            seat_m: config.seat_depth_m,
+            elapsed_s: 0.0,
+            duration_s: travel.clamp(tuning.min_s, tuning.max_s.max(tuning.min_s)),
+        })
+    }
+
+    fn advanced(self, dt: f32) -> Self {
+        Self {
+            elapsed_s: (self.elapsed_s + dt).min(self.duration_s),
+            ..self
+        }
+    }
+
+    fn arrived(&self) -> bool {
+        self.elapsed_s >= self.duration_s
+    }
+
+    /// The top now. It first comes onto the axis without passing the mouth, then slides down the
+    /// axis to the seat depth, eased in and out, so it never cuts through the gun's side.
+    fn top(&self) -> Vec3 {
+        let t = (self.elapsed_s / self.duration_s.max(f32::EPSILON)).clamp(0.0, 1.0);
+        let approach = smoothstep((t / APPROACH_SHARE).min(1.0));
+        let slide = smoothstep(((t - APPROACH_SHARE) / (1.0 - APPROACH_SHARE)).max(0.0));
+        let entry = self.from.y.min(0.0);
+        let lateral = Vec3::new(self.from.x, 0.0, self.from.z) * (1.0 - approach);
+        let depth = if t < APPROACH_SHARE {
+            self.from.y + (entry - self.from.y) * approach
+        } else {
+            entry + (self.seat_m - entry) * slide
+        };
+        lateral + Vec3::Y * depth
+    }
+
+    /// The direction the round points now: from where it pointed onto the axis.
+    fn axis(&self) -> Vec3 {
+        let t = (self.elapsed_s / self.duration_s.max(f32::EPSILON)).clamp(0.0, 1.0);
+        Quat::from_rotation_arc(self.from_axis, Vec3::Y)
+            .slerp(Quat::IDENTITY, 1.0 - smoothstep(t))
+            .mul_vec3(self.from_axis)
+    }
+}
+
+/// The share of a float spent bringing the top onto the axis.
+const APPROACH_SHARE: f32 = 0.6;
+
+fn smoothstep(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 impl Insertion {
@@ -101,6 +213,7 @@ impl Insertion {
             dropped: 0,
             distance_m: None,
             previous_local_top: None,
+            float: None,
         }
     }
 
@@ -164,6 +277,9 @@ impl Insertion {
         source: InsertionSource,
         config: &Reload,
     ) -> Option<InsertEvent> {
+        if let Some(float) = self.float {
+            return self.step_float(float, inputs, elapsed_s);
+        }
         let captured = match self.stage {
             InsertStage::Captured { depth_m, .. } => Some(depth_m),
             _ => None,
@@ -183,14 +299,21 @@ impl Insertion {
         let retained = aligned && off_axis <= slack && depth >= -slack;
         self.distance_m = Some(local.length());
         if !inputs.grip_held {
+            if captured.is_some() && retained && depth >= config.seat_depth_m * 0.5 {
+                self.stage = InsertStage::Idle;
+                return Some(InsertEvent::Seated);
+            }
+            let pointing = Quat::from_rotation_arc(axis, Vec3::Y) * held.axis;
+            if let Some(float) = Float::start(local, pointing, config, &FLOAT) {
+                self.float = Some(float);
+                self.stage = InsertStage::Captured {
+                    elapsed_s,
+                    depth_m: depth,
+                };
+                return captured.is_none().then_some(InsertEvent::Captured);
+            }
             self.stage = InsertStage::Idle;
-            return Some(
-                if captured.is_some() && retained && depth >= config.seat_depth_m * 0.5 {
-                    InsertEvent::Seated
-                } else {
-                    InsertEvent::Dropped
-                },
-            );
+            return Some(InsertEvent::Dropped);
         }
         if source == InsertionSource::Pouch && captured.is_none() && elapsed_s > config.timeout_s {
             self.stage = InsertStage::Idle;
@@ -235,16 +358,66 @@ impl Insertion {
         }
     }
 
-    /// Constrain the displayed round to the well while captured, keeping its measured depth.
+    /// Move a floating round on by the tick: it seats when it arrives, and drops when its gun can
+    /// no longer take it. The grip has let it go, so neither the grip nor the hand moves it.
+    fn step_float(
+        &mut self,
+        float: Float,
+        inputs: InsertInputs,
+        elapsed_s: f32,
+    ) -> Option<InsertEvent> {
+        if inputs.well.is_none() {
+            self.stage = InsertStage::Idle;
+            self.float = None;
+            return Some(InsertEvent::Dropped);
+        }
+        let dt = if inputs.dt.is_finite() {
+            inputs.dt.max(0.0)
+        } else {
+            0.0
+        };
+        let float = float.advanced(dt);
+        if float.arrived() {
+            self.stage = InsertStage::Idle;
+            self.float = None;
+            return Some(InsertEvent::Seated);
+        }
+        self.float = Some(float);
+        self.stage = InsertStage::Captured {
+            elapsed_s,
+            depth_m: float.top().y,
+        };
+        None
+    }
+
+    /// The top of the captured round, in the cockpit frame: on the well's axis at its measured
+    /// depth, or where a floating round has travelled to.
+    pub(super) fn captured_top(&self, well: Well) -> Option<Vec3> {
+        let InsertStage::Captured { depth_m, .. } = self.stage else {
+            return None;
+        };
+        let axis = well.axis.try_normalize()?;
+        Some(match self.float {
+            Some(float) => well.mouth + Quat::from_rotation_arc(Vec3::Y, axis) * float.top(),
+            None => well.mouth + axis * depth_m,
+        })
+    }
+
+    /// Constrain the displayed round to the well while captured, keeping its measured depth, or
+    /// carry a floating round along its float.
     pub(super) fn carried(&self, held: Held, well: Option<Well>) -> Held {
-        let (InsertStage::Captured { depth_m, .. }, Some(well)) = (self.stage, well) else {
+        let (InsertStage::Captured { .. }, Some(well)) = (self.stage, well) else {
             return held;
         };
-        let Some(axis) = well.axis.try_normalize() else {
+        let (Some(axis), Some(top)) = (well.axis.try_normalize(), self.captured_top(well)) else {
             return held;
+        };
+        let axis = match self.float {
+            Some(float) => Quat::from_rotation_arc(Vec3::Y, axis) * float.axis(),
+            None => axis,
         };
         Held {
-            top: well.mouth + axis * depth_m,
+            top,
             axis,
             velocity: held.velocity,
         }
@@ -255,6 +428,7 @@ impl Insertion {
         self.stage = InsertStage::Idle;
         self.distance_m = None;
         self.previous_local_top = None;
+        self.float = None;
     }
 }
 
@@ -492,6 +666,123 @@ mod tests {
         assert_eq!(insertion.step(pushed, &CONFIG), Some(InsertEvent::Seated));
         assert_eq!(insertion.step(pushed, &CONFIG), None);
         assert_eq!(insertion.seated, 1);
+    }
+
+    /// Let go of a round held with its top at `top` pointing along `axis`, then step until the
+    /// insertion settles: the events in order, and the displayed tops of a floating round.
+    fn let_go_at(top: Vec3, axis: Vec3) -> (Vec<InsertEvent>, Vec<Vec3>) {
+        let mut i = Insertion::new();
+        take(&mut i);
+        let held = |grip_held| InsertInputs {
+            grip_held,
+            held: Some(Held {
+                top,
+                axis,
+                velocity: Vec3::ZERO,
+            }),
+            ..inputs(false, top, Vec3::ZERO)
+        };
+        i.step(held(true), &CONFIG);
+        let mut events = Vec::new();
+        let mut shown = Vec::new();
+        for _ in 0..50 {
+            if let Some(event) = i.step(held(false), &CONFIG) {
+                events.push(event);
+            }
+            if i.float.is_some() {
+                let round = i.carried(
+                    Held {
+                        top: Vec3::splat(9.0),
+                        axis: Vec3::X,
+                        velocity: Vec3::ZERO,
+                    },
+                    Some(WELL),
+                );
+                shown.push(round.top);
+            }
+            if i.stage == InsertStage::Idle {
+                break;
+            }
+        }
+        (events, shown)
+    }
+
+    #[test]
+    fn a_round_let_go_of_near_the_well_floats_in_and_seats() {
+        let top = WELL.mouth + Vec3::new(0.06, -0.08, 0.03);
+        let (events, shown) = let_go_at(top, Vec3::new(0.3, 1.0, 0.0));
+        assert_eq!(events, vec![InsertEvent::Captured, InsertEvent::Seated]);
+        assert!(shown.len() >= 3, "the float takes a few ticks: {shown:?}");
+        // It leaves from where the hand let go of it, never jumps, and never cuts through the
+        // gun's side: past the mouth, it is on the axis.
+        assert!(shown[0].distance(top) < 0.05);
+        for pair in shown.windows(2) {
+            assert!(pair[0].distance(pair[1]) < 0.05, "{pair:?}");
+        }
+        for p in &shown {
+            let local = *p - WELL.mouth;
+            if local.y > 1.0e-4 {
+                assert!(
+                    Vec3::new(local.x, 0.0, local.z).length() < 1.0e-4,
+                    "{local:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_round_let_go_of_away_from_the_well_or_turned_from_it_drops() {
+        let far = WELL.mouth + Vec3::new(0.15, -0.15, 0.0);
+        assert_eq!(let_go_at(far, Vec3::Y).0, vec![InsertEvent::Dropped]);
+        let near = WELL.mouth - Vec3::Y * 0.08;
+        assert_eq!(let_go_at(near, Vec3::X).0, vec![InsertEvent::Dropped]);
+        // Beside the gun, past the mouth.
+        let beside = WELL.mouth + Vec3::new(0.1, 0.1, 0.0);
+        assert_eq!(let_go_at(beside, Vec3::Y).0, vec![InsertEvent::Dropped]);
+    }
+
+    #[test]
+    fn a_floating_round_drops_when_its_gun_goes() {
+        let mut i = Insertion::new();
+        take(&mut i);
+        let near = WELL.mouth - Vec3::Y * 0.08;
+        i.step(inputs(false, near, Vec3::ZERO), &CONFIG);
+        let released = InsertInputs {
+            grip_held: false,
+            ..inputs(false, near, Vec3::ZERO)
+        };
+        assert_eq!(i.step(released, &CONFIG), Some(InsertEvent::Captured));
+        assert!(i.float.is_some());
+        let gone = InsertInputs {
+            well: None,
+            ..released
+        };
+        assert_eq!(i.step(gone, &CONFIG), Some(InsertEvent::Dropped));
+        assert_eq!((i.stage, i.float, i.seated), (InsertStage::Idle, None, 0));
+    }
+
+    #[test]
+    fn the_float_turns_the_round_onto_the_axis() {
+        let float = Float::start(
+            Vec3::new(0.0, -0.1, 0.0),
+            Vec3::new(1.0, 1.0, 0.0),
+            &CONFIG,
+            &FLOAT,
+        )
+        .unwrap();
+        assert!(
+            float
+                .axis()
+                .abs_diff_eq(Vec3::new(1.0, 1.0, 0.0).normalize(), 1.0e-5)
+        );
+        let arrived = float.advanced(FLOAT.max_s);
+        assert!(arrived.arrived());
+        assert!(arrived.axis().abs_diff_eq(Vec3::Y, 1.0e-5));
+        assert!(
+            arrived
+                .top()
+                .abs_diff_eq(Vec3::Y * CONFIG.seat_depth_m, 1.0e-5)
+        );
     }
 
     #[test]

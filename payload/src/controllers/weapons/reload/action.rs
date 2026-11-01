@@ -399,18 +399,17 @@ impl State {
         let held = self.status.insert_hands.and_then(|(hand, gun_hand)| {
             let (weapon, gun) = tick.gun(gun_hand)?;
             let captured = match self.status.insertion.stage {
-                InsertStage::Captured { depth_m, .. } => gun.well.map(|well| {
+                InsertStage::Captured { .. } => gun.well.and_then(|well| {
+                    let top = self.status.insertion.captured_top(well)?;
                     let inverse = gun.wrist.orientation.inverse();
                     let axis = inverse * well.axis;
-                    (
+                    Some((
                         gun_hand,
                         Pose {
-                            position: inverse
-                                * (well.mouth + well.axis * depth_m - gun.wrist.position)
-                                * tick.world_scale,
+                            position: inverse * (top - gun.wrist.position) * tick.world_scale,
                             orientation: Quat::from_rotation_arc(Vec3::Y, axis),
                         },
-                    )
+                    ))
                 }),
                 _ => None,
             };
