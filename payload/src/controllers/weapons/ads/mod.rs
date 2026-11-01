@@ -7,6 +7,11 @@
 //! own sight line, so with the sights on the eye the shot goes where the player sees them point;
 //! nothing aims the gun toward a target.
 //!
+//! The solved move is not applied as solved: each gun's move eases toward it over time, kept in the
+//! holding wrist's frame so it travels with the gun ([`solve::ease`]). A gun the eye or the
+//! shoulder lets go of eases back to the hands, and a gun that changes the inputs in a step (the
+//! front hand coming onto the foregrip, the raised gun changing hands) glides rather than snaps.
+//!
 //! The pose is applied in [`apply`], on the cockpit-frame hands every hand subsystem starts from
 //! ([`crate::controllers::hands::active_hands`]), after the two-handed pose and the weight, so the
 //! IK targets, the render-time late update, the sight line the gun aim casts, and the scope's lens
@@ -22,6 +27,8 @@
 pub mod config;
 pub mod solve;
 
+use std::time::Instant;
+
 use glam::Vec3;
 use parking_lot::Mutex;
 
@@ -31,7 +38,7 @@ use crate::controllers::{
     weapons::{
         ads::{
             config::{AdsConfig, AimingEye},
-            solve::{AdsInputs, AdsSolution, WristSight},
+            solve::{AdsInputs, AdsSolution, RigidMove, WristSight},
         },
         foregrip,
     },
@@ -104,10 +111,12 @@ pub fn apply(
     config: &AdsConfig,
 ) {
     if !config.enabled {
+        settle();
         return;
     }
     let weapons = STATE.lock().weapons;
     if weapons.iter().all(Option::is_none) {
+        settle();
         return;
     }
     let brace = foregrip::status().hold.filter(|h| h.engaged);
@@ -135,21 +144,37 @@ pub fn apply(
         };
         Some(solve::solve(&inputs, config))
     });
-    let Some(hand) = raised(solutions) else {
-        record(None, &AdsSolution::NONE);
-        return;
-    };
-    let Some(solution) = solutions[hand.index()] else {
-        return;
-    };
-    record(Some(hand), &solution);
-    if let Some(held) = hands[hand.index()] {
-        hands[hand.index()] = Some(solution.moved.hand(held));
-    }
-    if let Some(h) = support_hand(hand)
-        && let Some(bracing) = hands[h.index()]
-    {
-        hands[h.index()] = Some(solution.moved.hand(bracing));
+    let raised = raised(solutions);
+    record(
+        raised,
+        &raised
+            .and_then(|hand| solutions[hand.index()])
+            .unwrap_or(AdsSolution::NONE),
+    );
+    // Each gun's move, in its holding wrist's frame: the raised gun's solved move, and none for
+    // the others, which ease back to their hands.
+    let targets = Hand::BOTH.map(|hand| {
+        let wrist = hands[hand.index()]?.wrist;
+        let moved = solutions[hand.index()]
+            .filter(|_| raised == Some(hand))
+            .map_or(RigidMove::IDENTITY, |s| s.moved);
+        Some(moved.in_frame(wrist))
+    });
+    let eased = ease_toward(targets);
+    for hand in Hand::BOTH {
+        let Some(local) = eased[hand.index()] else {
+            continue;
+        };
+        let Some(held) = hands[hand.index()] else {
+            continue;
+        };
+        let moved = local.out_of_frame(held.wrist);
+        hands[hand.index()] = Some(moved.hand(held));
+        if let Some(h) = support_hand(hand)
+            && let Some(bracing) = hands[h.index()]
+        {
+            hands[h.index()] = Some(moved.hand(bracing));
+        }
     }
 }
 
@@ -212,11 +237,19 @@ const POCKET_OFFSET_M: Vec3 = Vec3::new(-0.06, -0.04, -0.04);
 /// A step counts as taken once its share passes this.
 const TAKEN: f32 = 0.99;
 
+/// The longest step the eased moves take between two poses, seconds: after a pause in the poses
+/// (a hitch, or the hands going inert), the moves take one long step rather than replaying it.
+const MAX_EASE_STEP_S: f32 = 0.1;
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct State {
     /// Each hand's long gun, by [`Hand::index`].
     weapons: [Option<AdsWeapon>; 2],
     status: AdsStatus,
+    /// Each gun's eased move in its holding wrist's frame, by [`Hand::index`], and when it was
+    /// last eased.
+    eased: [Option<RigidMove>; 2],
+    eased_at: Option<Instant>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -233,7 +266,39 @@ static STATE: Mutex<State> = Mutex::new(State {
         shouldered: 0,
         welded: 0,
     },
+    eased: [None; 2],
+    eased_at: None,
 });
+
+/// Ease each gun's move toward its target in its wrist's frame, by [`Hand::index`], from where the
+/// last pose left it; `None` for a hand without a gun to move. A gun that comes into a hand starts
+/// at its hands.
+fn ease_toward(targets: [Option<RigidMove>; 2]) -> [Option<RigidMove>; 2] {
+    let now = Instant::now();
+    let mut state = STATE.lock();
+    let dt = state.eased_at.map_or(0.0, |at| {
+        now.saturating_duration_since(at)
+            .as_secs_f32()
+            .min(MAX_EASE_STEP_S)
+    });
+    state.eased_at = Some(now);
+    let weapons = state.weapons;
+    let eased = Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        let target = targets[i].filter(|_| weapons[i].is_some())?;
+        let from = state.eased[i].unwrap_or(RigidMove::IDENTITY);
+        Some(solve::ease(from, target, dt))
+    });
+    state.eased = eased;
+    eased
+}
+
+/// Drop the eased moves: no gun is lined up, so the next one starts at its hands.
+fn settle() {
+    let mut state = STATE.lock();
+    state.eased = [None; 2];
+    state.eased_at = None;
+}
 
 /// Note the solution of the gun in `raised`, counting and logging each step as it takes hold.
 fn record(raised: Option<Hand>, solution: &AdsSolution) {

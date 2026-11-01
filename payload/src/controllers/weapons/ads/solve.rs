@@ -15,8 +15,13 @@
 //! 3. A scope's cheek weld ([`weld_move`]): a scope is lined up by moving the gun across its axis,
 //!    keeping its direction, so the eye sits on the axis and the scope's view centres.
 //!
-//! Each step fades in as its distance closes from its engage distance to its lock distance, so a
-//! gun brought up to the eye settles onto it rather than snapping.
+//! Each step fades in as its distance closes from its engage distance to its lock distance, and the
+//! sights' steps also fade across the bounds of where the eye counts as behind the gun and the head
+//! as looking along it, so the pose is continuous in its inputs: a gun brought up to the eye settles
+//! onto it rather than snapping, and a gate that opens with the eye already on the line eases the
+//! sights in. The caller also eases the solved move toward each new one over time ([`ease`]), which
+//! covers what the inputs themselves do in a step: the front hand coming onto or off the foregrip,
+//! or the raised gun changing hands.
 
 use glam::{Quat, Vec3};
 
@@ -28,9 +33,15 @@ pub const ENGAGE_M: f32 = 0.06;
 pub const LOCK_M: f32 = 0.02;
 /// How far behind the holding grip, along the sight line, the eye may be, metres.
 pub const MAX_EYE_BEHIND_M: f32 = 0.4;
+/// How far the sights fade over at each end of the eye's range behind the grip, metres: in over
+/// the first stretch behind the grip, and out over the last before [`MAX_EYE_BEHIND_M`].
+pub const EYE_BEHIND_FADE_M: f32 = 0.05;
 /// The widest angle between the head's forward and the sight line, degrees: a gun the head does not
 /// look along is not being aimed.
 pub const MAX_VIEW_ANGLE_DEG: f32 = 30.0;
+/// The angle between the head's forward and the sight line within which the head fully looks along
+/// it, degrees; the sights fade out from here to [`MAX_VIEW_ANGLE_DEG`].
+pub const FULL_VIEW_ANGLE_DEG: f32 = 20.0;
 /// How far ahead of the holding grip, along the sight line, the gun turns about to bring the sights
 /// to the eye, metres: about where the front sight is.
 pub const PIVOT_AHEAD_M: f32 = 0.35;
@@ -44,6 +55,8 @@ pub const SHOULDER_LOCK_M: f32 = 0.04;
 pub const WELD_ENGAGE_M: f32 = 0.05;
 /// How far off a scope's axis the eye is when the cheek weld is full, metres.
 pub const WELD_LOCK_M: f32 = 0.015;
+/// The time constant the solved move eases toward each new one with, seconds ([`ease`]).
+pub const EASE_S: f32 = 0.06;
 
 /// A gun's sight line in its holding wrist's frame, in cockpit metres.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -114,6 +127,29 @@ impl RigidMove {
         }
     }
 
+    /// This move seen from `frame`: the move of a point given in `frame`'s coordinates. A move
+    /// kept in the holding wrist's frame stays with the gun as the hands move it.
+    pub fn in_frame(&self, frame: Pose) -> RigidMove {
+        let inverse = frame.orientation.conjugate();
+        RigidMove {
+            rotation: (inverse * self.rotation * frame.orientation).normalize(),
+            translation: inverse
+                * (self.rotation * frame.position + self.translation - frame.position),
+        }
+    }
+
+    /// The move in `frame`'s coordinates brought back out of it: the inverse of
+    /// [`RigidMove::in_frame`].
+    pub fn out_of_frame(&self, frame: Pose) -> RigidMove {
+        let rotation =
+            (frame.orientation * self.rotation * frame.orientation.conjugate()).normalize();
+        RigidMove {
+            rotation,
+            translation: frame.orientation * self.translation + frame.position
+                - rotation * frame.position,
+        }
+    }
+
     /// This move, then `next`.
     pub fn then(&self, next: RigidMove) -> RigidMove {
         RigidMove {
@@ -165,12 +201,12 @@ pub fn solve(inputs: &AdsInputs, config: &AdsConfig) -> AdsSolution {
     solution.eye_offset_m = Some(view.offset.length());
     let step = if inputs.scoped {
         config.cheek_weld.then(|| {
-            let weight = fade(view.offset.length(), WELD_LOCK_M, WELD_ENGAGE_M);
+            let weight = fade(view.offset.length(), WELD_LOCK_M, WELD_ENGAGE_M) * view.gate;
             solution.weld = weight;
             weld_move(view, weight)
         })
     } else {
-        let weight = fade(view.offset.length(), LOCK_M, ENGAGE_M);
+        let weight = fade(view.offset.length(), LOCK_M, ENGAGE_M) * view.gate;
         solution.eye = weight;
         Some(eye_move(line, grip, inputs.eye, PIVOT_AHEAD_M, weight))
     };
@@ -209,10 +245,14 @@ pub fn shoulder_move(inputs: &AdsInputs, pocket: Vec3) -> Option<(RigidMove, f32
 pub struct EyeView {
     /// The eye's offset from its nearest point on the line, across the line.
     pub offset: Vec3,
+    /// How far the eye counts as behind the gun and the head as looking along it, `0..=1`: the
+    /// share of the sights' steps the gates let through.
+    pub gate: f32,
 }
 
 /// The eye's view of the line `(origin, direction)` held at `grip`: `None` unless the eye is behind
-/// the grip by no more than [`MAX_EYE_BEHIND_M`] and the head looks along the line.
+/// the grip by no more than [`MAX_EYE_BEHIND_M`] and the head looks along the line within
+/// [`MAX_VIEW_ANGLE_DEG`]. The gate fades to zero toward each of those bounds.
 pub fn eye_view(
     (origin, direction): (Vec3, Vec3),
     grip: Vec3,
@@ -220,16 +260,21 @@ pub fn eye_view(
     forward: Vec3,
 ) -> Option<EyeView> {
     let behind = -(eye - grip).dot(direction);
-    if !(0.0..=MAX_EYE_BEHIND_M).contains(&behind) {
-        return None;
-    }
     let forward = forward.try_normalize()?;
-    if forward.dot(direction) < MAX_VIEW_ANGLE_DEG.to_radians().cos() {
+    let angle_deg = forward.dot(direction).clamp(-1.0, 1.0).acos().to_degrees();
+    let gate = fade(-behind, -EYE_BEHIND_FADE_M, 0.0)
+        * fade(
+            behind,
+            MAX_EYE_BEHIND_M - EYE_BEHIND_FADE_M,
+            MAX_EYE_BEHIND_M,
+        )
+        * fade(angle_deg, FULL_VIEW_ANGLE_DEG, MAX_VIEW_ANGLE_DEG);
+    if gate <= 0.0 {
         return None;
     }
     let along = (eye - origin).dot(direction);
     let offset = eye - (origin + direction * along);
-    offset.is_finite().then_some(EyeView { offset })
+    offset.is_finite().then_some(EyeView { offset, gate })
 }
 
 /// The turn about a point `pivot_ahead_m` ahead of `grip` on the line that brings the line through
@@ -254,6 +299,20 @@ pub fn weld_move(view: EyeView, weight: f32) -> RigidMove {
     RigidMove {
         rotation: Quat::IDENTITY,
         translation: view.offset * weight,
+    }
+}
+
+/// `current` moved toward `target` over `dt` seconds, closing the gap with the time constant
+/// [`EASE_S`]: a step in the target becomes a short glide, and a held target is reached.
+pub fn ease(current: RigidMove, target: RigidMove, dt: f32) -> RigidMove {
+    let t = if dt.is_finite() && dt > 0.0 {
+        1.0 - (-dt / EASE_S).exp()
+    } else {
+        0.0
+    };
+    RigidMove {
+        rotation: current.rotation.slerp(target.rotation, t).normalize(),
+        translation: current.translation.lerp(target.translation, t),
     }
 }
 
@@ -382,6 +441,85 @@ mod tests {
         assert!((fade(0.04, 0.02, 0.06) - 0.5).abs() < 1e-6);
         assert_eq!(fade(f32::NAN, 0.02, 0.06), 0.0);
         assert_eq!(fade(0.03, 0.05, 0.05), 1.0);
+    }
+
+    /// The largest change of the solved move between neighbouring inputs along a sweep, as the
+    /// distance a point a metre ahead of the pivot moves, metres.
+    fn largest_step(sweep: impl Iterator<Item = AdsInputs>) -> f32 {
+        let config = AdsConfig::new();
+        let probe = Vec3::new(0.03, 1.58, -1.5);
+        let points: Vec<Vec3> = sweep
+            .map(|i| solve(&i, &config).moved.point(probe))
+            .collect();
+        points
+            .windows(2)
+            .map(|w| w[0].distance(w[1]))
+            .fold(0.0, f32::max)
+    }
+
+    #[test]
+    fn the_sights_ease_in_as_the_head_comes_to_look_along_the_gun() {
+        // The eye sits a centimetre off the line, so the sights would take full hold of it at once
+        // were the head's gate a step.
+        let eye = Vec3::new(0.04, 1.58, -0.05);
+        let sweep = (0..=400).map(|k| {
+            let angle = (40.0 - k as f32 * 0.075).to_radians();
+            let mut i = inputs(eye);
+            i.forward = Quat::from_rotation_y(angle) * Vec3::NEG_Z;
+            i
+        });
+        // The full turn onto the eye moves the probe more than a centimetre; no single 0.075
+        // degree step of the head may carry more than a small share of it.
+        assert!(largest_step(sweep) < 0.002);
+        let mut looking = inputs(eye);
+        looking.forward = Quat::from_rotation_y(FULL_VIEW_ANGLE_DEG.to_radians()) * Vec3::NEG_Z;
+        assert!(solve(&looking, &AdsConfig::new()).eye > 0.99);
+    }
+
+    #[test]
+    fn the_sights_ease_in_and_out_across_the_eyes_range_behind_the_grip() {
+        // The eye slides along the line from in front of the grip to past the far bound.
+        let sweep = (0..=600).map(|k| inputs(Vec3::new(0.04, 1.58, -0.36 + k as f32 * 0.001)));
+        assert!(largest_step(sweep) < 0.002);
+    }
+
+    #[test]
+    fn a_move_survives_a_round_trip_through_a_frame() {
+        let frame = Pose {
+            position: Vec3::new(0.2, 1.3, -0.4),
+            orientation: Quat::from_euler(glam::EulerRot::YXZ, 0.7, -0.3, 0.2),
+        };
+        let m = RigidMove::about(Vec3::new(0.1, 1.5, -0.7), Quat::from_rotation_x(0.2));
+        let local = m.in_frame(frame);
+        let back = local.out_of_frame(frame);
+        let p = Vec3::new(-0.3, 1.1, 0.4);
+        assert!(back.point(p).distance(m.point(p)) < 1e-5);
+        // In the frame, the move takes the frame's coordinates of a point to those of its image.
+        let to_frame = |q: Vec3| frame.orientation.conjugate() * (q - frame.position);
+        assert!(local.point(to_frame(p)).distance(to_frame(m.point(p))) < 1e-5);
+    }
+
+    #[test]
+    fn the_eased_move_glides_to_a_held_target() {
+        let target = RigidMove::about(Vec3::new(0.0, 1.5, -0.6), Quat::from_rotation_y(0.6));
+        let probe = Vec3::new(0.0, 1.5, 0.4);
+        let mut eased = RigidMove::IDENTITY;
+        let mut last = eased.point(probe);
+        let full = probe.distance(target.point(probe));
+        for _ in 0..90 {
+            eased = ease(eased, target, 1.0 / 90.0);
+            let now = eased.point(probe);
+            // One 90 Hz frame closes at most a fifth of the gap.
+            assert!(now.distance(last) < full * 0.2);
+            last = now;
+        }
+        assert!(last.distance(target.point(probe)) < full * 0.01);
+        // No time, no movement.
+        assert_eq!(ease(RigidMove::IDENTITY, target, 0.0), RigidMove::IDENTITY);
+        assert_eq!(
+            ease(RigidMove::IDENTITY, target, f32::NAN),
+            RigidMove::IDENTITY
+        );
     }
 
     #[test]
