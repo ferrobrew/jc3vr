@@ -72,10 +72,10 @@ fn flight_labels_name_the_bilateral_motion_and_request_scope() {
     );
     assert_eq!(
         ModText::GestureClose.english(),
-        "Lower, Then Spread Both Arms to Arm; Hold Both Withdrawn: Request Wingsuit Close"
+        "Spread Both Arms to Arm; Hold Both Withdrawn: Request Wingsuit Close"
     );
     assert_eq!(
         ModText::GestureBrake.english(),
-        "Lower, Then Spread Both Arms to Arm; Turn Both Palms Forward While Spread: Brake"
+        "Spread Arms, Turn Both Palms Forward: Brake; Hold It Low over Level Ground to Land"
     );
 }

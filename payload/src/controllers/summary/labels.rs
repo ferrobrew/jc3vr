@@ -315,6 +315,7 @@ pub fn mod_action(action: ModAction) -> Text {
         ModAction::WristDetonator => ModText::WristDetonator,
         ModAction::ParachuteHandles => ModText::ParachuteHandles,
         ModAction::PullParachuteHandle => ModText::PullParachuteHandle,
+        ModAction::Ripcord => ModText::Ripcord,
         ModAction::SnatchYank => ModText::SnatchYank,
         ModAction::SnatchSwing => ModText::SnatchSwing,
         ModAction::SnatchGrip => ModText::SnatchGrip,
@@ -372,6 +373,7 @@ pub enum ModText {
     WristDetonator,
     ParachuteHandles,
     PullParachuteHandle,
+    Ripcord,
     SnatchYank,
     SnatchSwing,
     SnatchGrip,
@@ -435,6 +437,9 @@ impl ModText {
             ModText::WristDetonator => "Fingertip into the Wrist Button: Detonate C4",
             ModText::ParachuteHandles => "At a Handle: Hold, Pull Down to Steer, Both to Brake",
             ModText::PullParachuteHandle => "Pull down to steer; pull both handles to brake",
+            ModText::Ripcord => {
+                "At the Back of the Hip: Grip the Ripcord, Pull Out to Open the Parachute"
+            }
             ModText::SnatchYank => "Yank to snatch",
             ModText::SnatchSwing => "Swing while grip and grapple are held",
             ModText::SnatchGrip => "Keep grip held to snatch",
@@ -444,10 +449,10 @@ impl ModText {
             ModText::ArmSteering => "Spread Arms: Lower One to Bank, Both to Dive, Raise to Climb",
             ModText::GestureDeploy => "Lower Both Arms, Then Hold Spread: Request Wingsuit Deploy",
             ModText::GestureClose => {
-                "Lower, Then Spread Both Arms to Arm; Hold Both Withdrawn: Request Wingsuit Close"
+                "Spread Both Arms to Arm; Hold Both Withdrawn: Request Wingsuit Close"
             }
             ModText::GestureBrake => {
-                "Lower, Then Spread Both Arms to Arm; Turn Both Palms Forward While Spread: Brake"
+                "Spread Arms, Turn Both Palms Forward: Brake; Hold It Low over Level Ground to Land"
             }
             ModText::Wheel => "Hold at the Wheel: Steer",
             ModText::Handlebars => "Hold at the Handlebars: Steer; Twist the Right Grip: Throttle",
@@ -512,6 +517,7 @@ mod tests {
             wheel_trackpad: true,
             wheel_stick: true,
             parachute_handles: true,
+            ripcord: true,
             arm_steering: true,
             physical: PhysicalFeatures {
                 wheel: true,

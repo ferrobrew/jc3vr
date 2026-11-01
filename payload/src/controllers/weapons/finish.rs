@@ -266,6 +266,7 @@ pub(crate) fn finish_tick(
             | GrabVolume::VehicleControl(_)
             | GrabVolume::CockpitButton(_)
             | GrabVolume::ParachuteHandle(_)
+            | GrabVolume::Ripcord
             | GrabVolume::MountedHandle(_)
             | GrabVolume::Pickup(_)
             | GrabVolume::Climb

@@ -17,6 +17,7 @@ use crate::{
             fit::FitReadout,
             look_steer, parachute_rig,
             physical::{ControlEvent, ControlKind},
+            ripcord::MIN_PULL_M,
             wheel::WheelFrame,
             wheel_render,
         },
@@ -67,6 +68,10 @@ pub(super) fn feature_readout(ui: &mut Ui, readout: &VehiclesReadout, id: Featur
         FeatureId::Air => {
             arms_readout(ui, readout);
             handles_readout(ui, readout);
+            ui.label(match vehicles::ripcord_holder() {
+                Some(hand) => format!("Ripcord: held by the {} hand", hand.label()),
+                None => "Ripcord: free".to_owned(),
+            });
         }
         _ => {}
     }
@@ -465,6 +470,16 @@ fn air_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
     ui.add(
         egui::Slider::new(&mut h.brake_threshold, 0.0..=0.9)
             .text("Parachute brake threshold (of a full pull)")
+            .fixed_decimals(2),
+    );
+    let r = &mut v.ripcord;
+    ui.checkbox(
+        &mut r.enabled,
+        "Ripcord at the hip opens the parachute (falling, wingsuit)",
+    );
+    ui.add(
+        egui::Slider::new(&mut r.pull_m, MIN_PULL_M..=0.4)
+            .text("Ripcord pull (m)")
             .fixed_decimals(2),
     );
 }

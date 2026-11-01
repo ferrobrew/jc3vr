@@ -162,6 +162,7 @@ pub(crate) fn refresh(
             wheel_trackpad: weapons.wheel.enabled && WHEEL.trackpad,
             wheel_stick: weapons.wheel.enabled && WHEEL.stick,
             parachute_handles: config.vehicles.parachute_handles.enabled,
+            ripcord: config.vehicles.ripcord.enabled,
             arm_steering: config.vehicles.arm_steering.wingsuit,
             physical: PhysicalFeatures {
                 wheel: physical.wheel.enabled,

@@ -730,6 +730,14 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             grabs_for(step.grabs, Consumer::Climb),
         );
         physical_hands::stunt::finish_tick(finish.grips.map(|g| g.held()), &mut step.desired);
+        // The ripcord's canopy request goes in before the gestures commit, so it wins over a suit
+        // request on the same tick.
+        vehicles::ripcord_finish(
+            detection.mode,
+            grabs_for(step.grabs, Consumer::Vehicles),
+            &controls,
+            &mut step.desired,
+        );
         let reserve_pitch = flight::commit(
             state
                 .flight

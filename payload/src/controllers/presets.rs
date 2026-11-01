@@ -77,6 +77,7 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.vehicles.arm_steering.wingsuit = on;
     c.vehicles.driving_view.enabled = on;
     c.vehicles.parachute_handles.enabled = on;
+    c.vehicles.ripcord.enabled = on;
     c.fingers.enabled = on;
     c.grapple.pull_to_reel = on;
     c.grapple.pump = on;

@@ -12,6 +12,20 @@ The binding-owned `FlightState` retains the grip offset and body dimensions used
 
 Finalization checks packet currency, availability, and current per-hand interaction claims again after other handlers run. A contextual canopy request suppresses a pending suit contribution. Newly acquired grip, trigger, mechanical, or grapple ownership also cancels the contribution. Braking reserves arm-pitch steering only while the recognizer has an active eligible brake command. Stick steering remains available.
 
+## Landing
+
+The game lands the wingsuit through its close act, which a held air brake queues on every tick ([engine: wingsuit-landing.md](../../engine/gameplay/wingsuit-landing.md)). Once the suit is slow enough and low enough, the act turns into a slide onto the feet; faster, it does nothing, and the glide that meets the ground ends in a ragdoll. So the brake is the landing: wide arms with both palms to the wind, held as the suit comes in low over level ground, slow it until the game closes the suit into the slide. The `air_brake` action holds the same pair of actions from any analog input a custom layout binds it to; it ships unbound, since it is a float and the free buttons in the suit are clicks.
+
+The brake weakens while the suit turns: the game's brake gives up part of its drag and lift for the steering's sideways input, and the arm steering's bank is that input. Level wings brake hardest. The stall flip's removal ([controllers.md, "The wingsuit's stall flip"](controllers.md)) keeps the brake and the close act open as the suit slows with its nose up, where the game's own stall would close both until it recovered. Held higher up, the same brake closes the suit into a fall once it is slow, so the landing's brake belongs in the last few metres. Both the brake and the landing need the game's gear mods for them (`upgrade_wingsuit_air_brake` and `upgrade_wingsuit_cancel`); without the second, the close act never fires and the suit stays open until it meets the ground.
+
+The arm-pitch reservation while braking keeps the brake's rolled wrists from also reading as a full climb. A flare (pitching up while braking) stays on the stick.
+
+In the seated session the brake gestures never armed, so none of the three flights braked. The arms show what the player tried: in the first flight both palms rolled to the wind for about a second, two seconds before the ground, then rolled back past flat; in the third they rolled on past palm-forward toward palm-up for two seconds before the ground, past the brake's band and into the wrap of the arm steering's wrist tilt. The recording does not hold the suit's speed or height, so how far short of the landing's gates the flights fell is not measured.
+
+## The ripcord
+
+While falling or in the suit, a ripcord at the back of the hip on the dominant side opens the parachute: grip it and pull it out, the way a parachute handle is taken ([controllers.md, "Ripcord"](controllers.md)). The pull clicks the canopy action, the one the right lower face (A) drives, before the gestures commit, so a pull cancels a pending suit request as the button does.
+
 ## Native actions and validation
 
 The converter emits the narrow suit deployment or closure action and the native held airbrake pair. Shared binding integration supplies these contributions alongside the fixed physical-button map; the recognizer does not fabricate raw trigger fire. Engine state and animation permissions still determine whether a native request succeeds.

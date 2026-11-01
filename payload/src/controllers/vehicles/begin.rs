@@ -1,7 +1,7 @@
 //! The first half of the vehicle handling's input tick: read the mounted gun, fit the wheel and
 //! the handlebars, and provide the vehicle handling's grip targets ([`crate::controllers::grab`]):
-//! the driver's controls, the cockpit's buttons, the parachute's handles, and the mounted gun's
-//! handles.
+//! the driver's controls, the cockpit's buttons, the parachute's handles, the ripcord, and the
+//! mounted gun's handles.
 
 use std::sync::atomic::Ordering;
 
@@ -31,6 +31,7 @@ use crate::{
                 self, ControlEvent, Placement,
                 buttons::{Button, ButtonPlacement, PushPhase},
             },
+            ripcord_tick,
             state::{MOUNTED_WEAPON, STATE, State, log_handle_events, push_events},
             tuning::PhysicalControlsTuning,
             types::TickVolumes,
@@ -241,6 +242,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
                 }),
         );
     }
+    targets.extend(ripcord_tick::targets(mode, &active));
     let grips = grab::tick::hand_grips(&active);
     let volumes = grab::resolve::resolve(&targets, grips).map(|r| r.chosen.map(|c| c.volume));
     state.handles_on = handles_on;

@@ -15,6 +15,8 @@
 //!   [`mounted_grip`] takes the handles with the grip, and [`mounted_recoil`] kicks them;
 //! - [`arm_steering`]: the arm-pose steering of the wingsuit;
 //! - [`parachute`]: the parachute's handles, taken with the grip and pulled to steer and brake;
+//! - [`ripcord`]: the ripcord at the hip, taken with the grip and pulled to open the parachute
+//!   from a fall or the wingsuit;
 //! - [`driver_aim`]: the driver's vehicle weapons aimed by the dominant hand, as an option;
 //! - [`passenger`]: a passenger's seated body turned toward the gun hand's aim;
 //! - [`look_steer`]: the wingsuit's head look-steer removed.
@@ -67,6 +69,8 @@ pub mod parachute;
 pub mod parachute_rig;
 pub mod passenger;
 pub mod physical;
+pub mod ripcord;
+mod ripcord_tick;
 mod state;
 pub mod steering;
 pub mod tuning;
@@ -80,6 +84,7 @@ use re_utilities::hook_library::HookLibrary;
 
 pub use self::{
     axis_output::write_outputs,
+    ripcord_tick::holder as ripcord_holder,
     state::{
         apply, is_mounted_weapon, mounted_aim_point, mounted_target, parachute_brake, status,
         summary, wrist_tilt_now_deg,
@@ -89,6 +94,7 @@ pub use self::{
 pub(crate) use self::{
     begin::begin_tick,
     finish::finish_tick,
+    ripcord_tick::finish as ripcord_finish,
     state::{parachute_holds, stand_down},
 };
 

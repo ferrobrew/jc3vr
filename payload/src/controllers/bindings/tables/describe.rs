@@ -211,6 +211,8 @@ pub enum ModAction {
     ParachuteHandles,
     /// Pull a held parachute handle down to steer or contribute to braking.
     PullParachuteHandle,
+    /// Take the ripcord at the hip and pull it out to open the parachute.
+    Ripcord,
     /// Yank an armed remote target, optionally holding the grapple button to swing it.
     SnatchYank,
     /// Swing the attached target and release grip to detach, or B to snatch.
@@ -314,6 +316,8 @@ pub struct Features {
     pub wheel_stick: bool,
     /// The parachute's handles.
     pub parachute_handles: bool,
+    /// The ripcord at the hip.
+    pub ripcord: bool,
     /// The wingsuit's arm steering.
     pub arm_steering: bool,
     /// The physical vehicle controls offered to a driver, by kind.
@@ -858,6 +862,18 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
             Control::EitherGrip,
             Gesture::Press,
             modded(ModAction::ParachuteHandles),
+        );
+    }
+    if features.ripcord
+        && matches!(
+            ctx.mode,
+            Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Wingsuit)
+        )
+    {
+        add(
+            Control::Grip(dom),
+            Gesture::Press,
+            modded(ModAction::Ripcord),
         );
     }
     if features.arm_steering && ctx.mode == Mode::Airborne(AirborneVariant::Wingsuit) {

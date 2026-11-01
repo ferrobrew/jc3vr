@@ -83,6 +83,9 @@ pub enum GrabVolume {
     CockpitButton(Button),
     /// The parachute's handle on that side (see [`crate::controllers::vehicles::parachute`]).
     ParachuteHandle(Hand),
+    /// The ripcord at the hip, pulled to open the parachute from a fall or the wingsuit (see
+    /// [`crate::controllers::vehicles::ripcord`]).
+    Ripcord,
     /// The mounted gun's handle for that hand (see
     /// [`crate::controllers::vehicles::mounted_grip`]).
     MountedHandle(Hand),
@@ -130,6 +133,7 @@ impl GrabVolume {
             GrabVolume::CockpitButton(button) => button.label(),
             GrabVolume::ParachuteHandle(Hand::Left) => "left parachute handle",
             GrabVolume::ParachuteHandle(Hand::Right) => "right parachute handle",
+            GrabVolume::Ripcord => "ripcord",
             GrabVolume::MountedHandle(Hand::Left) => "mounted gun's left handle",
             GrabVolume::MountedHandle(Hand::Right) => "mounted gun's right handle",
             GrabVolume::Pickup(kind) => kind.label(),
@@ -151,7 +155,8 @@ impl GrabVolume {
             GrabVolume::Socket(_)
             | GrabVolume::GrenadePouch
             | GrabVolume::MagazinePouch
-            | GrabVolume::C4Pouch => Category::Body,
+            | GrabVolume::C4Pouch
+            | GrabVolume::Ripcord => Category::Body,
             GrabVolume::Foregrip
             | GrabVolume::Handle
             | GrabVolume::WeaponAction
@@ -198,6 +203,7 @@ impl GrabVolume {
             GrabVolume::VehicleControl(_)
             | GrabVolume::CockpitButton(_)
             | GrabVolume::ParachuteHandle(_)
+            | GrabVolume::Ripcord
             | GrabVolume::MountedHandle(_) => Consumer::Vehicles,
             GrabVolume::Pickup(_) => Consumer::Pickup,
             GrabVolume::Climb => Consumer::Climb,

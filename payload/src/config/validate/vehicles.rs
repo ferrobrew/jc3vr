@@ -1,9 +1,9 @@
-//! Checks for vehicle settings: the wingsuit gestures, the physical wheel, the arm steering, and
-//! the parachute handles.
+//! Checks for vehicle settings: the wingsuit gestures, the physical wheel, the arm steering, the
+//! parachute handles, and the ripcord.
 
 use crate::{
     config::validate::{Invalid, nonnegative, positive, range},
-    controllers::vehicles::config::VehiclesConfig,
+    controllers::vehicles::{config::VehiclesConfig, ripcord::MIN_PULL_M},
 };
 
 /// Check the vehicle settings. Paths are relative to `controllers.vehicles`.
@@ -51,7 +51,8 @@ pub(super) fn vehicles(v: &VehiclesConfig) -> Result<(), Invalid> {
         v.parachute_handles.brake_threshold,
         0.0,
         1.0,
-    )
+    )?;
+    range("vehicles.ripcord.pull_m", v.ripcord.pull_m, MIN_PULL_M, 1.0)
 }
 
 #[cfg(test)]

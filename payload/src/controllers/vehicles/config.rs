@@ -27,6 +27,9 @@ pub struct VehiclesConfig {
     pub wingsuit_gestures: WingsuitGesturesConfig,
     /// The parachute's handles, grabbed and pulled to steer and brake.
     pub parachute_handles: ParachuteHandlesConfig,
+    /// The ripcord at the hip, grabbed and pulled to open the parachute from a fall or the
+    /// wingsuit.
+    pub ripcord: RipcordConfig,
     /// The driver's view moved per vehicle to a standard place behind the wheel.
     pub driving_view: DrivingViewConfig,
 }
@@ -41,6 +44,7 @@ impl VehiclesConfig {
             arm_steering: ArmSteeringConfig::new(),
             wingsuit_gestures: WingsuitGesturesConfig::new(),
             parachute_handles: ParachuteHandlesConfig::new(),
+            ripcord: RipcordConfig::new(),
             driving_view: DrivingViewConfig::new(),
         }
     }
@@ -382,6 +386,32 @@ impl ParachuteHandlesConfig {
 }
 
 impl Default for ParachuteHandlesConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The ripcord (see [`crate::controllers::vehicles::ripcord`]): a handle at the hip on the dominant
+/// side, taken with the grip and pulled out to open the parachute while falling or in the wingsuit.
+/// The canopy's button still opens it.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RipcordConfig {
+    pub enabled: bool,
+    /// How far the holding hand must come from where it took the ripcord to pull it, metres.
+    pub pull_m: f32,
+}
+
+impl RipcordConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            pull_m: 0.15,
+        }
+    }
+}
+
+impl Default for RipcordConfig {
     fn default() -> Self {
         Self::new()
     }
