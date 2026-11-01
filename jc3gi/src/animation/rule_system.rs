@@ -19,7 +19,21 @@ fn _AnimationModifierType_size_check() {
 /// A character's [`AnimatedModel`](crate::character::character::AnimatedModel) holds one per animated model,
 /// the first being the body's.
 pub struct AnimationRuleSystem {
-    _field_0: [u8; 72],
+    _field_0: [u8; 52],
+    /// The character's height over the ground or the water surface, whichever is nearer, metres.
+    /// Written for the character's first rule system by
+    /// [`CalculateHeightOverGround`](crate::character::character::Character::CalculateHeightOverGround),
+    /// and zeroed by [`DoGroundInfoRaycasts`](crate::character::character::Character::DoGroundInfoRaycasts)
+    /// while the proxy is supported or sliding with no ray cast. The graph's
+    /// `CHeightOverGroundCondition` reads it or
+    /// [`m_HeightOverGroundExcludingWater`](crate::animation::rule_system::AnimationRuleSystem::m_HeightOverGroundExcludingWater) by its flag
+    /// (unverified).
+    pub m_HeightOverGround: f32,
+    /// The character's height over the ground alone, ignoring water, metres. Written and zeroed
+    /// alongside [`m_HeightOverGround`](crate::animation::rule_system::AnimationRuleSystem::m_HeightOverGround); a cast that hits nothing within
+    /// its 200 metres leaves the full length less the cast's lift.
+    pub m_HeightOverGroundExcludingWater: f32,
+    _field_3c: [u8; 12],
     /// The running state machine instance this rule system drives.
     pub m_StateMachineInstance: crate::types::shared_ptr::SharedPtr<
         crate::animation::rule_system::StateMachineInstance,
