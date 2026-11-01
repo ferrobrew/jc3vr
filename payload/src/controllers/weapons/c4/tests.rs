@@ -1,6 +1,7 @@
 use glam::Quat;
 
 use super::*;
+use crate::controllers::{hands::held::away_from_palm, weapons::c4::tuning::CHARGE_TOP_M};
 
 fn fresh() -> State {
     State {
@@ -69,19 +70,22 @@ fn an_unanswered_request_times_out() {
 }
 
 #[test]
-fn the_held_charge_sits_at_the_mirrored_offset() {
-    let tuning = C4Tuning {
-        hold_offset_m: Vec3::new(0.02, 0.0, -0.05),
-        ..C4
-    };
-    assert_eq!(
-        hold_offset(Hand::Left, &tuning),
-        Vec3::new(-0.02, 0.0, -0.05)
-    );
+fn the_held_charge_lies_flat_on_the_palm_with_its_sticking_face_out() {
+    for hand in Hand::BOTH {
+        let local = hold_local(hand, &C4);
+        let away = away_from_palm(hand);
+        // The top face's normal points back into the palm, so the sticking face looks out.
+        assert!((local.orientation * Vec3::Y).abs_diff_eq(-away, 1e-5));
+        // The top face sits just out of the palm, not in it.
+        let top = local.position + local.orientation * Vec3::new(0.0, CHARGE_TOP_M, 0.0);
+        assert!(top.dot(away) > 0.0 && top.dot(away) < 0.01, "{hand:?}");
+    }
     let grip = Pose {
         position: Vec3::new(1.0, 2.0, 3.0),
         orientation: Quat::IDENTITY,
     };
-    let m = Mat4::from(held_matrix(grip, hold_offset(Hand::Right, &tuning)));
-    assert!(m.w_axis.truncate().distance(Vec3::new(1.02, 2.0, 2.95)) < 1e-6);
+    let m = Mat4::from(held_matrix(grip, hold_local(Hand::Right, &C4)));
+    let centre = m.transform_point3(C4.centre_m);
+    // The middle of the brick is half its thickness out of the palm.
+    assert!((centre.x - (1.0 - CHARGE_TOP_M / 2.0 - 0.003)).abs() < 1e-5);
 }

@@ -10,7 +10,7 @@ Each system that puts something in a hand declares it on each of its ticks while
 |---|---|---|---|
 | Magazine | the weapon handling's input tick, a round in hand for the reload | magazine pinch | held |
 | Grenade | the same, a grenade in hand or caught | grenade palm | held |
-| C4 | the same, a charge in hand | charge pinch | held |
+| C4 | the same, a charge in hand | charge palm | held |
 | Gun | the same, each hand with a gun of the wielded weapon and each hand with a weapon armed in it | pistol grip, or the pose of the part a hand carries a long gun by | held |
 | Foregrip | the same, the off-hand on the foregrip, at the two-handed grip's weight | the pose of the part it braces the gun at: foregrip on the handguard | held |
 | Character | the palms' tick: a character held, or its ragdoll | collar grab | grip |
@@ -69,7 +69,7 @@ The debug UI's Status page has a `FINGERS` section with `LEFT GRIP POSE` and `RI
 1. Draw a pistol. The fingers wrap its grip and the thumb crosses over them; touching the trigger rests the index finger on it, pulling closes it a little, and lifting off points it. `LEFT GRIP POSE` or `RIGHT GRIP POSE` reads `PISTOL GRIP FROM GUN, 100%`, and the log has one `grip source changed` line for the draw.
 2. Take a rifle's foregrip with the off-hand: the off-hand wraps the handguard with the thumb along its side, blending in with the two-handed grip.
    With `controllers.weapons.regions.enabled`, brace the rifle on its barrel, magazine, action, and stock in turn: a tight wrap round the barrel, a cup under the magazine, a pinch on the action, and a looser wrap round the stock; `LEFT GRIP POSE` names each pose from `FOREGRIP`. Carry the rifle by its barrel alone: that hand's row names the bar from `GUN`.
-3. Take a round or a magazine from the pouch: a pinch between the thumb and the first fingers. A grenade sits in a spread palm; a C4 charge between the thumb and straight fingers.
+3. Take a round or a magazine from the pouch: a pinch between the thumb and the first fingers. A grenade stands upright in the fist, its fuse head past the thumb, the fingers wrapped round its body; a C4 charge lies flat on the palm, the fingers over its far edge and the thumb along its side.
 4. Pick up a small loose object and squeeze lightly, then hard: the fingers close onto it as the squeeze grows, and the row counts the fitted fingers within a few ticks. Fingers that sit in the air rather than on the object point at a wrong wrist or proportions.
 5. Grab a heavy crate one hand cannot lift: the palm lies flat on it. Press a palm into a wall with the hand empty: the palm flattens.
 6. Climb a ledge: the fingers hook over it with the knuckles straight.

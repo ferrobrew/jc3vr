@@ -91,11 +91,11 @@ mod tests {
     }
 
     #[test]
-    fn a_c4_grip_keeps_the_legacy_spelling() {
+    fn a_c4_grip_names_its_pose_and_its_source() {
         let status = HandFingersStatus {
             grip: Some(GripReport {
                 source: GripSource::C4,
-                pose: GripPose::ChargePinch,
+                pose: GripPose::ChargePalm,
                 share: 0.5,
                 fitted: 0,
                 mode: GripMode::Releasing,
@@ -103,8 +103,8 @@ mod tests {
             ..driven()
         };
         let line = grip_line(true, &status);
-        assert_eq!(line.text(), "OK, CHARGE PINCH FROM C4, 50%, LETTING GO");
-        assert_eq!(line.display_detail, "charge pinch from C4, 50%, letting go");
+        assert_eq!(line.text(), "OK, CHARGE PALM FROM C4, 50%, LETTING GO");
+        assert_eq!(line.display_detail, "charge palm from C4, 50%, letting go");
     }
 
     #[test]

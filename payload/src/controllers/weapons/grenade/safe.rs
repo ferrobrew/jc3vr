@@ -24,6 +24,7 @@ use parking_lot::Mutex;
 use crate::controllers::{
     body::rig::frames::Frames,
     frame::{Hand, Pose},
+    hands::held::held_matrix,
     loadout::{
         Departure, ItemId, Place, Socket, live,
         safe_items::{ItemLeaseId, SafeItemView},
@@ -32,7 +33,7 @@ use crate::controllers::{
     weapons::{
         engine,
         grenade::{
-            Release, Throw, hold_offset,
+            Release, Throw, hold_local,
             native::{self, Actor},
             throw_release,
             tuning::GrenadeTuning,
@@ -530,10 +531,7 @@ fn new_model_id() -> Option<ItemLeaseId> {
 }
 
 fn matrix(grip: Pose, hand: Hand, tuning: &GrenadeTuning) -> Mat4 {
-    Mat4::from_rotation_translation(
-        grip.orientation,
-        grip.position + grip.orientation * hold_offset(hand, tuning),
-    )
+    held_matrix(grip, hold_local(hand, tuning))
 }
 
 /// The transform a held item takes in a tracked hand.

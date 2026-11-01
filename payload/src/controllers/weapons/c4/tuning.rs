@@ -3,7 +3,7 @@
 
 use glam::Vec3;
 
-use crate::controllers::weapons::config::C4Config;
+use crate::controllers::{hands::held::HoldPlacement, weapons::config::C4Config};
 
 /// The C4 tuning with its default switches.
 pub const C4: C4Tuning = C4Tuning::new();
@@ -13,9 +13,11 @@ pub const C4: C4Tuning = C4Tuning::new();
 /// ([`POUCHES`](crate::controllers::weapons::volumes::POUCHES)).
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct C4Tuning {
-    /// Where the held charge sits in the throwing controller's grip frame, metres, given for the
-    /// right hand and mirrored for the left.
-    pub hold_offset_m: Vec3,
+    /// Where the held charge's in-hand model sits in the hand ([`HoldPlacement`]): its top face flat
+    /// on the palm, its sticking face out.
+    pub hold: HoldPlacement,
+    /// The middle of the charge in its model's frame, metres: where the surface probes start.
+    pub centre_m: Vec3,
     /// The detonator button on the off-hand's wrist.
     pub detonator: DetonatorTuning,
     /// Pressing a held charge onto a surface sticks it there.
@@ -25,7 +27,8 @@ pub struct C4Tuning {
 impl C4Tuning {
     const fn new() -> Self {
         Self {
-            hold_offset_m: Vec3::ZERO,
+            hold: HOLD,
+            centre_m: Vec3::new(0.0, CHARGE_TOP_M / 2.0, 0.0),
             detonator: DetonatorTuning::new(),
             stick: StickTuning::new(),
         }
@@ -46,6 +49,20 @@ impl C4Tuning {
         }
     }
 }
+
+/// The charge's hold, derived from the C4 weapon's in-hand model: a flat square brick lying in the
+/// model's XZ plane, centred on its origin there, whose origin is at the sticking (bottom) face and
+/// whose top face is [`CHARGE_TOP_M`] up the model's +Y. The top face lies on the palm, so the
+/// model's +Y points into the palm (the right grip's +X) and the sticking face looks out of the hand,
+/// at a surface the charge is pressed onto. The brick's sides run up the finger tube (the model's
+/// +Z along the grip's -Z) and along the hand; it is centred on the middle of the palm.
+pub const HOLD: HoldPlacement = HoldPlacement {
+    offset_m: Vec3::new(-(CHARGE_TOP_M + 0.003), 0.01, 0.0),
+    axes: [Vec3::Y, Vec3::X, Vec3::NEG_Z],
+};
+
+/// How far the in-hand model's top face is from its origin along its +Y, metres.
+pub const CHARGE_TOP_M: f32 = 0.029;
 
 /// The detonator button on the inside of the off-hand's wrist, pressed by the dominant hand's
 /// index fingertip (see [`crate::controllers::weapons::c4::press`]). The button's frame is the

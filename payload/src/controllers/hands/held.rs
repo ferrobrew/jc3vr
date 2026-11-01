@@ -15,6 +15,12 @@
 //! The registrations are refreshed every tick the object is held and lapse on their own a little
 //! past a tick, so an explosive that left the hand without its throw clearing the slot is drawn by
 //! the engine again within a few frames.
+//!
+//! Where a held model sits in the hand is a [`HoldPlacement`]: its origin and its axes in the grip
+//! frame, given for the right hand and mirrored for the left. The grip's origin is the centre of
+//! the closed hand, about where Rico's drawn palm lies, so a model placed at it with the grip's own
+//! orientation sinks into the palm; each placement moves its model out of the palm
+//! ([`away_from_palm`]) and turns it the way a hand holds it.
 
 use std::{
     ffi::c_void,
@@ -23,7 +29,7 @@ use std::{
 };
 
 use detours_macro::detour;
-use glam::{Mat4, Vec3};
+use glam::{Mat3, Mat4, Quat, Vec3};
 use jc3gi::{
     equipment::explosive::{Explosive, PlantedExplosive},
     game::GameObjectRenderContext,
@@ -72,8 +78,50 @@ pub struct Held {
     /// The explosive's address: the start of the `Explosive`, not its game-object subobject.
     pub explosive: usize,
     pub hand: Hand,
-    /// The explosive's point in the hand's grip frame, metres.
-    pub offset: Vec3,
+    /// The explosive's model in the hand's grip frame ([`HoldPlacement::in_hand`]), metres.
+    pub local: Pose,
+}
+
+/// Where a held model sits in a hand, given for the right hand and mirrored across the body's
+/// sagittal plane for the left, as the grip offset is ([`crate::controllers::hands::pose::grip_to_wrist`]).
+///
+/// The grip frame is OpenXR's: the origin at the centre of the closed hand, -Z up the tube of the
+/// curled fingers toward the thumb, +X out of the back of the right hand (into the left palm), and
+/// +Y toward the wrist.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct HoldPlacement {
+    /// The model's origin in the right hand's grip frame, metres.
+    pub offset_m: Vec3,
+    /// The model's +X, +Y, and +Z axes in the right hand's grip frame: the columns of a rotation.
+    pub axes: [Vec3; 3],
+}
+
+impl HoldPlacement {
+    /// The placement in `hand`'s grip frame. A mirrored rotation `R` is `F R F` with `F` negating X,
+    /// which is still a rotation: the model is turned, not mirrored.
+    pub fn in_hand(self, hand: Hand) -> Pose {
+        let rotation = Mat3::from_cols(self.axes[0], self.axes[1], self.axes[2]);
+        let (rotation, offset) = match hand {
+            Hand::Right => (rotation, self.offset_m),
+            Hand::Left => {
+                let flip_x = Mat3::from_diagonal(Vec3::new(-1.0, 1.0, 1.0));
+                (flip_x * rotation * flip_x, flip_x * self.offset_m)
+            }
+        };
+        Pose {
+            position: offset,
+            orientation: Quat::from_mat3(&rotation).normalize(),
+        }
+    }
+}
+
+/// The direction out of `hand`'s palm in its grip frame, toward what the hand holds: -X for the
+/// right hand, whose +X is out of the back of the hand, and +X for the left.
+pub const fn away_from_palm(hand: Hand) -> Vec3 {
+    match hand {
+        Hand::Right => Vec3::NEG_X,
+        Hand::Left => Vec3::X,
+    }
 }
 
 /// Register what `slot` holds this tick, or clear it with `None`.
@@ -86,12 +134,14 @@ pub fn updated() -> u64 {
     UPDATED.load(Ordering::Relaxed)
 }
 
-/// The world matrix of an explosive held at `offset` in a hand whose grip is `grip`: the grip's
-/// orientation, at the grip's point moved by the offset. The throws place the explosive on the
-/// tick the same way.
-pub fn held_matrix(grip: Pose, offset: Vec3) -> Mat4 {
+/// The world matrix of a model held at `local` (its pose in the grip frame) in a hand whose grip is
+/// `grip`. The throws place the explosive on the tick the same way.
+pub fn held_matrix(grip: Pose, local: Pose) -> Mat4 {
     let orientation = grip.orientation.normalize();
-    Mat4::from_rotation_translation(orientation, grip.position + orientation * offset)
+    Mat4::from_rotation_translation(
+        (orientation * local.orientation).normalize(),
+        grip.position + orientation * local.position,
+    )
 }
 
 /// The engine's render update of an explosive, then its model re-pushed at the holding hand.
@@ -164,7 +214,7 @@ unsafe fn target(
 fn render_matrix(explosive: usize, slots: [Slot; 2], dtf: f32) -> Option<Mat4> {
     let held = current(explosive, slots, Instant::now())?;
     let grip = late::drawn_hands(dtf)[held.hand.index()]?.grip;
-    let matrix = held_matrix(grip, held.offset);
+    let matrix = held_matrix(grip, held.local);
     matrix.is_finite().then_some(matrix)
 }
 
@@ -188,17 +238,19 @@ static UPDATED: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(test)]
 mod tests {
-    use glam::Quat;
-
     use super::*;
 
     #[test]
-    fn the_held_matrix_puts_the_offset_in_the_grips_frame() {
+    fn the_held_matrix_puts_the_placement_in_the_grips_frame() {
         let grip = Pose {
             position: Vec3::new(1.0, 2.0, 3.0),
             orientation: Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
         };
-        let m = held_matrix(grip, Vec3::new(0.0, 0.0, -0.1));
+        let local = Pose {
+            position: Vec3::new(0.0, 0.0, -0.1),
+            orientation: Quat::from_rotation_x(0.4),
+        };
+        let m = held_matrix(grip, local);
         // A quarter turn about +Y carries -Z to -X.
         assert!(
             m.w_axis
@@ -206,7 +258,48 @@ mod tests {
                 .abs_diff_eq(Vec3::new(0.9, 2.0, 3.0), 1e-5)
         );
         let (_, rotation, _) = m.to_scale_rotation_translation();
-        assert!(rotation.abs_diff_eq(grip.orientation, 1e-5));
+        assert!(rotation.abs_diff_eq(grip.orientation * local.orientation, 1e-5));
+    }
+
+    /// A placement that turns the model's +Y up the finger tube, its +Z toward the palm, and sits
+    /// out of the palm.
+    const UPRIGHT: HoldPlacement = HoldPlacement {
+        offset_m: Vec3::new(-0.03, 0.01, 0.02),
+        axes: [Vec3::NEG_Y, Vec3::NEG_Z, Vec3::X],
+    };
+
+    #[test]
+    fn a_placement_is_a_rotation_in_both_hands() {
+        for hand in Hand::BOTH {
+            let local = UPRIGHT.in_hand(hand);
+            let m = Mat3::from_quat(local.orientation);
+            assert!((m.determinant() - 1.0).abs() < 1e-5, "{hand:?}");
+        }
+    }
+
+    #[test]
+    fn the_left_placement_mirrors_the_right() {
+        let right = UPRIGHT.in_hand(Hand::Right);
+        let left = UPRIGHT.in_hand(Hand::Left);
+        let mirror = |v: Vec3| Vec3::new(-v.x, v.y, v.z);
+        assert!(left.position.abs_diff_eq(mirror(right.position), 1e-6));
+        // The model's up and its palm side mirror; the axis across them flips back.
+        for axis in [Vec3::Y, Vec3::Z] {
+            assert!((left.orientation * axis).abs_diff_eq(mirror(right.orientation * axis), 1e-5));
+        }
+        assert!(
+            (left.orientation * Vec3::X).abs_diff_eq(-mirror(right.orientation * Vec3::X), 1e-5)
+        );
+    }
+
+    #[test]
+    fn a_placement_out_of_the_palm_is_away_from_it_in_both_hands() {
+        for hand in Hand::BOTH {
+            let local = UPRIGHT.in_hand(hand);
+            assert!(local.position.dot(away_from_palm(hand)) > 0.0, "{hand:?}");
+            // The model's +Z faces back into the palm.
+            assert!((local.orientation * Vec3::Z).abs_diff_eq(-away_from_palm(hand), 1e-5));
+        }
     }
 
     #[test]
@@ -214,7 +307,7 @@ mod tests {
         let held = Held {
             explosive: 0x4000,
             hand: Hand::Left,
-            offset: Vec3::ZERO,
+            local: Pose::IDENTITY,
         };
         hold(Slot::CaughtGrenade, Some(held));
         let now = Instant::now();

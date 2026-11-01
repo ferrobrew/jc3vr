@@ -139,7 +139,7 @@ impl GripSource {
         match self {
             GripSource::Magazine => GripPose::MagazinePinch,
             GripSource::Grenade => GripPose::GrenadePalm,
-            GripSource::C4 => GripPose::ChargePinch,
+            GripSource::C4 => GripPose::ChargePalm,
             GripSource::Gun => GripPose::PistolGrip,
             GripSource::Foregrip => GripPose::Foregrip,
             GripSource::Character => GripPose::CollarGrab,

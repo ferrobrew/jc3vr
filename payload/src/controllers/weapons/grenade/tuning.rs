@@ -3,7 +3,7 @@
 
 use glam::Vec3;
 
-use crate::controllers::weapons::config::GrenadeConfig;
+use crate::controllers::{hands::held::HoldPlacement, weapons::config::GrenadeConfig};
 
 /// The grenade throw's tuning with the catch switched on.
 pub const GRENADE: GrenadeTuning = GrenadeTuning::new();
@@ -11,10 +11,10 @@ pub const GRENADE: GrenadeTuning = GrenadeTuning::new();
 /// The physical grenade throw: its hold, its release, its fuse warning, and the catch.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct GrenadeTuning {
-    /// Where the held grenade sits in the throwing controller's grip frame, metres, given for the
-    /// right hand and mirrored for the left. The grip's origin is the centre of the closed fist and
-    /// its -Z runs out of the front of the fist.
-    pub hold_offset_m: Vec3,
+    /// Where the held grenade's model sits in the hand ([`HoldPlacement`]): upright in the fist,
+    /// its fuse head out of the top of the fist past the thumb, its lever along the palm, and its
+    /// body out of the palm by the body's radius.
+    pub hold: HoldPlacement,
     /// Aim the game's own throw at the point the dominant hand's ray reaches rather than at the
     /// gaze. No controller input binds the game's throw (grenades come from the pouch), so this
     /// matters only to a throw the game starts by other means.
@@ -39,7 +39,7 @@ pub struct GrenadeTuning {
 impl GrenadeTuning {
     const fn new() -> Self {
         Self {
-            hold_offset_m: Vec3::ZERO,
+            hold: HOLD,
             hand_aimed_fallback: true,
             warning_s: 2.0,
             warning_overlay: true,
@@ -90,3 +90,17 @@ impl CatchTuning {
         }
     }
 }
+
+/// The grenade's hold, derived from its model (the grenade weapon's projectile model): the origin
+/// is the middle of the round body, the body runs along the model's +Y up to the fuse head, and the
+/// lever lies down the body's +Z side. Upright in the fist, the model's +Y runs up the finger tube
+/// (the grip's -Z) and its +Z, the lever, into the palm (the right grip's +X). The body's centre is
+/// a body radius and a little out of the palm, level with the middle of the palm along the hand,
+/// and a little toward the little finger so that the fuse head clears the top of the fist.
+pub const HOLD: HoldPlacement = HoldPlacement {
+    offset_m: Vec3::new(-(GRENADE_BODY_RADIUS_M + 0.002), 0.01, 0.01),
+    axes: [Vec3::NEG_Y, Vec3::NEG_Z, Vec3::X],
+};
+
+/// The radius of the grenade model's round body, metres.
+pub const GRENADE_BODY_RADIUS_M: f32 = 0.034;

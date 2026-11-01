@@ -327,9 +327,8 @@ pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Tuning) {
         // Without a tracked sample of the throw, the charge is dropped where it is rather than kept
         // in a hand that has opened.
         let release = state.grips[hand.index()].map_or(Release::REST, |grip| {
-            let point = held::held_matrix(grip, hold_offset(hand, tuning))
-                .w_axis
-                .truncate();
+            let point = held::held_matrix(grip, hold_local(hand, tuning))
+                .transform_point3(tuning.centre_m);
             throw_release(hand, point, state.held_since_s.unwrap_or(f64::INFINITY)).release
         });
         state.stage = stage::on_input(state.stage, InputEvent::Release(hand, release));
@@ -496,19 +495,14 @@ static STATE: Mutex<State> = Mutex::new(State {
     wheel: None,
 });
 
-/// The held charge's offset in `hand`'s grip frame: the configured right-hand offset, mirrored for
-/// the left.
-pub(crate) fn hold_offset(hand: Hand, tuning: &C4Tuning) -> Vec3 {
-    let o = tuning.hold_offset_m;
-    match hand {
-        Hand::Left => Vec3::new(-o.x, o.y, o.z),
-        Hand::Right => o,
-    }
+/// The held charge's in-hand model in `hand`'s grip frame.
+pub(crate) fn hold_local(hand: Hand, tuning: &C4Tuning) -> Pose {
+    tuning.hold.in_hand(hand)
 }
 
-/// The held charge's world matrix: the grip's world pose moved to the charge's point.
-fn held_matrix(grip: Pose, offset: Vec3) -> Matrix4 {
-    Matrix4::from(held::held_matrix(grip, offset))
+/// The held charge's world matrix in a hand whose grip is `grip`.
+fn held_matrix(grip: Pose, local: Pose) -> Matrix4 {
+    Matrix4::from(held::held_matrix(grip, local))
 }
 
 /// Record a throw step's outcome.
@@ -573,7 +567,7 @@ fn update_from_user_serial(
                 pulses.extend(outcome_pulse(hand, outcome));
             }
             let grip = hand.and_then(|h| {
-                state.grips[h.index()].map(|g| held_matrix(g, hold_offset(h, &tuning)))
+                state.grips[h.index()].map(|g| held_matrix(g, hold_local(h, &tuning)))
             });
             // A charge pressed onto a surface leaves from just off it, turned as the hand holds it.
             let stick = state
@@ -734,8 +728,8 @@ fn update_attachment_transforms(
         held::hold(Slot::Charge, None);
         return;
     };
-    let offset = hold_offset(hand, &C4);
-    let matrix = held_matrix(grip, offset);
+    let local = hold_local(hand, &C4);
+    let matrix = held_matrix(grip, local);
     // SAFETY: the primed charge is live while the weak reference locks, on this thread.
     let charge = unsafe { primed_charge(&*weapon) };
     // The tick's place moves the charge's transform; its in-hand model is drawn at the hand's
@@ -745,7 +739,7 @@ fn update_attachment_transforms(
         charge.map(|charge| Held {
             explosive: charge as usize,
             hand,
-            offset,
+            local,
         }),
     );
     if let Some(charge) = charge {

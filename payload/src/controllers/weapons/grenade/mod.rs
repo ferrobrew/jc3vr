@@ -477,12 +477,9 @@ thread_local! {
     static LAUNCH: Cell<Option<PlannedLaunch>> = const { Cell::new(None) };
 }
 
-fn hold_offset(hand: Hand, tuning: &GrenadeTuning) -> Vec3 {
-    let offset = tuning.hold_offset_m;
-    match hand {
-        Hand::Left => Vec3::new(-offset.x, offset.y, offset.z),
-        Hand::Right => offset,
-    }
+/// The held grenade's model in `hand`'s grip frame.
+fn hold_local(hand: Hand, tuning: &GrenadeTuning) -> Pose {
+    tuning.hold.in_hand(hand)
 }
 
 fn warning(
@@ -503,7 +500,7 @@ fn warning(
             at: Anchor::Hand {
                 hand,
                 pose: HandPose::Grip,
-                offset: hold_offset(hand, tuning),
+                offset: hold_local(hand, tuning).position,
             },
             size: SpriteSize::World(0.07 + 0.03 * urgency),
             facing: Facing::Billboard,
@@ -656,11 +653,11 @@ unsafe fn carry_caught(inputs: &TickInputs, tuning: &GrenadeTuning) -> Option<(H
         Some(Held {
             explosive: caught.explosive,
             hand,
-            offset: hold_offset(hand, tuning),
+            local: hold_local(hand, tuning),
         }),
     );
     if let Some(grip) = world_grip {
-        let target = grip.position + grip.orientation * hold_offset(hand, tuning);
+        let target = grip.position + grip.orientation * hold_local(hand, tuning).position;
         let velocity = catch::carry_velocity(centre, target, inputs.dt, tuning.catch.max_carry_mps);
         let _ = unsafe {
             physical_hands::set_body_velocities(caught.body, caught.owner, velocity, Vec3::ZERO)
@@ -680,6 +677,11 @@ unsafe fn carry_caught(inputs: &TickInputs, tuning: &GrenadeTuning) -> Option<(H
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::{
+        fingers::grip::catalogue::{GripPose, cylinder_curl},
+        hands::held::away_from_palm,
+        weapons::grenade::tuning::GRENADE_BODY_RADIUS_M,
+    };
 
     #[test]
     fn the_fuse_warns_only_in_its_last_seconds() {
@@ -692,15 +694,26 @@ mod tests {
     }
 
     #[test]
-    fn the_hold_offset_mirrors_for_the_left_hand() {
-        let tuning = GrenadeTuning {
-            hold_offset_m: Vec3::new(0.02, -0.01, -0.03),
-            ..GRENADE
-        };
-        assert_eq!(hold_offset(Hand::Right, &tuning), tuning.hold_offset_m);
-        assert_eq!(
-            hold_offset(Hand::Left, &tuning),
-            Vec3::new(-0.02, -0.01, -0.03)
-        );
+    fn the_held_grenade_stands_upright_with_its_lever_on_the_palm() {
+        for hand in Hand::BOTH {
+            let local = hold_local(hand, &GRENADE);
+            // The fuse head points up the finger tube, out of the top of the fist.
+            assert!((local.orientation * Vec3::Y).abs_diff_eq(Vec3::NEG_Z, 1e-5));
+            // The lever faces back into the palm.
+            assert!((local.orientation * Vec3::Z).abs_diff_eq(-away_from_palm(hand), 1e-5));
+            // The body is out of the palm by at least its radius.
+            assert!(local.position.dot(away_from_palm(hand)) >= GRENADE_BODY_RADIUS_M);
+        }
+    }
+
+    #[test]
+    fn the_grenade_palm_wraps_the_grenades_body() {
+        // Upright, the body is a cylinder up the finger tube, so the fingers close as far as round
+        // a bar of the body's diameter.
+        let wrap = cylinder_curl(2.0 * GRENADE_BODY_RADIUS_M);
+        let shape = GripPose::GrenadePalm.shape();
+        for curl in &shape.curl[1..] {
+            assert!((curl - wrap).abs() < 0.06, "{curl} against {wrap}");
+        }
     }
 }

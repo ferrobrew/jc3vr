@@ -27,6 +27,7 @@ use crate::controllers::{
     },
     config::ControllersConfig,
     frame::Pose,
+    hands::held::held_matrix,
     weapons::c4::{
         self,
         tuning::{C4Tuning, StickTuning},
@@ -71,7 +72,7 @@ pub(crate) unsafe fn probe(owner: &Character, config: &ControllersConfig) {
         c4::publish_preview(None);
         return;
     };
-    let centre = probe_origin(grip, c4::hold_offset(hand, tuning));
+    let centre = probe_origin(grip, c4::hold_local(hand, tuning), tuning.centre_m);
     let options = CastOptions {
         ignore: [owner as *const Character as usize, 0],
         see_through: false,
@@ -152,10 +153,10 @@ pub fn may_stick(held_s: f32, released: bool, tuning: &StickTuning) -> bool {
     !released && held_s >= tuning.after_prime_s
 }
 
-/// The held charge's centre, where the probes start: the grip moved by the charge's offset in the
-/// grip frame.
-pub fn probe_origin(grip: Pose, offset: Vec3) -> Vec3 {
-    grip.position + grip.orientation * offset
+/// The held charge's centre, where the probes start: the charge's middle `centre` (in its model's
+/// frame) carried by its model's place `local` in the grip frame.
+pub fn probe_origin(grip: Pose, local: Pose, centre: Vec3) -> Vec3 {
+    held_matrix(grip, local).transform_point3(centre)
 }
 
 #[cfg(test)]
@@ -223,7 +224,13 @@ mod tests {
             position: Vec3::new(0.0, 1.0, 0.0),
             orientation: Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
         };
-        let at = probe_origin(grip, Vec3::new(0.0, 0.0, -0.1));
-        assert!(at.distance(Vec3::new(-0.1, 1.0, 0.0)) < 1e-5);
+        let local = Pose {
+            position: Vec3::new(0.0, 0.0, -0.1),
+            orientation: Quat::from_rotation_x(std::f32::consts::FRAC_PI_2),
+        };
+        // The charge's middle is up its model's +Y, which the hold turns onto the grip's +Z, and
+        // the grip's quarter turn about +Y carries +Z to +X.
+        let at = probe_origin(grip, local, Vec3::new(0.0, 0.02, 0.0));
+        assert!(at.distance(Vec3::new(-0.08, 1.0, 0.0)) < 1e-5);
     }
 }

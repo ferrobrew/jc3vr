@@ -10,8 +10,8 @@ The act does nothing on most ticks. Every wingsuit state that takes it (the glid
 
 | Condition | Class | Shipped parameters |
 |---|---|---|
-| `C_WINGSUIT_CANCEL_FLIGHT_SPEED` | `CSpeedCondition` | the speed at most 10 m/s |
-| `C_WINGSUIT_CANCEL_LAND_HEIGHT` | `CHeightOverGroundCondition` | the height over the ground under 5 m |
+| `C_WINGSUIT_CANCEL_FLIGHT_SPEED` | `CSpeedCondition` | the speed at or below the condition's limit |
+| `C_WINGSUIT_CANCEL_LAND_HEIGHT` | `CHeightOverGroundCondition` | the height over the ground below the condition's limit |
 | `C_HAS_WINGSUIT_CANCEL_UPGRADE` | `CUpgradePurchasedCondition` | the `upgrade_wingsuit_cancel` gear mod |
 
 Slow enough and low enough, the act goes to `S_JC_WINGSUIT_TO_LAND_SLIDE`, then `S_JC_WINGSUIT_TO_LAND_SLIDE_ONGROUND`, and back to the idle on foot. Slow enough but higher, it goes to `S_JC_WINGSUIT_TO_FALL_SLOW`, an ordinary fall that lands as any fall does (`S_LAND_IDLE_*`, or `S_LAND_HARD` from high enough). Faster than the speed limit, no transition fires and the suit stays open.
@@ -28,9 +28,9 @@ The stall closes the brake and the close act alike while its turn segment runs, 
 
 The boost (Bavarium) wingsuit, `C_PLAYER_HAS_BOOST_WINGSUIT`, has a landing of its own in its brake state, `S_JC_WINGSUIT_BOOST_BREAK`, entered on `ACT_BOOST_BREAK` from the glide. While the brake is held (`C_WINGSUIT_BREAK_IS_HELD`) over ground whose normal is near vertical (`C_SURFACE_NORMAL_HORIZONTAL_FOR_BREAK_LANDING`), the state goes to:
 
-- `S_JC_BOOST_WINGSUIT_BREAK_TO_LAND` within 2.5 m of the ground (`C_BOOST_WINGSUIT_BREAK_LAND_HEIGHT`) and under 15 m/s (`C_BOOST_WINGSUIT_BREAK_TO_LAND_FLIGHT_SPEED`);
-- `S_JC_BOOST_CRASH_RECOVERY` within 1.5 m (`C_BOOST_WINGSUIT_CRASH_RECOVERY_LAND_HEIGHT`) and under 40 m/s (`C_BOOST_WINGSUIT_CRASH_RECOVERY_FLIGHT_SPEED`);
-- `S_JC_BOOST_HIGH_VELOCITY_CRASH_RECOVERY` within 1.5 m at any speed.
+- `S_JC_BOOST_WINGSUIT_BREAK_TO_LAND` near the ground (`C_BOOST_WINGSUIT_BREAK_LAND_HEIGHT`) and slow enough (`C_BOOST_WINGSUIT_BREAK_TO_LAND_FLIGHT_SPEED`);
+- `S_JC_BOOST_CRASH_RECOVERY` nearer the ground (`C_BOOST_WINGSUIT_CRASH_RECOVERY_LAND_HEIGHT`) and under a higher speed limit (`C_BOOST_WINGSUIT_CRASH_RECOVERY_FLIGHT_SPEED`);
+- `S_JC_BOOST_HIGH_VELOCITY_CRASH_RECOVERY` at the same height at any speed.
 
 Each is a recovery onto the feet rather than a ragdoll. The plain suit's close act also lands the boost suit.
 

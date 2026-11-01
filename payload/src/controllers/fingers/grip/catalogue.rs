@@ -25,8 +25,9 @@ pub enum GripPose {
     SlidePinch,
     /// A grenade in the palm: every finger round a ball, spread a little.
     GrenadePalm,
-    /// A C4 charge: a flat brick held between the thumb and straight fingers bent at the knuckles.
-    ChargePinch,
+    /// A C4 charge: a flat brick lying on the palm, the fingers bent at the knuckles and the middle
+    /// joints over its far edge onto its outer face, the thumb along its side.
+    ChargePalm,
     /// Fingers hooked over an edge, the knuckles straight and the outer joints bent, the thumb
     /// alongside.
     LedgeHook,
@@ -53,7 +54,7 @@ impl GripPose {
             GripPose::MagazineCup => "magazine cup",
             GripPose::SlidePinch => "slide pinch",
             GripPose::GrenadePalm => "grenade palm",
-            GripPose::ChargePinch => "charge pinch",
+            GripPose::ChargePalm => "charge palm",
             GripPose::LedgeHook => "ledge hook",
             GripPose::FlatPalm => "flat palm",
             GripPose::Wrap => "wrap",
@@ -123,12 +124,12 @@ impl GripPose {
                 thumb_spread_deg: Some(50.0),
                 roles: [Posed; 5],
             },
-            GripPose::ChargePinch => PoseShape {
-                curl: [0.3, 0.35, 0.38, 0.4, 0.42],
+            GripPose::ChargePalm => PoseShape {
+                curl: [0.35, 0.62, 0.64, 0.66, 0.68],
                 splay: [0.0; 5],
-                hook: [0.0, -0.8, -0.8, -0.8, -0.8],
-                opposition: 0.8,
-                thumb_spread_deg: Some(30.0),
+                hook: [0.0, -0.2, -0.2, -0.2, -0.2],
+                opposition: 0.3,
+                thumb_spread_deg: Some(20.0),
                 roles: [Posed; 5],
             },
             GripPose::LedgeHook => PoseShape {
@@ -262,7 +263,7 @@ mod tests {
         GripPose::Foregrip,
         GripPose::MagazinePinch,
         GripPose::GrenadePalm,
-        GripPose::ChargePinch,
+        GripPose::ChargePalm,
         GripPose::LedgeHook,
         GripPose::FlatPalm,
         GripPose::Wrap,
@@ -326,7 +327,8 @@ mod tests {
     fn a_ledge_hook_bends_at_the_outer_joints() {
         let shape = GripPose::LedgeHook.shape();
         assert!(shape.hook[1..].iter().all(|&h| h > 0.5));
-        let pinch = GripPose::ChargePinch.shape();
-        assert!(pinch.hook[1..].iter().all(|&h| h < -0.5));
+        // The charge's fingers lead with the knuckles over the brick's edge instead.
+        let charge = GripPose::ChargePalm.shape();
+        assert!(charge.hook[1..].iter().all(|&h| h < 0.0));
     }
 }
