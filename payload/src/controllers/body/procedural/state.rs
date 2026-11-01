@@ -1,7 +1,7 @@
 //! What the character is doing, read for the hand-over table at the solve gate
-//! ([`StateTracker::read`]), and whether the animation moves the body this tick
-//! ([`animation_moves_body`]), which the stick locomotion asks before it replaces the movement
-//! task's velocity.
+//! ([`StateTracker::read`]) and by the steady view's anchor, which keeps a tracker of its own, and
+//! whether the animation moves the body this tick ([`animation_moves_body`]), which the stick
+//! locomotion asks before it replaces the movement task's velocity.
 //!
 //! The predicates read here walk the character's own rule system and interaction graph, which the
 //! engine itself reads from the pose-finalization pass (`Character::IsInStuntPosition` and
@@ -40,15 +40,6 @@ pub(crate) unsafe fn animation_moves_body(character: &Character, now: Instant) -
     let hold_s = Config::lock_query(|c| c.controllers.body.procedural.hit_reaction_hold_s);
     let bits = unsafe { StateBits::of(character) };
     bits.authored_motion() || in_hit_reaction(now, hold_s)
-}
-
-/// Whether the character's state machine is in a jump.
-///
-/// # Safety
-///
-/// `character` must be the live local character, on the thread running its update.
-pub(crate) unsafe fn jumping(character: &Character) -> bool {
-    unsafe { StateBits::of(character) }.has(StateBitFlag::SB_IS_JUMPING)
 }
 
 /// The history the hand-over table's reads keep between gates.

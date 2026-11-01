@@ -13,7 +13,7 @@ use parking_lot::Mutex;
 use crate::{
     config::Config,
     controllers::{
-        body::procedural::state::jumping,
+        body::procedural::{authority::classify, state::StateTracker},
         locomotion::{
             status as locomotion_status,
             view::{
@@ -90,14 +90,22 @@ pub(crate) unsafe fn stabilize(
     let falling = controllers_enabled
         && detection.mode == Mode::Airborne(AirborneVariant::Falling)
         && !traversing;
-    // The movement task's stamp is written only while the headset drives the view; elsewhere the
+    // In the headset the procedural body's hand-over table says who moves the body, read with the
+    // anchor's own history; the movement task's stamp it reads is written only then. Elsewhere the
     // mode alone decides, as it always has.
-    let movement_task = !(controllers_enabled && source() == Source::Vr)
-        || locomotion.at.is_some_and(|at| {
+    let mut tracker = STATE.lock().tracker;
+    let case = (controllers_enabled && source() == Source::Vr).then(|| {
+        let config = Config::lock_query(|c| c.controllers.body.procedural);
+        let step = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+        // SAFETY: the pass's entry, on the thread running it.
+        let mut read =
+            unsafe { tracker.read(character, &locomotion, now, step, JUMP_GRACE_S, &config) };
+        // A few ticks' jitter in the task's stamp does not hand the view over and back.
+        read.movement_task = locomotion.at.is_some_and(|at| {
             now.saturating_duration_since(at).as_secs_f32() <= MOVEMENT_TASK_GRACE_S
         });
-    // SAFETY: the pass's entry, on the thread running it.
-    let in_air = unsafe { character.IsInAir() || jumping(character) };
+        classify(&read)
+    });
     let ragdoll = character.m_CurrentMotionState == Character::MOTION_STATE_RAGDOLL
         || character.m_CurrentMotionState == Character::MOTION_STATE_SWIMMING;
     let aiming = character
@@ -107,6 +115,7 @@ pub(crate) unsafe fn stabilize(
     let world_t1 = Mat4::from(character.m_WorldMatrixT1);
 
     let mut state = STATE.lock();
+    state.tracker = tracker;
     if on_ground && grounded {
         state.grounded_at = Some(now);
     }
@@ -117,9 +126,8 @@ pub(crate) unsafe fn stabilize(
         enabled: enabled && in_gameplay(),
         ragdoll,
         on_ground,
-        movement_task,
-        in_air,
         falling_in_grace: falling && in_grace,
+        case,
     }
     .root_fixed();
 
@@ -190,6 +198,8 @@ struct State {
     capture: NeutralCapture,
     height: HeightFilter,
     handover: Handover,
+    /// The hand-over table's history for the anchor's own reads, apart from the procedural body's.
+    tracker: StateTracker,
     grounded_at: Option<Instant>,
     /// Whether the root-fixed anchor had any weight last tick, for the handover log.
     stable: bool,
@@ -201,6 +211,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     capture: NeutralCapture::new(),
     height: HeightFilter::new(),
     handover: Handover::new(),
+    tracker: StateTracker::new(),
     grounded_at: None,
     stable: false,
     status: AnchorStatus {

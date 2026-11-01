@@ -17,7 +17,7 @@
 
 use glam::{Mat4, Vec3};
 
-use crate::headpose::Anchors;
+use crate::{controllers::body::procedural::authority::Case, headpose::Anchors};
 
 /// The neutral standing head, neck, and eye midpoint, in Rico's model space.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -233,25 +233,25 @@ pub struct Eligibility {
     pub ragdoll: bool,
     /// The mode detection reads Rico on foot on the ground, outside a traversal.
     pub on_ground: bool,
-    /// The on-foot movement task drives the root: it ran within [`MOVEMENT_TASK_GRACE_S`].
-    pub movement_task: bool,
-    /// Rico is jumping or off his support.
-    pub in_air: bool,
     /// The mode detection reads a fall that began within the jump's grace.
     pub falling_in_grace: bool,
+    /// What the procedural body's hand-over table reads the character doing, while the headset
+    /// drives the view; `None` outside it, where the mode alone decides.
+    pub case: Option<Case>,
 }
 
 impl Eligibility {
-    /// Whether the root-fixed anchor applies. On the ground it needs the movement task, since the
-    /// neutral head stands on a root the task moves at the stick's velocity. When the task stops
-    /// with Rico still on the ground, an animation the mode detection has not classified yet moves
-    /// the body (a wingsuit takeoff runs for over half a second before the wingsuit is detected),
-    /// and a standing head held over the root would leave the view behind the body. A jump stops
-    /// the task too, but keeps the root-fixed anchor through its grace.
+    /// Whether the root-fixed anchor applies: on the ground or early in a fall, and, in the headset,
+    /// only while the player's own movement carries the body ([`Case::player_carries_body`]). The
+    /// neutral head stands on a root that the stick moves; when a clip moves the head against the
+    /// root instead (a get-up from a ragdoll, a stumble, a hard landing, a takeoff the mode
+    /// detection has not classified yet), a standing head held over the root leaves the view
+    /// floating above and behind the body, so the view follows the animated head through it.
     pub fn root_fixed(&self) -> bool {
         self.enabled
             && !self.ragdoll
-            && ((self.on_ground && (self.movement_task || self.in_air)) || self.falling_in_grace)
+            && (self.on_ground || self.falling_in_grace)
+            && self.case.is_none_or(Case::player_carries_body)
     }
 }
 
@@ -323,6 +323,7 @@ mod tests {
     use glam::Quat;
 
     use super::*;
+    use crate::controllers::body::procedural::authority::{CharacterState, classify};
 
     const DT: f32 = 1.0 / 30.0;
 
@@ -334,64 +335,144 @@ mod tests {
         }
     }
 
-    fn walking() -> Eligibility {
+    /// The character on foot on the ground with the movement task running, as the hand-over table
+    /// reads it in the headset.
+    fn on_foot() -> CharacterState {
+        CharacterState {
+            in_headset: true,
+            in_gameplay: true,
+            movement_task: true,
+            ..CharacterState::default()
+        }
+    }
+
+    /// The eligibility of a character the mode detection reads on the ground, in the headset.
+    fn grounded(state: CharacterState) -> Eligibility {
         Eligibility {
             enabled: true,
             on_ground: true,
-            movement_task: true,
+            case: Some(classify(&state)),
             ..Eligibility::default()
         }
     }
 
     #[test]
-    fn the_root_holds_the_view_while_the_movement_task_drives_it() {
-        assert!(walking().root_fixed());
+    fn the_root_holds_the_view_while_the_player_walks() {
+        assert!(grounded(on_foot()).root_fixed());
         assert!(
             !Eligibility {
                 enabled: false,
-                ..walking()
+                ..grounded(on_foot())
             }
             .root_fixed()
         );
         assert!(
             !Eligibility {
                 ragdoll: true,
-                ..walking()
+                ..grounded(on_foot())
             }
             .root_fixed()
         );
     }
 
     #[test]
-    fn an_animation_on_the_ground_without_the_movement_task_takes_the_view() {
-        // A wingsuit takeoff: still detected on foot, on the ground, with the task stopped.
-        let takeoff = Eligibility {
-            movement_task: false,
-            ..walking()
+    fn getting_up_from_a_ragdoll_takes_the_view_while_the_movement_task_runs() {
+        // The mode reads on foot and the task runs through the get-up's clip, which lifts the head
+        // from the ground under a standing head that a root-fixed view would hold above the back.
+        let getting_up = CharacterState {
+            getting_up: true,
+            ..on_foot()
         };
-        assert!(!takeoff.root_fixed());
+        assert!(!grounded(getting_up).root_fixed());
+    }
+
+    #[test]
+    fn an_animation_the_player_did_not_cause_takes_the_view() {
+        let cases = [
+            // A stumble or a knock-back, for its hold.
+            CharacterState {
+                hit_reaction: true,
+                ..on_foot()
+            },
+            // A hard landing, a context action, a full-body pickup, or cover.
+            CharacterState {
+                authored_motion: true,
+                ..on_foot()
+            },
+            // The grapple's ledge climb.
+            CharacterState {
+                ledge_climb: true,
+                ..on_foot()
+            },
+            // A scripted sequence.
+            CharacterState {
+                sequence: true,
+                ..on_foot()
+            },
+            // Going into the wingsuit from the ground, before the mode detection reads it.
+            CharacterState {
+                wingsuit: true,
+                ..on_foot()
+            },
+            // A takeoff with neither: the task stopped with Rico still on the ground.
+            CharacterState {
+                movement_task: false,
+                ..on_foot()
+            },
+        ];
+        for state in cases {
+            assert!(!grounded(state).root_fixed(), "{:?}", classify(&state));
+        }
     }
 
     #[test]
     fn a_jump_keeps_the_root_through_its_grace() {
-        let leaving = Eligibility {
+        let jump = CharacterState {
+            jump: true,
             movement_task: false,
-            in_air: true,
-            ..walking()
+            ..on_foot()
         };
-        assert!(leaving.root_fixed());
+        assert!(grounded(jump).root_fixed());
         let falling = Eligibility {
             on_ground: false,
-            movement_task: false,
-            in_air: true,
             falling_in_grace: true,
-            ..walking()
+            ..grounded(jump)
         };
         assert!(falling.root_fixed());
         assert!(
             !Eligibility {
                 falling_in_grace: false,
                 ..falling
+            }
+            .root_fixed()
+        );
+        // Past the grace the table reads a flight, which the animation carries.
+        let flight = CharacterState {
+            flight: true,
+            movement_task: false,
+            ..on_foot()
+        };
+        assert!(
+            !Eligibility {
+                falling_in_grace: true,
+                ..grounded(flight)
+            }
+            .root_fixed()
+        );
+    }
+
+    #[test]
+    fn outside_the_headset_the_mode_alone_decides() {
+        let mode_only = Eligibility {
+            enabled: true,
+            on_ground: true,
+            ..Eligibility::default()
+        };
+        assert!(mode_only.root_fixed());
+        assert!(
+            !Eligibility {
+                on_ground: false,
+                ..mode_only
             }
             .root_fixed()
         );

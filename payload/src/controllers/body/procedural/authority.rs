@@ -124,6 +124,15 @@ impl Case {
     pub const fn snaps(self) -> bool {
         matches!(self, Self::Dead | Self::Ragdoll)
     }
+
+    /// Whether the player's own movement carries the body on foot: the stick on the ground, a jump
+    /// within its grace, or the hands climbing. In every other case a clip, a script, or physics
+    /// moves the head against the root (a get-up, a stumble, a hard landing, a context action, a
+    /// takeoff the mode detection has not classified yet), and the on-foot view follows the
+    /// animated head rather than a standing head held over the root.
+    pub const fn player_carries_body(self) -> bool {
+        matches!(self, Self::OnFoot | Self::Jump | Self::HandClimb)
+    }
 }
 
 /// What the character is doing, as [`classify`] needs it.
