@@ -57,6 +57,14 @@ pub fn on_recenter(_turn: Quat) {
     runtime::invalidate();
 }
 
+/// The follow bank turned the cockpit frame by `turn` (new frame from old) without moving the head
+/// or the hands in the world, so the fit is carried into the new frame rather than started anew.
+/// Withdrawing it would drop the drawn body to the animation and the hands' shoulders to their
+/// fallback for the ticks until the next fit, which yanks the arms and a shouldered gun.
+pub fn on_bank(turn: Quat) {
+    runtime::turn_cockpit(turn);
+}
+
 /// The committed chest heading relative to the character's facing.
 pub fn torso_turn(character_rotation: Quat) -> Option<f32> {
     if headpose::source() != headpose::Source::Vr {

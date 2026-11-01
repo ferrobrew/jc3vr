@@ -342,3 +342,48 @@ fn continuing_gate_commits_preserve_the_temporal_stream() {
     assert_eq!(fit.provenance.previous.step, 1);
     assert_eq!(fit.provenance.current.step, 2);
 }
+
+#[test]
+fn a_cockpit_turn_carries_the_fit_rather_than_withdrawing_it() {
+    let rig = rig();
+    let now = Instant::now();
+    let mut runtime = Runtime::default();
+    runtime
+        .commit(Some(tracking(now, 1)), input(&rig, now))
+        .unwrap();
+    let before = runtime.torso(now).unwrap();
+    // The follow bank turns the baseline by the body's frozen turn: the cockpit frame turns the
+    // other way, new frame from old.
+    let turn = Quat::from_rotation_y(-1.1);
+    runtime.turn_cockpit(turn);
+    let after = runtime.torso(now).expect("the fit still stands");
+    assert_eq!(runtime.status.fallback, None);
+    for (old, new) in [
+        (before.neck, after.neck),
+        (before.chest, after.chest),
+        (before.pelvis, after.pelvis),
+    ] {
+        assert!(new.abs_diff_eq(turn * old, 1.0e-4), "{old} -> {new}");
+    }
+    assert!((wrap(after.yaw - before.yaw) + 1.1).abs() < 1.0e-4);
+
+    // The next gate sees the tracking and the view frame in the turned cockpit frame, and the
+    // stream continues rather than reseeding from a neutral pose.
+    let later = now + Duration::from_millis(33);
+    let mut turned = tracking(later, 2);
+    turned.turn(turn);
+    let view = Quat::IDENTITY * turn.conjugate();
+    let fit = runtime
+        .commit(
+            Some(turned),
+            GateInput {
+                view,
+                ..input(&rig, later)
+            },
+        )
+        .unwrap()
+        .snapshot;
+    assert_eq!(fit.provenance.transition, Transition::Continue);
+    let next = runtime.torso(later).unwrap();
+    assert!(next.neck.abs_diff_eq(after.neck, 0.02), "{:?}", next.neck);
+}

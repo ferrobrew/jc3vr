@@ -156,6 +156,23 @@ pub(crate) fn invalidate() {
     STATE.lock().withdraw(Fallback::TrackingUnavailable);
 }
 
+/// Carry the fit through a turn of the cockpit frame that leaves the head and the hands where they
+/// are in the world (the follow bank, [`crate::vr::recenter`]). `turn` takes the old frame's
+/// coordinates to the new frame's. The presented fit, the estimator's stream, and the copied
+/// tracking are re-expressed in the new frame rather than withdrawn, so the drawn body, the torso
+/// estimate, and the follow heading carry on as they were.
+pub(crate) fn turn_cockpit(turn: Quat) {
+    let turn = turn.normalize();
+    if !turn.is_finite() {
+        invalidate();
+        return;
+    }
+    if let Some(tracking) = TRACKING.lock().as_mut() {
+        tracking.turn(turn);
+    }
+    STATE.lock().turn_cockpit(turn);
+}
+
 pub(crate) fn status() -> FitStatus {
     let state = STATE.lock();
     let mut status = state.status;
@@ -216,6 +233,22 @@ struct Tracking {
     focused: bool,
 }
 
+impl Tracking {
+    fn turn(&mut self, turn: Quat) {
+        self.head = turned_pose(self.head, turn);
+        self.grips = self.grips.map(|grip| grip.map(|g| turned_pose(g, turn)));
+    }
+}
+
+/// `tracked` in a cockpit frame turned by `turn` (new frame from old) about its origin.
+fn turned_pose(mut tracked: TrackedPose, turn: Quat) -> TrackedPose {
+    tracked.pose.position = turn * tracked.pose.position;
+    tracked.pose.orientation = (turn * tracked.pose.orientation).normalize();
+    tracked.linear_velocity = tracked.linear_velocity.map(|v| turn * v);
+    tracked.angular_velocity = tracked.angular_velocity.map(|v| turn * v);
+    tracked
+}
+
 /// A fit that met its tolerance, with the frames it was made in.
 #[derive(Debug, Copy, Clone)]
 struct Accepted {
@@ -225,6 +258,18 @@ struct Accepted {
     head_world: Vec3,
     head_cockpit: Vec3,
     scale: f32,
+}
+
+impl Accepted {
+    /// The fit in a cockpit frame turned by `turn` (new frame from old): the view frame turns the
+    /// other way, so every point the fit maps lands where it did in the world.
+    fn turned(self, turn: Quat) -> Accepted {
+        Accepted {
+            view: (self.view * turn.conjugate()).normalize(),
+            head_cockpit: turn * self.head_cockpit,
+            ..self
+        }
+    }
 }
 
 impl Presentation<Accepted> {
@@ -277,6 +322,14 @@ impl Runtime {
         self.previous = None;
         self.support = None;
         self.status.fallback = Some(reason);
+    }
+
+    fn turn_cockpit(&mut self, turn: Quat) {
+        self.hold.map_held(|fit| fit.turned(turn));
+        if let Some(previous) = self.previous.as_mut() {
+            previous.basis.body = (previous.basis.body * turn.conjugate()).normalize();
+            previous.shift_cockpit = turn * previous.shift_cockpit;
+        }
     }
 
     fn gate_failed(&mut self) {

@@ -90,6 +90,11 @@ impl<T: Copy> Hold<T> {
         self.rejected_s = 0.0;
     }
 
+    /// Re-express the held fit, keeping its weight and phase.
+    pub(crate) fn map_held(&mut self, f: impl FnOnce(T) -> T) {
+        self.held = self.held.map(f);
+    }
+
     /// The fit standing after the latest gate, at its weight.
     pub(crate) fn presented(&self) -> Option<Presentation<T>> {
         Some(Presentation {

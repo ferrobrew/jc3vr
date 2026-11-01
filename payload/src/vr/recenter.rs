@@ -200,7 +200,7 @@ fn service_follow_bank() {
         RecenterCause::SeatTransition,
     );
     crate::headpose::xr::bank(yaw);
-    crate::controllers::body::rig::on_recenter(turn);
+    crate::controllers::body::rig::on_bank(turn);
     tracing::debug!(
         target: "vr",
         yaw_deg = yaw.to_degrees(),
