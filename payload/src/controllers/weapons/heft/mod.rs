@@ -741,6 +741,59 @@ mod tests {
         }
     }
 
+    /// The lag behind a target turning about +Y at `speed` radians per second, after `seconds`.
+    fn lag_behind(weight: &Weight, speed: f32, seconds: f32) -> f32 {
+        let mut spring = RotSpring::at(Quat::IDENTITY);
+        let mut yaw = 0.0;
+        for _ in 0..(seconds / FRAME_S) as usize {
+            yaw += speed * FRAME_S;
+            spring.step(
+                Quat::from_rotation_y(yaw),
+                FRAME_S,
+                weight.stiffness,
+                weight.damping_ratio,
+            );
+        }
+        spring.orientation.angle_between(Quat::from_rotation_y(yaw))
+    }
+
+    #[test]
+    fn a_long_gun_in_one_hand_droops_and_trails_while_braced_it_holds_steady() {
+        let c = config();
+        let reach = level(Vec3::new(0.0, -0.2, -0.7));
+        // A brisk turn of the hand, a third of a turn a second.
+        let speed = std::f32::consts::TAU / 3.0;
+        let one_hand = |class| Weight::of(class, &c, 1.0);
+        let sag_at_reach = |weight: &Weight| {
+            weighted_pose(&reach, Vec3::ZERO, weight, &c, Vec2::ZERO)
+                .sag
+                .to_degrees()
+        };
+        // At arm's length a launcher hangs well down, and a rifle clearly so.
+        let heavy = one_hand(HeftClass::Heavy);
+        let rifle = one_hand(HeftClass::Rifle);
+        assert!(sag_at_reach(&heavy) >= 25.0, "{}", sag_at_reach(&heavy));
+        assert!(sag_at_reach(&rifle) >= 15.0, "{}", sag_at_reach(&rifle));
+        // Turned briskly, each trails the hand by a visible angle, the launcher the most.
+        let heavy_lag = lag_behind(&heavy, speed, 0.6).to_degrees();
+        let rifle_lag = lag_behind(&rifle, speed, 0.6).to_degrees();
+        assert!(heavy_lag >= 20.0, "{heavy_lag}");
+        assert!(rifle_lag >= 12.0 && rifle_lag < heavy_lag, "{rifle_lag}");
+        // Both stay inside the largest angle the weight may turn the gun.
+        assert!(heavy_lag < c.max_angle_deg && sag_at_reach(&heavy) < c.max_angle_deg);
+        // Braced, the same turn trails by a fraction of that, and the gun barely sags.
+        for (class, one) in [(HeftClass::Rifle, rifle_lag), (HeftClass::Heavy, heavy_lag)] {
+            let braced = Weight::of(class, &c, 0.0);
+            let lag = lag_behind(&braced, speed, 0.6).to_degrees();
+            assert!(lag < one / 2.0, "{class:?}: {lag} against {one}");
+            assert!(sag_at_reach(&braced) <= 3.0, "{class:?}");
+        }
+        // A pistol in one hand carries none of it: it follows the hand rigidly.
+        let sidearm = one_hand(HeftClass::Sidearm);
+        assert_eq!(sidearm.stiffness, 0.0);
+        assert_eq!(sag_at_reach(&sidearm), 0.0);
+    }
+
     #[test]
     fn a_braced_gun_lags_a_quick_swing_a_little_and_settles_on_the_aim() {
         // A brisk swing of the aim, a sixth of a turn a second.
