@@ -25,6 +25,7 @@
 //!   in the hand; the copy then slides into the hand from where the rack's weapon was, so it is
 //!   seen to leave the rack, and the rack's weapon fades back in a moment later, restocked.
 
+pub(crate) mod offer;
 pub(crate) mod paired;
 
 use std::{

@@ -1991,7 +1991,12 @@ pub struct WeaponBase {
     /// player's mode reach only the selected weapon
     /// ([`Player::SetAimMode`](crate::character::player::Player::SetAimMode)).
     pub m_AimMode: crate::aim::aim::AimMode,
-    _field_418: [u8; 8],
+    _field_418: [u8; 4],
+    /// The weapon's kind: two weapons of the same kind share it. The pickup condition
+    /// [`InteractionGraphParentWeaponNotInInventory`](crate::interaction::InteractionGraphParentWeaponNotInInventory)
+    /// compares it with the weapon in the character's slot.
+    pub m_WeaponId: i16,
+    _field_41e: [u8; 2],
     /// The inventory slot the weapon is equipped in.
     pub m_EquipSlot: crate::character::inventory::WeaponSlot,
     /// The weapon's state.

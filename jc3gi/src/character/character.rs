@@ -463,7 +463,7 @@ pub struct Character {
     /// the entries it could take. Its getter (`CCharacter::GetInteractionUserProxy`) is mislabelled
     /// `CContextAction::GetSecondaryOccupant` by the disassembler.
     pub m_InteractionUserProxy: crate::interaction::InteractionUserProxy,
-    _field_1c30: [u8; 1056],
+    _field_1c48: [u8; 1032],
     /// The character's physics-side body instance. The movement actuators drive the character
     /// through it: they write the wanted velocity into its input and its orientation through
     /// [`SetOrientation`](crate::physics::PfxCharacterInstance::SetOrientation).

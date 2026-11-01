@@ -112,6 +112,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(c4::hook_library())
         .with_hook_library(scope::hook_library())
         .with_hook_library(hold::hook_library())
+        .with_hook_library(hold::rack::offer::hook_library())
         .with_hook_library(dual_wield::single::hook_library())
         .with_hook_library(inventory::hook_library())
         .with_hook_library(empty::hook_library())
