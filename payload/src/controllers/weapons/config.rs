@@ -187,6 +187,10 @@ pub struct HoldConfig {
     /// which cannot fall, goes back onto the body. Off, guns are sticky: a gun stays in the hand
     /// until a grab of a socket docks it.
     pub grip_to_hold: bool,
+    /// Draw a weapon let go of near a free socket that takes it into the socket, though the hand
+    /// is outside the socket's own reach: over the shoulder for the back, beside the thigh for a
+    /// hip. A weapon let go of in front of the body or thrown still falls.
+    pub dock_attraction: bool,
 }
 
 impl HoldConfig {
@@ -194,6 +198,7 @@ impl HoldConfig {
         Self {
             either_hand: true,
             grip_to_hold: true,
+            dock_attraction: true,
         }
     }
 }

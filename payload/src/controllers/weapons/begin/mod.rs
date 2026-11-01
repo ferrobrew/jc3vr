@@ -25,7 +25,11 @@ use crate::{
             c4,
             capabilities::{Capabilities, gun_hands_now, tracked_hands, trigger_claims},
             collide,
-            docks::{self, SocketInputs, SocketUse, attachments::Sample},
+            docks::{
+                self, SocketInputs, SocketUse,
+                attachments::Sample,
+                attract::{self, ATTRACTION},
+            },
             engine::{self, HeldWeapon},
             foregrip::{self, FOREGRIP},
             grenade::{self, tuning::GrenadeTuning},
@@ -270,6 +274,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         targets.push(target);
     }
     let empty_handed = gun_hands == [false; 2] && ticked.table_hands == [false; 2];
+    state.attractors.clear();
     if capabilities.dock {
         let draw = socket_candidates::DrawContext {
             dominant: config.acting_hand(),
@@ -283,6 +288,12 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             SocketUse::NoFit => place.no_fit(c),
             SocketUse::Draw | SocketUse::Dock => place.on_skeleton(c),
         }));
+        state.attractors = attract::attractors(
+            &others,
+            body.as_ref(),
+            |p| place.xf.point_to_world(p),
+            &ATTRACTION,
+        );
     }
     if gameplay && let Some(body) = &body {
         // A hand holding a gun, a prop, or an explosive takes nothing from the chest.

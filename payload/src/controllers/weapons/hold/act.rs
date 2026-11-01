@@ -8,6 +8,9 @@
 //! - A dock onto a socket ([`dock`]) slides the gun from the hand onto the socket first, and the
 //!   table takes the dock when the slide ends, so the gun stays in the hand (and held back from
 //!   firing) while it slides. A gun never drawn off that socket docks at once, without the slide.
+//! - An attracted dock ([`attract`]) is a dock a release made from outside the socket's reach: the
+//!   gun travels onto the socket over a time set by the distance, toward where it sat at its last
+//!   draw, or with no draw, toward where its grip goes there.
 //! - A let-go ([`let_go`]) drops the weapon with the hand's motion and tells the table.
 //!
 //! Each hand has its own slide and its own grip watch, so the two hands draw, dock, and let go at
@@ -31,6 +34,7 @@ use crate::{
     controllers::{
         aim::gun,
         frame::{self, Hand, Pose},
+        hands::grip,
         loadout::{ObjectAddress, Socket, grab, live},
         motion,
         roomscale::teleport,
@@ -46,6 +50,7 @@ use crate::{
                     ReleaseMotion, ReleaseRecord, ReleaseRoute, ReleaseStatus, ReleaseTransport,
                     RigMotion, SampleStage, estimate_release,
                 },
+                steal,
             },
             inventory::{self, carry, engine::slot_of, reconcile, sockets},
         },
@@ -151,6 +156,45 @@ pub(crate) unsafe fn dock(hand: Hand, socket: Socket, snap_s: f32) -> Result<(),
     state.watches[hand.index()].release.disarm();
     state.watches[hand.index()].since_s = None;
     if state.slide_back(object, socket, hand, snap_s) {
+        return Ok(());
+    }
+    drop(state);
+    unsafe { finish_dock(hand, socket, object) }
+}
+
+/// Dock the weapon `hand` let go of on `socket`, whose attraction caught it outside the socket's
+/// reach ([`crate::controllers::weapons::docks::attract`]): the gun travels from the hand onto the
+/// socket over `travel_s` seconds, and the table takes the dock when it arrives. A gun with no
+/// pose there from a draw travels to `toward` (where its grip goes, in the world) at the
+/// orientation it left the hand with, and takes the socket's own placement on arrival.
+///
+/// # Safety
+///
+/// The game thread, before the world update.
+pub(crate) unsafe fn attract(
+    hand: Hand,
+    socket: Socket,
+    toward: Vec3,
+    travel_s: f32,
+) -> Result<(), DockRefusal> {
+    let result = unsafe { start_dock(hand, socket) };
+    let object = match result {
+        Ok(object) => object,
+        Err(refusal) => {
+            STATE.lock().status.last_refusal = Some(refusal);
+            hold::refused(refusal);
+            return Err(refusal);
+        }
+    };
+    // SAFETY: the table holds the weapon in the hand, and a slot or the carry set keeps it alive.
+    let provisional = unsafe { provisional_offset(object, socket, toward) };
+    let mut state = STATE.lock();
+    state.watches[hand.index()].release.disarm();
+    state.watches[hand.index()].since_s = None;
+    if state.slide_back(object, socket, hand, travel_s)
+        || provisional
+            .is_some_and(|offset| state.slide_onto(object, socket, hand, offset, travel_s))
+    {
         return Ok(());
     }
     drop(state);
@@ -458,6 +502,36 @@ impl State {
         true
     }
 
+    /// Start a dock's snap of `weapon`'s gun from `hand` onto `socket` toward `offset` on the
+    /// socket's bone, a pose not measured from a draw and so not remembered. Returns whether it
+    /// started.
+    fn slide_onto(
+        &mut self,
+        weapon: usize,
+        socket: Socket,
+        hand: Hand,
+        offset: Pose,
+        snap_s: f32,
+    ) -> bool {
+        if snap_s.is_nan() || snap_s <= 0.0 {
+            return false;
+        }
+        self.snaps[hand.index()] = Some((
+            Snap::new(
+                SnapKind::Holster,
+                weapon,
+                hand,
+                SnapFrom::Dock {
+                    bone: sockets::bone(socket) as u32,
+                    offset,
+                },
+                snap_s,
+            ),
+            Finish::Dock(socket),
+        ));
+        true
+    }
+
     fn remember(&mut self, weapon: usize, socket: Socket, offset: Pose) {
         self.offsets
             .retain(|&(w, s, _)| !(w == weapon && s == socket));
@@ -598,6 +672,42 @@ unsafe fn draw_off(hand: Hand, socket: Socket) -> Result<Seat, DockRefusal> {
     })
 }
 
+/// Where the gun of `weapon` would sit on `socket`'s bone with its grip at `toward` (world) and the
+/// orientation it has now, in the skeleton's model space: the end of an attracted gun's travel
+/// when no draw has measured where it sits there.
+///
+/// # Safety
+///
+/// `weapon` must be a weapon a slot or the carry set keeps alive, on the game thread before the
+/// world update.
+unsafe fn provisional_offset(weapon: usize, socket: Socket, toward: Vec3) -> Option<Pose> {
+    let owner = unsafe { engine::local_player() }?;
+    // SAFETY: forwarded from the caller.
+    let weapon = unsafe { (weapon as *const WeaponBase).as_ref() }?;
+    let bone = sockets::bone(socket);
+    let on_bone = unsafe { equip::pose_on_bone(owner, weapon, bone) }?;
+    let bone_pose = unsafe { grip::bone_model_pose(owner, bone) }?;
+    let ([grip_world, _], _) = unsafe { steal::gun_points(weapon) }?;
+    let character = Mat4::from(owner.m_WorldMatrixT1);
+    let moved = shift_on_bone(on_bone, bone_pose, character, toward - grip_world)?;
+    Some(moved)
+}
+
+/// `on_bone`, a pose on a bone posed at `bone` in the model space of a character whose
+/// model-to-world transform is `character`, moved by `world` in the world.
+fn shift_on_bone(on_bone: Pose, bone: Pose, character: Mat4, world: Vec3) -> Option<Pose> {
+    if character.determinant().abs() <= f32::EPSILON {
+        return None;
+    }
+    let model = character.inverse().transform_vector3(world);
+    let local = bone.orientation.inverse() * model;
+    let position = on_bone.position + local;
+    position.is_finite().then_some(Pose {
+        position,
+        ..on_bone
+    })
+}
+
 /// Check that `hand` can dock its weapon on `socket` now. Returns the weapon.
 unsafe fn start_dock(hand: Hand, socket: Socket) -> Result<usize, DockRefusal> {
     let owner = unsafe { engine::local_player() }.ok_or(DockRefusal::NoCharacter)?;
@@ -719,4 +829,36 @@ unsafe fn drop_from(
 fn is_wielded(owner: &Character, object: usize) -> bool {
     // SAFETY: the caller holds the live local player on the game thread before the world update.
     unsafe { gun::held_weapon(owner) }.is_some_and(|w| w as *const WeaponBase as usize == object)
+}
+
+#[cfg(test)]
+mod attract_tests {
+    use glam::Quat;
+
+    use super::*;
+
+    #[test]
+    fn a_pose_on_a_bone_moves_by_a_world_shift() {
+        let character = Mat4::from_rotation_translation(
+            Quat::from_rotation_y(0.9),
+            Vec3::new(100.0, 5.0, -40.0),
+        );
+        let bone = Pose {
+            position: Vec3::new(0.1, 1.3, 0.12),
+            orientation: Quat::from_rotation_z(0.4) * Quat::from_rotation_x(-0.3),
+        };
+        let on_bone = Pose {
+            position: Vec3::new(0.05, -0.2, 0.1),
+            orientation: Quat::from_rotation_y(0.2),
+        };
+        let world_of = |pose: Pose| {
+            character.transform_point3(bone.position + bone.orientation * pose.position)
+        };
+        let shift = Vec3::new(0.2, -0.1, 0.3);
+        let moved = shift_on_bone(on_bone, bone, character, shift).unwrap();
+        assert!(world_of(moved).distance(world_of(on_bone) + shift) < 1e-5);
+        assert_eq!(moved.orientation, on_bone.orientation);
+        assert_eq!(shift_on_bone(on_bone, bone, Mat4::ZERO, shift), None);
+        assert_eq!(shift_on_bone(on_bone, bone, character, Vec3::NAN), None);
+    }
 }

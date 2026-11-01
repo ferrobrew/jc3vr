@@ -14,6 +14,9 @@
 //!   or any socket for a weapon that docks nowhere yet, [`act::dockable`]) is marked for that
 //!   hand, never taken, so the hand knows before it opens.
 //!
+//! A free socket that takes a held weapon also attracts a release of it from beyond its volume
+//! ([`attract`]), so a weapon let go of over the shoulder travels onto the back.
+//!
 //! What each grab does is the table's decision ([`crate::controllers::loadout::grab`]). The points
 //! are read on the input tick from the guns' last placement, in the world, and carried into the
 //! cockpit frame the volumes live in ([`cockpit_frames`]).
@@ -51,6 +54,7 @@ use crate::{
 };
 
 pub(crate) mod attachments;
+pub(crate) mod attract;
 
 /// The last selected input-thread targets, carried with the current character transform.
 /// No weapon or joint is read by this consumer.

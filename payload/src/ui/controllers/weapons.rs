@@ -563,6 +563,12 @@ pub(super) fn hold_feature_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
              trigger fires it. Either hand draws while the other holds a weapon, the free hand \
              takes the held gun at its grip, and a grab takes guns from characters and racks.",
         );
+    ui.checkbox(&mut w.hold.dock_attraction, "Attract weapons to sockets")
+        .on_hover_text(
+            "A weapon let go of near a free socket that takes it travels into the socket: over \
+             the shoulder for the back, beside the thigh for a hip. In front of the body, or \
+             thrown, it falls.",
+        );
     ui.checkbox(&mut w.regions.enabled, "Grab long guns anywhere")
         .on_hover_text(
             "A hand takes a long gun where it closes on it: the grip fires it, the handguard or \

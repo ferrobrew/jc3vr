@@ -29,7 +29,7 @@ use crate::{
             grab::{self, GrabRules, Release, SocketMove, SocketRefusal},
             live,
         },
-        mode,
+        mode, motion,
         physical_hands::physics::guns,
         weapons::{
             begin::with_holder,
@@ -37,6 +37,7 @@ use crate::{
             capabilities::{
                 Capabilities, gun_hands_now, gun_owners_now, tracked_hands, trigger_claims,
             },
+            docks::attract::{self, ATTRACTION},
             dual_wield::single,
             engine,
             foregrip::{self, FOREGRIP, GripGeometry, Inputs, Transition, TwoHandedWeapon},
@@ -712,11 +713,45 @@ fn release(
         GrabVolume::Socket(socket) => Some(socket),
         _ => None,
     });
+    // Outside every socket's reach, a free socket's attraction may still take the weapon, unless
+    // the other hand braces it, which then keeps it.
+    let braced_by_other = foregrip::status()
+        .hold
+        .is_some_and(|h| h.engaged && h.weapon == object && h.holder == hand);
+    let attracted = over
+        .is_none()
+        .then(|| attraction_for(hand, config))
+        .flatten()
+        .filter(|_| dockable && !braced_by_other);
     // SAFETY: the game stage runs on the game thread before the world update.
-    match grab::release(&snapshot, hand, over, unsafe { droppable(object) }) {
+    let release = grab::release(
+        &snapshot,
+        hand,
+        over.or(attracted.map(|a| a.socket)),
+        unsafe { droppable(object) },
+    );
+    match release {
         Release::Dock(socket) => {
-            // SAFETY: as above.
-            match unsafe { hold::act::dock(hand, socket, hold::SNAP_S) } {
+            let docked = match attracted.filter(|a| a.socket == socket) {
+                Some(a) => {
+                    let travel = attract::travel_s(a.distance, hold::SNAP_S, &ATTRACTION);
+                    tracing::info!(
+                        target: "controllers",
+                        hand = hand.label(),
+                        socket = socket.label(),
+                        distance_m = a.distance,
+                        travel_s = travel,
+                        "hold: the {} drew in the weapon the {} hand let go of",
+                        socket.label(),
+                        hand.label()
+                    );
+                    // SAFETY: as above.
+                    unsafe { hold::act::attract(hand, socket, a.toward, travel) }
+                }
+                // SAFETY: as above.
+                None => unsafe { hold::act::dock(hand, socket, hold::SNAP_S) },
+            };
+            match docked {
                 // A dock by opening the grip confirms as a dock by a grab does.
                 Ok(()) => haptics::play(hand, Event::VolumeGrab),
                 Err(refusal) => {
@@ -739,6 +774,25 @@ fn release(
         }
         Release::Keep => {}
     }
+}
+
+/// The free socket whose attraction takes the weapon `hand` lets go of from outside every socket's
+/// reach, with the attraction on (`weapons.hold.dock_attraction`): the hand's grip as it is drawn
+/// against the tick's attractors, and the hand's fastest motion just before the release, which
+/// must not be a throw. A hand without motion history counts as still.
+fn attraction_for(hand: Hand, config: &ControllersConfig) -> Option<attract::Attraction> {
+    if !config.weapons.hold.dock_attraction {
+        return None;
+    }
+    let speed = motion::latest_time()
+        .and_then(|latest| {
+            let since = latest - f64::from(ATTRACTION.speed_window_s);
+            motion::peak_velocity(&motion::history(hand), since)
+        })
+        .map_or(0.0, |(_, velocity)| velocity.length());
+    let state = STATE.lock();
+    let grip = state.points[hand.index()]?;
+    attract::attract(&state.attractors, hand, grip, speed, &ATTRACTION)
 }
 
 /// Whether the weapon at `object` can lie in the world: every weapon but the game's dual-wield pair,
