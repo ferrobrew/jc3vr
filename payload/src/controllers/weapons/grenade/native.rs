@@ -29,13 +29,22 @@
 //! # Lifetime and phase
 //!
 //! [`Actor`] holds only a weak reference. A weak count check does not lock the object against
-//! forced pool erasure. Native accesses run at the game-thread render boundary after the run-state
-//! simulation completion waits and ammunition post-simulation update, or in the input fragment
-//! bracketed by the previous simulation waits and the input completion wait before ammunition
-//! pre-simulation. The
-//! parallel weapon hook never services this queue. Factory allocations inside [`AmmoNeutral`]
-//! disable reclamation under the allocator's own critical section. No reference outlives a removal,
-//! and only owned inert actors are removed.
+//! forced pool erasure. Native accesses run on the game thread: in the input tick's game stage, at
+//! the top of the world's pre-simulation queue, and at the render boundary after the ammunition
+//! manager's post-simulation pass, where releases are serviced ([`update`]). The parallel weapon
+//! hook never services this queue.
+//!
+//! An allocation has to come from the game stage at the top of that queue. The factory registers
+//! the grenade for the world's updates, and the world makes registrations live at its update-queue
+//! commits: the one that opens its pre-simulation update and the one that closes its render
+//! update. Registered after the first, the grenade is first updated in the next tick, after the
+//! ammunition manager's pass at the end of this one has made its physics body. Registered before
+//! it, the grenade's post-simulation update runs in the same tick without a body and faults
+//! ([`Grenade::UpdatePostSim`]). [`create`] therefore refuses unless the game stage allows spawning
+//! ([`stage::spawn`]), which it does only at the top of the queue, after the commit.
+//!
+//! Factory allocations inside [`AmmoNeutral`] disable reclamation under the allocator's own
+//! critical section. No reference outlives a removal, and only owned inert actors are removed.
 
 use std::{cell::Cell, collections::VecDeque, ptr};
 
@@ -54,6 +63,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     aim::targets::weak_target,
+    bindings::stage::{self, Spawn},
     frame::Hand,
     loadout::{live, safe_items::SafeItemView},
     weapons::{
@@ -148,16 +158,23 @@ impl Actor {
 
 /// Allocate an item's actor from the weapon's own factory and leave it inert.
 ///
-/// Returns `None` when the pool refuses the allocation, or when the grenade's fuse did not arrive in
-/// a state this module can hold inert: no item exists then, because a refused draw has nothing to
-/// show and nothing to fall back to.
+/// Returns `None` when the game stage does not allow spawning here ([`stage::spawn`]), when the
+/// pool refuses the allocation, or when the grenade's fuse did not arrive in a state this module
+/// can hold inert: no item exists then, because a refused draw has nothing to show and nothing to
+/// fall back to.
 ///
 /// # Safety
 ///
-/// `weapon` is the live local grenade weapon, and the caller runs in the serialized input fragment
-/// before ammunition pre-simulation or at the render boundary after ammunition post-simulation.
+/// `weapon` is the live local grenade weapon, and the caller runs on the game thread.
 pub(super) unsafe fn create(weapon: &mut ThrownGrenadeWeapon, world: Mat4) -> Option<Actor> {
     if !world.is_finite() {
+        return None;
+    }
+    if stage::spawn() != Spawn::Allowed {
+        tracing::debug!(
+            target: "controllers",
+            "grenade: refused a draw outside the top of the world's pre-simulation queue",
+        );
         return None;
     }
     let base = (weapon as *mut ThrownGrenadeWeapon).cast::<WeaponBase>();

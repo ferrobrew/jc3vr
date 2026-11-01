@@ -19,6 +19,19 @@
 //!   grapple, the physical hands' pickups and stunts, the vehicles), and the game's
 //!   active-input-device pin, and produces the writes the next poll stage lands.
 //!
+//! The top of that queue is after the world's update-queue commit
+//! ([`UpdateQueue::CommitAddRemove`](jc3gi::update_queue::UpdateQueue::CommitAddRemove)), where
+//! the world's pre-simulation update makes the updates registered since the last commit live
+//! ([`PreSimTurn`]). An object the stage spawns there joins the queue at the next commit, at the
+//! end of the render update, so its first updates are the next tick's, as for an object the
+//! engine's own updates spawn. Spawned before the commit, an explosive's post-simulation update
+//! would run in the same tick, before the ammunition manager's pass at the end of the tick has
+//! made its physics body, and a grenade's dereferences that body
+//! ([`Grenade::UpdatePostSim`](jc3gi::equipment::explosive::Grenade::UpdatePostSim)). The stage
+//! therefore runs there whenever the queue runs, and elsewhere (a paused update, which skips the
+//! queue and the ammunition manager's pass, or an inline game stage) it runs with [`Spawn`]
+//! refused, which acts that spawn such objects check through [`spawn`].
+//!
 //! Where the poll stage runs outside the input job (the load state, and the frontend before its
 //! main menu, call the input update inline on the game thread with no world update after it), the
 //! game stage runs inline right after it and its writes land at once, as one call. [`Delivery`]
@@ -33,6 +46,8 @@
 //! [`PollRecord`] from the poll stage to the game stage, the writes the game stage produced to the
 //! next poll stage, where they landed back to the next game stage (which the hold tracker needs
 //! before it resolves again), and the right stick's body turn for the next poll stage's look path.
+
+use std::cell::{Cell, RefCell};
 
 use parking_lot::Mutex;
 
@@ -66,6 +81,78 @@ impl Delivery {
             ThreadRole::InputJob => Self::Deferred,
             _ => Self::Inline,
         }
+    }
+}
+
+/// Whether the game stage may spawn objects that register for the world's updates.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum Spawn {
+    /// The stage runs at the top of the world's pre-simulation queue, after the update-queue
+    /// commit: what it registers is first updated in the next tick.
+    Allowed,
+    /// The stage runs anywhere else: a registration would be made live by the next pre-simulation
+    /// commit, ahead of the ammunition manager's pass that completes an explosive.
+    Refused,
+}
+
+/// Whether the game stage running on this thread may spawn objects that register for the world's
+/// updates; [`Spawn::Refused`] outside a game stage.
+pub(crate) fn spawn() -> Spawn {
+    SPAWN.with(Cell::get)
+}
+
+/// Where the game stage runs within one world pre-simulation update, on the game thread: at the top
+/// of its queue when the queue runs, or after the update when it skipped the queue (a paused
+/// context). The update commits the update queue before it runs the queue, with nothing between
+/// the two, so the first band the update queue runs after [`enter`](Self::enter) is that queue,
+/// after the commit.
+#[derive(Debug, Default)]
+pub(crate) struct PreSimTurn {
+    pending: bool,
+}
+
+impl PreSimTurn {
+    /// The world's pre-simulation update begins.
+    pub(crate) fn enter(&mut self) {
+        self.pending = true;
+    }
+
+    /// The update queue is about to run a band: the game stage runs here, with spawning allowed,
+    /// when it is the first band since [`enter`](Self::enter).
+    pub(crate) fn queue_runs(&mut self) -> Option<Spawn> {
+        std::mem::take(&mut self.pending).then_some(Spawn::Allowed)
+    }
+
+    /// The world's pre-simulation update returned: the game stage runs here, with spawning
+    /// refused, when no band ran since [`enter`](Self::enter).
+    pub(crate) fn leave(&mut self) -> Option<Spawn> {
+        std::mem::take(&mut self.pending).then_some(Spawn::Refused)
+    }
+}
+
+/// The world's pre-simulation update begins.
+///
+/// Must run on the game thread in the world's pre-simulation detour, before the original.
+pub(crate) fn world_pre_sim_entered() {
+    PRE_SIM_TURN.with_borrow_mut(PreSimTurn::enter);
+}
+
+/// The world's update queue is about to run a band: the game stage, when this is the
+/// pre-simulation queue's top.
+///
+/// Must run in the update queue's execution detour, before the original.
+pub(crate) fn update_queue_runs() {
+    if let Some(spawn) = PRE_SIM_TURN.with_borrow_mut(PreSimTurn::queue_runs) {
+        game_stage(Delivery::Deferred, spawn);
+    }
+}
+
+/// The world's pre-simulation update returned: the game stage, when the update skipped its queue.
+///
+/// Must run on the game thread in the world's pre-simulation detour, after the original.
+pub(crate) fn world_pre_sim_left() {
+    if let Some(spawn) = PRE_SIM_TURN.with_borrow_mut(PreSimTurn::leave) {
+        game_stage(Delivery::Deferred, spawn);
     }
 }
 
@@ -125,24 +212,27 @@ pub(crate) fn poll_stage(dt: f32, poll: DevicePoll) -> Option<f32> {
         log_missed(missed);
     }
     if delivery == Delivery::Inline {
-        game_stage(Delivery::Inline);
+        game_stage(Delivery::Inline, Spawn::Refused);
     }
     HANDOFF.lock().take_body_turn()
 }
 
 /// The game stage: run the bindings' decisions and acts for the tick the last poll stage
-/// published, and the active-input-device pin. Does nothing when no poll stage ran since the last
-/// game stage (the device poll was skipped, or the frontend or load state already ran this tick
-/// inline).
+/// published, and the active-input-device pin, with `spawn` saying whether the acts may spawn
+/// objects that register for the world's updates ([`spawn`]). Does nothing when no poll stage ran
+/// since the last game stage (the device poll was skipped, or the frontend or load state already
+/// ran this tick inline).
 ///
 /// Must run on the game thread with no input job in flight: at the top of the world's
-/// pre-simulation queue, or inline from [`poll_stage`] outside the input job.
-pub(crate) fn game_stage(delivery: Delivery) {
+/// pre-simulation queue, after the world's pre-simulation update when it skipped its queue, or
+/// inline from [`poll_stage`] outside the input job.
+fn game_stage(delivery: Delivery, spawn: Spawn) {
     let Some((record, landed)) = HANDOFF.lock().take_for_game() else {
         return;
     };
     let output = {
         let _timing = frame_timing::scope(Slot::Bindings);
+        let _spawn = SpawnScope::enter(spawn);
         crate::controllers::bindings::game_tick(record, landed, delivery)
     };
     gamepad_setting::input_tick();
@@ -237,6 +327,31 @@ impl<L> Handoff<Segment, L> {
 
 static HANDOFF: Mutex<Handoff<Segment, LandedSegment>> = Mutex::new(Handoff::new());
 
+thread_local! {
+    static PRE_SIM_TURN: RefCell<PreSimTurn> = const { RefCell::new(PreSimTurn { pending: false }) };
+    static SPAWN: Cell<Spawn> = const { Cell::new(Spawn::Refused) };
+}
+
+/// Holds this thread's [`spawn`] answer for a game stage, and restores the previous one when
+/// dropped.
+struct SpawnScope {
+    previous: Spawn,
+}
+
+impl SpawnScope {
+    fn enter(spawn: Spawn) -> Self {
+        Self {
+            previous: SPAWN.with(|cell| cell.replace(spawn)),
+        }
+    }
+}
+
+impl Drop for SpawnScope {
+    fn drop(&mut self) {
+        SPAWN.with(|cell| cell.set(self.previous));
+    }
+}
+
 /// Log a poll stage that had no game stage after it, at every power of two so that a persistent
 /// cause does not flood the log.
 fn log_missed(missed: u64) {
@@ -294,6 +409,53 @@ mod tests {
         ] {
             assert_eq!(Delivery::for_role(role), Delivery::Inline, "{role:?}");
         }
+    }
+
+    /// The update runs its queue: the stage runs at the queue's top, after the commit, and not
+    /// again when the update returns.
+    #[test]
+    fn a_running_queue_takes_the_stage_with_spawning_allowed() {
+        let mut turn = PreSimTurn::default();
+        turn.enter();
+        assert_eq!(turn.queue_runs(), Some(Spawn::Allowed));
+        assert_eq!(turn.leave(), None);
+    }
+
+    /// A paused update skips its queue: the stage runs after it, and may not spawn.
+    #[test]
+    fn a_skipped_queue_leaves_the_stage_to_the_update_end_with_spawning_refused() {
+        let mut turn = PreSimTurn::default();
+        turn.enter();
+        assert_eq!(turn.leave(), Some(Spawn::Refused));
+        assert_eq!(turn.leave(), None);
+    }
+
+    /// Only the first band after the update begins is its queue's top: later bands (the
+    /// post-simulation, post-camera, and render queues), and bands outside the update, take nothing.
+    #[test]
+    fn only_the_first_band_of_the_update_takes_the_stage() {
+        let mut turn = PreSimTurn::default();
+        assert_eq!(turn.queue_runs(), None);
+        turn.enter();
+        assert_eq!(turn.queue_runs(), Some(Spawn::Allowed));
+        assert_eq!(turn.queue_runs(), None);
+        assert_eq!(turn.leave(), None);
+        assert_eq!(turn.queue_runs(), None);
+    }
+
+    #[test]
+    fn spawning_is_refused_outside_a_game_stage_and_restored_after_one() {
+        assert_eq!(spawn(), Spawn::Refused);
+        {
+            let _outer = SpawnScope::enter(Spawn::Allowed);
+            assert_eq!(spawn(), Spawn::Allowed);
+            {
+                let _inner = SpawnScope::enter(Spawn::Refused);
+                assert_eq!(spawn(), Spawn::Refused);
+            }
+            assert_eq!(spawn(), Spawn::Allowed);
+        }
+        assert_eq!(spawn(), Spawn::Refused);
     }
 
     #[test]

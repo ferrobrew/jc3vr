@@ -55,9 +55,12 @@ pub(crate) fn counts() -> Counts {
 
 /// Draw another safe grenade without reading or mutating ammunition.
 ///
+/// Refused outside the top of the world's pre-simulation queue, where the actor could not be
+/// spawned safely ([`native::create`]).
+///
 /// # Safety
 ///
-/// The serialized input fragment before ammunition pre-simulation, or the render boundary.
+/// The input tick's game stage, on the game thread.
 pub(crate) unsafe fn draw(hand: Hand, tuning: &GrenadeTuning) -> bool {
     let Some(owner) = (unsafe { engine::local_player() }) else {
         return false;

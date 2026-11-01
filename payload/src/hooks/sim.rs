@@ -3,14 +3,17 @@
 //! job's thread role; and the input tick's game stage.
 //!
 //! The timing hooks change nothing the game does: each opens a [`frame_timing::scope`] around the
-//! original call. Two hooks do more. The input job's body (`RunInputThread_Proxy`) holds
+//! original call. Three hooks do more. The input job's body (`RunInputThread_Proxy`) holds
 //! [`ThreadRole::InputJob`] for its extent, so the input tick can tell the job, which overlaps the
 //! game thread's world-mutating work, from an inline input update on the game thread. The world's
-//! pre-simulation queue runs the input tick's game stage
-//! ([`crate::controllers::bindings::stage::game_stage`]) before the original: on the game thread,
-//! after the input job's completion wait, and before any character, weapon, or vehicle update and
-//! the physics step, so the stage's acts see no concurrent world mutation and still precede the
-//! world update that reads them.
+//! pre-simulation update and the update queue's execution ([`UpdateQueue::Execute`]) together run
+//! the input tick's game stage at the top of the pre-simulation queue
+//! ([`stage::update_queue_runs`]): on the game thread, after the input job's completion wait and
+//! after the update-queue commit that opens the world's pre-simulation update, and before any
+//! character, weapon, or vehicle update and the physics step. The stage's acts so see no concurrent
+//! world mutation, still precede the world update that reads them, and register what they spawn
+//! after the commit. When the update skips its queue (a paused context), the stage runs after it
+//! instead ([`stage::world_pre_sim_left`]).
 //!
 //! The tick itself ([`Game::UpdateGame`]) also counts against the frame it runs in,
 //! so the breakdown can split the frames by how many ticks they carried. Inside the tick, the run
@@ -23,15 +26,18 @@
 //! Threading: everything here except the AI thread bodies and the input job runs on the game thread,
 //! inside the engine's `Game::Update`.
 
+use std::ffi::c_void;
+
 use detours_macro::detour;
 use jc3gi::{
     game::{Game, GameObjectUpdateContext, UpdateContexts},
     game_world::GameWorld,
+    update_queue::UpdateQueue,
 };
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    controllers::bindings::stage::{self, Delivery},
+    controllers::bindings::stage,
     frame_timing::{self, Slot},
     thread_role::{self, ThreadRole},
 };
@@ -40,6 +46,7 @@ pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&UPDATE_GAME_BINDER)
         .with_static_binder(&WORLD_UPDATE_PRE_SIM_BINDER)
+        .with_static_binder(&UPDATE_QUEUE_EXECUTE_BINDER)
         .with_static_binder(&UPDATE_PHYSICS_BINDER)
         .with_static_binder(&WORLD_UPDATE_POST_SIM_BINDER)
         .with_static_binder(&STREAMER_UPDATE_BINDER)
@@ -64,8 +71,24 @@ fn world_update_pre_sim(this: *mut GameWorld, context: *mut GameObjectUpdateCont
     let _timing = frame_timing::scope(Slot::SimWorldPreSim);
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("GameWorld::UpdatePreSim");
-    stage::game_stage(Delivery::Deferred);
+    stage::world_pre_sim_entered();
     WORLD_UPDATE_PRE_SIM.get().unwrap().call(this, context);
+    stage::world_pre_sim_left();
+}
+
+#[detour(address = jc3gi::update_queue::UpdateQueue::Execute_ADDRESS)]
+fn update_queue_execute(
+    this: *mut UpdateQueue,
+    dt: f32,
+    prio_min: i32,
+    prio_max: i32,
+    context: *mut c_void,
+) {
+    stage::update_queue_runs();
+    UPDATE_QUEUE_EXECUTE
+        .get()
+        .unwrap()
+        .call(this, dt, prio_min, prio_max, context);
 }
 
 #[detour(address = jc3gi::game::GameState::UpdatePhysics_ADDRESS)]

@@ -6,15 +6,17 @@
 pub struct Explosive {
     _field_0: [u8; 1200],
     /// The explosive's model instance, or null. [`UpdateRender`](crate::equipment::explosive::Explosive::UpdateRender) pushes the
-    /// interpolated world matrix to it. The first `UpdatePostSimFromManager` after the explosive
-    /// spawns creates it from [`m_ModelHash`](crate::equipment::explosive::Explosive::m_ModelHash)
+    /// interpolated world matrix to it. The first
+    /// [`UpdatePostSimFromManager`](crate::equipment::explosive::Explosive::UpdatePostSimFromManager) after the explosive spawns
+    /// creates it from [`m_ModelHash`](crate::equipment::explosive::Explosive::m_ModelHash)
     /// ([`ModelInstanceManager::CreateInstanceFromHash`](crate::graphics_engine::model_instance::ModelInstanceManager::CreateInstanceFromHash),
     /// at [`m_WorldMatrixT1`](crate::equipment::explosive::Explosive::m_WorldMatrixT1), casting no shadow, added to the world),
     /// clears its [`FLAG_CLIPONDISTANCE`](crate::graphics_engine::model_instance::ModelInstanceFlags::FLAG_CLIPONDISTANCE),
     /// and shows it; the destructor releases it.
     pub m_ModelInstance: *mut crate::graphics_engine::model_instance::ModelInstance,
     /// The explosive's physics body (the pointer of a shared pointer), or null until the first
-    /// `UpdatePostSimFromManager` after the explosive spawns creates it.
+    /// [`UpdatePostSimFromManager`](crate::equipment::explosive::Explosive::UpdatePostSimFromManager) after the explosive spawns
+    /// creates it, which is at the end of a tick, after the world's post-simulation queue.
     /// [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) and [`SetPhysicsTransform`](crate::equipment::explosive::Explosive::SetPhysicsTransform)
     /// do nothing without it.
     pub m_PfxInstance: *mut crate::physics::PfxRigidBody,
@@ -30,7 +32,8 @@ pub struct Explosive {
     pub m_WorldMatrixT1: crate::types::math::Matrix4,
     /// Whether [`m_DeferredPhysicsTransform`](crate::equipment::explosive::Explosive::m_DeferredPhysicsTransform) is pending: set by
     /// [`SetPhysicsTransform`](crate::equipment::explosive::Explosive::SetPhysicsTransform) and applied to the physics body, then
-    /// cleared, by the next `UpdatePostSimFromManager`, before a pending launch.
+    /// cleared, by the next [`UpdatePostSimFromManager`](crate::equipment::explosive::Explosive::UpdatePostSimFromManager), before a
+    /// pending launch.
     pub m_DeferredSetPhysicsTransform: bool,
     _field_581: [u8; 3],
     /// The transform awaiting application to the physics body.
@@ -224,6 +227,22 @@ impl Explosive {
             f(game_object, context)
         }
     }
+    pub const UpdatePostSimFromManager_ADDRESS: usize = 0x140936A90;
+    /// The explosive's update from the ammunition manager's post-simulation pass
+    /// ([`AmmunitionManagerUpdatePostSim`](crate::equipment::explosive::AmmunitionManagerUpdatePostSim)), its override of the `CAmmunition` virtual. It creates
+    /// [`m_ModelInstance`](crate::equipment::explosive::Explosive::m_ModelInstance) when there is none, creates
+    /// [`m_PfxInstance`](crate::equipment::explosive::Explosive::m_PfxInstance) when the body is still pending and returns false
+    /// when that fails, applies a pending
+    /// [`m_DeferredPhysicsTransform`](crate::equipment::explosive::Explosive::m_DeferredPhysicsTransform) and then a pending launch
+    /// ([`m_DeferredPropelTowards`](crate::equipment::explosive::Explosive::m_DeferredPropelTowards)), and returns true.
+    pub unsafe fn UpdatePostSimFromManager(&mut self, dt: f32) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, dt: f32) -> bool = ::std::mem::transmute(
+                Self::UpdatePostSimFromManager_ADDRESS,
+            );
+            f(self as *mut Self as _, dt)
+        }
+    }
 }
 impl Explosive {
     /// The offset of the embedded `CGameObject` subobject. Weak references to the explosive (such
@@ -343,6 +362,31 @@ impl Grenade {
                 roof_target,
                 exact_target_aiming,
             )
+        }
+    }
+    pub const UpdatePostSim_ADDRESS: usize = 0x14091F890;
+    /// The grenade's post-simulation update (its override of the `CGameObject` virtual): steps the
+    /// homing and smart-fuse upgrades, runs [`Explosive::UpdatePostSim`](crate::equipment::explosive::Explosive::UpdatePostSim), then reads the physics
+    /// body's velocity for the trail sounds without checking that the body exists. The base update
+    /// only drops a grenade without a body from the update queue, so a grenade whose
+    /// post-simulation update runs before its first
+    /// [`Explosive::UpdatePostSimFromManager`](crate::equipment::explosive::Explosive::UpdatePostSimFromManager) faults here. That is a grenade spawned before the
+    /// update queue's commit at the top of the world's pre-simulation update
+    /// ([`GameWorld::UpdatePreSimImpl`](crate::game_world::GameWorld::UpdatePreSimImpl)), whose
+    /// registration that commit makes live in the same tick; one spawned from inside the world's
+    /// update, as the grenade weapon's own priming is, is first run in the next tick, after the
+    /// ammunition manager's pass has made its body. `game_object` is the grenade's `CGameObject` subobject
+    /// ([`Explosive::GAME_OBJECT_BASE_OFFSET`](crate::equipment::explosive::Explosive::GAME_OBJECT_BASE_OFFSET)), not the start of the grenade.
+    pub unsafe fn UpdatePostSim(
+        game_object: *mut ::std::ffi::c_void,
+        context: *mut crate::game::GameObjectUpdateContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                game_object: *mut ::std::ffi::c_void,
+                context: *mut crate::game::GameObjectUpdateContext,
+            ) = ::std::mem::transmute(Self::UpdatePostSim_ADDRESS);
+            f(game_object, context)
         }
     }
 }
@@ -501,5 +545,25 @@ pub unsafe fn AllocateGrenade(
             reclaim: bool,
         ) -> *mut ::std::ffi::c_void = ::std::mem::transmute(AllocateGrenade_ADDRESS);
         f(manager, allocation_type, position, reclaim)
+    }
+}
+pub const AmmunitionManagerUpdatePostSim_ADDRESS: usize = 0x1408F28F0;
+/// `CAmmunitionManager::UpdatePostSim`: unless the update context is paused, runs every pooled
+/// object's `UpdatePostSimFromManager` (an explosive's is
+/// [`Explosive::UpdatePostSimFromManager`](crate::equipment::explosive::Explosive::UpdatePostSimFromManager)) and erases the objects whose call returns false, then
+/// erases the objects queued for removal. Pooled objects are reached through the manager's own
+/// pool, not the world update queue, so an object takes part from its allocation on.
+/// [`GameStateRun::Update`](crate::game::GameStateRun::Update) calls it last in the tick, after the
+/// game world's post-simulation queue.
+pub unsafe fn AmmunitionManagerUpdatePostSim(
+    manager: *mut ::std::ffi::c_void,
+    update_contexts: *const crate::game::UpdateContexts,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            manager: *mut ::std::ffi::c_void,
+            update_contexts: *const crate::game::UpdateContexts,
+        ) = ::std::mem::transmute(AmmunitionManagerUpdatePostSim_ADDRESS);
+        f(manager, update_contexts)
     }
 }

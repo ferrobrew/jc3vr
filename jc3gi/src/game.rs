@@ -626,7 +626,10 @@ impl GameStateRun {
     /// the video's pre-simulation update before the game world's pre-simulation queue
     /// ([`GameWorld::UpdatePreSim`](crate::game_world::GameWorld::UpdatePreSim)), the physics phase
     /// ([`GameState::UpdatePhysics`](crate::game::GameState::UpdatePhysics)), and the post-simulation queue. Nothing between the
-    /// completion spin and the pre-simulation queue returns early. The challenge update reads the
+    /// completion spin and the pre-simulation queue returns early. The tick ends with the game
+    /// world's post-camera queue and then the ammunition manager's post-simulation pass
+    /// ([`AmmunitionManagerUpdatePostSim`](crate::equipment::explosive::AmmunitionManagerUpdatePostSim)),
+    /// which gives the explosives spawned since the previous pass their physics bodies. The challenge update reads the
     /// player action map there: an active race reads how long
     /// [`CHALLENGE_RESET_VEHICLE`](crate::input::input_action_map::Action::CHALLENGE_RESET_VEHICLE) has
     /// been held.

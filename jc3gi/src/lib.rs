@@ -139,6 +139,7 @@ pub mod state;
 pub mod steering_frame_profiler;
 pub mod types;
 pub mod ui;
+pub mod update_queue;
 pub mod vehicle;
 pub mod water_patch_manager;
 pub mod weapon_placement_rule;

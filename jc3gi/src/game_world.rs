@@ -97,7 +97,10 @@ impl GameWorld {
     pub const UpdatePreSimImpl_ADDRESS: usize = 0x1409C9FD0;
     /// `CGameWorld::UpdatePreSim`, the implementation behind the
     /// [`UpdatePreSim`](crate::game_world::GameWorld::UpdatePreSim) virtual. It takes the interface subobject (the
-    /// singleton) as `self`.
+    /// singleton) as `self`. It commits the update queue first and only then runs the band
+    /// ([`UpdateQueue::Execute`](crate::update_queue::UpdateQueue::Execute)), with nothing between the
+    /// two, so an object registered from inside the band is first run in the next tick. The
+    /// disassembler mislabels it `CGameWorldObjectManager::UpdatePostSim`.
     pub unsafe fn UpdatePreSimImpl(
         &mut self,
         context: *mut crate::game::GameObjectUpdateContext,
@@ -138,8 +141,10 @@ impl GameWorld {
             f(self as *const Self as _)
         }
     }
-    /// Runs the pre-simulation half of the world's update queue (the priorities below 1024)
-    /// with `context`, unless the context is paused. The registered objects' pre-simulation
+    /// Commits the world update queue's pending registrations and removals
+    /// ([`UpdateQueue::CommitAddRemove`](crate::update_queue::UpdateQueue::CommitAddRemove)), then
+    /// runs the pre-simulation half of the queue (the priorities below 1024) with `context`,
+    /// unless the context is paused. The registered objects' pre-simulation
     /// updates run here, the characters' state-machine and pre-physics passes among them.
     /// The run state's update calls it once per tick, before
     /// [`GameState::UpdatePhysics`](crate::game::GameState::UpdatePhysics).
@@ -273,8 +278,10 @@ pub struct GameWorldVftable {
     _vfunc_10: unsafe extern "system" fn(this: *mut crate::game_world::GameWorld),
     _vfunc_11: unsafe extern "system" fn(this: *mut crate::game_world::GameWorld),
     _vfunc_12: unsafe extern "system" fn(this: *mut crate::game_world::GameWorld),
-    /// Runs the pre-simulation half of the world's update queue (the priorities below 1024)
-    /// with `context`, unless the context is paused. The registered objects' pre-simulation
+    /// Commits the world update queue's pending registrations and removals
+    /// ([`UpdateQueue::CommitAddRemove`](crate::update_queue::UpdateQueue::CommitAddRemove)), then
+    /// runs the pre-simulation half of the queue (the priorities below 1024) with `context`,
+    /// unless the context is paused. The registered objects' pre-simulation
     /// updates run here, the characters' state-machine and pre-physics passes among them.
     /// The run state's update calls it once per tick, before
     /// [`GameState::UpdatePhysics`](crate::game::GameState::UpdatePhysics).
