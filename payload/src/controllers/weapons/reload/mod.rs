@@ -89,7 +89,7 @@ use crate::controllers::{
             engine::Reading,
             extraction::{DetachRequest, PendingDetach, Pull},
             frames::GunFrame,
-            insert::{Insertion, InsertionSource, Well},
+            insert::{Insertion, InsertionSource, ReadyCue, Well},
             plan::ReloadPlan,
             records::{RecordKey, Records, gun_entry},
             travel::ActionTravel,
@@ -595,14 +595,19 @@ unsafe fn loose_sightings(
     (seen, Some(frames))
 }
 
-/// The hand holding the gun, and the well's mouth and capture radius, while the other hand holds a
-/// round for it.
+/// The hand holding the gun, and the well's mouth and the capture radius its round catches at,
+/// while the other hand holds a round for it.
 pub(super) fn well(config: &Reload) -> Option<(Hand, Vec3, f32)> {
     let state = STATE.lock();
     let (_, gun_hand) = state.status.insert_hands?;
     let tick = state.tick.as_ref()?;
-    let well = tick.guns[gun_hand.index()].as_ref()?.well?;
-    Some((gun_hand, well.mouth, config.capture_radius_m))
+    let (weapon, gun) = tick.gun(gun_hand)?;
+    let well = gun.well?;
+    Some((
+        gun_hand,
+        well.mouth,
+        config.for_plan(&weapon.plan).capture_radius_m,
+    ))
 }
 
 /// The hand holding a round or pulling an inserted magazine, for occupancy and the overlay.
@@ -789,6 +794,7 @@ struct State {
     extraction_blocks_belt: [bool; 2],
     extraction_needs_neutral: [bool; 2],
     insertion_source: InsertionSource,
+    ready_cue: ReadyCue,
     tap: TapDetector,
     flicks: [FlickDetector; 2],
     belts: [BeltPush; 2],
@@ -839,6 +845,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     extraction_blocks_belt: [false; 2],
     extraction_needs_neutral: [false; 2],
     insertion_source: InsertionSource::Pouch,
+    ready_cue: ReadyCue::new(),
     tap: TapDetector::new(),
     flicks: [FlickDetector::new(); 2],
     belts: [BeltPush::new(); 2],

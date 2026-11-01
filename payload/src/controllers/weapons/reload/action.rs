@@ -402,12 +402,17 @@ impl State {
                 InsertStage::Captured { .. } => gun.well.and_then(|well| {
                     let top = self.status.insertion.captured_top(well)?;
                     let inverse = gun.wrist.orientation.inverse();
-                    let axis = inverse * well.axis;
+                    // The part keeps the gun's orientation as it slides along the well, as it
+                    // does seated; without a measured gun frame, it lines up with the well.
+                    let orientation = gun.frame.map_or_else(
+                        || Quat::from_rotation_arc(weapon.plan.part_axis, inverse * well.axis),
+                        |frame| (inverse * frame.pose.orientation).normalize(),
+                    );
                     Some((
                         gun_hand,
                         Pose {
                             position: inverse * (top - gun.wrist.position) * tick.world_scale,
-                            orientation: Quat::from_rotation_arc(Vec3::Y, axis),
+                            orientation,
                         },
                     ))
                 }),
@@ -418,6 +423,7 @@ impl State {
                 hand,
                 top_world_m: reload.held_top_m * tick.world_scale,
                 part_top_m: weapon.plan.part_top_m?,
+                part_axis: weapon.plan.part_axis,
                 captured,
             })
         });

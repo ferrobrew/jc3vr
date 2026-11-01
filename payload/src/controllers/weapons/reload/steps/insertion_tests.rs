@@ -106,6 +106,7 @@ pub(super) fn state(stage: InsertStage) -> State {
         extraction_blocks_belt: [false; 2],
         extraction_needs_neutral: [false; 2],
         insertion_source: InsertionSource::RetainedMagazine,
+        ready_cue: insert::ReadyCue::new(),
         tap: TapDetector::new(),
         flicks: [FlickDetector::new(); 2],
         belts: [BeltPush::new(); 2],
@@ -151,6 +152,8 @@ pub(super) fn tick(seating: bool) -> Tick {
                     handle: None,
                     travel_m: 0.06,
                     part_top_m: None,
+                    part_axis: Vec3::Y,
+                    launcher: false,
                 },
                 from_table: true,
                 reading: engine::Reading {
@@ -461,4 +464,36 @@ fn unavailable_seat_rolls_back_idle_and_transfers_rounds_only_once_after_recover
         assert_eq!(adapter.transfers.len(), usize::from(!release));
         assert_eq!(state.status.counts.seats, u64::from(!release));
     }
+}
+
+#[test]
+fn a_seat_readies_a_launcher_at_once_and_a_dry_gun_only_after_its_action() {
+    let launcher = ReloadPlan {
+        load: LoadKind::Magazine,
+        action: ActionKind::None,
+        well: WellFrame::Gun {
+            mouth: Vec3::ZERO,
+            axis: Vec3::Y,
+        },
+        handle: None,
+        travel_m: 0.06,
+        part_top_m: Some(0.05),
+        part_axis: Vec3::Y,
+        launcher: true,
+    };
+    assert!(ready_after_seat(&launcher, Chamber::Chambered));
+    assert!(ready_after_seat(&launcher, Chamber::Empty));
+    let pistol = ReloadPlan {
+        action: ActionKind::Slide,
+        handle: Some(Vec3::new(0.0, 0.03, 0.08)),
+        launcher: false,
+        ..launcher
+    };
+    assert!(!ready_after_seat(&pistol, Chamber::Empty));
+    assert!(ready_after_seat(&pistol, Chamber::Chambered));
+    let unplaced = ReloadPlan {
+        handle: None,
+        ..pistol
+    };
+    assert!(ready_after_seat(&unplaced, Chamber::Empty));
 }

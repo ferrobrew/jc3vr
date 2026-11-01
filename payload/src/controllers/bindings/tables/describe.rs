@@ -191,6 +191,8 @@ pub enum ModAction {
     Foregrip,
     /// Take a round from the belt pouch and push it into the gun's well.
     Magazine,
+    /// Push the round in the hand into the gun's well, marked by a gold ring on the gun.
+    InsertRound,
     /// Push the gun's well down onto the belt pouch to reload it in one hand.
     BeltReload,
     /// Flick the gun to eject its magazine.
@@ -789,6 +791,11 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
                 Control::Grip(off),
                 Gesture::Press,
                 modded(ModAction::Magazine),
+            );
+            add(
+                Control::Motion(off),
+                Gesture::Press,
+                modded(ModAction::InsertRound),
             );
         }
         if features.work_action {

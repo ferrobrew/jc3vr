@@ -3,7 +3,10 @@
 
 use glam::Vec3;
 
-use crate::controllers::weapons::reload::config::{ExtractionConfig, ReloadConfig};
+use crate::controllers::weapons::reload::{
+    config::{ExtractionConfig, ReloadConfig},
+    plan::ReloadPlan,
+};
 
 /// The true reload's tuning with its default switches.
 pub const RELOAD: Reload = Reload::new();
@@ -38,10 +41,20 @@ pub struct Reload {
     pub capture_radius_m: f32,
     /// How far a held magazine may be turned from the well's axis and still catch, degrees.
     pub capture_angle_deg: f32,
+    /// How close the top of a held round must come to a launcher's well to catch it, metres. A
+    /// launcher's well (a rocket tube's front, the UPU-210's cartridge bay) is large and sits far
+    /// from the hand on the grip, so it catches from farther than a gun's.
+    pub launcher_capture_radius_m: f32,
+    /// How far a round held for a launcher may be turned from the well's axis and still catch,
+    /// degrees.
+    pub launcher_capture_angle_deg: f32,
     /// How far past the mouth a caught magazine travels to seat, metres.
     pub seat_depth_m: f32,
     /// How long a magazine taken from the pouch stays in the hand before it is dropped, seconds.
     pub timeout_s: f32,
+    /// How long after a seat's bump the gun hand's ready cue plays, seconds, for a seat that leaves
+    /// the gun able to fire.
+    pub ready_cue_delay_s: f32,
     /// The one-handed belt reload: push the gun's well down onto the pouch.
     pub belt: BeltTuning,
     /// The slide, charging handle, bolt, and pump.
@@ -64,8 +77,11 @@ impl Reload {
             held_top_m: 0.07,
             capture_radius_m: 0.08,
             capture_angle_deg: 50.0,
+            launcher_capture_radius_m: 0.12,
+            launcher_capture_angle_deg: 75.0,
             seat_depth_m: 0.025,
             timeout_s: 8.0,
+            ready_cue_delay_s: 0.15,
             belt: BeltTuning::new(),
             action: ActionTuning::new(),
             loose: LooseTuning::new(),
@@ -92,6 +108,25 @@ impl Reload {
             },
             extraction: config.extraction,
             ..RELOAD
+        }
+    }
+
+    /// The tuning a round for `plan`'s weapon is inserted with: a launcher's catches at the
+    /// launcher capture radius and angle.
+    pub fn for_plan(self, plan: &ReloadPlan) -> Self {
+        if plan.launcher {
+            self.launcher_capture()
+        } else {
+            self
+        }
+    }
+
+    /// The tuning with a launcher's capture radius and angle in place of a gun's.
+    pub const fn launcher_capture(self) -> Self {
+        Self {
+            capture_radius_m: self.launcher_capture_radius_m,
+            capture_angle_deg: self.launcher_capture_angle_deg,
+            ..self
         }
     }
 }

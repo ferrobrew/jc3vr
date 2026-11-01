@@ -492,6 +492,9 @@ impl State {
         adapter: &mut impl MagazineInsertion,
     ) {
         let reload = &Reload::of(&config.weapons.reload);
+        if let Some(hand) = self.ready_cue.step(inputs.dt) {
+            haptics::play(hand, Event::Chambered);
+        }
         if !reload.loose.enabled && adapter.held() {
             adapter.release();
             self.status.insertion.reset();
@@ -550,6 +553,7 @@ impl State {
         let well = target.and_then(|(_, gun)| gun.well).filter(|_| can_take);
         let prior = self.status.insertion;
         let before_hands = self.status.insert_hands;
+        let capture = target.map_or(*reload, |(weapon, _)| reload.for_plan(&weapon.plan));
         let event = self.status.insertion.step_with_source(
             InsertInputs {
                 taken,
@@ -566,7 +570,7 @@ impl State {
                 dt: inputs.dt,
             },
             self.insertion_source,
-            reload,
+            &capture,
         );
         // Taking commits ownership, so deferred work must retain its Holding state and count.
         let before = if event == Some(InsertEvent::Taken) {
@@ -631,7 +635,13 @@ impl State {
                     engine::show_magazine_part(weapon.address, true)
                 },
                 Some(InsertEvent::Dropped) => unsafe {
-                    engine::show_magazine_part(weapon.address, !weapon.reading.out)
+                    engine::show_magazine_part(
+                        weapon.address,
+                        weapon
+                            .plan
+                            .load
+                            .part_shown(weapon.reading.out, weapon.reading.magazine),
+                    )
                 },
                 _ => {}
             }
@@ -694,9 +704,25 @@ impl State {
                     self.status.counts.seats += 1;
                     self.event(format!("{gun_hand:?} seated"));
                     pulse_both(Event::MagazineSeat);
+                    if let Some((weapon, gun)) = target
+                        && ready_after_seat(
+                            &weapon.plan,
+                            self.records.get(weapon.key).chambers[gun.entry()],
+                        )
+                    {
+                        self.ready_cue.arm(gun_hand, reload.ready_cue_delay_s);
+                    }
                 } else if !world_magazine && let Some((weapon, _)) = target {
                     // SAFETY: the weapon is this tick's verified target; failed seating transfers no round.
-                    unsafe { engine::show_magazine_part(weapon.address, !weapon.reading.out) };
+                    unsafe {
+                        engine::show_magazine_part(
+                            weapon.address,
+                            weapon
+                                .plan
+                                .load
+                                .part_shown(weapon.reading.out, weapon.reading.magazine),
+                        )
+                    };
                 }
             }
             Some(InsertEvent::Dropped) => {
@@ -850,6 +876,7 @@ impl State {
         self.status.active = false;
         self.status.weapons = [None; 2];
         self.status.insertion.reset();
+        self.ready_cue.cancel();
         self.status.insert_hands = None;
         self.status.work.reset();
         self.release_actions();
@@ -873,6 +900,14 @@ pub(super) fn chambering(plan: &ReloadPlan) -> bool {
         ActionKind::Pump => true,
         _ => plan.handle.is_some(),
     }
+}
+
+/// Whether a gun whose plan is `plan` fires once its round seats, its chamber then being
+/// `chamber`: one with no action worked by hand (a launcher, a revolver, or a gun whose handle the
+/// table does not place), or one whose chamber kept its round through a tactical reload. A dry gun
+/// with an action waits on it.
+pub(super) fn ready_after_seat(plan: &ReloadPlan, chamber: Chamber) -> bool {
+    !chambering(plan) || chamber != Chamber::Empty
 }
 
 /// The tick's view of `weapon`, which `base` is, and its plan. `None` for a weapon the reload

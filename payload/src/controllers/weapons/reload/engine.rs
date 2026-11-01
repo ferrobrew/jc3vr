@@ -42,6 +42,7 @@ use crate::{
                 chamber::{ActionKind, Chamber},
                 frames, gate,
                 loose::{self, EjectRounds, Loose, Retention},
+                render,
             },
         },
     },
@@ -614,18 +615,12 @@ unsafe fn gun_mut<'a>(weapon: *const WeaponBase, index: usize) -> Option<&'a mut
     unsafe { (*guns.m_Begin.add(index)).as_mut() }
 }
 
-/// The weapon's magazine part: the model part the game's reload hides and shows, by name.
+/// The weapon's round part: the model part the game's reload hides and shows, by name, or a
+/// launcher's rocket ([`render::is_round_part`]).
 unsafe fn magazine_part<'a>(
     weapon: *const WeaponBase,
 ) -> Option<&'a mut ModelAttachementWeaponComponent> {
-    unsafe { model_parts(weapon) }.find(|p| {
-        matches!(
-            p.m_NameHash,
-            ModelAttachementWeaponComponent::MAGAZINE_NAME_HASH
-                | ModelAttachementWeaponComponent::ROCKET_POD_NAME_HASH
-                | ModelAttachementWeaponComponent::CARTRIDGE_FULL_NAME_HASH
-        )
-    })
+    unsafe { model_parts(weapon) }.find(|p| render::is_round_part(p.m_NameHash))
 }
 
 /// The weapon's plain model parts, as the game's own part lookup takes them: by component kind.

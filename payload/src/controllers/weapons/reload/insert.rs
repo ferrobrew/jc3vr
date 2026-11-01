@@ -475,6 +475,42 @@ pub fn loading_hand(gun_hands: [bool; 2], taker: Option<Hand>, dominant: Hand) -
         .find(|hand| gun_hands[hand.index()])
 }
 
+/// The gun hand's ready cue after a seat that leaves the gun able to fire, with nothing left to
+/// work: it plays a moment after the seat's bump, so that the two read apart and the player can
+/// tell a gun that fires now from one whose action still waits.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub(super) struct ReadyCue {
+    pending: Option<(Hand, f32)>,
+}
+
+impl ReadyCue {
+    pub const fn new() -> Self {
+        Self { pending: None }
+    }
+
+    /// Play the cue on `hand` once `delay_s` has passed, replacing any cue still waiting.
+    pub fn arm(&mut self, hand: Hand, delay_s: f32) {
+        self.pending = Some((hand, delay_s.max(0.0)));
+    }
+
+    /// Advance by `dt` seconds: the hand to play the cue on, on the tick its delay runs out.
+    pub fn step(&mut self, dt: f32) -> Option<Hand> {
+        let (hand, left) = self.pending?;
+        let left = left - if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+        if left <= 0.0 {
+            self.pending = None;
+            Some(hand)
+        } else {
+            self.pending = Some((hand, left));
+            None
+        }
+    }
+
+    pub fn cancel(&mut self) {
+        self.pending = None;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -866,5 +902,49 @@ mod tests {
             Some(Hand::Left)
         );
         assert_eq!(loading_hand([false, false], None, Hand::Right), None);
+    }
+
+    #[test]
+    fn the_ready_cue_plays_once_after_its_delay() {
+        let mut cue = ReadyCue::new();
+        assert_eq!(cue.step(1.0), None);
+        cue.arm(Hand::Right, 0.15);
+        assert_eq!(cue.step(0.1), None);
+        assert_eq!(cue.step(f32::NAN), None);
+        assert_eq!(cue.step(0.1), Some(Hand::Right));
+        assert_eq!(cue.step(1.0), None);
+        cue.arm(Hand::Left, 0.15);
+        cue.cancel();
+        assert_eq!(cue.step(1.0), None);
+    }
+
+    #[test]
+    fn a_launcher_round_catches_from_farther_and_more_turned_than_a_guns() {
+        let gun = RELOAD;
+        let launcher = RELOAD.launcher_capture();
+        // The round's top 9 cm beside the mouth and turned 65 degrees from the axis, moving in.
+        let turn = Quat::from_rotation_x(65f32.to_radians());
+        let sample = |config: &Reload| {
+            let mut insertion = Insertion::new();
+            let mut inputs = InsertInputs {
+                taken: true,
+                grip_held: true,
+                held: Some(Held {
+                    top: WELL.mouth + Vec3::new(0.09, -0.01, 0.0),
+                    axis: turn * WELL.axis,
+                    velocity: WELL.axis,
+                }),
+                well: Some(WELL),
+                dt: 0.016,
+            };
+            insertion.step(inputs, config);
+            inputs.taken = false;
+            if let Some(held) = inputs.held.as_mut() {
+                held.top += WELL.axis * 0.005;
+            }
+            insertion.step(inputs, config)
+        };
+        assert_eq!(sample(&gun), None);
+        assert_eq!(sample(&launcher), Some(InsertEvent::Captured));
     }
 }

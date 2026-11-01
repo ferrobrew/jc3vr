@@ -230,6 +230,9 @@ fn capture_current(
     }) {
         mechanics.push(row);
     }
+    if let Some(row) = insert_row(&reload, input.ready) {
+        mechanics.push(row);
+    }
     if let Some(hand) = input.yank {
         mechanics.push(Row {
             control: Control::Motion(hand),
@@ -424,6 +427,17 @@ fn refresh_magazine_out(
     }
 }
 
+/// The push of the round already in a hand into its gun's well, while the reload holds one there
+/// and the hand is ready: the gold ring on the gun marks the well.
+fn insert_row(reload: &ReloadStatus, ready: [bool; 2]) -> Option<Row> {
+    let (hand, _) = reload.insert_hands?;
+    (reload.insertion.holding() && ready[hand.index()]).then_some(Row {
+        control: Control::Motion(hand),
+        gesture: Gesture::Press,
+        effect: Effect::Mod(ModAction::InsertRound),
+    })
+}
+
 fn flick_ready(reload: &ReloadStatus, guns: [Option<GunOwner>; 2], hand: Hand) -> bool {
     let i = hand.index();
     reload.weapons[i].is_some_and(|weapon| {
@@ -553,6 +567,7 @@ mod tests {
             reload::{
                 WeaponReadout,
                 chamber::{ActionKind, Chamber},
+                insert::InsertStage,
                 plan::{LoadKind, ReloadPlan, WellFrame},
             },
         },
@@ -657,6 +672,24 @@ mod tests {
     }
 
     #[test]
+    fn a_round_in_the_hand_offers_its_push_into_the_gold_ring_on_that_hand() {
+        let mut reload = ReloadStatus::default();
+        assert_eq!(insert_row(&reload, [true; 2]), None);
+        reload.insert_hands = Some((Hand::Left, Hand::Right));
+        assert_eq!(insert_row(&reload, [true; 2]), None);
+        reload.insertion.stage = InsertStage::Holding { elapsed_s: 0.0 };
+        assert_eq!(
+            insert_row(&reload, [true; 2]),
+            Some(Row {
+                control: Control::Motion(Hand::Left),
+                gesture: Gesture::Press,
+                effect: Effect::Mod(ModAction::InsertRound),
+            })
+        );
+        assert_eq!(insert_row(&reload, [false, true]), None);
+    }
+
+    #[test]
     fn post_finish_magazine_reader_removes_successful_but_not_refused_ejects() {
         let hand = Hand::Right;
         let i = hand.index();
@@ -671,6 +704,8 @@ mod tests {
                 handle: None,
                 travel_m: 0.0,
                 part_top_m: None,
+                part_axis: Vec3::Y,
+                launcher: false,
             },
             from_table: false,
             magazine: 1,

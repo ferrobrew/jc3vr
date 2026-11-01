@@ -102,6 +102,13 @@ The HUD's ammunition readout is pushed, not polled. [`SetMagazineAmmo`](https://
 
 The track messages, and with them the animated `Reload` and the magazine drop, run in the holder's serial post-physics pass (`CCharacter::UpdatePassPostPhysics_Serial`), on the game update thread after the physics step. The no-animation reload's `Reload` runs from the ammunition check inside the weapon's parallel update. The magazine drop writes rigid-body state through the physics world, which the physics system allows only on the thread holding the world's write mark.
 
+## Launchers
+
+No launcher has a cocking or cycling step: a launcher with rounds in its magazine and its magazine-out flag clear fires through the ordinary ammunition check.
+
+- The rocket launchers are `CRPGWeapon`s ([`RPGWeapon`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::RPGWeapon)). One fires only with its rocket loaded ([`m_AttachedState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::RPGWeapon##field-m_AttachedState)), which [`RPGWeapon::Reload`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::RPGWeapon##func-Reload) and the launcher's per-tick update set whenever the magazine holds a round, so refilling the magazine is all it takes. The rocket model is the `model.rpg` part ([`RPG_NAME_HASH`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::ModelAttachementWeaponComponent)), which the same update shows when it loads the rocket and, with [`m_RPGHideModelWhenOutOfAmmo`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::RPGWeapon##field-m_RPGHideModelWhenOutOfAmmo), hides once the launcher is empty. It leaves an empty launcher's unloaded rocket part alone.
+- The UPU-210 (`w123_grenade_launcher_upu_210`) is a `CMissileWeaponBase` in its `.epe`, not a rocket launcher. Its fire start has no loaded state of its own; the only refusal besides the ammunition check is a minimum height over the ground for a vehicle holder. This is unverified against the release binary. Its entity has two model parts, `model.cartridge_empty` and `model.cartridge_full` ([`CARTRIDGE_FULL_NAME_HASH`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::ModelAttachementWeaponComponent) and `CARTRIDGE_EMPTY_NAME_HASH`), both placed at the gun's origin with no rotation, so their frames are the gun's. No weapon code names either part; the track messages that carry a part's name hash (the throw-away and enable-model messages) are what can hide and show them.
+
 ## Sniper bolt and shotgun pump
 
 Neither cycle moves ammunition; both are animation.

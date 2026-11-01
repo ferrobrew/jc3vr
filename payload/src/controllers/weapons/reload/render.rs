@@ -1,5 +1,6 @@
-//! The reload's model parts: each hand's gun's action part where its travel has it, and a magazine
-//! part carried in the hand that took it from the pouch. The input tick publishes what to draw
+//! The reload's model parts: each hand's gun's action part where its travel has it, and a round
+//! part (a magazine, a cartridge, a pod, or a rocket) carried in the hand that took it from the
+//! pouch. The input tick publishes what to draw
 //! ([`publish`]), each part with the weapon it belongs to.
 //! The late update of the held gun's parts ([`crate::controllers::hands::parts`]) asks for each
 //! separate part's matrix ([`adjust`]) on the render thread, and the gun's own skeleton takes the
@@ -49,7 +50,7 @@ pub(super) struct ActionPart {
     pub magazine_empty: bool,
 }
 
-/// A magazine part carried in a hand.
+/// A round part carried in a hand.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(super) struct HeldPart {
     /// The address of the weapon the held round is for.
@@ -57,9 +58,13 @@ pub(super) struct HeldPart {
     pub hand: Hand,
     /// How far ahead of the grip the top of the held round is, in the world's metres.
     pub top_world_m: f32,
-    /// How far the part's top is from its origin along its own +Y, in the model's metres.
+    /// How far the part's top is from its origin along [`part_axis`](Self::part_axis), in the
+    /// model's metres.
     pub part_top_m: f32,
-    /// The captured round in its gun hand's wrist frame, in world metres.
+    /// The direction the part travels into the gun, in the part's own frame, unit length.
+    pub part_axis: Vec3,
+    /// The captured round in its gun hand's wrist frame, in world metres: its top, and the gun's
+    /// orientation, which the part keeps while it slides along the well.
     pub captured: Option<(Hand, Pose)>,
 }
 
@@ -136,7 +141,7 @@ pub(crate) fn adjust(
         return slide_matrix(matrix, action.share, game_share, recoil.m_RecoilMaxLength);
     }
     let held = published.held.filter(|h| h.weapon == weapon)?;
-    if part.m_NameHash != ModelAttachementWeaponComponent::MAGAZINE_NAME_HASH {
+    if !is_round_part(part.m_NameHash) {
         return None;
     }
     let drawn = late::drawn_hands(dtf);
@@ -146,7 +151,7 @@ pub(crate) fn adjust(
         let rotation = (wrist.orientation * local.orientation).normalize();
         return Some(Mat4::from_rotation_translation(
             rotation,
-            top - rotation * (Vec3::Y * held.part_top_m),
+            top - rotation * (held.part_axis * held.part_top_m),
         ));
     }
     let grip = drawn[held.hand.index()]?.grip;
@@ -166,13 +171,26 @@ pub(super) fn slide_matrix(matrix: Mat4, share: f32, game_share: f32, travel: f3
     Some(moved)
 }
 
-/// The magazine part carried by a hand whose grip is at `position` and `orientation` (world): the
-/// part's +Y along the way the closed hand points, its top the held round's top.
+/// Whether a model part named `name_hash` is the round a reload by hand carries: a gun's magazine,
+/// the UPU-210's full cartridge, the Hydra's pod, or a launcher's rocket or the mortar's shell.
+pub(super) fn is_round_part(name_hash: u32) -> bool {
+    matches!(
+        name_hash,
+        ModelAttachementWeaponComponent::MAGAZINE_NAME_HASH
+            | ModelAttachementWeaponComponent::ROCKET_POD_NAME_HASH
+            | ModelAttachementWeaponComponent::CARTRIDGE_FULL_NAME_HASH
+            | ModelAttachementWeaponComponent::RPG_NAME_HASH
+    )
+}
+
+/// The round part carried by a hand whose grip is at `position` and `orientation` (world): the
+/// part's insertion axis along the way the closed hand points, its top the held round's top.
 pub(super) fn held_matrix(position: Vec3, orientation: Quat, held: HeldPart) -> Mat4 {
     let pointing = orientation * Vec3::NEG_Z;
-    let rotation = orientation * Quat::from_rotation_arc(Vec3::Y, Vec3::NEG_Z);
+    let axis = held.part_axis.try_normalize().unwrap_or(Vec3::Y);
+    let rotation = orientation * Quat::from_rotation_arc(axis, Vec3::NEG_Z);
     let top = position + pointing * held.top_world_m;
-    Mat4::from_rotation_translation(rotation, top - rotation * (Vec3::Y * held.part_top_m))
+    Mat4::from_rotation_translation(rotation, top - rotation * (axis * held.part_top_m))
 }
 
 /// A bone's model-space joint (`position`, `orientation`) moved by `part`: back along the model's
@@ -243,6 +261,7 @@ mod tests {
             hand: Hand::Left,
             top_world_m: 0.07,
             part_top_m: 0.05,
+            part_axis: Vec3::Y,
             captured: None,
         };
         let m = held_matrix(Vec3::ZERO, Quat::IDENTITY, held);
@@ -250,5 +269,39 @@ mod tests {
         assert!((up - Vec3::NEG_Z).length() < 1e-6);
         let top = m.transform_point3(Vec3::Y * 0.05);
         assert!((top - Vec3::new(0.0, 0.0, -0.07)).length() < 1e-6);
+    }
+
+    #[test]
+    fn a_held_rocket_points_its_feed_end_out_of_the_hand() {
+        // A rocket goes into the tube along the model's +Z, its rear end first.
+        let held = HeldPart {
+            weapon: 1,
+            hand: Hand::Right,
+            top_world_m: 0.07,
+            part_top_m: 0.35,
+            part_axis: Vec3::Z,
+            captured: None,
+        };
+        let grip = Quat::from_rotation_y(0.6);
+        let m = held_matrix(Vec3::ONE, grip, held);
+        let pointing = grip * Vec3::NEG_Z;
+        assert!((m.transform_vector3(Vec3::Z) - pointing).length() < 1e-5);
+        let top = m.transform_point3(Vec3::Z * 0.35);
+        assert!((top - (Vec3::ONE + pointing * 0.07)).length() < 1e-5);
+    }
+
+    #[test]
+    fn every_round_part_the_reload_shows_is_one_it_draws_in_the_hand() {
+        for hash in [
+            ModelAttachementWeaponComponent::MAGAZINE_NAME_HASH,
+            ModelAttachementWeaponComponent::CARTRIDGE_FULL_NAME_HASH,
+            ModelAttachementWeaponComponent::ROCKET_POD_NAME_HASH,
+            ModelAttachementWeaponComponent::RPG_NAME_HASH,
+        ] {
+            assert!(is_round_part(hash));
+        }
+        assert!(!is_round_part(
+            ModelAttachementWeaponComponent::CARTRIDGE_EMPTY_NAME_HASH
+        ));
     }
 }

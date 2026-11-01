@@ -15,6 +15,16 @@ What a weapon loads and how its action is worked come from the wells table (see 
 | Rocket | rocket launchers, the mortar | no | one round into the muzzle | none |
 | Cylinder | revolvers | yes (the spent cylinder) | a whole cylinder | none |
 
+## Launchers
+
+The grenade launchers, the rocket launchers, and the mortar are launchers (`ReloadPlan::launcher`, from the weapon's class). None has an action to work: once its round seats it fires, and the game has no cocking step for any of them ([weapon-ammo-and-reload.md, "Launchers"](../../engine/gameplay/weapon-ammo-and-reload.md#launchers)). A launcher's well is large and sits far from the hand on the grip, so its round catches at `RELOAD.launcher_capture_radius_m` and `RELOAD.launcher_capture_angle_deg` instead of a gun's radius and angle; the gold ring at the mouth is drawn at that radius.
+
+- The UPU-210 loads a cartridge of grenades, a magazine whose part (`model.cartridge_full`) enters the underside of the receiver just ahead of the grip, pushed up. It is ejected and pulled out like a magazine, and the cartridge from the pouch or the ground is drawn in the hand.
+- A rocket launcher takes one rocket into the front of its tube, pushed back toward the shooter, the rocket's rear end first. The rocket (`model.rpg`) is drawn in the hand while it is held; let go before it seats, it goes back to whatever the launcher shows on its own, which is nothing while the launcher is empty.
+- The Hydra's pod goes into the rear of its housing, pushed forward.
+
+A seated round that leaves the launcher able to fire plays the ready cue (see "Haptics"); there is no other step.
+
 ## Stopping the game's reload
 
 Every animated reload the game starts goes through one call, [`Character::StartReloadingWieldingWeapon`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-StartReloadingWieldingWeapon): the reload button, the automatic reload of an empty or magazine-less gun, the predicted reload while idle, a reserve refilled by a pickup, an animation's request, and the launchers' and sniper rifles' own requests. A detour on it refuses the start for the local player while the input tick reloads either hand's weapon by hand (`gate.rs`). No reload act is queued, so the game's reload state never begins and nothing is left to clean up. The input tick publishes each hand's weapon it reloads with a time stamp; if the tick stops for half a second, the detour stops refusing and the game reloads as usual. Switching the reload off mid-reload leaves a magazine-less gun to the game, which reloads it.
@@ -53,7 +63,7 @@ The hand holds the round with its top `RELOAD.held_top_m` ahead of the closed fi
 
 A seated magazine, cylinder, or rocket loads through the weapon's own reload ([`WeaponBase::Reload`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##vfunc-Reload)), which keeps every rule of the game's: the reserve, unlimited ammunition, the upgrades, the rocket on the launcher, the magazine-out flag, and the HUD. A shell adds one round through [`WeaponBase::SetMagazineAmmo`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##vfunc-SetMagazineAmmo) and takes it from the reserve through [`Inventory::SetAmmoCount`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##func-SetAmmoCount), unless the ammunition is unlimited. Pickups, crates, and cheats only touch the reserve, so they keep working; the game's reload-on-refill is one of the starts the detour refuses.
 
-While a round is in hand, the gun's well is a touch target, marked gold at its mouth on the gun ([grip.md](grip.md#markers)): the round goes in as the hand brings it there, without a squeeze. A weapon whose magazine is a separate model part shows the part again in the hand that took it, drawn at the hand's grip by the late update of the gun's parts, and hides it if the round is dropped with the gun's magazine still out; a seated magazine shows the part back in the gun ([`WeaponComponentBase::Enable`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponComponentBase##vfunc-Enable)). Pistols and SMGs draw their magazine as part of the body, so nothing shows in the hand.
+While a round is in hand, the gun's well is a touch target, marked gold at its mouth on the gun ([grip.md](grip.md#markers)): the round goes in as the hand brings it there, without a squeeze. The wrist summary shows `Push the Round into the Gold Ring on the Gun` on the hand holding it. A weapon whose round is a separate model part (a magazine, the UPU-210's cartridge, the Hydra's pod, or a launcher's rocket, `render::is_round_part`) shows the part again in the hand that took it, drawn at the hand's grip by the late update of the gun's parts with its insertion axis along the way the hand points, and hides it if the round is dropped with the gun's magazine still out (for a rocket, while the launcher is empty); a seated magazine shows the part back in the gun ([`WeaponComponentBase::Enable`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponComponentBase##vfunc-Enable)). A caught round slides along the well in the gun's orientation, as it sits seated. Pistols and SMGs draw their magazine as part of the body, so nothing shows in the hand.
 
 ## Wells
 
@@ -135,7 +145,7 @@ A weapon is remembered by its item in the loadout table when the table holds it,
 
 ## Haptics
 
-Each step plays a cue of the weapons category ([haptics.md](haptics.md)): the eject on the gun hand (`Event::Eject`), a round taken from the pouch (`Event::PouchTake`), an empty pouch (`Event::PouchEmpty`), a round caught by the well and a seat on both hands (`Event::WellCatch`, `Event::MagazineSeat`), a belt seat on the gun hand (`Event::BeltSeat`), a full pull of the action on the working hand (`Event::Rack`), the physical action's part meeting a stop (home, a bolt turned all the way up or down) on the working hand, or on the gun hand for a slide run home by its spring or caught at the rear (`Event::ActionDetent`), and a chambered round on the gun hand (`Event::Chambered`). The dry fire is `Event::DryFire`.
+Each step plays a cue of the weapons category ([haptics.md](haptics.md)): the eject on the gun hand (`Event::Eject`), a round taken from the pouch (`Event::PouchTake`), an empty pouch (`Event::PouchEmpty`), a round caught by the well and a seat on both hands (`Event::WellCatch`, `Event::MagazineSeat`), a belt seat on the gun hand (`Event::BeltSeat`), a full pull of the action on the working hand (`Event::Rack`), the physical action's part meeting a stop (home, a bolt turned all the way up or down) on the working hand, or on the gun hand for a slide run home by its spring or caught at the rear (`Event::ActionDetent`), and a chambered round on the gun hand (`Event::Chambered`). A seat that leaves the gun able to fire with nothing left to work (a launcher, a revolver, a gun whose handle the table does not place, or a tactical reload with the chamber still loaded) plays `Event::Chambered` on the gun hand `RELOAD.ready_cue_delay_s` after the seat's bump, so the bump alone means the action still waits. The dry fire is `Event::DryFire`.
 
 ## The readout
 
@@ -174,6 +184,14 @@ With `reload.action.physical` on, `RIGHT ACTION` on the debug UI's Status page o
 
 `reload/steps/action_tests.rs` exercises the runtime handle candidate and physical action worker with a native-operation adapter. It covers both gun hands, repeated ready extraction, dry feeding, partial-pull abort, last-round lock-back, absent magazines, initially empty guns, bolt/pump open holds and reacquisition, geometry/settings exclusions, and current-ammo reads after reload operations. Automated execution and game/headset acceptance are separate checks.
 
+## In the headset: launchers
+
+1. Draw the UPU-210 and fire it dry. Pull the empty cartridge out from under the receiver with the free hand, or tap the reload button: it drops, and the HUD reads zero.
+2. Take a cartridge from the belt pouch: it is in the hand, top pointing the way the fist points, and nothing shows under the gun. The wrist summary reads `Push the Round into the Gold Ring on the Gun`, and a gold ring marks the bay under the receiver ahead of the grip.
+3. Push it up into the ring, roughly upright: a click on both hands, the cartridge slides up in the gun's orientation, a bump as it seats, and a click on the gun hand a moment later. The HUD shows the cartridge's rounds, and the launcher fires at once.
+4. Draw the UVK-13 (or any `w14x` launcher) and fire it. Take a rocket from the pouch: the rocket is in the hand, rear end out of the fist. Push it back into the front of the tube: it seats, the ready click plays, and it fires. Let go of a rocket before it seats: it vanishes, and the empty launcher shows no rocket.
+5. Do 3 and 4 with the round turned well off the axis and a hand's width beside the mouth: it still catches. A pistol's magazine must still come within a few centimetres.
+
 ## Unverified
 
 None of this has been run in the headset. In particular:
@@ -193,4 +211,6 @@ None of this has been run in the headset. In particular:
 - that writing a gun's joint from the detour, on a simulation worker, races nothing that reads the gun's pose on another thread;
 - that the U-SV 45's `ejection_port` is the piece to move for its bolt, and that the game's travel for it suits the table's;
 - that skipping the gun's pump and bolt clips on a hand-worked cycle loses no sound worth keeping;
-- the spring time, the bolt's lift and radius, and the handle's grab radius for a part held back.
+- the spring time, the bolt's lift and radius, and the handle's grab radius for a part held back;
+- that a rocket part shown on an empty launcher stays shown while it is carried, and that the rocket and the Hydra's pod are modelled with their part frame aligned with the gun's, as the UPU-210's cartridge is, so that the table's insertion axis is their own;
+- the launcher capture radius and angle.
