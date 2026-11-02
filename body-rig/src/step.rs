@@ -43,9 +43,9 @@ impl StepTuning {
             arrive_m: 0.06,
             response_s: 0.3,
             max_speed_mps: 1.8,
-            settle_speed_mps: 0.12,
-            settle_done_m: 0.015,
-            settle_s: 1.0,
+            settle_speed_mps: 0.15,
+            settle_done_m: 0.02,
+            settle_s: 0.6,
             give_up_s: 3.0,
         }
     }

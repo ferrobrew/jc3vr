@@ -4,6 +4,7 @@
 //! tracking-synth [--out <dir>] [--rate <hz>] [<script>...]
 //! tracking-synth --list
 //! tracking-synth dump [--json] [--from <time>] [--to <time>] <recording>
+//! tracking-synth rig-eval [--height <m>] [--eye-height <m>] [--tuning <json>] <recording> <out.csv>
 //! ```
 //!
 //! With no script named, every built-in script is written. The recordings go to `<dir>/<script>.jc3trk`,
@@ -12,7 +13,10 @@
 //! `dump` prints any recording's frames and events to stdout, as text or, with `--json`, as JSON
 //! lines. `--from` and `--to` limit it to an inclusive stretch; a `<time>` is seconds on the
 //! recording's clock (`12.5`) or an OpenXR predicted display time in nanoseconds (`xr:<ns>`), the
-//! clock a video recording's sidecar shares.
+//! clock a video recording's sidecar shares. `rig-eval` runs the grounded body rig over a recording
+//! and writes a CSV of each grounded frame (`rig_eval`); `--tuning` takes the rig's tuning as JSON,
+//! any field left out keeping its default, and a video sidecar (`frames.jsonl` and `stream.json`)
+//! beside the recording adds the video's time to each row.
 
 use std::{
     fmt,
@@ -23,6 +27,7 @@ use std::{
 use tracing_subscriber::EnvFilter;
 use tracking_synth::{
     dump::{self, Bound, DumpFormat, Range},
+    rig_eval::{self, EvalOptions, VideoClock},
     script::Script,
     scripts,
     synth::{DEFAULT_RATE_HZ, Options, SynthError},
@@ -55,8 +60,9 @@ fn main() -> ExitCode {
 }
 
 const USAGE: &str = "usage: tracking-synth [--out <dir>] [--rate <hz>] [<script>...] | --list | \
-                     dump [--json] [--from <time>] [--to <time>] <recording>, where <time> is \
-                     seconds or xr:<display time ns>";
+                     dump [--json] [--from <time>] [--to <time>] <recording> | rig-eval \
+                     [--height <m>] [--eye-height <m>] [--tuning <json>] <recording> <out.csv>, \
+                     where <time> is seconds or xr:<display time ns>";
 
 /// What the command line asks for.
 #[derive(Debug, Clone, PartialEq)]
@@ -67,6 +73,11 @@ enum Command {
         path: PathBuf,
         format: DumpFormat,
         range: Range,
+    },
+    RigEval {
+        path: PathBuf,
+        out: PathBuf,
+        options: EvalOptions,
     },
     Write {
         out: PathBuf,
@@ -91,6 +102,12 @@ enum CliError {
     UnknownScript(String),
     /// `dump` without a recording, or with more than one.
     DumpPath,
+    /// `rig-eval` without a recording and an output, or with more.
+    RigEvalPaths,
+    /// A `rig-eval` length that is not a positive number.
+    BadLength(String),
+    /// `rig-eval` tuning that does not parse.
+    BadTuning(serde_json::Error),
     Read {
         path: PathBuf,
         error: std::io::Error,
@@ -126,6 +143,13 @@ impl fmt::Display for CliError {
                 "there is no built-in script `{name}`; `--list` lists them"
             ),
             CliError::DumpPath => write!(f, "dump: name exactly one recording"),
+            CliError::RigEvalPaths => {
+                write!(f, "rig-eval: name exactly one recording and one output")
+            }
+            CliError::BadLength(value) => {
+                write!(f, "rig-eval: the length `{value}` is not a positive number")
+            }
+            CliError::BadTuning(error) => write!(f, "rig-eval: the tuning does not parse: {error}"),
             CliError::Read { path, error } => {
                 write!(f, "dump: could not read {}: {error}", path.display())
             }
@@ -146,6 +170,10 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Command, CliError> {
     if args.peek().map(String::as_str) == Some("dump") {
         args.next();
         return parse_dump(args);
+    }
+    if args.peek().map(String::as_str) == Some("rig-eval") {
+        args.next();
+        return parse_rig_eval(args);
     }
     let mut out = default_out();
     let mut options = Options::default();
@@ -198,6 +226,49 @@ fn parse_dump(mut args: impl Iterator<Item = String>) -> Result<Command, CliErro
     }
 }
 
+fn parse_rig_eval(mut args: impl Iterator<Item = String>) -> Result<Command, CliError> {
+    let mut height = DEFAULT_HEIGHT_M;
+    let mut eye_height = None;
+    let mut tuning = None;
+    let mut paths = Vec::new();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--height" => height = parse_length(args.next(), "--height")?,
+            "--eye-height" => eye_height = Some(parse_length(args.next(), "--eye-height")?),
+            "--tuning" => {
+                let json = args.next().ok_or(CliError::MissingValue("--tuning"))?;
+                tuning = Some(serde_json::from_str(&json).map_err(CliError::BadTuning)?);
+            }
+            option if option.starts_with('-') => {
+                return Err(CliError::UnknownOption(option.to_owned()));
+            }
+            path => paths.push(PathBuf::from(path)),
+        }
+    }
+    let mut options = EvalOptions::new(height, eye_height.unwrap_or(height * DEFAULT_EYE_SHARE));
+    if let Some(tuning) = tuning {
+        options.tuning = tuning;
+    }
+    match <[PathBuf; 2]>::try_from(paths) {
+        Ok([path, out]) => Ok(Command::RigEval { path, out, options }),
+        Err(_) => Err(CliError::RigEvalPaths),
+    }
+}
+
+/// The player's height `rig-eval` assumes without `--height`, metres.
+const DEFAULT_HEIGHT_M: f32 = 1.8;
+
+/// The eye height's share of the height without `--eye-height`.
+const DEFAULT_EYE_SHARE: f32 = 0.933;
+
+fn parse_length(value: Option<String>, option: &'static str) -> Result<f32, CliError> {
+    let value = value.ok_or(CliError::MissingValue(option))?;
+    match value.parse::<f32>() {
+        Ok(length) if length.is_finite() && length > 0.0 => Ok(length),
+        _ => Err(CliError::BadLength(value)),
+    }
+}
+
 fn parse_bound(value: Option<String>, option: &'static str) -> Result<Bound, CliError> {
     let value = value.ok_or(CliError::MissingValue(option))?;
     value.parse().map_err(|()| CliError::BadTime(value))
@@ -240,6 +311,44 @@ fn run(command: Command) -> Result<(), CliError> {
                 Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
                 result => result.map_err(CliError::Print),
             }
+        }
+        Command::RigEval { path, out, options } => {
+            let bytes = std::fs::read(&path).map_err(|error| CliError::Read {
+                path: path.clone(),
+                error,
+            })?;
+            let recording = tracking_format::decode(&bytes).map_err(|error| CliError::Decode {
+                path: path.clone(),
+                error,
+            })?;
+            let clock = video_clock(&path);
+            let (rows, summary) = rig_eval::evaluate(&recording, &options, clock.as_ref());
+            let file = std::fs::File::create(&out).map_err(|error| CliError::Write {
+                path: out.clone(),
+                error,
+            })?;
+            let mut writer = std::io::BufWriter::new(file);
+            rig_eval::write_csv(&rows, &mut writer)
+                .and_then(|()| std::io::Write::flush(&mut writer))
+                .map_err(|error| CliError::Write {
+                    path: out.clone(),
+                    error,
+                })?;
+            tracing::info!(
+                rows = rows.len(),
+                video = clock.is_some(),
+                grounded_s = %format_args!("{:.1}", summary.grounded_s),
+                steps = summary.steps,
+                driving_s = %format_args!("{:.1}", summary.driving_s),
+                turns = summary.turns,
+                mean_yaw_error_deg = %format_args!("{:.1}", summary.mean_yaw_error_deg),
+                mean_offset_m = %format_args!("{:.3}", summary.mean_offset_m),
+                max_offset_m = %format_args!("{:.3}", summary.max_offset_m),
+                recenters = summary.recenters,
+                "rig-eval: wrote {}",
+                out.display()
+            );
+            Ok(())
         }
         Command::Write {
             out,
@@ -286,6 +395,14 @@ fn write(script: &Script, out: &Path, options: Options) -> Result<(), CliError> 
         path.display()
     );
     Ok(())
+}
+
+/// The video sidecar beside a take's recording, when there is one.
+fn video_clock(recording: &Path) -> Option<VideoClock> {
+    let dir = recording.parent()?;
+    let frames = std::fs::read_to_string(dir.join("frames.jsonl")).ok()?;
+    let stream = std::fs::read_to_string(dir.join("stream.json")).ok()?;
+    VideoClock::parse(&frames, &stream)
 }
 
 /// Where the synthetic scenarios look for their recordings: `testing/recordings/synthetic/` in the

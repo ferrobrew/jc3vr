@@ -11,10 +11,12 @@
 //! - [`schema`] reads the payload's semantic action schema, which the semantic states index.
 //! - [`synth`] samples a script into a recording, frame by frame.
 //! - [`dump`] prints a recording's frames and events.
+//! - [`rig_eval`] runs the grounded body rig over a recording.
 
 pub mod dump;
 pub mod inputs;
 pub mod rig;
+pub mod rig_eval;
 pub mod schema;
 pub mod script;
 pub mod scripts;
