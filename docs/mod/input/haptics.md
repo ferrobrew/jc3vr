@@ -80,7 +80,8 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | `Event::GrenadePin` | a held grenade's pin is pulled with the trigger, starting its fuse | bump | 0.8 | weapons | `weapons::grenade` |
 | `Event::GrenadeWarning` | a cooking grenade's fuse warning, faster toward the end | click | 0.75 | weapons | `weapons::grenade` |
 | `Event::GrenadeCatch` | a live grenade is caught | bump | 0.75 | weapons | `weapons::grenade` |
-| `Event::PouchRefused` | the game refuses a grab at the grenade or C4 pouch | buzz | 0.75 | weapons | `weapons::grenade`, `weapons::c4` |
+| `Event::PouchRefused` | the game refuses a grab at the grenade or C4 pouch, or a full grenade pouch refuses a grenade pressed onto it | buzz | 0.75 | weapons | `weapons::grenade`, `weapons::c4` |
+| `Event::PouchReturn` | a held grenade or C4 charge pressed back into its pouch goes in | click | 0.5 | weapons | `weapons::grenade`, `weapons::c4` |
 | `Event::C4Prime` | a charge is primed in the hand | click | 0.4 | weapons | `weapons::c4` |
 | `Event::C4Throw` | a charge leaves the hand | click | 0.6 | weapons | `weapons::c4` |
 | `Event::C4Stick` | a charge pressed onto a surface sticks | bump | 0.6 | weapons | `weapons::c4` |

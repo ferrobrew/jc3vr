@@ -61,6 +61,51 @@ pub(super) unsafe fn with_sources<T>(
     )
 }
 
+/// Hide the static display instance a hand took its grenade from: entry `index` of the collection
+/// at `collection`, which must still be the instance `instance` drawing the model `resource`, and
+/// still shown. It is hidden as the game hides an instance, by clearing
+/// [`ModelInstanceFlags::VISIBLE`] and [`ModelInstanceFlags::FLAG_ENABLED`], so it is no longer
+/// drawn, and the next observation of its collection no longer finds it a source. The collection
+/// keeps it hidden until it is destroyed; a location that loads again makes it afresh, shown.
+/// `false`, with nothing written, when the entry is not that instance any more.
+///
+/// # Safety
+///
+/// Inside [`with_sources`]'s read, on the game thread: the registry's lock is held, which keeps
+/// the collection from being destroyed.
+pub(super) unsafe fn hide(
+    collection: usize,
+    index: usize,
+    instance: usize,
+    resource: usize,
+) -> bool {
+    let Some(collection) = (unsafe { (collection as *const ModelCollection).as_ref() }) else {
+        return false;
+    };
+    if index >= collection.m_NumInstances as usize
+        || collection.m_ModelInstances.is_null()
+        || !(collection.m_ModelInstances as usize)
+            .is_multiple_of(std::mem::align_of::<*mut ModelInstance>())
+    {
+        return false;
+    }
+    let current = unsafe { *collection.m_ModelInstances.add(index) };
+    if current as usize != instance {
+        return false;
+    }
+    let Some(model) = (unsafe { current.as_mut() }) else {
+        return false;
+    };
+    if !visible(model) || model.m_spModel.px as usize != resource {
+        return false;
+    }
+    model
+        .m_Flags
+        .remove(ModelInstanceFlags::VISIBLE | ModelInstanceFlags::FLAG_ENABLED);
+    tracing::debug!(target: "controllers", collection = collection as *const ModelCollection as usize, index, model = instance, "grenade: hid the static display instance a hand took");
+    true
+}
+
 fn read_sources<T>(
     registry: &Mutex<Registry>,
     to_cockpit: &impl Fn(Vec3) -> Vec3,

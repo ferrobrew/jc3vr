@@ -55,6 +55,8 @@ pub(crate) struct Counts {
     pub recovered: u64,
     /// Items the world made in place of native pickups.
     pub spawned: u64,
+    /// Items put back into the pouch.
+    pub returned: u64,
 }
 
 pub(crate) fn counts() -> Counts {
@@ -203,6 +205,30 @@ pub(crate) fn place_stowed(socket: Socket, world: Mat4) {
     {
         place(item.binding.lease, world);
     }
+}
+
+/// Put away the item in `hand`, whose pin is in: its actor leaves the pool and the item retires
+/// from the loadout. `false`, with nothing changed, when the hand holds no such item or its release
+/// is already under way.
+///
+/// The removal is the pool removal a draw's refusal makes ([`native::remove`]), which an inert
+/// actor allows at any point of the input tick's game stage.
+pub(crate) fn return_held(hand: Hand) -> bool {
+    let Some(item) = in_hand(hand) else {
+        return false;
+    };
+    let Some(actor) = actor(item) else {
+        return false;
+    };
+    if native::pin_out(&actor) || native::waiting(item) {
+        return false;
+    }
+    // SAFETY: the input tick's game stage, on the game thread; the item is ours and its actor is
+    // inert.
+    unsafe { native::remove(&actor) };
+    retire(item, "item put back into the pouch");
+    COUNTS.lock().returned += 1;
+    true
 }
 
 /// Pull the pin of the item in `hand`, starting its fuse. `None` when the hand holds no item.
@@ -756,6 +782,7 @@ static COUNTS: Mutex<Counts> = Mutex::new(Counts {
     dropped: 0,
     recovered: 0,
     spawned: 0,
+    returned: 0,
 });
 static NEXT_MODEL: AtomicU64 = AtomicU64::new(1);
 static CLEANUP: AtomicBool = AtomicBool::new(false);

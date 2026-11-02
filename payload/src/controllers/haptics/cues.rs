@@ -150,8 +150,11 @@ pub enum Event {
     GrenadeWarning,
     /// A live grenade caught.
     GrenadeCatch,
-    /// A grab at a pouch that the game refused: no grenade or charge to give.
+    /// A grab at a pouch that the game refused: no grenade or charge to give. Also a grenade
+    /// pressed onto a full grenade pouch.
     PouchRefused,
+    /// A held grenade or C4 charge pressed back into its pouch.
+    PouchReturn,
     /// A C4 charge primed in the hand.
     C4Prime,
     /// A C4 charge thrown.
@@ -225,7 +228,7 @@ pub enum Event {
 
 impl Event {
     #[cfg(test)]
-    pub const ALL: [Event; 57] = [
+    pub const ALL: [Event; 58] = [
         Event::PalmTouch,
         Event::HandStrike,
         Event::Take,
@@ -251,6 +254,7 @@ impl Event {
         Event::GrenadeWarning,
         Event::GrenadeCatch,
         Event::PouchRefused,
+        Event::PouchReturn,
         Event::C4Prime,
         Event::C4Throw,
         Event::C4Stick,
@@ -315,6 +319,7 @@ impl Event {
             Event::GrenadeWarning => Cue::new(Primitive::Click, 0.75, Category::Weapons),
             Event::GrenadeCatch => Cue::new(Primitive::Bump, 0.75, Category::Weapons),
             Event::PouchRefused => Cue::new(Primitive::Buzz, 0.75, Category::Weapons),
+            Event::PouchReturn => Cue::new(Primitive::Click, 0.5, Category::Weapons),
             Event::C4Prime => Cue::new(Primitive::Click, 0.4, Category::Weapons),
             Event::C4Throw => Cue::new(Primitive::Click, 0.6, Category::Weapons),
             Event::C4Stick => Cue::new(Primitive::Bump, 0.6, Category::Weapons),
@@ -379,6 +384,7 @@ impl Event {
             Event::GrenadeWarning => "grenade warning",
             Event::GrenadeCatch => "grenade catch",
             Event::PouchRefused => "pouch refused",
+            Event::PouchReturn => "pouch return",
             Event::C4Prime => "C4 prime",
             Event::C4Throw => "C4 throw",
             Event::C4Stick => "C4 stick",

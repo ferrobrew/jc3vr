@@ -27,7 +27,10 @@
 //! ([`Inventory::GetAnimationAllowsPlantingExplosives`]), and while the game's own planting holds
 //! the weapon. When the throw stops acting, a held charge is taken back
 //! ([`PlantedExplosiveWeapon::DespawnPrimedExplosive`]); priming consumes nothing, so nothing is
-//! refunded.
+//! refunded. A held charge pressed back onto the pouch
+//! ([`crate::controllers::weapons::pouch_return`]) is taken back the same way: a primed charge is
+//! not yet among the placed ones, so it holds no place against the limit, the detonator does not
+//! count it, and once removed nothing can detonate it.
 //!
 //! Detonation goes through the game's own detonate input
 //! ([`WeaponInput::E_INPUT_DETONATE_EXPLOSIVES`]): a request ([`request_detonation`], from the
@@ -94,6 +97,7 @@ use crate::{
             },
             engine,
             grenade::{Release, catch::body_of, throw_release},
+            pouch_return,
         },
     },
 };
@@ -161,6 +165,8 @@ pub struct C4Status {
     /// object rather than the world's geometry.
     pub stuck: u64,
     pub stuck_on_objects: u64,
+    /// Charges pressed back onto the pouch.
+    pub returned: u64,
     /// The most recent throw steps, newest last.
     pub events: Vec<C4Event>,
     /// Whether a detonation request waits for the weapon.
@@ -201,6 +207,21 @@ pub(crate) fn held() -> Option<(Hand, usize)> {
         .hand()
         .filter(|_| state.stage.charge_in_hand())?;
     Some((hand, state.primed?))
+}
+
+/// The charge each hand holds that could go back into the pouch, by its address: a primed charge
+/// the hand has not let go of.
+pub(crate) fn returnable() -> [Option<usize>; 2] {
+    let state = STATE.lock();
+    let mut out = [None; 2];
+    if let Stage::Held {
+        hand,
+        release: None,
+    } = state.stage
+    {
+        out[hand.index()] = state.primed;
+    }
+    out
 }
 
 /// Pass the held charge from the other hand to `to`, as a held grenade or a gun is passed: the
@@ -317,6 +338,19 @@ pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Tuning) {
     if let Some(hand) = inputs.pouch_grab {
         state.stage = stage::on_input(state.stage, InputEvent::Grab(hand));
     }
+    let mut returned = None;
+    for (hand, pressed) in Hand::BOTH.into_iter().zip(pouch_return::take_charges()) {
+        let before = state.stage;
+        if pressed {
+            state.stage = stage::on_input(before, InputEvent::Return(hand));
+        }
+        if state.stage != before {
+            state.status.returned += 1;
+            state.preview = None;
+            returned = Some(hand);
+            tracing::info!(target: "controllers", hand = hand.label(), "c4: put the charge back into the pouch");
+        }
+    }
     let planting = state.status.planting_mode;
     let hands = WheelHands {
         free: inputs.free,
@@ -371,6 +405,10 @@ pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Tuning) {
         );
     }
     state.status.stage = state.stage;
+    drop(state);
+    if let Some(hand) = returned {
+        haptics::play(hand, Event::PouchReturn);
+    }
 }
 
 /// Stop the throw: a held charge is taken back at the weapon's next update, and a grab not yet
@@ -510,6 +548,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         thrown: 0,
         stuck: 0,
         stuck_on_objects: 0,
+        returned: 0,
         events: Vec::new(),
         detonation_pending: false,
         detonations: 0,

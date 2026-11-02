@@ -38,6 +38,7 @@ use crate::{
             hold::{self, armed},
             inventory,
             pouch_models::{self, Prop, ShownPouch},
+            pouch_return,
             regions::{
                 self, Carry, GunRegion, GunShape, Observed,
                 engine::{self as region_engine, DockedLongGun},
@@ -317,6 +318,30 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             targets.extend(place.pouch(&pouch, pouches.reach_margin_m));
         }
     }
+    // A held grenade or charge goes back by pressing it onto its pouch, whatever is in stock and
+    // whichever hands may take from the pouches.
+    let return_body = body.as_ref().filter(|_| gameplay);
+    let as_pouch = |pouch: Candidate| pouch_return::Pouch {
+        centre: pouch.centre,
+        radius: pouch.radius,
+    };
+    pouch_return::observe(&pouch_return::Inputs {
+        grenade_pouch: return_body
+            .filter(|_| config.weapons.grenade_throw)
+            .and_then(|body| {
+                volumes::grenade_pouch(body, &POUCHES, config.acting_hand(), ChestGrabbers::Either)
+            })
+            .map(as_pouch),
+        charge_pouch: return_body
+            .filter(|_| config.weapons.c4_throw)
+            .and_then(|body| {
+                volumes::c4_pouch(body, &POUCHES, config.acting_hand(), ChestGrabbers::Either)
+            })
+            .map(as_pouch),
+        grips: active.hands.map(|hand| hand.map(|hand| hand.grip.position)),
+        grenades: Hand::BOTH.map(grenade::returnable),
+        charges: c4::returnable(),
+    });
     state.docked_touch = [None; 2];
     if capabilities.dock {
         let mut docked = docked_candidates(&mut state, &ticked, &active, free);

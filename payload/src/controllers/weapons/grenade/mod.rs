@@ -1,16 +1,18 @@
 //! Independent safe grenades, their pins, and native live grenades.
 //!
-//! A pouch draw takes a native grenade from the grenade weapon's own pool and leaves it inert, so
-//! the item the player sees, carries, stows, and drops is the engine's own object from that moment
-//! on. Transfers, holster moves, and releases keep that item and its actor while its pin is in. A
-//! trigger press on the hand holding it pulls the pin, which starts the fuse; nothing else does,
-//! and a grenade thrown or dropped with its pin in stays inert. Native live grenades can still be
-//! caught and thrown on.
+//! A pouch draw takes one grenade from the game's own stock ([`stock`]) and a native grenade from
+//! the grenade weapon's own pool, left inert, so the item the player sees, carries, stows, and
+//! drops is the engine's own object from that moment on. Transfers, holster moves, and releases
+//! keep that item and its actor while its pin is in, and pressed back onto the pouch with its pin in
+//! it returns to the stock. A trigger press on the hand holding it pulls the pin, which starts the
+//! fuse; nothing else does, and a grenade thrown or dropped with its pin in stays inert. Native
+//! live grenades can still be caught and thrown on.
 
 pub mod catch;
 mod locker;
 mod native;
 pub(crate) mod safe;
+pub mod stock;
 pub mod tuning;
 mod world;
 
@@ -48,7 +50,7 @@ use crate::{
             held::{self, Held, Slot},
         },
         haptics::{self, Event},
-        loadout::{TakeSource, safe_items::SafeItemView},
+        loadout::{ItemId, TakeSource, safe_items::SafeItemView},
         motion,
         overlay::{
             primitive::{
@@ -62,9 +64,11 @@ use crate::{
             grenade::{
                 catch::{CatchCounts, Caught, Sighting},
                 native::PinPull,
+                stock::Stock,
                 tuning::{GRENADE, GrenadeTuning},
             },
             hold::{self, act, refs::Weak},
+            pouch_return,
         },
     },
 };
@@ -77,6 +81,7 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_hook_library(native::hook_library())
         .with_hook_library(locker::hook_library())
         .with_hook_library(world::hook_library())
+        .with_hook_library(stock::hook_library())
 }
 
 /// Hook removal keeps the image mapped while a locker source callback remains active.
@@ -158,9 +163,12 @@ pub struct GrenadeStatus {
     pub fuse: Option<Fuse>,
     pub last_release: Option<Vec3>,
     pub weapon_seen: bool,
-    /// Whether the pouch's supply is independent of native grenade ammunition. A draw is still
-    /// refused when the engine's ammunition pool has no room for another grenade.
-    pub in_stock: Option<bool>,
+    /// The game's grenade stock at the last input tick, which the pouch draws from and returns to.
+    pub stock: Option<Stock>,
+    /// Grenades pressed back onto the pouch and taken, and those the pouch refused because the
+    /// stock was full.
+    pub returned: u64,
+    pub returns_refused: u64,
     pub primed: u64,
     pub thrown: u64,
     pub gone: u64,
@@ -169,9 +177,18 @@ pub struct GrenadeStatus {
     pub events: Vec<GrenadeEvent>,
 }
 
-/// The safe pouch does not depend on native grenade stock.
+/// Whether the pouch has a grenade to give: the game's stock holds one, or the game's unlimited
+/// ammunition applies. A pouch with nothing to give is neither offered nor drawn.
 pub(crate) fn in_stock() -> bool {
-    true
+    stock::in_stock()
+}
+
+/// The grenade `hand` holds that could go back into the pouch: one of the loadout's with its pin
+/// in.
+pub(crate) fn returnable(hand: Hand) -> Option<ItemId> {
+    safe::in_hand(hand)
+        .filter(|_| safe::pin_in(hand))
+        .map(|item| item.item)
 }
 
 pub fn status() -> GrenadeStatus {
@@ -211,9 +228,10 @@ pub(crate) fn snatched_from_world(hand: Hand, weapon: Weak) {
     STATE.lock().snatched_pickups[hand.index()] = Some(weapon);
 }
 
-/// Whether `weapon` is a finite native hand grenade lying in the world: one grenade, such as one a
-/// character dropped, that a hand takes as the grenade it is, rather than a display that hands out
-/// a copy ([`WeaponBase::m_InfinitePickup`]).
+/// Whether `weapon` is a finite native hand grenade lying in the world, such as one a character
+/// dropped: a grenade the snatch can bring to the hand and the world's drop replaces, rather than a
+/// grenade on a display ([`WeaponBase::m_InfinitePickup`]), which stays where it is until a hand
+/// takes it.
 pub(crate) fn finite_world_pickup(weapon: &WeaponBase) -> bool {
     // Read as raw values: an unset slot or a state the enums do not name is neither.
     let slot = unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() };
@@ -294,6 +312,8 @@ pub(super) unsafe fn begin_tick(inputs: &BeginInputs, tuning: &GrenadeTuning) ->
         state.sightings.clear();
         state.locker_frames = None;
     }
+    // SAFETY: the game thread, before the world update.
+    let _ = unsafe { stock::refresh() };
     locker::clear();
     if !inputs.acting {
         return Vec::new();
@@ -399,10 +419,16 @@ pub(super) fn input_tick(
         && !holds(hand)
     {
         // SAFETY: the game stage runs on the game thread before the world update.
-        if unsafe { safe::draw(hand, tuning) } {
+        if unsafe { draw_from_pouch(hand, tuning) } {
             haptics::play(hand, Event::GrenadePrime);
         } else {
             haptics::play(hand, Event::PouchRefused);
+        }
+    }
+    for (hand, pressed) in Hand::BOTH.into_iter().zip(pouch_return::take_grenades()) {
+        if pressed {
+            // SAFETY: the game stage runs on the game thread before the world update.
+            unsafe { return_to_pouch(hand) };
         }
     }
     // SAFETY: the game stage runs on the game thread before the world update.
@@ -496,7 +522,7 @@ pub(super) fn input_tick(
     );
     let mut state = STATE.lock();
     state.status.fuse = urgent.map(|(_, fuse)| fuse);
-    state.status.in_stock = Some(true);
+    state.status.stock = stock::last();
     let (mut primitives, pulse) =
         warning(&mut state, urgent, inputs.dt, config).unwrap_or_default();
     drop(state);
@@ -578,6 +604,61 @@ pub(super) fn report_native_throw(hand: Hand, release: Release) {
     state.status.events.drain(..excess);
 }
 
+/// Draw a grenade from the pouch: one from the game's stock, as an item in `hand`. The stock is
+/// read before the item is made and taken after, so a refused allocation takes nothing and an empty
+/// stock makes nothing.
+///
+/// # Safety
+///
+/// The input tick's game stage, on the game thread.
+unsafe fn draw_from_pouch(hand: Hand, tuning: &GrenadeTuning) -> bool {
+    if !unsafe { stock::refresh() }.is_some_and(Stock::may_draw) {
+        tracing::info!(target: "controllers", hand = hand.label(), "grenade: the pouch is empty");
+        return false;
+    }
+    if !unsafe { safe::draw(hand, tuning) } {
+        return false;
+    }
+    if !unsafe { stock::take() } {
+        // The stock changed between the read and the take: the item goes back as it came.
+        tracing::warn!(target: "controllers", hand = hand.label(), "grenade: the stock emptied during the draw; the grenade goes back");
+        safe::return_held(hand);
+        return false;
+    }
+    true
+}
+
+/// Put the grenade `hand` holds back into the pouch: its item and actor retire, and the stock goes
+/// up by one. A full stock refuses with the pouch's buzz and leaves the grenade in the hand; a
+/// grenade whose pin is out never goes back.
+///
+/// # Safety
+///
+/// The input tick's game stage, on the game thread.
+unsafe fn return_to_pouch(hand: Hand) {
+    if returnable(hand).is_none() {
+        return;
+    }
+    if let Err(error) = unsafe { stock::may_give_back() } {
+        tracing::info!(target: "controllers", hand = hand.label(), %error, "grenade: the pouch refused the grenade");
+        STATE.lock().status.returns_refused += 1;
+        haptics::play(hand, Event::PouchRefused);
+        return;
+    }
+    if !safe::return_held(hand) {
+        tracing::debug!(target: "controllers", hand = hand.label(), "grenade: the held grenade could not be put away");
+        return;
+    }
+    if let Err(error) = unsafe { stock::give_back() } {
+        // Read a moment ago as having room, on the same thread: only a change from elsewhere in the
+        // game between the two reads lands here.
+        tracing::warn!(target: "controllers", hand = hand.label(), %error, "grenade: the stock filled while the grenade was put away");
+    }
+    STATE.lock().status.returned += 1;
+    haptics::play(hand, Event::PouchReturn);
+    tracing::info!(target: "controllers", hand = hand.label(), "grenade: put the grenade back into the pouch");
+}
+
 const WARNING_TTL: Duration = Duration::from_millis(150);
 const MAX_EVENTS: usize = 6;
 const WARNING_CALM: Rgba = [0.4, 1.0, 0.4, 0.8];
@@ -607,7 +688,9 @@ static STATE: Mutex<State> = Mutex::new(State {
         fuse: None,
         last_release: None,
         weapon_seen: false,
-        in_stock: None,
+        stock: None,
+        returned: 0,
+        returns_refused: 0,
         primed: 0,
         thrown: 0,
         gone: 0,

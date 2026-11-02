@@ -1,8 +1,12 @@
-//! Safe grenade draws from native weapon displays and verified static collection displays.
+//! Grenades taken from native weapon displays and verified static collection displays.
 //!
 //! Native weapons use weak references. Static displays use copied live-location model transforms and
-//! retire before their collection is destroyed. Completion keeps each source's identity intact and
-//! draws an independent safe item without consuming the source or native ammunition.
+//! retire before their collection is destroyed. Each grenade on a display is one grenade: completion
+//! revalidates the source's identity, admits a safe item to the hand, and then removes that grenade
+//! from the display, without touching the grenade stock. A native display's grenade is consumed by
+//! the game's own pickup with its rounds emptied ([`stock::consume_through_pickup`]), so the
+//! placement rule that put it there hears of the pickup and restocks it as the game would; a static
+//! instance is hidden ([`collection::hide`]), and shows again only when its location loads again.
 
 mod collection;
 mod format;
@@ -29,7 +33,7 @@ use crate::controllers::{
     grab::{Candidate, GrabVolume},
     weapons::{
         engine,
-        grenade::{self, safe, tuning::GrenadeTuning},
+        grenade::{self, safe, stock, tuning::GrenadeTuning},
         hold::refs::{Strong, Weak},
     },
 };
@@ -146,28 +150,43 @@ pub(super) unsafe fn take(
     let offered = OFFERS.lock()[hand.index()].take();
     let owner = unsafe { engine::local_player() }.ok_or(Refusal::SourceChanged)?;
     let result = match offered.map(|source| source.identity.provider) {
-        Some(Provider::Collection { .. }) => unsafe {
+        Some(Provider::Collection {
+            collection,
+            index,
+            resource,
+        }) => unsafe {
             collection::with_sources(&to_cockpit, |current| {
-                complete(offered, &current, grip, || safe::draw(hand, tuning))
+                complete(offered, &current, grip, || {
+                    let model = offered.map_or(0, |source| source.identity.model);
+                    if !safe::draw(hand, tuning) {
+                        return false;
+                    }
+                    // The registry's lock, held here, keeps the collection from being destroyed.
+                    if collection::hide(collection, index, model, resource) {
+                        return true;
+                    }
+                    // A grenade that cannot be taken off the shelf is not taken at all.
+                    safe::return_held(hand);
+                    false
+                })
             })
         },
         Some(Provider::Weapon) | None => {
             let current = unsafe { sources(owner, &to_cockpit) };
             let pickup = offered.and_then(|source| registered(source.identity));
             complete(offered, &current, grip, || unsafe {
-                match &pickup {
+                let Some(alive) = &pickup else {
+                    return false;
+                };
+                let address =
+                    alive.object() as usize - WeaponBase::GAME_OBJECT_BASE_OFFSET as usize;
+                let weapon = &mut *(address as *mut WeaponBase);
+                if grenade::finite_world_pickup(weapon) {
                     // A finite grenade lying in the world is the grenade the hand takes.
-                    Some(alive) => {
-                        let address =
-                            alive.object() as usize - WeaponBase::GAME_OBJECT_BASE_OFFSET as usize;
-                        let weapon = &mut *(address as *mut WeaponBase);
-                        if grenade::finite_world_pickup(weapon) {
-                            grenade::take_world_pickup(hand, weapon, tuning)
-                        } else {
-                            safe::draw(hand, tuning)
-                        }
-                    }
-                    None => safe::draw(hand, tuning),
+                    grenade::take_world_pickup(hand, weapon, tuning)
+                } else {
+                    // A display's grenade is one grenade too, which its rule restocks.
+                    safe::draw(hand, tuning) && stock::consume_through_pickup(weapon)
                 }
             })
         }
@@ -668,7 +687,7 @@ mod tests {
     }
 
     #[test]
-    fn native_display_provider_feeds_independent_safe_items_without_native_pickup() {
+    fn native_display_provider_offers_the_visible_display_and_completion_admits_items() {
         let mut storage = Box::new(MaybeUninit::<WeaponBase>::zeroed());
         // SAFETY: every mapped value permits zero except WeaponClass, initialized before the borrow.
         let weapon = unsafe {
@@ -764,7 +783,7 @@ mod tests {
     }
 
     #[test]
-    fn repeated_draws_from_one_display_are_independent_and_refusal_does_not_retarget() {
+    fn each_completion_runs_its_draw_once_and_refusal_does_not_retarget() {
         let source = Source {
             identity: identity(),
             centre: Vec3::ZERO,

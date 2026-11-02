@@ -82,6 +82,7 @@ pub mod inventory;
 pub mod opening;
 pub(crate) mod permission;
 pub mod pouch_models;
+pub(crate) mod pouch_return;
 pub mod recoil;
 pub mod regions;
 pub mod reload;

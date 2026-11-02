@@ -197,7 +197,7 @@ pub(super) unsafe fn dropped(
 /// What a hand grenade at `address` is to the snatch: `None` for a weapon that is not a hand
 /// grenade, `Some(true)` for a finite one lying in the world, which the snatch yanks in and the
 /// catch takes as the grenade it is ([`grenade::finite_world_pickup`]), and `Some(false)` for a
-/// display that hands out copies, which the snatch leaves to the hand in reach.
+/// grenade on a display, which stays where it is for the hand in reach to take.
 ///
 /// # Safety
 ///

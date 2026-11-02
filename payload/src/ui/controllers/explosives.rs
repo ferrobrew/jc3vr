@@ -57,8 +57,8 @@ pub(super) fn explosives_readout(ui: &mut Ui, readout: &ExplosivesReadout) {
         yes_no(c.planting_mode)
     ));
     ui.label(format!(
-        "  pressed onto surfaces {} · of them onto objects {}",
-        c.stuck, c.stuck_on_objects
+        "  pressed onto surfaces {} · of them onto objects {} · put back into the pouch {}",
+        c.stuck, c.stuck_on_objects, c.returned
     ));
     if let Some(v) = c.last_release {
         ui.label(format!(

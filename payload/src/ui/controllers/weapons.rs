@@ -458,6 +458,18 @@ fn grenade_readout(ui: &mut Ui, g: &GrenadeStatus) {
             " · the grenade weapon has not updated yet"
         }
     ));
+    ui.label(format!(
+        "  stock {} · put back into the pouch {} · refused by a full pouch {}",
+        g.stock.map_or("unknown".to_owned(), |stock| {
+            let capacity = stock
+                .capacity
+                .map_or("no cap".to_owned(), |cap| format!("of {cap}"));
+            let unlimited = if stock.unlimited { ", unlimited" } else { "" };
+            format!("{} {capacity}{unlimited}", stock.count())
+        }),
+        g.returned,
+        g.returns_refused
+    ));
     if let Some(f) = g.fuse {
         ui.label(format!(
             "  fuse {:.1} s of {:.1} s",

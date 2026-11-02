@@ -72,6 +72,8 @@ pub enum InputEvent {
     Release(Hand, Release),
     /// The other hand took the held charge from the hand holding it: `to` holds it now.
     HandOver(Hand),
+    /// `hand` pressed its held charge back onto the C4 pouch.
+    Return(Hand),
     /// The throw cannot act: its toggle is off, the mode has no free hands, or the bindings stopped
     /// injecting.
     StandDown,
@@ -191,6 +193,15 @@ pub fn on_input(stage: Stage, event: InputEvent) -> Stage {
             hand: to,
             release: None,
         },
+        // A charge put back is taken back as a stand-down's is: it was never placed, so it holds no
+        // place among the live charges and nothing can detonate it.
+        (
+            Stage::Held {
+                hand,
+                release: None,
+            },
+            InputEvent::Return(h),
+        ) if h == hand => Stage::Cancelling,
         (Stage::Wanted { .. }, InputEvent::StandDown) => Stage::Idle,
         (Stage::Held { .. }, InputEvent::StandDown) => Stage::Cancelling,
         (stage, _) => stage,
@@ -470,6 +481,32 @@ mod tests {
         assert_eq!(s, Stage::Idle);
         let wanted = on_input(Stage::Idle, InputEvent::Grab(Hand::Right));
         assert_eq!(on_input(wanted, InputEvent::StandDown), Stage::Idle);
+    }
+
+    #[test]
+    fn a_charge_put_back_is_taken_back_without_a_throw() {
+        let held = Stage::Held {
+            hand: Hand::Left,
+            release: None,
+        };
+        // Only the hand holding the charge puts it back.
+        assert_eq!(on_input(held, InputEvent::Return(Hand::Right)), held);
+        let s = on_input(held, InputEvent::Return(Hand::Left));
+        assert_eq!(s, Stage::Cancelling);
+        assert!(!s.charge_in_hand());
+        let (s, action, out) = update(s, view(true, true));
+        assert_eq!(action, WeaponAction::Cancel);
+        assert_eq!(out, vec![Outcome::Cancelled]);
+        assert_eq!(s, Stage::Idle);
+        // A charge already let go of is on its way out, and a charge not yet primed has nothing to
+        // put back.
+        let released = Stage::Held {
+            hand: Hand::Left,
+            release: Some(RELEASE),
+        };
+        assert_eq!(on_input(released, InputEvent::Return(Hand::Left)), released);
+        let wanted = on_input(Stage::Idle, InputEvent::Grab(Hand::Left));
+        assert_eq!(on_input(wanted, InputEvent::Return(Hand::Left)), wanted);
     }
 
     #[test]
