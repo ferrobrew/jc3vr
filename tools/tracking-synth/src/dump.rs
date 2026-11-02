@@ -66,7 +66,7 @@ impl Range {
     /// The range as inclusive `time_ns` limits on the recording's clock. A display-time bound
     /// resolves to the first frame at or after it (`from`) or the last frame at or before it (`to`);
     /// with no such frame the range is empty.
-    fn resolve(&self, frames: &[Frame]) -> Option<(u64, u64)> {
+    pub(crate) fn resolve(&self, frames: &[Frame]) -> Option<(u64, u64)> {
         let from = match self.from {
             None => 0,
             Some(Bound::Seconds(seconds)) => seconds_to_ns(seconds),
@@ -313,7 +313,12 @@ fn text_event(event: &Event, out: &mut impl Write) -> io::Result<()> {
         seconds(event.time_ns),
         event.kind.name()
     )?;
-    match &event.kind {
+    write_event_body(&event.kind, out)
+}
+
+/// An event's fields as its text line prints them, after the time and the kind, ending in a newline.
+pub(crate) fn write_event_body(kind: &EventKind, out: &mut impl Write) -> io::Result<()> {
+    match kind {
         EventKind::ControllerState(state) => writeln!(out, "{state:?}"),
         EventKind::GripAcquisition(grip) => writeln!(out, "{grip:?}"),
         EventKind::GunRelease(release) => writeln!(out, "{release:?}"),

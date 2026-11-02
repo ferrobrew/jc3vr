@@ -122,11 +122,17 @@ impl VideoClock {
     /// Seconds into the video for a frame at `display_time_ns`, interpolated between the stamps,
     /// and extrapolated at real time for at most [`EDGE_NS`] past either end.
     pub fn video_s(&self, display_time_ns: i64) -> Option<f64> {
+        Some((self.unix_ms(display_time_ns)? - self.start_unix_ms) / 1000.0)
+    }
+
+    /// The wall-clock time of a frame at `display_time_ns`, milliseconds since the Unix epoch,
+    /// placed as [`video_s`](Self::video_s) places it.
+    pub fn unix_ms(&self, display_time_ns: i64) -> Option<f64> {
         let index = self.points.partition_point(|p| p.0 < display_time_ns);
-        let unix_ms = if index > 0 && index < self.points.len() {
+        if index > 0 && index < self.points.len() {
             let ((t0, u0), (t1, u1)) = (self.points[index - 1], self.points[index]);
             let span = (t1 - t0) as f64;
-            u0 + (u1 - u0) * ((display_time_ns - t0) as f64 / span)
+            Some(u0 + (u1 - u0) * ((display_time_ns - t0) as f64 / span))
         } else {
             let (t, u) = if index == 0 {
                 *self.points.first()?
@@ -136,9 +142,13 @@ impl VideoClock {
             if (display_time_ns - t).abs() > EDGE_NS {
                 return None;
             }
-            u + (display_time_ns - t) as f64 / 1.0e6
-        };
-        Some((unix_ms - self.start_unix_ms) / 1000.0)
+            Some(u + (display_time_ns - t) as f64 / 1.0e6)
+        }
+    }
+
+    /// The wall-clock time of the video's first frame, milliseconds since the Unix epoch.
+    pub fn start_unix_ms(&self) -> f64 {
+        self.start_unix_ms
     }
 }
 

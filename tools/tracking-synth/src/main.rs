@@ -5,6 +5,9 @@
 //! tracking-synth --list
 //! tracking-synth dump [--json] [--from <time>] [--to <time>] <recording>
 //! tracking-synth rig-eval [--height <m>] [--eye-height <m>] [--tuning <json>] <recording> <out.csv>
+//! tracking-synth export-rerun [--from <time>] [--to <time>] [--video <video>]
+//!     [--video-height <px>] [--height <m>] [--eye-height <m>] [--tuning <json>] <recording>
+//!     -o <out.rrd>
 //! ```
 //!
 //! With no script named, every built-in script is written. The recordings go to `<dir>/<script>.jc3trk`,
@@ -16,7 +19,9 @@
 //! clock a video recording's sidecar shares. `rig-eval` runs the grounded body rig over a recording
 //! and writes a CSV of each grounded frame (`rig_eval`); `--tuning` takes the rig's tuning as JSON,
 //! any field left out keeping its default, and a video sidecar (`frames.jsonl` and `stream.json`)
-//! beside the recording adds the video's time to each row.
+//! beside the recording adds the video's time to each row. `export-rerun` writes a stretch of a
+//! recording as a Rerun recording (`rerun_export`), with the take's video cut to the stretch beside
+//! it; it needs the `rerun` feature, on by default.
 
 use std::{
     fmt,
@@ -25,6 +30,8 @@ use std::{
 };
 
 use tracing_subscriber::EnvFilter;
+#[cfg(feature = "rerun")]
+use tracking_synth::rerun_export::{self, DEFAULT_VIDEO_HEIGHT, ExportOptions, VideoSource};
 use tracking_synth::{
     dump::{self, Bound, DumpFormat, Range},
     rig_eval::{self, EvalOptions, VideoClock},
@@ -61,8 +68,10 @@ fn main() -> ExitCode {
 
 const USAGE: &str = "usage: tracking-synth [--out <dir>] [--rate <hz>] [<script>...] | --list | \
                      dump [--json] [--from <time>] [--to <time>] <recording> | rig-eval \
-                     [--height <m>] [--eye-height <m>] [--tuning <json>] <recording> <out.csv>, \
-                     where <time> is seconds or xr:<display time ns>";
+                     [--height <m>] [--eye-height <m>] [--tuning <json>] <recording> <out.csv> | \
+                     export-rerun [--from <time>] [--to <time>] [--video <video>] [--video-height \
+                     <px>] [--height <m>] [--eye-height <m>] [--tuning <json>] <recording> -o \
+                     <out.rrd>, where <time> is seconds or xr:<display time ns>";
 
 /// What the command line asks for.
 #[derive(Debug, Clone, PartialEq)]
@@ -77,6 +86,14 @@ enum Command {
     RigEval {
         path: PathBuf,
         out: PathBuf,
+        options: EvalOptions,
+    },
+    ExportRerun {
+        path: PathBuf,
+        out: PathBuf,
+        range: Range,
+        video: Option<PathBuf>,
+        video_height: Option<u32>,
         options: EvalOptions,
     },
     Write {
@@ -108,6 +125,15 @@ enum CliError {
     BadLength(String),
     /// `rig-eval` tuning that does not parse.
     BadTuning(serde_json::Error),
+    /// `export-rerun` without a recording and an output, or with more.
+    ExportPaths,
+    /// A `--video-height` that is not a whole number of pixels.
+    BadVideoHeight(String),
+    /// `export-rerun` in a build without the `rerun` feature.
+    #[cfg_attr(feature = "rerun", allow(dead_code))]
+    NoRerun,
+    #[cfg(feature = "rerun")]
+    Export(tracking_synth::rerun_export::ExportError),
     Read {
         path: PathBuf,
         error: std::io::Error,
@@ -150,10 +176,24 @@ impl fmt::Display for CliError {
                 write!(f, "rig-eval: the length `{value}` is not a positive number")
             }
             CliError::BadTuning(error) => write!(f, "rig-eval: the tuning does not parse: {error}"),
+            CliError::ExportPaths => write!(
+                f,
+                "export-rerun: name exactly one recording, and the output with `-o`"
+            ),
+            CliError::BadVideoHeight(value) => write!(
+                f,
+                "export-rerun: the video height `{value}` is not a whole number of pixels"
+            ),
+            CliError::NoRerun => write!(
+                f,
+                "export-rerun: this build has no `rerun` feature; build with `--features rerun`"
+            ),
+            #[cfg(feature = "rerun")]
+            CliError::Export(error) => write!(f, "{error}"),
             CliError::Read { path, error } => {
-                write!(f, "dump: could not read {}: {error}", path.display())
+                write!(f, "could not read {}: {error}", path.display())
             }
-            CliError::Decode { path, error } => write!(f, "dump: {}: {error}", path.display()),
+            CliError::Decode { path, error } => write!(f, "{}: {error}", path.display()),
             CliError::Print(error) => write!(f, "dump: could not print: {error}"),
             CliError::Synth { script, error } => write!(f, "{script}: {error}"),
             CliError::Write { path, error } => {
@@ -174,6 +214,10 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Command, CliError> {
     if args.peek().map(String::as_str) == Some("rig-eval") {
         args.next();
         return parse_rig_eval(args);
+    }
+    if args.peek().map(String::as_str) == Some("export-rerun") {
+        args.next();
+        return parse_export_rerun(args);
     }
     let mut out = default_out();
     let mut options = Options::default();
@@ -252,6 +296,67 @@ fn parse_rig_eval(mut args: impl Iterator<Item = String>) -> Result<Command, Cli
     match <[PathBuf; 2]>::try_from(paths) {
         Ok([path, out]) => Ok(Command::RigEval { path, out, options }),
         Err(_) => Err(CliError::RigEvalPaths),
+    }
+}
+
+fn parse_export_rerun(mut args: impl Iterator<Item = String>) -> Result<Command, CliError> {
+    let mut range = Range::default();
+    let mut video = None;
+    let mut video_height = None;
+    let mut out = None;
+    let mut height = DEFAULT_HEIGHT_M;
+    let mut eye_height = None;
+    let mut tuning = None;
+    let mut paths = Vec::new();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--from" => range.from = Some(parse_bound(args.next(), "--from")?),
+            "--to" => range.to = Some(parse_bound(args.next(), "--to")?),
+            "--video" => {
+                video = Some(PathBuf::from(
+                    args.next().ok_or(CliError::MissingValue("--video"))?,
+                ));
+            }
+            "--video-height" => {
+                let value = args
+                    .next()
+                    .ok_or(CliError::MissingValue("--video-height"))?;
+                match value.parse::<u32>() {
+                    Ok(height) if height >= 2 => video_height = Some(height),
+                    _ => return Err(CliError::BadVideoHeight(value)),
+                }
+            }
+            "-o" | "--out" => {
+                out = Some(PathBuf::from(
+                    args.next().ok_or(CliError::MissingValue("-o"))?,
+                ));
+            }
+            "--height" => height = parse_length(args.next(), "--height")?,
+            "--eye-height" => eye_height = Some(parse_length(args.next(), "--eye-height")?),
+            "--tuning" => {
+                let json = args.next().ok_or(CliError::MissingValue("--tuning"))?;
+                tuning = Some(serde_json::from_str(&json).map_err(CliError::BadTuning)?);
+            }
+            option if option.starts_with('-') => {
+                return Err(CliError::UnknownOption(option.to_owned()));
+            }
+            path => paths.push(PathBuf::from(path)),
+        }
+    }
+    let mut options = EvalOptions::new(height, eye_height.unwrap_or(height * DEFAULT_EYE_SHARE));
+    if let Some(tuning) = tuning {
+        options.tuning = tuning;
+    }
+    match (<[PathBuf; 1]>::try_from(paths), out) {
+        (Ok([path]), Some(out)) => Ok(Command::ExportRerun {
+            path,
+            out,
+            range,
+            video,
+            video_height,
+            options,
+        }),
+        _ => Err(CliError::ExportPaths),
     }
 }
 
@@ -350,6 +455,21 @@ fn run(command: Command) -> Result<(), CliError> {
             );
             Ok(())
         }
+        Command::ExportRerun {
+            path,
+            out,
+            range,
+            video,
+            video_height,
+            options,
+        } => export_rerun(ExportRequest {
+            path,
+            out,
+            range,
+            video,
+            video_height,
+            eval: options,
+        }),
         Command::Write {
             out,
             options,
@@ -395,6 +515,66 @@ fn write(script: &Script, out: &Path, options: Options) -> Result<(), CliError> 
         path.display()
     );
     Ok(())
+}
+
+/// What `export-rerun` was asked for.
+#[cfg_attr(not(feature = "rerun"), allow(dead_code))]
+struct ExportRequest {
+    path: PathBuf,
+    out: PathBuf,
+    range: Range,
+    video: Option<PathBuf>,
+    video_height: Option<u32>,
+    eval: EvalOptions,
+}
+
+#[cfg(feature = "rerun")]
+fn export_rerun(request: ExportRequest) -> Result<(), CliError> {
+    let ExportRequest {
+        path,
+        out,
+        range,
+        video,
+        video_height,
+        eval,
+    } = request;
+    let bytes = std::fs::read(&path).map_err(|error| CliError::Read {
+        path: path.clone(),
+        error,
+    })?;
+    let recording = tracking_format::decode(&bytes).map_err(|error| CliError::Decode {
+        path: path.clone(),
+        error,
+    })?;
+    drop(bytes);
+    let clock = video_clock(&path);
+    let options = ExportOptions {
+        range,
+        video: video.map(|path| VideoSource {
+            path,
+            height: video_height.unwrap_or(DEFAULT_VIDEO_HEIGHT),
+        }),
+        eval,
+        source: path,
+    };
+    let summary = rerun_export::export(&recording, clock.as_ref(), &options, &out)
+        .map_err(CliError::Export)?;
+    tracing::info!(
+        frames = summary.frames,
+        events = summary.events,
+        rig_rows = summary.rig_rows,
+        video_frames = summary.video_frames,
+        wall_clock = summary.wall_clock,
+        median_wrist_error_m = ?summary.median_wrist_error_m,
+        "export-rerun: wrote {}",
+        out.display()
+    );
+    Ok(())
+}
+
+#[cfg(not(feature = "rerun"))]
+fn export_rerun(_request: ExportRequest) -> Result<(), CliError> {
+    Err(CliError::NoRerun)
 }
 
 /// The video sidecar beside a take's recording, when there is one.

@@ -12,6 +12,15 @@ serde_json = "1"
 tracking-format = { path = "../../tracking-format", features = ["serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# The Rerun SDK, for `export-rerun`. Pinned to the release nixpkgs ships the viewer at, so the
+# recordings it writes open in `nix shell nixpkgs#rerun`. Only the SDK, the file sink, and the MP4
+# reader that lists a video's frames: no viewer, no server, and no video decoder.
+rerun = { version = "=0.40.0", default-features = false, features = ["sdk", "rrd", "video"], optional = true }
+
+[features]
+default = ["rerun"]
+# `export-rerun`, which writes a recording as a Rerun recording.
+rerun = ["dep:rerun"]
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"

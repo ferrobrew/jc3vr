@@ -12,9 +12,12 @@
 //! - [`synth`] samples a script into a recording, frame by frame.
 //! - [`dump`] prints a recording's frames and events.
 //! - [`rig_eval`] runs the grounded body rig over a recording.
+//! - [`rerun_export`] writes a recording as a Rerun recording, with the `rerun` feature.
 
 pub mod dump;
 pub mod inputs;
+#[cfg(feature = "rerun")]
+pub mod rerun_export;
 pub mod rig;
 pub mod rig_eval;
 pub mod schema;
