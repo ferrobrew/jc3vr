@@ -77,7 +77,8 @@ pub struct GroundedFrame {
 pub fn frame(input: &GroundedInput) -> Option<GroundedFrame> {
     let mut state = STATE.lock();
     state.rig.set_body(player_body(&input.dimensions));
-    let snap = std::mem::take(&mut state.snap);
+    let snap = std::mem::take(&mut state.snap)
+        .filter(|at| input.now.saturating_duration_since(*at) <= SNAP_WAIT);
     if !input.grounded {
         state.rig.stand();
         if state
@@ -87,12 +88,13 @@ pub fn frame(input: &GroundedInput) -> Option<GroundedFrame> {
             state.rig.forget();
         }
         state.latest = None;
-        // A snap asked for off the ground waits for the ground.
+        // A snap asked for during a hop waits for the ground; one asked for in a vehicle seat or
+        // the air expires, since the recenter there re-based the whole view already.
         state.snap = snap;
         return None;
     }
     state.grounded_at = Some(input.now);
-    let snap_to = if snap {
+    let snap_to = if snap.is_some() {
         state.rig.recenter(input.eyes, input.head);
         state.snaps += 1;
         let yaw = state.rig.body_yaw().unwrap_or(0.0);
@@ -143,7 +145,7 @@ pub fn frame(input: &GroundedInput) -> Option<GroundedFrame> {
 /// Snap on the next grounded frame: face the head, measure the standing height afresh, and put the
 /// pelvis under the neck. The recenter's, and the debug UI's button.
 pub fn request_snap() {
-    STATE.lock().snap = true;
+    STATE.lock().snap = Some(Instant::now());
 }
 
 /// Turn the rig's room frame with the cockpit frame, by `turn` (new frame from old): a recenter's
@@ -296,6 +298,9 @@ const WALK_GAP_M: f32 = 0.08;
 /// The walk last added to the move stick, and when.
 static STEP_STICK: Mutex<Option<(Vec2, Instant)>> = Mutex::new(None);
 
+/// How long a snap waits for Rico to be grounded before it expires.
+const SNAP_WAIT: Duration = Duration::from_secs(1);
+
 /// A spell off the ground longer than this starts the rig again facing the head.
 const RESUME_AFTER: Duration = Duration::from_secs(1);
 
@@ -353,7 +358,8 @@ struct State {
     rig: GroundedRig,
     latest: Option<Published>,
     grounded_at: Option<Instant>,
-    snap: bool,
+    /// When a snap was asked for, until it is taken or expires.
+    snap: Option<Instant>,
     snaps: u64,
     height_samples: usize,
     logged_phase: StepPhase,
@@ -366,7 +372,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     }),
     latest: None,
     grounded_at: None,
-    snap: false,
+    snap: None,
     snaps: 0,
     height_samples: 0,
     logged_phase: StepPhase::Idle,
