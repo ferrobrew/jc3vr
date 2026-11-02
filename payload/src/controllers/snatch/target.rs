@@ -42,6 +42,21 @@ use crate::controllers::{
 /// The game thread, before the world update and the physics step.
 pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersConfig) -> bool {
     let point = match &mut offer.kind {
+        OfferKind::WorldGrenade { weapon, body, weak } => {
+            let Some(_alive) = weak.lock() else {
+                return false;
+            };
+            if !unsafe { grapple_weapons::is_dropped_weapon(*weapon) } {
+                return false;
+            }
+            let Ok((point, _)) = (unsafe { physical_hands::body_pose(*body, *weapon) }) else {
+                return false;
+            };
+            if !unsafe { in_sight(ray, point, weapon.get()) } {
+                return false;
+            }
+            point
+        }
         OfferKind::Ground {
             weapon,
             body,
@@ -165,7 +180,10 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
             point
         }
     };
-    let ground = matches!(offer.kind, OfferKind::Ground { .. });
+    let ground = matches!(
+        offer.kind,
+        OfferKind::Ground { .. } | OfferKind::WorldGrenade { .. }
+    );
     let chosen = rules::choose(
         ray,
         [Candidate { kind: (), point }],
@@ -216,6 +234,13 @@ pub(super) enum OfferKind {
         body: u32,
         weak: Weak,
     },
+    /// A native hand grenade lying in the world, which the game would collect by proximity: the
+    /// hand draws a grenade from it on the catch.
+    WorldGrenade {
+        weapon: NonZeroUsize,
+        body: u32,
+        weak: Weak,
+    },
     /// A vehicle's closed door, pulled at its handle, world space.
     Door {
         door: DoorTarget,
@@ -231,7 +256,9 @@ impl OfferKind {
             OfferKind::Ground { .. } | OfferKind::Held(_) | OfferKind::Holstered(_) => {
                 RemoteKind::Weapon
             }
-            OfferKind::Prop { .. } | OfferKind::Grenade { .. } => RemoteKind::Object,
+            OfferKind::Prop { .. } | OfferKind::Grenade { .. } | OfferKind::WorldGrenade { .. } => {
+                RemoteKind::Object
+            }
             OfferKind::Door { .. } => RemoteKind::Door,
         }
     }
@@ -242,7 +269,7 @@ impl OfferKind {
             OfferKind::Held(_) => "WEAPON IN HANDS",
             OfferKind::Holstered(_) => "HOLSTERED WEAPON",
             OfferKind::Prop { .. } => "OBJECT",
-            OfferKind::Grenade { .. } => "GRENADE",
+            OfferKind::Grenade { .. } | OfferKind::WorldGrenade { .. } => "GRENADE",
             OfferKind::Door { .. } => "CAR DOOR",
         }
     }
@@ -345,13 +372,25 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
         Kind::Aimed => aimed.map(|(_, kind, _alive)| kind)?,
         Kind::Floor(i) => {
             let weapon = floor[i];
-            unsafe { in_sight(ray, point, weapon.object.get()) }.then(|| OfferKind::Ground {
-                weapon: weapon.object,
-                body: weapon.body,
-                local_point: Vec3::ZERO,
-                // SAFETY: its body was read as its own on this thread this tick.
-                weak: unsafe { weak_of(weapon.object) },
-            })?
+            if !unsafe { in_sight(ray, point, weapon.object.get()) } {
+                return None;
+            }
+            // SAFETY: its body was read as its own on this thread this tick.
+            let weak = unsafe { weak_of(weapon.object) };
+            if unsafe { engine::is_hand_grenade(weapon.object) } {
+                OfferKind::WorldGrenade {
+                    weapon: weapon.object,
+                    body: weapon.body,
+                    weak,
+                }
+            } else {
+                OfferKind::Ground {
+                    weapon: weapon.object,
+                    body: weapon.body,
+                    local_point: Vec3::ZERO,
+                    weak,
+                }
+            }
         }
         Kind::Held(i) => {
             let target = held[i];
@@ -428,6 +467,13 @@ unsafe fn aimed_offer(
         }
         let (centre, orientation) =
             unsafe { physical_hands::body_pose(aimed.body, aimed.object) }.ok()?;
+        if unsafe { engine::is_hand_grenade(aimed.object) } {
+            return Some(OfferKind::WorldGrenade {
+                weapon: aimed.object,
+                body: aimed.body,
+                weak: weak(),
+            });
+        }
         return Some(OfferKind::Ground {
             weapon: aimed.object,
             body: aimed.body,

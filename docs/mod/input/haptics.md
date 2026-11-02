@@ -39,10 +39,10 @@ Each source belongs to one category, which the readout counts its cues under. Ev
 
 | Category | Sources |
 | --- | --- |
-| Contact | the palms and the hand bodies meeting, pressing, and striking things, taking hold and letting go, a door's latch |
+| Contact | the palms and the hand bodies meeting, pressing, and striking things, taking hold and letting go, a door's latch, the snatch's catch |
 | Weapons | shots and kicks, dry fire, holsters and pouches, the foregrip, the true reload's steps, grenades, C4, the weapon wheel |
 | Vehicles | the physical controls' stops, detents, and gate, the cockpit buttons, the mounted gun's handles and recoil |
-| Traversal | climbing, the stunt positions, the grapple (fire, attach, yank, tether retract, line tension, reel), and the snatch (armed, refused) |
+| Traversal | climbing, the stunt positions, the grapple (fire, attach, yank, tether retract, line tension, reel), and the snatch (armed, fired, hook bit, refused) |
 | Interface | the controller chords (the recenter and the debug panel) |
 | Game | the game's own rumble, behind `game_rumble` |
 
@@ -100,10 +100,12 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | `Event::HandleGrab` | a hand takes a mounted gun's handle | click | 0.5 | vehicles | `vehicles` |
 | `Event::MountedKick` | a shot of the mounted gun, on each holding hand | bump | 0.6 | vehicles | `vehicles::mounted_recoil` |
 | `Event::GrappleFire` | the grapple fires, or the snatch fires its hook | bump | 0.4 | traversal | `hands::anchor`, `snatch` |
-| `Event::GrappleAttach` | the hook takes hold, the snatch's hook takes hold of its weapon, or a tap tosses a gun | thud | 0.5 | traversal | `hands::anchor`, `snatch` |
+| `Event::GrappleAttach` | the hook takes hold, the snatch's hook opens a car door, or a tap tosses a gun | thud | 0.5 | traversal | `hands::anchor`, `snatch` |
 | `Event::Yank` | a yank of the grapple hand, or a yank that boosts the reel | bump | 0.6 | traversal | `bindings`, `grapple::physical` |
 | `Event::SnatchArm` | the grapple hand's grip arming a snatch on a target out of reach: the hand has latched on | bump | 0.6 | traversal | `snatch` |
 | `Event::SnatchFire` | the yank that fires an armed snatch | thud | 0.8 | traversal | `snatch` |
+| `Event::SnatchHit` | the snatch's hook biting its target, as the line goes taut | thud | 0.7 | traversal | `snatch` |
+| `Event::SnatchCatch` | the hand catching what the snatch's line yanked to it | thud, long | 1.0 | contact | `snatch` |
 | `Event::SnatchRefused` | a snatch refused or failed | buzz | 0.6 | traversal | `snatch` |
 | `Event::TetherRetract` | the tethers start to retract under the hand's pull | bump | 0.75 | traversal | `grapple::physical` |
 | `Event::ClimbGrip` | a hand grips the world to climb | bump | 0.75 | traversal | `physical_hands::climb` |
@@ -117,7 +119,7 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | `Sustain::BodyPressure` | a hand body is held back by what it presses, by its lag | tension | 0.5 | contact | `physical_hands::physics` |
 | `Sustain::ClimbStrain` | the climbing hands move the body, by its speed | tension | 0.5 | traversal | `physical_hands::climb` |
 | `Sustain::StuntHang` | a hand hangs from a stunt position, by the vehicle's speed | tension | 0.35 | traversal | `physical_hands::stunt` |
-| `Sustain::GrappleTension` | the grapple hand while the tethers are squeezed, by their tension, or while the snatch pulls, by the pull's load | tension | 0.75 | traversal | `grapple::physical`, `snatch` |
+| `Sustain::GrappleTension` | the grapple hand while the tethers are squeezed, by their tension, or while the snatch's line yanks its target, by the line's load | tension | 0.75 | traversal | `grapple::physical`, `snatch` |
 | `Sustain::GrappleReel` | the grapple hand while the reel carries the character, by its speed | hum | 0.35 | traversal | `grapple::physical` |
 | `Sustain::GameRumble` | the game's per-frame motor strength: the low motor on the left hand, the high one on the right | hum | 1.0 | game | `haptics::rumble` |
 

@@ -201,6 +201,13 @@ pub(crate) fn snatched(hand: Hand, owner: NonZeroUsize, body: u32) -> bool {
     true
 }
 
+/// The grapple's snatch brought a native hand grenade lying in the world to `hand`: the next input
+/// tick draws a grenade into that hand, as a hand closing on the grenade draws one from it as
+/// from a world display, and leaves the native grenade where it is.
+pub(crate) fn snatched_from_world(hand: Hand) {
+    STATE.lock().snatched_draws[hand.index()] = true;
+}
+
 /// Whether the physics game object `owner`'s body `body` is an inert grenade lying in the world,
 /// which the snatch brings to the hand as a grenade rather than as a loose object.
 pub(crate) fn inert_in_world(owner: NonZeroUsize, body: u32) -> bool {
@@ -345,6 +352,18 @@ pub(super) fn input_tick(
             haptics::play(hand, Event::PouchRefused);
         }
     }
+    let draws = std::mem::take(&mut STATE.lock().snatched_draws);
+    for hand in Hand::BOTH {
+        if !draws[hand.index()] || holds(hand) {
+            continue;
+        }
+        // SAFETY: the game stage runs on the game thread before the world update.
+        if unsafe { safe::draw(hand, tuning) } {
+            haptics::play(hand, Event::GrenadeCatch);
+        } else {
+            tracing::debug!(target: "controllers", hand = hand.label(), "grenade: the snatched world grenade gave the hand no grenade");
+        }
+    }
     let snatched = std::mem::take(&mut STATE.lock().snatched);
     for (hand, item) in Hand::BOTH.into_iter().zip(snatched) {
         if let Some(item) = item
@@ -450,6 +469,7 @@ pub(super) fn stand_down() {
     state.sightings.clear();
     state.locker_frames = None;
     state.snatched = [None; 2];
+    state.snatched_draws = [false; 2];
     state.status.fuse = None;
     drop(state);
     if catch::caught().is_some() {
@@ -508,6 +528,9 @@ struct State {
     thrown: [bool; 2],
     /// The inert grenades the snatch brought to each hand, for the next input tick to take.
     snatched: [Option<SafeItemView>; 2],
+    /// The hands the snatch brought a native world grenade to, for the next input tick to draw a
+    /// grenade into.
+    snatched_draws: [bool; 2],
     sightings: Vec<Sighting>,
     locker_frames: Option<Frames>,
     status: GrenadeStatus,
@@ -518,6 +541,7 @@ struct State {
 static STATE: Mutex<State> = Mutex::new(State {
     thrown: [false; 2],
     snatched: [None; 2],
+    snatched_draws: [false; 2],
     sightings: Vec::new(),
     locker_frames: None,
     status: GrenadeStatus {

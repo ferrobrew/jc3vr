@@ -5,17 +5,20 @@ use std::{mem::MaybeUninit, num::NonZeroUsize, ptr};
 
 use glam::Vec3;
 use jc3gi::{
-    character::character::Character,
+    character::{character::Character, inventory::WeaponSlot},
     equipment::{
         grappling_hook::{GrapplingHook, GrapplingHookState, GrapplingHookWire, WireState},
         weapon::{WeaponBase, WeaponState},
-        wire_end::{HookTargetInfo, WireEndState},
+        wire_end::{HookTargetInfo, WireEnd, WireEndState},
     },
     physics::PhysicsGameObject,
     types::{math::Vector3, shared_ptr::WeakPtrGameObject},
 };
 
-use crate::controllers::{aim::gun, snatch::Refusal};
+use crate::controllers::{
+    aim::gun,
+    snatch::{Refusal, sling_hooks},
+};
 
 /// The local player's grappling hook.
 ///
@@ -135,6 +138,38 @@ pub(super) unsafe fn remove_constraint(wire: NonZeroUsize) {
     }
 }
 
+/// The hook end of the custom wire `wire`, while it is the hook's active wire.
+///
+/// # Safety
+///
+/// The game thread, before the world update; the end is not kept past the tick.
+pub(super) unsafe fn hook_end(wire: NonZeroUsize) -> Option<&'static mut WireEnd> {
+    unsafe { active_wire(wire) }?;
+    let wire = unsafe { &mut *(wire.get() as *mut GrapplingHookWire) };
+    Some(&mut wire.m_WireEnds[HOOK_END])
+}
+
+/// Exclude the native rope from the custom wire `wire` from now on: its constraint is removed and
+/// neither made again nor tensioned while the exclusion stands ([`sling_hooks::exclude`]), so the
+/// snatch's tether is the one force on the target.
+///
+/// # Safety
+///
+/// The game thread, before the world update.
+pub(super) unsafe fn exclude_rope(wire: NonZeroUsize) {
+    sling_hooks::exclude(Some(wire.get()));
+    unsafe { remove_constraint(wire) };
+}
+
+/// The local player character's address, or zero, for a cast to ignore.
+///
+/// # Safety
+///
+/// The game thread.
+pub(super) unsafe fn local_player_address() -> usize {
+    unsafe { Character::GetLocalPlayerCharacter() as usize }
+}
+
 /// The weapon at `address`, while it lies in the world, with its first gun's body.
 ///
 /// # Safety
@@ -156,6 +191,19 @@ pub(super) unsafe fn dropped(
         .map(|instance| instance.m_BodyId)
         .ok_or(Refusal::NoBody)?;
     Ok((weapon, body))
+}
+
+/// Whether the weapon at `address` is a hand grenade: the game collects one lying in the world by
+/// proximity rather than picking it up, so the snatch draws a grenade from it instead.
+///
+/// # Safety
+///
+/// `address` must be a weapon held alive, on the game thread.
+pub(super) unsafe fn is_hand_grenade(address: NonZeroUsize) -> bool {
+    let weapon = unsafe { &*(address.get() as *const WeaponBase) };
+    // Read as the raw value: an unset slot is out of the enum's range.
+    let slot = unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() };
+    slot == WeaponSlot::E_SLOT_HAND_GRENADE as i32
 }
 
 /// Where the local player stands, world space.

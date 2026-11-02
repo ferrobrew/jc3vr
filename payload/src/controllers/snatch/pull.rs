@@ -27,8 +27,8 @@ use crate::controllers::{
         remote,
     },
     snatch::{
-        FinishInput, Refusal, SNATCH, engine,
-        rules::{self, PullLimits, StallWatch, Verdict},
+        FinishInput, Refusal, SNATCH, engine, juice,
+        rules::{self, FlightLimits, FlightSample, StallWatch, Verdict},
         sling::{RopeStep, Sling},
         sling_hooks,
         target::{Offer, OfferKind},
@@ -61,6 +61,9 @@ pub(super) enum Pulled {
     Prop { body: u32, mass_kg: f32 },
     /// An inert grenade, body `body`, into the hand through the loadout.
     Grenade { body: u32 },
+    /// A native hand grenade lying in the world, body `body`: the hand draws a grenade from it on
+    /// the catch, as a hand closing on it does.
+    WorldGrenade { body: u32 },
     /// A vehicle's closed door, pulled open at its handle, `handle` in the vehicle's frame.
     Door { door: DoorTarget, handle: Vec3 },
 }
@@ -107,6 +110,16 @@ pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal>
                 kind: Pulled::Prop { body, mass_kg },
                 _alive: weak.lock().ok_or(Refusal::Gone)?,
             };
+            let wire = unsafe { fire_hook(&grabbed) }?;
+            return Ok(Fired::HookOut(grabbed, wire));
+        }
+        OfferKind::WorldGrenade { weapon, body, weak } => {
+            let grabbed = Grabbed {
+                object: weapon,
+                kind: Pulled::WorldGrenade { body },
+                _alive: weak.lock().ok_or(Refusal::Gone)?,
+            };
+            unsafe { engine::dropped(weapon) }?;
             let wire = unsafe { fire_hook(&grabbed) }?;
             return Ok(Fired::HookOut(grabbed, wire));
         }
@@ -163,7 +176,7 @@ pub(super) unsafe fn fire_hook(grabbed: &Grabbed) -> Result<NonZeroUsize, Refusa
             let at = unsafe { body_centre(body, grabbed.object) }?;
             unsafe { engine::fire(grabbed.object, Vec3::ZERO, at) }
         }
-        Pulled::Prop { body, .. } | Pulled::Grenade { body } => {
+        Pulled::Prop { body, .. } | Pulled::Grenade { body } | Pulled::WorldGrenade { body } => {
             let at = unsafe { body_centre(body, grabbed.object) }?;
             unsafe { engine::fire(grabbed.object, Vec3::ZERO, at) }
         }
@@ -206,7 +219,78 @@ pub(super) enum Arrival {
     Grenade,
 }
 
-/// One tick of the pull: drive the target toward the hand, and hand it over once it arrives.
+/// The target's flight on the line, from the hook's bite to the catch.
+pub(super) struct Flight {
+    /// Where the hook bit the target, in the target body's frame: the line pulls there, so a
+    /// target hooked off its centre spins as it comes.
+    hook_local: Vec3,
+    /// The target's centre at the last tick, for the swept catch.
+    last_centre: Option<Vec3>,
+    /// How long the line has been slack, seconds, or `None` while it pulls.
+    slack_s: Option<f32>,
+    stall: StallWatch,
+}
+
+impl Flight {
+    /// Whether the line has gone slack near the hand.
+    pub(super) const fn slack(&self) -> bool {
+        self.slack_s.is_some()
+    }
+
+    /// Start the flight's watch over, for a pull that resumes after the sling held the target.
+    pub(super) fn resume(&mut self) {
+        self.last_centre = None;
+        self.slack_s = None;
+        self.stall = StallWatch::default();
+    }
+}
+
+/// What a tick of the flight did.
+pub(super) enum Step {
+    /// The target is on its way.
+    Flying,
+    /// The line went slack this tick; the target flies on by its own momentum.
+    WentSlack,
+    /// The hand caught the target.
+    Caught(Arrival),
+}
+
+/// The hook bit `grabbed`: note where, take the native rope off the line so that the line's pull
+/// is the one force on the target, and play the hook's impact.
+///
+/// # Safety
+///
+/// The game thread, before the world update and the physics step.
+pub(super) unsafe fn bite(
+    hand: Hand,
+    grabbed: &Grabbed,
+    wire: NonZeroUsize,
+) -> Result<Flight, Refusal> {
+    let body = unsafe { target_body(grabbed) }?;
+    let state =
+        unsafe { physical_hands::body_state(body, grabbed.object) }.map_err(Refusal::Body)?;
+    let hook_local = unsafe { engine::hook_end(wire) }
+        .map(|end| Vec3::from_array(end.m_WorldPositionT1.data))
+        .filter(|at| at.is_finite())
+        .map_or(Vec3::ZERO, |at| state.pose.local(at));
+    unsafe { engine::exclude_rope(wire) };
+    if let Some(palm) = ik::tick_records().current[hand.index()].map(|t| t.wrist.position) {
+        unsafe { juice::impact(wire, grabbed.object, palm) };
+    }
+    Ok(Flight {
+        hook_local,
+        last_centre: None,
+        slack_s: None,
+        stall: StallWatch::default(),
+    })
+}
+
+/// One tick of the flight: the line yanks the target toward the hand at its full speed until it
+/// is near, then goes slack, and the hand catches the target if the target passes through it.
+///
+/// The line's pull goes through the hold solve, the physics every hand's hold on a body goes
+/// through, at the hook's point with the line's strength and no twist of its own: the target keeps
+/// its momentum and its spin, collides on the way, and is never placed.
 ///
 /// # Safety
 ///
@@ -215,65 +299,81 @@ pub(super) unsafe fn pull(
     hand: Hand,
     grabbed: &Grabbed,
     wire: NonZeroUsize,
-    stall: &mut StallWatch,
+    flight: &mut Flight,
     input: &FinishInput,
-) -> Result<Option<Arrival>, Refusal> {
+) -> Result<Step, Refusal> {
     let (reading, line_m) = unsafe { engine::read_wire(wire) };
-    if reading == engine::WireReading::Gone {
+    if reading == engine::WireReading::Gone && !flight.slack() {
         return Err(Refusal::LineLost);
     }
-    let body = match grabbed.kind {
-        Pulled::Weapon => unsafe { engine::dropped(grabbed.object) }?.1,
-        Pulled::Prop { body, .. } | Pulled::Grenade { body } => body,
-        Pulled::Door { .. } => return Err(Refusal::Gone),
-    };
+    let body = unsafe { target_body(grabbed) }?;
     let state =
         unsafe { physical_hands::body_state(body, grabbed.object) }.map_err(Refusal::Body)?;
     let Some(palm) = ik::tick_records().current[hand.index()].map(|t| t.wrist.position) else {
         // An untracked hand keeps the line where it is.
-        return Ok(None);
+        return Ok(Step::Flying);
     };
     let centre = state.pose.centre;
-    let distance = centre.distance(palm);
-    let stalled = stall.step(
+    let stalled = flight.stall.step(
         input.dt,
         centre,
         SNATCH.stall_window_s,
         SNATCH.stall_distance_m,
     );
-    let limits = PullLimits {
-        capture_radius_m: SNATCH.capture_radius_m,
-        line_m: line_m.unwrap_or(SNATCH.range_m),
+    if let Some(slack_s) = &mut flight.slack_s {
+        *slack_s += input.dt;
+    }
+    let sample = FlightSample {
+        from: flight.last_centre.unwrap_or(centre),
+        to: centre,
+        velocity: state.velocities.linear,
+        hand: palm,
+        slack_s: flight.slack_s,
     };
-    match rules::verdict(distance, stalled, &limits) {
+    flight.last_centre = Some(centre);
+    let limits = FlightLimits {
+        slack_radius_m: SNATCH.slack_radius_m,
+        catch_radius_m: SNATCH.catch_radius_m,
+        line_m: line_m.unwrap_or(SNATCH.range_m),
+        max_slack_s: SNATCH.max_slack_s,
+    };
+    match rules::verdict(&sample, stalled, &limits) {
         Verdict::Pulling => {}
-        Verdict::Arrived => {
-            unsafe { engine::cancel(wire) };
-            return unsafe { arrive(hand, grabbed, body, centre, palm) }.map(Some);
+        Verdict::Slack if flight.slack() => return Ok(Step::Flying),
+        Verdict::Slack => {
+            flight.slack_s = Some(0.0);
+            return Ok(Step::WentSlack);
         }
+        Verdict::Caught => {
+            unsafe { end_line(wire) };
+            return unsafe { arrive(hand, grabbed, body, centre, palm) }.map(Step::Caught);
+        }
+        Verdict::Missed => return Err(Refusal::CatchMissed),
         Verdict::Stalled => return Err(Refusal::Stalled),
         Verdict::OutOfLine => return Err(Refusal::OutOfLine),
     }
     let mass = state.mass_kg.unwrap_or(1.0);
     let tuning = HoldTuning {
-        stiffness_per_s: SNATCH.stiffness_per_s.max(0.0),
+        stiffness_per_s: 0.0,
         angular_stiffness_per_s: 0.0,
-        max_speed_mps: SNATCH.max_speed_mps.max(0.0),
-        max_angular_speed_rps: 0.0,
-        hand_force_n: mass * SNATCH.max_accel_mps2.max(0.0),
+        max_speed_mps: SNATCH.line_speed_mps.max(0.0),
+        max_angular_speed_rps: SNATCH.max_spin_rps.max(0.0),
+        hand_force_n: mass * SNATCH.line_accel_mps2.max(0.0),
         hand_torque_nm: 0.0,
         two_hand_angular_share: 1.0,
         gravity: Vec3::new(0.0, -GRAVITY_MPS2, 0.0),
     };
     let rigid = state.rigid();
+    let hook = state.pose.point(flight.hook_local);
+    let aim = rules::pull_point(centre, palm, SNATCH.arc) + (hook - centre);
     let mut holds = [None; 2];
     holds[hand.index()] = Some(HandHold {
-        anchor: centre,
+        anchor: hook,
         target: HoldPoint {
-            point: rules::pull_point(centre, palm, SNATCH.arc),
+            point: hook,
             orientation: state.pose.orientation,
         },
-        velocity: Vec3::ZERO,
+        velocity: rules::line_velocity(hook, aim, SNATCH.line_speed_mps),
         angular_velocity: rigid.velocities.angular,
     });
     let solution = hold::solve(&rigid, holds, input.dt, &tuning);
@@ -287,7 +387,34 @@ pub(super) unsafe fn pull(
     }
     .map_err(Refusal::Body)?;
     haptics::sustain(hand, Sustain::GrappleTension, solution.loads[hand.index()]);
-    Ok(None)
+    Ok(Step::Flying)
+}
+
+/// End the snatch's line `wire` with the line's retract, while it is still the hook's active wire.
+///
+/// # Safety
+///
+/// The game thread, before the world update.
+pub(super) unsafe fn end_line(wire: NonZeroUsize) {
+    if unsafe { engine::read_wire(wire) }.0 != engine::WireReading::Gone {
+        unsafe { juice::retract() };
+    }
+    unsafe { engine::cancel(wire) };
+}
+
+/// The body of the thing `grabbed` holds, for the line to pull.
+///
+/// # Safety
+///
+/// The game thread, before the world update.
+unsafe fn target_body(grabbed: &Grabbed) -> Result<u32, Refusal> {
+    match grabbed.kind {
+        Pulled::Weapon => Ok(unsafe { engine::dropped(grabbed.object) }?.1),
+        Pulled::Prop { body, .. } | Pulled::Grenade { body } | Pulled::WorldGrenade { body } => {
+            Ok(body)
+        }
+        Pulled::Door { .. } => Err(Refusal::Gone),
+    }
 }
 
 /// The native device endpoint follows the tracked wrist frame, never the aim ray.
@@ -325,11 +452,7 @@ pub(super) unsafe fn sling(
     if unsafe { engine::read_wire(wire) }.0 != engine::WireReading::Attached {
         return Err(Refusal::LineLost);
     }
-    let body = match grabbed.kind {
-        Pulled::Weapon => unsafe { engine::dropped(grabbed.object) }?.1,
-        Pulled::Prop { body, .. } | Pulled::Grenade { body } => body,
-        Pulled::Door { .. } => return Err(Refusal::Gone),
-    };
+    let body = unsafe { target_body(grabbed) }?;
     let state =
         unsafe { physical_hands::body_state(body, grabbed.object) }.map_err(Refusal::Body)?;
     let anchor = unsafe { prepare_sling(hand, wire) }?;
@@ -370,8 +493,8 @@ const TOSS_LAND_M: f32 = 1.2;
 const TOSS_SPEED_MPS: f32 = 9.0;
 const TOSS_FLIGHT_S: (f32, f32) = (0.45, 1.2);
 
-/// Hand what arrived at the hand over: a weapon into the hand through the table, an object into
-/// the hand's hold at its surface nearest the palm.
+/// Hand what the hand caught over: a weapon into the hand through the table, an object into the
+/// hand's hold at its surface nearest the palm, and a grenade into the hand through the loadout.
 ///
 /// # Safety
 ///
@@ -406,6 +529,10 @@ unsafe fn arrive(
             } else {
                 Err(Refusal::Gone)
             }
+        }
+        Pulled::WorldGrenade { .. } => {
+            grenade::snatched_from_world(hand);
+            Ok(Arrival::Grenade)
         }
         Pulled::Door { .. } => Err(Refusal::Gone),
     }

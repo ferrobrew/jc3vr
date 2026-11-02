@@ -169,7 +169,32 @@ pub unsafe fn get_GrapplingHangTask_SmallImpulseSwingMagnitude() -> &'static mut
 /// reel/tether state machine, and the cached fire target. A character's hook is held by its
 /// inventory ([`Inventory::m_GrapplingHook`](crate::character::inventory::Inventory::m_GrapplingHook)).
 pub struct GrapplingHook {
-    _field_0: [u8; 544],
+    _field_0: [u8; 208],
+    /// The hook's attached effects and sounds (its `CAttachedEffectContainer` base), loaded from
+    /// the grapple device's effect container when the hook's properties are set. The fire
+    /// animation's track messages play one-off usages from it by the message's hash
+    /// (`CGrapplingHook::OnTrackMessage`, through `CGrapplingHook::PlayEffectOnMessage`, which
+    /// refuses a looping usage); the hook's own state plays the rest
+    /// ([`UpdateLoopingEffects`](crate::equipment::grappling_hook::GrapplingHook::UpdateLoopingEffects) and the one-off usages below).
+    pub m_AttachedEffects: crate::equipment::attached_effects::AttachedEffectContainer,
+    _field_160: [u8; 88],
+    /// Whether the hook's one looping usage, the reel's
+    /// ([`m_ReelingInEffectUsage`](crate::equipment::grappling_hook::GrapplingHook::m_ReelingInEffectUsage)), is playing, as
+    /// [`UpdateLoopingEffects`](crate::equipment::grappling_hook::GrapplingHook::UpdateLoopingEffects) last set it.
+    pub m_ActiveLoopingEffects: [bool; 1],
+    _field_1b9: [u8; 7],
+    /// The reel's looping effect and sound ([`REELING_IN_USAGE`](crate::equipment::grappling_hook::GrapplingHook::REELING_IN_USAGE)), playing
+    /// while the hook is [`GHS_REELING_IN`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELING_IN).
+    pub m_ReelingInEffectUsage: *mut crate::equipment::attached_effects::AttachedEffectUsage,
+    /// The one-off effect and sound of the active wire retracting into the device
+    /// ([`RETRACTING_USAGE`](crate::equipment::grappling_hook::GrapplingHook::RETRACTING_USAGE)).
+    pub m_RetractingActiveWireEffectUsage: *mut crate::equipment::attached_effects::AttachedEffectUsage,
+    /// The one-off effect and sound of a fire that finds no target.
+    pub m_GrappleFireFailEffectUsage: *mut crate::equipment::attached_effects::AttachedEffectUsage,
+    /// The one-off effect and sound of letting go of a reeled-in attachment
+    /// ([`RELEASE_FROM_ATTACHED_USAGE`](crate::equipment::grappling_hook::GrapplingHook::RELEASE_FROM_ATTACHED_USAGE)).
+    pub m_ReleaseFromAttachedEffectUsage: *mut crate::equipment::attached_effects::AttachedEffectUsage,
+    _field_1e0: [u8; 64],
     /// The character holding the hook (a `boost::weak_ptr<CCharacter>`).
     pub m_Holder: crate::types::shared_ptr::WeakPtrGameObject,
     _field_230: [u8; 2],
@@ -366,6 +391,21 @@ impl GrapplingHook {
                 Self::OnPostCamUpdate_ADDRESS,
             );
             f(self as *mut Self as _, dt)
+        }
+    }
+    pub const UpdateLoopingEffects_ADDRESS: usize = 0x1408C9610;
+    /// Starts or stops the reel's looping usage
+    /// ([`m_ReelingInEffectUsage`](crate::equipment::grappling_hook::GrapplingHook::m_ReelingInEffectUsage)) to match the state: playing while
+    /// [`GHS_REELING_IN`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELING_IN), stopped softly otherwise. It acts
+    /// only on a change from [`m_ActiveLoopingEffects`](crate::equipment::grappling_hook::GrapplingHook::m_ActiveLoopingEffects), which it
+    /// updates. [`OnPostCamUpdate`](crate::equipment::grappling_hook::GrapplingHook::OnPostCamUpdate) calls it every update of the local
+    /// player's hook, after the wires.
+    pub unsafe fn UpdateLoopingEffects(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::UpdateLoopingEffects_ADDRESS,
+            );
+            f(self as *mut Self as _)
         }
     }
     pub const CreateNewWire_ADDRESS: usize = 0x140923BC0;
@@ -713,6 +753,17 @@ impl GrapplingHook {
         }
     }
 }
+impl GrapplingHook {
+    /// The hash of the reel's looping usage (`hashlittle("ReelingIn")`), resolved into
+    /// [`m_ReelingInEffectUsage`](crate::equipment::grappling_hook::GrapplingHook::m_ReelingInEffectUsage).
+    pub const REELING_IN_USAGE: u32 = 322054904;
+    /// The hash of the release-from-attached one-off usage (`hashlittle("ReleaseFromAttached")`),
+    /// resolved into [`m_ReleaseFromAttachedEffectUsage`](crate::equipment::grappling_hook::GrapplingHook::m_ReleaseFromAttachedEffectUsage).
+    pub const RELEASE_FROM_ATTACHED_USAGE: u32 = 791276483;
+    /// The hash of the retracting active wire's one-off usage (`hashlittle("Retracting")`),
+    /// resolved into [`m_RetractingActiveWireEffectUsage`](crate::equipment::grappling_hook::GrapplingHook::m_RetractingActiveWireEffectUsage).
+    pub const RETRACTING_USAGE: u32 = 3231152827;
+}
 impl std::convert::AsRef<GrapplingHook> for GrapplingHook {
     fn as_ref(&self) -> &GrapplingHook {
         self
@@ -962,9 +1013,14 @@ impl std::convert::AsMut<NStateTask_GrapplingHangTask> for NStateTask_GrapplingH
 pub struct NStateTask_InAirGrappleFireMotionTask {}
 impl NStateTask_InAirGrappleFireMotionTask {
     pub const OnEnter_ADDRESS: usize = 0x140810B60;
-    /// Enters the task, orienting the fire motion from the camera matrix
-    /// (`CGameCameraManager::GetCameraMatrix`, read directly rather than through the aim slot) and
-    /// the latched target ([`GrapplingHook::GetLastGrappleTargetPos`](crate::equipment::grappling_hook::GrapplingHook::GetLastGrappleTargetPos)).
+    /// Enters the task. While either of the two character state bits it tests is set (which state
+    /// they mark is unverified), and the latched target
+    /// ([`GrapplingHook::GetLastGrappleTargetPos`](crate::equipment::grappling_hook::GrapplingHook::GetLastGrappleTargetPos)) lies within 2 metres of the character
+    /// horizontally (a fire nearly straight up or down), it arms a half-second horizontal boost
+    /// from the character toward the camera's position (`CGameCameraManager::GetCameraMatrix`, read
+    /// directly rather than through the aim slot), which the task's update applies; otherwise the
+    /// update damps the character's horizontal velocity instead. Either way the update turns the
+    /// character toward the grapple target over the fire segment.
     pub unsafe fn OnEnter(
         ctx: *mut crate::state::StateContext,
         p1: *mut ::std::ffi::c_void,

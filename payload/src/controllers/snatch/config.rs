@@ -61,17 +61,24 @@ pub struct SnatchTuning {
     /// How much wider the cone is for a weapon lying in the world at the range, degrees, in
     /// proportion to its distance ([`floor_cone`](crate::controllers::snatch::rules::floor_cone)).
     pub floor_cone_widen_deg: f32,
-    /// The fastest the pull carries the target, metres per second.
-    pub max_speed_mps: f32,
-    /// The hardest the pull accelerates the target, metres per second squared.
-    pub max_accel_mps2: f32,
-    /// The pull's speed toward the hand per metre the target is from it, per second.
-    pub stiffness_per_s: f32,
-    /// How high the pull carries the target above the line to the hand, as a share of the
-    /// distance still to go.
+    /// The speed the line yanks the target toward the hand at, metres per second. The line does
+    /// not slow it near the hand: it arrives at this speed.
+    pub line_speed_mps: f32,
+    /// The hardest the line accelerates the target, metres per second squared: the line's pull is
+    /// the target's mass times this, so a heavy target comes as hard as a light one.
+    pub line_accel_mps2: f32,
+    /// How high the line aims above the hand, as a share of the distance still to go, so a far
+    /// target clears the ground on its way.
     pub arc: f32,
-    /// How near the hand the target arrives and is taken, metres.
-    pub capture_radius_m: f32,
+    /// How near the hand the line goes slack and the target flies on by its own momentum, metres.
+    pub slack_radius_m: f32,
+    /// How near the hand the target's centre must pass for the hand to catch it, metres: the
+    /// hand's own reach around the target, with no pull toward the hand.
+    pub catch_radius_m: f32,
+    /// How long a slack target may fly before it counts as missed, seconds.
+    pub max_slack_s: f32,
+    /// The fastest the line's pull at the hook may spin the target, radians per second.
+    pub max_spin_rps: f32,
     /// How little the target may move over [`stall_window_s`](Self::stall_window_s) before the
     /// pull counts as snagged, metres.
     pub stall_distance_m: f32,
@@ -98,11 +105,13 @@ pub const SNATCH: SnatchTuning = SnatchTuning {
     range_m: 20.0,
     cone_deg: 6.0,
     floor_cone_widen_deg: 4.0,
-    max_speed_mps: 16.0,
-    max_accel_mps2: 80.0,
-    stiffness_per_s: 4.0,
-    arc: 0.2,
-    capture_radius_m: 0.4,
+    line_speed_mps: 18.0,
+    line_accel_mps2: 160.0,
+    arc: 0.08,
+    slack_radius_m: 1.0,
+    catch_radius_m: 0.25,
+    max_slack_s: 0.5,
+    max_spin_rps: 25.0,
     stall_distance_m: 0.1,
     stall_window_s: 0.5,
     attach_timeout_s: 2.5,

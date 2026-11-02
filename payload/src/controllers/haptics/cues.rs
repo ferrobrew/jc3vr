@@ -200,6 +200,10 @@ pub enum Event {
     SnatchArm,
     /// The yank that fires an armed snatch, stronger than the arming.
     SnatchFire,
+    /// The snatch's hook biting its target, as the line goes taut.
+    SnatchHit,
+    /// The hand catching what the snatch's line yanked to it: the hardest knock the hand takes.
+    SnatchCatch,
     /// A snatch refused or failed.
     SnatchRefused,
     /// The tethers starting to retract under the grapple hand's pull.
@@ -221,7 +225,7 @@ pub enum Event {
 
 impl Event {
     #[cfg(test)]
-    pub const ALL: [Event; 55] = [
+    pub const ALL: [Event; 57] = [
         Event::PalmTouch,
         Event::HandStrike,
         Event::Take,
@@ -270,6 +274,8 @@ impl Event {
         Event::Yank,
         Event::SnatchArm,
         Event::SnatchFire,
+        Event::SnatchHit,
+        Event::SnatchCatch,
         Event::SnatchRefused,
         Event::TetherRetract,
         Event::ClimbGrip,
@@ -333,6 +339,8 @@ impl Event {
             Event::Yank => Cue::new(Primitive::Bump, 0.6, Category::Traversal),
             Event::SnatchArm => Cue::new(Primitive::Bump, 0.6, Category::Traversal),
             Event::SnatchFire => Cue::new(Primitive::Thud, 0.8, Category::Traversal),
+            Event::SnatchHit => Cue::new(Primitive::Thud, 0.7, Category::Traversal),
+            Event::SnatchCatch => Cue::new(Primitive::Thud, 1.0, Category::Contact).long(),
             Event::SnatchRefused => Cue::new(Primitive::Buzz, 0.6, Category::Traversal),
             Event::TetherRetract => Cue::new(Primitive::Bump, 0.75, Category::Traversal),
             Event::ClimbGrip => Cue::new(Primitive::Bump, 0.75, Category::Traversal),
@@ -394,6 +402,8 @@ impl Event {
             Event::Yank => "yank",
             Event::SnatchArm => "snatch armed",
             Event::SnatchFire => "snatch fired",
+            Event::SnatchHit => "snatch hook bit",
+            Event::SnatchCatch => "snatch caught",
             Event::SnatchRefused => "snatch refused",
             Event::TetherRetract => "tether retract",
             Event::ClimbGrip => "climb grip",

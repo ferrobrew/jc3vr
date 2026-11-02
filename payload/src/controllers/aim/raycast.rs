@@ -102,6 +102,23 @@ pub unsafe fn cast_on(
     options: &CastOptions,
     layer: i32,
 ) -> Result<Option<RayHit>, RaycastError> {
+    unsafe { cast_on_with(ray, max_distance, options, layer, |hit, _| hit) }
+}
+
+/// [`cast_on`], handing `f` the hit with the engine's own cast info for it, for a caller that
+/// passes the info on to the engine: the grapple's impact effect reads the hit body's material
+/// from it.
+///
+/// # Safety
+///
+/// As [`cast`]; `f` must not keep the info past the call.
+pub unsafe fn cast_on_with<R>(
+    ray: &Ray,
+    max_distance: f32,
+    options: &CastOptions,
+    layer: i32,
+    f: impl FnOnce(RayHit, &mut CastRayInfo) -> R,
+) -> Result<Option<R>, RaycastError> {
     if !(max_distance.is_finite() && max_distance > 0.0) {
         return Err(RaycastError::InvalidDistance);
     }
@@ -154,7 +171,7 @@ pub unsafe fn cast_on(
     }
     // With a zero start distance the fraction is of the whole length.
     let distance = fraction * max_distance;
-    Ok(Some(RayHit {
+    let hit = RayHit {
         position: ray.at(distance),
         normal: Vec3::from_array(info.base.m_Normal.data),
         distance,
@@ -165,7 +182,8 @@ pub unsafe fn cast_on(
             .material
             .then(|| unsafe { info.GetHitMaterial() })
             .and_then(|m| u32::try_from(m).ok()),
-    }))
+    };
+    Ok(Some(f(hit, &mut info)))
 }
 
 /// Whether the line from `origin` to `end` is clear, allowing a hit within `tolerance` metres

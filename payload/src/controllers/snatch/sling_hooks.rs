@@ -1,6 +1,10 @@
-//! Scoped native-wire exclusions and a tracked forearm transform for the owned sling wire.
+//! Scoped native-wire exclusions for the owned wire, while the sling swings its target or the
+//! snatch's tether pulls it, and a tracked forearm transform for the sling.
 
-use std::cell::Cell;
+use std::{
+    cell::Cell,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use detours_macro::detour;
 use glam::Mat4;
@@ -48,7 +52,21 @@ pub(super) fn clear() {
     *SNAPSHOT.lock() = None;
 }
 
+/// Exclude the native rope's constraint and tension from the owned wire `wire` while the snatch's
+/// tether pulls its target, or end the exclusion with `None`. Unlike [`publish`], the wire's
+/// visuals stay native.
+pub(super) fn exclude(wire: Option<usize>) {
+    EXCLUDED.store(wire.unwrap_or(0), Ordering::Release);
+}
+
 static SNAPSHOT: Mutex<Option<Snapshot>> = Mutex::new(None);
+static EXCLUDED: AtomicUsize = AtomicUsize::new(0);
+
+/// Whether the native rope of `wire` is excluded, by the sling or the tether.
+fn excluded(wire: *mut GrapplingHookWire) -> bool {
+    let wire = wire as usize;
+    EXCLUDED.load(Ordering::Acquire) == wire || SNAPSHOT.lock().is_some_and(|s| s.wire == wire)
+}
 thread_local! { static CURRENT: Cell<Option<Snapshot>> = const { Cell::new(None) }; }
 
 #[detour(address = GrapplingHookWire::Update_ADDRESS)]
@@ -70,7 +88,7 @@ fn update(
 
 #[detour(address = GrapplingHookWire::CreateConstraint_ADDRESS)]
 fn create_constraint(wire: *mut GrapplingHookWire, shorten: f32, reattaching: bool) {
-    if SNAPSHOT.lock().is_some_and(|s| s.wire == wire as usize) {
+    if excluded(wire) {
         return;
     }
     CREATE_CONSTRAINT
@@ -81,7 +99,7 @@ fn create_constraint(wire: *mut GrapplingHookWire, shorten: f32, reattaching: bo
 
 #[detour(address = GrapplingHookWire::UpdateWireTension_ADDRESS)]
 fn update_wire_tension(wire: *mut GrapplingHookWire, tuning: *const GrappleTuning, dt: f32) {
-    if SNAPSHOT.lock().is_some_and(|s| s.wire == wire as usize) {
+    if excluded(wire) {
         return;
     }
     UPDATE_WIRE_TENSION.get().unwrap().call(wire, tuning, dt);

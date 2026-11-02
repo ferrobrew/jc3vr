@@ -17,14 +17,17 @@
 //!    of the hand back along its aim at the grip edge while the grip is held fires it
 //!    ([`reach_along`], [`pull`]): a gun on a
 //!    character is first let go of, with the steal's drop and stagger; then the game's hook flies
-//!    to the target as a ghost wire through the custom fire ([`engine::fire`]). Once it holds a
-//!    weapon or an object, the hold solve pulls the body along an arc toward the hand
-//!    ([`rules::pull_point`]), and within the capture radius the wire is ended and the weapon taken
-//!    into the hand through the loadout table, as a pickup is, or the object handed to the hand's
-//!    ordinary hold. Once it holds a door, the door comes open and swings outward, and the wire is
-//!    ended. Opening the grip at any point cancels: in flight the line comes away and the target
-//!    keeps its momentum. A stall, a line run out, a missed hook, or a refused take fails the
-//!    snatch and leaves the target in the world.
+//!    to the target as a ghost wire through the custom fire ([`engine::fire`]). Once it bites a
+//!    weapon or an object, the line yanks the body toward the hand at full speed through the hold
+//!    solve, pulling at the hook's point so the body spins, and near the hand goes slack: the body
+//!    flies on by its momentum, and when its path passes through the hand the hand has caught it
+//!    ([`rules::verdict`]), the wire is ended, and the weapon is taken into the hand through the
+//!    loadout table, as a pickup is, or the object handed to the hand's ordinary hold. A body the
+//!    hand is not where it arrives flies past or hits the player and drops. Once the hook holds a
+//!    door, the door comes open and swings outward, and the wire is ended. Opening the grip at any
+//!    point cancels: in flight the line comes away and the target keeps its momentum. A stall, a
+//!    line run out, a missed hook, a missed catch, or a refused take fails the snatch and leaves the
+//!    target in the world. The grapple's own sounds and effects play throughout ([`juice`]).
 //!
 //! The snatch's runtime state (armed, freeing, hook out, pulling) lives here alone; where a weapon
 //! ends up is the loadout table's. The mod holds a strong reference to the target from the fire to
@@ -39,6 +42,7 @@
 pub mod config;
 mod engine;
 mod hooks;
+mod juice;
 mod latch;
 mod moment;
 mod prearm;
@@ -73,8 +77,7 @@ use crate::controllers::{
     snatch::{
         moment::Moment,
         prearm::Prearm,
-        pull::{Arrival, Attached, Fired, Grabbed},
-        rules::StallWatch,
+        pull::{Arrival, Attached, Fired, Flight, Grabbed, Step},
         target::Offer,
     },
     weapons::hold::{
@@ -85,7 +88,9 @@ use crate::controllers::{
 
 /// The snatch's hooks, aggregated by [`crate::controllers::hook_library`].
 pub(crate) fn hook_library() -> HookLibrary {
-    hooks::hook_library().with_hook_library(sling_hooks::hook_library())
+    hooks::hook_library()
+        .with_hook_library(sling_hooks::hook_library())
+        .with_hook_library(juice::hook_library())
 }
 
 /// Only an already-gripped remote target can claim a subsequent fresh B press.
@@ -138,6 +143,8 @@ pub enum Refusal {
     Body(BodyError),
     /// The character would not let go of its gun.
     Free(StealRefusal),
+    /// The target flew past the hand, or stopped short of it, without being caught.
+    CatchMissed,
     /// The take into the hand refused the weapon.
     Take(pickup::Refusal),
     /// The door would not come open.
@@ -159,6 +166,7 @@ impl fmt::Display for Refusal {
             Refusal::Stalled => "the target snagged",
             Refusal::OutOfLine => "the target is beyond the line",
             Refusal::LineLost => "the line came away",
+            Refusal::CatchMissed => "the hand missed the catch",
             Refusal::Body(e) => return write!(f, "snatch: {e}"),
             Refusal::Free(e) => return write!(f, "snatch: {e}"),
             Refusal::Take(e) => return write!(f, "snatch: {e}"),
@@ -448,12 +456,13 @@ enum Phase {
         wire: NonZeroUsize,
         waited_s: f32,
     },
-    /// The hook holds the target, and the pull brings it in.
+    /// The hook holds the target, and the line yanks it toward the hand, then goes slack for the
+    /// catch.
     Pulling {
         hand: Hand,
         target: Grabbed,
         wire: NonZeroUsize,
-        stall: StallWatch,
+        flight: Flight,
         rope: Option<sling::Sling>,
     },
 }
@@ -466,6 +475,7 @@ impl Phase {
             Phase::Freeing { .. } => "FREEING",
             Phase::HookOut { .. } => "HOOK OUT",
             Phase::Pulling { rope: Some(_), .. } => "SWINGING",
+            Phase::Pulling { flight, .. } if flight.slack() => "INBOUND",
             Phase::Pulling { .. } => "PULLING",
         }
     }
@@ -480,12 +490,19 @@ impl Phase {
         }
     }
 
-    /// End the snatch's line, when it has one out.
+    /// End the snatch's line, when it has one out, with the line's retract.
     unsafe fn end_line(&self) {
         sling_hooks::clear();
+        sling_hooks::exclude(None);
+        unsafe { juice::set_reeling(false) };
         if let Phase::HookOut { wire, .. } | Phase::Pulling { wire, .. } = self {
-            unsafe { engine::cancel(*wire) };
+            unsafe { pull::end_line(*wire) };
         }
+    }
+
+    /// Whether the line is reeling its target in, for the reel's loop.
+    fn reeling(&self) -> bool {
+        matches!(self, Phase::Pulling { rope: None, flight, .. } if !flight.slack())
     }
 }
 
@@ -563,6 +580,7 @@ impl State {
                         },
                         Ok(Fired::HookOut(target, wire)) => {
                             haptics::play(hand, Event::GrappleFire);
+                            unsafe { juice::fire() };
                             Phase::HookOut {
                                 hand,
                                 target,
@@ -587,6 +605,7 @@ impl State {
             } => match unsafe { pull::fire_hook(&target) } {
                 Ok(wire) => {
                     haptics::play(hand, Event::GrappleFire);
+                    unsafe { juice::fire() };
                     Phase::HookOut {
                         hand,
                         target,
@@ -613,34 +632,36 @@ impl State {
                 waited_s,
             } => match unsafe { engine::read_wire(wire) }.0 {
                 engine::WireReading::Attached => {
-                    haptics::play(hand, Event::GrappleAttach);
                     match unsafe { pull::attached(&target, SNATCH.door_swing_mps) } {
                         Ok(Attached::Pull) => {
+                            haptics::play(hand, Event::SnatchHit);
                             let mut rope = None;
-                            let result = if input.modifier_held && config.sling {
-                                unsafe { pull::sling(hand, &target, wire, &mut rope, input) }.map(|length| {
-                                    self.status.sling_length_m = Some(length);
-                                    tracing::info!(target: "controllers", length_m = length, "snatch: swinging on the held line");
-                                })
-                            } else {
-                                Ok(())
-                            };
+                            let result = unsafe { pull::bite(hand, &target, wire) }.and_then(|flight| {
+                                if input.modifier_held && config.sling {
+                                    unsafe { pull::sling(hand, &target, wire, &mut rope, input) }.map(|length| {
+                                        self.status.sling_length_m = Some(length);
+                                        tracing::info!(target: "controllers", length_m = length, "snatch: swinging on the held line");
+                                    })?;
+                                }
+                                Ok(flight)
+                            });
                             match result {
-                                Ok(()) => Phase::Pulling {
+                                Ok(flight) => Phase::Pulling {
                                     hand,
                                     target,
                                     wire,
-                                    stall: StallWatch::default(),
+                                    flight,
                                     rope,
                                 },
                                 Err(refusal) => {
-                                    unsafe { engine::cancel(wire) };
+                                    unsafe { pull::end_line(wire) };
                                     self.failed(hand, refusal)
                                 }
                             }
                         }
                         Ok(Attached::Opened) => {
-                            unsafe { engine::cancel(wire) };
+                            haptics::play(hand, Event::GrappleAttach);
+                            unsafe { pull::end_line(wire) };
                             self.status.taken += 1;
                             tracing::info!(target: "controllers", hand = hand.label(), "snatch: the line pulled a car door open");
                             self.moment
@@ -648,7 +669,7 @@ impl State {
                             Phase::Idle
                         }
                         Err(refusal) => {
-                            unsafe { engine::cancel(wire) };
+                            unsafe { pull::end_line(wire) };
                             self.failed(hand, refusal)
                         }
                     }
@@ -671,7 +692,7 @@ impl State {
                 hand,
                 target,
                 wire,
-                mut stall,
+                mut flight,
                 mut rope,
             } => {
                 let mode = sling::attached_mode(config.sling, input.modifier_held, rope.is_some());
@@ -683,29 +704,34 @@ impl State {
                                 tracing::info!(target: "controllers", length_m = length, "snatch: swinging on the held line");
                             }
                             self.status.sling_length_m = Some(length);
-                            None
+                            Step::Flying
                         })
                     }
                     sling::AttachedMode::Resume | sling::AttachedMode::Pull => {
                         if mode == sling::AttachedMode::Resume {
                             rope = None;
                             sling_hooks::clear();
-                            stall = StallWatch::default();
+                            flight.resume();
                             tracing::info!(target: "controllers", "snatch: released B; pulling to the hand");
                         }
-                        unsafe { pull::pull(hand, &target, wire, &mut stall, input) }
+                        unsafe { pull::pull(hand, &target, wire, &mut flight, input) }
                     }
                     sling::AttachedMode::Cancel => Err(Refusal::Gone),
                 };
                 match result {
-                    Ok(None) => Phase::Pulling {
-                        hand,
-                        target,
-                        wire,
-                        stall,
-                        rope,
-                    },
-                    Ok(Some(arrival)) => {
+                    Ok(step @ (Step::Flying | Step::WentSlack)) => {
+                        if matches!(step, Step::WentSlack) {
+                            tracing::debug!(target: "controllers", hand = hand.label(), "snatch: the line went slack; the target flies to the hand");
+                        }
+                        Phase::Pulling {
+                            hand,
+                            target,
+                            wire,
+                            flight,
+                            rope,
+                        }
+                    }
+                    Ok(Step::Caught(arrival)) => {
                         self.status.taken += 1;
                         self.moment.ended(
                             "taken",
@@ -720,7 +746,7 @@ impl State {
                                 Arrival::Grenade => "a grenade came to the hand".to_owned(),
                             },
                         );
-                        haptics::play(hand, Event::Take);
+                        haptics::play(hand, Event::SnatchCatch);
                         match arrival {
                             Arrival::Weapon(slot) => tracing::info!(
                                 target: "controllers",
@@ -745,7 +771,7 @@ impl State {
                         Phase::Idle
                     }
                     Err(refusal) => {
-                        unsafe { engine::cancel(wire) };
+                        unsafe { pull::end_line(wire) };
                         sling_hooks::clear();
                         self.failed(hand, refusal)
                     }
@@ -754,7 +780,9 @@ impl State {
         };
         if matches!(self.phase, Phase::Idle) {
             sling_hooks::clear();
+            sling_hooks::exclude(None);
         }
+        unsafe { juice::set_reeling(self.phase.reeling()) };
         if input.modifier_held && config.sling {
             if let Phase::HookOut {
                 hand,
