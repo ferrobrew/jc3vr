@@ -8,13 +8,13 @@ use glam::Vec3;
 
 use crate::controllers::{
     frame::{Hand, Pose},
-    grab::{Candidate, GrabVolume, GripTarget, resolve::reaches},
+    grab::{Candidate, GrabVolume, GripTarget, resolve::reaches, target::TargetReach},
     haptics::{self, Event},
     weapons::{
         capabilities::tracked_hands,
         foregrip,
         reload::{
-            FinishInputs, GunTick, State, Tick, WeaponTick,
+            FinishInputs, GunTick, STATE, State, Tick, WeaponTick,
             chamber::WorkStage,
             config::ExtractionConfig,
             engine,
@@ -23,6 +23,7 @@ use crate::controllers::{
             plan::{LoadKind, WellFrame},
             serial,
             tuning::Reload,
+            zones::{self, MagazineZone, ZoneView},
         },
     },
 };
@@ -43,6 +44,8 @@ pub(super) struct Sample {
     frame: Pose,
     outward: Vec3,
     grip: Vec3,
+    /// The pulling hand is in the magazine's zone under the well ([`zones`]).
+    in_zone: bool,
     world_scale: f32,
 }
 
@@ -79,7 +82,7 @@ impl Pull {
         };
         let local = sample.frame.orientation.inverse() * (sample.grip - sample.frame.position);
         let Some(acquired) = self.held else {
-            if claimed && local.length() <= config.grab_radius_m {
+            if claimed && (local.length() <= config.grab_radius_m || sample.in_zone) {
                 self.held = Some(Acquired {
                     id: sample.id,
                     expected: sample.expected,
@@ -168,7 +171,39 @@ impl DetachEngine for SerialEngine {
 
 /// Keep an existing hold, then prefer a direct inserted-magazine claim over overlapping gun
 /// support, transfer, and action targets. Other targets keep the ordinary resolver's ranking.
+///
+/// A free hand in the magazine's zone under the other hand's gun's well is at the magazine: the
+/// handover is not offered to it, and the magazine is in its reach wherever in the zone it is.
 pub(super) fn prioritize(targets: &mut Vec<GripTarget>, grips: [Option<Vec3>; 2]) {
+    let views = prioritize_with(targets, grips, magazine_zones());
+    zones::publish(views);
+}
+
+/// [`prioritize`] with each held gun's magazine zone (`zones`, by the holding hand). Returns the
+/// zones as resolved, for the grab view.
+fn prioritize_with(
+    targets: &mut Vec<GripTarget>,
+    grips: [Option<Vec3>; 2],
+    zones: [Option<MagazineZone>; 2],
+) -> [Option<ZoneView>; 2] {
+    let views = zone_views(targets, grips, zones);
+    for view in views.iter().flatten().filter(|v| v.at_magazine) {
+        let hand = view.holder.other();
+        let Some(distance) = view
+            .magazine
+            .zip(grips[hand.index()])
+            .and_then(|(zone, grip)| zone.distance(grip))
+        else {
+            continue;
+        };
+        targets.retain(|t| !(t.volume == GrabVolume::Handle && t.hand == Some(hand)));
+        for target in targets
+            .iter_mut()
+            .filter(|t| t.volume == GrabVolume::InsertedMagazine && t.hand == Some(hand))
+        {
+            target.reach = TargetReach::Measured { distance };
+        }
+    }
     for hand in Hand::BOTH {
         let reachable = reaches(hand, targets, grips[hand.index()]);
         let held = reachable
@@ -195,6 +230,7 @@ pub(super) fn prioritize(targets: &mut Vec<GripTarget>, grips: [Option<Vec3>; 2]
             });
         }
     }
+    views
 }
 
 impl State {
@@ -464,6 +500,8 @@ fn sample(
     if !expected.has_spare() {
         return None;
     }
+    let grip = tick.hands[holder.other().index()]?.grip.position;
+    let in_zone = zone_of(tick, weapon, gun).is_some_and(|zone| zone.contains(grip));
     let sample = Sample {
         id,
         expected,
@@ -472,10 +510,69 @@ fn sample(
             orientation: frame.pose.orientation,
         },
         outward,
-        grip: tick.hands[holder.other().index()]?.grip.position,
+        grip,
+        in_zone,
         world_scale: tick.world_scale,
     };
     valid(&sample, &reload.extraction).then_some(sample)
+}
+
+/// Each held gun's magazine zone for the free hand, by the holding hand's [`Hand::index`].
+fn magazine_zones() -> [Option<MagazineZone>; 2] {
+    let state = STATE.lock();
+    let Some(tick) = state.tick else {
+        return [None; 2];
+    };
+    Hand::BOTH.map(|holder| {
+        if state.free != Some(holder.other()) {
+            return None;
+        }
+        let (weapon, gun) = tick.gun(holder)?;
+        zone_of(&tick, weapon, gun)
+    })
+}
+
+/// `gun`'s magazine zone, with the well where the tick placed it.
+fn zone_of(tick: &Tick, weapon: &WeaponTick, gun: &GunTick) -> Option<MagazineZone> {
+    zones::zone_for(
+        weapon.plan.load,
+        weapon.plan.well,
+        weapon.reading.out,
+        gun.well.map(|well| (well.mouth, well.axis)),
+        tick.world_scale,
+    )
+}
+
+/// The zones of each held gun for the free hand (`zones`, by the holding hand), with the handover
+/// offered to that hand in `targets`, and whether its grip is at the magazine.
+fn zone_views(
+    targets: &[GripTarget],
+    grips: [Option<Vec3>; 2],
+    zones: [Option<MagazineZone>; 2],
+) -> [Option<ZoneView>; 2] {
+    Hand::BOTH.map(|holder| {
+        let hand = holder.other();
+        let magazine = zones[holder.index()];
+        let handover = targets
+            .iter()
+            .filter(|t| t.volume == GrabVolume::Handle && t.hand == Some(hand))
+            .find_map(|t| match t.reach {
+                TargetReach::Sphere { centre, radius } => Some((centre, radius)),
+                TargetReach::Measured { .. } => None,
+            });
+        if magazine.is_none() && handover.is_none() {
+            return None;
+        }
+        let at_magazine = magazine
+            .zip(grips[hand.index()])
+            .is_some_and(|(zone, grip)| zone.contains(grip));
+        Some(ZoneView {
+            holder,
+            magazine,
+            handover,
+            at_magazine,
+        })
+    })
 }
 
 pub(super) fn eligible(load: LoadKind, out: bool, reload: &Reload) -> bool {

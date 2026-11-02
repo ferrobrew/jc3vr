@@ -175,7 +175,12 @@ fn alpha(shown: Shown, state: MarkState) -> Option<f32> {
 
 /// Where `target`'s marker is drawn.
 pub(crate) fn anchor(target: &GripTarget, frame: &MarkerFrame) -> Option<Anchor> {
-    match target.mark.at {
+    anchor_at(target.mark.at, frame)
+}
+
+/// Where a marker at `at` is drawn.
+pub(crate) fn anchor_at(at: MarkAt, frame: &MarkerFrame) -> Option<Anchor> {
+    match at {
         MarkAt::World(point) => point.is_finite().then_some(Anchor::World(point)),
         MarkAt::Cockpit(point) => point
             .is_finite()

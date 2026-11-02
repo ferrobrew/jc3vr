@@ -20,6 +20,7 @@ fn sample(holder: Hand, outward_m: f32) -> Sample {
         frame: Pose::IDENTITY,
         outward: Vec3::NEG_Y,
         grip: Vec3::NEG_Y * outward_m,
+        in_zone: false,
         world_scale: 1.0,
     }
 }
@@ -175,7 +176,7 @@ fn direct_magazine_claim_beats_overlapping_brace_transfer_and_action() {
         target(GrabVolume::WeaponAction, Vec3::ZERO),
         target(GrabVolume::InsertedMagazine, Vec3::X * 0.01),
     ];
-    prioritize(&mut targets, [Some(Vec3::ZERO), None]);
+    prioritize_with(&mut targets, [Some(Vec3::ZERO), None], [None; 2]);
     assert_eq!(
         resolve(&targets, [Some(Vec3::ZERO), None])[0]
             .chosen
@@ -202,7 +203,7 @@ fn direct_action_claim_beats_unheld_brace_and_transfer_but_preserves_existing_su
         };
         let grips = Hand::BOTH.map(|h| (h == hand).then_some(Vec3::ZERO));
         let mut targets = targets_for(false);
-        prioritize(&mut targets, grips);
+        prioritize_with(&mut targets, grips, [None; 2]);
         assert_eq!(
             resolve(&targets, grips)[hand.index()]
                 .chosen
@@ -211,7 +212,7 @@ fn direct_action_claim_beats_unheld_brace_and_transfer_but_preserves_existing_su
             GrabVolume::WeaponAction
         );
         let mut targets = targets_for(true);
-        prioritize(&mut targets, grips);
+        prioritize_with(&mut targets, grips, [None; 2]);
         assert_eq!(
             resolve(&targets, grips)[hand.index()]
                 .chosen
@@ -226,13 +227,13 @@ fn direct_action_claim_beats_unheld_brace_and_transfer_but_preserves_existing_su
 fn held_support_wins_and_a_missed_magazine_does_not_steal_support() {
     let support = target(GrabVolume::Foregrip, Vec3::ZERO).held(Hand::Left);
     let mut targets = vec![support, target(GrabVolume::InsertedMagazine, Vec3::ZERO)];
-    prioritize(&mut targets, [Some(Vec3::ZERO), None]);
+    prioritize_with(&mut targets, [Some(Vec3::ZERO), None], [None; 2]);
     assert_eq!(targets.len(), 2);
     let mut targets = vec![
         target(GrabVolume::Foregrip, Vec3::ZERO),
         target(GrabVolume::InsertedMagazine, Vec3::X),
     ];
-    prioritize(&mut targets, [Some(Vec3::ZERO), None]);
+    prioritize_with(&mut targets, [Some(Vec3::ZERO), None], [None; 2]);
     assert_eq!(targets.len(), 2);
     assert_eq!(
         resolve(&targets, [Some(Vec3::ZERO), None])[0]
@@ -241,4 +242,89 @@ fn held_support_wins_and_a_missed_magazine_does_not_steal_support() {
             .volume,
         GrabVolume::Foregrip
     );
+}
+
+/// A pistol held in the right hand, its well at the bottom of its grip: the magazine zone under it.
+fn pistol_zone() -> MagazineZone {
+    MagazineZone::under(Vec3::ZERO, Vec3::Y, 1.0).unwrap()
+}
+
+#[test]
+fn a_hand_under_the_well_takes_the_magazine_not_the_gun() {
+    // The handover's reach around the grip above takes in the magazine's base, and the magazine's
+    // own sphere is out of reach of a hand a little lower on it.
+    let grip = Vec3::new(0.0, -0.1, 0.0);
+    let mut targets = vec![
+        target(GrabVolume::Handle, Vec3::new(0.0, 0.05, 0.0)),
+        GripTarget::sphere(
+            GrabVolume::InsertedMagazine,
+            Some(Hand::Left),
+            Vec3::new(0.0, -0.03, 0.0),
+            0.05,
+            Mark::ring(MarkAt::Cockpit(Vec3::ZERO), 0.02),
+        ),
+    ];
+    let views = prioritize_with(
+        &mut targets,
+        [Some(grip), None],
+        [None, Some(pistol_zone())],
+    );
+    assert!(views[Hand::Right.index()].unwrap().at_magazine);
+    assert!(targets.iter().all(|t| t.volume != GrabVolume::Handle));
+    assert_eq!(
+        resolve(&targets, [Some(grip), None])[0]
+            .chosen
+            .unwrap()
+            .volume,
+        GrabVolume::InsertedMagazine
+    );
+}
+
+#[test]
+fn a_hand_under_the_well_is_not_handed_the_gun_without_a_magazine_target() {
+    let grip = Vec3::new(0.0, -0.05, 0.0);
+    let mut targets = vec![target(GrabVolume::Handle, Vec3::new(0.0, 0.05, 0.0))];
+    prioritize_with(
+        &mut targets,
+        [Some(grip), None],
+        [None, Some(pistol_zone())],
+    );
+    assert!(resolve(&targets, [Some(grip), None])[0].chosen.is_none());
+}
+
+#[test]
+fn a_hand_on_the_grip_above_the_well_is_handed_the_gun() {
+    let grip = Vec3::new(0.0, 0.05, 0.0);
+    let mut targets = vec![target(GrabVolume::Handle, Vec3::new(0.0, 0.05, 0.0))];
+    let views = prioritize_with(
+        &mut targets,
+        [Some(grip), None],
+        [None, Some(pistol_zone())],
+    );
+    let view = views[Hand::Right.index()].unwrap();
+    assert!(!view.at_magazine);
+    assert_eq!(view.handover.map(|(_, radius)| radius), Some(0.2));
+    assert_eq!(
+        resolve(&targets, [Some(grip), None])[0]
+            .chosen
+            .unwrap()
+            .volume,
+        GrabVolume::Handle
+    );
+}
+
+#[test]
+fn a_claim_anywhere_in_the_zone_acquires_the_pull() {
+    let mut pull = Pull::new();
+    // Well outside the magazine's grab radius, but in its zone.
+    let far = Sample {
+        in_zone: true,
+        ..sample(Hand::Right, CONFIG.grab_radius_m * 2.0)
+    };
+    assert!(!pull.step(Some(far), true, true, &CONFIG));
+    assert_eq!(pull.hand(), Some(Hand::Left));
+    let mut pull = Pull::new();
+    let outside = sample(Hand::Right, CONFIG.grab_radius_m * 2.0);
+    assert!(!pull.step(Some(outside), true, true, &CONFIG));
+    assert_eq!(pull.hand(), None);
 }

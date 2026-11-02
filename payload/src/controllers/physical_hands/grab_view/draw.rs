@@ -14,7 +14,7 @@ use glam::Vec3;
 use crate::controllers::{
     frame::Hand,
     grab::{
-        Category, GripTarget, Shown,
+        Category, GripTarget, MarkAt, Shown,
         markers::{self, MarkerFrame},
         target::TargetReach,
         tick::Tick,
@@ -29,6 +29,7 @@ use crate::controllers::{
             target_colour, target_mark_size,
         },
     },
+    weapons::reload::zones::ZoneView,
 };
 
 /// What one tick drew.
@@ -39,6 +40,8 @@ pub struct Drawn {
     pub handles: usize,
     pub candidates: usize,
     pub flashes: usize,
+    /// The held guns whose grab zones were drawn.
+    pub zones: usize,
     /// The candidates and lines the budget left out.
     pub dropped: usize,
 }
@@ -56,6 +59,8 @@ pub(crate) struct DrawInputs<'a> {
     pub candidates: &'a [Candidate],
     /// The refused grabs still flashing: where, and how many seconds ago.
     pub flashes: &'a [(Anchor, f32)],
+    /// The grab zones of each gun held in one hand for the other, by the holding hand.
+    pub zones: [Option<ZoneView>; 2],
 }
 
 /// The most primitives the view submits in a tick.
@@ -133,6 +138,16 @@ pub(crate) fn build(inputs: &DrawInputs, out: &mut Vec<Primitive>) -> Drawn {
                 colour,
             ));
             drawn.target_lines += 1;
+        }
+    }
+    if config.zones {
+        for view in inputs.zones.iter().flatten() {
+            if out.len() + ZONE_PRIMITIVES > PRIMITIVE_BUDGET {
+                drawn.dropped += 1;
+                continue;
+            }
+            zone_primitives(view, inputs.frame, out);
+            drawn.zones += 1;
         }
     }
     if config.candidates {
@@ -269,6 +284,65 @@ fn palm_marker(hand: Hand, state: PalmState, out: &mut Vec<Primitive>) {
     }
 }
 
+/// A held gun's grab zones for the free hand, on the gun as it rides its hand: the magazine's
+/// zone under the well as its axis and a ring at each end, and the handover's reach around the
+/// pistol grip as a ring of its radius. The zone the free hand is in is drawn brighter, and the
+/// handover dimmed while the magazine's zone holds the hand.
+fn zone_primitives(view: &ZoneView, frame: &MarkerFrame, out: &mut Vec<Primitive>) {
+    let on_gun = |point: Vec3| {
+        markers::anchor_at(
+            MarkAt::OnHand {
+                hand: view.holder,
+                point,
+            },
+            frame,
+        )
+        .or_else(|| markers::anchor_at(MarkAt::Cockpit(point), frame))
+    };
+    let scale = frame.xf.world_scale;
+    if let Some(zone) = view.magazine {
+        let (top, bottom) = zone.ends();
+        let colour = shade(MAGAZINE_ZONE_COLOUR, view.at_magazine);
+        if let (Some(top), Some(bottom)) = (on_gun(top), on_gun(bottom)) {
+            out.push(line(top, bottom, ZONE_LINE_WIDTH_M, colour));
+            for end in [top, bottom] {
+                out.push(sprite(
+                    end,
+                    2.0 * zone.radius * scale,
+                    Shape::Ring { thickness: 0.08 },
+                    colour,
+                ));
+            }
+        }
+    }
+    if let Some((centre, radius)) = view.handover
+        && let Some(at) = on_gun(centre)
+    {
+        let colour = if view.at_magazine {
+            [
+                HANDOVER_ZONE_COLOUR[0],
+                HANDOVER_ZONE_COLOUR[1],
+                HANDOVER_ZONE_COLOUR[2],
+                SUPPRESSED_ALPHA,
+            ]
+        } else {
+            HANDOVER_ZONE_COLOUR
+        };
+        out.push(sprite(
+            at,
+            2.0 * radius * scale,
+            Shape::Ring { thickness: 0.05 },
+            colour,
+        ));
+    }
+}
+
+/// `colour` brightened when the free hand is in its zone.
+fn shade(colour: Rgba, inside: bool) -> Rgba {
+    let [r, g, b, a] = colour;
+    if inside { [r, g, b, 1.0] } else { [r, g, b, a] }
+}
+
 fn line(from: Anchor, to: Anchor, width: f32, color: Rgba) -> Primitive {
     Primitive::Line {
         from,
@@ -293,6 +367,17 @@ fn sprite(at: Anchor, size: f32, shape: Shape, color: Rgba) -> Primitive {
 const XRAY: DepthMode = DepthMode::XRay {
     occluded_alpha: 0.4,
 };
+
+/// The most primitives one held gun's zones take.
+const ZONE_PRIMITIVES: usize = 4;
+/// The magazine zone's axis width, metres.
+const ZONE_LINE_WIDTH_M: f32 = 0.002;
+/// The magazine's zone: amber, as the well's gold ring.
+const MAGAZINE_ZONE_COLOUR: Rgba = [1.0, 0.7, 0.15, 0.55];
+/// The handover's reach: cyan.
+const HANDOVER_ZONE_COLOUR: Rgba = [0.3, 0.85, 1.0, 0.55];
+/// The handover's alpha while the magazine's zone holds the free hand.
+const SUPPRESSED_ALPHA: f32 = 0.15;
 
 /// The palm marker's place in the wrist frame: over the back of the hand (+Y), toward the forearm.
 const WRIST_OFFSET: Vec3 = Vec3::new(0.0, 0.04, 0.03);
@@ -350,6 +435,7 @@ mod tests {
             palms: [PalmState::Acting; 2],
             candidates,
             flashes: &[],
+            zones: [None; 2],
         }
     }
 

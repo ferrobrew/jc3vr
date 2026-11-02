@@ -54,7 +54,7 @@ Physical extraction executes at [`Character::UpdatePassPostPhysics_Serial`](http
 
 The provider in `reload/extraction.rs` requires a tracked free hand, an inserted detachable magazine, a table-defined well, a measured gun frame, world conversion, and a live tagged spare prop. Shell-fed pumps, revolver cylinders, muzzle-loaded rockets, and fallback wrist wells are excluded. Both `reload.extraction.enabled` and `reload.loose.enabled` must be enabled.
 
-A fresh grip claim on that target starts a pull. No release button or additional latch is required. The hand must travel outward along the well's axis by `reload.extraction.pull_m`. Movement is measured relative to the moving gun, so translating or rotating the gun with the hand does not complete the pull. The grab radius and sideways tolerance have separate settings. The target centre lies outside the well along its axis by `RELOAD.loose.half_length_m`, converted from model lengths to the player's scale. This is a fixed approximation of the magazine centre, not a measured magazine hull.
+A fresh grip claim on that target starts a pull, as does a claim anywhere in the magazine's zone (see "The magazine's zone"). No release button or additional latch is required. The hand must travel outward along the well's axis by `reload.extraction.pull_m`. Movement is measured relative to the moving gun, so translating or rotating the gun with the hand does not complete the pull. The grab radius and sideways tolerance have separate settings. The target centre lies outside the well along its axis by `RELOAD.loose.half_length_m`, converted from model lengths to the player's scale. This is a fixed approximation of the magazine centre, not a measured magazine hull.
 
 Before detachment, opening the grip, losing hand tracking or world conversion, changing the gun or world scale, moving beyond the sideways tolerance, or disabling extraction cancels the pull. Cancellation leaves the magazine inserted, with its ammunition, chamber readiness, and action travel unchanged. An existing brace or action hold prevents acquisition. For a new grip inside the magazine target, `reload::prioritize_extraction` removes overlapping brace, gun-transfer, and action targets before ordinary nearest-target resolution. An active pull owns the hand exclusively and blocks the gun from firing. Bracing outside the magazine target and deliberate grip transfer retain their existing paths.
 
@@ -65,6 +65,10 @@ An active or pending pull blocks belt processing for that gun and resets an alre
 The mailbox in `reload/serial.rs` holds at most one operation per gun hand, including an unread result. Requests contain copied character, weapon, gun, and spare identities, not borrowed pointers. The callback resolves the current local character's inventory or the existing strong-owned carry set before dereferencing the weapon. It rechecks the world, holder, gun index, spare identity, magazine state, controller focus, tracking freshness, reload permission, and the pulling hand's grip. A canceled or changed request does not fall back to input execution. Completion consumes the request once. The magazine-out flag is committed before the original native message poll, so its throw-away branch rejects a duplicate detach.
 
 The input owner calls `reload::cancel_extraction_on_standdown` on a mode boundary. This clears magazine claims and queued ejects, preserves unrelated holds, and requires neutral grip before a fresh extraction claim. Canceling delivery after detachment leaves the retained magazine and its rounds in the world. Button, flick, and belt drops use the same callback; a belt swap loads only after the drop result returns. `ReloadStatus::serial` reports installation, admission, pending/executing/completed slots, callback and execution counts, cancellation, and the last refusal. The source tests cover pull cancellation, insertion handoff, retention, and once-only queue transitions. Native prop lifetime, hook removal, and live all-state behavior still require runtime verification.
+
+### The magazine's zone
+
+Which part of the held gun the free hand is at decides what its grip takes (`reload/zones.rs`). The handover takes the gun by its pistol grip within a wide radius, wide enough to reach the bottom of a pistol's grip, where its magazine is, so a hand going for the magazine there took the gun instead. The space under the magazine well is therefore the magazine's zone: a cylinder down the well's axis from `ZONE.lip_m` (15 mm) inside the mouth to `ZONE.length_m` (0.24 m) below it, `ZONE.radius_m` (0.06 m) from the axis, in model metres at the player's scale. It exists while the gun has a magazine in a well the wells table places on the gun. A free hand in it is at the magazine: the handover is not offered to it, and the magazine target is in its reach wherever in the zone the hand is, so its grip starts the pull. Only a grab at the pistol grip above the well, or elsewhere in the handover's reach, hands the gun over. Without a magazine target (the physical pull unavailable for the gun, or a hand that has not yet opened its grip after a pull), a grab in the zone takes nothing rather than the gun. The grab view draws the zones on the held gun (see [grab-view.md](grab-view.md)).
 
 ## Load
 
@@ -225,7 +229,8 @@ None of this has been run in the headset. In particular:
 - the spring time, the bolt's lift and radius, and the handle's grab radius for a part held back;
 - that a rocket part shown on an empty launcher stays shown while it is carried, and that the rocket and the Hydra's pod are modelled with their part frame aligned with the gun's, as the UPU-210's cartridge is, so that the table's insertion axis is their own;
 - the launcher capture radius and angle;
-- that a round put back at the per-shot seam holds against the native debit of a gun that counts a burst, which can land after the seam (the input tick's top-up then fills the magazine on the next tick).
+- that a round put back at the per-shot seam holds against the native debit of a gun that counts a burst, which can land after the seam (the input tick's top-up then fills the magazine on the next tick);
+- the magazine zone's size against the wells table's pistol wells, and that a hand pinching a pistol's base plate falls inside it.
 
 ## In the headset: unlimited ammunition
 
@@ -237,3 +242,7 @@ With the director's unlimited ammunition on:
 4. Hold a gun in each hand, then the game's pistol pair, then separate pistols, and fire each well past a magazine; repeat with the UPU-210 and a rocket launcher, which load again after every shot.
 5. Fire the bolt rifle and the pump shotgun: each still needs its bolt or pump worked after every shot.
 6. Turn the unlimited ammunition off: the magazines run down again and the pouch draws on the reserve.
+
+## In the headset: the magazine's zone
+
+With the grab view on, hold a pistol in one hand: an amber cylinder hangs under its grip, and a cyan ring marks the handover's reach around the grip. Bring the free hand under the grip into the cylinder: it brightens and the cyan ring dims. Close the hand there and pull down: the magazine comes out, and the gun stays in its hand. Close the hand on the grip above the cylinder: the gun is handed over. Repeat with a rifle, where the cylinder hangs under the magazine well ahead of the grip.

@@ -31,12 +31,13 @@ pub(super) fn grab_view_readout(ui: &mut Ui, status: &GrabViewStatus) {
     }
     let drawn = &status.drawn;
     ui.label(format!(
-        "{} target lines · {} rays · {} door handles · {} candidates · {} flashes · {} over budget · {} of {} primitives",
+        "{} target lines · {} rays · {} door handles · {} candidates · {} flashes · {} guns' zones · {} over budget · {} of {} primitives",
         drawn.target_lines,
         drawn.rays,
         drawn.handles,
         drawn.candidates,
         drawn.flashes,
+        drawn.zones,
         drawn.dropped,
         status.primitives,
         PRIMITIVE_BUDGET

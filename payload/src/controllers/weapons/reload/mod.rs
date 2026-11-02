@@ -61,6 +61,7 @@ mod steps;
 pub mod travel;
 pub mod tuning;
 pub mod wells;
+pub(crate) mod zones;
 
 use glam::Vec3;
 use jc3gi::equipment::weapon::WeaponBase;

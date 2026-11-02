@@ -23,6 +23,10 @@ pub struct GrabViewConfig {
     /// Draw the boxes of the weapons lying in the world, the loose objects, and the vehicles near
     /// the hands, whether or not the reach finds them.
     pub candidates: bool,
+    /// Draw the grab zones of a gun held in one hand for the other: the magazine's zone under its
+    /// well, where a grab takes the magazine, and the handover's reach around its pistol grip,
+    /// where a grab takes the gun.
+    pub zones: bool,
 }
 
 impl GrabViewConfig {
@@ -34,6 +38,7 @@ impl GrabViewConfig {
             wrist: false,
             refusals: true,
             candidates: true,
+            zones: true,
         }
     }
 }

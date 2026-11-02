@@ -46,6 +46,7 @@ use crate::{
             store,
         },
         physical_hands::{PhysicalHandsConfig, palm_readout},
+        weapons::reload::zones,
     },
 };
 
@@ -231,6 +232,7 @@ pub(crate) fn submit(tick: &Tick, frame: Option<&MarkerFrame>) {
             palms,
             candidates,
             flashes: &flashes,
+            zones: zones::views(),
         },
         &mut state.primitives,
     );
@@ -295,6 +297,7 @@ static STATUS: Mutex<GrabViewStatus> = Mutex::new(GrabViewStatus {
         handles: 0,
         candidates: 0,
         flashes: 0,
+        zones: 0,
         dropped: 0,
     },
     primitives: 0,

@@ -56,6 +56,10 @@ fn each_inventory_switch_edits_only_its_concrete_config_field() {
             "/controllers/physical_hands/grab_view/candidates",
         ),
         (
+            ViewId::GrabZones,
+            "/controllers/physical_hands/grab_view/zones",
+        ),
+        (
             ViewId::ColliderView,
             "/controllers/physical_hands/collider_view/enabled",
         ),
@@ -266,11 +270,12 @@ fn the_inventory_maps_every_switch_to_the_exact_nine_output_sources() {
         (ViewId::GrabWrist, Source::GrabView),
         (ViewId::GrabRefusals, Source::GrabView),
         (ViewId::GrabCandidates, Source::GrabView),
+        (ViewId::GrabZones, Source::GrabView),
         (ViewId::ColliderView, Source::ColliderView),
         (ViewId::PalmBoxes, Source::PhysicalHands),
         (ViewId::WristDetonator, Source::WristDetonator),
     ];
-    assert_eq!(ENTRIES.len(), 14);
+    assert_eq!(ENTRIES.len(), 15);
     assert_eq!(expected.len(), ENTRIES.len());
     for (id, source) in expected {
         assert_eq!(ENTRIES.iter().filter(|entry| entry.id == id).count(), 1);
@@ -281,7 +286,7 @@ fn the_inventory_maps_every_switch_to_the_exact_nine_output_sources() {
             .iter()
             .filter(|entry| entry.id.source() == Source::GrabView)
             .count(),
-        6
+        7
     );
     let config = Config::new();
     let mask = TemporaryHide::default().hide(&config);

@@ -179,6 +179,7 @@ enum ViewId {
     GrabWrist,
     GrabRefusals,
     GrabCandidates,
+    GrabZones,
     ColliderView,
     PalmBoxes,
     WristDetonator,
@@ -197,7 +198,8 @@ impl ViewId {
             | Self::GrabTargets
             | Self::GrabWrist
             | Self::GrabRefusals
-            | Self::GrabCandidates => Source::GrabView,
+            | Self::GrabCandidates
+            | Self::GrabZones => Source::GrabView,
             Self::ColliderView => Source::ColliderView,
             Self::PalmBoxes => Source::PhysicalHands,
             Self::WristDetonator => Source::WristDetonator,
@@ -219,6 +221,7 @@ impl ViewId {
             Self::GrabWrist => grab.wrist,
             Self::GrabRefusals => grab.refusals,
             Self::GrabCandidates => grab.candidates,
+            Self::GrabZones => grab.zones,
             Self::ColliderView => config.controllers.physical_hands.collider_view.enabled,
             Self::PalmBoxes => config.controllers.physical_hands.show_boxes,
             Self::WristDetonator => config.controllers.weapons.c4.detonator.overlay,
@@ -240,6 +243,7 @@ impl ViewId {
             Self::GrabWrist => grab.wrist = requested,
             Self::GrabRefusals => grab.refusals = requested,
             Self::GrabCandidates => grab.candidates = requested,
+            Self::GrabZones => grab.zones = requested,
             Self::ColliderView => {
                 config.controllers.physical_hands.collider_view.enabled = requested
             }
@@ -256,6 +260,7 @@ impl ViewId {
                 | Self::GrabWrist
                 | Self::GrabRefusals
                 | Self::GrabCandidates
+                | Self::GrabZones
         )
     }
 
@@ -341,6 +346,12 @@ const ENTRIES: &[Entry] = &[
     Entry {
         id: ViewId::GrabCandidates,
         label: "Grab view: nearby candidates",
+        group: Group::DebugGeometry,
+        feature: FeatureId::PhysicalHands,
+    },
+    Entry {
+        id: ViewId::GrabZones,
+        label: "Grab view: held gun's grab zones",
         group: Group::DebugGeometry,
         feature: FeatureId::PhysicalHands,
     },
