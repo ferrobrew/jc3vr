@@ -12,7 +12,7 @@ Inventory restore and second-pistol requests hand the engine a payload callback,
 
 ## Magazine executor restriction
 
-`hooks::activate_magazine_executor` rejects activation because exclusion of new native callback entries through hook removal is unproven. The uninstalled native detour is removed, and the production mailbox has no admission opener or native consumer. A drained executor would be insufficient if another callback could enter after the drain check. The prepared magazine guard therefore authorizes only the uninstalled case. An installed callback marker defers shutdown even when its mailbox is empty.
+`hooks::activate_magazine_executor` marks the magazine binder installed. Shutdown preparation for the magazine executor runs only on the game thread. It cancels a magazine extraction in progress, then defers (`DeferReason::MagazineBusy`) while the reload executor has not drained or a native magazine callback entry is active.
 
 The hook library's disable operation does not establish callback completion. A snapshot of suspended threads also does not prove that a callback cannot resume in removed code. A future executor adapter must retain a proven barrier through removal or provide an equivalent lifetime guarantee. This restriction does not certify the pre-existing removal behavior of every other hook.
 

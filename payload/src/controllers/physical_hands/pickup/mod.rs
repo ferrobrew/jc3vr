@@ -9,9 +9,9 @@
 //! The grip decides, on the input tick: a hand with a target and no other grab volume reports the
 //! [`GrabVolume::Pickup`] volume to the bindings, which latch the grip press to it, so the press
 //! neither grapples nor reaches the game. A pickup grab of a weapon takes that weapon straight into
-//! the grabbing hand ([`crate::controllers::weapons::hold::pickup`]), or, with `direct_pickup` off
-//! or a weapon the direct pickup refuses, clicks the game's use-item action, so that the game picks
-//! a weapon up its own way ([`finish_tick`]). A pickup grab of an
+//! the grabbing hand ([`crate::controllers::weapons::hold::pickup`]), or, for a weapon the direct
+//! pickup refuses, clicks the game's use-item action, so that the game picks the weapon up its own
+//! way ([`finish_tick`]). A pickup grab of an
 //! object asks the next simulation tick to take hold of it; letting the grip go asks it to let go.
 //!
 //! A held object is held at the point the hand touched, in one of two ways. A hand its body drives
