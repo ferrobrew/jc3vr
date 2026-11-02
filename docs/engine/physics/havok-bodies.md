@@ -93,8 +93,30 @@ The solver writes the events into per-thread command streams as it solves, and t
 
 Each character proxy also subscribes a listener of its own (`CRigidBodyCharacterCollisionListener`) to its capsule's events: it asks for the continued events and records each point of a started contact as a hit for the character. The hits are reacted to after the step (`CPfxCharacterInstance::ProcessHitInfos`, through each game object's `DoReactToHit`), which is unverified, as is how a character reacts to a body whose instance has no owner.
 
+## A loose object's mass
+
+A loose object's mass is authored on its entity, not taken from its collision shape: each prop's entity properties carry a physics parameter block, which either keeps the Havok shape's own mass, picks a mass from a fixed table of mass categories, or gives a mass outright. The game leaves the chosen mass on the body, so a body's motion reads it at runtime. The shapes' own masses are of unit density (a fuel barrel's hull reads its volume in cubic metres), so the authored mass is the real one. How the physics game object chooses between the three is read from the debug build's decompiler output and is unverified against the release IDB; the category table itself is present in the release executable.
+
+The authored masses are coarse, and heavier than their real counterparts. Read from the game's data:
+
+| Object | Mass |
+| --- | --- |
+| Cardboard box, can, bottle | 5 kg |
+| Traffic cone | 10 kg |
+| Gas canister, tyre, crate debris | 25 kg |
+| Small wooden cargo crate | 40 kg |
+| Large cargo crate, jerrycan, fire extinguisher | 50 kg |
+| Wooden barrel, checkpoint barrel, ammo cache crate | 100 kg |
+| Red fuel barrel, water-filled barrier barrel | 150 kg |
+| Propane tank, circuit box, generator cylinder | 250 kg |
+| Voltage box, stack of planks | 300 to 500 kg |
+| Cable drum, hay bale, Hesco barrier, containers, wrecks | 1 t and up |
+
+Nothing loose lies between 500 kg and 1 t.
+
 ## Unverified
 
 - Which body quality the hang proxy's quality preset is: the game sets one on that proxy, and the preset's flags are not established.
 - How the engine's contact and damage listeners treat a weapons-layer body whose instance has no owner when it meets a ragdoll; the hang proxy, which also has no owner, never meets one.
 - Whether a character's own capsule listener (`CRigidBodyCharacterCollisionListener`) makes it react to a contact with a weapons-layer body whose instance has no owner.
+- How the physics game object chooses between a prop's shape mass, its mass category, and its explicit mass ([A loose object's mass](#a-loose-objects-mass)).
