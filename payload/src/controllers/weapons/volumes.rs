@@ -159,16 +159,18 @@ pub struct ChestSides {
     pub c4: Hand,
 }
 
-/// The chest's sides for a player whose guns ride `gun_side` (see [`gun_side`]): the grenade pouch
-/// on the gun hand's side, and the C4 pouch on the free hand's, so the two never share a side.
-pub fn chest_sides(gun_side: Hand) -> ChestSides {
+/// The chest's sides for a player whose dominant hand is `dominant`: the grenade pouch on the
+/// dominant side and the C4 pouch on the other. Unlike the magazine pouch, they do not follow the gun
+/// hand: with a pistol in each hand there is no single gun hand, and pouches that changed sides with
+/// each handover would have to be found again each time.
+pub fn chest_sides(dominant: Hand) -> ChestSides {
     ChestSides {
-        grenade: gun_side,
-        c4: gun_side.other(),
+        grenade: dominant,
+        c4: dominant.other(),
     }
 }
 
-/// The hand the body's pouches are laid out around: the hand holding a gun, `holder`, or with none
+/// The hand the magazine pouch is laid out around: the hand holding a gun, `holder`, or with none
 /// drawn, the hand that last held one, `last_holder`, or with none yet, the dominant hand. A gun
 /// may be in either hand whichever hand is dominant ([`crate::controllers::weapons::hold`]), and a
 /// layout keyed off the dominant hand would then put the magazine pouch on the gun's side, out of
@@ -215,10 +217,10 @@ impl ChestGrabbers {
 pub fn grenade_pouch(
     frame: &BodyFrame,
     pouches: &PouchTuning,
-    gun_side: Hand,
+    dominant: Hand,
     grabbers: ChestGrabbers,
 ) -> Option<Candidate> {
-    let side = chest_sides(gun_side).grenade;
+    let side = chest_sides(dominant).grenade;
     let pouch = chest_pouch(GrabVolume::GrenadePouch, frame, &pouches.grenade, side);
     grabbers.hand().map(|hand| Candidate { hand, ..pouch })
 }
@@ -228,10 +230,10 @@ pub fn grenade_pouch(
 pub fn c4_pouch(
     frame: &BodyFrame,
     pouches: &PouchTuning,
-    gun_side: Hand,
+    dominant: Hand,
     grabbers: ChestGrabbers,
 ) -> Option<Candidate> {
-    let side = chest_sides(gun_side).c4;
+    let side = chest_sides(dominant).c4;
     let pouch = chest_pouch(GrabVolume::C4Pouch, frame, &pouches.c4, side);
     grabbers.hand().map(|hand| Candidate { hand, ..pouch })
 }

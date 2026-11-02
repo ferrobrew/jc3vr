@@ -30,7 +30,7 @@ The instances are made, shown, hidden, and released in the input tick's game sta
 
 ## In the headset
 
-1. Stand with grenades and C4 in stock and look down at the chest: a grenade sits on the gun hand's side and a C4 charge on the other, on the pouches' markers. Turn, crouch, bend, and walk: they stay on the body.
+1. Stand with grenades and C4 in stock and look down at the chest: a grenade sits on the dominant hand's side and a C4 charge on the other, and they stay there when a gun passes to the other hand, on the pouches' markers. Turn, crouch, bend, and walk: they stay on the body.
 2. Draw a rifle with reserve ammunition and look at the belt: its magazine sits on the free hand's side. Draw a pistol: the magazine changes to the pistol's.
 3. Throw every grenade: the grenade on the chest goes, and comes back with a grenade picked up.
 4. Open the parachute, fall, and drive: the models stay on the body without lagging it.

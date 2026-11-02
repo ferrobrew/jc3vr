@@ -305,13 +305,14 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         // A pouch with nothing to give is neither offered nor drawn.
         if config.weapons.grenade_throw
             && grenade::in_stock()
-            && let Some(pouch) = volumes::grenade_pouch(body, pouches, gun_side, grabbers)
+            && let Some(pouch) =
+                volumes::grenade_pouch(body, pouches, config.acting_hand(), grabbers)
         {
             targets.extend(place.pouch(&pouch, pouches.reach_margin_m));
         }
         if config.weapons.c4_throw
             && c4::in_stock()
-            && let Some(pouch) = volumes::c4_pouch(body, pouches, gun_side, grabbers)
+            && let Some(pouch) = volumes::c4_pouch(body, pouches, config.acting_hand(), grabbers)
         {
             targets.extend(place.pouch(&pouch, pouches.reach_margin_m));
         }
@@ -376,7 +377,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         .as_ref()
         .filter(|_| capabilities.reload)
         .map_or_else(Vec::new, |body| {
-            let mut shown = shown_props(body, &config, gun_side);
+            let mut shown = shown_props(body, &config);
             if !gameplay {
                 shown.retain(|prop| matches!(prop.prop, Prop::Magazine));
             }
@@ -741,9 +742,10 @@ fn docked_candidates(
 
 /// The pouches to draw their models on this tick: each pouch with something to give, wherever it
 /// is placed, whichever hands are free to take from it.
-fn shown_props(body: &BodyFrame, config: &ControllersConfig, gun_side: Hand) -> Vec<ShownPouch> {
+fn shown_props(body: &BodyFrame, config: &ControllersConfig) -> Vec<ShownPouch> {
     let pouches = &POUCHES;
-    let sides = volumes::chest_sides(gun_side);
+    let dominant = config.acting_hand();
+    let sides = volumes::chest_sides(dominant);
     let on_chest = |prop: Prop, pouch: Candidate, side: Hand| ShownPouch {
         prop,
         pouch: Pose {
@@ -756,13 +758,13 @@ fn shown_props(body: &BodyFrame, config: &ControllersConfig, gun_side: Hand) -> 
     let mut out = Vec::new();
     if config.weapons.grenade_throw
         && grenade::in_stock()
-        && let Some(pouch) = volumes::grenade_pouch(body, pouches, gun_side, ChestGrabbers::Either)
+        && let Some(pouch) = volumes::grenade_pouch(body, pouches, dominant, ChestGrabbers::Either)
     {
         out.push(on_chest(Prop::Grenade, pouch, sides.grenade));
     }
     if config.weapons.c4_throw
         && c4::in_stock()
-        && let Some(pouch) = volumes::c4_pouch(body, pouches, gun_side, ChestGrabbers::Either)
+        && let Some(pouch) = volumes::c4_pouch(body, pouches, dominant, ChestGrabbers::Either)
     {
         out.push(on_chest(Prop::Charge, pouch, sides.c4));
     }
