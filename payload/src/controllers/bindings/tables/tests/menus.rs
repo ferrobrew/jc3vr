@@ -238,36 +238,36 @@ fn clicked(step: &Step, action: Action) -> bool {
 }
 
 #[test]
-fn a_short_system_press_pauses_on_release() {
+fn a_short_system_press_opens_the_commlink_on_release() {
     let mut b = Bindings::default();
     let step = b.sim_step(ON_FOOT, &system(true, true, false), DT, &CONFIG);
     assert!(step.desired.is_empty());
     let step = b.sim_step(ON_FOOT, &system(false, false, true), DT, &CONFIG);
-    assert!(clicked(&step, GUI_PAUSE));
-    assert!(!clicked(&step, GUI_PDA));
+    assert!(clicked(&step, GUI_PDA));
+    assert!(!clicked(&step, GUI_PAUSE));
 }
 
 #[test]
-fn a_tap_between_ticks_still_pauses() {
+fn a_tap_between_ticks_still_opens_the_commlink() {
     let mut b = Bindings::default();
     b.sim_step(ON_FOOT, &system(false, true, true), DT, &CONFIG);
     let step = b.sim_step(ON_FOOT, &Controls::default(), DT, &CONFIG);
-    assert!(clicked(&step, GUI_PAUSE));
+    assert!(clicked(&step, GUI_PDA));
 }
 
 #[test]
-fn a_long_system_press_opens_the_commlink_once() {
+fn a_long_system_press_pauses_once() {
     let mut b = Bindings::default();
     let held = system(true, false, false);
     let ticks = (CONFIG.long_press_s / DT).ceil() as usize + 1;
-    let mut commlinks = 0;
+    let mut pauses = 0;
     for _ in 0..ticks * 2 {
         let step = b.sim_step(ON_FOOT, &held, DT, &CONFIG);
-        commlinks += usize::from(clicked(&step, GUI_PDA));
+        pauses += usize::from(clicked(&step, GUI_PAUSE));
     }
-    assert_eq!(commlinks, 1);
+    assert_eq!(pauses, 1);
     let step = b.sim_step(ON_FOOT, &system(false, false, true), DT, &CONFIG);
-    assert!(!clicked(&step, GUI_PAUSE));
+    assert!(!clicked(&step, GUI_PDA));
 }
 
 #[test]
@@ -275,7 +275,7 @@ fn the_system_button_works_in_menus() {
     let mut b = Bindings::default();
     b.sim_step(Mode::Ui, &system(true, true, false), DT, &CONFIG);
     let step = b.sim_step(Mode::Ui, &Controls::default(), DT, &CONFIG);
-    assert!(clicked(&step, GUI_PAUSE));
+    assert!(clicked(&step, GUI_PDA));
 }
 
 #[test]

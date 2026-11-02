@@ -955,14 +955,14 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
         add(
             control,
             Gesture::Press,
-            Effect::Actions(vec![Action::GUI_PAUSE]),
+            Effect::Actions(vec![Action::GUI_PDA]),
         );
-        // An unbound pause has no long press either; its one row says so.
+        // An unbound system button has no long press either; its one row says so.
         if control != Control::Unbound {
             add(
                 control,
                 Gesture::Hold,
-                Effect::Actions(vec![Action::GUI_PDA]),
+                Effect::Actions(vec![Action::GUI_PAUSE]),
             );
         }
     }

@@ -295,13 +295,13 @@ impl SystemButton {
             };
             let long = !fired && seconds >= long_press_s;
             if long {
-                toggle(out, Action::GUI_PDA);
+                toggle(out, Action::GUI_PAUSE);
             }
             self.held = Some((seconds, fired || long));
         } else if let Some((_, fired)) = self.held.take()
             && !fired
         {
-            toggle(out, Action::GUI_PAUSE);
+            toggle(out, Action::GUI_PDA);
         }
     }
 }

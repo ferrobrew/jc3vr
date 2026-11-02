@@ -205,7 +205,7 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 | Melee (`PUSH_GRAPPLE` under the hammer ability) | none |
 | Precision aim and sniper zoom | removed; scopes magnify optically (see "Scopes") |
 | Reel-in context: cancel, boost, hang jump, slingshot | double tap Y, hold L trigger (hold L stick click while dual-wielding), A, A |
-| Pause, commlink | System button tap, System button hold (either hand) |
+| Commlink (map), pause | System button tap, System button hold (either hand) |
 | Skip a cutscene | hold the right B, as the game's prompt asks (every mode but the menus, either handedness) |
 | Crouch toggle (seated posture) | R stick flicked down |
 
@@ -608,7 +608,7 @@ The order puts the parts that everything else depends on first, then the parts w
 1. Input. Input/bindings > Devices and thresholds reports the OpenXR input status and the hand-tracking status. Both hands track, the grip and aim poses follow the controllers, and every button, trigger, grip, stick, and trackpad reads, including the system button.
 2. Scheme. A controller press selects the controller scheme; a gamepad, keyboard, or mouse input selects the gamepad scheme; the `Controllers` and `Gamepad` settings pin it. The gamepad scheme behaves as it did before controllers existed.
 3. Mode detection. The detected mode and the active action set follow walking, swimming, falling, the wingsuit, the parachute, each vehicle class in the driver and a passenger seat, the pause menu, the map, the commlink, and the mod's panel. No mode flickers during animation blends, and a fast travel holds the mode.
-4. On-foot bindings. Move with the head direction and the off-hand direction, turn smooth and snap, jump, fire, grapple fire, zip, and tether hold, retract, release, use and enter, reload tap and holster hold, and the explosive tap and hold. A short system press pauses, a long one opens the commlink, and neither toggles twice. The menus navigate, confirm, cancel, change tabs, and change pages.
+4. On-foot bindings. Move with the head direction and the off-hand direction, turn smooth and snap, jump, fire, grapple fire, zip, and tether hold, retract, release, use and enter, reload tap and holster hold, and the explosive tap and hold. A short system press opens the commlink, a long one pauses, and neither toggles twice. The menus navigate, confirm, cancel, change tabs, and change pages.
 5. Vehicle and air bindings. The car, the motorcycle, the helicopter, the plane, and the boat drive and fire; nitrous holds and the turbo jump taps separate; a held enter reaches the gunner seat. The wingsuit boosts and brakes, and the parachute opens and steers.
 6. Gamepad semantics. The prompts show gamepad buttons under the controller scheme, and the setting returns to its previous value under the gamepad scheme.
 7. The aim-state pin. Firing while walking keeps the body in the walk family with no weapon raise and no snap. The aim flags in the readout stay clear while firing. The grapple fires and tethers, and the body's behaviour on a held tether is acceptable. Entering combat draws nothing, leaving combat holsters nothing, and the reload hold still holsters. A gun fired with its barrel near a wall is not blocked. Check the strafe direction with the gun pointed sideways, and whether the trigger on an empty hand draws a gun.

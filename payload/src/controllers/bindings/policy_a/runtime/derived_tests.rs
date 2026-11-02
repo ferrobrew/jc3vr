@@ -231,7 +231,7 @@ fn losing_one_hands_episode_preserves_the_other_hands_different_gesture() {
             );
             let step = tables(&mut bindings, &tick, context, 0.01);
             let expected = if live_id == PAUSE {
-                Action::GUI_PAUSE
+                Action::GUI_PDA
             } else {
                 Action::FIRE_GRAPPLE
             };
@@ -244,7 +244,7 @@ fn losing_one_hands_episode_preserves_the_other_hands_different_gesture() {
                 !step
                     .desired
                     .iter()
-                    .any(|desired| desired.target.action == Action::GUI_PDA)
+                    .any(|desired| desired.target.action == Action::GUI_PAUSE)
             );
         }
     }
@@ -277,7 +277,7 @@ fn loss_of_nonparticipant_hand_preserves_the_accepted_route_episode() {
             let expected = if id == GRAPPLE {
                 Action::FIRE_GRAPPLE
             } else {
-                Action::GUI_PAUSE
+                Action::GUI_PDA
             };
             assert!(
                 step.desired
@@ -396,7 +396,7 @@ fn route_cancellation_does_not_transfer_snatch_owned_press_before_real_neutral()
 }
 
 #[test]
-fn pause_loss_before_long_threshold_cannot_open_pda_and_real_hold_still_does() {
+fn system_loss_before_long_threshold_cannot_pause_and_real_hold_still_does() {
     for loss in [false, true] {
         let mut runtime = Runtime::default();
         let mut bindings = Bindings::new();
@@ -425,7 +425,7 @@ fn pause_loss_before_long_threshold_cannot_open_pda_and_real_hold_still_does() {
             assert!(
                 step.desired
                     .iter()
-                    .any(|desired| desired.target.action == Action::GUI_PDA)
+                    .any(|desired| desired.target.action == Action::GUI_PAUSE)
             );
         }
     }

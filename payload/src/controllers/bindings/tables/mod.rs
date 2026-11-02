@@ -151,6 +151,16 @@ impl Bindings {
         self.grips
     }
 
+    /// The snatch's target came into `hand`, whose grip was closed on nothing: from now on its grip
+    /// holds the target by `volume`, as the grapple hand's grip holds a snatched target, so the
+    /// closed hand takes nothing more it comes to.
+    pub(crate) fn hold_catch(&mut self, hand: Hand, volume: GrabVolume) {
+        let grip = &mut self.grips[hand.index()];
+        if matches!(grip, GripLatch::Fist { .. }) {
+            *grip = GripLatch::Grab(volume);
+        }
+    }
+
     /// Claim the snatch's B episode before ordinary grapple evaluation.
     pub(crate) fn claim_snatch(
         &mut self,
@@ -296,10 +306,12 @@ impl Bindings {
             let volume = volume.filter(|v| {
                 !(chord.dominant_grip && hand == off_hand && *v == GrabVolume::Foregrip)
             });
+            // A grip held for the snatch's catch closes on nothing.
+            let reserved = controls.hand(hand).catch_reserved;
             self.grips[hand.index()].step(LatchTick {
                 grip: controls.hand(hand).grip,
-                target: volume,
-                bound: grip_bound(input, hand),
+                target: volume.filter(|_| !reserved),
+                bound: !reserved && grip_bound(input, hand),
                 slow: controls.hand(hand).grab_slow,
                 dt,
             })
@@ -638,13 +650,13 @@ impl SystemButton {
             };
             let long = !fired && seconds >= long_press_s;
             if long {
-                toggle(out, Action::GUI_PDA);
+                toggle(out, Action::GUI_PAUSE);
             }
             self.held = Some((seconds, fired || long));
         } else if let Some((_, fired)) = self.held.take()
             && !fired
         {
-            toggle(out, Action::GUI_PAUSE);
+            toggle(out, Action::GUI_PDA);
         }
     }
 }
