@@ -1,8 +1,8 @@
-//! The snatch's sounds and effects, all of them the grapple's own: the hook's material impact where
-//! it bites the target, the reel's loop while the line pulls, and the line's retract when it comes
-//! away. The custom fire plays no fire animation, and the hook's effects that the game plays from
-//! the fire animation's track messages and from the reel's state therefore never play for it on
-//! their own; the engine side is "The hook's sounds and effects" in
+//! The snatch's sounds and effects, all of them the grapple's own: the device's fire, the hook's
+//! material impact where it bites the target, the reel's loop while the line pulls, and the line's
+//! retract when it comes away. The custom fire plays no fire animation, and the hook's effects that
+//! the game plays from the fire animation's track messages and from the reel's state therefore
+//! never play for it on their own; the engine side is "The hook's sounds and effects" in
 //! `docs/engine/gameplay/grapple-pipeline.md`.
 //!
 //! The reel's loop belongs to the hook's state: [`GrapplingHook::UpdateLoopingEffects`] plays it
@@ -11,10 +11,7 @@
 
 use std::{
     num::NonZeroUsize,
-    sync::{
-        Once,
-        atomic::{AtomicUsize, Ordering},
-    },
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 use detours_macro::detour;
@@ -23,7 +20,6 @@ use jc3gi::{
     equipment::{
         attached_effects::AttachedEffectUsage, grappling_hook::GrapplingHook, wire_end::WireEnd,
     },
-    hash::hashlittle,
     physics::{CastRayInfo, GameMaterialId, PfxLayer},
     types::math::Vector3,
 };
@@ -112,9 +108,8 @@ pub(super) unsafe fn retract() {
     unsafe { play_once(hook, usage) };
 }
 
-/// Play the hook's fire one-off, when the hook's effect container has one by any of the names the
-/// fire animation's track message is likely to send; and, once, log every usage the container
-/// holds, so a recorded session names the fire's.
+/// Play the device's fire, the sound and muzzle effect a track message of the game's fire
+/// animation plays from the hook's container ([`GrapplingHook::GRAPPLE_FIRE_USAGE`]).
 ///
 /// # Safety
 ///
@@ -123,63 +118,36 @@ pub(super) unsafe fn fire() {
     let Some(hook) = (unsafe { engine::local_hook() }) else {
         return;
     };
-    LISTED.call_once(|| unsafe { list_usages(hook) });
-    let found = FIRE_USAGE_NAMES.iter().find_map(|name| {
-        let usage = unsafe {
-            hook.m_AttachedEffects
-                .FindAttachedEffectUsage(hashlittle(name.as_bytes()) as u32)
-        };
-        (!usage.is_null()).then_some((*name, usage))
-    });
-    if let Some((name, usage)) = found {
-        tracing::debug!(target: "controllers", name, "snatch: the hook plays its fire usage");
-        unsafe { play_once(hook, usage) };
+    let usage = unsafe {
+        hook.m_AttachedEffects
+            .FindAttachedEffectUsage(GrapplingHook::GRAPPLE_FIRE_USAGE)
+    };
+    let played = unsafe { play_once(hook, usage) };
+    if !played {
+        tracing::debug!(target: "controllers", found = !usage.is_null(), "snatch: the hook's fire did not play");
     }
 }
 
 /// The hook's local player hook the reel's loop is held on, by address, or zero.
 static REELING: AtomicUsize = AtomicUsize::new(0);
-static LISTED: Once = Once::new();
 
 /// How far past the hook's end the impact cast reaches, metres: the end sits on the target's
 /// surface or inside it.
 const IMPACT_OVERSHOOT_M: f32 = 0.5;
 
-/// The usage names a grapple fire's track message may play from the hook's container, tried in
-/// order. The container's other usages share this naming (`ReelingIn`, `Retracting`,
-/// `ReleaseFromAttached`); which of these the fire uses, if any, is unverified.
-const FIRE_USAGE_NAMES: [&str; 5] = ["Fire", "GrappleFire", "HookFire", "FireHook", "Shoot"];
-
-/// The most usages [`list_usages`] reads.
-const MAX_LISTED_USAGES: u16 = 64;
-
-/// Play `usage` once on `hook`'s container, unless it loops: a looping usage would play until it
-/// is stopped, which only its owner does.
-unsafe fn play_once(hook: &mut GrapplingHook, usage: *mut AttachedEffectUsage) {
+/// Play `usage` once on `hook`'s container, unless it loops, as the hook's own message playback
+/// refuses to: a looping usage would play until it is stopped, which only its owner does. Returns
+/// whether it plays.
+unsafe fn play_once(hook: &mut GrapplingHook, usage: *mut AttachedEffectUsage) -> bool {
     if usage.is_null() {
-        return;
+        return false;
     }
     let effects = &mut hook.m_AttachedEffects;
     let material = GameMaterialId::EGameMaterialId_Default;
     if unsafe { effects.IsAttachedEffectLooping(usage, material) } {
-        return;
+        return false;
     }
-    unsafe { effects.ActivateAttachedEffect(usage, true, material) };
-}
-
-/// Log the hashes of the usages in `hook`'s effect container.
-unsafe fn list_usages(hook: &GrapplingHook) {
-    let effects = &hook.m_AttachedEffects;
-    let count = effects.m_UsageCount.min(MAX_LISTED_USAGES);
-    if effects.m_UsageEntries.is_null() {
-        return;
-    }
-    let hashes: Vec<String> = (0..usize::from(count))
-        // SAFETY: the table holds `m_UsageCount` entries from its start.
-        .map(|i| unsafe { (*effects.m_UsageEntries.add(i)).m_Hash })
-        .map(|hash| format!("{hash:#010x}"))
-        .collect();
-    tracing::info!(target: "controllers", count = effects.m_UsageCount, ?hashes, "snatch: the hook's effect usages");
+    unsafe { effects.ActivateAttachedEffect(usage, true, material) }
 }
 
 #[detour(address = jc3gi::equipment::grappling_hook::GrapplingHook::UpdateLoopingEffects_ADDRESS)]

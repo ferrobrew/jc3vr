@@ -63,7 +63,7 @@ Weapons and props use the same correction. The owned wire's native constraint cr
 
 The snatch plays the grapple's own sounds and effects, from the hook's effect container (`snatch::juice`; the engine side is "The hook's sounds and effects" in [grapple-pipeline.md](../../engine/gameplay/grapple-pipeline.md#the-hooks-sounds-and-effects)). The custom fire plays no fire animation, and the hook's state stays custom, so of the game's own only the wire's flight loop plays by itself.
 
-- The fire: the game plays it from the fire animation's track message, which names a usage of the hook's container. The snatch plays the first of `Fire`, `GrappleFire`, `HookFire`, `FireHook`, and `Shoot` that the container holds, unless it loops; which name the animation sends is unverified, so this may play nothing.
+- The fire: the device's fire sound and muzzle effect, the container's `GrappleFire` usage ([`GRAPPLE_FIRE_USAGE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##const-GRAPPLE_FIRE_USAGE)), played as the game's track message plays it. The container's `GrapplePreFire` usage, a sound only, is not played: which point of the game's fire it belongs to is unverified, and the snatch's yank fires at once.
 - The bite: the hook's material impact, [`WireEnd::PlayImpactEffect`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::wire_end::WireEnd##func-PlayImpactEffect), fed by a cast from the hand through the hook's end on the layer that meets weapons, kept only when it hits the target.
 - The yank: the reel's loop ([`m_ReelingInEffectUsage`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##field-m_ReelingInEffectUsage)), held on while the line pulls by a detour of [`GrapplingHook::UpdateLoopingEffects`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-UpdateLoopingEffects), which otherwise plays it only while the hook reels in. When the line goes slack or the snatch ends, the game's own update stops it softly.
 - The line coming away (the catch, a miss, a cancel, a failure): the retract's one-off ([`m_RetractingActiveWireEffectUsage`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##field-m_RetractingActiveWireEffectUsage)).
@@ -123,7 +123,7 @@ Built, as described above, except the headset checks below.
 In the headset:
 
 1. Point the empty grapple hand at a gun on the ground 10 m away: the marker shows on it. Move the hand onto a crate within reach: the crate's marker wins.
-2. Squeeze, then yank: the hook flies from the left forearm, bites the gun with its impact sound and a thud on the hand, the reel's whine plays as the line yanks the gun, spinning, toward the hand, and with the hand held still it smacks into the hand with a hard thump, the line comes away with the retract, and the gun sits in the held pose. Yank again and pull the hand away as the gun arrives: it flies past or hits Rico and drops, and the snatch fails as a missed catch. Holster it, hand it over, drop it.
+2. Squeeze, then yank: the device fires with the game's fire sound and muzzle flash, the hook flies from the left forearm, bites the gun with its impact sound and a thud on the hand, the reel's whine plays as the line yanks the gun, spinning, toward the hand, and with the hand held still it smacks into the hand with a hard thump, the line comes away with the retract, and the gun sits in the held pose. Yank again and pull the hand away as the gun arrives: it flies past or hits Rico and drops, and the snatch fails as a missed catch. Holster it, hand it over, drop it.
 3. Squeeze without yanking: a bump, and the cyan latch dot and line on the gun until the hand opens. Open the hand: the latch goes and nothing flies. Hold the grapple button on a gun, aim at a car, and let go: the gun is tethered to the car.
 4. Yank, then open the hand mid-flight: the line goes and the gun falls near you.
 5. Snatch a gun from a soldier at 10 m: the soldier staggers, and the gun flies in.
@@ -177,7 +177,7 @@ In the headset:
 ## Open questions
 
 - Whether the AI reserves a dropped weapon it walks toward, and what it does when the weapon leaves.
-- The fire's usage name: the game plays the fire sound from the fire animation's track message, which the custom fire skips, and the snatch tries likely names ([The snatch's sounds](#the-snatchs-sounds)). The first snatch logs the hook's usages, `snatch: the hook's effect usages`, which a session can compare against them.
+- Whether the game's fire plays `GrapplePreFire` before `GrappleFire`, and whether the snatch should play it on the arming squeeze ([The snatch's sounds](#the-snatchs-sounds)).
 - Whether a target caught close to the body collides with Rico's collision proxy before it reaches the hand. A hand held near the chest may see it bounce off, which reads as a miss.
 - Whether the hook's state is ever left parked off inactive with no wire, which would refuse the custom fire ("the hook is busy" in the `SNATCH` row).
 

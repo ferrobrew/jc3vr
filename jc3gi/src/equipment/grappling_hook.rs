@@ -189,7 +189,8 @@ pub struct GrapplingHook {
     /// The one-off effect and sound of the active wire retracting into the device
     /// ([`RETRACTING_USAGE`](crate::equipment::grappling_hook::GrapplingHook::RETRACTING_USAGE)).
     pub m_RetractingActiveWireEffectUsage: *mut crate::equipment::attached_effects::AttachedEffectUsage,
-    /// The one-off effect and sound of a fire that finds no target.
+    /// The one-off effect and sound of a fire that finds no target
+    /// ([`GRAPPLE_FAIL_USAGE`](crate::equipment::grappling_hook::GrapplingHook::GRAPPLE_FAIL_USAGE)).
     pub m_GrappleFireFailEffectUsage: *mut crate::equipment::attached_effects::AttachedEffectUsage,
     /// The one-off effect and sound of letting go of a reeled-in attachment
     /// ([`RELEASE_FROM_ATTACHED_USAGE`](crate::equipment::grappling_hook::GrapplingHook::RELEASE_FROM_ATTACHED_USAGE)).
@@ -754,6 +755,18 @@ impl GrapplingHook {
     }
 }
 impl GrapplingHook {
+    /// The hash of the failed fire's one-off usage (`hashlittle("GrappleFail")`), resolved into
+    /// [`m_GrappleFireFailEffectUsage`](crate::equipment::grappling_hook::GrapplingHook::m_GrappleFireFailEffectUsage).
+    pub const GRAPPLE_FAIL_USAGE: u32 = 3180463715;
+    /// The hash of the fire's one-off usage (`hashlittle("GrappleFire")`): the device's fire sound
+    /// and its muzzle effect. No code names it: it plays only from a track message to the hook
+    /// (`CGrapplingHook::PlayEffectOnMessage`), which finds it in
+    /// [`m_AttachedEffects`](crate::equipment::grappling_hook::GrapplingHook::m_AttachedEffects) by this hash.
+    pub const GRAPPLE_FIRE_USAGE: u32 = 201876191;
+    /// The hash of the pre-fire's one-off usage (`hashlittle("GrapplePreFire")`): a sound with no
+    /// effect, which also plays only from a track message to the hook. Which animation sends it,
+    /// and when, is unverified.
+    pub const GRAPPLE_PRE_FIRE_USAGE: u32 = 87262980;
     /// The hash of the reel's looping usage (`hashlittle("ReelingIn")`), resolved into
     /// [`m_ReelingInEffectUsage`](crate::equipment::grappling_hook::GrapplingHook::m_ReelingInEffectUsage).
     pub const REELING_IN_USAGE: u32 = 322054904;
