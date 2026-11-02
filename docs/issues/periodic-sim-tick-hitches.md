@@ -21,26 +21,46 @@ Nothing in the mod runs on a 61 s or 26 s wall-clock beat. Its periodic work is 
 
 ## The game side
 
-[`GameStateRun::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::GameStateRun##func-Update) calls several dozen managers outside the phases the breakdown timed. The stretch before the world's pre-simulation queue includes the spin on the input job's completion and the operations and login updates; the stretch after the streaming block includes the AI waits and every online manager: the statistics, friends, online suite, Steam platform system (which runs `SteamAPI_RunCallbacks`), matchmaking, asynchronous brags, notifications, profile, player reporting, and achievements. Several of these keep their own clocks on the clock's real time or on the unscaled step, which fits a beat that ignores slow motion:
+[`GameStateRun::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::GameStateRun##func-Update) calls several dozen managers outside the phases the breakdown timed. The stretch before the world's pre-simulation queue includes the spin on the input job's completion and the operations and login updates; the stretch after the streaming block includes the AI waits and every online manager: the statistics, friends, online suite, Steam platform system (which runs `SteamAPI_RunCallbacks`), matchmaking, asynchronous brags, notifications, profile, player reporting, and achievements.
 
-- [`OnlineSuiteManager::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/online::OnlineSuiteManager##func-Update) retries the online suite's platform initialization on a real-time timer, though one several minutes long.
-- [`AsynchronousBragManager::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/online::AsynchronousBragManager##func-Update) runs per-bucket statistic timers with data-driven thresholds, and refreshes the friends' statistics on a timer several minutes long.
-- [`ProfileManager::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/profile_manager::ProfileManager##func-Update) fires real-time item and research deadlines.
-- The Steam platform system's update, [`OnlinePlatformSystemSteam::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/online::OnlinePlatformSystemSteam##func-Update), runs whatever Steam callbacks are due. Under Proton those cross into the Linux Steam client.
+## Located: the online-suite manager
 
-None of them is confirmed. The cause is not settled from the code alone.
+`sessions/2026-11-02_02-54-23_753` ran with the split of the tick described under [Instrumentation](#instrumentation). In each of the 32 breakdown windows with a stall, `sim_tail` and `sim_online` carry it and nothing else does: 602 of a 607 ms `sim_tick` maximum at 01:55:14, 262 of 266 at 01:54:43, 248 of 253 at 01:55:45, and the same shape in the rest. `sim_head` stays at a few milliseconds, so of the three managers `sim_online` timed, the operations and the login (which run in the head) are out, and the stall is inside [`OnlineSuiteManager::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/online::OnlineSuiteManager##func-Update). The recording's sidecar shows the same beat as before: two cycles of 61.0 s, offset by 26 s, so the gaps alternate 26.0 and 35.1 s, with the first cycle's stall at about 600 ms in some minutes and the other's at about 300 ms.
+
+`sim_steam`, the Steam callbacks, reads 5 to 6 ms in almost every stall window against about 0.1 ms in the others. Something in the stall's tick or soon after it makes a Steam call result arrive.
+
+## What the online-suite manager runs
+
+The manager's own work is a queued login and a platform-initialization retry at most every five minutes, neither of which fits. Everything else is the online suite's update, [`OnlineSuite::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/osuite::OnlineSuite##func-Update), the publisher's middleware. It runs, on the game thread:
+
+- the player accounts, [`PlayerAccountManager::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/osuite::PlayerAccountManager##func-Update), under the manager's mutex. For the Steam account that is the connection check, then the authentication, and once authenticated the friends refresh, the Square Enix Membership account, and the consumables;
+- the language refresh, [`OsInfo::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/osuite::OsInfo##func-Update), under a mutex;
+- the replies of the suite's HTTP requests, which its worker thread queued, [`Worker::CallCallbacks`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/osuite::Worker##func-CallCallbacks).
+
+The suite's timers run on the C runtime's `clock()` in whole seconds, so they keep wall-clock time through slow motion. Two of them run on a period of a minute, which matches two cycles of the same period at a fixed offset:
+
+- [`SteamFriends::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/osuite::SteamFriends##func-Update) walks the Steam friends list once a minute: the friend count, then one `ISteamFriends::GetFriendByIndex` call into the Steam client and one allocation for every second index. Under Proton every one of those calls crosses into the Linux Steam client, so a long friends list makes a slow tick. Its result is useless besides: each step replaces the stored list with a one-entry list.
+- [`AuthenticationBase::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/osuite::AuthenticationBase##func-Update) authenticates the Steam account with the suite's servlet. Without a ticket it requests a Steam encrypted app ticket ([`SteamAuthentication::RequestTicket`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/osuite::SteamAuthentication##func-RequestTicket)), once a second for ten attempts and then once a minute; when a ticket arrives (through the Steam callbacks, which fits the `sim_steam` blip) it sends the servlet's `os_Authenticate` request ([`AuthenticationBase::AuthenticateOnServlet`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/osuite::AuthenticationBase##func-AuthenticateOnServlet)), and a failed reply drops the ticket and starts over. If the servlet no longer answers, this loops for the whole session.
+- [`InternalSemAccount::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/osuite::InternalSemAccount##func-Update) retries the membership login every five minutes, too slow for either cycle.
+
+A period of 61.0 s rather than 60 is unexplained; both cycles show it, which fits two timers on the same clock. Which of the two minute timers costs 300 ms, and on what (a Steam client call, a mutex the worker thread holds, a blocking socket call in the HTTP request), is not settled from the code alone.
 
 ## Instrumentation
 
-The breakdown now splits the rest of the tick so the next session names the region and, if it is an online manager, the manager (see [frame-timing.md](../mod/performance/frame-timing.md)):
+The breakdown splits the tick so a session names the region and the manager (see [frame-timing.md](../mod/performance/frame-timing.md)):
 
 - `sim_head` and `sim_tail`: the stretches before the world's pre-simulation queue and after the streaming block, timed as intervals of `sim_tick`. `sim_tick` keeps only the short gaps between the phases.
-- `sim_steam`, `sim_stats`, and `sim_online`: the online managers.
+- `sim_steam`, `sim_stats`, `sim_online`, `sim_ops`, and `sim_login`: the online managers, with the operations and login (`sim_ops`, `sim_login`) apart from the online-suite manager.
+- `osuite_accounts`, `osuite_auth`, `osuite_ticket`, `osuite_servlet`, `osuite_friends`, `osuite_sem`, `osuite_consumables`, `osuite_info`, and `osuite_callbacks`: the parts of the online suite's update, nested in `sim_online`.
 - `input_job`: the input job's body, which the head spins on.
 
-A stall window's slot maxima then read as one of:
+In the next session's stall windows the `osuite_*` slot whose maximum matches the stall names the part. `osuite_friends` is the friends walk; `osuite_ticket` or `osuite_servlet` is the authentication's request, and `osuite_auth` alone its mutex; `osuite_accounts` alone is the accounts mutex or the connection check; `osuite_callbacks` is a reply handler; and `sim_online` keeping the stall with every `osuite_*` slot small is the manager's own login or retry.
 
-- `sim_head` near the stall with `input_job` near it too: the input job (the device poll, the UI's input update, the message boxes, or the account manager).
-- `sim_head` without `input_job`: one of the managers before the world update.
-- `sim_tail` with `sim_steam`, `sim_stats`, or `sim_online` near the stall: that online manager.
-- `sim_tail` alone: the AI or light waits or another post-simulation manager, which a further split narrows.
+## Remedies
+
+Nothing is shipped: each option changes what the game does, and the evidence does not yet say which part to change.
+
+- If it is `osuite_friends`: skip [`SteamFriends::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/osuite::SteamFriends##func-Update), or let it run once and then hold it in its waiting state. The risk is small, since the list it maintains holds only one friend anyway; the suite features that read it (friend-based challenges and brags) see no friends.
+- If it is the authentication: hold its retry delay at a long value once the servlet has failed, or stop calling it after a number of failures. The risk is that the suite never authenticates within a session after a transient failure, which takes the membership rewards and other suite services offline until a restart. Whether the servlet still answers at all should be checked first, from the suite's log lines or the network.
+- Moving the suite's update off the game thread is not safe: its reply handlers and the manager's observers touch game state that the game thread owns.
+- Throttling the whole suite update (every few ticks) does not help: the cost is one call on a timer, not a per-tick cost.

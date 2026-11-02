@@ -33,12 +33,44 @@ pub(crate) enum Slot {
     /// post-simulation managers, the AI and light kicks and waits, and the online managers. Timed as
     /// an interval of [`Self::SimTick`] rather than a hook of its own.
     SimTail,
-    /// The online-suite manager, the online operations, and the login state machine.
+    /// The online-suite manager's update (`OnlineSuiteManager::Update`), excluding the online
+    /// suite's parts timed in the `Osuite` slots: the queued online login and the suite's platform
+    /// initialization retry.
     SimOnline,
     /// The statistic manager, the asynchronous brags, and the profile manager's deadlines.
     SimStats,
     /// The Steam platform system's update, which runs the Steam API's callbacks.
     SimSteam,
+    /// The online operations queue (`OperationManager::Update`), in the tick's head.
+    SimOperations,
+    /// The login state machine (`LoginManager::Update`), in the tick's head.
+    SimLogin,
+    /// The online suite's player accounts (`osuite::PlayerAccountManager::Update`), excluding the
+    /// service-account parts timed on their own: the manager's mutex and the Steam account's
+    /// connection check.
+    OsuiteAccounts,
+    /// The Steam account's authentication with the online suite (`AuthenticationBase::Update`),
+    /// excluding [`Self::OsuiteTicket`] and [`Self::OsuiteServlet`]: its mutex and state machine.
+    OsuiteAuth,
+    /// The authentication's Steam ticket request (`SteamAuthentication::RequestTicket`), sent on the
+    /// retry timer.
+    OsuiteTicket,
+    /// The authentication's servlet request (`AuthenticationBase::AuthenticateOnServlet`), sent once
+    /// a ticket has arrived.
+    OsuiteServlet,
+    /// The online suite's Steam friends refresh (`SteamFriends::Update`), which walks the friends
+    /// list through the Steam client once a minute.
+    OsuiteFriends,
+    /// The Square Enix Membership account's update (`InternalSemAccount::Update`) and its login
+    /// retry.
+    OsuiteSem,
+    /// The online suite's consumables (`OnlineSuiteConsumables::Update`).
+    OsuiteConsumables,
+    /// The online suite's language refresh (`OsInfo::Update`).
+    OsuiteInfo,
+    /// The online suite's worker callbacks (`Worker::CallCallbacks`): the replies of its HTTP
+    /// requests, handled on the game thread.
+    OsuiteCallbacks,
     /// The first AI thread's body (`RunAIThread1_Proxy`), on the fragment worker that runs it.
     AiThread1,
     /// The second AI thread's body (`RunAIThread2_Proxy`), on the fragment worker that runs it. It
@@ -162,6 +194,17 @@ impl Slot {
         Slot::SimOnline,
         Slot::SimStats,
         Slot::SimSteam,
+        Slot::SimOperations,
+        Slot::SimLogin,
+        Slot::OsuiteAccounts,
+        Slot::OsuiteAuth,
+        Slot::OsuiteTicket,
+        Slot::OsuiteServlet,
+        Slot::OsuiteFriends,
+        Slot::OsuiteSem,
+        Slot::OsuiteConsumables,
+        Slot::OsuiteInfo,
+        Slot::OsuiteCallbacks,
         Slot::AiThread1,
         Slot::AiThread2,
         Slot::InputJob,
@@ -194,7 +237,7 @@ impl Slot {
     ];
 
     /// The number of slots.
-    pub(crate) const COUNT: usize = 41;
+    pub(crate) const COUNT: usize = 52;
 
     /// The slot's position in [`Self::ALL`] and in the counter arrays.
     pub(crate) const fn index(self) -> usize {
@@ -216,6 +259,17 @@ impl Slot {
             Slot::SimOnline => "sim_online",
             Slot::SimStats => "sim_stats",
             Slot::SimSteam => "sim_steam",
+            Slot::SimOperations => "sim_ops",
+            Slot::SimLogin => "sim_login",
+            Slot::OsuiteAccounts => "osuite_accounts",
+            Slot::OsuiteAuth => "osuite_auth",
+            Slot::OsuiteTicket => "osuite_ticket",
+            Slot::OsuiteServlet => "osuite_servlet",
+            Slot::OsuiteFriends => "osuite_friends",
+            Slot::OsuiteSem => "osuite_sem",
+            Slot::OsuiteConsumables => "osuite_consumables",
+            Slot::OsuiteInfo => "osuite_info",
+            Slot::OsuiteCallbacks => "osuite_callbacks",
             Slot::AiThread1 => "ai_thread_1",
             Slot::AiThread2 => "ai_thread_2",
             Slot::InputJob => "input_job",
@@ -280,6 +334,17 @@ impl Slot {
             | Slot::SimOnline
             | Slot::SimStats
             | Slot::SimSteam
+            | Slot::SimOperations
+            | Slot::SimLogin
+            | Slot::OsuiteAccounts
+            | Slot::OsuiteAuth
+            | Slot::OsuiteTicket
+            | Slot::OsuiteServlet
+            | Slot::OsuiteFriends
+            | Slot::OsuiteSem
+            | Slot::OsuiteConsumables
+            | Slot::OsuiteInfo
+            | Slot::OsuiteCallbacks
             | Slot::AiThread1
             | Slot::AiThread2
             | Slot::InputJob

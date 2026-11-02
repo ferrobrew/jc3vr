@@ -127,6 +127,7 @@ pub mod location;
 pub mod memory;
 pub mod mission;
 pub mod online;
+pub mod osuite;
 pub mod patch_system;
 pub mod physics;
 pub mod profile_manager;

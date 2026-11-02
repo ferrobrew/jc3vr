@@ -26,8 +26,7 @@
 //! The rest of the tick is split in two by [`frame_timing::interval`]s: the head, from the tick's
 //! start to the world's pre-simulation queue, and the tail, from the end of the streaming block to
 //! the tick's end. The online managers, which run in both and keep their own clocks, are timed on
-//! their own inside them: the Steam platform system's callbacks, the statistics, brags, and profile
-//! deadlines, and the online suite, operations, and login.
+//! their own inside them by `crate::hooks::online`.
 //!
 //! Threading: everything here except the AI thread bodies and the input job runs on the game thread,
 //! inside the engine's `Game::Update`.
@@ -38,11 +37,6 @@ use detours_macro::detour;
 use jc3gi::{
     game::{Game, GameObjectUpdateContext, UpdateContexts},
     game_world::GameWorld,
-    online::{
-        AsynchronousBragManager, LoginManager, OnlinePlatformSystemSteam, OnlineSuiteManager,
-        OperationManager, StatisticManager,
-    },
-    profile_manager::ProfileManager,
     update_queue::UpdateQueue,
 };
 use re_utilities::hook_library::HookLibrary;
@@ -66,13 +60,6 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&AI_THREAD_1_BINDER)
         .with_static_binder(&AI_THREAD_2_BINDER)
         .with_static_binder(&INPUT_JOB_BINDER)
-        .with_static_binder(&STATISTIC_MANAGER_UPDATE_BINDER)
-        .with_static_binder(&BRAG_MANAGER_UPDATE_BINDER)
-        .with_static_binder(&PROFILE_MANAGER_UPDATE_BINDER)
-        .with_static_binder(&ONLINE_SUITE_UPDATE_BINDER)
-        .with_static_binder(&STEAM_PLATFORM_UPDATE_BINDER)
-        .with_static_binder(&OPERATION_MANAGER_UPDATE_BINDER)
-        .with_static_binder(&LOGIN_MANAGER_UPDATE_BINDER)
 }
 
 #[detour(address = jc3gi::game::Game::UpdateGame_ADDRESS)]
@@ -178,48 +165,6 @@ fn input_job(update_contexts: *mut UpdateContexts) -> i32 {
     let _role = thread_role::enter(ThreadRole::InputJob);
     let _timing = frame_timing::scope(Slot::InputJob);
     INPUT_JOB.get().unwrap().call(update_contexts)
-}
-
-#[detour(address = jc3gi::online::StatisticManager::Update_ADDRESS)]
-fn statistic_manager_update(this: *mut StatisticManager, dt: f32) {
-    let _timing = frame_timing::scope(Slot::SimStats);
-    STATISTIC_MANAGER_UPDATE.get().unwrap().call(this, dt);
-}
-
-#[detour(address = jc3gi::online::AsynchronousBragManager::Update_ADDRESS)]
-fn brag_manager_update(this: *mut AsynchronousBragManager, dt: f32) {
-    let _timing = frame_timing::scope(Slot::SimStats);
-    BRAG_MANAGER_UPDATE.get().unwrap().call(this, dt);
-}
-
-#[detour(address = jc3gi::profile_manager::ProfileManager::Update_ADDRESS)]
-fn profile_manager_update(this: *mut ProfileManager, dt: f32) {
-    let _timing = frame_timing::scope(Slot::SimStats);
-    PROFILE_MANAGER_UPDATE.get().unwrap().call(this, dt);
-}
-
-#[detour(address = jc3gi::online::OnlineSuiteManager::Update_ADDRESS)]
-fn online_suite_update(this: *mut OnlineSuiteManager, dt: f32) {
-    let _timing = frame_timing::scope(Slot::SimOnline);
-    ONLINE_SUITE_UPDATE.get().unwrap().call(this, dt);
-}
-
-#[detour(address = jc3gi::online::OnlinePlatformSystemSteam::Update_ADDRESS)]
-fn steam_platform_update(this: *mut OnlinePlatformSystemSteam, dt: f32) {
-    let _timing = frame_timing::scope(Slot::SimSteam);
-    STEAM_PLATFORM_UPDATE.get().unwrap().call(this, dt);
-}
-
-#[detour(address = jc3gi::online::OperationManager::Update_ADDRESS)]
-fn operation_manager_update(this: *mut OperationManager, dt: f32) {
-    let _timing = frame_timing::scope(Slot::SimOnline);
-    OPERATION_MANAGER_UPDATE.get().unwrap().call(this, dt);
-}
-
-#[detour(address = jc3gi::online::LoginManager::Update_ADDRESS)]
-fn login_manager_update(this: *mut LoginManager, dt: f32) {
-    let _timing = frame_timing::scope(Slot::SimOnline);
-    LOGIN_MANAGER_UPDATE.get().unwrap().call(this, dt);
 }
 
 /// A sim tick opened: start its head.

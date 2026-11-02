@@ -24,6 +24,7 @@ pub mod draw_count;
 pub mod game;
 pub mod graphics_engine;
 pub mod input;
+pub mod online;
 #[cfg(feature = "profiler")]
 pub mod profiler;
 pub mod sim;
@@ -79,6 +80,7 @@ pub(super) fn install() {
         let library = HookLibrary::new()
             .with_hook_library(game::hook_library())
             .with_hook_library(sim::hook_library())
+            .with_hook_library(online::hook_library())
             .with_hook_library(clock::hook_library())
             .with_hook_library(graphics_engine::hook_library())
             .with_hook_library(draw_count::hook_library())

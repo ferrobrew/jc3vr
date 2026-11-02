@@ -95,7 +95,8 @@ impl std::convert::AsMut<OnlinePlatformSystemSteam> for OnlinePlatformSystemStea
 pub struct OnlineSuiteManager {}
 impl OnlineSuiteManager {
     pub const Update_ADDRESS: usize = 0x140B3FBC0;
-    /// `COnlineSuiteManager::Update`: updates the online suite, starts a queued online login, and,
+    /// `COnlineSuiteManager::Update`: updates the online suite
+    /// ([`OnlineSuite::Update`](crate::osuite::OnlineSuite::Update)), starts a queued online login, and,
     /// while logged in without the suite, retries the suite's platform initialization as an
     /// operation at most once every five minutes of the clock's real time.
     /// [`GameStateRun::Update`](crate::game::GameStateRun::Update) calls it once per tick among the online
