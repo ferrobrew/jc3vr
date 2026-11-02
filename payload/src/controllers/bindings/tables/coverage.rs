@@ -115,6 +115,7 @@ pub fn injected_with(
                 trackpad: pad,
                 grab_volume: None,
                 grab_slow: false,
+                catch_reserved: false,
             };
         }
         c

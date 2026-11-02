@@ -75,6 +75,10 @@ pub struct HandControls {
     /// Whether the hand moves slowly enough for a closed fist to take what it comes to
     /// ([`crate::controllers::grab::latch`]).
     pub grab_slow: bool,
+    /// Whether the snatch holds the hand's grip for its catch while its line is out
+    /// ([`crate::controllers::snatch::reserved_hands`]): a press closes the hand on nothing, and
+    /// it takes nothing and drives no game action.
+    pub catch_reserved: bool,
 }
 
 /// Both controllers' logical controls, and the layout's handedness.
@@ -145,6 +149,7 @@ impl Controls {
                 trackpad: hand.inputs.trackpad,
                 grab_volume: grab_volumes[which.index()],
                 grab_slow: false,
+                catch_reserved: false,
             }
         });
         Self {

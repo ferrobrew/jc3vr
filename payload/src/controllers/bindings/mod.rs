@@ -498,8 +498,14 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         move_rotation,
         targets.chosen(),
     );
+    let catch_reserved = if in_menu {
+        [false; 2]
+    } else {
+        snatch::reserved_hands()
+    };
     for hand in Hand::BOTH {
         controls.hands[hand.index()].grab_slow = targets.slow[hand.index()];
+        controls.hands[hand.index()].catch_reserved = catch_reserved[hand.index()];
     }
     controls.masked_hands = Hand::BOTH.map(|hand| !state.recovery.ready(hand));
     let gun_triggers = config.weapons.hold.either_hand;
@@ -728,6 +734,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
                     hand: grapple_hand,
                     grabs: grabs_for(step.grabs, Consumer::Snatch),
                     grips: finish.grips,
+                    latches: state.bindings.grip_latches(),
                     line: grapple_line,
                     ordinary_button_held: button_holds.ordinary,
                     modifier_held: button_holds.modifier,
@@ -739,6 +746,9 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
                 &mut step.desired,
             )
         };
+        if let Some((hand, volume)) = snatch::take_other_catch() {
+            state.bindings.hold_catch(hand, volume);
+        }
         physical_hands::climb::finish_tick(
             finish.grips.map(|g| g.held()),
             grabs_for(step.grabs, Consumer::Climb),

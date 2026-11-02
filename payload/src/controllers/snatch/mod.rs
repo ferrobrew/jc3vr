@@ -18,12 +18,15 @@
 //!    ([`reach_along`], [`pull`]): a gun on a
 //!    character is first let go of, with the steal's drop and stagger; then the game's hook flies
 //!    to the target as a ghost wire through the custom fire ([`engine::fire`]). Once it bites a
-//!    weapon or an object, the line yanks the body toward the hand at full speed through the hold
-//!    solve, pulling at the hook's point so the body spins, and near the hand goes slack: the body
-//!    flies on by its momentum, and when its path passes through the hand the hand has caught it
-//!    ([`rules::verdict`]), the wire is ended, and the weapon is taken into the hand through the
-//!    loadout table, as a pickup is, or the object handed to the hand's ordinary hold. A body the
-//!    hand is not where it arrives flies past or hits the player and drops. Once the hook holds a
+//!    weapon or an object, the line yanks the body toward the hand through the hold solve, pulling
+//!    at the hook's point so the body spins, then over the final approach slows and pulls at the
+//!    body's centre, and a couple of ticks out goes slack: the body flies on by its momentum, and
+//!    when its path passes through a free hand whose grip is held, the grapple hand or the other,
+//!    that hand has caught it ([`rules::verdict`]), the wire is ended, and the weapon is taken into
+//!    that hand through the loadout table, as a pickup is, or the object handed to the hand's
+//!    ordinary hold. While the line is out the other free hand's grip is held for the catch: it
+//!    takes nothing else and drives no game action ([`reserved_hands`]). A body no hand is where it
+//!    arrives flies past or hits the player and drops. Once the hook holds a
 //!    door, the door comes open and swings outward, and the wire is ended. Opening the grip at any
 //!    point cancels: in flight the line comes away and the target keeps its momentum. A stall, a
 //!    line run out, a missed hook, a missed catch, or a refused take fails the snatch and leaves the
@@ -69,7 +72,7 @@ use crate::controllers::{
     },
     config::ControllersConfig,
     frame::Hand,
-    grab::{GrabVolume, GripTarget, Mark, MarkAt, Provided},
+    grab::{GrabVolume, GripTarget, Mark, MarkAt, Provided, latch::GripLatch},
     haptics::{self, Event},
     loadout::slot_label,
     mode::{Detection, Mode},
@@ -110,6 +113,25 @@ pub(crate) fn hint() -> Option<(Hand, bool)> {
         } => Some((hand, true)),
         _ => None,
     }
+}
+
+/// The hands whose grips the snatch holds for its catch, by [`Hand::index`]: while its line is out,
+/// the free, empty hand other than the grapple hand. A press of such a grip closes the hand on
+/// nothing, ready to catch, rather than taking what is in reach or driving the game action bound to
+/// it.
+pub(crate) fn reserved_hands() -> [bool; 2] {
+    let Some(hand) = STATE.lock().phase.in_flight() else {
+        return [false; 2];
+    };
+    let free = physical_hands::free_hands();
+    let props = physical_hands::held_props();
+    Hand::BOTH.map(|h| h != hand && free[h.index()] && props[h.index()].is_none())
+}
+
+/// The hand other than the grapple hand that caught the snatch's target on the last tick, with the
+/// grab its grip now holds the target by, as the grapple hand's grip holds a snatched target.
+pub(crate) fn take_other_catch() -> Option<(Hand, GrabVolume)> {
+    STATE.lock().other_catch.take()
 }
 
 /// Why a snatch did not happen, or ended before the target reached the hand.
@@ -285,6 +307,9 @@ pub(crate) struct FinishInput<'a> {
     pub grabs: [Option<GrabVolume>; 2],
     /// The grips, by [`Hand::index`].
     pub grips: [ButtonControl; 2],
+    /// What each grip is latched on after the tables, by [`Hand::index`]: a hand catches only with
+    /// its grip closed on nothing or on the snatch.
+    pub latches: [GripLatch; 2],
     /// The grapple hand's grip and aim, or `None` while the hand is untracked.
     pub line: Option<HandLine>,
     /// The routed ordinary grapple hold, independent of the snatch modifier.
@@ -363,6 +388,7 @@ pub(crate) fn stand_down() {
     unsafe { state.phase.end_line() };
     state.phase = Phase::Idle;
     state.prearm.clear();
+    state.other_catch = None;
     state.status.live = false;
     state.status.phase = Phase::Idle.label();
     state.status.target = None;
@@ -411,6 +437,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     phase: Phase::Idle,
     moment: Moment::new(),
     prearm: Prearm::new(),
+    other_catch: None,
     status: SnatchStatus {
         live: false,
         phase: "IDLE",
@@ -431,6 +458,8 @@ struct State {
     moment: Moment,
     /// The recent aimed target retained across the grip edge.
     prearm: Prearm<Offer>,
+    /// The other hand's catch on the last tick, for the bindings to latch its grip on.
+    other_catch: Option<(Hand, GrabVolume)>,
     status: SnatchStatus,
 }
 
@@ -480,6 +509,16 @@ impl Phase {
         }
     }
 
+    /// The grapple hand while the snatch's line is out: from the fire to the catch or the miss.
+    const fn in_flight(&self) -> Option<Hand> {
+        match self {
+            Phase::Freeing { hand, .. }
+            | Phase::HookOut { hand, .. }
+            | Phase::Pulling { hand, .. } => Some(*hand),
+            Phase::Idle | Phase::Armed { .. } => None,
+        }
+    }
+
     const fn hand(&self) -> Option<Hand> {
         match self {
             Phase::Idle => None,
@@ -509,6 +548,23 @@ impl Phase {
 /// The hand's reach along `line` this tick, for the armed yank.
 fn reach(input: &FinishInput, line: Vec3) -> Option<f32> {
     input.line.and_then(|hand| reach_along(hand.grip, line))
+}
+
+/// The hands that may catch the snatch's target this tick, by [`Hand::index`]: the grapple hand
+/// `hand`, and the other hand when it is free and empty, each with its grip held and closed on
+/// nothing or on the snatch.
+fn catchers(hand: Hand, input: &FinishInput) -> [bool; 2] {
+    let free = physical_hands::free_hands();
+    let props = physical_hands::held_props();
+    Hand::BOTH.map(|h| {
+        let i = h.index();
+        let latched = match input.latches[i] {
+            GripLatch::Fist { .. } => true,
+            GripLatch::Grab(GrabVolume::Snatch(_)) => h == hand,
+            GripLatch::Open | GripLatch::Grab(_) | GripLatch::Default => false,
+        };
+        input.grips[i].held() && latched && free[i] && props[i].is_none()
+    })
 }
 
 fn armed_yank(reach: Option<f32>, config: &YankConfig) -> YankDetector {
@@ -714,7 +770,8 @@ impl State {
                             flight.resume();
                             tracing::info!(target: "controllers", "snatch: released B; pulling to the hand");
                         }
-                        unsafe { pull::pull(hand, &target, wire, &mut flight, input) }
+                        let catchers = catchers(hand, input);
+                        unsafe { pull::pull(hand, &target, wire, &mut flight, catchers, input) }
                     }
                     sling::AttachedMode::Cancel => Err(Refusal::Gone),
                 };
@@ -731,41 +788,57 @@ impl State {
                             rope,
                         }
                     }
-                    Ok(Step::Caught(arrival)) => {
+                    Ok(Step::Caught(catcher, arrival)) => {
                         self.status.taken += 1;
                         self.moment.ended(
                             "taken",
                             match &arrival {
                                 Arrival::Weapon(slot) => {
                                     format!(
-                                        "a weapon came into the hand's {} slot",
+                                        "a weapon came into the {} hand's {} slot",
+                                        catcher.label(),
                                         slot_label(*slot)
                                     )
                                 }
-                                Arrival::Prop => "an object came into the hand's hold".to_owned(),
-                                Arrival::Grenade => "a grenade came to the hand".to_owned(),
+                                Arrival::Prop => {
+                                    format!(
+                                        "an object came into the {} hand's hold",
+                                        catcher.label()
+                                    )
+                                }
+                                Arrival::Grenade => {
+                                    format!("a grenade came to the {} hand", catcher.label())
+                                }
                             },
                         );
-                        haptics::play(hand, Event::SnatchCatch);
+                        if catcher != hand
+                            && let GripLatch::Grab(volume) = input.latches[hand.index()]
+                        {
+                            self.other_catch = Some((catcher, volume));
+                        }
+                        haptics::play(catcher, Event::SnatchCatch);
                         match arrival {
                             Arrival::Weapon(slot) => tracing::info!(
                                 target: "controllers",
-                                hand = hand.label(),
+                                hand = catcher.label(),
+                                line_hand = hand.label(),
                                 slot = slot_label(slot),
                                 "snatch: the weapon came into the {} hand",
-                                hand.label()
+                                catcher.label()
                             ),
                             Arrival::Prop => tracing::info!(
                                 target: "controllers",
-                                hand = hand.label(),
+                                hand = catcher.label(),
+                                line_hand = hand.label(),
                                 "snatch: the object came into the {} hand's hold",
-                                hand.label()
+                                catcher.label()
                             ),
                             Arrival::Grenade => tracing::info!(
                                 target: "controllers",
-                                hand = hand.label(),
+                                hand = catcher.label(),
+                                line_hand = hand.label(),
                                 "snatch: the grenade came to the {} hand",
-                                hand.label()
+                                catcher.label()
                             ),
                         }
                         Phase::Idle

@@ -1,10 +1,10 @@
-//! The snatch's pure rules: which target the grapple's aim picks, where the line pulls the target,
-//! when the line goes slack and the hand catches or misses it, when it has stalled or run out of
-//! line, and the toss that a tap at a gun gives it.
+//! The snatch's pure rules: which target the grapple's aim picks, where and how fast the line pulls
+//! the target, when the line goes slack and which hand catches it or whether it is missed, when it
+//! has stalled or run out of line, and the toss that a tap at a gun gives it.
 
 use glam::Vec3;
 
-use crate::controllers::aim::ray::Ray;
+use crate::controllers::{aim::ray::Ray, frame::Hand};
 
 /// A thing the snatch could take, as the aim or the noted characters place it this tick.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -71,13 +71,46 @@ pub fn floor_cone(distance: f32, base: f32, widen: f32, range: f32) -> f32 {
 
 /// The point the pull carries the target's centre toward: the hand, raised by `arc` of the
 /// distance still to go, so a far target rises and falls into the hand rather than dragging along
-/// the ground, and a near one comes straight in.
-pub fn pull_point(body: Vec3, hand: Vec3, arc: f32) -> Vec3 {
+/// the ground. The rise fades to nothing over the last `approach` metres, so the final approach
+/// aims at the hand itself.
+pub fn pull_point(body: Vec3, hand: Vec3, arc: f32, approach: f32) -> Vec3 {
     let distance = body.distance(hand);
     if !distance.is_finite() {
         return hand;
     }
-    hand + Vec3::Y * distance * arc.max(0.0)
+    let fade = if approach > 0.0 {
+        (distance / approach).min(1.0)
+    } else {
+        1.0
+    };
+    hand + Vec3::Y * distance * arc.max(0.0) * fade
+}
+
+/// The speed the line asks of the target `distance` metres from the hand: `far` beyond
+/// `approach`, falling in proportion to the distance to `arrival` at the hand, never more than
+/// `far`.
+pub fn line_speed(distance: f32, far: f32, arrival: f32, approach: f32) -> f32 {
+    let far = far.max(0.0);
+    let arrival = arrival.clamp(0.0, far);
+    if !(approach > 0.0 && distance.is_finite()) {
+        return far;
+    }
+    let share = (distance.max(0.0) / approach).min(1.0);
+    arrival + (far - arrival) * share
+}
+
+/// How near the hand the line goes slack for a target moving at `speed` metres per second: the
+/// distance it covers in `coast_s` seconds, kept between `min` and `max` metres. A slow target,
+/// one a step away that the line has had little time to speed up, is guided nearer the hand
+/// before it flies on by itself.
+pub fn slack_radius(speed: f32, coast_s: f32, min: f32, max: f32) -> f32 {
+    let max = max.max(min);
+    let radius = speed.max(0.0) * coast_s.max(0.0);
+    if radius.is_finite() {
+        radius.clamp(min, max)
+    } else {
+        max
+    }
 }
 
 /// What a tick of the flight finds.
@@ -87,8 +120,8 @@ pub enum Verdict {
     Pulling,
     /// The line has gone slack near the hand, and the target flies on by its own momentum.
     Slack,
-    /// The target passed through the hand's catch this tick.
-    Caught,
+    /// The target passed through this hand's catch this tick.
+    Caught(Hand),
     /// The target flew past the hand, or stopped short of it, without being caught.
     Missed,
     /// The target has moved too little for a while: snagged on the world.
@@ -102,7 +135,7 @@ pub enum Verdict {
 pub struct FlightLimits {
     /// How near the hand the line goes slack, metres.
     pub slack_radius_m: f32,
-    /// How near the hand the target's centre must pass to be caught, metres.
+    /// How near a catching hand the target's centre must pass to be caught, metres.
     pub catch_radius_m: f32,
     /// How far the line reaches, metres.
     pub line_m: f32,
@@ -119,28 +152,42 @@ pub struct FlightSample {
     pub to: Vec3,
     /// The target's velocity now.
     pub velocity: Vec3,
-    /// The catching hand now.
+    /// The hand the line pulls toward, now.
     pub hand: Vec3,
+    /// The palms that may catch the target now, by [`Hand::index`]: a free hand whose grip is
+    /// held.
+    pub catchers: [Option<Vec3>; 2],
     /// How long the line has been slack, seconds, or `None` while it pulls.
     pub slack_s: Option<f32>,
 }
 
 /// The verdict for a tick of the flight, with `stalled` whether the stall watch has fired.
 ///
-/// The catch is swept: the target is caught when its centre passed within the catch radius of the
-/// hand anywhere along its path since the last tick, so a fast target is not stepped over. Nothing
-/// draws it in: once the line is slack the target flies on, and a hand that is not where it
-/// arrives misses it.
+/// The catch is swept: a hand catches the target when the target's centre passed within the catch
+/// radius of its palm anywhere along its path since the last tick, so a fast target is not stepped
+/// over, and of two hands that qualify the one it passed nearer catches it. Nothing draws it in:
+/// once the line is slack the target flies on, and it is missed once it recedes from the line's
+/// hand and from every catching hand.
 pub fn verdict(sample: &FlightSample, stalled: bool, limits: &FlightLimits) -> Verdict {
     let distance = sample.to.distance(sample.hand);
     if distance.is_nan() {
         return Verdict::OutOfLine;
     }
-    if closest_approach(sample.from, sample.to, sample.hand) <= limits.catch_radius_m {
-        return Verdict::Caught;
+    let caught = Hand::BOTH
+        .into_iter()
+        .filter_map(|hand| {
+            let palm = sample.catchers[hand.index()]?;
+            let pass = closest_approach(sample.from, sample.to, palm);
+            (pass <= limits.catch_radius_m).then_some((hand, pass))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1));
+    if let Some((hand, _)) = caught {
+        return Verdict::Caught(hand);
     }
     if let Some(slack_s) = sample.slack_s {
-        let receding = (sample.hand - sample.to).dot(sample.velocity) <= 0.0;
+        let receding = |palm: Vec3| (palm - sample.to).dot(sample.velocity) <= 0.0;
+        let receding =
+            receding(sample.hand) && sample.catchers.iter().flatten().all(|&p| receding(p));
         let too_long = slack_s.is_nan() || slack_s > limits.max_slack_s;
         return if stalled || receding || too_long {
             Verdict::Missed
@@ -171,9 +218,8 @@ pub fn closest_approach(from: Vec3, to: Vec3, point: Vec3) -> f32 {
     (from + segment * t).distance(point)
 }
 
-/// The velocity the line asks of the target's hook point at `at`: `speed` metres per second toward
-/// `toward`. The line does not slow the target as it nears the hand; it goes slack instead
-/// ([`verdict`]), so the target arrives at speed.
+/// The velocity the line asks of the point `at` on the target: `speed` metres per second toward
+/// `toward`.
 pub fn line_velocity(at: Vec3, toward: Vec3, speed: f32) -> Vec3 {
     (toward - at).try_normalize().unwrap_or(Vec3::ZERO) * speed.max(0.0)
 }
@@ -397,10 +443,56 @@ mod tests {
     #[test]
     fn the_pull_rises_far_out_and_comes_straight_in_near() {
         let hand = Vec3::new(0.0, 1.0, 0.0);
-        let far = pull_point(Vec3::new(0.0, 0.0, -10.0), hand, 0.25);
+        let far = pull_point(Vec3::new(0.0, 0.0, -10.0), hand, 0.25, 2.5);
         assert!(far.y > hand.y + 2.0);
-        let near = pull_point(hand + Vec3::new(0.0, 0.0, -0.1), hand, 0.25);
+        let near = pull_point(hand + Vec3::new(0.0, 0.0, -0.1), hand, 0.25, 2.5);
         assert!((near.y - hand.y) < 0.05);
+    }
+
+    #[test]
+    fn the_rise_fades_over_the_final_approach() {
+        let hand = Vec3::ZERO;
+        let at = |d: f32| pull_point(Vec3::new(0.0, 0.0, -d), hand, 0.08, 2.5).y;
+        assert!(
+            (at(5.0) - 0.4).abs() < 1e-5,
+            "the full rise beyond the approach"
+        );
+        assert!((at(2.5) - 0.2).abs() < 1e-5, "the full rise at its start");
+        assert!((at(1.0) - 0.032).abs() < 1e-5, "a fraction within it");
+        assert!(at(1.0) < 1.0 * 0.08, "lower than the rise without the fade");
+        assert!((pull_point(Vec3::new(0.0, 0.0, -1.0), hand, 0.08, 0.0).y - 0.08).abs() < 1e-5);
+    }
+
+    #[test]
+    fn the_line_slows_over_the_final_approach_to_its_arrival_speed() {
+        assert_eq!(line_speed(10.0, 18.0, 12.0, 2.5), 18.0);
+        assert_eq!(line_speed(2.5, 18.0, 12.0, 2.5), 18.0);
+        assert!((line_speed(1.25, 18.0, 12.0, 2.5) - 15.0).abs() < 1e-5);
+        assert_eq!(line_speed(0.0, 18.0, 12.0, 2.5), 12.0);
+        assert_eq!(
+            line_speed(1.0, 18.0, 30.0, 2.5),
+            18.0,
+            "never faster than its far speed"
+        );
+        assert_eq!(line_speed(f32::NAN, 18.0, 12.0, 2.5), 18.0);
+        assert_eq!(line_speed(1.0, 18.0, 12.0, 0.0), 18.0);
+    }
+
+    #[test]
+    fn the_line_goes_slack_a_couple_of_ticks_out_whatever_the_speed() {
+        assert!((slack_radius(12.0, 0.07, 0.4, 1.0) - 0.84).abs() < 1e-5);
+        assert_eq!(
+            slack_radius(18.0, 0.07, 0.4, 1.0),
+            1.0,
+            "a fast target from its farthest"
+        );
+        assert_eq!(
+            slack_radius(3.0, 0.07, 0.4, 1.0),
+            0.4,
+            "a slow one guided nearer"
+        );
+        assert_eq!(slack_radius(f32::INFINITY, 0.07, 0.4, 1.0), 1.0);
+        assert_eq!(slack_radius(-5.0, 0.07, 0.4, 1.0), 0.4);
     }
 
     const LIMITS: FlightLimits = FlightLimits {
@@ -410,12 +502,14 @@ mod tests {
         max_slack_s: 0.5,
     };
 
+    /// A tick of a flight toward the left hand at the origin, which is the one catching hand.
     fn sample(from: Vec3, to: Vec3, velocity: Vec3, slack_s: Option<f32>) -> FlightSample {
         FlightSample {
             from,
             to,
             velocity,
             hand: Vec3::ZERO,
+            catchers: [Some(Vec3::ZERO), None],
             slack_s,
         }
     }
@@ -460,9 +554,15 @@ mod tests {
             v,
             Some(0.02),
         );
-        assert_eq!(verdict(&through, false, &LIMITS), Verdict::Caught);
+        assert_eq!(
+            verdict(&through, false, &LIMITS),
+            Verdict::Caught(Hand::Left)
+        );
         let pulled = sample(Vec3::new(0.1, 0.0, -0.4), Vec3::new(0.1, 0.0, 0.2), v, None);
-        assert_eq!(verdict(&pulled, false, &LIMITS), Verdict::Caught);
+        assert_eq!(
+            verdict(&pulled, false, &LIMITS),
+            Verdict::Caught(Hand::Left)
+        );
     }
 
     #[test]
@@ -506,6 +606,70 @@ mod tests {
             Verdict::Missed,
             "flew too long"
         );
+    }
+
+    #[test]
+    fn the_other_hand_catches_a_target_on_its_way_to_the_line_hand() {
+        // The line pulls toward the left hand at the origin; the right hand, its grip held, is put
+        // in the target's path twenty centimetres short of it.
+        let v = Vec3::new(0.0, 0.0, 12.0);
+        let mut tick = sample(
+            Vec3::new(0.3, 0.0, -0.6),
+            Vec3::new(0.3, 0.0, -0.2),
+            v,
+            Some(0.03),
+        );
+        tick.catchers = [Some(Vec3::ZERO), Some(Vec3::new(0.3, 0.0, -0.3))];
+        assert_eq!(verdict(&tick, false, &LIMITS), Verdict::Caught(Hand::Right));
+    }
+
+    #[test]
+    fn of_two_hands_on_the_path_the_nearer_palm_catches() {
+        let v = Vec3::new(0.0, 0.0, 12.0);
+        let mut tick = sample(
+            Vec3::new(0.0, 0.0, -0.4),
+            Vec3::new(0.0, 0.0, 0.2),
+            v,
+            Some(0.03),
+        );
+        tick.catchers = [
+            Some(Vec3::new(0.15, 0.0, 0.0)),
+            Some(Vec3::new(-0.05, 0.0, -0.1)),
+        ];
+        assert_eq!(verdict(&tick, false, &LIMITS), Verdict::Caught(Hand::Right));
+        tick.catchers = [
+            Some(Vec3::new(0.02, 0.0, 0.0)),
+            Some(Vec3::new(-0.2, 0.0, -0.1)),
+        ];
+        assert_eq!(verdict(&tick, false, &LIMITS), Verdict::Caught(Hand::Left));
+    }
+
+    #[test]
+    fn a_target_past_the_line_hand_is_not_missed_while_it_still_nears_another_catcher() {
+        let v = Vec3::new(0.0, 0.0, 12.0);
+        let mut tick = sample(
+            Vec3::new(0.6, 0.0, -0.2),
+            Vec3::new(0.6, 0.0, 0.2),
+            v,
+            Some(0.05),
+        );
+        tick.catchers = [Some(Vec3::ZERO), Some(Vec3::new(0.6, 0.0, 0.8))];
+        assert_eq!(verdict(&tick, false, &LIMITS), Verdict::Slack);
+        tick.catchers = [Some(Vec3::ZERO), None];
+        assert_eq!(verdict(&tick, false, &LIMITS), Verdict::Missed);
+    }
+
+    #[test]
+    fn a_hand_that_is_not_free_and_gripping_never_catches() {
+        let v = Vec3::new(0.0, 0.0, 12.0);
+        let mut tick = sample(
+            Vec3::new(0.0, 0.0, -0.3),
+            Vec3::new(0.0, 0.0, 0.3),
+            v,
+            Some(0.02),
+        );
+        tick.catchers = [None, None];
+        assert_eq!(verdict(&tick, false, &LIMITS), Verdict::Missed);
     }
 
     #[test]

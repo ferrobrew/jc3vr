@@ -61,19 +61,36 @@ pub struct SnatchTuning {
     /// How much wider the cone is for a weapon lying in the world at the range, degrees, in
     /// proportion to its distance ([`floor_cone`](crate::controllers::snatch::rules::floor_cone)).
     pub floor_cone_widen_deg: f32,
-    /// The speed the line yanks the target toward the hand at, metres per second. The line does
-    /// not slow it near the hand: it arrives at this speed.
+    /// The speed the line yanks the target toward the hand at while it is farther than
+    /// [`approach_m`](Self::approach_m), metres per second.
     pub line_speed_mps: f32,
+    /// The speed the line asks of the target at the hand, metres per second: over the last
+    /// [`approach_m`](Self::approach_m) the line's speed falls in proportion to the distance from
+    /// [`line_speed_mps`](Self::line_speed_mps) to this, so the target still arrives hard but
+    /// slower than it flew ([`line_speed`](crate::controllers::snatch::rules::line_speed)).
+    pub arrival_speed_mps: f32,
     /// The hardest the line accelerates the target, metres per second squared: the line's pull is
-    /// the target's mass times this, so a heavy target comes as hard as a light one.
+    /// the target's mass times this, so a heavy target comes as hard as a light one, and a target
+    /// a step away reaches its speed within a tick or two.
     pub line_accel_mps2: f32,
+    /// How near the hand the final approach starts, metres. Within it the line's speed falls
+    /// toward [`arrival_speed_mps`](Self::arrival_speed_mps), its arc fades to nothing, and it
+    /// pulls at the target's centre rather than at the hook, so the spin the off-centre pull gave
+    /// the target does not carry the centre off the line when it goes slack.
+    pub approach_m: f32,
     /// How high the line aims above the hand, as a share of the distance still to go, so a far
-    /// target clears the ground on its way.
+    /// target clears the ground on its way. It fades to nothing over the final approach.
     pub arc: f32,
-    /// How near the hand the line goes slack and the target flies on by its own momentum, metres.
-    pub slack_radius_m: f32,
-    /// How near the hand the target's centre must pass for the hand to catch it, metres: the
-    /// hand's own reach around the target, with no pull toward the hand.
+    /// How long before the target would reach the hand the line goes slack, seconds: the slack
+    /// radius is the target's speed times this, kept between
+    /// [`slack_min_m`](Self::slack_min_m) and [`slack_max_m`](Self::slack_max_m)
+    /// ([`slack_radius`](crate::controllers::snatch::rules::slack_radius)). The target then flies
+    /// on by its own momentum for about two ticks, wherever the hand goes.
+    pub coast_s: f32,
+    pub slack_min_m: f32,
+    pub slack_max_m: f32,
+    /// How near a catching hand the target's centre must pass for the hand to catch it, metres:
+    /// the hand's own reach around the target, with no pull toward the hand.
     pub catch_radius_m: f32,
     /// How long a slack target may fly before it counts as missed, seconds.
     pub max_slack_s: f32,
@@ -106,9 +123,13 @@ pub const SNATCH: SnatchTuning = SnatchTuning {
     cone_deg: 6.0,
     floor_cone_widen_deg: 4.0,
     line_speed_mps: 18.0,
-    line_accel_mps2: 160.0,
+    arrival_speed_mps: 12.0,
+    line_accel_mps2: 240.0,
+    approach_m: 2.5,
     arc: 0.08,
-    slack_radius_m: 1.0,
+    coast_s: 0.07,
+    slack_min_m: 0.4,
+    slack_max_m: 1.0,
     catch_radius_m: 0.25,
     max_slack_s: 0.5,
     max_spin_rps: 25.0,

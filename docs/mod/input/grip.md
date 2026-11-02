@@ -58,6 +58,8 @@ Each hand's grip runs a small state machine (`grab/latch.rs`, `GripLatch`), step
 
 A press and release between two ticks is a fresh press even while the last one is still latched, so a quick tap reaches the target in reach at that moment.
 
+While a grapple snatch's line is out, the free, empty hand other than the grapple hand has its grip held for the catch: a press closes it into a fist whatever is in reach and drives no game action, and the fist takes nothing it comes to. If that hand catches the snatched target, its grip holds the target from then on ([grapple-snatch.md, "The interaction"](grapple-snatch.md#the-interaction)).
+
 ## Letting go
 
 What letting go does is the holder's, with one shared rule for docking (`grab::resolve::dock_target`): of the targets the opening hand is within reach of, the nearest that fits what it holds takes it. A weapon goes onto the free socket under the hand that fits it, as the loadout table decides ([two-handed-inventory.md](two-handed-inventory.md#the-grabs-against-the-table)), and anywhere else is let go of with the hand's velocity, as is anything else. A hand over both a pouch and a socket puts the gun on the socket, because a pouch does not fit a gun.

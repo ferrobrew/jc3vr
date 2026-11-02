@@ -4,6 +4,7 @@ use super::*;
 use crate::{
     controllers::{
         bindings::grapple_button::GrappleContext,
+        grab::RemoteKind,
         snatch::{ButtonHolds, should_reel_weapon},
     },
     vr::input::semantic::defaults::{Component, DefaultBinding},
@@ -121,4 +122,68 @@ fn route_changes_consume_old_release_then_common_neutral_restores_normal_grapple
             .is_some()
         );
     }
+}
+
+#[test]
+fn a_grip_held_for_the_catch_closes_on_nothing_then_holds_what_it_caught() {
+    let mut b = Bindings::default();
+    let caught = GrabVolume::Snatch(RemoteKind::Weapon);
+    // The dominant hand presses its grip on the chest socket while the snatch's line is out.
+    let press = controls(Hand::Right, |dom, _| {
+        dom.grip = down();
+        dom.grab_volume = Some(GrabVolume::Socket(Socket::Chest));
+        dom.catch_reserved = true;
+    });
+    let step = b.sim_step(ON_FOOT, &press, DT, &CONFIG);
+    assert_eq!(step.grabs, [None; 2], "the reserved grip takes nothing");
+    assert!(step.desired.is_empty(), "{:?}", step.desired);
+    assert!(matches!(
+        b.grip_latches()[Hand::Right.index()],
+        GripLatch::Fist { .. }
+    ));
+    // Still closed and slow over the socket: the reserved fist does not take it either.
+    let held = controls(Hand::Right, |dom, _| {
+        dom.grip = ButtonControl {
+            down: true,
+            ..Default::default()
+        };
+        dom.grab_volume = Some(GrabVolume::Socket(Socket::Chest));
+        dom.grab_slow = true;
+        dom.catch_reserved = true;
+    });
+    assert_eq!(b.sim_step(ON_FOOT, &held, DT, &CONFIG).grabs, [None; 2]);
+    // The hand caught the target: its grip holds it, and the hand takes nothing more it comes to.
+    b.hold_catch(Hand::Right, caught);
+    assert_eq!(
+        b.grip_latches()[Hand::Right.index()],
+        GripLatch::Grab(caught)
+    );
+    let after = controls(Hand::Right, |dom, _| {
+        dom.grip = ButtonControl {
+            down: true,
+            ..Default::default()
+        };
+        dom.grab_volume = Some(GrabVolume::Socket(Socket::Chest));
+        dom.grab_slow = true;
+    });
+    assert_eq!(b.sim_step(ON_FOOT, &after, DT, &CONFIG).grabs, [None; 2]);
+    assert_eq!(
+        b.grip_latches()[Hand::Right.index()],
+        GripLatch::Grab(caught)
+    );
+}
+
+#[test]
+fn a_catch_never_overrides_a_grip_that_holds_something_else() {
+    let mut b = Bindings::default();
+    let press = controls(Hand::Right, |dom, _| {
+        dom.grip = down();
+        dom.grab_volume = Some(GrabVolume::Socket(Socket::Chest));
+    });
+    b.sim_step(ON_FOOT, &press, DT, &CONFIG);
+    b.hold_catch(Hand::Right, GrabVolume::Snatch(RemoteKind::Weapon));
+    assert_eq!(
+        b.grip_latches()[Hand::Right.index()],
+        GripLatch::Grab(GrabVolume::Socket(Socket::Chest))
+    );
 }

@@ -251,8 +251,8 @@ pub(super) enum Step {
     Flying,
     /// The line went slack this tick; the target flies on by its own momentum.
     WentSlack,
-    /// The hand caught the target.
-    Caught(Arrival),
+    /// This hand caught the target.
+    Caught(Hand, Arrival),
 }
 
 /// The hook bit `grabbed`: note where, take the native rope off the line so that the line's pull
@@ -285,12 +285,16 @@ pub(super) unsafe fn bite(
     })
 }
 
-/// One tick of the flight: the line yanks the target toward the hand at its full speed until it
-/// is near, then goes slack, and the hand catches the target if the target passes through it.
+/// One tick of the flight: the line yanks the target toward the line's hand `hand`, slowing over
+/// the final approach, then goes slack a couple of ticks out, and a hand of `catchers` (by
+/// [`Hand::index`], the hands free with their grips held) catches the target if the target passes
+/// through it.
 ///
 /// The line's pull goes through the hold solve, the physics every hand's hold on a body goes
-/// through, at the hook's point with the line's strength and no twist of its own: the target keeps
-/// its momentum and its spin, collides on the way, and is never placed.
+/// through, with the line's strength and no twist of its own: the target keeps its momentum and its
+/// spin, collides on the way, and is never placed. Beyond the final approach the line pulls at the
+/// hook's point, so a target hooked off its centre spins; within it the line pulls at the centre,
+/// so the centre's own velocity, which the target keeps once the line is slack, is the line's.
 ///
 /// # Safety
 ///
@@ -300,6 +304,7 @@ pub(super) unsafe fn pull(
     grabbed: &Grabbed,
     wire: NonZeroUsize,
     flight: &mut Flight,
+    catchers: [bool; 2],
     input: &FinishInput,
 ) -> Result<Step, Refusal> {
     let (reading, line_m) = unsafe { engine::read_wire(wire) };
@@ -309,7 +314,10 @@ pub(super) unsafe fn pull(
     let body = unsafe { target_body(grabbed) }?;
     let state =
         unsafe { physical_hands::body_state(body, grabbed.object) }.map_err(Refusal::Body)?;
-    let Some(palm) = ik::tick_records().current[hand.index()].map(|t| t.wrist.position) else {
+    let palms = ik::tick_records()
+        .current
+        .map(|t| t.map(|t| t.wrist.position));
+    let Some(palm) = palms[hand.index()] else {
         // An untracked hand keeps the line where it is.
         return Ok(Step::Flying);
     };
@@ -328,11 +336,17 @@ pub(super) unsafe fn pull(
         to: centre,
         velocity: state.velocities.linear,
         hand: palm,
+        catchers: Hand::BOTH.map(|h| palms[h.index()].filter(|_| catchers[h.index()])),
         slack_s: flight.slack_s,
     };
     flight.last_centre = Some(centre);
     let limits = FlightLimits {
-        slack_radius_m: SNATCH.slack_radius_m,
+        slack_radius_m: rules::slack_radius(
+            state.velocities.linear.length(),
+            SNATCH.coast_s,
+            SNATCH.slack_min_m,
+            SNATCH.slack_max_m,
+        ),
         catch_radius_m: SNATCH.catch_radius_m,
         line_m: line_m.unwrap_or(SNATCH.range_m),
         max_slack_s: SNATCH.max_slack_s,
@@ -344,9 +358,11 @@ pub(super) unsafe fn pull(
             flight.slack_s = Some(0.0);
             return Ok(Step::WentSlack);
         }
-        Verdict::Caught => {
+        Verdict::Caught(catcher) => {
             unsafe { end_line(wire) };
-            return unsafe { arrive(hand, grabbed, body, centre, palm) }.map(Step::Caught);
+            let catcher_palm = palms[catcher.index()].unwrap_or(palm);
+            return unsafe { arrive(catcher, grabbed, body, centre, catcher_palm) }
+                .map(|arrival| Step::Caught(catcher, arrival));
         }
         Verdict::Missed => return Err(Refusal::CatchMissed),
         Verdict::Stalled => return Err(Refusal::Stalled),
@@ -364,16 +380,27 @@ pub(super) unsafe fn pull(
         gravity: Vec3::new(0.0, -GRAVITY_MPS2, 0.0),
     };
     let rigid = state.rigid();
-    let hook = state.pose.point(flight.hook_local);
-    let aim = rules::pull_point(centre, palm, SNATCH.arc) + (hook - centre);
+    let distance = centre.distance(palm);
+    let anchor = if distance > SNATCH.approach_m {
+        state.pose.point(flight.hook_local)
+    } else {
+        centre
+    };
+    let speed = rules::line_speed(
+        distance,
+        SNATCH.line_speed_mps,
+        SNATCH.arrival_speed_mps,
+        SNATCH.approach_m,
+    );
+    let aim = rules::pull_point(centre, palm, SNATCH.arc, SNATCH.approach_m) + (anchor - centre);
     let mut holds = [None; 2];
     holds[hand.index()] = Some(HandHold {
-        anchor: hook,
+        anchor,
         target: HoldPoint {
-            point: hook,
+            point: anchor,
             orientation: state.pose.orientation,
         },
-        velocity: rules::line_velocity(hook, aim, SNATCH.line_speed_mps),
+        velocity: rules::line_velocity(anchor, aim, speed),
         angular_velocity: rigid.velocities.angular,
     });
     let solution = hold::solve(&rigid, holds, input.dt, &tuning);
