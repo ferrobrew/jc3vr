@@ -17,8 +17,9 @@
 //!   ([`insert`]). The well is the gun's own, from the wells table ([`wells`]), carried to the
 //!   hand through the gun's measured placement ([`frames`]). A seated magazine reloads through the
 //!   game's own reload, so the reserve, unlimited ammunition, the upgrades, and the HUD all follow
-//!   the game's rules; a shell adds one round. A magazine seated while the old one is still in
-//!   pushes it out first, through the same drop as an eject.
+//!   the game's rules; a shell adds one round. A fresh magazine seats only once the well is empty.
+//! - **Knock.** The fresh magazine in the hand, struck against the one still in the gun, knocks
+//!   that one out through the eject's drop, with an impulse from the strike ([`knock`]).
 //! - **Belt.** Pushing a gun's well down onto the pouch reloads it in one hand, swapping a magazine
 //!   still in it, and works its action ([`belt`]).
 //! - **Chamber.** A gun that ran dry fires again only once its action is worked by hand; a bolt
@@ -51,6 +52,8 @@ pub mod frames;
 pub(super) mod gate;
 mod infinite;
 pub mod insert;
+pub(crate) mod knock;
+mod knocking;
 pub mod loose;
 pub mod plan;
 mod pouch;
@@ -94,6 +97,7 @@ use crate::controllers::{
             extraction::{DetachRequest, PendingDetach, Pull},
             frames::GunFrame,
             insert::{Insertion, InsertionSource, ReadyCue, Well},
+            knock::Knocks,
             plan::ReloadPlan,
             records::{RecordKey, Records, gun_entry},
             travel::ActionTravel,
@@ -161,6 +165,8 @@ pub struct WeaponReadout {
 pub struct ReloadCounts {
     pub ejects: u64,
     pub seats: u64,
+    /// Magazines knocked out by a held one.
+    pub knocks: u64,
     pub belt_reloads: u64,
     pub racks: u64,
     /// Slides caught at the rear.
@@ -853,6 +859,8 @@ struct State {
     /// either changed.
     drawn: Option<[Option<usize>; 2]>,
     since_draw_s: f32,
+    /// The tactical knock's tip, strikes, and pending impulse.
+    knocks: Knocks,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -868,6 +876,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         counts: ReloadCounts {
             ejects: 0,
             seats: 0,
+            knocks: 0,
             belt_reloads: 0,
             racks: 0,
             lock_backs: 0,
@@ -902,4 +911,5 @@ static STATE: Mutex<State> = Mutex::new(State {
     last_mouths: [None; 2],
     drawn: None,
     since_draw_s: 0.0,
+    knocks: Knocks::new(),
 });

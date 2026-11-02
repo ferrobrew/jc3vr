@@ -302,8 +302,10 @@ impl State {
 
         self.extraction_blocks_belt = [false; 2];
         self.finish_ejects(tick, config);
+        self.push_knocked();
         self.ejects(tick, inputs, config);
         self.insert(tick, inputs, config);
+        self.knock(tick, inputs, config);
         self.extract(tick, inputs, reload);
         self.belt(tick, config, dt);
         self.work(tick, inputs, config);
@@ -555,6 +557,8 @@ impl State {
         let can_take = target.is_some_and(|(weapon, _)| self.can_take(weapon));
         let grip = self.grip_motion(tick, hand, inputs.dt);
         let well = target.and_then(|(_, gun)| gun.well).filter(|_| can_take);
+        let occupied =
+            target.is_some_and(|(weapon, _)| weapon.plan.load.well_occupied(weapon.reading.out));
         let prior = self.status.insertion;
         let before_hands = self.status.insert_hands;
         let capture = target.map_or(*reload, |(weapon, _)| reload.for_plan(&weapon.plan));
@@ -571,6 +575,7 @@ impl State {
                     )
                 }),
                 well,
+                occupied,
                 dt: inputs.dt,
             },
             self.insertion_source,
@@ -655,13 +660,6 @@ impl State {
                 pulse_both(Event::WellCatch);
             }
             Some(InsertEvent::Seated) => {
-                if let Some((weapon, gun)) = target
-                    && !world_magazine
-                    && weapon.plan.load.swaps(weapon.reading.out)
-                {
-                    self.swap(weapon, gun, hand, gun_hand, reload, (before, before_hands));
-                    return;
-                }
                 let loaded = match target {
                     // SAFETY (both): game thread before the world update; the weapon was read
                     // this tick.
@@ -782,7 +780,7 @@ impl State {
             };
             // A magazine still in drops as the fresh one goes in, and the game's reload returns
             // its rounds.
-            if weapon.plan.load.swaps(weapon.reading.out) {
+            if weapon.plan.load.well_occupied(weapon.reading.out) {
                 self.queue_eject(weapon, gun, hand, DetachKind::Belt, reload.loose.enabled);
                 continue;
             }
@@ -824,39 +822,9 @@ impl State {
         }
     }
 
-    /// A pouch magazine seated in the well of `gun` of `weapon`, in `gun_hand`, while the old one
-    /// is still in: queue the old one's drop, and load the fresh one when it is out
-    /// ([`State::finish_ejects`]). The fresh magazine draws on the reserve only as it loads, so a
-    /// refused drop costs no round. While a drop is already queued for the gun, the fresh
-    /// magazine stays at the well as it was, `held`, and seats once the old one is out.
-    fn swap(
-        &mut self,
-        weapon: &WeaponTick,
-        gun: &GunTick,
-        hand: Hand,
-        gun_hand: Hand,
-        reload: &Reload,
-        held: (insert::Insertion, Option<(Hand, Hand)>),
-    ) {
-        if self.pending_ejects[gun_hand.index()].is_some() {
-            (self.status.insertion, self.status.insert_hands) = held;
-        } else if self.queue_eject(
-            weapon,
-            gun,
-            gun_hand,
-            DetachKind::Swap,
-            reload.loose.enabled,
-        ) {
-            self.event(format!("{gun_hand:?} pushing the old magazine out"));
-        } else {
-            self.event(format!("{gun_hand:?} magazine swap refused"));
-            haptics::play(hand, Event::PouchEmpty);
-        }
-    }
-
     /// Whether `weapon`'s gun in `gun_hand` can take a round from the hand now: a magazine or a
-    /// cylinder at any time, pushing out one still in ([`State::swap`]), and a shell or a rocket
-    /// while it has space.
+    /// cylinder at any time, held until the one still in leaves ([`State::knock`]), and a shell or
+    /// a rocket while it has space.
     pub(super) fn can_take(&self, weapon: &WeaponTick) -> bool {
         match weapon.plan.load {
             LoadKind::Magazine | LoadKind::Cylinder => true,
@@ -887,7 +855,7 @@ impl State {
     }
 
     /// The grip pose of `hand` this tick and its velocity since the last.
-    fn grip_motion(&self, tick: &Tick, hand: Hand, dt: f32) -> Option<(Pose, Vec3)> {
+    pub(super) fn grip_motion(&self, tick: &Tick, hand: Hand, dt: f32) -> Option<(Pose, Vec3)> {
         let pose = tick.hands[hand.index()]?.grip;
         let velocity = match self.last_grips[hand.index()] {
             Some(last) if dt > 1e-4 => (pose.position - last) / dt,

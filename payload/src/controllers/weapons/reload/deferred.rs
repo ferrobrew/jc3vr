@@ -1,9 +1,10 @@
-//! Input-side completion of button, flick, belt, and swap magazine requests.
+//! Input-side completion of button, flick, belt, and knock magazine requests.
 //!
-//! A belt push or a pouch magazine seated while the gun's magazine is in drops the old magazine
-//! first, through the same request as an eject, and loads the fresh one only once the drop's result
-//! returns. The old magazine leaves with its own rounds (or none under unlimited ammunition), so
-//! the load draws on the reserve for the fresh magazine alone, and a refused drop loads nothing.
+//! A belt push while the gun's magazine is in drops the old magazine first, through the same
+//! request as an eject, and loads the fresh one only once the drop's result returns. A knock drops
+//! it the same way and leaves the fresh magazine in the hand to seat. Either way the old magazine
+//! leaves with its own rounds (or none under unlimited ammunition), so a load draws on the reserve
+//! for the fresh magazine alone, and a refused drop loads nothing.
 
 use crate::controllers::{
     config::ControllersConfig,
@@ -14,9 +15,8 @@ use crate::controllers::{
         chamber::Chamber,
         engine::{self, DetachOutcome},
         extraction::{DetachKind, DetachRequest, MagazineId},
+        knock::{KNOCK, PendingImpulse},
         serial,
-        steps::ready_after_seat,
-        tuning::Reload,
     },
 };
 
@@ -82,16 +82,13 @@ impl State {
             self.pending_ejects[hand.index()] = None;
             if outcome == DetachOutcome::NoThrow {
                 self.event(format!("{hand:?} magazine request refused"));
-                if request.kind == DetachKind::Swap {
-                    // The fresh magazine was never paid for, so letting it go loses no round.
-                    haptics::play(hand.other(), Event::PouchEmpty);
-                }
+                self.knocks.strikes[hand.index()] = None;
                 continue;
             }
             self.status.counts.ejects += 1;
             self.extraction_blocks_belt[hand.index()] = true;
-            if request.kind == DetachKind::Swap {
-                self.finish_swap(weapon, gun, hand, config);
+            if request.kind == DetachKind::Knock {
+                self.finish_knock(hand, outcome);
             } else if request.kind == DetachKind::Belt
                 && config.weapons.reload.belt.enabled
                 && self.load(weapon, gun)
@@ -110,29 +107,21 @@ impl State {
         }
     }
 
-    /// Load the pouch magazine that pushed the old one out of `gun` of `weapon`, in `hand`, as a
-    /// seat from the hand: no action is worked, and a chamber that kept its round stays ready.
-    fn finish_swap(
-        &mut self,
-        weapon: &WeaponTick,
-        gun: &GunTick,
-        hand: Hand,
-        config: &ControllersConfig,
-    ) {
-        if !self.load(weapon, gun) {
-            self.event(format!("{hand:?} ejected, the fresh magazine did not load"));
-            haptics::play(hand, Event::Eject);
-            return;
-        }
-        self.status.counts.seats += 1;
-        self.event(format!("{hand:?} seated, the old magazine dropped"));
-        for hand in Hand::BOTH {
-            haptics::play(hand, Event::MagazineSeat);
-        }
-        let chamber = self.records.get(weapon.key).chambers[gun.entry()];
-        if ready_after_seat(&weapon.plan, chamber) {
-            let delay_s = Reload::of(&config.weapons.reload).ready_cue_delay_s;
-            self.ready_cue.arm(hand, delay_s);
+    /// The knocked magazine is out: give its body the strike's impulse, world space. An unretained
+    /// prop is not the mod's to move, so it flies with the gun's velocity alone.
+    fn finish_knock(&mut self, hand: Hand, outcome: DetachOutcome) {
+        let strike = self.knocks.strikes[hand.index()].take();
+        self.event(format!("{hand:?} magazine knocked out"));
+        if let (DetachOutcome::Retained(magazine), Some(strike), Some(frames)) =
+            (outcome, strike, self.frames)
+        {
+            let scale = frames.world_scale;
+            self.knocks.impulse = Some(PendingImpulse {
+                magazine,
+                contact: frames.view * strike.contact * scale,
+                velocity: frames.view * strike.velocity * scale,
+                ticks_left: KNOCK.impulse_ticks,
+            });
         }
     }
 
@@ -140,5 +129,6 @@ impl State {
         for request in self.pending_ejects.iter_mut().filter_map(Option::take) {
             serial::cancel(request);
         }
+        self.knocks.cancel();
     }
 }

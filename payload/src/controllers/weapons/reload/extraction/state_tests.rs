@@ -16,6 +16,7 @@ use crate::controllers::{
         engine::{DetachOutcome, Reading},
         frames::GunFrame,
         insert::{InsertStage, ReadyCue, Well},
+        knock::Knocks,
         plan::ReloadPlan,
         records::{RecordKey, Records},
         tuning::{RELOAD, Reload},
@@ -92,6 +93,7 @@ fn state() -> State {
         last_mouths: [None; 2],
         drawn: None,
         since_draw_s: 10.0,
+        knocks: Knocks::new(),
     }
 }
 

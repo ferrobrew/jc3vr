@@ -19,10 +19,11 @@ pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
     ui.label(format!("Native magazine execution: {:?}", r.serial));
     let c = &r.counts;
     ui.label(format!(
-        "True reload: {} · ejects {} · seats {} · belt reloads {} · actions worked {} · slides \
-         locked back {} · dry fires {} · empty pouch {} · game reloads stopped {}",
+        "True reload: {} · ejects {} · knocks {} · seats {} · belt reloads {} · actions worked {} · \
+         slides locked back {} · dry fires {} · empty pouch {} · game reloads stopped {}",
         if r.active { "acting" } else { "inactive" },
         c.ejects,
+        c.knocks,
         c.seats,
         c.belt_reloads,
         c.racks,
@@ -166,5 +167,14 @@ pub(super) fn reload_settings(ui: &mut Ui, r: &mut ReloadConfig) {
     ui.checkbox(&mut r.action.physical, "Physical action").on_hover_text(
         "The slide, charging handle, bolt, or pump follows the hand through its travel. Off, the \
          action is a pull-and-release gesture.",
+    );
+    ui.add(
+        egui::Slider::new(&mut r.knock.min_speed_mps, 0.3..=4.0)
+            .text("Magazine knock speed (m/s)")
+            .fixed_decimals(1),
+    )
+    .on_hover_text(
+        "How fast the fresh magazine in the hand must strike the one still in the gun, relative \
+         to the gun, to knock it out. Slower touches do nothing.",
     );
 }

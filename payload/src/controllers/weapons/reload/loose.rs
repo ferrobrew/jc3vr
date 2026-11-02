@@ -42,7 +42,10 @@ use crate::{
         body::rig::frames::Frames,
         frame::Hand,
         grab::{Candidate, GrabVolume},
-        physical_hands,
+        physical_hands::{
+            self,
+            rigid::{RigidBody, Velocities},
+        },
         weapons::reload::{
             loose::records::{DropKey, Records, Token, WorldHandle},
             tuning::LooseTuning,
@@ -334,6 +337,36 @@ pub(super) unsafe fn carry(top: Vec3, axis: Vec3, dt: f32, config: &LooseTuning)
         },
         &mut NativeBodies,
     )
+}
+
+/// Give the world magazine `magazine` the velocities `knock` makes of its current body: a magazine
+/// knocked out of the well, flying on from the strike. A body not readable now defers, and a
+/// record that is gone or quarantined is left alone.
+///
+/// # Safety
+///
+/// The game thread, before the world update.
+pub(super) unsafe fn knock(
+    magazine: Loose,
+    knock: impl FnOnce(RigidBody) -> Velocities,
+) -> Operation<()> {
+    let mut state = STATE.lock();
+    let read = unsafe { physical_hands::body_state(magazine.body, magazine.owner) };
+    let body = match state.observe(magazine, read) {
+        Operation::Ready(body) => body,
+        Operation::Deferred => return Operation::Deferred,
+        Operation::Gone => return Operation::Gone,
+    };
+    let velocities = knock(body.rigid());
+    let result = unsafe {
+        physical_hands::set_body_velocities(
+            magazine.body,
+            magazine.owner,
+            velocities.linear,
+            velocities.angular,
+        )
+    };
+    state.observe(magazine, result)
 }
 
 /// Let go of the held magazine: it stays in the world where it falls.

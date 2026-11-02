@@ -105,6 +105,9 @@ pub struct WellEntry {
     pub magazine_part: bool,
     /// The top of the magazine part's mesh along the insertion axis, from the part's origin.
     pub part_top_m: Option<f32>,
+    /// The magazine part's extent along the insertion axis; without a part, the visible length of
+    /// a magazine modelled below the receiver, or `None` for one inside the grip.
+    pub part_length_m: Option<f32>,
     pub action: TableAction,
     /// Where the hand grabs the action.
     pub handle_m: Option<Vec3>,

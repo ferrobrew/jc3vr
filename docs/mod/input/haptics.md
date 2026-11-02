@@ -72,6 +72,7 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | `Event::PouchEmpty` | a grab at an empty ammunition pouch | tick | 0.75 | weapons | `weapons::reload::steps` |
 | `Event::WellCatch` | the well catches a round or a magazine, on both hands | click | 0.4 | weapons | `weapons::reload::steps` |
 | `Event::MagazineSeat` | a magazine seats, on both hands | bump | 0.9 | weapons | `weapons::reload::steps` |
+| `Event::MagazineKnock` | a held magazine knocks the inserted one out, on both hands | thud | 1.0 | weapons | `weapons::reload::knocking` |
 | `Event::BeltSeat` | a belt seats | thud | 0.75 | weapons | `weapons::reload::steps` |
 | `Event::Rack` | a full pull of the action, on the working hand | click | 0.9 | weapons | `weapons::reload::steps` |
 | `Event::ActionDetent` | the action's part meeting a stop of its travel (home, a bolt turned all the way up or down, a slide caught at the rear), on the working hand | click | 0.35 | weapons | `weapons::reload::steps` |

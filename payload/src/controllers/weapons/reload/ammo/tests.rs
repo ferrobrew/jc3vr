@@ -306,10 +306,15 @@ impl Runtime {
         };
     }
 
-    /// A pouch magazine seated while the old one is in: the old one drops as an eject does, and
-    /// the fresh one loads only once the drop was thrown. Returns the drop's outcome and the rounds
-    /// the dropped magazine carries into the world.
-    fn swap(&mut self, capacity: i32, thrown: bool, retained: bool) -> (DetachOutcome, i32) {
+    /// The inserted magazine knocked out by a held pouch magazine, which then seats: the old one
+    /// drops as an eject does, and the fresh one loads only once the drop was thrown. Returns the
+    /// drop's outcome and the rounds the dropped magazine carries into the world.
+    fn knock_and_seat(
+        &mut self,
+        capacity: i32,
+        thrown: bool,
+        retained: bool,
+    ) -> (DetachOutcome, i32) {
         let carried = if retained {
             dropped_magazine_rounds(false, self.ammo.magazine)
         } else {
@@ -486,14 +491,14 @@ fn drop_switch_and_standdown_reconcile_without_restoring_a_spent_chamber() {
 }
 
 #[test]
-fn a_swap_drops_the_old_rounds_with_the_magazine_and_pays_only_for_the_fresh_one() {
+fn a_knock_drops_the_old_rounds_with_the_magazine_and_the_seat_pays_only_for_the_fresh_one() {
     for ready in [true, false] {
         for reserve in [20, 4] {
             let mut runtime = Runtime::loaded(8, ready);
             runtime.reserve = reserve;
             let old = runtime.ammo.magazine;
             let before = runtime.owned();
-            let (outcome, carried) = runtime.swap(10, true, true);
+            let (outcome, carried) = runtime.knock_and_seat(10, true, true);
             assert_eq!(outcome, DetachOutcome::Retained(magazine(old)));
             assert_eq!(carried, old);
             let fresh = 10.min(reserve);
@@ -509,12 +514,12 @@ fn a_swap_drops_the_old_rounds_with_the_magazine_and_pays_only_for_the_fresh_one
 }
 
 #[test]
-fn an_unretained_swap_returns_the_old_rounds_to_the_reserve_as_the_game_does() {
+fn an_unretained_knock_returns_the_old_rounds_to_the_reserve_as_the_game_does() {
     for ready in [true, false] {
         let mut runtime = Runtime::loaded(8, ready);
         let old = runtime.ammo.magazine;
         let before = runtime.owned();
-        let (outcome, carried) = runtime.swap(10, true, false);
+        let (outcome, carried) = runtime.knock_and_seat(10, true, false);
         assert_eq!(outcome, DetachOutcome::DroppedUnretained);
         assert_eq!(carried, 0);
         assert_eq!(runtime.ammo.magazine, 10);
@@ -525,10 +530,13 @@ fn an_unretained_swap_returns_the_old_rounds_to_the_reserve_as_the_game_does() {
 }
 
 #[test]
-fn a_refused_swap_drop_keeps_the_old_magazine_and_takes_nothing_from_the_reserve() {
+fn a_refused_knock_keeps_the_old_magazine_and_takes_nothing_from_the_reserve() {
     let mut runtime = Runtime::loaded(8, true);
     let (ammo, native, reserve) = (runtime.ammo, runtime.native, runtime.reserve);
-    assert_eq!(runtime.swap(10, false, true), (DetachOutcome::NoThrow, 0));
+    assert_eq!(
+        runtime.knock_and_seat(10, false, true),
+        (DetachOutcome::NoThrow, 0)
+    );
     assert_eq!(
         (runtime.ammo, runtime.native, runtime.reserve),
         (ammo, native, reserve)
@@ -537,11 +545,11 @@ fn a_refused_swap_drop_keeps_the_old_magazine_and_takes_nothing_from_the_reserve
 }
 
 #[test]
-fn a_swapped_chambered_round_fires_once_and_is_never_duplicated() {
+fn a_chambered_round_kept_through_a_knock_fires_once_and_is_never_duplicated() {
     let mut runtime = Runtime::loaded(1, true);
     assert_eq!(runtime.ammo.magazine, 0);
     let before = runtime.owned();
-    let (_, carried) = runtime.swap(10, true, true);
+    let (_, carried) = runtime.knock_and_seat(10, true, true);
     assert_eq!(carried, 0);
     assert_eq!(runtime.native.total, 11);
     assert_eq!(runtime.owned() + carried, before);

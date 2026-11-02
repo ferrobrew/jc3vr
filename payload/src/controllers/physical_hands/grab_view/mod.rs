@@ -46,7 +46,7 @@ use crate::{
             store,
         },
         physical_hands::{PhysicalHandsConfig, palm_readout},
-        weapons::reload::zones,
+        weapons::reload::{knock, zones},
     },
 };
 
@@ -233,6 +233,7 @@ pub(crate) fn submit(tick: &Tick, frame: Option<&MarkerFrame>) {
             candidates,
             flashes: &flashes,
             zones: zones::views(),
+            knock: knock::view().map(|view| (view, view.flashing(now))),
         },
         &mut state.primitives,
     );

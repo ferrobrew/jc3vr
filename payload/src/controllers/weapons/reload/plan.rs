@@ -45,9 +45,9 @@ impl LoadKind {
         matches!(self, LoadKind::Magazine | LoadKind::Cylinder)
     }
 
-    /// Whether a round of this kind seated in a gun whose magazine is `out` first pushes the old
-    /// magazine out: a magazine or a cylinder seated while the gun still holds one.
-    pub const fn swaps(self, out: bool) -> bool {
+    /// Whether the well of a gun of this kind, its magazine `out` or not, is occupied: a magazine or
+    /// a cylinder still in the gun, which has to leave before a fresh one can seat.
+    pub const fn well_occupied(self, out: bool) -> bool {
         self.ejects() && !out
     }
 
@@ -253,6 +253,7 @@ mod tests {
             insert_axis: Some(Vec3::Y * 2.0),
             magazine_part: true,
             part_top_m: Some(0.05),
+            part_length_m: Some(0.1),
             action,
             handle_m: Some(Vec3::new(0.0, 0.06, 0.1)),
             travel_m: Some(0.07),
@@ -400,14 +401,14 @@ mod tests {
     }
 
     #[test]
-    fn only_a_magazine_or_a_cylinder_still_in_is_pushed_out() {
+    fn only_a_magazine_or_a_cylinder_still_in_occupies_the_well() {
         for load in [LoadKind::Magazine, LoadKind::Cylinder] {
-            assert!(load.swaps(false), "{load:?}");
-            assert!(!load.swaps(true), "{load:?}");
+            assert!(load.well_occupied(false), "{load:?}");
+            assert!(!load.well_occupied(true), "{load:?}");
         }
         for load in [LoadKind::Shell, LoadKind::Rocket] {
-            assert!(!load.swaps(false), "{load:?}");
-            assert!(!load.swaps(true), "{load:?}");
+            assert!(!load.well_occupied(false), "{load:?}");
+            assert!(!load.well_occupied(true), "{load:?}");
         }
     }
 }

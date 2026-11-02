@@ -8,8 +8,8 @@ use crate::controllers::{
     body::rig::frames::Frames,
     hands::pose::CockpitHand,
     weapons::reload::{
-        ReloadStatus, eject::TapDetector, extraction::Pull, plan::WellFrame, records::Records,
-        tuning::RELOAD,
+        ReloadStatus, eject::TapDetector, extraction::Pull, knock::Knocks, plan::WellFrame,
+        records::Records, tuning::RELOAD,
     },
 };
 
@@ -115,6 +115,7 @@ pub(super) fn state(stage: InsertStage) -> State {
         last_mouths: [None; 2],
         drawn: None,
         since_draw_s: 10.0,
+        knocks: Knocks::new(),
     }
 }
 

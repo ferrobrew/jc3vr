@@ -70,6 +70,9 @@ pub struct InsertInputs {
     pub held: Option<Held>,
     /// The well of the gun the round is for, or `None` without a gun that can take it now.
     pub well: Option<Well>,
+    /// The well still holds a magazine, so the round is only held: it neither catches nor floats
+    /// in until that one is knocked out, ejected, or pulled.
+    pub occupied: bool,
     pub dt: f32,
 }
 
@@ -292,6 +295,17 @@ impl Insertion {
             self.stage = InsertStage::Idle;
             return Some(InsertEvent::Dropped);
         };
+        if inputs.occupied {
+            self.distance_m = Some(local.length());
+            if !inputs.grip_held
+                || (source == InsertionSource::Pouch && elapsed_s > config.timeout_s)
+            {
+                self.stage = InsertStage::Idle;
+                return Some(InsertEvent::Dropped);
+            }
+            self.stage = InsertStage::Holding { elapsed_s };
+            return captured.map(|_| InsertEvent::Released);
+        }
         let depth = local.y;
         let off_axis = Vec3::new(local.x, 0.0, local.z).length();
         let aligned = aligned_cos >= config.capture_angle_deg.to_radians().cos();
@@ -566,6 +580,7 @@ mod tests {
                 velocity,
             }),
             well: Some(WELL),
+            occupied: false,
             dt: 0.02,
         }
     }
@@ -581,6 +596,52 @@ mod tests {
             ),
             Some(InsertEvent::Taken)
         );
+    }
+
+    #[test]
+    fn a_push_at_a_well_still_holding_a_magazine_neither_catches_nor_seats() {
+        let mut i = Insertion::new();
+        take(&mut i);
+        let up = Vec3::Y * 0.5;
+        let occupied = |top: Vec3, grip_held: bool| InsertInputs {
+            occupied: true,
+            grip_held,
+            ..inputs(false, top, up)
+        };
+        for depth in [-0.02, 0.01, 0.03, 0.06] {
+            assert_eq!(
+                i.step(occupied(WELL.mouth + Vec3::Y * depth, true), &CONFIG),
+                None
+            );
+            assert!(
+                matches!(i.stage, InsertStage::Holding { .. }),
+                "{:?}",
+                i.stage
+            );
+        }
+        // Let go at the mouth: no float in, the round drops.
+        assert_eq!(
+            i.step(occupied(WELL.mouth, false), &CONFIG),
+            Some(InsertEvent::Dropped)
+        );
+        assert_eq!(i.seated, 0);
+    }
+
+    #[test]
+    fn a_round_caught_as_the_well_fills_is_released_back_into_the_hand() {
+        let mut i = Insertion::new();
+        take(&mut i);
+        let up = Vec3::Y * 0.5;
+        assert_eq!(
+            i.step(inputs(false, WELL.mouth - Vec3::Y * 0.02, up), &CONFIG),
+            Some(InsertEvent::Captured)
+        );
+        let occupied = InsertInputs {
+            occupied: true,
+            ..inputs(false, WELL.mouth + Vec3::Y * 0.01, up)
+        };
+        assert_eq!(i.step(occupied, &CONFIG), Some(InsertEvent::Released));
+        assert!(matches!(i.stage, InsertStage::Holding { .. }));
     }
 
     #[test]
@@ -935,6 +996,7 @@ mod tests {
                     velocity: WELL.axis,
                 }),
                 well: Some(WELL),
+                occupied: false,
                 dt: 0.016,
             };
             insertion.step(inputs, config);

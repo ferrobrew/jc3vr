@@ -22,6 +22,8 @@ pub struct ReloadConfig {
     pub loose: LooseMagazineConfig,
     /// Grip-and-pull removal of an inserted detachable magazine.
     pub extraction: ExtractionConfig,
+    /// Knocking the inserted magazine out with the fresh one in the other hand.
+    pub knock: KnockConfig,
 }
 
 impl ReloadConfig {
@@ -33,6 +35,7 @@ impl ReloadConfig {
             action: ActionConfig::new(),
             loose: LooseMagazineConfig::new(),
             extraction: ExtractionConfig::new(),
+            knock: KnockConfig::new(),
         }
     }
 }
@@ -90,6 +93,30 @@ impl ExtractionConfig {
 }
 
 impl Default for ExtractionConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Knocking the inserted magazine out with a held one (see
+/// [`crate::controllers::weapons::reload::knock`]).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct KnockConfig {
+    /// The slowest closing speed of the held magazine's tip against the inserted magazine, relative
+    /// to the gun, that knocks it out, metres per second at the player's scale. A hand brought to
+    /// the gun to load moves at a few tenths of a metre per second, and a deliberate strike at one
+    /// and a half to three, so a gentle touch does nothing.
+    pub min_speed_mps: f32,
+}
+
+impl KnockConfig {
+    pub const fn new() -> Self {
+        Self { min_speed_mps: 1.0 }
+    }
+}
+
+impl Default for KnockConfig {
     fn default() -> Self {
         Self::new()
     }

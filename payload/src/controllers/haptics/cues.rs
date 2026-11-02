@@ -133,6 +133,8 @@ pub enum Event {
     WellCatch,
     /// A magazine seated.
     MagazineSeat,
+    /// The inserted magazine knocked out of the well by a held one.
+    MagazineKnock,
     /// A belt seated.
     BeltSeat,
     /// A full pull of the action.
@@ -228,7 +230,7 @@ pub enum Event {
 
 impl Event {
     #[cfg(test)]
-    pub const ALL: [Event; 58] = [
+    pub const ALL: [Event; 59] = [
         Event::PalmTouch,
         Event::HandStrike,
         Event::Take,
@@ -245,6 +247,7 @@ impl Event {
         Event::PouchEmpty,
         Event::WellCatch,
         Event::MagazineSeat,
+        Event::MagazineKnock,
         Event::BeltSeat,
         Event::Rack,
         Event::ActionDetent,
@@ -310,6 +313,7 @@ impl Event {
             Event::PouchEmpty => Cue::new(Primitive::Tick, 0.75, Category::Weapons),
             Event::WellCatch => Cue::new(Primitive::Click, 0.4, Category::Weapons),
             Event::MagazineSeat => Cue::new(Primitive::Bump, 0.9, Category::Weapons),
+            Event::MagazineKnock => Cue::new(Primitive::Thud, 1.0, Category::Weapons),
             Event::BeltSeat => Cue::new(Primitive::Thud, 0.75, Category::Weapons),
             Event::Rack => Cue::new(Primitive::Click, 0.9, Category::Weapons),
             Event::ActionDetent => Cue::new(Primitive::Click, 0.35, Category::Weapons),
@@ -375,6 +379,7 @@ impl Event {
             Event::PouchEmpty => "pouch empty",
             Event::WellCatch => "well catch",
             Event::MagazineSeat => "magazine seat",
+            Event::MagazineKnock => "magazine knock",
             Event::BeltSeat => "belt seat",
             Event::Rack => "rack",
             Event::ActionDetent => "action detent",

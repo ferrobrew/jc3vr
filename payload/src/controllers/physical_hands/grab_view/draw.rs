@@ -29,7 +29,7 @@ use crate::controllers::{
             target_colour, target_mark_size,
         },
     },
-    weapons::reload::zones::ZoneView,
+    weapons::reload::{knock::KnockView, zones::ZoneView},
 };
 
 /// What one tick drew.
@@ -61,6 +61,9 @@ pub(crate) struct DrawInputs<'a> {
     pub flashes: &'a [(Anchor, f32)],
     /// The grab zones of each gun held in one hand for the other, by the holding hand.
     pub zones: [Option<ZoneView>; 2],
+    /// The knock zone of the gun whose magazine a held pouch magazine can knock out, and whether
+    /// its knock still flashes.
+    pub knock: Option<(KnockView, bool)>,
 }
 
 /// The most primitives the view submits in a tick.
@@ -148,6 +151,14 @@ pub(crate) fn build(inputs: &DrawInputs, out: &mut Vec<Primitive>) -> Drawn {
             }
             zone_primitives(view, inputs.frame, out);
             drawn.zones += 1;
+        }
+        if let Some((view, flashing)) = inputs.knock {
+            if out.len() + KNOCK_PRIMITIVES > PRIMITIVE_BUDGET {
+                drawn.dropped += 1;
+            } else {
+                knock_primitives(&view, flashing, inputs.frame, out);
+                drawn.zones += 1;
+            }
         }
     }
     if config.candidates {
@@ -337,6 +348,56 @@ fn zone_primitives(view: &ZoneView, frame: &MarkerFrame, out: &mut Vec<Primitive
     }
 }
 
+/// The knock zone on the held gun: the inserted magazine as its axis with a ring at the base and
+/// one at the top, and the held magazine's tip, green while it moves fast enough to knock. The
+/// zone flashes white when the magazine is knocked out.
+fn knock_primitives(
+    view: &KnockView,
+    flashing: bool,
+    frame: &MarkerFrame,
+    out: &mut Vec<Primitive>,
+) {
+    let on_gun = |point: Vec3| {
+        markers::anchor_at(
+            MarkAt::OnHand {
+                hand: view.holder,
+                point,
+            },
+            frame,
+        )
+        .or_else(|| markers::anchor_at(MarkAt::Cockpit(point), frame))
+    };
+    let scale = frame.xf.world_scale;
+    let colour = if flashing {
+        KNOCK_FLASH_COLOUR
+    } else {
+        KNOCK_ZONE_COLOUR
+    };
+    let (top, base) = view.zone.ends();
+    if let (Some(top), Some(base)) = (on_gun(top), on_gun(base)) {
+        out.push(line(top, base, ZONE_LINE_WIDTH_M, colour));
+        for (end, thickness) in [(top, 0.08), (base, 0.2)] {
+            out.push(sprite(
+                end,
+                2.0 * view.zone.radius * scale,
+                Shape::Ring { thickness },
+                colour,
+            ));
+        }
+    }
+    if let Some(tip) = view
+        .tip
+        .and_then(|tip| markers::anchor_at(MarkAt::Cockpit(tip), frame))
+    {
+        let colour = if view.fast {
+            KNOCK_FAST_COLOUR
+        } else {
+            KNOCK_ZONE_COLOUR
+        };
+        out.push(sprite(tip, KNOCK_TIP_M * scale, Shape::Disc, colour));
+    }
+}
+
 /// `colour` brightened when the free hand is in its zone.
 fn shade(colour: Rgba, inside: bool) -> Rgba {
     let [r, g, b, a] = colour;
@@ -378,6 +439,17 @@ const MAGAZINE_ZONE_COLOUR: Rgba = [1.0, 0.7, 0.15, 0.55];
 const HANDOVER_ZONE_COLOUR: Rgba = [0.3, 0.85, 1.0, 0.55];
 /// The handover's alpha while the magazine's zone holds the free hand.
 const SUPPRESSED_ALPHA: f32 = 0.15;
+
+/// The most primitives the knock zone takes.
+const KNOCK_PRIMITIVES: usize = 4;
+/// The knock zone: red, apart from the pull's amber zone it lies inside.
+const KNOCK_ZONE_COLOUR: Rgba = [1.0, 0.3, 0.25, 0.6];
+/// The knock zone as the magazine is knocked out.
+const KNOCK_FLASH_COLOUR: Rgba = [1.0, 1.0, 1.0, 1.0];
+/// The held tip while it moves fast enough to knock.
+const KNOCK_FAST_COLOUR: Rgba = [0.3, 1.0, 0.35, 0.9];
+/// The held tip's marker diameter, metres at the player's scale.
+const KNOCK_TIP_M: f32 = 0.014;
 
 /// The palm marker's place in the wrist frame: over the back of the hand (+Y), toward the forearm.
 const WRIST_OFFSET: Vec3 = Vec3::new(0.0, 0.04, 0.03);
@@ -436,6 +508,7 @@ mod tests {
             candidates,
             flashes: &[],
             zones: [None; 2],
+            knock: None,
         }
     }
 

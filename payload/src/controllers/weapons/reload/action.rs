@@ -398,9 +398,9 @@ impl State {
         });
         let held = self.status.insert_hands.and_then(|(hand, gun_hand)| {
             let (weapon, gun) = tick.gun(gun_hand)?;
-            // The gun's round part is the magazine still in it until the fresh one pushes it out,
-            // so the hand shows no part meanwhile.
-            if weapon.plan.load.swaps(weapon.reading.out) {
+            // The gun's round part is the magazine still in it until that one is knocked out,
+            // ejected, or pulled, so the hand shows no part meanwhile.
+            if weapon.plan.load.well_occupied(weapon.reading.out) {
                 return None;
             }
             let captured = match self.status.insertion.stage {

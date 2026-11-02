@@ -123,8 +123,8 @@ pub(super) enum DetachKind {
     Eject,
     /// A push onto the belt pouch drops the magazine, and a fresh one loads once it is out.
     Belt,
-    /// A pouch magazine seated in the well pushes the old one out, and loads once it is out.
-    Swap,
+    /// A held pouch magazine struck against the inserted one knocks it out of the well.
+    Knock,
 }
 
 /// A request is a value, not permission to call the engine from the input tick.
@@ -391,6 +391,7 @@ impl State {
                             grip_held: true,
                             held: None,
                             well: None,
+                            occupied: false,
                             dt: 0.0,
                         },
                         self.insertion_source,
