@@ -2143,7 +2143,7 @@ impl WeaponBase {
     /// for it (its [`m_UnlimitedAmmo`](crate::character::character::Character::m_UnlimitedAmmo), a holder
     /// that is not a player, or the challenge-island game mode); otherwise, and with no user at
     /// all, the tuning's [`m_unlimited_ammo`](crate::equipment::weapon::WeaponTuning::m_unlimited_ammo), and false without a
-    /// [`Reload`](crate::equipment::weapon::WeaponBase::Reload) then fills the magazine without drawing on the reserve, and
+    /// tuning. [`Reload`](crate::equipment::weapon::WeaponBase::Reload) then fills the magazine without drawing on the reserve, and
     /// [`CanReload`](crate::equipment::weapon::WeaponBase::CanReload) allows a reload with an empty reserve.
     pub unsafe fn HasUnlimitedAmmo(&self) -> bool {
         unsafe {
@@ -2870,10 +2870,15 @@ impl WeaponBase {
         }
     }
     pub const ConsumeAmmoBase_ADDRESS: usize = 0x140966220;
-    /// The base implementation of [`ConsumeAmmo`](crate::equipment::weapon::WeaponBase::ConsumeAmmo). Deducts the requested
-    /// count from the gun's magazine, updates empty-magazine state, and deducts reserve
-    /// ammunition when the weapon's ammunition policy requires it. Reserve ammunition can
-    /// belong to the weapon or its owning character's inventory.
+    /// The base implementation of [`ConsumeAmmo`](crate::equipment::weapon::WeaponBase::ConsumeAmmo). A gun partway through a
+    /// counted run of shots counts `count` against that run first, and while the run has rounds
+    /// left it can return without touching the weapon's counts. Otherwise, for a weapon whose
+    /// tuning has a non-zero [`m_magazine_size`](crate::equipment::weapon::WeaponTuning::m_magazine_size), it lowers the
+    /// magazine by `count` through [`SetMagazineAmmo`](crate::equipment::weapon::WeaponBase::SetMagazineAmmo), never below zero; a
+    /// weapon with no magazine size draws `count` from its user's reserve instead, except in the
+    /// challenge-island game mode. An [`AMMO_UNLIMITED`](crate::equipment::weapon::AmmunitionType::AMMO_UNLIMITED) weapon
+    /// draws from neither. [`HasUnlimitedAmmo`](crate::equipment::weapon::WeaponBase::HasUnlimitedAmmo) plays no part: a weapon
+    /// with unlimited ammunition still empties its magazine, and only its reload is free.
     pub unsafe fn ConsumeAmmoBase(
         &mut self,
         weapon_data: *mut crate::equipment::weapon::WeaponData,

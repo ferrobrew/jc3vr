@@ -28,7 +28,7 @@ use crate::controllers::{
             engine,
             extraction::{DetachKind, MagazineId},
             frames::{self, GunFrame},
-            gate,
+            gate, infinite,
             insert::{self, InsertEvent, InsertInputs, InsertStage, InsertionSource, Well},
             loose,
             plan::{self, LoadKind, ReloadPlan, WeaponFacts},
@@ -124,6 +124,10 @@ impl State {
             let Some(mut weapon_tick) = (unsafe { weapon_tick(weapon, base, config) }) else {
                 continue;
             };
+            // Before the partition adopts the native total, so a gun first seen short, such as one
+            // taken from a character, is adopted full with its chamber loaded.
+            // SAFETY: tick construction runs on the input thread with this weapon read this tick.
+            weapon_tick.reading = unsafe { infinite::top_up(weapon.address, weapon_tick.reading) };
             for hand in Hand::BOTH {
                 let i = hand.index();
                 // A hand holds one gun; the wielded weapon's comes first.

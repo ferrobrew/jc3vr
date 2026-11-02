@@ -32,7 +32,10 @@ use crate::{
     controllers::{
         aim::gun,
         frame::{Hand, Pose},
-        hands::{ik::TickTarget, late},
+        hands::{
+            ik::{self, TickTarget},
+            late,
+        },
         weapons::{
             dual_wield::single,
             empty,
@@ -71,7 +74,7 @@ pub struct Reading {
     pub out: bool,
     /// The weapon has unlimited magazines or an untimed reload.
     pub exempt: bool,
-    /// The weapon's user has unlimited ammunition.
+    /// The local player's rounds for the weapon come without limit ([`unlimited`]).
     pub unlimited: bool,
 }
 
@@ -112,8 +115,28 @@ pub unsafe fn read(weapon: &WeaponBase) -> Reading {
             || ammo_type == AmmunitionType::AMMO_UNLIMITED as i32
             || ammo_type < 0
             || ammo_type >= AmmunitionType::NOF_AMMO_TYPES as i32,
-        unlimited: unsafe { weapon.HasUnlimitedAmmo() },
+        unlimited: unsafe { unlimited(weapon) },
     }
+}
+
+/// Whether the local player's rounds for `weapon` come without limit: the game's own rule
+/// ([`WeaponBase::HasUnlimitedAmmo`]) as it reads with the local player as the holder, whoever
+/// the weapon's user is. The player's half is [`Character::HasUnlimitedAmmo`] (the game's
+/// unlimited-ammunition option, or the challenge-island mode); the weapon's is its tuning's
+/// [`WeaponTuning::m_unlimited_ammo`]. The weapon's own query reads its user, which for a gun taken
+/// from another character, or one only armed in a hand, need not be the player, and answers for a
+/// character that is not the player with true.
+///
+/// [`WeaponTuning::m_unlimited_ammo`]: jc3gi::equipment::weapon::WeaponTuning::m_unlimited_ammo
+///
+/// # Safety
+///
+/// `weapon` must be live. The local character's address is the one the input tick publishes
+/// ([`ik::local_character`]), so this may run on the weapon's update thread.
+pub(super) unsafe fn unlimited(weapon: &WeaponBase) -> bool {
+    let player = unsafe { (ik::local_character() as *const Character).as_ref() };
+    let player = player.is_some_and(|player| unsafe { player.HasUnlimitedAmmo() });
+    player || unsafe { weapon.m_Tuning.as_ref() }.is_some_and(|tuning| tuning.m_unlimited_ammo)
 }
 
 /// Which gun entries belong to the weapon, independent of hand-pose tracking.
@@ -236,7 +259,15 @@ unsafe fn detach_magazine(
         });
         *ammo
     });
-    let magazine_rounds = partition.map_or(rounds, |ammo| ammo.magazine);
+    // With unlimited rounds every seated magazine is kept full, so a dropped one carries none of
+    // its own: a magazine from the world is filled once it seats, and none of the rounds the
+    // unlimited ammunition made can reach a later finite load through it.
+    let unlimited = unsafe { weapon.as_ref() }.is_some_and(|w| unsafe { unlimited(w) });
+    let magazine_rounds = if unlimited {
+        0
+    } else {
+        partition.map_or(rounds, |ammo| ammo.magazine)
+    };
     let execute = |retention: Option<&Retention>| {
         if retention.is_some_and(|r| !r.matches(gun as usize, spare)) {
             return DetachOutcome::NoThrow;
@@ -324,7 +355,7 @@ pub unsafe fn load_rounds(address: usize, rounds: i32) {
     let partition = current_ammo(weapon);
     let chambers = partition.map_or(0, Ammo::chamber_rounds);
     let leftover = weapon.m_MagazineAmmo.max(0) - chambers;
-    let unlimited = unsafe { weapon.HasUnlimitedAmmo() };
+    let unlimited = unsafe { unlimited(weapon) };
     if leftover > 0
         && !unlimited
         && let Some(user) = unsafe { user_mut(weapon) }
@@ -416,7 +447,7 @@ pub unsafe fn load_one(address: usize) -> bool {
     if !unsafe { read(weapon) }.has_space() {
         return false;
     }
-    let unlimited = unsafe { weapon.HasUnlimitedAmmo() };
+    let unlimited = unsafe { unlimited(weapon) };
     let reserve = unsafe { reserve(weapon) };
     if !unlimited && reserve <= 0 {
         return false;
@@ -430,6 +461,32 @@ pub unsafe fn load_one(address: usize) -> bool {
     weapon.m_WeaponIsWithoutMagazine = false;
     current_ammo(weapon);
     true
+}
+
+/// Write the native loaded total of the weapon at `address` and adopt it into the chamber
+/// partition, which keeps its chambers and gives the rest to the magazine. Returns whether the
+/// weapon was found.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub(super) unsafe fn set_loaded(address: usize, total: i32) -> bool {
+    let Some(mut source) = (unsafe { owned_handle(address) }) else {
+        return false;
+    };
+    let weapon = unsafe { source.as_mut() };
+    unsafe { weapon.SetMagazineAmmo(total) };
+    current_ammo(weapon);
+    true
+}
+
+/// Adopt `total` into the chamber partition of the weapon at `address` with its magazine in, as the
+/// shot's native total before it is written. Returns `total`.
+pub(super) fn refill_partition(address: usize, total: i32) -> i32 {
+    ammo::change(address, |ammo| {
+        ammo.reconcile(NativeAmmo { total, out: false });
+    });
+    total
 }
 
 pub(super) unsafe fn set_shot_ammo(address: usize, total: i32) {

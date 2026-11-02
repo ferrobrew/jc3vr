@@ -718,6 +718,20 @@ impl Character {
             f(self as *mut Self as _, unlimited)
         }
     }
+    pub const HasUnlimitedAmmo_ADDRESS: usize = 0x14094FF20;
+    /// Whether the character's rounds come without limit: true when
+    /// [`m_UnlimitedAmmo`](crate::character::character::Character::m_UnlimitedAmmo) is set, when the character is not the local
+    /// player ([`IsPlayer`](crate::character::character::Character::IsPlayer)), or while the challenge-island game mode runs. It is the
+    /// holder half of [`WeaponBase::HasUnlimitedAmmo`](crate::equipment::weapon::WeaponBase::HasUnlimitedAmmo),
+    /// read without a weapon; the weapon's automatic-pickup check asks it of the character.
+    pub unsafe fn HasUnlimitedAmmo(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::HasUnlimitedAmmo_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
     pub const SetGodMode_ADDRESS: usize = 0x1407FD7C0;
     /// Sets the [`GOD_MODE`](crate::character::character::DamageStateFlags::GOD_MODE) damage flag and the damageable's
     /// invulnerability. Enabling it on a living character also restores full health, forces the

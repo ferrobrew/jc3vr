@@ -48,6 +48,7 @@ mod engine_tests;
 mod extraction;
 pub mod frames;
 pub(super) mod gate;
+mod infinite;
 pub mod insert;
 pub mod loose;
 pub mod plan;
@@ -660,7 +661,9 @@ pub(crate) fn adjust_part(
 /// weapon's thread.
 pub(super) fn on_shot(weapon: usize, hand: Hand, magazine: i32) {
     let total = if gate::tracks(weapon, hand) {
-        ammo::on_shot(weapon, hand.index(), magazine).unwrap_or(magazine)
+        let total = ammo::on_shot(weapon, hand.index(), magazine).unwrap_or(magazine);
+        // SAFETY: the per-shot caller keeps this weapon live on its native update thread.
+        unsafe { infinite::after_shot(weapon, total) }
     } else {
         magazine
     };

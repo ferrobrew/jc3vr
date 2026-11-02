@@ -31,6 +31,17 @@ Every animated reload the game starts goes through one call, [`Character::StartR
 
 The reload button ejects (see "Eject"); a start of the game's own timed reload is refused while the weapon is reloaded by hand.
 
+## Unlimited ammunition
+
+With unlimited ammunition the magazine never empties, so reloading is optional (`reload/infinite.rs`). The game's own unlimited ammunition only makes the reload free: each shot still empties the magazine, and the game's reload, which the stop above refuses, would refill it ([weapon-ammo-and-reload.md, "Unlimited ammunition"](../../engine/gameplay/weapon-ammo-and-reload.md#unlimited-ammunition)). Instead, while a magazine is in a gun reloaded by hand:
+
+- each shot puts its round back at once, at the per-shot seam, so the magazine is full again before the gun's next ammunition check and a pistol's slide never locks back;
+- each input tick tops up a magazine that came in short, before the chamber partition reads it, so a gun taken from a character, whose magazine can be empty, is adopted full with a round chambered and fires at once.
+
+The chamber is left alone: a bolt or a pump is still worked after every shot, and an action that is open or empty is still worked to chamber a round. The magazine can still be ejected or pulled, the pouch still gives a magazine while it is out, and whatever magazine seats, from the pouch or the world, is full from then on. A magazine dropped while the ammunition is unlimited carries no rounds of its own into the world: it is filled when it seats, and none of the rounds the unlimited ammunition made reach a later finite load through it. It also ages out of the world store as an empty magazine does. A launcher of one round is loaded again after each shot.
+
+Whether the ammunition is unlimited is the game's rule read for the local player (`engine::unlimited`): [`Character::HasUnlimitedAmmo`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-HasUnlimitedAmmo) of the player, which follows the game's unlimited-ammunition option, or the weapon's tuning's [`m_unlimited_ammo`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponTuning##field-m_unlimited_ammo). The weapon's own query reads the weapon's user, which for a gun taken from another character or one only armed in a hand need not be the player, and answers true for a user that is not the player. The same rule decides whether the pouch has a round to give and whether a seat or a shell draws on the reserve, so it holds for both hands, a gun in each hand, the game's pistol pair and the separate pistols (each filled to its own half magazine), the launchers, and magazine pulls and inserts alike.
+
 ## Eject
 
 A tap of the semantic `reload` action (the off-hand's lower face button on foot, in the default layout) ejects the magazine of the dominant hand's gun, or of the other hand's while the dominant hand holds no gun. The same button held is the game's holster, so only a press released within `RELOAD.tap_s` ejects. With `flick_eject` (off by default, since the button already ejects and a fast turn of the gun hand in play reads as a flick too easily), a gun hand turning faster than `RELOAD.flick_speed_dps` ejects that gun's magazine, at most once per `RELOAD.flick_cooldown_s`; the speed is the change in the hand's orientation between two input ticks (`eject.rs`).
@@ -213,4 +224,16 @@ None of this has been run in the headset. In particular:
 - that skipping the gun's pump and bolt clips on a hand-worked cycle loses no sound worth keeping;
 - the spring time, the bolt's lift and radius, and the handle's grab radius for a part held back;
 - that a rocket part shown on an empty launcher stays shown while it is carried, and that the rocket and the Hydra's pod are modelled with their part frame aligned with the gun's, as the UPU-210's cartridge is, so that the table's insertion axis is their own;
-- the launcher capture radius and angle.
+- the launcher capture radius and angle;
+- that a round put back at the per-shot seam holds against the native debit of a gun that counts a burst, which can land after the seam (the input tick's top-up then fills the magazine on the next tick).
+
+## In the headset: unlimited ammunition
+
+With the director's unlimited ammunition on:
+
+1. Fire a rifle for a whole magazine and more: the count stays full, the gun never runs dry, and no reload is needed. Fire a pistol the same way: the slide never locks back.
+2. Snatch a rifle from a character and fire it at once: it fires without a reload or a rack.
+3. Eject or pull the magazine: the gun reads its chamber alone, the pouch offers a magazine, and the seated magazine is full. Pick the dropped magazine up and seat it: full as well.
+4. Hold a gun in each hand, then the game's pistol pair, then separate pistols, and fire each well past a magazine; repeat with the UPU-210 and a rocket launcher, which load again after every shot.
+5. Fire the bolt rifle and the pump shotgun: each still needs its bolt or pump worked after every shot.
+6. Turn the unlimited ammunition off: the magazines run down again and the pouch draws on the reserve.
