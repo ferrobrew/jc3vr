@@ -16,14 +16,6 @@ pub struct ProceduralBodyConfig {
     /// How long a region takes to hand back to the animation, seconds; shorter, since the game's
     /// authored motion (a vehicle entry, a climb, a fall) is under way when it does.
     pub blend_out_s: f32,
-    /// The lowest the hips go before the spine takes the rest of a crouch, as a share of their
-    /// standing height.
-    pub min_hips_height: f32,
-    /// How far the player's head may drop below the height they are seen to stand at before the
-    /// hips follow it down, metres: a standing player's bobs and the runtime's floor error.
-    pub crouch_deadband_m: f32,
-    /// How far the hips turn toward the player's torso, at most, degrees.
-    pub pelvis_turn_limit_deg: f32,
     /// How far the chest turns toward the player's torso, at most, degrees.
     pub chest_turn_limit_deg: f32,
     /// How far the spine leans from upright, at most, degrees.
@@ -32,37 +24,6 @@ pub struct ProceduralBodyConfig {
     /// owns (the hips, waist, chest, shoulders, and legs), so the solve after the gate cannot move
     /// them.
     pub neutralize_targets: bool,
-    /// Hold the feet in the world, stepping when the body moves or turns away from them, instead
-    /// of leaving them where the animation puts them.
-    pub plant_feet: bool,
-    /// The stride at the hips' lowest, as a share of the upright walk's.
-    pub crouch_stride_share: f32,
-    /// The lift of a step at the hips' lowest, as a share of the upright walk's.
-    pub crouch_lift_share: f32,
-    /// The least share of a cycle each foot spends on the ground at the hips' lowest.
-    pub crouch_duty: f32,
-    /// Accepted for saved-key compatibility; production does not infer knee contact.
-    pub kneel: bool,
-    /// How long the kneel takes to ease in or out, seconds.
-    pub kneel_blend_s: f32,
-    /// Accepted for saved-key compatibility; production does not infer seated ground contact.
-    pub sit: bool,
-    /// How long the sit takes to ease in or out, seconds.
-    pub sit_blend_s: f32,
-    /// How long the head stays low and still before the body sits, seconds.
-    pub sit_after_s: f32,
-    /// Find the ground under each foothold with a scene ray, so the feet stand on slopes and
-    /// stairs, instead of taking the root's height.
-    pub ground_casts: bool,
-    /// How far above the root a foothold's ground is looked for, metres: the highest step up.
-    pub max_step_up_m: f32,
-    /// How far below the root a foothold's ground is looked for, metres: the lowest step down.
-    pub max_step_down_m: f32,
-    /// How far a foot tilts to the slope it stands on, at most, degrees.
-    pub ankle_tilt_limit_deg: f32,
-    /// How quickly the hips drop for a foot the legs cannot otherwise reach, seconds: the time
-    /// constant of the drop's follower (it rises back at a third of the pace).
-    pub reach_drop_s: f32,
     /// The chest capsule's radius, metres.
     pub chest_radius_m: f32,
     /// The abdomen capsule's radius, metres.
@@ -85,32 +46,6 @@ pub struct ProceduralBodyConfig {
     pub clavicle_reach_start: f32,
     /// How quickly the clavicles follow the hands, seconds: the time constant of their follower.
     pub clavicle_follow_s: f32,
-    /// The hip-to-ankle height while rising, as a share of the standing leg's.
-    pub air_tuck: f32,
-    /// The hip-to-ankle height while falling fast, as a share of the standing leg's.
-    pub air_hang: f32,
-    /// The falling speed at which the legs are fully let down, metres per second.
-    pub air_fall_speed_mps: f32,
-    /// How far the toes point down with the legs let down, degrees.
-    pub air_toe_drop_deg: f32,
-    /// How long before touching down the legs reach fully for the ground, seconds; they start
-    /// reaching twice as long before.
-    pub landing_reach_s: f32,
-    /// Dip the hips on landing from a jump or a short fall, by the speed of the fall.
-    pub landing_dip: bool,
-    /// How deep the landing dip goes per metre per second of falling speed past
-    /// `landing_dip_min_speed_mps`, metres.
-    pub landing_dip_per_mps: f32,
-    /// The deepest landing dip, metres.
-    pub landing_dip_max_m: f32,
-    /// The falling speed below which a landing does not dip, metres per second.
-    pub landing_dip_min_speed_mps: f32,
-    /// How long after landing the dip is deepest, seconds; it recovers over a few times that.
-    pub landing_dip_s: f32,
-    /// How far the hanging legs swing forward at a full brake of the parachute's handles, degrees.
-    pub parachute_flare_deg: f32,
-    /// How quickly the legs follow the brake, seconds: the smoothing time of their follower.
-    pub parachute_flare_s: f32,
     /// How long a hit reaction (a stumble or a knock-back) holds the body on the animation after
     /// its act, seconds: the game keeps no state for the reaction's length.
     pub hit_reaction_hold_s: f32,
@@ -122,26 +57,9 @@ impl ProceduralBodyConfig {
             mode: ProceduralMode::Full,
             blend_s: 0.35,
             blend_out_s: 0.2,
-            min_hips_height: 0.5,
-            crouch_deadband_m: 0.04,
-            pelvis_turn_limit_deg: 35.0,
             chest_turn_limit_deg: 70.0,
             lean_limit_deg: 60.0,
             neutralize_targets: true,
-            plant_feet: true,
-            crouch_stride_share: 0.55,
-            crouch_lift_share: 0.6,
-            crouch_duty: 0.7,
-            kneel: true,
-            kneel_blend_s: 0.35,
-            sit: true,
-            sit_blend_s: 0.5,
-            sit_after_s: 0.8,
-            ground_casts: true,
-            max_step_up_m: 0.5,
-            max_step_down_m: 0.6,
-            ankle_tilt_limit_deg: 25.0,
-            reach_drop_s: 0.05,
             chest_radius_m: 0.14,
             abdomen_radius_m: 0.13,
             hand_margin_m: 0.03,
@@ -152,18 +70,6 @@ impl ProceduralBodyConfig {
             clavicle_protraction_deg: 25.0,
             clavicle_reach_start: 0.8,
             clavicle_follow_s: 0.1,
-            air_tuck: 0.72,
-            air_hang: 0.94,
-            air_fall_speed_mps: 4.0,
-            air_toe_drop_deg: 20.0,
-            landing_reach_s: 0.25,
-            landing_dip: true,
-            landing_dip_per_mps: 0.02,
-            landing_dip_max_m: 0.15,
-            landing_dip_min_speed_mps: 1.5,
-            landing_dip_s: 0.1,
-            parachute_flare_deg: 40.0,
-            parachute_flare_s: 0.25,
             hit_reaction_hold_s: 1.2,
         }
     }
@@ -173,14 +79,6 @@ impl ProceduralBodyConfig {
         let checks = [
             ("blend_s", self.blend_s, 0.0, 10.0),
             ("blend_out_s", self.blend_out_s, 0.0, 10.0),
-            ("min_hips_height", self.min_hips_height, 0.1, 1.0),
-            ("crouch_deadband_m", self.crouch_deadband_m, 0.0, 0.2),
-            (
-                "pelvis_turn_limit_deg",
-                self.pelvis_turn_limit_deg,
-                0.0,
-                180.0,
-            ),
             (
                 "chest_turn_limit_deg",
                 self.chest_turn_limit_deg,
@@ -188,16 +86,6 @@ impl ProceduralBodyConfig {
                 180.0,
             ),
             ("lean_limit_deg", self.lean_limit_deg, 0.0, 90.0),
-            ("crouch_stride_share", self.crouch_stride_share, 0.1, 1.0),
-            ("crouch_lift_share", self.crouch_lift_share, 0.0, 1.0),
-            ("crouch_duty", self.crouch_duty, 0.2, 0.9),
-            ("kneel_blend_s", self.kneel_blend_s, 0.0, 3.0),
-            ("sit_blend_s", self.sit_blend_s, 0.0, 3.0),
-            ("sit_after_s", self.sit_after_s, 0.0, 10.0),
-            ("max_step_up_m", self.max_step_up_m, 0.0, 2.0),
-            ("max_step_down_m", self.max_step_down_m, 0.0, 2.0),
-            ("ankle_tilt_limit_deg", self.ankle_tilt_limit_deg, 0.0, 60.0),
-            ("reach_drop_s", self.reach_drop_s, 0.0, 2.0),
             ("chest_radius_m", self.chest_radius_m, 0.0, 0.4),
             ("abdomen_radius_m", self.abdomen_radius_m, 0.0, 0.4),
             ("hand_margin_m", self.hand_margin_m, 0.0, 0.2),
@@ -222,23 +110,7 @@ impl ProceduralBodyConfig {
             ),
             ("clavicle_reach_start", self.clavicle_reach_start, 0.3, 0.99),
             ("clavicle_follow_s", self.clavicle_follow_s, 0.0, 1.0),
-            ("air_tuck", self.air_tuck, 0.4, 1.0),
-            ("air_hang", self.air_hang, 0.4, 1.0),
-            ("air_fall_speed_mps", self.air_fall_speed_mps, 0.1, 50.0),
-            ("air_toe_drop_deg", self.air_toe_drop_deg, 0.0, 60.0),
-            ("landing_reach_s", self.landing_reach_s, 0.02, 1.0),
-            ("landing_dip_per_mps", self.landing_dip_per_mps, 0.0, 0.2),
-            ("landing_dip_max_m", self.landing_dip_max_m, 0.0, 0.5),
-            (
-                "landing_dip_min_speed_mps",
-                self.landing_dip_min_speed_mps,
-                0.0,
-                20.0,
-            ),
-            ("landing_dip_s", self.landing_dip_s, 0.02, 1.0),
             ("hit_reaction_hold_s", self.hit_reaction_hold_s, 0.0, 5.0),
-            ("parachute_flare_deg", self.parachute_flare_deg, 0.0, 80.0),
-            ("parachute_flare_s", self.parachute_flare_s, 0.0, 2.0),
         ];
         for (name, value, min, max) in checks {
             if !(min..=max).contains(&value) {
@@ -263,8 +135,8 @@ pub enum ProceduralMode {
     /// Nothing: the game's animation and the mod's IK targets pose the body as before.
     #[default]
     Off,
-    /// Build the body under the player's head while Rico is on foot on the ground, standing and
-    /// moving. Saved files from before the moving body name it `Body`.
+    /// Pose the torso from the player's head and hands on the animation's hips, wherever the
+    /// hand-over table gives the torso to the player. Saved files from before name it `Body`.
     #[serde(alias = "Body")]
     Full,
 }

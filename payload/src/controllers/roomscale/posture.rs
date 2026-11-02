@@ -1,6 +1,6 @@
 //! The player's posture and the head height it implies. Pure.
 //!
-//! The posture decides where the eyes sit and whether the body chases the head:
+//! The posture decides where the eyes sit and what the body rig measures the head against:
 //!
 //! - seated: the seated eye reference ([`crate::controllers::roomscale::seated`]) maps to the
 //!   character's standing eye height, and vertical travel from it scales by the height ratio; the

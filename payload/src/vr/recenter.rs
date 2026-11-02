@@ -22,10 +22,11 @@ use crate::{
 /// its position and yaw only (the cockpit model). The frame loop consumes the baseline when
 /// mapping per-eye poses (see [`crate::vr::frame`]). No-op until a frame has located a head pose.
 ///
-/// While the rig's chase keeps the body on the physical head, only the yaw and the height are
-/// re-based ([`crate::controllers::roomscale::manual_recenter_kind`]): the chase already keeps the
-/// position converged, and a position re-base could put the body through a wall the chase could
-/// not cross. The seat transitions ask for their own re-base through [`request_seat_recenter`].
+/// Out of a seat, only the yaw and the height are re-based
+/// ([`crate::controllers::roomscale::manual_recenter_kind`]), and the body rig then snaps the pelvis
+/// under the neck by re-basing the cockpit shift ([`crate::controllers::body::rig::root::on_recenter`]):
+/// the view moves to the body, so the recenter never puts the body through a wall. The seat
+/// transitions ask for their own re-base through [`request_seat_recenter`].
 ///
 /// The re-base runs at the start of the next frame ([`auto_recenter_tick`]), like
 /// [`request_recenter`]. It needs the runtime lock, which a frame holds while it waits on other
@@ -147,7 +148,6 @@ fn rebased(kind: RecenterKind, cause: RecenterCause, turn: glam::Quat) {
     // The head's forward becomes the body's: any turn of the body under the view is spent, and
     // the torso estimate turns with the frame.
     crate::headpose::xr::on_recenter();
-    crate::controllers::body::rig::on_recenter(turn);
     RECENTERS.fetch_add(1, Ordering::Relaxed);
 }
 
@@ -230,7 +230,6 @@ fn banked(yaw: f32, turn: glam::Quat) {
         RecenterCause::FollowBank,
     );
     crate::headpose::xr::bank(yaw);
-    crate::controllers::body::rig::on_bank(turn);
 }
 
 /// The recenters done, for [`recenter_count`].

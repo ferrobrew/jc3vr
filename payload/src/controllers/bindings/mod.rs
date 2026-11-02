@@ -87,6 +87,7 @@ use crate::{
             trigger_ownership::{Owner as TriggerOwner, RawTrigger, TriggerOwnership},
             yank::{HandLine, LineYank, Yank},
         },
+        body::rig::grounded::add_step_walk,
         clock::TimeScale,
         config::LocomotionDirection,
         frame::{self, Button, ControllerFrame, Hand},
@@ -769,6 +770,10 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             step.grapple_held,
             reserve_pitch,
         );
+        // A committed step walks Rico through the game's animation; the drive sets his speed.
+        if config.body.rig.steps.enabled {
+            add_step_walk(&mut step.desired, config.body.rig.steps.walk_stick);
+        }
     } else {
         weapons::hold::tick::publish_fire([false; 2]);
         weapons::wheel::pause();

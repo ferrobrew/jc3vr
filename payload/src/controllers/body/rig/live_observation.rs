@@ -20,7 +20,6 @@ use crate::{
                 self, CompletionSnapshot, CompletionSnapshotAvailability, CompletionToken,
                 CompletionUnavailable, FrameSourceSnapshot, MovementCompletion,
             },
-            runtime,
         },
         frame::{ControllerFrame, Pose, TrackedPose},
         roomscale::teleport,
@@ -292,13 +291,11 @@ pub(crate) fn publish_tracking(
     located: Option<LocatedTracking>,
     controllers: Option<ControllerFrame>,
 ) {
-    runtime::frame_tick(make_raw_packet(located, controllers.clone()).ok());
     SLOT.lock().publish_tracking(located, controllers);
 }
 
 /// Clear tracking before acquisition, including every early return and locate failure.
 pub(crate) fn tracking_unavailable() {
-    runtime::frame_tick(None);
     SLOT.lock().raw = Err(Unavailable::NoLiveTracking);
 }
 
@@ -644,7 +641,7 @@ fn read_completion(
     };
     let request_valid = completion.ledger.request.is_none_or(|request| {
         request.movement.task.is_finite()
-            && request.movement.chase.is_finite()
+            && request.movement.drive.is_finite()
             && request.credited.is_finite()
     });
     if completion.sequence == 0

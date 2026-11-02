@@ -48,12 +48,12 @@ use crate::{
         body::{
             self, BodyDimensions,
             rig::{
-                self,
                 collision::probe::{self, ProbeResult},
                 root::{self as rig_root, FrameSourceSnapshot, RootStatus, capsule_enabled},
             },
         },
         config::{Posture, RoomscaleConfig},
+        frame as controllers_frame, locomotion,
         roomscale::{
             crouch::{CROUCH_EXIT_DROP_M, CrouchTracker},
             fade::{FADE_TIMING, FadeSource},
@@ -113,8 +113,11 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let player = body::player();
     let now = Instant::now();
     let in_gameplay = hooks::in_gameplay();
-    let torso_yaw = rig::estimate().map(|e| e.yaw);
     let on_foot = headpose::sim::mode() == headpose::sim::HeadMode::OnFoot;
+    let moving = {
+        let stick = locomotion::status();
+        stick.fresh(now) && stick.stick.length() > MOVING_STICK
+    };
 
     let mut frame = FRAME.lock();
     let dt = frame
@@ -194,6 +197,18 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
         },
         |h| h.cockpit_y,
     );
+    // The rig's room frame: the cockpit frame with the floor at zero, in the player's metres. The
+    // eyes' height is over the STAGE floor standing, the seated reference's travel over the
+    // standing eye height seated, and the travel from the recenter's otherwise.
+    let eye_height = match (posture, stage.head_height, seated_reference) {
+        (EffectivePosture::Standing, Some(height), _) => height,
+        (EffectivePosture::Seated, Some(height), Some(reference)) => {
+            player.eye_height + height - reference.height_m
+        }
+        _ => player.eye_height + inputs.cockpit.y,
+    };
+    let lift = eye_height - inputs.cockpit.y;
+    let hands = room_hands(lift);
     let root = rig_root::frame(&rig_root::FrameInputs {
         raw: Vec3::new(inputs.cockpit.x, vertical, inputs.cockpit.z),
         head: inputs.orientation,
@@ -201,10 +216,12 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
         world_scale: inputs.world_scale,
         posture,
         seat: frame.seat.phase(),
-        on_foot,
-        floor_jumps: stage.floor_jumps,
+        eyes: Vec3::new(inputs.cockpit.x, eye_height, inputs.cockpit.z),
+        floor: -lift,
+        hands,
+        moving,
+        dimensions: player,
         dt,
-        torso_yaw,
         config: rig,
     });
     let (mut prev, mut cur) = (root.prev, root.cur);
@@ -215,6 +232,20 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
         (-vertical * inputs.world_scale).max(0.0)
     } else {
         0.0
+    };
+    // Standing on the ground, a crouch is the head's drop that no bend at the waist explains, so a
+    // look at the floor or a lean over a table does not lower the capsule.
+    let eye_drop_m = match (posture, rig_crouch()) {
+        (EffectivePosture::Standing, Some(crouch_m)) => {
+            let ratio = BodyDimensions::CHARACTER_ESTIMATE.eye_height / player.eye_height;
+            let drop = crouch_m * ratio * inputs.world_scale;
+            if drop.is_finite() {
+                drop.max(0.0)
+            } else {
+                eye_drop_m
+            }
+        }
+        _ => eye_drop_m,
     };
     let crouched = frame
         .crouch
@@ -260,7 +291,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     }
 
     let seat = frame.seat.phase();
-    // Added last, so the posture, the seated reference, the crouch, and the chase never see it.
+    // Added last, so the posture, the seated reference, the crouch, and the rig never see it.
     // A driving state missing from the seat tables reads as out, so only a transition holds the
     // correction back.
     let driving_view = driving_view::advance(
@@ -304,6 +335,30 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     }
 }
 
+/// The crouch the grounded rig measured on this frame, player metres, while Rico is grounded.
+fn rig_crouch() -> Option<f32> {
+    rig_root::status()
+        .frame
+        .rig
+        .map(|rig| rig.output.solve.crouch_m)
+}
+
+/// The tracked grips in the rig's room frame: the cockpit grips lifted by `lift`, the room height
+/// of the cockpit's origin.
+fn room_hands(lift: f32) -> [Option<Vec3>; 2] {
+    controllers_frame::with_latest(|frame| {
+        frame.hands.each_ref().map(|hand| {
+            (frame.focused && hand.active && hand.grip.is_tracked() && hand.grip.is_valid())
+                .then(|| hand.grip.pose.position + Vec3::Y * lift)
+                .filter(|p| p.is_finite())
+        })
+    })
+    .unwrap_or([None, None])
+}
+
+/// The move stick past this deflection moves the body, for the yaw's deadzone.
+const MOVING_STICK: f32 = 0.2;
+
 /// Re-base the cockpit shift after the recenter baseline was re-based
 /// ([`crate::controllers::body::rig::root::on_recenter`]). Called by the recenter at the top of the
 /// frame ([`crate::vr::auto_recenter_tick`]).
@@ -317,7 +372,7 @@ pub fn on_recenter(kind: RecenterKind, turn: Quat, cause: RecenterCause) {
     let setting = Config::lock_query(|c| c.controllers.roomscale.posture);
     let stage = vr::stage::stage();
     let player = body::player();
-    rig_root::on_recenter(kind, turn);
+    rig_root::on_recenter(kind, turn, cause);
     if cause != RecenterCause::Manual {
         return;
     }
@@ -354,21 +409,20 @@ fn classifier_input(stage: &StageInfo, player: &BodyDimensions) -> ClassifierInp
 }
 
 /// What a recenter outside a seat transition (the F7 key, the debug UI's button, and the
-/// gameplay-resume recenter) re-bases: yaw and height while the body follows the head on foot, and
-/// the full re-base otherwise ([`recenter_kind`]).
+/// gameplay-resume recenter) re-bases: yaw and height out of a seat, where the body rig then snaps
+/// the pelvis under the neck by re-basing the cockpit shift, and the full re-base otherwise
+/// ([`recenter_kind`]).
 pub fn manual_recenter_kind() -> RecenterKind {
-    let chase = Config::lock_query(|c| c.controllers.body.rig.chase.enabled);
     let frame = frame_shared().filter(|f| f.fresh(Instant::now()));
-    recenter_kind(chase, frame.map(|f| f.seat))
+    recenter_kind(frame.map(|f| f.seat))
 }
 
-/// The recenter for a chase toggle and the latest frame's seat phase: the chase is active out of a
-/// seat in either posture, where it keeps the body under the head, so only the yaw and the height
-/// need re-basing. With the chase off nothing else brings the body back under the head, and without
-/// a recent frame nothing is known: the full re-base.
-pub fn recenter_kind(chase_enabled: bool, seat: Option<SeatPhase>) -> RecenterKind {
+/// The recenter for the latest frame's seat phase: out of a seat, only the yaw and the height need
+/// re-basing, since the rig's snap puts the body under the head; in a seat, or without a recent
+/// frame where nothing is known, the full re-base.
+pub fn recenter_kind(seat: Option<SeatPhase>) -> RecenterKind {
     match seat {
-        Some(SeatPhase::Out) if chase_enabled => RecenterKind::YawAndHeight,
+        Some(SeatPhase::Out) => RecenterKind::YawAndHeight,
         _ => RecenterKind::Full,
     }
 }
@@ -416,7 +470,7 @@ pub struct RoomscaleStatus {
     /// Whether the frame half ran recently (a VR frame is rendering).
     pub active: bool,
     pub frame: FrameStatus,
-    /// The rig's root: the owner, the chase, the shift, the probe, and the capsule.
+    /// The rig's root: the owner, the step drive, the shift, the probe, and the capsule.
     pub root: RootStatus,
     pub fade: fade::FadeStatus,
     /// Teleports seen, and how many came from the distance test.
@@ -592,17 +646,18 @@ mod tests {
 
     #[test]
     fn a_recenter_on_foot_keeps_the_position() {
-        let out = Some(SeatPhase::Out);
-        assert_eq!(recenter_kind(true, out), RecenterKind::YawAndHeight);
-        assert_eq!(recenter_kind(false, out), RecenterKind::Full);
+        assert_eq!(
+            recenter_kind(Some(SeatPhase::Out)),
+            RecenterKind::YawAndHeight
+        );
         for seat in [
             SeatPhase::Entering,
             SeatPhase::Locked,
             SeatPhase::Shuffle,
             SeatPhase::Exiting,
         ] {
-            assert_eq!(recenter_kind(true, Some(seat)), RecenterKind::Full);
+            assert_eq!(recenter_kind(Some(seat)), RecenterKind::Full);
         }
-        assert_eq!(recenter_kind(true, None), RecenterKind::Full);
+        assert_eq!(recenter_kind(None), RecenterKind::Full);
     }
 }

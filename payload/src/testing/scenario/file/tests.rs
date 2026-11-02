@@ -195,13 +195,13 @@ fn the_replay_options_and_an_absolute_recording_are_kept() {
 fn a_status_row_with_nothing_asked_must_read_ok() {
     let scenario = parse(
         &path(),
-        "recording = \"a.jc3trk\"\n[[expect]]\nstatus = \"STANCE\"\n",
+        "recording = \"a.jc3trk\"\n[[expect]]\nstatus = \"TWIST BONES\"\n",
     )
     .expect("the scenario reads");
     assert_eq!(
         scenario.expectations[0].probe,
         Probe::Status {
-            label: "STANCE",
+            label: "TWIST BONES",
             health: Some(Health::Ok),
             detail: None,
         }
@@ -241,7 +241,7 @@ fn malformed_expectations_name_their_problem() {
         Problem::UnknownStatusRow("NOPE".to_owned())
     );
     assert_eq!(
-        problem(&with("status = \"STANCE\"\nhealth = \"fine\"")),
+        problem(&with("status = \"TWIST BONES\"\nhealth = \"fine\"")),
         Problem::UnknownHealth("fine".to_owned())
     );
     assert_eq!(

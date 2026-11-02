@@ -1,12 +1,12 @@
-//! The root: who moves the character's root each simulation tick, the chase that keeps it under the
-//! player's head, and the cockpit shift that keeps the camera on the head while it does
+//! The root: who moves the character's root each simulation tick, the step drive that keeps it
+//! under the player's head, and the cockpit shift that keeps the camera on the head while it does
 //! (`docs/mod/body/rig.md`).
 //!
 //! - [`owner`]: the one owner of the root per tick;
-//! - [`chase`]: the gap to the ground point under the upright eyes and the velocity that closes it;
-//! - [`ledger`]: what each step asked for and how much of the completed movement was the chase's;
-//! - [`shift`]: the cockpit shift that takes the credited chase back out of the view;
-//! - [`pushback`]: holding the view at a wall the chase cannot pass;
+//! - [`drive`]: the step drive's gap between the frame half and the ticks, and the warp test;
+//! - [`ledger`]: what each step asked for and how much of the completed movement was the drive's;
+//! - [`shift`]: the cockpit shift that takes the credited movement back out of the view;
+//! - [`pushback`]: holding the view at a wall the body cannot pass;
 //! - [`trace`]: each tick's move against what the previous tick asked for, for the recorder and the
 //!   `rig: the root jumped` log.
 //!
@@ -18,7 +18,7 @@
 //! - keeps the teleport and warp bookkeeping (a teleport clears the ledger and forgets the probe);
 //! - replaces the clip's velocity with the stick's ([`after_task`]) and adds the palms' push
 //!   ([`physical_hands::push_body`]), which together are the task's movement;
-//! - picks the root's owner ([`owner::select`]), and while the player owns it adds the chase
+//! - picks the root's owner ([`owner::select`]), and while the player owns it adds the step drive's
 //!   velocity through the engine's world-velocity accessors (the proxy's wanted velocity is
 //!   character-local) and submits the split to the ledger;
 //! - steps the head-through-geometry probe, since scene queries run against the live physics world;
@@ -31,11 +31,12 @@
 //!
 //! The pose-finalization entry completes the tick's request against the root's displacement
 //! ([`complete_movement`]). The frame half ([`frame`]), called once per rendered frame by the pose
-//! composition, folds the credited chase into the cockpit shift, measures the gap and the lean,
-//! slides the view back at an obstruction, and publishes the gap for the next ticks.
+//! composition, folds the credited movement into the cockpit shift, advances the grounded rig
+//! ([`crate::controllers::body::rig::grounded`]), slides the view back at an obstruction, and
+//! publishes the step drive's gap for the next ticks.
 
-pub mod chase;
 mod completion;
+pub mod drive;
 pub mod ledger;
 pub mod owner;
 pub mod pushback;
@@ -74,24 +75,22 @@ use crate::{
     controllers::{
         body::{
             BodyDimensions,
-            procedural::{head::looks_level, state::animation_moves_body},
+            procedural::state::animation_moves_body,
             rig::{
                 collision::probe::{self, HeadProbe, TimedProbe},
                 config::RigConfig,
-                lean::{Lean, LeanShape, StandingHeight, pivot_height, seated_drop},
+                grounded::{self, GroundedFrame, GroundedInput},
                 root::{
-                    chase::{
-                        ChaseFrame, HeadVelocity, MeasureInput, Measurement, measure, to_cockpit,
-                    },
+                    drive::{StepFrame, to_cockpit, to_world},
                     ledger::{CompletedMovement, LedgerCounts, Movement, Requests},
                     owner::{OwnerInput, RootOwner},
                     pushback::{Pushback, PushbackInput, PushbackOutcome},
                     shift::{CockpitBasis, CockpitShift},
                     trace::{Jump, ProxyRead, RootTrace, Split, Support, TickInput, Tracer},
                 },
-                torso::head_heading,
             },
         },
+        clock::TimeScale,
         config::RoomscaleConfig,
         locomotion::after_task,
         physical_hands::{self, climb},
@@ -104,7 +103,7 @@ use crate::{
         },
     },
     headpose, hooks,
-    vr::RecenterKind,
+    vr::{RecenterCause, RecenterKind},
 };
 
 pub(crate) fn hook_library() -> HookLibrary {
@@ -124,14 +123,18 @@ pub struct FrameInputs {
     pub posture: EffectivePosture,
     /// The seat phase as of the previous frame.
     pub seat: SeatPhase,
-    /// Whether the character is on foot, so a level gaze measures the standing height.
-    pub on_foot: bool,
-    /// The runtime's count of floor jumps.
-    pub floor_jumps: u32,
+    /// The eyes in the room frame: the cockpit frame with its floor at zero, in the player's
+    /// metres.
+    pub eyes: Vec3,
+    /// The cockpit height of the room's floor.
+    pub floor: f32,
+    /// The tracked grips, room frame.
+    pub hands: [Option<Vec3>; 2],
+    /// Whether the stick moves the body.
+    pub moving: bool,
+    pub dimensions: BodyDimensions,
     /// Seconds since the last frame.
     pub dt: f32,
-    /// The torso's heading, cockpit frame, when the torso estimate has one; the head's otherwise.
-    pub torso_yaw: Option<f32>,
     pub config: RigConfig,
 }
 
@@ -144,15 +147,12 @@ pub struct FrameOutput {
     pub(crate) source: FrameSourceSnapshot,
 }
 
-/// The frame half: fold the credited chase into the cockpit shift, measure the gap and the lean,
-/// and publish them. Called once per rendered VR frame on the game thread, outside the world
-/// update, from the pose composition ([`crate::controllers::roomscale::compose_cockpit`]).
+/// The frame half: fold the credited movement into the cockpit shift, advance the grounded rig,
+/// hold the view at a wall, and publish the step drive's gap. Called once per rendered VR frame on
+/// the game thread, outside the world update, from the pose composition
+/// ([`crate::controllers::roomscale::compose_cockpit`]).
 pub fn frame(inputs: &FrameInputs) -> FrameOutput {
     let config = inputs.config;
-    let torso_yaw = inputs
-        .torso_yaw
-        .or_else(|| head_heading(inputs.head))
-        .unwrap_or(0.0);
     let epoch = teleport::epoch();
     let now = Instant::now();
     let basis = CockpitBasis {
@@ -164,58 +164,58 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
         frame.seen_epoch = epoch;
         let completed = clear_movement();
         frame.shift.synchronize(completed);
-        frame.head_velocity.reset();
         frame.pushback.end_episode();
         frame.shift.rebase_horizontal(inputs.raw);
         frame.status.teleport_rebases += 1;
+        grounded::forget();
     }
     let movement = SIM.lock().frame_movement(now, epoch);
     frame.shift.observe(&basis, movement.movement());
 
-    let pivot = pivot_height(inputs.raw, inputs.head);
-    let standing =
-        inputs.on_foot && inputs.posture == EffectivePosture::Standing && looks_level(inputs.head);
-    let standing_drop_m = frame
-        .standing
-        .observe(pivot, standing, inputs.dt, inputs.floor_jumps);
-    // A seated player's upright height is the seated eye reference, which the seated head height
-    // already follows, not the standing height.
-    let drop_m = match inputs.posture {
-        EffectivePosture::Standing => standing_drop_m,
-        EffectivePosture::Seated => seated_drop(pivot),
-    };
-    let mut input = MeasureInput {
-        raw: inputs.raw,
-        shift: frame.shift.current(),
-        observed: frame.shift.observed(),
+    let (owner, stopped) = owner_and_obstruction(now);
+    let shift = frame.shift.current();
+    let rig_input = GroundedInput {
+        eyes: inputs.eyes,
         head: inputs.head,
-        torso_yaw,
-        view: inputs.view,
-        world_scale: inputs.world_scale,
-        drop_m,
-        shape: LeanShape::for_posture(inputs.posture),
+        hands: inputs.hands,
+        root: Vec2::new(shift.x, shift.z),
+        floor: inputs.floor,
+        moving: inputs.moving,
+        sample_height: inputs.posture == EffectivePosture::Standing,
+        grounded: owner.is_some_and(RootOwner::drives),
+        dimensions: inputs.dimensions,
+        tuning: config.tuning(),
         dt: inputs.dt,
+        now,
     };
+    let mut rig = grounded::frame(&rig_input);
     let state = &mut *frame;
-    let mut measurement = measure(&input, &mut state.head_velocity, &config.lean);
-
-    // Out of a seat, the body walks to a head that is near; a head further off than the chase
-    // should cover is put back over the body.
-    let exited = state.last_seat == SeatPhase::Exiting && inputs.seat == SeatPhase::Out;
-    state.last_seat = inputs.seat;
-    if exited && measurement.gap_m() * inputs.world_scale >= EXIT_REBASE_M {
-        state.shift.rebase_horizontal(inputs.raw);
-        state.status.exit_rebases += 1;
-        input.shift = state.shift.current();
-        input.dt = 0.0;
-        measurement = measure(&input, &mut state.head_velocity, &config.lean);
+    if let Some(snap) = rig.and_then(|r| r.snap_to) {
+        state
+            .shift
+            .rebase_horizontal(Vec3::new(snap.x, 0.0, snap.y));
+        state.pushback.end_episode();
+        state.status.snaps += 1;
     }
 
-    // Where the chase cannot follow, the view is held at the obstruction.
-    let (owner, stopped) = owner_and_obstruction(now);
+    // Out of a seat, the body steps to a head that is near; a head further off than a step should
+    // cover is put back over the body.
+    let exited = state.last_seat == SeatPhase::Exiting && inputs.seat == SeatPhase::Out;
+    state.last_seat = inputs.seat;
+    let gap_m = rig.map_or(0.0, |r| r.output.gap.length() * inputs.world_scale);
+    if exited && gap_m >= EXIT_REBASE_M {
+        state.shift.rebase_horizontal(inputs.raw);
+        state.status.exit_rebases += 1;
+        grounded::request_snap();
+        rig = None;
+    }
+
+    // Where the drive cannot follow, the view is held at the obstruction.
+    let to_world = |v: Vec2| to_world(v, inputs.view, inputs.world_scale);
+    let demand = rig.map_or(Vec2::ZERO, |r| to_world(r.output.solve.step_demand));
     let pushback = state.pushback.step(
         &PushbackInput {
-            gap: measurement.frame.gap,
+            gap: demand,
             owner,
             stopped,
             dt: inputs.dt,
@@ -226,21 +226,23 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
         state
             .shift
             .slide_view(to_cockpit(pushback.push, inputs.view, inputs.world_scale));
-        input.shift = state.shift.current();
-        input.dt = 0.0;
-        measurement = measure(&input, &mut state.head_velocity, &config.lean);
     }
     fade::set_target(FadeSource::PushBack, pushback.fade);
 
-    state.published = Some((measurement.frame, now));
+    let drives = config.steps.enabled;
+    state.published = rig.filter(|_| drives).map(|r| {
+        (
+            StepFrame {
+                phase: r.output.phase,
+                gap: to_world(r.output.gap),
+                observed: state.shift.observed(),
+            },
+            now,
+        )
+    });
     state.status = FrameReadout {
         at: Some(now),
-        measurement,
-        torso_yaw,
-        standing_m: match inputs.posture {
-            EffectivePosture::Standing => state.standing.reference(),
-            EffectivePosture::Seated => 0.0,
-        },
+        rig,
         world_scale: inputs.world_scale,
         shift: state.shift.current(),
         pushback,
@@ -256,25 +258,24 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
     }
 }
 
-/// Re-base the cockpit shift after the recenter baseline was re-based: a full recenter makes the
-/// head the cockpit origin, so the shift is spent; a yaw-and-height recenter keeps the horizontal
-/// position and turns the cockpit frame by `turn` (new frame from old).
-pub fn on_recenter(kind: RecenterKind, turn: Quat) {
+/// Re-base the cockpit shift after the recenter baseline was re-based, for a recenter or a follow
+/// bank of `cause`: a full recenter makes the head the cockpit origin, so the shift is spent; a
+/// yaw-and-height re-base keeps the horizontal position and turns the cockpit frame by `turn` (new
+/// frame from old). A recenter of the player's or a seat's then snaps the pelvis under the neck on
+/// the next grounded frame ([`grounded::request_snap`]); a follow bank only turns the frame.
+pub fn on_recenter(kind: RecenterKind, turn: Quat, cause: RecenterCause) {
     let mut frame = FRAME.lock();
     let completed = clear_movement();
     frame.shift.synchronize(completed);
-    frame.head_velocity.reset();
     frame.pushback.end_episode();
     match kind {
         RecenterKind::Full => frame.shift.clear(),
         RecenterKind::YawAndHeight => frame.shift.rotate(turn),
     }
-}
-
-/// The lean the chase leaves alone on the latest frame, cockpit `(x, z)`, while the frame half
-/// runs.
-pub fn lean_allowance() -> Option<Vec2> {
-    fresh_readout().map(|r| r.measurement.lean.vector)
+    grounded::rotate(turn);
+    if cause != RecenterCause::FollowBank {
+        grounded::request_snap();
+    }
 }
 
 /// Complete the tick's request using the roots already read by the local pre-IK capture.
@@ -308,12 +309,8 @@ pub struct RootStatus {
 pub struct FrameReadout {
     /// When the frame half last ran.
     pub at: Option<Instant>,
-    pub measurement: Measurement,
-    /// The torso heading the target and the lean used, cockpit frame, radians.
-    pub torso_yaw: f32,
-    /// The upright height the lean's drop is measured from, metres over the cockpit's origin: the
-    /// standing height standing, and zero, the seated eye reference, seated.
-    pub standing_m: f32,
+    /// The grounded rig's frame, while Rico is grounded.
+    pub rig: Option<GroundedFrame>,
     pub world_scale: f32,
     /// The cockpit shift, cockpit frame, metres.
     pub shift: Vec3,
@@ -321,6 +318,8 @@ pub struct FrameReadout {
     pub teleport_rebases: u64,
     /// Seat exits that re-based a head too far from the body.
     pub exit_rebases: u64,
+    /// Recenters that snapped the pelvis under the neck.
+    pub snaps: u64,
     /// What the push-back did on the frame.
     pub pushback: PushbackOutcome,
     /// How far the push-back has slid the view in its current episode, metres.
@@ -336,14 +335,16 @@ impl FrameReadout {
             .is_some_and(|at| now.saturating_duration_since(at) < FRAME_GAP)
     }
 
-    /// How far the ground point under the upright eyes is from the root, world metres.
+    /// How far the neck is out over the pelvis, world metres.
     pub fn gap_m(&self) -> f32 {
-        self.measurement.gap_m() * self.world_scale
+        self.rig
+            .map_or(0.0, |r| r.output.solve.offset.length() * self.world_scale)
     }
 
-    /// How far it is outside the lean, world metres: what the chase still has to close.
+    /// The step demand: how far the neck is out past what a lean explains, world metres.
     pub fn residual_m(&self) -> f32 {
-        self.measurement.residual_m() * self.world_scale
+        self.rig
+            .map_or(0.0, |r| r.output.solve.demand_m() * self.world_scale)
     }
 }
 
@@ -354,10 +355,10 @@ pub struct SimStatus {
     pub at: Option<Instant>,
     /// Who owned the root on the last tick; `None` before the first.
     pub owner: Option<RootOwner>,
-    /// The gap left after the chase completed since the frame, world `(x, z)`, metres.
+    /// The gap left after the drive completed since the frame, world `(x, z)`, metres.
     pub effective_gap: Vec2,
-    /// The chase velocity added, world `(x, z)`, metres per second.
-    pub chase_velocity: Vec2,
+    /// The step drive's velocity added, world `(x, z)`, metres per second.
+    pub step_velocity: Vec2,
     /// The locomotion task's own horizontal velocity with the palms' push, world `(x, z)`.
     pub task_velocity: Vec2,
     /// How the ledger credited the completed steps.
@@ -427,52 +428,38 @@ fn try_sim_readout_from(sim: &Mutex<Sim>) -> Option<SimStatus> {
 /// frame half's measurement stops holding for the simulation half.
 const FRAME_GAP: Duration = Duration::from_millis(500);
 
-/// The gap at a seat exit past which the head is put back over the body instead of the chase
-/// walking the body to it, world metres.
+/// The gap at a seat exit past which the head is put back over the body instead of the body
+/// stepping to it, world metres.
 const EXIT_REBASE_M: f32 = 1.0;
+
+/// The fastest the drive and the task together may ask the proxy to move, world metres per second:
+/// a sanity bound, not a tuning.
+const MAX_WANTED_MPS: f32 = 12.0;
 
 struct FrameState {
     seen_epoch: u64,
     shift: CockpitShift,
-    head_velocity: HeadVelocity,
-    standing: StandingHeight,
     last_seat: SeatPhase,
     pushback: Pushback,
-    /// The latest measurement for the simulation half, and when it was taken.
-    published: Option<(ChaseFrame, Instant)>,
+    /// The latest step frame for the simulation half, and when it was taken.
+    published: Option<(StepFrame, Instant)>,
     status: FrameReadout,
 }
 
 static FRAME: Mutex<FrameState> = Mutex::new(FrameState {
     seen_epoch: 0,
     shift: CockpitShift::new(),
-    head_velocity: HeadVelocity::new(),
-    standing: StandingHeight::new(),
     last_seat: SeatPhase::Out,
     pushback: Pushback::new(),
     published: None,
     status: FrameReadout {
         at: None,
-        measurement: Measurement {
-            target: Vec2::ZERO,
-            lean: Lean {
-                drop_m: 0.0,
-                allowance_m: 0.0,
-                vector: Vec2::ZERO,
-            },
-            feet: Vec2::ZERO,
-            frame: ChaseFrame {
-                gap: Vec2::ZERO,
-                observed: Vec2::ZERO,
-                head_velocity: Vec2::ZERO,
-            },
-        },
-        torso_yaw: 0.0,
-        standing_m: 0.0,
+        rig: None,
         world_scale: 1.0,
         shift: Vec3::ZERO,
         teleport_rebases: 0,
         exit_rebases: 0,
+        snaps: 0,
         pushback: PushbackOutcome {
             push: Vec2::ZERO,
             threshold: None,
@@ -484,13 +471,8 @@ static FRAME: Mutex<FrameState> = Mutex::new(FrameState {
     },
 });
 
-fn fresh_readout() -> Option<FrameReadout> {
-    let readout = FRAME.lock().status;
-    readout.fresh(Instant::now()).then_some(readout)
-}
-
 /// Who owned the root on the latest on-foot tick, while the simulation half runs, and whether the
-/// ledger finds the chase obstructed.
+/// ledger finds the drive obstructed.
 fn owner_and_obstruction(now: Instant) -> (Option<RootOwner>, bool) {
     let sim = SIM.lock();
     let fresh = sim
@@ -504,8 +486,8 @@ fn owner_and_obstruction(now: Instant) -> (Option<RootOwner>, bool) {
     }
 }
 
-/// The latest frame's measurement for the simulation half, while it is fresh.
-fn published_chase(now: Instant) -> Option<ChaseFrame> {
+/// The latest frame's step for the simulation half, while it is fresh.
+fn published_step(now: Instant) -> Option<StepFrame> {
     FRAME
         .lock()
         .published
@@ -547,7 +529,7 @@ impl Sim {
                 at: None,
                 owner: None,
                 effective_gap: Vec2::ZERO,
-                chase_velocity: Vec2::ZERO,
+                step_velocity: Vec2::ZERO,
                 task_velocity: Vec2::ZERO,
                 ledger: LedgerCounts {
                     exact: 0,
@@ -598,7 +580,7 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
     let (config, rig) = Config::lock_query(|c| (c.controllers.roomscale, c.controllers.body.rig));
     let now = Instant::now();
     let shared = roomscale::frame_shared();
-    let chase_frame = published_chase(now);
+    let step_frame = published_step(now);
     let climbing = climb::climbing();
     let mut sim = SIM.lock();
     // A gap means the task stopped running (a vehicle, a swim, a fall), and the body may have moved
@@ -630,7 +612,7 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
     let teleported = teleport::epoch() != sim.seen_epoch;
     if let (Some(last), false) = (sim.last_position, teleported) {
         let speed = proxy.map_or(0.0, |p| unsafe { velocity(p) }.length());
-        if chase::is_warp((position - last).length(), speed, dt, chase::WARP_MIN_M) {
+        if drive::is_warp((position - last).length(), speed, dt, drive::WARP_MIN_M) {
             teleport::record_warp();
         }
     }
@@ -663,7 +645,7 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
 
     let authored = unsafe { animation_moves_body(character, now) };
     // The stick's velocity replaces the clip's root velocity first; the palms' push off what they
-    // press into then counts as the task's own movement, so it is added before the chase reads the
+    // press into then counts as the task's own movement, so it is added before the drive reads the
     // task's velocity.
     let task = horizontal(unsafe { wanted_velocity(character) });
     unsafe { after_task(character, dt) };
@@ -679,13 +661,11 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
         seat: shared.seat,
     });
     sim.status.owner = Some(owner);
-    match chase_frame.filter(|_| owner.chases()) {
-        Some(frame) => unsafe {
-            chase_tick(&mut sim, character, &frame, dt, owner, rig.chase.enabled)
-        },
+    match step_frame.filter(|_| owner.drives()) {
+        Some(frame) => unsafe { drive_tick(&mut sim, character, &frame, dt, owner, &rig) },
         None => {
             // The ledger records nothing for a tick the player did not move the root on, so a climb
-            // or an authored motion is never credited as chase.
+            // or an authored motion is never credited as a step.
             sim.clear_movement(CompletionUnavailable::Cleared);
             stand_down(&mut sim.status, owner);
         }
@@ -722,7 +702,7 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
             task,
             stick,
             palms,
-            chase: sim.status.chase_velocity,
+            chase: sim.status.step_velocity,
             wanted: unsafe { wanted_velocity(character) },
         },
         proxy: unsafe { read_proxy(character) },
@@ -812,44 +792,47 @@ fn log_jump(jump: &Jump, owner: RootOwner) {
     );
 }
 
-/// Zero the chase's readout for a tick it did not run on.
+/// Zero the step drive's readout for a tick it did not run on.
 fn stand_down(status: &mut SimStatus, owner: RootOwner) {
     status.owner = Some(owner);
-    status.chase_velocity = Vec2::ZERO;
+    status.step_velocity = Vec2::ZERO;
     status.effective_gap = Vec2::ZERO;
 }
 
-/// Add the chase velocity to the task's and submit the split.
-unsafe fn chase_tick(
+/// Add the step drive's velocity to the task's and submit the split. `dt` is the task's step, game
+/// seconds, and the velocity is the world's per game second. The drive closes the gap to the
+/// player's own neck, which moves in real time, so it is paced in real time and converted: in slow
+/// motion the body keeps up with the player's steps.
+unsafe fn drive_tick(
     sim: &mut Sim,
     character: &mut Character,
-    frame: &ChaseFrame,
+    frame: &StepFrame,
     dt: f32,
     owner: RootOwner,
-    chase_enabled: bool,
+    config: &RigConfig,
 ) {
     let completed = sim.movement.completed();
-    let chase = crate::controllers::body::rig::runtime::root_velocity(
-        Instant::now(),
-        dt,
-        Mat4::from(character.m_WorldMatrixT1),
-        chase_enabled,
-    );
+    let gap = frame.effective_gap(completed.current);
+    // SAFETY: the locomotion task runs while the game runs.
+    let time_scale = unsafe { TimeScale::current() };
+    let real = body_rig::drive_velocity(frame.phase, gap, time_scale.real_dt(dt), &config.step);
+    let step = (real / time_scale.get()).clamp_length_max(MAX_WANTED_MPS);
+    let step = if step.is_finite() { step } else { Vec2::ZERO };
     let mut wanted = Vector3 { data: [0.0; 3] };
     unsafe { character.GetWantedWorldVelocity(&mut wanted) };
     let [x, y, z] = wanted.data;
     let task = Vec2::new(x, z);
-    let movement = Movement::new(task, chase, dt);
-    if chase != Vec2::ZERO {
-        let sum = movement.velocity(dt);
+    let movement = Movement::new(task, step, dt);
+    if step != Vec2::ZERO {
+        let sum = movement.velocity(dt).clamp_length_max(MAX_WANTED_MPS);
         let world = Vector3 {
             data: [sum.x, y, sum.y],
         };
         unsafe { character.SetWantedWorldVelocity(&world) };
     }
     sim.movement.submit_owned(movement, owner);
-    sim.status.effective_gap = frame.effective_gap(completed.current);
-    sim.status.chase_velocity = chase;
+    sim.status.effective_gap = gap;
+    sim.status.step_velocity = step;
     sim.status.task_velocity = task;
 }
 

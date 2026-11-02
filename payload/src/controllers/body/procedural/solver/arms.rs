@@ -134,24 +134,6 @@ impl Side {
     }
 
     pub const BOTH: [Self; 2] = [Self::Left, Self::Right];
-
-    /// The other side.
-    #[cfg(test)]
-    pub const fn other(self) -> Self {
-        match self {
-            Self::Left => Self::Right,
-            Self::Right => Self::Left,
-        }
-    }
-
-    /// The side's sign along the body's right: -1 on the left, +1 on the right.
-    #[cfg(test)]
-    pub const fn sign(self) -> f32 {
-        match self {
-            Self::Left => -1.0,
-            Self::Right => 1.0,
-        }
-    }
 }
 
 /// The elbow hint for an arm of `length` (upper arm and forearm together) from `shoulder` to the

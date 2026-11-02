@@ -55,7 +55,8 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     };
     let mode = Config::lock_query(|c| c.controllers.body.procedural.mode);
     let body = published_status();
-    let weights = [body.weight, body.legs_weight];
+    // The legs are the animation's, so their twist bones are too.
+    let weights = [body.weight, 0.0];
     let mut status = TwistStatus {
         at: Some(Instant::now()),
         ..*STATUS.lock()

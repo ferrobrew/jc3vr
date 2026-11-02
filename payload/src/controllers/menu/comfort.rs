@@ -47,7 +47,7 @@ fn build() -> Page {
             .controllers
             .body
             .rig
-            .chase
+            .steps
             .enabled))
         .item(config_toggle!("FADE WHEN HEAD IS IN WALLS", |c| c
             .controllers

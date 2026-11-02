@@ -38,7 +38,7 @@ use parking_lot::Mutex;
 use crate::{
     config::Config,
     controllers::{
-        body::procedural::state::animation_moves_body,
+        body::{procedural::state::animation_moves_body, rig::grounded},
         locomotion::{accel::Rates, speeds::SpeedLog},
     },
     headpose,
@@ -94,7 +94,9 @@ pub fn status() -> LocomotionStatus {
 pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
     let config = Config::lock_query(|c| c.controllers.locomotion.stick);
     let now = Instant::now();
-    let stick = unsafe { stick_vector() };
+    // A committed step of the body rig walks the game's animation through the move stick; its
+    // speed is the rig's drive, so its share of the stick moves nothing here.
+    let stick = player_stick(unsafe { stick_vector() }, grounded::step_stick());
     let game_speed = unsafe { game_target_speed(character) };
     let root_speed = unsafe { root_speed(character) };
     let mut wanted = Vector3 { data: [0.0; 3] };
@@ -205,6 +207,17 @@ unsafe fn stick_vector() -> Vec2 {
         stick.clamp_length_max(1.0)
     } else {
         Vec2::ZERO
+    }
+}
+
+/// The player's own move stick: what the game reads less the walk the body rig added for a
+/// committed step.
+fn player_stick(read: Vec2, step: Vec2) -> Vec2 {
+    let stick = read - step;
+    if stick.length() < STILL_STICK || !stick.is_finite() {
+        Vec2::ZERO
+    } else {
+        stick.clamp_length_max(1.0)
     }
 }
 

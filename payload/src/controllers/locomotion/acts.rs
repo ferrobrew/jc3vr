@@ -3,9 +3,10 @@
 //! `Character::QueueAct` detour (`hooks::character::acts`).
 //!
 //! - The turn-in-place acts (the rotate-on-spot acts, their warp flavors, the continuous rotation
-//!   starts, the quarter and half turns, and the heavy weapon's aim-focus rotations) are dropped.
-//!   The body still turns: the orientation executor yaws it toward the torso's heading, which is a
-//!   rotation of the root and not an animation that steps the feet around.
+//!   starts, the quarter and half turns, and the heavy weapon's aim-focus rotations) are dropped
+//!   while the stick drives the body. The body still turns: the orientation executor yaws it toward
+//!   the body rig's heading. While Rico stands and the body rig follows the head, they pass, so a
+//!   body turn plays the game's own turn-in-place animation.
 //! - The turning run and walk starts are replaced by the straight start, the turning stops by the
 //!   straight stop, and the turning flicks (running and aiming) by the straight flick, so the
 //!   state machine still passes through its start, stop, and flick states (it needs to know Rico
@@ -39,7 +40,9 @@ use parking_lot::Mutex;
 
 use crate::{
     controllers::{
+        body::rig::grounded,
         config::LocomotionConfig,
+        locomotion::status as locomotion_status,
         mode::{Mode, OnFootVariant, current as current_mode},
     },
     headpose::{Source, source},
@@ -107,9 +110,10 @@ pub fn status() -> ActFilterStatus {
     STATE.lock().status
 }
 
-/// Decide what to do with the local player's act `id`. `locomotion` is the locomotion settings and
-/// `controllers_enabled` the controllers' master switch, read by the caller with the config lock it
-/// already takes.
+/// Decide what to do with the local player's act `id`. `locomotion` is the locomotion settings,
+/// `controllers_enabled` the controllers' master switch, and `turn_animation` whether a body turn
+/// while Rico stands may play the game's turn-in-place animation, read by the caller with the
+/// config lock it already takes.
 ///
 /// # Safety
 ///
@@ -119,6 +123,7 @@ pub(crate) unsafe fn filter(
     id: i32,
     locomotion: &LocomotionConfig,
     controllers_enabled: bool,
+    turn_animation: bool,
 ) -> ActDecision {
     if !locomotion.acts.enabled {
         return ActDecision::Pass;
@@ -135,6 +140,16 @@ pub(crate) unsafe fn filter(
         ActScope::StuntArea => unsafe { applies_in_stunt_area(character, controllers_enabled) },
     };
     if !applies {
+        return ActDecision::Pass;
+    }
+    // The body rig turns a standing Rico through the game's own turn-in-place: the view does not
+    // ride the body while it follows the head, so the clip's turn of the root is only the body's.
+    if scope == ActScope::OnFoot
+        && wanted == ActDecision::Drop
+        && turn_animation
+        && grounded::body_yaw().is_some()
+        && locomotion_status().standing_still()
+    {
         return ActDecision::Pass;
     }
     let mut state = STATE.lock();

@@ -5,9 +5,9 @@
 //! instant teleport, the deferred teleport's placement, the respawn after death, the load's start
 //! position, and a playlist commit. A post-call detour on it counts a teleport epoch that the
 //! roomscale consumers compare against the epoch they last saw. Writers that bypass the game world
-//! (a vehicle teleport carrying its seated driver, scripted warps) are caught by the chase loop's
-//! per-tick distance test instead ([`crate::controllers::body::rig::root::chase::is_warp`]), which counts
-//! into the same epoch.
+//! (a vehicle teleport carrying its seated driver, scripted warps) are caught by the root hook's
+//! per-tick distance test instead ([`crate::controllers::body::rig::root::drive::is_warp`]), which
+//! counts into the same epoch.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 

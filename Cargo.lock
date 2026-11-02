@@ -1091,6 +1091,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arc-swap",
+ "body-rig",
  "clipboard-win",
  "detours-macro",
  "directories",

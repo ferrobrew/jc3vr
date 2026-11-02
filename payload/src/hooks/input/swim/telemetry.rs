@@ -104,7 +104,6 @@ pub(crate) fn log_tick(look_x: f32) {
         core_out_y = rotate.map(|r| r.out.y),
         body_case = procedural.case.label(),
         torso_weight = procedural.weight,
-        legs_weight = procedural.legs_weight,
         hand_tiers = ?tiers.effective,
         hand_weights = ?tiers.weights,
         "swim: the heading"

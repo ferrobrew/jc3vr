@@ -1,44 +1,41 @@
-//! Who poses which part of the body: the hand-over table between the procedural body and the
-//! game's animation, and the springs that blend each region from one to the other. Pure.
+//! Who poses the torso: the hand-over table between the procedural body and the game's animation,
+//! and the spring that blends the torso from one to the other. Pure.
 //!
-//! The body is two regions: the legs (the pelvis and both legs) and the torso (the hips, the spine,
-//! the neck, the head, and the clavicles). The arms are the controllers' in every case, through the
-//! hand IK, and the head is the headset's, through the head override. [`classify`] reads the
-//! character's state and names the case, first match winning:
+//! The game's animation keeps the hips, the pelvis, and the legs in every case. The torso (the
+//! spine, the neck, the head, and the clavicles) is posed on the animation's hips where the table
+//! gives it to the player, the arms are the controllers' in every case, through the hand IK, and
+//! the head is the headset's, through the head override. [`classify`] reads the character's state
+//! and names the case, first match winning:
 //!
-//! | Case | Legs | Torso |
-//! | --- | --- | --- |
-//! | not in the headset, not in gameplay (menus, cutscenes) | animation | animation |
-//! | in a scripted sequence | animation | animation |
-//! | dead | animation, at once | animation, at once |
-//! | ragdoll | animation, at once | animation, at once |
-//! | getting up from a ragdoll | animation | animation |
-//! | seated and riding in a vehicle | animation | procedural on the seat's hips |
-//! | standing in a vehicle's stunt area (a roof, a deck) | animation (the stunt idle's balance) | procedural on the stunt idle's hips |
-//! | in or on a vehicle otherwise (entering, leaving, a mounted gun, a helicopter's hang, a stunt traversal) | animation | animation |
-//! | grapple traversal, hanging, stunt traversal, grapple struggle | animation | animation |
-//! | the grapple's ledge climb | animation | animation |
-//! | swimming | animation (the kick) | procedural on the swim's hips |
-//! | the wingsuit (the arms follow the player's) | animation | animation |
-//! | the parachute | procedural, hanging from the harness | procedural on the harness's hips |
-//! | a fall past the jump's grace | animation | animation |
-//! | a hit reaction (a stumble or a knock-back), for a hold after its act | animation | animation |
-//! | climbing with the hands | procedural, hanging in the air | procedural |
-//! | a jump, within the grace | procedural, hanging in the air | procedural |
-//! | an authored one-off (a locomotion one-off, a hard landing, a context action, a full-body pickup, cover) | animation | animation |
-//! | on foot without the movement task running | animation | animation |
-//! | on foot on the ground | procedural | procedural |
+//! | Case | Torso |
+//! | --- | --- |
+//! | not in the headset, not in gameplay (menus, cutscenes) | animation |
+//! | in a scripted sequence | animation |
+//! | dead | animation, at once |
+//! | ragdoll | animation, at once |
+//! | getting up from a ragdoll | animation |
+//! | seated and riding in a vehicle | procedural on the seat's hips |
+//! | standing in a vehicle's stunt area (a roof, a deck) | procedural on the stunt idle's hips |
+//! | in or on a vehicle otherwise (entering, leaving, a mounted gun, a helicopter's hang, a stunt traversal) | animation |
+//! | grapple traversal, hanging, stunt traversal, grapple struggle | animation |
+//! | the grapple's ledge climb | animation |
+//! | swimming | procedural on the swim's hips |
+//! | the wingsuit (the arms follow the player's) | animation |
+//! | the parachute | procedural on the harness's hips |
+//! | a fall past the jump's grace | animation |
+//! | a hit reaction (a stumble or a knock-back), for a hold after its act | animation |
+//! | climbing with the hands | procedural |
+//! | a jump, within the grace | procedural |
+//! | an authored one-off (a locomotion one-off, a hard landing, a context action, a full-body pickup, cover) | animation |
+//! | on foot without the movement task running | animation |
+//! | on foot on the ground | procedural |
 //!
-//! Where the torso is procedural over hips the animation keeps ([`Case::anchored`]), the solve
-//! keeps the clip's hips and moves the spine from there (`solver::anchored`) rather than building
-//! the body under the head.
-//!
-//! [`RegionBlend`] eases each region's weight toward its case's with a critically damped spring,
+//! [`TorsoBlend`] eases the torso's weight toward its case's with a critically damped spring,
 //! quicker toward the animation than back, and at once where the case says so.
 
 use crate::controllers::body::procedural::config::ProceduralBodyConfig;
 
-/// Why a region is posed the way it is: the case [`classify`] matched.
+/// Why the torso is posed the way it is: the case [`classify`] matched.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum Case {
     #[default]
@@ -58,7 +55,7 @@ pub enum Case {
     Traversal,
     LedgeClimb,
     Swimming,
-    /// In the wingsuit, or going into it. The arms follow the player's apart from the regions.
+    /// In the wingsuit, or going into it. The arms follow the player's apart from the torso.
     Wingsuit,
     Parachute,
     /// Falling past the jump's grace.
@@ -99,24 +96,18 @@ impl Case {
         }
     }
 
-    /// The weights the case asks for: the legs', then the torso's. In a jump and a hand climb the
-    /// legs are the procedural body's, hanging in the air. Seated, the torso is the procedural
-    /// body's, and the legs keep the seat's animation.
-    pub const fn targets(self) -> [f32; 2] {
+    /// The torso's weight the case asks for.
+    pub const fn target(self) -> f32 {
         match self {
-            Self::OnFoot | Self::Jump | Self::HandClimb | Self::Parachute => [1.0, 1.0],
-            Self::Seated | Self::StuntStanding | Self::Swimming => [0.0, 1.0],
-            _ => [0.0, 0.0],
+            Self::OnFoot
+            | Self::Jump
+            | Self::HandClimb
+            | Self::Parachute
+            | Self::Seated
+            | Self::StuntStanding
+            | Self::Swimming => 1.0,
+            _ => 0.0,
         }
-    }
-
-    /// Whether the animation keeps the hips while the torso is procedural: the solve moves the
-    /// spine from the clip's hips (`solver::anchored`) instead of building the body under the head.
-    pub const fn anchored(self) -> bool {
-        matches!(
-            self,
-            Self::Seated | Self::StuntStanding | Self::Parachute | Self::Swimming
-        )
     }
 
     /// Whether the animation takes over at once, with no blend: a ragdoll writes the pose
@@ -219,67 +210,49 @@ pub fn classify(state: &CharacterState) -> Case {
     }
 }
 
-/// The two regions' weights, eased toward their targets.
+/// The torso's weight, eased toward its case's.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct RegionBlend {
-    springs: [Spring; 2],
+pub struct TorsoBlend {
+    spring: Spring,
 }
 
-/// The regions' weights: the legs', then the torso's.
-#[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct Weights {
-    pub legs: f32,
-    pub torso: f32,
-}
-
-impl Weights {
-    pub fn any(&self) -> bool {
-        self.legs > 0.0 || self.torso > 0.0
-    }
-}
-
-impl RegionBlend {
+impl TorsoBlend {
     pub const fn new() -> Self {
         Self {
-            springs: [Spring::new(); 2],
+            spring: Spring::new(),
         }
     }
 
-    /// Ease toward `case`'s weights over `dt` seconds.
-    pub fn step(&mut self, case: Case, dt: f32, config: &ProceduralBodyConfig) -> Weights {
-        let targets = case.targets();
-        for (spring, target) in self.springs.iter_mut().zip(targets) {
-            if case.snaps() {
-                *spring = Spring {
-                    value: target,
-                    velocity: 0.0,
-                };
+    /// Ease toward `case`'s weight over `dt` seconds.
+    pub fn step(&mut self, case: Case, dt: f32, config: &ProceduralBodyConfig) -> f32 {
+        let target = case.target();
+        if case.snaps() {
+            self.spring = Spring {
+                value: target,
+                velocity: 0.0,
+            };
+        } else {
+            let time = if target < self.spring.value {
+                config.blend_out_s
             } else {
-                let time = if target < spring.value {
-                    config.blend_out_s
-                } else {
-                    config.blend_s
-                };
-                spring.step(target, dt, time);
-            }
+                config.blend_s
+            };
+            self.spring.step(target, dt, time);
         }
-        self.weights()
+        self.weight()
     }
 
-    pub fn weights(&self) -> Weights {
-        Weights {
-            legs: self.springs[0].value,
-            torso: self.springs[1].value,
-        }
+    pub fn weight(&self) -> f32 {
+        self.spring.value
     }
 
-    /// Drop both regions to the animation at once.
+    /// Drop the torso to the animation at once.
     pub fn reset(&mut self) {
         *self = Self::new();
     }
 }
 
-/// One weight in `0..=1` eased toward its target as a region's is: over `in_s` toward one and the
+/// One weight in `0..=1` eased toward its target as the torso's is: over `in_s` toward one and the
 /// quicker `out_s` back.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct WeightFollower {
@@ -326,7 +299,7 @@ impl Spring {
     }
 
     /// Move toward `target` with the smoothing time `time` (about the time to cover most of the
-    /// way). A weight within [`SETTLE`] of its target lands on it, so a region fully handed over is
+    /// way). A weight within [`SETTLE`] of its target lands on it, so a torso fully handed over is
     /// exactly zero or one.
     fn step(&mut self, target: f32, dt: f32, time: f32) {
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
@@ -472,11 +445,11 @@ mod tests {
             }),
             Case::HitReaction
         );
-        assert_eq!(Case::HandClimb.targets(), [1.0, 1.0]);
+        assert_eq!(Case::HandClimb.target(), 1.0);
     }
 
     #[test]
-    fn seated_riding_takes_the_torso_and_leaves_the_legs_to_the_seat() {
+    fn seated_riding_takes_the_torso() {
         let seated = CharacterState {
             vehicle: true,
             seated: true,
@@ -506,16 +479,14 @@ mod tests {
             }),
             Case::Ragdoll
         );
-        assert_eq!(Case::Seated.targets(), [0.0, 1.0]);
-        assert!(Case::Seated.anchored() && !Case::OnFoot.anchored());
+        assert_eq!(Case::Seated.target(), 1.0);
         let roof = CharacterState {
             seated: false,
             stunt_standing: true,
             ..seated
         };
         assert_eq!(classify(&roof), Case::StuntStanding);
-        assert_eq!(Case::StuntStanding.targets(), [0.0, 1.0]);
-        assert!(Case::StuntStanding.anchored());
+        assert_eq!(Case::StuntStanding.target(), 1.0);
         // A ragdoll thrown off the roof is the ragdoll.
         assert_eq!(
             classify(&CharacterState {
@@ -537,14 +508,12 @@ mod tests {
         assert_eq!(classify(&flying(true, false, true)), Case::Wingsuit);
         assert_eq!(classify(&flying(false, true, true)), Case::Parachute);
         assert_eq!(classify(&flying(false, false, true)), Case::Flight);
-        // The wingsuit's arms are not a region: the body stays the flight pose.
-        assert_eq!(Case::Wingsuit.targets(), [0.0, 0.0]);
-        // Under the parachute the torso is on the harness's hips and the legs hang.
-        assert_eq!(Case::Parachute.targets(), [1.0, 1.0]);
-        assert!(Case::Parachute.anchored());
-        // Swimming, the torso is on the swim's hips and the legs keep the kick.
-        assert_eq!(Case::Swimming.targets(), [0.0, 1.0]);
-        assert!(Case::Swimming.anchored());
+        // The wingsuit's arms are not the torso: the body stays the flight pose.
+        assert_eq!(Case::Wingsuit.target(), 0.0);
+        // Under the parachute the torso is on the harness's hips.
+        assert_eq!(Case::Parachute.target(), 1.0);
+        // Swimming, the torso is on the swim's hips.
+        assert_eq!(Case::Swimming.target(), 1.0);
         assert_eq!(
             classify(&CharacterState {
                 swimming: true,
@@ -572,66 +541,58 @@ mod tests {
     }
 
     #[test]
-    fn regions_ease_in_smoothly_and_reach_their_targets() {
+    fn the_torso_eases_in_smoothly_and_reaches_its_target() {
         let config = ProceduralBodyConfig::new();
-        let mut blend = RegionBlend::new();
+        let mut blend = TorsoBlend::new();
         let mut last = 0.0;
         for _ in 0..90 {
             let w = blend.step(Case::OnFoot, 1.0 / 30.0, &config);
-            assert!(w.torso >= last && w.torso <= 1.0);
-            last = w.torso;
+            assert!(w >= last && w <= 1.0);
+            last = w;
         }
-        assert_eq!(
-            blend.weights(),
-            Weights {
-                legs: 1.0,
-                torso: 1.0
-            }
-        );
-        let w = blend.step(Case::Jump, 1.0 / 30.0, &config);
-        assert!(w.legs == 1.0 && w.torso == 1.0);
+        assert_eq!(blend.weight(), 1.0);
+        assert_eq!(blend.step(Case::Jump, 1.0 / 30.0, &config), 1.0);
     }
 
     #[test]
     fn leaving_is_quicker_than_arriving() {
         let config = ProceduralBodyConfig::new();
-        let ticks_to = |from: Case, to: Case, done: fn(&Weights) -> bool| {
-            let mut blend = RegionBlend::new();
+        let ticks_to = |from: Case, to: Case, done: fn(f32) -> bool| {
+            let mut blend = TorsoBlend::new();
             for _ in 0..300 {
                 blend.step(from, 1.0 / 60.0, &config);
             }
             (0..300)
-                .position(|_| done(&blend.step(to, 1.0 / 60.0, &config)))
+                .position(|_| done(blend.step(to, 1.0 / 60.0, &config)))
                 .unwrap()
         };
-        let arrive = ticks_to(Case::Vehicle, Case::OnFoot, |w| w.torso > 0.9);
-        let leave = ticks_to(Case::OnFoot, Case::Vehicle, |w| w.torso < 0.1);
+        let arrive = ticks_to(Case::Vehicle, Case::OnFoot, |w| w > 0.9);
+        let leave = ticks_to(Case::OnFoot, Case::Vehicle, |w| w < 0.1);
         assert!(leave < arrive, "{leave} >= {arrive}");
     }
 
     #[test]
     fn switching_off_blends_back_rather_than_snapping() {
         let config = ProceduralBodyConfig::new();
-        let mut blend = RegionBlend::new();
+        let mut blend = TorsoBlend::new();
         for _ in 0..60 {
             blend.step(Case::OnFoot, 1.0 / 30.0, &config);
         }
         let w = blend.step(Case::SwitchedOff, 1.0 / 30.0, &config);
-        assert!(w.torso > 0.0 && w.torso < 1.0);
+        assert!(w > 0.0 && w < 1.0);
         for _ in 0..60 {
             blend.step(Case::SwitchedOff, 1.0 / 30.0, &config);
         }
-        assert!(!blend.weights().any());
+        assert_eq!(blend.weight(), 0.0);
     }
 
     #[test]
     fn a_ragdoll_snaps_to_the_animation() {
         let config = ProceduralBodyConfig::new();
-        let mut blend = RegionBlend::new();
+        let mut blend = TorsoBlend::new();
         for _ in 0..60 {
             blend.step(Case::OnFoot, 1.0 / 30.0, &config);
         }
-        let w = blend.step(Case::Ragdoll, 1.0 / 30.0, &config);
-        assert!(!w.any());
+        assert_eq!(blend.step(Case::Ragdoll, 1.0 / 30.0, &config), 0.0);
     }
 }

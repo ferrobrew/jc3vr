@@ -1,6 +1,6 @@
 //! Posture and roomscale: the posture in effect, the play area, the head height, the teleports, the
-//! comfort fade, the crouch, and the seat phase, and the crouch settings. The chase and the lean are the
-//! rig's ([`crate::ui::controllers::rig`]).
+//! comfort fade, the crouch, and the seat phase, and the crouch settings. The steps and the lean are
+//! the rig's ([`crate::ui::controllers::rig`]).
 
 use egui::Ui;
 

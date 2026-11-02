@@ -213,6 +213,7 @@ impl Rig {
     }
 
     /// The reference model-space transform of `bone`.
+    #[cfg(test)]
     pub fn reference(&self, bone: RigBone) -> &Transform {
         &self.reference[bone.index()]
     }

@@ -173,7 +173,7 @@ fn roomscale_state(status: roomscale::RoomscaleStatus) -> RoomscaleState {
         residual_m: status.root.frame.residual_m(),
         pushback_m: status.root.frame.debt_m,
         cockpit_shift_m: status.root.frame.shift,
-        chase_velocity_mps: status.root.sim.chase_velocity,
+        chase_velocity_mps: status.root.sim.step_velocity,
         task_velocity_mps: status.root.sim.task_velocity,
         crouched: frame.crouched,
         seated_crouch: frame.seated_crouch,

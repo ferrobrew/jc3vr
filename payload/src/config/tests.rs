@@ -199,7 +199,7 @@ fn a_file_from_before_the_rig_loads_its_posture_and_skips_the_retired_settings()
     );
     let Loaded { config, report } = load(table);
     assert_eq!(config.controllers.roomscale.posture, Posture::Standing);
-    assert!(config.controllers.body.rig.chase.enabled);
+    assert!(config.controllers.body.rig.steps.enabled);
     assert_eq!(
         report.ignored,
         [

@@ -309,8 +309,8 @@ fn completed(sim: &Sim) -> MovementCompletion {
         .expect("a completed snapshot retains its owned record")
 }
 
-fn movement(chase: Vec2) -> Movement {
-    Movement::new(Vec2::ZERO, chase, 1.0)
+fn movement(drive: Vec2) -> Movement {
+    Movement::new(Vec2::ZERO, drive, 1.0)
 }
 
 fn root(position: Vec3) -> Mat4 {

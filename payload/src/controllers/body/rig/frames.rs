@@ -226,27 +226,40 @@ mod tests {
     use super::*;
     use crate::controllers::body::{
         BodyDimensions,
-        rig::torso::{TorsoEstimator, TorsoInputs},
+        rig::torso::{EYES_TO_NECK_PIVOT, HIP_SPACING_FRACTION},
     };
 
     fn deg(d: f32) -> f32 {
         d.to_radians()
     }
 
-    /// A skeleton built from the dimensions the way the torso estimate hangs its joints, in a
-    /// model space whose eyes are at `eyes`.
-    fn skeleton(dims: &BodyDimensions, eyes: Vec3, turn: f32) -> SkeletonLandmarks {
-        let mut estimator = TorsoEstimator::new();
-        let inputs = TorsoInputs {
-            head_position: Vec3::ZERO,
-            head_orientation: Quat::IDENTITY,
-            hands: [None; 2],
-        };
-        let mut estimate = None;
-        for _ in 0..400 {
-            estimate = estimator.update(&inputs, 0.01, dims);
+    /// An upright torso facing -Z under eyes at `head`, its joints hung from the dimensions as the
+    /// grounded rig hangs them.
+    fn upright(head: Vec3, dims: &BodyDimensions) -> TorsoEstimate {
+        let neck = head + EYES_TO_NECK_PIVOT;
+        let chest =
+            neck - Vec3::Y * (dims.eye_height + EYES_TO_NECK_PIVOT.y - dims.shoulder_height);
+        let pelvis = chest - Vec3::Y * 0.5;
+        let half = Vec3::X * dims.shoulder_width * 0.5;
+        let hip = half * HIP_SPACING_FRACTION;
+        TorsoEstimate {
+            yaw: 0.0,
+            head_yaw: 0.0,
+            neck_twist: 0.0,
+            hands_yaw: None,
+            hands_weight: 0.0,
+            neck,
+            shoulders: [chest - half, chest + half],
+            chest,
+            pelvis,
+            hips: [pelvis - hip, pelvis + hip],
         }
-        let estimate = estimate.unwrap();
+    }
+
+    /// A skeleton built from the dimensions the way the torso is hung, in a model space whose eyes
+    /// are at `eyes`.
+    fn skeleton(dims: &BodyDimensions, eyes: Vec3, turn: f32) -> SkeletonLandmarks {
+        let estimate = upright(Vec3::ZERO, dims);
         let rotation = Quat::from_rotation_y(turn);
         let place = |p: Vec3| eyes + rotation * p;
         SkeletonLandmarks {
@@ -310,17 +323,7 @@ mod tests {
         let dims = BodyDimensions::GENERIC_ADULT;
         let view = Quat::from_rotation_y(0.7);
         let frames = frames(view, 0.7);
-        let mut estimator = TorsoEstimator::new();
-        let inputs = TorsoInputs {
-            head_position: frames.head_cockpit,
-            head_orientation: Quat::IDENTITY,
-            hands: [None; 2],
-        };
-        let mut estimate = None;
-        for _ in 0..400 {
-            estimate = estimator.update(&inputs, 0.01, &dims);
-        }
-        let estimate = estimate.unwrap();
+        let estimate = upright(frames.head_cockpit, &dims);
         let eyes = frames.world_to_model(frames.head_world);
         let skeleton = skeleton(&dims, eyes, 0.0);
         let d = divergence(&estimate, &skeleton, &frames).unwrap();
@@ -343,22 +346,13 @@ mod tests {
     fn a_turned_chest_reads_as_a_chest_turn() {
         let dims = BodyDimensions::GENERIC_ADULT;
         let frames = frames(Quat::IDENTITY, 0.0);
-        let mut estimator = TorsoEstimator::new();
-        let inputs = TorsoInputs {
-            head_position: frames.head_cockpit,
-            head_orientation: Quat::IDENTITY,
-            hands: [None; 2],
-        };
-        let mut estimate = None;
-        for _ in 0..100 {
-            estimate = estimator.update(&inputs, 0.01, &dims);
-        }
+        let estimate = upright(frames.head_cockpit, &dims);
         let eyes = frames.world_to_model(frames.head_world);
         let mut skeleton = skeleton(&dims, eyes, 0.0);
         let chest = skeleton.chest();
         let turn = Quat::from_rotation_y(deg(20.0));
         skeleton.shoulders = skeleton.shoulders.map(|s| chest + turn * (s - chest));
-        let d = divergence(&estimate.unwrap(), &skeleton, &frames).unwrap();
+        let d = divergence(&estimate, &skeleton, &frames).unwrap();
         assert!((d.chest_turn.unwrap() + deg(20.0)).abs() < 1e-3);
         assert!(d.pelvis_turn.unwrap().abs() < 1e-3);
     }
@@ -394,18 +388,7 @@ mod tests {
     fn unusable_frames_yield_nothing() {
         let dims = BodyDimensions::GENERIC_ADULT;
         let skeleton = skeleton(&dims, Vec3::ZERO, 0.0);
-        let mut estimator = TorsoEstimator::new();
-        let estimate = estimator
-            .update(
-                &TorsoInputs {
-                    head_position: Vec3::ZERO,
-                    head_orientation: Quat::IDENTITY,
-                    hands: [None; 2],
-                },
-                0.01,
-                &dims,
-            )
-            .unwrap();
+        let estimate = upright(Vec3::ZERO, &dims);
         let bad = Frames {
             world_scale: 0.0,
             ..frames(Quat::IDENTITY, 0.0)

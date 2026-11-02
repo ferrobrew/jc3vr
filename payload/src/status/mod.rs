@@ -460,10 +460,6 @@ const SECTIONS: &[Section] = &[
         rows: &[
             row!("MODE", "Mode", controllers::procedural_mode),
             row!("HAND-OVER CASE", "Hand-over case", controllers::hand_over),
-            row!("GROUND CASTS", "Ground casts", controllers::ground_casts),
-            row!("STANCE", "Stance", controllers::stance),
-            row!("LOWER BODY", "Lower body", controllers::lower_body),
-            row!("POSE INPUTS", "Pose inputs", controllers::lower_inputs),
             row!("TWIST BONES", "Twist bones", controllers::twist_bones),
             row!("SEATED TORSO", "Seated torso", body::seated_torso),
             row!("WINGSUIT ARMS", "Wingsuit arms", body::wingsuit_arms),

@@ -232,7 +232,6 @@ pub(crate) fn capture_unavailable() {
     *SHOULDERS_DRIVEN.lock() = [false; 2];
     headpose::withdraw_anchors();
     live_observation::native_unavailable();
-    rig::runtime::hand_back();
 }
 
 /// Capture the headpose anchors (pre-IK) and queue the HumanIK head effector target for the local
@@ -550,10 +549,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
                 .intersects(AimState::m_AimingWeapon | AimState::m_AimingGrapple);
         // The procedural body poses the torso itself at the solve gate: at its full weight these
         // targets stand down, and below it the gate fades them by what is left.
-        let drive_torso = !torso.is_near_identity()
-            && !defer_to_aim
-            && torso_weight() < 1.0
-            && !crate::controllers::body::procedural::constrained_path();
+        let drive_torso = !torso.is_near_identity() && !defer_to_aim && torso_weight() < 1.0;
 
         // The girdle is then *told where to be*, rather than left to the solver. Relying on the head
         // effector's pull to carry the torso along does not work: the solver has cheaper ways to

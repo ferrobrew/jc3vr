@@ -49,7 +49,7 @@
 
 pub mod arm_steering;
 mod arm_tick;
-mod axis_output;
+pub(crate) mod axis_output;
 mod begin;
 pub mod config;
 mod control_haptics;
@@ -86,8 +86,8 @@ pub use self::{
     axis_output::write_outputs,
     ripcord_tick::holder as ripcord_holder,
     state::{
-        apply, is_mounted_weapon, mounted_aim_point, mounted_target, parachute_brake, status,
-        summary, wrist_tilt_now_deg,
+        apply, is_mounted_weapon, mounted_aim_point, mounted_target, status, summary,
+        wrist_tilt_now_deg,
     },
     types::{HandlesReadout, TickVolumes, VehicleSummary, VehiclesStatus},
 };

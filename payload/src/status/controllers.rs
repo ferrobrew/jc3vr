@@ -8,8 +8,7 @@ use smol_str::{SmolStr, format_smolstr};
 use crate::{
     controllers::{
         body::procedural::{
-            self, ProceduralStatus, authority::Case, config::ProceduralMode, ground::GroundTally,
-            twist::TwistStatus,
+            self, ProceduralStatus, authority::Case, config::ProceduralMode, twist::TwistStatus,
         },
         frame::Hand,
         hands::grip::{self, GripRead},
@@ -214,24 +213,6 @@ pub(super) fn hand_over() -> Line {
     hand_over_line(procedural::published_status().case)
 }
 
-pub(super) fn ground_casts() -> Line {
-    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
-        return Line::off("");
-    }
-    ground_line(procedural::published_status().ground)
-}
-
-pub(super) fn stance() -> Line {
-    if read_config(|c| c.controllers.body.procedural.mode) == ProceduralMode::Off {
-        return Line::off("");
-    }
-    if procedural::published_status().stance_measured {
-        Line::ok(prose("Measured"))
-    } else {
-        Line::waiting(prose("Stand still"))
-    }
-}
-
 pub(super) fn twist_bones() -> Line {
     if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
         return Line::off("");
@@ -259,21 +240,6 @@ fn twist_line(status: &TwistStatus) -> Line {
             }
         }
     }
-}
-
-pub(super) fn lower_body() -> Line {
-    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
-        return Line::off("");
-    }
-    Line::waiting(prose("Knee and ground-sit inference unavailable"))
-}
-
-pub(super) fn lower_inputs() -> Line {
-    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
-        return Line::off("");
-    }
-    let status = procedural::published_status();
-    Line::ok(text!("Crouch ", format!("{:.2}", status.crouch_depth)))
 }
 
 fn rigid_grip_line(pinned: [Option<bool>; 2], pins: u64) -> Line {
@@ -503,17 +469,6 @@ fn hand_over_line(case: Case) -> Line {
         _ => Health::Waiting,
     };
     Line::new(health, word).with_note(case.label())
-}
-
-fn ground_line(tally: GroundTally) -> Line {
-    let detail = text!(format!("{}/{}", tally.hits, tally.casts), " hit");
-    if tally.errors > 0 {
-        Line::failed(text!(tally.errors.to_string(), " err, ", detail))
-    } else if tally.casts == 0 {
-        Line::waiting(prose("No casts"))
-    } else {
-        Line::ok(detail)
-    }
 }
 
 /// The hands a per-hand flag is set for: `L`, `R`, `L+R`, or `NONE`.
@@ -806,18 +761,5 @@ mod tests {
         let climb = hand_over_line(Case::LedgeClimb);
         assert_eq!(climb.text(), "WAITING, LEDGE CLIMB");
         assert_eq!(climb.note.as_deref(), Some(Case::LedgeClimb.label()));
-    }
-
-    #[test]
-    fn ground_errors_fail_the_casts() {
-        let tally = |casts, hits, errors| GroundTally {
-            casts,
-            hits,
-            errors,
-            ..GroundTally::new()
-        };
-        assert_eq!(ground_line(tally(4, 3, 0)).text(), "OK, 3/4 HIT");
-        assert_eq!(ground_line(tally(4, 3, 1)).text(), "FAILED, 1 ERR, 3/4 HIT");
-        assert_eq!(ground_line(tally(0, 0, 0)).health, Health::Waiting);
     }
 }

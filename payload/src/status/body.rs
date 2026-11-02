@@ -1,5 +1,5 @@
-//! The status rows for the procedural body outside standing play: the torso in a vehicle
-//! seat, the wingsuit's arms, the body under the parachute, the torso in the water, the torso on
+//! The status rows for the procedural torso outside standing play: the torso in a vehicle
+//! seat, the wingsuit's arms, the torso under the parachute, the torso in the water, the torso on
 //! a vehicle's roof, the body mirror, and the render-rate body. Each reads the last published
 //! status, which the pause stops updating, so a row shows what the body did just before the menu
 //! opened.
@@ -43,7 +43,7 @@ fn torso_on_hips_line(status: &ProceduralStatus) -> Line {
         format!("{:.0}", status.neck_error_m * 100.0),
         " cm"
     );
-    if status.on_animated_hips && status.weight >= 1.0 && !status.switch_fading {
+    if status.weight >= 1.0 {
         Line::ok(detail)
     } else {
         Line::waiting(detail)
@@ -83,26 +83,12 @@ pub(super) fn parachute_body() -> Line {
     parachute_line(&procedural::published_status())
 }
 
-/// The body under the parachute: the torso's weight, and how far the legs swing forward for the
-/// brake.
+/// The torso under the parachute, on the harness's hips.
 fn parachute_line(status: &ProceduralStatus) -> Line {
     if status.case != Case::Parachute {
         return Line::waiting(prose("Not under the canopy")).with_note(status.case.label());
     }
-    let detail = text!(
-        format!("{:.0}%", status.weight * 100.0),
-        ", flare ",
-        format!("{:.0}%", status.flare * 100.0)
-    );
-    if status.on_animated_hips
-        && status.weight >= 1.0
-        && status.legs_weight >= 1.0
-        && !status.switch_fading
-    {
-        Line::ok(detail)
-    } else {
-        Line::waiting(detail)
-    }
+    torso_on_hips_line(status)
 }
 
 pub(super) fn swim_torso() -> Line {
@@ -200,7 +186,6 @@ mod tests {
         ProceduralStatus {
             case,
             weight,
-            on_animated_hips: case.anchored() && weight > 0.0,
             neck_error_m: 0.031,
             ..procedural::published_status()
         }
@@ -235,19 +220,14 @@ mod tests {
     }
 
     #[test]
-    fn the_parachute_reads_the_weights_and_the_flare() {
-        let hanging = |weight: f32, flare: f32| ProceduralStatus {
-            legs_weight: weight,
-            flare,
-            ..status(Case::Parachute, weight)
-        };
+    fn the_parachute_reads_the_torsos_weight() {
         assert_eq!(
-            parachute_line(&hanging(1.0, 0.25)).text(),
-            "OK, 100%, FLARE 25%"
+            parachute_line(&status(Case::Parachute, 1.0)).text(),
+            "OK, 100%, NECK 3 CM"
         );
         assert_eq!(
-            parachute_line(&hanging(0.4, 0.0)).text(),
-            "WAITING, 40%, FLARE 0%"
+            parachute_line(&status(Case::Parachute, 0.4)).text(),
+            "WAITING, 40%, NECK 3 CM"
         );
         assert_eq!(
             parachute_line(&status(Case::Flight, 0.0)).text(),

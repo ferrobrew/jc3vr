@@ -10,7 +10,7 @@ use crate::{
     controllers::{
         body::{
             procedural::{self, authority::Case},
-            rig::root as rig_root,
+            rig::{grounded, root as rig_root},
         },
         frame::{self as controller_frame, Hand},
         grab::{latch::GripLatch, tick as grab_tick},
@@ -175,11 +175,9 @@ signals! {
     CharacterKnockdowns => "characters.knockdowns", Counter, "Yanks and shoves that knocked a character down.";
     ProceduralRigError => "procedural.rig_error", Flag, "The procedural body could not rig the skeleton.";
     ProceduralOnFoot => "procedural.on_foot", Flag, "The hand-over table's case is on foot.";
-    StanceMeasured => "procedural.stance_measured", Flag, "The neutral stance has been measured.";
     ProceduralSeated => "procedural.seated", Flag, "The torso is posed on the seat's hips in a vehicle.";
     ProceduralWingArms => "procedural.wing_arms", Flag, "Rico's arms follow the player's in the wingsuit, both hands queued.";
     ProceduralParachute => "procedural.parachute", Flag, "The torso is posed on the harness's hips under the parachute, the legs hanging.";
-    ProceduralFlare => "procedural.parachute_flare", Measure, "How far the hanging legs swing forward for the parachute's brake, as a share of the full flare, under the parachute.";
     ProceduralSwimming => "procedural.swimming", Flag, "The torso is posed on the swim's hips in the water.";
     ProceduralRoof => "procedural.roof", Flag, "The torso is posed on the stunt idle's hips on a vehicle's roof.";
     ProceduralNeckErrorM => "procedural.neck_error_m", Measure, "How far the solved neck is from the point under the player's head, metres, while the procedural body poses the torso.";
@@ -233,14 +231,14 @@ signals! {
     GripFlips => "grip.flips", Counter, "Snaps of a gun on the wrist.";
     GripPins => "grip.pins", Counter, "Attach bones pinned.";
     StickSpeed => "locomotion.stick_speed_mps", Measure, "The speed the stick drives the body at, metres per second.";
-    RigGapM => "rig.gap_m", Measure, "How far the ground point under the player's upright eyes is from the root, metres, while a VR frame renders.";
-    RigResidualM => "rig.residual_m", Measure, "How far that point is outside the lean the chase leaves alone, metres: what the chase still has to close.";
-    RigLedgerProjected => "rig.ledger_projected", Counter, "Completed steps whose chase was credited by projection, because something stopped or deflected the root.";
+    RigGapM => "rig.gap_m", Measure, "How far the player's neck pivot is out over Rico's pelvis, metres, while Rico is grounded and a VR frame renders.";
+    RigResidualM => "rig.residual_m", Measure, "The step demand: how far the neck is out past what a lean explains, metres.";
+    RigLedgerProjected => "rig.ledger_projected", Counter, "Completed steps whose drive was credited by projection, because something stopped or deflected the root.";
     RigPushbackM => "rig.pushback_m", Measure, "How far the push-back has slid the view back in its current episode, metres, while a VR frame renders.";
-    RigObstructed => "rig.obstructed", Flag, "The ledger finds the player's chase obstructed: something stops the body.";
+    RigObstructed => "rig.obstructed", Flag, "The ledger finds the player's step drive obstructed: something stops the body.";
     RigPushbacks => "rig.pushbacks", Counter, "Push-back episodes: times the view started being held at a wall.";
-    LegsMoving => "legs.moving", Flag, "The procedural body's feet walk rather than step standing.";
-    LegsTouchdownLeadM => "legs.touchdown_lead_m", Measure, "How far ahead of its hip the last walking foot landed, metres, while the procedural body poses the legs.";
+    RigStepping => "rig.stepping", Flag, "The body rig drives a committed step, or slides out what one left.";
+    RigSteps => "rig.steps", Counter, "Steps the body rig has committed.";
 }
 
 impl Signal {
@@ -344,10 +342,9 @@ impl Signal {
             Signal::CharacterKnockdowns => count(physics::status().knockdowns),
             Signal::ProceduralRigError => flag(procedural::published_status().rig_error.is_some()),
             Signal::ProceduralOnFoot => flag(procedural::published_status().case == Case::OnFoot),
-            Signal::StanceMeasured => flag(procedural::published_status().stance_measured),
             Signal::ProceduralSeated => {
                 let status = procedural::published_status();
-                flag(status.case == Case::Seated && status.on_animated_hips && status.weight > 0.0)
+                flag(status.case == Case::Seated && status.weight > 0.0)
             }
             Signal::ProceduralWingArms => {
                 let status = procedural::published_status();
@@ -355,33 +352,15 @@ impl Signal {
             }
             Signal::ProceduralParachute => {
                 let status = procedural::published_status();
-                flag(
-                    status.case == Case::Parachute
-                        && status.on_animated_hips
-                        && status.weight > 0.0,
-                )
-            }
-            Signal::ProceduralFlare => {
-                let status = procedural::published_status();
-                if status.case == Case::Parachute {
-                    Value::Number(f64::from(status.flare))
-                } else {
-                    Value::Missing
-                }
+                flag(status.case == Case::Parachute && status.weight > 0.0)
             }
             Signal::ProceduralSwimming => {
                 let status = procedural::published_status();
-                flag(
-                    status.case == Case::Swimming && status.on_animated_hips && status.weight > 0.0,
-                )
+                flag(status.case == Case::Swimming && status.weight > 0.0)
             }
             Signal::ProceduralRoof => {
                 let status = procedural::published_status();
-                flag(
-                    status.case == Case::StuntStanding
-                        && status.on_animated_hips
-                        && status.weight > 0.0,
-                )
+                flag(status.case == Case::StuntStanding && status.weight > 0.0)
             }
             Signal::ProceduralNeckErrorM => {
                 let status = procedural::published_status();
@@ -478,14 +457,12 @@ impl Signal {
             Signal::RigPushbackM => rig_measure(rig_root::try_frame_readout(), |f| f.debt_m),
             Signal::RigObstructed => rig_obstructed(rig_root::try_frame_readout()),
             Signal::RigPushbacks => rig_pushbacks(rig_root::try_frame_readout()),
-            Signal::LegsMoving => flag(procedural::published_status().legs_moving),
-            Signal::LegsTouchdownLeadM => {
-                let status = procedural::published_status();
-                match status.touchdown_lead_m {
-                    Some(lead) if status.legs_weight > 0.0 => Value::Number(f64::from(lead)),
-                    _ => Value::Missing,
-                }
-            }
+            Signal::RigStepping => flag(
+                rig_root::try_frame_readout()
+                    .and_then(|f| f.rig)
+                    .is_some_and(|r| r.output.phase.drives()),
+            ),
+            Signal::RigSteps => count(grounded::status().latest.map_or(0, |(r, _)| r.output.steps)),
         }
     }
 }
@@ -559,8 +536,8 @@ mod tests {
 
     use super::*;
     use crate::controllers::body::rig::{
-        lean::Lean,
-        root::{chase::Measurement, ledger::LedgerCounts, pushback::PushbackOutcome},
+        grounded::GroundedFrame,
+        root::{ledger::LedgerCounts, pushback::PushbackOutcome},
     };
 
     #[test]
@@ -614,14 +591,7 @@ mod tests {
     fn root_frame(at: Instant) -> rig_root::FrameReadout {
         rig_root::FrameReadout {
             at: Some(at),
-            measurement: Measurement {
-                target: Vec2::new(3.0, 4.0),
-                lean: Lean {
-                    vector: Vec2::new(3.0, 0.0),
-                    ..Lean::default()
-                },
-                ..Measurement::default()
-            },
+            rig: Some(rig_frame()),
             world_scale: 2.0,
             pushback: PushbackOutcome {
                 obstructed: true,
@@ -631,6 +601,14 @@ mod tests {
             pushbacks: 7,
             ..rig_root::FrameReadout::default()
         }
+    }
+
+    /// A grounded frame with the neck 5 m out over the pelvis and 4 m of it step demand.
+    fn rig_frame() -> GroundedFrame {
+        let mut frame = GroundedFrame::default();
+        frame.output.solve.offset = Vec2::new(3.0, 4.0);
+        frame.output.solve.step_demand = Vec2::new(0.0, 4.0);
+        frame
     }
 
     #[test]

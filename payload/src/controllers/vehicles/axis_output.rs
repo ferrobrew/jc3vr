@@ -111,8 +111,27 @@ pub(super) fn lever_axes_wanted(desired: &[Desired]) -> bool {
         || axis_wanted(desired, PLANE_DEC_TRUST, PLANE_INC_TRUST)
 }
 
+/// The move stick the tables wrote this tick (+X right, +Y forward), from the move half-axes: each
+/// half-axis at the largest of its wants, as the wants on one action merge.
+pub(crate) fn read_move(desired: &[Desired]) -> Vec2 {
+    let half = |action: Action| {
+        desired
+            .iter()
+            .filter(|d| d.target.map == MapKind::Player && d.target.action == action)
+            .map(|d| match d.want {
+                Want::Analog(v) | Want::Hold(v) => v,
+                Want::Click => 1.0,
+            })
+            .fold(0.0f32, f32::max)
+    };
+    Vec2::new(
+        half(MOVE_RIGHT) - half(MOVE_LEFT),
+        half(MOVE_FORWARD) - half(MOVE_BACKWARD),
+    )
+}
+
 /// Write `stick` (+X right, +Y forward) over the tables' move half-axes and their length.
-pub(super) fn write_move(desired: &mut Vec<Desired>, stick: Vec2) {
+pub(crate) fn write_move(desired: &mut Vec<Desired>, stick: Vec2) {
     replace_axis(desired, stick.y, MOVE_BACKWARD, MOVE_FORWARD);
     replace_axis(desired, stick.x, MOVE_LEFT, MOVE_RIGHT);
     replace_axis(desired, stick.length().min(1.0), MOVE_ALL, MOVE_ALL);

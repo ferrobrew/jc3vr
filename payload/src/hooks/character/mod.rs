@@ -100,7 +100,6 @@ fn character_update_pass_finalize_pose_parallel(
         });
     if local && !pose_ready {
         hands::rig::invalidate();
-        controllers::body::rig::runtime::hand_back();
     }
     let plan =
         (local && pose_ready).then(|| unsafe { hands::ik::plan(character.as_ref().unwrap()) });

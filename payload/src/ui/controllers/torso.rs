@@ -6,10 +6,7 @@ use std::time::Duration;
 use egui::Ui;
 
 use crate::{
-    controllers::body::{
-        procedural,
-        rig::{TorsoStatus, skeleton::SkeletonStatus},
-    },
+    controllers::body::rig::{TorsoStatus, skeleton::SkeletonStatus},
     ui::controllers::{vec3, yes_no},
 };
 
@@ -42,11 +39,7 @@ pub(super) fn torso_readout(ui: &mut Ui, status: &TorsoStatus, skeleton: &Skelet
         deg(status.follow_offset),
         deg(status.follow_target),
     ));
-    ui.label(format!(
-        "Chest turn queued: {} · motion lean {:.1}°",
-        opt_deg(status.chest_turn),
-        procedural::published_status().motion_lean_deg,
-    ));
+    ui.label(format!("Chest turn queued: {}", opt_deg(status.chest_turn)));
     ui.label(format!(
         "Holsters ride: {}",
         skeleton.volume_anchor.unwrap_or("nothing yet")

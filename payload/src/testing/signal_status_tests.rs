@@ -2,8 +2,8 @@ use glam::Vec2;
 
 use super::*;
 use crate::controllers::body::rig::{
-    lean::Lean,
-    root::{chase::Measurement, ledger::LedgerCounts, pushback::PushbackOutcome},
+    grounded::GroundedFrame,
+    root::{ledger::LedgerCounts, pushback::PushbackOutcome},
 };
 
 #[test]
@@ -384,14 +384,7 @@ fn publication(at: Instant, driving: bool, recenters: f64) -> Publication {
 fn root_frame(at: Instant) -> FrameReadout {
     FrameReadout {
         at: Some(at),
-        measurement: Measurement {
-            target: Vec2::new(3.0, 4.0),
-            lean: Lean {
-                vector: Vec2::new(3.0, 0.0),
-                ..Lean::default()
-            },
-            ..Measurement::default()
-        },
+        rig: Some(rig_frame()),
         world_scale: 2.0,
         pushback: PushbackOutcome {
             obstructed: true,
@@ -401,4 +394,12 @@ fn root_frame(at: Instant) -> FrameReadout {
         pushbacks: 7,
         ..FrameReadout::default()
     }
+}
+
+/// A grounded frame with the neck 5 m out over the pelvis and 4 m of it step demand.
+fn rig_frame() -> GroundedFrame {
+    let mut frame = GroundedFrame::default();
+    frame.output.solve.offset = Vec2::new(3.0, 4.0);
+    frame.output.solve.step_demand = Vec2::new(0.0, 4.0);
+    frame
 }

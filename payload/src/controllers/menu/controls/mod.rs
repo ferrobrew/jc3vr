@@ -244,7 +244,7 @@ mod tests {
             config.controllers.locomotion.stick.run_speed_mps = 3.0;
             config.controllers.roomscale.crouch.enter_drop_m = 0.5;
             config.controllers.body.remap_head = false;
-            config.controllers.body.rig.lean.enabled = false;
+            config.controllers.body.rig.follow.turn_animation = false;
             config.hud.distance = 2.0;
         });
         reset_shown_settings();
@@ -270,7 +270,7 @@ mod tests {
             assert_eq!(config.controllers.aim.sights.get(7), Some(&sight));
             assert_eq!(config.controllers.roomscale.crouch.enter_drop_m, 0.5);
             assert!(!config.controllers.body.remap_head);
-            assert!(!config.controllers.body.rig.lean.enabled);
+            assert!(!config.controllers.body.rig.follow.turn_animation);
             assert_eq!(config.hud.distance, 2.0);
         });
     }

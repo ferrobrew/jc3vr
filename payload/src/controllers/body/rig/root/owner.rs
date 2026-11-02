@@ -1,10 +1,10 @@
 //! Who moves the root on a simulation tick. Pure.
 //!
 //! Several systems want the character's root: the game's own states, the hand climbing, the
-//! animation's authored motions, and the player's head through the chase. Exactly one owns it each
-//! tick, chosen once in the root hook by [`select`], so that the chase never runs, or is credited,
-//! on a tick something else moved the body. The player's head owns it in either posture: a seated
-//! player's head moves only by the upper body, and the chase follows that the same way.
+//! animation's authored motions, and the player's head through the step drive. Exactly one owns it
+//! each tick, chosen once in the root hook by [`select`], so that the drive never runs, or is
+//! credited, on a tick something else moved the body. The player's head owns it in either posture:
+//! a seated player's head moves only by the upper body, and the drive follows that the same way.
 
 use crate::controllers::roomscale::{SeatPhase, posture::EffectivePosture};
 
@@ -20,17 +20,16 @@ pub enum RootOwner {
     /// The animation carries the body: an authored one-off, a hard landing, cover, or a hit
     /// reaction's hold. Its root motion is the motion, so the view rides it.
     Authored,
-    /// The standing player's head, through the chase, on top of the stick and the hands.
+    /// The standing player's head, through the step drive, on top of the stick and the hands.
     Player,
-    /// The seated player's head, through the chase, on top of the stick and the hands. It chases
-    /// as [`RootOwner::Player`] does; the lean over the feet is measured for a seated player
-    /// ([`crate::controllers::body::rig::lean::LeanShape::SEATED`]).
+    /// The seated player's head, through the step drive, on top of the stick and the hands, as
+    /// [`RootOwner::Player`] does; the seated eye reference stands in for the standing height.
     Seated,
 }
 
 impl RootOwner {
-    /// Whether the chase moves the root on this tick.
-    pub fn chases(self) -> bool {
+    /// Whether the step drive moves the root on this tick.
+    pub fn drives(self) -> bool {
         matches!(self, RootOwner::Player | RootOwner::Seated)
     }
 
@@ -88,7 +87,7 @@ mod tests {
     #[test]
     fn the_player_owns_an_ordinary_standing_tick() {
         assert_eq!(select(&ON_FOOT), RootOwner::Player);
-        assert!(select(&ON_FOOT).chases());
+        assert!(select(&ON_FOOT).drives());
     }
 
     #[test]
@@ -117,34 +116,34 @@ mod tests {
             ..all
         };
         assert_eq!(select(&all), RootOwner::Seated);
-        assert!(select(&all).chases());
+        assert!(select(&all).drives());
     }
 
     #[test]
-    fn a_seated_player_chases_on_foot() {
+    fn a_seated_player_drives_on_foot() {
         let seated = OwnerInput {
             posture: EffectivePosture::Seated,
             ..ON_FOOT
         };
         assert_eq!(select(&seated), RootOwner::Seated);
-        assert!(select(&seated).chases());
+        assert!(select(&seated).drives());
     }
 
     #[test]
-    fn only_the_players_head_chases() {
+    fn only_the_players_head_drives() {
         for owner in [RootOwner::Game, RootOwner::Climb, RootOwner::Authored] {
-            assert!(!owner.chases(), "{}", owner.label());
+            assert!(!owner.drives(), "{}", owner.label());
         }
     }
 
     #[test]
-    fn a_climb_never_chases() {
+    fn a_climb_never_drives() {
         let climbing = OwnerInput {
             climbing: true,
             ..ON_FOOT
         };
         assert_eq!(select(&climbing), RootOwner::Climb);
-        assert!(!select(&climbing).chases());
+        assert!(!select(&climbing).drives());
     }
 
     #[test]

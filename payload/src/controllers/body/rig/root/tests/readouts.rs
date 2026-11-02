@@ -6,10 +6,8 @@ use parking_lot::Mutex;
 use crate::controllers::{
     body::rig::{
         collision::probe::{ProbeResult, TimedProbe},
-        lean::StandingHeight,
         root::{
             FrameReadout, FrameState, RootStatus, Sim, SimStatus,
-            chase::HeadVelocity,
             ledger::{LedgerCounts, Movement},
             owner::RootOwner,
             pushback::Pushback,
@@ -26,7 +24,7 @@ use crate::controllers::{
 fn blocking_and_try_readouts_project_current_counts_without_mutating_the_simulation() {
     let frame_status = FrameReadout {
         at: Some(Instant::now()),
-        torso_yaw: 0.75,
+        snaps: 3,
         world_scale: 2.0,
         shift: Vec3::new(1.0, 2.0, 3.0),
         teleport_rebases: 4,
@@ -94,8 +92,6 @@ fn local_frame(status: FrameReadout) -> Mutex<FrameState> {
     Mutex::new(FrameState {
         seen_epoch: 0,
         shift: CockpitShift::new(),
-        head_velocity: HeadVelocity::new(),
-        standing: StandingHeight::new(),
         last_seat: SeatPhase::Out,
         pushback: Pushback::new(),
         published: None,
@@ -110,7 +106,7 @@ fn local_sim() -> Mutex<Sim> {
         at: Some(now),
         owner: Some(RootOwner::Player),
         effective_gap: Vec2::new(1.0, 2.0),
-        chase_velocity: Vec2::new(3.0, 4.0),
+        step_velocity: Vec2::new(3.0, 4.0),
         task_velocity: Vec2::new(5.0, 6.0),
         ledger: LedgerCounts {
             exact: 11,
@@ -131,7 +127,7 @@ fn local_sim() -> Mutex<Sim> {
     };
     let movement = Movement {
         task: Vec2::ZERO,
-        chase: Vec2::X,
+        drive: Vec2::X,
     };
     sim.movement.submit_owned(movement, RootOwner::Player);
     sim.movement.complete(Vec3::ZERO, Vec3::X);

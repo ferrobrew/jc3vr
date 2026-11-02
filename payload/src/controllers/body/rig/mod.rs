@@ -1,71 +1,61 @@
-//! The body rig's simulation fit, root ownership, collision response, and pose consumers.
+//! The body rig: the grounded rig that keeps Rico under the player's head, root ownership, the
+//! collision response, and the readouts of the player's torso (`docs/mod/body/rig.md`).
 //!
-//! Tracking is copied at frame composition. The local solve gate commits one bounded body fit.
-//! The procedural skeleton, torso follow, and the next movement task consume that result.
+//! - [`grounded`]: the pure core (`body-rig`) advanced once per rendered frame: the pelvis solver,
+//!   the step commit, the yaw follow, and the standing height;
+//! - [`root`]: who moves the root, the step drive through the game's movement, the cockpit shift,
+//!   and the push-back at walls;
+//! - [`collision`]: the head-through-geometry probe;
+//! - [`skeleton`] and [`frames`]: Rico's solved skeleton for the body's volumes, and its divergence
+//!   from the player's torso;
+//! - [`visual`]: the grounded rig's in-world diagnostics.
 
 pub mod collision;
 pub mod config;
-pub(crate) mod estimate;
 pub mod frames;
-pub mod lean;
-pub mod legs;
+pub mod grounded;
 pub(crate) mod live_observation;
-pub(crate) mod observation;
 pub(crate) mod origin_provenance;
-pub mod pelvis;
 pub mod root;
-pub(crate) mod runtime;
 pub mod skeleton;
 pub mod torso;
+pub(crate) mod visual;
 
 use glam::Quat;
 use parking_lot::Mutex;
 
-pub use crate::controllers::body::rig::{config::RigConfig, root::lean_allowance};
+pub use crate::controllers::body::rig::config::RigConfig;
 use crate::{
     config::Config,
-    controllers::body::rig::torso::{
-        CHEST_LIMIT_DEG, FOLLOW_DEADBAND_DEG, TorsoEstimate, wrap, yaw_forward, yaw_of,
-    },
+    controllers::body::rig::torso::{CHEST_LIMIT_DEG, TorsoEstimate, wrap, yaw_forward, yaw_of},
     headpose::{self, xr::FollowSettings},
     hooks,
 };
 
-/// The latest committed torso estimate, when fresh and geometrically usable.
+/// The player's torso as the grounded rig places it, while it is fresh.
 pub fn estimate() -> Option<TorsoEstimate> {
-    runtime::torso()
+    grounded::torso()
 }
 
-/// Follow only a committed fit. A missing fit must not turn into a raw head-yaw request.
+/// How Rico's yaw follows the player on this input tick: toward the grounded rig's body heading,
+/// whose own deadzone and slew already decide when the body turns, so the follow adds none. With
+/// no fresh rig (off the ground, or before the first frame) the body does not follow.
 pub fn follow_settings() -> FollowSettings {
-    let follow = Config::lock_query(|c| c.controllers.body.rig.torso.follow);
+    let follow = Config::lock_query(|c| c.controllers.body.rig.follow.enabled);
     if !follow || headpose::source() != headpose::Source::Vr || !hooks::in_gameplay() {
         return FollowSettings::OFF;
     }
-    let Some(yaw) = runtime::follow_yaw() else {
+    let Some(yaw) = grounded::body_yaw() else {
         return FollowSettings::OFF;
     };
     FollowSettings {
         enabled: true,
         torso: Some(yaw),
-        deadband_deg: FOLLOW_DEADBAND_DEG,
+        deadband_deg: 0.0,
     }
 }
 
-/// Recentered tracking starts a new fit rather than applying old-frame inferred targets.
-pub fn on_recenter(_turn: Quat) {
-    runtime::invalidate();
-}
-
-/// The follow bank turned the cockpit frame by `turn` (new frame from old) without moving the head
-/// or the hands in the world, so the fit is carried into the new frame rather than started anew.
-/// Withdrawing it would drop the drawn body to the animation and the hands' shoulders to their
-/// fallback for the ticks until the next fit, which yanks the arms and a shouldered gun.
-pub fn on_bank(turn: Quat) {
-    runtime::turn_cockpit(turn);
-}
-
-/// The committed chest heading relative to the character's facing.
+/// The player's torso heading relative to the character's facing.
 pub fn torso_turn(character_rotation: Quat) -> Option<f32> {
     if headpose::source() != headpose::Source::Vr {
         return None;
@@ -75,7 +65,7 @@ pub fn torso_turn(character_rotation: Quat) -> Option<f32> {
     yaw_of(character_rotation.inverse() * (view * yaw_forward(estimate.yaw)))
 }
 
-/// The committed chest turn, bounded for the remaining pre-solve IK consumers.
+/// The torso's turn, bounded for the remaining pre-solve IK consumers.
 pub fn chest_turn(character_rotation: Quat) -> Option<f32> {
     let limit = CHEST_LIMIT_DEG.to_radians();
     let turn = torso_turn(character_rotation).map(|turn| wrap(turn).clamp(-limit, limit));
@@ -83,7 +73,7 @@ pub fn chest_turn(character_rotation: Quat) -> Option<f32> {
     turn
 }
 
-/// The committed torso heading for the hands' estimated shoulders.
+/// The torso's heading for the hands' estimated shoulders.
 pub fn shoulder_heading() -> Option<Quat> {
     estimate().map(|e| e.rotation())
 }

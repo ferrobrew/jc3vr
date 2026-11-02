@@ -53,24 +53,6 @@ pub(crate) fn parachute_holds() -> [Option<HandleHold>; 2] {
     }
 }
 
-/// How far the parachute's held handles brake, `0..=1`, as the last input tick read them: the
-/// share both are pulled past the brake threshold ([`parachute::steer`]). Zero while neither
-/// handle is held or the handles do not act. Takes the vehicle handling's lock briefly, so a caller
-/// holding another lock that the vehicle handling takes must not ask.
-pub fn parachute_brake() -> f32 {
-    let brake = STATE
-        .lock()
-        .status
-        .handles
-        .and_then(|h| h.handles)
-        .map_or(0.0, |stick| -stick.y);
-    if brake.is_finite() {
-        brake.clamp(0.0, 1.0)
-    } else {
-        0.0
-    }
-}
-
 pub fn summary() -> VehicleSummary {
     let state = STATE.lock();
     let s = &state.status;

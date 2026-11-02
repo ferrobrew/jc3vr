@@ -37,14 +37,20 @@ fn character_queue_act(character: *mut Character, act: *const u32) {
         && let Some(&id) = (unsafe { act.as_ref() })
     {
         let id = id as i32;
-        let (controllers_enabled, locomotion) =
-            Config::lock_query(|c| (c.controllers.enabled, c.controllers.locomotion));
+        let (controllers_enabled, locomotion, follow) = Config::lock_query(|c| {
+            (
+                c.controllers.enabled,
+                c.controllers.locomotion,
+                c.controllers.body.rig.follow,
+            )
+        });
+        let turn_animation = follow.enabled && follow.turn_animation;
         let reverse = reverse_act_ids().is_some_and(|ids| ids.contains(&id));
         if reverse || aim_state::swallow_local_act(id) {
             return;
         }
         // SAFETY: the local character, on the thread queuing its act.
-        match unsafe { act_filter(local, id, &locomotion, controllers_enabled) } {
+        match unsafe { act_filter(local, id, &locomotion, controllers_enabled, turn_animation) } {
             ActDecision::Pass => {}
             ActDecision::Drop => return,
             ActDecision::Replace(replacement) => {

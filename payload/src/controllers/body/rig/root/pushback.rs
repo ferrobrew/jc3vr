@@ -1,8 +1,8 @@
 //! The push-back: holding the view at a wall the body cannot pass. Pure.
 //!
 //! The view stays with the real head, so a player who walks or leans into a wall sees through it
-//! while the root stands at the wall. While nothing stops the root, the chase owns the gap and
-//! there is no push-back. Once the ledger says the chase is obstructed, the view may go only a
+//! while the root stands at the wall. While nothing stops the root, the step drive owns the gap and
+//! there is no push-back. Once the ledger says the drive is obstructed, the view may go only a
 //! threshold past the root: the part of the gap beyond it is taken out of the cockpit by sliding the
 //! cockpit shift back along the gap, on both sides of the pose pair, so the view holds rigidly at
 //! the obstruction. This is a translation of the room against the world, never a rotation.
@@ -11,7 +11,7 @@
 //! span past the threshold. The episode ends once the gap has stayed under half the threshold for a
 //! moment; the slide it applied stays, as the room's new place against the world.
 //!
-//! The thresholds depend on the root's owner: tight while the player's chase is obstructed, seated
+//! The thresholds depend on the root's owner: tight while the player's step drive is obstructed, seated
 //! or standing, loose while the animation carries the body (only a runaway gap), and an arm's
 //! length while climbing, where a lean is all the head does.
 //!
@@ -24,11 +24,11 @@ use crate::controllers::body::rig::{config::PushbackConfig, root::owner::RootOwn
 /// One frame's inputs.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct PushbackInput {
-    /// The gap outside the lean, from the root to the target: what the chase has yet to close.
+    /// The step demand: the gap past what a lean explains: what the drive has yet to close.
     pub gap: Vec2,
     /// Who owned the root on the last tick.
     pub owner: Option<RootOwner>,
-    /// Whether the ledger found the chase obstructed over its last steps.
+    /// Whether the ledger found the drive obstructed over its last steps.
     pub stopped: bool,
     /// Seconds since the last frame.
     pub dt: f32,
@@ -41,7 +41,7 @@ pub struct PushbackOutcome {
     pub push: Vec2,
     /// The threshold in force, metres, while there is one.
     pub threshold: Option<f32>,
-    /// Whether the player's chase, seated or standing, counts as obstructed.
+    /// Whether the player's step drive, seated or standing, counts as obstructed.
     pub obstructed: bool,
     /// The push-back fade's target, `0..=1`.
     pub fade: f32,
@@ -91,7 +91,7 @@ impl Pushback {
         };
         let r = gap.length();
         let obstructed =
-            input.owner.is_some_and(RootOwner::chases) && input.stopped && r > MIN_GAP_M;
+            input.owner.is_some_and(RootOwner::drives) && input.stopped && r > MIN_GAP_M;
         let threshold = threshold(input.owner, obstructed);
 
         // The episode ends once the gap has been calm for a moment, measured against the tight
@@ -144,7 +144,7 @@ impl Pushback {
     }
 }
 
-/// The threshold for the root's owner, metres, or `None` when the chase owns the gap or the game
+/// The threshold for the root's owner, metres, or `None` when the step drive owns the gap or the game
 /// owns the root.
 pub fn threshold(owner: Option<RootOwner>, obstructed: bool) -> Option<f32> {
     match owner? {
@@ -155,10 +155,10 @@ pub fn threshold(owner: Option<RootOwner>, obstructed: bool) -> Option<f32> {
     }
 }
 
-/// How far past the root the view may go while the player's chase is obstructed, metres.
+/// How far past the root the view may go while the player's step drive is obstructed, metres.
 const OBSTRUCTED_M: f32 = 0.10;
 
-/// How far while the animation carries the body and the chase is suspended, metres: only a runaway
+/// How far while the animation carries the body and the drive is suspended, metres: only a runaway
 /// gap.
 const AUTHORED_M: f32 = 0.30;
 
@@ -206,7 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn an_unobstructed_chase_owns_the_gap() {
+    fn an_unobstructed_drive_owns_the_gap() {
         let mut pushback = Pushback::new();
         let free = PushbackInput {
             stopped: false,
@@ -221,7 +221,7 @@ mod tests {
     }
 
     #[test]
-    fn a_seated_chase_is_held_at_a_wall_like_a_standing_one() {
+    fn a_seated_drive_is_held_at_a_wall_like_a_standing_one() {
         let seated = PushbackInput {
             owner: Some(RootOwner::Seated),
             ..into_wall(0.25)

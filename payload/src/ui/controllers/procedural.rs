@@ -1,4 +1,4 @@
-//! The procedural body: its mode, its weight against the animation, and what its last gate did.
+//! The procedural torso: its mode, its weight against the animation, and what its last gate did.
 
 use std::time::{Duration, Instant};
 
@@ -14,78 +14,22 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
         ui.label("Inactive: the local player's solve gate has not run recently.");
     }
     ui.label(format!(
-        "Mode {} · torso {:.2} · legs {:.2} · owns the body {}",
+        "Mode {} · torso {:.2} · owns the torso {}",
         match status.mode {
             ProceduralMode::Off => "off",
-            ProceduralMode::Full => "full body",
+            ProceduralMode::Full => "on",
         },
         status.weight,
-        status.legs_weight,
         if owns_body() { "yes" } else { "no" },
     ));
-    if status.mode == ProceduralMode::Full {
-        ui.label(format!(
-            "Hand-over case: {} · {}{}",
-            status.case.label(),
-            if status.on_animated_hips {
-                "torso on the animation's hips"
-            } else {
-                "body under the head"
-            },
-            if status.switch_fading {
-                " · fading from the other solve"
-            } else {
-                ""
-            },
-        ));
-    }
-    ui.label(format!("Constrained body fit: {:?}", status.fit));
     if let Some(error) = status.rig_error {
         ui.label(format!("Not rigged: {error}"));
     }
     if status.mode == ProceduralMode::Full {
         ui.label(format!(
-            "Hips {:.3} m below the animation · neck {:.3} m from its target · {}",
-            status.hips_drop_m,
+            "Hand-over case: {} · neck {:.3} m from its target",
+            status.case.label(),
             status.neck_error_m,
-            if status.stepping {
-                "stepping"
-            } else {
-                "feet planted"
-            },
-        ));
-        ui.label(format!(
-            "Speed {:.2} m/s · {} · crouch {:.2} · last touchdown {} ahead of the hip · reach drop {:.3} m · stance {}",
-            status.speed_mps,
-            match (status.legs_moving, status.gait_phase) {
-                (true, Some(p)) => format!("walking, phase {p:.2}"),
-                _ => "standing".to_owned(),
-            },
-            status.crouch_depth,
-            status
-                .touchdown_lead_m
-                .map_or_else(|| "none".to_owned(), |m| format!("{m:.2} m")),
-            status.reach_drop_m,
-            if status.stance_measured {
-                "measured"
-            } else {
-                "not measured yet"
-            },
-        ));
-        ui.label(format!(
-            "Standing height {:+.3} m over the head anchor from {} samples · head {:.3} m below it past the deadband",
-            status.standing_m, status.standing_samples, status.head_drop_m,
-        ));
-        ui.label("Knee and ground-sit inference is unavailable; the on-foot fit uses tracked head and hands.");
-        let ground = &status.ground;
-        ui.label(format!(
-            "Ground casts this tick {} · hits {} · too steep {} · on objects {} · errors {} · largest offset {:+.3} m",
-            ground.casts,
-            ground.hits,
-            ground.steep,
-            ground.objects,
-            ground.errors,
-            ground.largest_offset_m,
         ));
         let [left, right] = status.clavicles;
         ui.label(format!(
@@ -95,7 +39,6 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
             right.elevation.to_degrees(),
             right.protraction.to_degrees(),
         ));
-        ui.label(format!("Parachute flare {:.2}", status.flare));
         ui.label(format!(
             "Wingsuit arms {:.2} · targets placed L {} R {} · queued L {} R {}",
             status.wing_weight,
@@ -103,10 +46,6 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
             status.wing_hands[1],
             status.wing_queued[0],
             status.wing_queued[1],
-        ));
-        ui.label(format!(
-            "Legs in the air {:.2} · vertical speed {:+.2} m/s · reaching for the landing {:.2} · landing dip {:.3} m",
-            status.air_weight, status.vertical_mps, status.landing_reach, status.landing_dip_m,
         ));
     }
 }

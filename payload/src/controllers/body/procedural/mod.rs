@@ -1,5 +1,5 @@
-//! The procedural body: Rico's skeleton posed by the mod from the player's tracked head and body,
-//! rather than by the game's animation. See `docs/mod/body/procedural-body.md`.
+//! The procedural body: Rico's torso posed by the mod from the player's tracked head and hands on
+//! the hips the game's animation keeps. See `docs/mod/body/procedural-body.md`.
 //!
 //! The pose is written at the HumanIK solve gate: a pre-call detour on
 //! [`HumanIK::HasTargets`](jc3gi::animation::ik::HumanIK::HasTargets) for the local player's
@@ -8,34 +8,35 @@
 //! attachment refresh, the model-space sync, the hit shapes, the AI's view, and the effects, so all
 //! of them see the pose written there (`docs/engine/character/skeleton.md`).
 //!
+//! The game's animation keeps the hips, the pelvis, and the legs in every case; the body rig moves
+//! Rico by driving the game's own movement (`docs/mod/body/rig.md`). The torso (the spine, the
+//! neck, the head, and the clavicles) follows the player wherever the hand-over table gives it to
+//! them ([`authority`]).
+//!
 //! - [`skeleton`]: reading the skeleton, and logging it once per session.
 //! - [`rig`]: the bones the body drives, found by name.
 //! - [`joints`]: the rig for the skeleton the controller holds, and the bounds-checked joint reads
 //!   and writes.
-//! - [`solver`]: the body under the player's head, the feet, the walk, and the clavicles (pure).
-//! - [`gate_state`]: what the gate keeps between ticks, and the steps of the gate that update it.
-//! - [`head`]: the player's head as the body reads it, at the neck pivot, and the height the player
-//!   is seen to stand at.
-//! - [`ground`]: the scene rays that find the ground under the footholds.
+//! - [`solver`]: the torso on the animation's hips, the clavicles, and the arms' keep-out (pure).
+//! - [`gate_state`]: what the gate keeps between ticks.
+//! - [`head`]: the player's head as the torso reads it, at the neck pivot.
 //! - [`state`]: what the character is doing, for the hand-over table, and whether the animation
 //!   moves the body.
 //! - [`signals`]: the grapple's ledge climb and the hit reactions, which the character does not
 //!   keep.
 //! - [`targets`]: the fade of the HumanIK targets on the owned bones.
 //! - [`wings`]: Rico's arms in the wingsuit, carried over from the player's.
+//! - [`twist`]: the arms' twist bones.
 //! - [`config`]: the mode and the tuning.
 //!
-//! [`at_solve_gate`] runs the mode: `Full` builds the body, handing each
-//! region (the legs, the torso) between it and the animation by the table in [`authority`], and
-//! zeroes the game's own IK targets on the bones it owns. While it has any weight, [`owns_body`] tells the
-//! pre-solve IK (the body IK's torso) to stand down.
-//! Where the animation keeps the hips (a vehicle seat), the torso is solved on the clip's hips
-//! instead ([`solver::anchored`]); see `docs/mod/body/procedural-states.md`.
+//! [`at_solve_gate`] runs the mode: `Full` poses the torso, handing it between the player and the
+//! animation by the table in [`authority`], and fades the game's own IK targets on the bones it
+//! owns. While it has any weight, [`owns_body`] tells the pre-solve IK (the body IK's torso) to
+//! stand down.
 
 pub mod authority;
 pub mod config;
 mod gate_state;
-pub mod ground;
 pub mod head;
 pub mod joints;
 pub mod rig;
@@ -52,10 +53,10 @@ use std::{
     time::Instant,
 };
 
-use glam::{Mat4, Vec2, Vec3};
+use glam::Mat4;
 use jc3gi::{
     animation::ik::{Effector, HumanIK},
-    character::character::{AimState, Character},
+    character::character::Character,
 };
 use parking_lot::Mutex;
 
@@ -64,101 +65,50 @@ use crate::{
     controllers::{
         body::{
             procedural::{
-                authority::{Case, WeightFollower, Weights, classify},
+                authority::{Case, classify},
                 config::{ProceduralBodyConfig, ProceduralMode},
-                gate_state::{FeetRequest, Landing, STATE, State},
-                ground::{FitGround, GroundCaster, GroundTally},
-                rig::{Rig, RigBone, RigError},
+                gate_state::{STATE, State},
+                rig::{Rig, RigBone},
                 solver::{
                     SolveInput,
-                    air::{AirTuning, air_feet, mix_feet},
-                    anchored::{HangTuning, hang_feet, solve_anchored, upright_share},
+                    anchored::{solve_anchored, upright_share},
                     arms::{Side, TorsoKeepOut},
                     clavicles::{self, ClavicleTurn},
-                    crouch_depth, hips_height, hips_room, line_yaw,
-                    pose::{RigPose, SolveKind},
-                    reach_drop, solve,
+                    line_yaw,
+                    pose::RigPose,
                 },
                 targets::{Fade, Slot, TargetFade},
                 wings::{WingRequest, read_player_arms},
             },
-            rig::{legs::swing::FootPose, pelvis, torso_turn},
+            rig::torso_turn,
         },
         locomotion::{anchor::JUMP_GRACE_S, status as locomotion_status},
         mode::{AirborneVariant, Mode, current as current_mode},
-        vehicles::parachute_brake,
     },
-    headpose::{body_relative_rotation, query},
+    headpose::body_relative_rotation,
 };
 
 /// What the procedural body did at its last gate.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct ProceduralStatus {
-    pub(crate) fit: crate::controllers::body::rig::runtime::FitStatus,
     pub at: Option<Instant>,
     pub mode: ProceduralMode,
     /// The torso's weight of the procedural pose against the animation.
     pub weight: f32,
-    /// The legs' weight of the procedural pose against the animation.
-    pub legs_weight: f32,
     /// The hand-over table's case at the last gate.
     pub case: Case,
     /// Why the skeleton could not be rigged, if it could not.
-    pub rig_error: Option<RigError>,
-    /// How far the solved hips sit below the animated ones, metres.
-    pub hips_drop_m: f32,
-    /// How far the hips drop for the legs to reach the feet, metres.
-    pub reach_drop_m: f32,
+    pub rig_error: Option<rig::RigError>,
     /// How far the solved neck sits from its target, metres.
     pub neck_error_m: f32,
-    /// Whether a planted foot is stepping.
-    pub stepping: bool,
-    /// The body's horizontal speed, metres per second.
-    pub speed_mps: f32,
-    /// The walk's phase while walking.
-    pub gait_phase: Option<f32>,
-    /// How far the head has taken the hips toward their lowest, `0..=1`: what the crouch gait
-    /// scales the steps by.
-    pub crouch_depth: f32,
-    /// The height the player is seen to stand at: the neck pivot's over the head anchor, metres.
-    pub standing_m: f32,
-    /// How many samples of it are held.
-    pub standing_samples: usize,
-    /// How far the player's head is below that, past the deadband, metres.
-    pub head_drop_m: f32,
-    /// Whether the feet walk rather than step standing.
-    pub legs_moving: bool,
-    /// How far ahead of its hip the last walking foot landed, metres.
-    pub touchdown_lead_m: Option<f32>,
-    /// How far the body leans into its motion, degrees.
-    pub motion_lean_deg: f32,
-    /// How far the falling legs have reached for the ground below, `0..=1`.
-    pub landing_reach: f32,
-    /// Whether the neutral stance the feet stand around has been measured.
-    pub stance_measured: bool,
-    /// The last gate's ground casts.
-    pub ground: GroundTally,
     /// The clavicles' turns toward the hands, left then right.
     pub clavicles: [ClavicleTurn; 2],
-    /// The legs' weight of the air's feet against the ground's.
-    pub air_weight: f32,
-    /// The root's vertical speed, metres per second, up positive.
-    pub vertical_mps: f32,
-    /// The landing dip's drop of the hips, metres.
-    pub landing_dip_m: f32,
-    /// Whether the last pose written was the torso on the animation's hips rather than the body
-    /// under the head.
-    pub on_animated_hips: bool,
-    /// Whether a switch between the two solves is still fading.
-    pub switch_fading: bool,
     /// The wingsuit's arms' weight against the animation.
     pub wing_weight: f32,
     /// Which hands the wingsuit's arms placed a target for, left then right.
     pub wing_hands: [bool; 2],
     /// Which hands the wingsuit's arms queued a target for, left then right.
     pub wing_queued: [bool; 2],
-    /// How far the hanging legs swing forward under the parachute, as a share of the full flare.
-    pub flare: f32,
 }
 
 /// What the controllers' arm targets are queued against while the procedural body poses the
@@ -179,9 +129,10 @@ pub fn arm_context() -> Option<ArmContext> {
 }
 
 /// This tick's torso keep-out, carried into world space by `to_world` (the character's own world
-/// transform): `None` when the procedural body did not pose the torso this tick. A caller that keeps its own carried target out of the player's body,
-/// such as the physical hands' held-object keep-out, queries this instead of rebuilding the torso's
-/// shape, so the two keep-outs never drift apart.
+/// transform): `None` when the procedural body did not pose the torso this tick. A caller that
+/// keeps its own carried target out of the player's body, such as the physical hands' held-object
+/// keep-out, queries this instead of rebuilding the torso's shape, so the two keep-outs never drift
+/// apart.
 pub fn torso_keep_out(to_world: Mat4) -> Option<TorsoKeepOut> {
     arm_context().map(|arms| arms.keep_out.to_world(to_world))
 }
@@ -203,20 +154,10 @@ pub fn owns_body() -> bool {
     torso_weight() > 0.0
 }
 
-/// Whether the ordinary on-foot fit excludes independent pre-solve torso targets.
-pub(crate) fn constrained_path() -> bool {
-    if crate::controllers::body::rig::runtime::migrated_path() {
-        return true;
-    }
-    Config::lock_query(|c| c.controllers.body.procedural.mode == ProceduralMode::Full)
-        && crate::headpose::source() == crate::headpose::Source::Vr
-        && crate::hooks::in_gameplay()
-        && published_status().case == Case::OnFoot
-}
-
 /// The torso's weight of the procedural pose at the last gate, `0..=1`. The pre-solve IK that
-/// would pose the same bones (the body IK's torso) is queued while it is below one, and the gate fades the reach and pull of those targets by what is
-/// left of it ([`neutralize_owned_targets`]), so the hand-over is as gradual as the blend.
+/// would pose the same bones (the body IK's torso) is queued while it is below one, and the gate
+/// fades the reach and pull of those targets by what is left of it ([`neutralize_owned_targets`]),
+/// so the hand-over is as gradual as the blend.
 pub fn torso_weight() -> f32 {
     f32::from_bits(TORSO_WEIGHT.load(Ordering::Relaxed))
 }
@@ -225,18 +166,15 @@ pub fn torso_weight() -> f32 {
 /// character, or its reduced level of detail): nothing wrote the procedural pose, so the pre-solve
 /// IK must not stand down for it, and the blend starts over when the gate runs again.
 pub(crate) fn gate_skipped() {
-    crate::controllers::body::rig::runtime::hand_back();
     publish_torso_weight(0.0);
     let mut state = STATE.lock();
-    state.status.fit = crate::controllers::body::rig::runtime::status();
     state.blend.reset();
     state.status.weight = 0.0;
-    state.status.legs_weight = 0.0;
 }
 
 /// Run the pose authority for the local player, at the `MAIN` pass's solve gate. `dt` is the
-/// pass's step, which paces every follower, the blend, the walk, and the vertical speed, so the
-/// body keeps the simulation's time rather than the wall clock's.
+/// pass's step, which paces the blend and the followers, so the body keeps the simulation's time
+/// rather than the wall clock's.
 ///
 /// # Safety
 ///
@@ -248,7 +186,6 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
     let wrote = unsafe { run_gate(character, dt) };
     if !wrote {
         publish_torso_weight(0.0);
-        crate::controllers::body::rig::runtime::gate_failed();
     }
     let wing_queue = {
         let mut state = STATE.lock();
@@ -265,34 +202,6 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
     wrote
 }
 
-fn uses_constrained_fit(case: Case, mode: ProceduralMode) -> bool {
-    case == Case::OnFoot && mode == ProceduralMode::Full
-}
-
-#[cfg(test)]
-#[test]
-fn dispatcher_keeps_on_foot_in_constrained_fit_and_airborne_in_under_head() {
-    assert!(uses_constrained_fit(Case::OnFoot, ProceduralMode::Full));
-    for case in [
-        Case::Jump,
-        Case::HandClimb,
-        Case::Flight,
-        Case::Wingsuit,
-        Case::Parachute,
-    ] {
-        assert!(!uses_constrained_fit(case, ProceduralMode::Full));
-    }
-    assert!(!uses_constrained_fit(Case::OnFoot, ProceduralMode::Off));
-    for enabled in [false, true] {
-        let saved = format!(
-            "mode = 'Full'\nkneel = {enabled}\nsit = {enabled}\nkneel_blend_s = 0.4\nsit_blend_s = 0.6\nsit_after_s = 1.0\n"
-        );
-        let config: ProceduralBodyConfig =
-            toml::from_str(&saved).expect("old saved keys remain accepted");
-        assert!(uses_constrained_fit(Case::OnFoot, config.mode));
-    }
-}
-
 /// The gate itself; [`at_solve_gate`] publishes its status after it. Returns whether it wrote a
 /// procedural pose; every path that does not leaves the torso's published weight at zero.
 ///
@@ -300,25 +209,13 @@ fn dispatcher_keeps_on_foot_in_constrained_fit_and_airborne_in_under_head() {
 ///
 /// As [`at_solve_gate`].
 unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
-    let (config, legs_config, scale) = Config::lock_query(|c| {
-        (
-            c.controllers.body.procedural,
-            c.controllers.body.rig.legs,
-            c.vr.world_scale,
-        )
-    });
-    let pelvis_config = pelvis::PELVIS;
+    let (config, scale) = Config::lock_query(|c| (c.controllers.body.procedural, c.vr.world_scale));
     let now = Instant::now();
     // Read before the gate's own state too: it takes the configuration and the controller frame.
     let mode = current_mode().mode;
     let player_arms = (mode == Mode::Airborne(AirborneVariant::Wingsuit))
         .then(read_player_arms)
         .flatten();
-    let brake = if mode == Mode::Airborne(AirborneVariant::Parachute) {
-        parachute_brake()
-    } else {
-        0.0
-    };
     let mut state = STATE.lock();
     let dt = if dt.is_finite() {
         dt.clamp(0.0, MAX_STEP_S)
@@ -328,15 +225,10 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     state.status.at = Some(now);
     state.status.mode = config.mode;
     state.arms = None;
-    if config.mode != ProceduralMode::Full {
-        crate::controllers::body::rig::runtime::hand_back();
-    }
-    state.status.fit = crate::controllers::body::rig::runtime::status();
     // Switched off, the body blends back to the animation before the gate stops acting.
-    if config.mode == ProceduralMode::Off && !state.blend.weights().any() {
+    if config.mode == ProceduralMode::Off && state.blend.weight() <= 0.0 {
         state.blend.reset();
         state.status.weight = 0.0;
-        state.status.legs_weight = 0.0;
         return false;
     }
     let Some(controller) = (unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() })
@@ -349,377 +241,85 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     let rig = &live.rig;
     let animated = unsafe { live.read(controller) };
     let locomotion = locomotion_status();
-    let aiming = character
-        .m_AimFlags
-        .intersects(AimState::m_AimingWeapon | AimState::m_AimingGrapple);
-    state.observe_stance(&animated, rig, locomotion.standing_still() && !aiming, dt);
-    match config.mode {
-        ProceduralMode::Off | ProceduralMode::Full => {
-            let read = unsafe {
-                state
-                    .tracker
-                    .read(character, &locomotion, now, dt, JUMP_GRACE_S, &config)
-            };
-            let case = if config.mode == ProceduralMode::Off {
-                Case::SwitchedOff
-            } else {
-                classify(&read)
-            };
-            if case != Case::OnFoot {
-                crate::controllers::body::rig::runtime::hand_back();
-                state.status.fit = crate::controllers::body::rig::runtime::status();
-            }
-            let previous = state.blend.weights();
-            let weights = state.blend.step(case, dt, &config);
-            state.log_case(case, &weights);
-            state.status.case = case;
-            state.status.on_animated_hips = case.anchored() && weights.any();
-            state.status.switch_fading = false;
-            state.status.weight = weights.torso;
-            state.status.legs_weight = weights.legs;
-            let world = Mat4::from(character.m_WorldMatrixT1);
-            let previous_world = Mat4::from(character.m_WorldMatrixT0);
-            let vertical = state.vertical_speed(previous_world.w_axis.y, world.w_axis.y, dt);
-            state.track_landing(case, vertical, now, &config);
-            let wings = WingRequest {
-                case,
-                player: player_arms.as_ref(),
-                rig,
-                animated: &animated,
-                world: &world,
-                dt,
-            };
-            state.wing_queue = state.step_wings(&wings, &config);
-            if !weights.any() {
-                state.reset_under_head();
-                state.clavicles.reset();
-                state.switch.reset();
-                state.on_hips_logged = None;
-                state.flare = WeightFollower::new();
-                state.status.flare = 0.0;
-                state.status.clavicles = [ClavicleTurn::ZERO; 2];
-                state.fade.forget();
-                return false;
-            }
-            if case.anchored() {
-                crate::controllers::body::rig::runtime::hand_back();
-                let gate = AnchoredGate {
-                    character,
-                    animated: &animated,
-                    case,
-                    weights,
-                    brake,
-                    scale,
-                    dt,
-                };
-                let Some(pose) =
-                    (unsafe { pose_on_animated_hips(&mut state, rig, &gate, &config) })
-                else {
-                    return false;
-                };
-                unsafe { live.write(controller, &pose) };
-                finish_write(&mut state, character, &pose, &weights, &config);
-                return true;
-            }
-            state.on_hips_logged = None;
-            if uses_constrained_fit(case, config.mode) {
-                state.reset_under_head();
-                state.status.stepping = false;
-                state.status.legs_moving = false;
-                state.status.touchdown_lead_m = None;
-                state.status.motion_lean_deg = 0.0;
-                state.status.reach_drop_m = 0.0;
-                state.status.landing_dip_m = 0.0;
-                state.status.landing_reach = 0.0;
-                state.status.air_weight = 0.0;
-                let mut caster = GroundCaster::new(character, world.w_axis.y, &config);
-                let mut ground =
-                    unsafe { FitGround::new(character, &mut caster, world.w_axis.truncate(), now) };
-                let support = ground.as_ref().map(|ground| ground.sample);
-                let mut missing = crate::controllers::body::rig::estimate::MissingTerrain;
-                let terrain: &mut dyn crate::controllers::body::rig::estimate::Terrain =
-                    match ground.as_mut() {
-                        Some(ground) => ground,
-                        None => &mut missing,
-                    };
-                let fit = crate::controllers::body::rig::runtime::at_gate(
-                    crate::controllers::body::rig::runtime::GateInput {
-                        rig,
-                        player: crate::controllers::body::player(),
-                        previous_root: previous_world,
-                        root: world,
-                        head_world: query().position,
-                        view: crate::headpose::xr::body_rotation(),
-                        world_scale: scale,
-                        origin: crate::controllers::roomscale::teleport::epoch(),
-                        support,
-                        now,
-                        dt,
-                    },
-                    terrain,
-                );
-                state.status.ground = caster.tally;
-                state.ground_log.record(&caster.tally, now);
-                state.status.fit = crate::controllers::body::rig::runtime::status();
-                let Some(gate_fit) = fit else {
-                    state.status.weight = 0.0;
-                    state.status.legs_weight = 0.0;
-                    return false;
-                };
-                let fit = gate_fit.snapshot;
-                let rotation = body_relative_rotation();
-                // A held fit is realized against the root it was made in, so it rides along with
-                // the character until a fit is accepted again.
-                let Some(mut solved) =
-                    solver::constrained::realize(rig, &animated, &fit, gate_fit.root, rotation)
-                else {
-                    crate::controllers::body::rig::runtime::realization_failed();
-                    state.status.fit = crate::controllers::body::rig::runtime::status();
-                    state.status.weight = 0.0;
-                    state.status.legs_weight = 0.0;
-                    return false;
-                };
-                let turns = unsafe { state.turn_clavicles(character, rig, &solved, dt, &config) };
-                for side in Side::BOTH {
-                    clavicles::apply(&mut solved, rig, side, turns[side.index()]);
-                }
-                let weights = Weights {
-                    legs: weights.legs * gate_fit.weight,
-                    torso: weights.torso * gate_fit.weight,
-                };
-                state.status.weight = weights.torso;
-                state.status.legs_weight = weights.legs;
-                let pose = animated.blend_regions(&solved, weights.legs, weights.torso);
-                unsafe { live.write(controller, &pose) };
-                finish_write(&mut state, character, &pose, &weights, &config);
-                state.status.hips_drop_m =
-                    animated.position(RigBone::Hips).y - pose.position(RigBone::Hips).y;
-                state.status.neck_error_m = fit.quality.neck_residual_m;
-                state.status.gait_phase = Some(fit.gait.phase);
-                state.status.stepping = fit.contacts.iter().any(|contact| {
-                    matches!(
-                        contact,
-                        crate::controllers::body::rig::estimate::ContactState::Swinging { .. }
-                    )
-                });
-                state.status.legs_moving =
-                    fit.gait.completed_across_support.length_squared() > 1.0e-6;
-                return true;
-            }
-            crate::controllers::body::rig::runtime::hand_back();
-            let velocity = root_velocity(&previous_world, &world, dt);
-            let mut caster = GroundCaster::new(character, world.w_axis.y, &config);
-            // The legs come back from the animation with the feet where it left them, and step
-            // from there; while the animation has them, the feet are its own.
-            let legs_procedural = weights.legs > 0.0 || case.targets()[0] > 0.0;
-            let airborne = matches!(
-                case,
-                Case::Jump | Case::HandClimb | Case::Flight | Case::Wingsuit | Case::Parachute
-            );
-            let player = head::read(&world, scale);
-            let standing = case == Case::OnFoot && legs_procedural && !airborne;
-            let hips_head_y = state.hips_head(rig, &player, standing, dt, &config);
-            let crouch = crouch_depth(rig, hips_head_y, &config);
-            state.status.crouch_depth = crouch;
-            let request = FeetRequest {
-                world: &world,
-                rig,
-                animated: &animated,
-                still: locomotion.standing_still(),
-                velocity,
-                crouch,
-                dt,
-            };
-            let stance = state.stance_feet(&request);
-            let feet = if legs_procedural {
-                let ground_feet = if airborne {
-                    // The feet leave the ground with the body; the landing plants them afresh
-                    // where they are wanted.
-                    state.feet.reset();
-                    let takeoff = state.last_feet.unwrap_or_else(|| animated_feet(&animated));
-                    *state.takeoff_feet.get_or_insert(takeoff)
-                } else {
-                    let landed = state.takeoff_feet.take().is_some();
-                    if !state.feet.placed() && !landed {
-                        state
-                            .feet
-                            .plant(animated_feet(&animated).map(|f| to_world(&world, &f)));
-                    }
-                    state.place_feet(&request, &config, &legs_config, &mut caster)
-                };
-                let air_weight = state.air.step(airborne, dt);
-                state.status.air_weight = air_weight;
-                if air_weight > 0.0 {
-                    let tuning = AirTuning {
-                        tuck: config.air_tuck,
-                        hang: config.air_hang,
-                        fall_speed_mps: config.air_fall_speed_mps,
-                        toe_drop: config.air_toe_drop_deg.to_radians(),
-                    };
-                    let hips = hips_height(rig, hips_head_y, &config);
-                    let air = air_feet(rig, stance, hips, vertical, &tuning);
-                    let air = if airborne && vertical < 0.0 {
-                        let landing = Landing {
-                            world: &world,
-                            rig,
-                            stance,
-                            hips,
-                            vertical,
-                        };
-                        unsafe { state.reach_for_landing(&landing, air, &mut caster, &config) }
-                    } else {
-                        state.status.landing_reach = 0.0;
-                        air
-                    };
-                    mix_feet(ground_feet, air, air_weight)
-                } else {
-                    state.status.landing_reach = 0.0;
-                    ground_feet
-                }
-            } else {
-                state.feet.reset();
-                state.air.reset();
-                state.takeoff_feet = None;
-                state.status.air_weight = 0.0;
-                animated_feet(&animated)
-            };
-            state.last_feet = Some(feet);
-            state.status.ground = caster.tally;
-            state.ground_log.record(&caster.tally, now);
-            state.status.stepping = state.feet.stepping();
-            state.status.speed_mps = velocity.length();
-            state.status.gait_phase = state.feet.phase();
-            state.status.legs_moving = state.feet.moving();
-            state.status.touchdown_lead_m = state.feet.touchdown().map(|(_, lead)| lead);
-            let Some(mut input) = solve_input(character, &animated, feet, scale) else {
-                return false;
-            };
-            input.hips_head_y = Some(hips_head_y);
-            input.support = (stance[0].position + stance[1].position) * 0.5;
-            (input.planted, input.heel_lifts) = if legs_procedural && !airborne {
-                (state.feet.planted(), state.feet.heel_lifts())
-            } else {
-                ([true; 2], [0.0; 2])
-            };
-            // The torso comes back from the animation with the hips where it left them, and rises
-            // from there at the reach drop's pace and moves over the stance at the follower's.
-            if previous.torso <= 0.0 {
-                let hips = animated.position(RigBone::Hips);
-                state.hips.seed(Vec2::new(hips.x, hips.z));
-                let seed = hips_height(rig, input.hips_head(), &config)
-                    - animated.position(RigBone::Hips).y;
-                state
-                    .drop
-                    .seed(seed.min(hips_room(rig, input.hips_head(), &config)));
-            }
-            // The pelvis: over the stance, hinged back by a share of the lean the chase leaves
-            // alone, and leaning into the root's measured motion.
-            let flat = |v: Vec3| Vec2::new(v.x, v.z);
-            let lean = flat(player.head - player.upright);
-            let moving = flat(world.inverse().transform_vector3(velocity));
-            let motion = state
-                .motion
-                .step(moving, dt, pelvis::spine_length(rig), &pelvis_config);
-            state.status.motion_lean_deg = motion.pitch.to_degrees();
-            let place = pelvis::target(
-                pelvis::rest(rig, &input, &config),
-                lean,
-                motion.offset,
-                &pelvis_config,
-            );
-            input.hips_xz = Some(state.hips.step(place, dt, pelvis_config.follow_s));
-            let need = reach_drop(rig, &input, &config);
-            let reach = state.drop.step(need, dt, config.reach_drop_s);
-            let dip = state.dip.step(dt, config.landing_dip_s);
-            state.status.reach_drop_m = reach;
-            state.status.landing_dip_m = dip;
-            // The dip is the hips' alone: the view is anchored to the root, not to them.
-            input.hips_drop = (reach + dip).min(hips_room(rig, input.hips_head(), &config));
-            let mut solved = solve(rig, &input, &config);
-            let turns = unsafe { state.turn_clavicles(character, rig, &solved, dt, &config) };
-            for side in Side::BOTH {
-                clavicles::apply(&mut solved, rig, side, turns[side.index()]);
-            }
-            let pose = animated.blend_regions(&solved, weights.legs, weights.torso);
-            let pose = state
-                .switch
-                .step(SolveKind::UnderHead, pose, dt, config.blend_s);
-            unsafe { live.write(controller, &pose) };
-            finish_write(&mut state, character, &pose, &weights, &config);
-            state.status.hips_drop_m =
-                animated.position(RigBone::Hips).y - pose.position(RigBone::Hips).y;
-            let neck_target = input.head
-                + input.head_rotation
-                    * (animated.position(RigBone::Neck) - animated.position(RigBone::Head));
-            state.status.neck_error_m = solved.position(RigBone::Neck).distance(neck_target);
-            state.log_gait(now, &config);
-            true
-        }
+    let read = unsafe {
+        state
+            .tracker
+            .read(character, &locomotion, now, dt, JUMP_GRACE_S, &config)
+    };
+    let case = if config.mode == ProceduralMode::Off {
+        Case::SwitchedOff
+    } else {
+        classify(&read)
+    };
+    let weight = state.blend.step(case, dt, &config);
+    state.log_case(case, weight);
+    state.status.case = case;
+    state.status.weight = weight;
+    let world = Mat4::from(character.m_WorldMatrixT1);
+    let wings = WingRequest {
+        case,
+        player: player_arms.as_ref(),
+        rig,
+        animated: &animated,
+        world: &world,
+        dt,
+    };
+    state.wing_queue = state.step_wings(&wings, &config);
+    if weight <= 0.0 {
+        state.clavicles.reset();
+        state.on_hips_logged = None;
+        state.status.clavicles = [ClavicleTurn::ZERO; 2];
+        state.fade.forget();
+        return false;
     }
+    let gate = TorsoGate {
+        character,
+        animated: &animated,
+        case,
+        weight,
+        scale,
+        dt,
+    };
+    let Some(pose) = (unsafe { pose_torso(&mut state, rig, &gate, &config) }) else {
+        return false;
+    };
+    unsafe { live.write(controller, &pose) };
+    finish_write(&mut state, character, &pose, weight, &config);
+    true
 }
 
-/// What the gate poses the torso on the animation's hips from.
-struct AnchoredGate<'a> {
+/// What the gate poses the torso from.
+struct TorsoGate<'a> {
     character: &'a Character,
     animated: &'a RigPose,
     case: Case,
-    weights: Weights,
-    /// How far the parachute's handles brake, `0..=1`.
-    brake: f32,
+    /// The torso's weight against the animation.
+    weight: f32,
     /// The VR world scale.
     scale: f32,
     dt: f32,
 }
 
-/// The pose to write where the animation keeps the hips (a vehicle seat, the parachute's harness):
-/// the torso solved on the clip's hips toward the player's head, the clavicles turned toward the
-/// hands, and the legs left to the animation, or hanging from the harness under the parachute and
-/// swinging forward as the handles brake. `None` when the head is not known.
+/// The pose to write: the torso solved on the clip's hips toward the player's head, the clavicles
+/// turned toward the hands, and the hips, the pelvis, and the legs left to the animation. `None`
+/// when the head is not known.
 ///
 /// # Safety
 ///
 /// As [`at_solve_gate`].
-unsafe fn pose_on_animated_hips(
+unsafe fn pose_torso(
     state: &mut State,
     rig: &Rig,
-    gate: &AnchoredGate<'_>,
+    gate: &TorsoGate<'_>,
     config: &ProceduralBodyConfig,
 ) -> Option<RigPose> {
-    // The body under the head starts afresh from the animation when it comes back.
-    state.reset_under_head();
-    let input = solve_input(
-        gate.character,
-        gate.animated,
-        animated_feet(gate.animated),
-        gate.scale,
-    )?;
-    let flare = state.flare.step(
-        if gate.case == Case::Parachute {
-            gate.brake
-        } else {
-            0.0
-        },
-        gate.dt,
-        config.parachute_flare_s,
-        config.parachute_flare_s,
-    );
-    state.status.flare = flare;
-    let legs = (gate.case == Case::Parachute).then(|| {
-        let tuning = HangTuning {
-            share: config.air_hang,
-            flare: config.parachute_flare_deg.to_radians(),
-            toe_drop: config.air_toe_drop_deg.to_radians(),
-        };
-        hang_feet(rig, gate.animated, flare, &tuning)
-    });
-    let mut solved = solve_anchored(rig, &input, legs, config);
+    let input = solve_input(gate.character, gate.animated, gate.scale)?;
+    let mut solved = solve_anchored(&input, config);
     let turns = unsafe { state.turn_clavicles(gate.character, rig, &solved, gate.dt, config) };
     for side in Side::BOTH {
         clavicles::apply(&mut solved, rig, side, turns[side.index()]);
     }
-    let pose = gate
-        .animated
-        .blend_regions(&solved, gate.weights.legs, gate.weights.torso);
+    let pose = gate.animated.blend_torso(&solved, gate.weight);
     let neck_target = input.head
         + input.head_rotation
             * (gate.animated.position(RigBone::Neck) - gate.animated.position(RigBone::Head));
@@ -729,23 +329,11 @@ unsafe fn pose_on_animated_hips(
         tracing::info!(
             target: "body",
             case = gate.case.label(),
-            torso = gate.weights.torso,
-            legs = gate.weights.legs,
+            torso = gate.weight,
             neck_error_m,
             "procedural body: the torso follows the head on the animation's hips",
         );
     }
-    let pose = state
-        .switch
-        .step(SolveKind::OnAnimatedHips, pose, gate.dt, config.blend_s);
-    state.status.hips_drop_m = 0.0;
-    state.status.reach_drop_m = 0.0;
-    state.status.landing_dip_m = 0.0;
-    state.status.air_weight = 0.0;
-    state.status.landing_reach = 0.0;
-    state.status.stepping = false;
-    state.status.gait_phase = None;
-    state.status.legs_moving = false;
     state.status.neck_error_m = neck_error_m;
     Some(pose)
 }
@@ -756,25 +344,23 @@ fn finish_write(
     state: &mut State,
     character: &mut Character,
     pose: &RigPose,
-    weights: &Weights,
+    weight: f32,
     config: &ProceduralBodyConfig,
 ) {
-    publish_torso_weight(weights.torso);
-    state.status.switch_fading = state.switch.fading();
+    publish_torso_weight(weight);
     // The elbow hints point down and back from the chest, which only holds for a chest near
     // upright.
     let upright = (pose.position(RigBone::Neck) - pose.position(RigBone::Spine))
         .try_normalize()
         .is_some_and(|axis| upright_share(axis) > ELBOW_HINT_UPRIGHT);
-    state.arms = (weights.torso > 0.0).then(|| ArmContext {
+    state.arms = (weight > 0.0).then(|| ArmContext {
         keep_out: TorsoKeepOut::around(
             pose,
             config.chest_radius_m,
             config.abdomen_radius_m,
             config.hand_margin_m,
         ),
-        elbow_reach: (config.elbow_hints && upright)
-            .then_some(config.elbow_hint_reach * weights.torso),
+        elbow_reach: (config.elbow_hints && upright).then_some(config.elbow_hint_reach * weight),
         chest_yaw: line_yaw(
             pose.position(RigBone::LeftShoulder),
             pose.position(RigBone::RightShoulder),
@@ -782,7 +368,7 @@ fn finish_write(
         .unwrap_or(0.0),
     });
     if config.neutralize_targets {
-        neutralize_owned_targets(&mut character.m_HIK, weights, &mut state.fade);
+        neutralize_owned_targets(&mut character.m_HIK, weight, &mut state.fade);
     } else {
         state.fade.forget();
     }
@@ -794,33 +380,12 @@ const ELBOW_HINT_UPRIGHT: f32 = 0.5;
 /// The longest step the body takes, seconds: a hitch is not a long blend.
 const MAX_STEP_S: f32 = 0.1;
 
-/// The fastest the root moves vertically between two gates and still counts as moving, metres per
-/// second; anything faster is a teleport.
-const MAX_VERTICAL_MPS: f32 = 60.0;
-
-/// The fastest the root moves horizontally between two ticks and still counts as moving, metres
-/// per second; anything faster is a teleport.
-const MAX_HORIZONTAL_MPS: f32 = 40.0;
-
-/// The effectors of the torso region's bones.
-const TORSO_EFFECTORS: [Effector; 5] = [
-    Effector::HIPS,
+/// The effectors of the torso's bones. The hips are the animation's.
+const TORSO_EFFECTORS: [Effector; 4] = [
     Effector::WAIST,
     Effector::CHEST_END,
     Effector::LEFT_SHOULDER,
     Effector::RIGHT_SHOULDER,
-];
-
-/// The effectors of the legs region's bones.
-const LEG_EFFECTORS: [Effector; 8] = [
-    Effector::LEFT_HIP,
-    Effector::RIGHT_HIP,
-    Effector::LEFT_KNEE,
-    Effector::RIGHT_KNEE,
-    Effector::LEFT_ANKLE,
-    Effector::RIGHT_ANKLE,
-    Effector::LEFT_FOOT,
-    Effector::RIGHT_FOOT,
 ];
 
 /// The torso's weight [`torso_weight`] returns, as its bits.
@@ -841,98 +406,41 @@ static PUBLISHED: Mutex<ProceduralStatus> = Mutex::new(INITIAL_STATUS);
 
 /// The status before the first gate.
 const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
-    fit: crate::controllers::body::rig::runtime::FitStatus {
-        step: 0,
-        sample: None,
-        quality: None,
-        fallback: Some(crate::controllers::body::rig::runtime::Fallback::NotUpdated),
-        presented: None,
-        weight: 0.0,
-        evaluations: 0,
-    },
     at: None,
     mode: ProceduralMode::Off,
     weight: 0.0,
-    legs_weight: 0.0,
     case: Case::NotInHeadset,
     rig_error: None,
-    hips_drop_m: 0.0,
-    reach_drop_m: 0.0,
     neck_error_m: 0.0,
-    stepping: false,
-    speed_mps: 0.0,
-    gait_phase: None,
-    crouch_depth: 0.0,
-    standing_m: 0.0,
-    standing_samples: 0,
-    head_drop_m: 0.0,
-    legs_moving: false,
-    touchdown_lead_m: None,
-    motion_lean_deg: 0.0,
-    landing_reach: 0.0,
-    stance_measured: false,
-    ground: GroundTally::new(),
     clavicles: [ClavicleTurn::ZERO; 2],
-    air_weight: 0.0,
-    vertical_mps: 0.0,
-    landing_dip_m: 0.0,
-    on_animated_hips: false,
-    switch_fading: false,
     wing_weight: 0.0,
     wing_hands: [false; 2],
     wing_queued: [false; 2],
-    flare: 0.0,
 };
 
-/// The root's horizontal velocity over the pass, world space, from the previous tick's root to
-/// this one's: whatever moved it (the stick, the rig's chase, a push, a wall that stopped it).
-/// A teleport reads as standing still.
-fn root_velocity(previous: &Mat4, current: &Mat4, dt: f32) -> Vec3 {
-    let moved = current.w_axis - previous.w_axis;
-    let horizontal = Vec2::new(moved.x, moved.z);
-    let speed = root_speed(horizontal.length(), dt, MAX_HORIZONTAL_MPS);
-    let velocity = horizontal.normalize_or_zero() * speed;
-    Vec3::new(velocity.x, 0.0, velocity.y)
-}
-
-/// The solve's inputs from the headpose, the torso estimate, and the feet, in model space, at the
-/// VR world scale `scale`.
-fn solve_input(
-    character: &Character,
-    animated: &RigPose,
-    feet: [FootPose; 2],
-    scale: f32,
-) -> Option<SolveInput> {
+/// The solve's inputs from the headpose and the torso, in model space, at the VR world scale
+/// `scale`.
+fn solve_input(character: &Character, animated: &RigPose, scale: f32) -> Option<SolveInput> {
     let world = Mat4::from(character.m_WorldMatrixT1);
     let (_, rotation, _) = world.to_scale_rotation_translation();
-    let head = head::read(&world, scale).head;
+    let head = head::read(&world, scale);
     head.is_finite().then(|| SolveInput {
         animated: *animated,
         head,
-        hips_head_y: None,
         head_rotation: body_relative_rotation(),
         torso_yaw: torso_turn(rotation),
-        feet: feet.map(|f| f.position),
-        foot_rotations: feet.map(|f| f.rotation),
-        support: (feet[0].position + feet[1].position) * 0.5,
-        planted: [true; 2],
-        heel_lifts: [0.0; 2],
-        hips_xz: None,
-        hips_drop: 0.0,
-        lower: None,
     })
 }
 
-/// Fade the game's (and the mod's) IK targets on the bones the procedural body owns, each region
-/// by its weight, so the solve after the gate leaves them where the pose put them: in proportion
-/// to the weight, whatever was queued this tick ([`TargetFade`]). The head's target keeps its
-/// reach, so it still closes the gap to the player's head, but loses its pull by the torso's
-/// weight, so it cannot drag the procedural spine and hips after it.
-fn neutralize_owned_targets(hik: &mut HumanIK, weights: &Weights, fade: &mut TargetFade) {
-    let torso = TORSO_EFFECTORS.map(|e| (e as usize, weights.torso, Fade::All));
-    let legs = LEG_EFFECTORS.map(|e| (e as usize, weights.legs, Fade::All));
-    let head = [(Effector::HEAD as usize, weights.torso, Fade::Pull)];
-    for (i, weight, kind) in torso.into_iter().chain(legs).chain(head) {
+/// Fade the game's (and the mod's) IK targets on the torso's bones by its weight, so the solve
+/// after the gate leaves them where the pose put them: in proportion to the weight, whatever was
+/// queued this tick ([`TargetFade`]). The head's target keeps its reach, so it still closes the gap
+/// to the player's head, but loses its pull by the torso's weight, so it cannot drag the
+/// procedural spine after it.
+fn neutralize_owned_targets(hik: &mut HumanIK, weight: f32, fade: &mut TargetFade) {
+    let torso = TORSO_EFFECTORS.map(|e| (e as usize, weight, Fade::All));
+    let head = [(Effector::HEAD as usize, weight, Fade::Pull)];
+    for (i, weight, kind) in torso.into_iter().chain(head) {
         let slot = Slot {
             target_reach_t: hik.m_TargetReachT[i],
             target_reach_r: hik.m_TargetReachR[i],
@@ -948,50 +456,5 @@ fn neutralize_owned_targets(hik: &mut HumanIK, weights: &Weights, fade: &mut Tar
         hik.m_ReachT[i] = faded.reach_t;
         hik.m_ReachR[i] = faded.reach_r;
         hik.m_Pull[i] = faded.pull;
-    }
-}
-
-/// The speed of a root that moved `distance` metres over `dt` seconds, metres per second: zero for
-/// no step, and for anything faster than `max_mps`, which is a teleport rather than motion.
-fn root_speed(distance: f32, dt: f32, max_mps: f32) -> f32 {
-    if dt <= 0.0 {
-        return 0.0;
-    }
-    let speed = distance / dt;
-    if speed.is_finite() && speed.abs() <= max_mps {
-        speed
-    } else {
-        0.0
-    }
-}
-
-/// The animated feet, model space.
-fn animated_feet(animated: &RigPose) -> [FootPose; 2] {
-    [RigBone::LeftFoot, RigBone::RightFoot].map(|bone| FootPose {
-        position: animated.position(bone),
-        rotation: animated.get(bone).rotation,
-    })
-}
-
-/// A model-space foot pose in the world.
-fn to_world(world: &Mat4, foot: &FootPose) -> FootPose {
-    let (_, rotation, _) = world.to_scale_rotation_translation();
-    FootPose {
-        position: world.transform_point3(foot.position),
-        rotation: (rotation * foot.rotation).normalize(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_root_speed_ignores_a_teleport_and_an_empty_step() {
-        assert_eq!(root_speed(0.1, 0.05, MAX_VERTICAL_MPS), 2.0);
-        assert_eq!(root_speed(-0.1, 0.05, MAX_VERTICAL_MPS), -2.0);
-        assert_eq!(root_speed(0.1, 0.0, MAX_VERTICAL_MPS), 0.0);
-        assert_eq!(root_speed(50.0, 0.05, MAX_VERTICAL_MPS), 0.0);
-        assert_eq!(root_speed(f32::NAN, 0.05, MAX_VERTICAL_MPS), 0.0);
     }
 }

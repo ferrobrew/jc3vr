@@ -1,9 +1,9 @@
-//! The chase's bookkeeping: what each simulation step asked the root to move, split between the
-//! chase and everything else, and how much of the completed movement was the chase's. Pure.
+//! The step drive's bookkeeping: what each simulation step asked the root to move, split between the
+//! drive and everything else, and how much of the completed movement was the drive's. Pure.
 //!
 //! The root hook submits a [`Movement`] each tick the player owns the root; the pose-finalization
 //! entry completes it against the root's displacement between the two world transforms the engine
-//! interpolates ([`Requests::complete`]). The running total of credited chase movement at the last
+//! interpolates ([`Requests::complete`]). The running total of credited drive movement at the last
 //! two completed steps ([`CompletedMovement`]) is what the cockpit shift folds in
 //! ([`crate::controllers::body::rig::root::shift`]).
 //!
@@ -17,17 +17,17 @@ use crate::controllers::body::rig::root::owner::RootOwner;
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct Movement {
     pub task: Vec2,
-    pub chase: Vec2,
+    pub drive: Vec2,
 }
 
 impl Movement {
-    /// Integrate the task's and the chase's velocities for this tick. Nothing scales the sum but a
+    /// Integrate the task's and the drive's velocities for this tick. Nothing scales the sum but a
     /// sanity cap ([`MAX_COMBINED_SPEED_MPS`]), applied to both alike so that the split survives.
-    pub fn new(task: Vec2, chase: Vec2, dt: f32) -> Self {
-        if !task.is_finite() || !chase.is_finite() || !dt.is_finite() || dt <= 0.0 {
+    pub fn new(task: Vec2, drive: Vec2, dt: f32) -> Self {
+        if !task.is_finite() || !drive.is_finite() || !dt.is_finite() || dt <= 0.0 {
             return Self::default();
         }
-        let speed = (task + chase).length();
+        let speed = (task + drive).length();
         let scale = if speed > MAX_COMBINED_SPEED_MPS {
             MAX_COMBINED_SPEED_MPS / speed
         } else {
@@ -35,14 +35,14 @@ impl Movement {
         };
         Self {
             task: task * (scale * dt),
-            chase: chase * (scale * dt),
+            drive: drive * (scale * dt),
         }
     }
 
     /// The combined velocity this movement asks for over `dt`, for the proxy.
     pub fn velocity(self, dt: f32) -> Vec2 {
         if dt.is_finite() && dt > 0.0 {
-            (self.task + self.chase) / dt
+            (self.task + self.drive) / dt
         } else {
             Vec2::ZERO
         }
@@ -50,21 +50,21 @@ impl Movement {
 
     /// Attribute free movement exactly, including opposing requests. The engine exposes only one
     /// solved proxy displacement, so collisions do not identify each contributor. For a mismatch,
-    /// credit only the chase's forward projection along achieved movement, bounded by the achieved
-    /// distance and the requested chase distance. This deliberately leaves ambiguous motion visible;
+    /// credit only the drive's forward projection along achieved movement, bounded by the achieved
+    /// distance and the requested drive distance. This deliberately leaves ambiguous motion visible;
     /// it is not a reconstruction of the collision solver or a task-only counterfactual.
     ///
     /// `actual` is the difference of two absolute world positions, so it carries their `f32`
     /// rounding, which grows with the distance from the world origin. `position_scale` is the
     /// larger magnitude of the two positions (any coordinate bound will do), and the match
     /// tolerance widens with it so that free movement far from the origin still matches.
-    pub fn achieved_chase(self, actual: Vec2, position_scale: f32) -> (Vec2, Attribution) {
-        if !actual.is_finite() || !self.task.is_finite() || !self.chase.is_finite() {
+    pub fn achieved_drive(self, actual: Vec2, position_scale: f32) -> (Vec2, Attribution) {
+        if !actual.is_finite() || !self.task.is_finite() || !self.drive.is_finite() {
             return (Vec2::ZERO, Attribution::Projected);
         }
-        let expected = self.task + self.chase;
+        let expected = self.task + self.drive;
         if actual.distance(expected) <= exact_tolerance(expected.length(), position_scale) {
-            return (self.chase, Attribution::Exact);
+            return (self.drive, Attribution::Exact);
         }
         let distance = actual.length();
         if distance <= f32::EPSILON {
@@ -73,25 +73,25 @@ impl Movement {
         let direction = actual / distance;
         let credited = direction
             * self
-                .chase
+                .drive
                 .dot(direction)
                 .max(0.0)
                 .min(distance)
-                .min(self.chase.length());
+                .min(self.drive.length());
         (credited, Attribution::Projected)
     }
 }
 
-/// How a completed step's chase was credited.
+/// How a completed step's drive was credited.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Attribution {
-    /// The root moved exactly as asked: all of the chase is credited.
+    /// The root moved exactly as asked: all of the drive is credited.
     Exact,
-    /// Something stopped or deflected the root: only the chase's projection on what it achieved.
+    /// Something stopped or deflected the root: only the drive's projection on what it achieved.
     Projected,
 }
 
-/// Cumulative world-space chase movement credited at the last two completed simulation steps.
+/// Cumulative world-space drive movement credited at the last two completed simulation steps.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct CompletedMovement {
     pub previous: Vec2,
@@ -129,7 +129,7 @@ pub struct Requests {
     pending: Option<PendingRequest>,
     completed: CompletedMovement,
     counts: LedgerCounts,
-    /// The requested and the credited chase distances of the last two completed steps, newest
+    /// The requested and the credited drive distances of the last two completed steps, newest
     /// last.
     recent: [(f32, f32); 2],
 }
@@ -150,9 +150,9 @@ impl Requests {
         }
     }
 
-    /// Whether something stopped the chase: over the last two completed steps, less than half of
-    /// the chase they asked for was credited. A wall the root slides along at a shallow angle
-    /// leaves most of the chase credited, so it is no obstruction.
+    /// Whether something stopped the drive: over the last two completed steps, less than half of
+    /// the drive they asked for was credited. A wall the root slides along at a shallow angle
+    /// leaves most of the drive credited, so it is no obstruction.
     pub fn obstructed(&self) -> bool {
         let requested: f32 = self.recent.iter().map(|(r, _)| r).sum();
         let credited: f32 = self.recent.iter().map(|(_, c)| c).sum();
@@ -201,13 +201,13 @@ impl Requests {
             let delta = current - previous;
             let position_scale = previous.abs().max(current.abs()).max_element();
             let (credited, attribution) =
-                movement.achieved_chase(Vec2::new(delta.x, delta.z), position_scale);
+                movement.achieved_drive(Vec2::new(delta.x, delta.z), position_scale);
             self.completed.current += credited;
             match attribution {
                 Attribution::Exact => self.counts.exact += 1,
                 Attribution::Projected => self.counts.projected += 1,
             }
-            step = (movement.chase.length(), credited.length());
+            step = (movement.drive.length(), credited.length());
             CompletedRequest {
                 movement,
                 owner: request.owner,
@@ -238,15 +238,15 @@ struct PendingRequest {
     owner: Option<RootOwner>,
 }
 
-/// The fastest the stick, the hands, and the chase together may move the root, metres per second:
+/// The fastest the stick, the hands, and the drive together may move the root, metres per second:
 /// a sanity bound, well above anything a player asks for.
 pub const MAX_COMBINED_SPEED_MPS: f32 = 12.0;
 
-/// The least chase two steps must ask for, metres, before their shortfall counts as an
+/// The least drive two steps must ask for, metres, before their shortfall counts as an
 /// obstruction.
 const MIN_OBSTRUCTED_REQUEST_M: f32 = 1e-3;
 
-/// The share of the requested chase below which the credited chase means an obstruction.
+/// The share of the requested drive below which the credited drive means an obstruction.
 const OBSTRUCTED_SHARE: f32 = 0.5;
 
 /// The absolute part of the exact-match tolerance, metres.
@@ -275,18 +275,18 @@ fn exact_tolerance(expected: f32, position_scale: f32) -> f32 {
 mod tests {
     use super::*;
 
-    fn chase(movement: Movement, actual: Vec2, scale: f32) -> Vec2 {
-        movement.achieved_chase(actual, scale).0
+    fn drive(movement: Movement, actual: Vec2, scale: f32) -> Vec2 {
+        movement.achieved_drive(actual, scale).0
     }
 
     #[test]
     fn nothing_scales_the_sum_below_the_sanity_cap() {
         let movement = Movement::new(Vec2::new(0.0, 5.0), Vec2::new(3.0, 0.0), 1.0);
         assert_eq!(movement.task, Vec2::new(0.0, 5.0));
-        assert_eq!(movement.chase, Vec2::new(3.0, 0.0));
+        assert_eq!(movement.drive, Vec2::new(3.0, 0.0));
         let fast = Movement::new(Vec2::new(0.0, 20.0), Vec2::new(0.0, 4.0), 1.0);
-        assert!(((fast.task + fast.chase).length() - MAX_COMBINED_SPEED_MPS).abs() < 1e-4);
-        assert!((fast.task.y / fast.chase.y - 5.0).abs() < 1e-4);
+        assert!(((fast.task + fast.drive).length() - MAX_COMBINED_SPEED_MPS).abs() < 1e-4);
+        assert!((fast.task.y / fast.drive.y - 5.0).abs() < 1e-4);
         assert_eq!(Movement::new(Vec2::X, Vec2::X, 0.0), Movement::default());
     }
 
@@ -301,7 +301,7 @@ mod tests {
         ] {
             let movement = Movement::new(task, chase_v, 0.02);
             let actual = (task + chase_v) * 0.02;
-            let (credited, attribution) = movement.achieved_chase(actual, 0.0);
+            let (credited, attribution) = movement.achieved_drive(actual, 0.0);
             assert_eq!(attribution, Attribution::Exact);
             assert!((actual - credited).distance(movement.task) < 1e-6);
         }
@@ -310,15 +310,15 @@ mod tests {
     #[test]
     fn blocked_and_sliding_motion_have_bounded_compensation() {
         let movement = Movement::new(Vec2::X, Vec2::Y, 1.0);
-        assert_eq!(chase(movement, Vec2::ZERO, 0.0), Vec2::ZERO);
-        assert_eq!(chase(movement, Vec2::X, 0.0), Vec2::ZERO);
-        assert_eq!(chase(movement, Vec2::Y * 0.5, 0.0), Vec2::Y * 0.5);
-        assert_eq!(chase(movement, -Vec2::Y, 0.0), Vec2::ZERO);
+        assert_eq!(drive(movement, Vec2::ZERO, 0.0), Vec2::ZERO);
+        assert_eq!(drive(movement, Vec2::X, 0.0), Vec2::ZERO);
+        assert_eq!(drive(movement, Vec2::Y * 0.5, 0.0), Vec2::Y * 0.5);
+        assert_eq!(drive(movement, -Vec2::Y, 0.0), Vec2::ZERO);
         for actual in [Vec2::new(0.1, 0.2), Vec2::Y * 10.0, Vec2::new(-0.2, 0.3)] {
-            let (correction, attribution) = movement.achieved_chase(actual, 0.0);
+            let (correction, attribution) = movement.achieved_drive(actual, 0.0);
             assert_eq!(attribution, Attribution::Projected);
             assert!(correction.length() <= actual.length() + 1e-6);
-            assert!(correction.length() <= movement.chase.length() + 1e-6);
+            assert!(correction.length() <= movement.drive.length() + 1e-6);
             assert!(correction.dot(actual) >= 0.0);
         }
     }
@@ -337,15 +337,15 @@ mod tests {
                 (Vec2::new(1.0, 1.0), Vec2::new(-0.3, 0.2)),
             ] {
                 let movement = Movement::new(task, chase_v, dt);
-                let wanted = movement.task + movement.chase;
+                let wanted = movement.task + movement.drive;
                 // The engine integrates the displacement onto the absolute position in `f32`.
                 let current = origin + Vec3::new(wanted.x, 0.0, wanted.y);
                 let solved = current - origin;
                 let scale = origin.abs().max(current.abs()).max_element();
-                let achieved = movement.achieved_chase(Vec2::new(solved.x, solved.z), scale);
+                let achieved = movement.achieved_drive(Vec2::new(solved.x, solved.z), scale);
                 assert_eq!(
                     achieved,
-                    (movement.chase, Attribution::Exact),
+                    (movement.drive, Attribution::Exact),
                     "at {origin} for {task} + {chase_v}"
                 );
             }
@@ -355,11 +355,11 @@ mod tests {
     #[test]
     fn a_real_shortfall_far_from_the_origin_is_not_exact() {
         let movement = Movement::new(Vec2::new(0.0, 1.5), Vec2::new(0.9, 0.0), 1.0 / 30.0);
-        let wanted = movement.task + movement.chase;
-        // Wall sliding stops the sideways chase: well beyond the rounding at 8 km.
+        let wanted = movement.task + movement.drive;
+        // Wall sliding stops the sideways drive: well beyond the rounding at 8 km.
         let actual = Vec2::new(0.0, wanted.y);
         assert_eq!(
-            movement.achieved_chase(actual, 8_000.0),
+            movement.achieved_drive(actual, 8_000.0),
             (Vec2::ZERO, Attribution::Projected)
         );
     }
@@ -427,7 +427,7 @@ mod tests {
             requests.complete(Vec3::ZERO, Vec3::ZERO);
         }
         assert!(requests.obstructed());
-        // Along a wall at thirty degrees: most of the chase still goes through.
+        // Along a wall at thirty degrees: most of the drive still goes through.
         let along = Vec2::new(30f32.to_radians().cos(), 30f32.to_radians().sin()) * 0.1;
         for _ in 0..2 {
             requests.submit(Movement::new(Vec2::ZERO, along, 1.0));
@@ -441,7 +441,7 @@ mod tests {
         requests.complete(Vec3::ZERO, Vec3::ZERO);
         requests.clear();
         assert!(!requests.obstructed());
-        // A chase that asks for nothing is never obstructed.
+        // A drive that asks for nothing is never obstructed.
         requests.complete(Vec3::ZERO, Vec3::ZERO);
         assert!(!requests.obstructed());
     }
