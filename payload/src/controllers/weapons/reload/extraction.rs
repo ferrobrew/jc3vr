@@ -117,9 +117,14 @@ impl Pull {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) enum DetachKind {
+    /// The free hand pulls the magazine out of the well.
     Pull,
+    /// The reload button or a flick drops the magazine.
     Eject,
+    /// A push onto the belt pouch drops the magazine, and a fresh one loads once it is out.
     Belt,
+    /// A pouch magazine seated in the well pushes the old one out, and loads once it is out.
+    Swap,
 }
 
 /// A request is a value, not permission to call the engine from the input tick.

@@ -259,15 +259,9 @@ unsafe fn detach_magazine(
         });
         *ammo
     });
-    // With unlimited rounds every seated magazine is kept full, so a dropped one carries none of
-    // its own: a magazine from the world is filled once it seats, and none of the rounds the
-    // unlimited ammunition made can reach a later finite load through it.
     let unlimited = unsafe { weapon.as_ref() }.is_some_and(|w| unsafe { unlimited(w) });
-    let magazine_rounds = if unlimited {
-        0
-    } else {
-        partition.map_or(rounds, |ammo| ammo.magazine)
-    };
+    let magazine_rounds =
+        dropped_magazine_rounds(unlimited, partition.map_or(rounds, |ammo| ammo.magazine));
     let execute = |retention: Option<&Retention>| {
         if retention.is_some_and(|r| !r.matches(gun as usize, spare)) {
             return DetachOutcome::NoThrow;
@@ -324,6 +318,14 @@ unsafe fn detach_inputs(
     let gun = unsafe { gun_mut(weapon, index) }? as *mut WeaponData;
     let spare = unsafe { (*gun).m_MagazineObject.px as usize };
     Some((character, part, rounds, gun, spare))
+}
+
+/// The rounds a dropped magazine carries into the world, of the `magazine` rounds it held. With
+/// unlimited rounds every seated magazine is kept full, so a dropped one carries none of its own: a
+/// magazine from the world is filled once it seats, and none of the rounds the unlimited
+/// ammunition made can reach a later finite load through it.
+pub(super) fn dropped_magazine_rounds(unlimited: bool, magazine: i32) -> i32 {
+    if unlimited { 0 } else { magazine.max(0) }
 }
 
 pub(super) fn finish_detach(

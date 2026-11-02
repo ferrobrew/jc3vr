@@ -45,6 +45,12 @@ impl LoadKind {
         matches!(self, LoadKind::Magazine | LoadKind::Cylinder)
     }
 
+    /// Whether a round of this kind seated in a gun whose magazine is `out` first pushes the old
+    /// magazine out: a magazine or a cylinder seated while the gun still holds one.
+    pub const fn swaps(self, out: bool) -> bool {
+        self.ejects() && !out
+    }
+
     /// Whether the gun shows its round part on its own once no round is in the hand: a magazine
     /// while it is in the gun, and a rocket while the launcher holds one, which the launcher's own
     /// update shows and hides with its magazine.
@@ -391,5 +397,17 @@ mod tests {
         assert!(!LoadKind::Rocket.part_shown(false, 0));
         assert!(LoadKind::Magazine.part_shown(false, 0));
         assert!(!LoadKind::Magazine.part_shown(true, 5));
+    }
+
+    #[test]
+    fn only_a_magazine_or_a_cylinder_still_in_is_pushed_out() {
+        for load in [LoadKind::Magazine, LoadKind::Cylinder] {
+            assert!(load.swaps(false), "{load:?}");
+            assert!(!load.swaps(true), "{load:?}");
+        }
+        for load in [LoadKind::Shell, LoadKind::Rocket] {
+            assert!(!load.swaps(false), "{load:?}");
+            assert!(!load.swaps(true), "{load:?}");
+        }
     }
 }

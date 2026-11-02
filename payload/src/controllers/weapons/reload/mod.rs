@@ -17,7 +17,8 @@
 //!   ([`insert`]). The well is the gun's own, from the wells table ([`wells`]), carried to the
 //!   hand through the gun's measured placement ([`frames`]). A seated magazine reloads through the
 //!   game's own reload, so the reserve, unlimited ammunition, the upgrades, and the HUD all follow
-//!   the game's rules; a shell adds one round.
+//!   the game's rules; a shell adds one round. A magazine seated while the old one is still in
+//!   pushes it out first, through the same drop as an eject.
 //! - **Belt.** Pushing a gun's well down onto the pouch reloads it in one hand, swapping a magazine
 //!   still in it, and works its action ([`belt`]).
 //! - **Chamber.** A gun that ran dry fires again only once its action is worked by hand; a bolt

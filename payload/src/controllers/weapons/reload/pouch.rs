@@ -12,8 +12,8 @@ pub(super) enum PouchRefusal {
     NoGun,
     /// The gun has no rounds left for it in the reserve, and they are not unlimited.
     NoRounds,
-    /// The gun takes nothing from the pouch now: a magazine only while its magazine is out, a shell
-    /// or a rocket only while it is short.
+    /// The gun takes nothing from the pouch now: a shell or a rocket only while it is short. A
+    /// magazine or a cylinder is always taken, pushing out one still in.
     GunTakesNothing,
     /// A round is already in hand.
     Holding,
@@ -26,9 +26,7 @@ impl PouchRefusal {
             PouchRefusal::NoFreeHand => "magazine pouch: not offered, no hand is free",
             PouchRefusal::NoGun => "magazine pouch: not offered, no gun reloaded by hand",
             PouchRefusal::NoRounds => "magazine pouch: not offered, no rounds left for the gun",
-            PouchRefusal::GunTakesNothing => {
-                "magazine pouch: not offered, the gun's magazine is in (eject it first)"
-            }
+            PouchRefusal::GunTakesNothing => "magazine pouch: not offered, the gun is full",
             PouchRefusal::Holding => "magazine pouch: not offered, a round is already in hand",
         }
     }

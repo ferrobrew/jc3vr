@@ -2,7 +2,7 @@ use std::{cell::Cell, num::NonZeroUsize};
 
 use super::*;
 use crate::controllers::weapons::reload::{
-    engine::{DetachOutcome, finish_detach},
+    engine::{DetachOutcome, dropped_magazine_rounds, finish_detach},
     loose::Loose,
 };
 
@@ -305,6 +305,28 @@ impl Runtime {
             out: false,
         };
     }
+
+    /// A pouch magazine seated while the old one is in: the old one drops as an eject does, and
+    /// the fresh one loads only once the drop was thrown. Returns the drop's outcome and the rounds
+    /// the dropped magazine carries into the world.
+    fn swap(&mut self, capacity: i32, thrown: bool, retained: bool) -> (DetachOutcome, i32) {
+        let carried = if retained {
+            dropped_magazine_rounds(false, self.ammo.magazine)
+        } else {
+            0
+        };
+        let outcome = self.detach(thrown, retained);
+        if outcome == DetachOutcome::NoThrow {
+            return (outcome, 0);
+        }
+        self.native_reload(capacity);
+        (outcome, carried)
+    }
+
+    /// Every round the weapon's owner has: the reserve and the gun's native total.
+    fn owned(&self) -> i32 {
+        self.reserve + self.native.total
+    }
 }
 
 #[test]
@@ -461,4 +483,76 @@ fn drop_switch_and_standdown_reconcile_without_restoring_a_spent_chamber() {
     );
     assert_eq!((replacement.magazine, replacement.chamber_rounds()), (5, 0));
     assert_eq!(runtime.native.total, runtime.ammo.total());
+}
+
+#[test]
+fn a_swap_drops_the_old_rounds_with_the_magazine_and_pays_only_for_the_fresh_one() {
+    for ready in [true, false] {
+        for reserve in [20, 4] {
+            let mut runtime = Runtime::loaded(8, ready);
+            runtime.reserve = reserve;
+            let old = runtime.ammo.magazine;
+            let before = runtime.owned();
+            let (outcome, carried) = runtime.swap(10, true, true);
+            assert_eq!(outcome, DetachOutcome::Retained(magazine(old)));
+            assert_eq!(carried, old);
+            let fresh = 10.min(reserve);
+            assert_eq!(
+                runtime.ammo.magazine, fresh,
+                "ready={ready} reserve={reserve}"
+            );
+            assert_eq!(runtime.reserve, reserve - fresh);
+            assert_eq!(runtime.ammo.chambers[0] == Chamber::Chambered, ready);
+            assert_eq!(runtime.owned() + carried, before);
+        }
+    }
+}
+
+#[test]
+fn an_unretained_swap_returns_the_old_rounds_to_the_reserve_as_the_game_does() {
+    for ready in [true, false] {
+        let mut runtime = Runtime::loaded(8, ready);
+        let old = runtime.ammo.magazine;
+        let before = runtime.owned();
+        let (outcome, carried) = runtime.swap(10, true, false);
+        assert_eq!(outcome, DetachOutcome::DroppedUnretained);
+        assert_eq!(carried, 0);
+        assert_eq!(runtime.ammo.magazine, 10);
+        assert_eq!(runtime.reserve, 20 + old - 10);
+        assert_eq!(runtime.ammo.chambers[0] == Chamber::Chambered, ready);
+        assert_eq!(runtime.owned(), before);
+    }
+}
+
+#[test]
+fn a_refused_swap_drop_keeps_the_old_magazine_and_takes_nothing_from_the_reserve() {
+    let mut runtime = Runtime::loaded(8, true);
+    let (ammo, native, reserve) = (runtime.ammo, runtime.native, runtime.reserve);
+    assert_eq!(runtime.swap(10, false, true), (DetachOutcome::NoThrow, 0));
+    assert_eq!(
+        (runtime.ammo, runtime.native, runtime.reserve),
+        (ammo, native, reserve)
+    );
+    assert_eq!(runtime.spawned.get(), 0);
+}
+
+#[test]
+fn a_swapped_chambered_round_fires_once_and_is_never_duplicated() {
+    let mut runtime = Runtime::loaded(1, true);
+    assert_eq!(runtime.ammo.magazine, 0);
+    let before = runtime.owned();
+    let (_, carried) = runtime.swap(10, true, true);
+    assert_eq!(carried, 0);
+    assert_eq!(runtime.native.total, 11);
+    assert_eq!(runtime.owned() + carried, before);
+    assert!(runtime.fire(false, false));
+    assert_eq!((runtime.native.total, runtime.ammo.magazine), (10, 9));
+}
+
+#[test]
+fn an_unlimited_drop_carries_no_rounds_of_its_own() {
+    assert_eq!(dropped_magazine_rounds(true, 7), 0);
+    assert_eq!(dropped_magazine_rounds(true, 0), 0);
+    assert_eq!(dropped_magazine_rounds(false, 7), 7);
+    assert_eq!(dropped_magazine_rounds(false, -1), 0);
 }

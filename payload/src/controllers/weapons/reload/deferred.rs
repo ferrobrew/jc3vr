@@ -1,4 +1,9 @@
-//! Input-side completion of button, flick, and belt magazine requests.
+//! Input-side completion of button, flick, belt, and swap magazine requests.
+//!
+//! A belt push or a pouch magazine seated while the gun's magazine is in drops the old magazine
+//! first, through the same request as an eject, and loads the fresh one only once the drop's result
+//! returns. The old magazine leaves with its own rounds (or none under unlimited ammunition), so
+//! the load draws on the reserve for the fresh magazine alone, and a refused drop loads nothing.
 
 use crate::controllers::{
     config::ControllersConfig,
@@ -10,10 +15,14 @@ use crate::controllers::{
         engine::{self, DetachOutcome},
         extraction::{DetachKind, DetachRequest, MagazineId},
         serial,
+        steps::ready_after_seat,
+        tuning::Reload,
     },
 };
 
 impl State {
+    /// Queue a drop of the magazine of `gun` of `weapon`, in `hand`, for the serial callback.
+    /// Returns whether it was queued.
     pub(super) fn queue_eject(
         &mut self,
         weapon: &WeaponTick,
@@ -21,18 +30,18 @@ impl State {
         hand: Hand,
         kind: DetachKind,
         retain: bool,
-    ) {
+    ) -> bool {
         if weapon.reading.out
             || self.pending_ejects[hand.index()].is_some()
             || self.extraction_hand() == Some(hand.other())
         {
-            return;
+            return false;
         }
         let Some(expected) = gun.magazine else {
-            return;
+            return false;
         };
         let Some(generation) = self.detach_generation.checked_add(1) else {
-            return;
+            return false;
         };
         self.detach_generation = generation;
         let request = DetachRequest {
@@ -45,9 +54,11 @@ impl State {
             expected,
             kind,
         };
-        if serial::submit_with_retention(request, retain) {
+        let queued = serial::submit_with_retention(request, retain);
+        if queued {
             self.pending_ejects[hand.index()] = Some(request);
         }
+        queued
     }
 
     pub(super) fn finish_ejects(&mut self, tick: &Tick, config: &ControllersConfig) {
@@ -71,11 +82,17 @@ impl State {
             self.pending_ejects[hand.index()] = None;
             if outcome == DetachOutcome::NoThrow {
                 self.event(format!("{hand:?} magazine request refused"));
+                if request.kind == DetachKind::Swap {
+                    // The fresh magazine was never paid for, so letting it go loses no round.
+                    haptics::play(hand.other(), Event::PouchEmpty);
+                }
                 continue;
             }
             self.status.counts.ejects += 1;
             self.extraction_blocks_belt[hand.index()] = true;
-            if request.kind == DetachKind::Belt
+            if request.kind == DetachKind::Swap {
+                self.finish_swap(weapon, gun, hand, config);
+            } else if request.kind == DetachKind::Belt
                 && config.weapons.reload.belt.enabled
                 && self.load(weapon, gun)
             {
@@ -90,6 +107,32 @@ impl State {
                 self.event(format!("{hand:?} ejected"));
                 haptics::play(hand, Event::Eject);
             }
+        }
+    }
+
+    /// Load the pouch magazine that pushed the old one out of `gun` of `weapon`, in `hand`, as a
+    /// seat from the hand: no action is worked, and a chamber that kept its round stays ready.
+    fn finish_swap(
+        &mut self,
+        weapon: &WeaponTick,
+        gun: &GunTick,
+        hand: Hand,
+        config: &ControllersConfig,
+    ) {
+        if !self.load(weapon, gun) {
+            self.event(format!("{hand:?} ejected, the fresh magazine did not load"));
+            haptics::play(hand, Event::Eject);
+            return;
+        }
+        self.status.counts.seats += 1;
+        self.event(format!("{hand:?} seated, the old magazine dropped"));
+        for hand in Hand::BOTH {
+            haptics::play(hand, Event::MagazineSeat);
+        }
+        let chamber = self.records.get(weapon.key).chambers[gun.entry()];
+        if ready_after_seat(&weapon.plan, chamber) {
+            let delay_s = Reload::of(&config.weapons.reload).ready_cue_delay_s;
+            self.ready_cue.arm(hand, delay_s);
         }
     }
 
