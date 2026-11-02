@@ -6,6 +6,10 @@ Participants register before enabling work that requires shutdown preparation. P
 
 The reserved human-collider participant does not implement shape migration. A future implementation must restore all affected state transactionally and prove clearance, identity, and reader exclusion before returning a ready guard. An unavailable or blocked restoration must keep gameplay and its required hooks active. No global collider mutation is enabled by this lifecycle change.
 
+## Inventory spawn callbacks
+
+Inventory restore and second-pistol requests hand the engine a payload callback, and nothing the engine reports proves that a queued callback has retired. The participant in `controllers/weapons/inventory/spawn_safety.rs` latches the first such exposure for the rest of the process, but the exposure does not veto an unload: an unload that can never run cannot show whether the risk is real. Preparation and the post-unpatch check log a warning naming the risk (a callback the engine still holds would crash the game once the image unmaps) and continue. They defer only while a submission or callback is executing payload code at that moment, which is transient, and preparation closes admission so no new request starts.
+
 ## Magazine executor restriction
 
 `hooks::activate_magazine_executor` rejects activation because exclusion of new native callback entries through hook removal is unproven. The uninstalled native detour is removed, and the production mailbox has no admission opener or native consumer. A drained executor would be insufficient if another callback could enter after the drain check. The prepared magazine guard therefore authorizes only the uninstalled case. An installed callback marker defers shutdown even when its mailbox is empty.

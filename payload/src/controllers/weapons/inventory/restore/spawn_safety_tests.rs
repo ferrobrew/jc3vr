@@ -1,28 +1,29 @@
 use super::*;
 use crate::{
     controllers::loadout::Socket,
-    lifecycle::{DeferReason, Preparation, PrepareOutcome},
+    lifecycle::{Preparation, PrepareOutcome},
 };
 
 #[test]
-fn actual_clear_reset_and_expiry_never_erase_callback_exposure() {
+fn clear_reset_and_expiry_never_erase_callback_exposure_or_block_preparation() {
     spawn_safety::activate();
     spawn_safety::submit(RequestKind::Restore, || ()).unwrap();
     let participant = spawn_safety::participant();
-    let blocked = || {
+    // Exposure warns rather than defers, so each preparation is ready and dropping it aborts.
+    let still_exposed = || {
         assert!(matches!(
             participant.prepare(Preparation::for_test()),
-            PrepareOutcome::Deferred(DeferReason::SpawnCallbacksUnproven)
+            PrepareOutcome::Ready(_)
         ));
-        assert!(spawn_safety::post_unpatch_check().is_err());
+        assert!(spawn_safety::exposed());
     };
-    blocked();
+    still_exposed();
     clear();
-    blocked();
+    still_exposed();
     on_pre_reset(Vec::new(), false, false);
     on_post_reset();
     on_frontend();
-    blocked();
+    still_exposed();
 
     let record = Record {
         tag_hash: 7,
@@ -36,6 +37,6 @@ fn actual_clear_reset_and_expiry_never_erase_callback_exposure() {
     });
     assert_eq!(expire_spawning(), vec![record]);
     assert!(PLAN.lock().spawning.is_empty());
-    blocked();
+    still_exposed();
     clear();
 }

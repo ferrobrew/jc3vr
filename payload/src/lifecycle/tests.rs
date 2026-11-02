@@ -10,7 +10,7 @@ use super::*;
 use crate::controllers::weapons::inventory::spawn_safety::{RequestKind, SpawnSafety};
 
 #[test]
-fn exposed_inventory_requests_defer_before_other_participants_or_cleanup() {
+fn exposed_inventory_requests_do_not_block_shutdown() {
     for kind in [RequestKind::Restore, RequestKind::Twin] {
         let harness = Harness::new();
         let safety = Arc::new(SpawnSafety::for_test());
@@ -26,19 +26,12 @@ fn exposed_inventory_requests_defer_before_other_participants_or_cleanup() {
         safety.submit_for_test(kind, || ()).unwrap();
         harness.shutdown.lock().request();
 
-        assert!(!harness.frame());
-        assert!(!harness.shutting_down.load(Ordering::Acquire));
-        assert_eq!(harness.cleanups.lock().len(), 1);
-        assert_eq!(magazine.calls.load(Ordering::Relaxed), 0);
-        assert!(harness.events.lock().is_empty());
-        assert!(matches!(
-            harness.shutdown.lock().phase,
-            Phase::Pending {
-                blocked: Some(Blocked::Deferred(DeferReason::SpawnCallbacksUnproven)),
-                ..
-            }
-        ));
-        assert_eq!(safety.submit_for_test(kind, || 37), Ok(37));
+        assert!(harness.frame());
+        assert!(harness.shutting_down.load(Ordering::Acquire));
+        assert_eq!(magazine.calls.load(Ordering::Relaxed), 1);
+        assert_eq!(harness.cleanup_calls.load(Ordering::Relaxed), 1);
+        assert!(safety.post_unpatch_for_test().is_ok());
+        assert!(safety.submit_for_test(kind, || 37).is_err());
     }
 }
 

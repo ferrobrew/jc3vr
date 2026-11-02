@@ -1,8 +1,12 @@
 //! Unload containment for the inventory's restore and second-pistol spawn callbacks.
 //!
-//! Native request retirement is not established here. Exposure therefore remains latched for the
-//! process lifetime, even after a callback returns, a timeout, or a world reset. Preparation only
-//! excludes new submissions when no callback has been exposed; it performs no native work.
+//! Native request retirement is not established here: the engine can keep a restore or second-pistol
+//! callback queued after the request appears to finish, and a callback that fires after the image
+//! unmaps crashes the game. Exposure therefore remains latched for the process lifetime, even after a
+//! callback returns, a timeout, or a world reset. It does not veto the unload, because an unload that
+//! can never run cannot show whether the risk is real; preparation and the post-unpatch check log the
+//! exposure as a warning instead. They defer only while a submission or callback is executing right
+//! now. Preparation excludes new submissions and performs no native work.
 
 use std::{
     fmt,
@@ -37,6 +41,9 @@ impl fmt::Display for AdmissionClosed {
 impl std::error::Error for AdmissionClosed {}
 
 /// A failed final check requires the existing module-pin path after hook removal.
+///
+/// It fails only while payload code is executing for a submission or callback, or when admission
+/// never committed. A latched exposure alone passes with a warning.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct UnloadBlocked {
     first_exposure: Option<RequestKind>,
@@ -50,7 +57,7 @@ impl fmt::Display for UnloadBlocked {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "inventory spawn unload: native callback retirement is unproven; first exposure {:?}, callback entered {}, submissions in flight {}, active callbacks {}, admission {:?}",
+            "inventory spawn unload: payload code is still executing for a spawn request; first exposure {:?}, callback entered {}, submissions in flight {}, active callbacks {}, admission {:?}",
             self.first_exposure,
             self.callback_entered,
             self.submissions_in_flight,
@@ -84,6 +91,13 @@ pub(crate) fn callback_entry() -> CallbackEntry {
 
 pub(crate) fn post_unpatch_check() -> Result<(), UnloadBlocked> {
     SAFETY.post_unpatch_check()
+}
+
+/// Whether a request or callback has exposed the engine to payload callbacks this process.
+#[cfg(test)]
+pub(crate) fn exposed() -> bool {
+    let state = SAFETY.owner.state.lock();
+    state.first_exposure.is_some() || SAFETY.owner.callback_entered.load(Ordering::Acquire)
 }
 
 pub(crate) struct CallbackEntry {
@@ -184,32 +198,45 @@ impl SpawnSafety {
             active_callbacks: self.owner.active_callbacks.load(Ordering::Acquire),
             admission: state.admission,
         };
-        if status.first_exposure.is_none()
-            && !status.callback_entered
-            && status.submissions_in_flight == 0
-            && status.active_callbacks == 0
-            && status.admission == Admission::Committed
+        drop(state);
+        if status.submissions_in_flight != 0
+            || status.active_callbacks != 0
+            || status.admission != Admission::Committed
         {
-            Ok(())
-        } else {
-            Err(status)
+            return Err(status);
         }
+        if status.exposed() {
+            tracing::warn!(
+                first_exposure = ?status.first_exposure,
+                callback_entered = status.callback_entered,
+                "inventory spawn unload: a restore or second-pistol callback may still be queued in the engine; unloading anyway, and if it fires after the image unmaps, the game crashes"
+            );
+        }
+        Ok(())
+    }
+}
+
+impl UnloadBlocked {
+    fn exposed(&self) -> bool {
+        self.first_exposure.is_some() || self.callback_entered
     }
 }
 
 impl ShutdownParticipant for SpawnSafety {
     fn prepare(&self, preparation: Preparation) -> PrepareOutcome<Box<dyn PreparedParticipant>> {
         let mut state = self.owner.state.lock();
-        if state.first_exposure.is_some() {
-            return PrepareOutcome::Deferred(DeferReason::SpawnCallbacksUnproven);
-        }
         if state.submissions_in_flight != 0
             || self.owner.active_callbacks.load(Ordering::Acquire) != 0
         {
             return PrepareOutcome::Deferred(DeferReason::SpawnCallbackActive);
         }
-        if self.owner.callback_entered.load(Ordering::Acquire) {
-            return PrepareOutcome::Deferred(DeferReason::SpawnCallbacksUnproven);
+        let callback_entered = self.owner.callback_entered.load(Ordering::Acquire);
+        if state.first_exposure.is_some() || callback_entered {
+            tracing::warn!(
+                first_exposure = ?state.first_exposure,
+                callback_entered,
+                "inventory spawn shutdown: native callback retirement is unproven; preparing anyway, so a callback the engine still holds can crash the game after unload"
+            );
         }
         if matches!(
             state.admission,
@@ -272,8 +299,6 @@ impl PreparedParticipant for PreparedSpawn {
         let state = self.owner.state.lock();
         self.preparation == preparation
             && state.admission == Admission::Preparing(preparation)
-            && state.first_exposure.is_none()
-            && !self.owner.callback_entered.load(Ordering::Acquire)
             && state.submissions_in_flight == 0
             && self.owner.active_callbacks.load(Ordering::Acquire) == 0
     }

@@ -25,7 +25,6 @@ pub(crate) enum ParticipantId {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum DeferReason {
-    SpawnCallbacksUnproven,
     SpawnCallbackActive,
     MagazineBusy,
     ParticipantBusy(ParticipantId),
@@ -36,9 +35,6 @@ impl fmt::Display for DeferReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("shutdown deferred: ")?;
         match self {
-            Self::SpawnCallbacksUnproven => f.write_str(
-                "inventory restore or second-pistol requests expose native callbacks whose retirement is unproven; gameplay remains active, and ejection requires exiting the game",
-            ),
             Self::SpawnCallbackActive => f.write_str("an inventory spawn callback is active"),
             Self::MagazineBusy => f.write_str("the magazine executor is busy"),
             Self::ParticipantBusy(id) => write!(f, "participant {id:?} is busy"),

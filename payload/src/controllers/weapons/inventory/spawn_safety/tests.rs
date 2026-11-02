@@ -14,7 +14,7 @@ fn admission_stays_closed_until_installation_activates_it() {
 }
 
 #[test]
-fn either_request_kind_latches_exposure_before_the_native_boundary() {
+fn either_request_kind_latches_exposure_before_the_native_boundary_without_vetoing_unload() {
     for kind in [RequestKind::Restore, RequestKind::Twin] {
         let safety = SpawnSafety::new();
         safety.activate();
@@ -28,12 +28,18 @@ fn either_request_kind_latches_exposure_before_the_native_boundary() {
                 assert_eq!(state.first_exposure, Some(kind));
                 assert_eq!(state.submissions_in_flight, 1);
                 drop(state);
-                assert_deferred(&safety, DeferReason::SpawnCallbacksUnproven);
+                assert_deferred(&safety, DeferReason::SpawnCallbackActive);
             })
             .unwrap();
         assert_eq!(safety.owner.state.lock().submissions_in_flight, 0);
-        assert_deferred(&safety, DeferReason::SpawnCallbacksUnproven);
         assert_eq!(safety.submit(kind, || 19), Ok(19));
+        let preparation = Preparation::for_test();
+        let mut prepared = ready(safety.prepare(preparation));
+        assert!(prepared.validate(preparation));
+        prepared.commit();
+        drop(prepared);
+        assert_eq!(safety.owner.state.lock().first_exposure, Some(kind));
+        assert!(safety.post_unpatch_check().is_ok());
     }
 }
 
@@ -67,7 +73,7 @@ fn abort_restores_the_previous_admission_without_exposure() {
     let preparation = Preparation::for_test();
     drop(ready(safety.prepare(preparation)));
     assert_eq!(safety.submit(RequestKind::Twin, || 23), Ok(23));
-    assert_deferred(&safety, DeferReason::SpawnCallbacksUnproven);
+    drop(ready(safety.prepare(preparation)));
 }
 
 #[test]
@@ -100,7 +106,7 @@ fn submission_in_flight_defers_without_waiting_or_disabling_gameplay() {
         })
     });
     entered_rx.recv().unwrap();
-    assert_deferred(&safety, DeferReason::SpawnCallbacksUnproven);
+    assert_deferred(&safety, DeferReason::SpawnCallbackActive);
     let blocked = safety.post_unpatch_check().unwrap_err();
     assert_eq!(blocked.submissions_in_flight, 1);
     assert_eq!(blocked.admission, Admission::Open);
@@ -110,34 +116,41 @@ fn submission_in_flight_defers_without_waiting_or_disabling_gameplay() {
 }
 
 #[test]
-fn unexpected_callback_invalidates_preparation_and_requires_post_unpatch_retention() {
+fn callback_during_preparation_invalidates_it_only_while_running() {
     let safety = SpawnSafety::new();
     safety.activate();
     let preparation = Preparation::for_test();
-    let prepared = ready(safety.prepare(preparation));
+    let mut prepared = ready(safety.prepare(preparation));
     let callback = safety.callback_entry();
     assert!(!prepared.validate(preparation));
     let blocked = safety.post_unpatch_check().unwrap_err();
     assert_eq!(blocked.active_callbacks, 1);
     assert!(blocked.callback_entered);
     drop(callback);
-    assert!(!prepared.validate(preparation));
+    assert!(prepared.validate(preparation));
+    prepared.commit();
     drop(prepared);
-    assert_deferred(&safety, DeferReason::SpawnCallbacksUnproven);
-    assert!(safety.post_unpatch_check().is_err());
+    assert!(safety.post_unpatch_check().is_ok());
 }
 
 #[test]
-fn callback_return_and_silent_submission_failure_do_not_prove_retirement() {
+fn returned_callbacks_and_silent_submissions_warn_but_permit_unload() {
     let safety = SpawnSafety::new();
     safety.activate();
     // SpawnTagIndex returns no acknowledgement, including when no factory is queued.
     safety.submit(RequestKind::Restore, || ()).unwrap();
     let callback = safety.callback_entry();
+    assert_deferred(&safety, DeferReason::SpawnCallbackActive);
     drop(callback);
     assert_eq!(safety.owner.active_callbacks.load(Ordering::Acquire), 0);
-    assert_deferred(&safety, DeferReason::SpawnCallbacksUnproven);
+    // Without a committed preparation, the post-unpatch check still refuses.
     assert!(safety.post_unpatch_check().is_err());
+    let preparation = Preparation::for_test();
+    let mut prepared = ready(safety.prepare(preparation));
+    assert!(prepared.validate(preparation));
+    prepared.commit();
+    drop(prepared);
+    assert!(safety.post_unpatch_check().is_ok());
 }
 
 fn assert_deferred(safety: &SpawnSafety, expected: DeferReason) {
