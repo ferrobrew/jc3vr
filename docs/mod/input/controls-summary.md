@@ -26,7 +26,7 @@ The input tick reads the HUD's current queue through [`HUDUI::m_ButtonHints`](ht
 
 Native reload taps and held holster use separate current permissions and labels on the same resolved source. Holster does not require a partly empty magazine or native reload mode. Release and tighten hints likewise use independent, read-only permissions from the grapple-button state machine; tether count alone does not prove that a held press tightens.
 
-Action labels use the game's localisation keys through [`Locator::GetLocalizedStringRaw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::locator::Locator##func-GetLocalizedStringRaw), with the existing English fallback. The wrist removes repeated localized hold words when the row already has a hold prefix. Case-insensitive duplicate hint labels merge their sources. Runtime source names remain unchanged. The use-item and weapon-pickup prompts, notifications, and tutorials still use their native gamepad glyphs.
+Action labels use the game's localisation keys through [`Locator::GetLocalizedStringRaw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::locator::Locator##func-GetLocalizedStringRaw), with the existing English fallback. The wrist removes repeated localized hold words when the row already has a hold prefix. Case-insensitive duplicate hint labels merge their sources. Runtime source names remain unchanged. The use-item prompt, notifications, and tutorials still use their native gamepad glyphs. The weapon pickup panel is hidden under the controller scheme ([physical-hands.md](physical-hands.md#the-grip)).
 
 ## Compact grid and pagination
 

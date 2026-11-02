@@ -86,6 +86,7 @@ pub mod recoil;
 pub mod regions;
 pub mod reload;
 pub mod scope;
+mod self_hits;
 mod state;
 mod types;
 pub mod unarmed_fire;
@@ -107,6 +108,7 @@ pub use types::{TickStart, WeaponsStatus};
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_hook_library(fire::hook_library())
+        .with_hook_library(self_hits::hook_library())
         .with_hook_library(camera_kick::hook_library())
         .with_hook_library(grenade::hook_library())
         .with_hook_library(c4::hook_library())

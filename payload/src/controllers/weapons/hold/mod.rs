@@ -56,6 +56,7 @@
 
 pub mod act;
 pub(crate) mod armed;
+pub mod button_pickup;
 pub mod dock;
 pub mod equip;
 pub mod layout;
@@ -101,6 +102,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_static_binder(&UPDATE_INVENTORY_POST_FINALIZE_POSE_BINDER)
         .with_hook_library(tick::hook_library())
         .with_hook_library(use_item::hook_library())
+        .with_hook_library(button_pickup::hook_library())
 }
 
 /// How long a draw off a socket, a dock onto one, or a take from the world slides the gun between

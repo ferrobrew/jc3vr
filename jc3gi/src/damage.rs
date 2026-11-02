@@ -50,7 +50,10 @@ pub struct DamageMsg {
     /// The damage type and properties.
     pub m_DamageFlags: crate::damage::DamageFlags,
     /// The damager's faction, as [`Character::GetFaction`](crate::character::character::Character::GetFaction)
-    /// reports it; [`Clear`](crate::damage::DamageMsg::Clear) sets `-1`. The struck character compares it with its own.
+    /// reports it; [`Clear`](crate::damage::DamageMsg::Clear) sets `-1`. The struck character (`CCharacter::OnDamage`)
+    /// compares it with its own and takes no damage from its own faction, except from a locally
+    /// controlled player character (resolved from [`m_Damager`](crate::damage::DamageMsg::m_Damager)), including
+    /// itself, and from explosive damage.
     pub m_Faction: i32,
     /// What the damager was doing (in a stunt, under the parachute, aiming down the sights, and so
     /// on), as [`Character::GetCurrentDamageSourceStateInfo`](crate::character::character::Character::GetCurrentDamageSourceStateInfo)

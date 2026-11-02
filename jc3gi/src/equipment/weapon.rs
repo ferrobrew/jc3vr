@@ -2137,10 +2137,12 @@ impl WeaponBase {
         }
     }
     pub const HasUnlimitedAmmo_ADDRESS: usize = 0x140964F90;
-    /// Whether the weapon's rounds come without limit: true when the holder has
-    /// [`m_UnlimitedAmmo`](crate::character::character::Character::m_UnlimitedAmmo), the holder is not a
-    /// player, or the challenge-island game mode is running; otherwise the tuning's
-    /// [`m_unlimited_ammo`](crate::equipment::weapon::WeaponTuning::m_unlimited_ammo). False without a holder.
+    /// Whether the weapon's rounds come without limit. The holder is the weapon's user
+    /// ([`m_User`](crate::equipment::weapon::WeaponBase::m_User)): true when
+    /// [`Character::HasUnlimitedAmmo`](crate::character::character::Character::HasUnlimitedAmmo) holds
+    /// for it (its [`m_UnlimitedAmmo`](crate::character::character::Character::m_UnlimitedAmmo), a holder
+    /// that is not a player, or the challenge-island game mode); otherwise, and with no user at
+    /// all, the tuning's [`m_unlimited_ammo`](crate::equipment::weapon::WeaponTuning::m_unlimited_ammo), and false without a
     /// [`Reload`](crate::equipment::weapon::WeaponBase::Reload) then fills the magazine without drawing on the reserve, and
     /// [`CanReload`](crate::equipment::weapon::WeaponBase::CanReload) allows a reload with an empty reserve.
     pub unsafe fn HasUnlimitedAmmo(&self) -> bool {
@@ -2442,27 +2444,38 @@ impl WeaponBase {
         }
     }
     pub const GetHolderInformation_ADDRESS: usize = 0x1409855F0;
-    /// The holder's details for a shot, read from [`m_Holder`](crate::equipment::weapon::WeaponBase::m_Holder). `ignore` receives
-    /// the two physics objects (`CPhysicsGameObject`) the shot's projectiles ignore: the holder's
-    /// own bodies, so a weapon without a holder gives its projectiles none. The meanings of
-    /// `p1`, `p2`, and `p3` are unverified. The bullet weapons
-    /// ([`BulletWeaponBase::Fire_Projectile`](crate::equipment::weapon::BulletWeaponBase::Fire_Projectile)) call it before each shot.
+    /// The holder's details for a shot, read from [`m_Holder`](crate::equipment::weapon::WeaponBase::m_Holder). It also stores
+    /// the holder's velocity on the weapon, which the bullets take as their relative velocity.
+    ///
+    /// - A character holder writes its faction
+    ///   ([`Character::GetFaction`](crate::character::character::Character::GetFaction)) to `faction`,
+    ///   its network peer to `peer_id`, and whether it is a player to `is_player`, and names
+    ///   itself in `ignore[0]`, leaving `ignore[1]` as the caller set it.
+    /// - A vehicle holder writes the vehicle's faction, sets `is_player` when the vehicle is the
+    ///   local player's, and names the vehicle in `ignore[0]` and its driver in `ignore[1]`.
+    /// - Otherwise a turret component gives its faction and clears `is_player`, and `ignore` is
+    ///   left as the caller set it.
+    ///
+    /// `ignore` holds the physics objects (`CPhysicsGameObject`) the shot's projectiles ignore: a
+    /// bullet's ray filter skips them until it first penetrates an object. The bullet weapons
+    /// ([`BulletWeaponBase::Fire_Projectile`](crate::equipment::weapon::BulletWeaponBase::Fire_Projectile)) call it before each shot with `ignore` cleared, as
+    /// do the anti-air gun's shot, the magnet's gravity field filter, and the laser's beam length.
     pub unsafe fn GetHolderInformation(
         &mut self,
-        p1: *mut i32,
-        p2: *mut u8,
-        p3: *mut bool,
+        faction: *mut i32,
+        peer_id: *mut u8,
+        is_player: *mut bool,
         ignore: *mut [*const ::std::ffi::c_void; 2],
     ) {
         unsafe {
             let f: unsafe extern "system" fn(
                 this: *mut Self,
-                p1: *mut i32,
-                p2: *mut u8,
-                p3: *mut bool,
+                faction: *mut i32,
+                peer_id: *mut u8,
+                is_player: *mut bool,
                 ignore: *mut [*const ::std::ffi::c_void; 2],
             ) = ::std::mem::transmute(Self::GetHolderInformation_ADDRESS);
-            f(self as *mut Self as _, p1, p2, p3, ignore)
+            f(self as *mut Self as _, faction, peer_id, is_player, ignore)
         }
     }
     pub const StartUsingDeferred_ADDRESS: usize = 0x1409652A0;

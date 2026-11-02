@@ -192,6 +192,10 @@ pub struct HoldConfig {
     /// is outside the socket's own reach: over the shoulder for the back, beside the thigh for a
     /// hip. A weapon let go of in front of the body or thrown still falls.
     pub dock_attraction: bool,
+    /// Pick weapons up only by hand: the game's weapon pickup panel and its button glyph are
+    /// hidden, and the use-item button does not pick a weapon up
+    /// ([`crate::controllers::weapons::hold::button_pickup`]).
+    pub hand_pickup_only: bool,
 }
 
 impl HoldConfig {
@@ -200,6 +204,7 @@ impl HoldConfig {
             either_hand: true,
             grip_to_hold: true,
             dock_attraction: true,
+            hand_pickup_only: true,
         }
     }
 }

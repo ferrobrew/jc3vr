@@ -56,6 +56,8 @@ The fire path has no other AI-facing output than this event and the heat; whethe
 - The bullet's player flag, and its tracer's, is `m_IsUserPlayer`; the first bullet of a shot also takes `m_IsUserLocalPlayer`.
 - For a local user it sets the bullet's target point from the aim point along the shot direction, led by the velocity of the player aim control's weapon target ([`PlayerAimControl::m_Target`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##field-m_Target)) when there is one, or far out along the shot when there is none. That target is the player's single weapon target, whichever weapon fires. How the bullet uses the point is unverified.
 
+The holder's details are its faction, its network peer, and whether it is a player, and the bodies the bullets ignore: a character holder names itself, and a vehicle holder names the vehicle and its driver. A bullet's ray filter skips those bodies until the bullet first penetrates an object, so a character's own bullets pass through it.
+
 A weapon with neither a user nor a holder fires unowned bullets, and a weapon without a holder gives its bullets no bodies to ignore; both follow from the code and are unverified in play.
 
 ## The shooting permission

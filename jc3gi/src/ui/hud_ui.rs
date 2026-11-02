@@ -219,6 +219,40 @@ impl HUDUI {
             f(self as *mut Self as _, weapon)
         }
     }
+    pub const OnNewValidWeaponPickup_ADDRESS: usize = 0x140E2AAA0;
+    /// Shows the weapon pickup panel through the movie's `OnNewValidWeaponPickup`: the offered
+    /// weapon's id and the ammunition it would bring, and the id and total ammunition of the weapon
+    /// it would replace (-1 for none). The panel carries the use-item glyph.
+    /// [`Player::UpdateWeaponHUD`](crate::character::player::Player::UpdateWeaponHUD) is its caller.
+    pub unsafe fn OnNewValidWeaponPickup(
+        &mut self,
+        weapon_id: i32,
+        ammo: i32,
+        replaced_weapon_id: i32,
+        replaced_ammo: i32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon_id: i32,
+                ammo: i32,
+                replaced_weapon_id: i32,
+                replaced_ammo: i32,
+            ) = ::std::mem::transmute(Self::OnNewValidWeaponPickup_ADDRESS);
+            f(self as *mut Self as _, weapon_id, ammo, replaced_weapon_id, replaced_ammo)
+        }
+    }
+    pub const ClearValidWeaponPickup_ADDRESS: usize = 0x140DFA470;
+    /// Hides the weapon pickup panel through the movie's `ClearValidWeaponPickup`.
+    /// [`Player::UpdateWeaponHUD`](crate::character::player::Player::UpdateWeaponHUD) is its caller.
+    pub unsafe fn ClearValidWeaponPickup(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::ClearValidWeaponPickup_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
     pub const Update_ADDRESS: usize = 0x140F11D40;
     /// The per-frame HUD update: refreshes [`m_State`](crate::ui::hud_ui::HUDUI::m_State) through `UpdateState`, then,
     /// unless the state hides the HUD, updates the reticles, health, vehicle, wingsuit, points of

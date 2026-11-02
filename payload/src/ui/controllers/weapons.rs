@@ -29,6 +29,7 @@ use crate::{
                 self, Cause, HoldStatus,
                 act::{self, DockStatus},
                 armed::{self, ArmedReadout},
+                button_pickup::{self, ButtonPickupStatus},
                 dock::SnapKind,
                 tick::{self, TickStatus},
             },
@@ -65,6 +66,7 @@ pub(super) struct WeaponsReadout {
     heft: HeftStatus,
     grip_watch: GripWatchStatus,
     unarmed_fire: UnarmedFireStatus,
+    button_pickup: ButtonPickupStatus,
     reload: ReloadStatus,
 }
 
@@ -89,6 +91,7 @@ impl WeaponsReadout {
             heft: heft::status(),
             grip_watch: grip_watch::status(),
             unarmed_fire: unarmed_fire::status(),
+            button_pickup: button_pickup::status(),
             reload: reload::status(),
         }
     }
@@ -142,6 +145,12 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
     ui.label(format!(
         "Fire with empty hands: draws held back {}",
         readout.unarmed_fire.held_back
+    ));
+    ui.label(format!(
+        "Button pickup: held back {} · hand fallbacks passed {} · panel hidden frames {}",
+        readout.button_pickup.held_back,
+        readout.button_pickup.granted,
+        readout.button_pickup.panel_hidden
     ));
     assist_readout(ui, &readout.aim);
     match &status.wielded {
@@ -568,6 +577,12 @@ pub(super) fn hold_feature_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
             "A weapon let go of near a free socket that takes it travels into the socket: over \
              the shoulder for the back, beside the thigh for a hip. In front of the body, or \
              thrown, it falls.",
+        );
+    ui.checkbox(&mut w.hold.hand_pickup_only, "Pick weapons up only by hand")
+        .on_hover_text(
+            "Hides the game's weapon pickup panel and its button prompt, and the use button no \
+             longer picks a weapon up. A hand's grab picks weapons up. The gamepad scheme keeps \
+             the game's own prompt and button.",
         );
     ui.checkbox(&mut w.regions.enabled, "Grab long guns anywhere")
         .on_hover_text(

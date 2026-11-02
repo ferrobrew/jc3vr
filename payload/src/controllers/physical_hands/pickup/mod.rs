@@ -173,6 +173,7 @@ pub(crate) fn finish_tick(
             refusal
         };
         if refusal.is_some_and(Refusal::falls_back) {
+            weapons::hold::button_pickup::grant();
             desired.push(Desired {
                 target: Target {
                     map: MapKind::Player,

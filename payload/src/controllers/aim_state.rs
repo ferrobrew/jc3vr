@@ -591,7 +591,8 @@ fn wall_penetration_update(
 /// `QueueAct` filter can tell the relaxed branch's holster apart.
 ///
 /// Around all of it, the fire and precision-aim inputs that would draw a weapon with nothing in the
-/// hands are held back ([`weapons::unarmed_fire`]).
+/// hands are held back ([`weapons::unarmed_fire`]), and so is the use-item input that would pick a
+/// weapon up by button ([`weapons::hold::button_pickup`]).
 #[detour(address = jc3gi::character::inventory::Inventory::UpdateWeaponHandling_ADDRESS)]
 fn update_weapon_handling(inventory: *mut Inventory, dt: f32) {
     let original = || UPDATE_WEAPON_HANDLING.get().unwrap().call(inventory, dt);
@@ -602,8 +603,12 @@ fn update_weapon_handling(inventory: *mut Inventory, dt: f32) {
     let words = unsafe { StateWords::of(c) };
     let holstering = words.is_some_and(|w| unsafe { w.has(StateBitFlag::SB_IS_HOLSTERING_WEAPON) });
     let held = unsafe { weapons::unarmed_fire::hold_back(c, holstering) };
+    let held_use = unsafe { weapons::hold::button_pickup::hold_back(c) };
     unsafe { weapons::hold::use_item::before_weapon_handling(c) };
     update_local_weapon_handling(c, words, original);
+    if let Some(held_use) = held_use {
+        unsafe { held_use.restore(c) };
+    }
     if let Some(held) = held {
         unsafe { held.restore(c) };
     }

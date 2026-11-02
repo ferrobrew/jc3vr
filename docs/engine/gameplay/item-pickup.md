@@ -26,6 +26,8 @@ The weapon itself takes the use input. The player's weapon input task sets [`E_I
 
 What completing the pickup does to the weapon, and how a weapon is dropped, is in [weapon-equip-and-drop.md](weapon-equip-and-drop.md).
 
+The HUD offers the pickup in its weapon pickup panel: the weapon on offer and the ammunition it would bring, the weapon it would replace in its slot, and the use-item glyph. The player's pickup readout ([`Player::UpdateWeaponHUD`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::player::Player##func-UpdateWeaponHUD)), called from the player's post-physics update each frame, takes the weapon the first valid interaction entry offers, as the swimming pickup does. It offers nothing while the `USE_ITEM` action is disabled in the player's action map or the animation forbids a pickup. It remembers the last offer ([`m_CurrentWeaponPickupId`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::player::Player##field-m_CurrentWeaponPickupId)) and tells the HUD only on a change: a new weapon or ammunition shows the panel ([`HUDUI::OnNewValidWeaponPickup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::hud_ui::HUDUI##func-OnNewValidWeaponPickup)), and no offer clears it ([`HUDUI::ClearValidWeaponPickup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::hud_ui::HUDUI##func-ClearValidWeaponPickup)).
+
 The game, not the input, chooses the weapon: the one among the interaction proxy's valid entries. Which entry wins when several weapons are in range, and how the pickup interaction's execution follows the act, are unverified.
 
 ## A body in the Havok world

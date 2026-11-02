@@ -78,11 +78,20 @@ pub struct Player {
     /// The game time ([`Clock`](crate::clock::Clock) game-time milliseconds) at which
     /// [`m_AimMode`](crate::character::player::Player::m_AimMode) last changed.
     pub m_AimModeChangeTime: u32,
-    _field_1414: [u8; 4],
+    _field_1414: [u8; 156],
+    /// The weapon id ([`WeaponBase::m_WeaponId`](crate::equipment::weapon::WeaponBase::m_WeaponId)) of
+    /// the weapon the HUD's pickup panel last offered, or -1 when the panel is cleared.
+    /// [`UpdateWeaponHUD`](crate::character::player::Player::UpdateWeaponHUD) compares it with this frame's offer to decide
+    /// whether to tell the HUD, and writes this frame's offer back.
+    pub m_CurrentWeaponPickupId: i16,
+    _field_14b2: [u8; 2],
+    /// The ammunition the HUD's pickup panel last showed for
+    /// [`m_CurrentWeaponPickupId`](crate::character::player::Player::m_CurrentWeaponPickupId), or -1.
+    pub m_CurrentWeaponPickupAmmo: i32,
 }
 fn _Player_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x1418], Player>([0u8; 0x1418]);
+        ::std::mem::transmute::<[u8; 0x14B8], Player>([0u8; 0x14B8]);
     }
     unreachable!()
 }
@@ -158,6 +167,31 @@ impl Player {
                 inventory_reset_flags: u32,
             ) = ::std::mem::transmute(Self::ReInit_ADDRESS);
             f(self as *mut Self as _, transform, teleport_flags, inventory_reset_flags)
+        }
+    }
+    pub const UpdateWeaponHUD_ADDRESS: usize = 0x140CE04C0;
+    /// Drives the HUD's weapon pickup panel, which names the weapon on offer, the ammunition it
+    /// would bring, and the weapon it would replace in its slot, beside the use-item glyph. It
+    /// takes the weapon the first of the character's interaction entries offers
+    /// ([`InteractionUserProxy::m_ValidEntries`](crate::interaction::InteractionUserProxy::m_ValidEntries)):
+    /// the entry's graph's context's parent when that is a weapon, or the weapon a weapon placement
+    /// rule among them spawned. There is no offer while the
+    /// [`USE_ITEM`](crate::input::input_action_map::Action::USE_ITEM) action is disabled in the player's
+    /// action map or the animation forbids a pickup
+    /// ([`Inventory::GetAnimationAllowsPickup`](crate::character::inventory::Inventory::GetAnimationAllowsPickup)).
+    /// With no offer it clears the panel
+    /// ([`HUDUI::ClearValidWeaponPickup`](crate::ui::hud_ui::HUDUI::ClearValidWeaponPickup)) when one was
+    /// shown; a changed weapon or ammunition shows it again
+    /// ([`HUDUI::OnNewValidWeaponPickup`](crate::ui::hud_ui::HUDUI::OnNewValidWeaponPickup)). Either way
+    /// it stores the offer in [`m_CurrentWeaponPickupId`](crate::character::player::Player::m_CurrentWeaponPickupId) and
+    /// [`m_CurrentWeaponPickupAmmo`](crate::character::player::Player::m_CurrentWeaponPickupAmmo). `CPlayer::UpdatePostPhysics`
+    /// calls it each frame.
+    pub unsafe fn UpdateWeaponHUD(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::UpdateWeaponHUD_ADDRESS,
+            );
+            f(self as *mut Self as _)
         }
     }
 }
