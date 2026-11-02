@@ -44,27 +44,31 @@ pub(super) unsafe fn keep_latch(
             // SAFETY: forwarded from the caller; the door's body was found just now.
             match unsafe { bodies::read(body, object) } {
                 Ok(read) => {
-                    let Some(acquired) =
-                        (unsafe { doors::tearing::TearGrip::take(latch.door, object, body) })
-                    else {
-                        tracing::info!(
-                            hand = hand.label(),
-                            slot = doors::slot_label(latch.door.slot),
-                            part = latch.door.part_index,
-                            body,
-                            "physical hands: doors: the latch gave, but the opened door's identity \
-                             changed; the hand lets go"
-                        );
-                        crate::controllers::physical_hands::pickup::tearing::acquired(
-                            state, i, None,
-                        );
-                        outcome.released[i] = true;
-                        outcome.lost += 1;
-                        outcome.error = Some(
-                            "physical hands: doors: the opened door's identity changed".to_owned(),
-                        );
-                        return;
-                    };
+                    let acquired =
+                        match unsafe { doors::tearing::TearGrip::take(latch.door, object, body) } {
+                            Ok(acquired) => acquired,
+                            Err(refusal) => {
+                                tracing::info!(
+                                    hand = hand.label(),
+                                    slot = doors::slot_label(latch.door.slot),
+                                    part = latch.door.part_index,
+                                    body,
+                                    %refusal,
+                                    "physical hands: doors: the latch gave, but the opened door's \
+                                     identity changed; the hand lets go"
+                                );
+                                crate::controllers::physical_hands::pickup::tearing::acquired(
+                                    state, i, None,
+                                );
+                                outcome.released[i] = true;
+                                outcome.lost += 1;
+                                outcome.error = Some(
+                                    "physical hands: doors: the opened door's identity changed"
+                                        .to_owned(),
+                                );
+                                return;
+                            }
+                        };
                     tracing::info!(
                         hand = hand.label(),
                         slot = doors::slot_label(latch.door.slot),

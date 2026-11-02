@@ -26,7 +26,7 @@ All clearance checks finish before the first live-body write. The controller app
 
 The shutdown participant waits a bounded number of shutdown attempts (`RESTORE_ATTEMPTS` in `human_hull/mod.rs`, a second or two of retries) for the native phase to finish a restoration. A restoration in that window commits as above. Otherwise the eject leaves every table and live body with the shapes it has, narrowed or restored, and commits without touching the engine: it keeps every retained reference, original and replacement, and stops adopting, so construction hooks still pending keep the authored geometry. This is safe for the engine because the replacements are the engine's own convex shapes, built by its factory on its heap with the originals' user data and no pointer into the payload, and no shape a slot or a body names can be freed while the payload holds its references; a settings table's destructor releases its slots' own references as for any shape. The cost is a small leak and narrowed humans until their settings tables are freed. Only a settings hook still running payload code holds the eject, for the length of that call.
 
-Each deferred attempt logs the clearance reason when it changes, and the debug UI's physical-hands page shows the adapter state and clearance reason.
+Each deferred attempt logs the clearance reason when it changes, and the debug UI's physical-hands page shows the adapter state and clearance reason. Each native pass also checks whether the local player's character body has a narrowed shape and logs `human hull: the local player's body shape changed` when that changes, so a session log shows whether the player's own hull took effect.
 
 ## Limits
 

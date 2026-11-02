@@ -11,7 +11,8 @@ use jc3gi::{
     game::GameObject,
     havok::{hkAabb, hkReferencedObject, hknpShape},
     physics::{
-        PfxInstance, PhysicsGameObject, ProxyState, SharedPfxCharacterSettings, hknpBody, hknpWorld,
+        PfxCharacterInstance, PfxInstance, PhysicsGameObject, ProxyState,
+        SharedPfxCharacterSettings, hknpBody, hknpWorld,
     },
 };
 
@@ -35,6 +36,8 @@ pub(super) struct NativeState {
     pub(super) reported_clearance: Option<ClearanceUnavailableReason>,
     generation: u64,
     mutation_fault: bool,
+    /// Whether the local player's body last had a narrowed shape, reported on each change.
+    player_narrowed: Option<bool>,
 }
 
 // SAFETY: STATE serializes access. Shape mutations run in settings hooks or the native phase;
@@ -55,6 +58,7 @@ impl NativeState {
             reported_clearance: None,
             generation: 0,
             mutation_fault: false,
+            player_narrowed: None,
         }
     }
 
@@ -271,6 +275,7 @@ impl NativeState {
         }
         let bodies = unsafe { inventory(world)? };
         self.migrated_bodies = unsafe { self.count_migrated(world, &bodies) };
+        unsafe { self.report_player(world) };
         if restore && self.migrated_bodies != 0 {
             return Err(ClearanceUnavailableReason::MutationRejected);
         }
@@ -299,6 +304,29 @@ impl NativeState {
             .generation
             .checked_add(1)
             .expect("human hull: generation exhausted");
+    }
+
+    /// Log whether the local player's body has a narrowed shape whenever that changes, so that a
+    /// session log shows the player's own hull taking effect.
+    unsafe fn report_player(&mut self, world: &hknpWorld) {
+        let Some(id) = (unsafe { player_body(world) }) else {
+            return;
+        };
+        let current = unsafe { (*world.m_bodies.add(id as usize)).m_shape };
+        let narrowed = self
+            .tables
+            .iter()
+            .flat_map(|table| &table.pairs)
+            .any(|pair| current == pair.replacement.as_ptr());
+        if self.player_narrowed.replace(narrowed) != Some(narrowed) {
+            tracing::info!(
+                narrowed,
+                body = id,
+                settings = self.tables.len(),
+                migrated_bodies = self.migrated_bodies,
+                "human hull: the local player's body shape changed"
+            );
+        }
     }
 
     unsafe fn count_migrated(&self, world: &hknpWorld, bodies: &[u32]) -> usize {
@@ -543,6 +571,22 @@ fn apply_with(
         }
     }
     Ok(())
+}
+
+/// The local player's character body, when it names a slot of `world`.
+///
+/// # Safety
+///
+/// The native physics phase, with `world` the live world.
+unsafe fn player_body(world: &hknpWorld) -> Option<u32> {
+    let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
+    let proxy = unsafe { character.m_PfxCharacter.px.as_ref() }?;
+    let mut body = PfxCharacterInstance::INVALID_BODY_ID;
+    unsafe { proxy.GetCharacterRigidBodyId(&mut body) };
+    (body != PfxCharacterInstance::INVALID_BODY_ID
+        && body <= world.m_peakBodyIndex
+        && !world.m_bodies.is_null())
+    .then_some(body)
 }
 
 unsafe fn body_owner(world: &hknpWorld, id: u32) -> Option<NonNull<PhysicsGameObject>> {

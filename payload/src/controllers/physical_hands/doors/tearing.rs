@@ -1,6 +1,6 @@
 //! Deliberate tear intent and the synchronous native damage boundary for a held door.
 
-use std::{mem::MaybeUninit, num::NonZeroUsize};
+use std::{fmt, mem::MaybeUninit, num::NonZeroUsize};
 
 use glam::{Mat4, Vec3};
 use jc3gi::vehicle::{parts::ConstraintInfo, vehicle::Vehicle};
@@ -26,10 +26,41 @@ pub(crate) enum Acquisition {
     Detached,
 }
 
+/// Why a held door's identity could not be established.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum AcquireRefusal {
+    /// The held body no longer belongs to the door's object.
+    BodyReowned,
+    /// Neither the captured vehicle body nor the part's own vehicle reference proves the vehicle.
+    VehicleUnproven,
+    /// The vehicle has no live body of its own.
+    NoVehicleBody,
+    /// The door's part no longer hangs by that body.
+    ContinuityLost,
+}
+
+impl fmt::Display for AcquireRefusal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("physical hands: doors: ")?;
+        f.write_str(match self {
+            Self::BodyReowned => "the held body no longer belongs to the door",
+            Self::VehicleUnproven => "nothing proves the door's vehicle alive",
+            Self::NoVehicleBody => "the door's vehicle has no live body",
+            Self::ContinuityLost => "the door's part no longer hangs by the held body",
+        })
+    }
+}
+
+impl std::error::Error for AcquireRefusal {}
+
 impl TearGrip {
     /// # Safety
     /// The game thread, outside the physics step. The queued target need not still be live.
-    pub unsafe fn take(door: DoorTarget, object: NonZeroUsize, body: u32) -> Option<Acquisition> {
+    pub unsafe fn take(
+        door: DoorTarget,
+        object: NonZeroUsize,
+        body: u32,
+    ) -> Result<Acquisition, AcquireRefusal> {
         take_with(door, object, body, &mut NativeAcquisition)
     }
 
@@ -186,28 +217,29 @@ fn take_with(
     object: NonZeroUsize,
     body: u32,
     engine: &mut impl AcquisitionEngine,
-) -> Option<Acquisition> {
+) -> Result<Acquisition, AcquireRefusal> {
     if engine.owner(body) != Some(object) {
-        return None;
+        return Err(AcquireRefusal::BodyReowned);
     }
-    let vehicle_body = if let Some(captured) = door.vehicle_body {
-        if !engine.alive(door.vehicle, captured) {
-            return None;
-        }
-        (engine.vehicle_body(door.vehicle) == Some(captured)).then_some(captured)?
-    } else {
-        // A queued part may survive its vehicle. Only its current weak reference proves that
-        // the saved vehicle pointer can be read; the held body's ownership was checked above.
-        if engine.vehicle_of(object) != Some(door.vehicle) {
-            return None;
-        }
-        engine.vehicle_body(door.vehicle)?
-    };
+    // The body a reach captured proves the vehicle alive while it still owns it. Undoing a latch
+    // can leave the captured body unproven (the reach may have hit another of the vehicle's
+    // bodies, or the vehicle's body may change with the loosened part), so the part's own weak
+    // reference to its vehicle, read through the checked held body, proves it as well; a queued
+    // part may survive its vehicle, and only that reference then shows the saved pointer readable.
+    let captured = door
+        .vehicle_body
+        .is_some_and(|captured| engine.alive(door.vehicle, captured));
+    if !captured && engine.vehicle_of(object) != Some(door.vehicle) {
+        return Err(AcquireRefusal::VehicleUnproven);
+    }
+    let vehicle_body = engine
+        .vehicle_body(door.vehicle)
+        .ok_or(AcquireRefusal::NoVehicleBody)?;
     let grip = TearGrip::new(door, vehicle_body);
     match engine.continuity(&grip, object, body) {
-        TearResult::Refused => Some(Acquisition::Attached(grip)),
-        TearResult::Detached => Some(Acquisition::Detached),
-        TearResult::Lost => None,
+        TearResult::Refused => Ok(Acquisition::Attached(grip)),
+        TearResult::Detached => Ok(Acquisition::Detached),
+        TearResult::Lost => Err(AcquireRefusal::ContinuityLost),
     }
 }
 
@@ -427,37 +459,76 @@ mod tests {
                 weak_vehicle: None,
                 ..QueuedPart::live()
             };
-            assert_eq!(take_with(target(capture), object, 7, &mut engine), None);
+            assert_eq!(
+                take_with(target(capture), object, 7, &mut engine),
+                Err(AcquireRefusal::VehicleUnproven)
+            );
             assert_eq!(engine.reads, 0);
         }
+        let mut engine = QueuedPart {
+            captured_alive: false,
+            weak_vehicle: NonZeroUsize::new(32),
+            ..QueuedPart::live()
+        };
+        assert_eq!(
+            take_with(target(Some(3)), object, 7, &mut engine),
+            Err(AcquireRefusal::VehicleUnproven)
+        );
+        assert_eq!(engine.reads, 0);
         let mut engine = QueuedPart {
             weak_vehicle: NonZeroUsize::new(32),
             ..QueuedPart::live()
         };
-        assert_eq!(take_with(target(None), object, 7, &mut engine), None);
+        assert_eq!(
+            take_with(target(None), object, 7, &mut engine),
+            Err(AcquireRefusal::VehicleUnproven)
+        );
         assert_eq!(engine.reads, 0);
         let mut engine = QueuedPart {
             owner: None,
             ..QueuedPart::live()
         };
-        assert_eq!(take_with(target(None), object, 7, &mut engine), None);
+        assert_eq!(
+            take_with(target(None), object, 7, &mut engine),
+            Err(AcquireRefusal::BodyReowned)
+        );
         assert_eq!(engine.reads, 0);
     }
 
     #[test]
-    fn queued_acquisition_rejects_changed_vehicle_body_and_classifies_external_detachment() {
+    fn an_unlatched_door_keeps_its_grip_when_the_captured_vehicle_body_changes() {
         let object = NonZeroUsize::new(8).unwrap();
+        let door = target(Some(3));
+        // The captured body still names the vehicle, but the vehicle's own body is another.
         let mut engine = QueuedPart {
             current_body: Some(4),
             ..QueuedPart::live()
         };
-        assert_eq!(take_with(target(Some(3)), object, 7, &mut engine), None);
+        assert_eq!(
+            take_with(door, object, 7, &mut engine),
+            Ok(Acquisition::Attached(TearGrip::new(door, 4)))
+        );
+        // The captured body no longer names the vehicle; the part's weak reference proves it.
+        let mut engine = QueuedPart {
+            captured_alive: false,
+            current_body: Some(4),
+            ..QueuedPart::live()
+        };
+        assert_eq!(
+            take_with(door, object, 7, &mut engine),
+            Ok(Acquisition::Attached(TearGrip::new(door, 4)))
+        );
+    }
+
+    #[test]
+    fn queued_acquisition_classifies_external_detachment_and_lost_continuity() {
+        let object = NonZeroUsize::new(8).unwrap();
         for capture in [Some(3), None] {
             let door = target(capture);
             let mut engine = QueuedPart::live();
             assert_eq!(
                 take_with(door, object, 7, &mut engine),
-                Some(Acquisition::Attached(TearGrip::new(door, 3)))
+                Ok(Acquisition::Attached(TearGrip::new(door, 3)))
             );
             let mut engine = QueuedPart {
                 result: TearResult::Detached,
@@ -465,13 +536,24 @@ mod tests {
             };
             assert_eq!(
                 take_with(door, object, 7, &mut engine),
-                Some(Acquisition::Detached)
+                Ok(Acquisition::Detached)
             );
             let mut engine = QueuedPart {
                 result: TearResult::Lost,
                 ..QueuedPart::live()
             };
-            assert_eq!(take_with(door, object, 7, &mut engine), None);
+            assert_eq!(
+                take_with(door, object, 7, &mut engine),
+                Err(AcquireRefusal::ContinuityLost)
+            );
+            let mut engine = QueuedPart {
+                current_body: None,
+                ..QueuedPart::live()
+            };
+            assert_eq!(
+                take_with(door, object, 7, &mut engine),
+                Err(AcquireRefusal::NoVehicleBody)
+            );
         }
     }
 

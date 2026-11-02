@@ -361,7 +361,18 @@ unsafe fn tick_with(
                     && let TargetKind::Door(door) = reach.kind
                 {
                     let acquired =
-                        unsafe { doors::tearing::TearGrip::take(door, reach.object, reach.body) };
+                        unsafe { doors::tearing::TearGrip::take(door, reach.object, reach.body) }
+                            .inspect_err(|refusal| {
+                                tracing::info!(
+                                    hand = hand.label(),
+                                    slot = doors::slot_label(door.slot),
+                                    part = door.part_index,
+                                    body = reach.body,
+                                    %refusal,
+                                    "physical hands: doors: the reached door's identity changed"
+                                );
+                            })
+                            .ok();
                     if !crate::controllers::physical_hands::pickup::tearing::acquired(
                         state, i, acquired,
                     ) {
