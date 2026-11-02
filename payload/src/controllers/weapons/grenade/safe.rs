@@ -53,6 +53,8 @@ pub(crate) struct Counts {
     pub redrawn: u64,
     pub dropped: u64,
     pub recovered: u64,
+    /// Items the world made in place of native pickups.
+    pub spawned: u64,
 }
 
 pub(crate) fn counts() -> Counts {
@@ -101,6 +103,51 @@ pub(crate) unsafe fn draw(hand: Hand, tuning: &GrenadeTuning) -> bool {
     drop(state);
     ensure_cleanup();
     COUNTS.lock().drawn += 1;
+    true
+}
+
+/// Make a safe grenade lying in the world at `world`, moving with `release`: a grenade the world
+/// made, in place of a native pickup. Its actor is created as a draw's is, under the same pool and
+/// stage rules, admitted to the world, and released inert into the simulation once its body exists
+/// ([`native::submit`]). `false`, with nothing made, when the pool or the stage refuses.
+///
+/// # Safety
+///
+/// The input tick's game stage, on the game thread.
+pub(crate) unsafe fn spawn_in_world(world: Mat4, release: Release) -> bool {
+    let Some(owner) = (unsafe { engine::local_player() }) else {
+        return false;
+    };
+    let Some(weapon) = grenade_weapon(owner) else {
+        return false;
+    };
+    let Some(model) = new_model_id() else {
+        return false;
+    };
+    let Some(actor) = (unsafe { native::create(weapon, world) }) else {
+        return false;
+    };
+    let Ok(item) = live::admit_safe_item_to_world(model) else {
+        unsafe { native::remove(&actor) };
+        return false;
+    };
+    let owner_id = owner as *const Character as usize;
+    let mut state = STATE.lock();
+    state.owner = Some(owner_id);
+    state.items.push(Item {
+        model,
+        actor,
+        world: [world; 2],
+    });
+    drop(state);
+    ensure_cleanup();
+    native::submit(native::Launch {
+        item,
+        hand: None,
+        world,
+        release,
+    });
+    COUNTS.lock().spawned += 1;
     true
 }
 
@@ -218,7 +265,7 @@ pub(crate) unsafe fn opened(hand: Hand) {
     };
     let launch = native::Launch {
         item,
-        hand,
+        hand: Some(hand),
         world,
         release,
     };
@@ -466,7 +513,7 @@ pub(crate) fn stand_down_hands(unavailable: [bool; 2]) {
         };
         native::submit(native::Launch {
             item,
-            hand,
+            hand: Some(hand),
             world,
             release: Release::REST,
         });
@@ -708,6 +755,7 @@ static COUNTS: Mutex<Counts> = Mutex::new(Counts {
     redrawn: 0,
     dropped: 0,
     recovered: 0,
+    spawned: 0,
 });
 static NEXT_MODEL: AtomicU64 = AtomicU64::new(1);
 static CLEANUP: AtomicBool = AtomicBool::new(false);

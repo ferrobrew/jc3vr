@@ -2594,6 +2594,20 @@ impl WeaponBase {
             f(self as *mut Self as _, character)
         }
     }
+    pub const OnDropBase_ADDRESS: usize = 0x1409A4870;
+    /// The base implementation of the [`OnDrop`](crate::equipment::weapon::WeaponBase::OnDrop) virtual, which a weapon without an
+    /// override of its own, such as a thrown grenade weapon, runs. The inventory's drop
+    /// ([`Inventory::DropWeapon`](crate::character::inventory::Inventory::DropWeapon)) reaches it through
+    /// the deferred drop on the weapon's next pre-simulation update. It leaves the weapon in
+    /// [`E_WS_DROPPED`](crate::equipment::weapon::WeaponState::E_WS_DROPPED) with its holder cleared.
+    pub unsafe fn OnDropBase(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::OnDropBase_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
     pub const OnUnequipBase_ADDRESS: usize = 0x140982040;
     /// The base implementation of the [`OnUnequip`](crate::equipment::weapon::WeaponBase::OnUnequip) virtual.
     pub unsafe fn OnUnequipBase(&mut self) {

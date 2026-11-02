@@ -12,6 +12,7 @@ mod locker;
 mod native;
 pub(crate) mod safe;
 pub mod tuning;
+mod world;
 
 use std::{cell::Cell, num::NonZeroUsize, time::Duration};
 
@@ -75,6 +76,7 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&GRENADE_PROPEL_TOWARD_BINDER)
         .with_hook_library(native::hook_library())
         .with_hook_library(locker::hook_library())
+        .with_hook_library(world::hook_library())
 }
 
 /// Hook removal keeps the image mapped while a locker source callback remains active.
@@ -403,6 +405,8 @@ pub(super) fn input_tick(
             haptics::play(hand, Event::PouchRefused);
         }
     }
+    // SAFETY: the game stage runs on the game thread before the world update.
+    unsafe { world::input_tick() };
     let pickups = std::mem::take(&mut STATE.lock().snatched_pickups);
     for (hand, weapon) in Hand::BOTH.into_iter().zip(pickups) {
         let Some(alive) = weapon.as_ref().and_then(Weak::lock) else {
@@ -517,6 +521,7 @@ pub(crate) fn input_unavailable(unavailable: [bool; 2]) {
 /// A loss of input releases safe items inertly and leaves a caught grenade's fuse unchanged.
 pub(super) fn stand_down() {
     locker::clear();
+    world::clear();
     safe::stand_down();
     let mut state = STATE.lock();
     state.next_pulse_s = 0.0;

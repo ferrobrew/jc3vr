@@ -99,7 +99,8 @@ pub(super) fn hook_library() -> HookLibrary {
 #[derive(Copy, Clone)]
 pub(super) struct Launch {
     pub item: SafeItemView,
-    pub hand: Hand,
+    /// The hand that let go of the item, or `None` for an item the world made.
+    pub hand: Option<Hand>,
     pub world: Mat4,
     pub release: Release,
 }
@@ -443,7 +444,9 @@ unsafe fn release(
     let inert = !launched && unsafe { release_inert(launch, actor) };
     match settle(live, launched, inert) {
         Settle::Thrown => {
-            report_native_throw(launch.hand, launch.release);
+            if let Some(hand) = launch.hand {
+                report_native_throw(hand, launch.release);
+            }
             safe::launched(launch.item);
         }
         Settle::Retired => safe::launched(launch.item),
@@ -744,7 +747,7 @@ mod tests {
     fn launch(item: SafeItemView) -> Launch {
         Launch {
             item,
-            hand: Hand::Right,
+            hand: Some(Hand::Right),
             world: Mat4::IDENTITY,
             release: Release {
                 velocity: Vec3::X,

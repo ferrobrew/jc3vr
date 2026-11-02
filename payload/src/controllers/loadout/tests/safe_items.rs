@@ -55,6 +55,29 @@ fn independent_safe_items_resolve_through_draw_transfer_and_stow() {
 }
 
 #[test]
+fn a_world_made_item_lies_in_the_world_and_a_hand_takes_it_up() {
+    let mut table = Loadout::new(BodyLayout::full(Hand::Right));
+    let lying = table.admit_safe_item_to_world(model(1)).unwrap();
+    assert_eq!(lying.place, Place::World(Departure::Dropped));
+    assert_eq!(table.safe_item_for_lease(model(1)), Some(lying));
+    assert_eq!(
+        table.admit_safe_item_to_world(model(1)),
+        Err(SafeItemError::LeaseAlreadyBound {
+            model: model(1),
+            item: lying.item,
+        })
+    );
+    check_invariants(&table);
+    check_safe_items(&table);
+    let held = table
+        .move_safe_item(lying, Place::Hand(Hand::Left))
+        .unwrap();
+    assert_eq!(held.item, lying.item);
+    assert_eq!(held.binding.lease, model(1));
+    check_safe_items(&table);
+}
+
+#[test]
 fn duplicate_lease_occupied_hand_and_invalid_holster_leave_the_table_unchanged() {
     let mut table = Loadout::new(BodyLayout::full(Hand::Right));
     let first = table.admit_safe_item(model(1), Hand::Left).unwrap();

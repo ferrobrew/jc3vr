@@ -40,7 +40,10 @@ pub(crate) use crate::controllers::loadout::live::{
     expect::{Expect, Pending},
     hands::{Held, Whereabouts},
     published::{hand_of, held_kind, in_hand, item_of, place_of},
-    safe::{admit_safe_item, move_safe_item, retire_safe_item, safe_item, safe_items},
+    safe::{
+        admit_safe_item, admit_safe_item_to_world, move_safe_item, retire_safe_item, safe_item,
+        safe_items,
+    },
 };
 use crate::controllers::{
     frame::Hand,

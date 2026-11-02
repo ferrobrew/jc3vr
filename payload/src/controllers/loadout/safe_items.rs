@@ -126,6 +126,37 @@ impl Loadout {
         })
     }
 
+    /// Admit an item lying in the world, without allocating its native actor: a grenade the world
+    /// made rather than a hand drew.
+    pub fn admit_safe_item_to_world(
+        &mut self,
+        model: ItemLeaseId,
+    ) -> Result<SafeItemView, SafeItemError> {
+        if let Some(owner) = self.safe_item_for_lease(model) {
+            return Err(SafeItemError::LeaseAlreadyBound {
+                model,
+                item: owner.item,
+            });
+        }
+        let id = self.allocate();
+        let binding = SafeItemBinding {
+            lease: model,
+            revision: 0,
+        };
+        self.safe_world.push(SafeWorld {
+            item: Item {
+                id,
+                kind: ItemKind::Grenade,
+                binding: Binding::SafeItem(binding),
+            },
+        });
+        Ok(SafeItemView {
+            item: id,
+            binding,
+            place: Place::World(Departure::Dropped),
+        })
+    }
+
     /// Draw, transfer, stow, or drop the same item after checking its complete current view.
     pub fn move_safe_item(
         &mut self,

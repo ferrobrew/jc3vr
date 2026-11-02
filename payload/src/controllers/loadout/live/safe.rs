@@ -30,6 +30,20 @@ pub(crate) fn admit_safe_item(
     result
 }
 
+pub(crate) fn admit_safe_item_to_world(model: ItemLeaseId) -> Result<SafeItemView, SafeItemError> {
+    let mut live = LIVE.lock();
+    require_available(&live)?;
+    let result = live.table.admit_safe_item_to_world(model);
+    match &result {
+        Ok(_) => {
+            live.transitions += 1;
+            live.publish_places();
+        }
+        Err(_) => live.refusals += 1,
+    }
+    result
+}
+
 pub(crate) fn move_safe_item(
     expected: SafeItemView,
     destination: Place,
