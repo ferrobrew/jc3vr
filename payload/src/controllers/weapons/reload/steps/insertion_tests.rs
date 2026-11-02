@@ -88,6 +88,7 @@ pub(super) fn state(stage: InsertStage) -> State {
         tick: None,
         pouch: None,
         stocked_pouch: None,
+        pouch_refusal: None,
         free: Some(Hand::Left),
         loose_seen: Vec::new(),
         frames: Some(Frames {

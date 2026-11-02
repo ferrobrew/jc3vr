@@ -435,6 +435,11 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     let active = hands::active_hands_raw();
     let mut provided = Provided::targets(start.targets);
     provided.extend(Provided::targets(vehicle.targets));
+    if let Some(note) = weapons::reload::pouch_note() {
+        for notes in &mut provided.notes {
+            notes.push(note.to_owned());
+        }
+    }
     let mut interaction_scans = [None; 2];
     if !in_menu {
         provided.extend(physical_hands::targets(

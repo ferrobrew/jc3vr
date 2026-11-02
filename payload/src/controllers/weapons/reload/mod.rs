@@ -52,6 +52,7 @@ mod infinite;
 pub mod insert;
 pub mod loose;
 pub mod plan;
+mod pouch;
 mod records;
 mod render;
 mod retained;
@@ -257,10 +258,16 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
         }
         pouch
     });
+    state.pouch_refusal = pouch::refusal(pouch::PouchFacts {
+        placed: target_pouch.is_some(),
+        free: free.is_some(),
+        gun: loaded.is_some(),
+        stocked,
+        takes: loaded.is_some_and(|weapon| state.can_take(weapon)),
+        holding: state.status.insertion.holding(),
+    });
     if let Some(pouch) = target_pouch
-        && free.is_some()
-        && loaded.is_some_and(|weapon| stocked && state.can_take(weapon))
-        && !state.status.insertion.holding()
+        && state.pouch_refusal.is_none()
     {
         candidates.push(pouch);
     }
@@ -382,6 +389,16 @@ pub(super) struct StockedPouch {
 /// The magazine pouch on this tick, while it has a round to give.
 pub(super) fn stocked_pouch() -> Option<StockedPouch> {
     STATE.lock().stocked_pouch
+}
+
+/// Why the magazine pouch is not a grab target this tick, for the grip press's log; `None` while
+/// it is, or while the reload is not acting.
+pub(crate) fn pouch_note() -> Option<&'static str> {
+    let state = STATE.lock();
+    state
+        .tick
+        .and(state.pouch_refusal)
+        .map(pouch::PouchRefusal::label)
 }
 
 /// What the bindings hand the second half of the reload's input tick.
@@ -805,6 +822,8 @@ struct State {
     pouch: Option<(Vec3, f32)>,
     /// The pouch on the tick it has a round to give.
     stocked_pouch: Option<StockedPouch>,
+    /// Why the pouch is not a grab target this tick.
+    pouch_refusal: Option<pouch::PouchRefusal>,
     free: Option<Hand>,
     /// The magazines in the world that fit the tick's gun, within reach.
     loose_seen: Vec<loose::Sighting>,
@@ -860,6 +879,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     tick: None,
     pouch: None,
     stocked_pouch: None,
+    pouch_refusal: None,
     free: None,
     loose_seen: Vec::new(),
     frames: None,

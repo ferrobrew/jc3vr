@@ -868,6 +868,7 @@ impl State {
         self.tick = None;
         self.pouch = None;
         self.stocked_pouch = None;
+        self.pouch_refusal = None;
         self.free = None;
         self.cancel_extraction();
         self.cancel_ejects();
