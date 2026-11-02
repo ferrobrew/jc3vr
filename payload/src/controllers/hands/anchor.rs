@@ -7,7 +7,12 @@
 //!
 //! - **Holding the line.** The hand stays at its controller, turned about its grip so that the
 //!   grip's pointing axis (the axis through the closed fist) runs along the line to the hook's
-//!   attach point ([`hold_line`]). The turn blends in and out with the tier's anchor weight.
+//!   attach point ([`hold_line`]). The turn blends in and out with the tier's anchor weight. Only
+//!   the drawn hand turns: the controller's aim pose is left where the controller points, because
+//!   the grapple's aim leaves along it, and a fire from the reel or the hang (the game's re-fire
+//!   from a reel) latches whatever that aim points at. Turned with the fist, the aim would point
+//!   off the controller by the angle between the grip's axis and the aim's, about a right angle's
+//!   worth on some controllers, and the second grapple would fly where the player never pointed.
 //! - **Driving the hang.** The game's own stick-driven swing on a hang is switched off in this
 //!   build, so the stick does nothing to a hanging character beyond picking the hang jump's
 //!   direction. The hand drives the hang instead: the hand is fixed to the line, so moving it
@@ -97,8 +102,9 @@ pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&HANG_TASK_UPDATE_BINDER)
 }
 
-/// Turn `hand` about its grip so that the grip's pointing axis (-Z) runs along `line`, a direction
-/// in the hand's frame, by `weight` (`0..=1`). The hand is returned as it is for a degenerate line.
+/// Turn `hand`'s wrist and grip about its grip so that the grip's pointing axis (-Z) runs along
+/// `line`, a direction in the hand's frame, by `weight` (`0..=1`). The aim pose stays where the
+/// controller points (see the module docs). The hand is returned as it is for a degenerate line.
 pub fn hold_line(hand: CockpitHand, line: Vec3, weight: f32) -> CockpitHand {
     let weight = weight.clamp(0.0, 1.0);
     let (Some(line), Some(axis)) = (
@@ -119,7 +125,7 @@ pub fn hold_line(hand: CockpitHand, line: Vec3, weight: f32) -> CockpitHand {
     CockpitHand {
         wrist: rotate(hand.wrist),
         grip: rotate(hand.grip),
-        aim: rotate(hand.aim),
+        aim: hand.aim,
     }
 }
 
@@ -398,12 +404,14 @@ mod tests {
 
     #[test]
     fn the_hand_turns_its_fist_onto_the_line_and_stays_put() {
-        let h = hand(Quat::IDENTITY);
+        let mut h = hand(Quat::IDENTITY);
+        h.aim.orientation = Quat::from_rotation_x(-0.7);
         let line = Vec3::new(0.0, 1.0, -0.3);
         let held = hold_line(h, line, 1.0);
         let axis = held.grip.orientation * Vec3::NEG_Z;
         assert!(axis.dot(line.normalize()) > 0.9999);
         assert!(held.grip.position.distance(h.grip.position) < 1e-6);
+        assert_eq!(held.aim, h.aim, "the aim stays on the controller");
         let untouched = hold_line(h, line, 0.0);
         assert_eq!(untouched, h);
         let degenerate = hold_line(h, Vec3::ZERO, 1.0);
