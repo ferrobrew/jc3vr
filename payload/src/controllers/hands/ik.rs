@@ -944,7 +944,7 @@ pub(crate) unsafe fn bone_index(controller: &AnimationController, name: &str) ->
 }
 
 /// The index and middle knuckles (the proximal phalanges) of `hand`.
-fn knuckle_names(hand: Hand) -> [&'static str; 2] {
+pub(crate) fn knuckle_names(hand: Hand) -> [&'static str; 2] {
     match hand {
         Hand::Left => ["LeftHandIndex1", "LeftHandMiddle1"],
         Hand::Right => ["RightHandIndex1", "RightHandMiddle1"],

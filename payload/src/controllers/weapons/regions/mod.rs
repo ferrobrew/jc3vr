@@ -43,8 +43,8 @@ use parking_lot::Mutex;
 pub use self::{
     action::{action_back, action_volume},
     shape::{
-        Carry, GunRegion, GunShape, RegionHit, carry_offset, classify, into_gun, out_of_gun,
-        turn_on_wrist,
+        Carry, GunRegion, GunShape, RegionHit, carry_offset, carry_on_bone, classify, into_gun,
+        out_of_gun, turn_on_wrist,
     },
 };
 use crate::controllers::frame::Hand;

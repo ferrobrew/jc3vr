@@ -266,6 +266,37 @@ fn a_carried_gun_sits_with_its_anchor_in_the_palm_turned_as_it_was_taken() {
 }
 
 #[test]
+fn a_carry_measured_on_the_wrist_frame_holds_the_gun_there_on_a_differently_oriented_bone() {
+    // The skeleton's wrist bone is turned well away from the hand-tracking wrist frame.
+    let bone = Pose {
+        position: Vec3::new(0.2, 1.2, -0.3),
+        orientation: Quat::from_rotation_y(0.9) * Quat::from_rotation_x(0.2),
+    };
+    let frame_on_bone = Quat::from_rotation_z(2.1) * Quat::from_rotation_y(-1.3);
+    let wrist_frame = (bone.orientation * frame_on_bone).normalize();
+    let grip = Pose {
+        position: Vec3::new(0.06, -0.03, 0.004),
+        orientation: Quat::from_rotation_x(0.4) * Quat::from_rotation_z(-1.1),
+    };
+    // The gun as the hand took it, measured on the wrist frame.
+    let gun_world = Quat::from_rotation_x(-0.6) * Quat::from_rotation_y(2.4);
+    let carry = Carry {
+        region: GunRegion::Stock,
+        anchor: Vec3::new(0.0, 0.0, 0.06),
+        turn: turn_on_wrist(wrist_frame, gun_world),
+    };
+    let attach = hand_pose::mul(bone, grip);
+    let placed = hand_pose::mul(
+        attach,
+        carry_offset(&carry_on_bone(carry, frame_on_bone), grip),
+    );
+    assert!(placed.orientation.angle_between(gun_world) < 1e-4);
+    // Composed on the bone without the conversion, the gun turns by the bone's offset.
+    let unconverted = hand_pose::mul(attach, carry_offset(&carry, grip));
+    assert!(unconverted.orientation.angle_between(gun_world) > 0.5);
+}
+
+#[test]
 fn a_point_round_trips_through_the_gun_frame_at_any_scale() {
     let gun = Pose {
         position: Vec3::new(1.0, 2.0, 3.0),

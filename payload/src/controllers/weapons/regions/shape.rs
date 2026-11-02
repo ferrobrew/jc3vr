@@ -261,6 +261,17 @@ pub fn turn_on_wrist(wrist: Quat, gun: Quat) -> Quat {
     (wrist.inverse() * gun).normalize()
 }
 
+/// `carry` with its turn moved from the wrist frame onto the wrist bone, for a wrist frame of
+/// rotation `frame_on_bone` on the bone. A carry's turn is measured on the hand-tracking wrist
+/// frame ([`crate::controllers::hands::pose`]), and the rigid grip composes it after the wrist
+/// bone's own frame, which the skeleton orients differently on each side.
+pub fn carry_on_bone(carry: Carry, frame_on_bone: Quat) -> Carry {
+    Carry {
+        turn: (frame_on_bone * carry.turn).normalize(),
+        ..carry
+    }
+}
+
 /// The pose that carries a gun held at its grip to the same gun held by `carry`, in the attach
 /// frame, for a hand whose grip puts the attach frame at `grip` on its wrist: the gun turned as the
 /// hand took it, and moved so that the anchor sits where the grip's attach point sits, in the palm.

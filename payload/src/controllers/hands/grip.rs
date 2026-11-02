@@ -32,7 +32,8 @@
 //! ([`seat_on_body`]), so the drawn gun, and everything that derives from its placement, follows the
 //! gun body while the hand is drawn at its own. A gun a hand holds by a part other than its grip
 //! ([`crate::controllers::weapons::regions`]) is pinned so that part sits in the palm, turned as
-//! the hand took it ([`carry_offset`]). A gun on a holster or back bone, and a hand the
+//! the hand took it ([`carry_offset`]), a turn measured on the hand-tracking wrist frame and moved
+//! onto the wrist bone's own frame ([`carry_on_bone`]). A gun on a holster or back bone, and a hand the
 //! controllers do not drive, are left to the game. Each placement also records how the hand's
 //! animated attach bone sat relative to the canonical grip before the pin, and how the gun sits on
 //! the wrist after the placement, for [`crate::controllers::weapons::grip_watch`].
@@ -65,7 +66,7 @@ use crate::{
                 act::{self, SnapStart, SnapView},
                 armed, take,
             },
-            regions::{self, Carry, carry_offset},
+            regions::{self, Carry, carry_offset, carry_on_bone},
         },
     },
 };
@@ -577,7 +578,11 @@ unsafe fn pin(
     let wrist_scale = Vec3::from_array(wrist_joint.m_Scale.data);
     let mut held = pinned_attach(wrist, wrist_scale, offset);
     if let Some(carry) = carry {
-        held = hand_pose::mul(held, carry_offset(&carry, offset));
+        // Without the wrist frame's place on the bone, a carry's turn cannot be placed: the gun
+        // stays at the grip rather than at a turn meant for another frame.
+        if let Some(frame) = unsafe { wrist_frame_on_bone(controller, hand, wrist_index) } {
+            held = hand_pose::mul(held, carry_offset(&carry_on_bone(carry, frame), offset));
+        }
     }
     if let Some(deviation) = deviation {
         held = seat_on_body(held, deviation);
@@ -704,6 +709,47 @@ unsafe fn canonical_grip(
     Some(grip)
 }
 
+/// The hand-tracking wrist frame's rotation on `hand`'s wrist bone ([`hand_pose`]): the frame the
+/// knuckles give in the skeleton's bind pose, relative to the bone's own frame there, cached per
+/// animation controller. The knuckles are fixed on the hand bone, so the relation holds in any pose.
+/// `None` when a knuckle does not resolve or the bind pose is degenerate.
+unsafe fn wrist_frame_on_bone(
+    controller: &AnimationController,
+    hand: Hand,
+    wrist_index: u32,
+) -> Option<Quat> {
+    let key = FrameKey {
+        controller: controller as *const AnimationController as usize,
+        wrist_index,
+    };
+    if let Some(cached) = FRAMES.lock()[hand.index()].filter(|(k, _)| *k == key) {
+        return Some(cached.1);
+    }
+    let [index_name, middle_name] = ik::knuckle_names(hand);
+    let index = unsafe { ik::bone_index(controller, index_name) }?;
+    let middle = unsafe { ik::bone_index(controller, middle_name) }?;
+    let bind = |index| {
+        let mut matrix = Matrix4::default();
+        unsafe { controller.GetBindPoseBoneMatrix(index, &mut matrix) };
+        Mat4::from(matrix)
+    };
+    let (_, bone, wrist) = bind(wrist_index).to_scale_rotation_translation();
+    let point = |index| bind(index).w_axis.truncate();
+    let frame = hand_pose::wrist_frame_from_bones(hand, wrist, point(index), point(middle))?;
+    let on_bone = (bone.normalize().inverse() * frame).normalize();
+    if !on_bone.is_finite() {
+        return None;
+    }
+    tracing::info!(
+        target: "controllers",
+        ?hand,
+        rotation_deg = angle_deg(Quat::IDENTITY, on_bone),
+        "rigid grip: the wrist frame on the wrist bone from the bind pose"
+    );
+    FRAMES.lock()[hand.index()] = Some((key, on_bone));
+    Some(on_bone)
+}
+
 fn record_read(hand: Hand, read: GripRead) {
     READS[hand.index()].store(read as u8, Ordering::Relaxed);
 }
@@ -732,6 +778,14 @@ struct GripKey {
 }
 
 static GRIPS: Mutex<[Option<(GripKey, Pose)>; 2]> = Mutex::new([None; 2]);
+/// What a cached wrist frame on the wrist bone was read for.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct FrameKey {
+    controller: usize,
+    wrist_index: u32,
+}
+
+static FRAMES: Mutex<[Option<(FrameKey, Quat)>; 2]> = Mutex::new([None; 2]);
 /// The left hand's grip mirrored onto the right wrist, and the controller it was read for.
 static MIRRORED: Mutex<Option<(GripKey, Pose)>> = Mutex::new(None);
 static RIGHT_GRIP: Mutex<Option<RightGripRead>> = Mutex::new(None);
