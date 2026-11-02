@@ -443,7 +443,12 @@ pub struct Character {
     /// The impulse, accumulated over hits in quick succession, at which a hit too weak to stagger
     /// the character alone counts as staggering.
     pub m_HitReaction_AccumalatedImpulseStumbleThreshold: f32,
-    _field_4c4: [u8; 1140],
+    _field_4c4: [u8; 16],
+    /// The chance, from zero to one, that the character drops its hand grenade when it dies
+    /// ([`OnDestroyed`](crate::character::character::Character::OnDestroyed)). Per-character tuning read from data; the constructor
+    /// sets a quarter.
+    pub m_DropGrenadeChance: f32,
+    _field_4d8: [u8; 1120],
     /// The character's aiming-settings resource (`TResourceCachePtr<SCharacterAimingSettings>`, a
     /// resource handle resolved through the resource cache). Both aim-input updates read the
     /// aim-timer refill value from the resolved settings.
@@ -2022,6 +2027,29 @@ impl Character {
                 Self::DropAllWeapons_ADDRESS,
             );
             f(self as *mut Self as _)
+        }
+    }
+    pub const OnDestroyed_ADDRESS: usize = 0x1407F14F0;
+    /// The character's death (its `CDamageable::OnDestroyed` override), run on the main thread when
+    /// its health runs out. Unless the damage carries the flag that skips it, it stops using the
+    /// heavy weapon and the selected weapon and, for a character other than the local player,
+    /// drops weapons through the inventory's drop
+    /// ([`Inventory::DropWeapon`](crate::character::inventory::Inventory::DropWeapon)): its best weapon
+    /// ([`Inventory::DropBestWeapon`](crate::character::inventory::Inventory::DropBestWeapon)) when the
+    /// selected weapon is not mounted, and its hand grenade
+    /// ([`E_SLOT_HAND_GRENADE`](crate::character::inventory::WeaponSlot::E_SLOT_HAND_GRENADE)) when a
+    /// uniform random draw falls below [`m_DropGrenadeChance`](crate::character::character::Character::m_DropGrenadeChance). The
+    /// avatar's death handling (`CBehaviorTreeAvatar::OnDeath`) runs after the drops and drops
+    /// nothing. Each drop reaches the weapon's drop virtual
+    /// ([`WeaponBase::OnDrop`](crate::equipment::weapon::WeaponBase::OnDrop)) on its next pre-simulation
+    /// update.
+    pub unsafe fn OnDestroyed(&mut self, damage: *mut ::std::ffi::c_void) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                damage: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::OnDestroyed_ADDRESS);
+            f(self as *mut Self as _, damage)
         }
     }
     pub const IsLocalPlayerControlled_ADDRESS: usize = 0x1407813D0;

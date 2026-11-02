@@ -2300,13 +2300,21 @@ impl WeaponBase {
     }
     pub const PickupStart_ADDRESS: usize = 0x1409912B0;
     /// Starts picking the weapon up for `activator` (a character's `CGameObject` subobject; any
-    /// other object is ignored). A hand grenade is taken at once: its stored ammunition goes to the
-    /// inventory, the HUD shows the grenade pickup, and the weapon despawns. Another weapon enters
+    /// other object is ignored). A hand grenade is taken at once, whatever its
+    /// [`m_InfinitePickup`](crate::equipment::weapon::WeaponBase::m_InfinitePickup): its stored ammunition
+    /// ([`m_StoredNonMagazineAmmo`](crate::equipment::weapon::WeaponBase::m_StoredNonMagazineAmmo)) goes to the inventory's reserve
+    /// ([`Inventory::AddAmmo`](crate::character::inventory::Inventory::AddAmmo), so a weapon with none
+    /// stored adds nothing), the HUD shows the grenade pickup when any was added, and the weapon
+    /// disables its pickup, leaves the update, hides ([`SetVisible`](crate::equipment::weapon::WeaponBase::SetVisible)), leaves the
+    /// physics world ([`RemoveFromWorld`](crate::equipment::weapon::WeaponBase::RemoveFromWorld)), and is handed to the spawn
+    /// system's despawn (`CSpawnSystem::Despawn`), which queues an object it spawned for removal
+    /// and lowers its resource's spawned count. Another weapon enters
     /// [`E_WS_PICKING_UP`](crate::equipment::weapon::WeaponState::E_WS_PICKING_UP) and leaves the physics world; the weapon's
     /// pickup track message then completes the pickup through [`PickupItem`](crate::equipment::weapon::WeaponBase::PickupItem).
     /// A weapon with infinite pickups gives the character a copy instead. The weapon's pickup
     /// interaction calls it when it executes, and on activation for a weapon that
-    /// [`ShouldAutoPickup`](crate::equipment::weapon::WeaponBase::ShouldAutoPickup) takes without input.
+    /// [`ShouldAutoPickup`](crate::equipment::weapon::WeaponBase::ShouldAutoPickup) takes without input. Every weapon, a hand
+    /// grenade included, then sends its picked-up event when it has one.
     pub unsafe fn PickupStart(&mut self, activator: *mut crate::game::GameObject) {
         unsafe {
             let f: unsafe extern "system" fn(

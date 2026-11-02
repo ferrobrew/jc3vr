@@ -625,8 +625,10 @@ impl Inventory {
     /// ([`WeaponBase::OnDrop`](crate::equipment::weapon::WeaponBase::OnDrop)) to the weapon's next
     /// pre-simulation update. With `select_valid` set and `slot` selected, it then selects another
     /// weapon. An empty slot is left as it is. The inventory's add drops the
-    /// occupant of a slot this way when the slot's drop flag is set, and the character drops a
-    /// heavy weapon this way when its holster or cancel input is clicked.
+    /// occupant of a slot this way when the slot's drop flag is set, the character drops a heavy
+    /// weapon this way when its holster or cancel input is clicked, and a dying character drops its
+    /// best weapon and, by chance, its hand grenade this way
+    /// ([`Character::OnDestroyed`](crate::character::character::Character::OnDestroyed)).
     pub unsafe fn DropWeapon(
         &mut self,
         slot: crate::character::inventory::WeaponSlot,
@@ -639,6 +641,20 @@ impl Inventory {
                 select_valid: bool,
             ) = ::std::mem::transmute(Self::DropWeapon_ADDRESS);
             f(self as *mut Self as _, slot, select_valid)
+        }
+    }
+    pub const DropBestWeapon_ADDRESS: usize = 0x140932840;
+    /// Drops the character's best weapons through [`DropWeapon`](crate::character::inventory::Inventory::DropWeapon), selecting
+    /// another weapon after each: the heavy slot's weapon when there is one, and then the special
+    /// slot's weapon, or failing that the two-handed slot's, or failing that the dual-wield slot's.
+    /// A dying character calls it
+    /// ([`Character::OnDestroyed`](crate::character::character::Character::OnDestroyed)).
+    pub unsafe fn DropBestWeapon(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::DropBestWeapon_ADDRESS,
+            );
+            f(self as *mut Self as _)
         }
     }
     pub const UpdateAttachmentEffects_ADDRESS: usize = 0x1408C6D30;
