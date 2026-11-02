@@ -1,6 +1,7 @@
 //! The overlay's own producers: the grapple highlight and gauntlet beam, the guns' dot or laser,
-//! the ghosts of yielded hands, the controller gizmos, and the sight tuning marker. Each builds its primitives from a
-//! published readout, behind its toggle in [`OverlayConfig`].
+//! the ghosts of yielded hands, the controller gizmos, the sight tuning marker, and the grounded body
+//! rig's diagnostics. Each builds its primitives from a published readout, behind its toggle in
+//! [`OverlayConfig`].
 //!
 //! [`tick`] runs once per rendered frame on the render thread, before the first eye's draw. The
 //! aim's readouts change at the sim tick's rate, so the grapple and gun producers submit only when
@@ -8,7 +9,7 @@
 //! (a menu, the gamepad scheme, an idle update). Their hand-attached ends are anchored to the hand,
 //! so they still follow the controller at frame rate. The ghost hands and the gizmos follow the
 //! render-time hand poses and submit every frame, as does the sight tuning marker, which stays
-//! where it was placed.
+//! where it was placed, and the body rig, which the grounded rig publishes once per rendered frame.
 //!
 //! The grip targets' markers are the grip model's to produce, into [`Source::GrabMarkers`]
 //! ([`crate::controllers::grab::markers`]).
@@ -27,6 +28,7 @@ use crate::{
             self, GRAPPLE_ORIGIN_M, GrappleAim, HandAim, HandSource, raycast::RayHit,
             sights::tuning,
         },
+        body::rig::{grounded, visual},
         config::{GunReadout, OverlayConfig},
         frame::Hand,
         hands::tiers,
@@ -38,17 +40,19 @@ use crate::{
             store,
         },
     },
+    headpose,
 };
 
 /// Build and submit every producer's primitives for this frame, given the render-time hand poses.
 /// Every producer's slot is cleared while `active` is false.
 pub fn tick(active: bool, hands: &[Option<HandPoses>; 2]) {
-    let (config, dominant, grapple_origin, sight_tuning) = Config::lock_query(|c| {
+    let (config, dominant, grapple_origin, sight_tuning, world_scale) = Config::lock_query(|c| {
         (
             c.controllers.overlay,
             c.controllers.acting_hand(),
             GRAPPLE_ORIGIN_M,
             c.controllers.aim.sight_tuning.enabled,
+            c.vr.world_scale,
         )
     });
     if !active {
@@ -122,6 +126,17 @@ pub fn tick(active: bool, hands: &[Option<HandPoses>; 2]) {
         |out| {
             if let Some(marker) = tuning::status().marker {
                 sight_marker(marker, status.hands[dominant.index()], out);
+            }
+        },
+        &mut prims,
+    );
+    submit_or_clear(
+        Source::BodyRig,
+        config.body_rig,
+        FRAME_TTL,
+        |out| {
+            if let Some(d) = grounded::diagnostics() {
+                visual::primitives(&d, headpose::xr::body_rotation(), world_scale, out);
             }
         },
         &mut prims,
@@ -344,13 +359,14 @@ pub fn sight_marker(marker: Vec3, dominant: Option<HandAim>, out: &mut Vec<Primi
 }
 
 /// The sources [`tick`] produces.
-const PRODUCED: [Source; 6] = [
+const PRODUCED: [Source; 7] = [
     Source::GrappleHighlight,
     Source::GrappleBeam,
     Source::GunReadout,
     Source::GhostHands,
     Source::DebugGizmos,
     Source::SightTuning,
+    Source::BodyRig,
 ];
 
 /// The time to live of the sim-rate producers' slots: a few sim ticks.

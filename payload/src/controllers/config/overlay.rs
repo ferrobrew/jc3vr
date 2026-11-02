@@ -36,6 +36,9 @@ pub struct OverlayConfig {
     pub body_mirror: bool,
     /// How far ahead of Rico the body mirror stands, metres.
     pub body_mirror_distance_m: f32,
+    /// Draw the grounded rig's neck pivot, waist pivot, and the spine between them, and its lean
+    /// rings on the floor around the pelvis, coloured by the step phase (`docs/mod/body/rig.md`).
+    pub body_rig: bool,
     /// How far behind the scene's depth, in metres, a primitive still counts as visible, so that a
     /// marker on a surface is not hidden by that surface.
     pub depth_tolerance_m: f32,
@@ -61,6 +64,7 @@ impl OverlayConfig {
             debug_gizmos: false,
             body_mirror: false,
             body_mirror_distance_m: 1.2,
+            body_rig: true,
             depth_tolerance_m: 0.05,
             depth_tolerance_rel: 0.01,
             min_line_px: 1.5,

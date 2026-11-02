@@ -45,6 +45,9 @@ pub enum Source {
     BodyMirror,
     /// The body mirror's render-time pouch models and copied input targets.
     BodyMirrorPouches,
+    /// The grounded body rig's neck and waist pivots, spine, and lean rings
+    /// ([`crate::controllers::body::rig::visual`]).
+    BodyRig,
     /// The grab view: the reach rays, the lines to the grip targets, the palms' state, the refused
     /// grabs, and the candidates near the hands
     /// ([`crate::controllers::physical_hands::grab_view`]).
@@ -55,7 +58,7 @@ pub enum Source {
 }
 
 impl Source {
-    pub const COUNT: usize = 18;
+    pub const COUNT: usize = 19;
 
     /// Every source, in index order.
     pub const ALL: [Source; Source::COUNT] = [
@@ -75,6 +78,7 @@ impl Source {
         Source::MagazinePips,
         Source::BodyMirror,
         Source::BodyMirrorPouches,
+        Source::BodyRig,
         Source::GrabView,
         Source::ColliderView,
     ];
@@ -97,8 +101,9 @@ impl Source {
             Source::MagazinePips => 13,
             Source::BodyMirror => 14,
             Source::BodyMirrorPouches => 15,
-            Source::GrabView => 16,
-            Source::ColliderView => 17,
+            Source::BodyRig => 16,
+            Source::GrabView => 17,
+            Source::ColliderView => 18,
         }
     }
 
@@ -120,6 +125,7 @@ impl Source {
             Source::MagazinePips => "second weapon's magazine",
             Source::BodyMirror => "body mirror",
             Source::BodyMirrorPouches => "body mirror pouch render placement",
+            Source::BodyRig => "body rig",
             Source::GrabView => "grab view",
             Source::ColliderView => "collider view",
         }

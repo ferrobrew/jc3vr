@@ -21,6 +21,7 @@ fn snapshot_with(config: Config) -> Snapshot {
 fn each_inventory_switch_edits_only_its_concrete_config_field() {
     let paths = [
         (ViewId::BodyMirror, "/controllers/overlay/body_mirror"),
+        (ViewId::BodyRig, "/controllers/overlay/body_rig"),
         (
             ViewId::ControllerGizmos,
             "/controllers/overlay/debug_gizmos",
@@ -257,9 +258,10 @@ fn retained_overlay_error_does_not_block_requested_visualizations() {
 }
 
 #[test]
-fn the_inventory_maps_every_switch_to_the_exact_nine_output_sources() {
+fn the_inventory_maps_every_switch_to_the_exact_ten_output_sources() {
     let expected = [
         (ViewId::BodyMirror, Source::BodyMirror),
+        (ViewId::BodyRig, Source::BodyRig),
         (ViewId::ControllerGizmos, Source::DebugGizmos),
         (ViewId::GhostHands, Source::GhostHands),
         (ViewId::GrappleHighlight, Source::GrappleHighlight),
@@ -275,7 +277,7 @@ fn the_inventory_maps_every_switch_to_the_exact_nine_output_sources() {
         (ViewId::PalmBoxes, Source::PhysicalHands),
         (ViewId::WristDetonator, Source::WristDetonator),
     ];
-    assert_eq!(ENTRIES.len(), 15);
+    assert_eq!(ENTRIES.len(), 16);
     assert_eq!(expected.len(), ENTRIES.len());
     for (id, source) in expected {
         assert_eq!(ENTRIES.iter().filter(|entry| entry.id == id).count(), 1);
@@ -295,7 +297,7 @@ fn the_inventory_maps_every_switch_to_the_exact_nine_output_sources() {
             .into_iter()
             .filter(|source| mask.contains(*source))
             .count(),
-        10
+        11
     );
     for source in Source::ALL {
         assert_eq!(

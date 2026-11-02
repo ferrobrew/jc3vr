@@ -169,6 +169,7 @@ pub(crate) fn controls(ui: &mut Ui, snapshot: &Snapshot) {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum ViewId {
     BodyMirror,
+    BodyRig,
     ControllerGizmos,
     GhostHands,
     GrappleHighlight,
@@ -189,6 +190,7 @@ impl ViewId {
     fn source(self) -> Source {
         match self {
             Self::BodyMirror => Source::BodyMirror,
+            Self::BodyRig => Source::BodyRig,
             Self::ControllerGizmos => Source::DebugGizmos,
             Self::GhostHands => Source::GhostHands,
             Self::GrappleHighlight => Source::GrappleHighlight,
@@ -211,6 +213,7 @@ impl ViewId {
         let grab = &config.controllers.physical_hands.grab_view;
         match self {
             Self::BodyMirror => overlay.body_mirror,
+            Self::BodyRig => overlay.body_rig,
             Self::ControllerGizmos => overlay.debug_gizmos,
             Self::GhostHands => overlay.ghost_hands,
             Self::GrappleHighlight => overlay.grapple_highlight,
@@ -233,6 +236,7 @@ impl ViewId {
         let grab = &mut config.controllers.physical_hands.grab_view;
         match self {
             Self::BodyMirror => overlay.body_mirror = requested,
+            Self::BodyRig => overlay.body_rig = requested,
             Self::ControllerGizmos => overlay.debug_gizmos = requested,
             Self::GhostHands => overlay.ghost_hands = requested,
             Self::GrappleHighlight => overlay.grapple_highlight = requested,
@@ -267,7 +271,11 @@ impl ViewId {
     fn overlay_producer(self) -> bool {
         matches!(
             self,
-            Self::ControllerGizmos | Self::GhostHands | Self::GrappleHighlight | Self::GrappleBeam
+            Self::BodyRig
+                | Self::ControllerGizmos
+                | Self::GhostHands
+                | Self::GrappleHighlight
+                | Self::GrappleBeam
         )
     }
 }
@@ -298,6 +306,12 @@ const ENTRIES: &[Entry] = &[
     Entry {
         id: ViewId::BodyMirror,
         label: "Body mirror",
+        group: Group::DebugGeometry,
+        feature: FeatureId::BodyFit,
+    },
+    Entry {
+        id: ViewId::BodyRig,
+        label: "Body rig",
         group: Group::DebugGeometry,
         feature: FeatureId::BodyFit,
     },
