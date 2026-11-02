@@ -84,6 +84,14 @@ impl Prop {
         }
     }
 
+    /// Where the prop's model sits on its pouch.
+    pub const fn placement(self) -> ModelPlacement {
+        match self {
+            Prop::Charge => CHARGE_PLACEMENT,
+            Prop::Grenade | Prop::Magazine => MODEL_PLACEMENT,
+        }
+    }
+
     fn bone(self) -> SafeBoneIndex {
         match self {
             Self::Magazine => SafeBoneIndex::HIPS,
@@ -92,10 +100,19 @@ impl Prop {
     }
 }
 
-/// Where every prop's model sits on its pouch: at the pouch's centre, square to the girdle.
+/// Where the grenade's and the magazine's models sit on their pouches: at the pouch's centre,
+/// square to the girdle.
 pub const MODEL_PLACEMENT: ModelPlacement = ModelPlacement {
     offset_m: Vec3::ZERO,
     rotation_deg: Vec3::ZERO,
+};
+
+/// Where the C4 charge's model sits on its pouch: at the pouch's centre, pitched down a quarter
+/// turn, so that the charge, whose in-hand model lies face up, lies flat on the chest with its face
+/// forward rather than standing out of it.
+pub const CHARGE_PLACEMENT: ModelPlacement = ModelPlacement {
+    offset_m: Vec3::ZERO,
+    rotation_deg: Vec3::new(-90.0, 0.0, 0.0),
 };
 
 /// Where a model sits relative to its pouch's centre, in the frame of the girdle the pouch rides
@@ -242,7 +259,7 @@ pub(crate) unsafe fn input_tick(
             slot.weapon,
             slot.model,
         );
-        let mut attachment = placement(prop, wanted, source, &frames, &MODEL_PLACEMENT);
+        let mut attachment = placement(prop, wanted, source, &frames, &prop.placement());
         let local = attachment.local.ok();
         let slot = &mut state.slots[prop.index()];
         let previous_source = slot.model;
@@ -597,6 +614,17 @@ mod tests {
         let reflected = mirror * right * mirror;
         for (a, b) in reflected.to_cols_array().iter().zip(left.to_cols_array()) {
             assert!((a - b).abs() < 1e-5, "{reflected} vs {left}");
+        }
+    }
+
+    #[test]
+    fn the_charge_lies_flat_on_the_chest_facing_forward_on_either_side() {
+        for side in Hand::BOTH {
+            let on = on_pouch(&Prop::Charge.placement(), side);
+            // The model's up, its face, points forward out of the chest (the girdle's -Z).
+            let face = on.transform_vector3(Vec3::Y);
+            assert!(face.distance(Vec3::NEG_Z) < 1e-5, "{side:?}: {face}");
+            assert_eq!(on.w_axis.truncate(), Vec3::ZERO);
         }
     }
 
