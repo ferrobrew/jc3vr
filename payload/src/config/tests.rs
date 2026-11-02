@@ -128,10 +128,17 @@ fn the_mirror_view_loads_and_the_retired_mirror_eye_is_skipped() {
 }
 
 #[test]
-fn the_clean_view_starts_on_and_its_scope_is_not_loaded() {
+fn the_clean_view_and_its_scope_are_not_loaded() {
+    // A session that showed the desktop overlay saved the switch off; the next launch still starts
+    // with the overlay hidden.
+    let mut table = defaults_table();
+    set(&mut table, &["director", "clean_view"], false.into());
+    let Loaded { config, report } = load(table);
+    assert!(config.director.clean_view);
+    assert_eq!(report.ignored, ["director.clean_view"]);
+
     let mut table = defaults_table();
     set(&mut table, &["hud", "flat_overlay_visible"], true.into());
-    remove(&mut table, &["director", "clean_view"]);
     let Loaded { config, report } = load(table);
     assert!(config.director.clean_view);
     assert_eq!(report.ignored, ["hud.flat_overlay_visible"]);
