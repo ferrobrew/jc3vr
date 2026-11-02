@@ -379,7 +379,10 @@ pub(crate) fn finish_tick(
         },
         &config,
     );
-    let action_hands = reload::action_hands();
+    // A holding hand that opens while the other hand holds its gun's slide or bolt passes the gun
+    // to that hand, rather than waiting for the action and dropping the gun once it lets go.
+    let passes = passes_by_action(reload::action_held_by_other(), grips);
+    let action_hands = waiting_on_action(reload::action_hands(), passes);
     let release_active =
         config.weapons.hold.grip_to_hold && capabilities.release && active.is_some();
     let released = if release_active {
@@ -390,6 +393,9 @@ pub(crate) fn finish_tick(
     };
     if release_active {
         for hand in Hand::BOTH.into_iter().filter(|hand| released[hand.index()]) {
+            if passes[hand.index()] && pass_by_action(hand) {
+                continue;
+            }
             let gun = lone.map(|(weapon, _)| weapon);
             release(hand, gun, active.as_ref(), world_scale, &config);
         }
@@ -801,6 +807,49 @@ fn release(
     }
 }
 
+/// Which holding hands pass their gun on when they open, by [`Hand::index`]: the other hand holds
+/// the gun's action by its handle (`action_held`), with its grip still closed on it.
+fn passes_by_action(action_held: [bool; 2], grips: [ButtonControl; 2]) -> [bool; 2] {
+    Hand::BOTH.map(|hand| action_held[hand.index()] && grips[hand.other().index()].held())
+}
+
+/// The hands whose release waits for the physical action (`action_hands`), less those that pass
+/// their gun to the hand on the action.
+fn waiting_on_action(action_hands: [bool; 2], passes: [bool; 2]) -> [bool; 2] {
+    Hand::BOTH.map(|hand| action_hands[hand.index()] && !passes[hand.index()])
+}
+
+/// Pass the gun `hand` let go of to the other hand, which holds its action: the table moves it,
+/// and the gun glides from where it was into the other hand's grip over [`hold::SNAP_S`], so it is
+/// seen to move into the palm rather than jump there. The action lets go of its handle once the
+/// hand on it holds the gun. `false` when the other hand could not take it, for the ordinary
+/// release to decide.
+fn pass_by_action(hand: Hand) -> bool {
+    let Some(object) = live::in_hand(hand) else {
+        return false;
+    };
+    // SAFETY: the game stage runs on the game thread before the world update, and a slot or the
+    // carry set keeps the table's weapon in the hand alive.
+    let from = unsafe { (object as *const WeaponBase).as_ref() }
+        .and_then(|weapon| unsafe { hold::pickup::gun_pose(weapon) });
+    let to = hand.other();
+    if !hold::hand_over(to, object) {
+        return false;
+    }
+    if let Some(from) = from {
+        hold::act::slide_in(object, to, from, hold::SNAP_S);
+    }
+    tracing::info!(
+        target: "controllers",
+        from = hand.label(),
+        to = to.label(),
+        "hold: the {} hand let go, and the {} hand holding the action takes the gun",
+        hand.label(),
+        to.label()
+    );
+    true
+}
+
 /// The free socket whose attraction takes the weapon `hand` lets go of from outside every socket's
 /// reach, with the attraction on (`weapons.hold.dock_attraction`): the hand's grip as it is drawn
 /// against the tick's attractors, and the hand's fastest motion just before the release, which
@@ -850,6 +899,24 @@ pub(super) fn cues_grab(outcome: GrabOutcome) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_holder_opening_while_the_other_hand_holds_the_action_passes_the_gun_at_once() {
+        let grip = |down| ButtonControl {
+            down,
+            ..ButtonControl::default()
+        };
+        // The right hand holds the gun, and the left holds its slide with its grip closed.
+        let action_held = [false, true];
+        let passes = passes_by_action(action_held, [grip(true), grip(false)]);
+        assert_eq!(passes, [false, true]);
+        // The pass fires on the opening rather than waiting for the action to let go.
+        assert_eq!(waiting_on_action([true, true], passes), [true, false]);
+        // A hand that opened its grip on the slide passes nothing: the release waits as before.
+        let open_on_slide = passes_by_action(action_held, [grip(false), grip(false)]);
+        assert_eq!(open_on_slide, [false, false]);
+        assert_eq!(waiting_on_action([true, true], open_on_slide), [true, true]);
+    }
 
     #[test]
     fn only_a_brace_at_the_handguard_takes_the_grip_when_the_holder_lets_go() {

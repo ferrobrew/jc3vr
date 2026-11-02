@@ -310,6 +310,26 @@ pub(super) fn action_hands() -> [bool; 2] {
     [working; 2]
 }
 
+/// The gun hands whose gun's action the other, free hand holds by its handle, by [`Hand::index`]:
+/// a hand holding the slide or the bolt of the gun in the other hand. A pump is left out, since a
+/// hand on a pump holds the foregrip, and the brace decides what its holding hand's release does.
+pub(super) fn action_held_by_other() -> [bool; 2] {
+    let mut state = STATE.lock();
+    let Some(tick) = state.tick else {
+        return [false; 2];
+    };
+    let free = state.free;
+    Hand::BOTH.map(|hand| {
+        free == Some(hand.other())
+            && tick.gun(hand).is_some_and(|(weapon, gun)| {
+                weapon.plan.action != chamber::ActionKind::Pump
+                    && state.records.get(weapon.key).travels[gun.entry()]
+                        .grip
+                        .is_some()
+            })
+    })
+}
+
 /// Resolve direct magazine intent before ordinary nearest-target selection. An existing action
 /// or foregrip remains held; an unheld brace or transfer cannot steal a magazine grip.
 pub(super) fn prioritize_extraction(targets: &mut Vec<GripTarget>, grips: [Option<Vec3>; 2]) {
