@@ -18,6 +18,7 @@ use jc3gi::{
 use crate::controllers::{
     aim::gun,
     snatch::{Refusal, sling_hooks},
+    weapons::grenade,
 };
 
 /// The local player's grappling hook.
@@ -193,17 +194,19 @@ pub(super) unsafe fn dropped(
     Ok((weapon, body))
 }
 
-/// Whether the weapon at `address` is a hand grenade: the game collects one lying in the world by
-/// proximity rather than picking it up, so the snatch draws a grenade from it instead.
+/// What a hand grenade at `address` is to the snatch: `None` for a weapon that is not a hand
+/// grenade, `Some(true)` for a finite one lying in the world, which the snatch yanks in and the
+/// catch takes as the grenade it is ([`grenade::finite_world_pickup`]), and `Some(false)` for a
+/// display that hands out copies, which the snatch leaves to the hand in reach.
 ///
 /// # Safety
 ///
 /// `address` must be a weapon held alive, on the game thread.
-pub(super) unsafe fn is_hand_grenade(address: NonZeroUsize) -> bool {
+pub(super) unsafe fn hand_grenade(address: NonZeroUsize) -> Option<bool> {
     let weapon = unsafe { &*(address.get() as *const WeaponBase) };
     // Read as the raw value: an unset slot is out of the enum's range.
     let slot = unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() };
-    slot == WeaponSlot::E_SLOT_HAND_GRENADE as i32
+    (slot == WeaponSlot::E_SLOT_HAND_GRENADE as i32).then(|| grenade::finite_world_pickup(weapon))
 }
 
 /// Where the local player stands, world space.

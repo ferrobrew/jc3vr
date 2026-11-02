@@ -18,9 +18,10 @@ use std::{cell::Cell, num::NonZeroUsize, time::Duration};
 use detours_macro::detour;
 use glam::{Mat4, Vec3};
 use jc3gi::{
+    character::inventory::WeaponSlot,
     equipment::{
         explosive::{Explosive, Grenade},
-        weapon::{ThrownGrenadeWeapon, WeaponBase, WeaponInputs},
+        weapon::{ThrownGrenadeWeapon, WeaponBase, WeaponInputs, WeaponState},
     },
     input::input_action_map::Action,
     types::math::{Matrix4, Vector3},
@@ -62,7 +63,7 @@ use crate::{
                 native::PinPull,
                 tuning::{GRENADE, GrenadeTuning},
             },
-            hold::{self, act},
+            hold::{self, act, refs::Weak},
         },
     },
 };
@@ -201,11 +202,61 @@ pub(crate) fn snatched(hand: Hand, owner: NonZeroUsize, body: u32) -> bool {
     true
 }
 
-/// The grapple's snatch brought a native hand grenade lying in the world to `hand`: the next input
-/// tick draws a grenade into that hand, as a hand closing on the grenade draws one from it as
-/// from a world display, and leaves the native grenade where it is.
-pub(crate) fn snatched_from_world(hand: Hand) {
-    STATE.lock().snatched_draws[hand.index()] = true;
+/// The grapple's snatch brought `weapon`, a finite native hand grenade lying in the world
+/// ([`finite_world_pickup`]), to `hand`: the next input tick takes it into that hand, as a hand
+/// closing on it does ([`take_world_pickup`]).
+pub(crate) fn snatched_from_world(hand: Hand, weapon: Weak) {
+    STATE.lock().snatched_pickups[hand.index()] = Some(weapon);
+}
+
+/// Whether `weapon` is a finite native hand grenade lying in the world: one grenade, such as one a
+/// character dropped, that a hand takes as the grenade it is, rather than a display that hands out
+/// a copy ([`WeaponBase::m_InfinitePickup`]).
+pub(crate) fn finite_world_pickup(weapon: &WeaponBase) -> bool {
+    // Read as raw values: an unset slot or a state the enums do not name is neither.
+    let slot = unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() };
+    let state = unsafe { (&raw const weapon.m_State).cast::<i32>().read() };
+    slot == WeaponSlot::E_SLOT_HAND_GRENADE as i32
+        && state == WeaponState::E_WS_DROPPED as i32
+        && !weapon.m_InfinitePickup
+}
+
+/// Take the finite native hand grenade `weapon` lying in the world into `hand` as one grenade: a
+/// safe item is admitted to the hand ([`safe::draw`], under its allocation rules), and only then is
+/// the native grenade consumed ([`consume_world_pickup`]), so a refused admission leaves it lying
+/// and one native grenade always becomes one item.
+///
+/// # Safety
+///
+/// The input tick's game stage, on the game thread; `weapon` must be held alive.
+pub(super) unsafe fn take_world_pickup(
+    hand: Hand,
+    weapon: &mut WeaponBase,
+    tuning: &GrenadeTuning,
+) -> bool {
+    if !finite_world_pickup(weapon) || holds(hand) {
+        return false;
+    }
+    if !unsafe { safe::draw(hand, tuning) } {
+        return false;
+    }
+    unsafe { consume_world_pickup(weapon) };
+    true
+}
+
+/// Consume a native hand grenade lying in the world that a hand took: its rounds are emptied, so
+/// the game's proximity collection can no longer credit them to the reserve, and it is despawned
+/// with its bodies out of the physics world, so it no longer shows, collides, or offers itself.
+///
+/// # Safety
+///
+/// The game thread, before the world update; `weapon` must be held alive.
+unsafe fn consume_world_pickup(weapon: &mut WeaponBase) {
+    unsafe { weapon.SetMagazineAmmo(0) };
+    weapon.m_StoredNonMagazineAmmo = 0;
+    unsafe { weapon.Despawn() };
+    unsafe { weapon.RemoveFromWorld() };
+    tracing::info!(target: "controllers", weapon = weapon as *mut WeaponBase as usize, "grenade: a hand took a native grenade lying in the world");
 }
 
 /// Whether the physics game object `owner`'s body `body` is an inert grenade lying in the world,
@@ -352,16 +403,19 @@ pub(super) fn input_tick(
             haptics::play(hand, Event::PouchRefused);
         }
     }
-    let draws = std::mem::take(&mut STATE.lock().snatched_draws);
-    for hand in Hand::BOTH {
-        if !draws[hand.index()] || holds(hand) {
+    let pickups = std::mem::take(&mut STATE.lock().snatched_pickups);
+    for (hand, weapon) in Hand::BOTH.into_iter().zip(pickups) {
+        let Some(alive) = weapon.as_ref().and_then(Weak::lock) else {
             continue;
-        }
-        // SAFETY: the game stage runs on the game thread before the world update.
-        if unsafe { safe::draw(hand, tuning) } {
+        };
+        let address = alive.object() as usize - WeaponBase::GAME_OBJECT_BASE_OFFSET as usize;
+        // SAFETY: the strong reference keeps the weapon alive; the game stage runs on the game
+        // thread before the world update.
+        let took = unsafe { take_world_pickup(hand, &mut *(address as *mut WeaponBase), tuning) };
+        if took {
             haptics::play(hand, Event::GrenadeCatch);
         } else {
-            tracing::debug!(target: "controllers", hand = hand.label(), "grenade: the snatched world grenade gave the hand no grenade");
+            tracing::debug!(target: "controllers", hand = hand.label(), "grenade: the snatched world grenade could not be taken into the hand");
         }
     }
     let snatched = std::mem::take(&mut STATE.lock().snatched);
@@ -469,7 +523,7 @@ pub(super) fn stand_down() {
     state.sightings.clear();
     state.locker_frames = None;
     state.snatched = [None; 2];
-    state.snatched_draws = [false; 2];
+    state.snatched_pickups = [None, None];
     state.status.fuse = None;
     drop(state);
     if catch::caught().is_some() {
@@ -528,9 +582,9 @@ struct State {
     thrown: [bool; 2],
     /// The inert grenades the snatch brought to each hand, for the next input tick to take.
     snatched: [Option<SafeItemView>; 2],
-    /// The hands the snatch brought a native world grenade to, for the next input tick to draw a
-    /// grenade into.
-    snatched_draws: [bool; 2],
+    /// The finite native grenades lying in the world the snatch brought to each hand, for the next
+    /// input tick to take.
+    snatched_pickups: [Option<Weak>; 2],
     sightings: Vec<Sighting>,
     locker_frames: Option<Frames>,
     status: GrenadeStatus,
@@ -541,7 +595,7 @@ struct State {
 static STATE: Mutex<State> = Mutex::new(State {
     thrown: [false; 2],
     snatched: [None; 2],
-    snatched_draws: [false; 2],
+    snatched_pickups: [None, None],
     sightings: Vec::new(),
     locker_frames: None,
     status: GrenadeStatus {

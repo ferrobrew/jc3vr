@@ -31,7 +31,7 @@ use crate::controllers::{
         rules::{self, FlightLimits, FlightSample, StallWatch, Verdict},
         sling::{RopeStep, Sling},
         sling_hooks,
-        target::{Offer, OfferKind},
+        target::{Offer, OfferKind, weak_of},
     },
     weapons::{
         grenade,
@@ -61,8 +61,8 @@ pub(super) enum Pulled {
     Prop { body: u32, mass_kg: f32 },
     /// An inert grenade, body `body`, into the hand through the loadout.
     Grenade { body: u32 },
-    /// A native hand grenade lying in the world, body `body`: the hand draws a grenade from it on
-    /// the catch, as a hand closing on it does.
+    /// A finite native hand grenade lying in the world, body `body`: the catch takes it into the
+    /// hand as the grenade it is, as a hand closing on it does.
     WorldGrenade { body: u32 },
     /// A vehicle's closed door, pulled open at its handle, `handle` in the vehicle's frame.
     Door { door: DoorTarget, handle: Vec3 },
@@ -531,7 +531,8 @@ unsafe fn arrive(
             }
         }
         Pulled::WorldGrenade { .. } => {
-            grenade::snatched_from_world(hand);
+            // SAFETY: the snatch's strong reference keeps the weapon alive.
+            grenade::snatched_from_world(hand, unsafe { weak_of(grabbed.object) });
             Ok(Arrival::Grenade)
         }
         Pulled::Door { .. } => Err(Refusal::Gone),

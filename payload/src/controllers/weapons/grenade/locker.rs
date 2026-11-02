@@ -29,7 +29,7 @@ use crate::controllers::{
     grab::{Candidate, GrabVolume},
     weapons::{
         engine,
-        grenade::{safe, tuning::GrenadeTuning},
+        grenade::{self, safe, tuning::GrenadeTuning},
         hold::refs::{Strong, Weak},
     },
 };
@@ -153,8 +153,22 @@ pub(super) unsafe fn take(
         },
         Some(Provider::Weapon) | None => {
             let current = unsafe { sources(owner, &to_cockpit) };
+            let pickup = offered.and_then(|source| registered(source.identity));
             complete(offered, &current, grip, || unsafe {
-                safe::draw(hand, tuning)
+                match &pickup {
+                    // A finite grenade lying in the world is the grenade the hand takes.
+                    Some(alive) => {
+                        let address =
+                            alive.object() as usize - WeaponBase::GAME_OBJECT_BASE_OFFSET as usize;
+                        let weapon = &mut *(address as *mut WeaponBase);
+                        if grenade::finite_world_pickup(weapon) {
+                            grenade::take_world_pickup(hand, weapon, tuning)
+                        } else {
+                            safe::draw(hand, tuning)
+                        }
+                    }
+                    None => safe::draw(hand, tuning),
+                }
             })
         }
     };
@@ -305,6 +319,19 @@ unsafe fn sources(owner: &Character, to_cockpit: &impl Fn(Vec3) -> Vec3) -> Vec<
         Some(())
     });
     out
+}
+
+/// A strong reference to the registered native weapon behind `identity`, while it is the same
+/// weapon.
+fn registered(identity: Identity) -> Option<Strong> {
+    let key = WeaponKey {
+        weapon: identity.weapon,
+        control: identity.control,
+    };
+    let registry = REGISTRY.lock();
+    let source = registry.sources.iter().find(|source| source.key == key)?;
+    let alive = source.reference.lock()?;
+    (alive.control_block() as usize == key.control).then_some(alive)
 }
 
 fn reset() {

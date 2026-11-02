@@ -46,7 +46,9 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
             let Some(_alive) = weak.lock() else {
                 return false;
             };
-            if !unsafe { grapple_weapons::is_dropped_weapon(*weapon) } {
+            if !unsafe { grapple_weapons::is_dropped_weapon(*weapon) }
+                || unsafe { engine::hand_grenade(*weapon) } != Some(true)
+            {
                 return false;
             }
             let Ok((point, _)) = (unsafe { physical_hands::body_pose(*body, *weapon) }) else {
@@ -234,8 +236,8 @@ pub(super) enum OfferKind {
         body: u32,
         weak: Weak,
     },
-    /// A native hand grenade lying in the world, which the game would collect by proximity: the
-    /// hand draws a grenade from it on the catch.
+    /// A finite native hand grenade lying in the world, which the game would collect by proximity:
+    /// the hand takes it on the catch.
     WorldGrenade {
         weapon: NonZeroUsize,
         body: u32,
@@ -377,19 +379,19 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
             }
             // SAFETY: its body was read as its own on this thread this tick.
             let weak = unsafe { weak_of(weapon.object) };
-            if unsafe { engine::is_hand_grenade(weapon.object) } {
-                OfferKind::WorldGrenade {
-                    weapon: weapon.object,
-                    body: weapon.body,
-                    weak,
-                }
-            } else {
-                OfferKind::Ground {
+            match unsafe { engine::hand_grenade(weapon.object) } {
+                None => OfferKind::Ground {
                     weapon: weapon.object,
                     body: weapon.body,
                     local_point: Vec3::ZERO,
                     weak,
-                }
+                },
+                Some(true) => OfferKind::WorldGrenade {
+                    weapon: weapon.object,
+                    body: weapon.body,
+                    weak,
+                },
+                Some(false) => return None,
             }
         }
         Kind::Held(i) => {
@@ -467,12 +469,16 @@ unsafe fn aimed_offer(
         }
         let (centre, orientation) =
             unsafe { physical_hands::body_pose(aimed.body, aimed.object) }.ok()?;
-        if unsafe { engine::is_hand_grenade(aimed.object) } {
-            return Some(OfferKind::WorldGrenade {
-                weapon: aimed.object,
-                body: aimed.body,
-                weak: weak(),
-            });
+        match unsafe { engine::hand_grenade(aimed.object) } {
+            None => {}
+            Some(true) => {
+                return Some(OfferKind::WorldGrenade {
+                    weapon: aimed.object,
+                    body: aimed.body,
+                    weak: weak(),
+                });
+            }
+            Some(false) => return None,
         }
         return Some(OfferKind::Ground {
             weapon: aimed.object,
