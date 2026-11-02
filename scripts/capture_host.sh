@@ -19,7 +19,11 @@
 # Environment overrides:
 #   JC3VR_CAPTURE_PORT    the listen port (default 47172, the payload's default).
 #   JC3VR_CAPTURE_FPS     the recording frame rate (default 60).
-#   JC3VR_CAPTURE_QUALITY gpu-screen-recorder's quality preset (default high).
+#   JC3VR_CAPTURE_CODEC   the video codec: hevc (default), av1, or h264. AV1 needs an encoder
+#                         that has it (gpu-screen-recorder --info lists the GPU's codecs).
+#   JC3VR_CAPTURE_BITRATE the constant video bitrate in kbps (default 10000, about 1.1 GB per
+#                         fifteen minutes at 1080p60); 0 records at constant quality instead.
+#   JC3VR_CAPTURE_QUALITY gpu-screen-recorder's quality preset for constant quality (default high).
 #   JC3VR_CAPTURE_AUDIO   a gpu-screen-recorder audio input (default default_output); set to "none"
 #                         to record video only.
 #   JC3VR_CAPTURE_WINDOW  a niri window id to record instead of looking the game's window up.
@@ -38,6 +42,8 @@ args=(
     --port "${JC3VR_CAPTURE_PORT:-47172}"
     --fallback-dir "$out_dir"
     --fps "${JC3VR_CAPTURE_FPS:-60}"
+    --codec "${JC3VR_CAPTURE_CODEC:-hevc}"
+    --bitrate-kbps "${JC3VR_CAPTURE_BITRATE:-10000}"
     --quality "${JC3VR_CAPTURE_QUALITY:-high}"
     --audio "${JC3VR_CAPTURE_AUDIO:-default_output}"
 )

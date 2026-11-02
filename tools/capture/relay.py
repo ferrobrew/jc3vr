@@ -3,7 +3,8 @@
 the payload starts, into the take's own folder, and go back to listening when the take ends.
 
     relay.py [--host 127.0.0.1] [--port 47172] [--fallback-dir captures]
-             [--fps 60] [--quality high] [--audio default_output]
+             [--fps 60] [--codec hevc] [--bitrate-kbps 10000] [--quality high]
+             [--audio default_output]
              [--window-id ID | --region WxH+X+Y] [-- EXTRA GSR ARGS...]
 
 The payload connects over TCP and speaks the control protocol below. For each take the relay finds
@@ -14,6 +15,12 @@ output, writing `video.mkv` into the take's folder beside the payload's `frames.
 first frame, so `video_time = unix_ms - video_start_unix_ms` lines the payload's sidecar up with the
 video. When the take ends it sends gpu-screen-recorder SIGINT, waits for it to finalize the file,
 and listens again, so one relay serves every take of a session.
+
+The video is HEVC at a constant 10 Mbps by default, about 1.1 GB for fifteen minutes at 1080p60.
+gpu-screen-recorder's own default, constant quality, ran to about 36 Mbps of H.264 on the game,
+nearly 5 GB for the same fifteen minutes. `--codec` picks H.264, HEVC, or AV1 (AV1 needs a GPU
+encoder that has it; `gpu-screen-recorder --info` lists the codecs the GPU offers), and
+`--bitrate-kbps 0` goes back to constant quality at the `--quality` preset.
 
 ## Control protocol, version 1
 
@@ -75,6 +82,12 @@ LINE_LIMIT = 64 * 1024
 DEFAULT_TITLE = "Just Cause 3"
 DEFAULT_APP_IDS = ("steam_app_225540",)
 GSR = "gpu-screen-recorder"
+# The video codecs the relay offers, by gpu-screen-recorder's name for each.
+CODECS = ("h264", "hevc", "av1")
+DEFAULT_CODEC = "hevc"
+# The default constant bitrate: 10 Mbps keeps 1080p60 gameplay clean in HEVC or AV1 at about 1.1 GB
+# for fifteen minutes.
+DEFAULT_BITRATE_KBPS = 10_000
 
 # How long the payload has to send its start line after connecting.
 START_TIMEOUT_S = 10.0
@@ -336,10 +349,33 @@ def take_paths(folder: str) -> tuple[str, str]:
         n += 1
 
 
+@dataclass(frozen=True)
+class Encoding:
+    """How gpu-screen-recorder encodes the video: the codec, and either a constant bitrate or, when
+    `bitrate_kbps` is None, constant quality at the `quality` preset."""
+
+    codec: str
+    bitrate_kbps: int | None
+    quality: str
+
+    def gsr_args(self) -> list[str]:
+        args = ["-k", self.codec]
+        if self.bitrate_kbps is None:
+            return args + ["-bm", "qp", "-q", self.quality]
+        # In CBR mode gpu-screen-recorder reads `-q` as the bitrate in kbps.
+        return args + ["-bm", "cbr", "-q", str(self.bitrate_kbps)]
+
+
 def build_command(
-    gsr: str, region: Region, video: str, fps: int, quality: str, audio: str, extra: list[str]
+    gsr: str,
+    region: Region,
+    video: str,
+    fps: int,
+    encoding: Encoding,
+    audio: str,
+    extra: list[str],
 ) -> list[str]:
-    command = [gsr, "-w", region.gsr_arg(), "-f", str(fps), "-q", quality]
+    command = [gsr, "-w", region.gsr_arg(), "-f", str(fps), *encoding.gsr_args()]
     if audio != "none":
         command += ["-a", audio]
     return command + ["-write-first-frame-ts", "yes", *extra, "-o", video]
@@ -371,7 +407,7 @@ def unix_ms() -> int:
 class Config:
     fallback_dir: str
     fps: int
-    quality: str
+    encoding: Encoding
     audio: str
     extra: list[str]
     window_id: int | None
@@ -514,7 +550,7 @@ def run_take(connection: Connection, config: Config) -> None:
         return
     video, stream = take_paths(folder)
     command = build_command(
-        config.gsr, located.region, video, config.fps, config.quality, config.audio, config.extra
+        config.gsr, located.region, video, config.fps, config.encoding, config.audio, config.extra
     )
     log.info("capture: recording %s to %s", located.region.gsr_arg(), video)
     spawn_ms = unix_ms()
@@ -646,7 +682,16 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--fallback-dir", default="captures")
     parser.add_argument("--fps", type=int, default=60)
-    parser.add_argument("--quality", default="high")
+    parser.add_argument("--codec", choices=CODECS, default=DEFAULT_CODEC)
+    parser.add_argument(
+        "--bitrate-kbps",
+        type=int,
+        default=DEFAULT_BITRATE_KBPS,
+        help="the constant video bitrate; 0 records at constant quality instead",
+    )
+    parser.add_argument(
+        "--quality", default="high", help="the constant-quality preset, with --bitrate-kbps 0"
+    )
     parser.add_argument("--audio", default="default_output", help='a gsr audio input, or "none"')
     target = parser.add_mutually_exclusive_group()
     target.add_argument("--window-id", type=int, help="record this niri window")
@@ -654,6 +699,8 @@ def main() -> int:
     parser.add_argument("extra", nargs=argparse.REMAINDER, help="after --: extra gsr arguments")
     args = parser.parse_args()
     extra = args.extra[1:] if args.extra[:1] == ["--"] else args.extra
+    if args.bitrate_kbps < 0:
+        parser.error("--bitrate-kbps must not be negative")
     try:
         region = parse_region(args.region) if args.region else None
     except ValueError as error:
@@ -661,7 +708,11 @@ def main() -> int:
     config = Config(
         fallback_dir=os.path.abspath(args.fallback_dir),
         fps=args.fps,
-        quality=args.quality,
+        encoding=Encoding(
+            codec=args.codec,
+            bitrate_kbps=args.bitrate_kbps or None,
+            quality=args.quality,
+        ),
         audio=args.audio,
         extra=extra,
         window_id=args.window_id,

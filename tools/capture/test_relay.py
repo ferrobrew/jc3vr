@@ -231,17 +231,24 @@ class Takes(unittest.TestCase):
 
     def test_the_command_records_the_region_with_audio_and_the_first_frame_time(self):
         region = relay.Region(x=4, y=31, width=1141, height=701)
-        command = relay.build_command("gsr", region, "/t/video.mkv", 60, "high", "default_output", [])
+        cbr = relay.Encoding(codec="hevc", bitrate_kbps=10_000, quality="high")
+        command = relay.build_command("gsr", region, "/t/video.mkv", 60, cbr, "default_output", [])
         self.assertEqual(
             command,
             [
-                "gsr", "-w", "1141x701+4+31", "-f", "60", "-q", "high", "-a", "default_output",
-                "-write-first-frame-ts", "yes", "-o", "/t/video.mkv",
+                "gsr", "-w", "1141x701+4+31", "-f", "60", "-k", "hevc", "-bm", "cbr", "-q", "10000",
+                "-a", "default_output", "-write-first-frame-ts", "yes", "-o", "/t/video.mkv",
             ],
         )
-        silent = relay.build_command("gsr", region, "/t/v.mkv", 30, "high", "none", ["-k", "hevc"])
+        silent = relay.build_command("gsr", region, "/t/v.mkv", 30, cbr, "none", ["-cursor", "no"])
         self.assertNotIn("-a", silent)
-        self.assertEqual(silent[-4:], ["-k", "hevc", "-o", "/t/v.mkv"])
+        self.assertEqual(silent[-4:], ["-cursor", "no", "-o", "/t/v.mkv"])
+
+    def test_without_a_bitrate_the_command_records_at_constant_quality(self):
+        region = relay.Region(x=0, y=0, width=1920, height=1080)
+        qp = relay.Encoding(codec="av1", bitrate_kbps=None, quality="very_high")
+        command = relay.build_command("gsr", region, "/t/v.mkv", 60, qp, "none", [])
+        self.assertEqual(command[5:11], ["-k", "av1", "-bm", "qp", "-q", "very_high"])
 
     def test_the_first_frame_time_is_read_from_the_timestamp_file(self):
         with tempfile.TemporaryDirectory() as folder:
