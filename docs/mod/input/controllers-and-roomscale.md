@@ -91,7 +91,7 @@ The pin also needs:
 
 ### Locomotion and facing
 
-The stick direction is relative to the head by default, with an option for the off-hand controller's pointing direction. The body's yaw is stick turning (smooth or snap), plus the body turning under the view to face the player's torso, estimated from the head and the hands ([rig.md, "The body turning under the view"](../body/rig.md#the-body-turning-under-the-view)). The body's turn toward the torso never rotates the view, and the movement frame is the view's. Physical turning is always honoured.
+The stick direction is relative to the head by default, with an option for the off-hand controller's pointing direction. The body's yaw is stick turning (smooth or snap), plus the body turning under the view as the body rig's yaw follows the head through a deadzone, with the hands as a bias ([rig.md, "The yaw"](../body/rig.md#the-yaw) and ["The body turning under the view"](../body/rig.md#the-body-turning-under-the-view)). The body's turn never rotates the view, and the movement frame is the view's. Physical turning is always honoured.
 
 ### Hands
 
@@ -125,8 +125,8 @@ The starting assignments are as follows.
 | Driving and flying with physical controls | Anchored: the hands on the wheel, handlebars, or sticks | none needed |
 | Mounted guns and turrets | Anchored: the hands on the handles, which aim the gun | none needed |
 | Parachute | Free, or anchored on a handle a hand has taken | the handles: a hand takes the handle above its shoulder with the grip and pulls it down to steer or brake |
-| Wingsuit, stick steering | Yielded: the wing membrane is skinned between the arms and the body, and free arms may deform it | arm steering (on by default) reads the controllers; the procedural body carries the player's arms over onto the flight pose's ([body/procedural-states.md](../body/procedural-states.md#the-wingsuit)) |
-| Swimming | Yielded, or free while the procedural body poses the torso in the water ([body/procedural-states.md](../body/procedural-states.md#swimming)) | arm-stroke swimming |
+| Wingsuit, stick steering | Yielded: the wing membrane is skinned between the arms and the body, and free arms may deform it | arm steering (on by default) reads the controllers; the procedural torso's full mode carries the player's arms over onto the flight pose's ([body/procedural-states.md](../body/procedural-states.md#the-wingsuit)) |
+| Swimming | Yielded, or free while the procedural torso poses the torso in the water ([body/procedural-states.md](../body/procedural-states.md#swimming)) | arm-stroke swimming |
 | Interactions (sabotage, planting, using objects) | Yielded | per interaction |
 | Ragdoll, knockdown, death, and cutscenes | Yielded | none planned |
 
@@ -372,15 +372,15 @@ The design for physical locomotion is resolved against the engine answers in [ha
 
 ### The body following the head
 
-Who moves the root on each simulation tick, the chase after the ground point under the player's upright eyes, the lean it leaves alone, the cockpit shift and the ledger that keep the camera on the real head, teleports, seat exits, and recentering are in [rig.md](../body/rig.md). Physical translation never rotates the body, consistent with the rule that orientation changes only with a movement action.
+Who moves the root on each simulation tick, the pelvis solver that separates a lean from a step, the step drive that walks Rico under the player's neck, the cockpit shift and the ledger that keep the camera on the real head, teleports, seat exits, and recentering are in [rig.md](../body/rig.md). Physical translation never rotates the body, consistent with the rule that orientation changes only with a movement action.
 
 ### Crouch, in stages
 
-1. The body: the procedural body's hips follow the head down and the legs fold under them ([procedural-body.md](../body/procedural-body.md#crouching-and-seated-players)).
+1. The measure: standing, the body rig reads the crouch as the head's drop that no bend at the waist explains, so a look at the floor or a lean over a table is not a crouch ([rig.md, "Posture"](../body/rig.md#posture)). The hips and the legs stay the game's animation, and the procedural torso poses the spine on them.
 2. Capsule height: the engine swaps the proxy capsule per state itself (`SetProxyState`, which calls `hknpWorld::setBodyShape`), and every character has a crouching proxy state with a shortened capsule ([hands-locomotion-and-state.md §4.6a](../../engine/character/hands-locomotion-and-state.md#46a-capsule-dimensions-and-runtime-resize)). The mod requests that state through the character's pending proxy state ([`Character::m_PendingProxyState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##field-m_PendingProxyState)), which the engine applies on the sim thread. The request is made only while the pending state is the default or already the crouch, so the engine's own proxy states for swimming, the parachute, vehicles, and ragdoll win, and it is released only when a ray up from the feet finds the headroom to stand.
 3. AI response: whether enemy perception responds to a lowered head is measured in the headset.
 
-In the seated posture, the crouch toggle moves the eye height between the standing and crouched presets, and the body folds under it the same way.
+In the seated posture, the crouch toggle moves the eye height between the standing and crouched presets, and drives the capsule.
 
 ### Seat transitions
 
@@ -391,7 +391,7 @@ JC3 vehicles are entered through animations in which Rico crosses metres of worl
 - Ride: the head stays anchored through the full animation with nothing hidden. It is the default until the other modes are proven in the headset, because it is the mod's existing behaviour, and it stays as the intense option.
 - Ceremony, deferred with the rest of the mod UI because it needs a confirmation prompt: the entry animation plays; at seat lock the game clock freezes and the floating panel asks the player to take their seat and confirm; on confirmation the mod re-bases, unfreezes, and enables the `vehicle` action set. The freeze is a mod-side clock freeze through the hooked `CClock::Update` (zero game dt, skipped sim tick), never the game's own pause, because `UpdateRenderPaused` does not run `CameraTree::UpdateRenderContexts`, and a real pause freezes the camera under head motion. Exit reverses the sequence. Whether the frozen world dims is decided in the headset.
 
-The chase is disengaged while seated in every mode.
+The step drive is disengaged in a vehicle seat in every mode.
 
 ## Milestones
 
@@ -425,7 +425,7 @@ Author the pyxis definitions for the seams milestone 1 uses, and verify each off
 - The posture setting and STAGE-space support, and the seated crouch toggle.
 - The Bonelab-style remap, still driven by config dimensions.
 - The body following the head ([rig.md](../body/rig.md)), the teleport re-base, and the head-through-geometry fade.
-- The crouching body, then the capsule swap.
+- The crouch measured from the head, then the capsule swap.
 - The Instant, Fade, and Ride seat-transition modes.
 
 ### 3. Holding
@@ -473,7 +473,7 @@ A setting marked "off" below is off by default and has to be switched on to test
 | Hands | `hands.ik`, `hands.late_update`, `hands.grip`; the tier table is fixed at `HandTierTable::PLAN` | The free and yielded tiers are built; milestones 3 and 4 add the action-runs and anchored tiers. A state assigned a tier that is not built for it yields. A left-handed layout mirrors the bindings but does not move a single gun to the left hand: the gun stays on the attach bone the game gives it, and the pouches and the wrist detonator are laid out around whichever hand holds it rather than the dominant hand. Swapping a single gun's attach bone to the dominant hand, as the dual-wield layout already does for the pistols, is a future item; it needs the two-handed weapons' foregrip geometry and the sight corrections checked for the mirrored hold. The grapple wire's render-time correction and elbow pole hints are not built. |
 | Gun aiming | `aim.gun`, `aim.sights`; the ray length is `RAY_LENGTH_M` in `controllers::aim` | Built. The sight line starts from the fire point, corrected by the config entry or the embedded table (milestone 5). |
 | Grapple aiming | `aim.grapple`; the ray's origin is `GRAPPLE_ORIGIN_M` in `controllers::aim` | Built. |
-| World-space overlay | `overlay.enabled`, `overlay.gun_readout` (`None` by default, `Dot`, or `Laser`), `overlay.grapple_highlight`, `overlay.grapple_beam`, `overlay.hide_game_reticle`, `overlay.markers` (on), `overlay.ghost_hands`, `overlay.debug_gizmos`, and `overlay.body_mirror` with `overlay.body_mirror_distance_m` (the last three debugging aids, off), `overlay.depth_tolerance_m`, `overlay.depth_tolerance_rel`, `overlay.min_line_px`, `overlay.xray_alpha` | Built. |
+| World-space overlay | `overlay.enabled`, `overlay.gun_readout` (`None` by default, `Dot`, or `Laser`), `overlay.grapple_highlight`, `overlay.grapple_beam`, `overlay.hide_game_reticle`, `overlay.markers` (on), `overlay.body_rig` (on), `overlay.ghost_hands`, `overlay.debug_gizmos`, and `overlay.body_mirror` with `overlay.body_mirror_distance_m` (the last three debugging aids, off), `overlay.depth_tolerance_m`, `overlay.depth_tolerance_rel`, `overlay.min_line_px`, `overlay.xray_alpha` | Built. |
 
 ### Milestone 2: posture and roomscale
 
@@ -484,7 +484,7 @@ The settings are under `roomscale`, except the seated crouch flick (`bindings.cr
 | Posture and STAGE space | `posture` (`Auto`, `Seated`, or `Standing`) | Built. `Auto` detects seated from the head height (`roomscale::posture::AUTO_POSTURE`). |
 | Head height remap | `body.remap_head` (on) | Built. |
 | Seated crouch toggle | `bindings.crouch_flick` | Built. It works with or without the head remap. |
-| The body following the head and the teleport re-base | `body.rig.chase` (on), `body.rig.lean` (on), `body.rig.pushback` (on) | Built ([rig.md](../body/rig.md)). |
+| The body following the head and the teleport re-base | `body.rig.steps` (on), `body.rig.follow` (on), `body.rig.pushback` (on) | Built ([rig.md](../body/rig.md)). |
 | The head-through-geometry fade | `head_fade.enabled` (on) | Built. The fade darkens the image in the VR blit. |
 | The crouch capsule | `crouch.capsule` (on), `crouch.enter_drop_m` | Built. The AI response to a lowered head is not measured. |
 | Seat transitions | `seat_transition` (`Ride` by default, `Instant`, or `Fade`) | Built. Ceremony is deferred with the mod UI. |
@@ -503,7 +503,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 | Separate pistols | `separate_pistols` | Built, as part of the two-handed inventory: each pistol its own weapon, a pistol in each hand ([physical-weapons.md, "Separate pistols"](physical-weapons.md#separate-pistols)). |
 | The anchored tier for the grapple line and the hang push | `hands.anchor.enabled`, which also carries the hang push; the swing tuning is fixed in `controllers::hands::anchor` | Built for the reel and hang states. A grapple hand that holds anything (a gun, a prop, a grenade, or a charge) stays free. |
 | The yank gesture | `bindings.yank.enabled`; the detector is fixed at `GRAPPLE_YANK` | Built. It is disarmed while the line carries the character (the reel-in and the hang). |
-| F7 during the chase | none | Re-bases yaw and height only while the chase is active ([rig.md, "Recentering"](../body/rig.md#recentering)). |
+| F7 on foot | none | Re-bases yaw and height only out of a vehicle seat, and the rig snaps the pelvis under the neck ([rig.md, "Recentering"](../body/rig.md#recentering)). |
 
 ### Milestone 4: vehicles and flight
 
@@ -515,7 +515,7 @@ The settings are under `vehicles`. The description is in [controllers.md, "Vehic
 | Driver weapons by hand | `driver_weapons_by_hand` (on) | Built. The dominant hand aims the driver's weapons by default. |
 | Mounted guns and gunner seats | `mounted.aim_by_hands`, which also anchors the hands on the handles; the minimum lever is fixed (`MIN_LEVER_M` in `controllers::vehicles::mounted_tick`) | Built. |
 | Physical controls | `physical.wheel` (with its lock, response, and tracking), `physical.handlebars`, `physical.sticks`, and `physical.levers` (each on); the placement, ranges, and grab are fixed in `PhysicalControlsTuning` | Built. The placement and ranges are untuned. A hand on a control cannot fire the vehicle's weapons with its grip; another fire input while a control is held is not built. |
-| Arm steering | `arm_steering.wingsuit` (on), `arm_steering.deadzone_m`, `arm_steering.full_bank_m`, `arm_steering.invert_pitch`; the spread to engage and the full pitches are fixed in `controllers::vehicles::arm_steering` | Built for the wingsuit. The hand tier stays yielded; Rico's arms follow the player's through the procedural body (`body.procedural.wingsuit_arms`). |
+| Arm steering | `arm_steering.wingsuit` (on), `arm_steering.deadzone_m`, `arm_steering.full_bank_m`, `arm_steering.invert_pitch`; the spread to engage and the full pitches are fixed in `controllers::vehicles::arm_steering` | Built for the wingsuit. The hand tier stays yielded; Rico's arms follow the player's through the procedural torso's full mode. |
 | Parachute handles | `parachute_handles.enabled` (on), `parachute_handles.full_pull_m`, `parachute_handles.brake_threshold`; the placement, deadzone, and let-go distance are fixed in `controllers::vehicles::parachute` | Built. They replace the parachute's arm steering. The placement and the pull are untuned, and whether the stick-back slow-down the handles brake with is a strong brake depends on shipped tuning that was not read. |
 | The wingsuit's head look-steer removal | none; always on | Built. |
 | Weaponized wingsuit guns aimed by the right hand | none | Not built. They aim by the gaze, because the gun aim covers only the wielded slot. |
@@ -622,9 +622,9 @@ The order puts the parts that everything else depends on first, then the parts w
 15. Recoil and haptics. Shots kick the gun up and back and the spring returns it; the foregrip stiffens it; the view does not kick. Fire pulses the firing hand; damage, collisions, and a vehicle's engine and road rumble pulse continuously by side (ride in a car and a boat and feel the engine on both hands); the grapple pulses on fire, attachment, and a yank. With a physical gamepad connected, it stays quiet while the controllers vibrate, unless `gamepad_rumble` is on; firing a gun still gives the firing hand its own precise pulse rather than a muddier generic one.
 16. Dual-wield. Each trigger fires its own pistol along its own hand's ray, semi-automatic pistols fire once per pull on each hand, and the off-hand stick click retracts tethers.
 17. The grapple hand. While reeling and hanging, the grapple hand holds the line; while hanging, moving that hand pushes the body. A sharp pull on a live line zips.
-18. The body following the head (`body.rig.chase.enabled`, seated or standing). Walking physically moves the body with the head and the view never runs ahead; walking while pushing the stick moves at the sum of the two; leaning over a table moves nothing; a wall stops the body while the view stays with the head. Seated, sliding back or sideways in the chair brings the body under the head without a recenter, leaning forward or to the side to look or reach leaves the feet where they are, and the body never turns until the player turns. A fast travel, a respawn, a load, and a vehicle teleport re-base without a chase spike. F7 re-bases yaw and height only, seated as well as standing.
+18. The body following the head (`body.rig.steps.enabled`, seated or standing). Walking physically commits a step, the body walks with the head, and the view never runs ahead; walking while pushing the stick moves at the sum of the two; leaning over a table moves nothing; a wall stops the body while the view stays with the head. Seated, sliding back or sideways in the chair steps the body under the head without a recenter, leaning forward or to the side to look or reach does not step, and the body never turns until the player turns. A fast travel, a respawn, a load, and a vehicle teleport re-base without a step. F7 re-bases yaw and height only and snaps the body under the head, seated as well as standing.
 19. The head fade (`roomscale.head_fade.enabled`). Putting the head into a wall darkens the view with depth and clears on the way out, and moving the head down past the torso does not trigger it.
-20. Crouch (`roomscale.crouch.capsule`). A physical crouch folds the legs with the feet planted; with the capsule, Rico fits under low cover, cannot stand up into a ceiling, and swimming, vehicles, the parachute, and ragdoll keep their own capsules. Check whether enemies react to a lowered head.
+20. Crouch (`roomscale.crouch.capsule`). A physical crouch lowers the capsule and a look at the floor does not; with the capsule, Rico fits under low cover, cannot stand up into a ceiling, and swimming, vehicles, the parachute, and ragdoll keep their own capsules. Check whether enemies react to a lowered head.
 21. Seat transitions (`roomscale.seat_transition`). With `Instant` and `Fade`, enter, shuffle seats, and exit each vehicle class; the fades cover the animations and the seated view is re-based. Note any seat state logged as unmatched.
 22. Mounted guns. A mounted gun and a gunner seat anchor the hands to the handles, and moving the hands swings the muzzle about the pivot without runaway turning.
 23. Vehicle weapons (`vehicles.driver_weapons_by_hand`). The driver's weapons follow the dominant hand, turrets trail it, and the motorcycle and jetski personal weapon aims with the hand.

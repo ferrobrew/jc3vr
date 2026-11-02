@@ -177,7 +177,7 @@ signals! {
     ProceduralOnFoot => "procedural.on_foot", Flag, "The hand-over table's case is on foot.";
     ProceduralSeated => "procedural.seated", Flag, "The torso is posed on the seat's hips in a vehicle.";
     ProceduralWingArms => "procedural.wing_arms", Flag, "Rico's arms follow the player's in the wingsuit, both hands queued.";
-    ProceduralParachute => "procedural.parachute", Flag, "The torso is posed on the harness's hips under the parachute, the legs hanging.";
+    ProceduralParachute => "procedural.parachute", Flag, "The torso is posed on the harness's hips under the parachute.";
     ProceduralSwimming => "procedural.swimming", Flag, "The torso is posed on the swim's hips in the water.";
     ProceduralRoof => "procedural.roof", Flag, "The torso is posed on the stunt idle's hips on a vehicle's roof.";
     ProceduralNeckErrorM => "procedural.neck_error_m", Measure, "How far the solved neck is from the point under the player's head, metres, while the procedural body poses the torso.";

@@ -52,17 +52,12 @@ signal = "rig.gap_m"
 check = "always"
 below = 0.05
 
+# The stick moves the room and the body together, so the head never leaves the pelvis.
 [[expect]]
-name = "the body steps"
+name = "the stick commits no step"
 signal = "rig.stepping"
+check = "never"
 
-[[expect]]
-name = "the body stands again at the end"
-signal = "rig.stepping"
-check = "at_end"
-is = false
-
-# The unit tests bound the lead by 0.42 of a leg's length, about 0.38 m for a 1.8 m player.
 [[expect]]
 name = "nothing obstructs the steps"
 signal = "rig.obstructed"

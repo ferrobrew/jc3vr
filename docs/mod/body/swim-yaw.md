@@ -65,7 +65,7 @@ While the local player swims, an info line `swim: the heading` (target `swim`) i
 - `look_x` and `look_x_peak`: the turn input this tick and the largest since the last line.
 - The advance of each swim counter: `cores`, `direction_overrides`, `rotate_overrides`, `turn_suppressions`, `backward_refusals`, and `untargeted`, the core runs that found the override on but no body-yaw target, during which the game's own heading turns the body.
 - The last heading rotation of a core: which core, the body's heading before it, the core's own target (`core_own_target_deg` and its height; underwater this is the camera-relative move direction), the target it was given, and what it returned.
-- `body_case`, `torso_weight`, and `legs_weight` from the procedural body, and the effective `hand_tiers` and `hand_weights`, so a circle can be set against whether the swim torso and the free swimming hands were acting.
+- `body_case` and `torso_weight` from the procedural torso, and the effective `hand_tiers` and `hand_weights`, so a circle can be set against whether the swim torso and the free swimming hands were acting.
 
 ## Validation
 

@@ -53,7 +53,6 @@ signal = "rig.stepping"
 check = "at_end"
 is = false
 
-# The unit tests bound the lead by 0.42 of a leg's length, about 0.38 m for a 1.8 m player.
 # A step ends within the arrival radius and slides the rest out.
 [[expect]]
 name = "the root settles under the head at the start"

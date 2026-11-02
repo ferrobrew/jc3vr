@@ -156,7 +156,7 @@ Taking hold of one logs `physical hands: a hand took hold of an articulated obje
 
 ### The player's own body
 
-The held object's centre is kept out of the player's own body (`PlayerKeepOut` in `physical_hands/hold.rs`), so a held crate is not driven into the player's capsule, where it would shove the player. While the procedural body poses the torso this tick ([procedural-body.md](../body/procedural-body.md#the-arms)), the keep-out is the same chest and belly capsules the wrist targets are kept out of, carried from Rico's model space into world space by the character's own transform (`body::procedural::torso_keep_out`), so a held object rests against the torso's own shape rather than a looser bound. Otherwise it falls back to a cylinder around the player's body (`PICKUP.keep_out_radius_m`, the player's height tall): a target inside it is moved out horizontally. The object and the capsule still collide; making the held body ignore the player would need its collision filter word changed on the live world and restored on every release, which the mod does not do.
+The held object's centre is kept out of the player's own body (`PlayerKeepOut` in `physical_hands/hold.rs`), so a held crate is not driven into the player's capsule, where it would shove the player. While the procedural torso poses the torso this tick ([procedural-body.md](../body/procedural-body.md#the-arms)), the keep-out is the same chest and belly capsules the wrist targets are kept out of, carried from Rico's model space into world space by the character's own transform (`body::procedural::torso_keep_out`), so a held object rests against the torso's own shape rather than a looser bound. Otherwise it falls back to a cylinder around the player's body (`PICKUP.keep_out_radius_m`, the player's height tall): a target inside it is moved out horizontally. The object and the capsule still collide; making the held body ignore the player would need its collision filter word changed on the live world and restored on every release, which the mod does not do.
 
 A holding hand does not probe or push off surfaces, and the other palm's probes pass through what the hands hold, so a free hand never pushes the body off the carried object. The reach rays do find a held object, so that the second hand can take hold of it.
 
@@ -215,14 +215,14 @@ The Physical hands feature's readout shows the retained evidence under "Grip acq
 
 - That nothing the palms read changes between the aim update and the palms' tick at the start of the render update, which runs after the rest of the simulation tick rather than straight after the aim update.
 - Whether holding the hand at the surface reads well with the render-time late update.
-- How the push feels against the chase ([rig.md](../body/rig.md)) when the player leans into a wall.
+- How the push feels against the body rig's step drive and push-back ([rig.md, "Walls"](../body/rig.md#walls)) when the player leans into a wall.
 - How the push up feels: whether the lift settles without bouncing at the default stiffness, whether the game keeps the player on foot while the pressing hand finds no static world under it, and whether a vault over a low wall carries on smoothly with the stick.
 - That the aim's ray filter hits loose props and dropped weapons at all, and their bodies' masses and inertias: the strength defaults are guesses.
 - That the simulation's gravity is the default `PICKUP.gravity_mps2`; a mismatch shows as a held object that sags or rises at rest.
 - That one physics step runs between two aim updates; several steps per update would integrate the set velocities several times, and a held object would overshoot.
 - That the Havok solver respects the set velocities against contacts and joints as expected: a held crate stops at a wall, a hinged gate swings about its hinge.
 - Which world props are joined by a placed constraint.
-- That a held object kept out of the player's own body, by the torso's capsules or the fallback cylinder, never shoves the player's capsule, and whether the cylinder's default radius fits the capsule where the procedural body is off.
+- That a held object kept out of the player's own body, by the torso's capsules or the fallback cylinder, never shoves the player's capsule, and whether the cylinder's default radius fits the capsule where the procedural torso is off.
 - Whether the shove's resistance settles without the body chattering between pushed and not, and whether its strength default moves a car at all against its brakes.
 - Which weapon the game picks up when several are in range, and that the use-item click alone starts the pickup.
 - Whether the hold's defaults hold a crate steadily at the game's simulation rate, and how a throw feels at `throw_scale` one.
