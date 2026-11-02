@@ -160,9 +160,9 @@ pub(super) fn capture(input: Refresh<'_>) -> Eligibility {
             .and_then(|target| target.door_eligibility)
             .is_some_and(|offer| offer.current(hand, &input.config.physical_hands))
     });
-    let hint = snatch::hint().filter(|(hand, _)| {
-        input.ready[hand.index()]
-            && matches!(input.owners[hand.index()].mode, Mode::OnFoot(_))
+    let hint = snatch::hint().filter(|hint| {
+        input.ready[hint.hand.index()]
+            && matches!(input.owners[hint.hand.index()].mode, Mode::OnFoot(_))
             && input.config.weapons.snatch.enabled
     });
     let modifier_enabled = input.config.weapons.snatch.sling;
@@ -182,10 +182,10 @@ pub(super) fn capture(input: Refresh<'_>) -> Eligibility {
         reload_permissions,
         doors,
     );
-    eligibility.snatch = hint.map(|(hand, swinging)| SnatchHint {
-        hand,
-        swinging,
-        modifier_enabled,
+    eligibility.snatch = hint.map(|hint| SnatchHint {
+        hand: hint.hand,
+        swinging: hint.swinging,
+        modifier_enabled: modifier_enabled && hint.modifier,
         routes,
     });
     eligibility

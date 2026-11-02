@@ -37,11 +37,16 @@
 //! the end, holds the grapple button back from the game while its line is out, and ends its own
 //! wire on every exit and stand-down.
 //!
-//! Holding B after arming retains the attached weapon or prop on a compliant radial rope
-//! ([`sling`]). [`sling_hooks`] keeps the native device endpoint on the tracked forearm and excludes
-//! the owned wire's native constraint and tension path until B releases. Grip release writes no
-//! target velocity. [`hooks`] keeps ordinary grapple taps and holds working on aimed weapons.
+//! A loose object too heavy for a hand to carry, up to the swing's ceiling, is never pulled in: once
+//! the hook bites, the held line swings it ([`sling`]), a stiff, tension-only spring-damper from the
+//! grapple hand whose strength scales with the target's mass, and which the other hand can brace at
+//! the grapple hand's wrist ([`brace`]). Holding B after arming swings a weapon or a light object
+//! the same way until B releases. [`sling_hooks`] keeps the native device endpoint on the tracked
+//! forearm and excludes the owned wire's native constraint and tension path while the line swings.
+//! Grip release writes no target velocity. [`hooks`] keeps ordinary grapple taps and holds working
+//! on aimed weapons.
 
+mod brace;
 pub mod config;
 mod engine;
 mod hooks;
@@ -50,18 +55,24 @@ mod latch;
 mod moment;
 mod prearm;
 mod pull;
+mod readout;
+mod refusal;
 pub mod rules;
 mod sling;
 mod sling_hooks;
 mod target;
 
-use std::{fmt, num::NonZeroUsize};
+use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-pub use crate::controllers::snatch::config::{SNATCH, SnatchConfig};
+pub use crate::controllers::snatch::{
+    config::{SNATCH, SnatchConfig, SwingConfig},
+    readout::{SnatchStatus, SwingReadout, TargetReadout},
+    refusal::Refusal,
+};
 use crate::controllers::{
     aim::{self, grapple_weapons},
     bindings::{
@@ -76,17 +87,16 @@ use crate::controllers::{
     haptics::{self, Event},
     loadout::slot_label,
     mode::{Detection, Mode},
-    physical_hands::{self, BodyError},
+    physical_hands,
     snatch::{
+        brace::Brace,
         moment::Moment,
         prearm::Prearm,
-        pull::{Arrival, Attached, Fired, Flight, Grabbed, Step},
-        target::Offer,
+        pull::{Arrival, Attached, Fired, Flight, Grabbed, Step, Swinging},
+        rules::PropHandling,
+        target::{Offer, OfferKind},
     },
-    weapons::hold::{
-        pickup,
-        steal::{self, StealRefusal},
-    },
+    weapons::hold::steal,
 };
 
 /// The snatch's hooks, aggregated by [`crate::controllers::hook_library`].
@@ -96,23 +106,59 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(juice::hook_library())
 }
 
-/// Only an already-gripped remote target can claim a subsequent fresh B press.
+/// Only an already-gripped remote target can claim a subsequent fresh B press. A heavy object swings
+/// without it, and the claimed press does nothing to it, rather than firing the game's grapple from
+/// under the armed snatch.
 pub(crate) fn can_claim_button() -> bool {
     matches!(STATE.lock().phase, Phase::Armed { .. })
 }
 
 /// A copied phase-specific instruction for the current usable-controls provider.
-pub(crate) fn hint() -> Option<(Hand, bool)> {
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct Hint {
+    /// The grapple hand.
+    pub hand: Hand,
+    /// Whether the line swings the target.
+    pub swinging: bool,
+    /// Whether B acts on the target: it swings a weapon or a light object, and releasing it brings
+    /// one swung to the hand. A heavy object swings without it and never comes to the hand.
+    pub modifier: bool,
+}
+
+/// The snatch's current instruction, while it has one.
+pub(crate) fn hint() -> Option<Hint> {
     let state = STATE.lock();
     match state.phase {
-        Phase::Armed { hand, .. } => Some((hand, false)),
+        Phase::Armed {
+            hand, ref offer, ..
+        } => Some(Hint {
+            hand,
+            swinging: false,
+            modifier: !heavy(offer),
+        }),
         Phase::Pulling {
             hand,
             rope: Some(_),
+            ref target,
             ..
-        } => Some((hand, true)),
+        } => Some(Hint {
+            hand,
+            swinging: true,
+            modifier: !target.kind.tethered(),
+        }),
         _ => None,
     }
+}
+
+/// Whether `offer` is an object too heavy to come to the hand, which the line swings.
+const fn heavy(offer: &Offer) -> bool {
+    matches!(
+        offer.kind,
+        OfferKind::Prop {
+            handling: PropHandling::Swing,
+            ..
+        }
+    )
 }
 
 /// The hands whose grips the snatch holds for its catch, by [`Hand::index`]: while its line is out,
@@ -133,72 +179,6 @@ pub(crate) fn reserved_hands() -> [bool; 2] {
 pub(crate) fn take_other_catch() -> Option<(Hand, GrabVolume)> {
     STATE.lock().other_catch.take()
 }
-
-/// Why a snatch did not happen, or ended before the target reached the hand.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Refusal {
-    /// There is no local player or hook.
-    NoPlayer,
-    /// The grapple has a line out.
-    LineOut,
-    /// The hook is firing or reeling.
-    HookBusy,
-    /// The target is gone: despawned, picked up, or no longer where it was.
-    Gone,
-    /// The weapon no longer lies in the world.
-    NotDropped,
-    /// The weapon has no body in the world.
-    NoBody,
-    /// The hook did not take the custom fire.
-    FireRefused,
-    /// The hook missed, ran out of line, or the game ended its line before it held the target.
-    Missed,
-    /// The hook flew for too long without holding the target.
-    TimedOut,
-    /// The target stopped coming: snagged on the world.
-    Stalled,
-    /// The target is farther from the hand than the line reaches.
-    OutOfLine,
-    /// The line came away while it pulled.
-    LineLost,
-    /// The target's body could not be read or driven.
-    Body(BodyError),
-    /// The character would not let go of its gun.
-    Free(StealRefusal),
-    /// The target flew past the hand, or stopped short of it, without being caught.
-    CatchMissed,
-    /// The take into the hand refused the weapon.
-    Take(pickup::Refusal),
-    /// The door would not come open.
-    Door(String),
-}
-
-impl fmt::Display for Refusal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let why = match self {
-            Refusal::NoPlayer => "there is no local player or hook",
-            Refusal::LineOut => "the grapple has a line out",
-            Refusal::HookBusy => "the hook is firing or reeling",
-            Refusal::Gone => "the target is gone",
-            Refusal::NotDropped => "the weapon no longer lies in the world",
-            Refusal::NoBody => "the weapon has no body in the world",
-            Refusal::FireRefused => "the hook did not fire",
-            Refusal::Missed => "the hook missed",
-            Refusal::TimedOut => "the hook flew too long",
-            Refusal::Stalled => "the target snagged",
-            Refusal::OutOfLine => "the target is beyond the line",
-            Refusal::LineLost => "the line came away",
-            Refusal::CatchMissed => "the hand missed the catch",
-            Refusal::Body(e) => return write!(f, "snatch: {e}"),
-            Refusal::Free(e) => return write!(f, "snatch: {e}"),
-            Refusal::Take(e) => return write!(f, "snatch: {e}"),
-            Refusal::Door(e) => return write!(f, "snatch: the door: {e}"),
-        };
-        write!(f, "snatch: {why}")
-    }
-}
-
-impl std::error::Error for Refusal {}
 
 /// What the bindings hand [`targets`].
 pub(crate) struct OfferInput<'a> {
@@ -242,6 +222,7 @@ pub(crate) unsafe fn targets(input: &OfferInput) -> Provided {
         return Provided::default();
     }
     state.status.unoffered = None;
+    state.status.aimed_mass_kg = unsafe { target::aimed_mass() };
     let grapple = aim::status().grapple;
     let current = grapple
         .as_ref()
@@ -260,6 +241,10 @@ pub(crate) unsafe fn targets(input: &OfferInput) -> Provided {
     let readout = TargetReadout {
         kind: offer.kind.label(),
         distance_m: offer.distance,
+        mass_kg: match offer.kind {
+            OfferKind::Prop { mass_kg, .. } => Some(mass_kg),
+            _ => None,
+        },
     };
     let target = GripTarget::measured(
         GrabVolume::Snatch(offer.kind.remote()),
@@ -352,10 +337,10 @@ pub(crate) unsafe fn finish_tick(input: &FinishInput, desired: &mut Vec<Desired>
     let hand = hand.or(state.phase.hand());
     state.moment.note(hand, from, to);
     let overlay = &input.config.overlay;
-    match &state.phase {
-        Phase::Armed { hand, offer, .. } if overlay.enabled && overlay.markers => {
-            latch::submit(*hand, offer.point)
-        }
+    match (&state.phase, state.status.swing) {
+        _ if !(overlay.enabled && overlay.markers) => latch::clear(),
+        (Phase::Armed { hand, offer, .. }, _) => latch::submit(*hand, offer.point),
+        (Phase::Pulling { hand, .. }, Some(swing)) => latch::submit_line(*hand, &swing),
         _ => latch::clear(),
     }
     let line_out = matches!(
@@ -392,37 +377,7 @@ pub(crate) fn stand_down() {
     state.status.live = false;
     state.status.phase = Phase::Idle.label();
     state.status.target = None;
-    state.status.sling_length_m = None;
-}
-
-/// The snatch's readout.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct SnatchStatus {
-    /// Whether the input tick ran it recently.
-    pub live: bool,
-    /// What the snatch is doing.
-    pub phase: &'static str,
-    /// The target offered to the grip on the last tick.
-    pub target: Option<TargetReadout>,
-    /// Why nothing was offered on the last tick, when the hand or the hook could not snatch.
-    pub unoffered: Option<&'static str>,
-    /// Why the last snatch failed.
-    pub last_refusal: Option<String>,
-    /// Snatches fired, brought to the hand (or doors opened), and failed, since the payload loaded.
-    pub fired: u64,
-    pub taken: u64,
-    pub failed: u64,
-    /// Weapons a tap of the grapple tossed to the player.
-    pub tosses: u64,
-    /// The attachment-time rope length while swinging.
-    pub sling_length_m: Option<f32>,
-}
-
-/// The target offered, for the readout.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct TargetReadout {
-    pub kind: &'static str,
-    pub distance_m: f32,
+    state.status.swing = None;
 }
 
 /// The latest readout. Safe from any thread: it takes only a leaf lock.
@@ -448,7 +403,8 @@ static STATE: Mutex<State> = Mutex::new(State {
         taken: 0,
         failed: 0,
         tosses: 0,
-        sling_length_m: None,
+        aimed_mass_kg: None,
+        swing: None,
     },
 });
 
@@ -493,6 +449,7 @@ enum Phase {
         wire: NonZeroUsize,
         flight: Flight,
         rope: Option<sling::Sling>,
+        brace: Brace,
     },
 }
 
@@ -573,11 +530,23 @@ fn armed_yank(reach: Option<f32>, config: &YankConfig) -> YankDetector {
     yank
 }
 
+/// Log the held line taking its target.
+fn log_swing_start(swinging: &Swinging, tethered: bool) {
+    tracing::info!(
+        target: "controllers",
+        length_m = swinging.length_m,
+        mass_kg = swinging.mass_kg,
+        max_tension_n = swinging.max_tension_n,
+        tethered,
+        "snatch: swinging on the held line"
+    );
+}
+
 impl State {
     /// One input tick of the snatch.
     unsafe fn step(&mut self, input: &FinishInput) {
         let config = &input.config.weapons.snatch;
-        self.status.sling_length_m = None;
+        self.status.swing = None;
         if let Phase::HookOut { target, .. } | Phase::Pulling { target, .. } = &self.phase
             && physical_hands::held_props().contains(&Some(target.object))
         {
@@ -600,8 +569,13 @@ impl State {
                 self.cancel(why);
                 return;
             }
-            if matches!(self.phase, Phase::Pulling { rope: Some(_), .. }) && !config.sling {
-                self.cancel("hammer throws are off");
+            let swings = match &self.phase {
+                Phase::Pulling { rope, target, .. } => rope.is_some() || target.kind.tethered(),
+                Phase::HookOut { target, .. } => target.kind.tethered(),
+                _ => false,
+            };
+            if swings && !config.sling {
+                self.cancel("swinging on the line is off");
                 return;
             }
         }
@@ -692,15 +666,22 @@ impl State {
                         Ok(Attached::Pull) => {
                             haptics::play(hand, Event::SnatchHit);
                             let mut rope = None;
-                            let result = unsafe { pull::bite(hand, &target, wire) }.and_then(|flight| {
-                                if input.modifier_held && config.sling {
-                                    unsafe { pull::sling(hand, &target, wire, &mut rope, input) }.map(|length| {
-                                        self.status.sling_length_m = Some(length);
-                                        tracing::info!(target: "controllers", length_m = length, "snatch: swinging on the held line");
-                                    })?;
-                                }
-                                Ok(flight)
-                            });
+                            let mut brace = Brace::default();
+                            let tethered = target.kind.tethered();
+                            let result =
+                                unsafe { pull::bite(hand, &target, wire) }.and_then(|flight| {
+                                    if config.sling && (input.modifier_held || tethered) {
+                                        let swinging = unsafe {
+                                            pull::sling(
+                                                hand, &target, wire, &mut rope, &mut brace, input,
+                                            )
+                                        }?;
+                                        self.status.swing =
+                                            Some(SwingReadout::new(swinging, tethered));
+                                        log_swing_start(&swinging, tethered);
+                                    }
+                                    Ok(flight)
+                                });
                             match result {
                                 Ok(flight) => Phase::Pulling {
                                     hand,
@@ -708,6 +689,7 @@ impl State {
                                     wire,
                                     flight,
                                     rope,
+                                    brace,
                                 },
                                 Err(refusal) => {
                                     unsafe { pull::end_line(wire) };
@@ -750,22 +732,41 @@ impl State {
                 wire,
                 mut flight,
                 mut rope,
+                mut brace,
             } => {
-                let mode = sling::attached_mode(config.sling, input.modifier_held, rope.is_some());
+                let tethered = target.kind.tethered();
+                let mode = sling::attached_mode(
+                    config.sling,
+                    input.modifier_held,
+                    rope.is_some(),
+                    tethered,
+                );
                 let result = match mode {
                     sling::AttachedMode::Swing => {
                         let starting = rope.is_none();
-                        unsafe { pull::sling(hand, &target, wire, &mut rope, input) }.map(|length| {
-                            if starting {
-                                tracing::info!(target: "controllers", length_m = length, "snatch: swinging on the held line");
-                            }
-                            self.status.sling_length_m = Some(length);
-                            Step::Flying
-                        })
+                        let was_braced = brace.braced();
+                        unsafe { pull::sling(hand, &target, wire, &mut rope, &mut brace, input) }
+                            .map(|swinging| {
+                                if starting {
+                                    log_swing_start(&swinging, tethered);
+                                }
+                                if swinging.braced != was_braced {
+                                    tracing::info!(
+                                        target: "controllers",
+                                        braced = swinging.braced,
+                                        max_tension_n = swinging.max_tension_n,
+                                        "snatch: the other hand {} the line",
+                                        if swinging.braced { "braced" } else { "let go of" }
+                                    );
+                                }
+                                self.status.swing = Some(SwingReadout::new(swinging, tethered));
+                                Step::Flying
+                            })
                     }
                     sling::AttachedMode::Resume | sling::AttachedMode::Pull => {
                         if mode == sling::AttachedMode::Resume {
                             rope = None;
+                            brace = Brace::default();
                             sling_hooks::clear();
                             flight.resume();
                             tracing::info!(target: "controllers", "snatch: released B; pulling to the hand");
@@ -786,6 +787,7 @@ impl State {
                             wire,
                             flight,
                             rope,
+                            brace,
                         }
                     }
                     Ok(Step::Caught(catcher, arrival)) => {
@@ -856,7 +858,13 @@ impl State {
             sling_hooks::exclude(None);
         }
         unsafe { juice::set_reeling(self.phase.reeling()) };
-        if input.modifier_held && config.sling {
+        let keeps_sling = match &self.phase {
+            Phase::HookOut { target, .. } | Phase::Pulling { target, .. } => {
+                input.modifier_held || target.kind.tethered()
+            }
+            _ => input.modifier_held,
+        };
+        if keeps_sling && config.sling {
             if let Phase::HookOut {
                 hand,
                 wire,
@@ -893,6 +901,10 @@ impl State {
             hand = hand.label(),
             target_kind = offer.kind.label(),
             distance_m = offer.distance,
+            mass_kg = match offer.kind {
+                OfferKind::Prop { mass_kg, .. } => Some(mass_kg),
+                _ => None,
+            },
             "snatch: armed; a yank fires"
         );
         self.moment.target(offer.kind.label(), offer.distance);

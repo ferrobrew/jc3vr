@@ -429,16 +429,32 @@ fn grapple_readout(ui: &mut Ui, a: &AnchorStatus, (yanks, last): (u64, Option<Ya
         n.phase,
         n.target.map_or_else(
             || n.unoffered.unwrap_or("none").to_owned(),
-            |t| format!("{} at {:.1} m", t.kind, t.distance_m)
+            |t| match t.mass_kg {
+                Some(mass) => format!("{} of {mass:.0} kg at {:.1} m", t.kind, t.distance_m),
+                None => format!("{} at {:.1} m", t.kind, t.distance_m),
+            }
         ),
         n.fired,
         n.taken,
         n.failed,
         n.tosses
     ));
-    if let Some(length) = n.sling_length_m {
+    if let Some(mass) = n.aimed_mass_kg {
+        ui.label(format!("  Object under the aim: {mass:.0} kg"));
+    }
+    if let Some(swing) = n.swing {
         ui.label(format!(
-            "  Rope {length:.2} m · release grip to throw · release B to snatch"
+            "  Line {:.2} m held · tension {:.0} of {:.0} N · {:.0} kg{} · release grip to throw{}",
+            swing.length_m,
+            swing.tension_n,
+            swing.max_tension_n,
+            swing.mass_kg,
+            if swing.braced { " · braced" } else { "" },
+            if swing.tethered {
+                ""
+            } else {
+                " · release B to snatch"
+            }
         ));
     }
     if let Some(refusal) = &n.last_refusal {

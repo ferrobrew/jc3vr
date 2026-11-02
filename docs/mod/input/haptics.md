@@ -121,7 +121,7 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | `Sustain::BodyPressure` | a hand body is held back by what it presses, by its lag | tension | 0.5 | contact | `physical_hands::physics` |
 | `Sustain::ClimbStrain` | the climbing hands move the body, by its speed | tension | 0.5 | traversal | `physical_hands::climb` |
 | `Sustain::StuntHang` | a hand hangs from a stunt position, by the vehicle's speed | tension | 0.35 | traversal | `physical_hands::stunt` |
-| `Sustain::GrappleTension` | the grapple hand while the tethers are squeezed, by their tension, or while the snatch's line yanks its target, by the line's load | tension | 0.75 | traversal | `grapple::physical`, `snatch` |
+| `Sustain::GrappleTension` | the grapple hand while the tethers are squeezed, by their tension, or while the snatch's line yanks its target, by the line's load, or while the held line swings its target, by its tension's share of the line's strength, on the bracing hand too while it braces | tension | 0.75 | traversal | `grapple::physical`, `snatch` |
 | `Sustain::GrappleReel` | the grapple hand while the reel carries the character, by its speed | hum | 0.35 | traversal | `grapple::physical` |
 | `Sustain::GameRumble` | the game's per-frame motor strength: the low motor on the left hand, the high one on the right | hum | 1.0 | game | `haptics::rumble` |
 

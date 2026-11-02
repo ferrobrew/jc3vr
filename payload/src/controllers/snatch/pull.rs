@@ -1,6 +1,7 @@
 //! What the snatch does with the target it fired at: frees a gun from a character, fires the hook,
-//! opens a door the hook took hold of, pulls a weapon or an object in along an arc, and hands it to
-//! the hand on arrival; and the toss a tap of the grapple gives a gun.
+//! opens a door the hook took hold of, pulls a weapon or an object in along an arc and hands it to
+//! the hand on arrival, or swings it on the held line; and the toss a tap of the grapple gives a
+//! gun.
 
 use std::num::NonZeroUsize;
 
@@ -17,6 +18,7 @@ use crate::controllers::{
         raycast::{self, CastOptions},
     },
     frame::Hand,
+    grab::latch::GripLatch,
     hands::ik,
     haptics::{self, Sustain},
     physical_hands::{
@@ -27,9 +29,11 @@ use crate::controllers::{
         remote,
     },
     snatch::{
-        FinishInput, Refusal, SNATCH, engine, juice,
-        rules::{self, FlightLimits, FlightSample, StallWatch, Verdict},
-        sling::{RopeStep, Sling},
+        FinishInput, Refusal, SNATCH,
+        brace::{self, Brace, BraceInput, BraceReach},
+        engine, juice,
+        rules::{self, FlightLimits, FlightSample, PropHandling, StallWatch, Verdict},
+        sling::{LineTuning, RopeFault, RopeStep, Sling},
         sling_hooks,
         target::{Offer, OfferKind, weak_of},
     },
@@ -57,8 +61,13 @@ pub(super) struct Grabbed {
 pub(super) enum Pulled {
     /// A weapon lying in the world, into the hand through the table.
     Weapon,
-    /// A loose object, body `body` of `mass_kg`, into the hand's ordinary hold.
-    Prop { body: u32, mass_kg: f32 },
+    /// A loose object, body `body` of `mass_kg`: one a hand can carry into the hand's ordinary
+    /// hold, or one too heavy, swung on the held line.
+    Prop {
+        body: u32,
+        mass_kg: f32,
+        handling: PropHandling,
+    },
     /// An inert grenade, body `body`, into the hand through the loadout.
     Grenade { body: u32 },
     /// A finite native hand grenade lying in the world, body `body`: the catch takes it into the
@@ -66,6 +75,19 @@ pub(super) enum Pulled {
     WorldGrenade { body: u32 },
     /// A vehicle's closed door, pulled open at its handle, `handle` in the vehicle's frame.
     Door { door: DoorTarget, handle: Vec3 },
+}
+
+impl Pulled {
+    /// Whether the target is too heavy to come to the hand, so the line swings it from the bite.
+    pub(super) const fn tethered(&self) -> bool {
+        matches!(
+            self,
+            Pulled::Prop {
+                handling: PropHandling::Swing,
+                ..
+            }
+        )
+    }
 }
 
 /// What a fire at an armed target started.
@@ -103,11 +125,16 @@ pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal>
             object,
             body,
             mass_kg,
+            handling,
             weak,
         } => {
             let grabbed = Grabbed {
                 object,
-                kind: Pulled::Prop { body, mass_kg },
+                kind: Pulled::Prop {
+                    body,
+                    mass_kg,
+                    handling,
+                },
                 _alive: weak.lock().ok_or(Refusal::Gone)?,
             };
             let wire = unsafe { fire_hook(&grabbed) }?;
@@ -444,12 +471,16 @@ unsafe fn target_body(grabbed: &Grabbed) -> Result<u32, Refusal> {
     }
 }
 
-/// The native device endpoint follows the tracked wrist frame, never the aim ray.
+/// The native device endpoint follows the tracked wrist frame, never the aim ray. Gives the line's
+/// origin on the grapple hand and the hand's wrist.
 ///
 /// # Safety
 ///
 /// The game thread, before the world update.
-pub(super) unsafe fn prepare_sling(hand: Hand, wire: NonZeroUsize) -> Result<Vec3, Refusal> {
+pub(super) unsafe fn prepare_sling(
+    hand: Hand,
+    wire: NonZeroUsize,
+) -> Result<(Vec3, Vec3), Refusal> {
     let wrist = ik::tick_records().current[hand.index()]
         .ok_or(Refusal::Gone)?
         .wrist;
@@ -461,10 +492,39 @@ pub(super) unsafe fn prepare_sling(hand: Hand, wire: NonZeroUsize) -> Result<Vec
     let proxy = unsafe { engine::device_proxy(wire) }.ok_or(Refusal::LineLost)?;
     unsafe { engine::remove_constraint(wire) };
     sling_hooks::publish(wire.get(), proxy, transform);
-    Ok(anchor)
+    Ok((anchor, wrist.position))
 }
 
-/// Keep the attachment-time length with a radial correction while B is held.
+/// A tick of the held line, for the readout, the haptics, and the overlay.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(super) struct Swinging {
+    /// The line's held length, metres.
+    pub length_m: f32,
+    /// The line's tension, and the most it holds on this target with this brace, newtons.
+    pub tension_n: f32,
+    pub max_tension_n: f32,
+    pub mass_kg: f32,
+    /// Whether the other hand braces the grapple hand.
+    pub braced: bool,
+    /// Where the line is anchored, and the target's centre, world space.
+    pub anchor: Vec3,
+    pub centre: Vec3,
+}
+
+impl Swinging {
+    /// The line's tension as a share of its strength, `0..=1`.
+    pub(super) fn share(&self) -> f32 {
+        if self.max_tension_n > 0.0 {
+            (self.tension_n / self.max_tension_n).clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+}
+
+/// One tick of the held line: hold the target at the line's held length from the grapple hand,
+/// reeling in toward the swing's length, with a tension up to the line's strength for the target's
+/// mass, raised while the other hand braces the grapple hand's wrist ([`brace`]).
 ///
 /// # Safety
 ///
@@ -474,41 +534,89 @@ pub(super) unsafe fn sling(
     grabbed: &Grabbed,
     wire: NonZeroUsize,
     rope: &mut Option<Sling>,
+    brace: &mut Brace,
     input: &FinishInput,
-) -> Result<f32, Refusal> {
+) -> Result<Swinging, Refusal> {
     if unsafe { engine::read_wire(wire) }.0 != engine::WireReading::Attached {
         return Err(Refusal::LineLost);
     }
     let body = unsafe { target_body(grabbed) }?;
     let state =
         unsafe { physical_hands::body_state(body, grabbed.object) }.map_err(Refusal::Body)?;
-    let anchor = unsafe { prepare_sling(hand, wire) }?;
+    let (line_anchor, wrist) = unsafe { prepare_sling(hand, wire) }?;
+    let other = hand.other();
+    let other_wrist = ik::tick_records().current[other.index()].map(|t| t.wrist.position);
+    let was_braced = brace.braced();
+    let braced = brace.step(
+        BraceInput {
+            grip_held: input.grips[other.index()].held()
+                && matches!(input.latches[other.index()], GripLatch::Fist { .. }),
+            free: physical_hands::free_hands()[other.index()]
+                && physical_hands::held_props()[other.index()].is_none(),
+            gap_m: other_wrist.map(|other| other.distance(wrist)),
+        },
+        BraceReach {
+            take_m: SNATCH.brace_take_m,
+            break_m: SNATCH.brace_break_m,
+        },
+    );
+    let braced_anchor = brace::anchor(line_anchor, wrist, other_wrist);
+    let anchor = if braced { braced_anchor } else { line_anchor };
     let rope = match rope {
-        Some(rope) => rope,
+        Some(rope) => {
+            // The anchor moving between the hand and the pair is no motion of the hands.
+            if braced != was_braced && other_wrist.is_some() {
+                rope.shift_anchor(if braced {
+                    braced_anchor - line_anchor
+                } else {
+                    line_anchor - braced_anchor
+                });
+            }
+            rope
+        }
         slot @ None => slot.insert(Sling::new(state.pose.centre, anchor).ok_or(Refusal::Gone)?),
     };
+    let mass_kg = state.mass_kg.unwrap_or(1.0);
+    let line = LineTuning::of(&input.config.weapons.snatch.swing, mass_kg, braced);
     let rigid = state.rigid();
-    let velocity = rope
+    let out = rope
         .step(RopeStep {
             centre: state.pose.centre,
             velocity: rigid.velocities.linear,
+            mass_kg,
             anchor,
             dt: input.dt,
-            stiffness: SNATCH.sling_stiffness,
-            damping: SNATCH.sling_damping,
-            max_accel: SNATCH.sling_max_accel_mps2,
+            line,
         })
-        .ok_or(Refusal::Gone)?;
+        .map_err(|fault| match fault {
+            RopeFault::Invalid => Refusal::Gone,
+            RopeFault::Stretched => Refusal::OutOfLine,
+        })?;
     unsafe {
         physical_hands::set_body_velocities(
             body,
             grabbed.object,
-            velocity,
+            out.velocity,
             rigid.velocities.angular,
         )
     }
     .map_err(Refusal::Body)?;
-    Ok(rope.length_m)
+    let swinging = Swinging {
+        length_m: rope.length_m,
+        tension_n: out.tension_n,
+        max_tension_n: line.max_tension_n,
+        mass_kg,
+        braced,
+        anchor,
+        centre: state.pose.centre,
+    };
+    haptics::sustain(hand, Sustain::GrappleTension, swinging.share());
+    if braced {
+        haptics::sustain(other, Sustain::GrappleTension, swinging.share());
+    } else if was_braced {
+        haptics::sustain(other, Sustain::GrappleTension, 0.0);
+    }
+    Ok(swinging)
 }
 
 /// Gravity's acceleration, metres per second squared.
@@ -545,6 +653,10 @@ unsafe fn arrive(
                 .map(Arrival::Weapon)
                 .map_err(Refusal::Take)
         }
+        Pulled::Prop {
+            handling: PropHandling::Swing,
+            ..
+        } => Err(Refusal::Gone),
         Pulled::Prop { mass_kg, .. } => {
             let point = unsafe { surface_toward(grabbed.object, centre, palm) };
             remote::hold_remote(hand, grabbed.object, body, point, mass_kg);

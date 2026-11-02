@@ -1,6 +1,11 @@
-//! A compliant rope: tension changes only radial velocity relative to the moving forearm anchor.
+//! The held line: a stiff, tension-only spring-damper between the grapple hand and the target's
+//! centre at a held length, which changes only the target's velocity along the line relative to the
+//! moving hand. The tension it may reach scales with the target's mass, so a heavy target takes a
+//! real swing to move, but does move.
 
 use glam::Vec3;
+
+use crate::controllers::snatch::config::{REFERENCE_MASS_KG, SwingConfig};
 
 /// The owner facts required before continuing any snatch phase.
 pub(super) struct Continuation {
@@ -37,31 +42,132 @@ pub(super) enum AttachedMode {
     Cancel,
 }
 
-pub(super) fn attached_mode(enabled: bool, button_held: bool, swinging: bool) -> AttachedMode {
-    match (enabled, button_held, swinging) {
-        (false, _, true) => AttachedMode::Cancel,
-        (true, true, _) => AttachedMode::Swing,
-        (_, false, true) => AttachedMode::Resume,
+/// What the attached target does this tick: `enabled` is the swing's switch, `button_held` the
+/// snatch's hold of B, `swinging` whether the line holds it already, and `tethered` whether it is
+/// too heavy to come to the hand, which swings it whatever B does.
+pub(super) fn attached_mode(
+    enabled: bool,
+    button_held: bool,
+    swinging: bool,
+    tethered: bool,
+) -> AttachedMode {
+    match (enabled, button_held, swinging, tethered) {
+        (false, _, _, true) | (false, _, true, _) => AttachedMode::Cancel,
+        (true, _, _, true) | (true, true, _, _) => AttachedMode::Swing,
+        (_, false, true, _) => AttachedMode::Resume,
         _ => AttachedMode::Pull,
     }
 }
 
-/// The rope's immutable length and previous tracked anchor.
+/// The most tension the line holds on a target of `mass_kg`, newtons: `strength_n` at
+/// [`REFERENCE_MASS_KG`], growing with the mass to the power `scaling`, `0..=1`. Below 1 the
+/// acceleration the line can give falls as the mass grows. A mass that is not positive gets none.
+pub(super) fn line_strength_n(mass_kg: f32, strength_n: f32, scaling: f32) -> f32 {
+    if !(mass_kg.is_finite() && mass_kg > 0.0 && strength_n.is_finite()) {
+        return 0.0;
+    }
+    let scaling = if scaling.is_finite() {
+        scaling.clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    strength_n.max(0.0) * (mass_kg / REFERENCE_MASS_KG).powf(scaling)
+}
+
+/// The line's strength while braced, or not, as a multiple of one hand's `single_n`. A brace never
+/// weakens the line.
+pub(super) fn braced_strength_n(single_n: f32, factor: f32, braced: bool) -> f32 {
+    if braced && factor.is_finite() {
+        single_n * factor.max(1.0)
+    } else {
+        single_n
+    }
+}
+
+/// The held length after one tick of `dt` reeling in at `reel_mps` toward `floor_m`, from
+/// `length_m` with the target `distance_m` from the hand. The reel takes in line no faster than
+/// the target comes, keeping it at most [`REEL_LEAD_M`] inside the target, so a heavy target that
+/// lags is pulled hard rather than left far beyond the line. It never pays line out.
+pub(super) fn reeled_length(
+    length_m: f32,
+    distance_m: f32,
+    floor_m: f32,
+    reel_mps: f32,
+    dt: f32,
+) -> f32 {
+    if !(reel_mps.is_finite() && floor_m.is_finite() && distance_m.is_finite()) {
+        return length_m;
+    }
+    (length_m - reel_mps.max(0.0) * dt)
+        .max(floor_m.max(MIN_LENGTH_M))
+        .max(distance_m - REEL_LEAD_M)
+        .min(length_m)
+}
+
+/// How far inside the target the reel may take the line in, metres: at the default stiffness, a
+/// pull of about the strength of any line up to a few hundred kilograms.
+pub(super) const REEL_LEAD_M: f32 = 0.3;
+
+/// How far the target may be stretched past the held length before the line breaks, metres.
+pub(super) const MAX_STRETCH_M: f32 = 3.0;
+
+/// The rope's held length and previous tracked anchor.
 #[derive(Debug, Copy, Clone)]
 pub(super) struct Sling {
     pub length_m: f32,
     anchor: Vec3,
 }
 
-/// One pre-simulation radial correction; gravity and collisions remain the engine's work.
+/// The line's tuning for one step, with the strength for this target and brace.
+#[derive(Debug, Copy, Clone)]
+pub(super) struct LineTuning {
+    pub stiffness_per_s2: f32,
+    pub damping_per_s: f32,
+    pub max_tension_n: f32,
+    pub swing_length_m: f32,
+    pub reel_mps: f32,
+}
+
+impl LineTuning {
+    /// The tuning of `config` for a target of `mass_kg`, braced or not.
+    pub fn of(config: &SwingConfig, mass_kg: f32, braced: bool) -> Self {
+        let single = line_strength_n(mass_kg, config.strength_n, config.mass_scaling);
+        Self {
+            stiffness_per_s2: config.stiffness_per_s2,
+            damping_per_s: config.damping_per_s,
+            max_tension_n: braced_strength_n(single, config.brace_factor, braced),
+            swing_length_m: config.swing_length_m,
+            reel_mps: config.reel_mps,
+        }
+    }
+}
+
+/// One pre-simulation correction along the line; gravity and collisions remain the engine's work.
 pub(super) struct RopeStep {
     pub centre: Vec3,
     pub velocity: Vec3,
+    pub mass_kg: f32,
     pub anchor: Vec3,
     pub dt: f32,
-    pub stiffness: f32,
-    pub damping: f32,
-    pub max_accel: f32,
+    pub line: LineTuning,
+}
+
+/// What a step of the line did.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(super) struct RopeOutput {
+    /// The target's linear velocity after the line's pull.
+    pub velocity: Vec3,
+    /// The line's tension this tick, newtons.
+    pub tension_n: f32,
+}
+
+/// Why the line could not take a step.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(super) enum RopeFault {
+    /// A sample was not finite, the tick's length was out of bounds, or the hand jumped.
+    Invalid,
+    /// The target is farther past the held length than the line stretches.
+    Stretched,
 }
 
 impl Sling {
@@ -71,16 +177,24 @@ impl Sling {
             .then_some(Self { length_m, anchor })
     }
 
-    /// Preserve tangent, never push a slack rope, and bound tension over a bounded time step.
-    pub fn step(&mut self, step: RopeStep) -> Option<Vec3> {
+    /// Move the remembered anchor by `delta`, for a change of what the line is anchored to (a
+    /// brace taken or let go) that is not the hand's motion.
+    pub fn shift_anchor(&mut self, delta: Vec3) {
+        if delta.is_finite() {
+            self.anchor += delta;
+        }
+    }
+
+    /// Reel the line in, then pull along it: preserve the tangent, never push a slack rope, and
+    /// bound the tension by the line's strength over a bounded time step.
+    pub fn step(&mut self, step: RopeStep) -> Result<RopeOutput, RopeFault> {
         let RopeStep {
             centre,
             velocity,
+            mass_kg,
             anchor,
             dt,
-            stiffness,
-            damping,
-            max_accel,
+            line,
         } = step;
         if !centre.is_finite()
             || !velocity.is_finite()
@@ -88,36 +202,56 @@ impl Sling {
             || !dt.is_finite()
             || dt <= 0.0
             || dt > 0.1
-            || !stiffness.is_finite()
-            || !damping.is_finite()
-            || !max_accel.is_finite()
+            || !(mass_kg.is_finite() && mass_kg > 0.0)
+            || !line.stiffness_per_s2.is_finite()
+            || !line.damping_per_s.is_finite()
+            || !line.max_tension_n.is_finite()
         {
-            return None;
+            return Err(RopeFault::Invalid);
         }
         let anchor_velocity = (anchor - self.anchor) / dt;
         self.anchor = anchor;
         if anchor_velocity.length() > 30.0 {
-            return None;
+            return Err(RopeFault::Invalid);
         }
+        let slack = RopeOutput {
+            velocity,
+            tension_n: 0.0,
+        };
         let radial = centre - anchor;
         let distance = radial.length();
         let Some(direction) = radial.try_normalize() else {
-            return Some(velocity);
+            return Ok(slack);
         };
-        if distance > self.length_m + 3.0 {
-            return None;
+        self.length_m = reeled_length(
+            self.length_m,
+            distance,
+            line.swing_length_m,
+            line.reel_mps,
+            dt,
+        );
+        if distance > self.length_m + MAX_STRETCH_M {
+            return Err(RopeFault::Stretched);
         }
         let extension = (distance - self.length_m).max(0.0);
         let outward = (velocity - anchor_velocity).dot(direction);
         let predicted_extension = (distance + outward * dt - self.length_m).max(0.0);
         if predicted_extension <= 0.0 {
-            return Some(velocity);
+            return Ok(slack);
         }
-        let accel = (stiffness.max(0.0) * extension + damping.max(0.0) * outward)
-            .clamp(0.0, max_accel.max(0.0));
-        Some(velocity - direction * accel * dt)
+        let accel = (line.stiffness_per_s2.max(0.0) * extension
+            + line.damping_per_s.max(0.0) * outward)
+            .max(0.0);
+        let tension_n = (accel * mass_kg).min(line.max_tension_n.max(0.0));
+        Ok(RopeOutput {
+            velocity: velocity - direction * (tension_n / mass_kg) * dt,
+            tension_n,
+        })
     }
 }
+
+/// The shortest held length, metres, whatever the swing's length is set to.
+const MIN_LENGTH_M: f32 = 0.5;
 
 #[cfg(test)]
 mod tests {
@@ -149,23 +283,107 @@ mod tests {
 
     #[test]
     fn hold_bypasses_arrival_and_stall_until_resume_and_disable_cancels() {
-        assert_eq!(attached_mode(true, true, false), AttachedMode::Swing);
-        assert_eq!(attached_mode(true, true, true), AttachedMode::Swing);
-        assert_eq!(attached_mode(true, false, true), AttachedMode::Resume);
-        assert_eq!(attached_mode(true, false, false), AttachedMode::Pull);
-        assert_eq!(attached_mode(false, true, true), AttachedMode::Cancel);
-        assert_eq!(attached_mode(false, false, false), AttachedMode::Pull);
+        assert_eq!(attached_mode(true, true, false, false), AttachedMode::Swing);
+        assert_eq!(attached_mode(true, true, true, false), AttachedMode::Swing);
+        assert_eq!(
+            attached_mode(true, false, true, false),
+            AttachedMode::Resume
+        );
+        assert_eq!(attached_mode(true, false, false, false), AttachedMode::Pull);
+        assert_eq!(
+            attached_mode(false, true, true, false),
+            AttachedMode::Cancel
+        );
+        assert_eq!(
+            attached_mode(false, false, false, false),
+            AttachedMode::Pull
+        );
+    }
+
+    #[test]
+    fn a_tethered_target_swings_whatever_b_does_and_never_resumes_the_pull() {
+        for button in [false, true] {
+            for swinging in [false, true] {
+                assert_eq!(
+                    attached_mode(true, button, swinging, true),
+                    AttachedMode::Swing
+                );
+                assert_eq!(
+                    attached_mode(false, button, swinging, true),
+                    AttachedMode::Cancel
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_strength_grows_with_the_mass_but_the_acceleration_falls() {
+        let at = |mass: f32| line_strength_n(mass, 1500.0, 0.5);
+        assert!((at(REFERENCE_MASS_KG) - 1500.0).abs() < 1e-3);
+        let (rifle, barrel, heavy) = (at(4.0), at(100.0), at(400.0));
+        assert!(rifle < at(10.0) && at(10.0) < barrel && barrel < heavy);
+        assert!(rifle / 4.0 > barrel / 100.0 && barrel / 100.0 > heavy / 400.0);
+        assert!(heavy / 400.0 > 9.81, "a heavy target still moves: {heavy}");
+    }
+
+    #[test]
+    fn the_mass_scaling_spans_a_fixed_pull_to_a_fixed_acceleration() {
+        assert!((line_strength_n(100.0, 1500.0, 0.0) - 1500.0).abs() < 1e-3);
+        assert!(
+            (line_strength_n(100.0, 1500.0, 1.0) / 100.0 - 1500.0 / REFERENCE_MASS_KG).abs() < 1e-2
+        );
+        assert_eq!(
+            line_strength_n(100.0, 1500.0, 7.0),
+            line_strength_n(100.0, 1500.0, 1.0)
+        );
+        assert_eq!(line_strength_n(0.0, 1500.0, 0.5), 0.0);
+        assert_eq!(line_strength_n(f32::NAN, 1500.0, 0.5), 0.0);
+    }
+
+    #[test]
+    fn a_brace_multiplies_the_strength_and_never_weakens_it() {
+        assert_eq!(braced_strength_n(1000.0, 1.75, true), 1750.0);
+        assert_eq!(braced_strength_n(1000.0, 1.75, false), 1000.0);
+        assert_eq!(braced_strength_n(1000.0, 0.5, true), 1000.0);
+        assert_eq!(braced_strength_n(1000.0, f32::NAN, true), 1000.0);
+    }
+
+    #[test]
+    fn the_reel_takes_in_line_toward_the_swing_length_no_faster_than_the_target_comes() {
+        assert!((reeled_length(10.0, 10.0, 3.0, 8.0, 0.02) - 9.84).abs() < 1e-4);
+        assert!((reeled_length(10.0, 10.1, 3.0, 8.0, 0.1) - (10.1 - REEL_LEAD_M)).abs() < 1e-4);
+        assert_eq!(reeled_length(3.1, 3.1, 3.0, 8.0, 0.1), 3.0);
+        assert_eq!(
+            reeled_length(2.0, 2.0, 3.0, 8.0, 0.1),
+            2.0,
+            "never pays out"
+        );
+        assert_eq!(
+            reeled_length(10.0, 13.0, 3.0, 8.0, 0.1),
+            10.0,
+            "never pays out"
+        );
+        assert_eq!(reeled_length(1.0, 0.2, 0.0, 8.0, 0.1), MIN_LENGTH_M);
+    }
+
+    fn line(max_tension_n: f32) -> LineTuning {
+        LineTuning {
+            stiffness_per_s2: 400.0,
+            damping_per_s: 30.0,
+            max_tension_n,
+            swing_length_m: 0.0,
+            reel_mps: 0.0,
+        }
     }
 
     fn step(centre: Vec3, velocity: Vec3, anchor: Vec3) -> RopeStep {
         RopeStep {
             centre,
             velocity,
+            mass_kg: 1.0,
             anchor,
             dt: 0.01,
-            stiffness: 400.0,
-            damping: 30.0,
-            max_accel: 120.0,
+            line: line(120.0),
         }
     }
 
@@ -174,9 +392,10 @@ mod tests {
         let mut rope = Sling::new(Vec3::X * 2.0, Vec3::ZERO).unwrap();
         let before = Vec3::new(5.0, 7.0, -9.0);
         let after = rope.step(step(Vec3::X * 2.1, before, Vec3::ZERO)).unwrap();
-        assert_eq!(after.y, before.y);
-        assert_eq!(after.z, before.z);
-        assert!((before.x - after.x - 1.2).abs() < 1e-5);
+        assert_eq!(after.velocity.y, before.y);
+        assert_eq!(after.velocity.z, before.z);
+        assert!((before.x - after.velocity.x - 1.2).abs() < 1e-5);
+        assert_eq!(after.tension_n, 120.0);
         let released = Continuation {
             enabled: true,
             on_foot: true,
@@ -186,21 +405,36 @@ mod tests {
             grip_held: false,
         };
         assert_eq!(released.cancellation(), Some("the grip opened"));
-        assert_eq!(
-            attached_mode(true, false, true),
-            AttachedMode::Resume,
-            "B release with grip retained resumes pull instead of detaching"
-        );
+    }
+
+    #[test]
+    fn the_same_pull_moves_a_heavier_target_less() {
+        let pull = |mass_kg: f32| {
+            let mut rope = Sling::new(Vec3::X * 2.0, Vec3::ZERO).unwrap();
+            let max = line_strength_n(mass_kg, 1500.0, 0.5);
+            let out = rope
+                .step(RopeStep {
+                    mass_kg,
+                    line: line(max),
+                    ..step(Vec3::X * 2.2, Vec3::ZERO, Vec3::ZERO)
+                })
+                .unwrap();
+            (-out.velocity.x, out.tension_n)
+        };
+        let (rifle_dv, rifle_n) = pull(4.0);
+        let (barrel_dv, barrel_n) = pull(100.0);
+        assert!(barrel_n > rifle_n, "the line pulls a barrel harder");
+        assert!(barrel_dv < rifle_dv, "but the barrel speeds up less");
+        assert!(barrel_dv > 0.0);
     }
 
     #[test]
     fn slack_never_pushes_or_drags_the_tangent() {
         let mut rope = Sling::new(Vec3::X * 2.0, Vec3::ZERO).unwrap();
         let velocity = Vec3::new(-2.0, 3.0, 4.0);
-        assert_eq!(
-            rope.step(step(Vec3::X, velocity, Vec3::ZERO)),
-            Some(velocity)
-        );
+        let out = rope.step(step(Vec3::X, velocity, Vec3::ZERO)).unwrap();
+        assert_eq!(out.velocity, velocity);
+        assert_eq!(out.tension_n, 0.0);
     }
 
     #[test]
@@ -208,9 +442,21 @@ mod tests {
         let mut rope = Sling::new(Vec3::X * 2.0, Vec3::ZERO).unwrap();
         let velocity = Vec3::new(2.0, 8.0, 0.0);
         assert_eq!(
-            rope.step(step(Vec3::X * 2.02, velocity, Vec3::X * 0.02)),
-            Some(velocity)
+            rope.step(step(Vec3::X * 2.02, velocity, Vec3::X * 0.02))
+                .unwrap()
+                .velocity,
+            velocity
         );
+    }
+
+    #[test]
+    fn a_shifted_anchor_is_not_read_as_the_hand_moving() {
+        let mut rope = Sling::new(Vec3::X * 2.0, Vec3::ZERO).unwrap();
+        rope.shift_anchor(Vec3::X * 0.05);
+        let out = rope
+            .step(step(Vec3::X * 2.05, Vec3::ZERO, Vec3::X * 0.05))
+            .unwrap();
+        assert_eq!(out.tension_n, 0.0);
     }
 
     #[test]
@@ -219,7 +465,10 @@ mod tests {
         let mut centre = Vec3::X * 2.0;
         let mut velocity = Vec3::Y * 6.0;
         for _ in 0..2000 {
-            velocity = rope.step(step(centre, velocity, Vec3::ZERO)).unwrap();
+            velocity = rope
+                .step(step(centre, velocity, Vec3::ZERO))
+                .unwrap()
+                .velocity;
             centre += velocity * 0.01;
             assert!(centre.length() < 2.3);
         }
@@ -228,17 +477,96 @@ mod tests {
     }
 
     #[test]
+    fn a_hand_whirling_a_heavy_target_brings_it_up_to_speed() {
+        // A 100 kg target at rest 3 m off, the hand circling at 0.4 m and 1.5 turns a second.
+        let mass_kg = 100.0;
+        let config = SwingConfig::new();
+        let tuning = LineTuning::of(&config, mass_kg, false);
+        let hand = |t: f32| {
+            let a = t * std::f32::consts::TAU * 1.5;
+            Vec3::new(a.cos(), a.sin(), 0.0) * 0.4
+        };
+        let mut rope = Sling::new(Vec3::X * 3.4, hand(0.0)).unwrap();
+        let (mut centre, mut velocity) = (Vec3::X * 3.4, Vec3::ZERO);
+        let dt = 1.0 / 60.0;
+        for i in 1..=600 {
+            let out = rope
+                .step(RopeStep {
+                    centre,
+                    velocity,
+                    mass_kg,
+                    anchor: hand(i as f32 * dt),
+                    dt,
+                    line: tuning,
+                })
+                .unwrap();
+            velocity = out.velocity;
+            centre += velocity * dt;
+        }
+        assert!(velocity.length() > 8.0, "{}", velocity.length());
+        assert!(centre.length() < rope.length_m + MAX_STRETCH_M);
+    }
+
+    #[test]
+    fn the_line_reels_a_far_target_in_no_faster_than_the_reel() {
+        let mass_kg = 100.0;
+        let config = SwingConfig::new();
+        let tuning = LineTuning::of(&config, mass_kg, false);
+        let mut rope = Sling::new(Vec3::X * 12.0, Vec3::ZERO).unwrap();
+        let (mut centre, mut velocity) = (Vec3::X * 12.0, Vec3::ZERO);
+        let dt = 1.0 / 60.0;
+        let mut fastest = 0.0_f32;
+        while rope.length_m > config.swing_length_m {
+            velocity = rope
+                .step(RopeStep {
+                    centre,
+                    velocity,
+                    mass_kg,
+                    anchor: Vec3::ZERO,
+                    dt,
+                    line: tuning,
+                })
+                .unwrap()
+                .velocity;
+            centre += velocity * dt;
+            fastest = fastest.max(-velocity.x);
+        }
+        assert!(fastest > config.reel_mps * 0.8, "{fastest}");
+        assert!(fastest < config.reel_mps * 1.5, "{fastest}");
+    }
+
+    #[test]
     fn coincident_invalid_and_discontinuous_samples_are_safe() {
         assert!(Sling::new(Vec3::ZERO, Vec3::ZERO).is_none());
         let mut rope = Sling::new(Vec3::X, Vec3::ZERO).unwrap();
         assert_eq!(
-            rope.step(step(Vec3::ZERO, Vec3::Y, Vec3::ZERO)),
-            Some(Vec3::Y)
+            rope.step(step(Vec3::ZERO, Vec3::Y, Vec3::ZERO))
+                .unwrap()
+                .velocity,
+            Vec3::Y
         );
-        assert!(rope.step(step(Vec3::NAN, Vec3::ZERO, Vec3::ZERO)).is_none());
-        assert!(rope.step(step(Vec3::X, Vec3::ZERO, Vec3::Y)).is_none());
+        assert_eq!(
+            rope.step(step(Vec3::NAN, Vec3::ZERO, Vec3::ZERO)),
+            Err(RopeFault::Invalid)
+        );
+        assert_eq!(
+            rope.step(step(Vec3::X, Vec3::ZERO, Vec3::Y)),
+            Err(RopeFault::Invalid)
+        );
         let mut invalid = step(Vec3::X, Vec3::ZERO, Vec3::ZERO);
         invalid.dt = 0.0;
-        assert!(rope.step(invalid).is_none());
+        assert_eq!(rope.step(invalid), Err(RopeFault::Invalid));
+        let mut massless = step(Vec3::X, Vec3::ZERO, Vec3::ZERO);
+        massless.mass_kg = 0.0;
+        assert_eq!(rope.step(massless), Err(RopeFault::Invalid));
+    }
+
+    #[test]
+    fn a_target_far_past_the_held_length_breaks_the_line() {
+        let mut rope = Sling::new(Vec3::X * 2.0, Vec3::ZERO).unwrap();
+        assert_eq!(
+            rope.step(step(Vec3::X * 5.5, Vec3::ZERO, Vec3::ZERO)),
+            Err(RopeFault::Stretched)
+        );
     }
 }

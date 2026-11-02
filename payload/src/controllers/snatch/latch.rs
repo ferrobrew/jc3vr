@@ -3,6 +3,12 @@
 //! latched on. The grip's own target marker goes away once the snatch arms, since the snatch
 //! offers no target while it is under way, so this marker takes its place until the snatch fires or
 //! is cancelled.
+//!
+//! While the held line swings its target, the same slot draws the line: from the gripping hand to
+//! the target's centre, its colour running from the latch's cyan when slack to red at the line's
+//! strength and its width growing with the tension, a ring on it where the held length ends (the
+//! target beyond the ring is stretching the line), and a dot between the hands while the other hand
+//! braces.
 
 use std::time::Duration;
 
@@ -14,6 +20,7 @@ use crate::controllers::{
         primitive::{Anchor, DepthMode, Facing, HandPose, Primitive, Shape, Source, SpriteSize},
         store,
     },
+    snatch::SwingReadout,
 };
 
 /// Draw the latch of `hand` on the target at the world point `point`.
@@ -29,6 +36,69 @@ pub(super) fn submit(hand: Hand, point: Vec3) {
 /// Take the latch marker down.
 pub(super) fn clear() {
     store::clear(Source::SnatchLatch);
+}
+
+/// Draw the held line of `hand` as `swing` reads it.
+pub(super) fn submit_line(hand: Hand, swing: &SwingReadout) {
+    let mut prims = line_primitives(hand, swing);
+    if prims.is_empty() {
+        clear();
+    } else {
+        store::submit(Source::SnatchLatch, &mut prims, LATCH_TTL);
+    }
+}
+
+/// The primitives that draw the held line of `hand`: none for a line whose ends are not finite.
+fn line_primitives(hand: Hand, swing: &SwingReadout) -> Vec<Primitive> {
+    let offset = swing.centre - swing.anchor;
+    let Some(direction) = offset.try_normalize().filter(|_| swing.centre.is_finite()) else {
+        return Vec::new();
+    };
+    let share = if swing.max_tension_n > 0.0 {
+        (swing.tension_n / swing.max_tension_n).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let mix = |a: f32, b: f32| a + (b - a) * share;
+    let color = [
+        mix(LATCH_COLOUR[0], STRAINED_COLOUR[0]),
+        mix(LATCH_COLOUR[1], STRAINED_COLOUR[1]),
+        mix(LATCH_COLOUR[2], STRAINED_COLOUR[2]),
+        1.0,
+    ];
+    let held = swing.anchor + direction * swing.length_m.max(0.0);
+    let mut prims = vec![
+        Primitive::Line {
+            from: Anchor::Hand {
+                hand,
+                pose: HandPose::Grip,
+                offset: Vec3::ZERO,
+            },
+            to: Anchor::World(swing.centre),
+            width: LINE_WIDTH_M + share * STRAINED_WIDTH_M,
+            color,
+            depth: DEPTH,
+        },
+        Primitive::Sprite {
+            at: Anchor::World(held),
+            size: SpriteSize::Angular(RING_RAD * 0.5),
+            facing: Facing::Billboard,
+            shape: Shape::Ring { thickness: 0.3 },
+            color,
+            depth: DEPTH,
+        },
+    ];
+    if swing.braced {
+        prims.push(Primitive::Sprite {
+            at: Anchor::World(swing.anchor),
+            size: SpriteSize::Angular(DOT_RAD),
+            facing: Facing::Billboard,
+            shape: Shape::Disc,
+            color,
+            depth: DEPTH,
+        });
+    }
+    prims
 }
 
 /// The primitives that draw the latch of `hand` on the target at `point`: none for a point that is
@@ -75,6 +145,12 @@ const LATCH_TTL: Duration = Duration::from_millis(150);
 /// The latch's colour: a cyan no grip target uses, so that it reads as held rather than offered.
 const LATCH_COLOUR: [f32; 4] = [0.3, 0.95, 1.0, 1.0];
 
+/// The held line's colour at its strength.
+const STRAINED_COLOUR: [f32; 4] = [1.0, 0.25, 0.15, 1.0];
+
+/// How much wider the held line is at its strength, metres.
+const STRAINED_WIDTH_M: f32 = 0.008;
+
 /// The line's opacity, fainter than the dot so that it does not hide the target.
 const LINE_ALPHA: f32 = 0.6;
 
@@ -115,6 +191,50 @@ mod tests {
                 ..
             } if *to == Anchor::World(point)
         )));
+    }
+
+    fn swing(tension_n: f32, braced: bool) -> SwingReadout {
+        SwingReadout {
+            length_m: 3.0,
+            tension_n,
+            max_tension_n: 1000.0,
+            mass_kg: 100.0,
+            braced,
+            tethered: true,
+            anchor: Vec3::ZERO,
+            centre: Vec3::new(0.0, 0.0, -3.5),
+        }
+    }
+
+    #[test]
+    fn the_held_line_rings_its_held_length_and_reddens_with_its_tension() {
+        let slack = line_primitives(Hand::Left, &swing(0.0, false));
+        assert_eq!(slack.len(), 2);
+        assert!(slack.iter().any(|p| matches!(
+            p,
+            Primitive::Sprite { at: Anchor::World(at), .. } if (*at - Vec3::new(0.0, 0.0, -3.0)).length() < 1e-5
+        )));
+        let line_of = |prims: &[Primitive]| {
+            prims.iter().find_map(|p| match p {
+                Primitive::Line { color, width, .. } => Some((*color, *width)),
+                _ => None,
+            })
+        };
+        let (slack_colour, slack_width) = line_of(&slack).unwrap();
+        let (taut_colour, taut_width) =
+            line_of(&line_primitives(Hand::Left, &swing(1000.0, false))).unwrap();
+        let near = |a: [f32; 4], b: [f32; 4]| (0..3).all(|i| (a[i] - b[i]).abs() < 1e-5);
+        assert!(near(slack_colour, LATCH_COLOUR));
+        assert!(near(taut_colour, STRAINED_COLOUR));
+        assert!(taut_width > slack_width);
+        assert_eq!(line_primitives(Hand::Left, &swing(0.0, true)).len(), 3);
+    }
+
+    #[test]
+    fn a_line_with_no_length_draws_nothing() {
+        let mut coincident = swing(0.0, false);
+        coincident.centre = coincident.anchor;
+        assert!(line_primitives(Hand::Left, &coincident).is_empty());
     }
 
     #[test]

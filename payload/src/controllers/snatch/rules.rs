@@ -1,4 +1,5 @@
-//! The snatch's pure rules: which target the grapple's aim picks, where and how fast the line pulls
+//! The snatch's pure rules: which target the grapple's aim picks, what a loose object is to it by
+//! its mass, where and how fast the line pulls
 //! the target, when the line goes slack and which hand catches it or whether it is missed, when it
 //! has stalled or run out of line, and the toss that a tap at a gun gives it.
 
@@ -282,6 +283,31 @@ pub fn toss_flight(distance: f32, speed: f32, shortest: f32, longest: f32) -> f3
         t.clamp(shortest, longest.max(shortest))
     } else {
         longest.max(shortest)
+    }
+}
+
+/// What the snatch does with a loose object.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum PropHandling {
+    /// Pulled into the hand and caught: a hand can carry it.
+    Carry,
+    /// Swung on the held line, never brought to the hand: too heavy to carry, but within the
+    /// swing's ceiling.
+    Swing,
+}
+
+/// What the snatch does with a loose object of `mass_kg`: carried up to `carry_max_kg`, swung
+/// above it up to `ceiling_kg`, and not offered above the ceiling or without a finite, positive
+/// mass. A ceiling below the carry limit swings nothing.
+pub fn prop_handling(mass_kg: f32, carry_max_kg: f32, ceiling_kg: f32) -> Option<PropHandling> {
+    if !(mass_kg.is_finite() && mass_kg > 0.0) {
+        None
+    } else if mass_kg <= carry_max_kg {
+        Some(PropHandling::Carry)
+    } else if mass_kg <= ceiling_kg {
+        Some(PropHandling::Swing)
+    } else {
+        None
     }
 }
 
@@ -731,5 +757,23 @@ mod tests {
         assert_eq!(toss_flight(0.1, 10.0, 0.4, 1.2), 0.4);
         assert_eq!(toss_flight(100.0, 10.0, 0.4, 1.2), 1.2);
         assert_eq!(toss_flight(5.0, 0.0, 0.4, 1.2), 1.2);
+    }
+
+    #[test]
+    fn a_loose_object_is_carried_swung_or_not_offered_by_its_mass() {
+        let at = |mass| prop_handling(mass, 35.0, 400.0);
+        assert_eq!(at(4.0), Some(PropHandling::Carry));
+        assert_eq!(at(35.0), Some(PropHandling::Carry));
+        assert_eq!(at(35.5), Some(PropHandling::Swing));
+        assert_eq!(at(400.0), Some(PropHandling::Swing));
+        assert_eq!(at(400.5), None);
+        assert_eq!(at(0.0), None);
+        assert_eq!(at(f32::NAN), None);
+        assert_eq!(at(f32::INFINITY), None);
+        assert_eq!(
+            prop_handling(100.0, 35.0, 20.0),
+            None,
+            "a low ceiling swings nothing"
+        );
     }
 }

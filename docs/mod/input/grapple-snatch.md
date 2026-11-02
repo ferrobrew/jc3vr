@@ -4,7 +4,7 @@ This is the plan of record and the description of what is built. Phases 1, 3, an
 
 It is built on the [two-handed inventory](two-handed-inventory.md), whose takes it ends in: the snatch's arrival lands the item in the loadout table and the grabbing hand, never through the game's equip. It is the first feature built on the inventory, and its test: a snatch takes an item from anywhere into the grabbing hand while the other hand holds whatever it holds, which exercises the table, the hands' independence, and the reconcile end to end.
 
-The grapple hand pulls things to itself. The grapple button keeps doing what it does in the game (a tap fires, a hold tethers to and between targets), and the grip pulls: with the empty grapple hand pointed at something out of reach, a squeeze and a yank back away from it fire the game's hook at it and snatch it from wherever it is (the ground, a rack or a locker, a character's hands, a holster on a character's body) into the hand, in the held position. From there it is an ordinary held thing: hand it to the other hand, holster it, carry it, or drop it. Weapons are the core of the feature. Props and car doors follow, the doors pulled open on the line rather than into the hand.
+The grapple hand pulls things to itself. The grapple button keeps doing what it does in the game (a tap fires, a hold tethers to and between targets), and the grip pulls: with the empty grapple hand pointed at something out of reach, a squeeze and a yank back away from it fire the game's hook at it and snatch it from wherever it is (the ground, a rack or a locker, a character's hands, a holster on a character's body) into the hand, in the held position. From there it is an ordinary held thing: hand it to the other hand, holster it, carry it, or drop it. Weapons are the core of the feature. Props and car doors follow, the doors pulled open on the line rather than into the hand, and an object too heavy for a hand to carry, such as an explosive barrel, swung on the line and slung into something ([Swinging on the line](#swinging-on-the-line)).
 
 The game offers nothing like it: its grapple never hooks a weapon, has no pull of a light object to the player, and cannot reach into a character's hands. The snatch keeps the game's own grapple wherever it can, so it reads as the same device doing one thing more: the game's aim and target highlight, the game's hook, line, and flight from Rico's left forearm, and the game's own pickup and steal rules at the end. The mod adds the trigger, the pull, and the arrival.
 
@@ -29,7 +29,7 @@ With the patch, a gun on the ground is a grapple target like any other ([The gra
 
 In the grip's one targeting rule ([grip.md](grip.md)) the snatch is the lowest tier, `Tier::Remote`, taken only when nothing at all is in reach (not even a surface to climb or a reach margin), so anything within real reach always wins. It is offered only to the grapple hand, empty (no gun, foregrip, grenade, charge, or prop), on foot with no traversal, with the hook free (no active or attachment wire, no fire pending, the hook inactive) and the grapple button up. A fist never takes it: only a press aimed at it arms the snatch.
 
-The grapple hand is the off-hand of the acting hand. The game's grapple device is on Rico's left forearm, so an ordinary snatch in a left-handed setup still leaves the opposite arm. During a grapple-held hammer throw, the native device proxy follows the tracked grapple hand's wrist frame.
+The grapple hand is the off-hand of the acting hand. The game's grapple device is on Rico's left forearm, so an ordinary snatch in a left-handed setup still leaves the opposite arm. While the line swings its target, the native device proxy follows the tracked grapple hand's wrist frame.
 
 ## The interaction
 
@@ -49,17 +49,65 @@ Sound: the snatch plays the grapple's own sounds and effects ([The snatch's soun
 
 Leaving the feet (a vehicle, a fall, a ragdoll, a reel) or turning the snatch off cancels it as opening the grip does.
 
-## Grapple-held hammer throws
+## Swinging on the line
 
-Grip a remote weapon or loose prop first, then hold the grapple semantic button (B) and yank. The native hook flies and attaches, but the target stays on a fixed-length rope instead of coming into the hand. Moving the tracked forearm can accelerate the target around the anchor. Aiming elsewhere does not move the target toward that ray. Opening the grip cancels the native line without writing a release velocity, so the target retains its current motion. Releasing B while retaining grip resumes the ordinary snatch with a fresh stall watch. Doors keep their existing open-door behavior.
+The line can hold its target at a length instead of pulling it in, and the grapple hand swings it: drag it, whirl it around, or lift it into an arc, then open the grip to let it go with its current velocity. The game's own physics and damage do the rest, so an explosive barrel slung into a wall or a soldier explodes on impact as it would from any hit. Two things swing:
 
-The rope uses the target's centre of mass and the tracked wrist frame with `GRAPPLE_ORIGIN_M` (`controllers::aim`). The native device proxy's visual getters receive that frame during the owned wire update. The rope snapshots its length at attachment, then applies a bounded tension-only radial velocity increment using velocity relative to the moving anchor. Tangential and angular velocity remain unchanged by that increment. Gravity and collisions remain part of the engine simulation. Excessive stretch, an invalid sample, tracking loss, a lost line, changed target ownership, an occupied hand, a hand-role change, leaving the supported mode, opening a menu, or disabling the feature ends the line. A stationary swing does not use the arrival pull's stall timeout.
+- A loose object too heavy for one hand to carry (`physical_hands::remote::carry_max_kg`, the pickup's one-hand strength against gravity, about 36 kg) and no heavier than the swing's ceiling (`weapons.snatch.swing.ceiling_kg`) is offered as a heavy object (`HEAVY OBJECT`, marked as an object) and is always swung (`rules::prop_handling`). It never comes to the hand: once the hook bites, the line holds it. Above the ceiling nothing is offered. Characters and vehicles are never offered, however light, as before.
+- A weapon or a light object swings while B (the grapple semantic button) is held: grip the target, hold B, and yank. Releasing B while the grip stays closed resumes the ordinary pull to the hand with a fresh stall watch.
 
-Weapons and props use the same correction. The owned wire's native constraint creation and tension callbacks are excluded while swinging, so a prop does not receive a second rope force. This exclusion starts during hook flight and ends before the ordinary pull resumes. The input tick owns target references and body access outside physics work. Hooks copy the published anchor and compare wire/proxy identities; they do not resolve target references or drive target bodies on a worker.
+The line (`snatch::sling`) is a stiff, tension-only spring-damper from the grapple hand to the target's centre of mass at a held length. Each tick it asks the target's velocity along the line, relative to the moving hand, for the line's stiffness times its stretch past the held length plus its damping times the target's speed away from the hand, and gives no more tension than the line's strength. Velocity across the line and angular velocity are untouched, a slack line never pushes, and gravity and collisions stay the engine's. The change is written through the same body-velocity path every hand's hold uses, so the target is never placed or keyframed.
 
-`GrappleButton` owns a fresh B press only after the grip has armed a remote target. It consumes that press and release through cancellation and stand-down until a usable neutral observation on the original hand and on-foot route. B before grip remains an ordinary grapple. The native custom-wire state ignores ordinary fire/reel input, and the input owner prevents delayed zip, tether, or release gestures from the consumed episode.
+The line's strength scales with the target's mass (`sling::line_strength_n`): `strength_n` at a 10 kg reference, times the mass over the reference to the power `mass_scaling`. At the default 0.5 the line pulls a heavy target harder than a light one but speeds it up less, so a 150 kg fuel barrel takes a real swing to move but does move, and a rifle swings briskly. At 1 every mass swings alike; at 0 the line pulls every mass equally hard.
 
-`weapons.snatch.sling` is enabled by default, and its switch is in the debug UI's Snatch feature. Its radial stiffness, radial damping, and maximum tension acceleration are `SNATCH.sling_stiffness`, `SNATCH.sling_damping`, and `SNATCH.sling_max_accel_mps2`. The snatch readout shows `SWINGING` and the saved rope length. `testing/scenarios/grapple_hammer_throw.toml` records the acceptance sequence for weapons, props, release momentum, B release, ordinary grapple preservation, and cancellation. This sequence still needs a headset recording and live-game acceptance.
+The held length starts as the distance at the bite and reels in at `reel_mps` toward `swing_length_m`, so a target hooked far off is drawn in and then swung around the player rather than hanging off the end of a long line. The reel takes in line no faster than the target comes, keeping it at most 0.3 m inside the target (`sling::reeled_length`), so a heavy target that lags is pulled at the line's strength rather than left far beyond the line. It never pays line out. A rope cannot push, so a target reeled in keeps its speed once the reel stops and coasts on toward the player until friction, gravity, or a swing takes it; the default reel is slow enough that a barrel dragged along the ground stops within a step or two. A reel speed of zero keeps the length the hook bit at.
+
+The swung target collides with everything, the player's own body included. The line's anchor is the tracked wrist frame with `GRAPPLE_ORIGIN_M` (`controllers::aim`), and the native device proxy's visual getters receive that frame during the owned wire update, so the game's line runs from the tracked forearm. Excessive stretch (3 m past the held length, "the target is beyond the line"), an invalid sample, tracking loss, a lost line, changed target ownership, an occupied hand, a hand-role change, leaving the supported mode, opening a menu, or turning the swing off ends the line. A stationary swing does not use the arrival pull's stall timeout.
+
+The owned wire's native constraint creation and tension callbacks are excluded while swinging, so the target does not receive a second rope force and Rico is not pulled toward a heavy one. The exclusion starts during hook flight and ends before an ordinary pull resumes. The input tick owns target references and body access outside physics work. Hooks copy the published anchor and compare wire and proxy identities; they do not resolve target references or drive target bodies on a worker.
+
+`GrappleButton` owns a fresh B press only after the grip has armed a remote target; on a heavy object the owned press does nothing, rather than firing the game's grapple from under the armed snatch. It consumes that press and release through cancellation and stand-down until a usable neutral observation on the original hand and on-foot route. B before grip remains an ordinary grapple. The native custom-wire state ignores ordinary fire and reel input, and the input owner prevents delayed zip, tether, or release gestures from the consumed episode.
+
+### The two-handed brace
+
+While the line swings, the other hand can brace the grapple hand: squeeze its grip with its wrist within `SNATCH.brace_take_m` of the grapple hand's wrist (`snatch::brace`). The other hand must be free and empty, its grip closed on nothing; while the line is out that grip is held for the snatch already, so the squeeze takes nothing in reach. Braced, the line's strength is `brace_factor` times one hand's, and the line is anchored at the average of the two hands, keeping the grapple hand's offset to the line's origin; the anchor's move between the hand and the pair is not read as a motion of the hands. The brace holds until the grip opens, the hand takes something, a wrist loses tracking, or the wrists drift more than `SNATCH.brace_break_m` apart, and the line returns to one hand's strength.
+
+### Feedback
+
+Haptics: the grapple hand feels the line's tension (`Sustain::GrappleTension`, by the tension's share of the line's strength), and so does the bracing hand while it braces ([haptics.md](haptics.md)).
+
+In-world, the latch's slot (`snatch::latch`, `SnatchLatch`, shown with the grip markers, `overlay.markers`) draws the line while it swings: from the grapple hand to the target's centre, its colour running from the latch's cyan when slack to red at the line's strength and its width growing with the tension, a ring on it where the held length ends (a target beyond the ring is stretching the line), and a dot at the anchor between the hands while braced.
+
+The snatch readout and the Status page's `SNATCH` row show `SWINGING` with the target's mass, the held length, the tension of the line's strength in newtons, and whether it is braced. While nothing is under way, the readout shows the mass of the loose object under the grapple's aim whatever the snatch would do with it, so an object above the ceiling can be told apart, and an offered object's mass rides with its kind. The log has `snatch: swinging on the held line` with the length, mass, strength, and whether the target is too heavy to come to the hand, `snatch: the other hand braced the line` and `let go of the line` with the strength, and `snatch: armed` with an object's mass.
+
+### Tuning
+
+`weapons.snatch.sling` (on by default) switches the swing, heavy objects' offer with it; its switch and the line's tuning (`weapons.snatch.swing`) are in the debug UI's Snatch feature:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `ceiling_kg` | 300 | the heaviest object offered |
+| `strength_n` | 1500 | the line's strength on a 10 kg target, newtons |
+| `mass_scaling` | 0.5 | how the strength grows with the mass |
+| `brace_factor` | 1.75 | the braced strength as a multiple of one hand's |
+| `stiffness_per_s2` | 400 | the pull per metre of stretch, per second squared |
+| `damping_per_s` | 30 | the damping of the speed away from the hand, per second |
+| `swing_length_m` | 3 | the length the line reels in to |
+| `reel_mps` | 4 | how fast it reels in |
+
+The ceiling comes from the game's prop masses ([engine: havok-bodies.md, "A loose object's mass"](../../engine/physics/havok-bodies.md#a-loose-objects-mass)): 300 kg admits every barrel (fuel barrels and water-filled barrier barrels at 150 kg), crate, jerrycan, chair, and the 250 kg propane tank, and stops short of voltage boxes and stacks of planks, with nothing loose between 500 kg and 1 t. The 25 kg gas canister is carried rather than swung. At the defaults the line's strongest pull on a fuel barrel is about 5800 N, 39 m/s² (68 m/s² braced), enough to whirl it at about 10 m/s on the 3 m line; on a propane tank it is 30 m/s² (52 m/s² braced); on a 4 kg rifle the stiffness, not the strength, sets the pull.
+
+In the headset:
+
+1. Aim at a red fuel barrel 10 m off: a heavy object's marker, and the readout names it with its 150 kg. Aim at a hay bale: no marker, and the readout shows its mass.
+2. Squeeze and yank: the hook bites, the line reels the barrel in along the ground to about 3 m and holds it there; it never comes to the hand. The in-world line runs from the hand to the barrel, reddening and thickening as it pulls, with its ring at the held length.
+3. Drag it by walking back, then whirl the hand in circles or turn on the spot until it lifts and circles, then open the grip as it points at a wall or a soldier: it flies on and explodes on impact. The hand feels the line's tension throughout.
+4. While it swings, squeeze the other grip at the grapple hand's wrist: the readout says braced, the strength rises, a dot shows between the hands, both hands feel the tension, and the barrel answers the swing harder. Pull the hands apart or open that grip: back to one hand.
+5. Swing it into Rico: it hits him. Walk away from a barrel snagged on something: the line breaks with "the target is beyond the line".
+6. Grip a rifle on the ground, hold B, and yank: it swings on the same line and reels in to about 3 m; whirl it and let go, then repeat and release B to bring it to the hand.
+7. Turn the swing off in the debug UI: the barrel is no longer offered, and a swing under way is cancelled.
+
+`testing/scenarios/grapple_hammer_throw.toml` records the acceptance sequence for weapons and light props on B, and `testing/scenarios/grapple_heavy_swing.toml` the heavy swing's. Both still need a headset recording and live-game acceptance.
 
 ## The snatch's sounds
 
@@ -102,15 +150,16 @@ The hook's state machine serialises snatches: `FireHookCustom` refuses while a l
 | Weapon in a locker | none if it lies dropped with bodies (unverified) | as on the ground | as on the ground | `pickup::take` | 2 |
 | Weapon holstered on a character | the slot's weapon dropped as the steal drops a held one | as on the ground | as on the ground | `pickup::take` | 3, built |
 | Loose prop | none | custom ghost fire at the object | the line's yank through the hold solve | the catch, then the hand's ordinary hold | 3, built |
+| Loose object too heavy to carry, up to the ceiling | none | custom ghost fire at the object | none: the held line swings it | the grip's release lets it fly | built |
 | Car door | the doors' unlatch once the hook is on ([vehicle-doors.md](vehicle-doors.md)) | fire at the vehicle at the handle | an outward impulse on the door's body, not into the hand | the wire cancelled; the door swings | 4, built |
 
 A disarmed character staggers and reacts as to the steal in reach: it draws another weapon, fights unarmed, or goes for one lying in the world. How the AI reacts to a disarm from range is to be watched in the headset.
 
 ## Settings
 
-`weapons.snatch.enabled` (on by default) switches the snatch, the aim's patch, and the grapple button's ghost fire and tap at a gun together; phases 3 and 4's targets are always offered while it is on. The debug UI's Snatch feature has it, the sling's switch, and the yank's speed and length; the yank's window stays in `weapons.snatch.yank` without a widget. The rest of the tuning is fixed in `controllers::snatch::SNATCH`: the range, the cone for guns on characters and weapons on the ground and its widening for the latter, the line's speed, arrival speed, acceleration, final approach, arc, and spin, the slack's coast and its bounds, the catch radius and the slack flight's limit, the stall rule, the hook's flight limit, and the door's handle reach, fastest vehicle, and swing. A gun in a character's hands also needs the either-hand hold (`weapons.hold.either_hand`).
+`weapons.snatch.enabled` (on by default) switches the snatch, the aim's patch, and the grapple button's ghost fire and tap at a gun together; phases 3 and 4's targets are always offered while it is on. The debug UI's Snatch feature has it, the swing's switch and tuning ([Swinging on the line](#swinging-on-the-line)), and the yank's speed and length; the yank's window stays in `weapons.snatch.yank` without a widget. The rest of the tuning is fixed in `controllers::snatch::SNATCH`: the range, the cone for guns on characters and weapons on the ground and its widening for the latter, the line's speed, arrival speed, acceleration, final approach, arc, and spin, the slack's coast and its bounds, the catch radius and the slack flight's limit, the stall rule, the hook's flight limit, and the door's handle reach, fastest vehicle, and swing. A gun in a character's hands also needs the either-hand hold (`weapons.hold.either_hand`).
 
-The Status page's `GRAPPLE` section has a `SNATCH` row: the snatch's state (idle, armed, freeing, hook out, pulling, inbound once the line is slack, swinging), the target offered and its distance or why none is offered (not on foot, the hand not empty, the button held, a line out, the hook busy), and the snatches taken of those fired, with the last refusal as a note. The weapons readout has a line with the counts and the tosses. The log, at info under `controllers`, has `snatch: armed; a yank fires`, `snatch: yanked; firing` with the yank, `snatch: the character let go of its gun`, `snatch: the hook holds the weapon; pulling`, `snatch: the weapon came into the … hand` with the slot and the catching and line hands, `snatch: the object came into the … hand's hold`, `snatch: the line pulled a car door open`, `snatch: failed` with the reason (`the hand missed the catch` for a missed catch), `snatch: cancelled` with why, `snatch: a tap of the grapple reeled a weapon in`, and `snatch: tossed a weapon to the player's feet`; each grip press's log notes the remote target offered.
+The Status page's `GRAPPLE` section has a `SNATCH` row: the snatch's state (idle, armed, freeing, hook out, pulling, inbound once the line is slack, swinging), the target offered, an object's mass, and its distance or why none is offered, the held line while it swings (not on foot, the hand not empty, the button held, a line out, the hook busy), and the snatches taken of those fired, with the last refusal as a note. The weapons readout has a line with the counts and the tosses. The log, at info under `controllers`, has `snatch: armed; a yank fires`, `snatch: yanked; firing` with the yank, `snatch: the character let go of its gun`, `snatch: the hook holds the weapon; pulling`, `snatch: the weapon came into the … hand` with the slot and the catching and line hands, `snatch: the object came into the … hand's hold`, `snatch: the line pulled a car door open`, `snatch: failed` with the reason (`the hand missed the catch` for a missed catch), `snatch: cancelled` with why, `snatch: a tap of the grapple reeled a weapon in`, and `snatch: tossed a weapon to the player's feet`; each grip press's log notes the remote target offered.
 
 ## Phases
 
@@ -146,7 +195,7 @@ The RE so far, against the release IDB: [`WeaponBase::PickupStart`](https://ferr
 
 Built. The steal notes, with each character it notes, the guns holstered and visible on its body (the pistol, two-handed, and special slots in the holstered state), and the snatch offers them as it offers a gun in hands. Firing at one drops it as the player's own replaced weapon is dropped ([`WeaponBase::OnDrop`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##vfunc-OnDrop), then [`Inventory::DropWeapon`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##func-DropWeapon) without a selection change), the character staggers, and the gun is snatched as one lying in the world; the take's rules are checked before it leaves the character.
 
-A loose object under the aim is offered when one hand could carry it: not a character, a vehicle, or a weapon, dynamic, within the pickup's heaviest, and no heavier than the hand's strongest pull holds up. The hook takes hold of it as of a weapon, the same line yanks it in, and on the catch the wire ends and the object is handed to the hand's ordinary hold (`physical_hands::remote`), taken at its surface on the line from the palm to its centre: the next palms' tick takes hold of it as of a grab in reach, and the grip's release lets go of it, thrown with the hand's motion.
+A loose object under the aim is offered as an object when one hand could carry it: not a character, a vehicle, or a weapon, dynamic, and no heavier than the hand's strongest pull holds up. A heavier one, up to the swing's ceiling, is offered as a heavy object and swung on the line instead ([Swinging on the line](#swinging-on-the-line)). The hook takes hold of it as of a weapon, the same line yanks it in, and on the catch the wire ends and the object is handed to the hand's ordinary hold (`physical_hands::remote`), taken at its surface on the line from the palm to its centre: the next palms' tick takes hold of it as of a grab in reach, and the grip's release lets go of it, thrown with the hand's motion.
 
 A grenade lying inert in the world (dropped with its pin in, and still the loadout's) is offered as a grenade rather than as a loose object (`OfferKind::Grenade`, marked as an object, labelled `GRENADE`). The hook takes hold of it and the same line yanks it in, and on the catch the wire ends and the grenade is handed to the weapon handling, which takes it into the hand through the loadout at the next input tick, as a hand closing on it would ([grenades.md, "Dropped grenades"](grenades.md#dropped-grenades)); the take clicks the hand. A grenade whose pin is out is a live grenade and not a snatch target: a free hand catches it.
 
@@ -155,7 +204,7 @@ A grenade a character drops is normally made one of the mod's own as it drops, a
 In the headset:
 
 1. Snatch the pistol on a soldier's hip while it holds its rifle: the soldier staggers, keeps the rifle, and the pistol flies in.
-2. Snatch a crate or a barrel a hand can carry: it arcs in and stays in the hand's hold; let go and it falls or flies with the hand. Aim at a heavy one: no marker.
+2. Snatch a gas canister or a box a hand can carry: it arcs in and stays in the hand's hold; let go and it falls or flies with the hand. Aim at a fuel barrel: it is offered as a heavy object (the swing's checks are under [Swinging on the line](#swinging-on-the-line)). Aim at a hay bale or a container: no marker.
 
 ### Phase 4: car doors
 
@@ -179,12 +228,17 @@ In the headset:
 - A holstered gun is dropped without a selection change, so the character keeps what it wields and the stagger is its whole reaction; a gun in its hands goes through the selection, as the steal's does.
 - A caught object becomes the hand's ordinary hold where the hand caught it, at its surface nearest the palm: the hold's own solve takes its momentum, within the hand's strength, as for an object taken in reach.
 - A car door's target is its handle area near where the aim hits the vehicle, not a cone around the ray, since a door is a large surface the aim lands on directly.
+- A heavy object swings on the line rather than coming to the hand, and the line is a rope rather than a rod: it pulls but never pushes, so it reads as a line and needs no rule for a target pushed away. The reel to a swing length is what makes a far target swingable at all, since a hand's motion turns a 15 m line by a few degrees.
+- The line's strength grows with the square root of the target's mass by default rather than holding a fixed acceleration, so a heavier target takes a bigger swing, and the ceiling, not a weak line, keeps vehicles and wrecks out. Vehicles are excluded outright for now, however light.
+- The brace is taken by holding the other grip near the wrist, not only by a fresh squeeze there: that grip is already held for the snatch while the line is out, and a hand that squeezed early and then came to the wrist should brace.
 
 ## Open questions
 
 - Whether the AI reserves a dropped weapon it walks toward, and what it does when the weapon leaves.
 - Whether the game's fire plays `GrapplePreFire` before `GrappleFire`, and whether the snatch should play it on the arming squeeze ([The snatch's sounds](#the-snatchs-sounds)).
 - Whether a target caught close to the body collides with Rico's collision proxy before it reaches the hand. A hand held near the chest may see it bounce off, which reads as a miss.
+- Whether every placed barrel and crate is dynamic before it is disturbed. A prop the game keeps static or keyframed until it is hit reads as no loose object, and is offered only once it has been knocked loose.
+- Whether a swung barrel's explosion on impact needs a harder hit than a swing gives, and whether the game counts the player as its instigator.
 - Whether the hook's state is ever left parked off inactive with no wire, which would refuse the custom fire ("the hook is busy" in the `SNATCH` row).
 
 Settled by the phase 1 RE: the custom fire is accepted while dual tethers are attached (they are not the active wire), and the hook ignores the grapple input in its custom state; a ghost wire passes through walls, so the line of sight is the aim's own cast for a weapon on the ground and the snatch's cast for a gun in hands.

@@ -23,7 +23,7 @@ use crate::controllers::{
     },
     snatch::{
         OfferInput, Refusal, SNATCH, engine,
-        rules::{self, Candidate},
+        rules::{self, Candidate, PropHandling},
     },
     weapons::{
         grenade,
@@ -116,12 +116,16 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
             current.point
         }
         OfferKind::Prop {
-            object, body, weak, ..
+            object,
+            body,
+            handling,
+            weak,
+            ..
         } => {
             let Some(_alive) = weak.lock() else {
                 return false;
             };
-            if unsafe { remote::loose_prop(*object, *body) }.is_none() {
+            if unsafe { prop_handling(*object, *body, config) }.map(|(_, h)| h) != Some(*handling) {
                 return false;
             }
             let Ok((point, _)) = (unsafe { physical_hands::body_pose(*body, *object) }) else {
@@ -222,11 +226,13 @@ pub(super) enum OfferKind {
     Held(WorldTarget),
     /// A gun holstered on a character's body.
     Holstered(HolsteredTarget),
-    /// A loose object one hand can carry.
+    /// A loose object: one a hand can carry, or one heavier, up to the swing's ceiling, which the
+    /// line swings.
     Prop {
         object: NonZeroUsize,
         body: u32,
         mass_kg: f32,
+        handling: PropHandling,
         weak: Weak,
     },
     /// A grenade lying inert in the world, its pin in: the loadout's still, and taken into the
@@ -270,7 +276,14 @@ impl OfferKind {
             OfferKind::Ground { .. } => "WEAPON ON THE GROUND",
             OfferKind::Held(_) => "WEAPON IN HANDS",
             OfferKind::Holstered(_) => "HOLSTERED WEAPON",
-            OfferKind::Prop { .. } => "OBJECT",
+            OfferKind::Prop {
+                handling: PropHandling::Carry,
+                ..
+            } => "OBJECT",
+            OfferKind::Prop {
+                handling: PropHandling::Swing,
+                ..
+            } => "HEAVY OBJECT",
             OfferKind::Grenade { .. } | OfferKind::WorldGrenade { .. } => "GRENADE",
             OfferKind::Door { .. } => "CAR DOOR",
         }
@@ -452,7 +465,7 @@ fn near_aim(ray: &Ray, aabb: &Aabb) -> bool {
 }
 
 /// What the object under the aim is to the snatch: a weapon lying in the world, a loose object a
-/// hand can carry, or a vehicle's closed door near the aim's point.
+/// hand can carry or the line can swing, or a vehicle's closed door near the aim's point.
 ///
 /// # Safety
 ///
@@ -495,11 +508,12 @@ unsafe fn aimed_offer(
         });
     }
     let hands = &config.physical_hands;
-    if let Some(mass_kg) = unsafe { remote::loose_prop(aimed.object, aimed.body) } {
+    if let Some((mass_kg, handling)) = unsafe { prop_handling(aimed.object, aimed.body, config) } {
         return Some(OfferKind::Prop {
             object: aimed.object,
             body: aimed.body,
             mass_kg,
+            handling,
             weak: weak(),
         });
     }
@@ -523,6 +537,41 @@ unsafe fn aimed_offer(
         return Some(OfferKind::Door { door, handle, weak });
     }
     None
+}
+
+/// The mass of the loose object under the grapple's aim, whatever the snatch would do with it, for
+/// the readout.
+///
+/// # Safety
+///
+/// The game thread, before the world update.
+pub(super) unsafe fn aimed_mass() -> Option<f32> {
+    let (aimed, _alive) = grapple_weapons::aimed()?;
+    if aimed.weapon {
+        return None;
+    }
+    unsafe { remote::loose_mass(aimed.object, aimed.body) }
+}
+
+/// The mass of `object`'s body `body` and what the snatch does with it, when it is a loose object
+/// the snatch offers: one a hand can carry, or, while the swing is on, one up to its ceiling.
+///
+/// # Safety
+///
+/// The game thread, before the world update; the object must be held alive.
+unsafe fn prop_handling(
+    object: NonZeroUsize,
+    body: u32,
+    config: &ControllersConfig,
+) -> Option<(f32, PropHandling)> {
+    let snatch = &config.weapons.snatch;
+    let ceiling = if snatch.sling {
+        snatch.swing.ceiling_kg
+    } else {
+        0.0
+    };
+    let mass_kg = unsafe { remote::loose_mass(object, body) }?;
+    rules::prop_handling(mass_kg, remote::carry_max_kg(), ceiling).map(|h| (mass_kg, h))
 }
 
 /// A weak reference to the physics game object at `object`, from its own.

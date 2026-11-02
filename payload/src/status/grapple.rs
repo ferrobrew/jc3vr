@@ -76,15 +76,40 @@ fn snatch_line(enabled: bool, status: &SnatchStatus) -> Line {
     if !status.live {
         return Line::waiting(prose("No hand input"));
     }
-    let target = match (status.target, status.unoffered) {
-        (Some(target), _) => text!(
-            snatch_kind(target.kind),
-            ", ",
-            format!("{:.1}", target.distance_m),
-            " m"
+    let target = match (status.swing, status.target, status.unoffered) {
+        (Some(swing), _, _) => text!(
+            format!("{:.0}", swing.mass_kg),
+            " kg, held ",
+            format!("{:.1}", swing.length_m),
+            " m, ",
+            format!("{:.0}", swing.tension_n),
+            " of ",
+            format!("{:.0}", swing.max_tension_n),
+            " N",
+            if swing.braced {
+                prose(", braced")
+            } else {
+                Text::default()
+            }
         ),
-        (None, Some(why)) => snatch_reason(why),
-        (None, None) => prose("No target"),
+        (None, Some(target), _) => match target.mass_kg {
+            Some(mass) => text!(
+                snatch_kind(target.kind),
+                ", ",
+                format!("{mass:.0}"),
+                " kg, ",
+                format!("{:.1}", target.distance_m),
+                " m"
+            ),
+            None => text!(
+                snatch_kind(target.kind),
+                ", ",
+                format!("{:.1}", target.distance_m),
+                " m"
+            ),
+        },
+        (None, None, Some(why)) => snatch_reason(why),
+        (None, None, None) => prose("No target"),
     };
     let line = Line::ok(text!(
         snatch_phase(status.phase),
@@ -204,6 +229,7 @@ fn snatch_kind(kind: &str) -> Text {
         "WEAPON IN HANDS" => "weapon in hands",
         "HOLSTERED WEAPON" => "holstered weapon",
         "OBJECT" => "object",
+        "HEAVY OBJECT" => "heavy object",
         "CAR DOOR" => "car door",
         other => other,
     };
@@ -225,6 +251,8 @@ fn snatch_reason(reason: &str) -> Text {
 
 #[cfg(test)]
 mod tests {
+    use glam::Vec3;
+
     use super::*;
     use crate::grapple::physical::TargetReadout;
 
@@ -276,6 +304,7 @@ mod tests {
             target: Some(snatch::TargetReadout {
                 kind: "WEAPON ON THE GROUND",
                 distance_m: 9.96,
+                mass_kg: None,
             }),
             fired: 3,
             taken: 2,
@@ -290,6 +319,25 @@ mod tests {
         assert_eq!(
             line.note.as_deref(),
             Some("last: snatch: the weapon snagged")
+        );
+        let swinging = SnatchStatus {
+            live: true,
+            phase: "SWINGING",
+            swing: Some(snatch::SwingReadout {
+                length_m: 3.0,
+                tension_n: 1200.0,
+                max_tension_n: 5809.5,
+                mass_kg: 150.0,
+                braced: true,
+                tethered: true,
+                anchor: Vec3::ZERO,
+                centre: Vec3::NEG_Z * 3.0,
+            }),
+            ..SnatchStatus::default()
+        };
+        assert_eq!(
+            snatch_line(true, &swinging).text(),
+            "OK, SWINGING, 150 KG, HELD 3.0 M, 1200 OF 5810 N, BRACED, 0 TAKEN OF 0"
         );
         let busy = SnatchStatus {
             live: true,

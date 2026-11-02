@@ -19,15 +19,14 @@ use crate::controllers::{
     },
 };
 
-/// The mass of `object`'s body `body`, when it is a loose object one hand can lift and carry: not a
-/// character, a vehicle or its part, or a weapon, dynamic, within the pickup's heaviest, and no
-/// heavier than one hand's strongest pull holds up.
+/// The mass of `object`'s body `body`, when it is a loose object: not a character, a vehicle or its
+/// part, a weapon, or a grenade, and dynamic with a finite mass.
 ///
 /// # Safety
 ///
 /// The main thread, outside the physics step; `object` and `body` must be held alive or come from
 /// a cast this tick.
-pub(crate) unsafe fn loose_prop(object: NonZeroUsize, body: u32) -> Option<f32> {
+pub(crate) unsafe fn loose_mass(object: NonZeroUsize, body: u32) -> Option<f32> {
     if unsafe { engine::is_character(object) }
         || unsafe { door_engine::vehicle_of(object) }.is_some()
     {
@@ -36,8 +35,18 @@ pub(crate) unsafe fn loose_prop(object: NonZeroUsize, body: u32) -> Option<f32> 
     let TargetKind::Prop { mass_kg } = (unsafe { bodies::classify(object, body) }).ok()? else {
         return None;
     };
-    (grasp::can_hold(mass_kg, &PICKUP) && mass_kg * PICKUP.gravity_mps2 <= PICKUP.hand_force_n)
-        .then_some(mass_kg)
+    Some(mass_kg)
+}
+
+/// The heaviest loose object one hand lifts and carries, kilograms: within the pickup's heaviest,
+/// and no heavier than one hand's strongest pull holds up.
+pub(crate) fn carry_max_kg() -> f32 {
+    let lifted = PICKUP.hand_force_n / PICKUP.gravity_mps2;
+    if grasp::can_hold(lifted, &PICKUP) {
+        lifted
+    } else {
+        PICKUP.max_mass_kg
+    }
 }
 
 /// A weapon lying in the world, found by its box rather than by a cast.

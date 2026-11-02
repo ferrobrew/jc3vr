@@ -1,0 +1,22 @@
+# Record this sequence before running the scenario.
+name = "grapple heavy swing"
+description = "On foot with an empty grapple hand, aim at a red fuel barrel out of reach, grip it, and yank. Let the line reel it in, drag it by walking back, whirl the hand until it circles, and open the grip as it points at a wall: it flies on and explodes on impact. Repeat, and while it swings squeeze the other grip at the grapple hand's wrist, then pull the hands apart. Also aim at an object above the ceiling (a hay bale or a container) and confirm no marker, swing a barrel into Rico, and walk away from a snagged barrel until the line breaks."
+recording = "../recordings/grapple_heavy_swing.jc3trk"
+settle_s = 2.0
+
+[[expect]]
+name = "the heavy target swings on its held line"
+log = "snatch: swinging on the held line"
+
+[[expect]]
+name = "the other hand braces the line"
+log = "snatch: the other hand braced the line"
+
+[[expect]]
+name = "the grip release lets the target go"
+log = "snatch: cancelled"
+
+[[expect]]
+name = "the swinging phase appears in the status readout"
+status = "SNATCH"
+detail = "SWINGING"
