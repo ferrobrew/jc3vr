@@ -1,0 +1,20 @@
+[package]
+name = "body-rig"
+version = "0.1.0"
+edition = "2024"
+description = "The grounded body rig's pure core: the pelvis solver, the body's yaw follow, and the step commit, shared by the payload and the offline evaluator."
+publish = false
+
+# Pure and portable, like `tracking-format`, so that the offline evaluator in `tools/tracking-synth`
+# runs the same solver over recordings on Linux that the payload runs in the game.
+
+[dependencies]
+glam = { workspace = true }
+serde = { version = "1", features = ["derive"], optional = true }
+
+[features]
+serde = ["dep:serde"]
+
+[dev-dependencies]
+proptest = "1.11.0"
+test-case = "3.3.1"

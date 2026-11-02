@@ -160,6 +160,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "body-rig"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "proptest",
+ "serde",
+ "test-case",
+]
+
+[[package]]
 name = "borsh"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
