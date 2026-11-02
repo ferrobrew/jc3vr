@@ -1,5 +1,5 @@
 //! The Previews and performance feature's readout: the engine clock's frame-rate readouts and
-//! pacing controls, and the profiler, kept small so the feature can be dragged out into its own
+//! pacing controls, the online hitch switch, and the profiler, kept small so the feature can be dragged out into its own
 //! window and watched while tuning render features.
 
 use std::{collections::VecDeque, time::Instant};
@@ -7,6 +7,7 @@ use std::{collections::VecDeque, time::Instant};
 use parking_lot::Mutex;
 
 use crate::{
+    config,
     frame_timing::{self, Kind, ThreadClass, TickLoad, ns_to_ms},
     ui::util::patchbox,
 };
@@ -38,6 +39,7 @@ pub fn egui_debug_performance(ui: &mut egui::Ui) {
     }
 
     frame_breakdown(ui);
+    online_controls(ui);
     far_field_summary(ui);
 
     // The profiler (issue #34): a collapsible with the live flame graph and trace capture, below
@@ -123,6 +125,22 @@ fn frame_breakdown(ui: &mut egui::Ui) {
                     }
                 });
         });
+}
+
+/// The switch for the online-suite manager's per-tick Steam check, beside the breakdown whose
+/// `sim_online` and `sim_logged_on` slots show its cost.
+fn online_controls(ui: &mut egui::Ui) {
+    ui.separator();
+    ui.checkbox(
+        &mut config::edit().online.skip_logged_on_check,
+        "Skip the offline suite retry's Steam check",
+    )
+    .on_hover_text(
+        "While logged in offline, the online-suite manager asks Steam on every tick whether \
+         it is logged on, to decide whether to retry the online suite. On, that check answers \
+         no without calling Steam: the periodic sim-tick stalls it is suspected of go away, and \
+         an offline session stays offline until the game is restarted. Off restores the call.",
+    );
 }
 
 /// The far-field split totals (issue #32), mirrored here so they can be watched alongside the

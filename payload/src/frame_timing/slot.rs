@@ -45,6 +45,11 @@ pub(crate) enum Slot {
     SimOperations,
     /// The login state machine (`LoginManager::Update`), in the tick's head.
     SimLogin,
+    /// The online-suite manager's first-party check in its suite retry
+    /// (`AccountManagerSteam::IsConnectedToFirstPartyService`, which asks the Steam client whether
+    /// it is logged on), nested in [`Self::SimOnline`]. Its calls count the ticks that reach the
+    /// check, whether or not the call is skipped (`crate::hooks::online`).
+    SimLoggedOn,
     /// The online suite's player accounts (`osuite::PlayerAccountManager::Update`), excluding the
     /// service-account parts timed on their own: the manager's mutex and the Steam account's
     /// connection check.
@@ -196,6 +201,7 @@ impl Slot {
         Slot::SimSteam,
         Slot::SimOperations,
         Slot::SimLogin,
+        Slot::SimLoggedOn,
         Slot::OsuiteAccounts,
         Slot::OsuiteAuth,
         Slot::OsuiteTicket,
@@ -237,7 +243,7 @@ impl Slot {
     ];
 
     /// The number of slots.
-    pub(crate) const COUNT: usize = 52;
+    pub(crate) const COUNT: usize = 53;
 
     /// The slot's position in [`Self::ALL`] and in the counter arrays.
     pub(crate) const fn index(self) -> usize {
@@ -261,6 +267,7 @@ impl Slot {
             Slot::SimSteam => "sim_steam",
             Slot::SimOperations => "sim_ops",
             Slot::SimLogin => "sim_login",
+            Slot::SimLoggedOn => "sim_logged_on",
             Slot::OsuiteAccounts => "osuite_accounts",
             Slot::OsuiteAuth => "osuite_auth",
             Slot::OsuiteTicket => "osuite_ticket",
@@ -336,6 +343,7 @@ impl Slot {
             | Slot::SimSteam
             | Slot::SimOperations
             | Slot::SimLogin
+            | Slot::SimLoggedOn
             | Slot::OsuiteAccounts
             | Slot::OsuiteAuth
             | Slot::OsuiteTicket

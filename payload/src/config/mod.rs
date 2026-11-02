@@ -34,6 +34,7 @@
 //! [`CameraConfig`](crate::hooks::camera::CameraConfig) in `hooks::camera::config`,
 //! [`BodyIkConfig`](crate::hooks::character::BodyIkConfig) in `hooks::character::config`,
 //! [`MovementConfig`](crate::hooks::input::MovementConfig) in `hooks::input::config`,
+//! [`OnlineConfig`](crate::hooks::online::OnlineConfig) in `hooks::online`,
 //! [`FsrConfig`](crate::fsr::FsrConfig) in `fsr::config`,
 //! [`HudConfig`](crate::hud::HudConfig) in `hud::config`,
 //! [`HeadPoseConfig`](crate::headpose::HeadPoseConfig) in `headpose::config`,
@@ -69,6 +70,7 @@ use crate::{
         character::BodyIkConfig,
         graphics_engine::config::{ExposureConfig, PostFxConfig},
         input::MovementConfig,
+        online::OnlineConfig,
     },
     hud::HudConfig,
     recorder::RecorderConfig,
@@ -159,6 +161,8 @@ pub struct Config {
     pub controllers: ControllersConfig,
     #[serde(default)]
     pub testing: TestingConfig,
+    #[serde(default)]
+    pub online: OnlineConfig,
     /// The player's body dimensions; see [`crate::controllers::body`].
     pub body: BodyDimensions,
 }
@@ -181,6 +185,7 @@ impl Config {
             recorder: RecorderConfig::new(),
             controllers: ControllersConfig::new(),
             testing: TestingConfig::new(),
+            online: OnlineConfig::new(),
             body: BodyDimensions::GENERIC_ADULT,
         }
     }

@@ -11,15 +11,33 @@
 //! account, and consumables, the language refresh, and the worker's callbacks, so a stall in the
 //! suite names the part.
 //!
-//! Threading: every hooked function runs on the game thread, inside the sim tick.
+//! One hook changes what the game does. While a session is logged in offline, the online-suite
+//! manager asks the account manager on every tick whether Steam is logged on
+//! ([`AccountManager::IsConnectedToFirstPartyService`]), to decide whether to retry the online suite.
+//! The Steam account answers through `ISteamUser::BLoggedOn`, a call into the Steam client, which
+//! under Proton crosses into the native client; it is the only untimed per-tick work in the
+//! manager, where the periodic stalls of hundreds of milliseconds sit
+//! (`docs/issues/periodic-sim-tick-hitches.md`). With
+//! [`OnlineConfig::skip_logged_on_check`] on, that one call site answers false without calling
+//! Steam, so the retry never starts; the account manager's other callers (the title screen's login
+//! choice, the achievements, the pause menu, the reconnect from the menus) still reach Steam. The
+//! call site is told apart by the thread being inside [`OnlineSuiteManager::Update`] and outside the
+//! online suite's own update, whose parts are all hooked here.
+//!
+//! Threading: every hooked function runs on the game thread, inside the sim tick, except the
+//! account manager's check, which only acts inside the online-suite manager's update.
 //!
 //! [`OnlineSuite::Update`]: jc3gi::osuite::OnlineSuite::Update
+//! [`AccountManager::IsConnectedToFirstPartyService`]: jc3gi::online::AccountManager
+//! [`OnlineSuiteManager::Update`]: jc3gi::online::OnlineSuiteManager::Update
+
+use std::cell::Cell;
 
 use detours_macro::detour;
 use jc3gi::{
     online::{
-        AsynchronousBragManager, LoginManager, OnlinePlatformSystemSteam, OnlineSuiteManager,
-        OperationManager, StatisticManager,
+        AccountManagerSteam, AsynchronousBragManager, LoginManager, OnlinePlatformSystemSteam,
+        OnlineSuiteManager, OperationManager, StatisticManager,
     },
     osuite::{
         AuthenticationBase, InternalSemAccount, OnlineSuiteConsumables, OsInfo,
@@ -28,8 +46,35 @@ use jc3gi::{
     profile_manager::ProfileManager,
 };
 use re_utilities::hook_library::HookLibrary;
+use serde::{Deserialize, Serialize};
 
-use crate::frame_timing::{self, Slot};
+use crate::{
+    config::Config,
+    frame_timing::{self, Slot},
+};
+
+/// The online hooks' settings.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct OnlineConfig {
+    /// Whether the online-suite manager's per-tick first-party check answers false without calling
+    /// Steam. Off restores the call. On, an offline session never retries the online suite, so it
+    /// stays offline until the game is restarted.
+    pub skip_logged_on_check: bool,
+}
+
+impl OnlineConfig {
+    pub const fn new() -> Self {
+        Self {
+            skip_logged_on_check: true,
+        }
+    }
+}
+
+impl Default for OnlineConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -49,6 +94,35 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&CONSUMABLES_UPDATE_BINDER)
         .with_static_binder(&OS_INFO_UPDATE_BINDER)
         .with_static_binder(&WORKER_CALL_CALLBACKS_BINDER)
+        .with_static_binder(&FIRST_PARTY_CHECK_BINDER)
+}
+
+thread_local! {
+    /// Whether this thread is inside the online-suite manager's update and outside the online
+    /// suite's own update: the stretch that holds the manager's queued login and its suite retry,
+    /// whose first-party check is the only call to [`first_party_check`] there. The suite's parts
+    /// clear it, because its reply handlers can reach the account manager for other reasons.
+    static IN_SUITE_RETRY: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Sets [`IN_SUITE_RETRY`] for its lifetime and restores the previous value on drop, so a nested
+/// suspension inside the manager's update and a panic unwinding out of it both leave it right.
+struct SuiteRetryScope {
+    previous: bool,
+}
+
+impl SuiteRetryScope {
+    fn set(value: bool) -> Self {
+        Self {
+            previous: IN_SUITE_RETRY.with(|cell| cell.replace(value)),
+        }
+    }
+}
+
+impl Drop for SuiteRetryScope {
+    fn drop(&mut self) {
+        IN_SUITE_RETRY.with(|cell| cell.set(self.previous));
+    }
 }
 
 #[detour(address = jc3gi::online::StatisticManager::Update_ADDRESS)]
@@ -72,6 +146,7 @@ fn profile_manager_update(this: *mut ProfileManager, dt: f32) {
 #[detour(address = jc3gi::online::OnlineSuiteManager::Update_ADDRESS)]
 fn online_suite_update(this: *mut OnlineSuiteManager, dt: f32) {
     let _timing = frame_timing::scope(Slot::SimOnline);
+    let _retry = SuiteRetryScope::set(true);
     ONLINE_SUITE_UPDATE.get().unwrap().call(this, dt);
 }
 
@@ -96,6 +171,7 @@ fn login_manager_update(this: *mut LoginManager, dt: f32) {
 #[detour(address = jc3gi::osuite::PlayerAccountManager::Update_ADDRESS)]
 fn player_accounts_update(this: *mut PlayerAccountManager) {
     let _timing = frame_timing::scope(Slot::OsuiteAccounts);
+    let _retry = SuiteRetryScope::set(false);
     PLAYER_ACCOUNTS_UPDATE.get().unwrap().call(this);
 }
 
@@ -138,11 +214,59 @@ fn consumables_update(this: *mut OnlineSuiteConsumables) {
 #[detour(address = jc3gi::osuite::OsInfo::Update_ADDRESS)]
 fn os_info_update(this: *mut OsInfo) {
     let _timing = frame_timing::scope(Slot::OsuiteInfo);
+    let _retry = SuiteRetryScope::set(false);
     OS_INFO_UPDATE.get().unwrap().call(this);
 }
 
 #[detour(address = jc3gi::osuite::Worker::CallCallbacks_ADDRESS)]
 fn worker_call_callbacks(this: *mut Worker) {
     let _timing = frame_timing::scope(Slot::OsuiteCallbacks);
+    let _retry = SuiteRetryScope::set(false);
     WORKER_CALL_CALLBACKS.get().unwrap().call(this);
+}
+
+#[detour(address = jc3gi::online::AccountManagerSteam::IsConnectedToFirstPartyService_ADDRESS)]
+fn first_party_check(this: *mut AccountManagerSteam) -> bool {
+    if !IN_SUITE_RETRY.with(Cell::get) {
+        return FIRST_PARTY_CHECK.get().unwrap().call(this);
+    }
+    let _timing = frame_timing::scope(Slot::SimLoggedOn);
+    if Config::lock_query(|c| c.online.skip_logged_on_check) {
+        return false;
+    }
+    FIRST_PARTY_CHECK.get().unwrap().call(this)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn in_suite_retry() -> bool {
+        IN_SUITE_RETRY.with(Cell::get)
+    }
+
+    #[test]
+    fn the_suite_parts_suspend_the_retry_and_restore_it() {
+        assert!(!in_suite_retry());
+        {
+            let _manager = SuiteRetryScope::set(true);
+            assert!(in_suite_retry());
+            {
+                let _suite_part = SuiteRetryScope::set(false);
+                assert!(!in_suite_retry());
+            }
+            assert!(in_suite_retry());
+        }
+        assert!(!in_suite_retry());
+    }
+
+    #[test]
+    fn an_unwind_out_of_the_manager_clears_the_retry() {
+        let unwound = std::panic::catch_unwind(|| {
+            let _manager = SuiteRetryScope::set(true);
+            panic!("the manager's update unwinds");
+        });
+        assert!(unwound.is_err());
+        assert!(!in_suite_retry());
+    }
 }
