@@ -62,6 +62,14 @@ pub struct StrokeStatus {
     pub strokes: [u64; 2],
 }
 
+impl StrokeStatus {
+    /// Whether the strokes ran in the water recently enough that their motion still counts.
+    pub fn fresh(&self, now: Instant) -> bool {
+        self.at
+            .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER)
+    }
+}
+
 /// The last tick's status.
 pub fn status() -> StrokeStatus {
     STATE.lock().status
@@ -85,7 +93,7 @@ pub(crate) fn tick(
     };
     // A pause in the ticks (a menu, a hitch, the panel) forgets the hands' motion, so the first
     // tick back does not read the whole gap as one fast stroke.
-    if state.status.at.is_none_or(|at| at.elapsed() > STALE_AFTER) {
+    if !state.status.fresh(Instant::now()) {
         state.model = StrokeModel::new();
     }
     let underwater = mode::last_snapshot()

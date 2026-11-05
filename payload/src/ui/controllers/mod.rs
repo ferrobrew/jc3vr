@@ -244,7 +244,10 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
             physical_hands::characters_doors_readout(ui, &controller_physical_hands::status());
         },
         FeatureId::Climbing => |ui, _| {
-            headlines(ui, &[&hands_status::MOVING_CLIMBS, &hands_status::STUNT_POSITIONS]);
+            headlines(
+                ui,
+                &[&hands_status::MOVING_CLIMBS, &hands_status::STUNT_POSITIONS],
+            );
             climb::climb_readout(ui, &controller_physical_hands::climb::status());
             stunt::stunt_readout(ui, &controller_physical_hands::stunt::status());
         },
@@ -272,9 +275,8 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
         },
         FeatureId::OnFoot => |ui, _| {
             let stick = controller_locomotion::status();
-            let acts = controller_locomotion::acts::status();
             let anchor = controller_locomotion::anchor::status();
-            locomotion::locomotion_readout(ui, &stick, &acts, &anchor);
+            locomotion::locomotion_readout(ui, &stick, &anchor);
             ui.separator();
             locomotion::strokes_readout(ui, &controller_locomotion::strokes::status());
         },
