@@ -82,8 +82,13 @@ const TAKE_OFF_STATES: [&str; 2] = [
 fn is_take_off_state(state: u32) -> bool {
     static HASHES: OnceLock<[u32; 2]> = OnceLock::new();
     HASHES
-        .get_or_init(|| TAKE_OFF_STATES.map(|name| hashlittle(name.as_bytes()) as u32))
+        .get_or_init(|| take_off_hashes(|name| hashlittle(name.as_bytes()) as u32))
         .contains(&state)
+}
+
+/// The take-off's state ids, by `hash` of their names (the game's hash in play).
+fn take_off_hashes(hash: impl Fn(&str) -> u32) -> [u32; 2] {
+    TAKE_OFF_STATES.map(hash)
 }
 
 #[cfg(test)]
@@ -100,11 +105,18 @@ mod tests {
         assert_eq!(tracker.step(false), Some(Edge::Left));
     }
 
+    /// A stand-in for the game's name hash, which lives in the game's code.
+    fn hash(name: &str) -> u32 {
+        name.bytes().fold(0x811C_9DC5, |h, b| {
+            (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
+        })
+    }
+
     #[test]
     fn both_take_off_states_count_and_others_do_not() {
-        for name in TAKE_OFF_STATES {
-            assert!(is_take_off_state(hashlittle(name.as_bytes()) as u32));
-        }
-        assert!(!is_take_off_state(hashlittle(b"S_IDLE") as u32));
+        let hashes = take_off_hashes(hash);
+        assert!(hashes.contains(&hash("S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND_INTO")));
+        assert!(hashes.contains(&hash("S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND")));
+        assert!(!hashes.contains(&hash("S_IDLE")));
     }
 }
