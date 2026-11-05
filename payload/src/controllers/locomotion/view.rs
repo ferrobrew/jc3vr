@@ -286,6 +286,32 @@ pub fn stable_anchors(
     }
 }
 
+/// `animated` with its eyes carried `clearance` metres out in front of the face, along the face's
+/// forward: the direction from the neck to the eyes with the skull's own axis, neck to head, taken
+/// out, from the animated head, neck, and eyes in model space `model`. A clip that pitches or
+/// reclines the head carries the clearance with the face, so the eyes stay ahead of it rather than
+/// at the eye bones, where the chest and the shoulders of a pose that folds or leans back sit just
+/// beyond the near plane. The anchors are returned unchanged when the face has no forward.
+pub fn face_clear(animated: &Anchors, model: &Neutral, clearance: f32) -> Anchors {
+    let forward = face_forward(model);
+    let offset = forward.map_or(Vec3::ZERO, |f| f * clearance);
+    if !offset.is_finite() {
+        return *animated;
+    }
+    Anchors {
+        eye_arm: animated.eye_arm + offset,
+        ..*animated
+    }
+}
+
+/// The face's forward in model space: the neck-to-eyes direction with its part along the skull's
+/// axis (neck to head) removed.
+fn face_forward(model: &Neutral) -> Option<Vec3> {
+    let up = (model.head - model.neck).try_normalize()?;
+    let arm = model.eyes - model.neck;
+    (arm - up * arm.dot(up)).try_normalize()
+}
+
 /// `animated` mixed toward `stable` by `weight`.
 pub fn blend(animated: &Anchors, stable: &Anchors, weight: f32) -> Anchors {
     let w = weight.clamp(0.0, 1.0);
@@ -608,6 +634,39 @@ mod tests {
         let lowered = stable_anchors(&neutral(), t0, t1, smoothed);
         assert!((anchors.head.y - lowered.head.y - 0.05).abs() < 1e-5);
         assert!((anchors.head_prev.y - lowered.head_prev.y - 0.1).abs() < 1e-5);
+    }
+
+    #[test]
+    fn the_face_clearance_follows_the_face() {
+        let animated = Anchors {
+            head: Vec3::ZERO,
+            head_prev: Vec3::ZERO,
+            neck: Vec3::ZERO,
+            eye_arm: Vec3::new(0.0, 0.1, -0.1),
+        };
+        // An upright head facing -Z: the clearance is straight ahead.
+        let upright = Neutral {
+            head: Vec3::new(0.0, 1.7, 0.0),
+            neck: Vec3::new(0.0, 1.55, 0.0),
+            eyes: Vec3::new(0.0, 1.65, -0.1),
+        };
+        let cleared = face_clear(&animated, &upright, 0.05);
+        assert!((cleared.eye_arm - Vec3::new(0.0, 0.1, -0.15)).length() < 1e-5);
+        // A head tipped back to face up: the clearance goes up, away from the chest.
+        let reclined = Neutral {
+            head: Vec3::new(0.0, 1.55, 0.15),
+            neck: Vec3::new(0.0, 1.55, 0.0),
+            eyes: Vec3::new(0.0, 1.65, 0.1),
+        };
+        let up = face_clear(&animated, &reclined, 0.05);
+        assert!((up.eye_arm - animated.eye_arm - Vec3::new(0.0, 0.05, 0.0)).length() < 1e-5);
+        // A head with no face leaves the anchors alone.
+        let flat = Neutral {
+            head: Vec3::ZERO,
+            neck: Vec3::ZERO,
+            eyes: Vec3::ZERO,
+        };
+        assert_eq!(face_clear(&animated, &flat, 0.05).eye_arm, animated.eye_arm);
     }
 
     #[test]

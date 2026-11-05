@@ -17,6 +17,7 @@
 //! | seated and riding in a vehicle | procedural on the seat's hips |
 //! | standing in a vehicle's stunt area (a roof, a deck) | procedural on the stunt idle's hips |
 //! | in or on a vehicle otherwise (entering, leaving, a mounted gun, a helicopter's hang, a stunt traversal) | animation |
+//! | attached to a wall at the end of a grapple, a hang | procedural on the attach's hips |
 //! | grapple traversal, hanging, stunt traversal, grapple struggle | animation |
 //! | the grapple's ledge climb | animation |
 //! | swimming | procedural on the swim's hips |
@@ -52,6 +53,8 @@ pub enum Case {
     /// Standing in a vehicle's stunt area: a car's roof, a boat's deck, a plane's wing.
     StuntStanding,
     Vehicle,
+    /// Attached to a wall at the end of a grapple's reel: a hang the clip holds still.
+    GrappleAttach,
     Traversal,
     LedgeClimb,
     Swimming,
@@ -81,6 +84,7 @@ impl Case {
             Self::Seated => "seated in a vehicle",
             Self::StuntStanding => "standing on a vehicle",
             Self::Vehicle => "vehicle",
+            Self::GrappleAttach => "grapple wall attach",
             Self::Traversal => "grapple or stunt traversal",
             Self::LedgeClimb => "grapple ledge climb",
             Self::Swimming => "swimming",
@@ -105,9 +109,33 @@ impl Case {
             | Self::Parachute
             | Self::Seated
             | Self::StuntStanding
+            | Self::GrappleAttach
             | Self::Swimming => 1.0,
             _ => 0.0,
         }
+    }
+
+    /// Whether a clip, a script, or physics poses Rico's whole body while he is out of a vehicle,
+    /// and can carry his head anywhere against the root: a traversal or a hang, a ledge climb, the
+    /// wingsuit, the parachute, a fall, a ragdoll and the get-up after it, a hit reaction, an
+    /// authored motion such as a hard landing, or a takeoff the mode detection has not classified
+    /// yet. The camera keeps its eyes out in front of the animated face in these.
+    pub const fn game_poses_body(self) -> bool {
+        matches!(
+            self,
+            Self::Dead
+                | Self::Ragdoll
+                | Self::GettingUp
+                | Self::GrappleAttach
+                | Self::Traversal
+                | Self::LedgeClimb
+                | Self::Wingsuit
+                | Self::Parachute
+                | Self::Flight
+                | Self::HitReaction
+                | Self::AuthoredMotion
+                | Self::NoMovementTask
+        )
     }
 
     /// Whether the animation takes over at once, with no blend: a ragdoll writes the pose
@@ -142,6 +170,8 @@ pub struct CharacterState {
     /// Standing in a vehicle's stunt area, not traversing it: a narrower [`vehicle`](Self::vehicle).
     pub stunt_standing: bool,
     pub traversal: bool,
+    /// Attached to a wall at the end of a grapple's reel.
+    pub grapple_attach: bool,
     /// Climbing over a ledge at the end of a grapple.
     pub ledge_climb: bool,
     pub swimming: bool,
@@ -183,6 +213,8 @@ pub fn classify(state: &CharacterState) -> Case {
         Case::StuntStanding
     } else if state.vehicle {
         Case::Vehicle
+    } else if state.grapple_attach {
+        Case::GrappleAttach
     } else if state.traversal {
         Case::Traversal
     } else if state.ledge_climb {
@@ -446,6 +478,21 @@ mod tests {
             Case::HitReaction
         );
         assert_eq!(Case::HandClimb.target(), 1.0);
+    }
+
+    #[test]
+    fn the_grapple_wall_attach_is_a_hang_with_the_torso() {
+        let attached = CharacterState {
+            grapple_attach: true,
+            traversal: true,
+            flight: true,
+            ..on_foot()
+        };
+        assert_eq!(classify(&attached), Case::GrappleAttach);
+        assert_eq!(Case::GrappleAttach.target(), 1.0);
+        assert!(Case::GrappleAttach.game_poses_body());
+        assert!(!Case::OnFoot.game_poses_body());
+        assert!(!Case::Seated.game_poses_body());
     }
 
     #[test]

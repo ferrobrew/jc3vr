@@ -13,12 +13,15 @@ use parking_lot::Mutex;
 use crate::{
     config::Config,
     controllers::{
-        body::procedural::{authority::classify, state::StateTracker},
+        body::procedural::{
+            authority::{Case, classify},
+            state::StateTracker,
+        },
         locomotion::{
             status as locomotion_status,
             view::{
                 Eligibility, Handover, HeightFilter, MOVEMENT_TASK_GRACE_S, Neutral,
-                NeutralCapture, blend, stable_anchors,
+                NeutralCapture, blend, face_clear, stable_anchors,
             },
         },
         mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
@@ -156,6 +159,10 @@ pub(crate) unsafe fn stabilize(
         .step(world_t1.w_axis.y, dt, eligible && supported);
     let measured = state.neutral.is_some();
     let weight = state.handover.step(eligible && measured, dt, BLEND_S);
+    // Where a clip carries the head, the eyes are held out in front of its face.
+    let posed = case.is_some_and(Case::game_poses_body);
+    let clear = state.face_clear.step(posed, dt, BLEND_S);
+    let animated = face_clear(&animated, &model, FACE_CLEARANCE_M * clear);
     state.status = AnchorStatus {
         weight,
         eligible,
@@ -183,6 +190,11 @@ pub(crate) unsafe fn stabilize(
     )
 }
 
+/// How far in front of the animated face the eyes are held while a clip poses the body, metres: a
+/// few centimetres past the skull's front, so a chest or a shoulder the pose folds toward the face
+/// stays beyond the near plane.
+const FACE_CLEARANCE_M: f32 = 0.06;
+
 /// How long Rico must have stood still for his neutral head to be measured, seconds.
 const CAPTURE_S: f32 = 1.5;
 
@@ -198,6 +210,8 @@ struct State {
     capture: NeutralCapture,
     height: HeightFilter,
     handover: Handover,
+    /// The weight of the face clearance, in while a clip poses the body.
+    face_clear: Handover,
     /// The hand-over table's history for the anchor's own reads, apart from the procedural body's.
     tracker: StateTracker,
     grounded_at: Option<Instant>,
@@ -211,6 +225,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     capture: NeutralCapture::new(),
     height: HeightFilter::new(),
     handover: Handover::new(),
+    face_clear: Handover::new(),
     tracker: StateTracker::new(),
     grounded_at: None,
     stable: false,

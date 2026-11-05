@@ -7,9 +7,9 @@
 //! engine itself reads from the pose-finalization pass (`Character::IsInStuntPosition` and
 //! `Character::IsGrappleHanging` among them).
 
-use std::time::Instant;
+use std::{sync::OnceLock, time::Instant};
 
-use jc3gi::{character::character::Character, state::StateBitFlag};
+use jc3gi::{character::character::Character, hash::hashlittle, state::StateBitFlag};
 
 use crate::{
     config::Config,
@@ -25,7 +25,7 @@ use crate::{
         physical_hands::climb,
     },
     headpose::{Source, source},
-    hooks::in_gameplay,
+    hooks::{animation::active_state_type_id, in_gameplay},
 };
 
 /// Whether the game's animation moves the body this tick, rather than the movement task's
@@ -127,6 +127,7 @@ impl StateTracker {
                 || stunt_traversing
                 || unsafe { character.IsGrappleHanging() }
                 || has(StateBitFlag::SB_IN_GRAPPLE_STRUGGLE),
+            grapple_attach: unsafe { grapple_attached(character) },
             ledge_climb: in_ledge_climb(now),
             hit_reaction: in_hit_reaction(now, config.hit_reaction_hold_s),
             hand_climb: climb::climbing(),
@@ -146,6 +147,22 @@ impl StateTracker {
         }
     }
 }
+
+/// Whether the body rule system is in the grapple's wall attach: Rico hangs against the wall the
+/// reel brought him to, in a reclining pose the clip holds still, which none of the grapple's own
+/// predicates report.
+///
+/// # Safety
+///
+/// `character` must be live, on the thread running its update.
+unsafe fn grapple_attached(character: &Character) -> bool {
+    static ATTACH: OnceLock<u32> = OnceLock::new();
+    let attach = *ATTACH.get_or_init(|| hashlittle(GRAPPLE_ATTACH_STATE.as_bytes()) as u32);
+    (unsafe { active_state_type_id(character) }) == Some(attach)
+}
+
+/// The body rule state of the grapple's wall attach, from the shipped animation graph.
+const GRAPPLE_ATTACH_STATE: &str = "S_GRAPPLE_ATTACH_0";
 
 /// How long the proxy must be off its support, with no jump and no fall detected, before the
 /// body counts as in the air, seconds: a stair or a bump lifts it for a tick without a fall.

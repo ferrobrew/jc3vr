@@ -450,6 +450,7 @@ fn hand_over_line(case: Case) -> Line {
         Case::Seated => "Seated",
         Case::StuntStanding => "On a roof",
         Case::Vehicle => "Vehicle",
+        Case::GrappleAttach => "Wall attach",
         Case::Traversal => "Traversal",
         Case::LedgeClimb => "Ledge climb",
         Case::Swimming => "Swimming",
