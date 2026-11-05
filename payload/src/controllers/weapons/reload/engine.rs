@@ -39,7 +39,7 @@ use crate::{
         weapons::{
             dual_wield::single,
             empty,
-            engine::{FULL_WEIGHT, credit_reserve, limited_ammo, reserve},
+            engine::{FULL_WEIGHT, credit_reserve, gun_at, gun_ptr, limited_ammo, reserve},
             inventory::{carry, engine as inventory_engine},
             reload::{
                 ammo::{self, Ammo, NativeAmmo},
@@ -300,7 +300,7 @@ unsafe fn detach_inputs(
     };
     let part = unsafe { magazine_part(weapon) }
         .map_or(WeaponData::NO_MAGAZINE_MODEL_NAME_HASH, |p| p.m_NameHash);
-    let gun = unsafe { gun_mut(weapon, index) }? as *mut WeaponData;
+    let gun = unsafe { gun_ptr(weapon.as_ref()?, index) }?.as_ptr();
     let spare = unsafe { (*gun).m_MagazineObject.px as usize };
     Some((character, part, rounds, gun, spare))
 }
@@ -365,7 +365,7 @@ pub unsafe fn load_rounds(address: usize, rounds: i32) {
 pub unsafe fn magazine_tag(address: usize, index: usize) -> Option<i32> {
     let mut source = unsafe { owned_handle(address) }?;
     let weapon = unsafe { source.as_mut() };
-    let gun = unsafe { gun_mut(weapon, index) }?;
+    let gun = unsafe { gun_at(weapon, index) }?;
     Some(gun.m_MagazineUniqueTag)
 }
 
@@ -554,8 +554,8 @@ pub unsafe fn cycled(address: usize, kind: ActionKind, clip: bool) {
     let act = act as u32;
     let count = unsafe { gun::guns(weapon) }.count();
     for index in 0..count {
-        if let Some(gun) = unsafe { gun_mut(weapon, index) } {
-            unsafe { gun.DoAct(&act) };
+        if let Some(mut gun) = unsafe { gun_ptr(weapon, index) } {
+            unsafe { gun.as_mut().DoAct(&act) };
         }
     }
 }
@@ -567,7 +567,7 @@ pub unsafe fn cycled(address: usize, kind: ActionKind, clip: bool) {
 /// The weapon must be owned and live on the input thread, outside the world update.
 pub unsafe fn gun_address(address: usize, index: usize) -> Option<usize> {
     let source = unsafe { owned_handle(address) }?;
-    unsafe { gun_mut(source.as_ptr(), index) }.map(|gun| gun as *mut WeaponData as usize)
+    unsafe { gun_ptr(source.as_ref(), index) }.map(|gun| gun.as_ptr() as usize)
 }
 
 /// The local player's reload start, refused while the weapon is reloaded by hand (see [`gate`]).
@@ -632,19 +632,6 @@ fn do_act_fire_start(component: *mut DoActWeaponComponent, weapon_data: *mut Wea
 /// The weapon's user, mutably: the character is its own object, not part of the weapon.
 unsafe fn user_mut<'a>(weapon: *const WeaponBase) -> Option<&'a mut Character> {
     unsafe { (weapon.as_ref()?.m_User[0] as *mut Character).as_mut() }
-}
-
-/// Gun `index` of `weapon`, mutably: each gun is its own object, not part of the weapon.
-unsafe fn gun_mut<'a>(weapon: *const WeaponBase, index: usize) -> Option<&'a mut WeaponData> {
-    let guns = unsafe { &weapon.as_ref()?.m_lWeaponData };
-    if guns.m_Begin.is_null() {
-        return None;
-    }
-    let count = (guns.m_End as usize - guns.m_Begin as usize) / size_of::<*mut WeaponData>();
-    if index >= count {
-        return None;
-    }
-    unsafe { (*guns.m_Begin.add(index)).as_mut() }
 }
 
 /// The weapon's round part: the model part the game's reload hides and shows, by name, or a

@@ -94,7 +94,10 @@ use crate::controllers::{
     frame::Hand,
     hands::{grip, late},
     loadout::{ObjectAddress, TakeSource, live},
-    weapons::{engine::slot_of, inventory},
+    weapons::{
+        engine::{gun_at_mut, gun_count, slot_of},
+        inventory,
+    },
 };
 
 pub(crate) fn hook_library() -> HookLibrary {
@@ -349,16 +352,10 @@ pub(crate) unsafe fn apply(weapon: &mut WeaponBase, snap: bool) {
     };
     let state = weapon.m_State as usize;
     let mut hands = [None; gun::MAX_GUNS];
-    let list = &weapon.m_lWeaponData;
-    let count = if list.m_Begin.is_null() || list.m_End < list.m_Begin {
-        0
-    } else {
-        unsafe { list.m_End.offset_from(list.m_Begin) as usize }
-    };
+    let count = unsafe { gun_count(weapon) };
     let mut wrote = false;
     for (index, hand) in hands.iter_mut().enumerate().take(count) {
-        // SAFETY: the entry is inside the weapon's live gun list.
-        let Some(data) = (unsafe { (*list.m_Begin.add(index)).as_mut() }) else {
+        let Some(data) = (unsafe { gun_at_mut(weapon, index) }) else {
             continue;
         };
         for wielding in [WeaponState::E_WS_WIELDING, WeaponState::E_WS_DUAL_WIELDING] {

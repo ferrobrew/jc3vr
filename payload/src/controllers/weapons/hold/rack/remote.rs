@@ -30,7 +30,6 @@ use jc3gi::{
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    aim::gun,
     frame::Hand,
     loadout::TakeSource,
     weapons::{
@@ -222,7 +221,7 @@ pub(crate) unsafe fn waiting(weapon: &WeaponBase) -> bool {
 /// `weapon` must be live.
 unsafe fn shown_guns(weapon: &WeaponBase) -> u8 {
     let pair = unsafe { slot_of(weapon) } == Some(WeaponSlot::E_SLOT_DUAL_WIELD)
-        && paired::two_guns(weapon)
+        && unsafe { paired::whole_pair(weapon) }
         && !single::is(weapon as *const WeaponBase as usize);
     if pair { 2 } else { 1 }
 }
@@ -234,7 +233,7 @@ unsafe fn shown_guns(weapon: &WeaponBase) -> u8 {
 /// `weapon` must be live, on the game thread.
 unsafe fn shown_point(weapon: &WeaponBase, gun: u8) -> Option<Vec3> {
     let data = if gun == 0 {
-        unsafe { gun::guns(weapon) }.next().flatten()
+        unsafe { engine::gun_at(weapon, 0) }
     } else {
         unsafe { paired::gun(weapon, usize::from(gun)) }
     }?;

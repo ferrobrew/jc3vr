@@ -45,6 +45,7 @@ use crate::controllers::{
     vehicles,
     weapons::{
         dual_wield::single,
+        engine,
         hold::{self, tick as hold_tick},
     },
 };
@@ -268,18 +269,13 @@ static KEPT: AtomicU64 = AtomicU64::new(0);
 /// The weapon's guns, in order. A single pistol has one: its first, the only one it shows and
 /// fires ([`single`]).
 pub(crate) unsafe fn guns(weapon: &WeaponBase) -> impl Iterator<Item = Option<&WeaponData>> {
-    let list = &weapon.m_lWeaponData;
-    let count = if list.m_Begin.is_null() || list.m_End < list.m_Begin {
-        0
-    } else {
-        unsafe { list.m_End.offset_from(list.m_Begin) as usize }
-    };
+    let count = unsafe { engine::gun_count(weapon) };
     let count = if single::is(weapon as *const WeaponBase as usize) {
         count.min(1)
     } else {
         count
     };
-    (0..count).map(move |i| unsafe { (*list.m_Begin.add(i)).as_ref() })
+    (0..count).map(move |i| unsafe { engine::gun_at(weapon, i) })
 }
 
 /// The gun's current fire point in its own frame, or the identity when the cursor is out of range,

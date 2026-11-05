@@ -46,7 +46,7 @@ use crate::controllers::{
     hands::ik,
     weapons::{
         dual_wield::single,
-        engine::{self, HeldWeapon, Wielded, slot_of},
+        engine::{self, HeldWeapon, Wielded, gun_count, gun_ptr, slot_of},
         heft::HeftClass,
         hold::layout,
         inventory::{carry, engine as inventory_engine},
@@ -468,17 +468,10 @@ unsafe fn for_each_gun_mut(weapon: &mut WeaponBase, mut visit: impl FnMut(usize,
 }
 
 unsafe fn gun_handles(weapon: &WeaponBase) -> [Option<NonNull<WeaponData>>; MAX_ARMED_GUNS] {
-    let list = &weapon.m_lWeaponData;
-    let begin = list.m_Begin;
-    let count = if begin.is_null() || list.m_End < begin {
-        0
-    } else {
-        unsafe { list.m_End.offset_from(begin) as usize }
-    };
     let mut guns = [None; MAX_ARMED_GUNS];
     let mut next = 0;
-    for index in 0..count.min(MAX_ARMED_GUNS) {
-        let Some(gun) = NonNull::new(unsafe { *begin.add(index) }) else {
+    for index in 0..unsafe { gun_count(weapon) }.min(MAX_ARMED_GUNS) {
+        let Some(gun) = (unsafe { gun_ptr(weapon, index) }) else {
             continue;
         };
         if !guns.contains(&Some(gun)) {

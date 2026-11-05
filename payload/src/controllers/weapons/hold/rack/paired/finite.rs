@@ -13,7 +13,7 @@ use crate::controllers::{
     loadout::take::TakeRoute,
     weapons::{
         dual_wield::single::{self, magazine},
-        engine::{character_object, object_of},
+        engine::{character_object, gun_at_mut, object_of},
         hold::{
             pickup::Refusal,
             rack::paired::{
@@ -164,11 +164,7 @@ pub(super) fn waiting(member: Member) -> bool {
 pub(super) unsafe fn staged(member: Member, actor: Strong) {
     let weapon = unsafe { &mut *engine::weapon_of(&actor) };
     unsafe { single::designate(weapon, "a finite rack member") };
-    if !single::is(weapon as *mut WeaponBase as usize)
-        || !paired::two_guns(weapon)
-        || unsafe { gun(weapon, 0) }.is_none()
-        || unsafe { gun(weapon, 1) }.is_none()
-    {
+    if !single::is(weapon as *mut WeaponBase as usize) || !unsafe { paired::whole_pair(weapon) } {
         single::undesignate(weapon as *mut WeaponBase as usize);
         unsafe { weapon.Despawn() };
         return;
@@ -477,7 +473,7 @@ unsafe fn split(
     if !unsafe { single::designate(original, "the remaining finite rack member") } {
         return Err(Refusal::NotTaken);
     }
-    if let Some(data) = unsafe { (*copy.m_lWeaponData.m_Begin).as_mut() } {
+    if let Some(data) = unsafe { gun_at_mut(copy, 0) } {
         data.m_WorldMatrixT0 = matrix;
         data.m_WorldMatrixT1 = matrix;
     }
@@ -496,7 +492,7 @@ unsafe fn show_remaining(source: &Source, taken: usize) {
         let Some(matrix) = (unsafe { gun(weapon, 1) }).map(|g| g.m_WorldMatrixT1) else {
             return;
         };
-        if let Some(data) = unsafe { (*weapon.m_lWeaponData.m_Begin).as_mut() } {
+        if let Some(data) = unsafe { gun_at_mut(weapon, 0) } {
             data.m_WorldMatrixT0 = matrix;
             data.m_WorldMatrixT1 = matrix;
         }

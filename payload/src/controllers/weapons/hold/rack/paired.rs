@@ -10,8 +10,7 @@ use std::time::{Duration, Instant};
 use glam::Mat4;
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
-    equipment::weapon::{ModelAttachementWeaponComponent, WeaponBase, WeaponData, WeaponState},
-    graphics_engine::model_instance::ModelInstanceFlags,
+    equipment::weapon::{WeaponBase, WeaponData, WeaponState},
 };
 use parking_lot::Mutex;
 
@@ -20,7 +19,7 @@ use crate::controllers::{
     loadout::{live, take::TakeRoute},
     weapons::{
         dual_wield::single::{self, magazine},
-        engine::{character_object, place_guns, slot_of},
+        engine::{character_object, gun_at, gun_count, hide_gun, place_guns, slot_of},
         hold::{
             pickup::{self, Refusal},
             rack::{copy, offered_state},
@@ -91,16 +90,13 @@ pub(crate) unsafe fn targets(
     source.seen = now;
     for index in 0..2 {
         if matches!(source.members[index], Stage::Taken) {
-            unsafe { hide_member(source, index) };
+            unsafe { hide_gun(&mut *(source.address as *mut WeaponBase), index) };
         }
         let member = source.member(index);
         if !matches!(source.members[index], Stage::Ready(_)) {
             continue;
         }
-        let Some(gun) = (unsafe { gun(weapon, index) }) else {
-            continue;
-        };
-        let Some((points, pose)) = gun_target(gun) else {
+        let Some((points, pose)) = (unsafe { gun(weapon, index) }).and_then(gun_target) else {
             continue;
         };
         out.push(WorldTarget {
@@ -250,10 +246,7 @@ pub(crate) unsafe fn staged(member: Member, actor: Strong) {
         return;
     }
     let weapon = unsafe { &mut *engine::weapon_of(&actor) };
-    if !two_guns(weapon)
-        || unsafe { gun(weapon, 0) }.is_none()
-        || unsafe { gun(weapon, 1) }.is_none()
-    {
+    if !unsafe { whole_pair(weapon) } {
         unsafe { weapon.Despawn() };
         return;
     }
@@ -402,7 +395,12 @@ unsafe fn settle_unlimited(member: Member, actor: Strong, accepted: bool) {
     };
     if accepted {
         // Hide only the member that left; the other native source gun remains visible.
-        unsafe { hide_member(source, member.index as usize) };
+        unsafe {
+            hide_gun(
+                &mut *(source.address as *mut WeaponBase),
+                member.index as usize,
+            )
+        };
     } else {
         unsafe { weapon.SetState(WeaponState::E_WS_WEAPON_RACK, true) };
         unsafe { weapon.SetVisible(false, false, false) };
@@ -554,21 +552,28 @@ unsafe fn qualifies(weapon: &WeaponBase) -> bool {
     {
         return false;
     }
-    two_guns(weapon) && unsafe { gun(weapon, 0) }.is_some() && unsafe { gun(weapon, 1) }.is_some()
+    unsafe { whole_pair(weapon) }
 }
 
-pub(crate) fn two_guns(weapon: &WeaponBase) -> bool {
-    let list = &weapon.m_lWeaponData;
-    !list.m_Begin.is_null()
-        && (list.m_End as usize).checked_sub(list.m_Begin as usize)
-            == Some(2 * std::mem::size_of::<*mut WeaponData>())
+/// Whether `weapon` has exactly two guns, both present: a pair a rack can hand out one by one.
+///
+/// # Safety
+///
+/// `weapon` must be live.
+pub(crate) unsafe fn whole_pair(weapon: &WeaponBase) -> bool {
+    unsafe { gun(weapon, 0) }.is_some() && unsafe { gun(weapon, 1) }.is_some()
 }
 
+/// Member `index` of the pair `weapon`, or `None` when `weapon` does not have exactly two guns.
+///
+/// # Safety
+///
+/// `weapon` must be live.
 pub(crate) unsafe fn gun(weapon: &WeaponBase, index: usize) -> Option<&WeaponData> {
-    if index >= 2 || !two_guns(weapon) {
+    if unsafe { gun_count(weapon) } != 2 {
         return None;
     }
-    unsafe { (*weapon.m_lWeaponData.m_Begin.add(index)).as_ref() }
+    unsafe { gun_at(weapon, index) }
 }
 
 fn gun_target(gun: &WeaponData) -> Option<([glam::Vec3; 2], Pose)> {
@@ -588,29 +593,6 @@ fn gun_target(gun: &WeaponData) -> Option<([glam::Vec3; 2], Pose)> {
             orientation,
         },
     ))
-}
-
-unsafe fn hide_member(source: &Source, index: usize) {
-    let weapon = unsafe { &mut *(source.address as *mut WeaponBase) };
-    let Some(gun) = (unsafe { gun(weapon, index) }) else {
-        return;
-    };
-    if let Some(model) = unsafe { gun.m_BaseModelInstance.as_mut() } {
-        model
-            .m_Flags
-            .remove(ModelInstanceFlags::VISIBLE | ModelInstanceFlags::FLAG_ENABLED);
-    }
-    for component in unsafe { weapon.m_WeaponComponents.as_slice() } {
-        let Some(component) = (unsafe { component.px.as_mut() }) else {
-            continue;
-        };
-        if unsafe { component.IsType(ModelAttachementWeaponComponent::TYPE_ID()) } {
-            let part = unsafe { &*(component as *mut _ as *const ModelAttachementWeaponComponent) };
-            if part.m_WeaponDataIndex as usize == index {
-                unsafe { component.SetVisible(false, false) };
-            }
-        }
-    }
 }
 
 unsafe fn retire(source: Source) {

@@ -44,7 +44,7 @@ use detours_macro::detour;
 use glam::{Mat4, Vec3};
 use jc3gi::{
     character::{character::Character, inventory::Inventory},
-    equipment::weapon::{ModelAttachementWeaponComponent, WeaponBase, WeaponState},
+    equipment::weapon::{ModelAttachementWeaponComponent, WeaponBase, WeaponData, WeaponState},
     types::math::Matrix4,
     ui::hud_ui::HUDUI,
 };
@@ -58,7 +58,7 @@ use crate::controllers::{
     loadout::{ObjectAddress, Place, Socket, live},
     weapons::{
         dual_wield::single,
-        engine::{character_object, slot_of},
+        engine::{character_object, gun_ptr, slot_of},
         hold::{armed, refs::Strong},
         inventory::{
             engine::{self as inventory_engine, ObjectKey, Seen, kind_of, strong_to},
@@ -570,17 +570,12 @@ fn translated(matrix: Mat4, shift: Vec3) -> Mat4 {
 }
 
 /// The weapon's guns, to write.
-unsafe fn guns_mut(
-    weapon: &mut WeaponBase,
-) -> impl Iterator<Item = &'static mut jc3gi::equipment::weapon::WeaponData> {
-    let list = &weapon.m_lWeaponData;
-    let begin = list.m_Begin;
-    let count = if begin.is_null() || list.m_End < begin {
-        0
-    } else {
-        unsafe { list.m_End.offset_from(begin) as usize }
-    };
-    (0..count.min(gun::MAX_GUNS)).filter_map(move |i| unsafe { (*begin.add(i)).as_mut() })
+unsafe fn guns_mut(weapon: &mut WeaponBase) -> impl Iterator<Item = &'static mut WeaponData> {
+    let guns: [Option<NonNull<WeaponData>>; gun::MAX_GUNS] =
+        std::array::from_fn(|i| unsafe { gun_ptr(weapon, i) });
+    guns.into_iter()
+        .flatten()
+        .map(|mut gun| unsafe { gun.as_mut() })
 }
 
 /// Skip every gun's render interpolation for one frame, so a gun that changed place does not

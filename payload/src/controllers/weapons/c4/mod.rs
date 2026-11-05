@@ -64,7 +64,7 @@ pub mod tuning;
 pub mod wheel;
 pub mod wrist;
 
-use std::time::Instant;
+use std::{ptr::NonNull, time::Instant};
 
 use detours_macro::detour;
 use glam::{Mat4, Vec3};
@@ -1064,12 +1064,7 @@ unsafe fn slot_c4(owner: &mut Character) -> Option<&mut PlantedExplosiveWeapon> 
 /// `weapon` must be a live C4 weapon.
 unsafe fn first_weapon_data(weapon: &mut PlantedExplosiveWeapon) -> Option<*mut WeaponData> {
     let base = unsafe { &*std::ptr::from_mut(weapon).cast::<WeaponBase>() };
-    let list = &base.m_lWeaponData;
-    if list.m_Begin.is_null() || list.m_Begin >= list.m_End {
-        return None;
-    }
-    let data = unsafe { *list.m_Begin };
-    (!data.is_null()).then_some(data)
+    unsafe { engine::gun_ptr(base, 0) }.map(NonNull::as_ptr)
 }
 
 #[cfg(test)]

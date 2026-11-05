@@ -46,7 +46,7 @@ use jc3gi::{
         character::Character,
         inventory::{Inventory, WeaponSlot},
     },
-    equipment::weapon::{ModelAttachementWeaponComponent, WeaponBase, WeaponState},
+    equipment::weapon::{WeaponBase, WeaponState},
     game::GameObject,
     graphics_engine::model_instance::ModelInstanceFlags,
 };
@@ -64,7 +64,10 @@ use crate::{
                 grant::{Grant, GrantTick, Grants, OneWhy, TwinState},
                 magazine::Dealt,
             },
-            engine::{character_object, credit_reserve, credit_stored, slot_of},
+            engine::{
+                character_object, credit_reserve, credit_stored, gun_at, gun_count, hide_gun,
+                slot_of,
+            },
             hold::{self, rack::paired, refs::Strong},
             inventory::{
                 carry, config::InventoryConfig, engine as inventory_engine, engine::ObjectKey,
@@ -411,39 +414,12 @@ pub(crate) unsafe fn stand_down() {
 /// `weapon` must be live, on the game thread before the world update or on a thread updating its
 /// holder.
 pub(crate) unsafe fn hide_extra(weapon: &mut WeaponBase) {
-    let count = unsafe { gun_count(weapon) };
-    let mut hid = false;
-    for index in 1..count {
-        let Some(gun) = (unsafe { gun_mut(weapon, index) }) else {
-            continue;
-        };
-        let Some(model) = (unsafe { gun.m_BaseModelInstance.as_mut() }) else {
-            continue;
-        };
-        if model.m_Flags.contains(ModelInstanceFlags::VISIBLE) {
-            model
-                .m_Flags
-                .remove(ModelInstanceFlags::VISIBLE | ModelInstanceFlags::FLAG_ENABLED);
-            hid = true;
-        }
-    }
-    if !hid {
-        return;
-    }
-    // A model part shows only while its own gun's model does, so asking it to hide now that the
-    // gun is hidden hides it, and a later show of the part keeps it hidden.
-    for component in unsafe { weapon.m_WeaponComponents.as_slice() } {
-        let Some(component) = (unsafe { component.px.as_mut() }) else {
-            continue;
-        };
-        // SAFETY: the component belongs to the live weapon; the test also takes the barrel recoil
-        // and spin parts, which derive from the model part.
-        if !unsafe { component.IsType(ModelAttachementWeaponComponent::TYPE_ID()) } {
-            continue;
-        }
-        let part = unsafe { &*(component as *mut _ as *const ModelAttachementWeaponComponent) };
-        if part.m_WeaponDataIndex >= 1 {
-            unsafe { component.SetVisible(false, false) };
+    for index in 1..unsafe { gun_count(weapon) } {
+        let shown = unsafe { gun_at(weapon, index) }
+            .and_then(|gun| unsafe { gun.m_BaseModelInstance.as_ref() })
+            .is_some_and(|model| model.m_Flags.contains(ModelInstanceFlags::VISIBLE));
+        if shown {
+            unsafe { hide_gun(weapon, index) };
         }
     }
 }
@@ -781,27 +757,6 @@ unsafe fn slot_weapon(owner: &Character) -> Option<&WeaponBase> {
             .px
             .as_ref()
     }
-}
-
-/// How many guns `weapon` has, all of them.
-unsafe fn gun_count(weapon: &WeaponBase) -> usize {
-    let list = &weapon.m_lWeaponData;
-    if list.m_Begin.is_null() || list.m_End < list.m_Begin {
-        0
-    } else {
-        unsafe { list.m_End.offset_from(list.m_Begin) as usize }
-    }
-}
-
-/// Gun `index` of `weapon`, to write: each gun is its own object, not part of the weapon.
-unsafe fn gun_mut(
-    weapon: &mut WeaponBase,
-    index: usize,
-) -> Option<&mut jc3gi::equipment::weapon::WeaponData> {
-    if index >= unsafe { gun_count(weapon) } {
-        return None;
-    }
-    unsafe { (*weapon.m_lWeaponData.m_Begin.add(index)).as_mut() }
 }
 
 #[detour(address = jc3gi::equipment::weapon::WeaponBase::SetVisibleBase_ADDRESS)]

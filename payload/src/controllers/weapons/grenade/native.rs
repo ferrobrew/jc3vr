@@ -63,7 +63,7 @@
 //! Factory allocations inside [`AmmoNeutral`] disable reclamation under the allocator's own
 //! critical section. No reference outlives a removal, and only owned inert actors are removed.
 
-use std::{cell::Cell, collections::VecDeque, ptr};
+use std::{cell::Cell, collections::VecDeque, ptr, ptr::NonNull};
 
 use detours_macro::detour;
 use glam::{Mat4, Vec3};
@@ -84,6 +84,7 @@ use crate::controllers::{
     frame::Hand,
     loadout::{live, safe_items::SafeItemView},
     weapons::{
+        engine::gun_ptr,
         grenade::{LAUNCH, PlannedLaunch, Release, primed_explosive, report_native_throw, safe},
         hold::refs::Weak,
     },
@@ -649,17 +650,7 @@ fn consume_ammo(weapon: *mut WeaponBase, data: *mut WeaponData, count: i32) {
 }
 
 unsafe fn weapon_data(weapon: &WeaponBase) -> Option<*mut WeaponData> {
-    let data = &weapon.m_lWeaponData;
-    if data.m_Begin.is_null() || data.m_End.is_null() {
-        return None;
-    }
-    let count = unsafe { data.m_End.offset_from(data.m_Begin) };
-    let index = weapon.m_NextWeaponToFire as isize;
-    if count <= index || index < 0 {
-        return None;
-    }
-    let selected = unsafe { *data.m_Begin.offset(index) };
-    (!selected.is_null()).then_some(selected)
+    unsafe { gun_ptr(weapon, usize::from(weapon.m_NextWeaponToFire)) }.map(NonNull::as_ptr)
 }
 
 fn null_weak() -> WeakPtrGameObject {

@@ -13,6 +13,7 @@ mod format;
 
 use std::{
     fmt,
+    ptr::NonNull,
     sync::atomic::{AtomicBool, Ordering},
 };
 
@@ -30,7 +31,7 @@ use crate::controllers::{
     frame::Hand,
     grab::{Candidate, GrabVolume, resolve::nearest_within},
     weapons::{
-        engine,
+        engine::{self, gun_count, gun_ptr},
         grenade::{self, safe, stock, tuning::GrenadeTuning},
         hold::{
             rack::entries,
@@ -400,18 +401,14 @@ unsafe fn weapon_displays(
     if !world_grenade(weapon) {
         return;
     }
-    let data = &weapon.m_lWeaponData;
-    let stride = std::mem::size_of::<*mut WeaponData>();
-    let Some(count) = (data.m_End as usize)
-        .checked_sub(data.m_Begin as usize)
-        .filter(|bytes| !data.m_Begin.is_null() && bytes.is_multiple_of(stride))
-        .map(|bytes| bytes / stride)
-        .filter(|count| *count <= MAX_MODELS_PER_WEAPON)
-    else {
+    let count = unsafe { gun_count(weapon) };
+    if count > MAX_MODELS_PER_WEAPON {
         return;
-    };
+    }
     for index in 0..count {
-        let data = unsafe { *data.m_Begin.add(index) };
+        let Some(data) = (unsafe { gun_ptr(weapon, index) }).map(NonNull::as_ptr) else {
+            continue;
+        };
         let Some(display) = (unsafe {
             display(
                 data,

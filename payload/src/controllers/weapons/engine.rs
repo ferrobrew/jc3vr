@@ -3,11 +3,17 @@
 //! game stage ([`crate::controllers::bindings::stage`]), on the game thread before the world
 //! update.
 
+use std::ptr::NonNull;
+
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
-    equipment::weapon::{AmmunitionType, WeaponBase, WeaponGripHand, WeaponState},
+    equipment::weapon::{
+        AmmunitionType, ModelAttachementWeaponComponent, WeaponBase, WeaponData, WeaponGripHand,
+        WeaponState,
+    },
     game::GameObject,
+    graphics_engine::model_instance::ModelInstanceFlags,
     types::math::Matrix4,
 };
 
@@ -173,6 +179,84 @@ pub(crate) unsafe fn gun_pose(weapon: &WeaponBase) -> Option<Pose> {
     })
 }
 
+/// How many guns `weapon`'s gun list holds, a single pistol's hidden second gun included.
+///
+/// # Safety
+///
+/// `weapon` must be live.
+pub(crate) unsafe fn gun_count(weapon: &WeaponBase) -> usize {
+    let list = &weapon.m_lWeaponData;
+    if list.m_Begin.is_null() || list.m_End < list.m_Begin {
+        0
+    } else {
+        unsafe { list.m_End.offset_from(list.m_Begin) as usize }
+    }
+}
+
+/// Gun `index` of `weapon`, as its list points to it: each gun is its own object, not part of the
+/// weapon.
+///
+/// # Safety
+///
+/// `weapon` must be live.
+pub(crate) unsafe fn gun_ptr(weapon: &WeaponBase, index: usize) -> Option<NonNull<WeaponData>> {
+    if index >= unsafe { gun_count(weapon) } {
+        return None;
+    }
+    NonNull::new(unsafe { *weapon.m_lWeaponData.m_Begin.add(index) })
+}
+
+/// Gun `index` of `weapon` ([`gun_ptr`]).
+///
+/// # Safety
+///
+/// `weapon` must be live.
+pub(crate) unsafe fn gun_at(weapon: &WeaponBase, index: usize) -> Option<&WeaponData> {
+    unsafe { gun_ptr(weapon, index) }.map(|gun| unsafe { gun.as_ref() })
+}
+
+/// Gun `index` of `weapon`, to write ([`gun_ptr`]).
+///
+/// # Safety
+///
+/// `weapon` must be live.
+pub(crate) unsafe fn gun_at_mut(weapon: &mut WeaponBase, index: usize) -> Option<&mut WeaponData> {
+    unsafe { gun_ptr(weapon, index) }.map(|mut gun| unsafe { gun.as_mut() })
+}
+
+/// Hide gun `index` of `weapon` and its model parts, leaving its other guns as they are.
+///
+/// # Safety
+///
+/// `weapon` must be live, on the game thread before the world update or on a thread updating its
+/// holder.
+pub(crate) unsafe fn hide_gun(weapon: &mut WeaponBase, index: usize) {
+    let Some(gun) = (unsafe { gun_at_mut(weapon, index) }) else {
+        return;
+    };
+    if let Some(model) = unsafe { gun.m_BaseModelInstance.as_mut() } {
+        model
+            .m_Flags
+            .remove(ModelInstanceFlags::VISIBLE | ModelInstanceFlags::FLAG_ENABLED);
+    }
+    // A model part shows only while its own gun's model does, so asking it to hide now that the
+    // gun is hidden hides it, and a later show of the part keeps it hidden.
+    for component in unsafe { weapon.m_WeaponComponents.as_slice() } {
+        let Some(component) = (unsafe { component.px.as_mut() }) else {
+            continue;
+        };
+        // SAFETY: the component belongs to the live weapon; the test also takes the barrel recoil
+        // and spin parts, which derive from the model part.
+        if !unsafe { component.IsType(ModelAttachementWeaponComponent::TYPE_ID()) } {
+            continue;
+        }
+        let part = unsafe { &*(component as *mut _ as *const ModelAttachementWeaponComponent) };
+        if part.m_WeaponDataIndex as usize == index {
+            unsafe { component.SetVisible(false, false) };
+        }
+    }
+}
+
 /// The world matrix of `weapon`'s first gun.
 ///
 /// # Safety
@@ -192,13 +276,8 @@ pub(crate) unsafe fn first_gun_matrix(weapon: &WeaponBase) -> Option<Matrix4> {
 ///
 /// `weapon` must be live, on the game thread.
 pub(crate) unsafe fn place_guns(weapon: &mut WeaponBase, matrix: Matrix4) {
-    let list = &weapon.m_lWeaponData;
-    if list.m_Begin.is_null() || list.m_End < list.m_Begin {
-        return;
-    }
-    let count = unsafe { list.m_End.offset_from(list.m_Begin) } as usize;
-    for index in 0..count {
-        if let Some(gun) = unsafe { (*list.m_Begin.add(index)).as_mut() } {
+    for index in 0..unsafe { gun_count(weapon) } {
+        if let Some(gun) = unsafe { gun_at_mut(weapon, index) } {
             gun.m_WorldMatrixT0 = matrix;
             gun.m_WorldMatrixT1 = matrix;
         }

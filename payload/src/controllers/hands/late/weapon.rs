@@ -25,7 +25,7 @@ use crate::controllers::{
         },
     },
     weapons::{
-        engine::weapon_at,
+        engine::{self, weapon_at},
         hold::{self, armed},
     },
 };
@@ -138,18 +138,13 @@ unsafe fn late_update_weapon(game_object: *mut c_void, context: *const GameObjec
     };
     let state = weapon.m_State;
     let dtf = context.m_Dtf;
-    let guns = &weapon.m_lWeaponData;
-    let mut cursor = guns.m_Begin;
     let count = unsafe { gun::guns(weapon) }.count();
-    let mut index = 0;
-    while !cursor.is_null() && cursor < guns.m_End {
-        let gun = unsafe { (*cursor).as_ref() };
-        let gun_index = index;
-        index += 1;
-        cursor = unsafe { cursor.add(1) };
-        let Some(gun) = gun else {
+    for gun_index in 0..unsafe { engine::gun_count(weapon) } {
+        let Some(mut gun) = (unsafe { engine::gun_ptr(weapon, gun_index) }) else {
             continue;
         };
+        // SAFETY: each gun is its own object, not part of the weapon.
+        let gun = unsafe { gun.as_mut() };
         let bone = gun
             .m_lBoneAttachementPerWeaponState
             .get(state as usize)
