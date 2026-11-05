@@ -59,6 +59,7 @@ use crate::{
         frame::Hand,
         haptics::{self, Event, Sustain},
         physical_hands::remote,
+        weapons::engine::character_position,
     },
     grapple::{
         hook,
@@ -397,7 +398,7 @@ unsafe fn start(character: &Character, hook: &GrapplingHook, input: &LockTickInp
     let Some(rider_mass_kg) = (unsafe { engine::rider_mass_kg(character) }) else {
         return refuse("the character's mass could not be read");
     };
-    let rider = engine::position(character);
+    let rider = character_position(character);
     let Some(held) = Held::new(hook_point, rider, input.config) else {
         return refuse("the line's length is not finite");
     };

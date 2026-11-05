@@ -198,9 +198,7 @@ pub(super) unsafe fn hand_grenade(address: NonZeroUsize) -> Option<bool> {
 /// The game thread, before the world update.
 pub(super) unsafe fn player_position() -> Option<Vec3> {
     let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
-    let position = glam::Mat4::from(character.m_WorldMatrixT1)
-        .w_axis
-        .truncate();
+    let position = engine::character_position(character);
     position.is_finite().then_some(position)
 }
 

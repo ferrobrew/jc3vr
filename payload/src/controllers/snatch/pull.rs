@@ -40,6 +40,7 @@ use crate::{
             target::{Offer, OfferKind, weak_of},
         },
         weapons::{
+            engine::character_frame,
             grenade,
             hold::{
                 Cause, SNAP_S,
@@ -246,9 +247,9 @@ pub(super) unsafe fn fire_hook(grabbed: &Grabbed) -> Result<NonZeroUsize, Refusa
             // The hook latches the character's bone nearest the point, given in the character's
             // model space.
             let at = unsafe { body_centre(body, owner) }?;
-            let local = unsafe { character_frame(grabbed.object) }
-                .inverse()
-                .transform_point3(at);
+            // SAFETY: the grabbed character is held alive.
+            let character = unsafe { &*(grabbed.object.get() as *const Character) };
+            let local = character_frame(character).inverse().transform_point3(at);
             unsafe { engine::fire(grabbed.object, local, at) }
         }
         Pulled::Door { door, handle } => {
@@ -820,16 +821,6 @@ unsafe fn surface_toward(object: NonZeroUsize, centre: Vec3, palm: Vec3) -> Vec3
         })
         .filter(|hit| hit.object == Some(object))
         .map_or(centre, |hit| hit.position)
-}
-
-/// The world transform of the character `character`.
-///
-/// # Safety
-///
-/// `character` must be a live character, held alive.
-unsafe fn character_frame(character: NonZeroUsize) -> Mat4 {
-    let character = unsafe { &*(character.get() as *const Character) };
-    Mat4::from(character.m_WorldMatrixT1)
 }
 
 /// The centre of mass of `object`'s body `body`, world space.

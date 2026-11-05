@@ -3,7 +3,7 @@
 
 use std::num::NonZeroUsize;
 
-use glam::{Mat4, Vec3};
+use glam::Vec3;
 use jc3gi::{
     character::character::Character,
     equipment::{
@@ -88,11 +88,6 @@ pub(super) unsafe fn far_body(proxy: &GrapplePointProxy) -> Option<(u32, NonZero
     }
     let (owner, state) = unsafe { physical_hands::line_body(body) }?;
     Some((body, owner, state))
-}
-
-/// The character's position, as the reel task reads it.
-pub(super) fn position(character: &Character) -> Vec3 {
-    Mat4::from(character.m_WorldMatrixT1).w_axis.truncate()
 }
 
 /// The character's mass: its proxy body's.
