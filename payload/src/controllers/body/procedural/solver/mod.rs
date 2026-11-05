@@ -23,7 +23,7 @@ pub mod spine;
 pub mod twist;
 pub mod wings;
 
-use glam::{Quat, Vec2, Vec3};
+use glam::{Quat, Vec3};
 
 use crate::controllers::body::procedural::solver::pose::RigPose;
 
@@ -40,22 +40,4 @@ pub struct SolveInput {
     pub head_rotation: Quat,
     /// The player's torso heading relative to Rico's facing, radians about +Y, when estimated.
     pub torso_yaw: Option<f32>,
-}
-
-/// The yaw of the horizontal line from `left` to `right` about +Y, measured from +X: the facing of
-/// a pair of bones on either side of the body.
-pub fn line_yaw(left: Vec3, right: Vec3) -> Option<f32> {
-    let line = Vec2::new(right.x - left.x, right.z - left.z);
-    (line.length_squared() > 1e-8).then(|| (-line.y).atan2(line.x))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_line_from_left_to_right_faces_forward() {
-        assert!(line_yaw(Vec3::new(-1.0, 0.0, 0.0), Vec3::X).unwrap().abs() < 1e-6);
-        assert_eq!(line_yaw(Vec3::ZERO, Vec3::Y), None);
-    }
 }

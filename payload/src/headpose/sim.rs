@@ -31,7 +31,7 @@
 
 use std::sync::atomic::Ordering;
 
-use body_rig::angle::wrap;
+use body_rig::angle::{direction, wrap};
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
@@ -174,7 +174,7 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
         HeadMode::OnFoot => {
             s.latch = update_latch(s.latch, s.yaw.to_degrees(), s.mode);
             s.body_yaw_target = (s.latch == LatchState::BodyFollowing)
-                .then(|| body_yaw.map(|b| yaw_forward(b + s.yaw)))
+                .then(|| body_yaw.map(|b| direction(b + s.yaw)))
                 .flatten();
         }
         HeadMode::Other => {
@@ -328,12 +328,6 @@ pub(crate) fn orientation_at(root: glam::Mat4) -> Quat {
     let body = grapple::filter_body_rotation(body);
     let state = SIM.lock();
     body * Quat::from_euler(glam::EulerRot::YXZ, state.yaw, state.pitch, state.roll)
-}
-
-/// The ground-plane forward direction for a world yaw, matching the game's convention (yaw about
-/// +Y, forward -Z).
-pub(super) fn yaw_forward(world_yaw: f32) -> Vec3 {
-    Quat::from_rotation_y(world_yaw) * Vec3::NEG_Z
 }
 
 /// Read the local player character's world rotation from `m_WorldMatrixT1`.

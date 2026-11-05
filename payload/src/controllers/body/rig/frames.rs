@@ -9,10 +9,10 @@
 
 use std::fmt;
 
-use body_rig::angle::wrap;
+use body_rig::angle::{direction, line_yaw, wrap, yaw_of};
 use glam::{Mat4, Quat, Vec3};
 
-use crate::controllers::body::rig::torso::{TorsoEstimate, yaw_forward, yaw_of};
+use crate::controllers::body::rig::torso::TorsoEstimate;
 
 /// The character's skeleton landmarks in its model space, from the bones HumanIK drives.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -119,7 +119,7 @@ impl Frames {
     /// turns vertical there.
     pub fn cockpit_yaw_to_model(&self, yaw: f32) -> Option<f32> {
         let (_, rotation, _) = self.character.to_scale_rotation_translation();
-        yaw_of(rotation.inverse() * (self.view * yaw_forward(yaw)))
+        yaw_of(rotation.inverse() * (self.view * direction(yaw)))
     }
 }
 
@@ -230,12 +230,7 @@ impl fmt::Display for Implausible {
 /// `-π/2..=π/2`; `None` when the points coincide horizontally. Wrapping to a half turn makes the
 /// measure independent of which side of the model the rig puts its left.
 pub fn lateral_twist(left: Vec3, right: Vec3) -> Option<f32> {
-    let v = right - left;
-    let (x, y) = (v.x, -v.z);
-    if x.hypot(y) < 1.0e-5 || !x.is_finite() || !y.is_finite() {
-        return None;
-    }
-    let angle = y.atan2(x);
+    let angle = line_yaw(left, right)?;
     let half = std::f32::consts::FRAC_PI_2;
     Some(if angle > half {
         angle - std::f32::consts::PI

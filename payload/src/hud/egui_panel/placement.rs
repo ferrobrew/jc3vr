@@ -6,6 +6,7 @@
 //! centre, its -Z points into the panel's front face, its +X is the panel's right, and its +Y the
 //! panel's up. This is the rotation [`PanelParams::rot`] takes.
 
+use body_rig::angle::{direction, head_heading, yaw_of};
 use glam::{Quat, Vec3};
 
 use crate::{
@@ -38,8 +39,7 @@ pub(crate) fn in_front_of(head: Pose, distance: f32) -> Pose {
         MIN_DISTANCE_M
     };
     let forward = head.orientation * Vec3::NEG_Z;
-    let heading = heading(head.orientation);
-    let yaw = (-heading.x).atan2(-heading.z);
+    let yaw = gaze_heading(head.orientation);
     let pitch = forward
         .y
         .atan2(Vec3::new(forward.x, 0.0, forward.z).length());
@@ -54,7 +54,8 @@ pub(crate) fn in_front_of(head: Pose, distance: f32) -> Pose {
 /// through the head square to its heading. A panel straight above or below the head is not behind.
 pub(crate) fn is_behind(head: Pose, center: Vec3) -> bool {
     let to_center = center - head.position;
-    flat_direction(to_center).is_some_and(|flat| flat.dot(heading(head.orientation)) < 0.0)
+    flat_direction(to_center)
+        .is_some_and(|flat| flat.dot(direction(gaze_heading(head.orientation))) < 0.0)
 }
 
 /// The panel in the frame of the hand's `aim` pose at the moment of a grab, which the grab keeps.
@@ -126,15 +127,13 @@ pub(crate) fn world_panel(
     }
 }
 
-/// The horizontal direction `orientation` faces. Looking straight up or down, the gaze has no
-/// horizontal part, so the top of the head gives it: it points ahead when looking down and behind
-/// when looking up.
-fn heading(orientation: Quat) -> Vec3 {
-    let forward = orientation * Vec3::NEG_Z;
-    let up = orientation * Vec3::Y;
-    flat_direction(forward)
-        .or_else(|| flat_direction(up * -forward.y.signum()))
-        .unwrap_or(Vec3::NEG_Z)
+/// The heading of the gaze's ground projection, so that a summoned panel sits along the gaze even
+/// with the head rolled. Looking straight up or down the gaze has no projection, and the head's
+/// heading, which reads the top of the head there, stands in.
+fn gaze_heading(orientation: Quat) -> f32 {
+    yaw_of(orientation * Vec3::NEG_Z)
+        .or_else(|| head_heading(orientation))
+        .unwrap_or(0.0)
 }
 
 /// The horizontal part of `v`, normalized, or `None` when it is too short to give a direction.

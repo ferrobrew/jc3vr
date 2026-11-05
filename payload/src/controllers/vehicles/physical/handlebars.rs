@@ -157,4 +157,3 @@ const GRAB_PAST_END: f32 = 1.15;
 fn lock(spec: &HandlebarsSpec) -> f32 {
     spec.max_steer_deg.to_radians().abs().max(1e-3)
 }
-

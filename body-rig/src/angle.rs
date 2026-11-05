@@ -30,10 +30,22 @@ pub fn yaw_of_flat(flat: Vec2) -> Option<f32> {
     (flat.length_squared() > 1.0e-10 && flat.is_finite()).then(|| (-flat.x).atan2(-flat.y))
 }
 
+/// The heading a line from `left` to `right` faces: square to it on the ground, to the side that
+/// `-Z` is on for a line along `+X`, as the left and right bones of a body face. `None` when the
+/// points coincide horizontally.
+pub fn line_yaw(left: Vec3, right: Vec3) -> Option<f32> {
+    yaw_of(Vec3::Y.cross(right - left))
+}
+
 /// The horizontal `(x, z)` forward of a heading.
 pub fn forward(yaw: f32) -> Vec2 {
-    let v = Quat::from_rotation_y(yaw) * Vec3::NEG_Z;
+    let v = direction(yaw);
     Vec2::new(v.x, v.z)
+}
+
+/// The unit forward of a heading on the ground plane.
+pub fn direction(yaw: f32) -> Vec3 {
+    Quat::from_rotation_y(yaw) * Vec3::NEG_Z
 }
 
 /// The horizontal `(x, z)` right of a heading.
@@ -85,6 +97,16 @@ mod tests {
         assert!((forward(left) - Vec2::new(-1.0, 0.0)).length() < 1e-6);
         assert!((right(0.0) - Vec2::new(1.0, 0.0)).length() < 1e-6);
         assert_eq!(yaw_of(Vec3::Y), None);
+        assert!((direction(left) - Vec3::NEG_X).length() < 1e-6);
+        assert!(direction(0.5).y.abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_line_from_left_to_right_faces_forward() {
+        assert!(line_yaw(Vec3::NEG_X, Vec3::X).unwrap().abs() < 1e-6);
+        let left = std::f32::consts::FRAC_PI_2;
+        assert!((line_yaw(Vec3::Z, Vec3::NEG_Z).unwrap() - left).abs() < 1e-6);
+        assert_eq!(line_yaw(Vec3::ZERO, Vec3::Y), None);
     }
 
     #[test]

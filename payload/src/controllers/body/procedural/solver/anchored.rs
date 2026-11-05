@@ -195,11 +195,10 @@ const UPRIGHT_NONE: f32 = 1.22;
 
 #[cfg(test)]
 mod tests {
+    use body_rig::angle::line_yaw;
+
     use super::*;
-    use crate::controllers::body::procedural::{
-        rig::{Rig, tests::skeleton},
-        solver::line_yaw,
-    };
+    use crate::controllers::body::procedural::rig::{Rig, tests::skeleton};
 
     fn setup() -> (SolveInput, ProceduralBodyConfig) {
         let rig = Rig::from_skeleton(&skeleton()).unwrap();

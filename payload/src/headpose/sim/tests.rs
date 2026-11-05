@@ -1,5 +1,3 @@
-use std::f32::consts::FRAC_PI_2;
-
 use super::*;
 
 #[test]
@@ -83,18 +81,6 @@ fn test_mode_detection_from_counter() {
     assert_eq!(detect_mode(5, 8), HeadMode::OnFoot);
     // Counter unchanged: not on foot.
     assert_eq!(detect_mode(5, 5), HeadMode::Other);
-}
-
-#[test]
-fn test_yaw_forward_convention() {
-    // At zero yaw, the forward is -Z.
-    assert!((yaw_forward(0.0) - glam::Vec3::NEG_Z).length() < 1e-5);
-    // A quarter turn about +Y rotates -Z to -X.
-    assert!((yaw_forward(FRAC_PI_2) - glam::Vec3::NEG_X).length() < 1e-5);
-    // The forward is always unit length on the ground plane.
-    let forward = yaw_forward(0.5);
-    assert!((forward.length() - 1.0).abs() < 1e-5);
-    assert!(forward.y.abs() < 1e-6);
 }
 
 #[test]

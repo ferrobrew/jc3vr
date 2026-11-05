@@ -119,10 +119,9 @@ impl WheelGrip {
         // A hand that crossed the hub's unstable middle between two ticks counts by the smaller
         // of its two places' weights, so a swing past the hub turns nothing by its travel.
         let travel = match (last.angle, now.angle) {
-            (Some(last_angle), Some(now_angle)) => Some((
-                wrap(now_angle - last_angle),
-                last.weight.min(now.weight),
-            )),
+            (Some(last_angle), Some(now_angle)) => {
+                Some((wrap(now_angle - last_angle), last.weight.min(now.weight)))
+            }
             _ => None,
         };
         match (tracking, travel, twist) {
@@ -342,11 +341,7 @@ fn clockwise_twist(delta: Quat, axis: Vec3) -> f32 {
     let along = Vec3::new(delta.x, delta.y, delta.z).dot(axis);
     let twist = 2.0 * along.atan2(delta.w);
     // Seen from the driver, along -axis, a positive rotation about the axis runs anticlockwise.
-    if twist.is_finite() {
-        -wrap(twist)
-    } else {
-        0.0
-    }
+    if twist.is_finite() { -wrap(twist) } else { 0.0 }
 }
 
 /// How much a hand at `position` counts by its travel around the hub: nothing near the hub, fully
@@ -357,7 +352,6 @@ fn position_weight(frame: &WheelFrame, position: Vec3) -> f32 {
     let share = r / frame.radius.max(0.05);
     ((share - HUB_SHARE) / HUB_SHARE).clamp(0.0, 1.0)
 }
-
 
 #[cfg(test)]
 mod tests {

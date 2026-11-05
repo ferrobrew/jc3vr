@@ -21,14 +21,14 @@ pub mod skeleton;
 pub mod torso;
 pub(crate) mod visual;
 
-use body_rig::angle::wrap;
+use body_rig::angle::{direction, wrap, yaw_of};
 use glam::Quat;
 use parking_lot::Mutex;
 
 pub use crate::controllers::body::rig::config::RigConfig;
 use crate::{
     config::Config,
-    controllers::body::rig::torso::{CHEST_LIMIT_DEG, TorsoEstimate, yaw_forward, yaw_of},
+    controllers::body::rig::torso::{CHEST_LIMIT_DEG, TorsoEstimate},
     headpose::{self, xr::FollowSettings},
     hooks,
 };
@@ -64,7 +64,7 @@ pub fn torso_turn(character_rotation: Quat) -> Option<f32> {
     }
     let estimate = estimate()?;
     let view = headpose::xr::body_rotation();
-    yaw_of(character_rotation.inverse() * (view * yaw_forward(estimate.yaw)))
+    yaw_of(character_rotation.inverse() * (view * direction(estimate.yaw)))
 }
 
 /// The torso's turn, bounded for the remaining pre-solve IK consumers.

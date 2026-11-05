@@ -58,6 +58,7 @@ pub mod yank;
 
 use std::{sync::LazyLock, time::Instant};
 
+use body_rig::angle::{head_heading, yaw_of};
 use glam::Vec3;
 use jc3gi::{input::input_action_map::Action, state::StateBitFlag};
 use parking_lot::Mutex;
@@ -72,7 +73,7 @@ use crate::{
         aim::{self, sights},
         bindings::{
             buttons::{grapple_button, grapple_button_held, reload_button},
-            controls::{ButtonControl, Controls, yaw_of},
+            controls::{ButtonControl, Controls},
             grapple_button::GrappleContext,
             hold::{ActionWrite, Desired, DevicePoll, HoldTracker, MapKind, Target, Want},
             intents::SemanticInput,
@@ -1105,8 +1106,10 @@ impl State {
 /// either heading is unknown.
 fn off_hand_rotation(frame: &ControllerFrame, off: Hand) -> f32 {
     let aim = &frame.hand(off).aim;
-    let hand = aim.orientation_valid.then(|| yaw_of(aim.pose.orientation));
-    let head = headpose::xr::cockpit_pose().map(|pose| yaw_of(pose.orientation));
+    let hand = aim
+        .orientation_valid
+        .then(|| yaw_of(aim.pose.orientation * Vec3::NEG_Z));
+    let head = headpose::xr::cockpit_pose().map(|pose| head_heading(pose.orientation));
     match (hand.flatten(), head.flatten()) {
         (Some(hand), Some(head)) => hand - head,
         _ => 0.0,

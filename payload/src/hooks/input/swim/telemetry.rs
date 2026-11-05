@@ -14,7 +14,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use body_rig::angle::wrap;
+use body_rig::angle::{wrap, yaw_of};
 use glam::Vec3;
 use parking_lot::Mutex;
 
@@ -57,7 +57,7 @@ pub(crate) fn log_tick(look_x: f32) {
     let body = headpose::xr::body_rotation_raw();
     let body_forward = body * Vec3::NEG_Z;
     let body_euler_yaw = body_yaw_of(body);
-    let target = headpose::body_yaw_target().map(heading_of);
+    let target = headpose::body_yaw_target().and_then(yaw_of);
     let mut state = STATE.lock();
     state.look_x_peak = state.look_x_peak.max(look_x.abs());
     let due = state
@@ -88,7 +88,7 @@ pub(crate) fn log_tick(look_x: f32) {
         target_yaw_deg = target.map(f32::to_degrees),
         target_turn_deg_s = target.zip(target_before).map(|(now, then)| rate(now, then)),
         body_yaw_deg = body_euler_yaw.to_degrees(),
-        body_heading_deg = heading_of(body_forward).to_degrees(),
+        body_heading_deg = yaw_of(body_forward).map(f32::to_degrees),
         body_forward_y = body_forward.y,
         body_turn_deg_s = rate(body_euler_yaw, body_before),
         look_x,
@@ -102,11 +102,11 @@ pub(crate) fn log_tick(look_x: f32) {
         move_refusals = advanced.moves,
         untargeted = advanced.untargeted,
         core = rotate.map(|r| r.core.label()),
-        core_from_deg = rotate.map(|r| heading_of(r.from).to_degrees()),
-        core_own_target_deg = rotate.map(|r| heading_of(r.game_to).to_degrees()),
+        core_from_deg = rotate.and_then(|r| yaw_of(r.from)).map(f32::to_degrees),
+        core_own_target_deg = rotate.and_then(|r| yaw_of(r.game_to)).map(f32::to_degrees),
         core_own_target_y = rotate.map(|r| r.game_to.y),
-        core_given_target_deg = rotate.map(|r| heading_of(r.given_to).to_degrees()),
-        core_out_deg = rotate.map(|r| heading_of(r.out).to_degrees()),
+        core_given_target_deg = rotate.and_then(|r| yaw_of(r.given_to)).map(f32::to_degrees),
+        core_out_deg = rotate.and_then(|r| yaw_of(r.out)).map(f32::to_degrees),
         core_out_y = rotate.map(|r| r.out.y),
         body_case = procedural.case.label(),
         torso_weight = procedural.weight,
@@ -164,15 +164,6 @@ static GATE: Mutex<SwimSignals> = Mutex::new(SwimSignals {
     motion_state: false,
     state_bits: false,
 });
-
-/// The ground-plane heading of `direction`, radians, as the headpose's yaws are: about +Y from -Z.
-/// Zero for a vertical direction.
-fn heading_of(direction: Vec3) -> f32 {
-    if direction.x == 0.0 && direction.z == 0.0 {
-        return 0.0;
-    }
-    (-direction.x).atan2(-direction.z)
-}
 
 #[derive(Debug, Copy, Clone)]
 struct RotateSample {
@@ -236,22 +227,3 @@ impl TelemetryState {
 }
 
 static STATE: Mutex<TelemetryState> = Mutex::new(TelemetryState::NEW);
-
-#[cfg(test)]
-mod tests {
-    use glam::Quat;
-
-    use super::*;
-
-    #[test]
-    fn the_heading_matches_the_headpose_yaw() {
-        for yaw in [-2.5_f32, -1.0, 0.0, 0.4, 3.0] {
-            let forward = Quat::from_rotation_y(yaw) * Vec3::NEG_Z;
-            assert!((heading_of(forward) - yaw).abs() < 1e-5, "{yaw}");
-            // A pitched forward keeps its heading.
-            let pitched = Quat::from_rotation_y(yaw) * Quat::from_rotation_x(-0.6) * Vec3::NEG_Z;
-            assert!((heading_of(pitched) - yaw).abs() < 1e-5, "{yaw}");
-        }
-        assert_eq!(heading_of(Vec3::Y), 0.0);
-    }
-}

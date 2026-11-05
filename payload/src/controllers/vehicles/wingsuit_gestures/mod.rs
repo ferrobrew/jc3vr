@@ -11,6 +11,7 @@
 
 use std::{fmt, time::Instant};
 
+use body_rig::angle::yaw_of;
 use glam::{Quat, Vec3};
 
 use crate::controllers::{
@@ -603,7 +604,7 @@ fn flight_heading(wrists: [Pose; 2], head: Pose) -> Quat {
         return head_heading;
     }
     // About the vertical alone, so a player turned to face the cockpit's back still stands upright.
-    Quat::from_rotation_y((-forward.x).atan2(-forward.z))
+    yaw_of(forward).map_or(head_heading, Quat::from_rotation_y)
 }
 
 /// The wrists' smallest horizontal separation that gives the body's facing, metres. Closer, the

@@ -40,7 +40,7 @@
 //! ([`crate::headpose::follow`]): the view frame is then the body frame turned back by the body's
 //! heading relative to the view ([`follow_turn`]), so only the turn input turns the view.
 
-use body_rig::angle::wrap;
+use body_rig::angle::{direction, wrap};
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
@@ -174,9 +174,7 @@ pub fn advance_body_yaw(
     // it, so the same input turns faster. Snap keeps its step: a scaled snap is a different size.
     let rate_scale = if swimming { SWIM_TURN_SCALE } else { 1.0 };
     // Seeded at the view's heading: the body's, less however far it was turned under the view.
-    let mut yaw = s
-        .yaw
-        .unwrap_or_else(|| wrap(body - s.follow.frozen()));
+    let mut yaw = s.yaw.unwrap_or_else(|| wrap(body - s.follow.frozen()));
 
     match turn.mode {
         VrTurnMode::Smooth => {
@@ -370,8 +368,7 @@ pub fn on_recenter() {
 /// relative to the view, which is zero unless the body follows the torso ([`BodyFollow`]).
 pub fn body_yaw_target() -> Option<Vec3> {
     let s = BODY_YAW.lock();
-    s.yaw
-        .map(|yaw| sim::yaw_forward(wrap(yaw + s.follow.target())))
+    s.yaw.map(|yaw| direction(wrap(yaw + s.follow.target())))
 }
 
 /// The VR body-yaw accumulator state (see [`advance_body_yaw`]).

@@ -4,7 +4,7 @@
 //! Positions use +X right, +Y up, and -Z forward, in metres. A heading is a yaw about +Y,
 //! positive turning -Z toward -X, as in [`crate::headpose::sim::body_yaw_of`].
 
-use glam::{Quat, Vec2, Vec3};
+use glam::{Quat, Vec3};
 
 /// The estimated torso, in the cockpit frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -39,17 +39,6 @@ impl TorsoEstimate {
     }
 }
 
-/// The heading of a flat direction, or `None` for a direction with no horizontal extent.
-pub fn yaw_of(direction: Vec3) -> Option<f32> {
-    let flat = Vec2::new(direction.x, direction.z);
-    (flat.length_squared() > 1.0e-10 && flat.is_finite()).then(|| (-flat.x).atan2(-flat.y))
-}
-
-/// The forward direction of a heading.
-pub fn yaw_forward(yaw: f32) -> Vec3 {
-    Quat::from_rotation_y(yaw) * Vec3::NEG_Z
-}
-
 /// The neck pivot, at the base of the skull, from the eyes in the head's frame: below and behind
 /// them, so that nodding turns the eyes about it.
 pub const EYES_TO_NECK_PIVOT: Vec3 =
@@ -70,7 +59,7 @@ pub const CHEST_LIMIT_DEG: f32 = 45.0;
 
 #[cfg(test)]
 mod tests {
-    use body_rig::angle::{head_heading, wrap};
+    use body_rig::angle::{direction, head_heading, wrap, yaw_of};
 
     use super::*;
 
@@ -85,7 +74,7 @@ mod tests {
     #[test]
     fn the_heading_conventions_agree() {
         for yaw in [0.0, 0.7, -2.0, 3.0] {
-            assert!((yaw_of(yaw_forward(yaw)).unwrap() - yaw).abs() < 1e-5);
+            assert!((yaw_of(direction(yaw)).unwrap() - yaw).abs() < 1e-5);
             // The grounded rig's headings are the same.
             assert!((head_heading(looking(yaw, 0.0)).unwrap() - yaw).abs() < 1e-5);
         }

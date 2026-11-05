@@ -2,7 +2,7 @@
 //! per-hand buttons with their edges, deadzoned sticks and triggers, and what each hand's grip would
 //! take. Pure.
 
-use glam::{Quat, Vec2, Vec3};
+use glam::Vec2;
 
 use crate::{
     controllers::{
@@ -226,15 +226,6 @@ pub fn rotate_stick(stick: Vec2, angle: f32) -> Vec2 {
     Vec2::new(stick.x * cos - stick.y * sin, stick.x * sin + stick.y * cos)
 }
 
-/// The yaw of an orientation in the cockpit frame (OpenXR axes: +Y up, -Z forward), radians,
-/// counter-clockwise from above, zero looking down -Z. `None` when the orientation's forward is
-/// near vertical and has no meaningful heading.
-pub fn yaw_of(orientation: Quat) -> Option<f32> {
-    let forward = orientation * Vec3::NEG_Z;
-    let ground = Vec2::new(forward.x, forward.z);
-    (ground.length_squared() > 1e-4).then(|| (-forward.x).atan2(-forward.z))
-}
-
 #[cfg(test)]
 mod tests {
     use std::{f32::consts::FRAC_PI_2, time::Instant};
@@ -281,15 +272,6 @@ mod tests {
             rotate_stick(Vec2::new(0.3, 0.4), 0.0),
             Vec2::new(0.3, 0.4)
         ));
-    }
-
-    #[test]
-    fn yaw_is_counter_clockwise_from_forward() {
-        assert!(yaw_of(Quat::IDENTITY).unwrap().abs() < 1e-5);
-        let left = Quat::from_rotation_y(FRAC_PI_2);
-        assert!((yaw_of(left).unwrap() - FRAC_PI_2).abs() < 1e-5);
-        let down = Quat::from_rotation_x(-FRAC_PI_2);
-        assert_eq!(yaw_of(down), None);
     }
 
     #[test]

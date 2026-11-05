@@ -103,10 +103,8 @@ pub fn advance(body: Quat, anchor: Vec3, on_foot: bool, config: &GrappleComfortC
     // body can be blocked from turning), when the character leaves its feet, or when a new reel
     // starts.
     if let Some(deadline) = s.handoff_deadline {
-        let dyaw = wrap(
-            headpose::sim::body_yaw_of(body) - headpose::sim::body_yaw_of(s.held),
-        )
-        .abs();
+        let dyaw =
+            wrap(headpose::sim::body_yaw_of(body) - headpose::sim::body_yaw_of(s.held)).abs();
         if active || !on_foot || now >= deadline || dyaw < HANDOFF_CONVERGED_RAD {
             s.handoff_deadline = None;
         }

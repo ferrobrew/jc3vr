@@ -53,6 +53,7 @@ use std::{
     time::Instant,
 };
 
+use body_rig::angle::line_yaw;
 use glam::Mat4;
 use jc3gi::{
     animation::ik::{Effector, HumanIK},
@@ -74,7 +75,6 @@ use crate::{
                     anchored::{solve_anchored, upright_share},
                     arms::{Side, TorsoKeepOut},
                     clavicles::{self, ClavicleTurn},
-                    line_yaw,
                     pose::RigPose,
                 },
                 targets::{Fade, Slot, TargetFade},
