@@ -10,7 +10,7 @@
 //! [`wanted`] measures the turn for a hand target, [`ClavicleFollower`] eases it over time, and
 //! [`apply`] turns the clavicle (and the arm under it) about its own joint.
 
-use body_rig::smooth::follow_factor;
+use body_rig::smooth::{follow_factor, smoothstep_between};
 use glam::{Quat, Vec3};
 
 use crate::controllers::body::procedural::{
@@ -83,10 +83,11 @@ pub fn wanted(
         .normalize_or_zero();
 
     let reach_start = tuning.reach_start.clamp(0.0, REACH_FULL - 0.01);
-    let far = smoothstep(reach_start, REACH_FULL, extension);
+    let far = smoothstep_between(reach_start, REACH_FULL, extension);
     // A hand overhead lifts the shoulder by how straight the arm is, from about half its length.
-    let lift = smoothstep(LIFT_START, 1.0, direction.y) * smoothstep(0.5, REACH_FULL, extension);
-    let lower = smoothstep(LOWER_START, 1.0, -direction.y) * far;
+    let lift = smoothstep_between(LIFT_START, 1.0, direction.y)
+        * smoothstep_between(0.5, REACH_FULL, extension);
+    let lower = smoothstep_between(LOWER_START, 1.0, -direction.y) * far;
     // Ahead, and across the body (half as much, since the chest is in the way).
     let ahead = (direction.dot(forward) - ACROSS_SHARE * direction.dot(outward)).clamp(0.0, 1.0);
 
@@ -184,11 +185,6 @@ fn chest_forward(pose: &RigPose) -> Option<Vec3> {
     let line =
         (pose.position(RigBone::RightShoulder) - pose.position(RigBone::LeftShoulder)).with_y(0.0);
     Vec3::Y.cross(line).try_normalize()
-}
-
-fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
-    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
 }
 
 #[cfg(test)]

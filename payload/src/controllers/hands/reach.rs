@@ -22,7 +22,11 @@
 //!   small threshold and up to a cap. With the reach limited, only a body that moves against the
 //!   hands within a tick leaves a shortfall for it.
 
-use body_rig::{geometry::within_sphere, rotation::level, smooth::follow_factor};
+use body_rig::{
+    geometry::within_sphere,
+    rotation::level,
+    smooth::{follow_factor, smoothstep_between},
+};
 use glam::{Quat, Vec3};
 
 use crate::controllers::{
@@ -284,14 +288,7 @@ impl ArmTracker {
 /// fraction of the arm's length: zero up to `start`, one from `full`, and a smoothstep between. With
 /// `full` at or below `start` the ramp is a step at `start`.
 pub fn pull_ramp(extension: f32, start: f32, full: f32) -> f32 {
-    if !extension.is_finite() {
-        return 0.0;
-    }
-    if full <= start {
-        return if extension >= start { 1.0 } else { 0.0 };
-    }
-    let t = ((extension - start) / (full - start)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
+    smoothstep_between(start, full, extension)
 }
 
 /// How far the rendered hand moves from the solved wrist toward the target, given the shortfall
@@ -527,32 +524,6 @@ mod tests {
         tracker.update(nan, 0.03, 0.1);
         assert_eq!(tracker.arm(), before);
         assert_eq!(tracker.rejected(), 3);
-    }
-
-    #[test]
-    fn the_pull_ramp_is_zero_below_start_and_full_from_full() {
-        assert_eq!(pull_ramp(0.5, 0.9, 1.0), 0.0);
-        assert_eq!(pull_ramp(0.9, 0.9, 1.0), 0.0);
-        assert!((pull_ramp(0.95, 0.9, 1.0) - 0.5).abs() < EPS);
-        assert_eq!(pull_ramp(1.0, 0.9, 1.0), 1.0);
-        assert_eq!(pull_ramp(1.4, 0.9, 1.0), 1.0);
-        assert_eq!(pull_ramp(f32::NAN, 0.9, 1.0), 0.0);
-    }
-
-    #[test]
-    fn the_pull_ramp_is_monotonic() {
-        let mut previous = 0.0;
-        for i in 0..=200 {
-            let r = pull_ramp(0.8 + i as f32 * 0.001, 0.9, 1.0);
-            assert!(r >= previous);
-            previous = r;
-        }
-    }
-
-    #[test]
-    fn a_degenerate_pull_ramp_is_a_step() {
-        assert_eq!(pull_ramp(0.89, 0.9, 0.9), 0.0);
-        assert_eq!(pull_ramp(0.9, 0.9, 0.8), 1.0);
     }
 
     #[test]

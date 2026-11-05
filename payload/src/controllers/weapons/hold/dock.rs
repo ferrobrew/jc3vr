@@ -16,6 +16,8 @@
 //! after it took the gun by a grab; what the release does is the table's decision
 //! ([`crate::controllers::loadout::grab::release`]).
 
+use body_rig::smooth::smoothstep;
+
 use crate::controllers::frame::{Hand, Pose};
 
 /// Which way a snap moves the gun.
@@ -98,12 +100,11 @@ impl Snap {
 
     /// How far the gun is from the dock toward the hand, `0..=1`, eased in and out.
     pub fn toward_hand(&self) -> f32 {
-        let progress = if self.duration_s > 0.0 {
-            (self.elapsed_s / self.duration_s).clamp(0.0, 1.0)
+        let eased = if self.duration_s > 0.0 {
+            smoothstep(self.elapsed_s / self.duration_s)
         } else {
             1.0
         };
-        let eased = progress * progress * (3.0 - 2.0 * progress);
         match self.kind {
             SnapKind::Draw => eased,
             SnapKind::Holster => 1.0 - eased,

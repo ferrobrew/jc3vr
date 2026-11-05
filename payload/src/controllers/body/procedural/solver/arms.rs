@@ -15,7 +15,7 @@
 //! hand reaching down, out, and back toward a hip holster), the pole's part across the reach
 //! vanishes, so a second pole, straight back, takes over smoothly as it does rather than at once.
 
-use body_rig::geometry::closest_on_segment;
+use body_rig::{geometry::closest_on_segment, smooth::smoothstep};
 use glam::{Mat4, Quat, Vec3};
 
 use crate::controllers::body::procedural::{rig::RigBone, solver::pose::RigPose};
@@ -160,8 +160,7 @@ pub fn elbow_hint(
     let across = |pole: Vec3| pole - along * pole.dot(along);
     let primary = across(pole.normalize_or_zero());
     let fallback = across(chest * Vec3::Z).normalize_or_zero();
-    let t = (primary.length() / POLE_FALLBACK_BELOW).clamp(0.0, 1.0);
-    let keep = t * t * (3.0 - 2.0 * t);
+    let keep = smoothstep(primary.length() / POLE_FALLBACK_BELOW);
     let pole = (primary.normalize_or_zero() * keep + fallback * (1.0 - keep))
         .try_normalize()
         .unwrap_or(out);

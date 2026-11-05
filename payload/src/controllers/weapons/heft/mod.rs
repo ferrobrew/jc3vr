@@ -382,14 +382,6 @@ fn epoch() -> Instant {
     *EPOCH.get_or_init(Instant::now)
 }
 
-pub(super) fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
-    if edge1 <= edge0 {
-        return if x >= edge1 { 1.0 } else { 0.0 };
-    }
-    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
-}
-
 pub(super) fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t.clamp(0.0, 1.0)
 }

@@ -27,6 +27,7 @@
 //! The back's free sockets are reached for docking lower and further out than their weapons sit
 //! ([`reach_back_sockets`]).
 
+use body_rig::smooth::smoothstep_between;
 use glam::{Mat3, Quat, Vec3};
 
 use crate::controllers::{
@@ -395,7 +396,7 @@ const BACK_REACH_OFFSET_M: Vec3 = Vec3::new(0.05, -0.12, 0.0);
 /// for a look down of up to [`LOOK_DOWN_START`], all of it from [`LOOK_DOWN_FULL`], eased between.
 fn look_down_share(head: Quat) -> f32 {
     let down = (-(head * Vec3::NEG_Z).y).clamp(-1.0, 1.0).asin();
-    smoothstep(LOOK_DOWN_START, LOOK_DOWN_FULL, down)
+    smoothstep_between(LOOK_DOWN_START, LOOK_DOWN_FULL, down)
 }
 
 /// The share of the bend the chest pouches are kept off for a spine running along `up`: all of it
@@ -403,17 +404,7 @@ fn look_down_share(head: Quat) -> f32 {
 /// [`BEND_NONE`], where the body is lying or folded by more than a look explains.
 fn bend_share(up: Vec3) -> f32 {
     let bend = up.y.clamp(-1.0, 1.0).acos();
-    1.0 - smoothstep(BEND_FULL, BEND_NONE, bend)
-}
-
-/// A smooth step from 0 at `from` to 1 at `to`.
-fn smoothstep(from: f32, to: f32, x: f32) -> f32 {
-    let t = ((x - from) / (to - from)).clamp(0.0, 1.0);
-    if t.is_finite() {
-        t * t * (3.0 - 2.0 * t)
-    } else {
-        0.0
-    }
+    1.0 - smoothstep_between(BEND_FULL, BEND_NONE, bend)
 }
 
 /// The look down below which the chest pouches ride the chest as it is, radians: about ten degrees.

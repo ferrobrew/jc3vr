@@ -33,6 +33,7 @@ pub mod shape;
 
 use std::time::{Duration, Instant};
 
+use body_rig::smooth::smoothstep;
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
@@ -268,8 +269,7 @@ fn eased_share(elapsed: Duration, over: Duration) -> f32 {
     if over.is_zero() {
         return 1.0;
     }
-    let t = (elapsed.as_secs_f32() / over.as_secs_f32()).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
+    smoothstep(elapsed.as_secs_f32() / over.as_secs_f32())
 }
 
 /// A gun sliding through a hand onto its grip.

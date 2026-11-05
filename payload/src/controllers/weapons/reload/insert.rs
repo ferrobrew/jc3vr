@@ -11,6 +11,7 @@
 //! travels from where the hand left it onto the axis and down to the seat depth, turning onto the
 //! axis as it goes, and seats when it arrives. Anything else let go of drops.
 
+use body_rig::smooth::smoothstep;
 use glam::{Quat, Vec3};
 
 use crate::controllers::{frame::Hand, weapons::reload::tuning::Reload};
@@ -201,11 +202,6 @@ impl Float {
 
 /// The share of a float spent bringing the top onto the axis.
 const APPROACH_SHARE: f32 = 0.6;
-
-fn smoothstep(t: f32) -> f32 {
-    let t = t.clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
-}
 
 impl Insertion {
     pub const fn new() -> Self {

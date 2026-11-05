@@ -1,5 +1,5 @@
-//! Smoothing primitives: the share of the way an exponential follow closes in a step, and a
-//! critically damped spring step.
+//! Smoothing primitives: the share of the way an exponential follow closes in a step, a critically
+//! damped spring step, and the smoothstep ease.
 //!
 //! The degenerate inputs are settled once here, so every caller agrees on them:
 //!
@@ -7,6 +7,8 @@
 //!   smoothing: the value is the target, whatever the step.
 //! - Otherwise a step that is not positive, NaN included, does not move: the value and its rate
 //!   are kept. An infinite step settles fully.
+//! - A smoothstep of NaN is zero, and a range whose end is not past its start is a step at the
+//!   start.
 
 use std::f32::consts::LN_2;
 
@@ -54,6 +56,21 @@ pub fn critically_damped(value: f32, rate: f32, target: f32, smooth_s: f32, dt: 
     let rate = (rate - omega * temp) * decay;
     let value = target + (change + temp) * decay;
     (value, rate)
+}
+
+/// The smoothstep ease `3t² - 2t³` of `t` clamped to `0..=1`; zero for a NaN `t`.
+pub fn smoothstep(t: f32) -> f32 {
+    let t = if t.is_nan() { 0.0 } else { t.clamp(0.0, 1.0) };
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// The [`smoothstep`] from zero at `start` to one at `end`; zero for a NaN `x`. With `end` not past
+/// `start` the ramp is a step: one from `start` on.
+pub fn smoothstep_between(start: f32, end: f32, x: f32) -> f32 {
+    if end <= start {
+        return if x >= start { 1.0 } else { 0.0 };
+    }
+    smoothstep((x - start) / (end - start))
 }
 
 #[cfg(test)]
@@ -135,5 +152,40 @@ mod tests {
     #[test_case(f32::NAN, 0.2 => (0.5, 3.0); "nan time keeps the value and rate")]
     fn critically_damped_edges(dt: f32, smooth_s: f32) -> (f32, f32) {
         critically_damped(0.5, 3.0, 1.0, smooth_s, dt)
+    }
+
+    #[test_case(-1.0 => 0.0; "below")]
+    #[test_case(0.0 => 0.0; "start")]
+    #[test_case(0.5 => 0.5; "middle")]
+    #[test_case(1.0 => 1.0; "end")]
+    #[test_case(2.0 => 1.0; "above")]
+    #[test_case(f32::NAN => 0.0; "nan")]
+    #[test_case(f32::INFINITY => 1.0; "infinite")]
+    fn smoothstep_values(t: f32) -> f32 {
+        smoothstep(t)
+    }
+
+    #[test_case(0.5, 0.9, 1.0 => 0.0; "before the start")]
+    #[test_case(0.9, 0.9, 1.0 => 0.0; "at the start")]
+    #[test_case(1.0, 0.9, 1.0 => 1.0; "at the end")]
+    #[test_case(1.4, 0.9, 1.0 => 1.0; "past the end")]
+    #[test_case(f32::NAN, 0.9, 1.0 => 0.0; "nan")]
+    #[test_case(0.89, 0.9, 0.9 => 0.0; "an empty range before the start")]
+    #[test_case(0.9, 0.9, 0.9 => 1.0; "an empty range at the start")]
+    #[test_case(0.85, 0.9, 0.8 => 0.0; "a reversed range before the start")]
+    #[test_case(0.9, 0.9, 0.8 => 1.0; "a reversed range at the start")]
+    fn smoothstep_between_values(x: f32, start: f32, end: f32) -> f32 {
+        smoothstep_between(start, end, x)
+    }
+
+    #[test]
+    fn smoothstep_between_is_half_way_at_the_middle_and_monotonic() {
+        assert!((smoothstep_between(0.9, 1.0, 0.95) - 0.5).abs() < 1e-5);
+        let mut last = 0.0;
+        for i in 0..=400 {
+            let r = smoothstep_between(0.9, 1.0, 0.8 + i as f32 * 0.001);
+            assert!(r >= last);
+            last = r;
+        }
     }
 }

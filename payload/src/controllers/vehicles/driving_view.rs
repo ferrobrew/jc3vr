@@ -24,6 +24,7 @@
 
 use std::time::{Duration, Instant};
 
+use body_rig::smooth::smoothstep;
 use glam::Vec3;
 use parking_lot::Mutex;
 
@@ -313,8 +314,7 @@ impl Ease {
         if !(duration.is_finite() && duration > 0.0) {
             return self.to;
         }
-        let t = (self.elapsed / duration).clamp(0.0, 1.0);
-        self.from.lerp(self.to, t * t * (3.0 - 2.0 * t))
+        self.from.lerp(self.to, smoothstep(self.elapsed / duration))
     }
 }
 

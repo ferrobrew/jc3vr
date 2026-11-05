@@ -2,6 +2,7 @@
 
 use std::time::{Duration, Instant};
 
+use body_rig::smooth::smoothstep;
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::character::character::Character;
 use parking_lot::Mutex;
@@ -450,7 +451,7 @@ impl Runtime {
             *STATUS.lock() = Status::NormalTracked { reason };
             return None;
         }
-        let amount = remaining * remaining * (3.0 - 2.0 * remaining);
+        let amount = smoothstep(remaining);
         let correction = Trs {
             translation: handback.correction.translation * amount,
             rotation: Quat::IDENTITY.slerp(handback.correction.rotation, amount),

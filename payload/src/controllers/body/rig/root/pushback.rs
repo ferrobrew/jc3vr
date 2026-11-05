@@ -17,6 +17,7 @@
 //!
 //! Vectors are world `(x, z)`, metres.
 
+use body_rig::smooth::smoothstep;
 use glam::Vec2;
 
 use crate::controllers::body::rig::{config::PushbackConfig, root::owner::RootOwner};
@@ -179,15 +180,6 @@ const RESET_S: f32 = 0.2;
 
 /// How close to the cap the debt counts as spent, metres.
 const CAP_EPSILON_M: f32 = 1e-5;
-
-fn smoothstep(t: f32) -> f32 {
-    let t = if t.is_finite() {
-        t.clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    t * t * (3.0 - 2.0 * t)
-}
 
 #[cfg(test)]
 mod tests {

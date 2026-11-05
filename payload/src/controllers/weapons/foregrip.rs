@@ -35,6 +35,7 @@
 //! distance from the foregrip; or when the weapon leaves the hands. Engaging and releasing blend
 //! over the configured time.
 
+use body_rig::smooth::smoothstep_between;
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
@@ -361,11 +362,7 @@ pub fn onto_foregrip(
 /// The share of the two-handed pose a span of `span` metres between the grips lets through: none
 /// below `min_span`, all of it from twice `min_span`, and a smooth ramp between.
 pub fn span_fade(span: f32, min_span: f32) -> f32 {
-    if min_span <= 0.0 {
-        return if span > 0.0 { 1.0 } else { 0.0 };
-    }
-    let t = ((span - min_span) / min_span).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
+    smoothstep_between(min_span, 2.0 * min_span, span)
 }
 
 /// What the input tick knows about the hands and the weapon for the foregrip.

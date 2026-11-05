@@ -15,7 +15,7 @@
 //! - [`stable_anchors`] composes the anchors from the neutral pose and the root's two tick-spaced
 //!   transforms, and [`blend`] mixes them with the animated ones.
 
-use body_rig::smooth::critically_damped;
+use body_rig::smooth::{critically_damped, smoothstep};
 use glam::{Mat4, Vec3};
 
 use crate::{controllers::body::procedural::authority::Case, headpose::Anchors};
@@ -219,8 +219,7 @@ impl Handover {
 
     /// The eased weight of the stable anchor.
     pub fn weight(&self) -> f32 {
-        let t = self.progress.clamp(0.0, 1.0);
-        t * t * (3.0 - 2.0 * t)
+        smoothstep(self.progress)
     }
 }
 

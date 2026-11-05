@@ -25,6 +25,7 @@
 //!
 //! The legs are not touched.
 
+use body_rig::smooth::smoothstep_between;
 use glam::{Quat, Vec3};
 
 use crate::controllers::body::procedural::{
@@ -177,12 +178,7 @@ const CLEAR_ITERATIONS: usize = 3;
 pub fn upright_share(upright: Vec3) -> f32 {
     let cos = upright.y;
     let (none, full) = (UPRIGHT_NONE.cos(), UPRIGHT_FULL.cos());
-    let t = ((cos - none) / (full - none)).clamp(0.0, 1.0);
-    if t.is_finite() {
-        t * t * (3.0 - 2.0 * t)
-    } else {
-        0.0
-    }
+    smoothstep_between(none, full, cos)
 }
 
 /// The spine's tilt from the vertical within which it takes the whole of the torso's turn,

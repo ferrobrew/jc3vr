@@ -23,7 +23,7 @@
 //! covers what the inputs themselves do in a step: the front hand coming onto or off the foregrip,
 //! or the raised gun changing hands.
 
-use body_rig::smooth::follow_factor;
+use body_rig::smooth::{follow_factor, smoothstep_between};
 use glam::{Quat, Vec3};
 
 use crate::controllers::{frame::Pose, hands::CockpitHand, weapons::ads::config::AdsConfig};
@@ -318,11 +318,7 @@ pub fn fade(distance: f32, lock: f32, engage: f32) -> f32 {
     if !distance.is_finite() {
         return 0.0;
     }
-    if engage <= lock {
-        return if distance <= lock { 1.0 } else { 0.0 };
-    }
-    let t = ((engage - distance) / (engage - lock)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
+    1.0 - smoothstep_between(lock, engage, distance)
 }
 
 #[cfg(test)]

@@ -3,7 +3,7 @@
 
 use std::f32::consts::TAU;
 
-use body_rig::rotation::rotation_error;
+use body_rig::{rotation::rotation_error, smooth::smoothstep_between};
 use glam::{Quat, Vec2, Vec3};
 
 use crate::controllers::{
@@ -11,7 +11,7 @@ use crate::controllers::{
     hands::CockpitHand,
     weapons::{
         foregrip,
-        heft::{BracedTuning, Heft, HeftClass, HeftTuning, lerp, smoothstep},
+        heft::{BracedTuning, Heft, HeftClass, HeftTuning, lerp},
     },
 };
 
@@ -116,7 +116,7 @@ pub fn weighted_pose(
     sway: Vec2,
 ) -> WeightedPose {
     let grip = hand.grip;
-    let reach = smoothstep(
+    let reach = smoothstep_between(
         config.reach_near_m,
         config.reach_far_m,
         grip.position.distance(head),

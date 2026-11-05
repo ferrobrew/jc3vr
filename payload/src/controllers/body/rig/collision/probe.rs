@@ -25,7 +25,7 @@
 
 use std::time::{Duration, Instant};
 
-use body_rig::geometry::cast_segment;
+use body_rig::{geometry::cast_segment, smooth::smoothstep_between};
 use glam::Vec3;
 
 use crate::controllers::aim::{
@@ -148,12 +148,7 @@ pub const HEAD_FADE_FULL_DEPTH_M: f32 = 0.25;
 pub fn fade_for_depth(depth: f32, start_m: f32, full_m: f32) -> f32 {
     let start = start_m.max(0.0);
     let full = full_m.max(start + 1e-3);
-    let t = ((depth - start) / (full - start)).clamp(0.0, 1.0);
-    if t.is_finite() {
-        t * t * (3.0 - 2.0 * t)
-    } else {
-        0.0
-    }
+    smoothstep_between(start, full, depth)
 }
 
 /// How long a probe result stays current. The probe runs every simulation tick in gameplay under
