@@ -36,7 +36,7 @@ use crate::{
             grip::{self, HandGrip},
             tiers,
         },
-        weapons::heft::HeftClass,
+        weapons::{engine::FULL_WEIGHT, heft::HeftClass},
     },
     hooks::animation,
 };
@@ -380,9 +380,6 @@ fn at_full_weight(record: HandGrip) -> Option<f32> {
         .map(|_| record.animated_deviation_deg)
         .filter(|d| d.is_finite())
 }
-
-/// The IK weight that counts as full for [`at_full_weight`].
-const FULL_WEIGHT: f32 = 0.999;
 
 /// A record older than this is from a placement that no longer runs.
 const MAX_AGE: Duration = Duration::from_millis(250);

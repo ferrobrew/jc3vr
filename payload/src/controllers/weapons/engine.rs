@@ -94,6 +94,9 @@ pub(crate) fn takeable_gun_slot(slot: WeaponSlot) -> bool {
     )
 }
 
+/// The IK weight at which a hand's target counts as reached in full, rather than blended toward.
+pub(crate) const FULL_WEIGHT: f32 = 0.999;
+
 /// `weapon`'s slot, read as the raw value: an unset slot is out of the enum's range.
 ///
 /// # Safety
@@ -202,7 +205,6 @@ pub unsafe fn measure_geometry(
     aim: &AimConfig,
     world_scale: f32,
 ) -> Option<GripGeometry> {
-    const FULL_WEIGHT: f32 = 0.999;
     let holder = weapon.holder?;
     if target.weight < FULL_WEIGHT || world_scale.is_nan() || world_scale <= 0.0 {
         return None;

@@ -5,7 +5,7 @@ use jc3gi::equipment::weapon::WeaponState;
 
 use crate::controllers::{
     frame::{Hand, Pose},
-    weapons::hold::world,
+    weapons::{engine::FULL_WEIGHT, hold::world},
 };
 
 /// A placement's identity, checked again before its captured grip is used.
@@ -101,8 +101,6 @@ impl Records {
         )
     }
 }
-
-const FULL_WEIGHT: f32 = 0.999;
 
 #[derive(Debug, Copy, Clone)]
 struct Record {

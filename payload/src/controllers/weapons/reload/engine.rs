@@ -39,6 +39,7 @@ use crate::{
         weapons::{
             dual_wield::single,
             empty,
+            engine::FULL_WEIGHT,
             inventory::{carry, engine as inventory_engine},
             reload::{
                 ammo::{self, Ammo, NativeAmmo},
@@ -192,7 +193,6 @@ pub unsafe fn measure_gun(
     target: TickTarget,
     world_scale: f32,
 ) -> Option<Pose> {
-    const FULL_WEIGHT: f32 = 0.999;
     if target.weight < FULL_WEIGHT {
         return None;
     }
