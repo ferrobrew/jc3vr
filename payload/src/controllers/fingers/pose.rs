@@ -375,16 +375,12 @@ mod tests {
     const RIGHT_THUMB_BASE: Vec3 = Vec3::new(-0.025, -0.01, -0.02);
 
     fn palm(hand: Hand) -> PalmFrame {
-        let side = |v: Vec3| match hand {
-            Hand::Right => v,
-            Hand::Left => mirror(v),
-        };
         PalmFrame::from_bones(
             hand,
-            side(RIGHT_WRIST),
-            side(RIGHT_INDEX),
-            side(RIGHT_MIDDLE),
-            side(RIGHT_LITTLE),
+            hand.mirror_from_right(RIGHT_WRIST),
+            hand.mirror_from_right(RIGHT_INDEX),
+            hand.mirror_from_right(RIGHT_MIDDLE),
+            hand.mirror_from_right(RIGHT_LITTLE),
         )
         .unwrap()
     }

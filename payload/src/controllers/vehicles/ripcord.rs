@@ -77,11 +77,7 @@ pub fn centre(shoulders: [Vec3; 2], torso: Quat, body: &BodyDimensions, side: Ha
     let shoulder = shoulders[side.index()];
     let drop = (body.shoulder_height - body.height * HIP_HEIGHT_FRACTION).max(0.0);
     let hip = shoulder - Vec3::Y * drop;
-    let offset = match side {
-        Hand::Right => FROM_HIP_M,
-        Hand::Left => Vec3::new(-FROM_HIP_M.x, FROM_HIP_M.y, FROM_HIP_M.z),
-    };
-    hip + torso * offset
+    hip + torso * side.mirror_from_right(FROM_HIP_M)
 }
 
 /// The ripcord's grab volume, for its side's hand only: at `centre` while it is free, and on the

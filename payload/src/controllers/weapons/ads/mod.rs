@@ -139,7 +139,7 @@ pub fn apply(
             eye: aiming_eye(head, hand, config),
             forward: head.orientation * Vec3::NEG_Z,
             pocket: shoulders[hand.index()]
-                .map(|s| s + torso * pocket_offset(hand, POCKET_OFFSET_M)),
+                .map(|s| s + torso * hand.mirror_from_right(POCKET_OFFSET_M)),
             scoped: weapon.scoped,
         };
         Some(solve::solve(&inputs, config))
@@ -216,15 +216,6 @@ pub fn aiming_eye(head: Pose, holder: Hand, config: &AdsConfig) -> Vec3 {
         Hand::Right => 1.0,
     };
     head.position + head.orientation * Vec3::new(sign * HALF_IPD_M, 0.0, 0.0)
-}
-
-/// The pocket's offset from `hand`'s shoulder in the torso's frame: the right-side offset `right`,
-/// mirrored for the left.
-pub fn pocket_offset(hand: Hand, right: Vec3) -> Vec3 {
-    match hand {
-        Hand::Left => Vec3::new(-right.x, right.y, right.z),
-        Hand::Right => right,
-    }
 }
 
 /// How far each eye sits from the eyes' midpoint, metres.
@@ -383,16 +374,6 @@ mod tests {
         assert_eq!(
             raised([None, Some(holding(0.0, 0.0, 0.2, None))]),
             Some(Hand::Right)
-        );
-    }
-
-    #[test]
-    fn the_pocket_mirrors_for_the_left_shoulder() {
-        let right = Vec3::new(-0.06, -0.04, -0.04);
-        assert_eq!(pocket_offset(Hand::Right, right), right);
-        assert_eq!(
-            pocket_offset(Hand::Left, right),
-            Vec3::new(0.06, -0.04, -0.04)
         );
     }
 }

@@ -87,10 +87,7 @@ pub fn well(
             Some((gun.point(mouth), gun.direction(axis).try_normalize()?))
         }
         WellFrame::Wrist { offset } => {
-            let local = match holder {
-                Hand::Left => Vec3::new(-offset.x, offset.y, offset.z),
-                Hand::Right => offset,
-            };
+            let local = holder.mirror_from_right(offset);
             let axis = wrist.orientation * (-local).try_normalize()?;
             Some((wrist.position + wrist.orientation * local, axis))
         }
