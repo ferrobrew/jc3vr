@@ -5,7 +5,7 @@
 //! weapon on the freed socket as any dock does.
 
 use glam::{Mat4, Vec3};
-use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponBase};
+use jc3gi::equipment::weapon::WeaponBase;
 
 use crate::controllers::{
     loadout::{ObjectAddress, Socket, live},
@@ -46,7 +46,7 @@ pub(crate) unsafe fn eject(socket: Socket) -> Result<(), DockRefusal> {
     // SAFETY: a slot or the carry set keeps the docked weapon alive.
     let slot = unsafe { slot_of(docked) };
     // The game's pair is one weapon and cannot fall; a single pistol is a weapon alone.
-    if slot == Some(WeaponSlot::E_SLOT_DUAL_WIELD) && !single::is(object) {
+    if unsafe { single::is_pair(docked) } {
         return Err(DockRefusal::Unsupported);
     }
     let in_slot = slot.filter(|slot| {

@@ -49,10 +49,7 @@ use glam::Vec3;
 use jc3gi::{
     aim::aim::AimMode,
     camera::game_camera_manager::GameCameraManager,
-    character::{
-        character::Character,
-        inventory::{Inventory, WeaponSlot},
-    },
+    character::{character::Character, inventory::Inventory},
     equipment::weapon::{WeaponBase, WeaponInputs, WeaponState},
     types::math::Vector3,
 };
@@ -189,7 +186,7 @@ pub(crate) unsafe fn substitute(weapon: &WeaponBase, input: &WeaponInputs) -> Op
         weapon.m_State,
         WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING
     );
-    let pair = weapon.m_EquipSlot == WeaponSlot::E_SLOT_DUAL_WIELD && !single::is(address);
+    let pair = unsafe { single::is_pair(weapon) };
     if !wielded || pair {
         return None;
     }

@@ -39,7 +39,7 @@ use crate::{
             },
             docks::attract::{self, ATTRACTION},
             dual_wield::single,
-            engine::{self, slot_of},
+            engine,
             foregrip::{self, FOREGRIP, GripGeometry, Inputs, Transition, TwoHandedWeapon},
             grenade,
             hold::{self, armed, tick},
@@ -928,9 +928,8 @@ fn attraction_for(hand: Hand, config: &ControllersConfig) -> Option<attract::Att
 /// world update.
 unsafe fn droppable(object: usize) -> bool {
     // SAFETY: forwarded from the caller.
-    let slot = unsafe { (object as *const WeaponBase).as_ref() }
-        .and_then(|weapon| unsafe { slot_of(weapon) });
-    slot != Some(WeaponSlot::E_SLOT_DUAL_WIELD) || single::is(object)
+    unsafe { (object as *const WeaponBase).as_ref() }
+        .is_none_or(|weapon| !unsafe { single::is_pair(weapon) })
 }
 
 /// Whether a grab's outcome is one the grab cue pulses: a draw, a dock, or a foregrip grab.

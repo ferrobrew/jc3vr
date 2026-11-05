@@ -120,6 +120,17 @@ pub(crate) fn is(object: usize) -> bool {
     set::contains(object)
 }
 
+/// Whether `weapon` is the game's dual-wield pair: a weapon of the dual-wield slot that is not a
+/// single pistol, one object of two guns, which cannot lie in the world.
+///
+/// # Safety
+///
+/// `weapon` must be live.
+pub(crate) unsafe fn is_pair(weapon: &WeaponBase) -> bool {
+    (unsafe { slot_of(weapon) }) == Some(WeaponSlot::E_SLOT_DUAL_WIELD)
+        && !is(weapon as *const WeaponBase as usize)
+}
+
 /// Whether new pistols are made single: the setting is on, and the VR inventory tracks and carries
 /// weapons.
 pub(crate) fn active() -> bool {

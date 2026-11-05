@@ -129,8 +129,7 @@ pub(crate) unsafe fn drop_held(
     let weapon = unsafe { handle.as_mut() };
     let slot = unsafe { slot_of(weapon) }.ok_or(DockRefusal::Unsupported)?;
     // The game's pair is one weapon and cannot fall; a single pistol is a weapon alone.
-    let pair = !single::is(weapon as *mut WeaponBase as usize);
-    if slot == WeaponSlot::E_SLOT_DUAL_WIELD && pair {
+    if unsafe { single::is_pair(weapon) } {
         return Err(DockRefusal::Unsupported);
     }
     let first = unsafe { gun::guns(weapon) }.next().flatten();
