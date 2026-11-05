@@ -355,7 +355,7 @@ pub(super) unsafe fn offerable(input: &OfferInput) -> Result<(), &'static str> {
     if input.button_held {
         return Err("GRAPPLE BUTTON HELD");
     }
-    let hook = unsafe { engine::local_hook() }.ok_or("NO HOOK")?;
+    let hook = unsafe { crate::grapple::hook::local_hook() }.ok_or("NO HOOK")?;
     match engine::busy(hook) {
         Some(Refusal::LineOut) => Err("LINE OUT"),
         Some(_) => Err("HOOK BUSY"),

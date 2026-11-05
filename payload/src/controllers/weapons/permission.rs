@@ -15,6 +15,8 @@
 
 use jc3gi::character::character::Character;
 
+use crate::grapple::hook;
+
 /// Whether a gun the character holds may fire: the game's shooting permission, or the airborne
 /// locomotion waiver ([`waived`]).
 ///
@@ -45,7 +47,7 @@ fn waived(state: AirborneState) -> bool {
 }
 
 unsafe fn airborne_state(character: &Character) -> AirborneState {
-    let hook = unsafe { character.m_Inventory.m_GrapplingHook.px.as_ref() };
+    let hook = unsafe { hook::of(character) };
     unsafe {
         AirborneState {
             airborne: character.IsUsingWingsuit()
@@ -54,7 +56,7 @@ unsafe fn airborne_state(character: &Character) -> AirborneState {
                 || character.IsFreefalling()
                 || character.IsFastfalling(),
             reeling: character.IsPreReelingIn() || character.IsReelingIn(),
-            active_wire: hook.is_some_and(|hook| !hook.m_ActiveWire.px.is_null()),
+            active_wire: hook.is_some_and(|hook| hook.m_ActiveWire.exists()),
         }
     }
 }

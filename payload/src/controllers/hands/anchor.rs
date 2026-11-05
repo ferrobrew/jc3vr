@@ -55,7 +55,10 @@ use crate::{
         hands::{self, CockpitHand, pose as hand_pose, tiers},
         haptics::{self, Event},
     },
-    grapple::physical::{PhysicalGrappleTuning, swing},
+    grapple::{
+        hook,
+        physical::{PhysicalGrappleTuning, swing},
+    },
     headpose,
     hooks::input::locomotion::character_from_context,
 };
@@ -199,9 +202,8 @@ pub fn status() -> AnchorStatus {
 ///
 /// The game stage: the game thread, before the world update.
 pub(crate) unsafe fn input_tick(config: &ControllersConfig) {
-    let hook = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
-        .and_then(|c| unsafe { c.m_Inventory.m_GrapplingHook.px.as_ref() });
-    let wire = hook.is_some_and(|h| !h.m_ActiveWire.px.is_null());
+    let hook = unsafe { hook::local_hook() }.map(|hook| &*hook);
+    let wire = hook.is_some_and(|h| h.m_ActiveWire.exists());
     let anchor = hook.and_then(|h| unsafe { attach_point(h) });
     let mut state = STATE.lock();
     let fired = wire && !state.status.wire;
@@ -356,7 +358,7 @@ unsafe fn swing(character: &mut Character) {
         return;
     }
     let world = body_rotation * Vec3::new(impulse.x, 0.0, impulse.y);
-    let Some(hook) = (unsafe { character.m_Inventory.m_GrapplingHook.px.as_mut() }) else {
+    let Some(hook) = (unsafe { hook::of_mut(character) }) else {
         return;
     };
     let proxy = &mut hook.m_GrapplingHangProxy;

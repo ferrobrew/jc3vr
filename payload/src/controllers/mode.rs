@@ -45,6 +45,7 @@ use parking_lot::Mutex;
 pub(crate) use crate::egui_impl::DebugUiInput;
 use crate::{
     controllers::frame::ActionSetKind,
+    grapple::hook,
     hooks::animation::active_state_type_id,
     ui::capture::{CaptureUpdate, OwnershipSnapshot},
 };
@@ -472,8 +473,8 @@ unsafe fn read_character(character: &Character) -> Option<CharacterSnapshot> {
     ];
     let vehicle =
         unsafe { character.IsInVehicleAttachState() }.then(|| unsafe { read_vehicle(character) });
-    let hook = unsafe { character.m_Inventory.m_GrapplingHook.px.as_ref() };
-    let grapple_wire = hook.is_some_and(|h| !h.m_ActiveWire.px.is_null());
+    let hook = unsafe { hook::of(character) };
+    let grapple_wire = hook.is_some_and(|h| h.m_ActiveWire.exists());
     let reeled_in = hook.is_some()
         && (unsafe { character.IsReeledIn() } || unsafe { character.IsGrappleHanging() });
     Some(CharacterSnapshot {

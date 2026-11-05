@@ -1,4 +1,4 @@
-//! The snatch's calls into the game: the local player's hook, the custom fire at a weapon and its
+//! The snatch's calls into the game: the custom fire of the local player's hook at a weapon and its
 //! wire, and the weapon's body.
 
 use std::{mem::MaybeUninit, num::NonZeroUsize, ptr};
@@ -15,28 +15,21 @@ use jc3gi::{
     types::{math::Vector3, shared_ptr::WeakPtrGameObject},
 };
 
-use crate::controllers::{
-    aim::gun,
-    snatch::{Refusal, sling_hooks},
-    weapons::{engine, grenade},
+use crate::{
+    controllers::{
+        aim::gun,
+        snatch::{Refusal, sling_hooks},
+        weapons::{engine, grenade},
+    },
+    grapple::hook::{self, local_hook},
 };
-
-/// The local player's grappling hook.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(super) unsafe fn local_hook() -> Option<&'static mut GrapplingHook> {
-    let character = unsafe { Character::GetLocalPlayerCharacter().as_mut() }?;
-    unsafe { character.m_Inventory.m_GrapplingHook.as_mut() }
-}
 
 /// Why the hook cannot fire now, if it cannot: a line is out, or a fire or a reel is under way.
 pub(super) fn busy(hook: &GrapplingHook) -> Option<Refusal> {
     if hook.m_ActiveWire.exists() || hook.m_AttachmentWire.exists() {
         return Some(Refusal::LineOut);
     }
-    if hook.m_WaitingForGrappleFire || hook.m_WaitingForTetherFire {
+    if hook::firing(hook) {
         return Some(Refusal::HookBusy);
     }
     (hook.m_State != GrapplingHookState::GHS_INACTIVE).then_some(Refusal::HookBusy)
@@ -99,10 +92,10 @@ pub(super) unsafe fn read_wire(wire: NonZeroUsize) -> (WireReading, Option<f32>)
     let Some(active) = (unsafe { active_wire(wire) }) else {
         return (WireReading::Gone, None);
     };
-    let end = &active.m_WireEnds[HOOK_END];
     let reading = if active.m_WireState == WireState::GHWS_INVALID {
         WireReading::Gone
     } else {
+        let end = hook::hook_end(active);
         match end.m_WireEndState {
             WireEndState::GWES_ATTACHED if !end.m_PointProxy.is_null() => WireReading::Attached,
             WireEndState::GWES_EXTENDING | WireEndState::GWES_ATTACHED => WireReading::Flying,
@@ -129,7 +122,7 @@ pub(super) unsafe fn cancel(wire: NonZeroUsize) {
 /// The owned native wire's device proxy. No wire address is dereferenced after ownership is lost.
 pub(super) unsafe fn device_proxy(wire: NonZeroUsize) -> Option<usize> {
     let wire = unsafe { active_wire(wire) }?;
-    NonZeroUsize::new(wire.m_WireEnds[1].m_PointProxy as usize).map(NonZeroUsize::get)
+    NonZeroUsize::new(hook::device_end(wire).m_PointProxy as usize).map(NonZeroUsize::get)
 }
 
 /// Remove a native rope before substituting the same tension model for both target categories.
@@ -147,7 +140,7 @@ pub(super) unsafe fn remove_constraint(wire: NonZeroUsize) {
 pub(super) unsafe fn hook_end(wire: NonZeroUsize) -> Option<&'static mut WireEnd> {
     unsafe { active_wire(wire) }?;
     let wire = unsafe { &mut *(wire.get() as *mut GrapplingHookWire) };
-    Some(&mut wire.m_WireEnds[HOOK_END])
+    Some(hook::hook_end_mut(wire))
 }
 
 /// Exclude the native rope from the custom wire `wire` from now on: its constraint is removed and
@@ -220,8 +213,6 @@ pub(super) unsafe fn player_position() -> Option<Vec3> {
     position.is_finite().then_some(position)
 }
 
-/// The hook end of a wire.
-const HOOK_END: usize = 0;
 /// A target info's bone for an object that is not a character.
 const NO_BONE: i32 = -1;
 

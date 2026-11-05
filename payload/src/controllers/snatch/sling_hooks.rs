@@ -22,6 +22,8 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
+use crate::grapple::hook;
+
 /// Only addresses identifying the owned wire and its native near-end proxy accompany the pose.
 #[derive(Copy, Clone)]
 struct Snapshot {
@@ -79,7 +81,7 @@ fn update(
     let snapshot = SNAPSHOT.lock().filter(|s| {
         s.wire == wire as usize
             // SAFETY: the native update owns this live wire throughout the call.
-            && unsafe { (*wire).m_WireEnds[1].m_PointProxy as usize == s.proxy }
+            && hook::device_end(unsafe { &*wire }).m_PointProxy as usize == s.proxy
     });
     let previous = CURRENT.replace(snapshot);
     UPDATE.get().unwrap().call(wire, owner, tuning, dt);

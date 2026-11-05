@@ -61,6 +61,7 @@ use crate::{
         physical_hands::remote,
     },
     grapple::{
+        hook,
         physical::{
             config::LockConfig,
             lock::model::{Held, SwingInput, TakeIn},
@@ -183,7 +184,7 @@ pub(crate) fn holds() -> bool {
 /// The game thread.
 pub(crate) unsafe fn lockable(config: &LockConfig) -> bool {
     config.enabled
-        && unsafe { engine::local() }.is_some_and(|(_, hook)| {
+        && unsafe { hook::local() }.is_some_and(|(_, hook)| {
             unsafe { engine::reeling_far_end(hook) }
                 .is_some_and(|proxy| engine::lockable_kind(proxy.m_AttachmentObjectInfo))
         })
@@ -224,7 +225,7 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
     {
         tracing::debug!(target: "grapple", %error, "grapple lock: the reaction found no body");
     }
-    let Some((character, hook)) = (unsafe { engine::local() }) else {
+    let Some((character, hook)) = (unsafe { hook::local() }) else {
         end(None, LockEnd::ReelEnded, input.hand);
         return;
     };

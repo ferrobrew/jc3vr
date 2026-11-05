@@ -15,20 +15,22 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use detours_macro::detour;
 use jc3gi::{
-    character::character::Character,
     equipment::{
-        grappling_hook::{GrapplingHook, GrapplingHookState, WireState},
+        grappling_hook::{GrapplingHook, GrapplingHookState},
         weapon::WeaponBase,
-        wire_end::{HookTargetInfo, WireEnd, WireEndState},
+        wire_end::{HookTargetInfo, WireEnd},
     },
     types::math::Vector3,
 };
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::weapons::{
-    hold::refs::{Strong, Weak},
-    inventory::engine::weapon_of,
+use crate::{
+    controllers::weapons::{
+        hold::refs::{Strong, Weak},
+        inventory::engine::weapon_of,
+    },
+    grapple::hook::{attached_hook_end, local_hook},
 };
 
 /// The hooks, aggregated by [`crate::controllers::snatch::hook_library`].
@@ -112,26 +114,19 @@ fn on_pre_sim_update(hook: *mut GrapplingHook, dt: f32) {
 ///
 /// `hook` must be null or live, in its update.
 unsafe fn reel_in_weapon(hook: *mut GrapplingHook) {
+    let local = unsafe { local_hook() }.map(|local| local as *mut GrapplingHook);
+    if local != Some(hook) {
+        return;
+    }
     let Some(hook) = (unsafe { hook.as_mut() }) else {
         return;
     };
-    let local = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
-        .map(|c| c.m_Inventory.m_GrapplingHook.px);
-    if local != Some(hook as *mut GrapplingHook)
-        || hook.m_State != GrapplingHookState::GHS_INACTIVE
-        || hook.m_CachedDualTetherFire
-    {
+    if hook.m_State != GrapplingHookState::GHS_INACTIVE || hook.m_CachedDualTetherFire {
         return;
     }
-    let Some(wire) = (unsafe { hook.m_ActiveWire.as_ref() }) else {
+    let Some(end) = (unsafe { hook.m_ActiveWire.as_ref() }).and_then(attached_hook_end) else {
         return;
     };
-    let end = &wire.m_WireEnds[0];
-    if wire.m_WireState == WireState::GHWS_INVALID
-        || end.m_WireEndState != WireEndState::GWES_ATTACHED
-    {
-        return;
-    }
     let Some(weapon) = (unsafe { latched_weapon(&end.m_TargetInfo) }) else {
         return;
     };

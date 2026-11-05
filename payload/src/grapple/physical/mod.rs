@@ -33,10 +33,7 @@ pub mod tether;
 use std::time::{Duration, Instant};
 
 pub use config::{PhysicalGrappleConfig, PhysicalGrappleTuning};
-use jc3gi::{
-    character::character::Character,
-    equipment::grappling_hook::{GrapplingHook, GrapplingHookState},
-};
+use jc3gi::equipment::grappling_hook::GrapplingHookState;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -48,10 +45,13 @@ use crate::{
         haptics::{self, Event, Sustain},
         mode::{Detection, Traversal},
     },
-    grapple::physical::{
-        pull::{LinePull, PullReading},
-        reel::ReelDrive,
-        tether::TetherTick,
+    grapple::{
+        hook::{self, HookRead},
+        physical::{
+            pull::{LinePull, PullReading},
+            reel::ReelDrive,
+            tether::TetherTick,
+        },
     },
     headpose,
 };
@@ -203,7 +203,7 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
         && tether::armed(
             &TetherTick {
                 tethers,
-                active_wire: hook.is_some_and(|h| h.active_wire),
+                active_wire: hook.is_some_and(|h| h.read.active_wire),
                 detection: *input.detection,
             },
             &config.tether,
@@ -340,10 +340,10 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
         live: true,
         phase: hook.map_or(GrapplePhase::Inactive, |h| {
             phase(
-                h.state,
-                h.active_wire,
+                h.read.state,
+                h.read.active_wire,
                 anchor.is_some(),
-                h.firing,
+                h.read.firing,
                 input.detection,
             )
         }),
@@ -466,12 +466,11 @@ static STATUS: Mutex<(GrappleStatus, Option<Instant>)> = Mutex::new((
     None,
 ));
 
-/// The local player's hook as the input tick reads it.
+/// The local player's hook as the input tick reads it: the phase's fields, and the tethers and
+/// their tension as the game counts them.
 #[derive(Copy, Clone)]
-struct HookRead {
-    state: GrapplingHookState,
-    active_wire: bool,
-    firing: bool,
+struct HookTick {
+    read: HookRead,
     /// Whether the latched fire target is an object.
     object_target: bool,
     tethers: u32,
@@ -484,14 +483,11 @@ struct HookRead {
 /// # Safety
 ///
 /// Game thread, before the world update.
-unsafe fn read_hook() -> Option<HookRead> {
-    let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
-    let hook: &GrapplingHook = unsafe { character.m_Inventory.m_GrapplingHook.px.as_ref() }?;
+unsafe fn read_hook() -> Option<HookTick> {
+    let hook = unsafe { hook::local_hook() }?;
     let tension = unsafe { hook.GetHighestWireTension() };
-    Some(HookRead {
-        state: hook.m_State,
-        active_wire: !hook.m_ActiveWire.px.is_null(),
-        firing: hook.m_WaitingForGrappleFire || hook.m_WaitingForTetherFire,
+    Some(HookTick {
+        read: HookRead::of(hook),
         object_target: !hook.m_HookFireInfo.m_TargetGameObject.px.is_null(),
         tethers: u32::try_from(unsafe { hook.GetNumDualTethers() }).unwrap_or(0),
         tension: if tension.is_finite() { tension } else { 0.0 },

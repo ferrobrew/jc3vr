@@ -49,17 +49,18 @@ use std::{
 
 use body_rig::angle::wrap;
 use glam::{Quat, Vec3};
-use jc3gi::{character::character::Character, equipment::grappling_hook::GrapplingHookState};
+use jc3gi::equipment::grappling_hook::GrapplingHookState;
 use parking_lot::Mutex;
 
 pub mod config;
+pub(crate) mod hook;
 pub mod physical;
 pub mod rope;
 pub mod telemetry;
 
 pub use config::{GrappleComfortConfig, GrappleComfortMode};
 
-use crate::headpose;
+use crate::{grapple::hook::HookRead, headpose};
 
 /// Advance the filter one step: read the hook's phase, run the engage/hold/handoff/release state
 /// machine, and update the anchor absorber. `body` and `anchor` are the raw body rotation and
@@ -344,29 +345,11 @@ fn filter_with(body: Quat, mode: GrappleComfortMode, held: Quat, factor: f32) ->
     body.slerp(filtered, factor.min(1.0)).normalize()
 }
 
-/// A snapshot of the local player's grappling-hook fields the filter reads each advance.
-struct HookSnapshot {
-    state: GrapplingHookState,
-    /// Whether the active wire is live.
-    wire: bool,
-    /// Whether a fire is committed and awaiting the fire animation's release
-    /// (`m_WaitingForGrappleFire`/`m_WaitingForTetherFire`).
-    firing: bool,
-}
-
 /// Read the local player's grappling hook, or `None` when there is no local character or hook. A
-/// plain field walk (character → inventory → hook), safe on both advance cadences.
-fn hook_snapshot() -> Option<HookSnapshot> {
-    unsafe {
-        let character = Character::GetLocalPlayerCharacter();
-        let character = character.as_ref()?;
-        let hook = character.m_Inventory.m_GrapplingHook.as_ref()?;
-        Some(HookSnapshot {
-            state: hook.m_State,
-            wire: hook.m_ActiveWire.exists(),
-            firing: hook.m_WaitingForGrappleFire || hook.m_WaitingForTetherFire,
-        })
-    }
+/// plain field walk, safe on both advance cadences.
+fn hook_snapshot() -> Option<HookRead> {
+    // SAFETY: the hook's plain fields, read where the game does not free it.
+    unsafe { hook::local_hook() }.map(|hook| HookRead::of(hook))
 }
 
 /// The local player's grapple phase as `(reeling, engaged_other)`: actively zipping
@@ -390,8 +373,8 @@ fn reel_flags() -> (bool, bool) {
         GrapplingHookState::GHS_REELED_ATTACHED
         | GrapplingHookState::GHS_REELED_HANG
         | GrapplingHookState::GHS_REELED_UPSIDEDOWN
-        | GrapplingHookState::GHS_REELED_STUNT => (false, hook.wire || hook.firing),
-        GrapplingHookState::GHS_INACTIVE => (false, hook.wire || hook.firing),
+        | GrapplingHookState::GHS_REELED_STUNT => (false, hook.active_wire || hook.firing),
+        GrapplingHookState::GHS_INACTIVE => (false, hook.active_wire || hook.firing),
         _ => (false, hook.firing),
     }
 }

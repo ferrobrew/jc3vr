@@ -25,12 +25,15 @@ use jc3gi::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    aim::{
-        ray::Ray,
-        raycast::{self, CastOptions, RayHit},
+use crate::{
+    controllers::{
+        aim::{
+            ray::Ray,
+            raycast::{self, CastOptions, RayHit},
+        },
+        snatch::engine,
     },
-    snatch::engine,
+    grapple::hook::local_hook,
 };
 
 /// The juice's hooks, aggregated by [`crate::controllers::snatch::hook_library`].
@@ -46,7 +49,7 @@ pub(super) fn hook_library() -> HookLibrary {
 /// The game thread, before the world update.
 pub(super) unsafe fn set_reeling(reeling: bool) {
     let hook = if reeling {
-        unsafe { engine::local_hook() }.map_or(0, |hook| hook as *mut GrapplingHook as usize)
+        unsafe { local_hook() }.map_or(0, |hook| hook as *mut GrapplingHook as usize)
     } else {
         0
     };
@@ -101,7 +104,7 @@ pub(super) unsafe fn impact(wire: NonZeroUsize, object: NonZeroUsize, from: Vec3
 ///
 /// The game thread, before the world update.
 pub(super) unsafe fn retract() {
-    let Some(hook) = (unsafe { engine::local_hook() }) else {
+    let Some(hook) = (unsafe { local_hook() }) else {
         return;
     };
     let usage = hook.m_RetractingActiveWireEffectUsage;
@@ -115,7 +118,7 @@ pub(super) unsafe fn retract() {
 ///
 /// The game thread, before the world update.
 pub(super) unsafe fn fire() {
-    let Some(hook) = (unsafe { engine::local_hook() }) else {
+    let Some(hook) = (unsafe { local_hook() }) else {
         return;
     };
     let usage = unsafe {

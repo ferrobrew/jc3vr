@@ -1,5 +1,4 @@
-//! The lock's engine side: the local player's hook and its far end, the far end's point, motion,
-//! and body, the character's mass and support, and the line let go of. The engine side is in "The
+//! The lock's engine side: the far end of the local player's hook, its point, motion, and body, the character's mass and support, and the line let go of. The engine side is in "The
 //! reel's motion and endings" in `docs/engine/gameplay/grapple-pipeline.md`.
 
 use std::num::NonZeroUsize;
@@ -9,25 +8,16 @@ use jc3gi::{
     character::character::Character,
     equipment::{
         grapple_point_proxy::{AttachmentObjectInfo, GrapplePointProxy},
-        grappling_hook::{GrapplingHook, GrapplingHookState, WireState},
-        wire_end::WireEndState,
+        grappling_hook::{GrapplingHook, GrapplingHookState},
     },
     physics::{PfxCharacterInstance, hknpCharacterSurfaceInfo},
     types::math::Vector3,
 };
 
-use crate::controllers::physical_hands::{self, BodyState};
-
-/// The local player's character and hook.
-///
-/// # Safety
-///
-/// The game thread.
-pub(super) unsafe fn local() -> Option<(&'static mut Character, &'static mut GrapplingHook)> {
-    let character = unsafe { Character::GetLocalPlayerCharacter().as_mut() }?;
-    let hook = unsafe { character.m_Inventory.m_GrapplingHook.px.as_mut() }?;
-    Some((character, hook))
-}
+use crate::{
+    controllers::physical_hands::{self, BodyState, characters::engine::proxy_body},
+    grapple::hook,
+};
 
 /// The far end's proxy of `hook`'s active wire while the hook reels in along it, the far end is
 /// attached, and what it is attached to is live.
@@ -50,14 +40,7 @@ pub(super) unsafe fn attached_far_end(hook: &GrapplingHook) -> Option<&GrapplePo
         return None;
     }
     let wire = unsafe { hook.m_ActiveWire.px.as_ref() }?;
-    if wire.m_WireState == WireState::GHWS_INVALID {
-        return None;
-    }
-    let end = &wire.m_WireEnds[0];
-    if end.m_WireEndState != WireEndState::GWES_ATTACHED {
-        return None;
-    }
-    unsafe { end.m_PointProxy.as_ref() }
+    unsafe { hook::attached_hook_end(wire)?.m_PointProxy.as_ref() }
 }
 
 /// Whether the lock may hold a far end attached to `kind`: anything but a character, whose own
@@ -118,12 +101,7 @@ pub(super) fn position(character: &Character) -> Vec3 {
 ///
 /// The game thread, outside the physics step.
 pub(super) unsafe fn rider_mass_kg(character: &Character) -> Option<f32> {
-    let proxy = unsafe { character.m_PfxCharacter.px.as_ref() }?;
-    let mut body = PfxCharacterInstance::INVALID_BODY_ID;
-    unsafe { proxy.GetCharacterRigidBodyId(&mut body) };
-    if body == PfxCharacterInstance::INVALID_BODY_ID {
-        return None;
-    }
+    let body = unsafe { proxy_body(character) }?;
     unsafe { physical_hands::body_mass_kg(body) }.filter(|m| *m > 0.0)
 }
 

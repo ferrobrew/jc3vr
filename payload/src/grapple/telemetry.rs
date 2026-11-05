@@ -47,7 +47,7 @@ pub fn log_tick(body: Quat, dt: f32) {
             |h| format!(
                 "{:?}{}{}",
                 h.state,
-                if h.wire { "+wire" } else { "-wire" },
+                if h.active_wire { "+wire" } else { "-wire" },
                 if h.firing { "+fire" } else { "" },
             )
         ),

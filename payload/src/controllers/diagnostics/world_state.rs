@@ -20,7 +20,7 @@ use crate::{
     config::Config,
     controllers::{frame::Hand, haptics, snatch, vehicles},
     frame_timing,
-    grapple::physical::lock,
+    grapple::{hook, physical::lock},
     headpose,
     hooks::camera::last_dtf,
 };
@@ -56,17 +56,17 @@ pub(super) fn view_state() -> Option<ViewState> {
 pub(super) fn grapple_state(character: &Character) -> Option<GrappleState> {
     // SAFETY: the game thread after the render update; the hook and its wire are the local
     // player's, alive for the read.
-    let hook = unsafe { character.m_Inventory.m_GrapplingHook.px.as_ref() }?;
+    let hook = unsafe { hook::of(character) }?;
     let wire = unsafe { hook.m_ActiveWire.px.as_ref() }
         .or(unsafe { hook.m_AttachmentWire.px.as_ref() })?;
     let debug = |value: &dyn std::fmt::Debug| Label::Owned(format!("{value:?}"));
-    let hook_end = &wire.m_WireEnds[0];
+    let hook_end = hook::hook_end(wire);
     Some(GrappleState {
         hook_state: debug(&hook.m_State),
         wire_state: debug(&wire.m_WireState),
         max_length_m: wire.m_MaxLength,
         hook: wire_end(hook_end),
-        device: wire_end(&wire.m_WireEnds[1]),
+        device: wire_end(hook::device_end(wire)),
         target_object: std::num::NonZeroUsize::new(
             hook_end.m_TargetInfo.m_TargetGameObject.px as usize,
         )
