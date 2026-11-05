@@ -25,6 +25,7 @@ use jc3gi::{
 };
 
 use crate::controllers::physical_hands::{
+    bodies::slot,
     physics::{self, havok_affine},
     world::World,
 };
@@ -360,18 +361,6 @@ unsafe fn proxy_slot<'w>(
     let mut body = PfxCharacterInstance::INVALID_BODY_ID;
     unsafe { proxy.GetCharacterRigidBodyId(&mut body) };
     unsafe { slot(world, body) }.ok_or(ClimbEngineError::NoPlayer)
-}
-
-/// The world's slot for the body `body`, if it holds one.
-unsafe fn slot(world: &hknpWorld, body: u32) -> Option<&hknpBody> {
-    if body == PfxCharacterInstance::INVALID_BODY_ID
-        || body > world.m_peakBodyIndex
-        || world.m_bodies.is_null()
-    {
-        return None;
-    }
-    let slot = unsafe { &*world.m_bodies.add(body as usize) };
-    (slot.m_motionId != hknpBody::INVALID_MOTION_ID).then_some(slot)
 }
 
 fn aligned(v: Vec3) -> AlignedVector3 {

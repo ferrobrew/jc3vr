@@ -2,24 +2,23 @@
 
 use std::{
     collections::HashSet,
-    ptr::{self, NonNull},
+    ptr::NonNull,
     sync::atomic::{AtomicU32, Ordering},
 };
 
 use jc3gi::{
     character::character::Character,
-    game::GameObject,
     havok::{hkAabb, hkReferencedObject, hknpShape},
-    physics::{
-        PfxCharacterInstance, PfxInstance, PhysicsGameObject, ProxyState,
-        SharedPfxCharacterSettings, hknpBody, hknpWorld,
-    },
+    physics::{PfxCharacterInstance, ProxyState, SharedPfxCharacterSettings, hknpBody, hknpWorld},
 };
 
-use crate::controllers::physical_hands::human_hull::{
-    ClearanceUnavailableReason,
-    geometry::{self, Bounds, GeometryError},
-    query::{self, Budget},
+use crate::controllers::physical_hands::{
+    bodies,
+    human_hull::{
+        ClearanceUnavailableReason,
+        geometry::{self, Bounds, GeometryError},
+        query::{self, Budget},
+    },
 };
 
 pub(super) struct NativeState {
@@ -193,21 +192,14 @@ impl NativeState {
         let mut owners = HashSet::new();
         let type_id = unsafe { Character::TYPE_ID() };
         let settings = bodies.into_iter().filter_map(|id| {
-            let owner = unsafe { body_owner(world, id) }?;
-            if !owners.insert(owner.as_ptr() as usize) {
+            let owner = unsafe { bodies::body_owner(world, id) }?;
+            if !owners.insert(owner.get()) {
                 return None;
             }
-            let object = unsafe {
-                &*owner
-                    .as_ptr()
-                    .cast::<u8>()
-                    .add(PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize)
-                    .cast::<GameObject>()
-            };
-            if !unsafe { object.IsType(type_id) } {
+            if !unsafe { bodies::is_type(owner, type_id) } {
                 return None;
             }
-            let character = unsafe { &*owner.as_ptr().cast::<Character>() };
+            let character = unsafe { &*(owner.get() as *const Character) };
             let proxy = unsafe { character.m_PfxCharacter.px.as_ref() }?;
             Some(
                 unsafe { proxy.m_Owner.as_mut() }
@@ -583,29 +575,7 @@ unsafe fn player_body(world: &hknpWorld) -> Option<u32> {
     let proxy = unsafe { character.m_PfxCharacter.px.as_ref() }?;
     let mut body = PfxCharacterInstance::INVALID_BODY_ID;
     unsafe { proxy.GetCharacterRigidBodyId(&mut body) };
-    (body != PfxCharacterInstance::INVALID_BODY_ID
-        && body <= world.m_peakBodyIndex
-        && !world.m_bodies.is_null())
-    .then_some(body)
-}
-
-unsafe fn body_owner(world: &hknpWorld, id: u32) -> Option<NonNull<PhysicsGameObject>> {
-    let buffer = unsafe {
-        world
-            .m_bodyProperties
-            .getWithDefault(hknpWorld::BODY_PROPERTY_PFX_INSTANCE, ptr::null_mut())
-            .as_ref()
-    }?;
-    if id >= buffer.m_capacity || buffer.m_occupancy.is_null() || buffer.m_data.is_null() {
-        return None;
-    }
-    let occupied = unsafe { *buffer.m_occupancy.add((id / 32) as usize) } & (1 << (id % 32)) != 0;
-    if !occupied {
-        return None;
-    }
-    let instance =
-        unsafe { (*buffer.m_data.cast::<*const PfxInstance>().add(id as usize)).as_ref() }?;
-    NonNull::new(instance.m_GameObject.cast())
+    unsafe { bodies::slot(world, body) }.map(|_| body)
 }
 
 pub(super) unsafe fn retain(shape: NonNull<hknpShape>) {

@@ -43,7 +43,7 @@ use crate::controllers::{
     haptics::{self, Event},
     physical_hands::{
         PhysicalHandsConfig,
-        bodies::owner_of,
+        bodies::{instance_of, owner_of},
         collider_view, engine,
         physics::{
             HAND_BODIES, HandHitsTuning, body,
@@ -463,7 +463,7 @@ static GATE: Mutex<Gates> = Mutex::new(Gates {
 unsafe fn victim(contact: &Contact, attacker: &Character) -> Option<*mut Character> {
     let object = NonZeroUsize::new(contact.other_object)?;
     let world = unsafe { World::get() }?;
-    let instance = unsafe { body::instance_of(world.world(), contact.other_body) }?;
+    let instance = unsafe { instance_of(world.world(), contact.other_body) }?;
     if instance != contact.other_instance {
         return None;
     }

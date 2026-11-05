@@ -292,17 +292,67 @@ pub(super) unsafe fn shove(
 pub(super) unsafe fn owner_of(body: u32) -> Option<NonZeroUsize> {
     let world = unsafe { World::get() }?;
     let world = world.world();
+    unsafe { slot(world, body) }?;
+    unsafe { body_owner(world, body) }
+}
+
+/// The world's slot for the body `body`, while it holds a body: the id is a valid one within the
+/// world's bodies, and its slot has a motion.
+///
+/// # Safety
+///
+/// `world` must be the live world, read where its bodies do not change under the read: the thread
+/// that steps it, or the native physics phase.
+pub(super) unsafe fn slot(world: &hknpWorld, body: u32) -> Option<&hknpBody> {
     if body == PfxCharacterInstance::INVALID_BODY_ID
         || body > world.m_peakBodyIndex
         || world.m_bodies.is_null()
     {
         return None;
     }
+    // SAFETY: every id up to the peak has a slot.
     let slot = unsafe { &*world.m_bodies.add(body as usize) };
-    if slot.m_motionId == hknpBody::INVALID_MOTION_ID {
+    (slot.m_motionId != hknpBody::INVALID_MOTION_ID).then_some(slot)
+}
+
+/// The object that owns the body `body`: its engine instance's owner ([`instance_of`]), as a
+/// physics query reports it.
+///
+/// # Safety
+///
+/// As [`slot`].
+pub(super) unsafe fn body_owner(world: &hknpWorld, body: u32) -> Option<NonZeroUsize> {
+    let instance = unsafe { (instance_of(world, body)? as *const PfxInstance).as_ref() }?;
+    NonZeroUsize::new(instance.m_GameObject as usize)
+}
+
+/// The engine instance of the body `body` ([`hknpWorld::BODY_PROPERTY_PFX_INSTANCE`]), as an
+/// address.
+///
+/// # Safety
+///
+/// As [`slot`].
+pub(super) unsafe fn instance_of(world: &hknpWorld, body: u32) -> Option<usize> {
+    let buffer = unsafe {
+        world
+            .m_bodyProperties
+            .getWithDefault(hknpWorld::BODY_PROPERTY_PFX_INSTANCE, ptr::null_mut())
+            .as_ref()
+    }?;
+    if body >= buffer.m_capacity || buffer.m_occupancy.is_null() || buffer.m_data.is_null() {
         return None;
     }
-    unsafe { body_owner(world, body) }
+    let word = unsafe { *buffer.m_occupancy.add((body / 32) as usize) };
+    if word & (1 << (body % 32)) == 0 {
+        return None;
+    }
+    let instance = unsafe {
+        *buffer
+            .m_data
+            .cast::<*const PfxInstance>()
+            .add(body as usize)
+    };
+    (!instance.is_null()).then_some(instance as usize)
 }
 
 /// The mass of the dynamic body `body`, whatever owns it: `None` for a freed body, one that is
@@ -314,15 +364,8 @@ pub(super) unsafe fn owner_of(body: u32) -> Option<NonZeroUsize> {
 pub(super) unsafe fn mass_kg(body: u32) -> Option<f32> {
     let world = unsafe { World::get() }?;
     let world = world.world();
-    if body == PfxCharacterInstance::INVALID_BODY_ID
-        || body > world.m_peakBodyIndex
-        || world.m_bodies.is_null()
-        || world.m_motions.is_null()
-    {
-        return None;
-    }
-    let slot = unsafe { &*world.m_bodies.add(body as usize) };
-    if slot.m_motionId == hknpBody::INVALID_MOTION_ID || slot.m_flags & hknpBody::IS_DYNAMIC == 0 {
+    let slot = unsafe { slot(world, body) }?;
+    if world.m_motions.is_null() || slot.m_flags & hknpBody::IS_DYNAMIC == 0 {
         return None;
     }
     let motion = unsafe { &*world.m_motions.add(slot.m_motionId as usize) };
@@ -362,15 +405,8 @@ unsafe fn owned_motion(
     body: u32,
     owner: NonZeroUsize,
 ) -> Result<&hknpMotion, BodyError> {
-    if body == PfxCharacterInstance::INVALID_BODY_ID
-        || body > world.m_peakBodyIndex
-        || world.m_bodies.is_null()
-        || world.m_motions.is_null()
-    {
-        return Err(BodyError::NoBody);
-    }
-    let slot = unsafe { &*world.m_bodies.add(body as usize) };
-    if slot.m_motionId == hknpBody::INVALID_MOTION_ID {
+    let slot = unsafe { slot(world, body) }.ok_or(BodyError::NoBody)?;
+    if world.m_motions.is_null() {
         return Err(BodyError::NoBody);
     }
     if slot.m_flags & hknpBody::IS_DYNAMIC == 0 {
@@ -380,32 +416,6 @@ unsafe fn owned_motion(
         return Err(BodyError::Reowned);
     }
     Ok(unsafe { &*world.m_motions.add(slot.m_motionId as usize) })
-}
-
-/// The object that owns the body `body`: its engine instance's owner, as a physics query reports
-/// it.
-unsafe fn body_owner(world: &hknpWorld, body: u32) -> Option<NonZeroUsize> {
-    let buffer = unsafe {
-        world
-            .m_bodyProperties
-            .getWithDefault(hknpWorld::BODY_PROPERTY_PFX_INSTANCE, ptr::null_mut())
-            .as_ref()
-    }?;
-    if body >= buffer.m_capacity || buffer.m_occupancy.is_null() || buffer.m_data.is_null() {
-        return None;
-    }
-    let word = unsafe { *buffer.m_occupancy.add((body / 32) as usize) };
-    if word & (1 << (body % 32)) == 0 {
-        return None;
-    }
-    let instance = unsafe {
-        *buffer
-            .m_data
-            .cast::<*const PfxInstance>()
-            .add(body as usize)
-    };
-    let instance = unsafe { instance.as_ref() }?;
-    NonZeroUsize::new(instance.m_GameObject as usize)
 }
 
 /// A Havok `hkHalf`: the upper 16 bits of an `f32`.

@@ -321,7 +321,7 @@ unsafe fn identity(world: &World, body: u32, owner: NonZeroUsize) -> Option<Iden
         world: world.world() as *const hknpWorld as usize,
         body,
         owner,
-        instance: unsafe { body::instance_of(world.world(), body) }?,
+        instance: unsafe { bodies::instance_of(world.world(), body) }?,
     })
 }
 

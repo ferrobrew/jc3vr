@@ -21,7 +21,7 @@
 use std::{
     fmt,
     mem::MaybeUninit,
-    ptr::{self, NonNull},
+    ptr::NonNull,
     sync::atomic::{AtomicU32, Ordering},
 };
 
@@ -31,8 +31,8 @@ use jc3gi::{
     havok::{hkReferencedObject, hknpBodyCinfo, hknpCapsuleShape, hknpMotionCinfo, hknpShape},
     memory::{MemoryFree, OperatorNew},
     physics::{
-        CustomGroupCollisionFilter, PfxCharacterInstance, PfxInstance, PfxLayer, PfxRigidBody,
-        hknpAdditionMode, hknpBody, hknpWorld,
+        CustomGroupCollisionFilter, PfxCharacterInstance, PfxLayer, PfxRigidBody, hknpAdditionMode,
+        hknpBody, hknpWorld,
     },
     types::{
         math::Matrix4,
@@ -41,6 +41,7 @@ use jc3gi::{
 };
 
 use crate::controllers::physical_hands::{
+    bodies,
     physics::{
         contact::{self, ContactError, Source},
         drive::BodyMotion,
@@ -460,7 +461,7 @@ impl HandBody {
     /// The body's slot, checked to still hold this wrapper's body: the id has a slot with a
     /// motion, and the slot's engine instance is this wrapper.
     unsafe fn slot<'w>(&self, world: &'w hknpWorld) -> Result<&'w hknpBody, BodyError> {
-        unsafe { self.slot_with(world, |world, body| instance_of(world, body)) }
+        unsafe { self.slot_with(world, |world, body| bodies::instance_of(world, body)) }
     }
 
     unsafe fn slot_with<'w>(
@@ -468,17 +469,10 @@ impl HandBody {
         world: &'w hknpWorld,
         instance: impl FnOnce(&hknpWorld, u32) -> Option<usize>,
     ) -> Result<&'w hknpBody, BodyError> {
-        if self.world != world as *const hknpWorld as usize
-            || self.body_id > world.m_peakBodyIndex
-            || world.m_bodies.is_null()
-            || world.m_motions.is_null()
-        {
+        if self.world != world as *const hknpWorld as usize || world.m_motions.is_null() {
             return Err(BodyError::Lost);
         }
-        let slot = unsafe { &*world.m_bodies.add(self.body_id as usize) };
-        if slot.m_motionId == hknpBody::INVALID_MOTION_ID {
-            return Err(BodyError::Lost);
-        }
+        let slot = unsafe { bodies::slot(world, self.body_id) }.ok_or(BodyError::Lost)?;
         if instance(world, self.body_id) != Some(self.wrapper.as_ptr() as usize) {
             return Err(BodyError::Lost);
         }
@@ -511,14 +505,7 @@ pub unsafe fn player_system_group() -> Option<u32> {
     let mut body = PfxCharacterInstance::INVALID_BODY_ID;
     unsafe { proxy.GetCharacterRigidBodyId(&mut body) };
     let world = unsafe { World::get() }?;
-    let world = world.world();
-    if body == PfxCharacterInstance::INVALID_BODY_ID
-        || body > world.m_peakBodyIndex
-        || world.m_bodies.is_null()
-    {
-        return None;
-    }
-    let slot = unsafe { &*world.m_bodies.add(body as usize) };
+    let slot = unsafe { bodies::slot(world.world(), body) }?;
     let group = slot.m_collisionFilterInfo >> CustomGroupCollisionFilter::SYSTEM_GROUP_SHIFT;
     (group != 0).then_some(group)
 }
@@ -536,36 +523,10 @@ pub unsafe fn in_player_group(body: u32) -> bool {
     let Some(world) = (unsafe { World::get() }) else {
         return false;
     };
-    let world = world.world();
-    if body > world.m_peakBodyIndex || world.m_bodies.is_null() {
+    let Some(slot) = (unsafe { bodies::slot(world.world(), body) }) else {
         return false;
-    }
-    let slot = unsafe { &*world.m_bodies.add(body as usize) };
-    slot.m_collisionFilterInfo >> CustomGroupCollisionFilter::SYSTEM_GROUP_SHIFT == group
-}
-
-/// The engine instance of the body `body`, as an address.
-pub(crate) unsafe fn instance_of(world: &hknpWorld, body: u32) -> Option<usize> {
-    let buffer = unsafe {
-        world
-            .m_bodyProperties
-            .getWithDefault(hknpWorld::BODY_PROPERTY_PFX_INSTANCE, ptr::null_mut())
-            .as_ref()
-    }?;
-    if body >= buffer.m_capacity || buffer.m_occupancy.is_null() || buffer.m_data.is_null() {
-        return None;
-    }
-    let word = unsafe { *buffer.m_occupancy.add((body / 32) as usize) };
-    if word & (1 << (body % 32)) == 0 {
-        return None;
-    }
-    let instance = unsafe {
-        *buffer
-            .m_data
-            .cast::<*const PfxInstance>()
-            .add(body as usize)
     };
-    (!instance.is_null()).then_some(instance as usize)
+    slot.m_collisionFilterInfo >> CustomGroupCollisionFilter::SYSTEM_GROUP_SHIFT == group
 }
 
 /// Drop one reference to `object`, destroying it when it was the last, as the engine's inline

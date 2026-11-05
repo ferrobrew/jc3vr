@@ -24,7 +24,7 @@ use jc3gi::{
         hkMemoryRouter, hkReferencedObject, hkTransformf, hknpConstraintCinfo,
         hkpFixedConstraintData,
     },
-    physics::{PfxCharacterInstance, hknpBody, hknpConstraint, hknpConstraintManager, hknpWorld},
+    physics::{hknpConstraint, hknpConstraintManager, hknpWorld},
     types::vector_math::AlignedVector3,
 };
 use windows::Win32::System::Threading::TlsGetValue;
@@ -114,8 +114,9 @@ impl Joint {
         object: Option<NonZeroUsize>,
     ) -> Result<Self, JointError> {
         let mut world = unsafe { World::get() }.ok_or(JointError::NoPhysicsWorld)?;
-        let hand_frame = affine(&unsafe { slot(world.world(), hand) }?.m_transform);
-        let object_frame = affine(&unsafe { slot(world.world(), object_body) }?.m_transform);
+        let slot = |body| unsafe { bodies::slot(world.world(), body) }.ok_or(JointError::NoBody);
+        let hand_frame = affine(&slot(hand)?.m_transform);
+        let object_frame = affine(&slot(object_body)?.m_transform);
         let pivot_a = transform(Affine3A::IDENTITY);
         let pivot_b = transform(pivot_in(object_frame, hand_frame));
 
@@ -239,21 +240,6 @@ pub fn transform(a: Affine3A) -> hkTransformf {
         ],
         m_translation: column(a.translation),
     }
-}
-
-/// The world's slot for the body `body`, checked to hold a body.
-unsafe fn slot(world: &hknpWorld, body: u32) -> Result<&hknpBody, JointError> {
-    if body == PfxCharacterInstance::INVALID_BODY_ID
-        || body > world.m_peakBodyIndex
-        || world.m_bodies.is_null()
-    {
-        return Err(JointError::NoBody);
-    }
-    let slot = unsafe { &*world.m_bodies.add(body as usize) };
-    if slot.m_motionId == hknpBody::INVALID_MOTION_ID {
-        return Err(JointError::NoBody);
-    }
-    Ok(slot)
 }
 
 /// Fixed constraint data's memory, from the calling thread's Havok heap.

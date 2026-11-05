@@ -7,7 +7,7 @@ use glam::{Mat4, Vec3};
 use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponData},
     havok::hknpShape,
-    physics::{PfxRigidBody, hknpBody},
+    physics::PfxRigidBody,
 };
 
 use crate::controllers::{
@@ -15,8 +15,9 @@ use crate::controllers::{
     frame::{Hand, Pose},
     hands::{self, grip},
     physical_hands::{
+        bodies,
         physics::{
-            body::{half_to_f32, instance_of},
+            body::half_to_f32,
             guns::{
                 GunHolds, HeldGun,
                 math::{GunAxes, brace_contact, gun_axes},
@@ -191,12 +192,9 @@ pub(super) unsafe fn read_source(held: &HeldGun) -> Result<GunSource, GunError> 
 pub(super) unsafe fn check_own_body(held: &HeldGun) -> Result<(), GunError> {
     let world = unsafe { World::get() }.ok_or(GunError::NoPhysicsWorld)?;
     let world = world.world();
-    if held.body > world.m_peakBodyIndex || world.m_bodies.is_null() || world.m_motions.is_null() {
-        return Err(GunError::GunGone);
-    }
-    let slot = unsafe { &*world.m_bodies.add(held.body as usize) };
-    if slot.m_motionId == hknpBody::INVALID_MOTION_ID
-        || unsafe { instance_of(world, held.body) } != Some(held.wrapper.get())
+    if world.m_motions.is_null()
+        || unsafe { bodies::slot(world, held.body) }.is_none()
+        || unsafe { bodies::instance_of(world, held.body) } != Some(held.wrapper.get())
     {
         return Err(GunError::GunGone);
     }
