@@ -398,9 +398,9 @@ fn a_held_item_rides_along_and_a_body_slot_in_reach_claims_the_hand() {
         GrabVolume::MagazinePouch,
         GrabVolume::C4Pouch,
     ] {
-        assert!(on_body(volume), "{volume:?}");
+        assert!(volume.on_body(), "{volume:?}");
     }
     for volume in [GrabVolume::Foregrip, GrabVolume::Handle, GrabVolume::Climb] {
-        assert!(!on_body(volume), "{volume:?}");
+        assert!(!volume.on_body(), "{volume:?}");
     }
 }

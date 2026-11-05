@@ -869,17 +869,6 @@ pub(super) fn entered_body_volumes(
 ) -> [bool; 2] {
     Hand::BOTH.map(|hand| {
         let i = hand.index();
-        now[i].is_some_and(|v| is_body_volume(v) && previous[i] != Some(v))
+        now[i].is_some_and(|v| v.on_body() && previous[i] != Some(v))
     })
-}
-
-/// Whether `volume` is placed on the body: a socket or a pouch.
-fn is_body_volume(volume: GrabVolume) -> bool {
-    matches!(
-        volume,
-        GrabVolume::Socket(_)
-            | GrabVolume::GrenadePouch
-            | GrabVolume::MagazinePouch
-            | GrabVolume::C4Pouch
-    )
 }

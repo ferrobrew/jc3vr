@@ -399,7 +399,7 @@ fn claims(tick: &Tick<'_>, now: Instant) -> [HandClaims; 2] {
             grip: grip
                 || tick.grabs[i].is_some()
                 || foregrip.is_some_and(|hold| hold.holder.other() == hand),
-            slot: tick.reaches[i].iter().copied().any(on_body),
+            slot: tick.reaches[i].iter().copied().any(GrabVolume::on_body),
             mechanical: reload.fire_held[i]
                 || reload
                     .insert_hands
@@ -415,17 +415,6 @@ const fn holds_item(source: GripSource) -> bool {
     matches!(
         source,
         GripSource::Gun | GripSource::Grenade | GripSource::C4 | GripSource::Pickup
-    )
-}
-
-/// Whether `volume` is a slot on the body: a socket, or a pouch.
-const fn on_body(volume: GrabVolume) -> bool {
-    matches!(
-        volume,
-        GrabVolume::Socket(_)
-            | GrabVolume::GrenadePouch
-            | GrabVolume::MagazinePouch
-            | GrabVolume::C4Pouch
     )
 }
 

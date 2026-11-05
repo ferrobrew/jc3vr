@@ -117,6 +117,17 @@ pub enum GrabVolume {
 }
 
 impl GrabVolume {
+    /// Whether the volume is a slot on the body: a socket, or a pouch.
+    pub const fn on_body(self) -> bool {
+        matches!(
+            self,
+            GrabVolume::Socket(_)
+                | GrabVolume::GrenadePouch
+                | GrabVolume::MagazinePouch
+                | GrabVolume::C4Pouch
+        )
+    }
+
     pub const fn label(self) -> &'static str {
         match self {
             GrabVolume::Foregrip => "foregrip",
