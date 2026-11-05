@@ -268,7 +268,7 @@ Three steps, each fading in as its distance closes from its engage distance to i
 
 The solved move is applied through an ease (`solve::ease`, time constant `EASE_S`, 0.06 s), kept in the holding wrist's frame so it travels with the gun as the hands move. Some inputs change in a step however smooth the solve is: the front hand coming onto or off the foregrip moves the stock's pivot, the shoulder estimate falling back to the arms' own shoulders moves the pocket, and the raised gun can change hands. Each of those glides over a few frames instead of turning the gun at once. A gun that is not raised eases back to where its hands hold it, and a gun just taken starts there.
 
-The debug UI's Status page has an `AIMING` section with `DOWN THE SIGHTS` (iron sights or scoped, the hand whose gun is raised, the times each step took hold, and how far the eye is off the line), and the scenario signals `ads.sighted`, `ads.shouldered`, and `ads.welded` count them (`testing/scenarios/aim_down_sights.toml`).
+The debug UI's Status page has an `AIMING` section with `DOWN THE SIGHTS` (iron sights or scoped, the hand whose gun is raised, the times each step took hold, and how far the eye is off the line), which heads the Weapons > Aim, sights, and scopes live status above the stock's, the sights', and the weld's shares, and the scenario signals `ads.sighted`, `ads.shouldered`, and `ads.welded` count them (`testing/scenarios/aim_down_sights.toml`).
 
 ## Guns against walls
 
@@ -283,7 +283,7 @@ Each hand pose then pushes the gun out of the plane, last of the cockpit-frame h
 
 The holding hand rides the gun, and the hand on its foregrip with it, so both hands stay on the gun where it is stopped, and the player's hands, which go on into the wall, are left behind for as long as the gun is against it. A gun whose grip is itself through the wall is not pushed. The first contact after a second without one logs `collide: the held gun met a wall`. Because the proxy is a ray, the gun is stopped by what it points into, not by what its sides brush, and it does not push loose objects: it is stopped by them, as by a wall.
 
-The debug UI's Status page has `GUN AGAINST WALLS` in the `AIMING` section (against a wall or clear, the contacts, and the turn and pull-back of a gun against one), the Weapons > Aim, sights, and scopes live status shows each hand's gun, and the scenario signals `collide.contacts` and `collide.touching` read it (`testing/scenarios/gun_against_walls.toml`).
+The debug UI's Status page has `GUN AGAINST WALLS` in the `AIMING` section (against a wall or clear, the contacts, and the turn and pull-back of a gun against one), the Weapons > Aim, sights, and scopes live status shows the row and beneath it each hand's gun and the probes, and the scenario signals `collide.contacts` and `collide.touching` read it (`testing/scenarios/gun_against_walls.toml`).
 
 ## Settings and readout
 

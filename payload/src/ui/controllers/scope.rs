@@ -1,22 +1,27 @@
-//! Scoped weapons: whether a scope is detected, the eyepiece's distance from the nearest eye, the
-//! lens's eyes, the precision-aim suppression's counts, and the aim-and-sights switches.
+//! Scoped weapons: the aiming rows, each hand against walls, the shares down the sights, whether a
+//! scope is detected, the eyepiece's distance from the nearest eye, the lens's eyes, the
+//! precision-aim suppression's counts, and the aim-and-sights switches.
 
 use egui::Ui;
 
-use crate::controllers::{
-    aim::sights::SightSource,
-    frame::Hand,
-    weapons::{
-        ads::{
-            self, AdsStatus,
-            config::{AdsConfig, AimingEye},
-        },
-        collide::{self, HandCollideStatus, config::CollideConfig},
-        scope::{
-            self, ScopeStatus,
-            suppress::{self, SuppressCounters},
+use crate::{
+    controllers::{
+        aim::sights::SightSource,
+        frame::Hand,
+        weapons::{
+            ads::{
+                self, AdsStatus,
+                config::{AdsConfig, AimingEye},
+            },
+            collide::{self, HandCollideStatus, config::CollideConfig},
+            scope::{
+                self, ScopeStatus,
+                suppress::{self, SuppressCounters},
+            },
         },
     },
+    status::explosives::{DOWN_THE_SIGHTS, GUN_AGAINST_WALLS},
+    ui::status_row::headlines,
 };
 
 /// Everything the scope section shows, read before the config is locked for editing.
@@ -45,6 +50,7 @@ pub(super) fn scope_readout(ui: &mut Ui, readout: &ScopeReadout) {
         suppressing,
         ads,
     } = readout;
+    headlines(ui, &[&DOWN_THE_SIGHTS, &GUN_AGAINST_WALLS]);
     let c = collide::status();
     let against = |h: &HandCollideStatus| match (h.weapon, h.touching) {
         (false, _) => "no long gun".to_owned(),
@@ -56,29 +62,16 @@ pub(super) fn scope_readout(ui: &mut Ui, readout: &ScopeReadout) {
         ),
     };
     ui.label(format!(
-        "Against walls: left {} · right {} · contacts {} · probes {}",
+        "Against walls: left {} · right {} · probes {}",
         against(&c.hands[Hand::Left.index()]),
         against(&c.hands[Hand::Right.index()]),
-        c.contacts,
         c.casts
     ));
     ui.label(format!(
-        "Down the sights: {} · raised {} · stock {:.0}% · sights {:.0}% · weld {:.0}% · eye off \
-         the line {} · sighted {} · shouldered {} · welded {}",
-        match (ads.weapon, ads.scoped) {
-            (false, _) => "no long gun measured",
-            (true, false) => "long gun",
-            (true, true) => "scoped long gun",
-        },
-        ads.raised.map_or("none", |h| h.label()),
+        "Down the sights: stock {:.0}% · sights {:.0}% · weld {:.0}%",
         ads.shoulder * 100.0,
         ads.eye * 100.0,
         ads.weld * 100.0,
-        ads.eye_offset_m
-            .map_or("-".to_owned(), |m| format!("{:.1} cm", m * 100.0)),
-        ads.sighted,
-        ads.shouldered,
-        ads.welded
     ));
     ui.label(format!(
         "Precision aim: {} · refused {} · left {}",
