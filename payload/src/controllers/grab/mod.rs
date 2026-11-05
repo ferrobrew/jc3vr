@@ -381,15 +381,13 @@ impl Candidate {
     }
 }
 
-/// The candidate `hand`, at `point`, would take among `candidates`, by the same nearest-grab-point
-/// rule the resolver applies: for the tests of the providers' placement.
+/// The candidate `hand`, at `point`, would take among `candidates`, by the resolver's own rule
+/// ([`resolve::choose`]): for the tests of the providers' placement.
 #[cfg(test)]
 pub fn grab_volume(point: Vec3, hand: Hand, candidates: &[Candidate]) -> Option<GrabVolume> {
-    candidates
+    let targets: Vec<GripTarget> = candidates
         .iter()
-        .filter(|c| c.hand.is_none_or(|h| h == hand))
-        .filter_map(|c| c.reach(point).map(|d| (d, Tier::of(c.volume), c.volume)))
-        .filter(|(_, tier, _)| *tier != Tier::Touch)
-        .min_by(|a, b| a.1.cmp(&b.1).then(a.0.total_cmp(&b.0)))
-        .map(|(_, _, volume)| volume)
+        .map(|c| c.target(Mark::ring(MarkAt::Cockpit(c.centre), c.radius)))
+        .collect();
+    resolve::choose(resolve::reaches(hand, &targets, Some(point))).map(|reach| reach.volume)
 }
