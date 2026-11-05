@@ -990,6 +990,19 @@ fn _PlantedExplosiveWeapon_size_check() {
     unreachable!()
 }
 impl PlantedExplosiveWeapon {
+    pub const TYPE_ID_ADDRESS: usize = 0x1407C82C0;
+    /// `CPlantedExplosiveWeapon::TYPE_ID`: the run-time type id of the class, for
+    /// [`GameObject::IsType`](crate::game::GameObject::IsType). Registers it on first use. The game tests
+    /// the weapon in the [`E_SLOT_PLANTED_EXPLOSIVE`](crate::character::inventory::WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE)
+    /// slot against it before treating it as the C4 weapon.
+    pub unsafe fn TYPE_ID() -> *const u32 {
+        unsafe {
+            let f: unsafe extern "system" fn() -> *const u32 = ::std::mem::transmute(
+                Self::TYPE_ID_ADDRESS,
+            );
+            f()
+        }
+    }
     pub const UpdateFromUserPostSim_Serial_ADDRESS: usize = 0x14098EBE0;
     /// The weapon's serial per-frame update from its user (its override of
     /// [`WeaponBase::UpdateFromUserPostSim_Serial`](crate::equipment::weapon::WeaponBase::UpdateFromUserPostSim_Serial)). The inventory runs it for the planted
@@ -1083,6 +1096,26 @@ impl PlantedExplosiveWeapon {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
                 Self::DespawnPrimedExplosive_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const RemoveAllExplosives_ADDRESS: usize = 0x1409906B0;
+    /// Removes every placed charge without detonating it: for each live charge it unregisters the
+    /// HUD's charge hint, removes the charge
+    /// ([`Explosive::RemoveSelf`](crate::equipment::explosive::Explosive::RemoveSelf)), turns off the
+    /// charge's light component, and drops it from the live list, then refreshes the HUD's charge
+    /// count. It then queues a stop-using for the next pre-simulation update
+    /// ([`m_DeferredStopUsing`](crate::equipment::weapon::WeaponBase::m_DeferredStopUsing), registering the weapon through
+    /// [`m_RequiresPreSimUpdates`](crate::equipment::weapon::WeaponBase::m_RequiresPreSimUpdates)); the weapon's
+    /// `StopUsing` acts only in the planting mode, which it leaves, despawning a primed charge.
+    /// Outside the planting mode a primed charge is left alone. The game calls it when a character
+    /// is disabled, when a mission activates or resets, when a ROM starts, and from the player's
+    /// event handler.
+    pub unsafe fn RemoveAllExplosives(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::RemoveAllExplosives_ADDRESS,
             );
             f(self as *mut Self as _)
         }
