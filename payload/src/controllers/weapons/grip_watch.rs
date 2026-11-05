@@ -22,6 +22,7 @@
 
 use std::time::{Duration, Instant};
 
+use body_rig::rotation::angle_between;
 use glam::Quat;
 use jc3gi::{
     character::character::Character,
@@ -80,7 +81,7 @@ pub const SWEEP_HOLD: Duration = Duration::from_millis(100);
 
 /// The change between two gun-on-wrist rotations, degrees.
 pub fn change_deg(previous: Quat, current: Quat) -> f32 {
-    grip::angle_deg(previous, current)
+    angle_between(previous, current).to_degrees()
 }
 
 /// Measure `weapon`'s hand-held guns from the rigid grip's last records.

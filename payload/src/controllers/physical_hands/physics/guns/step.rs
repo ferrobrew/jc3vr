@@ -12,6 +12,7 @@
 
 use std::time::Instant;
 
+use body_rig::rotation::angle;
 use glam::Vec3;
 use jc3gi::physics::CustomGroupCollisionFilter;
 use parking_lot::Mutex;
@@ -29,7 +30,7 @@ use crate::controllers::{
             math::{
                 BRACE_BREAK_STEPS, GunAxes, MAX_GRIP_SEAT_M, MassSource, brace_broken, brace_due,
                 brace_palm, carried_velocity, clamp_velocity, class_value, deviation, gun_mass,
-                intended_seat, limit, seat, seated, settled, shot_impulse, strayed, turn_rad,
+                intended_seat, limit, seat, seated, settled, shot_impulse, strayed,
             },
         },
         joint::Joint,
@@ -603,7 +604,7 @@ unsafe fn keep(
             holder_joint,
             brace_joint: slot.brace.as_ref().map(|brace| brace.joint.id()),
             deviation_m: drift.position.length(),
-            deviation_rad: turn_rad(drift.orientation),
+            deviation_rad: angle(drift.orientation),
             speed_mps: gun_motion.linear.length(),
         },
         deviation: drift,

@@ -44,6 +44,7 @@ use std::{
     time::Instant,
 };
 
+use body_rig::rotation::angle_between;
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::{
     character::{
@@ -179,7 +180,7 @@ pub fn mirrored_grip(right_wrist: Mat4, left_attach: Mat4, axis: usize) -> Optio
 /// whether it is the mirrored one: its own, unless it is turned far from the mirrored one. The left
 /// hand always takes its own grip.
 pub fn pick_right_grip(own: Pose, mirrored: Pose) -> (Pose, bool) {
-    if angle_deg(own.orientation, mirrored.orientation) > AUTO_TURN_DEG {
+    if angle_between(own.orientation, mirrored.orientation).to_degrees() > AUTO_TURN_DEG {
         (mirrored, true)
     } else {
         (own, false)
@@ -448,13 +449,6 @@ pub fn relative_pose(wrist: Mat4, attach: Mat4) -> Option<Pose> {
     })
 }
 
-/// The angle between two rotations, degrees.
-pub fn angle_deg(a: Quat, b: Quat) -> f32 {
-    let delta = (a.inverse() * b).normalize();
-    let delta = if delta.w < 0.0 { -delta } else { delta };
-    delta.to_axis_angle().1.to_degrees()
-}
-
 /// The model-space pose of `character`'s skeleton bone `bone`, as its animation controller has it
 /// now, or `None` when the bone does not resolve.
 ///
@@ -575,7 +569,7 @@ unsafe fn pin(
     let wrist = joint_to_pose(&wrist_joint);
     let animated = joint_to_pose(&attach_joint);
     let animated_in_wrist = (wrist.orientation.inverse() * animated.orientation).normalize();
-    let animated_deviation_deg = angle_deg(animated_in_wrist, offset.orientation);
+    let animated_deviation_deg = angle_between(animated_in_wrist, offset.orientation).to_degrees();
     let wrist_scale = Vec3::from_array(wrist_joint.m_Scale.data);
     let mut held = pinned_attach(wrist, wrist_scale, offset);
     if let Some(slide) = slide {
@@ -700,7 +694,7 @@ unsafe fn right_grip(
                 axis,
                 offset_m = ?mirrored.position,
                 own_offset_m = ?own.position,
-                turn_from_own_deg = angle_deg(own.orientation, mirrored.orientation),
+                turn_from_own_deg = angle_between(own.orientation, mirrored.orientation).to_degrees(),
                 "rigid grip: the left hand's grip mirrored onto the right wrist"
             );
             *MIRRORED.lock() = Some((key, mirrored));
@@ -709,7 +703,7 @@ unsafe fn right_grip(
     };
     let (grip, used) = pick_right_grip(own, mirrored);
     *RIGHT_GRIP.lock() = Some(RightGripRead {
-        angle_deg: angle_deg(own.orientation, mirrored.orientation),
+        angle_deg: angle_between(own.orientation, mirrored.orientation).to_degrees(),
         mirrored: used,
     });
     Some(grip)
@@ -741,7 +735,7 @@ unsafe fn canonical_grip(
         target: "controllers",
         ?hand,
         offset_m = ?grip.position,
-        rotation_deg = angle_deg(Quat::IDENTITY, grip.orientation),
+        rotation_deg = angle_between(Quat::IDENTITY, grip.orientation).to_degrees(),
         "rigid grip: the canonical grip from the bind pose"
     );
     GRIPS.lock()[hand.index()] = Some((key, grip));
@@ -782,7 +776,7 @@ unsafe fn wrist_frame_on_bone(
     tracing::info!(
         target: "controllers",
         ?hand,
-        rotation_deg = angle_deg(Quat::IDENTITY, on_bone),
+        rotation_deg = angle_between(Quat::IDENTITY, on_bone).to_degrees(),
         "rigid grip: the wrist frame on the wrist bone from the bind pose"
     );
     FRAMES.lock()[hand.index()] = Some((key, on_bone));
@@ -852,13 +846,13 @@ mod tests {
             bind_wrist * Mat4::from_rotation_translation(offset.orientation, offset.position);
         let grip = relative_pose(bind_wrist, bind_attach).unwrap();
         assert!(grip.position.distance(offset.position) < 1e-5);
-        assert!(angle_deg(grip.orientation, offset.orientation) < 1e-2);
+        assert!(angle_between(grip.orientation, offset.orientation).to_degrees() < 1e-2);
 
         let wrist = pose(Vec3::new(3.0, 1.0, -2.0), Quat::from_rotation_z(1.2));
         let attach = pinned_attach(wrist, Vec3::ONE, grip);
         let back = hand_pose::mul(hand_pose::inverse(wrist), attach);
         assert!(back.position.distance(offset.position) < 1e-5);
-        assert!(angle_deg(back.orientation, offset.orientation) < 1e-2);
+        assert!(angle_between(back.orientation, offset.orientation).to_degrees() < 1e-2);
     }
 
     #[test]
@@ -872,7 +866,7 @@ mod tests {
             held.position + held.orientation * Vec3::new(0.0, -0.02, 0.0),
             1e-6
         ));
-        assert!(angle_deg(drawn.orientation, held.orientation) > 2.0);
+        assert!(angle_between(drawn.orientation, held.orientation).to_degrees() > 2.0);
     }
 
     #[test]
@@ -881,15 +875,15 @@ mod tests {
         let pinned = pose(Vec3::new(0.0, 0.05, 0.0), Quat::from_rotation_x(0.4));
         let at = |w| blend_pin(animated, pinned, w);
         assert!(at(0.0).position.distance(animated.position) < 1e-6);
-        assert!(angle_deg(at(0.0).orientation, animated.orientation) < 1e-2);
+        assert!(angle_between(at(0.0).orientation, animated.orientation).to_degrees() < 1e-2);
         assert!(at(1.0).position.distance(pinned.position) < 1e-6);
-        assert!(angle_deg(at(1.0).orientation, pinned.orientation) < 1e-2);
+        assert!(angle_between(at(1.0).orientation, pinned.orientation).to_degrees() < 1e-2);
         // Part way, the gun is part way between, and the turn grows steadily with the weight.
-        let whole = angle_deg(animated.orientation, pinned.orientation);
+        let whole = angle_between(animated.orientation, pinned.orientation).to_degrees();
         let mut last = 0.0;
         for step in 1..=10 {
             let w = step as f32 / 10.0;
-            let turned = angle_deg(animated.orientation, at(w).orientation);
+            let turned = angle_between(animated.orientation, at(w).orientation).to_degrees();
             assert!((turned - whole * w).abs() < 0.1, "{w}: {turned}");
             assert!(turned > last);
             last = turned;
@@ -908,10 +902,12 @@ mod tests {
         let c = pinned_attach(turned, Vec3::ONE, grip);
         let in_wrist = |w: Pose, p: Pose| hand_pose::mul(hand_pose::inverse(w), p);
         assert!(
-            angle_deg(
+            angle_between(
                 in_wrist(wrist, a).orientation,
                 in_wrist(turned, c).orientation
-            ) < 1e-2
+            )
+            .to_degrees()
+                < 1e-2
         );
     }
 
@@ -923,7 +919,7 @@ mod tests {
         let on_dock = hand_pose::mul(dock, offset);
         let at = |t| slide_grip(on_dock, held, t);
         assert!(at(0.0).position.distance(on_dock.position) < 1e-5);
-        assert!(angle_deg(at(0.0).orientation, on_dock.orientation) < 1e-2);
+        assert!(angle_between(at(0.0).orientation, on_dock.orientation).to_degrees() < 1e-2);
         assert!(at(1.0).position.distance(held.position) < 1e-5);
         let half = at(0.5).position;
         assert!(half.distance((on_dock.position + held.position) / 2.0) < 1e-5);
@@ -981,7 +977,7 @@ mod tests {
         assert_eq!(axis, 0);
         let mirrored = mirrored_grip(right_wrist, left_attach, axis).unwrap();
         assert!(mirrored.position.distance(own.position) < 1e-4);
-        assert!(angle_deg(mirrored.orientation, own.orientation) < 0.05);
+        assert!(angle_between(mirrored.orientation, own.orientation).to_degrees() < 0.05);
         // The automatic choice keeps the right hand's own grip when the two agree.
         assert_eq!(pick_right_grip(own, mirrored), (own, false));
     }
@@ -1023,7 +1019,7 @@ mod tests {
         let right = relative_pose(rw, ra).unwrap();
         // The right grip's offset is the left's negated, and its rotation the same.
         assert!(right.position.distance(-left.position) < 1e-4);
-        assert!(angle_deg(right.orientation, left.orientation) < 0.05);
+        assert!(angle_between(right.orientation, left.orientation).to_degrees() < 0.05);
     }
 
     #[test]
@@ -1035,7 +1031,7 @@ mod tests {
         let mirrored = mirrored_grip(rw, la, axis).unwrap();
         // The right hand's own grip is turned half round from the mirror, so the automatic choice
         // takes the mirror.
-        assert!(angle_deg(own.orientation, mirrored.orientation) > 179.0);
+        assert!(angle_between(own.orientation, mirrored.orientation).to_degrees() > 179.0);
         assert_eq!(pick_right_grip(own, mirrored), (mirrored, true));
         // On the right wrist's bind pose, the mirrored grip holds the gun as the left hand's
         // reflected across the body: its forward and up axes, which lie in its symmetry plane, are
@@ -1066,7 +1062,7 @@ mod tests {
         for axis in 0..3 {
             let back = mirror_pose(mirror_pose(p, axis), axis);
             assert!(back.position.distance(p.position) < 1e-6);
-            assert!(angle_deg(back.orientation, p.orientation) < 1e-2);
+            assert!(angle_between(back.orientation, p.orientation).to_degrees() < 1e-2);
         }
     }
 
@@ -1089,12 +1085,5 @@ mod tests {
             lateral_axis(Vec3::new(0.0, 1.0, 0.4), Vec3::new(0.0, 1.1, -0.4)),
             2
         );
-    }
-
-    #[test]
-    fn a_flip_measures_as_a_large_angle() {
-        let held = Quat::from_rotation_y(0.3);
-        assert!(angle_deg(held, -held) < 1e-3);
-        assert!(angle_deg(held, Quat::from_rotation_x(std::f32::consts::PI) * held) > 179.0);
     }
 }

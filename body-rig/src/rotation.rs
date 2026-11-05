@@ -1,5 +1,6 @@
 //! Rotation primitives: the yaw left of a rotation, in its two meanings, a rotation's twist about
-//! an axis, and a rotation taken the short way round, as a rotation vector or an angular velocity.
+//! an axis, and a rotation taken the short way round: its angle, limited, or as a rotation vector
+//! or an angular velocity.
 //!
 //! Axes and headings are as in [`crate::angle`].
 
@@ -46,6 +47,29 @@ pub fn shortest(rotation: Quat) -> Quat {
         -rotation
     } else {
         rotation
+    }
+}
+
+/// The angle `rotation` turns through the short way round, radians in `0..=π`.
+pub fn angle(rotation: Quat) -> f32 {
+    shortest(rotation).to_axis_angle().1
+}
+
+/// The angle between the orientations `a` and `b`, the short way round, radians in `0..=π`.
+pub fn angle_between(a: Quat, b: Quat) -> f32 {
+    angle(a.inverse() * b)
+}
+
+/// `rotation` the short way round, limited to turn at most `max` radians about the same axis. A
+/// negative `max` is zero.
+pub fn clamp_angle(rotation: Quat, max: f32) -> Quat {
+    let max = max.max(0.0);
+    let rotation = shortest(rotation);
+    let (axis, angle) = rotation.to_axis_angle();
+    if angle <= max || !axis.is_finite() {
+        rotation
+    } else {
+        Quat::from_axis_angle(axis, max)
     }
 }
 
@@ -170,5 +194,24 @@ mod tests {
             angular_velocity(from, Quat::from_xyzw(f32::NAN, 0.0, 0.0, 1.0), 0.1),
             None
         );
+    }
+
+    #[test]
+    fn the_angle_is_the_short_way_round() {
+        let long = Quat::from_rotation_x(1.5 * std::f32::consts::PI);
+        assert!((angle(long) - 0.5 * std::f32::consts::PI).abs() < 1e-4);
+        let held = Quat::from_rotation_y(0.4);
+        assert!(angle_between(held, -held) < 1e-3);
+        assert!((angle_between(held, Quat::from_rotation_x(0.3) * held) - 0.3).abs() < 1e-5);
+    }
+
+    #[test]
+    fn the_clamp_keeps_the_axis_and_limits_the_angle() {
+        let clamped = clamp_angle(Quat::from_rotation_x(1.0), 0.5);
+        assert!((angle(clamped) - 0.5).abs() < 1e-5);
+        assert!(clamped.angle_between(Quat::from_rotation_x(0.5)) < 1e-5);
+        let small = Quat::from_rotation_x(0.2);
+        assert!(clamp_angle(small, 0.5).angle_between(small) < 1e-6);
+        assert!(angle(clamp_angle(small, -1.0)) < 1e-6);
     }
 }

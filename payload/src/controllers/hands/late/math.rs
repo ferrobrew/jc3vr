@@ -1,6 +1,7 @@
 //! The pure pose and transform math the late update builds its correction from, independent of any
 //! frame state.
 
+use body_rig::rotation::angle;
 use glam::{Mat4, Quat, Vec3};
 
 use crate::controllers::{frame::Pose, hands::pose as hand_pose};
@@ -83,12 +84,8 @@ pub(super) fn relative_metrics(now: Pose, reference: Pose) -> Option<(f32, f32)>
         && reference.orientation.is_finite())
     .then(|| {
         let displacement = (now.position - reference.position).length();
-        let mut relative = hand_pose::delta(now, reference).orientation;
-        if relative.w < 0.0 {
-            relative = -relative;
-        }
-        let (_, angle) = relative.to_axis_angle();
-        (displacement, angle.to_degrees())
+        let rotation = angle(hand_pose::delta(now, reference).orientation);
+        (displacement, rotation.to_degrees())
     })
     .filter(|(displacement, rotation)| displacement.is_finite() && rotation.is_finite())
 }

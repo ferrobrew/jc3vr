@@ -46,7 +46,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use body_rig::rotation::shortest;
+use body_rig::rotation::{angle, clamp_angle};
 use detours_macro::detour;
 use glam::{Quat, Vec2, Vec3};
 use jc3gi::equipment::weapon::WeaponBase;
@@ -55,7 +55,7 @@ use re_utilities::hook_library::HookLibrary;
 #[cfg(test)]
 pub(crate) use test_support::TestWeight;
 
-use self::pose::{Weight, clamp_angle, sway, unbraced_share};
+use self::pose::{Weight, sway, unbraced_share};
 pub use self::{
     class::HeftClass,
     tuning::{BracedHeft, BracedTuning, Heft, HeftTuning},
@@ -382,10 +382,6 @@ fn epoch() -> Instant {
     *EPOCH.get_or_init(Instant::now)
 }
 
-fn angle(q: Quat) -> f32 {
-    shortest(q).to_axis_angle().1
-}
-
 pub(super) fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     if edge1 <= edge0 {
         return if x >= edge1 { 1.0 } else { 0.0 };
@@ -421,10 +417,11 @@ fn get_current_scatter_value(weapon: *const WeaponBase) -> f32 {
 mod tests {
     use std::time::{Duration, Instant};
 
+    use body_rig::rotation::angle;
     use glam::{Quat, Vec2, Vec3};
     use jc3gi::equipment::weapon::WeaponClass;
 
-    use super::{HeftClass, HeftTarget, advance_clock, angle, apply, clamp_angle, freeze, observe};
+    use super::{HeftClass, HeftTarget, advance_clock, apply, freeze, observe};
     use crate::controllers::{
         config::GripOffset,
         frame::{Hand, Pose},
@@ -977,13 +974,5 @@ mod tests {
             .duration_since(start)
             .as_secs_f32();
         assert!((total - elapsed).abs() < 1e-4, "{total} against {elapsed}");
-    }
-
-    #[test]
-    fn the_offset_is_clamped_to_the_largest_angle() {
-        let clamped = clamp_angle(Quat::from_rotation_x(1.0), 0.5);
-        assert!((angle(clamped) - 0.5).abs() < 1e-5);
-        let small = Quat::from_rotation_x(0.2);
-        assert!(clamp_angle(small, 0.5).angle_between(small) < 1e-6);
     }
 }

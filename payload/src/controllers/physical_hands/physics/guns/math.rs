@@ -2,8 +2,8 @@
 //! strays from it, the motion that keeps it on the hand, the gun's barrel and up axes in its own
 //! frame, and a shot's impulse.
 
-use body_rig::rotation::angular_velocity;
-use glam::{Mat4, Quat, Vec3};
+use body_rig::rotation::{angle, angle_between, angular_velocity, clamp_angle};
+use glam::{Mat4, Vec3};
 
 use crate::controllers::{
     frame::Pose,
@@ -53,7 +53,7 @@ pub fn brace_palm(gun: Pose, palm: Pose, contact: BraceContact) -> Pose {
 /// joint otherwise keeps a stale contact when the hand slides or rotates its grip around the gun.
 pub fn brace_changed(before: Pose, after: Pose, rebuild: &BraceConfig) -> bool {
     before.position.distance(after.position) > rebuild.distance_m
-        || turn_rad(before.orientation.inverse() * after.orientation) > rebuild.angle_rad
+        || angle_between(before.orientation, after.orientation) > rebuild.angle_rad
 }
 
 /// Whether a brace's fixed joint, made `age_s` seconds ago holding the palm frame `built` in the
@@ -155,7 +155,7 @@ pub fn strayed(deviation: Pose, max_shift_m: f32, max_turn_rad: f32) -> bool {
     let finite = deviation.position.is_finite() && deviation.orientation.is_finite();
     !finite
         || deviation.position.length() > max_shift_m.max(0.0)
-        || turn_rad(deviation.orientation) > max_turn_rad.max(0.0)
+        || angle(deviation.orientation) > max_turn_rad.max(0.0)
 }
 
 /// `deviation` held to a shift of `max_shift_m` and a turn of `max_turn_rad`, about the same axis:
@@ -165,18 +165,9 @@ pub fn limit(deviation: Pose, max_shift_m: f32, max_turn_rad: f32) -> Pose {
     if !(deviation.position.is_finite() && deviation.orientation.is_finite()) {
         return Pose::IDENTITY;
     }
-    let q = deviation.orientation.normalize();
-    let q = if q.w < 0.0 { -q } else { q };
-    let (axis, angle) = q.to_axis_angle();
-    let max_turn = max_turn_rad.max(0.0);
-    let orientation = if angle > max_turn && axis.is_finite() {
-        Quat::from_axis_angle(axis, max_turn)
-    } else {
-        q
-    };
     Pose {
         position: deviation.position.clamp_length_max(max_shift_m.max(0.0)),
-        orientation,
+        orientation: clamp_angle(deviation.orientation, max_turn_rad),
     }
 }
 
@@ -221,7 +212,7 @@ pub fn intended_seat(palm: Pose, gun: Pose) -> Pose {
 /// within [`SETTLED_SHIFT_M`] and [`SETTLED_TURN_RAD`].
 pub fn settled(body: Pose, palm: Pose) -> bool {
     let shift = body.position.distance(palm.position);
-    let turn = turn_rad(body.orientation.inverse() * palm.orientation);
+    let turn = angle_between(body.orientation, palm.orientation);
     shift.is_finite() && shift <= SETTLED_SHIFT_M && turn <= SETTLED_TURN_RAD
 }
 
@@ -239,12 +230,6 @@ pub const MAX_GRIP_SEAT_M: f32 = 0.15;
 /// `angular`: the gun body seated on the hand moves with the hand's body, as one rigid body.
 pub fn carried_velocity(origin: Vec3, linear: Vec3, angular: Vec3, point: Vec3) -> Vec3 {
     linear + angular.cross(point - origin)
-}
-/// The angle of a rotation, radians.
-pub fn turn_rad(q: Quat) -> f32 {
-    let q = q.normalize();
-    let q = if q.w < 0.0 { -q } else { q };
-    q.to_axis_angle().1
 }
 
 /// The gun's barrel and muzzle in its own frame: the barrel the axis of its fire point `fire_point`
@@ -293,6 +278,7 @@ pub fn shot_impulse(gun: Pose, axes: &GunAxes, impulse_ns: f32, muzzle_rise: f32
 
 #[cfg(test)]
 mod tests {
+    use glam::Quat;
     use pretty_assertions::assert_eq;
 
     use super::*;
@@ -389,7 +375,7 @@ mod tests {
         };
         let drift = hand_pose::mul(hand_pose::inverse(seated), next);
         assert!((drift.position.length() - shift).abs() < 1e-4);
-        assert!((turn_rad(drift.orientation) - turn).abs() < 1e-3);
+        assert!((angle(drift.orientation) - turn).abs() < 1e-3);
         assert!(!strayed(drift, shift + 1e-4, turn + 1e-3));
         assert_eq!(clamp_velocity(seated, kicked, shift, turn, 0.0), None);
         assert_eq!(clamp_velocity(seated, kicked, shift, turn, f32::NAN), None);
@@ -538,7 +524,7 @@ mod tests {
         let seat = seat(hand, gun);
         let d = deviation(hand, seat, gun);
         assert!(d.position.length() < 1e-5);
-        assert!(turn_rad(d.orientation) < 1e-3);
+        assert!(angle(d.orientation) < 1e-3);
         // The hand moves; the gun seated on it moves with it.
         let moved = pose(Vec3::new(-2.0, 0.5, 4.0), Quat::from_rotation_z(1.1));
         let carried = seated(moved, seat);
@@ -569,7 +555,7 @@ mod tests {
         let d = pose(Vec3::new(0.1, 0.0, 0.0), Quat::from_rotation_x(0.3));
         let held = limit(d, 0.015, max_turn);
         assert!((held.position.length() - 0.015).abs() < 1e-6);
-        assert!((turn_rad(held.orientation) - max_turn).abs() < 1e-4);
+        assert!((angle(held.orientation) - max_turn).abs() < 1e-4);
         // The turn keeps its axis.
         let (axis, _) = held.orientation.to_axis_angle();
         assert!(axis.abs_diff_eq(Vec3::X, 1e-4));

@@ -3,7 +3,7 @@
 
 use std::f32::consts::TAU;
 
-use body_rig::rotation::{rotation_error, shortest};
+use body_rig::rotation::rotation_error;
 use glam::{Quat, Vec2, Vec3};
 
 use crate::controllers::{
@@ -202,17 +202,6 @@ impl RotSpring {
         if !(self.orientation.is_finite() && self.velocity.is_finite()) {
             *self = Self::at(target);
         }
-    }
-}
-
-/// Limit a rotation to `max` radians, keeping its axis.
-pub fn clamp_angle(rotation: Quat, max: f32) -> Quat {
-    let rotation = shortest(rotation);
-    let (axis, angle) = rotation.to_axis_angle();
-    if angle <= max.max(0.0) || !axis.is_finite() {
-        rotation
-    } else {
-        Quat::from_axis_angle(axis, max.max(0.0))
     }
 }
 
