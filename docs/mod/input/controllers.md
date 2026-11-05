@@ -55,7 +55,7 @@ The sets, their actions, and the actions' types are the action schema. The runti
 
 ### Input self-check
 
-Once per session (and per reinject), at the first focused frame at which a hand has an interaction profile, `vr/input/self_check.rs` logs one block at info level under the `vr` target, starting `input: self-check`, and the "Semantic actions" section shows it. It is on by default (`controllers.input.self_check`) and the section can run it again, for example after entering a mode whose set was inactive the first time. What to look for:
+Once per session (and per reinject), at the first focused frame at which a hand has an interaction profile, `vr/input/self_check.rs` logs one block at info level under the `vr` target, starting `input: self-check`, and the "Semantic actions" section shows it under the `SELF-CHECK` status row. The Devices feature likewise opens with the `CONTROLLER ACTIONS` and `LAYOUT FINGERPRINT` rows, and names the OpenXR input's error only when there is one. It is on by default (`controllers.input.self_check`) and the section can run it again, for example after entering a mode whose set was inactive the first time. What to look for:
 
 - The runtime line and each hand's profile path say what was tested.
 - Under "one input in two active sets at priority 0", every line pairs a semantic action with the raw action bound to the same input on that hand. Both should read `active`. A semantic side that reads `INACTIVE` while the raw side is active means the runtime gave the input to one set only, and the semantic layer cannot share inputs with `hands` on that runtime.

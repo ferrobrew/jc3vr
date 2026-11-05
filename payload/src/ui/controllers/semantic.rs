@@ -1,11 +1,12 @@
-//! The semantic actions: the input self-check's results, and each action set's actions with their
+//! The semantic actions: the input self-check's row and results, and each action set's actions with their
 //! active flag, per-hand state, and bound sources.
 
 use egui::{RichText, Ui};
 
 use crate::{
     controllers::frame::Hand,
-    ui::controllers::yes_no,
+    status::system::SELF_CHECK,
+    ui::{controllers::yes_no, status_row::headlines},
     vr::input::{
         actions::SetId,
         layout::{BoolInput, FloatInput, HandsAction, Vec2Input},
@@ -26,13 +27,13 @@ pub(super) fn semantic_readout(ui: &mut Ui) {
     let frame = semantic_frame::latest();
     let cache = sources::cached();
 
-    ui.strong("Self-check");
+    headlines(ui, &[&SELF_CHECK]);
     match &check.report {
         Some(report) => {
             ui.label(RichText::new(report).monospace());
         }
         None => {
-            ui.label("Not run yet (it runs once a hand has an interaction profile).");
+            ui.label("It runs once a hand has an interaction profile.");
         }
     }
     for finding in &check.findings {

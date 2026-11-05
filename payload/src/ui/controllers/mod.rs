@@ -55,9 +55,12 @@ use crate::{
         roomscale as controller_roomscale, scheme, summary as controller_summary,
     },
     hud::{pointer, summary_panel},
-    status::{feedback, hands as hands_status},
+    status::{
+        feedback, hands as hands_status,
+        system::{INPUT_ACTIONS, LAYOUT_FINGERPRINT},
+    },
     ui::{camera, catalog::FeatureId, dispatch::FeatureBody, status_row::headlines},
-    vr::input::{self as vr_input, ActionsOrigin},
+    vr::input as vr_input,
 };
 
 /// The controller editors for a feature, when it has any. Each editor takes the configuration edit
@@ -165,15 +168,12 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
     let body: FeatureBody = match id {
         FeatureId::Devices => |ui, _| {
             let status = vr_input::status();
+            headlines(ui, &[&INPUT_ACTIONS, &LAYOUT_FINGERPRINT]);
             ui.label(format!("Scheme: {:?}", scheme::current()));
             ui.label(format!("Action set: {:?}", vr_input::active_action_set()));
-            ui.label(match (&status.error, status.attached, status.origin) {
-                (Some(error), _, _) => format!("OpenXR input: unavailable: {error}"),
-                (None, true, Some(origin)) => {
-                    format!("OpenXR input: attached ({})", origin_label(origin))
-                }
-                (None, _, _) => "OpenXR input: no session".to_owned(),
-            });
+            if let Some(error) = &status.error {
+                ui.label(format!("OpenXR input: unavailable: {error}"));
+            }
             ui.label(format!(
                 "Profiles: left {}, right {}",
                 profile_label(status.profiles[0]),
@@ -326,14 +326,6 @@ fn vec3_drag(ui: &mut Ui, label: &str, v: &mut Vec3, speed: f64) {
         ui.add(egui::DragValue::new(&mut v.y).speed(speed).prefix("y "));
         ui.add(egui::DragValue::new(&mut v.z).speed(speed).prefix("z "));
     });
-}
-
-fn origin_label(origin: ActionsOrigin) -> &'static str {
-    match origin {
-        ActionsOrigin::Created => "created this session",
-        ActionsOrigin::RewrappedAndAttached => "re-wrapped, attached to a new session",
-        ActionsOrigin::Rewrapped => "re-wrapped from the previous injection",
-    }
 }
 
 fn profile_label(profile: InteractionProfile) -> &'static str {
