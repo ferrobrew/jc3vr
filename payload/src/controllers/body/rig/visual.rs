@@ -78,7 +78,7 @@ fn phase_color(phase: StepPhase) -> Rgba {
     match phase {
         StepPhase::Idle => IDLE,
         StepPhase::Stepping => STEPPING,
-        StepPhase::Settling => SETTLING,
+        StepPhase::Settling | StepPhase::Drifting => SETTLING,
     }
 }
 

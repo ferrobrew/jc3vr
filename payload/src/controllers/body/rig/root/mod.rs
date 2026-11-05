@@ -202,7 +202,7 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
     // cover is put back over the body.
     let exited = state.last_seat == SeatPhase::Exiting && inputs.seat == SeatPhase::Out;
     state.last_seat = inputs.seat;
-    let gap_m = rig.map_or(0.0, |r| r.output.gap.length() * inputs.world_scale);
+    let gap_m = rig.map_or(0.0, |r| r.output.solve.offset.length() * inputs.world_scale);
     if exited && gap_m >= EXIT_REBASE_M {
         state.shift.rebase_horizontal(inputs.raw);
         state.status.exit_rebases += 1;

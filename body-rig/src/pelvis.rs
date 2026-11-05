@@ -17,7 +17,12 @@
 //! standing head's bob would read as a lean or a step at random. The lean radius sets a floor under
 //! the reach a bend explains: inside it Rico never moves, and the spine absorbs the offset. The
 //! hands are a tie-breaker: both reaching out along the offset widen the reach, so a slow drift
-//! toward something held in both hands stays a lean longer.
+//! toward something held in both hands stays a lean longer. Behind the pelvis the floor is a
+//! smaller radius: a person stepping back steps rather than leaning back.
+//!
+//! A forward lean is a reach the player means, but an offset to the side or back held still is a
+//! weight shift, which the step commit's idle drift walks the body under; the solve gives that
+//! part of the offset as the drift.
 
 use glam::{Quat, Vec2, Vec3};
 
@@ -37,6 +42,9 @@ pub struct PelvisTuning {
     /// How far the neck may be out over the pelvis before a step is considered at all, metres:
     /// the floor under the reach a bend explains.
     pub lean_radius_m: f32,
+    /// The floor under the reach a bend explains straight back, metres: the lean radius's
+    /// counterpart behind the pelvis, between them toward the back quarters.
+    pub back_radius_m: f32,
     /// The furthest the neck is ever out over the pelvis as a lean, metres, however low it is.
     pub max_lean_m: f32,
     /// The furthest the spine bends forward from vertical, degrees.
@@ -56,10 +64,11 @@ impl PelvisTuning {
     pub const fn new() -> Self {
         Self {
             lean_radius_m: 0.2,
+            back_radius_m: 0.12,
             max_lean_m: 0.6,
             forward_bend_deg: 70.0,
             side_bend_deg: 30.0,
-            back_bend_deg: 20.0,
+            back_bend_deg: 10.0,
             hand_reach_m: 0.3,
             hand_lean_m: 0.08,
         }
@@ -124,6 +133,9 @@ pub struct PelvisSolve {
     pub lean_reach_m: f32,
     /// The part of the offset past the lean's reach, `(x, z)`: what a step must take up.
     pub step_demand: Vec2,
+    /// The part of the offset to the side of the body and behind it, `(x, z)`: what the idle drift
+    /// walks the body under.
+    pub drift: Vec2,
     /// How far the waist has dropped below the calibrated hip height: the head's drop that no bend
     /// explains, metres.
     pub crouch_m: f32,
@@ -181,8 +193,8 @@ pub fn solve(input: &PelvisInput, tuning: &PelvisTuning) -> PelvisSolve {
     } else {
         0.0
     };
-    let lean_reach = (arc.max(tuning.lean_radius_m.max(0.0)) + bonus)
-        .min(tuning.max_lean_m.max(tuning.lean_radius_m.max(0.0) + bonus));
+    let radius = lean_radius(along, tuning);
+    let lean_reach = (arc.max(radius) + bonus).min(tuning.max_lean_m.max(radius + bonus));
     let excess = (reach - lean_reach).max(0.0);
 
     // The bend drawn: the spine tilted toward the neck as far as the offset and the limit allow.
@@ -200,14 +212,25 @@ pub fn solve(input: &PelvisInput, tuning: &PelvisTuning) -> PelvisSolve {
         bend,
         lean_reach_m: lean_reach,
         step_demand: direction * excess,
+        drift: offset - body_forward * offset.dot(body_forward).max(0.0),
         crouch_m: (input.hip_height_m - waist_y).max(0.0),
         hands_reaching,
     };
-    if solve.step_demand.is_finite() && solve.waist.is_finite() {
+    if solve.step_demand.is_finite() && solve.drift.is_finite() && solve.waist.is_finite() {
         solve
     } else {
         PelvisSolve::default()
     }
+}
+
+/// The floor under the reach a bend explains toward a direction `along` the body's forward (a unit
+/// vector's part): the lean radius ahead and to the side, narrowing to the back radius straight
+/// back.
+fn lean_radius(along: f32, tuning: &PelvisTuning) -> f32 {
+    let ahead = tuning.lean_radius_m.max(0.0);
+    let behind = tuning.back_radius_m.max(0.0).min(ahead);
+    let back = (-along).clamp(0.0, 1.0);
+    ahead + (behind - ahead) * back
 }
 
 /// The furthest the spine bends toward a direction `along` the body's forward and `across` toward
@@ -290,7 +313,7 @@ mod tests {
 
     #[test_case(Vec2::new(0.0, -1.0), 50.0; "forward")]
     #[test_case(Vec2::new(1.0, 0.0), 25.0; "to the right")]
-    #[test_case(Vec2::new(0.0, 1.0), 15.0; "back")]
+    #[test_case(Vec2::new(0.0, 1.0), 8.0; "back")]
     fn a_bend_on_the_arc_within_its_limit_is_a_lean(direction: Vec2, tilt_deg: f32) {
         let solve = solve(&at_neck(bent(direction, tilt_deg.to_radians())), &TUNING);
         assert_eq!(solve.step_demand, Vec2::ZERO, "{solve:?}");
@@ -322,15 +345,36 @@ mod tests {
 
     #[test]
     fn a_bend_past_its_limit_steps_the_excess() {
-        // Back is the narrowest: a bend of 45 degrees back explains only 20.
+        // To the side a bend of 45 degrees explains only 30.
         let solve = solve(
-            &at_neck(bent(Vec2::new(0.0, 1.0), 45f32.to_radians())),
+            &at_neck(bent(Vec2::new(1.0, 0.0), 45f32.to_radians())),
             &TUNING,
         );
         let spine = STANDING_NECK - HIP;
         let expected = spine * 45f32.to_radians().sin()
-            - (spine * 20f32.to_radians().sin()).max(TUNING.lean_radius_m);
+            - (spine * 30f32.to_radians().sin()).max(TUNING.lean_radius_m);
         assert!((solve.demand_m() - expected).abs() < 1e-3, "{solve:?}");
+    }
+
+    #[test]
+    fn stepping_back_steps_sooner_than_stepping_forward() {
+        let back = solve(&at_neck(Vec3::new(0.0, STANDING_NECK, 0.18)), &TUNING);
+        assert!((back.demand_m() - (0.18 - TUNING.back_radius_m)).abs() < 1e-4);
+        let ahead = solve(&at_neck(Vec3::new(0.0, STANDING_NECK, -0.18)), &TUNING);
+        assert_eq!(ahead.step_demand, Vec2::ZERO);
+    }
+
+    #[test]
+    fn the_drift_is_the_side_and_back_of_the_offset() {
+        let ahead = solve(&at_neck(Vec3::new(0.0, STANDING_NECK, -0.15)), &TUNING);
+        assert!(ahead.drift.length() < 1e-5);
+        let side = solve(&at_neck(Vec3::new(0.1, STANDING_NECK, -0.1)), &TUNING);
+        assert!(
+            (side.drift - Vec2::new(0.1, 0.0)).length() < 1e-5,
+            "{side:?}"
+        );
+        let back = solve(&at_neck(Vec3::new(0.0, STANDING_NECK, 0.1)), &TUNING);
+        assert!((back.drift - Vec2::new(0.0, 0.1)).length() < 1e-5);
     }
 
     #[test]
@@ -382,7 +426,7 @@ mod tests {
             let solve = solve(&input, &TUNING);
             prop_assert!(solve.demand_m() <= solve.offset.length() + 1e-4);
             prop_assert!(solve.step_demand.dot(solve.offset) >= -1e-5);
-            prop_assert!(solve.lean_reach_m >= TUNING.lean_radius_m - 1e-5);
+            prop_assert!(solve.lean_reach_m >= TUNING.back_radius_m - 1e-5);
             prop_assert!(solve.waist.y <= HIP + 1e-5);
             prop_assert!(solve.crouch_m >= 0.0);
         }

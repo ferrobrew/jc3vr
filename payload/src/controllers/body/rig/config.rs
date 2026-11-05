@@ -53,6 +53,7 @@ impl RigConfig {
         let checks = [
             ("steps.walk_stick", self.steps.walk_stick, 0.0, 1.0),
             ("pelvis.lean_radius_m", p.lean_radius_m, 0.0, 1.0),
+            ("pelvis.back_radius_m", p.back_radius_m, 0.0, 1.0),
             ("pelvis.max_lean_m", p.max_lean_m, 0.05, 1.5),
             ("pelvis.forward_bend_deg", p.forward_bend_deg, 1.0, 89.0),
             ("pelvis.side_bend_deg", p.side_bend_deg, 1.0, 89.0),
@@ -67,6 +68,10 @@ impl RigConfig {
             ("step.settle_done_m", s.settle_done_m, 0.0, 0.5),
             ("step.settle_s", s.settle_s, 0.0, 10.0),
             ("step.give_up_s", s.give_up_s, 0.1, 30.0),
+            ("step.drift_min_m", s.drift_min_m, 0.0, 0.5),
+            ("step.drift_after_s", s.drift_after_s, 0.0, 30.0),
+            ("step.drift_steady_mps", s.drift_steady_mps, 0.0, 2.0),
+            ("step.drift_speed_mps", s.drift_speed_mps, 0.0, 2.0),
             ("yaw.chest_clamp_deg", y.chest_clamp_deg, 0.0, 120.0),
             ("yaw.chest_follow_s", y.chest_follow_s, 0.0, 5.0),
             ("yaw.turn_deg", y.turn_deg, 0.0, 180.0),

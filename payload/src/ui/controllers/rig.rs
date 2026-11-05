@@ -139,6 +139,10 @@ pub(super) fn rig_settings(ui: &mut Ui, body: &mut BodyRemapConfig) {
             .on_hover_text(
                 "How far the neck may be out over the pelvis before a step is considered.",
             );
+        ui.add(egui::Slider::new(&mut p.back_radius_m, 0.0..=0.5).text("Lean radius back (m)"))
+            .on_hover_text(
+                "The lean radius straight behind the pelvis: stepping back steps sooner.",
+            );
         ui.add(egui::Slider::new(&mut p.max_lean_m, 0.1..=1.0).text("Longest lean (m)"));
         ui.add(egui::Slider::new(&mut p.forward_bend_deg, 5.0..=89.0).text("Forward bend (°)"));
         ui.add(egui::Slider::new(&mut p.side_bend_deg, 5.0..=89.0).text("Side bend (°)"));
@@ -154,6 +158,13 @@ pub(super) fn rig_settings(ui: &mut Ui, body: &mut BodyRemapConfig) {
         ui.add(egui::Slider::new(&mut s.settle_speed_mps, 0.0..=0.5).text("Settle speed (m/s)"));
         ui.add(egui::Slider::new(&mut s.settle_s, 0.0..=3.0).text("Longest settle (s)"));
         ui.add(egui::Slider::new(&mut s.give_up_s, 0.5..=10.0).text("Give up after (s)"));
+        ui.add(egui::Slider::new(&mut s.drift_min_m, 0.0..=0.2).text("Drift past (m)"))
+            .on_hover_text("A side or back offset held this far out, standing still, drifts out.");
+        ui.add(egui::Slider::new(&mut s.drift_after_s, 0.0..=5.0).text("Drift after (s)"));
+        ui.add(
+            egui::Slider::new(&mut s.drift_steady_mps, 0.0..=0.3).text("Head steady below (m/s)"),
+        );
+        ui.add(egui::Slider::new(&mut s.drift_speed_mps, 0.0..=0.5).text("Drift speed (m/s)"));
         ui.add(egui::Slider::new(&mut r.steps.walk_stick, 0.0..=1.0).text("Walk stick"))
             .on_hover_text("How far a step pushes the move stick for the game's walk.");
     });

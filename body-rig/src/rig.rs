@@ -40,6 +40,9 @@ impl RigTuning {
 /// a player looking down also tends to bow.
 pub const LEVEL_GAZE_DEG: f32 = 20.0;
 
+/// The smoothing time of the head's speed for the idle drift, seconds.
+const HEAD_SPEED_SMOOTHING_S: f32 = 0.2;
+
 /// One frame's inputs, in the room frame: metres over the floor, +Y up, -Z forward.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct RigFrame {
@@ -64,7 +67,8 @@ pub struct RigFrame {
 pub struct RigOutput {
     pub solve: PelvisSolve,
     pub phase: StepPhase,
-    /// The pelvis's gap to the floor point under the neck, `(x, z)`: what the drive closes.
+    /// What the drive closes, `(x, z)`: the pelvis's gap to the floor point under the neck, or the
+    /// drift's part of it while drifting.
     pub gap: Vec2,
     /// The body's heading: the legs', which Rico faces.
     pub body_yaw: f32,
@@ -89,6 +93,9 @@ pub struct GroundedRig {
     height: StandingHeight,
     step: StepCommit,
     yaw: YawFollow,
+    /// The neck's last position and its smoothed horizontal speed, metres per second.
+    neck: Option<Vec3>,
+    head_speed_mps: f32,
 }
 
 impl GroundedRig {
@@ -98,6 +105,8 @@ impl GroundedRig {
             height: StandingHeight::new(body.eye_height + crate::body::EYES_TO_NECK.y),
             step: StepCommit::new(),
             yaw: YawFollow::new(),
+            neck: None,
+            head_speed_mps: 0.0,
         }
     }
 
@@ -133,6 +142,8 @@ impl GroundedRig {
     pub fn forget(&mut self) {
         self.step.stand();
         self.yaw = YawFollow::new();
+        self.neck = None;
+        self.head_speed_mps = 0.0;
     }
 
     /// Turn the room frame by `turn` radians about +Y (new frame from old), leaving the body where
@@ -153,9 +164,28 @@ impl GroundedRig {
         }
     }
 
+    /// Fold the neck's horizontal motion since the last frame into the smoothed head speed.
+    fn observe_head_speed(&mut self, neck: Vec3, dt: f32) {
+        if !neck.is_finite() {
+            return;
+        }
+        if let Some(last) = self.neck
+            && dt.is_finite()
+            && dt > 0.0
+        {
+            let speed = Vec2::new(neck.x - last.x, neck.z - last.z).length() / dt;
+            let blend = (dt / (HEAD_SPEED_SMOOTHING_S + dt)).clamp(0.0, 1.0);
+            if speed.is_finite() {
+                self.head_speed_mps += (speed - self.head_speed_mps) * blend;
+            }
+        }
+        self.neck = Some(neck);
+    }
+
     /// Advance one frame.
     pub fn update(&mut self, frame: &RigFrame, tuning: &RigTuning) -> RigOutput {
         let neck = neck_pivot(frame.eyes, frame.head);
+        self.observe_head_speed(neck, frame.dt);
         let level = head_pitch(frame.head).abs() <= LEVEL_GAZE_DEG.to_radians();
         let standing_neck = self
             .height
@@ -178,16 +208,23 @@ impl GroundedRig {
             &StepInput {
                 demand_m: solve.demand_m(),
                 gap: solve.offset,
+                drift: solve.drift,
+                head_speed_mps: self.head_speed_mps,
                 dt: frame.dt,
             },
             &tuning.step,
         );
+        let gap = if phase == StepPhase::Drifting {
+            solve.drift
+        } else {
+            solve.offset
+        };
         let body_yaw = match head_yaw {
             Some(head_yaw) => self.yaw.update(
                 &YawInput {
                     head_yaw,
                     hands: hands_heading(neck, &frame.hands, &tuning.yaw),
-                    moving: frame.moving || phase.drives(),
+                    moving: frame.moving || phase.steps(),
                     dt: frame.dt,
                 },
                 &tuning.yaw,
@@ -197,7 +234,7 @@ impl GroundedRig {
         RigOutput {
             solve,
             phase,
-            gap: solve.offset,
+            gap,
             body_yaw,
             chest_yaw: self.yaw.chest().unwrap_or(body_yaw),
             yaw_target: self.yaw.target(),
@@ -277,6 +314,22 @@ mod tests {
         assert_eq!(pelvis, Vec2::ZERO);
         assert_eq!(out.steps, 0);
         assert!(out.solve.bend.pitch > 0.8);
+    }
+
+    #[test]
+    fn a_weight_shift_held_still_drifts_back_under_the_neck() {
+        let mut rig = GroundedRig::new(body());
+        let standing = body().standing_neck();
+        // Shift 12 cm to the side over half a second, then hold.
+        let (pelvis, out) = walk(&mut rig, Vec2::ZERO, 4.0, |t| {
+            Vec3::new((t * 0.24).min(0.12), standing, 0.0)
+        });
+        assert!(
+            (pelvis - Vec2::new(0.12, 0.0)).length() < 0.03,
+            "{pelvis:?}"
+        );
+        assert_eq!(out.steps, 0);
+        assert!(out.solve.offset.length() < 0.03);
     }
 
     #[test]

@@ -197,11 +197,7 @@ const LEAN_INSIDE: Color = Color(Rgba32::from_rgb(90, 200, 120));
 const LEAN_DEMAND: Color = Color(Rgba32::from_rgb(255, 120, 60));
 
 fn phase_name(phase: StepPhase) -> &'static str {
-    match phase {
-        StepPhase::Idle => "idle",
-        StepPhase::Stepping => "stepping",
-        StepPhase::Settling => "settling",
-    }
+    phase.label()
 }
 
 fn ns(seconds: f64) -> u64 {

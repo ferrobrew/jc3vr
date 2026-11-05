@@ -452,6 +452,7 @@ fn run(command: Command) -> Result<(), CliError> {
                 mean_chest_error_deg = %format_args!("{:.1}", summary.mean_chest_error_deg),
                 mean_offset_m = %format_args!("{:.3}", summary.mean_offset_m),
                 max_offset_m = %format_args!("{:.3}", summary.max_offset_m),
+                held_lean_s = %format_args!("{:.0}", summary.held_lean_s),
                 recenters = summary.recenters,
                 "rig-eval: wrote {}",
                 out.display()

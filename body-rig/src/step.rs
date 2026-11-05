@@ -7,6 +7,11 @@
 //! velocity is the gap over a response time, capped, so it tapers on arrival and the walk cycle
 //! does not overshoot. What is left once the step arrives is slid out slowly while Rico idles, and
 //! a step that does not arrive (a wall) gives up rather than walking into it forever.
+//!
+//! A weight shift inside the lean's reach commits no step, and a player who stands still with one
+//! hip out would otherwise be drawn bent for as long as they stand there. So while Rico idles and
+//! the head holds still, an offset to the side or back that stays for a while is drifted out: the
+//! pelvis shuffles under the neck at a slow speed, with no walk, until it is there.
 
 use glam::Vec2;
 
@@ -34,6 +39,14 @@ pub struct StepTuning {
     pub settle_s: f32,
     /// A step that has not arrived after this long stops, seconds.
     pub give_up_s: f32,
+    /// The idle drift starts once the drift has been longer than this, metres...
+    pub drift_min_m: f32,
+    /// ...for this long, seconds, with the head steady.
+    pub drift_after_s: f32,
+    /// The head is steady below this speed, metres per second.
+    pub drift_steady_mps: f32,
+    /// The speed the idle drift shuffles the pelvis at, metres per second.
+    pub drift_speed_mps: f32,
 }
 
 impl StepTuning {
@@ -47,6 +60,10 @@ impl StepTuning {
             settle_done_m: 0.02,
             settle_s: 0.6,
             give_up_s: 3.0,
+            drift_min_m: 0.04,
+            drift_after_s: 1.0,
+            drift_steady_mps: 0.06,
+            drift_speed_mps: 0.12,
         }
     }
 }
@@ -68,6 +85,8 @@ pub enum StepPhase {
     Stepping,
     /// The remainder of an arrived step, slid out slowly.
     Settling,
+    /// A weight shift held while standing still, shuffled out slowly.
+    Drifting,
 }
 
 impl StepPhase {
@@ -76,11 +95,18 @@ impl StepPhase {
         self != StepPhase::Idle
     }
 
+    /// Whether the phase is a step's: the body moves as a walk rather than a shuffle under a
+    /// standing player.
+    pub fn steps(self) -> bool {
+        matches!(self, StepPhase::Stepping | StepPhase::Settling)
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             StepPhase::Idle => "idle",
             StepPhase::Stepping => "stepping",
             StepPhase::Settling => "settling",
+            StepPhase::Drifting => "drifting",
         }
     }
 }
@@ -92,6 +118,10 @@ pub struct StepInput {
     pub demand_m: f32,
     /// The pelvis's horizontal gap to the floor point under the neck, `(x, z)`.
     pub gap: Vec2,
+    /// The part of the gap the idle drift takes out, `(x, z)`.
+    pub drift: Vec2,
+    /// How fast the neck moves horizontally, metres per second.
+    pub head_speed_mps: f32,
     /// Seconds since the last frame.
     pub dt: f32,
 }
@@ -104,6 +134,8 @@ pub struct StepCommit {
     elapsed: f32,
     /// Steps committed since the commit was made.
     steps: u64,
+    /// How long, idle, the drift has stayed past its threshold with the head steady, seconds.
+    drift_held: f32,
 }
 
 impl StepCommit {
@@ -112,6 +144,7 @@ impl StepCommit {
             phase: StepPhase::Idle,
             elapsed: 0.0,
             steps: 0,
+            drift_held: 0.0,
         }
     }
 
@@ -128,6 +161,7 @@ impl StepCommit {
     pub fn stand(&mut self) {
         self.phase = StepPhase::Idle;
         self.elapsed = 0.0;
+        self.drift_held = 0.0;
     }
 
     /// Advance one frame and return the phase.
@@ -147,13 +181,34 @@ impl StepCommit {
         } else {
             0.0
         };
+        let drift = if input.drift.is_finite() {
+            input.drift.length()
+        } else {
+            0.0
+        };
+        let steady =
+            input.head_speed_mps.is_finite() && input.head_speed_mps < tuning.drift_steady_mps;
+        if self.phase == StepPhase::Idle && drift > tuning.drift_min_m && steady {
+            self.drift_held += dt;
+        } else {
+            self.drift_held = 0.0;
+        }
         self.elapsed += dt;
         let next = match self.phase {
-            StepPhase::Idle | StepPhase::Settling if demand > tuning.commit_m => {
+            StepPhase::Idle | StepPhase::Settling | StepPhase::Drifting
+                if demand > tuning.commit_m =>
+            {
                 self.steps += 1;
                 StepPhase::Stepping
             }
+            StepPhase::Idle if self.drift_held >= tuning.drift_after_s => StepPhase::Drifting,
             StepPhase::Idle => StepPhase::Idle,
+            StepPhase::Drifting
+                if drift <= tuning.settle_done_m || self.elapsed >= tuning.give_up_s =>
+            {
+                StepPhase::Idle
+            }
+            StepPhase::Drifting => StepPhase::Drifting,
             StepPhase::Stepping if gap <= tuning.arrive_m => {
                 if gap > tuning.settle_done_m {
                     StepPhase::Settling
@@ -179,7 +234,8 @@ impl StepCommit {
 }
 
 /// The velocity that drives the pelvis along `gap` (the pelvis to the floor point under the neck,
-/// `(x, z)`) in `phase`, for a step of `dt` seconds: never further than the gap in one step.
+/// `(x, z)`, or the drift while drifting) in `phase`, for a step of `dt` seconds: never further than
+/// the gap in one step.
 pub fn drive_velocity(phase: StepPhase, gap: Vec2, dt: f32, tuning: &StepTuning) -> Vec2 {
     let Some(direction) = gap.try_normalize() else {
         return Vec2::ZERO;
@@ -189,6 +245,7 @@ pub fn drive_velocity(phase: StepPhase, gap: Vec2, dt: f32, tuning: &StepTuning)
         StepPhase::Idle => 0.0,
         StepPhase::Stepping => distance / tuning.response_s.max(1.0e-3),
         StepPhase::Settling => tuning.settle_speed_mps,
+        StepPhase::Drifting => tuning.drift_speed_mps,
     };
     let cap = tuning.max_speed_mps.max(0.0);
     let speed = speed.clamp(0.0, cap);
@@ -218,6 +275,8 @@ mod tests {
         StepInput {
             demand_m,
             gap: Vec2::new(0.0, -gap),
+            drift: Vec2::ZERO,
+            head_speed_mps: 0.0,
             dt: DT,
         }
     }
@@ -280,6 +339,46 @@ mod tests {
         assert_eq!(commit.phase(), StepPhase::Idle);
     }
 
+    fn drifting(drift: f32, head_speed_mps: f32) -> StepInput {
+        StepInput {
+            drift: Vec2::new(drift, 0.0),
+            head_speed_mps,
+            gap: Vec2::new(drift, 0.0),
+            ..input(0.0, 0.0)
+        }
+    }
+
+    #[test]
+    fn a_held_weight_shift_drifts_out() {
+        let mut commit = StepCommit::new();
+        let hold = (TUNING.drift_after_s / DT).ceil() as usize + 1;
+        let mut phase = StepPhase::Idle;
+        for _ in 0..hold {
+            phase = commit.update(&drifting(0.1, 0.0), &TUNING);
+        }
+        assert_eq!(phase, StepPhase::Drifting);
+        assert_eq!(commit.steps(), 0);
+        assert_eq!(
+            commit.update(&drifting(0.01, 0.0), &TUNING),
+            StepPhase::Idle
+        );
+    }
+
+    #[test]
+    fn a_moving_head_or_a_small_shift_never_drifts() {
+        let mut commit = StepCommit::new();
+        for _ in 0..1000 {
+            assert_eq!(
+                commit.update(&drifting(0.1, TUNING.drift_steady_mps * 2.0), &TUNING),
+                StepPhase::Idle
+            );
+            assert_eq!(
+                commit.update(&drifting(TUNING.drift_min_m * 0.5, 0.0), &TUNING),
+                StepPhase::Idle
+            );
+        }
+    }
+
     #[test]
     fn the_drive_tapers_and_caps() {
         let far = drive_velocity(StepPhase::Stepping, Vec2::new(0.0, -2.0), DT, &TUNING);
@@ -307,6 +406,8 @@ mod tests {
                 &StepInput {
                     demand_m: demand,
                     gap,
+                    drift: Vec2::ZERO,
+                    head_speed_mps: 0.0,
                     dt: DT,
                 },
                 &TUNING,
@@ -328,7 +429,12 @@ mod tests {
             x in -2.0f32..2.0, z in -2.0f32..2.0, dt in 0.001f32..0.2,
         ) {
             let gap = Vec2::new(x, z);
-            for phase in [StepPhase::Idle, StepPhase::Stepping, StepPhase::Settling] {
+            for phase in [
+                StepPhase::Idle,
+                StepPhase::Stepping,
+                StepPhase::Settling,
+                StepPhase::Drifting,
+            ] {
                 let v = drive_velocity(phase, gap, dt, &TUNING);
                 prop_assert!(v.length() * dt <= gap.length() + 1e-4);
                 prop_assert!(v.length() <= TUNING.max_speed_mps + 1e-4);

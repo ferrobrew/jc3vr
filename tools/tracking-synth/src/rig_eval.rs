@@ -90,8 +90,21 @@ pub struct EvalSummary {
     pub max_offset_m: f32,
     /// The mean neck offset over the pelvis, metres.
     pub mean_offset_m: f64,
+    /// Seconds in stretches longer than [`HELD_LEAN_S`] in which the body idled with the neck more
+    /// than [`HELD_LEAN_M`] out over the pelvis and no crouch: offsets drawn as a bend that never
+    /// settled.
+    pub held_lean_s: f64,
     pub recenters: u64,
 }
+
+/// A held lean is an idle offset longer than this, seconds...
+pub const HELD_LEAN_S: f64 = 8.0;
+
+/// ...further out than this, metres.
+pub const HELD_LEAN_M: f32 = 0.08;
+
+/// A held lean has a crouch shallower than this, metres.
+const HELD_LEAN_CROUCH_M: f32 = 0.05;
 
 /// A map from the runtime's predicted display time to seconds into the take's video.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -179,6 +192,7 @@ pub fn evaluate(
     let mut chest_error_sum = 0.0f64;
     let mut turn_start: Option<f32> = None;
     let mut turn_sizes: Vec<f32> = Vec::new();
+    let mut lean_stretch = 0.0f64;
     let mut last_grounded: Option<u64> = None;
     for frame in &recording.frames {
         let dt = last_time.map_or(0.0, |last| {
@@ -268,6 +282,15 @@ pub fn evaluate(
             f64::from(angle::wrap(head_yaw - output.chest_yaw).abs().to_degrees() * dt);
         let offset = output.solve.offset.length();
         offset_sum += f64::from(offset * dt);
+        if output.phase == StepPhase::Idle
+            && offset > HELD_LEAN_M
+            && output.solve.crouch_m < HELD_LEAN_CROUCH_M
+        {
+            lean_stretch += f64::from(dt);
+        } else {
+            summary.held_lean_s += held(lean_stretch);
+            lean_stretch = 0.0;
+        }
         summary.max_offset_m = summary.max_offset_m.max(offset);
         summary.steps = output.steps;
         rows.push(EvalRow {
@@ -285,10 +308,20 @@ pub fn evaluate(
         summary.mean_chest_error_deg = chest_error_sum / summary.grounded_s;
         summary.mean_offset_m = offset_sum / summary.grounded_s;
     }
+    summary.held_lean_s += held(lean_stretch);
     turn_sizes.sort_by(f32::total_cmp);
     summary.median_turn_deg = percentile(&turn_sizes, 0.5);
     summary.p90_turn_deg = percentile(&turn_sizes, 0.9);
     (rows, summary)
+}
+
+/// A stretch's length, if it is long enough to count as a held lean.
+fn held(stretch_s: f64) -> f64 {
+    if stretch_s > HELD_LEAN_S {
+        stretch_s
+    } else {
+        0.0
+    }
 }
 
 /// The value a share `p` of the sorted `values` lie below, or zero for none.
@@ -356,6 +389,7 @@ fn phase_code(phase: StepPhase) -> u8 {
         StepPhase::Idle => 0,
         StepPhase::Stepping => 1,
         StepPhase::Settling => 2,
+        StepPhase::Drifting => 3,
     }
 }
 
