@@ -5,8 +5,8 @@
 //! slots including `LOOK_LEFT` / `LOOK_RIGHT` / `LOOK_UP` / `LOOK_DOWN`. These are the mouse-look
 //! deltas the game's camera system reads. We intercept them post-call: read the values, clear the
 //! effectors so the game's camera doesn't respond, and feed the deltas into the headpose simulation.
-//! The same seam is where [`crate::hooks::input::swim`] refuses backward movement in water, and
-//! where the motion controllers' poll stage lands their bindings' writes
+//! The same seam is where [`crate::hooks::input::swim`] refuses backward and sideways movement in
+//! water, and where the motion controllers' poll stage lands their bindings' writes
 //! ([`crate::controllers::bindings::stage::poll_stage`]): after the poll, so the injected state
 //! survives until the game reads it, and before the swim refusal, so it covers the controllers'
 //! input too. The bindings' decisions and acts run in the game stage, on the game thread before the
@@ -27,7 +27,7 @@ use crate::{
     controllers::{self, bindings::hold::DevicePoll},
     frame_timing::{self, Slot},
     headpose,
-    hooks::input::swim::{log_tick, suppress_backward_input},
+    hooks::input::swim::{log_tick, refuse_swim_moves},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -82,9 +82,9 @@ fn input_device_manager_update(manager: *mut InputDeviceManager, dt: f32) {
         clear_effector(map, Action::LOOK_RIGHT);
         clear_effector(map, Action::LOOK_UP);
         clear_effector(map, Action::LOOK_DOWN);
-        // Swimming refuses backward input outright; done here so the game's own input never carries
-        // it, rather than unpicking its effects downstream.
-        suppress_backward_input(map);
+        // Swimming refuses backward and sideways input outright; done here so the game's own input
+        // never carries it, rather than unpicking its effects downstream.
+        refuse_swim_moves(map);
 
         headpose::sim::on_input_tick(look_x, look_y, look_x_delta, dt);
         // The swim heading's telemetry, after the headpose took this tick's turn.

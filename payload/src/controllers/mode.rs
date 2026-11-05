@@ -253,6 +253,11 @@ impl CharacterSnapshot {
             .get(bit / 64)
             .is_some_and(|word| (word >> (bit % 64)) & 1 != 0)
     }
+
+    /// Whether the state words say the character swims, at the surface or underwater.
+    pub fn swimming(&self) -> bool {
+        self.has(StateBitFlag::SB_IS_SWIMMING) || self.has(StateBitFlag::SB_IS_UW_SWIMMING)
+    }
 }
 
 /// The debounced mode state machine.
@@ -365,8 +370,7 @@ pub fn classify(character: &CharacterSnapshot) -> Mode {
     {
         return Mode::Airborne(AirborneVariant::Falling);
     }
-    if character.has(StateBitFlag::SB_IS_SWIMMING) || character.has(StateBitFlag::SB_IS_UW_SWIMMING)
-    {
+    if character.swimming() {
         return Mode::OnFoot(OnFootVariant::Swimming);
     }
     Mode::OnFoot(OnFootVariant::Ground)

@@ -21,7 +21,7 @@ use crate::{
     controllers::{body::procedural, hands::tiers},
     headpose::{self, sim::body_yaw_of},
     hooks::input::swim::{
-        SWIM_BACKWARD_REFUSALS, SWIM_DIRECTION_OVERRIDES, SWIM_EVAL_CALLS, SWIM_ROTATE_OVERRIDES,
+        SWIM_DIRECTION_OVERRIDES, SWIM_EVAL_CALLS, SWIM_MOVE_REFUSALS, SWIM_ROTATE_OVERRIDES,
         SWIM_TURN_SUPPRESSIONS, SWIM_UNTARGETED, SwimCore, swimming,
     },
 };
@@ -93,7 +93,7 @@ pub(crate) fn log_tick(look_x: f32) {
         direction_overrides = advanced.directions,
         rotate_overrides = advanced.rotates,
         turn_suppressions = advanced.turns,
-        backward_refusals = advanced.backward,
+        move_refusals = advanced.moves,
         untargeted = advanced.untargeted,
         core = rotate.map(|r| r.core.label()),
         core_from_deg = rotate.map(|r| heading_of(r.from).to_degrees()),
@@ -146,7 +146,7 @@ struct Counters {
     directions: u64,
     rotates: u64,
     turns: u64,
-    backward: u64,
+    moves: u64,
     untargeted: u64,
 }
 
@@ -157,7 +157,7 @@ impl Counters {
             directions: SWIM_DIRECTION_OVERRIDES.load(Ordering::Relaxed),
             rotates: SWIM_ROTATE_OVERRIDES.load(Ordering::Relaxed),
             turns: SWIM_TURN_SUPPRESSIONS.load(Ordering::Relaxed),
-            backward: SWIM_BACKWARD_REFUSALS.load(Ordering::Relaxed),
+            moves: SWIM_MOVE_REFUSALS.load(Ordering::Relaxed),
             untargeted: SWIM_UNTARGETED.load(Ordering::Relaxed),
         }
     }
@@ -168,7 +168,7 @@ impl Counters {
             directions: self.directions.wrapping_sub(before.directions),
             rotates: self.rotates.wrapping_sub(before.rotates),
             turns: self.turns.wrapping_sub(before.turns),
-            backward: self.backward.wrapping_sub(before.backward),
+            moves: self.moves.wrapping_sub(before.moves),
             untargeted: self.untargeted.wrapping_sub(before.untargeted),
         }
     }

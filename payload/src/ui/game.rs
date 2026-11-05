@@ -15,7 +15,7 @@ use crate::{
             },
             parachute::PARACHUTE_LOOK_STEER_SUPPRESSIONS,
             swim::{
-                SWIM_BACKWARD_REFUSALS, SWIM_DIRECTION_OVERRIDES, SWIM_EVAL_CALLS,
+                SWIM_DIRECTION_OVERRIDES, SWIM_EVAL_CALLS, SWIM_MOVE_REFUSALS,
                 SWIM_ROTATE_OVERRIDES, SWIM_TURN_SUPPRESSIONS, SWIM_UNTARGETED,
             },
             wingsuit::{barrel_rolls_dropped, suppressed as stall_flip_suppressed},
@@ -53,7 +53,8 @@ fn swimming_controls(ui: &mut egui::Ui, cfg: &mut Config) {
     .on_hover_text(
         "Aim both the swim move direction and the body's heading rotation at the \
          heading you own with the right stick: the camera has no influence, the left stick \
-         swims forward along that heading (backward is refused -- there is no backstroke), \
+         swims forward along that heading (backward is refused -- there is no backstroke -- \
+         and so is sideways, since nothing strafes), \
          and the game's act-quantized turn steps never trigger. Inert on flatscreen or \
          before the right-stick yaw target seeds.",
     );
@@ -71,12 +72,12 @@ fn swimming_controls(ui: &mut egui::Ui, cfg: &mut Config) {
 fn swimming_readout(ui: &mut egui::Ui) {
     ui.label(format!(
         "Swim: cores {}  dir-overrides {}  rotate-overrides {}  turn-suppressions {}  \
-         backward-refusals {}  untargeted {}",
+         move-refusals {}  untargeted {}",
         SWIM_EVAL_CALLS.load(Ordering::Relaxed),
         SWIM_DIRECTION_OVERRIDES.load(Ordering::Relaxed),
         SWIM_ROTATE_OVERRIDES.load(Ordering::Relaxed),
         SWIM_TURN_SUPPRESSIONS.load(Ordering::Relaxed),
-        SWIM_BACKWARD_REFUSALS.load(Ordering::Relaxed),
+        SWIM_MOVE_REFUSALS.load(Ordering::Relaxed),
         SWIM_UNTARGETED.load(Ordering::Relaxed),
     ));
 }

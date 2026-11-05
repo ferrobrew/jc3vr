@@ -17,7 +17,8 @@
 //!   direction.
 //! - [`get_delta_angle_from_orientation`] reports zero, so the turn acts never queue and their slerp
 //!   never takes the rotation away from [`do_rotate`].
-//! - [`suppress_backward_input`] clears `MOVE_BACKWARD`, since the swim family has no backstroke.
+//! - [`refuse_swim_moves`] clears `MOVE_BACKWARD`, since the swim family has no backstroke, and
+//!   `MOVE_LEFT` and `MOVE_RIGHT`, since the right stick turns and nothing strafes.
 //!
 //! [`process_motion`] only marks its window, so [`do_rotate`] can tell the heading rotation from the
 //! velocity slerp nested inside it. `CPfxCharacterInstance::SetOrientation` is deliberately not
@@ -43,7 +44,7 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{config::Config, headpose::body_yaw_target};
+use crate::{config::Config, controllers::mode::CharacterSnapshot, headpose::body_yaw_target};
 
 mod telemetry;
 
@@ -69,47 +70,100 @@ pub static SWIM_DIRECTION_OVERRIDES: AtomicU64 = AtomicU64::new(0);
 pub static SWIM_ROTATE_OVERRIDES: AtomicU64 = AtomicU64::new(0);
 /// How often the turn-angle probe was suppressed, keeping a turn act from queuing.
 pub static SWIM_TURN_SUPPRESSIONS: AtomicU64 = AtomicU64::new(0);
-/// How often backward input was cleared before the game could see it.
-pub static SWIM_BACKWARD_REFUSALS: AtomicU64 = AtomicU64::new(0);
+/// How often backward or sideways input was cleared before the game could see it.
+pub static SWIM_MOVE_REFUSALS: AtomicU64 = AtomicU64::new(0);
 /// How often a swim movement core ran for the local player with the override on but no body-yaw
 /// target to give it, so the game's own camera-relative heading turned the body.
 pub static SWIM_UNTARGETED: AtomicU64 = AtomicU64::new(0);
 
-/// Whether the local player is swimming, from the motion state both swim movement cores write every
-/// frame they run. Read by consumers outside this module too (the VR frame loop levels the view
-/// frame on it).
+/// Whether the local player is swimming, by either of [`SwimSignals`]. Read by consumers outside
+/// this module too (the VR frame loop levels the view frame on it).
 ///
-/// The motion state rather than a recency stamp: a stamp keeps reading "swimming" for its whole
-/// window after the last core ran, and every gate below then leaks onto foot for that long -- the
-/// player could not walk backwards out of the water, and the on-foot heading and aim-blend paths saw
-/// the swim overrides.
+/// Live state rather than a recency stamp: a stamp keeps reading "swimming" for its whole window
+/// after the last core ran, and every gate below then leaks onto foot for that long -- the player
+/// could not walk backwards out of the water, and the on-foot heading and aim-blend paths saw the
+/// swim overrides.
 pub fn swimming() -> bool {
-    unsafe { Character::GetLocalPlayerCharacter().as_ref() }
-        .is_some_and(|c| c.m_CurrentMotionState == Character::MOTION_STATE_SWIMMING)
+    SwimSignals::local().is_some_and(SwimSignals::any)
 }
 
-/// Clear the `MOVE_BACKWARD` effector while swimming, so the game never sees backward input: no act
-/// queues, no stroke animation plays, the forward axis nets to zero, and both movement cores take
-/// their idle branch. Called from the input-device update alongside the look effectors the headpose
-/// consumes.
+/// The two signals that say the local player swims.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct SwimSignals {
+    /// The character's motion state reads swimming, which both swim movement cores write each
+    /// frame they run.
+    pub motion_state: bool,
+    /// The state bits read swimming, the signal the controllers' mode detector classifies by. They
+    /// hold for every tick in the water, where the motion state follows the cores' cadence.
+    pub state_bits: bool,
+}
+
+impl SwimSignals {
+    /// The local player's signals, or `None` without a local player.
+    pub(crate) fn local() -> Option<Self> {
+        // SAFETY: the local player is live for the frame; only plain fields are read.
+        let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
+        // SAFETY: as above; the control parameters are null or live with the character.
+        let bits = unsafe { character.m_ControlParameters.as_ref() }.map(|control| {
+            let vm = &control.m_UserVM;
+            [
+                vm.m_CurrentStateBitFlags0,
+                vm.m_CurrentStateBitFlags1,
+                vm.m_CurrentStateBitFlags2,
+            ]
+        });
+        Some(Self::of(character.m_CurrentMotionState, bits))
+    }
+
+    fn of(motion_state: u32, state_bits: Option<[u64; 3]>) -> Self {
+        Self {
+            motion_state: motion_state == Character::MOTION_STATE_SWIMMING,
+            state_bits: state_bits.is_some_and(|state_bits| {
+                CharacterSnapshot {
+                    state_bits,
+                    ..CharacterSnapshot::default()
+                }
+                .swimming()
+            }),
+        }
+    }
+
+    pub(crate) const fn any(self) -> bool {
+        self.motion_state || self.state_bits
+    }
+}
+
+/// Clear the swim's refused moves ([`REFUSED_SWIM_MOVES`]) while swimming, so the game never sees
+/// them: no act queues, no stroke animation plays, and the left stick only swims forward along the
+/// heading the right stick turns. Called from the input-device update alongside the look effectors
+/// the headpose consumes.
 ///
 /// Backward cannot simply be reversed -- the swim family ships no backstroke, and pointing the move
 /// direction against the heading made the character paddle in place, re-orient, or drift sideways.
-pub(super) fn suppress_backward_input(map: &mut LocalPlayerActionMap) {
+/// Sideways would otherwise reach the game as forward motion, since [`transform_input_dir_to_world_dir`]
+/// returns the heading for any stick direction.
+pub(super) fn refuse_swim_moves(map: &mut LocalPlayerActionMap) {
     if engaged_target().is_none() {
         return;
     }
-    let Some(effector) = (unsafe { map.GetActionEffector(Action::MOVE_BACKWARD).as_mut() }) else {
-        return;
-    };
-    if effector.m_Value == 0.0 {
-        return;
+    for action in REFUSED_SWIM_MOVES {
+        let Some(effector) = (unsafe { map.GetActionEffector(action).as_mut() }) else {
+            continue;
+        };
+        if effector.m_Value == 0.0 {
+            continue;
+        }
+        SWIM_MOVE_REFUSALS.fetch_add(1, Ordering::Relaxed);
+        effector.m_Value = 0.0;
+        effector.m_PrevValue = 0.0;
+        effector.m_State = EffectorState::Idle;
     }
-    SWIM_BACKWARD_REFUSALS.fetch_add(1, Ordering::Relaxed);
-    effector.m_Value = 0.0;
-    effector.m_PrevValue = 0.0;
-    effector.m_State = EffectorState::Idle;
 }
+
+/// The moves the swim refuses: backward, which has no stroke, and both strafes, since the right
+/// stick turns the body and the left stick's forward swims along the heading.
+const REFUSED_SWIM_MOVES: [Action; 3] =
+    [Action::MOVE_BACKWARD, Action::MOVE_LEFT, Action::MOVE_RIGHT];
 
 #[detour(address = jc3gi::input::swim::UpdateSurfaceMovement_ADDRESS)]
 fn update_surface_movement(
@@ -383,7 +437,38 @@ fn pitched(flat: Vec3, pitch_sin: f32) -> Vec3 {
 
 #[cfg(test)]
 mod tests {
+    use jc3gi::state::StateBitFlag;
+
     use super::*;
+
+    fn bits(flag: StateBitFlag) -> [u64; 3] {
+        let bit = flag as u32 as usize;
+        let mut words = [0; 3];
+        words[bit / 64] |= 1 << (bit % 64);
+        words
+    }
+
+    /// Either signal alone counts as swimming, so a tick on which the cores did not run still
+    /// engages the swim steering while the state bits say the player is in the water.
+    #[test]
+    fn either_swim_signal_engages_the_swim() {
+        let swimming = Character::MOTION_STATE_SWIMMING;
+        let other = swimming + 1;
+        assert!(SwimSignals::of(swimming, None).any());
+        assert!(SwimSignals::of(other, Some(bits(StateBitFlag::SB_IS_SWIMMING))).any());
+        assert!(SwimSignals::of(other, Some(bits(StateBitFlag::SB_IS_UW_SWIMMING))).any());
+        assert!(!SwimSignals::of(other, Some(bits(StateBitFlag::SB_IS_WINGSUIT))).any());
+        assert!(!SwimSignals::of(other, None).any());
+    }
+
+    /// The left stick swims only forward: back and both strafes are refused, and forward is not.
+    #[test]
+    fn the_swim_refuses_back_and_strafe_but_not_forward() {
+        assert!(REFUSED_SWIM_MOVES.contains(&Action::MOVE_BACKWARD));
+        assert!(REFUSED_SWIM_MOVES.contains(&Action::MOVE_LEFT));
+        assert!(REFUSED_SWIM_MOVES.contains(&Action::MOVE_RIGHT));
+        assert!(!REFUSED_SWIM_MOVES.contains(&Action::MOVE_FORWARD));
+    }
 
     /// Tilting keeps the heading and produces the asked-for vertical component.
     #[test]
