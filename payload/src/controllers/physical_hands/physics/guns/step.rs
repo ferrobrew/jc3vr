@@ -12,7 +12,7 @@
 
 use std::time::Instant;
 
-use body_rig::rotation::angle;
+use body_rig::{geometry::point_velocity, rotation::angle};
 use glam::Vec3;
 use jc3gi::physics::CustomGroupCollisionFilter;
 use parking_lot::Mutex;
@@ -29,8 +29,8 @@ use crate::controllers::{
             engine::{GunError, GunSource, check_own_body, read_source},
             math::{
                 BRACE_BREAK_STEPS, GunAxes, MAX_GRIP_SEAT_M, MassSource, brace_broken, brace_due,
-                brace_palm, carried_velocity, clamp_velocity, class_value, deviation, gun_mass,
-                intended_seat, limit, seat, seated, settled, shot_impulse, strayed,
+                brace_palm, clamp_velocity, class_value, deviation, gun_mass, intended_seat, limit,
+                seat, seated, settled, shot_impulse, strayed,
             },
         },
         joint::Joint,
@@ -711,7 +711,8 @@ unsafe fn carry_with_hand(
 ) -> Result<Carried, BodyError> {
     // SAFETY: forwarded from the caller.
     let (gun_centre, hand_centre) = unsafe { (gun.centre_of_mass()?, hand.centre_of_mass()?) };
-    let linear = carried_velocity(
+    // The gun body seated on the hand moves with the hand's body, as one rigid body.
+    let linear = point_velocity(
         hand_centre,
         hand_motion.linear,
         hand_motion.angular,
@@ -737,7 +738,7 @@ unsafe fn carry_with_hand(
 unsafe fn carry_with(body: &mut HandBody, carrier: Carried) -> Result<(), BodyError> {
     // SAFETY: forwarded from the caller.
     let centre = unsafe { body.centre_of_mass() }?;
-    let linear = carried_velocity(carrier.centre, carrier.linear, carrier.angular, centre);
+    let linear = point_velocity(carrier.centre, carrier.linear, carrier.angular, centre);
     // SAFETY: forwarded from the caller.
     unsafe { body.set_velocities(linear, carrier.angular) }
 }

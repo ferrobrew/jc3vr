@@ -226,12 +226,6 @@ pub const SETTLED_TURN_RAD: f32 = 0.2;
 /// still on its way into the hand, or one the hand's pose put somewhere else.
 pub const MAX_GRIP_SEAT_M: f32 = 0.15;
 
-/// The velocity of a point at `point` on a body at `origin` moving at `linear` and turning at
-/// `angular`: the gun body seated on the hand moves with the hand's body, as one rigid body.
-pub fn carried_velocity(origin: Vec3, linear: Vec3, angular: Vec3, point: Vec3) -> Vec3 {
-    linear + angular.cross(point - origin)
-}
-
 /// The gun's barrel and muzzle in its own frame: the barrel the axis of its fire point `fire_point`
 /// (the fire point's -Z, as the sight line's), and the muzzle the fire point's origin.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -278,6 +272,7 @@ pub fn shot_impulse(gun: Pose, axes: &GunAxes, impulse_ns: f32, muzzle_rise: f32
 
 #[cfg(test)]
 mod tests {
+    use body_rig::geometry::point_velocity;
     use glam::Quat;
     use pretty_assertions::assert_eq;
 
@@ -448,7 +443,7 @@ mod tests {
         let (linear, angular) = (Vec3::new(0.4, -0.2, 0.9), Vec3::new(0.8, -1.5, 0.3));
         let palm = centre + Vec3::new(-0.05, -0.04, -0.3);
         let step_s = 1.0 / 30.0;
-        let off = carried_velocity(centre, linear, angular, palm);
+        let off = point_velocity(centre, linear, angular, palm);
         let carried = palm + off * step_s;
         // Where the palm would be as a rigid part of the gun after the step.
         let turn = Quat::from_scaled_axis(angular * step_s);
@@ -571,16 +566,6 @@ mod tests {
             limit(pose(Vec3::NAN, Quat::IDENTITY), 0.015, max_turn),
             Pose::IDENTITY
         );
-    }
-
-    #[test]
-    fn a_seated_gun_moves_with_its_hand_as_one_body() {
-        let origin = Vec3::new(1.0, 1.0, 1.0);
-        let gun = origin + Vec3::new(0.0, 0.0, -0.3);
-        let v = carried_velocity(origin, Vec3::X, Vec3::new(0.0, 2.0, 0.0), gun);
-        // Turning about +Y at two radians a second, a point thirty centimetres ahead (-Z) moves
-        // toward -X at 0.6 m/s, on top of the hand's own +X.
-        assert!(v.abs_diff_eq(Vec3::new(0.4, 0.0, 0.0), 1e-5));
     }
 
     #[test]

@@ -1,5 +1,6 @@
 //! Bounded held-prop impact strength and repeat-contact admission.
 
+use body_rig::geometry::point_velocity;
 use glam::Vec3;
 
 /// The contact-point motion before the physics step.
@@ -13,7 +14,7 @@ pub(super) struct Motion {
 
 impl Motion {
     pub fn velocity_at(self, point: Vec3) -> Vec3 {
-        self.linear + self.angular.cross(point - self.centre)
+        point_velocity(self.centre, self.linear, self.angular, point)
     }
 }
 

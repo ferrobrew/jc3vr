@@ -7,6 +7,7 @@
 //! velocity by the inverse inertia times the impulse's moment about the centre of mass, as the
 //! engine's own impulse does ([`crate::controllers::physical_hands::engine::push_body`]).
 
+use body_rig::geometry::point_velocity;
 use glam::{Mat3, Quat, Vec3};
 
 /// A body's place: its centre of mass and the orientation of its motion's frame, world space.
@@ -66,7 +67,12 @@ impl RigidBody {
 
     /// The velocity of the body's material point at the world point `at`.
     pub fn point_velocity(&self, at: Vec3) -> Vec3 {
-        self.velocities.linear + self.velocities.angular.cross(at - self.pose.centre)
+        point_velocity(
+            self.pose.centre,
+            self.velocities.linear,
+            self.velocities.angular,
+            at,
+        )
     }
 
     /// Apply the linear impulse `impulse` at the world point `at`.

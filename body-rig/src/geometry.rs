@@ -1,5 +1,5 @@
-//! Geometry primitives: the nearest point of a segment, a point held within a sphere, and a cast
-//! along a segment long enough to be worth casting.
+//! Geometry primitives: the nearest point of a segment, a point held within a sphere, a cast along
+//! a segment long enough to be worth casting, and the velocity of a point on a rigid body.
 
 use glam::Vec3;
 
@@ -44,6 +44,13 @@ pub fn cast_segment<T>(
     } else {
         cast(from, to)
     }
+}
+
+/// The velocity of the point `point` carried rigidly with a body whose `origin` moves at `linear`
+/// and which turns at `angular` (radians per second about each axis): `linear + angular × (point -
+/// origin)`.
+pub fn point_velocity(origin: Vec3, linear: Vec3, angular: Vec3, point: Vec3) -> Vec3 {
+    linear + angular.cross(point - origin)
 }
 
 /// The shortest segment worth casting, metres.
@@ -98,5 +105,16 @@ mod tests {
         assert_eq!(cast_segment(Vec3::ZERO, Vec3::splat(1e-4), &mut cast), None);
         assert_eq!(cast_segment(Vec3::ZERO, Vec3::X, &mut cast), Some(Vec3::X));
         assert_eq!(casts, 1);
+    }
+
+    #[test]
+    fn a_point_on_a_turning_body_moves_with_it() {
+        let origin = Vec3::new(1.0, 1.0, 1.0);
+        let point = origin + Vec3::new(0.0, 0.0, -0.3);
+        let v = point_velocity(origin, Vec3::X, Vec3::new(0.0, 2.0, 0.0), point);
+        // Turning about +Y at two radians a second, a point thirty centimetres ahead (-Z) moves
+        // toward -X at 0.6 m/s, on top of the body's own +X.
+        assert!(v.abs_diff_eq(Vec3::new(0.4, 0.0, 0.0), 1e-5));
+        assert_eq!(point_velocity(origin, Vec3::Y, Vec3::Z, origin), Vec3::Y);
     }
 }

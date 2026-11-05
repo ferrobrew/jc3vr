@@ -9,7 +9,7 @@
 
 use std::num::NonZeroUsize;
 
-use body_rig::{rotation::angular_velocity, smooth::follow_factor};
+use body_rig::{geometry::point_velocity, rotation::angular_velocity, smooth::follow_factor};
 use glam::{Quat, Vec3};
 
 use crate::controllers::{
@@ -165,7 +165,7 @@ pub struct PalmMotion {
 impl PalmMotion {
     /// The velocity of the point `at` carried rigidly with the palm.
     pub fn point_velocity(&self, at: Vec3) -> Vec3 {
-        self.velocity + self.angular_velocity.cross(at - self.pose.position)
+        point_velocity(self.pose.position, self.velocity, self.angular_velocity, at)
     }
 }
 

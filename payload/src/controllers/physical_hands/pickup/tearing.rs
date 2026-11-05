@@ -2,6 +2,7 @@
 
 use std::num::NonZeroUsize;
 
+use body_rig::geometry::point_velocity;
 use glam::Vec3;
 
 use crate::controllers::physical_hands::{
@@ -142,11 +143,12 @@ fn step_with(
             };
             let lag = report.target - report.anchor;
             let body = observation.state;
-            let body_velocity = body.velocities.linear
-                + body
-                    .velocities
-                    .angular
-                    .cross(report.anchor - body.pose.centre);
+            let body_velocity = point_velocity(
+                body.pose.centre,
+                body.velocities.linear,
+                body.velocities.angular,
+                report.anchor,
+            );
             let scale = world_scale.max(0.01);
             let speed = (palm.point_velocity(report.target) - body_velocity)
                 .dot(lag.normalize_or_zero())

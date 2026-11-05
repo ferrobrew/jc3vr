@@ -16,6 +16,7 @@
 
 use std::{fmt, ptr};
 
+use body_rig::geometry::point_velocity;
 use glam::{Affine3A, Mat4, Quat, Vec3, Vec3A};
 use jc3gi::{
     character::character::Character,
@@ -194,7 +195,7 @@ impl BodyFrame {
         if self.is_static {
             return Vec3::ZERO;
         }
-        self.linear + self.angular.cross(at - self.centre)
+        point_velocity(self.centre, self.linear, self.angular, at)
     }
 }
 
