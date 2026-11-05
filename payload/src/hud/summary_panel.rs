@@ -47,6 +47,7 @@ use crate::{
     },
     hooks,
     hud::{
+        offscreen_egui::OffscreenEgui,
         palette::{PANEL_ACCENT, PANEL_BACKGROUND, PANEL_DIM, PANEL_TEXT},
         quad::HudQuad,
         target::HudTarget,
@@ -273,13 +274,11 @@ impl Panel {
     }
 }
 
-/// The panel's egui context, renderer, render target, and quad pass.
+/// The panel's egui, render target, and quad pass.
 struct Gpu {
-    egui: egui::Context,
-    renderer: egui_directx11::Renderer,
+    egui: OffscreenEgui,
     quad: HudQuad,
     target: Option<HudTarget>,
-    started: Instant,
     /// The layout of the summary last measured, and what it was measured for.
     measured: Option<(LayoutKey, Grid)>,
     /// The texture updates of a measuring pass, which the next painted frame uploads.
@@ -297,15 +296,12 @@ struct LayoutKey {
 
 impl Gpu {
     fn new(device: &Device) -> anyhow::Result<Self> {
-        let egui = egui::Context::default();
-        egui.set_fonts(fonts());
+        let egui = OffscreenEgui::new(device)?;
+        egui.context().set_fonts(fonts());
         Ok(Self {
-            renderer: egui_directx11::Renderer::new(&device.m_Device)
-                .context("creating the egui renderer")?,
             quad: HudQuad::new(device).context("creating the quad pass")?,
             egui,
             target: None,
-            started: Instant::now(),
             measured: None,
             pending_textures: None,
         })
@@ -341,22 +337,19 @@ impl Gpu {
         };
         let screen = Vec2::new(size.0 as f32, size.1 as f32);
         let summary = &published.current;
-        let output = self.egui.run_ui(self.input(screen), |ui| {
+        let mut output = self.egui.run(screen, |ui| {
             let mut painter = ui.painter().clone();
             painter.set_opacity(alpha);
             paint_summary(&painter, summary, grid, page);
         });
-        let (mut output, _, _) = egui_directx11::split_output(output);
         // The measuring pass's texture updates (the font atlas, laid out there first) must reach
         // the renderer, or the text samples a texture that was never uploaded.
         if let Some(mut pending) = self.pending_textures.take() {
             pending.append(output.textures_delta);
             output.textures_delta = pending;
         }
-        // SAFETY: the target's view is live, and the caller holds the engine context mutex.
-        unsafe { context.ClearRenderTargetView(target.color_rtv(), &[0.0; 4]) };
-        self.renderer
-            .render(context, target.color_rtv(), &self.egui, output)
+        self.egui
+            .render(context, target, output)
             .context("rendering the summary")?;
         Ok(layout)
     }
@@ -371,9 +364,9 @@ impl Gpu {
             return;
         }
         let mut grid = None;
-        let output = self.egui.run_ui(
-            self.input(Vec2::new(key.width as f32, key.max_height as f32)),
-            |ui| {
+        let output = self
+            .egui
+            .run(Vec2::new(key.width as f32, key.max_height as f32), |ui| {
                 grid = Some(measure_summary(
                     ui.painter(),
                     summary,
@@ -381,28 +374,12 @@ impl Gpu {
                     key.max_height,
                     row_px,
                 ));
-            },
-        );
-        let (output, _, _) = egui_directx11::split_output(output);
+            });
         match self.pending_textures.as_mut() {
             Some(pending) => pending.append(output.textures_delta),
             None => self.pending_textures = Some(output.textures_delta),
         }
         self.measured = grid.map(|grid| (key, grid));
-    }
-
-    fn input(&self, screen: Vec2) -> egui::RawInput {
-        let mut input = egui::RawInput {
-            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, screen)),
-            time: Some(self.started.elapsed().as_secs_f64()),
-            ..Default::default()
-        };
-        input
-            .viewports
-            .entry(egui::ViewportId::ROOT)
-            .or_default()
-            .native_pixels_per_point = Some(1.0);
-        input
     }
 }
 

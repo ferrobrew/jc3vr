@@ -46,6 +46,7 @@ pub(crate) mod game_icons;
 pub(crate) mod grab_hint;
 pub(crate) mod lost_weapons;
 pub(crate) mod mirror_overlay;
+mod offscreen_egui;
 mod palette;
 pub(crate) mod pointer;
 mod quad;

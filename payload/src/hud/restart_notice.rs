@@ -18,6 +18,7 @@ use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 use crate::{
     controllers::summary::glance::PanelPose,
     hud::{
+        offscreen_egui::OffscreenEgui,
         palette::{PANEL_ACCENT, PANEL_BACKGROUND, PANEL_DIM, PANEL_TEXT},
         quad::HudQuad,
         target::HudTarget,
@@ -99,10 +100,9 @@ impl Notice {
     }
 }
 
-/// The panel's egui context, renderer, render target, and quad pass.
+/// The panel's egui, render target, and quad pass.
 struct Gpu {
-    egui: egui::Context,
-    renderer: egui_directx11::Renderer,
+    egui: OffscreenEgui,
     quad: HudQuad,
     target: HudTarget,
     /// The reason the target holds the text of.
@@ -112,9 +112,7 @@ struct Gpu {
 impl Gpu {
     fn new(device: &Device) -> anyhow::Result<Self> {
         Ok(Self {
-            egui: egui::Context::default(),
-            renderer: egui_directx11::Renderer::new(&device.m_Device)
-                .context("creating the egui renderer")?,
+            egui: OffscreenEgui::new(device)?,
             quad: HudQuad::new(device).context("creating the quad pass")?,
             target: HudTarget::new(device, WIDTH_PX, HEIGHT_PX)
                 .context("creating the notice target")?,
@@ -128,18 +126,9 @@ impl Gpu {
         reason: RestartReason,
     ) -> anyhow::Result<()> {
         let size = Vec2::new(WIDTH_PX as f32, HEIGHT_PX as f32);
-        let mut input = egui::RawInput {
-            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
-            ..Default::default()
-        };
-        input
-            .viewports
-            .entry(egui::ViewportId::ROOT)
-            .or_default()
-            .native_pixels_per_point = Some(1.0);
         let headline = reason.headline();
         let detail = reason.detail();
-        let output = self.egui.run_ui(input, |ui| {
+        let output = self.egui.run(size, |ui| {
             let painter = ui.painter();
             let panel = Rect::from_min_size(Pos2::ZERO, size);
             painter.rect_filled(panel, MARGIN_PX, PANEL_BACKGROUND);
@@ -165,11 +154,8 @@ impl Gpu {
             let y = ((size.y - galley.size().y) * 0.5).max(MARGIN_PX * 0.5);
             painter.galley(Pos2::new(MARGIN_PX, y), galley, PANEL_TEXT);
         });
-        let (output, _, _) = egui_directx11::split_output(output);
-        // SAFETY: the target's view is live, and the caller holds the engine context mutex.
-        unsafe { context.ClearRenderTargetView(self.target.color_rtv(), &[0.0; 4]) };
-        self.renderer
-            .render(context, self.target.color_rtv(), &self.egui, output)
+        self.egui
+            .render(context, &self.target, output)
             .context("rendering the notice")?;
         self.painted = Some(reason);
         Ok(())
