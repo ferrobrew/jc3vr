@@ -78,6 +78,11 @@ pub unsafe fn game_object(target: *mut Target) -> Option<*mut c_void> {
     unsafe { weak_target(&target.m_GameObject) }
 }
 
+/// How far short of a target's body position ([`body_position`]) the line of sight to it may be
+/// blocked and still count as clear, metres: the line ends inside the target's own body, or its
+/// vehicle's.
+pub const BODY_SIGHT_TOLERANCE_M: f32 = 0.75;
+
 /// The target's body position as the game's target selection uses it.
 ///
 /// # Safety

@@ -46,10 +46,6 @@ use crate::controllers::{
 /// The farthest a candidate may be from the hand for aim assist, metres.
 const MAX_DISTANCE_M: f32 = 150.0;
 
-/// How far short of a candidate's body position the line of sight to it may be blocked and still
-/// count as clear, metres: the line ends inside the target's own body.
-const OCCLUSION_TOLERANCE_M: f32 = 0.75;
-
 /// One hand's correction on the last aim update.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct AssistCorrection {
@@ -150,25 +146,12 @@ pub(super) unsafe fn grapple_assist(
         return None;
     }
     let aim = unsafe { aim.as_mut() }?;
-    let view = Matrix4::from(ray::view_matrix(ray));
-    let mut candidates = grapple::with_view(view, || {
-        let mut candidates = Vec::new();
-        for set in TargetSet::ALL {
-            for target in unsafe { targets::targets(set) } {
-                if let Some(candidate) = unsafe { grapple_candidate(aim, target, ray, cone) } {
-                    candidates.push(candidate);
-                }
-            }
-        }
-        candidates
-    });
-    candidates.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let target = candidates
-        .into_iter()
-        .find(|(_, position)| unsafe {
-            raycast::line_of_sight(ray.origin, *position, OCCLUSION_TOLERANCE_M, options)
+    // Ranked by the angle from the ray, nearest first.
+    let target = unsafe {
+        first_in_sight(aim, ray, options, [true; 3], |aim, target| {
+            grapple_candidate(aim, target, ray, cone)
         })
-        .map(|(_, position)| position)?;
+    }?;
     let bent = assisted_ray(ray, target, strength)?;
     Some((
         bent,
@@ -192,6 +175,50 @@ fn angle_in_cone(ray: &Ray, position: Vec3, cone: f32) -> Option<f32> {
     ray.offset(position)
         .filter(|offset| offset.within(MAX_DISTANCE_M, cone))
         .map(|offset| offset.angle)
+}
+
+/// The body position of the first candidate in `sets` (the included ones of [`TargetSet::ALL`])
+/// that `rank` accepts and that has a clear line from the ray's origin, taking the candidates in
+/// ascending order of their rank. `rank` runs with the camera getters returning `ray`, so that the
+/// game's target scoring centres on it.
+///
+/// # Safety
+///
+/// `aim` must be the local player's live aim control, called from its update on that thread, with
+/// `options` naming live objects and no grapple view set.
+unsafe fn first_in_sight(
+    aim: &mut PlayerAimControl,
+    ray: &Ray,
+    options: &CastOptions,
+    sets: [bool; 3],
+    mut rank: impl FnMut(&mut PlayerAimControl, *mut Target) -> Option<(f32, Vec3)>,
+) -> Option<Vec3> {
+    let view = Matrix4::from(ray::view_matrix(ray));
+    let mut ranked = grapple::with_view(view, || {
+        let mut ranked = Vec::new();
+        for (set, _) in TargetSet::ALL
+            .into_iter()
+            .zip(sets)
+            .filter(|(_, included)| *included)
+        {
+            for target in unsafe { targets::targets(set) } {
+                ranked.extend(rank(aim, target));
+            }
+        }
+        ranked
+    });
+    ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
+    ranked
+        .into_iter()
+        .find(|(_, position)| unsafe {
+            raycast::line_of_sight(
+                ray.origin,
+                *position,
+                targets::BODY_SIGHT_TOLERANCE_M,
+                options,
+            )
+        })
+        .map(|(_, position)| position)
 }
 
 /// A grapple candidate's angle from `ray` and its body position, when it is within `cone` of the
@@ -228,29 +255,12 @@ unsafe fn best_candidate(
 ) -> Option<Vec3> {
     let aim = unsafe { aim.as_mut() }?;
     let included = unsafe { targets::included_sets() };
-    let view = Matrix4::from(ray::view_matrix(ray));
-    let mut scored = grapple::with_view(view, || {
-        let mut scored = Vec::new();
-        for (set, _) in TargetSet::ALL
-            .into_iter()
-            .zip(included)
-            .filter(|(_, included)| *included)
-        {
-            for target in unsafe { targets::targets(set) } {
-                if let Some(candidate) = unsafe { score(aim, target, ray) } {
-                    scored.push(candidate);
-                }
-            }
-        }
-        scored
-    });
-    scored.sort_by(|a, b| b.0.total_cmp(&a.0));
-    scored
-        .into_iter()
-        .find(|(_, position)| unsafe {
-            raycast::line_of_sight(ray.origin, *position, OCCLUSION_TOLERANCE_M, options)
+    // Ranked by the negated fitness, best scored first.
+    unsafe {
+        first_in_sight(aim, ray, options, included, |aim, target| {
+            score(aim, target, ray).map(|(fitness, position)| (-fitness, position))
         })
-        .map(|(_, position)| position)
+    }
 }
 
 /// The game's weapon fitness of `target` around the current view, and its body position, when it

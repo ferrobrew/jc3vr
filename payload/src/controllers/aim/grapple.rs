@@ -187,10 +187,6 @@ fn is_last_valid_grapple_aim_pos_still_valid(aim: *mut PlayerAimControl) -> bool
     })
 }
 
-/// How far short of a grapple candidate's body position its line of sight may be blocked and still
-/// count as clear, metres: the line ends inside the candidate's own body, or its vehicle's.
-const GRAPPLE_OCCLUSION_TOLERANCE_M: f32 = 0.75;
-
 /// Whether `target`'s body position is in sight of the ray `view` stands for, cast from where the
 /// engine's visibility cast starts from a camera matrix, ignoring the aim control's owner and its
 /// vehicle.
@@ -215,7 +211,7 @@ unsafe fn visible_from_view(
     let view = Mat4::from(view);
     let origin = view.w_axis.truncate() - view.z_axis.truncate() * DIRECT_AIM_START_OFFSET;
     let options = unsafe { CastOptions::ignoring_rider(owner) }.seeing_through();
-    unsafe { raycast::line_of_sight(origin, end, GRAPPLE_OCCLUSION_TOLERANCE_M, &options) }
+    unsafe { raycast::line_of_sight(origin, end, targets::BODY_SIGHT_TOLERANCE_M, &options) }
 }
 
 /// Everything the direct-aim distribution writes for the grapple slot.
