@@ -9,15 +9,20 @@
 //! on the recording's clock or as OpenXR predicted display times. The header line still counts the
 //! whole recording.
 
+mod text;
+
 use std::io::{self, Write};
 
-use glam::{EulerRot, Vec3};
+use glam::EulerRot;
 use serde_json::{Value, json};
 use tracking_format::{
     Frame, Recording,
     event::{Event, EventKind},
     model::{Button, Hand, HandFrame, RecenterCause},
 };
+
+use crate::dump::text::vec3;
+pub(crate) use crate::dump::text::write_event_body;
 
 /// How [`dump`] prints.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -183,6 +188,18 @@ fn json_event(event: &Event) -> serde_json::Result<Value> {
         EventKind::GripRelease(release) => serde_json::to_value(release)?,
         EventKind::WingsuitGesture(gesture) => serde_json::to_value(gesture)?,
         EventKind::Snatch(snatch) => serde_json::to_value(snatch)?,
+        EventKind::Pose(pose) => serde_json::to_value(pose)?,
+        EventKind::Rig(rig) => serde_json::to_value(rig)?,
+        EventKind::RigConfig(config) => serde_json::to_value(config)?,
+        EventKind::Bodies(bodies) => serde_json::to_value(bodies)?,
+        EventKind::BodyIntro(intro) => serde_json::to_value(intro)?,
+        EventKind::Held(held) => serde_json::to_value(held)?,
+        EventKind::Force(force) => serde_json::to_value(force)?,
+        EventKind::Injected(injected) => serde_json::to_value(injected)?,
+        EventKind::Diagnostic(diagnostic) => serde_json::to_value(diagnostic)?,
+        EventKind::Haptic(haptic) => serde_json::to_value(haptic)?,
+        EventKind::Settings(settings) => serde_json::to_value(settings)?,
+        EventKind::FrameTiming(timing) => serde_json::to_value(timing)?,
     };
     Ok(json!({
         "type": "event",
@@ -316,115 +333,6 @@ fn text_event(event: &Event, out: &mut impl Write) -> io::Result<()> {
     write_event_body(&event.kind, out)
 }
 
-/// An event's fields as its text line prints them, after the time and the kind, ending in a newline.
-pub(crate) fn write_event_body(kind: &EventKind, out: &mut impl Write) -> io::Result<()> {
-    match kind {
-        EventKind::ControllerState(state) => writeln!(out, "{state:?}"),
-        EventKind::GripAcquisition(grip) => writeln!(out, "{grip:?}"),
-        EventKind::GunRelease(release) => writeln!(out, "{release:?}"),
-        EventKind::TakeMarker(marker) => writeln!(
-            out,
-            "#{} at {} (unix ms {}){}",
-            marker.index,
-            marker.stamp,
-            marker.unix_ms,
-            if marker.label.is_empty() {
-                String::new()
-            } else {
-                format!(" {:?}", marker.label)
-            },
-        ),
-        EventKind::BodyState(state) => writeln!(
-            out,
-            "{} ({}){}",
-            match (&state.rule_state_name, state.rule_state) {
-                (Some(name), _) => name.to_string(),
-                (None, Some(hash)) => format!("{hash:#010x}"),
-                (None, None) => "no rule state".to_owned(),
-            },
-            state.case,
-            if state.repeat { ", repeated" } else { "" },
-        ),
-        EventKind::Throw(throw) => writeln!(
-            out,
-            "{} {} {:.2} m/s {} spin {:.2} rad/s {} per game second, \
-             {:.2} m/s per real second at time scale {}{}{}",
-            hand_name(throw.hand),
-            throw.item,
-            throw.motion.linear.length(),
-            vec3(throw.motion.linear),
-            throw.motion.angular.length(),
-            vec3(throw.motion.angular),
-            throw.motion.linear.length() * throw.time_scale,
-            throw.time_scale,
-            throw
-                .source
-                .as_ref()
-                .map_or(String::new(), |source| format!(", from {source}")),
-            match throw.armed {
-                Some(true) => ", armed",
-                Some(false) => ", not armed",
-                None => "",
-            },
-        ),
-        EventKind::GripRelease(release) => writeln!(
-            out,
-            "{} let go of {}{}{} ({}){}",
-            hand_name(release.hand),
-            release.held,
-            release
-                .object
-                .map_or(String::new(), |object| format!(" {object:#x}")),
-            release
-                .body
-                .map_or(String::new(), |body| format!(" body {body}")),
-            release.cause,
-            if release.thrown { ", thrown" } else { "" },
-        ),
-        EventKind::WingsuitGesture(gesture) => writeln!(
-            out,
-            "{}{}",
-            gesture
-                .phase
-                .as_deref()
-                .unwrap_or("idle, neither falling nor in the suit"),
-            gesture
-                .why
-                .as_ref()
-                .map_or(String::new(), |why| format!(" ({why})")),
-        ),
-        EventKind::Snatch(snatch) => {
-            write!(out, "{} -> {}", snatch.from, snatch.to)?;
-            if let Some(hand) = snatch.hand {
-                write!(out, " {}", hand_name(hand))?;
-            }
-            if let Some(outcome) = &snatch.outcome {
-                write!(out, ", {outcome}")?;
-            }
-            if let Some(reason) = &snatch.reason {
-                write!(out, ": {reason}")?;
-            }
-            if let Some(target) = &snatch.target {
-                write!(out, ", target {target}")?;
-            }
-            if let Some(distance) = snatch.distance_m {
-                write!(out, " at {distance:.2} m")?;
-            }
-            if let (Some(yank), Some(speed)) = (snatch.yank_m, snatch.yank_mps) {
-                write!(out, ", yanked {yank:.2} m at {speed:.2} m/s")?;
-            }
-            writeln!(out)
-        }
-    }
-}
-
-fn hand_name(hand: Hand) -> &'static str {
-    match hand {
-        Hand::Left => "left",
-        Hand::Right => "right",
-    }
-}
-
 /// Seconds as nanoseconds, saturating at the clock's ends.
 fn seconds_to_ns(seconds: f64) -> u64 {
     (seconds * 1e9).clamp(0.0, u64::MAX as f64) as u64
@@ -434,17 +342,14 @@ fn seconds(time_ns: u64) -> String {
     format!("{:>12.6}", time_ns as f64 * 1e-9)
 }
 
-fn vec3(v: Vec3) -> String {
-    format!("({:+.3}, {:+.3}, {:+.3})", v.x, v.y, v.z)
-}
-
 #[cfg(test)]
 mod tests {
+    use glam::Vec3;
     use tracking_format::{
         Header, RecenterEvent, SessionSample, StartMarker,
         event::{
-            BodyState, GripRelease, GunRelease, Label, Snatch, TakeMarker, Throw, WingsuitGesture,
-            WorldMotion,
+            BodyState, GripRelease, GunRelease, Label, ReleasePose, Snatch, TakeMarker, Throw,
+            WingsuitGesture, WorldMotion,
         },
         model::{RecenterKind, Stage},
     };
@@ -687,6 +592,10 @@ mod tests {
                 time_scale: 0.5,
                 source: Some(Label::Borrowed("history")),
                 armed: Some(true),
+                release: Some(ReleasePose {
+                    position: Vec3::new(1.0, 2.0, 3.0),
+                    orientation: None,
+                }),
             })),
             EventKind::GripRelease(Box::new(GripRelease {
                 hand: Hand::Right,
@@ -744,7 +653,8 @@ mod tests {
         for expected in [
             "event body_state: S_JC_WINGSUIT_IDLE (wingsuit), repeated",
             "event throw: left grenade 8.00 m/s",
-            "4.00 m/s per real second at time scale 0.5, from history, armed",
+            "4.00 m/s per real second at time scale 0.5, from history, armed, left the hand at \
+             (+1.000, +2.000, +3.000)",
             "event grip_release: right let go of prop 0x10 body 7 (grip opened), thrown",
             "event wingsuit_gesture: armed",
             "event snatch: ARMED -> IDLE right, cancelled: the grip let go",
