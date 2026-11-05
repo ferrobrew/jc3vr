@@ -17,9 +17,7 @@ use std::{
 };
 
 use jc3gi::{
-    character::{character::Character, inventory::WeaponSlot},
-    equipment::weapon::WeaponBase,
-    spawn_system::SpawnSystem,
+    character::character::Character, equipment::weapon::WeaponBase, spawn_system::SpawnSystem,
     types::math::Matrix4,
 };
 use parking_lot::Mutex;
@@ -225,16 +223,13 @@ unsafe fn adopt(owner: &mut Character) {
         let Some(restored) = (unsafe { inventory_engine::restored(weapon, pending.socket) }) else {
             continue;
         };
-        let pistol = restored.weapon.slot() == WeaponSlot::E_SLOT_DUAL_WIELD;
         let (outcome, carried) = adoption::carry_onto(owner, strong, restored);
         let line = match carried {
             Some(object) => {
-                if pistol && single::active() {
-                    // SAFETY: the carry set keeps the weapon alive.
-                    unsafe {
-                        single::designate(&mut *(object as *mut WeaponBase), "a given pistol")
-                    };
-                }
+                // SAFETY: the carry set keeps the weapon alive.
+                unsafe {
+                    single::designate_if_active(&mut *(object as *mut WeaponBase), "a given pistol")
+                };
                 format!(
                     "give: {} is on the {}",
                     pending.name,

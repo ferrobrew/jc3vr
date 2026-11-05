@@ -239,7 +239,7 @@ pub(crate) fn arrived(weapon: usize, hand: Hand) {
     if let Some(mut source) = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
         .and_then(|owner| inventory_engine::slot_handle(&owner.m_Inventory, weapon))
     {
-        unsafe { dual_wield::single::rack_copy_arrived(source.as_mut()) };
+        unsafe { dual_wield::single::designate_if_active(source.as_mut(), "a rack's copy") };
     }
     if let Some(from) = pending.from {
         act::slide_in(weapon, hand, from, pending.slide_s);

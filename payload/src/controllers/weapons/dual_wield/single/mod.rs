@@ -168,6 +168,16 @@ pub(crate) unsafe fn designate(weapon: &mut WeaponBase, why: &str) -> bool {
     }
 }
 
+/// Make `weapon` a single pistol ([`designate`]) while new pistols are made single ([`active`]).
+/// Returns whether it became one.
+///
+/// # Safety
+///
+/// As [`designate`].
+pub(crate) unsafe fn designate_if_active(weapon: &mut WeaponBase, why: &str) -> bool {
+    active() && unsafe { designate(weapon, why) }
+}
+
 /// Remove a single-pistol designation when an unclaimed source split is rolled back.
 pub(crate) fn undesignate(object: usize) {
     set::remove(object);
@@ -233,17 +243,6 @@ pub(crate) unsafe fn clamp_magazine(owner: &mut Character, weapon: &mut WeaponBa
 pub(crate) unsafe fn taken_from_world(owner: &mut Character, weapon: &mut WeaponBase) {
     unsafe { credit_stored(owner, weapon) };
     PICKED.fetch_add(1, Ordering::Relaxed);
-}
-
-/// A rack's copy for one pistol arrived as `weapon`: it is one pistol.
-///
-/// # Safety
-///
-/// As [`designate`].
-pub(crate) unsafe fn rack_copy_arrived(weapon: &mut WeaponBase) {
-    if active() {
-        unsafe { designate(weapon, "a rack's copy") };
-    }
 }
 
 /// A reset is under way: the slot's pistol comes back as one pistol, a pair, or with nothing
@@ -828,9 +827,7 @@ fn set_visible_base(weapon: *mut WeaponBase, visible: bool, fade: bool, force: b
 ///
 /// `weapon` must be live, on the thread completing its pickup.
 pub(crate) unsafe fn designate_picked(weapon: &mut WeaponBase) {
-    if ACTIVE.load(Ordering::Relaxed)
-        && unsafe { designate(weapon, "a pistol taken from the world") }
-    {
+    if unsafe { designate_if_active(weapon, "a pistol taken from the world") } {
         PICKED.fetch_add(1, Ordering::Relaxed);
     }
 }

@@ -241,10 +241,7 @@ pub(crate) unsafe fn take_by_table(
         unsafe { weapon.PickupStart(character_object(owner)) };
     }
     // While pistols are single, a pistol from the world is one pistol.
-    let single = weapon_type.slot() == WeaponSlot::E_SLOT_DUAL_WIELD
-        && single::active()
-        && unsafe { single::designate(weapon, "a pistol taken from the world") };
-    if single {
+    if unsafe { single::designate_if_active(weapon, "a pistol taken from the world") } {
         unsafe { single::taken_from_world(owner, weapon) };
     } else {
         unsafe { credit_stored(owner, weapon) };
