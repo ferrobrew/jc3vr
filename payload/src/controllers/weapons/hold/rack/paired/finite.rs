@@ -18,7 +18,7 @@ use crate::controllers::{
             pickup::Refusal,
             rack::paired::{
                 self, COPY_WAIT, Claim, ClaimKind, MAX_SOURCES, Member, SOURCE_GRACE, Stage, gun,
-                gun_target,
+                member_points,
             },
             refs::{Strong, Weak},
             source::SourceRefusal,
@@ -84,7 +84,8 @@ pub(super) unsafe fn targets(
             if !source.claims.available(index) {
                 continue;
             }
-            let Some((points, pose)) = (unsafe { gun(weapon, index) }).and_then(gun_target) else {
+            let Some((points, pose)) = (unsafe { gun(weapon, index) }).and_then(member_points)
+            else {
                 continue;
             };
             out.push(WorldTarget {

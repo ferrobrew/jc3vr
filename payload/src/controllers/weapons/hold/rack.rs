@@ -43,12 +43,11 @@ use crate::controllers::{
     frame::Hand,
     loadout::{TakeSource, slot_label},
     weapons::{
-        engine::{self, character_object, slot_of, takeable_gun_slot, weapon_at},
+        engine::{self, character_object, grip_points, slot_of, takeable_gun_slot, weapon_at},
         hold::{
             pickup::{self, Refusal, TakeOptions},
             refs::Strong,
             source::SourceRefusal,
-            steal,
             world::{TargetKind, WorldTarget},
         },
         inventory::engine as inventory_engine,
@@ -78,7 +77,7 @@ pub(crate) unsafe fn targets(
             let Some(slot) = rack_slot(weapon) else {
                 return false;
             };
-            let Some((points, gun)) = steal::gun_points(weapon) else {
+            let Some((points, gun)) = grip_points(weapon) else {
                 return false;
             };
             out.push(WorldTarget {

@@ -13,11 +13,10 @@ use crate::controllers::{
     weapons::{
         docks,
         dual_wield::single,
-        engine,
+        engine::{self, grip_points},
         hold::{
             equip::{self, DockRefusal},
             release_diagnostics::ReleaseMotion,
-            steal,
         },
         inventory::{
             engine::{strong_to, weapon_of},
@@ -49,7 +48,7 @@ pub(crate) unsafe fn eject(socket: Socket) -> Result<(), DockRefusal> {
     }
     let character = Mat4::from(owner.m_WorldMatrixT1).w_axis.truncate();
     // SAFETY: as above.
-    let at = unsafe { steal::gun_points(docked) }.map(|([grip, _], _)| grip);
+    let at = unsafe { grip_points(docked) }.map(|([grip, _], _)| grip);
     let away = at.map_or(Vec3::ZERO, |at| away_from(character, at));
     // SAFETY: a slot or the carry set keeps the docked weapon alive.
     let strong = unsafe { strong_to(docked) }.ok_or(DockRefusal::NotDone)?;

@@ -7,7 +7,6 @@ mod finite;
 
 use std::time::{Duration, Instant};
 
-use glam::Mat4;
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{WeaponBase, WeaponData, WeaponState},
@@ -19,7 +18,9 @@ use crate::controllers::{
     loadout::{live, take::TakeRoute},
     weapons::{
         dual_wield::single::{self, magazine},
-        engine::{character_object, gun_at, gun_count, hide_gun, place_guns, slot_of},
+        engine::{
+            character_object, gun_at, gun_count, gun_data_pose, hide_gun, place_guns, slot_of,
+        },
         hold::{
             pickup::{self, Refusal},
             rack::{copy, offered_state},
@@ -96,7 +97,7 @@ pub(crate) unsafe fn targets(
         if !matches!(source.members[index], Stage::Ready(_)) {
             continue;
         }
-        let Some((points, pose)) = (unsafe { gun(weapon, index) }).and_then(gun_target) else {
+        let Some((points, pose)) = (unsafe { gun(weapon, index) }).and_then(member_points) else {
             continue;
         };
         out.push(WorldTarget {
@@ -576,23 +577,11 @@ pub(crate) unsafe fn gun(weapon: &WeaponBase, index: usize) -> Option<&WeaponDat
     unsafe { gun_at(weapon, index) }
 }
 
-fn gun_target(gun: &WeaponData) -> Option<([glam::Vec3; 2], Pose)> {
-    let matrix = Mat4::from(gun.m_WorldMatrixT1);
-    if !matrix.is_finite() {
-        return None;
-    }
-    let (_, orientation, position) = matrix.to_scale_rotation_translation();
-    if !orientation.is_finite() || !orientation.is_normalized() {
-        return None;
-    }
-    // The native gun's own origin is also where the visible member is placed, not its neighbour.
-    Some((
-        [position; 2],
-        Pose {
-            position,
-            orientation,
-        },
-    ))
+/// Where a hand closes on a member `gun` of a pair, and its pose. The member's own origin is
+/// where its visible gun is, so both points are there, not at the pair's grips.
+fn member_points(gun: &WeaponData) -> Option<([glam::Vec3; 2], Pose)> {
+    let pose = gun_data_pose(gun)?;
+    Some(([pose.position; 2], pose))
 }
 
 unsafe fn retire(source: Source) {

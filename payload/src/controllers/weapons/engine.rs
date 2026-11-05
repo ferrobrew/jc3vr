@@ -164,19 +164,45 @@ pub(crate) fn character_position(character: &Character) -> Vec3 {
     character_frame(character).w_axis.truncate()
 }
 
-/// The world pose of `weapon`'s first gun, without its scale.
+/// The world pose of `weapon`'s first gun, without its scale ([`gun_data_pose`]).
 ///
 /// # Safety
 ///
 /// `weapon` must be live.
 pub(crate) unsafe fn gun_pose(weapon: &WeaponBase) -> Option<Pose> {
-    let first = unsafe { gun::guns(weapon) }.next().flatten()?;
+    unsafe { gun::guns(weapon) }
+        .next()
+        .flatten()
+        .and_then(gun_data_pose)
+}
+
+/// The world pose of the gun `gun`, without its scale, as its last placement left it.
+pub(crate) fn gun_data_pose(gun: &WeaponData) -> Option<Pose> {
     let (_, orientation, position) =
-        Mat4::from(first.m_WorldMatrixT1).to_scale_rotation_translation();
+        Mat4::from(gun.m_WorldMatrixT1).to_scale_rotation_translation();
     (position.is_finite() && orientation.is_finite()).then(|| Pose {
         position,
         orientation: orientation.normalize(),
     })
+}
+
+/// Where hands close on `weapon`, in the world (the right hand's grip, and the left hand's grip,
+/// each falling back to the first gun's origin without one), and its first gun's pose.
+///
+/// # Safety
+///
+/// `weapon` must be live.
+pub(crate) unsafe fn grip_points(weapon: &WeaponBase) -> Option<([Vec3; 2], Pose)> {
+    let pose = unsafe { gun_pose(weapon) }?;
+    let grip = |hand| {
+        let mut out = Matrix4::from(Mat4::IDENTITY);
+        unsafe { weapon.GetGripPosition(hand, &mut out) }
+            .then(|| Mat4::from(out).w_axis.truncate())
+            .filter(|p| p.is_finite())
+    };
+    let right = grip(WeaponGripHand::E_WEAPON_GRIP_HAND_RIGHT).unwrap_or(pose.position);
+    let left = grip(WeaponGripHand::E_WEAPON_GRIP_HAND_LEFT).unwrap_or(pose.position);
+    Some(([right, left], pose))
 }
 
 /// How many guns `weapon`'s gun list holds, a single pistol's hidden second gun included.

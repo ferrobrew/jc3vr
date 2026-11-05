@@ -47,8 +47,8 @@ use jc3gi::{
         inventory::{Inventory, WeaponSlot},
     },
     damage::DamageFlags,
-    equipment::weapon::{WeaponBase, WeaponGripHand, WeaponState},
-    types::math::{Matrix4, Vector3},
+    equipment::weapon::{WeaponBase, WeaponState},
+    types::math::Vector3,
 };
 use parking_lot::Mutex;
 
@@ -58,7 +58,7 @@ use crate::controllers::{
     hands::ik,
     loadout::TakeSource,
     weapons::{
-        engine::{self, slot_of, takeable_gun_slot},
+        engine::{self, grip_points, slot_of, takeable_gun_slot},
         hold::{
             pickup::Refusal,
             refs::Weak,
@@ -127,7 +127,7 @@ pub(crate) unsafe fn observe(inventory: *mut Inventory) {
     }
     let wielded = unsafe { wielded(character) }.and_then(|(weapon, slot)| {
         // SAFETY: the character's wielded weapon is live for its pass.
-        let (points, gun) = unsafe { gun_points(&*weapon) }?;
+        let (points, gun) = unsafe { grip_points(&*weapon) }?;
         Some(Wielded {
             weapon: weapon as usize,
             slot,
@@ -406,29 +406,6 @@ unsafe fn holstered(character: &Character) -> [Option<Holstered>; HOLSTER_SLOTS.
             point,
         })
     })
-}
-
-/// The gun's segment in the world (the holding hand's grip, and the other hand's grip or the
-/// gun's origin) and its first gun's pose.
-pub(crate) unsafe fn gun_points(weapon: &WeaponBase) -> Option<([Vec3; 2], Pose)> {
-    let first = unsafe { gun::guns(weapon) }.next().flatten()?;
-    let matrix = Mat4::from(first.m_WorldMatrixT1);
-    let (_, orientation, origin) = matrix.to_scale_rotation_translation();
-    let grip = |hand| {
-        let mut out = Matrix4::from(Mat4::IDENTITY);
-        unsafe { weapon.GetGripPosition(hand, &mut out) }
-            .then(|| Mat4::from(out).w_axis.truncate())
-            .filter(|p| p.is_finite())
-    };
-    let right = grip(WeaponGripHand::E_WEAPON_GRIP_HAND_RIGHT).unwrap_or(origin);
-    let left = grip(WeaponGripHand::E_WEAPON_GRIP_HAND_LEFT).unwrap_or(origin);
-    (origin.is_finite() && orientation.is_finite()).then_some((
-        [right, left],
-        Pose {
-            position: origin,
-            orientation: orientation.normalize(),
-        },
-    ))
 }
 
 /// Stagger `victim` toward `toward`, as a melee blow just over its stumble threshold would.

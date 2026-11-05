@@ -42,7 +42,7 @@ use crate::{
         roomscale::teleport,
         weapons::{
             docks,
-            engine::{self, slot_of},
+            engine::{self, grip_points, slot_of},
             hold::{
                 self, armed,
                 dock::{ReleaseWatch, Snap, SnapFrom, SnapKind},
@@ -53,7 +53,6 @@ use crate::{
                     ReleaseMotion, ReleaseRecord, ReleaseRoute, ReleaseStatus, ReleaseTransport,
                     RigMotion, SampleStage, estimate_release,
                 },
-                steal,
             },
             inventory::{self, reconcile, sockets},
         },
@@ -689,7 +688,7 @@ unsafe fn provisional_offset(weapon: usize, socket: Socket, toward: Vec3) -> Opt
     let bone = sockets::bone(socket);
     let on_bone = unsafe { equip::pose_on_bone(owner, weapon, bone) }?;
     let bone_pose = unsafe { grip::bone_model_pose(owner, bone) }?;
-    let ([grip_world, _], _) = unsafe { steal::gun_points(weapon) }?;
+    let ([grip_world, _], _) = unsafe { grip_points(weapon) }?;
     let character = Mat4::from(owner.m_WorldMatrixT1);
     let moved = shift_on_bone(on_bone, bone_pose, character, toward - grip_world)?;
     Some(moved)

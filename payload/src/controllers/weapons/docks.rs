@@ -41,9 +41,9 @@ use crate::controllers::{
     },
     weapons::{
         docks::attachments::{Attachment, Missing, Occupancy, Placement, PoseSource, Sample},
-        engine::slot_of,
+        engine::{grip_points, slot_of},
         grenade,
-        hold::{act, armed, steal},
+        hold::{act, armed},
         inventory::{
             carry,
             engine::ObjectKey,
@@ -410,7 +410,7 @@ fn held_object(snapshot: &LoadoutSnapshot, hand: Hand) -> Option<ObjectKey> {
 
 /// Where a hand closes on `weapon`, in the world: its grip, or its first gun's origin without one.
 unsafe fn grip_point(weapon: &WeaponBase) -> Option<Vec3> {
-    let (points, _) = unsafe { steal::gun_points(weapon) }?;
+    let (points, _) = unsafe { grip_points(weapon) }?;
     points[0].is_finite().then_some(points[0])
 }
 
