@@ -58,7 +58,7 @@ use crate::controllers::{
     loadout::{ObjectAddress, Place, Socket, live},
     weapons::{
         dual_wield::single,
-        engine::{character_object, gun_ptr, slot_of},
+        engine::{character_object, gun_ptr, skip_interpolation, slot_of},
         hold::{armed, refs::Strong},
         inventory::{
             engine::{self as inventory_engine, ObjectKey, Seen, kind_of, strong_to},
@@ -576,17 +576,6 @@ unsafe fn guns_mut(weapon: &mut WeaponBase) -> impl Iterator<Item = &'static mut
     guns.into_iter()
         .flatten()
         .map(|mut gun| unsafe { gun.as_mut() })
-}
-
-/// Skip every gun's render interpolation for one frame, so a gun that changed place does not
-/// streak.
-unsafe fn skip_interpolation(weapon: &mut WeaponBase) {
-    let count = unsafe { gun::guns(weapon) }.count();
-    for index in 0..count {
-        if let Ok(index) = i32::try_from(index) {
-            unsafe { weapon.SkipRenderInterpolationForOneFrame(index) };
-        }
-    }
 }
 
 #[detour(address = jc3gi::character::inventory::Inventory::UpdateWeaponVisibility_ADDRESS)]

@@ -32,7 +32,7 @@ use crate::controllers::{
     physical_hands,
     weapons::{
         dual_wield::single,
-        engine::slot_of,
+        engine::{skip_interpolation, slot_of},
         hold::release_diagnostics::{DropObservation, NativeWrite, ReleaseMotion, SampleStage},
         inventory::{carry, engine::strong_to},
     },
@@ -339,15 +339,4 @@ fn slot_weapon(inventory: &Inventory, slot: WeaponSlot) -> Option<NonNull<Weapon
 /// The gun's body id.
 unsafe fn body_of(gun: &WeaponData) -> Option<u32> {
     unsafe { gun.m_PfxInstance.as_ref() }.map(|body| body.m_BodyId)
-}
-
-/// Skip every gun's render interpolation for one frame, so a gun that changed bones does not
-/// streak between them.
-unsafe fn skip_interpolation(weapon: &mut WeaponBase) {
-    let count = unsafe { gun::guns(weapon) }.count();
-    for index in 0..count {
-        if let Ok(index) = i32::try_from(index) {
-            unsafe { weapon.SkipRenderInterpolationForOneFrame(index) };
-        }
-    }
 }

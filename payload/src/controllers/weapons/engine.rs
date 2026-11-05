@@ -295,6 +295,21 @@ pub(crate) unsafe fn first_gun_matrix(weapon: &WeaponBase) -> Option<Matrix4> {
         .map(|first| first.m_WorldMatrixT1)
 }
 
+/// Skip every gun's render interpolation for one frame, so a gun that changed place or bones does
+/// not streak from where it was drawn.
+///
+/// # Safety
+///
+/// `weapon` must be live, on the game thread or a thread updating its holder.
+pub(crate) unsafe fn skip_interpolation(weapon: &mut WeaponBase) {
+    let count = unsafe { gun::guns(weapon) }.count();
+    for index in 0..count {
+        if let Ok(index) = i32::try_from(index) {
+            unsafe { weapon.SkipRenderInterpolationForOneFrame(index) };
+        }
+    }
+}
+
 /// Place every gun of `weapon` at `matrix`, for this frame and the last, so that a weapon that has
 /// not been drawn there does not streak in from where it was.
 ///

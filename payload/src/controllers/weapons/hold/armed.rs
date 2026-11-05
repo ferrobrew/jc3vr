@@ -41,12 +41,11 @@ use jc3gi::{
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    aim::gun,
     frame::Hand,
     hands::ik,
     weapons::{
         dual_wield::single,
-        engine::{self, HeldWeapon, Wielded, gun_count, gun_ptr, slot_of},
+        engine::{self, HeldWeapon, Wielded, gun_count, gun_ptr, skip_interpolation, slot_of},
         heft::HeftClass,
         hold::layout,
         inventory::{carry, engine as inventory_engine},
@@ -480,13 +479,4 @@ unsafe fn gun_handles(weapon: &WeaponBase) -> [Option<NonNull<WeaponData>>; MAX_
         }
     }
     guns
-}
-
-unsafe fn skip_interpolation(weapon: &mut WeaponBase) {
-    let count = unsafe { gun::guns(weapon) }.count();
-    for index in 0..count {
-        if let Ok(index) = i32::try_from(index) {
-            unsafe { weapon.SkipRenderInterpolationForOneFrame(index) };
-        }
-    }
 }
