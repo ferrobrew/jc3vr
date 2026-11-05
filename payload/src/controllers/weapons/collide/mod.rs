@@ -23,7 +23,6 @@ pub mod solve;
 use std::time::{Duration, Instant};
 
 use glam::Vec3;
-use jc3gi::character::character::Character;
 use parking_lot::Mutex;
 
 use crate::controllers::{
@@ -144,14 +143,11 @@ pub fn apply(
 ///
 /// # Safety
 ///
-/// The simulation thread outside the physics step, with `owner` the live local player character.
-pub(crate) unsafe fn probe(owner: &Character) {
+/// The simulation thread outside the physics step, with a live local player character.
+pub(crate) unsafe fn probe() {
     let probes = STATE.lock().hands.map(|h| h.probe);
-    let options = CastOptions {
-        ignore: [owner as *const Character as usize, 0],
-        see_through: true,
-        material: false,
-    };
+    // SAFETY: forwarded from the caller.
+    let options = unsafe { CastOptions::ignoring_player(0) }.seeing_through();
     for hand in Hand::BOTH {
         let Some(probe) = probes[hand.index()] else {
             continue;

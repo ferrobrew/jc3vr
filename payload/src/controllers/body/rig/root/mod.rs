@@ -831,7 +831,7 @@ unsafe fn capsule_tick(sim: &mut Sim, character: &mut Character, crouched: bool,
     let owned = sim.status.capsule_owned;
     let pending = character.m_PendingProxyState;
     let default = character.m_DefaultProxyState;
-    let blocked = !crouched && owned && unsafe { headroom_blocked(character, feet) };
+    let blocked = !crouched && owned && unsafe { headroom_blocked(feet) };
     let step = capsule_step(crouched || blocked, owned, pending, default);
     if let Some(value) = step.write {
         character.m_PendingProxyState = value;
@@ -842,13 +842,11 @@ unsafe fn capsule_tick(sim: &mut Sim, character: &mut Character, crouched: bool,
 
 /// Whether something above the crouched character would stop it standing: a ray up from knee
 /// height to the top of a standing character.
-unsafe fn headroom_blocked(character: &Character, feet: Vec3) -> bool {
+unsafe fn headroom_blocked(feet: Vec3) -> bool {
     let from = feet + Vec3::Y * HEADROOM_RAY_START_M;
     let to = feet + Vec3::Y * BodyDimensions::CHARACTER_ESTIMATE.height;
-    let options = CastOptions {
-        ignore: [character as *const Character as usize, 0],
-        ..CastOptions::default()
-    };
+    // SAFETY: the game thread.
+    let options = unsafe { CastOptions::ignoring_player(0) };
     // SAFETY: the simulation phase; the ignored object is the live local character.
     matches!(
         unsafe { probe::scene_cast(from, to, &options) },

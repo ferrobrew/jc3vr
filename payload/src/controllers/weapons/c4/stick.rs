@@ -18,7 +18,6 @@
 //! [`StickTuning::push_mps`]: crate::controllers::weapons::c4::tuning::StickTuning::push_mps
 
 use glam::Vec3;
-use jc3gi::character::character::Character;
 
 use crate::controllers::{
     aim::{
@@ -61,8 +60,8 @@ pub struct StickAt {
 ///
 /// # Safety
 ///
-/// The simulation thread outside the physics step, with `owner` the live local player character.
-pub(crate) unsafe fn probe(owner: &Character, config: &ControllersConfig) {
+/// The simulation thread outside the physics step, with a live local player character.
+pub(crate) unsafe fn probe(config: &ControllersConfig) {
     let tuning = &C4Tuning::of(&config.weapons.c4);
     if !(config.weapons.c4_throw && tuning.stick.enabled) {
         c4::publish_preview(None);
@@ -73,18 +72,15 @@ pub(crate) unsafe fn probe(owner: &Character, config: &ControllersConfig) {
         return;
     };
     let centre = probe_origin(grip, c4::hold_local(hand, tuning), tuning.centre_m);
-    let options = CastOptions {
-        ignore: [owner as *const Character as usize, 0],
-        see_through: false,
-        material: false,
-    };
+    // SAFETY: forwarded from the caller.
+    let options = unsafe { CastOptions::ignoring_player(0) };
     let reach = tuning.stick.contact_m.max(0.0);
     let preview = tuning.stick.preview_m.max(reach);
     let hits: Vec<_> = PROBE_AXES
         .iter()
         .filter_map(|&axis| {
             let ray = Ray::new(centre, grip.orientation * axis)?;
-            // SAFETY: forwarded from the caller; the owner is live.
+            // SAFETY: forwarded from the caller.
             let hit = unsafe { raycast::cast(&ray, preview, &options) }.ok()??;
             Some((
                 hit.position,

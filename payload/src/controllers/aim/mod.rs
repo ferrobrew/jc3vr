@@ -238,12 +238,12 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
     let _timing = frame_timing::scope(Slot::Aim);
     grenade::observe_hands(tick.hands.map(|h| h.map(|h| h.grip)));
     c4::observe_hands(tick.hands.map(|h| h.map(|h| h.grip)));
-    if let Some(owner) = owner {
+    if owner.is_some() {
         // SAFETY: the owner is the live local player, in the simulation phase outside the physics
         // step.
-        unsafe { c4::stick::probe(owner, &tick.config) };
+        unsafe { c4::stick::probe(&tick.config) };
         // SAFETY: as above.
-        unsafe { collide::probe(owner) };
+        unsafe { collide::probe() };
     }
 
     let off = tick.config.acting_hand().other();

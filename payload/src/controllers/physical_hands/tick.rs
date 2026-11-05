@@ -194,20 +194,15 @@ unsafe fn run(owner: &Character, dt: f32) {
     // The palms pass through what a hand holds, so that a free palm never pushes off it; the reach
     // rays do not, so that the other hand can take hold of it too.
     let held_objects = state.pickup.held_objects();
+    let held = held_objects.into_iter().find(|&o| o != 0).unwrap_or(0);
+    // SAFETY: forwarded from the caller.
     let probe_options = CastOptions {
-        ignore: [
-            owner as *const Character as usize,
-            held_objects.into_iter().find(|&o| o != 0).unwrap_or(0),
-        ],
-        see_through: false,
         // The impact sounds play against the surface's material.
         material: config.sounds.enabled,
+        ..unsafe { CastOptions::ignoring_player(held) }
     };
-    let reach_options = CastOptions {
-        ignore: [owner as *const Character as usize, 0],
-        see_through: false,
-        material: false,
-    };
+    // SAFETY: forwarded from the caller.
+    let reach_options = unsafe { CastOptions::ignoring_player(0) };
     let mut casts = 0;
     let mut error = None;
     let mut cast = |from: Vec3, to: Vec3, options: &CastOptions| -> Option<SurfaceHit> {
