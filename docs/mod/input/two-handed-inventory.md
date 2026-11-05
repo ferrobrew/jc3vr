@@ -535,8 +535,8 @@ The grenade row shows the stock's count and capacity, with Fill (to the capacity
 30. Swim to a weapon floating in the water with a rifle on the back and pick it up with the use button: the rifle stays on the back (`a swimming pickup's slot was emptied first`).
 31. With an extra rifle carried, switch to the gamepad: the slots hold the best of the table, the extra disappears from the body; switch back: it is on its socket again.
 32. Throw a rifle 10 m and turn away: its icon hangs above it, seen through walls and the ground, at the rifle's distance. Walk to it: the marker fades out within arm's length, and goes when the rifle is picked up. Drop three weapons around you: each has its own icon. Walk 60 m away: the markers go as the table forgets the weapons. Check the size reads at 5 m and at 50 m, and whether the marker through a wall is more help than clutter.
-32. In the inventory view's Give weapons section, give an assault rifle to the outer back, a launcher to the left shoulder, and a submachine gun to the left hip: each comes onto its socket within a second (`give: … is on the …`), the table lists it there, and each can be drawn and fired. Give a different rifle to the outer back: the first falls clear and the new one docks. Clear a socket: its weapon falls at the feet. Give a pistol to a hip with the pistols separate: one pistol comes, not the pair.
-33. Fill the grenade stock and take grenades from the pouch until it is empty; clear it, and the pouch gives nothing.
+33. In the inventory view's Give weapons section, give an assault rifle to the outer back, a launcher to the left shoulder, and a submachine gun to the left hip: each comes onto its socket within a second (`give: … is on the …`), the table lists it there, and each can be drawn and fired. Give a different rifle to the outer back: the first falls clear and the new one docks. Clear a socket: its weapon falls at the feet. Give a pistol to a hip with the pistols separate: one pistol comes, not the pair.
+34. Fill the grenade stock and take grenades from the pouch until it is empty; clear it, and the pouch gives nothing.
 
 ## Phases
 
