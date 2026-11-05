@@ -79,7 +79,9 @@ pub struct DetonatorTuning {
     pub normal: Vec3,
     /// The drawn button's radius, metres. The touch sphere is drawn around it as a ring.
     pub radius_m: f32,
-    /// How close to the button's centre the fingertip must come to touch it, metres.
+    /// How close to the button's centre the fingertip must come to touch it, metres. Wider than the
+    /// drawn button, since the drawn fingertip and the drawn wrist land a few centimetres from
+    /// where the player's own are.
     pub touch_radius_m: f32,
     /// How far from the button's centre a fingertip must move away before the button presses
     /// again, metres. More than `touch_radius_m`, so that a fingertip resting on the button does
@@ -87,7 +89,8 @@ pub struct DetonatorTuning {
     pub release_radius_m: f32,
     /// How close to the button's centre the fingertip comes before the button shows it
     /// approaching, metres: the fingertip's dot appears, a ring closes in on the button as the
-    /// fingertip nears, and the pressing hand ticks once on the way in.
+    /// fingertip nears, the pressing hand ticks once on the way in, and a hum on it grows as the
+    /// fingertip closes in.
     pub approach_radius_m: f32,
     /// How far behind the face's plane a fingertip may be and still touch, metres: further behind,
     /// it has come through the wrist, which a real finger cannot.
@@ -115,8 +118,8 @@ impl DetonatorTuning {
             offset_m: Vec3::new(0.03, 0.0, 0.08),
             normal: Vec3::X,
             radius_m: 0.02,
-            touch_radius_m: 0.03,
-            release_radius_m: 0.05,
+            touch_radius_m: 0.05,
+            release_radius_m: 0.07,
             approach_radius_m: 0.1,
             max_behind_m: 0.015,
             min_entry_speed_mps: 0.25,

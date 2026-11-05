@@ -446,11 +446,13 @@ pub enum Sustain {
     GrappleReel,
     /// The game's own rumble: the rumble manager's per-frame motor strength, by side.
     GameRumble,
+    /// The pressing hand while its fingertip closes on the wrist detonator, by how close it is.
+    DetonatorApproach,
 }
 
 impl Sustain {
     #[cfg(test)]
-    pub const ALL: [Sustain; 8] = [
+    pub const ALL: [Sustain; 9] = [
         Sustain::PalmPressure,
         Sustain::HeldLoad,
         Sustain::BodyPressure,
@@ -459,6 +461,7 @@ impl Sustain {
         Sustain::GrappleTension,
         Sustain::GrappleReel,
         Sustain::GameRumble,
+        Sustain::DetonatorApproach,
     ];
 
     pub const fn cue(self) -> Cue {
@@ -471,6 +474,7 @@ impl Sustain {
             Sustain::GrappleTension => Cue::new(Primitive::Tension, 0.75, Category::Traversal),
             Sustain::GrappleReel => Cue::new(Primitive::Hum, 0.35, Category::Traversal),
             Sustain::GameRumble => Cue::new(Primitive::Hum, 1.0, Category::Game),
+            Sustain::DetonatorApproach => Cue::new(Primitive::Hum, 0.3, Category::Weapons),
         }
     }
 
@@ -491,6 +495,7 @@ impl Sustain {
             Sustain::GrappleTension => "grapple tension",
             Sustain::GrappleReel => "grapple reel",
             Sustain::GameRumble => "game rumble",
+            Sustain::DetonatorApproach => "detonator approach",
         }
     }
 }

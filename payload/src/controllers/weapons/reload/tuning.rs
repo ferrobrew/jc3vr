@@ -206,7 +206,10 @@ pub struct ActionTuning {
     /// pump stays where it is left, and a bolt turns up before it slides. Off, the action is a
     /// gesture: a pull to the pull share and a release or a push home.
     pub physical: bool,
-    /// How close the off-hand's grip must be to the handle to grab it, metres.
+    /// How close the off-hand's grip must be to the handle to grab it, metres. A closed hand
+    /// feeling along the gun for the handle lands a few centimetres off it, and while the gun
+    /// waits on its action the handle is taken first within this reach
+    /// ([`prefer_waiting_action`](crate::controllers::weapons::reload::chamber::prefer_waiting_action)).
     pub grab_radius_m: f32,
     /// The share of the action's travel a pull must reach, `0..=1`.
     pub pull_fraction: f32,
@@ -232,7 +235,7 @@ pub struct ActionTuning {
 impl ActionTuning {
     const fn new() -> Self {
         Self {
-            grab_radius_m: 0.07,
+            grab_radius_m: 0.105,
             pull_fraction: 0.8,
             return_fraction: 0.3,
             release_distance_m: 0.15,

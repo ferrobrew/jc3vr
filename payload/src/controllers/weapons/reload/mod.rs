@@ -357,8 +357,23 @@ pub(super) fn action_held_by_other() -> [bool; 2] {
 }
 
 /// Resolve direct magazine intent before ordinary nearest-target selection. An existing action
-/// or foregrip remains held; an unheld brace or transfer cannot steal a magazine grip.
+/// or foregrip remains held; an unheld brace or transfer cannot steal a magazine grip. A gun waiting
+/// on its action offers its handle first ([`chamber::prefer_waiting_action`]).
 pub(super) fn prioritize_extraction(targets: &mut Vec<GripTarget>, grips: [Option<Vec3>; 2]) {
+    let waiting = {
+        let mut state = STATE.lock();
+        state.tick.map_or([false; 2], |tick| {
+            Hand::BOTH.map(|worker| {
+                tick.gun(worker.other()).is_some_and(|(weapon, gun)| {
+                    weapon.plan.action != chamber::ActionKind::Pump
+                        && !weapon.reading.out
+                        && weapon.reading.magazine_rounds() > 0
+                        && state.records.get(weapon.key).chambers[gun.entry()] == Chamber::Empty
+                })
+            })
+        })
+    };
+    chamber::prefer_waiting_action(targets, grips, waiting);
     let (pulling, action) = {
         let mut state = STATE.lock();
         let action = state.tick.and_then(|tick| {

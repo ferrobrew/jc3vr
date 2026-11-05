@@ -123,6 +123,7 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | `Sustain::StuntHang` | a hand hangs from a stunt position, by the vehicle's speed | tension | 0.35 | traversal | `physical_hands::stunt` |
 | `Sustain::GrappleTension` | the grapple hand while the tethers are squeezed, by their tension, or while the snatch's line yanks its target, by the line's load, or while the held line swings its target, by its tension's share of the line's strength, on the bracing hand too while it braces | tension | 0.75 | traversal | `grapple::physical`, `snatch` |
 | `Sustain::GrappleReel` | the grapple hand while the reel carries the character, by its speed | hum | 0.35 | traversal | `grapple::physical` |
+| `Sustain::DetonatorApproach` | the pressing fingertip within the wrist detonator's approach radius, by the square of how far it has come toward the touch sphere | hum | 0.3 | weapons | `weapons::c4::wrist` |
 | `Sustain::GameRumble` | the game's per-frame motor strength: the low motor on the left hand, the high one on the right | hum | 1.0 | game | `haptics::rumble` |
 
 Each default is rounded onto the primitive its source belongs to. The pressure and tension sources are sustained levels that sum, not short pulses resent every tick, and the softest end of the kick and the palm contact is the bump's soft amplitude.

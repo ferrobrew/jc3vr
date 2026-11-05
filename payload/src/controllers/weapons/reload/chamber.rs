@@ -17,7 +17,11 @@
 
 use glam::Vec3;
 
-use crate::controllers::weapons::reload::tuning::ActionTuning;
+use crate::controllers::{
+    frame::Hand,
+    grab::{GrabVolume, GripTarget, target::TargetReach},
+    weapons::reload::tuning::ActionTuning,
+};
 
 /// The mod's chamber.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -224,13 +228,108 @@ impl ActionWork {
     }
 }
 
+/// Rank the action's handle first for each hand whose other hand's gun waits on it (`waiting`, by
+/// the working hand's [`Hand::index`]: its chamber is empty and its magazine feeds), while that
+/// hand's grip (`grips`) is within the handle's reach and the hand holds nothing: the handle is
+/// offered to it as held, so it wins over the foregrip, the gun's grip, and the inserted magazine,
+/// which a closed hand sliding along the gun would otherwise take first.
+pub(super) fn prefer_waiting_action(
+    targets: &mut [GripTarget],
+    grips: [Option<Vec3>; 2],
+    waiting: [bool; 2],
+) {
+    for hand in Hand::BOTH {
+        let Some(grip) = grips[hand.index()].filter(|_| waiting[hand.index()]) else {
+            continue;
+        };
+        if targets.iter().any(|t| t.held_by == Some(hand)) {
+            continue;
+        }
+        for target in targets
+            .iter_mut()
+            .filter(|t| t.volume == GrabVolume::WeaponAction && t.hand == Some(hand))
+        {
+            if let TargetReach::Sphere { centre, radius } = target.reach
+                && grip.distance(centre) <= radius
+            {
+                *target = target.held(hand);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::weapons::reload::tuning::RELOAD;
+    use crate::controllers::{
+        grab::{Mark, MarkAt, resolve::resolve},
+        weapons::reload::tuning::RELOAD,
+    };
 
     const CONFIG: ActionTuning = RELOAD.action;
     const HANDLE: Vec3 = Vec3::new(0.1, -0.2, -0.3);
+
+    fn sphere(volume: GrabVolume, centre: Vec3, radius: f32) -> GripTarget {
+        GripTarget::sphere(
+            volume,
+            Some(Hand::Left),
+            centre,
+            radius,
+            Mark::ring(MarkAt::Cockpit(centre), 0.02),
+        )
+    }
+
+    /// The action's handle and, nearer the hand, the foregrip, the gun's grip, and the inserted
+    /// magazine, for the left hand at the origin.
+    fn gun_parts() -> Vec<GripTarget> {
+        vec![
+            sphere(GrabVolume::Foregrip, Vec3::X * 0.02, 0.1),
+            sphere(GrabVolume::Handle, Vec3::X * 0.03, 0.14),
+            sphere(GrabVolume::InsertedMagazine, Vec3::X * 0.04, 0.08),
+            sphere(
+                GrabVolume::WeaponAction,
+                Vec3::X * 0.09,
+                CONFIG.grab_radius_m,
+            ),
+        ]
+    }
+
+    fn chosen(targets: &[GripTarget]) -> Option<GrabVolume> {
+        resolve(targets, [Some(Vec3::ZERO), None])[0]
+            .chosen
+            .map(|r| r.volume)
+    }
+
+    #[test]
+    fn the_handle_of_a_gun_waiting_on_its_action_comes_first_within_its_reach() {
+        // A closed hand 9 cm from the handle, nearer the other parts: a reach the old 7 cm radius
+        // missed, after which the hand took the foregrip.
+        const { assert!(CONFIG.grab_radius_m >= 0.1) };
+        let mut waiting = gun_parts();
+        prefer_waiting_action(&mut waiting, [Some(Vec3::ZERO), None], [true, false]);
+        assert_eq!(chosen(&waiting), Some(GrabVolume::WeaponAction));
+        // A chambered gun keeps the nearest part.
+        let mut loaded = gun_parts();
+        prefer_waiting_action(&mut loaded, [Some(Vec3::ZERO), None], [false, false]);
+        assert_eq!(chosen(&loaded), Some(GrabVolume::Foregrip));
+        // Out of the handle's reach, nothing changes.
+        let mut far = gun_parts();
+        let grip = Vec3::X * -0.05;
+        prefer_waiting_action(&mut far, [Some(grip), None], [true, false]);
+        assert_eq!(far, {
+            let mut parts = gun_parts();
+            prefer_waiting_action(&mut parts, [Some(grip), None], [false, false]);
+            parts
+        });
+    }
+
+    #[test]
+    fn a_hand_holding_something_keeps_it_over_the_waiting_handle() {
+        let mut targets = gun_parts();
+        targets[0] = targets[0].held(Hand::Left);
+        prefer_waiting_action(&mut targets, [Some(Vec3::ZERO), None], [true, false]);
+        assert_eq!(chosen(&targets), Some(GrabVolume::Foregrip));
+    }
 
     fn inputs(kind: ActionKind, back: f32, pressed: bool, held: bool) -> Option<WorkInputs> {
         Some(WorkInputs {

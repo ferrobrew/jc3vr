@@ -47,7 +47,7 @@ pub const SOCKETS: SocketTuning = SocketTuning {
 /// surface, where a hand laid flat on the body closes.
 pub const POUCHES: PouchTuning = PouchTuning {
     grenade: CHEST_POUCH,
-    c4: CHEST_POUCH,
+    c4: C4_POUCH,
     magazine: POUCH,
     reach_margin_m: 0.05,
 };
@@ -367,6 +367,14 @@ const POUCH: VolumeSpec = VolumeSpec {
 const CHEST_POUCH: VolumeSpec = VolumeSpec {
     offset_m: Vec3::new(0.0, -0.02, 0.04),
     radius_m: 0.09,
+};
+
+/// The C4 pouch's volume: placed as the grenade pouch is, and wider still. The charge is taken with
+/// the hand reaching across the body to the far side of the chest, which lands further off the
+/// pouch than a reach to the near side.
+const C4_POUCH: VolumeSpec = VolumeSpec {
+    radius_m: 0.1,
+    ..CHEST_POUCH
 };
 
 /// The chest of a frame: its middle and its orientation, as [`BodyFrame::chest`].

@@ -49,7 +49,7 @@ use crate::{
         fingers,
         frame::{self, Hand, Pose},
         hands::{self, late},
-        haptics::{self, Event},
+        haptics::{self, Event, Sustain},
         overlay::{
             primitive::{
                 Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize,
@@ -183,12 +183,18 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
     let near = reading
         .distance_m
         .is_some_and(|d| d <= tuning.approach_radius_m.max(tuning.touch_radius_m));
-    let came_near = near && !state.near && matches!(reading.phase, PressPhase::Armed { .. });
+    let armed = matches!(reading.phase, PressPhase::Armed { .. });
+    let came_near = near && !state.near && armed;
     state.near = near;
     drop(state);
     if came_near {
         haptics::play(presser, Event::DetonatorNear);
     }
+    haptics::sustain(
+        presser,
+        Sustain::DetonatorApproach,
+        approach_hum(reading.distance_m.filter(|_| near && armed), tuning),
+    );
 
     if reading.pressed {
         if lit {
@@ -488,6 +494,13 @@ struct Look {
     blocked: bool,
     /// The tested fingertip in the off hand's grip frame, while it is within the approach radius.
     tip: Option<Vec3>,
+}
+
+/// The approach hum's level for a fingertip `distance_m` from the button, or for none in reach
+/// (`None`): rising from nothing at the approach radius to the full level on the touch sphere, and
+/// steeper near the button, so the last centimetres are felt most.
+fn approach_hum(distance_m: Option<f32>, tuning: &DetonatorTuning) -> f32 {
+    distance_m.map_or(0.0, |d| closeness(d, tuning).powi(2))
 }
 
 /// How far a fingertip `distance_m` from the button's centre has come from the approach radius to
@@ -885,7 +898,10 @@ mod tests {
     fn an_approaching_fingertip_shows_its_dot_and_a_closing_ring() {
         let t = C4.detonator;
         let near = Look {
-            closeness: Some(closeness(t.approach_radius_m * 0.5, &t)),
+            closeness: Some(closeness(
+                (t.approach_radius_m + t.touch_radius_m) * 0.5,
+                &t,
+            )),
             tip: Some(Vec3::X * 0.05),
             ..look(0, None)
         };
@@ -899,6 +915,17 @@ mod tests {
             panic!("{size:?}");
         };
         assert!(size > t.touch_radius_m * 2.0 && size < t.approach_radius_m * 2.0);
+    }
+
+    #[test]
+    fn the_approach_hum_grows_as_the_fingertip_closes_in() {
+        let t = C4.detonator;
+        assert_eq!(approach_hum(None, &t), 0.0);
+        assert_eq!(approach_hum(Some(t.approach_radius_m), &t), 0.0);
+        assert_eq!(approach_hum(Some(t.touch_radius_m), &t), 1.0);
+        let far = approach_hum(Some(t.approach_radius_m * 0.9), &t);
+        let near = approach_hum(Some(t.touch_radius_m * 1.1), &t);
+        assert!(far > 0.0 && far < near && near < 1.0, "{far} {near}");
     }
 
     #[test]
