@@ -335,12 +335,10 @@ fn regions_readout(ui: &mut Ui, r: &RegionsStatus) {
         })
     };
     ui.label(format!(
-        "Grab anywhere: left {} · right {} · carries {} · braces {} · grips taken {} · left in the brace {} · slides {}",
+        "Grab anywhere: left {} · right {} · braces {} · passed to the brace {} · slides {}",
         hand(Hand::Left),
         hand(Hand::Right),
-        r.carries,
         r.braces,
-        r.grips_taken,
         r.let_go,
         r.slides
     ));
@@ -614,8 +612,8 @@ pub(super) fn hold_feature_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
         );
     ui.checkbox(&mut w.regions.enabled, "Grab long guns anywhere")
         .on_hover_text(
-            "A hand takes a long gun where it closes on it: the grip fires it, the handguard or \
-             barrel braces it, and a lone hand anywhere but the grip carries it unable to fire.",
+            "A second hand braces a long gun wherever it closes on it. A lone hand takes a gun \
+             by its grip wherever it touches it, and a bracing hand left alone slides onto the grip.",
         );
 }
 

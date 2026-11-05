@@ -80,7 +80,7 @@ One reserve per ammunition type, shared by both hands: two pistols of one calibr
 
 ## The HUD
 
-Each hand shows its own weapon's state; the per-hand ammunition pips do this for a gun beside the wielded one, and a fuller per-hand HUD is the goal. Until then, the game's ammunition counter shows the primary's.
+Each hand shows its own weapon's state: the mod's ammunition counter stands above every hand holding a gun, in every mode, and the game's weapon readout, which shows the primary alone, is not drawn ([ui-decoupling.md](../rendering/ui-decoupling.md#the-atlas-as-built)).
 
 ## Firing
 
@@ -106,7 +106,7 @@ The game has no per-hand hold layer: its hand poses are per weapon class, one cl
 | The weapon acts (draw, holster, switch, reload) | Cut; the IK places the arms and the guns | For the mod's own moves |
 | Selection, cycling, the wheel, the automatic switch | Requests on the table, or cut | The automatic switch only |
 | The game's pickup (`WeaponBase::PickupItem`) | Detoured into the table's take | Yes, but for the embedded power core |
-| The HUD's ammunition and reticle | The mod's pips and reticle; the game's counter shows the primary meanwhile | Yes |
+| The HUD's ammunition and reticle | The mod's per-hand counters and reticle | Yes |
 | The camera's recoil and hints | Already the mod's | Yes |
 | The hand subsystems (the weight, the recoil, the sights, the scope, the wall collision, the regions, the foregrip, the handover) | Keyed by the hand, each acting on that hand's gun (see "The gun in either hand") | Yes |
 | The placement and visibility of slot weapons | The mod's: the IK in the hands, the sockets on the body | Yes |
@@ -247,8 +247,8 @@ The subsystems that act on a gun in a hand key it by the hand, not by the game's
 - The wall collision (`weapons::collide`): each hand's long gun has its own probe, cast each aim update, its own wall, and its own push, so two long guns are stopped at a wall each by what it points into.
 - The sights (`weapons::ads`): each hand's long gun is solved for the eye, and the one raised to it is lined up (`ads::raised`): the gun whose sights or scope's weld take the most hold of the eye, then whose stock takes the most hold of the shoulder, then whose sight line passes nearest the eye. A gun whose pose takes no hold is not raised. The aiming eye is the raised gun's hand's side by default.
 - The scope (`weapons::scope`): each hand's scoped gun is identified, its sight line anchored to its own wrist, and its lens placed, and the lens drawn is the scope raised to the eye (`scope::chosen`): a scope an eye is at, then one placed with a sight line, then the eyepiece nearest an eye.
-- The regions (`weapons::regions`): each hand has its own carry and its own draw waiting for its gun, so a long gun drawn by its barrel or picked up by its stock is carried in its hand, unable to fire, whether the game wields it or it is armed beside a pistol in the other hand. Each hand's finger pose takes the part it carries its gun by, and its trigger fires nothing while it does. A carry ends when its hand holds another gun or none.
-- The foregrip, a touch along the gun, and the handover (`weapons::foregrip`, `weapons::hold::hand_over`): these take the other hand, so they act on the gun held in one hand while the other is free (`weapons::engine::lone_gun`), wielded or armed: the handover on any such gun, and the foregrip, the touches, the slides, and the grip taken from a carrying hand on a long gun. With a gun in each hand neither hand is free, so there is one such gun at most, and one foregrip hold, keyed by its holding hand and its weapon.
+- The regions (`weapons::regions`): a lone hand always holds its gun by the grip, so a long gun drawn by its barrel or picked up by its stock comes into the hand by its grip, whether the game wields it or it is armed beside a pistol in the other hand. Each hand has its own slide onto the grip, which ends when its hand holds another gun or none.
+- The foregrip, a touch along the gun, and the handover (`weapons::foregrip`, `weapons::hold::hand_over`): these take the other hand, so they act on the gun held in one hand while the other is free (`weapons::engine::lone_gun`), wielded or armed: the handover on any such gun, and the foregrip, the touches, and the slides on a long gun. With a gun in each hand neither hand is free, so there is one such gun at most, and one foregrip hold, keyed by its holding hand and its weapon.
 
 Decisions taken here:
 

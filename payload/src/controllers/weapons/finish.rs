@@ -35,7 +35,7 @@ use crate::{
             begin::with_holder,
             c4::{self, tuning::C4Tuning},
             capabilities::{
-                Capabilities, gun_hands_now, gun_owners_now, tracked_hands, trigger_claims,
+                Capabilities, GunHand, gun_hands_now, gun_owners_now, tracked_hands, trigger_claims,
             },
             docks::attract::{self, ATTRACTION},
             dual_wield::single,
@@ -44,7 +44,7 @@ use crate::{
             grenade,
             hold::{self, armed, tick},
             inventory::engine::slot_of,
-            regions::{self, Carry, CarryCause, GunRegion},
+            regions::{self, GunRegion},
             reload,
             state::STATE,
             types::{GrabEvent, GrabOutcome, SocketOutcome},
@@ -90,7 +90,6 @@ pub(crate) fn finish_tick(
     let config = Config::lock_query(|c| c.controllers);
     let active = hands::active_hands_raw();
     let capabilities = Capabilities::of(mode::current().mode);
-    let now = Instant::now();
     let source_guns = gun_owners_now();
     // The fingers opening lets a grenade or a charge go, not the grip's press relaxing.
     let values = frame::with_latest(|f| {
@@ -104,7 +103,7 @@ pub(crate) fn finish_tick(
         .lock()
         .opening
         .step_available(values, grips, unavailable);
-    let (weapon, lone, gameplay, touch, slide, promote, docked_touch) = {
+    let (weapon, lone, gameplay, touch, slide) = {
         let state = STATE.lock();
         (
             state.weapon,
@@ -112,16 +111,9 @@ pub(crate) fn finish_tick(
             state.gameplay,
             state.touch,
             state.slide,
-            state.promote,
-            state.docked_touch,
         )
     };
     let world_scale = active.as_ref().map_or(1.0, |a| a.world_scale);
-    // A bracing hand that slid onto the grip of a gun the other hand carries takes the grip.
-    let promoted = match (promote, lone) {
-        (Some(hand), Some((w, _))) => take_grip(w.address, hand, &grips, now),
-        _ => false,
-    };
 
     let foregrip_grab = grabs
         .iter()
@@ -138,31 +130,11 @@ pub(crate) fn finish_tick(
                 region: GunRegion::Handguard,
             })
         });
-    // The off-hand braces where it touched the gun, or where it held the gun before the other hand
-    // took its grip.
-    let rebrace = two_handed.and_then(|w| {
-        let geometry = w.geometry?;
-        let off = w.holder.other();
-        // The geometry is the new hand's only once the gun has been placed on it.
-        let placed = hands::grip::status().hands[w.holder.index()]
-            .is_some_and(|g| g.weapon == w.address && g.pinned);
-        if !placed {
-            return None;
-        }
-        if !grips[off.index()].held() {
-            regions::drop_rebrace();
-            return None;
-        }
-        let (region, anchor) = regions::take_rebrace(w.address, off, now, regions::REBRACE)?;
-        Some((
-            region,
-            regions::out_of_gun(geometry.gun, anchor, world_scale),
-        ))
-    });
+    // The off-hand braces where it touched the gun.
     let at_touch = touch
         .filter(|t| foregrip_grab == Some(t.hand) && t.hit.region != GunRegion::Grip)
         .map(|t| (t.hit.region, t.anchor_in_wrist));
-    let two_handed = two_handed.map(|w| match rebrace.or(at_touch) {
+    let two_handed = two_handed.map(|w| match at_touch {
         Some((region, point)) => TwoHandedWeapon {
             geometry: w.geometry.map(|g| GripGeometry {
                 foregrip: point,
@@ -179,11 +151,8 @@ pub(crate) fn finish_tick(
         active: config.weapons.foregrip.enabled && active.is_some(),
         hands: active.as_ref().map_or([None; 2], |a| a.hands),
         weapon: two_handed,
-        // The hand that just took the grip does not brace with the same press.
-        grab_pressed: !promoted
-            && (rebrace.is_some()
-                || foregrip_grab
-                    .is_some_and(|hand| two_handed.is_some_and(|w| w.holder.other() == hand))),
+        grab_pressed: foregrip_grab
+            .is_some_and(|hand| two_handed.is_some_and(|w| w.holder.other() == hand)),
         grip_held: two_handed.is_some_and(|w| grips[w.holder.other().index()].held()),
         slide,
         support_broke: two_handed.is_some_and(|w| support_broke[w.holder.other().index()]),
@@ -218,13 +187,7 @@ pub(crate) fn finish_tick(
                                 .filter(|&(holder, _)| holder == hand.other())
                                 .map(|_| c4::hand_over(hand))
                         })
-                        .unwrap_or_else(|| match gun {
-                            Some(w) if regions::carrying(w).is_some() => {
-                                take_grip(w, hand, &grips, now)
-                            }
-                            Some(w) => hold::hand_over(hand, w),
-                            None => false,
-                        });
+                        .unwrap_or_else(|| gun.is_some_and(|w| hold::hand_over(hand, w)));
                 if moved {
                     // The hand that took the gun let go of the foregrip to take it.
                     foregrip::clear();
@@ -256,17 +219,11 @@ pub(crate) fn finish_tick(
                 let taken = unsafe { hold::take::finish_grab(hand, &inputs) };
                 GrabOutcome::Take { taken }
             }
-            GrabVolume::Socket(socket) => {
-                // A draw at a docked gun's barrel or stock takes the gun there.
-                match docked_touch[hand.index()].filter(|t| t.site == socket) {
-                    Some(touched) => regions::pend_draw(touched.weapon, hand, touched.carry, now),
-                    None => regions::cancel_draw(hand),
-                }
-                match grab_socket(hand, socket, &config) {
-                    Some(outcome) => outcome,
-                    None => continue,
-                }
-            }
+            // A draw takes the gun by its grip wherever on it the hand closed.
+            GrabVolume::Socket(socket) => match grab_socket(hand, socket, &config) {
+                Some(outcome) => outcome,
+                None => continue,
+            },
             // The other subsystems' grabs: the bindings hand the weapon handling only its own.
             GrabVolume::MagazineWell
             | GrabVolume::ChargeSurface
@@ -419,8 +376,6 @@ pub(crate) fn finish_tick(
             .all(|h| !gun_hands[h.index()] || reload_finish.held[h.index()]);
 
     // Only a hand on the grip fires the gun.
-    let carries = regions::carries();
-    let carried = current.and_then(|weapon| regions::carrying(weapon.address));
     let holder = current.and_then(|weapon| weapon.holder);
     let docking = hold::act::docking();
     let gun_roles = gun_hands_now();
@@ -430,31 +385,51 @@ pub(crate) fn finish_tick(
         [false; 2]
     };
     let claims = trigger_claims(capabilities, gun_roles, ready);
-    tick::publish_fire(hand_fire(&HandFire {
+    let fire = HandFire {
         allowed: claims.map(|claim| claim.fire),
         triggers: &triggers,
         holder,
-        carrying: carries.map(|c| c.is_some()),
         docking,
         action_running: Hand::BOTH.map(weapon_action_running),
-    }));
+    };
+    let fired = hand_fire(&fire);
+    tick::publish_fire(fired);
+    let refusals = refused_fire(&RefusedFire {
+        fire: &fire,
+        fired,
+        reserved: claims.map(|claim| claim.reserved),
+        roles: gun_roles,
+        ready,
+        may_fire: capabilities.fire,
+        reload_held: reload_finish.held,
+    });
+    for (hand, refusal) in Hand::BOTH
+        .into_iter()
+        .filter_map(|hand| refusals[hand.index()].map(|r| (hand, r)))
+    {
+        haptics::play(hand, Event::DryFire);
+        tracing::info!(
+            target: "controllers",
+            hand = hand.label(),
+            reason = refusal.label(),
+            "trigger: the {} hand's trigger fired nothing: {}",
+            hand.label(),
+            refusal.label()
+        );
+    }
     let explosive_blocked = Hand::BOTH.into_iter().any(|hand| {
         (grenade::holds(hand) || c4::throwing_hand() == Some(hand))
             && explosive_holds_fire(Some(hand), gun_hands, armed_hands)
     });
     let fire_blocked = reload_blocks
         || explosive_blocked
-        || carried.is_some()
         || holder.is_some_and(|h| docking[h.index()])
         || primary_trigger_idle(current, &triggers)
         || primary_action_blocked(holder, Hand::BOTH.map(weapon_action_running));
     if fire_blocked {
         hold_fire_back(desired);
     }
-    declare_grips(
-        Hand::BOTH.map(|h| gun_hands[h.index()] || armed_hands[h.index()]),
-        carries,
-    );
+    declare_grips(Hand::BOTH.map(|h| gun_hands[h.index()] || armed_hands[h.index()]));
     record_hands(&config);
 
     let mut state = STATE.lock();
@@ -495,16 +470,12 @@ const FIRE_ACTIONS: [Action; 2] = [Action::FIRE_RIGHT, Action::R2];
 /// How many grabs the readout keeps.
 const MAX_EVENTS: usize = 6;
 
-/// Declare what each hand holds of the weapons, for its finger pose: a gun in each hand that holds
-/// one (`gun_hands`, the wielded weapon's and the armed ones'), by the part each hand carries its
-/// gun by (`carries`), the foregrip, a grenade or a charge, and a round for the reload.
-fn declare_grips(gun_hands: [bool; 2], carries: [Option<Carry>; 2]) {
+/// Declare what each hand holds of the weapons, for its finger pose: a gun by its grip in each hand
+/// that holds one (`gun_hands`, the wielded weapon's and the armed ones'), the foregrip, a grenade
+/// or a charge, and a round for the reload.
+fn declare_grips(gun_hands: [bool; 2]) {
     for hand in Hand::BOTH.into_iter().filter(|h| gun_hands[h.index()]) {
-        let grip = match carries[hand.index()] {
-            Some(carry) => Grip::new(GripSource::Gun).pose(carry.region.finger_pose()),
-            None => Grip::new(GripSource::Gun),
-        };
-        grip::declare(hand, grip);
+        grip::declare(hand, Grip::new(GripSource::Gun));
     }
     if let Some(two) = foregrip::two_hand_grip() {
         grip::declare(
@@ -525,29 +496,9 @@ fn declare_grips(gun_hands: [bool; 2], carries: [Option<Carry>; 2]) {
     }
 }
 
-/// Hand `weapon` to `hand`, which takes its grip: a gun the other hand carried by another part is
-/// braced by that hand where it carried it, once the gun is measured in its new hand, while its
-/// grip stays held. Returns whether the gun moved; for a gun held at its grip, this is a plain
-/// handover.
-fn take_grip(weapon: usize, hand: Hand, grips: &[ButtonControl; 2], now: Instant) -> bool {
-    let carried = regions::carrying(weapon).filter(|(carrier, _)| *carrier == hand.other());
-    if !hold::hand_over(hand, weapon) {
-        return false;
-    }
-    foregrip::clear();
-    if let Some((carrier, carry)) = carried {
-        regions::end_carry(weapon, "the other hand took the grip");
-        if grips[carrier.index()].held() {
-            regions::took_grip(weapon, hand, carry.region, carry.anchor, now);
-        }
-    }
-    true
-}
-
-/// Leave the long gun `weapon`, whose holding hand `holder` let go, in the hand that braces it.
-/// A hand bracing the handguard slides back onto the grip and fires the gun, which keeps pointing
-/// the way it pointed ([`regions::grip_from_brace`]): letting go of a braced gun there is passing
-/// it to the other hand. A hand braced anywhere else carries it where it holds it. Returns whether
+/// Pass the long gun `weapon`, whose holding hand `holder` let go, to the hand that braces it: the
+/// bracing hand slides onto the grip from wherever it braced, the gun turning onto the canonical
+/// grip as it glides through the hand ([`regions::grip_from_brace`]), and fires it. Returns whether
 /// the gun stayed in the bracing hand.
 fn leave_in_brace(weapon: usize, holder: Hand, active: &ActiveHands, world_scale: f32) -> bool {
     let Some(hold) = foregrip::status()
@@ -562,41 +513,24 @@ fn leave_in_brace(weapon: usize, holder: Hand, active: &ActiveHands, world_scale
         return false;
     };
     let gun = hand_pose::mul(holding.wrist, hold.geometry.gun);
-    let carry = Carry {
-        region: hold.region,
-        anchor: regions::into_gun(hold.geometry.gun, hold.geometry.foregrip, world_scale),
-        turn: regions::turn_on_wrist(bracing.wrist.orientation, gun.orientation),
-    };
-    if !carry.anchor.is_finite() || !carry.turn.is_finite() || !hold::hand_over(brace, weapon) {
+    let anchor = regions::into_gun(hold.geometry.gun, hold.geometry.foregrip, world_scale);
+    let turn = regions::turn_on_wrist(bracing.wrist.orientation, gun.orientation);
+    if !anchor.is_finite() || !turn.is_finite() || !hold::hand_over(brace, weapon) {
         return false;
     }
     foregrip::clear();
-    if passes_to_grip(carry.region) {
-        regions::grip_from_brace(weapon, brace, carry.turn, carry.anchor, Instant::now());
-    } else {
-        regions::begin_carry(weapon, brace, carry, CarryCause::LetGo);
-    }
+    regions::grip_from_brace(weapon, brace, hold.region, turn, anchor, Instant::now());
     true
 }
 
-/// Whether a bracing hand at `region` takes the gun at its grip when the holding hand lets go: only
-/// at the handguard, where a hand bracing a gun is the hand it is being passed to. A hand on the
-/// barrel, the stock, the magazine, or the action carries it there.
-fn passes_to_grip(region: GunRegion) -> bool {
-    region == GunRegion::Handguard
-}
-
-/// Record the hands on the long guns for the readout: each hand holding one at its grip or the part
-/// it carries it by, and the bracing hand at its part.
+/// Record the hands on the long guns for the readout: each hand holding one at its grip, and the
+/// bracing hand at its part.
 fn record_hands(config: &ControllersConfig) {
     if !config.weapons.regions.enabled {
         regions::record([None; 2]);
         return;
     }
-    let carries = regions::carries();
-    let holders = Hand::BOTH.map(|hand| {
-        live::in_hand(hand).map(|_| carries[hand.index()].map_or(GunRegion::Grip, |c| c.region))
-    });
+    let holders = Hand::BOTH.map(|hand| live::in_hand(hand).is_some());
     let brace = foregrip::status()
         .hold
         .filter(|h| h.engaged && live::in_hand(h.holder) == Some(h.weapon))
@@ -629,9 +563,6 @@ pub(super) struct HandFire<'a> {
     pub triggers: &'a [ButtonControl; 2],
     /// The hand holding the wielded weapon.
     pub holder: Option<Hand>,
-    /// Each hand carrying its gun by a part other than its grip, which cannot fire it, by
-    /// [`Hand::index`].
-    pub carrying: [bool; 2],
     /// Each hand whose gun a dock's slide is moving onto its socket, by [`Hand::index`].
     pub docking: [bool; 2],
     /// A reload, a draw, or a holster plays with each hand, and holds its fire back, by
@@ -647,9 +578,90 @@ pub(super) fn hand_fire(f: &HandFire) -> [bool; 2] {
         let wielding = f.holder == Some(hand);
         f.allowed[hand.index()]
             && f.triggers[hand.index()].held()
-            && !f.carrying[hand.index()]
             && !f.docking[hand.index()]
             && !(wielding && primary_action_blocked(f.holder, f.action_running))
+    })
+}
+
+/// Why a hand's trigger press fired nothing, for the dead click and its log line.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(super) enum FireRefusal {
+    /// The hand braces the gun; only the hand on the grip fires it.
+    Bracing,
+    /// The hand's controller is not tracked.
+    Untracked,
+    /// The mode allows no firing.
+    Mode,
+    /// A dock's slide is moving the gun onto its socket.
+    Docking,
+    /// A reload, a draw, or a holster plays with the hand.
+    Action,
+    /// The reload holds the gun.
+    Reload,
+    /// The hand holds a gun the mod's fire path does not fire.
+    Other,
+}
+
+impl FireRefusal {
+    pub(super) const fn label(self) -> &'static str {
+        match self {
+            FireRefusal::Bracing => "the hand braces the gun, and only the hand on the grip fires",
+            FireRefusal::Untracked => "the controller is not tracked",
+            FireRefusal::Mode => "firing is not allowed here",
+            FireRefusal::Docking => "the gun is moving onto its socket",
+            FireRefusal::Action => "a reload, draw, or holster is playing",
+            FireRefusal::Reload => "the reload holds the gun",
+            FireRefusal::Other => "the hand's gun is not fired from its trigger",
+        }
+    }
+}
+
+/// What decides whether a trigger press fired nothing, and why.
+pub(super) struct RefusedFire<'a> {
+    pub fire: &'a HandFire<'a>,
+    /// Each hand's own fire input this tick ([`hand_fire`]).
+    pub fired: [bool; 2],
+    /// Each hand on some part of a gun, whose trigger belongs to it.
+    pub reserved: [bool; 2],
+    pub roles: [GunHand; 2],
+    pub ready: [bool; 2],
+    /// Whether the mode allows firing at all.
+    pub may_fire: bool,
+    /// Each hand whose gun the reload holds.
+    pub reload_held: [bool; 2],
+}
+
+/// Each hand whose trigger was pressed this tick, on a gun it holds or braces, without firing it,
+/// with the reason, by [`Hand::index`]. A press on an empty hand, a hand holding something other
+/// than a gun, or the native pair's shared trigger is not refused here.
+pub(super) fn refused_fire(r: &RefusedFire) -> [Option<FireRefusal>; 2] {
+    Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        let pressed = r.fire.triggers[i].pressed;
+        if !pressed || !r.reserved[i] || matches!(r.roles[i], GunHand::NativePair(_)) {
+            return None;
+        }
+        if r.reload_held[i] && r.roles[i] == GunHand::Grip {
+            return Some(FireRefusal::Reload);
+        }
+        if r.fired[i] {
+            return None;
+        }
+        Some(if !r.may_fire {
+            FireRefusal::Mode
+        } else if r.roles[i] == GunHand::Support {
+            FireRefusal::Bracing
+        } else if !r.ready[i] {
+            FireRefusal::Untracked
+        } else if r.fire.docking[i] {
+            FireRefusal::Docking
+        } else if r.fire.holder == Some(hand)
+            && primary_action_blocked(r.fire.holder, r.fire.action_running)
+        {
+            FireRefusal::Action
+        } else {
+            FireRefusal::Other
+        })
     })
 }
 
@@ -791,7 +803,7 @@ fn release(
             }
         }
         Release::LetGo => {
-            // A gun the other hand braces stays in that hand, carried where it holds it.
+            // A gun the other hand braces passes to that hand, which slides onto its grip.
             let braced = config.weapons.regions.enabled
                 && weapon.is_some_and(|w| w.address == object)
                 && active.is_some_and(|a| leave_in_brace(object, hand, a, world_scale));
@@ -919,20 +931,6 @@ mod tests {
     }
 
     #[test]
-    fn only_a_brace_at_the_handguard_takes_the_grip_when_the_holder_lets_go() {
-        assert!(passes_to_grip(GunRegion::Handguard));
-        for region in [
-            GunRegion::Barrel,
-            GunRegion::Stock,
-            GunRegion::Magazine,
-            GunRegion::Action,
-            GunRegion::Grip,
-        ] {
-            assert!(!passes_to_grip(region), "{region:?}");
-        }
-    }
-
-    #[test]
     fn each_hand_fires_from_its_own_trigger_unless_its_gun_is_held_back() {
         let pulled = |down| ButtonControl {
             down,
@@ -943,7 +941,6 @@ mod tests {
             allowed: [true; 2],
             triggers: &triggers,
             holder: Some(Hand::Right),
-            carrying: [false; 2],
             docking: [false; 2],
             action_running: [false; 2],
         };
@@ -955,13 +952,6 @@ mod tests {
             }),
             [true, false],
             "a dock's slide holds only its own hand's gun"
-        );
-        assert_eq!(
-            hand_fire(&HandFire {
-                carrying: [true, false],
-                ..free
-            }),
-            [false, true]
         );
         assert_eq!(
             hand_fire(&HandFire {
@@ -977,6 +967,90 @@ mod tests {
                 ..free
             }),
             [false, true]
+        );
+    }
+
+    #[test]
+    fn a_trigger_press_that_fires_nothing_is_refused_once_with_its_reason() {
+        let press = |pressed| ButtonControl {
+            down: pressed,
+            pressed,
+            ..ButtonControl::default()
+        };
+        let triggers = [press(true), press(true)];
+        let fire = HandFire {
+            allowed: [false, true],
+            triggers: &triggers,
+            holder: Some(Hand::Right),
+            docking: [false; 2],
+            action_running: [false; 2],
+        };
+        // The right hand holds the grip and fires; the left braces.
+        let refused = RefusedFire {
+            fire: &fire,
+            fired: hand_fire(&fire),
+            reserved: [true; 2],
+            roles: [GunHand::Support, GunHand::Grip],
+            ready: [true; 2],
+            may_fire: true,
+            reload_held: [false; 2],
+        };
+        assert_eq!(refused_fire(&refused), [Some(FireRefusal::Bracing), None]);
+        // A trigger held down from an earlier tick is not refused again.
+        let held = [
+            ButtonControl {
+                down: true,
+                ..ButtonControl::default()
+            },
+            press(false),
+        ];
+        let fire_held = HandFire {
+            triggers: &held,
+            ..fire
+        };
+        assert_eq!(
+            refused_fire(&RefusedFire {
+                fire: &fire_held,
+                fired: hand_fire(&fire_held),
+                ..refused
+            }),
+            [None, None]
+        );
+        // An empty hand's press is the game's.
+        assert_eq!(
+            refused_fire(&RefusedFire {
+                reserved: [false, true],
+                roles: [GunHand::Empty, GunHand::Grip],
+                ..refused
+            }),
+            [None, None]
+        );
+        let docking = HandFire {
+            docking: [false, true],
+            ..fire
+        };
+        assert_eq!(
+            refused_fire(&RefusedFire {
+                fire: &docking,
+                fired: hand_fire(&docking),
+                ..refused
+            })[Hand::Right.index()],
+            Some(FireRefusal::Docking)
+        );
+        assert_eq!(
+            refused_fire(&RefusedFire {
+                ready: [true, false],
+                fired: [false; 2],
+                ..refused
+            })[Hand::Right.index()],
+            Some(FireRefusal::Untracked)
+        );
+        assert_eq!(
+            refused_fire(&RefusedFire {
+                reload_held: [false, true],
+                ..refused
+            })[Hand::Right.index()],
+            Some(FireRefusal::Reload)
         );
     }
 
@@ -999,7 +1073,6 @@ mod tests {
                 allowed: [true; 2],
                 triggers: &triggers,
                 holder: Some(current),
-                carrying: [false; 2],
                 docking: [false; 2],
                 action_running: running,
             };

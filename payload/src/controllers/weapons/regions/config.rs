@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RegionsConfig {
-    /// Let a hand take a long gun, in the hands, on the body, or in the world, at whatever part
-    /// of it the hand closes on.
+    /// Let a second hand brace a long gun at whatever part of it the hand closes on. A lone hand
+    /// takes a gun by its grip wherever it touches it, whether this is on or off.
     pub enabled: bool,
 }
 

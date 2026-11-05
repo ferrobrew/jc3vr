@@ -559,7 +559,7 @@ mod tests {
     fn wingsuit_gun_claim_is_per_hand_and_release_waits_for_real_neutral() {
         for dominant in Hand::BOTH {
             for hand in Hand::BOTH {
-                for role in [GunHand::Grip, GunHand::Carry, GunHand::Support] {
+                for role in [GunHand::Grip, GunHand::Support] {
                     let mut owners = WINGSUIT_EMPTY;
                     let mut gate = TriggerOwnership::new();
                     let mut bindings = Bindings::new();

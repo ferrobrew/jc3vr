@@ -523,8 +523,6 @@ fn fire_ready(ready: [bool; 2], guns: [Option<GunOwner>; 2]) -> [bool; 2] {
         base,
         guns,
         docking: weapons::hold::act::docking(),
-        carrying: guns
-            .map(|gun| gun.is_some_and(|gun| weapons::regions::carrying(gun.weapon).is_some())),
         primary,
         holder,
         action_running,
@@ -535,7 +533,6 @@ struct FirePermission {
     base: [bool; 2],
     guns: [Option<GunOwner>; 2],
     docking: [bool; 2],
-    carrying: [bool; 2],
     primary: Option<usize>,
     holder: Option<Hand>,
     action_running: [bool; 2],
@@ -554,16 +551,9 @@ fn fire_permission(input: FirePermission) -> [bool; 2] {
         match gun.role {
             GunHand::NativePair(_) => {
                 // The pair keeps its shared semantic route unless both reload gates hold fire.
-                input.base.contains(&true)
-                    && !input.carrying.contains(&true)
-                    && !(primary && primary_blocked)
+                input.base.contains(&true) && !(primary && primary_blocked)
             }
-            GunHand::Grip => {
-                input.base[i]
-                    && !input.docking[i]
-                    && !input.carrying[i]
-                    && !(primary && primary_blocked)
-            }
+            GunHand::Grip => input.base[i] && !input.docking[i] && !(primary && primary_blocked),
             _ => false,
         }
     })
@@ -822,7 +812,6 @@ mod tests {
                 }),
             }); 2],
             docking: [false; 2],
-            carrying: [false; 2],
             primary: Some(1),
             holder: Some(Hand::Right),
             action_running: [false; 2],
@@ -830,12 +819,9 @@ mod tests {
     }
 
     #[test]
-    fn pair_docking_and_carrying_block_shared_fire() {
+    fn pair_docking_blocks_shared_fire() {
         let mut input = pair();
         input.docking[Hand::Right.index()] = true;
-        assert_eq!(fire_permission(input), [false; 2]);
-        let mut input = pair();
-        input.carrying[Hand::Left.index()] = true;
         assert_eq!(fire_permission(input), [false; 2]);
     }
 

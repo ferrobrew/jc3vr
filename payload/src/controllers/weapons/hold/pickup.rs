@@ -52,7 +52,6 @@ use crate::{
             engine::{self, slot_from_raw},
             hold::{self, Cause, act, equip, use_item},
             inventory::{self, carry, engine as inventory_engine},
-            regions::{self, CarryCause, WorldTouch},
         },
     },
 };
@@ -124,11 +123,9 @@ pub struct TakeOptions {
     /// How long the gun slides from where it was into the hand, seconds; zero puts it there at
     /// once.
     pub slide_s: f32,
-    /// What took the weapon, for the holding hand's readout.
+    /// What took the weapon, for the holding hand's readout. Whatever took it, and wherever the
+    /// hand closed on it, the weapon comes into the hand by its grip, aligned to shoot.
     pub cause: Cause,
-    /// Where the hand closed on the weapon, when a long gun is taken where the hand touched it
-    /// ([`crate::controllers::weapons::regions`]); without one, it comes into the hand at its grip.
-    pub touch: Option<WorldTouch>,
 }
 
 /// Pick `weapon` up into `hand` directly. Returns the slot the weapon belongs to.
@@ -241,12 +238,6 @@ pub(crate) unsafe fn take_by_table(
         unsafe { inventory_engine::weapon_type(weapon) }.ok_or(Refusal::UnknownSlot)?;
     let strong = unsafe { inventory_engine::strong_to(weapon) }.ok_or(Refusal::NotDropped)?;
     let from = unsafe { gun_pose(weapon) };
-    let carry = from
-        .zip(options.touch)
-        .filter(|_| weapon_type.slot() != WeaponSlot::E_SLOT_DUAL_WIELD)
-        .and_then(|(gun, touch)| unsafe {
-            regions::engine::world_carry(weapon, hand, gun, &touch)
-        });
     if weapon.m_State == WeaponState::E_WS_WEAPON_RACK {
         // Takes it out of the rack's state and tells the rack it was picked up.
         unsafe { weapon.PickupStart(activator(owner)) };
@@ -275,9 +266,6 @@ pub(crate) unsafe fn take_by_table(
     }
     unsafe { inventory::reconcile::apply(owner) };
     act::arm(hand);
-    if let Some(carry) = carry {
-        regions::begin_carry(address, hand, carry, CarryCause::Pickup);
-    }
     if let Some(from) = from {
         act::slide_in(address, hand, from, options.slide_s);
     }
@@ -329,12 +317,6 @@ unsafe fn take_by_game(
         );
     }
     let from = unsafe { gun_pose(weapon) };
-    let carry = from
-        .zip(options.touch)
-        .filter(|_| slot != WeaponSlot::E_SLOT_DUAL_WIELD)
-        .and_then(|(gun, touch)| unsafe {
-            regions::engine::world_carry(weapon, hand, gun, &touch)
-        });
     hold::begin(hand, options.cause, Some(address));
     let activator = activator(owner);
     if from_rack {
@@ -349,9 +331,6 @@ unsafe fn take_by_game(
     unsafe { hold::adopt(address) };
     // The pickup unequipped the weapon the other hand may hold, which stays there, armed.
     unsafe { inventory::reconcile::apply(owner) };
-    if let Some(carry) = carry {
-        regions::begin_carry(address, hand, carry, CarryCause::Pickup);
-    }
     if let Some(from) = from {
         act::slide_in(address, hand, from, options.slide_s);
     }

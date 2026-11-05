@@ -10,7 +10,6 @@ use crate::controllers::{
     frame::Hand,
     grab::{GrabVolume, GripTarget},
     hands::ik,
-    loadout::Socket,
     physical_hands::physics::guns,
     weapons::{
         ads, c4, collide,
@@ -22,7 +21,7 @@ use crate::controllers::{
         hold::{self, armed},
         opening::OpenWatch,
         pouch_models, pouch_return, recoil,
-        regions::{self, Carry, GunRegion, RegionHit},
+        regions::{self, GunRegion, RegionHit},
         reload,
         types::WeaponsStatus,
         wheel,
@@ -78,8 +77,6 @@ pub(crate) fn stand_down() {
     state.last_volumes = [None; 2];
     state.touch = None;
     state.slide = None;
-    state.promote = None;
-    state.docked_touch = [None; 2];
 }
 
 pub(super) struct State {
@@ -116,10 +113,6 @@ pub(super) struct State {
     pub(super) touch: Option<OffTouch>,
     /// Where the bracing hand has slid to along the gun on this tick, in the holding wrist's frame.
     pub(super) slide: Option<(Vec3, GunRegion)>,
-    /// The bracing hand that slid onto the grip of a gun the other hand carries, on this tick.
-    pub(super) promote: Option<Hand>,
-    /// Where each hand touches a long gun docked on a shoulder, by [`Hand::index`].
-    pub(super) docked_touch: [Option<DockTouch>; 2],
     /// Each hand's fingers, for the release of a grenade or a charge.
     pub(super) opening: OpenWatch,
 }
@@ -131,14 +124,6 @@ pub(super) struct OffTouch {
     pub(super) hit: RegionHit,
     /// The anchor in the holding wrist's frame.
     pub(super) anchor_in_wrist: Vec3,
-}
-
-/// Where a hand touches a long gun docked on a shoulder, and how it would carry it.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(super) struct DockTouch {
-    pub(super) site: Socket,
-    pub(super) weapon: usize,
-    pub(super) carry: Carry,
 }
 
 impl State {
@@ -197,7 +182,5 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     gun_side: Hand::Right,
     touch: None,
     slide: None,
-    promote: None,
-    docked_touch: [None; 2],
     opening: OpenWatch::new(),
 });

@@ -2,8 +2,6 @@
 //! the weapon handling's grip targets ([`crate::controllers::grab`]): the sockets and pouches on
 //! the body, the held gun's parts, and the weapons and grenades in the world.
 
-use std::time::Instant;
-
 use glam::{Mat4, Vec3};
 use jc3gi::equipment::weapon::WeaponBase;
 
@@ -14,7 +12,7 @@ use crate::{
         config::ControllersConfig,
         frame::{Hand, Pose},
         grab::{self, Candidate, GrabVolume, GripTarget, Mark, MarkAt, Shown},
-        hands::{self, ActiveHands, CockpitHand, ik, pose as hand_pose},
+        hands::{self, ActiveHands, CockpitHand, pose as hand_pose},
         haptics::{self, Event},
         loadout::{LoadoutSnapshot, grab::GrabRules, live},
         mode::{AirborneVariant, Mode, OnFootVariant},
@@ -40,11 +38,11 @@ use crate::{
             pouch_models::{self, Prop, ShownPouch},
             pouch_return,
             regions::{
-                self, Carry, GunRegion, GunShape, Observed,
+                self, GunRegion, GunShape, Observed,
                 engine::{self as region_engine, DockedLongGun},
             },
             reload, scope,
-            state::{DockTouch, OffTouch, STATE, State},
+            state::{OffTouch, STATE},
             types::{TickStart, WieldedReadout},
             volumes::{self, BodyFrame, ChestGrabbers, POUCHES, SOCKETS},
         },
@@ -211,24 +209,18 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 .map(|w| w.address)
         }),
         lone: long.map(|w| (w.address, shape)),
-        now: Instant::now(),
-        draw_wait: regions::DRAW_WAIT,
     });
-    let carried = braced.and_then(|w| regions::carrying(w.address));
-    // A gun carried by a part other than its grip is not aimed.
     ads::observe(Hand::BOTH.map(|hand| {
         let w = guns[hand.index()]?;
         let g = geometries[hand.index()]?;
-        regions::carrying(w.address)
-            .is_none()
-            .then(|| ads::AdsWeapon {
-                holder: hand,
-                sight: ads::solve::WristSight {
-                    origin: g.sight,
-                    direction: g.barrel,
-                },
-                scoped: scope::is_scoped(w.address),
-            })
+        Some(ads::AdsWeapon {
+            holder: hand,
+            sight: ads::solve::WristSight {
+                origin: g.sight,
+                direction: g.barrel,
+            },
+            scoped: scope::is_scoped(w.address),
+        })
     }));
     collide::observe(Hand::BOTH.map(|hand| {
         geometries[hand.index()].map(|g| collide::CollideWeapon {
@@ -342,9 +334,8 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         grenades: Hand::BOTH.map(grenade::returnable),
         charges: c4::returnable(),
     });
-    state.docked_touch = [None; 2];
     if capabilities.dock {
-        let mut docked = docked_candidates(&mut state, &ticked, &active, free);
+        let mut docked = docked_candidates(&ticked, &active, free);
         volumes::reserve_long_guns(&mut docked, config.acting_hand(), empty_handed);
         targets.extend(docked.iter().map(|c| place.touch(c)));
     }
@@ -457,7 +448,6 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let holder = braced.and_then(|w| w.holder);
     state.touch = None;
     state.slide = None;
-    state.promote = None;
     match on_gun {
         Some(gun) => {
             let touch = foregrip_hand
@@ -492,14 +482,11 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 _ => {}
             }
             if let Some(h) = hold.filter(|h| braced.is_some_and(|w| w.address == h.weapon)) {
-                let carrying = carried.is_some();
-                match brace_moves(&gun, h.holder.other(), &active, carrying) {
-                    Some(BraceMove::OntoGrip) => state.promote = Some(h.holder.other()),
-                    // A pump the reload has out sets where the hand is along the barrel.
-                    Some(BraceMove::Slide(point, region)) if !foregrip::pumping(h.weapon) => {
-                        state.slide = Some((point, region));
-                    }
-                    Some(BraceMove::Slide(..)) | None => {}
+                // A pump the reload has out sets where the hand is along the barrel.
+                if let Some((point, region)) = brace_slide(&gun, h.holder.other(), &active)
+                    && !foregrip::pumping(h.weapon)
+                {
+                    state.slide = Some((point, region));
                 }
             }
         }
@@ -654,23 +641,9 @@ fn off_touch(gun: &GunOnHand, hand: Hand, active: &ActiveHands) -> Option<(OffTo
     Some((touch, regions::out_of_gun(pose, hit.anchor, scale)))
 }
 
-/// How a bracing hand moved along the gun.
-enum BraceMove {
-    /// Onto the grip of a gun the other hand carries.
-    OntoGrip,
-    /// Along the handguard or the barrel, to this point in the holding wrist's frame.
-    Slide(Vec3, GunRegion),
-}
-
-/// How the bracing hand `hand` has moved along the gun, from where its controller is: a hand that
-/// reaches the grip of a gun the holding hand carries takes it, and one on the handguard or the
-/// barrel slides along them.
-fn brace_moves(
-    gun: &GunOnHand,
-    hand: Hand,
-    active: &ActiveHands,
-    carrying: bool,
-) -> Option<BraceMove> {
+/// Where the bracing hand `hand` has slid to along the handguard or the barrel, from where its
+/// controller is: the point in the holding wrist's frame, and the region.
+fn brace_slide(gun: &GunOnHand, hand: Hand, active: &ActiveHands) -> Option<(Vec3, GunRegion)> {
     let point = active.hands[hand.index()]?.grip.position;
     let hit = regions::classify(
         &gun.shape,
@@ -678,11 +651,8 @@ fn brace_moves(
         regions::GRIP_RADIUS_M,
         regions::REACH_M,
     )?;
-    if hit.region == GunRegion::Grip {
-        return carrying.then_some(BraceMove::OntoGrip);
-    }
     hit.region.slides().then(|| {
-        BraceMove::Slide(
+        (
             regions::out_of_gun(gun.geometry.gun, hit.anchor, active.world_scale),
             hit.region,
         )
@@ -702,14 +672,9 @@ const GUN_VOLUME_MARGIN_M: f32 = 0.01;
 const GUN_VOLUME_DEPTH: f32 = 0.95;
 
 /// The volumes on the long guns docked on the shoulders, for each free hand that touches one at a
-/// part other than its grip, as both are drawn: a grab there draws the gun from its shoulder as the holster does, and
-/// the hand takes it where it touched it ([`regions::pend_draw`]). Notes each touch in `state`.
-fn docked_candidates(
-    state: &mut State,
-    ticked: &Ticked,
-    active: &ActiveHands,
-    free: [bool; 2],
-) -> Vec<Candidate> {
+/// part other than its grip, as both are drawn: a grab there draws the gun from its shoulder as the
+/// holster does, and the gun slides into the hand by its grip, aligned to shoot.
+fn docked_candidates(ticked: &Ticked, active: &ActiveHands, free: [bool; 2]) -> Vec<Candidate> {
     let mut out = Vec::new();
     if ticked.docked_long.is_empty() {
         return out;
@@ -720,15 +685,11 @@ fn docked_candidates(
     else {
         return out;
     };
-    let targets = ik::tick_records().current;
     for hand in Hand::BOTH.into_iter().filter(|h| free[h.index()]) {
         let Some(cockpit) = active.hands[hand.index()] else {
             continue;
         };
         let world = frames.cockpit_to_world(cockpit.grip.position);
-        let wrist = targets[hand.index()].map_or(frames.view * cockpit.wrist.orientation, |t| {
-            t.wrist.orientation
-        });
         let touched = ticked
             .docked_long
             .iter()
@@ -746,15 +707,6 @@ fn docked_candidates(
         let Some((gun, hit)) = touched else {
             continue;
         };
-        state.docked_touch[hand.index()] = Some(DockTouch {
-            site: gun.site,
-            weapon: gun.weapon,
-            carry: Carry {
-                region: hit.region,
-                anchor: hit.anchor,
-                turn: regions::turn_on_wrist(wrist, gun.pose.orientation),
-            },
-        });
         out.push(Candidate {
             volume: GrabVolume::Socket(gun.site),
             centre: frames.world_to_cockpit(regions::out_of_gun(gun.pose, hit.anchor, 1.0)),

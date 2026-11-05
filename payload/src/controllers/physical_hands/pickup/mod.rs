@@ -53,21 +53,16 @@ pub(super) use state::{PickupState, Request};
 pub(super) use tick::{JointInputs, TickInputs, TickOutcome, tick};
 pub use tuning::{PICKUP, PickupTuning};
 
-use crate::{
-    config::Config,
-    controllers::{
-        bindings::hold::{Desired, MapKind, Target, Want},
-        frame::Hand,
-        hands::ik,
-        haptics::{self, Event},
-        physical_hands::{STATE, bodies, grab_view, grasp::Reach},
-        weapons::{
-            self, FinishInputs,
-            hold::{
-                Cause, SNAP_S,
-                pickup::{Refusal, TakeOptions},
-            },
-            regions::{GRIP_RADIUS_M, REACH_M, WorldTouch},
+use crate::controllers::{
+    bindings::hold::{Desired, MapKind, Target, Want},
+    frame::Hand,
+    haptics::{self, Event},
+    physical_hands::{STATE, bodies, grab_view, grasp::Reach},
+    weapons::{
+        self, FinishInputs,
+        hold::{
+            Cause, SNAP_S,
+            pickup::{Refusal, TakeOptions},
         },
     },
 };
@@ -146,22 +141,11 @@ pub(crate) fn finish_tick(
     state.status.pickup.weapons += weapons.len() as u64;
     let pulses: Vec<_> = weapons.iter().map(|(hand, _)| *hand).collect();
     drop(state);
-    let regions = Config::lock_query(|c| c.controllers.weapons.regions);
-    let targets = ik::tick_records().current;
     for (hand, reach) in weapons {
         let refusal = {
             let options = TakeOptions {
                 slide_s: SNAP_S,
                 cause: Cause::Pickup,
-                // A long gun is taken where the hand closed on it.
-                touch: targets[hand.index()]
-                    .filter(|_| regions.enabled)
-                    .map(|target| WorldTouch {
-                        point: reach.point,
-                        wrist: target.wrist.orientation,
-                        grip_radius: GRIP_RADIUS_M,
-                        reach: REACH_M,
-                    }),
             };
             // SAFETY: the game stage runs on the game thread before the world update.
             let refusal = unsafe { take_weapon(hand, reach, options) }.err();

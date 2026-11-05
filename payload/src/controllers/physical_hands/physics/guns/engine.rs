@@ -59,7 +59,7 @@ pub(crate) unsafe fn read_holds(weapons: [Option<(usize, HeftClass)>; 2]) -> Gun
         // SAFETY: forwarded from the caller; the weapon was read live this tick.
         holds.guns[hand.index()] =
             unsafe { held_gun(weapon, placed.gun, class) }.map(|gun| HeldGun {
-                carry: regions::carry_mark(weapon, hand),
+                carry: regions::slide_mark(weapon, hand),
                 ..gun
             });
     }

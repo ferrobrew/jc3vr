@@ -204,7 +204,7 @@ fn absent_stale_or_noncurrent_guns_never_authorize_an_engine_read() {
     let (config, state, tick, guns) = fixture();
     let finish = state.belt_finish(&tick);
     let no_read = |_| panic!("no current belt owner may be read");
-    for role in [GunHand::Empty, GunHand::Carry, GunHand::Support] {
+    for role in [GunHand::Empty, GunHand::Support] {
         let mut changed = guns;
         changed[tick.dominant.index()].as_mut().unwrap().role = role;
         assert!(
@@ -265,11 +265,9 @@ fn final_claims_readiness_and_sequence_revoke_the_exact_physical_row() {
     let mut unready = [true; 2];
     unready[hand.index()] = false;
     assert!(lease.row(SEQUENCE, hand, guns, unready).is_none());
-    for role in [GunHand::Carry, GunHand::Support] {
-        let mut changed = guns;
-        changed[hand.index()].as_mut().unwrap().role = role;
-        assert!(lease.row(SEQUENCE, hand, changed, [true; 2]).is_none());
-    }
+    let mut changed = guns;
+    changed[hand.index()].as_mut().unwrap().role = GunHand::Support;
+    assert!(lease.row(SEQUENCE, hand, changed, [true; 2]).is_none());
     let mut other_changed = guns;
     other_changed[hand.other().index()] = Some(GunOwner {
         weapon: 2,

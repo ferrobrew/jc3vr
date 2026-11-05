@@ -10,15 +10,6 @@ use crate::controllers::{
 const GRIP_RADIUS: f32 = 0.07;
 const REACH: f32 = 0.05;
 
-const REGIONS: [GunRegion; 6] = [
-    GunRegion::Grip,
-    GunRegion::Stock,
-    GunRegion::Magazine,
-    GunRegion::Action,
-    GunRegion::Handguard,
-    GunRegion::Barrel,
-];
-
 /// A rifle along -Z: the stock 0.3 m behind the grip, the muzzle 0.7 m ahead, a foregrip 0.35 m
 /// out below the bore, a magazine below the receiver ahead of the grip, and a charging handle on
 /// top.
@@ -204,10 +195,7 @@ fn an_unusable_shape_classifies_nothing() {
 }
 
 #[test]
-fn only_the_grip_fires_and_only_the_parts_ahead_of_it_steer() {
-    for region in REGIONS {
-        assert_eq!(region.fires(), region == GunRegion::Grip, "{region:?}");
-    }
+fn only_the_parts_ahead_of_the_grip_steer() {
     assert!(GunRegion::Handguard.steers());
     assert!(GunRegion::Barrel.steers());
     assert!(!GunRegion::Stock.steers());
@@ -231,7 +219,7 @@ fn each_region_has_its_own_finger_pose() {
 }
 
 #[test]
-fn a_carried_gun_sits_with_its_anchor_in_the_palm_turned_as_it_was_taken() {
+fn a_sliding_gun_sits_with_its_anchor_in_the_palm_turned_as_it_was_braced() {
     // The hand's grip puts the attach frame a little ahead of the wrist, turned.
     let grip = Pose {
         position: Vec3::new(0.0, -0.03, -0.08),
@@ -243,13 +231,13 @@ fn a_carried_gun_sits_with_its_anchor_in_the_palm_turned_as_it_was_taken() {
     };
     let anchor = Vec3::new(0.0, 0.05, -0.55);
     let gun_on_wrist = Quat::from_rotation_z(1.2) * Quat::from_rotation_x(-0.3);
-    let carry = Carry {
-        region: GunRegion::Barrel,
+    let slide = GripSlide {
         anchor,
         turn: gun_on_wrist,
+        aligned: 0.0,
     };
     let attach = hand_pose::mul(wrist, grip);
-    let gun = hand_pose::mul(attach, carry_offset(&carry, grip));
+    let gun = hand_pose::mul(attach, slide_offset(&slide, grip));
     // The anchor is where the grip's attach point is.
     let anchor_world = hand_pose::mul(
         gun,
@@ -260,13 +248,47 @@ fn a_carried_gun_sits_with_its_anchor_in_the_palm_turned_as_it_was_taken() {
     )
     .position;
     assert!(close(anchor_world, attach.position));
-    // The gun turns on the wrist as it did when the hand took it.
+    // At the start the gun turns on the wrist as it did when the hand braced it.
     let on_wrist = turn_on_wrist(wrist.orientation, gun.orientation);
     assert!(on_wrist.angle_between(gun_on_wrist) < 1e-4);
 }
 
 #[test]
-fn a_carry_measured_on_the_wrist_frame_holds_the_gun_there_on_a_differently_oriented_bone() {
+fn a_finished_slide_holds_the_gun_on_the_canonical_grip() {
+    let grip = Pose {
+        position: Vec3::new(0.01, -0.02, -0.07),
+        orientation: Quat::from_rotation_z(0.4),
+    };
+    let slide = GripSlide {
+        anchor: Vec3::ZERO,
+        turn: Quat::from_rotation_y(2.6) * Quat::from_rotation_x(-0.9),
+        aligned: 1.0,
+    };
+    let offset = slide_offset(&slide, grip);
+    assert!(offset.orientation.angle_between(Quat::IDENTITY) < 1e-4);
+    assert!(offset.position.length() < 1e-6);
+    // Halfway, the gun has turned part of the way.
+    let half = slide_offset(
+        &GripSlide {
+            aligned: 0.5,
+            ..slide
+        },
+        grip,
+    );
+    let start = slide_offset(
+        &GripSlide {
+            aligned: 0.0,
+            ..slide
+        },
+        grip,
+    );
+    let total = start.orientation.angle_between(Quat::IDENTITY);
+    let left = half.orientation.angle_between(Quat::IDENTITY);
+    assert!((left - total / 2.0).abs() < 1e-3, "{left} of {total}");
+}
+
+#[test]
+fn a_slide_measured_on_the_wrist_frame_holds_the_gun_there_on_a_differently_oriented_bone() {
     // The skeleton's wrist bone is turned well away from the hand-tracking wrist frame.
     let bone = Pose {
         position: Vec3::new(0.2, 1.2, -0.3),
@@ -278,21 +300,21 @@ fn a_carry_measured_on_the_wrist_frame_holds_the_gun_there_on_a_differently_orie
         position: Vec3::new(0.06, -0.03, 0.004),
         orientation: Quat::from_rotation_x(0.4) * Quat::from_rotation_z(-1.1),
     };
-    // The gun as the hand took it, measured on the wrist frame.
+    // The gun as the hand braced it, measured on the wrist frame.
     let gun_world = Quat::from_rotation_x(-0.6) * Quat::from_rotation_y(2.4);
-    let carry = Carry {
-        region: GunRegion::Stock,
+    let slide = GripSlide {
         anchor: Vec3::new(0.0, 0.0, 0.06),
         turn: turn_on_wrist(wrist_frame, gun_world),
+        aligned: 0.0,
     };
     let attach = hand_pose::mul(bone, grip);
     let placed = hand_pose::mul(
         attach,
-        carry_offset(&carry_on_bone(carry, frame_on_bone), grip),
+        slide_offset(&slide_on_bone(slide, frame_on_bone), grip),
     );
     assert!(placed.orientation.angle_between(gun_world) < 1e-4);
     // Composed on the bone without the conversion, the gun turns by the bone's offset.
-    let unconverted = hand_pose::mul(attach, carry_offset(&carry, grip));
+    let unconverted = hand_pose::mul(attach, slide_offset(&slide, grip));
     assert!(unconverted.orientation.angle_between(gun_world) > 0.5);
 }
 
@@ -309,18 +331,18 @@ fn a_point_round_trips_through_the_gun_frame_at_any_scale() {
     }
 }
 
-/// The regions each hand holds its own gun by, by [`Hand::index`].
-fn holding(left: Option<GunRegion>, right: Option<GunRegion>) -> [Option<GunRegion>; 2] {
-    let mut holders = [None; 2];
+/// The hands holding a gun of their own, by [`Hand::index`].
+fn holding(left: bool, right: bool) -> [bool; 2] {
+    let mut holders = [false; 2];
     holders[Hand::Left.index()] = left;
     holders[Hand::Right.index()] = right;
     holders
 }
 
 #[test]
-fn the_hands_on_a_gun_read_as_firing_bracing_or_carrying() {
+fn the_hands_on_a_gun_read_as_firing_or_bracing() {
     let hands = hands_on_guns(
-        holding(None, Some(GunRegion::Grip)),
+        holding(false, true),
         Some((Hand::Left, GunRegion::Handguard)),
     );
     assert_eq!(
@@ -336,39 +358,26 @@ fn the_hands_on_a_gun_read_as_firing_bracing_or_carrying() {
             }),
         ]
     );
-    let carried = hands_on_guns(holding(Some(GunRegion::Barrel), None), None);
+    // A lone hand holds its gun by the grip, and fires it.
+    let lone = hands_on_guns(holding(true, false), None);
     assert_eq!(
-        carried[Hand::Left.index()],
+        lone[Hand::Left.index()],
         Some(HandOnGun {
-            region: GunRegion::Barrel,
-            role: HandRole::Carrying
+            region: GunRegion::Grip,
+            role: HandRole::Firing
         })
     );
-    assert_eq!(carried[Hand::Right.index()], None);
+    assert_eq!(lone[Hand::Right.index()], None);
     // A brace by a hand holding a gun of its own is not a brace.
-    let same = hands_on_guns(
-        holding(Some(GunRegion::Grip), None),
-        Some((Hand::Left, GunRegion::Barrel)),
-    );
+    let same = hands_on_guns(holding(true, false), Some((Hand::Left, GunRegion::Barrel)));
     assert_eq!(same[Hand::Left.index()].unwrap().role, HandRole::Firing);
 }
 
 #[test]
-fn each_hand_carries_or_fires_its_own_gun() {
-    // A rifle carried by its barrel in the left hand beside a pistol fired from the right.
-    let hands = hands_on_guns(
-        holding(Some(GunRegion::Barrel), Some(GunRegion::Grip)),
-        None,
-    );
-    assert_eq!(hands[Hand::Left.index()].unwrap().role, HandRole::Carrying);
-    assert_eq!(hands[Hand::Right.index()].unwrap().role, HandRole::Firing);
-}
-
-#[test]
-fn a_carry_ends_when_its_hand_holds_another_gun_or_none() {
-    assert_eq!(carry_gone(0x10, Some(0x10)), None);
-    assert!(carry_gone(0x10, Some(0x20)).is_some());
-    assert!(carry_gone(0x10, None).is_some());
+fn a_slide_ends_when_its_hand_holds_another_gun_or_none() {
+    assert!(!slide_gone(0x10, Some(0x10)));
+    assert!(slide_gone(0x10, Some(0x20)));
+    assert!(slide_gone(0x10, None));
 }
 
 #[test]
@@ -388,49 +397,25 @@ fn a_hand_slides_onto_the_grip_eased_and_ends_there() {
 }
 
 #[test]
-fn a_held_slide_moves_only_the_anchor() {
+fn a_held_slide_moves_the_anchor_onto_the_grip_and_turns_the_gun_there() {
     let turn = Quat::from_rotation_x(0.7);
     let since = Instant::now();
-    let hold = CarryHold {
+    // A hand that braced the stock, behind the grip.
+    let hold = SlideHold {
         weapon: 1,
-        carry: Carry {
-            region: GunRegion::Grip,
-            anchor: Vec3::ZERO,
-            turn,
-        },
+        from: Vec3::new(0.0, 0.0, 0.2),
+        turn,
         mark: 1,
-        slide: Some(AnchorSlide {
-            from: Vec3::new(0.0, 0.0, -0.3),
-            since,
-        }),
+        since,
     };
     let start = hold.at(since);
-    assert_eq!(start.anchor, Vec3::new(0.0, 0.0, -0.3));
+    assert_eq!(start.anchor, Vec3::new(0.0, 0.0, 0.2));
     assert_eq!(start.turn, turn);
-    assert_eq!(start.region, GunRegion::Grip);
-    assert_eq!(hold.at(since + GRIP_SLIDE).anchor, Vec3::ZERO);
+    assert_eq!(start.aligned, 0.0);
+    let end = hold.at(since + GRIP_SLIDE);
+    assert_eq!(end.anchor, Vec3::ZERO);
+    assert_eq!(end.aligned, 1.0);
     // The gun body is seated again once the slide has ended, and not before.
     assert_eq!(hold.mark_at(since), hold.mark_at(since + GRIP_SLIDE / 2));
     assert_ne!(hold.mark_at(since), hold.mark_at(since + GRIP_SLIDE));
-}
-
-#[test]
-fn a_gun_slid_onto_the_grip_keeps_pointing_the_way_it_pointed() {
-    // The grip's attach frame on the wrist, and the gun's turn on the wrist when the hand braced.
-    let grip = Pose {
-        position: Vec3::new(0.01, -0.02, -0.07),
-        orientation: Quat::from_rotation_z(0.4),
-    };
-    let turn = Quat::from_rotation_y(1.2) * Quat::from_rotation_x(-0.3);
-    let carry = Carry {
-        region: GunRegion::Grip,
-        anchor: Vec3::ZERO,
-        turn,
-    };
-    let held = hand_pose::mul(grip, carry_offset(&carry, grip));
-    // The gun keeps its turn on the wrist, so its barrel points as it did, with its attach point
-    // in the palm where the grip's is.
-    assert!(held.orientation.dot(turn).abs() > 1.0 - 1e-5);
-    assert!(held.position.distance(grip.position) < 1e-6);
-    assert!(carry.region.fires());
 }

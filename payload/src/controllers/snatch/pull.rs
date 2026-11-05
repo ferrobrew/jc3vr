@@ -647,7 +647,6 @@ unsafe fn arrive(
             let options = TakeOptions {
                 slide_s: SNAP_S,
                 cause: Cause::Snatch,
-                touch: None,
             };
             unsafe { pickup::take(hand, weapon, options) }
                 .map(Arrival::Weapon)

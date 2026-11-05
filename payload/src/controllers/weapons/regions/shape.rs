@@ -1,6 +1,6 @@
 //! The pure parts of a gun's regions: the gun's shape in its own frame, which region a point on it
-//! is in, where a hand holding it there closes, and how a gun held at a point other than its grip
-//! sits on the hand.
+//! is in, where a hand holding it there closes, and how a gun sliding through the hand onto its
+//! grip sits on the hand.
 //!
 //! Everything is in the gun's own frame, the frame of its world matrix and of its model: metres, +Y
 //! up, -Z toward the muzzle, and the origin at the attach point, which sits in the palm of the hand
@@ -39,11 +39,6 @@ impl GunRegion {
             GunRegion::Handguard => "handguard",
             GunRegion::Barrel => "barrel",
         }
-    }
-
-    /// Whether a hand holding the gun here fires it: only the pistol grip's.
-    pub const fn fires(self) -> bool {
-        matches!(self, GunRegion::Grip)
     }
 
     /// Whether a second hand holding the gun here steers it: a hand ahead of the grip sets the
@@ -245,14 +240,16 @@ pub fn classify(shape: &GunShape, point: Vec3, grip_radius: f32, reach: f32) -> 
     ))
 }
 
-/// How a hand holds a gun at a point other than its grip.
+/// A gun on its way onto a hand's canonical grip from where another part of it sat in the palm:
+/// the bracing hand's slide onto the grip when the holding hand lets go.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Carry {
-    pub region: GunRegion,
-    /// Where the hand closes on the gun, in the gun's frame.
+pub struct GripSlide {
+    /// The point of the gun in the palm now, in the gun's frame: the origin once the slide is over.
     pub anchor: Vec3,
-    /// The gun's rotation on the hand's wrist, kept from when the hand took it there.
+    /// The gun's rotation on the hand's wrist when the slide began.
     pub turn: Quat,
+    /// How far the gun has turned from `turn` onto the canonical grip, from 0 to 1.
+    pub aligned: f32,
 }
 
 /// The gun's rotation on a wrist of rotation `wrist`, for a gun of rotation `gun` in the same
@@ -261,25 +258,29 @@ pub fn turn_on_wrist(wrist: Quat, gun: Quat) -> Quat {
     (wrist.inverse() * gun).normalize()
 }
 
-/// `carry` with its turn moved from the wrist frame onto the wrist bone, for a wrist frame of
-/// rotation `frame_on_bone` on the bone. A carry's turn is measured on the hand-tracking wrist
+/// `slide` with its turn moved from the wrist frame onto the wrist bone, for a wrist frame of
+/// rotation `frame_on_bone` on the bone. A slide's turn is measured on the hand-tracking wrist
 /// frame ([`crate::controllers::hands::pose`]), and the rigid grip composes it after the wrist
 /// bone's own frame, which the skeleton orients differently on each side.
-pub fn carry_on_bone(carry: Carry, frame_on_bone: Quat) -> Carry {
-    Carry {
-        turn: (frame_on_bone * carry.turn).normalize(),
-        ..carry
+pub fn slide_on_bone(slide: GripSlide, frame_on_bone: Quat) -> GripSlide {
+    GripSlide {
+        turn: (frame_on_bone * slide.turn).normalize(),
+        ..slide
     }
 }
 
-/// The pose that carries a gun held at its grip to the same gun held by `carry`, in the attach
-/// frame, for a hand whose grip puts the attach frame at `grip` on its wrist: the gun turned as the
-/// hand took it, and moved so that the anchor sits where the grip's attach point sits, in the palm.
-/// The rigid grip composes it after the grip's pose on the wrist.
-pub fn carry_offset(carry: &Carry, grip: Pose) -> Pose {
-    let orientation = (grip.orientation.inverse() * carry.turn).normalize();
+/// The pose that carries a gun held at its canonical grip to the same gun held as `slide` has it,
+/// in the attach frame, for a hand whose grip puts the attach frame at `grip` on its wrist: the gun
+/// turned from its slide's turn toward the canonical grip by the share it has aligned, and moved so
+/// that the anchor sits where the grip's attach point sits, in the palm. The rigid grip composes it
+/// after the grip's pose on the wrist; a finished slide gives the identity.
+pub fn slide_offset(slide: &GripSlide, grip: Pose) -> Pose {
+    let start = (grip.orientation.inverse() * slide.turn).normalize();
+    let orientation = start
+        .slerp(Quat::IDENTITY, slide.aligned.clamp(0.0, 1.0))
+        .normalize();
     Pose {
-        position: -(orientation * carry.anchor),
+        position: -(orientation * slide.anchor),
         orientation,
     }
 }

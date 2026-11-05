@@ -82,9 +82,9 @@ fn capture_revalidates_belt_against_physical_guns_without_per_hand_trigger_subst
 
     let mut changed = guns;
     changed[hand.index()].as_mut().unwrap().weapon = 2;
-    let mut carried = guns;
-    carried[hand.index()].as_mut().unwrap().role = GunHand::Carry;
-    for physical in [changed, carried, [None; 2]] {
+    let mut supported = guns;
+    supported[hand.index()].as_mut().unwrap().role = GunHand::Support;
+    for physical in [changed, supported, [None; 2]] {
         let revoked = capture(physical, 7, ready, Some(lease));
         assert!(!revoked.mechanics.contains(&row));
         assert!(

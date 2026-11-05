@@ -16,10 +16,7 @@ use crate::controllers::{
         docks,
         engine::slot_from_raw,
         hold::pickup::gun_pose,
-        regions::{
-            WorldTouch,
-            shape::{Carry, GunRegion, GunShape, MagazineWell, classify, into_gun, turn_on_wrist},
-        },
+        regions::shape::{GunShape, MagazineWell},
         reload::wells,
     },
 };
@@ -81,35 +78,6 @@ pub(crate) fn is_long(slot: WeaponSlot) -> bool {
             | WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL
             | WeaponSlot::E_SLOT_HEAVY
     )
-}
-
-/// How `hand` carries the long gun `weapon`, whose first gun is at `gun` in the world, taking it
-/// where `touch` says: `None` at its grip, for a pistol, or for a touch off the gun.
-///
-/// # Safety
-///
-/// `weapon` must be live, read on the game thread before the world update.
-pub(crate) unsafe fn world_carry(
-    weapon: &WeaponBase,
-    hand: Hand,
-    gun: Pose,
-    touch: &WorldTouch,
-) -> Option<Carry> {
-    let shape = unsafe { shape(weapon, hand) }?;
-    if !shape.long {
-        return None;
-    }
-    let hit = classify(
-        &shape,
-        into_gun(gun, touch.point, 1.0),
-        touch.grip_radius,
-        touch.reach,
-    )?;
-    (hit.region != GunRegion::Grip).then(|| Carry {
-        region: hit.region,
-        anchor: hit.anchor,
-        turn: turn_on_wrist(touch.wrist, gun.orientation),
-    })
 }
 
 /// A long gun docked on a socket of the body.

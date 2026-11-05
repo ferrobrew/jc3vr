@@ -11,8 +11,7 @@ use crate::controllers::{
     loadout::live,
     mode::{AirborneVariant, Mode, OnFootVariant},
     weapons::{
-        dual_wield::single, foregrip, hold::armed, inventory::engine::slot_of, permission, regions,
-        reload,
+        dual_wield::single, foregrip, hold::armed, inventory::engine::slot_of, permission, reload,
     },
 };
 
@@ -60,7 +59,6 @@ pub(crate) enum GunHand {
     #[default]
     Empty,
     Grip,
-    Carry,
     Support,
     /// One gun of the native pair, whose shared fire input alternates the guns.
     NativePair(NativePair),
@@ -115,7 +113,6 @@ pub(crate) fn gun_owners_now() -> [Option<GunOwner>; 2] {
             weapon,
             slot,
             single: single::is(weapon),
-            carrying: regions::carrying(weapon).is_some(),
         })
     });
     discover_owners(held, support.map(|hold| (hold.weapon, hold.holder.other())))
@@ -148,7 +145,6 @@ struct DiscoveredGun {
     weapon: usize,
     slot: Option<WeaponSlot>,
     single: bool,
-    carrying: bool,
 }
 
 fn discover_owners(
@@ -169,11 +165,7 @@ fn discover_owners(
         held[hand.index()]
             .map(|gun| GunOwner {
                 weapon: gun.weapon,
-                role: if gun.carrying {
-                    GunHand::Carry
-                } else {
-                    GunHand::Grip
-                },
+                role: GunHand::Grip,
             })
             .or_else(|| {
                 support
@@ -240,7 +232,6 @@ mod tests {
             weapon: 1,
             slot: Some(WeaponSlot::E_SLOT_DUAL_WIELD),
             single: false,
-            carrying: false,
         };
         for first_hand in Hand::BOTH {
             let held = Hand::BOTH.map(|hand| (hand == first_hand).then_some(pair));
@@ -321,12 +312,17 @@ mod tests {
     }
 
     #[test]
-    fn carrying_and_support_reserve_the_trigger_without_firing() {
+    fn support_reserves_the_trigger_without_firing() {
         for mode in modes() {
             for hand in Hand::BOTH {
-                for occupied in [GunHand::Carry, GunHand::Support] {
-                    let hands =
-                        Hand::BOTH.map(|h| if h == hand { occupied } else { GunHand::Grip });
+                {
+                    let hands = Hand::BOTH.map(|h| {
+                        if h == hand {
+                            GunHand::Support
+                        } else {
+                            GunHand::Grip
+                        }
+                    });
                     let claims = trigger_claims(Capabilities::of(mode), hands, [true; 2]);
                     assert_eq!(
                         claims[hand.index()],

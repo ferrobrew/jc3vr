@@ -82,8 +82,8 @@ pub struct HeldGun {
     pub class: HeftClass,
     /// How many guns the weapon has: the dual-wield pair's two share its own body's mass.
     pub guns: usize,
-    /// The carry the hand holds the gun by, when it holds it by a part other than its grip
-    /// ([`crate::controllers::weapons::regions::carry_mark`]): the seat is the carry's.
+    /// The slide onto the grip the gun is in, while one is under way or has just come to rest
+    /// ([`crate::controllers::weapons::regions::slide_mark`]): the seat is the slide's.
     pub carry: Option<u32>,
 }
 

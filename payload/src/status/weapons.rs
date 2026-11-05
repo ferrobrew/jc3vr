@@ -12,7 +12,7 @@ use crate::{
         weapons::{
             self,
             hold::{self, Cause, armed},
-            regions::{self, HandRole},
+            regions,
             reload::{
                 self,
                 chamber::{ActionKind, Chamber},
@@ -123,21 +123,15 @@ fn hand_on_gun(hand: Hand) -> Line {
         }
         return Line::waiting(prose("Not on a gun"));
     };
-    let role = match on.role {
-        HandRole::Carrying => prose("carrying, cannot fire"),
-        role => prose(role.label()),
-    };
     let line = Line::ok(text!(
         prose(on.region.label()),
         ", ",
-        role,
+        prose(on.role.label()),
         ", ",
-        status.carries.to_string(),
-        " carries, ",
         status.braces.to_string(),
         " braces, ",
-        status.grips_taken.to_string(),
-        " grips taken"
+        status.let_go.to_string(),
+        " passed to the brace"
     ));
     match shape {
         Some(shape) => line.with_note(shape),

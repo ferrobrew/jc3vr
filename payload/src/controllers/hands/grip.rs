@@ -30,10 +30,11 @@
 //! ([`crate::controllers::physical_hands::physics::guns`]) is pinned where that body is: the
 //! canonical grip carried by how far the gun body strays from its seat on the holding hand's body
 //! ([`seat_on_body`]), so the drawn gun, and everything that derives from its placement, follows the
-//! gun body while the hand is drawn at its own. A gun a hand holds by a part other than its grip
-//! ([`crate::controllers::weapons::regions`]) is pinned so that part sits in the palm, turned as
-//! the hand took it ([`carry_offset`]), a turn measured on the hand-tracking wrist frame and moved
-//! onto the wrist bone's own frame ([`carry_on_bone`]). A gun on a holster or back bone, and a hand the
+//! gun body while the hand is drawn at its own. A gun sliding through the hand onto its grip from
+//! another part of it ([`crate::controllers::weapons::regions`]) is pinned so that the part the
+//! slide has reached sits in the palm, turned from the way the hand braced it toward the canonical
+//! grip ([`slide_offset`]), a turn measured on the hand-tracking wrist frame and moved onto the
+//! wrist bone's own frame ([`slide_on_bone`]). A gun on a holster or back bone, and a hand the
 //! controllers do not drive, are left to the game. Each placement also records how the hand's
 //! animated attach bone sat relative to the canonical grip before the pin, and how the gun sits on
 //! the wrist after the placement, for [`crate::controllers::weapons::grip_watch`].
@@ -66,7 +67,7 @@ use crate::{
                 act::{self, SnapStart, SnapView},
                 armed, take,
             },
-            regions::{self, Carry, carry_offset, carry_on_bone},
+            regions::{self, GripSlide, slide_offset, slide_on_bone},
         },
     },
 };
@@ -274,7 +275,7 @@ pub(crate) unsafe fn before_placement(
                 weight,
                 snap,
                 deviation,
-                carry: regions::carry_for(address, hand),
+                slide: regions::slide_for(address, hand),
             };
             let read = unsafe { pin(character, controller, hand, attach, grip) };
             let Some(read) = read else {
@@ -522,8 +523,8 @@ struct PinGrip {
     /// The gun body's stray from its seat on the holding hand's body, in the gun's own frame, when
     /// the hand bodies hold the gun.
     deviation: Option<Pose>,
-    /// How the hand holds the gun when it holds it by a part other than its grip.
-    carry: Option<Carry>,
+    /// Where the gun is on its way onto the hand's grip from another part of it, while it slides.
+    slide: Option<GripSlide>,
 }
 
 /// Read `hand`'s wrist and the gun's attach bone `attach`, and with a weight above zero, write the
@@ -542,7 +543,7 @@ unsafe fn pin(
         weight,
         snap,
         deviation,
-        carry,
+        slide,
     } = grip;
     let (wrist_safe, primary_safe) = match hand {
         Hand::Left => (SafeBoneIndex::LEFT_HAND, SafeBoneIndex::ATTACH_HAND_LEFT),
@@ -577,11 +578,11 @@ unsafe fn pin(
     let animated_deviation_deg = angle_deg(animated_in_wrist, offset.orientation);
     let wrist_scale = Vec3::from_array(wrist_joint.m_Scale.data);
     let mut held = pinned_attach(wrist, wrist_scale, offset);
-    if let Some(carry) = carry {
-        // Without the wrist frame's place on the bone, a carry's turn cannot be placed: the gun
+    if let Some(slide) = slide {
+        // Without the wrist frame's place on the bone, a slide's turn cannot be placed: the gun
         // stays at the grip rather than at a turn meant for another frame.
         if let Some(frame) = unsafe { wrist_frame_on_bone(controller, hand, wrist_index) } {
-            held = hand_pose::mul(held, carry_offset(&carry_on_bone(carry, frame), offset));
+            held = hand_pose::mul(held, slide_offset(&slide_on_bone(slide, frame), offset));
         }
     }
     if let Some(deviation) = deviation {

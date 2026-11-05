@@ -115,7 +115,6 @@ unsafe fn take(owner: &mut Character, weapon: &mut WeaponBase) {
             let options = TakeOptions {
                 slide_s: SNAP_S,
                 cause: Cause::Pickup,
-                touch: None,
             };
             unsafe { pickup::take_by_table(owner, hand, weapon, TakeSource::World, options) }
                 .map(|()| hand)
