@@ -100,7 +100,9 @@ pub(crate) use tick::{after_aim, free_hands, main_thread_tick, mode_acts};
 
 use crate::{
     config::Config,
-    controllers::{hands::CockpitHand, physical_hands::state::STATE},
+    controllers::{
+        frame::Hand, grab::PickupKind, hands::CockpitHand, physical_hands::state::STATE,
+    },
 };
 
 /// The loose object each hand carries, by [`Hand::index`](crate::controllers::frame::Hand::index),
@@ -108,6 +110,32 @@ use crate::{
 /// the world's.
 pub(crate) fn held_props() -> [Option<NonZeroUsize>; 2] {
     STATE.lock().pickup.props()
+}
+
+/// What a hand holds through its grip: the object, its body, the kind of hold, and the hold's last
+/// report, for the tracking recorder.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct HeldBody {
+    pub object: NonZeroUsize,
+    pub body: u32,
+    pub kind: PickupKind,
+    pub report: Option<pickup::HeldReport>,
+}
+
+/// What each hand holds through its grip, by [`Hand::index`].
+pub(crate) fn held_bodies() -> [Option<HeldBody>; 2] {
+    let state = STATE.lock();
+    let objects = state.pickup.held_objects();
+    Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        let (_, body) = state.pickup.grip(hand)?;
+        Some(HeldBody {
+            object: NonZeroUsize::new(objects[i])?,
+            body: body?,
+            kind: state.pickup.held_kind(hand)?,
+            report: state.status.hands[i].held,
+        })
+    })
 }
 
 /// When the hands are composed for: the simulation tick, or a frame rendered between ticks.
@@ -165,6 +193,7 @@ pub fn apply(cockpit: &mut [Option<CockpitHand>; 2], at: DrawTime) {
 /// # Safety
 ///
 /// The main thread, outside the physics step.
+#[track_caller]
 pub(crate) unsafe fn set_body_velocities(
     body: u32,
     owner: NonZeroUsize,

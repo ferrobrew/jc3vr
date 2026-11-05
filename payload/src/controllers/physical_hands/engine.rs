@@ -17,6 +17,7 @@ use jc3gi::{
 
 use crate::controllers::{
     aim::raycast::RayHit,
+    diagnostics::{Applied, note_force},
     physical_hands::contact::{Surface, SurfaceHit},
 };
 
@@ -90,10 +91,12 @@ pub(super) unsafe fn melee_damage(character: &Character) -> Option<i32> {
 /// # Safety
 ///
 /// Main thread, outside the physics step; `body` must come from a cast this tick.
+#[track_caller]
 pub(super) unsafe fn push_body(body: u32, impulse: Vec3, at: Vec3) -> Result<(), EngineError> {
     if body == PfxCharacterInstance::INVALID_BODY_ID || !impulse.is_finite() || !at.is_finite() {
         return Err(EngineError::InvalidBody);
     }
+    note_force(body, Applied::Impulse { impulse, at }, None);
     let physics = unsafe { PhysicsSystem::get() }.ok_or(EngineError::NoPhysicsWorld)?;
     let shift = Vec3::from_array(physics.m_AccumulatedShift.data);
     let world = unsafe { physics.m_World.as_mut() }.ok_or(EngineError::NoPhysicsWorld)?;

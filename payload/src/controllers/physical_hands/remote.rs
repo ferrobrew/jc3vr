@@ -141,6 +141,7 @@ pub(crate) unsafe fn closed_door(
 /// # Safety
 ///
 /// The main thread, outside the physics step; the door's vehicle must be live.
+#[track_caller]
 pub(crate) unsafe fn swing_open(door: &DoorTarget, at: Vec3, speed: f32) -> Result<(), String> {
     let (owner, body) = unsafe { door_engine::unlatch(door.vehicle, door.part_index) }
         .map_err(|e| e.to_string())?;

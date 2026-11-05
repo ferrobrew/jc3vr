@@ -1,6 +1,7 @@
 //! Detours around the sim tick and its phases: timing for the always-on frame breakdown
 //! (`crate::frame_timing`) and, under the `profiler` feature, the profiler's flame graph; the input
-//! job's thread role; and the input tick's game stage.
+//! job's thread role; the input tick's game stage; and the tracking recorder's bodies near Rico,
+//! sampled after the world's post-simulation update.
 //!
 //! The timing hooks change nothing the game does: each opens a [`frame_timing::scope`] around the
 //! original call. Three hooks do more. The input job's body (`RunInputThread_Proxy`) holds
@@ -114,6 +115,8 @@ fn world_update_post_sim(this: *mut GameWorld, context: *mut GameObjectUpdateCon
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("GameWorld::UpdatePostSim");
     WORLD_UPDATE_POST_SIM.get().unwrap().call(this, context);
+    // SAFETY: the game thread, after the step's physics phase and outside it.
+    unsafe { crate::controllers::diagnostics::after_step() };
 }
 
 #[detour(address = jc3gi::game::StreamerUpdate_ADDRESS)]

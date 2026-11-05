@@ -6,6 +6,7 @@
 //! - [`scan`]: the read of the world after a step, on the game thread outside the step;
 //! - [`model`]: the snapshot it fills, and the pure geometry over it;
 //! - [`draw`]: the primitives within a budget;
+//! - [`nearby`]: the reads the tracking recorder's near set makes, a slice of the walk at a time;
 //! - [`config`]: the settings.
 //!
 //! Geometry discovery runs once per physics step. After the engine's render update, retained body
@@ -18,6 +19,7 @@ mod callback;
 pub mod config;
 pub mod draw;
 pub mod model;
+pub(crate) mod nearby;
 mod scan;
 
 use std::{

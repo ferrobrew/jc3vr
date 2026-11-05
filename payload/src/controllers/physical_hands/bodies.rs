@@ -26,10 +26,13 @@ use jc3gi::{
     vehicle::{parts::VehiclePartGameObject, vehicle::Vehicle},
 };
 
-use crate::controllers::physical_hands::{
-    grasp::{TargetKind, mass_of},
-    rigid::{BodyPose, RigidBody, Velocities},
-    world::World,
+use crate::controllers::{
+    diagnostics::{Applied, BodyBefore, note_force},
+    physical_hands::{
+        grasp::{TargetKind, mass_of},
+        rigid::{BodyPose, RigidBody, Velocities},
+        world::World,
+    },
 };
 
 /// Why a body could not be read or driven.
@@ -222,6 +225,7 @@ pub(super) unsafe fn read(body: u32, owner: NonZeroUsize) -> Result<BodyState, B
 /// # Safety
 ///
 /// Main thread, outside the physics step.
+#[track_caller]
 pub(super) unsafe fn drive(
     body: u32,
     owner: NonZeroUsize,
@@ -231,7 +235,15 @@ pub(super) unsafe fn drive(
         return Err(BodyError::BadMotion);
     }
     let mut world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
-    unsafe { owned_motion(world.world(), body, owner) }?;
+    let motion = unsafe { owned_motion(world.world(), body, owner) }?;
+    note_force(
+        body,
+        Applied::Velocity {
+            linear: velocities.linear,
+            angular: velocities.angular,
+        },
+        Some(before(motion, owner)),
+    );
     let linear = aligned(velocities.linear);
     let angular = aligned(velocities.angular);
     unsafe { world.world_mut().setBodyVelocity(body, &linear, &angular) };
@@ -244,6 +256,7 @@ pub(super) unsafe fn drive(
 /// # Safety
 ///
 /// Main thread, outside the physics step.
+#[track_caller]
 pub(super) unsafe fn shove(
     body: u32,
     owner: NonZeroUsize,
@@ -254,7 +267,12 @@ pub(super) unsafe fn shove(
         return Err(BodyError::BadMotion);
     }
     let mut world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
-    unsafe { owned_motion(world.world(), body, owner) }?;
+    let motion = unsafe { owned_motion(world.world(), body, owner) }?;
+    note_force(
+        body,
+        Applied::Impulse { impulse, at },
+        Some(before(motion, owner)),
+    );
     let impulse = aligned(impulse);
     let position = aligned(at - world.shift);
     unsafe {
@@ -296,6 +314,22 @@ pub(super) unsafe fn is_type(object: NonZeroUsize, type_id: *const u32) -> bool 
     let game_object =
         (object.get() + PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize) as *const GameObject;
     unsafe { (*game_object).IsType(type_id) }
+}
+
+/// A body's owner, mass, and velocities before a force, for the recording.
+fn before(motion: &hknpMotion, owner: NonZeroUsize) -> BodyBefore {
+    let frame = Quat::from_array(motion.m_orientation.data);
+    let local_angular = Vec3::from_array(motion.m_angularVelocity.data);
+    BodyBefore {
+        object: Some(owner.get()),
+        mass_kg: mass_of(f32::from_bits(u32::from(motion.m_inverseInertia[3]) << 16)),
+        linear: Vec3::from_array(motion.m_linearVelocity.data),
+        angular: if frame.is_finite() {
+            frame.normalize() * local_angular
+        } else {
+            local_angular
+        },
+    }
 }
 
 /// The motion of the dynamic body `body`, checked to belong to `owner`.

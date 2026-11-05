@@ -228,13 +228,13 @@ pub(super) unsafe fn refresh(snapshot: &mut Snapshot, centre: Vec3) -> Result<()
 }
 
 /// The world's integer space.
-struct Space {
+pub(super) struct Space {
     scale_inv: Vec3,
     offset_low: Vec3,
 }
 
 impl Space {
-    fn of(world: &hknpWorld) -> Self {
+    pub(super) fn of(world: &hknpWorld) -> Self {
         let space = &world.m_intSpaceUtil;
         Self {
             scale_inv: Vec3::from_array(space.m_bitScaleInv.data),
@@ -243,7 +243,7 @@ impl Space {
     }
 
     /// A body's box, game space.
-    fn restore(&self, body: &hknpBody, shift: Vec3) -> Aabb {
+    pub(super) fn restore(&self, body: &hknpBody, shift: Vec3) -> Aabb {
         restore_aabb(
             body.m_aabb.m_min,
             body.m_aabb.m_max,
@@ -256,8 +256,8 @@ impl Space {
 
 /// The player's proxy body and what it stands on.
 #[derive(Debug, Copy, Clone)]
-struct PlayerProxy {
-    body: u32,
+pub(super) struct PlayerProxy {
+    pub(super) body: u32,
     ground: Option<Ground>,
 }
 
@@ -266,7 +266,7 @@ struct PlayerProxy {
 /// # Safety
 ///
 /// The game thread, outside the physics step.
-unsafe fn player_proxy() -> Option<PlayerProxy> {
+pub(super) unsafe fn player_proxy() -> Option<PlayerProxy> {
     let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
     let proxy = unsafe { character.m_PfxCharacter.px.as_ref() }?;
     let mut body = PfxCharacterInstance::INVALID_BODY_ID;
@@ -283,7 +283,7 @@ unsafe fn player_proxy() -> Option<PlayerProxy> {
 
 /// The motion of a slot holding a body in the simulation, or `None` for a freed slot, an empty
 /// one, or a body out of the simulation.
-fn motion_kind(body: &hknpBody) -> Option<MotionKind> {
+pub(super) fn motion_kind(body: &hknpBody) -> Option<MotionKind> {
     let flags = body.m_flags;
     if body.m_motionId == hknpBody::INVALID_MOTION_ID
         || flags & (hknpBody::IS_STATIC | hknpBody::IS_DYNAMIC) == 0
@@ -301,7 +301,7 @@ fn motion_kind(body: &hknpBody) -> Option<MotionKind> {
 }
 
 /// The layer of a collision-filter word, as far as the kinds tell layers apart.
-fn layer(filter_info: u32) -> Layer {
+pub(super) fn layer(filter_info: u32) -> Layer {
     let value = filter_info & CustomGroupCollisionFilter::LAYER_MASK;
     let is = |layers: &[u32]| layers.contains(&value);
     if is(&[
@@ -330,7 +330,7 @@ fn layer(filter_info: u32) -> Layer {
 /// [`hknpMotion::m_inverseInertia`]'s half-floats. `None` for a static body and an infinite mass.
 ///
 /// [`hknpMotion::m_inverseInertia`]: jc3gi::physics::hknpMotion::m_inverseInertia
-unsafe fn mass(world: &hknpWorld, body: &hknpBody, motion: MotionKind) -> Option<f32> {
+pub(super) unsafe fn mass(world: &hknpWorld, body: &hknpBody, motion: MotionKind) -> Option<f32> {
     if motion == MotionKind::Static || world.m_motions.is_null() {
         return None;
     }
@@ -344,7 +344,7 @@ unsafe fn mass(world: &hknpWorld, body: &hknpBody, motion: MotionKind) -> Option
 /// # Safety
 ///
 /// `shape` must be null or a live shape.
-unsafe fn geometry(shape: *const hknpShape) -> Geometry {
+pub(super) unsafe fn geometry(shape: *const hknpShape) -> Geometry {
     let Some(shape) = (unsafe { shape.as_ref() }) else {
         return Geometry::Other(u32::MAX);
     };
