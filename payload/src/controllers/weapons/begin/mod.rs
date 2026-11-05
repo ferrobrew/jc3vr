@@ -139,12 +139,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let (weapon, beside) = (ticked.weapon, ticked.beside);
     scope::input_tick(ticked.guns.map(|g| g.map(|w| w.address)));
     // SAFETY: the weapons were read this tick, on the game thread before the world update.
-    unsafe {
-        hand_ammo::observe(
-            ticked.weapon.map(|w| w.address),
-            ticked.guns.map(|g| g.map(|w| w.address)),
-        )
-    };
+    unsafe { hand_ammo::observe(ticked.guns.map(|g| g.map(|w| w.address))) };
     // SAFETY: the weapon was read this tick, on the game thread before the world update.
     if let Some(w) = weapon
         && let Some(base) = unsafe { (w.address as *const WeaponBase).as_ref() }

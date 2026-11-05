@@ -1,12 +1,12 @@
-//! The ammunition readout of a gun held beside the wielded weapon: its magazine and its reserve,
-//! as a small counter the mod draws above that hand.
+//! The ammunition readout of a gun in a hand: its magazine and its reserve, as a small counter the
+//! mod draws above that hand.
 //!
-//! The game's weapon readout shows the wielded weapon alone, and rides one of the hands holding it
-//! ([`crate::hud::anchored::place::gun_hand`]). Each hand holds a weapon of its own under the
-//! two-handed inventory, so a gun armed in the other hand (a second submachine gun, or a rifle
-//! beside a pistol) would show no count at all. The input tick samples each hand's gun
+//! The game's weapon readout shows the wielded weapon alone, and the game wields nothing in the
+//! seats whose update skips the wielded weapon. Each hand holds a weapon of its own under the
+//! two-handed inventory, so every gun gets the mod's counter, in every mode, and the game's readout
+//! is not drawn: the two hands' guns read alike. The input tick samples each hand's gun
 //! ([`observe`], on the game thread where the table keeps the guns alive), and the HUD draws a
-//! counter above each hand whose gun is not the wielded weapon ([`beside_hands`]).
+//! counter above each hand holding one ([`counted_hands`]).
 
 use anyhow::Context as _;
 use jc3gi::{
@@ -15,7 +15,7 @@ use jc3gi::{
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
-use crate::{controllers::frame::Hand, hud::target::HudTarget};
+use crate::hud::target::HudTarget;
 
 /// The counter texture's size, texels.
 pub(crate) const COUNT_TEXELS: (u32, u32) = (192, 40);
@@ -31,21 +31,20 @@ pub(crate) struct HandAmmo {
     pub reserve: i32,
 }
 
-/// The input tick's sample: the wielded weapon and each hand's gun, by [`Hand::index`].
+/// The input tick's sample: each hand's gun, by [`Hand::index`](crate::controllers::frame::Hand::index).
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub(crate) struct HandsAmmo {
-    pub wielded: Option<usize>,
     pub hands: [Option<HandAmmo>; 2],
 }
 
-/// Sample the wielded weapon and the gun in each hand, by [`Hand::index`], for the HUD. Called each
-/// input tick of the weapon handling.
+/// Sample the gun in each hand, by [`Hand::index`](crate::controllers::frame::Hand::index), for the HUD. Called each input tick of the
+/// weapon handling.
 ///
 /// # Safety
 ///
 /// Each address must be a live weapon of the local player, read on the game thread before the
 /// world update.
-pub(crate) unsafe fn observe(wielded: Option<usize>, guns: [Option<usize>; 2]) {
+pub(crate) unsafe fn observe(guns: [Option<usize>; 2]) {
     let hands = guns.map(|gun| {
         let weapon = unsafe { (gun? as *const WeaponBase).as_ref() }?;
         // `m_User` is a `weak_ptr<CCharacter>`; its first word is the character.
@@ -59,7 +58,7 @@ pub(crate) unsafe fn observe(wielded: Option<usize>, guns: [Option<usize>; 2]) {
             reserve,
         })
     });
-    *SAMPLE.lock() = Some(HandsAmmo { wielded, hands });
+    *SAMPLE.lock() = Some(HandsAmmo { hands });
 }
 
 /// Forget the sample: the weapon handling stood down.
@@ -72,13 +71,11 @@ pub(crate) fn sampled() -> Option<HandsAmmo> {
     *SAMPLE.lock()
 }
 
-/// The hands, by [`Hand::index`], that get a counter: those holding a gun other than the wielded
-/// weapon, except `game_hand`, the hand the game's own readout is drawn above.
-pub(crate) fn beside_hands(sample: &HandsAmmo, game_hand: Option<Hand>) -> [bool; 2] {
-    Hand::BOTH.map(|hand| {
-        Some(hand) != game_hand
-            && sample.hands[hand.index()].is_some_and(|gun| Some(gun.weapon) != sample.wielded)
-    })
+/// The hands, by [`Hand::index`](crate::controllers::frame::Hand::index), that get a counter: every hand holding a gun, the wielded weapon
+/// as well as a gun armed beside it, and each gun of the game's own dual-wield pair, which share
+/// one magazine.
+pub(crate) fn counted_hands(sample: &HandsAmmo) -> [bool; 2] {
+    sample.hands.map(|gun| gun.is_some())
 }
 
 /// What a counter shows, so it is repainted only when it changes.
@@ -241,30 +238,21 @@ mod tests {
     }
 
     #[test]
-    fn a_gun_beside_the_wielded_weapon_gets_a_counter() {
-        let sample = HandsAmmo {
-            wielded: Some(0x10),
+    fn every_hand_holding_a_gun_gets_a_counter() {
+        let both = HandsAmmo {
             hands: [gun(0x20), gun(0x10)],
         };
-        assert_eq!(beside_hands(&sample, Some(Hand::Right)), [true, false]);
-    }
-
-    #[test]
-    fn the_wielded_weapon_and_the_game_readouts_hand_get_none() {
-        // A native pair in both hands is the wielded weapon: the game's readout covers it.
+        assert_eq!(counted_hands(&both), [true, true]);
+        // The native pair is one weapon in both hands; each hand shows its shared magazine.
         let pair = HandsAmmo {
-            wielded: Some(0x10),
             hands: [gun(0x10), gun(0x10)],
         };
-        assert_eq!(beside_hands(&pair, Some(Hand::Right)), [false, false]);
-        // The game's readout lingering over a hand keeps that hand's counter off.
-        let lingering = HandsAmmo {
-            wielded: Some(0x10),
-            hands: [gun(0x20), None],
+        assert_eq!(counted_hands(&pair), [true, true]);
+        let one = HandsAmmo {
+            hands: [None, gun(0x10)],
         };
-        assert_eq!(beside_hands(&lingering, Some(Hand::Left)), [false, false]);
-        assert_eq!(beside_hands(&lingering, None), [true, false]);
-        assert_eq!(beside_hands(&HandsAmmo::default(), None), [false, false]);
+        assert_eq!(counted_hands(&one), [false, true]);
+        assert_eq!(counted_hands(&HandsAmmo::default()), [false, false]);
     }
 
     #[test]

@@ -35,7 +35,7 @@ pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer
             );
             ui.add_enabled_ui(hud.atlas.enabled, |ui| {
                 let atlas = &mut hud.atlas;
-                ui.checkbox(&mut atlas.ammo.enabled, "Weapon readout above the gun hand");
+                ui.checkbox(&mut atlas.ammo.enabled, "Ammunition counter above each gun hand");
                 ui.checkbox(
                     &mut atlas.cross.enabled,
                     "Weapon selection cross at the hand steering the weapon wheel",
@@ -293,11 +293,14 @@ fn atlas_status_ui(ui: &mut egui::Ui) {
     }
     let anchored = crate::hud::anchored::status();
     ui.label(format!(
-        "Weapon readout on {}; health {}; heat level {}; wrist {:.0}% (glance {}, attention \
+        "Ammunition counters {}; health {}; heat level {}; wrist {:.0}% (glance {}, attention \
          {}, heat {}, grenades {})",
-        anchored
-            .ammo_hand
-            .map_or("no hand".to_owned(), |hand| format!("{hand:?}")),
+        match anchored.counts {
+            [true, true] => "on both hands",
+            [true, false] => "on the left hand",
+            [false, true] => "on the right hand",
+            [false, false] => "on no hand",
+        },
         anchored
             .health
             .map_or("not sampled".to_owned(), |(health, trail)| format!(

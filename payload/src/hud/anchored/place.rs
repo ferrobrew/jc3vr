@@ -7,51 +7,7 @@ use crate::controllers::{
     summary::glance::PanelPose,
 };
 
-/// The hand the weapon readout rides: the dominant hand when it holds a gun, otherwise the other
-/// hand when it does (a gun in the off hand alone), otherwise none. `holding` is indexed by
-/// [`Hand::index`].
-pub(crate) fn gun_hand(holding: [bool; 2], dominant: Hand) -> Option<Hand> {
-    [dominant, dominant.other()]
-        .into_iter()
-        .find(|hand| holding[hand.index()])
-}
-
-/// The weapon readout's hand across frames: the gun hand while a hand holds a gun, and the last
-/// gun hand for a while after, so the game's fade-out plays where the gun was.
-#[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub(crate) struct AmmoHand {
-    hand: Option<Hand>,
-    /// Seconds since a hand last held a gun.
-    since_gun_s: f32,
-}
-
-impl AmmoHand {
-    pub const fn new() -> Self {
-        Self {
-            hand: None,
-            since_gun_s: 0.0,
-        }
-    }
-
-    /// Advance by `dt` seconds with this frame's gun hand, and return the hand to draw on.
-    pub fn step(&mut self, gun: Option<Hand>, dt: f32, linger_s: f32) -> Option<Hand> {
-        match gun {
-            Some(hand) => {
-                self.hand = Some(hand);
-                self.since_gun_s = 0.0;
-            }
-            None => {
-                self.since_gun_s += if dt.is_finite() { dt.max(0.0) } else { 0.0 };
-                if self.since_gun_s > linger_s {
-                    self.hand = None;
-                }
-            }
-        }
-        self.hand
-    }
-}
-
-/// The weapon readout's centre for a quad `height` metres tall: straight up in the world from the
+/// An ammunition counter's centre for a quad `height` metres tall: straight up in the world from the
 /// gun hand's `grip` until the quad's lower edge is `clearance` metres above it, then `pull`
 /// metres toward the `eye`. The hand's tilt does not move it, so the quad stays clear of the hand
 /// and the gun however the gun is held.
@@ -61,7 +17,7 @@ pub(crate) fn ammo_anchor(grip: Vec3, eye: Vec3, clearance: f32, height: f32, pu
 
 /// Whether the gun is raised to the eye to sight along it: the gun hand's `grip` within
 /// [`SIGHT_REACH_M`] of the `eye`, and the hand's aim `aim_forward` within [`SIGHT_CONE_DEG`] of
-/// the `gaze`. The weapon readout above the hand would then sit in the sight picture.
+/// the `gaze`. A counter above the hand would then sit in the sight picture.
 pub(crate) fn sighting(grip: Vec3, aim_forward: Vec3, eye: Vec3, gaze: Vec3) -> bool {
     let (Some(aim), Some(gaze)) = (aim_forward.try_normalize(), gaze.try_normalize()) else {
         return false;
@@ -252,24 +208,6 @@ mod tests {
         let aside = Vec3::new(1.0, 0.0, -1.0);
         assert!(!sighting(raised, aside, eye, gaze));
         assert!(!sighting(raised, Vec3::ZERO, eye, gaze));
-    }
-
-    #[test]
-    fn the_readout_prefers_the_dominant_gun_hand() {
-        assert_eq!(gun_hand([true, true], Hand::Right), Some(Hand::Right));
-        assert_eq!(gun_hand([true, false], Hand::Right), Some(Hand::Left));
-        assert_eq!(gun_hand([false, true], Hand::Left), Some(Hand::Right));
-        assert_eq!(gun_hand([true, true], Hand::Left), Some(Hand::Left));
-        assert_eq!(gun_hand([false, false], Hand::Right), None);
-    }
-
-    #[test]
-    fn the_readout_lingers_on_the_last_gun_hand() {
-        let mut hand = AmmoHand::new();
-        assert_eq!(hand.step(Some(Hand::Left), 0.01, 1.0), Some(Hand::Left));
-        assert_eq!(hand.step(None, 0.5, 1.0), Some(Hand::Left));
-        assert_eq!(hand.step(None, 0.6, 1.0), None);
-        assert_eq!(hand.step(Some(Hand::Right), 0.01, 1.0), Some(Hand::Right));
     }
 
     /// The readout rises straight up from the grip until its lower edge clears it, then leans

@@ -83,10 +83,10 @@ impl Default for WorldMarkersConfig {
 pub struct AtlasConfig {
     /// Master toggle.
     pub enabled: bool,
-    /// The weapon readout (`MCI_weapons_parent`: the weapon's name and icon, the magazine bar, and
-    /// the reserve) drawn above the hand that holds the gun, under the controller scheme, upright
-    /// and facing the eye. The game shows it while a gun is out and fades it when holstered; the
-    /// quad carries that fade.
+    /// The ammunition counters the mod draws above each hand holding a gun (the magazine and the
+    /// reserve), under the controller scheme, upright and facing the eye. The game's own weapon
+    /// readout (`MCI_weapons_parent`) shows the wielded weapon alone; with the atlas on it keeps
+    /// its cell, off the panel, and is not drawn, so both hands' guns read alike.
     pub ammo: AtlasPartConfig,
     /// The health bar (drawn by the mod from the player character's health), the heat readout
     /// (`MCI_heat_container`), and the grenade readout (`MCI_grenade_parent`), both moved into
