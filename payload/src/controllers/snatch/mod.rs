@@ -15,7 +15,7 @@
 //!    cone and in sight.
 //! 2. [`finish_tick`] acts on the grip's grab of it, which arms the snatch on that target. A yank
 //!    of the hand back along its aim at the grip edge while the grip is held fires it
-//!    ([`reach_along`], [`pull`]): a gun on a
+//!    ([`ArmedLine`], [`pull`]): a gun on a
 //!    character is first let go of, with the steal's drop and stagger; then the game's hook flies
 //!    to the target as a ghost wire through the custom fire ([`engine::fire`]). Once it bites a
 //!    weapon or an object, the line yanks the body toward the hand through the hold solve, pulling
@@ -66,7 +66,6 @@ mod target;
 
 use std::num::NonZeroUsize;
 
-use glam::Vec3;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -81,7 +80,7 @@ use crate::controllers::{
         controls::ButtonControl,
         hold::Desired,
         tables,
-        yank::{HandLine, YankConfig, YankDetector, reach_along},
+        yank::{ArmedLine, HandLine, YankConfig, YankDetector},
     },
     config::ControllersConfig,
     frame::Hand,
@@ -436,7 +435,7 @@ enum Phase {
     Armed {
         hand: Hand,
         offer: Offer,
-        line: Vec3,
+        line: ArmedLine,
         yank: YankDetector,
     },
     /// A character let go of the gun; the hook fires once it lies in the world.
@@ -511,11 +510,6 @@ impl Phase {
     fn reeling(&self) -> bool {
         matches!(self, Phase::Pulling { rope: None, flight, .. } if !flight.slack())
     }
-}
-
-/// The hand's reach along `line` this tick, for the armed yank.
-fn reach(input: &FinishInput, line: Vec3) -> Option<f32> {
-    input.line.and_then(|hand| reach_along(hand.grip, line))
 }
 
 /// The hands that may catch the snatch's target this tick, by [`Hand::index`]: the grapple hand
@@ -596,9 +590,9 @@ impl State {
             Phase::Armed {
                 hand,
                 offer,
-                line,
+                mut line,
                 mut yank,
-            } => match yank.step(input.real_dt, reach(input, line), true, &config.yank) {
+            } => match yank.step(input.real_dt, line.reach(input.line), true, &config.yank) {
                 Some(pulled) => {
                     tracing::info!(
                         target: "controllers",
@@ -904,9 +898,9 @@ impl State {
             return Phase::Idle;
         }
         // An untracked hand has no aim to yank back along; the continuation cancels it next tick.
-        let Some(line) = input.line.map(|hand| hand.aim) else {
+        if input.line.is_none() {
             return Phase::Idle;
-        };
+        }
         let Some(offer) = self.prearm.take() else {
             return Phase::Idle;
         };
@@ -923,11 +917,13 @@ impl State {
         );
         self.moment.target(offer.kind.label(), offer.distance);
         haptics::play(hand, Event::SnatchArm);
+        let mut line = ArmedLine::new();
+        let reach = line.reach(input.line);
         Phase::Armed {
             hand,
             offer,
             line,
-            yank: armed_yank(reach(input, line), &input.config.weapons.snatch.yank),
+            yank: armed_yank(reach, &input.config.weapons.snatch.yank),
         }
     }
 

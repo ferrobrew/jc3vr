@@ -5,7 +5,7 @@
 use glam::Vec3;
 
 use crate::{
-    controllers::bindings::yank::{HandLine, reach_along},
+    controllers::bindings::yank::{ArmedLine, HandLine},
     grapple::{
         physical::config::LockConfig,
         rope::{GRAVITY_MPS2, Rope, RopeEnd, RopeFault, RopeStep, RopeTuning, held_floor},
@@ -146,7 +146,7 @@ pub(crate) fn swing(
 /// keeps taking line in.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub(crate) struct TakeIn {
-    line: Option<Vec3>,
+    line: ArmedLine,
     previous: Option<f32>,
 }
 
@@ -158,10 +158,7 @@ impl TakeIn {
             self.previous = None;
             return 0.0;
         };
-        if self.line.is_none() && hand.aim.is_finite() {
-            self.line = Some(hand.aim);
-        }
-        let Some(reach) = self.line.and_then(|line| reach_along(hand.grip, line)) else {
+        let Some(reach) = self.line.reach(Some(hand)) else {
             self.previous = None;
             return 0.0;
         };

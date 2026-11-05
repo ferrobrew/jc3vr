@@ -7,9 +7,9 @@
 //! in the window to the current one, covered at the configured speed or faster. After a yank the
 //! history is cleared and a cooldown runs, so one pull issues one tap.
 //!
-//! The measure is the hand's reach along its aim when the gesture armed ([`reach_along`], kept by
-//! [`LineYank`] for the zip and the reel's boost): a pull away from what the hand pointed at,
-//! whichever way it goes. The hand's distance from a point below the head would miss the pull of a
+//! The measure is the hand's reach along its aim when the gesture armed ([`reach_along`], latched
+//! by [`ArmedLine`], which [`LineYank`] keeps for the zip and the reel's boost): a pull away from
+//! what the hand pointed at, whichever way it goes. The hand's distance from a point below the head would miss the pull of a
 //! seated player, whose hand starts close to the body and pulls back past its side.
 
 use std::collections::VecDeque;
@@ -88,19 +88,57 @@ pub fn reach_along(grip: Vec3, line: Vec3) -> Option<f32> {
     reach.is_finite().then_some(reach)
 }
 
+/// The aim the grapple hand had when a gesture armed: the line each armed hand gesture measures the
+/// hand's reach along ([`reach_along`]). The zip's yank and the reel's boost ([`LineYank`]), the
+/// reel's and the retract's pull, the lock's take-in, and the snatch's yank each keep one. The
+/// gestures' detectors differ; only this latch is shared.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct ArmedLine {
+    /// The aim at the arming, once a tracked hand gave a finite one.
+    line: Option<Vec3>,
+}
+
+impl ArmedLine {
+    pub const fn new() -> Self {
+        Self { line: None }
+    }
+
+    /// The reach along the line of the hand at `hand` (`None` while untracked), metres. The first
+    /// tracked tick with a finite aim latches that aim as the line; before it, and while the hand
+    /// is untracked, there is no reach.
+    pub fn reach(&mut self, hand: Option<HandLine>) -> Option<f32> {
+        if self.line.is_none() {
+            self.line = hand.map(|hand| hand.aim).filter(|aim| aim.is_finite());
+        }
+        self.line
+            .zip(hand)
+            .and_then(|(line, hand)| reach_along(hand.grip, line))
+    }
+
+    /// Whether the line is latched.
+    pub fn latched(&self) -> bool {
+        self.line.is_some()
+    }
+
+    /// Forget the line, so that the next arming latches its own.
+    pub fn disarm(&mut self) {
+        self.line = None;
+    }
+}
+
 /// A yank measured along the aim the hand had when the gesture armed: the zip's, armed while a line
 /// is attached and the grapple button is held.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct LineYank {
-    /// The aim at the arming, once a tracked hand gave one; cleared while disarmed.
-    line: Option<Vec3>,
+    /// The aim at the arming; disarmed while the yank is.
+    line: ArmedLine,
     pub detector: YankDetector,
 }
 
 impl LineYank {
     pub const fn new() -> Self {
         Self {
-            line: None,
+            line: ArmedLine::new(),
             detector: YankDetector::new(),
         }
     }
@@ -115,15 +153,12 @@ impl LineYank {
         armed: bool,
         config: &YankConfig,
     ) -> Option<Yank> {
-        if !armed {
-            self.line = None;
-        } else if self.line.is_none() {
-            self.line = hand.map(|hand| hand.aim).filter(|aim| aim.is_finite());
-        }
-        let reach = self
-            .line
-            .zip(hand)
-            .and_then(|(line, hand)| reach_along(hand.grip, line));
+        let reach = if armed {
+            self.line.reach(hand)
+        } else {
+            self.line.disarm();
+            None
+        };
         self.detector.step(dt, reach, armed, config)
     }
 }
@@ -316,6 +351,29 @@ mod tests {
             reach_along(Vec3::new(0.0, 0.0, -0.4), Vec3::NEG_Z),
             Some(0.4)
         );
+    }
+
+    #[test]
+    fn the_armed_line_latches_the_first_finite_aim_until_disarmed() {
+        let hand = |aim: Vec3| {
+            Some(HandLine {
+                grip: Vec3::new(0.0, 0.0, -0.4),
+                aim,
+            })
+        };
+        let mut line = ArmedLine::new();
+        assert_eq!(line.reach(None), None);
+        assert_eq!(line.reach(hand(Vec3::NAN)), None);
+        assert!(!line.latched(), "a non-finite aim latches nothing");
+        assert_eq!(line.reach(hand(Vec3::NEG_Z)), Some(0.4));
+        assert_eq!(
+            line.reach(hand(Vec3::X)),
+            Some(0.4),
+            "the latched aim holds"
+        );
+        assert_eq!(line.reach(None), None);
+        line.disarm();
+        assert_eq!(line.reach(hand(Vec3::X)), Some(0.0));
     }
 
     #[test]

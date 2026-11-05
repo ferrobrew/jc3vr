@@ -2,7 +2,7 @@
 //! Pure.
 //!
 //! The pull arms when the reel starts or the tether retract arms ([`LinePull`]), and the aim the
-//! hand has then is the line it pulls back along ([`reach_along`]): a reel follows a fire or a tap
+//! hand has then is the line it pulls back along ([`ArmedLine`]): a reel follows a fire or a tap
 //! along the line the hand pointed, and the retract follows a hold of the button at what the
 //! tethers hold. A pull back from where the hand pointed counts whichever way it goes, so a seated
 //! player's hand, which starts close to the chest and pulls back past its side, pulls; its distance
@@ -19,25 +19,23 @@
 //!   and relaxes toward a hand held still at [`PullTuning::relax_mps`]. Reaching out and pulling
 //!   back deepens the pull; holding the hand back lets it fade; a hand-over-hand pull keeps it up.
 
-use glam::Vec3;
-
 use crate::{
-    controllers::bindings::yank::{HandLine, reach_along},
+    controllers::bindings::yank::{ArmedLine, HandLine},
     grapple::physical::config::PullTuning,
 };
 
 /// A pull measured along the aim the hand had when it armed.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct LinePull {
-    /// The aim at the arming, once a tracked hand gave one; cleared while disarmed.
-    line: Option<Vec3>,
+    /// The aim at the arming; disarmed while the pull is.
+    line: ArmedLine,
     tracker: PullTracker,
 }
 
 impl LinePull {
     pub const fn new() -> Self {
         Self {
-            line: None,
+            line: ArmedLine::new(),
             tracker: PullTracker::new(),
         }
     }
@@ -57,14 +55,10 @@ impl LinePull {
             *self = Self::new();
             return PullReading::default();
         }
-        if self.line.is_none() {
-            self.line = hand.map(|hand| hand.aim).filter(|aim| aim.is_finite());
+        if !self.line.latched() {
             self.tracker = PullTracker::new();
         }
-        let reach = self
-            .line
-            .zip(hand)
-            .and_then(|(line, hand)| reach_along(hand.grip, line));
+        let reach = self.line.reach(hand);
         self.tracker.step(dt, reach, config)
     }
 
@@ -141,6 +135,8 @@ impl PullTracker {
 
 #[cfg(test)]
 mod tests {
+    use glam::Vec3;
+
     use super::*;
     use crate::grapple::physical::config::GRAPPLE;
 
