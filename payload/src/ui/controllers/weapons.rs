@@ -39,10 +39,14 @@ use crate::{
             unarmed_fire::{self, UnarmedFireStatus},
         },
     },
-    ui::controllers::{
-        explosives::{ExplosivesReadout, explosives_readout, explosives_settings},
-        reload::{reload_readout, reload_settings},
-        vec3, yes_no,
+    status::grapple as grapple_status,
+    ui::{
+        controllers::{
+            explosives::{ExplosivesReadout, explosives_readout, explosives_settings},
+            reload::{reload_readout, reload_settings},
+            vec3, yes_no,
+        },
+        status_row::headlines,
     },
 };
 
@@ -385,6 +389,19 @@ fn tick_readout(ui: &mut Ui, t: &TickStatus, e: &EmptyStatus) {
 }
 
 fn grapple_readout(ui: &mut Ui, a: &AnchorStatus, (yanks, last): (u64, Option<Yank>)) {
+    headlines(
+        ui,
+        &[
+            &grapple_status::STATE,
+            &grapple_status::TARGET,
+            &grapple_status::REEL,
+            &grapple_status::TETHERS,
+            &grapple_status::LOCK,
+            &grapple_status::SWING,
+            &grapple_status::SNATCH,
+            &grapple_status::HAPTICS,
+        ],
+    );
     ui.label(format!(
         "Grapple line: live {} · attached at {}",
         yes_no(a.wire),
@@ -392,27 +409,16 @@ fn grapple_readout(ui: &mut Ui, a: &AnchorStatus, (yanks, last): (u64, Option<Ya
     ));
     ui.label(match a.displacement {
         Some(d) => format!(
-            "Hang: hand moved ({:+.2}, {:+.2}) m · impulse ({:+.1}, {:+.1}) · swings {}",
-            d.x, d.y, a.impulse.x, a.impulse.y, a.swings
+            "Hang: hand moved ({:+.2}, {:+.2}) m · impulse ({:+.1}, {:+.1})",
+            d.x, d.y, a.impulse.x, a.impulse.y
         ),
-        None => format!("Hang: not swinging · swings {}", a.swings),
+        None => "Hang: not swinging".to_owned(),
     });
+    ui.label(format!("Hang pump: ({:+.1}, {:+.1})", a.pump.x, a.pump.y));
+    let pull = crate::grapple::physical::status().pull;
     ui.label(format!(
-        "Hang pump: ({:+.1}, {:+.1}) · pumped {}",
-        a.pump.x, a.pump.y, a.pumps
-    ));
-    let g = crate::grapple::physical::status();
-    ui.label(format!(
-        "Physical grapple: {} · pull {:.2} m/s, {:.2} m deep · reel {} · tethers {} · retract {} · \
-         haptic {:.2}",
-        g.phase.label(),
-        g.pull.speed_mps,
-        g.pull.depth_m,
-        g.reel_scale
-            .map_or("game's own".to_owned(), |s| format!("{s:.2}x")),
-        g.tethers,
-        g.retract.map_or("none".to_owned(), |v| format!("{v:.2}")),
-        g.haptic
+        "Hand pull: {:.2} m/s, {:.2} m deep",
+        pull.speed_mps, pull.depth_m
     ));
     ui.label(match last {
         Some(y) => format!(
@@ -423,40 +429,18 @@ fn grapple_readout(ui: &mut Ui, a: &AnchorStatus, (yanks, last): (u64, Option<Ya
     });
     let n = snatch::status();
     ui.label(format!(
-        "Snatch: {} · target {} · fired {} · taken {} · failed {} · tosses {}",
-        n.phase,
-        n.target.map_or_else(
-            || n.unoffered.unwrap_or("none").to_owned(),
-            |t| match t.mass_kg {
-                Some(mass) => format!("{} of {mass:.0} kg at {:.1} m", t.kind, t.distance_m),
-                None => format!("{} at {:.1} m", t.kind, t.distance_m),
-            }
-        ),
-        n.fired,
-        n.taken,
-        n.failed,
-        n.tosses
+        "Snatches failed: {} · tosses {}",
+        n.failed, n.tosses
     ));
     if let Some(mass) = n.aimed_mass_kg {
         ui.label(format!("  Object under the aim: {mass:.0} kg"));
     }
     if let Some(swing) = n.swing {
-        ui.label(format!(
-            "  Line {:.2} m held · tension {:.0} of {:.0} N · {:.0} kg{} · release grip to throw{}",
-            swing.length_m,
-            swing.tension_n,
-            swing.max_tension_n,
-            swing.mass_kg,
-            if swing.braced { " · braced" } else { "" },
-            if swing.tethered {
-                ""
-            } else {
-                " · release B to snatch"
-            }
-        ));
-    }
-    if let Some(refusal) = &n.last_refusal {
-        ui.label(format!("Snatch: last refusal: {refusal}"));
+        ui.label(if swing.tethered {
+            "  Holding the line: release grip to throw"
+        } else {
+            "  Holding the line: release grip to throw · release B to snatch"
+        });
     }
 }
 
