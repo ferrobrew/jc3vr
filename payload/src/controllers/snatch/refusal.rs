@@ -4,7 +4,7 @@ use std::fmt;
 
 use crate::controllers::{
     physical_hands::BodyError,
-    weapons::hold::{pickup, steal::StealRefusal},
+    weapons::hold::{pickup, rack::RackRefusal, steal::StealRefusal},
 };
 
 /// Why a snatch did not happen, or ended before the target reached the hand.
@@ -38,6 +38,8 @@ pub enum Refusal {
     Body(BodyError),
     /// The character would not let go of its gun.
     Free(StealRefusal),
+    /// The rack or locker would not give its weapon up.
+    Rack(RackRefusal),
     /// The target flew past the hand, or stopped short of it, without being caught.
     CatchMissed,
     /// The take into the hand refused the weapon.
@@ -64,6 +66,7 @@ impl fmt::Display for Refusal {
             Refusal::CatchMissed => "the hand missed the catch",
             Refusal::Body(e) => return write!(f, "snatch: {e}"),
             Refusal::Free(e) => return write!(f, "snatch: {e}"),
+            Refusal::Rack(e) => return write!(f, "snatch: {e}"),
             Refusal::Take(e) => return write!(f, "snatch: {e}"),
             Refusal::Door(e) => return write!(f, "snatch: the door: {e}"),
         };

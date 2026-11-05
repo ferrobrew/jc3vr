@@ -43,6 +43,7 @@ use crate::controllers::{
         hold::{
             Cause, SNAP_S,
             pickup::{self, TakeOptions},
+            rack,
             refs::{Strong, Weak},
             steal,
         },
@@ -182,9 +183,12 @@ pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal>
         OfferKind::Holstered(target) => {
             unsafe { steal::release_holstered(hand, &target) }.map_err(Refusal::Free)?
         }
+        OfferKind::Rack { weapon, weak } => {
+            unsafe { rack::remote::release(hand, weapon, &weak) }.map_err(Refusal::Rack)?
+        }
     };
     let object = NonZeroUsize::new(freed.weapon as usize).ok_or(Refusal::Gone)?;
-    tracing::info!(target: "controllers", hand = hand.label(), "snatch: the character let go of its gun");
+    tracing::info!(target: "controllers", hand = hand.label(), "snatch: the gun is free of its holder");
     Ok(Fired::Freeing(Grabbed {
         object,
         kind: Pulled::Weapon,

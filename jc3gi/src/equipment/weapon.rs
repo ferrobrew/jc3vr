@@ -1963,7 +1963,15 @@ pub struct WeaponBase {
     /// is positive, sets it to the negated share recovered this tick; each shot raises it by the
     /// shot's pitch kick. The weapon camera modifier pitches the camera boom by it.
     pub m_RecoilPitch: f32,
-    _field_27c: [u8; 272],
+    _field_27c: [u8; 12],
+    /// The placement rule that spawned the weapon (a
+    /// [`WeaponPlacementRule`](crate::weapon_placement_rule::WeaponPlacementRule)), as a weak reference
+    /// to the rule's `CGameObject` subobject; empty for a weapon no rule placed. The rule writes it
+    /// once its weapon has spawned (`CWeaponPlacementRule::OnPostSpawn`), with the weapon's
+    /// infinite-pickup setting and its picked-up events, before it puts a rack's weapon in the
+    /// rack state. It is not cleared when the weapon leaves the rule's spot.
+    pub m_SpawnedFromRule: crate::types::shared_ptr::WeakPtrGameObject,
+    _field_298: [u8; 244],
     /// Whether the weapon overheats.
     pub m_CanBeOverheated: bool,
     /// Whether the weapon is overheated and cannot fire.

@@ -28,6 +28,7 @@ use crate::controllers::{
     weapons::{
         grenade,
         hold::{
+            rack::{self, remote::RemoteRack},
             refs::Weak,
             steal::{self, HolsteredTarget},
             world::{TargetKind, WorldTarget},
@@ -115,6 +116,15 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
             *target = current;
             current.point
         }
+        OfferKind::Rack { weapon, weak } => {
+            let Some(point) = (unsafe { rack::remote::current(*weapon, weak) }) else {
+                return false;
+            };
+            if !unsafe { in_sight(ray, point, weapon.get()) } {
+                return false;
+            }
+            point
+        }
         OfferKind::Prop {
             object,
             body,
@@ -188,7 +198,7 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
     };
     let ground = matches!(
         offer.kind,
-        OfferKind::Ground { .. } | OfferKind::WorldGrenade { .. }
+        OfferKind::Ground { .. } | OfferKind::WorldGrenade { .. } | OfferKind::Rack { .. }
     );
     let chosen = rules::choose(
         ray,
@@ -226,6 +236,8 @@ pub(super) enum OfferKind {
     Held(WorldTarget),
     /// A gun holstered on a character's body.
     Holstered(HolsteredTarget),
+    /// A long gun on a rack, or lying where a locker's placement rule set it down.
+    Rack { weapon: NonZeroUsize, weak: Weak },
     /// A loose object: one a hand can carry, or one heavier, up to the swing's ceiling, which the
     /// line swings.
     Prop {
@@ -261,9 +273,10 @@ impl OfferKind {
     /// What it is to the grip, for its marker's colour.
     pub(super) const fn remote(&self) -> RemoteKind {
         match self {
-            OfferKind::Ground { .. } | OfferKind::Held(_) | OfferKind::Holstered(_) => {
-                RemoteKind::Weapon
-            }
+            OfferKind::Ground { .. }
+            | OfferKind::Held(_)
+            | OfferKind::Holstered(_)
+            | OfferKind::Rack { .. } => RemoteKind::Weapon,
             OfferKind::Prop { .. } | OfferKind::Grenade { .. } | OfferKind::WorldGrenade { .. } => {
                 RemoteKind::Object
             }
@@ -276,6 +289,7 @@ impl OfferKind {
             OfferKind::Ground { .. } => "WEAPON ON THE GROUND",
             OfferKind::Held(_) => "WEAPON IN HANDS",
             OfferKind::Holstered(_) => "HOLSTERED WEAPON",
+            OfferKind::Rack { .. } => "WEAPON ON A RACK",
             OfferKind::Prop {
                 handling: PropHandling::Carry,
                 ..
@@ -329,6 +343,7 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
         Loose(usize),
         Held(usize),
         Holstered(usize),
+        Rack(usize),
     }
     let hold = &config.weapons.hold;
     let takes_held = hold.either_hand;
@@ -349,7 +364,13 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
         .into_iter()
         .filter(|(object, _, _)| Some(*object) != aimed_object)
         .collect();
-    // A rack's weapons are the grab's alone.
+    // A weapon its rule set down that lies in the world with its body is the floor's already.
+    let mut racks: Vec<RemoteRack> = unsafe { rack::remote::near(|point| near_point(ray, point)) }
+        .into_iter()
+        .filter(|rack| {
+            Some(rack.weapon) != aimed_weapon && !floor.iter().any(|w| w.object == rack.weapon)
+        })
+        .collect();
     let held: Vec<WorldTarget> = if takes_held {
         steal::targets(|p| p)
             .into_iter()
@@ -392,11 +413,20 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
         .chain(holstered.iter().enumerate().map(|(i, target)| Candidate {
             kind: Kind::Holstered(i),
             point: target.point,
+        }))
+        .chain(racks.iter().enumerate().map(|(i, rack)| Candidate {
+            kind: Kind::Rack(i),
+            point: rack.point,
         }));
     let chosen = rules::choose(
         ray,
         candidates,
-        |kind, distance| cone(matches!(kind, Kind::Floor(_) | Kind::Loose(_)), distance),
+        |kind, distance| {
+            cone(
+                matches!(kind, Kind::Floor(_) | Kind::Loose(_) | Kind::Rack(_)),
+                distance,
+            )
+        },
         SNATCH.range_m,
     )?;
     let point = chosen.candidate.point;
@@ -448,6 +478,16 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
             unsafe { in_sight(ray, point, target.character) }
                 .then_some(OfferKind::Holstered(target))?
         }
+        Kind::Rack(i) => {
+            let rack = racks.swap_remove(i);
+            if !unsafe { in_sight(ray, point, rack.weapon.get()) } {
+                return None;
+            }
+            OfferKind::Rack {
+                weapon: rack.weapon,
+                weak: rack.weak,
+            }
+        }
     };
     Some(Offer {
         kind,
@@ -491,6 +531,18 @@ fn near_aim(ray: &Ray, aabb: &Aabb) -> bool {
     let slack = (half_size / distance).asin();
     let widest = (SNATCH.cone_deg + SNATCH.floor_cone_widen_deg).to_radians();
     ray.direction.angle_between(offset / distance) <= widest + slack
+}
+
+/// Whether `point` could be a candidate [`choose`] would take from `ray`: within the range and the
+/// widest floor cone.
+fn near_point(ray: &Ray, point: Vec3) -> bool {
+    let offset = point - ray.origin;
+    let distance = offset.length();
+    if !distance.is_finite() || distance > SNATCH.range_m || distance < 1e-3 {
+        return false;
+    }
+    let widest = (SNATCH.cone_deg + SNATCH.floor_cone_widen_deg).to_radians();
+    ray.direction.angle_between(offset / distance) <= widest
 }
 
 /// What the object under the aim is to the snatch: a weapon lying in the world, a loose object a

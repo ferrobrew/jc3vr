@@ -27,6 +27,7 @@
 
 pub(crate) mod offer;
 pub(crate) mod paired;
+pub(crate) mod remote;
 
 use std::{
     fmt,
@@ -279,9 +280,11 @@ pub(crate) fn tick() {
     }
 }
 
-/// Show the rack's weapon again and forget the copy. Called when the weapon handling stands down.
+/// Show the rack's weapon again, forget the copy, and forget the weapons noted for the snatch.
+/// Called when the weapon handling stands down.
 pub(crate) fn stand_down() {
     paired::clear();
+    remote::clear();
     let pending = COPY.lock().take();
     if let Some(pending) = pending {
         pending.restore();
