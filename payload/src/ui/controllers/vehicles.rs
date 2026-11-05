@@ -1,7 +1,8 @@
-//! Vehicles and flight: the seat and the physical controls it offers, what each hand holds, the
-//! values the controls write, where the wheel and handlebars were placed from and the rendered
-//! wheel's turn, the driving view's correction, the mounted gun's aim, the arm steering's pose and
-//! output, the parachute handles' pulls and output, and the vehicle and air settings.
+//! Vehicles and flight: the vehicle rows, the seat and the physical controls it offers, what each
+//! hand holds, the values the controls write, where the wheel and handlebars were placed from and
+//! the rendered wheel's turn, the driving view's correction, the mounted gun's aim, the arm
+//! steering's pose and output, the parachute handles' pulls and output, and the vehicle and air
+//! settings.
 
 use egui::Ui;
 
@@ -22,7 +23,8 @@ use crate::{
             wheel_render,
         },
     },
-    ui::{catalog::FeatureId, controllers::vec3},
+    status::vehicles::{COCKPIT_BUTTONS, FLIGHT_CONTROLS, MOUNTED_GUN, PASSENGER_AIM},
+    ui::{catalog::FeatureId, controllers::vec3, status_row::headlines},
 };
 
 /// Everything the section shows, read before the config is locked for editing.
@@ -32,7 +34,6 @@ pub(super) struct VehiclesReadout {
     driver_substitutions: u64,
     look_steer_suppressions: u64,
     wheel_turns: u64,
-    mounted_shots: u64,
     handles_unplaced: u64,
 }
 
@@ -44,7 +45,6 @@ impl VehiclesReadout {
             driver_substitutions: driver_aim::substitutions(),
             look_steer_suppressions: look_steer::suppressions(),
             wheel_turns: wheel_render::turned(),
-            mounted_shots: vehicles::mounted_recoil::shots(),
             handles_unplaced: parachute_rig::handles_unplaced(),
         }
     }
@@ -56,6 +56,15 @@ pub(super) fn feature_readout(ui: &mut Ui, readout: &VehiclesReadout, id: Featur
     }
     match id {
         FeatureId::Vehicles => {
+            headlines(
+                ui,
+                &[
+                    &FLIGHT_CONTROLS,
+                    &COCKPIT_BUTTONS,
+                    &PASSENGER_AIM,
+                    &MOUNTED_GUN,
+                ],
+            );
             seat_readout(ui, &readout.status);
             driving_view_readout(ui, &readout.driving_view);
             ui.label(format!(
@@ -157,13 +166,10 @@ fn physical_readout(ui: &mut Ui, readout: &VehiclesReadout) {
         grip(o.bike_brake),
     ));
     ui.label(format!(
-        "Stick and lever cues {} (last {}) · afterburner gate passed {} · horn {} · nitrous {} · buttons worked {}",
+        "Stick and lever cues {} (last {}) · afterburner gate passed {}",
         status.cues,
         status.last_cue.map_or("none", |c| c.label()),
         status.afterburner_lights,
-        o.horn,
-        o.nitrous,
-        status.button_presses,
     ));
     wheel_readout(ui, status, readout.wheel_turns);
     for event in status.events.iter().rev() {
@@ -192,32 +198,19 @@ fn physical_readout(ui: &mut Ui, readout: &VehiclesReadout) {
 }
 
 fn mounted_readout(ui: &mut Ui, readout: &VehiclesReadout) {
-    let status = &readout.status;
-    match &status.mounted {
-        Some(m) => {
-            ui.label(format!(
-                "Mounted gun at {} · barrel {} · handles {} / {}",
-                vec3(m.gun.pivot),
-                vec3(m.gun.barrel),
-                m.gun.handles[0].map_or("none".to_owned(), vec3),
-                m.gun.handles[1].map_or("none".to_owned(), vec3),
-            ));
-            ui.label(format!(
-                "Hands aim along {} at {}",
-                m.direction.map_or("nothing".to_owned(), vec3),
-                m.target.map_or("nothing".to_owned(), vec3),
-            ));
-            ui.label(format!(
-                "Handles held: left {} · right {} · grabs and releases {} · kicks {}",
-                status.mounted_holds[0],
-                status.mounted_holds[1],
-                status.mounted_grip_events,
-                readout.mounted_shots,
-            ));
-        }
-        None => {
-            ui.label("Mounted gun: none");
-        }
+    if let Some(m) = &readout.status.mounted {
+        ui.label(format!(
+            "Mounted gun at {} · barrel {} · handles {} / {}",
+            vec3(m.gun.pivot),
+            vec3(m.gun.barrel),
+            m.gun.handles[0].map_or("none".to_owned(), vec3),
+            m.gun.handles[1].map_or("none".to_owned(), vec3),
+        ));
+        ui.label(format!(
+            "Hands aim along {} at {}",
+            m.direction.map_or("nothing".to_owned(), vec3),
+            m.target.map_or("nothing".to_owned(), vec3),
+        ));
     }
 }
 
