@@ -46,7 +46,6 @@ use jc3gi::{
     character::{character::Character, inventory::Inventory},
     equipment::weapon::{ModelAttachementWeaponComponent, WeaponBase, WeaponData, WeaponState},
     types::math::Matrix4,
-    ui::hud_ui::HUDUI,
 };
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -61,7 +60,7 @@ use crate::controllers::{
         engine::{character_object, gun_ptr, skip_interpolation, slot_of},
         hold::{armed, refs::Strong},
         inventory::{
-            engine::{self as inventory_engine, ObjectKey, Seen, kind_of, strong_to},
+            engine::{self as inventory_engine, ObjectKey, Seen, kind_of, refresh_hud, strong_to},
             lost,
             persist::Record,
             sockets,
@@ -489,13 +488,6 @@ fn take(object: ObjectKey) -> Option<Carried> {
     let carried = carry.remove(index);
     COUNT.store(carry.len(), Ordering::Relaxed);
     Some(carried)
-}
-
-/// Rebuild the HUD's weapon list from the slots.
-unsafe fn refresh_hud() {
-    if let Some(hud) = unsafe { HUDUI::get() } {
-        unsafe { hud.InitWeapons() };
-    }
 }
 
 /// Whether the game's own placement puts the slot's weapon `weapon` on `socket`: the socket it

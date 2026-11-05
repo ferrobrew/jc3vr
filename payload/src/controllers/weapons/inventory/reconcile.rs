@@ -36,7 +36,6 @@ use jc3gi::{
         inventory::{EquipMode, WeaponSlot},
     },
     equipment::weapon::{WeaponBase, WeaponState},
-    ui::hud_ui::HUDUI,
 };
 
 use crate::{
@@ -49,7 +48,7 @@ use crate::{
             hold::armed,
             inventory::{
                 carry,
-                engine::{self as inventory_engine, ObjectKey, shared_view},
+                engine::{self as inventory_engine, ObjectKey, refresh_hud, shared_view},
                 traversal,
             },
         },
@@ -477,11 +476,4 @@ unsafe fn abort_clips(owner: &mut Character) {
     let act = act as u32;
     unsafe { owner.QueueAct(&act) };
     ABORTS.fetch_add(1, Ordering::Relaxed);
-}
-
-/// Rebuild the HUD's weapon list from the slots.
-unsafe fn refresh_hud() {
-    if let Some(hud) = unsafe { HUDUI::get() } {
-        unsafe { hud.InitWeapons() };
-    }
 }

@@ -15,6 +15,7 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponState},
     spawn_system::SpawnSystem,
     types::shared_ptr::SharedPtr,
+    ui::hud_ui::HUDUI,
 };
 
 use crate::controllers::{
@@ -213,4 +214,15 @@ pub(crate) unsafe fn fate(weak: &Weak, owner: &Character, player: Vec3) -> Fate 
         return Fate::HeldByOther { distance_m };
     }
     Fate::Lying { distance_m }
+}
+
+/// Rebuild the HUD's weapon list from the slots.
+///
+/// # Safety
+///
+/// The game thread.
+pub(crate) unsafe fn refresh_hud() {
+    if let Some(hud) = unsafe { HUDUI::get() } {
+        unsafe { hud.InitWeapons() };
+    }
 }
