@@ -1,5 +1,9 @@
 //! Owned animation evidence copied at synchronous completion and checked at the camera seam.
 
+#[cfg(test)]
+use std::cell::RefCell;
+
+#[cfg(not(test))]
 use parking_lot::Mutex;
 
 use crate::hooks::camera::authored::{Refusal, native::Source};
@@ -149,16 +153,16 @@ impl Publication {
 }
 
 pub(crate) fn select_controller(controller: Option<u64>) {
-    PUBLICATION.lock().select(controller);
+    with_publication(|publication| publication.select(controller));
 }
 
 /// Called only at the existing serialized controller seam; no native pointer is stored.
 pub(super) fn publish(source: Source, pose_buffer: u64, animation: Animation) {
-    PUBLICATION.lock().record(source, pose_buffer, animation);
+    with_publication(|publication| publication.record(source, pose_buffer, animation));
 }
 
 pub(super) fn invalidate(controller: u64) {
-    PUBLICATION.lock().invalidate(controller);
+    with_publication(|publication| publication.invalidate(controller));
 }
 
 pub(super) fn matching(
@@ -166,26 +170,46 @@ pub(super) fn matching(
     pose_buffer: u64,
     animation: &Animation,
 ) -> Result<Finalized, Refusal> {
-    let publication = PUBLICATION.lock();
-    let latest = publication
-        .latest
-        .as_ref()
-        .filter(|entry| entry.source.controller == source.controller)
-        .ok_or(Refusal::MissingFinalizedAnimation)?;
-    if latest.source != source
-        || latest.pose_buffer != pose_buffer
-        || &latest.animation != animation
-    {
-        return Err(Refusal::IncoherentAnimation);
-    }
-    Ok(latest.clone())
+    with_publication(|publication| {
+        let latest = publication
+            .latest
+            .as_ref()
+            .filter(|entry| entry.source.controller == source.controller)
+            .ok_or(Refusal::MissingFinalizedAnimation)?;
+        if latest.source != source
+            || latest.pose_buffer != pose_buffer
+            || &latest.animation != animation
+        {
+            return Err(Refusal::IncoherentAnimation);
+        }
+        Ok(latest.clone())
+    })
 }
 
+/// Run `f` on the publication. The game has one, shared by its controller seam; each unit test has
+/// its own, so that tests running side by side do not select controllers out from under each
+/// other.
+#[cfg(not(test))]
+fn with_publication<R>(f: impl FnOnce(&mut Publication) -> R) -> R {
+    f(&mut PUBLICATION.lock())
+}
+
+#[cfg(test)]
+fn with_publication<R>(f: impl FnOnce(&mut Publication) -> R) -> R {
+    PUBLICATION.with_borrow_mut(f)
+}
+
+#[cfg(not(test))]
 static PUBLICATION: Mutex<Publication> = Mutex::new(Publication {
     serial: 0,
     selected: None,
     latest: None,
 });
+
+#[cfg(test)]
+thread_local! {
+    static PUBLICATION: RefCell<Publication> = RefCell::new(Publication::default());
+}
 
 #[cfg(test)]
 mod tests {
