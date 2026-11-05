@@ -82,6 +82,8 @@ pub(crate) struct TickOutcome {
     pub thrown: [Option<Velocities>; 2],
     /// Holds lost this tick.
     pub lost: u64,
+    /// Why each hand's hold of a body was lost this tick, when it was.
+    pub losses: [Option<HoldLoss>; 2],
     pub error: Option<String>,
     /// Each hand's grab that was refused this tick: where it reached (world space), and why.
     pub refused: [Option<(Vec3, String)>; 2],
@@ -109,7 +111,49 @@ pub(crate) struct TickOutcome {
     pub regrips: u64,
 }
 
+/// Why a hand's hold of a body ended other than by the grip opening.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum HoldLoss {
+    /// The hand stopped being tracked or acting.
+    Untracked,
+    /// The joint between the hand's body and the object ended.
+    JointEnded,
+    /// The grab point fell past the break distance behind the hand.
+    TornAway,
+    /// The held body could not be read: it went away or changed owner.
+    BodyGone,
+    /// The carry's velocities were refused.
+    DriveRefused,
+    /// A held door's body went away: it latched shut or broke off.
+    DoorGone,
+    /// A held door's vehicle is gone, or the door is no longer the one gripped.
+    DoorIdentity,
+}
+
+impl HoldLoss {
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            HoldLoss::Untracked => "the hand stopped acting",
+            HoldLoss::JointEnded => "the hand's joint to it ended",
+            HoldLoss::TornAway => "it was torn from the hand",
+            HoldLoss::BodyGone => "its body went away",
+            HoldLoss::DriveRefused => "its carry was refused",
+            HoldLoss::DoorGone => "the door latched shut or broke off",
+            HoldLoss::DoorIdentity => "the door or its vehicle is no longer the one gripped",
+        }
+    }
+}
+
 impl TickOutcome {
+    /// Note that each hand holding `held` lost its hold, `loss`.
+    pub(super) fn lose_hold(&mut self, holders: [bool; 2], loss: HoldLoss) {
+        for (k, holds) in holders.into_iter().enumerate() {
+            if holds {
+                self.losses[k] = Some(loss);
+            }
+        }
+    }
+
     /// Note that `hand`'s grab of what it reached at `at` (world space) was refused, `why`.
     fn refuse(&mut self, hand: Hand, at: Vec3, why: String) {
         self.refused[hand.index()] = Some((at, why.clone()));
@@ -134,8 +178,28 @@ pub(crate) unsafe fn tick(
         .map(|request| matches!(request, Some(Request::Release)));
     let time_scale = inputs.time_scale;
     let outcome = unsafe { tick_with(state, inputs, config, &mut NativeBodies) };
+    log_losses(subjects, &outcome);
     note_releases(subjects, opened, time_scale, &outcome);
     outcome
+}
+
+/// Log each hold lost this tick, with what the hand held and why it was lost.
+fn log_losses(subjects: [Option<GripSubject>; 2], outcome: &TickOutcome) {
+    for hand in Hand::BOTH {
+        let i = hand.index();
+        let Some(loss) = outcome.losses[i] else {
+            continue;
+        };
+        tracing::info!(
+            target: "controllers",
+            ?hand,
+            held = subjects[i].map_or("an object", |subject| subject.held),
+            body = subjects[i].and_then(|subject| subject.body),
+            detail = outcome.error.as_deref(),
+            "physical hands: pickup: a hold was lost: {}",
+            loss.label()
+        );
+    }
 }
 
 /// Record each hand that let go this tick: what it held, as the tick found it, why, and the motion
@@ -173,6 +237,8 @@ fn note_releases(
             body: subject.body,
             cause: if opened[i] {
                 "the grip opened"
+            } else if let Some(loss) = outcome.losses[i] {
+                loss.label()
             } else if outcome.lost > 0 {
                 "the hold was lost"
             } else {
@@ -219,6 +285,7 @@ unsafe fn tick_with(
             state.held[i] = None;
             outcome.released[i] = true;
             outcome.lost += 1;
+            outcome.losses[i] = Some(HoldLoss::JointEnded);
             outcome.error =
                 Some("physical hands: pickup: the hand's joint to the object ended".to_owned());
         }
@@ -405,6 +472,7 @@ unsafe fn tick_with(
         if state.held[i].is_some() && palms[i].is_none() {
             state.held[i] = None;
             outcome.lost += 1;
+            outcome.losses[i] = Some(HoldLoss::Untracked);
         }
         if state.latches[i].is_some() && palms[i].is_none() {
             state.latches[i] = None;
@@ -482,7 +550,12 @@ unsafe fn tick_with(
         let body = match engine.read(held.body, held.object) {
             Ok(body) => body,
             Err(e) => {
-                lose(state, &held, &mut outcome, e.to_string());
+                let loss = if held.kind == HeldKind::Door {
+                    HoldLoss::DoorGone
+                } else {
+                    HoldLoss::BodyGone
+                };
+                lose(state, &held, &mut outcome, loss, e.to_string());
                 continue;
             }
         };
@@ -549,6 +622,7 @@ unsafe fn tick_with(
                 state.held[k] = None;
                 outcome.released[k] = true;
                 outcome.lost += 1;
+                outcome.losses[k] = Some(HoldLoss::TornAway);
                 outcome.error = Some("physical hands: pickup: the object was torn away".to_owned());
                 continue;
             }
@@ -596,7 +670,13 @@ unsafe fn tick_with(
                     );
                 }
             }
-            lose(state, &held, &mut outcome, e.to_string());
+            lose(
+                state,
+                &held,
+                &mut outcome,
+                HoldLoss::DriveRefused,
+                e.to_string(),
+            );
             continue;
         }
         for (k, hold) in holds.iter().enumerate() {
@@ -830,12 +910,19 @@ unsafe fn throw(
 }
 
 /// Let go of `held` in every hand that holds it, as a lost hold.
-fn lose(state: &mut PickupState, held: &Held, outcome: &mut TickOutcome, why: String) {
+fn lose(
+    state: &mut PickupState,
+    held: &Held,
+    outcome: &mut TickOutcome,
+    loss: HoldLoss,
+    why: String,
+) {
     for hand in Hand::BOTH {
         let i = hand.index();
         if state.held[i].is_some_and(|h| h.same(held)) {
             state.held[i] = None;
             outcome.released[i] = true;
+            outcome.losses[i] = Some(loss);
         }
     }
     outcome.lost += 1;

@@ -18,11 +18,12 @@ use glam::Vec3;
 use parking_lot::Mutex;
 
 use crate::{
+    config::Config,
     controllers::{body::procedural, hands::tiers},
     headpose::{self, sim::body_yaw_of},
     hooks::input::swim::{
         SWIM_DIRECTION_OVERRIDES, SWIM_EVAL_CALLS, SWIM_MOVE_REFUSALS, SWIM_ROTATE_OVERRIDES,
-        SWIM_TURN_SUPPRESSIONS, SWIM_UNTARGETED, SwimCore, swimming,
+        SWIM_TURN_SUPPRESSIONS, SWIM_UNTARGETED, SwimCore, SwimSignals,
     },
 };
 
@@ -44,7 +45,9 @@ pub(super) fn record_rotate(core: SwimCore, from: Vec3, game_to: Vec3, given_to:
 /// stage ([`crate::controllers::bindings::stage`]), in the engine's input job in play, after the
 /// headpose has advanced, holding no lock.
 pub(crate) fn log_tick(look_x: f32) {
-    if !swimming() {
+    let signals = SwimSignals::local().unwrap_or_default();
+    log_gate(signals);
+    if !signals.any() {
         *STATE.lock() = TelemetryState::NEW;
         return;
     }
@@ -89,6 +92,8 @@ pub(crate) fn log_tick(look_x: f32) {
         body_turn_deg_s = rate(body_euler_yaw, body_before),
         look_x,
         look_x_peak,
+        motion_state = signals.motion_state,
+        state_bits = signals.state_bits,
         cores = advanced.evals,
         direction_overrides = advanced.directions,
         rotate_overrides = advanced.rotates,
@@ -112,6 +117,39 @@ pub(crate) fn log_tick(look_x: f32) {
 
 /// How often the line is logged while swimming.
 const PERIOD: Duration = Duration::from_secs(1);
+
+/// Log the swim gate when the player enters or leaves the water: which signals say the player
+/// swims, whether the override is on, and whether the headpose has a heading to give it. Without
+/// all three the swim detours pass through and the game's own swim steering runs.
+fn log_gate(signals: SwimSignals) {
+    let mut last = GATE.lock();
+    if last.any() == signals.any() {
+        *last = signals;
+        return;
+    }
+    *last = signals;
+    drop(last);
+    let change = if signals.any() {
+        "opened: the player entered the water"
+    } else {
+        "closed: the player left the water"
+    };
+    tracing::info!(
+        target: "swim",
+        swimming = signals.any(),
+        motion_state = signals.motion_state,
+        state_bits = signals.state_bits,
+        override_on = Config::lock_query(|c| c.movement.smooth_swim_yaw),
+        heading = headpose::body_yaw_target().is_some(),
+        "swim: the swim gate {change}"
+    );
+}
+
+/// The swim signals at the last input tick.
+static GATE: Mutex<SwimSignals> = Mutex::new(SwimSignals {
+    motion_state: false,
+    state_bits: false,
+});
 
 /// The ground-plane heading of `direction`, radians, as the headpose's yaws are: about +Y from -Z.
 /// Zero for a vertical direction.

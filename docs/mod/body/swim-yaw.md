@@ -58,11 +58,12 @@ Two measures close the lead itself. `swim_turn_rate_deg_s` (360) is passed to [`
 
 ## Telemetry
 
-While the local player swims, an info line `swim: the heading` (target `swim`) is logged once a second from the input tick (`payload/src/hooks/input/swim/telemetry.rs`). It carries:
+When the player enters or leaves the water, an info line `swim: the swim gate opened` or `closed` (target `swim`) says which signals read swimming (`motion_state`, `state_bits`), whether the override is on (`override_on`), and whether the headpose has a heading to give it (`heading`); without all of them the detours pass through and the game's own swim steering runs. While the local player swims, an info line `swim: the heading` (target `swim`) is logged once a second from the input tick (`payload/src/hooks/input/swim/telemetry.rs`). It carries:
 
 - `target_yaw_deg` and `target_turn_deg_s`: the body-yaw target and how fast it turned since the last line. With no turn input the target only moves when the accumulator is re-seeded or clamped, so a steady rate here with `look_x_peak` near zero is the ratchet.
 - `body_yaw_deg`, `body_heading_deg`, `body_forward_y`, and `body_turn_deg_s`: the body's euler yaw (what the accumulator seeds and clamps against), the ground heading of its forward, the forward's height, and how fast the body turned. A forward near vertical with the two headings apart would mean the character's frame is the swim capsule's rather than the facing frame, and the euler yaw is at its gimbal lock.
 - `look_x` and `look_x_peak`: the turn input this tick and the largest since the last line.
+- `motion_state` and `state_bits`: which of the two swim signals read swimming this tick.
 - The advance of each swim counter: `cores`, `direction_overrides`, `rotate_overrides`, `turn_suppressions`, `move_refusals` (backward and sideways), and `untargeted`, the core runs that found the override on but no body-yaw target, during which the game's own heading turns the body.
 - The last heading rotation of a core: which core, the body's heading before it, the core's own target (`core_own_target_deg` and its height; underwater this is the camera-relative move direction), the target it was given, and what it returned.
 - `body_case` and `torso_weight` from the procedural torso, and the effective `hand_tiers` and `hand_weights`, so a circle can be set against whether the swim torso and the free swimming hands were acting.

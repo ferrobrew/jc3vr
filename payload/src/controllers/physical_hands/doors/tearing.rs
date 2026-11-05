@@ -183,6 +183,7 @@ pub(crate) unsafe fn tear(grip: &TearGrip, object: NonZeroUsize, body: u32) -> T
         return TearResult::Lost;
     };
     let Some(properties) = (unsafe { part.m_PartProperties.as_ref() }) else {
+        log_refusal(grip, TearRefusal::Invalid);
         return TearResult::Refused;
     };
     let permit = Permit {
@@ -203,13 +204,33 @@ pub(crate) unsafe fn tear(grip: &TearGrip, object: NonZeroUsize, body: u32) -> T
         health: part.m_Health,
         parallel,
     };
-    if !permit.allowed() {
+    if let Some(refusal) = permit.refusal() {
+        log_refusal(grip, refusal);
         return TearResult::Refused;
     }
     // Force ignores the healthy-part restriction. The selective checks retain the vehicle's and
     // part's actual protections; refusing parallel work prevents a stale forced request.
     unsafe { part.DamagePart_ToBreakOff(true, true) };
-    unsafe { continuity(grip, object, body) }
+    let result = unsafe { continuity(grip, object, body) };
+    tracing::info!(
+        target: "controllers",
+        slot = ?grip.door.slot,
+        part = grip.door.part_index,
+        ?result,
+        "physical hands: doors: the game was asked to tear a door off"
+    );
+    result
+}
+
+/// Log that a tear of the door `grip` holds was refused, and why.
+fn log_refusal(grip: &TearGrip, refusal: TearRefusal) {
+    tracing::info!(
+        target: "controllers",
+        slot = ?grip.door.slot,
+        part = grip.door.part_index,
+        "physical hands: doors: a tear was refused: {}",
+        refusal.label()
+    );
 }
 
 fn take_with(
@@ -372,14 +393,58 @@ struct Permit {
 }
 
 impl Permit {
+    #[cfg(test)]
     fn allowed(self) -> bool {
-        !self.vehicle_protected
-            && !self.part_protected
-            && self.authored
-            && self.body_survives
-            && self.valid
-            && (0..i32::MAX).contains(&self.health)
-            && !self.parallel
+        self.refusal().is_none()
+    }
+
+    /// The first reason the tear is refused, if any.
+    fn refusal(self) -> Option<TearRefusal> {
+        if self.vehicle_protected {
+            Some(TearRefusal::VehicleProtected)
+        } else if self.part_protected {
+            Some(TearRefusal::PartProtected)
+        } else if !self.authored {
+            Some(TearRefusal::NotDetachable)
+        } else if !self.body_survives {
+            Some(TearRefusal::BodyWouldVanish)
+        } else if !self.valid {
+            Some(TearRefusal::Invalid)
+        } else if !(0..i32::MAX).contains(&self.health) {
+            Some(TearRefusal::Health)
+        } else if self.parallel {
+            Some(TearRefusal::Parallel)
+        } else {
+            None
+        }
+    }
+}
+
+/// Why a tear was refused.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum TearRefusal {
+    VehicleProtected,
+    PartProtected,
+    NotDetachable,
+    BodyWouldVanish,
+    Invalid,
+    Health,
+    Parallel,
+}
+
+impl TearRefusal {
+    const fn label(self) -> &'static str {
+        match self {
+            TearRefusal::VehicleProtected => "the vehicle is invulnerable",
+            TearRefusal::PartProtected => "the door is invulnerable",
+            TearRefusal::NotDetachable => {
+                "the door is not authored to break off, or not allowed to now"
+            }
+            TearRefusal::BodyWouldVanish => "the door would disappear rather than come off whole",
+            TearRefusal::Invalid => "the door's part is not the one gripped, or not valid",
+            TearRefusal::Health => "the door's health is out of range",
+            TearRefusal::Parallel => "the vehicle is in its parallel update",
+        }
     }
 }
 

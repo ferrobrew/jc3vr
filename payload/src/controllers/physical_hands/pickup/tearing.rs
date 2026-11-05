@@ -13,7 +13,7 @@ use crate::controllers::physical_hands::{
     grasp::PalmMotion,
     pickup::{
         state::{Held, HeldKind, PickupState},
-        tick::TickOutcome,
+        tick::{HoldLoss, TickOutcome},
     },
 };
 
@@ -103,7 +103,7 @@ fn step_with(
             continue;
         };
         let Some(grip) = state.doors[i] else {
-            apply(state, &held, TearResult::Lost, outcome);
+            lost(state, &held, HoldLoss::DoorIdentity, outcome);
             continue;
         };
         if visited[i] {
@@ -114,14 +114,18 @@ fn step_with(
             visited[k] |= holders[k];
         }
         let Some(observation) = observed.iter().flatten().find(|o| o.matches(&held)) else {
-            apply(state, &held, TearResult::Lost, outcome);
+            lost(state, &held, HoldLoss::DoorGone, outcome);
             continue;
         };
         if !engine.alive(&held) {
-            apply(state, &held, TearResult::Lost, outcome);
+            lost(state, &held, HoldLoss::DoorGone, outcome);
             continue;
         }
         let continuity = engine.continuity(&grip, &held);
+        if continuity == TearResult::Lost {
+            lost(state, &held, HoldLoss::DoorIdentity, outcome);
+            continue;
+        }
         if continuity != TearResult::Refused {
             apply(state, &held, continuity, outcome);
             continue;
@@ -155,22 +159,34 @@ fn step_with(
                         lag.dot(tangent) / scale,
                     )
                 });
-            requested |= grip.gesture(
-                Gesture {
-                    dt,
-                    lag_m: lag.length() / scale,
-                    separating_speed_mps: speed,
-                    opening_push_m,
-                    load: report.load,
-                    at_limit,
-                },
-                config,
-            );
+            let gesture = Gesture {
+                dt,
+                lag_m: lag.length() / scale,
+                separating_speed_mps: speed,
+                opening_push_m,
+                load: report.load,
+                at_limit,
+            };
+            if grip.gesture(gesture, config) {
+                requested = true;
+                tracing::info!(
+                    target: "controllers",
+                    hand = k,
+                    lag_m = gesture.lag_m,
+                    separating_speed_mps = gesture.separating_speed_mps,
+                    opening_push_m = gesture.opening_push_m,
+                    load = gesture.load,
+                    at_limit = gesture.at_limit,
+                    "physical hands: doors: a hand asked to tear a door"
+                );
+            }
             state.doors[k] = Some(grip);
         }
         if requested {
-            let result = engine.tear(&grip, &held);
-            apply(state, &held, result, outcome);
+            match engine.tear(&grip, &held) {
+                TearResult::Lost => lost(state, &held, HoldLoss::DoorIdentity, outcome),
+                result => apply(state, &held, result, outcome),
+            }
         }
     }
 }
@@ -200,6 +216,12 @@ impl TearEngine for NativeTearing {
     fn tear(&mut self, grip: &TearGrip, held: &Held) -> TearResult {
         unsafe { tearing::tear(grip, held.object, held.body) }
     }
+}
+
+/// Let go of `held` from every hand that holds it, as lost, `loss`.
+fn lost(state: &mut PickupState, held: &Held, loss: HoldLoss, outcome: &mut TickOutcome) {
+    outcome.lose_hold(state.held.map(|h| h.is_some_and(|h| h.same(held))), loss);
+    apply(state, held, TearResult::Lost, outcome);
 }
 
 pub(super) fn apply(
@@ -246,6 +268,12 @@ pub(super) fn apply(
         }
         TearResult::Refused => {
             outcome.tear_refusals += 1;
+            crate::controllers::diagnostics::note_diagnostic(
+                "door",
+                None,
+                "the door refused to tear",
+                || None,
+            );
         }
         _ => {}
     }
