@@ -74,6 +74,21 @@ impl Hand {
         }
     }
 
+    /// A vector in a hand's frame (the grip or the aim) given for the left hand, as it is for this
+    /// hand: the right hand mirrors it across the frame's X.
+    pub fn mirror_from_left(self, v: Vec3) -> Vec3 {
+        match self {
+            Hand::Left => v,
+            Hand::Right => Vec3::new(-v.x, v.y, v.z),
+        }
+    }
+
+    /// A vector in a hand's frame given for the right hand, as it is for this hand: the left hand
+    /// mirrors it across the frame's X.
+    pub fn mirror_from_right(self, v: Vec3) -> Vec3 {
+        self.other().mirror_from_left(v)
+    }
+
     /// The first hand that is `free`, trying the `dominant` hand before the other.
     pub fn first_free(dominant: Hand, free: impl Fn(Hand) -> bool) -> Option<Hand> {
         [dominant, dominant.other()]
@@ -706,6 +721,15 @@ impl Slot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_hand_vector_mirrors_across_x_for_the_other_hand() {
+        let v = Vec3::new(0.1, 0.2, 0.3);
+        assert_eq!(Hand::Left.mirror_from_left(v), v);
+        assert_eq!(Hand::Right.mirror_from_left(v), Vec3::new(-0.1, 0.2, 0.3));
+        assert_eq!(Hand::Right.mirror_from_right(v), v);
+        assert_eq!(Hand::Left.mirror_from_right(v), Vec3::new(-0.1, 0.2, 0.3));
+    }
 
     #[test]
     fn the_dominant_hand_is_tried_first() {

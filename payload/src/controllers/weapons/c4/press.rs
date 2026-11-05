@@ -45,8 +45,8 @@ pub struct ButtonFace {
 /// The button's face on the `off` hand whose grip is at `grip`: the configured left-hand placement,
 /// mirrored for the right hand. `None` for a degenerate normal.
 pub fn button_face(off: Hand, grip: Pose, tuning: &DetonatorTuning) -> Option<ButtonFace> {
-    let local_normal = mirror_from_left(off, tuning.normal).try_normalize()?;
-    let local_centre = mirror_from_left(off, tuning.offset_m);
+    let local_normal = off.mirror_from_left(tuning.normal).try_normalize()?;
+    let local_centre = off.mirror_from_left(tuning.offset_m);
     let orientation = grip.orientation.normalize();
     let face = ButtonFace {
         centre: grip.position + orientation * local_centre,
@@ -102,11 +102,7 @@ pub fn fingertip(hand: Hand, source: FingertipSource<'_>, tuning: &DetonatorTuni
     } else {
         tuning.fingertip_pointing_m
     };
-    let offset = match hand {
-        Hand::Right => offset,
-        Hand::Left => Vec3::new(-offset.x, offset.y, offset.z),
-    };
-    source.aim.position + source.aim.orientation.normalize() * offset
+    source.aim.position + source.aim.orientation.normalize() * hand.mirror_from_right(offset)
 }
 
 /// The skeleton's index-tip position when it is valid and finite.
@@ -277,14 +273,6 @@ impl PressDetector {
 
 /// The `XR_EXT_hand_tracking` index of the index finger's tip (`XR_HAND_JOINT_INDEX_TIP_EXT`).
 pub(super) const INDEX_TIP_JOINT: usize = 10;
-
-/// A vector given for the left hand, mirrored across the controller's X for `hand`.
-fn mirror_from_left(hand: Hand, v: Vec3) -> Vec3 {
-    match hand {
-        Hand::Left => v,
-        Hand::Right => Vec3::new(-v.x, v.y, v.z),
-    }
-}
 
 #[cfg(test)]
 mod tests {

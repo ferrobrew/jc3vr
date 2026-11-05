@@ -516,7 +516,7 @@ fn closeness(distance_m: f32, tuning: &DetonatorTuning) -> f32 {
 /// The button's sprites on the off-hand's wrist, lying on the wrist facing out of it: a disc and
 /// its rim, and a pip for each placed charge in a row along the forearm toward the elbow.
 fn button(look: &Look, tuning: &DetonatorTuning) -> Vec<Primitive> {
-    let centre = mirrored(look.off, tuning.offset_m);
+    let centre = look.off.mirror_from_left(tuning.offset_m);
     let radius = tuning.radius_m.max(0.005);
     let lit = look.charges > 0;
     let (fill, rim, scale) = match look.flash {
@@ -592,14 +592,6 @@ fn button(look: &Look, tuning: &DetonatorTuning) -> Vec<Primitive> {
         ));
     }
     prims
-}
-
-/// A vector given for the left hand, mirrored for `hand`.
-fn mirrored(hand: Hand, v: Vec3) -> Vec3 {
-    match hand {
-        Hand::Left => v,
-        Hand::Right => Vec3::new(-v.x, v.y, v.z),
-    }
 }
 
 #[cfg(test)]

@@ -104,7 +104,7 @@ pub(crate) fn upright_corners(
 /// forearm and its top toward the fingers, as read with the palm turned up.
 pub(crate) fn inner_wrist_pose(grip: Pose, hand: Hand, offset: Vec3) -> PanelPose {
     PanelPose {
-        center: grip.position + grip.orientation * mirror(offset, hand == Hand::Right),
+        center: grip.position + grip.orientation * hand.mirror_from_left(offset),
         rotation: (grip.orientation * inner_face(hand)).normalize(),
     }
 }
@@ -172,11 +172,6 @@ const WORLD_UP: Vec3 = Vec3::Y;
 /// The range of the vertical component of the direction to the eye over which an upright quad's up
 /// blends from the world's up to the head's: from about 18 degrees off vertical to about 6.
 const UPRIGHT_BLEND: (f32, f32) = (0.95, 0.995);
-
-/// `v` with its X negated when `flip`.
-fn mirror(v: Vec3, flip: bool) -> Vec3 {
-    if flip { Vec3::new(-v.x, v.y, v.z) } else { v }
-}
 
 /// The inner-wrist readout's rotation in the grip frame: +X along its text, +Y up its page, +Z out
 /// of its face. With the palm turned up toward the face, out of the palm is grip +X for the left
