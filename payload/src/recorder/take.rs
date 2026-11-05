@@ -65,6 +65,14 @@ pub(crate) enum Record {
         unix_ms: i64,
         mirror: MirrorFrame,
     },
+    /// A present of the mirror after frame `frame`: its counter, and whether the frame stamp drew
+    /// it into the window.
+    Present {
+        frame: u32,
+        unix_ms: i64,
+        present: u32,
+        stamped: bool,
+    },
 }
 
 /// What the render thread knows about a frame when it finishes rendering.
@@ -325,6 +333,20 @@ fn write_record(out: &mut impl Write, record: &Record) -> std::io::Result<()> {
                 },
             },
         ),
+        Record::Present {
+            frame,
+            unix_ms,
+            present,
+            stamped,
+        } => serde_json::to_writer(
+            &mut *out,
+            &PresentLine {
+                frame: *frame,
+                unix_ms: *unix_ms,
+                present: *present,
+                stamped: *stamped,
+            },
+        ),
     }
     .map_err(std::io::Error::other)?;
     out.write_all(b"\n")
@@ -382,6 +404,14 @@ struct MirrorLine<'a> {
     frame: u32,
     unix_ms: i64,
     mirror: MirrorJson<'a>,
+}
+
+#[derive(Serialize)]
+struct PresentLine {
+    frame: u32,
+    unix_ms: i64,
+    present: u32,
+    stamped: bool,
 }
 
 #[derive(Serialize)]

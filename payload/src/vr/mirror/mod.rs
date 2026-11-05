@@ -68,8 +68,9 @@ use windows::{
                 D3D11_FILL_SOLID, D3D11_FILTER_MIN_MAG_MIP_LINEAR, D3D11_RASTERIZER_DESC,
                 D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC, D3D11_TEXTURE_ADDRESS_CLAMP,
                 D3D11_TEXTURE2D_DESC, D3D11_VIEWPORT, ID3D11BlendState, ID3D11DeviceContext,
-                ID3D11PixelShader, ID3D11RasterizerState, ID3D11RenderTargetView,
-                ID3D11SamplerState, ID3D11ShaderResourceView, ID3D11Texture2D, ID3D11VertexShader,
+                ID3D11DeviceContext1, ID3D11PixelShader, ID3D11RasterizerState,
+                ID3D11RenderTargetView, ID3D11SamplerState, ID3D11ShaderResourceView,
+                ID3D11Texture2D, ID3D11VertexShader,
             },
         },
         System::Threading::{EnterCriticalSection, LeaveCriticalSection},
@@ -90,6 +91,7 @@ use crate::{
 };
 
 mod layout;
+mod stamp;
 
 /// The committed, precompiled shaders shared with the VR blit and others: the fullscreen-triangle
 /// vertex shader and the plain-sample (no gamma) pixel shader. See the module gamma note.
@@ -107,6 +109,9 @@ static MIRROR_FAILING: AtomicBool = AtomicBool::new(false);
 /// Frames lost to the current (or just-ended) transient mirror-present failure streak. Paired with
 /// [`MIRROR_FAILING`].
 static MIRROR_FAIL_COUNT: AtomicU32 = AtomicU32::new(0);
+/// The mirror's presents since the payload loaded, the counter the frame stamp draws
+/// ([`stamp`]).
+static PRESENTS: AtomicU32 = AtomicU32::new(0);
 
 /// Draw `view`'s eye captures into the game swapchain's back buffer (laid out per
 /// [`mirror_layout`]), composite the egui overlay on top, and present the game swapchain unsynced.
@@ -248,6 +253,8 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
         }
     }
 
+    let present_index;
+    let stamped;
     // The eye draws, egui composite, and present run under one critical-section hold, serialized
     // with the engine's render work. The section is recursive, so a re-entrant take inside egui (there
     // is none today) would be safe.
@@ -309,6 +316,15 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
             }
         }
 
+        present_index = PRESENTS.fetch_add(1, Ordering::Relaxed);
+        stamped = crate::recorder::is_recording()
+            && Config::lock_query(|c| c.vr.mirror_frame_stamp)
+            && mirror.stamp(
+                &context.m_Context,
+                &rtv,
+                stamp::stamp(present_index, buffer_size, window_size),
+            );
+
         // Present the game swapchain ourselves -- the only present this frame (the engine's is
         // blocked). Unsynced by mandate (see the doc comment); errors bubble up to disable the mirror.
         let present = device
@@ -320,6 +336,7 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
             .context("vr: the mirror swapchain present failed")?;
     }
     crate::recorder::note_mirror(recorded_layout(view, &layout, buffer_size, window_size));
+    crate::recorder::note_present(present_index, stamped);
     Ok(())
 }
 
@@ -469,6 +486,28 @@ impl Mirror {
         unsafe {
             context.ClearRenderTargetView(rtv, &[0.0, 0.0, 0.0, 1.0]);
         }
+    }
+
+    /// Clear the frame stamp's blocks into the back buffer, and return whether it was drawn: a
+    /// context without `ID3D11DeviceContext1` draws none. The caller must hold the context mutex.
+    ///
+    /// # Safety
+    /// `context` must be the live engine immediate context; `rtv` must be a live view over the game
+    /// back buffer.
+    unsafe fn stamp(
+        &self,
+        context: &ID3D11DeviceContext,
+        rtv: &ID3D11RenderTargetView,
+        stamp: stamp::Stamp,
+    ) -> bool {
+        let Ok(context) = context.cast::<ID3D11DeviceContext1>() else {
+            return false;
+        };
+        unsafe {
+            context.ClearView(rtv, &[1.0, 1.0, 1.0, 1.0], Some(&stamp.white));
+            context.ClearView(rtv, &[0.0, 0.0, 0.0, 1.0], Some(&stamp.black));
+        }
+        true
     }
 
     /// Draw one eye into `viewport`, opaque. The caller must hold the context mutex.

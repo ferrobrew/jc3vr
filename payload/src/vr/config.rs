@@ -180,6 +180,12 @@ pub struct VrConfig {
     /// [`MirrorView`]). F10 toggles between the stereo pair and the last single eye.
     #[serde(default)]
     pub mirror_view: MirrorView,
+    /// While a capture take runs, stamp the mirror's present counter into the window's corner as a
+    /// strip of black and white blocks, which the take's sidecar logs per present (see
+    /// [`crate::vr::mirror`]), so a recording shows whether a repeated frame comes from the mod or
+    /// from downstream. On by default.
+    #[serde(default = "default_true")]
+    pub mirror_frame_stamp: bool,
     /// Persist the OpenXR **instance and session** across inject/uninject cycles instead of destroying
     /// them on teardown. The runtime allows only a small number of instances *and* sessions per
     /// process (often one each), and Proton's own startup VR probe contends for that budget, so a
@@ -253,6 +259,7 @@ impl VrConfig {
             native_resolution: true,
             mirror: true,
             mirror_view: MirrorView::Left,
+            mirror_frame_stamp: true,
             persist_instance: true,
             auto_recenter_on_gameplay: true,
             own_back_buffer: true,

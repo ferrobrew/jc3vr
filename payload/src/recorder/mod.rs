@@ -303,6 +303,27 @@ pub fn note_mirror(mirror: MirrorFrame) {
     }
 }
 
+/// Note a present of the desktop mirror: its counter `present`, and whether the frame stamp drew it
+/// into the window (`stamped`). A no-op unless recording.
+pub fn note_present(present: u32, stamped: bool) {
+    if !is_recording() {
+        return;
+    }
+    let state = STATE.lock();
+    let frame = state.frame_index;
+    let Some(take) = state.takes.active().filter(|_| state.recording) else {
+        return;
+    };
+    // A present lost to a full or closed channel is only a gap in the counter's log; the take's own
+    // failure is reported by the frame records.
+    let _ = take.send(Record::Present {
+        frame,
+        unix_ms: jiff::Timestamp::now().as_millisecond(),
+        present,
+        stamped,
+    });
+}
+
 /// Stop the recording and wait for the take's thread to exit, for eject. Returns whether every take
 /// thread is confirmed stopped; `false` means the payload must stay mapped (see
 /// `image_writer::shutdown`).

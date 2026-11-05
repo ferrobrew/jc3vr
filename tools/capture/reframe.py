@@ -63,6 +63,9 @@ def read_sidecar(path):
                 markers.append(record)
             elif "mirror" in record:
                 mirrors.append(record)
+            elif "present" in record:
+                # The mirror's present counter, which the frame stamp draws into the video.
+                continue
             else:
                 frames.append(record)
     return frames, markers, mirrors

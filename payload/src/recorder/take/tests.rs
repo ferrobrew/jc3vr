@@ -13,7 +13,7 @@ use super::*;
 use crate::recorder::Region;
 
 #[test]
-fn sidecar_lines_carry_frames_markers_and_mirror_layouts() {
+fn sidecar_lines_carry_frames_markers_mirror_layouts_and_presents() {
     let mut out = Vec::new();
     write_record(&mut out, &Record::Frame(Box::new(frame(7)))).unwrap();
     write_record(
@@ -49,6 +49,16 @@ fn sidecar_lines_carry_frames_markers_and_mirror_layouts() {
             views: None,
             ..frame(8)
         })),
+    )
+    .unwrap();
+    write_record(
+        &mut out,
+        &Record::Present {
+            frame: 9,
+            unix_ms: 1_700_000_000_130,
+            present: 41,
+            stamped: true,
+        },
     )
     .unwrap();
     let lines: Vec<Value> = String::from_utf8(out)
@@ -88,6 +98,12 @@ fn sidecar_lines_carry_frames_markers_and_mirror_layouts() {
                 "game_run_time_us": 8_000,
                 "predicted_display_time_ns": null,
                 "views": null,
+            }),
+            json!({
+                "frame": 9,
+                "unix_ms": 1_700_000_000_130_i64,
+                "present": 41,
+                "stamped": true,
             }),
         ]
     );

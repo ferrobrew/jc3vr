@@ -31,6 +31,15 @@ pub fn egui_debug_vr(ui: &mut egui::Ui) {
                      the left). F10 toggles between this and the last single eye.",
                 );
             });
+            ui.checkbox(
+                &mut cfg.vr.mirror_frame_stamp,
+                "Frame stamp while capturing",
+            )
+            .on_hover_text(
+                "While a capture take runs, draw the mirror's present counter as black and \
+                     white blocks in the window's bottom-left corner; the take's frames.jsonl \
+                     logs the same counter per present.",
+            );
         });
     });
     ui.checkbox(&mut cfg.vr.own_back_buffer, "Mod-owned back buffer")
