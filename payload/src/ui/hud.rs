@@ -8,6 +8,8 @@ use crate::{
         HUD_STATE, StageSafeAreaReadout, aim, stage_safe_area_readout,
         world_markers::layout::StageFrame,
     },
+    status::system::{ATLAS, MARKER_DEPTH, WORLD_MARKERS},
+    ui::status_row::headlines,
 };
 
 /// Preview width (px) for the redirected HUD texture, independent of the Previews and performance feature's preview size.
@@ -187,14 +189,14 @@ fn stage_safe_area_status_ui(ui: &mut egui::Ui) {
 }
 
 fn world_markers_status_ui(ui: &mut egui::Ui) {
+    headlines(ui, &[&WORLD_MARKERS, &MARKER_DEPTH]);
     match crate::hud::world_markers::status() {
         None => {
-            ui.label("Not drawing (off, outside gameplay, or the panel is off).");
+            ui.label("Off, outside gameplay, or the panel is off.");
         }
         Some(status) => {
             ui.label(format!(
-                "Layout snapshot {:?}, displayed {} ({}); {} markers, {} past the cap; \
-                 labelled POI {}",
+                "Layout snapshot {:?}, displayed {} ({}); labelled POI {}",
                 status.layout_snapshot,
                 status.displayed_snapshot,
                 if status.layout_matched {
@@ -202,8 +204,6 @@ fn world_markers_status_ui(ui: &mut egui::Ui) {
                 } else {
                     "newest layout"
                 },
-                status.markers.len(),
-                status.skipped,
                 status.labelled_id,
             ));
             ui.label(format!(
@@ -242,10 +242,11 @@ fn world_markers_status_ui(ui: &mut egui::Ui) {
 }
 
 fn atlas_status_ui(ui: &mut egui::Ui) {
+    headlines(ui, &[&ATLAS]);
     let status = crate::hud::atlas::status();
     ui.label(format!(
-        "Moves {}, restores {}, move failures {}, restore failures {}, drift {}",
-        status.moves, status.restores, status.move_failures, status.restore_failures, status.drift,
+        "Moves {}, restores {}, drift {}",
+        status.moves, status.restores, status.drift,
     ));
     match &status.frame {
         None => {

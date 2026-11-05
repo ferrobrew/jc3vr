@@ -1,4 +1,5 @@
-//! Controller-owned hands: the IK, tier, and late-update readouts, and the hand settings.
+//! Controller-owned hands: the render-rate body's row, the IK, tier, and late-update readouts, and
+//! the hand settings.
 
 use egui::Ui;
 
@@ -14,9 +15,12 @@ use crate::{
             parts, reach, rig,
             tiers::{TierState, TierStatus},
         },
-        presentation,
     },
-    ui::controllers::{vec3_drag, yes_no},
+    status::body::RENDER_RATE_BODY,
+    ui::{
+        controllers::{vec3_drag, yes_no},
+        status_row::headlines,
+    },
 };
 
 pub(super) fn hands_readout(
@@ -25,20 +29,10 @@ pub(super) fn hands_readout(
     tiers: &TierStatus,
     late: &LateStatus,
 ) {
+    headlines(ui, &[&RENDER_RATE_BODY]);
     ui.label(format!(
         "State: {}",
         tiers.state.map_or("none yet", TierState::label)
-    ));
-    let p = presentation::status();
-    ui.label(format!(
-        "Render-rate body: {}, {} draws, {:.3} ms a frame (last {:.3}, peak {:.3}), {} ticks{}",
-        p.idle.label(),
-        p.draws,
-        p.mean_cost_us / 1000.0,
-        p.frame_cost_us / 1000.0,
-        p.peak_cost_us / 1000.0,
-        p.ticks,
-        p.rig_error.map_or(String::new(), |e| format!(", {e}")),
     ));
     let arms = rig::status();
     let player_arm = reach::player_arm_length(&body::player());
