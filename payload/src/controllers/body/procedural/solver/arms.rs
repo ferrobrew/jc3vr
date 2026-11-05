@@ -9,7 +9,11 @@
 //! An elbow hint is where an arm's elbow naturally sits for a wrist target: at the middle of the
 //! shoulder-to-wrist line, out along a pole that points down, out to the arm's side, and a little
 //! back, as far as the arm's length bends it. The side and the back are the chest's, so a chest
-//! turned toward the player's torso carries the elbows round with it.
+//! turned toward the player's torso carries the elbows round with it. The pole is chosen from the
+//! reach: a hand reaching up or across the body lifts the elbow out to the side, as a person's
+//! does, rather than leaving it hanging under a raised arm. Where the reach runs along the pole (a
+//! hand reaching down, out, and back toward a hip holster), the pole's part across the reach
+//! vanishes, so a second pole, straight back, takes over smoothly as it does rather than at once.
 
 use glam::{Mat4, Quat, Vec3};
 
@@ -160,8 +164,17 @@ pub fn elbow_hint(
     } else {
         0.0
     });
-    let pole = Vec3::NEG_Y * POLE_DOWN + chest * (out * POLE_OUT + Vec3::Z * POLE_BACK);
-    let pole = (pole - along * pole.dot(along))
+    let local = chest.inverse() * along;
+    // Up, and across toward the other side, both lift the elbow out.
+    let lift = (local.y.max(0.0) + (-local.dot(out)).max(0.0)).min(1.0);
+    let pole = Vec3::NEG_Y * POLE_DOWN
+        + chest * (out * (POLE_OUT + POLE_REACH_OUT * lift) + Vec3::Z * POLE_BACK);
+    let across = |pole: Vec3| pole - along * pole.dot(along);
+    let primary = across(pole.normalize_or_zero());
+    let fallback = across(chest * Vec3::Z).normalize_or_zero();
+    let t = (primary.length() / POLE_FALLBACK_BELOW).clamp(0.0, 1.0);
+    let keep = t * t * (3.0 - 2.0 * t);
+    let pole = (primary.normalize_or_zero() * keep + fallback * (1.0 - keep))
         .try_normalize()
         .unwrap_or(out);
     let half = length * 0.5;
@@ -173,6 +186,13 @@ pub fn elbow_hint(
 const POLE_DOWN: f32 = 1.0;
 const POLE_OUT: f32 = 0.5;
 const POLE_BACK: f32 = 0.3;
+
+/// How much further out a reach up or across lifts the elbow, on top of [`POLE_OUT`].
+const POLE_REACH_OUT: f32 = 1.5;
+
+/// The share of the pole left across the reach below which the fallback pole takes over, fully
+/// at none.
+const POLE_FALLBACK_BELOW: f32 = 0.6;
 
 #[cfg(test)]
 mod tests {
@@ -267,6 +287,40 @@ mod tests {
         )
         .unwrap();
         assert!(turned.z < square.z, "{square} -> {turned}");
+    }
+
+    #[test]
+    fn a_hand_reaching_up_or_across_lifts_the_elbow_out() {
+        let shoulder = Vec3::new(0.2, 1.45, 0.0);
+        let down = elbow_hint(shoulder, Vec3::new(0.25, 1.0, -0.3), 0.6, Side::Right, 0.0).unwrap();
+        let up = elbow_hint(shoulder, Vec3::new(0.25, 1.9, -0.25), 0.6, Side::Right, 0.0).unwrap();
+        let across =
+            elbow_hint(shoulder, Vec3::new(-0.2, 1.4, -0.35), 0.6, Side::Right, 0.0).unwrap();
+        assert!(up.x - shoulder.x > down.x - shoulder.x, "{down} {up}");
+        // Across the body, the elbow stands out to the arm's side of the reach's middle.
+        let middle = (shoulder + Vec3::new(-0.2, 1.4, -0.35)) * 0.5;
+        let out = (across - middle).normalize();
+        assert!(out.x > 0.3, "{across} {out}");
+    }
+
+    #[test]
+    fn the_elbow_moves_smoothly_through_a_reach_along_the_pole() {
+        // Sweep the wrist through down, out, and back, where the reach runs along the pole.
+        let shoulder = Vec3::new(0.2, 1.45, 0.0);
+        let mut last: Option<Vec3> = None;
+        for i in 0..=60 {
+            let a = i as f32 / 60.0;
+            let wrist = shoulder
+                + Vec3::new(0.15 + 0.2 * a, -0.5 + 0.1 * a, 0.05 + 0.25 * a).normalize() * 0.5;
+            let hint = elbow_hint(shoulder, wrist, 0.6, Side::Right, 0.0).unwrap();
+            if let Some(last) = last {
+                assert!(
+                    (hint - last).length() < 0.03,
+                    "a jump at {a}: {last} -> {hint}"
+                );
+            }
+            last = Some(hint);
+        }
     }
 
     /// The horizontal distance of a point from the test torso's axis, which is vertical at the

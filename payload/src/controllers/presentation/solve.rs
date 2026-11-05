@@ -25,7 +25,7 @@ use glam::{Mat4, Quat, Vec3};
 
 use crate::controllers::{
     body::procedural::solver::arms::{Side, elbow_hint},
-    hands::palette::forearm_reach,
+    hands::palette::{MAX_FOREARM_STRETCH, forearm_reach},
     presentation::rig::Group,
 };
 
@@ -257,13 +257,23 @@ pub fn two_bone_elbow(
 }
 
 /// The upper arm's, the forearm's, and the hand's edits of one arm whose shoulder rides `torso`,
-/// solved to the hand moved by `hand`.
+/// solved to the hand moved by `hand`. A hand further from the shoulder than the arm reaches, with
+/// the forearm stretched as far as it may, is drawn at that reach along the line to it: within one
+/// tick the body can move against the hands further than the arm covers (a throw and a fall at
+/// once), and the hand falling short keeps it on the end of the forearm rather than leaving the
+/// forearm behind.
 fn arm_edits(torso: Mat4, arm: &ArmJoints, hand: Mat4, stretch: bool, side: Side) -> [Mat4; 3] {
     let shoulder = torso.transform_point3(arm.shoulder);
     let carried_elbow = torso.transform_point3(arm.elbow);
-    let wrist = hand.transform_point3(arm.wrist);
     let upper = arm.shoulder.distance(arm.elbow);
     let fore = arm.elbow.distance(arm.wrist);
+    let hand = within_reach(
+        shoulder,
+        hand,
+        arm.wrist,
+        upper + fore * stretch_limit(stretch),
+    );
+    let wrist = hand.transform_point3(arm.wrist);
     let elbow = two_bone_elbow(shoulder, wrist, upper, fore, carried_elbow - shoulder)
         .or_else(|| {
             let hint = elbow_hint(shoulder, wrist, upper + fore, side, 0.0)?;
@@ -282,6 +292,24 @@ fn arm_edits(torso: Mat4, arm: &ArmJoints, hand: Mat4, stretch: bool, side: Side
     let carried_wrist = upper_edit.transform_point3(arm.wrist);
     let fore_edit = forearm_reach(elbow, carried_wrist, wrist, stretch) * upper_edit;
     [upper_edit, fore_edit, hand]
+}
+
+/// How far the forearm may reach as a share of its length: its stretch's cap, or its own length.
+fn stretch_limit(stretch: bool) -> f32 {
+    if stretch { MAX_FOREARM_STRETCH } else { 1.0 }
+}
+
+/// `hand` moved back along the line from `shoulder` so that the wrist it carries from `wrist`
+/// (model space, as drawn) is at most `reach` from the shoulder.
+fn within_reach(shoulder: Vec3, hand: Mat4, wrist: Vec3, reach: f32) -> Mat4 {
+    let moved = hand.transform_point3(wrist);
+    let offset = moved - shoulder;
+    let distance = offset.length();
+    if !(distance > reach && reach > 0.0 && offset.is_finite()) {
+        return hand;
+    }
+    let pulled = shoulder + offset * (reach / distance);
+    Mat4::from_translation(pulled - moved) * hand
 }
 
 /// The chain's joints' edits for each joint turned by `turns` about its own origin, each carried by
@@ -507,6 +535,30 @@ mod tests {
         for group in Group::arm(0) {
             assert!(edits[group.index()].abs_diff_eq(Mat4::IDENTITY, 1e-5));
         }
+    }
+
+    #[test]
+    fn a_hand_past_the_arm_s_reach_falls_short_on_the_end_of_the_forearm() {
+        let b = body();
+        let a = &b.arms[1];
+        let (upper, fore) = (a.shoulder.distance(a.elbow), a.elbow.distance(a.wrist));
+        // The hand thrown far beyond any reach, as a body jumping against the hands in one tick
+        // leaves it.
+        let hand = Mat4::from_translation(Vec3::new(0.2, -0.3, -0.6));
+        let motion = Motion {
+            hands: [None, Some(hand)],
+            ..still()
+        };
+        let edits = solve(&b, &motion);
+        let [up, fo, palm] = Group::arm(1).map(|g| edits[g.index()]);
+        let shoulder = up.transform_point3(a.shoulder);
+        let wrist = palm.transform_point3(a.wrist);
+        let forearm_wrist = fo.transform_point3(a.wrist);
+        assert!(
+            forearm_wrist.abs_diff_eq(wrist, 1e-3),
+            "{forearm_wrist:?} {wrist:?}"
+        );
+        assert!(shoulder.distance(wrist) <= upper + fore * MAX_FOREARM_STRETCH + 1e-4);
     }
 
     #[test]

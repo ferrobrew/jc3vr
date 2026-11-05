@@ -4,7 +4,9 @@
 //! It runs at the end of the pose-finalization pass (the post-call `UpdatePropEffects` detour),
 //! after the HumanIK solve has turned the hands to the controllers and the head override and the
 //! finger curls have written theirs, with `AnimationController::SetJoint` over the finalized
-//! model-space pose, as those do. The arms' twist bones take the arms' twist while the procedural
+//! model-space pose, as those do. A forearm turned past its range passes part of the turn to the
+//! upper arm's twist bones ([`solver::twist::passed_up`](crate::controllers::body::procedural::solver::twist::passed_up)).
+//! The arms' twist bones take the arms' twist while the procedural
 //! body poses the torso, and the legs' while it poses the legs, each by that region's weight, so
 //! the animation's own twist bones come back as the body hands back.
 
@@ -143,7 +145,17 @@ unsafe fn distribute(
         from_joint(&joint)
     };
     let mut largest: f32 = 0.0;
-    for segment in &rig.segments {
+    let twists: Vec<f32> = rig
+        .segments
+        .iter()
+        .map(|segment| {
+            let [parent, bone, end] =
+                [segment.parent, segment.bone, segment.end].map(|b| read(controller, b));
+            segment.twist(parent.rotation, bone.rotation, end.rotation)
+        })
+        .collect();
+    let passes = rig.passes(&twists);
+    for ((segment, &twist), &passed) in rig.segments.iter().zip(&twists).zip(&passes) {
         let weight = match segment.region {
             Region::Arms => weights[0],
             Region::Legs => weights[1],
@@ -151,9 +163,7 @@ unsafe fn distribute(
         if weight <= 0.0 {
             continue;
         }
-        let [parent, bone, end] =
-            [segment.parent, segment.bone, segment.end].map(|b| read(controller, b));
-        let twist = segment.twist(parent.rotation, bone.rotation, end.rotation);
+        let bone = read(controller, segment.bone);
         largest = largest.max(twist.abs());
         let current: Vec<_> = segment
             .rolls
@@ -161,7 +171,7 @@ unsafe fn distribute(
             .map(|r| read(controller, r.bone))
             .collect();
         let rotations: Vec<Quat> = current.iter().map(|t| t.rotation).collect();
-        let turned = segment.rolls(bone.rotation, twist, &rotations, weight);
+        let turned = segment.rolls(bone.rotation, twist, passed, &rotations, weight);
         for ((roll, now), rotation) in segment.rolls.iter().zip(&current).zip(turned) {
             let mut written = *now;
             written.rotation = rotation;

@@ -14,6 +14,13 @@
 //!   (the clavicle, the pelvis): a twist bone `f` of the way down turns back by `1 - f` of it, so
 //!   the skin at the shoulder or the hip stays with the body while the limb rolls under it.
 //!
+//! A forearm can only pronate or supinate so far before the rest comes from the shoulder rolling the
+//! upper arm, so a hand turned past [`FOREARM_TWIST_LIMIT`] from the forearm passes
+//! [`UPPER_ARM_SHARE`] of the excess up to the upper arm ([`passed_up`]): the upper arm's twist
+//! bones take it rising toward the elbow, and the forearm's start from it at the elbow, so the skin
+//! turns continuously from the shoulder to the wrist and the forearm carries less of a large turn.
+//! The bones of the arm themselves are not turned; the elbow stays where the solve put it.
+//!
 //! Twists are measured against the reference pose's, so a limb at its reference twist leaves its
 //! twist bones at theirs.
 
@@ -155,28 +162,77 @@ impl Segment {
         }
     }
 
-    /// The share of the segment's twist `roll` turns by: `along` of it on a distal segment, and
-    /// back by `1 - along` of it on a proximal one.
-    pub fn share(&self, roll: &Roll) -> f32 {
+    /// The angle `roll` turns by for the segment's twist `twist`, with `passed` of the forearm's
+    /// twist handed to the upper arm ([`passed_up`]). On a distal segment it is `along` of the twist
+    /// left after the pass, on top of the pass; on a proximal one it is back by `1 - along` of the
+    /// segment's own twist, and forward by `along` of the pass.
+    pub fn turn(&self, roll: &Roll, twist: f32, passed: f32) -> f32 {
         if self.distal {
-            roll.along
+            passed + (twist - passed) * roll.along
         } else {
-            -(1.0 - roll.along)
+            -(1.0 - roll.along) * twist + roll.along * passed
         }
     }
 
-    /// Each twist bone's model-space rotation for the segment's twist `twist`, the segment turned
-    /// `segment` in model space, mixed from each bone's `current` rotation by `weight`.
-    pub fn rolls(&self, segment: Quat, twist: f32, current: &[Quat], weight: f32) -> Vec<Quat> {
+    /// Each twist bone's model-space rotation for the segment's twist `twist`, with `passed`
+    /// handed up from the forearm ([`Segment::turn`]), the segment turned `segment` in model space,
+    /// mixed from each bone's `current` rotation by `weight`.
+    pub fn rolls(
+        &self,
+        segment: Quat,
+        twist: f32,
+        passed: f32,
+        current: &[Quat],
+        weight: f32,
+    ) -> Vec<Quat> {
         let w = weight.clamp(0.0, 1.0);
+        let passed = if passed.is_finite() { passed } else { 0.0 };
         self.rolls
             .iter()
             .zip(current)
             .map(|(roll, now)| {
-                let turn = Quat::from_axis_angle(self.axis, twist * self.share(roll));
+                let turn = Quat::from_axis_angle(self.axis, self.turn(roll, twist, passed));
                 let wanted = (segment * turn * roll.reference_local).normalize();
                 let mixed = now.slerp(wanted, w).normalize();
                 if mixed.is_finite() { mixed } else { *now }
+            })
+            .collect()
+    }
+}
+
+/// How far a hand turns from its forearm before the upper arm takes a share, radians: about the
+/// forearm's own range of pronation from the reference.
+pub const FOREARM_TWIST_LIMIT: f32 = std::f32::consts::FRAC_PI_2;
+
+/// The share of a hand's turn past [`FOREARM_TWIST_LIMIT`] the upper arm takes.
+pub const UPPER_ARM_SHARE: f32 = 0.5;
+
+/// The part of a forearm's twist `twist` handed up to the upper arm: [`UPPER_ARM_SHARE`] of what
+/// is past [`FOREARM_TWIST_LIMIT`], in the twist's own direction.
+pub fn passed_up(twist: f32) -> f32 {
+    if !twist.is_finite() {
+        return 0.0;
+    }
+    (twist.abs() - FOREARM_TWIST_LIMIT).max(0.0) * UPPER_ARM_SHARE * twist.signum()
+}
+
+impl TwistRig {
+    /// What each segment passes or receives ([`passed_up`]), by segment: a forearm passes its own,
+    /// an upper arm receives its forearm's (the distal segment that hangs from it), and the legs
+    /// none. `twists` are the segments' twists in order.
+    pub fn passes(&self, twists: &[f32]) -> Vec<f32> {
+        let twist = |i: usize| twists.get(i).copied().unwrap_or(0.0);
+        self.segments
+            .iter()
+            .enumerate()
+            .map(|(i, segment)| match (segment.region, segment.distal) {
+                (Region::Legs, _) => 0.0,
+                (Region::Arms, true) => passed_up(twist(i)),
+                (Region::Arms, false) => self
+                    .segments
+                    .iter()
+                    .position(|s| s.distal && s.parent == segment.bone)
+                    .map_or(0.0, |child| passed_up(twist(child))),
             })
             .collect()
     }
@@ -278,11 +334,14 @@ mod tests {
         let twist = fore.twist(parent, segment, hand);
         assert!((twist - 1.5).abs() < 1e-4, "{twist}");
         let current = [model[fore.rolls[0].bone].rotation];
-        let rolls = fore.rolls(segment, twist, &current, 1.0);
+        let rolls = fore.rolls(segment, twist, 0.0, &current, 1.0);
         let turned = twist_about(segment.inverse() * rolls[0], fore.axis);
         assert!((turned - 1.5 * 0.8).abs() < 1e-3, "{turned}");
         // At no weight, the twist bone stays as it is.
-        assert_eq!(fore.rolls(segment, twist, &current, 0.0)[0], current[0]);
+        assert_eq!(
+            fore.rolls(segment, twist, 0.0, &current, 0.0)[0],
+            current[0]
+        );
         // A bend of the wrist is not a twist.
         let swing = fore.axis.any_orthonormal_vector();
         let bent = segment * Quat::from_axis_angle(swing, 0.8) * fore.reference_end_local;
@@ -302,10 +361,39 @@ mod tests {
         let twist = upper.twist(parent, segment, Quat::IDENTITY);
         assert!((twist - 1.5).abs() < 1e-3, "{twist}");
         let current = [model[upper.rolls[0].bone].rotation];
-        let rolls = upper.rolls(segment, twist, &current, 1.0);
+        let rolls = upper.rolls(segment, twist, 0.0, &current, 1.0);
         // The twist bone near the shoulder turns back by most of the roll.
         let turned = twist_about(segment.inverse() * rolls[0], upper.axis);
         assert!((turned + 1.5 * 0.8).abs() < 1e-3, "{turned}");
+    }
+
+    #[test]
+    fn a_large_hand_turn_passes_part_of_it_to_the_upper_arm() {
+        let rig = TwistRig::from_skeleton(&with_rolls());
+        let (upper, fore) = (&rig.segments[0], &rig.segments[1]);
+        // Within the forearm's range nothing passes.
+        assert_eq!(passed_up(1.0), 0.0);
+        assert_eq!(rig.passes(&[0.0, 1.0]), vec![0.0, 0.0]);
+        // A 130 degree turn passes half of the 40 past the limit.
+        let twist = 130f32.to_radians();
+        let passed = passed_up(twist);
+        assert!((passed - 20f32.to_radians()).abs() < 1e-5);
+        assert_eq!(passed_up(-twist), -passed);
+        let passes = rig.passes(&[0.0, twist]);
+        assert!((passes[0] - passed).abs() < 1e-6 && (passes[1] - passed).abs() < 1e-6);
+        // The skin turns continuously: the upper arm's roll at the elbow end and the forearm's at
+        // the elbow both take the pass, and the forearm's at the wrist the whole turn.
+        let at = |along: f32| Roll {
+            along,
+            ..fore.rolls[0].clone()
+        };
+        assert!((fore.turn(&at(0.0), twist, passed) - passed).abs() < 1e-6);
+        assert!((fore.turn(&at(1.0), twist, passed) - twist).abs() < 1e-6);
+        assert!((upper.turn(&at(1.0), 0.0, passed) - passed).abs() < 1e-6);
+        assert!(upper.turn(&at(0.0), 0.0, passed).abs() < 1e-6);
+        // The forearm carries less of the turn along its length.
+        let spread = fore.turn(&at(1.0), twist, passed) - fore.turn(&at(0.0), twist, passed);
+        assert!(spread < twist - 0.3);
     }
 
     #[test]
