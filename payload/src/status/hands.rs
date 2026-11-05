@@ -173,7 +173,7 @@ fn characters_line(on: bool, pickup: &PickupStatus, knockdowns: u64) -> Line {
         pickup.character_grips.to_string(),
         " grips, ",
         pickup.yanks.to_string(),
-        " yanked, ",
+        " thrown, ",
         knockdowns.to_string(),
         " down, ",
         pickup.regrips.to_string(),
@@ -344,7 +344,7 @@ mod tests {
         pickup.hijacks = 1;
         assert_eq!(
             characters_line(true, &pickup, 2).text(),
-            "OK, 3 GRIPS, 2 YANKED, 2 DOWN, 1 DRAGGED, 1 PULLED OUT"
+            "OK, 3 GRIPS, 2 THROWN, 2 DOWN, 1 DRAGGED, 1 PULLED OUT"
         );
     }
 

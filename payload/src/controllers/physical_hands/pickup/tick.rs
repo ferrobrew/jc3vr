@@ -11,12 +11,11 @@ use crate::controllers::{
     frame::Hand,
     physical_hands::{
         STALE_AFTER, bodies,
-        characters::{CharactersConfig, Seize},
+        characters::{self, CharactersConfig, Regrip, Seize},
         doors::{self, Latch},
         grasp::{self, Grip, PalmMotion, Reach, TargetKind},
         hold::{self, HandHold, HoldTuning, PlayerKeepOut},
-        physics,
-        physics::HoldTarget,
+        physics::{self, HoldTarget, Shove, ShoveForce},
         pickup::{
             HeldReport, PickupTuning,
             diagnostics::{self, ConsumerResult, DriveRecord},
@@ -105,7 +104,8 @@ pub(crate) struct TickOutcome {
     pub hijacks: u64,
     /// Articulated objects the hands took hold of this tick.
     pub articulated_grips: u64,
-    /// Characters on foot the hands yanked this tick.
+    /// Characters on foot the hands threw off their feet this tick: by the grip's topple, or by
+    /// a yank.
     pub yanks: u64,
     /// Fallen characters' ragdolls the hands took hold of this tick.
     pub regrips: u64,
@@ -400,7 +400,21 @@ unsafe fn tick_with(
                             );
                             record(ConsumerResult::CharacterAccepted);
                             state.evidence_holds[i] = evidence;
-                            state.seizes[i] = Some(seize);
+                            // SAFETY: forwarded from the caller; the body's owner is checked
+                            // before the character is read.
+                            let direction =
+                                unsafe { characters::topples(target, &character_config) }
+                                    .then(|| {
+                                        characters::topple_direction(palm.velocity, reach.normal)
+                                    })
+                                    .flatten();
+                            match direction {
+                                Some(direction) => {
+                                    topple(hand, seize, reach.point, direction, &mut outcome);
+                                    state.regrips[i] = Some(Regrip::new(seize));
+                                }
+                                None => state.seizes[i] = Some(seize),
+                            }
                             outcome.taken[i] = true;
                             outcome.character_grips += 1;
                         }
@@ -869,6 +883,29 @@ pub(super) fn take_body(
             ConsumerResult::BodyRefused(e)
         }
     }
+}
+
+/// Throw the character `seize` took into their ragdoll by their own hit reaction, from the grab
+/// point `at` along `direction`, a unit vector, just past the knockdown; the hand then waits for
+/// the ragdoll as after a yank.
+fn topple(hand: Hand, seize: Seize, at: Vec3, direction: Vec3, outcome: &mut TickOutcome) {
+    physics::queue_shove(Shove {
+        hand,
+        character: seize.target.character,
+        body: seize.target.body,
+        at,
+        direction,
+        force: ShoveForce::Yank {
+            strength: characters::TOPPLE_STRENGTH,
+        },
+    });
+    outcome.yanks += 1;
+    tracing::info!(
+        hand = hand.label(),
+        hostile = seize.target.hostile,
+        ?direction,
+        "physical hands: characters: a hand's grip threw a character into their ragdoll"
+    );
 }
 
 /// The mass a hand holding a body of `bone_kg` reached as `kind` carries: the whole ragdoll's for

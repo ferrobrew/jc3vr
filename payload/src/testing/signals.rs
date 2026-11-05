@@ -170,7 +170,7 @@ signals! {
     DoorOnLatch => "doors.on_latch", Flag, "A hand grips a latched vehicle door.";
     CharacterGrips => "characters.grips", Counter, "Grips taken on characters.";
     Hijacks => "characters.hijacks", Counter, "Seated characters a hand pulled out through an open door.";
-    CharacterYanks => "characters.yanks", Counter, "Characters on foot a hand yanked.";
+    CharacterYanks => "characters.yanks", Counter, "Characters on foot a hand threw off their feet, by the grip's topple or a yank.";
     CharacterRegrips => "characters.regrips", Counter, "Fallen characters' ragdolls a hand took hold of after a yank.";
     CharacterKnockdowns => "characters.knockdowns", Counter, "Yanks and shoves that knocked a character down.";
     ProceduralRigError => "procedural.rig_error", Flag, "The procedural body could not rig the skeleton.";

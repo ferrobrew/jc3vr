@@ -95,6 +95,7 @@ fn a_non_finite_frame_refuses_the_checked_acquisition() {
 fn disabled_current_capabilities_do_not_reuse_the_queued_offer() {
     let config = CharactersConfig {
         grab: false,
+        topple: false,
         hijack: false,
     };
     for (target, attachment) in [

@@ -26,7 +26,7 @@ pub(crate) struct PickupState {
     pub(crate) doors: [Option<TearGrip>; 2],
     /// Each hand's grip on a character.
     pub(crate) seizes: [Option<Seize>; 2],
-    /// Each hand waiting to take hold of a character it yanked off its feet.
+    /// Each hand waiting to take hold of a character it threw off their feet.
     pub(crate) regrips: [Option<Regrip>; 2],
     /// The hands that yanked a seated character, for the input tick to click the vehicle entry.
     pub(crate) hijack_clicks: [bool; 2],
@@ -106,7 +106,7 @@ impl PickupState {
         } else if self.seizes[i].is_some() {
             "a character"
         } else if self.regrips[i].is_some() {
-            "a yanked character"
+            "a character thrown off their feet"
         } else {
             return None;
         };

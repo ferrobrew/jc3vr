@@ -207,6 +207,12 @@ pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) 
 pub(super) fn characters_doors_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) {
     ui.add_enabled_ui(p.enabled, |ui| {
         ui.checkbox(&mut p.characters.grab, "Take hold of characters on foot");
+        ui.add_enabled_ui(p.characters.grab, |ui| {
+            ui.checkbox(
+                &mut p.characters.topple,
+                "Throw a gripped character into their ragdoll",
+            )
+        });
         ui.checkbox(
             &mut p.characters.hijack,
             "Pull occupants out through open doors",
@@ -300,7 +306,7 @@ pub(super) fn characters_doors_readout(ui: &mut Ui, status: &PhysicalHandsStatus
         ))
     ));
     ui.label(format!(
-        "Characters: {} grips · {} yanked · {} ragdolls taken · {} pulled out of a seat",
+        "Characters: {} grips · {} thrown down · {} ragdolls taken · {} pulled out of a seat",
         p.character_grips, p.yanks, p.regrips, p.hijacks
     ));
 }

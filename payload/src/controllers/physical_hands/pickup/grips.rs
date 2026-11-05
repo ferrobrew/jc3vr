@@ -169,8 +169,8 @@ pub(super) unsafe fn keep_seize(
             state.seizes[i] = None;
             if seize.target.seated.is_none() {
                 // A character on foot is thrown off its feet along the yank by its own hit
-                // reaction; the hand then looks for the ragdoll it falls as, if the player is
-                // hostile to it, and lets go otherwise.
+                // reaction; the hand then looks for the ragdoll it falls as, and lets go if none
+                // comes.
                 physics::queue_shove(Shove {
                     hand,
                     character: seize.target.character,
@@ -187,11 +187,7 @@ pub(super) unsafe fn keep_seize(
                     hostile = seize.target.hostile,
                     "physical hands: characters: a hand yanked a character"
                 );
-                if seize.target.hostile {
-                    state.regrips[i] = Some(Regrip::new(seize));
-                } else {
-                    outcome.released[i] = true;
-                }
+                state.regrips[i] = Some(Regrip::new(seize));
                 return;
             }
             outcome.released[i] = true;

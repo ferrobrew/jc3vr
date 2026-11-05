@@ -1,7 +1,11 @@
-//! Taking hold of characters with an empty hand. A grip on a character on foot holds the hand on
-//! them: a yank throws a character the player is hostile to off their feet, by the character's own
-//! hit reaction, and the hand then takes hold of the ragdoll they fall as, which it drags and
-//! throws as any loose object; letting go with a push shoves them. A grip on a character seated in
+//! Taking hold of characters with an empty hand. A grip on a character on foot throws them into
+//! their ragdoll at once by the character's own hit reaction ([`topples`]), and the hand takes
+//! hold of the bone of that ragdoll nearest the palm, which it drags and throws as any loose
+//! object; the game's own get-up takes them back once they lie still. With the topple off, or for
+//! a character whose state keeps it on its feet, the grip holds the hand on them instead: a yank
+//! throws a character the player is hostile to off their feet, and letting go with a push shoves
+//! them. A character the game protects, mission-critical or in a scripted sequence, is not
+//! taken. A grip on a character seated in
 //! a vehicle, reached through an open door, holds the hand on them too; a yank then pulls them out
 //! the game's own way, by the vehicle-entry action, which hijacks an occupied seat. The design is
 //! in `docs/mod/input/character-grabs.md`, the engine side in
@@ -32,6 +36,7 @@ pub mod ragdoll;
 use std::num::NonZeroUsize;
 
 pub use config::CharactersConfig;
+pub use engine::Protection;
 use glam::{Mat4, Vec3};
 use jc3gi::{character::character::Character, vehicle::vehicle::DoorSlot};
 
@@ -74,6 +79,8 @@ pub enum Unavailable {
     Animated,
     /// The character ragdolls but none of its ragdoll's bodies could be read.
     NoBody,
+    /// The game protects the character.
+    Protected(Protection),
 }
 
 impl Unavailable {
@@ -84,6 +91,7 @@ impl Unavailable {
             Unavailable::Dying => "dying, not yet a ragdoll",
             Unavailable::Animated => "a limb its animation drives",
             Unavailable::NoBody => "no body of its ragdoll could be read",
+            Unavailable::Protected(protection) => protection.label(),
         }
     }
 }
@@ -114,10 +122,48 @@ pub(crate) const REGRIP_S: f32 = 1.0;
 /// The slowest hand that shoves a character it lets go of, metres per second.
 pub(crate) const SHOVE_MIN_SPEED_MPS: f32 = 1.5;
 
+/// How hard a grip throws a standing character into their ragdoll, as a share of the knockdown
+/// blow: just past it, so that the character falls where the hand holds them rather than flying
+/// off.
+pub(crate) const TOPPLE_STRENGTH: f32 = 1.1;
+
+/// Whether a grip that took `target` throws the character into their ragdoll at once
+/// ([`CharactersConfig::topple`]): a character on foot, alive, and not one whose state keeps it out
+/// of its ragdoll, so that the game's own hit reaction ragdolls it.
+///
+/// # Safety
+///
+/// The game thread, outside the physics step. The target need not still be live: its body's owner
+/// is checked before the character is read.
+pub(crate) unsafe fn topples(target: CharacterTarget, config: &CharactersConfig) -> bool {
+    if !config.topple || target.seated.is_some() || target.ragdoll {
+        return false;
+    }
+    if unsafe { owner_of(target.body) } != Some(target.character) {
+        return false;
+    }
+    let character = unsafe { &*(target.character.get() as *const Character) };
+    !unsafe { engine::keeps_footing(character) } && !unsafe { engine::dead(character) }
+}
+
+/// The way a grip throws a character it takes into their ragdoll: along the palm's motion
+/// `palm_velocity` when the hand moves at least [`SHOVE_MIN_SPEED_MPS`], or else toward the palm
+/// along the touched surface's normal `normal`, held level so that the character folds toward the
+/// hand rather than being lifted or driven into the ground. `None` when neither gives a way.
+pub(crate) fn topple_direction(palm_velocity: Vec3, normal: Vec3) -> Option<Vec3> {
+    if palm_velocity.is_finite() && palm_velocity.length() >= SHOVE_MIN_SPEED_MPS {
+        return palm_velocity.try_normalize();
+    }
+    Vec3::new(normal.x, 0.0, normal.z)
+        .try_normalize()
+        .filter(|d| d.is_finite())
+}
+
 /// What a palm centred at `palm` reaches of the character `object` through the ray hit `hit` on
 /// its body `body`: a character on foot, by its capsule, a ragdolling character, by the body of
 /// its ragdoll nearest the hit, or a character seated in a vehicle with a door open beside the
-/// hand; or why it reaches none of these.
+/// hand; or why it reaches none of these. A character the game protects
+/// ([`engine::protection`]) is never reached.
 ///
 /// # Safety
 ///
@@ -132,6 +178,9 @@ pub(crate) unsafe fn reach(
     config: &CharactersConfig,
 ) -> Result<Reach, Unavailable> {
     let character = unsafe { &*(object.get() as *const Character) };
+    if let Some(protection) = unsafe { engine::protection(character) } {
+        return Err(Unavailable::Protected(protection));
+    }
     let hostile = unsafe { engine::hostile(character) };
     let distance = hit.position.distance(palm);
     let reach =
@@ -196,9 +245,9 @@ pub struct Seize {
     pub grab: Vec3,
 }
 
-/// A hand that yanked a character off their feet, waiting to take hold of the ragdoll they fall
-/// as: it stays at the grab point on the character until its reach finds one of the character's
-/// ragdoll's bodies, or until it gives up.
+/// A hand that threw a character off their feet, by the grip's topple or a yank, waiting to take
+/// hold of the ragdoll they fall as: it stays at the grab point on the character until its reach
+/// finds one of the character's ragdoll's bodies, or until it gives up.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Regrip {
     pub seize: Seize,
@@ -407,6 +456,17 @@ mod tests {
         assert!(!regrip.run_down(f32::NAN));
         assert!(!regrip.run_down(-1.0));
         assert!(regrip.run_down(REGRIP_S));
+    }
+
+    #[test]
+    fn a_topple_follows_a_moving_hand_and_otherwise_folds_toward_it() {
+        let moving = topple_direction(Vec3::new(0.0, 0.0, -2.0), Vec3::X).unwrap();
+        assert!((moving - Vec3::NEG_Z).length() < 1e-5);
+        // A still hand pulls toward itself, level, whatever the surface's slope.
+        let still = topple_direction(Vec3::new(0.1, 0.0, 0.0), Vec3::new(0.6, 0.8, 0.0)).unwrap();
+        assert!((still - Vec3::X).length() < 1e-5);
+        assert_eq!(topple_direction(Vec3::ZERO, Vec3::Y), None);
+        assert_eq!(topple_direction(Vec3::NAN, Vec3::NAN), None);
     }
 
     #[test]

@@ -10,6 +10,9 @@ pub struct CharactersConfig {
     /// Take hold of characters on foot: hold on, shove, yank them off their feet, and drag and
     /// throw them by their ragdoll.
     pub grab: bool,
+    /// Throw a standing character into their ragdoll as the grip takes hold of them, held by the
+    /// bone nearest the palm, rather than holding on until a yank.
+    pub topple: bool,
     /// Pull a character out of a vehicle seat through an open door: grip them, then yank.
     pub hijack: bool,
 }
@@ -18,6 +21,7 @@ impl CharactersConfig {
     pub const fn new() -> Self {
         Self {
             grab: true,
+            topple: true,
             hijack: true,
         }
     }

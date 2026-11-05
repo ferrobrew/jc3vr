@@ -118,7 +118,7 @@ pub struct PickupStatus {
     pub hijacks: u64,
     /// Articulated objects a hand took hold of: bodies joined to the world or another body.
     pub articulated_grips: u64,
-    /// Characters on foot a hand yanked.
+    /// Characters on foot a hand threw off their feet: by the grip's topple, or by a yank.
     pub yanks: u64,
     /// Fallen characters' ragdolls a hand took hold of after a yank.
     pub regrips: u64,

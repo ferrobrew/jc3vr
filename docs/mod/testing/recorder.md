@@ -210,7 +210,7 @@ Scenario signals read the snapshots the mod's systems publish for the status row
 | `grab.left_holds`, `.right_holds`, `.left_fist`, `.right_fist` | flag | A grip holds what it took, or is closed on nothing; missing while the grip model does not resolve the hands. |
 | `doors.grips`, `.unlatches` | counter | Grips taken on latched vehicle doors, and the latches the hands undid ([vehicle-doors.md](../input/vehicle-doors.md)). |
 | `doors.on_latch` | flag | A hand grips a latched vehicle door. |
-| `characters.grips`, `.yanks`, `.knockdowns`, `.regrips`, `.hijacks` | counter | Grips taken on characters, the yanks, the yanks and shoves that knocked a character down, the fallen characters' ragdolls taken, and the seated characters pulled out through an open door ([character-grabs.md](../input/character-grabs.md)). |
+| `characters.grips`, `.yanks`, `.knockdowns`, `.regrips`, `.hijacks` | counter | Grips taken on characters, the characters thrown down by a grip's topple or a yank, the throws and shoves that knocked a character down, the fallen characters' ragdolls taken, and the seated characters pulled out through an open door ([character-grabs.md](../input/character-grabs.md)). |
 | `procedural.rig_error`, `.on_foot` | flag | The procedural torso's rig failed; its case is on foot. |
 | `procedural.seated` | flag | The torso is posed on the seat's hips in a vehicle ([body/procedural-states.md](../body/procedural-states.md)). |
 | `procedural.wing_arms` | flag | Rico's arms follow the player's in the wingsuit, with both hands queued. |
