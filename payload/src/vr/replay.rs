@@ -10,12 +10,11 @@
 use openxr as xr;
 
 use crate::{
-    controllers::frame::Pose,
     recorder::tracking::{CaptureSample, format::EyeSample},
     testing::replay,
     vr::{
         EyeView, Fov, OffAxisProjection, VrConfig, begin_replay_frame,
-        pose_control::{pose_orientation, pose_position},
+        convert::{self, posef},
         stage,
     },
 };
@@ -27,7 +26,7 @@ pub(super) fn replace_located_head(eyes: &mut [EyeView; 2]) {
         return;
     };
     for (eye, sample) in eyes.iter_mut().zip(&head.eyes) {
-        eye.pose = posef(&sample.pose);
+        eye.pose = posef(sample.pose.position, sample.pose.orientation);
     }
 }
 
@@ -67,8 +66,8 @@ pub fn drive_replay_frame(vr_frame_rendering: bool, cfg: &VrConfig) {
     let eyes = head.eyes.map(|sample| {
         let [left, right, up, down] = sample.fov;
         EyeView {
-            pose: posef(&sample.pose),
-            raw_pose: posef(&sample.pose),
+            pose: posef(sample.pose.position, sample.pose.orientation),
+            raw_pose: posef(sample.pose.position, sample.pose.orientation),
             fov: xr::Fovf {
                 angle_left: left,
                 angle_right: right,
@@ -92,51 +91,12 @@ pub fn drive_replay_frame(vr_frame_rendering: bool, cfg: &VrConfig) {
 
 fn eye_sample(eye: &EyeView) -> EyeSample {
     EyeSample {
-        pose: Pose {
-            position: pose_position(eye.pose),
-            orientation: pose_orientation(eye.pose),
-        },
+        pose: convert::pose(eye.pose),
         fov: [
             eye.fov.angle_left,
             eye.fov.angle_right,
             eye.fov.angle_up,
             eye.fov.angle_down,
         ],
-    }
-}
-
-fn posef(pose: &Pose) -> xr::Posef {
-    let p = pose.position;
-    let q = pose.orientation;
-    xr::Posef {
-        orientation: xr::Quaternionf {
-            x: q.x,
-            y: q.y,
-            z: q.z,
-            w: q.w,
-        },
-        position: xr::Vector3f {
-            x: p.x,
-            y: p.y,
-            z: p.z,
-        },
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use glam::{Quat, Vec3};
-
-    use super::*;
-
-    #[test]
-    fn a_pose_survives_the_round_trip_through_openxr() {
-        let pose = Pose {
-            position: Vec3::new(0.1, 1.6, -0.2),
-            orientation: Quat::from_rotation_y(0.7),
-        };
-        let back = posef(&pose);
-        assert_eq!(pose_position(back), pose.position);
-        assert_eq!(pose_orientation(back), pose.orientation);
     }
 }

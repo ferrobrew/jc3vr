@@ -44,7 +44,10 @@
 use glam::{EulerRot, Quat, Vec3};
 use parking_lot::Mutex;
 
-use crate::vr::EyeView;
+use crate::vr::{
+    EyeView,
+    convert::{posef, quat, vec3},
+};
 
 /// The euler convention for the frozen pose: yaw about +Y, then pitch about +X, then roll about +Z.
 /// Matches the flatscreen head sim's composition (`headpose::sim`), so a yaw/pitch/roll reading means
@@ -214,38 +217,6 @@ pub fn nudge(value: f32, step: f32, steps: i32) -> f32 {
     ((value / step).round() + steps as f32) * step
 }
 
-/// The position of an OpenXR pose as a [`Vec3`].
-pub(super) fn pose_position(pose: openxr::Posef) -> Vec3 {
-    Vec3::new(pose.position.x, pose.position.y, pose.position.z)
-}
-
-/// The orientation of an OpenXR pose as a [`Quat`].
-pub(super) fn pose_orientation(pose: openxr::Posef) -> Quat {
-    Quat::from_xyzw(
-        pose.orientation.x,
-        pose.orientation.y,
-        pose.orientation.z,
-        pose.orientation.w,
-    )
-}
-
-/// An OpenXR pose from a position and orientation.
-fn posef(position: Vec3, orientation: Quat) -> openxr::Posef {
-    openxr::Posef {
-        position: openxr::Vector3f {
-            x: position.x,
-            y: position.y,
-            z: position.z,
-        },
-        orientation: openxr::Quaternionf {
-            x: orientation.x,
-            y: orientation.y,
-            z: orientation.z,
-            w: orientation.w,
-        },
-    }
-}
-
 /// The captured pose and the edits layered on it (`None` while the freeze is off).
 static STATE: Mutex<Option<FrozenState>> = Mutex::new(None);
 
@@ -292,8 +263,8 @@ struct CockpitCapture {
 
 impl CockpitCapture {
     fn capture((eyes, body_rotation, anchor): ([EyeView; 2], Quat, Vec3)) -> Self {
-        let positions = eyes.map(|e| pose_position(e.pose));
-        let orientations = eyes.map(|e| pose_orientation(e.pose));
+        let positions = eyes.map(|e| vec3(e.pose.position));
+        let orientations = eyes.map(|e| quat(e.pose.orientation));
         let centre_position = 0.5 * (positions[0] + positions[1]);
         let centre_orientation = orientations[0].slerp(orientations[1], 0.5);
         let inverse = centre_orientation.inverse();
@@ -417,7 +388,7 @@ mod tests {
 
         let cockpit = frozen_frame(|| (test_eyes(0.0), Quat::IDENTITY, Vec3::ZERO));
         let centre =
-            0.5 * (pose_position(cockpit.eyes[0].pose) + pose_position(cockpit.eyes[1].pose));
+            0.5 * (vec3(cockpit.eyes[0].pose.position) + vec3(cockpit.eyes[1].pose.position));
         assert!((centre - Vec3::new(0.0, 1.6, -0.2)).length() < 1e-5);
         assert!((current().expect("frozen").position - centre).length() < 1e-5);
         clear();
@@ -539,8 +510,8 @@ mod tests {
         current.position = Vec3::new(2.0, 1.0, -3.0);
 
         let frame = capture.frame(current);
-        let positions = frame.eyes.map(|e| pose_position(e.pose));
-        let orientations = frame.eyes.map(|e| pose_orientation(e.pose));
+        let positions = frame.eyes.map(|e| vec3(e.pose.position));
+        let orientations = frame.eyes.map(|e| quat(e.pose.orientation));
         let centre_position = 0.5 * (positions[0] + positions[1]);
         let centre_orientation = orientations[0].slerp(orientations[1], 0.5);
         let reduced = PoseValues::from_pose(centre_position, centre_orientation);

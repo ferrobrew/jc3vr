@@ -6,7 +6,7 @@
 
 use std::{ptr, sync::atomic::Ordering, time::Instant};
 
-use glam::{Quat, Vec3};
+use glam::Vec3;
 use openxr as xr;
 use openxr::sys;
 use tracking_format::input::{
@@ -23,6 +23,7 @@ use crate::{
         haptics::{self, mixer::HapticPulse},
     },
     vr::{
+        convert,
         input::{
             PROFILES_DIRTY, STATUS,
             actions::{SetId, State},
@@ -646,23 +647,19 @@ fn joints_to_cockpit(
 
 /// Re-base a LOCAL-space pose into the cockpit frame, as the eye views are.
 fn to_cockpit(pose: xr::Posef, baseline: Option<Baseline>) -> Pose {
-    let pose = baseline.map_or(pose, |b| b.rebase(pose));
-    let p = pose.position;
-    let q = pose.orientation;
-    Pose {
-        position: Vec3::new(p.x, p.y, p.z),
-        orientation: Quat::from_xyzw(q.x, q.y, q.z, q.w),
-    }
+    convert::pose(baseline.map_or(pose, |b| b.rebase(pose)))
 }
 
 /// Rotate a LOCAL-space vector (a velocity) into the cockpit frame.
 fn rotate_to_cockpit(v: xr::Vector3f, baseline: Option<Baseline>) -> Vec3 {
-    let v = Vec3::new(v.x, v.y, v.z);
+    let v = convert::vec3(v);
     baseline.map_or(v, |b| b.rotate(v))
 }
 
 #[cfg(test)]
 mod tests {
+    use glam::Quat;
+
     use super::*;
 
     #[test]

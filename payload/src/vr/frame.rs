@@ -22,7 +22,8 @@ use crate::{
     vr::{
         EyeView, Fov, FrameContext, FreezeMode, OffAxisProjection, VrConfig,
         config::ProjectionConvention,
-        pose_control::{self, pose_orientation, pose_position},
+        convert::{quat, vec3},
+        pose_control,
     },
 };
 
@@ -222,15 +223,15 @@ fn render_frame(
         &headpose_config.grapple,
     );
 
-    let pos0 = pose_position(eye0.pose);
-    let pos1 = pose_position(eye1.pose);
+    let pos0 = vec3(eye0.pose.position);
+    let pos1 = vec3(eye1.pose.position);
     let center_position = 0.5 * (pos0 + pos1);
     // The true mid orientation (slerp of the two eyes), so the cockpit/head frame sits between the
     // eyes rather than on one of them. On canted panels the eyes' orientations differ, so anchoring
     // the center on one eye would bias the head (and everything keyed to it -- aim, the recenter
     // baseline) toward that eye and split the per-eye canting asymmetrically. Matches the runtime
     // head-pose stand-in ([`crate::vr::recenter::mid_pose`]), which is likewise the slerp-mid.
-    let center_orientation = pose_orientation(eye0.pose).slerp(pose_orientation(eye1.pose), 0.5);
+    let center_orientation = quat(eye0.pose.orientation).slerp(quat(eye1.pose.orientation), 0.5);
 
     let body_rotation = frozen.map_or_else(headpose::xr::body_rotation, |f| f.body_rotation);
     // The anchor goes through the grapple filter's landing rate limit; the previous-tick anchor is
@@ -383,7 +384,7 @@ fn render_frame(
             // display canting. `center_orientation` is the slerp-mid, so each eye carries half the
             // inter-eye cant (symmetric); the camera hook applies it locally so each eye renders at the
             // orientation it is submitted with.
-            orientation_delta: center_orientation.inverse() * pose_orientation(eye.pose),
+            orientation_delta: center_orientation.inverse() * quat(eye.pose.orientation),
             convention: cfg.projection_convention,
         }
     };

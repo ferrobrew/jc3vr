@@ -17,6 +17,7 @@ use crate::{
     controllers::body::rig::origin_provenance,
     recorder::tracking::format::RecenterEvent,
     vr::{
+        convert::{posef, quat, vec3},
         input::flight_pose::{self, EpochChange},
         is_running,
         state::lock_state,
@@ -402,15 +403,9 @@ pub(crate) struct Baseline {
 impl Baseline {
     /// Extract the position and yaw-only orientation from a located VIEW-space pose.
     fn from_pose(pose: xr::Posef) -> Self {
-        let orientation = glam::Quat::from_xyzw(
-            pose.orientation.x,
-            pose.orientation.y,
-            pose.orientation.z,
-            pose.orientation.w,
-        );
         Self {
-            position: glam::Vec3::new(pose.position.x, pose.position.y, pose.position.z),
-            yaw: twist_about_y(orientation),
+            position: vec3(pose.position),
+            yaw: twist_about_y(quat(pose.orientation)),
         }
     }
 
@@ -430,29 +425,11 @@ impl Baseline {
 
     /// Re-base a located pose into the baseline (cockpit) frame: `baseline⁻¹ · pose`.
     pub(super) fn rebase(&self, pose: xr::Posef) -> xr::Posef {
-        let pos = glam::Vec3::new(pose.position.x, pose.position.y, pose.position.z);
-        let rot = glam::Quat::from_xyzw(
-            pose.orientation.x,
-            pose.orientation.y,
-            pose.orientation.z,
-            pose.orientation.w,
-        );
         let inv_yaw = self.yaw.conjugate();
-        let rel_pos = inv_yaw * (pos - self.position);
-        let rel_rot = inv_yaw * rot;
-        xr::Posef {
-            orientation: xr::Quaternionf {
-                x: rel_rot.x,
-                y: rel_rot.y,
-                z: rel_rot.z,
-                w: rel_rot.w,
-            },
-            position: xr::Vector3f {
-                x: rel_pos.x,
-                y: rel_pos.y,
-                z: rel_pos.z,
-            },
-        }
+        posef(
+            inv_yaw * (vec3(pose.position) - self.position),
+            inv_yaw * quat(pose.orientation),
+        )
     }
 }
 
@@ -462,32 +439,10 @@ impl Baseline {
 /// panels (e.g. the Valve Index) the eyes' orientations differ, so taking one eye's would bias the
 /// baseline.
 pub(super) fn mid_pose(a: xr::Posef, b: xr::Posef) -> xr::Posef {
-    let qa = glam::Quat::from_xyzw(
-        a.orientation.x,
-        a.orientation.y,
-        a.orientation.z,
-        a.orientation.w,
-    );
-    let qb = glam::Quat::from_xyzw(
-        b.orientation.x,
-        b.orientation.y,
-        b.orientation.z,
-        b.orientation.w,
-    );
-    let mid = qa.slerp(qb, 0.5);
-    xr::Posef {
-        orientation: xr::Quaternionf {
-            x: mid.x,
-            y: mid.y,
-            z: mid.z,
-            w: mid.w,
-        },
-        position: xr::Vector3f {
-            x: 0.5 * (a.position.x + b.position.x),
-            y: 0.5 * (a.position.y + b.position.y),
-            z: 0.5 * (a.position.z + b.position.z),
-        },
-    }
+    posef(
+        0.5 * (vec3(a.position) + vec3(b.position)),
+        quat(a.orientation).slerp(quat(b.orientation), 0.5),
+    )
 }
 
 /// The gameplay-resume auto-recenter state (see [`auto_recenter_tick`]).

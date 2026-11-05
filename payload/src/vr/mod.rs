@@ -50,6 +50,7 @@ pub use projection::{Fov, OffAxisProjection};
 mod back_buffer;
 mod blit;
 mod config;
+pub(crate) mod convert;
 mod eye_resolution;
 pub mod foveation;
 mod frame;

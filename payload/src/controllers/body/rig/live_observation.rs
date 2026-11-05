@@ -24,7 +24,7 @@ use crate::{
         frame::{ControllerFrame, Pose, TrackedPose},
         roomscale::teleport,
     },
-    vr,
+    vr::{self, convert},
 };
 
 /// The head located before replay replacement, with the exact transform used to rebase grips.
@@ -670,7 +670,7 @@ pub(crate) fn make_raw_packet(
     }
     let packet = RawPacket {
         head: TrackedPose {
-            pose: pose_from_xr(located.head),
+            pose: convert::pose(located.head),
             position_valid: located.flags.contains(xr::ViewStateFlags::POSITION_VALID),
             orientation_valid: located
                 .flags
@@ -689,7 +689,7 @@ pub(crate) fn make_raw_packet(
         sequence: controllers.sequence,
         display_time_ns: controllers.display_time_ns,
         published_at: controllers.published_at,
-        cockpit_from_local: pose_from_xr(located.cockpit_from_local),
+        cockpit_from_local: convert::pose(located.cockpit_from_local),
         origin: located.origin,
     };
     if packet.sequence == 0
@@ -723,18 +723,6 @@ fn age_at(
         return Err(Unavailable::Stale { age });
     }
     Ok(age)
-}
-
-fn pose_from_xr(pose: xr::Posef) -> Pose {
-    Pose {
-        position: Vec3::new(pose.position.x, pose.position.y, pose.position.z),
-        orientation: Quat::from_xyzw(
-            pose.orientation.x,
-            pose.orientation.y,
-            pose.orientation.z,
-            pose.orientation.w,
-        ),
-    }
 }
 
 fn valid_tracking(tracked: TrackedPose) -> bool {

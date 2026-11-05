@@ -20,9 +20,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use glam::{Quat, Vec2, Vec3};
+use glam::Vec2;
 use openxr as xr;
 use parking_lot::Mutex;
+
+use crate::vr::convert::{quat, vec3};
 
 /// What the runtime reports about its STAGE space, published once per frame.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -241,44 +243,16 @@ static BOUNDS_DIRTY: AtomicBool = AtomicBool::new(true);
 
 /// The height above the STAGE floor of a LOCAL-space head position, given LOCAL's pose in STAGE.
 fn height_above_floor(local_in_stage: xr::Posef, head_local: xr::Posef) -> f32 {
-    let rotation = Quat::from_xyzw(
-        local_in_stage.orientation.x,
-        local_in_stage.orientation.y,
-        local_in_stage.orientation.z,
-        local_in_stage.orientation.w,
-    );
-    let origin = Vec3::new(
-        local_in_stage.position.x,
-        local_in_stage.position.y,
-        local_in_stage.position.z,
-    );
-    let head = Vec3::new(
-        head_local.position.x,
-        head_local.position.y,
-        head_local.position.z,
-    );
-    (origin + rotation * head).y
+    let rotation = quat(local_in_stage.orientation);
+    (vec3(local_in_stage.position) + rotation * vec3(head_local.position)).y
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use glam::{Quat, Vec3};
 
-    fn pose(position: Vec3, orientation: Quat) -> xr::Posef {
-        xr::Posef {
-            orientation: xr::Quaternionf {
-                x: orientation.x,
-                y: orientation.y,
-                z: orientation.z,
-                w: orientation.w,
-            },
-            position: xr::Vector3f {
-                x: position.x,
-                y: position.y,
-                z: position.z,
-            },
-        }
-    }
+    use super::*;
+    use crate::vr::convert::posef;
 
     #[test]
     fn a_floor_jump_after_a_reference_space_change_is_taken_out() {
@@ -308,8 +282,8 @@ mod tests {
     #[test]
     fn the_head_height_adds_the_local_origin_height() {
         // LOCAL's origin sits at the eyes of a standing player, 1.7 m above the floor, turned.
-        let local = pose(Vec3::new(0.3, 1.7, -0.2), Quat::from_rotation_y(1.0));
-        let head = pose(Vec3::new(0.1, -0.4, 0.5), Quat::IDENTITY);
+        let local = posef(Vec3::new(0.3, 1.7, -0.2), Quat::from_rotation_y(1.0));
+        let head = posef(Vec3::new(0.1, -0.4, 0.5), Quat::IDENTITY);
         assert!((height_above_floor(local, head) - 1.3).abs() < 1e-5);
     }
 }

@@ -5,20 +5,23 @@
 
 use std::{sync::LazyLock, time::Instant};
 
-use glam::{Quat, Vec3};
 use jc3gi::input::input_action_map::Action::{CANCEL, OPEN_WINGSUIT, WINGSUIT_AIRBRAKE};
 use openxr as xr;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    bindings::hold::{Desired, MapKind, Target, Want},
-    body::BodyDimensions,
-    config::GripOffset,
-    frame::{ControllerFrame, Pose, TrackedPose},
-    mode::{AirborneVariant, Mode},
-    vehicles::wingsuit_gestures::{
-        FlightPose, GestureCommands, GestureHead, GestureObservation, GestureSample, SuitTransition,
+use crate::{
+    controllers::{
+        bindings::hold::{Desired, MapKind, Target, Want},
+        body::BodyDimensions,
+        config::GripOffset,
+        frame::{ControllerFrame, Pose, TrackedPose},
+        mode::{AirborneVariant, Mode},
+        vehicles::wingsuit_gestures::{
+            FlightPose, GestureCommands, GestureHead, GestureObservation, GestureSample,
+            SuitTransition,
+        },
     },
+    vr::convert,
 };
 
 /// Source-owned discontinuities. Ordinary head/controller movement does not advance the epoch.
@@ -297,15 +300,7 @@ fn located_center(head: &LocatedHead) -> Option<TrackedPose> {
     ) {
         return None;
     }
-    let eyes = head.eyes.map(|pose| Pose {
-        position: Vec3::new(pose.position.x, pose.position.y, pose.position.z),
-        orientation: Quat::from_xyzw(
-            pose.orientation.x,
-            pose.orientation.y,
-            pose.orientation.z,
-            pose.orientation.w,
-        ),
-    });
+    let eyes = head.eyes.map(convert::pose);
     if eyes.iter().any(|pose| {
         !pose.position.is_finite()
             || !pose.orientation.is_finite()
@@ -355,6 +350,8 @@ pub(crate) fn test_guard() -> impl Drop {
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
+
+    use glam::Vec3;
 
     use super::*;
     use crate::controllers::frame::{ActionSetKind, HandFrame};
