@@ -65,7 +65,7 @@ use crate::{
             config::LockConfig,
             lock::model::{Held, SwingInput, TakeIn},
         },
-        rope::RopeFault,
+        rope::{self, RopeFault},
     },
 };
 
@@ -161,11 +161,7 @@ pub struct LockStatus {
 impl LockStatus {
     /// The tension as a share of the line's strength, `0..=1`.
     pub fn share(&self) -> f32 {
-        if self.max_tension_n > 0.0 && self.tension_n.is_finite() {
-            (self.tension_n / self.max_tension_n).clamp(0.0, 1.0)
-        } else {
-            0.0
-        }
+        rope::tension_share(self.tension_n, self.max_tension_n)
     }
 }
 

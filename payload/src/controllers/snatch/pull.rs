@@ -50,7 +50,7 @@ use crate::{
             },
         },
     },
-    grapple::rope::RopeFault,
+    grapple::rope::{self, RopeFault},
 };
 
 /// What the snatch fired at, held alive from the fire to the end.
@@ -627,11 +627,7 @@ pub(super) struct Swinging {
 impl Swinging {
     /// The line's tension as a share of its strength, `0..=1`.
     pub(super) fn share(&self) -> f32 {
-        if self.max_tension_n > 0.0 {
-            (self.tension_n / self.max_tension_n).clamp(0.0, 1.0)
-        } else {
-            0.0
-        }
+        rope::tension_share(self.tension_n, self.max_tension_n)
     }
 }
 

@@ -156,6 +156,16 @@ impl Rope {
     }
 }
 
+/// `tension_n` as a share of the rope's strength `max_tension_n`, `0..=1`: none for a strength
+/// that is not positive or a tension that is not finite.
+pub fn tension_share(tension_n: f32, max_tension_n: f32) -> f32 {
+    if max_tension_n > 0.0 && tension_n.is_finite() {
+        (tension_n / max_tension_n).clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
 /// The longest step the rope takes, seconds: a longer one is a hitch, not a tick.
 const MAX_DT_S: f32 = 0.1;
 
@@ -312,5 +322,15 @@ mod tests {
             .step(step(fixed, end(Vec3::ZERO, Vec3::Y, 1.0)))
             .unwrap();
         assert_eq!(coincident.b_velocity, Vec3::Y);
+    }
+
+    #[test]
+    fn the_tension_share_is_bounded_and_refuses_bad_samples() {
+        assert_eq!(tension_share(60.0, 120.0), 0.5);
+        assert_eq!(tension_share(240.0, 120.0), 1.0);
+        assert_eq!(tension_share(-5.0, 120.0), 0.0);
+        assert_eq!(tension_share(60.0, 0.0), 0.0);
+        assert_eq!(tension_share(f32::NAN, 120.0), 0.0);
+        assert_eq!(tension_share(f32::INFINITY, 120.0), 0.0);
     }
 }
