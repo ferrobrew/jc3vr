@@ -17,17 +17,20 @@ use crate::{
         frame::{Hand, Pose},
         hands::CockpitHand,
         haptics::{self, Sustain},
-        physical_hands::physics::{
-            HAND_BODIES, blows, callback,
-            drive::rig_jumped,
-            guns,
-            lifecycle::HANDS,
-            render::RenderOffset,
-            state::{
-                CLEANUP_REGISTERED, MIN_PRESSURE_LOAD, RENDER_MAX_TURN_RAD,
-                RENDER_TURN_DEADBAND_RAD, SHARED, STALE_AFTER, TRACKERS_AT_REST, Target,
-                VELOCITY_SMOOTHING_S, acting_palms, enabled, steps,
+        physical_hands::{
+            physics::{
+                HAND_BODIES, blows, callback,
+                drive::rig_jumped,
+                guns,
+                lifecycle::HANDS,
+                render::RenderOffset,
+                state::{
+                    CLEANUP_REGISTERED, MIN_PRESSURE_LOAD, RENDER_MAX_TURN_RAD,
+                    RENDER_TURN_DEADBAND_RAD, SHARED, STALE_AFTER, TRACKERS_AT_REST, Target,
+                    acting_palms, enabled, steps,
+                },
             },
+            state::VELOCITY_SMOOTHING_S,
         },
         roomscale::teleport,
     },

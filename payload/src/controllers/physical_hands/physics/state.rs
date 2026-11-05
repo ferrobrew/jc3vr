@@ -158,9 +158,6 @@ pub(super) const PARK_AFTER: Duration = Duration::from_millis(250);
 /// The longest a published pose is carried forward by its velocity, seconds.
 pub(super) const MAX_LEAD_S: f32 = 0.1;
 
-/// How long the palms' velocities are smoothed over, seconds.
-pub(super) const VELOCITY_SMOOTHING_S: f32 = 0.03;
-
 /// The turn between a body and its controller's palm that is not drawn, radians: a free hand keeps
 /// the controller's own rotation.
 pub(super) const RENDER_TURN_DEADBAND_RAD: f32 = 0.05;

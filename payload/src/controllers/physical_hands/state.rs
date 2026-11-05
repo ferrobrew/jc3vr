@@ -143,7 +143,7 @@ impl State {
 pub(super) const STALE_AFTER: Duration = Duration::from_millis(200);
 
 /// How long the palms' velocities are smoothed over, seconds: short, so that a throw keeps the
-/// flick.
+/// flick. The aim update's trackers and the hand bodies' trackers both smooth over it.
 pub(super) const VELOCITY_SMOOTHING_S: f32 = 0.03;
 
 pub(super) static STATE: Mutex<State> = Mutex::new(State {
