@@ -11,6 +11,8 @@
 //! trigger, and a finger hand tracking measures where the pose leaves it free
 //! ([`FingerRole::LiveWhenTracked`]).
 
+use body_rig::smooth::follow_factor;
+
 use crate::controllers::fingers::{
     curl::{CurlSource, FingerCurls},
     grip::{
@@ -95,11 +97,7 @@ pub fn firmness_share(firmness: Firmness, squeeze: f32, config: &GripPoseTuning)
 /// Follow the share `target` from `previous` over `dt` seconds with the time constant
 /// `time_constant_s`.
 pub fn follow_share(previous: f32, target: f32, dt: f32, time_constant_s: f32) -> f32 {
-    if time_constant_s <= 0.0 || !dt.is_finite() {
-        return target;
-    }
-    let t = 1.0 - (-dt.max(0.0) / time_constant_s).exp();
-    previous + (target - previous) * t
+    previous + (target - previous) * follow_factor(dt, time_constant_s)
 }
 
 #[cfg(test)]

@@ -22,7 +22,7 @@
 //!   small threshold and up to a cap. With the reach limited, only a body that moves against the
 //!   hands within a tick leaves a shortfall for it.
 
-use body_rig::{geometry::within_sphere, rotation::level};
+use body_rig::{geometry::within_sphere, rotation::level, smooth::follow_factor};
 use glam::{Quat, Vec3};
 
 use crate::controllers::{
@@ -319,15 +319,6 @@ const MIN_SEGMENT_M: f32 = 0.05;
 const MAX_SEGMENT_M: f32 = 0.6;
 /// The time constant the bone lengths settle over, seconds.
 const LENGTH_SMOOTHING_S: f32 = 0.5;
-
-/// The fraction of the way to a new reading to move after `dt` seconds with the time constant
-/// `tau`; a non-positive `tau` follows at once.
-fn follow_factor(dt: f32, tau: f32) -> f32 {
-    if tau.is_nan() || tau <= 0.0 || !dt.is_finite() {
-        return 1.0;
-    }
-    1.0 - (-dt.max(0.0) / tau).exp()
-}
 
 fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t

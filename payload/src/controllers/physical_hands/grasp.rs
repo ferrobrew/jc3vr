@@ -9,7 +9,7 @@
 
 use std::num::NonZeroUsize;
 
-use body_rig::rotation::angular_velocity;
+use body_rig::{rotation::angular_velocity, smooth::follow_factor};
 use glam::{Quat, Vec3};
 
 use crate::controllers::{
@@ -201,7 +201,7 @@ impl VelocityTracker {
         {
             let raw = (at - last) / dt;
             if raw.is_finite() {
-                self.velocity = self.velocity.lerp(raw, smoothing(dt, time_constant_s));
+                self.velocity = self.velocity.lerp(raw, follow_factor(dt, time_constant_s));
             }
         }
         self.last = Some(at);
@@ -239,18 +239,10 @@ impl AngularTracker {
             && dt.is_finite()
             && let Some(raw) = angular_velocity(last, at, dt)
         {
-            self.velocity = self.velocity.lerp(raw, smoothing(dt, time_constant_s));
+            self.velocity = self.velocity.lerp(raw, follow_factor(dt, time_constant_s));
         }
         self.last = Some(at);
         self.velocity
-    }
-}
-
-fn smoothing(dt: f32, time_constant_s: f32) -> f32 {
-    if time_constant_s > 0.0 {
-        1.0 - (-dt / time_constant_s).exp()
-    } else {
-        1.0
     }
 }
 

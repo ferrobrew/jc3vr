@@ -10,6 +10,7 @@
 //! [`wanted`] measures the turn for a hand target, [`ClavicleFollower`] eases it over time, and
 //! [`apply`] turns the clavicle (and the arm under it) about its own joint.
 
+use body_rig::smooth::follow_factor;
 use glam::{Quat, Vec3};
 
 use crate::controllers::body::procedural::{
@@ -144,12 +145,7 @@ impl ClavicleFollower {
     /// Move toward `wanted` (left then right) over `dt` seconds with the time constant `time_s`,
     /// and return the turns.
     pub fn step(&mut self, wanted: [ClavicleTurn; 2], dt: f32, time_s: f32) -> [ClavicleTurn; 2] {
-        let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
-        let k = if time_s > 0.0 {
-            1.0 - (-dt / time_s).exp()
-        } else {
-            1.0
-        };
+        let k = follow_factor(dt, time_s);
         for (turn, wanted) in self.turns.iter_mut().zip(wanted) {
             let wanted = if wanted.is_finite() {
                 wanted

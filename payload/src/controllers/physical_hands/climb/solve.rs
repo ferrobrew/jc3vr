@@ -10,6 +10,7 @@
 //! where the body or the view is now, so the climb is a plain closed loop on the body's position:
 //! a hand held still holds the body still once it gets there.
 
+use body_rig::smooth::follow_factor;
 use glam::{Affine3A, Quat, Vec2, Vec3};
 
 /// One gripping hand: where the body and the palm were when it took hold, and where the palm is
@@ -74,12 +75,7 @@ pub fn smooth(smoothed: Vec3, velocity: Vec3, dt: f32, smoothing_s: f32) -> Vec3
     if !(smoothed.is_finite() && velocity.is_finite()) {
         return Vec3::ZERO;
     }
-    let blend = if smoothing_s > 0.0 && dt.is_finite() && dt > 0.0 {
-        1.0 - (-dt / smoothing_s).exp()
-    } else {
-        1.0
-    };
-    smoothed.lerp(velocity, blend)
+    smoothed.lerp(velocity, follow_factor(dt, smoothing_s))
 }
 
 /// Where the point `point` (world space), fixed to a body that has moved from `from` to `to`, is
@@ -541,6 +537,8 @@ mod tests {
         // One step of a sudden change moves the smoothed speed only part of the way.
         let once = smooth(Vec3::ZERO, Vec3::Y, STEP, 0.08);
         assert!(once.y > 0.0 && once.y < 1.0);
+        // A step of no time does not move it.
+        assert_eq!(smooth(once, Vec3::Y, 0.0, 0.08), once);
     }
 
     #[test]

@@ -14,6 +14,7 @@
 //! brakes, gives nothing, however light the shove that could move it in the open; the share it
 //! does not give is the resistance, which pushes the body away as a wall does.
 
+use body_rig::smooth::follow_factor;
 use glam::Vec3;
 
 use crate::controllers::physical_hands::rigid::RigidBody;
@@ -160,11 +161,7 @@ impl Give {
             _ => None,
         };
         let raw = measured.map_or(shove.saturation, |m| m.max(shove.saturation));
-        let share = if smoothing_s > 0.0 && dt.is_finite() && dt > 0.0 {
-            1.0 - (-dt / smoothing_s).exp()
-        } else {
-            1.0
-        };
+        let share = follow_factor(dt, smoothing_s);
         self.resistance = if self.last.is_some_and(|(last, _)| last == body) {
             self.resistance + (raw - self.resistance) * share
         } else {
@@ -353,6 +350,8 @@ mod tests {
         give.update(1, &s, DT, 0.1);
         let once = give.update(1, &s, DT, 0.1);
         assert!(once > 0.0 && once < 0.5);
+        // A step of no time does not move it.
+        assert_eq!(give.update(1, &s, 0.0, 0.1), once);
         give.reset();
         assert_eq!(give, Give::new());
     }

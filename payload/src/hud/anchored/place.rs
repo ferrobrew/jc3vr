@@ -1,5 +1,6 @@
 //! Where the hand- and wrist-anchored readouts go, and when they show. Pure.
 
+use body_rig::smooth::half_life_factor;
 use glam::{Mat3, Quat, Vec2, Vec3};
 
 use crate::controllers::{
@@ -52,11 +53,7 @@ pub(crate) fn follow(
     let Some(current) = current.filter(|c| c.is_finite() && c.distance(target) <= snap) else {
         return target;
     };
-    if halflife <= 0.0 || !dt.is_finite() {
-        return target;
-    }
-    let alpha = (1.0 - 2.0_f32.powf(-dt.max(0.0) / halflife)).clamp(0.0, 1.0);
-    current.lerp(target, alpha)
+    current.lerp(target, half_life_factor(dt, halflife))
 }
 
 /// The corners (top left, top right, bottom left, bottom right) of a `width` by `height` quad

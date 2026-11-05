@@ -2,6 +2,7 @@
 //! marker's crop covers, how large its billboard is to keep its angular size, whether a world point
 //! is inside the headset's field of view, and how the placement distance is resolved and smoothed.
 
+use body_rig::smooth::half_life_factor;
 use glam::{Quat, Vec2, Vec3, Vec4};
 
 /// A rectangle around a point, as its extents on each side, in stage pixels.
@@ -331,11 +332,7 @@ pub(crate) fn smooth_distance(current: Option<f32>, target: f32, dt: f32, halfli
     if !(target > 0.0 && target.is_finite()) {
         return current;
     }
-    let alpha = if halflife <= 0.0 {
-        1.0
-    } else {
-        (1.0 - 2.0_f32.powf(-dt.max(0.0) / halflife)).clamp(0.0, 1.0)
-    };
+    let alpha = half_life_factor(dt, halflife);
     (current.ln() + (target.ln() - current.ln()) * alpha).exp()
 }
 

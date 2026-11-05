@@ -9,6 +9,7 @@
 //! are measured against the game's own continuous stick swing at full deflection, and their sum is
 //! capped per hang tick so that a flailing hand cannot fling the body.
 
+use body_rig::smooth::follow_factor;
 use glam::Vec2;
 
 use crate::grapple::physical::config::SwingTuning;
@@ -40,11 +41,7 @@ pub fn smooth_velocity(previous: Vec2, sample: Vec2, dt: f32, config: &SwingTuni
     if !sample.is_finite() {
         return previous;
     }
-    if config.smoothing_s <= f32::EPSILON || !dt.is_finite() {
-        return sample;
-    }
-    let alpha = 1.0 - (-dt.max(0.0) / config.smoothing_s).exp();
-    previous.lerp(sample, alpha)
+    previous.lerp(sample, follow_factor(dt, config.smoothing_s))
 }
 
 #[cfg(test)]

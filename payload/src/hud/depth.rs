@@ -3,6 +3,8 @@
 //! always reads as far. The panel's constant-apparent-size scaling makes the shift a pure depth
 //! change.
 
+use body_rig::smooth::half_life_factor;
+
 use crate::hud::HudMode;
 
 /// The dynamic distance's fixed tuning.
@@ -65,7 +67,7 @@ impl DepthShift {
             .unwrap_or(0.016)
             .min(0.1);
         self.last_update = Some(std::time::Instant::now());
-        let alpha = (1.0 - 2.0_f32.powf(-dt / cfg.halflife.max(0.01))).min(1.0);
+        let alpha = half_life_factor(dt, cfg.halflife.max(0.01));
         let mut smoothed = self.smoothed.unwrap_or(target);
         smoothed += (target - smoothed) * alpha;
         self.smoothed = Some(smoothed);

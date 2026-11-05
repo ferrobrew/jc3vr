@@ -47,7 +47,7 @@ use std::{
     time::Instant,
 };
 
-use body_rig::angle::wrap;
+use body_rig::{angle::wrap, smooth::follow_factor};
 use glam::{Quat, Vec3};
 use jc3gi::equipment::grappling_hook::GrapplingHookState;
 use parking_lot::Mutex;
@@ -132,12 +132,7 @@ pub fn advance(body: Quat, anchor: Vec3, on_foot: bool, config: &GrappleComfortC
     } else {
         RELEASE_S
     };
-    let alpha = if tau > f32::EPSILON {
-        1.0 - (-dt / tau).exp()
-    } else {
-        1.0
-    };
-    s.factor = s.factor + (target - s.factor) * alpha;
+    s.factor = s.factor + (target - s.factor) * follow_factor(dt, tau);
     // The release decay is exponential and never truly reaches zero; snap the tail off so the
     // filter (and the absorber's arming) fully disarms a couple of seconds after a release.
     if !hold && s.factor < FACTOR_DISARM {
@@ -215,7 +210,7 @@ fn advance_absorber(s: &mut GrappleFilter, anchor: Vec3, reeling: bool, now: Ins
                 }
                 // The velocity estimate tracks the raw motion unconditionally, so it locks onto
                 // the zip within a few steps and only genuine one-step spikes read as excess.
-                let alpha = 1.0 - (-step_dt / ANCHOR_VELOCITY_EMA_S).exp();
+                let alpha = follow_factor(step_dt, ANCHOR_VELOCITY_EMA_S);
                 s.anchor_velocity = s.anchor_velocity.lerp(delta / step_dt, alpha);
             }
         }

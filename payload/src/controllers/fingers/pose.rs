@@ -22,6 +22,7 @@
 //! bone then turns by the shortest arc from its animated direction to its target direction, which
 //! keeps the bone's animated roll about its length.
 
+use body_rig::smooth::follow_factor;
 use glam::{Quat, Vec3};
 
 use crate::controllers::{
@@ -74,10 +75,7 @@ impl HandShape {
 
     /// Follow `target` from `self` over `dt` seconds with the time constant `time_constant_s`.
     pub fn smooth(self, target: HandShape, dt: f32, time_constant_s: f32) -> HandShape {
-        if time_constant_s <= 0.0 || !dt.is_finite() {
-            return target;
-        }
-        self.lerp(target, 1.0 - (-dt.max(0.0) / time_constant_s).exp())
+        self.lerp(target, follow_factor(dt, time_constant_s))
     }
 
     /// The shape `t` of the way from `self` to `other`.
@@ -796,6 +794,6 @@ mod tests {
         let step = open.smooth(closed, 0.04, 0.04);
         assert!((step.curl[2] - (1.0 - (-1.0f32).exp())).abs() < 1e-5);
         assert_eq!(open.smooth(closed, 0.04, 0.0), closed);
-        assert_eq!(open.smooth(closed, f32::NAN, 0.04), closed);
+        assert_eq!(open.smooth(closed, f32::NAN, 0.04), open);
     }
 }

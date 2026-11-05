@@ -2,6 +2,7 @@
 //! up, and the turn an uneven stroke makes. Everything is in the cockpit frame (+X right, +Y up,
 //! +Z back, metres), which rides the body.
 
+use body_rig::smooth::follow_factor;
 use glam::{Vec2, Vec3};
 
 use crate::controllers::locomotion::config::SwimStrokeConfig;
@@ -124,7 +125,7 @@ impl StrokeModel {
             };
             let raw = self.last[i].map_or(Vec3::ZERO, |last| (hand.position - last) / dt);
             self.last[i] = Some(hand.position);
-            let blend = 1.0 - (-dt / VELOCITY_SMOOTHING_S).exp();
+            let blend = follow_factor(dt, VELOCITY_SMOOTHING_S);
             self.velocity[i] = self.velocity[i].lerp(raw, blend);
             let in_water = input.underwater
                 || hand.position.y <= input.head.y - config.water_below_eyes_m.max(0.0);
@@ -160,7 +161,7 @@ impl StrokeModel {
         let decay = (-dt / config.decay_s.max(0.05)).exp();
         self.drive =
             ((self.drive + config.gain.max(0.0) * thrust * dt) * decay).clamp(0.0, MAX_DRIVE);
-        let smoothing = 1.0 - (-dt / config.turn_smoothing_s.max(0.01)).exp();
+        let smoothing = follow_factor(dt, config.turn_smoothing_s.max(0.01));
         self.torque += (torque - self.torque) * smoothing;
         let max_turn = config.max_turn_deg_s.max(0.0).to_radians();
         let rate = (-config.turn_gain * self.torque).clamp(-max_turn, max_turn);

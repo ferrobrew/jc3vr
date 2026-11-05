@@ -15,7 +15,7 @@
 //! it shove a heavy one over a few steps; a hand held back by what it meets is driven more softly
 //! ([`contact_gain`]), so it rests on a wall rather than pounding it every step.
 
-use body_rig::rotation::rotation_error;
+use body_rig::{rotation::rotation_error, smooth::follow_factor};
 use glam::{Mat3, Quat, Vec2, Vec3};
 
 use crate::controllers::clock::TimeScale;
@@ -178,11 +178,7 @@ pub fn smooth_push(smoothed: Vec2, push: Vec2, dt: f32, smoothing_s: f32, max_sp
     if !push.is_finite() || !smoothed.is_finite() {
         return Vec2::ZERO;
     }
-    let blend = if smoothing_s > 0.0 && dt.is_finite() && dt > 0.0 {
-        1.0 - (-dt / smoothing_s).exp()
-    } else {
-        1.0
-    };
+    let blend = follow_factor(dt, smoothing_s);
     smoothed
         .lerp(push, blend)
         .clamp_length_max(max_speed.max(0.0))
@@ -568,6 +564,8 @@ mod tests {
         assert!((smoothed - Vec2::X * 2.5).length() < 1e-3);
         let once = smooth_push(Vec2::ZERO, Vec2::X, STEP, 0.1, 2.5);
         assert!(once.x > 0.0 && once.x < 1.0);
+        // A step of no time does not move it.
+        assert_eq!(smooth_push(once, Vec2::X, 0.0, 0.1, 2.5), once);
     }
 
     #[test]

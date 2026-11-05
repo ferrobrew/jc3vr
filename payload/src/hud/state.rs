@@ -5,6 +5,7 @@ mod resources;
 
 use std::time::{Duration, Instant};
 
+use body_rig::smooth::half_life_factor;
 use glam::{Quat, Vec2, Vec3, Vec4};
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use parking_lot::Mutex;
@@ -165,7 +166,7 @@ impl FollowState {
         self.last_time = Some(Instant::now());
         let dt = dt.min(0.1);
 
-        let alpha = (1.0 - 2.0_f32.powf(-dt / FOLLOW_ROTATION_HALFLIFE_S)).min(1.0);
+        let alpha = half_life_factor(dt, FOLLOW_ROTATION_HALFLIFE_S);
         self.rotation = self.rotation.slerp(head_rotation, alpha);
 
         self.rotation

@@ -13,6 +13,7 @@
 
 use std::time::Instant;
 
+use body_rig::smooth::half_life_factor;
 use glam::Vec3;
 use parking_lot::Mutex;
 
@@ -54,7 +55,7 @@ pub fn current(base_distance: f32) -> f32 {
     state.updated_at = Some(now);
 
     // Holden's critically-damped exponential, like the panel follow.
-    let alpha = (1.0 - 2.0_f32.powf(-dt / HALFLIFE_SECONDS)).min(1.0);
+    let alpha = half_life_factor(dt, HALFLIFE_SECONDS);
     state.smoothed += (target - state.smoothed) * alpha;
     state.smoothed
 }

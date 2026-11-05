@@ -23,6 +23,7 @@
 //! covers what the inputs themselves do in a step: the front hand coming onto or off the foregrip,
 //! or the raised gun changing hands.
 
+use body_rig::smooth::follow_factor;
 use glam::{Quat, Vec3};
 
 use crate::controllers::{frame::Pose, hands::CockpitHand, weapons::ads::config::AdsConfig};
@@ -305,11 +306,7 @@ pub fn weld_move(view: EyeView, weight: f32) -> RigidMove {
 /// `current` moved toward `target` over `dt` seconds, closing the gap with the time constant
 /// [`EASE_S`]: a step in the target becomes a short glide, and a held target is reached.
 pub fn ease(current: RigidMove, target: RigidMove, dt: f32) -> RigidMove {
-    let t = if dt.is_finite() && dt > 0.0 {
-        1.0 - (-dt / EASE_S).exp()
-    } else {
-        0.0
-    };
+    let t = follow_factor(dt, EASE_S);
     RigidMove {
         rotation: current.rotation.slerp(target.rotation, t).normalize(),
         translation: current.translation.lerp(target.translation, t),
