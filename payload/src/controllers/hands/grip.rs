@@ -610,6 +610,44 @@ unsafe fn pin(
     })
 }
 
+/// Where `hand`'s canonical grip holds a gun relative to the hand-tracking wrist frame
+/// ([`hand_pose`]), the frame of the hands' IK targets: the pose that carries that wrist frame to
+/// the gun's own frame when the rigid grip pins the gun at the grip (the right hand's chosen grip,
+/// [`pick_right_grip`]), for a system that needs to know before the gun is in the hand how the hand
+/// will hold it. `None` when a bone does not resolve or the bind pose is degenerate.
+///
+/// # Safety
+///
+/// `character` must be live, on the game thread or the thread running its pose-finalization pass.
+pub(crate) unsafe fn canonical_on_wrist_frame(character: &Character, hand: Hand) -> Option<Pose> {
+    let controller = unsafe { character.m_AnimatedModel.m_AnimationController.as_ref() }?;
+    let (wrist_safe, primary_safe) = match hand {
+        Hand::Left => (SafeBoneIndex::LEFT_HAND, SafeBoneIndex::ATTACH_HAND_LEFT),
+        Hand::Right => (SafeBoneIndex::RIGHT_HAND, SafeBoneIndex::ATTACH_HAND_RIGHT),
+    };
+    let wrist_index = unsafe { character.GetSafeIndex(wrist_safe) };
+    let primary_index = unsafe { character.GetSafeIndex(primary_safe) };
+    if wrist_index == 0 || primary_index == 0 {
+        return None;
+    }
+    let own = unsafe { canonical_grip(controller, hand, wrist_index, primary_index) }?;
+    let offset = match hand {
+        Hand::Right => {
+            unsafe { right_grip(character, controller, wrist_index, own) }.unwrap_or(own)
+        }
+        Hand::Left => own,
+    };
+    let frame = unsafe { wrist_frame_on_bone(controller, hand, wrist_index) }?;
+    // The wrist bone is the wrist frame turned back by the frame's place on the bone.
+    Some(hand_pose::mul(
+        Pose {
+            position: Vec3::ZERO,
+            orientation: frame.inverse(),
+        },
+        offset,
+    ))
+}
+
 /// Where a snap's far end is in `character`'s model space: the gun's pose on its dock bone as the
 /// skeleton has it now, or a pose in the world carried into the model.
 unsafe fn snap_start(character: &Character, start: SnapStart) -> Option<Pose> {

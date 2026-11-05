@@ -30,8 +30,9 @@ use crate::controllers::{
     },
     snatch::{
         FinishInput, Refusal, SNATCH,
+        arrival::{self, Landing, LandingInput},
         brace::{self, Brace, BraceInput, BraceReach},
-        engine, juice,
+        engine, juice, landing,
         rules::{self, FlightLimits, FlightSample, PropHandling, StallWatch, Verdict},
         sling::{LineTuning, RopeFault, RopeStep, Sling},
         sling_hooks,
@@ -238,8 +239,8 @@ pub(super) unsafe fn attached(grabbed: &Grabbed, swing_mps: f32) -> Result<Attac
 
 /// How a pulled thing arrived.
 pub(super) enum Arrival {
-    /// The weapon went into the hand, to this slot.
-    Weapon(WeaponSlot),
+    /// The weapon (a `WeaponBase` address) went into the hand, to this slot.
+    Weapon { slot: WeaponSlot, weapon: usize },
     /// The object went into the hand's hold.
     Prop,
     /// The grenade came to the hand, which takes it at the next input tick.
@@ -251,8 +252,11 @@ pub(super) struct Flight {
     /// Where the hook bit the target, in the target body's frame: the line pulls there, so a
     /// target hooked off its centre spins as it comes.
     hook_local: Vec3,
-    /// The target's centre at the last tick, for the swept catch.
+    /// The target's centre at the last tick, for the swept catch: the gun's grip for a gun the
+    /// landing steers.
     last_centre: Option<Vec3>,
+    /// A gun's aligned landing, when the target is a gun whose pose could be read at the bite.
+    landing: Option<Landing>,
     /// How long the line has been slack, seconds, or `None` while it pulls.
     slack_s: Option<f32>,
     stall: StallWatch,
@@ -304,9 +308,16 @@ pub(super) unsafe fn bite(
     if let Some(palm) = ik::tick_records().current[hand.index()].map(|t| t.wrist.position) {
         unsafe { juice::impact(wire, grabbed.object, palm) };
     }
+    let landing = match grabbed.kind {
+        Pulled::Weapon => unsafe { engine::dropped(grabbed.object) }
+            .ok()
+            .and_then(|(weapon, _)| unsafe { Landing::measure(weapon, state.pose) }),
+        _ => None,
+    };
     Ok(Flight {
         hook_local,
         last_centre: None,
+        landing,
         slack_s: None,
         stall: StallWatch::default(),
     })
@@ -358,15 +369,33 @@ pub(super) unsafe fn pull(
     if let Some(slack_s) = &mut flight.slack_s {
         *slack_s += input.dt;
     }
+    // A gun the landing steers is caught at its grip, where the catching hand will hold it.
+    let landed = flight.landing.as_mut().map(|landing| unsafe {
+        landing.tick(&LandingInput {
+            body: state.pose,
+            velocity: state.velocities.linear,
+            angular: state.velocities.angular,
+            hand,
+            palm,
+            catchers,
+            dt: input.dt,
+        })
+    });
+    let at = landed.map_or(centre, |l| l.grip);
     let sample = FlightSample {
-        from: flight.last_centre.unwrap_or(centre),
-        to: centre,
+        from: flight.last_centre.unwrap_or(at),
+        to: at,
         velocity: state.velocities.linear,
         hand: palm,
-        catchers: Hand::BOTH.map(|h| palms[h.index()].filter(|_| catchers[h.index()])),
+        catchers: Hand::BOTH.map(|h| {
+            let target = landed
+                .and_then(|l| l.targets[h.index()])
+                .map(|t| t.position);
+            target.or(palms[h.index()]).filter(|_| catchers[h.index()])
+        }),
         slack_s: flight.slack_s,
     };
-    flight.last_centre = Some(centre);
+    flight.last_centre = Some(at);
     let limits = FlightLimits {
         slack_radius_m: rules::slack_radius(
             state.velocities.linear.length(),
@@ -378,17 +407,55 @@ pub(super) unsafe fn pull(
         line_m: line_m.unwrap_or(SNATCH.range_m),
         max_slack_s: SNATCH.max_slack_s,
     };
+    // The turn keeps running once the line is slack: it cannot change whether the catch happens.
+    let drive = landed.and_then(|l| l.angular);
     match rules::verdict(&sample, stalled, &limits) {
         Verdict::Pulling => {}
-        Verdict::Slack if flight.slack() => return Ok(Step::Flying),
         Verdict::Slack => {
+            if let Some(angular) = drive {
+                unsafe {
+                    physical_hands::set_body_velocities(
+                        body,
+                        grabbed.object,
+                        state.velocities.linear,
+                        angular,
+                    )
+                }
+                .map_err(Refusal::Body)?;
+            }
+            if flight.slack() {
+                return Ok(Step::Flying);
+            }
             flight.slack_s = Some(0.0);
             return Ok(Step::WentSlack);
         }
         Verdict::Caught(catcher) => {
             unsafe { end_line(wire) };
             let catcher_palm = palms[catcher.index()].unwrap_or(palm);
-            return unsafe { arrive(catcher, grabbed, body, centre, catcher_palm) }
+            let slide_s = match (&flight.landing, landed) {
+                (Some(landing), Some(l)) => l.targets[catcher.index()].map_or(SNAP_S, |target| {
+                    let rotation = arrival::gun_rotation(landing, state.pose);
+                    let (angle, distance) = arrival::residual(rotation, l.grip, target);
+                    let speed = state.velocities.linear.length();
+                    let slide_s =
+                        landing::arrival_slide(angle, distance, speed, SNAP_S, &SNATCH.landing);
+                    tracing::info!(
+                        target: "controllers",
+                        hand = catcher.label(),
+                        angle_deg = angle.to_degrees(),
+                        distance_m = distance,
+                        speed_mps = speed,
+                        slide_s,
+                        "snatch: the gun arrived {:.0} degrees and {:.2} m from where the {} hand holds it",
+                        angle.to_degrees(),
+                        distance,
+                        catcher.label()
+                    );
+                    slide_s
+                }),
+                _ => SNAP_S,
+            };
+            return unsafe { arrive(catcher, grabbed, body, centre, catcher_palm, slide_s) }
                 .map(|arrival| Step::Caught(catcher, arrival));
         }
         Verdict::Missed => return Err(Refusal::CatchMissed),
@@ -419,7 +486,9 @@ pub(super) unsafe fn pull(
         SNATCH.arrival_speed_mps,
         SNATCH.approach_m,
     );
-    let aim = rules::pull_point(centre, palm, SNATCH.arc, SNATCH.approach_m) + (anchor - centre);
+    let shift = landed.map_or(Vec3::ZERO, |l| l.shift);
+    let aim =
+        rules::pull_point(centre, palm + shift, SNATCH.arc, SNATCH.approach_m) + (anchor - centre);
     let mut holds = [None; 2];
     holds[hand.index()] = Some(HandHold {
         anchor,
@@ -436,7 +505,7 @@ pub(super) unsafe fn pull(
             body,
             grabbed.object,
             solution.velocities.linear,
-            solution.velocities.angular,
+            drive.unwrap_or(solution.velocities.angular),
         )
     }
     .map_err(Refusal::Body)?;
@@ -628,8 +697,9 @@ const TOSS_LAND_M: f32 = 1.2;
 const TOSS_SPEED_MPS: f32 = 9.0;
 const TOSS_FLIGHT_S: (f32, f32) = (0.45, 1.2);
 
-/// Hand what the hand caught over: a weapon into the hand through the table, an object into the
-/// hand's hold at its surface nearest the palm, and a grenade into the hand through the loadout.
+/// Hand what the hand caught over: a weapon into the hand through the table, sliding the rest of
+/// the way into its grip over `slide_s`, an object into the hand's hold at its surface nearest the
+/// palm, and a grenade into the hand through the loadout.
 ///
 /// # Safety
 ///
@@ -640,16 +710,21 @@ unsafe fn arrive(
     body: u32,
     centre: Vec3,
     palm: Vec3,
+    slide_s: f32,
 ) -> Result<Arrival, Refusal> {
     match grabbed.kind {
         Pulled::Weapon => {
             let (weapon, _) = unsafe { engine::dropped(grabbed.object) }?;
+            let address = weapon as *mut WeaponBase as usize;
             let options = TakeOptions {
-                slide_s: SNAP_S,
+                slide_s,
                 cause: Cause::Snatch,
             };
             unsafe { pickup::take(hand, weapon, options) }
-                .map(Arrival::Weapon)
+                .map(|slot| Arrival::Weapon {
+                    slot,
+                    weapon: address,
+                })
                 .map_err(Refusal::Take)
         }
         Pulled::Prop {

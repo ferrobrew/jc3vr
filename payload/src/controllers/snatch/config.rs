@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::bindings::yank::YankConfig;
+use crate::controllers::{bindings::yank::YankConfig, snatch::landing::LandingTuning};
 
 /// The grapple snatch (see [`crate::controllers::snatch`]). Acts only under the controller scheme.
 /// Its tuning is fixed at [`SNATCH`], apart from the yank that fires it.
@@ -174,6 +174,9 @@ pub struct SnatchTuning {
     /// How hard the line swings a door outward once it comes open: the door's mass times this,
     /// metres per second.
     pub door_swing_mps: f32,
+    /// How a snatched gun is steered into the pose the catching hand will hold it in over its
+    /// final approach.
+    pub landing: LandingTuning,
 }
 
 /// The grapple snatch's tuning.
@@ -201,7 +204,24 @@ pub const SNATCH: SnatchTuning = SnatchTuning {
     door_reach_m: 0.5,
     door_max_vehicle_speed_mps: 2.0,
     door_swing_mps: 3.0,
+    landing: LandingTuning {
+        ramp_m: 0.25,
+        ramp_ticks: 1.0,
+        min_t_go_s: 1.0 / 30.0,
+        max_t_go_s: 0.5,
+        max_spin_rps: 40.0,
+        max_angular_accel: 1200.0,
+        lateral_window_m: 0.3,
+        hysteresis_m: 0.1,
+        max_extrapolate_s: 0.1,
+        settled_rad: 5.0 * DEGREE,
+        settled_m: 0.02,
+        full_slide_rad: 30.0 * DEGREE,
+    },
 };
+
+/// One degree, radians.
+const DEGREE: f32 = std::f32::consts::PI / 180.0;
 
 #[cfg(test)]
 mod tests {

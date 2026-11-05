@@ -46,11 +46,13 @@
 //! Grip release writes no target velocity. [`hooks`] keeps ordinary grapple taps and holds working
 //! on aimed weapons.
 
+mod arrival;
 mod brace;
 pub mod config;
 mod engine;
 mod hooks;
 mod juice;
+pub mod landing;
 mod latch;
 mod moment;
 mod prearm;
@@ -89,6 +91,7 @@ use crate::controllers::{
     mode::{Detection, Mode},
     physical_hands,
     snatch::{
+        arrival::ArrivalWatch,
         brace::Brace,
         moment::Moment,
         prearm::Prearm,
@@ -331,6 +334,11 @@ pub(crate) unsafe fn finish_tick(input: &FinishInput, desired: &mut Vec<Desired>
         }
     }
     let mut state = STATE.lock();
+    if let Some(watch) = &mut state.watch
+        && !unsafe { watch.tick() }
+    {
+        state.watch = None;
+    }
     let (from, hand) = (state.phase.label(), state.phase.hand());
     unsafe { state.step(input) };
     let to = state.phase.label();
@@ -393,6 +401,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     moment: Moment::new(),
     prearm: Prearm::new(),
     other_catch: None,
+    watch: None,
     status: SnatchStatus {
         live: false,
         phase: "IDLE",
@@ -416,6 +425,8 @@ struct State {
     prearm: Prearm<Offer>,
     /// The other hand's catch on the last tick, for the bindings to latch its grip on.
     other_catch: Option<(Hand, GrabVolume)>,
+    /// The watch over a caught gun's first ticks in the hand.
+    watch: Option<ArrivalWatch>,
     status: SnatchStatus,
 }
 
@@ -795,7 +806,7 @@ impl State {
                         self.moment.ended(
                             "taken",
                             match &arrival {
-                                Arrival::Weapon(slot) => {
+                                Arrival::Weapon { slot, .. } => {
                                     format!(
                                         "a weapon came into the {} hand's {} slot",
                                         catcher.label(),
@@ -819,8 +830,11 @@ impl State {
                             self.other_catch = Some((catcher, volume));
                         }
                         haptics::play(catcher, Event::SnatchCatch);
+                        if let Arrival::Weapon { weapon, .. } = arrival {
+                            self.watch = Some(ArrivalWatch::new(weapon, catcher));
+                        }
                         match arrival {
-                            Arrival::Weapon(slot) => tracing::info!(
+                            Arrival::Weapon { slot, .. } => tracing::info!(
                                 target: "controllers",
                                 hand = catcher.label(),
                                 line_hand = hand.label(),
