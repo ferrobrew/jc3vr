@@ -81,6 +81,8 @@ Every take of a weapon into a hand goes through one path (`hold::source`), whate
 - a hand that closes on the weapon within reach takes it at once (`source::take`): the source gives it up, and it slides from where it was into the hand through the direct pickup ([Picking a weapon up into the hand](#picking-a-weapon-up-into-the-hand));
 - the snatch takes it from range (`source::free`): the source gives it up into the world with its bodies, the line pulls it in, and the catching hand takes it through the same pickup (`source::deliver`).
 
+Every source makes the same check before it gives its weapon up (`pickup::preflight`), so a take the hand could not finish leaves the weapon where it was: the weapon is one a hand takes (not a hand grenade, and not a weapon that hands out copies unless the take is of the copy), the table can take it into the hand or the game's pickup can, and on the game's route the animation allows a pickup. The table's route plays no pickup animation and does not ask. A rack's freeing step is the one call that starts the game's own pickup of its weapon ([`WeaponBase::PickupStart`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##func-PickupStart)), made after the check and before the delivery, so the rack hears of each take once.
+
 The table records the source and the delivery apart (a `TakeSource` and a `Delivery`), so a snatched weapon keeps its provenance: the log names a rack's weapon as taken off a rack whether a hand or the line brought it, and the hand's readout shows it as snatched.
 
 ## Taking a gun from a character's hands

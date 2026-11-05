@@ -143,9 +143,34 @@ pub(crate) unsafe fn take(
         return Err(SourceRefusal::Gone);
     }
     // A copy is asked of a rack with unlimited stock; anything else hands its own weapon over.
-    let restocks = weapon.m_InfinitePickup && weapon.m_State == WeaponState::E_WS_WEAPON_RACK;
+    let racked = weapon.m_State == WeaponState::E_WS_WEAPON_RACK;
+    let restocks = weapon.m_InfinitePickup && racked;
+    if restocks && COPY.lock().is_some() {
+        return Err(SourceRefusal::CopyPending);
+    }
+    let admitted =
+        unsafe { pickup::preflight(owner, weapon, hand, restocks) }.map_err(SourceRefusal::Take)?;
     if !restocks {
-        let slot = unsafe { pickup::take(hand, weapon, options) }.map_err(SourceRefusal::Take)?;
+        // A rack's weapon is offered in the rack state, and a locker's lying in the world where its
+        // placement rule set it down.
+        if !racked && weapon.m_State != WeaponState::E_WS_DROPPED {
+            let state = unsafe { (&raw const weapon.m_State).cast::<i32>().read() };
+            return Err(SourceRefusal::Take(Refusal::NotOffered { state }));
+        }
+        if racked {
+            // Takes it out of the rack's state and tells the rack it was picked up.
+            unsafe { weapon.PickupStart(character_object(owner)) };
+        }
+        let options = TakeOptions {
+            source: if racked {
+                TakeSource::Rack
+            } else {
+                TakeSource::Locker
+            },
+            ..options
+        };
+        let slot = unsafe { pickup::deliver(owner, hand, weapon, admitted, options) }
+            .map_err(SourceRefusal::Take)?;
         RACK_TAKES.lock().takes += 1;
         tracing::info!(
             target: "controllers",
@@ -156,13 +181,7 @@ pub(crate) unsafe fn take(
         );
         return Ok(slot);
     }
-    if COPY.lock().is_some() {
-        return Err(SourceRefusal::CopyPending);
-    }
-    let slot = rack_slot(weapon).ok_or(SourceRefusal::Take(Refusal::UnknownSlot))?;
-    if !unsafe { owner.m_Inventory.GetAnimationAllowsPickup() } {
-        return Err(SourceRefusal::Take(Refusal::AnimationForbids));
-    }
+    let slot = admitted.0;
     let from = unsafe { engine::gun_pose(weapon) };
     let display = unsafe { inventory_engine::strong_to(weapon) }.ok_or(SourceRefusal::Gone)?;
     // The copy is a give, which the table takes into the hand left expecting it

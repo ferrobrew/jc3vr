@@ -140,7 +140,7 @@ pub(crate) unsafe fn release(
     }
     let owner =
         unsafe { engine::local_player() }.ok_or(SourceRefusal::Take(Refusal::NoCharacter))?;
-    unsafe { pickup::preflight(owner, weapon, hand) }.map_err(SourceRefusal::Take)?;
+    unsafe { pickup::preflight(owner, weapon, hand, false) }.map_err(SourceRefusal::Take)?;
     let from_rack = weapon.m_State == WeaponState::E_WS_WEAPON_RACK;
     if from_rack {
         unsafe { weapon.PickupStart(character_object(owner)) };

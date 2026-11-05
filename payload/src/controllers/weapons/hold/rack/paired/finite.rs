@@ -10,14 +10,15 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     frame::Hand,
-    loadout::{TakeSource, take::TakeRoute},
+    loadout::take::TakeRoute,
     weapons::{
         dual_wield::single::{self, magazine},
-        engine::object_of,
+        engine::{character_object, object_of},
         hold::{
-            pickup::{self, Refusal, TakeOptions},
+            pickup::Refusal,
             rack::paired::{
-                self, COPY_WAIT, MAX_SOURCES, Member, SOURCE_GRACE, Stage, gun, gun_target,
+                self, COPY_WAIT, Claim, ClaimKind, MAX_SOURCES, Member, SOURCE_GRACE, Stage, gun,
+                gun_target,
             },
             refs::{Strong, Weak},
             source::SourceRefusal,
@@ -171,17 +172,18 @@ pub(super) unsafe fn staged(member: Member, actor: Strong) {
     unsafe { weapon.Despawn() };
 }
 
-/// Claim the staged copy first, then transfer the remaining original through finite pickup.
+/// Claim the staged copy first, then the remaining original: the first claim splits the source's
+/// ammunition between the two, and the last starts the original's native pickup, which tells its
+/// placement rule, once.
 ///
 /// # Safety
 ///
 /// The source and local player are live on the game thread before the world update.
-pub(super) unsafe fn take(
-    owner: &mut Character,
+pub(super) unsafe fn claim(
+    owner: &Character,
     hand: Hand,
     member: Member,
-    options: TakeOptions,
-) -> Result<WeaponSlot, SourceRefusal> {
+) -> Result<(Claim, (WeaponSlot, TakeRoute)), SourceRefusal> {
     let (actor, first, pickup_started) = {
         let mut state = STATE.lock();
         let source = state
@@ -205,70 +207,93 @@ pub(super) unsafe fn take(
     if !single::is(weapon as *mut WeaponBase as usize) {
         unsafe { single::designate(weapon, "a finite rack member") };
     }
-    let route = if single::is(weapon as *mut WeaponBase as usize) {
-        unsafe { pickup::route(weapon, Some(hand)) }
+    let admitted = if single::is(weapon as *mut WeaponBase as usize) {
+        unsafe { paired::admit(owner, weapon, hand) }
     } else {
         Err(Refusal::NotTaken)
     };
-    let result = match route {
-        Ok(TakeRoute::Table { hand }) => {
-            if first {
-                unsafe {
-                    take_first(
-                        owner,
-                        hand,
-                        member,
-                        weapon,
-                        &mut *(member.source as *mut WeaponBase),
-                        options,
-                    )
-                }
-            } else {
-                if pickup_started {
-                    // A failed carry may already have sent the native source's pickup event.
-                    unsafe { weapon.SetState(WeaponState::E_WS_DROPPED, true) };
-                }
-                unsafe {
-                    pickup::take_by_table(
-                        owner,
-                        hand,
-                        weapon,
-                        TakeOptions {
-                            source: TakeSource::Rack,
-                            ..options
-                        },
-                    )
-                }
+    let prepared = admitted.and_then(|admitted| {
+        let kind = if first {
+            unsafe { split(member, weapon, &mut *(member.source as *mut WeaponBase)) }?
+        } else {
+            if pickup_started {
+                // A failed carry already sent the native source's pickup event.
+                unsafe { weapon.SetState(WeaponState::E_WS_DROPPED, true) };
+            } else if weapon.m_State == WeaponState::E_WS_WEAPON_RACK {
+                // Takes the last pistol out of the rack state and tells its placement rule.
+                unsafe { weapon.PickupStart(character_object(owner)) };
             }
+            ClaimKind::FiniteFinal {
+                started: weapon.m_State != WeaponState::E_WS_WEAPON_RACK,
+            }
+        };
+        Ok((kind, admitted))
+    });
+    match prepared {
+        Ok((kind, admitted)) => Ok((Claim::new(member, actor, kind), admitted)),
+        Err(refusal) => {
+            if first && let Some(source) = STATE.lock().iter_mut().find(|s| s.matches(member)) {
+                source.copy.complete(actor, false);
+            }
+            Err(SourceRefusal::Take(refusal))
         }
-        Ok(TakeRoute::Game(_)) => Err(Refusal::NotTaken),
-        Err(refusal) => Err(refusal),
-    };
-    let started = !first && weapon.m_State != WeaponState::E_WS_WEAPON_RACK;
+    }
+}
+
+/// Settle a finite pair's claim (`kind`, of `actor` for `member`) after its take.
+///
+/// # Safety
+///
+/// The game thread, before the world update.
+pub(super) unsafe fn settle(member: Member, actor: Strong, kind: ClaimKind, accepted: bool) {
+    let weapon = unsafe { &mut *engine::weapon_of(&actor) };
+    let index = member.index as usize;
+    if let ClaimKind::FiniteFirst { magazine, stored } = kind
+        && !accepted
+    {
+        // Give the original its whole ammunition back, as one pair again.
+        let original = unsafe { &mut *(member.source as *mut WeaponBase) };
+        unsafe { original.SetMagazineAmmo(magazine) };
+        original.m_StoredNonMagazineAmmo = stored;
+        single::undesignate(member.source);
+        unsafe { original.SetVisible(true, false, false) };
+        unsafe { weapon.SetMagazineAmmo(0) };
+        weapon.m_StoredNonMagazineAmmo = 0;
+    }
     let mut state = STATE.lock();
-    if let Some(source) = state.iter_mut().find(|s| s.matches(member)) {
-        source.pickup_started |= started;
-        if result.is_ok() {
-            source.claims.accept(member.index as usize);
-            if first {
-                source.copy.complete(actor, true);
-                unsafe { show_remaining(source, member.index as usize) };
-            }
-        } else if first {
+    let Some(source) = state.iter_mut().find(|s| s.matches(member)) else {
+        return;
+    };
+    match kind {
+        ClaimKind::FiniteFirst { .. } if accepted => {
+            source.claims.accept(index);
+            source.copy.complete(actor, true);
+            unsafe { show_remaining(source, index) };
+        }
+        ClaimKind::FiniteFirst { .. } => {
             unsafe { weapon.SetState(WeaponState::E_WS_WEAPON_RACK, true) };
             unsafe { weapon.SetVisible(false, false, false) };
             source.copy.complete(actor, false);
-        } else if started {
-            // The source event cannot be rolled back; a failed final carry leaves one loose gun.
-            unsafe { weapon.SetState(WeaponState::E_WS_DROPPED, true) };
-            unsafe { weapon.SetVisible(true, false, false) };
-            unsafe { single::hide_extra(weapon) };
         }
+        ClaimKind::FiniteFinal { started } => {
+            source.pickup_started |= started;
+            if accepted {
+                source.claims.accept(index);
+            } else if started {
+                // The source event cannot be rolled back; a failed final carry leaves one loose
+                // gun.
+                unsafe { weapon.SetState(WeaponState::E_WS_DROPPED, true) };
+                unsafe { weapon.SetVisible(true, false, false) };
+                unsafe { single::hide_extra(weapon) };
+            }
+        }
+        ClaimKind::Unlimited => return,
     }
-    result.map_err(SourceRefusal::Take)?;
-    tracing::info!(target: "controllers", source = member.source, generation = member.generation,
-        member = member.index, original = !first, "rack: took a finite native member");
-    Ok(WeaponSlot::E_SLOT_DUAL_WIELD)
+    if accepted {
+        tracing::info!(target: "controllers", source = member.source, generation = member.generation,
+            member = member.index, original = matches!(kind, ClaimKind::FiniteFinal { .. }),
+            "rack: took a finite native member");
+    }
 }
 
 pub(super) fn tick() {
@@ -411,14 +436,14 @@ impl Allocation {
 
 static STATE: Mutex<Vec<Source>> = Mutex::new(Vec::new());
 
-unsafe fn take_first(
-    owner: &mut Character,
-    hand: Hand,
+/// Split the original's ammunition between the staged `copy` and the `original` for a first claim
+/// of `member`, the copy carrying the claimed gun's share, and place the copy at that gun. Returns
+/// the claim's kind, with the original's ammunition before the split.
+unsafe fn split(
     member: Member,
     copy: &mut WeaponBase,
     original: &mut WeaponBase,
-    options: TakeOptions,
-) -> Result<(), Refusal> {
+) -> Result<ClaimKind, Refusal> {
     let allocation = Allocation::new(
         original.m_MagazineAmmo,
         original.m_StoredNonMagazineAmmo,
@@ -444,26 +469,7 @@ unsafe fn take_first(
     copy.m_StoredNonMagazineAmmo = 0;
     copy.m_InfinitePickup = false;
     unsafe { copy.SetState(WeaponState::E_WS_DROPPED, true) };
-    let result = unsafe {
-        pickup::take_by_table(
-            owner,
-            hand,
-            copy,
-            TakeOptions {
-                source: TakeSource::Rack,
-                ..options
-            },
-        )
-    };
-    if result.is_err() {
-        unsafe { original.SetMagazineAmmo(magazine) };
-        original.m_StoredNonMagazineAmmo = stored;
-        single::undesignate(member.source);
-        unsafe { original.SetVisible(true, false, false) };
-        unsafe { copy.SetMagazineAmmo(0) };
-        copy.m_StoredNonMagazineAmmo = 0;
-    }
-    result
+    Ok(ClaimKind::FiniteFirst { magazine, stored })
 }
 
 unsafe fn show_remaining(source: &Source, taken: usize) {

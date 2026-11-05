@@ -158,12 +158,19 @@ pub(crate) unsafe fn take(hand: Hand, source: &WeaponSource) -> Result<WeaponSlo
         WeaponSource::RackMember(member) => {
             let owner = unsafe { engine::local_player() }
                 .ok_or(SourceRefusal::Take(Refusal::NoCharacter))?;
-            unsafe { rack::paired::take(owner, hand, *member, options(TakeSource::Rack)) }
+            let (claim, admitted) = unsafe { rack::paired::claim(owner, hand, *member) }?;
+            // SAFETY: the claim holds the pistol alive.
+            let weapon = unsafe { &mut *claim.weapon() };
+            let taken = unsafe {
+                pickup::deliver(owner, hand, weapon, admitted, options(TakeSource::Rack))
+            };
+            unsafe { claim.settle(taken.is_ok()) };
+            taken.map_err(SourceRefusal::Take)
         }
         WeaponSource::Character(gun) => {
             let freed = unsafe {
                 steal::release(gun, |owner, weapon| {
-                    pickup::preflight(owner, weapon, hand)
+                    pickup::preflight(owner, weapon, hand, false)
                         .map(|_| ())
                         .map_err(SourceRefusal::Take)
                 })
@@ -199,8 +206,8 @@ pub(crate) unsafe fn free(hand: Hand, source: &WeaponSource) -> Result<Freed, So
             let player = unsafe { engine::local_player() }
                 .ok_or(SourceRefusal::Take(Refusal::NoCharacter))?;
             // SAFETY: the strong reference keeps the weapon alive.
-            unsafe { pickup::takeable(player, &*weapon) }.map_err(SourceRefusal::Take)?;
-            unsafe { pickup::route(&*weapon, Some(hand)) }.map_err(SourceRefusal::Take)?;
+            unsafe { pickup::preflight(player, &*weapon, hand, false) }
+                .map_err(SourceRefusal::Take)?;
             Ok(Freed {
                 weapon,
                 alive,
@@ -214,7 +221,7 @@ pub(crate) unsafe fn free(hand: Hand, source: &WeaponSource) -> Result<Freed, So
         WeaponSource::RackMember(_) => Err(SourceRefusal::Gone),
         WeaponSource::Character(gun) => unsafe {
             steal::release(gun, |owner, weapon| {
-                pickup::preflight(owner, weapon, hand)
+                pickup::preflight(owner, weapon, hand, false)
                     .map(|_| ())
                     .map_err(SourceRefusal::Take)
             })

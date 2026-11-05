@@ -17,12 +17,12 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     frame::{Hand, Pose},
-    loadout::{TakeSource, live, take::TakeRoute},
+    loadout::{live, take::TakeRoute},
     weapons::{
         dual_wield::single::{self, magazine},
         engine::{character_object, slot_of},
         hold::{
-            pickup::{self, Refusal, TakeOptions},
+            pickup::{self, Refusal},
             rack::offered_state,
             refs::Strong,
             source::SourceRefusal,
@@ -230,19 +230,71 @@ pub(crate) unsafe fn staged(member: Member, actor: Strong) {
         member = member.index, "rack: the initialized member waits at its source");
 }
 
-/// Take exactly the cached source member, never its neighbour or a replacement source.
+/// A member claimed from its source for a take: a standalone single pistol, out of the rack state,
+/// held alive. The take settles it ([`Claim::settle`]): accepted, the member has left its source;
+/// refused, the source has it back as before the claim, except that a finite pair's last pistol
+/// whose rack already heard its pickup stays a loose single pistol.
+pub(crate) struct Claim {
+    member: Member,
+    actor: Strong,
+    kind: ClaimKind,
+}
+
+/// What settling a claim undoes or completes.
+pub(super) enum ClaimKind {
+    /// A staged member of a rack with unlimited stock.
+    Unlimited,
+    /// A finite pair's staged copy, with the original's ammunition before the split.
+    FiniteFirst { magazine: i32, stored: i32 },
+    /// A finite pair's original actor, the last pistol: whether its rack heard its pickup.
+    FiniteFinal { started: bool },
+}
+
+impl Claim {
+    pub(super) fn new(member: Member, actor: Strong, kind: ClaimKind) -> Claim {
+        Claim {
+            member,
+            actor,
+            kind,
+        }
+    }
+
+    /// The claimed pistol.
+    pub(crate) fn weapon(&self) -> *mut WeaponBase {
+        engine::weapon_of(&self.actor)
+    }
+
+    /// Settle the claim after its take: `accepted` when the pistol went into the hand.
+    ///
+    /// # Safety
+    ///
+    /// The game thread, before the world update.
+    pub(crate) unsafe fn settle(self, accepted: bool) {
+        let Claim {
+            member,
+            actor,
+            kind,
+        } = self;
+        match kind {
+            ClaimKind::Unlimited => unsafe { settle_unlimited(member, actor, accepted) },
+            kind => unsafe { finite::settle(member, actor, kind, accepted) },
+        }
+    }
+}
+
+/// Claim exactly the cached source member for a take into `hand`, never its neighbour or a
+/// replacement source, once the take is admitted. Returns the claim and the admitted take.
 ///
 /// # Safety
 ///
 /// The local player and source are live on the game thread before the world update.
-pub(crate) unsafe fn take(
-    owner: &mut Character,
+pub(crate) unsafe fn claim(
+    owner: &Character,
     hand: Hand,
     member: Member,
-    options: TakeOptions,
-) -> Result<WeaponSlot, SourceRefusal> {
+) -> Result<(Claim, (WeaponSlot, TakeRoute)), SourceRefusal> {
     if finite::owns(member) {
-        return unsafe { finite::take(owner, hand, member, options) };
+        return unsafe { finite::claim(owner, hand, member) };
     }
     let actor = {
         let mut state = STATE.lock();
@@ -252,45 +304,57 @@ pub(crate) unsafe fn take(
     };
     let weapon = unsafe { &mut *engine::weapon_of(&actor) };
     // A staged actor is not in the single-pistol inventory watch until the take makes it owned.
-    let result = unsafe { designate_member(weapon) }
-        .and_then(|()| unsafe { pickup::route(weapon, Some(hand)) })
-        .and_then(|route| match route {
-            TakeRoute::Table { hand } => Ok(hand),
-            TakeRoute::Game(_) => Err(Refusal::NotTaken),
-        })
-        .and_then(|hand| {
-            if !unsafe { owner.m_Inventory.GetAnimationAllowsPickup() } {
-                return Err(Refusal::AnimationForbids);
+    let admitted =
+        unsafe { designate_member(weapon) }.and_then(|()| unsafe { admit(owner, weapon, hand) });
+    let admitted = match admitted {
+        Ok(admitted) => admitted,
+        Err(refusal) => {
+            if let Some(source) = find_mut(&mut STATE.lock(), member) {
+                source.members[member.index as usize].complete(actor, false);
             }
-            // The native give already initialized ownership and ammunition; do not request a copy.
-            weapon.m_InfinitePickup = false;
-            unsafe { weapon.SetState(WeaponState::E_WS_DROPPED, true) };
-            unsafe {
-                pickup::take_by_table(
-                    owner,
-                    hand,
-                    weapon,
-                    TakeOptions {
-                        source: TakeSource::Rack,
-                        ..options
-                    },
-                )
-            }
-        });
-    let mut state = STATE.lock();
-    if let Some(source) = find_mut(&mut state, member) {
-        if result.is_ok() {
-            // Hide only the member that left; the other native source gun remains visible.
-            unsafe { hide_member(source, member.index as usize) };
-        } else {
-            unsafe { weapon.SetState(WeaponState::E_WS_WEAPON_RACK, true) };
-            unsafe { weapon.SetVisible(false, false, false) };
+            return Err(SourceRefusal::Take(refusal));
         }
-        source.members[member.index as usize].complete(actor, result.is_ok());
+    };
+    // The native give already initialized ownership and ammunition; do not request a copy.
+    weapon.m_InfinitePickup = false;
+    unsafe { weapon.SetState(WeaponState::E_WS_DROPPED, true) };
+    Ok((Claim::new(member, actor, ClaimKind::Unlimited), admitted))
+}
+
+/// The take of a claimed member into `hand`, admitted as every take is, and only through the table,
+/// which holds a single pistol in a hand of its own.
+///
+/// # Safety
+///
+/// The owner and weapon are live on the game thread before the world update.
+pub(super) unsafe fn admit(
+    owner: &Character,
+    weapon: &WeaponBase,
+    hand: Hand,
+) -> Result<(WeaponSlot, TakeRoute), Refusal> {
+    let admitted = unsafe { pickup::preflight(owner, weapon, hand, true) }?;
+    match admitted.1 {
+        TakeRoute::Table { .. } => Ok(admitted),
+        TakeRoute::Game(_) => Err(Refusal::NotTaken),
     }
-    drop(state);
-    result.map_err(SourceRefusal::Take)?;
-    Ok(WeaponSlot::E_SLOT_DUAL_WIELD)
+}
+
+/// Settle an unlimited rack's claimed member: hide its gun at the source when it left, or put the
+/// staged actor back.
+unsafe fn settle_unlimited(member: Member, actor: Strong, accepted: bool) {
+    let weapon = unsafe { &mut *engine::weapon_of(&actor) };
+    let mut state = STATE.lock();
+    let Some(source) = find_mut(&mut state, member) else {
+        return;
+    };
+    if accepted {
+        // Hide only the member that left; the other native source gun remains visible.
+        unsafe { hide_member(source, member.index as usize) };
+    } else {
+        unsafe { weapon.SetState(WeaponState::E_WS_WEAPON_RACK, true) };
+        unsafe { weapon.SetVisible(false, false, false) };
+    }
+    source.members[member.index as usize].complete(actor, accepted);
 }
 
 /// Retire sources no longer offered, and make failed native requests non-repeating.

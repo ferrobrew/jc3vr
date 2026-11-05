@@ -21,9 +21,11 @@
 //! are refused, and the caller falls back to the use-item click. A table take does not queue that
 //! animation and does not require its permission.
 //!
-//! A weapon on a rack is taken the same way, after the call that starts the game's own pickup of
-//! it ([`WeaponBase::PickupStart`]), which takes it out of the rack's state and tells the rack it
-//! was picked up; the pickup animation that would complete it is never queued.
+//! A weapon from any other source (a rack, a locker, a character) is taken the same way once its
+//! source gave it up ([`deliver`], from [`crate::controllers::weapons::hold::source`]): a rack's
+//! weapon after the call that starts the game's own pickup of it ([`WeaponBase::PickupStart`]),
+//! which takes it out of the rack's state and tells the rack it was picked up; the pickup animation
+//! that would complete it is never queued. Every source checks the take first ([`preflight`]).
 //!
 //! While pistols are single ([`crate::controllers::weapons::dual_wield::single`]), a pistol taken
 //! from the world is one pistol.
@@ -129,7 +131,8 @@ pub struct TakeOptions {
     pub delivery: Delivery,
 }
 
-/// Pick `weapon` up into `hand` directly. Returns the slot the weapon belongs to.
+/// Pick `weapon`, lying in the world, up into `hand` directly. Returns the slot the weapon belongs
+/// to.
 ///
 /// # Safety
 ///
@@ -141,26 +144,28 @@ pub(crate) unsafe fn take(
     options: TakeOptions,
 ) -> Result<WeaponSlot, Refusal> {
     let owner = unsafe { engine::local_player() }.ok_or(Refusal::NoCharacter)?;
-    // An interaction offers a rack's weapon in the rack state, and a weapon its placement rule
-    // set down at a spot (a locker's) lying in the world; only the rack state needs the game's own
-    // pickup started first. A weapon the snatch pulled in lies in the world whatever its source.
-    let offered = options.delivery == Delivery::Local
-        && matches!(options.source, TakeSource::Rack | TakeSource::Locker);
-    let from_rack = offered && weapon.m_State == WeaponState::E_WS_WEAPON_RACK;
-    let source = match options.source {
-        TakeSource::Rack if !from_rack => TakeSource::Locker,
-        source => source,
-    };
-    let options = TakeOptions { source, ..options };
-    match (offered, weapon.m_State) {
-        (_, WeaponState::E_WS_DROPPED) | (true, WeaponState::E_WS_WEAPON_RACK) => {}
-        (false, _) => return Err(Refusal::NotDropped),
-        (true, _) => {
-            let state = unsafe { (&raw const weapon.m_State).cast::<i32>().read() };
-            return Err(Refusal::NotOffered { state });
-        }
+    if weapon.m_State != WeaponState::E_WS_DROPPED {
+        return Err(Refusal::NotDropped);
     }
-    let (slot, route) = unsafe { preflight(owner, weapon, hand) }?;
+    let admitted = unsafe { preflight(owner, weapon, hand, false) }?;
+    unsafe { deliver(owner, hand, weapon, admitted, options) }
+}
+
+/// Carry out a take of `weapon` that [`preflight`] admitted as `admitted`, once its source gave it
+/// up: lying in the world, or with its rack's pickup started. Returns the slot the weapon belongs
+/// to.
+///
+/// # Safety
+///
+/// As [`take`].
+pub(crate) unsafe fn deliver(
+    owner: &mut Character,
+    hand: Hand,
+    weapon: &mut WeaponBase,
+    admitted: (WeaponSlot, TakeRoute),
+    options: TakeOptions,
+) -> Result<WeaponSlot, Refusal> {
+    let (slot, route) = admitted;
     match route {
         TakeRoute::Table { hand } => {
             unsafe { take_by_table(owner, hand, weapon, options) }?;
@@ -168,12 +173,15 @@ pub(crate) unsafe fn take(
         }
         TakeRoute::Game(why) => {
             tracing::debug!(target: "controllers", why = why.label(), "hold: the game's pickup takes the weapon");
-            unsafe { take_by_game(owner, hand, weapon, slot, from_rack, options) }
+            unsafe { take_by_game(owner, hand, weapon, slot, options) }
         }
     }
 }
 
-/// Check all admission conditions before a caller changes the source's ownership.
+/// The one admission check of every take into a hand, made before its source gives the weapon up:
+/// the weapon is one a hand takes ([`takeable`]), the table can take it into `hand` or the game's
+/// pickup can ([`route`]), and on the game's route the animation allows a pickup. `copy` is a
+/// weapon a rack with unlimited stock made, whose infinite-pickup setting does not refuse it.
 ///
 /// # Safety
 ///
@@ -182,9 +190,10 @@ pub(crate) unsafe fn preflight(
     owner: &Character,
     weapon: &WeaponBase,
     hand: Hand,
+    copy: bool,
 ) -> Result<(WeaponSlot, TakeRoute), Refusal> {
     complete_preflight(
-        unsafe { takeable(owner, weapon) },
+        unsafe { takeable(weapon, copy) },
         || unsafe { route(weapon, Some(hand)) },
         || unsafe { owner.m_Inventory.GetAnimationAllowsPickup() },
     )
@@ -217,7 +226,7 @@ pub(crate) unsafe fn route(weapon: &WeaponBase, hand: Option<Hand>) -> Result<Ta
     .map_err(Refusal::Hands)
 }
 
-/// Take `weapon`, lying in the world or offered on its rack, into `hand` through the loadout table,
+/// Take `weapon`, which its source gave up, into `hand` through the loadout table,
 /// from `options`' source: the weapon becomes the player's without the game's equip, the carry set keeps it,
 /// the table takes it into the hand, and the reconcile wields it there when the hand is the primary
 /// and arms it otherwise. The weapon in the other hand stays there, and one in the slot it would
@@ -240,10 +249,6 @@ pub(crate) unsafe fn take_by_table(
         unsafe { inventory_engine::weapon_type(weapon) }.ok_or(Refusal::UnknownSlot)?;
     let strong = unsafe { inventory_engine::strong_to(weapon) }.ok_or(Refusal::NotDropped)?;
     let from = unsafe { gun_pose(weapon) };
-    if weapon.m_State == WeaponState::E_WS_WEAPON_RACK {
-        // Takes it out of the rack's state and tells the rack it was picked up.
-        unsafe { weapon.PickupStart(character_object(owner)) };
-    }
     // While pistols are single, a pistol from the world is one pistol.
     if unsafe { single::designate_if_active(weapon, "a pistol taken from the world") } {
         unsafe { single::taken_from_world(owner, weapon) };
@@ -293,7 +298,6 @@ unsafe fn take_by_game(
     hand: Hand,
     weapon: &mut WeaponBase,
     slot: WeaponSlot,
-    from_rack: bool,
     options: TakeOptions,
 ) -> Result<WeaponSlot, Refusal> {
     let address = weapon as *mut WeaponBase as usize;
@@ -322,11 +326,7 @@ unsafe fn take_by_game(
         live::Expect::Take(options.source, options.delivery),
         Some(address),
     );
-    let activator = character_object(owner);
-    if from_rack {
-        unsafe { weapon.PickupStart(activator) };
-    }
-    unsafe { use_item::own_pickup(weapon, activator) };
+    unsafe { use_item::own_pickup(weapon, character_object(owner)) };
     let wielded = unsafe { gun::held_weapon(owner) }
         .is_some_and(|held| held as *const WeaponBase as usize == address);
     if !wielded {
@@ -356,22 +356,18 @@ static EMBEDDED_POWER_CORE: LazyLock<u32> =
     LazyLock::new(|| hashlittle(b"w210_powercore_embedded") as u32);
 
 /// Whether `weapon` can enter a direct pickup, whatever its state: its slot is one the inventory
-/// holds, and it is not a hand grenade or a weapon that gives a copy. The native route checks
-/// animation permission separately. Returns its slot.
+/// holds, and it is not a hand grenade or, unless it is a rack's `copy`, a weapon that gives a
+/// copy. The native route checks animation permission separately. Returns its slot.
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character and `weapon` live, on the game thread before
-/// the world update.
-pub(crate) unsafe fn takeable(
-    _owner: &Character,
-    weapon: &WeaponBase,
-) -> Result<WeaponSlot, Refusal> {
+/// `weapon` must be live, on the game thread before the world update.
+unsafe fn takeable(weapon: &WeaponBase, copy: bool) -> Result<WeaponSlot, Refusal> {
     let slot = unsafe { slot_of(weapon) }.ok_or(Refusal::UnknownSlot)?;
     if slot == WeaponSlot::E_SLOT_HAND_GRENADE {
         return Err(Refusal::Grenade);
     }
-    if weapon.m_InfinitePickup {
+    if weapon.m_InfinitePickup && !copy {
         return Err(Refusal::InfinitePickup);
     }
     Ok(slot)
@@ -428,6 +424,32 @@ mod tests {
             ),
             Err(Refusal::Grenade)
         );
+    }
+
+    #[test]
+    fn a_rack_s_copy_is_admitted_where_the_weapon_that_gives_it_is_not() {
+        let mut storage = Box::new(std::mem::MaybeUninit::<WeaponBase>::zeroed());
+        // SAFETY: the mapped enums receive valid values before the weapon is borrowed.
+        let weapon = unsafe {
+            (&raw mut (*storage.as_mut_ptr()).m_Class)
+                .write(jc3gi::equipment::weapon::WeaponClass::E_WEAPON_CLASS_NONE);
+            (&raw mut (*storage.as_mut_ptr()).m_EquipSlot).write(WeaponSlot::E_SLOT_TWO_HANDED);
+            storage.assume_init_mut()
+        };
+        weapon.m_InfinitePickup = true;
+        assert_eq!(
+            unsafe { takeable(weapon, false) },
+            Err(Refusal::InfinitePickup)
+        );
+        assert_eq!(
+            unsafe { takeable(weapon, true) },
+            Ok(WeaponSlot::E_SLOT_TWO_HANDED)
+        );
+        // SAFETY: as above.
+        unsafe {
+            (&raw mut weapon.m_EquipSlot).write(WeaponSlot::E_SLOT_HAND_GRENADE);
+        }
+        assert_eq!(unsafe { takeable(weapon, true) }, Err(Refusal::Grenade));
     }
 
     #[test]
