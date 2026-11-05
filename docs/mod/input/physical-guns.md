@@ -82,7 +82,7 @@ A lone hand that takes a free gun takes it by its grip, wherever on the gun it c
 - a long gun docked on a shoulder has a volume on whatever part a free hand touches, as both are drawn, which draws it as the shoulder's holster does, and the gun slides into the hand by its grip;
 - a handover takes the gun by its grip, as does a gun taken out of a character's hands, off a rack, or caught from the snatch ([grapple-snatch.md](grapple-snatch.md)).
 
-A trigger press on a gun the hand braces, or one the mod's fire path holds back (the controller untracked, a dock's slide, a reload, a draw, or a holster playing, or the reload holding the gun), gives the dead click of a dry fire (`DryFire`, [haptics.md](haptics.md)) and one info line, `trigger: the left hand's trigger fired nothing: ...` with the reason, so a press that does nothing is felt and can be read from the log.
+A trigger press on a gun the hand braces, or one the mod's fire path holds back (the controller untracked, a dock's slide, a reload, a draw, or a holster playing, or the reload holding the gun), gives the dead click of a dry fire (`DryFire`, [haptics.md](haptics.md)) and one info line, `trigger: the trigger fired nothing: ...` with the reason and the hand as a field, so a press that does nothing is felt and can be read from the log.
 
 The action's region is also where the reload places the action's handle while the chamber waits on it (`regions::action_volume`): a grip press there works the action, and anywhere else on the action it braces the gun.
 
@@ -130,7 +130,7 @@ With `weapons.regions.enabled` on, once with the hand bodies off and once with t
 19. Brace on the magazine and on the stock: `MAGAZINE, BRACING` with a cupped hand, and `STOCK, BRACING` with the rifle not turning toward the left hand.
 20. With `grip_to_hold` on, hold a rifle muzzle up in the right hand, brace its handguard with the left, and let go with the right: `regions: the holding hand let go, and the left hand slides from the handguard onto the grip`; the rifle glides back through the left hand to its grip without popping and turns onto the grip as it goes, `LEFT HAND ON GUN` reads `GRIP, FIRING`, the fingers take the pistol grip, and the left trigger fires.
 21. Do the same braced on the barrel, then on the stock with the left palm under it: each time the rifle glides onto the left hand's grip over a quarter of a second and ends aligned to shoot (`slides from the barrel`, then `from the stock`), and the left trigger fires at once.
-22. Brace a rifle with the left hand and pull the left trigger: a dead click on the left controller and `trigger: the left hand's trigger fired nothing: the hand braces the gun, and only the hand on the grip fires`. The right trigger fires as before.
+22. Brace a rifle with the left hand and pull the left trigger: a dead click on the left controller and `trigger: the trigger fired nothing: the hand braces the gun, and only the hand on the grip fires`. The right trigger fires as before.
 23. Kill a soldier and pick his rifle up off the ground by the barrel: the rifle slides from the ground into the palm by its grip, aligned to shoot, and fires at once.
 24. With a rifle on the back, reach over the shoulder and grab its barrel or stock rather than the grip: the rifle draws into the hand by its grip, aligned to shoot, and the log has no `took the gun by its barrel`.
 25. With the gun bodies on, brace a rifle and swing its stock into a soldier: the blow counts with the gun.

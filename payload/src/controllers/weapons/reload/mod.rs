@@ -79,6 +79,7 @@ use crate::controllers::{
     },
     body::rig::frames::Frames,
     config::ControllersConfig,
+    diagnostics,
     frame::{Hand, Pose},
     grab::{Candidate, GrabVolume, GripTarget},
     hands::{ActiveHands, pose::CockpitHand},
@@ -276,12 +277,7 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     });
     // The pouch going unplaced is a failure worth a note; its other refusals follow the hands.
     if pouch_refusal == Some(pouch::PouchRefusal::NoBody) && state.pouch_refusal != pouch_refusal {
-        crate::controllers::diagnostics::note_diagnostic(
-            "pouch",
-            None,
-            pouch::PouchRefusal::NoBody.label(),
-            || None,
-        );
+        diagnostics::report("pouch", None, pouch::PouchRefusal::NoBody.label(), || None);
     }
     state.pouch_refusal = pouch_refusal;
     if let Some(pouch) = target_pouch

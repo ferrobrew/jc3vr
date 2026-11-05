@@ -6,7 +6,7 @@ use glam::{Mat4, Vec3};
 use jc3gi::vehicle::{parts::ConstraintInfo, vehicle::Vehicle};
 
 use crate::controllers::{
-    diagnostics::note_diagnostic,
+    diagnostics::report,
     physical_hands::{
         bodies::owner_of,
         doors::{DoorTarget, config::TearTuning, engine},
@@ -211,7 +211,7 @@ pub(crate) unsafe fn tear(grip: &TearGrip, object: NonZeroUsize, body: u32) -> T
         return TearResult::Lost;
     };
     let Some(properties) = (unsafe { part.m_PartProperties.as_ref() }) else {
-        log_refusal(grip, TearRefusal::Invalid);
+        report_refusal(grip, TearRefusal::Invalid);
         return TearResult::Refused;
     };
     let permit = Permit {
@@ -233,7 +233,7 @@ pub(crate) unsafe fn tear(grip: &TearGrip, object: NonZeroUsize, body: u32) -> T
         parallel,
     };
     if let Some(refusal) = permit.refusal() {
-        log_refusal(grip, refusal);
+        report_refusal(grip, refusal);
         return TearResult::Refused;
     }
     // Force ignores the healthy-part restriction. The selective checks retain the vehicle's and
@@ -250,16 +250,9 @@ pub(crate) unsafe fn tear(grip: &TearGrip, object: NonZeroUsize, body: u32) -> T
     result
 }
 
-/// Log that a tear of the door `grip` holds was refused, and why.
-fn log_refusal(grip: &TearGrip, refusal: TearRefusal) {
-    tracing::info!(
-        target: "controllers",
-        slot = ?grip.door.slot,
-        part = grip.door.part_index,
-        "physical hands: doors: a tear was refused: {}",
-        refusal.label()
-    );
-    note_diagnostic("door", None, "a tear was refused", || {
+/// Report that a tear of the door `grip` holds was refused, and why.
+fn report_refusal(grip: &TearGrip, refusal: TearRefusal) {
+    report("door", None, "a tear was refused", || {
         Some(format!(
             "{}; slot {:?}, part {}",
             refusal.label(),

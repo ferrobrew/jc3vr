@@ -20,14 +20,27 @@ use crate::{
     },
 };
 
-/// Note a refusal or another diagnostic moment from `source`, the same fact its log line reports.
-/// `detail` is built only while a recording or the lookback collects.
-pub(crate) fn note_diagnostic(
+/// Report a refusal or another diagnostic moment from `source`: one line in the session log and,
+/// while a recording or the lookback collects, one diagnostic event carrying the same text.
+pub(crate) fn report(
     source: &'static str,
     hand: Option<Hand>,
     what: &'static str,
     detail: impl FnOnce() -> Option<String>,
 ) {
+    let detail = detail();
+    match &detail {
+        Some(detail) => tracing::info!(
+            target: "controllers",
+            hand = hand.map(Hand::label),
+            "{source}: {what}: {detail}"
+        ),
+        None => tracing::info!(
+            target: "controllers",
+            hand = hand.map(Hand::label),
+            "{source}: {what}"
+        ),
+    }
     if !events::collecting() {
         return;
     }
@@ -35,7 +48,7 @@ pub(crate) fn note_diagnostic(
         source: Label::Borrowed(source),
         hand: hand.map(hand_to_file),
         what: Label::Borrowed(what),
-        detail: detail().map(Label::Owned),
+        detail: detail.map(Label::Owned),
     })));
 }
 

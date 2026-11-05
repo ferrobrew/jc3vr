@@ -20,7 +20,7 @@ use parking_lot::Mutex;
 
 use crate::{
     config::Config,
-    controllers::{body::procedural, diagnostics::note_diagnostic, hands::tiers},
+    controllers::{body::procedural, diagnostics::report, hands::tiers},
     headpose::{self, sim::body_yaw_of},
     hooks::input::swim::{
         SWIM_DIRECTION_OVERRIDES, SWIM_EVAL_CALLS, SWIM_MOVE_REFUSALS, SWIM_ROTATE_OVERRIDES,
@@ -130,28 +130,14 @@ fn log_gate(signals: SwimSignals) {
     }
     *last = signals;
     drop(last);
-    let change = if signals.any() {
-        "opened: the player entered the water"
-    } else {
-        "closed: the player left the water"
-    };
     let override_on = Config::lock_query(|c| c.movement.smooth_swim_yaw);
     let heading = headpose::body_yaw_target().is_some();
-    tracing::info!(
-        target: "swim",
-        swimming = signals.any(),
-        motion_state = signals.motion_state,
-        state_bits = signals.state_bits,
-        override_on,
-        heading,
-        "swim: the swim gate {change}"
-    );
     let what = if signals.any() {
         "the swim gate opened"
     } else {
         "the swim gate closed"
     };
-    note_diagnostic("swim", None, what, || {
+    report("swim", None, what, || {
         Some(format!(
             "motion state {}, state bits {}, override {override_on}, heading {heading}",
             signals.motion_state, signals.state_bits

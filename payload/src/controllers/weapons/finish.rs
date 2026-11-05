@@ -16,6 +16,7 @@ use crate::{
             hold::{Desired, MapKind},
         },
         config::ControllersConfig,
+        diagnostics,
         fingers::grip::{self, Grip, GripSource},
         frame::{self, Hand},
         grab::{GrabVolume, resolve::dock_target},
@@ -412,20 +413,9 @@ pub(crate) fn finish_tick(
         .filter_map(|hand| refusals[hand.index()].map(|r| (hand, r)))
     {
         haptics::play(hand, Event::DryFire);
-        tracing::info!(
-            target: "controllers",
-            hand = hand.label(),
-            reason = refusal.label(),
-            "trigger: the {} hand's trigger fired nothing: {}",
-            hand.label(),
-            refusal.label()
-        );
-        crate::controllers::diagnostics::note_diagnostic(
-            "trigger",
-            Some(hand),
-            "the trigger fired nothing",
-            || Some(refusal.label().to_owned()),
-        );
+        diagnostics::report("trigger", Some(hand), "the trigger fired nothing", || {
+            Some(refusal.label().to_owned())
+        });
     }
     let explosive_blocked = Hand::BOTH.into_iter().any(|hand| {
         (grenade::holds(hand) || c4::throwing_hand() == Some(hand))

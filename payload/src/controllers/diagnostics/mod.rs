@@ -34,8 +34,8 @@ pub(crate) use crate::controllers::diagnostics::{
     bodies::after_step,
     moments::{Released, Thrown, note_release, note_throw, note_throw_at},
     notes::{
-        Applied, BodyBefore, Cue, Write, note_diagnostic, note_force, note_frame_timing,
-        note_haptic, note_injected, note_settings,
+        Applied, BodyBefore, Cue, Write, note_force, note_frame_timing, note_haptic, note_injected,
+        note_settings, report,
     },
     pose::{sample_final, sample_pre_ik},
     rig::{RigRun, note_rig},
