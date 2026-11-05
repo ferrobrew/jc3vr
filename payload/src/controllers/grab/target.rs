@@ -147,6 +147,9 @@ pub struct Mark {
 }
 
 impl Mark {
+    /// The size of the marker on something in the world, metres.
+    pub const WORLD_SIZE_M: f32 = 0.06;
+
     /// A ring of `size` at `at`, facing the eye, shown while a hand is within reach.
     pub const fn ring(at: MarkAt, size: f32) -> Self {
         Self {

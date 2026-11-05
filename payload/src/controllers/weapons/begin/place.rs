@@ -81,7 +81,7 @@ impl Place {
     pub(super) fn world(&self, c: &Candidate) -> GripTarget {
         c.target(Mark::ring(
             MarkAt::World(self.xf.point_to_world(c.centre)),
-            WORLD_MARK_M,
+            Mark::WORLD_SIZE_M,
         ))
     }
 }
@@ -116,8 +116,6 @@ pub(super) fn mark_size(radius: f32) -> f32 {
 
 const MIN_MARK_M: f32 = 0.03;
 const MAX_MARK_M: f32 = 0.12;
-/// The marker on something lying in the world, metres.
-pub(super) const WORLD_MARK_M: f32 = 0.06;
 /// The marker where a held charge would stick, metres.
 pub(super) const CHARGE_MARK_M: f32 = 0.08;
 /// The marker on a braced foregrip, metres.

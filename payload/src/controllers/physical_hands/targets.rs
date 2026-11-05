@@ -109,7 +109,7 @@ pub(crate) fn targets(world_scale: f32, scans: &mut [Option<Scan>; 2]) -> Provid
                 GrabVolume::Climb,
                 hand,
                 distance,
-                Mark::ring(MarkAt::World(hold.point), WORLD_MARK_M).on_surface(hold.normal),
+                Mark::ring(MarkAt::World(hold.point), Mark::WORLD_SIZE_M).on_surface(hold.normal),
             ));
         }
     }
@@ -119,7 +119,8 @@ pub(crate) fn targets(world_scale: f32, scans: &mut [Option<Scan>; 2]) -> Provid
                 GrabVolume::StuntHold,
                 hand,
                 0.0,
-                Mark::ring(MarkAt::World(glam::Vec3::ZERO), WORLD_MARK_M).showing(Shown::Never),
+                Mark::ring(MarkAt::World(glam::Vec3::ZERO), Mark::WORLD_SIZE_M)
+                    .showing(Shown::Never),
             ));
         }
     }
@@ -199,7 +200,7 @@ fn same_door(a: DoorTarget, b: DoorTarget) -> bool {
 /// What `reach` found, as a target `hand` is at the reach's distance from, at the player's scale
 /// (`scale` world metres to one).
 fn reach_target(hand: Hand, reach: &Reach, scale: f32) -> GripTarget {
-    let mark = Mark::ring(MarkAt::World(reach.point), WORLD_MARK_M);
+    let mark = Mark::ring(MarkAt::World(reach.point), Mark::WORLD_SIZE_M);
     let mark = match reach.normal.try_normalize() {
         Some(normal) => mark.on_surface(normal),
         None => mark,
@@ -225,8 +226,6 @@ pub(super) fn kind_of(kind: &TargetKind) -> PickupKind {
     }
 }
 
-/// The marker on something in the world, metres.
-const WORLD_MARK_M: f32 = 0.06;
 /// The marker on the grab point of what a hand holds, metres.
 const HELD_MARK_M: f32 = 0.03;
 
