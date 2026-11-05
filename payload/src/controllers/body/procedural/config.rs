@@ -65,7 +65,7 @@ impl ProceduralBodyConfig {
             chest_turn_limit_deg: 70.0,
             lean_limit_deg: 60.0,
             chest_clear_below_m: 0.25,
-            chest_clear_back_m: 0.05,
+            chest_clear_back_m: 0.08,
             neutralize_targets: true,
             chest_radius_m: 0.14,
             abdomen_radius_m: 0.13,
