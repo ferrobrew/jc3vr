@@ -219,6 +219,22 @@ impl DepthMode {
 /// A straight-alpha colour.
 pub type Rgba = [f32; 4];
 
+/// `colour` with its alpha replaced by `alpha`.
+pub fn with_alpha([r, g, b, _]: Rgba, alpha: f32) -> Rgba {
+    [r, g, b, alpha]
+}
+
+/// `colour` with its alpha scaled by `scale`, clamped to 0 to 1.
+pub fn scale_alpha([r, g, b, a]: Rgba, scale: f32) -> Rgba {
+    [r, g, b, a * scale.clamp(0.0, 1.0)]
+}
+
+/// The colour `t` of the way from `a` to `b`, with `t` clamped to 0 to 1.
+pub fn mix(a: Rgba, b: Rgba, t: f32) -> Rgba {
+    let t = t.clamp(0.0, 1.0);
+    std::array::from_fn(|i| a[i] + (b[i] - a[i]) * t)
+}
+
 /// A primitive to draw.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Primitive {
@@ -239,4 +255,27 @@ pub enum Primitive {
         color: Rgba,
         depth: DepthMode,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn with_alpha_replaces_and_scale_alpha_scales() {
+        let colour = [0.2, 0.4, 0.6, 0.5];
+        assert_eq!(with_alpha(colour, 0.8), [0.2, 0.4, 0.6, 0.8]);
+        assert_eq!(scale_alpha(colour, 0.5), [0.2, 0.4, 0.6, 0.25]);
+        assert_eq!(scale_alpha(colour, 3.0), colour, "the scale clamps to one");
+        assert_eq!(scale_alpha(colour, -1.0)[3], 0.0);
+    }
+
+    #[test]
+    fn mix_runs_from_one_colour_to_the_other() {
+        let (a, b) = ([0.0, 0.0, 0.0, 0.0], [1.0, 0.5, 0.25, 1.0]);
+        assert_eq!(mix(a, b, 0.0), a);
+        assert_eq!(mix(a, b, 1.0), b);
+        assert_eq!(mix(a, b, 0.5), [0.5, 0.25, 0.125, 0.5]);
+        assert_eq!(mix(a, b, 2.0), b);
+    }
 }

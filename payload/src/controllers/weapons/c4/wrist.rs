@@ -53,6 +53,7 @@ use crate::{
         overlay::{
             primitive::{
                 Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize,
+                mix, scale_alpha,
             },
             store,
         },
@@ -550,7 +551,7 @@ fn button(look: &Look, tuning: &DetonatorTuning) -> Vec<Primitive> {
     let well_colour = if look.blocked {
         BLOCKED
     } else {
-        fade(WELL, 0.35 + 0.65 * closeness)
+        scale_alpha(WELL, 0.35 + 0.65 * closeness)
     };
     let mut prims = vec![
         sprite(centre, diameter, Shape::Disc, fill),
@@ -563,7 +564,7 @@ fn button(look: &Look, tuning: &DetonatorTuning) -> Vec<Primitive> {
             centre,
             approach + (well - approach) * closeness,
             Shape::Ring { thickness: 0.06 },
-            fade(WELL, closeness),
+            scale_alpha(WELL, closeness),
         ));
     }
     if let Some(tip) = look.tip {
@@ -601,17 +602,6 @@ fn mirrored(hand: Hand, v: Vec3) -> Vec3 {
         Hand::Left => v,
         Hand::Right => Vec3::new(-v.x, v.y, v.z),
     }
-}
-
-/// `colour` with its alpha scaled by `alpha`.
-fn fade(colour: Rgba, alpha: f32) -> Rgba {
-    let [r, g, b, a] = colour;
-    [r, g, b, a * alpha.clamp(0.0, 1.0)]
-}
-
-fn mix(a: Rgba, b: Rgba, t: f32) -> Rgba {
-    let t = t.clamp(0.0, 1.0);
-    std::array::from_fn(|i| a[i] + (b[i] - a[i]) * t)
 }
 
 #[cfg(test)]

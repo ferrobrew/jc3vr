@@ -11,7 +11,9 @@ use std::collections::HashMap;
 use glam::{Affine3A, Vec3};
 
 use crate::controllers::{
-    overlay::primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, SpriteSize},
+    overlay::primitive::{
+        Anchor, DepthMode, Facing, Primitive, Rgba, Shape, SpriteSize, scale_alpha,
+    },
     physical_hands::collider_view::{
         config::ColliderViewConfig,
         model::{Aabb, Body, BodyKind, Geometry, JointKind, Snapshot, interpolate},
@@ -103,14 +105,14 @@ pub fn build(inputs: &DrawInputs<'_>, out: &mut Vec<Primitive>) -> Drawn {
                 size: SpriteSize::World(size * (1.0 + flash.age_s / FLASH_S)),
                 facing: Facing::Billboard,
                 shape: Shape::Ring { thickness: 0.25 },
-                color: with_alpha(CONTACT, fade),
+                color: scale_alpha(CONTACT, fade),
                 depth: DepthMode::Always,
             });
             if let Some(aabb) = flash.body.and_then(|id| frames.aabb(id)) {
                 box_lines(
                     &aabb,
                     BOX_WIDTH_M * 2.0,
-                    with_alpha(CONTACT, fade),
+                    scale_alpha(CONTACT, fade),
                     &mut scratch,
                 );
             }
@@ -159,7 +161,7 @@ pub fn build(inputs: &DrawInputs<'_>, out: &mut Vec<Primitive>) -> Drawn {
             box_lines(
                 &aabb,
                 BOX_WIDTH_M,
-                with_alpha(color, BOX_ALPHA),
+                scale_alpha(color, BOX_ALPHA),
                 &mut scratch,
             );
         }
@@ -325,10 +327,6 @@ fn disc(centre: Vec3, diameter: f32, color: Rgba) -> Primitive {
         color,
         depth: DepthMode::Always,
     }
-}
-
-fn with_alpha(color: Rgba, alpha: f32) -> Rgba {
-    [color[0], color[1], color[2], color[3] * alpha]
 }
 
 const XRAY: DepthMode = DepthMode::XRay {

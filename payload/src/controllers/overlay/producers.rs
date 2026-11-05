@@ -35,6 +35,7 @@ use crate::{
         overlay::{
             primitive::{
                 Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize,
+                with_alpha,
             },
             resolve::HandPoses,
             store,
@@ -426,10 +427,6 @@ fn submit_or_clear(
     buffer.clear();
     build(buffer);
     store::submit(source, buffer, ttl);
-}
-
-fn with_alpha([r, g, b, _]: Rgba, a: f32) -> Rgba {
-    [r, g, b, a]
 }
 
 #[cfg(test)]
