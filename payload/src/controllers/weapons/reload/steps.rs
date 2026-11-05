@@ -621,8 +621,8 @@ impl State {
             && let Some(world) = self.frames
         {
             let round = self.status.insertion.carried(round, well);
-            let top = world.cockpit_to_world(round.top);
-            let axis = world.view * round.axis;
+            let top = world.cockpit.point_to_world(round.top);
+            let axis = world.cockpit.direction_to_world(round.axis);
             match adapter.carry(top, axis, inputs.game_dt, &reload.loose) {
                 loose::Operation::Ready(()) => {}
                 loose::Operation::Deferred => {

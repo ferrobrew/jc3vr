@@ -352,7 +352,7 @@ impl State {
                 || self.free != Some(hand)
                 || self
                     .frames
-                    .is_none_or(|f| f.world_scale != pending.world_scale)
+                    .is_none_or(|f| f.cockpit.world_scale != pending.world_scale)
                 || tick.world_scale != pending.world_scale
                 || self.status.insertion.holding()
                 || self.status.insertion.taken != pending.insertion_taken

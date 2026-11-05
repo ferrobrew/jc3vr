@@ -724,7 +724,7 @@ fn docked_candidates(ticked: &Ticked, active: &ActiveHands, free: [bool; 2]) -> 
         let Some(cockpit) = active.hands[hand.index()] else {
             continue;
         };
-        let world = frames.cockpit_to_world(cockpit.grip.position);
+        let world = frames.cockpit.point_to_world(cockpit.grip.position);
         let touched = ticked
             .docked_long
             .iter()
@@ -744,7 +744,9 @@ fn docked_candidates(ticked: &Ticked, active: &ActiveHands, free: [bool; 2]) -> 
         };
         out.push(Candidate {
             volume: GrabVolume::Socket(gun.site),
-            centre: frames.world_to_cockpit(regions::out_of_gun(gun.pose, hit.anchor, 1.0)),
+            centre: frames
+                .cockpit
+                .point_to_cockpit(regions::out_of_gun(gun.pose, hit.anchor, 1.0)),
             radius: gun_volume_radius(hit.distance / active.world_scale.max(f32::EPSILON)),
             hand: Some(hand),
         });

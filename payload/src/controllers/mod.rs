@@ -62,6 +62,7 @@ pub mod aim_state;
 pub mod bindings;
 pub mod body;
 pub mod clock;
+pub mod cockpit;
 pub mod config;
 pub mod diagnostics;
 pub mod fingers;

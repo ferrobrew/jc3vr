@@ -16,6 +16,7 @@ use tracking_format::event::{GunRelease, ReleaseController, ReleaseDrop, WorldMo
 use crate::{
     controllers::{
         clock::TimeScale,
+        cockpit::CockpitTransform,
         diagnostics::Thrown,
         frame::{self, ControllerFrame, Hand},
         motion::{self, MotionSample, ReleaseEstimate},
@@ -111,9 +112,16 @@ impl ReleaseTransport {
 }
 
 impl ReleaseFrame {
-    /// Recover the transform used by hand composition without adding HMD translation twice.
+    /// Recover the transform used by hand composition without adding HMD translation twice: the
+    /// origin is where the cockpit frame's origin lands with the head at `head_world`.
     pub(crate) fn with_composed_head(mut self, head_world: Vec3, head_cockpit: Vec3) -> Self {
-        self.origin = head_world - self.rotation * (head_cockpit * self.scale);
+        self.origin = CockpitTransform {
+            head_world,
+            head_cockpit,
+            body: self.rotation,
+            world_scale: self.scale,
+        }
+        .point_to_world(Vec3::ZERO);
         self
     }
 

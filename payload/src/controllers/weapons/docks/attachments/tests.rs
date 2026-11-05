@@ -6,6 +6,7 @@ use crate::controllers::{
         mirror::{Plane, attachment_markers},
         rig::frames::Frames,
     },
+    cockpit::CockpitTransform,
     overlay::primitive::{Anchor, Primitive},
 };
 
@@ -209,16 +210,19 @@ fn a_platform_move_rebases_the_same_sample_without_refreshing_its_age() {
     assert_eq!(sample, original);
     assert_docking_and_mirror(&rebased, destination.transform_point3(local));
     let frames = Frames {
-        head_world: Vec3::new(19.0, 5.5, -8.0),
-        head_cockpit: Vec3::new(0.0, 1.7, 0.0),
-        view: Quat::from_rotation_y(0.5),
-        world_scale: 1.4,
+        cockpit: CockpitTransform {
+            head_world: Vec3::new(19.0, 5.5, -8.0),
+            head_cockpit: Vec3::new(0.0, 1.7, 0.0),
+            body: Quat::from_rotation_y(0.5),
+            world_scale: 1.4,
+        },
         character: destination,
     };
     let point = rebased.points()[0].point;
     assert!(
         frames
-            .cockpit_to_world(frames.world_to_cockpit(point))
+            .cockpit
+            .point_to_world(frames.cockpit.point_to_cockpit(point))
             .abs_diff_eq(point, 1e-5)
     );
     assert!(sample.in_world(8, destination, sample.at).is_none());

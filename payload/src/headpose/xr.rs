@@ -48,6 +48,7 @@ use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
 use crate::{
+    controllers::{cockpit::CockpitTransform, frame::Pose},
     grapple,
     headpose::{
         HeadPose,
@@ -68,11 +69,14 @@ pub fn compose(
     anchor: Vec3,
     world_scale: f32,
 ) -> HeadPose {
-    let orientation = body_rotation * cockpit_orientation;
-    let position = anchor + body_rotation * (cockpit_position * world_scale);
+    let world =
+        CockpitTransform::from_origin(anchor, body_rotation, world_scale).pose_to_world(Pose {
+            position: cockpit_position,
+            orientation: cockpit_orientation,
+        });
     HeadPose {
-        position,
-        orientation,
+        position: world.position,
+        orientation: world.orientation,
     }
 }
 

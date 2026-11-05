@@ -30,28 +30,26 @@ use jc3gi::{
 };
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::{
-        body::rig::frames::Frames,
-        frame::Hand,
-        hands::{ActiveHands, grip},
-        loadout::{
-            LoadoutSnapshot, Place, Socket,
-            grab::{self, GrabRules, SocketMove},
-        },
-        weapons::{
-            docks::attachments::{Attachment, Missing, Occupancy, Placement, PoseSource, Sample},
-            engine::slot_of,
-            grenade,
-            hold::{act, armed, steal},
-            inventory::{
-                carry,
-                engine::ObjectKey,
-                sockets::{self, Offsets},
-            },
+use crate::controllers::{
+    body::rig::frames::Frames,
+    cockpit::CockpitTransform,
+    frame::Hand,
+    hands::{ActiveHands, grip},
+    loadout::{
+        LoadoutSnapshot, Place, Socket,
+        grab::{self, GrabRules, SocketMove},
+    },
+    weapons::{
+        docks::attachments::{Attachment, Missing, Occupancy, Placement, PoseSource, Sample},
+        engine::slot_of,
+        grenade,
+        hold::{act, armed, steal},
+        inventory::{
+            carry,
+            engine::ObjectKey,
+            sockets::{self, Offsets},
         },
     },
-    headpose,
 };
 
 pub(crate) mod attachments;
@@ -384,10 +382,7 @@ pub const MAX_GRIP_OFFSET_M: f32 = 0.6;
 /// the character's model-to-world transform.
 pub(crate) fn cockpit_frames(active: &ActiveHands, character: Mat4) -> Option<Frames> {
     let frames = Frames {
-        head_world: headpose::query().position,
-        head_cockpit: active.head.position,
-        view: headpose::xr::body_rotation(),
-        world_scale: active.world_scale,
+        cockpit: CockpitTransform::current(active.head.position, active.world_scale),
         character,
     };
     frames.is_usable().then_some(frames)

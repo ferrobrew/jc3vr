@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use glam::{Mat4, Vec3};
 
-use crate::controllers::{body::rig::frames::Frames, vehicles::wheel::CockpitTransform};
+use crate::controllers::{body::rig::frames::Frames, cockpit::CockpitTransform};
 
 /// Why a free handle has no normal or wider-reach target.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -104,10 +104,7 @@ impl NativeRestSnapshot {
             return Err(RestUnavailable::InvalidCharacterRoot);
         }
         let frames = Frames {
-            head_world: cockpit.head_world,
-            head_cockpit: cockpit.head_cockpit,
-            view: cockpit.body,
-            world_scale: cockpit.world_scale,
+            cockpit: *cockpit,
             character: self
                 .rig_world
                 .ok_or(RestUnavailable::TransformUnavailable)?,

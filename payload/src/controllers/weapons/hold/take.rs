@@ -189,7 +189,7 @@ pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
     let Some(frames) = docks::cockpit_frames(inputs.active, player) else {
         return Vec::new();
     };
-    let to_cockpit = |p: Vec3| frames.world_to_cockpit(p);
+    let to_cockpit = |p: Vec3| frames.cockpit.point_to_cockpit(p);
     state.targets.extend(steal::targets(to_cockpit));
     let held = state.targets.len();
     if let Some(owner) = owner {

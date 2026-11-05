@@ -2,17 +2,16 @@
 //! world, and the character's model space, and the divergence between the torso estimate and the
 //! character's skeleton. Pure.
 //!
-//! The cockpit frame holds the player's tracked body at the player's own scale, with the head at
-//! the published head pose: a cockpit point composes into the world as the hands do, by its offset
-//! from the head turned by the view frame and scaled by the world scale. The character's model
-//! space faces -Z with +Y up, as the world does once the character's own world transform is undone.
+//! The cockpit frame composes into the world through the head pose ([`CockpitTransform`]). The
+//! character's model space faces -Z with +Y up, as the world does once the character's own world
+//! transform is undone.
 
 use std::fmt;
 
 use body_rig::angle::{direction, line_yaw, wrap, yaw_of};
 use glam::{Mat4, Quat, Vec3};
 
-use crate::controllers::body::rig::torso::TorsoEstimate;
+use crate::controllers::{body::rig::torso::TorsoEstimate, cockpit::CockpitTransform};
 
 /// The character's skeleton landmarks in its model space, from the bones HumanIK drives.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -61,14 +60,8 @@ impl SkeletonLandmarks {
 /// moment.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Frames {
-    /// The head in the world: the published head pose's position.
-    pub head_world: Vec3,
-    /// The head in the cockpit frame.
-    pub head_cockpit: Vec3,
-    /// The view frame the cockpit composes with.
-    pub view: Quat,
-    /// World metres per cockpit metre.
-    pub world_scale: f32,
+    /// The map between the cockpit frame and the world.
+    pub cockpit: CockpitTransform,
     /// The character's model-to-world transform.
     pub character: Mat4,
 }
@@ -76,21 +69,9 @@ pub struct Frames {
 impl Frames {
     /// Whether the frames can carry a point both ways.
     pub fn is_usable(&self) -> bool {
-        self.head_world.is_finite()
-            && self.head_cockpit.is_finite()
-            && self.view.is_finite()
-            && self.world_scale.is_finite()
-            && self.world_scale > 0.0
+        self.cockpit.is_usable()
             && self.character.is_finite()
             && self.character.determinant().abs() > 1.0e-6
-    }
-
-    pub fn cockpit_to_world(&self, point: Vec3) -> Vec3 {
-        self.head_world + self.view * ((point - self.head_cockpit) * self.world_scale)
-    }
-
-    pub fn world_to_cockpit(&self, point: Vec3) -> Vec3 {
-        self.head_cockpit + self.view.inverse() * (point - self.head_world) / self.world_scale
     }
 
     pub fn model_to_world(&self, point: Vec3) -> Vec3 {
@@ -102,24 +83,24 @@ impl Frames {
     }
 
     pub fn cockpit_to_model(&self, point: Vec3) -> Vec3 {
-        self.world_to_model(self.cockpit_to_world(point))
+        self.world_to_model(self.cockpit.point_to_world(point))
     }
 
     pub fn model_to_cockpit(&self, point: Vec3) -> Vec3 {
-        self.world_to_cockpit(self.model_to_world(point))
+        self.cockpit.point_to_cockpit(self.model_to_world(point))
     }
 
     /// An orientation in the cockpit frame as an orientation in the character's model space.
     pub fn cockpit_rotation_to_model(&self, rotation: Quat) -> Quat {
         let (_, character, _) = self.character.to_scale_rotation_translation();
-        (character.inverse() * self.view * rotation).normalize()
+        (character.inverse() * self.cockpit.rotation_to_world(rotation)).normalize()
     }
 
     /// A cockpit heading as a heading in the character's model space, or `None` for one that
     /// turns vertical there.
     pub fn cockpit_yaw_to_model(&self, yaw: f32) -> Option<f32> {
         let (_, rotation, _) = self.character.to_scale_rotation_translation();
-        yaw_of(rotation.inverse() * (self.view * direction(yaw)))
+        yaw_of(rotation.inverse() * self.cockpit.direction_to_world(direction(yaw)))
     }
 }
 
@@ -305,10 +286,12 @@ mod tests {
 
     fn frames(view: Quat, character_yaw: f32) -> Frames {
         Frames {
-            head_world: Vec3::new(10.0, 3.0, -4.0),
-            head_cockpit: Vec3::new(0.1, -0.05, 0.2),
-            view,
-            world_scale: 1.0,
+            cockpit: CockpitTransform {
+                head_world: Vec3::new(10.0, 3.0, -4.0),
+                head_cockpit: Vec3::new(0.1, -0.05, 0.2),
+                body: view,
+                world_scale: 1.0,
+            },
             character: Mat4::from_rotation_translation(
                 Quat::from_rotation_y(character_yaw),
                 Vec3::new(10.0, 1.3, -4.0),
@@ -318,14 +301,19 @@ mod tests {
 
     #[test]
     fn the_frames_carry_points_both_ways() {
+        let base = frames(Quat::from_rotation_y(0.4), -1.1);
         let frames = Frames {
-            world_scale: 1.3,
-            ..frames(Quat::from_rotation_y(0.4), -1.1)
+            cockpit: CockpitTransform {
+                world_scale: 1.3,
+                ..base.cockpit
+            },
+            ..base
         };
         let p = Vec3::new(0.3, -0.6, 0.1);
         assert!(
             frames
-                .world_to_cockpit(frames.cockpit_to_world(p))
+                .cockpit
+                .point_to_cockpit(frames.cockpit.point_to_world(p))
                 .distance(p)
                 < 1e-4
         );
@@ -337,8 +325,9 @@ mod tests {
         );
         assert!(
             frames
-                .cockpit_to_world(frames.head_cockpit)
-                .distance(frames.head_world)
+                .cockpit
+                .point_to_world(frames.cockpit.head_cockpit)
+                .distance(frames.cockpit.head_world)
                 < 1e-5
         );
     }
@@ -356,8 +345,8 @@ mod tests {
         let dims = BodyDimensions::GENERIC_ADULT;
         let view = Quat::from_rotation_y(0.7);
         let frames = frames(view, 0.7);
-        let estimate = upright(frames.head_cockpit, &dims);
-        let eyes = frames.world_to_model(frames.head_world);
+        let estimate = upright(frames.cockpit.head_cockpit, &dims);
+        let eyes = frames.world_to_model(frames.cockpit.head_world);
         let skeleton = skeleton(&dims, eyes, 0.0);
         let d = divergence(&estimate, &skeleton, &frames).unwrap();
         assert!(d.root_turn.abs() < 1e-4);
@@ -379,8 +368,8 @@ mod tests {
     fn a_turned_chest_reads_as_a_chest_turn() {
         let dims = BodyDimensions::GENERIC_ADULT;
         let frames = frames(Quat::IDENTITY, 0.0);
-        let estimate = upright(frames.head_cockpit, &dims);
-        let eyes = frames.world_to_model(frames.head_world);
+        let estimate = upright(frames.cockpit.head_cockpit, &dims);
+        let eyes = frames.world_to_model(frames.cockpit.head_world);
         let mut skeleton = skeleton(&dims, eyes, 0.0);
         let chest = skeleton.chest();
         let turn = Quat::from_rotation_y(deg(20.0));
@@ -509,9 +498,13 @@ mod tests {
         let dims = BodyDimensions::GENERIC_ADULT;
         let skeleton = skeleton(&dims, Vec3::ZERO, 0.0);
         let estimate = upright(Vec3::ZERO, &dims);
+        let base = frames(Quat::IDENTITY, 0.0);
         let bad = Frames {
-            world_scale: 0.0,
-            ..frames(Quat::IDENTITY, 0.0)
+            cockpit: CockpitTransform {
+                world_scale: 0.0,
+                ..base.cockpit
+            },
+            ..base
         };
         assert_eq!(divergence(&estimate, &skeleton, &bad), None);
     }

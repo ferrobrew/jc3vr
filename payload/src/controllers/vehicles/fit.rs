@@ -33,14 +33,13 @@ use jc3gi::{
 use smol_str::SmolStr;
 
 use crate::controllers::{
+    cockpit::CockpitTransform,
     mode::{VehicleClass, VehicleSeat},
     vehicles::{
         driving_view::{self, Correction, Entry, Target},
         entry::VehicleEntry,
         tuning::PhysicalControlsTuning,
-        wheel::{
-            self, BarsFrame, CockpitTransform, PartWheel, WheelFrame, WheelPartView, WheelSource,
-        },
+        wheel::{self, BarsFrame, PartWheel, WheelFrame, WheelPartView, WheelSource},
         wheel_render::RenderWheel,
     },
 };

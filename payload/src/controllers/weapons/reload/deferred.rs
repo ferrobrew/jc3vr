@@ -115,11 +115,10 @@ impl State {
         if let (DetachOutcome::Retained(magazine), Some(strike), Some(frames)) =
             (outcome, strike, self.frames)
         {
-            let scale = frames.world_scale;
             self.knocks.impulse = Some(PendingImpulse {
                 magazine,
-                contact: frames.view * strike.contact * scale,
-                velocity: frames.view * strike.velocity * scale,
+                contact: frames.cockpit.offset_to_world(strike.contact),
+                velocity: frames.cockpit.offset_to_world(strike.velocity),
                 ticks_left: KNOCK.impulse_ticks,
             });
         }

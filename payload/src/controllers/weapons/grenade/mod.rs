@@ -345,7 +345,7 @@ pub(super) unsafe fn begin_tick(inputs: &BeginInputs, tuning: &GrenadeTuning) ->
                     .active
                     .hands
                     .map(|hand| hand.map(|hand| hand.grip.position)),
-                |point| frames.world_to_cockpit(point),
+                |point| frames.cockpit.point_to_cockpit(point),
             )
         });
     }
@@ -354,7 +354,7 @@ pub(super) unsafe fn begin_tick(inputs: &BeginInputs, tuning: &GrenadeTuning) ->
             if inputs.free[hand.index()] && !holds(hand) {
                 candidates.push(Candidate {
                     volume: GrabVolume::LiveGrenade,
-                    centre: frames.world_to_cockpit(world),
+                    centre: frames.cockpit.point_to_cockpit(world),
                     radius: tuning.catch.radius_m,
                     hand: Some(hand),
                 });
@@ -364,7 +364,7 @@ pub(super) unsafe fn begin_tick(inputs: &BeginInputs, tuning: &GrenadeTuning) ->
     if tuning.catch.enabled && catch::caught().is_none() {
         let seen = unsafe {
             catch::sightings(player.w_axis.truncate(), &tuning.catch, |point| {
-                frames.world_to_cockpit(point)
+                frames.cockpit.point_to_cockpit(point)
             })
         };
         let free = Hand::BOTH.map(|hand| inputs.free[hand.index()] && !holds(hand));
@@ -409,7 +409,7 @@ pub(super) fn input_tick(
                         locker::take(
                             hand,
                             inputs.cockpit_grips[hand.index()],
-                            |point| frames.world_to_cockpit(point),
+                            |point| frames.cockpit.point_to_cockpit(point),
                             tuning,
                         )
                     }

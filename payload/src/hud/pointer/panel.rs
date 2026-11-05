@@ -9,8 +9,9 @@ use parking_lot::Mutex;
 
 use crate::{
     controllers::{
+        cockpit::CockpitTransform,
         frame::{MAX_FRAME_AGE, Pose},
-        hands::pose::{body_of_head, compose_world},
+        hands::pose::body_of_head,
     },
     headpose::xr::CockpitPose,
 };
@@ -169,13 +170,13 @@ impl RenderedPanel {
     /// The world-space ray of a cockpit-frame aim pose, composed through the same basis that
     /// placed the panel: the rendered head, with the body rotation recovered from it.
     fn ray(self, aim: Pose) -> PanelRay {
-        let world = compose_world(
-            self.head.position,
-            body_of_head(self.head.orientation, self.cockpit_head.orientation),
-            self.cockpit_head.position,
-            aim,
-            self.scale,
-        );
+        let world = CockpitTransform {
+            head_world: self.head.position,
+            head_cockpit: self.cockpit_head.position,
+            body: body_of_head(self.head.orientation, self.cockpit_head.orientation),
+            world_scale: self.scale,
+        }
+        .pose_to_world(aim);
         PanelRay {
             origin: world.position,
             direction: world.orientation * Vec3::NEG_Z,

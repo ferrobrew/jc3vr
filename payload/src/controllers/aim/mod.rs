@@ -58,9 +58,10 @@ use crate::{
             ray::Ray,
             raycast::{CastOptions, RayHit, RaycastError},
         },
+        cockpit::CockpitTransform,
         config::ControllersConfig,
         frame::{Hand, Pose},
-        hands::{self, ik, late, pose as hand_pose},
+        hands::{self, ik, late},
         mode::{self, Mode},
         physical_hands, scheme, vehicles,
         weapons::{
@@ -69,7 +70,7 @@ use crate::{
         },
     },
     frame_timing::{self, Slot},
-    headpose, hooks,
+    hooks,
 };
 
 /// The nearest a gun's aim point may be to the sight's origin, metres. A nearer hit is pushed out
@@ -292,17 +293,8 @@ fn begin() -> Result<TickHands, AimIdle> {
         return Err(AimIdle::NoHands);
     }
     let active = hands::active_hands().ok_or(AimIdle::NoHands)?;
-    let head = headpose::query();
-    let body = headpose::xr::body_rotation();
-    let compose = |pose: Pose| {
-        hand_pose::compose_world(
-            head.position,
-            body,
-            active.head.position,
-            pose,
-            active.world_scale,
-        )
-    };
+    let xf = CockpitTransform::current(active.head.position, active.world_scale);
+    let compose = |pose: Pose| xf.pose_to_world(pose);
     let records = ik::tick_records();
     let late_update = config.hands.late_update;
     let hands = Hand::BOTH.map(|hand| {
@@ -321,10 +313,7 @@ fn begin() -> Result<TickHands, AimIdle> {
     if hands.iter().all(Option::is_none) {
         return Err(AimIdle::NoHands);
     }
-    let head = Pose {
-        position: head.position,
-        orientation: (body * active.head.orientation).normalize(),
-    };
+    let head = xf.pose_to_world(active.head);
     Ok(TickHands {
         config,
         head,

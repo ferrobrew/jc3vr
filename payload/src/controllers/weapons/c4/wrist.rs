@@ -45,6 +45,7 @@ use crate::{
             frames::Frames,
             origin_provenance::{self, OriginEvidence},
         },
+        cockpit::CockpitTransform,
         config::ControllersConfig,
         fingers,
         frame::{self, Hand, Pose},
@@ -64,7 +65,7 @@ use crate::{
             tuning::{C4Tuning, DetonatorTuning},
         },
     },
-    headpose, hooks,
+    hooks,
 };
 
 /// Where the fingertip was read from.
@@ -287,10 +288,12 @@ impl HandSample {
         }
         // The common head/body transform cancels in grip-relative space. Only scale remains.
         let frames = Frames {
-            head_world: Vec3::ZERO,
-            head_cockpit: Vec3::ZERO,
-            view: glam::Quat::IDENTITY,
-            world_scale: self.sources.world_scale,
+            cockpit: CockpitTransform {
+                head_world: Vec3::ZERO,
+                head_cockpit: Vec3::ZERO,
+                body: glam::Quat::IDENTITY,
+                world_scale: self.sources.world_scale,
+            },
             character: Mat4::IDENTITY,
         };
         let point = press::on_drawn_hand(
@@ -361,18 +364,15 @@ fn sample_hands() -> Option<HandSample> {
     let source = frame::latest()?;
     let active = hands::active_hands_from_frame(&source, DrawTime::Tick)?;
     let frames = Frames {
-        head_world: headpose::query().position,
-        head_cockpit: active.head.position,
-        view: headpose::xr::body_rotation(),
-        world_scale: active.world_scale,
+        cockpit: CockpitTransform::current(active.head.position, active.world_scale),
         character: Mat4::IDENTITY,
     };
     if !frames.is_usable() {
         return None;
     }
     let to_world = |pose: Pose| Pose {
-        position: frames.cockpit_to_world(pose.position),
-        orientation: (frames.view * pose.orientation).normalize(),
+        position: frames.cockpit.point_to_world(pose.position),
+        orientation: frames.cockpit.rotation_to_world(pose.orientation),
     };
     let grips = active.hands.map(|hand| hand.map(|h| to_world(h.grip)));
     let wrists = active.hands.map(|hand| hand.map(|h| to_world(h.wrist)));

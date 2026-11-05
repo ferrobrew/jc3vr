@@ -71,10 +71,10 @@ pub(super) fn on_drawn_hand(point: Vec3, grip: Pose, drawn: Pose, frames: &Frame
         return None;
     }
     let source = Pose {
-        position: frames.cockpit_to_world(grip.position),
-        orientation: (frames.view * grip.orientation).normalize(),
+        position: frames.cockpit.point_to_world(grip.position),
+        orientation: frames.cockpit.rotation_to_world(grip.orientation),
     };
-    let point = carry(frames.cockpit_to_world(point), source, drawn);
+    let point = carry(frames.cockpit.point_to_world(point), source, drawn);
     point.is_finite().then_some(point)
 }
 
@@ -279,7 +279,7 @@ mod tests {
     use glam::Quat;
 
     use super::*;
-    use crate::controllers::weapons::c4::tuning::C4;
+    use crate::controllers::{cockpit::CockpitTransform, weapons::c4::tuning::C4};
 
     const DT: f32 = 1.0 / 90.0;
 
@@ -322,10 +322,12 @@ mod tests {
     #[test]
     fn a_tracked_tip_is_composed_once_before_carrying_onto_the_drawn_hand() {
         let frames = Frames {
-            head_world: Vec3::new(42.0, 9.0, -15.0),
-            head_cockpit: Vec3::new(0.0, 1.7, 0.0),
-            view: Quat::from_rotation_y(1.2),
-            world_scale: 1.4,
+            cockpit: CockpitTransform {
+                head_world: Vec3::new(42.0, 9.0, -15.0),
+                head_cockpit: Vec3::new(0.0, 1.7, 0.0),
+                body: Quat::from_rotation_y(1.2),
+                world_scale: 1.4,
+            },
             character: glam::Mat4::IDENTITY,
         };
         let grip = Pose {
@@ -347,7 +349,8 @@ mod tests {
         };
         let tracked = fingertip(Hand::Right, source, &tuning());
         let tip = on_drawn_hand(tracked, grip, drawn, &frames).unwrap();
-        let expected = drawn.position + drawn.orientation * (local_tip * frames.world_scale);
+        let expected =
+            drawn.position + drawn.orientation * (local_tip * frames.cockpit.world_scale);
         assert!(tip.abs_diff_eq(expected, 1.0e-5));
         let mut detector = PressDetector::new();
         let face = ButtonFace {

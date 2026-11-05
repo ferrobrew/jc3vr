@@ -6,6 +6,7 @@ use super::*;
 use crate::controllers::{
     bindings::controls::ButtonControl,
     body::rig::frames::Frames,
+    cockpit::CockpitTransform,
     hands::pose::CockpitHand,
     weapons::reload::{
         ReloadStatus, eject::TapDetector, extraction::Pull, knock::Knocks, plan::WellFrame,
@@ -92,10 +93,12 @@ pub(super) fn state(stage: InsertStage) -> State {
         free: Some(Hand::Left),
         loose_seen: Vec::new(),
         frames: Some(Frames {
-            head_world: Vec3::ZERO,
-            head_cockpit: Vec3::ZERO,
-            view: Quat::IDENTITY,
-            world_scale: 1.0,
+            cockpit: CockpitTransform {
+                head_world: Vec3::ZERO,
+                head_cockpit: Vec3::ZERO,
+                body: Quat::IDENTITY,
+                world_scale: 1.0,
+            },
             character: Mat4::IDENTITY,
         }),
         records: Records::new(),

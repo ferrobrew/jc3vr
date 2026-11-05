@@ -26,6 +26,7 @@ use crate::{
         },
         body,
         clock::TimeScale,
+        cockpit::CockpitTransform,
         fingers::{
             grip::{
                 self, Grip, GripSource,
@@ -35,7 +36,7 @@ use crate::{
             tuning::FINGERS,
         },
         frame::{Hand, Pose},
-        hands::{self, pose as hand_pose, tiers},
+        hands::{self, tiers},
         loadout::{ItemKind, live},
         mode::{self, AirborneVariant, Detection, Mode, OnFootVariant},
         physical_hands::{
@@ -63,7 +64,7 @@ use crate::{
         scheme,
         weapons::{self, c4, foregrip, grenade},
     },
-    headpose, hooks,
+    hooks,
     thread_role::{self, ThreadRole},
 };
 
@@ -129,17 +130,9 @@ unsafe fn run(owner: &Character, dt: f32) {
         stand_down(Idle::NoHands);
         return;
     };
-    let head = headpose::query();
-    let body_rotation = headpose::xr::body_rotation();
-    let compose = |pose: Pose| {
-        hand_pose::compose_world(
-            head.position,
-            body_rotation,
-            active.head.position,
-            pose,
-            active.world_scale,
-        )
-    };
+    let xf = CockpitTransform::current(active.head.position, active.world_scale);
+    let body_rotation = xf.body;
+    let compose = |pose: Pose| xf.pose_to_world(pose);
     let at = |point: Vec3| {
         compose(Pose {
             position: point,
@@ -372,7 +365,7 @@ unsafe fn run(owner: &Character, dt: f32) {
                 // The palm in the rig: its tracking-space place turned and scaled as the world
                 // palm is, but not carried by the head's world position, which the climb moves.
                 let rig = PalmBox::from_wrist(cockpit.wrist, 1.0, &PALMS).centre;
-                climb_palms[i] = Some(body_rotation * rig * active.world_scale);
+                climb_palms[i] = Some(xf.offset_to_world(rig));
                 climb_pressing[i] = physics::pressing(hand);
                 // A loose object in reach wins over the world it rests on.
                 climb_reaches[i] = if reach.is_none() {
@@ -443,7 +436,7 @@ unsafe fn run(owner: &Character, dt: f32) {
             push::hand_push(hit.normal, depth, &PALMS) * resistance
         });
         let offset = contact.clamp_offset();
-        clamp[i] = (body_rotation.inverse() * offset) / active.world_scale.max(1e-3);
+        clamp[i] = xf.offset_to_cockpit(offset);
         let mut hit_vehicles = Vec::new();
         let reach = if pickup_on {
             // SAFETY: the simulation phase outside the physics step.
@@ -548,7 +541,7 @@ unsafe fn run(owner: &Character, dt: f32) {
                 && !physics::drives(hand)
             {
                 let offset = (pin - palm.pose.position).clamp_length_max(PICKUP.break_distance_m);
-                clamp[i] = (body_rotation.inverse() * offset) / active.world_scale.max(1e-3);
+                clamp[i] = xf.offset_to_cockpit(offset);
             }
         }
         for hand in Hand::BOTH {
@@ -559,7 +552,7 @@ unsafe fn run(owner: &Character, dt: f32) {
             // Physical hand bodies follow carry pins; only nonphysical hands need this offset.
             if !physics::drives(hand) {
                 let offset = (held.anchor - held.target).clamp_length_max(PICKUP.break_distance_m);
-                clamp[i] = (body_rotation.inverse() * offset) / active.world_scale.max(1e-3);
+                clamp[i] = xf.offset_to_cockpit(offset);
             }
             if config.push {
                 let deadband = hold::resist_deadband_m(state.pickup.props()[i].is_some(), &PALMS);
@@ -618,7 +611,7 @@ unsafe fn run(owner: &Character, dt: f32) {
     }
     if viewing {
         grab_view::record(grab_view::Recorded {
-            head: head.position,
+            head: xf.head_world,
             rays,
             handles,
         });

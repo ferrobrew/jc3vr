@@ -324,6 +324,7 @@ mod tests {
     use super::*;
     use crate::controllers::{
         body::rig::frames::Frames,
+        cockpit::CockpitTransform,
         grab::{Mark, MarkAt, PickupKind, RemoteKind, Tier, resolve},
         weapons::{
             engine::Wielded,
@@ -898,22 +899,27 @@ mod tests {
         let radius = TAKE_RADIUS_M;
         for scale in [0.5, 1.0, 2.0] {
             let frames = Frames {
-                head_world: Vec3::new(80.0, 12.0, -30.0),
-                head_cockpit: Vec3::new(0.1, 1.7, 0.2),
-                view: Quat::from_rotation_y(0.8),
-                world_scale: scale,
+                cockpit: CockpitTransform {
+                    head_world: Vec3::new(80.0, 12.0, -30.0),
+                    head_cockpit: Vec3::new(0.1, 1.7, 0.2),
+                    body: Quat::from_rotation_y(0.8),
+                    world_scale: scale,
+                },
                 character: Mat4::IDENTITY,
             };
-            let points = [Vec3::ZERO, Vec3::NEG_Z]
-                .map(|p| frames.world_to_cockpit(frames.cockpit_to_world(p)));
+            let points = [Vec3::ZERO, Vec3::NEG_Z].map(|p| {
+                frames
+                    .cockpit
+                    .point_to_cockpit(frames.cockpit.point_to_world(p))
+            });
             let gun = target(TargetKind::Rack { weapon: 3 }, points[0], points[1]);
             let offered = candidates(&[gun], radius, [true, false], [Some(point), None]);
             assert_eq!(resolved_index(&offered, point), Some(0));
             assert_eq!(chosen(&[gun], point, radius), Some(gun));
             let world_distance = segment_distance(
-                frames.cockpit_to_world(point),
-                frames.cockpit_to_world(Vec3::ZERO),
-                frames.cockpit_to_world(Vec3::NEG_Z),
+                frames.cockpit.point_to_world(point),
+                frames.cockpit.point_to_world(Vec3::ZERO),
+                frames.cockpit.point_to_world(Vec3::NEG_Z),
             );
             assert!((world_distance / scale - 0.29).abs() < 1e-5);
         }

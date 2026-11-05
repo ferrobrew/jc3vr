@@ -107,7 +107,7 @@ fn candidates_from_sample(
     for point in sample.points() {
         let candidate = Candidate {
             volume: GrabVolume::Socket(point.socket),
-            centre: frames.world_to_cockpit(point.point),
+            centre: frames.cockpit.point_to_cockpit(point.point),
             radius: socket_radius(point.socket, holsters).max(0.0),
             hand: Some(point.hand),
         };

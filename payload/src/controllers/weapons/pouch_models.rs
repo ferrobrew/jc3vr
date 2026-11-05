@@ -639,6 +639,7 @@ unsafe fn slot_weapon(owner: &Character, slot: WeaponSlot) -> Option<&WeaponBase
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::cockpit::CockpitTransform;
 
     const PLACEMENT: ModelPlacement = ModelPlacement {
         offset_m: Vec3::new(0.03, 0.01, -0.02),
@@ -687,10 +688,12 @@ mod tests {
         };
         for scale in [0.7, 1.0, 1.5] {
             let frames = Frames {
-                head_world: Vec3::new(20.0, 4.0, -8.0),
-                head_cockpit: Vec3::Y * 1.7,
-                view: Quat::from_rotation_y(0.8),
-                world_scale: scale,
+                cockpit: CockpitTransform {
+                    head_world: Vec3::new(20.0, 4.0, -8.0),
+                    head_cockpit: Vec3::Y * 1.7,
+                    body: Quat::from_rotation_y(0.8),
+                    world_scale: scale,
+                },
                 character: Mat4::IDENTITY,
             };
             for side in Hand::BOTH {
@@ -705,7 +708,8 @@ mod tests {
                 let target = display_centre(pouch, &PLACEMENT, side, scale);
                 assert!(
                     frames
-                        .cockpit_to_world(target)
+                        .cockpit
+                        .point_to_world(target)
                         .abs_diff_eq(visible_origin, 1.0e-5)
                 );
             }

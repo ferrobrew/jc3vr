@@ -11,8 +11,9 @@
 //!    by the ratio of the arm lengths, placed at the character's shoulder.
 //! 4. Held within the character's arm length of his solved shoulder ([`limit_reach`]), so the arm
 //!    can always reach the hand.
-//! 5. Into the world through the head's transform ([`compose_world`]), the same composition the
-//!    head pose uses, so that the hands and the view agree.
+//! 5. Into the world through the head's transform
+//!    ([`CockpitTransform`](crate::controllers::cockpit::CockpitTransform)), the same composition
+//!    the head pose uses, so that the hands and the view agree.
 //!
 //! On the character's side, the same wrist frame is built from the animated bones
 //! ([`wrist_frame_from_bones`]): the direction to the middle knuckle and the palm's plane. The IK
@@ -109,23 +110,6 @@ pub fn grip_to_wrist(hand: Hand, offset: &GripOffset) -> Pose {
     }
 }
 
-/// A cockpit-frame pose in the world, composed relative to the head: `head_world` is the head's
-/// world position, `body` the body-frame rotation the head composes with, `head_cockpit` the head's
-/// cockpit position, and `world_scale` the VR world scale. The same composition as the head pose
-/// (`headpose::xr::compose`), anchored at the head so that the hands and the view agree.
-pub fn compose_world(
-    head_world: Vec3,
-    body: Quat,
-    head_cockpit: Vec3,
-    pose: Pose,
-    world_scale: f32,
-) -> Pose {
-    Pose {
-        position: head_world + body * ((pose.position - head_cockpit) * world_scale),
-        orientation: (body * pose.orientation).normalize(),
-    }
-}
-
 /// The body-frame rotation behind a composed head pose: the head's world orientation with its
 /// cockpit orientation divided out.
 pub fn body_of_head(head_world: Quat, head_cockpit: Quat) -> Quat {
@@ -218,6 +202,7 @@ fn right_wrist_in_grip() -> Mat3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::cockpit::CockpitTransform;
 
     const EPS: f32 = 1e-4;
 
@@ -402,7 +387,13 @@ mod tests {
             position: Vec3::new(0.3, -0.4, -0.5),
             orientation: Quat::from_rotation_x(0.3),
         };
-        let world = compose_world(head_world, body, head_cockpit, hand, 1.0);
+        let world = CockpitTransform {
+            head_world,
+            head_cockpit,
+            body,
+            world_scale: 1.0,
+        }
+        .pose_to_world(hand);
         // The same as composing both through an anchor: anchor + body × cockpit.
         let anchor = head_world - body * head_cockpit;
         assert!(close(world.position, anchor + body * hand.position));

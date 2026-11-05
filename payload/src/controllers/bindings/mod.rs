@@ -91,6 +91,7 @@ use crate::{
         },
         body::rig::grounded::add_step_walk,
         clock::TimeScale,
+        cockpit::CockpitTransform,
         config::LocomotionDirection,
         frame::{self, Button, ControllerFrame, Hand},
         grab::{self, Consumer, Provided, grabs_for, markers::MarkerFrame},
@@ -98,9 +99,7 @@ use crate::{
         haptics::{self, Event},
         locomotion,
         mode::{self, Detection, Mode},
-        physical_hands, roomscale, scheme, snatch,
-        vehicles::{self, wheel::CockpitTransform},
-        weapons,
+        physical_hands, roomscale, scheme, snatch, vehicles, weapons,
     },
     grapple, headpose,
     hud::{
@@ -907,12 +906,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
 /// Where the markers are placed for the hands of `active` at this tick.
 fn marker_frame(active: &hands::ActiveHands) -> MarkerFrame {
     MarkerFrame {
-        xf: CockpitTransform {
-            head_world: headpose::query().position,
-            head_cockpit: active.head.position,
-            body: headpose::xr::body_rotation(),
-            world_scale: active.world_scale,
-        },
+        xf: CockpitTransform::current(active.head.position, active.world_scale),
         drawn: active.hands,
     }
 }

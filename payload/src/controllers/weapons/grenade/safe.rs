@@ -630,7 +630,7 @@ fn loose_distance(grip: Vec3, world: Vec3, frames: &Frames, radius_m: f32) -> Op
         return None;
     }
     // Completion uses the same cockpit geometry as the inert item's offer.
-    let distance = frames.world_to_cockpit(world).distance(grip);
+    let distance = frames.cockpit.point_to_cockpit(world).distance(grip);
     (distance.is_finite() && distance <= radius_m).then_some(distance)
 }
 
@@ -814,22 +814,27 @@ mod tests {
     use glam::Quat;
 
     use super::*;
-    use crate::controllers::loadout::{BodyLayout, Loadout};
+    use crate::controllers::{
+        cockpit::CockpitTransform,
+        loadout::{BodyLayout, Loadout},
+    };
 
     #[test]
     fn loose_completion_matches_offer_boundary_at_every_world_scale() {
         for scale in [0.5, 1.0, 2.0] {
             let frames = Frames {
-                head_world: Vec3::ZERO,
-                head_cockpit: Vec3::ZERO,
-                view: Quat::IDENTITY,
-                world_scale: scale,
+                cockpit: CockpitTransform {
+                    head_world: Vec3::ZERO,
+                    head_cockpit: Vec3::ZERO,
+                    body: Quat::IDENTITY,
+                    world_scale: scale,
+                },
                 character: Mat4::IDENTITY,
             };
             let radius = 0.25;
             for distance in [radius - 0.001, radius, radius + 0.001] {
-                let world = frames.cockpit_to_world(Vec3::X * distance);
-                let offered = frames.world_to_cockpit(world).length() <= radius;
+                let world = frames.cockpit.point_to_world(Vec3::X * distance);
+                let offered = frames.cockpit.point_to_cockpit(world).length() <= radius;
                 assert_eq!(
                     loose_distance(Vec3::ZERO, world, &frames, radius).is_some(),
                     offered
@@ -838,7 +843,10 @@ mod tests {
             }
             for invalid in [0.0, -1.0, f32::NAN, f32::INFINITY] {
                 let invalid_frames = Frames {
-                    world_scale: invalid,
+                    cockpit: CockpitTransform {
+                        world_scale: invalid,
+                        ..frames.cockpit
+                    },
                     ..frames
                 };
                 assert!(loose_distance(Vec3::ZERO, Vec3::ZERO, &invalid_frames, radius).is_none());

@@ -20,9 +20,12 @@ use parking_lot::Mutex;
 
 use crate::{
     config::Config,
-    controllers::body::rig::{
-        self,
-        frames::{self, Divergence, Frames, Implausible, SkeletonLandmarks, divergence},
+    controllers::{
+        body::rig::{
+            self,
+            frames::{self, Divergence, Frames, Implausible, SkeletonLandmarks, divergence},
+        },
+        cockpit::CockpitTransform,
     },
     headpose, hooks,
     hooks::character::body_ik::bone_for_effector,
@@ -42,10 +45,7 @@ pub fn skeleton_in_cockpit(
 ) -> Option<(SkeletonLandmarks, SkeletonSource)> {
     let (skeleton, character, source) = STATE.lock().memory.body(Instant::now())?;
     let frames = Frames {
-        head_world: headpose::query().position,
-        head_cockpit,
-        view: headpose::xr::body_rotation(),
-        world_scale,
+        cockpit: CockpitTransform::current(head_cockpit, world_scale),
         character,
     };
     frames
@@ -127,10 +127,10 @@ pub unsafe fn after_solve(character: *mut Character) {
     let measured = match (skeleton, rig::estimate(), headpose::xr::cockpit_pose()) {
         (Some(skeleton), Some(estimate), Some(cockpit)) => {
             let frames = Frames {
-                head_world: headpose::query().position,
-                head_cockpit: cockpit.position,
-                view: headpose::xr::body_rotation(),
-                world_scale: Config::lock_query(|c| c.vr.world_scale),
+                cockpit: CockpitTransform::current(
+                    cockpit.position,
+                    Config::lock_query(|c| c.vr.world_scale),
+                ),
                 character: world,
             };
             divergence(&estimate, &skeleton, &frames)

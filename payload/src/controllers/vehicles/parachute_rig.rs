@@ -22,7 +22,7 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{frame::Hand, hands::ik, vehicles::wheel::CockpitTransform};
+use crate::controllers::{cockpit::CockpitTransform, frame::Hand, hands::ik};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()

@@ -11,8 +11,9 @@ use glam::{Quat, Vec3};
 
 use crate::{
     controllers::{
+        cockpit::CockpitTransform,
         frame::Pose,
-        hands::pose::{body_of_head, compose_world, inverse, mul},
+        hands::pose::{body_of_head, inverse, mul},
     },
     hud::{pointer::RenderedCamera, quad::PanelParams},
 };
@@ -106,13 +107,13 @@ pub(crate) fn world_panel(
     height: f32,
     aspect: f32,
 ) -> PanelParams {
-    let world = compose_world(
-        camera.head.position,
-        body_of_head(camera.head.orientation, camera.cockpit_head.orientation),
-        camera.cockpit_head.position,
-        pose,
-        camera.scale,
-    );
+    let world = CockpitTransform {
+        head_world: camera.head.position,
+        head_cockpit: camera.cockpit_head.position,
+        body: body_of_head(camera.head.orientation, camera.cockpit_head.orientation),
+        world_scale: camera.scale,
+    }
+    .pose_to_world(pose);
     let forward = world.orientation * Vec3::NEG_Z;
     let distance = world
         .position

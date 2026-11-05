@@ -269,7 +269,7 @@ pub(super) unsafe fn sightings(
         {
             seen.push(Sighting {
                 magazine,
-                cockpit: frames.world_to_cockpit(centre),
+                cockpit: frames.cockpit.point_to_cockpit(centre),
             });
         }
     }

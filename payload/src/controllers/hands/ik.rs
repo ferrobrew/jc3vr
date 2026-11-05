@@ -65,6 +65,7 @@ use crate::{
             },
             unarmed,
         },
+        cockpit::CockpitTransform,
         frame::{Hand, Pose},
         hands::{
             self, ActiveHands, CockpitHand, late, pose as hand_pose, reach,
@@ -907,15 +908,8 @@ struct WristTarget {
 /// The wrist target of the hand at `cockpit`: its cockpit wrist composed into the world through
 /// the head, and brought into `character`'s model space through its current world matrix.
 fn wrist_target(character: &Character, active: &ActiveHands, cockpit: &CockpitHand) -> WristTarget {
-    let head = headpose::query();
-    let body = headpose::xr::body_rotation();
-    let world = hand_pose::compose_world(
-        head.position,
-        body,
-        active.head.position,
-        cockpit.wrist,
-        active.world_scale,
-    );
+    let world = CockpitTransform::current(active.head.position, active.world_scale)
+        .pose_to_world(cockpit.wrist);
     let to_world = Mat4::from(character.m_WorldMatrixT1);
     let (_, rotation, position) = (to_world.inverse()
         * Mat4::from_rotation_translation(world.orientation, world.position))

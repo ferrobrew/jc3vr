@@ -22,6 +22,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     config::Config,
+    controllers::{cockpit::CockpitTransform, frame::Pose},
     debug::trace::{TraceEvent, TraceState},
     stereo::STEREO_STATE,
 };
@@ -566,9 +567,12 @@ fn compose_relative(
     world_scale: f32,
 ) -> glam::Mat4 {
     let (_, base_rotation, base_position) = base.to_scale_rotation_translation();
-    let position = base_position + base_rotation * (cockpit.position * world_scale);
-    let orientation = base_rotation * cockpit.orientation;
-    glam::Mat4::from_rotation_translation(orientation, position)
+    let world = CockpitTransform::from_origin(base_position, base_rotation, world_scale)
+        .pose_to_world(Pose {
+            position: cockpit.position,
+            orientation: cockpit.orientation,
+        });
+    glam::Mat4::from_rotation_translation(world.orientation, world.position)
 }
 
 /// The upright loading base pose `(position, yaw-only rotation)`: the last gameplay viewpoint, held

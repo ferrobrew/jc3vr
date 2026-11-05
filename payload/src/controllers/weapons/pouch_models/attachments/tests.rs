@@ -5,6 +5,7 @@ use glam::{Quat, Vec3};
 use super::*;
 use crate::controllers::{
     body::mirror::{PouchRenderContext, PouchRenderStatus, pouch_render_markers},
+    cockpit::CockpitTransform,
     overlay::{
         primitive::{Anchor, Primitive, Source},
         store::Store,
@@ -14,10 +15,12 @@ use crate::controllers::{
 
 fn frames() -> Frames {
     Frames {
-        head_world: Vec3::new(3.0, 2.0, -4.0),
-        head_cockpit: Vec3::new(0.0, 1.7, 0.0),
-        view: Quat::from_rotation_y(0.8),
-        world_scale: 1.3,
+        cockpit: CockpitTransform {
+            head_world: Vec3::new(3.0, 2.0, -4.0),
+            head_cockpit: Vec3::new(0.0, 1.7, 0.0),
+            body: Quat::from_rotation_y(0.8),
+            world_scale: 1.3,
+        },
         character: Mat4::from_rotation_translation(
             Quat::from_rotation_y(-0.2),
             Vec3::new(2.0, 0.0, -3.0),

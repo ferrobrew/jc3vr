@@ -19,7 +19,10 @@
 
 use glam::{Mat4, Quat, Vec3};
 
-use crate::controllers::vehicles::tuning::{HandlebarsSpec, WheelSpec};
+use crate::controllers::{
+    cockpit::CockpitTransform,
+    vehicles::tuning::{HandlebarsSpec, WheelSpec},
+};
 
 /// A steering wheel in the cockpit frame: its hub, its in-plane axes, and its rim's radius.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -313,48 +316,8 @@ pub fn turn_about_hub(hub: Vec3, axis: Vec3, angle: f32) -> Mat4 {
         * Mat4::from_translation(-hub)
 }
 
-/// The map between the world and the cockpit frame, as the head pose composes them: the cockpit
-/// frame's `head_cockpit` sits at the world's `head_world`, turned by the body frame and scaled by
-/// the world scale.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct CockpitTransform {
-    pub head_world: Vec3,
-    pub head_cockpit: Vec3,
-    pub body: Quat,
-    pub world_scale: f32,
-}
-
+/// The wheel and the handlebars carried between the vehicle and the cockpit frame.
 impl CockpitTransform {
-    fn scale(&self) -> f32 {
-        self.world_scale.max(1e-3)
-    }
-
-    pub fn point_to_cockpit(&self, world: Vec3) -> Vec3 {
-        self.head_cockpit + self.body.inverse() * (world - self.head_world) / self.scale()
-    }
-
-    pub fn point_to_world(&self, cockpit: Vec3) -> Vec3 {
-        self.head_world + self.point_from_head(cockpit)
-    }
-
-    /// A cockpit-frame point as a world-space offset from the head.
-    pub fn point_from_head(&self, cockpit: Vec3) -> Vec3 {
-        self.body * ((cockpit - self.head_cockpit) * self.scale())
-    }
-
-    /// A world-space displacement as a cockpit-frame one: turned into the body frame and scaled.
-    pub fn offset_to_cockpit(&self, world: Vec3) -> Vec3 {
-        self.body.inverse() * world / self.scale()
-    }
-
-    pub fn direction_to_cockpit(&self, world: Vec3) -> Vec3 {
-        self.body.inverse() * world
-    }
-
-    pub fn direction_to_world(&self, cockpit: Vec3) -> Vec3 {
-        self.body * cockpit
-    }
-
     /// `wheel`, in the space `to_world` maps to the world, in the cockpit frame.
     pub fn wheel(&self, to_world: Mat4, wheel: &PartWheel) -> Option<WheelFrame> {
         let (right, up) = wheel.axes();

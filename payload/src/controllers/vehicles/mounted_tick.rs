@@ -6,21 +6,19 @@ use std::time::Instant;
 use glam::Vec3;
 use jc3gi::character::character::Character;
 
-use crate::{
-    controllers::{
-        aim::RAY_LENGTH_M,
-        config::ControllersConfig,
-        frame::Hand,
-        hands::ActiveHands,
-        mode::VehicleSeat,
-        vehicles::{
-            mounted::{self, MountedTarget},
-            physical::ControlKind,
-            state::STATE,
-            types::MountedReadout,
-        },
+use crate::controllers::{
+    aim::RAY_LENGTH_M,
+    cockpit::CockpitTransform,
+    config::ControllersConfig,
+    frame::Hand,
+    hands::ActiveHands,
+    mode::VehicleSeat,
+    vehicles::{
+        mounted::{self, MountedTarget},
+        physical::ControlKind,
+        state::STATE,
+        types::MountedReadout,
     },
-    headpose,
 };
 
 /// What the mounted-gun half of the input tick produced.
@@ -63,12 +61,9 @@ pub(super) fn mounted_tick(active: &ActiveHands, aiming: [bool; 2]) -> MountedTi
         state.mounted_last = None;
         return none;
     };
-    let head = headpose::query();
-    let body = headpose::xr::body_rotation();
-    let to_cockpit = |world: Vec3| {
-        active.head.position
-            + body.inverse() * (world - head.position) / active.world_scale.max(1e-3)
-    };
+    let xf = CockpitTransform::current(active.head.position, active.world_scale);
+    let to_cockpit = |world: Vec3| xf.point_to_cockpit(world);
+    let body = xf.body;
     let handles = gun.handles.map(|h| h.map(to_cockpit));
     let grips = active.hands.map(|h| h.map(|h| h.grip.position));
     let grips = Hand::BOTH.map(|hand| grips[hand.index()].filter(|_| aiming[hand.index()]));

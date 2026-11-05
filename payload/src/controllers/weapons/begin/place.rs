@@ -1,14 +1,11 @@
 //! How the weapon handling's candidates become grip targets, and where their markers go.
 
-use crate::{
-    controllers::{
-        frame::Hand,
-        grab::{Candidate, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
-        hands::ActiveHands,
-        vehicles::wheel::CockpitTransform,
-        weapons::foregrip::{self, FOREGRIP},
-    },
-    headpose,
+use crate::controllers::{
+    cockpit::CockpitTransform,
+    frame::Hand,
+    grab::{Candidate, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
+    hands::ActiveHands,
+    weapons::foregrip::{self, FOREGRIP},
 };
 
 /// How the weapon handling's candidates become grip targets, and where the markers go.
@@ -19,12 +16,7 @@ pub(super) struct Place {
 impl Place {
     pub(super) fn new(active: &ActiveHands) -> Self {
         Self {
-            xf: CockpitTransform {
-                head_world: headpose::query().position,
-                head_cockpit: active.head.position,
-                body: headpose::xr::body_rotation(),
-                world_scale: active.world_scale,
-            },
+            xf: CockpitTransform::current(active.head.position, active.world_scale),
         }
     }
 

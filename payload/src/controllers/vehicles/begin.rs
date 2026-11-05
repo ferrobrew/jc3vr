@@ -10,6 +10,7 @@ use glam::Vec3;
 use crate::{
     controllers::{
         body::{self, BodyDimensions},
+        cockpit::CockpitTransform,
         config::ControllersConfig,
         fingers::grip::{self, Grip, GripSource},
         frame::Hand,
@@ -35,7 +36,6 @@ use crate::{
             state::{MOUNTED_WEAPON, STATE, State, log_handle_events, push_events},
             tuning::PhysicalControlsTuning,
             types::TickVolumes,
-            wheel::CockpitTransform,
             wing_guide,
         },
     },
@@ -56,12 +56,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         _ => None,
     };
     let physical_config = PhysicalControlsTuning::of(&config.vehicles.physical);
-    let xf = CockpitTransform {
-        head_world: headpose::query().position,
-        head_cockpit: active.head.position,
-        body: headpose::xr::body_rotation(),
-        world_scale: active.world_scale,
-    };
+    let xf = CockpitTransform::current(active.head.position, active.world_scale);
     // SAFETY: the game stage runs on the game thread before the world update.
     let entry = seat.and_then(|_| unsafe { VehicleEntry::read() });
     let mut events = Vec::new();

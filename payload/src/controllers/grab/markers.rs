@@ -13,6 +13,7 @@
 use std::time::Duration;
 
 use crate::controllers::{
+    cockpit::CockpitTransform,
     frame::Hand,
     grab::{Category, GripTarget, MarkAt, MarkStyle, Resolved, Shown},
     hands::CockpitHand,
@@ -20,7 +21,6 @@ use crate::controllers::{
         primitive::{Anchor, DepthMode, Facing, HandPose, Primitive, Shape, Source, SpriteSize},
         store,
     },
-    vehicles::wheel::CockpitTransform,
 };
 
 /// Where the tick's cockpit-frame points are placed for the overlay, and the hands that reach for

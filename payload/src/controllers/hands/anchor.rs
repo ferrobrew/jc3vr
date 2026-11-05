@@ -49,10 +49,11 @@ use serde::{Deserialize, Serialize};
 use crate::{
     config::Config,
     controllers::{
+        cockpit::CockpitTransform,
         config::ControllersConfig,
         fingers::grip::{self, Grip, GripSource},
         frame::{Hand, Pose},
-        hands::{self, CockpitHand, pose as hand_pose, tiers},
+        hands::{self, CockpitHand, tiers},
         haptics::{self, Event},
     },
     grapple::{
@@ -159,15 +160,14 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Pose, world_scale: f32)
     let Some(anchor) = line_anchor() else {
         return;
     };
-    let head_world = headpose::query().position;
-    let body = headpose::xr::body_rotation();
+    let xf = CockpitTransform::current(head.position, world_scale);
     for hand in Hand::BOTH {
         let weight = weights[hand.index()];
         let Some(h) = hands[hand.index()].filter(|_| weight > 0.0) else {
             continue;
         };
-        let grip = hand_pose::compose_world(head_world, body, head.position, h.grip, world_scale);
-        let line = body.inverse() * (anchor - grip.position);
+        let grip = xf.pose_to_world(h.grip);
+        let line = xf.direction_to_cockpit(anchor - grip.position);
         hands[hand.index()] = Some(hold_line(h, line, weight));
     }
 }

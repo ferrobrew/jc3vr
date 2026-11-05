@@ -13,6 +13,7 @@ use parking_lot::Mutex;
 use crate::{
     controllers::{
         body::rig::origin_provenance::{self, OriginEvidence},
+        cockpit::CockpitTransform,
         frame::{self, ControllerFrame, HAND_JOINT_COUNT, Hand, HandJoint, Pose, TrackedPose},
         hands::{
             self, ActiveHands, ik,
@@ -581,13 +582,13 @@ fn compose_render_hands(active: &ActiveHands) -> [Option<RenderHand>; 2] {
     let cockpit_head = active.head;
     let pair = |pose: Pose| {
         let side = |head: headpose::HeadPose| {
-            hand_pose::compose_world(
-                head.position,
-                hand_pose::body_of_head(head.orientation, cockpit_head.orientation),
-                cockpit_head.position,
-                pose,
-                active.world_scale,
-            )
+            CockpitTransform {
+                head_world: head.position,
+                head_cockpit: cockpit_head.position,
+                body: hand_pose::body_of_head(head.orientation, cockpit_head.orientation),
+                world_scale: active.world_scale,
+            }
+            .pose_to_world(pose)
         };
         PosePair {
             previous: side(previous_head),

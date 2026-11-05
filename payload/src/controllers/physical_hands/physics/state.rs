@@ -12,8 +12,9 @@ use parking_lot::Mutex;
 
 use crate::{
     controllers::{
-        frame::{Hand, Pose},
-        hands::{self, CockpitHand, pose as hand_pose},
+        cockpit::CockpitTransform,
+        frame::Hand,
+        hands::{self, CockpitHand},
         mode,
         physical_hands::{
             PhysicalHandsConfig, STATE, free_hands,
@@ -34,7 +35,7 @@ use crate::{
         },
         scheme,
     },
-    headpose, hooks,
+    hooks,
 };
 
 pub fn status() -> HandBodiesStatus {
@@ -335,8 +336,6 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
         return None;
     }
     let mut active = hands::active_hands_raw()?;
-    let head = headpose::query();
-    let body_rotation = headpose::xr::body_rotation();
     let free = free_hands();
     // A hand that carries what it holds, rather than holding it through a joint, has no body, so
     // that it never fights the object.
@@ -353,15 +352,9 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
             &active.config.weapons.heft,
         );
     }
+    let xf = CockpitTransform::current(active.head.position, active.world_scale);
     let palm_of = |cockpit: CockpitHand| {
-        let wrist = hand_pose::compose_world(
-            head.position,
-            body_rotation,
-            active.head.position,
-            cockpit.wrist,
-            active.world_scale,
-        );
-        PalmBox::from_wrist(wrist, active.world_scale, &PALMS)
+        PalmBox::from_wrist(xf.pose_to_world(cockpit.wrist), active.world_scale, &PALMS)
     };
     let palms = Hand::BOTH.map(|hand| {
         let i = hand.index();
@@ -377,14 +370,7 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
         palms,
         tracked,
         // The cockpit frame's origin in the world, composed as the palms are.
-        origin: hand_pose::compose_world(
-            head.position,
-            body_rotation,
-            active.head.position,
-            Pose::IDENTITY,
-            active.world_scale,
-        )
-        .position,
+        origin: xf.point_to_world(Vec3::ZERO),
         world_scale: active.world_scale,
         // A tracked hand that takes a gun without a body or carries what it grabbed has stopped
         // acting on purpose: its body leaves at once rather than standing frozen in the world.
@@ -461,6 +447,7 @@ pub(super) fn press_load(lag: Vec3, config: &HandBodyTuning, scale: f32) -> f32 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::frame::Pose;
 
     #[test]
     fn a_publication_ages_by_steps_so_a_hitch_drops_nothing() {

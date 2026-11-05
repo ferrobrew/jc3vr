@@ -5,6 +5,7 @@ use glam::{Quat, Vec3};
 use super::*;
 use crate::controllers::{
     body::mirror::{Plane, attachment_markers},
+    cockpit::CockpitTransform,
     frame::{Hand, Pose},
     overlay::primitive::{Anchor, Primitive},
     weapons::{
@@ -15,10 +16,12 @@ use crate::controllers::{
 
 fn frames(character: Mat4) -> Frames {
     Frames {
-        head_world: character.transform_point3(Vec3::new(0.0, 1.7, 0.0)),
-        head_cockpit: Vec3::new(0.0, 1.7, 0.0),
-        view: Quat::from_rotation_y(0.7),
-        world_scale: 1.3,
+        cockpit: CockpitTransform {
+            head_world: character.transform_point3(Vec3::new(0.0, 1.7, 0.0)),
+            head_cockpit: Vec3::new(0.0, 1.7, 0.0),
+            body: Quat::from_rotation_y(0.7),
+            world_scale: 1.3,
+        },
         character,
     }
 }
@@ -49,7 +52,9 @@ fn native_sample(frames: &Frames) -> Sample {
                     item: None,
                     source: PoseSource::VisibleGrip { object: 11 },
                     pose: Ok(Pose {
-                        position: frames.cockpit_to_world(Vec3::new(index as f32, 0.2, 0.3)),
+                        position: frames
+                            .cockpit
+                            .point_to_world(Vec3::new(index as f32, 0.2, 0.3)),
                         orientation: Quat::IDENTITY,
                     }),
                 }
@@ -105,7 +110,7 @@ fn assert_provider_and_mirror(
     frames: &Frames,
 ) {
     let plane = Plane::ahead_of(&sample.character, 1.5).unwrap();
-    let head = frames.head_world;
+    let head = frames.cockpit.head_world;
     let mut primitives = Vec::new();
     attachment_markers(sample, plane, head, &mut primitives);
     let points = sample.points();
@@ -135,7 +140,8 @@ fn assert_provider_and_mirror(
             .unwrap();
         assert!(
             frames
-                .cockpit_to_world(candidate.centre)
+                .cockpit
+                .point_to_world(candidate.centre)
                 .abs_diff_eq(point.point, 1e-5)
         );
         let Primitive::Sprite {
@@ -281,7 +287,7 @@ fn removing_the_only_hand_offer_keeps_the_base_socket_marker() {
         attachment_markers(
             &sample,
             Plane::ahead_of(&sample.character, 1.5).unwrap(),
-            frames.head_world,
+            frames.cockpit.head_world,
             &mut primitives,
         );
         assert_eq!(primitives.len(), 2);

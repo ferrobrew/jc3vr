@@ -22,28 +22,26 @@ pub mod solve;
 
 use std::time::{Duration, Instant};
 
-use glam::{Quat, Vec3};
+use glam::Vec3;
 use jc3gi::character::character::Character;
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::{
-        aim::{
-            ray::Ray,
-            raycast::{self, CastOptions},
-        },
-        frame::{Hand, Pose},
-        hands::CockpitHand,
-        weapons::{
-            ads::solve::RigidMove,
-            collide::{
-                config::CollideConfig,
-                solve::{Barrel, Wall},
-            },
-            foregrip,
-        },
+use crate::controllers::{
+    aim::{
+        ray::Ray,
+        raycast::{self, CastOptions},
     },
-    headpose,
+    cockpit::CockpitTransform,
+    frame::{Hand, Pose},
+    hands::CockpitHand,
+    weapons::{
+        ads::solve::RigidMove,
+        collide::{
+            config::CollideConfig,
+            solve::{Barrel, Wall},
+        },
+        foregrip,
+    },
 };
 
 /// A long gun in a hand, as the input tick measured it.
@@ -123,7 +121,7 @@ pub fn apply(
     if !config.enabled {
         return;
     }
-    let frame = WorldFrame::now(head, world_scale);
+    let frame = CockpitTransform::current(head.position, world_scale);
     let support = foregrip::status().hold.filter(|h| h.engaged);
     for hand in Hand::BOTH {
         let Some(push) = push_hand(hand, hands, &frame) else {
@@ -202,7 +200,7 @@ const KEEP_S: f32 = 0.15;
 fn push_hand(
     hand: Hand,
     hands: &[Option<CockpitHand>; 2],
-    frame: &WorldFrame,
+    frame: &CockpitTransform,
 ) -> Option<RigidMove> {
     let mut guard = STATE.lock();
     let state = &mut *guard;
@@ -210,11 +208,11 @@ fn push_hand(
     let weapon = h.weapon?;
     let holder = hands[hand.index()]?;
     let barrel = barrel_of(holder, &weapon);
-    h.probe = Some(frame.barrel_to_world(barrel));
+    h.probe = Some(barrel_to_world(frame, barrel));
     let wall = h
         .wall
         .filter(|w| w.at.elapsed() <= Duration::from_secs_f32(KEEP_S))
-        .map(|w| frame.wall_to_cockpit(w.wall));
+        .map(|w| wall_to_cockpit(frame, w.wall));
     let push = wall.and_then(|w| solve::solve(barrel, w, MAX_TURN_DEG, MAX_RETRACT_M));
     let touching = push.is_some();
     let status = &mut state.status.hands[hand.index()];
@@ -252,44 +250,20 @@ fn barrel_of(holder: CockpitHand, weapon: &CollideWeapon) -> Barrel {
 /// The shortest time between two contact log lines.
 const LOG_INTERVAL: Duration = Duration::from_secs(1);
 
-/// The transforms between the cockpit frame and the world at one moment.
-#[derive(Debug, Copy, Clone, PartialEq)]
-struct WorldFrame {
-    head_world: Vec3,
-    head_cockpit: Vec3,
-    body: Quat,
-    world_scale: f32,
+/// `b`, a barrel in the cockpit frame, in the world.
+fn barrel_to_world(frame: &CockpitTransform, b: Barrel) -> Barrel {
+    Barrel {
+        grip: frame.point_to_world(b.grip),
+        direction: frame.direction_to_world(b.direction),
+        length: b.length * frame.scale(),
+    }
 }
 
-impl WorldFrame {
-    fn now(head: Pose, world_scale: f32) -> WorldFrame {
-        WorldFrame {
-            head_world: headpose::query().position,
-            head_cockpit: head.position,
-            body: headpose::xr::body_rotation(),
-            world_scale,
-        }
-    }
-
-    fn barrel_to_world(&self, b: Barrel) -> Barrel {
-        Barrel {
-            grip: self.head_world + self.body * ((b.grip - self.head_cockpit) * self.world_scale),
-            direction: self.body * b.direction,
-            length: b.length * self.world_scale,
-        }
-    }
-
-    fn wall_to_cockpit(&self, w: Wall) -> Wall {
-        let scale = if self.world_scale > 0.0 {
-            self.world_scale
-        } else {
-            1.0
-        };
-        let inverse = self.body.inverse();
-        Wall {
-            point: self.head_cockpit + inverse * (w.point - self.head_world) / scale,
-            normal: inverse * w.normal,
-        }
+/// `w`, a wall in the world, in the cockpit frame.
+fn wall_to_cockpit(frame: &CockpitTransform, w: Wall) -> Wall {
+    Wall {
+        point: frame.point_to_cockpit(w.point),
+        normal: frame.direction_to_cockpit(w.normal),
     }
 }
 
@@ -338,11 +312,13 @@ static STATE: Mutex<State> = Mutex::new(State {
 
 #[cfg(test)]
 mod tests {
+    use glam::Quat;
+
     use super::*;
 
     #[test]
-    fn the_world_frame_carries_a_wall_back_where_the_barrel_went() {
-        let frame = WorldFrame {
+    fn the_cockpit_transform_carries_a_wall_back_where_the_barrel_went() {
+        let frame = CockpitTransform {
             head_world: Vec3::new(10.0, 2.0, -5.0),
             head_cockpit: Vec3::new(0.0, 1.7, 0.0),
             body: Quat::from_rotation_y(0.7),
@@ -353,11 +329,14 @@ mod tests {
             direction: Vec3::NEG_Z,
             length: 0.8,
         };
-        let world = frame.barrel_to_world(barrel);
-        let wall = frame.wall_to_cockpit(Wall {
-            point: world.grip,
-            normal: world.direction,
-        });
+        let world = barrel_to_world(&frame, barrel);
+        let wall = wall_to_cockpit(
+            &frame,
+            Wall {
+                point: world.grip,
+                normal: world.direction,
+            },
+        );
         assert!(wall.point.distance(barrel.grip) < 1e-4);
         assert!(wall.normal.distance(barrel.direction) < 1e-5);
         assert!((world.length - 0.96).abs() < 1e-5);
@@ -393,7 +372,7 @@ mod tests {
             },
             at: Instant::now(),
         });
-        let frame = WorldFrame {
+        let frame = CockpitTransform {
             head_world: Vec3::ZERO,
             head_cockpit: Vec3::ZERO,
             body: Quat::IDENTITY,

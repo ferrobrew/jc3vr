@@ -6,6 +6,7 @@ use super::*;
 use crate::controllers::{
     bindings::controls::ButtonControl,
     body::rig::frames::Frames,
+    cockpit::CockpitTransform,
     config::ControllersConfig,
     hands::pose::CockpitHand,
     weapons::reload::{
@@ -70,10 +71,12 @@ fn state() -> State {
         free: Some(Hand::Left),
         loose_seen: Vec::new(),
         frames: Some(Frames {
-            head_world: Vec3::ZERO,
-            head_cockpit: Vec3::ZERO,
-            view: Quat::IDENTITY,
-            world_scale: 1.0,
+            cockpit: CockpitTransform {
+                head_world: Vec3::ZERO,
+                head_cockpit: Vec3::ZERO,
+                body: Quat::IDENTITY,
+                world_scale: 1.0,
+            },
             character: Mat4::IDENTITY,
         }),
         records: Records::new(),
@@ -365,7 +368,7 @@ fn delayed_retained_result_cannot_replace_changed_input_context() {
                 state.status.insertion.taken += 1;
                 state.status.insert_hands = Some((Hand::Right, Hand::Left));
             }
-            4 => state.frames.as_mut().unwrap().world_scale = 2.0,
+            4 => state.frames.as_mut().unwrap().cockpit.world_scale = 2.0,
             _ => unreachable!(),
         }
         let insertion = state.status.insertion;
