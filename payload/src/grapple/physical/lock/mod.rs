@@ -194,7 +194,8 @@ pub(crate) unsafe fn lockable(config: &LockConfig) -> bool {
 pub(crate) struct LockTickInput<'a> {
     /// What the grapple button asks of the lock this tick.
     pub button: Option<LockButton>,
-    /// The physical grapple's yank fired this tick.
+    /// The physical grapple's yank fired this tick: the lock's one source of it, whatever the
+    /// button's gesture is doing.
     pub yank: bool,
     /// The grapple hand's grip and aim, in the cockpit frame, or `None` while untracked.
     pub line: Option<HandLine>,
@@ -467,7 +468,6 @@ unsafe fn ending(
     match input.button {
         Some(LockButton::Tapped) => return Some(LockEnd::Tapped),
         Some(LockButton::LetGo) => return Some(LockEnd::Released),
-        Some(LockButton::Yanked) => return Some(LockEnd::Yanked),
         _ if input.yank => return Some(LockEnd::Yanked),
         _ => {}
     }

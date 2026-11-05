@@ -71,7 +71,9 @@ pub struct GrappleTick {
     pub context: GrappleContext,
     /// The yank gesture fired this tick: a sharp pull of the grapple hand.
     pub yank: bool,
-    /// The physical grapple's yank fired this tick while the lock held the line.
+    /// The physical grapple's yank fired this tick while the lock held the line. The lock hears
+    /// the yank itself (`lock::LockTickInput::yank`); the button spends the press, so that its
+    /// release neither ends the lock again nor fires.
     pub lock_yank: bool,
     pub dt: f32,
 }
@@ -102,8 +104,6 @@ pub enum LockButton {
     Tapped,
     /// The button came up after a longer hold: let go of the line.
     LetGo,
-    /// A yank while the button was held: unlock and resume the reel.
-    Yanked,
 }
 
 /// The gesture under way.
@@ -233,10 +233,7 @@ impl GrappleButton {
                 out.lock = Some(LockButton::Pressed);
                 Phase::Locking { held_s: 0.0 }
             }
-            Phase::Locking { .. } if lock_yank => {
-                out.lock = Some(LockButton::Yanked);
-                Phase::Spent
-            }
+            Phase::Locking { .. } if lock_yank => Phase::Spent,
             Phase::Locking { held_s } if held && !(button.released && !button.down) => {
                 out.lock = Some(LockButton::Held);
                 Phase::Locking {
@@ -802,14 +799,15 @@ mod tests {
     }
 
     #[test]
-    fn a_yank_while_locked_resumes_the_reel_and_spends_the_press() {
+    fn a_yank_while_locked_spends_the_press() {
+        // The lock hears the yank itself; the button only stops asking anything of it.
         let mut g = GrappleButton::new();
         run(&mut g, REELING, &[PRESS]);
         let out = g.step(GrappleTick {
             lock_yank: true,
             ..tick(HELD, REELING)
         });
-        assert_eq!(out.lock, Some(LockButton::Yanked));
+        assert_eq!(out.lock, None);
         let out = run(&mut g, REELING, &[HELD, RELEASE, UP]);
         assert!(locks(&out).is_empty());
         assert!(fires(&out).is_empty(), "a quick yank never re-fires");
