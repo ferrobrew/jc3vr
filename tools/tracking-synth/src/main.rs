@@ -4,7 +4,8 @@
 //! tracking-synth [--out <dir>] [--rate <hz>] [<script>...]
 //! tracking-synth --list
 //! tracking-synth dump [--json] [--from <time>] [--to <time>] <recording>
-//! tracking-synth rig-eval [--height <m>] [--eye-height <m>] [--tuning <json>] <recording> <out.csv>
+//! tracking-synth rig-eval [--pelvis simulated|recorded|pre-ik] [--height <m>] [--eye-height <m>]
+//!     [--tuning <json>] <recording> <out.csv>
 //! tracking-synth export-rerun [--from <time>] [--to <time>] [--video <video>]
 //!     [--video-height <px>] [--height <m>] [--eye-height <m>] [--tuning <json>] <recording>
 //!     -o <out.rrd>
@@ -17,9 +18,13 @@
 //! lines. `--from` and `--to` limit it to an inclusive stretch; a `<time>` is seconds on the
 //! recording's clock (`12.5`) or an OpenXR predicted display time in nanoseconds (`xr:<ns>`), the
 //! clock a video recording's sidecar shares. `rig-eval` runs the grounded body rig over a recording
-//! and writes a CSV of each grounded frame (`rig_eval`); `--tuning` takes the rig's tuning as JSON,
-//! any field left out keeping its default, and a video sidecar (`frames.jsonl` and `stream.json`)
-//! beside the recording adds the video's time to each row. `export-rerun` writes a stretch of a
+//! and writes a CSV of each grounded frame (`rig_eval`). `--pelvis` picks the rig's inputs: the
+//! frames with a simulated pelvis, the rig inputs the payload recorded, or the frames with the
+//! pelvis under the game's pre-IK hips; a recording with rig frames defaults to its recorded inputs
+//! and compares every row with them. `--tuning` takes the rig's tuning as JSON, any field left out
+//! keeping its default, and it and `--height` and `--eye-height` override the calibration and
+//! tuning a recording notes. A video sidecar (`frames.jsonl` and `stream.json`) beside the
+//! recording adds the video's time to each row. `export-rerun` writes a stretch of a
 //! recording as a Rerun recording (`rerun_export`), with the take's video cut to the stretch beside
 //! it; it needs the `rerun` feature, on by default.
 
@@ -34,7 +39,9 @@ use tracing_subscriber::EnvFilter;
 use tracking_synth::rerun_export::{self, DEFAULT_VIDEO_HEIGHT, ExportOptions, VideoSource};
 use tracking_synth::{
     dump::{self, Bound, DumpFormat, Range},
-    rig_eval::{self, EvalOptions, VideoClock},
+    rig_eval::{
+        self, EvalOptions, Evaluation, PelvisSource, ReplayOptions, RigEvalError, VideoClock,
+    },
     script::Script,
     scripts,
     synth::{DEFAULT_RATE_HZ, Options, SynthError},
@@ -68,7 +75,8 @@ fn main() -> ExitCode {
 
 const USAGE: &str = "usage: tracking-synth [--out <dir>] [--rate <hz>] [<script>...] | --list | \
                      dump [--json] [--from <time>] [--to <time>] <recording> | rig-eval \
-                     [--height <m>] [--eye-height <m>] [--tuning <json>] <recording> <out.csv> | \
+                     [--pelvis simulated|recorded|pre-ik] [--height <m>] [--eye-height <m>] \
+                     [--tuning <json>] <recording> <out.csv> | \
                      export-rerun [--from <time>] [--to <time>] [--video <video>] [--video-height \
                      <px>] [--height <m>] [--eye-height <m>] [--tuning <json>] <recording> -o \
                      <out.rrd>, where <time> is seconds or xr:<display time ns>";
@@ -86,7 +94,7 @@ enum Command {
     RigEval {
         path: PathBuf,
         out: PathBuf,
-        options: EvalOptions,
+        options: ReplayOptions,
     },
     ExportRerun {
         path: PathBuf,
@@ -125,6 +133,10 @@ enum CliError {
     BadLength(String),
     /// `rig-eval` tuning that does not parse.
     BadTuning(serde_json::Error),
+    /// A `--pelvis` source the evaluator does not have.
+    BadPelvis(String),
+    /// A `rig-eval` source the recording cannot feed.
+    RigEval(RigEvalError),
     /// `export-rerun` without a recording and an output, or with more.
     ExportPaths,
     /// A `--video-height` that is not a whole number of pixels.
@@ -176,6 +188,12 @@ impl fmt::Display for CliError {
                 write!(f, "rig-eval: the length `{value}` is not a positive number")
             }
             CliError::BadTuning(error) => write!(f, "rig-eval: the tuning does not parse: {error}"),
+            CliError::BadPelvis(value) => write!(
+                f,
+                "rig-eval: there is no pelvis source `{value}`; it is one of simulated, recorded, \
+                 or pre-ik"
+            ),
+            CliError::RigEval(error) => write!(f, "{error}"),
             CliError::ExportPaths => write!(
                 f,
                 "export-rerun: name exactly one recording, and the output with `-o`"
@@ -271,13 +289,18 @@ fn parse_dump(mut args: impl Iterator<Item = String>) -> Result<Command, CliErro
 }
 
 fn parse_rig_eval(mut args: impl Iterator<Item = String>) -> Result<Command, CliError> {
-    let mut height = DEFAULT_HEIGHT_M;
+    let mut height = None;
     let mut eye_height = None;
     let mut tuning = None;
+    let mut source = None;
     let mut paths = Vec::new();
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--height" => height = parse_length(args.next(), "--height")?,
+            "--pelvis" => {
+                let name = args.next().ok_or(CliError::MissingValue("--pelvis"))?;
+                source = Some(PelvisSource::from_name(&name).ok_or(CliError::BadPelvis(name))?);
+            }
+            "--height" => height = Some(parse_length(args.next(), "--height")?),
             "--eye-height" => eye_height = Some(parse_length(args.next(), "--eye-height")?),
             "--tuning" => {
                 let json = args.next().ok_or(CliError::MissingValue("--tuning"))?;
@@ -289,10 +312,19 @@ fn parse_rig_eval(mut args: impl Iterator<Item = String>) -> Result<Command, Cli
             path => paths.push(PathBuf::from(path)),
         }
     }
-    let mut options = EvalOptions::new(height, eye_height.unwrap_or(height * DEFAULT_EYE_SHARE));
+    let recorded_body = height.is_none() && eye_height.is_none();
+    let recorded_tuning = tuning.is_none();
+    let height = height.unwrap_or(DEFAULT_HEIGHT_M);
+    let mut eval = EvalOptions::new(height, eye_height.unwrap_or(height * DEFAULT_EYE_SHARE));
     if let Some(tuning) = tuning {
-        options.tuning = tuning;
+        eval.tuning = tuning;
     }
+    let options = ReplayOptions {
+        eval,
+        source,
+        recorded_body,
+        recorded_tuning,
+    };
     match <[PathBuf; 2]>::try_from(paths) {
         Ok([path, out]) => Ok(Command::RigEval { path, out, options }),
         Err(_) => Err(CliError::RigEvalPaths),
@@ -427,20 +459,24 @@ fn run(command: Command) -> Result<(), CliError> {
                 error,
             })?;
             let clock = video_clock(&path);
-            let (rows, summary) = rig_eval::evaluate(&recording, &options, clock.as_ref());
+            let evaluation = rig_eval::evaluate_replay(&recording, &options, clock.as_ref())
+                .map_err(CliError::RigEval)?;
+            report_rig_config(&evaluation);
             let file = std::fs::File::create(&out).map_err(|error| CliError::Write {
                 path: out.clone(),
                 error,
             })?;
             let mut writer = std::io::BufWriter::new(file);
-            rig_eval::write_csv(&rows, &mut writer)
+            rig_eval::write_compared_csv(&evaluation.rows, &mut writer)
                 .and_then(|()| std::io::Write::flush(&mut writer))
                 .map_err(|error| CliError::Write {
                     path: out.clone(),
                     error,
                 })?;
+            let summary = evaluation.summary;
             tracing::info!(
-                rows = rows.len(),
+                pelvis = evaluation.source.name(),
+                rows = evaluation.rows.len(),
                 video = clock.is_some(),
                 grounded_s = %format_args!("{:.1}", summary.grounded_s),
                 steps = summary.steps,
@@ -457,6 +493,16 @@ fn run(command: Command) -> Result<(), CliError> {
                 "rig-eval: wrote {}",
                 out.display()
             );
+            if let Some(comparison) = evaluation.comparison {
+                tracing::info!(
+                    rows = comparison.rows,
+                    mean_body_yaw_diff_deg = %format_args!("{:.2}", comparison.mean_yaw_diff_deg),
+                    max_body_yaw_diff_deg = %format_args!("{:.2}", comparison.max_yaw_diff_deg),
+                    phase_agreement = %format_args!("{:.3}", comparison.phase_agreement),
+                    mean_offset_diff_m = %format_args!("{:.4}", comparison.mean_offset_diff_m),
+                    "rig-eval: against the recorded rig"
+                );
+            }
             Ok(())
         }
         Command::ExportRerun {
@@ -519,6 +565,38 @@ fn write(script: &Script, out: &Path, options: Options) -> Result<(), CliError> 
         path.display()
     );
     Ok(())
+}
+
+/// Say on stderr which calibration and tuning `rig-eval` ran, and which of the recording's notes
+/// it could not read.
+fn report_rig_config(evaluation: &Evaluation) {
+    for error in &evaluation.config_errors {
+        tracing::warn!("{error}");
+    }
+    if evaluation.unplaced_poses > 0 {
+        tracing::warn!(
+            poses = evaluation.unplaced_poses,
+            "rig-eval: some pre-IK poses have no view to place them, and are left out"
+        );
+    }
+    let Some(config) = evaluation.config else {
+        return;
+    };
+    let first = config.first;
+    let ran = match (config.body, config.tuning) {
+        (true, true) => "the recorded calibration and tuning",
+        (true, false) => "the recorded calibration and the command line's tuning",
+        (false, true) => "the command line's calibration and the recorded tuning",
+        (false, false) => "the command line's calibration and tuning",
+    };
+    tracing::info!(
+        notes = config.notes,
+        height_m = first.height_m,
+        eye_height_m = first.eye_height_m,
+        body_eye_height_m = first.body.eye_height,
+        body_hip_height_m = first.body.hip_height,
+        "rig-eval: the recording notes the rig's calibration and tuning; running {ran}"
+    );
 }
 
 /// What `export-rerun` was asked for.
