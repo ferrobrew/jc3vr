@@ -22,7 +22,7 @@
 //!   small threshold and up to a cap. With the reach limited, only a body that moves against the
 //!   hands within a tick leaves a shortfall for it.
 
-use body_rig::rotation::level;
+use body_rig::{geometry::within_sphere, rotation::level};
 use glam::{Quat, Vec3};
 
 use crate::controllers::{
@@ -167,13 +167,7 @@ impl ReachLimit {
     /// the arm reaches. A wrist within reach is untouched, so the limit is continuous and the hand
     /// slides along the sphere's surface as the controller moves past it.
     pub fn apply(&self, wrist: Vec3) -> Vec3 {
-        let offset = wrist - self.shoulder;
-        let distance = offset.length();
-        if distance > self.length && distance.is_finite() {
-            self.shoulder + offset * (self.length / distance)
-        } else {
-            wrist
-        }
+        within_sphere(wrist, self.shoulder, self.length)
     }
 }
 

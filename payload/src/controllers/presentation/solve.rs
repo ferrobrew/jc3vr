@@ -21,6 +21,7 @@
 //! With no motion since the ticks every edit is the identity, so the layer cannot move a pose the
 //! simulation already agrees with.
 
+use body_rig::geometry::within_sphere;
 use glam::{Mat4, Quat, Vec3};
 
 use crate::controllers::{
@@ -303,13 +304,10 @@ fn stretch_limit(stretch: bool) -> f32 {
 /// (model space, as drawn) is at most `reach` from the shoulder.
 fn within_reach(shoulder: Vec3, hand: Mat4, wrist: Vec3, reach: f32) -> Mat4 {
     let moved = hand.transform_point3(wrist);
-    let offset = moved - shoulder;
-    let distance = offset.length();
-    if !(distance > reach && reach > 0.0 && offset.is_finite()) {
+    if !moved.is_finite() {
         return hand;
     }
-    let pulled = shoulder + offset * (reach / distance);
-    Mat4::from_translation(pulled - moved) * hand
+    Mat4::from_translation(within_sphere(moved, shoulder, reach) - moved) * hand
 }
 
 /// The chain's joints' edits for each joint turned by `turns` about its own origin, each carried by

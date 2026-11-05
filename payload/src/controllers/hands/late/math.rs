@@ -1,7 +1,7 @@
 //! The pure pose and transform math the late update builds its correction from, independent of any
 //! frame state.
 
-use body_rig::rotation::angle;
+use body_rig::{geometry::within_sphere, rotation::angle};
 use glam::{Mat4, Quat, Vec3};
 
 use crate::controllers::{frame::Pose, hands::pose as hand_pose};
@@ -60,14 +60,11 @@ pub(crate) fn keep_on_forearm(d: Pose, elbow: Vec3, wrist: Vec3, max_stretch: f3
         },
     )
     .position;
-    let from_elbow = drawn - elbow;
-    if !(reach.is_finite() && reach > f32::EPSILON && from_elbow.is_finite())
-        || from_elbow.length() <= reach
-    {
+    if !(reach > f32::EPSILON && drawn.is_finite()) {
         return d;
     }
     Pose {
-        position: d.position + from_elbow.clamp_length_max(reach) - from_elbow,
+        position: d.position + (within_sphere(drawn, elbow, reach) - drawn),
         ..d
     }
 }
