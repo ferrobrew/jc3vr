@@ -1,6 +1,6 @@
 //! Every controller setting except those with their own section's file.
 
-use egui::Ui;
+use egui::{Slider, Ui};
 
 use crate::{
     config,
@@ -73,6 +73,23 @@ pub(super) fn grapple_settings(ui: &mut Ui, cfg: &mut config::Config) {
              tightens attached tethers.",
         );
     ui.checkbox(&mut c.grapple.pump, "Pump the hang swing");
+    let l = &mut c.grapple.lock;
+    ui.checkbox(&mut l.enabled, "Lock the reel's line").on_hover_text(
+        "Holding the grapple button during the reel holds the line's length to swing from. A quick \
+         release resumes the reel, a longer one lets go, and a yank resumes the reel.",
+    );
+    ui.add_enabled_ui(l.enabled, |ui| {
+        ui.add(Slider::new(&mut l.stiffness_per_s2, 10.0..=400.0).text("Lock stiffness (1/s²)"));
+        ui.add(Slider::new(&mut l.damping_per_s, 0.0..=40.0).text("Lock damping (1/s)"));
+        ui.add(Slider::new(&mut l.max_accel_g, 1.0..=10.0).text("Lock strength (g)"));
+        ui.add(Slider::new(&mut l.break_stretch_m, 0.5..=10.0).text("Lock break stretch (m)"));
+        ui.add(Slider::new(&mut l.reel_in_mps, 0.0..=8.0).text("Hand reel-in (m/s)"));
+        ui.add(Slider::new(&mut l.min_length_m, 0.5..=5.0).text("Shortest line (m)"));
+        ui.add(Slider::new(&mut l.brake_s, 0.0..=1.0).text("Lock brake (s)"))
+            .on_hover_text("How long the lock takes to stop the reel's rush toward the hook.");
+        ui.add(Slider::new(&mut l.reaction, 0.0..=1.0).text("Target reaction"))
+            .on_hover_text("The share of the line's pull the target feels back.");
+    });
 }
 
 pub(super) fn locomotion_settings(ui: &mut Ui, cfg: &mut config::Config) {

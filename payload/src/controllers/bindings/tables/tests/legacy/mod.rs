@@ -133,6 +133,7 @@ impl Bindings {
             sight_capture: chord.capture,
             wheel: Default::default(),
             grapple_held: false,
+            grapple_lock: None,
         }
     }
 }

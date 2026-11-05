@@ -14,6 +14,8 @@ The grapple is the off-hand's upper face button (Y on the left Touch controller,
 | A hold with nothing new under the aim, tethers attached | Tightens the tethers: the retract rises from 0.35 to 0.7 over a second, and pulling the hand back while holding tightens harder (the larger of the two wins) |
 | A sharp pull of the hand while the button is held, a line attached | Zips along the line, as a tap would |
 
+During the reel, the button is the lock's: a press holds the line's length to swing from, a quick release resumes the reel and passes the tap on to the game, a longer hold's release lets go of the line, and a yank resumes the reel ([grapple-lock.md](grapple-lock.md)).
+
 The pulls act only while the button is held: a hand moved back in the course of play never zips or tightens. The L trigger still retracts the tethers on its own while the left hand holds nothing that uses the trigger: no gun, and no grenade whose pin the press pulls.
 
 ## What the hand does
@@ -23,6 +25,7 @@ The pulls act only while the button is held: a hand moved back in the course of 
 | A line is attached, nothing carries the character, and the grapple button is held | A sharp pull back along the hand's aim (the yank) | The grapple's tap, which zips |
 | Reeling in | The pull's speed | The reel's speed and acceleration scale from `GRAPPLE.reel.min_scale` to `GRAPPLE.reel.max_scale` |
 | Reeling in | A yank | The reel takes the game's retract boost for `GRAPPLE.reel.boost_s` |
+| Reeling in, the grapple button held into the lock | Pulling back along the aim | Takes line in ([grapple-lock.md](grapple-lock.md#shortening-the-line)); a yank resumes the reel |
 | Tethers attached, on foot or falling, no line of the grapple's own, the grapple button held | Pulling back from where the hand reached | The game's retract input, which tightens the tethers |
 | Hanging from the line | Holding the hand off where it took the line, and moving it | The body swings against the hand: the hold, plus a pump while the hand moves |
 | On foot, the grapple hand empty, no line out, the grapple button up, the grip pressed at a thing out of reach under the aim | A yank while the grip is held | The grapple snatch: the hook pulls the thing into the hand ([grapple-snatch.md](grapple-snatch.md)) |
@@ -68,7 +71,7 @@ The input tick's game stage (the game thread, before the world update; [controll
 
 ## Settings and readouts
 
-The switches are in the debug UI's Grapple feature, under Movement/vehicles: yank to zip (`bindings.yank.enabled`), pull to reel (`controllers.grapple.pull_to_reel`, which drives both the reel and the tether retract), the pump (`controllers.grapple.pump`), and the anchor hand (`hands.anchor.enabled`, which carries the hang swing's hold); the line's vibration is behind the haptics' master switch ([haptics.md](haptics.md)). Everything defaults on. The tuning is fixed in `GRAPPLE` (`PhysicalGrappleTuning`) and the yank's in `GRAPPLE_YANK`, and the Grapple feature's live status shows the pump and a line for the physical grapple.
+The switches are in the debug UI's Grapple feature, under Movement/vehicles: yank to zip (`bindings.yank.enabled`), pull to reel (`controllers.grapple.pull_to_reel`, which drives both the reel and the tether retract), the pump (`controllers.grapple.pump`), the lock and its tuning (`controllers.grapple.lock`, [grapple-lock.md](grapple-lock.md)), and the anchor hand (`hands.anchor.enabled`, which carries the hang swing's hold); the line's vibration is behind the haptics' master switch ([haptics.md](haptics.md)). Everything defaults on. The tuning is fixed in `GRAPPLE` (`PhysicalGrappleTuning`) and the yank's in `GRAPPLE_YANK`, and the Grapple feature's live status shows the pump and a line for the physical grapple.
 
 The debug UI's Status page has a `GRAPPLE` section:
 
@@ -76,6 +79,7 @@ The debug UI's Status page has a `GRAPPLE` section:
 - `ATTACHED TARGET`: `OBJECT` or `SURFACE` with the distance from the head to the attach point, or `NONE`.
 - `REEL FROM HAND`: the scale while the hand drives a reel, `BOOSTED` during a boost, and the counts of reels and boosts.
 - `TETHERS`: how many are attached, the retract value while the pull drives it, the tension while the game squeezes, and the count of pulls.
+- `LINE LOCK`: the lock on the reel's line ([grapple-lock.md](grapple-lock.md#settings-and-readouts)).
 - `HANG SWING`: the hang ticks that swung, and how many the pump added to.
 - `LINE HAPTICS`: the grapple hand's line level, the stronger of the tension's and the reel's.
 

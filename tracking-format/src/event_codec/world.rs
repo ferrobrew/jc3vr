@@ -10,8 +10,8 @@ use crate::{
     codec::{hand_code, read_hand},
     event::{
         BodiesSample, BodyIntro, BodySample, CameraState, Force, ForceKind, FrameState,
-        GrappleState, HeldMotion, HeldSample, HoldReport, SlingState, VehicleState, ViewState,
-        WireEndSample,
+        GrappleState, HeldMotion, HeldSample, HoldReport, LockState, SlingState, VehicleState,
+        ViewState, WireEndSample,
     },
     event_codec::{
         bools, invalid, label, list, opt, opt_f32, opt_label, opt_u32, opt_u64, opt_vec3,
@@ -68,6 +68,16 @@ pub(super) fn grapple_state(out: &mut Encoder, grapple: &GrappleState) {
         out.vec3(sling.anchor);
         out.vec3(sling.centre);
     });
+    opt(out, grapple.lock.as_ref(), |out, lock| {
+        out.bool(lock.braking);
+        out.f32(lock.length_m);
+        out.f32(lock.stretch_m);
+        out.f32(lock.tension_n);
+        out.f32(lock.max_tension_n);
+        opt_f32(out, lock.target_mass_kg);
+        out.vec3(lock.hook);
+        out.vec3(lock.rider);
+    });
 }
 
 pub(super) fn read_grapple_state(input: &mut Decoder) -> Result<GrappleState, DecodeError> {
@@ -93,6 +103,18 @@ pub(super) fn read_grapple_state(input: &mut Decoder) -> Result<GrappleState, De
                 tethered,
                 anchor: input.vec3()?,
                 centre: input.vec3()?,
+            })
+        })?,
+        lock: read_opt(input, "the lock flag", |input| {
+            Ok(LockState {
+                braking: input.bool("the lock brake flag")?,
+                length_m: input.f32()?,
+                stretch_m: input.f32()?,
+                tension_n: input.f32()?,
+                max_tension_n: input.f32()?,
+                target_mass_kg: read_opt_f32(input, "the lock target mass flag")?,
+                hook: input.vec3()?,
+                rider: input.vec3()?,
             })
         })?,
     })

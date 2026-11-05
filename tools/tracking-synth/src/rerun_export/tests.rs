@@ -440,6 +440,7 @@ fn controller_state(
                 anchor: device,
                 centre: device + Vec3::new(5.0, 0.0, -10.0),
             }),
+            lock: None,
         }),
         vehicle: (index > 20).then(|| VehicleState {
             class: "car".into(),

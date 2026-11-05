@@ -596,7 +596,9 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         tethers: physical_grapple.tethers > 0,
         line: yank_armed_in(line, &detection),
         aim_target: aim::status().grapple.is_some_and(|g| g.valid),
+        reeling: physical_grapple.lockable && !snatch_button_owned,
     };
+    controls.lock_yank = physical_grapple.lock_yank;
     let mut step = state.bindings.step(
         detection.mode,
         &controls,
@@ -604,6 +606,17 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         real_dt,
         &config.bindings,
     );
+    // SAFETY: the game stage runs on the game thread before the world update.
+    unsafe {
+        grapple::physical::lock::lock_tick(&grapple::physical::lock::LockTickInput {
+            button: step.grapple_lock,
+            yank: physical_grapple.lock_yank,
+            line: grapple_line,
+            real_dt,
+            hand: grapple_hand,
+            config: &config.grapple.lock,
+        })
+    };
     let summary_masks = state
         .bindings
         .effective_masks(detection.mode, &controls, &semantic_input);

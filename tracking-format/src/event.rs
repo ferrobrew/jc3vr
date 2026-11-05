@@ -29,8 +29,8 @@ pub use crate::event::{
     notes::{Diagnostic, FrameTiming, Haptic, Injected, InjectedWrite, Settings, SlotTiming},
     world::{
         BodiesSample, BodyIntro, BodySample, CameraState, Force, ForceKind, FrameState,
-        GrappleState, HeldMotion, HeldSample, HoldReport, SlingState, VehicleState, ViewState,
-        WireEndSample,
+        GrappleState, HeldMotion, HeldSample, HoldReport, LockState, SlingState, VehicleState,
+        ViewState, WireEndSample,
     },
 };
 use crate::model::Hand;

@@ -14,7 +14,8 @@
 //!
 //! The drive is published by the input tick ([`publish`]) and read by the detour on the same
 //! thread's character update; a drive older than [`DRIVE_MAX_AGE`] is ignored, so the reel returns
-//! to the game's own as soon as the input tick stops publishing.
+//! to the game's own as soon as the input tick stops publishing. While the lock holds the line,
+//! the detour hands the reel the lock's velocity instead ([`lock::drive`]).
 //!
 //! [`NStateTask_ReelIn::UpdateReelVelocity`]: jc3gi::equipment::grappling_hook::NStateTask_ReelIn::UpdateReelVelocity
 
@@ -30,7 +31,7 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::grapple::physical::config::ReelPullTuning;
+use crate::grapple::physical::{config::ReelPullTuning, lock};
 
 /// The reel's hooks, aggregated by [`crate::grapple::physical::hook_library`].
 pub(super) fn hook_library() -> HookLibrary {
@@ -194,6 +195,19 @@ fn update_reel_velocity(
         )
     };
     // SAFETY: the reel task's own arguments, on the character update that owns them.
+    if unsafe {
+        lock::drive(
+            character,
+            hook,
+            velocity,
+            current_position,
+            dt,
+            is_simulating,
+        )
+    } {
+        return;
+    }
+    // SAFETY: as above.
     let local = unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter);
     let (Some(drive), Some(base)) = (local.then(current_drive).flatten(), unsafe {
         tuning.as_ref()

@@ -349,6 +349,12 @@ fn log_scalars(context: &Context<'_>, state: &ControllerState) -> RecordingStrea
             push("grapple/tension_n", sling.tension_n);
             push("grapple/max_tension_n", sling.max_tension_n);
         }
+        if let Some(lock) = &grapple.lock {
+            push("grapple/lock_length_m", lock.length_m);
+            push("grapple/lock_stretch_m", lock.stretch_m);
+            push("grapple/lock_tension_n", lock.tension_n);
+            push("grapple/lock_max_tension_n", lock.max_tension_n);
+        }
     }
     if let Some(vehicle) = &state.vehicle {
         if let Some(step) = vehicle.step_m {

@@ -216,6 +216,12 @@ pub enum Event {
     SnatchRefused,
     /// The tethers starting to retract under the grapple hand's pull.
     TetherRetract,
+    /// The grapple's line locked during the reel, to swing from.
+    LineLock,
+    /// The locked line let go of: the button released or the character landed.
+    LineRelease,
+    /// The locked line breaking.
+    LineSnap,
     /// A hand gripping the world to climb.
     ClimbGrip,
     /// A climbing hand letting go.
@@ -235,7 +241,7 @@ pub enum Event {
 
 impl Event {
     #[cfg(test)]
-    pub const ALL: [Event; 61] = [
+    pub const ALL: [Event; 64] = [
         Event::PalmTouch,
         Event::HandStrike,
         Event::Take,
@@ -291,6 +297,9 @@ impl Event {
         Event::SnatchCatch,
         Event::SnatchRefused,
         Event::TetherRetract,
+        Event::LineLock,
+        Event::LineRelease,
+        Event::LineSnap,
         Event::ClimbGrip,
         Event::ClimbRelease,
         Event::ClimbFling,
@@ -361,6 +370,9 @@ impl Event {
             Event::SnatchCatch => Cue::new(Primitive::Thud, 1.0, Category::Contact).long(),
             Event::SnatchRefused => Cue::new(Primitive::Buzz, 0.6, Category::Traversal),
             Event::TetherRetract => Cue::new(Primitive::Bump, 0.75, Category::Traversal),
+            Event::LineLock => Cue::new(Primitive::Thud, 0.7, Category::Traversal),
+            Event::LineRelease => Cue::new(Primitive::Click, 0.4, Category::Traversal),
+            Event::LineSnap => Cue::new(Primitive::Buzz, 0.8, Category::Traversal),
             Event::ClimbGrip => Cue::new(Primitive::Bump, 0.75, Category::Traversal),
             Event::ClimbRelease => Cue::new(Primitive::Click, 0.25, Category::Traversal),
             Event::ClimbFling => Cue::new(Primitive::Thud, 0.85, Category::Traversal),
@@ -428,6 +440,9 @@ impl Event {
             Event::SnatchCatch => "snatch caught",
             Event::SnatchRefused => "snatch refused",
             Event::TetherRetract => "tether retract",
+            Event::LineLock => "line lock",
+            Event::LineRelease => "line release",
+            Event::LineSnap => "line snap",
             Event::ClimbGrip => "climb grip",
             Event::ClimbRelease => "climb release",
             Event::ClimbFling => "climb fling",

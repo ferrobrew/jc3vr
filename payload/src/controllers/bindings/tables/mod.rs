@@ -52,6 +52,7 @@ use crate::{
             controls::{ButtonControl, Controls},
             grapple_button::{
                 GrappleActions, GrappleButton, GrappleContext, GrapplePermissions, GrappleTick,
+                LockButton,
             },
             hold::{Desired, MapKind, Target, Want},
             intents::{Gestures, Intents, Mask, MaskScope, SemanticInput},
@@ -106,6 +107,8 @@ pub struct Step {
     pub wheel: [WheelPress; 2],
     /// The grapple's button is held this tick, in a mode with a grapple: the hand is aiming it.
     pub grapple_held: bool,
+    /// What the grapple's button asks of the lock this tick ([`crate::grapple::physical::lock`]).
+    pub grapple_lock: Option<LockButton>,
 }
 
 /// The tables and their cross-tick state.
@@ -356,6 +359,7 @@ impl Bindings {
         let mut out = EvalSink::new(&intents, latches, controls.move_rotation, map);
         declare(&mut out, mode, &ctx);
         let mut grapple_held = false;
+        let mut grapple_lock = None;
         if let Some((inputs, actions)) = grapple_press(mode) {
             let button = inputs
                 .iter()
@@ -381,16 +385,20 @@ impl Bindings {
                     }
                 }
             }
-            self.grapple.apply(
-                GrappleTick {
-                    button,
-                    context: controls.grapple,
-                    yank: controls.yank,
-                    dt,
-                },
-                actions,
-                &mut out.desired,
-            );
+            grapple_lock = self
+                .grapple
+                .apply(
+                    GrappleTick {
+                        button,
+                        context: controls.grapple,
+                        yank: controls.yank,
+                        lock_yank: controls.lock_yank,
+                        dt,
+                    },
+                    actions,
+                    &mut out.desired,
+                )
+                .lock;
             if !self.grapple.pending() {
                 self.grapple_triggers = [false; 2];
                 self.grapple_routes.clear();
@@ -446,6 +454,7 @@ impl Bindings {
             sight_capture: chord.capture,
             wheel,
             grapple_held,
+            grapple_lock,
         }
     }
 }
@@ -763,6 +772,7 @@ mod grapple_permission_tests {
             tethers: true,
             line: false,
             aim_target: false,
+            reeling: false,
         };
         for button in [
             ButtonControl {
@@ -780,6 +790,7 @@ mod grapple_permission_tests {
                 button,
                 context,
                 yank: false,
+                lock_yank: false,
                 dt: 0.0,
             });
         }

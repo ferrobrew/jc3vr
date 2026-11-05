@@ -55,6 +55,8 @@ pub struct GrappleState {
     pub target_object: Option<u64>,
     /// The snatch's held line, while it swings its target.
     pub sling: Option<SlingState>,
+    /// The grapple's lock, while it holds the line's length during the reel.
+    pub lock: Option<LockState>,
 }
 
 /// One end of a grapple wire.
@@ -81,6 +83,25 @@ pub struct SlingState {
     /// Where the line is anchored, and the target's centre, world space.
     pub anchor: Vec3,
     pub centre: Vec3,
+}
+
+/// The grapple's lock on the reel's line.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct LockState {
+    /// Whether the brake still turns the reel's rush into the swing.
+    pub braking: bool,
+    /// The held length, and how far the character is past it, metres: negative while slack.
+    pub length_m: f32,
+    pub stretch_m: f32,
+    /// The line's tension and its strength, newtons.
+    pub tension_n: f32,
+    pub max_tension_n: f32,
+    /// The mass of the body behind the hook's point, or `None` for one the line does not move.
+    pub target_mass_kg: Option<f32>,
+    /// The hook's point and the character's position, world space.
+    pub hook: Vec3,
+    pub rider: Vec3,
 }
 
 /// The vehicle the player rides, while in one.

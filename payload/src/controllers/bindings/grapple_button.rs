@@ -20,6 +20,13 @@
 //!
 //! The pulls act only while the button is held, so a pull of the hand never zips or tightens by
 //! itself.
+//!
+//! While the reel carries the character toward a target the lock can hold
+//! ([`GrappleContext::reeling`]), the button is the lock's ([`crate::grapple::physical::lock`]):
+//! a press locks the line's length at once; a release within [`TAP_S`] unlocks it and passes the
+//! tap to the game, which keeps its fire from the reel; a release after a longer hold lets go of
+//! the line; and a yank of the grapple hand while it is held unlocks it and resumes the reel. The
+//! game sees no held fire input through any of it.
 
 use jc3gi::input::input_action_map::Action;
 
@@ -37,6 +44,8 @@ pub struct GrappleContext {
     pub line: bool,
     /// The game holds a grapple target in range under the grapple's aim.
     pub aim_target: bool,
+    /// The reel carries the character toward a target the lock can hold.
+    pub reeling: bool,
 }
 
 impl GrappleContext {
@@ -62,6 +71,8 @@ pub struct GrappleTick {
     pub context: GrappleContext,
     /// The yank gesture fired this tick: a sharp pull of the grapple hand.
     pub yank: bool,
+    /// The physical grapple's yank fired this tick while the lock held the line.
+    pub lock_yank: bool,
     pub dt: f32,
 }
 
@@ -76,6 +87,23 @@ pub struct GrappleOutput {
     pub release: bool,
     /// The tethers' retract, `0..=1`.
     pub tighten: Option<f32>,
+    /// What the button asks of the lock this tick.
+    pub lock: Option<LockButton>,
+}
+
+/// What the grapple button asks of the lock.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum LockButton {
+    /// The button went down during the reel: lock the line.
+    Pressed,
+    /// The button is held into the lock.
+    Held,
+    /// The button came up within [`TAP_S`]: unlock, the tap going to the game.
+    Tapped,
+    /// The button came up after a longer hold: let go of the line.
+    LetGo,
+    /// A yank while the button was held: unlock and resume the reel.
+    Yanked,
 }
 
 /// The gesture under way.
@@ -96,6 +124,8 @@ enum Phase {
     Spent,
     /// The button is passed through to the game, nothing being attached at its press.
     Passing,
+    /// The button holds the lock on a reel, for `held_s`.
+    Locking { held_s: f32 },
 }
 
 /// The button's gesture state across ticks.
@@ -155,7 +185,7 @@ impl GrappleButton {
                 context.tethers && !context.aim_target
             }
             Phase::Tightening { .. } => true,
-            Phase::Firing | Phase::Spent | Phase::Passing => false,
+            Phase::Firing | Phase::Spent | Phase::Passing | Phase::Locking { .. } => false,
         };
         GrapplePermissions {
             release: context.tethers,
@@ -184,6 +214,7 @@ impl GrappleButton {
             button,
             context,
             yank,
+            lock_yank,
             dt,
         } = tick;
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
@@ -194,6 +225,36 @@ impl GrappleButton {
             ..GrappleOutput::default()
         };
         self.phase = match self.phase {
+            Phase::Idle | Phase::TapWaiting { .. } if fresh && context.reeling => {
+                // A tap still waiting fires first; the reel's press is the lock's.
+                if matches!(self.phase, Phase::TapWaiting { .. }) {
+                    out.fire = Some(Want::Click);
+                }
+                out.lock = Some(LockButton::Pressed);
+                Phase::Locking { held_s: 0.0 }
+            }
+            Phase::Locking { .. } if lock_yank => {
+                out.lock = Some(LockButton::Yanked);
+                Phase::Spent
+            }
+            Phase::Locking { held_s } if held && !(button.released && !button.down) => {
+                out.lock = Some(LockButton::Held);
+                Phase::Locking {
+                    held_s: held_s + dt,
+                }
+            }
+            Phase::Locking { held_s } => {
+                if held_s < TAP_S {
+                    // The tap is the game's fire from the reel, and nothing once the reel is over.
+                    if context.reeling {
+                        out.fire = Some(Want::Click);
+                    }
+                    out.lock = Some(LockButton::Tapped);
+                } else {
+                    out.lock = Some(LockButton::LetGo);
+                }
+                Phase::Idle
+            }
             Phase::Idle | Phase::TapWaiting { .. } if fresh && !context.gestures() => {
                 // A tap still waiting fires first, and the new press reaches the game from the
                 // next tick.
@@ -209,7 +270,7 @@ impl GrappleButton {
                 second: false,
             },
             Phase::Idle => {
-                out.gestures = context.gestures();
+                out.gestures = context.gestures() || context.reeling;
                 Phase::Idle
             }
             Phase::TapWaiting { .. } if fresh => Phase::Pressed {
@@ -288,6 +349,7 @@ impl GrappleButton {
                 | Phase::Tightening { .. }
                 | Phase::Spent
                 | Phase::Passing
+                | Phase::Locking { .. }
         )
     }
 
@@ -416,6 +478,7 @@ mod tests {
         tethers: true,
         line: false,
         aim_target: false,
+        reeling: false,
     };
 
     fn tick(button: ButtonControl, context: GrappleContext) -> GrappleTick {
@@ -423,6 +486,7 @@ mod tests {
             button,
             context,
             yank: false,
+            lock_yank: false,
             dt: DT,
         }
     }
@@ -474,6 +538,7 @@ mod tests {
                     let context = GrappleContext {
                         tethers,
                         aim_target,
+                        reeling: false,
                         line: false,
                     };
                     let expected = GrapplePermissions {
@@ -492,6 +557,7 @@ mod tests {
     fn current_permissions_distinguish_a_new_tether_from_tightening() {
         let aimed = GrappleContext {
             aim_target: true,
+            reeling: false,
             ..TETHERS
         };
         for context in [TETHERS, aimed] {
@@ -517,6 +583,7 @@ mod tests {
             let context = GrappleContext {
                 tethers,
                 aim_target: true,
+                reeling: false,
                 line: false,
             };
             assert_eq!(
@@ -535,6 +602,7 @@ mod tests {
         let mut g = GrappleButton::new();
         let aimed = GrappleContext {
             aim_target: true,
+            reeling: false,
             ..TETHERS
         };
         assert_eq!(hold(&mut g, aimed).fire, Some(Want::Hold(1.0)));
@@ -574,6 +642,7 @@ mod tests {
                         tethers,
                         line: true,
                         aim_target: true,
+                        reeling: false,
                     })
                     .release,
                     tethers
@@ -592,6 +661,7 @@ mod tests {
             let context = GrappleContext {
                 tethers,
                 aim_target: true,
+                reeling: false,
                 line: false,
             };
             let permissions = g.current_permissions(context);
@@ -637,6 +707,7 @@ mod tests {
         let mut g = GrappleButton::new();
         let aimed = GrappleContext {
             aim_target: true,
+            reeling: false,
             ..TETHERS
         };
         let hold = (TAP_S / DT).ceil() as usize + 2;
@@ -686,6 +757,88 @@ mod tests {
         // The press is spent: holding on does not fire again, and letting go fires nothing.
         let out = run(&mut g, line, &[HELD, HELD, RELEASE, UP]);
         assert!(fires(&out).is_empty());
+    }
+
+    const REELING: GrappleContext = GrappleContext {
+        tethers: false,
+        line: false,
+        aim_target: false,
+        reeling: true,
+    };
+
+    fn locks(out: &[GrappleOutput]) -> Vec<LockButton> {
+        out.iter().filter_map(|o| o.lock).collect()
+    }
+
+    #[test]
+    fn a_press_during_the_reel_locks_at_once_and_holds_the_fire_back() {
+        let mut g = GrappleButton::new();
+        let out = run(&mut g, REELING, &[PRESS, HELD, HELD]);
+        assert_eq!(
+            locks(&out),
+            vec![LockButton::Pressed, LockButton::Held, LockButton::Held]
+        );
+        assert!(out.iter().all(|o| o.gestures && o.fire.is_none()));
+    }
+
+    #[test]
+    fn a_quick_release_unlocks_and_passes_the_tap_to_the_game() {
+        let mut g = GrappleButton::new();
+        let out = run(&mut g, REELING, &[PRESS, HELD, RELEASE, UP]);
+        assert_eq!(locks(&out).last(), Some(&LockButton::Tapped));
+        assert_eq!(fires(&out), vec![Want::Click]);
+        assert!(!g.holding());
+    }
+
+    #[test]
+    fn a_long_hold_lets_go_of_the_line_on_release_and_fires_nothing() {
+        let mut g = GrappleButton::new();
+        let mut buttons = vec![PRESS];
+        buttons.extend(vec![HELD; (TAP_S / DT).ceil() as usize + 2]);
+        buttons.extend([RELEASE, UP]);
+        let out = run(&mut g, REELING, &buttons);
+        assert_eq!(locks(&out).last(), Some(&LockButton::LetGo));
+        assert!(fires(&out).is_empty());
+    }
+
+    #[test]
+    fn a_yank_while_locked_resumes_the_reel_and_spends_the_press() {
+        let mut g = GrappleButton::new();
+        run(&mut g, REELING, &[PRESS]);
+        let out = g.step(GrappleTick {
+            lock_yank: true,
+            ..tick(HELD, REELING)
+        });
+        assert_eq!(out.lock, Some(LockButton::Yanked));
+        let out = run(&mut g, REELING, &[HELD, RELEASE, UP]);
+        assert!(locks(&out).is_empty());
+        assert!(fires(&out).is_empty(), "a quick yank never re-fires");
+    }
+
+    #[test]
+    fn the_lock_outlasts_the_reel_until_the_button_comes_up() {
+        // The reel ending under the lock (a landing, a break) does not hand the held button back.
+        let mut g = GrappleButton::new();
+        run(&mut g, REELING, &[PRESS]);
+        let mut buttons = vec![HELD; (TAP_S / DT).ceil() as usize + 2];
+        buttons.push(RELEASE);
+        let out = run(&mut g, GrappleContext::default(), &buttons);
+        assert_eq!(locks(&out).last(), Some(&LockButton::LetGo));
+        assert!(fires(&out).is_empty());
+    }
+
+    #[test]
+    fn without_a_reel_the_press_never_locks() {
+        let mut g = GrappleButton::new();
+        let out = run(&mut g, GrappleContext::default(), &[PRESS, HELD, RELEASE]);
+        assert!(locks(&out).is_empty());
+        let line = GrappleContext {
+            line: true,
+            ..GrappleContext::default()
+        };
+        let mut g = GrappleButton::new();
+        let out = run(&mut g, line, &[PRESS, HELD, RELEASE]);
+        assert!(locks(&out).is_empty());
     }
 
     #[test]

@@ -10,8 +10,8 @@ use jc3gi::{
 };
 use tracking_format::{
     event::{
-        CameraState, FrameState, GrappleState, Label, SlingState, VehicleState, ViewState,
-        WireEndSample,
+        CameraState, FrameState, GrappleState, Label, LockState, SlingState, VehicleState,
+        ViewState, WireEndSample,
     },
     model::Pose,
 };
@@ -19,7 +19,9 @@ use tracking_format::{
 use crate::{
     config::Config,
     controllers::{frame::Hand, haptics, snatch, vehicles},
-    frame_timing, headpose,
+    frame_timing,
+    grapple::physical::lock,
+    headpose,
     hooks::camera::last_dtf,
 };
 
@@ -79,6 +81,18 @@ pub(super) fn grapple_state(character: &Character) -> Option<GrappleState> {
             anchor: swing.anchor,
             centre: swing.centre,
         }),
+        lock: Some(lock::status())
+            .filter(|lock| lock.locked)
+            .map(|lock| LockState {
+                braking: lock.braking,
+                length_m: lock.length_m,
+                stretch_m: lock.stretch_m,
+                tension_n: lock.tension_n,
+                max_tension_n: lock.max_tension_n,
+                target_mass_kg: lock.target.and_then(|t| t.mass_kg),
+                hook: lock.hook,
+                rider: lock.rider,
+            }),
     })
 }
 

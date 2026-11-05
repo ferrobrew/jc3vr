@@ -111,6 +111,9 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | `Event::SnatchCatch` | the hand catching what the snatch's line yanked to it | thud, long | 1.0 | contact | `snatch` |
 | `Event::SnatchRefused` | a snatch refused or failed | buzz | 0.6 | traversal | `snatch` |
 | `Event::TetherRetract` | the tethers start to retract under the hand's pull | bump | 0.75 | traversal | `grapple::physical` |
+| `Event::LineLock` | the grapple's line locks during the reel ([grapple-lock.md](grapple-lock.md)) | thud | 0.7 | traversal | `grapple::physical::lock` |
+| `Event::LineRelease` | the locked line let go of: the button released or Rico landed | click | 0.4 | traversal | `grapple::physical::lock` |
+| `Event::LineSnap` | the locked line breaks | buzz | 0.8 | traversal | `grapple::physical::lock` |
 | `Event::ClimbGrip` | a hand grips the world to climb | bump | 0.75 | traversal | `physical_hands::climb` |
 | `Event::ClimbRelease` | a climbing hand lets go | click | 0.25 | traversal | `physical_hands::climb` |
 | `Event::ClimbFling` | the body is flung off a climbing grip, scaled by the throw | thud | 0.85 | traversal | `physical_hands::climb` |

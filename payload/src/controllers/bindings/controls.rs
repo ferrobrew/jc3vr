@@ -101,6 +101,8 @@ pub struct Controls {
     pub dual_wield: bool,
     /// Whether the yank gesture fired this tick: a sharp pull of the grapple hand.
     pub yank: bool,
+    /// Whether the physical grapple's yank fired this tick while the lock held the line.
+    pub lock_yank: bool,
     /// What the grapple button's gestures need to know of the game.
     pub grapple: GrappleContext,
     /// Whether the sight tuning capture chord is armed: the tuning tool is on and its marker is
@@ -162,6 +164,7 @@ impl Controls {
             weapon_cycle: false,
             dual_wield: false,
             yank: false,
+            lock_yank: false,
             grapple: GrappleContext::default(),
             sight_chord: false,
             ragdolling: false,

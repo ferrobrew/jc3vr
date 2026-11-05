@@ -16,6 +16,9 @@ pub struct PhysicalGrappleConfig {
     /// Pump a hanging character's swing by the grapple hand's motion, on top of the hold of
     /// [`AnchorConfig::enabled`](crate::controllers::hands::anchor::AnchorConfig::enabled).
     pub pump: bool,
+    /// The lock: holding the grapple button during the reel holds the line's length to swing from
+    /// ([`crate::grapple::physical::lock`]).
+    pub lock: LockConfig,
 }
 
 impl PhysicalGrappleConfig {
@@ -23,7 +26,56 @@ impl PhysicalGrappleConfig {
         Self {
             pull_to_reel: true,
             pump: true,
+            lock: LockConfig::new(),
         }
+    }
+}
+
+/// The lock's switch and tuning ([`crate::grapple::physical::lock`]).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LockConfig {
+    /// Whether a press of the grapple button during the reel locks the line.
+    pub enabled: bool,
+    /// The line's pull per metre it is stretched past its held length, per second squared, for
+    /// the character and the target's reduced mass.
+    pub stiffness_per_s2: f32,
+    /// The line's damping of the character's speed away from the hook's point, per second.
+    pub damping_per_s: f32,
+    /// The most the line accelerates the character, in multiples of gravity: its strength.
+    pub max_accel_g: f32,
+    /// How far past its held length the line stretches before it breaks, metres.
+    pub break_stretch_m: f32,
+    /// How fast the grapple hand pulling back takes line in, at most, metres per second.
+    pub reel_in_mps: f32,
+    /// The shortest the line is held at, metres: the hand takes no line in past it.
+    pub min_length_m: f32,
+    /// How long the lock brakes the reel's speed toward the hook when it takes hold, seconds; the
+    /// held length follows the character in over it.
+    pub brake_s: f32,
+    /// The share of the line's pull the target feels back, `0..=1`.
+    pub reaction: f32,
+}
+
+impl LockConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            stiffness_per_s2: 65.0,
+            damping_per_s: 11.0,
+            max_accel_g: 4.0,
+            break_stretch_m: 3.0,
+            reel_in_mps: 3.0,
+            min_length_m: 1.5,
+            brake_s: 0.25,
+            reaction: 1.0,
+        }
+    }
+}
+
+impl Default for LockConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

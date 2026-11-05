@@ -1,6 +1,6 @@
 //! The status rows for the physical grapple: where the grapple is, what its line holds, the
-//! reel and the tethers the hand works, the hang swing, the snatch, and the grapple hand's
-//! vibration.
+//! reel and the tethers the hand works, the lock, the hang swing, the snatch, and the grapple
+//! hand's vibration.
 
 use smol_str::format_smolstr;
 
@@ -10,7 +10,10 @@ use crate::{
         menu::read_config,
         snatch::{self, SnatchStatus},
     },
-    grapple::physical::{self, GrapplePhase, GrappleStatus},
+    grapple::physical::{
+        self, GrapplePhase, GrappleStatus,
+        lock::{self, LockStatus},
+    },
     status::{Line, Text, prose, text},
 };
 
@@ -30,6 +33,11 @@ pub(super) fn reel() -> Line {
 pub(super) fn tethers() -> Line {
     let enabled = read_config(|c| c.controllers.grapple.pull_to_reel);
     tethers_line(enabled, &physical::status())
+}
+
+pub(super) fn lock() -> Line {
+    let enabled = read_config(|c| c.controllers.grapple.lock.enabled);
+    lock_line(enabled, &lock::status())
 }
 
 pub(super) fn swing() -> Line {
@@ -187,6 +195,54 @@ fn reel_line(enabled: bool, status: &GrappleStatus) -> Line {
     }
 }
 
+fn lock_line(enabled: bool, status: &LockStatus) -> Line {
+    if !enabled {
+        return Line::off("");
+    }
+    let counts = text!(
+        status.locks.to_string(),
+        " locks, ",
+        status.breaks.to_string(),
+        " broke"
+    );
+    if !status.locked {
+        let last = status
+            .last_end
+            .map_or_else(Text::default, |end| text!(", last ", prose(end.label())));
+        return if status.locks == 0 {
+            Line::waiting(counts)
+        } else {
+            Line::ok(text!(counts, last))
+        };
+    }
+    let target = status
+        .target
+        .map_or_else(Text::default, |target| match target.mass_kg {
+            Some(mass) => text!(prose(target.kind), " ", format!("{mass:.0}"), " kg, "),
+            None => text!(prose(target.kind), ", "),
+        });
+    Line::ok(text!(
+        if status.braking {
+            prose("braking, ")
+        } else {
+            Text::default()
+        },
+        target,
+        "held ",
+        format!("{:.1}", status.length_m),
+        " m, stretch ",
+        format!("{:+.2}", status.stretch_m),
+        " m, ",
+        format!("{:.0}", status.tension_n),
+        " of ",
+        format!("{:.0}", status.max_tension_n),
+        " N, hook ",
+        format!("{:.1}", status.hook_speed_mps),
+        " m/s, ",
+        counts
+    ))
+}
+
 fn tethers_line(enabled: bool, status: &GrappleStatus) -> Line {
     let count = text!(status.tethers.to_string(), " attached");
     if !enabled {
@@ -255,6 +311,43 @@ mod tests {
 
     use super::*;
     use crate::grapple::physical::TargetReadout;
+
+    #[test]
+    fn the_lock_row_reads_the_lock() {
+        assert_eq!(lock_line(false, &LockStatus::default()).text(), "OFF");
+        assert_eq!(
+            lock_line(true, &LockStatus::default()).text(),
+            "WAITING, 0 LOCKS, 0 BROKE"
+        );
+        let held = LockStatus {
+            locked: true,
+            length_m: 8.25,
+            stretch_m: 0.12,
+            tension_n: 900.0,
+            max_tension_n: 3924.0,
+            target: Some(lock::LockTarget {
+                kind: "vehicle",
+                mass_kg: Some(1500.0),
+            }),
+            hook_speed_mps: 12.0,
+            locks: 1,
+            ..LockStatus::default()
+        };
+        assert_eq!(
+            lock_line(true, &held).text(),
+            "OK, VEHICLE 1500 KG, HELD 8.2 M, STRETCH +0.12 M, 900 OF 3924 N, HOOK 12.0 M/S, 1 LOCKS, 0 BROKE"
+        );
+        let ended = LockStatus {
+            locked: false,
+            breaks: 1,
+            last_end: Some(lock::LockEnd::Broke(lock::BreakCause::Stretched)),
+            ..held
+        };
+        assert_eq!(
+            lock_line(true, &ended).text(),
+            "OK, 1 LOCKS, 1 BROKE, LAST BROKE: OVERSTRETCHED"
+        );
+    }
 
     #[test]
     fn the_rows_read_the_readout() {

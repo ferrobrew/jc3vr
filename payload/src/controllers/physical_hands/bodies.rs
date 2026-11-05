@@ -305,6 +305,30 @@ pub(super) unsafe fn owner_of(body: u32) -> Option<NonZeroUsize> {
     unsafe { body_owner(world, body) }
 }
 
+/// The mass of the dynamic body `body`, whatever owns it: `None` for a freed body, one that is
+/// not dynamic, or an infinite mass.
+///
+/// # Safety
+///
+/// Main thread, outside the physics step.
+pub(super) unsafe fn mass_kg(body: u32) -> Option<f32> {
+    let world = unsafe { World::get() }?;
+    let world = world.world();
+    if body == PfxCharacterInstance::INVALID_BODY_ID
+        || body > world.m_peakBodyIndex
+        || world.m_bodies.is_null()
+        || world.m_motions.is_null()
+    {
+        return None;
+    }
+    let slot = unsafe { &*world.m_bodies.add(body as usize) };
+    if slot.m_motionId == hknpBody::INVALID_MOTION_ID || slot.m_flags & hknpBody::IS_DYNAMIC == 0 {
+        return None;
+    }
+    let motion = unsafe { &*world.m_motions.add(slot.m_motionId as usize) };
+    mass_of(half_to_f32(motion.m_inverseInertia[3])).filter(|m| m.is_finite())
+}
+
 /// Whether the physics game object at `object` is of the run-time type `type_id`.
 ///
 /// # Safety

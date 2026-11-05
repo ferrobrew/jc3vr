@@ -8,6 +8,8 @@
 //! - [`tether`] turns the pull's depth into the game's retract input while tethers are attached;
 //! - [`swing`] is the hang swing's pump, which the hang task's detour applies
 //!   ([`crate::controllers::hands::anchor`]);
+//! - [`lock`] holds the line's length during the reel while the grapple button is held, and the
+//!   character swings from it;
 //!
 //! The yank that starts a reel along an attached line is the bindings' own gesture
 //! ([`crate::controllers::bindings::yank`]); the point-and-fire of a tether is the grapple's hand
@@ -22,6 +24,7 @@
 //! status rows ([`crate::status`]).
 
 pub mod config;
+pub mod lock;
 pub mod pull;
 pub mod reel;
 pub mod swing;
@@ -55,7 +58,7 @@ use crate::{
 
 /// The physical grapple's hooks, aggregated by [`crate::hooks`].
 pub(crate) fn hook_library() -> HookLibrary {
-    reel::hook_library()
+    reel::hook_library().with_hook_library(lock::hook_library())
 }
 
 /// What the bindings hand the input tick.
@@ -79,6 +82,11 @@ pub(crate) struct TickOutput {
     pub retract: Option<f32>,
     /// The dual tethers the hook holds.
     pub tethers: u32,
+    /// The lock could take hold now: the reel task carries the character
+    /// ([`Traversal::ReelingIn`]) along a line [`lock::lockable`] accepts. Or it holds already.
+    pub lockable: bool,
+    /// The yank fired this tick while the lock held the line: it resumes the reel.
+    pub lock_yank: bool,
 }
 
 /// Where the grapple is, as the readout names it.
@@ -208,6 +216,8 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
     let boost = state
         .boost
         .step(input.real_dt, input.line, drive_reel, &GRAPPLE_YANK);
+    let locked = lock::holds();
+    let lock_yank = locked && boost.is_some();
     if let Some(yank) = boost {
         state.boost_left_s = Some(config.reel.boost_s.max(0.0));
         state.status.boosts += 1;
@@ -318,7 +328,7 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
     // while the line carries the character.
     let line = [
         if squeezing { unit(tension) } else { 0.0 },
-        if drive.is_some() {
+        if drive.is_some() && !locked {
             unit(readout.speed_fraction)
         } else {
             0.0
@@ -356,7 +366,14 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
     }
     haptics::sustain(hand, Sustain::GrappleTension, line[0]);
     haptics::sustain(hand, Sustain::GrappleReel, line[1]);
-    TickOutput { retract, tethers }
+    TickOutput {
+        retract,
+        tethers,
+        lockable: locked
+            || (input.detection.traversal == Some(Traversal::ReelingIn)
+                && unsafe { lock::lockable(&input.config.grapple.lock) }),
+        lock_yank,
+    }
 }
 
 /// Forget the pull and stop driving the reel: the bindings stand down.
@@ -367,6 +384,8 @@ pub(crate) fn stand_down() {
     state.boost_left_s = None;
     state.tether_armed = false;
     reel::publish(None);
+    drop(state);
+    lock::stand_down();
 }
 
 /// `left_s` after a tick of `dt` seconds: `None` once it runs out, or for a tick that is not finite.

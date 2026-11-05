@@ -225,6 +225,29 @@ pub(crate) unsafe fn body_state(body: u32, owner: NonZeroUsize) -> Result<BodySt
     unsafe { bodies::read(body, owner) }
 }
 
+/// The dynamic body `body`'s owner and state, whoever owns it: a body the engine named, such as
+/// the one behind the grapple hook's point or the player's own proxy body, rather than one taken
+/// from an object. `None` for a freed body or one that is not dynamic.
+///
+/// # Safety
+///
+/// The main thread, outside the physics step.
+pub(crate) unsafe fn line_body(body: u32) -> Option<(NonZeroUsize, BodyState)> {
+    let owner = unsafe { bodies::owner_of(body) }?;
+    let state = unsafe { bodies::read(body, owner) }.ok()?;
+    Some((owner, state))
+}
+
+/// The mass of the dynamic body `body`, whatever owns it, kilograms: the player's own proxy body,
+/// which no object owns as a hand's targets are owned.
+///
+/// # Safety
+///
+/// The main thread, outside the physics step.
+pub(crate) unsafe fn body_mass_kg(body: u32) -> Option<f32> {
+    unsafe { bodies::mass_kg(body) }
+}
+
 pub(crate) unsafe fn push_body(character: &mut Character) {
     let enabled = Config::lock_query(|c| {
         c.controllers.physical_hands.enabled && c.controllers.physical_hands.push
