@@ -244,6 +244,20 @@ impl PartInstance {
             f(self as *const Self as _)
         }
     }
+    pub const MergePart_ADDRESS: usize = 0x140221E10;
+    /// Merges a loosened part back into its parent's body: it re-enables the part's merged
+    /// world-collision shapes, hands the part's physical body back to its owner to destroy,
+    /// reattaches its children, and destroys the part's constraint. The door controller merges a
+    /// door this way when its latch catches it or its motor closes it
+    /// ([`DoorInfo`](crate::vehicle::vehicle::DoorInfo)).
+    pub unsafe fn MergePart(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::MergePart_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
     pub const GetPfxVehiclePartIfAny_ADDRESS: usize = 0x1401F0810;
     /// The part's own body, a `CPfxVehiclePart` (a [`PfxRigidBody`](crate::physics::PfxRigidBody)), when
     /// the part has been loosened or broken off into one; null while the part is merged into its

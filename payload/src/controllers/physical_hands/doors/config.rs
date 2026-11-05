@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::controllers::physical_hands::doors::hinge::HingeConfig;
+
 /// Opening vehicle doors by hand (see [`crate::controllers::physical_hands::doors`]): a grip on a
 /// closed door's handle area takes hold of it, a pull unlatches it onto its hinge, and the hand
 /// swings it from there. A shove swings it shut, and the game latches it.
@@ -12,6 +14,8 @@ pub struct DoorsConfig {
     /// Tear a detachable door off its hinge by hand, with a yank or a push past its opening limit
     /// once the grip has settled ([`TEARING`]).
     pub tear: bool,
+    /// What keeps a door the hands opened where it is left, and when it latches.
+    pub hinge: HingeConfig,
 }
 
 impl DoorsConfig {
@@ -19,6 +23,7 @@ impl DoorsConfig {
         Self {
             enabled: true,
             tear: true,
+            hinge: HingeConfig::new(),
         }
     }
 }

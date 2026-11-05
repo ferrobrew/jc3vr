@@ -9,6 +9,7 @@
 //! - [`geometry`]: a door's box, its handle area, its handle, and the pull on its latch, pure;
 //! - [`table`]: the door handle table derived offline from the game's files;
 //! - [`engine`]: a vehicle's doors as its door controller keeps them, and the latch;
+//! - [`hinge`]: what keeps a door the hands opened where it is left, and when it latches;
 //! - [`scan`]: the doors near the hands, offered by their handles whatever the reach's rays hit.
 //!
 //! The pickup's reach ([`crate::controllers::physical_hands::pickup::reach`]) asks [`reach`] about
@@ -23,6 +24,7 @@ pub(crate) mod acquisition;
 pub mod config;
 pub mod engine;
 pub mod geometry;
+pub mod hinge;
 pub(crate) mod scan;
 pub mod table;
 pub(crate) mod tearing;

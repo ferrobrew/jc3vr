@@ -66,9 +66,20 @@ impl std::convert::AsMut<AirPlane> for AirPlane {
 /// closed angle. A door that has opened stops its motor, unless it is kept open, and then swings
 /// freely on its hinge. A freely swinging door whose hinge angle above its minimum
 /// ([`PfxBreakable::GetHingeAngleAboveMin`](crate::vehicle::parts::PfxBreakable::GetHingeAngleAboveMin))
-/// falls below a small angle while it swings shut faster than a threshold speed is merged back into
-/// the body (`CPartInstance::MergePart`): a door swung shut hard latches. A door the motor closes
-/// is merged once it reaches its smallest angle. Only some members are bound.
+/// falls below [`LATCH_ANGLE_DEG`](crate::vehicle::vehicle::DoorInfo::LATCH_ANGLE_DEG) while it swings shut faster than
+/// [`LATCH_SPEED_DEG_S`](crate::vehicle::vehicle::DoorInfo::LATCH_SPEED_DEG_S) is merged back into the body
+/// ([`PartInstance::MergePart`](crate::vehicle::parts::PartInstance::MergePart), then
+/// [`Vehicle::OnFinishedClosingDoor`](crate::vehicle::vehicle::Vehicle::OnFinishedClosingDoor)): a door swung shut hard latches. The speed is the change of
+/// the angle since [`m_PreviousAngle_Deg`](crate::vehicle::vehicle::DoorInfo::m_PreviousAngle_Deg) over the update's step. A door
+/// the motor closes is merged once it reaches its smallest angle.
+///
+/// The latch is skipped for a door with [`FLAG_KEEP_OPEN`](crate::vehicle::vehicle::DoorInfo::FLAG_KEEP_OPEN). Such a door that
+/// is [`DoorState::DOOR_OPEN`](crate::vehicle::vehicle::DoorState::DOOR_OPEN) and touching nothing is asked to open again (a pending
+/// [`DoorState::DOOR_OPENING`](crate::vehicle::vehicle::DoorState::DOOR_OPENING), so the motor turns it back) once the hinge's largest angle exceeds
+/// its angle above the smallest plus [`m_KeepOpenMinAngle_Rad`](crate::vehicle::vehicle::DoorInfo::m_KeepOpenMinAngle_Rad) by
+/// more than [`KEEP_OPEN_REOPEN_RAD`](crate::vehicle::vehicle::DoorInfo::KEEP_OPEN_REOPEN_RAD). With the kept angle at the
+/// hinge's largest, that never holds, so the door swings freely and never latches. Only some
+/// members are bound.
 pub struct DoorInfo {
     /// The state the controller moves the door to on its next update, or
     /// [`DoorState::DOOR_CLOSED`](crate::vehicle::vehicle::DoorState::DOOR_CLOSED) when nothing is pending.
@@ -88,7 +99,9 @@ pub struct DoorInfo {
     /// The hinge's largest angle, radians.
     pub m_HingeMaxAngle_Rad: f32,
     _field_24: [u8; 4],
-    /// The smallest angle a door kept open is held at, radians.
+    /// The smallest angle a door kept open is held at, radians. An opening request sets it a given
+    /// angle below the hinge's largest (no lower than the smallest) when it keeps the door open, and
+    /// to the hinge's smallest otherwise.
     pub m_KeepOpenMinAngle_Rad: f32,
     /// A freely swinging door's hinge angle above its minimum on the controller's last update,
     /// degrees, from which it measures how fast the door swings shut.
@@ -107,6 +120,15 @@ impl DoorInfo {}
 impl DoorInfo {
     /// The flag of [`m_Flags`](crate::vehicle::vehicle::DoorInfo::m_Flags) an opening request that keeps the door open sets.
     pub const FLAG_KEEP_OPEN: u32 = 2;
+    /// How far a kept-open door must fall short of its kept angle before it is asked to open again,
+    /// radians. A static of the controller's update.
+    pub const KEEP_OPEN_REOPEN_RAD: f32 = 0.0017453292;
+    /// The angle above the hinge's smallest below which a free door swinging shut latches, degrees.
+    /// A static of the controller's update.
+    pub const LATCH_ANGLE_DEG: f32 = 2.0;
+    /// The closing speed above which a free door within [`LATCH_ANGLE_DEG`](crate::vehicle::vehicle::DoorInfo::LATCH_ANGLE_DEG)
+    /// latches, degrees per second. A static of the controller's update.
+    pub const LATCH_SPEED_DEG_S: f32 = 10.0;
 }
 impl std::convert::AsRef<DoorInfo> for DoorInfo {
     fn as_ref(&self) -> &DoorInfo {
@@ -382,6 +404,23 @@ impl Vehicle {
                 this: *mut Self,
                 slot: crate::vehicle::vehicle::DoorSlot,
             ) = ::std::mem::transmute(Self::CloseDoor_ADDRESS);
+            f(self as *mut Self as _, slot)
+        }
+    }
+    pub const OnFinishedClosingDoor_ADDRESS: usize = 0x14101A020;
+    /// Notes that the doors of `slot` finished closing: queues the slot's door-closed effect usage
+    /// (the folding wing, the cargo bay door, and the missile hatch have their own), and for the
+    /// folding wing refreshes the stunt area edges. The door controller calls it after merging a
+    /// door, from its latch and at the end of a motor close.
+    pub unsafe fn OnFinishedClosingDoor(
+        &mut self,
+        slot: crate::vehicle::vehicle::DoorSlot,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                slot: crate::vehicle::vehicle::DoorSlot,
+            ) = ::std::mem::transmute(Self::OnFinishedClosingDoor_ADDRESS);
             f(self as *mut Self as _, slot)
         }
     }

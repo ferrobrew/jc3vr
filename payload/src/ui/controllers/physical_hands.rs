@@ -214,6 +214,30 @@ pub(super) fn characters_doors_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig
         ui.checkbox(&mut p.doors.enabled, "Open vehicle doors by hand");
         ui.add_enabled_ui(p.doors.enabled, |ui| {
             ui.checkbox(&mut p.doors.tear, "Tear detachable doors by hand");
+            let hinge = &mut p.doors.hinge;
+            ui.checkbox(&mut hinge.enabled, "Hold opened doors where they are left")
+                .on_hover_text(
+                    "Damp a door the hands opened, prop a lid open like a gas strut, and latch \
+                     only a door shoved shut or resting shut, never one a hand holds.",
+                );
+            ui.add_enabled_ui(hinge.enabled, |ui| {
+                ui.add(
+                    egui::Slider::new(&mut hinge.latch_speed_deg_s, 10.0..=200.0)
+                        .text("Latches past (deg/s)"),
+                );
+                ui.add(
+                    egui::Slider::new(&mut hinge.settle_s, 0.2..=5.0)
+                        .text("Latches at rest after (s)"),
+                );
+                ui.add(
+                    egui::Slider::new(&mut hinge.damping_per_s, 0.0..=10.0)
+                        .text("Door damping (/s)"),
+                );
+                ui.add(
+                    egui::Slider::new(&mut hinge.strut_fraction, 0.0..=1.0)
+                        .text("Lid strut above (share of travel)"),
+                );
+            });
         });
     });
 }

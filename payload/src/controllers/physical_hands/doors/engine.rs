@@ -28,7 +28,7 @@ use jc3gi::{
 
 use crate::controllers::physical_hands::{
     bodies::{is_type, owner_of},
-    doors::geometry::DoorBox,
+    doors::{geometry::DoorBox, hinge},
 };
 
 /// Why a door could not be worked.
@@ -217,7 +217,101 @@ pub(crate) unsafe fn unlatch(
             }
         })
     };
+    if let Some(vehicle_body) = unsafe { vehicle_body(vehicle) } {
+        hinge::opened(vehicle, vehicle_body, part_index, read.slot);
+    }
     Ok(body)
+}
+
+/// A loose door's hinge as its door entry keeps it.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct HingeRead {
+    /// Whether the door is open and nothing is asked of it: no motor turns it, and no opening or
+    /// closing request is pending.
+    pub resting_open: bool,
+    /// The hinge's travel from its smallest angle to its largest, radians.
+    pub range_rad: f32,
+    /// The door's own body and its owner.
+    pub body: Option<(NonZeroUsize, u32)>,
+}
+
+/// The hinge of the loose door at part index `part_index` of `vehicle`; `None` for a door that is
+/// latched, gone, or broken off.
+///
+/// # Safety
+///
+/// The game thread, outside the physics step; `vehicle` must be a live vehicle.
+pub(crate) unsafe fn hinge(vehicle: NonZeroUsize, part_index: u32) -> Option<HingeRead> {
+    let mut read = None;
+    unsafe {
+        each_door(vehicle, |info, _, part| {
+            if part.m_PartInstanceIndex != part_index || !part.IsConstraintActive() {
+                return;
+            }
+            read = Some(HingeRead {
+                resting_open: state_of(ptr::addr_of!(info.m_State)) == DoorState::DOOR_OPEN as i32
+                    && state_of(ptr::addr_of!(info.m_PendingState))
+                        == DoorState::DOOR_CLOSED as i32,
+                range_rad: (info.m_HingeMaxAngle_Rad - info.m_HingeMinAngle_Rad).abs(),
+                body: loose_body(part),
+            });
+        })
+    };
+    read
+}
+
+/// Whether the door controller's own latch acts on the door at part index `part_index` of
+/// `vehicle`. Off, the door is kept open at its hinge's largest angle
+/// ([`DoorInfo::FLAG_KEEP_OPEN`] with [`DoorInfo::m_KeepOpenMinAngle_Rad`] at the largest), which
+/// skips the latch and never asks the motor to reopen it, so the door swings freely and never
+/// latches. On restores an opened door's kept angle, the hinge's smallest.
+///
+/// # Safety
+///
+/// The game thread, outside the physics step; `vehicle` must be a live vehicle.
+pub(crate) unsafe fn set_native_latch(vehicle: NonZeroUsize, part_index: u32, on: bool) {
+    unsafe {
+        each_door(vehicle, |info, _, part| {
+            if part.m_PartInstanceIndex != part_index {
+                return;
+            }
+            if on {
+                info.m_Flags &= !DoorInfo::FLAG_KEEP_OPEN;
+                info.m_KeepOpenMinAngle_Rad = info.m_HingeMinAngle_Rad;
+            } else {
+                info.m_Flags |= DoorInfo::FLAG_KEEP_OPEN;
+                info.m_KeepOpenMinAngle_Rad = info.m_HingeMaxAngle_Rad;
+            }
+        })
+    };
+}
+
+/// Latch the loose door at part index `part_index` of `vehicle` as the door controller's latch
+/// does: merge its part into the vehicle's body ([`PartInstance::MergePart`]) and note the slot
+/// finished closing ([`Vehicle::OnFinishedClosingDoor`]), with the controller's own latch restored
+/// first.
+///
+/// # Safety
+///
+/// The game thread, outside the physics step; `vehicle` must be a live vehicle.
+pub(crate) unsafe fn latch(vehicle: NonZeroUsize, part_index: u32) {
+    let mut found = None;
+    unsafe {
+        each_door(vehicle, |info, slot, part| {
+            if part.m_PartInstanceIndex != part_index || !part.IsConstraintActive() {
+                return;
+            }
+            info.m_Flags &= !DoorInfo::FLAG_KEEP_OPEN;
+            info.m_KeepOpenMinAngle_Rad = info.m_HingeMinAngle_Rad;
+            found = Some((ptr::from_mut(part), slot));
+        })
+    };
+    // Merged after the walk of the door map, whose entries the merge's notifications update.
+    if let Some((part, slot)) = found {
+        unsafe { (*part).MergePart() };
+        let vehicle = unsafe { &mut *(vehicle.get() as *mut Vehicle) };
+        unsafe { vehicle.OnFinishedClosingDoor(slot) };
+    }
 }
 
 /// The angle the door at part index `part_index` of `vehicle` stands open, radians: its hinge's

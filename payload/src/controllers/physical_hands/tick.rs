@@ -43,6 +43,7 @@ use crate::{
             doors::{
                 self,
                 config::{TEARING, TearTuning},
+                hinge::HingeConfig,
             },
             draw, engine, grab_view, grasp,
             grasp::PalmMotion,
@@ -566,6 +567,15 @@ unsafe fn run(owner: &Character, dt: f32) {
             }
         }
     }
+    // The doors the hands opened are kept even while nothing is held; with the pickup or the doors
+    // off, they get the game's own latch back.
+    let held_bodies: Vec<u32> = state.pickup.held.iter().flatten().map(|h| h.body).collect();
+    let hinges = HingeConfig {
+        enabled: pickup_on && config.doors.enabled && config.doors.hinge.enabled,
+        ..config.doors.hinge
+    };
+    // SAFETY: the simulation phase outside the physics step.
+    unsafe { doors::hinge::tick(dt, &held_bodies, &hinges, PICKUP.gravity_mps2) };
     declare_grips(&state.pickup, &hand_status, wrists, &mut |from, to| {
         cast(from, to, &reach_options)
     });
