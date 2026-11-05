@@ -1,13 +1,13 @@
 //! The frames: the head and the controllers in the cockpit frame, the cockpit's placement in the
 //! world, the grounded rig in the room frame, and the frames' scalars.
 //!
-//! The tracked poses are children of `world/cockpit`, whose transform is the registration's
-//! placement, so a 3D view rooted at `world` shows them in the world and one rooted at
+//! The tracked poses are children of `world/cockpit`, whose transform is the recorded view's
+//! placement or, without one, the registration's, so a 3D view rooted at `world` shows them in the world and one rooted at
 //! `world/cockpit` shows them as the runtime gave them. The rig is under `world/cockpit/room`, the
 //! cockpit lowered to its floor.
 
 use body_rig::{StepPhase, angle};
-use glam::{Quat, Vec3};
+use glam::{Quat, Vec2, Vec3};
 use rerun::{
     Arrows3D, Clear, Color, LineStrips3D, Points3D, Quaternion, RecordingStreamResult, Rgba32,
     Rotation3D, Scalars, StateChange, Transform3D, TransformAxes3D,
@@ -19,7 +19,7 @@ use tracking_format::{
 };
 
 use crate::{
-    rerun_export::{Context, registration::Correspondence},
+    rerun_export::{Context, character::lane, registration::Correspondence},
     rig_eval::EvalRow,
 };
 
@@ -88,6 +88,87 @@ pub(crate) fn hand_name(hand: Hand) -> &'static str {
 /// How long a velocity arrow's travel lasts, seconds: an arrow is the velocity times this.
 pub(crate) const ARROW_S: f32 = 0.25;
 
+/// One grounded-rig frame as the scene draws it, in the room frame: the offline rig's or the one the
+/// game ran.
+pub(crate) struct RigDraw {
+    pub neck: Vec3,
+    pub waist: Vec3,
+    /// The floor point under the pelvis, `(x, z)`.
+    pub pelvis: Vec2,
+    pub lean_reach_m: f32,
+    pub step_demand: Vec2,
+    pub body_yaw: f32,
+    /// The scalars to plot, by name under the plot prefix.
+    pub scalars: Vec<(&'static str, f64)>,
+}
+
+/// Draw a rig frame under `base`: its pivots, its spine, its lean ring, its step demand, and its
+/// heading, in `colour`; and plot its scalars under `plots`, a prefix such as `plots/rig/`.
+pub(crate) fn log_rig_draw(
+    context: &Context<'_>,
+    base: &str,
+    plots: &str,
+    colour: Color,
+    rig: &RigDraw,
+) -> RecordingStreamResult<()> {
+    let rec = context.rec;
+    let pelvis = Vec3::new(rig.pelvis.x, 0.0, rig.pelvis.y);
+    let (neck, waist) = (rig.neck, rig.waist);
+    rec.log(
+        format!("{base}/pivots"),
+        &Points3D::new([neck.to_array(), waist.to_array(), pelvis.to_array()])
+            .with_radii([0.03, 0.03, 0.04])
+            .with_colors([colour, colour, RICO])
+            .with_labels(["neck", "waist", "pelvis"]),
+    )?;
+    rec.log(
+        format!("{base}/spine"),
+        &LineStrips3D::new([[pelvis.to_array(), waist.to_array(), neck.to_array()]])
+            .with_colors([colour])
+            .with_radii([0.01]),
+    )?;
+    let centre = Vec3::new(pelvis.x, neck.y, pelvis.z);
+    let ring: Vec<[f32; 3]> = (0..=RING_SEGMENTS)
+        .map(|i| {
+            let a = i as f32 / RING_SEGMENTS as f32 * std::f32::consts::TAU;
+            (centre + Vec3::new(a.cos(), 0.0, a.sin()) * rig.lean_reach_m).to_array()
+        })
+        .collect();
+    let demanding = rig.step_demand.length() > 0.0;
+    rec.log(
+        format!("{base}/lean"),
+        &LineStrips3D::new([ring]).with_colors([if demanding { LEAN_DEMAND } else { LEAN_INSIDE }]),
+    )?;
+    if demanding {
+        let demand = Vec3::new(rig.step_demand.x, 0.0, rig.step_demand.y);
+        rec.log(
+            format!("{base}/demand"),
+            &Arrows3D::from_vectors([demand.to_array()])
+                .with_origins([(neck - demand).to_array()])
+                .with_colors([LEAN_DEMAND]),
+        )?;
+    } else {
+        rec.log(format!("{base}/demand"), &Clear::flat())?;
+    }
+    let forward = angle::forward(rig.body_yaw);
+    rec.log(
+        format!("{base}/heading"),
+        &Arrows3D::from_vectors([[forward.x * 0.4, 0.0, forward.y * 0.4]])
+            .with_origins([pelvis.to_array()])
+            .with_colors([colour]),
+    )?;
+    for (name, value) in &rig.scalars {
+        if value.is_finite() {
+            rec.log(format!("{plots}{name}"), &Scalars::single(*value))?;
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn rotation(orientation: Quat) -> Rotation3D {
+    Rotation3D::from(Quaternion::from_xyzw(orientation.to_array()))
+}
+
 /// Log the stretch's frames, with the rig's rows among them.
 pub(crate) fn log_frames(context: &Context<'_>, rows: &[EvalRow]) -> RecordingStreamResult<()> {
     let rec = context.rec;
@@ -96,6 +177,7 @@ pub(crate) fn log_frames(context: &Context<'_>, rows: &[EvalRow]) -> RecordingSt
     let mut rig_shown = false;
     let mut last_phase: Option<StepPhase> = None;
     let mut last_time: Option<u64> = None;
+    let mut last_anchor: Option<String> = None;
     for (index, frame) in context.frames.iter().enumerate() {
         context.set_time(frame.time_ns);
         if let Some(last) = last_time {
@@ -110,9 +192,15 @@ pub(crate) fn log_frames(context: &Context<'_>, rows: &[EvalRow]) -> RecordingSt
                 "world/cockpit",
                 &Transform3D::from_translation_rotation_scale(
                     context.world(placement.translation),
-                    rotation(Quat::from_rotation_y(placement.yaw)),
+                    rotation(placement.rotation),
                     placement.scale,
                 ),
+            )?;
+            lane(
+                context,
+                "states/cockpit_placement",
+                &mut last_anchor,
+                placement.anchor.label().to_owned(),
             )?;
         }
         if let Some(error) = context.fit.wrist_errors[index] {
@@ -208,10 +296,6 @@ fn usable(pose: &TrackedPose) -> bool {
     pose.position_valid && pose.orientation_valid
 }
 
-fn rotation(orientation: Quat) -> Rotation3D {
-    Rotation3D::from(Quaternion::from_xyzw(orientation.to_array()))
-}
-
 fn transform(pose: &Pose) -> Transform3D {
     Transform3D::from_translation_rotation(pose.position.to_array(), rotation(pose.orientation))
 }
@@ -279,76 +363,33 @@ fn log_hand(
     Ok(())
 }
 
-/// The rig's pivots, its spine, its lean ring, its step demand, and its heading, in the room frame,
-/// and its scalars.
+/// The offline rig's row, drawn under `world/cockpit/room/rig` with its scalars under `plots/rig/`.
 fn log_rig(context: &Context<'_>, row: &EvalRow) -> RecordingStreamResult<()> {
-    let rec = context.rec;
     let solve = &row.output.solve;
-    let pelvis = Vec3::new(row.pelvis.x, 0.0, row.pelvis.y);
-    let neck = solve.neck;
-    let waist = solve.waist;
-    rec.log(
-        "world/cockpit/room/rig/pivots",
-        &Points3D::new([neck.to_array(), waist.to_array(), pelvis.to_array()])
-            .with_radii([0.03, 0.03, 0.04])
-            .with_colors([RIG, RIG, RICO])
-            .with_labels(["neck", "waist", "pelvis"]),
-    )?;
-    rec.log(
-        "world/cockpit/room/rig/spine",
-        &LineStrips3D::new([[pelvis.to_array(), waist.to_array(), neck.to_array()]])
-            .with_colors([RIG])
-            .with_radii([0.01]),
-    )?;
-    let centre = Vec3::new(pelvis.x, neck.y, pelvis.z);
-    let ring: Vec<[f32; 3]> = (0..=RING_SEGMENTS)
-        .map(|i| {
-            let a = i as f32 / RING_SEGMENTS as f32 * std::f32::consts::TAU;
-            (centre + Vec3::new(a.cos(), 0.0, a.sin()) * solve.lean_reach_m).to_array()
-        })
-        .collect();
-    let demanding = solve.demand_m() > 0.0;
-    rec.log(
-        "world/cockpit/room/rig/lean",
-        &LineStrips3D::new([ring]).with_colors([if demanding { LEAN_DEMAND } else { LEAN_INSIDE }]),
-    )?;
-    if demanding {
-        let demand = Vec3::new(solve.step_demand.x, 0.0, solve.step_demand.y);
-        rec.log(
-            "world/cockpit/room/rig/demand",
-            &Arrows3D::from_vectors([demand.to_array()])
-                .with_origins([(Vec3::new(neck.x, neck.y, neck.z) - demand).to_array()])
-                .with_colors([LEAN_DEMAND]),
-        )?;
-    } else {
-        rec.log("world/cockpit/room/rig/demand", &Clear::flat())?;
-    }
-    let forward = angle::forward(row.output.body_yaw);
-    rec.log(
-        "world/cockpit/room/rig/heading",
-        &Arrows3D::from_vectors([[forward.x * 0.4, 0.0, forward.y * 0.4]])
-            .with_origins([pelvis.to_array()])
-            .with_colors([RIG]),
-    )?;
     let o = &row.output;
-    let scalars: [(&str, f64); 9] = [
-        ("bend_deg", f64::from(solve.bend.angle().to_degrees())),
-        ("demand_m", f64::from(solve.demand_m())),
-        (
-            "yaw_error_deg",
-            f64::from(angle::wrap(row.head_yaw - o.body_yaw).to_degrees()),
-        ),
-        ("offset_m", f64::from(solve.offset.length())),
-        ("lean_reach_m", f64::from(solve.lean_reach_m)),
-        ("crouch_m", f64::from(solve.crouch_m)),
-        ("neck_height_m", f64::from(neck.y)),
-        ("standing_neck_m", f64::from(o.standing_neck_m)),
-        ("pelvis_speed_mps", f64::from(row.speed_mps)),
-    ];
-    for (name, value) in scalars {
-        rec.log(format!("plots/rig/{name}"), &Scalars::single(value))?;
-    }
-    Ok(())
+    let rig = RigDraw {
+        neck: solve.neck,
+        waist: solve.waist,
+        pelvis: Vec2::new(row.pelvis.x, row.pelvis.y),
+        lean_reach_m: solve.lean_reach_m,
+        step_demand: solve.step_demand,
+        body_yaw: o.body_yaw,
+        scalars: vec![
+            ("bend_deg", f64::from(solve.bend.angle().to_degrees())),
+            ("demand_m", f64::from(solve.demand_m())),
+            (
+                "yaw_error_deg",
+                f64::from(angle::wrap(row.head_yaw - o.body_yaw).to_degrees()),
+            ),
+            ("offset_m", f64::from(solve.offset.length())),
+            ("lean_reach_m", f64::from(solve.lean_reach_m)),
+            ("crouch_m", f64::from(solve.crouch_m)),
+            ("neck_height_m", f64::from(solve.neck.y)),
+            ("standing_neck_m", f64::from(o.standing_neck_m)),
+            ("pelvis_speed_mps", f64::from(row.speed_mps)),
+        ],
+    };
+    log_rig_draw(context, "world/cockpit/room/rig", "plots/rig/", RIG, &rig)
 }
 
 /// The lean ring's segments.

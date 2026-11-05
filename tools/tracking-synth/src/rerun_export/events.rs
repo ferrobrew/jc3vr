@@ -1,15 +1,18 @@
 //! The events other than the controller states, as text log entries under `events/`, state lanes
-//! under `states/`, and, for a throw and a snatch, marks in the 3D scene; and the frames' own
-//! moments (a recenter, a change of session state, of focus, or of action set) as log entries and
-//! lanes.
+//! under `states/`, plots under `plots/timing/`, the settings under `settings`, and, for a grip's
+//! target, a throw, and a snatch, marks in the 3D scene; and the frames' own moments (a recenter, a
+//! change of session state, of focus, or of action set) as log entries and lanes.
+//!
+//! The poses, the recorded rig, and the bodies have their own modules; their events are skipped
+//! here, but for a body's introduction and the rig's configuration, which are logged as text.
 
 use glam::Vec3;
 use rerun::{
-    Arrows3D, Clear, Color, Points3D, RecordingStreamResult, Rgba32, StateChange, TextLog,
-    components::TextLogLevel,
+    Arrows3D, Clear, Color, Points3D, RecordingStreamResult, Rgba32, Scalars, StateChange,
+    TextDocument, TextLog, components::TextLogLevel,
 };
 use tracking_format::{
-    event::{EventKind, GripAcquisition, GripStage, GunRelease, Snatch, Throw},
+    event::{EventKind, FrameTiming, GripAcquisition, GripStage, GunRelease, Snatch, Throw},
     model::RecenterCause,
 };
 
@@ -18,6 +21,7 @@ use crate::{
     rerun_export::{
         Context,
         character::lane,
+        path_part,
         scene::{ARROW_S, hand_name},
     },
 };
@@ -30,6 +34,7 @@ pub(crate) fn log(context: &Context<'_>, (from, to): (u64, u64)) -> RecordingStr
         entries: 0,
         throws: 0,
         snatch_distance: [None; 2],
+        grip_target: [false; 2],
     };
     if context.recording.truncated {
         context.set_time(from);
@@ -77,6 +82,13 @@ pub(crate) fn log(context: &Context<'_>, (from, to): (u64, u64)) -> RecordingStr
                     TextLogLevel::INFO
                 };
                 log.text("events/grip", level, body(&event.kind))?;
+                if log.grip_target[release.hand.index()] {
+                    log.grip_target[release.hand.index()] = false;
+                    context.rec.log(
+                        format!("world/grip_targets/{}", hand_name(release.hand)),
+                        &Clear::flat(),
+                    )?;
+                }
             }
             EventKind::WingsuitGesture(gesture) => {
                 let lane = match (&gesture.phase, &gesture.why) {
@@ -90,6 +102,49 @@ pub(crate) fn log(context: &Context<'_>, (from, to): (u64, u64)) -> RecordingStr
                 log.text("events/wingsuit", TextLogLevel::DEBUG, body(&event.kind))?;
             }
             EventKind::Snatch(snatch) => log.snatch(snatch, &event.kind)?,
+            EventKind::RigConfig(config) => {
+                let level = if config.repeat {
+                    TextLogLevel::DEBUG
+                } else {
+                    TextLogLevel::INFO
+                };
+                log.text("events/rig", level, body(&event.kind))?;
+            }
+            EventKind::BodyIntro(intro) if !intro.repeat => {
+                log.text("events/bodies", TextLogLevel::DEBUG, body(&event.kind))?
+            }
+            EventKind::Injected(_) => {
+                log.text("events/injected", TextLogLevel::DEBUG, body(&event.kind))?
+            }
+            EventKind::Diagnostic(diagnostic) => log.text(
+                &format!("events/refusals/{}", path_part(&diagnostic.source)),
+                TextLogLevel::WARN,
+                body(&event.kind),
+            )?,
+            EventKind::Haptic(_) => {
+                log.text("events/haptics", TextLogLevel::INFO, body(&event.kind))?
+            }
+            EventKind::Settings(settings) => {
+                context.rec.log(
+                    "settings",
+                    &TextDocument::from_markdown(format!(
+                        "# Settings at {:.2} s\n\n```toml\n{}\n```\n",
+                        event.time_ns as f64 / 1.0e9,
+                        settings.toml.trim_end()
+                    )),
+                )?;
+                log.text("events/settings", TextLogLevel::INFO, body(&event.kind))?;
+            }
+            EventKind::FrameTiming(timing) => {
+                log.frame_timing(timing)?;
+                log.text("events/timing", TextLogLevel::DEBUG, body(&event.kind))?;
+            }
+            EventKind::Pose(_)
+            | EventKind::Rig(_)
+            | EventKind::Bodies(_)
+            | EventKind::BodyIntro(_)
+            | EventKind::Held(_)
+            | EventKind::Force(_) => {}
         }
     }
     Ok(log.entries)
@@ -97,9 +152,10 @@ pub(crate) fn log(context: &Context<'_>, (from, to): (u64, u64)) -> RecordingStr
 
 const THROW: Color = Color(Rgba32::from_rgb(255, 80, 160));
 const SNATCH: Color = Color(Rgba32::from_rgb(80, 220, 255));
+const GRIP_TARGET: Color = Color(Rgba32::from_rgb(120, 255, 120));
 
 /// An event's text line as `dump` prints it, less the time and the kind.
-fn body(kind: &EventKind) -> String {
+pub(crate) fn body(kind: &EventKind) -> String {
     let mut text = Vec::new();
     // Writing to a vector cannot fail.
     let _ = dump::write_event_body(kind, &mut text);
@@ -112,6 +168,8 @@ struct Log<'a, 'c> {
     throws: usize,
     /// Each hand's snatch distance, from its arming or firing, while the snatch is out.
     snatch_distance: [Option<f32>; 2],
+    /// Whether each hand's grip target is drawn.
+    grip_target: [bool; 2],
 }
 
 impl Log<'_, '_> {
@@ -244,7 +302,43 @@ impl Log<'_, '_> {
                 TextLogLevel::DEBUG
             }
         };
+        if let Some(point) = grip.target_point {
+            let label = match &grip.chosen {
+                Some(chosen) => format!("{hand} grip target {}", chosen.volume),
+                None => format!("{hand} grip target"),
+            };
+            self.context.rec.log(
+                format!("world/grip_targets/{hand}"),
+                &Points3D::new([self.context.world(point)])
+                    .with_radii([0.03])
+                    .with_colors([GRIP_TARGET])
+                    .with_labels([label]),
+            )?;
+            self.grip_target[grip.hand.index()] = true;
+        }
         self.text("events/grip", level, text)
+    }
+
+    /// The window's frame times and each slot's own time per frame, as plots.
+    fn frame_timing(&mut self, timing: &FrameTiming) -> RecordingStreamResult<()> {
+        let rec = self.context.rec;
+        rec.log(
+            "plots/timing/frame_ms",
+            &Scalars::single(f64::from(timing.frame_ms)),
+        )?;
+        rec.log(
+            "plots/timing/frame_max_ms",
+            &Scalars::single(f64::from(timing.frame_max_ms)),
+        )?;
+        for slot in &timing.slots {
+            if slot.self_ms.is_finite() {
+                rec.log(
+                    format!("plots/timing/slots/{}", path_part(&slot.name)),
+                    &Scalars::single(f64::from(slot.self_ms)),
+                )?;
+            }
+        }
+        Ok(())
     }
 
     fn gun_release(&mut self, release: &GunRelease) -> RecordingStreamResult<()> {
@@ -272,8 +366,8 @@ impl Log<'_, '_> {
         )
     }
 
-    /// A throw's log entry, and its release point with its velocity in the world: the hand's drawn
-    /// wrist at the throw, or the registered grip without one.
+    /// A throw's log entry, and its release point with its velocity in the world: where the throw
+    /// says the item left, else the hand's drawn wrist at the throw, else the placed grip.
     fn throw(
         &mut self,
         time_ns: u64,
@@ -282,10 +376,15 @@ impl Log<'_, '_> {
     ) -> RecordingStreamResult<()> {
         self.text("events/throw", TextLogLevel::INFO, body(kind))?;
         let context = self.context;
-        let release = context
-            .states
-            .at(time_ns)
-            .and_then(|state| state.late.hands[throw.hand.index()].latest_wrist)
+        let release = throw
+            .release
+            .map(|release| release.position)
+            .or_else(|| {
+                context
+                    .states
+                    .at(time_ns)
+                    .and_then(|state| state.late.hands[throw.hand.index()].latest_wrist)
+            })
             .or_else(|| {
                 let index = context.frame_at(time_ns)?;
                 let placement = context.fit.placements[index]?;
@@ -315,7 +414,8 @@ impl Log<'_, '_> {
     }
 
     /// A snatch's log entry and lane, and, while it is out, its line along the hand's aim to the
-    /// target's distance.
+    /// target's distance; from version 8 the grapple's own line is drawn instead
+    /// (`world/grapple_line`).
     fn snatch(&mut self, snatch: &Snatch, kind: &EventKind) -> RecordingStreamResult<()> {
         let level = match snatch.outcome.as_deref() {
             Some("failed") => TextLogLevel::WARN,
@@ -330,6 +430,9 @@ impl Log<'_, '_> {
             format!("states/snatch/{name}"),
             &StateChange::single(snatch.to.as_ref()),
         )?;
+        if self.context.recording.version >= GRAPPLE_LINE_VERSION {
+            return Ok(());
+        }
         let path = format!("world/cockpit/{name}/aim/snatch");
         let distance = &mut self.snatch_distance[hand.index()];
         if snatch.to == IDLE {
@@ -352,3 +455,6 @@ impl Log<'_, '_> {
 
 /// The snatch's resting phase.
 const IDLE: &str = "IDLE";
+
+/// The format version whose controller states record the grapple's line.
+const GRAPPLE_LINE_VERSION: u16 = 8;

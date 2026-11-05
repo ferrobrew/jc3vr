@@ -4,22 +4,32 @@
 //! Everything is logged on the `recording` timeline (seconds on the recording's clock) and, when the
 //! take's video sidecar or a take marker anchors it, on the `wall_clock` timeline.
 //!
-//! - [`registration`] estimates where the cockpit frame sits in the world, which a recording does
-//!   not hold.
+//! - [`registration`] places the cockpit frame in the world: from the recorded view where the
+//!   recording holds it (from version 8), and by an estimate otherwise.
+//! - [`view`] turns a recorded view into a placement and logs the camera.
 //! - [`clock`] maps the recording's clock to the wall clock and the video's clock.
-//! - [`scene`] logs the frames: the tracked poses, the rig, and their scalars.
-//! - [`character`] logs the controller states: Rico, the aim and the grapple, and their scalars.
+//! - [`scene`] logs the frames: the tracked poses, the offline rig, and their scalars.
+//! - [`character`] logs the controller states: Rico, the aim, the grapple, the vehicle, and their
+//!   scalars.
+//! - [`pose`] logs Rico's recorded skeleton, and [`recorded_rig`] the rig the game ran.
+//! - [`bodies`] logs the physics bodies near Rico, what the hands hold, and the forces applied.
 //! - [`events`] logs the other events as text log entries, state lanes, and 3D markers.
 //! - [`video`] cuts the take's video to the stretch and logs it as a video asset.
 //! - [`blueprint`] is the default layout.
 
 mod blueprint;
+mod bodies;
 mod character;
 mod clock;
 mod events;
+mod pose;
+mod recorded_rig;
 pub mod registration;
 mod scene;
+#[cfg(test)]
+mod tests;
 mod video;
+mod view;
 
 use std::{
     fmt,
@@ -37,7 +47,7 @@ use crate::{
     dump::Range,
     rerun_export::{
         clock::WallClock,
-        registration::{Correspondence, Fit, Placement},
+        registration::{Anchor, Correspondence, Fit, Placement},
     },
     rig_eval::{self, EvalOptions, EvalRow, VideoClock},
 };
@@ -167,7 +177,15 @@ pub fn export(
             ))
         })
         .collect();
-    let fit = registration::place(&correspondences, REGISTRATION_WINDOW);
+    let views: Vec<Option<Placement>> = states
+        .per_frame
+        .iter()
+        .map(|state| {
+            let view = states.all[(*state)?].1.view.as_ref()?;
+            view::placement(view)
+        })
+        .collect();
+    let fit = registration::place(&correspondences, &views, REGISTRATION_WINDOW);
     let origin = world_origin(recording, &states, &fit.placements);
     // The rig needs the recording's history before the stretch, so it runs over the whole of it.
     let (rows, _) = rig_eval::evaluate(recording, &options.eval, None);
@@ -203,7 +221,10 @@ pub fn export(
     };
     scene::log_frames(&context, &rows)?;
     character::log(&context)?;
-    let events = events::log(&context, (from, to))?;
+    view::log(&context)?;
+    pose::log(&context, (from, to))?;
+    recorded_rig::log(&context, (from, to))?;
+    let events = events::log(&context, (from, to))? + bodies::log(&context, (from, to))?;
     let video_frames = match (&options.video, sidecar) {
         (Some(source), Some(clock)) => video::log(&context, source, out, clock)?,
         _ => 0,
@@ -256,6 +277,26 @@ impl Context<'_> {
         self.frames
             .partition_point(|f| f.time_ns <= time_ns)
             .checked_sub(1)
+    }
+}
+
+/// A recorded name as one part of an entity path: anything but letters, digits, and underscores
+/// becomes an underscore, so that a name with spaces, dots, or slashes stays one part.
+pub(crate) fn path_part(name: &str) -> String {
+    let part: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if part.is_empty() {
+        "_".to_owned()
+    } else {
+        part
     }
 }
 
@@ -358,9 +399,9 @@ fn about(
          `{build}`, {hand:?} hand dominant, world scale {scale}, time scale {time_scale}.\n\n\
          The `world` entity is the game's world, Y up, less the origin ({ox}, {oy}, {oz}). \
          `world/rico` is the root's world position from the root's tick. `world/cockpit` is the \
-         cockpit frame placed in the world by an estimate: the recording does not hold the view's \
-         heading, so it is fitted from the drawn wrists' world positions against the grips \
-         (wrist offsets left {ol:?} m, right {or:?} m in the grips' frames). \
+         cockpit frame placed in the world: {placed} The drawn wrists sit off the grips by left \
+         {ol:?} m and right {or:?} m in the grips' frames, as estimated from the placements \
+         (`states/cockpit_placement` names each frame's source). \
          `world/cockpit/room` is the room frame, the cockpit with its floor at zero, which the \
          grounded rig (evaluated offline with the payload's solver, eye height {eye:.2} m) works \
          in. Velocity arrows show a quarter-second's travel.\n\n\
@@ -381,6 +422,7 @@ fn about(
         ox = origin.x,
         oy = origin.y,
         oz = origin.z,
+        placed = placement_note(fit),
         ol = fit.offsets[0].to_array(),
         or = fit.offsets[1].to_array(),
         eye = options.eval.body.eye_height,
@@ -391,6 +433,32 @@ fn about(
             markers.join("\n")
         },
     )
+}
+
+/// What placed the stretch's frames, for the notes.
+fn placement_note(fit: &Fit) -> String {
+    let count = |anchor: Anchor| {
+        fit.placements
+            .iter()
+            .flatten()
+            .filter(|p| p.anchor == anchor)
+            .count()
+    };
+    let viewed = count(Anchor::View);
+    let total = fit.placements.len();
+    if viewed == total {
+        "every frame by the recorded view.".to_owned()
+    } else {
+        format!(
+            "{viewed} of {total} frames by the recorded view; the rest by an estimate fitted from \
+             the drawn wrists' world positions against the grips ({} from the root tick, {} from \
+             the wrists alone, {} holding the last placement), the recording not holding the \
+             view for them.",
+            count(Anchor::Root),
+            count(Anchor::Wrists),
+            count(Anchor::Held),
+        )
+    }
 }
 
 fn seconds_to_ns(seconds: f64) -> u64 {

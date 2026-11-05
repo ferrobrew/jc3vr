@@ -1,7 +1,7 @@
-//! Where the cockpit frame sits in the world, estimated, because a recording does not hold the
-//! view's world transform.
+//! Where the cockpit frame sits in the world: the recorded view's transform where the controller
+//! state holds one (from version 8), and an estimate otherwise.
 //!
-//! The camera is the anchor the root carries, plus the cockpit position less the cockpit shift,
+//! Without the view, the camera is the anchor the root carries, plus the cockpit position less the cockpit shift,
 //! turned by the view's rotation and scaled by the world scale (`docs/mod/body/rig.md`, "Who moves
 //! the root"). The anchor stands the eyes over the root, so the floor under the cockpit is at the
 //! root's height. A recording holds the root's world position (the root tick), the cockpit shift,
@@ -15,6 +15,10 @@
 //! in the controller's frame; the fit estimates each hand's offset from a first pass and fits again
 //! with it, a few times over. Without a root tick (in a vehicle, say) the wrists' centroid stands
 //! in for the root, and with neither the last placement holds.
+//!
+//! A frame with a recorded view takes it as its placement, and the wrist offsets are estimated
+//! against it as against a root-anchored fit, so the wrist error measures the late correction
+//! rather than the fit.
 
 use glam::{Quat, Vec3};
 use tracking_format::model::Pose;
@@ -42,26 +46,25 @@ pub struct Correspondence {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Placement {
     pub translation: Vec3,
-    /// The heading, radians about +Y.
-    pub yaw: f32,
+    /// The view's rotation: a heading about +Y for a fitted placement, and whatever the view holds
+    /// for a recorded one.
+    pub rotation: Quat,
     pub scale: f32,
     pub anchor: Anchor,
 }
 
 impl Placement {
-    pub fn rotation(&self) -> Quat {
-        Quat::from_rotation_y(self.yaw)
-    }
-
     /// A cockpit point in the world.
     pub fn apply(&self, point: Vec3) -> Vec3 {
-        self.translation + self.rotation() * (point * self.scale)
+        self.translation + self.rotation * (point * self.scale)
     }
 }
 
 /// What placed the cockpit on a frame.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Anchor {
+    /// The recorded view.
+    View,
     /// The root tick, with the heading from the wrists.
     Root,
     /// The wrists alone.
@@ -73,6 +76,7 @@ pub enum Anchor {
 impl Anchor {
     pub fn label(self) -> &'static str {
         match self {
+            Anchor::View => "view",
             Anchor::Root => "root",
             Anchor::Wrists => "wrists",
             Anchor::Held => "held",
@@ -91,13 +95,15 @@ pub struct Fit {
     pub wrist_errors: Vec<Option<f32>>,
 }
 
-/// Place each of `samples`, pooling the heading over `window` frames either side.
-pub fn place(samples: &[Correspondence], window: usize) -> Fit {
+/// Place each of `samples`, taking its recorded view from `views` where there is one and fitting it
+/// otherwise, pooling the heading over `window` frames either side. `views` is indexed as
+/// `samples`; a missing entry is a frame without a view.
+pub fn place(samples: &[Correspondence], views: &[Option<Placement>], window: usize) -> Fit {
     let mut offsets = [Vec3::ZERO; 2];
-    let mut placements = pass(samples, window, offsets);
+    let mut placements = pass(samples, views, window, offsets);
     for _ in 0..OFFSET_PASSES {
         offsets = [0, 1].map(|hand| estimate_offset(samples, &placements, hand));
-        placements = pass(samples, window, offsets);
+        placements = pass(samples, views, window, offsets);
     }
     let wrist_errors = samples
         .iter()
@@ -122,23 +128,33 @@ const MAX_OFFSET_M: f32 = 0.2;
 /// from the anchor say little about the heading.
 const MIN_WEIGHT: f32 = 0.01;
 
-fn pass(samples: &[Correspondence], window: usize, offsets: [Vec3; 2]) -> Vec<Option<Placement>> {
+fn pass(
+    samples: &[Correspondence],
+    views: &[Option<Placement>],
+    window: usize,
+    offsets: [Vec3; 2],
+) -> Vec<Option<Placement>> {
     let terms: Vec<(f32, f32)> = samples.iter().map(|s| heading_terms(s, offsets)).collect();
     let mut placements = Vec::with_capacity(samples.len());
     let mut last: Option<Placement> = None;
     for (index, sample) in samples.iter().enumerate() {
+        if let Some(view) = views.get(index).copied().flatten() {
+            last = Some(view);
+            placements.push(Some(view));
+            continue;
+        }
         let lo = index.saturating_sub(window);
         let hi = (index + window + 1).min(samples.len());
         let (dot, cross) = (lo..hi)
             .filter(|&j| samples[j].segment == sample.segment)
             .fold((0.0, 0.0), |(d, c), j| (d + terms[j].0, c + terms[j].1));
-        let yaw = if dot.hypot(cross) >= MIN_WEIGHT {
-            Some(cross.atan2(dot))
+        let rotation = if dot.hypot(cross) >= MIN_WEIGHT {
+            Some(Quat::from_rotation_y(cross.atan2(dot)))
         } else {
-            last.map(|p| p.yaw)
+            last.map(|p| p.rotation)
         };
-        let placement = yaw
-            .and_then(|yaw| anchor(sample, yaw, offsets))
+        let placement = rotation
+            .and_then(|rotation| anchor(sample, rotation, offsets))
             .or(last.map(|p| Placement {
                 anchor: Anchor::Held,
                 ..p
@@ -194,8 +210,7 @@ fn heading_terms(sample: &Correspondence, offsets: [Vec3; 2]) -> (f32, f32) {
 }
 
 /// The placement a heading gives a frame, from its root or its wrists.
-fn anchor(sample: &Correspondence, yaw: f32, offsets: [Vec3; 2]) -> Option<Placement> {
-    let rotation = Quat::from_rotation_y(yaw);
+fn anchor(sample: &Correspondence, rotation: Quat, offsets: [Vec3; 2]) -> Option<Placement> {
     let s = sample.scale;
     if let Some(root) = sample.root {
         let shift = Vec3::new(sample.shift.x, 0.0, sample.shift.z);
@@ -203,7 +218,7 @@ fn anchor(sample: &Correspondence, yaw: f32, offsets: [Vec3; 2]) -> Option<Place
             Vec3::new(root.x, root.y - s * sample.floor, root.z) - rotation * (shift * s);
         return Some(Placement {
             translation,
-            yaw,
+            rotation,
             scale: s,
             anchor: Anchor::Root,
         });
@@ -221,14 +236,14 @@ fn anchor(sample: &Correspondence, yaw: f32, offsets: [Vec3; 2]) -> Option<Place
     let world = (left.1 + right.1) * 0.5;
     Some(Placement {
         translation: world - rotation * (cockpit * s),
-        yaw,
+        rotation,
         scale: s,
         anchor: Anchor::Wrists,
     })
 }
 
 /// A hand's wrist offset in its grip's frame: the median, per axis, of where the recorded wrist sits
-/// from the grip under the root-anchored placements.
+/// from the grip under the recorded and the root-anchored placements.
 fn estimate_offset(
     samples: &[Correspondence],
     placements: &[Option<Placement>],
@@ -241,11 +256,11 @@ fn estimate_offset(
         else {
             continue;
         };
-        if placement.anchor != Anchor::Root || placement.scale <= 0.0 {
+        if !matches!(placement.anchor, Anchor::View | Anchor::Root) || placement.scale <= 0.0 {
             continue;
         }
         let cockpit =
-            placement.rotation().inverse() * (wrist - placement.translation) / placement.scale;
+            placement.rotation.inverse() * (wrist - placement.translation) / placement.scale;
         let local = grip.orientation.inverse() * (cockpit - grip.position);
         if !local.is_finite() || local.length() > MAX_OFFSET_M * 2.0 {
             continue;
@@ -292,7 +307,7 @@ mod tests {
     fn sample(truth: &Placement, root: Vec3, grips: [Pose; 2], offset: Vec3) -> Correspondence {
         // The root's place in the cockpit, from the placement's own definition.
         let shift_world = root - truth.translation;
-        let shift = truth.rotation().inverse() * shift_world / truth.scale;
+        let shift = truth.rotation.inverse() * shift_world / truth.scale;
         Correspondence {
             root: Some(root),
             shift: Vec3::new(shift.x, 0.0, shift.z),
@@ -308,7 +323,7 @@ mod tests {
     fn the_fit_recovers_the_heading_and_the_wrist_offset() {
         let truth = Placement {
             translation: Vec3::new(10.0, 2.0, -5.0),
-            yaw: 2.3,
+            rotation: Quat::from_rotation_y(2.3),
             scale: 1.0,
             anchor: Anchor::Root,
         };
@@ -330,11 +345,14 @@ mod tests {
                 sample(&truth, root, grips, offset)
             })
             .collect();
-        let fit = place(&samples, 3);
+        let fit = place(&samples, &[], 3);
         // The offset and the heading trade off against each other, so the passes close in on both
         // rather than reaching them: within about half a degree and a few millimetres.
         for placement in fit.placements.iter().flatten() {
-            assert!((placement.yaw - truth.yaw).abs() < 1e-2, "{placement:?}");
+            assert!(
+                placement.rotation.angle_between(truth.rotation) < 1e-2,
+                "{placement:?}"
+            );
             assert!(placement.translation.distance(truth.translation) < 5e-3);
         }
         for estimated in fit.offsets {
@@ -347,7 +365,7 @@ mod tests {
     fn without_a_root_the_wrists_place_the_cockpit_and_nothing_holds_the_last() {
         let truth = Placement {
             translation: Vec3::new(-3.0, 0.5, 7.0),
-            yaw: -0.8,
+            rotation: Quat::from_rotation_y(-0.8),
             scale: 1.0,
             anchor: Anchor::Wrists,
         };
@@ -359,13 +377,46 @@ mod tests {
         placed.root = None;
         let mut empty = placed;
         empty.wrists = [None, None];
-        let fit = place(&[placed, empty], 0);
+        let fit = place(&[placed, empty], &[], 0);
         let first = fit.placements[0].unwrap();
         assert_eq!(first.anchor, Anchor::Wrists);
-        assert!((first.yaw - truth.yaw).abs() < 1e-4);
+        assert!(first.rotation.angle_between(truth.rotation) < 1e-4);
         assert!(first.translation.distance(truth.translation) < 1e-4);
         let held = fit.placements[1].unwrap();
         assert_eq!(held.anchor, Anchor::Held);
         assert_eq!(held.translation, first.translation);
+    }
+
+    #[test]
+    fn a_recorded_view_places_its_frame_and_measures_the_wrist_offset() {
+        let truth = Placement {
+            translation: Vec3::new(4.0, -1.0, 2.0),
+            rotation: Quat::from_rotation_y(0.6) * Quat::from_rotation_z(0.1),
+            scale: 1.5,
+            anchor: Anchor::View,
+        };
+        let offset = Vec3::new(0.01, 0.0, 0.05);
+        let grips = [
+            pose(Vec3::new(-0.3, -0.4, -0.3), Quat::from_rotation_x(0.4)),
+            pose(Vec3::new(0.3, -0.5, -0.2), Quat::from_rotation_y(-0.3)),
+        ];
+        let mut viewed = sample(
+            &truth,
+            truth.apply(Vec3::new(0.0, -1.6, 0.0)),
+            grips,
+            offset,
+        );
+        // Without a root the fit has nothing to go on; the view alone places the frame.
+        viewed.root = None;
+        viewed.wrists[1] = None;
+        let mut unviewed = viewed;
+        unviewed.wrists = [None, None];
+        let fit = place(&[viewed, unviewed], &[Some(truth)], 0);
+        assert_eq!(fit.placements[0], Some(truth));
+        let held = fit.placements[1].unwrap();
+        assert_eq!(held.anchor, Anchor::Held);
+        assert_eq!(held.rotation, truth.rotation);
+        assert!(fit.offsets[0].distance(offset) < 1e-4, "{:?}", fit.offsets);
+        assert!(fit.wrist_errors[0].unwrap() < 1e-4);
     }
 }

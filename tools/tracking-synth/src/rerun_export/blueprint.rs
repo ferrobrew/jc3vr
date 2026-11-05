@@ -31,6 +31,9 @@ pub(crate) fn send(rec: &RecordingStream, video: bool) -> RecordingStreamResult<
             .with_origin("/states")
             .into(),
         TextDocumentView::new("about").with_origin("/about").into(),
+        TextDocumentView::new("settings")
+            .with_origin("/settings")
+            .into(),
     ]);
     let right = if video {
         Vertical::new([
@@ -48,11 +51,15 @@ pub(crate) fn send(rec: &RecordingStream, video: bool) -> RecordingStreamResult<
 }
 
 /// The plot tabs and the entities each shows.
-const PLOTS: [(&str, &[&str]); 6] = [
+const PLOTS: [(&str, &[&str]); 10] = [
     ("Rico", &["+ /plots/rico/**", "+ /plots/height/**"]),
     ("rig", &["+ /plots/rig/**"]),
     ("hands", &["+ /plots/hands/**"]),
     ("roomscale", &["+ /plots/roomscale/**"]),
     ("arms", &["+ /plots/ik/**", "+ /plots/late/**"]),
     ("frame", &["+ /plots/frame/**", "+ /plots/registration/**"]),
+    ("camera", &["+ /plots/camera/**"]),
+    ("timing", &["+ /plots/timing/**"]),
+    ("held", &["+ /plots/held/**", "+ /plots/grapple/**"]),
+    ("vehicle", &["+ /plots/vehicle/**"]),
 ];

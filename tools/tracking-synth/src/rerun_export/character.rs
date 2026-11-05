@@ -1,17 +1,20 @@
-//! The controller states: Rico's root and motion, the aim targets, the grapple's aim, and the drawn
-//! wrists in the world, with their scalars, their state lanes, and the log lines for a standing
-//! error that starts or a root move the tick does not explain.
+//! The controller states: Rico's root and motion, the aim targets, the grapple's aim and its line,
+//! the vehicle, and the drawn wrists in the world, with their scalars, their state lanes, and the
+//! log lines for a standing error that starts or a root move the tick does not explain.
 
 use glam::Vec3;
 use rerun::{
     Arrows3D, Clear, Color, LineStrips3D, Points3D, RecordingStreamResult, Rgba32, Scalars,
-    StateChange, TextLog, Transform3D, components::TextLogLevel,
+    StateChange, TextLog, Transform3D, TransformAxes3D, components::TextLogLevel,
 };
-use tracking_format::{event::ControllerState, model::Hand};
+use tracking_format::{
+    event::{ControllerState, GrappleState, VehicleState},
+    model::Hand,
+};
 
 use crate::rerun_export::{
     Context,
-    scene::{ARROW_S, hand_name},
+    scene::{ARROW_S, hand_name, rotation},
 };
 
 /// Log the stretch's controller states.
@@ -31,6 +34,8 @@ pub(crate) fn log(context: &Context<'_>) -> RecordingStreamResult<()> {
         context.set_time(time_ns);
         log_rico(context, state, previous)?;
         log_aim(context, state)?;
+        log_grapple(context, state, previous)?;
+        log_vehicle(context, state, previous)?;
         log_scalars(context, state)?;
         lanes.log(context, state)?;
         log_changes(context, state, previous)?;
@@ -64,6 +69,8 @@ const GRAPPLE_TETHER: Color = Color(Rgba32::from_rgb(80, 220, 80));
 const GRAPPLE_VALID: Color = Color(Rgba32::from_rgb(230, 210, 60));
 const GRAPPLE_INVALID: Color = Color(Rgba32::from_rgb(220, 60, 60));
 const WRIST: Color = Color(Rgba32::from_rgb(250, 250, 250));
+const SLING: Color = Color(Rgba32::from_rgb(80, 220, 255));
+const VEHICLE_AIM: Color = Color(Rgba32::from_rgb(230, 210, 60));
 
 /// A root move the tick's wanted velocity does not explain beyond this is logged, metres.
 const JUMP_LOG_M: f32 = 0.25;
@@ -164,6 +171,126 @@ fn log_aim(context: &Context<'_>, state: &ControllerState) -> RecordingStreamRes
     }
 }
 
+/// The grapple's line from the device's end to the hook's end, green while the hook's end is fixed
+/// and yellow while it is not, and the snatch's held line from its anchor to the target's centre.
+fn log_grapple(
+    context: &Context<'_>,
+    state: &ControllerState,
+    previous: Option<&ControllerState>,
+) -> RecordingStreamResult<()> {
+    let rec = context.rec;
+    let Some(grapple) = &state.grapple else {
+        if previous.is_some_and(|p| p.grapple.is_some()) {
+            rec.log("world/grapple_line", &Clear::recursive())?;
+            rec.log("world/grapple_sling", &Clear::recursive())?;
+        }
+        return Ok(());
+    };
+    let ends = [
+        context.world(grapple.device.position),
+        context.world(grapple.hook.position),
+    ];
+    let color = if grapple.hook.attached {
+        GRAPPLE_TETHER
+    } else {
+        GRAPPLE_VALID
+    };
+    rec.log(
+        "world/grapple_line",
+        &LineStrips3D::new([ends])
+            .with_colors([color])
+            .with_radii([0.01])
+            .with_labels([grapple_label(grapple)]),
+    )?;
+    match &grapple.sling {
+        Some(sling) => {
+            let points = [context.world(sling.anchor), context.world(sling.centre)];
+            rec.log(
+                "world/grapple_sling",
+                &Points3D::new(points)
+                    .with_radii([0.04, 0.05])
+                    .with_colors([SLING])
+                    .with_labels(["sling anchor", "target centre"]),
+            )?;
+            rec.log(
+                "world/grapple_sling/line",
+                &LineStrips3D::new([points])
+                    .with_colors([SLING])
+                    .with_radii([0.008]),
+            )
+        }
+        None => rec.log("world/grapple_sling", &Clear::recursive()),
+    }
+}
+
+fn grapple_label(grapple: &GrappleState) -> String {
+    format!(
+        "hook {} ({}), wire {}",
+        grapple.hook_state, grapple.hook.state, grapple.wire_state
+    )
+}
+
+/// The vehicle's rendered transform with axes, and a manned mounted gun's aim point.
+fn log_vehicle(
+    context: &Context<'_>,
+    state: &ControllerState,
+    previous: Option<&ControllerState>,
+) -> RecordingStreamResult<()> {
+    let rec = context.rec;
+    let Some(vehicle) = &state.vehicle else {
+        if previous.is_some_and(|p| p.vehicle.is_some()) {
+            rec.log("world/vehicle", &Clear::recursive())?;
+            rec.log("world/vehicle_aim", &Clear::flat())?;
+        }
+        return Ok(());
+    };
+    match vehicle.rendered.or(vehicle.transform) {
+        Some(pose) => {
+            rec.log(
+                "world/vehicle",
+                &Transform3D::from_translation_rotation(
+                    context.world(pose.position),
+                    rotation(pose.orientation),
+                ),
+            )?;
+            rec.log("world/vehicle", &TransformAxes3D::new(1.0))?;
+        }
+        None => rec.log("world/vehicle", &Clear::recursive())?,
+    }
+    match vehicle.mounted_aim {
+        Some(aim) if vehicle.mounted => rec.log(
+            "world/vehicle_aim",
+            &Points3D::new([context.world(aim)])
+                .with_radii([0.05])
+                .with_colors([VEHICLE_AIM])
+                .with_labels(["mounted aim"]),
+        ),
+        _ => rec.log("world/vehicle_aim", &Clear::flat()),
+    }
+}
+
+/// The vehicle's lane: its class, the player's seat, a manned gun, and what each hand holds.
+fn vehicle_lane(vehicle: &VehicleState) -> String {
+    let mut lane = format!(
+        "{} ({})",
+        vehicle.class,
+        if vehicle.driver {
+            "driving"
+        } else {
+            "passenger"
+        }
+    );
+    if vehicle.mounted {
+        lane.push_str(", mounted gun");
+    }
+    for hand in Hand::BOTH {
+        if let Some(hold) = &vehicle.holds[hand.index()] {
+            lane.push_str(&format!(", {} on {hold}", hand_name(hand)));
+        }
+    }
+    lane
+}
+
 fn log_scalars(context: &Context<'_>, state: &ControllerState) -> RecordingStreamResult<()> {
     let rec = context.rec;
     let mut scalars: Vec<(String, f64)> = Vec::new();
@@ -200,6 +327,39 @@ fn log_scalars(context: &Context<'_>, state: &ControllerState) -> RecordingStrea
             push(&format!("late/displacement_m/{name}"), displacement);
         }
     }
+    if let Some(frame) = &state.frame {
+        if let Some(interval) = frame.interval_ms {
+            push("frame/interval_ms", interval);
+        }
+        push("frame/ticks", frame.ticks as f32);
+        for hand in Hand::BOTH {
+            if let Some(amplitude) = frame.haptics[hand.index()] {
+                push(&format!("hands/haptic/{}", hand_name(hand)), amplitude);
+            }
+        }
+    }
+    if let Some(grapple) = &state.grapple {
+        push(
+            "grapple/wire_m",
+            grapple.device.position.distance(grapple.hook.position),
+        );
+        push("grapple/max_length_m", grapple.max_length_m);
+        if let Some(sling) = &grapple.sling {
+            push("grapple/sling_length_m", sling.length_m);
+            push("grapple/tension_n", sling.tension_n);
+            push("grapple/max_tension_n", sling.max_tension_n);
+        }
+    }
+    if let Some(vehicle) = &state.vehicle {
+        if let Some(step) = vehicle.step_m {
+            push("vehicle/step_m", step.length());
+        }
+        if let Some(steering) = vehicle.steering {
+            push("vehicle/steering/accelerate", steering.x);
+            push("vehicle/steering/brake", steering.y);
+            push("vehicle/steering/turn", steering.z);
+        }
+    }
     for (name, value) in scalars {
         if value.is_finite() {
             rec.log(format!("plots/{name}"), &Scalars::single(value))?;
@@ -215,6 +375,8 @@ struct Lanes {
     posture: Option<String>,
     support: Option<String>,
     owner: Option<String>,
+    grapple: Option<String>,
+    vehicle: Option<String>,
 }
 
 impl Lanes {
@@ -252,7 +414,24 @@ impl Lanes {
                 .as_deref()
                 .unwrap_or("none")
                 .to_owned(),
-        )
+        )?;
+        // The lanes for the version 8 groups start with the group, so a version 7 recording has
+        // none.
+        if state.grapple.is_some() || self.grapple.is_some() {
+            let value = state
+                .grapple
+                .as_ref()
+                .map_or("no wire".to_owned(), grapple_label);
+            lane(context, "states/grapple", &mut self.grapple, value)?;
+        }
+        if state.vehicle.is_some() || self.vehicle.is_some() {
+            let value = state
+                .vehicle
+                .as_ref()
+                .map_or("on foot".to_owned(), vehicle_lane);
+            lane(context, "states/vehicle", &mut self.vehicle, value)?;
+        }
+        Ok(())
     }
 }
 
