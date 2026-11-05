@@ -58,7 +58,7 @@ use crate::{
     controllers::{
         aim::gun,
         frame::Hand,
-        loadout::{Place, Restored, Socket, live},
+        loadout::{Place, Socket, live},
         weapons::{
             dual_wield::single::{
                 grant::{Grant, GrantTick, Grants, OneWhy, TwinState},
@@ -673,14 +673,8 @@ unsafe fn take_twin(owner: &mut Character, strong: Strong, tick: &Tick) {
     }
     let dealt = unsafe { reload::split_pair(slot_pistol, twin_pistol, tuned) }.unwrap_or(dealt);
     unsafe { deal(owner, slot_pistol, twin_pistol, dealt) };
-    if let (Some(object), Some(weapon)) = (inventory_engine::object_address(twin_pistol), unsafe {
-        inventory_engine::weapon_type(twin_pistol)
-    }) {
-        live::restored(Restored {
-            object,
-            weapon,
-            socket,
-        });
+    if let Some(restored) = unsafe { inventory_engine::restored(twin_pistol, socket) } {
+        live::restored(restored);
     }
     unsafe { share_hands(pair, twin) };
     note(

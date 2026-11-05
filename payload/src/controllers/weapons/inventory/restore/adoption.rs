@@ -130,25 +130,14 @@ pub(super) unsafe fn adopt(owner: &mut Character) {
         let Some(record) = record else {
             continue;
         };
-        let requested = engine::object_address(weapon)
-            .zip(unsafe { engine::weapon_type(weapon) })
-            .map(|(object, weapon)| Restored {
-                object,
-                weapon,
-                socket: record.socket,
-            });
-        let mut native = Native {
-            owner,
-            strong: Some(strong),
-            carried: None,
+        let (outcome, carried) = match unsafe { engine::restored(weapon, record.socket) } {
+            Some(restored) => carry_onto(owner, strong, restored),
+            None => (Outcome::Refused(RestoreRefusal::NoSocket), None),
         };
-        let outcome = requested.map_or(Outcome::Refused(RestoreRefusal::NoSocket), |restored| {
-            transfer(&mut native, restored)
-        });
-        let restored = matches!(outcome, Outcome::Restored(_));
-        if restored {
+        let restored = carried.is_some();
+        if let Some(object) = carried {
             // SAFETY: the carry set keeps the successfully admitted weapon alive.
-            unsafe { restore_rounds(native.carried.unwrap(), record) };
+            unsafe { restore_rounds(object, record) };
         } else {
             tracing::info!(target: "controllers", ?outcome, "inventory: a respawned weapon was not carried");
         }

@@ -26,7 +26,7 @@ use parking_lot::Mutex;
 
 use crate::{
     controllers::{
-        loadout::{Restored, Socket},
+        loadout::Socket,
         weapons::{
             c4,
             dual_wield::single,
@@ -222,14 +222,7 @@ unsafe fn adopt(owner: &mut Character) {
         };
         // SAFETY: the callback's strong reference keeps the weapon alive.
         let weapon = unsafe { &mut *inventory_engine::weapon_of(&strong) };
-        let Some(restored) = inventory_engine::object_address(weapon)
-            .zip(unsafe { inventory_engine::weapon_type(weapon) })
-            .map(|(object, weapon)| Restored {
-                object,
-                weapon,
-                socket: pending.socket,
-            })
-        else {
+        let Some(restored) = (unsafe { inventory_engine::restored(weapon, pending.socket) }) else {
             continue;
         };
         let pistol = restored.weapon.slot() == WeaponSlot::E_SLOT_DUAL_WIELD;

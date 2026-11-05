@@ -18,7 +18,7 @@ use jc3gi::{
 };
 
 use crate::controllers::{
-    loadout::{ObjectAddress, WeaponType},
+    loadout::{ObjectAddress, Restored, Socket, WeaponType},
     weapons::{
         engine::{character_object, gun_position, object_of, slot_of, weapon_at},
         hold::refs::{Strong, Weak},
@@ -137,6 +137,20 @@ pub(crate) unsafe fn kind_of(weapon: &WeaponBase) -> Option<WeaponKind> {
 /// `weapon`'s address, as the loadout binds an item to it.
 pub(crate) fn object_address(weapon: &WeaponBase) -> Option<ObjectAddress> {
     ObjectAddress::from_address(weapon as *const WeaponBase as usize)
+}
+
+/// The restoration of `weapon` onto `socket`, as the table admits it: `None` for a weapon whose
+/// address or type the loadout cannot hold.
+///
+/// # Safety
+///
+/// `weapon` must be live.
+pub(crate) unsafe fn restored(weapon: &WeaponBase, socket: Socket) -> Option<Restored> {
+    Some(Restored {
+        object: object_address(weapon)?,
+        weapon: unsafe { weapon_type(weapon) }?,
+        socket,
+    })
 }
 
 /// `weapon`'s type as the loadout knows it: its spawn tag's hash, its slot, and its size class. `None`
