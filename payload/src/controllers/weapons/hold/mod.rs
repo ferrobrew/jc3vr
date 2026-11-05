@@ -194,8 +194,8 @@ pub struct HoldStatus {
     pub handovers: u64,
     pub pickups: u64,
     pub pickup_fallbacks: u64,
-    /// Why the last direct pickup did not happen.
-    pub last_pickup_refusal: Option<String>,
+    /// Why the last thing the hands tried with a weapon did not happen ([`last_refusal`]).
+    pub last_refusal: Option<String>,
     /// Table writes and snapped placements since the payload loaded.
     pub writes: u64,
     pub snaps: u64,
@@ -206,6 +206,7 @@ pub struct HoldStatus {
 pub fn status() -> HoldStatus {
     // Read before the tick's lock: the status rows take one lock at a time.
     let take = take::status();
+    let last_refusal = last_refusal();
     let pending = live::pending().and_then(|p| Some((p.hand, Cause::of(p.expect)?)));
     let wielded = WIELDED.load(Ordering::Relaxed);
     let holder = owned_holder(wielded);
@@ -219,7 +220,7 @@ pub fn status() -> HoldStatus {
         handovers: tick.handovers,
         pickups: tick.pickups,
         pickup_fallbacks: tick.pickup_fallbacks,
-        last_pickup_refusal: tick.last_pickup_refusal.clone(),
+        last_refusal,
         writes: WRITES.load(Ordering::Relaxed),
         snaps: SNAPS.load(Ordering::Relaxed),
         take,
@@ -467,7 +468,6 @@ pub(crate) fn record_pickup(refusal: Option<String>) {
         None => tick.pickups += 1,
         Some(refusal) => {
             tick.pickup_fallbacks += 1;
-            tick.last_pickup_refusal = Some(refusal.clone());
             drop(tick);
             refused(refusal);
         }
@@ -505,7 +505,6 @@ struct Tick {
     handovers: u64,
     pickups: u64,
     pickup_fallbacks: u64,
-    last_pickup_refusal: Option<String>,
 }
 
 /// The hand each gun of the owned weapon was last placed in.
@@ -520,7 +519,6 @@ static TICK: Mutex<Tick> = Mutex::new(Tick {
     handovers: 0,
     pickups: 0,
     pickup_fallbacks: 0,
-    last_pickup_refusal: None,
 });
 static PLACED: Mutex<Option<Placed>> = Mutex::new(None);
 static LAST_REFUSAL: Mutex<Option<String>> = Mutex::new(None);

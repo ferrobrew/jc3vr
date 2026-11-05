@@ -275,24 +275,22 @@ fn hold_readout(ui: &mut Ui, h: &HoldStatus, d: &DockStatus) {
         h.snaps
     ));
     ui.label(format!(
-        "Direct pickups: {} · left to the game {} · last refusal: {} · weapon came by {}",
+        "Direct pickups: {} · left to the game {} · weapon came by {}",
         h.pickups,
         h.pickup_fallbacks,
-        h.last_pickup_refusal.as_deref().unwrap_or("none"),
         h.origin.map_or("the game's draw", Cause::label)
     ));
     ui.label(format!(
-        "Takes: guns in hands near {} · on racks near {} · taken from hands {} · off racks {} · rack copies {} · last refusal: {}",
+        "Takes: guns in hands near {} · on racks near {} · taken from hands {} · off racks {} · rack copies {}",
         h.take.held_targets,
         h.take.rack_targets,
         h.take.steals,
         h.take.rack_takes,
-        h.take.rack_copies,
-        h.take.last_refusal.as_deref().unwrap_or("none")
+        h.take.rack_copies
     ));
     let sliding = |hand: Hand| d.snapping[hand.index()].map_or("nothing", SnapKind::label);
     ui.label(format!(
-        "Docking: sliding left {} right {} · grip holds left {} right {} · draws {} · docks {} · drops {} · last setter request {} · last refusal: {}",
+        "Docking: sliding left {} right {} · grip holds left {} right {} · draws {} · docks {} · drops {} · last setter request {}",
         sliding(Hand::Left),
         sliding(Hand::Right),
         yes_no(d.grip_holds[0]),
@@ -301,8 +299,11 @@ fn hold_readout(ui: &mut Ui, h: &HoldStatus, d: &DockStatus) {
         d.docks,
         d.drops,
         d.last_throw_mps
-            .map_or("the game's".to_owned(), |v| format!("{v:.1} m/s")),
-        d.last_refusal.map_or("none".to_owned(), |r| r.to_string())
+            .map_or("the game's".to_owned(), |v| format!("{v:.1} m/s"))
+    ));
+    ui.label(format!(
+        "Last refusal of a pickup, take, draw, dock, or drop: {}",
+        h.last_refusal.as_deref().unwrap_or("none")
     ));
     ui.collapsing("Latest gun release evidence", |ui| {
         ui.label(format!("Release attempts: {}.", d.releases.attempts));

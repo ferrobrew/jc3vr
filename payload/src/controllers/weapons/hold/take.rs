@@ -49,8 +49,6 @@ pub struct TakeStatus {
     /// Weapons a rack handed over, and copies asked of racks with unlimited stock.
     pub rack_takes: u64,
     pub rack_copies: u64,
-    /// Why the last take did not happen.
-    pub last_refusal: Option<String>,
 }
 
 pub fn status() -> TakeStatus {
@@ -280,7 +278,6 @@ const TAKE_RADII: TakeRadii = TakeRadii {
 
 fn report_refusal(hand: Hand, refusal: TakeRefusal) {
     tracing::info!(target: "controllers", hand = hand.label(), %refusal, "hold: no weapon taken");
-    STATE.lock().status.last_refusal = Some(refusal.to_string());
     grab_view::refused(hand, None, &refusal.to_string());
     hold::refused(refusal);
 }
@@ -323,6 +320,5 @@ static STATE: Mutex<State> = Mutex::new(State {
         steals: 0,
         rack_takes: 0,
         rack_copies: 0,
-        last_refusal: None,
     },
 });

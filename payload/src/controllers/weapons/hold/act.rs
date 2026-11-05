@@ -94,7 +94,6 @@ pub struct DockStatus {
     pub last_throw_mps: Option<f32>,
     /// Only the latest release attempt is retained; all native identifiers are copied values.
     pub releases: ReleaseStatus,
-    pub last_refusal: Option<DockRefusal>,
 }
 
 pub fn status() -> DockStatus {
@@ -131,7 +130,6 @@ pub(crate) unsafe fn draw(hand: Hand, socket: Socket, snap_s: f32) -> Result<(),
             Ok(())
         }
         Err(refusal) => {
-            state.status.last_refusal = Some(refusal);
             drop(state);
             hold::refused(refusal);
             Err(refusal)
@@ -150,7 +148,6 @@ pub(crate) unsafe fn dock(hand: Hand, socket: Socket, snap_s: f32) -> Result<(),
     let object = match result {
         Ok(object) => object,
         Err(refusal) => {
-            STATE.lock().status.last_refusal = Some(refusal);
             hold::refused(refusal);
             return Err(refusal);
         }
@@ -184,7 +181,6 @@ pub(crate) unsafe fn attract(
     let object = match result {
         Ok(object) => object,
         Err(refusal) => {
-            STATE.lock().status.last_refusal = Some(refusal);
             hold::refused(refusal);
             return Err(refusal);
         }
@@ -239,7 +235,6 @@ pub(crate) unsafe fn let_go(hand: Hand, max_speed_mps: f32) -> Result<Thrown, Do
             Ok(thrown)
         }
         Err(refusal) => {
-            state.status.last_refusal = Some(refusal);
             drop(state);
             hold::refused(refusal);
             Err(refusal)
@@ -569,7 +564,6 @@ static STATE: Mutex<State> = Mutex::new(State {
         drops: 0,
         last_throw_mps: None,
         releases: ReleaseStatus::EMPTY,
-        last_refusal: None,
     },
 });
 
@@ -739,7 +733,6 @@ unsafe fn start_dock(hand: Hand, socket: Socket) -> Result<usize, DockRefusal> {
 /// is the primary now, and a weapon armed in `hand` is disarmed.
 unsafe fn finish_dock(hand: Hand, socket: Socket, weapon: usize) -> Result<(), DockRefusal> {
     let refused = |refusal: DockRefusal| {
-        STATE.lock().status.last_refusal = Some(refusal);
         hold::refused(refusal);
         Err(refusal)
     };
