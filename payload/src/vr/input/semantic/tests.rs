@@ -340,16 +340,25 @@ fn reads(set: SemanticSet, index: usize, hand: Hand, ctx: ReadCtx) -> bool {
     }
 }
 
-/// Which part of its input an action reads: a signed axis can carry one action on each half.
+/// Which part of its input an action reads: a signed axis can carry one action on each half, and a
+/// button one action on its short presses and one on its long presses.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 enum Half {
     Whole,
     Negative,
     Positive,
+    Short,
+    Long,
 }
 
 impl Half {
-    const ALL: [Half; 3] = [Half::Whole, Half::Negative, Half::Positive];
+    const ALL: [Half; 5] = [
+        Half::Whole,
+        Half::Negative,
+        Half::Positive,
+        Half::Short,
+        Half::Long,
+    ];
 
     fn overlaps(self, other: Half) -> bool {
         self == other || self == Half::Whole || other == Half::Whole
@@ -357,12 +366,28 @@ impl Half {
 }
 
 /// The half of its input action `index` of `set` reads: the crouch flick only pushes down the
-/// dominant stick's vertical axis, and the weapon wheel only up.
+/// dominant stick's vertical axis, and the weapon wheel only up; a vehicle's stunt reads only short
+/// presses, and its exit only long ones.
 fn half_read(set: SemanticSet, index: usize) -> Half {
     match set {
         SemanticSet::OnFoot => match F::ALL[index] {
             F::CrouchFlick => Half::Negative,
             F::WeaponWheel => Half::Positive,
+            _ => Half::Whole,
+        },
+        SemanticSet::LandVehicle => match L::ALL[index] {
+            L::Stunt => Half::Short,
+            L::ExitVehicle => Half::Long,
+            _ => Half::Whole,
+        },
+        SemanticSet::Helicopter => match H::ALL[index] {
+            H::Stunt => Half::Short,
+            H::ExitVehicle => Half::Long,
+            _ => Half::Whole,
+        },
+        SemanticSet::Plane => match P::ALL[index] {
+            P::Stunt => Half::Short,
+            P::ExitVehicle => Half::Long,
             _ => Half::Whole,
         },
         _ => Half::Whole,
@@ -418,14 +443,9 @@ fn the_defaults_mirror_the_gamepad_by_side() {
     assert_eq!(on_foot(F::Reload, Hand::Left), Some("input/a/click"));
     assert_eq!(on_foot(F::Use, Hand::Left), None);
     let land = |a: L, hand| path(SemanticSet::LandVehicle, a as usize, hand);
-    // A vehicle is exited with the button it was entered with.
-    assert_eq!(
-        land(L::ExitVehicle, Hand::Right),
-        on_foot(F::Use, Hand::Right)
-    );
-    // The grapple takes the off-hand's upper face in every mode, and nitrous the dominant stick's
-    // click.
-    assert_eq!(land(L::Grapple, Hand::Left), Some("input/b/click"));
+    // The grapple takes the off-hand's upper face on foot; in a vehicle the upper faces fire, and
+    // the grapple is the off-hand stick click, nitrous the dominant's.
+    assert_eq!(land(L::Grapple, Hand::Left), Some("input/thumbstick/click"));
     assert_eq!(
         land(L::VehicleMod, Hand::Right),
         Some("input/thumbstick/click")
@@ -435,11 +455,67 @@ fn the_defaults_mirror_the_gamepad_by_side() {
     assert_eq!(on_foot(F::ReleaseTethers, Hand::Left), None);
     assert_eq!(land(L::Handbrake, Hand::Left), Some("input/a/click"));
     assert_eq!(land(L::Handbrake, Hand::Right), None);
-    for (set, exit) in [
-        (SemanticSet::Helicopter, H::ExitVehicle as usize),
-        (SemanticSet::Plane, P::ExitVehicle as usize),
+    // Every vehicle set: the upper faces fire weapons 1 and 2, the right A is the stunt on a tap
+    // and the exit on a hold, the grapple is the off-hand stick click, the horn ships unbound, and
+    // the grips carry nothing.
+    for (set, primary, secondary, stunt, exit, grapple, horn) in [
+        (
+            SemanticSet::LandVehicle,
+            L::FirePrimary as usize,
+            L::FireSecondary as usize,
+            L::Stunt as usize,
+            L::ExitVehicle as usize,
+            L::Grapple as usize,
+            L::Horn as usize,
+        ),
+        (
+            SemanticSet::Helicopter,
+            H::FirePrimary as usize,
+            H::FireSecondary as usize,
+            H::Stunt as usize,
+            H::ExitVehicle as usize,
+            H::Grapple as usize,
+            H::Horn as usize,
+        ),
+        (
+            SemanticSet::Plane,
+            P::FirePrimary as usize,
+            P::FireSecondary as usize,
+            P::Stunt as usize,
+            P::ExitVehicle as usize,
+            P::Grapple as usize,
+            P::Horn as usize,
+        ),
     ] {
-        assert_eq!(path(set, exit, Hand::Right), Some("input/b/click"));
+        assert_eq!(path(set, primary, Hand::Right), Some("input/b/click"));
+        assert_eq!(path(set, primary, Hand::Left), None);
+        assert_eq!(path(set, secondary, Hand::Left), Some("input/b/click"));
+        assert_eq!(path(set, secondary, Hand::Right), None);
+        assert_eq!(path(set, stunt, Hand::Right), Some("input/a/click"));
+        assert_eq!(path(set, exit, Hand::Right), Some("input/a/click"));
+        assert_eq!(path(set, exit, Hand::Left), None);
+        assert_eq!(
+            path(set, grapple, Hand::Left),
+            Some("input/thumbstick/click")
+        );
+        assert_eq!(default_binding(set, horn), None);
+        // Left-handed, the handed rows mirror and the stunt and the exit keep the right A.
+        let left = |index, hand| default_path(set, index, Profile::ValveIndex, hand, Hand::Left);
+        assert_eq!(left(primary, Hand::Left), Some("input/b/click"));
+        assert_eq!(left(secondary, Hand::Right), Some("input/b/click"));
+        assert_eq!(left(grapple, Hand::Right), Some("input/thumbstick/click"));
+        assert_eq!(left(exit, Hand::Right), Some("input/a/click"));
+        for index in 0..set.actions().len() {
+            for hand in Hand::BOTH {
+                assert_ne!(
+                    path(set, index, hand),
+                    Some("input/squeeze/force"),
+                    "{}.{}",
+                    set.name(),
+                    set.actions()[index].name
+                );
+            }
+        }
     }
     // The off-hand trackpad is not the weapon select's: it sits under the thumb's way to the
     // debug panel chord's stick click.
@@ -520,11 +596,14 @@ fn the_defaults_mirror_the_gamepad_by_side() {
 }
 
 #[test]
-fn vehicle_stunt_defaults_stay_on_physical_right_lower_face_for_both_dominance_choices() {
+fn vehicle_stunt_and_exit_defaults_stay_on_physical_right_lower_face_for_both_dominance_choices() {
     let stunts = [
         (SemanticSet::LandVehicle, L::Stunt as usize),
         (SemanticSet::Helicopter, H::Stunt as usize),
         (SemanticSet::Plane, P::Stunt as usize),
+        (SemanticSet::LandVehicle, L::ExitVehicle as usize),
+        (SemanticSet::Helicopter, H::ExitVehicle as usize),
+        (SemanticSet::Plane, P::ExitVehicle as usize),
     ];
     for profile in Profile::ALL {
         for dominant in Hand::BOTH {

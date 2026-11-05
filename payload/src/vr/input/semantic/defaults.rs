@@ -281,15 +281,16 @@ fn land_vehicle(action: LandVehicleAction) -> Option<DefaultBinding> {
         Turn => on(Dom, ThumbstickX),
         Accelerate | Fire => on(Dom, TriggerValue),
         Reverse | FireOffHandPistol => on(Off, TriggerValue),
-        FirePrimary => on(Dom, GripPress),
-        FireSecondary => on(Off, GripPress),
-        Stunt => on(Right, LowerFace),
-        ExitVehicle => on(Dom, UpperFace),
-        Grapple => on(Off, UpperFace),
-        // The grapple took the off-hand's upper face; nitrous is also on the cockpit's button.
+        FirePrimary => on(Dom, UpperFace),
+        FireSecondary => on(Off, UpperFace),
+        // A tap of the button is the stunt and a hold the exit, told apart by the tables.
+        Stunt | ExitVehicle => on(Right, LowerFace),
+        Grapple => on(Off, ThumbstickClick),
+        // Nitrous is also on the cockpit's button.
         VehicleMod => on(Dom, ThumbstickClick),
         Handbrake => on(Left, LowerFace),
-        Horn => on(Off, ThumbstickClick),
+        // The off-hand stick click took the grapple; the horn is on the cockpit's button.
+        Horn => None,
     }
 }
 
@@ -302,13 +303,12 @@ fn helicopter(action: HelicopterAction) -> Option<DefaultBinding> {
         Yaw => on(Dom, ThumbstickX),
         CollectiveUp | Fire => on(Dom, TriggerValue),
         CollectiveDown | FireOffHandPistol => on(Off, TriggerValue),
-        FirePrimary => on(Dom, GripPress),
-        FireSecondary => on(Off, GripPress),
-        Stunt => on(Right, LowerFace),
-        ExitVehicle => on(Dom, UpperFace),
-        Grapple => on(Off, UpperFace),
+        FirePrimary => on(Dom, UpperFace),
+        FireSecondary => on(Off, UpperFace),
+        Stunt | ExitVehicle => on(Right, LowerFace),
+        Grapple => on(Off, ThumbstickClick),
         VehicleMod => on(Dom, ThumbstickClick),
-        Horn => on(Off, ThumbstickClick),
+        Horn => None,
     }
 }
 
@@ -321,12 +321,11 @@ fn plane(action: PlaneAction) -> Option<DefaultBinding> {
         Rudder => on(Dom, ThumbstickX),
         ThrustUp | Fire => on(Dom, TriggerValue),
         ThrustDown | FireOffHandPistol => on(Off, TriggerValue),
-        FirePrimary => on(Dom, GripPress),
-        FireSecondary => on(Off, GripPress),
-        Stunt => on(Right, LowerFace),
-        ExitVehicle => on(Dom, UpperFace),
-        Grapple => on(Off, UpperFace),
-        Horn => on(Off, ThumbstickClick),
+        FirePrimary => on(Dom, UpperFace),
+        FireSecondary => on(Off, UpperFace),
+        Stunt | ExitVehicle => on(Right, LowerFace),
+        Grapple => on(Off, ThumbstickClick),
+        Horn => None,
     }
 }
 

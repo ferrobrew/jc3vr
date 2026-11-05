@@ -40,7 +40,13 @@ pub fn write_outputs(out: &Outputs, desired: &mut Vec<Desired>) {
         raise_analog(desired, throttle, ACCELERATE);
     }
     // The buttons hold their actions alongside the controller's buttons, which merge with them.
-    for (pressed, action) in [(out.horn, SOUND_HORN_SIREN), (out.nitrous, USE_VEHICLE_MOD)] {
+    // The horn is the gamepad's left stick click there, which also toggles a vehicle's magnet; the
+    // controllers leave the horn action unbound by default, so the cockpit's horn carries both.
+    for (pressed, action) in [
+        (out.horn, SOUND_HORN_SIREN),
+        (out.horn, TOGGLE_MAGNET_1),
+        (out.nitrous, USE_VEHICLE_MOD),
+    ] {
         if pressed {
             desired.push(Desired {
                 target: Target {

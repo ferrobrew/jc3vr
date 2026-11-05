@@ -318,6 +318,7 @@ pub fn mod_action(action: ModAction) -> Text {
         ModAction::ParachuteHandles => ModText::ParachuteHandles,
         ModAction::PullParachuteHandle => ModText::PullParachuteHandle,
         ModAction::Ripcord => ModText::Ripcord,
+        ModAction::FireHandGun => ModText::FireHandGun,
         ModAction::SnatchYank => ModText::SnatchYank,
         ModAction::SnatchSwing => ModText::SnatchSwing,
         ModAction::SnatchGrip => ModText::SnatchGrip,
@@ -378,6 +379,7 @@ pub enum ModText {
     ParachuteHandles,
     PullParachuteHandle,
     Ripcord,
+    FireHandGun,
     SnatchYank,
     SnatchSwing,
     SnatchGrip,
@@ -446,6 +448,7 @@ impl ModText {
             ModText::Ripcord => {
                 "At the Back of the Hip: Grip the Ripcord, Pull Out to Open the Parachute"
             }
+            ModText::FireHandGun => "Holding a Gun: Fire It",
             ModText::SnatchYank => "Yank to snatch",
             ModText::SnatchSwing => "Swing while grip and grapple are held",
             ModText::SnatchGrip => "Keep grip held to snatch",

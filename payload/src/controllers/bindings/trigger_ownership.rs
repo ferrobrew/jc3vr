@@ -11,7 +11,7 @@ use crate::{
             tables::{
                 declare::{TableCtx, declare},
                 grapple_press,
-                sink::{Axis, Input, Press, Sink},
+                sink::{Axis, Press, Sink},
             },
         },
         frame::Hand,
@@ -29,6 +29,20 @@ use crate::{
 pub(super) struct Owner {
     pub mode: Mode,
     pub gun: Option<GunOwner>,
+}
+
+impl Owner {
+    /// The owner as it bears on the trigger: in a driver's seat the triggers are the pedals and a
+    /// gun fires from its hand's vehicle weapon action, so a gun there claims no trigger.
+    const fn of_trigger(self) -> Self {
+        match self.mode {
+            Mode::Vehicle(seat) if seat.driver => Self {
+                mode: self.mode,
+                gun: None,
+            },
+            _ => self,
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, Default)]
@@ -69,6 +83,7 @@ impl TriggerOwnership {
         raw: [RawTrigger; 2],
         deadzone: f32,
     ) -> [bool; 2] {
+        let owners = owners.map(Owner::of_trigger);
         Hand::BOTH.map(|hand| {
             let i = hand.index();
             if self.owners[i] != Some(owners[i]) || !raw[i].usable {
@@ -92,6 +107,7 @@ impl TriggerOwnership {
 
     /// Mutations during weapon finish cannot transfer a press accepted for the old identity.
     pub fn after_finish(&mut self, owners: [Owner; 2]) -> [bool; 2] {
+        let owners = owners.map(Owner::of_trigger);
         Hand::BOTH.map(|hand| {
             let i = hand.index();
             let changed = self.owners[i] != Some(owners[i]);
@@ -126,6 +142,7 @@ impl TriggerMask {
 }
 
 pub(super) fn masks(owners: [Owner; 2], blocked: [bool; 2]) -> [TriggerMask; 2] {
+    let owners = owners.map(Owner::of_trigger);
     Hand::BOTH.map(|hand| {
         let i = hand.index();
         TriggerMask {
@@ -250,10 +267,10 @@ impl ChangedRoutes<'_> {
 
 impl Sink for ChangedRoutes<'_> {
     fn hold(&mut self, presses: &[Press], actions: &[Action]) {
-        if presses.iter().any(|press| match press.input {
-            Input::Action(id) | Input::Zone(id, _) => self.affected(id),
-            Input::MenuStick(_) => false,
-        }) {
+        if presses
+            .iter()
+            .any(|press| press.input.action().is_some_and(|id| self.affected(id)))
+        {
             self.actions.extend_from_slice(actions);
         }
     }
@@ -777,49 +794,54 @@ mod tests {
     }
 
     #[test]
-    fn late_pickup_clears_old_trigger_action_and_fire_until_neutral() {
-        let mode = Mode::Vehicle(VehicleSeat {
-            class: VehicleClass::Car,
-            driver: true,
-        });
-        let owners = [Owner { mode, gun: None }; 2];
-        let mut gate = TriggerOwnership::new();
-        gate.observe(owners, [raw(false); 2], 0.05);
-        assert_eq!(gate.observe(owners, [raw(true); 2], 0.05), [false; 2]);
-        assert_eq!(gate.after_finish(owners), [false; 2]);
-        let mut picked_up = owners;
-        picked_up[Hand::Right.index()].gun = Some(GunOwner {
-            weapon: 2,
-            role: GunHand::Grip,
-        });
-        let changed = gate.after_finish(picked_up);
-        assert_eq!(changed, [false, true]);
-        assert_eq!(retain_fire([true; 2], changed), [true, false]);
-        let controls = Controls {
-            dominant: Hand::Right,
-            ..Default::default()
-        };
-        let input = simulate(&controls, SemanticSet::LandVehicle, default_binding);
-        let mut desired = [Action::ACCELERATE, Action::REVERSE, Action::TURN_LEFT]
-            .map(|action| Desired {
-                target: Target::player(action),
-                want: Want::Hold(1.0),
-            })
-            .to_vec();
-        suppress_changed_routes(&mut desired, mode, &controls, &input, changed);
-        assert!(
-            !desired
-                .iter()
-                .any(|desired| desired.target.action == Action::ACCELERATE)
-        );
-        assert!(
-            desired
-                .iter()
-                .any(|desired| desired.target.action == Action::REVERSE)
-        );
-        assert!(gate.observe(picked_up, [raw(true); 2], 0.05)[Hand::Right.index()]);
-        assert!(gate.observe(picked_up, [raw(false); 2], 0.05)[Hand::Right.index()]);
-        assert!(!gate.observe(picked_up, [raw(true); 2], 0.05)[Hand::Right.index()]);
+    fn a_gun_in_the_drivers_seat_leaves_the_pedals_alone() {
+        for class in [
+            VehicleClass::Car,
+            VehicleClass::Helicopter,
+            VehicleClass::Plane,
+        ] {
+            let mode = Mode::Vehicle(VehicleSeat {
+                class,
+                driver: true,
+            });
+            let owners = [Owner { mode, gun: None }; 2];
+            let mut gate = TriggerOwnership::new();
+            gate.observe(owners, [raw(false); 2], 0.05);
+            assert_eq!(gate.observe(owners, [raw(true); 2], 0.05), [false; 2]);
+            for hand in Hand::BOTH {
+                let mut picked_up = owners;
+                picked_up[hand.index()].gun = Some(GunOwner {
+                    weapon: 2,
+                    role: GunHand::Grip,
+                });
+                // Taking a gun with a pedal held neither cuts the pedal nor waits for neutral.
+                assert_eq!(gate.after_finish(picked_up), [false; 2], "{class:?}");
+                assert_eq!(
+                    gate.observe(picked_up, [raw(true); 2], 0.05),
+                    [false; 2],
+                    "{class:?}"
+                );
+                let masks = masks(picked_up, [false; 2]);
+                assert!(masks.iter().all(|mask| !mask.reserved), "{class:?}");
+                assert_eq!(gate.after_finish(owners), [false; 2], "{class:?}");
+            }
+            // Leaving the driver's seat with the gun hands the trigger to the gun, after neutral.
+            let passenger = Mode::Vehicle(VehicleSeat {
+                class,
+                driver: false,
+            });
+            let mut moved = [Owner {
+                mode: passenger,
+                gun: None,
+            }; 2];
+            moved[Hand::Right.index()].gun = Some(GunOwner {
+                weapon: 2,
+                role: GunHand::Grip,
+            });
+            assert_eq!(gate.after_finish(moved), [true; 2]);
+            assert!(gate.observe(moved, [raw(true); 2], 0.05)[Hand::Right.index()]);
+            assert!(masks(moved, [false; 2])[Hand::Right.index()].reserved);
+        }
     }
 
     #[test]

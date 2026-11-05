@@ -45,7 +45,6 @@ impl ActionId {
                 | LandVehicleAction::Reverse
                 | LandVehicleAction::Fire
                 | LandVehicleAction::FireOffHandPistol => Some(Trigger),
-                LandVehicleAction::FirePrimary | LandVehicleAction::FireSecondary => Some(Grip),
                 _ => None,
             },
             SemanticSet::Helicopter => match HelicopterAction::ALL[self.index()] {
@@ -53,7 +52,6 @@ impl ActionId {
                 | HelicopterAction::CollectiveDown
                 | HelicopterAction::Fire
                 | HelicopterAction::FireOffHandPistol => Some(Trigger),
-                HelicopterAction::FirePrimary | HelicopterAction::FireSecondary => Some(Grip),
                 _ => None,
             },
             SemanticSet::Plane => match PlaneAction::ALL[self.index()] {
@@ -61,7 +59,6 @@ impl ActionId {
                 | PlaneAction::ThrustDown
                 | PlaneAction::Fire
                 | PlaneAction::FireOffHandPistol => Some(Trigger),
-                PlaneAction::FirePrimary | PlaneAction::FireSecondary => Some(Grip),
                 _ => None,
             },
             SemanticSet::Menu => match MenuAction::ALL[self.index()] {
@@ -221,12 +218,17 @@ semantic_actions! {
         Accelerate => ("accelerate", Float, "Accelerate"),
         /// Read in the driver's seat.
         Reverse => ("reverse", Float, "Brake and reverse"),
-        FirePrimary => ("fire_primary", Float, "Fire the vehicle weapon"),
-        FireSecondary => ("fire_secondary", Float, "Fire the secondary weapon"),
-        Stunt => ("stunt", Bool, "Stunt position"),
-        ExitVehicle => ("exit_vehicle", Bool, "Exit the vehicle (hold: gunner seat)"),
+        /// On a hand holding a gun, fires that gun instead.
+        FirePrimary => ("fire_primary", Bool, "Fire vehicle weapon 1 (a gun in the hand: fire it)"),
+        /// On a hand holding a gun, fires that gun instead.
+        FireSecondary => ("fire_secondary", Bool, "Fire vehicle weapon 2 (a gun in the hand: fire it)"),
+        /// A short press; it shares its button with the exit by default.
+        Stunt => ("stunt", Bool, "Stunt position (tap)"),
+        /// A long press; held on, it moves to the gunner seat.
+        ExitVehicle => ("exit_vehicle", Bool, "Exit the vehicle (hold; keep holding: gunner seat)"),
         VehicleMod => ("vehicle_mod", Bool, "Nitrous (tap: turbo jump)"),
         Handbrake => ("handbrake", Bool, "Handbrake"),
+        /// Unbound by default: the cockpit's horn button sounds it.
         Horn => ("horn", Bool, "Horn or magnet"),
         /// Read out of the driver's seat.
         Fire => ("fire", Float, "Fire (passenger)"),
@@ -245,11 +247,16 @@ semantic_actions! {
         CollectiveUp => ("collective_up", Float, "Climb"),
         /// Read in the driver's seat.
         CollectiveDown => ("collective_down", Float, "Descend"),
-        FirePrimary => ("fire_primary", Float, "Fire the vehicle weapon"),
-        FireSecondary => ("fire_secondary", Float, "Fire the secondary weapon"),
-        Stunt => ("stunt", Bool, "Stunt position"),
-        ExitVehicle => ("exit_vehicle", Bool, "Exit the vehicle (hold: gunner seat)"),
+        /// On a hand holding a gun, fires that gun instead.
+        FirePrimary => ("fire_primary", Bool, "Fire vehicle weapon 1 (a gun in the hand: fire it)"),
+        /// On a hand holding a gun, fires that gun instead.
+        FireSecondary => ("fire_secondary", Bool, "Fire vehicle weapon 2 (a gun in the hand: fire it)"),
+        /// A short press; it shares its button with the exit by default.
+        Stunt => ("stunt", Bool, "Stunt position (tap)"),
+        /// A long press; held on, it moves to the gunner seat.
+        ExitVehicle => ("exit_vehicle", Bool, "Exit the vehicle (hold; keep holding: gunner seat)"),
         VehicleMod => ("vehicle_mod", Bool, "Vehicle mod"),
+        /// Unbound by default: the cockpit's horn button sounds it.
         Horn => ("horn", Bool, "Horn or magnet"),
         /// Read out of the driver's seat.
         Fire => ("fire", Float, "Fire (passenger)"),
@@ -269,10 +276,15 @@ semantic_actions! {
         ThrustUp => ("thrust_up", Float, "More thrust"),
         /// Read in the driver's seat.
         ThrustDown => ("thrust_down", Float, "Less thrust"),
-        FirePrimary => ("fire_primary", Float, "Fire the vehicle weapon"),
-        FireSecondary => ("fire_secondary", Float, "Fire the secondary weapon"),
-        Stunt => ("stunt", Bool, "Stunt position"),
-        ExitVehicle => ("exit_vehicle", Bool, "Exit the vehicle (hold: gunner seat)"),
+        /// On a hand holding a gun, fires that gun instead.
+        FirePrimary => ("fire_primary", Bool, "Fire vehicle weapon 1 (a gun in the hand: fire it)"),
+        /// On a hand holding a gun, fires that gun instead.
+        FireSecondary => ("fire_secondary", Bool, "Fire vehicle weapon 2 (a gun in the hand: fire it)"),
+        /// A short press; it shares its button with the exit by default.
+        Stunt => ("stunt", Bool, "Stunt position (tap)"),
+        /// A long press; held on, it moves to the gunner seat.
+        ExitVehicle => ("exit_vehicle", Bool, "Exit the vehicle (hold; keep holding: gunner seat)"),
+        /// Unbound by default: the cockpit's horn button sounds it.
         Horn => ("horn", Bool, "Horn or magnet"),
         /// Read out of the driver's seat.
         Fire => ("fire", Float, "Fire (passenger)"),

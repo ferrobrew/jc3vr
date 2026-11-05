@@ -32,6 +32,14 @@ fn down() -> ButtonControl {
     }
 }
 
+fn up() -> ButtonControl {
+    ButtonControl {
+        down: false,
+        pressed: false,
+        released: true,
+    }
+}
+
 fn controls(dominant: Hand, set: impl FnOnce(&mut HandControls, &mut HandControls)) -> Controls {
     let mut c = Controls {
         dominant,

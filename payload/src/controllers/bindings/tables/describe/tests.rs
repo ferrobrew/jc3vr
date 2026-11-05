@@ -617,3 +617,49 @@ fn a_named_source_is_masked_only_with_its_whole_hand() {
         Control::Named(Some(Hand::Right), name) if table.name(name) == "Right Pinch"
     )));
 }
+
+#[test]
+fn a_vehicle_lists_the_fire_faces_the_timed_a_and_the_grapple_click() {
+    for class in [
+        VehicleClass::Car,
+        VehicleClass::Helicopter,
+        VehicleClass::Plane,
+    ] {
+        for driver in [false, true] {
+            let mode = Mode::Vehicle(VehicleSeat { class, driver });
+            for dominant in Hand::BOTH {
+                let off = dominant.other();
+                let rows = describe(&ctx(mode, dominant, TableCtx::default()));
+                assert!(
+                    actions_of(&rows, Control::B(dominant), Gesture::Press)
+                        .contains(&FIRE_VEHICLE_WEAPON_PRIMARY),
+                    "{mode:?} {dominant:?}"
+                );
+                assert!(
+                    actions_of(&rows, Control::B(off), Gesture::Press)
+                        .contains(&FIRE_VEHICLE_WEAPON_SECONDARY),
+                    "{mode:?} {dominant:?}"
+                );
+                // Both hands' upper faces fire a held gun: one row, folded.
+                assert!(rows.iter().any(|r| r.control == Control::EitherB
+                    && r.effect == Effect::Mod(ModAction::FireHandGun)));
+                for hand in Hand::BOTH {
+                    assert!(actions_of(&rows, Control::Grip(hand), Gesture::Press).is_empty());
+                }
+                let tap = actions_of(&rows, Control::A(Hand::Right), Gesture::Press);
+                assert!(tap.contains(&STUNT_JUMP) && !tap.contains(&EXIT_VEHICLE));
+                let hold = actions_of(&rows, Control::A(Hand::Right), Gesture::Hold);
+                assert!(hold.contains(&EXIT_VEHICLE) && !hold.contains(&STUNT_JUMP));
+                assert!(
+                    actions_of(&rows, Control::StickClick(off), Gesture::Press)
+                        .contains(&FIRE_GRAPPLE),
+                    "{mode:?} {dominant:?}"
+                );
+                assert!(!rows.iter().any(|r| matches!(
+                    &r.effect,
+                    Effect::Actions(actions) if actions.contains(&SOUND_HORN_SIREN)
+                ) && r.control != Control::Unbound));
+            }
+        }
+    }
+}

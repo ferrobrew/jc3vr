@@ -21,7 +21,7 @@ use crate::{
             intents::{Mask, YANK_ACTIONS},
             tables::{
                 body_turn_action, context_masks,
-                declare::{TableCtx, declare},
+                declare::{TableCtx, declare, vehicle_weapon_actions},
                 grapple_press,
                 sink::{Axis, Direction, Gate, Input, PadLayout, PadZone, Press, Sink, pad_of},
             },
@@ -217,6 +217,8 @@ pub enum ModAction {
     PullParachuteHandle,
     /// Take the ripcord at the hip and pull it out to open the parachute.
     Ripcord,
+    /// Fire the gun the hand holds, from the hand's vehicle weapon action.
+    FireHandGun,
     /// Yank an armed remote target, optionally holding the grapple button to swing it.
     SnatchYank,
     /// Swing the attached target and release grip to detach, or B to snatch.
@@ -474,13 +476,22 @@ impl DescribeSink<'_> {
     }
 
     fn press_rows(&self, press: Press, actions: &[Action]) -> Vec<Row> {
+        // A press read only on a hand holding a gun fires that gun, which the gun's own row
+        // describes ([`ModAction::FireHandGun`]).
+        if press.gate == Gate::HandArmed {
+            return Vec::new();
+        }
+        let long = matches!(press.input, Input::Long(_));
         let gate = |gesture| match press.gate {
             Gate::Gripped => Gesture::WithGrip,
+            _ if long => Gesture::Hold,
             Gate::Always
             | Gate::UnlessChordArmed
             | Gate::UnlessChordGrip
             | Gate::Ungripped
-            | Gate::Ragdolling => gesture,
+            | Gate::Ragdolling
+            | Gate::HandArmed
+            | Gate::HandUnarmed => gesture,
         };
         let row = |control, gesture| Row {
             control,
@@ -494,7 +505,7 @@ impl DescribeSink<'_> {
             effect: Effect::Actions(actions.to_vec()),
         };
         match press.input {
-            Input::Action(action) => {
+            Input::Action(action) | Input::Short(action) | Input::Long(action) => {
                 match self.bound(action) {
                     Some(inputs) => {
                         for input in inputs {
@@ -746,6 +757,17 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
                     modded(ModAction::ReleaseTethers),
                 );
                 add(control, Gesture::Hold, modded(ModAction::TightenTethers));
+            }
+        }
+    }
+    // A gun in a hand takes over that hand's vehicle weapon action.
+    if let Mode::Vehicle(seat) = ctx.mode {
+        for action in vehicle_weapon_actions(seat.class) {
+            for (control, gesture) in controls(action)
+                .into_iter()
+                .filter(|(c, _)| *c != Control::Unbound)
+            {
+                add(control, gesture, modded(ModAction::FireHandGun));
             }
         }
     }

@@ -101,6 +101,16 @@ fn p(action: impl Into<ActionId>) -> Press {
     Press::new(Input::Action(action.into()))
 }
 
+/// A short press of `action`: released before the long-press time.
+fn short(action: impl Into<ActionId>) -> Press {
+    Press::new(Input::Short(action.into()))
+}
+
+/// A long press of `action`: held past the long-press time, until its release.
+fn long(action: impl Into<ActionId>) -> Press {
+    Press::new(Input::Long(action.into()))
+}
+
 /// A press of the pad press `action` latched to `zone`.
 fn zone(action: impl Into<ActionId>, zone: PadZone) -> Press {
     Press::new(Input::Zone(action.into(), zone))
@@ -224,13 +234,30 @@ impl VehicleActions {
     }
 }
 
+/// The vehicle weapon actions of `class`'s set, the primary's first. A gun in a hand takes over
+/// the hand's vehicle weapon action: on that hand it fires the gun, not the vehicle's weapon.
+pub fn vehicle_weapon_actions(class: VehicleClass) -> [ActionId; 2] {
+    let v = VehicleActions::of(class);
+    [v.fire_primary, v.fire_secondary]
+}
+
+/// The vehicle weapon action `action`, on a hand holding no gun.
+fn vehicle_weapon(action: ActionId) -> Press {
+    Press::new(Input::Action(action)).gated(Gate::HandUnarmed)
+}
+
 /// Seated in a vehicle. The throttle actions are read in the driver's seat only: out of it they
 /// drive nothing, and the triggers fire the weapon in the hands or on the mount instead.
+///
+/// The stunt and the exit share one button by default, told apart by the press's length: a tap
+/// takes the stunt position, and a hold exits. The exit's gamepad button is held from the moment
+/// the press becomes long, so the game sees the button pressed then: let go soon after, it is the
+/// game's tap of the button, which exits, and held on, its hold, which moves to the gunner seat.
 fn vehicle<S: Sink>(s: &mut S, ctx: &TableCtx, seat: VehicleSeat) {
     let v = VehicleActions::of(seat.class);
-    s.hold(&[p(v.stunt)], PAD_A);
-    s.hold(&[p(v.exit)], PAD_Y_VEHICLE);
-    s.hold(&[p(v.fire_secondary)], PAD_LB_VEHICLE);
+    s.hold(&[short(v.stunt)], PAD_A);
+    s.hold(&[long(v.exit)], PAD_Y_VEHICLE);
+    s.hold(&[vehicle_weapon(v.fire_secondary)], PAD_LB_VEHICLE);
     s.hold(&[p(v.grapple)], GRAPPLE_VEHICLE);
     s.hold(&[p(v.horn)], PAD_L3_VEHICLE);
     match seat.class {
@@ -243,7 +270,10 @@ fn vehicle<S: Sink>(s: &mut S, ctx: &TableCtx, seat: VehicleSeat) {
             s.axis(Axis::Y(cyclic), HELI_BACKWARD, HELI_FORWARD);
             s.axis(Axis::X(cyclic), HELI_ROLL_LEFT, HELI_ROLL_RIGHT);
             s.axis(Axis::Value(H::Yaw.id()), HELI_TURN_LEFT, HELI_TURN_RIGHT);
-            s.hold(&[p(v.fire_primary)], &[FIRE_VEHICLE_WEAPON_PRIMARY, R1]);
+            s.hold(
+                &[vehicle_weapon(v.fire_primary)],
+                &[FIRE_VEHICLE_WEAPON_PRIMARY, R1],
+            );
             s.hold(&[p(H::VehicleMod)], &[USE_VEHICLE_MOD, BTN_B]);
         }
         VehicleClass::Plane => {
@@ -260,7 +290,10 @@ fn vehicle<S: Sink>(s: &mut S, ctx: &TableCtx, seat: VehicleSeat) {
                 PLANE_TURN_LEFT,
                 PLANE_TURN_RIGHT,
             );
-            s.hold(&[p(v.fire_primary)], &[FIRE_VEHICLE_WEAPON_PRIMARY, R1]);
+            s.hold(
+                &[vehicle_weapon(v.fire_primary)],
+                &[FIRE_VEHICLE_WEAPON_PRIMARY, R1],
+            );
         }
         VehicleClass::Mech => mech(s, seat),
         VehicleClass::Car
@@ -288,28 +321,31 @@ fn vehicle<S: Sink>(s: &mut S, ctx: &TableCtx, seat: VehicleSeat) {
             // The boat's weapon and the motorcycle and jetski personal weapon differ only by
             // action; each class reads its own and ignores the other.
             s.hold(
-                &[p(v.fire_primary)],
+                &[vehicle_weapon(v.fire_primary)],
                 &[FIRE_VEHICLE_WEAPON_PRIMARY, MC_FIRE, R1],
             );
         }
     }
     // Out of the driver's seat the fire actions fire the weapon in the hands or on the mount,
-    // aimed by the hands, and with a pistol in the off-hand its own fire action fires too.
+    // aimed by the hands, and with a pistol in the off-hand its own fire action fires too; so does
+    // the vehicle weapon action of a hand holding a gun. The game's fire reaches the wielded weapon
+    // and the game's own dual-wield pair, and the per-hand fire input the gun in each hand
+    // (`crate::controllers::weapons::hold::tick`).
     if !seat.driver {
         let mut presses = vec![p(v.fire)];
         if ctx.dual_wield {
             presses.push(p(v.fire_off_hand_pistol));
         }
+        presses.extend([v.fire_primary, v.fire_secondary].map(|a| p(a).gated(Gate::HandArmed)));
         s.hold(&presses, &[FIRE_RIGHT, R2]);
     }
 }
 
-/// The mech, on the land vehicle set's actions at the gamepad's places: the stick walks it (the
-/// mech's move reads the plane's pitch and the car's turn), the triggers fire its right-hand weapon
-/// and work its gravity gun (held to attract, let go to throw), the dominant grip drops what the
-/// gravity gun holds, the off-hand grip punches, and the dominant A jumps. The vehicle's shared
-/// actions (the exit, the grapple, the horn, and the grips' vehicle weapons) are declared by the
-/// caller.
+/// The mech, on the land vehicle set's actions: the stick walks it (the mech's move reads the
+/// plane's pitch and the car's turn), the throttle actions fire its right-hand weapon and work its
+/// gravity gun (held to attract, let go to throw), the primary vehicle weapon action drops what
+/// the gravity gun holds, the secondary punches, and a tap of the stunt jumps. The vehicle's shared
+/// actions (the exit, the grapple, the horn, and the vehicle weapons) are declared by the caller.
 fn mech<S: Sink>(s: &mut S, seat: VehicleSeat) {
     let steer = L::Steer.id();
     s.axis(Axis::X(steer), TURN_LEFT, TURN_RIGHT);
@@ -317,9 +353,12 @@ fn mech<S: Sink>(s: &mut S, seat: VehicleSeat) {
     if seat.driver {
         s.hold(&[p(L::Accelerate)], &[MECH_FIRE_RIGHT_HAND_WEAPON]);
         s.hold(&[p(L::Reverse)], &[MECH_FIRE_GRAVITY_WEAPON_PRIMARY]);
-        s.hold(&[p(L::FirePrimary)], &[MECH_FIRE_GRAVITY_WEAPON_SECONDARY]);
-        s.hold(&[p(L::FireSecondary)], &[MECH_PUNCH]);
-        s.hold(&[p(L::Stunt)], &[MECH_JUMP]);
+        s.hold(
+            &[vehicle_weapon(L::FirePrimary.id())],
+            &[MECH_FIRE_GRAVITY_WEAPON_SECONDARY],
+        );
+        s.hold(&[vehicle_weapon(L::FireSecondary.id())], &[MECH_PUNCH]);
+        s.hold(&[short(L::Stunt)], &[MECH_JUMP]);
     }
 }
 

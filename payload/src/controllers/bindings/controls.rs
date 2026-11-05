@@ -118,6 +118,9 @@ pub struct Controls {
     /// The inputs of each hand claimed by mechanisms outside the tables (the debug panel chord),
     /// masked from the semantic actions, by [`Hand::index`].
     pub masked_inputs: [PhysicalSet; 2],
+    /// Each hand holds a gun (any part of one), by [`Hand::index`]. In a vehicle the hand's
+    /// vehicle weapon action fires the gun rather than the vehicle's weapon.
+    pub armed: [bool; 2],
 }
 
 impl Controls {
@@ -165,6 +168,7 @@ impl Controls {
             pointer_hand: None,
             masked_hands: [false; 2],
             masked_inputs: [PhysicalSet::EMPTY; 2],
+            armed: [false; 2],
             trackpad_paging: Hand::BOTH.into_iter().any(|which| {
                 provides(
                     frame.hand(which).profile,

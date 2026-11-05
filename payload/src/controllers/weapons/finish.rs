@@ -61,6 +61,10 @@ pub(crate) struct FinishInputs {
     pub grips: [ButtonControl; 2],
     /// Each hand's trigger press over the tick.
     pub triggers: [ButtonControl; 2],
+    /// Each hand's fire press for the gun it holds, over the tick: its trigger where the triggers
+    /// fire the hand weapons, and in a vehicle its vehicle weapon action
+    /// (`crate::controllers::bindings::gun_fire`).
+    pub fire_presses: [ButtonControl; 2],
     /// The input owner's per-hand recovery mask, before filtered controls can appear neutral.
     pub unavailable: [bool; 2],
     /// The reload action's press over the tick.
@@ -82,6 +86,7 @@ pub(crate) fn finish_tick(
         grabs,
         grips,
         triggers,
+        fire_presses,
         unavailable,
         reload_button,
         dt,
@@ -387,7 +392,7 @@ pub(crate) fn finish_tick(
     let claims = trigger_claims(capabilities, gun_roles, ready);
     let fire = HandFire {
         allowed: claims.map(|claim| claim.fire),
-        triggers: &triggers,
+        triggers: &fire_presses,
         holder,
         docking,
         action_running: Hand::BOTH.map(weapon_action_running),
@@ -430,7 +435,7 @@ pub(crate) fn finish_tick(
     let fire_blocked = reload_blocks
         || explosive_blocked
         || holder.is_some_and(|h| docking[h.index()])
-        || primary_trigger_idle(current, &triggers)
+        || primary_trigger_idle(current, &fire_presses)
         || primary_action_blocked(holder, Hand::BOTH.map(weapon_action_running));
     if fire_blocked {
         hold_fire_back(desired);
@@ -1067,7 +1072,7 @@ mod tests {
         assert!(compact.contains(
             "letcurrent=unsafe{engine::local_player().and_then(|owner|engine::held_weapon(owner))}"
         ));
-        assert!(source.contains("primary_trigger_idle(current, &triggers)"));
+        assert!(source.contains("primary_trigger_idle(current, &fire_presses)"));
         let triggers = [ButtonControl {
             down: true,
             ..Default::default()

@@ -42,6 +42,7 @@ mod buttons;
 pub mod controls;
 mod flight;
 pub mod grapple_button;
+mod gun_fire;
 pub mod hold;
 pub mod inject;
 pub mod intents;
@@ -510,6 +511,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     controls.masked_hands = Hand::BOTH.map(|hand| !state.recovery.ready(hand));
     let gun_triggers = config.weapons.hold.either_hand;
     let gun_owners = weapons::capabilities::gun_owners_now();
+    controls.armed = gun_owners.map(|gun| gun.is_some() && !in_menu);
     let trigger_owners = gun_owners.map(|gun| TriggerOwner {
         mode: detection.mode,
         gun: gun.filter(|_| gun_triggers && !in_menu),
@@ -677,6 +679,12 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             grabs: grabs_for(step.grabs, Consumer::Weapons),
             grips: controls.hands.map(|h| h.grip),
             triggers: controls.hands.map(|h| h.trigger_press),
+            fire_presses: gun_fire::presses(
+                detection.mode,
+                &semantic_input,
+                controls.hands.map(|h| h.trigger_press),
+                controls.masked_hands,
+            ),
             unavailable: controls.masked_hands,
             reload_button: reload_button(&semantic_input),
             dt,

@@ -82,11 +82,16 @@ fn the_free_hand_sounds_the_horn_on_the_hub_while_the_other_holds_the_wheel() {
     ))));
     let mut desired = Vec::new();
     write_outputs(&out, &mut desired);
-    assert!(
-        desired
-            .iter()
-            .any(|d| d.target.action == jc3gi::input::input_action_map::Action::SOUND_HORN_SIREN)
-    );
+    // The horn also toggles a vehicle's magnet, as the gamepad's button does.
+    for action in [
+        jc3gi::input::input_action_map::Action::SOUND_HORN_SIREN,
+        jc3gi::input::input_action_map::Action::TOGGLE_MAGNET_1,
+    ] {
+        assert!(
+            desired.iter().any(|d| d.target.action == action),
+            "{action:?}"
+        );
+    }
 
     // The hand holding the wheel presses nothing, even pushed into the hub.
     let mut state = ControlState::default();

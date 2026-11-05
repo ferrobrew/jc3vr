@@ -35,6 +35,10 @@ const DROPPED: [Action; 6] = [
     BTN_B,
 ];
 
+/// The horn and the magnet in a vehicle: the controllers leave the horn action unbound by default,
+/// and the cockpit's horn button carries both (`crate::controllers::vehicles::axis_output`).
+const VEHICLE_DROPPED: [Action; 3] = [SOUND_HORN_SIREN, TOGGLE_MAGNET_1, L3];
+
 // Suit gestures use the narrow native actions, not the broad button aliases.
 const WINGSUIT_DROPPED_BUTTON_ALIASES: [Action; 3] = [ENTER_VEHICLE, USE_ITEM, BTN_Y];
 
@@ -55,6 +59,7 @@ fn every_action_reachable_before_stays_reachable() {
                     mode != Mode::Airborne(AirborneVariant::Wingsuit)
                         || !WINGSUIT_DROPPED_BUTTON_ALIASES.contains(a)
                 })
+                .filter(|a| !matches!(mode, Mode::Vehicle(_)) || !VEHICLE_DROPPED.contains(a))
                 .collect();
             assert!(
                 lost.is_empty(),
@@ -142,12 +147,17 @@ fn gesture_actions(mode: Mode) -> BTreeSet<Action> {
 }
 
 #[test]
-fn the_dominant_upper_button_enters_and_exits_vehicles() {
+fn the_dominant_upper_button_enters_and_the_right_a_held_exits() {
     for dominant in Hand::BOTH {
         let c = controls(dominant, |dom, _| dom.b = down());
         let step = Bindings::default().sim_step(ON_FOOT, &c, DT, &CONFIG);
         assert_eq!(player(&step, ENTER_VEHICLE), Some(Want::Hold(1.0)));
         assert_eq!(player(&step, RELOAD), None);
+        let mut a = Controls {
+            dominant,
+            ..Default::default()
+        };
+        a.hands[Hand::Right.index()].a = down();
         for class in [
             VehicleClass::Car,
             VehicleClass::Helicopter,
@@ -157,13 +167,22 @@ fn the_dominant_upper_button_enters_and_exits_vehicles() {
                 class,
                 driver: true,
             });
+            // The dominant upper button fires in a vehicle; it neither exits nor burns nitrous.
             let step = Bindings::default().sim_step(seat, &c, DT, &CONFIG);
+            assert_eq!(player(&step, EXIT_VEHICLE), None, "{class:?}");
+            assert_eq!(player(&step, USE_VEHICLE_MOD), None, "{class:?}");
             assert_eq!(
-                player(&step, EXIT_VEHICLE),
+                player(&step, FIRE_VEHICLE_WEAPON_PRIMARY),
                 Some(Want::Hold(1.0)),
                 "{class:?}"
             );
-            assert_eq!(player(&step, USE_VEHICLE_MOD), None, "{class:?}");
+            let mut b = Bindings::default();
+            let mut exited = false;
+            for _ in 0..30 {
+                exited |= player(&b.sim_step(seat, &a, DT, &CONFIG), EXIT_VEHICLE)
+                    == Some(Want::Hold(1.0));
+            }
+            assert!(exited, "{class:?}");
         }
     }
 }

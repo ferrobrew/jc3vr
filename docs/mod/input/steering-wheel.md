@@ -18,7 +18,7 @@ The input tick captures the actual attached vehicle once through [`Character::Ge
 
 The design follows the VR wheels of other games: Sacchan's SaccGroundVehicle for VRChat (hold to grip, per-hand accumulators seeded from the current steering, ±450° for a car) and BNG's VR Interaction Framework wheel (position-tracked, hold to grip, ±360°, a linear return).
 
-A hand holds the wheel only while its grip is held. A grip press with the hand within `PHYSICAL.grab_radius_m` (`controllers::vehicles::tuning`) of the rim takes the wheel, and releasing the grip lets go; so does moving further than `PHYSICAL.release_distance_m` from the rim. A hand that passes through the rim, or rests on it with the grip open, takes nothing. The press is latched at its edge as for every grab volume, so a press made outside the rim and carried onto it fires the vehicle's weapon rather than grabbing.
+A hand holds the wheel only while its grip is held. A grip press with the hand within `PHYSICAL.grab_radius_m` (`controllers::vehicles::tuning`) of the rim takes the wheel, and releasing the grip lets go; so does moving further than `PHYSICAL.release_distance_m` from the rim. A hand that passes through the rim, or rests on it with the grip open, takes nothing. The press is latched at its edge as for every grab volume; the grip fires nothing in a vehicle, so a press that misses the rim only closes the hand.
 
 Each holding hand turns the wheel by how far it turned since the last tick, measured one of two ways (`physical.wheel.turned_by`):
 

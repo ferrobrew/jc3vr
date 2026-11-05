@@ -1,7 +1,7 @@
 //! The per-mode binding tables: from the tick's semantic actions to the game actions wanted this
 //! tick. Pure, with the little state the tables need across ticks (the pause button's long press,
-//! what each grip press is doing ([`GripLatch`]), the wingsuit's evade press, and the menu and pad
-//! latches).
+//! the timed presses, what each grip press is doing ([`GripLatch`]), the wingsuit's evade press,
+//! and the menu and pad latches).
 //!
 //! Each mode reads the semantic actions of its action set ([`crate::vr::input::semantic`]), which
 //! the player can rebind in the runtime; [`crate::vr::input::semantic::defaults`] suggests the
@@ -15,8 +15,9 @@
 //! intact: the reload button is also the holster (hold), `USE_VEHICLE_MOD` is nitrous (hold) and
 //! the turbo jump (tap), `ENTER_VEHICLE` held enters the gunner seat, and the grapple tethers on a
 //! hold, all decided by the game from the hold time the tracker ([`crate::controllers::bindings::hold`])
-//! writes. The pause action is the one overload the mod resolves itself: a short press pauses and
-//! a long press opens the commlink.
+//! writes. The mod resolves two overloads itself, by the press's length: the pause action, whose
+//! short press opens the commlink and long press pauses, and a vehicle's stunt and exit, which a
+//! table reads as a short and a long press ([`sink::Input::Short`] and [`sink::Input::Long`]).
 //!
 //! One action drives the mod rather than the game: on foot, flicking `crouch_flick` (the dominant
 //! stick's vertical axis by default) down toggles the seated crouch
@@ -57,7 +58,10 @@ use crate::{
             policy_a::runtime::Tick,
             tables::{
                 declare::{TableCtx, declare},
-                sink::{EvalSink, Latches, MenuLatch, PadLatch},
+                sink::{
+                    Axis, EvalSink, Input, Latches, MAX_TIMED, MenuLatch, PadLatch, Press,
+                    PressTimer, Sink, TimedLatch,
+                },
             },
         },
         config::BindingsConfig,
@@ -123,6 +127,9 @@ pub struct Bindings {
     /// Accepted action and hand participants in derived gesture episodes.
     grapple_routes: Vec<(ActionId, Hand)>,
     system_routes: Vec<(ActionId, Hand)>,
+    /// The press timers of the current mode's timed actions ([`Input::Short`] and
+    /// [`Input::Long`]), each hand's by [`Hand::index`].
+    timers: Vec<(ActionId, [PressTimer; 2])>,
 }
 
 impl Bindings {
@@ -143,6 +150,7 @@ impl Bindings {
             grapple_triggers: [false; 2],
             grapple_routes: Vec::new(),
             system_routes: Vec::new(),
+            timers: Vec::new(),
         }
     }
 
@@ -331,10 +339,13 @@ impl Bindings {
             menu::step(&mut self.menu[i], &intents, hand, config.menu_stick_push);
             menu::step_pad(&mut self.pads[i], &intents, hand);
         }
+        let timed = self.step_timers(mode, &ctx, &intents, dt, config.long_press_s);
         let latches = Latches {
             chord_grip: chord.dominant_grip,
             chord_armed: chord.armed,
             ragdolling: controls.ragdolling,
+            armed: controls.armed,
+            timed,
             menu: self.menu,
             pads: self.pads,
         };
@@ -437,6 +448,60 @@ impl Bindings {
             grapple_held,
         }
     }
+}
+
+impl Bindings {
+    /// Advance the press timers of the actions `mode`'s table reads by press length, dropping the
+    /// timers of actions it no longer reads, and return each hand's presses this tick.
+    fn step_timers(
+        &mut self,
+        mode: Mode,
+        ctx: &TableCtx,
+        intents: &Intents,
+        dt: f32,
+        long_press_s: f32,
+    ) -> [TimedLatch; 2] {
+        let mut collect = TimedInputs(Vec::new());
+        declare(&mut collect, mode, ctx);
+        let actions = collect.0;
+        self.timers.retain(|(id, _)| actions.contains(id));
+        let mut latches = [TimedLatch::default(); 2];
+        for (slot, &id) in actions.iter().take(MAX_TIMED).enumerate() {
+            let timers = match self.timers.iter_mut().find(|(t, _)| *t == id) {
+                Some((_, timers)) => timers,
+                None => {
+                    self.timers.push((id, [PressTimer::default(); 2]));
+                    &mut self.timers.last_mut().expect("just pushed").1
+                }
+            };
+            for hand in Hand::BOTH {
+                let press =
+                    timers[hand.index()].step(intents.hand(id, hand).button, dt, long_press_s);
+                latches[hand.index()].presses[slot] = Some((id, press));
+            }
+        }
+        latches
+    }
+}
+
+/// Collects the actions a table reads by press length.
+struct TimedInputs(Vec<ActionId>);
+
+impl Sink for TimedInputs {
+    fn hold(&mut self, presses: &[Press], _: &[Action]) {
+        for press in presses {
+            if let Input::Short(id) | Input::Long(id) = press.input
+                && !self.0.contains(&id)
+            {
+                self.0.push(id);
+            }
+        }
+    }
+    fn click(&mut self, press: Press, action: Action) {
+        self.hold(&[press], &[action]);
+    }
+    fn analog(&mut self, _: Axis, _: Action) {}
+    fn axis(&mut self, _: Axis, _: Action, _: Action) {}
 }
 
 /// The masks the table context implies in `mode`: with a pistol in the off-hand, its trigger

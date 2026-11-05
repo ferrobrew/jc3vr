@@ -7,7 +7,7 @@
 //! sequences. That separates the port of the tables from the change of the default layout: the
 //! shipped defaults are free to move, and this still checks that each meaning is read as before.
 //!
-//! The semantic tables differ from the raw-input ones on purpose in four places, which the
+//! The semantic tables differ from the raw-input ones on purpose in five places, which the
 //! comparison accounts for:
 //!
 //! - Out of the driver's seat, the throttle actions are not read; the raw-input tables injected
@@ -16,6 +16,9 @@
 //!   weapon's button, so its writes follow that button's rather than sit among them ([`in_order`]).
 //! - The yank is a source of the grapple action, so the sight tuning chord's grip withholds a
 //!   yank as it withholds the grip's grapple; no sequence yanks during the chord.
+//! - In a vehicle the stunt and the exit are a short and a long press, where the raw-input tables
+//!   held them while their buttons were; their timing has its own tests, so their writes are left
+//!   out ([`in_order`]).
 //! - The wingsuit's evade is unbound, so a press after a flick of the stick opens the parachute
 //!   where the raw-input tables evaded ([`normalise`]).
 
@@ -95,10 +98,15 @@ fn the_semantic_tables_want_what_the_raw_tables_wanted() {
 
 /// The wanted actions of a vehicle mode in one order: the grapple has its own action there, so
 /// its writes come after the secondary weapon's button rather than among them. The raw tables did
-/// not report the grapple's button as held, so that is left out of the comparison.
+/// not report the grapple's button as held, so that is left out of the comparison, and nor are
+/// the stunt's and the exit's writes, which the semantic tables time.
 fn in_order(mut step: Step, mode: Mode) -> Step {
     if matches!(mode, Mode::Vehicle(_)) {
         step.desired.sort_by_key(|d| d.target);
+        step.desired.retain(|d| {
+            !declare::PAD_A.contains(&d.target.action)
+                && !declare::PAD_Y_VEHICLE.contains(&d.target.action)
+        });
     }
     step.grapple_held = false;
     step

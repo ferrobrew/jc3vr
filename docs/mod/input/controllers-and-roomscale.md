@@ -181,7 +181,7 @@ The grip holds what it takes for as long as it is held, everywhere: a gun, a pro
 
 ### Per-mode bindings
 
-The tables are the default bindings of the semantic actions, laid out for the Valve Index controller, which has A and B on both hands; the player can rebind each action in the runtime's binding interface. In the tables, R and L are the dominant hand and the off-hand, A and B are the dominant hand's face buttons, and X and Y are the off-hand's A and B. The face buttons mirror the gamepad's by side: the gamepad's A and Y (jump, and use or enter) are on the dominant hand, and its X and B (reload, and release tethers) on the off-hand, so a vehicle is exited with the button that entered it. A left-handed layout mirrors every gameplay binding; the menu bindings stay on the physical hands, so that the previous and next tabs and pages keep their sides. The system button of either hand is free on the Index controller and carries pause and the commlink. The Touch profile shares the topology through its own suggested bindings, with its left menu button as the system button, and has no trackpad. The off-hand Index trackpad selects weapon slots, as the gamepad's d-pad does. The tables follow the game's own mode partition and stay congruent with [the default gamepad keymap](../../engine/gameplay/input.md#the-default-gamepad-keymap) where the VR model allows, so that a player's gamepad habits carry over; the action IDs each mapping drives are in [the mapping to action table](../../engine/gameplay/input.md#the-mapping--action-table). Where a controller input stands for a gamepad button, the injection holds every gameplay action that the default gamepad keymap puts on that button, and the game's own context selects the one that applies. The action IDs that serve several mappings (holster as a short hold of `RELOAD`, nitrous and turbo jump as a hold and a tap of `USE_VEHICLE_MOD`, the gunner seat as a held `ENTER_VEHICLE`, and the tether as a held `FIRE_GRAPPLE`) are separated by the game through tap versus hold and through the mode context, so the injection reproduces the hold time of the button it stands for. The system button is the one overload the mod resolves itself. Melee (`PUSH_GRAPPLE` under the hammer ability) is left off the virtual B button, because there it would melee on every tether release. Wherever a mapping is marked as a gesture, the button remains as the fallback.
+The tables are the default bindings of the semantic actions, laid out for the Valve Index controller, which has A and B on both hands; the player can rebind each action in the runtime's binding interface. In the tables, R and L are the dominant hand and the off-hand, A and B are the dominant hand's face buttons, and X and Y are the off-hand's A and B. The face buttons mirror the gamepad's by side: the gamepad's A and Y (jump, and use or enter) are on the dominant hand, and its X and B (reload, and release tethers) on the off-hand. In every vehicle the upper face buttons fire, the grips only grip, and the right controller's A takes the stunt position on a tap and exits on a hold, as in Just Cause 2. A left-handed layout mirrors every gameplay binding; the menu bindings stay on the physical hands, so that the previous and next tabs and pages keep their sides. The system button of either hand is free on the Index controller and carries pause and the commlink. The Touch profile shares the topology through its own suggested bindings, with its left menu button as the system button, and has no trackpad. The off-hand Index trackpad selects weapon slots, as the gamepad's d-pad does. The tables follow the game's own mode partition and stay congruent with [the default gamepad keymap](../../engine/gameplay/input.md#the-default-gamepad-keymap) where the VR model allows, so that a player's gamepad habits carry over; the action IDs each mapping drives are in [the mapping to action table](../../engine/gameplay/input.md#the-mapping--action-table). Where a controller input stands for a gamepad button, the injection holds every gameplay action that the default gamepad keymap puts on that button, and the game's own context selects the one that applies. The action IDs that serve several mappings (holster as a short hold of `RELOAD`, nitrous and turbo jump as a hold and a tap of `USE_VEHICLE_MOD`, the gunner seat as a held `ENTER_VEHICLE`, and the tether as a held `FIRE_GRAPPLE`) are separated by the game through tap versus hold and through the mode context, so the injection reproduces the hold time of the button it stands for. The system button, and in a vehicle the stunt and the exit sharing the right A, are the overloads the mod resolves itself, by the press's length. Melee (`PUSH_GRAPPLE` under the hammer ability) is left off the virtual B button, because there it would melee on every tether release. Wherever a mapping is marked as a gesture, the button remains as the fallback.
 
 #### On foot
 
@@ -211,21 +211,25 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 
 #### Land vehicles (car; motorcycle in the last rows)
 
+Every vehicle class shares one scheme. The grips carry nothing binary: they grip the guns, the wheel, the bars, the levers, and the handles. The stunt and the exit are on the right controller's A and the handbrake on the left controller's A whichever hand is dominant; the rest mirrors for a left-handed player.
+
 | Action | VR binding |
 |---|---|
 | Steer | L stick; wheel or handlebars |
-| Accelerate and reverse | R trigger and L trigger |
-| Handbrake | X |
+| Accelerate and reverse | R trigger and L trigger, whatever the hands hold |
+| Handbrake | the left controller's A |
 | Nitrous and turbo jump (`USE_VEHICLE_MOD`, upgrade-gated) | hold and tap R stick click; the cockpit's nitrous button |
-| Fire vehicle weapons, primary and secondary | R grip and L grip, when the grip takes nothing |
-| Grapple | Y, with its gestures as on foot; its double tap releases a tether fired from the vehicle (`VEHICLE_RELEASE_GRAPPLE`, with `RELEASE_GRAPPLE`) |
-| Enter gunner seat, roof stunt | hold B, A |
-| Exit vehicle | B |
-| Horn | L stick click |
+| Fire vehicle weapons 1 and 2 | B and Y; held, they keep firing |
+| Fire a gun held in a hand | that hand's B or Y, in place of the vehicle weapon it fires otherwise; in a passenger seat or a stunt position its trigger too |
+| Grapple | L stick click, with its gestures as on foot: a tap fires, a hold tethers or tightens, and a double tap releases a tether fired from the vehicle (`VEHICLE_RELEASE_GRAPPLE`, with `RELEASE_GRAPPLE`) |
+| Roof stunt, exit vehicle, gunner seat | the right controller's A: tap, hold, and keep holding |
+| Horn, and a vehicle's magnet | the cockpit's horn button; the `horn` action ships unbound |
 | Look back, vehicle camera, recenter camera | removed; the neck replaces them, and F7 recenters |
-| Motorcycle personal weapon (`MC_FIRE`) | R grip, aimed by the right hand |
+| Motorcycle personal weapon (`MC_FIRE`) | B, aimed by the right hand |
 | Motorcycle lean and tilt | L stick; handlebar lean |
 | Motorcycle throttle | R trigger; twisting the handlebars' right grip back |
+
+A gun takes over its hand's vehicle weapon action, not a button: rebinding `fire_primary` or `fire_secondary` in the runtime moves the vehicle weapon and the held gun together. In the driver's seat the triggers stay the pedals with a gun in either hand. The exit is held from the moment the press becomes long (`controllers.bindings.long_press_s`): let go then, it is the gamepad's tap of Y, which exits, and held on, its hold, which moves to the gunner seat.
 
 #### Helicopter
 
@@ -234,9 +238,10 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 | Collective up and down | R trigger and L trigger; collective lever |
 | Cyclic (forward, back, and roll) | L stick; cyclic stick |
 | Yaw | R stick X |
-| Fire primary and secondary | R grip and L grip, aimed by the gaze, when the grip takes nothing |
-| Grapple | Y |
-| Exit, stunt, nitrous | B, A, hold R stick click |
+| Fire primary and secondary | B and Y, aimed by the gaze; a hand holding a gun fires its gun |
+| Grapple | L stick click |
+| Stunt, exit | tap and hold the right controller's A |
+| Vehicle mod | hold R stick click |
 
 #### Plane
 
@@ -245,9 +250,9 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 | Pitch and roll | L stick; flight stick |
 | Rudder | R stick X |
 | Thrust up and down | R trigger and L trigger; throttle |
-| Fire primary and secondary | R grip and L grip, aimed by the gaze, when the grip takes nothing |
-| Grapple | Y |
-| Exit, stunt | B, A |
+| Fire primary and secondary | B and Y, aimed by the gaze; a hand holding a gun fires its gun |
+| Grapple | L stick click |
+| Stunt, exit | tap and hold the right controller's A |
 
 #### Boats and jetskis
 
@@ -255,23 +260,24 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 |---|---|
 | Steer | L stick; wheel or handlebars |
 | Accelerate and reverse | R trigger and L trigger |
-| Fire, and the jetski personal weapon | R grip, aimed by the gaze (boat) or the right hand (jetski) |
+| Fire, and the jetski personal weapon | B, aimed by the gaze (boat) or the right hand (jetski) |
 | Nitrous and turbo jump | hold and tap R stick click |
-| Exit | B |
+| Grapple | L stick click |
+| Stunt, exit | tap and hold the right controller's A |
 
 #### Mech
 
-The mech is its own vehicle class ([`Character::IsAttachedToMech`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsAttachedToMech)), on the land vehicle set's actions at the gamepad's places. It has no physical controls.
+The mech is its own vehicle class ([`Character::IsAttachedToMech`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsAttachedToMech)), on the land vehicle set's actions. It has no physical controls.
 
 | Action | VR binding |
 |---|---|
 | Walk and turn (the plane's pitch and the car's turn) | L stick |
 | Right-hand weapon (`MECH_FIRE_RIGHT_HAND_WEAPON`) | R trigger |
 | Gravity gun: attract while held, throw on release (`MECH_FIRE_GRAVITY_WEAPON_PRIMARY`) | L trigger |
-| Gravity gun: drop (`MECH_FIRE_GRAVITY_WEAPON_SECONDARY`) | R grip, when it takes nothing |
-| Punch (`MECH_PUNCH`) | L grip, when it takes nothing |
-| Jump (`MECH_JUMP`) | A |
-| Exit, grapple | B, Y |
+| Gravity gun: drop (`MECH_FIRE_GRAVITY_WEAPON_SECONDARY`) | B |
+| Punch (`MECH_PUNCH`) | Y |
+| Jump (`MECH_JUMP`) | tap the right controller's A |
+| Exit, grapple | hold the right controller's A, L stick click |
 
 #### Wingsuit and parachute
 
@@ -609,7 +615,7 @@ The order puts the parts that everything else depends on first, then the parts w
 2. Scheme. A controller press selects the controller scheme; a gamepad, keyboard, or mouse input selects the gamepad scheme; the `Controllers` and `Gamepad` settings pin it. The gamepad scheme behaves as it did before controllers existed.
 3. Mode detection. The detected mode and the active action set follow walking, swimming, falling, the wingsuit, the parachute, each vehicle class in the driver and a passenger seat, the pause menu, the map, the commlink, and the mod's panel. No mode flickers during animation blends, and a fast travel holds the mode.
 4. On-foot bindings. Move with the head direction and the off-hand direction, turn smooth and snap, jump, fire, grapple fire, zip, and tether hold, retract, release, use and enter, reload tap and holster hold, and the explosive tap and hold. A short system press opens the commlink, a long one pauses, and neither toggles twice. The menus navigate, confirm, cancel, change tabs, and change pages.
-5. Vehicle and air bindings. The car, the motorcycle, the helicopter, the plane, and the boat drive and fire; nitrous holds and the turbo jump taps separate; a held enter reaches the gunner seat. The wingsuit boosts and brakes, and the parachute opens and steers.
+5. Vehicle and air bindings. The car, the motorcycle, the helicopter, the plane, and the boat drive and fire from B and Y, holding either keeps firing; nitrous holds and the turbo jump taps separate; a tap of the right A takes the stunt position, a hold exits, and holding on reaches the gunner seat; the grips fire nothing. The wingsuit boosts and brakes, and the parachute opens and steers.
 6. Gamepad semantics. The prompts show gamepad buttons under the controller scheme, and the setting returns to its previous value under the gamepad scheme.
 7. The aim-state pin. Firing while walking keeps the body in the walk family with no weapon raise and no snap. The aim flags in the readout stay clear while firing. The grapple fires and tethers, and the body's behaviour on a held tether is acceptable. Entering combat draws nothing, leaving combat holsters nothing, and the reload hold still holsters. A gun fired with its barrel near a wall is not blocked. Check the strafe direction with the gun pointed sideways, and whether the trigger on an empty hand draws a gun.
 8. Hands. The hands are the right way up with the fingers forward; fit the grip offset. The arms reach the controllers, and the arm-span remap feels right with calibrated body dimensions. The gun sits in the hand, fast hand motion shows no lag, the gun and the hand never separate, and the forearm stays attached at the elbow. Ledge grabs, climbs, vehicle entry, swimming, the wingsuit, and ragdoll yield the hands and return them smoothly. The off-hand is not pulled onto the weapon, and the grapple wire leaves the left forearm.
@@ -642,14 +648,16 @@ The order puts the parts that everything else depends on first, then the parts w
 35. The wingsuit's buttons. Open the wingsuit with the right B and close it with the right B again; nothing boosts. In the weaponized suit, click the right stick: it boosts. The left A does nothing in the suit.
 36. Aiming the grapple in the wingsuit. With the arms spread and banking slightly, hold the left B and point the left hand at a target: the suit keeps flying the line it had, and lets go of the target to grapple it; once the button is up, the arms steer again. The log has `wingsuit arm steering: the grapple is aimed` and the button-up line.
 37. The motorcycle's throttle grip. On a motorcycle with the handlebars held, roll the right grip back: the bike accelerates in proportion, with a click as it opens, and no nitrous or turbo jump; the trigger still accelerates. In a helicopter, raise and lower the collective with an ordinary wrist roll: no nitrous; twist it hard either way: nitrous.
-38. The mech. Enter a mech: the summary's heading reads `MECH`, the left stick walks, the right trigger fires the right-hand weapon, the left trigger held attracts with the gravity gun and let go throws, the right grip drops, the left grip punches, and A jumps.
-39. Tethers from a vehicle. Drive a car, tether it to something with the grapple, and double tap the left B: the tether lets go.
+38. The mech. Enter a mech: the summary's heading reads `MECH`, the left stick walks, the right trigger fires the right-hand weapon, the left trigger held attracts with the gravity gun and let go throws, B drops, Y punches, a tap of the right A jumps, and a hold exits.
+39. Tethers from a vehicle. Drive a car, tap the left stick click to fire the grapple (it fires after the stick-click chord's short wait), hold it to tether something, and double tap it: the tether lets go. The same in a helicopter and a plane.
 40. Menu pages with the pointer. In the map or a menu with the native pointer showing, aim just off the panel's edge and pull the right trigger: nothing pages. Pull the left trigger: the page goes back; hold the left grip and pull it: the page goes forward.
 41. Map zoom. Open the map and push the left stick up and down: it zooms, and the wrist summary lists the zoom on that stick. Rebind `map_zoom` in the runtime's binding interface to another input: the map zooms from that input instead.
 42. Hold to hold across interruptions. Hold a rifle, cover a controller's sensors until the hand is lost, and uncover it with the grip still closed: the rifle stays in the hand; open and close the grip: `hold: the grip closed on the gun in the hand` is logged, and opening it again away from the body drops it. Choose a rifle on the weapon wheel and close the hand on it, then open it in front of the body: it falls. With the pistols drawn in both hands, open one hand anywhere: that pistol goes back to its hip and the other stays drawn. Enter a car holding a rifle: it is not dropped.
 43. Long guns by the dominant hand. With both hands empty, reach the left hand to the left shoulder and squeeze: nothing is drawn and the shoulder's marker does not light for it; reach across with the right hand: the special weapon comes into the right hand. With a pistol in the right hand, the left hand draws the left shoulder's gun.
 44. The gamepad's held B. Walk slowly toward a ledge: the character stops at it; hold the right B and walk on: he steps off. Get knocked into a ragdoll and hold the right B: he stays a ragdoll; let go and he gets up. Pressing the right B to enter a car still enters it.
 45. The game's hints on the wrist. Stand by a car with an armed passenger seat, or get a mission prompt: the summary pops up with `ON SCREEN` first, naming the prompt with the controller's glyph (the gunner seat on the right B, held). With tethers attached, the release hint points at the left B's double tap. Doors, characters, the holsters, and climbable surfaces have markers in their colours (`GRIP MARKERS`).
+46. A gun in the driver's seat. Drive with a gun in the left hand: the left B fires it and the left trigger still brakes; the right B fires the vehicle's weapon. Swap hands, then hold a gun in each: each hand's B fires its own gun, and both pedals keep working. Hold B down: the gun keeps firing. Rebind `fire_secondary` to another input in the runtime: the left gun fires from there.
+47. A gun in a passenger seat and on a roof. Each gun fires from its hand's trigger and from its hand's B; a dual-wielded pair of the game's fires from either.
 
 ## Reverse-engineering work
 

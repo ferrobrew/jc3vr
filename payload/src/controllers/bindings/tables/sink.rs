@@ -17,7 +17,7 @@ use jc3gi::input::input_action_map::Action;
 use crate::{
     controllers::{
         bindings::{
-            controls::rotate_stick,
+            controls::{ButtonControl, rotate_stick},
             hold::{Desired, MapKind, Target, Want},
             intents::Intents,
         },
@@ -40,6 +40,22 @@ pub enum Input {
     /// The menu stick pushed one way: held while the push latched to that direction lasts
     /// ([`MenuLatch::stick`]).
     MenuStick(Direction),
+    /// A short press of a semantic action: held for the one tick at which a press released before
+    /// the long-press time ends ([`PressTimer`]).
+    Short(ActionId),
+    /// A long press of a semantic action: held from the tick the press reaches the long-press time
+    /// until it is released ([`PressTimer`]).
+    Long(ActionId),
+}
+
+impl Input {
+    /// The semantic action the input reads, for the inputs that read one.
+    pub const fn action(self) -> Option<ActionId> {
+        match self {
+            Input::Action(a) | Input::Zone(a, _) | Input::Short(a) | Input::Long(a) => Some(a),
+            Input::MenuStick(_) => None,
+        }
+    }
 }
 
 /// A menu stick push's direction.
@@ -142,6 +158,10 @@ pub enum Gate {
     Ungripped,
     /// Only while the character is a ragdoll.
     Ragdolling,
+    /// Only on a hand holding a gun ([`Latches::armed`]).
+    HandArmed,
+    /// Only on a hand holding no gun ([`Latches::armed`]).
+    HandUnarmed,
 }
 
 /// A digital input, with its gate.
@@ -221,10 +241,73 @@ pub struct Latches {
     pub chord_armed: bool,
     /// The character is a ragdoll.
     pub ragdolling: bool,
+    /// Each hand holds a gun, by [`Hand::index`].
+    pub armed: [bool; 2],
+    /// Each hand's short and long presses of the timed actions, by [`Hand::index`].
+    pub timed: [TimedLatch; 2],
     /// Each hand's menu presses, by [`Hand::index`].
     pub menu: [MenuLatch; 2],
     /// Each hand's pad press, by [`Hand::index`].
     pub pads: [PadLatch; 2],
+}
+
+/// The most semantic actions whose presses are told apart by length in one mode.
+pub const MAX_TIMED: usize = 4;
+
+/// One hand's presses of the timed actions as of this tick: for each, whether a short press ended
+/// this tick and whether a long press is held.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub struct TimedLatch {
+    pub presses: [Option<(ActionId, TimedPress)>; MAX_TIMED],
+}
+
+impl TimedLatch {
+    /// The press state of `action`, or the idle state for an action that is not timed.
+    pub fn of(&self, action: ActionId) -> TimedPress {
+        self.presses
+            .iter()
+            .flatten()
+            .find(|(a, _)| *a == action)
+            .map_or(TimedPress::default(), |&(_, press)| press)
+    }
+}
+
+/// A timed action's press on one hand, this tick.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub struct TimedPress {
+    /// A press released before the long-press time ended this tick.
+    pub short: bool,
+    /// The press has been held past the long-press time and is still held.
+    pub long: bool,
+}
+
+/// Times one hand's presses of one action, to tell a short press from a long one.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct PressTimer {
+    /// How long the current press has been held, seconds.
+    held: Option<f32>,
+}
+
+impl PressTimer {
+    /// Advance by `dt` seconds with the action's `button` this tick. A press and release between
+    /// two ticks counts as held for one tick, so a quick tap ends as a short press on the next.
+    pub fn step(&mut self, button: ButtonControl, dt: f32, long_press_s: f32) -> TimedPress {
+        let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+        if button.held() {
+            let seconds = self.held.map_or(0.0, |s| s + dt);
+            self.held = Some(seconds);
+            TimedPress {
+                short: false,
+                long: seconds >= long_press_s,
+            }
+        } else {
+            let ended = self.held.take();
+            TimedPress {
+                short: ended.is_some_and(|s| s < long_press_s),
+                long: false,
+            }
+        }
+    }
 }
 
 /// One hand's menu presses, each latched at its press edge with whether that hand's menu modifier
@@ -313,6 +396,8 @@ impl<'a> EvalSink<'a> {
             Gate::Gripped => self.gripped(press.input, hand) == Some(true),
             Gate::Ungripped => self.gripped(press.input, hand) == Some(false),
             Gate::Ragdolling => self.latches.ragdolling,
+            Gate::HandArmed => self.latches.armed[hand.index()],
+            Gate::HandUnarmed => !self.latches.armed[hand.index()],
         }
     }
 
@@ -326,6 +411,8 @@ impl<'a> EvalSink<'a> {
             Input::MenuStick(direction) => self.latches.menu[hand.index()]
                 .stick
                 .is_some_and(|(latched, _)| latched == direction),
+            Input::Short(action) => self.latches.timed[hand.index()].of(action).short,
+            Input::Long(action) => self.latches.timed[hand.index()].of(action).long,
         }
     }
 
@@ -336,7 +423,9 @@ impl<'a> EvalSink<'a> {
                 self.latches.pads[hand.index()].zone(action) == Some(zone)
                     && self.intents.hand(action, hand).button.pressed
             }
-            Input::MenuStick(_) => false,
+            // A short press is held for one tick, so its tick is its press.
+            Input::Short(action) => self.latches.timed[hand.index()].of(action).short,
+            Input::MenuStick(_) | Input::Long(_) => false,
         }
     }
 

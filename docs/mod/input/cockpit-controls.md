@@ -36,7 +36,7 @@ One cue fires a tick. A lever that passes neutral on the tick it leaves the gate
 
 ## Cockpit buttons
 
-The horn and the nitrous are worked by hand (`buttons.rs`, with the fixed `PHYSICAL.buttons`), alongside the controller's buttons, which keep working:
+The horn and the nitrous are worked by hand (`buttons.rs`, with the fixed `PHYSICAL.buttons`). The nitrous is also on the dominant stick click; the horn is on no controller button by default (its `horn` action ships unbound), so the cockpit's horn is how it sounds; it also toggles a vehicle's magnet (`TOGGLE_MAGNET_1`), as the gamepad's left stick click does:
 
 | Seat | Horn | Nitrous |
 | --- | --- | --- |
@@ -49,7 +49,7 @@ A push button is a disc facing the driver: the horn is the hub, 35% of the wheel
 
 The handlebars' right grip is the throttle, as a motorcycle's is (`physical.twist_throttle`, on): rolling its top back toward the rider, about the line across the bars, from the orientation the hand took it in, opens the throttle from nothing within 4° to full at 30°. It reaches the game as `ACCELERATE`, alongside the trigger, the larger of the two winning, so the trigger still works with a hand on the grip; rolling the grip forward closes it. The grip clicks in the hand as the throttle opens and ticks as it closes, and burns no nitrous: the nitrous is the dominant stick's click, as on every land vehicle. The collective's grip burns the nitrous while the hand holding it has twisted it 40° (well past the roll a wrist makes while it raises the lever) either way about the fore-aft axis, and stops once the twist comes back by 8°. The handlebars' and the collective's own motion is untouched by either: the bars turn and roll by the grips' positions, and the collective moves along its axis.
 
-A pressed horn holds `SOUND_HORN_SIREN`, and the nitrous holds `USE_VEHICLE_MOD`, which the game reads as the nitrous while it is held and as the turbo jump when it is tapped ([input.md](../../engine/gameplay/input.md#land-vehicle-generic-car-and-motorcycle)), so a short press of the nitrous button is a turbo jump, as a tap of the gamepad's button is. Both need the vehicle's upgrades as the gamepad does. Each press and twist clicks in its hand, and each release ticks. A hand pressing a button takes the flat palm's finger pose ([grip-poses.md](grip-poses.md)); a twisting hand keeps the pose of the control it holds.
+A pressed horn holds `SOUND_HORN_SIREN` and `TOGGLE_MAGNET_1`, and the nitrous holds `USE_VEHICLE_MOD`, which the game reads as the nitrous while it is held and as the turbo jump when it is tapped ([input.md](../../engine/gameplay/input.md#land-vehicle-generic-car-and-motorcycle)), so a short press of the nitrous button is a turbo jump, as a tap of the gamepad's button is. Both need the vehicle's upgrades as the gamepad does. Each press and twist clicks in its hand, and each release ticks. A hand pressing a button takes the flat palm's finger pose ([grip-poses.md](grip-poses.md)); a twisting hand keeps the pose of the control it holds.
 
 ### The landing gear
 
