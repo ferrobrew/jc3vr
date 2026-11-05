@@ -578,7 +578,10 @@ mod tests {
             collider_view_line(&off, Some("F3".to_owned())).text(),
             "OFF, F3 SHOWS IT"
         );
-        assert_eq!(collider_view_line(&off, None).text(), "OFF, NO KEY SHOWS IT");
+        assert_eq!(
+            collider_view_line(&off, None).text(),
+            "OFF, NO KEY SHOWS IT"
+        );
         let waiting = ColliderViewStatus {
             enabled: true,
             registered: true,
