@@ -37,10 +37,11 @@ pub(super) fn read(world: &Mat4, scale: f32) -> Vec3 {
 /// the eye point would drop it below the shoulders; the pivot does not move, and the head bone's
 /// orientation, which follows the HMD, is what puts the drawn eyes back in front of it.
 pub fn head_bone_world(character_rotation: Quat, scale: f32) -> Vec3 {
-    query().position + character_rotation * neck_pivot_offset(body_relative_rotation(), scale)
+    let eye = character_rotation.inverse() * query().position;
+    character_rotation * head_bone_target(eye, body_relative_rotation(), scale)
 }
 
-/// [`head_bone_world`] in the character's model space: the head bone's place for the eye point
+/// [`head_bone_world`] in the character's body axes: the head bone's place for the eye point
 /// `eye`, with the head turned `head_rotation` against the body, at the world scale `scale`.
 pub fn head_bone_target(eye: Vec3, head_rotation: Quat, scale: f32) -> Vec3 {
     eye + neck_pivot_offset(head_rotation, scale)
