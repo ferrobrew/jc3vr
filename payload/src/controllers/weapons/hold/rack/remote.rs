@@ -28,6 +28,7 @@ use parking_lot::Mutex;
 use crate::controllers::{
     aim::gun,
     frame::Hand,
+    loadout::TakeSource,
     weapons::{
         engine::{self, character_object, long_slot, object_of, slot_of, takeable_gun_slot},
         hold::{
@@ -156,7 +157,15 @@ pub(crate) unsafe fn release(
         if from_rack { "rack" } else { "locker" },
         hand.label()
     );
-    Ok(Freed { weapon, alive })
+    Ok(Freed {
+        weapon,
+        alive,
+        source: if from_rack {
+            TakeSource::Rack
+        } else {
+            TakeSource::Locker
+        },
+    })
 }
 
 /// Forget every noted weapon. Called when the weapon handling stands down.

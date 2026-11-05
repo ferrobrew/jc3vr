@@ -36,12 +36,12 @@ use crate::{
     config::Config,
     controllers::{
         hands::ik,
-        loadout::{TakeSource, live, take::TakeRoute},
+        loadout::{Delivery, TakeSource, live, take::TakeRoute},
         weapons::{
             dual_wield::single,
             engine::{character_object, slot_of},
             hold::{
-                self, Cause, SNAP_S,
+                self, SNAP_S,
                 pickup::{self, TakeOptions},
                 rack,
                 refs::Strong,
@@ -115,10 +115,10 @@ unsafe fn take(owner: &mut Character, weapon: &mut WeaponBase) {
         Ok(TakeRoute::Table { hand }) => {
             let options = TakeOptions {
                 slide_s: SNAP_S,
-                cause: Cause::Pickup,
+                source: TakeSource::World,
+                delivery: Delivery::Local,
             };
-            unsafe { pickup::take_by_table(owner, hand, weapon, TakeSource::World, options) }
-                .map(|()| hand)
+            unsafe { pickup::take_by_table(owner, hand, weapon, options) }.map(|()| hand)
         }
         Ok(TakeRoute::Game(why)) => {
             tracing::debug!(target: "controllers", why = why.label(), "hold: the game's pickup takes the weapon");

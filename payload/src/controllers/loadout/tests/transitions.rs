@@ -49,7 +49,6 @@ fn a_take_lands_in_the_grabbing_hand_and_never_touches_the_other() {
 #[test_case(TakeSource::Pouch, weapon(a_pistol()) => false; "no weapon from the pouch")]
 #[test_case(TakeSource::Catch, ItemKind::Grenade => true; "a caught grenade")]
 #[test_case(TakeSource::Catch, ItemKind::Charge => false; "no caught charge")]
-#[test_case(TakeSource::Snatch, weapon(a_launcher()) => true; "a snatched launcher")]
 fn a_take_brings_only_what_its_source_holds(source: TakeSource, kind: ItemKind) -> bool {
     let mut t = table();
     let taken = t.take(Take {

@@ -39,12 +39,10 @@ pub enum TakeSource {
     RackCopy,
     /// Out of a locker.
     Locker,
-    /// Out of a living character's hands.
+    /// Out of a living character's hands, or off its body.
     Character,
     /// A mission's give, taken by the hand it was offered to.
     Give,
-    /// The grapple snatch.
-    Snatch,
     /// From a pouch: a grenade or a C4 charge.
     Pouch,
     /// A live grenade caught out of the air.
@@ -53,14 +51,13 @@ pub enum TakeSource {
 
 impl TakeSource {
     #[cfg(test)]
-    pub const ALL: [TakeSource; 9] = [
+    pub const ALL: [TakeSource; 8] = [
         TakeSource::World,
         TakeSource::Rack,
         TakeSource::RackCopy,
         TakeSource::Locker,
         TakeSource::Character,
         TakeSource::Give,
-        TakeSource::Snatch,
         TakeSource::Pouch,
         TakeSource::Catch,
     ];
@@ -73,8 +70,7 @@ impl TakeSource {
             | TakeSource::RackCopy
             | TakeSource::Locker
             | TakeSource::Character
-            | TakeSource::Give
-            | TakeSource::Snatch => matches!(kind, ItemKind::Weapon(_)),
+            | TakeSource::Give => matches!(kind, ItemKind::Weapon(_)),
             TakeSource::Pouch => matches!(kind, ItemKind::Grenade | ItemKind::Charge),
             TakeSource::Catch => matches!(kind, ItemKind::Grenade),
         }
@@ -88,9 +84,28 @@ impl TakeSource {
             TakeSource::Locker => "taken out of a locker",
             TakeSource::Character => "taken from a character's hands",
             TakeSource::Give => "a mission's give taken",
-            TakeSource::Snatch => "snatched with the grapple",
             TakeSource::Pouch => "taken from a pouch",
             TakeSource::Catch => "caught",
+        }
+    }
+}
+
+/// How a taken weapon reached the hand: a hand that closed on it at its source, or the grapple's
+/// snatch, which pulled it in on the line. The source and the delivery are independent: any source
+/// a hand takes from, the snatch takes from too.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Delivery {
+    /// Within the hand's reach: it slides from its source into the hand.
+    Local,
+    /// Beyond it: the grapple's snatch pulls it in on the line, and the hand catches it.
+    Remote,
+}
+
+impl Delivery {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Delivery::Local => "in reach",
+            Delivery::Remote => "snatched with the grapple",
         }
     }
 }

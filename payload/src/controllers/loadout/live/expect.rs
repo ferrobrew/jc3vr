@@ -8,9 +8,14 @@
 //! otherwise into the other ([`landing`]). The hand is per-hand runtime state beside the table, not
 //! an item's place: once the weapon lands, the table holds it in that hand.
 
+use std::fmt;
+
 use crate::controllers::{
     frame::Hand,
-    loadout::{binding::ObjectAddress, transition::TakeSource},
+    loadout::{
+        binding::ObjectAddress,
+        transition::{Delivery, TakeSource},
+    },
 };
 
 /// How long a hand expects a weapon, seconds.
@@ -21,15 +26,16 @@ pub(crate) const PENDING_S: f32 = 3.0;
 pub(crate) enum Expect {
     /// A draw off the body.
     Draw,
-    /// A take from this source.
-    Take(TakeSource),
+    /// A take from this source, delivered this way.
+    Take(TakeSource, Delivery),
 }
 
-impl Expect {
-    pub(crate) const fn label(self) -> &'static str {
+impl fmt::Display for Expect {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Expect::Draw => "draw",
-            Expect::Take(source) => source.label(),
+            Expect::Draw => f.write_str("draw"),
+            Expect::Take(source, Delivery::Local) => f.write_str(source.label()),
+            Expect::Take(source, delivery) => write!(f, "{}, {}", source.label(), delivery.label()),
         }
     }
 }
@@ -99,7 +105,7 @@ pub(crate) fn copy_hand(
         .filter(|p| {
             matches!(
                 p.expect,
-                Expect::Take(TakeSource::Rack | TakeSource::RackCopy)
+                Expect::Take(TakeSource::Rack | TakeSource::RackCopy, _)
             ) && p.claims(object)
         })
         .map(|p| p.hand)
@@ -149,7 +155,11 @@ mod tests {
 
     #[test]
     fn a_take_waits_for_its_own_weapon() {
-        let pending = Pending::new(Hand::Left, Expect::Take(TakeSource::World), Some(object(1)));
+        let pending = Pending::new(
+            Hand::Left,
+            Expect::Take(TakeSource::World, Delivery::Local),
+            Some(object(1)),
+        );
         assert_eq!(
             landing(Some(pending), object(2), [true; 2], Hand::Right),
             (Hand::Right, None, false),
@@ -157,13 +167,21 @@ mod tests {
         );
         assert_eq!(
             landing(Some(pending), object(1), [true; 2], Hand::Right),
-            (Hand::Left, Some(Expect::Take(TakeSource::World)), true)
+            (
+                Hand::Left,
+                Some(Expect::Take(TakeSource::World, Delivery::Local)),
+                true
+            )
         );
     }
 
     #[test]
     fn a_rack_s_copy_comes_into_the_hand_that_asked_for_it() {
-        let rack = Pending::new(Hand::Left, Expect::Take(TakeSource::Rack), None);
+        let rack = Pending::new(
+            Hand::Left,
+            Expect::Take(TakeSource::Rack, Delivery::Local),
+            None,
+        );
         assert_eq!(
             copy_hand(Some(rack), object(1), [true; 2]),
             Some(Hand::Left)

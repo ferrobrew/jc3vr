@@ -126,56 +126,21 @@ pub const TAKE_RADIUS_M: f32 = 0.3;
 /// and completion use the same boundary.
 pub const STEAL_RADIUS_M: f32 = 0.4;
 
-/// What a grab that brings a weapon into a hand is.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Cause {
-    /// A holster grab's draw.
-    Draw,
-    /// A weapon taken off the ground.
-    Pickup,
-    /// A gun taken out of a living character's hands.
-    Steal,
-    /// A weapon taken off a rack, or the copy a rack hands out.
-    Rack,
-    /// A weapon the grapple's snatch pulled into the hand.
-    Snatch,
-}
-
-impl Cause {
-    pub const fn label(self) -> &'static str {
-        match self {
-            Cause::Draw => "draw",
-            Cause::Pickup => "pickup",
-            Cause::Steal => "taken from a character",
-            Cause::Rack => "rack",
-            Cause::Snatch => "snatched with the grapple",
-        }
-    }
-
-    /// What the grab leaves its hand expecting of the table.
-    const fn expect(self) -> live::Expect {
-        match self {
-            Cause::Draw => live::Expect::Draw,
-            Cause::Pickup => live::Expect::Take(TakeSource::World),
-            Cause::Steal => live::Expect::Take(TakeSource::Character),
-            Cause::Rack => live::Expect::Take(TakeSource::Rack),
-            Cause::Snatch => live::Expect::Take(TakeSource::Snatch),
-        }
-    }
-
-    /// The grab an expectation of the table's came from, when one of the hold's did.
-    const fn of(expect: live::Expect) -> Option<Cause> {
-        match expect {
-            live::Expect::Draw => Some(Cause::Draw),
-            live::Expect::Take(TakeSource::World) => Some(Cause::Pickup),
-            live::Expect::Take(TakeSource::Character) => Some(Cause::Steal),
-            // A locker's weapon is taken by the rack's grab, which delivers it as a locker take.
-            live::Expect::Take(TakeSource::Rack | TakeSource::RackCopy | TakeSource::Locker) => {
-                Some(Cause::Rack)
-            }
-            live::Expect::Take(TakeSource::Snatch) => Some(Cause::Snatch),
-            live::Expect::Take(TakeSource::Give | TakeSource::Pouch | TakeSource::Catch) => None,
-        }
+/// What brought a weapon into a hand, as the hold reads it: a hand's expectation of the table's
+/// that one of the hold's grabs set (a draw, or a take from a source in reach or by the grapple's
+/// snatch), or `None` for anything else (a give, a pouch, a catch).
+pub(crate) const fn by_a_grab(expect: live::Expect) -> Option<live::Expect> {
+    match expect {
+        live::Expect::Draw
+        | live::Expect::Take(
+            TakeSource::World
+            | TakeSource::Character
+            | TakeSource::Rack
+            | TakeSource::RackCopy
+            | TakeSource::Locker,
+            _,
+        ) => Some(expect),
+        live::Expect::Take(TakeSource::Give | TakeSource::Pouch | TakeSource::Catch, _) => None,
     }
 }
 
@@ -187,9 +152,9 @@ pub struct HoldStatus {
     /// The hand holding the wielded weapon.
     pub holder: Option<Hand>,
     /// What brought the wielded weapon into the hands, or `None` for the game's own draw.
-    pub origin: Option<Cause>,
+    pub origin: Option<live::Expect>,
     /// A hand expecting the game to wield a weapon, and the grab that left it so.
-    pub pending: Option<(Hand, Cause)>,
+    pub pending: Option<(Hand, live::Expect)>,
     /// Handovers, direct pickups, and pickups left to the game's use-item action since the payload
     /// loaded.
     pub handovers: u64,
@@ -208,10 +173,10 @@ pub fn status() -> HoldStatus {
     // Read before the tick's lock: the status rows take one lock at a time.
     let take = take::status();
     let last_refusal = last_refusal();
-    let pending = live::pending().and_then(|p| Some((p.hand, Cause::of(p.expect)?)));
+    let pending = live::pending().and_then(|p| Some((p.hand, by_a_grab(p.expect)?)));
     let wielded = WIELDED.load(Ordering::Relaxed);
     let holder = owned_holder(wielded);
-    let origin = holder.and_then(live::origin).and_then(Cause::of);
+    let origin = holder.and_then(live::origin).and_then(by_a_grab);
     let tick = TICK.lock();
     HoldStatus {
         owned: holder.is_some(),
@@ -272,8 +237,10 @@ pub(crate) unsafe fn input_tick(
     WIELDED.store(wielded.unwrap_or(0), Ordering::Relaxed);
     if enabled && let Some(arrival) = arrival {
         took(arrival);
-        if let (Some(live::Expect::Take(TakeSource::Rack | TakeSource::RackCopy)), Some(address)) =
-            (arrival.expect, wielded)
+        if let (
+            Some(live::Expect::Take(TakeSource::Rack | TakeSource::RackCopy, _)),
+            Some(address),
+        ) = (arrival.expect, wielded)
         {
             rack::arrived(address, arrival.hand);
         }
@@ -284,12 +251,8 @@ pub(crate) unsafe fn input_tick(
 
 /// Leave `hand` expecting the next weapon the game wields, or the one at `weapon` when it is
 /// named.
-pub(crate) fn begin(hand: Hand, cause: Cause, weapon: Option<usize>) {
-    live::expect(
-        hand,
-        cause.expect(),
-        weapon.and_then(ObjectAddress::from_address),
-    );
+pub(crate) fn begin(hand: Hand, expect: live::Expect, weapon: Option<usize>) {
+    live::expect(hand, expect, weapon.and_then(ObjectAddress::from_address));
 }
 
 /// The weapon at `weapon` came into the hands by a call the mod made (an equip or a pickup): land
@@ -494,7 +457,7 @@ fn took(arrival: live::Arrival) {
     tracing::info!(
         target: "controllers",
         hand = arrival.hand.label(),
-        cause = arrival.expect.map_or("the game's draw", live::Expect::label),
+        cause = %arrival.expect.map_or_else(|| "the game's draw".to_owned(), |e| e.to_string()),
         "hold: the weapon is in the {} hand",
         arrival.hand.label()
     );
@@ -600,22 +563,25 @@ fn update_inventory_post_finalize_pose(inventory: *mut Inventory) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::loadout::Delivery;
 
     #[test]
-    fn every_take_of_the_hold_names_its_grab() {
-        for cause in [
-            Cause::Draw,
-            Cause::Pickup,
-            Cause::Steal,
-            Cause::Rack,
-            Cause::Snatch,
+    fn every_grab_of_the_hold_is_its_own_whatever_the_delivery() {
+        assert_eq!(by_a_grab(live::Expect::Draw), Some(live::Expect::Draw));
+        for source in [
+            TakeSource::World,
+            TakeSource::Character,
+            TakeSource::Rack,
+            TakeSource::RackCopy,
+            TakeSource::Locker,
         ] {
-            assert_eq!(Cause::of(cause.expect()), Some(cause));
+            for delivery in [Delivery::Local, Delivery::Remote] {
+                let expect = live::Expect::Take(source, delivery);
+                assert_eq!(by_a_grab(expect), Some(expect));
+            }
         }
-        assert_eq!(
-            Cause::of(live::Expect::Take(TakeSource::Locker)),
-            Some(Cause::Rack)
-        );
-        assert_eq!(Cause::of(live::Expect::Take(TakeSource::Pouch)), None);
+        for source in [TakeSource::Give, TakeSource::Pouch, TakeSource::Catch] {
+            assert_eq!(by_a_grab(live::Expect::Take(source, Delivery::Local)), None);
+        }
     }
 }

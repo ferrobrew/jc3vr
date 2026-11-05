@@ -55,7 +55,7 @@ use crate::controllers::{
     aim::gun,
     frame::{Hand, Pose},
     hands::ik,
-    loadout::slot_label,
+    loadout::{TakeSource, slot_label},
     weapons::{
         engine::{self, slot_of, takeable_gun_slot},
         hold::{
@@ -255,11 +255,14 @@ pub(crate) unsafe fn take(
     Ok(taken)
 }
 
-/// A gun a character let go of: dropped into the world with its bodies, held alive.
+/// A gun a character let go of, or a rack or locker gave up: dropped into the world with its
+/// bodies, held alive.
 pub(crate) struct Freed {
     pub weapon: *mut WeaponBase,
     /// Keeps the gun alive while held.
     pub alive: Strong,
+    /// Where it was taken from.
+    pub source: TakeSource,
 }
 
 /// Make `target`'s character let go of its gun and stagger, leaving the gun lying in the world, for
@@ -308,7 +311,11 @@ pub(crate) unsafe fn release(hand: Hand, target: &WorldTarget) -> Result<Freed, 
     unsafe { victim.m_Inventory.DropWeapon(slot, true) };
     unsafe { stagger(victim, player_at) };
     SEEN.lock().retain(|s| s.character != character);
-    Ok(Freed { weapon, alive })
+    Ok(Freed {
+        weapon,
+        alive,
+        source: TakeSource::Character,
+    })
 }
 
 /// Make `target`'s character drop the gun holstered on its body and stagger, leaving the gun lying
@@ -357,7 +364,11 @@ pub(crate) unsafe fn release_holstered(
     unsafe { weapon.OnDrop() };
     unsafe { victim.m_Inventory.DropWeapon(target.slot, false) };
     unsafe { stagger(victim, player_at) };
-    Ok(Freed { weapon, alive })
+    Ok(Freed {
+        weapon,
+        alive,
+        source: TakeSource::Character,
+    })
 }
 
 /// The takes from characters' hands since the payload loaded.

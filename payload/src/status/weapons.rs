@@ -7,11 +7,11 @@ use crate::{
     controllers::{
         frame::Hand,
         hands::grip,
-        loadout::slot_label,
+        loadout::{Delivery, TakeSource, live::Expect, slot_label},
         menu::read_config,
         weapons::{
             self,
-            hold::{self, Cause, armed},
+            hold::{self, armed},
             regions,
             reload::{
                 self,
@@ -289,7 +289,7 @@ impl HowHeld {
 fn in_hand(
     hand: Hand,
     wielded: Option<(WeaponSlot, [bool; 2])>,
-    origin: Option<Cause>,
+    origin: Option<Expect>,
     beside: Option<(Hand, WeaponSlot)>,
 ) -> Option<(WeaponSlot, HowHeld)> {
     if let Some((beside_hand, slot)) = beside
@@ -301,12 +301,19 @@ fn in_hand(
     hands[hand.index()].then_some((
         slot,
         match origin {
-            Some(Cause::Draw) => HowHeld::Docked,
-            Some(Cause::Pickup) => HowHeld::PickedUp,
-            Some(Cause::Steal) => HowHeld::Stolen,
-            Some(Cause::Rack) => HowHeld::Rack,
-            Some(Cause::Snatch) => HowHeld::Snatched,
-            None => HowHeld::Game,
+            Some(Expect::Draw) => HowHeld::Docked,
+            Some(Expect::Take(_, Delivery::Remote)) => HowHeld::Snatched,
+            Some(Expect::Take(TakeSource::World, Delivery::Local)) => HowHeld::PickedUp,
+            Some(Expect::Take(TakeSource::Character, Delivery::Local)) => HowHeld::Stolen,
+            Some(Expect::Take(
+                TakeSource::Rack | TakeSource::RackCopy | TakeSource::Locker,
+                Delivery::Local,
+            )) => HowHeld::Rack,
+            Some(Expect::Take(
+                TakeSource::Give | TakeSource::Pouch | TakeSource::Catch,
+                Delivery::Local,
+            ))
+            | None => HowHeld::Game,
         },
     ))
 }
@@ -322,11 +329,21 @@ mod tests {
     fn each_hand_names_its_weapon_and_how_it_came() {
         let left_rifle = Some((RIFLE, [true, false]));
         assert_eq!(
-            in_hand(Hand::Left, left_rifle, Some(Cause::Steal), None),
+            in_hand(
+                Hand::Left,
+                left_rifle,
+                Some(Expect::Take(TakeSource::Character, Delivery::Local)),
+                None
+            ),
             Some((RIFLE, HowHeld::Stolen))
         );
         assert_eq!(
-            in_hand(Hand::Right, left_rifle, Some(Cause::Steal), None),
+            in_hand(
+                Hand::Right,
+                left_rifle,
+                Some(Expect::Take(TakeSource::Character, Delivery::Local)),
+                None
+            ),
             None
         );
         assert_eq!(
@@ -334,9 +351,25 @@ mod tests {
             Some((RIFLE, HowHeld::Game))
         );
         assert_eq!(
-            in_hand(Hand::Left, left_rifle, Some(Cause::Draw), None),
+            in_hand(Hand::Left, left_rifle, Some(Expect::Draw), None),
             Some((RIFLE, HowHeld::Docked))
         );
+    }
+
+    #[test]
+    fn a_snatched_weapon_reads_snatched_whatever_its_source() {
+        let left_rifle = Some((RIFLE, [true, false]));
+        for source in [TakeSource::World, TakeSource::Character, TakeSource::Rack] {
+            assert_eq!(
+                in_hand(
+                    Hand::Left,
+                    left_rifle,
+                    Some(Expect::Take(source, Delivery::Remote)),
+                    None
+                ),
+                Some((RIFLE, HowHeld::Snatched))
+            );
+        }
     }
 
     #[test]
@@ -344,11 +377,21 @@ mod tests {
         let left_rifle = Some((RIFLE, [true, false]));
         let beside = Some((Hand::Right, SPECIAL));
         assert_eq!(
-            in_hand(Hand::Right, left_rifle, Some(Cause::Pickup), beside),
+            in_hand(
+                Hand::Right,
+                left_rifle,
+                Some(Expect::Take(TakeSource::World, Delivery::Local)),
+                beside
+            ),
             Some((SPECIAL, HowHeld::Beside))
         );
         assert_eq!(
-            in_hand(Hand::Left, left_rifle, Some(Cause::Pickup), beside),
+            in_hand(
+                Hand::Left,
+                left_rifle,
+                Some(Expect::Take(TakeSource::World, Delivery::Local)),
+                beside
+            ),
             Some((RIFLE, HowHeld::PickedUp))
         );
     }

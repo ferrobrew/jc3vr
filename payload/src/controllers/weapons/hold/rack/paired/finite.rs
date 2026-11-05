@@ -15,7 +15,6 @@ use crate::controllers::{
         dual_wield::single::{self, magazine},
         engine::object_of,
         hold::{
-            Cause,
             pickup::{self, Refusal, TakeOptions},
             rack::{
                 RackRefusal,
@@ -236,9 +235,8 @@ pub(super) unsafe fn take(
                         owner,
                         hand,
                         weapon,
-                        TakeSource::Rack,
                         TakeOptions {
-                            cause: Cause::Rack,
+                            source: TakeSource::Rack,
                             ..options
                         },
                     )
@@ -453,9 +451,8 @@ unsafe fn take_first(
             owner,
             hand,
             copy,
-            TakeSource::Rack,
             TakeOptions {
-                cause: Cause::Rack,
+                source: TakeSource::Rack,
                 ..options
             },
         )

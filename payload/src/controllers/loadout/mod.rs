@@ -47,4 +47,4 @@ pub use socket::{BodyLayout, Socket};
 #[cfg(test)]
 pub(crate) use table::Loadout;
 pub use table::{Departure, ItemView, LoadoutSnapshot, Place};
-pub use transition::{GiveSource, LostWhy, Restored, TakeSource};
+pub use transition::{Delivery, GiveSource, LostWhy, Restored, TakeSource};

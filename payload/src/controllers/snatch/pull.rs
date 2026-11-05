@@ -22,6 +22,7 @@ use crate::{
         grab::latch::GripLatch,
         hands::ik,
         haptics::{self, Sustain},
+        loadout::{Delivery, TakeSource},
         physical_hands::{
             self,
             doors::{DoorTarget, engine::vehicle_frame},
@@ -43,7 +44,7 @@ use crate::{
             engine::character_frame,
             grenade,
             hold::{
-                Cause, SNAP_S,
+                SNAP_S,
                 pickup::{self, TakeOptions},
                 rack,
                 refs::{Strong, Weak},
@@ -66,8 +67,8 @@ pub(super) struct Grabbed {
 /// How a grabbed thing comes.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(super) enum Pulled {
-    /// A weapon lying in the world, into the hand through the table.
-    Weapon,
+    /// A weapon lying in the world, taken from `source`, into the hand through the table.
+    Weapon { source: TakeSource },
     /// A loose object, body `body` of `mass_kg`: one a hand can carry into the hand's ordinary
     /// hold, or one too heavy, swung on the held line.
     Prop {
@@ -123,7 +124,9 @@ pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal>
         OfferKind::Ground { weapon, weak, .. } => {
             let grabbed = Grabbed {
                 object: weapon,
-                kind: Pulled::Weapon,
+                kind: Pulled::Weapon {
+                    source: TakeSource::World,
+                },
                 _alive: weak.lock().ok_or(Refusal::Gone)?,
             };
             let (dropped, _) = unsafe { engine::dropped(weapon) }?;
@@ -222,7 +225,9 @@ pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal>
     tracing::info!(target: "controllers", hand = hand.label(), "snatch: the gun is free of its holder");
     Ok(Fired::Freeing(Grabbed {
         object,
-        kind: Pulled::Weapon,
+        kind: Pulled::Weapon {
+            source: freed.source,
+        },
         _alive: freed.alive,
     }))
 }
@@ -234,7 +239,7 @@ pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal>
 /// The game thread, before the world update.
 pub(super) unsafe fn fire_hook(grabbed: &Grabbed) -> Result<NonZeroUsize, Refusal> {
     match grabbed.kind {
-        Pulled::Weapon => {
+        Pulled::Weapon { .. } => {
             let (_, body) = unsafe { engine::dropped(grabbed.object) }?;
             let at = unsafe { body_centre(body, grabbed.object) }?;
             unsafe { engine::fire(grabbed.object, Vec3::ZERO, at) }
@@ -352,7 +357,7 @@ pub(super) unsafe fn bite(
         unsafe { juice::impact(wire, grabbed.object, palm) };
     }
     let landing = match grabbed.kind {
-        Pulled::Weapon => unsafe { engine::dropped(grabbed.object) }
+        Pulled::Weapon { .. } => unsafe { engine::dropped(grabbed.object) }
             .ok()
             .and_then(|(weapon, _)| unsafe { Landing::measure(weapon, state.pose) }),
         _ => None,
@@ -574,7 +579,7 @@ pub(super) unsafe fn end_line(wire: NonZeroUsize) {
 /// The game thread, before the world update.
 unsafe fn target_body(grabbed: &Grabbed) -> Result<(u32, NonZeroUsize), Refusal> {
     match grabbed.kind {
-        Pulled::Weapon => Ok((
+        Pulled::Weapon { .. } => Ok((
             unsafe { engine::dropped(grabbed.object) }?.1,
             grabbed.object,
         )),
@@ -764,12 +769,13 @@ unsafe fn arrive(
     slide_s: f32,
 ) -> Result<Arrival, Refusal> {
     match grabbed.kind {
-        Pulled::Weapon => {
+        Pulled::Weapon { source } => {
             let (weapon, _) = unsafe { engine::dropped(grabbed.object) }?;
             let address = weapon as *mut WeaponBase as usize;
             let options = TakeOptions {
                 slide_s,
-                cause: Cause::Snatch,
+                source,
+                delivery: Delivery::Remote,
             };
             unsafe { pickup::take(hand, weapon, options) }
                 .map(|slot| Arrival::Weapon {

@@ -57,11 +57,12 @@ use crate::controllers::{
     bindings::hold::{Desired, MapKind, Target, Want},
     frame::Hand,
     haptics::{self, Event},
+    loadout::{Delivery, TakeSource},
     physical_hands::{STATE, bodies, grab_view, grasp::Reach},
     weapons::{
         self, FinishInputs,
         hold::{
-            Cause, SNAP_S,
+            SNAP_S,
             pickup::{Refusal, TakeOptions},
         },
     },
@@ -145,7 +146,8 @@ pub(crate) fn finish_tick(
         let refusal = {
             let options = TakeOptions {
                 slide_s: SNAP_S,
-                cause: Cause::Pickup,
+                source: TakeSource::World,
+                delivery: Delivery::Local,
             };
             // SAFETY: the game stage runs on the game thread before the world update.
             let refusal = unsafe { take_weapon(hand, reach, options) }.err();

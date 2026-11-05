@@ -42,13 +42,13 @@ use crate::{
         aim::gun,
         frame::Hand,
         loadout::{
-            Socket, TakeSource, live, slot_label,
+            Delivery, Socket, TakeSource, live, slot_label,
             take::{self, TakeOffer, TakeRefusal, TakeRoute, TakeRules},
         },
         weapons::{
             dual_wield::single,
             engine::{self, character_object, credit_stored, gun_pose, slot_of},
-            hold::{self, Cause, act, equip, use_item},
+            hold::{self, act, equip, use_item},
             inventory::{self, carry, engine as inventory_engine},
         },
     },
@@ -121,9 +121,12 @@ pub struct TakeOptions {
     /// How long the gun slides from where it was into the hand, seconds; zero puts it there at
     /// once.
     pub slide_s: f32,
-    /// What took the weapon, for the holding hand's readout. Whatever took it, and wherever the
-    /// hand closed on it, the weapon comes into the hand by its grip, aligned to shoot.
-    pub cause: Cause,
+    /// Where the weapon was taken from, for the table and the holding hand's readout: a take off
+    /// a rack of a weapon out of the rack state is a locker's.
+    pub source: TakeSource,
+    /// How it reached the hand. Whatever took it, and wherever the hand closed on it, the weapon
+    /// comes into the hand by its grip, aligned to shoot.
+    pub delivery: Delivery,
 }
 
 /// Pick `weapon` up into `hand` directly. Returns the slot the weapon belongs to.
@@ -140,9 +143,15 @@ pub(crate) unsafe fn take(
     let owner = unsafe { engine::local_player() }.ok_or(Refusal::NoCharacter)?;
     // An interaction offers a rack's weapon in the rack state, and a weapon its placement rule
     // set down at a spot (a locker's) lying in the world; only the rack state needs the game's own
-    // pickup started first.
-    let offered = options.cause == Cause::Rack;
+    // pickup started first. A weapon the snatch pulled in lies in the world whatever its source.
+    let offered = options.delivery == Delivery::Local
+        && matches!(options.source, TakeSource::Rack | TakeSource::Locker);
     let from_rack = offered && weapon.m_State == WeaponState::E_WS_WEAPON_RACK;
+    let source = match options.source {
+        TakeSource::Rack if !from_rack => TakeSource::Locker,
+        source => source,
+    };
+    let options = TakeOptions { source, ..options };
     match (offered, weapon.m_State) {
         (_, WeaponState::E_WS_DROPPED) | (true, WeaponState::E_WS_WEAPON_RACK) => {}
         (false, _) => return Err(Refusal::NotDropped),
@@ -154,14 +163,7 @@ pub(crate) unsafe fn take(
     let (slot, route) = unsafe { preflight(owner, weapon, hand) }?;
     match route {
         TakeRoute::Table { hand } => {
-            let source = match (options.cause, from_rack) {
-                (Cause::Steal, _) => TakeSource::Character,
-                (Cause::Snatch, _) => TakeSource::Snatch,
-                (Cause::Rack, true) => TakeSource::Rack,
-                (Cause::Rack, false) => TakeSource::Locker,
-                (Cause::Pickup | Cause::Draw, _) => TakeSource::World,
-            };
-            unsafe { take_by_table(owner, hand, weapon, source, options) }?;
+            unsafe { take_by_table(owner, hand, weapon, options) }?;
             Ok(slot)
         }
         TakeRoute::Game(why) => {
@@ -216,7 +218,7 @@ pub(crate) unsafe fn route(weapon: &WeaponBase, hand: Option<Hand>) -> Result<Ta
 }
 
 /// Take `weapon`, lying in the world or offered on its rack, into `hand` through the loadout table,
-/// from `source`: the weapon becomes the player's without the game's equip, the carry set keeps it,
+/// from `options`' source: the weapon becomes the player's without the game's equip, the carry set keeps it,
 /// the table takes it into the hand, and the reconcile wields it there when the hand is the primary
 /// and arms it otherwise. The weapon in the other hand stays there, and one in the slot it would
 /// take stays where the table has it.
@@ -228,9 +230,11 @@ pub(crate) unsafe fn take_by_table(
     owner: &mut Character,
     hand: Hand,
     weapon: &mut WeaponBase,
-    source: TakeSource,
     options: TakeOptions,
 ) -> Result<(), Refusal> {
+    let TakeOptions {
+        source, delivery, ..
+    } = options;
     let address = weapon as *mut WeaponBase as usize;
     let weapon_type =
         unsafe { inventory_engine::weapon_type(weapon) }.ok_or(Refusal::UnknownSlot)?;
@@ -250,8 +254,8 @@ pub(crate) unsafe fn take_by_table(
     let object =
         unsafe { carry::carry_loose(owner, strong, socket) }.map_err(|_| Refusal::NotTaken)?;
     let other = live::held_kind(hand.other());
-    let taken =
-        unsafe { inventory::held_of(object) }.is_some_and(|held| live::take(hand, held, source));
+    let taken = unsafe { inventory::held_of(object) }
+        .is_some_and(|held| live::take(hand, held, source, delivery));
     if !taken {
         // Back into the world where it is, rather than kept on the body unseen by the table.
         if let Some(strong) = carry::release(object) {
@@ -269,6 +273,7 @@ pub(crate) unsafe fn take_by_table(
         hand = hand.label(),
         slot = slot_label(weapon_type.slot()),
         source = source.label(),
+        delivery = delivery.label(),
         other = %other.map_or_else(|| "nothing".to_owned(), |kind| kind.to_string()),
         "hold: took the weapon into the {} hand through the table; the {} hand keeps what it holds",
         hand.label(),
@@ -312,7 +317,11 @@ unsafe fn take_by_game(
         );
     }
     let from = unsafe { gun_pose(weapon) };
-    hold::begin(hand, options.cause, Some(address));
+    hold::begin(
+        hand,
+        live::Expect::Take(options.source, options.delivery),
+        Some(address),
+    );
     let activator = character_object(owner);
     if from_rack {
         unsafe { weapon.PickupStart(activator) };
@@ -333,7 +342,8 @@ unsafe fn take_by_game(
         target: "controllers",
         hand = hand.label(),
         slot = slot_label(slot),
-        cause = options.cause.label(),
+        source = options.source.label(),
+        delivery = options.delivery.label(),
         "hold: picked the weapon up into the {} hand through the game's pickup",
         hand.label()
     );

@@ -45,12 +45,12 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     frame::{Hand, Pose},
-    loadout::slot_label,
+    loadout::{Delivery, TakeSource, live, slot_label},
     weapons::{
         dual_wield,
         engine::{self, character_object, slot_of, takeable_gun_slot, weapon_at},
         hold::{
-            self, Cause, act,
+            self, act,
             pickup::{self, Refusal, TakeOptions},
             refs::Strong,
             steal,
@@ -201,7 +201,11 @@ pub(crate) unsafe fn take(
     let from = unsafe { engine::gun_pose(weapon) };
     // The copy is a give, which the table takes into the hand left expecting it
     // ([`crate::controllers::weapons::inventory::gives`]); the slot's weapon keeps its place.
-    hold::begin(hand, Cause::Rack, None);
+    hold::begin(
+        hand,
+        live::Expect::Take(TakeSource::Rack, Delivery::Local),
+        None,
+    );
     unsafe { weapon.PickupStart(character_object(owner)) };
     unsafe { weapon.SetVisible(false, false, false) };
     *COPY.lock() = Some(Copy {

@@ -21,12 +21,13 @@ use crate::controllers::{
     frame::{Hand, Pose},
     grab::Candidate,
     hands::{ActiveHands, CockpitHand},
+    loadout::{Delivery, TakeSource},
     physical_hands::grab_view,
     weapons::{
         config::HoldConfig,
         docks, engine,
         hold::{
-            self, Cause, SNAP_S, STEAL_RADIUS_M, TAKE_RADIUS_M,
+            self, SNAP_S, STEAL_RADIUS_M, TAKE_RADIUS_M,
             pickup::TakeOptions,
             rack::{self, RackRefusal},
             steal::{self, StealRefusal},
@@ -219,10 +220,11 @@ pub(crate) unsafe fn finish_grab(hand: Hand, inputs: &TakeInputs) -> bool {
     let result = world::complete_offer(target, |target| {
         let options = TakeOptions {
             slide_s: SNAP_S,
-            cause: match target.kind {
-                TargetKind::Held { .. } => Cause::Steal,
-                TargetKind::Rack { .. } | TargetKind::RackMember { .. } => Cause::Rack,
+            source: match target.kind {
+                TargetKind::Held { .. } => TakeSource::Character,
+                TargetKind::Rack { .. } | TargetKind::RackMember { .. } => TakeSource::Rack,
             },
+            delivery: Delivery::Local,
         };
         match target.kind {
             TargetKind::Held { .. } => {

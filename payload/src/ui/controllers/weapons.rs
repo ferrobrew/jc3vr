@@ -284,9 +284,8 @@ fn hold_readout(ui: &mut Ui, h: &HoldStatus, d: &DockStatus) {
         h.holder.map_or("no hand", Hand::label),
         yes_no(h.owned),
         h.pending
-            .map_or("nothing".to_owned(), |(hand, cause)| format!(
-                "{} for the {} hand",
-                cause.label(),
+            .map_or("nothing".to_owned(), |(hand, expect)| format!(
+                "{expect} for the {} hand",
                 hand.label()
             )),
         h.handovers,

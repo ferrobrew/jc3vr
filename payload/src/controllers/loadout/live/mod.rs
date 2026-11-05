@@ -58,7 +58,8 @@ use crate::controllers::{
         socket::{BodyLayout, Socket},
         table::{Loadout, LoadoutSnapshot, Place},
         transition::{
-            Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, Take, TakeSource,
+            Delivery, Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, Take,
+            TakeSource,
         },
     },
     weapons::grenade::safe::reset as retire_safe_items,
@@ -227,7 +228,8 @@ pub(crate) fn given(held: Held, source: GiveSource) -> Option<(Place, Option<Han
                 source: TakeSource::RackCopy,
             }));
             if live.hand_holding(held.object) == Some(hand) {
-                live.origins[hand.index()] = Some(Expect::Take(TakeSource::RackCopy));
+                live.origins[hand.index()] =
+                    Some(Expect::Take(TakeSource::RackCopy, Delivery::Local));
             }
         }
         None => {
@@ -315,11 +317,11 @@ pub(crate) fn arrive(hand: Hand, held: Held) -> bool {
     live.hand_holding(held.object) == Some(hand)
 }
 
-/// `hand` took `held` from `source` (off the ground, a rack, a locker, or a character's hands), the
-/// weapon kept alive by the carry set: the table takes it into the hand at once, as a weapon of its
-/// own, or as the same item for one it has lying in the world. Returns whether the table holds it
-/// there.
-pub(crate) fn take(hand: Hand, held: Held, source: TakeSource) -> bool {
+/// `hand` took `held` from `source` (off the ground, a rack, a locker, or a character's hands),
+/// delivered as `delivery` says, the weapon kept alive by the carry set: the table takes it into
+/// the hand at once, as a weapon of its own, or as the same item for one it has lying in the world.
+/// Returns whether the table holds it there.
+pub(crate) fn take(hand: Hand, held: Held, source: TakeSource, delivery: Delivery) -> bool {
     let mut live = LIVE.lock();
     if !live.started {
         return false;
@@ -327,7 +329,7 @@ pub(crate) fn take(hand: Hand, held: Held, source: TakeSource) -> bool {
     if let Some(event) = hands::arrival(&live.table, hand, held, source) {
         live.fold(event);
         if live.hand_holding(held.object) == Some(hand) {
-            live.origins[hand.index()] = Some(Expect::Take(source));
+            live.origins[hand.index()] = Some(Expect::Take(source, delivery));
         }
     }
     live.publish_places();
@@ -882,7 +884,7 @@ impl Live {
             self.pending = None;
         }
         let source = match expect {
-            Some(Expect::Take(source)) => source,
+            Some(Expect::Take(source, _)) => source,
             Some(Expect::Draw) | None => TakeSource::Give,
         };
         let event = hands::arrival(&self.table, hand, held, source)?;

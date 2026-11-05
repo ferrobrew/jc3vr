@@ -22,7 +22,6 @@ use crate::controllers::{
         dual_wield::single::{self, magazine},
         engine::{character_object, slot_of},
         hold::{
-            Cause,
             pickup::{self, Refusal, TakeOptions},
             rack::{RackRefusal, offered_state},
             refs::Strong,
@@ -270,9 +269,8 @@ pub(crate) unsafe fn take(
                     owner,
                     hand,
                     weapon,
-                    TakeSource::Rack,
                     TakeOptions {
-                        cause: Cause::Rack,
+                        source: TakeSource::Rack,
                         ..options
                     },
                 )
