@@ -25,6 +25,7 @@
 
 use std::time::{Duration, Instant};
 
+use body_rig::geometry::cast_segment;
 use glam::Vec3;
 
 use crate::controllers::aim::{
@@ -83,8 +84,8 @@ impl HeadProbe {
         for side in [0.0, 1.0, -1.0] {
             let offset = right * (side * FAN_HALF_WIDTH_M);
             let (from, to, anchor) = (start + offset, head + offset, anchor + offset);
-            let hit = segment(from, to, &mut cast)
-                .filter(|_| from == anchor || segment(anchor, to, &mut cast).is_some());
+            let hit = cast_segment(from, to, &mut cast)
+                .filter(|_| from == anchor || cast_segment(anchor, to, &mut cast).is_some());
             if let Some(point) = hit {
                 let depth = (to - point).length();
                 deepest = Some(deepest.map_or(depth, |d| d.max(depth)));
@@ -185,21 +186,6 @@ pub unsafe fn scene_cast(
 /// How far to either side of the eye centre the outer rays of the fan run, metres: about the
 /// head's half-width.
 pub const FAN_HALF_WIDTH_M: f32 = 0.08;
-
-/// The shortest segment worth casting, metres.
-const MIN_SEGMENT_M: f32 = 1e-3;
-
-fn segment(
-    from: Vec3,
-    to: Vec3,
-    cast: &mut impl FnMut(Vec3, Vec3) -> Option<Vec3>,
-) -> Option<Vec3> {
-    if (to - from).length() < MIN_SEGMENT_M {
-        None
-    } else {
-        cast(from, to)
-    }
-}
 
 #[cfg(test)]
 mod tests {

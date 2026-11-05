@@ -12,6 +12,7 @@
 
 use std::num::NonZeroUsize;
 
+use body_rig::geometry::cast_segment;
 use glam::Vec3;
 
 /// What a cast hit.
@@ -75,7 +76,7 @@ impl PointProbe {
         cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
     ) -> PointContact {
         let from = self.last_clear.unwrap_or(anchor);
-        let Some(hit) = segment(from, point, cast) else {
+        let Some(hit) = cast_segment(from, point, cast) else {
             self.last_clear = Some(point);
             return PointContact::Clear;
         };
@@ -83,7 +84,7 @@ impl PointProbe {
             self.last_clear = Some(point);
             return PointContact::Clear;
         }
-        if from != anchor && segment(anchor, point, cast).is_none() {
+        if from != anchor && cast_segment(anchor, point, cast).is_none() {
             self.last_clear = Some(point);
             return PointContact::Clear;
         }
@@ -132,21 +133,6 @@ impl HandContact {
         self.press.map_or(Vec3::ZERO, |(hit, depth)| {
             hit.normal.normalize_or_zero() * depth
         })
-    }
-}
-
-/// The shortest segment worth casting, metres.
-const MIN_SEGMENT_M: f32 = 1e-3;
-
-fn segment(
-    from: Vec3,
-    to: Vec3,
-    cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
-) -> Option<SurfaceHit> {
-    if (to - from).length() < MIN_SEGMENT_M {
-        None
-    } else {
-        cast(from, to)
     }
 }
 
