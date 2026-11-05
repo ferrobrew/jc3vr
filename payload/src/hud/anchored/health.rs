@@ -3,6 +3,8 @@
 //! the full-screen vignette, which the floating HUD suppresses), so the bar is the player's only
 //! health display in VR.
 
+use crate::hud::palette::{ACCENT, ALERT, BACKING, FRAME, Rgba8, TEXT, premultiply, with_alpha};
+
 /// The bar texture's size, texels. Small: the bar is a few centimetres on the wrist.
 pub(crate) const BAR_TEXELS: (u32, u32) = (320, 32);
 
@@ -91,7 +93,7 @@ pub(crate) fn paint(width: u32, height: u32, key: BarKey) -> Vec<u8> {
             let colour = if border {
                 FRAME
             } else if inside && x - inset < key.fill {
-                if key.low { LOW } else { FILL }
+                if key.low { ALERT } else { TEXT }
             } else if inside && x - inset < key.trail {
                 TRAIL
             } else {
@@ -108,17 +110,8 @@ const BORDER: u32 = 2;
 /// The gap between the frame and the bar, texels.
 const PAD: u32 = 2;
 
-/// Straight RGBA colours, premultiplied when painted.
-const FRAME: [u8; 4] = [235, 235, 235, 220];
-const BACKING: [u8; 4] = [10, 12, 15, 190];
-const FILL: [u8; 4] = [240, 240, 240, 255];
-const LOW: [u8; 4] = [225, 45, 35, 255];
-const TRAIL: [u8; 4] = [200, 40, 30, 200];
-
-fn premultiply([r, g, b, a]: [u8; 4]) -> [u8; 4] {
-    let scale = |c: u8| ((u32::from(c) * u32::from(a) + 127) / 255) as u8;
-    [scale(r), scale(g), scale(b), a]
-}
+/// The trail: the accent red, translucent.
+const TRAIL: Rgba8 = with_alpha(ACCENT, 200);
 
 #[cfg(test)]
 mod tests {
@@ -174,11 +167,11 @@ mod tests {
         assert_eq!(texels.len(), (w * h * 4) as usize);
         let mid = h / 2;
         assert_eq!(texel(&texels, w, 0, mid), premultiply(FRAME));
-        assert_eq!(texel(&texels, w, 4 + 10, mid), premultiply(FILL));
+        assert_eq!(texel(&texels, w, 4 + 10, mid), premultiply(TEXT));
         assert_eq!(texel(&texels, w, 4 + 50, mid), premultiply(TRAIL));
         assert_eq!(texel(&texels, w, 4 + 70, mid), premultiply(BACKING));
         let low = paint(w, h, BarKey { low: true, ..key });
-        assert_eq!(texel(&low, w, 4 + 10, mid), premultiply(LOW));
+        assert_eq!(texel(&low, w, 4 + 10, mid), premultiply(ALERT));
     }
 
     /// Premultiplied texels never carry more colour than coverage.

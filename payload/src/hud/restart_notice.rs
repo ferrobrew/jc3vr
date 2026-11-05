@@ -9,7 +9,7 @@
 //! nothing is created until the notice first shows.
 
 use anyhow::Context as _;
-use egui::{Color32, FontId, Pos2, Rect, Vec2, text::LayoutJob};
+use egui::{FontId, Pos2, Rect, Vec2, text::LayoutJob};
 use glam::{Vec3, Vec4};
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use parking_lot::Mutex;
@@ -17,7 +17,11 @@ use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
 use crate::{
     controllers::summary::glance::PanelPose,
-    hud::{quad::HudQuad, target::HudTarget},
+    hud::{
+        palette::{PANEL_ACCENT, PANEL_BACKGROUND, PANEL_DIM, PANEL_TEXT},
+        quad::HudQuad,
+        target::HudTarget,
+    },
     vr::input::restart::{self, RestartReason},
 };
 
@@ -138,11 +142,11 @@ impl Gpu {
         let output = self.egui.run_ui(input, |ui| {
             let painter = ui.painter();
             let panel = Rect::from_min_size(Pos2::ZERO, size);
-            painter.rect_filled(panel, MARGIN_PX, BACKGROUND);
+            painter.rect_filled(panel, MARGIN_PX, PANEL_BACKGROUND);
             painter.rect_filled(
                 Rect::from_min_size(Pos2::ZERO, Vec2::new(MARGIN_PX * 0.5, size.y)),
                 0.0,
-                ACCENT,
+                PANEL_ACCENT,
             );
             let width = size.x - 2.0 * MARGIN_PX;
             let mut job = LayoutJob::default();
@@ -150,16 +154,16 @@ impl Gpu {
             job.append(
                 headline,
                 0.0,
-                egui::TextFormat::simple(FontId::proportional(HEADLINE_PX), TEXT),
+                egui::TextFormat::simple(FontId::proportional(HEADLINE_PX), PANEL_TEXT),
             );
             job.append(
                 &format!("\n{detail}"),
                 0.0,
-                egui::TextFormat::simple(FontId::proportional(DETAIL_PX), DIM),
+                egui::TextFormat::simple(FontId::proportional(DETAIL_PX), PANEL_DIM),
             );
             let galley = painter.layout_job(job);
             let y = ((size.y - galley.size().y) * 0.5).max(MARGIN_PX * 0.5);
-            painter.galley(Pos2::new(MARGIN_PX, y), galley, TEXT);
+            painter.galley(Pos2::new(MARGIN_PX, y), galley, PANEL_TEXT);
         });
         let (output, _, _) = egui_directx11::split_output(output);
         // SAFETY: the target's view is live, and the caller holds the engine context mutex.
@@ -183,10 +187,3 @@ const OFFSET_M: Vec3 = Vec3::new(0.0, -0.35, -1.4);
 const MARGIN_PX: f32 = 28.0;
 const HEADLINE_PX: f32 = 44.0;
 const DETAIL_PX: f32 = 30.0;
-
-/// The summary panel's palette: white text, grey detail, the accent red, and a dark translucent
-/// backing.
-const TEXT: Color32 = Color32::WHITE;
-const DIM: Color32 = Color32::from_rgb(200, 200, 200);
-const BACKGROUND: Color32 = Color32::from_rgba_premultiplied(10, 12, 15, 225);
-const ACCENT: Color32 = Color32::from_rgb(200, 40, 30);

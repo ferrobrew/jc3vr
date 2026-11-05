@@ -46,7 +46,11 @@ use crate::{
         },
     },
     hooks,
-    hud::{quad::HudQuad, target::HudTarget},
+    hud::{
+        palette::{PANEL_ACCENT, PANEL_BACKGROUND, PANEL_DIM, PANEL_TEXT},
+        quad::HudQuad,
+        target::HudTarget,
+    },
 };
 
 /// Draw the summary panel for `eye` over `target`. Called from the render-thread post-draw hook
@@ -425,14 +429,14 @@ fn paint_summary(painter: &egui::Painter, summary: &CurrentSummary, grid: &Grid,
             Vec2::new(grid.size.0 as f32, grid.size.1 as f32),
         ),
         m.margin,
-        BACKGROUND,
+        PANEL_BACKGROUND,
     );
     paint_text(
         painter,
         &summary.heading,
         grid.heading,
         m.heading_px * 0.55,
-        TEXT,
+        PANEL_TEXT,
     );
     let Some(selected) = grid.pages.get(page.index) else {
         return;
@@ -448,11 +452,11 @@ fn paint_summary(painter: &egui::Painter, summary: &CurrentSummary, grid: &Grid,
             height: m.group_px,
             ..cell.bounds
         };
-        paint_text(painter, title, header, m.font_px, ACCENT);
+        paint_text(painter, title, header, m.font_px, PANEL_ACCENT);
         for &(index, bounds) in &cell.rows {
             let hint = &summary.cells[cell.kind.index()][index];
             let galley = painter.layout_job(hint_job(hint, bounds.width, m));
-            painter.galley(Pos2::new(bounds.x, bounds.y), galley, TEXT);
+            painter.galley(Pos2::new(bounds.x, bounds.y), galley, PANEL_TEXT);
         }
     }
     let footer = if summary.cells.iter().all(Vec::is_empty) {
@@ -467,7 +471,7 @@ fn paint_summary(painter: &egui::Painter, summary: &CurrentSummary, grid: &Grid,
     } else {
         "Page 1/1 | Input/bindings: full reference".to_owned()
     };
-    paint_text(painter, &footer, grid.footer, m.font_px, DIM);
+    paint_text(painter, &footer, grid.footer, m.font_px, PANEL_DIM);
 }
 
 fn hint_job(hint: &Hint, width: f32, m: Metrics) -> LayoutJob {
@@ -500,7 +504,7 @@ fn hint_job(hint: &Hint, width: f32, m: Metrics) -> LayoutJob {
             0.0,
             TextFormat {
                 font_id: font.clone(),
-                color: DIM,
+                color: PANEL_DIM,
                 ..Default::default()
             },
         );
@@ -510,7 +514,11 @@ fn hint_job(hint: &Hint, width: f32, m: Metrics) -> LayoutJob {
         0.0,
         TextFormat {
             font_id: font,
-            color: if hint.essential { ESSENTIAL } else { TEXT },
+            color: if hint.essential {
+                ESSENTIAL
+            } else {
+                PANEL_TEXT
+            },
             ..Default::default()
         },
     );
@@ -583,14 +591,8 @@ const REGULAR: &str = "libre-franklin";
 const SEMIBOLD: &str = "libre-franklin-semibold";
 const HEADING_FAMILY: &str = "summary-heading";
 
-/// The game's HUD palette: white text, the unavailable-text grey for prefixes, and a dark
-/// translucent backing.
-const TEXT: Color32 = Color32::WHITE;
-const DIM: Color32 = Color32::from_rgb(160, 160, 160);
 /// A fixed essential's text, a step below a contextual row's, so the rows usable now stand out.
 const ESSENTIAL: Color32 = Color32::from_rgb(205, 205, 205);
-const BACKGROUND: Color32 = Color32::from_rgba_premultiplied(10, 12, 15, 215);
-const ACCENT: Color32 = Color32::from_rgb(200, 40, 30);
 /// The source control's compact text label.
 const SOURCE: Color32 = Color32::from_rgb(235, 200, 120);
 

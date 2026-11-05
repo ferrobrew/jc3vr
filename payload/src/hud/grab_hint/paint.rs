@@ -2,7 +2,10 @@
 //! and for a swap the weapon going in, an arrow, and the weapon coming out, dimmed, as the game's
 //! own pickup panel pairs a pickup with the weapon it replaces.
 
-use crate::hud::game_icons::Image;
+use crate::hud::{
+    game_icons::Image,
+    palette::{self, premultiply_linear as premultiply},
+};
 
 /// The cell an icon is fitted into, texels: the size of the game's weapon icons.
 pub(crate) const ICON_TEXELS: (u32, u32) = (232, 80);
@@ -52,10 +55,10 @@ const OUTGOING_OPACITY: f32 = 0.5;
 /// The frame's width, texels.
 const BORDER: u32 = 2;
 
-/// Straight RGBA colours, premultiplied when painted; the hand readouts' palette.
-const FRAME: [f32; 4] = [0.92, 0.92, 0.92, 0.86];
-const BACKING: [f32; 4] = [0.04, 0.05, 0.06, 0.75];
-const ARROW: [f32; 4] = [0.94, 0.94, 0.94, 1.0];
+/// Straight RGBA colours in 0 to 1, premultiplied when painted.
+const FRAME: [f32; 4] = palette::linear(palette::FRAME);
+const BACKING: [f32; 4] = palette::linear(palette::BACKING);
+const ARROW: [f32; 4] = palette::linear(palette::TEXT);
 
 /// The arrow's shape, texels: the shaft's half thickness, the head's length and half height, and
 /// the margin to the arrow cell's edges.
@@ -198,10 +201,6 @@ fn sample(image: &Image, u: f32, v: f32) -> [f32; 4] {
         lerp(at(x0, y1), at(x1, y1), fx),
         fy,
     )
-}
-
-fn premultiply([r, g, b, a]: [f32; 4]) -> [f32; 4] {
-    [r * a, g * a, b * a, a]
 }
 
 #[cfg(test)]

@@ -13,6 +13,8 @@
 use jc3gi::{character::character::Character, equipment::weapon::WeaponBase};
 use parking_lot::Mutex;
 
+use crate::hud::palette::{ALERT, BACKING, FRAME, TEXT, premultiply};
+
 /// The counter texture's size, texels.
 pub(crate) const COUNT_TEXELS: (u32, u32) = (192, 40);
 
@@ -97,7 +99,7 @@ impl CountKey {
 /// light border and the text centred on it, in white, or in red for an empty or absent magazine.
 pub(crate) fn paint(width: u32, height: u32, key: CountKey) -> Vec<u8> {
     let text = key.text();
-    let colour = if key.magazine == 0 { EMPTY } else { TEXT };
+    let colour = if key.magazine == 0 { ALERT } else { TEXT };
     let glyphs = text.chars().filter_map(glyph).collect::<Vec<_>>();
     let advance = (GLYPH_W + 1) * SCALE;
     let text_w = (glyphs.len() as u32 * advance).saturating_sub(SCALE);
@@ -147,12 +149,6 @@ const SCALE: u32 = 5;
 /// The frame's width, texels.
 const BORDER: u32 = 2;
 
-/// Straight RGBA colours, premultiplied when painted; the health bar's palette.
-const FRAME: [u8; 4] = [235, 235, 235, 220];
-const BACKING: [u8; 4] = [10, 12, 15, 190];
-const TEXT: [u8; 4] = [240, 240, 240, 255];
-const EMPTY: [u8; 4] = [225, 45, 35, 255];
-
 /// The rows of a character's 3-by-5 glyph, top first, each row's bits left to right.
 fn glyph(c: char) -> Option<[u8; GLYPH_H as usize]> {
     Some(match c {
@@ -169,11 +165,6 @@ fn glyph(c: char) -> Option<[u8; GLYPH_H as usize]> {
         '/' => [0b001, 0b001, 0b010, 0b100, 0b100],
         _ => return None,
     })
-}
-
-fn premultiply([r, g, b, a]: [u8; 4]) -> [u8; 4] {
-    let scale = |c: u8| ((u32::from(c) * u32::from(a) + 127) / 255) as u8;
-    [scale(r), scale(g), scale(b), a]
 }
 
 #[cfg(test)]
@@ -239,7 +230,7 @@ mod tests {
             texels.iter().filter(|t| **t == premultiply(colour)).count()
         };
         assert!(lit(&full, TEXT) > 0);
-        assert_eq!(lit(&full, EMPTY), 0);
+        assert_eq!(lit(&full, ALERT), 0);
         let empty = paint(
             w,
             h,
@@ -248,7 +239,7 @@ mod tests {
                 reserve: 450,
             },
         );
-        assert!(lit(&empty, EMPTY) > 0);
+        assert!(lit(&empty, ALERT) > 0);
         assert_eq!(lit(&empty, TEXT), 0);
     }
 }
