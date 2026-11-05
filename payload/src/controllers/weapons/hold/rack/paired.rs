@@ -20,10 +20,10 @@ use crate::controllers::{
     loadout::{live, take::TakeRoute},
     weapons::{
         dual_wield::single::{self, magazine},
-        engine::{character_object, slot_of},
+        engine::{character_object, place_guns, slot_of},
         hold::{
             pickup::{self, Refusal},
-            rack::offered_state,
+            rack::{copy, offered_state},
             refs::Strong,
             source::SourceRefusal,
             world::{TargetKind, WorldTarget},
@@ -151,6 +151,10 @@ pub(crate) unsafe fn targets(
 
 /// Split the native rack's allocation, not a fabricated actor's ammunition snapshot.
 pub(crate) fn copy_request(member: Member, ammo: i32) -> CopyRequest {
+    // A long gun's copy is one weapon, and takes the whole allocation.
+    if copy::owns(member) {
+        return CopyRequest { member, ammo };
+    }
     if finite::owns(member) {
         return CopyRequest { member, ammo: 0 };
     }
@@ -172,6 +176,9 @@ pub(crate) fn retains_single(object: usize) -> bool {
 
 /// Whether an arrival still belongs to a waiting member of the same source generation.
 pub(crate) fn waiting(member: Member) -> bool {
+    if copy::owns(member) {
+        return copy::waiting(member);
+    }
     if finite::owns(member) {
         return finite::waiting(member);
     }
@@ -186,6 +193,10 @@ pub(crate) fn waiting(member: Member) -> bool {
 ///
 /// `actor` owns a live weapon on the game thread before the world update.
 pub(crate) unsafe fn staged(member: Member, actor: Strong) {
+    if copy::owns(member) {
+        unsafe { copy::staged(member, actor) };
+        return;
+    }
     if finite::owns(member) {
         unsafe { finite::staged(member, actor) };
         return;
@@ -217,13 +228,7 @@ pub(crate) unsafe fn staged(member: Member, actor: Strong) {
             member.index as usize,
         )
     } {
-        let matrix = display.m_WorldMatrixT1;
-        for index in 0..2 {
-            if let Some(gun) = unsafe { (*weapon.m_lWeaponData.m_Begin.add(index)).as_mut() } {
-                gun.m_WorldMatrixT0 = matrix;
-                gun.m_WorldMatrixT1 = matrix;
-            }
-        }
+        unsafe { place_guns(weapon, display.m_WorldMatrixT1) };
     }
     source.members[member.index as usize].supply(actor);
     tracing::info!(target: "controllers", source = member.source, generation = member.generation,
@@ -468,7 +473,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     sources: Vec::new(),
 });
 
-fn next_generation() -> Option<u64> {
+pub(crate) fn next_generation() -> Option<u64> {
     let mut state = STATE.lock();
     state.generation = state.generation.checked_add(1)?;
     Some(state.generation)

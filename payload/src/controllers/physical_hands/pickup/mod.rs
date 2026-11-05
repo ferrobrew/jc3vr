@@ -186,7 +186,9 @@ unsafe fn take_weapon(hand: Hand, reach: Reach) -> Result<(), Refusal> {
     match unsafe { source::take(hand, &source) } {
         Ok(_) => Ok(()),
         Err(SourceRefusal::Take(refusal)) => Err(refusal),
-        Err(SourceRefusal::Gone | SourceRefusal::CopyPending) => Err(Refusal::NotDropped),
+        Err(SourceRefusal::Gone | SourceRefusal::CopyPending | SourceRefusal::CopiesClosed) => {
+            Err(Refusal::NotDropped)
+        }
     }
 }
 

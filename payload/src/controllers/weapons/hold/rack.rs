@@ -21,35 +21,30 @@
 //!
 //! - a weapon the rack hands over goes straight into the grabbing hand, as a weapon off the ground
 //!   does, after the call that starts the game's own pickup of it ([`WeaponBase::PickupStart`]);
-//! - a rack with unlimited stock hands out a copy instead: starting the pickup asks the inventory
-//!   for a new weapon of the same kind, which spawns a few frames later and is a give the table
-//!   takes into the hand left expecting it, without the game's equip, so the other hand keeps what
-//!   it holds. The hand is left pending for it, and the rack's own weapon is hidden from the grab until the copy is
-//!   in the hand; the copy then slides into the hand from where the rack's weapon was, so it is
-//!   seen to leave the rack, and the rack's weapon fades back in a moment later, restocked.
+//! - a rack with unlimited stock hands out a copy instead ([`copy`]): the take asks the rack for
+//!   one, which spawns a few frames later where the rack's weapon hangs, and then goes into the
+//!   hand as the rack's own weapon would, while the rack's weapon is hidden until it has left.
 
+pub(crate) mod copy;
 pub(crate) mod entries;
 pub(crate) mod offer;
 pub(crate) mod paired;
 pub(crate) mod remote;
 
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use glam::Vec3;
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{WeaponBase, WeaponState},
 };
-use parking_lot::Mutex;
 
 use crate::controllers::{
-    frame::{Hand, Pose},
-    loadout::{Delivery, TakeSource, live, slot_label},
+    frame::Hand,
+    loadout::{TakeSource, slot_label},
     weapons::{
-        dual_wield,
         engine::{self, character_object, slot_of, takeable_gun_slot, weapon_at},
         hold::{
-            self, act,
             pickup::{self, Refusal, TakeOptions},
             refs::Strong,
             source::SourceRefusal,
@@ -142,12 +137,10 @@ pub(crate) unsafe fn take(
     if !offered_state(weapon) {
         return Err(SourceRefusal::Gone);
     }
-    // A copy is asked of a rack with unlimited stock; anything else hands its own weapon over.
+    // A copy is asked of a rack or locker with unlimited stock, whose pickup gives one whatever its
+    // state; anything else hands its own weapon over.
     let racked = weapon.m_State == WeaponState::E_WS_WEAPON_RACK;
-    let restocks = weapon.m_InfinitePickup && racked;
-    if restocks && COPY.lock().is_some() {
-        return Err(SourceRefusal::CopyPending);
-    }
+    let restocks = weapon.m_InfinitePickup;
     let admitted =
         unsafe { pickup::preflight(owner, weapon, hand, restocks) }.map_err(SourceRefusal::Take)?;
     if !restocks {
@@ -171,7 +164,7 @@ pub(crate) unsafe fn take(
         };
         let slot = unsafe { pickup::deliver(owner, hand, weapon, admitted, options) }
             .map_err(SourceRefusal::Take)?;
-        RACK_TAKES.lock().takes += 1;
+        RACK_TAKES.fetch_add(1, Ordering::Relaxed);
         tracing::info!(
             target: "controllers",
             hand = hand.label(),
@@ -181,149 +174,31 @@ pub(crate) unsafe fn take(
         );
         return Ok(slot);
     }
-    let slot = admitted.0;
-    let from = unsafe { engine::gun_pose(weapon) };
-    let display = unsafe { inventory_engine::strong_to(weapon) }.ok_or(SourceRefusal::Gone)?;
-    // The copy is a give, which the table takes into the hand left expecting it
-    // ([`crate::controllers::weapons::inventory::gives`]); the slot's weapon keeps its place.
-    hold::begin(
-        hand,
-        live::Expect::Take(TakeSource::Rack, Delivery::Local),
-        None,
-    );
-    unsafe { weapon.PickupStart(character_object(owner)) };
-    unsafe { weapon.SetVisible(false, false, false) };
-    *COPY.lock() = Some(Copy {
-        display,
-        hand,
-        from,
-        slide_s: options.slide_s,
-        asked_at: Instant::now(),
-        arrived_at: None,
-    });
-    RACK_TAKES.lock().copies += 1;
-    tracing::info!(
-        target: "controllers",
-        hand = hand.label(),
-        slot = slot_label(slot),
-        "hold: asked a rack for a copy for the {} hand",
-        hand.label()
-    );
-    Ok(slot)
+    unsafe { copy::request(owner, hand, weapon) }?;
+    Ok(admitted.0)
 }
 
-/// A weapon the game wielded came into `hand` on a rack's grab: when a copy was asked for that
-/// hand, slide it in from where the rack's weapon was. A copy of a pistol is one pistol while
-/// pistols are single.
-pub(crate) fn arrived(weapon: usize, hand: Hand) {
-    let mut copy = COPY.lock();
-    let Some(pending) = copy
-        .as_mut()
-        .filter(|c| c.hand == hand && c.arrived_at.is_none())
-    else {
-        return;
-    };
-    pending.arrived_at = Some(Instant::now());
-    // SAFETY: the serialized input phase retains the current slot source for this call.
-    if let Some(mut source) = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
-        .and_then(|owner| inventory_engine::slot_handle(&owner.m_Inventory, weapon))
-    {
-        unsafe { dual_wield::single::designate_if_active(source.as_mut(), "a rack's copy") };
-    }
-    if let Some(from) = pending.from {
-        act::slide_in(weapon, hand, from, pending.slide_s);
-    }
-    tracing::info!(
-        target: "controllers",
-        hand = hand.label(),
-        "hold: the rack's copy is in the {} hand",
-        hand.label()
-    );
-}
-
-/// Show the rack's weapon again once its copy has been in the hand a moment, or when the copy
-/// never came. Called every input tick.
+/// Retire the pairs no longer offered, and show a rack's weapon again once its copy has left.
+/// Called every input tick.
 pub(crate) fn tick() {
     paired::tick();
-    let mut copy = COPY.lock();
-    let Some(pending) = copy.as_ref() else {
-        return;
-    };
-    let due = match pending.arrived_at {
-        Some(at) => at.elapsed() >= RESTOCK_AFTER,
-        None => pending.asked_at.elapsed() >= COPY_WAIT,
-    };
-    if !due {
-        return;
-    }
-    let pending = copy.take();
-    drop(copy);
-    if let Some(pending) = pending {
-        if pending.arrived_at.is_none() {
-            tracing::info!(target: "controllers", "hold: the rack's copy never came");
-            hold::refused("take off a rack: the rack's copy never came");
-        }
-        pending.restore();
-    }
+    copy::tick();
 }
 
-/// Show the rack's weapon again, forget the copy, and forget the weapons noted for the snatch.
-/// Called when the weapon handling stands down.
+/// Show the racks' weapons again, forget the copies and the pairs, and forget the weapons noted for
+/// the snatch. Called when the weapon handling stands down.
 pub(crate) fn stand_down() {
     paired::clear();
+    copy::clear();
     remote::clear();
-    let pending = COPY.lock().take();
-    if let Some(pending) = pending {
-        pending.restore();
-    }
 }
 
 /// The takes off racks since the payload loaded: weapons handed over, and copies asked for.
 pub(crate) fn counts() -> (u64, u64) {
-    let counts = RACK_TAKES.lock();
-    (counts.takes, counts.copies)
+    (RACK_TAKES.load(Ordering::Relaxed), copy::count())
 }
 
-/// How long a rack's weapon stays hidden after its copy is in the hand.
-const RESTOCK_AFTER: Duration = Duration::from_millis(800);
-/// How long a copy is waited for before the rack's weapon is shown again.
-const COPY_WAIT: Duration = Duration::from_secs(3);
-
-/// A copy a rack with unlimited stock is spawning for a hand.
-struct Copy {
-    /// The rack's own weapon, hidden until the copy is in the hand, held alive meanwhile.
-    display: Strong,
-    hand: Hand,
-    /// Where the rack's weapon was, for the copy's slide.
-    from: Option<Pose>,
-    slide_s: f32,
-    asked_at: Instant,
-    arrived_at: Option<Instant>,
-}
-
-impl Copy {
-    /// Fade the rack's weapon back in, when it is still on its rack.
-    fn restore(self) {
-        // SAFETY: the strong reference keeps the weapon alive; called on the game thread before
-        // the world update.
-        let weapon = unsafe { &mut *inventory_engine::weapon_of(&self.display) };
-        if weapon.m_State == WeaponState::E_WS_WEAPON_RACK {
-            unsafe { weapon.SetVisible(true, true, false) };
-        }
-        drop(self.display);
-    }
-}
-
-struct Counts {
-    takes: u64,
-    copies: u64,
-}
-
-static COPY: Mutex<Option<Copy>> = Mutex::new(None);
-static RACK_TAKES: Mutex<Counts> = Mutex::new(Counts {
-    takes: 0,
-    copies: 0,
-});
+static RACK_TAKES: AtomicU64 = AtomicU64::new(0);
 
 /// Walk the weapons `owner`'s valid interaction entries offer that sit on a rack, with a strong
 /// reference holding each alive, until `visit` returns true.

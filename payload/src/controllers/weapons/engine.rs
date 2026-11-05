@@ -173,6 +173,38 @@ pub(crate) unsafe fn gun_pose(weapon: &WeaponBase) -> Option<Pose> {
     })
 }
 
+/// The world matrix of `weapon`'s first gun.
+///
+/// # Safety
+///
+/// `weapon` must be live.
+pub(crate) unsafe fn first_gun_matrix(weapon: &WeaponBase) -> Option<Matrix4> {
+    unsafe { gun::guns(weapon) }
+        .next()
+        .flatten()
+        .map(|first| first.m_WorldMatrixT1)
+}
+
+/// Place every gun of `weapon` at `matrix`, for this frame and the last, so that a weapon that has
+/// not been drawn there does not streak in from where it was.
+///
+/// # Safety
+///
+/// `weapon` must be live, on the game thread.
+pub(crate) unsafe fn place_guns(weapon: &mut WeaponBase, matrix: Matrix4) {
+    let list = &weapon.m_lWeaponData;
+    if list.m_Begin.is_null() || list.m_End < list.m_Begin {
+        return;
+    }
+    let count = unsafe { list.m_End.offset_from(list.m_Begin) } as usize;
+    for index in 0..count {
+        if let Some(gun) = unsafe { (*list.m_Begin.add(index)).as_mut() } {
+            gun.m_WorldMatrixT0 = matrix;
+            gun.m_WorldMatrixT1 = matrix;
+        }
+    }
+}
+
 /// The world position of `weapon`'s first gun. Unlike [`gun_pose`], it needs no orientation, so a
 /// gun whose transform does not decompose still has one.
 ///

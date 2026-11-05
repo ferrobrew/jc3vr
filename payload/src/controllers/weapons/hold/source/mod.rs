@@ -108,6 +108,9 @@ pub enum SourceRefusal {
     Gone,
     /// A rack's copy is already on its way to a hand.
     CopyPending,
+    /// A rack's copies and pistol members are closed until the game restarts: an earlier request
+    /// could not be proven retired.
+    CopiesClosed,
     /// The take into the hand refused it.
     Take(Refusal),
 }
@@ -124,6 +127,10 @@ impl fmt::Display for SourceRefusal {
                     "take from a source: a rack's copy is already on its way to a hand"
                 )
             }
+            SourceRefusal::CopiesClosed => write!(
+                f,
+                "take from a source: a rack's copies are closed until the game restarts"
+            ),
             SourceRefusal::Take(refusal) => write!(f, "take from a source: {refusal}"),
         }
     }

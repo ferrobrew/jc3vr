@@ -238,13 +238,6 @@ pub(crate) unsafe fn input_tick(
     WIELDED.store(wielded.unwrap_or(0), Ordering::Relaxed);
     if enabled && let Some(arrival) = arrival {
         took(arrival);
-        if let (
-            Some(live::Expect::Take(TakeSource::Rack | TakeSource::RackCopy, _)),
-            Some(address),
-        ) = (arrival.expect, wielded)
-        {
-            rack::arrived(address, arrival.hand);
-        }
     }
     unsafe { act::tick(dt) };
     wielded.and_then(owned_holder)

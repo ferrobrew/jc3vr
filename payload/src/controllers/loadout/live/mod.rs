@@ -51,15 +51,14 @@ use crate::controllers::{
         binding::{Awaiting, Binding, ObjectAddress},
         event::Event,
         item::{ItemKind, WeaponType},
-        live::expect::{copy_hand, landing},
+        live::expect::landing,
         projection::{StoreProjection, project_store},
         reset::{CacheKind, ResetKind, SlotObject},
         restore::{RestoreAdmission, RestoreRefusal},
         socket::{BodyLayout, Socket},
         table::{Loadout, LoadoutSnapshot, Place},
         transition::{
-            Delivery, Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, Take,
-            TakeSource,
+            Delivery, Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, TakeSource,
         },
     },
     weapons::grenade::safe::reset as retire_safe_items,
@@ -206,43 +205,21 @@ pub(crate) fn mission_holds() -> bool {
     live.started && (live.mission != Hold::Idle || live.challenge != Hold::Idle)
 }
 
-/// The game gave the player `held` from `source`, the weapon in its slot and not equipped: a hand
-/// expecting a rack's copy takes it (the copy a grab of a rack with unlimited stock asked for), and
-/// otherwise the table's give rule places it, an empty hand first (the dominant first), else a
-/// free socket that fits it, else the player's feet. Returns where the table has it, and the hand
-/// that took a rack's copy.
-pub(crate) fn given(held: Held, source: GiveSource) -> Option<(Place, Option<Hand>)> {
+/// The game gave the player `held` from `source`, the weapon in its slot and not equipped: the
+/// table's give rule places it, an empty hand first (the dominant first), else a free socket that
+/// fits it, else the player's feet. Returns where the table has it.
+pub(crate) fn given(held: Held, source: GiveSource) -> Option<Place> {
     let mut live = LIVE.lock();
     if !live.started {
         return None;
     }
-    let free = Hand::BOTH.map(|hand| live.table.held(hand).is_none());
-    let copy = copy_hand(live.pending, held.object, free);
-    match copy {
-        Some(hand) => {
-            live.pending = None;
-            live.fold(Event::Take(Take {
-                hand,
-                object: held.object,
-                kind: ItemKind::Weapon(held.weapon),
-                source: TakeSource::RackCopy,
-            }));
-            if live.hand_holding(held.object) == Some(hand) {
-                live.origins[hand.index()] =
-                    Some(Expect::Take(TakeSource::RackCopy, Delivery::Local));
-            }
-        }
-        None => {
-            live.fold(Event::Given(Give {
-                object: held.object,
-                weapon: held.weapon,
-                source,
-            }));
-        }
-    }
+    live.fold(Event::Given(Give {
+        object: held.object,
+        weapon: held.weapon,
+        source,
+    }));
     live.publish_places();
-    let place = live.place_of(held.object)?;
-    Some((place, copy.filter(|&hand| place == Place::Hand(hand))))
+    live.place_of(held.object)
 }
 
 /// `hand` expects the next weapon the game wields, or `weapon` when it is named, to come into it

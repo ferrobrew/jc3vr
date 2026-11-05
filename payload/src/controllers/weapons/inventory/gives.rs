@@ -15,10 +15,14 @@
 //! that matches a record, does not run the hand-over at once: it keeps the weapon and queues it,
 //! and the next game stage hands it over on the game thread ([`input_tick`]), with the slot's
 //! occupant first taken out of the slot onto the body where the table has it, and the entry's
-//! equip turned off. The weapon is then in its slot, not equipped, and the table places it: a hand
-//! that asked a rack for a copy takes it, and anything else goes by the table's give rule, an empty
-//! hand (the dominant first), else a free socket that fits it, else the player's feet, where it is
-//! dropped. The reconcile then wields, arms, or docks it.
+//! equip turned off. The weapon is then in its slot, not equipped, and the table places it by its
+//! give rule: an empty hand (the dominant first), else a free socket that fits it, else the
+//! player's feet, where it is dropped. The reconcile then wields, arms, or docks it.
+//!
+//! A give made inside a rack-member request (a rack's pistol, or the copy a take asks of a rack
+//! with unlimited stock) is staged instead: initialized through the arrival without its equip,
+//! then taken out of the inventory and handed to the rack, which delivers it
+//! ([`crate::controllers::weapons::hold::rack::paired::staged`]).
 //!
 //! A give the reset owns (one made before the reset began, as a checkpoint's restore is, or during
 //! it) is left to the game and to the reset's completion, as is a give while a mission holds the
@@ -124,6 +128,11 @@ impl MemberClosure {
             }
         }
     }
+}
+
+/// Whether rack copy and member requests are closed until the game process restarts.
+pub(crate) fn members_closed() -> bool {
+    STATE.lock().members_closed.is_some()
 }
 
 /// Whether a native source request still owns the pistol callback, including a canceled request.
@@ -362,16 +371,13 @@ unsafe fn hand_over(owner: &mut Character, arrival: Arrival) {
     let Some(held) = (unsafe { inventory::held_of(object) }) else {
         return;
     };
-    let Some((place, copy)) = live::given(held, source) else {
+    let Some(place) = live::given(held, source) else {
         return;
     };
     if matches!(place, Place::World(_)) {
         unsafe { equip::drop_occupant(owner, slot) };
     }
     unsafe { reconcile::apply(owner) };
-    if let Some(hand) = copy {
-        rack::arrived(object, hand);
-    }
     tracing::info!(
         target: "controllers",
         slot = slot_label(slot),
