@@ -1,7 +1,7 @@
-//! The VR inventory's feature: its switches, and a read-only view of three sources side by side,
-//! each read from its owner's publication: the game's own inventory ([`game`]), the live loadout
-//! table, which places the player's weapons ([`table`]), and what each hand holds ([`hands`]).
-//! Where the game's slots and the table disagree ([`mismatch`]) the rows are marked.
+//! The VR inventory's feature: its switches, its status rows, and a read-only view of three sources
+//! side by side, each read from its owner's publication: the game's own inventory ([`game`]), the
+//! live loadout table, which places the player's weapons ([`table`]), and what each hand holds
+//! ([`hands`]). Where the game's slots and the table disagree ([`mismatch`]) the rows are marked.
 
 mod game;
 mod give;
@@ -22,7 +22,11 @@ use crate::{
         physical_hands::{self, PhysicalHandsStatus},
         weapons::inventory::{self as controller_inventory, InventoryReadout, StatusUnavailable},
     },
-    ui::controllers::{inventory::mismatch::Mismatches, pouch_models::pouch_model_settings},
+    status::inventory::{CARRIED, LAST_LOAD, LOADOUT, PINNED, SEPARATE_PISTOLS, SIDECAR, TRACKED},
+    ui::{
+        controllers::{inventory::mismatch::Mismatches, pouch_models::pouch_model_settings},
+        status_row::headlines,
+    },
 };
 
 /// Everything the inventory view shows, read from the publications before it is drawn.
@@ -47,6 +51,18 @@ impl InventoryView {
 }
 
 pub(super) fn inventory_view(ui: &mut Ui, view: &InventoryView) {
+    headlines(
+        ui,
+        &[
+            &TRACKED,
+            &CARRIED,
+            &SEPARATE_PISTOLS,
+            &SIDECAR,
+            &LAST_LOAD,
+            &PINNED,
+            &LOADOUT,
+        ],
+    );
     let inventory = view.inventory.as_ref().ok().map(Arc::as_ref);
     let game = inventory.and_then(|readout| readout.game.as_ref());
     let table = view.live.snapshot.as_deref();

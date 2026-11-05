@@ -18,16 +18,12 @@ pub(super) fn table_section(ui: &mut Ui, live: &LiveStatus, inventory: Option<&I
         return;
     };
     ui.label(format!(
-        "Dominant hand: {} · primary: {} · {} transitions and {} refusals since the payload loaded",
+        "Dominant hand: {} · primary: {} · {} transitions since the payload loaded",
         table.body.dominant().label(),
         table.primary.map_or("none", Hand::label),
         live.transitions,
-        live.refusals,
     ));
     let game = inventory.and_then(|readout| readout.game.as_ref());
-    if inventory.is_some_and(|readout| readout.status.stashed) {
-        ui.label("The carried weapons are stashed while a mission holds the player's weapons.");
-    }
     Grid::new("inventory_table_items")
         .striped(true)
         .show(ui, |ui| {
