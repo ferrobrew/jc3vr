@@ -32,6 +32,10 @@ pub struct VehiclesConfig {
     pub ripcord: RipcordConfig,
     /// The driver's view moved per vehicle to a standard place behind the wheel.
     pub driving_view: DrivingViewConfig,
+    /// Turn the body to the head's heading when the boost wingsuit takes off from the ground, so the
+    /// suit launches where the player looks
+    /// ([`take_off`](crate::controllers::vehicles::take_off)).
+    pub take_off_to_head: bool,
 }
 
 impl VehiclesConfig {
@@ -46,6 +50,7 @@ impl VehiclesConfig {
             parachute_handles: ParachuteHandlesConfig::new(),
             ripcord: RipcordConfig::new(),
             driving_view: DrivingViewConfig::new(),
+            take_off_to_head: true,
         }
     }
 }

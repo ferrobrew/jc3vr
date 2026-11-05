@@ -204,12 +204,18 @@ pub fn advance_body_yaw(
     }
 
     let following = follow.enabled && on_foot && !swimming;
+    // A take-off from the ground turns the body to the head's heading in place of the torso's.
+    let take_off = *TAKE_OFF_HEADING.lock();
     s.follow.tick(FollowTick {
         follow: following,
         heading: yaw,
         body,
-        torso: follow.torso,
-        deadband: follow.deadband_deg.max(0.0).to_radians(),
+        torso: take_off.or(follow.torso),
+        deadband: if take_off.is_some() {
+            0.0
+        } else {
+            follow.deadband_deg.max(0.0).to_radians()
+        },
     });
 
     // Clamp how far the target may lead the body, re-anchoring it each tick: the body chases at a
@@ -283,6 +289,16 @@ pub fn follow_offset(current: bool) -> f32 {
 pub fn follow_turn(current: bool) -> Quat {
     Quat::from_rotation_y(-follow_offset(current))
 }
+
+/// Set the heading relative to the view that the body follows in place of the torso's while the
+/// boost wingsuit takes off from the ground ([`crate::controllers::vehicles::take_off`]), or clear
+/// it. It acts only while the body follows.
+pub fn set_take_off_heading(heading: Option<f32>) {
+    *TAKE_OFF_HEADING.lock() = heading.filter(|h| h.is_finite());
+}
+
+/// The heading of [`set_take_off_heading`].
+static TAKE_OFF_HEADING: Mutex<Option<f32>> = Mutex::new(None);
 
 /// Whether the body is following the torso, and the body's target heading relative to the view,
 /// for the debug UI.

@@ -26,6 +26,10 @@ In the seated session the brake gestures never armed, so none of the three fligh
 
 While falling or in the suit, a ripcord at the back of the hip on the dominant side opens the parachute: grip it and pull it out, the way a parachute handle is taken ([controllers.md, "Ripcord"](controllers.md)). The pull clicks the canopy action, the one the right lower face (A) drives, before the gestures commit, so a pull cancels a pending suit request as the button does.
 
+## Take-off from the ground
+
+The boost wingsuit's take-off from the ground (the use button held on foot, the rule states `S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND_INTO` and then `..._FROM_GROUND`) launches the suit along the character's facing. In VR the body faces where the grounded rig puts it under the view, not where the head looks, so the suit could leave off to one side of the player's gaze. A take-off is a movement action, so it turns the body (`controllers/vehicles/take_off.rs`): on entering the take-off, the head's heading relative to the view is captured from the cockpit pose, and while the take-off runs the body's follow steers the body to that heading in place of the torso's ([rig.md](../body/rig.md)), so the game's own turn brings the body around during the wind-up, under the view, and the view does not move. The log has `the take-off from the ground turns the body to the head's heading` with the heading and whether the body was following. The turn needs the body to be following, which it does on foot with the follow setting on; if the game stops steering the body during the take-off's wind-up, nothing turns, and the log line's `following` says which. It is on by default (`vehicles.take_off_to_head`, in the debug UI's Vehicles feature). The launch's climb angle is left to the game.
+
 ## Native actions and validation
 
 The converter emits the narrow suit deployment or closure action and the native held airbrake pair. Shared binding integration supplies these contributions alongside the fixed physical-button map; the recognizer does not fabricate raw trigger fire. Engine state and animation permissions still determine whether a native request succeeds.
@@ -36,3 +40,4 @@ Pure tests cover independent shoulder and palm geometry, scale, observation iden
 
 1. Tether two objects, walk off a ledge, and spread the arms: the suit opens, and the log does not say "the left hand has the grapple".
 2. Hold the grapple button while falling: the gestures stand down until it is let go.
+3. With the boost suit, stand at the foot of some stairs, look up them with the body turned away, and hold the use button to take off: the body turns to the gaze during the wind-up without the view moving, and the suit launches where you look. The log's take-off line says `following=true`.

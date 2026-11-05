@@ -472,6 +472,14 @@ fn air_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
             .text("Parachute brake threshold (of a full pull)")
             .fixed_decimals(2),
     );
+    ui.checkbox(
+        &mut v.take_off_to_head,
+        "Wingsuit take-off from the ground along the head's heading",
+    )
+    .on_hover_text(
+        "The boost suit's ground take-off turns the body to where you look during its wind-up, \
+         under the view, so the suit launches where you look.",
+    );
     let r = &mut v.ripcord;
     ui.checkbox(
         &mut r.enabled,

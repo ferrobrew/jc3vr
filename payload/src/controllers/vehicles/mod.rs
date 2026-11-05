@@ -73,6 +73,7 @@ pub mod ripcord;
 mod ripcord_tick;
 mod state;
 pub mod steering;
+pub(crate) mod take_off;
 pub mod tuning;
 mod types;
 pub mod wheel;

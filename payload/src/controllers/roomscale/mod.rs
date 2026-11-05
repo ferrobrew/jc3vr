@@ -262,6 +262,9 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     if in_gameplay {
         // SAFETY: the game thread, outside the world update.
         unsafe { seat_tick(&mut frame, &config, now) };
+        let take_off = Config::lock_query(|c| c.controllers.vehicles.take_off_to_head);
+        // SAFETY: as above.
+        unsafe { crate::controllers::vehicles::take_off::tick(take_off) };
     } else {
         frame.seat = SeatTracker::default();
         frame.seat_fade_release = None;
