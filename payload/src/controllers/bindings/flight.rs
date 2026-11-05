@@ -217,14 +217,14 @@ fn note(
         return;
     }
     state.logged = entry;
-    if events::collecting() {
-        events::note(EventKind::WingsuitGesture(Box::new(WingsuitGesture {
+    events::note_with(|| {
+        EventKind::WingsuitGesture(Box::new(WingsuitGesture {
             phase: entry.map(|(phase, _)| Label::Owned(phase.to_string())),
             why: entry
                 .and_then(|(_, why)| why)
                 .map(|why| Label::Owned(why.to_string())),
-        })));
-    }
+        }))
+    });
     match entry {
         None => tracing::info!(
             target: "controllers",

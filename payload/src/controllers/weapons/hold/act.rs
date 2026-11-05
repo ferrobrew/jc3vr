@@ -212,8 +212,8 @@ pub(crate) unsafe fn let_go(hand: Hand, max_speed_mps: f32) -> Result<Thrown, Do
     let mut state = STATE.lock();
     state.status.releases.record(diagnostic);
     let release = state.status.releases.latest;
-    if let Some(record) = release.filter(|_| events::collecting()) {
-        events::note(EventKind::GunRelease(Box::new(record.event())));
+    if let Some(record) = release {
+        events::note_with(|| EventKind::GunRelease(Box::new(record.event())));
         if let Some(thrown) = record.thrown() {
             diagnostics::note_throw(thrown);
         }

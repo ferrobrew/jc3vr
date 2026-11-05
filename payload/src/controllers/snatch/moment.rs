@@ -53,19 +53,18 @@ impl Moment {
         if from == to && moment.outcome.is_none() {
             return;
         }
-        if !events::collecting() {
-            return;
-        }
-        events::note(EventKind::Snatch(Box::new(Snatch {
-            hand: hand.map(hand_to_file),
-            from: Label::Borrowed(from),
-            to: Label::Borrowed(to),
-            outcome: moment.outcome.map(Label::Borrowed),
-            reason: moment.reason.map(Label::Owned),
-            target: moment.target.map(|(kind, _)| Label::Borrowed(kind)),
-            distance_m: moment.target.map(|(_, distance)| distance),
-            yank_m: moment.yank.map(|(distance, _)| distance),
-            yank_mps: moment.yank.map(|(_, speed)| speed),
-        })));
+        events::note_with(|| {
+            EventKind::Snatch(Box::new(Snatch {
+                hand: hand.map(hand_to_file),
+                from: Label::Borrowed(from),
+                to: Label::Borrowed(to),
+                outcome: moment.outcome.map(Label::Borrowed),
+                reason: moment.reason.map(Label::Owned),
+                target: moment.target.map(|(kind, _)| Label::Borrowed(kind)),
+                distance_m: moment.target.map(|(_, distance)| distance),
+                yank_m: moment.yank.map(|(distance, _)| distance),
+                yank_mps: moment.yank.map(|(_, speed)| speed),
+            }))
+        });
     }
 }

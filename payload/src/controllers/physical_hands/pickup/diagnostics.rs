@@ -195,30 +195,32 @@ pub(crate) fn status() -> Status {
 /// Record a branch in the actual pickup input consumer. A press's branch is noted as an event.
 pub(crate) fn input_consumer(hand: Hand, input: InputRecord, result: InputConsumer) {
     STATUS.lock().hands[hand.index()].input_consumer(input, result);
-    if input.grip.pressed && events::collecting() {
-        let input = InputRecord {
-            consumer: result,
-            ..input
-        };
-        note(event(hand, GripStage::Input, &input, None));
+    if input.grip.pressed {
+        note(|| {
+            let input = InputRecord {
+                consumer: result,
+                ..input
+            };
+            event(hand, GripStage::Input, &input, None)
+        });
     }
 }
 
 /// Record the reach that the actual pickup input consumer places in its queue, and note it.
 pub(crate) fn queued(hand: Hand, input: InputRecord, target: Reach) -> RequestKey {
     let key = STATUS.lock().hands[hand.index()].queued(input, target);
-    if events::collecting() {
+    note(|| {
         let input = InputRecord {
             consumer: InputConsumer::Queued,
             ..input
         };
-        note(event(
+        event(
             hand,
             GripStage::Input,
             &input,
             Some(&request_record(key, input)),
-        ));
-    }
+        )
+    });
     key
 }
 
@@ -229,13 +231,8 @@ pub(crate) fn consumed(hand: Hand, key: RequestKey, result: ConsumerResult) {
         status.hands[hand.index()].consumed(key, result);
         status.hands[hand.index()].request_mut(key).copied()
     };
-    if let Some(record) = record.filter(|_| events::collecting()) {
-        note(event(
-            hand,
-            GripStage::Request,
-            &record.input,
-            Some(&record),
-        ));
+    if let Some(record) = record {
+        note(|| event(hand, GripStage::Request, &record.input, Some(&record)));
     }
 }
 
@@ -252,8 +249,8 @@ pub(crate) fn driven(hand: Hand, key: RequestKey, drive: DriveRecord) {
                 first.then_some(*record)
             })
     };
-    if let Some(record) = first.filter(|_| events::collecting()) {
-        note(event(hand, GripStage::Drive, &record.input, Some(&record)));
+    if let Some(record) = first {
+        note(|| event(hand, GripStage::Drive, &record.input, Some(&record)));
     }
 }
 
@@ -266,8 +263,8 @@ fn request_record(key: RequestKey, input: InputRecord) -> RequestRecord {
     }
 }
 
-fn note(event: GripAcquisition) {
-    events::note(EventKind::GripAcquisition(Box::new(event)));
+fn note(event: impl FnOnce() -> GripAcquisition) {
+    events::note_with(|| EventKind::GripAcquisition(Box::new(event())));
 }
 
 /// The event for one acquisition stage. Nested runtime values are recorded as their Debug text.

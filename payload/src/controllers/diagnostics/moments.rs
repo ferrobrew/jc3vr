@@ -64,33 +64,31 @@ pub(crate) struct Released {
 
 /// Note a grip release.
 pub(crate) fn note_release(released: Released) {
-    if !events::collecting() {
-        return;
-    }
-    events::note(EventKind::GripRelease(Box::new(GripRelease {
-        hand: hand_to_file(released.hand),
-        held: Label::Borrowed(released.held),
-        object: released.object.map(|object| object as u64),
-        body: released.body,
-        cause: Label::Borrowed(released.cause),
-        thrown: released.thrown,
-    })));
+    events::note_with(|| {
+        EventKind::GripRelease(Box::new(GripRelease {
+            hand: hand_to_file(released.hand),
+            held: Label::Borrowed(released.held),
+            object: released.object.map(|object| object as u64),
+            body: released.body,
+            cause: Label::Borrowed(released.cause),
+            thrown: released.thrown,
+        }))
+    });
 }
 
 fn note(thrown: Thrown, release: Option<ReleasePose>) {
-    if !events::collecting() {
-        return;
-    }
-    events::note(EventKind::Throw(Box::new(Throw {
-        hand: hand_to_file(thrown.hand),
-        item: Label::Borrowed(thrown.item),
-        motion: WorldMotion {
-            linear: thrown.linear,
-            angular: thrown.angular,
-        },
-        time_scale: thrown.time_scale,
-        source: thrown.source.map(Label::Borrowed),
-        armed: thrown.armed,
-        release,
-    })));
+    events::note_with(|| {
+        EventKind::Throw(Box::new(Throw {
+            hand: hand_to_file(thrown.hand),
+            item: Label::Borrowed(thrown.item),
+            motion: WorldMotion {
+                linear: thrown.linear,
+                angular: thrown.angular,
+            },
+            time_scale: thrown.time_scale,
+            source: thrown.source.map(Label::Borrowed),
+            armed: thrown.armed,
+            release,
+        }))
+    });
 }

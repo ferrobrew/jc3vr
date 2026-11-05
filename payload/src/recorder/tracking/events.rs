@@ -3,7 +3,7 @@
 //! before it, stamped on the recording's frame timeline.
 //!
 //! Noting is a no-op unless a recording or the lookback ([`crate::recorder::tracking::lookback`])
-//! is collecting, so a producer may build its event lazily behind [`collecting`]. The pending list
+//! is collecting, so a producer builds its event lazily through [`note_with`]. The pending list
 //! is bounded; an event beyond the bound is counted and dropped rather than growing the list when
 //! no frame is captured to drain it (a session without a headset, for one).
 
@@ -33,6 +33,13 @@ pub(crate) fn note(kind: EventKind) {
         return;
     }
     pending.push(Noted { at, kind });
+}
+
+/// Note the event `build` makes, building it only while a recording or the lookback collects.
+pub(crate) fn note_with(build: impl FnOnce() -> EventKind) {
+    if collecting() {
+        note(build());
+    }
 }
 
 /// Events dropped because the pending list was full, since the payload loaded.
