@@ -22,6 +22,7 @@ use crate::{
                 trace::{RootTrace, STALE_AFTER as TRACE_STALE_AFTER},
             },
         },
+        diagnostics::world_state,
         frame::{self, Hand},
         hands::{ik, late, tiers},
         mode::{self, AirborneVariant, HoldReason, Mode, OnFootVariant, Traversal},
@@ -63,6 +64,10 @@ pub(super) fn snapshot(character: Option<&Character>) -> ControllerState {
         roomscale: roomscale_state(roomscale_status),
         root: fresh_trace(&roomscale_status.root.sim, Instant::now()).map(root_tick),
         character: character.map(character_motion),
+        view: world_state::view_state(),
+        grapple: character.and_then(world_state::grapple_state),
+        vehicle: character.and_then(world_state::vehicle_state),
+        frame: Some(world_state::frame_state()),
     }
 }
 
