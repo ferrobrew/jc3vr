@@ -13,6 +13,14 @@
 //! The candidate query reads the target system rather than casting shapes: the target system
 //! already holds every candidate the game's own assist can pick, and its fitness function is what
 //! the game tunes per weapon.
+//!
+//! The grapple has an assist of its own ([`grapple_assist`]), run before the aim update so that
+//! the game's own grapple targeting runs along the assisted ray. When the grapple hand's ray does
+//! not already hit an object, the candidates in every set within
+//! [`AimConfig::grapple_assist_cone_deg`] of the ray that the game's grapple scoring
+//! ([`PlayerAimControl::SetTargetGrappleFitness`]) accepts (an object the grapple attaches to, in
+//! range, not the one the wire holds) and that are in sight are ranked by their angle from the
+//! ray, and the ray turns toward the nearest by [`AimConfig::grapple_assist_strength`].
 
 use glam::{Quat, Vec3};
 use jc3gi::{
@@ -103,6 +111,113 @@ pub(super) unsafe fn assist(
             angle_rad,
         },
     ))
+}
+
+/// The grapple's aim assist on the last aim update.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct GrappleAssist {
+    /// The candidate's body position.
+    pub target: Vec3,
+    /// How far the grapple's ray was turned, radians.
+    pub angle_rad: f32,
+}
+
+/// The grapple's ray turned toward the valid grapple target nearest `ray` within the configured
+/// cone, and the turn made, or `None` when the assist is off, the ray already hits an object, or
+/// no candidate qualifies.
+///
+/// # Safety
+///
+/// `aim` must be the local player's live aim control, called from its post-simulation update
+/// before the original, on that thread, with `options` naming live objects and no grapple view set.
+pub(super) unsafe fn grapple_assist(
+    aim: *mut PlayerAimControl,
+    ray: &Ray,
+    options: &CastOptions,
+    config: &AimConfig,
+) -> Option<(Ray, GrappleAssist)> {
+    let strength = config.grapple_assist_strength;
+    let cone = config.grapple_assist_cone_deg.to_radians();
+    if strength.is_nan() || strength <= 0.0 || cone.is_nan() || cone <= 0.0 {
+        return None;
+    }
+    // A ray on an object already has the game's own grapple target, which the assist would only
+    // take away.
+    let hit = unsafe { raycast::cast(ray, MAX_DISTANCE_M, options) }.ok()?;
+    if hit.is_some_and(|h| h.object.is_some()) {
+        return None;
+    }
+    let aim = unsafe { aim.as_mut() }?;
+    let view = Matrix4::from(ray::view_matrix(ray));
+    let mut candidates = grapple::with_view(view, || {
+        let mut candidates = Vec::new();
+        for set in TargetSet::ALL {
+            for target in unsafe { targets::targets(set) } {
+                if let Some(candidate) = unsafe { grapple_candidate(aim, target, ray, cone) } {
+                    candidates.push(candidate);
+                }
+            }
+        }
+        candidates
+    });
+    candidates.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let target = candidates
+        .into_iter()
+        .find(|(_, position)| unsafe {
+            raycast::line_of_sight(ray.origin, *position, OCCLUSION_TOLERANCE_M, options)
+        })
+        .map(|(_, position)| position)?;
+    let bent = assisted_ray(ray, target, strength)?;
+    Some((
+        bent,
+        GrappleAssist {
+            target,
+            angle_rad: bent.direction.angle_between(ray.direction),
+        },
+    ))
+}
+
+/// `ray` turned toward `target` by `strength` of the angle between them: one aims at it.
+pub fn assisted_ray(ray: &Ray, target: Vec3, strength: f32) -> Option<Ray> {
+    let distance = (target - ray.origin).length();
+    let point = assisted_point(ray.origin, ray.at(distance), target, strength)?;
+    Ray::new(ray.origin, point - ray.origin)
+}
+
+/// Whether `position` lies within `cone` radians of `ray` and within the assist's reach, and its
+/// angle from the ray when it does.
+pub fn angle_in_cone(ray: &Ray, position: Vec3, cone: f32) -> Option<f32> {
+    let offset = position - ray.origin;
+    let distance = offset.length();
+    if distance.is_nan() || distance <= 0.0 || distance > MAX_DISTANCE_M {
+        return None;
+    }
+    let angle = (offset / distance)
+        .dot(ray.direction)
+        .clamp(-1.0, 1.0)
+        .acos();
+    (angle <= cone).then_some(angle)
+}
+
+/// A grapple candidate's angle from `ray` and its body position, when it is within `cone` of the
+/// ray and the game's grapple scoring accepts it.
+///
+/// # Safety
+///
+/// As [`grapple_assist`], inside the view override.
+unsafe fn grapple_candidate(
+    aim: &mut PlayerAimControl,
+    target: *mut Target,
+    ray: &Ray,
+    cone: f32,
+) -> Option<(f32, Vec3)> {
+    let object = unsafe { targets::game_object(target) }?;
+    let position = unsafe { targets::body_position(target) }?;
+    let angle = angle_in_cone(ray, position, cone)?;
+    // The game's own grapple scoring: the object kinds the grapple attaches to, in range, and not
+    // the object the wire already holds. The fitness it writes on the target is reset by the
+    // game's own target pass in the update that follows.
+    unsafe { aim.SetTargetGrappleFitness(object, target) }.then_some((angle, position))
 }
 
 /// The body position of the best-scored hostile candidate in the ray's cone with a clear line from
@@ -205,6 +320,33 @@ mod tests {
         let angle = (p - origin).angle_between(Vec3::NEG_Z);
         assert!((angle - std::f32::consts::FRAC_PI_4).abs() < 1e-4);
         assert!(((p - origin).length() - 10.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_grapple_ray_turns_onto_a_target_in_the_cone() {
+        let ray = Ray::new(Vec3::new(0.0, 1.5, 0.0), Vec3::NEG_Z).unwrap();
+        let target = ray.origin + Vec3::new(1.0, 0.5, -20.0);
+        let angle = angle_in_cone(&ray, target, 5f32.to_radians()).unwrap();
+        assert!(angle > 0.0);
+        let bent = assisted_ray(&ray, target, 1.0).unwrap();
+        assert!(bent.direction.angle_between(target - ray.origin) < 1e-3);
+        assert_eq!(bent.origin, ray.origin);
+        let half = assisted_ray(&ray, target, 0.5).unwrap();
+        assert!((half.direction.angle_between(ray.direction) - angle * 0.5).abs() < 1e-3);
+    }
+
+    #[test]
+    fn a_target_outside_the_cone_or_behind_is_not_a_grapple_candidate() {
+        let ray = Ray::new(Vec3::ZERO, Vec3::NEG_Z).unwrap();
+        let cone = 5f32.to_radians();
+        assert!(angle_in_cone(&ray, Vec3::new(5.0, 0.0, -20.0), cone).is_none());
+        assert!(angle_in_cone(&ray, Vec3::new(0.0, 0.0, 20.0), cone).is_none());
+        assert!(angle_in_cone(&ray, Vec3::ZERO, cone).is_none());
+        assert!(angle_in_cone(&ray, Vec3::NEG_Z * (MAX_DISTANCE_M + 1.0), cone).is_none());
+        // The nearer to the ray ranks first.
+        let near = angle_in_cone(&ray, Vec3::new(0.5, 0.0, -20.0), cone).unwrap();
+        let far = angle_in_cone(&ray, Vec3::new(1.5, 0.0, -20.0), cone).unwrap();
+        assert!(near < far);
     }
 
     #[test]

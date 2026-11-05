@@ -57,12 +57,17 @@ pub(super) fn aim_readout(
     });
     ui.label(match &status.grapple {
         Some(g) => format!(
-            "Grapple: from {} · point {} · hit {} · valid {} · tetherable {}",
+            "Grapple: from {} · point {} · hit {} · valid {} · tetherable {} · assist {}",
             vec3(g.ray.origin),
             vec3(g.point),
             yes_no(g.hit),
             yes_no(g.valid),
-            yes_no(g.tetherable)
+            yes_no(g.tetherable),
+            g.assist.map_or("none".to_owned(), |a| format!(
+                "{:.1}° onto {}",
+                a.angle_rad.to_degrees(),
+                vec3(a.target)
+            ))
         ),
         None => "Grapple: on the camera".to_owned(),
     });
@@ -80,6 +85,17 @@ pub(super) fn aim_settings(ui: &mut Ui, c: &mut ControllersConfig) {
         .on_hover_text("Each gun aims along its hand's sight line instead of the gaze.");
     ui.checkbox(&mut a.grapple, "Grapple aim from the off-hand")
         .on_hover_text("The grapple targets along the off-hand's ray, with the game's targeting.");
+    ui.add(
+        egui::Slider::new(&mut a.grapple_assist_strength, 0.0..=1.0).text("Grapple aim assist"),
+    )
+    .on_hover_text(
+        "How far the grapple's ray turns onto the grapple target nearest it in the cone when the \
+         ray is not on an object: one snaps onto it, zero turns the assist off.",
+    );
+    ui.add(
+        egui::Slider::new(&mut a.grapple_assist_cone_deg, 0.0..=30.0)
+            .text("Grapple assist cone (°)"),
+    );
     egui::CollapsingHeader::new("Sight tuning").show(ui, |ui| sights::sight_tuning(ui, c));
 }
 

@@ -9,7 +9,8 @@
 //! - [`grapple`]: the grapple slot is filled from the off-hand's ray by the game's own targeting;
 //! - [`grapple_weapons`]: inside that, the grapple's aim also sees the weapons lying in the world;
 //! - [`targets`]: the game's own aim candidates, which the target selections below share;
-//! - [`assist`]: per-hand aim assist over those candidates;
+//! - [`assist`]: per-hand aim assist over those candidates, and the grapple's, which turns the
+//!   grapple ray onto the valid grapple target nearest it before the game's targeting runs;
 //! - [`sights`]: each weapon's sight correction, looked up from the config and the embedded sight
 //!   table, and the in-headset tool that tunes it.
 //!
@@ -52,7 +53,7 @@ use crate::{
     config::Config,
     controllers::{
         aim::{
-            assist::AssistCorrection,
+            assist::{AssistCorrection, GrappleAssist},
             gun::HeldWeapon,
             ray::Ray,
             raycast::{CastOptions, RayHit, RaycastError},
@@ -118,7 +119,8 @@ pub struct HandAim {
 /// The grapple's aim for a tick, read back from the grapple slot after the game's targeting.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct GrappleAim {
-    /// The ray from the gauntlet.
+    /// The ray from the gauntlet the game's targeting ran along: the hand's, or the aim assist's
+    /// turn of it ([`assist`](Self::assist)).
     pub ray: Ray,
     /// The grapple slot's aim point: the surface hit, a target's body position, or the point at
     /// the grapple's range.
@@ -130,6 +132,8 @@ pub struct GrappleAim {
     /// Whether the target is an object rather than world geometry, so that a tether pulls it. A
     /// best guess at the plan's "targets that support tethering", not yet checked in play.
     pub tetherable: bool,
+    /// The aim assist's turn of the ray onto a grapple target, when it made one.
+    pub assist: Option<GrappleAssist>,
 }
 
 /// Why the aim did nothing on the last update.
@@ -249,6 +253,17 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
         .then(|| tick.hands[off.index()])
         .flatten()
         .and_then(|h| ray::grapple_ray(h.wrist, h.aim, GRAPPLE_ORIGIN_M));
+    // The grapple's aim assist turns the ray before the game's own targeting runs along it.
+    let grapple_assist = match (grapple_ray, owner) {
+        (Some(ray), Some(owner)) => {
+            let options = owner_cast_options(owner);
+            // SAFETY: the live local player's aim control, before the original, with no grapple
+            // view set; the options name the live owner and its vehicle.
+            unsafe { assist::grapple_assist(aim, &ray, &options, &tick.config.aim) }
+        }
+        _ => None,
+    };
+    let grapple_ray = grapple_assist.map_or(grapple_ray, |(bent, _)| Some(bent));
     grapple::set_view(grapple_ray.map(|r| Matrix4::from(ray::view_matrix(&r))));
     original();
     grapple::set_view(None);
@@ -256,7 +271,8 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
     let Some(owner) = owner.filter(|_| !aim.is_null()) else {
         return;
     };
-    unsafe { finish(aim, owner, &tick, grapple_ray) };
+    let grapple_assist = grapple_assist.map(|(_, assist)| assist);
+    unsafe { finish(aim, owner, &tick, grapple_ray, grapple_assist) };
     physical_hands::after_aim(dt);
 }
 
@@ -327,6 +343,7 @@ unsafe fn finish(
     owner: &Character,
     tick: &TickHands,
     grapple_ray: Option<Ray>,
+    grapple_assist: Option<GrappleAssist>,
 ) {
     let cfg = &tick.config.aim;
     let weapon = cfg
@@ -357,12 +374,7 @@ unsafe fn finish(
         }
     }
 
-    let vehicle = unsafe { owner.GetVehiclePtr() } as usize;
-    let options = CastOptions {
-        ignore: [owner as *const Character as usize, vehicle],
-        see_through: true,
-        material: false,
-    };
+    let options = owner_cast_options(owner);
     let mut raycast_error = None;
     let hands = Hand::BOTH.map(|hand| {
         let world = tick.hands[hand.index()]?;
@@ -445,8 +457,9 @@ unsafe fn finish(
     }
 
     // SAFETY: as above.
-    let grapple =
-        grapple_ray.and_then(|ray| unsafe { aim.as_ref() }.map(|aim| grapple_readout(aim, ray)));
+    let grapple = grapple_ray.and_then(|ray| {
+        unsafe { aim.as_ref() }.map(|aim| grapple_readout(aim, ray, grapple_assist))
+    });
     let mut status = STATUS.lock();
     let corrections = assist.iter().flatten().count() as u64;
     *status = AimStatus {
@@ -462,8 +475,20 @@ unsafe fn finish(
     };
 }
 
+/// What the hand rays' casts pass through: the owner and the vehicle it rides, and what the
+/// game's aim ray sees through.
+fn owner_cast_options(owner: &Character) -> CastOptions {
+    // SAFETY: the owner is the live local player character, on the thread updating it.
+    let vehicle = unsafe { owner.GetVehiclePtr() } as usize;
+    CastOptions {
+        ignore: [owner as *const Character as usize, vehicle],
+        see_through: true,
+        material: false,
+    }
+}
+
 /// The grapple slot after the game's targeting, as the grapple's readout.
-fn grapple_readout(aim: &PlayerAimControl, ray: Ray) -> GrappleAim {
+fn grapple_readout(aim: &PlayerAimControl, ray: Ray, assist: Option<GrappleAssist>) -> GrappleAim {
     const GRAPPLE: usize = TargetType::TARGET_GRAPPLE as usize;
     let has_target = !aim.m_Target[GRAPPLE].is_null();
     let valid = aim.m_HasLastValidGrapple && aim.m_IsInRange[GRAPPLE];
@@ -473,6 +498,7 @@ fn grapple_readout(aim: &PlayerAimControl, ray: Ray) -> GrappleAim {
         hit: aim.m_DirectHits[GRAPPLE] || has_target,
         valid,
         tetherable: valid && NonZeroUsize::new(aim.m_LastHitGrappleTargetGO[0] as usize).is_some(),
+        assist,
     }
 }
 

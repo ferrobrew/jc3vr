@@ -14,7 +14,19 @@ pub(super) fn hands(c: &HandsConfig) -> Result<(), Invalid> {
 
 /// Check the per-hand aiming settings. Paths are relative to `controllers.aim`.
 pub(super) fn aim(c: &AimConfig) -> Result<(), Invalid> {
-    range("aim.assist_strength", c.assist_strength, 0.0, 1.0)
+    range("aim.assist_strength", c.assist_strength, 0.0, 1.0)?;
+    range(
+        "aim.grapple_assist_strength",
+        c.grapple_assist_strength,
+        0.0,
+        1.0,
+    )?;
+    range(
+        "aim.grapple_assist_cone_deg",
+        c.grapple_assist_cone_deg,
+        0.0,
+        30.0,
+    )
 }
 
 /// Check the world-space overlay's settings. Paths are relative to `controllers.overlay`.

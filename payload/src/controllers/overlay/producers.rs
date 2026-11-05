@@ -145,7 +145,8 @@ pub fn tick(active: bool, hands: &[Option<HandPoses>; 2]) {
 
 /// The grapple's target highlight: a ring on the target while the game holds a valid target in
 /// range, lying on the surface when the off-hand's own ray hit it there, with a centre dot and its
-/// own colour for a target a tether pulls.
+/// own colour for a target a tether pulls, and a wider, thin outer ring while the aim assist turned
+/// the ray onto it.
 pub fn grapple_highlight(g: &GrappleAim, off_hit: Option<RayHit>, out: &mut Vec<Primitive>) {
     if !g.valid {
         return;
@@ -169,6 +170,16 @@ pub fn grapple_highlight(g: &GrappleAim, off_hit: Option<RayHit>, out: &mut Vec<
         color,
         depth,
     });
+    if g.assist.is_some() {
+        out.push(Primitive::Sprite {
+            at: Anchor::World(g.point),
+            size: SpriteSize::Angular(GRAPPLE_RING_RAD * ASSIST_RING_SCALE),
+            facing: Facing::Billboard,
+            shape: Shape::Ring { thickness: 0.12 },
+            color: with_alpha(color, 0.6),
+            depth,
+        });
+    }
     if g.tetherable {
         out.push(Primitive::Sprite {
             at: Anchor::World(g.point),
@@ -387,6 +398,8 @@ const MARKER: Rgba = [1.0, 0.9, 0.2, 0.95];
 /// surface normal.
 const SURFACE_MATCH_M: f32 = 0.5;
 const GRAPPLE_RING_RAD: f32 = 0.035;
+/// The aim assist's lock ring's size against the grapple's ring.
+const ASSIST_RING_SCALE: f32 = 1.6;
 const GUN_DOT_RAD: f32 = 0.006;
 const BEAM_WIDTH_M: f32 = 0.008;
 const LASER_WIDTH_M: f32 = 0.003;
@@ -424,7 +437,11 @@ mod tests {
     use glam::Quat;
 
     use super::*;
-    use crate::controllers::{aim::ray::Ray, frame::Pose, overlay::resolve::anchor_position};
+    use crate::controllers::{
+        aim::{assist::GrappleAssist, ray::Ray},
+        frame::Pose,
+        overlay::resolve::anchor_position,
+    };
 
     fn grapple(valid: bool, tetherable: bool) -> GrappleAim {
         GrappleAim {
@@ -433,6 +450,7 @@ mod tests {
             hit: true,
             valid,
             tetherable,
+            assist: None,
         }
     }
 
@@ -480,6 +498,33 @@ mod tests {
             Primitive::Line { color, .. } => *color,
         };
         assert_ne!(color(&plain[0]), color(&tether[0]));
+    }
+
+    #[test]
+    fn an_assisted_target_shows_the_lock_ring() {
+        let mut plain = Vec::new();
+        grapple_highlight(&grapple(true, false), None, &mut plain);
+        let assisted = GrappleAim {
+            assist: Some(GrappleAssist {
+                target: Vec3::new(0.0, 0.0, -30.0),
+                angle_rad: 0.05,
+            }),
+            ..grapple(true, false)
+        };
+        let mut locked = Vec::new();
+        grapple_highlight(&assisted, None, &mut locked);
+        assert_eq!(locked.len(), plain.len() + 1);
+        // No lock ring without a valid target.
+        let mut none = Vec::new();
+        grapple_highlight(
+            &GrappleAim {
+                valid: false,
+                ..assisted
+            },
+            None,
+            &mut none,
+        );
+        assert!(none.is_empty());
     }
 
     #[test]
