@@ -186,6 +186,35 @@ pub unsafe fn cast_on_with<R>(
     Ok(Some(f(hit, &mut info)))
 }
 
+/// Cast `ray` out to `max_distance` metres against the terrain alone ([`PhysicsSystem::CastRayTerrain`])
+/// and return the hit's position, or `None` for a miss. Cheaper than a scene cast, and blind to
+/// everything but the heightfield.
+///
+/// # Safety
+///
+/// As [`cast`].
+pub unsafe fn cast_terrain(ray: &Ray, max_distance: f32) -> Result<Option<Vec3>, RaycastError> {
+    if !(max_distance.is_finite() && max_distance > 0.0) {
+        return Err(RaycastError::InvalidDistance);
+    }
+    let physics = unsafe { PhysicsSystem::get() }.ok_or(RaycastError::NoPhysicsSystem)?;
+    // A plain stack object in the engine too, as in `cast_on_with`.
+    let mut info = unsafe { MaybeUninit::<CastRayInfoBase>::zeroed().assume_init() };
+    info.__vftable = CastRayInfoBase::VFTABLE;
+    info.m_HitObjectId = 0;
+    unsafe { info.Reset() };
+    let query = Ray3 {
+        Origin: vector(ray.origin),
+        Direction: vector(ray.direction),
+    };
+    let hit = unsafe { physics.CastRayTerrain(&query, 0.0, max_distance, &mut info) };
+    let fraction = info.m_HitDistance;
+    if !hit || !(0.0..1.0).contains(&fraction) {
+        return Ok(None);
+    }
+    Ok(Some(ray.at(fraction * max_distance)))
+}
+
 /// Whether the line from `origin` to `end` is clear, allowing a hit within `tolerance` metres
 /// short of `end`: the line to a target's body position ends inside the target's own body. A failed
 /// cast counts as blocked.

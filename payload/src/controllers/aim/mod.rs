@@ -217,6 +217,8 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
     if let Some(owner) = owner {
         // SAFETY: the owner is the live local player character, on the simulation thread.
         unsafe { crate::hud::world_markers::resolve_rays(owner) };
+        // SAFETY: as above. The head probe runs in every state and scheme, for the comfort fade.
+        unsafe { crate::controllers::body::rig::collision::tick(owner) };
     }
     let tick = match owner.map(|_| begin()) {
         Some(Ok(tick)) => tick,

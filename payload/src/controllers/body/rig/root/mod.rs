@@ -15,13 +15,12 @@
 //! every on-foot tick, idle included. Velocity written there goes through the proxy's character
 //! context, which handles stairs, slopes, and support. On each tick it:
 //!
-//! - keeps the teleport and warp bookkeeping (a teleport clears the ledger and forgets the probe);
+//! - keeps the teleport and warp bookkeeping (a teleport clears the ledger);
 //! - replaces the clip's velocity with the stick's ([`after_task`]) and adds the palms' push
 //!   ([`physical_hands::push_body`]), which together are the task's movement;
 //! - picks the root's owner ([`owner::select`]), and while the player owns it adds the step drive's
 //!   velocity through the engine's world-velocity accessors (the proxy's wanted velocity is
 //!   character-local) and submits the split to the ledger;
-//! - steps the head-through-geometry probe, since scene queries run against the live physics world;
 //! - requests or releases the crouch capsule, on the simulation thread where the engine applies it.
 //!
 //! The task writes nothing while the character is attached to a vehicle, and every other state
@@ -77,7 +76,7 @@ use crate::{
             BodyDimensions,
             procedural::state::animation_moves_body,
             rig::{
-                collision::probe::{self, HeadProbe, TimedProbe},
+                collision::probe,
                 config::RigConfig,
                 grounded::{self, GroundedFrame, GroundedInput},
                 root::{
@@ -363,8 +362,6 @@ pub struct SimStatus {
     pub task_velocity: Vec2,
     /// How the ledger credited the completed steps.
     pub ledger: LedgerCounts,
-    /// The head probe's last result, while the probe runs.
-    pub probe: Option<TimedProbe>,
     /// Whether the mod holds the crouch capsule.
     pub capsule_owned: bool,
     /// Whether the last release of the capsule was held back for lack of headroom.
@@ -503,7 +500,6 @@ fn clear_movement() -> CompletedMovement {
 }
 
 struct Sim {
-    probe: HeadProbe,
     /// The teleport epoch last acted on.
     seen_epoch: u64,
     /// The body's position on the last tick, for the warp test.
@@ -518,7 +514,6 @@ struct Sim {
 impl Sim {
     const fn new() -> Self {
         Self {
-            probe: HeadProbe::new(),
             seen_epoch: 0,
             last_position: None,
             movement: Requests::new(),
@@ -535,7 +530,6 @@ impl Sim {
                     exact: 0,
                     projected: 0,
                 },
-                probe: None,
                 capsule_owned: false,
                 capsule_blocked: false,
                 trace: None,
@@ -621,7 +615,6 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
     if epoch != sim.seen_epoch {
         sim.seen_epoch = epoch;
         sim.clear_movement(CompletionUnavailable::Teleported);
-        sim.probe.reset();
         sim.tracer.forget();
         sim.status.trace = None;
         stand_down(&mut sim.status, RootOwner::Game);
@@ -630,11 +623,9 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
 
     let (Some(shared), true) = (shared, live) else {
         sim.clear_movement(CompletionUnavailable::SourceUnavailable);
-        sim.probe.reset();
         sim.tracer.forget();
         sim.status.trace = None;
         stand_down(&mut sim.status, RootOwner::Game);
-        sim.status.probe = None;
         // Without the headset driving the view, nothing asks for the crouch any more, and the frame
         // half's release does not run (no VR frames) or sees this tick as fresh.
         if !driven {
@@ -670,26 +661,6 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
             stand_down(&mut sim.status, owner);
         }
     }
-
-    sim.status.probe = if config.head_fade.enabled {
-        let ignore = [character as *const Character as usize, 0];
-        let pose = headpose::query();
-        let head = pose.position;
-        let anchor = headpose::anchor().unwrap_or(head);
-        let right = pose.orientation * Vec3::X;
-        let right = Vec3::new(right.x, 0.0, right.z).normalize_or_zero();
-        let result = sim.probe.step(head, anchor, right, |from, to| {
-            // SAFETY: the simulation phase, and the ignored object is the live local character.
-            unsafe { probe::scene_cast(from, to, ignore) }.unwrap_or_else(|error| {
-                tracing::debug!(target: "controllers", "rig: head probe: {error}");
-                None
-            })
-        });
-        Some(TimedProbe { result, at: now })
-    } else {
-        sim.probe.reset();
-        None
-    };
 
     if capsule_enabled(&config) {
         unsafe { capsule_tick(&mut sim, character, shared.crouched, position) };

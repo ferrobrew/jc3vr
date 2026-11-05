@@ -12,6 +12,12 @@
 //! the pair is cast three times, through the eye centre and [`FAN_HALF_WIDTH_M`] to either side of
 //! it across the view, and the deepest hit counts. The fan stands in for a swept sphere.
 //!
+//! The animated head is a poor witness when the clip itself has put it in the world (a wingsuit
+//! flight ending in the ground carries the head and the eyes under the terrain together), so the
+//! terrain is checked on its own as well: a short ray down onto the eyes from above them meets the
+//! heightfield when the eyes are below its surface, and the depth below counts as for any other hit
+//! ([`below_terrain`]).
+//!
 //! The casts use the player aim's filter ([`crate::controllers::aim::raycast`]): the plain
 //! simple-ray query can hit the player's own ragdoll and hit-proxy bodies, which a head moving down
 //! or forward past the torso crosses. The casts run in the simulation phase, where the engine casts
@@ -94,6 +100,42 @@ impl HeadProbe {
     }
 }
 
+/// How far below the terrain's surface the eyes are, metres, or `None` when they are above it or
+/// further below than [`TERRAIN_REACH_M`]. `cast` returns the first terrain hit between two points.
+pub fn below_terrain(eyes: Vec3, mut cast: impl FnMut(Vec3, Vec3) -> Option<Vec3>) -> Option<f32> {
+    if !eyes.is_finite() {
+        return None;
+    }
+    let above = eyes + Vec3::Y * TERRAIN_REACH_M;
+    cast(above, eyes)
+        .map(|surface| surface.y - eyes.y)
+        .filter(|depth| depth.is_finite() && *depth > 0.0)
+}
+
+/// How far above the eyes the terrain check starts, metres: deeper than the full fade, and short
+/// enough that the heightfield over a tunnel or a bunker is never in reach.
+pub const TERRAIN_REACH_M: f32 = 1.0;
+
+/// The deeper of a scene probe's result and a terrain check's depth.
+pub fn with_terrain(result: ProbeResult, terrain: Option<f32>) -> ProbeResult {
+    match terrain {
+        Some(depth) if depth > result.depth() => ProbeResult::Obstructed { depth },
+        _ => result,
+    }
+}
+
+/// Cast from `from` to `to` against the terrain alone and return the hit.
+///
+/// # Safety
+///
+/// As [`raycast::cast_terrain`].
+pub unsafe fn terrain_cast(from: Vec3, to: Vec3) -> Result<Option<Vec3>, RaycastError> {
+    let Some(ray) = Ray::new(from, to - from) else {
+        return Ok(None);
+    };
+    unsafe { raycast::cast_terrain(&ray, (to - from).length()) }
+}
+
 /// How deep, metres, past the obstruction the head may go before the view starts to darken.
 pub const HEAD_FADE_START_DEPTH_M: f32 = 0.05;
 
@@ -113,8 +155,8 @@ pub fn fade_for_depth(depth: f32, start_m: f32, full_m: f32) -> f32 {
     }
 }
 
-/// How long a probe result stays current. The probe runs only while the on-foot locomotion runs, so
-/// a stale result means the probe has stopped, and its fade must clear.
+/// How long a probe result stays current. The probe runs every simulation tick in gameplay under
+/// the headset, so a stale result means the probe has stopped, and its fade must clear.
 pub const STALE_AFTER: Duration = Duration::from_millis(200);
 
 /// A probe result with the time it was taken.
@@ -240,6 +282,31 @@ mod tests {
             single.step(Vec3::new(1.1, 1.7, 0.0), anchor, Vec3::ZERO, post),
             ProbeResult::Clear
         );
+    }
+
+    /// Flat ground at `y = 0`.
+    fn ground(from: Vec3, to: Vec3) -> Option<Vec3> {
+        ((from.y < 0.0) != (to.y < 0.0)).then(|| from + (to - from) * (from.y / (from.y - to.y)))
+    }
+
+    #[test]
+    fn eyes_under_the_terrain_are_as_deep_as_the_surface_above() {
+        assert_eq!(below_terrain(Vec3::new(0.0, 1.6, 0.0), ground), None);
+        let depth = below_terrain(Vec3::new(3.0, -0.3, 1.0), ground).unwrap();
+        assert!((depth - 0.3).abs() < 1e-5, "{depth}");
+        assert_eq!(
+            below_terrain(Vec3::new(0.0, -TERRAIN_REACH_M - 0.5, 0.0), ground),
+            None
+        );
+        assert_eq!(
+            with_terrain(ProbeResult::Clear, Some(0.3)),
+            ProbeResult::Obstructed { depth: 0.3 }
+        );
+        assert_eq!(
+            with_terrain(ProbeResult::Obstructed { depth: 0.5 }, Some(0.3)),
+            ProbeResult::Obstructed { depth: 0.5 }
+        );
+        assert_eq!(with_terrain(ProbeResult::Clear, None), ProbeResult::Clear);
     }
 
     #[test]

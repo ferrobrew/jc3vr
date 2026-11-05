@@ -4,18 +4,15 @@ use glam::{Vec2, Vec3};
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    body::rig::{
-        collision::probe::{ProbeResult, TimedProbe},
-        root::{
-            FrameReadout, FrameState, RootStatus, Sim, SimStatus,
-            ledger::{LedgerCounts, Movement},
-            owner::RootOwner,
-            pushback::Pushback,
-            shift::CockpitShift,
-            status_from,
-            trace::RootTrace,
-            try_frame_readout_from, try_sim_readout_from,
-        },
+    body::rig::root::{
+        FrameReadout, FrameState, RootStatus, Sim, SimStatus,
+        ledger::{LedgerCounts, Movement},
+        owner::RootOwner,
+        pushback::Pushback,
+        shift::CockpitShift,
+        status_from,
+        trace::RootTrace,
+        try_frame_readout_from, try_sim_readout_from,
     },
     roomscale::SeatPhase,
 };
@@ -112,10 +109,6 @@ fn local_sim() -> Mutex<Sim> {
             exact: 11,
             projected: 13,
         },
-        probe: Some(TimedProbe {
-            result: ProbeResult::Obstructed { depth: 0.25 },
-            at: now,
-        }),
         capsule_owned: true,
         capsule_blocked: true,
         trace: Some(RootTrace {

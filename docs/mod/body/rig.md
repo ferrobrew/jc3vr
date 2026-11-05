@@ -90,7 +90,7 @@ Several systems want the root: the game's own states, the hand climbing, the ani
 
 On every tick the task wrote the velocity, the hook first replaces the clip's velocity with the stick's ([locomotion.md](locomotion.md)) and adds the palms' push off what they press into; together these are the task's movement. While the player owns the root, seated or standing, the step drive's velocity is added through the character's world-space accessors ([`Character::GetWantedWorldVelocity`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-GetWantedWorldVelocity) and [`Character::SetWantedWorldVelocity`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-SetWantedWorldVelocity)), because the proxy's own wanted velocity is character-local.
 
-The same hook steps the head-through-geometry probe (below) and requests or releases the crouch capsule ([controllers.md, "Posture and roomscale"](../input/controllers.md#posture-and-roomscale)).
+The same hook requests or releases the crouch capsule ([controllers.md, "Posture and roomscale"](../input/controllers.md#posture-and-roomscale)).
 
 ## The bookkeeping
 
@@ -116,7 +116,7 @@ The push-back (`rig::root::pushback`) runs in the frame half after the gap is me
 
 The part of the gap beyond the threshold is taken out of the cockpit by sliding the cockpit shift back along the gap, on both sides of the pose pair, so the view holds rigidly at the obstruction. The slide is capped per episode at 0.30 m; with the cap spent, the push-back fade rises past the threshold, black 0.15 m past it. The episode ends once the gap has stayed under half the threshold for 0.2 s. A teleport or a recenter ends the episode. With `pushback.enabled` off, nothing slides and the fade answers the gap past the threshold at once.
 
-The head-through-geometry probe (`rig::collision::probe`) catches what the push-back cannot: a head pushed into geometry the root is nowhere near, such as a low beam or a wall the player leans into. On each tick the player's on-foot task runs, it casts from the last position the head held in the open to where it is now, and from the animated head, through the eye centre and 8 cm to either side across the view, and the deepest hit drives the head fade.
+The head-through-geometry probe (`rig::collision::probe`) catches what the push-back cannot: a head pushed into geometry the root is nowhere near, such as a low beam or a wall the player leans into. On every simulation tick in gameplay under the headset, in every state, from the player aim control's post-simulation update (`rig::collision::tick`), it casts from the last position the eyes held in the open to where they are now, and from the animated head, through the eye centre and 8 cm to either side across the view, and the deepest hit drives the head fade. A terrain check backs it up where the animated head is no witness, as when a wingsuit flight ends in the ground and the clip carries the head under the terrain with the eyes: a ray from a metre above the eyes down onto them against the terrain alone ([`PhysicsSystem::CastRayTerrain`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PhysicsSystem##func-CastRayTerrain)) meets the heightfield when the eyes are below its surface, and the depth below counts as a hit's. The vehicle Rico rides is ignored with Rico, since between two ticks of a fast car the head's path runs through its cabin.
 
 ## Teleports and seat exits
 

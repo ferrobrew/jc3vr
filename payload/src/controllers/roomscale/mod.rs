@@ -48,7 +48,10 @@ use crate::{
         body::{
             self, BodyDimensions,
             rig::{
-                collision::probe::{self, ProbeResult},
+                collision::{
+                    self,
+                    probe::{self, ProbeResult},
+                },
                 grounded,
                 root::{self as rig_root, FrameSourceSnapshot, RootStatus, capsule_enabled},
             },
@@ -278,8 +281,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     }
 
     let sim = rig_root::status().sim;
-    let probe = sim
-        .probe
+    let probe = collision::latest()
         .filter(|p| now.duration_since(p.at) < probe::STALE_AFTER)
         .map(|p| p.result);
     let head_fade = match probe {
