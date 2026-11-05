@@ -11,6 +11,7 @@
 
 use std::{num::NonZeroUsize, time::Instant};
 
+use body_rig::rotation::level;
 use glam::{Mat4, Quat, Vec2, Vec3};
 use jc3gi::character::character::Character;
 use parking_lot::Mutex;
@@ -34,7 +35,7 @@ use crate::{
             tuning::FINGERS,
         },
         frame::{Hand, Pose},
-        hands::{self, pose as hand_pose, reach, tiers},
+        hands::{self, pose as hand_pose, tiers},
         loadout::{ItemKind, live},
         mode::{self, AirborneVariant, Detection, Mode, OnFootVariant},
         physical_hands::{
@@ -148,7 +149,7 @@ unsafe fn run(owner: &Character, dt: f32) {
     };
     let shoulders = body::shoulder_positions(
         active.head.position,
-        reach::yaw_only(active.head.orientation),
+        level(active.head.orientation),
         &body::player(),
     )
     .map(at);

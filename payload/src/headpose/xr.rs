@@ -40,7 +40,10 @@
 //! ([`crate::headpose::follow`]): the view frame is then the body frame turned back by the body's
 //! heading relative to the view ([`follow_turn`]), so only the turn input turns the view.
 
-use body_rig::angle::{direction, wrap};
+use body_rig::{
+    angle::{direction, wrap},
+    rotation::level,
+};
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
@@ -435,18 +438,7 @@ fn level_while_swimming(rotation: Quat) -> Quat {
     if !swimming() {
         return rotation;
     }
-    yaw_only(rotation)
-}
-
-/// `rotation` with its pitch and roll removed: the rotation about +Y that takes -Z to the ground
-/// projection of `rotation`'s forward. Falls back to the euler yaw when the forward is vertical and
-/// that projection has no direction.
-fn yaw_only(rotation: Quat) -> Quat {
-    let forward = rotation * Vec3::NEG_Z;
-    match Vec3::new(forward.x, 0.0, forward.z).try_normalize() {
-        Some(flat) => Quat::from_rotation_arc(Vec3::NEG_Z, flat),
-        None => Quat::from_rotation_y(sim::body_yaw_of(rotation)),
-    }
+    level(rotation)
 }
 
 /// Extract the local player's world rotation from the world matrix `world_of` selects. Identity when
@@ -470,32 +462,6 @@ fn body_rotation_from(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Levelling keeps the heading and removes everything else: a body pitched and rolled hard still
-    /// yields a pure yaw about +Y whose forward matches the original's ground projection.
-    #[test]
-    fn yaw_only_keeps_heading_and_drops_pitch_and_roll() {
-        let rotation = Quat::from_euler(glam::EulerRot::YXZ, 0.7, -0.9, 0.4);
-        let levelled = yaw_only(rotation);
-        let forward = levelled * Vec3::NEG_Z;
-        assert!(forward.y.abs() < 1e-5, "levelled forward must be flat");
-        assert!(
-            (levelled * Vec3::Y).distance(Vec3::Y) < 1e-5,
-            "up must stay up"
-        );
-        let want = (rotation * Vec3::NEG_Z) * Vec3::new(1.0, 0.0, 1.0);
-        assert!(
-            forward.angle_between(want.normalize()) < 1e-4,
-            "heading must be preserved"
-        );
-    }
-
-    /// A body already upright is left alone, so the levelling is inert outside water-like poses.
-    #[test]
-    fn yaw_only_is_identity_for_an_upright_body() {
-        let rotation = Quat::from_rotation_y(-1.2);
-        assert!(yaw_only(rotation).angle_between(rotation) < 1e-5);
-    }
 
     /// With an upright body, identity cockpit orientation, and unit scale, the world pose is the
     /// anchor plus the cockpit translation, oriented by the body.

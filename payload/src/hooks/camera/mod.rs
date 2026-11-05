@@ -3,6 +3,7 @@ use std::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
+use body_rig::rotation::twist_about_y;
 use detours_macro::detour;
 use jc3gi::{
     camera::{
@@ -411,7 +412,7 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
             // look around and the floating panel a fixed world anchor.
             let (_, gameplay_rotation, gameplay_position) =
                 glam::Mat4::from(camera.m_TransformT1).to_scale_rotation_translation();
-            *LOADING_BASE.lock() = Some((gameplay_position, yaw_only(gameplay_rotation)));
+            *LOADING_BASE.lock() = Some((gameplay_position, twist_about_y(gameplay_rotation)));
         }
     }
 
@@ -575,18 +576,6 @@ fn compose_relative(
 /// well-formed frame to head-track around during the load (issue #27). `None` until the first gameplay
 /// frame captures one.
 static LOADING_BASE: Mutex<Option<(glam::Vec3, glam::Quat)>> = Mutex::new(None);
-
-/// Project a rotation onto yaw only (rotation about the world up axis), zeroing pitch and roll. A
-/// degenerate (looking straight up or down) rotation falls back to identity yaw. Mirrors the recenter
-/// baseline's yaw extraction ([`crate::vr`]).
-fn yaw_only(rotation: glam::Quat) -> glam::Quat {
-    let yaw = glam::Quat::from_xyzw(0.0, rotation.y, 0.0, rotation.w);
-    if yaw.length_squared() > 1e-6 {
-        yaw.normalize()
-    } else {
-        glam::Quat::IDENTITY
-    }
-}
 
 /// The sim-phase camera matrix reader: `m_NextCameraContext`'s transform, which the game's
 /// sim-phase camera update rewrites from its internal camera *after* the mod's render-phase

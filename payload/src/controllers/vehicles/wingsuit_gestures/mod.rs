@@ -11,14 +11,14 @@
 
 use std::{fmt, time::Instant};
 
-use body_rig::angle::yaw_of;
+use body_rig::{angle::yaw_of, rotation::level};
 use glam::{Quat, Vec3};
 
 use crate::controllers::{
     body::{self, BodyDimensions},
     config::GripOffset,
     frame::{ControllerFrame, Hand, Pose, TrackedPose},
-    hands::{pose::cockpit_hand, reach::yaw_only},
+    hands::pose::cockpit_hand,
     mode::{AirborneVariant, Mode},
     vehicles::{arm_steering::wrist_tilt, config::WingsuitGesturesConfig},
 };
@@ -592,7 +592,7 @@ impl HandClaims {
 /// [`MAX_ARMS_FROM_HEAD_DEG`] of the head's heading, and the head's heading otherwise (wrists
 /// together, crossed, or behind the player).
 fn flight_heading(wrists: [Pose; 2], head: Pose) -> Quat {
-    let head_heading = yaw_only(head.orientation);
+    let head_heading = level(head.orientation);
     let across = (wrists[1].position - wrists[0].position).with_y(0.0);
     if across.length() < MIN_ARMS_SEPARATION_M {
         return head_heading;

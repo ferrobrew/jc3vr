@@ -21,6 +21,7 @@
 //!   small threshold and up to a cap. With the reach limited, only a body that moves against the
 //!   hands within a tick leaves a shortfall for it.
 
+use body_rig::rotation::level;
 use glam::{Quat, Vec3};
 
 use crate::controllers::{
@@ -321,16 +322,7 @@ pub fn detach_offset(miss: Vec3, threshold: f32, cap: f32) -> Vec3 {
 /// The torso's heading the player's shoulders are estimated at: the estimated torso's `torso` when
 /// there is one, and the head's heading otherwise.
 pub fn torso_heading(head: Pose, torso: Option<Quat>) -> Quat {
-    torso.unwrap_or_else(|| yaw_only(head.orientation))
-}
-
-/// `rotation` with its pitch and roll removed, keeping the heading of its -Z axis.
-pub(crate) fn yaw_only(rotation: Quat) -> Quat {
-    let forward = rotation * Vec3::NEG_Z;
-    match Vec3::new(forward.x, 0.0, forward.z).try_normalize() {
-        Some(flat) => Quat::from_rotation_arc(Vec3::NEG_Z, flat),
-        None => Quat::IDENTITY,
-    }
+    torso.unwrap_or_else(|| level(head.orientation))
 }
 
 /// The shortest player or character arm the measured remap accepts, metres.

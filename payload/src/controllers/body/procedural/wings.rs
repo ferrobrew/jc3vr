@@ -7,6 +7,7 @@
 
 use std::sync::atomic::{AtomicU8, Ordering};
 
+use body_rig::rotation::level;
 use glam::Mat4;
 use jc3gi::character::character::Character;
 
@@ -30,11 +31,7 @@ use crate::{
             rig::shoulder_heading,
         },
         frame::{self, Hand, Pose},
-        hands::{
-            ik::queue_model_wrists,
-            pose::cockpit_hand,
-            reach::{torso_heading, yaw_only},
-        },
+        hands::{ik::queue_model_wrists, pose::cockpit_hand, reach::torso_heading},
         scheme,
     },
     headpose::{self, Source},
@@ -83,7 +80,7 @@ pub(super) fn read_player_arms() -> Option<PlayerArms> {
             })
         })
     })?;
-    let torso = yaw_only(torso_heading(head, shoulder_heading()));
+    let torso = level(torso_heading(head, shoulder_heading()));
     let player = body::player();
     Some(PlayerArms {
         torso,

@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use body_rig::angle::head_heading;
+use body_rig::{angle::head_heading, rotation::twist_about_y};
 use openxr as xr;
 use parking_lot::Mutex;
 
@@ -408,18 +408,9 @@ impl Baseline {
             pose.orientation.z,
             pose.orientation.w,
         );
-        // Yaw only: project the orientation onto rotation about the Y (up) axis. Zero the X/Z
-        // components of the quaternion and renormalize; a degenerate (looking straight up/down)
-        // quaternion falls back to identity yaw.
-        let yaw = glam::Quat::from_xyzw(0.0, orientation.y, 0.0, orientation.w);
-        let yaw = if yaw.length_squared() > 1e-6 {
-            yaw.normalize()
-        } else {
-            glam::Quat::IDENTITY
-        };
         Self {
             position: glam::Vec3::new(pose.position.x, pose.position.y, pose.position.z),
-            yaw,
+            yaw: twist_about_y(orientation),
         }
     }
 
