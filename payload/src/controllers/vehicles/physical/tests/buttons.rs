@@ -171,23 +171,24 @@ fn the_throttle_opens_with_the_twist_past_a_deadzone() {
 }
 
 #[test]
-fn twisting_the_right_grip_back_opens_the_throttle_on_the_bars_and_burns_no_nitrous() {
+fn twisting_the_bars_grips_back_opens_the_throttle_or_brakes_and_burns_no_nitrous() {
     let config = PHYSICAL.buttons;
     let grab = Quat::from_rotation_y(0.2);
     // Rolling the grip's top back toward the rider is a positive turn about the bars' line.
     let back = Quat::from_rotation_x((config.throttle_twist_deg + 5.0).to_radians()) * grab;
     assert!(
-        grip_twist(TwistGrip::Bars, grab, back, Vec3::X) > config.throttle_twist_deg.to_radians()
+        grip_twist(TwistGrip::Throttle, grab, back, Vec3::X)
+            > config.throttle_twist_deg.to_radians()
     );
     let forward = Quat::from_rotation_x(-0.6) * grab;
-    assert!(grip_twist(TwistGrip::Bars, grab, forward, Vec3::X) < 0.0);
+    assert!(grip_twist(TwistGrip::Throttle, grab, forward, Vec3::X) < 0.0);
     // The collective's grip works either way.
     let either = Quat::from_rotation_z(-0.7) * grab;
     assert!(grip_twist(TwistGrip::Collective, grab, either, Vec3::X) > 0.6);
 
     let p = placement(|c| c.handlebars = true);
     let kinds = [ControlKind::Handlebars];
-    let ends = bar_ends(p.bars.centre, p.bars.half_width, Vec2::ZERO);
+    let ends = bar_ends(p.bars.centre, p.bars.half_width, 0.0);
     let mut state = ControlState::default();
     let mut events = Vec::new();
     let mut inputs = StepInputs {
@@ -204,19 +205,38 @@ fn twisting_the_right_grip_back_opens_the_throttle_on_the_bars_and_burns_no_nitr
     let out = step(&mut state, &p, &inputs, &mut events);
     assert_eq!(out.bike_throttle, Some(0.0));
     inputs.grabs = [None; 2];
+    // The left grip twisted back the same way brakes, and opens no throttle.
     inputs.orientations = [Some(back), Some(grab)];
+    let out = step(&mut state, &p, &inputs, &mut events);
+    assert_eq!(out.bike_throttle, Some(0.0));
+    assert_eq!(out.bike_brake, Some(1.0));
+    assert!(events.contains(&ControlEvent::Button(ButtonEvent::Twisted(
+        Hand::Left,
+        TwistGrip::Brake
+    ))));
+    let mut desired = Vec::new();
+    write_outputs(&out, &mut desired);
     assert_eq!(
-        step(&mut state, &p, &inputs, &mut events).bike_throttle,
-        Some(0.0),
-        "the left grip does not twist"
+        desired
+            .iter()
+            .filter(|d| d.target.action == Action::REVERSE)
+            .map(|d| d.want)
+            .collect::<Vec<_>>(),
+        [Want::Analog(1.0)]
+    );
+    assert!(
+        desired
+            .iter()
+            .all(|d| d.target.action != Action::ACCELERATE)
     );
     inputs.orientations = [Some(Quat::IDENTITY), Some(back)];
     let out = step(&mut state, &p, &inputs, &mut events);
     assert_eq!(out.bike_throttle, Some(1.0));
+    assert_eq!(out.bike_brake, Some(0.0));
     assert!(!out.nitrous, "the throttle grip burns no nitrous");
     assert!(events.contains(&ControlEvent::Button(ButtonEvent::Twisted(
         Hand::Right,
-        TwistGrip::Bars
+        TwistGrip::Throttle
     ))));
     // The throttle reaches the game as the accelerator, over a lighter trigger.
     let mut desired = vec![Desired {
@@ -244,7 +264,7 @@ fn twisting_the_right_grip_back_opens_the_throttle_on_the_bars_and_burns_no_nitr
     assert!(
         events.contains(&ControlEvent::Button(ButtonEvent::Untwisted(
             Hand::Right,
-            TwistGrip::Bars
+            TwistGrip::Throttle
         )))
     );
 }

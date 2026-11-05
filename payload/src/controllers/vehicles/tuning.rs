@@ -12,7 +12,9 @@
 
 use glam::Vec3;
 
-use crate::controllers::vehicles::config::{PhysicalControlsConfig, WheelConfig, WheelTracking};
+use crate::controllers::vehicles::config::{
+    BarsSteeringConfig, PhysicalControlsConfig, WheelConfig, WheelTracking,
+};
 
 /// The physical controls' tuning with the default switches.
 pub const PHYSICAL: PhysicalControlsTuning = PhysicalControlsTuning::new();
@@ -52,7 +54,9 @@ impl PhysicalControlsTuning {
                 centre_m: Vec3::new(0.0, -0.50, -0.45),
                 half_width_m: 0.34,
                 max_steer_deg: 30.0,
-                max_lean_deg: 25.0,
+                deadzone_deg: BarsSteeringConfig::new().deadzone_deg,
+                response: BarsSteeringConfig::new().response,
+                grab_radius_m: 0.16,
             },
             cyclic: StickSpec {
                 top_m: Vec3::new(0.12, -0.78, -0.30),
@@ -96,7 +100,7 @@ impl PhysicalControlsTuning {
                 press_depth_m: 0.02,
                 twist_nitrous: true,
                 twist_deg: 40.0,
-                twist_throttle: true,
+                bars_twist: true,
                 throttle_twist_deg: 30.0,
             },
             grab_radius_m: 0.09,
@@ -112,9 +116,14 @@ impl PhysicalControlsTuning {
                 twist_rudder: config.twist_rudder,
                 ..PHYSICAL.flight
             },
+            handlebars: HandlebarsSpec {
+                deadzone_deg: config.bars_steering.deadzone_deg,
+                response: config.bars_steering.response,
+                ..PHYSICAL.handlebars
+            },
             buttons: CockpitButtonsTuning {
                 nitrous_button: config.nitrous_button,
-                twist_throttle: config.twist_throttle,
+                bars_twist: config.bars_twist,
                 ..PHYSICAL.buttons
             },
             ..PHYSICAL
@@ -160,18 +169,25 @@ impl WheelSpec {
     }
 }
 
-/// Handlebars, pivoting about their centre. The middle and half width place them where the
-/// vehicle's own are not found.
+/// Handlebars, turning about their centre (see
+/// [`crate::controllers::vehicles::physical`]). The middle and half width place them where the
+/// vehicle's own are not found; the lock, the response, and the reach apply to all.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct HandlebarsSpec {
     /// The middle of the bars.
     pub centre_m: Vec3,
     /// From the middle to each grip, metres.
     pub half_width_m: f32,
-    /// The bars' turn that steers fully, degrees.
+    /// The bars' turn that steers fully, degrees. The bars stop there.
     pub max_steer_deg: f32,
-    /// The bars' roll that leans fully, degrees.
-    pub max_lean_deg: f32,
+    /// [`BarsSteeringConfig::deadzone_deg`].
+    pub deadzone_deg: f32,
+    /// [`BarsSteeringConfig::response`].
+    pub response: f32,
+    /// How far from the hand's half of the bars its grip may be for a grip press to take them,
+    /// metres: wider than the other controls', since the bars are where a reaching hand expects
+    /// them less exactly than a wheel's rim.
+    pub grab_radius_m: f32,
 }
 
 /// A joystick whose top moves in the horizontal plane. Let go, a spring returns it to centre.
@@ -189,10 +205,11 @@ pub struct StickSpec {
     pub return_s: f32,
 }
 
-/// The horn and the nitrous worked by hand (see
+/// The horn, the nitrous, and the bars' twist grips worked by hand (see
 /// [`crate::controllers::vehicles::physical::buttons`]): the horn pressed on the wheel's hub, a
-/// nitrous button on the dash beside the wheel, and the handlebars' right grip or the collective
-/// twisted for the nitrous. The plane's afterburner is its throttle's gate
+/// nitrous button on the dash beside the wheel, the collective twisted for the nitrous, and the
+/// handlebars' right grip twisted back for the throttle and the left for the brake. The plane's
+/// afterburner is its throttle's gate
 /// ([`FlightControlsTuning::afterburner_gate`]). The buttons stay alongside the controller's.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct CockpitButtonsTuning {
@@ -213,16 +230,16 @@ pub struct CockpitButtonsTuning {
     /// How far the collective's grip is twisted from where the hand took it to burn the nitrous,
     /// degrees: well past the roll a wrist makes while it raises and lowers the lever.
     pub twist_deg: f32,
-    /// [`PhysicalControlsConfig::twist_throttle`].
-    pub twist_throttle: bool,
-    /// How far the handlebars' right grip is twisted back for full throttle, degrees.
+    /// [`PhysicalControlsConfig::bars_twist`].
+    pub bars_twist: bool,
+    /// How far a handlebars' grip is twisted back for full throttle or full brake, degrees.
     pub throttle_twist_deg: f32,
 }
 
 impl CockpitButtonsTuning {
     /// Whether any button is switched on.
     pub const fn any(&self) -> bool {
-        self.horn || self.nitrous_button || self.twist_nitrous || self.twist_throttle
+        self.horn || self.nitrous_button || self.twist_nitrous || self.bars_twist
     }
 }
 

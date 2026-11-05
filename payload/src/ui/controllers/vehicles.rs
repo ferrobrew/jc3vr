@@ -125,10 +125,9 @@ fn physical_readout(ui: &mut Ui, readout: &VehiclesReadout) {
     let c = &status.controls;
     let o = &status.outputs;
     ui.label(format!(
-        "Wheel {:+.0}° · bars turn {:+.0}° roll {:+.0}° · stick ({:+.2}, {:+.2}) m · collective {:+.2} · throttle {:+.2}",
+        "Wheel {:+.0}° · bars turn {:+.0}° · stick ({:+.2}, {:+.2}) m · collective {:+.2} · throttle {:+.2}",
         c.wheel_angle.to_degrees(),
-        c.bars.x.to_degrees(),
-        c.bars.y.to_degrees(),
+        c.bars.to_degrees(),
         c.stick.x,
         c.stick.y,
         c.levers[0],
@@ -150,6 +149,12 @@ fn physical_readout(ui: &mut Ui, readout: &VehiclesReadout) {
         axis(o.rudder),
         axis(o.throttle),
         if o.afterburner { " (afterburner)" } else { "" },
+    ));
+    let grip = |v: Option<f32>| v.map_or("not held".to_owned(), |v| format!("{v:.2}"));
+    ui.label(format!(
+        "Bars' grips: throttle {} · brake {}",
+        grip(o.bike_throttle),
+        grip(o.bike_brake),
     ));
     ui.label(format!(
         "Stick and lever cues {} (last {}) · afterburner gate passed {} · horn {} · nitrous {} · buttons worked {}",
@@ -425,6 +430,18 @@ fn vehicle_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
             .fixed_decimals(2),
     );
     ui.checkbox(&mut p.handlebars, "Handlebars (motorcycle, ATV, jetski)");
+    ui.add_enabled(
+        p.handlebars,
+        egui::Slider::new(&mut p.bars_steering.deadzone_deg, 0.0..=10.0)
+            .text("Handlebars deadzone (°)")
+            .fixed_decimals(1),
+    );
+    ui.add_enabled(
+        p.handlebars,
+        egui::Slider::new(&mut p.bars_steering.response, 0.5..=3.0)
+            .text("Handlebars response (1 is linear, higher is gentler at centre)")
+            .fixed_decimals(2),
+    );
     ui.checkbox(
         &mut p.sticks,
         "Stick (helicopter cyclic, plane flight stick)",
@@ -435,8 +452,8 @@ fn vehicle_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
     );
     ui.checkbox(&mut p.nitrous_button, "Nitrous button beside the wheel");
     ui.checkbox(
-        &mut p.twist_throttle,
-        "Twist the bars' right grip back for the throttle",
+        &mut p.bars_twist,
+        "Twist the bars' grips back: the right for the throttle, the left for the brake",
     );
     ui.checkbox(&mut p.twist_rudder, "Twist the flight stick for the rudder");
     ui.checkbox(

@@ -12,9 +12,10 @@
 //! - the wheel turns by the holding hands' turns ([`crate::controllers::vehicles::steering`]), and
 //!   its angle over the lock is the steering; let go, it returns to centre, steering as it goes,
 //!   until the stick steers. The holding hands stay where they took the rim as it turns;
-//! - the handlebars pivot about their middle: their turn in the horizontal plane steers and their
-//!   roll leans. With one hand on them, the other end mirrors it through the middle. They move by
-//!   the grips' change since the hands holding them last changed, so a grab does not jump them;
+//! - the handlebars turn about their middle in the horizontal plane, and their turn past a small
+//!   deadzone, shaped by a response exponent, steers and leans together, as the gamepad's stick
+//!   does. With one hand on them, the other end mirrors it through the middle. They move by the
+//!   grips' change since the hands holding them last changed, so a grab does not jump them;
 //! - a stick's top follows the hand across the horizontal plane, and its deflection over the full
 //!   deflection, past a small deadzone, drives both of its axes; let go, a centring spring returns
 //!   it, still flying the vehicle on its way. The flight stick's twist about its shaft works the
@@ -24,8 +25,8 @@
 //!   afterburner gate at the top of its travel.
 //!
 //! The cockpit's buttons ([`buttons`]) are worked by hand too: the horn pressed on the wheel's hub,
-//! a nitrous button on the dash, the handlebars' right grip twisted back for the throttle, and the
-//! collective twisted for the nitrous.
+//! a nitrous button on the dash, the handlebars' right grip twisted back for the throttle and the
+//! left for the brake, and the collective twisted for the nitrous.
 //!
 //! The sticks and levers give the holding hand a haptic cue at the ends of their travel, the
 //! levers at neutral, and the throttle going into and out of its gate ([`cues`]).
@@ -63,7 +64,7 @@ use crate::controllers::{
         physical::{
             buttons::{ButtonEvent, ButtonInputs, ButtonPlacement, ButtonState, step_buttons},
             cues::TravelCues,
-            handlebars::{BarsLatch, bars_now, step_bars},
+            handlebars::{BarsLatch, bar_grab_point, bars_now, step_bars},
             held_wheel::step_wheel,
             levers::step_lever,
             sticks::{deflection3, step_stick},
@@ -188,8 +189,8 @@ pub struct ControlState {
     wheel_past_lock: f32,
     /// Which of the wheel's haptic cues may fire.
     wheel_cues: CueArming,
-    /// The handlebars' turn and roll, radians.
-    pub bars: Vec2,
+    /// The handlebars' turn, radians, positive with the right grip pulled back.
+    pub bars: f32,
     /// The bars and the grips' measure of them when the hands holding them last changed.
     bars_latch: Option<BarsLatch>,
     /// The stick's deflection in the horizontal plane (+X right, +Y back), metres.
@@ -212,7 +213,7 @@ impl ControlState {
             wheel_grips: [None; 2],
             wheel_past_lock: 0.0,
             wheel_cues: CueArming::new(),
-            bars: Vec2::ZERO,
+            bars: 0.0,
             bars_latch: None,
             stick: Vec2::ZERO,
             levers: [0.0; 2],
@@ -229,7 +230,8 @@ impl ControlState {
 pub struct Outputs {
     /// `-1..=1`, positive right.
     pub steer: Option<f32>,
-    /// `-1..=1`, positive leaning right.
+    /// `-1..=1`, positive leaning right: the handlebars' steering, as the gamepad's one stick
+    /// writes both.
     pub lean: Option<f32>,
     /// The cyclic: +X rolls right, +Y pushes forward.
     pub cyclic: Option<Vec2>,
@@ -255,6 +257,8 @@ pub struct Outputs {
     pub nitrous: bool,
     /// The throttle the handlebars' right grip opens, `0..=1`, while the right hand holds it.
     pub bike_throttle: Option<f32>,
+    /// The brake the handlebars' left grip applies, `0..=1`, while the left hand holds it.
+    pub bike_brake: Option<f32>,
 }
 
 impl Outputs {
@@ -273,6 +277,7 @@ impl Outputs {
         horn: false,
         nitrous: false,
         bike_throttle: None,
+        bike_brake: None,
     };
 }
 
@@ -331,7 +336,8 @@ impl Placement {
     }
 
     /// The point `hand`'s grip grabs `kind` at, given the hand's grip `point`: the nearest point on
-    /// the wheel's rim, the hand's own end of the handlebars, or a stick's or lever's handle.
+    /// the wheel's rim, the nearest point on the hand's own half of the handlebars, or a stick's or
+    /// lever's handle.
     pub fn grab_point(
         &self,
         state: &ControlState,
@@ -344,10 +350,7 @@ impl Placement {
                 let angle = self.wheel.hand_angle(point).unwrap_or(0.0);
                 Some(self.wheel.rim_point(angle))
             }
-            ControlKind::Handlebars => {
-                let ends = bar_ends(self.bars.centre, self.bars.half_width, state.bars);
-                Some(ends[hand.index()])
-            }
+            ControlKind::Handlebars => Some(bar_grab_point(&self.bars, state.bars, hand, point)),
             kind => {
                 if let Some(spec) = self.stick(kind) {
                     return Some(self.mirror(spec.top_m) + deflection3(state.stick));
@@ -381,7 +384,10 @@ pub fn candidates(
                 out.push(Candidate {
                     volume: GrabVolume::VehicleControl(kind),
                     centre,
-                    radius: placement.config.grab_radius_m,
+                    radius: match kind {
+                        ControlKind::Handlebars => placement.config.handlebars.grab_radius_m,
+                        _ => placement.config.grab_radius_m,
+                    },
                     hand: Some(hand),
                 });
             }
@@ -482,9 +488,9 @@ pub fn step(
                 out.wheel_cue = cue;
             }
             ControlKind::Handlebars => {
-                if let Some((steer, lean)) = step_bars(state, placement, holding) {
+                if let Some(steer) = step_bars(state, placement, holding) {
                     out.steer = Some(steer);
-                    out.lean = Some(lean);
+                    out.lean = Some(steer);
                 }
             }
             ControlKind::Cyclic | ControlKind::FlightStick => {
@@ -541,7 +547,7 @@ pub fn step(
             grips: inputs.grips,
             orientations: inputs.orientations,
             holds: state.holds,
-            bars_angles: state.bars,
+            bars_turn: state.bars,
         },
         &mut button_events,
     );
@@ -549,6 +555,7 @@ pub fn step(
     out.horn = pressed.horn;
     out.nitrous = pressed.nitrous;
     out.bike_throttle = pressed.throttle;
+    out.bike_brake = pressed.brake;
     out
 }
 
@@ -560,8 +567,9 @@ pub fn release_all(state: &mut ControlState, events: &mut Vec<ControlEvent>) {
 }
 
 /// Where `hand`'s grip sits on the control it holds, for the hand's current grip positions
-/// `grips`: the rim point at the hand's angle, the hand's end of the bars as both hands turn them,
-/// or the stick's or lever's handle where the hand has moved it, within its travel.
+/// `grips`: the rim point at the hand's angle, the nearest point on the hand's half of the bars as
+/// both hands turn them, or the stick's or lever's handle where the hand has moved it, within its
+/// travel.
 pub fn anchor_point(
     state: &ControlState,
     placement: &Placement,
@@ -585,7 +593,7 @@ pub fn anchor_point(
                 placement,
                 grips_holding(state, ControlKind::Handlebars, grips),
             );
-            Some(bar_ends(placement.bars.centre, placement.bars.half_width, bars)[hand.index()])
+            Some(bar_grab_point(&placement.bars, bars, hand, point))
         }
         kind => {
             if let Some(spec) = placement.stick(kind) {

@@ -110,8 +110,8 @@ fn cockpit_buttons_line(config: &CockpitButtonsTuning, summary: &VehicleSummary)
             here.push(prose("nitrous button"));
         }
     }
-    if config.twist_throttle && offers(ControlKind::Handlebars) {
-        here.push(prose("throttle grip"));
+    if config.bars_twist && offers(ControlKind::Handlebars) {
+        here.push(prose("throttle and brake grips"));
     }
     if config.twist_nitrous && offers(ControlKind::Collective) {
         here.push(prose("twist grip"));
@@ -280,7 +280,7 @@ mod tests {
             horn: false,
             nitrous_button: false,
             twist_nitrous: false,
-            twist_throttle: false,
+            bars_twist: false,
             ..config
         };
         assert_eq!(cockpit_buttons_line(&off, &flying()).health, Health::Off);

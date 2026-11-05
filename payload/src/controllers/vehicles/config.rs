@@ -125,6 +125,8 @@ pub struct PhysicalControlsConfig {
     pub wheel: WheelConfig,
     /// The handlebars of the motorcycles, the ATV, the jetski, and the duck.
     pub handlebars: bool,
+    /// How the handlebars' turn maps to the steering.
+    pub bars_steering: BarsSteeringConfig,
     /// The helicopter's cyclic and the plane's flight stick, by the dominant knee.
     pub sticks: bool,
     /// The helicopter's collective, twisted for the nitrous, and the plane's throttle with its
@@ -133,8 +135,11 @@ pub struct PhysicalControlsConfig {
     /// A nitrous button on the dash beside the wheel, pushed with a free hand.
     pub nitrous_button: bool,
     /// Open the throttle by twisting the handlebars' right grip back, as a motorcycle's throttle
-    /// is twisted. The trigger still accelerates; the larger of the two wins.
-    pub twist_throttle: bool,
+    /// is twisted, and brake by twisting the left grip back the same way. The triggers still
+    /// accelerate and brake; on each, the larger of the grip and the trigger wins. Read from the
+    /// key that saved the throttle twist alone.
+    #[serde(alias = "twist_throttle")]
+    pub bars_twist: bool,
     /// Twist the held flight stick about its shaft to work the rudder: turning the top to the
     /// right yaws right.
     pub twist_rudder: bool,
@@ -145,10 +150,11 @@ impl PhysicalControlsConfig {
         Self {
             wheel: WheelConfig::new(),
             handlebars: true,
+            bars_steering: BarsSteeringConfig::new(),
             sticks: true,
             levers: true,
             nitrous_button: true,
-            twist_throttle: true,
+            bars_twist: true,
             twist_rudder: true,
         }
     }
@@ -160,6 +166,34 @@ impl PhysicalControlsConfig {
 }
 
 impl Default for PhysicalControlsConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// How the handlebars' turn maps to the steering (see
+/// [`crate::controllers::vehicles::physical`]), in [`PhysicalControlsConfig::bars_steering`].
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BarsSteeringConfig {
+    /// Bar turns within this of centre steer nothing, degrees, so that a resting hand's tremor and
+    /// the small turns a wrist makes while it twists a grip do not weave the bike.
+    pub deadzone_deg: f32,
+    /// The exponent the share of the lock past the deadzone is raised to: one is linear, above one
+    /// steers more gently around centre and as fully at the lock.
+    pub response: f32,
+}
+
+impl BarsSteeringConfig {
+    pub const fn new() -> Self {
+        Self {
+            deadzone_deg: 3.0,
+            response: 1.6,
+        }
+    }
+}
+
+impl Default for BarsSteeringConfig {
     fn default() -> Self {
         Self::new()
     }

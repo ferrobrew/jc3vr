@@ -9,9 +9,13 @@ use std::f32::consts::FRAC_PI_2;
 use super::*;
 use crate::controllers::vehicles::{
     config::PhysicalControlsConfig,
-    physical::{handlebars::bar_angles, levers::detent, sticks},
+    physical::{
+        handlebars::{bar_grab_point, bar_turn, steer_for_turn},
+        levers::detent,
+        sticks,
+    },
     steering,
-    tuning::{LeverAxis, PhysicalControlsTuning},
+    tuning::{HandlebarsSpec, LeverAxis, PHYSICAL, PhysicalControlsTuning},
 };
 
 const DT: f32 = 1.0 / 30.0;
@@ -230,9 +234,9 @@ fn a_hand_that_leaves_the_wheel_lets_go() {
 }
 
 #[test]
-fn the_handlebars_steer_with_a_pulled_back_grip_and_lean_with_a_lowered_one() {
+fn the_handlebars_turn_with_a_pulled_back_grip_and_not_with_a_lowered_one() {
     let c = Vec3::ZERO;
-    let steer = bar_angles(
+    let turn = bar_turn(
         c,
         [
             Some(Vec3::new(-0.3, 0.0, -0.1)),
@@ -240,8 +244,8 @@ fn the_handlebars_steer_with_a_pulled_back_grip_and_lean_with_a_lowered_one() {
         ],
     )
     .unwrap();
-    assert!(steer.x > 0.0 && steer.y.abs() < 1e-5);
-    let lean = bar_angles(
+    assert!(turn > 0.0);
+    let lowered = bar_turn(
         c,
         [
             Some(Vec3::new(-0.3, 0.1, 0.0)),
@@ -249,22 +253,104 @@ fn the_handlebars_steer_with_a_pulled_back_grip_and_lean_with_a_lowered_one() {
         ],
     )
     .unwrap();
-    assert!(lean.y > 0.0 && lean.x.abs() < 1e-5);
-    let one = bar_angles(c, [None, Some(Vec3::new(0.3, 0.0, 0.1))]).unwrap();
-    assert!((one.x - steer.x).abs() < 1e-5);
-    let ends = bar_ends(c, 0.3, Vec2::new(steer.x, 0.0));
+    assert!(lowered.abs() < 1e-5, "{lowered}");
+    let one = bar_turn(c, [None, Some(Vec3::new(0.3, 0.0, 0.1))]).unwrap();
+    assert!((one - turn).abs() < 1e-5);
+    let ends = bar_ends(c, 0.3, turn);
     assert!(ends[1].z > 0.0 && ends[0].z < 0.0);
-    let rolled = bar_ends(c, 0.3, Vec2::new(0.0, lean.y));
-    assert!(rolled[1].y < 0.0);
+    assert!(ends.iter().all(|e| e.y.abs() < 1e-6));
+}
+
+#[test]
+fn the_handlebars_steer_past_a_deadzone_on_a_curve_and_lean_as_they_steer() {
+    let spec = PHYSICAL.handlebars;
+    let lock = spec.max_steer_deg.to_radians();
+    let deadzone = spec.deadzone_deg.to_radians();
+    assert!(deadzone > 0.0 && spec.response > 1.0);
+    assert_eq!(steer_for_turn(deadzone * 0.9, &spec), 0.0);
+    assert_eq!(steer_for_turn(lock, &spec), 1.0);
+    assert_eq!(steer_for_turn(-2.0 * lock, &spec), -1.0);
+    assert_eq!(steer_for_turn(f32::NAN, &spec), 0.0);
+    let halfway = deadzone + (lock - deadzone) * 0.5;
+    let half = steer_for_turn(halfway, &spec);
+    assert!(half > 0.0 && half < 0.5, "{half}");
+    assert!((steer_for_turn(-halfway, &spec) + half).abs() < 1e-6);
+    let linear = HandlebarsSpec {
+        response: 1.0,
+        ..spec
+    };
+    assert!((steer_for_turn(halfway, &linear) - 0.5).abs() < 1e-5);
+
+    // Held and turned, the bars write the same value to the steering and the lean, whatever the
+    // grips' heights.
+    let p = placement(|c| c.handlebars = true);
+    let kinds = [ControlKind::Handlebars];
+    let ends = bar_ends(p.bars.centre, p.bars.half_width, 0.0);
+    let mut state = ControlState::default();
+    step_with(
+        &mut state,
+        &p,
+        &kinds,
+        [Some(ends[0]), Some(ends[1])],
+        [Some(ControlKind::Handlebars); 2],
+    );
+    let turned = bar_ends(p.bars.centre, p.bars.half_width, halfway);
+    let (out, _) = step_with(
+        &mut state,
+        &p,
+        &kinds,
+        [
+            Some(turned[0] + Vec3::new(0.0, 0.06, 0.0)),
+            Some(turned[1] - Vec3::new(0.0, 0.06, 0.0)),
+        ],
+        [None; 2],
+    );
+    let steer = out.steer.unwrap();
+    assert!((steer - half).abs() < 1e-3, "{steer} {half}");
+    assert_eq!(out.lean, out.steer);
+}
+
+#[test]
+fn a_hand_takes_the_handlebars_anywhere_along_its_half() {
+    let p = placement(|c| c.handlebars = true);
+    let state = ControlState::default();
+    let ends = bar_ends(p.bars.centre, p.bars.half_width, 0.0);
+    let radius = p.config.handlebars.grab_radius_m;
+    assert!(radius > p.config.grab_radius_m);
+    // Inboard of the right grip and a little above it, the bars are in reach at the point below.
+    let inboard = p.bars.centre.lerp(ends[1], 0.6) + Vec3::new(0.0, 0.1, 0.0);
+    let candidates = candidates(
+        &p,
+        &state,
+        &[ControlKind::Handlebars],
+        [None, Some(inboard)],
+    );
+    assert_eq!(candidates.len(), 1);
+    assert!(candidates[0].reach(inboard).is_some());
+    assert!(candidates[0].centre.distance(inboard) < 0.1 + 1e-4);
+    // The middle of the bars and the other half are not this hand's.
+    let middle = p.bars.centre;
+    let grab = p
+        .grab_point(&state, ControlKind::Handlebars, Hand::Right, middle)
+        .unwrap();
+    assert!(grab.x > p.bars.centre.x + p.bars.half_width * 0.3);
+    // Well past the end, the reach runs out.
+    let past = ends[1] + Vec3::new(radius + 0.12, 0.0, 0.0);
+    let far = candidates_for(&p, &state, past);
+    assert!(far.reach(past).is_none());
+}
+
+fn candidates_for(p: &Placement, state: &ControlState, point: Vec3) -> Candidate {
+    candidates(p, state, &[ControlKind::Handlebars], [None, Some(point)])[0]
 }
 
 #[test]
 fn grabbing_the_handlebars_off_their_ends_neither_jumps_nor_biases_them() {
     let p = placement(|c| c.handlebars = true);
     let kinds = [ControlKind::Handlebars];
-    let ends = bar_ends(p.bars.centre, p.bars.half_width, Vec2::ZERO);
+    let ends = bar_ends(p.bars.centre, p.bars.half_width, 0.0);
     let mut state = ControlState::default();
-    let close = |a: Vec2, b: Vec2| (a - b).length() < 1e-4;
+    let close = |a: f32, b: f32| (a - b).abs() < 1e-4;
 
     // The right hand takes its end a few centimetres in front of it and a little low.
     let right = ends[1] + Vec3::new(0.0, -0.03, -0.05);
@@ -275,14 +361,14 @@ fn grabbing_the_handlebars_off_their_ends_neither_jumps_nor_biases_them() {
         [None, Some(right)],
         [None, Some(ControlKind::Handlebars)],
     );
-    assert!(close(state.bars, Vec2::ZERO), "{}", state.bars);
+    assert!(close(state.bars, 0.0), "{}", state.bars);
     assert_eq!(out.steer, Some(0.0));
 
     // Pulling it back turns the bars by the change alone.
     let pulled = right + Vec3::new(0.0, 0.0, 0.04);
     let (out, _) = step_with(&mut state, &p, &kinds, [None, Some(pulled)], [None; 2]);
     let turned = state.bars;
-    let measured = |grips| bar_angles(p.bars.centre, grips).unwrap();
+    let measured = |grips| bar_turn(p.bars.centre, grips).unwrap();
     let change = measured([None, Some(pulled)]) - measured([None, Some(right)]);
     assert!(out.steer.unwrap() > 0.0);
     assert!(close(turned, change), "{turned} {change}");
@@ -305,8 +391,12 @@ fn grabbing_the_handlebars_off_their_ends_neither_jumps_nor_biases_them() {
         [Some(left), Some(pulled)],
     )
     .unwrap();
-    let drawn = bar_ends(p.bars.centre, p.bars.half_width, turned)[0];
+    let drawn = bar_grab_point(&p.bars, turned, Hand::Left, left);
     assert!(anchored.distance(drawn) < 1e-4);
+    // The drawn hand sits on the turned bars' left half.
+    let end = bar_ends(p.bars.centre, p.bars.half_width, turned)[0];
+    let on_bar = (drawn - p.bars.centre).cross(end - p.bars.centre).length();
+    assert!(on_bar < 1e-5, "{on_bar}");
 
     // The right hand lets go, and the bars still stay.
     step_held(

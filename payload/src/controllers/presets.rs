@@ -72,7 +72,7 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.vehicles.physical.levers = on;
     c.vehicles.physical.twist_rudder = on;
     c.vehicles.physical.nitrous_button = on;
-    c.vehicles.physical.twist_throttle = on;
+    c.vehicles.physical.bars_twist = on;
     c.vehicles.arm_steering.wingsuit = on;
     c.vehicles.driving_view.enabled = on;
     c.vehicles.parachute_handles.enabled = on;

@@ -35,9 +35,12 @@ pub fn write_outputs(out: &Outputs, desired: &mut Vec<Desired>) {
     if let Some(throttle) = out.throttle {
         replace_axis(desired, throttle, PLANE_DEC_TRUST, PLANE_INC_TRUST);
     }
-    // The bars' throttle grip opens the throttle alongside the trigger: the larger wins.
+    // The bars' throttle and brake grips work alongside the triggers: on each, the larger wins.
     if let Some(throttle) = out.bike_throttle.filter(|t| *t > 0.0) {
         raise_analog(desired, throttle, ACCELERATE);
+    }
+    if let Some(brake) = out.bike_brake.filter(|b| *b > 0.0) {
+        raise_analog(desired, brake, REVERSE);
     }
     // The buttons hold their actions alongside the controller's buttons, which merge with them.
     // The horn is the gamepad's left stick click there, which also toggles a vehicle's magnet; the

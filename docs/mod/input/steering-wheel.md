@@ -79,7 +79,13 @@ The wheel is centred on the vehicle, so it is never mirrored for a left-handed l
 
 The ATV, the jetski, and the duck share their classes with cars and boats, but steer by handlebars. A vehicle whose parts include a steering fork (behaviour `SteeringFork`, or a part named `<model>_upper_steering`) is offered the handlebars in place of the wheel, motorcycles included. The fork's model-space box, at rest (its parent space offset under its parent's root-space transform, without the hinge's turn), places the grips' middle at the box's rear and mid-height, and the half width at half the box's width less a hand's half width. Without a usable fork, the handlebars spec places them. The game turns the forks itself, by the steering, so they are not animated by the mod.
 
-The grips measure the bars' turn and roll from the line between them, or with one hand from its grip mirrored through the middle. A hand rarely takes the bars exactly at their end, so that measure is latched whenever the hands holding the bars change (a grab, a second hand joining, or one letting go), and the bars move from where they were by the change the grips measure since. A grab a few centimetres in front of the end therefore neither jumps the bars nor leaves them biased, and the hands are drawn on the bars' ends as the bars turn.
+A grip press takes the bars anywhere along the hand's own half, from about a third of the way out from the middle to a little past the grip, within 16 cm of it: wider than the other controls' 9 cm, since a hand reaching for the bars lands less exactly than one on a wheel's rim, and in the driver's seat a grip press that misses a control does nothing else. The hand is drawn where it took the bars, on the bars as they turn.
+
+The grips measure the bars' turn in the horizontal plane from the line between them, or with one hand from its grip mirrored through the middle. A hand rarely takes the bars exactly at their end, so that measure is latched whenever the hands holding the bars change (a grab, a second hand joining, or one letting go), and the bars move from where they were by the change the grips measure since. A grab a few centimetres in front of the end therefore neither jumps the bars nor leaves them biased.
+
+The bars only turn. Their turn within 3° of centre steers nothing, so a resting hand's tremor and the small turns a wrist makes while it twists a grip do not weave the bike, and past that the share of the 30° lock is raised to the response exponent (1.6), so the bars steer gently around centre and fully at the lock. The steering is written to `TURN_LEFT`/`TURN_RIGHT` and the same value to `BIKE_LEAN_LEFT`/`BIKE_LEAN_RIGHT`, because the gamepad's one stick writes both and the game's bikes are tuned for them moving together. The grips' heights work nothing: the bars do not roll, so the grip that drops as two hands turn the bars neither leans nor steers on its own.
+
+The right grip twisted back is the throttle and the left the brake ([cockpit-controls.md, "The cockpit's buttons"](cockpit-controls.md#cockpit-buttons)).
 
 ## Turning the rendered wheel
 
@@ -91,14 +97,15 @@ The render update runs on worker threads, so the detour reads only its own slot:
 
 ## Debug UI and settings
 
-The Vehicles feature's live status shows the wheel's angle and the steering written, the driving position and the driving view's correction (above), the vehicle type hash, the wheel and fork parts found, where the wheel came from (the part, an override, or the fallback with its reason), the wheel in the part's space and as placed in the cockpit, whether the fallback is held in the vehicle's space, where the handlebars came from, and the rendered wheel's angle with a count of the render updates that turned it. The wheel's settings are `physical.wheel.enabled`, `lock_deg`, `response`, and `turned_by`; its placement, deadzone, and return are fixed in `PhysicalControlsTuning`.
+The Vehicles feature's live status shows the wheel's angle and the steering written, the driving position and the driving view's correction (above), the vehicle type hash, the wheel and fork parts found, where the wheel came from (the part, an override, or the fallback with its reason), the wheel in the part's space and as placed in the cockpit, whether the fallback is held in the vehicle's space, where the handlebars came from, and the rendered wheel's angle with a count of the render updates that turned it. The wheel's settings are `physical.wheel.enabled`, `lock_deg`, `response`, and `turned_by`; its placement, deadzone, and return are fixed in `PhysicalControlsTuning`. The handlebars' are `physical.handlebars` and `physical.bars_steering` (`deadzone_deg` and `response`), with sliders in the Vehicles feature; their lock and reach are fixed in `PhysicalControlsTuning`. The live status shows the bars' turn, the steering and lean written, and the bars' throttle and brake.
 
 ## Unverified
 
 - That the travel tracking feels right with the hands drawn on the rim at their own angle, and that the leading hand's pick keeps the wheel with the hand that turns it without a jitter or a drift while both rest.
 - The default lock of 135° and the return rate against the game's own steering ramp.
 - The box fit's hub, radius, and tilt in each car, and the override values.
-- That the handlebar grips sit at the fork box's rear and mid-height.
+- That the handlebar grips sit at the fork box's rear and mid-height. In the session before the bars' reach was widened, the first grip presses on a motorcycle missed the grips' points by 12 to 15 cm beyond the old 9 cm reach, so the placement may be off as well.
+- The bars' deadzone, response, and lock against the bike's own steering, and whether the lean written with the steering suits every bike, the ATV, and the jetski.
 - The sign of [`m_SteeringTurn`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_SteeringTurn) (positive is taken as right) and its range. The drawn wheel follows it under stick steering, so a wrong sign turns the drawn wheel against the car.
 - That nothing else on the render worker reads the wheel part's root-space transform while the detour holds it turned.
 - That the head pose is composed against the end of the simulation step, so the vehicle's `m_WorldMatrixT1` matches it at speed.
@@ -115,6 +122,7 @@ The Vehicles feature's live status shows the wheel's angle and the steering writ
 5. The circuit racer, the ladbil, the old bus, and the old jeep: the overrides sit on the wheel; adjust `WHEEL_OVERRIDES` where they do not.
 6. The modern bus and the old truck: the fallback wheel hangs from the head for the first moment, then rides the bus.
 7. A boat with a wheel (the racing boat, the small fishing boat) and the transport boat's ship's wheel.
-8. The ATV, the jetski, a motorcycle, and the duck: handlebars are offered, not a wheel, and the grips sit on the drawn bars.
+8. The ATV, the jetski, a motorcycle, and the duck: handlebars are offered, not a wheel, and the grips sit on the drawn bars. Reach for the bars without looking: the first press takes them, and the hand is drawn where it took them.
 9. The rendered wheel turns with the held wheel, the right way, and with the stick when no hand holds it; it stops turning when it is shot off.
 10. A left-handed layout: the wheel and the handlebars stay where they are; the sticks and levers swap sides.
+11. On a motorcycle, ride a straight with both hands on the bars: it holds its line with no weave. Turn the bars a little, then fully: the bike turns gently, then fully, and a hand dropping as the bars turn does not add a turn of its own. Compare `physical.bars_steering.response` at 1 and at 2.
