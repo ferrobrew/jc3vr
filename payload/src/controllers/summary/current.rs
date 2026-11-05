@@ -108,6 +108,9 @@ pub(crate) struct Hint {
     pub sources: Vec<Source>,
     pub prefix: Option<String>,
     pub text: String,
+    /// One of the mode's fixed essentials ([`crate::controllers::summary::essentials`]) rather
+    /// than a control usable at this moment.
+    pub essential: bool,
 }
 
 #[derive(Debug, Clone, Eq)]
@@ -277,6 +280,7 @@ pub(crate) fn project(
                 sources: vec![source],
                 prefix: line.prefix,
                 text: line.text,
+                essential: false,
             });
         }
     }

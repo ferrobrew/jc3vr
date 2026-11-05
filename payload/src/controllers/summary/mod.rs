@@ -1,7 +1,8 @@
-//! The controls summary: a current-usable panel on the off-hand wrist and a separate complete
-//! binding reference, with the game's own names for actions and the runtime's actual source names,
-//! and the suppression of the game's own button hints, whose gamepad glyphs do not match the
-//! controllers. See `docs/mod/input/controls-summary.md`.
+//! The controls summary: a panel on the off-hand wrist of the controls usable now above the mode's
+//! fixed essentials ([`essentials`]), and a separate complete binding reference, with the game's
+//! own names for actions and the runtime's actual source names, and the suppression of the game's
+//! own button hints, whose gamepad glyphs do not match the controllers. See
+//! `docs/mod/input/controls-summary.md`.
 //!
 //! - [`config`]: the settings, [`SummaryConfig`];
 //! - [`labels`]: the game's localisation key for each action per mode, and the mod's own strings;
@@ -28,6 +29,7 @@ pub mod content;
 pub mod context;
 pub(crate) mod current;
 pub(crate) mod eligibility;
+pub(crate) mod essentials;
 pub mod game_hints;
 pub mod glance;
 #[cfg(test)]
@@ -233,7 +235,7 @@ pub(crate) fn refresh(
         context_lines,
         resolve(Text::Mod(ModText::OnScreen)),
     );
-    let wrist = project(
+    let mut wrist = project(
         &known_rows,
         mode,
         current,
@@ -242,6 +244,18 @@ pub(crate) fn refresh(
         &|name| table.name(name).to_owned(),
         &description,
     );
+    // The mode's fixed essentials go below the contextual rows, usable now or not.
+    let essential_rows = essentials::rows(mode, &describe_current(&ctx, &table, None));
+    let essential = project(
+        &essential_rows,
+        mode,
+        &essentials::context(essential_rows.clone()),
+        &[],
+        &resolve,
+        &|name| table.name(name).to_owned(),
+        &description,
+    );
+    essentials::merge(&mut wrist, essential);
     if previous.is_none_or(|old| old.locale != key.locale) {
         sources::request_refresh();
     }

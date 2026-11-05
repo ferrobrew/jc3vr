@@ -510,7 +510,7 @@ fn hint_job(hint: &Hint, width: f32, m: Metrics) -> LayoutJob {
         0.0,
         TextFormat {
             font_id: font,
-            color: TEXT,
+            color: if hint.essential { ESSENTIAL } else { TEXT },
             ..Default::default()
         },
     );
@@ -587,6 +587,8 @@ const HEADING_FAMILY: &str = "summary-heading";
 /// translucent backing.
 const TEXT: Color32 = Color32::WHITE;
 const DIM: Color32 = Color32::from_rgb(160, 160, 160);
+/// A fixed essential's text, a step below a contextual row's, so the rows usable now stand out.
+const ESSENTIAL: Color32 = Color32::from_rgb(205, 205, 205);
 const BACKGROUND: Color32 = Color32::from_rgba_premultiplied(10, 12, 15, 215);
 const ACCENT: Color32 = Color32::from_rgb(200, 40, 30);
 /// The source control's compact text label.
@@ -638,6 +640,7 @@ mod tests {
                 text:
                     "A long localized action description that wraps across several readable lines"
                         .repeat(3),
+                essential: false,
             })
             .collect();
         let output = context.run_ui(egui::RawInput::default(), |ui| {
@@ -692,6 +695,7 @@ mod tests {
                         }],
                         prefix: None,
                         text: format!("Action {index}"),
+                        essential: index % 2 == 1,
                     })
                     .collect();
             }
