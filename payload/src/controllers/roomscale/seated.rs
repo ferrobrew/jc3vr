@@ -229,6 +229,20 @@ impl Default for SeatedReference {
     }
 }
 
+/// A frame step of `dt` seconds as a head-height tracker counts it: at most [`MAX_STEP_S`], so
+/// that a stall counts neither as seated time nor toward the posture's dwell, and nothing when it
+/// is not finite.
+pub(crate) fn step(dt: f32) -> f32 {
+    if dt.is_finite() {
+        dt.clamp(0.0, MAX_STEP_S)
+    } else {
+        0.0
+    }
+}
+
+/// The longest frame step a head-height tracker accounts for, seconds.
+const MAX_STEP_S: f32 = 0.25;
+
 /// The samples the window holds; the sampling interval is the window divided by this.
 const CAPACITY: usize = 240;
 
@@ -238,23 +252,11 @@ const MIN_SAMPLES: usize = CAPACITY / 4;
 /// Once adapting, the adaptive baseline closes the gap to this fraction of the deadband.
 const SETTLE_FRACTION: f32 = 0.25;
 
-/// The longest frame step the tracker accounts for, seconds, so that a stall does not count as
-/// seated time.
-const MAX_STEP_S: f32 = 0.25;
-
 /// The range a head height above the floor must fall in to be used, metres.
 const PLAUSIBLE_HEIGHT_M: (f32, f32) = (0.3, 2.5);
 
 fn plausible(height_m: f32) -> bool {
     height_m.is_finite() && (PLAUSIBLE_HEIGHT_M.0..=PLAUSIBLE_HEIGHT_M.1).contains(&height_m)
-}
-
-fn step(dt: f32) -> f32 {
-    if dt.is_finite() {
-        dt.clamp(0.0, MAX_STEP_S)
-    } else {
-        0.0
-    }
 }
 
 fn sample_interval(window_s: f32) -> f32 {

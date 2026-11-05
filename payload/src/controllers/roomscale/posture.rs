@@ -18,7 +18,7 @@ use glam::Vec3;
 use crate::controllers::{
     body::{BodyDimensions, remap_head_height, remap_head_translation},
     config::Posture,
-    roomscale::seated::{SeatedEyeReference, SeatedReferenceSource},
+    roomscale::seated::{SeatedEyeReference, SeatedReferenceSource, step},
 };
 
 /// The automatic posture's seated and standing detection
@@ -362,17 +362,6 @@ const FLOOR_MARGIN_FRACTION: f32 = 0.12;
 /// How far a standing player's head may move up or down and still count as steady at a chair's
 /// height, metres: a seated head holds its height, and a crouch behind cover bobs.
 pub const STEADY_BAND_M: f32 = 0.08;
-
-/// The longest frame step the dwell accounts for, seconds, so that a stall does not complete one.
-const MAX_STEP_S: f32 = 0.25;
-
-fn step(dt: f32) -> f32 {
-    if dt.is_finite() {
-        dt.clamp(0.0, MAX_STEP_S)
-    } else {
-        0.0
-    }
-}
 
 /// What the head height is computed from on one frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
