@@ -26,9 +26,8 @@ pub(super) fn climb_readout(ui: &mut Ui, status: &ClimbStatus) {
         }
     ));
     ui.label(format!(
-        "{} grips ({} on moving bodies) · {} releases · {} mantles · {} dropped{}",
+        "{} grips · {} releases · {} mantles · {} dropped{}",
         status.grips,
-        status.moving_grips,
         status.releases,
         status.mantles,
         status.drops,

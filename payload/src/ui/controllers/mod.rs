@@ -55,7 +55,7 @@ use crate::{
         roomscale as controller_roomscale, scheme, summary as controller_summary,
     },
     hud::{pointer, summary_panel},
-    status::feedback,
+    status::{feedback, hands as hands_status},
     ui::{camera, catalog::FeatureId, dispatch::FeatureBody, status_row::headlines},
     vr::input::{self as vr_input, ActionsOrigin},
 };
@@ -226,19 +226,25 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
             )
         },
         FeatureId::PhysicalHands => |ui, _| {
-            physical_hands::physical_hands_readout(
+            headlines(
                 ui,
-                &controller_physical_hands::status(),
-                &controller_physical_hands::vault::status(),
+                &[
+                    &hands_status::PALMS,
+                    &hands_status::PUSH_UP,
+                    &hands_status::ARTICULATED,
+                ],
             );
+            physical_hands::physical_hands_readout(ui, &controller_physical_hands::status());
             ui.collapsing("Diagnostics", |ui| {
                 hand_bodies::hand_bodies_readout(ui, &controller_physical_hands::physics::status())
             });
         },
         FeatureId::CharactersDoors => |ui, _| {
+            headlines(ui, &[&hands_status::DOORS, &hands_status::CHARACTERS]);
             physical_hands::characters_doors_readout(ui, &controller_physical_hands::status());
         },
         FeatureId::Climbing => |ui, _| {
+            headlines(ui, &[&hands_status::MOVING_CLIMBS, &hands_status::STUNT_POSITIONS]);
             climb::climb_readout(ui, &controller_physical_hands::climb::status());
             stunt::stunt_readout(ui, &controller_physical_hands::stunt::status());
         },

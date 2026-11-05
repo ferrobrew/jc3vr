@@ -7,11 +7,11 @@ use crate::controllers::{
     frame::Hand,
     physical_hands::{
         PhysicalHandsConfig, PhysicalHandsStatus, doors, grasp::TargetKind, human_hull, impacts,
-        pickup::diagnostics, sounds::SoundsStatus, vault::VaultStatus,
+        pickup::diagnostics, sounds::SoundsStatus,
     },
 };
 
-pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus, v: &VaultStatus) {
+pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) {
     ui.label(format!(
         "Human-hull adapter: {:?}; clearance: {:?}.",
         status.human_hull.adapter, status.human_hull.clearance,
@@ -41,13 +41,12 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus, 
             });
         }
     });
-    match status.idle {
-        Some(idle) => ui.label(format!("Idle: {}", idle.label())),
-        None => ui.label(format!(
-            "Acting · {} casts · push ({:+.2}, {:+.2}) m/s",
-            status.casts, status.push.x, status.push.y
-        )),
-    };
+    if status.idle.is_none() {
+        ui.label(format!(
+            "Push ({:+.2}, {:+.2}) m/s",
+            status.push.x, status.push.y
+        ));
+    }
     ui.columns(2, |columns| {
         for hand in Hand::BOTH {
             let ui = &mut columns[hand.index()];
@@ -126,14 +125,13 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus, 
         }
     });
     ui.label(format!(
-        "Object knocks {} · shove ticks {} · off-thread ticks {}",
-        status.object_pushes, status.shoves, status.off_thread
+        "Object knocks {} · shove ticks {}",
+        status.object_pushes, status.shoves
     ));
     let p = &status.pickup;
     ui.label(format!(
-        "Pickups: {} holds ({} articulated) · {} weapons · {} let go · {} lost{}",
+        "Pickups: {} holds · {} weapons · {} let go · {} lost{}",
         p.holds,
-        p.articulated_grips,
         p.weapons,
         p.releases,
         p.lost,
@@ -147,21 +145,6 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus, 
     ui.label(format!(
         "Held impacts: {} bodies, {} contacts, {} feedback, {} suppressed, {} dropped",
         impacts.listening, impacts.contacts, impacts.feedback, impacts.suppressed, impacts.dropped
-    ));
-    ui.label(format!(
-        "Push up: {} pushes{}{}",
-        v.pushes,
-        if v.lifting {
-            format!(" · lifting {:.2} m/s", v.lift_mps)
-        } else {
-            String::new()
-        },
-        v.last_rise_m
-            .map_or(String::new(), |r| format!(" · last rise {r:.2} m"))
-    ));
-    ui.label(format!(
-        "Push up refused off the ground or moving down: {} · at the feet: {}",
-        v.refusals, v.at_the_feet
     ));
     if let Some(error) = &status.last_error {
         ui.label(format!("Last error: {error}"));
@@ -295,19 +278,8 @@ pub(super) fn characters_doors_readout(ui: &mut Ui, status: &PhysicalHandsStatus
     });
     let p = &status.pickup;
     ui.label(format!(
-        "Doors: {} latched grips · {} unlatched · {} torn · {} tear refusals{}",
-        p.door_grips,
-        p.unlatches,
-        p.tears,
-        p.tear_refusals,
-        p.last_door.map_or(String::new(), |slot| format!(
-            " · last {}",
-            doors::slot_label(slot)
-        ))
-    ));
-    ui.label(format!(
-        "Characters: {} grips · {} thrown down · {} ragdolls taken · {} pulled out of a seat",
-        p.character_grips, p.yanks, p.regrips, p.hijacks
+        "Doors torn: {} · tear refusals {}",
+        p.tears, p.tear_refusals
     ));
 }
 

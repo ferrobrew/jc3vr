@@ -19,16 +19,6 @@ pub enum BodyPhase {
     Acting,
 }
 
-impl BodyPhase {
-    pub const fn label(self) -> &'static str {
-        match self {
-            BodyPhase::Absent => "no body",
-            BodyPhase::Parked => "parked",
-            BodyPhase::Acting => "acting",
-        }
-    }
-}
-
 /// One hand body on the last step, for the readout.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct HandBodyStatus {
