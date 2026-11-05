@@ -26,9 +26,8 @@ use crate::{
             grip_watch::{self, GripWatchStatus},
             heft::{self, HeftStatus},
             hold::{
-                self, Cause, HoldStatus,
+                self, HoldStatus,
                 act::{self, DockStatus},
-                armed::{self, ArmedReadout},
                 button_pickup::{self, ButtonPickupStatus},
                 dock::SnapKind,
                 tick::{self, TickStatus},
@@ -39,7 +38,10 @@ use crate::{
             unarmed_fire::{self, UnarmedFireStatus},
         },
     },
-    status::{explosives as explosives_status, grapple as grapple_status},
+    status::{
+        controllers as gun_status, explosives as explosives_status, grapple as grapple_status,
+        weapons as weapons_status,
+    },
     ui::{
         controllers::{
             explosives::{ExplosivesReadout, explosives_readout, explosives_settings},
@@ -59,7 +61,6 @@ pub(super) struct WeaponsReadout {
     hold: HoldStatus,
     regions: RegionsStatus,
     dock: DockStatus,
-    armed: [Option<ArmedReadout>; 2],
     tick: TickStatus,
     anchor: AnchorStatus,
     yanks: (u64, Option<Yank>),
@@ -84,7 +85,6 @@ impl WeaponsReadout {
             hold: hold::status(),
             regions: regions::status(),
             dock: act::status(),
-            armed: armed::status(),
             tick: tick::status(),
             anchor: anchor::status(),
             yanks: bindings::yank_status(),
@@ -108,6 +108,26 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
         tiers,
         ..
     } = readout;
+    headlines(
+        ui,
+        &[
+            &weapons_status::LEFT_HAND,
+            &weapons_status::RIGHT_HAND,
+            &weapons_status::LEFT_HAND_ON_GUN,
+            &weapons_status::RIGHT_HAND_ON_GUN,
+            &weapons_status::TAKES,
+            &weapons_status::RACKS,
+            &weapons_status::ARMED,
+            &weapons_status::RIGHT_GRIP,
+            &weapons_status::DOCKS,
+            &weapons_status::LAST_REFUSAL,
+            &gun_status::RIGID_GRIP,
+            &gun_status::CANONICAL_GRIP,
+            &gun_status::FLIP_WATCH,
+            &gun_status::ANIMATED_DEVIATION,
+            &gun_status::BONE_CHANGES,
+        ],
+    );
     if !status.active {
         ui.label("Inactive: the bindings are not injecting.");
     }
@@ -143,7 +163,6 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
     });
     hold_readout(ui, &readout.hold, &readout.dock);
     regions_readout(ui, &readout.regions);
-    armed_readout(ui, &readout.armed);
     tick_readout(ui, &readout.tick, &readout.empty);
     grip_watch_readout(ui, &readout.grip_watch);
     ui.label(format!(
@@ -275,18 +294,8 @@ fn hold_readout(ui: &mut Ui, h: &HoldStatus, d: &DockStatus) {
         h.snaps
     ));
     ui.label(format!(
-        "Direct pickups: {} · left to the game {} · weapon came by {}",
-        h.pickups,
-        h.pickup_fallbacks,
-        h.origin.map_or("the game's draw", Cause::label)
-    ));
-    ui.label(format!(
-        "Takes: guns in hands near {} · on racks near {} · taken from hands {} · off racks {} · rack copies {}",
-        h.take.held_targets,
-        h.take.rack_targets,
-        h.take.steals,
-        h.take.rack_takes,
-        h.take.rack_copies
+        "Direct pickups: {} · left to the game {}",
+        h.pickups, h.pickup_fallbacks
     ));
     let sliding = |hand: Hand| d.snapping[hand.index()].map_or("nothing", SnapKind::label);
     ui.label(format!(
@@ -300,10 +309,6 @@ fn hold_readout(ui: &mut Ui, h: &HoldStatus, d: &DockStatus) {
         d.drops,
         d.last_throw_mps
             .map_or("the game's".to_owned(), |v| format!("{v:.1} m/s"))
-    ));
-    ui.label(format!(
-        "Last refusal of a pickup, take, draw, dock, or drop: {}",
-        h.last_refusal.as_deref().unwrap_or("none")
     ));
     ui.collapsing("Latest gun release evidence", |ui| {
         ui.label(format!("Release attempts: {}.", d.releases.attempts));
@@ -341,19 +346,7 @@ fn hold_readout(ui: &mut Ui, h: &HoldStatus, d: &DockStatus) {
 }
 
 fn regions_readout(ui: &mut Ui, r: &RegionsStatus) {
-    let hand = |hand: Hand| {
-        r.hands[hand.index()].map_or("off the gun".to_owned(), |on| {
-            format!("{} ({})", on.region.label(), on.role.label())
-        })
-    };
-    ui.label(format!(
-        "Grab anywhere: left {} · right {} · braces {} · passed to the brace {} · slides {}",
-        hand(Hand::Left),
-        hand(Hand::Right),
-        r.braces,
-        r.let_go,
-        r.slides
-    ));
+    ui.label(format!("Grab anywhere: slides {}", r.slides));
     match r.shape {
         Some(s) => ui.label(format!(
             "Gun shape: {:.2} m long · foregrip {} · magazine well {} · action {}",
@@ -365,19 +358,6 @@ fn regions_readout(ui: &mut Ui, r: &RegionsStatus) {
         None if r.unread => ui.label("Gun shape: not read for the wielded long gun"),
         None => ui.label("Gun shape: no long gun wielded"),
     };
-}
-
-fn armed_readout(ui: &mut Ui, armed: &[Option<ArmedReadout>; 2]) {
-    let hand = |hand: Hand| {
-        armed[hand.index()].map_or("nothing".to_owned(), |a| {
-            format!("{} ({}/{})", slot_label(a.slot), a.magazine.0, a.magazine.1)
-        })
-    };
-    ui.label(format!(
-        "Armed beside the wielded weapon: left {} · right {}",
-        hand(Hand::Left),
-        hand(Hand::Right)
-    ));
 }
 
 fn tick_readout(ui: &mut Ui, t: &TickStatus, e: &EmptyStatus) {
@@ -536,20 +516,12 @@ fn grip_watch_readout(ui: &mut Ui, g: &GripWatchStatus) {
     let degrees = |d: Option<f32>| d.map_or("-".to_owned(), |d| format!("{d:.1}°"));
     for hand in Hand::BOTH {
         let i = hand.index();
-        let pinned = match g.pinned[i] {
-            Some(true) => "pinned",
-            Some(false) => "not pinned",
-            None => "no gun",
-        };
         ui.label(format!(
-            "Gun in {} hand ({pinned}): tick change {} · from grab {} · animation off the grip {} · snaps {} · sweeps {} · bone changes {}",
+            "Gun in {} hand: tick change {} · from grab {} · animation off the grip {}",
             hand.label(),
             degrees(g.change_deg[i]),
             degrees(g.from_grab_deg[i]),
             degrees(g.animated_deviation_deg[i]),
-            g.flips[i],
-            g.sweeps[i],
-            g.bone_changes[i],
         ));
     }
     if let Some((hand, c)) = g.last_flip {
