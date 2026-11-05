@@ -34,7 +34,7 @@ use crate::controllers::{
         dual_wield::single,
         engine::slot_of,
         hold::release_diagnostics::{DropObservation, NativeWrite, ReleaseMotion, SampleStage},
-        inventory::engine::strong_to,
+        inventory::{carry, engine::strong_to},
     },
 };
 
@@ -146,12 +146,7 @@ pub(crate) unsafe fn drop_held(
     // OnDrop can unequip a heavy weapon through its slot, so retain it through the write.
     let strong = unsafe { strong_to(weapon) }.ok_or(DockRefusal::NotDone)?;
     let mut thrown = unsafe { throw(weapon, max_speed_mps, diagnostic, release) };
-    if owner
-        .m_Inventory
-        .m_Weapons
-        .get(slot as usize)
-        .is_some_and(|entry| entry.px as usize == address)
-    {
+    if slot_holds(owner, slot, address) {
         unsafe { owner.m_Inventory.DropWeapon(slot, false) };
     }
     thrown.diagnostic.slot_clear_returned = true;
@@ -218,22 +213,13 @@ unsafe fn throw(
     }
 }
 
-/// Drop a weapon without a hand-release estimate, requesting rest motion for inventory cleanup.
-/// The linear request still observes `max_speed_mps`.
-///
-/// # Safety
-///
-/// `weapon` must be live, on the game thread before the world update.
-pub(crate) unsafe fn drop_loose(weapon: &mut WeaponBase, max_speed_mps: f32) -> Thrown {
-    unsafe { release_loose(weapon, max_speed_mps, ReleaseMotion::REST) }
-}
-
 /// Drop a carried weapon using motion copied before its disarm.
 ///
 /// # Safety
 ///
-/// As [`drop_loose`]. The caller retains a slot or strong reference through the call.
-pub(crate) unsafe fn release_loose(
+/// `weapon` must be live, on the game thread before the world update. The caller retains a slot
+/// or strong reference through the call.
+unsafe fn release_loose(
     weapon: &mut WeaponBase,
     max_speed_mps: f32,
     release: ReleaseMotion,
@@ -250,6 +236,45 @@ pub(crate) unsafe fn release_loose(
     let diagnostic =
         DropObservation::sampled(address, None, SampleStage::OutsideInventory, motion, body);
     unsafe { throw(weapon, max_speed_mps, diagnostic, release) }
+}
+
+/// Let `weapon`, carried on the body or in a slot but wielded by no hand, fall into the world with
+/// `release`'s motion, its linear part capped at `max_speed_mps`: it leaves the carry set, drops,
+/// and leaves its slot when the slot still holds it after the drop. Strong references keep it alive
+/// throughout, since the drop can unequip a heavy weapon through its slot.
+///
+/// # Safety
+///
+/// `owner` must be the live local player character and `weapon` live, held by a slot or the carry
+/// set, on the game thread before the world update.
+pub(crate) unsafe fn drop_carried(
+    owner: &mut Character,
+    weapon: &mut WeaponBase,
+    max_speed_mps: f32,
+    release: ReleaseMotion,
+) -> Thrown {
+    let object = weapon as *mut WeaponBase as usize;
+    let strong = unsafe { strong_to(weapon) };
+    let carried = carry::release(object);
+    let mut thrown = unsafe { release_loose(weapon, max_speed_mps, release) };
+    let slot = unsafe { slot_of(weapon) };
+    thrown.diagnostic.slot = slot;
+    if let Some(slot) = slot.filter(|&slot| slot_holds(owner, slot, object)) {
+        unsafe { owner.m_Inventory.DropWeapon(slot, false) };
+        thrown.diagnostic.slot_clear_returned = true;
+    }
+    drop(carried);
+    drop(strong);
+    thrown
+}
+
+/// Whether `owner`'s `slot` holds the weapon at `object`.
+fn slot_holds(owner: &Character, slot: WeaponSlot, object: usize) -> bool {
+    owner
+        .m_Inventory
+        .m_Weapons
+        .get(slot as usize)
+        .is_some_and(|entry| entry.px as usize == object)
 }
 
 /// Drop the weapon in `slot` onto the ground before another weapon replaces it there, so that it

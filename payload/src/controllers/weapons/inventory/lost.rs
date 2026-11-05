@@ -25,7 +25,7 @@ use parking_lot::Mutex;
 use crate::controllers::{
     loadout::{Departure, LostWhy, ObjectAddress, Place, Socket, live},
     weapons::{
-        hold::{equip, refs::Strong},
+        hold::{equip, refs::Strong, release_diagnostics::ReleaseMotion},
         inventory::{
             carry,
             engine::{self as inventory_engine, ObjectKey},
@@ -116,7 +116,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, tick: LostTick) {
     };
     live::set_fast(fast);
     for object in falling {
-        unsafe { let_fall(object) };
+        unsafe { let_fall(owner, object) };
     }
     if !tick.enabled {
         return;
@@ -209,7 +209,7 @@ unsafe fn bring_back(owner: &mut Character, object: ObjectAddress, why: LostWhy,
 }
 
 /// Let the weapon at `object`, carried on the body since the last tick, fall from it.
-unsafe fn let_fall(object: ObjectAddress) {
+unsafe fn let_fall(owner: &mut Character, object: ObjectAddress) {
     let Some(strong) = carry::release(object.get()) else {
         return;
     };
@@ -217,7 +217,7 @@ unsafe fn let_fall(object: ObjectAddress) {
     let Some(weapon) = (unsafe { inventory_engine::weapon_of(&strong).as_mut() }) else {
         return;
     };
-    unsafe { equip::drop_loose(weapon, 0.0) };
+    unsafe { equip::drop_carried(owner, weapon, 0.0, ReleaseMotion::REST) };
 }
 
 #[cfg(test)]

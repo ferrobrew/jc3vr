@@ -13,14 +13,13 @@ use crate::controllers::{
     weapons::{
         docks,
         dual_wield::single,
-        engine::{self, slot_of},
+        engine,
         hold::{
             equip::{self, DockRefusal},
             release_diagnostics::ReleaseMotion,
             steal,
         },
         inventory::{
-            carry,
             engine::{strong_to, weapon_of},
             reconcile,
         },
@@ -44,27 +43,16 @@ pub(crate) unsafe fn eject(socket: Socket) -> Result<(), DockRefusal> {
         .ok_or(DockRefusal::NothingThere)?;
     let object = docked as *const WeaponBase as usize;
     let address = ObjectAddress::from_address(object).ok_or(DockRefusal::NothingThere)?;
-    // SAFETY: a slot or the carry set keeps the docked weapon alive.
-    let slot = unsafe { slot_of(docked) };
     // The game's pair is one weapon and cannot fall; a single pistol is a weapon alone.
     if unsafe { single::is_pair(docked) } {
         return Err(DockRefusal::Unsupported);
     }
-    let in_slot = slot.filter(|slot| {
-        owner
-            .m_Inventory
-            .m_Weapons
-            .get(*slot as usize)
-            .is_some_and(|entry| entry.px as usize == object)
-    });
     let character = Mat4::from(owner.m_WorldMatrixT1).w_axis.truncate();
     // SAFETY: as above.
     let at = unsafe { steal::gun_points(docked) }.map(|([grip, _], _)| grip);
     let away = at.map_or(Vec3::ZERO, |at| away_from(character, at));
-    // SAFETY: as above; the strong reference keeps it through the drop, which can unequip a heavy
-    // weapon through its slot.
+    // SAFETY: a slot or the carry set keeps the docked weapon alive.
     let strong = unsafe { strong_to(docked) }.ok_or(DockRefusal::NotDone)?;
-    let carried = carry::release(object);
     live::dropped(address);
     // SAFETY: the strong reference keeps the weapon alive, and the game stage serializes mutation.
     let weapon = unsafe { &mut *weapon_of(&strong) };
@@ -75,11 +63,7 @@ pub(crate) unsafe fn eject(socket: Socket) -> Result<(), DockRefusal> {
         },
         ..ReleaseMotion::REST
     };
-    let thrown = unsafe { equip::release_loose(weapon, EJECT_MPS, motion) };
-    if let Some(slot) = in_slot {
-        unsafe { owner.m_Inventory.DropWeapon(slot, false) };
-    }
-    drop(carried);
+    let thrown = unsafe { equip::drop_carried(owner, weapon, EJECT_MPS, motion) };
     drop(strong);
     unsafe { reconcile::apply(owner) };
     tracing::info!(

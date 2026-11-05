@@ -55,7 +55,7 @@ use crate::{
                 },
                 steal,
             },
-            inventory::{self, carry, reconcile, sockets},
+            inventory::{self, reconcile, sockets},
         },
     },
     headpose,
@@ -794,24 +794,8 @@ unsafe fn drop_from(
         if weapon.m_State != WeaponState::E_WS_HOLSTERED {
             return Err(DockRefusal::NotHolstered);
         }
-        // A carried weapon's strong reference is kept until the drop is done.
-        let strong = carry::release(object);
-        let mut thrown = unsafe { equip::release_loose(weapon, max_speed_mps, motion) };
+        let mut thrown = unsafe { equip::drop_carried(owner, weapon, max_speed_mps, motion) };
         thrown.diagnostic.sample_stage = SampleStage::AfterDisarm;
-        let slot = unsafe { slot_of(weapon) };
-        thrown.diagnostic.slot = slot;
-        let in_slot = slot.is_some_and(|slot| {
-            owner
-                .m_Inventory
-                .m_Weapons
-                .get(slot as usize)
-                .is_some_and(|s| s.px as usize == object)
-        });
-        if let Some(slot) = slot.filter(|_| in_slot) {
-            unsafe { owner.m_Inventory.DropWeapon(slot, false) };
-            thrown.diagnostic.slot_clear_returned = true;
-        }
-        drop(strong);
         thrown
     } else {
         return Err(DockRefusal::NotDone);
