@@ -4,11 +4,11 @@
 
 use crate::{
     codec::{hand_code, read_hand},
-    event::{BodyState, GripRelease, Snatch, Throw, WingsuitGesture},
+    event::{BodyState, GripRelease, ReleasePose, Snatch, Throw, WingsuitGesture},
     event_codec::{
-        label, opt, opt_f32, opt_hand, opt_label, opt_u32, opt_u64, read_label, read_opt,
-        read_opt_f32, read_opt_hand, read_opt_label, read_opt_u32, read_opt_u64, read_world_motion,
-        world_motion,
+        WORLD_VERSION, label, opt, opt_f32, opt_hand, opt_label, opt_u32, opt_u64, read_label,
+        read_opt, read_opt_f32, read_opt_hand, read_opt_label, read_opt_u32, read_opt_u64,
+        read_world_motion, world_motion,
     },
     wire::{DecodeError, Decoder, Encoder},
 };
@@ -36,9 +36,13 @@ pub(super) fn throw(out: &mut Encoder, throw: &Throw) {
     out.f32(throw.time_scale);
     opt_label(out, &throw.source);
     opt(out, throw.armed.as_ref(), |out, armed| out.bool(*armed));
+    opt(out, throw.release.as_ref(), |out, release| {
+        out.vec3(release.position);
+        opt(out, release.orientation.as_ref(), |out, q| out.quat(*q));
+    });
 }
 
-pub(super) fn read_throw(input: &mut Decoder) -> Result<Throw, DecodeError> {
+pub(super) fn read_throw(input: &mut Decoder, version: u16) -> Result<Throw, DecodeError> {
     Ok(Throw {
         hand: read_hand(input, "the throwing hand")?,
         item: read_label(input, "the thrown item")?,
@@ -48,6 +52,18 @@ pub(super) fn read_throw(input: &mut Decoder) -> Result<Throw, DecodeError> {
         armed: read_opt(input, "the armed flag", |input| {
             input.bool("the armed state")
         })?,
+        release: if version >= WORLD_VERSION {
+            read_opt(input, "the release flag", |input| {
+                Ok(ReleasePose {
+                    position: input.vec3()?,
+                    orientation: read_opt(input, "the release orientation flag", |input| {
+                        input.quat()
+                    })?,
+                })
+            })?
+        } else {
+            None
+        },
     })
 }
 

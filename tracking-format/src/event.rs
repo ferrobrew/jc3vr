@@ -9,11 +9,30 @@
 //! variant on the mod's side changes no layout here. Nested runtime values that have no stable
 //! shape (a grab volume, a body state, a refusal) are recorded as their Rust `Debug` text, to be
 //! read against the recording's build stamp; they are evidence, not a schema.
+//!
+//! Version 8 adds the body's poses and rig ([`body`]), the world around Rico ([`world`]), and the
+//! diagnostic notes ([`notes`]).
+
+mod body;
+mod notes;
+mod world;
 
 use std::borrow::Cow;
 
-use glam::{Vec2, Vec3};
+use glam::{Quat, Vec2, Vec3};
 
+pub use crate::event::{
+    body::{
+        BODY_BONE_PARENTS, BODY_BONES, BoneSet, IkGoal, IkTarget, PoseSample, PoseStage, RigConfig,
+        RigInput, RigResult, RigSample,
+    },
+    notes::{Diagnostic, FrameTiming, Haptic, Injected, InjectedWrite, Settings, SlotTiming},
+    world::{
+        BodiesSample, BodyIntro, BodySample, CameraState, Force, ForceKind, FrameState,
+        GrappleState, HeldMotion, HeldSample, HoldReport, SlingState, VehicleState, ViewState,
+        WireEndSample,
+    },
+};
 use crate::model::Hand;
 
 /// A label or a piece of evidence text. Producers lend `'static` labels without allocating; a
@@ -52,6 +71,30 @@ pub enum EventKind {
     WingsuitGesture(Box<WingsuitGesture>),
     /// The grapple snatch's phase changed, from version 7.
     Snatch(Box<Snatch>),
+    /// Rico's pose at one stage of a pose-finalization pass, from version 8.
+    Pose(Box<PoseSample>),
+    /// One grounded-rig frame, from version 8.
+    Rig(Box<RigSample>),
+    /// The rig's calibration and tuning, from version 8.
+    RigConfig(Box<RigConfig>),
+    /// The dynamic bodies near Rico after a physics step, from version 8.
+    Bodies(Box<BodiesSample>),
+    /// A body joined the near set, from version 8.
+    BodyIntro(Box<BodyIntro>),
+    /// What a hand holds after a simulation tick, from version 8.
+    Held(Box<HeldSample>),
+    /// A velocity write or an impulse the mod applied, from version 8.
+    Force(Box<Force>),
+    /// The actions the mod injected on an input tick, from version 8.
+    Injected(Box<Injected>),
+    /// A refusal or another diagnostic moment, from version 8.
+    Diagnostic(Box<Diagnostic>),
+    /// A haptic cue, from version 8.
+    Haptic(Box<Haptic>),
+    /// The settings in effect, from version 8.
+    Settings(Box<Settings>),
+    /// The frame-time breakdown over a reporting window, from version 8.
+    FrameTiming(Box<FrameTiming>),
 }
 
 impl EventKind {
@@ -67,6 +110,18 @@ impl EventKind {
             EventKind::GripRelease(_) => "grip_release",
             EventKind::WingsuitGesture(_) => "wingsuit_gesture",
             EventKind::Snatch(_) => "snatch",
+            EventKind::Pose(_) => "pose",
+            EventKind::Rig(_) => "rig",
+            EventKind::RigConfig(_) => "rig_config",
+            EventKind::Bodies(_) => "bodies",
+            EventKind::BodyIntro(_) => "body_intro",
+            EventKind::Held(_) => "held",
+            EventKind::Force(_) => "force",
+            EventKind::Injected(_) => "injected",
+            EventKind::Diagnostic(_) => "diagnostic",
+            EventKind::Haptic(_) => "haptic",
+            EventKind::Settings(_) => "settings",
+            EventKind::FrameTiming(_) => "frame_timing",
         }
     }
 }
@@ -100,6 +155,14 @@ pub struct ControllerState {
     /// The player character's measured motion and height over the ground, while there is a
     /// player character; absent before version 7.
     pub character: Option<CharacterMotion>,
+    /// Where the cockpit and the camera sit in the world; absent before version 8.
+    pub view: Option<ViewState>,
+    /// The grapple's line, while a wire is out; absent before version 8.
+    pub grapple: Option<GrappleState>,
+    /// The vehicle, while the player rides one; absent before version 8.
+    pub vehicle: Option<VehicleState>,
+    /// The frame's place in the engine's sequence and its timing; absent before version 8.
+    pub frame: Option<FrameState>,
 }
 
 /// The player character's motion as the game measures it, read once per game frame.
@@ -358,6 +421,8 @@ pub struct GripAcquisition {
     /// What the simulation consumer did with the request.
     pub result: Option<Label>,
     pub drive: Option<GripDrive>,
+    /// The chosen target's world point, when the reach supplies one; absent before version 8.
+    pub target_point: Option<Vec3>,
 }
 
 /// One resolver candidate.
@@ -527,6 +592,17 @@ pub struct Throw {
     /// Whether the item left live (a grenade with its pin out, or a caught grenade), when the item
     /// has such a state.
     pub armed: Option<bool>,
+    /// Where the item left the hand, world space, when the release knows; absent before version 8.
+    pub release: Option<ReleasePose>,
+}
+
+/// Where a thrown item left the hand.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ReleasePose {
+    pub position: Vec3,
+    /// Its orientation, when the release read one.
+    pub orientation: Option<Quat>,
 }
 
 /// A hand that let go of what its grip held, whether the grip opened or the hold was lost.

@@ -122,6 +122,18 @@ impl Encoder {
         self.bytes.extend_from_slice(&value.as_bytes()[..end]);
     }
 
+    /// A long text, as its byte length (`u32`) and UTF-8, for a value that may pass a `u16` length:
+    /// the settings file.
+    pub(crate) fn long_str(&mut self, value: &str) {
+        let len = u32::try_from(value.len()).unwrap_or(u32::MAX);
+        let mut end = len as usize;
+        while !value.is_char_boundary(end) {
+            end -= 1;
+        }
+        self.u32(end as u32);
+        self.bytes.extend_from_slice(&value.as_bytes()[..end]);
+    }
+
     pub(crate) fn vec2(&mut self, value: Vec2) {
         self.f32(value.x);
         self.f32(value.y);
@@ -261,6 +273,16 @@ impl<'a> Decoder<'a> {
 
     pub(crate) fn str(&mut self, field: &'static str) -> Result<String, DecodeError> {
         let len = usize::from(self.u16()?);
+        let offset = self.offset();
+        let bytes = self.take(len)?;
+        String::from_utf8(bytes.to_vec()).map_err(|_| DecodeError {
+            offset,
+            kind: DecodeErrorKind::InvalidUtf8 { field },
+        })
+    }
+
+    pub(crate) fn long_str(&mut self, field: &'static str) -> Result<String, DecodeError> {
+        let len = self.u32()? as usize;
         let offset = self.offset();
         let bytes = self.take(len)?;
         String::from_utf8(bytes.to_vec()).map_err(|_| DecodeError {

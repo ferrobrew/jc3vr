@@ -153,6 +153,8 @@ pub(crate) fn frame_tick() {
     }
     // The ticks counted since the last call belong to the frame that ends here.
     let ticks = TICKS_THIS_FRAME.swap(0, Ordering::Relaxed);
+    LAST_FRAME_NS.store(interval.unwrap_or(0), Ordering::Relaxed);
+    LAST_FRAME_TICKS.store(ticks, Ordering::Relaxed);
     let (ui, log) = WINDOWS.with_borrow_mut(|windows| windows.tick(now, ticks, drain));
     let percentiles = RECENT.with_borrow_mut(|recent| {
         if let Some(interval) = interval {
@@ -164,11 +166,22 @@ pub(crate) fn frame_tick() {
         *PERCENTILES.lock() = Some(percentiles);
     }
     if let Some(ui) = ui {
+        crate::controllers::diagnostics::note_frame_timing(&ui);
         *LATEST.lock() = Some(ui);
     }
     if let Some(log) = log {
         tracing::info!(target: "perf", "{log}");
     }
+}
+
+/// The last complete game frame's interval, `None` before the second frame, and the sim ticks it
+/// ran. Lock-free, so any thread may read it.
+pub(crate) fn last_frame() -> (Option<Duration>, u32) {
+    let ns = LAST_FRAME_NS.load(Ordering::Relaxed);
+    (
+        (ns != 0).then(|| Duration::from_nanos(ns)),
+        LAST_FRAME_TICKS.load(Ordering::Relaxed),
+    )
 }
 
 /// The breakdown over the last complete [`UI_WINDOW`], or `None` before the first one closes.
@@ -207,6 +220,10 @@ static BUCKETS: [[AtomicU64; Kind::COUNT]; ThreadClass::COUNT] =
 /// The sim ticks the current game frame has run, counted by [`note_sim_tick`] and taken by
 /// [`frame_tick`].
 static TICKS_THIS_FRAME: AtomicU32 = AtomicU32::new(0);
+
+/// The last complete frame's interval and ticks, for [`last_frame`].
+static LAST_FRAME_NS: AtomicU64 = AtomicU64::new(0);
+static LAST_FRAME_TICKS: AtomicU32 = AtomicU32::new(0);
 
 /// The frame interval past which [`frame_tick`] logs the frame on its own.
 const STALL_LOG_NS: u64 = 1_000_000_000;

@@ -9,19 +9,36 @@
 //! the frame timeline and writes beside the next frame, and a
 //! [`BodyState`](tracking_format::event::BodyState) event when the body's animation state changed
 //! ([`body_state`]). The controller state combines independently read subsystem snapshots; it does
-//! not claim an atomic cross-subsystem instant.
+//! not claim an atomic cross-subsystem instant; its world groups are [`world_state`]'s.
+//!
+//! The rest of the recording's evidence is noted where it happens: Rico's pose before and after the
+//! solves ([`pose`]), the grounded rig's frames ([`rig`]), the bodies near Rico and what his hands
+//! hold after each simulation step ([`bodies`]), and the refusals, forces, injected actions, haptic
+//! cues, settings, and frame timing ([`notes`]).
 
+mod bodies;
 mod body_state;
 mod moments;
+mod notes;
+mod pose;
+mod rig;
 mod sample;
 mod state_names;
+mod world_state;
 
 use std::time::Instant;
 
 use jc3gi::character::character::Character;
 
-pub(crate) use crate::controllers::diagnostics::moments::{
-    Released, Thrown, note_release, note_throw,
+pub(crate) use crate::controllers::diagnostics::{
+    bodies::after_step,
+    moments::{Released, Thrown, note_release, note_throw, note_throw_at},
+    notes::{
+        Applied, BodyBefore, Cue, Write, note_diagnostic, note_force, note_frame_timing,
+        note_haptic, note_injected, note_settings,
+    },
+    pose::{sample_final, sample_pre_ik},
+    rig::{RigRun, note_rig},
 };
 use crate::{
     controllers::body::procedural,

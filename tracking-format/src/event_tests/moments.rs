@@ -4,7 +4,7 @@
 
 use glam::{Quat, Vec3};
 
-use super::{controller_state, frame, header};
+use super::{V8_STATE_GROUPS, controller_state, frame, header, strip_absent_flags};
 use crate::{
     DecodeErrorKind, RecenterEvent, TAG_EVENT, VERSION, decode, encode_chunk, encode_event,
     encode_latest_frame, encode_latest_preamble,
@@ -58,11 +58,9 @@ fn a_version_6_controller_state_reads_without_the_character_motion() {
         })),
     };
     let mut record = encode_event(&event).unwrap();
-    // Version 6 ends the controller state at the root tick: drop the character motion's absent
-    // flag and shorten the record's length, which follows the one-byte tag, to match.
-    assert_eq!(record.pop(), Some(0));
-    let len = u32::from_le_bytes(record[1..5].try_into().unwrap()) - 1;
-    record[1..5].copy_from_slice(&len.to_le_bytes());
+    // Version 6 ends the controller state at the root tick: drop the character motion's and the
+    // version 8 groups' absent flags.
+    strip_absent_flags(&mut record, 1 + V8_STATE_GROUPS);
     let decoded = decode(&container(6, &record)).unwrap();
     assert_eq!(decoded.version, 6);
     assert_eq!(decoded.events, vec![event]);
@@ -112,7 +110,7 @@ fn the_follow_bank_round_trips_as_a_recenter_cause() {
 }
 
 /// Every moment kind, with each optional field present (`full`) or absent.
-fn moments(full: bool) -> Vec<EventKind> {
+pub(super) fn moments(full: bool) -> Vec<EventKind> {
     let label = |text: &'static str| full.then_some(Label::Borrowed(text));
     let number = |value: f32| full.then_some(value);
     vec![
@@ -132,6 +130,7 @@ fn moments(full: bool) -> Vec<EventKind> {
             time_scale: if full { 0.25 } else { 1.0 },
             source: label("history"),
             armed: full.then_some(true),
+            release: None,
         })),
         EventKind::Throw(Box::new(Throw {
             hand: Hand::Right,
@@ -143,6 +142,7 @@ fn moments(full: bool) -> Vec<EventKind> {
             time_scale: 1.0,
             source: None,
             armed: full.then_some(false),
+            release: None,
         })),
         EventKind::GripRelease(Box::new(GripRelease {
             hand: Hand::Left,
@@ -172,7 +172,7 @@ fn moments(full: bool) -> Vec<EventKind> {
 
 /// Encode `events` beside a frame, direct and chunked, and check that each reads back as written
 /// and encodes again to the same bytes.
-fn assert_round_trip(events: &[Event]) {
+pub(super) fn assert_round_trip(events: &[Event]) {
     let records: Vec<Vec<u8>> = events.iter().map(|e| encode_event(e).unwrap()).collect();
     let frame = frame(10);
     for chunked in [false, true] {
@@ -197,7 +197,7 @@ fn assert_round_trip(events: &[Event]) {
 }
 
 /// A container of `version` holding `record`.
-fn container(version: u16, record: &[u8]) -> Vec<u8> {
+pub(super) fn container(version: u16, record: &[u8]) -> Vec<u8> {
     assert_eq!(record[0], TAG_EVENT);
     let mut bytes = encode_latest_preamble(&header());
     // The version follows the eight-byte magic.

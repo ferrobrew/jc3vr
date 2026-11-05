@@ -67,7 +67,7 @@ fn events_round_trip_direct_and_chunked_beside_frames() {
         }
         let decoded = decode(&bytes).unwrap();
         assert_eq!(decoded.version, VERSION);
-        assert_eq!(decoded.version, 7);
+        assert_eq!(decoded.version, 8);
         assert!(!decoded.truncated);
         assert_eq!(decoded.events, events);
         assert_eq!(decoded.frames, vec![frame.clone()]);
@@ -91,13 +91,9 @@ fn a_version_5_controller_state_reads_without_the_root_tick() {
         })),
     };
     let mut record = encode_event(&event).unwrap();
-    // Version 5 ends the controller state at the roomscale state: drop the root tick's and the
-    // character motion's absent flags and shorten the record's length to match. The length follows
-    // the one-byte tag.
-    assert_eq!(record.pop(), Some(0));
-    assert_eq!(record.pop(), Some(0));
-    let len = u32::from_le_bytes(record[1..5].try_into().unwrap()) - 2;
-    record[1..5].copy_from_slice(&len.to_le_bytes());
+    // Version 5 ends the controller state at the roomscale state: drop the root tick's, the
+    // character motion's, and the version 8 groups' absent flags.
+    strip_absent_flags(&mut record, 2 + V8_STATE_GROUPS);
     let mut bytes = encode_latest_preamble(&header());
     // The version follows the eight-byte magic.
     bytes[8..10].copy_from_slice(&5u16.to_le_bytes());
@@ -239,6 +235,20 @@ fn frame(time_ns: u64) -> Frame {
     }
 }
 
+/// The groups version 8 appends to the controller state, each behind a presence byte.
+pub(super) const V8_STATE_GROUPS: usize = 4;
+
+/// Drop the last `count` bytes of an event record, each an absent field's flag, and shorten the
+/// record's length (which follows the one-byte tag) to match: the record as an earlier version,
+/// which ends before those fields, writes it.
+pub(super) fn strip_absent_flags(record: &mut Vec<u8>, count: usize) {
+    for _ in 0..count {
+        assert_eq!(record.pop(), Some(0));
+    }
+    let len = u32::from_le_bytes(record[1..5].try_into().unwrap()) - count as u32;
+    record[1..5].copy_from_slice(&len.to_le_bytes());
+}
+
 fn some_label(full: bool, text: &'static str) -> Option<Label> {
     full.then_some(Label::Borrowed(text))
 }
@@ -376,6 +386,10 @@ fn controller_state(full: bool) -> ControllerState {
                 ground_m: 6.0,
             }),
         }),
+        view: None,
+        grapple: None,
+        vehicle: None,
+        frame: None,
     }
 }
 
@@ -390,7 +404,7 @@ fn candidate(lost: Option<&'static str>) -> GripCandidate {
     }
 }
 
-fn grip(full: bool) -> GripAcquisition {
+pub(super) fn grip(full: bool) -> GripAcquisition {
     GripAcquisition {
         hand: if full { Hand::Left } else { Hand::Right },
         stage: if full {
@@ -455,6 +469,7 @@ fn grip(full: bool) -> GripAcquisition {
             result: Some("Ok(())".into()),
             report: None,
         }),
+        target_point: None,
     }
 }
 
@@ -508,3 +523,4 @@ fn take_marker(full: bool) -> TakeMarker {
 
 #[path = "event_tests/moments.rs"]
 mod moments;
+mod v8;

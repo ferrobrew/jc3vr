@@ -98,6 +98,9 @@ pub(crate) fn tick() {
     // up to date.
     saver.compared = Some(now);
     saver.unchanged = saver.last_text.as_deref() == Some(text.as_str());
+    if due && !saver.unchanged {
+        crate::controllers::diagnostics::note_settings(&text);
+    }
     if due || retry {
         saver.hand_off(text, now);
     }

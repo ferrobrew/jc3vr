@@ -65,9 +65,10 @@ pub(super) fn stamp(noted: &[Noted], origin: Instant) -> Vec<Event> {
         .collect()
 }
 
-/// How many events wait for a frame at most. A game frame notes one controller state and, rarely,
-/// a grip or release event; the bound covers many frames without a capture.
-const MAX_PENDING: usize = 256;
+/// How many events wait for a frame at most. A game frame notes one controller state, and each
+/// simulation step its bodies, two poses, the held bodies, the injected actions, and the forces
+/// the mod applied; the bound covers many frames without a capture.
+const MAX_PENDING: usize = 1024;
 
 static PENDING: Mutex<Vec<Noted>> = Mutex::new(Vec::new());
 static DROPPED: AtomicU64 = AtomicU64::new(0);

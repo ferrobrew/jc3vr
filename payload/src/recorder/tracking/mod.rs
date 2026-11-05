@@ -38,7 +38,7 @@ use std::{
 
 use parking_lot::Mutex;
 use tracking_format::{
-    event::Event,
+    event::{Event, Label, Settings},
     input::{CapturedInput, DiscontinuityReason, InputRecord},
 };
 
@@ -46,7 +46,7 @@ use crate::{
     config::Config,
     controllers::frame as controller_frame,
     recorder::tracking::{
-        events::Noted,
+        events::{EventKind, Noted},
         format::{
             ControllerSample, EyeSample, Frame, HeadSample, Header, RecenterEvent, SemanticSample,
             SessionSample, StartMarker,
@@ -625,6 +625,10 @@ fn begin(stamp: String) -> Result<PathBuf, StartError> {
     FRAMES.store(0, Ordering::Relaxed);
     DROPPED.store(0, Ordering::Relaxed);
     RECORDING.store(true, Ordering::Relaxed);
+    drop(state);
+    if let Some(toml) = settings_toml() {
+        crate::controllers::diagnostics::note_settings(&toml);
+    }
     if let Some(name) = &header.start.bookmark {
         tracing::info!("recorder: tracking: the start marker is at the bookmark {name:?}");
     }
@@ -727,7 +731,7 @@ fn save_lookback() -> Result<PathBuf, StartError> {
     let path = crate::session::recording_file(RecordingFile::Lookback, &stamp)
         .map_err(StartError::Session)?;
     // The evicted batches took their input history with them: say so before the first record.
-    let lead = snapshot
+    let discontinuity = snapshot
         .evicted_inputs
         .map(|discarded| {
             tracking_format::encode_input(&CapturedInput {
@@ -741,6 +745,28 @@ fn save_lookback() -> Result<PathBuf, StartError> {
         })
         .transpose()
         .map_err(|error| StartError::Writer(writer::WriterError::Encode(error)))?;
+    // The window may have evicted the settings a recording opens with, so the save opens with them.
+    let settings = settings_toml()
+        .map(|toml| {
+            tracking_format::encode_event(&Event {
+                time_ns: snapshot.first_time_ns,
+                kind: EventKind::Settings(Box::new(Settings {
+                    toml: Label::Owned(toml),
+                })),
+            })
+        })
+        .transpose()
+        .map_err(|error| StartError::Writer(writer::WriterError::Encode(error)))?;
+    let lead = match (settings, discontinuity) {
+        (None, None) => None,
+        (settings, discontinuity) => Some(
+            settings
+                .into_iter()
+                .chain(discontinuity)
+                .flatten()
+                .collect::<Vec<u8>>(),
+        ),
+    };
     let mut state = STATE.lock();
     state.can_start()?;
     let writer =
@@ -750,6 +776,17 @@ fn save_lookback() -> Result<PathBuf, StartError> {
         path: path.clone(),
     });
     Ok(path)
+}
+
+/// The settings as their file holds them, for the recording to open with.
+fn settings_toml() -> Option<String> {
+    match toml::to_string(&crate::config::get()) {
+        Ok(toml) => Some(toml),
+        Err(error) => {
+            tracing::warn!("recorder: tracking: the settings did not serialize: {error}");
+            None
+        }
+    }
 }
 
 fn stop() {

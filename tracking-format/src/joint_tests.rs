@@ -85,8 +85,8 @@ fn all_legacy_versions_down_convert_by_conjunction_and_ignore_upper_joint_bits()
 
 #[test]
 fn schema_selection_and_legacy_entry_points_stay_pinned() {
-    assert_eq!(VERSION, 7);
-    for version in 1..=7 {
+    assert_eq!(VERSION, 8);
+    for version in 1..=8 {
         assert_eq!(
             FrameSchema::for_version(version).unwrap(),
             if version >= 4 {
@@ -96,7 +96,7 @@ fn schema_selection_and_legacy_entry_points_stay_pinned() {
             }
         );
     }
-    for version in [0, 8, u16::MAX] {
+    for version in [0, 9, u16::MAX] {
         assert_eq!(
             FrameSchema::for_version(version).unwrap_err().kind,
             DecodeErrorKind::UnsupportedVersion(version)
@@ -106,8 +106,8 @@ fn schema_selection_and_legacy_entry_points_stay_pinned() {
         (encode_preamble(&header()), 1u16),
         (encode_input_preamble(&header()), 2),
         (encode_chunked_preamble(&header()), 3),
-        (encode_latest_preamble(&header()), 7),
-        (encode_latest_chunked_preamble(&header()), 7),
+        (encode_latest_preamble(&header()), 8),
+        (encode_latest_chunked_preamble(&header()), 8),
     ] {
         assert_eq!(&preamble[8..10], &version.to_le_bytes());
     }

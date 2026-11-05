@@ -4,9 +4,15 @@
 //! order. A label is a string; an optional value is a presence byte and, when present, the value;
 //! a list is a `u16` count and its entries.
 //!
-//! The kinds a version 7 container adds are in [`moments`].
+//! The kinds a version 7 container adds are in [`moments`]; those a version 8 container adds are in
+//! [`body`], [`world`], and [`notes`]. A field a later version appends to an earlier kind (the
+//! controller state's groups, a grip acquisition's target point, a throw's release pose) follows
+//! the kind's earlier fields, behind its own presence byte.
 
+mod body;
 mod moments;
+mod notes;
+mod world;
 
 use crate::{
     codec::{hand_code, read_hand},
@@ -62,6 +68,54 @@ pub(crate) fn encode(out: &mut Encoder, event: &Event) {
             out.u8(KIND_SNATCH);
             moments::snatch(out, snatch);
         }
+        EventKind::Pose(pose) => {
+            out.u8(KIND_POSE);
+            body::pose(out, pose);
+        }
+        EventKind::Rig(rig) => {
+            out.u8(KIND_RIG);
+            body::rig(out, rig);
+        }
+        EventKind::RigConfig(config) => {
+            out.u8(KIND_RIG_CONFIG);
+            body::rig_config(out, config);
+        }
+        EventKind::Bodies(bodies) => {
+            out.u8(KIND_BODIES);
+            world::bodies(out, bodies);
+        }
+        EventKind::BodyIntro(intro) => {
+            out.u8(KIND_BODY_INTRO);
+            world::body_intro(out, intro);
+        }
+        EventKind::Held(held) => {
+            out.u8(KIND_HELD);
+            world::held(out, held);
+        }
+        EventKind::Force(force) => {
+            out.u8(KIND_FORCE);
+            world::force(out, force);
+        }
+        EventKind::Injected(injected) => {
+            out.u8(KIND_INJECTED);
+            notes::injected(out, injected);
+        }
+        EventKind::Diagnostic(diagnostic) => {
+            out.u8(KIND_DIAGNOSTIC);
+            notes::diagnostic(out, diagnostic);
+        }
+        EventKind::Haptic(haptic) => {
+            out.u8(KIND_HAPTIC);
+            notes::haptic(out, haptic);
+        }
+        EventKind::Settings(settings) => {
+            out.u8(KIND_SETTINGS);
+            notes::settings(out, settings);
+        }
+        EventKind::FrameTiming(timing) => {
+            out.u8(KIND_FRAME_TIMING);
+            notes::frame_timing(out, timing);
+        }
     }
 }
 
@@ -74,7 +128,7 @@ pub(crate) fn decode(input: &mut Decoder, version: u16) -> Result<Event, DecodeE
             EventKind::ControllerState(Box::new(read_controller_state(input, version)?))
         }
         KIND_GRIP_ACQUISITION => {
-            EventKind::GripAcquisition(Box::new(read_grip_acquisition(input)?))
+            EventKind::GripAcquisition(Box::new(read_grip_acquisition(input, version)?))
         }
         KIND_GUN_RELEASE => EventKind::GunRelease(Box::new(read_gun_release(input)?)),
         KIND_TAKE_MARKER => EventKind::TakeMarker(Box::new(read_take_marker(input)?)),
@@ -82,7 +136,7 @@ pub(crate) fn decode(input: &mut Decoder, version: u16) -> Result<Event, DecodeE
             EventKind::BodyState(Box::new(moments::read_body_state(input)?))
         }
         KIND_THROW if version >= MOMENTS_VERSION => {
-            EventKind::Throw(Box::new(moments::read_throw(input)?))
+            EventKind::Throw(Box::new(moments::read_throw(input, version)?))
         }
         KIND_GRIP_RELEASE if version >= MOMENTS_VERSION => {
             EventKind::GripRelease(Box::new(moments::read_grip_release(input)?))
@@ -92,6 +146,38 @@ pub(crate) fn decode(input: &mut Decoder, version: u16) -> Result<Event, DecodeE
         }
         KIND_SNATCH if version >= MOMENTS_VERSION => {
             EventKind::Snatch(Box::new(moments::read_snatch(input)?))
+        }
+        KIND_POSE if version >= WORLD_VERSION => EventKind::Pose(Box::new(body::read_pose(input)?)),
+        KIND_RIG if version >= WORLD_VERSION => EventKind::Rig(Box::new(body::read_rig(input)?)),
+        KIND_RIG_CONFIG if version >= WORLD_VERSION => {
+            EventKind::RigConfig(Box::new(body::read_rig_config(input)?))
+        }
+        KIND_BODIES if version >= WORLD_VERSION => {
+            EventKind::Bodies(Box::new(world::read_bodies(input)?))
+        }
+        KIND_BODY_INTRO if version >= WORLD_VERSION => {
+            EventKind::BodyIntro(Box::new(world::read_body_intro(input)?))
+        }
+        KIND_HELD if version >= WORLD_VERSION => {
+            EventKind::Held(Box::new(world::read_held(input)?))
+        }
+        KIND_FORCE if version >= WORLD_VERSION => {
+            EventKind::Force(Box::new(world::read_force(input)?))
+        }
+        KIND_INJECTED if version >= WORLD_VERSION => {
+            EventKind::Injected(Box::new(notes::read_injected(input)?))
+        }
+        KIND_DIAGNOSTIC if version >= WORLD_VERSION => {
+            EventKind::Diagnostic(Box::new(notes::read_diagnostic(input)?))
+        }
+        KIND_HAPTIC if version >= WORLD_VERSION => {
+            EventKind::Haptic(Box::new(notes::read_haptic(input)?))
+        }
+        KIND_SETTINGS if version >= WORLD_VERSION => {
+            EventKind::Settings(Box::new(notes::read_settings(input)?))
+        }
+        KIND_FRAME_TIMING if version >= WORLD_VERSION => {
+            EventKind::FrameTiming(Box::new(notes::read_frame_timing(input)?))
         }
         kind => return Err(invalid(offset, "the event kind", kind.into())),
     };
@@ -108,6 +194,12 @@ pub(crate) fn is_bounded(event: &Event) -> bool {
                     .as_ref()
                     .is_none_or(|scan| scan.entries.len() <= MAX_LIST)
         }
+        EventKind::Pose(pose) => {
+            pose.bones.len() == pose.set.names().len() && pose.targets.len() <= MAX_LIST
+        }
+        EventKind::Bodies(bodies) => bodies.bodies.len() <= MAX_LIST,
+        EventKind::Injected(injected) => injected.writes.len() <= MAX_LIST,
+        EventKind::FrameTiming(timing) => timing.slots.len() <= MAX_LIST,
         EventKind::ControllerState(_)
         | EventKind::GunRelease(_)
         | EventKind::TakeMarker(_)
@@ -115,7 +207,15 @@ pub(crate) fn is_bounded(event: &Event) -> bool {
         | EventKind::Throw(_)
         | EventKind::GripRelease(_)
         | EventKind::WingsuitGesture(_)
-        | EventKind::Snatch(_) => true,
+        | EventKind::Snatch(_)
+        | EventKind::Rig(_)
+        | EventKind::RigConfig(_)
+        | EventKind::BodyIntro(_)
+        | EventKind::Held(_)
+        | EventKind::Force(_)
+        | EventKind::Diagnostic(_)
+        | EventKind::Haptic(_)
+        | EventKind::Settings(_) => true,
     }
 }
 
@@ -128,10 +228,27 @@ const KIND_THROW: u8 = 6;
 const KIND_GRIP_RELEASE: u8 = 7;
 const KIND_WINGSUIT_GESTURE: u8 = 8;
 const KIND_SNATCH: u8 = 9;
+const KIND_POSE: u8 = 10;
+const KIND_RIG: u8 = 11;
+const KIND_RIG_CONFIG: u8 = 12;
+const KIND_BODIES: u8 = 13;
+const KIND_BODY_INTRO: u8 = 14;
+const KIND_HELD: u8 = 15;
+const KIND_FORCE: u8 = 16;
+const KIND_INJECTED: u8 = 17;
+const KIND_DIAGNOSTIC: u8 = 18;
+const KIND_HAPTIC: u8 = 19;
+const KIND_SETTINGS: u8 = 20;
+const KIND_FRAME_TIMING: u8 = 21;
 
 /// The first version whose controller state carries the character's motion, and whose events
 /// include the [`moments`] kinds. An earlier container reads those kinds as unknown.
 const MOMENTS_VERSION: u16 = 7;
+
+/// The first version whose controller state carries the view, the grapple, the vehicle, and the
+/// frame state, whose grip acquisitions and throws carry their world points, and whose events
+/// include the [`body`], [`world`], and [`notes`] kinds.
+const WORLD_VERSION: u16 = 8;
 
 fn invalid(offset: usize, field: &'static str, value: u64) -> DecodeError {
     DecodeError {
@@ -294,6 +411,10 @@ fn controller_state(out: &mut Encoder, state: &ControllerState) {
     roomscale_state(out, &state.roomscale);
     opt(out, state.root.as_ref(), root_tick);
     opt(out, state.character.as_ref(), character_motion);
+    opt(out, state.view.as_ref(), world::view_state);
+    opt(out, state.grapple.as_ref(), world::grapple_state);
+    opt(out, state.vehicle.as_ref(), world::vehicle_state);
+    opt(out, state.frame.as_ref(), world::frame_state);
 }
 
 fn read_controller_state(
@@ -328,6 +449,16 @@ fn read_controller_state(
     } else {
         None
     };
+    let (view, grapple, vehicle, frame) = if version >= WORLD_VERSION {
+        (
+            read_opt(input, "the view flag", world::read_view_state)?,
+            read_opt(input, "the grapple flag", world::read_grapple_state)?,
+            read_opt(input, "the vehicle flag", world::read_vehicle_state)?,
+            read_opt(input, "the frame state flag", world::read_frame_state)?,
+        )
+    } else {
+        (None, None, None, None)
+    };
     Ok(ControllerState {
         frame_sequence,
         publication_age_us,
@@ -346,6 +477,10 @@ fn read_controller_state(
         roomscale,
         root,
         character,
+        view,
+        grapple,
+        vehicle,
+        frame,
     })
 }
 
@@ -652,9 +787,13 @@ fn grip_acquisition(out: &mut Encoder, grip: &GripAcquisition) {
         opt_label(out, &drive.result);
         opt_label(out, &drive.report);
     });
+    opt_vec3(out, grip.target_point);
 }
 
-fn read_grip_acquisition(input: &mut Decoder) -> Result<GripAcquisition, DecodeError> {
+fn read_grip_acquisition(
+    input: &mut Decoder,
+    version: u16,
+) -> Result<GripAcquisition, DecodeError> {
     let hand = read_hand(input, "the grip hand")?;
     let stage = read_grip_stage(input)?;
     let sequence = input.u64()?;
@@ -691,6 +830,11 @@ fn read_grip_acquisition(input: &mut Decoder) -> Result<GripAcquisition, DecodeE
                 report: read_opt_label(input, "the held report")?,
             })
         })?,
+        target_point: if version >= WORLD_VERSION {
+            read_opt_vec3(input, "the grip target point flag")?
+        } else {
+            None
+        },
     })
 }
 

@@ -30,8 +30,14 @@
 //!    (the body's animation state, throws, grip releases, and the wingsuit gesture and snatch
 //!    phases), and adds the follow bank as a recenter cause. An earlier container reads those kinds
 //!    as unknown.
+//!    Version 8 keeps the version 7 layouts, appends the view, the grapple, the vehicle, and the
+//!    frame state to the controller state event, a target point to the grip acquisition, and a
+//!    release pose to the throw, each behind a presence byte, and adds the event kinds for Rico's
+//!    poses and rig, the bodies near him and the forces on them, and the diagnostic notes
+//!    ([`event`]). Dense samples are quantised (`quant`). An earlier container reads those kinds as
+//!    unknown.
 //!
-//! Versions 1 and 2 skip unknown tags. Versions 3 through 7 reject unknown required tags; only unknown
+//! Versions 1 and 2 skip unknown tags. Versions 3 through 8 reject unknown required tags; only unknown
 //! tags with [`OPTIONAL_TAG_BIT`] set are skippable. Chunks cannot contain chunks or required unknown
 //! records. A cut final outer record leaves all earlier records readable and marks
 //! [`Recording::truncated`]. A complete malformed chunk, unread inner bytes, a bad checksum, or a
@@ -62,6 +68,7 @@ mod input_codec;
 #[cfg(test)]
 mod joint_tests;
 pub mod model;
+mod quant;
 mod read;
 mod wire;
 
@@ -82,14 +89,14 @@ use crate::{
 pub const EXTENSION: &str = "jc3trk";
 
 /// The newest supported format version. Legacy entry points retain versions 1 through 3.
-pub const VERSION: u16 = 7;
+pub const VERSION: u16 = 8;
 
 /// The joint-flag schema of a frame, independent of the input and decision schemas.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum FrameSchema {
     /// Versions 1 through 3 store only the conjunctions of the component flags.
     Legacy,
-    /// Versions 4 through 7 preserve each component flag and validate the aggregate bits.
+    /// Versions 4 through 8 preserve each component flag and validate the aggregate bits.
     V4,
 }
 
@@ -98,7 +105,7 @@ impl FrameSchema {
     pub fn for_version(version: u16) -> Result<Self, DecodeError> {
         match version {
             1..=3 => Ok(Self::Legacy),
-            4..=7 => Ok(Self::V4),
+            4..=8 => Ok(Self::V4),
             _ => Err(DecodeError {
                 offset: 0,
                 kind: DecodeErrorKind::UnsupportedVersion(version),
