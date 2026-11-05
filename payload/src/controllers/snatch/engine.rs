@@ -11,7 +11,7 @@ use jc3gi::{
         weapon::{WeaponBase, WeaponState},
         wire_end::{HookTargetInfo, WireEnd, WireEndState},
     },
-    types::{math::Vector3, shared_ptr::WeakPtrGameObject},
+    types::math::Vector3,
 };
 
 use crate::{
@@ -19,7 +19,7 @@ use crate::{
         aim::gun,
         physical_hands::game_object_of,
         snatch::{Refusal, sling_hooks},
-        weapons::{engine, grenade},
+        weapons::{engine, grenade, hold::refs::null_weak},
     },
     grapple::hook::{self, local_hook},
 };
@@ -215,11 +215,4 @@ unsafe fn active_wire(wire: NonZeroUsize) -> Option<&'static GrapplingHookWire> 
 
 fn vector(v: Vec3) -> Vector3 {
     Vector3 { data: v.to_array() }
-}
-
-fn null_weak() -> WeakPtrGameObject {
-    WeakPtrGameObject {
-        px: ptr::null_mut(),
-        pn: ptr::null_mut(),
-    }
 }

@@ -146,7 +146,8 @@ fn null_shared() -> SharedPtr<GameObject> {
     unsafe { std::mem::zeroed() }
 }
 
-fn null_weak() -> WeakPtrGameObject {
+/// An empty weak reference, for the engine to write one into or to clear one with.
+pub(crate) fn null_weak() -> WeakPtrGameObject {
     WeakPtrGameObject {
         px: ptr::null_mut(),
         pn: ptr::null_mut(),

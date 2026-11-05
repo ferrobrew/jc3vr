@@ -63,7 +63,7 @@
 //! Factory allocations inside [`AmmoNeutral`] disable reclamation under the allocator's own
 //! critical section. No reference outlives a removal, and only owned inert actors are removed.
 
-use std::{cell::Cell, collections::VecDeque, ptr, ptr::NonNull};
+use std::{cell::Cell, collections::VecDeque, ptr::NonNull};
 
 use detours_macro::detour;
 use glam::{Mat4, Vec3};
@@ -86,7 +86,7 @@ use crate::controllers::{
     weapons::{
         engine::gun_ptr,
         grenade::{LAUNCH, PlannedLaunch, Release, primed_explosive, report_native_throw, safe},
-        hold::refs::Weak,
+        hold::refs::{Weak, null_weak},
     },
 };
 
@@ -651,13 +651,6 @@ fn consume_ammo(weapon: *mut WeaponBase, data: *mut WeaponData, count: i32) {
 
 unsafe fn weapon_data(weapon: &WeaponBase) -> Option<*mut WeaponData> {
     unsafe { gun_ptr(weapon, usize::from(weapon.m_NextWeaponToFire)) }.map(NonNull::as_ptr)
-}
-
-fn null_weak() -> WeakPtrGameObject {
-    WeakPtrGameObject {
-        px: ptr::null_mut(),
-        pn: ptr::null_mut(),
-    }
 }
 
 /// An ammunition exemption for one weapon on one thread: drawing an item neither reads nor changes

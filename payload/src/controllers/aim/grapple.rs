@@ -45,11 +45,14 @@ use jc3gi::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::aim::{
-    grapple_weapons,
-    ray::DIRECT_AIM_START_OFFSET,
-    raycast::{self, CastOptions},
-    targets,
+use crate::controllers::{
+    aim::{
+        grapple_weapons,
+        ray::DIRECT_AIM_START_OFFSET,
+        raycast::{self, CastOptions},
+        targets,
+    },
+    weapons::hold::refs::null_weak,
 };
 
 /// The grapple hooks, aggregated by [`crate::controllers::aim::hook_library`].
@@ -280,11 +283,4 @@ unsafe fn release(weak: &mut WeakPtrGameObject) {
     }
     let empty = null_weak();
     unsafe { weak.Assign(&empty) };
-}
-
-fn null_weak() -> WeakPtrGameObject {
-    WeakPtrGameObject {
-        px: ptr::null_mut(),
-        pn: ptr::null_mut(),
-    }
 }
