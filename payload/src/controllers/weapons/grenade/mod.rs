@@ -135,15 +135,19 @@ pub(crate) fn throw_release(
 ) -> Release {
     let estimate = act::release_at(hand, point_world, since_s);
     let requested = estimate.capped(hold::MAX_THROW_MPS);
-    diagnostics::note_throw(Thrown {
-        hand,
-        item,
-        linear: requested.linear,
-        angular: requested.angular,
-        time_scale: estimate.time_scale.get(),
-        source: Some(estimate.source.label()),
-        armed,
-    });
+    diagnostics::note_throw_at(
+        Thrown {
+            hand,
+            item,
+            linear: requested.linear,
+            angular: requested.angular,
+            time_scale: estimate.time_scale.get(),
+            source: Some(estimate.source.label()),
+            armed,
+        },
+        point_world,
+        None,
+    );
     Release {
         velocity: requested.linear,
         angular: requested.angular,

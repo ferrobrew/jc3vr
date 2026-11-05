@@ -266,7 +266,7 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
         }
         pouch
     });
-    state.pouch_refusal = pouch::refusal(pouch::PouchFacts {
+    let pouch_refusal = pouch::refusal(pouch::PouchFacts {
         placed: target_pouch.is_some(),
         free: free.is_some(),
         gun: loaded.is_some(),
@@ -274,6 +274,16 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
         takes: loaded.is_some_and(|weapon| state.can_take(weapon)),
         holding: state.status.insertion.holding(),
     });
+    // The pouch going unplaced is a failure worth a note; its other refusals follow the hands.
+    if pouch_refusal == Some(pouch::PouchRefusal::NoBody) && state.pouch_refusal != pouch_refusal {
+        crate::controllers::diagnostics::note_diagnostic(
+            "pouch",
+            None,
+            pouch::PouchRefusal::NoBody.label(),
+            || None,
+        );
+    }
+    state.pouch_refusal = pouch_refusal;
     if let Some(pouch) = target_pouch
         && state.pouch_refusal.is_none()
     {

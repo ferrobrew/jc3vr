@@ -29,6 +29,7 @@ use crate::{
     config::Config,
     controllers::{
         config::ControllersConfig,
+        diagnostics,
         frame::Hand,
         haptics::{
             mixer::{HapticPulse, MIX, MixStats, Mixer, Sustained, Transient},
@@ -220,6 +221,14 @@ fn seconds(s: f32) -> Duration {
 fn queue(hand: Hand, event: Event, transient: Transient) {
     MIXER.lock().transient(hand, transient);
     let cue = event.cue();
+    diagnostics::note_haptic(diagnostics::Cue {
+        hand,
+        event: event.label(),
+        primitive: cue.primitive.label(),
+        amplitude: transient.amplitude,
+        duration_s: transient.duration.as_secs_f32(),
+        frequency_hz: transient.frequency_hz,
+    });
     let mut status = STATUS.lock();
     status.sent[cue.category.index()] += 1;
     status.recent.push(CueRecord {

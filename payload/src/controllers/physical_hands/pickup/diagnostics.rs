@@ -331,6 +331,9 @@ fn event(
                 result: drive.result.map(|result| debug(&result)),
                 report: drive.report.map(|report| debug(&report)),
             }),
+        target_point: request
+            .map(|record| record.key.target.point)
+            .or_else(|| input.scan.as_ref()?.selected.map(|reach| reach.point)),
     }
 }
 

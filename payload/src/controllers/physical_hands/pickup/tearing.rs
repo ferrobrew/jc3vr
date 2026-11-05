@@ -268,12 +268,6 @@ pub(super) fn apply(
         }
         TearResult::Refused => {
             outcome.tear_refusals += 1;
-            crate::controllers::diagnostics::note_diagnostic(
-                "door",
-                None,
-                "the door refused to tear",
-                || None,
-            );
         }
         _ => {}
     }

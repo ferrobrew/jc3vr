@@ -5,9 +5,12 @@ use std::{fmt, mem::MaybeUninit, num::NonZeroUsize};
 use glam::{Mat4, Vec3};
 use jc3gi::vehicle::{parts::ConstraintInfo, vehicle::Vehicle};
 
-use crate::controllers::physical_hands::{
-    bodies::owner_of,
-    doors::{DoorTarget, config::TearTuning, engine},
+use crate::controllers::{
+    diagnostics::note_diagnostic,
+    physical_hands::{
+        bodies::owner_of,
+        doors::{DoorTarget, config::TearTuning, engine},
+    },
 };
 
 /// The native identity and gesture history of an open door grip.
@@ -231,6 +234,14 @@ fn log_refusal(grip: &TearGrip, refusal: TearRefusal) {
         "physical hands: doors: a tear was refused: {}",
         refusal.label()
     );
+    note_diagnostic("door", None, "a tear was refused", || {
+        Some(format!(
+            "{}; slot {:?}, part {}",
+            refusal.label(),
+            grip.door.slot,
+            grip.door.part_index
+        ))
+    });
 }
 
 fn take_with(

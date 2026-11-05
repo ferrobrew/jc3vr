@@ -54,9 +54,10 @@ use parking_lot::Mutex;
 use crate::{
     controllers::{
         bindings::{
-            hold::{ActionWrite, DevicePoll},
-            inject::{self, Landing},
+            hold::{ActionWrite, DevicePoll, Phase},
+            inject::{self, Landing, Outcome},
         },
+        diagnostics::{Write, note_injected},
         gamepad_setting,
     },
     frame_timing::{self, Slot},
@@ -245,13 +246,21 @@ fn game_stage(delivery: Delivery, spawn: Spawn) {
 ///
 /// As [`inject::apply`].
 pub(crate) unsafe fn land(segments: Vec<Segment>) -> Vec<LandedSegment> {
-    segments
+    let landed: Vec<LandedSegment> = segments
         .into_iter()
         .map(|segment| {
             let landings = unsafe { inject::apply(&segment.writes) };
             LandedSegment { segment, landings }
         })
-        .collect()
+        .collect();
+    note_injected(|| {
+        landed
+            .iter()
+            .flat_map(|l| l.segment.writes.iter().zip(&l.landings))
+            .map(|(write, landing)| injected_write(write, landing))
+            .collect()
+    });
+    landed
 }
 
 /// The handoff between the stages. Each direction has one producer and one consumer: the poll
@@ -361,6 +370,31 @@ fn log_missed(missed: u64) {
             missed,
             "input tick: a poll stage had no game stage after it; its tick was dropped"
         );
+    }
+}
+
+/// A landed write as the tracking recording notes it.
+fn injected_write(write: &ActionWrite, landing: &Landing) -> Write {
+    let (phase, held_s) = match write.phase {
+        Phase::Value => ("value", None),
+        Phase::Clicked => ("clicked", None),
+        Phase::Held { seconds } => ("held", Some(seconds)),
+        Phase::Released { seconds } => ("released", Some(seconds)),
+        Phase::Unclick { .. } => ("unclick", None),
+        Phase::Neutral => ("neutral", None),
+    };
+    Write {
+        map: format!("{:?}", write.target.map),
+        action: format!("{:?}", write.target.action),
+        value: write.value,
+        phase,
+        held_s,
+        outcome: match landing.outcome {
+            Outcome::Applied => "applied",
+            Outcome::KeptPhysicalPress => "kept physical press",
+            Outcome::AlreadyMovedOn => "already moved on",
+            Outcome::Unresolved => "unresolved",
+        },
     }
 }
 

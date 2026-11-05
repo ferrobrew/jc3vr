@@ -2,8 +2,8 @@
 //! ([`Throw`]), and a grip letting go of what it held ([`GripRelease`]). Each producer calls in at
 //! the moment it acts; nothing is noted unless a recording or the lookback collects.
 
-use glam::Vec3;
-use tracking_format::event::{GripRelease, Label, Throw, WorldMotion};
+use glam::{Quat, Vec3};
+use tracking_format::event::{GripRelease, Label, ReleasePose, Throw, WorldMotion};
 
 use crate::{
     controllers::frame::Hand,
@@ -32,20 +32,19 @@ pub(crate) struct Thrown {
 
 /// Note a throw.
 pub(crate) fn note_throw(thrown: Thrown) {
-    if !events::collecting() {
-        return;
-    }
-    events::note(EventKind::Throw(Box::new(Throw {
-        hand: hand_to_file(thrown.hand),
-        item: Label::Borrowed(thrown.item),
-        motion: WorldMotion {
-            linear: thrown.linear,
-            angular: thrown.angular,
-        },
-        time_scale: thrown.time_scale,
-        source: thrown.source.map(Label::Borrowed),
-        armed: thrown.armed,
-    })));
+    note(thrown, None);
+}
+
+/// Note a throw that left the hand at `position`, world space, with `orientation` when the release
+/// read one.
+pub(crate) fn note_throw_at(thrown: Thrown, position: Vec3, orientation: Option<Quat>) {
+    note(
+        thrown,
+        Some(ReleasePose {
+            position,
+            orientation,
+        }),
+    );
 }
 
 /// A grip that let go of what it held.
@@ -75,5 +74,23 @@ pub(crate) fn note_release(released: Released) {
         body: released.body,
         cause: Label::Borrowed(released.cause),
         thrown: released.thrown,
+    })));
+}
+
+fn note(thrown: Thrown, release: Option<ReleasePose>) {
+    if !events::collecting() {
+        return;
+    }
+    events::note(EventKind::Throw(Box::new(Throw {
+        hand: hand_to_file(thrown.hand),
+        item: Label::Borrowed(thrown.item),
+        motion: WorldMotion {
+            linear: thrown.linear,
+            angular: thrown.angular,
+        },
+        time_scale: thrown.time_scale,
+        source: thrown.source.map(Label::Borrowed),
+        armed: thrown.armed,
+        release,
     })));
 }
