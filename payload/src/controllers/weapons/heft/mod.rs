@@ -48,7 +48,7 @@ use std::{
 
 use body_rig::rotation::{angle, clamp_angle};
 use detours_macro::detour;
-use glam::{Quat, Vec2, Vec3};
+use glam::{FloatExt, Quat, Vec2, Vec3};
 use jc3gi::equipment::weapon::WeaponBase;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -234,7 +234,8 @@ pub fn spread_scale(weapon: usize) -> f32 {
         return 1.0;
     };
     let share = unbraced_share(foregrip::two_hand_grip(), target.hand);
-    lerp(1.0, target.class.tuning(&config).spread_scale, share)
+    // The share is clamped to `0..=1` where it is made.
+    1.0_f32.lerp(target.class.tuning(&config).spread_scale, share)
 }
 
 /// How long a published weapon stays in effect without a new input tick.
@@ -380,10 +381,6 @@ fn advance_clock(at: &mut Option<Instant>, now: Instant) -> f32 {
 fn epoch() -> Instant {
     static EPOCH: OnceLock<Instant> = OnceLock::new();
     *EPOCH.get_or_init(Instant::now)
-}
-
-pub(super) fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t.clamp(0.0, 1.0)
 }
 
 /// The scatter the game gives a shot, multiplied by the one-handed spread for the local player's

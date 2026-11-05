@@ -25,7 +25,7 @@
 
 use std::time::{Duration, Instant};
 
-use glam::{Quat, Vec3};
+use glam::{FloatExt, Quat, Vec3};
 use parking_lot::Mutex;
 
 use crate::controllers::{
@@ -86,7 +86,8 @@ pub fn kick_offset(
     two_hand_weight: f32,
     one_hand_scale: f32,
 ) -> Vec3 {
-    let scale = config.kick_scale * lerp(one_hand_scale, TWO_HAND_KICK_SCALE, two_hand_weight);
+    let scale = config.kick_scale
+        * one_hand_scale.lerp(TWO_HAND_KICK_SCALE, two_hand_weight.clamp(0.0, 1.0));
     let (pitch, yaw) = (pitch * scale, yaw * scale);
     let kick = Vec3::new(pitch, yaw, pitch.abs() * KICK_BACK_M_PER_RAD);
     if kick.is_finite() { kick } else { Vec3::ZERO }
@@ -94,7 +95,7 @@ pub fn kick_offset(
 
 /// The spring's stiffness under a two-hand grip of `weight`.
 pub fn stiffness(two_hand_weight: f32) -> f32 {
-    SPRING_STIFFNESS * lerp(1.0, TWO_HAND_STIFFNESS_SCALE, two_hand_weight)
+    SPRING_STIFFNESS * 1.0_f32.lerp(TWO_HAND_STIFFNESS_SCALE, two_hand_weight.clamp(0.0, 1.0))
 }
 
 /// Limit an offset's rotation to `max_angle_deg` on each axis.
@@ -307,10 +308,6 @@ fn advance(now: Instant, grip: Option<foregrip::TwoHandGrip>) -> [Vec3; 2] {
 
 fn grip_weight(grip: Option<foregrip::TwoHandGrip>, hand: Hand) -> f32 {
     grip.filter(|g| g.holder == hand).map_or(0.0, |g| g.weight)
-}
-
-fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t.clamp(0.0, 1.0)
 }
 
 #[cfg(test)]

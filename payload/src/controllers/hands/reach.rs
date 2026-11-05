@@ -27,7 +27,7 @@ use body_rig::{
     rotation::level,
     smooth::{follow_factor, smoothstep_between},
 };
-use glam::{Quat, Vec3};
+use glam::{FloatExt, Quat, Vec3};
 
 use crate::controllers::{
     body::{self, BodyDimensions},
@@ -273,8 +273,8 @@ impl ArmTracker {
                 let lengths = follow_factor(dt, LENGTH_SMOOTHING_S);
                 let offset = follow_factor(dt, shoulder_smoothing_s);
                 MeasuredArm {
-                    upper_arm: lerp(previous.upper_arm, reading.upper_arm, lengths),
-                    forearm: lerp(previous.forearm, reading.forearm, lengths),
+                    upper_arm: previous.upper_arm.lerp(reading.upper_arm, lengths),
+                    forearm: previous.forearm.lerp(reading.forearm, lengths),
                     eye_to_shoulder: previous
                         .eye_to_shoulder
                         .lerp(reading.eye_to_shoulder, offset),
@@ -316,10 +316,6 @@ const MIN_SEGMENT_M: f32 = 0.05;
 const MAX_SEGMENT_M: f32 = 0.6;
 /// The time constant the bone lengths settle over, seconds.
 const LENGTH_SMOOTHING_S: f32 = 0.5;
-
-fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t
-}
 
 #[cfg(test)]
 mod tests {

@@ -5,7 +5,7 @@
 //! finger's sideways turn at its knuckle toward the thumb side, in radians.
 
 use body_rig::rotation::twist_angle;
-use glam::{Quat, Vec3};
+use glam::{FloatExt, Quat, Vec3};
 
 use crate::controllers::{
     fingers::config::FingerSource,
@@ -164,15 +164,15 @@ pub fn estimate(inputs: &HandInputs, profile: InteractionProfile) -> FingerCurls
 
     let trigger = inputs.trigger.clamp(0.0, 1.0);
     let index = if inputs.trigger_touch || trigger > 0.0 {
-        lerp(TRIGGER_REST, 1.0, trigger)
+        TRIGGER_REST.lerp(1.0, trigger)
     } else {
         0.0
     };
 
     let squeeze = inputs.squeeze.clamp(0.0, 1.0);
     let grip = match profile {
-        InteractionProfile::OculusTouch => lerp(TOUCH_GRIP_REST, 1.0, squeeze),
-        _ => lerp(squeeze, 1.0, inputs.squeeze_force.clamp(0.0, 1.0)),
+        InteractionProfile::OculusTouch => TOUCH_GRIP_REST.lerp(1.0, squeeze),
+        _ => squeeze.lerp(1.0, inputs.squeeze_force.clamp(0.0, 1.0)),
     };
 
     FingerCurls {
@@ -217,10 +217,6 @@ fn chain(finger: Finger) -> &'static [usize] {
 /// toward the palm.
 fn flexion(parent: Quat, child: Quat) -> f32 {
     -twist_angle(parent.inverse() * child, Vec3::X)
-}
-
-fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t
 }
 
 #[cfg(test)]

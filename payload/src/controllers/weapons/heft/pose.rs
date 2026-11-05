@@ -4,14 +4,14 @@
 use std::f32::consts::TAU;
 
 use body_rig::{rotation::rotation_error, smooth::smoothstep_between};
-use glam::{Quat, Vec2, Vec3};
+use glam::{FloatExt, Quat, Vec2, Vec3};
 
 use crate::controllers::{
     frame::Hand,
     hands::CockpitHand,
     weapons::{
         foregrip,
-        heft::{BracedTuning, Heft, HeftClass, HeftTuning, lerp},
+        heft::{BracedTuning, Heft, HeftClass, HeftTuning},
     },
 };
 
@@ -87,16 +87,19 @@ impl Weight {
             0.0
         } else {
             let omega = |k: f32| if k > 0.0 { k.sqrt() } else { RIGID_OMEGA };
-            lerp(omega(braced_k), omega(one_k), share).powi(2)
+            omega(braced_k).lerp(omega(one_k), share).powi(2)
         };
         Self {
-            sag_deg: lerp(braced.sag_deg, one.sag_deg, share),
+            sag_deg: braced.sag_deg.lerp(one.sag_deg, share),
             reach_sag_deg: one.reach_sag_deg * share,
             sway_deg: one.sway_deg,
             sway_share: share,
             stiffness,
-            damping_ratio: lerp(1.0, one.lag_damping_ratio, share),
-            max_angle_deg: lerp(config.braced.max_angle_deg, config.max_angle_deg, share),
+            damping_ratio: 1.0_f32.lerp(one.lag_damping_ratio, share),
+            max_angle_deg: config
+                .braced
+                .max_angle_deg
+                .lerp(config.max_angle_deg, share),
         }
     }
 }
