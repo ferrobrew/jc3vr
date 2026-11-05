@@ -123,8 +123,8 @@ pub struct WireEnd {
     /// The end's state; see [`WireEndState`](crate::equipment::wire_end::WireEndState).
     pub m_WireEndState: crate::equipment::wire_end::WireEndState,
     _field_54: [u8; 4],
-    /// The attachment proxy (`CGrapplePointProxy`) while attached, or null.
-    pub m_PointProxy: *mut ::std::ffi::c_void,
+    /// The attachment proxy while attached, or null.
+    pub m_PointProxy: *mut crate::equipment::grapple_point_proxy::GrapplePointProxy,
     /// The wire's other end.
     pub m_OtherEnd: *mut crate::equipment::wire_end::WireEnd,
     /// The wire that holds the end.
