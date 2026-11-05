@@ -216,6 +216,7 @@ fn tick_inputs() -> TickInputs {
         world_scale: 1.0,
         characters: CharactersConfig::default(),
         reaches: [None; 2],
+        carrier_velocity: None,
     }
 }
 

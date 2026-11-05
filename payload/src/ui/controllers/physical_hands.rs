@@ -187,6 +187,14 @@ pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) 
         ui.checkbox(&mut p.pickup.enabled, "Pick up objects with the grip");
         ui.add_enabled_ui(p.pickup.enabled, |ui| {
             ui.add(egui::Slider::new(&mut p.pickup.throw_scale, 0.0..=4.0).text("Throw (× hand)"));
+            ui.add(
+                egui::Slider::new(&mut p.pickup.carrier_motion_share, 0.0..=1.0)
+                    .text("Carry with the body's motion"),
+            )
+            .on_hover_text(
+                "The share of the body's own jumps, landings, and launches a carried object \
+                 takes on, so that it stays in the hands rather than being torn away.",
+            );
         });
         ui.checkbox(
             &mut p.vault.enabled,

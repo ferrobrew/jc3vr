@@ -1,10 +1,10 @@
 //! The pickups' fixed tuning: the reach, the weight limits, the hand's strength on what it holds,
 //! the drive toward the hand, and the throw.
 
-/// The pickups' tuning, fixed at [`PICKUP`] apart from the throw's share of the hand's velocity,
-/// which [`PickupConfig::throw_scale`] sets ([`PickupTuning::with_throw_scale`]).
-///
-/// [`PickupConfig::throw_scale`]: crate::controllers::physical_hands::config::PickupConfig::throw_scale
+use crate::controllers::physical_hands::config::PickupConfig;
+
+/// The pickups' tuning, fixed at [`PICKUP`] apart from what [`PickupConfig`] sets from the debug UI
+/// ([`PickupTuning::configured`]).
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct PickupTuning {
     /// How far from the palm an object can be taken, metres of the player's hand.
@@ -36,6 +36,12 @@ pub struct PickupTuning {
     pub keep_out_radius_m: f32,
     /// How far the grab point can lag behind the hand before it is let go, metres.
     pub break_distance_m: f32,
+    /// The share of the character's own change of velocity a carried loose object the hands can
+    /// lift takes on each tick, `0..=1`. The hands ride on the character, so a jump, a landing, or
+    /// a launch moves what they carry with them rather than through the hands' strength, which
+    /// covers only the hands' motion relative to the body. One carries the object along whatever
+    /// its weight within the hands' lift; its weight still shows as the drive's sag.
+    pub carrier_motion_share: f32,
     /// The released object's velocity as a share of the hand's.
     pub throw_scale: f32,
     /// The fastest throw, metres per second.
@@ -47,10 +53,11 @@ pub struct PickupTuning {
 }
 
 impl PickupTuning {
-    /// The tuning with the throw's share of the hand's velocity at `throw_scale`.
-    pub const fn with_throw_scale(self, throw_scale: f32) -> Self {
+    /// The tuning with the debug UI's settings from `config` applied.
+    pub const fn configured(self, config: &PickupConfig) -> Self {
         Self {
-            throw_scale,
+            throw_scale: config.throw_scale,
+            carrier_motion_share: config.carrier_motion_share,
             ..self
         }
     }
@@ -70,6 +77,7 @@ pub const PICKUP: PickupTuning = PickupTuning {
     gravity_mps2: 9.81,
     keep_out_radius_m: 0.3,
     break_distance_m: 0.6,
+    carrier_motion_share: 1.0,
     throw_scale: 1.0,
     max_throw_speed_mps: 25.0,
     max_articulated_mass_kg: 20_000.0,

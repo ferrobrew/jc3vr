@@ -81,6 +81,9 @@ pub struct PickupConfig {
     pub enabled: bool,
     /// The released object's velocity as a share of the hand's.
     pub throw_scale: f32,
+    /// The share of the character's own change of velocity a carried object takes on
+    /// ([`PickupTuning::carrier_motion_share`](crate::controllers::physical_hands::pickup::PickupTuning::carrier_motion_share)).
+    pub carrier_motion_share: f32,
 }
 
 impl PickupConfig {
@@ -88,6 +91,7 @@ impl PickupConfig {
         Self {
             enabled: true,
             throw_scale: 1.0,
+            carrier_motion_share: 1.0,
         }
     }
 }

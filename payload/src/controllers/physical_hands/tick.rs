@@ -523,13 +523,14 @@ unsafe fn run(owner: &Character, dt: f32) {
             world_scale: active.world_scale,
             characters: config.characters,
             reaches: hand_status.map(|h| h.reach),
+            carrier_velocity: Some(Vec3::from_array(owner.m_MeasuredWorldVelocity.data)),
         };
         // SAFETY: the simulation phase outside the physics step.
         let outcome = unsafe {
             pickup::tick(
                 &mut state.pickup,
                 inputs,
-                &PICKUP.with_throw_scale(config.pickup.throw_scale),
+                &PICKUP.configured(&config.pickup),
             )
         };
         joined = outcome.joints;

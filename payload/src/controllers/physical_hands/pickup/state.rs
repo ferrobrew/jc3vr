@@ -3,6 +3,8 @@
 
 use std::{num::NonZeroUsize, time::Instant};
 
+use glam::Vec3;
+
 use crate::controllers::{
     fingers::grip::GripSource,
     frame::Hand,
@@ -35,6 +37,9 @@ pub(crate) struct PickupState {
     /// When the input tick last acted on the grips.
     pub(crate) input_at: Option<Instant>,
     pub(crate) joints_enabled: Option<bool>,
+    /// The player character's world velocity at the last tick, from which a carried object takes
+    /// on the character's change of velocity.
+    pub(crate) carrier_velocity: Option<Vec3>,
 }
 
 impl PickupState {
@@ -51,6 +56,7 @@ impl PickupState {
             scans: [Scan::new(); 2],
             input_at: None,
             joints_enabled: None,
+            carrier_velocity: None,
         }
     }
 
@@ -129,6 +135,7 @@ impl PickupState {
             scans: _,
             input_at: _,
             joints_enabled: _,
+            carrier_velocity: _,
         } = self;
         let i = hand.index();
         held[i].is_some()
@@ -202,6 +209,7 @@ impl PickupState {
         self.regrips = [None; 2];
         self.hijack_clicks = [false; 2];
         self.requests = [None; 2];
+        self.carrier_velocity = None;
     }
 
     /// Preserve the queue's existing replacement semantics and record a displaced local request.

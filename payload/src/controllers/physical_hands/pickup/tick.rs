@@ -62,6 +62,9 @@ pub(crate) struct TickInputs {
     /// What each hand reaches this tick, from which a hand that yanked a character takes hold of
     /// its ragdoll.
     pub reaches: [Option<Reach>; 2],
+    /// The player character's world velocity, metres per second, whose change a carried object
+    /// takes on ([`PickupTuning::carrier_motion_share`]); none when it is not known.
+    pub carrier_velocity: Option<Vec3>,
 }
 
 /// What a pickup tick did, for the readout, the haptics, and the overlay.
@@ -197,8 +200,11 @@ unsafe fn tick_with(
         world_scale,
         characters: character_config,
         reaches,
+        carrier_velocity,
     } = inputs;
     let mut outcome = TickOutcome::default();
+    let carried = carrier_change(state.carrier_velocity, carrier_velocity, config);
+    state.carrier_velocity = carrier_velocity;
     if state
         .joints_enabled
         .is_some_and(|previous| previous != joints.enabled)
@@ -558,7 +564,17 @@ unsafe fn tick_with(
             continue;
         }
         let tuning = carry_tuning(&held, &holds, config).in_real_time(time_scale);
-        let solution = hold::solve(&body.rigid(), holds, dt, &tuning);
+        let mut rigid = body.rigid();
+        // The hands ride on the character, so a loose object they can lift takes on the
+        // character's own change of velocity outright, and the hands' strength works only on
+        // their motion relative to the body: a jump carries the object along instead of tearing
+        // it from the hands.
+        if held.kind == HeldKind::Prop
+            && held.mass_kg * tuning.gravity.length() <= hands as f32 * tuning.hand_force_n
+        {
+            rigid.velocities.linear += carried;
+        }
+        let solution = hold::solve(&rigid, holds, dt, &tuning);
         // SAFETY: forwarded from the caller.
         engine.release_joints(&held);
         let result = engine.drive(&held, solution.velocities);
@@ -747,6 +763,21 @@ pub(super) fn take_body(
             ConsumerResult::BodyRefused(e)
         }
     }
+}
+
+/// The change in the carrier's velocity since the last tick that a carried object takes on, scaled
+/// by [`PickupTuning::carrier_motion_share`] and capped at the hold's top speed; zero unless both
+/// velocities are known and finite.
+fn carrier_change(previous: Option<Vec3>, now: Option<Vec3>, config: &PickupTuning) -> Vec3 {
+    let (Some(previous), Some(now)) = (previous, now) else {
+        return Vec3::ZERO;
+    };
+    let change = now - previous;
+    if !change.is_finite() {
+        return Vec3::ZERO;
+    }
+    (change * config.carrier_motion_share.clamp(0.0, 1.0))
+        .clamp_length_max(config.max_speed_mps.max(0.0))
 }
 
 pub(super) fn carry_tuning(

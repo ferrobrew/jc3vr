@@ -11,6 +11,7 @@ use crate::controllers::{
 struct FakeBodies {
     body: bodies::BodyState,
     calls: Vec<&'static str>,
+    driven: Option<Velocities>,
 }
 
 impl BodyEngine for FakeBodies {
@@ -21,9 +22,10 @@ impl BodyEngine for FakeBodies {
     fn release_joints(&mut self, _: &Held) {
         self.calls.push("unjoin");
     }
-    fn drive(&mut self, _: &Held, _: Velocities) -> Result<(), bodies::BodyError> {
+    fn drive(&mut self, _: &Held, velocities: Velocities) -> Result<(), bodies::BodyError> {
         assert_eq!(self.calls.last(), Some(&"unjoin"));
         self.calls.push("drive");
+        self.driven = Some(velocities);
         Ok(())
     }
 }
@@ -81,6 +83,7 @@ fn inputs(enabled: bool) -> TickInputs {
         world_scale: 1.0,
         characters: CharactersConfig::default(),
         reaches: [None; 2],
+        carrier_velocity: None,
     }
 }
 
@@ -105,6 +108,7 @@ fn a_second_holder_inherits_carry_or_a_preserved_joint_in_the_production_tick() 
         let mut fake = FakeBodies {
             body: body(),
             calls: Vec::new(),
+            driven: None,
         };
         let outcome = run(&mut state, true, &mut fake);
         assert_eq!(state.held.map(|h| h.unwrap().joined), [joined; 2]);
@@ -150,6 +154,7 @@ fn latch_handoff_tear_and_regrab_keep_one_body_mode_in_the_production_tick() {
         let mut fake = FakeBodies {
             body: body(),
             calls: Vec::new(),
+            driven: None,
         };
         let outcome = run(&mut state, true, &mut fake);
         assert_eq!(state.held.map(|h| h.unwrap().joined), [initially_joined; 2]);
@@ -167,6 +172,7 @@ fn latch_handoff_tear_and_regrab_keep_one_body_mode_in_the_production_tick() {
     let mut fake = FakeBodies {
         body: body(),
         calls: Vec::new(),
+        driven: None,
     };
     let outcome = run(&mut state, true, &mut fake);
     assert_eq!(state.held.map(|h| h.unwrap().joined), [false; 2]);
@@ -184,6 +190,7 @@ fn a_joint_feature_toggle_releases_the_whole_group_without_a_carry_command() {
         let mut fake = FakeBodies {
             body: body(),
             calls: Vec::new(),
+            driven: None,
         };
         let outcome = run(&mut state, false, &mut fake);
         assert_eq!(state.held, [None; 2]);
@@ -192,4 +199,50 @@ fn a_joint_feature_toggle_releases_the_whole_group_without_a_carry_command() {
         assert!(fake.calls.is_empty());
         assert_eq!(outcome.throw, None);
     }
+}
+
+#[test]
+fn a_carried_object_the_hands_can_lift_takes_on_the_characters_jump() {
+    // The character leaves the ground at 7 m/s, and the palms rise with it.
+    let jump = Vec3::new(0.0, 7.0, 0.0);
+    let rising_palm = PalmMotion {
+        velocity: jump,
+        ..palm()
+    };
+    let driven_rise = |mass_kg: f32, share: f32| {
+        let mut state = PickupState::new();
+        state.held = [Some(Held {
+            mass_kg,
+            ..held(false, HeldKind::Prop)
+        }); 2];
+        let mut fake = FakeBodies {
+            body: bodies::BodyState {
+                mass_kg: Some(mass_kg),
+                ..body()
+            },
+            calls: Vec::new(),
+            driven: None,
+        };
+        let config = PickupTuning {
+            carrier_motion_share: share,
+            ..PICKUP
+        };
+        for carrier in [Vec3::ZERO, jump] {
+            state.input_at = Some(Instant::now());
+            let inputs = TickInputs {
+                palms: [Some(rising_palm); 2],
+                carrier_velocity: Some(carrier),
+                ..inputs(false)
+            };
+            let outcome = unsafe { tick_with(&mut state, inputs, &config, &mut fake) };
+            assert_eq!(state.held.map(|h| h.is_some()), [true; 2], "{outcome:?}");
+        }
+        fake.driven.unwrap().linear.y
+    };
+    // A tyre's weight is within the two hands' lift, so it rises with the character.
+    assert!((driven_rise(30.0, 1.0) - jump.y).abs() < 0.5);
+    // Without the carrier's motion the hands' strength alone gets it well short of the jump.
+    assert!(driven_rise(30.0, 0.0) < jump.y * 0.5);
+    // What the hands cannot lift is not carried along: it stays a snag.
+    assert!(driven_rise(100.0, 1.0) < jump.y * 0.5);
 }

@@ -196,6 +196,7 @@ fn queue_replacement_and_no_palm_consumer_preserve_the_actual_request_key() {
                 world_scale: 1.0,
                 characters: CharactersConfig::default(),
                 reaches: [None; 2],
+                carrier_velocity: None,
             },
             &PICKUP,
         )
@@ -245,6 +246,7 @@ fn an_evicted_observed_request_consumes_the_same_target_as_a_remote_grab() {
                     world_scale: 1.0,
                     characters: CharactersConfig::default(),
                     reaches: [None; 2],
+                    carrier_velocity: None,
                 },
                 &PICKUP,
             )
