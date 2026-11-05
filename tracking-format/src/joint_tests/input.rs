@@ -14,7 +14,7 @@ use crate::{
 #[test]
 fn input_order_and_decision_wire_are_independent_of_the_frame_container_version() {
     assert_eq!(INPUT_VERSION, 2);
-    assert_eq!(POLICY_A_VERSION, 4);
+    assert_eq!(POLICY_A_VERSION, 5);
     let stamp = InputStamp {
         epoch: 13,
         clock: ClockDomain::Synthetic,
@@ -54,6 +54,7 @@ fn input_order_and_decision_wire_are_independent_of_the_frame_container_version(
                 recenter_join_ns: 100_000_000,
                 panel_join_ns: 350_000_000,
                 recenter_hold_ns: 1_000_000_000,
+                suppress_developer_chords_in_vehicles: false,
             }),
             context: 8,
             gameplay: true,

@@ -20,7 +20,10 @@ use std::{sync::Arc, time::Instant};
 use tracking_format::input::{ClockDomain, GroupOrder, InputStamp, SourceQuery};
 
 use super::*;
-use crate::{controllers::frame::ActionSetKind, vr::input::semantic::vocabulary::OnFootAction};
+use crate::{
+    controllers::frame::ActionSetKind,
+    vr::input::semantic::vocabulary::{LandVehicleAction, OnFootAction},
+};
 
 const LS: &str = "/user/hand/left/input/thumbstick/click";
 const RS: &str = "/user/hand/right/input/thumbstick/click";
@@ -44,6 +47,17 @@ fn group(
     down: [bool; CONTROLS],
     semantic: &[(ActionId, bool, SourceQuery)],
 ) -> InputGroup {
+    group_in(ActionSetKind::OnFoot, ms, sequence, down, semantic)
+}
+
+/// A group observed while `kind`'s action set is active, carrying that set's semantic routes.
+fn group_in(
+    kind: ActionSetKind,
+    ms: u64,
+    sequence: u64,
+    down: [bool; CONTROLS],
+    semantic: &[(ActionId, bool, SourceQuery)],
+) -> InputGroup {
     // The physical A is down whenever a semantic action bound to it is, as it is live.
     let mut down = down;
     down[Control::RightA.index()] |= semantic.iter().any(|(_, pressed, sources)| {
@@ -61,11 +75,11 @@ fn group(
             sources: paths(&[path]),
         })
         .collect::<Vec<_>>();
-    for set in [SemanticSet::Global, SemanticSet::OnFoot] {
+    for set in [SemanticSet::Global, SemanticSet::of(kind)] {
         for (action, definition) in set.actions().iter().enumerate() {
             for hand in Hand::BOTH {
-                let provided = semantic.iter().find(|(id, _, _)| {
-                    id.set == set && id.index() == action && hand == Hand::Right
+                let provided = semantic.iter().find(|(id, _, sources)| {
+                    id.set == set && id.index() == action && hand == source_hand(sources)
                 });
                 let (down, sources) = provided.map_or((false, paths(&[])), |(_, down, sources)| {
                     (*down, sources.clone())
@@ -102,13 +116,40 @@ fn group(
         source_generation: 1,
         binding_generation: 1,
         action_schema: SCHEMA_VERSION,
-        context: 0,
+        context: kind as u64,
         focused: true,
         samples,
     }
 }
 
+/// The hand a provided semantic sample is read on: the left when every source is a left-hand
+/// path, and the right otherwise.
+fn source_hand(sources: &SourceQuery) -> Hand {
+    match sources {
+        SourceQuery::Paths(paths)
+            if !paths.is_empty()
+                && paths
+                    .iter()
+                    .all(|path| path.starts_with("/user/hand/left/")) =>
+        {
+            Hand::Left
+        }
+        _ => Hand::Right,
+    }
+}
+
 fn evaluate(runtime: &mut Runtime, group: InputGroup, gameplay: bool) -> Tick {
+    evaluate_in(runtime, group, gameplay, 0, &BindingsConfig::new())
+}
+
+/// Evaluates `group` under the policy context `context`, whose action set matches the group's.
+fn evaluate_in(
+    runtime: &mut Runtime,
+    group: InputGroup,
+    gameplay: bool,
+    context: u64,
+    config: &BindingsConfig,
+) -> Tick {
     let frame = ControllerFrame {
         sequence: group.stamp.sequence,
         display_time_ns: 0,
@@ -125,10 +166,10 @@ fn evaluate(runtime: &mut Runtime, group: InputGroup, gameplay: bool) -> Tick {
         }],
         replay: false,
         frame: Some(&frame),
-        context: 0,
+        context,
         gameplay,
         usable: true,
-        config: &BindingsConfig::new(),
+        config,
         dominant: Hand::Right,
     })
 }
@@ -296,6 +337,116 @@ fn unordered_panel_is_consumed_but_ordered_panel_works_while_gameplay_stands_dow
     );
     assert_eq!(formed.commands, [SystemCommand::TogglePanel]);
     assert!(formed.raw.iter().all(|button| !button.held()));
+}
+
+#[test]
+fn vehicle_left_click_skips_the_panel_window_only_under_suppression() {
+    let vehicle = ActionSetKind::LandVehicle;
+    for suppress in [true, false] {
+        let config = BindingsConfig {
+            suppress_developer_chords_in_vehicles: suppress,
+            ..BindingsConfig::new()
+        };
+        let mut runtime = Runtime::default();
+        let mut step = |ms, sequence, down| {
+            evaluate_in(
+                &mut runtime,
+                group_in(vehicle, ms, sequence, down, &[]),
+                true,
+                vehicle as u64,
+                &config,
+            )
+        };
+        step(1, 1, [false; CONTROLS]);
+        step(10, 2, [true, false, false, false]);
+        let joined = step(50, 3, [true, false, true, false]);
+        let after_recenter = step(120, 4, [true, false, true, false]);
+        if suppress {
+            assert!(joined.commands.is_empty());
+            assert!(joined.raw[Control::RightB.index()].pressed);
+            assert!(after_recenter.raw[Control::LeftStick.index()].pressed);
+        } else {
+            assert_eq!(joined.commands, [SystemCommand::TogglePanel]);
+            assert!(joined.raw.iter().all(|button| !button.held()));
+            assert!(!after_recenter.raw[Control::LeftStick.index()].held());
+        }
+    }
+}
+
+#[test]
+fn vehicle_grapple_press_waits_only_for_the_recenter_window_under_suppression() {
+    let vehicle = ActionSetKind::LandVehicle;
+    let id = LandVehicleAction::Grapple.id();
+    for suppress in [true, false] {
+        let config = BindingsConfig {
+            suppress_developer_chords_in_vehicles: suppress,
+            ..BindingsConfig::new()
+        };
+        let mut runtime = Runtime::default();
+        let mut step = |ms, sequence, down: bool| {
+            let tick = evaluate_in(
+                &mut runtime,
+                group_in(
+                    vehicle,
+                    ms,
+                    sequence,
+                    [down, false, false, false],
+                    &[(id, down, paths(&[LS]))],
+                ),
+                true,
+                vehicle as u64,
+                &config,
+            );
+            button_hand(&tick, id, Hand::Left)
+        };
+        step(1, 1, false);
+        assert!(!step(10, 2, true).held());
+        assert!(!step(100, 3, true).held());
+        let past_recenter = step(120, 4, true);
+        assert_eq!(past_recenter.pressed, suppress, "suppress={suppress}");
+        let past_panel = step(370, 5, true);
+        assert_eq!(past_panel.pressed, !suppress, "suppress={suppress}");
+        assert!(past_panel.down);
+    }
+}
+
+#[test]
+fn on_foot_left_click_keeps_the_panel_chord_under_suppression() {
+    let config = BindingsConfig::new();
+    assert!(config.suppress_developer_chords_in_vehicles);
+    let mut runtime = Runtime::default();
+    let on_foot = ActionSetKind::OnFoot as u64;
+    evaluate_in(
+        &mut runtime,
+        group(1, 1, [false; CONTROLS], &[]),
+        true,
+        on_foot,
+        &config,
+    );
+    let lone = evaluate_in(
+        &mut runtime,
+        group(10, 2, [true, false, false, false], &[]),
+        true,
+        on_foot,
+        &config,
+    );
+    assert!(!lone.raw[Control::LeftStick.index()].held());
+    let waiting = evaluate_in(
+        &mut runtime,
+        group(120, 3, [true, false, false, false], &[]),
+        true,
+        on_foot,
+        &config,
+    );
+    assert!(!waiting.raw[Control::LeftStick.index()].held());
+    let formed = evaluate_in(
+        &mut runtime,
+        group(130, 4, [true, false, true, false], &[]),
+        true,
+        on_foot,
+        &config,
+    );
+    assert_eq!(formed.commands, [SystemCommand::TogglePanel]);
 }
 
 #[test]

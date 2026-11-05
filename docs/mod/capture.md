@@ -69,7 +69,7 @@ F1 starts a session recording: the video recorder and a tracking recording ([tes
 
 The two halves line up by the OpenXR predicted display time, which the sidecar's `predicted_display_time_ns` and the tracking frames' `display_time_ns` share; `tracking-synth dump --from xr:<ns>` prints the tracking around a sidecar frame, and the sidecar's `unix_ms` places that frame in the video.
 
-F2 is the take-marker action: an unlabelled marker into whatever records (above); in the headset the left stick click and then right A does the same ([input/controllers.md](input/controllers.md)). With no tracking recording running it also saves the tracking lookback, the last ten seconds, to `recordings/<stamp>/lookback.jc3trk`, so a moment is kept even when no session recording was started.
+F2 is the take-marker action: an unlabelled marker into whatever records (above); in the headset the left stick click and then right A does the same, except in a vehicle while `controllers.bindings.suppress_developer_chords_in_vehicles` is on, as it is by default ([input/controllers.md](input/controllers.md#bindings-and-injection)). With no tracking recording running it also saves the tracking lookback, the last ten seconds, to `recordings/<stamp>/lookback.jc3trk`, so a moment is kept even when no session recording was started.
 
 ## Operating it
 

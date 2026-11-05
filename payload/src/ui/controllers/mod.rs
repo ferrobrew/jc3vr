@@ -131,7 +131,12 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
             climb::climb_settings(ui, &mut cfg.controllers.physical_hands.climb);
             stunt::stunt_settings(ui, &mut cfg.controllers.physical_hands.stunt);
         },
-        FeatureId::Vehicles | FeatureId::Air => |ui, id| {
+        FeatureId::Vehicles => |ui, id| {
+            let mut cfg = config::edit();
+            vehicles::feature_settings(ui, &mut cfg.controllers.vehicles, id);
+            settings::vehicle_chord_settings(ui, &mut cfg);
+        },
+        FeatureId::Air => |ui, id| {
             vehicles::feature_settings(ui, &mut config::edit().controllers.vehicles, id);
         },
         FeatureId::Posture => {

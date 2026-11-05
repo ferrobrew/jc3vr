@@ -25,6 +25,7 @@ use crate::{
             },
         },
         config::BindingsConfig,
+        frame::ActionSetKind,
     },
     vr::input::semantic::{SCHEMA_VERSION, history},
 };
@@ -227,6 +228,7 @@ impl Runtime {
                 generation: BindingGeneration(group.binding_generation),
                 context: GameplayContext(context),
                 singles_enabled: true,
+                vehicle: vehicle_set(context),
                 down,
                 #[cfg(test)]
                 evidence: InputEvidence::VerifiedUnmasked,
@@ -347,4 +349,11 @@ fn flags(button: ButtonControl) -> u8 {
 }
 fn context_set(context: u64) -> u64 {
     context & 0xff
+}
+/// Whether the context's action set is one of the vehicle sets.
+fn vehicle_set(context: u64) -> bool {
+    usize::try_from(context_set(context))
+        .ok()
+        .and_then(|index| ActionSetKind::ALL.get(index))
+        .is_some_and(|kind| kind.is_vehicle())
 }

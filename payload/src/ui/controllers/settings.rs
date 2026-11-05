@@ -92,6 +92,21 @@ pub(super) fn grapple_settings(ui: &mut Ui, cfg: &mut config::Config) {
     });
 }
 
+pub(super) fn vehicle_chord_settings(ui: &mut Ui, cfg: &mut config::Config) {
+    ui.checkbox(
+        &mut cfg
+            .controllers
+            .bindings
+            .suppress_developer_chords_in_vehicles,
+        "No developer chords in vehicles",
+    )
+    .on_hover_text(
+        "In a vehicle, the left stick click no longer starts the debug panel (then right B) or \
+         take marker (then right A) chords, so it acts without waiting for them. The recenter \
+         chord still works.",
+    );
+}
+
 pub(super) fn locomotion_settings(ui: &mut Ui, cfg: &mut config::Config) {
     let l = &mut cfg.controllers.locomotion;
     locomotion::locomotion_settings(ui, &mut l.stick, &mut l.acts, &mut l.view, &mut l.strokes);

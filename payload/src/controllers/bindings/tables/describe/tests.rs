@@ -395,6 +395,28 @@ fn the_chords_are_listed_in_every_mode() {
 }
 
 #[test]
+fn the_panel_chord_is_unlisted_in_vehicles_while_suppressed() {
+    for mode in all_modes() {
+        let ctx = DescribeCtx {
+            features: Features {
+                suppress_developer_chords_in_vehicles: true,
+                ..Features::default()
+            },
+            ..ctx(mode, Hand::Right, TableCtx::default())
+        };
+        let rows = describe(&ctx);
+        assert!(
+            rows.iter()
+                .any(|r| r.effect == Effect::Mod(ModAction::Recenter))
+        );
+        let panel = rows
+            .iter()
+            .any(|r| r.effect == Effect::Mod(ModAction::DebugPanel));
+        assert_eq!(panel, !mode.action_set().is_vehicle(), "{mode:?}");
+    }
+}
+
+#[test]
 fn gameplay_rows_of_different_hands_stay_apart() {
     let rows = describe(&ctx(ON_FOOT, Hand::Right, TableCtx::default()));
     assert!(rows.iter().all(|r| !matches!(

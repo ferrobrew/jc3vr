@@ -117,6 +117,14 @@ impl ActionSetKind {
     pub const fn index(self) -> usize {
         self as usize
     }
+
+    /// Whether this is one of the vehicle sets.
+    pub const fn is_vehicle(self) -> bool {
+        matches!(
+            self,
+            ActionSetKind::LandVehicle | ActionSetKind::Helicopter | ActionSetKind::Plane
+        )
+    }
 }
 
 /// The interaction profile the runtime bound a hand to, which tells the consumer which physical

@@ -19,6 +19,7 @@ pub(super) fn timing(config: Option<PolicyAConfig>) -> Option<PolicyATiming> {
         recenter_join_ns: config.recenter_join.as_nanos() as u64,
         panel_join_ns: config.panel_join.as_nanos() as u64,
         recenter_hold_ns: config.recenter_hold.as_nanos() as u64,
+        suppress_developer_chords_in_vehicles: config.suppress_developer_chords_in_vehicles,
     })
 }
 
@@ -29,6 +30,7 @@ pub(super) fn config(timing: Option<PolicyATiming>) -> Option<PolicyAConfig> {
             recenter_join: Duration::from_nanos(timing.recenter_join_ns),
             panel_join: Duration::from_nanos(timing.panel_join_ns),
             recenter_hold: Duration::from_nanos(timing.recenter_hold_ns),
+            suppress_developer_chords_in_vehicles: timing.suppress_developer_chords_in_vehicles,
         })
 }
 

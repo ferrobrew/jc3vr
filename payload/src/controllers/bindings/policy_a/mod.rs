@@ -85,6 +85,9 @@ pub(crate) struct PolicyAConfig {
     /// The join window of both left-stick-first chords, the panel's and the mark's.
     pub(crate) panel_join: Duration,
     pub(crate) recenter_hold: Duration,
+    /// Withhold the panel and mark chords while the observation is in a vehicle, so that the left
+    /// stick click waits only for the recenter join window.
+    pub(crate) suppress_developer_chords_in_vehicles: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,6 +142,9 @@ pub(crate) struct Observation {
     pub(crate) generation: BindingGeneration,
     pub(crate) context: GameplayContext,
     pub(crate) singles_enabled: bool,
+    /// Whether a vehicle action set is active, where
+    /// [`PolicyAConfig::suppress_developer_chords_in_vehicles`] applies.
+    pub(crate) vehicle: bool,
     /// Real, unmasked levels, indexed by `Control::index`.
     pub(crate) down: [bool; CONTROLS],
     #[cfg(test)]
@@ -247,7 +253,7 @@ pub(crate) struct PolicyA {
     config: PolicyAConfig,
     epoch: ClockEpoch,
     last: Option<ObservationStamp>,
-    interpretation: Option<(BindingGeneration, GameplayContext, bool)>,
+    interpretation: Option<Interpretation>,
     down: [bool; CONTROLS],
     presses: [Option<Press>; CONTROLS],
     locked: Members,
@@ -342,23 +348,25 @@ impl PolicyA {
         if let InputEvidence::Unavailable(reason) = input.evidence {
             return self.reset(ResetRequest { reason });
         }
+        let interpretation = Interpretation::of(&input);
         if self
             .interpretation
-            .is_some_and(|(generation, _, _)| generation != input.generation)
+            .is_some_and(|previous| previous.generation != input.generation)
         {
             let out = self.reset(ResetRequest {
                 reason: ResetReason::BindingChanged,
             });
-            self.interpretation = Some((input.generation, input.context, input.singles_enabled));
+            self.interpretation = Some(interpretation);
             return out;
         }
         let mut out = Arbitration::empty(ObservationStatus::Accepted);
-        if self.interpretation.is_some_and(|(_, context, enabled)| {
-            context != input.context || enabled != input.singles_enabled
-        }) {
+        if self
+            .interpretation
+            .is_some_and(|previous| previous != interpretation)
+        {
             self.invalidate_singles(input.stamp.at, &mut out);
         }
-        self.interpretation = Some((input.generation, input.context, input.singles_enabled));
+        self.interpretation = Some(interpretation);
         if self.awaiting_neutral && available == [true; CONTROLS] {
             if input.down == [false; CONTROLS] {
                 self.awaiting_neutral = false;
@@ -377,7 +385,7 @@ impl PolicyA {
             let i = control.index();
             if !available[i] {
                 if !self.unavailable[i] {
-                    for pair in Members::PAIRS {
+                    for &pair in self.pairs() {
                         if pair.contains(control)
                             && Control::ALL.into_iter().any(|member| {
                                 pair.contains(member)
@@ -542,7 +550,7 @@ impl PolicyA {
     }
 
     fn refuse_committed_overlaps(&mut self, previous: [bool; CONTROLS], out: &mut Arbitration) {
-        for pair in Members::PAIRS {
+        for &pair in self.pairs() {
             if !pair.all_down(self.down)
                 || !pair.all_up(self.unavailable)
                 || !Control::ALL
@@ -578,7 +586,7 @@ impl PolicyA {
     fn resolve_chords(&mut self, stamp: ObservationStamp, out: &mut Arbitration) {
         // Recenter takes priority, then the panel, then the mark: a group that makes two of them
         // eligible at once forms the first and refuses the others as competing.
-        let eligible = Members::PAIRS.into_iter().find(|&members| {
+        let eligible = self.pairs().iter().copied().find(|&members| {
             self.pending_pair(members).is_some_and(|[left, other]| {
                 if members == Members::RECENTER {
                     onset_gap(left, other) < self.config.recenter_join
@@ -606,14 +614,14 @@ impl PolicyA {
                 fired: false,
                 cancelled: false,
             });
-            for pair in Members::PAIRS {
+            for &pair in self.pairs() {
                 if pair != members && pair.all_down(self.down) {
                     self.consume(pair, RefusalReason::CompetingChord, out);
                 }
             }
             return;
         }
-        for pair in [Members::PANEL, Members::MARK] {
+        for &pair in &self.pairs()[1..] {
             if self
                 .pending_pair(pair)
                 .is_some_and(|[left, other]| left.onset.sequence == other.onset.sequence)
@@ -634,7 +642,7 @@ impl PolicyA {
                 self.commit_single(control, stamp.at, out);
             }
         }
-        for pair in Members::PAIRS {
+        for &pair in self.pairs() {
             if pair.all_down(self.down)
                 && pair.all_up(self.unavailable)
                 && Control::ALL.into_iter().any(|c| {
@@ -691,9 +699,27 @@ impl PolicyA {
         }
     }
 
+    /// The chord pairs the current interpretation admits, in priority order. Recenter always
+    /// leads, so the developer chords are the tail.
+    fn pairs(&self) -> &'static [Members] {
+        if self.developer_chords() {
+            &Members::PAIRS
+        } else {
+            &Members::PAIRS[..1]
+        }
+    }
+
+    fn developer_chords(&self) -> bool {
+        !(self.config.suppress_developer_chords_in_vehicles
+            && self.interpretation.is_some_and(|i| i.vehicle))
+    }
+
     fn reservation(&self, control: Control) -> Duration {
         match control {
-            Control::LeftStick => self.config.recenter_join.max(self.config.panel_join),
+            Control::LeftStick if self.developer_chords() => {
+                self.config.recenter_join.max(self.config.panel_join)
+            }
+            Control::LeftStick => self.config.recenter_join,
             Control::RightStick => self.config.recenter_join,
             // Neither face button leads a chord, so either commits at once while the left click is
             // neutral; the left click's own wait covers the mark chord, which shares the panel's
@@ -772,6 +798,26 @@ impl PolicyA {
             if !self.down[control.index()] && !self.locked.contains(control) {
                 self.presses[control.index()] = None;
             }
+        }
+    }
+}
+
+/// What an observation means beyond its levels; a change invalidates pending singles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Interpretation {
+    generation: BindingGeneration,
+    context: GameplayContext,
+    singles_enabled: bool,
+    vehicle: bool,
+}
+
+impl Interpretation {
+    fn of(input: &Observation) -> Self {
+        Self {
+            generation: input.generation,
+            context: input.context,
+            singles_enabled: input.singles_enabled,
+            vehicle: input.vehicle,
         }
     }
 }

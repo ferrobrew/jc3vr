@@ -171,6 +171,10 @@ pub struct BindingsConfig {
     /// How soon after the left stick click a fresh right B press can show or hide the debug panel,
     /// seconds. The left click waits for the longer of this and the recenter join window.
     pub panel_chord_window_s: f32,
+    /// Withhold the left-stick-first developer chords (the debug panel and the take marker) in a
+    /// vehicle, so that the left stick click, a right-handed player's grapple there, waits only for
+    /// the recenter join window rather than the panel's.
+    pub suppress_developer_chords_in_vehicles: bool,
     /// The yank gesture: a sharp pull of the grapple hand toward the body zips along an attached
     /// line.
     pub yank: GrappleYankConfig,
@@ -188,6 +192,7 @@ impl BindingsConfig {
             stick_chord_window_s: 0.1,
             recenter_hold_s: 1.0,
             panel_chord_window_s: 0.35,
+            suppress_developer_chords_in_vehicles: true,
             yank: GrappleYankConfig::new(),
         }
     }
@@ -211,6 +216,7 @@ impl BindingsConfig {
             recenter_join,
             panel_join,
             recenter_hold,
+            suppress_developer_chords_in_vehicles: self.suppress_developer_chords_in_vehicles,
         })
     }
 }

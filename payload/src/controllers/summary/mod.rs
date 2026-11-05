@@ -172,6 +172,9 @@ pub(crate) fn refresh(
                 helicopter: physical.sticks || physical.levers,
                 plane: physical.sticks || physical.levers,
             },
+            suppress_developer_chords_in_vehicles: config
+                .bindings
+                .suppress_developer_chords_in_vehicles,
         },
     };
     // The game's context hints are relabelled on the wrist only while the HUD's are hidden.

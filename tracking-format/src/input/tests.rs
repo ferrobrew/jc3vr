@@ -239,6 +239,7 @@ fn policy_wire_preserves_effective_timing_and_accepted_decisions() {
             recenter_join_ns: 100_000_000,
             panel_join_ns: 350_000_000,
             recenter_hold_ns: 1_000_000_000,
+            suppress_developer_chords_in_vehicles: true,
         }),
         context: 32,
         gameplay: false,

@@ -2,6 +2,7 @@ use super::*;
 
 mod mark;
 mod recovery;
+mod vehicle;
 
 const UP: [bool; CONTROLS] = [false; CONTROLS];
 const LS: [bool; CONTROLS] = [true, false, false, false];
@@ -19,6 +20,7 @@ struct History {
     generation: BindingGeneration,
     context: GameplayContext,
     enabled: bool,
+    vehicle: bool,
 }
 
 impl History {
@@ -27,6 +29,7 @@ impl History {
             recenter_join: ms(100),
             panel_join: ms(350),
             recenter_hold: ms(1000),
+            suppress_developer_chords_in_vehicles: true,
         })
     }
 
@@ -38,6 +41,7 @@ impl History {
             generation: BindingGeneration(1),
             context: GameplayContext(1),
             enabled: true,
+            vehicle: false,
         };
         assert_eq!(history.step(0, UP).status, ObservationStatus::Recovered);
         history
@@ -77,6 +81,7 @@ impl History {
             generation: self.generation,
             context: self.context,
             singles_enabled: self.enabled,
+            vehicle: self.vehicle,
             down,
             evidence,
         })
@@ -249,6 +254,7 @@ fn ls_reservation_is_the_maximum_eligible_window() {
                 recenter_join: ms(recenter),
                 panel_join: ms(panel),
                 recenter_hold: ms(1000),
+                suppress_developer_chords_in_vehicles: true,
             });
             let down = if control == Control::LeftStick {
                 LS
@@ -572,6 +578,7 @@ fn invalid_order_time_or_sync_resets_without_hold_credit() {
             generation: history.generation,
             context: history.context,
             singles_enabled: true,
+            vehicle: false,
             down: LR,
             evidence: InputEvidence::VerifiedUnmasked,
         });
@@ -591,6 +598,7 @@ fn starts_disarmed_and_does_not_synthesize_a_held_startup_press() {
             recenter_join: ms(100),
             panel_join: ms(350),
             recenter_hold: ms(1000),
+            suppress_developer_chords_in_vehicles: true,
         },
         ClockEpoch(1),
     )
@@ -606,6 +614,7 @@ fn starts_disarmed_and_does_not_synthesize_a_held_startup_press() {
             generation: BindingGeneration(1),
             context: GameplayContext(1),
             singles_enabled: true,
+            vehicle: false,
             down: ALL,
             evidence: InputEvidence::VerifiedUnmasked,
         });
@@ -647,6 +656,7 @@ fn separate_ordered_groups_from_one_sync_retain_press_order() {
             generation: history.generation,
             context: history.context,
             singles_enabled: true,
+            vehicle: false,
             down,
             evidence: InputEvidence::VerifiedUnmasked,
         });
@@ -664,6 +674,7 @@ fn config_rejects_zero_join_windows_without_replacement_constants() {
         recenter_join: ms(1),
         panel_join: ms(1),
         recenter_hold: Duration::ZERO,
+        suppress_developer_chords_in_vehicles: true,
     };
     assert_eq!(
         PolicyA::new(

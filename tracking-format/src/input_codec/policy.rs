@@ -4,8 +4,8 @@ use crate::{
     input::{
         ClockDomain, InputStamp,
         policy::{
-            AcceptedCommand, AcceptedSingle, DirectAcceptance, DirectDecision, PROTECTED_CONTROLS,
-            PolicyATiming, PolicyEvaluation, PolicyOutcome,
+            AcceptedCommand, AcceptedSingle, DirectAcceptance, DirectDecision, POLICY_A_VERSION,
+            PROTECTED_CONTROLS, PolicyATiming, PolicyEvaluation, PolicyOutcome,
         },
     },
     input_codec::invalid,
@@ -29,6 +29,7 @@ pub(super) fn encode(out: &mut Encoder, policy: &PolicyEvaluation) {
         out.u64(timing.recenter_join_ns);
         out.u64(timing.panel_join_ns);
         out.u64(timing.recenter_hold_ns);
+        out.bool(timing.suppress_developer_chords_in_vehicles);
     }
     out.u64(policy.context);
     out.bool(policy.gameplay);
@@ -74,8 +75,18 @@ pub(super) fn encode(out: &mut Encoder, policy: &PolicyEvaluation) {
     out.u8(policy.commands);
 }
 
+/// The previous decision version, which still decodes.
+const LEGACY_POLICY_A_VERSION: u16 = 4;
+
 pub(super) fn decode(input: &mut Decoder) -> Result<PolicyEvaluation, DecodeError> {
     let version = input.u16()?;
+    // Version 4 predates the vehicle chord suppression, so its timing ends at the recenter hold
+    // and its chords ran in every set. It decodes into the current layout.
+    let layout = if version == LEGACY_POLICY_A_VERSION {
+        POLICY_A_VERSION
+    } else {
+        version
+    };
     let epoch = input.u64()?;
     let clock = match input.u8()? {
         0 => ClockDomain::HostMonotonic,
@@ -96,6 +107,8 @@ pub(super) fn decode(input: &mut Decoder) -> Result<PolicyEvaluation, DecodeErro
             recenter_join_ns: input.u64()?,
             panel_join_ns: input.u64()?,
             recenter_hold_ns: input.u64()?,
+            suppress_developer_chords_in_vehicles: version != LEGACY_POLICY_A_VERSION
+                && input.bool("policy vehicle developer chord suppression")?,
         })
     } else {
         None
@@ -152,7 +165,7 @@ pub(super) fn decode(input: &mut Decoder) -> Result<PolicyEvaluation, DecodeErro
     let claims = input.u32()?;
     let commands = input.u8()?;
     let policy = PolicyEvaluation {
-        version,
+        version: layout,
         stamp,
         action_schema,
         timing,

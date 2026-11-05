@@ -328,6 +328,9 @@ pub struct Features {
     pub arm_steering: bool,
     /// The physical vehicle controls offered to a driver, by kind.
     pub physical: PhysicalFeatures,
+    /// The developer chords are withheld in the vehicle sets
+    /// (`controllers.bindings.suppress_developer_chords_in_vehicles`).
+    pub suppress_developer_chords_in_vehicles: bool,
 }
 
 /// The physical vehicle controls that are on, by kind.
@@ -942,11 +945,13 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
         Gesture::Hold,
         modded(ModAction::Recenter),
     );
-    add(
-        Control::LeftStickClickAndRightB,
-        Gesture::Press,
-        modded(ModAction::DebugPanel),
-    );
+    if !(features.suppress_developer_chords_in_vehicles && ctx.mode.action_set().is_vehicle()) {
+        add(
+            Control::LeftStickClickAndRightB,
+            Gesture::Press,
+            modded(ModAction::DebugPanel),
+        );
+    }
     if ctx.mode != Mode::Ui {
         let mut skip: Vec<Control> = Vec::new();
         for (control, _) in controls(GlobalAction::SkipCutscene.id()) {

@@ -534,6 +534,8 @@ mod tests {
                 helicopter: true,
                 plane: true,
             },
+            // Off, so that every mode describes the panel chord too.
+            suppress_developer_chords_in_vehicles: false,
         };
         for mode in all_modes() {
             for (dominant, table) in all_contexts() {
