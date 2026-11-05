@@ -6,14 +6,17 @@ use crate::{
         frame::Hand,
         menu::read_config,
     },
-    status::{Line, Text, prose, text},
+    status::{Line, Row, Text, prose, text},
 };
 
-pub(super) fn left_grip() -> Line {
+pub(crate) const LEFT_GRIP: Row = Row::new("LEFT GRIP POSE", "Left grip pose", left_grip);
+pub(crate) const RIGHT_GRIP: Row = Row::new("RIGHT GRIP POSE", "Right grip pose", right_grip);
+
+fn left_grip() -> Line {
     grip(Hand::Left)
 }
 
-pub(super) fn right_grip() -> Line {
+fn right_grip() -> Line {
     grip(Hand::Right)
 }
 

@@ -14,16 +14,25 @@ use crate::{
             vault::{self, VaultStatus},
         },
     },
-    status::{Health, Line, Text, prose, text},
+    status::{Health, Line, Row, Text, prose, text},
 };
 
-pub(super) fn palms() -> Line {
+pub(crate) const PALMS: Row = Row::new("PALMS", "Palms", palms);
+pub(crate) const DOORS: Row = Row::new("VEHICLE DOORS", "Vehicle doors", doors);
+pub(crate) const CHARACTERS: Row = Row::new("CHARACTERS", "Characters", characters);
+pub(crate) const MOVING_CLIMBS: Row = Row::new("MOVING CLIMBS", "Moving climbs", moving_climbs);
+pub(crate) const STUNT_POSITIONS: Row =
+    Row::new("STUNT POSITIONS", "Stunt positions", stunt_positions);
+pub(crate) const PUSH_UP: Row = Row::new("PUSH UP", "Push up", push_up);
+pub(crate) const ARTICULATED: Row = Row::new("HINGED THINGS", "Hinged things", articulated);
+
+fn palms() -> Line {
     let on = read_config(|c| c.controllers.physical_hands.enabled);
     let status = physical_hands::status();
     palms_line(on, status.idle, status.casts, status.off_thread)
 }
 
-pub(super) fn doors() -> Line {
+fn doors() -> Line {
     let on = read_config(|c| {
         let p = &c.controllers.physical_hands;
         p.enabled && p.pickup.enabled && p.doors.enabled
@@ -33,7 +42,7 @@ pub(super) fn doors() -> Line {
     doors_line(on, &status.pickup, latched)
 }
 
-pub(super) fn characters() -> Line {
+fn characters() -> Line {
     let on = read_config(|c| {
         let p = &c.controllers.physical_hands;
         p.enabled && p.pickup.enabled && (p.characters.grab || p.characters.hijack)
@@ -45,7 +54,7 @@ pub(super) fn characters() -> Line {
     )
 }
 
-pub(super) fn moving_climbs() -> Line {
+fn moving_climbs() -> Line {
     let on = read_config(|c| climb::enabled(&c.controllers.physical_hands));
     let status = climb::status();
     let on_moving = status
@@ -55,12 +64,12 @@ pub(super) fn moving_climbs() -> Line {
     moving_climbs_line(on, status.moving_grips, on_moving)
 }
 
-pub(super) fn stunt_positions() -> Line {
+fn stunt_positions() -> Line {
     let on = read_config(|c| stunt::enabled(&c.controllers.physical_hands));
     stunt_line(on, &stunt::status())
 }
 
-pub(super) fn push_up() -> Line {
+fn push_up() -> Line {
     let on = read_config(|c| {
         let p = &c.controllers.physical_hands;
         physics::enabled(p) && p.vault.enabled
@@ -68,7 +77,7 @@ pub(super) fn push_up() -> Line {
     push_up_line(on, vault::status())
 }
 
-pub(super) fn articulated() -> Line {
+fn articulated() -> Line {
     let on = read_config(|c| {
         let p = &c.controllers.physical_hands;
         p.enabled && p.pickup.enabled

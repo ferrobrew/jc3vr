@@ -8,7 +8,7 @@ mod tests;
 #[cfg(feature = "profiler")]
 use std::path::PathBuf;
 
-use egui::{Color32, Response, RichText, Ui};
+use egui::{Response, RichText, Ui};
 
 #[cfg(feature = "profiler")]
 use crate::profiler::capture;
@@ -23,6 +23,7 @@ use crate::{
         catalog::FeatureId,
         director::host_line,
         navigation::NavigationState,
+        status_row::health_color,
     },
     vr::input::{self, InputStatus},
 };
@@ -528,15 +529,7 @@ fn render_rows<'a>(ui: &mut Ui, rows: impl IntoIterator<Item = &'a Row>, empty: 
             ui.group(|ui| {
                 ui.label(format!("{} / {}", row.group, row.label));
                 let (word, color) = match row.state {
-                    RowState::Health(health) => (
-                        health.display_word(),
-                        match health {
-                            Health::Failed => ui.visuals().error_fg_color,
-                            Health::Waiting => ui.visuals().warn_fg_color,
-                            Health::Ok => Color32::from_rgb(90, 190, 90),
-                            Health::Off => ui.visuals().weak_text_color(),
-                        },
-                    ),
+                    RowState::Health(health) => (health.display_word(), health_color(ui, health)),
                     RowState::Unavailable => ("Unavailable", ui.visuals().warn_fg_color),
                 };
                 ui.horizontal_wrapped(|ui| {

@@ -7,10 +7,18 @@ use crate::{
         menu::read_config,
         weapons::{ads, c4, collide, grenade, reload::loose},
     },
-    status::{Line, Text, prose, text},
+    status::{Line, Row, Text, prose, text},
 };
 
-pub(super) fn gun_against_walls() -> Line {
+pub(crate) const LIVE_GRENADES: Row = Row::new("LIVE GRENADES", "Live grenades", live_grenades);
+pub(crate) const C4_BY_HAND: Row = Row::new("C4 BY HAND", "C4 by hand", c4_by_hand);
+pub(crate) const MAGAZINES: Row = Row::new("MAGAZINES", "Magazines", magazines);
+pub(crate) const DOWN_THE_SIGHTS: Row =
+    Row::new("DOWN THE SIGHTS", "Down the sights", down_the_sights);
+pub(crate) const GUN_AGAINST_WALLS: Row =
+    Row::new("GUN AGAINST WALLS", "Gun against walls", gun_against_walls);
+
+fn gun_against_walls() -> Line {
     if !read_config(|c| c.controllers.weapons.collide.enabled) {
         return Line::off("");
     }
@@ -41,7 +49,7 @@ pub(super) fn gun_against_walls() -> Line {
     ))
 }
 
-pub(super) fn down_the_sights() -> Line {
+fn down_the_sights() -> Line {
     if !read_config(|c| c.controllers.weapons.ads.enabled) {
         return Line::off("");
     }
@@ -72,7 +80,7 @@ pub(super) fn down_the_sights() -> Line {
     ))
 }
 
-pub(super) fn magazines() -> Line {
+fn magazines() -> Line {
     if !read_config(|c| {
         let reload = c.controllers.weapons.reload;
         reload.enabled && reload.loose.enabled
@@ -90,7 +98,7 @@ pub(super) fn magazines() -> Line {
     ))
 }
 
-pub(super) fn c4_by_hand() -> Line {
+fn c4_by_hand() -> Line {
     if !read_config(|c| c.controllers.weapons.c4_throw) {
         return Line::off("");
     }
@@ -110,7 +118,7 @@ pub(super) fn c4_by_hand() -> Line {
     ))
 }
 
-pub(super) fn live_grenades() -> Line {
+fn live_grenades() -> Line {
     if !read_config(|c| {
         c.controllers.weapons.grenade_throw && c.controllers.weapons.grenade.catch.enabled
     }) {

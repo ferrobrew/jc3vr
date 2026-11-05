@@ -14,46 +14,63 @@ use crate::{
         atlas,
         world_markers::{self, DistanceSource},
     },
-    status::{Line, Text, prose, text},
+    status::{Line, Row, Text, prose, text},
     vr::{
         self, DirectArm, DirectStatus, PublishedStatus, ResolutionStatus,
         input::{self as vr_input, ActionsOrigin, InputStatus, layout, restart, self_check},
     },
 };
 
-pub(super) fn settings_file() -> Line {
+pub(crate) const SETTINGS_FILE: Row = Row::new("SETTINGS FILE", "Settings file", settings_file);
+pub(crate) const SESSION: Row = Row::new("VR SESSION", "VR session", session);
+pub(crate) const DIRECT_BLIT: Row = Row::new("DIRECT EYE BLIT", "Direct eye blit", direct_blit);
+pub(crate) const FRAME_TIME: Row = Row::new("FRAME TIME", "Frame time", frame_time);
+pub(crate) const RENDER_SIZE: Row = Row::new("RENDER SIZE", "Render size", render_size);
+pub(crate) const INPUT_ACTIONS: Row =
+    Row::new("CONTROLLER ACTIONS", "Controller actions", input_actions);
+pub(crate) const LAYOUT_FINGERPRINT: Row = Row::new(
+    "LAYOUT FINGERPRINT",
+    "Layout fingerprint",
+    layout_fingerprint,
+);
+pub(crate) const SELF_CHECK: Row = Row::new("SELF-CHECK", "Self-check", self_check);
+pub(crate) const ATLAS: Row = Row::new("ATLAS PARTS", "Atlas parts", atlas);
+pub(crate) const WORLD_MARKERS: Row = Row::new("WORLD MARKERS", "World markers", world_markers);
+pub(crate) const MARKER_DEPTH: Row = Row::new("MARKER DEPTH", "Marker depth", marker_depth);
+
+fn settings_file() -> Line {
     settings_line(config::status())
 }
 
-pub(super) fn session() -> Line {
+fn session() -> Line {
     if !read_config(|c| c.vr.enabled) {
         return Line::off("");
     }
     session_line(vr::published_status(), vr::render_params(0).is_some())
 }
 
-pub(super) fn direct_blit() -> Line {
+fn direct_blit() -> Line {
     if !read_config(|c| c.vr.direct_eye_blit) {
         return Line::off("");
     }
     direct_blit_line(vr::direct_status())
 }
 
-pub(super) fn frame_time() -> Line {
+fn frame_time() -> Line {
     frame_time_line(frame_timing::frame_percentiles())
 }
 
-pub(super) fn render_size() -> Line {
+fn render_size() -> Line {
     let native = read_config(|c| c.vr.native_resolution);
     render_size_line(native, vr::resolution_status())
 }
 
-pub(super) fn input_actions() -> Line {
+fn input_actions() -> Line {
     let configured = read_config(|c| c.controllers.dominant_hand);
     input_line(&vr_input::status(), configured)
 }
 
-pub(super) fn layout_fingerprint() -> Line {
+fn layout_fingerprint() -> Line {
     let status = vr_input::status();
     let Some(hand) = status.suggested_for else {
         return Line::waiting(prose("Not attached"));
@@ -70,7 +87,7 @@ pub(super) fn layout_fingerprint() -> Line {
     }
 }
 
-pub(super) fn self_check() -> Line {
+fn self_check() -> Line {
     let status = self_check::status();
     match (status.report.is_some(), status.problems) {
         (false, _) => Line::waiting(prose("Not run")),
@@ -88,7 +105,7 @@ pub(super) fn self_check() -> Line {
     }
 }
 
-pub(super) fn atlas() -> Line {
+fn atlas() -> Line {
     if !read_config(|c| c.hud.atlas.enabled) {
         return Line::off("");
     }
@@ -124,7 +141,7 @@ pub(super) fn atlas() -> Line {
     }
 }
 
-pub(super) fn world_markers() -> Line {
+fn world_markers() -> Line {
     if !read_config(|c| c.hud.world_markers.enabled) {
         return Line::off("");
     }
@@ -140,7 +157,7 @@ pub(super) fn world_markers() -> Line {
     }
 }
 
-pub(super) fn marker_depth() -> Line {
+fn marker_depth() -> Line {
     if !read_config(|c| c.hud.world_markers.enabled) {
         return Line::off("");
     }

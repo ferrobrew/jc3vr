@@ -14,33 +14,42 @@ use crate::{
         self, GrapplePhase, GrappleStatus,
         lock::{self, LockStatus},
     },
-    status::{Line, Text, prose, text},
+    status::{Line, Row, Text, prose, text},
 };
 
-pub(super) fn state() -> Line {
+pub(crate) const STATE: Row = Row::new("GRAPPLE STATE", "Grapple state", state);
+pub(crate) const TARGET: Row = Row::new("ATTACHED TARGET", "Attached target", target);
+pub(crate) const REEL: Row = Row::new("REEL FROM HAND", "Reel from hand", reel);
+pub(crate) const TETHERS: Row = Row::new("TETHERS", "Tethers", tethers);
+pub(crate) const LOCK: Row = Row::new("LINE LOCK", "Line lock", lock);
+pub(crate) const SWING: Row = Row::new("HANG SWING", "Hang swing", swing);
+pub(crate) const SNATCH: Row = Row::new("SNATCH", "Snatch", snatch);
+pub(crate) const HAPTICS: Row = Row::new("LINE HAPTICS", "Line haptics", haptics);
+
+fn state() -> Line {
     state_line(&physical::status())
 }
 
-pub(super) fn target() -> Line {
+fn target() -> Line {
     target_line(&physical::status())
 }
 
-pub(super) fn reel() -> Line {
+fn reel() -> Line {
     let enabled = read_config(|c| c.controllers.grapple.pull_to_reel);
     reel_line(enabled, &physical::status())
 }
 
-pub(super) fn tethers() -> Line {
+fn tethers() -> Line {
     let enabled = read_config(|c| c.controllers.grapple.pull_to_reel);
     tethers_line(enabled, &physical::status())
 }
 
-pub(super) fn lock() -> Line {
+fn lock() -> Line {
     let enabled = read_config(|c| c.controllers.grapple.lock.enabled);
     lock_line(enabled, &lock::status())
 }
 
-pub(super) fn swing() -> Line {
+fn swing() -> Line {
     let (hold, pump) = read_config(|c| {
         (
             c.controllers.hands.anchor.enabled,
@@ -64,12 +73,12 @@ pub(super) fn swing() -> Line {
     }
 }
 
-pub(super) fn snatch() -> Line {
+fn snatch() -> Line {
     let enabled = read_config(|c| c.controllers.weapons.snatch.enabled);
     snatch_line(enabled, &snatch::status())
 }
 
-pub(super) fn haptics() -> Line {
+fn haptics() -> Line {
     if !read_config(|c| c.controllers.haptics.enabled) {
         return Line::off("");
     }

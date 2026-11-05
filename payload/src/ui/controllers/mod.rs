@@ -55,7 +55,8 @@ use crate::{
         roomscale as controller_roomscale, scheme, summary as controller_summary,
     },
     hud::{pointer, summary_panel},
-    ui::{camera, catalog::FeatureId, dispatch::FeatureBody},
+    status::feedback,
+    ui::{camera, catalog::FeatureId, dispatch::FeatureBody, status_row::headlines},
     vr::input::{self as vr_input, ActionsOrigin},
 };
 
@@ -253,6 +254,7 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
             |ui, _| inventory::inventory_view(ui, &inventory::InventoryView::read())
         }
         FeatureId::Feedback => |ui, _| {
+            headlines(ui, &[&feedback::HAPTIC_CUES, &feedback::IMPACT_SOUNDS]);
             haptics::haptics_readout(ui, &controller_haptics::status());
             physical_hands::impact_sounds_readout(ui, &controller_physical_hands::sounds::status());
         },

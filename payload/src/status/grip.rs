@@ -10,18 +10,22 @@ use crate::{
         },
         menu::read_config,
     },
-    status::{Health, Line, prose, text},
+    status::{Health, Line, Row, prose, text},
 };
 
-pub(super) fn left_grip() -> Line {
+pub(crate) const LEFT_GRIP: Row = Row::new("LEFT GRIP", "Left grip", left_grip);
+pub(crate) const RIGHT_GRIP: Row = Row::new("RIGHT GRIP", "Right grip", right_grip);
+pub(crate) const MARKERS: Row = Row::new("GRIP MARKERS", "Grip markers", markers);
+
+fn left_grip() -> Line {
     grip_line(&tick::status(), Hand::Left)
 }
 
-pub(super) fn right_grip() -> Line {
+fn right_grip() -> Line {
     grip_line(&tick::status(), Hand::Right)
 }
 
-pub(super) fn markers() -> Line {
+fn markers() -> Line {
     let on = read_config(|c| c.controllers.overlay.enabled && c.controllers.overlay.markers);
     markers_line(on, &tick::status())
 }

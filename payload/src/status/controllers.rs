@@ -27,10 +27,40 @@ use crate::{
         },
         weapons::{grip_watch, heft::HeftClass},
     },
-    status::{Health, Line, Text, prose, text},
+    status::{Health, Line, Row, Text, prose, text},
 };
 
-pub(super) fn rigid_grip() -> Line {
+pub(crate) const RIGID_GRIP: Row = Row::new("RIGID GRIP", "Rigid grip", rigid_grip);
+pub(crate) const CANONICAL_GRIP: Row = Row::new("CANONICAL GRIP", "Canonical grip", canonical_grip);
+pub(crate) const FLIP_WATCH: Row = Row::new("FLIP WATCH", "Flip watch", flip_watch);
+pub(crate) const ANIMATED_DEVIATION: Row = Row::new(
+    "ANIMATED GRIP OFFSET",
+    "Animated grip offset",
+    animated_deviation,
+);
+pub(crate) const BONE_CHANGES: Row =
+    Row::new("ATTACH BONE CHANGES", "Attach bone changes", bone_changes);
+pub(crate) const CALLBACK: Row = Row::new("CALLBACK", "Callback", callback);
+pub(crate) const CALLBACK_FIRES: Row = Row::new("CALLBACK FIRES", "Callback fires", callback_fires);
+pub(crate) const LEFT_BODY: Row = Row::new("LEFT BODY", "Left body", left_body);
+pub(crate) const RIGHT_BODY: Row = Row::new("RIGHT BODY", "Right body", right_body);
+pub(crate) const BODY_ERRORS: Row = Row::new("BODY ERRORS", "Body errors", body_errors);
+pub(crate) const CONTACT_EVENTS: Row = Row::new("CONTACT EVENTS", "Contact events", contact_events);
+pub(crate) const BLOWS: Row = Row::new("BLOWS DEALT", "Blows dealt", blows);
+pub(crate) const JOINTS: Row = Row::new("GRAB JOINTS", "Grab joints", joints);
+pub(crate) const COLLIDER_VIEW: Row = Row::new("COLLIDER VIEW", "Collider view", collider_view);
+pub(crate) const LEFT_GUN_BODY: Row = Row::new("LEFT GUN BODY", "Left gun body", left_gun_body);
+pub(crate) const RIGHT_GUN_BODY: Row = Row::new("RIGHT GUN BODY", "Right gun body", right_gun_body);
+pub(crate) const STICK_VELOCITY: Row = Row::new("STICK VELOCITY", "Stick velocity", stick_velocity);
+pub(crate) const ACT_FILTER: Row = Row::new("ACT FILTER", "Act filter", act_filter);
+pub(crate) const ACT_WATCHDOG: Row = Row::new("ACT WATCHDOG", "Act watchdog", act_watchdog);
+pub(crate) const STEADY_VIEW: Row = Row::new("STEADY VIEW", "Steady view", steady_view);
+pub(crate) const NEUTRAL_HEAD: Row = Row::new("NEUTRAL HEAD", "Neutral head", neutral_head);
+pub(crate) const PROCEDURAL_MODE: Row = Row::new("MODE", "Mode", procedural_mode);
+pub(crate) const HAND_OVER: Row = Row::new("HAND-OVER CASE", "Hand-over case", hand_over);
+pub(crate) const TWIST_BONES: Row = Row::new("TWIST BONES", "Twist bones", twist_bones);
+
+fn rigid_grip() -> Line {
     if !read_config(|c| c.controllers.hands.rigid_grip) {
         return Line::off("");
     }
@@ -39,11 +69,11 @@ pub(super) fn rigid_grip() -> Line {
     rigid_grip_line(pinned, pins)
 }
 
-pub(super) fn canonical_grip() -> Line {
+fn canonical_grip() -> Line {
     canonical_grip_line(grip::grip_reads())
 }
 
-pub(super) fn flip_watch() -> Line {
+fn flip_watch() -> Line {
     let watch = grip_watch::status();
     let flips: u64 = watch.flips.iter().sum();
     let sweeps: u64 = watch.sweeps.iter().sum();
@@ -55,21 +85,21 @@ pub(super) fn flip_watch() -> Line {
     }
 }
 
-pub(super) fn animated_deviation() -> Line {
+fn animated_deviation() -> Line {
     animated_deviation_line(grip_watch::status().by_class)
 }
 
-pub(super) fn bone_changes() -> Line {
+fn bone_changes() -> Line {
     let [left, right] = grip_watch::status().bone_changes;
     Line::ok(format_smolstr!("L {left}, R {right}"))
 }
 
-pub(super) fn callback() -> Line {
+fn callback() -> Line {
     let enabled = read_config(|c| physics::enabled(&c.controllers.physical_hands));
     callback_line(enabled, physics::callback_status())
 }
 
-pub(super) fn callback_fires() -> Line {
+fn callback_fires() -> Line {
     let status = physics::callback_status();
     let detail = text!(status.fires.to_string(), " fires");
     match status.fires {
@@ -79,15 +109,15 @@ pub(super) fn callback_fires() -> Line {
     }
 }
 
-pub(super) fn left_body() -> Line {
+fn left_body() -> Line {
     body(Hand::Left)
 }
 
-pub(super) fn right_body() -> Line {
+fn right_body() -> Line {
     body(Hand::Right)
 }
 
-pub(super) fn body_errors() -> Line {
+fn body_errors() -> Line {
     let status = physics::status();
     let made = text!(
         status.created.to_string(),
@@ -101,7 +131,7 @@ pub(super) fn body_errors() -> Line {
     }
 }
 
-pub(super) fn contact_events() -> Line {
+fn contact_events() -> Line {
     let hits = read_config(|c| physics::enabled(&c.controllers.physical_hands));
     if !hits {
         return Line::off("");
@@ -119,11 +149,11 @@ pub(super) fn contact_events() -> Line {
     }
 }
 
-pub(super) fn collider_view() -> Line {
+fn collider_view() -> Line {
     collider_view_line(&collider_view::status())
 }
 
-pub(super) fn blows() -> Line {
+fn blows() -> Line {
     let status = physics::status();
     match status.last_blow {
         Some(blow) => Line::ok(text!(
@@ -136,7 +166,7 @@ pub(super) fn blows() -> Line {
     }
 }
 
-pub(super) fn joints() -> Line {
+fn joints() -> Line {
     let on = read_config(|c| physics::enabled(&c.controllers.physical_hands));
     if !on {
         return Line::off("");
@@ -149,7 +179,7 @@ pub(super) fn joints() -> Line {
     ))
 }
 
-pub(super) fn stick_velocity() -> Line {
+fn stick_velocity() -> Line {
     if !read_config(|c| c.controllers.locomotion.stick.enabled) {
         return Line::off("");
     }
@@ -163,14 +193,14 @@ pub(super) fn stick_velocity() -> Line {
     }
 }
 
-pub(super) fn act_filter() -> Line {
+fn act_filter() -> Line {
     if !read_config(|c| c.controllers.locomotion.acts.enabled) {
         return Line::off("");
     }
     act_filter_line(acts::status())
 }
 
-pub(super) fn act_watchdog() -> Line {
+fn act_watchdog() -> Line {
     if !read_config(|c| c.controllers.locomotion.acts.enabled) {
         return Line::off("");
     }
@@ -183,14 +213,14 @@ pub(super) fn act_watchdog() -> Line {
     }
 }
 
-pub(super) fn steady_view() -> Line {
+fn steady_view() -> Line {
     if !read_config(|c| c.controllers.locomotion.view.enabled) {
         return Line::off("");
     }
     steady_view_line(&anchor::status())
 }
 
-pub(super) fn neutral_head() -> Line {
+fn neutral_head() -> Line {
     if !read_config(|c| c.controllers.locomotion.view.enabled) {
         return Line::off("");
     }
@@ -201,19 +231,19 @@ pub(super) fn neutral_head() -> Line {
     }
 }
 
-pub(super) fn procedural_mode() -> Line {
+fn procedural_mode() -> Line {
     let mode = read_config(|c| c.controllers.body.procedural.mode);
     procedural_mode_line(mode, &procedural::published_status(), Instant::now())
 }
 
-pub(super) fn hand_over() -> Line {
+fn hand_over() -> Line {
     if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
         return Line::off("");
     }
     hand_over_line(procedural::published_status().case)
 }
 
-pub(super) fn twist_bones() -> Line {
+fn twist_bones() -> Line {
     if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
         return Line::off("");
     }
@@ -315,11 +345,11 @@ fn callback_line(enabled: bool, status: CallbackStatus) -> Line {
     }
 }
 
-pub(super) fn left_gun_body() -> Line {
+fn left_gun_body() -> Line {
     gun_body(Hand::Left)
 }
 
-pub(super) fn right_gun_body() -> Line {
+fn right_gun_body() -> Line {
     gun_body(Hand::Right)
 }
 

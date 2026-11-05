@@ -17,7 +17,7 @@ Grabbing a ledge or a door sounds when the hand arrives fast enough to count as 
 
 ## Settings, readout, and log
 
-`controllers.physical_hands.sounds.enabled` (on) switches them, in the debug UI's Feedback feature, with the counts and the last sound's kind and material. The thresholds and the cooldowns are fixed in `physical_hands::sounds::SOUNDS`.
+`controllers.physical_hands.sounds.enabled` (on) switches them, in the debug UI's Feedback feature, under the `IMPACT SOUNDS` status row with the counts, and with the last sound's kind and material. The thresholds and the cooldowns are fixed in `physical_hands::sounds::SOUNDS`.
 
 The debug UI's Status page has `IMPACT SOUNDS` under FEEDBACK: the sounds played, the impacts the cooldowns held back, and the impacts whose material has no melee impact sound (`SILENT`).
 

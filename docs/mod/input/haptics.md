@@ -143,7 +143,7 @@ The game's rumble reaches the controllers through two detours ([controllers.md, 
 
 ## Readout and log
 
-The debug UI's Feedback feature has the haptics readout: the cues sent per category, the mixer's counts (played, stacked, masked, limited), the amplitude each hand was last sent, and the last dozen one-off cues with their primitive, hand, amplitude, and length. The live controller frame has a test button per primitive for each hand, which plays it at full strength.
+The debug UI's Feedback feature opens with the `HAPTIC CUES` and `IMPACT SOUNDS` status rows, then has the haptics readout: the cues sent per category, the mixer's played and stacked counts (the row has the masked and limited), the amplitude each hand was last sent, and the last dozen one-off cues with their primitive, hand, amplitude, and length. The live controller frame has a test button per primitive for each hand, which plays it at full strength.
 
 The debug UI's Status page has `HAPTIC CUES` under FEEDBACK: the cues sent, masked, and limited. The cues themselves are not logged (they are too frequent); the events that raise them are, by their own subsystems.
 

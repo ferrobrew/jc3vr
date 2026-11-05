@@ -3,10 +3,13 @@
 
 use crate::{
     controllers::{haptics, menu::read_config, physical_hands::sounds},
-    status::{Line, text},
+    status::{Line, Row, text},
 };
 
-pub(super) fn haptic_cues() -> Line {
+pub(crate) const HAPTIC_CUES: Row = Row::new("HAPTIC CUES", "Haptic cues", haptic_cues);
+pub(crate) const IMPACT_SOUNDS: Row = Row::new("IMPACT SOUNDS", "Impact sounds", impact_sounds);
+
+fn haptic_cues() -> Line {
     if !read_config(|c| c.controllers.haptics.enabled) {
         return Line::off("");
     }
@@ -26,7 +29,7 @@ pub(super) fn haptic_cues() -> Line {
     }
 }
 
-pub(super) fn impact_sounds() -> Line {
+fn impact_sounds() -> Line {
     if !read_config(|c| c.controllers.physical_hands.sounds.enabled) {
         return Line::off("");
     }

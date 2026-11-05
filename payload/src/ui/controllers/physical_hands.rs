@@ -322,13 +322,10 @@ pub(super) fn impact_sounds_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) {
 
 pub(super) fn impact_sounds_readout(ui: &mut Ui, status: &SoundsStatus) {
     ui.label(format!(
-        "Sounds: {} played · {} held back · {} silent · last {}",
-        status.played,
-        status.limited,
-        status.silent,
+        "Last sound: {}",
         status
             .last
-            .map_or("-".to_owned(), |(material, kind)| format!(
+            .map_or("none".to_owned(), |(material, kind)| format!(
                 "{} on material {material}",
                 kind.label()
             ))

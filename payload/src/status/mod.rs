@@ -11,19 +11,19 @@
 //! time. A caller must not hold the configuration lock while it reads a row, since some rows read
 //! the configuration.
 
-mod body;
-mod controllers;
-mod explosives;
-mod feedback;
-mod fingers;
-mod grapple;
-mod grip;
-mod hands;
-mod inventory;
-mod system;
+pub(crate) mod body;
+pub(crate) mod controllers;
+pub(crate) mod explosives;
+pub(crate) mod feedback;
+pub(crate) mod fingers;
+pub(crate) mod grapple;
+pub(crate) mod grip;
+pub(crate) mod hands;
+pub(crate) mod inventory;
+pub(crate) mod system;
 mod text;
-mod vehicles;
-mod weapons;
+pub(crate) mod vehicles;
+pub(crate) mod weapons;
 
 use smol_str::SmolStr;
 
@@ -180,22 +180,33 @@ struct Section {
     rows: &'static [Row],
 }
 
-/// One row: its label, and how to read its line.
-struct Row {
+/// One row: its stable label, its display label, and how to read its line. Each section module
+/// owns its rows as constants, so a feature page shows a row through the same formatter as the
+/// Status feature.
+pub(crate) struct Row {
     label: &'static str,
     display_label: &'static str,
     read: fn() -> Line,
 }
 
-/// A row with its stable scenario ID and its authored UI label.
-macro_rules! row {
-    ($label:literal, $display:literal, $read:path) => {
-        Row {
-            label: $label,
-            display_label: $display,
-            read: $read,
+impl Row {
+    const fn new(label: &'static str, display_label: &'static str, read: fn() -> Line) -> Self {
+        Self {
+            label,
+            display_label,
+            read,
         }
-    };
+    }
+
+    /// The row's authored UI label.
+    pub(crate) fn display_label(&self) -> &'static str {
+        self.display_label
+    }
+
+    /// The row's line, read now.
+    pub(crate) fn read(&self) -> Line {
+        (self.read)()
+    }
 }
 
 /// The sections, top to bottom.
@@ -203,271 +214,182 @@ const SECTIONS: &[Section] = &[
     Section {
         title: "SAVED SETTINGS",
         display_title: "Saved settings",
-        rows: &[row!(
-            "SETTINGS FILE",
-            "Settings file",
-            system::settings_file
-        )],
+        rows: &[system::SETTINGS_FILE],
     },
     Section {
         title: "RENDERING",
         display_title: "Rendering",
         rows: &[
-            row!("VR SESSION", "VR session", system::session),
-            row!("DIRECT EYE BLIT", "Direct eye blit", system::direct_blit),
-            row!("FRAME TIME", "Frame time", system::frame_time),
-            row!("RENDER SIZE", "Render size", system::render_size),
-            row!(
-                "RENDER-RATE BODY",
-                "Render-rate body",
-                body::render_rate_body
-            ),
+            system::SESSION,
+            system::DIRECT_BLIT,
+            system::FRAME_TIME,
+            system::RENDER_SIZE,
+            body::RENDER_RATE_BODY,
         ],
     },
     Section {
         title: "INPUT",
         display_title: "Input",
         rows: &[
-            row!(
-                "CONTROLLER ACTIONS",
-                "Controller actions",
-                system::input_actions
-            ),
-            row!(
-                "LAYOUT FINGERPRINT",
-                "Layout fingerprint",
-                system::layout_fingerprint
-            ),
-            row!("SELF-CHECK", "Self-check", system::self_check),
+            system::INPUT_ACTIONS,
+            system::LAYOUT_FINGERPRINT,
+            system::SELF_CHECK,
         ],
     },
     Section {
         title: "HUD",
         display_title: "HUD",
-        rows: &[
-            row!("ATLAS PARTS", "Atlas parts", system::atlas),
-            row!("WORLD MARKERS", "World markers", system::world_markers),
-            row!("MARKER DEPTH", "Marker depth", system::marker_depth),
-        ],
+        rows: &[system::ATLAS, system::WORLD_MARKERS, system::MARKER_DEPTH],
     },
     Section {
         title: "GUN IN HAND",
         display_title: "Gun in hand",
         rows: &[
-            row!("RIGID GRIP", "Rigid grip", controllers::rigid_grip),
-            row!(
-                "CANONICAL GRIP",
-                "Canonical grip",
-                controllers::canonical_grip
-            ),
-            row!("FLIP WATCH", "Flip watch", controllers::flip_watch),
-            row!(
-                "ANIMATED GRIP OFFSET",
-                "Animated grip offset",
-                controllers::animated_deviation
-            ),
-            row!(
-                "ATTACH BONE CHANGES",
-                "Attach bone changes",
-                controllers::bone_changes
-            ),
+            controllers::RIGID_GRIP,
+            controllers::CANONICAL_GRIP,
+            controllers::FLIP_WATCH,
+            controllers::ANIMATED_DEVIATION,
+            controllers::BONE_CHANGES,
         ],
     },
     Section {
         title: "WEAPONS IN HAND",
         display_title: "Weapons in hand",
         rows: &[
-            row!("LEFT HAND", "Left hand", weapons::left_hand),
-            row!("RIGHT HAND", "Right hand", weapons::right_hand),
-            row!(
-                "LEFT HAND ON GUN",
-                "Left hand on gun",
-                weapons::left_hand_on_gun
-            ),
-            row!(
-                "RIGHT HAND ON GUN",
-                "Right hand on gun",
-                weapons::right_hand_on_gun
-            ),
-            row!("TAKE FROM HANDS", "Take from hands", weapons::takes),
-            row!("TAKE FROM RACKS", "Take from racks", weapons::racks),
-            row!("LEFT ACTION", "Left action", weapons::left_action),
-            row!("RIGHT ACTION", "Right action", weapons::right_action),
-            row!("ARMED BESIDE", "Armed beside", weapons::armed),
-            row!("RIGHT HAND GRIP", "Right hand grip", weapons::right_grip),
-            row!("SOCKETS", "Sockets", weapons::docks),
-            row!("LAST REFUSAL", "Last refusal", weapons::last_refusal),
+            weapons::LEFT_HAND,
+            weapons::RIGHT_HAND,
+            weapons::LEFT_HAND_ON_GUN,
+            weapons::RIGHT_HAND_ON_GUN,
+            weapons::TAKES,
+            weapons::RACKS,
+            weapons::LEFT_ACTION,
+            weapons::RIGHT_ACTION,
+            weapons::ARMED,
+            weapons::RIGHT_GRIP,
+            weapons::DOCKS,
+            weapons::LAST_REFUSAL,
         ],
     },
     Section {
         title: "INVENTORY",
         display_title: "Inventory",
         rows: &[
-            row!("TRACKED WEAPONS", "Tracked weapons", inventory::tracked),
-            row!("CARRIED", "Carried", inventory::carried),
-            row!(
-                "SEPARATE PISTOLS",
-                "Separate pistols",
-                inventory::separate_pistols
-            ),
-            row!("SAVE SIDECAR", "Save sidecar", inventory::sidecar),
-            row!("LAST LOAD", "Last load", inventory::last_load),
-            row!("KEPT IN THE WORLD", "Kept in the world", inventory::pinned),
-            row!("LOADOUT TABLE", "Loadout table", inventory::loadout),
+            inventory::TRACKED,
+            inventory::CARRIED,
+            inventory::SEPARATE_PISTOLS,
+            inventory::SIDECAR,
+            inventory::LAST_LOAD,
+            inventory::PINNED,
+            inventory::LOADOUT,
         ],
     },
     Section {
         title: "EXPLOSIVES AND MAGAZINES",
         display_title: "Explosives and magazines",
         rows: &[
-            row!("LIVE GRENADES", "Live grenades", explosives::live_grenades),
-            row!("C4 BY HAND", "C4 by hand", explosives::c4_by_hand),
-            row!("MAGAZINES", "Magazines", explosives::magazines),
+            explosives::LIVE_GRENADES,
+            explosives::C4_BY_HAND,
+            explosives::MAGAZINES,
         ],
     },
     Section {
         title: "AIMING",
         display_title: "Aiming",
-        rows: &[
-            row!(
-                "DOWN THE SIGHTS",
-                "Down the sights",
-                explosives::down_the_sights
-            ),
-            row!(
-                "GUN AGAINST WALLS",
-                "Gun against walls",
-                explosives::gun_against_walls
-            ),
-        ],
+        rows: &[explosives::DOWN_THE_SIGHTS, explosives::GUN_AGAINST_WALLS],
     },
     Section {
         title: "HAND BODIES",
         display_title: "Hand bodies",
         rows: &[
-            row!("CALLBACK", "Callback", controllers::callback),
-            row!(
-                "CALLBACK FIRES",
-                "Callback fires",
-                controllers::callback_fires
-            ),
-            row!("LEFT BODY", "Left body", controllers::left_body),
-            row!("RIGHT BODY", "Right body", controllers::right_body),
-            row!("BODY ERRORS", "Body errors", controllers::body_errors),
-            row!(
-                "CONTACT EVENTS",
-                "Contact events",
-                controllers::contact_events
-            ),
-            row!("BLOWS DEALT", "Blows dealt", controllers::blows),
-            row!("GRAB JOINTS", "Grab joints", controllers::joints),
-            row!("COLLIDER VIEW", "Collider view", controllers::collider_view),
-            row!("LEFT GUN BODY", "Left gun body", controllers::left_gun_body),
-            row!(
-                "RIGHT GUN BODY",
-                "Right gun body",
-                controllers::right_gun_body
-            ),
+            controllers::CALLBACK,
+            controllers::CALLBACK_FIRES,
+            controllers::LEFT_BODY,
+            controllers::RIGHT_BODY,
+            controllers::BODY_ERRORS,
+            controllers::CONTACT_EVENTS,
+            controllers::BLOWS,
+            controllers::JOINTS,
+            controllers::COLLIDER_VIEW,
+            controllers::LEFT_GUN_BODY,
+            controllers::RIGHT_GUN_BODY,
         ],
     },
     Section {
         title: "GRIP",
         display_title: "Grip",
-        rows: &[
-            row!("LEFT GRIP", "Left grip", grip::left_grip),
-            row!("RIGHT GRIP", "Right grip", grip::right_grip),
-            row!("GRIP MARKERS", "Grip markers", grip::markers),
-        ],
+        rows: &[grip::LEFT_GRIP, grip::RIGHT_GRIP, grip::MARKERS],
     },
     Section {
         title: "HANDS IN THE WORLD",
         display_title: "Hands in the world",
         rows: &[
-            row!("PALMS", "Palms", hands::palms),
-            row!("VEHICLE DOORS", "Vehicle doors", hands::doors),
-            row!("CHARACTERS", "Characters", hands::characters),
-            row!("MOVING CLIMBS", "Moving climbs", hands::moving_climbs),
-            row!("STUNT POSITIONS", "Stunt positions", hands::stunt_positions),
-            row!("PUSH UP", "Push up", hands::push_up),
-            row!("HINGED THINGS", "Hinged things", hands::articulated),
+            hands::PALMS,
+            hands::DOORS,
+            hands::CHARACTERS,
+            hands::MOVING_CLIMBS,
+            hands::STUNT_POSITIONS,
+            hands::PUSH_UP,
+            hands::ARTICULATED,
         ],
     },
     Section {
         title: "FEEDBACK",
         display_title: "Feedback",
-        rows: &[
-            row!("HAPTIC CUES", "Haptic cues", feedback::haptic_cues),
-            row!("IMPACT SOUNDS", "Impact sounds", feedback::impact_sounds),
-        ],
+        rows: &[feedback::HAPTIC_CUES, feedback::IMPACT_SOUNDS],
     },
     Section {
         title: "FINGERS",
         display_title: "Fingers",
-        rows: &[
-            row!("LEFT GRIP POSE", "Left grip pose", fingers::left_grip),
-            row!("RIGHT GRIP POSE", "Right grip pose", fingers::right_grip),
-        ],
+        rows: &[fingers::LEFT_GRIP, fingers::RIGHT_GRIP],
     },
     Section {
         title: "GRAPPLE",
         display_title: "Grapple",
         rows: &[
-            row!("GRAPPLE STATE", "Grapple state", grapple::state),
-            row!("ATTACHED TARGET", "Attached target", grapple::target),
-            row!("REEL FROM HAND", "Reel from hand", grapple::reel),
-            row!("TETHERS", "Tethers", grapple::tethers),
-            row!("LINE LOCK", "Line lock", grapple::lock),
-            row!("HANG SWING", "Hang swing", grapple::swing),
-            row!("SNATCH", "Snatch", grapple::snatch),
-            row!("LINE HAPTICS", "Line haptics", grapple::haptics),
+            grapple::STATE,
+            grapple::TARGET,
+            grapple::REEL,
+            grapple::TETHERS,
+            grapple::LOCK,
+            grapple::SWING,
+            grapple::SNATCH,
+            grapple::HAPTICS,
         ],
     },
     Section {
         title: "VEHICLES",
         display_title: "Vehicles",
         rows: &[
-            row!(
-                "FLIGHT CONTROLS",
-                "Flight controls",
-                vehicles::flight_controls
-            ),
-            row!(
-                "COCKPIT BUTTONS",
-                "Cockpit buttons",
-                vehicles::cockpit_buttons
-            ),
-            row!("PASSENGER AIM", "Passenger aim", vehicles::passenger_aim),
-            row!("MOUNTED GUN", "Mounted gun", vehicles::mounted_gun),
+            vehicles::FLIGHT_CONTROLS,
+            vehicles::COCKPIT_BUTTONS,
+            vehicles::PASSENGER_AIM,
+            vehicles::MOUNTED_GUN,
         ],
     },
     Section {
         title: "LOCOMOTION",
         display_title: "Locomotion",
         rows: &[
-            row!(
-                "STICK VELOCITY",
-                "Stick velocity",
-                controllers::stick_velocity
-            ),
-            row!("ACT FILTER", "Act filter", controllers::act_filter),
-            row!("ACT WATCHDOG", "Act watchdog", controllers::act_watchdog),
-            row!("STEADY VIEW", "Steady view", controllers::steady_view),
-            row!("NEUTRAL HEAD", "Neutral head", controllers::neutral_head),
+            controllers::STICK_VELOCITY,
+            controllers::ACT_FILTER,
+            controllers::ACT_WATCHDOG,
+            controllers::STEADY_VIEW,
+            controllers::NEUTRAL_HEAD,
         ],
     },
     Section {
         title: "PROCEDURAL BODY",
         display_title: "Procedural body",
         rows: &[
-            row!("MODE", "Mode", controllers::procedural_mode),
-            row!("HAND-OVER CASE", "Hand-over case", controllers::hand_over),
-            row!("TWIST BONES", "Twist bones", controllers::twist_bones),
-            row!("SEATED TORSO", "Seated torso", body::seated_torso),
-            row!("WINGSUIT ARMS", "Wingsuit arms", body::wingsuit_arms),
-            row!("PARACHUTE BODY", "Parachute body", body::parachute_body),
-            row!("SWIM TORSO", "Swim torso", body::swim_torso),
-            row!("ROOF TORSO", "Roof torso", body::roof_torso),
-            row!("BODY MIRROR", "Body mirror", body::body_mirror),
+            controllers::PROCEDURAL_MODE,
+            controllers::HAND_OVER,
+            controllers::TWIST_BONES,
+            body::SEATED_TORSO,
+            body::WINGSUIT_ARMS,
+            body::PARACHUTE_BODY,
+            body::SWIM_TORSO,
+            body::ROOF_TORSO,
+            body::BODY_MIRROR,
         ],
     },
 ];

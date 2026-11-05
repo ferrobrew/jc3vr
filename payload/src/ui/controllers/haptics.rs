@@ -1,4 +1,4 @@
-//! The haptics: what the mixer sent each hand and the recent cues, and the gamepad rumble switch.
+//! The haptics: the cues of each kind, what the mixer sent each hand and the recent cues, and the gamepad rumble switch.
 
 use egui::Ui;
 
@@ -13,10 +13,10 @@ pub(super) fn haptics_readout(ui: &mut Ui, h: &HapticsStatus) {
         .map(|c| format!("{} {}", c.label(), h.sent[c.index()]))
         .collect::<Vec<_>>()
         .join(" · ");
-    ui.label(format!("Cues sent: {} ({sent})", h.total_sent()));
+    ui.label(format!("Cues by kind: {sent}"));
     ui.label(format!(
-        "Mixer: {} played · {} stacked · {} masked · {} limited",
-        h.mix.played, h.mix.stacked, h.mix.masked, h.mix.limited
+        "Mixer: {} played · {} stacked",
+        h.mix.played, h.mix.stacked
     ));
     let output =
         |hand: Hand| h.last_output[hand.index()].map_or("-".to_owned(), |a| format!("{a:.2}"));

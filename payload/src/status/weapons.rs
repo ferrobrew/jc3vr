@@ -19,22 +19,37 @@ use crate::{
             },
         },
     },
-    status::{Line, Text, prose, text},
+    status::{Line, Row, Text, prose, text},
 };
 
-pub(super) fn left_hand() -> Line {
+pub(crate) const LEFT_HAND: Row = Row::new("LEFT HAND", "Left hand", left_hand);
+pub(crate) const RIGHT_HAND: Row = Row::new("RIGHT HAND", "Right hand", right_hand);
+pub(crate) const LEFT_HAND_ON_GUN: Row =
+    Row::new("LEFT HAND ON GUN", "Left hand on gun", left_hand_on_gun);
+pub(crate) const RIGHT_HAND_ON_GUN: Row =
+    Row::new("RIGHT HAND ON GUN", "Right hand on gun", right_hand_on_gun);
+pub(crate) const TAKES: Row = Row::new("TAKE FROM HANDS", "Take from hands", takes);
+pub(crate) const RACKS: Row = Row::new("TAKE FROM RACKS", "Take from racks", racks);
+pub(crate) const LEFT_ACTION: Row = Row::new("LEFT ACTION", "Left action", left_action);
+pub(crate) const RIGHT_ACTION: Row = Row::new("RIGHT ACTION", "Right action", right_action);
+pub(crate) const ARMED: Row = Row::new("ARMED BESIDE", "Armed beside", armed);
+pub(crate) const RIGHT_GRIP: Row = Row::new("RIGHT HAND GRIP", "Right hand grip", right_grip);
+pub(crate) const DOCKS: Row = Row::new("SOCKETS", "Sockets", docks);
+pub(crate) const LAST_REFUSAL: Row = Row::new("LAST REFUSAL", "Last refusal", last_refusal);
+
+fn left_hand() -> Line {
     hand(Hand::Left)
 }
 
-pub(super) fn right_hand() -> Line {
+fn right_hand() -> Line {
     hand(Hand::Right)
 }
 
-pub(super) fn left_action() -> Line {
+fn left_action() -> Line {
     action(Hand::Left)
 }
 
-pub(super) fn right_action() -> Line {
+fn right_action() -> Line {
     action(Hand::Right)
 }
 
@@ -93,11 +108,11 @@ fn action(hand: Hand) -> Line {
     ))
 }
 
-pub(super) fn left_hand_on_gun() -> Line {
+fn left_hand_on_gun() -> Line {
     hand_on_gun(Hand::Left)
 }
 
-pub(super) fn right_hand_on_gun() -> Line {
+fn right_hand_on_gun() -> Line {
     hand_on_gun(Hand::Right)
 }
 
@@ -139,7 +154,7 @@ fn hand_on_gun(hand: Hand) -> Line {
     }
 }
 
-pub(super) fn armed() -> Line {
+fn armed() -> Line {
     if !read_config(|c| c.controllers.weapons.hold.either_hand) {
         return Line::off("");
     }
@@ -164,14 +179,14 @@ pub(super) fn armed() -> Line {
     }
 }
 
-pub(super) fn docks() -> Line {
+fn docks() -> Line {
     Line::ok(text!(
         weapons::status().docks_followed.to_string(),
         " on their weapons"
     ))
 }
 
-pub(super) fn right_grip() -> Line {
+fn right_grip() -> Line {
     match grip::right_grip_read() {
         None => Line::waiting(prose("No gun in the right hand yet")),
         Some(read) => Line::ok(text!(
@@ -187,14 +202,14 @@ pub(super) fn right_grip() -> Line {
     }
 }
 
-pub(super) fn last_refusal() -> Line {
+fn last_refusal() -> Line {
     match hold::last_refusal() {
         Some(refusal) => Line::ok(Text::pair(refusal.to_uppercase(), refusal)),
         None => Line::ok(prose("None")),
     }
 }
 
-pub(super) fn takes() -> Line {
+fn takes() -> Line {
     if !read_config(|c| c.controllers.weapons.hold.either_hand) {
         return Line::off("");
     }
@@ -207,7 +222,7 @@ pub(super) fn takes() -> Line {
     ))
 }
 
-pub(super) fn racks() -> Line {
+fn racks() -> Line {
     if !read_config(|c| c.controllers.weapons.hold.either_hand) {
         return Line::off("");
     }
