@@ -3,8 +3,8 @@
 //!
 //! The bodies are read from the character's own ragdoll ([`Character::m_Ragdoll`]) on every call,
 //! so a ragdoll the game has freed or rebuilt since is never trusted, and each body is read through
-//! [`bodies::read`], which checks that its engine instance still belongs to its owner and that it
-//! is dynamic: a ragdoll whose bones the animation drives keyframed has none to take.
+//! [`physical_hands::line_body`], which checks that its engine instance still belongs to its owner
+//! and that it is dynamic: a ragdoll whose bones the animation drives keyframed has none to take.
 //!
 //! Every function here runs on the game thread outside the physics step.
 
@@ -13,7 +13,7 @@ use std::num::NonZeroUsize;
 use glam::Vec3;
 use jc3gi::{character::character::Character, physics::hknpRagdoll};
 
-use crate::controllers::physical_hands::bodies::{self, owner_of};
+use crate::controllers::physical_hands;
 
 /// One dynamic body of a character's ragdoll.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -58,8 +58,7 @@ impl Ragdoll {
             .copied()
             .filter(|&body| body != hknpRagdoll::INVALID_BODY_ID)
             .filter_map(|body| {
-                let owner = unsafe { owner_of(body) }?;
-                let state = unsafe { bodies::read(body, owner) }.ok()?;
+                let (owner, state) = unsafe { physical_hands::line_body(body) }?;
                 Some(Bone {
                     owner,
                     body,
