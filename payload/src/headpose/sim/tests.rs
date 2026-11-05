@@ -1,4 +1,4 @@
-use std::f32::consts::{FRAC_PI_2, PI, TAU};
+use std::f32::consts::FRAC_PI_2;
 
 use super::*;
 
@@ -86,15 +86,6 @@ fn test_mode_detection_from_counter() {
 }
 
 #[test]
-fn test_wrap_angle() {
-    assert!((wrap_angle(0.0)).abs() < 1e-6);
-    assert!((wrap_angle(PI + 0.5) - (-PI + 0.5)).abs() < 1e-5);
-    assert!((wrap_angle(-PI - 0.5) - (PI - 0.5)).abs() < 1e-5);
-    assert!((wrap_angle(TAU + 0.25) - 0.25).abs() < 1e-5);
-    assert!((wrap_angle(-0.25) - (-0.25)).abs() < 1e-6);
-}
-
-#[test]
 fn test_yaw_forward_convention() {
     // At zero yaw, the forward is -Z.
     assert!((yaw_forward(0.0) - glam::Vec3::NEG_Z).length() < 1e-5);
@@ -113,6 +104,6 @@ fn test_body_turn_compensation_keeps_head_world_anchored() {
     let body_then = 0.3_f32;
     let body_now = 0.8_f32;
     let relative = 1.0_f32;
-    let compensated = wrap_angle(relative - wrap_angle(body_now - body_then));
+    let compensated = wrap(relative - wrap(body_now - body_then));
     assert!(((body_now + compensated) - (body_then + relative)).abs() < 1e-5);
 }

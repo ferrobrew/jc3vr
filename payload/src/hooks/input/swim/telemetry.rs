@@ -14,6 +14,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use body_rig::angle::wrap;
 use glam::Vec3;
 use parking_lot::Mutex;
 
@@ -77,7 +78,7 @@ pub(crate) fn log_tick(look_x: f32) {
         .saturating_duration_since(at)
         .as_secs_f32()
         .max(f32::EPSILON);
-    let rate = |now: f32, then: f32| wrap_deg((now - then).to_degrees()) / elapsed;
+    let rate = |now: f32, then: f32| wrap(now - then).to_degrees() / elapsed;
     let advanced = counters.since(&before);
     let rotate = *LAST_ROTATE.lock();
     let procedural = procedural::published_status();
@@ -173,12 +174,6 @@ fn heading_of(direction: Vec3) -> f32 {
     (-direction.x).atan2(-direction.z)
 }
 
-/// `degrees` wrapped into `-180..=180`.
-fn wrap_deg(degrees: f32) -> f32 {
-    let wrapped = (degrees + 180.0).rem_euclid(360.0) - 180.0;
-    if wrapped == -180.0 { 180.0 } else { wrapped }
-}
-
 #[derive(Debug, Copy, Clone)]
 struct RotateSample {
     core: SwimCore,
@@ -258,13 +253,5 @@ mod tests {
             assert!((heading_of(pitched) - yaw).abs() < 1e-5, "{yaw}");
         }
         assert_eq!(heading_of(Vec3::Y), 0.0);
-    }
-
-    #[test]
-    fn turn_rates_wrap_across_the_seam() {
-        assert!((wrap_deg(350.0) + 10.0).abs() < 1e-4);
-        assert!((wrap_deg(-350.0) - 10.0).abs() < 1e-4);
-        assert_eq!(wrap_deg(180.0), 180.0);
-        assert_eq!(wrap_deg(-180.0), 180.0);
     }
 }

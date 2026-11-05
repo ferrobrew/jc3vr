@@ -47,6 +47,7 @@ use std::{
     time::Instant,
 };
 
+use body_rig::angle::wrap;
 use glam::{Quat, Vec3};
 use jc3gi::{character::character::Character, equipment::grappling_hook::GrapplingHookState};
 use parking_lot::Mutex;
@@ -102,7 +103,7 @@ pub fn advance(body: Quat, anchor: Vec3, on_foot: bool, config: &GrappleComfortC
     // body can be blocked from turning), when the character leaves its feet, or when a new reel
     // starts.
     if let Some(deadline) = s.handoff_deadline {
-        let dyaw = headpose::sim::wrap_angle(
+        let dyaw = wrap(
             headpose::sim::body_yaw_of(body) - headpose::sim::body_yaw_of(s.held),
         )
         .abs();

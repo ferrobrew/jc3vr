@@ -9,9 +9,10 @@
 
 use std::fmt;
 
+use body_rig::angle::wrap;
 use glam::{Mat4, Quat, Vec3};
 
-use crate::controllers::body::rig::torso::{TorsoEstimate, wrap, yaw_forward, yaw_of};
+use crate::controllers::body::rig::torso::{TorsoEstimate, yaw_forward, yaw_of};
 
 /// The character's skeleton landmarks in its model space, from the bones HumanIK drives.
 #[derive(Debug, Copy, Clone, PartialEq)]

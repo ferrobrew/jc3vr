@@ -40,6 +40,7 @@
 //! ([`crate::headpose::follow`]): the view frame is then the body frame turned back by the body's
 //! heading relative to the view ([`follow_turn`]), so only the turn input turns the view.
 
+use body_rig::angle::wrap;
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
@@ -175,7 +176,7 @@ pub fn advance_body_yaw(
     // Seeded at the view's heading: the body's, less however far it was turned under the view.
     let mut yaw = s
         .yaw
-        .unwrap_or_else(|| sim::wrap_angle(body - s.follow.frozen()));
+        .unwrap_or_else(|| wrap(body - s.follow.frozen()));
 
     match turn.mode {
         VrTurnMode::Smooth => {
@@ -184,18 +185,18 @@ pub fn advance_body_yaw(
                 // scale with no deadzone (a slow mouse move is a small real delta, not stick drift).
                 // Running it through the stick rate (sensitivity * smooth_scale) oversteers and the
                 // deadzone drops slow motion -- the reported overshoot and stop-start.
-                yaw = sim::wrap_angle(yaw - (look_x * MOUSE_TURN_SCALE * rate_scale).to_radians());
+                yaw = wrap(yaw - (look_x * MOUSE_TURN_SCALE * rate_scale).to_radians());
             } else if look_x.abs() >= turn.deadzone {
                 // Stick: an absolute axis integrated as a per-tick rate.
                 let delta =
                     (look_x * sim::MOUSE_SENSITIVITY * turn.smooth_scale * rate_scale).to_radians();
-                yaw = sim::wrap_angle(yaw - delta);
+                yaw = wrap(yaw - delta);
             }
         }
         VrTurnMode::Snap => {
             if s.snap_armed && look_x.abs() >= turn.snap_threshold {
                 let step = look_x.signum() * turn.snap_angle_deg.to_radians();
-                yaw = sim::wrap_angle(yaw - step);
+                yaw = wrap(yaw - step);
                 s.snap_armed = false;
             }
             // Re-arm the snap step once the flick relaxes, with hysteresis so one flick is one step.
@@ -206,7 +207,7 @@ pub fn advance_body_yaw(
     }
 
     if swimming && stroke_turn.is_finite() {
-        yaw = sim::wrap_angle(yaw - stroke_turn);
+        yaw = wrap(yaw - stroke_turn);
     }
 
     let following = follow.enabled && on_foot && !swimming;
@@ -231,8 +232,8 @@ pub fn advance_body_yaw(
     if !s.follow.following() {
         let offset = s.follow.target();
         let max_lead = MAX_BODY_LEAD_DEG.to_radians();
-        let lead = sim::wrap_angle(yaw + offset - body).clamp(-max_lead, max_lead);
-        yaw = sim::wrap_angle(body - offset + lead);
+        let lead = wrap(yaw + offset - body).clamp(-max_lead, max_lead);
+        yaw = wrap(body - offset + lead);
     }
 
     s.yaw = Some(yaw);
@@ -343,7 +344,7 @@ pub fn pending_bank() -> Option<f32> {
 pub fn bank(yaw: f32) {
     let mut s = BODY_YAW.lock();
     s.follow.bank(yaw);
-    s.yaw = s.yaw.map(|heading| sim::wrap_angle(heading + yaw));
+    s.yaw = s.yaw.map(|heading| wrap(heading + yaw));
 }
 
 /// A frozen turn smaller than this is left in the composition rather than folded into the
@@ -370,7 +371,7 @@ pub fn on_recenter() {
 pub fn body_yaw_target() -> Option<Vec3> {
     let s = BODY_YAW.lock();
     s.yaw
-        .map(|yaw| sim::yaw_forward(sim::wrap_angle(yaw + s.follow.target())))
+        .map(|yaw| sim::yaw_forward(wrap(yaw + s.follow.target())))
 }
 
 /// The VR body-yaw accumulator state (see [`advance_body_yaw`]).

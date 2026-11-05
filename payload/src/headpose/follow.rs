@@ -27,7 +27,7 @@
 //!
 //! Headings are world yaws about +Y in radians, as [`crate::headpose::sim::body_yaw_of`] reads them.
 
-use crate::headpose::sim::wrap_angle;
+use body_rig::angle::wrap;
 
 /// The follow state, owned by the VR body-yaw accumulator.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -90,7 +90,7 @@ impl BodyFollow {
     pub fn tick(&mut self, tick: FollowTick) {
         if !tick.follow || !tick.heading.is_finite() || !tick.body.is_finite() {
             if let Some((_, current)) = self.view.take() {
-                self.frozen = wrap_angle(tick.body - current);
+                self.frozen = wrap(tick.body - current);
             }
             return;
         }
@@ -109,9 +109,9 @@ impl BodyFollow {
             } else {
                 0.0
             };
-            let off = wrap_angle(torso - self.target);
+            let off = wrap(torso - self.target);
             if off.abs() > deadband {
-                self.target = wrap_angle(torso - off.signum() * deadband);
+                self.target = wrap(torso - off.signum() * deadband);
             }
         }
     }
@@ -121,7 +121,7 @@ impl BodyFollow {
     pub fn offset(&self, body: f32, current: bool) -> f32 {
         match self.view {
             Some((previous, now)) if body.is_finite() => {
-                wrap_angle(body - if current { now } else { previous })
+                wrap(body - if current { now } else { previous })
             }
             Some(_) => 0.0,
             None => self.frozen,
@@ -132,7 +132,7 @@ impl BodyFollow {
     /// composes the same either way.
     pub fn bank(&mut self, yaw: f32) {
         if yaw.is_finite() {
-            self.frozen = wrap_angle(self.frozen - yaw);
+            self.frozen = wrap(self.frozen - yaw);
         }
     }
 
@@ -166,7 +166,7 @@ mod tests {
 
     /// The body heading a rate-limited executor reaches from `body` toward `target` in a tick.
     fn step(body: f32, target: f32, max_step: f32) -> f32 {
-        wrap_angle(body + wrap_angle(target - body).clamp(-max_step, max_step))
+        wrap(body + wrap(target - body).clamp(-max_step, max_step))
     }
 
     #[test]
@@ -181,12 +181,12 @@ mod tests {
             body = step(body, view + follow.target(), deg(10.0));
             // The view composes each side of the pair from that side's body.
             views.push((
-                wrap_angle(previous_body - follow.offset(previous_body, false)),
-                wrap_angle(body - follow.offset(body, true)),
+                wrap(previous_body - follow.offset(previous_body, false)),
+                wrap(body - follow.offset(body, true)),
             ));
         }
         // The body faces the torso's heading, short by the deadband.
-        assert!((wrap_angle(body - view) - deg(85.0)).abs() < 1e-4);
+        assert!((wrap(body - view) - deg(85.0)).abs() < 1e-4);
         for (previous, current) in views {
             assert!((previous - view).abs() < 1e-5 && (current - view).abs() < 1e-5);
         }
@@ -199,17 +199,17 @@ mod tests {
         let mut heading = 0.0;
         for i in 0..20 {
             let previous_heading = heading;
-            heading = wrap_angle(heading + deg(3.0));
+            heading = wrap(heading + deg(3.0));
             follow.tick(tick(true, heading, body, Some(0.0)));
             let previous_body = body;
             // The game also kicks the body by a few degrees now and then.
             body = step(body, heading + follow.target(), deg(10.0))
                 + if i % 5 == 0 { 0.05 } else { 0.0 };
             if i > 0 {
-                let previous = wrap_angle(previous_body - follow.offset(previous_body, false));
+                let previous = wrap(previous_body - follow.offset(previous_body, false));
                 assert!((previous - previous_heading).abs() < 1e-5);
             }
-            let current = wrap_angle(body - follow.offset(body, true));
+            let current = wrap(body - follow.offset(body, true));
             assert!((current - heading).abs() < 1e-5);
         }
     }
@@ -237,7 +237,7 @@ mod tests {
         assert!((follow.offset(deg(80.0), true) - deg(40.0)).abs() < 1e-5);
         assert!((follow.target() - deg(40.0)).abs() < 1e-5);
         // A body steered to the heading plus the frozen offset does not move.
-        assert!((wrap_angle(deg(10.0) + follow.target()) - deg(50.0)).abs() < 1e-5);
+        assert!((wrap(deg(10.0) + follow.target()) - deg(50.0)).abs() < 1e-5);
     }
 
     #[test]
@@ -247,10 +247,10 @@ mod tests {
         follow.tick(tick(false, 0.0, deg(30.0), None));
         // Off foot the body was turned by the game; the view rode it.
         let body = deg(100.0);
-        let view = wrap_angle(body - follow.offset(body, true));
+        let view = wrap(body - follow.offset(body, true));
         // Back on foot the accumulator seeds at the view's heading.
         follow.tick(tick(true, view, body, None));
-        assert!((wrap_angle(body - follow.offset(body, true)) - view).abs() < 1e-5);
+        assert!((wrap(body - follow.offset(body, true)) - view).abs() < 1e-5);
         assert!((follow.target() - deg(30.0)).abs() < 1e-5);
     }
 

@@ -40,8 +40,7 @@
 //! vehicle's own steering. Let go, the wheel returns to centre at the return rate, easing in over
 //! the last stretch ([`return_step`]).
 
-use std::f32::consts::{PI, TAU};
-
+use body_rig::angle::wrap;
 use glam::{Quat, Vec3};
 
 use crate::controllers::vehicles::{config::WheelTracking, tuning::WheelSpec, wheel::WheelFrame};
@@ -121,7 +120,7 @@ impl WheelGrip {
         // of its two places' weights, so a swing past the hub turns nothing by its travel.
         let travel = match (last.angle, now.angle) {
             (Some(last_angle), Some(now_angle)) => Some((
-                wrap_angle(now_angle - last_angle),
+                wrap(now_angle - last_angle),
                 last.weight.min(now.weight),
             )),
             _ => None,
@@ -344,7 +343,7 @@ fn clockwise_twist(delta: Quat, axis: Vec3) -> f32 {
     let twist = 2.0 * along.atan2(delta.w);
     // Seen from the driver, along -axis, a positive rotation about the axis runs anticlockwise.
     if twist.is_finite() {
-        -wrap_angle(twist)
+        -wrap(twist)
     } else {
         0.0
     }
@@ -359,14 +358,10 @@ fn position_weight(frame: &WheelFrame, position: Vec3) -> f32 {
     ((share - HUB_SHARE) / HUB_SHARE).clamp(0.0, 1.0)
 }
 
-/// Wrap an angle difference into `-π..=π`.
-fn wrap_angle(a: f32) -> f32 {
-    (a + PI).rem_euclid(TAU) - PI
-}
 
 #[cfg(test)]
 mod tests {
-    use std::f32::consts::FRAC_PI_2;
+    use std::f32::consts::{FRAC_PI_2, TAU};
 
     use super::*;
     use crate::controllers::vehicles::tuning::PHYSICAL;

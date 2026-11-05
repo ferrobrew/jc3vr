@@ -13,8 +13,7 @@
 //! on the bars works nothing, so the grip that drops as a wrist turns the bars neither leans nor
 //! steers.
 
-use std::f32::consts::{PI, TAU};
-
+use body_rig::angle::wrap;
 use glam::{Quat, Vec3};
 
 use crate::controllers::{
@@ -42,7 +41,7 @@ impl BarsLatch {
     /// The bars' turn for the grips measuring `measured` now, within the lock.
     fn bars(&self, measured: f32, spec: &HandlebarsSpec) -> f32 {
         let lock = lock(spec);
-        (self.bars + wrap_angle(measured - self.measured)).clamp(-lock, lock)
+        (self.bars + wrap(measured - self.measured)).clamp(-lock, lock)
     }
 }
 
@@ -159,7 +158,3 @@ fn lock(spec: &HandlebarsSpec) -> f32 {
     spec.max_steer_deg.to_radians().abs().max(1e-3)
 }
 
-/// Wrap an angle difference into `-π..=π`.
-fn wrap_angle(a: f32) -> f32 {
-    (a + PI).rem_euclid(TAU) - PI
-}

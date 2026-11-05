@@ -70,6 +70,8 @@ mod tests {
     #[test_case(std::f32::consts::PI, std::f32::consts::PI; "half turn stays positive")]
     #[test_case(-std::f32::consts::PI, std::f32::consts::PI; "negative half turn flips")]
     #[test_case(3.0 * std::f32::consts::PI, std::f32::consts::PI; "one and a half turns")]
+    #[test_case(-0.5, -0.5; "small negative")]
+    #[test_case(350.0f32.to_radians(), -10.0f32.to_radians(); "nearly a whole turn")]
     #[test_case(f32::NAN, 0.0; "nan")]
     fn wraps(angle: f32, expected: f32) {
         assert!((wrap(angle) - expected).abs() < 1e-5);

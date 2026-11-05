@@ -21,13 +21,14 @@ pub mod skeleton;
 pub mod torso;
 pub(crate) mod visual;
 
+use body_rig::angle::wrap;
 use glam::Quat;
 use parking_lot::Mutex;
 
 pub use crate::controllers::body::rig::config::RigConfig;
 use crate::{
     config::Config,
-    controllers::body::rig::torso::{CHEST_LIMIT_DEG, TorsoEstimate, wrap, yaw_forward, yaw_of},
+    controllers::body::rig::torso::{CHEST_LIMIT_DEG, TorsoEstimate, yaw_forward, yaw_of},
     headpose::{self, xr::FollowSettings},
     hooks,
 };

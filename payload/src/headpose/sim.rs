@@ -31,6 +31,7 @@
 
 use std::sync::atomic::Ordering;
 
+use body_rig::angle::wrap;
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
@@ -154,9 +155,9 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
             // rotation since the last tick from the body-relative offset. Without this, the offset
             // rides the turning body and the latch never converges.
             if let (Some(now), Some(then)) = (body_yaw, s.last_body_yaw) {
-                s.yaw = wrap_angle(s.yaw - wrap_angle(now - then));
+                s.yaw = wrap(s.yaw - wrap(now - then));
             }
-            s.yaw = wrap_angle(s.yaw + yaw_delta);
+            s.yaw = wrap(s.yaw + yaw_delta);
         }
         HeadMode::Other => {
             let yaw_limit = FREE_LOOK_YAW_LIMIT_DEG.to_radians();
@@ -327,16 +328,6 @@ pub(crate) fn orientation_at(root: glam::Mat4) -> Quat {
     let body = grapple::filter_body_rotation(body);
     let state = SIM.lock();
     body * Quat::from_euler(glam::EulerRot::YXZ, state.yaw, state.pitch, state.roll)
-}
-
-/// Wrap an angle (radians) into `[-π, π]`.
-pub fn wrap_angle(angle: f32) -> f32 {
-    let wrapped = angle.rem_euclid(std::f32::consts::TAU);
-    if wrapped > std::f32::consts::PI {
-        wrapped - std::f32::consts::TAU
-    } else {
-        wrapped
-    }
 }
 
 /// The ground-plane forward direction for a world yaw, matching the game's convention (yaw about

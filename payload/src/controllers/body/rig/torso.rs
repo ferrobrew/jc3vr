@@ -50,20 +50,6 @@ pub fn yaw_forward(yaw: f32) -> Vec3 {
     Quat::from_rotation_y(yaw) * Vec3::NEG_Z
 }
 
-/// `angle` wrapped to `-π..=π`.
-pub fn wrap(angle: f32) -> f32 {
-    if !angle.is_finite() {
-        return 0.0;
-    }
-    let tau = std::f32::consts::TAU;
-    let wrapped = (angle + std::f32::consts::PI).rem_euclid(tau) - std::f32::consts::PI;
-    if wrapped <= -std::f32::consts::PI {
-        wrapped + tau
-    } else {
-        wrapped
-    }
-}
-
 /// The neck pivot, at the base of the skull, from the eyes in the head's frame: below and behind
 /// them, so that nodding turns the eyes about it.
 pub const EYES_TO_NECK_PIVOT: Vec3 =
@@ -84,7 +70,7 @@ pub const CHEST_LIMIT_DEG: f32 = 45.0;
 
 #[cfg(test)]
 mod tests {
-    use body_rig::angle::head_heading;
+    use body_rig::angle::{head_heading, wrap};
 
     use super::*;
 
@@ -116,14 +102,6 @@ mod tests {
                 assert!(wrap(heading - yaw).abs() < 1e-3, "{yaw} {pitch}: {heading}");
             }
         }
-    }
-
-    #[test]
-    fn wrapping_stays_in_a_half_turn_each_way() {
-        assert!((wrap(3.0 * std::f32::consts::PI) - std::f32::consts::PI).abs() < 1e-5);
-        assert!((wrap(-0.5) + 0.5).abs() < 1e-6);
-        assert!((wrap(deg(350.0)) - deg(-10.0)).abs() < 1e-5);
-        assert_eq!(wrap(f32::NAN), 0.0);
     }
 
     #[test]

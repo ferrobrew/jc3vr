@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 
 use body_rig::{
     GroundedRig, PlayerBody, RigFrame, RigOutput, RigTuning, StepPhase,
-    angle::{forward, head_heading, right},
+    angle::{forward, head_heading, right, wrap},
     body::EYES_TO_NECK,
 };
 use glam::{Quat, Vec2, Vec3};
@@ -33,7 +33,7 @@ use crate::controllers::{
     bindings::hold::Desired,
     body::{
         BodyDimensions,
-        rig::torso::{HIP_SPACING_FRACTION, TorsoEstimate, wrap},
+        rig::torso::{HIP_SPACING_FRACTION, TorsoEstimate},
     },
     diagnostics::{RigRun, note_rig},
     vehicles::axis_output::{read_move, write_move},
