@@ -18,10 +18,9 @@ use jc3gi::{
 };
 
 use crate::controllers::{
-    aim::gun,
     loadout::{ObjectAddress, WeaponType},
     weapons::{
-        engine::{character_object, object_of, slot_of, weapon_at},
+        engine::{character_object, gun_position, object_of, slot_of, weapon_at},
         hold::refs::{Strong, Weak},
     },
 };
@@ -192,7 +191,7 @@ pub(crate) unsafe fn fate(weak: &Weak, owner: &Character, player: Vec3) -> Fate 
     // SAFETY: the strong reference keeps the weapon alive while it is read.
     let weapon = unsafe { &*weapon_of(&strong) };
     let holder = weapon.m_Holder.px as usize;
-    let distance_m = unsafe { origin(weapon) }.map(|at| at.distance(player));
+    let distance_m = unsafe { gun_position(weapon) }.map(|at| at.distance(player));
     if weapon.m_State != WeaponState::E_WS_DROPPED
         && holder != 0
         && holder != character_object(owner) as usize
@@ -205,15 +204,4 @@ pub(crate) unsafe fn fate(weak: &Weak, owner: &Character, player: Vec3) -> Fate 
 /// Where `owner` stands.
 pub(crate) fn position(owner: &Character) -> Vec3 {
     Mat4::from(owner.m_WorldMatrixT1).w_axis.truncate()
-}
-
-/// The world position of `weapon`'s first gun.
-///
-/// # Safety
-///
-/// `weapon` must be live.
-pub(crate) unsafe fn origin(weapon: &WeaponBase) -> Option<Vec3> {
-    let first = unsafe { gun::guns(weapon) }.next().flatten()?;
-    let at = Mat4::from(first.m_WorldMatrixT1).w_axis.truncate();
-    at.is_finite().then_some(at)
 }

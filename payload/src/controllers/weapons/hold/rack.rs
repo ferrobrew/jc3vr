@@ -198,7 +198,7 @@ pub(crate) unsafe fn take(
     if !unsafe { owner.m_Inventory.GetAnimationAllowsPickup() } {
         return Err(RackRefusal::Pickup(Refusal::AnimationForbids));
     }
-    let from = unsafe { pickup::gun_pose(weapon) };
+    let from = unsafe { engine::gun_pose(weapon) };
     // The copy is a give, which the table takes into the hand left expecting it
     // ([`crate::controllers::weapons::inventory::gives`]); the slot's weapon keeps its place.
     hold::begin(hand, Cause::Rack, None);

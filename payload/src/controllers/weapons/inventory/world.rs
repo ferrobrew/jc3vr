@@ -22,6 +22,7 @@ use crate::{
     controllers::{
         loadout::{ObjectAddress, live},
         weapons::{
+            engine::gun_position,
             hold::refs::{Strong, Weak},
             inventory::{
                 engine::{self, Fate},
@@ -186,7 +187,7 @@ impl World {
                 // SAFETY: the strong reference keeps the weapon alive while it is read.
                 let weapon = unsafe { &*engine::weapon_of(&strong) };
                 Some(LostWeapon {
-                    position: unsafe { engine::origin(weapon) }?,
+                    position: unsafe { gun_position(weapon) }?,
                     icon: IconId::of(weapon)?,
                 })
             })

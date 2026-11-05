@@ -25,7 +25,7 @@ use crate::controllers::{
     aim::gun,
     physical_hands, scheme,
     weapons::{
-        engine::character_object,
+        engine::{character_object, gun_pose},
         grenade::{Release, consume_world_pickup, finite_world_pickup, safe},
         hold::refs::{Strong, Weak},
         inventory::engine::weapon_of,
@@ -121,13 +121,9 @@ unsafe fn replace(alive: &Strong) -> Replacement {
 ///
 /// `weapon` must be live, on the game thread outside the physics step.
 unsafe fn motion(weapon: &WeaponBase) -> Option<(Mat4, Release)> {
+    let pose = unsafe { gun_pose(weapon) }?;
+    let world = Mat4::from_rotation_translation(pose.orientation, pose.position);
     let first = unsafe { gun::guns(weapon) }.next().flatten()?;
-    let (_, orientation, position) =
-        Mat4::from(first.m_WorldMatrixT1).to_scale_rotation_translation();
-    let world = Mat4::from_rotation_translation(orientation.normalize(), position);
-    if !world.is_finite() {
-        return None;
-    }
     let owner = NonZeroUsize::new(weapon as *const WeaponBase as usize)?;
     let release = unsafe { first.m_PfxInstance.as_ref() }
         .and_then(|instance| unsafe { physical_hands::body_state(instance.m_BodyId, owner) }.ok())

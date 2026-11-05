@@ -14,8 +14,7 @@ use crate::controllers::{
     loadout::{LoadoutSnapshot, Socket},
     weapons::{
         docks,
-        engine::{long_slot, slot_of},
-        hold::pickup::gun_pose,
+        engine::{gun_pose, long_slot, slot_of},
         regions::shape::{GunShape, MagazineWell},
         reload::wells,
     },

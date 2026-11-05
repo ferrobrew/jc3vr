@@ -317,7 +317,7 @@ pub(crate) unsafe fn input_tick(
             // SAFETY: the strong reference keeps the weapon alive while it is read.
             let at = strong
                 .as_ref()
-                .and_then(|s| unsafe { engine::origin(&*engine::weapon_of(s)) });
+                .and_then(|s| unsafe { weapons_engine::gun_position(&*engine::weapon_of(s)) });
             (
                 lost::Lying {
                     object,

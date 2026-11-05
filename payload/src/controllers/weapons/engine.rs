@@ -3,7 +3,7 @@
 //! game stage ([`crate::controllers::bindings::stage`]), on the game thread before the world
 //! update.
 
-use glam::{Mat4, Quat};
+use glam::{Mat4, Quat, Vec3};
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{WeaponBase, WeaponGripHand, WeaponState},
@@ -146,6 +146,33 @@ pub(crate) fn character_object(character: *const Character) -> *mut GameObject {
         .wrapping_add(Character::GAME_OBJECT_BASE_OFFSET as usize)
         .cast::<GameObject>()
         .cast_mut()
+}
+
+/// The world pose of `weapon`'s first gun, without its scale.
+///
+/// # Safety
+///
+/// `weapon` must be live.
+pub(crate) unsafe fn gun_pose(weapon: &WeaponBase) -> Option<Pose> {
+    let first = unsafe { gun::guns(weapon) }.next().flatten()?;
+    let (_, orientation, position) =
+        Mat4::from(first.m_WorldMatrixT1).to_scale_rotation_translation();
+    (position.is_finite() && orientation.is_finite()).then(|| Pose {
+        position,
+        orientation: orientation.normalize(),
+    })
+}
+
+/// The world position of `weapon`'s first gun. Unlike [`gun_pose`], it needs no orientation, so a
+/// gun whose transform does not decompose still has one.
+///
+/// # Safety
+///
+/// `weapon` must be live.
+pub(crate) unsafe fn gun_position(weapon: &WeaponBase) -> Option<Vec3> {
+    let first = unsafe { gun::guns(weapon) }.next().flatten()?;
+    let at = Mat4::from(first.m_WorldMatrixT1).w_axis.truncate();
+    at.is_finite().then_some(at)
 }
 
 /// The local player character.

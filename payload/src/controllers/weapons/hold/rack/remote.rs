@@ -205,5 +205,5 @@ unsafe fn shown_point(weapon: &WeaponBase) -> Option<Vec3> {
     if !model.m_Flags.contains(ModelInstanceFlags::VISIBLE) {
         return None;
     }
-    unsafe { pickup::gun_pose(weapon) }.map(|pose| pose.position)
+    unsafe { engine::gun_pose(weapon) }.map(|pose| pose.position)
 }

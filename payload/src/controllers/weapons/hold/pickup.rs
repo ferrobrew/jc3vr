@@ -30,7 +30,6 @@
 
 use std::{fmt, sync::LazyLock};
 
-use glam::Mat4;
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{AmmunitionType, WeaponBase, WeaponState},
@@ -41,14 +40,14 @@ use crate::{
     config::Config,
     controllers::{
         aim::gun,
-        frame::{Hand, Pose},
+        frame::Hand,
         loadout::{
             Socket, TakeSource, live, slot_label,
             take::{self, TakeOffer, TakeRefusal, TakeRoute, TakeRules},
         },
         weapons::{
             dual_wield::single,
-            engine::{self, character_object, slot_of},
+            engine::{self, character_object, gun_pose, slot_of},
             hold::{self, Cause, act, equip, use_item},
             inventory::{self, carry, engine as inventory_engine},
         },
@@ -407,17 +406,6 @@ fn animation_eligibility(
         return Err(Refusal::AnimationForbids);
     }
     Ok(route)
-}
-
-/// The world pose of `weapon`'s first gun.
-pub(crate) unsafe fn gun_pose(weapon: &WeaponBase) -> Option<Pose> {
-    let first = unsafe { gun::guns(weapon) }.next().flatten()?;
-    let (_, orientation, position) =
-        Mat4::from(first.m_WorldMatrixT1).to_scale_rotation_translation();
-    (position.is_finite() && orientation.is_finite()).then(|| Pose {
-        position,
-        orientation: orientation.normalize(),
-    })
 }
 
 #[cfg(test)]

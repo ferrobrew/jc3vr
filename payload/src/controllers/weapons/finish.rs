@@ -871,7 +871,7 @@ fn pass_by_action(hand: Hand) -> bool {
     // SAFETY: the game stage runs on the game thread before the world update, and a slot or the
     // carry set keeps the table's weapon in the hand alive.
     let from = unsafe { (object as *const WeaponBase).as_ref() }
-        .and_then(|weapon| unsafe { hold::pickup::gun_pose(weapon) });
+        .and_then(|weapon| unsafe { engine::gun_pose(weapon) });
     let to = hand.other();
     if !hold::hand_over(to, object) {
         return false;

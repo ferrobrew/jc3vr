@@ -29,7 +29,7 @@ use crate::controllers::{
         SNATCH,
         landing::{self, HandOffer, Turning},
     },
-    weapons::hold::{act, pickup::gun_pose},
+    weapons::{engine::gun_pose, hold::act},
 };
 
 /// A snatched gun's landing, from the bite to the catch.
