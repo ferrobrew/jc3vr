@@ -23,6 +23,8 @@ use windows::{
     core::Interface,
 };
 
+use crate::vr::texture_size;
+
 /// Post-stage indices (matching the Previews tab's stage labels); used by the stage detours.
 pub const POST_STAGE_DOF: usize = 0;
 pub const POST_STAGE_MB: usize = 1;
@@ -443,9 +445,7 @@ unsafe fn srv_texture_size(srv: &ID3D11ShaderResourceView) -> (u32, u32) {
         let Ok(texture) = resource.cast::<ID3D11Texture2D>() else {
             return (0, 0);
         };
-        let mut desc = D3D11_TEXTURE2D_DESC::default();
-        texture.GetDesc(&mut desc);
-        (desc.Width, desc.Height)
+        texture_size(&texture)
     }
 }
 

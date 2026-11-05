@@ -908,7 +908,7 @@ impl VrBlit {
 ///
 /// # Safety
 /// `texture` must be a live `ID3D11Texture2D`.
-unsafe fn texture_size(texture: &ID3D11Texture2D) -> (u32, u32) {
+pub(crate) unsafe fn texture_size(texture: &ID3D11Texture2D) -> (u32, u32) {
     let mut desc = D3D11_TEXTURE2D_DESC::default();
     unsafe {
         texture.GetDesc(&mut desc);

@@ -67,10 +67,9 @@ use windows::{
                 D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_COMPARISON_NEVER, D3D11_CULL_NONE,
                 D3D11_FILL_SOLID, D3D11_FILTER_MIN_MAG_MIP_LINEAR, D3D11_RASTERIZER_DESC,
                 D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC, D3D11_TEXTURE_ADDRESS_CLAMP,
-                D3D11_TEXTURE2D_DESC, D3D11_VIEWPORT, ID3D11BlendState, ID3D11DeviceContext,
-                ID3D11DeviceContext1, ID3D11PixelShader, ID3D11RasterizerState,
-                ID3D11RenderTargetView, ID3D11SamplerState, ID3D11ShaderResourceView,
-                ID3D11Texture2D, ID3D11VertexShader,
+                D3D11_VIEWPORT, ID3D11BlendState, ID3D11DeviceContext, ID3D11DeviceContext1,
+                ID3D11PixelShader, ID3D11RasterizerState, ID3D11RenderTargetView,
+                ID3D11SamplerState, ID3D11ShaderResourceView, ID3D11Texture2D, ID3D11VertexShader,
             },
         },
         System::Threading::{EnterCriticalSection, LeaveCriticalSection},
@@ -87,6 +86,7 @@ use crate::{
         mirror::layout::{
             AspectSize, MirrorFraming, MirrorLayout, Viewport, mirror_layout, mirror_viewport,
         },
+        texture_size,
     },
 };
 
@@ -369,18 +369,6 @@ fn recorded_layout(
         window,
         draws,
     }
-}
-
-/// The pixel dimensions of a texture from its descriptor.
-///
-/// # Safety
-/// `texture` must be a live `ID3D11Texture2D`.
-unsafe fn texture_size(texture: &ID3D11Texture2D) -> (u32, u32) {
-    let mut desc = D3D11_TEXTURE2D_DESC::default();
-    unsafe {
-        texture.GetDesc(&mut desc);
-    }
-    (desc.Width, desc.Height)
 }
 
 /// The mirror pipeline: shaders, sampler, rasterizer, and caches of the back-buffer render-target view

@@ -74,7 +74,7 @@ pub use back_buffer::{
     owned as back_buffer_owned, resize_substitute_bypassed, substitute_render_setups,
     sync_swapchain_to_window,
 };
-pub(crate) use blit::{DirectArm, DirectStatus, blit_direct, direct_status};
+pub(crate) use blit::{DirectArm, DirectStatus, blit_direct, direct_status, texture_size};
 pub use blit::{arm_direct, disarm_direct, present_and_submit};
 pub use eye_resolution::{engine_render_resolution, native_eye_resolution};
 pub use frame_loop::{EyeImage, EyeView, FrameContext, frame_begin};
