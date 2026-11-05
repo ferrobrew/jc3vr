@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use glam::{Quat, Vec3};
 use jc3gi::character::inventory::WeaponSlot;
-use tracking_format::event::{self as file, GunRelease, Label, ReleaseController, ReleaseDrop};
+use tracking_format::event::{GunRelease, ReleaseController, ReleaseDrop, WorldMotion};
 
 use crate::{
     controllers::{
@@ -21,7 +21,7 @@ use crate::{
         physical_hands::BodyError,
         weapons::hold::equip::DockRefusal,
     },
-    recorder::tracking::format::hand_to_file,
+    recorder::tracking::format::{debug_label, hand_to_file},
 };
 
 /// The cockpit-to-world transform sampled on an input tick, without controller translation.
@@ -405,18 +405,13 @@ impl ReleaseRecord {
     /// The attempt as a tracking-recording event. The controller's poses and flags are left to the
     /// frame of the same display time; nested runtime values are recorded as their Debug text.
     pub(crate) fn event(&self) -> GunRelease {
-        let debug = |value: &dyn std::fmt::Debug| Label::Owned(format!("{value:?}"));
-        let motion = |motion: WorldMotion| file::WorldMotion {
-            linear: motion.linear,
-            angular: motion.angular,
-        };
         GunRelease {
             hand: hand_to_file(self.hand),
             attempt: self.sequence,
             weapon: self.weapon.map(|weapon| weapon as u64),
-            route: debug(&self.route),
+            route: debug_label(&self.route),
             max_speed_mps: self.max_speed_mps,
-            refusal: self.refusal.map(|refusal| debug(&refusal)),
+            refusal: self.refusal.map(|refusal| debug_label(&refusal)),
             before_disarm: self.stages.before_disarm,
             disarm_returned: self.stages.disarm_returned,
             slot_clear_returned: self.stages.slot_clear_returned,
@@ -429,15 +424,15 @@ impl ReleaseRecord {
             }),
             drop: self.drop.map(|drop| ReleaseDrop {
                 weapon: drop.weapon as u64,
-                slot: drop.slot.map(|slot| debug(&slot)),
-                sample_stage: debug(&drop.sample_stage),
-                sample_source: debug(&drop.sample_source),
-                cached_motion: drop.cached_world_motion.map(motion),
+                slot: drop.slot.map(|slot| debug_label(&slot)),
+                sample_stage: debug_label(&drop.sample_stage),
+                sample_source: debug_label(&drop.sample_source),
+                cached_motion: drop.cached_world_motion,
                 native_body: drop.native_body_id,
-                requested_motion: drop.requested_world_motion.map(motion),
-                release_source: debug(&drop.release_source),
+                requested_motion: drop.requested_world_motion,
+                release_source: debug_label(&drop.release_source),
                 history_age_s: drop.history_age_s,
-                write: debug(&drop.write),
+                write: debug_label(&drop.write),
                 on_drop_returned: drop.on_drop_returned,
                 slot_clear_returned: drop.slot_clear_returned,
             }),
@@ -598,28 +593,6 @@ impl SampleSource {
             Self::RigTransportOnly => "rig transport only",
             Self::UnavailableAtRelease => "unavailable at release",
         }
-    }
-}
-
-/// World-space linear and angular velocities, after any source-specific conversion.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct WorldMotion {
-    pub linear: Vec3,
-    pub angular: Vec3,
-}
-
-impl WorldMotion {
-    pub const ZERO: Self = Self {
-        linear: Vec3::ZERO,
-        angular: Vec3::ZERO,
-    };
-
-    pub fn linear_is_finite(self) -> bool {
-        self.linear.is_finite()
-    }
-
-    pub fn angular_is_finite(self) -> bool {
-        self.angular.is_finite()
     }
 }
 

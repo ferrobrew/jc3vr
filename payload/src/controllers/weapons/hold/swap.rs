@@ -6,6 +6,7 @@
 
 use glam::{Mat4, Vec3};
 use jc3gi::equipment::weapon::WeaponBase;
+use tracking_format::event::WorldMotion;
 
 use crate::controllers::{
     loadout::{ObjectAddress, Socket, live},
@@ -15,7 +16,7 @@ use crate::controllers::{
         engine::{self, slot_of},
         hold::{
             equip::{self, DockRefusal},
-            release_diagnostics::{ReleaseMotion, WorldMotion},
+            release_diagnostics::ReleaseMotion,
             steal,
         },
         inventory::{

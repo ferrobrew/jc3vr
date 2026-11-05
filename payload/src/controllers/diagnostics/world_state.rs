@@ -6,7 +6,7 @@ use glam::{Mat4, Quat, Vec3};
 use jc3gi::{
     camera::camera_manager::CameraManager, character::character::Character,
     equipment::wire_end::WireEnd, graphics_engine::graphics_engine::get_render_frame_counters,
-    types::math::Matrix4, vehicle::vehicle::Vehicle,
+    vehicle::vehicle::Vehicle,
 };
 use tracking_format::{
     event::{
@@ -23,6 +23,7 @@ use crate::{
     grapple::{hook, physical::lock},
     headpose,
     hooks::camera::last_dtf,
+    recorder::tracking::format::debug_label,
 };
 
 /// The cockpit's placement in the world and the active camera, while the cockpit is placed.
@@ -35,10 +36,10 @@ pub(super) fn view_state() -> Option<ViewState> {
     let camera = unsafe { CameraManager::get() }
         .and_then(|manager| unsafe { manager.m_ActiveCamera.as_ref() })
         .map(|camera| CameraState {
-            previous: pose_of(&camera.m_TransformT0),
-            current: pose_of(&camera.m_TransformT1),
+            previous: pose_of(Mat4::from(camera.m_TransformT0)),
+            current: pose_of(Mat4::from(camera.m_TransformT1)),
             fraction: last_dtf(),
-            rendered: pose_of(&camera.m_TransformF),
+            rendered: pose_of(Mat4::from(camera.m_TransformF)),
         });
     Some(ViewState {
         head_world: Pose {
@@ -59,11 +60,10 @@ pub(super) fn grapple_state(character: &Character) -> Option<GrappleState> {
     let hook = unsafe { hook::of(character) }?;
     let wire = unsafe { hook.m_ActiveWire.px.as_ref() }
         .or(unsafe { hook.m_AttachmentWire.px.as_ref() })?;
-    let debug = |value: &dyn std::fmt::Debug| Label::Owned(format!("{value:?}"));
     let hook_end = hook::hook_end(wire);
     Some(GrappleState {
-        hook_state: debug(&hook.m_State),
-        wire_state: debug(&wire.m_WireState),
+        hook_state: debug_label(&hook.m_State),
+        wire_state: debug_label(&wire.m_WireState),
         max_length_m: wire.m_MaxLength,
         hook: wire_end(hook_end),
         device: wire_end(hook::device_end(wire)),
@@ -105,16 +105,15 @@ pub(super) fn vehicle_state(character: &Character) -> Option<VehicleState> {
     if vehicle.is_none() && summary.seat.is_none() {
         return None;
     }
-    let debug = |value: &dyn std::fmt::Debug| Label::Owned(format!("{value:?}"));
-    let transform = vehicle.map(|v| pose_of(&v.m_WorldMatrixT1));
+    let transform = vehicle.map(|v| pose_of(Mat4::from(v.m_WorldMatrixT1)));
     Some(VehicleState {
         class: summary
             .seat
-            .map_or(Label::Borrowed("unknown"), |seat| debug(&seat.class)),
+            .map_or(Label::Borrowed("unknown"), |seat| debug_label(&seat.class)),
         driver: summary.seat.is_some_and(|seat| seat.driver),
         object: vehicle.map(|v| std::ptr::from_ref(v) as u64),
         transform,
-        rendered: vehicle.map(|v| pose_of(&v.m_InterpolatedWorldMatrix)),
+        rendered: vehicle.map(|v| pose_of(Mat4::from(v.m_InterpolatedWorldMatrix))),
         step_m: vehicle.map(|v| {
             Mat4::from(v.m_WorldMatrixT1).w_axis.truncate()
                 - Mat4::from(v.m_WorldMatrixT0).w_axis.truncate()
@@ -127,7 +126,9 @@ pub(super) fn vehicle_state(character: &Character) -> Option<VehicleState> {
             )
         }),
         handling: summary.active,
-        holds: summary.holds.map(|hold| hold.map(|kind| debug(&kind))),
+        holds: summary
+            .holds
+            .map(|hold| hold.map(|kind| debug_label(&kind))),
         mounted: summary.mounted,
         mounted_holds: summary.mounted_holds,
         mounted_aim: summary.mounted.then(vehicles::mounted_aim_point).flatten(),
@@ -158,9 +159,10 @@ fn wire_end(end: &WireEnd) -> WireEndSample {
     }
 }
 
-/// An engine transform as a position and an orientation.
-fn pose_of(matrix: &Matrix4) -> Pose {
-    let (_, rotation, translation) = Mat4::from(*matrix).to_scale_rotation_translation();
+/// A world transform as a position and an orientation, the orientation normalized and the identity
+/// when the transform has none to give.
+pub(super) fn pose_of(matrix: Mat4) -> Pose {
+    let (_, rotation, translation) = matrix.to_scale_rotation_translation();
     Pose {
         position: translation,
         orientation: if rotation.is_finite() {

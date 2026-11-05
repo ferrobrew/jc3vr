@@ -321,8 +321,8 @@ fn hold_readout(ui: &mut Ui, h: &HoldStatus, d: &DockStatus) {
             if let Some(motion) = record.drop.and_then(|drop| drop.cached_world_motion) {
                 ui.label(format!(
                     "Cached sample finite: linear {} · angular {}.",
-                    yes_no(motion.linear_is_finite()),
-                    yes_no(motion.angular_is_finite()),
+                    yes_no(motion.linear.is_finite()),
+                    yes_no(motion.angular.is_finite()),
                 ));
             }
             ui.label(format!(

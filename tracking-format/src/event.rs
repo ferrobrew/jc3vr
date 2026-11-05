@@ -541,6 +541,14 @@ pub struct WorldMotion {
     pub angular: Vec3,
 }
 
+impl WorldMotion {
+    /// No motion.
+    pub const ZERO: Self = Self {
+        linear: Vec3::ZERO,
+        angular: Vec3::ZERO,
+    };
+}
+
 /// A take marker: the same marker the mod writes to a video recording's sidecar or to the session's
 /// marker log, so the two can be joined by `index` and `stamp`.
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]

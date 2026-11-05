@@ -20,7 +20,7 @@ use tracking_format::{
 };
 
 use crate::{
-    controllers::body::procedural::skeleton::SkeletonKey,
+    controllers::{body::procedural::skeleton::SkeletonKey, diagnostics::world_state::pose_of},
     frame_timing::{self, Slot},
     hooks::{self, character::pose::LivePose},
     recorder::tracking::events::{self, EventKind},
@@ -100,14 +100,10 @@ unsafe fn note(character: &mut Character, pass: u64, stage: PoseStage, targets: 
             })
         })
         .collect();
-    let (_, rotation, translation) = world.to_scale_rotation_translation();
     events::note(EventKind::Pose(Box::new(PoseSample {
         pass,
         stage,
-        character: Pose {
-            position: translation,
-            orientation: rotation,
-        },
+        character: pose_of(world),
         set: BoneSet::Body,
         bones,
         targets,

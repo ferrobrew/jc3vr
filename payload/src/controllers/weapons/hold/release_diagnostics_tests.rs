@@ -41,8 +41,8 @@ fn cached_motion_retains_each_vectors_validity_without_substituting_zero() {
         let sample = observation(SampleStage::Wielded, Some((linear, angular)))
             .cached_world_motion
             .unwrap();
-        assert_eq!(sample.linear_is_finite(), linear_valid);
-        assert_eq!(sample.angular_is_finite(), angular_valid);
+        assert_eq!(sample.linear.is_finite(), linear_valid);
+        assert_eq!(sample.angular.is_finite(), angular_valid);
         if linear_valid {
             assert_eq!(sample.linear, linear);
         }
@@ -144,7 +144,7 @@ fn setter_completion_preserves_requested_values_without_claiming_readback() {
     status.record(attempt);
     let saved = status.latest.unwrap();
     let drop = saved.drop.unwrap();
-    assert!(!drop.cached_world_motion.unwrap().linear_is_finite());
+    assert!(!drop.cached_world_motion.unwrap().linear.is_finite());
     assert_eq!(drop.requested_world_motion.unwrap().linear, Vec3::ZERO);
     assert_eq!(drop.write, NativeWrite::SetterReturned);
     assert!(saved.stages.slot_clear_returned && saved.stages.reconcile_returned);

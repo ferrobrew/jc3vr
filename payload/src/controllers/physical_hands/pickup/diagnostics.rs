@@ -36,7 +36,7 @@ use crate::{
     },
     recorder::tracking::{
         events::{self, EventKind},
-        format::hand_to_file,
+        format::{debug_label, hand_to_file},
     },
 };
 
@@ -277,7 +277,6 @@ fn event(
     input: &InputRecord,
     request: Option<&RequestRecord>,
 ) -> GripAcquisition {
-    let debug = |value: &dyn std::fmt::Debug| Label::Owned(format!("{value:?}"));
     GripAcquisition {
         hand: hand_to_file(hand),
         stage,
@@ -288,8 +287,8 @@ fn event(
         grip_down: input.grip.down,
         grip_pressed: input.grip.pressed,
         grip_released: input.grip.released,
-        latch: debug(&input.latch),
-        grab: input.grab.map(|grab| debug(&grab)),
+        latch: debug_label(&input.latch),
+        grab: input.grab.map(|grab| debug_label(&grab)),
         chosen: input.chosen.as_ref().map(candidate),
         candidates: input.candidates.iter().flatten().map(candidate).collect(),
         candidates_omitted: u32::try_from(input.candidates_omitted).unwrap_or(u32::MAX),
@@ -299,37 +298,37 @@ fn event(
                 .iter()
                 .flatten()
                 .map(|entry| GripScanEntry {
-                    branch: debug(&entry.branch),
+                    branch: debug_label(&entry.branch),
                     object: entry.object.map(|object| object.get() as u64),
                     body: entry.body,
-                    door: entry.door.map(|door| debug(&door)),
+                    door: entry.door.map(|door| debug_label(&door)),
                     point: entry.point,
                     distance_m: entry.distance,
                     mass_kg: entry.mass_kg,
-                    result: debug(&entry.result),
+                    result: debug_label(&entry.result),
                 })
                 .collect(),
             omitted: u32::try_from(scan.omitted).unwrap_or(u32::MAX),
             ray_ran: scan.ray_ran,
             handles_ran: scan.handles_ran,
-            ray_selected: scan.ray_selected.map(|reach| debug(&reach)),
-            handle_selected: scan.handle_selected.map(|reach| debug(&reach)),
-            selected: scan.selected.map(|reach| debug(&reach)),
+            ray_selected: scan.ray_selected.map(|reach| debug_label(&reach)),
+            handle_selected: scan.handle_selected.map(|reach| debug_label(&reach)),
+            selected: scan.selected.map(|reach| debug_label(&reach)),
         }),
-        consumer: debug(&input.consumer),
-        target: request.map(|record| debug(&record.key.target)),
+        consumer: debug_label(&input.consumer),
+        target: request.map(|record| debug_label(&record.key.target)),
         result: request
             .filter(|_| stage != GripStage::Input)
-            .map(|record| debug(&record.consumer)),
+            .map(|record| debug_label(&record.consumer)),
         drive: request
             .and_then(|record| record.drive)
             .map(|drive| GripDrive {
                 object: drive.object as u64,
                 body: drive.body,
-                before: debug(&drive.before),
-                commanded: drive.commanded.map(|commanded| debug(&commanded)),
-                result: drive.result.map(|result| debug(&result)),
-                report: drive.report.map(|report| debug(&report)),
+                before: debug_label(&drive.before),
+                commanded: drive.commanded.map(|commanded| debug_label(&commanded)),
+                result: drive.result.map(|result| debug_label(&result)),
+                report: drive.report.map(|report| debug_label(&report)),
             }),
         target_point: request
             .map(|record| record.key.target.point)
@@ -338,13 +337,12 @@ fn event(
 }
 
 fn candidate(candidate: &Candidate) -> GripCandidate {
-    let debug = |value: &dyn std::fmt::Debug| Label::Owned(format!("{value:?}"));
     GripCandidate {
         resolver_index: u32::try_from(candidate.resolved.index).unwrap_or(u32::MAX),
         distance_m: candidate.resolved.distance,
-        tier: debug(&candidate.resolved.tier),
-        volume: debug(&candidate.resolved.volume),
-        observed: candidate.observed.map(|reach| debug(&reach)),
+        tier: debug_label(&candidate.resolved.tier),
+        volume: debug_label(&candidate.resolved.volume),
+        observed: candidate.observed.map(|reach| debug_label(&reach)),
         lost: candidate.lost.map(|lost| Label::Owned(lost.describe())),
     }
 }

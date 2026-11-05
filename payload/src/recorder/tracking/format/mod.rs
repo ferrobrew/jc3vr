@@ -182,6 +182,12 @@ pub(crate) fn hand_to_file(hand: Hand) -> tracking_format::model::Hand {
     convert::hand_to_file(hand)
 }
 
+/// A runtime value's `Debug` text as the file's label, for the producers of events that record a
+/// nested state as text.
+pub(crate) fn debug_label(value: &impl std::fmt::Debug) -> tracking_format::event::Label {
+    tracking_format::event::Label::Owned(format!("{value:?}"))
+}
+
 /// Read a whole file.
 pub(crate) fn decode(bytes: &[u8]) -> Result<Recording, DecodeError> {
     tracking_format::decode(bytes).map(convert::recording_from_file)
