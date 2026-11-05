@@ -176,6 +176,18 @@ pub fn current() -> Keymap {
     Config::lock_query(|c| c.director.keymap.clone())
 }
 
+/// The chord that fires `action` in the active map, rendered as the debug tab shows it, or `None`
+/// when nothing binds it.
+pub fn chord_label(action: Action) -> Option<String> {
+    Config::lock_query(|c| {
+        c.director
+            .keymap
+            .effective()
+            .find(|binding| binding.action == action)
+            .map(|binding| binding.chord.describe())
+    })
+}
+
 /// Replace the map with the defaults.
 pub fn reset_to_defaults() {
     config::edit().director.keymap = Keymap::new();

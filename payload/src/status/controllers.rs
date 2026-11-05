@@ -27,6 +27,7 @@ use crate::{
         },
         weapons::{grip_watch, heft::HeftClass},
     },
+    director::keymap::{self, Action},
     status::{Health, Line, Row, Text, prose, text},
 };
 
@@ -150,7 +151,10 @@ fn contact_events() -> Line {
 }
 
 fn collider_view() -> Line {
-    collider_view_line(&collider_view::status())
+    collider_view_line(
+        &collider_view::status(),
+        keymap::chord_label(Action::ToggleColliderView),
+    )
 }
 
 fn blows() -> Line {
@@ -519,11 +523,14 @@ fn hand_letter(hand: Hand) -> &'static str {
     }
 }
 
-/// The collider view's row: off with the key that shows it, waiting for the step counter or a
-/// read, or the bodies drawn and those the budget left out.
-fn collider_view_line(status: &ColliderViewStatus) -> Line {
+/// The collider view's row: off with the key that shows it (`key`, from the keymap), waiting for
+/// the step counter or a read, or the bodies drawn and those the budget left out.
+fn collider_view_line(status: &ColliderViewStatus, key: Option<String>) -> Line {
     if !status.enabled {
-        return Line::off(prose("Ctrl+Numpad 0 shows it"));
+        return Line::off(match key {
+            Some(key) => prose(format!("{key} shows it")),
+            None => prose("No key shows it"),
+        });
     }
     if let Some(error) = &status.last_error
         && status.reads == 0
@@ -568,15 +575,16 @@ mod tests {
     fn the_collider_view_row_says_how_to_show_it_and_what_it_draws() {
         let off = ColliderViewStatus::default();
         assert_eq!(
-            collider_view_line(&off).text(),
-            "OFF, CTRL+NUMPAD 0 SHOWS IT"
+            collider_view_line(&off, Some("F3".to_owned())).text(),
+            "OFF, F3 SHOWS IT"
         );
+        assert_eq!(collider_view_line(&off, None).text(), "OFF, NO KEY SHOWS IT");
         let waiting = ColliderViewStatus {
             enabled: true,
             registered: true,
             ..ColliderViewStatus::default()
         };
-        assert_eq!(collider_view_line(&waiting).health, Health::Waiting);
+        assert_eq!(collider_view_line(&waiting, None).health, Health::Waiting);
         let drawing = ColliderViewStatus {
             enabled: true,
             registered: true,
@@ -591,7 +599,7 @@ mod tests {
             ..ColliderViewStatus::default()
         };
         assert_eq!(
-            collider_view_line(&drawing).text(),
+            collider_view_line(&drawing, None).text(),
             "OK, 30 OF 40 BODIES, 1200 PRIMITIVES, 10 OVER BUDGET"
         );
     }

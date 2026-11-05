@@ -1,18 +1,27 @@
-//! The collider view: its switch, what it read and drew, the body under the gaze, and what it
+//! The collider view: its status row, its switch, what it read, the body under the gaze, and what it
 //! draws.
 
 use egui::Ui;
 use jc3gi::physics::CustomGroupCollisionFilter;
 
-use crate::controllers::physical_hands::collider_view::{
-    self, ColliderViewConfig, ColliderViewStatus, model::BodyKind,
+use crate::{
+    controllers::physical_hands::collider_view::{
+        self, ColliderViewConfig, ColliderViewStatus, model::BodyKind,
+    },
+    director::keymap::{self, Action},
+    status::controllers::COLLIDER_VIEW,
+    ui::status_row::headlines,
 };
 
 pub(super) fn collider_view_readout(ui: &mut Ui, status: &ColliderViewStatus) {
+    headlines(ui, &[&COLLIDER_VIEW]);
     let label = if status.enabled {
-        "Hide the colliders"
+        "Hide the colliders".to_owned()
     } else {
-        "Show the colliders (F3)"
+        match keymap::chord_label(Action::ToggleColliderView) {
+            Some(key) => format!("Show the colliders ({key})"),
+            None => "Show the colliders".to_owned(),
+        }
     };
     if ui.button(label).clicked() {
         collider_view::toggle();
@@ -21,20 +30,8 @@ pub(super) fn collider_view_readout(ui: &mut Ui, status: &ColliderViewStatus) {
         return;
     }
     ui.label(format!(
-        "Step counter {} · {} steps · {} reads · last read {} slots in {} µs",
-        if status.registered {
-            "registered"
-        } else {
-            "not registered"
-        },
-        status.steps,
-        status.reads,
-        status.scanned,
-        status.read_us
-    ));
-    ui.label(format!(
-        "{} bodies in range · {} drawn · {} over budget · {} primitives",
-        status.in_range, status.drawn.bodies, status.drawn.dropped, status.primitives
+        "{} steps · {} reads · last read {} slots in {} µs",
+        status.steps, status.reads, status.scanned, status.read_us
     ));
     let kinds = BodyKind::ALL
         .into_iter()
@@ -65,7 +62,10 @@ pub(super) fn collider_view_readout(ui: &mut Ui, status: &ColliderViewStatus) {
             ui.label("Gaze: no body");
         }
     }
-    if let Some(error) = &status.last_error {
+    // Before the first read, the row carries the error as its note.
+    if let Some(error) = &status.last_error
+        && status.reads > 0
+    {
         ui.label(format!("Last error: {error}"));
     }
 }
