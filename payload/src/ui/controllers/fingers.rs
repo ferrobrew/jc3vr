@@ -1,4 +1,4 @@
-//! Finger curls: the per-hand readout and the finger settings.
+//! Finger curls: the grip pose rows, the per-hand readout, and the finger settings.
 
 use egui::Ui;
 
@@ -11,10 +11,12 @@ use crate::{
         },
         frame::Hand,
     },
-    ui::controllers::yes_no,
+    status::fingers::{LEFT_GRIP, RIGHT_GRIP},
+    ui::{controllers::yes_no, status_row::headlines},
 };
 
 pub(super) fn fingers_readout(ui: &mut Ui, status: &[HandFingersStatus; 2], conforming: bool) {
+    headlines(ui, &[&LEFT_GRIP, &RIGHT_GRIP]);
     ui.label(format!(
         "Joints located with the controller-conforming motion range: {}",
         yes_no(conforming)
@@ -25,36 +27,14 @@ pub(super) fn fingers_readout(ui: &mut Ui, status: &[HandFingersStatus; 2], conf
             let s = &status[hand.index()];
             ui.strong(hand.label());
             let Some(source) = s.source else {
-                ui.label("not curled");
                 continue;
             };
             ui.label(format!(
-                "source {} · weight {:.2}",
+                "curls from {} · weight {:.2}",
                 source.label(),
                 s.weight
             ));
-            match s.grip {
-                Some(grip) => {
-                    ui.label(format!(
-                        "holds: {} · {} · {} · share {:.2}{}",
-                        grip.source.label(),
-                        grip.pose.label(),
-                        grip.mode.label(),
-                        grip.share,
-                        if grip.fitted > 0 {
-                            format!(" · {} fitted", grip.fitted)
-                        } else {
-                            String::new()
-                        }
-                    ));
-                }
-                None => {
-                    ui.label("holds nothing");
-                }
-            }
-            if s.unresolved {
-                ui.label("finger bones unresolved");
-            } else if !s.applied {
+            if !s.unresolved && !s.applied {
                 ui.label("not written");
             }
             for finger in Finger::ALL {
