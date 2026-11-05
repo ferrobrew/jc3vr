@@ -48,6 +48,7 @@ use crate::{
                 refs::{Strong, Weak},
                 steal,
             },
+            inventory::engine::weapon_of,
         },
     },
     grapple::rope::{self, GRAVITY_MPS2, RopeFault},
@@ -809,9 +810,8 @@ unsafe fn arrive(
 ///
 /// The game thread, before the world update.
 unsafe fn surface_toward(object: NonZeroUsize, centre: Vec3, palm: Vec3) -> Vec3 {
-    let player = unsafe { Character::GetLocalPlayerCharacter() } as usize;
     let options = CastOptions {
-        ignore: [player, 0],
+        ignore: [unsafe { engine::local_player_address() }, 0],
         see_through: false,
         material: false,
     };
@@ -854,8 +854,7 @@ unsafe fn body_centre(body: u32, object: NonZeroUsize) -> Result<Vec3, Refusal> 
 /// The game thread, before the world update and the physics step.
 pub(super) unsafe fn toss(weak: &Weak) -> Result<(), Refusal> {
     let alive = weak.lock().ok_or(Refusal::Gone)?;
-    let address = alive.object() as usize - WeaponBase::GAME_OBJECT_BASE_OFFSET as usize;
-    let weapon = NonZeroUsize::new(address).ok_or(Refusal::Gone)?;
+    let weapon = NonZeroUsize::new(weapon_of(&alive) as usize).ok_or(Refusal::Gone)?;
     let (_, body) = unsafe { engine::dropped(weapon) }?;
     let from = unsafe { body_centre(body, weapon) }?;
     let player = unsafe { engine::player_position() }.ok_or(Refusal::NoPlayer)?;
