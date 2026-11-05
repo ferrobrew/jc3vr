@@ -425,7 +425,9 @@ transforming an upload in flight, and puts the type's own rows back afterwards. 
 *not* reprojected by `M_eye`: the geometry still rasterizes from the collapsed centre view, so the UV
 has to describe where that geometry actually landed. On by default, but the hardest of this group to
 A/B: the affected family may not be on screen at all at the water-quality setting in use, which makes a
-headset comparison the only way to tell the fix from a no-op.
+headset comparison the only way to tell the fix from a no-op. The re-issue lives in
+`hooks/graphics_engine/scene/water.rs` and has not been verified in the headset; the
+[playtest checklist](../vr-runtime.md#playtest-checklist) carries the check.
 
 > **Not `NvWaterHighEnd`, and not a shader rewrite.** This mechanism is not `NvWaterHighEnd`'s, and its
 > fix is not a DXBC rewrite of nine water pixel shaders with eye parity plumbed into a pixel shader.
@@ -437,6 +439,14 @@ headset comparison the only way to tell the fix from a no-op.
 > water at the wrong depth is invisible in a screenshot and wrong only in a headset, which is why it
 > is easy to miss; `single_pass.nvwater_per_eye` (**on**) addresses it, and
 > `single_pass.ssdecal_geometry_per_eye` (**on**) is the same shape for the decal box.
+>
+> The WaveWorks fix substitutes the eye's view and reverse-Z projection into the render context,
+> re-runs [`NvWaterHighEndRenderBlock::Setup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::NvWaterHighEndRenderBlock##func-Setup)
+> so the block rebakes its matrices and constant buffers from them, and re-issues `Draw` into that
+> eye's half, skipping the block's auxiliary foam and wake passes. The second eye's
+> [`WaveWorksSimulationStep`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::WaveWorksSimulationStep)
+> is suppressed, since it is the one non-idempotent call in the block. It has not been verified in
+> the headset either.
 
 #### The water box surface, and what the legacy family's clip path actually is
 
@@ -485,7 +495,7 @@ either alone trades a known-shape defect for a subtler one, so neither has been 
 
 The surface grid is the awkward member of the set: it is drawn from `NWater::DrawWaterBoxSurface`
 rather than from `WaterBoxRenderBlock::Draw`, so the per-eye re-issue in
-`hooks/graphics_engine/water.rs` does not reach it, and it would need its own intercept before the
+`hooks/graphics_engine/scene/water.rs` does not reach it, and it would need its own intercept before the
 paired fix could be applied to it.
 
 ### 4. A reduced-resolution target handed the scene's viewport
@@ -577,7 +587,7 @@ is marked with its actual default.
 | `single_pass.bark` | On | `RenderBlockBark`'s colour and depth draws. Also declines the `cb0` remap on `vegetationbark*` (see below). |
 | `single_pass.foliage` | On | `RenderBlockFoliage`'s colour and depth draws. Also declines the `cb0` remap on `vegetationfoliage*` (see below). |
 | `single_pass.occluder` | Off | `RenderBlockOccluder`'s depth prime. **Blind-implemented, unvalidated.** |
-| `single_pass.nvwater_per_eye` | On | The WaveWorks water blocks, whose baked model-view-projection leaves both eyes on the centre view. |
+| `single_pass.nvwater_per_eye` | On | The WaveWorks water blocks, whose baked model-view-projection leaves both eyes on the centre view. Not yet verified in the headset. |
 | `single_pass.ssdecal_geometry_per_eye` | On | The screen-space decal box geometry, same shape. On top of `single_pass.ssdecal_per_eye`. |
 
 ### Per-eye viewport and draw routing
@@ -601,7 +611,7 @@ is marked with its actual default.
 | `single_pass.subsurface_per_eye` | On | Screen-space subsurface skin. |
 | `single_pass.dof_per_eye` | On | Depth of field: splits `CDownScale2x2PackFocus::Apply`, whose closing pack draw is the sole consumer of the DoF basis. Its five-dispatch near-field prologue reads no view or projection matrix, so it runs whole-target on the first run only and the second run reads the same coverage. |
 | `single_pass.ssdecal_per_eye` | On | Screen-space decals: per-eye basis plus a spliced depth-UV bias in the 12 `ssdecal` pixel shaders (mechanism 2). |
-| `single_pass.water_uv_per_eye` | On | Legacy water's projective screen UV (mechanism 3). |
+| `single_pass.water_uv_per_eye` | On | Legacy water's projective screen UV (mechanism 3). Not yet verified in the headset. |
 | `single_pass.clustered_per_eye` | On | Per-eye clustered froxel light grid. |
 | `single_pass.clustered_per_eye_light_view` | On | Also assign each eye's lights from that eye's position. |
 

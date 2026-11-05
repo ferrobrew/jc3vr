@@ -30,6 +30,8 @@ pub(super) enum Flag {
     Bark,
     Foliage,
     Occluder,
+    WaterScreenUv,
+    NvWater,
     InstancedPerEye,
     IndirectPerEye,
     UniformViewportSlots,
@@ -110,6 +112,8 @@ fn store_config_flags() -> u32 {
             | bit(s.bark, Flag::Bark)
             | bit(s.foliage, Flag::Foliage)
             | bit(s.occluder, Flag::Occluder)
+            | bit(s.water_uv_per_eye, Flag::WaterScreenUv)
+            | bit(s.nvwater_per_eye, Flag::NvWater)
             | bit(s.instanced_per_eye, Flag::InstancedPerEye)
             | bit(s.indirect_per_eye, Flag::IndirectPerEye)
             | bit(s.uniform_viewport_slots, Flag::UniformViewportSlots)

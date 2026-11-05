@@ -330,10 +330,10 @@ claims these two before the handler that owns them is ever consulted, exactly as
 The remapped `cb0[4]` is then added on top of a transform that already accounts for the eye offset,
 displacing the water box by that offset again. Half an IPD on a water surface, so not urgent, but the
 fix has the same shape as the vegetation one: add the prefix so the remap declines while the intercept
-is on. It is not done here because it needs a `BlockIntercept` variant for the WaveWorks flag (which
-`water.rs` currently queries directly) and live validation that the decline and the intercept's
-`draw_per_eye_half_ignoring_bound_vs` re-issue compose — the two must land together, since declining
-without the intercept forwards the draw once at whatever viewport is bound.
+is on. The flag already has its `BlockIntercept::NvWater` variant, so the prefix is a one-line
+addition to the list; it is not made yet because it needs live validation that the decline and the
+intercept's `draw_per_eye_half_ignoring_bound_vs` re-issue compose — the two must land together, since
+declining without the intercept forwards the draw once at whatever viewport is bound.
 
 **The bound-shader gate.** `baked_cb_intercept_ready`'s `BOUND_VS_PATCHED` check
 reads the shader bound by the *previous* draw, because these blocks bind their own inside the `Draw`

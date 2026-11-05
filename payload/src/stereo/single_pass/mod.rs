@@ -184,15 +184,17 @@ pub fn double_wide_active() -> bool {
     collapse_active() && config_flags().has(Flag::DoubleWide)
 }
 
-/// Whether the per-eye re-issue intercept for one of the baked-view-projection render blocks is
-/// enabled. Read from the frame's config snapshot, so the block `Draw` detours -- which fire for
-/// every draw of their type whether or not single-pass is on -- cost a relaxed load rather than a
-/// mutex acquisition.
+/// Whether the per-eye re-issue intercept for one of the intercepted render blocks is enabled. Read
+/// from the frame's config snapshot, so the block `Draw` detours -- which fire for every draw of
+/// their type whether or not single-pass is on -- cost a relaxed load rather than a mutex
+/// acquisition.
 pub fn block_intercept_enabled(block: BlockIntercept) -> bool {
     config_flags().has(match block {
         BlockIntercept::Bark => Flag::Bark,
         BlockIntercept::Foliage => Flag::Foliage,
         BlockIntercept::Occluder => Flag::Occluder,
+        BlockIntercept::WaterScreenUv => Flag::WaterScreenUv,
+        BlockIntercept::NvWater => Flag::NvWater,
     })
 }
 
@@ -241,12 +243,20 @@ pub fn baked_cb_block_owns_vs(name: Option<&str>, code: &[u8]) -> bool {
         && dxbc_stereo::reads_global_view_projection(code).is_ok_and(|reads| !reads)
 }
 
-/// A render block with a baked-view-projection per-eye intercept.
+/// A render block with a per-eye re-issue intercept: the baked-view-projection blocks, and the two
+/// water families, whose per-eye state is restaged around the re-issue rather than transformed in
+/// flight.
 #[derive(Clone, Copy)]
 pub enum BlockIntercept {
     Bark,
     Foliage,
     Occluder,
+    /// The legacy water blocks' projective screen UV
+    /// ([`water_uv_per_eye`](crate::stereo::config::SinglePassConfig::water_uv_per_eye)).
+    WaterScreenUv,
+    /// The WaveWorks water blocks' per-eye camera
+    /// ([`nvwater_per_eye`](crate::stereo::config::SinglePassConfig::nvwater_per_eye)).
+    NvWater,
 }
 
 /// The eye whose viewport + view-projection the collapse UI overlays (HUD panel, egui panel) should

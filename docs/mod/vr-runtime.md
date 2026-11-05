@@ -103,6 +103,7 @@ Everything below needs a headset in the loop; the desktop build could not settle
 
 - Confirm the world fills the frustum with no §2.7 depth wedge (a thin valid band with black elsewhere). If it wedges, flip `vr.projection_convention` to `ManualReverseZ`.
 - Confirm colors and gamma look correct in the headset. If washed out or crushed, flip `vr.blit_srgb_gamma` to `Passthrough`.
+- Under single-pass stereo with the collapse, confirm water surfaces and their reflections line up in both eyes: the WaveWorks ocean sits at its depth with parallax rather than flat at the centre view (`single_pass.nvwater_per_eye`), and at a lower water-quality setting the legacy water's reflections stay on the water instead of sliding across it (`single_pass.water_uv_per_eye`). Each flag toggles in the debug UI for an A/B ([single-pass-stereo.md](stereo/single-pass-stereo.md)).
 
 **Resolution and mirror.**
 
