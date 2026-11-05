@@ -232,6 +232,23 @@ pub fn nearest_miss(
         .min_by(|a, b| a.1.total_cmp(&b.1))
 }
 
+/// The item nearest `grip` whose point (`at`) lies within `radius_m` of it: the one a hand closing
+/// there takes among loose things that are not grip targets of their own. A point or a distance
+/// that is not finite is never within reach.
+pub fn nearest_within<T: Copy>(
+    items: &[T],
+    at: impl Fn(&T) -> Vec3,
+    grip: Vec3,
+    radius_m: f32,
+) -> Option<T> {
+    items
+        .iter()
+        .map(|item| (at(item).distance(grip), item))
+        .filter(|(distance, _)| distance.is_finite() && *distance <= radius_m)
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, item)| *item)
+}
+
 #[cfg(test)]
 mod vehicle_grip_tests {
     use super::*;

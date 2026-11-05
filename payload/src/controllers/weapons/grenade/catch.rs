@@ -169,15 +169,6 @@ pub fn candidates(seen: &[Sighting], radius_m: f32, free: [bool; 2]) -> Vec<Cand
         .collect()
 }
 
-/// The sighting nearest `grip`, the grabbing hand's grip in the cockpit frame, within `radius_m`.
-pub fn nearest(seen: &[Sighting], grip: Vec3, radius_m: f32) -> Option<Sighting> {
-    seen.iter()
-        .map(|s| (s.cockpit.distance(grip), s))
-        .filter(|(d, _)| d.is_finite() && *d <= radius_m)
-        .min_by(|a, b| a.0.total_cmp(&b.0))
-        .map(|(_, s)| *s)
-}
-
 /// Whether a grenade launched `age_s` ago may be caught: another's at once, the player's own once
 /// `grace_s` has passed.
 pub fn catchable(own: bool, age_s: f32, grace_s: f32) -> bool {
@@ -275,14 +266,6 @@ mod tests {
             owner: NonZeroUsize::new(0x2000).unwrap(),
             cockpit: Vec3::new(x, 0.0, 0.0),
         }
-    }
-
-    #[test]
-    fn the_nearest_grenade_in_reach_is_caught() {
-        let seen = [sighting(0.15), sighting(0.05), sighting(0.4)];
-        assert_eq!(nearest(&seen, Vec3::ZERO, 0.2), Some(seen[1]));
-        assert_eq!(nearest(&seen, Vec3::new(1.0, 0.0, 0.0), 0.2), None);
-        assert_eq!(nearest(&[], Vec3::ZERO, 0.2), None);
     }
 
     #[test]

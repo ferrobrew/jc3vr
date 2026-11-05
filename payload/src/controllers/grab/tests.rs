@@ -3,7 +3,7 @@ use glam::Vec3;
 use super::{
     latch::{GripLatch, LatchTick},
     markers::{self, colour, test_frame},
-    resolve::{Lost, choose, dock_target, losers, resolve},
+    resolve::{Lost, choose, dock_target, losers, nearest_within, resolve},
     *,
 };
 use crate::controllers::{
@@ -556,4 +556,20 @@ fn a_tap_between_ticks_is_a_fresh_press() {
     assert_eq!(latch.step(tick(UP, None)), None);
     assert_eq!(latch, GripLatch::Open);
     assert!(!latch.grabbing());
+}
+
+#[test]
+fn the_nearest_item_within_reach_is_taken() {
+    let items = [0.15, 0.05, 0.4].map(|x| Vec3::new(x, 0.0, 0.0));
+    let near = |grip: Vec3, radius: f32| nearest_within(&items, |p| *p, grip, radius);
+    assert_eq!(near(Vec3::ZERO, 0.2), Some(items[1]));
+    assert_eq!(near(Vec3::X, 0.2), None);
+    assert_eq!(near(Vec3::NAN, 0.2), None);
+    assert_eq!(near(Vec3::ZERO, f32::NAN), None);
+    // The reach's edge is within it.
+    assert_eq!(near(Vec3::new(0.25, 0.0, 0.0), 0.15), Some(items[0]));
+    assert_eq!(
+        nearest_within(&[] as &[Vec3], |p| *p, Vec3::ZERO, 0.2),
+        None
+    );
 }

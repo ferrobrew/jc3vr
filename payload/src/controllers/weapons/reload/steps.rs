@@ -7,7 +7,7 @@ use jc3gi::equipment::weapon::WeaponBase;
 use crate::controllers::{
     config::ControllersConfig,
     frame::{self, Hand, Pose},
-    grab::{Candidate, GrabVolume},
+    grab::{Candidate, GrabVolume, resolve::nearest_within},
     hands::{ActiveHands, ik},
     haptics::{self, Event},
     loadout::live::item_of,
@@ -532,7 +532,7 @@ impl State {
             .and_then(|hand| {
                 let gun_hand = loading(hand)?;
                 let grip = tick.hands[hand.index()]?.grip.position;
-                loose::nearest(&self.loose_seen, grip, reload.loose.radius_m)
+                nearest_within(&self.loose_seen, |s| s.cockpit, grip, reload.loose.radius_m)
                     .map(|s| (hand, gun_hand, s))
             });
         let mut taken = false;

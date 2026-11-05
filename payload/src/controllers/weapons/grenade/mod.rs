@@ -43,7 +43,7 @@ use crate::{
         config::ControllersConfig,
         diagnostics::{self, Thrown},
         frame::{Hand, Pose},
-        grab::{Candidate, GrabVolume},
+        grab::{Candidate, GrabVolume, resolve::nearest_within},
         hands::{
             ActiveHands,
             held::{self, Held, Slot},
@@ -868,7 +868,7 @@ unsafe fn primed_explosive(weapon: &ThrownGrenadeWeapon) -> Option<*mut Explosiv
 }
 
 fn catch_one(hand: Hand, grip: Vec3, seen: &[Sighting], tuning: &GrenadeTuning) {
-    if let Some(sighting) = catch::nearest(seen, grip, tuning.catch.radius_m) {
+    if let Some(sighting) = nearest_within(seen, |s| s.cockpit, grip, tuning.catch.radius_m) {
         catch::set_caught(Some(Caught {
             hand,
             explosive: sighting.explosive,

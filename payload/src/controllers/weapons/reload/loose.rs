@@ -296,15 +296,6 @@ pub fn candidates(seen: &[Sighting], radius_m: f32, hand: Hand) -> Vec<Candidate
         .collect()
 }
 
-/// The sighting nearest `grip`, within `radius_m`.
-pub fn nearest(seen: &[Sighting], grip: Vec3, radius_m: f32) -> Option<Sighting> {
-    seen.iter()
-        .map(|s| (s.cockpit.distance(grip), s))
-        .filter(|(d, _)| d.is_finite() && *d <= radius_m)
-        .min_by(|a, b| a.0.total_cmp(&b.0))
-        .map(|(_, s)| *s)
-}
-
 /// Take the magazine of `sighting` into `hand` as the round in hand.
 pub(super) fn take(hand: Hand, sighting: Sighting) -> bool {
     let mut state = STATE.lock();
@@ -689,13 +680,11 @@ mod tests {
     }
 
     #[test]
-    fn the_nearest_magazine_in_reach_is_taken() {
+    fn each_magazine_gets_a_volume_for_the_hand() {
         let seen = [0.08, 0.03, 0.5].map(|x| Sighting {
             magazine: magazine(1),
             cockpit: Vec3::new(x, 0.0, 0.0),
         });
-        assert_eq!(nearest(&seen, Vec3::ZERO, 0.1), Some(seen[1]));
-        assert_eq!(nearest(&seen, Vec3::new(2.0, 0.0, 0.0), 0.1), None);
         let volumes = candidates(&seen, 0.1, Hand::Left);
         assert_eq!(volumes.len(), 3);
         assert!(volumes.iter().all(|c| c.hand == Some(Hand::Left)));

@@ -30,7 +30,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     frame::Hand,
-    grab::{Candidate, GrabVolume},
+    grab::{Candidate, GrabVolume, resolve::nearest_within},
     weapons::{
         engine,
         grenade::{self, safe, stock, tuning::GrenadeTuning},
@@ -504,17 +504,7 @@ unsafe fn display(
 }
 
 fn nearest(sources: &[Source], grip: Vec3) -> Option<Source> {
-    if !grip.is_finite() {
-        return None;
-    }
-    sources
-        .iter()
-        .filter_map(|source| {
-            let distance = source.centre.distance_squared(grip);
-            (distance.is_finite() && distance <= REACH_M * REACH_M).then_some((*source, distance))
-        })
-        .min_by(|a, b| a.1.total_cmp(&b.1))
-        .map(|(source, _)| source)
+    nearest_within(sources, |source| source.centre, grip, REACH_M)
 }
 
 fn complete(
