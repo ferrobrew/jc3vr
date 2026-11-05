@@ -226,6 +226,8 @@ pub enum Event {
     StuntEnter,
     /// A hand letting go of a stunt position.
     StuntRelease,
+    /// A swimming hand's stroke catching the water, scaled by how hard it pulls.
+    SwimStroke,
     // Interface.
     /// A controller chord the mod acts on: the recenter or the debug panel.
     Chord,
@@ -233,7 +235,7 @@ pub enum Event {
 
 impl Event {
     #[cfg(test)]
-    pub const ALL: [Event; 60] = [
+    pub const ALL: [Event; 61] = [
         Event::PalmTouch,
         Event::HandStrike,
         Event::Take,
@@ -294,6 +296,7 @@ impl Event {
         Event::ClimbFling,
         Event::StuntEnter,
         Event::StuntRelease,
+        Event::SwimStroke,
     ];
 
     pub const fn cue(self) -> Cue {
@@ -363,6 +366,7 @@ impl Event {
             Event::ClimbFling => Cue::new(Primitive::Thud, 0.85, Category::Traversal),
             Event::StuntEnter => Cue::new(Primitive::Thud, 0.65, Category::Traversal),
             Event::StuntRelease => Cue::new(Primitive::Click, 0.5, Category::Traversal),
+            Event::SwimStroke => Cue::new(Primitive::Bump, 0.45, Category::Traversal),
             Event::Chord => Cue::new(Primitive::Bump, 0.6, Category::Interface),
         }
     }
@@ -429,6 +433,7 @@ impl Event {
             Event::ClimbFling => "climb fling",
             Event::StuntEnter => "stunt enter",
             Event::StuntRelease => "stunt release",
+            Event::SwimStroke => "swim stroke",
             Event::Chord => "chord",
         }
     }

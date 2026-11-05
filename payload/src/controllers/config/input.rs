@@ -9,7 +9,7 @@ use crate::{
     controllers::{
         bindings::{policy_a::PolicyAConfig, yank::GrappleYankConfig},
         frame::{GripPress, Hand, InteractionProfile, PressRules, PressThresholds},
-        locomotion::config::{ActFilterConfig, StableViewConfig, StickConfig},
+        locomotion::config::{ActFilterConfig, StableViewConfig, StickConfig, SwimStrokeConfig},
     },
     vr::input::layout::{FloatInput, Input, provides},
 };
@@ -110,6 +110,8 @@ pub struct LocomotionConfig {
     pub acts: ActFilterConfig,
     /// The on-foot view anchored to Rico's root rather than his animated head.
     pub view: StableViewConfig,
+    /// Swimming by the arms.
+    pub strokes: SwimStrokeConfig,
 }
 
 impl LocomotionConfig {
@@ -119,6 +121,7 @@ impl LocomotionConfig {
             stick: StickConfig::new(),
             acts: ActFilterConfig::new(),
             view: StableViewConfig::new(),
+            strokes: SwimStrokeConfig::new(),
         }
     }
 }

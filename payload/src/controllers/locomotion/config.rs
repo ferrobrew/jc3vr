@@ -1,6 +1,7 @@
 //! The stick locomotion's settings: the velocity integrator ([`StickConfig`]), the act filter
-//! ([`ActFilterConfig`]), and the stable view anchor ([`StableViewConfig`]). They live under
-//! `controllers.locomotion` beside the stick's direction frame.
+//! ([`ActFilterConfig`]), the stable view anchor ([`StableViewConfig`]), and the arm-stroke
+//! swimming ([`SwimStrokeConfig`]). They live under `controllers.locomotion` beside the stick's
+//! direction frame.
 
 use serde::{Deserialize, Serialize};
 
@@ -85,6 +86,64 @@ impl StableViewConfig {
 }
 
 impl Default for StableViewConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Arm-stroke swimming (see [`crate::controllers::locomotion::strokes`]), in
+/// `controllers.locomotion.strokes`.
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SwimStrokeConfig {
+    /// Swim by the arms: a hand sweeping back through the water, palm first, swims forward, and
+    /// an uneven stroke turns. The left stick still swims.
+    pub enabled: bool,
+    /// The forward drive a metre of palm-first paddle travel back through the water adds, in full
+    /// sticks per metre.
+    pub gain: f32,
+    /// The time constant the forward drive decays over between strokes, seconds: the glide.
+    pub decay_s: f32,
+    /// A hand slower than this through the water pushes nothing, metres per second, so a hand held
+    /// still or drifting does not swim.
+    pub min_speed_mps: f32,
+    /// How far the palm may face away from the way the hand moves and still push, degrees; the push
+    /// fades to nothing there, so a palm slicing edge-on through its recovery pushes nothing.
+    pub palm_facing_deg: f32,
+    /// The backward push that counts as a stroke catching the water, for the haptic knock, metres
+    /// per second of paddle speed.
+    pub catch_mps: f32,
+    /// The heading turn per square metre of the hands' smoothed turning push about the head, in
+    /// radians per second per square metre per second.
+    pub turn_gain: f32,
+    /// The time constant the hands' turning push is smoothed over, seconds: the alternate arms of
+    /// a crawl cancel within it, and a stroke on one side alone turns.
+    pub turn_smoothing_s: f32,
+    /// The fastest the strokes turn the heading, degrees per second.
+    pub max_turn_deg_s: f32,
+    /// How far below the eyes a hand is in the water at the surface, metres. Underwater every hand
+    /// is.
+    pub water_below_eyes_m: f32,
+}
+
+impl SwimStrokeConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            gain: 1.0,
+            decay_s: 1.5,
+            min_speed_mps: 0.3,
+            palm_facing_deg: 50.0,
+            catch_mps: 0.6,
+            turn_gain: 3.0,
+            turn_smoothing_s: 0.5,
+            max_turn_deg_s: 90.0,
+            water_below_eyes_m: 0.2,
+        }
+    }
+}
+
+impl Default for SwimStrokeConfig {
     fn default() -> Self {
         Self::new()
     }

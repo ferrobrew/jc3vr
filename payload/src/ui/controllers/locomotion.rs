@@ -1,5 +1,6 @@
 //! The stick locomotion: the velocity it wrote in the movement task's place, the act filter's
-//! counters, where the on-foot view's anchor comes from, and the on-foot switches and run speed.
+//! counters, where the on-foot view's anchor comes from, the arm strokes in water, and the on-foot
+//! switches, run speed, and stroke tuning.
 
 use std::time::Instant;
 
@@ -10,7 +11,8 @@ use crate::{
         LocomotionStatus,
         acts::ActFilterStatus,
         anchor::{AnchorStatus, remeasure},
-        config::{ActFilterConfig, SpeedSource, StableViewConfig, StickConfig},
+        config::{ActFilterConfig, SpeedSource, StableViewConfig, StickConfig, SwimStrokeConfig},
+        strokes::StrokeStatus,
     },
     ui::controllers::{vec3, yes_no},
 };
@@ -80,11 +82,49 @@ pub(super) fn locomotion_readout(
     }
 }
 
+pub(super) fn strokes_readout(ui: &mut Ui, strokes: &StrokeStatus) {
+    let fresh = strokes
+        .at
+        .is_some_and(|at| at.elapsed() < std::time::Duration::from_millis(250));
+    if !fresh {
+        ui.label(format!(
+            "Arm strokes: not swimming · strokes caught left {} · right {}",
+            strokes.strokes[0], strokes.strokes[1],
+        ));
+        return;
+    }
+    let s = &strokes.step;
+    let hand = |i: usize| {
+        format!(
+            "{} push ({:+.2}, {:+.2})",
+            if s.in_water[i] { "in water" } else { "dry" },
+            s.push[i].x,
+            s.push[i].y,
+        )
+    };
+    ui.label(format!(
+        "Arm strokes: left {} · right {} · caught left {} · right {}",
+        hand(0),
+        hand(1),
+        strokes.strokes[0],
+        strokes.strokes[1],
+    ));
+    ui.label(format!(
+        "Drive {:.2} · forward written {:.2} (stick {:.2}) · turning push {:+.3} m²/s · turn {:+.0}°/tick",
+        s.drive,
+        strokes.written_forward,
+        strokes.stick_forward,
+        s.torque,
+        s.turn_right.to_degrees(),
+    ));
+}
+
 pub(super) fn locomotion_settings(
     ui: &mut Ui,
     stick: &mut StickConfig,
     acts: &mut ActFilterConfig,
     view: &mut StableViewConfig,
+    strokes: &mut SwimStrokeConfig,
 ) {
     ui.checkbox(&mut view.enabled, "Steady view on foot")
         .on_hover_text(
@@ -106,4 +146,60 @@ pub(super) fn locomotion_settings(
         stick.speed == SpeedSource::Fixed,
         egui::Slider::new(&mut stick.run_speed_mps, 0.5..=15.0).text("Full-stick speed (m/s)"),
     );
+    strokes_settings(ui, strokes);
+}
+
+fn strokes_settings(ui: &mut Ui, s: &mut SwimStrokeConfig) {
+    ui.checkbox(&mut s.enabled, "Swim with the arms")
+        .on_hover_text(
+            "A hand sweeping back through the water, palm first, swims forward, and a stroke on one \
+             side turns away from it. The left stick still swims.",
+        );
+    ui.add_enabled_ui(s.enabled, |ui| {
+        ui.add(
+            egui::Slider::new(&mut s.gain, 0.2..=3.0)
+                .text("Stroke drive (full sticks per metre of stroke)")
+                .fixed_decimals(2),
+        );
+        ui.add(
+            egui::Slider::new(&mut s.decay_s, 0.3..=4.0)
+                .text("Glide between strokes (s)")
+                .fixed_decimals(2),
+        );
+        ui.add(
+            egui::Slider::new(&mut s.min_speed_mps, 0.0..=1.0)
+                .text("Slowest stroke (m/s)")
+                .fixed_decimals(2),
+        );
+        ui.add(
+            egui::Slider::new(&mut s.palm_facing_deg, 10.0..=85.0)
+                .text("Palm facing the stroke within (°)")
+                .fixed_decimals(0),
+        );
+        ui.add(
+            egui::Slider::new(&mut s.turn_gain, 0.0..=10.0)
+                .text("Stroke turn")
+                .fixed_decimals(2),
+        );
+        ui.add(
+            egui::Slider::new(&mut s.turn_smoothing_s, 0.05..=2.0)
+                .text("Stroke turn smoothing (s)")
+                .fixed_decimals(2),
+        );
+        ui.add(
+            egui::Slider::new(&mut s.max_turn_deg_s, 0.0..=180.0)
+                .text("Fastest stroke turn (°/s)")
+                .fixed_decimals(0),
+        );
+        ui.add(
+            egui::Slider::new(&mut s.catch_mps, 0.1..=2.0)
+                .text("Stroke knock from (m/s)")
+                .fixed_decimals(2),
+        );
+        ui.add(
+            egui::Slider::new(&mut s.water_below_eyes_m, 0.0..=0.6)
+                .text("Water line below the eyes at the surface (m)")
+                .fixed_decimals(2),
+        );
+    });
 }

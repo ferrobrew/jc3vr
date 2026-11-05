@@ -262,6 +262,8 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
             let acts = controller_locomotion::acts::status();
             let anchor = controller_locomotion::anchor::status();
             locomotion::locomotion_readout(ui, &stick, &acts, &anchor);
+            ui.separator();
+            locomotion::strokes_readout(ui, &controller_locomotion::strokes::status());
         },
         FeatureId::Posture => {
             |ui, _| roomscale::roomscale_readout(ui, &controller_roomscale::status())

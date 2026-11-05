@@ -145,6 +145,8 @@ pub fn advance_body_yaw(
 ) {
     let mut s = BODY_YAW.lock();
     let body = sim::body_yaw_of(body_rotation_raw());
+    // The strokes' turn is taken every tick, so a turn queued out of the water is dropped.
+    let stroke_turn = std::mem::take(&mut *SWIM_TURN.lock());
     if !on_foot && !swimming {
         let heading = s.yaw.unwrap_or(body);
         s.follow.tick(FollowTick {
@@ -201,6 +203,10 @@ pub fn advance_body_yaw(
                 s.snap_armed = true;
             }
         }
+    }
+
+    if swimming && stroke_turn.is_finite() {
+        yaw = sim::wrap_angle(yaw - stroke_turn);
     }
 
     let following = follow.enabled && on_foot && !swimming;
@@ -299,6 +305,18 @@ pub fn set_take_off_heading(heading: Option<f32>) {
 
 /// The heading of [`set_take_off_heading`].
 static TAKE_OFF_HEADING: Mutex<Option<f32>> = Mutex::new(None);
+
+/// Turn the swimming body's heading by `right` radians, positive to the right, on the next input
+/// tick: the arm strokes' turn ([`crate::controllers::locomotion::strokes`]), added to the heading
+/// the right stick owns. Out of the water the turn is dropped.
+pub fn add_swim_turn(right: f32) {
+    if right.is_finite() {
+        *SWIM_TURN.lock() += right;
+    }
+}
+
+/// The turn [`add_swim_turn`] queued since the last input tick, radians to the right.
+static SWIM_TURN: Mutex<f32> = Mutex::new(0.0);
 
 /// Whether the body is following the torso, and the body's target heading relative to the view,
 /// for the debug UI.

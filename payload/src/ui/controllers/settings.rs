@@ -77,7 +77,7 @@ pub(super) fn grapple_settings(ui: &mut Ui, cfg: &mut config::Config) {
 
 pub(super) fn locomotion_settings(ui: &mut Ui, cfg: &mut config::Config) {
     let l = &mut cfg.controllers.locomotion;
-    locomotion::locomotion_settings(ui, &mut l.stick, &mut l.acts, &mut l.view);
+    locomotion::locomotion_settings(ui, &mut l.stick, &mut l.acts, &mut l.view, &mut l.strokes);
 }
 
 pub(super) fn animation_settings(ui: &mut Ui, cfg: &mut config::Config) {

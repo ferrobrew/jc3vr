@@ -16,12 +16,15 @@
 //!
 //! The legs still play the game's clips; only where the body goes, and where the view sits, no
 //! longer come from them.
+//!
+//! In water, [`strokes`] swims the body by the arms alongside the stick.
 
 pub mod accel;
 pub mod acts;
 pub mod anchor;
 pub mod config;
 pub mod speeds;
+pub mod strokes;
 pub mod view;
 
 use std::time::{Duration, Instant};

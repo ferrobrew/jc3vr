@@ -116,6 +116,7 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | `Event::ClimbFling` | the body is flung off a climbing grip, scaled by the throw | thud | 0.85 | traversal | `physical_hands::climb` |
 | `Event::StuntEnter` | a hand takes a stunt position | thud | 0.65 | traversal | `physical_hands::stunt` |
 | `Event::StuntRelease` | the hands let go of a stunt position | click | 0.5 | traversal | `physical_hands::stunt` |
+| `Event::SwimStroke` | a swimming hand's stroke catches the water, scaled by how hard it pulls | bump | 0.45 | traversal | `locomotion::strokes` |
 | `Event::Chord` | a controller chord the mod acts on (the recenter or the debug panel) | bump | 0.6 | interface | `bindings` |
 | `Sustain::PalmPressure` | a palm presses into an object, by its shove's load | tension | 0.5 | contact | `physical_hands::touch` |
 | `Sustain::HeldLoad` | a hand pulls or twists what it holds, by the load | tension | 0.5 | contact | `physical_hands::touch` |

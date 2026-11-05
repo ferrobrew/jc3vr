@@ -95,6 +95,7 @@ use crate::{
         grab::{self, Consumer, Provided, grabs_for, markers::MarkerFrame},
         hands::{self, tiers},
         haptics::{self, Event},
+        locomotion,
         mode::{self, Detection, Mode},
         physical_hands, roomscale, scheme, snatch,
         vehicles::{self, wheel::CockpitTransform},
@@ -793,6 +794,13 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         if config.body.rig.steps.enabled {
             add_step_walk(&mut step.desired, config.body.rig.steps.walk_stick);
         }
+        locomotion::strokes::tick(
+            active.as_ref(),
+            controls.armed,
+            &config.locomotion.strokes,
+            &mut step.desired,
+            real_dt,
+        );
     } else {
         weapons::hold::tick::publish_fire([false; 2]);
         weapons::wheel::pause();
