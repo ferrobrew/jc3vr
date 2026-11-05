@@ -1,10 +1,10 @@
 //! The parachute's handles, standing in for a canopy's toggle lines. Pure.
 //!
-//! One handle hangs a little above, ahead of, and outside each shoulder, along the torso's heading
-//! ([`handle_centres`]), and only that side's hand takes it. The hands are not on the handles until
-//! the player takes them: like the other grab volumes, a grip press with the hand inside a handle's
-//! volume takes it, and it is held only while the grip is: releasing the grip lets go ([`step`]).
-//! A hand that has clearly left its handle without opening (further than the let-go distance from
+//! One handle hangs a little above, ahead of, and outside each shoulder, where the game's
+//! parachute rig places it ([`crate::controllers::vehicles::parachute_rig`]), and only that side's
+//! hand takes it. The hands are not on the handles until the player takes them: like the other grab
+//! volumes, a grip press with the hand inside a handle's volume takes it, and it is held only while
+//! the grip is: releasing the grip lets go ([`step`]). A hand that has clearly left its handle without opening (further than the let-go distance from
 //! the handle's pull line, a generous distance) lets go too, but a pull, which goes down and back
 //! rather than straight down, never does: the pull line runs straight below where the handle was
 //! taken, and a tight distance from it let go of a handle mid-pull. A handle's volume wins over the body's volumes it
@@ -33,8 +33,6 @@
 //! nothing. The holding hand is drawn on the handle ([`anchor_point`]): straight below where it was
 //! taken, no further down than a full pull and no higher than where it was taken.
 
-#[cfg(test)]
-use glam::Quat;
 use glam::{Vec2, Vec3};
 
 use crate::controllers::{
@@ -80,31 +78,6 @@ pub struct StepInputs {
     pub grabs: [bool; 2],
 }
 
-/// The torso heading the handles hang along this tick, from the fresh torso estimate when there
-/// is one. When the estimate goes stale (the controllers lose tracking a moment, or the estimator
-/// drops out), the last heading eases toward the head's heading `head_yaw` over
-/// [`TORSO_FALLBACK_S`], so the handles neither jump to the cockpit frame's forward nor stay
-/// pinned to a stale heading. With no heading yet, the head's. `dt` is the time since the last
-/// heading, seconds.
-#[cfg(test)]
-pub fn torso_heading(estimate: Option<Quat>, last: Option<Quat>, head_yaw: Quat, dt: f32) -> Quat {
-    if let Some(estimate) = estimate.filter(|q| q.is_finite()) {
-        return estimate;
-    }
-    match last.filter(|q| q.is_finite()) {
-        Some(last) => {
-            let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
-            last.slerp(head_yaw, 1.0 - (-dt / TORSO_FALLBACK_S).exp())
-        }
-        None => head_yaw,
-    }
-}
-
-/// The right handle's centre from the right shoulder joint along the torso's axes (+X out, +Y up,
-/// +Z back), metres; the left handle mirrors it.
-#[cfg(test)]
-pub const FROM_SHOULDER_M: Vec3 = Vec3::new(0.15, 0.12, -0.12);
-
 /// How far from a handle's centre a hand's grip may be for a grip press to take it over every other
 /// volume, metres.
 pub const RADIUS_M: f32 = 0.14;
@@ -121,20 +94,6 @@ pub const DEADZONE_M: f32 = 0.03;
 /// and back and the grip opening is what lets go; this only catches a hand that has clearly left
 /// the handle without opening.
 pub const LET_GO_DISTANCE_M: f32 = 0.6;
-
-/// The time constant over which a stale torso heading eases toward the head's, seconds.
-#[cfg(test)]
-pub const TORSO_FALLBACK_S: f32 = 2.0;
-
-/// Where the handles' volumes are centred for shoulder joints at `shoulders`, indexed by
-/// [`Hand::index`], for a torso turned by `torso` in the cockpit frame: each shoulder's offset
-/// along the torso's axes, mirrored for the left.
-#[cfg(test)]
-pub fn handle_centres(shoulders: [Vec3; 2], torso: Quat) -> [Vec3; 2] {
-    let right = FROM_SHOULDER_M;
-    let left = Vec3::new(-right.x, right.y, right.z);
-    [shoulders[0] + torso * left, shoulders[1] + torso * right]
-}
 
 /// The handles' grab volumes: a free hand's handle at its place by the shoulder, a held one where
 /// the hand holds it, each for its own side's hand only.
@@ -269,26 +228,13 @@ mod tests {
     use crate::controllers::{grab::grab_volume, vehicles::arm_steering::combine};
 
     const CONFIG: ParachuteHandlesConfig = ParachuteHandlesConfig::new();
-    const SHOULDERS: [Vec3; 2] = [Vec3::new(-0.2, -0.2, 0.1), Vec3::new(0.2, -0.2, 0.1)];
 
-    #[test]
-    fn a_stale_torso_eases_toward_the_head_rather_than_jumping() {
-        let head = Quat::from_rotation_y(0.8);
-        let torso = Quat::from_rotation_y(0.2);
-        let fresh = Quat::from_rotation_y(-0.3);
-        assert_eq!(torso_heading(Some(fresh), Some(torso), head, 0.1), fresh);
-        assert_eq!(torso_heading(None, None, head, 0.1), head);
-        // A tick of staleness barely moves the last heading; a long gap settles on the head.
-        let next = torso_heading(None, Some(torso), head, 1.0 / 30.0);
-        assert!(next.angle_between(torso) < 0.02, "{next}");
-        let settled = torso_heading(None, Some(torso), head, TORSO_FALLBACK_S * 10.0);
-        assert!(settled.angle_between(head) < 1e-3);
-        let nan = torso_heading(None, Some(torso), head, f32::NAN);
-        assert!(nan.angle_between(torso) < 1e-3, "{nan}");
-    }
-
+    /// The handles' centres: above, ahead of, and outside the shoulders.
     fn centres() -> [Vec3; 2] {
-        handle_centres(SHOULDERS, Quat::IDENTITY)
+        [
+            Vec3::new(-0.35, -0.08, -0.02),
+            Vec3::new(0.35, -0.08, -0.02),
+        ]
     }
 
     /// A tick with every tracked hand's grip held.
@@ -320,27 +266,14 @@ mod tests {
     }
 
     #[test]
-    fn the_handles_sit_above_ahead_and_outside_their_shoulders_for_their_own_hand() {
+    fn each_handle_is_for_its_own_hand() {
         let centres = centres();
-        assert!(centres[0].x < SHOULDERS[0].x && centres[1].x > SHOULDERS[1].x);
-        assert!(centres.iter().all(|c| c.y > SHOULDERS[0].y));
-        assert!(centres.iter().all(|c| c.z < SHOULDERS[0].z));
         let c = candidates(&CONFIG, &HandleState::new(), centres, [None; 2]);
         assert_eq!(
             grab_volume(centres[1], Hand::Right, &c),
             Some(GrabVolume::ParachuteHandle(Hand::Right))
         );
         assert_eq!(grab_volume(centres[1], Hand::Left, &c), None);
-    }
-
-    #[test]
-    fn the_handles_turn_with_the_torso() {
-        let torso = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
-        let turned = handle_centres([Vec3::ZERO; 2], torso);
-        // Facing -X: the right handle is out toward -Z and ahead toward -X.
-        let right = FROM_SHOULDER_M;
-        assert!((turned[1] - Vec3::new(right.z, right.y, -right.x)).length() < 1e-5);
-        assert!(turned[0].z > 0.0 && turned[1].z < 0.0);
     }
 
     #[test]
