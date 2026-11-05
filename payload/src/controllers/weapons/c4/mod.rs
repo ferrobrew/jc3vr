@@ -69,11 +69,15 @@ use std::time::Instant;
 use detours_macro::detour;
 use glam::{Mat4, Vec3};
 use jc3gi::{
-    character::character::{Character, WeaponInput},
+    character::{
+        character::{Character, WeaponInput},
+        inventory::WeaponSlot,
+    },
     equipment::{
         explosive::{Explosive, PlantedExplosive},
         weapon::{PlantedExplosiveWeapon, WeaponBase, WeaponData, WeaponInputs, WeaponState},
     },
+    game::GameObject,
     types::math::{Matrix4, Vector3},
 };
 use parking_lot::Mutex;
@@ -192,6 +196,29 @@ pub(crate) fn in_stock() -> bool {
 /// The placed charges at the weapon's last update, or `None` before it ran.
 pub fn charges() -> Option<i32> {
     STATE.lock().status.charges.map(|(live, _)| live)
+}
+
+/// The placed charges and the most that may be placed at once, at the weapon's last update, or
+/// `None` before it ran.
+pub fn placed() -> Option<(i32, i32)> {
+    STATE.lock().status.charges
+}
+
+/// Remove `owner`'s placed charges without detonating them, through the weapon's own removal
+/// ([`PlantedExplosiveWeapon::RemoveAllExplosives`]), the one the game runs when a mission resets
+/// or a character is disabled. A charge held in a hand is primed, not placed, so it stays. Returns
+/// how many were removed, or `None` when `owner` has no C4 weapon.
+///
+/// # Safety
+///
+/// `owner` must be the live local player character, on the game thread before the world update.
+pub(crate) unsafe fn remove_placed(owner: &mut Character) -> Option<i32> {
+    let weapon = unsafe { slot_c4(owner) }?;
+    let removed = unsafe { weapon.NumActiveExplosives() };
+    unsafe { weapon.RemoveAllExplosives() };
+    let (live, max) = unsafe { (weapon.NumActiveExplosives(), weapon.MaxActiveExplosives()) };
+    STATE.lock().status.charges = Some((live, max));
+    Some(removed - live)
 }
 
 /// The hand a throw holds, from the grab at the pouch until the charge leaves it.
@@ -1017,6 +1044,24 @@ unsafe fn primed_charge(weapon: &PlantedExplosiveWeapon) -> Option<*mut PlantedE
             .wrapping_sub(GAME_OBJECT_OFFSET)
             .cast::<PlantedExplosive>(),
     )
+}
+
+/// The C4 weapon in `owner`'s planted-explosive slot, when the slot holds one.
+///
+/// # Safety
+///
+/// `owner` must be the live local player character, on the game thread.
+unsafe fn slot_c4(owner: &mut Character) -> Option<&mut PlantedExplosiveWeapon> {
+    let slot = WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE as usize;
+    let weapon = unsafe { owner.m_Inventory.m_Weapons.get(slot)?.px.as_mut() }?;
+    let object = std::ptr::from_mut(weapon)
+        .cast::<u8>()
+        .wrapping_add(WeaponBase::GAME_OBJECT_BASE_OFFSET as usize)
+        .cast::<GameObject>();
+    if !unsafe { (*object).IsType(PlantedExplosiveWeapon::TYPE_ID()) } {
+        return None;
+    }
+    Some(unsafe { &mut *std::ptr::from_mut(weapon).cast::<PlantedExplosiveWeapon>() })
 }
 
 /// The weapon's first (and only) gun entry.

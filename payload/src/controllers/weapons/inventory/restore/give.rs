@@ -1,6 +1,6 @@
 //! The debug UI's give: a weapon of any kind the game ships put straight onto a socket, a socket
-//! cleared, and the grenade stock set. The design is in `docs/mod/input/two-handed-inventory.md`,
-//! "Giving weapons from the debug UI".
+//! cleared, the grenade stock set, and the placed C4 charges removed. The design is in
+//! `docs/mod/input/two-handed-inventory.md`, "Giving weapons from the debug UI".
 //!
 //! A give takes the restore's path for a carried weapon: the spawn system spawns the weapon at the
 //! player ([`SpawnSystem::Spawn`], with the shipped definition's full tag set, as the director's
@@ -29,6 +29,7 @@ use crate::{
     controllers::{
         loadout::{Restored, Socket},
         weapons::{
+            c4,
             dual_wield::single,
             grenade::stock,
             hold::{refs::Strong, swap},
@@ -51,6 +52,8 @@ pub enum GiveRequest {
     Clear(Socket),
     /// Set the grenade stock to this many, within its capacity.
     Grenades(i32),
+    /// Remove the player's placed C4 charges without detonating them.
+    RemovePlacedC4,
 }
 
 /// Queue `request` for the next input tick. A request beyond the queue's bound is dropped.
@@ -93,6 +96,11 @@ pub(super) unsafe fn input_tick(owner: &mut Character, ready: bool) {
             GiveRequest::Grenades(count) => match unsafe { stock::set(count) } {
                 Some(count) => format!("give: the grenade stock is {count}"),
                 None => "give: the player has no grenade weapon".to_owned(),
+            },
+            GiveRequest::RemovePlacedC4 => match unsafe { c4::remove_placed(owner) } {
+                Some(1) => "give: removed the one placed C4 charge".to_owned(),
+                Some(removed) => format!("give: removed {removed} placed C4 charges"),
+                None => "give: the player has no C4 weapon".to_owned(),
             },
         };
         tracing::info!(target: "controllers", "{outcome}");

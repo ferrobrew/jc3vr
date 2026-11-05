@@ -1,6 +1,7 @@
 //! Giving weapons: for each body socket, a choice of the hand weapons the game ships that fit it,
-//! given straight onto the socket, and a clear; and the grenade stock set or emptied. The requests
-//! go to the inventory's give ([`give`]), which carries them out on the next input tick.
+//! given straight onto the socket, and a clear; the grenade stock set or emptied; and the placed
+//! C4 charges against their cap, with their removal. The requests go to the inventory's give
+//! ([`give`]), which carries them out on the next input tick.
 
 use egui::{Button, ComboBox, Grid, Ui};
 use parking_lot::Mutex;
@@ -78,10 +79,21 @@ pub(super) fn give_section(ui: &mut Ui, table: Option<&LoadoutSnapshot>) {
         }
         ui.end_row();
         ui.label("C4");
-        ui.label(
-            c4::charges().map_or_else(|| "unknown".to_owned(), |live| format!("{live} placed")),
-        );
-        ui.label("no stock: the game caps the charges placed at once");
+        let placed = c4::placed();
+        ui.label(placed.map_or_else(
+            || "unknown".to_owned(),
+            |(live, max)| format!("{live} of {max} placed"),
+        ));
+        ui.label("no stock: the cap is on charges placed at once");
+        if ui
+            .add_enabled(
+                placed.is_none_or(|(live, _)| live > 0),
+                Button::new("Remove placed"),
+            )
+            .clicked()
+        {
+            give::request(GiveRequest::RemovePlacedC4);
+        }
         ui.end_row();
     });
     if let Some(outcome) = give::last_outcome() {
