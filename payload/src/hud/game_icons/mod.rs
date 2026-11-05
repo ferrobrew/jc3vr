@@ -24,16 +24,21 @@ use std::{
 };
 
 pub(crate) use avtx::Image;
+use jc3gi::equipment::weapon::WeaponBase;
 use parking_lot::Mutex;
 
 use crate::hud::game_icons::archive::ArchiveIndex;
 
-/// A weapon icon, by the weapon's id
-/// ([`WeaponBase::m_WeaponId`](jc3gi::equipment::weapon::WeaponBase::m_WeaponId)).
+/// A weapon icon, by the weapon's id ([`WeaponBase::m_WeaponId`]).
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct IconId(pub i16);
 
 impl IconId {
+    /// The icon of `weapon`; none for a weapon without an id.
+    pub(crate) fn of(weapon: &WeaponBase) -> Option<Self> {
+        (weapon.m_WeaponId >= 0).then_some(Self(weapon.m_WeaponId))
+    }
+
     /// The icon's path in the archives.
     fn path(self) -> String {
         format!("textures/ui/weapon_icons/{}.ddsc", self.0)

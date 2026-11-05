@@ -187,7 +187,7 @@ impl World {
                 let weapon = unsafe { &*engine::weapon_of(&strong) };
                 Some(LostWeapon {
                     position: unsafe { engine::origin(weapon) }?,
-                    icon: (weapon.m_WeaponId >= 0).then_some(IconId(weapon.m_WeaponId))?,
+                    icon: IconId::of(weapon)?,
                 })
             })
             .collect()

@@ -115,6 +115,5 @@ unsafe fn slot_icon(owner: &Character, slot: WeaponSlot) -> Option<IconId> {
 /// `weapon` must be null or a live weapon.
 unsafe fn weapon_icon(weapon: *const WeaponBase) -> Option<IconId> {
     // SAFETY: forwarded from the caller.
-    let weapon = unsafe { weapon.as_ref() }?;
-    (weapon.m_WeaponId >= 0).then_some(IconId(weapon.m_WeaponId))
+    IconId::of(unsafe { weapon.as_ref() }?)
 }
