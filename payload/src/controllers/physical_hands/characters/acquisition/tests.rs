@@ -146,6 +146,7 @@ fn target(seated: Option<Seated>) -> CharacterTarget {
         seated,
         ragdoll: false,
         hostile: true,
+        mass_kg: 0.0,
     }
 }
 

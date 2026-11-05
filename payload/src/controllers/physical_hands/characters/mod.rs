@@ -8,7 +8,13 @@
 //! `docs/engine/gameplay/melee-and-damage.md` and `docs/engine/gameplay/vehicle-doors.md`.
 //!
 //! - [`config`]: the settings;
-//! - [`engine`]: a character's capsule body and the player's hostility to it.
+//! - [`engine`]: a character's capsule body, the player's hostility to it, and whether it is dead;
+//! - [`ragdoll`]: a ragdolling character's bodies, the bone nearest a point, and the whole
+//!   ragdoll's mass.
+//!
+//! A ragdolling character, fallen or dead, is taken by the dynamic body of its ragdoll nearest the
+//! point the reach hit, whichever of the character's bodies the hit was on, and held as a loose
+//! object of the whole ragdoll's weight.
 //!
 //! The pickup's reach ([`crate::controllers::physical_hands::pickup::reach`]) asks [`reach`] about
 //! every ray hit on a character. The pickup tick
@@ -21,6 +27,7 @@
 mod acquisition;
 pub mod config;
 pub mod engine;
+pub mod ragdoll;
 
 use std::num::NonZeroUsize;
 
@@ -29,7 +36,8 @@ use glam::{Mat4, Vec3};
 use jc3gi::{character::character::Character, vehicle::vehicle::DoorSlot};
 
 use crate::controllers::physical_hands::{
-    bodies::{self, owner_of},
+    bodies::owner_of,
+    characters::ragdoll::Ragdoll,
     contact::SurfaceHit,
     doors::engine as door_engine,
     grasp::{Reach, TargetKind},
@@ -48,6 +56,36 @@ pub struct CharacterTarget {
     pub ragdoll: bool,
     /// Whether the player's faction is hostile to the character.
     pub hostile: bool,
+    /// The whole ragdoll's mass, kilograms, for a body of its ragdoll: what holding that one body
+    /// drags. Zero for the capsule.
+    pub mass_kg: f32,
+}
+
+/// Why a character the reach hit is not one a hand takes.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Unavailable {
+    /// The grab, or the hijack for a seated character, is off.
+    Off,
+    /// The character is seated in a vehicle with no door open beside the hand.
+    NoOpenDoor,
+    /// The character is dead but not yet a ragdoll: the death animation still drives it.
+    Dying,
+    /// The hit was on a body of a standing character's ragdoll, which its animation drives.
+    Animated,
+    /// The character ragdolls but none of its ragdoll's bodies could be read.
+    NoBody,
+}
+
+impl Unavailable {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Unavailable::Off => "the grab is off",
+            Unavailable::NoOpenDoor => "seated with no door open beside the hand",
+            Unavailable::Dying => "dying, not yet a ragdoll",
+            Unavailable::Animated => "a limb its animation drives",
+            Unavailable::NoBody => "no body of its ragdoll could be read",
+        }
+    }
 }
 
 /// A character seated in a vehicle, reached through an open door.
@@ -77,8 +115,9 @@ pub(crate) const REGRIP_S: f32 = 1.0;
 pub(crate) const SHOVE_MIN_SPEED_MPS: f32 = 1.5;
 
 /// What a palm centred at `palm` reaches of the character `object` through the ray hit `hit` on
-/// its body `body`: a character on foot, by its capsule or a body of its ragdoll, or a character
-/// seated in a vehicle with a door open beside the hand. `None` for anything else.
+/// its body `body`: a character on foot, by its capsule, a ragdolling character, by the body of
+/// its ragdoll nearest the hit, or a character seated in a vehicle with a door open beside the
+/// hand; or why it reaches none of these.
 ///
 /// # Safety
 ///
@@ -91,47 +130,62 @@ pub(crate) unsafe fn reach(
     palm: Vec3,
     world_scale: f32,
     config: &CharactersConfig,
-) -> Option<Reach> {
+) -> Result<Reach, Unavailable> {
     let character = unsafe { &*(object.get() as *const Character) };
     let hostile = unsafe { engine::hostile(character) };
-    let reach = |reached: NonZeroUsize, seated: Option<Seated>, ragdoll: bool| Reach {
-        object: reached,
-        body,
-        point: hit.position,
-        distance: hit.position.distance(palm),
-        normal: hit.normal,
-        kind: TargetKind::Character(CharacterTarget {
-            character: object,
+    let distance = hit.position.distance(palm);
+    let reach =
+        |reached: NonZeroUsize, body: u32, seated: Option<Seated>, mass_kg: Option<f32>| Reach {
+            object: reached,
             body,
-            seated,
-            ragdoll,
-            hostile,
-        }),
-    };
+            point: hit.position,
+            distance,
+            normal: hit.normal,
+            kind: TargetKind::Character(CharacterTarget {
+                character: object,
+                body,
+                seated,
+                ragdoll: mass_kg.is_some(),
+                hostile,
+                mass_kg: mass_kg.unwrap_or(0.0),
+            }),
+        };
     if unsafe { character.IsAttachedToVehicle() } {
         if !config.hijack {
-            return None;
+            return Err(Unavailable::Off);
         }
-        let vehicle = NonZeroUsize::new(unsafe { character.GetVehiclePtr() } as usize)?;
-        let (door, open_deg) = unsafe { open_door_near(vehicle, palm, world_scale) }?;
+        let vehicle = NonZeroUsize::new(unsafe { character.GetVehiclePtr() } as usize)
+            .ok_or(Unavailable::NoOpenDoor)?;
+        let (door, open_deg) =
+            unsafe { open_door_near(vehicle, palm, world_scale) }.ok_or(Unavailable::NoOpenDoor)?;
         let seated = Seated {
             vehicle,
             door,
             open_deg,
         };
-        return Some(reach(object, Some(seated), false));
+        return Ok(reach(object, body, Some(seated), None));
     }
     if !config.grab {
-        return None;
+        return Err(Unavailable::Off);
+    }
+    if let Some(ragdoll) = unsafe { Ragdoll::of(character) } {
+        // The hit may be on the capsule or the ragdoll's hit proxy rather than on a body of the
+        // ragdoll itself: the bone nearest the hit stands in for it.
+        let bone = ragdoll
+            .bone(body)
+            .or_else(|| ragdoll.nearest(hit.position))
+            .ok_or(Unavailable::NoBody)?;
+        return Ok(reach(bone.owner, bone.body, None, Some(ragdoll.mass_kg())));
+    }
+    if unsafe { engine::dead(character) } {
+        return Err(Unavailable::Dying);
     }
     let capsule = unsafe { engine::proxy_body(character) };
     if capsule.is_none_or(|capsule| capsule == body) {
-        return Some(reach(object, None, false));
+        Ok(reach(object, body, None, None))
+    } else {
+        Err(Unavailable::Animated)
     }
-    // A body of the character's ragdoll, held as a loose object by whatever owns it.
-    let owner = unsafe { owner_of(body) }?;
-    unsafe { bodies::read(body, owner) }.ok()?;
-    Some(reach(owner, None, true))
 }
 
 /// A hand holding on to a character.
@@ -306,6 +360,7 @@ mod tests {
             seated: None,
             ragdoll,
             hostile: true,
+            mass_kg: if ragdoll { 70.0 } else { 0.0 },
         }
     }
 

@@ -12,7 +12,9 @@ use crate::controllers::{
         doors::{self, LatchStep},
         grasp::{self, Grip, PalmMotion, Reach},
         physics::{self, Shove, ShoveForce},
-        pickup::{Held, HeldKind, JointInputs, PickupState, PickupTuning, TickOutcome},
+        pickup::{
+            Held, HeldKind, JointInputs, PickupState, PickupTuning, TickOutcome, tick::held_mass,
+        },
     },
 };
 
@@ -272,9 +274,11 @@ pub(super) unsafe fn keep_regrip(
         // SAFETY: forwarded from the caller; the reach found the body this tick.
         match unsafe { bodies::read(reach.body, reach.object) } {
             Ok(body) if body.mass_kg.is_some_and(|m| grasp::can_hold(m, config)) => {
+                let mass_kg = held_mass(&reach.kind, body.mass_kg.unwrap_or(f32::INFINITY));
                 tracing::info!(
                     hand = hand.label(),
                     body = reach.body,
+                    mass_kg,
                     joined = joints.join[i],
                     "physical hands: characters: a hand took hold of a fallen character's ragdoll"
                 );
@@ -284,7 +288,7 @@ pub(super) unsafe fn keep_regrip(
                     object: reach.object,
                     body: reach.body,
                     grip: Grip::of(palm.pose, body.pose, reach.point),
-                    mass_kg: body.mass_kg.unwrap_or(f32::INFINITY),
+                    mass_kg,
                     joined,
                     kind,
                 });

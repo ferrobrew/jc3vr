@@ -2397,6 +2397,36 @@ impl std::convert::AsMut<hknpMotion> for hknpMotion {
         self
     }
 }
+#[repr(C, align(8))]
+/// A Havok ragdoll (`hknpRagdoll`, an `hknpPhysicsSystem`): the bodies and constraints of one
+/// ragdoll in the world, and the skeleton they map to. Only some members are bound.
+pub struct hknpRagdoll {
+    _field_0: [u8; 32],
+    /// The ragdoll's bodies, one per ragdoll bone in the order of the ragdoll's skeleton.
+    pub m_bodyIds: crate::animation::skeleton::HkArray<u32>,
+    _field_30: [u8; 24],
+}
+fn _hknpRagdoll_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x48], hknpRagdoll>([0u8; 0x48]);
+    }
+    unreachable!()
+}
+impl hknpRagdoll {}
+impl hknpRagdoll {
+    /// An invalid entry of [`m_bodyIds`](crate::physics::hknpRagdoll::m_bodyIds).
+    pub const INVALID_BODY_ID: u32 = 2147483647;
+}
+impl std::convert::AsRef<hknpRagdoll> for hknpRagdoll {
+    fn as_ref(&self) -> &hknpRagdoll {
+        self
+    }
+}
+impl std::convert::AsMut<hknpRagdoll> for hknpRagdoll {
+    fn as_mut(&mut self) -> &mut hknpRagdoll {
+        self
+    }
+}
 #[repr(C, align(16))]
 /// The Havok physics world (`hknpWorld`, Havok Physics 2014.1). Its body manager is embedded at
 /// the start; bodies and motions live in arrays indexed by body id and motion id. Only some members

@@ -405,6 +405,15 @@ unsafe fn tick_with(
                             outcome.character_grips += 1;
                         }
                         None => {
+                            // SAFETY: forwarded from the caller; only the body's owner is read.
+                            let owned =
+                                unsafe { bodies::owner_of(target.body) } == Some(target.character);
+                            tracing::info!(
+                                hand = hand.label(),
+                                seated = target.seated.is_some(),
+                                owned,
+                                "physical hands: characters: a hand's grip on a character could not be placed"
+                            );
                             record(ConsumerResult::CharacterRefused);
                             outcome.refuse(
                                 hand,
@@ -639,6 +648,11 @@ unsafe fn tick_with(
         }
         let tuning = carry_tuning(&held, &holds, config).in_real_time(time_scale);
         let mut rigid = body.rigid();
+        // A ragdoll's body drags the rest of the ragdoll, so the hands' strength moves it as the
+        // whole ragdoll's weight.
+        if held.kind == HeldKind::Ragdoll && held.mass_kg.is_finite() && held.mass_kg > 0.0 {
+            rigid.inverse_mass = rigid.inverse_mass.min(1.0 / held.mass_kg);
+        }
         // The hands ride on the character, so a loose object they can lift takes on the
         // character's own change of velocity outright, and the hands' strength works only on
         // their motion relative to the body: a jump carries the object along instead of tearing
@@ -791,7 +805,8 @@ pub(super) fn take_body(
             .mass_kg
             .filter(|&m| grasp::can_take(&reach.kind, m, config))
         {
-            Some(mass_kg) => {
+            Some(bone_kg) => {
+                let mass_kg = held_mass(&reach.kind, bone_kg);
                 let (kind, joined) =
                     state.body_mode(reach.object, reach.body, HeldKind::of(&reach.kind), joined);
                 state.held[i] = Some(Held {
@@ -803,6 +818,17 @@ pub(super) fn take_body(
                     kind,
                 });
                 outcome.taken[i] = true;
+                if let TargetKind::Character(target) = reach.kind {
+                    tracing::info!(
+                        hand = hand.label(),
+                        body = reach.body,
+                        bone_kg,
+                        mass_kg,
+                        hostile = target.hostile,
+                        joined,
+                        "physical hands: characters: a hand took hold of a ragdoll"
+                    );
+                }
                 if matches!(reach.kind, TargetKind::Articulated { .. }) {
                     tracing::info!(
                         hand = hand.label(),
@@ -842,6 +868,17 @@ pub(super) fn take_body(
             outcome.refuse(hand, reach.point, e.to_string());
             ConsumerResult::BodyRefused(e)
         }
+    }
+}
+
+/// The mass a hand holding a body of `bone_kg` reached as `kind` carries: the whole ragdoll's for
+/// a body of a character's ragdoll, which drags the rest of it, and the body's own otherwise.
+pub(super) fn held_mass(kind: &TargetKind, bone_kg: f32) -> f32 {
+    match kind {
+        TargetKind::Character(target) if target.ragdoll && target.mass_kg.is_finite() => {
+            target.mass_kg.max(bone_kg)
+        }
+        _ => bone_kg,
     }
 }
 

@@ -280,6 +280,7 @@ fn seize() -> Seize {
             seated: None,
             ragdoll: false,
             hostile: true,
+            mass_kg: 0.0,
         },
         grab: Vec3::ZERO,
     }

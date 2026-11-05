@@ -395,13 +395,17 @@ unsafe fn judge(
                 character_config,
             )
         } {
-            Some(reach) => {
-                note(format!("a character, {at}: in reach"));
+            Ok(reach) => {
+                let what = match reach.kind {
+                    TargetKind::Character(target) if target.ragdoll => "a character's ragdoll",
+                    _ => "a character",
+                };
+                note(format!("{what}, {at}: in reach"));
                 judged.reaches.push(reach);
             }
-            None => {
+            Err(why) => {
                 entry.result = ScanResult::CharacterUnavailable;
-                note(format!("a character, {at}: not one a hand takes here"));
+                note(format!("a character, {at}: not taken, {}", why.label()));
             }
         }
         judged.scan.push(entry);

@@ -36,6 +36,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [idle-stance.md](engine/character/idle-stance.md) — the on-foot idle's clip variants, the animation modifiers that choose them, and why every armed idle is a combat stance.
 - [animation-layers.md](engine/character/animation-layers.md) — the animation layers and their names, how the pose job stacks them, what keeps running when a layer's pose is left out (reload, holster, and draw events), and the state tasks inside the pose-finalization pass, the weapon off-hand grip among them.
 - [animation-graph.md](engine/character/animation-graph.md) — the decoded state machine format, and what Rico's graphs do with the weapon: conditions, state tasks, upper-body actions, recoil, hand poses, and playing clips from code; tooling in `tools/anim_graph/`.
+- [ragdoll.md](engine/character/ragdoll.md) — the ragdoll instance and its bodies, telling a ragdolling character, what puts a character into its ragdoll and gets it up again, and how the game marks mission-critical and scripted characters.
 
 ### gameplay/
 

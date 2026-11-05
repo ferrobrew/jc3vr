@@ -443,7 +443,19 @@ pub struct Character {
     /// The impulse, accumulated over hits in quick succession, at which a hit too weak to stagger
     /// the character alone counts as staggering.
     pub m_HitReaction_AccumalatedImpulseStumbleThreshold: f32,
-    _field_4c4: [u8; 16],
+    _field_4c4: [u8; 8],
+    /// The character's melee invulnerability, which `CCharacter::IsInvulnerableToMelee` returns.
+    /// Per-character tuning read from data.
+    pub m_InvulnerableToMelee: bool,
+    /// The character's invulnerability to other non-player characters, toggled at run time by the
+    /// character's enable and disable events for it.
+    pub m_InvulnerableToOtherAI: bool,
+    /// Whether a mission marks the character as critical to it. The character rule that spawns the
+    /// character copies it from the rule's data. The interaction graph's node-occupied condition
+    /// can be set to treat a node a non-player character occupies as free for a mission-critical
+    /// character, and the AI's vehicle entry checks it when the seat it wants is occupied.
+    pub m_IsMissionCriticalCharacter: bool,
+    _field_4cf: [u8; 5],
     /// The chance, from zero to one, that the character drops its hand grenade when it dies
     /// ([`OnDestroyed`](crate::character::character::Character::OnDestroyed)). Per-character tuning read from data; the constructor
     /// sets a quarter.
@@ -504,12 +516,20 @@ pub struct Character {
     /// [`PLAYER_STANDING`](crate::physics::ProxyState::PLAYER_STANDING), set at player initialization through
     /// [`SetDefaultProxyState`](crate::character::character::Character::SetDefaultProxyState).
     pub m_DefaultProxyState: i32,
-    _field_213c: [u8; 856],
+    _field_213c: [u8; 748],
     /// How the character's motion is integrated this frame (`CCharacter::EMotionState`), read by
     /// the dispatch in `CCharacter::UpdateIntegratingPhysics`. Each movement actuator sets it as
     /// part of its per-frame update. Left as a raw integer because only a few of its ~25 values have
     /// been confirmed: `MOTION_STATE_SWIMMING`, `MOTION_STATE_RAGDOLL`, and
     /// `MOTION_STATE_TASK_DEFINED` on this type.
+    /// The character's ragdoll (`boost::shared_ptr<NAnimationSystem::CRagdollInstanceImpl>`), or
+    /// null for a character without one. While the animation drives the character the ragdoll's
+    /// displacement is controlled by its owner; the character ragdolls
+    /// ([`IsRagdolling`](crate::character::character::Character::IsRagdolling)) while the ragdoll's own simulation moves it.
+    pub m_Ragdoll: crate::types::shared_ptr::SharedPtr<
+        crate::animation::ragdoll::RagdollInstance,
+    >,
+    _field_2438: [u8; 92],
     pub m_CurrentMotionState: u32,
     _field_2498: [u8; 402],
     pub m_IsLocalCharacter: bool,
@@ -1538,6 +1558,19 @@ impl Character {
         unsafe {
             let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
                 Self::IsAttachedToVehicle_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsRagdolling_ADDRESS: usize = 0x14077E270;
+    /// Whether the character is ragdolling: it has a ragdoll ([`m_Ragdoll`](crate::character::character::Character::m_Ragdoll)) whose
+    /// displacement is not controlled by its owner, so the ragdoll's bodies simulate freely and
+    /// move the character. A knocked-down, thrown, or dead character ragdolls until the animation
+    /// graph's get-up takes it back.
+    pub unsafe fn IsRagdolling(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsRagdolling_ADDRESS,
             );
             f(self as *const Self as _)
         }

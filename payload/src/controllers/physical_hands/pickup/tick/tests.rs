@@ -5,7 +5,9 @@ use glam::Quat;
 use super::*;
 use crate::controllers::{
     frame::Pose,
-    physical_hands::{doors::config::TEARING, pickup::PICKUP, rigid::BodyPose},
+    physical_hands::{
+        characters::CharacterTarget, doors::config::TEARING, pickup::PICKUP, rigid::BodyPose,
+    },
 };
 
 struct FakeBodies {
@@ -245,4 +247,24 @@ fn a_carried_object_the_hands_can_lift_takes_on_the_characters_jump() {
     assert!(driven_rise(30.0, 0.0) < jump.y * 0.5);
     // What the hands cannot lift is not carried along: it stays a snag.
     assert!(driven_rise(100.0, 1.0) < jump.y * 0.5);
+}
+
+#[test]
+fn a_ragdolls_body_is_held_as_the_whole_ragdolls_weight() {
+    let target = |ragdoll: bool, mass_kg: f32| {
+        TargetKind::Character(CharacterTarget {
+            character: NonZeroUsize::new(32).unwrap(),
+            body: 7,
+            seated: None,
+            ragdoll,
+            hostile: false,
+            mass_kg,
+        })
+    };
+    assert_eq!(held_mass(&target(true, 72.0), 6.0), 72.0);
+    // A ragdoll whose total could not be read is never lighter than the body held.
+    assert_eq!(held_mass(&target(true, 0.0), 6.0), 6.0);
+    assert_eq!(held_mass(&target(true, f32::NAN), 6.0), 6.0);
+    assert_eq!(held_mass(&target(false, 72.0), 6.0), 6.0);
+    assert_eq!(held_mass(&TargetKind::Prop { mass_kg: 6.0 }, 6.0), 6.0);
 }
