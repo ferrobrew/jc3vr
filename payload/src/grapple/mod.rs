@@ -53,6 +53,7 @@ use parking_lot::Mutex;
 
 pub mod config;
 pub mod physical;
+pub mod rope;
 pub mod telemetry;
 
 pub use config::{GrappleComfortConfig, GrappleComfortMode};

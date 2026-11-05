@@ -718,7 +718,7 @@ pub(super) unsafe fn sling(
     }
     .map_err(Refusal::Body)?;
     let swinging = Swinging {
-        length_m: rope.length_m,
+        length_m: rope.length_m(),
         tension_n: out.tension_n,
         max_tension_n: line.max_tension_n,
         mass_kg,

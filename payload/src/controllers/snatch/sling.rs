@@ -5,7 +5,10 @@
 
 use glam::Vec3;
 
-use crate::controllers::snatch::config::{REFERENCE_MASS_KG, SwingConfig};
+use crate::{
+    controllers::snatch::config::{REFERENCE_MASS_KG, SwingConfig},
+    grapple::rope::{self, Rope, RopeEnd, RopeTuning},
+};
 
 /// The owner facts required before continuing any snatch phase.
 pub(super) struct Continuation {
@@ -111,10 +114,11 @@ pub(super) const REEL_LEAD_M: f32 = 0.3;
 /// How far the target may be stretched past the held length before the line breaks, metres.
 pub(super) const MAX_STRETCH_M: f32 = 3.0;
 
-/// The rope's held length and previous tracked anchor.
+/// The held line: the shared rope ([`Rope`]) from the tracked hand to the target, and the hand's
+/// previous anchor, from which the hand's velocity is measured.
 #[derive(Debug, Copy, Clone)]
 pub(super) struct Sling {
-    pub length_m: f32,
+    rope: Rope,
     anchor: Vec3,
 }
 
@@ -173,8 +177,18 @@ pub(super) enum RopeFault {
 impl Sling {
     pub fn new(centre: Vec3, anchor: Vec3) -> Option<Self> {
         let length_m = centre.distance(anchor);
-        (centre.is_finite() && anchor.is_finite() && length_m.is_finite() && length_m > 0.01)
-            .then_some(Self { length_m, anchor })
+        if !(centre.is_finite() && anchor.is_finite() && length_m.is_finite() && length_m > 0.01) {
+            return None;
+        }
+        Some(Self {
+            rope: Rope::new(length_m)?,
+            anchor,
+        })
+    }
+
+    /// The line's held length, metres.
+    pub fn length_m(&self) -> f32 {
+        self.rope.length_m
     }
 
     /// Move the remembered anchor by `delta`, for a change of what the line is anchored to (a
@@ -185,8 +199,9 @@ impl Sling {
         }
     }
 
-    /// Reel the line in, then pull along it: preserve the tangent, never push a slack rope, and
-    /// bound the tension by the line's strength over a bounded time step.
+    /// Reel the line in, then pull along it with the hand as the rope's kinematic end: preserve
+    /// the tangent, never push a slack rope, and bound the tension by the line's strength over a
+    /// bounded time step.
     pub fn step(&mut self, step: RopeStep) -> Result<RopeOutput, RopeFault> {
         let RopeStep {
             centre,
@@ -197,15 +212,10 @@ impl Sling {
             line,
         } = step;
         if !centre.is_finite()
-            || !velocity.is_finite()
             || !anchor.is_finite()
             || !dt.is_finite()
             || dt <= 0.0
-            || dt > 0.1
             || !(mass_kg.is_finite() && mass_kg > 0.0)
-            || !line.stiffness_per_s2.is_finite()
-            || !line.damping_per_s.is_finite()
-            || !line.max_tension_n.is_finite()
         {
             return Err(RopeFault::Invalid);
         }
@@ -214,38 +224,41 @@ impl Sling {
         if anchor_velocity.length() > 30.0 {
             return Err(RopeFault::Invalid);
         }
-        let slack = RopeOutput {
-            velocity,
-            tension_n: 0.0,
-        };
-        let radial = centre - anchor;
-        let distance = radial.length();
-        let Some(direction) = radial.try_normalize() else {
-            return Ok(slack);
-        };
-        self.length_m = reeled_length(
-            self.length_m,
-            distance,
+        self.rope.length_m = reeled_length(
+            self.rope.length_m,
+            centre.distance(anchor),
             line.swing_length_m,
             line.reel_mps,
             dt,
         );
-        if distance > self.length_m + MAX_STRETCH_M {
-            return Err(RopeFault::Stretched);
-        }
-        let extension = (distance - self.length_m).max(0.0);
-        let outward = (velocity - anchor_velocity).dot(direction);
-        let predicted_extension = (distance + outward * dt - self.length_m).max(0.0);
-        if predicted_extension <= 0.0 {
-            return Ok(slack);
-        }
-        let accel = (line.stiffness_per_s2.max(0.0) * extension
-            + line.damping_per_s.max(0.0) * outward)
-            .max(0.0);
-        let tension_n = (accel * mass_kg).min(line.max_tension_n.max(0.0));
+        let out = self
+            .rope
+            .step(rope::RopeStep {
+                a: RopeEnd {
+                    position: anchor,
+                    velocity: anchor_velocity,
+                    inverse_mass: 0.0,
+                },
+                b: RopeEnd {
+                    position: centre,
+                    velocity,
+                    inverse_mass: 1.0 / mass_kg,
+                },
+                dt,
+                tuning: RopeTuning {
+                    stiffness_per_s2: line.stiffness_per_s2,
+                    damping_per_s: line.damping_per_s,
+                    max_tension_n: line.max_tension_n,
+                    max_stretch_m: MAX_STRETCH_M,
+                },
+            })
+            .map_err(|fault| match fault {
+                rope::RopeFault::Invalid => RopeFault::Invalid,
+                rope::RopeFault::Stretched => RopeFault::Stretched,
+            })?;
         Ok(RopeOutput {
-            velocity: velocity - direction * (tension_n / mass_kg) * dt,
-            tension_n,
+            velocity: out.b_velocity,
+            tension_n: out.tension_n,
         })
     }
 }
@@ -473,7 +486,7 @@ mod tests {
             assert!(centre.length() < 2.3);
         }
         assert!(velocity.length() > 4.0);
-        assert_eq!(rope.length_m, 2.0);
+        assert_eq!(rope.length_m(), 2.0);
     }
 
     #[test]
@@ -504,7 +517,7 @@ mod tests {
             centre += velocity * dt;
         }
         assert!(velocity.length() > 8.0, "{}", velocity.length());
-        assert!(centre.length() < rope.length_m + MAX_STRETCH_M);
+        assert!(centre.length() < rope.length_m() + MAX_STRETCH_M);
     }
 
     #[test]
@@ -516,7 +529,7 @@ mod tests {
         let (mut centre, mut velocity) = (Vec3::X * 12.0, Vec3::ZERO);
         let dt = 1.0 / 60.0;
         let mut fastest = 0.0_f32;
-        while rope.length_m > config.swing_length_m {
+        while rope.length_m() > config.swing_length_m {
             velocity = rope
                 .step(RopeStep {
                     centre,
