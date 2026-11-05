@@ -314,7 +314,7 @@ Decisions taken here:
 
 - A pair split while it is in a hand, its second gun in the other, keeps a pistol in each hand: the slot's pistol stays in the table's hand, and the twin comes into the other hand at once when that hand is empty, otherwise onto its hip.
 - The sidecar records each carried weapon on the socket the table has it on, rather than the one it came into the carry set on.
-- A tap of the reload button ejects the dominant hand's gun, or the other hand's when the dominant holds none; the pair has the one magazine.
+- A tap of the reload button ejects the driest gun's magazine, the dominant hand's on a tie, so a double tap ejects both ([reload.md, "Eject"](reload.md#eject)); the pair has the one magazine.
 
 ## Props and explosives in the table
 

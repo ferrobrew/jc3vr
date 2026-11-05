@@ -5,8 +5,10 @@
 //! is the gun hand turning faster than the flick speed, measured from the change in the hand's
 //! orientation between two ticks, and it ejects once per cooldown.
 //!
-//! A tap ejects the dominant hand's gun when it holds one, and otherwise the other hand's
-//! ([`tap_targets`]). A flick ejects the gun of the hand that flicked.
+//! A tap ejects the magazine of the driest gun in either hand: the one with the fewest rounds in its
+//! magazine, the dominant hand's on a tie ([`tap_target`]). A gun whose magazine is already out, or
+//! already on its way out, is not a candidate, so a second tap ejects the other gun's. A flick
+//! ejects the gun of the hand that flicked.
 
 use glam::Quat;
 
@@ -106,13 +108,15 @@ impl FlickDetector {
     }
 }
 
-/// The hands whose guns a tap ejects, by [`Hand::index`], from the hands that hold a gun (`guns`)
-/// and the `dominant` hand: the dominant hand's gun when it holds one, otherwise the other hand's.
-pub fn tap_targets(guns: [bool; 2], dominant: Hand) -> [bool; 2] {
-    let tapped = [dominant, dominant.other()]
+/// The hand whose gun a tap ejects, from the rounds in each hand's ejectable magazine by
+/// [`Hand::index`] (`None` for a hand with no gun, or whose gun has no magazine to eject) and the
+/// `dominant` hand: the fewest rounds, the dominant hand's on a tie.
+pub fn tap_target(rounds: [Option<i32>; 2], dominant: Hand) -> Option<Hand> {
+    [dominant, dominant.other()]
         .into_iter()
-        .find(|hand| guns[hand.index()]);
-    Hand::BOTH.map(|hand| Some(hand) == tapped)
+        .filter_map(|hand| Some((hand, rounds[hand.index()]?)))
+        .min_by_key(|&(_, rounds)| rounds)
+        .map(|(hand, _)| hand)
 }
 
 #[cfg(test)]
@@ -187,14 +191,28 @@ mod tests {
     }
 
     #[test]
-    fn a_tap_ejects_the_dominant_hands_gun_first() {
-        assert_eq!(tap_targets([true; 2], Hand::Right), [false, true]);
-        assert_eq!(tap_targets([true; 2], Hand::Left), [true, false]);
+    fn a_tap_ejects_the_driest_gun() {
+        assert_eq!(
+            tap_target([Some(3), Some(12)], Hand::Right),
+            Some(Hand::Left)
+        );
+        assert_eq!(
+            tap_target([Some(12), Some(0)], Hand::Left),
+            Some(Hand::Right)
+        );
     }
 
     #[test]
-    fn a_tap_ejects_the_other_hands_gun_when_the_dominant_hand_has_none() {
-        assert_eq!(tap_targets([true, false], Hand::Right), [true, false]);
-        assert_eq!(tap_targets([false; 2], Hand::Right), [false, false]);
+    fn a_tie_ejects_the_dominant_hands_gun() {
+        assert_eq!(tap_target([Some(5); 2], Hand::Right), Some(Hand::Right));
+        assert_eq!(tap_target([Some(5); 2], Hand::Left), Some(Hand::Left));
+    }
+
+    #[test]
+    fn a_hand_without_a_magazine_to_eject_is_passed_over() {
+        // The second tap of a double tap: the first gun's magazine is already out.
+        assert_eq!(tap_target([None, Some(30)], Hand::Right), Some(Hand::Right));
+        assert_eq!(tap_target([Some(30), None], Hand::Right), Some(Hand::Left));
+        assert_eq!(tap_target([None; 2], Hand::Right), None);
     }
 }

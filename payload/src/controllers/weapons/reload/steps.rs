@@ -442,8 +442,10 @@ impl State {
         let tapped = self.tap.step(inputs.reload_button, inputs.dt, reload.tap_s);
         let mut targets = [false; 2];
         if tapped {
-            let guns = Hand::BOTH.map(|hand| tick.guns[hand.index()].is_some());
-            targets = eject::tap_targets(guns, tick.dominant);
+            let rounds = Hand::BOTH.map(|hand| self.ejectable_rounds(tick, hand));
+            if let Some(hand) = eject::tap_target(rounds, tick.dominant) {
+                targets[hand.index()] = true;
+            }
         }
         for hand in Hand::BOTH {
             let i = hand.index();
@@ -466,6 +468,17 @@ impl State {
                 self.eject(weapon, gun, hand, config);
             }
         }
+    }
+
+    /// The rounds in the magazine of `hand`'s gun, while it holds one that a tap can eject: one that
+    /// ejects, with its magazine in and no eject of it already queued.
+    fn ejectable_rounds(&self, tick: &Tick, hand: Hand) -> Option<i32> {
+        let (weapon, gun) = tick.gun(hand)?;
+        (weapon.plan.load.ejects()
+            && !weapon.reading.out
+            && gun.magazine.is_some()
+            && self.pending_ejects[hand.index()].is_none())
+        .then(|| weapon.reading.magazine_rounds())
     }
 
     /// Eject the magazine of `gun` of `weapon`, in `hand`, when it is in.

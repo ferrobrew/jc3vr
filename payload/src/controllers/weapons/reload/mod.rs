@@ -5,9 +5,9 @@
 //! Under the controller scheme the game's own reloads of the weapons the mod reloads are stopped
 //! ([`gate`]), and the player reloads by hand:
 //!
-//! - **Eject.** A tap of the reload button ejects the dominant hand's gun's magazine, or the other
-//!   hand's while the dominant hand holds no gun, and a flick of a gun hand ejects that gun's
-//!   ([`eject`]). The game drops the
+//! - **Eject.** A tap of the reload button ejects the magazine of the driest gun in either hand
+//!   (the dominant hand's on a tie), so a double tap ejects both, and a flick of a gun hand ejects
+//!   that gun's ([`eject`]). The game drops the
 //!   magazine as a prop from the gun, with the gun's velocity, and hides the magazine part. The
 //!   magazine keeps the rounds left in it as an object in the world, to be picked up and seated
 //!   again ([`loose`]); with that off, they go back to the reserve when the next magazine seats,
@@ -786,7 +786,7 @@ struct Tick {
     /// The weapons the reload acts on, in the order of [`BeginInputs::weapons`]. A weapon the
     /// reload leaves to the game is not among them.
     weapons: [Option<WeaponTick>; 2],
-    /// The dominant hand, whose gun a tap ejects first.
+    /// The dominant hand, whose gun a tap ejects when both guns are equally dry.
     dominant: Hand,
     /// Each hand's gun, by [`Hand::index`].
     guns: [Option<GunTick>; 2],
