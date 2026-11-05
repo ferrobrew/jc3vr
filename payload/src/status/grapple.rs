@@ -87,13 +87,10 @@ fn snatch_line(enabled: bool, status: &SnatchStatus) -> Line {
     let target = match (status.swing, status.target, status.unoffered) {
         (Some(swing), _, _) => text!(
             format!("{:.0}", swing.mass_kg),
-            " kg, held ",
-            format!("{:.1}", swing.length_m),
-            " m, ",
-            format!("{:.0}", swing.tension_n),
-            " of ",
-            format!("{:.0}", swing.max_tension_n),
-            " N",
+            " kg, ",
+            held_length(swing.length_m),
+            ", ",
+            line_tension(swing.tension_n, swing.max_tension_n),
             if swing.braced {
                 prose(", braced")
             } else {
@@ -228,19 +225,31 @@ fn lock_line(enabled: bool, status: &LockStatus) -> Line {
             Text::default()
         },
         target,
-        "held ",
-        format!("{:.1}", status.length_m),
-        " m, stretch ",
+        held_length(status.length_m),
+        ", stretch ",
         format!("{:+.2}", status.stretch_m),
         " m, ",
-        format!("{:.0}", status.tension_n),
-        " of ",
-        format!("{:.0}", status.max_tension_n),
-        " N, hook ",
+        line_tension(status.tension_n, status.max_tension_n),
+        ", hook ",
         format!("{:.1}", status.hook_speed_mps),
         " m/s, ",
         counts
     ))
+}
+
+/// A held line's length, for the snatch's and the lock's rows.
+fn held_length(length_m: f32) -> Text {
+    text!("held ", format!("{length_m:.1}"), " m")
+}
+
+/// A held line's tension of its strength, for the snatch's and the lock's rows.
+fn line_tension(tension_n: f32, max_tension_n: f32) -> Text {
+    text!(
+        format!("{tension_n:.0}"),
+        " of ",
+        format!("{max_tension_n:.0}"),
+        " N"
+    )
 }
 
 fn tethers_line(enabled: bool, status: &GrappleStatus) -> Line {
