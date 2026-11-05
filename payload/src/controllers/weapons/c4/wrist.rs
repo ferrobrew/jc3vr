@@ -201,9 +201,7 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
         if lit {
             tracing::info!(target: "controllers", charges, "wrist detonator: detonating");
             c4::request_detonation(DetonationSource::WristButton);
-            for hand in Hand::BOTH {
-                haptics::play(hand, Event::DetonatorPress);
-            }
+            haptics::play_hands(Hand::BOTH, Event::DetonatorPress);
         } else {
             tracing::info!(target: "controllers", "wrist detonator: pressed with no charges placed");
             haptics::play(presser, Event::DetonatorEmpty);

@@ -675,7 +675,7 @@ impl State {
         }
         match event {
             Some(InsertEvent::Captured) => {
-                pulse_both(Event::WellCatch);
+                haptics::play_hands(Hand::BOTH, Event::WellCatch);
             }
             Some(InsertEvent::Seated) => {
                 let loaded = match target {
@@ -730,7 +730,7 @@ impl State {
                 if loaded {
                     self.status.counts.seats += 1;
                     self.event(format!("{gun_hand:?} seated"));
-                    pulse_both(Event::MagazineSeat);
+                    haptics::play_hands(Hand::BOTH, Event::MagazineSeat);
                     if let Some((weapon, gun)) = target
                         && ready_after_seat(
                             &weapon.plan,
@@ -987,9 +987,3 @@ mod authority_tests;
 mod belt_tests;
 #[cfg(test)]
 mod insertion_tests;
-
-fn pulse_both(event: Event) {
-    for hand in Hand::BOTH {
-        haptics::play(hand, event);
-    }
-}

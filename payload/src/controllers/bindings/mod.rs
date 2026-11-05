@@ -935,17 +935,17 @@ fn system_command(command: SystemCommand) {
             let kind = roomscale::manual_recenter_kind();
             vr::request_recenter(kind);
             tracing::info!(target: "controllers", ?kind, "controller input: recentering the view");
-            chord_pulse(Hand::BOTH);
+            haptics::play_hands(Hand::BOTH, Event::Chord);
         }
         SystemCommand::TogglePanel => {
             let enabled = egui_panel::toggle();
             tracing::info!(target: "controllers", enabled, "controller input: toggled the debug panel");
-            chord_pulse([Hand::Right]);
+            haptics::play(Hand::Right, Event::Chord);
         }
         SystemCommand::Mark => {
             tracing::info!(target: "controllers", "controller input: take marker");
             crate::recorder::session_recording::mark();
-            chord_pulse(Hand::BOTH);
+            haptics::play_hands(Hand::BOTH, Event::Chord);
         }
     }
 }
@@ -985,13 +985,6 @@ fn cancel_capture_routes(poll: DevicePoll, sink: &mut Vec<Segment>) {
     grapple::physical::stand_down();
     snatch::stand_down();
     grab::tick::stand_down();
-}
-
-/// The short pulse that confirms a chord, on each of `hands`.
-fn chord_pulse(hands: impl IntoIterator<Item = Hand>) {
-    for hand in hands {
-        haptics::play(hand, Event::Chord);
-    }
 }
 
 /// System ownership survives gameplay stand-down and editor open/close transitions.

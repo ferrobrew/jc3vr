@@ -98,9 +98,7 @@ impl State {
                 strike.closing_mps
             ));
             tracing::info!(target: "controllers", hand = ?gun_hand, closing_mps = strike.closing_mps, "reload: knocked the magazine out");
-            for hand in Hand::BOTH {
-                haptics::play(hand, Event::MagazineKnock);
-            }
+            haptics::play_hands(Hand::BOTH, Event::MagazineKnock);
         }
         knock::publish(Some(view(fast, self.knocks.knocked_at)));
     }

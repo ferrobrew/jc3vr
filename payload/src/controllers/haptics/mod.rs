@@ -7,9 +7,10 @@
 //! - [`mixer`]: what each hand plays when several sources reach it at once;
 //! - [`rumble`]: the game's own rumble, forwarded to the hands.
 //!
-//! A source calls [`play`] or [`play_scaled`] for a one-off cue and [`sustain`] each tick for a
-//! level. Any thread may call them: the cue is shaped from the settings, checked against the master
-//! switch, the controller scheme, and its category's switch, and handed to the mixer, a leaf lock.
+//! A source calls [`play`], [`play_hands`], or [`play_scaled`] for a one-off cue and [`sustain`]
+//! each tick for a level. Any thread may call them: the cue is shaped from the settings, checked
+//! against the master switch, the controller scheme, and its category's switch, and handed to the
+//! mixer, a leaf lock.
 //! The VR frame loop calls [`mix`] once per rendered frame and plays what it returns.
 
 pub mod config;
@@ -47,6 +48,13 @@ pub(crate) fn hook_library() -> HookLibrary {
 /// Play `event`'s cue on `hand`.
 pub fn play(hand: Hand, event: Event) {
     play_scaled(hand, event, 1.0);
+}
+
+/// Play `event`'s cue on each of `hands`.
+pub fn play_hands(hands: impl IntoIterator<Item = Hand>, event: Event) {
+    for hand in hands {
+        play(hand, event);
+    }
 }
 
 /// Play `event`'s cue on `hand` at `scale` of its strength, `0..=1`: a source whose cue follows how

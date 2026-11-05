@@ -139,7 +139,7 @@ The game's rumble reaches the controllers through two detours ([controllers.md, 
 
 ## Threading
 
-`haptics::play`, `play_scaled`, and `sustain` are called from the input tick, the hand bodies' callbacks and frame tick, the weapon hooks, and the rumble detours. Each reads the settings under the config lock, then takes the mixer's lock, a leaf held only to queue the cue ([threading.md](../threading.md)). The frame loop takes the same lock once per frame to mix, under the runtime lock.
+`haptics::play`, `play_hands` (one cue on several hands), `play_scaled`, and `sustain` are called from the input tick, the hand bodies' callbacks and frame tick, the weapon hooks, and the rumble detours. Each reads the settings under the config lock, then takes the mixer's lock, a leaf held only to queue the cue ([threading.md](../threading.md)). The frame loop takes the same lock once per frame to mix, under the runtime lock.
 
 ## Readout and log
 

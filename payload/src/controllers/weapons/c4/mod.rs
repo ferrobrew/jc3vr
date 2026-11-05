@@ -734,9 +734,7 @@ fn update_from_user_serial(
     }
     if started {
         wrist::note_detonation();
-        for hand in Hand::BOTH {
-            haptics::play(hand, Event::C4Detonate);
-        }
+        haptics::play_hands(Hand::BOTH, Event::C4Detonate);
     }
 }
 
