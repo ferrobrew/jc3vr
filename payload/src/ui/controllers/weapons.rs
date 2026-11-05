@@ -39,7 +39,7 @@ use crate::{
             unarmed_fire::{self, UnarmedFireStatus},
         },
     },
-    status::grapple as grapple_status,
+    status::{explosives as explosives_status, grapple as grapple_status},
     ui::{
         controllers::{
             explosives::{ExplosivesReadout, explosives_readout, explosives_settings},
@@ -240,6 +240,13 @@ pub(super) fn feature_readout(
             grapple_readout(ui, &readout.anchor, readout.yanks)
         }
         crate::ui::catalog::FeatureId::Explosives => {
+            headlines(
+                ui,
+                &[
+                    &explosives_status::LIVE_GRENADES,
+                    &explosives_status::C4_BY_HAND,
+                ],
+            );
             grenade_readout(ui, &readout.grenade);
             explosives_readout(ui, &readout.explosives);
         }
@@ -475,18 +482,7 @@ fn grenade_readout(ui: &mut Ui, g: &GrenadeStatus) {
             f.total_s
         ));
     }
-    ui.label(format!(
-        "  live grenades {} · in reach {} · caught {} · thrown on {} · lost in the hand {}{}",
-        g.catch.tracked,
-        g.catch.in_reach,
-        g.catch.caught,
-        g.catch.thrown,
-        g.catch.lost,
-        g.caught_hand.map_or(String::new(), |h| format!(
-            " · holding one in the {} hand",
-            h.label()
-        ))
-    ));
+    ui.label(format!("  live grenades lost in the hand {}", g.catch.lost));
     if let Some(v) = g.last_release {
         ui.label(format!(
             "  last release {} ({:.1} m/s)",

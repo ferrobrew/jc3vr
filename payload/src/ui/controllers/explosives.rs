@@ -36,10 +36,9 @@ pub(super) fn explosives_readout(ui: &mut Ui, readout: &ExplosivesReadout) {
         .hand()
         .map_or(String::new(), |h| format!(" in the {} hand", h.label()));
     ui.label(format!(
-        "C4: {}{hand} · primed {} · thrown {}{}",
+        "C4: {}{hand} · primed {}{}",
         c.stage.label(),
         c.primed,
-        c.thrown,
         if c.weapon_seen {
             ""
         } else {
@@ -56,10 +55,7 @@ pub(super) fn explosives_readout(ui: &mut Ui, readout: &ExplosivesReadout) {
         yes_no(c.may_detonate),
         yes_no(c.planting_mode)
     ));
-    ui.label(format!(
-        "  pressed onto surfaces {} · of them onto objects {} · put back into the pouch {}",
-        c.stuck, c.stuck_on_objects, c.returned
-    ));
+    ui.label(format!("  put back into the pouch {}", c.returned));
     if let Some(v) = c.last_release {
         ui.label(format!(
             "  last release {} ({:.1} m/s)",

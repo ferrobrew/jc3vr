@@ -244,7 +244,7 @@ With `catch.enabled` (on), a free hand catches a live grenade near the player an
 
 Each live grenade within `catch.range_m` (4 m) of the player is a grab volume (`GrabVolume::LiveGrenade`, radius `catch.radius_m`, 0.18 m, larger than a pouch's since a flying grenade moves between ticks) for each hand that holds no gun, grenade, or charge, while no grenade is in the hands. The player's own grenade waits `catch.own_grace_s` (0.4 s) after its launch, so it is not taken back as it leaves. A grip press there catches the grenade nearest the hand (`grenade: caught a live grenade`, with `Event::GrenadeCatch`). From then each input tick gives its body the velocity that carries it to the hand's grip over the tick, capped at `catch.max_carry_mps`, so it stays in the hand with its own physics and its fuse runs on; the fuse warning shows on that hand as for a grenade from the pouch. Opening the grip throws it as a gun is let go of: its body gets the release motion a gun's let-go takes, linear and angular, through the same owned-body setter ([grenades.md, "The throw's motion"](grenades.md#the-throws-motion)). A grenade that goes off in the hand logs `grenade: the caught grenade is gone from the hand`. While a caught grenade is held the pouch gives no other grenade.
 
-The readout shows the live grenades noted and in reach, and the catches; the debug UI's Status page has an `EXPLOSIVES AND MAGAZINES` section with `LIVE GRENADES`, and the scenario signals `grenade.thrown`, `grenade.caught`, and `grenade.thrown_on` count them (`testing/scenarios/grenade_safe_items.toml`).
+The debug UI's Status page has an `EXPLOSIVES AND MAGAZINES` section with `LIVE GRENADES` (the live grenades noted and in reach, and the catches), which heads the Weapons > Explosives live status above the grenades lost in the hand, and the scenario signals `grenade.thrown`, `grenade.caught`, and `grenade.thrown_on` count them (`testing/scenarios/grenade_safe_items.toml`).
 
 ## C4 pressed onto a surface
 
@@ -254,7 +254,7 @@ The press is the throw's release with a different start and velocity. The next C
 
 The same rays reach on to `C4.stick.preview_m` (0.3 m), and the nearest surface they meet within it is marked where the charge would stick: a red ring lying on the surface (`GrabVolume::ChargeSurface`, a marked target no squeeze takes; [grip.md](grip.md)). The ring is drawn whenever a charge is held and a surface is near, so the player sees where to press before touching.
 
-The debug UI's Status page shows `C4 BY HAND` with the charges thrown and pressed on, and the scenario signals `c4.thrown` and `c4.stuck` count them (`testing/scenarios/c4_by_hand.toml`).
+The debug UI's Status page shows `C4 BY HAND` with the charges thrown and pressed on, which also heads the Weapons > Explosives live status, where the C4 readout adds the stage, the primes, the charges placed, and the charges put back, and the scenario signals `c4.thrown` and `c4.stuck` count them (`testing/scenarios/c4_by_hand.toml`).
 
 ## Aiming down the sights
 
