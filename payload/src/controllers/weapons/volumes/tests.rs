@@ -145,10 +145,15 @@ fn the_pouches_sit_on_the_front_of_the_body_by_handedness() {
         // magazine pouch at the waist, above the hip joints.
         assert!(grenade.y < shoulders.y - 0.1 && grenade.y > magazine.y + 0.2);
         assert!(magazine.y > hip.y && magazine.y < -0.5, "{magazine}");
-        // In front of the body, a few centimetres ahead of the eyes' vertical line rather than
-        // out in the air.
-        for pouch in [grenade, c4, magazine] {
-            assert!(pouch.z < 0.0 && pouch.z > -0.12, "{pouch}");
+        // The magazine pouch in front of the belly, a few centimetres ahead of the eyes' vertical
+        // line rather than out in the air; the chest pouches back at the chest's surface, ahead of
+        // the shoulder joints' line.
+        assert!(magazine.z < 0.0 && magazine.z > -0.12, "{magazine}");
+        for pouch in [grenade, c4] {
+            assert!(
+                pouch.z < shoulders.z && pouch.z > shoulders.z - 0.1,
+                "{pouch}"
+            );
         }
     }
 }
@@ -397,5 +402,89 @@ fn with_both_hands_empty_only_the_dominant_hand_draws_a_long_gun() {
         let mut armed = sockets();
         reserve_long_guns(&mut armed, dominant, false);
         assert_eq!(shoulders(&armed), vec![None; 2]);
+    }
+}
+
+/// The ideal skeleton with its upper body bent forward by `bend` radians about the middle of the
+/// hip joints.
+fn bent_forward(bend: f32) -> SkeletonLandmarks {
+    let mut skeleton = ideal_skeleton(&DIMS, 0.0);
+    let hips = skeleton.hip_centre();
+    let fold = |p: Vec3| hips + Quat::from_rotation_x(-bend) * (p - hips);
+    skeleton.shoulders = skeleton.shoulders.map(fold);
+    skeleton.head = fold(skeleton.head);
+    skeleton
+}
+
+fn chest_pouches(frame: &BodyFrame) -> [Vec3; 2] {
+    let c = every_volume(frame);
+    [
+        centre(&c, GrabVolume::GrenadePouch),
+        centre(&c, GrabVolume::C4Pouch),
+    ]
+}
+
+#[test]
+fn a_look_down_keeps_the_chest_pouches_off_the_bend_it_causes() {
+    let upright = chest_pouches(&standing(&DIMS));
+    let bent = frame_of(bent_forward(0.3));
+    let down = Quat::from_rotation_x(-1.2);
+    // Looking down, the pouches stay where the upright chest has them.
+    for (a, b) in upright.iter().zip(chest_pouches(&bent.looking(down))) {
+        assert!(a.distance(b) < 1e-3, "{a} and {b}");
+    }
+    // With the head level, a lean carries them with the chest.
+    let leaning = chest_pouches(&bent.looking(Quat::IDENTITY));
+    assert_eq!(leaning, chest_pouches(&bent));
+    for (a, b) in upright.iter().zip(leaning) {
+        assert!(b.z < a.z - 0.05, "{a} and {b}");
+    }
+    // The magazine pouch rides the pelvis either way.
+    let magazine = |frame: &BodyFrame| centre(&every_volume(frame), GrabVolume::MagazinePouch);
+    assert_eq!(magazine(&bent.looking(down)), magazine(&bent));
+}
+
+#[test]
+fn a_body_folded_past_a_look_down_keeps_its_chest_pouches_on_its_chest() {
+    let down = Quat::from_rotation_x(-1.2);
+    let folded = frame_of(bent_forward(1.2));
+    assert_eq!(chest_pouches(&folded.looking(down)), chest_pouches(&folded));
+    // Lying face down in a skydive, looking down at the ground.
+    let lying = frame_of(
+        ideal_skeleton(&DIMS, 0.0).map(|p| Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2) * p),
+    );
+    assert_eq!(chest_pouches(&lying.looking(down)), chest_pouches(&lying));
+}
+
+#[test]
+fn the_back_sockets_reach_lower_and_further_out_than_their_weapons_sit() {
+    let frame = standing(&DIMS);
+    let chest = frame.skeleton.chest();
+    let at = |socket: Socket, x: f32| Candidate {
+        volume: GrabVolume::Socket(socket),
+        centre: chest + Vec3::new(x, 0.2, 0.15),
+        radius: SOCKETS.shoulder_radius_m,
+        hand: None,
+    };
+    let sockets = [
+        at(Socket::Shoulder(Hand::Left), -0.1),
+        at(Socket::Shoulder(Hand::Right), 0.1),
+        at(Socket::BackOuter, 0.12),
+        at(Socket::Hip(Hand::Right), 0.2),
+    ];
+    let mut reached = sockets;
+    reach_back_sockets(&mut reached, &frame);
+    for (before, after) in sockets.iter().zip(&reached) {
+        let moved = after.centre - before.centre;
+        if matches!(before.volume, GrabVolume::Socket(Socket::Hip(_))) {
+            assert_eq!(moved, Vec3::ZERO);
+            continue;
+        }
+        assert!((moved.y + 0.12).abs() < 1e-4, "{moved}");
+        assert!(
+            (moved.x.abs() - 0.05).abs() < 1e-4 && moved.x.signum() == before.centre.x.signum(),
+            "{moved}"
+        );
+        assert_eq!(after.radius, before.radius);
     }
 }

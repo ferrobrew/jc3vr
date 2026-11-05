@@ -230,7 +230,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     skeleton::record_volume_anchor(
         placed.map_or("nothing: no skeleton", |(_, source)| source.anchor()),
     );
-    let body = placed.map(|(body, _)| body);
+    let body = placed.map(|(body, _)| body.looking(active.head.orientation));
     let pouches = &POUCHES;
     let place = Place::new(&active);
     // A held foregrip goes first, so that the bracing hand keeps it over anything as near.
@@ -273,9 +273,20 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         let (draws, others) = socket_candidates(&ticked, &active, draw);
         state.status.docks_followed = draws.len();
         targets.extend(draws.iter().map(|c| place.on_skeleton(c)));
-        targets.extend(others.iter().map(|(c, usage)| match usage {
-            SocketUse::NoFit => place.no_fit(c),
-            SocketUse::Draw | SocketUse::Dock => place.on_skeleton(c),
+        // A held weapon's reach to the back's free sockets moves off their place; a draw stays on
+        // the weapon the hand sees, and the attraction below keeps the place, as it travels the
+        // weapon there.
+        targets.extend(others.iter().map(|(c, usage)| {
+            let mut reach = [*c];
+            if *usage != SocketUse::Draw
+                && let Some(body) = &body
+            {
+                volumes::reach_back_sockets(&mut reach, body);
+            }
+            match usage {
+                SocketUse::NoFit => place.no_fit(&reach[0]),
+                SocketUse::Draw | SocketUse::Dock => place.on_skeleton(&reach[0]),
+            }
         }));
         state.attractors = attract::attractors(
             &others,
@@ -721,7 +732,7 @@ fn shown_props(body: &BodyFrame, config: &ControllersConfig) -> Vec<ShownPouch> 
         prop,
         pouch: Pose {
             position: pouch.centre,
-            orientation: body.chest,
+            orientation: body.pouch_chest(),
         },
         side,
         weapon: None,

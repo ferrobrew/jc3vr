@@ -19,8 +19,13 @@
 //! The pouches' sides are laid out around the hand that holds the guns ([`gun_side`]), not the
 //! dominant hand, because the gun can ride the other hand.
 //!
-//! The landmarks of the chest's and the belt's front are on the body's surface, and each pouch's
-//! offset carries it out in front of the surface, where a hand laid on the body closes.
+//! The landmarks of the chest's and the belt's front are on the body's surface. The magazine pouch's
+//! offset carries it out in front of the surface, and the chest pouches' brings them back to it,
+//! where a hand laid on the body closes. A look down bends the character's chest forward, which
+//! the chest pouches are kept off ([`BodyFrame::looking`]).
+//!
+//! The back's free sockets are reached for docking lower and further out than their weapons sit
+//! ([`reach_back_sockets`]).
 
 use glam::{Mat3, Quat, Vec3};
 
@@ -41,8 +46,8 @@ pub const SOCKETS: SocketTuning = SocketTuning {
 /// The pouches' fixed placement. Each pouch's centre is a few centimetres out from the body's
 /// surface, where a hand laid flat on the body closes.
 pub const POUCHES: PouchTuning = PouchTuning {
-    grenade: POUCH,
-    c4: POUCH,
+    grenade: CHEST_POUCH,
+    c4: CHEST_POUCH,
     magazine: POUCH,
     reach_margin_m: 0.05,
 };
@@ -99,6 +104,9 @@ pub struct BodyFrame {
     pub pelvis: Quat,
     /// The chest, as the pelvis but along the line through the shoulder joints.
     pub chest: Quat,
+    /// The chest the chest pouches ride: the chest itself, or with the head looking down, the chest
+    /// stood back up over the hips by the look's share ([`BodyFrame::looking`]).
+    pouch_chest: Girdle,
 }
 
 impl BodyFrame {
@@ -109,11 +117,53 @@ impl BodyFrame {
             return None;
         }
         let spine = skeleton.chest() - skeleton.hip_centre();
+        let chest = girdle_basis(skeleton.shoulders, spine)?;
         Some(Self {
             skeleton,
             pelvis: girdle_basis(skeleton.hips, spine)?,
-            chest: girdle_basis(skeleton.shoulders, spine)?,
+            chest,
+            pouch_chest: Girdle {
+                centre: skeleton.chest(),
+                basis: chest,
+            },
         })
+    }
+
+    /// The frame with the chest pouches kept off the forward bend that the head's look down,
+    /// `head` (its orientation in the cockpit frame, whose +Y is up), puts in the body. Looking
+    /// down at the chest bends the character's back by a share of the look, and the body rig reads
+    /// the neck pivot coming forward over the chest as a lean; the player's own chest barely
+    /// moves, so pouches carried by the bend would leave the hand that reaches for them. The chest
+    /// pouches therefore ride the chest turned back toward upright about the middle of the hip
+    /// joints, by the look's share ([`look_down_share`]), and only while the spine is near upright
+    /// ([`bend_share`]): a body lying in a skydive, or folded far past what a look explains, keeps
+    /// its pouches on its chest. A lean with the head level keeps them on the bent chest too.
+    pub fn looking(self, head: Quat) -> Self {
+        let hips = self.skeleton.hip_centre();
+        let spine = self.skeleton.chest() - hips;
+        let Some(up) = spine.try_normalize() else {
+            return self;
+        };
+        let share = look_down_share(head) * bend_share(up);
+        if share <= 0.0 {
+            return self;
+        }
+        let unbend = Quat::IDENTITY.slerp(Quat::from_rotation_arc(up, Vec3::Y), share);
+        if !unbend.is_finite() {
+            return self;
+        }
+        Self {
+            pouch_chest: Girdle {
+                centre: hips + unbend * spine,
+                basis: (unbend * self.chest).normalize(),
+            },
+            ..self
+        }
+    }
+
+    /// The orientation of the chest the chest pouches ride.
+    pub fn pouch_chest(&self) -> Quat {
+        self.pouch_chest.basis
     }
 
     /// The length of the torso, from the middle of the hip joints to the middle of the shoulder
@@ -124,6 +174,40 @@ impl BodyFrame {
 
     fn shoulder_width(&self) -> f32 {
         self.skeleton.shoulders[0].distance(self.skeleton.shoulders[1])
+    }
+}
+
+/// Move the back's sockets' volumes (the shoulders' and the outer back's) in `candidates` from where
+/// a weapon would sit on `body` to where a hand putting one away over the shoulder closes: lower
+/// and further out from the spine, by [`BACK_REACH_OFFSET_M`] in the chest's frame. A long gun on
+/// the back sits with its grip up behind the head, and a hand reaching over the shoulder to put a
+/// gun there closes below and outside that. Only the reach for docking moves: a draw is reached on
+/// the weapon the player sees, a docked weapon stays where its socket puts it, and the attraction
+/// travels a weapon to the socket's own place.
+pub fn reach_back_sockets(candidates: &mut [Candidate], body: &BodyFrame) {
+    let midline = body.skeleton.chest();
+    let right = body.chest * Vec3::X;
+    for candidate in candidates {
+        if !matches!(
+            candidate.volume,
+            GrabVolume::Socket(Socket::Shoulder(_) | Socket::BackOuter)
+        ) {
+            continue;
+        }
+        let side = if (candidate.centre - midline).dot(right) < 0.0 {
+            -1.0
+        } else {
+            1.0
+        };
+        let offset = Vec3::new(
+            BACK_REACH_OFFSET_M.x * side,
+            BACK_REACH_OFFSET_M.y,
+            BACK_REACH_OFFSET_M.z,
+        );
+        let centre = candidate.centre + body.chest * offset;
+        if centre.is_finite() {
+            candidate.centre = centre;
+        }
     }
 }
 
@@ -265,11 +349,78 @@ pub fn magazine_pouch(
 #[cfg(test)]
 pub const HIP_HEIGHT_FRACTION: f32 = 0.53;
 
-/// Each pouch's volume: its centre a few centimetres out from the body's surface.
+/// The magazine pouch's volume: its centre a few centimetres out from the belly's surface.
 const POUCH: VolumeSpec = VolumeSpec {
     offset_m: Vec3::new(0.0, 0.0, -0.04),
     radius_m: 0.075,
 };
+
+/// The chest pouches' volume: at the chest's surface and a little below the landmark, and wider than
+/// the magazine pouch's, so that both a hand laid flat on the chest with the gaze level and a hand
+/// reaching out in front of it close inside it. In the 2 November 2026 standing session a pouch
+/// centred a few centimetres out from the surface missed hands laid on the chest by 4 to 10 cm,
+/// which sat about 13 cm behind and 4 cm below its centre, while the takes came from hands pushed
+/// out in front of the chest. Of that session's level-gaze presses at the chest, this centre and
+/// radius take 22 of 48, against 18 for the old pouch and 17 for one moved the whole 13 cm back.
+/// The pouch models sit partly inside the character's chest until his chest is aligned with the
+/// player's.
+const CHEST_POUCH: VolumeSpec = VolumeSpec {
+    offset_m: Vec3::new(0.0, -0.02, 0.04),
+    radius_m: 0.09,
+};
+
+/// The chest of a frame: its middle and its orientation, as [`BodyFrame::chest`].
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct Girdle {
+    centre: Vec3,
+    basis: Quat,
+}
+
+/// How far the back's sockets' reach is moved from where their weapons sit, in the chest's frame
+/// (+X right, mirrored for the left side; +Y up the spine; +Z back), metres: down by about a hand's
+/// width and out from the spine. In the same session the releases over the shoulder that dropped
+/// the weapon came lower and further out than the place; the draws, which closed at eye height
+/// behind the head on the weapon, are left there.
+const BACK_REACH_OFFSET_M: Vec3 = Vec3::new(0.05, -0.12, 0.0);
+
+/// The share of the look-down bend the chest pouches are kept off for a head turned `head`: none
+/// for a look down of up to [`LOOK_DOWN_START`], all of it from [`LOOK_DOWN_FULL`], eased between.
+fn look_down_share(head: Quat) -> f32 {
+    let down = (-(head * Vec3::NEG_Z).y).clamp(-1.0, 1.0).asin();
+    smoothstep(LOOK_DOWN_START, LOOK_DOWN_FULL, down)
+}
+
+/// The share of the bend the chest pouches are kept off for a spine running along `up`: all of it
+/// within [`BEND_FULL`] of upright, which covers the bend a look down puts in the body, none past
+/// [`BEND_NONE`], where the body is lying or folded by more than a look explains.
+fn bend_share(up: Vec3) -> f32 {
+    let bend = up.y.clamp(-1.0, 1.0).acos();
+    1.0 - smoothstep(BEND_FULL, BEND_NONE, bend)
+}
+
+/// A smooth step from 0 at `from` to 1 at `to`.
+fn smoothstep(from: f32, to: f32, x: f32) -> f32 {
+    let t = ((x - from) / (to - from)).clamp(0.0, 1.0);
+    if t.is_finite() {
+        t * t * (3.0 - 2.0 * t)
+    } else {
+        0.0
+    }
+}
+
+/// The look down below which the chest pouches ride the chest as it is, radians: about ten degrees.
+const LOOK_DOWN_START: f32 = 0.17;
+
+/// The look down from which the chest pouches are kept off the whole bend, radians: about forty
+/// degrees.
+const LOOK_DOWN_FULL: f32 = 0.7;
+
+/// The spine's tilt from upright within which a look down's bend is undone, radians: about thirty
+/// degrees.
+const BEND_FULL: f32 = 0.52;
+
+/// The spine's tilt from upright past which nothing is undone, radians: about fifty degrees.
+const BEND_NONE: f32 = 0.87;
 
 /// How far above the hip joints the belt's front is, where the magazine pouch hangs, as a fraction
 /// of the torso: the waist.
@@ -304,17 +455,18 @@ fn belt(frame: &BodyFrame, side: Hand) -> Vec3 {
 }
 
 /// The chest pouch `volume` on `side`: on the chest's surface below and inside the shoulder joint,
-/// riding the chest.
+/// riding the pouches' chest ([`BodyFrame::looking`]).
 fn chest_pouch(volume: GrabVolume, frame: &BodyFrame, spec: &VolumeSpec, side: Hand) -> Candidate {
     let out = frame.shoulder_width() * CHEST_POUCH_OUT_FRACTION * side_sign(side);
-    let landmark = frame.skeleton.chest()
-        + frame.chest
+    let chest = frame.pouch_chest;
+    let landmark = chest.centre
+        + chest.basis
             * Vec3::new(
                 out,
                 -frame.torso() * CHEST_POUCH_DROP_FRACTION,
                 -CHEST_FRONT_M,
             );
-    place(volume, landmark, frame.chest, spec, side, None)
+    place(volume, landmark, chest.basis, spec, side, None)
 }
 
 /// The orientation of a girdle through `[left, right]` on a body whose spine runs along `spine`:
