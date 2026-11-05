@@ -38,8 +38,6 @@ mod transition;
 #[cfg(test)]
 mod lifecycle_ammo;
 #[cfg(test)]
-mod lifecycle_source;
-#[cfg(test)]
 mod tests;
 
 pub use binding::{Binding, ObjectAddress};
