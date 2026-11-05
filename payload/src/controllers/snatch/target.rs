@@ -154,14 +154,14 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
             else {
                 return false;
             };
-            if current.body != *body || current.owner != *owner {
+            if current.bone.body != *body || current.bone.owner != *owner {
                 return false;
             }
             *mass_kg = current.mass_kg;
-            if !unsafe { in_sight(ray, current.centre, character.get()) } {
+            if !unsafe { in_sight(ray, current.bone.centre, character.get()) } {
                 return false;
             }
-            current.centre
+            current.bone.centre
         }
         OfferKind::Grenade { object, body, weak } => {
             let Some(_alive) = weak.lock() else {
@@ -619,8 +619,8 @@ unsafe fn aimed_offer(
     if let Some(ragdoll) = unsafe { ragdoll_offer(aimed.object, aimed.body, aimed.point, config) } {
         return Some(OfferKind::Ragdoll {
             character: aimed.object,
-            owner: ragdoll.owner,
-            body: ragdoll.body,
+            owner: ragdoll.bone.owner,
+            body: ragdoll.bone.body,
             mass_kg: ragdoll.mass_kg,
             weak: weak(),
         });

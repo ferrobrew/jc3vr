@@ -12,7 +12,7 @@ use crate::controllers::{
     physical_hands::{
         STATE,
         bodies::{self, BodyError},
-        characters::ragdoll::Ragdoll,
+        characters::ragdoll::{Bone, Ragdoll},
         collider_view::{self, model::Aabb},
         contact::{Surface, SurfaceHit},
         doors::{self, DoorTarget, DoorsConfig, acquisition::PanelReach, engine as door_engine},
@@ -41,21 +41,18 @@ pub(crate) unsafe fn loose_mass(object: NonZeroUsize, body: u32) -> Option<f32> 
     Some(mass_kg)
 }
 
-/// A ragdolling character under the grapple's aim: the body of its ragdoll the line pulls, and
-/// the whole ragdoll's mass, which that body drags.
+/// A ragdolling character under the grapple's aim: the bone of its ragdoll the line pulls, and
+/// the whole ragdoll's mass, which that bone drags.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct RagdollTarget {
-    /// The object that owns the body, as a physics query reports it.
-    pub owner: NonZeroUsize,
-    pub body: u32,
-    /// The body's centre of mass, world space.
-    pub centre: Vec3,
+    pub bone: Bone,
+    /// The whole ragdoll's mass, kilograms.
     pub mass_kg: f32,
 }
 
-/// The ragdoll of the character `object`, hit on its body `body` at `point`, when it ragdolls:
-/// the hit body when it is one of the ragdoll's dynamic bodies, or else the one nearest `point`.
-/// `None` for anything that is not a ragdolling character.
+/// The ragdoll of the character `object`, hit on its body `body` at `point`, when it ragdolls,
+/// taken by the bone the hit lands on ([`Ragdoll::bone_at`]). `None` for anything that is not a
+/// ragdolling character.
 ///
 /// # Safety
 ///
@@ -71,11 +68,8 @@ pub(crate) unsafe fn ragdoll_target(
     }
     let character = unsafe { &*(object.get() as *const Character) };
     let ragdoll = unsafe { Ragdoll::of(character) }?;
-    let bone = ragdoll.bone(body).or_else(|| ragdoll.nearest(point))?;
     Some(RagdollTarget {
-        owner: bone.owner,
-        body: bone.body,
-        centre: bone.centre,
+        bone: ragdoll.bone_at(body, point)?,
         mass_kg: ragdoll.mass_kg(),
     })
 }

@@ -218,11 +218,8 @@ pub(crate) unsafe fn reach(
         return Err(Unavailable::Off);
     }
     if let Some(ragdoll) = unsafe { Ragdoll::of(character) } {
-        // The hit may be on the capsule or the ragdoll's hit proxy rather than on a body of the
-        // ragdoll itself: the bone nearest the hit stands in for it.
         let bone = ragdoll
-            .bone(body)
-            .or_else(|| ragdoll.nearest(hit.position))
+            .bone_at(body, hit.position)
             .ok_or(Unavailable::NoBody)?;
         return Ok(reach(bone.owner, bone.body, None, Some(ragdoll.mass_kg())));
     }

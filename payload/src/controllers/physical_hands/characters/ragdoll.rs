@@ -97,6 +97,13 @@ impl Ragdoll {
         self.bones.iter().copied().find(|b| b.body == body)
     }
 
+    /// The bone a hit on the body `body` at `point` takes the ragdoll by: the hit body's, when it is
+    /// one of the ragdoll's, or else the bone nearest `point`. A hit on the character's capsule or
+    /// its ragdoll's hit proxy lands on no body of the ragdoll itself.
+    pub(crate) fn bone_at(&self, body: u32, point: Vec3) -> Option<Bone> {
+        self.bone(body).or_else(|| self.nearest(point))
+    }
+
     /// The whole ragdoll's mass, kilograms: what a hand or a line pulling one bone drags.
     pub(crate) fn mass_kg(&self) -> f32 {
         self.bones.iter().map(|b| b.mass_kg).sum()
@@ -134,6 +141,26 @@ mod tests {
         assert!((ragdoll.mass_kg() - 46.0).abs() < 1e-4);
         assert_eq!(ragdoll.bone(2).unwrap().mass_kg, 30.0);
         assert_eq!(ragdoll.bone(9), None);
+    }
+
+    #[test]
+    fn a_hit_takes_its_own_bone_or_else_the_nearest() {
+        let ragdoll = Ragdoll::from_bones(vec![
+            bone(1, Vec3::new(0.0, 0.2, 0.0), 12.0),
+            bone(2, Vec3::new(0.0, 0.9, 0.0), 30.0),
+        ])
+        .unwrap();
+        // A hit on a bone's own body takes that bone, even nearer another.
+        assert_eq!(
+            ragdoll.bone_at(2, Vec3::new(0.0, 0.2, 0.0)).unwrap().body,
+            2
+        );
+        // A hit on a body outside the ragdoll takes the bone nearest it.
+        assert_eq!(
+            ragdoll.bone_at(9, Vec3::new(0.0, 0.8, 0.0)).unwrap().body,
+            2
+        );
+        assert_eq!(ragdoll.bone_at(9, Vec3::NAN), None);
     }
 
     #[test]
