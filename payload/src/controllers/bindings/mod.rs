@@ -627,7 +627,8 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         detection,
         ready: !controls.masked_hands.contains(&true),
         ragdoll: controls.ragdolling,
-        grapple: grapple_held || line || physical_grapple.tethers > 0,
+        // Tethers left in the world do not occupy a hand; only a held button or a live line does.
+        grapple: grapple_held || line,
         grabs: step.grabs,
         reaches: reach_volumes.each_ref().map(Vec::as_slice),
         dt,

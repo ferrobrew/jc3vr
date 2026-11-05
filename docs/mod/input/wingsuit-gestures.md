@@ -10,7 +10,7 @@ The arm measures are taken against the body's facing, read from the line between
 
 The binding-owned `FlightState` retains the grip offset and body dimensions used to interpret observations. Any changed component resets arming, dwell, braking, and pitch reservation without rewinding the observation watermark. Repeating an old packet after calibration cannot contribute new dwell or reactivate held output. A fresh flight pose can arm the recognizer again in the suit, and a fresh neutral and flight pose while falling.
 
-Finalization checks packet currency, availability, and current per-hand interaction claims again after other handlers run. A contextual canopy request suppresses a pending suit contribution. Newly acquired grip, trigger, mechanical, or grapple ownership also cancels the contribution. Braking reserves arm-pitch steering only while the recognizer has an active eligible brake command. Stick steering remains available.
+Finalization checks packet currency, availability, and current per-hand interaction claims again after other handlers run. A contextual canopy request suppresses a pending suit contribution. Newly acquired grip, trigger, mechanical, or grapple ownership also cancels the contribution. A hand has the grapple while the grapple button is held, while its line is attached, or during a traversal; tethers left in the world claim neither hand, so a fall after tethering a car still opens the suit. Braking reserves arm-pitch steering only while the recognizer has an active eligible brake command. Stick steering remains available.
 
 ## Landing
 
@@ -31,3 +31,8 @@ While falling or in the suit, a ripcord at the back of the hip on the dominant s
 The converter emits the narrow suit deployment or closure action and the native held airbrake pair. Shared binding integration supplies these contributions alongside the fixed physical-button map; the recognizer does not fabricate raw trigger fire. Engine state and animation permissions still determine whether a native request succeeds.
 
 Pure tests cover independent shoulder and palm geometry, scale, observation identity, dwell boundaries, calibration edits, interaction suspension, late canopy priority, and exact converter output, and poses sampled from a seated player's flights check the thresholds against arms that flew. These tests do not establish physical controller calibration, native acceptance during every transition, or headset comfort. Live flight validation remains required.
+
+## Headset checklist
+
+1. Tether two objects, walk off a ledge, and spread the arms: the suit opens, and the log does not say "the left hand has the grapple".
+2. Hold the grapple button while falling: the gestures stand down until it is let go.
