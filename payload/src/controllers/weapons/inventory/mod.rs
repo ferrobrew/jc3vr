@@ -245,7 +245,7 @@ pub(crate) unsafe fn input_tick(
     }
     let mut state = STATE.lock();
     state.status.active = true;
-    let player = engine::position(owner);
+    let player = weapons_engine::character_position(owner);
     let slots = unsafe { engine::slots(owner) };
     unsafe { missions::input_tick() };
     for (_, weapon) in &slots {

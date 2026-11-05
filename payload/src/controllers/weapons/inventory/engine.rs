@@ -6,7 +6,7 @@
 
 use std::ptr::NonNull;
 
-use glam::{Mat4, Vec3};
+use glam::Vec3;
 use jc3gi::{
     character::{
         character::Character,
@@ -213,9 +213,4 @@ pub(crate) unsafe fn fate(weak: &Weak, owner: &Character, player: Vec3) -> Fate 
         return Fate::HeldByOther { distance_m };
     }
     Fate::Lying { distance_m }
-}
-
-/// Where `owner` stands.
-pub(crate) fn position(owner: &Character) -> Vec3 {
-    Mat4::from(owner.m_WorldMatrixT1).w_axis.truncate()
 }

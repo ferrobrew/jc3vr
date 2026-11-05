@@ -39,7 +39,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use glam::{Mat4, Vec3};
+use glam::Vec3;
 use jc3gi::{
     animation::symbol_table::RagdollRBGroupId,
     character::{
@@ -53,12 +53,11 @@ use jc3gi::{
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    aim::gun,
     frame::Pose,
     hands::ik,
     loadout::TakeSource,
     weapons::{
-        engine::{self, grip_points, slot_of, takeable_gun_slot},
+        engine::{self, character_position, grip_points, slot_of, takeable_gun_slot},
         hold::{
             pickup::Refusal,
             refs::Weak,
@@ -119,7 +118,7 @@ pub(crate) unsafe fn observe(inventory: *mut Inventory) {
         f32::from_bits(PROBE[1].load(Ordering::Relaxed)),
         f32::from_bits(PROBE[2].load(Ordering::Relaxed)),
     );
-    let at = Mat4::from(character.m_WorldMatrixT1).w_axis.truncate();
+    let at = character_position(character);
     let distance_sq = at.distance_squared(probe);
     let range = f32::from_bits(NOTICE_RANGE.load(Ordering::Relaxed));
     if distance_sq.is_nan() || distance_sq > range * range {
@@ -292,7 +291,7 @@ pub(crate) unsafe fn release(
     let alive = unsafe { Weak::of(&weapon.m_WeakThis) }
         .lock()
         .ok_or(SourceRefusal::Gone)?;
-    let player_at = Mat4::from(player.m_WorldMatrixT1).w_axis.truncate();
+    let player_at = character_position(player);
     unsafe { weapon.OnDrop() };
     unsafe { victim.m_Inventory.DropWeapon(gun.slot, !gun.holstered) };
     unsafe { stagger(victim, player_at) };
@@ -398,9 +397,8 @@ unsafe fn holstered(character: &Character) -> [Option<Holstered>; HOLSTER_SLOTS.
         if state != WeaponState::E_WS_HOLSTERED as i32 {
             return None;
         }
-        let first = unsafe { gun::guns(weapon) }.next().flatten()?;
-        let point = Mat4::from(first.m_WorldMatrixT1).w_axis.truncate();
-        point.is_finite().then_some(Holstered {
+        let point = unsafe { engine::gun_position(weapon) }?;
+        Some(Holstered {
             weapon: weapon as *const WeaponBase as usize,
             slot,
             point,
@@ -422,7 +420,7 @@ unsafe fn stagger(victim: &mut Character, toward: Vec3) {
     ) else {
         return;
     };
-    let at = Mat4::from(victim.m_WorldMatrixT1).w_axis.truncate();
+    let at = character_position(victim);
     let level = Vec3::new(toward.x - at.x, 0.0, toward.z - at.z);
     let Some(direction) = level.try_normalize() else {
         return;

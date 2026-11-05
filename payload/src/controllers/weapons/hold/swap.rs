@@ -4,7 +4,7 @@
 //! its first half, the docked weapon's fall ([`eject`]), after which the release docks the held
 //! weapon on the freed socket as any dock does.
 
-use glam::{Mat4, Vec3};
+use glam::Vec3;
 use jc3gi::equipment::weapon::WeaponBase;
 use tracking_format::event::WorldMotion;
 
@@ -13,7 +13,7 @@ use crate::controllers::{
     weapons::{
         docks,
         dual_wield::single,
-        engine::{self, grip_points},
+        engine::{self, character_position, grip_points},
         hold::{
             equip::{self, DockRefusal},
             release_diagnostics::ReleaseMotion,
@@ -46,7 +46,7 @@ pub(crate) unsafe fn eject(socket: Socket) -> Result<(), DockRefusal> {
     if unsafe { single::is_pair(docked) } {
         return Err(DockRefusal::Unsupported);
     }
-    let character = Mat4::from(owner.m_WorldMatrixT1).w_axis.truncate();
+    let character = character_position(owner);
     // SAFETY: as above.
     let at = unsafe { grip_points(docked) }.map(|([grip, _], _)| grip);
     let away = at.map_or(Vec3::ZERO, |at| away_from(character, at));

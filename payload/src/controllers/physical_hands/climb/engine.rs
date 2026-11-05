@@ -17,7 +17,7 @@
 use std::{fmt, ptr};
 
 use body_rig::geometry::point_velocity;
-use glam::{Affine3A, Mat4, Quat, Vec3, Vec3A};
+use glam::{Affine3A, Quat, Vec3, Vec3A};
 use jc3gi::{
     character::character::Character,
     havok::hkSimdFloat32,
@@ -25,10 +25,13 @@ use jc3gi::{
     types::vector_math::AlignedVector3,
 };
 
-use crate::controllers::physical_hands::{
-    bodies::slot,
-    physics::{self, havok_affine},
-    world::World,
+use crate::controllers::{
+    physical_hands::{
+        bodies::slot,
+        physics::{self, havok_affine},
+        world::World,
+    },
+    weapons::engine::character_position,
 };
 
 /// Why the player could not be climbed with.
@@ -75,7 +78,7 @@ pub unsafe fn player_place() -> Result<PlayerPlace, ClimbEngineError> {
     let world = unsafe { World::get() }.ok_or(ClimbEngineError::NoPhysicsWorld)?;
     let slot = unsafe { proxy_slot(world.world(), proxy) }?;
     let body = Vec3::from_array(slot.m_transform.m_translation.data) + world.shift;
-    let feet = Mat4::from(character.m_WorldMatrixT1).w_axis.truncate();
+    let feet = character_position(character);
     if !(body.is_finite() && feet.is_finite()) {
         return Err(ClimbEngineError::NoPlayer);
     }

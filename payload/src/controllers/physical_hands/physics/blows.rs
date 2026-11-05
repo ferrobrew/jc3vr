@@ -24,7 +24,7 @@
 
 use std::{mem::MaybeUninit, num::NonZeroUsize, time::Instant};
 
-use glam::{Mat4, Vec3};
+use glam::Vec3;
 use jc3gi::{
     aim::target::FactionRelation,
     animation::symbol_table::RagdollRBGroupId,
@@ -57,7 +57,7 @@ use crate::controllers::{
         sounds::{self, Impact, ImpactKind},
         world::World,
     },
-    weapons::hold::take,
+    weapons::{engine::character_position, hold::take},
 };
 
 /// A blow a hand dealt, for the readout.
@@ -179,7 +179,7 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         };
         // SAFETY: a live character, found again above.
         let victim = unsafe { &mut *victim };
-        let victim_at = Mat4::from(victim.m_WorldMatrixT1).w_axis.truncate();
+        let victim_at = character_position(victim);
         let toward = victim_at + Vec3::Y * CHEST_HEIGHT_M - contact.hand_position;
         let swung = swing(
             contact.hand_velocity,
@@ -549,7 +549,7 @@ unsafe fn strike(
     unsafe { msg.m_Damager.Assign(&attacker.m_WeakThis) };
     msg.m_Position = vector(at);
     msg.m_Direction = vector(direction);
-    msg.m_DamagerPosition = vector(Mat4::from(attacker.m_WorldMatrixT1).w_axis.truncate());
+    msg.m_DamagerPosition = vector(character_position(attacker));
     msg.m_Impulse = plan.reaction_impulse;
     msg.m_Faction = unsafe { attacker.GetFaction() };
     msg.m_DamagerSourceStateInfo = unsafe { attacker.GetCurrentDamageSourceStateInfo() };
