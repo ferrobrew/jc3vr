@@ -15,6 +15,7 @@
 //! hand reaching down, out, and back toward a hip holster), the pole's part across the reach
 //! vanishes, so a second pole, straight back, takes over smoothly as it does rather than at once.
 
+use body_rig::geometry::closest_on_segment;
 use glam::{Mat4, Quat, Vec3};
 
 use crate::controllers::body::procedural::{rig::RigBone, solver::pose::RigPose};
@@ -25,19 +26,6 @@ pub struct Capsule {
     pub a: Vec3,
     pub b: Vec3,
     pub radius: f32,
-}
-
-impl Capsule {
-    /// The closest point of the capsule's segment to `point`.
-    fn closest(&self, point: Vec3) -> Vec3 {
-        let axis = self.b - self.a;
-        let length = axis.length_squared();
-        if length < 1e-10 {
-            return self.a;
-        }
-        let t = ((point - self.a).dot(axis) / length).clamp(0.0, 1.0);
-        self.a + axis * t
-    }
 }
 
 /// The torso's keep-out: the chest and the abdomen.
@@ -94,7 +82,7 @@ impl TorsoKeepOut {
         // settles it.
         for _ in 0..2 {
             for capsule in &self.capsules {
-                let closest = capsule.closest(point);
+                let closest = closest_on_segment(point, capsule.a, capsule.b);
                 let offset = point - closest;
                 let clearance = capsule.radius + self.margin;
                 if offset.length_squared() < clearance * clearance {

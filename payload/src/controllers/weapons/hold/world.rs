@@ -9,6 +9,7 @@
 //! anywhere on the gun takes it, and the marker shows where. A grab of one
 //! ([`GrabVolume::WorldWeapon`]) takes the target whose segment is nearest the grabbing hand.
 
+use body_rig::geometry::{closest_on_segment, segment_distance};
 use glam::Vec3;
 use jc3gi::character::inventory::WeaponSlot;
 
@@ -107,7 +108,7 @@ pub fn candidates(
             };
             out.push(Candidate {
                 volume: GrabVolume::WorldWeapon,
-                centre: nearest_on_segment(point, a, b),
+                centre: closest_on_segment(point, a, b),
                 radius,
                 hand: Some(hand),
             });
@@ -290,23 +291,6 @@ pub(crate) fn grip_on_current_wrist(
     point.is_finite().then_some(point)
 }
 
-/// The distance from `point` to the segment from `a` to `b`.
-pub fn segment_distance(point: Vec3, a: Vec3, b: Vec3) -> f32 {
-    point.distance(nearest_on_segment(point, a, b))
-}
-
-/// The point of the segment from `a` to `b` nearest `point`.
-pub fn nearest_on_segment(point: Vec3, a: Vec3, b: Vec3) -> Vec3 {
-    let along = b - a;
-    let length_sq = along.length_squared();
-    let t = if length_sq > f32::EPSILON {
-        ((point - a).dot(along) / length_sq).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    a + along * t
-}
-
 /// The impulse that staggers a character without knocking it down, from its hit-reaction tuning:
 /// `type_scale` scales an impulse of the reaction's damage type, a scaled impulse above
 /// `stumble_threshold` staggers it, and one at `ragdoll_threshold` knocks it down. `None` without
@@ -356,17 +340,6 @@ mod tests {
             points: [a, b],
             gun: Pose::IDENTITY,
         }
-    }
-
-    #[test]
-    fn a_segment_measures_to_its_nearest_point() {
-        let a = Vec3::ZERO;
-        let b = Vec3::new(1.0, 0.0, 0.0);
-        assert!((segment_distance(Vec3::new(0.5, 0.2, 0.0), a, b) - 0.2).abs() < 1e-6);
-        assert!((segment_distance(Vec3::new(-0.3, 0.0, 0.0), a, b) - 0.3).abs() < 1e-6);
-        assert!((segment_distance(Vec3::new(1.4, 0.3, 0.0), a, b) - 0.5).abs() < 1e-6);
-        // A gun without a second grip is a point.
-        assert!((segment_distance(Vec3::Y, a, a) - 1.0).abs() < 1e-6);
     }
 
     #[test]

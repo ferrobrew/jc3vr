@@ -6,6 +6,7 @@
 //! up, -Z toward the muzzle, and the origin at the attach point, which sits in the palm of the hand
 //! holding the pistol grip.
 
+use body_rig::geometry::closest_on_segment;
 use glam::{Quat, Vec3};
 
 use crate::controllers::{
@@ -168,7 +169,7 @@ pub fn classify(shape: &GunShape, point: Vec3, grip_radius: f32, reach: f32) -> 
     };
     // The parts with a point of their own, nearest first by the share of their radius.
     let mut parts: Vec<(f32, RegionHit)> = Vec::new();
-    let grip_segment = segment_point(point, Vec3::ZERO, GRIP_BOTTOM);
+    let grip_segment = closest_on_segment(point, Vec3::ZERO, GRIP_BOTTOM);
     let grip_radius = grip_radius.max(0.0);
     if grip_radius > 0.0 && point.distance(grip_segment) <= grip_radius {
         parts.push((
@@ -190,7 +191,7 @@ pub fn classify(shape: &GunShape, point: Vec3, grip_radius: f32, reach: f32) -> 
         && well.mouth.length() > grip_radius
     {
         let end = well.mouth - well.axis.normalize_or_zero() * MAGAZINE_LENGTH_M;
-        let on = segment_point(point, well.mouth, end);
+        let on = closest_on_segment(point, well.mouth, end);
         let d = point.distance(on);
         if d <= MAGAZINE_RADIUS_M {
             parts.push((d / MAGAZINE_RADIUS_M, hit(GunRegion::Magazine, on)));
@@ -333,14 +334,4 @@ const STOCK_DIAMETER_M: f32 = 0.045;
 /// How far along the bore from the grip `point` is.
 fn along(point: Vec3) -> f32 {
     point.dot(BORE)
-}
-
-/// The point on the segment from `a` to `b` nearest `point`.
-fn segment_point(point: Vec3, a: Vec3, b: Vec3) -> Vec3 {
-    let ab = b - a;
-    let length_sq = ab.length_squared();
-    if length_sq <= f32::EPSILON {
-        return a;
-    }
-    a + ab * ((point - a).dot(ab) / length_sq).clamp(0.0, 1.0)
 }

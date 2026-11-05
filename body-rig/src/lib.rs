@@ -10,13 +10,15 @@
 //! - [`height`]: the standing neck height, measured rather than assumed.
 //! - [`rig`]: all of them advanced together.
 //!
-//! [`angle`] and [`rotation`] hold the heading and rotation primitives the payload shares.
+//! [`angle`], [`rotation`], and [`geometry`] hold the heading, rotation, and geometry primitives
+//! the payload shares.
 //!
 //! Everything works in the room frame: metres over the floor, +X right, +Y up, -Z forward, with
 //! headings as yaws about +Y ([`angle`]).
 
 pub mod angle;
 pub mod body;
+pub mod geometry;
 pub mod height;
 pub mod pelvis;
 pub mod rig;

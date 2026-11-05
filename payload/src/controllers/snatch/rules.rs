@@ -3,6 +3,7 @@
 //! the target, when the line goes slack and which hand catches it or whether it is missed, when it
 //! has stalled or run out of line, and the toss that a tap at a gun gives it.
 
+use body_rig::geometry::segment_distance;
 use glam::Vec3;
 
 use crate::controllers::{aim::ray::Ray, frame::Hand};
@@ -175,7 +176,7 @@ pub fn verdict(sample: &FlightSample, stalled: bool, limits: &FlightLimits) -> V
         .into_iter()
         .filter_map(|hand| {
             let palm = sample.catchers[hand.index()]?;
-            let pass = closest_approach(sample.from, sample.to, palm);
+            let pass = segment_distance(palm, sample.from, sample.to);
             (pass <= limits.catch_radius_m).then_some((hand, pass))
         })
         .min_by(|a, b| a.1.total_cmp(&b.1));
@@ -202,18 +203,6 @@ pub fn verdict(sample: &FlightSample, stalled: bool, limits: &FlightLimits) -> V
     } else {
         Verdict::Pulling
     }
-}
-
-/// The least distance from `point` to the segment from `from` to `to`.
-pub fn closest_approach(from: Vec3, to: Vec3, point: Vec3) -> f32 {
-    let segment = to - from;
-    let length_squared = segment.length_squared();
-    let t = if length_squared > f32::EPSILON {
-        ((point - from).dot(segment) / length_squared).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    (from + segment * t).distance(point)
 }
 
 /// The velocity the line asks of the point `at` on the target: `speed` metres per second toward
@@ -693,14 +682,6 @@ mod tests {
         );
         tick.catchers = [None, None];
         assert_eq!(verdict(&tick, false, &LIMITS), Verdict::Missed);
-    }
-
-    #[test]
-    fn the_closest_approach_is_measured_along_the_segment() {
-        let (from, to) = (Vec3::new(-1.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0));
-        assert!((closest_approach(from, to, Vec3::new(0.0, 0.3, 0.0)) - 0.3).abs() < 1e-6);
-        assert!((closest_approach(from, to, Vec3::new(2.0, 0.0, 0.0)) - 1.0).abs() < 1e-6);
-        assert!((closest_approach(from, from, Vec3::new(-1.0, 0.5, 0.0)) - 0.5).abs() < 1e-6);
     }
 
     #[test]
