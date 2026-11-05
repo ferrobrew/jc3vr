@@ -86,6 +86,26 @@ impl Adapter for Native<'_> {
     }
 }
 
+/// Carry `strong` onto `restored`'s socket, or the table's next free socket that fits it, through
+/// the table's restore admission. Returns the outcome and, when it was carried, the weapon's
+/// address.
+pub(super) fn carry_onto(
+    owner: &mut Character,
+    strong: Strong,
+    restored: Restored,
+) -> (Outcome, Option<usize>) {
+    let mut native = Native {
+        owner,
+        strong: Some(strong),
+        carried: None,
+    };
+    let outcome = transfer(&mut native, restored);
+    let carried = matches!(outcome, Outcome::Restored(_))
+        .then_some(native.carried)
+        .flatten();
+    (outcome, carried)
+}
+
 /// Adopt current-generation results only after the live table has completed its restoration.
 pub(super) unsafe fn adopt(owner: &mut Character) {
     let generation = PLAN.lock().generation;

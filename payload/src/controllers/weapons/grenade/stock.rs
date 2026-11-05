@@ -181,6 +181,35 @@ pub(super) unsafe fn give_back() -> Result<(), Full> {
     Ok(())
 }
 
+/// Set the stock to `count` grenades, kept in the reserve up to its capacity with the weapon's
+/// magazine emptied, through the game's own setters. Returns the count set, or `None` without a
+/// grenade weapon. Under unlimited ammunition the count is still written, though the draw ignores
+/// it.
+///
+/// # Safety
+///
+/// The game thread, before the world update.
+pub(crate) unsafe fn set(count: i32) -> Option<i32> {
+    let owner = unsafe { engine::local_player() }?;
+    let stock = unsafe { read(owner) }?;
+    let count = settable(stock, count);
+    unsafe { apply(owner, Change::Magazine(0)) };
+    unsafe { apply(owner, Change::Reserve(count)) };
+    let _ = unsafe { refresh() };
+    Some(count)
+}
+
+/// The stock's capacity, for a fill, or `None` for an uncapped reserve.
+pub(crate) fn capacity() -> Option<i32> {
+    CACHED.lock().and_then(|stock| stock.capacity)
+}
+
+/// The count a [`set`] to `count` writes: never below zero, nor above the reserve's capacity.
+fn settable(stock: Stock, count: i32) -> i32 {
+    let count = count.max(0);
+    stock.capacity.map_or(count, |capacity| count.min(capacity))
+}
+
 /// Consume `weapon`, a native hand grenade in the world the hands took, as the game's own pickup
 /// does ([`WeaponBase::PickupStart`]): hidden, out of the physics world, handed to the spawn
 /// system's despawn, and its picked-up event sent, which is how the placement rule that put it on a
@@ -343,6 +372,14 @@ mod tests {
             capacity,
             unlimited,
         }
+    }
+
+    #[test]
+    fn a_set_count_stays_within_zero_and_the_capacity() {
+        assert_eq!(settable(stock(1, 2, Some(4), false), 3), 3);
+        assert_eq!(settable(stock(1, 2, Some(4), false), 9), 4);
+        assert_eq!(settable(stock(1, 2, Some(4), false), -2), 0);
+        assert_eq!(settable(stock(0, 0, None, false), 9), 9);
     }
 
     #[test]

@@ -22,6 +22,7 @@
 //! results to the input tick; the module and carry locks are taken separately.
 
 pub(crate) mod adoption;
+pub mod give;
 
 use std::{
     ffi::c_void,
@@ -178,6 +179,7 @@ pub(crate) fn on_pre_reset(records: Vec<Record>, slot_pistol_single: bool, stash
     std::mem::drop(plan);
     SPAWNED.lock().clear();
     TWINS.lock().clear();
+    give::clear_pending();
 }
 
 /// The spawn system has reset: the next input tick with the player respawns the carried weapons.
@@ -311,6 +313,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, settings: &InventoryConfi
         unsafe { request(owner, chosen.origin, chosen.records) };
     }
     unsafe { adoption::adopt(owner) };
+    unsafe { give::input_tick(owner, ready) };
 }
 
 /// Ask the spawn system for the second pistol of a pair of the type `tag_hash`, at the player, for

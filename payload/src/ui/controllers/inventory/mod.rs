@@ -4,6 +4,7 @@
 //! Where the game's slots and the table disagree ([`mismatch`]) the rows are marked.
 
 mod game;
+mod give;
 mod hands;
 mod mismatch;
 mod table;
@@ -59,6 +60,9 @@ pub(super) fn inventory_view(ui: &mut Ui, view: &InventoryView) {
             "The game's inventory disagrees with the table on the marked rows.",
         );
     }
+    CollapsingHeader::new("Give weapons")
+        .default_open(false)
+        .show(ui, |ui| give::give_section(ui, table));
     CollapsingHeader::new("The game's inventory")
         .default_open(true)
         .show(ui, |ui| match &view.inventory {

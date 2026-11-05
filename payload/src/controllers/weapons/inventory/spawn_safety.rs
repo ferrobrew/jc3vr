@@ -26,6 +26,8 @@ use crate::lifecycle::{
 pub(crate) enum RequestKind {
     Restore,
     Twin,
+    /// The debug UI's give of a weapon onto a socket.
+    Give,
 }
 
 /// Refusal occurs before the native submission closure runs.
