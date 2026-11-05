@@ -46,7 +46,7 @@ use jc3gi::{
         character::Character,
         inventory::{Inventory, WeaponSlot},
     },
-    equipment::weapon::{AmmunitionType, ModelAttachementWeaponComponent, WeaponBase, WeaponState},
+    equipment::weapon::{ModelAttachementWeaponComponent, WeaponBase, WeaponState},
     game::GameObject,
     graphics_engine::model_instance::ModelInstanceFlags,
 };
@@ -64,7 +64,7 @@ use crate::{
                 grant::{Grant, GrantTick, Grants, OneWhy, TwinState},
                 magazine::Dealt,
             },
-            engine::{character_object, slot_of},
+            engine::{character_object, credit_reserve, credit_stored, slot_of},
             hold::{self, rack::paired, refs::Strong},
             inventory::{
                 carry, config::InventoryConfig, engine as inventory_engine, engine::ObjectKey,
@@ -213,7 +213,7 @@ pub(crate) unsafe fn clamp_magazine(owner: &mut Character, weapon: &mut WeaponBa
         return;
     };
     unsafe { weapon.SetMagazineAmmo(clamped.magazine + chamber) };
-    unsafe { return_rounds(owner, weapon, clamped.returned) };
+    unsafe { credit_reserve(owner, weapon, clamped.returned) };
     tracing::debug!(
         target: "controllers",
         magazine = clamped.magazine,
@@ -231,9 +231,7 @@ pub(crate) unsafe fn clamp_magazine(owner: &mut Character, weapon: &mut WeaponBa
 /// `owner` must be the live local player character and `weapon` live, on the game thread before
 /// the world update.
 pub(crate) unsafe fn taken_from_world(owner: &mut Character, weapon: &mut WeaponBase) {
-    let stored = weapon.m_StoredNonMagazineAmmo;
-    weapon.m_StoredNonMagazineAmmo = 0;
-    unsafe { return_rounds(owner, weapon, stored) };
+    unsafe { credit_stored(owner, weapon) };
     PICKED.fetch_add(1, Ordering::Relaxed);
 }
 
@@ -738,26 +736,8 @@ unsafe fn deal(owner: &mut Character, slot: &mut WeaponBase, twin: &mut WeaponBa
     unsafe { slot.SetMagazineAmmo(dealt.slot) };
     unsafe { twin.SetMagazineAmmo(dealt.twin) };
     if dealt.over > 0 && !unsafe { slot.HasUnlimitedAmmo() } {
-        unsafe { return_rounds(owner, slot, dealt.over) };
+        unsafe { credit_reserve(owner, slot, dealt.over) };
     }
-}
-
-/// Add `rounds` to `owner`'s reserve of `weapon`'s ammunition.
-unsafe fn return_rounds(owner: &mut Character, weapon: &WeaponBase, rounds: i32) {
-    if rounds <= 0 {
-        return;
-    }
-    // Read as the raw value: an unset type is out of the enum's range.
-    let raw = unsafe { (&raw const weapon.m_AmmunitionType).cast::<i32>().read() };
-    if !(0..AmmunitionType::NOF_AMMO_TYPES as i32).contains(&raw)
-        || raw == AmmunitionType::AMMO_UNLIMITED as i32
-    {
-        return;
-    }
-    let ammo_type = weapon.m_AmmunitionType;
-    let inventory: &mut Inventory = &mut owner.m_Inventory;
-    let reserve = unsafe { inventory.GetAmmoCount(ammo_type) };
-    unsafe { inventory.SetAmmoCount(ammo_type, reserve.saturating_add(rounds), true) };
 }
 
 fn note(count: impl FnOnce(&mut State), what: String) {

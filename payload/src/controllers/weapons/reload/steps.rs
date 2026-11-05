@@ -13,7 +13,7 @@ use crate::controllers::{
     loadout::live::item_of,
     weapons::{
         self,
-        engine::HeldWeapon,
+        engine::{HeldWeapon, reserve},
         foregrip::set_pump_slide,
         inventory::engine::strong_to,
         pouch_models,
@@ -972,7 +972,7 @@ unsafe fn weapon_tick(
         plan,
         from_table: entry.is_some(),
         reading,
-        reserve: unsafe { engine::reserve(base) },
+        reserve: unsafe { reserve(base) },
     })
 }
 

@@ -32,7 +32,7 @@ use std::{fmt, sync::LazyLock};
 
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
-    equipment::weapon::{AmmunitionType, WeaponBase, WeaponState},
+    equipment::weapon::{WeaponBase, WeaponState},
     hash::hashlittle,
 };
 
@@ -47,7 +47,7 @@ use crate::{
         },
         weapons::{
             dual_wield::single,
-            engine::{self, character_object, gun_pose, slot_of},
+            engine::{self, character_object, credit_stored, gun_pose, slot_of},
             hold::{self, Cause, act, equip, use_item},
             inventory::{self, carry, engine as inventory_engine},
         },
@@ -341,25 +341,6 @@ unsafe fn take_by_game(
         hand.label()
     );
     Ok(slot)
-}
-
-/// Add `weapon`'s stored rounds to `owner`'s reserve, up to its cap, and clear them, as the game's
-/// pickup does.
-///
-/// # Safety
-///
-/// `owner` must be the live local player character and `weapon` live, on the game thread before
-/// the world update.
-pub(crate) unsafe fn credit_stored(owner: &mut Character, weapon: &mut WeaponBase) {
-    let stored = weapon.m_StoredNonMagazineAmmo;
-    weapon.m_StoredNonMagazineAmmo = 0;
-    // Read as the raw value: an unset type is out of the enum's range.
-    let raw = unsafe { (&raw const weapon.m_AmmunitionType).cast::<i32>().read() };
-    let known = (0..AmmunitionType::NOF_AMMO_TYPES as i32).contains(&raw)
-        && raw != AmmunitionType::AMMO_UNLIMITED as i32;
-    if stored > 0 && known {
-        unsafe { owner.m_Inventory.AddAmmo(weapon.m_AmmunitionType, stored) };
-    }
 }
 
 /// The name hash of the embedded power core, whose pickup spawns and equips another weapon in its

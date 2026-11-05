@@ -6,7 +6,7 @@
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
-    equipment::weapon::{WeaponBase, WeaponGripHand, WeaponState},
+    equipment::weapon::{AmmunitionType, WeaponBase, WeaponGripHand, WeaponState},
     game::GameObject,
     types::math::Matrix4,
 };
@@ -183,6 +183,67 @@ pub(crate) unsafe fn gun_position(weapon: &WeaponBase) -> Option<Vec3> {
     let first = unsafe { gun::guns(weapon) }.next().flatten()?;
     let at = Mat4::from(first.m_WorldMatrixT1).w_axis.truncate();
     at.is_finite().then_some(at)
+}
+
+/// `weapon`'s ammunition type when a reserve counts it: read as the raw value, so an unset or
+/// unknown type is `None`, as is the unlimited type, whose rounds are never counted.
+///
+/// # Safety
+///
+/// `weapon` must be live.
+pub(crate) unsafe fn limited_ammo(weapon: &WeaponBase) -> Option<AmmunitionType> {
+    let raw = unsafe { (&raw const weapon.m_AmmunitionType).cast::<i32>().read() };
+    ((0..AmmunitionType::NOF_AMMO_TYPES as i32).contains(&raw)
+        && raw != AmmunitionType::AMMO_UNLIMITED as i32)
+        .then_some(weapon.m_AmmunitionType)
+}
+
+/// The reserve of `weapon`'s ammunition in its user's inventory: zero without a user, or for a type
+/// out of the inventory's range.
+///
+/// # Safety
+///
+/// `weapon` must be live, on the game thread before the world update.
+pub(crate) unsafe fn reserve(weapon: &WeaponBase) -> i32 {
+    let raw = unsafe { (&raw const weapon.m_AmmunitionType).cast::<i32>().read() };
+    if !(0..AmmunitionType::NOF_AMMO_TYPES as i32).contains(&raw) {
+        return 0;
+    }
+    // `m_User` is a `weak_ptr<CCharacter>`; its first word is the character.
+    let Some(user) = (unsafe { (weapon.m_User[0] as *const Character).as_ref() }) else {
+        return 0;
+    };
+    unsafe { user.m_Inventory.GetAmmoCount(weapon.m_AmmunitionType) }
+}
+
+/// Add `rounds` of `weapon`'s ammunition to `owner`'s reserve, up to its cap, as the game's pickup
+/// does ([`Inventory::AddAmmo`](jc3gi::character::inventory::Inventory::AddAmmo)); nothing for no rounds or a type no reserve counts. Unlike a write
+/// of the reserve
+/// ([`Inventory::SetAmmoCount`](jc3gi::character::inventory::Inventory::SetAmmoCount)), it starts no reload of an empty wielded weapon and
+/// pushes nothing to the game's weapon readout.
+///
+/// # Safety
+///
+/// `owner` must be the live local player character and `weapon` live, on the game thread before
+/// the world update.
+pub(crate) unsafe fn credit_reserve(owner: &mut Character, weapon: &WeaponBase, rounds: i32) {
+    if rounds <= 0 {
+        return;
+    }
+    if let Some(ammo) = unsafe { limited_ammo(weapon) } {
+        unsafe { owner.m_Inventory.AddAmmo(ammo, rounds) };
+    }
+}
+
+/// Move `weapon`'s stored rounds to `owner`'s reserve ([`credit_reserve`]) and clear them, as the
+/// game's pickup does.
+///
+/// # Safety
+///
+/// As [`credit_reserve`].
+pub(crate) unsafe fn credit_stored(owner: &mut Character, weapon: &mut WeaponBase) {
+    let stored = std::mem::take(&mut weapon.m_StoredNonMagazineAmmo);
+    unsafe { credit_reserve(owner, weapon, stored) };
 }
 
 /// The local player character.

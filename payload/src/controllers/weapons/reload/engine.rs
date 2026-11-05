@@ -19,10 +19,10 @@ use detours_macro::detour;
 use glam::Mat4;
 use jc3gi::{
     animation::symbol_table::EventIdSymbolTable,
-    character::{character::Character, inventory::Inventory},
+    character::character::Character,
     equipment::weapon::{
-        AmmunitionType, DoActWeaponComponent, ModelAttachementWeaponComponent, ReloadType,
-        SniperWeapon, WeaponBase, WeaponComponentType, WeaponData, WeaponInputs,
+        DoActWeaponComponent, ModelAttachementWeaponComponent, ReloadType, SniperWeapon,
+        WeaponBase, WeaponComponentType, WeaponData, WeaponInputs,
     },
     types::math::Vector3,
 };
@@ -39,7 +39,7 @@ use crate::{
         weapons::{
             dual_wield::single,
             empty,
-            engine::FULL_WEIGHT,
+            engine::{FULL_WEIGHT, credit_reserve, limited_ammo, reserve},
             inventory::{carry, engine as inventory_engine},
             reload::{
                 ammo::{self, Ammo, NativeAmmo},
@@ -103,7 +103,6 @@ pub unsafe fn read(weapon: &WeaponBase) -> Reading {
     // Read as raw values: an unset class or reload type is out of its enum's range.
     let class = unsafe { (&raw const weapon.m_Class).cast::<i32>().read() };
     let reload_type = unsafe { (&raw const weapon.m_ReloadType).cast::<i32>().read() };
-    let ammo_type = unsafe { (&raw const weapon.m_AmmunitionType).cast::<i32>().read() };
     let capacity = unsafe { single::magazine_size(weapon) };
     Reading {
         class,
@@ -113,9 +112,7 @@ pub unsafe fn read(weapon: &WeaponBase) -> Reading {
         chambers: ammo::protected_rounds(weapon as *const WeaponBase as usize),
         out: weapon.m_WeaponIsWithoutMagazine,
         exempt: reload_type == ReloadType::E_RELOAD_NO_ANIMATION as i32
-            || ammo_type == AmmunitionType::AMMO_UNLIMITED as i32
-            || ammo_type < 0
-            || ammo_type >= AmmunitionType::NOF_AMMO_TYPES as i32,
+            || unsafe { limited_ammo(weapon) }.is_none(),
         unlimited: unsafe { unlimited(weapon) },
     }
 }
@@ -151,18 +148,6 @@ pub(super) unsafe fn gun_topology(weapon: &WeaponBase) -> [bool; 2] {
         topology[entry] = gun.is_some_and(|gun| std::ptr::eq(gun.m_Owner, weapon));
     }
     topology
-}
-
-/// The reserve of `weapon`'s ammunition in its user's inventory; zero without a user.
-///
-/// # Safety
-///
-/// As [`read`], with `weapon`'s ammunition type one [`read`] accepted.
-pub unsafe fn reserve(weapon: &WeaponBase) -> i32 {
-    let Some(user) = (unsafe { user(weapon) }) else {
-        return 0;
-    };
-    unsafe { user.m_Inventory.GetAmmoCount(weapon.m_AmmunitionType) }
 }
 
 /// The index of `weapon`'s gun that rides `hand`.
@@ -358,14 +343,8 @@ pub unsafe fn load_rounds(address: usize, rounds: i32) {
     let chambers = partition.map_or(0, Ammo::chamber_rounds);
     let leftover = weapon.m_MagazineAmmo.max(0) - chambers;
     let unlimited = unsafe { unlimited(weapon) };
-    if leftover > 0
-        && !unlimited
-        && let Some(user) = unsafe { user_mut(weapon) }
-    {
-        let ammo_type = weapon.m_AmmunitionType;
-        let inventory: &mut Inventory = &mut user.m_Inventory;
-        let reserve = unsafe { inventory.GetAmmoCount(ammo_type) };
-        unsafe { inventory.SetAmmoCount(ammo_type, reserve + leftover, true) };
+    if !unlimited && let Some(user) = unsafe { user_mut(weapon) } {
+        unsafe { credit_reserve(user, weapon, leftover) };
     }
     let total = ammo::change(address, |ammo| {
         ammo.insert(rounds);
@@ -648,12 +627,6 @@ fn do_act_fire_start(component: *mut DoActWeaponComponent, weapon_data: *mut Wea
         .get()
         .unwrap()
         .call(component, weapon_data);
-}
-
-/// The weapon's user.
-unsafe fn user(weapon: &WeaponBase) -> Option<&Character> {
-    // `m_User` is a `weak_ptr<CCharacter>`; its first word is the character.
-    unsafe { (weapon.m_User[0] as *const Character).as_ref() }
 }
 
 /// The weapon's user, mutably: the character is its own object, not part of the weapon.

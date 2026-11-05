@@ -21,7 +21,7 @@ use std::{cell::Cell, fmt};
 use detours_macro::detour;
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
-    equipment::weapon::{AmmunitionType, WeaponBase},
+    equipment::weapon::WeaponBase,
     game::GameObject,
 };
 use parking_lot::Mutex;
@@ -248,7 +248,7 @@ thread_local! {
 /// `owner` is the live local player, on the game thread.
 unsafe fn read(owner: &Character) -> Option<Stock> {
     let weapon = unsafe { grenade_weapon(owner) }?;
-    let kind = unsafe { ammunition_kind(weapon) }?;
+    let kind = unsafe { engine::limited_ammo(weapon) }? as usize;
     let inventory = &owner.m_Inventory;
     let reserve = inventory.m_Ammunition.get(kind)?;
     let cap = inventory.m_MaxAmmunition.get(kind)?;
@@ -311,19 +311,6 @@ unsafe fn grenade_weapon_mut(owner: &mut Character) -> Option<&mut WeaponBase> {
         .get(WeaponSlot::E_SLOT_HAND_GRENADE as usize)?;
     // SAFETY: as above.
     unsafe { weapon.px.as_mut() }
-}
-
-/// The index of `weapon`'s ammunition kind in the inventory's arrays: a limited kind.
-///
-/// # Safety
-///
-/// `weapon` must be live.
-unsafe fn ammunition_kind(weapon: &WeaponBase) -> Option<usize> {
-    // Read as the raw value: an unset kind is out of the enum's range.
-    let raw = unsafe { (&raw const weapon.m_AmmunitionType).cast::<i32>().read() };
-    ((0..AmmunitionType::NOF_AMMO_TYPES as i32).contains(&raw)
-        && raw != AmmunitionType::AMMO_UNLIMITED as i32)
-        .then_some(raw as usize)
 }
 
 /// Whether the game's own pickup of `weapon` for `activator` is held back: a hand grenade, for the

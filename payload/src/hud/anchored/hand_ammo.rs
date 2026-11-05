@@ -10,10 +10,13 @@
 //! the game's own dual-wield pair, which share one magazine. A magazine out of its gun reads as
 //! empty.
 
-use jc3gi::{character::character::Character, equipment::weapon::WeaponBase};
+use jc3gi::equipment::weapon::WeaponBase;
 use parking_lot::Mutex;
 
-use crate::hud::palette::{ALERT, BACKING, FRAME, TEXT, premultiply};
+use crate::{
+    controllers::weapons::engine::reserve,
+    hud::palette::{ALERT, BACKING, FRAME, TEXT, premultiply},
+};
 
 /// The counter texture's size, texels.
 pub(crate) const COUNT_TEXELS: (u32, u32) = (192, 40);
@@ -47,11 +50,7 @@ pub(crate) struct HandsAmmo {
 pub(crate) unsafe fn observe(guns: [Option<usize>; 2]) {
     let hands = guns.map(|gun| {
         let weapon = unsafe { (gun? as *const WeaponBase).as_ref() }?;
-        // `m_User` is a `weak_ptr<CCharacter>`; its first word is the character.
-        let reserve = unsafe { (weapon.m_User[0] as *const Character).as_ref() }
-            .map_or(0, |user| unsafe {
-                user.m_Inventory.GetAmmoCount(weapon.m_AmmunitionType)
-            });
+        let reserve = unsafe { reserve(weapon) };
         Some(HandAmmo {
             weapon: gun?,
             magazine: weapon.m_MagazineAmmo,

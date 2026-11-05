@@ -87,7 +87,7 @@ use crate::controllers::{
         capabilities::{GunHand, GunOwner},
         docks,
         dual_wield::single::magazine::Dealt,
-        engine::HeldWeapon,
+        engine::{HeldWeapon, reserve},
         inventory::engine::strong_to,
         pouch_models::{self, MODEL_PLACEMENT},
         reload::{
@@ -529,7 +529,7 @@ impl FinishResult {
             if reading.exempt {
                 return None;
             }
-            Some((reading, unsafe { engine::reserve(weapon) }))
+            Some((reading, unsafe { reserve(weapon) }))
         })
     }
 }
