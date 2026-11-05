@@ -648,6 +648,9 @@ unsafe fn seat_tick(frame: &mut FrameState, config: &RoomscaleConfig, now: Insta
     if let Some(kind) = action.recenter {
         vr::request_seat_recenter(kind);
     }
+    if action.rebase_yaw {
+        vr::request_seat_yaw_rebase();
+    }
     if let Some(target) = action.fade {
         if action.hold_s > 0.0 {
             let hold = Duration::try_from_secs_f32(action.hold_s).unwrap_or(Duration::ZERO);

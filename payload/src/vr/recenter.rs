@@ -1,9 +1,14 @@
 //! Recentering the cockpit: the baseline the per-eye poses are expressed relative to, the manual
-//! [`recenter`], the deferred [`request_recenter`] and [`request_seat_recenter`], and the
-//! gameplay-resume auto-recenter ([`auto_recenter_tick`]).
+//! [`recenter`], the deferred [`request_recenter`] and [`request_seat_recenter`], the seat lock's
+//! yaw re-base ([`request_seat_yaw_rebase`]), and the gameplay-resume auto-recenter
+//! ([`auto_recenter_tick`]).
 
-use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
+use std::{
+    sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering},
+    time::{Duration, Instant},
+};
 
+use body_rig::angle::head_heading;
 use openxr as xr;
 use parking_lot::Mutex;
 
@@ -77,6 +82,23 @@ pub fn request_seat_recenter(kind: RecenterKind) {
     request(kind, false);
 }
 
+/// Ask for the seat lock's yaw re-base at the start of the next frame: the cockpit's yaw turns by
+/// the head's heading against the body when the body last stopped following it (the latest follow
+/// bank), so the offset the head had from the body then does not carry into the seat as a look off
+/// the vehicle's axis. Only the yaw changes; the position and the height stay. A bank older than
+/// [`SEAT_YAW_BANK_WINDOW`], or one a recenter has since spent, is not used.
+pub fn request_seat_yaw_rebase() {
+    PENDING_SEAT_YAW.store(true, Ordering::Relaxed);
+}
+
+/// How recent the follow bank must be for the seat lock's yaw re-base to use it: a vehicle entry,
+/// a hijack, or a stunt position into a seat takes a few seconds from the moment the body stops
+/// following.
+pub const SEAT_YAW_BANK_WINDOW: Duration = Duration::from_secs(15);
+
+/// A yaw re-base smaller than this is not worth turning the view for, radians: about a degree.
+const SEAT_YAW_MIN: f32 = 0.017;
+
 fn request(kind: RecenterKind, manual: bool) {
     let kind_bit = match kind {
         RecenterKind::YawAndHeight => REQUEST_YAW_HEIGHT,
@@ -102,6 +124,8 @@ fn recenter_as(kind: RecenterKind, cause: RecenterCause) {
             let _origin_mutation = origin_provenance::changing();
             let fresh = Baseline::from_pose(pose);
             let previous = state.baseline;
+            // The head's forward becomes the cockpit's, so a bank's offset is spent.
+            *LAST_BANK.lock() = None;
             state.baseline = Some(match (kind, previous) {
                 (RecenterKind::YawAndHeight, Some(previous)) => fresh.keeping_horizontal(previous),
                 _ => fresh,
@@ -204,7 +228,16 @@ fn service_follow_bank() {
             yaw: glam::Quat::IDENTITY,
         });
         baseline.yaw = (baseline.yaw * rotation).normalize();
+        let banked = *baseline;
+        let head = state.latest_head_pose.map(|pose| banked.rebase(pose));
         flight_pose::source_changed(EpochChange::FollowBank);
+        // The head's heading in the banked cockpit frame is its offset from the body.
+        *LAST_BANK.lock() = head
+            .and_then(|pose| {
+                let o = pose.orientation;
+                head_heading(glam::Quat::from_xyzw(o.x, o.y, o.z, o.w))
+            })
+            .map(|yaw| (yaw, Instant::now()));
     }
     // The cockpit frame turns by the inverse: new frame from old.
     let turn = rotation.conjugate();
@@ -220,6 +253,49 @@ fn service_follow_bank() {
         "folded the body's turn under the view into the cockpit baseline"
     );
 }
+
+/// Service a [`request_seat_yaw_rebase`]: turn the baseline's yaw by the latest follow bank's head
+/// offset. Called at the top of the frame, after the follow bank, so a bank in the same frame as
+/// the seat lock is used, and before the frame takes the runtime lock.
+fn service_seat_yaw() {
+    if !PENDING_SEAT_YAW.swap(false, Ordering::Relaxed) {
+        return;
+    }
+    let bank = LAST_BANK.lock().take();
+    let Some(yaw) = bank
+        .filter(|(_, at)| at.elapsed() <= SEAT_YAW_BANK_WINDOW)
+        .map(|(yaw, _)| yaw)
+        .filter(|yaw| yaw.is_finite() && yaw.abs() >= SEAT_YAW_MIN)
+    else {
+        return;
+    };
+    let _origin_mutation = origin_provenance::changing();
+    let rotation = glam::Quat::from_rotation_y(yaw);
+    {
+        let mut state = lock_state();
+        let Some(baseline) = state.baseline.as_mut() else {
+            return;
+        };
+        baseline.yaw = (baseline.yaw * rotation).normalize();
+        flight_pose::source_changed(EpochChange::Recenter);
+    }
+    // The cockpit frame turns by the inverse: new frame from old.
+    let turn = rotation.conjugate();
+    let (kind, cause) = (RecenterKind::YawAndHeight, RecenterCause::SeatTransition);
+    rebased(kind, cause, turn);
+    crate::recorder::tracking::note_recenter(RecenterEvent { kind, cause, turn });
+    tracing::info!(
+        target: "vr",
+        yaw_deg = yaw.to_degrees(),
+        "re-based the cockpit's yaw at the seat lock by the head's offset from the body"
+    );
+}
+
+/// The latest follow bank's head offset from the body, radians, and when the bank ran.
+static LAST_BANK: Mutex<Option<(f32, Instant)>> = Mutex::new(None);
+
+/// Whether a [`request_seat_yaw_rebase`] waits for the next frame.
+static PENDING_SEAT_YAW: AtomicBool = AtomicBool::new(false);
 
 /// What follows a follow bank of `yaw` besides the baseline's own turn: the cockpit frame turned by
 /// `turn`, new frame from old, and the composition gives the turn back.
@@ -258,10 +334,12 @@ pub fn auto_recenter_tick() {
     // would turn the body and the torso estimate under them.
     if !is_running() || crate::testing::replay::is_driving() {
         PENDING_RECENTER.store(REQUEST_NONE, Ordering::Relaxed);
+        PENDING_SEAT_YAW.store(false, Ordering::Relaxed);
         return;
     }
     service_requested_recenter();
     service_follow_bank();
+    service_seat_yaw();
     if !Config::lock_query(|c| c.vr.auto_recenter_on_gameplay) {
         return;
     }

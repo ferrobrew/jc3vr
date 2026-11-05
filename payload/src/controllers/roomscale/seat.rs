@@ -159,6 +159,9 @@ pub struct SeatAction {
     pub hold_s: f32,
     /// The recenter to request.
     pub recenter: Option<RecenterKind>,
+    /// Re-base the cockpit's yaw by the head's offset from the body when it stopped following
+    /// ([`crate::vr::request_seat_yaw_rebase`]), in place of a recenter.
+    pub rebase_yaw: bool,
 }
 
 /// The action `mode` takes at `event`. Under [`SeatTransition::Fade`] the fade clears only after
@@ -166,6 +169,10 @@ pub struct SeatAction {
 pub fn action(mode: SeatTransition, event: SeatEvent, hold_s: f32) -> SeatAction {
     let hold_s = hold_s.max(0.0);
     match (mode, event) {
+        (SeatTransition::Ride, SeatEvent::SeatLocked) => SeatAction {
+            rebase_yaw: true,
+            ..SeatAction::default()
+        },
         (SeatTransition::Ride, _) => SeatAction::default(),
         (_, SeatEvent::EntryBegan) => SeatAction {
             fade: Some(1.0),
@@ -175,11 +182,13 @@ pub fn action(mode: SeatTransition, event: SeatEvent, hold_s: f32) -> SeatAction
             fade: Some(0.0),
             recenter: Some(RecenterKind::Full),
             hold_s: 0.0,
+            ..SeatAction::default()
         },
         (SeatTransition::Fade, SeatEvent::SeatLocked) => SeatAction {
             fade: Some(0.0),
             recenter: Some(RecenterKind::Full),
             hold_s,
+            ..SeatAction::default()
         },
         (SeatTransition::Instant, SeatEvent::ExitBegan) => SeatAction {
             fade: Some(0.0),
@@ -193,11 +202,13 @@ pub fn action(mode: SeatTransition, event: SeatEvent, hold_s: f32) -> SeatAction
             fade: Some(0.0),
             recenter: Some(RecenterKind::YawAndHeight),
             hold_s: 0.0,
+            ..SeatAction::default()
         },
         (SeatTransition::Fade, SeatEvent::ExitDone) => SeatAction {
             fade: Some(0.0),
             recenter: Some(RecenterKind::YawAndHeight),
             hold_s,
+            ..SeatAction::default()
         },
     }
 }
@@ -315,10 +326,9 @@ mod tests {
     }
 
     #[test]
-    fn ride_does_nothing_and_the_others_re_base_at_the_lock() {
+    fn ride_re_bases_only_the_yaw_and_the_others_re_base_at_the_lock() {
         for event in [
             SeatEvent::EntryBegan,
-            SeatEvent::SeatLocked,
             SeatEvent::ExitBegan,
             SeatEvent::ExitDone,
         ] {
@@ -327,6 +337,13 @@ mod tests {
                 SeatAction::default()
             );
         }
+        assert_eq!(
+            action(SeatTransition::Ride, SeatEvent::SeatLocked, 0.3),
+            SeatAction {
+                rebase_yaw: true,
+                ..SeatAction::default()
+            }
+        );
         let instant = action(SeatTransition::Instant, SeatEvent::SeatLocked, 0.3);
         assert_eq!(instant.recenter, Some(RecenterKind::Full));
         assert_eq!(instant.hold_s, 0.0);

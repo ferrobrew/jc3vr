@@ -81,7 +81,7 @@ pub use mirror::{present_mirror, toggle_stereo_pair};
 pub(crate) use recenter::apply_replayed_recenter;
 pub use recenter::{
     RecenterCause, RecenterKind, auto_recenter_tick, recenter, recenter_count, request_recenter,
-    request_seat_recenter,
+    request_seat_recenter, request_seat_yaw_rebase,
 };
 pub use replay::drive_replay_frame;
 pub use resolution::apply_native_resolution;
