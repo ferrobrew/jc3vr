@@ -31,6 +31,7 @@
 //! [`config`] types for tuning parameters. Parts of the gameplay HUD leave the panel through the
 //! [`atlas`]: the [`world_markers`] at their world points, the [`anchored`] readouts at the
 //! gun hand and the off-hand's wrist, and the reticles at the aim point ([`reticle`]).
+//! The [`grab_hint`] draws the game's icons ([`game_icons`]) on the panel's plane.
 
 pub mod aim;
 pub(crate) mod anchored;
@@ -40,6 +41,8 @@ pub(crate) mod config;
 pub mod cursor;
 pub mod depth;
 pub(crate) mod egui_panel;
+pub(crate) mod game_icons;
+pub(crate) mod grab_hint;
 pub(crate) mod mirror_overlay;
 pub(crate) mod pointer;
 mod quad;
@@ -402,6 +405,7 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
     hud.draw_quad(context, device, target, eye);
     reticle::draw(context, device, target);
     anchored::draw(context, device, target, eye);
+    grab_hint::draw(context, device, target, eye, hud.panel_corners());
     hud.clear(context);
 }
 

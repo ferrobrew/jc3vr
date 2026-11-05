@@ -281,6 +281,11 @@ impl ZoneWatch {
         Self { inside: [None; 2] }
     }
 
+    /// The socket whose attraction `hand` is in, as of the last [`step`](Self::step).
+    pub(crate) const fn inside(&self, hand: Hand) -> Option<Socket> {
+        self.inside[hand.index()]
+    }
+
     /// Follow `hand`, with its grip at `grip` (`None` while it has nothing to dock, or its gun is
     /// braced, or the attraction is off), among `attractors`: whether it came into a socket's
     /// attraction this tick, which plays the tick. The hand stays in the socket it is in until it

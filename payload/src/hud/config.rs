@@ -36,6 +36,11 @@ pub struct HudConfig {
     /// [`crate::hud::atlas`].
     #[serde(default)]
     pub atlas: AtlasConfig,
+    /// The grab hint ([`crate::hud::grab_hint`]): while a hand is within reach of a slot on the
+    /// body, the game's icon of what its grip would take, or of the swap a release would make, in
+    /// front of the player on the panel's plane, under the controller scheme.
+    #[serde(default)]
+    pub grab_hint: IconFeatureConfig,
 }
 impl HudConfig {
     pub const fn new() -> Self {
@@ -48,7 +53,28 @@ impl HudConfig {
             egui_panel: EguiPanelConfig::new(),
             world_markers: WorldMarkersConfig::new(),
             atlas: AtlasConfig::new(),
+            grab_hint: IconFeatureConfig::new(),
         }
+    }
+}
+
+/// A HUD feature drawn by the mod with the game's icons: the grab hint
+/// ([`crate::hud::grab_hint`]). Its placement and look are fixed there.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct IconFeatureConfig {
+    pub enabled: bool,
+}
+
+impl IconFeatureConfig {
+    pub const fn new() -> Self {
+        Self { enabled: true }
+    }
+}
+
+impl Default for IconFeatureConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

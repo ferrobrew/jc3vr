@@ -324,6 +324,7 @@ The debug UI's Weapons > Hold, transfer, and grab regions live status shows the 
 1. With rifles docked on both shoulders and the outer back, draw one, snatch or pick up another rifle into the other hand, and let it go over a shoulder: the rifle docked there drops beside you, clear of the body, `hold: the right shoulder was taken, so its weapon falls clear for the one let go of there`, the new rifle docks there, and the hand feels a knock rather than the dock's click.
 2. With one shoulder free, let go between the free and a taken shoulder: the free one takes the rifle, and nothing falls.
 3. Let go of a pistol over a taken hip: it falls, as before; only the back swaps.
+4. Before letting go over the taken shoulder, the grab hint in front of you shows the held rifle, an arrow, and the docked rifle dimmed ([grip.md](grip.md#the-grab-hint)).
 
 ## In the headset: separate pistols
 

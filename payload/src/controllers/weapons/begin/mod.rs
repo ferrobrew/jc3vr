@@ -54,6 +54,7 @@ use crate::{
     hud::anchored::hand_ammo,
 };
 
+mod hint;
 mod place;
 mod socket_candidates;
 
@@ -65,6 +66,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let Some(active) = hands::active_hands_raw() else {
         crate::controllers::weapons::stand_down();
         hand_ammo::clear();
+        hint::clear();
         return TickStart::default();
     };
     let gameplay = gameplay(mode);
@@ -596,7 +598,21 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             .zones
             .step(hand, &tracked.attractors, grip, &ATTRACTION)
     });
+    let in_attraction = Hand::BOTH.map(|hand| tracked.zones.inside(hand));
     drop(state);
+
+    // SAFETY: the game stage runs on the game thread before the world update, and the table keeps
+    // its live weapons alive.
+    unsafe {
+        hint::publish(
+            engine::local_player().as_deref(),
+            &hint::HintInputs {
+                snapshot: live::snapshot_now().as_ref(),
+                chosen: volumes,
+                attracted: in_attraction,
+            },
+        );
+    }
 
     for hand in Hand::BOTH.into_iter().filter(|h| entered[h.index()]) {
         haptics::play(hand, Event::VolumeEnter);

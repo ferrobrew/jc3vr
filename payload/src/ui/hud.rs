@@ -33,6 +33,10 @@ pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer
                 &mut hud.world_markers.enabled,
                 "World markers: draw on-screen markers at their world points instead of on the panel",
             );
+            ui.checkbox(
+                &mut hud.grab_hint.enabled,
+                "Grab hint: the icon of what a hand near a body slot would take",
+            );
             ui.add_enabled_ui(hud.atlas.enabled, |ui| {
                 let atlas = &mut hud.atlas;
                 ui.checkbox(&mut atlas.ammo.enabled, "Ammunition counter above each gun hand");
