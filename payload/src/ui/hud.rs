@@ -37,6 +37,10 @@ pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer
                 &mut hud.grab_hint.enabled,
                 "Grab hint: the icon of what a hand near a body slot would take",
             );
+            ui.checkbox(
+                &mut hud.lost_weapons.enabled,
+                "Lost weapons: the icon of each weapon let go of, above where it lies",
+            );
             ui.add_enabled_ui(hud.atlas.enabled, |ui| {
                 let atlas = &mut hud.atlas;
                 ui.checkbox(&mut atlas.ammo.enabled, "Ammunition counter above each gun hand");

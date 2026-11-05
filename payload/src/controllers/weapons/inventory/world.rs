@@ -18,15 +18,18 @@
 use glam::Vec3;
 use jc3gi::{character::character::Character, equipment::weapon::WeaponBase};
 
-use crate::controllers::{
-    loadout::{ObjectAddress, live},
-    weapons::{
-        hold::refs::{Strong, Weak},
-        inventory::{
-            engine::{self, Fate},
-            pins::{PinPlan, WorldWeapon},
+use crate::{
+    controllers::{
+        loadout::{ObjectAddress, live},
+        weapons::{
+            hold::refs::{Strong, Weak},
+            inventory::{
+                engine::{self, Fate},
+                pins::{PinPlan, WorldWeapon},
+            },
         },
     },
+    hud::{game_icons::IconId, lost_weapons::LostWeapon},
 };
 
 /// The inventory's references to the weapons it has seen.
@@ -171,6 +174,23 @@ impl World {
             .iter()
             .filter(|h| h.with_other && h.held_by_other)
             .count()
+    }
+
+    /// Where each of `lying` lies and its icon, for the HUD's markers
+    /// ([`crate::hud::lost_weapons`]), while it lives and its place can be read.
+    pub(super) fn markers(&self, lying: &[ObjectAddress]) -> Vec<LostWeapon> {
+        lying
+            .iter()
+            .filter_map(|&object| {
+                let strong = self.strong_of(object)?;
+                // SAFETY: the strong reference keeps the weapon alive while it is read.
+                let weapon = unsafe { &*engine::weapon_of(&strong) };
+                Some(LostWeapon {
+                    position: unsafe { engine::origin(weapon) }?,
+                    icon: (weapon.m_WeaponId >= 0).then_some(IconId(weapon.m_WeaponId))?,
+                })
+            })
+            .collect()
     }
 
     /// A strong reference to each of `objects` that still lives.

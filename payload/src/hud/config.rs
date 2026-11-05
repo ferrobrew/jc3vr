@@ -41,6 +41,11 @@ pub struct HudConfig {
     /// front of the player on the panel's plane, under the controller scheme.
     #[serde(default)]
     pub grab_hint: IconFeatureConfig,
+    /// The markers over the weapons the player let go of ([`crate::hud::lost_weapons`]): the
+    /// game's icon of each weapon the loadout table has lying in the world, above where it lies,
+    /// under the controller scheme.
+    #[serde(default)]
+    pub lost_weapons: IconFeatureConfig,
 }
 impl HudConfig {
     pub const fn new() -> Self {
@@ -54,12 +59,14 @@ impl HudConfig {
             world_markers: WorldMarkersConfig::new(),
             atlas: AtlasConfig::new(),
             grab_hint: IconFeatureConfig::new(),
+            lost_weapons: IconFeatureConfig::new(),
         }
     }
 }
 
 /// A HUD feature drawn by the mod with the game's icons: the grab hint
-/// ([`crate::hud::grab_hint`]). Its placement and look are fixed there.
+/// ([`crate::hud::grab_hint`]) or the lost weapon markers ([`crate::hud::lost_weapons`]). Its
+/// placement and look are fixed there.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct IconFeatureConfig {

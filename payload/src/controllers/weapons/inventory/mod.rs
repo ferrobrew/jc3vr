@@ -89,6 +89,7 @@ use crate::{
             },
         },
     },
+    hud::lost_weapons,
 };
 
 /// The pin policy: the weapons the player let go of nearby are kept from the game's despawn while
@@ -363,6 +364,7 @@ pub(crate) unsafe fn input_tick(
         .map(|(object, _)| *object)
         .collect();
     state.world.settle(&kept, &lying, &taken, PINS.forget_m);
+    lost_weapons::publish(state.world.markers(&lying));
     let world = state.world.world(&lying);
     state.status.owned = bound.len() - world.len();
     state.status.world = world;

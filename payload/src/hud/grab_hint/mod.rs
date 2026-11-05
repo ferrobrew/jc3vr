@@ -27,6 +27,7 @@ use std::{
 use anyhow::Context as _;
 use glam::Vec4;
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
+pub(crate) use paint::{TAKE_TEXELS, take as paint_take};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
@@ -38,7 +39,7 @@ use crate::{
         game_icons::{self, IconId, Image, Lookup},
         grab_hint::{
             layout::{hint_corners, panel_frame},
-            paint::{SWAP_TEXELS, TAKE_TEXELS},
+            paint::SWAP_TEXELS,
         },
         quad::HudQuad,
         target::HudTarget,
