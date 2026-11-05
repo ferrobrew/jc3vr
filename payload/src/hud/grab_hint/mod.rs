@@ -42,7 +42,7 @@ use crate::{
             paint::SWAP_TEXELS,
         },
         quad::HudQuad,
-        target::HudTarget,
+        target::{HudTarget, KeyedTexture},
     },
 };
 
@@ -150,57 +150,40 @@ impl Gpu {
     }
 }
 
-/// A hand's textures: one sized for a take, one for a swap, and the hint painted into each.
+/// A hand's textures: one sized for a take and one for a swap, each holding the last hint of its
+/// kind painted into it.
 struct HintTextures {
-    take: HudTarget,
-    swap: HudTarget,
-    painted: Option<Hint>,
+    take: KeyedTexture<Hint>,
+    swap: KeyedTexture<Hint>,
 }
 
 impl HintTextures {
     fn new(device: &Device) -> anyhow::Result<Self> {
         Ok(Self {
-            take: HudTarget::new(device, TAKE_TEXELS.0, TAKE_TEXELS.1)
+            take: KeyedTexture::new(device, TAKE_TEXELS)
                 .context("creating a grab hint's take texture")?,
-            swap: HudTarget::new(device, SWAP_TEXELS.0, SWAP_TEXELS.1)
+            swap: KeyedTexture::new(device, SWAP_TEXELS)
                 .context("creating a grab hint's swap texture")?,
-            painted: None,
         })
     }
 
     /// The texture `hint` is drawn from.
     fn target(&self, hint: Hint) -> &HudTarget {
         match hint {
-            Hint::Take(_) => &self.take,
-            Hint::Swap { .. } => &self.swap,
+            Hint::Take(_) => self.take.target(),
+            Hint::Swap { .. } => self.swap.target(),
         }
     }
 
-    /// Paint `hint` from its loaded `icons`, if it is not the hint painted already.
+    /// Paint `hint` from its loaded `icons`, if its texture does not show it already.
     fn paint(&mut self, context: &ID3D11DeviceContext, hint: Hint, icons: &[Arc<Image>]) {
-        if self.painted == Some(hint) {
-            return;
+        match (hint, icons) {
+            (Hint::Take(_), [icon]) => self.take.update(context, hint, |_| paint::take(icon)),
+            (Hint::Swap { .. }, [incoming, outgoing]) => self
+                .swap
+                .update(context, hint, |_| paint::swap(incoming, outgoing)),
+            _ => {}
         }
-        let texels = match (hint, icons) {
-            (Hint::Take(_), [icon]) => paint::take(icon),
-            (Hint::Swap { .. }, [incoming, outgoing]) => paint::swap(incoming, outgoing),
-            _ => return,
-        };
-        let target = self.target(hint);
-        let (width, _) = target.size();
-        // SAFETY: the texture is ours, of the default usage, and `texels` holds its every RGBA
-        // texel; the caller holds the engine context mutex.
-        unsafe {
-            context.UpdateSubresource(
-                target.color_texture(),
-                0,
-                None,
-                texels.as_ptr().cast(),
-                width * 4,
-                0,
-            );
-        }
-        self.painted = Some(hint);
     }
 }
 

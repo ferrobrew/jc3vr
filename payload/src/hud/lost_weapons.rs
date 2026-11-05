@@ -243,18 +243,7 @@ fn paint(
     let (width, height) = TAKE_TEXELS;
     let target =
         HudTarget::new(device, width, height).context("creating a lost weapon marker's texture")?;
-    // SAFETY: the texture is ours, of the default usage, and `texels` holds its every RGBA texel;
-    // the caller holds the engine context mutex.
-    unsafe {
-        context.UpdateSubresource(
-            target.color_texture(),
-            0,
-            None,
-            texels.as_ptr().cast(),
-            width * 4,
-            0,
-        );
-    }
+    target.upload(context, texels);
     Ok(target)
 }
 

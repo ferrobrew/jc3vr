@@ -10,14 +10,8 @@
 //! the game's own dual-wield pair, which share one magazine. A magazine out of its gun reads as
 //! empty.
 
-use anyhow::Context as _;
-use jc3gi::{
-    character::character::Character, equipment::weapon::WeaponBase, graphics_engine::device::Device,
-};
+use jc3gi::{character::character::Character, equipment::weapon::WeaponBase};
 use parking_lot::Mutex;
-use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
-
-use crate::hud::target::HudTarget;
 
 /// The counter texture's size, texels.
 pub(crate) const COUNT_TEXELS: (u32, u32) = (192, 40);
@@ -136,48 +130,6 @@ pub(crate) fn paint(width: u32, height: u32, key: CountKey) -> Vec<u8> {
         }
     }
     texels
-}
-
-/// A counter's texture, repainted when its key changes.
-pub(crate) struct Count {
-    target: HudTarget,
-    key: Option<CountKey>,
-}
-
-impl Count {
-    pub fn new(device: &Device) -> anyhow::Result<Self> {
-        Ok(Self {
-            target: HudTarget::new(device, COUNT_TEXELS.0, COUNT_TEXELS.1)
-                .context("creating an ammunition counter texture")?,
-            key: None,
-        })
-    }
-
-    pub fn target(&self) -> &HudTarget {
-        &self.target
-    }
-
-    /// Repaint the counter for `key` if it changed.
-    pub fn update(&mut self, context: &ID3D11DeviceContext, key: CountKey) {
-        if self.key == Some(key) {
-            return;
-        }
-        let (width, height) = COUNT_TEXELS;
-        let texels = paint(width, height, key);
-        // SAFETY: the texture is ours, of the default usage, and `texels` holds `width * height`
-        // RGBA texels; the caller holds the engine context mutex.
-        unsafe {
-            context.UpdateSubresource(
-                self.target.color_texture(),
-                0,
-                None,
-                texels.as_ptr().cast(),
-                width * 4,
-                0,
-            );
-        }
-        self.key = Some(key);
-    }
 }
 
 static SAMPLE: Mutex<Option<HandsAmmo>> = Mutex::new(None);

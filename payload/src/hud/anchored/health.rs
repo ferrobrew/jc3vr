@@ -3,12 +3,6 @@
 //! the full-screen vignette, which the floating HUD suppresses), so the bar is the player's only
 //! health display in VR.
 
-use anyhow::Context as _;
-use jc3gi::graphics_engine::device::Device;
-use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
-
-use crate::hud::target::HudTarget;
-
 /// The bar texture's size, texels. Small: the bar is a few centimetres on the wrist.
 pub(crate) const BAR_TEXELS: (u32, u32) = (320, 32);
 
@@ -107,48 +101,6 @@ pub(crate) fn paint(width: u32, height: u32, key: BarKey) -> Vec<u8> {
         }
     }
     texels
-}
-
-/// The bar's texture, repainted when its key changes.
-pub(crate) struct Bar {
-    target: HudTarget,
-    key: Option<BarKey>,
-}
-
-impl Bar {
-    pub fn new(device: &Device) -> anyhow::Result<Self> {
-        Ok(Self {
-            target: HudTarget::new(device, BAR_TEXELS.0, BAR_TEXELS.1)
-                .context("creating the health bar texture")?,
-            key: None,
-        })
-    }
-
-    pub fn target(&self) -> &HudTarget {
-        &self.target
-    }
-
-    /// Repaint the bar for `key` if it changed.
-    pub fn update(&mut self, context: &ID3D11DeviceContext, key: BarKey) {
-        if self.key == Some(key) {
-            return;
-        }
-        let (width, height) = BAR_TEXELS;
-        let texels = paint(width, height, key);
-        // SAFETY: the texture is ours, of the default usage, and `texels` holds `width * height`
-        // RGBA texels; the caller holds the engine context mutex.
-        unsafe {
-            context.UpdateSubresource(
-                self.target.color_texture(),
-                0,
-                None,
-                texels.as_ptr().cast(),
-                width * 4,
-                0,
-            );
-        }
-        self.key = Some(key);
-    }
 }
 
 /// The frame's width, texels.

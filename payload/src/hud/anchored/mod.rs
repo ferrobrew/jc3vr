@@ -30,6 +30,7 @@ use std::{
     time::Instant,
 };
 
+use anyhow::Context as _;
 use glam::{Vec2, Vec3, Vec4};
 use jc3gi::{
     character::character::Character,
@@ -55,8 +56,8 @@ use crate::{
     hud::{
         HudMode,
         anchored::{
-            hand_ammo::{COUNT_TEXELS, Count, CountKey},
-            health::{BAR_TEXELS, Bar, BarKey, HealthTrail},
+            hand_ammo::{COUNT_TEXELS, CountKey},
+            health::{BAR_TEXELS, BarKey, HealthTrail},
             place::{
                 Attention, ammo_anchor, facing_corners, fade_out, follow, forearm_anchor,
                 inner_wrist_pose, pull_toward, sighting, stacked_corners, upright_corners,
@@ -66,6 +67,7 @@ use crate::{
         atlas::{self, Part},
         config::{AtlasConfig, HudConfig},
         quad::HudQuad,
+        target::KeyedTexture,
     },
 };
 
@@ -264,8 +266,8 @@ impl HandCount {
 /// active frame.
 struct Gpu {
     quad: HudQuad,
-    bar: Bar,
-    counts: [Count; 2],
+    bar: KeyedTexture<BarKey>,
+    counts: [KeyedTexture<CountKey>; 2],
 }
 
 impl State {
@@ -393,7 +395,9 @@ impl State {
             });
             count.alpha = fade(count.alpha, !sighted, dt, SIGHT_FADE_S);
             if let Some(gpu) = self.gpu.as_mut() {
-                gpu.counts[hand.index()].update(context, CountKey::new(&ammo));
+                gpu.counts[hand.index()].update(context, CountKey::new(&ammo), |key| {
+                    hand_ammo::paint(COUNT_TEXELS.0, COUNT_TEXELS.1, key)
+                });
             }
             self.status.counts[hand.index()] = count.corners.is_some();
         }
@@ -541,8 +545,11 @@ impl State {
         }
         if let (Some(gpu), Some(fraction), Some(trail)) = (self.gpu.as_mut(), fraction, trail) {
             let low = fraction <= WRIST_LOW_HEALTH;
-            gpu.bar
-                .update(context, BarKey::new(BAR_TEXELS.0, fraction, trail, low));
+            gpu.bar.update(
+                context,
+                BarKey::new(BAR_TEXELS.0, fraction, trail, low),
+                |key| health::paint(BAR_TEXELS.0, BAR_TEXELS.1, key),
+            );
         }
     }
 
@@ -619,10 +626,15 @@ impl State {
 
 impl Gpu {
     fn new(device: &Device) -> anyhow::Result<Self> {
+        let count = || {
+            KeyedTexture::new(device, COUNT_TEXELS)
+                .context("creating an ammunition counter texture")
+        };
         Ok(Self {
             quad: HudQuad::new(device)?,
-            bar: Bar::new(device)?,
-            counts: [Count::new(device)?, Count::new(device)?],
+            bar: KeyedTexture::new(device, BAR_TEXELS)
+                .context("creating the health bar texture")?,
+            counts: [count()?, count()?],
         })
     }
 }

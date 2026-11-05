@@ -1,12 +1,13 @@
-//! The GPU resources the redirected HUD renders into.
+//! The GPU resources the redirected HUD renders into, and the textures the mod paints on the CPU
+//! for its own HUD quads.
 
 use anyhow::Context as _;
 use jc3gi::graphics_engine::device::Device;
 use windows::Win32::Graphics::{
     Direct3D11::{
         D3D11_BIND_DEPTH_STENCIL, D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE,
-        D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, ID3D11DepthStencilView, ID3D11RenderTargetView,
-        ID3D11ShaderResourceView, ID3D11Texture2D,
+        D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, ID3D11DepthStencilView, ID3D11DeviceContext,
+        ID3D11RenderTargetView, ID3D11ShaderResourceView, ID3D11Texture2D,
     },
     Dxgi::Common::{DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC},
 };
@@ -121,5 +122,60 @@ impl HudTarget {
 
     pub(crate) fn depth_dsv(&self) -> &ID3D11DepthStencilView {
         &self.depth_dsv
+    }
+
+    /// Replace the colour texture's texels with `texels`: straight rows of RGBA, top first, one
+    /// texel per texel of the target. A buffer of any other length is not uploaded.
+    ///
+    /// The caller holds the engine context mutex.
+    pub(crate) fn upload(&self, context: &ID3D11DeviceContext, texels: &[u8]) {
+        let (width, height) = self.size;
+        let expected = width as usize * height as usize * 4;
+        debug_assert_eq!(texels.len(), expected, "a HUD texture's texel count");
+        if texels.len() != expected {
+            return;
+        }
+        // SAFETY: the texture is ours, of the default usage, and `texels` holds its every RGBA
+        // texel, checked above; the caller holds the engine context mutex.
+        unsafe {
+            context.UpdateSubresource(&self.color, 0, None, texels.as_ptr().cast(), width * 4, 0);
+        }
+    }
+}
+
+/// A texture painted on the CPU and repainted only when what it shows, its key, changes.
+pub(crate) struct KeyedTexture<K> {
+    target: HudTarget,
+    key: Option<K>,
+}
+
+impl<K: Copy + PartialEq> KeyedTexture<K> {
+    /// A texture of `width` x `height` texels, not yet painted.
+    pub(crate) fn new(device: &Device, (width, height): (u32, u32)) -> anyhow::Result<Self> {
+        Ok(Self {
+            target: HudTarget::new(device, width, height)?,
+            key: None,
+        })
+    }
+
+    pub(crate) fn target(&self) -> &HudTarget {
+        &self.target
+    }
+
+    /// Repaint the texture for `key` with `paint`'s texels ([`HudTarget::upload`]) unless it
+    /// already shows `key`.
+    ///
+    /// The caller holds the engine context mutex.
+    pub(crate) fn update(
+        &mut self,
+        context: &ID3D11DeviceContext,
+        key: K,
+        paint: impl FnOnce(K) -> Vec<u8>,
+    ) {
+        if self.key == Some(key) {
+            return;
+        }
+        self.target.upload(context, &paint(key));
+        self.key = Some(key);
     }
 }
