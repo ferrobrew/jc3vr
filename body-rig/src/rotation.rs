@@ -1,10 +1,11 @@
-//! Rotation primitives: the yaw left of a rotation, in its two meanings.
+//! Rotation primitives: the yaw left of a rotation, in its two meanings, and a rotation's twist
+//! about an axis.
 //!
 //! Axes and headings are as in [`crate::angle`].
 
 use glam::{EulerRot, Quat, Vec3};
 
-use crate::angle::yaw_of;
+use crate::angle::{wrap, yaw_of};
 
 /// `rotation` with its pitch and roll removed: the turn about +Y that takes -Z to the ground
 /// projection of `rotation`'s forward. With the forward vertical, which has no projection, the
@@ -27,6 +28,14 @@ pub fn twist_about_y(rotation: Quat) -> Quat {
     } else {
         Quat::IDENTITY
     }
+}
+
+/// The angle of `rotation`'s twist about the unit `axis`, the twist part of its swing-twist split:
+/// radians in `-π..=π`, positive anticlockwise looking down the axis toward its origin, and zero
+/// for a non-finite rotation. Either sign of the quaternion gives the same angle.
+pub fn twist_angle(rotation: Quat, axis: Vec3) -> f32 {
+    let along = Vec3::new(rotation.x, rotation.y, rotation.z).dot(axis);
+    wrap(2.0 * along.atan2(rotation.w))
 }
 
 #[cfg(test)]
@@ -66,5 +75,23 @@ mod tests {
             twist_about_y(Quat::from_rotation_x(std::f32::consts::PI)),
             Quat::IDENTITY
         );
+    }
+
+    #[test]
+    fn the_twist_angle_is_wrapped_and_finite() {
+        let axis = Vec3::Y;
+        assert!((twist_angle(Quat::from_rotation_y(0.5), axis) - 0.5).abs() < 1e-5);
+        assert!((twist_angle(Quat::from_rotation_y(-3.0), axis) + 3.0).abs() < 1e-4);
+        assert!((twist_angle(-Quat::from_rotation_y(-3.0), axis) + 3.0).abs() < 1e-4);
+        assert_eq!(twist_angle(Quat::from_rotation_x(0.7), axis), 0.0);
+        let nan = Quat::from_xyzw(f32::NAN, 0.0, 0.0, 1.0);
+        assert_eq!(twist_angle(nan, axis), 0.0);
+    }
+
+    #[test]
+    fn the_twist_angle_ignores_the_swing() {
+        // A swing about an axis square to the twist axis, applied after the twist.
+        let rotation = Quat::from_rotation_x(0.4) * Quat::from_rotation_z(0.9);
+        assert!((twist_angle(rotation, Vec3::Z) - 0.9).abs() < 1e-5);
     }
 }

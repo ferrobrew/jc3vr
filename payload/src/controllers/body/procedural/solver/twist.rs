@@ -24,6 +24,7 @@
 //! Twists are measured against the reference pose's, so a limb at its reference twist leaves its
 //! twist bones at theirs.
 
+use body_rig::rotation::twist_angle;
 use glam::{Quat, Vec3};
 use smol_str::SmolStr;
 
@@ -152,13 +153,13 @@ impl Segment {
     pub fn twist(&self, parent: Quat, segment: Quat, end: Quat) -> f32 {
         if self.distal {
             let local = segment.inverse() * end;
-            twist_about(local * self.reference_end_local.inverse(), self.axis)
+            twist_angle(local * self.reference_end_local.inverse(), self.axis)
         } else {
             let local = parent.inverse() * segment;
             // The turn from the reference, in the parent's frame, measured about the segment's
             // length as the parent sees it now.
             let axis = local * self.axis;
-            twist_about(local * self.reference_local.inverse(), axis)
+            twist_angle(local * self.reference_local.inverse(), axis)
         }
     }
 
@@ -236,16 +237,6 @@ impl TwistRig {
             })
             .collect()
     }
-}
-
-/// The twist part of `rotation` about the unit `axis`, radians in `-π..=π`: the angle of its
-/// swing-twist split's twist.
-pub fn twist_about(rotation: Quat, axis: Vec3) -> f32 {
-    let along = Vec3::new(rotation.x, rotation.y, rotation.z).dot(axis);
-    let angle = 2.0 * along.atan2(rotation.w);
-    let pi = std::f32::consts::PI;
-    let wrapped = (angle + pi).rem_euclid(2.0 * pi) - pi;
-    if wrapped.is_finite() { wrapped } else { 0.0 }
 }
 
 /// The limb segments: the segment, its parent, its end, whether the twist comes from its end, and
@@ -335,7 +326,7 @@ mod tests {
         assert!((twist - 1.5).abs() < 1e-4, "{twist}");
         let current = [model[fore.rolls[0].bone].rotation];
         let rolls = fore.rolls(segment, twist, 0.0, &current, 1.0);
-        let turned = twist_about(segment.inverse() * rolls[0], fore.axis);
+        let turned = twist_angle(segment.inverse() * rolls[0], fore.axis);
         assert!((turned - 1.5 * 0.8).abs() < 1e-3, "{turned}");
         // At no weight, the twist bone stays as it is.
         assert_eq!(
@@ -363,7 +354,7 @@ mod tests {
         let current = [model[upper.rolls[0].bone].rotation];
         let rolls = upper.rolls(segment, twist, 0.0, &current, 1.0);
         // The twist bone near the shoulder turns back by most of the roll.
-        let turned = twist_about(segment.inverse() * rolls[0], upper.axis);
+        let turned = twist_angle(segment.inverse() * rolls[0], upper.axis);
         assert!((turned + 1.5 * 0.8).abs() < 1e-3, "{turned}");
     }
 
@@ -394,17 +385,5 @@ mod tests {
         // The forearm carries less of the turn along its length.
         let spread = fore.turn(&at(1.0), twist, passed) - fore.turn(&at(0.0), twist, passed);
         assert!(spread < twist - 0.3);
-    }
-
-    #[test]
-    fn the_twist_is_wrapped_and_finite() {
-        let axis = Vec3::Y;
-        assert!((twist_about(Quat::from_rotation_y(0.5), axis) - 0.5).abs() < 1e-5);
-        assert!((twist_about(Quat::from_rotation_y(-3.0), axis) + 3.0).abs() < 1e-4);
-        assert_eq!(twist_about(Quat::from_rotation_x(0.7), axis), 0.0);
-        assert_eq!(
-            twist_about(Quat::from_xyzw(f32::NAN, 0.0, 0.0, 1.0), axis),
-            0.0
-        );
     }
 }

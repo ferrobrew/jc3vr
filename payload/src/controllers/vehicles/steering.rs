@@ -40,7 +40,7 @@
 //! vehicle's own steering. Let go, the wheel returns to centre at the return rate, easing in over
 //! the last stretch ([`return_step`]).
 
-use body_rig::angle::wrap;
+use body_rig::{angle::wrap, rotation::twist_angle};
 use glam::{Quat, Vec3};
 
 use crate::controllers::vehicles::{config::WheelTracking, tuning::WheelSpec, wheel::WheelFrame};
@@ -113,7 +113,9 @@ impl WheelGrip {
         let now = Sample::at(frame, position, orientation);
         let last = std::mem::replace(&mut self.last, now);
         let twist = match (last.orientation, now.orientation) {
-            (Some(last), Some(now)) => Some(clockwise_twist(now * last.inverse(), frame.normal())),
+            // The face normal points toward the driver, so a positive twist about it runs
+            // anticlockwise as the driver sees it, and clockwise is its negation.
+            (Some(last), Some(now)) => Some(-twist_angle(now * last.inverse(), frame.normal())),
             _ => None,
         };
         // A hand that crossed the hub's unstable middle between two ticks counts by the smaller
@@ -332,16 +334,6 @@ fn response(spec: &WheelSpec) -> f32 {
     } else {
         1.0
     }
-}
-
-/// The rotation `delta`'s twist about `axis` (the wheel's face normal, toward the driver), radians
-/// clockwise as the driver sees it.
-fn clockwise_twist(delta: Quat, axis: Vec3) -> f32 {
-    let delta = if delta.w < 0.0 { -delta } else { delta };
-    let along = Vec3::new(delta.x, delta.y, delta.z).dot(axis);
-    let twist = 2.0 * along.atan2(delta.w);
-    // Seen from the driver, along -axis, a positive rotation about the axis runs anticlockwise.
-    if twist.is_finite() { -wrap(twist) } else { 0.0 }
 }
 
 /// How much a hand at `position` counts by its travel around the hub: nothing near the hub, fully

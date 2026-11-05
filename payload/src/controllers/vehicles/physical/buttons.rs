@@ -15,12 +15,13 @@
 //! `REVERSE` as the triggers do, so the brake grip brakes a moving bike and then reverses it, as
 //! the left trigger does.
 
+use body_rig::rotation::twist_angle;
 use glam::{Quat, Vec3};
 
 use crate::controllers::{
     frame::Hand,
     vehicles::{
-        physical::{ControlKind, Hold, bar_ends, sticks::twist_about},
+        physical::{ControlKind, Hold, bar_ends},
         tuning::CockpitButtonsTuning,
         wheel::{BarsFrame, WheelFrame},
     },
@@ -153,9 +154,9 @@ pub fn grip_twist(grip: TwistGrip, grab: Quat, now: Quat, across: Vec3) -> f32 {
     let delta = now * grab.inverse();
     match grip {
         TwistGrip::Throttle | TwistGrip::Brake => {
-            twist_about(delta, across.try_normalize().unwrap_or(Vec3::X))
+            twist_angle(delta, across.try_normalize().unwrap_or(Vec3::X))
         }
-        TwistGrip::Collective => twist_about(delta, Vec3::Z).abs(),
+        TwistGrip::Collective => twist_angle(delta, Vec3::Z).abs(),
     }
 }
 

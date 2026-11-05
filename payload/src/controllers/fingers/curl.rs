@@ -4,7 +4,8 @@
 //! A curl runs from 0 (the finger straight) to 1 (the finger closed into a fist). A splay is the
 //! finger's sideways turn at its knuckle toward the thumb side, in radians.
 
-use glam::Quat;
+use body_rig::rotation::twist_angle;
+use glam::{Quat, Vec3};
 
 use crate::controllers::{
     fingers::config::FingerSource,
@@ -118,7 +119,7 @@ pub fn from_joints(hand: Hand, joints: &[HandJoint; HAND_JOINT_COUNT]) -> Option
         if finger != Finger::Thumb {
             // The spec's +Y turn swings -Z toward -X, the thumb side of a right hand and the
             // little finger's side of a left hand.
-            let turn = twist(orientation(0).inverse() * orientation(1), TwistAxis::Y);
+            let turn = twist_angle(orientation(0).inverse() * orientation(1), Vec3::Y);
             curls.splay[finger.index()] = match hand {
                 Hand::Right => turn,
                 Hand::Left => -turn,
@@ -215,29 +216,7 @@ fn chain(finger: Finger) -> &'static [usize] {
 /// The flexion of `child` relative to `parent`: its turn about the parent's -X, which swings -Z
 /// toward the palm.
 fn flexion(parent: Quat, child: Quat) -> f32 {
-    -twist(parent.inverse() * child, TwistAxis::X)
-}
-
-#[derive(Copy, Clone)]
-enum TwistAxis {
-    X,
-    Y,
-}
-
-/// The angle of `q`'s twist about `axis` (its swing-twist decomposition), in `-π..=π`.
-fn twist(q: Quat, axis: TwistAxis) -> f32 {
-    let component = match axis {
-        TwistAxis::X => q.x,
-        TwistAxis::Y => q.y,
-    };
-    let angle = 2.0 * component.atan2(q.w);
-    if angle > std::f32::consts::PI {
-        angle - std::f32::consts::TAU
-    } else if angle < -std::f32::consts::PI {
-        angle + std::f32::consts::TAU
-    } else {
-        angle
-    }
+    -twist_angle(parent.inverse() * child, Vec3::X)
 }
 
 fn lerp(a: f32, b: f32, t: f32) -> f32 {

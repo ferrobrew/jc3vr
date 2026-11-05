@@ -7,8 +7,7 @@
 //! measured from the hand's orientation when it took the stick, so a wrist held at any angle
 //! starts from no rudder.
 
-use std::f32::consts::{PI, TAU};
-
+use body_rig::rotation::twist_angle;
 use glam::{Quat, Vec2, Vec3};
 
 use crate::controllers::{
@@ -63,7 +62,7 @@ pub fn spring_back(spec: &StickSpec, deflection: Vec2, dt: f32) -> Vec2 {
 /// and holds it at `now`: its twist about the shaft (the cockpit frame's vertical), turning the top
 /// to the right for a right rudder, past the deadzone and fully at the full twist.
 pub fn twist_rudder(config: &FlightControlsTuning, grab: Quat, now: Quat) -> f32 {
-    let twist = -twist_about(now * grab.inverse(), Vec3::Y);
+    let twist = -twist_angle(now * grab.inverse(), Vec3::Y);
     let deadzone = config.twist_deadzone_deg.to_radians().max(0.0);
     let full = config.twist_full_deg.to_radians().max(deadzone + 1e-3);
     let past = (twist.abs() - deadzone).max(0.0);
@@ -131,19 +130,6 @@ pub(super) fn step_stick(
 
 /// A returning stick closer to centre than this, metres, is at centre.
 const SETTLED_M: f32 = 0.002;
-
-/// The rotation `delta`'s twist about the unit `axis`, radians, positive anticlockwise looking down
-/// the axis toward its origin.
-pub(super) fn twist_about(delta: Quat, axis: Vec3) -> f32 {
-    let delta = if delta.w < 0.0 { -delta } else { delta };
-    let along = Vec3::new(delta.x, delta.y, delta.z).dot(axis);
-    let twist = 2.0 * along.atan2(delta.w);
-    if twist.is_finite() {
-        (twist + PI).rem_euclid(TAU) - PI
-    } else {
-        0.0
-    }
-}
 
 #[cfg(test)]
 mod tests {
