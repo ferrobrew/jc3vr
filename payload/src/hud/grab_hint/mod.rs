@@ -17,10 +17,7 @@ mod layout;
 mod paint;
 
 use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -41,6 +38,7 @@ use crate::{
             layout::{hint_corners, panel_frame},
             paint::SWAP_TEXELS,
         },
+        log_once::LogOnce,
         quad::HudQuad,
         target::{HudTarget, KeyedTexture},
     },
@@ -225,7 +223,7 @@ impl State {
             match Gpu::new(device) {
                 Ok(gpu) => self.gpu = Some(gpu),
                 Err(e) => {
-                    log_once(&e);
+                    FAILURES.error(&e);
                     return;
                 }
             }
@@ -293,10 +291,4 @@ impl State {
     }
 }
 
-/// Log a resource failure once per session; the next frame retries regardless.
-fn log_once(error: &anyhow::Error) {
-    static LOGGED: AtomicBool = AtomicBool::new(false);
-    if !LOGGED.swap(true, Ordering::Relaxed) {
-        tracing::error!("hud grab hint: {error:#}");
-    }
-}
+static FAILURES: LogOnce = LogOnce::new("hud grab hint");

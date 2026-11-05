@@ -10,8 +10,6 @@
 //!
 //! On eye 0 the corners are placed from the head pose; both eyes then draw the same corners.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use glam::{Quat, Vec3, Vec4};
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use parking_lot::Mutex;
@@ -20,6 +18,7 @@ use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 use crate::hud::{
     aim,
     atlas::{self, Part},
+    log_once::LogOnce,
     quad::HudQuad,
     scaleform,
     world_markers::layout::{Billboard, billboard_corners, radians_per_texel},
@@ -51,7 +50,7 @@ pub(crate) fn prepare_frame(device: &Device, inputs: &FrameInputs) {
         match HudQuad::new(device) {
             Ok(quad) => state.quad = Some(quad),
             Err(e) => {
-                log_once(&e);
+                FAILURES.error(&e);
                 return;
             }
         }
@@ -106,13 +105,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     corners: None,
 });
 
-/// Log a resource failure once per session; the next frame retries regardless.
-fn log_once(error: &anyhow::Error) {
-    static LOGGED: AtomicBool = AtomicBool::new(false);
-    if !LOGGED.swap(true, Ordering::Relaxed) {
-        tracing::error!("hud reticle: {error:#}");
-    }
-}
+static FAILURES: LogOnce = LogOnce::new("hud reticle");
 
 #[cfg(test)]
 mod tests {

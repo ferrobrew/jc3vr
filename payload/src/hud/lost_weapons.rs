@@ -17,7 +17,6 @@
 
 use std::{
     collections::HashMap,
-    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 
@@ -35,6 +34,7 @@ use crate::{
         anchored::place::upright_corners,
         game_icons::{self, IconId, Lookup},
         grab_hint::{TAKE_TEXELS, paint_take},
+        log_once::LogOnce,
         quad::HudQuad,
         target::HudTarget,
     },
@@ -181,7 +181,7 @@ impl State {
                     })
                 }
                 Err(e) => {
-                    log_once(&e);
+                    FAILURES.error(&e);
                     return;
                 }
             }
@@ -203,7 +203,7 @@ impl State {
                         gpu.textures.insert(marker.icon, texture);
                     }
                     Err(e) => {
-                        log_once(&e);
+                        FAILURES.error(&e);
                         continue;
                     }
                 }
@@ -247,13 +247,7 @@ fn paint(
     Ok(target)
 }
 
-/// Log a resource failure once per session; the next frame retries regardless.
-fn log_once(error: &anyhow::Error) {
-    static LOGGED: AtomicBool = AtomicBool::new(false);
-    if !LOGGED.swap(true, Ordering::Relaxed) {
-        tracing::error!("hud lost weapons: {error:#}");
-    }
-}
+static FAILURES: LogOnce = LogOnce::new("hud lost weapons");
 
 #[cfg(test)]
 mod tests {

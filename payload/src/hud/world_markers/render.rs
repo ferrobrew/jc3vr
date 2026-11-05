@@ -23,6 +23,7 @@ use windows::Win32::Graphics::Direct3D11::{D3D11_BOX, ID3D11DeviceContext};
 use crate::{
     config::Config,
     hud::{
+        log_once::LogOnce,
         quad::HudQuad,
         target::HudTarget,
         world_markers::{
@@ -76,7 +77,7 @@ pub(crate) fn prepare_frame(
         match Renderer::new(device) {
             Ok(built) => *renderer = Some(built),
             Err(e) => {
-                log_once(&e);
+                FAILURES.error(&e);
                 return;
             }
         }
@@ -226,7 +227,7 @@ impl Renderer {
             slot_size(&LABEL_CROP, scale),
             layout.markers.len(),
         ) {
-            log_once(&e);
+            FAILURES.error(&e);
             return;
         }
 
@@ -371,7 +372,7 @@ impl Renderer {
             match DepthProbe::new(device) {
                 Ok(probe) => self.depth = Some(probe),
                 Err(e) => {
-                    log_once(&e);
+                    FAILURES.error(&e);
                     return;
                 }
             }
@@ -518,11 +519,4 @@ const MAX_DISTANCE_M: f32 = 300.0;
 /// How long a marker's placement state outlives its last sighting, in seconds.
 const FORGET_S: f32 = 2.0;
 
-/// Log a resource failure once per session; the next frame retries regardless.
-fn log_once(error: &anyhow::Error) {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    static LOGGED: AtomicBool = AtomicBool::new(false);
-    if !LOGGED.swap(true, Ordering::Relaxed) {
-        tracing::error!("hud world markers: {error:#}");
-    }
-}
+static FAILURES: LogOnce = LogOnce::new("hud world markers");

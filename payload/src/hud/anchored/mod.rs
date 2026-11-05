@@ -25,10 +25,7 @@ pub(crate) mod hand_ammo;
 mod health;
 pub(crate) mod place;
 
-use std::{
-    sync::atomic::{AtomicBool, Ordering},
-    time::Instant,
-};
+use std::time::Instant;
 
 use anyhow::Context as _;
 use glam::{Vec2, Vec3, Vec4};
@@ -66,6 +63,7 @@ use crate::{
         },
         atlas::{self, Part},
         config::{AtlasConfig, HudConfig},
+        log_once::LogOnce,
         quad::HudQuad,
         target::KeyedTexture,
     },
@@ -342,7 +340,7 @@ impl State {
             match Gpu::new(device) {
                 Ok(gpu) => self.gpu = Some(gpu),
                 Err(e) => {
-                    log_once(&e);
+                    FAILURES.error(&e);
                     return;
                 }
             }
@@ -639,10 +637,4 @@ impl Gpu {
     }
 }
 
-/// Log a resource failure once per session; the next frame retries regardless.
-fn log_once(error: &anyhow::Error) {
-    static LOGGED: AtomicBool = AtomicBool::new(false);
-    if !LOGGED.swap(true, Ordering::Relaxed) {
-        tracing::error!("hud anchored readouts: {error:#}");
-    }
-}
+static FAILURES: LogOnce = LogOnce::new("hud anchored readouts");

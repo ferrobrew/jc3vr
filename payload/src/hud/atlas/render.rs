@@ -18,6 +18,7 @@ use crate::hud::{
         FrameStatus, STATUS, capture_for,
         layout::{Cell, band_texels, texel_rect},
     },
+    log_once::LogOnce,
     target::HudTarget,
     world_markers::layout::TexelRect,
 };
@@ -100,7 +101,7 @@ pub(crate) fn prepare_frame(device: &Device, hud: Option<&HudTarget>, active: bo
             continue;
         };
         if let Err(e) = renderer.ensure_slot(device, *part, (rect.width(), rect.height())) {
-            log_once(&e);
+            FAILURES.error(&e);
             continue;
         }
         let size = Vec2::new(texture.0 as f32, texture.1 as f32);
@@ -111,7 +112,7 @@ pub(crate) fn prepare_frame(device: &Device, hud: Option<&HudTarget>, active: bo
     if let Err(e) =
         renderer.ensure_blank(device, texture.0, bands[0].height().max(bands[1].height()))
     {
-        log_once(&e);
+        FAILURES.error(&e);
         return;
     }
     renderer.frame = Some(Frame {
@@ -295,10 +296,4 @@ fn texel_box(rect: TexelRect) -> D3D11_BOX {
     }
 }
 
-/// Log a resource failure once per session; the next frame retries regardless.
-fn log_once(error: &anyhow::Error) {
-    static LOGGED: AtomicBool = AtomicBool::new(false);
-    if !LOGGED.swap(true, Ordering::Relaxed) {
-        tracing::error!("hud atlas: {error:#}");
-    }
-}
+static FAILURES: LogOnce = LogOnce::new("hud atlas");
