@@ -40,6 +40,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use body_rig::body::EYES_TO_NECK;
 use glam::{Mat4, Vec3};
 use jc3gi::character::character::{AnimationController, Character, Joint};
 use parking_lot::Mutex;
@@ -52,12 +53,9 @@ pub use crate::controllers::presentation::{
 use crate::{
     config::Config,
     controllers::{
-        body::{
-            procedural::{
-                self,
-                skeleton::{self, SkeletonKey},
-            },
-            rig::torso::EYES_TO_NECK_PIVOT,
+        body::procedural::{
+            self,
+            skeleton::{self, SkeletonKey},
         },
         frame::{Hand, Pose},
         hands::{late, pose as hand_pose, reach::REACH},
@@ -228,7 +226,7 @@ pub(crate) fn begin_frame() {
         let frame = Frame {
             config,
             stretch_forearm: REACH.detach && REACH.stretch_forearm,
-            pivot_offset: EYES_TO_NECK_PIVOT * scale,
+            pivot_offset: EYES_TO_NECK * scale,
             head: [head(headpose::query_prev()), head(headpose::query())],
             ticks: [previous, current],
             sequence: SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1,

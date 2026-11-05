@@ -39,17 +39,6 @@ impl TorsoEstimate {
     }
 }
 
-/// The neck pivot, at the base of the skull, from the eyes in the head's frame: below and behind
-/// them, so that nodding turns the eyes about it.
-pub const EYES_TO_NECK_PIVOT: Vec3 =
-    Vec3::new(0.0, -EYES_TO_NECK_PIVOT_DROP, EYES_TO_NECK_PIVOT_BACK);
-
-/// How far the neck pivot sits below the eyes, metres. A generic anthropometric figure.
-const EYES_TO_NECK_PIVOT_DROP: f32 = 0.075;
-
-/// How far the neck pivot sits behind the eyes, metres. A generic anthropometric figure.
-const EYES_TO_NECK_PIVOT_BACK: f32 = 0.085;
-
 /// The distance between the hip joints as a fraction of the distance between the shoulder joints.
 /// A generic anthropometric figure.
 pub const HIP_SPACING_FRACTION: f32 = 0.45;
@@ -91,10 +80,5 @@ mod tests {
                 assert!(wrap(heading - yaw).abs() < 1e-3, "{yaw} {pitch}: {heading}");
             }
         }
-    }
-
-    #[test]
-    fn the_neck_pivot_is_the_rigs() {
-        assert_eq!(EYES_TO_NECK_PIVOT, body_rig::body::EYES_TO_NECK);
     }
 }

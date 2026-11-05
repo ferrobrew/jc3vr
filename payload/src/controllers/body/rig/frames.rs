@@ -256,11 +256,11 @@ const HEAD_REACH_M: f32 = 0.5;
 
 #[cfg(test)]
 mod tests {
+    use body_rig::body::EYES_TO_NECK;
+
     use super::*;
     use crate::controllers::body::{
-        BodyDimensions,
-        procedural::head::head_bone_target,
-        rig::torso::{EYES_TO_NECK_PIVOT, HIP_SPACING_FRACTION},
+        BodyDimensions, procedural::head::head_bone_target, rig::torso::HIP_SPACING_FRACTION,
     };
 
     fn deg(d: f32) -> f32 {
@@ -270,9 +270,8 @@ mod tests {
     /// An upright torso facing -Z under eyes at `head`, its joints hung from the dimensions as the
     /// grounded rig hangs them.
     fn upright(head: Vec3, dims: &BodyDimensions) -> TorsoEstimate {
-        let neck = head + EYES_TO_NECK_PIVOT;
-        let chest =
-            neck - Vec3::Y * (dims.eye_height + EYES_TO_NECK_PIVOT.y - dims.shoulder_height);
+        let neck = head + EYES_TO_NECK;
+        let chest = neck - Vec3::Y * (dims.eye_height + EYES_TO_NECK.y - dims.shoulder_height);
         let pelvis = chest - Vec3::Y * 0.5;
         let half = Vec3::X * dims.shoulder_width * 0.5;
         let hip = half * HIP_SPACING_FRACTION;
@@ -447,7 +446,7 @@ mod tests {
             |angle: f32, pivot: Vec3, p: Vec3| pivot + Quat::from_rotation_x(-angle) * (p - pivot);
         let chest_pitch = (look * 0.35).min(0.44);
         let head_rotation = Quat::from_rotation_x(-look);
-        let eyes = -EYES_TO_NECK_PIVOT;
+        let eyes = -EYES_TO_NECK;
         let eye = reference.head + head_rotation * eyes - eyes;
         SkeletonLandmarks {
             head: head_bone_target(eye, head_rotation, 1.0),

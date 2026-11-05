@@ -9,12 +9,11 @@
 //! ([`head_bone_world`]), so the head bone stays on the neck as the player looks down while the
 //! camera stays at the eye point.
 
+use body_rig::body::EYES_TO_NECK;
 use glam::{Mat4, Quat, Vec3};
 
 use crate::{
-    controllers::{
-        body::rig::torso::EYES_TO_NECK_PIVOT, locomotion::anchor::status as anchor_status,
-    },
+    controllers::locomotion::anchor::status as anchor_status,
     headpose::{body_relative_rotation, query},
 };
 
@@ -57,7 +56,7 @@ pub fn neck_pivot_offset(head_rotation: Quat, scale: f32) -> Vec3 {
     } else {
         1.0
     };
-    let offset = (head_rotation.normalize() * EYES_TO_NECK_PIVOT - EYES_TO_NECK_PIVOT) * scale;
+    let offset = (head_rotation.normalize() * EYES_TO_NECK - EYES_TO_NECK) * scale;
     if offset.is_finite() {
         offset
     } else {
@@ -79,7 +78,7 @@ mod tests {
         // Pitching the head down by 60 degrees about the pivot swings the eyes down and forward
         // around it.
         let down = Quat::from_rotation_x(-60f32.to_radians());
-        let arm = -EYES_TO_NECK_PIVOT;
+        let arm = -EYES_TO_NECK;
         let eye_travel = down * arm - arm;
         assert!(eye_travel.y < -0.05, "{eye_travel}");
         // The eye-derived head plus the offset is the pivot, which did not move.
