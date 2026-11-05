@@ -34,6 +34,8 @@
 //! [`TorsoBlend`] eases the torso's weight toward its case's with a critically damped spring,
 //! quicker toward the animation than back, and at once where the case says so.
 
+use body_rig::smooth::critically_damped;
+
 use crate::controllers::body::procedural::config::ProceduralBodyConfig;
 
 /// Why the torso is posed the way it is: the case [`classify`] matched.
@@ -334,19 +336,8 @@ impl Spring {
     /// way). A weight within [`SETTLE`] of its target lands on it, so a torso fully handed over is
     /// exactly zero or one.
     fn step(&mut self, target: f32, dt: f32, time: f32) {
-        let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
-        if time <= 0.0 {
-            self.value = target;
-            self.velocity = 0.0;
-            return;
-        }
-        let omega = 2.0 / time;
-        let x = omega * dt;
-        let decay = 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x);
-        let change = self.value - target;
-        let temp = (self.velocity + omega * change) * dt;
-        self.velocity = (self.velocity - omega * temp) * decay;
-        self.value = target + (change + temp) * decay;
+        (self.value, self.velocity) =
+            critically_damped(self.value, self.velocity, target, time, dt);
         if (self.value - target).abs() < SETTLE {
             self.value = target;
             self.velocity = 0.0;

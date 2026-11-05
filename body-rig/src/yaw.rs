@@ -12,7 +12,10 @@
 
 use glam::{Vec2, Vec3};
 
-use crate::angle::{wrap, yaw_of_flat};
+use crate::{
+    angle::{wrap, yaw_of_flat},
+    smooth::critically_damped,
+};
 
 /// The yaw's tuning.
 #[cfg_attr(
@@ -290,26 +293,18 @@ impl YawFollow {
     }
 }
 
-/// A critically damped spring from the heading `from`, turning at `rate`, toward `to`, over `dt`
-/// seconds with a smoothing time of `smooth_s`: the new heading and rate. It never overshoots.
+/// The [`critically_damped`] spring from the heading `from`, turning at `rate`, toward `to` the
+/// short way round, over `dt` seconds with a smoothing time of `smooth_s`: the new heading and
+/// rate. It never overshoots.
 fn smooth_damp(from: f32, to: f32, rate: f32, smooth_s: f32, dt: f32) -> (f32, f32) {
-    if smooth_s <= 1.0e-4 || dt <= 0.0 {
-        return if dt <= 0.0 { (from, rate) } else { (to, 0.0) };
-    }
-    let omega = 2.0 / smooth_s;
-    let x = omega * dt;
-    let decay = 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x);
     let change = wrap(from - to);
-    let temp = (rate + omega * change) * dt;
-    let rate_out = (rate - omega * temp) * decay;
-    let mut offset = (change + temp) * decay;
-    let mut rate_out = rate_out;
+    let (mut offset, mut rate) = critically_damped(change, rate, 0.0, smooth_s, dt);
     // Arriving past the goal from either side lands on it.
     if (change > 0.0) != (offset > 0.0) && change != 0.0 {
         offset = 0.0;
-        rate_out = 0.0;
+        rate = 0.0;
     }
-    (wrap(to + offset), rate_out)
+    (wrap(to + offset), rate)
 }
 
 #[cfg(test)]

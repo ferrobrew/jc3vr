@@ -15,6 +15,7 @@
 //! - [`stable_anchors`] composes the anchors from the neutral pose and the root's two tick-spaced
 //!   transforms, and [`blend`] mixes them with the animated ones.
 
+use body_rig::smooth::critically_damped;
 use glam::{Mat4, Vec3};
 
 use crate::{controllers::body::procedural::authority::Case, headpose::Anchors};
@@ -154,8 +155,7 @@ impl HeightFilter {
                 HeightState::Following { rate, .. } => rate,
                 _ => 0.0,
             };
-            let (mut y, mut rate) =
-                smooth_critically_damped(smoothed, rate, raw, HEIGHT_SMOOTHING_S, dt);
+            let (mut y, mut rate) = critically_damped(smoothed, rate, raw, HEIGHT_SMOOTHING_S, dt);
             let lag = MAX_HEIGHT_LAG_M;
             if (y - raw).abs() > lag {
                 y = raw + (y - raw).clamp(-lag, lag);
@@ -329,20 +329,6 @@ const MAX_HEAD_HEIGHT_M: f32 = 2.5;
 
 /// The furthest the neck may sit from the head or the eyes in a plausible pose, metres.
 const MAX_BONE_SPREAD_M: f32 = 0.5;
-
-/// One step of a critically damped spring of time constant `tau` toward `target`, exact for a
-/// constant target and stable for any step (the rational approximation of the exponential from
-/// Game Programming Gems 4, "Critically damped ease-in/ease-out smoothing").
-fn smooth_critically_damped(value: f32, rate: f32, target: f32, tau: f32, dt: f32) -> (f32, f32) {
-    let omega = 2.0 / tau;
-    let x = omega * dt;
-    let decay = 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x);
-    let change = value - target;
-    let temp = (rate + omega * change) * dt;
-    let rate = (rate - omega * temp) * decay;
-    let value = target + (change + temp) * decay;
-    (value, rate)
-}
 
 #[cfg(test)]
 mod tests {
