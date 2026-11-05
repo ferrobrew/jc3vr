@@ -9,7 +9,9 @@
 //!    hand, X = Y × Z).
 //! 3. The Bonelab-style remap ([`ArmRemap`]): the wrist's offset from the player's shoulder, scaled
 //!    by the ratio of the arm lengths, placed at the character's shoulder.
-//! 4. Into the world through the head's transform ([`compose_world`]), the same composition the
+//! 4. Held within the character's arm length of his solved shoulder ([`limit_reach`]), so the arm
+//!    can always reach the hand.
+//! 5. Into the world through the head's transform ([`compose_world`]), the same composition the
 //!    head pose uses, so that the hands and the view agree.
 //!
 //! On the character's side, the same wrist frame is built from the animated bones
@@ -22,7 +24,7 @@ use glam::{EulerRot, Mat3, Quat, Vec3};
 use crate::controllers::{
     config::GripOffset,
     frame::{Hand, Pose},
-    hands::reach::ArmRemap,
+    hands::reach::{ArmRemap, ReachLimit},
 };
 
 /// One hand's poses in the cockpit frame, after the grip offset and the remap.
@@ -58,6 +60,21 @@ pub fn cockpit_hand(
         wrist: shifted(wrist),
         grip: shifted(grip),
         aim: shifted(aim),
+    }
+}
+
+/// `hand` with its wrist held within `limit`, its grip and aim poses carried by the same shift so
+/// that the controller's rays leave the limited hand.
+pub fn limit_reach(hand: CockpitHand, limit: &ReachLimit) -> CockpitHand {
+    let shift = limit.apply(hand.wrist.position) - hand.wrist.position;
+    let shifted = |p: Pose| Pose {
+        position: p.position + shift,
+        orientation: p.orientation,
+    };
+    CockpitHand {
+        wrist: shifted(hand.wrist),
+        grip: shifted(hand.grip),
+        aim: shifted(hand.aim),
     }
 }
 
@@ -438,5 +455,28 @@ mod tests {
             carried.orientation,
             Quat::from_rotation_y(0.2)
         ));
+    }
+
+    #[test]
+    fn a_limited_hand_carries_its_grip_and_aim_with_the_wrist() {
+        let grip = Pose {
+            position: Vec3::new(0.2, 1.3, -1.2),
+            orientation: right_grip_on_vertical_handle(),
+        };
+        let hand = cockpit_hand(Hand::Right, grip, grip, &NO_OFFSET, None);
+        let limit = ReachLimit {
+            shoulder: Vec3::new(0.2, 1.45, 0.0),
+            length: 0.5,
+        };
+        let limited = limit_reach(hand, &limit);
+        assert!((limited.wrist.position.distance(limit.shoulder) - 0.5).abs() < EPS);
+        let shift = limited.wrist.position - hand.wrist.position;
+        assert!(close(limited.grip.position, hand.grip.position + shift));
+        assert!(close(limited.aim.position, hand.aim.position + shift));
+        assert!(same_rotation(
+            limited.wrist.orientation,
+            hand.wrist.orientation
+        ));
+        assert!(same_rotation(limited.aim.orientation, hand.aim.orientation));
     }
 }

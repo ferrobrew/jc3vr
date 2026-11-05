@@ -13,8 +13,13 @@
 //!   to the estimated shoulders and the arm-span ratio ([`ArmRemap::estimated`]).
 //! - [`pull_ramp`]: the wrist target's pull, ramping from zero as the target nears the arm's full
 //!   length, so reach propagates into the girdle only when the arm alone cannot get there.
+//! - [`ReachLimit`]: the wrist held within the character's measured arm length of his solved
+//!   shoulder joint, so the arm can always reach its hand: the hand body's goal, the wrist target,
+//!   and what the hand holds all start from the limited wrist, and a controller past the arm's
+//!   reach leaves the hand at full extension along the line to it.
 //! - [`detach_offset`]: how far the rendered hand leaves the solved wrist toward the target, past a
-//!   small threshold and up to a cap.
+//!   small threshold and up to a cap. With the reach limited, only a body that moves against the
+//!   hands within a tick leaves a shortfall for it.
 
 use glam::{Quat, Vec3};
 
@@ -33,6 +38,9 @@ pub struct ReachTuning {
     pub measured_remap: bool,
     /// The time constant of the smoothing on the character's measured shoulder positions, seconds.
     pub shoulder_smoothing_s: f32,
+    /// Hold each wrist within the character's measured arm length of his solved shoulder joint
+    /// ([`ReachLimit`]).
+    pub reach_limit: bool,
     /// Ramp the wrist targets' pull up as a hand nears full extension, so the character's shoulder
     /// and chest follow a reach.
     pub reach_pull: bool,
@@ -56,6 +64,7 @@ pub struct ReachTuning {
 pub const REACH: ReachTuning = ReachTuning {
     measured_remap: true,
     shoulder_smoothing_s: 0.1,
+    reach_limit: true,
     reach_pull: true,
     pull_start: 0.9,
     pull_full: 1.0,
@@ -127,6 +136,42 @@ impl ArmRemap {
     /// The remapped wrist position.
     pub fn apply(&self, wrist: Vec3) -> Vec3 {
         self.character_shoulder + (wrist - self.player_shoulder) * self.scale
+    }
+}
+
+/// The sphere a wrist is held within: the character's arm length about his shoulder joint, both
+/// in the cockpit frame.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ReachLimit {
+    pub shoulder: Vec3,
+    pub length: f32,
+}
+
+impl ReachLimit {
+    /// The limit for `arm` about `shoulder`, the solved shoulder joint in the cockpit frame, at
+    /// the VR world scale `world_scale`. `None` when the arm or the scale is not a usable length or
+    /// the shoulder is not finite.
+    pub fn new(shoulder: Vec3, arm: &MeasuredArm, world_scale: f32) -> Option<Self> {
+        let length = arm.length() / world_scale;
+        (shoulder.is_finite()
+            && world_scale.is_finite()
+            && world_scale > 0.0
+            && length.is_finite()
+            && length > MIN_ARM_M / world_scale)
+            .then_some(Self { shoulder, length })
+    }
+
+    /// `wrist`, or where the line from the shoulder to it meets the sphere when it is further than
+    /// the arm reaches. A wrist within reach is untouched, so the limit is continuous and the hand
+    /// slides along the sphere's surface as the controller moves past it.
+    pub fn apply(&self, wrist: Vec3) -> Vec3 {
+        let offset = wrist - self.shoulder;
+        let distance = offset.length();
+        if distance > self.length && distance.is_finite() {
+            self.shoulder + offset * (self.length / distance)
+        } else {
+            wrist
+        }
     }
 }
 
@@ -557,5 +602,42 @@ mod tests {
         let below = detach_offset(Vec3::X * 0.0099, 0.01, 0.1);
         let above = detach_offset(Vec3::X * 0.0101, 0.01, 0.1);
         assert!(below.distance(above) < 1e-3);
+    }
+
+    #[test]
+    fn a_wrist_past_the_arm_s_reach_stops_at_full_extension_toward_it() {
+        let shoulder = Vec3::new(0.19, 1.45, 0.1);
+        let limit = ReachLimit::new(shoulder, &rico(), 1.0).unwrap();
+        assert!((limit.length - 0.52).abs() < EPS);
+        // Within reach, untouched.
+        let near = shoulder + Vec3::new(0.1, -0.2, -0.3);
+        assert_eq!(limit.apply(near), near);
+        // A controller a metre out, into a wall or across the body: the hand sits at the reach's
+        // limit along the line to it, so it keeps following the controller's direction.
+        for direction in [Vec3::NEG_Z, Vec3::NEG_X, Vec3::new(-1.0, 0.5, -1.0)] {
+            let far = shoulder + direction.normalize() * 1.0;
+            let limited = limit.apply(far);
+            assert!((limited.distance(shoulder) - limit.length).abs() < EPS);
+            assert!((limited - shoulder).normalize().dot(direction.normalize()) > 1.0 - EPS);
+        }
+        // Continuous across the sphere's surface.
+        let inside = limit.apply(shoulder + Vec3::NEG_Z * (limit.length - 1e-4));
+        let outside = limit.apply(shoulder + Vec3::NEG_Z * (limit.length + 1e-4));
+        assert!(inside.distance(outside) < 1e-3);
+    }
+
+    #[test]
+    fn the_reach_limit_scales_with_the_world_and_refuses_bad_lengths() {
+        let shoulder = Vec3::ZERO;
+        let doubled = ReachLimit::new(shoulder, &rico(), 2.0).unwrap();
+        assert!((doubled.length - 0.26).abs() < EPS);
+        assert!(ReachLimit::new(shoulder, &rico(), 0.0).is_none());
+        assert!(ReachLimit::new(Vec3::NAN, &rico(), 1.0).is_none());
+        let stub = MeasuredArm {
+            upper_arm: 0.05,
+            forearm: 0.05,
+            ..rico()
+        };
+        assert!(ReachLimit::new(shoulder, &stub, 1.0).is_none());
     }
 }

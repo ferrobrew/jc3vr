@@ -30,10 +30,16 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     controllers::{
-        body::{self, BodyDimensions, rig::shoulder_heading},
+        body::{
+            self, BodyDimensions,
+            rig::{
+                shoulder_heading,
+                skeleton::{SkeletonSource, skeleton_in_cockpit},
+            },
+        },
         config::{ControllersConfig, HandsConfig},
         frame::{self, ControllerFrame, Hand, Pose},
-        hands::reach::ArmRemap,
+        hands::reach::{ArmRemap, ReachLimit},
         physical_hands::{self, DrawTime, physics::guns},
         scheme, vehicles,
         weapons::{ads, collide, recoil},
@@ -149,11 +155,17 @@ fn active_hands_raw_from_frame(frame: &ControllerFrame) -> Option<ActiveHands> {
         orientation: cockpit.orientation,
     };
     let remaps = arm_remaps(&config, head, world_scale);
+    let limits = reach_limits(head, world_scale);
     let hands = Hand::BOTH.map(|hand| {
-        frame
+        let i = hand.index();
+        let cockpit = frame
             .focused
-            .then(|| cockpit_hand(frame, hand, &config.hands, remaps[hand.index()]))
-            .flatten()
+            .then(|| cockpit_hand(frame, hand, &config.hands, remaps[i]))
+            .flatten()?;
+        Some(match &limits[i] {
+            Some(limit) => pose::limit_reach(cockpit, limit),
+            None => cockpit,
+        })
     });
     Some(ActiveHands {
         config,
@@ -258,6 +270,29 @@ fn arm_remaps(config: &ControllersConfig, head: Pose, world_scale: f32) -> [Opti
                     )
                 })
             })
+    })
+}
+
+/// Each wrist's reach limit, by [`Hand::index`]: the character's measured arm length about his
+/// shoulder joint as the last solve left it, carried into the cockpit frame of the head at `head`.
+/// Before a fresh solve has been read, the shoulder is the measured animated one, relative to the
+/// eyes. `None` for an arm not measured, or with the limit off.
+fn reach_limits(head: Pose, world_scale: f32) -> [Option<ReachLimit>; 2] {
+    if !reach::REACH.reach_limit {
+        return [None; 2];
+    }
+    let arms = rig::arms();
+    if arms.iter().all(Option::is_none) {
+        return [None; 2];
+    }
+    let solved = skeleton_in_cockpit(head.position, world_scale)
+        .filter(|(_, source)| *source == SkeletonSource::Latest)
+        .map(|(skeleton, _)| skeleton.shoulders);
+    Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        let arm = arms[i]?;
+        let shoulder = solved.map_or(head.position + arm.eye_to_shoulder / world_scale, |s| s[i]);
+        ReachLimit::new(shoulder, &arm, world_scale)
     })
 }
 
