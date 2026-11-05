@@ -61,7 +61,6 @@ pub mod dock;
 pub mod equip;
 pub mod layout;
 pub mod pickup;
-pub mod pips;
 pub mod rack;
 pub(crate) mod refs;
 pub mod release_diagnostics;

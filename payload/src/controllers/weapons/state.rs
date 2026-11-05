@@ -57,7 +57,6 @@ pub(crate) fn stand_down() {
     hold::act::clear();
     hold::tick::stand_down();
     hold::take::stand_down();
-    hold::pips::submit([None; 2]);
     regions::stand_down();
     // SAFETY: the game stage runs on the game thread before the world update.
     unsafe { armed::stand_down() };

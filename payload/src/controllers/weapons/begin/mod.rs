@@ -75,7 +75,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     // SAFETY: the game stage runs on the game thread before the world update.
     let ticked = unsafe {
         engine::local_player().map_or(Ticked::default(), |owner| {
-            armed::show_magazines(Some(owner), capabilities.reload);
+            armed::sample_readouts(owner);
             // The table lands the wielded weapon in a hand first; the hold then follows it there.
             let wielded = hold::wielded(owner);
             let arrival = inventory::input_tick(

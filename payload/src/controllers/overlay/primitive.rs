@@ -39,8 +39,6 @@ pub enum Source {
     WristDetonator,
     /// The physical hands' palm boxes and contacts.
     PhysicalHands,
-    /// The second weapon's magazine, over its hand.
-    MagazinePips,
     /// The body mirror's reflection of Rico's skeleton.
     BodyMirror,
     /// The body mirror's render-time pouch models and copied input targets.
@@ -58,7 +56,7 @@ pub enum Source {
 }
 
 impl Source {
-    pub const COUNT: usize = 19;
+    pub const COUNT: usize = 18;
 
     /// Every source, in index order.
     pub const ALL: [Source; Source::COUNT] = [
@@ -75,7 +73,6 @@ impl Source {
         Source::PanelPointer,
         Source::WristDetonator,
         Source::PhysicalHands,
-        Source::MagazinePips,
         Source::BodyMirror,
         Source::BodyMirrorPouches,
         Source::BodyRig,
@@ -98,12 +95,11 @@ impl Source {
             Source::PanelPointer => 10,
             Source::WristDetonator => 11,
             Source::PhysicalHands => 12,
-            Source::MagazinePips => 13,
-            Source::BodyMirror => 14,
-            Source::BodyMirrorPouches => 15,
-            Source::BodyRig => 16,
-            Source::GrabView => 17,
-            Source::ColliderView => 18,
+            Source::BodyMirror => 13,
+            Source::BodyMirrorPouches => 14,
+            Source::BodyRig => 15,
+            Source::GrabView => 16,
+            Source::ColliderView => 17,
         }
     }
 
@@ -122,7 +118,6 @@ impl Source {
             Source::PanelPointer => "debug panel pointer",
             Source::WristDetonator => "wrist detonator",
             Source::PhysicalHands => "physical hands",
-            Source::MagazinePips => "second weapon's magazine",
             Source::BodyMirror => "body mirror",
             Source::BodyMirrorPouches => "body mirror pouch render placement",
             Source::BodyRig => "body rig",

@@ -472,7 +472,7 @@ fn temporary_controls(ui: &mut Ui, snapshot: &Snapshot) {
         ));
     }
     ui.small("Hide also covers switches enabled while hidden. It lasts until Restore or payload teardown; closing this drawer does not restore output. Restore keeps configuration edits made while hidden.");
-    ui.small("Gun readout, sight tuning, magazine pips, and other non-inventory output remain unchanged.");
+    ui.small("Gun readout, sight tuning, and other non-inventory output remain unchanged.");
 }
 
 #[derive(Default)]

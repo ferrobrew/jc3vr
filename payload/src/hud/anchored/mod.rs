@@ -55,7 +55,7 @@ use crate::{
     hud::{
         HudMode,
         anchored::{
-            hand_ammo::{COUNT_TEXELS, Count, CountKey, counted_hands},
+            hand_ammo::{COUNT_TEXELS, Count, CountKey},
             health::{BAR_TEXELS, Bar, BarKey, HealthTrail},
             place::{
                 Attention, ammo_anchor, facing_corners, fade_out, follow, forearm_anchor,
@@ -355,14 +355,11 @@ impl State {
 
         // A counter above each hand holding a gun.
         let sampled = hand_ammo::sampled().filter(|_| cfg.ammo.enabled);
-        let counted = sampled.map_or([false; 2], |s| counted_hands(&s));
         self.status.counts = [false; 2];
         for hand in Hand::BOTH {
             let count = &mut self.counts[hand.index()];
             let ammo = sampled.and_then(|s| s.hands[hand.index()]);
-            let (Some(ammo), Some(head), Some(grip), true) =
-                (ammo, head, grip(hand), counted[hand.index()])
-            else {
+            let (Some(ammo), Some(head), Some(grip)) = (ammo, head, grip(hand)) else {
                 count.position = None;
                 count.alpha = 1.0;
                 continue;

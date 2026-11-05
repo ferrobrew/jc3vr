@@ -6,7 +6,9 @@
 //! two-handed inventory, so every gun gets the mod's counter, in every mode, and the game's readout
 //! is not drawn: the two hands' guns read alike. The input tick samples each hand's gun
 //! ([`observe`], on the game thread where the table keeps the guns alive), and the HUD draws a
-//! counter above each hand holding one ([`counted_hands`]).
+//! counter above each hand holding one: the wielded weapon, a gun armed beside it, and each gun of
+//! the game's own dual-wield pair, which share one magazine. A magazine out of its gun reads as
+//! empty.
 
 use anyhow::Context as _;
 use jc3gi::{
@@ -27,6 +29,8 @@ pub(crate) struct HandAmmo {
     pub weapon: usize,
     /// The rounds in its magazine.
     pub magazine: i32,
+    /// The magazine is out of the gun ([`WeaponBase::m_WeaponIsWithoutMagazine`]).
+    pub out: bool,
     /// The rounds of its ammunition its user carries.
     pub reserve: i32,
 }
@@ -55,6 +59,7 @@ pub(crate) unsafe fn observe(guns: [Option<usize>; 2]) {
         Some(HandAmmo {
             weapon: gun?,
             magazine: weapon.m_MagazineAmmo,
+            out: weapon.m_WeaponIsWithoutMagazine,
             reserve,
         })
     });
@@ -71,16 +76,10 @@ pub(crate) fn sampled() -> Option<HandsAmmo> {
     *SAMPLE.lock()
 }
 
-/// The hands, by [`Hand::index`](crate::controllers::frame::Hand::index), that get a counter: every hand holding a gun, the wielded weapon
-/// as well as a gun armed beside it, and each gun of the game's own dual-wield pair, which share
-/// one magazine.
-pub(crate) fn counted_hands(sample: &HandsAmmo) -> [bool; 2] {
-    sample.hands.map(|gun| gun.is_some())
-}
-
 /// What a counter shows, so it is repainted only when it changes.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct CountKey {
+    /// The rounds in the magazine, zero while the magazine is out.
     pub magazine: u32,
     pub reserve: u32,
 }
@@ -89,7 +88,7 @@ impl CountKey {
     pub fn new(ammo: &HandAmmo) -> Self {
         let clamp = |n: i32| u32::try_from(n).unwrap_or(0).min(MAX_SHOWN);
         Self {
-            magazine: clamp(ammo.magazine),
+            magazine: if ammo.out { 0 } else { clamp(ammo.magazine) },
             reserve: clamp(ammo.reserve),
         }
     }
@@ -101,7 +100,7 @@ impl CountKey {
 }
 
 /// Paint the counter into premultiplied RGBA texels, row by row: a dark translucent backing with a
-/// light border and the text centred on it, in white, or in red for an empty magazine.
+/// light border and the text centred on it, in white, or in red for an empty or absent magazine.
 pub(crate) fn paint(width: u32, height: u32, key: CountKey) -> Vec<u8> {
     let text = key.text();
     let colour = if key.magazine == 0 { EMPTY } else { TEXT };
@@ -229,30 +228,19 @@ fn premultiply([r, g, b, a]: [u8; 4]) -> [u8; 4] {
 mod tests {
     use super::*;
 
-    fn gun(weapon: usize) -> Option<HandAmmo> {
-        Some(HandAmmo {
-            weapon,
-            magazine: 12,
-            reserve: 90,
-        })
-    }
-
     #[test]
-    fn every_hand_holding_a_gun_gets_a_counter() {
-        let both = HandsAmmo {
-            hands: [gun(0x20), gun(0x10)],
+    fn an_out_magazine_reads_as_empty() {
+        let ammo = HandAmmo {
+            weapon: 1,
+            magazine: 12,
+            out: true,
+            reserve: 90,
         };
-        assert_eq!(counted_hands(&both), [true, true]);
-        // The native pair is one weapon in both hands; each hand shows its shared magazine.
-        let pair = HandsAmmo {
-            hands: [gun(0x10), gun(0x10)],
-        };
-        assert_eq!(counted_hands(&pair), [true, true]);
-        let one = HandsAmmo {
-            hands: [None, gun(0x10)],
-        };
-        assert_eq!(counted_hands(&one), [false, true]);
-        assert_eq!(counted_hands(&HandsAmmo::default()), [false, false]);
+        let key = CountKey::new(&ammo);
+        assert_eq!(key.magazine, 0);
+        assert_eq!(key.text(), "0/90");
+        let seated = CountKey::new(&HandAmmo { out: false, ..ammo });
+        assert_eq!(seated.magazine, 12);
     }
 
     #[test]
@@ -260,6 +248,7 @@ mod tests {
         let key = CountKey::new(&HandAmmo {
             weapon: 1,
             magazine: -3,
+            out: false,
             reserve: 123_456,
         });
         assert_eq!(key.magazine, 0);

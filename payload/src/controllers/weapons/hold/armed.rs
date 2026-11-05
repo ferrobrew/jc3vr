@@ -48,10 +48,7 @@ use crate::controllers::{
         dual_wield::single,
         engine::{self, HeldWeapon, Wielded},
         heft::HeftClass,
-        hold::{
-            layout,
-            pips::{self, Shown},
-        },
+        hold::layout,
         inventory::{carry, engine as inventory_engine, engine::slot_of},
     },
 };
@@ -291,31 +288,23 @@ pub(crate) unsafe fn held_weapon(owner: &Character, hand: Hand) -> Option<HeldWe
     })
 }
 
-/// Read each armed weapon's magazine for the readouts, and show it over its hand while `shown`.
+/// Read each armed weapon's magazine for the readouts ([`status`]).
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character when given, on the game thread before the
-/// world update.
-pub(crate) unsafe fn show_magazines(owner: Option<&Character>, shown: bool) {
+/// `owner` must be the live local player character, on the game thread before the world update.
+pub(crate) unsafe fn sample_readouts(owner: &Character) {
     let read = Hand::BOTH.map(|hand| {
-        let weapon = unsafe { weapon_of(owner?, hand) }?;
+        let weapon = unsafe { weapon_of(owner, hand) }?;
         let slot = unsafe { slot_of(weapon) }?;
-        let capacity = unsafe { single::magazine_size(weapon) };
-        Some((
-            ArmedReadout {
-                slot,
-                magazine: (weapon.m_MagazineAmmo, capacity),
-            },
-            Shown {
-                magazine: weapon.m_MagazineAmmo,
-                capacity,
-                out: weapon.m_WeaponIsWithoutMagazine,
-            },
-        ))
+        Some(ArmedReadout {
+            slot,
+            magazine: (weapon.m_MagazineAmmo, unsafe {
+                single::magazine_size(weapon)
+            }),
+        })
     });
-    *READOUTS.lock() = read.map(|r| r.map(|(readout, _)| readout));
-    pips::submit(read.map(|r| r.map(|(_, shown)| shown).filter(|_| shown)));
+    *READOUTS.lock() = read;
 }
 
 /// Disarm the weapons in the hands, left on the body where the game has them, or forget them when
