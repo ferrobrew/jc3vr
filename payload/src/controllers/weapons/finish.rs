@@ -416,6 +416,12 @@ pub(crate) fn finish_tick(
             hand.label(),
             refusal.label()
         );
+        crate::controllers::diagnostics::note_diagnostic(
+            "trigger",
+            Some(hand),
+            "the trigger fired nothing",
+            || Some(refusal.label().to_owned()),
+        );
     }
     let explosive_blocked = Hand::BOTH.into_iter().any(|hand| {
         (grenade::holds(hand) || c4::throwing_hand() == Some(hand))
