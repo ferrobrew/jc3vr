@@ -32,7 +32,6 @@ use crate::{
     config::Config,
     controllers::{frame::Hand, scheme, summary::glance::fade},
     hud::{
-        HudMode,
         game_icons::{self, IconId, Image, Lookup},
         grab_hint::{
             layout::{hint_corners, panel_frame},
@@ -41,6 +40,7 @@ use crate::{
         log_once::LogOnce,
         quad::HudQuad,
         target::{HudTarget, KeyedTexture},
+        world_quads_active,
     },
 };
 
@@ -86,12 +86,7 @@ pub(crate) fn draw(
     let mut state = STATE.lock();
     if eye == 0 {
         let cfg = Config::lock_query(|c| c.hud);
-        let active = cfg.grab_hint.enabled
-            && cfg.redirect
-            && cfg.quad
-            && crate::hud::current_mode() == HudMode::Hud
-            && scheme::is_controllers()
-            && !crate::director::clean_view::hides_everything();
+        let active = cfg.grab_hint.enabled && world_quads_active(&cfg) && scheme::is_controllers();
         state.prepare(context, device, active.then_some(panel).flatten());
     }
     state.draw(context, device, target);

@@ -66,6 +66,7 @@ use crate::{
         log_once::LogOnce,
         quad::HudQuad,
         target::KeyedTexture,
+        world_quads_active,
     },
 };
 
@@ -101,11 +102,8 @@ pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Text
     if eye == 0 {
         let (cfg, dominant) = Config::lock_query(|c| (c.hud, c.controllers.acting_hand()));
         let active = cfg.atlas.enabled
-            && cfg.redirect
-            && cfg.quad
-            && crate::hud::current_mode() == HudMode::Hud
+            && world_quads_active(&cfg)
             && scheme::is_controllers()
-            && !crate::director::clean_view::hides_everything()
             && crate::vr::render_params(0).is_some();
         state.prepare(context, device, active, dominant, &cfg.atlas);
     }

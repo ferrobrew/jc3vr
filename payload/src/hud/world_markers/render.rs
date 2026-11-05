@@ -35,6 +35,7 @@ use crate::{
             },
             layout_for, raycast,
         },
+        world_quads_active,
     },
 };
 
@@ -60,11 +61,7 @@ pub(crate) fn prepare_frame(
     let _timing = crate::frame_timing::scope(crate::frame_timing::Slot::WorldMarkers);
     let cfg = Config::lock_query(|c| c.hud);
     let mut renderer = RENDERER.lock();
-    let active = cfg.world_markers.enabled
-        && cfg.redirect
-        && cfg.quad
-        && crate::hud::current_mode() == crate::hud::HudMode::Hud
-        && !crate::director::clean_view::hides_everything();
+    let active = cfg.world_markers.enabled && world_quads_active(&cfg);
     let Some(hud) = inputs.hud.filter(|_| active) else {
         if let Some(renderer) = renderer.as_mut() {
             renderer.plan.clear();

@@ -30,13 +30,13 @@ use crate::{
     config::Config,
     controllers::scheme,
     hud::{
-        HudMode,
         anchored::place::upright_corners,
         game_icons::{self, IconId, Lookup},
         grab_hint::{TAKE_TEXELS, paint_take},
         log_once::LogOnce,
         quad::HudQuad,
         target::HudTarget,
+        world_quads_active,
     },
 };
 
@@ -59,12 +59,8 @@ pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Text
     let mut state = STATE.lock();
     if eye == 0 {
         let cfg = Config::lock_query(|c| c.hud);
-        let active = cfg.lost_weapons.enabled
-            && cfg.redirect
-            && cfg.quad
-            && crate::hud::current_mode() == HudMode::Hud
-            && scheme::is_controllers()
-            && !crate::director::clean_view::hides_everything();
+        let active =
+            cfg.lost_weapons.enabled && world_quads_active(&cfg) && scheme::is_controllers();
         let head = active.then(crate::hud::render_camera_pose).flatten();
         state.prepare(context, device, head);
     }

@@ -114,6 +114,17 @@ pub fn current_mode() -> HudMode {
     HudMode::Hud
 }
 
+/// Whether the mod's quads placed in the world (the anchored readouts, the grab hint, the lost
+/// weapon markers, and the world markers) can draw this frame: the HUD is redirected and drawn as a
+/// quad, the game is in its gameplay HUD, and the clean view does not hide everything. Each part
+/// adds its own switch, and those that need the controllers add the scheme.
+pub(crate) fn world_quads_active(cfg: &HudConfig) -> bool {
+    cfg.redirect
+        && cfg.quad
+        && current_mode() == HudMode::Hud
+        && !crate::director::clean_view::hides_everything()
+}
+
 /// Whether the floating panel should world-lock this frame: an in-game modal menu (pause /
 /// full-screen map), where the render camera still has a valid pose. Narrower than [`current_mode`]'s
 /// Movie result -- it excludes the frontend and loading screens (not `E_GAME_RUN`), whose degenerate
