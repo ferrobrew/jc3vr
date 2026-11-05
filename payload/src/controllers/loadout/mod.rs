@@ -42,8 +42,6 @@ mod lifecycle_grenade;
 #[cfg(test)]
 mod lifecycle_source;
 #[cfg(test)]
-mod spawn_transport;
-#[cfg(test)]
 mod tests;
 
 pub use binding::{Binding, ObjectAddress};
