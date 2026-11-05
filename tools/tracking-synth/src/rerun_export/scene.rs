@@ -77,14 +77,6 @@ pub(crate) fn head_pose(frame: &Frame) -> Option<Pose> {
     (pose.position.is_finite() && pose.orientation.is_finite()).then_some(pose)
 }
 
-/// The entity name of a hand.
-pub(crate) fn hand_name(hand: Hand) -> &'static str {
-    match hand {
-        Hand::Left => "left",
-        Hand::Right => "right",
-    }
-}
-
 /// How long a velocity arrow's travel lasts, seconds: an arrow is the velocity times this.
 pub(crate) const ARROW_S: f32 = 0.25;
 
@@ -307,7 +299,7 @@ fn log_hand(
     state: Option<&ControllerState>,
 ) -> RecordingStreamResult<()> {
     let rec = context.rec;
-    let name = hand_name(hand);
+    let name = hand.label();
     let base = format!("world/cockpit/{name}");
     if !frame.active || !usable(&frame.grip) {
         return rec.log(base, &Clear::recursive());

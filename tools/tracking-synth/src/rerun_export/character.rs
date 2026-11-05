@@ -14,7 +14,7 @@ use tracking_format::{
 
 use crate::rerun_export::{
     Context,
-    scene::{ARROW_S, hand_name, rotation},
+    scene::{ARROW_S, rotation},
 };
 
 /// Log the stretch's controller states.
@@ -131,7 +131,7 @@ fn log_rico(
 fn log_aim(context: &Context<'_>, state: &ControllerState) -> RecordingStreamResult<()> {
     let rec = context.rec;
     for hand in Hand::BOTH {
-        let name = hand_name(hand);
+        let name = hand.label();
         match &state.aim.hands[hand.index()] {
             Some(aim) => rec.log(
                 format!("world/aim/{name}"),
@@ -285,7 +285,7 @@ fn vehicle_lane(vehicle: &VehicleState) -> String {
     }
     for hand in Hand::BOTH {
         if let Some(hold) = &vehicle.holds[hand.index()] {
-            lane.push_str(&format!(", {} on {hold}", hand_name(hand)));
+            lane.push_str(&format!(", {} on {hold}", hand.label()));
         }
     }
     lane
@@ -319,7 +319,7 @@ fn log_scalars(context: &Context<'_>, state: &ControllerState) -> RecordingStrea
     push("roomscale/eye_drop_m", roomscale.eye_drop_m);
     push("roomscale/fade", roomscale.fade_level);
     for hand in Hand::BOTH {
-        let name = hand_name(hand);
+        let name = hand.label();
         let ik = &state.ik[hand.index()];
         push(&format!("ik/weight/{name}"), ik.weight);
         push(&format!("ik/reach_m/{name}"), ik.reach_distance_m);
@@ -334,7 +334,7 @@ fn log_scalars(context: &Context<'_>, state: &ControllerState) -> RecordingStrea
         push("frame/ticks", frame.ticks as f32);
         for hand in Hand::BOTH {
             if let Some(amplitude) = frame.haptics[hand.index()] {
-                push(&format!("hands/haptic/{}", hand_name(hand)), amplitude);
+                push(&format!("hands/haptic/{}", hand.label()), amplitude);
             }
         }
     }

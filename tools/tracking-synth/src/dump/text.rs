@@ -3,10 +3,7 @@
 use std::io::{self, Write};
 
 use glam::{EulerRot, Vec3};
-use tracking_format::{
-    event::{BodiesSample, EventKind, ForceKind, PoseSample},
-    model::Hand,
-};
+use tracking_format::event::{BodiesSample, EventKind, ForceKind, PoseSample};
 
 /// An event's fields as its text line prints them, after the time and the kind, ending in a newline.
 pub(crate) fn write_event_body(kind: &EventKind, out: &mut impl Write) -> io::Result<()> {
@@ -29,11 +26,7 @@ pub(crate) fn write_event_body(kind: &EventKind, out: &mut impl Write) -> io::Re
         EventKind::BodyState(state) => writeln!(
             out,
             "{} ({}){}",
-            match (&state.rule_state_name, state.rule_state) {
-                (Some(name), _) => name.to_string(),
-                (None, Some(hash)) => format!("{hash:#010x}"),
-                (None, None) => "no rule state".to_owned(),
-            },
+            state.rule_label(),
             state.case,
             if state.repeat { ", repeated" } else { "" },
         ),
@@ -41,7 +34,7 @@ pub(crate) fn write_event_body(kind: &EventKind, out: &mut impl Write) -> io::Re
             out,
             "{} {} {:.2} m/s {} spin {:.2} rad/s {} per game second, \
              {:.2} m/s per real second at time scale {}{}{}{}",
-            hand_name(throw.hand),
+            throw.hand.label(),
             throw.item,
             throw.motion.linear.length(),
             vec3(throw.motion.linear),
@@ -66,7 +59,7 @@ pub(crate) fn write_event_body(kind: &EventKind, out: &mut impl Write) -> io::Re
         EventKind::GripRelease(release) => writeln!(
             out,
             "{} let go of {}{}{} ({}){}",
-            hand_name(release.hand),
+            release.hand.label(),
             release.held,
             release
                 .object
@@ -92,7 +85,7 @@ pub(crate) fn write_event_body(kind: &EventKind, out: &mut impl Write) -> io::Re
         EventKind::Snatch(snatch) => {
             write!(out, "{} -> {}", snatch.from, snatch.to)?;
             if let Some(hand) = snatch.hand {
-                write!(out, " {}", hand_name(hand))?;
+                write!(out, " {}", hand.label())?;
             }
             if let Some(outcome) = &snatch.outcome {
                 write!(out, ", {outcome}")?;
@@ -169,7 +162,7 @@ pub(crate) fn write_event_body(kind: &EventKind, out: &mut impl Write) -> io::Re
             write!(
                 out,
                 "{} holds {} {:#x} body {}",
-                hand_name(held.hand),
+                held.hand.label(),
                 held.kind,
                 held.object,
                 held.body
@@ -245,7 +238,7 @@ pub(crate) fn write_event_body(kind: &EventKind, out: &mut impl Write) -> io::Re
             diagnostic.source,
             diagnostic
                 .hand
-                .map_or(String::new(), |hand| format!(" {}", hand_name(hand))),
+                .map_or(String::new(), |hand| format!(" {}", hand.label())),
             diagnostic.what,
             diagnostic
                 .detail
@@ -255,7 +248,7 @@ pub(crate) fn write_event_body(kind: &EventKind, out: &mut impl Write) -> io::Re
         EventKind::Haptic(haptic) => writeln!(
             out,
             "{} {} ({}) {:.2} for {:.0} ms{}",
-            hand_name(haptic.hand),
+            haptic.hand.label(),
             haptic.event,
             haptic.primitive,
             haptic.amplitude,
@@ -288,13 +281,6 @@ pub(crate) fn write_event_body(kind: &EventKind, out: &mut impl Write) -> io::Re
                 top.join(" ")
             )
         }
-    }
-}
-
-pub(crate) fn hand_name(hand: Hand) -> &'static str {
-    match hand {
-        Hand::Left => "left",
-        Hand::Right => "right",
     }
 }
 
@@ -372,7 +358,7 @@ mod tests {
             InjectedWrite, Label, PoseStage, RigConfig, RigInput, RigResult, RigSample, Settings,
             SlotTiming, WorldMotion,
         },
-        model::Pose,
+        model::{Hand, Pose},
     };
 
     use super::*;

@@ -28,6 +28,14 @@ impl Hand {
             Hand::Right => 1,
         }
     }
+
+    /// The hand's lowercase name, as the tools print and name it.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Hand::Left => "left",
+            Hand::Right => "right",
+        }
+    }
 }
 
 /// The mode action set that was active when a frame was sampled.

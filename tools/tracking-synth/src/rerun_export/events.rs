@@ -18,12 +18,7 @@ use tracking_format::{
 
 use crate::{
     dump,
-    rerun_export::{
-        Context,
-        character::lane,
-        path_part,
-        scene::{ARROW_S, hand_name},
-    },
+    rerun_export::{Context, character::lane, path_part, scene::ARROW_S},
 };
 
 /// Log the events within `(from, to)` and the frames' moments; returns how many entries were
@@ -58,11 +53,7 @@ pub(crate) fn log(context: &Context<'_>, (from, to): (u64, u64)) -> RecordingStr
                 log.text("events/marker", TextLogLevel::INFO, body(&event.kind))?
             }
             EventKind::BodyState(state) => {
-                let rule = match (&state.rule_state_name, state.rule_state) {
-                    (Some(name), _) => name.to_string(),
-                    (None, Some(hash)) => format!("{hash:#010x}"),
-                    (None, None) => "no rule state".to_owned(),
-                };
+                let rule = state.rule_label();
                 context
                     .rec
                     .log("states/body_rule", &StateChange::single(rule.as_str()))?;
@@ -85,7 +76,7 @@ pub(crate) fn log(context: &Context<'_>, (from, to): (u64, u64)) -> RecordingStr
                 if log.grip_target[release.hand.index()] {
                     log.grip_target[release.hand.index()] = false;
                     context.rec.log(
-                        format!("world/grip_targets/{}", hand_name(release.hand)),
+                        format!("world/grip_targets/{}", release.hand.label()),
                         &Clear::flat(),
                     )?;
                 }
@@ -255,7 +246,7 @@ impl Log<'_, '_> {
     }
 
     fn grip_acquisition(&mut self, grip: &GripAcquisition) -> RecordingStreamResult<()> {
-        let hand = hand_name(grip.hand);
+        let hand = grip.hand.label();
         let mut text = format!("{hand} grip {}:", grip.stage.name());
         let level = match grip.stage {
             GripStage::Input => {
@@ -342,7 +333,7 @@ impl Log<'_, '_> {
     }
 
     fn gun_release(&mut self, release: &GunRelease) -> RecordingStreamResult<()> {
-        let hand = hand_name(release.hand);
+        let hand = release.hand.label();
         let (level, outcome) = match &release.refusal {
             Some(refusal) => (TextLogLevel::WARN, format!("refused: {refusal}")),
             None => (
@@ -396,7 +387,7 @@ impl Log<'_, '_> {
         };
         self.throws += 1;
         let path = format!("world/throws/{:03}", self.throws);
-        let label = format!("{} {}", hand_name(throw.hand), throw.item);
+        let label = format!("{} {}", throw.hand.label(), throw.item);
         let velocity = throw.motion.linear * throw.time_scale;
         context.rec.log(
             format!("{path}/release"),
@@ -425,7 +416,7 @@ impl Log<'_, '_> {
         let Some(hand) = snatch.hand else {
             return Ok(());
         };
-        let name = hand_name(hand);
+        let name = hand.label();
         self.context.rec.log(
             format!("states/snatch/{name}"),
             &StateChange::single(snatch.to.as_ref()),

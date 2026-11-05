@@ -15,11 +15,7 @@ use rerun::{
 };
 use tracking_format::event::{BodiesSample, BodyIntro, EventKind, Force, ForceKind, HeldSample};
 
-use crate::rerun_export::{
-    Context,
-    events::body,
-    scene::{ARROW_S, hand_name},
-};
+use crate::rerun_export::{Context, events::body, scene::ARROW_S};
 
 /// Log the bodies, holds, and forces within `(from, to)`; returns how many text log entries were
 /// logged.
@@ -57,7 +53,7 @@ pub(crate) fn log(context: &Context<'_>, (from, to): (u64, u64)) -> RecordingStr
                 context.set_time(event.time_ns);
                 log.holding[release.hand.index()] = false;
                 context.rec.log(
-                    format!("world/held/{}", hand_name(release.hand)),
+                    format!("world/held/{}", release.hand.label()),
                     &Clear::recursive(),
                 )?;
             }
@@ -235,7 +231,7 @@ impl<'a> Log<'a, '_> {
     fn held(&mut self, held: &HeldSample) -> RecordingStreamResult<()> {
         let context = self.context;
         let rec = context.rec;
-        let name = hand_name(held.hand);
+        let name = held.hand.label();
         let base = format!("world/held/{name}");
         self.holding[held.hand.index()] = true;
         if let Some(motion) = &held.motion {

@@ -574,6 +574,18 @@ pub struct BodyState {
     pub repeat: bool,
 }
 
+impl BodyState {
+    /// The rule state as the tools print it: its name when known, else its hash, else a note that
+    /// none was readable.
+    pub fn rule_label(&self) -> String {
+        match (&self.rule_state_name, self.rule_state) {
+            (Some(name), _) => name.to_string(),
+            (None, Some(hash)) => format!("{hash:#010x}"),
+            (None, None) => "no rule state".to_owned(),
+        }
+    }
+}
+
 /// An item that left a hand with a requested motion: a gun let go, a grenade, a charge, or a carried
 /// object thrown.
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
