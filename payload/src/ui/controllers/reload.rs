@@ -1,32 +1,40 @@
-//! The true reload: each hand's reloaded weapon, its magazine and chamber, the round in hand, the
-//! belt pushes, the action's work, the counters, and the reload's switches.
+//! The true reload: the action and magazine rows, each hand's reloaded weapon, its magazine and
+//! chamber, the round in hand, the belt pushes, the action's work, the counters, and the reload's
+//! switches.
 
 use egui::Ui;
 
-use crate::controllers::{
-    frame::Hand,
-    weapons::reload::{
-        ReloadStatus, WeaponReadout,
-        belt::PushStage,
-        chamber::{ActionKind, Chamber, WorkStage},
-        config::ReloadConfig,
-        insert::InsertStage,
-        loose, wells,
+use crate::{
+    controllers::{
+        frame::Hand,
+        weapons::reload::{
+            ReloadStatus, WeaponReadout,
+            belt::PushStage,
+            chamber::{Chamber, WorkStage},
+            config::ReloadConfig,
+            insert::InsertStage,
+            loose, wells,
+        },
     },
+    status::{
+        explosives::MAGAZINES,
+        weapons::{LEFT_ACTION, RIGHT_ACTION},
+    },
+    ui::status_row::headlines,
 };
 
 pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
+    headlines(ui, &[&LEFT_ACTION, &RIGHT_ACTION, &MAGAZINES]);
     ui.label(format!("Native magazine execution: {:?}", r.serial));
     let c = &r.counts;
     ui.label(format!(
-        "True reload: {} · ejects {} · knocks {} · seats {} · belt reloads {} · actions worked {} · \
-         slides locked back {} · dry fires {} · empty pouch {} · game reloads stopped {}",
+        "True reload: {} · ejects {} · knocks {} · seats {} · belt reloads {} · slides locked back \
+         {} · dry fires {} · empty pouch {} · game reloads stopped {}",
         if r.active { "acting" } else { "inactive" },
         c.ejects,
         c.knocks,
         c.seats,
         c.belt_reloads,
-        c.racks,
         c.lock_backs,
         c.dry_fires,
         c.empty_pouch,
@@ -34,13 +42,9 @@ pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
     ));
     let l = loose::counts();
     ui.label(format!(
-        "  magazines in the world {} · fitting in reach {} · dropped {} · picked up {} · seated \
-         {}{}",
-        l.in_world,
+        "  magazines fitting in reach {} · dropped {}{}",
         l.in_reach,
         l.dropped,
-        l.picked_up,
-        l.seated,
         l.last_rounds
             .map_or(String::new(), |n| format!(" (last held {n})"))
     ));
@@ -94,22 +98,12 @@ pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
             r.insertion.dropped
         ));
         for hand in Hand::BOTH {
-            let Some((w, t)) = r.weapons[hand.index()].and_then(|w| Some((w, w.action?))) else {
-                continue;
-            };
-            ui.label(format!(
-                "{} action: {:.0}% back{}{}{}{}",
-                hand.label(),
-                t.position * 100.0,
-                if w.plan.action == ActionKind::Bolt {
-                    format!(", {:.0}% up", t.lift * 100.0)
-                } else {
-                    String::new()
-                },
-                if t.grip.is_some() { " · held" } else { "" },
-                if t.locked_back { " · locked back" } else { "" },
-                if t.pulled { " · racked" } else { "" },
-            ));
+            if r.weapons[hand.index()]
+                .and_then(|w| w.action)
+                .is_some_and(|t| t.pulled)
+            {
+                ui.label(format!("{} action: racked", hand.label()));
+            }
         }
         ui.label(match r.work.stage {
             WorkStage::Idle => format!("action: idle · worked {}", r.work.worked),

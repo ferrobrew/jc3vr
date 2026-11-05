@@ -164,7 +164,7 @@ Each step plays a cue of the weapons category ([haptics.md](haptics.md)): the ej
 
 ## The readout
 
-The Weapons > Reload and gun action live status shows each reloaded weapon's name hash, its load and action, whether its well came from the table, the magazine and the reserve (the pair's once), each gun hand's chamber, belt push, fire hold, and turning speed, the round in hand and its distance from the mouth, each gun hand's physical action (how far back, a bolt's turn, held, locked back, racked) or the gesture's work, the recent reload events, and the counters (ejects, knocks, seats, belt reloads, actions worked, slides locked back, dry fires, empty pouch grabs, and the game's reload starts refused).
+The Weapons > Reload and gun action live status opens with the `LEFT ACTION`, `RIGHT ACTION`, and `MAGAZINES` status rows ([status.md](../status.md)), then shows each reloaded weapon's name hash, its load and action, whether its well came from the table, the magazine and the reserve (the pair's once), each gun hand's chamber, belt push, fire hold, and turning speed, the round in hand and its distance from the mouth, whether a gun hand's physical action has racked (the rows have how far back, a bolt's turn, held, and locked back) or the gesture's work, the recent reload events, and the counters (ejects, knocks, seats, belt reloads, slides locked back, dry fires, empty pouch grabs, and the game's reload starts refused).
 
 ## In the headset: magazines in the world
 
