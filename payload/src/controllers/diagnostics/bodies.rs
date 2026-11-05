@@ -22,7 +22,10 @@ use crate::{
         frame::Hand,
         physical_hands::{
             self, HeldBody,
-            collider_view::nearby::{self, BodyState},
+            collider_view::{
+                model::Aabb,
+                nearby::{self, BodyState},
+            },
             physics,
         },
     },
@@ -55,7 +58,7 @@ pub(crate) unsafe fn after_step() {
         .truncate();
     let hands = Hand::BOTH.map(|hand| physics::body_pose(hand).map(|(position, _)| position));
     let held = physical_hands::held_bodies();
-    let near = |aabb: &physical_hands::collider_view::model::Aabb| {
+    let near = |aabb: &Aabb| {
         aabb.distance(origin) <= RICO_RADIUS_M
             || hands
                 .iter()
@@ -95,25 +98,34 @@ pub(crate) unsafe fn after_step() {
         }
     }
 
-    let mut read: Vec<(u32, BodyState, f32, [bool; 2])> = candidates
+    let mut read: Vec<Reading> = candidates
         .into_iter()
         .filter_map(|id| {
             // SAFETY: forwarded from the caller.
             let body = unsafe { nearby::dynamic_state(id) }?;
             let holding =
                 Hand::BOTH.map(|hand| held[hand.index()].is_some_and(|h: HeldBody| h.body == id));
+            // A hand's reach is the shorter, so its distance counts from the edge of its own
+            // radius as Rico's does from his.
             let distance = hands
                 .iter()
                 .flatten()
                 .map(|hand| body.aabb.distance(*hand) - (HAND_RADIUS_M - RICO_RADIUS_M))
                 .fold(body.aabb.distance(origin), f32::min);
-            (holding[0] || holding[1] || near(&body.aabb)).then_some((id, body, distance, holding))
+            (holding[0] || holding[1] || near(&body.aabb)).then_some(Reading {
+                id,
+                body,
+                distance,
+                holding,
+            })
         })
         .collect();
     // Held bodies first, then the nearest.
     read.sort_by(|a, b| {
-        let held = |e: &(u32, BodyState, f32, [bool; 2])| !(e.3[0] || e.3[1]);
-        held(a).cmp(&held(b)).then(a.2.total_cmp(&b.2))
+        let unheld = |r: &Reading| !(r.holding[0] || r.holding[1]);
+        unheld(a)
+            .cmp(&unheld(b))
+            .then(a.distance.total_cmp(&b.distance))
     });
     read.truncate(MAX_BODIES);
 
@@ -121,7 +133,10 @@ pub(crate) unsafe fn after_step() {
     let mut kept = Vec::with_capacity(read.len());
     let mut samples = Vec::with_capacity(read.len());
     let mut intros = Vec::new();
-    for (id, body, _, holding) in &read {
+    for Reading {
+        id, body, holding, ..
+    } in &read
+    {
         let resting = body.linear.length_squared() < REST_SPEED_SQ
             && body.angular.length_squared() < REST_SPEED_SQ;
         let previous = state
@@ -143,7 +158,14 @@ pub(crate) unsafe fn after_step() {
                 resting,
             },
         ));
-        if resting && previous.is_some_and(|p| p.resting) && !holding[0] && !holding[1] {
+        // A body at rest since the last step is left out, but for a step that introduces it, so a
+        // stretch of the recording places every body it names.
+        if resting
+            && previous.is_some_and(|p| p.resting)
+            && introduced != now
+            && !holding[0]
+            && !holding[1]
+        {
             continue;
         }
         samples.push(BodySample {
@@ -225,6 +247,16 @@ impl Near {
     };
 }
 
+/// A candidate body read after the step.
+struct Reading {
+    id: u32,
+    body: BodyState,
+    /// How near it is, for ranking: from Rico's root, or from a hand less the difference of their
+    /// radii.
+    distance: f32,
+    holding: [bool; 2],
+}
+
 /// What the near set remembers of a kept body.
 #[derive(Debug, Copy, Clone)]
 struct Kept {
@@ -234,11 +266,11 @@ struct Kept {
 
 static NEAR: Mutex<Near> = Mutex::new(Near::EMPTY);
 
-fn note_held(hand: Hand, held: HeldBody, read: &[(u32, BodyState, f32, [bool; 2])]) {
+fn note_held(hand: Hand, held: HeldBody, read: &[Reading]) {
     let motion = read
         .iter()
-        .find(|(id, ..)| *id == held.body)
-        .map(|(_, body, ..)| HeldMotion {
+        .find(|r| r.id == held.body)
+        .map(|Reading { body, .. }| HeldMotion {
             pose: Pose {
                 position: body.position,
                 orientation: body.orientation,

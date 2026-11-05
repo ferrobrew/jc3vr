@@ -141,7 +141,8 @@ pub struct BodiesSample {
     pub peak: u32,
     pub cost_us: u32,
     /// The kept bodies, less those at rest since an earlier step: a body that comes to rest is
-    /// written once, and again when it moves. A body that left the set is simply absent.
+    /// written once, and again when it moves or is introduced again. A body that left the set is
+    /// simply absent.
     pub bodies: Vec<BodySample>,
 }
 
