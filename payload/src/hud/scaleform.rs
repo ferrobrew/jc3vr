@@ -305,21 +305,7 @@ pub(crate) unsafe fn unforce_visible(handle: &mut ClipHandle) {
 /// # Safety
 /// The caller must be on the capture (game update) thread (see [`ClipHandle`]).
 pub(crate) unsafe fn get_visible(handle: &mut ClipHandle) -> bool {
-    // SAFETY: the handle's value is pinned and managed; the interface pointer comes from it.
-    unsafe {
-        let Some(value) = handle.value.as_mut() else {
-            return true;
-        };
-        let Some(interface) = value.pObjectInterface.as_mut() else {
-            return true;
-        };
-        let mut info = DisplayInfo::default();
-        let data = value.mValue as *mut std::ffi::c_void;
-        if !interface.GetDisplayInfo(data, &mut info) {
-            return true;
-        }
-        info.Visible
-    }
+    unsafe { display_info(handle) }.is_none_or(|info| info.Visible)
 }
 
 /// Write a clip's visibility through its cached handle (a `VarsSet = V_VISIBLE` display-info
@@ -350,9 +336,19 @@ pub(crate) unsafe fn set_visible(handle: &mut ClipHandle, visible: bool) {
 /// # Safety
 /// The caller must be on the capture (game update) thread (see [`ClipHandle`]).
 pub(crate) unsafe fn display_info(handle: &mut ClipHandle) -> Option<DisplayInfo> {
-    // SAFETY: the handle's value is pinned and managed; the interface pointer comes from it.
+    // SAFETY: the handle's value is pinned and managed.
+    unsafe { value_display_info(handle.value.as_mut()?) }
+}
+
+/// Read a clip's display info through its managed value, or `None` for a value without an object
+/// interface or a failed read.
+///
+/// # Safety
+///
+/// `value` must be a live managed display-object value, read on the capture (game update) thread.
+pub(crate) unsafe fn value_display_info(value: &mut Value) -> Option<DisplayInfo> {
+    // SAFETY: forwarded from the caller; the interface pointer comes from the value.
     unsafe {
-        let value = handle.value.as_mut()?;
         let interface = value.pObjectInterface.as_mut()?;
         let mut info = DisplayInfo::default();
         let data = value.mValue as *mut std::ffi::c_void;

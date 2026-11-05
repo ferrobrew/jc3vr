@@ -466,7 +466,7 @@ unsafe fn carry_into(
     cell: &Cell,
 ) -> Option<Saved> {
     // SAFETY: forwarded from the caller.
-    let info = unsafe { read_info(value)? };
+    let info = unsafe { scaleform::value_display_info(value)? };
     let saved = Saved {
         position: Vec2::new(info.X as f32, info.Y as f32),
         scale: Vec2::new(info.XScale as f32, info.YScale as f32),
@@ -507,7 +507,7 @@ unsafe fn move_into(
     cell: &Cell,
 ) -> Option<Saved> {
     // SAFETY: forwarded from the caller.
-    let info = unsafe { read_info(value)? };
+    let info = unsafe { scaleform::value_display_info(value)? };
     let saved = Saved {
         position: Vec2::new(info.X as f32, info.Y as f32),
         scale: Vec2::new(info.XScale as f32, info.YScale as f32),
@@ -537,21 +537,6 @@ unsafe fn write_placement(value: &mut Value, local: Placement) -> bool {
     write.VarsSet = PLACEMENT_VARS as u16;
     // SAFETY: forwarded from the caller.
     unsafe { write_info(value, &write) }
-}
-
-/// Read a clip's display info through its managed value.
-///
-/// # Safety
-/// `value` must be a live managed display-object value, on the capture seam.
-unsafe fn read_info(value: &mut Value) -> Option<DisplayInfo> {
-    // SAFETY: forwarded from the caller.
-    unsafe {
-        let interface = value.pObjectInterface.as_mut()?;
-        let mut info = DisplayInfo::default();
-        interface
-            .GetDisplayInfo(value.mValue as *mut std::ffi::c_void, &mut info)
-            .then_some(info)
-    }
 }
 
 /// Write the display-info fields `info.VarsSet` selects through a clip's managed value.

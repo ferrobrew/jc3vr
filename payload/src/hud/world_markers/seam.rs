@@ -24,6 +24,7 @@ use crate::hud::{
     HudMode,
     atlas::layout::{AtlasLayout, MarkerSlots},
     config::WorldMarkersConfig,
+    scaleform::value_display_info,
     world_markers::{
         CaptureLayout, MAX_MARKERS, MarkerRecord,
         layout::{FovTangents, clamp_into},
@@ -271,7 +272,7 @@ unsafe fn read_marker(
             return None;
         }
         // SAFETY: the element is the record's live managed clip value.
-        let info = unsafe { display_info(&mut record.m_Element)? };
+        let info = unsafe { value_display_info(&mut record.m_Element)? };
         info.Visible.then(|| MarkerRecord {
             id: poi.m_ID,
             world,
@@ -390,20 +391,5 @@ unsafe fn set_origin(value: &mut Value, origin: Vec2) -> bool {
             return false;
         };
         interface.SetDisplayInfo(value.mValue as *mut std::ffi::c_void, &info)
-    }
-}
-
-/// Read a clip's display info through its managed value.
-///
-/// # Safety
-/// `value` must be a live managed display-object value, read on the capture thread.
-unsafe fn display_info(value: &mut Value) -> Option<DisplayInfo> {
-    // SAFETY: forwarded from the caller.
-    unsafe {
-        let interface = value.pObjectInterface.as_mut()?;
-        let mut info = DisplayInfo::default();
-        interface
-            .GetDisplayInfo(value.mValue as *mut std::ffi::c_void, &mut info)
-            .then_some(info)
     }
 }
