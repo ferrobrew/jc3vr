@@ -267,3 +267,32 @@ fn moving_from_one_attraction_straight_into_another_ticks_for_the_new_socket() {
     // Up to the shoulder, out of the hip's attraction by more than the margin.
     assert!(step(&mut watch, Vec3::new(0.18, 1.62, 0.0)));
 }
+
+#[test]
+fn a_taken_back_socket_draws_in_a_swap_and_a_free_one_comes_first() {
+    let body = body(0.0);
+    let taken = |socket: Socket, centre: Vec3| {
+        let (candidate, _) = dock(socket, Hand::Right, centre, 0.17);
+        (candidate, SocketUse::NoFit)
+    };
+    let others = vec![
+        taken(Socket::Shoulder(Hand::Left), Vec3::new(-0.12, 1.3, 0.15)),
+        taken(Socket::Hip(Hand::Left), Vec3::new(-0.2, 0.85, 0.0)),
+    ];
+    let swaps = |_: Hand, socket: Socket| matches!(socket, Socket::Shoulder(_));
+    let swapping = swap_attractors(&others, swaps, Some(&body), offset, &ATTRACTION);
+    assert_eq!(swapping.len(), 1);
+    assert!(swapping[0].swap);
+    assert_eq!(swapping[0].socket, Socket::Shoulder(Hand::Left));
+    // A hand let open over the left shoulder swaps there.
+    let over_left = Vec3::new(-0.15, 1.45, 0.2);
+    let attraction = attract(&swapping, Hand::Right, over_left, 0.1, &ATTRACTION).unwrap();
+    assert!(attraction.swap);
+    // With a free socket in reach as well, the free one takes the weapon, however deep the hand is
+    // in the taken one's attraction.
+    let mut all = attractors(&free_sockets(), Some(&body), offset, &ATTRACTION);
+    all.extend(swapping);
+    let attraction = attract(&all, Hand::Right, over_left, 0.1, &ATTRACTION).unwrap();
+    assert!(!attraction.swap);
+    assert_eq!(attraction.socket, Socket::Shoulder(Hand::Right));
+}

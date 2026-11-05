@@ -5,7 +5,7 @@ use pretty_assertions::assert_eq;
 use crate::controllers::{
     frame::Hand,
     loadout::{
-        grab::{GrabRules, Release, SocketMove, SocketRefusal, grab, refusing, release},
+        grab::{GrabRules, Release, SocketMove, SocketRefusal, grab, refusing, release, swaps},
         item::ItemKind,
         socket::Socket,
         tests::fixtures::{a_launcher, a_pistol, a_rifle, docked, table, take, weapon},
@@ -138,4 +138,24 @@ fn a_release_docks_over_a_socket_that_fits_and_lets_go_elsewhere() {
         release(&full.snapshot(), Hand::Right, None, false),
         Release::Keep
     );
+}
+
+#[test]
+fn a_release_over_a_taken_back_socket_swaps_and_a_taken_hip_does_not() {
+    let mut t = table();
+    take(&mut t, Hand::Right, 1, weapon(a_rifle()));
+    docked(&mut t, RIGHT_SHOULDER, 2, a_rifle());
+    docked(&mut t, LEFT_HIP, 3, a_pistol());
+    let s = t.snapshot();
+    assert!(swaps(&s, Hand::Right, RIGHT_SHOULDER));
+    // A free back socket docks rather than swaps; a taken hip, too small for the rifle, neither.
+    assert!(!swaps(&s, Hand::Right, Socket::Shoulder(Hand::Left)));
+    assert!(!swaps(&s, Hand::Right, LEFT_HIP));
+    // An empty hand swaps nothing.
+    assert!(!swaps(&s, Hand::Left, RIGHT_SHOULDER));
+    // Every back socket takes the heaviest weapons, so a launcher swaps onto the outer back too.
+    let mut t = table();
+    take(&mut t, Hand::Right, 1, weapon(a_launcher()));
+    docked(&mut t, Socket::BackOuter, 2, a_rifle());
+    assert!(swaps(&t.snapshot(), Hand::Right, Socket::BackOuter));
 }

@@ -14,7 +14,11 @@ use crate::{
         grab::{self, Candidate, GrabVolume, GripTarget, Mark, MarkAt, Shown},
         hands::{self, ActiveHands, CockpitHand, pose as hand_pose},
         haptics::{self, Event},
-        loadout::{LoadoutSnapshot, grab::GrabRules, live},
+        loadout::{
+            LoadoutSnapshot,
+            grab::{GrabRules, swaps},
+            live,
+        },
         mode::{AirborneVariant, Mode, OnFootVariant},
         physical_hands::physics::guns,
         weapons::{
@@ -294,6 +298,15 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             |p| place.xf.point_to_world(p),
             &ATTRACTION,
         );
+        if let Some(snapshot) = live::snapshot_now() {
+            state.attractors.extend(attract::swap_attractors(
+                &others,
+                |hand, socket| swaps(&snapshot, hand, socket),
+                body.as_ref(),
+                |p| place.xf.point_to_world(p),
+                &ATTRACTION,
+            ));
+        }
     }
     if gameplay && let Some(body) = &body {
         // A hand holding a gun, a prop, or an explosive takes nothing from the chest.

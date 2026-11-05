@@ -777,6 +777,33 @@ fn release(
         .then(|| attraction_for(hand, config))
         .flatten()
         .filter(|_| dockable && !braced_by_other);
+    // A taken socket on the back swaps: its weapon falls clear first, which frees the socket for
+    // the dock below.
+    let swapped = attracted.filter(|a| a.swap).is_some_and(|a| {
+        // SAFETY: the game stage runs on the game thread before the world update.
+        match unsafe { hold::swap::eject(a.socket) } {
+            Ok(()) => true,
+            Err(refusal) => {
+                tracing::info!(
+                    target: "controllers",
+                    %refusal,
+                    socket = a.socket.label(),
+                    "hold: the swap on the {} was not done: {refusal}",
+                    a.socket.label()
+                );
+                false
+            }
+        }
+    });
+    let attracted = attracted.filter(|a| !a.swap || swapped);
+    let snapshot = if swapped {
+        match live::snapshot_now() {
+            Some(snapshot) => snapshot,
+            None => return,
+        }
+    } else {
+        snapshot
+    };
     // SAFETY: the game stage runs on the game thread before the world update.
     let release = grab::release(
         &snapshot,
@@ -806,6 +833,7 @@ fn release(
                 None => unsafe { hold::act::dock(hand, socket, hold::SNAP_S) },
             };
             match docked {
+                Ok(()) if swapped => haptics::play(hand, Event::SocketSwap),
                 // A dock by opening the grip confirms as a dock by a grab does.
                 Ok(()) => haptics::play(hand, Event::VolumeGrab),
                 Err(refusal) => {

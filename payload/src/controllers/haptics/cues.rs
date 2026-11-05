@@ -123,6 +123,9 @@ pub enum Event {
     VolumeGrab,
     /// A hand holding a weapon coming into a free socket's attraction: letting go there docks it.
     DockAttraction,
+    /// A weapon let go of over a taken socket on the back swapped for the one docked there, which
+    /// falls clear.
+    SocketSwap,
     /// The magazine or the rounds ejected.
     Eject,
     /// A round or a magazine taken from the pouch.
@@ -230,7 +233,7 @@ pub enum Event {
 
 impl Event {
     #[cfg(test)]
-    pub const ALL: [Event; 59] = [
+    pub const ALL: [Event; 60] = [
         Event::PalmTouch,
         Event::HandStrike,
         Event::Take,
@@ -242,6 +245,7 @@ impl Event {
         Event::VolumeEnter,
         Event::VolumeGrab,
         Event::DockAttraction,
+        Event::SocketSwap,
         Event::Eject,
         Event::PouchTake,
         Event::PouchEmpty,
@@ -308,6 +312,8 @@ impl Event {
             // Firmer than a volume's tick, as it is felt with the hand out of sight behind the
             // head, and lighter than the dock's click that follows the release.
             Event::DockAttraction => Cue::new(Primitive::Tick, 0.4, Category::Weapons),
+            // A knock rather than the dock's click, so a swap is told from a dock by feel.
+            Event::SocketSwap => Cue::new(Primitive::Bump, 0.7, Category::Weapons),
             Event::Eject => Cue::new(Primitive::Click, 0.6, Category::Weapons),
             Event::PouchTake => Cue::new(Primitive::Click, 0.25, Category::Weapons),
             Event::PouchEmpty => Cue::new(Primitive::Tick, 0.75, Category::Weapons),
@@ -374,6 +380,7 @@ impl Event {
             Event::VolumeEnter => "holster or pouch entered",
             Event::VolumeGrab => "draw, holster, or foregrip",
             Event::DockAttraction => "socket attraction entered",
+            Event::SocketSwap => "socket swap",
             Event::Eject => "eject",
             Event::PouchTake => "pouch take",
             Event::PouchEmpty => "pouch empty",

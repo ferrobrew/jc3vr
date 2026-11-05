@@ -17,6 +17,10 @@
 //! The weapon then travels from the hand into the socket over a time set by the distance
 //! ([`travel_s`]), along the dock's own slide.
 //!
+//! A taken socket on the back attracts too, for a swap ([`swap_attractors`]): the weapon docked
+//! there falls clear and the released one docks in its place, so a weapon put away over a full
+//! shoulder never just falls behind the player.
+//!
 //! A hand holding a weapon that comes into a socket's attraction feels one tick ([`ZoneWatch`]),
 //! which says that letting go there docks it: the back's sockets cannot be seen, so the hand finds
 //! them by feel. The tick does not repeat while the hand stays, and comes again only once the hand
@@ -114,6 +118,9 @@ pub(crate) struct Attractor {
     /// How far from the centre the socket attracts, metres.
     pub radius: f32,
     pub front: Option<FrontLimit>,
+    /// Whether the socket is taken, so that a weapon it draws in swaps for the one docked there
+    /// ([`swap_attractors`]).
+    pub swap: bool,
 }
 
 /// The socket a release is attracted to.
@@ -124,6 +131,8 @@ pub(crate) struct Attraction {
     pub distance: f32,
     /// Where the weapon's grip goes, in the world.
     pub toward: Vec3,
+    /// Whether the socket is taken, and the weapon docked there falls clear for this one.
+    pub swap: bool,
 }
 
 /// The attractions of this tick's free sockets, from the sockets' candidates (`others`: the free
@@ -174,16 +183,49 @@ pub(crate) fn attractors(
                     world,
                     radius,
                     front,
+                    swap: false,
                 },
             )
         })
         .collect()
 }
 
+/// The attractions of this tick's taken sockets on the back that a held weapon swaps onto, from the
+/// sockets' candidates (`others`): those that do not take what the hand holds (marked as no fit)
+/// and that `swaps` says the hand's weapon swaps onto, attracting as a free back socket does. A
+/// release they draw in docks the weapon and lets the one docked there fall clear.
+pub(crate) fn swap_attractors(
+    others: &[(Candidate, SocketUse)],
+    swaps: impl Fn(Hand, Socket) -> bool,
+    body: Option<&BodyFrame>,
+    to_world: impl Fn(Vec3) -> Vec3,
+    tuning: &AttractionTuning,
+) -> Vec<Attractor> {
+    let taken: Vec<(Candidate, SocketUse)> = others
+        .iter()
+        .filter(|(candidate, usage)| {
+            *usage == SocketUse::NoFit
+                && matches!(
+                    (candidate.volume, candidate.hand),
+                    (GrabVolume::Socket(socket), Some(hand)) if swaps(hand, socket)
+                )
+        })
+        .map(|(candidate, _)| (*candidate, SocketUse::Dock))
+        .collect();
+    attractors(&taken, body, to_world, tuning)
+        .into_iter()
+        .map(|attractor| Attractor {
+            swap: true,
+            ..attractor
+        })
+        .collect()
+}
+
 /// The socket a release of `hand`'s weapon with its grip at `grip`, moving at up to `speed` metres
 /// per second over the speed window, is attracted to: of the attractors for `hand` that reach the
-/// grip and whose front limit allows it, the one the grip is deepest inside, as a share of its
-/// radius. `None` for a throw, a grip that is not finite, or no attractor.
+/// grip and whose front limit allows it, a free socket before a taken one that swaps, and of
+/// those the one the grip is deepest inside, as a share of its radius. `None` for a throw, a grip
+/// that is not finite, or no attractor.
 pub(crate) fn attract(
     attractors: &[Attractor],
     hand: Hand,
@@ -208,10 +250,11 @@ pub(crate) fn attract(
                     socket: a.socket,
                     distance,
                     toward: a.world,
+                    swap: a.swap,
                 },
             ))
         })
-        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .min_by(|a, b| a.1.swap.cmp(&b.1.swap).then(a.0.total_cmp(&b.0)))
         .map(|(_, attraction)| attraction)
 }
 
