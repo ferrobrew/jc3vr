@@ -80,15 +80,12 @@ pub fn request_dump(budget: i32) {
 
 /// Sync the gated-type `IsEnabled` overrides to `names` (comma/whitespace separated type names, as
 /// shown in the render-block-type registry). Newly listed types get their slot pointed at the
-/// mode-following stub; delisted ones are reverted. Call whenever the config list changes (the
-/// slots are also reverted wholesale on uninject by the patcher).
+/// mode-following stub; delisted ones are reverted. A list already applied is not applied again
+/// (the slots are also reverted wholesale on uninject by the patcher).
 pub fn sync_type_gates(names: &str) {
-    {
-        let mut last = LAST_SYNCED_GATES.lock();
-        if last.as_deref() == Some(names) {
-            return;
-        }
-        *last = Some(names.to_owned());
+    let mut last = LAST_SYNCED_GATES.lock();
+    if last.as_deref() == Some(names) {
+        return;
     }
     let wanted: Vec<&str> = names
         .split([',', ' '])
@@ -141,6 +138,21 @@ pub fn sync_type_gates(names: &str) {
             gated.insert(slot, name);
         }
     }
+    // Only once applied: before the patcher and the registry exist, the next call tries again.
+    *last = Some(names.to_owned());
+}
+
+/// Sync the gated-type overrides to the configuration ([`sync_type_gates`]): its list while the
+/// split is enabled, none while it is not. Once per frame on the game thread, so a list loaded from
+/// the settings or edited in the debug UI takes effect without either being shown.
+pub fn sync_configured_type_gates() {
+    Config::lock_query(|c| {
+        sync_type_gates(if c.far_field.enabled {
+            &c.far_field.gated_types
+        } else {
+            ""
+        })
+    });
 }
 
 /// The names of the currently gated types, for the UI.

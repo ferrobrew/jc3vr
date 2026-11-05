@@ -116,6 +116,10 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // sim-side CShadowManager::UpdateRender sees it and drives the engine's own SetEnabled path.
         apply_sun_shadow_override(Config::lock_query(|c| c.stereo.disable_sun_shadows));
 
+        // Point the far-regime render-block types' enable checks at the far field's gate, as the
+        // configuration lists them, before this frame's draws.
+        crate::far_field::sync_configured_type_gates();
+
         // Apply a requested shader reload here, on the game thread before this frame's draws, so the
         // PCF-patch hook re-creates the already-loaded shaders (injection is normally after the game
         // has built them).

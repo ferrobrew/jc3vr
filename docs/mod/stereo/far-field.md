@@ -15,8 +15,10 @@ Two mechanisms, matched to how the engine organizes the work:
   `DoDraw` detour windows the walk onto either run.
 - **Type gating** for the inherently-far block types (`VolumetricTerrainPatch`, `TreeImpostor`,
   `TerrainForest`, `Occluder`, `Window`; user-editable): their `IsEnabled` vtable slots point at a
-  stub that consults the far-field mode and eye per dispatch. Near terrain is unaffected because
-  the engine hands it off to other block types as the camera approaches.
+  stub that consults the far-field mode and eye per dispatch. The slots follow the configured list
+  once per frame on the game thread, whether or not the debug UI is open, and are reverted while
+  the split is off. Near terrain is unaffected because the engine hands it off to other block types
+  as the camera approaches.
 
 Dial-in modes: Collect (counters only), Skip far, Skip near, Skip far on eye 1. Counters in the
 Experimental page's Far field feature and in Rendering > Previews and performance; a dump button logs the full per-pass classification state.
