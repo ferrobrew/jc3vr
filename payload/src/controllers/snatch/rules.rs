@@ -28,7 +28,7 @@ pub struct Chosen<K> {
 /// The candidate of `candidates` within its cone of `ray` and `range` metres of its origin whose
 /// line makes the smallest angle with the ray; of equal angles, the nearer. `cone` gives a
 /// candidate's cone, radians, from its kind and its distance from the ray's origin. A candidate at
-/// the ray's origin, or with a point that is not finite, is never chosen.
+/// the ray's origin, or with a point that is not finite, is never chosen ([`Ray::offset`]).
 pub fn choose<K: Copy>(
     ray: &Ray,
     candidates: impl IntoIterator<Item = Candidate<K>>,
@@ -38,17 +38,14 @@ pub fn choose<K: Copy>(
     candidates
         .into_iter()
         .filter_map(|candidate| {
-            let offset = candidate.point - ray.origin;
-            let distance = offset.length();
-            if !(distance.is_finite() && distance > f32::EPSILON && distance <= range) {
-                return None;
-            }
-            let angle = ray.direction.angle_between(offset / distance);
-            (angle.is_finite() && angle <= cone(&candidate.kind, distance)).then_some(Chosen {
-                candidate,
-                distance,
-                angle,
-            })
+            let offset = ray.offset(candidate.point)?;
+            offset
+                .within(range, cone(&candidate.kind, offset.distance))
+                .then_some(Chosen {
+                    candidate,
+                    distance: offset.distance,
+                    angle: offset.angle,
+                })
         })
         .min_by(|a, b| {
             a.angle

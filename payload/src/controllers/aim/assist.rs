@@ -22,6 +22,8 @@
 //! range, not the one the wire holds) and that are in sight are ranked by their angle from the
 //! ray, and the ray turns toward the nearest by [`AimConfig::grapple_assist_strength`].
 
+use std::f32::consts::FRAC_PI_2;
+
 use glam::{Quat, Vec3};
 use jc3gi::{
     aim::{
@@ -186,17 +188,10 @@ pub fn assisted_ray(ray: &Ray, target: Vec3, strength: f32) -> Option<Ray> {
 
 /// Whether `position` lies within `cone` radians of `ray` and within the assist's reach, and its
 /// angle from the ray when it does.
-pub fn angle_in_cone(ray: &Ray, position: Vec3, cone: f32) -> Option<f32> {
-    let offset = position - ray.origin;
-    let distance = offset.length();
-    if distance.is_nan() || distance <= 0.0 || distance > MAX_DISTANCE_M {
-        return None;
-    }
-    let angle = (offset / distance)
-        .dot(ray.direction)
-        .clamp(-1.0, 1.0)
-        .acos();
-    (angle <= cone).then_some(angle)
+fn angle_in_cone(ray: &Ray, position: Vec3, cone: f32) -> Option<f32> {
+    ray.offset(position)
+        .filter(|offset| offset.within(MAX_DISTANCE_M, cone))
+        .map(|offset| offset.angle)
 }
 
 /// A grapple candidate's angle from `ray` and its body position, when it is within `cone` of the
@@ -277,8 +272,10 @@ unsafe fn score(aim: &mut PlayerAimControl, target: *mut Target, ray: &Ray) -> O
         return None;
     }
     let position = unsafe { targets::body_position(target) }?;
-    let offset = position - ray.origin;
-    if offset.length() > MAX_DISTANCE_M || offset.dot(ray.direction) <= 0.0 {
+    let ahead = ray
+        .offset(position)
+        .is_some_and(|offset| offset.distance <= MAX_DISTANCE_M && offset.angle < FRAC_PI_2);
+    if !ahead {
         return None;
     }
     let mut fitness = 0.0f32;

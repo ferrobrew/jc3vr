@@ -29,6 +29,42 @@ impl Ray {
     pub fn at(&self, distance: f32) -> Vec3 {
         self.origin + self.direction * distance
     }
+
+    /// Where `point` lies from the ray: its distance from the origin and its angle off the ray's
+    /// direction. `None` when the point is not finite or lies within [`Ray::MIN_OFFSET_M`] of the
+    /// origin, where the angle means nothing.
+    pub fn offset(&self, point: Vec3) -> Option<RayOffset> {
+        let offset = point - self.origin;
+        let distance = offset.length();
+        if !(distance.is_finite() && distance >= Ray::MIN_OFFSET_M) {
+            return None;
+        }
+        let angle = (offset / distance)
+            .dot(self.direction)
+            .clamp(-1.0, 1.0)
+            .acos();
+        Some(RayOffset { distance, angle })
+    }
+
+    /// The nearest a point may lie to the origin and still have an angle off the ray, metres.
+    pub const MIN_OFFSET_M: f32 = 1e-3;
+}
+
+/// Where a point lies from a ray ([`Ray::offset`]).
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct RayOffset {
+    /// The distance from the ray's origin, metres.
+    pub distance: f32,
+    /// The angle between the ray's direction and the line to the point, radians, from zero (on the
+    /// ray) to pi (straight behind).
+    pub angle: f32,
+}
+
+impl RayOffset {
+    /// Whether the point lies within `range` metres and `cone` radians of the ray.
+    pub fn within(&self, range: f32, cone: f32) -> bool {
+        self.distance <= range && self.angle <= cone
+    }
 }
 
 /// The ray along a pose's -Z axis, the OpenXR aim pose's pointing direction.
@@ -137,6 +173,31 @@ mod tests {
         assert!(Ray::new(Vec3::NAN, Vec3::X).is_none());
         let ray = Ray::new(Vec3::ONE, Vec3::new(0.0, 0.0, -3.0)).unwrap();
         assert!(close(ray.direction, Vec3::NEG_Z));
+    }
+
+    #[test]
+    fn a_point_off_the_ray_has_its_distance_and_angle() {
+        let ray = Ray::new(Vec3::new(0.0, 1.0, 0.0), Vec3::NEG_Z).unwrap();
+        let ahead = ray.offset(ray.origin + Vec3::new(0.0, 0.0, -4.0)).unwrap();
+        assert!((ahead.distance - 4.0).abs() < EPS);
+        assert!(ahead.angle.abs() < EPS);
+        let beside = ray.offset(ray.origin + Vec3::new(3.0, 0.0, -3.0)).unwrap();
+        assert!((beside.angle - std::f32::consts::FRAC_PI_4).abs() < EPS);
+        let behind = ray.offset(ray.origin + Vec3::Z).unwrap();
+        assert!((behind.angle - std::f32::consts::PI).abs() < EPS);
+        assert!(beside.within(5.0, 0.8));
+        assert!(!beside.within(4.0, 0.8));
+        assert!(!beside.within(5.0, 0.7));
+    }
+
+    #[test]
+    fn a_point_at_the_origin_or_not_finite_has_no_offset() {
+        let ray = Ray::new(Vec3::ZERO, Vec3::NEG_Z).unwrap();
+        assert_eq!(ray.offset(Vec3::ZERO), None);
+        assert_eq!(ray.offset(Vec3::X * (Ray::MIN_OFFSET_M * 0.5)), None);
+        assert!(ray.offset(Vec3::X * Ray::MIN_OFFSET_M).is_some());
+        assert_eq!(ray.offset(Vec3::new(f32::NAN, 0.0, -1.0)), None);
+        assert_eq!(ray.offset(Vec3::new(0.0, 0.0, f32::NEG_INFINITY)), None);
     }
 
     #[test]

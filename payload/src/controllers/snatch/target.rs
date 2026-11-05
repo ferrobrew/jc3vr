@@ -548,30 +548,29 @@ fn cone(on_ground: bool, distance: f32) -> f32 {
 /// Whether a dynamic body's box could hold a weapon lying in the world that [`choose`] would take
 /// from `ray`: within the range and the widest floor cone, allowing for the box's own size.
 fn near_aim(ray: &Ray, aabb: &Aabb) -> bool {
-    let offset = aabb.centre() - ray.origin;
-    let distance = offset.length();
     let half_size = (aabb.max - aabb.min).length() * 0.5;
-    if !(distance.is_finite() && half_size.is_finite()) || distance - half_size > SNATCH.range_m {
+    if !half_size.is_finite() {
         return false;
     }
-    if distance <= half_size {
+    let Some(offset) = ray.offset(aabb.centre()) else {
+        // The box's centre is at the ray's origin, so the box holds it, or is not finite.
+        return aabb.centre().is_finite();
+    };
+    if offset.distance - half_size > SNATCH.range_m {
+        return false;
+    }
+    if offset.distance <= half_size {
         return true;
     }
-    let slack = (half_size / distance).asin();
-    let widest = (SNATCH.cone_deg + SNATCH.floor_cone_widen_deg).to_radians();
-    ray.direction.angle_between(offset / distance) <= widest + slack
+    let slack = (half_size / offset.distance).asin();
+    offset.angle <= cone(true, SNATCH.range_m) + slack
 }
 
 /// Whether `point` could be a candidate [`choose`] would take from `ray`: within the range and the
 /// widest floor cone.
 fn near_point(ray: &Ray, point: Vec3) -> bool {
-    let offset = point - ray.origin;
-    let distance = offset.length();
-    if !distance.is_finite() || distance > SNATCH.range_m || distance < 1e-3 {
-        return false;
-    }
-    let widest = (SNATCH.cone_deg + SNATCH.floor_cone_widen_deg).to_radians();
-    ray.direction.angle_between(offset / distance) <= widest
+    ray.offset(point)
+        .is_some_and(|offset| offset.within(SNATCH.range_m, cone(true, SNATCH.range_m)))
 }
 
 /// What the object under the aim is to the snatch: a weapon lying in the world, a loose object a
