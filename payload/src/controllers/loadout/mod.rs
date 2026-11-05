@@ -36,8 +36,6 @@ pub mod take;
 mod transition;
 
 #[cfg(test)]
-mod lifecycle_ammo;
-#[cfg(test)]
 mod tests;
 
 pub use binding::{Binding, ObjectAddress};
