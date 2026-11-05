@@ -169,11 +169,12 @@ impl Cause {
             live::Expect::Draw => Some(Cause::Draw),
             live::Expect::Take(TakeSource::World) => Some(Cause::Pickup),
             live::Expect::Take(TakeSource::Character) => Some(Cause::Steal),
-            live::Expect::Take(TakeSource::Rack | TakeSource::RackCopy) => Some(Cause::Rack),
+            // A locker's weapon is taken by the rack's grab, which delivers it as a locker take.
+            live::Expect::Take(TakeSource::Rack | TakeSource::RackCopy | TakeSource::Locker) => {
+                Some(Cause::Rack)
+            }
             live::Expect::Take(TakeSource::Snatch) => Some(Cause::Snatch),
-            live::Expect::Take(
-                TakeSource::Locker | TakeSource::Give | TakeSource::Pouch | TakeSource::Catch,
-            ) => None,
+            live::Expect::Take(TakeSource::Give | TakeSource::Pouch | TakeSource::Catch) => None,
         }
     }
 }
@@ -594,4 +595,27 @@ fn update_inventory_post_finalize_pose(inventory: *mut Inventory) {
     unsafe { inventory::carry::end_pass(inventory) };
     // The guns are placed for the pass, so another character's gun is where it is drawn.
     unsafe { steal::observe(inventory) };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_take_of_the_hold_names_its_grab() {
+        for cause in [
+            Cause::Draw,
+            Cause::Pickup,
+            Cause::Steal,
+            Cause::Rack,
+            Cause::Snatch,
+        ] {
+            assert_eq!(Cause::of(cause.expect()), Some(cause));
+        }
+        assert_eq!(
+            Cause::of(live::Expect::Take(TakeSource::Locker)),
+            Some(Cause::Rack)
+        );
+        assert_eq!(Cause::of(live::Expect::Take(TakeSource::Pouch)), None);
+    }
 }
