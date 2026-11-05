@@ -160,7 +160,7 @@ const fn heavy(offer: &Offer) -> bool {
         OfferKind::Prop {
             handling: PropHandling::Swing,
             ..
-        }
+        } | OfferKind::Ragdoll { .. }
     )
 }
 
@@ -245,7 +245,7 @@ pub(crate) unsafe fn targets(input: &OfferInput) -> Provided {
         kind: offer.kind.label(),
         distance_m: offer.distance,
         mass_kg: match offer.kind {
-            OfferKind::Prop { mass_kg, .. } => Some(mass_kg),
+            OfferKind::Prop { mass_kg, .. } | OfferKind::Ragdoll { mass_kg, .. } => Some(mass_kg),
             _ => None,
         },
     };

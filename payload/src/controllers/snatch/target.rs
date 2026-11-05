@@ -19,7 +19,7 @@ use crate::controllers::{
         self,
         collider_view::model::Aabb,
         doors::DoorTarget,
-        remote::{self, DroppedWeapon},
+        remote::{self, DroppedWeapon, RagdollTarget},
     },
     snatch::{
         OfferInput, Refusal, SNATCH, engine,
@@ -146,6 +146,29 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
             }
             point
         }
+        OfferKind::Ragdoll {
+            character,
+            owner,
+            body,
+            mass_kg,
+            weak,
+        } => {
+            let Some(_alive) = weak.lock() else {
+                return false;
+            };
+            let Some(current) = (unsafe { ragdoll_offer(*character, *body, offer.point, config) })
+            else {
+                return false;
+            };
+            if current.body != *body || current.owner != *owner {
+                return false;
+            }
+            *mass_kg = current.mass_kg;
+            if !unsafe { in_sight(ray, current.centre, character.get()) } {
+                return false;
+            }
+            current.centre
+        }
         OfferKind::Grenade { object, body, weak } => {
             let Some(_alive) = weak.lock() else {
                 return false;
@@ -247,6 +270,16 @@ pub(super) enum OfferKind {
         handling: PropHandling,
         weak: Weak,
     },
+    /// A ragdolling character, fallen, knocked down, or dead, pulled by the body of its ragdoll
+    /// the aim hit, `body` of `owner`, which drags the whole ragdoll of `mass_kg`. Always swung,
+    /// within the swing's ceiling.
+    Ragdoll {
+        character: NonZeroUsize,
+        owner: NonZeroUsize,
+        body: u32,
+        mass_kg: f32,
+        weak: Weak,
+    },
     /// A grenade lying inert in the world, its pin in: the loadout's still, and taken into the
     /// hand through it.
     Grenade {
@@ -277,9 +310,10 @@ impl OfferKind {
             | OfferKind::Held(_)
             | OfferKind::Holstered(_)
             | OfferKind::Rack { .. } => RemoteKind::Weapon,
-            OfferKind::Prop { .. } | OfferKind::Grenade { .. } | OfferKind::WorldGrenade { .. } => {
-                RemoteKind::Object
-            }
+            OfferKind::Prop { .. }
+            | OfferKind::Ragdoll { .. }
+            | OfferKind::Grenade { .. }
+            | OfferKind::WorldGrenade { .. } => RemoteKind::Object,
             OfferKind::Door { .. } => RemoteKind::Door,
         }
     }
@@ -298,6 +332,7 @@ impl OfferKind {
                 handling: PropHandling::Swing,
                 ..
             } => "HEAVY OBJECT",
+            OfferKind::Ragdoll { .. } => "BODY",
             OfferKind::Grenade { .. } | OfferKind::WorldGrenade { .. } => "GRENADE",
             OfferKind::Door { .. } => "CAR DOOR",
         }
@@ -588,6 +623,15 @@ unsafe fn aimed_offer(
             weak: weak(),
         });
     }
+    if let Some(ragdoll) = unsafe { ragdoll_offer(aimed.object, aimed.body, aimed.point, config) } {
+        return Some(OfferKind::Ragdoll {
+            character: aimed.object,
+            owner: ragdoll.owner,
+            body: ragdoll.body,
+            mass_kg: ragdoll.mass_kg,
+            weak: weak(),
+        });
+    }
     let hands = &config.physical_hands;
     if let Some((mass_kg, handling)) = unsafe { prop_handling(aimed.object, aimed.body, config) } {
         return Some(OfferKind::Prop {
@@ -631,7 +675,30 @@ pub(super) unsafe fn aimed_mass() -> Option<f32> {
     if aimed.weapon {
         return None;
     }
-    unsafe { remote::loose_mass(aimed.object, aimed.body) }
+    unsafe { remote::loose_mass(aimed.object, aimed.body) }.or_else(|| {
+        unsafe { remote::ragdoll_target(aimed.object, aimed.body, aimed.point) }.map(|r| r.mass_kg)
+    })
+}
+
+/// The ragdoll of the character `object` the aim hit on its body `body` at `point`, when the
+/// snatch offers it: the character ragdolls, the swing is on, and the whole ragdoll is within the
+/// swing's ceiling.
+///
+/// # Safety
+///
+/// The game thread, before the world update; the object must be held alive.
+unsafe fn ragdoll_offer(
+    object: NonZeroUsize,
+    body: u32,
+    point: Vec3,
+    config: &ControllersConfig,
+) -> Option<RagdollTarget> {
+    let snatch = &config.weapons.snatch;
+    if !snatch.sling {
+        return None;
+    }
+    let ragdoll = unsafe { remote::ragdoll_target(object, body, point) }?;
+    (ragdoll.mass_kg <= snatch.swing.ceiling_kg).then_some(ragdoll)
 }
 
 /// The mass of `object`'s body `body` and what the snatch does with it, when it is a loose object

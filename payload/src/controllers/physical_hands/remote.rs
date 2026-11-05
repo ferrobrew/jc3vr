@@ -5,11 +5,14 @@
 use std::num::NonZeroUsize;
 
 use glam::Vec3;
+use jc3gi::character::character::Character;
 
 use crate::controllers::{
     frame::Hand,
     physical_hands::{
-        STATE, bodies,
+        STATE,
+        bodies::{self, BodyError},
+        characters::ragdoll::Ragdoll,
         collider_view::{self, model::Aabb},
         contact::{Surface, SurfaceHit},
         doors::{self, DoorTarget, DoorsConfig, acquisition::PanelReach, engine as door_engine},
@@ -36,6 +39,62 @@ pub(crate) unsafe fn loose_mass(object: NonZeroUsize, body: u32) -> Option<f32> 
         return None;
     };
     Some(mass_kg)
+}
+
+/// A ragdolling character under the grapple's aim: the body of its ragdoll the line pulls, and
+/// the whole ragdoll's mass, which that body drags.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct RagdollTarget {
+    /// The object that owns the body, as a physics query reports it.
+    pub owner: NonZeroUsize,
+    pub body: u32,
+    /// The body's centre of mass, world space.
+    pub centre: Vec3,
+    pub mass_kg: f32,
+}
+
+/// The ragdoll of the character `object`, hit on its body `body` at `point`, when it ragdolls:
+/// the hit body when it is one of the ragdoll's dynamic bodies, or else the one nearest `point`.
+/// `None` for anything that is not a ragdolling character.
+///
+/// # Safety
+///
+/// The main thread, outside the physics step; `object` must be held alive or come from a cast
+/// this tick.
+pub(crate) unsafe fn ragdoll_target(
+    object: NonZeroUsize,
+    body: u32,
+    point: Vec3,
+) -> Option<RagdollTarget> {
+    if !unsafe { engine::is_character(object) } {
+        return None;
+    }
+    let character = unsafe { &*(object.get() as *const Character) };
+    let ragdoll = unsafe { Ragdoll::of(character) }?;
+    let bone = ragdoll.bone(body).or_else(|| ragdoll.nearest(point))?;
+    Some(RagdollTarget {
+        owner: bone.owner,
+        body: bone.body,
+        centre: bone.centre,
+        mass_kg: ragdoll.mass_kg(),
+    })
+}
+
+/// Push the body `body` of `owner` by `impulse` at `at`, world space, after checking it still
+/// belongs to `owner`: the line's pull on one body of a ragdoll, which the ragdoll's constraints
+/// share with the rest of it.
+///
+/// # Safety
+///
+/// The main thread, outside the physics step.
+#[track_caller]
+pub(crate) unsafe fn push(
+    body: u32,
+    owner: NonZeroUsize,
+    impulse: Vec3,
+    at: Vec3,
+) -> Result<(), BodyError> {
+    unsafe { bodies::shove(body, owner, impulse, at) }
 }
 
 /// The heaviest loose object one hand lifts and carries, kilograms: within the pickup's heaviest,
