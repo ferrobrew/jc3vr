@@ -12,16 +12,15 @@
 //! the restore's input tick ([`input_tick`]).
 
 use std::{
-    ffi::{CString, c_void},
+    ffi::CString,
     time::{Duration, Instant},
 };
 
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::WeaponBase,
-    game::GameObject,
     spawn_system::SpawnSystem,
-    types::{math::Matrix4, shared_ptr::SharedPtr, std_vector::Vector},
+    types::math::Matrix4,
 };
 use parking_lot::Mutex;
 
@@ -31,12 +30,11 @@ use crate::{
         weapons::{
             c4,
             dual_wield::single,
-            engine::weapon_at,
             grenade::stock,
             hold::{refs::Strong, swap},
             inventory::{
                 engine as inventory_engine,
-                restore::{PLAN, adoption},
+                restore::{PLAN, SpawnToken, adoption, spawned},
                 spawn_safety::{self, RequestKind},
             },
         },
@@ -120,12 +118,10 @@ pub(super) fn clear_pending() {
 const MAX_QUEUED: usize = 16;
 /// How long a give's spawn is waited for.
 const GIVE_WAIT: Duration = Duration::from_secs(10);
-/// The shift of a give's socket index in its spawn request's user data, above the generation.
-const SOCKET_SHIFT: u32 = 56;
 
 /// A give whose weapon is on its way.
 struct Pending {
-    token: u64,
+    token: SpawnToken,
     socket: Socket,
     name: String,
     at: Instant,
@@ -133,8 +129,8 @@ struct Pending {
 
 static QUEUE: Mutex<Vec<GiveRequest>> = Mutex::new(Vec::new());
 static PENDING: Mutex<Vec<Pending>> = Mutex::new(Vec::new());
-/// The weapons the spawn callback handed over, with their request's user data.
-static GIVEN: Mutex<Vec<(u64, Strong)>> = Mutex::new(Vec::new());
+/// The weapons the spawn callback ([`spawned`]) handed over, with their request's token.
+pub(super) static GIVEN: Mutex<Vec<(SpawnToken, Strong)>> = Mutex::new(Vec::new());
 static LAST: Mutex<Option<String>> = Mutex::new(None);
 
 /// Whether `def` is a hand weapon a socket can be given, and if so whether it is one-handed
@@ -176,7 +172,7 @@ unsafe fn give(owner: &Character, socket: Socket, name: &str) -> String {
     // A refusal here only means the socket was empty.
     let _ = unsafe { swap::eject(socket) };
     let generation = PLAN.lock().generation;
-    let token = generation | ((socket.index() as u64) << SOCKET_SHIFT);
+    let token = SpawnToken::Give { generation, socket };
     let transform = owner.m_WorldMatrixT1;
     let transform: *const Matrix4 = &transform;
     let submitted = spawn_safety::submit(RequestKind::Give, || unsafe {
@@ -184,8 +180,8 @@ unsafe fn give(owner: &Character, socket: Socket, name: &str) -> String {
             tags.as_ptr().cast(),
             transform,
             SpawnSystem::FF_HIGH_PRIO_SPAWN_CHECKS,
-            given as *const u8,
-            token as usize as *mut u8,
+            spawned as *const u8,
+            token.user_data(),
         )
     });
     if let Err(refusal) = submitted {
@@ -269,30 +265,6 @@ unsafe fn adopt(owner: &mut Character) {
         let line = format!("give: {name} never came");
         tracing::info!(target: "controllers", "{line}");
         *LAST.lock() = Some(line);
-    }
-}
-
-/// The spawn system's callback for a give: take a strong reference to each spawned weapon and hand
-/// it to the next input tick. Runs inline on the caller of `SpawnSystem::PreUpdate`.
-unsafe extern "system" fn given(
-    objects: *const Vector<SharedPtr<GameObject>>,
-    userdata: *mut c_void,
-) {
-    let _entry = spawn_safety::callback_entry();
-    let Some(objects) = (unsafe { objects.as_ref() }) else {
-        return;
-    };
-    let token = userdata as usize as u64;
-    let mut out = GIVEN.lock();
-    for object in unsafe { objects.as_slice() } {
-        if object.px.is_null() || !unsafe { (*object.px).IsType(WeaponBase::TYPE_ID()) } {
-            continue;
-        }
-        let weapon = weapon_at(object.px);
-        // SAFETY: the vector's reference keeps the object alive for the call.
-        if let Some(strong) = unsafe { inventory_engine::strong_to(&*weapon) } {
-            out.push((token, strong));
-        }
     }
 }
 

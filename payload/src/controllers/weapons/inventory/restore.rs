@@ -47,6 +47,7 @@ use crate::{
     config::paths,
     controllers::{
         hands::ik,
+        loadout::Socket,
         weapons::{
             dual_wield::single,
             engine::weapon_at,
@@ -341,7 +342,7 @@ pub(crate) unsafe fn request_twin(owner: &Character, tag_hash: u32) -> bool {
             transform,
             SpawnSystem::FF_HIGH_PRIO_SPAWN_CHECKS,
             spawned as *const u8,
-            (generation | TWIN_REQUEST) as usize as *mut u8,
+            SpawnToken::Twin { generation }.user_data(),
             u32::MAX,
         )
     })
@@ -437,9 +438,6 @@ static PLAN: Mutex<Plan> = Mutex::new(Plan {
 static SPAWNED: Mutex<Vec<(u64, Strong)>> = Mutex::new(Vec::new());
 /// The second pistols the spawn callback handed over, with the generation they were asked in.
 static TWINS: Mutex<Vec<(u64, Strong)>> = Mutex::new(Vec::new());
-/// The bit of a spawn request's user data that marks it as a second pistol's, above the
-/// generation.
-const TWIN_REQUEST: u64 = 1 << 62;
 static STATUS: Mutex<RestoreStatus> = Mutex::new(RestoreStatus {
     path: None,
     writes: 0,
@@ -651,7 +649,7 @@ unsafe fn request(owner: &Character, origin: Origin, records: Vec<Record>) {
                 transform,
                 SpawnSystem::FF_HIGH_PRIO_SPAWN_CHECKS,
                 spawned as *const u8,
-                generation as usize as *mut u8,
+                SpawnToken::Respawn { generation }.user_data(),
                 u32::MAX,
             )
         })
@@ -686,9 +684,10 @@ fn expire_spawning() -> Vec<Record> {
     expired.into_iter().map(|s| s.record).collect()
 }
 
-/// The spawn system's callback for a respawn: take a strong reference to each spawned weapon and
-/// hand it to the next input tick. Runs inline on the caller of `SpawnSystem::PreUpdate`.
-unsafe extern "system" fn spawned(
+/// The spawn system's callback for every request the restore and the give make: take a strong
+/// reference to each spawned weapon and queue it, by its request's token, for the input tick that
+/// waits for it. Runs inline on the caller of `SpawnSystem::PreUpdate`.
+pub(super) unsafe extern "system" fn spawned(
     objects: *const Vector<SharedPtr<GameObject>>,
     userdata: *mut c_void,
 ) {
@@ -696,25 +695,75 @@ unsafe extern "system" fn spawned(
     let Some(objects) = (unsafe { objects.as_ref() }) else {
         return;
     };
-    let userdata = userdata as usize as u64;
-    let generation = userdata & !TWIN_REQUEST;
-    let mut out = if userdata & TWIN_REQUEST != 0 {
-        TWINS.lock()
-    } else {
-        SPAWNED.lock()
+    let Some(token) = SpawnToken::decode(userdata as usize as u64) else {
+        return;
     };
     for object in unsafe { objects.as_slice() } {
-        if object.px.is_null() {
+        // SAFETY: the vector's reference keeps the object alive for the call.
+        if object.px.is_null() || !unsafe { (*object.px).IsType(WeaponBase::TYPE_ID()) } {
             continue;
         }
         // The spawned object's own weak reference to itself, through which the inventory holds it.
-        let weapon = weapon_at(object.px);
-        // SAFETY: the vector's reference keeps the object alive for the call.
-        if !unsafe { (*object.px).IsType(WeaponBase::TYPE_ID()) } {
+        let Some(strong) = (unsafe { inventory_engine::strong_to(&*weapon_at(object.px)) }) else {
             continue;
+        };
+        match token {
+            SpawnToken::Respawn { generation } => SPAWNED.lock().push((generation, strong)),
+            SpawnToken::Twin { generation } => TWINS.lock().push((generation, strong)),
+            SpawnToken::Give { .. } => give::GIVEN.lock().push((token, strong)),
         }
-        if let Some(strong) = unsafe { inventory_engine::strong_to(&*weapon) } {
-            out.push((generation, strong));
+    }
+}
+
+/// What a spawn request asked for, carried in its user data so that the one callback
+/// ([`spawned`]) queues each weapon where it is waited for.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(super) enum SpawnToken {
+    /// A carried weapon respawned after a reset, asked in the restore's `generation`.
+    Respawn { generation: u64 },
+    /// A single pistol's second pistol, asked in `generation`.
+    Twin { generation: u64 },
+    /// A give onto `socket`, asked in `generation`.
+    Give { generation: u64, socket: Socket },
+}
+
+impl SpawnToken {
+    /// The bits of the user data that hold the generation.
+    const GENERATION_MASK: u64 = (1 << Self::SOCKET_SHIFT) - 1;
+    /// The shift of a give's socket index, above the generation.
+    const SOCKET_SHIFT: u32 = 56;
+    /// The bit that marks a second pistol's request.
+    const TWIN: u64 = 1 << 62;
+    /// The bit that marks a give's request.
+    const GIVE: u64 = 1 << 63;
+
+    /// The token as a spawn request's user data.
+    pub(super) fn user_data(self) -> *mut u8 {
+        self.encode() as usize as *mut u8
+    }
+
+    fn encode(self) -> u64 {
+        match self {
+            SpawnToken::Respawn { generation } => generation & Self::GENERATION_MASK,
+            SpawnToken::Twin { generation } => (generation & Self::GENERATION_MASK) | Self::TWIN,
+            SpawnToken::Give { generation, socket } => {
+                (generation & Self::GENERATION_MASK)
+                    | ((socket.index() as u64) << Self::SOCKET_SHIFT)
+                    | Self::GIVE
+            }
+        }
+    }
+
+    fn decode(data: u64) -> Option<SpawnToken> {
+        let generation = data & Self::GENERATION_MASK;
+        let socket = ((data & !(Self::TWIN | Self::GIVE)) >> Self::SOCKET_SHIFT) as usize;
+        match (data & Self::TWIN != 0, data & Self::GIVE != 0) {
+            (false, false) if socket == 0 => Some(SpawnToken::Respawn { generation }),
+            (true, false) if socket == 0 => Some(SpawnToken::Twin { generation }),
+            (false, true) => Socket::ALL
+                .get(socket)
+                .map(|&socket| SpawnToken::Give { generation, socket }),
+            _ => None,
         }
     }
 }
@@ -726,3 +775,37 @@ mod status_tests;
 
 #[cfg(test)]
 mod spawn_safety_tests;
+
+#[cfg(test)]
+mod token_tests {
+    use super::*;
+
+    #[test]
+    fn every_request_finds_its_queue_again() {
+        let mut tokens = vec![
+            SpawnToken::Respawn { generation: 0 },
+            SpawnToken::Respawn { generation: 41 },
+            SpawnToken::Twin { generation: 41 },
+        ];
+        tokens.extend(Socket::ALL.map(|socket| SpawnToken::Give {
+            generation: 41,
+            socket,
+        }));
+        for token in tokens {
+            assert_eq!(SpawnToken::decode(token.encode()), Some(token));
+        }
+    }
+
+    #[test]
+    fn a_token_of_no_request_is_refused() {
+        let give = SpawnToken::Give {
+            generation: 1,
+            socket: Socket::ALL[0],
+        }
+        .encode();
+        // A socket beyond the body's, a socket on a respawn, and both kinds at once.
+        assert_eq!(SpawnToken::decode(give | (63 << 56)), None);
+        assert_eq!(SpawnToken::decode(1 | (1 << 56)), None);
+        assert_eq!(SpawnToken::decode(give | (1 << 62)), None);
+    }
+}
