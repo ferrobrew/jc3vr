@@ -226,12 +226,17 @@ pub fn affine(t: &hkTransformf) -> Affine3A {
     }
 }
 
+/// A vector as a Havok vector, its padding lane zero.
+pub fn vector(v: Vec3) -> AlignedVector3 {
+    AlignedVector3 {
+        data: v.to_array(),
+        _w: 0.0,
+    }
+}
+
 /// An affine transform as a Havok transform.
 pub fn transform(a: Affine3A) -> hkTransformf {
-    let column = |v: Vec3A| AlignedVector3 {
-        data: Vec3::from(v).to_array(),
-        _w: 0.0,
-    };
+    let column = |v: Vec3A| vector(Vec3::from(v));
     hkTransformf {
         m_rotation: [
             column(a.matrix3.x_axis),

@@ -65,7 +65,7 @@ mod types;
 pub(crate) use blows::queue_shove;
 pub use blows::{Shove, ShoveForce};
 pub use config::{HAND_BODIES, HandBodiesConfig, HandHitsTuning};
-pub(crate) use joint::affine as havok_affine;
+pub(crate) use joint::{affine as havok_affine, vector as havok_vector};
 pub(crate) use lifecycle::release_body_joints;
 
 pub(crate) use self::{

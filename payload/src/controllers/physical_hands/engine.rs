@@ -11,7 +11,6 @@ use glam::Vec3;
 use jc3gi::{
     character::{character::Character, player::Player},
     physics::{PfxCharacterInstance, PhysicsSystem},
-    types::vector_math::AlignedVector3,
 };
 
 use crate::controllers::{
@@ -20,6 +19,7 @@ use crate::controllers::{
     physical_hands::{
         bodies::is_type,
         contact::{Surface, SurfaceHit},
+        physics::havok_vector,
     },
 };
 
@@ -102,8 +102,8 @@ pub(super) unsafe fn push_body(body: u32, impulse: Vec3, at: Vec3) -> Result<(),
     let physics = unsafe { PhysicsSystem::get() }.ok_or(EngineError::NoPhysicsWorld)?;
     let shift = Vec3::from_array(physics.m_AccumulatedShift.data);
     let world = unsafe { physics.m_World.as_mut() }.ok_or(EngineError::NoPhysicsWorld)?;
-    let impulse = aligned(impulse);
-    let position = aligned(at - shift);
+    let impulse = havok_vector(impulse);
+    let position = havok_vector(at - shift);
     unsafe { world.applyBodyImpulseAt(body, &impulse, &position) };
     Ok(())
 }
@@ -135,11 +135,4 @@ unsafe fn player_of(character: &Character) -> Option<&Player> {
 /// Whether the physics game object at `object` is a character.
 pub(super) unsafe fn is_character(object: NonZeroUsize) -> bool {
     unsafe { is_type(object, Character::TYPE_ID()) }
-}
-
-fn aligned(v: Vec3) -> AlignedVector3 {
-    AlignedVector3 {
-        data: v.to_array(),
-        _w: 0.0,
-    }
 }

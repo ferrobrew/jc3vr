@@ -34,10 +34,7 @@ use jc3gi::{
         CustomGroupCollisionFilter, PfxCharacterInstance, PfxLayer, PfxRigidBody, hknpAdditionMode,
         hknpBody, hknpWorld,
     },
-    types::{
-        math::Matrix4,
-        vector_math::{AlignedQuat, AlignedVector3},
-    },
+    types::{math::Matrix4, vector_math::AlignedQuat},
 };
 
 use crate::controllers::physical_hands::{
@@ -46,6 +43,7 @@ use crate::controllers::physical_hands::{
     physics::{
         contact::{self, ContactError, Source},
         drive::BodyMotion,
+        havok_vector,
     },
     world::World,
 };
@@ -158,8 +156,8 @@ impl HandBody {
         // A made capsule comes with one reference, the caller's; a shared shape lends none.
         let (shape, owned) = match spec.shape {
             BodyShape::Capsule(capsule) => {
-                let a = aligned(Vec3::NEG_Z * capsule.half_length_m);
-                let b = aligned(Vec3::Z * capsule.half_length_m);
+                let a = havok_vector(Vec3::NEG_Z * capsule.half_length_m);
+                let b = havok_vector(Vec3::Z * capsule.half_length_m);
                 let shape =
                     unsafe { hknpCapsuleShape::createCapsuleShape(&a, &b, capsule.radius_m) };
                 (shape, true)
@@ -178,7 +176,7 @@ impl HandBody {
             cinfo.assume_init_mut()
         };
         cinfo.m_shape = shape;
-        cinfo.m_position = aligned(position - world.shift);
+        cinfo.m_position = havok_vector(position - world.shift);
         cinfo.m_orientation = AlignedQuat {
             data: orientation.normalize().to_array(),
         };
@@ -367,9 +365,11 @@ impl HandBody {
         let mut world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
         unsafe { self.slot(world.world()) }?;
         unsafe {
-            world
-                .world_mut()
-                .setBodyVelocity(self.body_id, &aligned(linear), &aligned(angular))
+            world.world_mut().setBodyVelocity(
+                self.body_id,
+                &havok_vector(linear),
+                &havok_vector(angular),
+            )
         };
         Ok(())
     }
@@ -392,8 +392,8 @@ impl HandBody {
                 access.wrapper.as_mut().SetTransform(&transform);
                 access.world.world_mut().setBodyVelocity(
                     self.body_id,
-                    &aligned(Vec3::ZERO),
-                    &aligned(Vec3::ZERO),
+                    &havok_vector(Vec3::ZERO),
+                    &havok_vector(Vec3::ZERO),
                 );
             })
         }
@@ -434,11 +434,11 @@ impl HandBody {
         }
         let mut world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
         unsafe { self.slot(world.world()) }?;
-        let at = aligned(at - world.shift);
+        let at = havok_vector(at - world.shift);
         unsafe {
             world
                 .world_mut()
-                .applyBodyImpulseAt(self.body_id, &aligned(impulse), &at)
+                .applyBodyImpulseAt(self.body_id, &havok_vector(impulse), &at)
         };
         Ok(())
     }
@@ -557,10 +557,3 @@ pub(super) fn half_to_f32(half: u16) -> f32 {
 
 #[cfg(test)]
 mod tests;
-
-fn aligned(v: Vec3) -> AlignedVector3 {
-    AlignedVector3 {
-        data: v.to_array(),
-        _w: 0.0,
-    }
-}

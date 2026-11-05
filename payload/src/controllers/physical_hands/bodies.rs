@@ -22,7 +22,6 @@ use jc3gi::{
         PfxCharacterInstance, PfxInstance, PhysicsGameObject, RigidObject, hknpBody, hknpMotion,
         hknpWorld,
     },
-    types::vector_math::AlignedVector3,
     vehicle::{parts::VehiclePartGameObject, vehicle::Vehicle},
 };
 
@@ -30,6 +29,7 @@ use crate::controllers::{
     diagnostics::{Applied, BodyBefore, note_force},
     physical_hands::{
         grasp::{TargetKind, mass_of},
+        physics::havok_vector,
         rigid::{BodyPose, RigidBody, Velocities},
         world::World,
     },
@@ -242,8 +242,8 @@ pub(super) unsafe fn drive(
         },
         Some(before(motion, owner)),
     );
-    let linear = aligned(velocities.linear);
-    let angular = aligned(velocities.angular);
+    let linear = havok_vector(velocities.linear);
+    let angular = havok_vector(velocities.angular);
     unsafe { world.world_mut().setBodyVelocity(body, &linear, &angular) };
     Ok(())
 }
@@ -271,8 +271,8 @@ pub(super) unsafe fn shove(
         Applied::Impulse { impulse, at },
         Some(before(motion, owner)),
     );
-    let impulse = aligned(impulse);
-    let position = aligned(at - world.shift);
+    let impulse = havok_vector(impulse);
+    let position = havok_vector(at - world.shift);
     unsafe {
         world
             .world_mut()
@@ -423,13 +423,6 @@ unsafe fn owned_motion(
 /// A Havok `hkHalf`: the upper 16 bits of an `f32`.
 fn half_to_f32(half: u16) -> f32 {
     f32::from_bits(u32::from(half) << 16)
-}
-
-fn aligned(v: Vec3) -> AlignedVector3 {
-    AlignedVector3 {
-        data: v.to_array(),
-        _w: 0.0,
-    }
 }
 
 #[cfg(test)]

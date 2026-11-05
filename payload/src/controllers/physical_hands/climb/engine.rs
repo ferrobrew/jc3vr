@@ -22,13 +22,12 @@ use jc3gi::{
     character::character::Character,
     havok::hkSimdFloat32,
     physics::{PfxCharacterInstance, PfxInstance, hknpBody, hknpCharacterSurfaceInfo, hknpWorld},
-    types::vector_math::AlignedVector3,
 };
 
 use crate::controllers::{
     physical_hands::{
         bodies::slot,
-        physics::{self, havok_affine},
+        physics::{self, havok_affine, havok_vector},
         world::World,
     },
     weapons::engine::character_position,
@@ -292,8 +291,8 @@ pub unsafe fn hold(
     info.m_isSurfaceDynamic = surface_velocity != Vec3::ZERO;
     info.m_supportedState = hknpCharacterSurfaceInfo::SUPPORTED;
     info.m_surfaceDistanceExcess = 0.0;
-    info.m_surfaceNormal = aligned(Vec3::Y);
-    info.m_surfaceVelocity = aligned(surface_velocity);
+    info.m_surfaceNormal = havok_vector(Vec3::Y);
+    info.m_surfaceVelocity = havok_vector(surface_velocity);
     proxy.m_GroundBodyId = ground;
     proxy.m_LastValidGroundBodyId = ground;
     Ok(())
@@ -315,7 +314,7 @@ pub unsafe fn set_velocity(velocity: Vec3) -> Result<(), ClimbEngineError> {
     let timestep = hkSimdFloat32 {
         m_real: [physics::step_seconds(); 4],
     };
-    unsafe { body.setLinearVelocity(&aligned(velocity), &timestep, false) };
+    unsafe { body.setLinearVelocity(&havok_vector(velocity), &timestep, false) };
     Ok(())
 }
 
@@ -365,13 +364,6 @@ unsafe fn proxy_slot<'w>(
     let mut body = PfxCharacterInstance::INVALID_BODY_ID;
     unsafe { proxy.GetCharacterRigidBodyId(&mut body) };
     unsafe { slot(world, body) }.ok_or(ClimbEngineError::NoPlayer)
-}
-
-fn aligned(v: Vec3) -> AlignedVector3 {
-    AlignedVector3 {
-        data: v.to_array(),
-        _w: 0.0,
-    }
 }
 
 #[cfg(test)]
