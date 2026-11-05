@@ -94,11 +94,11 @@ use crate::controllers::{
         brace::Brace,
         moment::Moment,
         prearm::Prearm,
-        pull::{Arrival, Attached, Fired, Flight, Grabbed, Step, Swinging},
+        pull::{Arrival, Attached, Fired, Flight, Freeing, Grabbed, Step, Swinging},
         rules::PropHandling,
         target::{Offer, OfferKind},
     },
-    weapons::hold::steal,
+    weapons::hold::{source::SourceRefusal, steal},
 };
 
 /// The snatch's hooks, aggregated by [`crate::controllers::hook_library`].
@@ -438,10 +438,10 @@ enum Phase {
         line: ArmedLine,
         yank: YankDetector,
     },
-    /// A character let go of the gun; the hook fires once it lies in the world.
+    /// A source gave its weapon up, or is making it; the hook fires once it lies in the world.
     Freeing {
         hand: Hand,
-        target: Grabbed,
+        target: Freeing,
         waited_s: f32,
     },
     /// The hook flies to the target.
@@ -637,29 +637,45 @@ impl State {
                 hand,
                 target,
                 waited_s,
-            } => match unsafe { pull::fire_hook(&target) } {
-                Ok(wire) => {
-                    haptics::play(hand, Event::GrappleFire);
-                    unsafe { juice::fire() };
-                    Phase::HookOut {
+            } => {
+                let timeout_s = target.timeout_s();
+                let waited_s = waited_s + input.dt;
+                match unsafe { pull::collect(hand, target) } {
+                    Ok(Freeing::Freed(grabbed)) => match unsafe { pull::fire_hook(&grabbed) } {
+                        Ok(wire) => {
+                            haptics::play(hand, Event::GrappleFire);
+                            unsafe { juice::fire() };
+                            Phase::HookOut {
+                                hand,
+                                target: grabbed,
+                                wire,
+                                waited_s: 0.0,
+                            }
+                        }
+                        // The weapon's body may take a tick to lie in the world.
+                        Err(Refusal::NoBody | Refusal::Body(_) | Refusal::NotDropped)
+                            if waited_s < timeout_s =>
+                        {
+                            Phase::Freeing {
+                                hand,
+                                target: Freeing::Freed(grabbed),
+                                waited_s,
+                            }
+                        }
+                        Err(refusal) => self.failed(hand, refusal),
+                    },
+                    // A rack's copy or a pair's pistol spawns a few frames later.
+                    Ok(making @ Freeing::Making(_)) if waited_s < timeout_s => Phase::Freeing {
                         hand,
-                        target,
-                        wire,
-                        waited_s: 0.0,
+                        target: making,
+                        waited_s,
+                    },
+                    Ok(Freeing::Making(_)) => {
+                        self.failed(hand, Refusal::Source(SourceRefusal::Gone))
                     }
+                    Err(refusal) => self.failed(hand, refusal),
                 }
-                // The gun's body may take a tick to lie in the world.
-                Err(Refusal::NoBody | Refusal::Body(_) | Refusal::NotDropped)
-                    if waited_s + input.dt < SNATCH.free_timeout_s =>
-                {
-                    Phase::Freeing {
-                        hand,
-                        target,
-                        waited_s: waited_s + input.dt,
-                    }
-                }
-                Err(refusal) => self.failed(hand, refusal),
-            },
+            }
             Phase::HookOut {
                 hand,
                 target,

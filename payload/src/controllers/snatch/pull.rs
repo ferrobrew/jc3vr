@@ -45,8 +45,9 @@ use crate::{
             grenade,
             hold::{
                 SNAP_S,
+                rack::copy,
                 refs::{Strong, Weak},
-                source::{self as hold_source, WeaponSource},
+                source::{self as hold_source, Freed, Ticket, WeaponSource, Yield},
                 steal::CharacterGun,
             },
             inventory::engine::weapon_of,
@@ -106,8 +107,8 @@ impl Pulled {
 
 /// What a fire at an armed target started.
 pub(super) enum Fired {
-    /// A character let go of its gun; the hook fires once the gun lies in the world.
-    Freeing(Grabbed),
+    /// A source gave its weapon up, or is making it; the hook fires once it lies in the world.
+    Freeing(Freeing),
     /// The hook flies.
     HookOut(Grabbed, NonZeroUsize),
 }
@@ -125,7 +126,7 @@ pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal>
             WeaponSource::Character(CharacterGun::held(&target).ok_or(Refusal::Gone)?)
         }
         OfferKind::Holstered(target) => WeaponSource::Character(CharacterGun::holstered(&target)),
-        OfferKind::Rack { weapon, weak } => WeaponSource::Rack { weapon, weak },
+        OfferKind::Rack { weapon, weak, gun } => WeaponSource::Rack { weapon, weak, gun },
         OfferKind::Prop {
             object,
             body,
@@ -201,22 +202,64 @@ pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal>
         }
     };
     let ground = matches!(source, WeaponSource::Ground { .. });
-    let freed = unsafe { hold_source::free(hand, &source) }.map_err(Refusal::Source)?;
-    let object = NonZeroUsize::new(freed.weapon as usize).ok_or(Refusal::Gone)?;
-    let grabbed = Grabbed {
-        object,
-        kind: Pulled::Weapon {
-            source: freed.source,
-        },
-        _alive: freed.alive,
+    let freed = match unsafe { hold_source::free(hand, &source) }.map_err(Refusal::Source)? {
+        Yield::Ready(freed) => freed,
+        Yield::Pending(ticket) => return Ok(Fired::Freeing(Freeing::Making(ticket))),
     };
+    let grabbed = grabbed(freed)?;
     if ground {
         // A weapon lying in the world has its bodies already: the hook flies at once.
         let wire = unsafe { fire_hook(&grabbed) }?;
         return Ok(Fired::HookOut(grabbed, wire));
     }
     tracing::info!(target: "controllers", hand = hand.label(), "snatch: the gun is free of its holder");
-    Ok(Fired::Freeing(grabbed))
+    Ok(Fired::Freeing(Freeing::Freed(grabbed)))
+}
+
+/// A weapon its source is giving up for the snatch.
+pub(super) enum Freeing {
+    /// Given up: the hook fires once its bodies lie in the world.
+    Freed(Grabbed),
+    /// Still being made: a rack's copy, or a pair's pistol, collected once it is.
+    Making(Ticket),
+}
+
+impl Freeing {
+    /// How long the source may take, seconds: a weapon given up lies in the world within a tick
+    /// or two, and one being made spawns a few frames later.
+    pub(super) fn timeout_s(&self) -> f32 {
+        match self {
+            Freeing::Freed(_) => SNATCH.free_timeout_s,
+            Freeing::Making(_) => copy::COPY_WAIT.as_secs_f32(),
+        }
+    }
+}
+
+/// Collect the weapon a source was making into `freeing`, when it has made it.
+///
+/// # Safety
+///
+/// The game thread, before the world update.
+pub(super) unsafe fn collect(hand: Hand, freeing: Freeing) -> Result<Freeing, Refusal> {
+    let Freeing::Making(ticket) = freeing else {
+        return Ok(freeing);
+    };
+    match unsafe { hold_source::poll(hand, &ticket) } {
+        None => Ok(Freeing::Making(ticket)),
+        Some(Ok(freed)) => grabbed(freed).map(Freeing::Freed),
+        Some(Err(refusal)) => Err(Refusal::Source(refusal)),
+    }
+}
+
+/// A weapon its source gave up, as the snatch holds it.
+fn grabbed(freed: Freed) -> Result<Grabbed, Refusal> {
+    Ok(Grabbed {
+        object: NonZeroUsize::new(freed.weapon as usize).ok_or(Refusal::Gone)?,
+        kind: Pulled::Weapon {
+            source: freed.source,
+        },
+        _alive: freed.alive,
+    })
 }
 
 /// Fire the hook at what `grabbed` holds.

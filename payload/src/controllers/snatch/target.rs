@@ -110,8 +110,8 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
             *target = current;
             current.point
         }
-        OfferKind::Rack { weapon, weak } => {
-            let Some(point) = (unsafe { rack::remote::current(*weapon, weak) }) else {
+        OfferKind::Rack { weapon, weak, gun } => {
+            let Some(point) = (unsafe { rack::remote::current(*weapon, *gun, weak) }) else {
                 return false;
             };
             if !unsafe { in_sight(ray, point, weapon.get()) } {
@@ -253,8 +253,13 @@ pub(super) enum OfferKind {
     Held(WorldTarget),
     /// A gun holstered on a character's body.
     Holstered(HolsteredTarget),
-    /// A long gun on a rack, or lying where a locker's placement rule set it down.
-    Rack { weapon: NonZeroUsize, weak: Weak },
+    /// A gun on a rack (`gun`, the first, or the second of a pistol pair), or lying where a
+    /// locker's placement rule set it down.
+    Rack {
+        weapon: NonZeroUsize,
+        weak: Weak,
+        gun: u8,
+    },
     /// A loose object: one a hand can carry, or one heavier, up to the swing's ceiling, which the
     /// line swings.
     Prop {
@@ -515,6 +520,7 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
             OfferKind::Rack {
                 weapon: rack.weapon,
                 weak: rack.weak,
+                gun: rack.gun,
             }
         }
     };

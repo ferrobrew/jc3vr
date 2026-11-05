@@ -131,6 +131,24 @@ pub(super) fn owns(member: Member) -> bool {
     STATE.lock().iter().any(|s| s.matches(member))
 }
 
+pub(super) fn member_for(source: usize, preferred: u8) -> Option<Member> {
+    let state = STATE.lock();
+    let source = state.iter().find(|s| s.address == source)?;
+    paired::pick(preferred, |index| source.claims.available(index)).map(|index| Member {
+        source: source.address,
+        generation: source.generation,
+        index: index as u8,
+    })
+}
+
+pub(super) fn ready(member: Member) -> bool {
+    STATE.lock().iter().any(|s| {
+        s.matches(member)
+            && s.claims.available(member.index as usize)
+            && (s.claims.first.is_some() || matches!(s.copy, Stage::Ready(_)))
+    })
+}
+
 pub(super) fn waiting(member: Member) -> bool {
     STATE
         .lock()

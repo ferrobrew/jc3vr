@@ -13,9 +13,10 @@
 //! as one standalone weapon ([`staged`]). Meanwhile the rack's weapon is hidden, held alive, and it
 //! fades back in a moment after the copy left, restocked.
 //!
-//! From there the copy is delivered as any weapon its source gave up: the hand that asked for it
-//! takes it at once through the direct pickup, sliding from the rack. One copy is on its way at a
-//! time.
+//! From there the copy is delivered as any weapon its source gave up: a hand in reach takes it at
+//! once through the direct pickup, sliding from the rack, and for the grapple's snatch it drops
+//! into the world where it hangs, with its bodies, and waits for the line ([`collect`]). One copy
+//! is on its way at a time.
 
 use std::{
     sync::atomic::{AtomicU64, Ordering},
@@ -39,7 +40,7 @@ use crate::controllers::{
             pickup::{self, TakeOptions},
             rack::paired::{self, Member},
             refs::Strong,
-            source::SourceRefusal,
+            source::{Freed, SourceRefusal},
         },
         inventory::{
             engine::{strong_to, weapon_of},
@@ -48,8 +49,9 @@ use crate::controllers::{
     },
 };
 
-/// Ask the rack weapon `display` for a copy for `hand`: start its pickup inside the rack-member
-/// give fence and hide it until the copy has left. Returns the copy's member identity.
+/// Ask the rack weapon `display` for a copy, to be delivered to `hand` as `delivery` says: start
+/// its pickup inside the rack-member give fence and hide it until the copy has left. Returns the
+/// copy's member identity, for the snatch to collect it by.
 ///
 /// # Safety
 ///
@@ -58,6 +60,7 @@ use crate::controllers::{
 pub(crate) unsafe fn request(
     owner: &Character,
     hand: Hand,
+    delivery: Delivery,
     display: &mut WeaponBase,
 ) -> Result<Member, SourceRefusal> {
     if gives::members_closed() {
@@ -82,6 +85,7 @@ pub(crate) unsafe fn request(
         member,
         display: alive,
         hand,
+        delivery,
         gun,
         asked_at: Instant::now(),
         stage: Stage::Waiting,
@@ -94,6 +98,7 @@ pub(crate) unsafe fn request(
     tracing::info!(
         target: "controllers",
         hand = hand.label(),
+        delivery = delivery.label(),
         "hold: asked a rack for a copy for the {} hand",
         hand.label()
     );
@@ -121,10 +126,12 @@ pub(crate) fn waiting(member: Member) -> bool {
 /// `actor` owns a live weapon on the game thread before the world update.
 pub(crate) unsafe fn staged(member: Member, actor: Strong) {
     let weapon = unsafe { &mut *weapon_of(&actor) };
-    let (hand, gun) = {
+    let (hand, delivery, gun) = {
         let pending = PENDING.lock();
         match pending.as_ref() {
-            Some(p) if p.member == member && matches!(p.stage, Stage::Waiting) => (p.hand, p.gun),
+            Some(p) if p.member == member && matches!(p.stage, Stage::Waiting) => {
+                (p.hand, p.delivery, p.gun)
+            }
             _ => {
                 drop(pending);
                 unsafe { weapon.Despawn() };
@@ -136,9 +143,48 @@ pub(crate) unsafe fn staged(member: Member, actor: Strong) {
     // It is a weapon of its own now: a take of it must not ask for another copy.
     weapon.m_InfinitePickup = false;
     unsafe { weapon.SetState(WeaponState::E_WS_DROPPED, true) };
-    unsafe { deliver(hand, weapon) };
+    let stage = match delivery {
+        Delivery::Local => {
+            unsafe { deliver(hand, weapon) };
+            Stage::Delivered { at: Instant::now() }
+        }
+        Delivery::Remote => {
+            unsafe { weapon.SetVisible(true, true, false) };
+            // Into the world where it hangs, with its bodies, for the line to pull in.
+            unsafe { weapon.OnDrop() };
+            Stage::Freed(actor)
+        }
+    };
     if let Some(pending) = PENDING.lock().as_mut().filter(|p| p.member == member) {
-        pending.stage = Stage::Delivered { at: Instant::now() };
+        pending.stage = stage;
+    }
+}
+
+/// The copy `member` the snatch waits for: `None` while it has not arrived, else the copy lying in
+/// the world, or why it never will.
+pub(crate) fn collect(member: Member) -> Option<Result<Freed, SourceRefusal>> {
+    let mut pending = PENDING.lock();
+    let Some(p) = pending.as_mut().filter(|p| p.member == member) else {
+        return Some(Err(SourceRefusal::Gone));
+    };
+    match std::mem::replace(&mut p.stage, Stage::Delivered { at: Instant::now() }) {
+        Stage::Freed(actor) => Some(Ok(Freed {
+            weapon: weapon_of(&actor),
+            alive: actor,
+            source: TakeSource::RackCopy,
+        })),
+        Stage::Waiting => {
+            p.stage = Stage::Waiting;
+            None
+        }
+        Stage::Failed => {
+            p.stage = Stage::Failed;
+            Some(Err(SourceRefusal::Gone))
+        }
+        Stage::Delivered { at } => {
+            p.stage = Stage::Delivered { at };
+            Some(Err(SourceRefusal::Gone))
+        }
     }
 }
 
@@ -158,7 +204,8 @@ pub(crate) fn tick() {
         }
         Stage::Waiting => false,
         Stage::Delivered { at } => at.elapsed() >= RESTOCK_AFTER,
-        Stage::Failed => true,
+        // A copy the snatch never collected lies in the world where it hangs.
+        Stage::Freed(_) | Stage::Failed => p.asked_at.elapsed() >= 2 * COPY_WAIT,
     };
     if done && let Some(p) = pending.take() {
         drop(pending);
@@ -183,7 +230,7 @@ pub(crate) fn count() -> u64 {
 /// How long a rack's weapon stays hidden after its copy left it.
 const RESTOCK_AFTER: Duration = Duration::from_millis(800);
 /// How long a copy is waited for.
-const COPY_WAIT: Duration = Duration::from_secs(3);
+pub(crate) const COPY_WAIT: Duration = Duration::from_secs(3);
 
 /// A copy a rack with unlimited stock is spawning.
 struct Pending {
@@ -191,6 +238,7 @@ struct Pending {
     /// The rack's own weapon, hidden until the copy has left, held alive meanwhile.
     display: Strong,
     hand: Hand,
+    delivery: Delivery,
     /// The rack weapon's first gun's world matrix, where the copy is placed.
     gun: Matrix4,
     asked_at: Instant,
@@ -200,7 +248,9 @@ struct Pending {
 enum Stage {
     /// The copy has not arrived.
     Waiting,
-    /// The copy left the rack into the hand.
+    /// The copy lies in the world at the rack, held alive for the snatch.
+    Freed(Strong),
+    /// The copy left the rack: into a hand, or to the snatch.
     Delivered { at: Instant },
     /// The copy never came.
     Failed,

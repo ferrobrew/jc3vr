@@ -5,21 +5,25 @@
 //! ([`crate::controllers::weapons::hold::rack`]), which hold only what is within reach, and the
 //! weapon has no body for the aim to hit. So the weapons a placement rule set out are noted as the
 //! game renders them ([`observe`]), each by a weak reference, and the snatch looks among those
-//! near its ray ([`near`]). A weapon is noted while it waits on its rule: in the rack state, or
-//! lying where its rule set it down (a locker's). A rack whose weapon hands out copies
-//! ([`WeaponBase::m_InfinitePickup`] in the rack state) is left to the hands, whose take asks it for
-//! a copy; a weapon of the dual-wield slot is left to them too, since a rack's pistols are a pair
-//! the hands take one at a time ([`crate::controllers::weapons::hold::rack::paired`]).
+//! near its ray ([`near`]), each gun of a rack's pistol pair on its own. A weapon is noted while it
+//! waits on its rule: in the rack state, or lying where its rule set it down (a locker's). Noting
+//! is all the render pass does; everything that changes a weapon runs in the input tick.
 //!
-//! The snatch frees the weapon as the hand's take starts: the rack hears that its weapon was picked
-//! up ([`WeaponBase::PickupStart`]), so a finite rack is left as empty as a hand would leave it.
-//! The weapon then drops into the world where it hangs ([`WeaponBase::OnDrop`]), and the line pulls
-//! it in as any weapon lying in the world ([`release`]).
+//! The snatch frees the weapon as the hand's take does, through the take from a source
+//! ([`crate::controllers::weapons::hold::source`]). A rack that hands its own weapon over hears
+//! that its weapon was picked up ([`WeaponBase::PickupStart`]), so a finite rack is left as empty
+//! as a hand would leave it, and the weapon drops into the world where it hangs
+//! ([`WeaponBase::OnDrop`]) for the line to pull in ([`release`]). A rack with unlimited stock
+//! hands out a copy ([`crate::controllers::weapons::hold::rack::copy`]), and a rack's pistol pair
+//! gives up the one pistol aimed at
+//! ([`crate::controllers::weapons::hold::rack::paired`]), each placed where it hung and dropped
+//! into the world the same way.
 
 use std::num::NonZeroUsize;
 
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 use jc3gi::{
+    character::inventory::WeaponSlot,
     equipment::weapon::{WeaponBase, WeaponState},
     graphics_engine::model_instance::ModelInstanceFlags,
 };
@@ -30,19 +34,23 @@ use crate::controllers::{
     frame::Hand,
     loadout::TakeSource,
     weapons::{
-        engine::{self, character_object, long_slot, object_of, slot_of, takeable_gun_slot},
+        dual_wield::single,
+        engine::{self, character_object, object_of, slot_of, takeable_gun_slot},
         hold::{
             pickup::{self, Refusal},
+            rack::paired,
             refs::Weak,
             source::{Freed, SourceRefusal},
         },
     },
 };
 
-/// A rack or locker weapon the snatch can be offered.
+/// A rack or locker weapon the snatch can be offered, at one of its guns.
 pub(crate) struct RemoteRack {
     pub weapon: NonZeroUsize,
-    /// Its first gun's position, world space.
+    /// Which of its guns: the first, or the second of a rack's pistol pair.
+    pub gun: u8,
+    /// That gun's position, world space.
     pub point: Vec3,
     pub weak: Weak,
 }
@@ -91,33 +99,37 @@ pub(crate) unsafe fn near(near: impl Fn(Vec3) -> bool) -> Vec<RemoteRack> {
         if alive.object() != object_of(weapon) || !unsafe { waiting(weapon) } {
             return false;
         }
-        if let Some(point) = unsafe { shown_point(weapon) }.filter(|&p| near(p))
-            && let Some(weapon) = NonZeroUsize::new(seen.weapon)
-        {
-            out.push(RemoteRack {
-                weapon,
-                point,
-                weak: seen.weak.clone(),
-            });
+        let Some(address) = NonZeroUsize::new(seen.weapon) else {
+            return true;
+        };
+        for gun in 0..unsafe { shown_guns(weapon) } {
+            if let Some(point) = unsafe { shown_point(weapon, gun) }.filter(|&p| near(p)) {
+                out.push(RemoteRack {
+                    weapon: address,
+                    gun,
+                    point,
+                    weak: seen.weak.clone(),
+                });
+            }
         }
         true
     });
     out
 }
 
-/// Where `target`'s first gun is now, world space, while it still waits on its rule and shows.
+/// Where `weapon`'s gun `gun` is now, world space, while it still waits on its rule and shows.
 ///
 /// # Safety
 ///
 /// The game thread, before the world update.
-pub(crate) unsafe fn current(weapon: NonZeroUsize, weak: &Weak) -> Option<Vec3> {
+pub(crate) unsafe fn current(weapon: NonZeroUsize, gun: u8, weak: &Weak) -> Option<Vec3> {
     let _alive = weak.lock()?;
     // SAFETY: the strong reference keeps the weapon alive.
     let weapon = unsafe { &*(weapon.get() as *const WeaponBase) };
     if !unsafe { waiting(weapon) } {
         return None;
     }
-    unsafe { shown_point(weapon) }
+    unsafe { shown_point(weapon, gun) }
 }
 
 /// Free `weapon` from its rack or locker for the snatch into `hand`: tell the rack it was picked
@@ -183,35 +195,53 @@ struct Seen {
 
 static REGISTRY: Mutex<Vec<Seen>> = Mutex::new(Vec::new());
 
-/// Whether `weapon` waits on its placement rule for the snatch to take it: a long gun in a rack
-/// that hands over its own weapon, or one lying where a rule set it down.
+/// Whether `weapon` waits on its placement rule for the snatch to take it: a gun of a slot a hand
+/// holds on a rack, or one lying where a rule set it down that hands over itself rather than a
+/// copy (a copy placed at a weapon still lying there would overlap its bodies).
 ///
 /// # Safety
 ///
 /// `weapon` must be live.
-unsafe fn waiting(weapon: &WeaponBase) -> bool {
+pub(crate) unsafe fn waiting(weapon: &WeaponBase) -> bool {
     // Read as the raw value: a state the enum does not name is out of its range.
     let state = unsafe { (&raw const weapon.m_State).cast::<i32>().read() };
-    // The two-handed and special slots: the long guns a hand takes, not the heavy slot's.
-    let long_gun =
-        unsafe { slot_of(weapon) }.is_some_and(|slot| long_slot(slot) && takeable_gun_slot(slot));
-    let racked = state == WeaponState::E_WS_WEAPON_RACK as i32 && !weapon.m_InfinitePickup;
+    let gun = unsafe { slot_of(weapon) }.is_some_and(takeable_gun_slot);
+    let racked = state == WeaponState::E_WS_WEAPON_RACK as i32;
     let set_down = state == WeaponState::E_WS_DROPPED as i32
+        && !weapon.m_InfinitePickup
         && !weapon.m_SpawnedFromRule.pn.is_null()
         && weapon.m_Holder.pn.is_null();
-    long_gun && (racked || set_down)
+    gun && (racked || set_down)
 }
 
-/// `weapon`'s first gun's position, world space, while its model shows.
+/// How many of `weapon`'s guns the snatch offers on their own: both of a rack's pistol pair, and
+/// otherwise the first.
+///
+/// # Safety
+///
+/// `weapon` must be live.
+unsafe fn shown_guns(weapon: &WeaponBase) -> u8 {
+    let pair = unsafe { slot_of(weapon) } == Some(WeaponSlot::E_SLOT_DUAL_WIELD)
+        && paired::two_guns(weapon)
+        && !single::is(weapon as *const WeaponBase as usize);
+    if pair { 2 } else { 1 }
+}
+
+/// `weapon`'s gun `gun`'s position, world space, while its model shows.
 ///
 /// # Safety
 ///
 /// `weapon` must be live, on the game thread.
-unsafe fn shown_point(weapon: &WeaponBase) -> Option<Vec3> {
-    let first = unsafe { gun::guns(weapon) }.next().flatten()?;
-    let model = unsafe { first.m_BaseModelInstance.as_ref() }?;
+unsafe fn shown_point(weapon: &WeaponBase, gun: u8) -> Option<Vec3> {
+    let data = if gun == 0 {
+        unsafe { gun::guns(weapon) }.next().flatten()
+    } else {
+        unsafe { paired::gun(weapon, usize::from(gun)) }
+    }?;
+    let model = unsafe { data.m_BaseModelInstance.as_ref() }?;
     if !model.m_Flags.contains(ModelInstanceFlags::VISIBLE) {
         return None;
     }
-    unsafe { engine::gun_pose(weapon) }.map(|pose| pose.position)
+    let at = Mat4::from(data.m_WorldMatrixT1).w_axis.truncate();
+    at.is_finite().then_some(at)
 }

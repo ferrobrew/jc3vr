@@ -174,7 +174,7 @@ pub(crate) unsafe fn take(
         );
         return Ok(slot);
     }
-    unsafe { copy::request(owner, hand, weapon) }?;
+    unsafe { copy::request(owner, hand, options.delivery, weapon) }?;
     Ok(admitted.0)
 }
 

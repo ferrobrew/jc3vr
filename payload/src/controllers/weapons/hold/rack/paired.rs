@@ -149,6 +149,54 @@ pub(crate) unsafe fn targets(
     true
 }
 
+/// Observe the pair `weapon` and ask for its staged members as a hand's reach does, without placing
+/// grip targets: for the grapple's snatch, which takes a pistol from beyond reach. Returns whether
+/// the pair is taken member by member.
+///
+/// # Safety
+///
+/// As [`targets`].
+pub(crate) unsafe fn prepare(owner: &Character, weapon: &WeaponBase, alive: Strong) -> bool {
+    unsafe { targets(owner, weapon, alive, &|p| p, &mut Vec::new()) }
+}
+
+/// The member of the observed pair at `source` that a take aimed at its gun `preferred` claims:
+/// that gun's while it is still at the source, else the other gun's.
+pub(crate) fn member_for(source: usize, preferred: u8) -> Option<Member> {
+    if let Some(member) = finite::member_for(source, preferred) {
+        return Some(member);
+    }
+    let state = STATE.lock();
+    let source = state.sources.iter().find(|s| s.address == source)?;
+    pick(preferred, |index| {
+        !matches!(
+            source.members[index],
+            Stage::Taking | Stage::Taken | Stage::Failed
+        )
+    })
+    .map(|index| source.member(index))
+}
+
+/// Whether `member`'s pistol can be claimed now: staged, or for a finite pair's second pistol, the
+/// original.
+pub(crate) fn ready(member: Member) -> bool {
+    if finite::owns(member) {
+        return finite::ready(member);
+    }
+    let state = STATE.lock();
+    find(&state, member)
+        .is_some_and(|s| matches!(s.members[member.index as usize], Stage::Ready(_)))
+}
+
+/// The gun a take aimed at gun `preferred` of a pair takes, of the guns `available` says are still
+/// there: that gun, else the other.
+pub(super) fn pick(preferred: u8, available: impl Fn(usize) -> bool) -> Option<usize> {
+    let preferred = usize::from(preferred.min(1));
+    [preferred, 1 - preferred]
+        .into_iter()
+        .find(|&index| available(index))
+}
+
 /// Split the native rack's allocation, not a fabricated actor's ammunition snapshot.
 pub(crate) fn copy_request(member: Member, ammo: i32) -> CopyRequest {
     // A long gun's copy is one weapon, and takes the whole allocation.
@@ -509,14 +557,14 @@ unsafe fn qualifies(weapon: &WeaponBase) -> bool {
     two_guns(weapon) && unsafe { gun(weapon, 0) }.is_some() && unsafe { gun(weapon, 1) }.is_some()
 }
 
-fn two_guns(weapon: &WeaponBase) -> bool {
+pub(crate) fn two_guns(weapon: &WeaponBase) -> bool {
     let list = &weapon.m_lWeaponData;
     !list.m_Begin.is_null()
         && (list.m_End as usize).checked_sub(list.m_Begin as usize)
             == Some(2 * std::mem::size_of::<*mut WeaponData>())
 }
 
-unsafe fn gun(weapon: &WeaponBase, index: usize) -> Option<&WeaponData> {
+pub(crate) unsafe fn gun(weapon: &WeaponBase, index: usize) -> Option<&WeaponData> {
     if index >= 2 || !two_guns(weapon) {
         return None;
     }
@@ -679,6 +727,25 @@ mod tests {
         let mut empty = Stage::Empty;
         assert!(!empty.supply(202));
         assert!(empty.take().is_none());
+    }
+
+    #[test]
+    fn a_snatch_takes_the_gun_it_aimed_at_while_it_is_there_else_the_other() {
+        for preferred in [0, 1] {
+            let other = 1 - usize::from(preferred);
+            assert_eq!(pick(preferred, |_| true), Some(usize::from(preferred)));
+            assert_eq!(
+                pick(preferred, |index| index == other),
+                Some(other),
+                "the aimed gun already left"
+            );
+            assert_eq!(pick(preferred, |_| false), None, "both guns left");
+        }
+        assert_eq!(
+            pick(u8::MAX, |_| true),
+            Some(1),
+            "an out-of-range gun is the second"
+        );
     }
 
     #[test]
