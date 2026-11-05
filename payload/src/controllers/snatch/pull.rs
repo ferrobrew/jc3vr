@@ -11,43 +11,46 @@ use jc3gi::{
     equipment::weapon::WeaponBase,
 };
 
-use crate::controllers::{
-    aim::{
-        GRAPPLE_ORIGIN_M,
-        ray::Ray,
-        raycast::{self, CastOptions},
-    },
-    frame::Hand,
-    grab::latch::GripLatch,
-    hands::ik,
-    haptics::{self, Sustain},
-    physical_hands::{
-        self,
-        doors::{DoorTarget, engine::vehicle_frame},
-        grasp::GripTarget as HoldPoint,
-        hold::{self, HandHold, HoldTuning},
-        remote,
-    },
-    snatch::{
-        FinishInput, Refusal, SNATCH,
-        arrival::{self, Landing, LandingInput},
-        brace::{self, Brace, BraceInput, BraceReach},
-        engine, juice, landing,
-        rules::{self, FlightLimits, FlightSample, PropHandling, StallWatch, Verdict},
-        sling::{LineTuning, RopeFault, RopeStep, Sling},
-        sling_hooks,
-        target::{Offer, OfferKind, weak_of},
-    },
-    weapons::{
-        grenade,
-        hold::{
-            Cause, SNAP_S,
-            pickup::{self, TakeOptions},
-            rack,
-            refs::{Strong, Weak},
-            steal,
+use crate::{
+    controllers::{
+        aim::{
+            GRAPPLE_ORIGIN_M,
+            ray::Ray,
+            raycast::{self, CastOptions},
+        },
+        frame::Hand,
+        grab::latch::GripLatch,
+        hands::ik,
+        haptics::{self, Sustain},
+        physical_hands::{
+            self,
+            doors::{DoorTarget, engine::vehicle_frame},
+            grasp::GripTarget as HoldPoint,
+            hold::{self, HandHold, HoldTuning},
+            remote,
+        },
+        snatch::{
+            FinishInput, Refusal, SNATCH,
+            arrival::{self, Landing, LandingInput},
+            brace::{self, Brace, BraceInput, BraceReach},
+            engine, juice, landing,
+            rules::{self, FlightLimits, FlightSample, PropHandling, StallWatch, Verdict},
+            sling::{LineTuning, Sling, SlingStep},
+            sling_hooks,
+            target::{Offer, OfferKind, weak_of},
+        },
+        weapons::{
+            grenade,
+            hold::{
+                Cause, SNAP_S,
+                pickup::{self, TakeOptions},
+                rack,
+                refs::{Strong, Weak},
+                steal,
+            },
         },
     },
+    grapple::rope::RopeFault,
 };
 
 /// What the snatch fired at, held alive from the fire to the end.
@@ -695,7 +698,7 @@ pub(super) unsafe fn sling(
     let line = LineTuning::of(&input.config.weapons.snatch.swing, mass_kg, braced);
     let rigid = state.rigid();
     let out = rope
-        .step(RopeStep {
+        .step(SlingStep {
             centre: state.pose.centre,
             velocity: rigid.velocities.linear,
             mass_kg,
@@ -709,11 +712,16 @@ pub(super) unsafe fn sling(
         })?;
     if ragdoll {
         // The line's impulse on the one body, which the ragdoll's constraints share with the rest.
-        let impulse = (out.velocity - rigid.velocities.linear) * mass_kg;
+        let impulse = out.impulse_on_b(input.dt);
         unsafe { remote::push(body, owner, impulse, state.pose.centre) }
     } else {
         unsafe {
-            physical_hands::set_body_velocities(body, owner, out.velocity, rigid.velocities.angular)
+            physical_hands::set_body_velocities(
+                body,
+                owner,
+                out.b_velocity,
+                rigid.velocities.angular,
+            )
         }
     }
     .map_err(Refusal::Body)?;

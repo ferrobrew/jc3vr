@@ -7,7 +7,7 @@ use glam::Vec3;
 
 use crate::{
     controllers::snatch::config::{REFERENCE_MASS_KG, SwingConfig},
-    grapple::rope::{self, Rope, RopeEnd, RopeTuning},
+    grapple::rope::{self, Rope, RopeEnd, RopeFault, RopeOutput, RopeTuning},
 };
 
 /// The owner facts required before continuing any snatch phase.
@@ -147,7 +147,7 @@ impl LineTuning {
 }
 
 /// One pre-simulation correction along the line; gravity and collisions remain the engine's work.
-pub(super) struct RopeStep {
+pub(super) struct SlingStep {
     pub centre: Vec3,
     pub velocity: Vec3,
     pub mass_kg: f32,
@@ -156,32 +156,10 @@ pub(super) struct RopeStep {
     pub line: LineTuning,
 }
 
-/// What a step of the line did.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(super) struct RopeOutput {
-    /// The target's linear velocity after the line's pull.
-    pub velocity: Vec3,
-    /// The line's tension this tick, newtons.
-    pub tension_n: f32,
-}
-
-/// Why the line could not take a step.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(super) enum RopeFault {
-    /// A sample was not finite, the tick's length was out of bounds, or the hand jumped.
-    Invalid,
-    /// The target is farther past the held length than the line stretches.
-    Stretched,
-}
-
 impl Sling {
     pub fn new(centre: Vec3, anchor: Vec3) -> Option<Self> {
-        let length_m = centre.distance(anchor);
-        if !(centre.is_finite() && anchor.is_finite() && length_m.is_finite() && length_m > 0.01) {
-            return None;
-        }
         Some(Self {
-            rope: Rope::new(length_m)?,
+            rope: Rope::new(centre.distance(anchor))?,
             anchor,
         })
     }
@@ -201,9 +179,10 @@ impl Sling {
 
     /// Reel the line in, then pull along it with the hand as the rope's kinematic end: preserve
     /// the tangent, never push a slack rope, and bound the tension by the line's strength over a
-    /// bounded time step.
-    pub fn step(&mut self, step: RopeStep) -> Result<RopeOutput, RopeFault> {
-        let RopeStep {
+    /// bounded time step. The target is the rope's `b` end; a hand that jumped between ticks is
+    /// [`RopeFault::Invalid`].
+    pub fn step(&mut self, step: SlingStep) -> Result<RopeOutput, RopeFault> {
+        let SlingStep {
             centre,
             velocity,
             mass_kg,
@@ -231,34 +210,24 @@ impl Sling {
             line.reel_mps,
             dt,
         );
-        let out = self
-            .rope
-            .step(rope::RopeStep {
-                a: RopeEnd {
-                    position: anchor,
-                    velocity: anchor_velocity,
-                    inverse_mass: 0.0,
-                },
-                b: RopeEnd {
-                    position: centre,
-                    velocity,
-                    inverse_mass: 1.0 / mass_kg,
-                },
-                dt,
-                tuning: RopeTuning {
-                    stiffness_per_s2: line.stiffness_per_s2,
-                    damping_per_s: line.damping_per_s,
-                    max_tension_n: line.max_tension_n,
-                    max_stretch_m: MAX_STRETCH_M,
-                },
-            })
-            .map_err(|fault| match fault {
-                rope::RopeFault::Invalid => RopeFault::Invalid,
-                rope::RopeFault::Stretched => RopeFault::Stretched,
-            })?;
-        Ok(RopeOutput {
-            velocity: out.b_velocity,
-            tension_n: out.tension_n,
+        self.rope.step(rope::RopeStep {
+            a: RopeEnd {
+                position: anchor,
+                velocity: anchor_velocity,
+                inverse_mass: 0.0,
+            },
+            b: RopeEnd {
+                position: centre,
+                velocity,
+                inverse_mass: 1.0 / mass_kg,
+            },
+            dt,
+            tuning: RopeTuning {
+                stiffness_per_s2: line.stiffness_per_s2,
+                damping_per_s: line.damping_per_s,
+                max_tension_n: line.max_tension_n,
+                max_stretch_m: MAX_STRETCH_M,
+            },
         })
     }
 }
@@ -389,8 +358,8 @@ mod tests {
         }
     }
 
-    fn step(centre: Vec3, velocity: Vec3, anchor: Vec3) -> RopeStep {
-        RopeStep {
+    fn step(centre: Vec3, velocity: Vec3, anchor: Vec3) -> SlingStep {
+        SlingStep {
             centre,
             velocity,
             mass_kg: 1.0,
@@ -405,9 +374,9 @@ mod tests {
         let mut rope = Sling::new(Vec3::X * 2.0, Vec3::ZERO).unwrap();
         let before = Vec3::new(5.0, 7.0, -9.0);
         let after = rope.step(step(Vec3::X * 2.1, before, Vec3::ZERO)).unwrap();
-        assert_eq!(after.velocity.y, before.y);
-        assert_eq!(after.velocity.z, before.z);
-        assert!((before.x - after.velocity.x - 1.2).abs() < 1e-5);
+        assert_eq!(after.b_velocity.y, before.y);
+        assert_eq!(after.b_velocity.z, before.z);
+        assert!((before.x - after.b_velocity.x - 1.2).abs() < 1e-5);
         assert_eq!(after.tension_n, 120.0);
         let released = Continuation {
             enabled: true,
@@ -426,13 +395,13 @@ mod tests {
             let mut rope = Sling::new(Vec3::X * 2.0, Vec3::ZERO).unwrap();
             let max = line_strength_n(mass_kg, 1500.0, 0.5);
             let out = rope
-                .step(RopeStep {
+                .step(SlingStep {
                     mass_kg,
                     line: line(max),
                     ..step(Vec3::X * 2.2, Vec3::ZERO, Vec3::ZERO)
                 })
                 .unwrap();
-            (-out.velocity.x, out.tension_n)
+            (-out.b_velocity.x, out.tension_n)
         };
         let (rifle_dv, rifle_n) = pull(4.0);
         let (barrel_dv, barrel_n) = pull(100.0);
@@ -446,7 +415,7 @@ mod tests {
         let mut rope = Sling::new(Vec3::X * 2.0, Vec3::ZERO).unwrap();
         let velocity = Vec3::new(-2.0, 3.0, 4.0);
         let out = rope.step(step(Vec3::X, velocity, Vec3::ZERO)).unwrap();
-        assert_eq!(out.velocity, velocity);
+        assert_eq!(out.b_velocity, velocity);
         assert_eq!(out.tension_n, 0.0);
     }
 
@@ -457,7 +426,7 @@ mod tests {
         assert_eq!(
             rope.step(step(Vec3::X * 2.02, velocity, Vec3::X * 0.02))
                 .unwrap()
-                .velocity,
+                .b_velocity,
             velocity
         );
     }
@@ -481,7 +450,7 @@ mod tests {
             velocity = rope
                 .step(step(centre, velocity, Vec3::ZERO))
                 .unwrap()
-                .velocity;
+                .b_velocity;
             centre += velocity * 0.01;
             assert!(centre.length() < 2.3);
         }
@@ -504,7 +473,7 @@ mod tests {
         let dt = 1.0 / 60.0;
         for i in 1..=600 {
             let out = rope
-                .step(RopeStep {
+                .step(SlingStep {
                     centre,
                     velocity,
                     mass_kg,
@@ -513,7 +482,7 @@ mod tests {
                     line: tuning,
                 })
                 .unwrap();
-            velocity = out.velocity;
+            velocity = out.b_velocity;
             centre += velocity * dt;
         }
         assert!(velocity.length() > 8.0, "{}", velocity.length());
@@ -531,7 +500,7 @@ mod tests {
         let mut fastest = 0.0_f32;
         while rope.length_m() > config.swing_length_m {
             velocity = rope
-                .step(RopeStep {
+                .step(SlingStep {
                     centre,
                     velocity,
                     mass_kg,
@@ -540,7 +509,7 @@ mod tests {
                     line: tuning,
                 })
                 .unwrap()
-                .velocity;
+                .b_velocity;
             centre += velocity * dt;
             fastest = fastest.max(-velocity.x);
         }
@@ -555,7 +524,7 @@ mod tests {
         assert_eq!(
             rope.step(step(Vec3::ZERO, Vec3::Y, Vec3::ZERO))
                 .unwrap()
-                .velocity,
+                .b_velocity,
             Vec3::Y
         );
         assert_eq!(

@@ -65,6 +65,11 @@ impl RopeOutput {
     pub fn impulse_on_a(&self, dt: f32) -> Vec3 {
         self.direction * self.tension_n * dt
     }
+
+    /// The impulse the rope gave `b` this step, newton seconds: `-a`'s.
+    pub fn impulse_on_b(&self, dt: f32) -> Vec3 {
+        -self.impulse_on_a(dt)
+    }
 }
 
 /// Why the rope could not take a step.
