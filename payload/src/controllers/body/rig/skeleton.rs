@@ -89,6 +89,15 @@ pub struct SkeletonStatus {
     pub volume_anchor: Option<&'static str>,
 }
 
+impl SkeletonStatus {
+    /// Whether the skeleton was read recently enough to place the holsters, which is when its
+    /// divergence describes the body now.
+    pub fn fresh(&self, now: Instant) -> bool {
+        self.at
+            .is_some_and(|at| now.saturating_duration_since(at) <= SKELETON_FRESH)
+    }
+}
+
 pub fn status() -> SkeletonStatus {
     let state = STATE.lock();
     SkeletonStatus {

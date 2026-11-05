@@ -50,7 +50,7 @@ pub mod wings;
 
 use std::{
     sync::atomic::{AtomicU32, Ordering},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use body_rig::angle::line_yaw;
@@ -109,6 +109,15 @@ pub struct ProceduralStatus {
     pub wing_hands: [bool; 2],
     /// Which hands the wingsuit's arms queued a target for, left then right.
     pub wing_queued: [bool; 2],
+}
+
+impl ProceduralStatus {
+    /// Whether the local player's gate ran recently: the body is being solved now, not left as it
+    /// was when the gate last ran.
+    pub fn fresh(&self, now: Instant) -> bool {
+        self.at
+            .is_some_and(|at| now.saturating_duration_since(at) <= GATE_FRESH)
+    }
 }
 
 /// What the controllers' arm targets are queued against while the procedural body poses the
@@ -373,6 +382,9 @@ fn finish_write(
         state.fade.forget();
     }
 }
+
+/// How long after the gate last ran the body still counts as solved: a few ticks.
+const GATE_FRESH: Duration = Duration::from_millis(500);
 
 /// How upright the written chest must be for the elbow hints, as [`upright_share`] measures it.
 const ELBOW_HINT_UPRIGHT: f32 = 0.5;

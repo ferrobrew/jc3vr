@@ -84,7 +84,7 @@ The skeleton's twist bones carry part of the skin along the arm ([skeleton.md](.
 
 ## Diagnostics
 
-The debug UI's Body/tracking > Body fit live status shows the mode, the weight, whether the procedural torso owns the torso, a rigging error, the hand-over case and how far the neck sits from its target, each clavicle's turn, and the wingsuit's arms.
+The debug UI's Body/tracking > Body fit live status opens with the `PROCEDURAL BODY` status rows bar the body mirror (the mode and a rigging error, the hand-over case, the twist bones, and the seated, wingsuit, parachute, swim, and roof torsos), then shows the weight, whether the procedural torso owns the torso, how far the neck sits from its target, each clavicle's turn, and the wingsuit's arm targets placed.
 
 ## What needs confirming in the headset
 

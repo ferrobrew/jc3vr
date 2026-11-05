@@ -1,7 +1,7 @@
 //! The rig's torso: the player's estimated torso, the body turning under the view, the chest turn,
 //! and how far the character's skeleton is from the player's body.
 
-use std::time::Duration;
+use std::time::Instant;
 
 use egui::Ui;
 
@@ -44,10 +44,7 @@ pub(super) fn torso_readout(ui: &mut Ui, status: &TorsoStatus, skeleton: &Skelet
         "Holsters ride: {}",
         skeleton.volume_anchor.unwrap_or("nothing yet")
     ));
-    let skeleton_fresh = skeleton
-        .at
-        .is_some_and(|at| at.elapsed() < Duration::from_millis(500));
-    match (&skeleton.divergence, skeleton_fresh) {
+    match (&skeleton.divergence, skeleton.fresh(Instant::now())) {
         (Some(d), true) => {
             ui.label(
                 "Divergence after the solve, the player less Rico, in his model space (+Y up, -Z \

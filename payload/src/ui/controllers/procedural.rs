@@ -1,36 +1,43 @@
-//! The procedural torso: its mode, its weight against the animation, and what its last gate did.
+//! The procedural torso: its status rows, its weight against the animation, the neck's error, the
+//! clavicles, and the wingsuit's arm targets.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use egui::Ui;
 
-use crate::controllers::body::procedural::{ProceduralStatus, config::ProceduralMode, owns_body};
+use crate::{
+    controllers::body::procedural::{ProceduralStatus, config::ProceduralMode, owns_body},
+    status::{
+        body::{PARACHUTE_BODY, ROOF_TORSO, SEATED_TORSO, SWIM_TORSO, WINGSUIT_ARMS},
+        controllers::{HAND_OVER, PROCEDURAL_MODE, TWIST_BONES},
+    },
+    ui::status_row::headlines,
+};
 
 pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
-    let fresh = status
-        .at
-        .is_some_and(|at| Instant::now().saturating_duration_since(at) < STALE);
-    if !fresh {
+    headlines(
+        ui,
+        &[
+            &PROCEDURAL_MODE,
+            &HAND_OVER,
+            &TWIST_BONES,
+            &SEATED_TORSO,
+            &WINGSUIT_ARMS,
+            &PARACHUTE_BODY,
+            &SWIM_TORSO,
+            &ROOF_TORSO,
+        ],
+    );
+    if !status.fresh(Instant::now()) {
         ui.label("Inactive: the local player's solve gate has not run recently.");
     }
     ui.label(format!(
-        "Mode {} · torso {:.2} · owns the torso {}",
-        match status.mode {
-            ProceduralMode::Off => "off",
-            ProceduralMode::Full => "on",
-        },
+        "Torso {:.2} · owns the torso {}",
         status.weight,
         if owns_body() { "yes" } else { "no" },
     ));
-    if let Some(error) = status.rig_error {
-        ui.label(format!("Not rigged: {error}"));
-    }
     if status.mode == ProceduralMode::Full {
-        ui.label(format!(
-            "Hand-over case: {} · neck {:.3} m from its target",
-            status.case.label(),
-            status.neck_error_m,
-        ));
+        ui.label(format!("Neck {:.3} m from its target", status.neck_error_m));
         let [left, right] = status.clavicles;
         ui.label(format!(
             "Clavicles: left up {:+.1}° forward {:.1}° · right up {:+.1}° forward {:.1}°",
@@ -40,14 +47,8 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
             right.protraction.to_degrees(),
         ));
         ui.label(format!(
-            "Wingsuit arms {:.2} · targets placed L {} R {} · queued L {} R {}",
-            status.wing_weight,
-            status.wing_hands[0],
-            status.wing_hands[1],
-            status.wing_queued[0],
-            status.wing_queued[1],
+            "Wingsuit arm targets placed: L {} R {}",
+            status.wing_hands[0], status.wing_hands[1],
         ));
     }
 }
-
-const STALE: Duration = Duration::from_millis(500);

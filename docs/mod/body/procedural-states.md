@@ -48,7 +48,7 @@ The targets are placed at the solve gate from the pose the animation wrote this 
 
 The wingsuit's membrane is skinned between the arms and the body, so arms held far from the wing pose (by the sides, overhead) fold or stretch it as they would in the game's own arm animation; the arms spread as wings keep it as the flight pose has it.
 
-The `WINGSUIT ARMS` status row shows the arms' weight and the hands queued, `OK` with both at full weight and `NOT IN THE WINGSUIT` otherwise. The scenario signal `procedural.wing_arms` reads the same, and `testing/scenarios/wingsuit_arms.toml` is the template for a recorded check. The Body page's Body fit live status shows the weight and the hands placed and queued.
+The `WINGSUIT ARMS` status row shows the arms' weight and the hands queued, `OK` with both at full weight and `NOT IN THE WINGSUIT` otherwise. The scenario signal `procedural.wing_arms` reads the same, and `testing/scenarios/wingsuit_arms.toml` is the template for a recorded check. The Body page's Body fit live status shows the row, and beneath it the arm targets placed.
 
 ## The parachute
 
