@@ -8,9 +8,10 @@
 //!   lengths and placed at the character's shoulder. With the character's arm measured
 //!   ([`ArmTracker`]), the shoulder is the character's animated shoulder joint, carried into the
 //!   cockpit frame relative to his eyes, and the ratio is his measured shoulder-to-wrist length over
-//!   the player's ([`player_arm_length`]), so a fully extended player arm asks for a fully extended
-//!   character arm about the joint HumanIK reaches from. Without a measurement, the remap falls back
-//!   to the estimated shoulders and the arm-span ratio ([`ArmRemap::estimated`]).
+//!   the player's ([`BodyDimensions::shoulder_to_wrist`]), so a fully extended player arm asks for
+//!   a fully extended character arm about the joint HumanIK reaches from. Without a measurement,
+//!   the remap falls back to the estimated shoulders and the arm-span ratio
+//!   ([`ArmRemap::estimated`]).
 //! - [`pull_ramp`]: the wrist target's pull, ramping from zero as the target nears the arm's full
 //!   length, so reach propagates into the girdle only when the arm alone cannot get there.
 //! - [`ReachLimit`]: the wrist held within the character's measured arm length of his solved
@@ -117,7 +118,7 @@ impl ArmRemap {
         arm: &MeasuredArm,
         world_scale: f32,
     ) -> Option<Self> {
-        let player_arm = player_arm_length(player);
+        let player_arm = player.shoulder_to_wrist();
         let character_arm = arm.length();
         let usable = |l: f32| l.is_finite() && l > MIN_ARM_M;
         if !usable(player_arm)
@@ -174,14 +175,6 @@ impl ReachLimit {
             wrist
         }
     }
-}
-
-/// The player's shoulder-to-wrist length from the body dimensions: half of the arm span less the
-/// shoulder width, less the hand. This is the figure the calibration splits into the upper arm and
-/// forearm; the saved segment lengths are not used, because hand-written dimensions need not
-/// agree with its span.
-pub fn player_arm_length(player: &BodyDimensions) -> f32 {
-    (player.arm_span - player.shoulder_width) * 0.5 - player.hand
 }
 
 /// One of the character's arms as measured from his animated skeleton, smoothed.
@@ -381,7 +374,7 @@ mod tests {
 
     #[test]
     fn the_player_arm_is_half_the_span_less_the_shoulders_and_hand() {
-        assert!((player_arm_length(&PLAYER) - 0.53).abs() < EPS);
+        assert!((PLAYER.shoulder_to_wrist() - 0.53).abs() < EPS);
     }
 
     #[test]
@@ -397,7 +390,7 @@ mod tests {
         )
         .unwrap();
         for direction in [Vec3::NEG_Z, Vec3::X, Vec3::new(0.3, -0.5, -0.8).normalize()] {
-            let wrist = remap.player_shoulder + direction * player_arm_length(&PLAYER);
+            let wrist = remap.player_shoulder + direction * PLAYER.shoulder_to_wrist();
             let remapped = remap.apply(wrist);
             let reach = remapped - remap.character_shoulder;
             assert!((reach.length() - rico().length()).abs() < EPS);
@@ -423,7 +416,7 @@ mod tests {
             2.0,
         )
         .unwrap();
-        let wrist = scaled.player_shoulder + Vec3::NEG_Z * player_arm_length(&PLAYER);
+        let wrist = scaled.player_shoulder + Vec3::NEG_Z * PLAYER.shoulder_to_wrist();
         // Composed into the world, cockpit offsets scale by the world scale; Rico's arm does not.
         let world_reach = (scaled.apply(wrist) - scaled.character_shoulder) * 2.0;
         assert!((world_reach.length() - rico().length()).abs() < EPS);

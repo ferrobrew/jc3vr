@@ -86,7 +86,7 @@ pub(super) fn read_player_arms() -> Option<PlayerArms> {
         torso,
         shoulders: body::shoulder_positions(head.position, torso, &player),
         wrists,
-        arm_length: player.upper_arm + player.forearm,
+        arm_length: player.shoulder_to_wrist(),
     })
 }
 

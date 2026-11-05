@@ -256,7 +256,7 @@ fn proportions(
     }
     let shoulder_width = SHOULDER_WIDTH_RATIO * height;
     let hand = HAND_RATIO * height;
-    let shoulder_to_wrist = (arm_span - shoulder_width) * 0.5 - hand;
+    let shoulder_to_wrist = BodyDimensions::shoulder_to_wrist_of(arm_span, shoulder_width, hand);
     let body = BodyDimensions {
         height: millimetres(height),
         eye_height: millimetres(eye_height),

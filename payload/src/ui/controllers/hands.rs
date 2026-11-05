@@ -12,7 +12,7 @@ use crate::{
             held,
             ik::HandIkStatus,
             late::{HandLateStatus, LateStatus},
-            parts, reach, rig,
+            parts, rig,
             tiers::{TierState, TierStatus},
         },
     },
@@ -35,7 +35,7 @@ pub(super) fn hands_readout(
         tiers.state.map_or("none yet", TierState::label)
     ));
     let arms = rig::status();
-    let player_arm = reach::player_arm_length(&body::player());
+    let player_arm = body::player().shoulder_to_wrist();
     ui.label(format!(
         "Player arm (shoulder to wrist, from the body dimensions): {:.0} mm",
         player_arm * 1000.0

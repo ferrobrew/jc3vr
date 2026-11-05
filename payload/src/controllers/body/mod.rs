@@ -111,6 +111,20 @@ impl BodyDimensions {
         seated_eye_height: None,
     };
 
+    /// The player's shoulder-to-wrist length: half of the arm span less the shoulder width, less the
+    /// hand ([`Self::shoulder_to_wrist_of`]). This is the arm length everything that scales the
+    /// player's arm reads. The upper arm and forearm are not summed for it, because hand-written
+    /// dimensions need not agree with their span; the calibration splits this length into them.
+    pub fn shoulder_to_wrist(&self) -> f32 {
+        Self::shoulder_to_wrist_of(self.arm_span, self.shoulder_width, self.hand)
+    }
+
+    /// The shoulder-to-wrist length of an arm span `arm_span` across shoulders `shoulder_width`
+    /// wide, with hands `hand` long, metres.
+    pub fn shoulder_to_wrist_of(arm_span: f32, shoulder_width: f32, hand: f32) -> f32 {
+        (arm_span - shoulder_width) * 0.5 - hand
+    }
+
     /// Check that every dimension is a positive finite length and that the heights are ordered
     /// (shoulders below the eyes, eyes below the top of the head, and the seated eyes, when set,
     /// below the standing eyes).
