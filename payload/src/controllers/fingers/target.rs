@@ -37,15 +37,6 @@ pub enum GripMode {
     Releasing,
 }
 
-impl GripMode {
-    pub const fn label(self) -> &'static str {
-        match self {
-            GripMode::Posed => "posed",
-            GripMode::Releasing => "releasing",
-        }
-    }
-}
-
 /// What a hand's target reads.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct TargetInputs<'a> {
