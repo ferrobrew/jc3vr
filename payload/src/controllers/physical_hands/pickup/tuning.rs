@@ -1,7 +1,7 @@
 //! The pickups' fixed tuning: the reach, the weight limits, the hand's strength on what it holds,
 //! the drive toward the hand, and the throw.
 
-use crate::controllers::physical_hands::config::PickupConfig;
+use crate::{controllers::physical_hands::config::PickupConfig, grapple::rope::GRAVITY_MPS2};
 
 /// The pickups' tuning, fixed at [`PICKUP`] apart from what [`PickupConfig`] sets from the debug UI
 /// ([`PickupTuning::configured`]).
@@ -74,7 +74,7 @@ pub const PICKUP: PickupTuning = PickupTuning {
     angular_stiffness_per_s: 14.0,
     max_angular_speed_rps: 20.0,
     two_hand_angular_share: 0.25,
-    gravity_mps2: 9.81,
+    gravity_mps2: GRAVITY_MPS2,
     keep_out_radius_m: 0.3,
     break_distance_m: 0.6,
     carrier_motion_share: 1.0,

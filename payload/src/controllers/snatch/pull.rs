@@ -50,7 +50,7 @@ use crate::{
             },
         },
     },
-    grapple::rope::{self, RopeFault},
+    grapple::rope::{self, GRAVITY_MPS2, RopeFault},
 };
 
 /// What the snatch fired at, held alive from the fire to the end.
@@ -739,8 +739,6 @@ pub(super) unsafe fn sling(
     Ok(swinging)
 }
 
-/// Gravity's acceleration, metres per second squared.
-const GRAVITY_MPS2: f32 = 9.81;
 /// Where a tossed gun lands, metres in front of the player toward where it came from.
 const TOSS_LAND_M: f32 = 1.2;
 /// The toss's speed over the ground, metres per second, and its shortest and longest flight,

@@ -7,7 +7,7 @@ use crate::{
             config::LockConfig,
             lock::model::{Held, SwingInput, TakeIn, swing},
         },
-        rope::RopeFault,
+        rope::{GRAVITY_MPS2, RopeFault},
     },
 };
 
@@ -114,7 +114,7 @@ fn the_target_feels_the_equal_and_opposite_pull() {
         &CONFIG,
     )
     .unwrap();
-    let gravity = Vec3::Y * -crate::grapple::physical::lock::model::GRAVITY_MPS2 * DT;
+    let gravity = Vec3::Y * -GRAVITY_MPS2 * DT;
     let rider_impulse = (out.velocity - before - gravity) * MASS;
     assert!(out.tension_n > 0.0);
     assert!((rider_impulse + out.target_impulse).length() < 1e-2);
@@ -135,7 +135,7 @@ fn the_tension_is_capped_at_the_lines_strength() {
     )
     .unwrap();
     assert_eq!(out.tension_n, out.max_tension_n);
-    assert!((out.max_tension_n - CONFIG.max_accel_g * 9.81 * MASS).abs() < 1e-2);
+    assert!((out.max_tension_n - CONFIG.max_accel_g * GRAVITY_MPS2 * MASS).abs() < 1e-2);
 }
 
 #[test]

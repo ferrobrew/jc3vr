@@ -8,7 +8,7 @@ use crate::{
     controllers::bindings::yank::{HandLine, reach_along},
     grapple::{
         physical::config::LockConfig,
-        rope::{Rope, RopeEnd, RopeFault, RopeStep, RopeTuning},
+        rope::{GRAVITY_MPS2, Rope, RopeEnd, RopeFault, RopeStep, RopeTuning},
     },
 };
 
@@ -76,13 +76,10 @@ pub(crate) struct SwingOutput {
     pub target_impulse: Vec3,
 }
 
-/// Standard gravity, metres per second squared: the reel's velocity carries none, so the lock
-/// adds it.
-pub(crate) const GRAVITY_MPS2: f32 = 9.81;
-
-/// Advance the swing by a tick: gravity, the brake while it runs (the held length following the
-/// character in), then the rope. The velocity is measured against the hook's point, so the swing
-/// holds its offset from a moving target.
+/// Advance the swing by a tick: gravity (the reel's velocity carries none, so the lock adds it),
+/// the brake while it runs (the held length following the character in), then the rope. The
+/// velocity is measured against the hook's point, so the swing holds its offset from a moving
+/// target.
 pub(crate) fn swing(
     held: &mut Held,
     input: SwingInput,
