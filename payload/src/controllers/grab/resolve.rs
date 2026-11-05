@@ -102,6 +102,46 @@ pub fn choose(reaches: impl IntoIterator<Item = Reach>) -> Option<Reach> {
 /// A character the physical hands' reach found.
 const CHARACTER: GrabVolume = GrabVolume::Pickup(PickupKind::Character);
 
+/// Let each hand reach the things lying on the floor among `targets` (a grenade or a magazine,
+/// offered to that hand alone) from its controller's grip, `controllers`, where the hand as it is
+/// drawn, `drawn`, stays well above it: the character's crouch does not go as low as the player's,
+/// so the drawn hand of a player crouched to the floor hangs short of it. Such a target the
+/// controller's grip is within reach of, and the drawn grip is not, is offered at the controller's
+/// distance. Both grips are in the cockpit frame, whose +Y is up.
+pub fn reach_low(
+    targets: &mut [GripTarget],
+    drawn: [Option<Vec3>; 2],
+    controllers: [Option<Vec3>; 2],
+) {
+    for target in targets.iter_mut() {
+        if !matches!(
+            target.volume,
+            GrabVolume::LiveGrenade | GrabVolume::WorldMagazine
+        ) {
+            continue;
+        }
+        let (Some(hand), TargetReach::Sphere { centre, radius }) = (target.hand, target.reach)
+        else {
+            continue;
+        };
+        let (Some(drawn), Some(controller)) = (drawn[hand.index()], controllers[hand.index()])
+        else {
+            continue;
+        };
+        if drawn.y - controller.y < LOW_REACH_M || drawn.distance(centre) <= radius {
+            continue;
+        }
+        let distance = controller.distance(centre);
+        if distance <= radius {
+            target.reach = TargetReach::Measured { distance };
+        }
+    }
+}
+
+/// How far below the drawn hand the controller must be for [`reach_low`] to reach from it, metres:
+/// more than the drawn hand strays from its controller in ordinary reaches.
+const LOW_REACH_M: f32 = 0.1;
+
 /// Why a reach lost to the chosen one, for the grip press's log.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Lost {
@@ -195,6 +235,60 @@ pub fn nearest_miss(
 #[cfg(test)]
 mod vehicle_grip_tests {
     use super::*;
+    use crate::controllers::grab::{Mark, MarkAt};
+
+    fn on_floor(volume: GrabVolume, hand: Hand) -> GripTarget {
+        let centre = Vec3::new(0.2, -1.5, -0.4);
+        GripTarget::sphere(
+            volume,
+            Some(hand),
+            centre,
+            0.1,
+            Mark::ring(MarkAt::Cockpit(centre), 0.06),
+        )
+    }
+
+    #[test]
+    fn a_crouched_reach_to_the_floor_takes_from_the_controller() {
+        // The controller at the grenade on the floor; the drawn hand 0.7 m above it.
+        let controller = Vec3::new(0.2, -1.47, -0.4);
+        let drawn = Vec3::new(0.2, -0.8, -0.35);
+        let mut targets = vec![
+            on_floor(GrabVolume::LiveGrenade, Hand::Left),
+            on_floor(GrabVolume::WorldMagazine, Hand::Left),
+            on_floor(GrabVolume::LiveGrenade, Hand::Right),
+            on_floor(GrabVolume::Climb, Hand::Left),
+        ];
+        reach_low(&mut targets, [Some(drawn), None], [Some(controller), None]);
+        let left = resolve(&targets, [Some(drawn), None]);
+        assert_eq!(
+            left[0].chosen.map(|r| r.volume),
+            Some(GrabVolume::LiveGrenade)
+        );
+        assert!((left[0].chosen.unwrap().distance - 0.03).abs() < 1e-4);
+        assert!(matches!(targets[1].reach, TargetReach::Measured { .. }));
+        // The other hand's target and a target that is not a floor pickup keep their spheres.
+        assert!(matches!(targets[2].reach, TargetReach::Sphere { .. }));
+        assert!(matches!(targets[3].reach, TargetReach::Sphere { .. }));
+    }
+
+    #[test]
+    fn a_drawn_hand_level_with_its_controller_reaches_as_drawn() {
+        let controller = Vec3::new(0.2, -1.47, -0.4);
+        let drawn = controller + Vec3::new(0.0, 0.05, 0.1);
+        let mut targets = vec![on_floor(GrabVolume::LiveGrenade, Hand::Left)];
+        let before = targets.clone();
+        reach_low(&mut targets, [Some(drawn), None], [Some(controller), None]);
+        assert_eq!(targets, before);
+        // A controller below the drawn hand but out of reach changes nothing either.
+        let mut far = before.clone();
+        reach_low(
+            &mut far,
+            [Some(Vec3::new(0.2, -0.8, -0.4)), None],
+            [Some(Vec3::new(0.6, -1.4, -0.4)), None],
+        );
+        assert_eq!(far, before);
+    }
 
     #[test]
     fn only_an_explicit_foregrip_target_outranks_the_climbing_fallback() {

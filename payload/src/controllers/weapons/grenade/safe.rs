@@ -405,6 +405,28 @@ pub(crate) fn loose() -> Vec<Vec3> {
         .collect()
 }
 
+/// The inert loose items lying in the world, each with its physics game object, its actor's
+/// physics body, and its grab point in the world: what the snatch offers near its aim.
+pub(crate) fn loose_bodies() -> Vec<(NonZeroUsize, u32, Vec3)> {
+    let items = live::safe_items();
+    let state = STATE.lock();
+    state
+        .items
+        .iter()
+        .filter(|entry| {
+            items.iter().any(|item| {
+                item.binding.lease == entry.model && matches!(item.place, Place::World(_))
+            })
+        })
+        .filter_map(|entry| {
+            let explosive = entry.actor.explosive()?;
+            // SAFETY: the weak handle proved a strong reference to the object still exists.
+            let (body, owner) = unsafe { body_of(&*explosive) }?;
+            Some((owner, body, entry.actor.position()?))
+        })
+        .collect()
+}
+
 /// The actor behind an item, while the pool still holds it.
 pub(super) fn actor(item: SafeItemView) -> Option<Actor> {
     STATE

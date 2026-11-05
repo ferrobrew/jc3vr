@@ -289,6 +289,12 @@ pub(crate) fn inert_in_world(owner: NonZeroUsize, body: u32) -> bool {
     safe::inert_in_world(owner, body).is_some()
 }
 
+/// The inert grenades lying in the world, each with its physics game object, its body, and its
+/// grab point in the world, for the snatch to offer near its aim as it offers weapons lying there.
+pub(crate) fn inert_lying() -> Vec<(NonZeroUsize, u32, Vec3)> {
+    safe::loose_bodies()
+}
+
 /// Whether `hand` holds a grenade from the pouch whose pin is still in.
 pub(crate) fn pin_in_hand(hand: Hand) -> bool {
     safe::pin_in(hand)

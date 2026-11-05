@@ -163,6 +163,23 @@ fn active_hands_raw_from_frame(frame: &ControllerFrame) -> Option<ActiveHands> {
     })
 }
 
+/// Each hand's grip where its controller holds it in the cockpit frame of `active`, before the
+/// remap onto the character's arms and every pose after it, by [`Hand::index`]: where the player's
+/// own hand is, which the drawn hand cannot follow where the character's body does not go as low
+/// as the player's (a deep crouch to the floor).
+pub(crate) fn controller_grips(active: &ActiveHands) -> [Option<Vec3>; 2] {
+    let Some(frame) = frame::latest() else {
+        return [None; 2];
+    };
+    Hand::BOTH.map(|hand| {
+        frame
+            .focused
+            .then(|| cockpit_hand(&frame, hand, &active.config.hands, None))
+            .flatten()
+            .map(|h| h.grip.position)
+    })
+}
+
 /// Hand IK ownership without composing poses or acquiring weapon and vehicle state locks.
 pub(crate) fn ik_owned() -> [bool; 2] {
     let enabled = Config::lock_query(|c| c.controllers.enabled && c.controllers.hands.ik);

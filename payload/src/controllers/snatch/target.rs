@@ -315,8 +315,8 @@ pub(super) unsafe fn offerable(input: &OfferInput) -> Result<(), &'static str> {
 }
 
 /// The target the grapple's aim picks along `ray`: the weapon, object, or car door under it, or a
-/// weapon lying in the world or a gun in a character's hands or holster near its line, within the
-/// range, in sight.
+/// weapon or an inert grenade lying in the world or a gun in a character's hands or holster near
+/// its line, within the range, in sight.
 ///
 /// # Safety
 ///
@@ -326,6 +326,7 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
     enum Kind {
         Aimed,
         Floor(usize),
+        Loose(usize),
         Held(usize),
         Holstered(usize),
     }
@@ -340,6 +341,13 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
     let floor: Vec<DroppedWeapon> = unsafe { remote::dropped_weapons(|aabb| near_aim(ray, aabb)) }
         .into_iter()
         .filter(|weapon| Some(weapon.object) != aimed_weapon)
+        .collect();
+    // An inert grenade lying in the world is small, so it is offered within the floor's cone as a
+    // weapon lying there is, not only under a direct hit of the aim.
+    let aimed_object = aimed.as_ref().map(|(aimed, _, _)| aimed.object);
+    let loose: Vec<(NonZeroUsize, u32, Vec3)> = grenade::inert_lying()
+        .into_iter()
+        .filter(|(object, _, _)| Some(*object) != aimed_object)
         .collect();
     // A rack's weapons are the grab's alone.
     let held: Vec<WorldTarget> = if takes_held {
@@ -368,6 +376,15 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
             kind: Kind::Floor(i),
             point: weapon.centre,
         }))
+        .chain(
+            loose
+                .iter()
+                .enumerate()
+                .map(|(i, (_, _, centre))| Candidate {
+                    kind: Kind::Loose(i),
+                    point: *centre,
+                }),
+        )
         .chain(held.iter().enumerate().map(|(i, target)| Candidate {
             kind: Kind::Held(i),
             point: target.points[0],
@@ -379,7 +396,7 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
     let chosen = rules::choose(
         ray,
         candidates,
-        |kind, distance| cone(matches!(kind, Kind::Floor(_)), distance),
+        |kind, distance| cone(matches!(kind, Kind::Floor(_) | Kind::Loose(_)), distance),
         SNATCH.range_m,
     )?;
     let point = chosen.candidate.point;
@@ -405,6 +422,18 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
                     weak,
                 },
                 Some(false) => return None,
+            }
+        }
+        Kind::Loose(i) => {
+            let (object, body, _) = loose[i];
+            if !unsafe { in_sight(ray, point, object.get()) } {
+                return None;
+            }
+            OfferKind::Grenade {
+                object,
+                body,
+                // SAFETY: the grenade's pool holds a strong reference to it this tick.
+                weak: unsafe { weak_of(object) },
             }
         }
         Kind::Held(i) => {

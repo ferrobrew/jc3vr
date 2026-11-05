@@ -547,6 +547,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     // The weapon handling's own view of where each hand is, for the release's docking, the heft,
     // and the cue on entering a socket.
     let grips = grab::tick::hand_grips(&active);
+    grab::resolve::reach_low(&mut targets, grips, hands::controller_grips(&active));
     reload::prioritize_extraction(&mut targets, grips);
     let resolved = grab::resolve::resolve(&targets, grips);
     let volumes = resolved.map(|r| r.chosen.map(|c| c.volume));
