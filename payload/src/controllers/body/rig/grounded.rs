@@ -35,6 +35,7 @@ use crate::controllers::{
         BodyDimensions,
         rig::torso::{HIP_SPACING_FRACTION, TorsoEstimate, wrap},
     },
+    diagnostics::{RigRun, note_rig},
     vehicles::axis_output::{read_move, write_move},
 };
 
@@ -112,18 +113,26 @@ pub fn frame(input: &GroundedInput) -> Option<GroundedFrame> {
         .unwrap_or(0.0);
     let root = snap_to.unwrap_or(input.root);
     let pelvis = root + arm(yaw);
-    let output = state.rig.update(
-        &RigFrame {
-            eyes: input.eyes,
-            head: input.head,
-            hands: input.hands,
-            pelvis,
-            moving: input.moving,
-            sample_height: input.sample_height,
-            dt: input.dt,
-        },
-        &input.tuning,
-    );
+    let rig_frame = RigFrame {
+        eyes: input.eyes,
+        head: input.head,
+        hands: input.hands,
+        pelvis,
+        moving: input.moving,
+        sample_height: input.sample_height,
+        dt: input.dt,
+    };
+    let output = state.rig.update(&rig_frame, &input.tuning);
+    note_rig(RigRun {
+        frame: &rig_frame,
+        output: &output,
+        floor_m: input.floor,
+        snapped_to: snap_to,
+        body: state.rig.body(),
+        dimensions: &input.dimensions,
+        tuning: &input.tuning,
+        now: input.now,
+    });
     let result = GroundedFrame {
         output,
         pelvis,

@@ -2,7 +2,8 @@
 //! completion of the step's root movement, headset-driven body IK, and the controller hands' wrist
 //! targets before the HumanIK solve, the secondary hand targets switched off before the `SECONDARY`
 //! pass, and the head override, the hands' post-solve publish, the finger curls, and the rig's
-//! skeleton read after it), the act filter, the animation modifiers, and the animation-layer mask.
+//! skeleton read after it, and the tracking recorder's pose samples before the solves and after
+//! the pass), the act filter, the animation modifiers, and the animation-layer mask.
 //!
 //! - [`body_ik`]: the pre-solve anchor capture and the head, torso, and hand-pin targets;
 //! - [`head`]: the post-solve head override and the render-block head-hide inputs;
@@ -130,6 +131,9 @@ fn character_update_pass_finalize_pose_parallel(
         if let Some(plan) = plan {
             hands::ik::queue_or_defer(character, plan);
         }
+        if pose_ready {
+            controllers::diagnostics::sample_pre_ik(character);
+        }
     }
     drop(timing);
 
@@ -183,5 +187,6 @@ fn character_update_prop_effects(character: *mut Character, dt: f32) {
         controllers::body::procedural::twist::after_solve(character);
         controllers::body::mirror::after_solve(character);
         controllers::presentation::after_solve(character);
+        controllers::diagnostics::sample_final(character);
     }
 }
