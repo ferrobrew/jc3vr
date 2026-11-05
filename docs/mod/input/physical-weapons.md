@@ -325,6 +325,7 @@ The debug UI's Weapons > Hold, transfer, and grab regions live status opens with
 2. With one shoulder free, let go between the free and a taken shoulder: the free one takes the rifle, and nothing falls.
 3. Let go of a pistol over a taken hip: it falls, as before; only the back swaps.
 4. Before letting go over the taken shoulder, the grab hint in front of you shows the held rifle, an arrow, and the docked rifle dimmed ([grip.md](grip.md#the-grab-hint)).
+5. Let a heavy weapon armed in a hand go: it falls once, the heavy slot is empty afterwards, and the log has no second drop. Swap a rifle on a shoulder for another: the docked rifle falls once and its slot keeps whatever the table projects there.
 
 ## In the headset: separate pistols
 
@@ -342,6 +343,7 @@ With `weapons.separate_pistols`, `weapons.inventory.enabled`, `weapons.inventory
 10. Take a pistol off a rack, and from a soldier's hands, with the slot's pistol drawn in the other hand: each comes in as one pistol beside it. Take a pistol off a rack with unlimited stock with both hands empty: the copy arrives as one pistol (`a rack's copy`), and the slot's old pistol stays on its hip.
 11. Start a mission that takes the player's weapons, with one pistol in the slot and none carried: when the weapons come back, the slot's pistol is one pistol, and no second is asked for.
 12. Switch `weapons.separate_pistols` off: the pistols already single stay as they are; a pair the game hands over afterwards (a supply drop) stays a pair, drawn into one hand with its second gun in the other, and fires from either trigger.
+13. Note the pistol ammunition reserve, then take a full pistol from the world beside the slot's pistol and let the game's reload fill a single pistol: the reserve grows by the stored rounds and by the rounds over the half, never past the cap, and no game reload starts on its own when the reserve was empty. Swap a pistol's magazine with rounds left in it: the reserve gains them.
 
 ## Unverified
 
