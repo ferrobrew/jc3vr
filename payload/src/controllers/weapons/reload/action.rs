@@ -12,11 +12,12 @@ use crate::controllers::{
     haptics::{self, Event},
     weapons::{
         foregrip::{self, set_pump_slide},
+        pouch_models,
         reload::{
             FinishInputs, GunTick, State, Tick, WeaponTick,
             chamber::{self, ActionKind, Chamber, WorkEvent, WorkInputs},
             engine,
-            insert::InsertStage,
+            insert::{InsertStage, InsertionSource},
             plan::ReloadPlan,
             render,
             steps::chambering,
@@ -396,13 +397,31 @@ impl State {
                 magazine_empty: weapon.reading.magazine <= 0,
             })
         });
+        // A pouch magazine in the hand is drawn with the gun's spare magazine model where it has
+        // one; a magazine from the world is its own object in the hand.
+        let modelled = self
+            .status
+            .insert_hands
+            .filter(|_| self.insertion_source == InsertionSource::Pouch)
+            .and_then(|(_, gun_hand)| tick.gun(gun_hand))
+            .filter(|(weapon, _)| weapon.plan.spare_top_m.is_some())
+            .map(|(weapon, _)| weapon.address);
+        // SAFETY: game thread before the world update; the weapon was read this tick.
+        let modelled = unsafe { pouch_models::hand_tick(modelled) };
         let held = self.status.insert_hands.and_then(|(hand, gun_hand)| {
             let (weapon, gun) = tick.gun(gun_hand)?;
-            // The gun's round part is the magazine still in it until that one is knocked out,
-            // ejected, or pulled, so the hand shows no part meanwhile.
-            if weapon.plan.load.well_occupied(weapon.reading.out) {
+            let (drawn, part_top) = if modelled {
+                (render::HeldDraw::Instance, weapon.plan.spare_top_m?)
+            } else if weapon.plan.load.well_occupied(weapon.reading.out) {
+                // The gun's round part is the magazine still in it until that one is knocked
+                // out, ejected, or pulled, so the hand shows no part meanwhile.
                 return None;
-            }
+            } else {
+                (
+                    render::HeldDraw::Part,
+                    weapon.plan.part_axis * weapon.plan.part_top_m?,
+                )
+            };
             let captured = match self.status.insertion.stage {
                 InsertStage::Captured { .. } => gun.well.and_then(|well| {
                     let top = self.status.insertion.captured_top(well)?;
@@ -428,8 +447,9 @@ impl State {
                 hand,
                 top_world_m: reload.held_top_m * tick.world_scale,
                 palm_gap_world_m: reload.held_palm_gap_m * tick.world_scale,
-                part_top_m: weapon.plan.part_top_m?,
+                part_top,
                 part_axis: weapon.plan.part_axis,
+                drawn,
                 captured,
             })
         });

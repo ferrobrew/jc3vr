@@ -3,7 +3,9 @@
 
 For every player weapon entity, the same set as ``extract_sights.py`` covers, this loads the closest
 LOD of every model part, the magazine included, and derives where the magazine, shell, or round goes
-in and where the hand grabs to chamber, in weapon space (see ``wells.py``).
+in and where the hand grabs to chamber, in weapon space (see ``wells.py``). For a magazine-fed
+weapon whose spare magazine prop depicts the magazine a hand loads, it also measures the top of that
+prop's model in the prop's own frame (see ``spares.py``).
 
 Usage::
 
@@ -23,6 +25,7 @@ import os
 import sys
 from pathlib import Path
 
+import spares
 import weapon
 import wells
 import wells_plot
@@ -48,14 +51,15 @@ def main() -> int:
     try:
         entities = _player_weapon_entities(args.gibbed_tools / FILE_LISTS)
         archives = GameArchives(args.game)
-    except (OSError, ValueError) as e:
+        spare_magazines = spares.SpareMagazines(archives)
+    except (OSError, ValueError, LookupError) as e:
         log.error("%s", e)
         return 1
     log.info("found %d player weapon entities", len(entities))
 
     table = []
     for path in entities:
-        entry, loaded, well = _derive(path, archives)
+        entry, loaded, well = _derive(path, archives, spare_magazines)
         table.append(entry)
         if args.dump:
             _dump(path, archives, args.dump / entry["weapon"])
@@ -82,7 +86,7 @@ def _parse_args():
     return parser.parse_args()
 
 
-def _derive(path: str, archives: GameArchives):
+def _derive(path: str, archives: GameArchives, spare_magazines: spares.SpareMagazines):
     """The table entry for one entity, with the loaded weapon and well when they exist."""
     name = PLAYER_WEAPON.match(path).group(2)
     family = name.split("_")[1]
@@ -118,6 +122,7 @@ def _derive(path: str, archives: GameArchives):
     remarks = well.notes + [f"doubt: {d}" for d in well.doubts]
     if remarks:
         entry["notes"] = "; ".join(remarks)
+    entry["spare_top_m"] = _vec(_spare_top(name, loaded, well, spare_magazines))
 
     log.log(
         logging.WARNING if well.doubts or well.grade == wells.FAILED else logging.INFO,
@@ -134,6 +139,32 @@ def _derive(path: str, archives: GameArchives):
         f"; doubtful: {', '.join(well.doubts)}" if well.doubts else "",
     )
     return entry, loaded, well
+
+
+def _spare_top(name: str, loaded: weapon.Weapon | None, well: wells.Well, spare_magazines: spares.SpareMagazines):
+    """The top centre of the spare magazine's model along the insertion axis (taken into the
+    magazine part's frame when the weapon has one), in the model's own frame, when the spare depicts the magazine a hand loads: the spare's model is the weapon's
+    magazine part, or the weapon has no round part and its magazine is modelled into the body."""
+    if loaded is None or well.kind != wells.MAGAZINE or well.axis is None:
+        return None
+    try:
+        spare = spare_magazines.model(loaded)
+    except (LookupError, ValueError) as e:
+        log.warning("%s: %s", name, e)
+        return None
+    if spare is None:
+        return None
+    round_part = next((p for n in wells.ROUND_PARTS for p in loaded.parts if p.name == n), None)
+    if round_part is not None and not (round_part.name == "model.magazine" and round_part.model == spare.model):
+        log.info("%s: the spare magazine %s is not the round part %s", name, spare.model, round_part.model)
+        return None
+    axis = well.axis
+    if round_part is not None and round_part.matrix is not None:
+        # The axis is in weapon space, and the part's rows are its own axes in weapon space, so the
+        # axis's coordinates in the part's (and the spare model's) frame are its projections on them.
+        m = round_part.matrix
+        axis = tuple(sum(axis[j] * m[4 * i + j] for j in range(3)) for i in range(3))
+    return spares.top_centre(spare.positions, axis)
 
 
 def _vec(v) -> list[float] | None:

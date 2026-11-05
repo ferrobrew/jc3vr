@@ -692,6 +692,13 @@ pub(crate) fn adjust_part(
     render::adjust(part, weapon, matrix, dtf)
 }
 
+/// The world matrix of the pouch magazine in the hand for the weapon at `weapon`, drawn with an
+/// instance of its spare magazine model, at the render interpolation fraction `dtf`: the same
+/// place the gun's own round part would be drawn in the hand.
+pub(crate) fn held_round_matrix(weapon: usize, dtf: f32) -> Option<glam::Mat4> {
+    render::held_round_matrix(weapon, dtf)
+}
+
 /// A shot of `weapon` from `hand` that left `magazine` rounds, from the per-shot seam on the
 /// weapon's thread.
 pub(super) fn on_shot(weapon: usize, hand: Hand, magazine: i32) {

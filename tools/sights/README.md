@@ -115,7 +115,7 @@ Every point and direction is in weapon space: metres, +Y up, -Z toward the muzzl
 A JSON array with one object per weapon entity, sorted by name, one object per line:
 
 ```json
-{"weapon": "w111_assault_rifle_up_39", "weapon_hash": 2307691279, "kind": "magazine", "mouth_m": [-0.0003, 0.0382, -0.1414], "insert_axis": [0.0, 1.0, 0.0], "magazine_part": true, "part_name": "model.magazine", "part_top_m": 0.0679, "part_length_m": 0.1357, "action": "charging_handle", "handle_m": [0.0395, 0.1472, -0.1777], "travel_m": 0.07, "grade": "part", "notes": "travel: class default; handle: the receiver's right-side protrusion"}
+{"weapon": "w111_assault_rifle_up_39", "weapon_hash": 2307691279, "kind": "magazine", "mouth_m": [-0.0003, 0.0382, -0.1414], "insert_axis": [0.0, 1.0, 0.0], "magazine_part": true, "part_name": "model.magazine", "part_top_m": 0.0679, "part_length_m": 0.1357, "action": "charging_handle", "handle_m": [0.0395, 0.1472, -0.1777], "travel_m": 0.07, "grade": "part", "notes": "travel: class default; handle: the receiver's right-side protrusion", "spare_top_m": [0.0001, 0.0679, 0.0]}
 ```
 
 - `weapon_hash` is `hashlittle` of the entity name, as in `sights.json`, and is the table's key.
@@ -127,6 +127,7 @@ A JSON array with one object per weapon entity, sorted by name, one object per l
 - `action` is what chambers a round: `slide`, `charging_handle`, `bolt`, `pump`, or `none`. `handle_m` is its grab point and `travel_m` its travel along the barrel.
 - `grade` is the confidence in the mouth and axis: `part` (measured against a magazine part), `mesh` (measured from the body mesh), `default` (a class default, or nothing to load), or `failed`.
 - `notes` names the fields that hold class defaults rather than measurements (every `travel_m`, and the handles that are not measured), says what the mouth is for that weapon, and repeats any doubt from the log.
+- `spare_top_m` is the feed end of the weapon's spare magazine prop, the loose magazine the game drops on a reload: the centre of the prop model's bounding box moved along the insertion axis to the model's furthest extent, in the prop model's own frame. The insertion axis is taken into the magazine part's frame first, which is the prop's frame when the prop is the part's model. It is set only for a `magazine` weapon whose prop shows the magazine a hand loads, which is when the prop's model is the weapon's `model.magazine` part or when the weapon has no round part at all (the pistols and submachine guns), and null otherwise. `spares.py` resolves the prop: the weapon's `magazine_tag` property names a definition in the prop spawn table, `settings/spawn_prop_defs.bin`, whose entity embeds the prop's model.
 
 ### Algorithm
 

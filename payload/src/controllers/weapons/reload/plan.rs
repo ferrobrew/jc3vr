@@ -93,6 +93,10 @@ pub struct ReloadPlan {
     /// gun's model frame for the round parts the table measures: the well's insertion axis, or
     /// +Y without one.
     pub part_axis: Vec3,
+    /// For a magazine whose gun has a spare magazine model that depicts it, the top of that model
+    /// centred across it, in the model's own frame, metres: what the magazine in the hand is
+    /// drawn with.
+    pub spare_top_m: Option<Vec3>,
     /// A launcher: a grenade launcher, a rocket launcher, or the mortar. Its round is caught by
     /// the well at the launcher capture radius and angle, since a launcher's well is large and
     /// awkward to reach with the other hand.
@@ -159,6 +163,10 @@ pub fn plan(
             WellFrame::Gun { axis, .. } => axis,
             WellFrame::Wrist { .. } => Vec3::Y,
         },
+        spare_top_m: entry
+            .filter(|_| load == LoadKind::Magazine)
+            .and_then(|e| e.spare_top_m)
+            .filter(|t| t.is_finite()),
         launcher: is_launcher(facts.class),
     })
 }
@@ -254,6 +262,7 @@ mod tests {
             magazine_part: true,
             part_top_m: Some(0.05),
             part_length_m: Some(0.1),
+            spare_top_m: Some(Vec3::new(0.0, 0.06, 0.01)),
             action,
             handle_m: Some(Vec3::new(0.0, 0.06, 0.1)),
             travel_m: Some(0.07),
@@ -362,6 +371,50 @@ mod tests {
         assert_eq!(p.action, ActionKind::None);
         assert!(p.part_top_m.is_some());
         assert_eq!(p.part_axis, Vec3::Y);
+    }
+
+    #[test]
+    fn only_a_magazine_is_drawn_with_the_spare_magazine_model() {
+        let rifle = plan(
+            facts(WeaponClass::E_WEAPON_CLASS_ASSAULT_RIFLE),
+            Some(&entry(
+                WellKind::Magazine,
+                TableAction::ChargingHandle,
+                WellGrade::Part,
+            )),
+            WRIST,
+            0.06,
+        )
+        .unwrap();
+        assert_eq!(rifle.spare_top_m, Some(Vec3::new(0.0, 0.06, 0.01)));
+        let launcher = plan(
+            facts(WeaponClass::E_WEAPON_CLASS_RPG),
+            Some(&entry(WellKind::Rocket, TableAction::None, WellGrade::Part)),
+            WRIST,
+            0.06,
+        )
+        .unwrap();
+        assert_eq!(launcher.spare_top_m, None);
+    }
+
+    #[test]
+    fn the_table_draws_pistol_and_smg_magazines_but_not_the_upu_210s_cartridge() {
+        let spare = |name: &str| {
+            wells::entries()
+                .iter()
+                .find(|e| e.weapon == name)
+                .unwrap_or_else(|| panic!("{name} is in the wells table"))
+                .spare_top_m
+        };
+        for name in [
+            "w011_pistol_u_pozhar_98",
+            "w031_smg_prizrak_u4",
+            "w111_assault_rifle_up_39",
+        ] {
+            assert!(spare(name).is_some(), "{name}");
+        }
+        assert_eq!(spare("w123_grenade_launcher_upu_210"), None);
+        assert_eq!(spare("w141_rpg_uvk_13"), None);
     }
 
     #[test]

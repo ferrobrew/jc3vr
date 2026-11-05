@@ -64,6 +64,9 @@ class Weapon:
     class_name: str
     stored_name_hash: int
     epe_source: str
+    # The spawn tag of the weapon's spare magazine prop (its ``magazine_tag`` property), or ``None``
+    # for a weapon without one.
+    magazine_tag: str | None = None
     fire_points: list[FirePoint] = field(default_factory=list)
     parts: list[Part] = field(default_factory=list)
 
@@ -90,6 +93,7 @@ def load(entity_path: str, archives: GameArchives, skipped_part_names: tuple[str
         class_name=top.get("_class"),
         stored_name_hash=top.get("name_hash", 0) & 0xFFFFFFFF,
         epe_source=epe_source,
+        magazine_tag=top.get("magazine_tag") or None,
     )
     models = [(weapon.name, top.get(MODEL_KEY), None, weapon.class_name)]
     for child in top.children:

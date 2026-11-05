@@ -185,6 +185,7 @@ fn a_magazine_part_hangs_its_length_and_a_grip_magazine_none() {
         magazine_part: part,
         part_top_m: part.then_some(0.07),
         part_length_m: length,
+        spare_top_m: None,
         action: TableAction::Slide,
         handle_m: None,
         travel_m: None,

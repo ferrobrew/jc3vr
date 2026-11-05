@@ -155,6 +155,7 @@ pub(super) fn tick(seating: bool) -> Tick {
                     travel_m: 0.06,
                     part_top_m: None,
                     part_axis: Vec3::Y,
+                    spare_top_m: None,
                     launcher: false,
                 },
                 from_table: true,
@@ -482,6 +483,7 @@ fn a_seat_readies_a_launcher_at_once_and_a_dry_gun_only_after_its_action() {
         travel_m: 0.06,
         part_top_m: Some(0.05),
         part_axis: Vec3::Y,
+        spare_top_m: None,
         launcher: true,
     };
     assert!(ready_after_seat(&launcher, Chamber::Chambered));

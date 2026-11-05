@@ -16,6 +16,7 @@ use crate::controllers::{
         engine::HeldWeapon,
         foregrip::set_pump_slide,
         inventory::engine::strong_to,
+        pouch_models,
         regions::{action_back, action_volume},
         reload::{
             BeltFinish, BeltGate, FinishInputs, GunTick, MAX_EVENTS, State, Tick, WeaponReadout,
@@ -632,10 +633,14 @@ impl State {
         }
         // A magazine part rides the hand while it is held, and hides again when it is dropped
         // with the gun's magazine still out. A magazine from the world is its own object in the
-        // hand, so the part stays hidden until it seats.
+        // hand, so the part stays hidden until it seats, and so does the part of a gun whose spare
+        // magazine model draws the magazine in the hand.
         if let Some((weapon, _)) = target
             && weapon.plan.part_top_m.is_some()
             && !world_magazine
+            // SAFETY: game thread before the world update; the weapon was read this tick.
+            && !(weapon.plan.spare_top_m.is_some()
+                && unsafe { pouch_models::hand_draws(weapon.address) })
         {
             match event {
                 // SAFETY (both): game thread before the world update; the weapon was read this

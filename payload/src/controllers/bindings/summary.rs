@@ -727,6 +727,7 @@ mod tests {
                 travel_m: 0.0,
                 part_top_m: None,
                 part_axis: Vec3::Y,
+                spare_top_m: None,
                 launcher: false,
             },
             from_table: false,

@@ -120,6 +120,7 @@ fn tick(pull: f32, rounds: i32) -> Tick {
                     travel_m: 0.06,
                     part_top_m: None,
                     part_axis: Vec3::Y,
+                    spare_top_m: None,
                     launcher: false,
                 },
                 from_table: true,

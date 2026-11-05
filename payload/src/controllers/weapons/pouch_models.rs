@@ -1,6 +1,7 @@
 //! The game's models of what the body's pouches hold, drawn on the pouches: a grenade on the grenade
 //! pouch, a C4 charge on the C4 pouch, and the held gun's magazine on the magazine pouch, so the
-//! player sees on Rico's body what a hand reaching there takes.
+//! player sees on Rico's body what a hand reaching there takes. The magazine a hand takes from the
+//! pouch is drawn in that hand the same way ([`hand_tick`]).
 //!
 //! Each model is an instance the payload owns, made from a model the game already holds for the
 //! item's lifetime ([`ModelInstanceManager::CreateInstanceFromModel`]): the grenade weapon's
@@ -8,20 +9,25 @@
 //! model ([`PlantedExplosiveWeapon::m_InactiveModelInstance`]), and the gun's spare magazine prop's
 //! model ([`WeaponData::m_MagazineObject`], [`RigidObject::m_Model`]). The instance keeps its own
 //! reference to the model, and the engine's cull draws it once it is in the world, with no physics
-//! and no game object behind it.
+//! and no game object behind it ([`owned`]). A gun's magazine on the belt and in the hand are both
+//! such instances of its spare magazine's model, and either one keeps that model for the weapon
+//! while the game respawns the spare after a magazine is dropped.
 //!
 //! The input tick ([`input_tick`]) places each model where its pouch is, in the character's model
 //! space, and keeps the last two ticks' placements. The render frame ([`render_frame`]) draws it
 //! between them, carried by the character's interpolated world transform at the frame's
 //! interpolation fraction, so it rides the body as the body is drawn rather than a tick behind
-//! it ([render-time-anchoring.md](../../../../docs/mod/rendering/render-time-anchoring.md)).
+//! it ([render-time-anchoring.md](../../../../docs/mod/rendering/render-time-anchoring.md)). The
+//! magazine in the hand is drawn where the reload draws the round in the hand at the same fraction
+//! ([`reload::held_round_matrix`]), on the hand as it is drawn.
 //!
 //! The instances are created, shown, hidden, and released on the game thread before the world
-//! update, as the engine requires. A model whose pouch is not offered is hidden; every instance is
-//! released outside gameplay, when its source model changes (another gun's magazine), and when the
-//! payload unloads.
+//! update, as the engine requires. A model whose pouch is not offered is hidden, as is the hand's
+//! magazine once the hand no longer holds it; every instance is released outside gameplay, when
+//! its source model changes (another gun's magazine), and when the payload unloads.
 
 use std::{
+    collections::BTreeSet,
     sync::atomic::{AtomicBool, Ordering},
     time::Instant,
 };
@@ -33,29 +39,31 @@ use jc3gi::{
         inventory::WeaponSlot,
     },
     equipment::weapon::{PlantedExplosiveWeapon, ThrownGrenadeWeapon, WeaponBase},
-    graphics_engine::model_instance::{
-        Model, ModelInstance, ModelInstanceFlags, ModelInstanceManager,
-    },
-    types::{math::Matrix4, shared_ptr::SharedPtr},
+    graphics_engine::model_instance::Model,
+    types::shared_ptr::SharedPtr,
 };
 use parking_lot::Mutex;
 
 use crate::{
     controllers::{
-        aim::gun,
         body::{mirror, rig::frames::Frames},
         frame::{Hand, Pose},
         hands::{grip, late::lerp_transform},
         weapons::{
             config::PouchModelsConfig,
             engine,
-            pouch_models::attachments::{RenderSample, Sample, SampleId, placement},
+            pouch_models::{
+                attachments::{RenderSample, Sample, SampleId, placement},
+                owned::{OwnedModel, magazine_source, without_magazine_prop},
+            },
+            reload,
         },
     },
     hooks,
 };
 
 pub(crate) mod attachments;
+pub(crate) mod owned;
 
 /// What a pouch holds, drawn on it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -143,6 +151,8 @@ pub struct ShownPouch {
 pub struct PouchModelsStatus {
     /// Whether each prop's model is drawn, by [`Prop::ALL`]'s order.
     pub shown: [bool; 3],
+    /// Whether a magazine is drawn in a hand.
+    pub hand: bool,
     /// Instances created since the payload loaded.
     pub created: u64,
     /// Render frames that drew at least one model.
@@ -230,6 +240,12 @@ pub(crate) unsafe fn input_tick(
         unsafe { state.release_all() };
         state.owner = Some(owner_id);
     }
+    // The reload asks for the magazine in the hand on every tick it holds one, after this one; a
+    // tick it did not ask on (the reload stood down) hides it.
+    if state.hand_sequence != state.input_sequence {
+        unsafe { state.hand.hide() };
+        state.status.hand = false;
+    }
     state.input_sequence = state.input_sequence.wrapping_add(1);
     let mut attachments = Sample {
         id: SampleId {
@@ -241,43 +257,33 @@ pub(crate) unsafe fn input_tick(
         character: frames.character,
         attachments: Vec::new(),
     };
+    let hand = state.hand;
     for prop in Prop::ALL {
         let wanted = shown.iter().find(|s| s.prop == prop);
         let slot = &mut state.slots[prop.index()];
         if let Some(wanted) = wanted
-            && slot.weapon != wanted.weapon
+            && slot.owned.weapon() != wanted.weapon
         {
             unsafe { slot.release() };
-            slot.weapon = wanted.weapon;
+            unsafe { slot.owned.retarget(wanted.weapon) };
         }
-        let model = wanted.and_then(|s| unsafe { source_model(owner, prop, s.weapon) });
-        // The owned instance retains its model while an ejection temporarily removes the source prop.
-        let slot = &state.slots[prop.index()];
-        let source = offered_model(
-            wanted,
-            model.map(|model| unsafe { (*model).px } as usize),
-            slot.weapon,
-            slot.model,
-        );
+        // The owned instances keep their model while the game respawns a dropped magazine's prop.
+        let model =
+            wanted.and_then(|s| unsafe { source_model(owner, prop, s.weapon, &slot.owned, &hand) });
+        let source = model.map(|model| unsafe { (*model).px } as usize);
         let mut attachment = placement(prop, wanted, source, &frames, &prop.placement());
         let local = attachment.local.ok();
-        let slot = &mut state.slots[prop.index()];
-        let previous_source = slot.model;
-        let previously_visible = slot.visible;
+        let previous_source = slot.owned.model();
+        let previously_visible = slot.owned.visible();
         let created = match (model, local) {
             (Some(model), Some(local)) => unsafe {
                 slot.show(model, local, Mat4::from(owner.m_WorldMatrixT1))
             },
-            (None, Some(local)) if slot.instance.is_some() && slot.model.is_some() => {
-                unsafe { slot.place(local) };
-                false
-            }
             _ => {
                 unsafe { slot.hide() };
                 false
             }
         };
-        slot.weapon = wanted.and_then(|wanted| wanted.weapon);
         slot.bone_local = local.and_then(|local| {
             // SAFETY: the game stage owns this live character observation.
             let bone = unsafe { grip::bone_model_pose(owner, prop.bone()) }?;
@@ -285,8 +291,8 @@ pub(crate) unsafe fn input_tick(
             let local = bone.inverse() * local;
             local.is_finite().then_some(local)
         });
-        let visible = slot.visible;
-        if previously_visible != visible || previous_source != slot.model {
+        let visible = slot.owned.visible();
+        if previously_visible != visible || previous_source != slot.owned.model() {
             mirror::clear_pouch_render();
         }
         state.status.created += u64::from(created);
@@ -295,6 +301,66 @@ pub(crate) unsafe fn input_tick(
         attachments.attachments.push(attachment);
     }
     state.attachments = Some(attachments);
+}
+
+/// Draw the magazine of the gun at `weapon` in the hand holding a magazine from its pouch, or with
+/// `None`, in no hand. Returns whether the instance draws it; when it does not (the pouches'
+/// models off, or no magazine model for the gun), the reload draws the round in the hand with the
+/// gun's own part, if it has one. The reload places it each frame ([`reload::held_round_matrix`]).
+///
+/// # Safety
+///
+/// The game thread, before the world update; `weapon` is a live weapon of the local player.
+pub(crate) unsafe fn hand_tick(weapon: Option<usize>) -> bool {
+    let mut state = STATE.lock();
+    let owner = state
+        .owner
+        .and_then(|_| unsafe { engine::local_player() })
+        .filter(|owner| state.owner == Some(*owner as *const Character as usize));
+    let (Some(owner), Some(weapon)) = (owner, weapon) else {
+        unsafe { state.hand.hide() };
+        state.status.hand = false;
+        return false;
+    };
+    state.hand_sequence = state.input_sequence;
+    unsafe { state.hand.retarget(Some(weapon)) };
+    let belt = state.slots[Prop::Magazine.index()].owned;
+    let Some(model) = (unsafe { magazine_source(weapon, [&state.hand, &belt]) }) else {
+        unsafe { state.hand.hide() };
+        state.status.hand = false;
+        if let Some(name_hash) = unsafe { without_magazine_prop(weapon) }
+            && state.without_prop.insert(name_hash)
+        {
+            tracing::info!(
+                target: "controllers",
+                weapon = format_args!("{name_hash:#010x}"),
+                "pouch models: the held gun has no spare magazine model to draw in the hand"
+            );
+        }
+        return false;
+    };
+    let created = unsafe { state.hand.show(model, Mat4::from(owner.m_WorldMatrixT1)) };
+    state.status.created += u64::from(created == Some(true));
+    state.status.hand = created.is_some();
+    state.status.hand
+}
+
+/// Whether a magazine of the gun at `weapon` would be drawn in the hand by an instance of its
+/// magazine model ([`hand_tick`]).
+///
+/// # Safety
+///
+/// As [`hand_tick`].
+pub(crate) unsafe fn hand_draws(weapon: usize) -> bool {
+    let state = STATE.lock();
+    state.owner.is_some()
+        && unsafe {
+            magazine_source(
+                weapon,
+                [&state.hand, &state.slots[Prop::Magazine.index()].owned],
+            )
+        }
+        .is_some()
 }
 
 /// Draw the pouches' models at the frame's interpolation fraction `dtf`. Called once per rendered
@@ -334,10 +400,10 @@ pub(crate) unsafe fn render_frame(dtf: f32) {
     let mut drew = false;
     for prop in Prop::ALL {
         let slot = &state.slots[prop.index()];
-        if !slot.visible {
+        if !slot.owned.visible() {
             continue;
         }
-        let (Some(instance), Some(local)) = (slot.instance, slot.local) else {
+        let Some(local) = slot.local else {
             continue;
         };
         let bone = slot.bone_local.and_then(|local| {
@@ -349,12 +415,21 @@ pub(crate) unsafe fn render_frame(dtf: f32) {
         let Some(matrix) = bone.or_else(|| render_matrix(character, local, dtf)) else {
             continue;
         };
-        // SAFETY: the instance is the payload's own, live until it is released on this thread.
-        unsafe { (*(instance as *mut ModelInstance)).UpdateMatrix(&Matrix4::from(matrix)) };
-        if let (Some(sample), Some(model)) = (&mut sample, slot.model) {
+        // SAFETY: the game thread, outside the world update.
+        if !unsafe { slot.owned.push(matrix) } {
+            continue;
+        }
+        if let (Some(sample), Some(model)) = (&mut sample, slot.owned.model()) {
             sample.applied(prop, model, matrix);
         }
         drew = true;
+    }
+    // The magazine in the hand rides the hand as it is drawn, where the reload draws its round.
+    if let Some(weapon) = state.hand.weapon().filter(|_| state.hand.visible())
+        && let Some(matrix) = reload::held_round_matrix(weapon, dtf)
+    {
+        // SAFETY: the game thread, outside the world update.
+        drew |= unsafe { state.hand.push(matrix) };
     }
     state.status.drawn += u64::from(drew);
     drop(state);
@@ -372,20 +447,6 @@ pub(crate) unsafe fn stand_down() {
     unsafe { STATE.lock().release_all() };
 }
 
-fn offered_model(
-    wanted: Option<&ShownPouch>,
-    current: Option<usize>,
-    previous_weapon: Option<usize>,
-    previous_model: Option<usize>,
-) -> Option<usize> {
-    let wanted = wanted?;
-    current.or_else(|| {
-        (wanted.weapon == previous_weapon)
-            .then_some(previous_model)
-            .flatten()
-    })
-}
-
 fn render_transform(transforms: [Mat4; 2], dtf: f32) -> Mat4 {
     let t = if dtf.is_finite() {
         dtf.clamp(0.0, 1.0)
@@ -398,18 +459,19 @@ fn render_transform(transforms: [Mat4; 2], dtf: f32) -> Mat4 {
 /// One prop's instance and its placements.
 #[derive(Debug, Copy, Clone, Default)]
 struct Slot {
-    /// The instance (a `ModelInstance` address), or `None` before one is made.
-    instance: Option<usize>,
-    /// The model the instance was made from.
-    model: Option<usize>,
-    weapon: Option<usize>,
+    owned: OwnedModel,
     bone_local: Option<Mat4>,
-    visible: bool,
     /// The placement in the character's model space on the last two ticks, older first.
     local: Option<[Mat4; 2]>,
 }
 
 impl Slot {
+    const EMPTY: Slot = Slot {
+        owned: OwnedModel::EMPTY,
+        bone_local: None,
+        local: None,
+    };
+
     /// Show the instance of `model` at `local`, making it first (at `local` carried by
     /// `character`, the character's latest world transform) or remaking it when its model changed.
     /// Returns whether it made an instance.
@@ -423,47 +485,19 @@ impl Slot {
         local: Mat4,
         character: Mat4,
     ) -> bool {
-        let source = unsafe { (*model).px } as usize;
-        if self.instance.is_some() && self.model != Some(source) {
-            unsafe { self.release() };
-        }
-        let Some(manager) = (unsafe { ModelInstanceManager::get() }) else {
+        let was_visible = self.owned.visible();
+        let Some(created) = (unsafe { self.owned.show(model, character * local) }) else {
             return false;
         };
-        let mut created = false;
-        if self.instance.is_none() {
-            let world = Matrix4::from(character * local);
-            let made = unsafe { manager.CreateInstanceFromModel(model, &world, true, false, true) };
-            let Some(made) = (unsafe { made.as_mut() }) else {
-                return false;
-            };
-            // The engine's own owners of a model held on a character keep it drawn whatever
-            // the camera's distance, as the explosives do.
-            made.m_Flags.remove(ModelInstanceFlags::FLAG_CLIPONDISTANCE);
-            self.instance = Some(made as *mut ModelInstance as usize);
-            self.model = Some(source);
-            self.visible = false;
-            created = true;
-        }
-        unsafe { self.place(local) };
-        created
-    }
-
-    unsafe fn place(&mut self, local: Mat4) {
-        if !self.visible {
-            let (Some(instance), Some(manager)) =
-                (self.instance, unsafe { ModelInstanceManager::get() })
-            else {
-                return;
-            };
-            unsafe { manager.ShowModelInstance(instance as *mut ModelInstance) };
-            self.visible = true;
+        // A model shown afresh starts at its new place rather than sweeping from its last.
+        if !was_visible || created {
             self.local = None;
         }
         self.local = Some(match self.local {
             Some([_, last]) => [last, local],
             None => [local, local],
         });
+        created
     }
 
     /// Hide the instance, keeping it for when its pouch comes back.
@@ -472,12 +506,7 @@ impl Slot {
     ///
     /// The game thread, before the world update.
     unsafe fn hide(&mut self) {
-        if let (Some(instance), true) = (self.instance, self.visible)
-            && let Some(manager) = unsafe { ModelInstanceManager::get() }
-        {
-            unsafe { manager.HideModelInstance(instance as *mut ModelInstance) };
-        }
-        self.visible = false;
+        unsafe { self.owned.hide() };
         self.local = None;
         self.bone_local = None;
     }
@@ -488,17 +517,19 @@ impl Slot {
     ///
     /// The game thread, before the world update.
     unsafe fn release(&mut self) {
-        if let Some(instance) = self.instance.take()
-            && let Some(manager) = unsafe { ModelInstanceManager::get() }
-        {
-            unsafe { manager.AddToDeleteQueue(instance as *mut ModelInstance, false) };
-        }
-        *self = Slot::default();
+        unsafe { self.owned.release() };
+        *self = Slot::EMPTY;
     }
 }
 
 struct State {
     slots: [Slot; 3],
+    /// The magazine in the hand ([`hand_tick`]).
+    hand: OwnedModel,
+    /// The input tick [`hand_tick`] last showed the magazine in the hand on.
+    hand_sequence: u64,
+    /// The weapons, by name hash, already logged as having no spare magazine model.
+    without_prop: BTreeSet<u32>,
     status: PouchModelsStatus,
     attachments: Option<Sample>,
     owner: Option<usize>,
@@ -515,7 +546,9 @@ impl State {
         for slot in &mut self.slots {
             unsafe { slot.release() };
         }
+        unsafe { self.hand.release() };
         self.status.shown = [false; 3];
+        self.status.hand = false;
         self.attachments = None;
         self.owner = None;
         self.epoch = self.epoch.wrapping_add(1);
@@ -524,16 +557,13 @@ impl State {
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
-    slots: [Slot {
-        instance: None,
-        model: None,
-        weapon: None,
-        bone_local: None,
-        visible: false,
-        local: None,
-    }; 3],
+    slots: [Slot::EMPTY; 3],
+    hand: OwnedModel::EMPTY,
+    hand_sequence: 0,
+    without_prop: BTreeSet::new(),
     status: PouchModelsStatus {
         shown: [false; 3],
+        hand: false,
         created: 0,
         drawn: 0,
     },
@@ -557,9 +587,10 @@ fn ensure_cleanup() {
 }
 
 /// The model `prop` is drawn with for `owner`: the grenade weapon's projectile model, the C4
-/// weapon's in-hand model, or the spare magazine's model of the gun at `weapon`; `None` while the
-/// weapon or its model is missing (a gun's spare magazine is respawned a while after each one it
-/// drops).
+/// weapon's in-hand model, or a magazine model of the gun at `weapon` ([`magazine_source`]). While
+/// the source is missing (a gun's spare magazine is respawned a while after each one it drops),
+/// the model `own` (the prop's instance) or, for a magazine, `hand` (the hand's) already holds for
+/// the same weapon; `None` without either.
 ///
 /// # Safety
 ///
@@ -569,7 +600,21 @@ unsafe fn source_model(
     owner: &Character,
     prop: Prop,
     weapon: Option<usize>,
+    own: &OwnedModel,
+    hand: &OwnedModel,
 ) -> Option<*const SharedPtr<Model>> {
+    if prop == Prop::Magazine {
+        return unsafe { magazine_source(weapon?, [own, hand]) };
+    }
+    unsafe { game_model(owner, prop) }.or_else(|| own.kept_for(weapon))
+}
+
+/// The grenade weapon's projectile model, or the C4 weapon's in-hand model, for `owner`.
+///
+/// # Safety
+///
+/// As [`source_model`].
+unsafe fn game_model(owner: &Character, prop: Prop) -> Option<*const SharedPtr<Model>> {
     let model: *const SharedPtr<Model> = match prop {
         Prop::Grenade => {
             let weapon = unsafe { slot_weapon(owner, WeaponSlot::E_SLOT_HAND_GRENADE) }?;
@@ -581,12 +626,7 @@ unsafe fn source_model(
             let c4 = unsafe { &*(weapon as *const WeaponBase).cast::<PlantedExplosiveWeapon>() };
             &c4.m_InactiveModelInstance
         }
-        Prop::Magazine => {
-            let weapon = unsafe { (weapon? as *const WeaponBase).as_ref() }?;
-            let first = unsafe { gun::guns(weapon) }.next().flatten()?;
-            let magazine = unsafe { first.m_MagazineObject.px.as_ref() }?;
-            &magazine.m_Model
-        }
+        Prop::Magazine => return None,
     };
     (!unsafe { (*model).px }.is_null()).then_some(model)
 }
@@ -670,31 +710,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn a_stocked_source_gap_keeps_its_model_but_stock_loss_and_weapon_changes_do_not() {
-        let mut wanted = ShownPouch {
-            prop: Prop::Magazine,
-            pouch: Pose::IDENTITY,
-            side: Hand::Left,
-            weapon: Some(1),
-        };
-        assert_eq!(
-            offered_model(Some(&wanted), Some(7), Some(1), None),
-            Some(7)
-        );
-        assert_eq!(
-            offered_model(Some(&wanted), None, Some(1), Some(7)),
-            Some(7)
-        );
-        assert_eq!(offered_model(None, None, Some(1), Some(7)), None);
-        wanted.weapon = Some(2);
-        assert_eq!(offered_model(Some(&wanted), None, Some(1), Some(7)), None);
-        assert_eq!(
-            offered_model(Some(&wanted), Some(9), Some(1), Some(7)),
-            Some(9)
-        );
     }
 
     #[test]

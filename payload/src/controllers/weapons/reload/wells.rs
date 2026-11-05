@@ -108,6 +108,11 @@ pub struct WellEntry {
     /// The magazine part's extent along the insertion axis; without a part, the visible length of
     /// a magazine modelled below the receiver, or `None` for one inside the grip.
     pub part_length_m: Option<f32>,
+    /// The top of the gun's spare magazine model along the insertion axis, centred across it, in
+    /// that model's own frame; `None` when the gun has no spare magazine model that depicts the
+    /// magazine a hand loads.
+    #[serde(default)]
+    pub spare_top_m: Option<Vec3>,
     pub action: TableAction,
     /// Where the hand grabs the action.
     pub handle_m: Option<Vec3>,
