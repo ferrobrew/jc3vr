@@ -170,6 +170,12 @@ pub fn teardown() {
     *MIRROR.lock() = None;
 }
 
+/// The counter of the mirror's latest present, the number the frame stamp draws (wrapping at its
+/// bits), or `None` before the first present. Lock-free, for the tracking recorder.
+pub(crate) fn latest_present() -> Option<u32> {
+    PRESENTS.load(Ordering::Relaxed).checked_sub(1)
+}
+
 /// Toggle `vr.mirror_view` between the stereo pair and the single eye it was last switched away
 /// from (the left eye before any toggle), returning the new view. Bound to F10.
 pub fn toggle_stereo_pair() -> MirrorView {

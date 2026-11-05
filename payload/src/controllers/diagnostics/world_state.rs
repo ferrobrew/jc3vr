@@ -129,7 +129,7 @@ pub(super) fn frame_state() -> FrameState {
     let played = haptics::status().last_output;
     FrameState {
         render_frame: Some(render_frame),
-        mirror_frame: None,
+        mirror_frame: crate::vr::latest_present().map(u64::from),
         interval_ms: interval.map(|d| d.as_secs_f32() * 1000.0),
         ticks,
         haptics: Hand::BOTH.map(|hand| played[hand.index()]),

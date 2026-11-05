@@ -77,6 +77,7 @@ pub(crate) use blit::{DirectArm, DirectStatus, blit_direct, direct_status};
 pub use blit::{arm_direct, disarm_direct, present_and_submit};
 pub use eye_resolution::{engine_render_resolution, native_eye_resolution};
 pub use frame_loop::{EyeImage, EyeView, FrameContext, frame_begin};
+pub(crate) use mirror::latest_present;
 pub use mirror::{present_mirror, toggle_stereo_pair};
 pub(crate) use recenter::apply_replayed_recenter;
 pub use recenter::{

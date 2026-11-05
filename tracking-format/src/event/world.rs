@@ -116,8 +116,9 @@ pub struct VehicleState {
 pub struct FrameState {
     /// The engine's render frame index.
     pub render_frame: Option<u32>,
-    /// The mirror's frame counter, the number burned into the mirror's video, when the mirror
-    /// presents one.
+    /// The counter of the mirror's latest present when the state was read, the number the frame
+    /// stamp draws into the mirror's video (wrapping at its bits); this frame's own present follows
+    /// it. Absent before the mirror presents.
     pub mirror_frame: Option<u64>,
     /// The last complete game frame's interval, milliseconds, and the sim ticks it ran.
     pub interval_ms: Option<f32>,
