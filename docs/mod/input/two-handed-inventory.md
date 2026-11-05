@@ -6,11 +6,11 @@ This is the plan of record and the description of what is built. Phases 1 to 3 a
 
 ## Tested lifecycle contracts
 
-The new `controllers::loadout::lifecycle_grenade`, `lifecycle_source`, and `lifecycle_ammo` modules are compiled only for tests. They define transition and ownership contracts for later locker and physical-magazine adapters; they do not enable stowed grenades, unlimited locker draws, paired locker displays, or physical magazine extraction in the game.
+The `controllers::loadout::lifecycle_source` and `lifecycle_ammo` modules are compiled only for tests. They define ownership contracts for later locker and physical-magazine adapters; they do not enable unlimited locker draws, paired locker displays, or physical magazine extraction in the game.
 
-Grenade plans reuse the loadout's item identities, locations, and occupancy snapshots. They distinguish safe and active items, deliberate throws from incidental releases, and accepted activation from stale or duplicate callbacks. Source requests distinguish source, member, request, and world generations. Every admitted callback batch retains its disposal obligations until its own settlement is acknowledged. A request remains reserved while any of its batches are outstanding. Capacity failure returns the complete batch and blocks further issuance and adoption rather than dropping ownership information. The eventual engine adapter must retain real handles and verify disposal before acknowledgment.
+Source requests distinguish source, member, request, and world generations. Every admitted callback batch retains its disposal obligations until its own settlement is acknowledged. A request remains reserved while any of its batches are outstanding. Capacity failure returns the complete batch and blocks further issuance and adoption rather than dropping ownership information. The eventual engine adapter must retain real handles and verify disposal before acknowledgment.
 
-The ammunition contract moves a represented magazine allocation without copying or refunding it. It does not invent a numeric chamber count from the existing chamber-readiness state. Pure tests cover location exclusivity, safe-item transitions, independent source members, callback ordering and capacity, and represented ammunition conservation. Actor creation, active explosive ownership, source persistence, and engine cleanup remain separate unverified adapter requirements.
+The ammunition contract moves a represented magazine allocation without copying or refunding it. It does not invent a numeric chamber count from the existing chamber-readiness state. Pure tests cover independent source members, callback ordering and capacity, and represented ammunition conservation. Source persistence and engine cleanup remain separate unverified adapter requirements.
 
 ## Why the game's inventory is replaced
 
