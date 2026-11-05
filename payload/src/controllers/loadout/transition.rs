@@ -779,10 +779,7 @@ impl Loadout {
         cause: Cause,
     ) -> Option<Transition> {
         let dominant = self.body.dominant();
-        match [dominant, dominant.other()]
-            .into_iter()
-            .find(|hand| self.hands[hand.index()].is_none())
-        {
+        match Hand::first_free(dominant, |hand| self.hands[hand.index()].is_none()) {
             Some(hand) => Some(self.put_in_hand(item, hand, from, cause)),
             None => self.onto_body(item, from, cause),
         }

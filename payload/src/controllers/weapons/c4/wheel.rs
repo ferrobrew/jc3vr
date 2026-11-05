@@ -54,9 +54,7 @@ pub fn step(
     pending: Option<(Hand, f32)>,
     hands: WheelHands,
 ) -> WheelStep {
-    let free_hand = [hands.dominant, hands.dominant.other()]
-        .into_iter()
-        .find(|h| hands.free[h.index()]);
+    let free_hand = Hand::first_free(hands.dominant, |h| hands.free[h.index()]);
     match (planting, pending) {
         (true, None) if stage == Stage::Idle => match free_hand {
             Some(hand) => WheelStep::Leave(hand),

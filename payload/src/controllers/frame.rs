@@ -73,6 +73,13 @@ impl Hand {
             Hand::Right => "right",
         }
     }
+
+    /// The first hand that is `free`, trying the `dominant` hand before the other.
+    pub fn first_free(dominant: Hand, free: impl Fn(Hand) -> bool) -> Option<Hand> {
+        [dominant, dominant.other()]
+            .into_iter()
+            .find(|&hand| free(hand))
+    }
 }
 
 /// The mode action set that was active when a frame was sampled. The mode detector selects one per
@@ -699,6 +706,18 @@ impl Slot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_dominant_hand_is_tried_first() {
+        for dominant in Hand::BOTH {
+            assert_eq!(Hand::first_free(dominant, |_| true), Some(dominant));
+            assert_eq!(
+                Hand::first_free(dominant, |h| h != dominant),
+                Some(dominant.other())
+            );
+            assert_eq!(Hand::first_free(dominant, |_| false), None);
+        }
+    }
 
     const THRESHOLDS: PressThresholds = PressThresholds {
         press: 0.7,

@@ -80,10 +80,7 @@ pub(crate) fn landing(
     match pending.filter(|p| p.claims(object)) {
         Some(p) => (p.hand, Some(p.expect), true),
         None => {
-            let hand = [dominant, dominant.other()]
-                .into_iter()
-                .find(|h| free[h.index()])
-                .unwrap_or(dominant);
+            let hand = Hand::first_free(dominant, |h| free[h.index()]).unwrap_or(dominant);
             (hand, None, false)
         }
     }

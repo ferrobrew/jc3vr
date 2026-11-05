@@ -124,10 +124,7 @@ pub fn route(
         Some(hand) => return Err(TakeRefusal::HandFull(hand)),
         None => {
             let dominant = snapshot.body.dominant();
-            [dominant, dominant.other()]
-                .into_iter()
-                .find(|&hand| free(hand))
-                .ok_or(TakeRefusal::BothHandsFull)?
+            Hand::first_free(dominant, free).ok_or(TakeRefusal::BothHandsFull)?
         }
     };
     let other_weapon = snapshot
