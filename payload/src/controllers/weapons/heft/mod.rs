@@ -46,6 +46,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use body_rig::rotation::shortest;
 use detours_macro::detour;
 use glam::{Quat, Vec2, Vec3};
 use jc3gi::equipment::weapon::WeaponBase;
@@ -379,11 +380,6 @@ fn advance_clock(at: &mut Option<Instant>, now: Instant) -> f32 {
 fn epoch() -> Instant {
     static EPOCH: OnceLock<Instant> = OnceLock::new();
     *EPOCH.get_or_init(Instant::now)
-}
-
-/// The same rotation with a non-negative scalar part, the shorter way round.
-pub(super) fn shortest(q: Quat) -> Quat {
-    if q.w < 0.0 { -q } else { q }
 }
 
 fn angle(q: Quat) -> f32 {

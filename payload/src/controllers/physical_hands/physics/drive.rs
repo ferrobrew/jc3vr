@@ -15,6 +15,7 @@
 //! it shove a heavy one over a few steps; a hand held back by what it meets is driven more softly
 //! ([`contact_gain`]), so it rests on a wall rather than pounding it every step.
 
+use body_rig::rotation::rotation_error;
 use glam::{Mat3, Quat, Vec2, Vec3};
 
 use crate::controllers::clock::TimeScale;
@@ -253,8 +254,7 @@ fn drive_linear(
 /// The angular velocity toward the goal's orientation, and the share of the strongest twist it
 /// took.
 fn drive_angular(body: &BodyMotion, goal: &Goal, tuning: &DriveTuning, step_s: f32) -> (Vec3, f32) {
-    let error =
-        rotation_vector(goal.orientation.normalize() * body.orientation.normalize().inverse());
+    let error = rotation_error(body.orientation, goal.orientation);
     let wanted = (error * tuning.angular_gain.clamp(0.0, 1.0) / step_s)
         .clamp_length_max(tuning.max_angular_speed_rps.max(0.0));
     let change = wanted - body.angular;
@@ -275,16 +275,6 @@ fn drive_angular(body: &BodyMotion, goal: &Goal, tuning: &DriveTuning, step_s: f
     }
     let scale = max_torque / needed;
     (body.angular + change * scale, 1.0)
-}
-
-/// The rotation `q` as an axis times its angle, taking the shorter way round.
-fn rotation_vector(q: Quat) -> Vec3 {
-    let q = if q.w < 0.0 { -q } else { q };
-    let (axis, angle) = q.to_axis_angle();
-    if !axis.is_finite() || !angle.is_finite() {
-        return Vec3::ZERO;
-    }
-    axis * angle
 }
 
 #[cfg(test)]
@@ -441,12 +431,6 @@ mod tests {
         let torque = body.inverse_inertia.inverse() * d.angular / STEP;
         assert!((torque.length() - 1.0).abs() < 1e-3);
         assert_eq!(d.torque_share, 1.0);
-    }
-
-    #[test]
-    fn a_rotation_takes_the_shorter_way_round() {
-        let v = rotation_vector(-Quat::from_rotation_z(0.3));
-        assert!((v - Vec3::Z * 0.3).length() < 1e-4);
     }
 
     #[test]

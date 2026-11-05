@@ -11,6 +11,7 @@
 //! moves away after the line goes slack still misses. The catching hand is the free hand the path passes nearer, with hysteresis
 //! ([`catching_hand`]).
 
+use body_rig::rotation::{angular_velocity, rotation_error};
 use glam::{Quat, Vec3};
 
 use crate::controllers::frame::Hand;
@@ -104,21 +105,6 @@ pub fn time_to_go(
         tuning.max_t_go_s
     };
     t_go.clamp(tuning.min_t_go_s, tuning.max_t_go_s.max(tuning.min_t_go_s))
-}
-
-/// The rotation that carries `from` onto `to` the shortest way, as an axis scaled by its angle,
-/// radians.
-pub fn rotation_error(from: Quat, to: Quat) -> Vec3 {
-    let mut delta = (to * from.inverse()).normalize();
-    if delta.w < 0.0 {
-        delta = -delta;
-    }
-    let (axis, angle) = delta.to_axis_angle();
-    if angle.is_finite() && axis.is_finite() {
-        axis * angle
-    } else {
-        Vec3::ZERO
-    }
 }
 
 /// An orientation and the rate it turns at, radians per second.
@@ -229,7 +215,7 @@ pub fn extrapolate(
         return (now.0, now.1, Vec3::ZERO);
     };
     let velocity = (now.0 - last_position) / dt;
-    let angular = rotation_error(last_rotation, now.1) / dt;
+    let angular = angular_velocity(last_rotation, now.1, dt).unwrap_or(Vec3::ZERO);
     let ahead = ahead.clamp(0.0, max_ahead.max(0.0));
     let turn = angular * ahead;
     let rotation = match turn.try_normalize() {

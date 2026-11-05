@@ -6,6 +6,7 @@
 
 use std::time::Instant;
 
+use body_rig::rotation::shortest;
 use glam::{Quat, Vec3};
 
 use crate::controllers::{frame::Pose, hands::CockpitHand};
@@ -38,9 +39,7 @@ impl RenderOffset {
         if !(shift.is_finite() && palm.orientation.is_finite() && body.orientation.is_finite()) {
             return Self::NONE;
         }
-        let turn = body.orientation.normalize() * palm.orientation.normalize().inverse();
-        let turn = if turn.w < 0.0 { -turn } else { turn };
-        let (axis, angle) = turn.to_axis_angle();
+        let (axis, angle) = shortest(body.orientation * palm.orientation.inverse()).to_axis_angle();
         let drawn = (angle - deadband_rad.max(0.0)).clamp(0.0, max_turn_rad.max(0.0));
         let turn = if drawn > 0.0 && axis.is_finite() {
             Quat::from_axis_angle(axis, drawn)

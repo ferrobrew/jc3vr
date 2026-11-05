@@ -19,6 +19,7 @@
 //! rotation target is the delta between the two ([`wrist_rotation_delta`]), which never needs to
 //! know how the game's hand bone is oriented at rest.
 
+use body_rig::rotation::shortest;
 use glam::{EulerRot, Mat3, Quat, Vec3};
 
 use crate::controllers::{
@@ -156,10 +157,8 @@ pub fn wrist_frame_from_bones(hand: Hand, wrist: Vec3, index: Vec3, middle: Vec3
 /// pre-solve orientation, so any fixed offset between the wrist frame and the bone's own frame
 /// cancels.
 pub fn wrist_rotation_delta(target: Quat, animated: Quat) -> (Vec3, f32) {
-    let delta = (target * animated.inverse()).normalize();
     // The shorter way round, so that the solver is never asked to spin the wrist past 180 degrees.
-    let delta = if delta.w < 0.0 { -delta } else { delta };
-    delta.to_axis_angle()
+    shortest(target * animated.inverse()).to_axis_angle()
 }
 
 /// `a` then `b`, as rigid transforms: `b` expressed in `a`'s frame.

@@ -14,6 +14,7 @@
 
 use std::collections::VecDeque;
 
+use body_rig::rotation::angular_velocity;
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
@@ -106,15 +107,7 @@ pub fn release_angular_velocity(
                 .or_else(|| {
                     let previous = samples.get(index.checked_sub(1)?)?;
                     let dt = (sample.time_s - previous.time_s) as f32;
-                    if !(dt > 0.0
-                        && sample.orientation.is_finite()
-                        && previous.orientation.is_finite())
-                    {
-                        return None;
-                    }
-                    let turn = (sample.orientation * previous.orientation.inverse()).normalize();
-                    let turn = if turn.w < 0.0 { -turn } else { turn };
-                    Some(turn.to_scaled_axis() / dt)
+                    angular_velocity(previous.orientation, sample.orientation, dt)
                 })?;
             angular.is_finite().then_some((sample.time_s, angular))
         })

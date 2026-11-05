@@ -26,6 +26,7 @@
 
 use std::{cell::Cell, num::NonZeroUsize, time::Instant};
 
+use body_rig::rotation::angular_velocity;
 use detours_macro::detour;
 use glam::{Quat, Vec3};
 use jc3gi::{
@@ -404,15 +405,8 @@ pub fn carry_velocities(
         return (Vec3::ZERO, Vec3::ZERO);
     }
     let linear = ((to.0 - from.0) / dt).clamp_length_max(max_mps.max(0.0));
-    let turn = (to.1 * from.1.inverse()).normalize();
-    // The shorter way round.
-    let turn = if turn.w < 0.0 { -turn } else { turn };
-    let (axis, angle) = turn.to_axis_angle();
-    let angular = if angle.is_finite() && axis.is_finite() {
-        (axis * angle / dt).clamp_length_max(MAX_CARRY_TURN_RADPS)
-    } else {
-        Vec3::ZERO
-    };
+    let angular = angular_velocity(from.1, to.1, dt)
+        .map_or(Vec3::ZERO, |v| v.clamp_length_max(MAX_CARRY_TURN_RADPS));
     (linear, angular)
 }
 

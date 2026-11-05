@@ -9,6 +9,7 @@
 
 use std::num::NonZeroUsize;
 
+use body_rig::rotation::angular_velocity;
 use glam::{Quat, Vec3};
 
 use crate::controllers::{
@@ -236,24 +237,13 @@ impl AngularTracker {
         let at = at.normalize();
         if let Some(last) = self.last
             && dt.is_finite()
-            && dt > 0.0
+            && let Some(raw) = angular_velocity(last, at, dt)
         {
-            let raw = rotation_vector(at * last.inverse()) / dt;
-            if raw.is_finite() {
-                self.velocity = self.velocity.lerp(raw, smoothing(dt, time_constant_s));
-            }
+            self.velocity = self.velocity.lerp(raw, smoothing(dt, time_constant_s));
         }
         self.last = Some(at);
         self.velocity
     }
-}
-
-/// The rotation `q` as an axis times its angle, radians, the short way round.
-pub fn rotation_vector(q: Quat) -> Vec3 {
-    let q = if q.w < 0.0 { -q } else { q }.normalize();
-    let (axis, angle) = q.to_axis_angle();
-    let v = axis * angle;
-    if v.is_finite() { v } else { Vec3::ZERO }
 }
 
 fn smoothing(dt: f32, time_constant_s: f32) -> f32 {
@@ -415,8 +405,5 @@ mod tests {
         // A point 0.5 m along -Z is swung toward -X by the turn, cancelling the palm's own +X.
         let v = palm.point_velocity(Vec3::new(0.0, 0.0, -0.5));
         assert!(v.length() < 1e-5);
-        let short = rotation_vector(Quat::from_rotation_x(0.2));
-        assert!((rotation_vector(-Quat::from_rotation_x(0.2)) - short).length() < 1e-6);
-        assert!((short - Vec3::new(0.2, 0.0, 0.0)).length() < 1e-5);
     }
 }

@@ -8,6 +8,7 @@
 
 use std::time::Duration;
 
+use body_rig::rotation::{angular_velocity, shortest};
 use glam::{Quat, Vec3};
 use jc3gi::character::inventory::WeaponSlot;
 use tracking_format::event::{GunRelease, ReleaseController, ReleaseDrop, WorldMotion};
@@ -83,9 +84,7 @@ impl ReleaseTransport {
             self.cut_history(time_s);
             return None;
         }
-        let turn = (current.rotation * previous.rotation.inverse()).normalize();
-        let turn = if turn.w < 0.0 { -turn } else { turn };
-        let angle = turn.to_scaled_axis();
+        let angle = shortest(current.rotation * previous.rotation.inverse()).to_scaled_axis();
         if !angle.is_finite() || angle.length() > std::f32::consts::FRAC_PI_4 {
             self.cut_history(time_s);
             return None;
@@ -265,15 +264,9 @@ pub(crate) fn estimate_release(input: ReleaseInput<'_>) -> ReleaseMotion {
         let previous = samples[index - 1];
         let sample = &mut samples[index];
         let dt = (sample.time_s - previous.time_s) as f32;
-        if sample.angular_velocity.is_none()
-            && dt > 0.0
-            && sample.orientation.is_finite()
-            && previous.orientation.is_finite()
-        {
-            let turn = (sample.orientation * previous.orientation.inverse()).normalize();
-            let turn = if turn.w < 0.0 { -turn } else { turn };
-            let angular = turn.to_scaled_axis() / dt;
-            sample.angular_velocity = angular.is_finite().then_some(angular);
+        if sample.angular_velocity.is_none() {
+            sample.angular_velocity =
+                angular_velocity(previous.orientation, sample.orientation, dt);
         }
     }
     let point_cockpit =

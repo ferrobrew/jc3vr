@@ -2,6 +2,7 @@
 //! strays from it, the motion that keeps it on the hand, the gun's barrel and up axes in its own
 //! frame, and a shot's impulse.
 
+use body_rig::rotation::angular_velocity;
 use glam::{Mat4, Quat, Vec3};
 
 use crate::controllers::{
@@ -202,14 +203,8 @@ pub fn clamp_velocity(
         return None;
     }
     let target = hand_pose::mul(seated, limit(drift, max_shift_m, max_turn_rad));
-    let turn = (target.orientation * gun.orientation.inverse()).normalize();
-    let turn = if turn.w < 0.0 { -turn } else { turn };
-    let (axis, angle) = turn.to_axis_angle();
-    let angular = if axis.is_finite() && angle.is_finite() {
-        axis * angle / step_s
-    } else {
-        Vec3::ZERO
-    };
+    let angular =
+        angular_velocity(gun.orientation, target.orientation, step_s).unwrap_or(Vec3::ZERO);
     Some(((target.position - gun.position) / step_s, angular))
 }
 

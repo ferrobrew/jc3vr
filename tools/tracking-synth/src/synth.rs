@@ -9,12 +9,10 @@
 //! axis. The first frame carries a full recenter, so a replay starts the posture, the rig's
 //! chase, and the torso estimate afresh from the scripted head.
 
-use std::{
-    f32::consts::{PI, TAU},
-    fmt,
-};
+use std::fmt;
 
-use glam::{Quat, Vec2, Vec3};
+use body_rig::rotation::angular_velocity;
+use glam::{Quat, Vec2};
 use tracking_format::{
     ControllerSample, EyeSample, Frame, HeadSample, Header, RecenterEvent, Recording,
     SemanticSample, SessionSample, SessionState, StartMarker,
@@ -273,8 +271,6 @@ fn tracked(t: f32, pose_at: impl Fn(f32) -> Pose) -> TrackedPose {
     );
     let span = 2.0 * VELOCITY_H_S;
     // The turn from before to after, in the cockpit frame, as the base space's angular velocity.
-    let (axis, angle) = (after.orientation * before.orientation.inverse()).to_axis_angle();
-    let angle = if angle > PI { angle - TAU } else { angle };
     TrackedPose {
         pose: now,
         position_valid: true,
@@ -282,11 +278,7 @@ fn tracked(t: f32, pose_at: impl Fn(f32) -> Pose) -> TrackedPose {
         position_tracked: true,
         orientation_tracked: true,
         linear_velocity: Some((after.position - before.position) / span),
-        angular_velocity: Some(if angle.abs() < 1e-9 {
-            Vec3::ZERO
-        } else {
-            axis * (angle / span)
-        }),
+        angular_velocity: angular_velocity(before.orientation, after.orientation, span),
     }
 }
 

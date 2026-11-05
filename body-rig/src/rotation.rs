@@ -1,5 +1,5 @@
-//! Rotation primitives: the yaw left of a rotation, in its two meanings, and a rotation's twist
-//! about an axis.
+//! Rotation primitives: the yaw left of a rotation, in its two meanings, a rotation's twist about
+//! an axis, and a rotation taken the short way round, as a rotation vector or an angular velocity.
 //!
 //! Axes and headings are as in [`crate::angle`].
 
@@ -36,6 +36,43 @@ pub fn twist_about_y(rotation: Quat) -> Quat {
 pub fn twist_angle(rotation: Quat, axis: Vec3) -> f32 {
     let along = Vec3::new(rotation.x, rotation.y, rotation.z).dot(axis);
     wrap(2.0 * along.atan2(rotation.w))
+}
+
+/// `rotation` normalized, with the sign that makes its scalar part non-negative: the same
+/// orientation, turning the short way round, at most a half turn.
+pub fn shortest(rotation: Quat) -> Quat {
+    let rotation = rotation.normalize();
+    if rotation.w < 0.0 {
+        -rotation
+    } else {
+        rotation
+    }
+}
+
+/// `rotation` the short way round as its axis scaled by its angle, radians, or zero for a
+/// non-finite rotation.
+pub fn rotation_vector(rotation: Quat) -> Vec3 {
+    let vector = shortest(rotation).to_scaled_axis();
+    if vector.is_finite() {
+        vector
+    } else {
+        Vec3::ZERO
+    }
+}
+
+/// The rotation that carries `from` onto `to` the short way round, as a [`rotation_vector`] in the
+/// frame both are given in.
+pub fn rotation_error(from: Quat, to: Quat) -> Vec3 {
+    rotation_vector(to * from.inverse())
+}
+
+/// The angular velocity, radians per second about each axis, that turns `from` into `to` the short
+/// way round over `dt` seconds. `None` for a step that is not positive or an orientation or a
+/// turn that is not finite.
+pub fn angular_velocity(from: Quat, to: Quat, dt: f32) -> Option<Vec3> {
+    let velocity = (dt > 0.0 && from.is_finite() && to.is_finite())
+        .then(|| shortest(to * from.inverse()).to_scaled_axis() / dt)?;
+    velocity.is_finite().then_some(velocity)
 }
 
 #[cfg(test)]
@@ -93,5 +130,45 @@ mod tests {
         // A swing about an axis square to the twist axis, applied after the twist.
         let rotation = Quat::from_rotation_x(0.4) * Quat::from_rotation_z(0.9);
         assert!((twist_angle(rotation, Vec3::Z) - 0.9).abs() < 1e-5);
+    }
+
+    #[test]
+    fn the_short_way_round_is_at_most_a_half_turn() {
+        let long = Quat::from_rotation_x(1.5 * std::f32::consts::PI);
+        let short = shortest(long);
+        assert!(short.w >= 0.0);
+        assert!((short.to_axis_angle().1 - 0.5 * std::f32::consts::PI).abs() < 1e-4);
+        assert!((rotation_vector(long) - Vec3::NEG_X * 0.5 * std::f32::consts::PI).length() < 1e-4);
+    }
+
+    #[test]
+    fn either_sign_gives_the_same_rotation_vector() {
+        let q = Quat::from_rotation_z(0.3);
+        assert!((rotation_vector(-q) - Vec3::Z * 0.3).length() < 1e-6);
+        assert!((rotation_vector(q * 2.0) - Vec3::Z * 0.3).length() < 1e-6);
+        assert_eq!(
+            rotation_vector(Quat::from_xyzw(f32::NAN, 0.0, 0.0, 1.0)),
+            Vec3::ZERO
+        );
+    }
+
+    #[test]
+    fn the_error_carries_from_onto_to() {
+        let from = Quat::from_rotation_y(0.4);
+        let to = Quat::from_rotation_x(0.2) * from;
+        assert!((rotation_error(from, to) - Vec3::X * 0.2).length() < 1e-5);
+    }
+
+    #[test]
+    fn the_angular_velocity_needs_a_positive_step() {
+        let from = Quat::IDENTITY;
+        let to = Quat::from_rotation_y(0.1);
+        assert!((angular_velocity(from, to, 0.05).unwrap() - Vec3::Y * 2.0).length() < 1e-4);
+        assert_eq!(angular_velocity(from, to, 0.0), None);
+        assert_eq!(angular_velocity(from, to, f32::NAN), None);
+        assert_eq!(
+            angular_velocity(from, Quat::from_xyzw(f32::NAN, 0.0, 0.0, 1.0), 0.1),
+            None
+        );
     }
 }

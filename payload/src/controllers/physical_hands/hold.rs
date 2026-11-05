@@ -21,13 +21,14 @@
 //! The body stays dynamic: the velocities are set before the step, which then integrates them,
 //! resolves the body's contacts, and resolves any constraint it hangs from, such as a hinge.
 
+use body_rig::rotation::rotation_error;
 use glam::{Vec2, Vec3};
 
 use crate::controllers::{
     body::procedural::solver::arms::TorsoKeepOut,
     clock::TimeScale,
     physical_hands::{
-        grasp::{GripTarget, rotation_vector},
+        grasp::GripTarget,
         pickup::PickupTuning,
         rigid::{RigidBody, Velocities},
         tuning::PalmTuning,
@@ -171,7 +172,7 @@ pub fn solve(
         hold.map(|h| {
             let linear = (finite(h.velocity) + (h.target.point - h.anchor) * stiffness)
                 .clamp_length_max(tuning.max_speed_mps);
-            let turn = rotation_vector(h.target.orientation * body.pose.orientation.inverse());
+            let turn = rotation_error(body.pose.orientation, h.target.orientation);
             let angular = (finite(h.angular_velocity) + turn * angular_stiffness)
                 .clamp_length_max(tuning.max_angular_speed_rps);
             (linear, angular)

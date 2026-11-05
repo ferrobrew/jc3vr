@@ -3,6 +3,7 @@
 
 use std::f32::consts::TAU;
 
+use body_rig::rotation::{rotation_error, shortest};
 use glam::{Quat, Vec2, Vec3};
 
 use crate::controllers::{
@@ -10,7 +11,7 @@ use crate::controllers::{
     hands::CockpitHand,
     weapons::{
         foregrip,
-        heft::{BracedTuning, Heft, HeftClass, HeftTuning, lerp, shortest, smoothstep},
+        heft::{BracedTuning, Heft, HeftClass, HeftTuning, lerp, smoothstep},
     },
 };
 
@@ -193,7 +194,7 @@ impl RotSpring {
         let steps = (dt / MAX_SUBSTEP).ceil().max(1.0) as u32;
         let h = dt / steps as f32;
         for _ in 0..steps {
-            let error = shortest(target * self.orientation.inverse()).to_scaled_axis();
+            let error = rotation_error(self.orientation, target);
             self.velocity += (stiffness * error - damping * self.velocity) * h;
             self.orientation =
                 (Quat::from_scaled_axis(self.velocity * h) * self.orientation).normalize();
