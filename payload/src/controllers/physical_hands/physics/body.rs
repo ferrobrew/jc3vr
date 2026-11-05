@@ -42,6 +42,7 @@ use jc3gi::{
 
 use crate::controllers::physical_hands::{
     bodies,
+    characters::engine::proxy_body,
     physics::{
         contact::{self, ContactError, Source},
         drive::BodyMotion,
@@ -501,9 +502,7 @@ struct CheckedBody {
 /// As [`HandBody::create`].
 pub unsafe fn player_system_group() -> Option<u32> {
     let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
-    let proxy = unsafe { character.m_PfxCharacter.px.as_ref() }?;
-    let mut body = PfxCharacterInstance::INVALID_BODY_ID;
-    unsafe { proxy.GetCharacterRigidBodyId(&mut body) };
+    let body = unsafe { proxy_body(character) }?;
     let world = unsafe { World::get() }?;
     let slot = unsafe { bodies::slot(world.world(), body) }?;
     let group = slot.m_collisionFilterInfo >> CustomGroupCollisionFilter::SYSTEM_GROUP_SHIFT;

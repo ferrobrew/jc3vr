@@ -9,11 +9,12 @@ use std::{
 use jc3gi::{
     character::character::Character,
     havok::{hkAabb, hkReferencedObject, hknpShape},
-    physics::{PfxCharacterInstance, ProxyState, SharedPfxCharacterSettings, hknpBody, hknpWorld},
+    physics::{ProxyState, SharedPfxCharacterSettings, hknpBody, hknpWorld},
 };
 
 use crate::controllers::physical_hands::{
     bodies,
+    characters::engine::proxy_body,
     human_hull::{
         ClearanceUnavailableReason,
         geometry::{self, Bounds, GeometryError},
@@ -572,9 +573,7 @@ fn apply_with(
 /// The native physics phase, with `world` the live world.
 unsafe fn player_body(world: &hknpWorld) -> Option<u32> {
     let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
-    let proxy = unsafe { character.m_PfxCharacter.px.as_ref() }?;
-    let mut body = PfxCharacterInstance::INVALID_BODY_ID;
-    unsafe { proxy.GetCharacterRigidBodyId(&mut body) };
+    let body = unsafe { proxy_body(character) }?;
     unsafe { bodies::slot(world, body) }.map(|_| body)
 }
 
