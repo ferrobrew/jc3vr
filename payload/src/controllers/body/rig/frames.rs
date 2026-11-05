@@ -7,6 +7,8 @@
 //! from the head turned by the view frame and scaled by the world scale. The character's model
 //! space faces -Z with +Y up, as the world does once the character's own world transform is undone.
 
+use std::fmt;
+
 use glam::{Mat4, Quat, Vec3};
 
 use crate::controllers::body::rig::torso::{TorsoEstimate, wrap, yaw_forward, yaw_of};
@@ -162,27 +164,66 @@ pub fn divergence(
 }
 
 /// Whether landmarks describe a body that the volumes can be placed on, in whatever orientation:
-/// the head a plausible distance up the spine from the shoulders and near its line, the shoulders
-/// a plausible distance from the hips, and both girdles a plausible width. Garbage bone data fails
-/// it; a crouch, a lean, a fall, or a skydive does not. Lengths are in the landmarks' metres.
+/// [`implausibility`] finds nothing wrong with them.
 pub fn plausible(landmarks: &SkeletonLandmarks) -> bool {
+    implausibility(landmarks).is_none()
+}
+
+/// What makes landmarks implausible as a body, the first failing test in the order listed by
+/// [`Implausible`], or `None` for a body that the volumes can be placed on: the shoulders a plausible
+/// distance from the hips, both girdles a plausible width, and the head within a neck's reach of
+/// the shoulders. Garbage bone data fails it; a crouch, a lean, a fall, a skydive, or a look
+/// straight down does not. Lengths are in the landmarks' metres.
+///
+/// The head is held loosely: a look down hangs the head forward on the neck and the body IK's head
+/// target pulls the head bone toward the eyes, which a steep look down carries below the line
+/// through the shoulder joints, so the head may be anywhere within reach of the chest, below the
+/// shoulders included.
+pub fn implausibility(landmarks: &SkeletonLandmarks) -> Option<Implausible> {
     if !landmarks.is_finite() {
-        return false;
+        return Some(Implausible::NotFinite);
     }
     let chest = landmarks.chest();
     let spine = chest - landmarks.hip_centre();
-    let Some(up) = spine.try_normalize() else {
-        return false;
-    };
-    let head = landmarks.head - chest;
-    let head_up = head.dot(up);
+    if !(CHEST_TO_HIPS_M.0..=CHEST_TO_HIPS_M.1).contains(&spine.length()) {
+        return Some(Implausible::Spine);
+    }
     let shoulder_width = landmarks.shoulders[0].distance(landmarks.shoulders[1]);
+    if !(SHOULDER_WIDTH_M.0..=SHOULDER_WIDTH_M.1).contains(&shoulder_width) {
+        return Some(Implausible::ShoulderWidth);
+    }
     let hip_width = landmarks.hips[0].distance(landmarks.hips[1]);
-    (HEAD_TO_CHEST_M.0..=HEAD_TO_CHEST_M.1).contains(&head_up)
-        && (CHEST_TO_HIPS_M.0..=CHEST_TO_HIPS_M.1).contains(&spine.length())
-        && (SHOULDER_WIDTH_M.0..=SHOULDER_WIDTH_M.1).contains(&shoulder_width)
-        && (HIP_WIDTH_M.0..=HIP_WIDTH_M.1).contains(&hip_width)
-        && (head - up * head_up).length() <= HEAD_REACH_M
+    if !(HIP_WIDTH_M.0..=HIP_WIDTH_M.1).contains(&hip_width) {
+        return Some(Implausible::HipWidth);
+    }
+    (landmarks.head.distance(chest) > HEAD_REACH_M).then_some(Implausible::Head)
+}
+
+/// Why landmarks are not a plausible body, in the order [`implausibility`] tests.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Implausible {
+    /// A landmark is not a finite position.
+    NotFinite,
+    /// The shoulders are too near the hips or too far from them.
+    Spine,
+    /// The shoulder joints are too close together or too far apart.
+    ShoulderWidth,
+    /// The hip joints are too close together or too far apart.
+    HipWidth,
+    /// The head is beyond a neck's reach of the shoulders.
+    Head,
+}
+
+impl fmt::Display for Implausible {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Implausible::NotFinite => "a landmark is not finite",
+            Implausible::Spine => "the spine's length is out of range",
+            Implausible::ShoulderWidth => "the shoulders' width is out of range",
+            Implausible::HipWidth => "the hips' width is out of range",
+            Implausible::Head => "the head is beyond the neck's reach",
+        })
+    }
 }
 
 /// The turn of the line from `left` to `right` away from the model's lateral axis, radians, in
@@ -205,10 +246,6 @@ pub fn lateral_twist(left: Vec3, right: Vec3) -> Option<f32> {
     })
 }
 
-/// The range of the head's distance up the spine from the middle of the shoulder joints, metres:
-/// from a hunch to a stretch.
-const HEAD_TO_CHEST_M: (f32, f32) = (0.05, 0.45);
-
 /// The range of the shoulders' distance from the hips, metres: from a deep bend to a tall adult.
 const CHEST_TO_HIPS_M: (f32, f32) = (0.2, 0.8);
 
@@ -218,7 +255,8 @@ const SHOULDER_WIDTH_M: (f32, f32) = (0.2, 0.7);
 /// The range of the distance between the hip joints, metres.
 const HIP_WIDTH_M: (f32, f32) = (0.05, 0.5);
 
-/// The furthest the head may be from the spine's line, metres.
+/// The furthest the head bone may be from the middle of the shoulder joints, metres: well past a
+/// stretched neck, short of a head torn off the body.
 const HEAD_REACH_M: f32 = 0.5;
 
 #[cfg(test)]
@@ -375,13 +413,105 @@ mod tests {
             hips: standing.shoulders,
             ..standing
         };
-        assert!(!plausible(&collapsed));
+        assert_eq!(implausibility(&collapsed), Some(Implausible::Spine));
         // The head torn off the neck.
         let torn = SkeletonLandmarks {
             head: standing.head + Vec3::new(1.0, 0.0, 0.0),
             ..standing
         };
-        assert!(!plausible(&torn));
+        assert_eq!(implausibility(&torn), Some(Implausible::Head));
+    }
+
+    /// The local player's skeleton in its reference pose, model space, from the skeleton the
+    /// procedural body logs: the head bone, the hips effector's bone, the hip joints, and the
+    /// shoulder joints.
+    fn reference_skeleton() -> SkeletonLandmarks {
+        SkeletonLandmarks {
+            head: Vec3::new(0.0, 1.6348, 0.0098),
+            pelvis: Vec3::new(0.0, 1.0352, 0.0),
+            hips: [
+                Vec3::new(-0.0913, 0.9789, -0.0263),
+                Vec3::new(0.0913, 0.9789, -0.0263),
+            ],
+            shoulders: [
+                Vec3::new(-0.188, 1.4455, 0.0417),
+                Vec3::new(0.188, 1.4455, 0.0417),
+            ],
+        }
+    }
+
+    /// The reference skeleton looking down by `look` radians as the posing leaves it: the upper
+    /// back pitched forward by the procedural torso's share of the look, the neck bent by its
+    /// share, and the head bone pulled onto the eyes by the body IK's head target, which a look
+    /// down swings down and forward about the neck pivot.
+    fn looking_down(look: f32) -> SkeletonLandmarks {
+        let reference = reference_skeleton();
+        let upper_back = Vec3::new(0.0, 1.3096, 0.0082);
+        let neck = Vec3::new(0.0, 1.5459, 0.0267);
+        let pitch =
+            |angle: f32, pivot: Vec3, p: Vec3| pivot + Quat::from_rotation_x(-angle) * (p - pivot);
+        let chest_pitch = (look * 0.35).min(0.44);
+        let neck = pitch(chest_pitch, upper_back, neck);
+        let head = pitch(
+            look * 0.3,
+            neck,
+            pitch(chest_pitch, upper_back, reference.head),
+        );
+        let eyes = -EYES_TO_NECK_PIVOT;
+        let eye_travel = Quat::from_rotation_x(-look) * eyes - eyes;
+        SkeletonLandmarks {
+            head: head + eye_travel,
+            shoulders: reference
+                .shoulders
+                .map(|s| pitch(chest_pitch, upper_back, s)),
+            ..reference
+        }
+    }
+
+    /// How far the head is up the spine from the middle of the shoulder joints.
+    fn head_up_the_spine(landmarks: &SkeletonLandmarks) -> f32 {
+        let up = (landmarks.chest() - landmarks.hip_centre()).normalize();
+        (landmarks.head - landmarks.chest()).dot(up)
+    }
+
+    #[test]
+    fn a_look_down_carries_the_head_below_the_shoulders_and_stays_plausible() {
+        assert!(plausible(&reference_skeleton()));
+        // From about 55 degrees down, the head bone hangs within a few centimetres of the line
+        // through the shoulder joints, and past 75 below it, where a floor under the head's height
+        // up the spine threw the skeleton out and the body's volumes with it.
+        let steep = looking_down(deg(60.0));
+        assert!(
+            head_up_the_spine(&steep) < 0.05,
+            "{}",
+            head_up_the_spine(&steep)
+        );
+        for look in [0.0, 30.0, 60.0, 75.0, 90.0] {
+            let landmarks = looking_down(deg(look));
+            assert_eq!(
+                implausibility(&landmarks),
+                None,
+                "looking {look} degrees down"
+            );
+        }
+        assert!(head_up_the_spine(&looking_down(deg(90.0))) < 0.0);
+    }
+
+    #[test]
+    fn a_deep_crouch_bent_over_the_floor_stays_plausible() {
+        // The hips lowered half a metre and the whole torso folded 70 degrees forward over them,
+        // looking straight down.
+        let down = looking_down(deg(90.0));
+        let hips = down.hip_centre();
+        let fold = |p: Vec3| hips + Quat::from_rotation_x(deg(-70.0)) * (p - hips);
+        let crouched = SkeletonLandmarks {
+            head: fold(down.head),
+            pelvis: down.pelvis,
+            hips: down.hips,
+            shoulders: down.shoulders.map(fold),
+        }
+        .map(|p| p - Vec3::Y * 0.5);
+        assert_eq!(implausibility(&crouched), None);
     }
 
     #[test]

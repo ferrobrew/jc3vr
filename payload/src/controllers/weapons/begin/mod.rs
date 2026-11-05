@@ -225,13 +225,12 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         })
     }));
 
-    let body = skeleton::skeleton_in_cockpit(active.head.position, active.world_scale)
-        .and_then(BodyFrame::on);
-    skeleton::record_volume_anchor(if body.is_some() {
-        "the character's skeleton"
-    } else {
-        "nothing: no skeleton"
-    });
+    let placed = skeleton::skeleton_in_cockpit(active.head.position, active.world_scale)
+        .and_then(|(landmarks, source)| Some((BodyFrame::on(landmarks)?, source)));
+    skeleton::record_volume_anchor(
+        placed.map_or("nothing: no skeleton", |(_, source)| source.anchor()),
+    );
+    let body = placed.map(|(body, _)| body);
     let pouches = &POUCHES;
     let place = Place::new(&active);
     // A held foregrip goes first, so that the bracing hand keeps it over anything as near.

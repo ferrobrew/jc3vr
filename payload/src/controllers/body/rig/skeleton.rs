@@ -1,6 +1,10 @@
 //! The character's skeleton after the pose-finalization pass's solves: the hip and shoulder joints
 //! the holsters can ride ([`skeleton_in_cockpit`]), and the divergence between them and the torso
 //! estimate, published for the debug UI and logged once a second.
+//!
+//! A read that is not a plausible body ([`frames::implausibility`]) does not take the volumes away:
+//! they ride the last plausible skeleton, in the character's model space, carried by the
+//! character's current transform, so they stay on the body as it moves ([`SkeletonMemory`]).
 
 use std::{
     sync::atomic::{AtomicBool, Ordering},
@@ -18,7 +22,7 @@ use crate::{
     config::Config,
     controllers::body::rig::{
         self,
-        frames::{Divergence, Frames, SkeletonLandmarks, divergence, plausible},
+        frames::{self, Divergence, Frames, Implausible, SkeletonLandmarks, divergence},
     },
     headpose, hooks,
     hooks::character::body_ik::bone_for_effector,
@@ -28,16 +32,15 @@ use crate::{
 /// it up to `DEBUG`.
 pub const SKELETON_TARGET: &str = "body_divergence";
 
-/// The character's skeleton in the cockpit frame, when it is fresh and plausible: what the body's
-/// grab volumes ride ([`crate::controllers::weapons::volumes`]).
+/// The character's skeleton in the cockpit frame, while the character's pose is fresh: what the
+/// body's grab volumes ride ([`crate::controllers::weapons::volumes`]), with where it came from.
 /// `head_cockpit` is the head's cockpit position and `world_scale` the VR world scale the cockpit
 /// composes with.
-pub fn skeleton_in_cockpit(head_cockpit: Vec3, world_scale: f32) -> Option<SkeletonLandmarks> {
-    let (skeleton, character) = {
-        let state = STATE.lock();
-        let (skeleton, character, at) = state.skeleton?;
-        (at.elapsed() <= SKELETON_FRESH).then_some((skeleton, character))?
-    };
+pub fn skeleton_in_cockpit(
+    head_cockpit: Vec3,
+    world_scale: f32,
+) -> Option<(SkeletonLandmarks, SkeletonSource)> {
+    let (skeleton, character, source) = STATE.lock().memory.body(Instant::now())?;
     let frames = Frames {
         head_world: headpose::query().position,
         head_cockpit,
@@ -45,11 +48,29 @@ pub fn skeleton_in_cockpit(head_cockpit: Vec3, world_scale: f32) -> Option<Skele
         world_scale,
         character,
     };
-    if !frames.is_usable() {
-        return None;
+    frames
+        .is_usable()
+        .then(|| (skeleton.map(|p| frames.model_to_cockpit(p)), source))
+}
+
+/// Which skeleton the volumes ride.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum SkeletonSource {
+    /// The skeleton read after the latest solve.
+    Latest,
+    /// The last plausible skeleton, carried by the character's current transform, because the
+    /// latest read was not a plausible body.
+    LastGood,
+}
+
+impl SkeletonSource {
+    /// The readout's name for the body the volumes ride.
+    pub fn anchor(self) -> &'static str {
+        match self {
+            SkeletonSource::Latest => "the character's skeleton",
+            SkeletonSource::LastGood => "the character's last plausible skeleton",
+        }
     }
-    let landmarks = skeleton.map(|p| frames.model_to_cockpit(p));
-    plausible(&landmarks).then_some(landmarks)
 }
 
 /// Record which body the holsters rode on the latest input tick, for the readout.
@@ -72,7 +93,7 @@ pub fn status() -> SkeletonStatus {
     let state = STATE.lock();
     SkeletonStatus {
         divergence: state.divergence,
-        at: state.skeleton.map(|(_, _, at)| at),
+        at: state.memory.latest.as_ref().map(|read| read.at),
         volume_anchor: state.volume_anchor,
     }
 }
@@ -88,7 +109,7 @@ pub unsafe fn after_solve(character: *mut Character) {
         return;
     };
     if headpose::source() != headpose::Source::Vr || !hooks::in_gameplay() {
-        STATE.lock().skeleton = None;
+        STATE.lock().memory.latest = None;
         return;
     }
     let skeleton = unsafe { read_skeleton(character) };
@@ -107,34 +128,130 @@ pub unsafe fn after_solve(character: *mut Character) {
         }
         _ => None,
     };
-    {
+    let unusable = {
         let mut state = STATE.lock();
-        state.skeleton = skeleton.map(|s| (s, world, now));
+        let unusable = state.memory.record(skeleton, world, now);
         state.divergence = measured;
+        let changed = state.unusable != unusable;
+        state.unusable = unusable;
+        changed.then_some(unusable)
+    };
+    if let Some(unusable) = unusable {
+        log_unusable(unusable);
     }
     log(measured);
 }
 
-/// How old the skeleton may be and still place the holsters.
+/// How old the character's pose may be and still place the holsters.
 const SKELETON_FRESH: Duration = Duration::from_millis(250);
 
 /// The shortest time between two log lines.
 const LOG_INTERVAL: Duration = Duration::from_secs(1);
 
 struct State {
-    /// The skeleton in model space with the character's world transform it was read under.
-    skeleton: Option<(SkeletonLandmarks, Mat4, Instant)>,
+    memory: SkeletonMemory,
+    /// Why the latest read could not place the volumes, for logging each change once.
+    unusable: Option<Unusable>,
     divergence: Option<Divergence>,
     volume_anchor: Option<&'static str>,
     last_log: Option<Instant>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
-    skeleton: None,
+    memory: SkeletonMemory {
+        latest: None,
+        last_good: None,
+    },
+    unusable: None,
     divergence: None,
     volume_anchor: None,
     last_log: None,
 });
+
+/// The latest skeleton read, and the last one that was a plausible body. Pure.
+#[derive(Debug, Clone, PartialEq)]
+struct SkeletonMemory {
+    latest: Option<SkeletonRead>,
+    /// The last plausible skeleton, in the character's model space.
+    last_good: Option<SkeletonLandmarks>,
+}
+
+/// One read of the skeleton after a solve.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct SkeletonRead {
+    /// The landmarks in model space, or `None` when the bones could not be read.
+    landmarks: Option<SkeletonLandmarks>,
+    /// The character's model-to-world transform at the read.
+    character: Mat4,
+    at: Instant,
+}
+
+/// Why a read cannot place the volumes itself.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Unusable {
+    /// The bones could not be read.
+    Unread,
+    /// The bones are not a plausible body.
+    Implausible(Implausible),
+}
+
+impl SkeletonMemory {
+    /// Take a read of `landmarks` under the transform `character` at `at`, and say why it cannot
+    /// place the volumes itself, if it cannot. A plausible read becomes the last good one.
+    fn record(
+        &mut self,
+        landmarks: Option<SkeletonLandmarks>,
+        character: Mat4,
+        at: Instant,
+    ) -> Option<Unusable> {
+        self.latest = Some(SkeletonRead {
+            landmarks,
+            character,
+            at,
+        });
+        let Some(landmarks) = landmarks else {
+            return Some(Unusable::Unread);
+        };
+        match frames::implausibility(&landmarks) {
+            Some(why) => Some(Unusable::Implausible(why)),
+            None => {
+                self.last_good = Some(landmarks);
+                None
+            }
+        }
+    }
+
+    /// The skeleton the volumes ride at `now`, in model space, with the character's transform that
+    /// carries it: the latest read when it is plausible, else the last plausible one, carried by
+    /// the latest read's transform. `None` while the latest read is older than [`SKELETON_FRESH`],
+    /// since then the character's pose is not being solved, or before any plausible read.
+    fn body(&self, now: Instant) -> Option<(SkeletonLandmarks, Mat4, SkeletonSource)> {
+        let latest = self.latest.as_ref()?;
+        if now.saturating_duration_since(latest.at) > SKELETON_FRESH {
+            return None;
+        }
+        match latest.landmarks.filter(frames::plausible) {
+            Some(landmarks) => Some((landmarks, latest.character, SkeletonSource::Latest)),
+            None => Some((self.last_good?, latest.character, SkeletonSource::LastGood)),
+        }
+    }
+}
+
+/// Log a change in whether the reads place the volumes, naming the gate a read failed.
+fn log_unusable(unusable: Option<Unusable>) {
+    match unusable {
+        None => tracing::info!(target: "body", "body frame: the skeleton reads as a body again"),
+        Some(Unusable::Unread) => tracing::info!(
+            target: "body",
+            "body frame: the skeleton's bones could not be read; the volumes ride the last plausible skeleton"
+        ),
+        Some(Unusable::Implausible(why)) => tracing::info!(
+            target: "body",
+            reason = %why,
+            "body frame: the skeleton is not a plausible body; the volumes ride the last plausible skeleton"
+        ),
+    }
+}
 
 static NOTHING_LOGGED: AtomicBool = AtomicBool::new(false);
 
@@ -219,4 +336,79 @@ fn log(measured: Option<Divergence>) {
         }
     }
     NOTHING_LOGGED.store(false, Ordering::Relaxed);
+}
+
+#[cfg(test)]
+mod tests {
+    use glam::Quat;
+
+    use super::*;
+
+    fn standing() -> SkeletonLandmarks {
+        SkeletonLandmarks {
+            head: Vec3::new(0.0, 1.63, 0.01),
+            pelvis: Vec3::new(0.0, 1.04, 0.0),
+            hips: [Vec3::new(-0.09, 0.98, -0.03), Vec3::new(0.09, 0.98, -0.03)],
+            shoulders: [Vec3::new(-0.19, 1.45, 0.04), Vec3::new(0.19, 1.45, 0.04)],
+        }
+    }
+
+    fn memory() -> SkeletonMemory {
+        SkeletonMemory {
+            latest: None,
+            last_good: None,
+        }
+    }
+
+    #[test]
+    fn a_plausible_read_places_the_volumes() {
+        let mut memory = memory();
+        let now = Instant::now();
+        let character = Mat4::from_translation(Vec3::new(5.0, 0.0, 2.0));
+        assert_eq!(memory.record(Some(standing()), character, now), None);
+        assert_eq!(
+            memory.body(now),
+            Some((standing(), character, SkeletonSource::Latest))
+        );
+    }
+
+    #[test]
+    fn a_bad_read_falls_back_to_the_last_good_skeleton_carried_by_the_body() {
+        let mut memory = memory();
+        let now = Instant::now();
+        memory.record(Some(standing()), Mat4::IDENTITY, now);
+        // The character has walked on and turned since the good read.
+        let moved =
+            Mat4::from_rotation_translation(Quat::from_rotation_y(1.0), Vec3::new(3.0, 0.5, -1.0));
+        let torn = SkeletonLandmarks {
+            head: Vec3::new(3.0, 1.6, 0.0),
+            ..standing()
+        };
+        let later = now + Duration::from_millis(30);
+        assert_eq!(
+            memory.record(Some(torn), moved, later),
+            Some(Unusable::Implausible(Implausible::Head))
+        );
+        assert_eq!(
+            memory.body(later),
+            Some((standing(), moved, SkeletonSource::LastGood))
+        );
+        assert_eq!(memory.record(None, moved, later), Some(Unusable::Unread));
+        assert_eq!(
+            memory.body(later),
+            Some((standing(), moved, SkeletonSource::LastGood))
+        );
+    }
+
+    #[test]
+    fn nothing_is_placed_before_a_good_read_or_once_the_pose_goes_stale() {
+        let mut memory = memory();
+        let now = Instant::now();
+        assert_eq!(memory.body(now), None);
+        memory.record(None, Mat4::IDENTITY, now);
+        assert_eq!(memory.body(now), None);
+        memory.record(Some(standing()), Mat4::IDENTITY, now);
+        assert!(memory.body(now + SKELETON_FRESH).is_some());
+        assert_eq!(memory.body(now + SKELETON_FRESH * 2), None);
+    }
 }
