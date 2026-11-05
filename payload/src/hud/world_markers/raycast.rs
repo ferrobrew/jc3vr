@@ -38,12 +38,7 @@ pub(crate) unsafe fn resolve_rays(owner: &Character) {
     }
     let head = crate::headpose::query().position;
     // SAFETY: the owner is the live local player; its vehicle pointer is live or null.
-    let vehicle = unsafe { owner.GetVehiclePtr() } as usize;
-    let options = CastOptions {
-        ignore: [owner as *const Character as usize, vehicle],
-        see_through: true,
-        material: false,
-    };
+    let options = unsafe { CastOptions::ignoring_rider(owner) }.seeing_through();
     let now = Instant::now();
     let mut results = Vec::with_capacity(requests.len().min(MAX_CASTS_PER_TICK));
     for (id, world) in requests.into_iter().take(MAX_CASTS_PER_TICK) {

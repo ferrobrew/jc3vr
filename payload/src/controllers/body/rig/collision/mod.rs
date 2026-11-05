@@ -19,6 +19,7 @@ use parking_lot::Mutex;
 use crate::{
     config::Config,
     controllers::{
+        aim::raycast::CastOptions,
         body::rig::collision::probe::{HeadProbe, TimedProbe},
         roomscale::teleport,
     },
@@ -49,12 +50,12 @@ pub(crate) unsafe fn tick(character: &Character) {
     let anchor = headpose::anchor().unwrap_or(pose.position);
     let right = pose.orientation * Vec3::X;
     let right = Vec3::new(right.x, 0.0, right.z).normalize_or_zero();
-    let vehicle = unsafe { character.GetVehiclePtr() } as usize;
-    let ignore = [std::ptr::from_ref(character) as usize, vehicle];
+    // SAFETY: the character is the live local character, on the thread updating it.
+    let options = unsafe { CastOptions::ignoring_rider(character) };
     let scene = state.probe.step(eyes, anchor, right, |from, to| {
         // SAFETY: the simulation phase; the ignored objects are the live local character and the
         // vehicle it rides, or zero.
-        unsafe { probe::scene_cast(from, to, ignore) }.unwrap_or_else(|error| {
+        unsafe { probe::scene_cast(from, to, &options) }.unwrap_or_else(|error| {
             tracing::debug!(target: "controllers", "rig: head probe: {error}");
             None
         })

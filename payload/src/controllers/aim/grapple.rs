@@ -214,12 +214,7 @@ unsafe fn visible_from_view(
     };
     let view = Mat4::from(view);
     let origin = view.w_axis.truncate() - view.z_axis.truncate() * DIRECT_AIM_START_OFFSET;
-    let vehicle = unsafe { owner.GetVehiclePtr() } as usize;
-    let options = CastOptions {
-        ignore: [owner as *const _ as usize, vehicle],
-        see_through: true,
-        material: false,
-    };
+    let options = unsafe { CastOptions::ignoring_rider(owner) }.seeing_through();
     unsafe { raycast::line_of_sight(origin, end, GRAPPLE_OCCLUSION_TOLERANCE_M, &options) }
 }
 

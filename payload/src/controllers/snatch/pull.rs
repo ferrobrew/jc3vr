@@ -810,11 +810,7 @@ unsafe fn arrive(
 ///
 /// The game thread, before the world update.
 unsafe fn surface_toward(object: NonZeroUsize, centre: Vec3, palm: Vec3) -> Vec3 {
-    let options = CastOptions {
-        ignore: [unsafe { engine::local_player_address() }, 0],
-        see_through: false,
-        material: false,
-    };
+    let options = unsafe { CastOptions::ignoring_player(0) };
     let distance = palm.distance(centre);
     Ray::new(palm, centre - palm)
         .and_then(|ray| {

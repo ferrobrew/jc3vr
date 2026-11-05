@@ -14,6 +14,7 @@ use std::{fmt, mem::MaybeUninit, num::NonZeroUsize, ptr};
 use glam::Vec3;
 use jc3gi::{
     aim::aim::PlayerAimRaycastFilter,
+    character::character::Character,
     physics::{
         CastRayInfo, CastRayInfoBase, MaterialPassFlags, PhysicsSystem, Ray3, RaycastFilter,
     },
@@ -32,6 +33,44 @@ pub struct CastOptions {
     pub see_through: bool,
     /// Read the hit shape's game material ([`RayHit::material`]).
     pub material: bool,
+}
+
+impl CastOptions {
+    /// Pass through the local player character and `other` (a game object, or zero), and nothing
+    /// else.
+    ///
+    /// # Safety
+    ///
+    /// The game thread.
+    pub unsafe fn ignoring_player(other: usize) -> CastOptions {
+        let player = unsafe { Character::GetLocalPlayerCharacter() } as usize;
+        CastOptions {
+            ignore: [player, other],
+            ..CastOptions::default()
+        }
+    }
+
+    /// Pass through `rider` and the vehicle it rides, if any, and nothing else.
+    ///
+    /// # Safety
+    ///
+    /// `rider` must be a live character, on the thread updating it.
+    pub unsafe fn ignoring_rider(rider: &Character) -> CastOptions {
+        let vehicle = unsafe { rider.GetVehiclePtr() } as usize;
+        CastOptions {
+            ignore: [rider as *const Character as usize, vehicle],
+            ..CastOptions::default()
+        }
+    }
+
+    /// These options, also passing through what the game's aim ray sees through
+    /// ([`CastOptions::see_through`]).
+    pub fn seeing_through(self) -> CastOptions {
+        CastOptions {
+            see_through: true,
+            ..self
+        }
+    }
 }
 
 /// The closest hit of a cast.

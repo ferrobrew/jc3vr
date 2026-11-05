@@ -166,7 +166,7 @@ pub struct TimedProbe {
     pub at: Instant,
 }
 
-/// Cast from `from` to `to` against the scene, ignoring the `ignore` objects, and return the hit.
+/// Cast from `from` to `to` against the scene with `options`, and return the hit.
 ///
 /// # Safety
 ///
@@ -174,17 +174,12 @@ pub struct TimedProbe {
 pub unsafe fn scene_cast(
     from: Vec3,
     to: Vec3,
-    ignore: [usize; 2],
+    options: &CastOptions,
 ) -> Result<Option<Vec3>, RaycastError> {
     let Some(ray) = Ray::new(from, to - from) else {
         return Ok(None);
     };
-    let options = CastOptions {
-        ignore,
-        see_through: false,
-        material: false,
-    };
-    Ok(unsafe { raycast::cast(&ray, (to - from).length(), &options) }?.map(|hit| hit.position))
+    Ok(unsafe { raycast::cast(&ray, (to - from).length(), options) }?.map(|hit| hit.position))
 }
 
 /// How far to either side of the eye centre the outer rays of the fan run, metres: about the

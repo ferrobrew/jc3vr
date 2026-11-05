@@ -72,11 +72,7 @@ pub(super) unsafe fn impact(wire: NonZeroUsize, object: NonZeroUsize, from: Vec3
     let Some(ray) = Ray::new(from, at - from) else {
         return;
     };
-    let options = CastOptions {
-        ignore: [unsafe { engine::local_player_address() }, 0],
-        see_through: true,
-        material: false,
-    };
+    let options = unsafe { CastOptions::ignoring_player(0) }.seeing_through();
     let end: *mut WireEnd = end;
     let play = |hit: RayHit, info: &mut CastRayInfo| {
         if hit.object != Some(object) {

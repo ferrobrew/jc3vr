@@ -4,7 +4,7 @@
 use std::num::NonZeroUsize;
 
 use glam::Vec3;
-use jc3gi::{character::character::Character, physics::PfxLayer, vehicle::vehicle::Vehicle};
+use jc3gi::{physics::PfxLayer, vehicle::vehicle::Vehicle};
 
 use crate::controllers::{
     aim::{
@@ -238,12 +238,7 @@ pub(crate) unsafe fn reach(
 /// The ordinary palm query layer excludes dropped weapons; this cast meets their real bodies.
 unsafe fn floor_cast(from: Vec3, to: Vec3) -> Option<SurfaceHit> {
     let ray = Ray::new(from, to - from)?;
-    let player = unsafe { Character::GetLocalPlayerCharacter() } as usize;
-    let options = CastOptions {
-        ignore: [player, 0],
-        see_through: false,
-        material: false,
-    };
+    let options = unsafe { CastOptions::ignoring_player(0) };
     let hit = unsafe {
         raycast::cast_on(
             &ray,

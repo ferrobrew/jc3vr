@@ -263,12 +263,7 @@ unsafe fn find_weapon(
         length
     };
     let owner = unsafe { aim.m_Owner.as_ref() }?;
-    let vehicle = unsafe { owner.GetVehiclePtr() } as usize;
-    let options = CastOptions {
-        ignore: [owner as *const _ as usize, vehicle],
-        see_through: true,
-        material: false,
-    };
+    let options = unsafe { CastOptions::ignoring_rider(owner) }.seeing_through();
     let mut from = 0.0;
     for _ in 0..MAX_STEPS {
         let remaining = reach - from;

@@ -72,6 +72,7 @@ pub(crate) use crate::controllers::body::rig::root::completion::{
 use crate::{
     config::Config,
     controllers::{
+        aim::raycast::CastOptions,
         body::{
             BodyDimensions,
             procedural::state::animation_moves_body,
@@ -844,9 +845,15 @@ unsafe fn capsule_tick(sim: &mut Sim, character: &mut Character, crouched: bool,
 unsafe fn headroom_blocked(character: &Character, feet: Vec3) -> bool {
     let from = feet + Vec3::Y * HEADROOM_RAY_START_M;
     let to = feet + Vec3::Y * BodyDimensions::CHARACTER_ESTIMATE.height;
-    let ignore = [character as *const Character as usize, 0];
+    let options = CastOptions {
+        ignore: [character as *const Character as usize, 0],
+        ..CastOptions::default()
+    };
     // SAFETY: the simulation phase; the ignored object is the live local character.
-    matches!(unsafe { probe::scene_cast(from, to, ignore) }, Ok(Some(_)))
+    matches!(
+        unsafe { probe::scene_cast(from, to, &options) },
+        Ok(Some(_))
+    )
 }
 
 /// Where the headroom ray starts above the feet, metres: above a step the character stands on.

@@ -256,7 +256,8 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
     // The grapple's aim assist turns the ray before the game's own targeting runs along it.
     let grapple_assist = match (grapple_ray, owner) {
         (Some(ray), Some(owner)) => {
-            let options = owner_cast_options(owner);
+            // SAFETY: the owner is the live local player character, on the thread updating it.
+            let options = unsafe { CastOptions::ignoring_rider(owner) }.seeing_through();
             // SAFETY: the live local player's aim control, before the original, with no grapple
             // view set; the options name the live owner and its vehicle.
             unsafe { assist::grapple_assist(aim, &ray, &options, &tick.config.aim) }
@@ -374,7 +375,8 @@ unsafe fn finish(
         }
     }
 
-    let options = owner_cast_options(owner);
+    // SAFETY: the owner is the live local player character, on the thread updating it.
+    let options = unsafe { CastOptions::ignoring_rider(owner) }.seeing_through();
     let mut raycast_error = None;
     let hands = Hand::BOTH.map(|hand| {
         let world = tick.hands[hand.index()]?;
@@ -473,18 +475,6 @@ unsafe fn finish(
         assist_corrections: status.assist_corrections + corrections,
         updates: status.updates + 1,
     };
-}
-
-/// What the hand rays' casts pass through: the owner and the vehicle it rides, and what the
-/// game's aim ray sees through.
-fn owner_cast_options(owner: &Character) -> CastOptions {
-    // SAFETY: the owner is the live local player character, on the thread updating it.
-    let vehicle = unsafe { owner.GetVehiclePtr() } as usize;
-    CastOptions {
-        ignore: [owner as *const Character as usize, vehicle],
-        see_through: true,
-        material: false,
-    }
 }
 
 /// The grapple slot after the game's targeting, as the grapple's readout.

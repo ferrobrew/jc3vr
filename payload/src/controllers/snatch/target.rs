@@ -4,7 +4,7 @@
 use std::num::NonZeroUsize;
 
 use glam::Vec3;
-use jc3gi::{character::character::Character, game::GameObject, physics::PhysicsGameObject};
+use jc3gi::{game::GameObject, physics::PhysicsGameObject};
 
 use crate::controllers::{
     aim::{
@@ -77,13 +77,7 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
                 return false;
             };
             let point = centre + orientation * *local_point;
-            let player = unsafe { Character::GetLocalPlayerCharacter() } as usize;
-            let options = CastOptions {
-                ignore: [player, weapon.get()],
-                see_through: true,
-                material: false,
-            };
-            if !unsafe { raycast::line_of_sight(ray.origin, point, SIGHT_TOLERANCE_M, &options) } {
+            if !unsafe { in_sight(ray, point, weapon.get()) } {
                 return false;
             }
             point
@@ -733,18 +727,13 @@ pub(super) unsafe fn weak_of(object: NonZeroUsize) -> Weak {
     unsafe { Weak::of(&(*game_object).m_WeakThis) }
 }
 
-/// Whether the gun at `point` on `character` is in sight from `ray`'s origin: a ghost hook flies
-/// through walls, so the snatch checks the sight line itself.
+/// Whether `point` on `object` (the gun's holder, or the dropped gun itself) is in sight from
+/// `ray`'s origin: a ghost hook flies through walls, so the snatch checks the sight line itself.
 ///
 /// # Safety
 ///
 /// The game thread, before the world update.
-unsafe fn in_sight(ray: &Ray, point: Vec3, character: usize) -> bool {
-    let player = unsafe { Character::GetLocalPlayerCharacter() } as usize;
-    let options = CastOptions {
-        ignore: [player, character],
-        see_through: true,
-        material: false,
-    };
+unsafe fn in_sight(ray: &Ray, point: Vec3, object: usize) -> bool {
+    let options = unsafe { CastOptions::ignoring_player(object) }.seeing_through();
     unsafe { raycast::line_of_sight(ray.origin, point, SIGHT_TOLERANCE_M, &options) }
 }

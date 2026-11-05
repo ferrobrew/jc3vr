@@ -4,7 +4,7 @@
 use std::time::Instant;
 
 use glam::{Quat, Vec2, Vec3};
-use jc3gi::{character::character::Character, physics::PhysicsSystem};
+use jc3gi::physics::PhysicsSystem;
 
 use crate::{
     config::Config,
@@ -451,12 +451,7 @@ unsafe fn path_clear(from: Vec3, to: Vec3, held: usize) -> bool {
     let Some(ray) = Ray::new(from, to - from) else {
         return true;
     };
-    let player = unsafe { Character::GetLocalPlayerCharacter() } as usize;
-    let options = CastOptions {
-        ignore: [player, held],
-        see_through: false,
-        material: false,
-    };
+    let options = unsafe { CastOptions::ignoring_player(held) };
     // SAFETY: forwarded from the caller; the ignored objects are the live player and a held
     // object the pickups checked this tick, or zero.
     matches!(

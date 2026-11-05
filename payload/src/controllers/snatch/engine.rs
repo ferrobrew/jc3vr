@@ -155,15 +155,6 @@ pub(super) unsafe fn exclude_rope(wire: NonZeroUsize) {
     unsafe { remove_constraint(wire) };
 }
 
-/// The local player character's address, or zero, for a cast to ignore.
-///
-/// # Safety
-///
-/// The game thread.
-pub(super) unsafe fn local_player_address() -> usize {
-    unsafe { Character::GetLocalPlayerCharacter() as usize }
-}
-
 /// The weapon at `address`, while it lies in the world, with its first gun's body.
 ///
 /// # Safety
