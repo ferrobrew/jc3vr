@@ -5,7 +5,6 @@ use std::time::Instant;
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{WeaponBase, WeaponState},
-    game::GameObject,
 };
 use parking_lot::Mutex;
 
@@ -14,6 +13,7 @@ use crate::controllers::{
     loadout::{TakeSource, take::TakeRoute},
     weapons::{
         dual_wield::single::{self, magazine},
+        engine::object_of,
         hold::{
             Cause,
             pickup::{self, Refusal, TakeOptions},
@@ -114,10 +114,7 @@ pub(super) unsafe fn targets(
     };
     drop(state);
     if let Some(member) = request {
-        let object = unsafe {
-            &*((address + WeaponBase::GAME_OBJECT_BASE_OFFSET as usize) as *const GameObject)
-        };
-        let tag = unsafe { object.GetUniqueSpawnTagIndex() };
+        let tag = unsafe { (*object_of(address as *const WeaponBase)).GetUniqueSpawnTagIndex() };
         unsafe { gives::request_member_copy(owner, member, tag) };
         tracing::info!(target: "controllers", source = address, generation = member.generation,
             "rack: requested the finite pair's only initialized copy");

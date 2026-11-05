@@ -45,7 +45,6 @@ use glam::{Mat4, Vec3};
 use jc3gi::{
     character::{character::Character, inventory::Inventory},
     equipment::weapon::{ModelAttachementWeaponComponent, WeaponBase, WeaponState},
-    game::GameObject,
     types::math::Matrix4,
     ui::hud_ui::HUDUI,
 };
@@ -59,7 +58,7 @@ use crate::controllers::{
     loadout::{ObjectAddress, Place, Socket, live},
     weapons::{
         dual_wield::single,
-        engine::slot_of,
+        engine::{character_object, slot_of},
         hold::{armed, refs::Strong},
         inventory::{
             engine::{self as inventory_engine, ObjectKey, Seen, kind_of, strong_to},
@@ -229,10 +228,10 @@ pub(crate) unsafe fn carry_loose(
     if unsafe { slot_of(weapon) }.is_none_or(|slot| !inventory_engine::tracks(slot)) {
         return Err(CarryRefusal::Unsupported);
     }
-    let holder = inventory_engine::player_object(owner) as *mut GameObject;
+    let holder = character_object(owner);
     unsafe { weapon.OnPickup(holder) };
     if weapon.m_State != WeaponState::E_WS_HOLSTERED
-        || weapon.m_Holder.px as usize != inventory_engine::player_object(owner)
+        || !std::ptr::eq(weapon.m_Holder.px.cast_const().cast(), holder)
     {
         return Err(CarryRefusal::NotDone);
     }

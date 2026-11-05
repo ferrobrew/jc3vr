@@ -67,6 +67,7 @@ use crate::{
                 tuning::{GRENADE, GrenadeTuning},
             },
             hold::{self, act, refs::Weak},
+            inventory::engine::weapon_of,
             pouch_return,
         },
     },
@@ -445,10 +446,9 @@ pub(super) fn input_tick(
         let Some(alive) = weapon.as_ref().and_then(Weak::lock) else {
             continue;
         };
-        let address = alive.object() as usize - WeaponBase::GAME_OBJECT_BASE_OFFSET as usize;
         // SAFETY: the strong reference keeps the weapon alive; the game stage runs on the game
         // thread before the world update.
-        let took = unsafe { take_world_pickup(hand, &mut *(address as *mut WeaponBase), tuning) };
+        let took = unsafe { take_world_pickup(hand, &mut *weapon_of(&alive), tuning) };
         if took {
             haptics::play(hand, Event::GrenadeCatch);
         } else {

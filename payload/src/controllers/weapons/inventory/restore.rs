@@ -49,6 +49,7 @@ use crate::{
         hands::ik,
         weapons::{
             dual_wield::single,
+            engine::weapon_at,
             hold::refs::Strong,
             inventory::{
                 carry,
@@ -707,8 +708,7 @@ unsafe extern "system" fn spawned(
             continue;
         }
         // The spawned object's own weak reference to itself, through which the inventory holds it.
-        let weapon = (object.px as usize).wrapping_sub(WeaponBase::GAME_OBJECT_BASE_OFFSET as usize)
-            as *const WeaponBase;
+        let weapon = weapon_at(object.px);
         // SAFETY: the vector's reference keeps the object alive for the call.
         if !unsafe { (*object.px).IsType(WeaponBase::TYPE_ID()) } {
             continue;

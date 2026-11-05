@@ -39,7 +39,7 @@ use crate::{
         loadout::{TakeSource, live, take::TakeRoute},
         weapons::{
             dual_wield::single,
-            engine::slot_of,
+            engine::{character_object, slot_of},
             hold::{
                 self, Cause, SNAP_S,
                 pickup::{self, TakeOptions},
@@ -109,7 +109,7 @@ static QUEUED: Mutex<Vec<Strong>> = Mutex::new(Vec::new());
 /// Take the queued `weapon` into a free hand through the table, or through the game's pickup where
 /// the table cannot hold it, or put it back into the world with both hands full.
 unsafe fn take(owner: &mut Character, weapon: &mut WeaponBase) {
-    let activator = pickup::activator(owner);
+    let activator = character_object(owner);
     let route = unsafe { pickup::route(weapon, None) };
     let result = match route {
         Ok(TakeRoute::Table { hand }) => {
@@ -179,7 +179,7 @@ pub(crate) unsafe fn before_weapon_handling(owner: &mut Character) {
 /// Whether `activator` is the local player's `CGameObject` subobject.
 fn is_local_player(activator: *mut GameObject) -> bool {
     let local = ik::local_character();
-    local != 0 && activator as usize == local + Character::GAME_OBJECT_BASE_OFFSET as usize
+    local != 0 && activator == character_object(local as *const Character)
 }
 
 /// Whether the table takes the local player's pickup of `weapon` rather than the game: it runs,

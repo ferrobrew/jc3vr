@@ -64,7 +64,7 @@ use crate::{
                 grant::{Grant, GrantTick, Grants, OneWhy, TwinState},
                 magazine::Dealt,
             },
-            engine::slot_of,
+            engine::{character_object, slot_of},
             hold::{self, rack::paired, refs::Strong},
             inventory::{
                 carry, config::InventoryConfig, engine as inventory_engine, engine::ObjectKey,
@@ -706,7 +706,7 @@ unsafe fn take_twin(owner: &mut Character, strong: Strong, tick: &Tick) {
 unsafe fn park(owner: &mut Character, strong: Strong, why: &str) {
     // SAFETY: the strong reference keeps the weapon alive.
     let weapon = unsafe { &mut *inventory_engine::weapon_of(&strong) };
-    let holder = inventory_engine::player_object(owner);
+    let holder = character_object(owner) as usize;
     if weapon.m_Holder.px as usize != holder {
         unsafe { weapon.OnPickup(holder as *mut GameObject) };
     }

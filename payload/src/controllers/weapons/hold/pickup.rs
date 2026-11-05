@@ -34,7 +34,6 @@ use glam::Mat4;
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{AmmunitionType, WeaponBase, WeaponState},
-    game::GameObject,
     hash::hashlittle,
 };
 
@@ -49,7 +48,7 @@ use crate::{
         },
         weapons::{
             dual_wield::single,
-            engine::{self, slot_of},
+            engine::{self, character_object, slot_of},
             hold::{self, Cause, act, equip, use_item},
             inventory::{self, carry, engine as inventory_engine},
         },
@@ -240,7 +239,7 @@ pub(crate) unsafe fn take_by_table(
     let from = unsafe { gun_pose(weapon) };
     if weapon.m_State == WeaponState::E_WS_WEAPON_RACK {
         // Takes it out of the rack's state and tells the rack it was picked up.
-        unsafe { weapon.PickupStart(activator(owner)) };
+        unsafe { weapon.PickupStart(character_object(owner)) };
     }
     // While pistols are single, a pistol from the world is one pistol.
     let single = weapon_type.slot() == WeaponSlot::E_SLOT_DUAL_WIELD
@@ -318,7 +317,7 @@ unsafe fn take_by_game(
     }
     let from = unsafe { gun_pose(weapon) };
     hold::begin(hand, options.cause, Some(address));
-    let activator = activator(owner);
+    let activator = character_object(owner);
     if from_rack {
         unsafe { weapon.PickupStart(activator) };
     }
@@ -408,12 +407,6 @@ fn animation_eligibility(
         return Err(Refusal::AnimationForbids);
     }
     Ok(route)
-}
-
-/// `owner`'s game-object subobject, which the pickups take as their activator.
-pub(crate) fn activator(owner: &mut Character) -> *mut GameObject {
-    (owner as *mut Character as usize + Character::GAME_OBJECT_BASE_OFFSET as usize)
-        as *mut GameObject
 }
 
 /// The world pose of `weapon`'s first gun.

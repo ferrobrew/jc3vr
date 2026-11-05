@@ -26,7 +26,10 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::weapons::hold::refs::{Strong, Weak};
+use crate::controllers::weapons::{
+    hold::refs::{Strong, Weak},
+    inventory::engine::weapon_of,
+};
 
 /// The hooks, aggregated by [`crate::controllers::snatch::hook_library`].
 pub(super) fn hook_library() -> HookLibrary {
@@ -132,9 +135,8 @@ unsafe fn reel_in_weapon(hook: *mut GrapplingHook) {
     let Some(weapon) = (unsafe { latched_weapon(&end.m_TargetInfo) }) else {
         return;
     };
-    let address = weapon.object() as usize - WeaponBase::GAME_OBJECT_BASE_OFFSET as usize;
     // SAFETY: the strong reference keeps the weapon, and its weak reference to itself, alive.
-    let weak = unsafe { Weak::of(&(*(address as *const WeaponBase)).m_WeakThis) };
+    let weak = unsafe { Weak::of(&(*weapon_of(&weapon)).m_WeakThis) };
     unsafe { hook.CancelActiveWire() };
     *TOSS.lock() = Some(weak);
     tracing::info!(target: "controllers", "snatch: a tap of the grapple reeled a weapon in");

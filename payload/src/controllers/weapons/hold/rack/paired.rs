@@ -11,7 +11,6 @@ use glam::Mat4;
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{ModelAttachementWeaponComponent, WeaponBase, WeaponData, WeaponState},
-    game::GameObject,
     graphics_engine::model_instance::ModelInstanceFlags,
 };
 use parking_lot::Mutex;
@@ -21,7 +20,7 @@ use crate::controllers::{
     loadout::{TakeSource, live, take::TakeRoute},
     weapons::{
         dual_wield::single::{self, magazine},
-        engine::slot_of,
+        engine::{character_object, slot_of},
         hold::{
             Cause,
             pickup::{self, Refusal, TakeOptions},
@@ -142,8 +141,7 @@ pub(crate) unsafe fn targets(
     if let Some(member) = request {
         // PickupStart supplies the native ammo amount; the give detour divides it between members.
         gives::within_member_start(member, || unsafe {
-            (*(address as *mut WeaponBase))
-                .PickupStart(engine::player_object(owner) as *mut GameObject);
+            (*(address as *mut WeaponBase)).PickupStart(character_object(owner));
         });
         tracing::info!(target: "controllers", source = address, generation = member.generation,
             member = member.index, "rack: requested a native source member");

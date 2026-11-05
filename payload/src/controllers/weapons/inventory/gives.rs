@@ -38,7 +38,6 @@ use jc3gi::{
         inventory::{Inventory, WeaponSlot},
     },
     equipment::weapon::WeaponBase,
-    game::GameObject,
     types::shared_ptr::SharedPtr,
 };
 use parking_lot::Mutex;
@@ -50,7 +49,7 @@ use crate::{
         hands::ik,
         loadout::{GiveSource, Place, live, slot_label},
         weapons::{
-            engine::slot_of,
+            engine::{object_of, slot_of, weapon_at},
             hold::{
                 equip,
                 rack::{
@@ -310,8 +309,7 @@ fn tracked(slot: WeaponSlot) -> bool {
 fn shared_weapon(strong: Strong) -> SharedPtr<WeaponBase> {
     let shared = strong.into_raw();
     SharedPtr {
-        px: (shared.px as usize).wrapping_sub(WeaponBase::GAME_OBJECT_BASE_OFFSET as usize)
-            as *mut WeaponBase,
+        px: weapon_at(shared.px),
         pn: shared.pn,
     }
 }
@@ -490,11 +488,7 @@ unsafe fn queue(inventory: *mut Inventory, weapon: *mut SharedPtr<WeaponBase>) -
     let Some(slot) = (unsafe { slot_of(w) }).filter(|&slot| tracked(slot)) else {
         return false;
     };
-    let tag_index = unsafe {
-        (*((w as *const WeaponBase as usize + WeaponBase::GAME_OBJECT_BASE_OFFSET as usize)
-            as *const GameObject))
-            .GetUniqueSpawnTagIndex()
-    };
+    let tag_index = unsafe { (*object_of(w)).GetUniqueSpawnTagIndex() };
     if !table_places() {
         return false;
     }
@@ -503,7 +497,7 @@ unsafe fn queue(inventory: *mut Inventory, weapon: *mut SharedPtr<WeaponBase>) -
         return false;
     };
     let object = SharedPtr {
-        px: (shared.px as usize + WeaponBase::GAME_OBJECT_BASE_OFFSET as usize) as *mut GameObject,
+        px: object_of(shared.px),
         pn: shared.pn,
     };
     // SAFETY: the arrival owns the reference it is handed, which now falls to the queue.

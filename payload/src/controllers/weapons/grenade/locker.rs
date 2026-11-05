@@ -35,6 +35,7 @@ use crate::controllers::{
         engine,
         grenade::{self, safe, stock, tuning::GrenadeTuning},
         hold::refs::{Strong, Weak},
+        inventory::engine::weapon_of,
     },
 };
 
@@ -178,9 +179,7 @@ pub(super) unsafe fn take(
                 let Some(alive) = &pickup else {
                     return false;
                 };
-                let address =
-                    alive.object() as usize - WeaponBase::GAME_OBJECT_BASE_OFFSET as usize;
-                let weapon = &mut *(address as *mut WeaponBase);
+                let weapon = &mut *weapon_of(alive);
                 if grenade::finite_world_pickup(weapon) {
                     // A finite grenade lying in the world is the grenade the hand takes.
                     grenade::take_world_pickup(hand, weapon, tuning)
@@ -311,8 +310,7 @@ unsafe fn sources(owner: &Character, to_cockpit: &impl Fn(Vec3) -> Vec3) -> Vec<
     let mut out = Vec::new();
     let _ = REGISTRY.lock().read(|source| {
         let alive = source.reference.lock()?;
-        let address =
-            (alive.object() as usize).checked_sub(WeaponBase::GAME_OBJECT_BASE_OFFSET as usize)?;
+        let address = weapon_of(&alive) as usize;
         if address != source.key.weapon || alive.control_block() as usize != source.key.control {
             return None;
         }
@@ -400,12 +398,7 @@ unsafe fn seed_interactions(owner: &Character) {
         let Some(alive) = (unsafe { offered(entry) }) else {
             continue;
         };
-        let Some(address) =
-            (alive.object() as usize).checked_sub(WeaponBase::GAME_OBJECT_BASE_OFFSET as usize)
-        else {
-            continue;
-        };
-        unsafe { observe(&*(address as *const WeaponBase)) };
+        unsafe { observe(&*weapon_of(&alive)) };
     }
 }
 

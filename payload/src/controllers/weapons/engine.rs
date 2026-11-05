@@ -7,6 +7,7 @@ use glam::{Mat4, Quat};
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{WeaponBase, WeaponGripHand, WeaponState},
+    game::GameObject,
     types::math::Matrix4,
 };
 
@@ -109,6 +110,39 @@ pub(crate) unsafe fn slot_of(weapon: &WeaponBase) -> Option<WeaponSlot> {
 /// `weapon` must be live.
 pub(crate) unsafe fn is_hand_grenade(weapon: &WeaponBase) -> bool {
     (unsafe { slot_of(weapon) }) == Some(WeaponSlot::E_SLOT_HAND_GRENADE)
+}
+
+/// `weapon`'s `CGameObject` subobject, the object that references, holders, and spawn calls name
+/// it by.
+pub(crate) fn object_of(weapon: *const WeaponBase) -> *mut GameObject {
+    weapon
+        .cast::<u8>()
+        .wrapping_add(WeaponBase::GAME_OBJECT_BASE_OFFSET as usize)
+        .cast::<GameObject>()
+        .cast_mut()
+}
+
+/// The weapon whose `CGameObject` subobject is `object`, or null for a null object. The caller
+/// establishes that the object is a weapon.
+pub(crate) fn weapon_at(object: *const GameObject) -> *mut WeaponBase {
+    if object.is_null() {
+        return std::ptr::null_mut();
+    }
+    object
+        .cast::<u8>()
+        .wrapping_sub(WeaponBase::GAME_OBJECT_BASE_OFFSET as usize)
+        .cast::<WeaponBase>()
+        .cast_mut()
+}
+
+/// `character`'s `CGameObject` subobject, as a weapon's holder names it and the pickups take it
+/// as their activator.
+pub(crate) fn character_object(character: *const Character) -> *mut GameObject {
+    character
+        .cast::<u8>()
+        .wrapping_add(Character::GAME_OBJECT_BASE_OFFSET as usize)
+        .cast::<GameObject>()
+        .cast_mut()
 }
 
 /// The local player character.
@@ -359,4 +393,10 @@ mod tests {
         assert_eq!(slot_from_raw(WeaponSlot::E_NONE as i32), None);
     }
 
+    #[test]
+    fn the_object_casts_round_trip_and_keep_null() {
+        let weapon = 0x1000 as *const WeaponBase;
+        assert_eq!(weapon_at(object_of(weapon)).cast_const(), weapon);
+        assert!(weapon_at(std::ptr::null()).is_null());
+    }
 }

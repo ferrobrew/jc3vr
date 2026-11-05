@@ -29,7 +29,7 @@ use crate::controllers::{
     aim::gun,
     frame::Hand,
     weapons::{
-        engine::{self, long_slot, slot_of, takeable_gun_slot},
+        engine::{self, character_object, long_slot, object_of, slot_of, takeable_gun_slot},
         hold::{
             pickup::{self, Refusal},
             rack::RackRefusal,
@@ -88,9 +88,7 @@ pub(crate) unsafe fn near(near: impl Fn(Vec3) -> bool) -> Vec<RemoteRack> {
         };
         // SAFETY: the strong reference keeps the weapon alive.
         let weapon = unsafe { &*(seen.weapon as *const WeaponBase) };
-        if alive.object() as usize != seen.weapon + WeaponBase::GAME_OBJECT_BASE_OFFSET as usize
-            || !unsafe { waiting(weapon) }
-        {
+        if alive.object() != object_of(weapon) || !unsafe { waiting(weapon) } {
             return false;
         }
         if let Some(point) = unsafe { shown_point(weapon) }.filter(|&p| near(p))
@@ -145,7 +143,7 @@ pub(crate) unsafe fn release(
     unsafe { pickup::preflight(owner, weapon, hand) }.map_err(RackRefusal::Pickup)?;
     let from_rack = weapon.m_State == WeaponState::E_WS_WEAPON_RACK;
     if from_rack {
-        unsafe { weapon.PickupStart(pickup::activator(owner)) };
+        unsafe { weapon.PickupStart(character_object(owner)) };
     }
     unsafe { weapon.OnDrop() };
     let address = weapon as *mut WeaponBase as usize;

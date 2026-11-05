@@ -28,8 +28,8 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::weapons::{
     dual_wield::single,
-    engine::slot_of,
-    hold::rack::{offered, weapon_of},
+    engine::{slot_of, weapon_at},
+    hold::rack::offered,
 };
 
 pub(crate) fn hook_library() -> HookLibrary {
@@ -103,7 +103,7 @@ unsafe fn first_offered_slot(user: &InteractionUserProxy) -> Option<WeaponSlot> 
         let Some(strong) = (unsafe { offered(entry) }) else {
             continue;
         };
-        let weapon = unsafe { weapon_of(strong.object()) }?;
+        let weapon = unsafe { weapon_at(strong.object()).as_ref() }?;
         return unsafe { slot_of(weapon) };
     }
     None

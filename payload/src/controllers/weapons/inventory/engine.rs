@@ -13,7 +13,6 @@ use jc3gi::{
         inventory::{Inventory, WeaponSlot},
     },
     equipment::weapon::{WeaponBase, WeaponState},
-    game::GameObject,
     spawn_system::SpawnSystem,
     types::shared_ptr::SharedPtr,
 };
@@ -22,7 +21,7 @@ use crate::controllers::{
     aim::gun,
     loadout::{ObjectAddress, WeaponType},
     weapons::{
-        engine::slot_of,
+        engine::{character_object, object_of, slot_of, weapon_at},
         hold::refs::{Strong, Weak},
     },
 };
@@ -92,11 +91,7 @@ pub(crate) fn slot_handle(inventory: &Inventory, object: ObjectKey) -> Option<No
 
 /// The weapon `strong` refers to, which it keeps alive.
 pub(crate) fn weapon_of(strong: &Strong) -> *mut WeaponBase {
-    strong
-        .object()
-        .cast::<u8>()
-        .wrapping_sub(WeaponBase::GAME_OBJECT_BASE_OFFSET as usize)
-        .cast::<WeaponBase>()
+    weapon_at(strong.object())
 }
 
 /// A weak reference to `weapon`.
@@ -133,10 +128,8 @@ pub(crate) fn shared_view(strong: &Strong) -> SharedPtr<WeaponBase> {
 /// `weapon` must be live.
 pub(crate) unsafe fn kind_of(weapon: &WeaponBase) -> Option<WeaponKind> {
     let slot = unsafe { slot_of(weapon) }?;
-    let object = (weapon as *const WeaponBase as usize
-        + WeaponBase::GAME_OBJECT_BASE_OFFSET as usize) as *const GameObject;
     // SAFETY: a live weapon's `CGameObject` subobject is live.
-    let index = unsafe { (*object).GetUniqueSpawnTagIndex() };
+    let index = unsafe { (*object_of(weapon)).GetUniqueSpawnTagIndex() };
     let tag_hash = unsafe { SpawnSystem::get() }
         .map_or(0, |system| unsafe { system.GetTagHashFromTagIndex(index) });
     Some(WeaponKind { tag_hash, slot })
@@ -200,16 +193,13 @@ pub(crate) unsafe fn fate(weak: &Weak, owner: &Character, player: Vec3) -> Fate 
     let weapon = unsafe { &*weapon_of(&strong) };
     let holder = weapon.m_Holder.px as usize;
     let distance_m = unsafe { origin(weapon) }.map(|at| at.distance(player));
-    if weapon.m_State != WeaponState::E_WS_DROPPED && holder != 0 && holder != player_object(owner)
+    if weapon.m_State != WeaponState::E_WS_DROPPED
+        && holder != 0
+        && holder != character_object(owner) as usize
     {
         return Fate::HeldByOther { distance_m };
     }
     Fate::Lying { distance_m }
-}
-
-/// `owner`'s `CGameObject` subobject, as a weapon's holder names it.
-pub(crate) fn player_object(owner: &Character) -> usize {
-    owner as *const Character as usize + Character::GAME_OBJECT_BASE_OFFSET as usize
 }
 
 /// Where `owner` stands.

@@ -38,9 +38,7 @@ use glam::Vec3;
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{WeaponBase, WeaponState},
-    game::GameObject,
     interaction::InteractionGraphEntry,
-    physics::PhysicsGameObject,
     weapon_placement_rule::WeaponPlacementRule,
 };
 use parking_lot::Mutex;
@@ -50,7 +48,7 @@ use crate::controllers::{
     loadout::slot_label,
     weapons::{
         dual_wield,
-        engine::{self, slot_of, takeable_gun_slot},
+        engine::{self, character_object, slot_of, takeable_gun_slot, weapon_at},
         hold::{
             self, Cause, act,
             pickup::{self, Refusal, TakeOptions},
@@ -204,7 +202,7 @@ pub(crate) unsafe fn take(
     // The copy is a give, which the table takes into the hand left expecting it
     // ([`crate::controllers::weapons::inventory::gives`]); the slot's weapon keeps its place.
     hold::begin(hand, Cause::Rack, None);
-    unsafe { weapon.PickupStart(pickup::activator(owner)) };
+    unsafe { weapon.PickupStart(character_object(owner)) };
     unsafe { weapon.SetVisible(false, false, false) };
     *COPY.lock() = Some(Copy {
         display: alive,
@@ -356,7 +354,7 @@ unsafe fn walk(owner: &Character, mut visit: impl FnMut(&WeaponBase, Strong) -> 
         let Some(strong) = (unsafe { offered(entry) }) else {
             continue;
         };
-        let weapon = unsafe { weapon_of(strong.object()) };
+        let weapon = unsafe { weapon_at(strong.object()).as_ref() };
         if let Some(weapon) = weapon.filter(|w| offered_state(w))
             && visit(weapon, strong)
         {
@@ -432,13 +430,6 @@ unsafe fn offered(entry: *mut InteractionGraphEntry) -> Option<Strong> {
         })
     }?;
     unsafe { (*spawned.object()).IsType(WeaponBase::TYPE_ID()) }.then_some(spawned)
-}
-
-/// The weapon whose `CGameObject` subobject is `object`.
-unsafe fn weapon_of<'a>(object: *mut GameObject) -> Option<&'a WeaponBase> {
-    let address =
-        (object as usize).checked_sub(PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize)?;
-    unsafe { (address as *const WeaponBase).as_ref() }
 }
 
 /// The slot a rack weapon goes into, for the slots a hand holds.

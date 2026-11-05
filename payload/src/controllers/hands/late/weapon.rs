@@ -24,7 +24,10 @@ use crate::controllers::{
             math::{lerp_transform, pose_matrix},
         },
     },
-    weapons::hold::{self, armed},
+    weapons::{
+        engine::weapon_at,
+        hold::{self, armed},
+    },
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -115,12 +118,7 @@ unsafe fn late_update_weapon(game_object: *mut c_void, context: *const GameObjec
     let (Some(context), false) = (unsafe { context.as_ref() }, game_object.is_null()) else {
         return;
     };
-    let weapon = unsafe {
-        &*(game_object
-            .cast::<u8>()
-            .sub(WeaponBase::GAME_OBJECT_BASE_OFFSET as usize)
-            .cast::<WeaponBase>())
-    };
+    let weapon = unsafe { &*weapon_at(game_object.cast()) };
     // SAFETY: this render invocation owns a live native weapon; the observer retains only a weak reference.
     unsafe { crate::controllers::weapons::grenade::observe_world_weapon(weapon) };
     // SAFETY: as above.

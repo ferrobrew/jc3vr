@@ -225,8 +225,7 @@ pub(super) unsafe fn consume_through_pickup(weapon: &mut WeaponBase) -> bool {
     };
     unsafe { weapon.SetMagazineAmmo(0) };
     weapon.m_StoredNonMagazineAmmo = 0;
-    let activator = (owner as *mut Character as usize + Character::GAME_OBJECT_BASE_OFFSET as usize)
-        as *mut GameObject;
+    let activator = engine::character_object(owner);
     let previous = PERMIT.replace(true);
     unsafe { weapon.PickupStart(activator) };
     PERMIT.set(previous);
@@ -342,9 +341,7 @@ unsafe fn held_back(weapon: &WeaponBase, activator: *mut GameObject) -> bool {
         return false;
     }
     let player = unsafe { Character::GetLocalPlayerCharacter() };
-    if player.is_null()
-        || activator as usize != player as usize + Character::GAME_OBJECT_BASE_OFFSET as usize
-    {
+    if player.is_null() || activator != engine::character_object(player) {
         return false;
     }
     Config::lock_query(|c| c.controllers.weapons.grenade_throw) && scheme::is_controllers()

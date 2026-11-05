@@ -25,8 +25,10 @@ use crate::controllers::{
     aim::gun,
     physical_hands, scheme,
     weapons::{
+        engine::character_object,
         grenade::{Release, consume_world_pickup, finite_world_pickup, safe},
         hold::refs::{Strong, Weak},
+        inventory::engine::weapon_of,
     },
 };
 
@@ -97,9 +99,8 @@ enum Replacement {
 ///
 /// The input tick's game stage, on the game thread.
 unsafe fn replace(alive: &Strong) -> Replacement {
-    let address = alive.object() as usize - WeaponBase::GAME_OBJECT_BASE_OFFSET as usize;
     // SAFETY: the strong reference keeps the weapon alive.
-    let weapon = unsafe { &mut *(address as *mut WeaponBase) };
+    let weapon = unsafe { &mut *weapon_of(alive) };
     if !finite_world_pickup(weapon) {
         return Replacement::NotAPickup;
     }
@@ -149,8 +150,7 @@ unsafe fn held_by_player(weapon: &WeaponBase) -> bool {
         return false;
     };
     let player = unsafe { Character::GetLocalPlayerCharacter() };
-    !player.is_null()
-        && holder.object() as usize == player as usize + Character::GAME_OBJECT_BASE_OFFSET as usize
+    !player.is_null() && holder.object() == character_object(player)
 }
 
 #[detour(address = jc3gi::equipment::weapon::WeaponBase::OnDropBase_ADDRESS)]

@@ -77,7 +77,6 @@ use jc3gi::{
         explosive::{Explosive, PlantedExplosive},
         weapon::{PlantedExplosiveWeapon, WeaponBase, WeaponData, WeaponInputs, WeaponState},
     },
-    game::GameObject,
     types::math::{Matrix4, Vector3},
 };
 use parking_lot::Mutex;
@@ -1054,11 +1053,7 @@ unsafe fn primed_charge(weapon: &PlantedExplosiveWeapon) -> Option<*mut PlantedE
 unsafe fn slot_c4(owner: &mut Character) -> Option<&mut PlantedExplosiveWeapon> {
     let slot = WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE as usize;
     let weapon = unsafe { owner.m_Inventory.m_Weapons.get(slot)?.px.as_mut() }?;
-    let object = std::ptr::from_mut(weapon)
-        .cast::<u8>()
-        .wrapping_add(WeaponBase::GAME_OBJECT_BASE_OFFSET as usize)
-        .cast::<GameObject>();
-    if !unsafe { (*object).IsType(PlantedExplosiveWeapon::TYPE_ID()) } {
+    if !unsafe { (*engine::object_of(weapon)).IsType(PlantedExplosiveWeapon::TYPE_ID()) } {
         return None;
     }
     Some(unsafe { &mut *std::ptr::from_mut(weapon).cast::<PlantedExplosiveWeapon>() })

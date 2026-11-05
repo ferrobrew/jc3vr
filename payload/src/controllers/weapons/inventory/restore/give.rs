@@ -31,6 +31,7 @@ use crate::{
         weapons::{
             c4,
             dual_wield::single,
+            engine::weapon_at,
             grenade::stock,
             hold::{refs::Strong, swap},
             inventory::{
@@ -287,8 +288,7 @@ unsafe extern "system" fn given(
         if object.px.is_null() || !unsafe { (*object.px).IsType(WeaponBase::TYPE_ID()) } {
             continue;
         }
-        let weapon = (object.px as usize).wrapping_sub(WeaponBase::GAME_OBJECT_BASE_OFFSET as usize)
-            as *const WeaponBase;
+        let weapon = weapon_at(object.px);
         // SAFETY: the vector's reference keeps the object alive for the call.
         if let Some(strong) = unsafe { inventory_engine::strong_to(&*weapon) } {
             out.push((token, strong));
