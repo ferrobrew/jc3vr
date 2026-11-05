@@ -7,6 +7,7 @@ use jc3gi::character::character::{AnimatedModel, Character, Joint, SafeBoneIndex
 
 use crate::{
     config::Config,
+    controllers::body::procedural::head::head_bone_world,
     headpose,
     hooks::{
         self,
@@ -153,15 +154,17 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
             joint.m_Orientation.data = [composed.x, composed.y, composed.z, composed.w];
 
             // The roomscale positional offset, brought into the body frame — but only when HumanIK
-            // is not already placing the head: both paths aim at the same tracked position, so
-            // applying both displaces it twice. "Placing" requires an effective reach, not just a
-            // queued target — with the reach dialled to zero the solve moves nothing and this add
-            // must take over, or roomscale placement silently dies.
+            // is not already placing the head: both paths aim at the same place, the eye point
+            // carried back onto the neck pivot, so applying both displaces it twice. "Placing"
+            // requires an effective reach, not just a queued target — with the reach dialled to
+            // zero the solve moves nothing and this add must take over, or roomscale placement
+            // silently dies.
             let hik_places_head = body_ik_enabled
                 && BODY_IK_TUNING.head_reach_t * BODY_IK_TUNING.weight > 0.0
                 && body_ik_status().is_some_and(|s| s.skip.is_none());
             let animated_head_world = headpose::anchor().unwrap_or(glam::Vec3::ZERO);
-            let world_offset = headpose::query().position - animated_head_world;
+            let scale = Config::lock_query(|c| c.vr.world_scale);
+            let world_offset = head_bone_world(character_rotation, scale) - animated_head_world;
             if !hik_places_head && world_offset != glam::Vec3::ZERO {
                 let model_offset = character_rotation.inverse() * world_offset;
                 let [tx, ty, tz] = joint.m_Translation.data;

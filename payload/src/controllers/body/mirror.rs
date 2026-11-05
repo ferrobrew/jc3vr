@@ -23,6 +23,7 @@ use crate::{
     config::Config,
     controllers::{
         body::procedural::{
+            head::head_bone_world,
             joints::from_joint,
             skeleton::{self, SkeletonKey},
         },
@@ -177,6 +178,8 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     let bones =
         indices.map(|index| index.map(|i| unsafe { joint_in_world(controller, i, &world) }));
     let head = headpose::query().position;
+    let (_, rotation, _) = world.to_scale_rotation_translation();
+    let head_target = head_bone_world(rotation, Config::lock_query(|c| c.vr.world_scale));
     let targets = tick_records()
         .current
         .map(|t| t.map(|t| t.wrist.position).filter(|p| p.is_finite()));
@@ -188,7 +191,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         &Figure {
             plane,
             bones,
-            head_target: head,
+            head_target,
             wrist_targets: targets,
             root_height: world.w_axis.y,
         },
@@ -287,7 +290,7 @@ pub struct Figure {
     pub plane: Plane,
     /// Each of [`FIGURE_BONES`] in the world, `None` for a bone the skeleton lacks.
     pub bones: [Option<Vec3>; FIGURE_BONE_COUNT],
-    /// Where the body's head was posed toward: the player's head.
+    /// Where the body's head was posed toward: the player's neck pivot under the eyes.
     pub head_target: Vec3,
     /// Each controller's wrist target, left then right.
     pub wrist_targets: [Option<Vec3>; 2],

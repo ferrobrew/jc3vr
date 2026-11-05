@@ -175,10 +175,9 @@ pub fn plausible(landmarks: &SkeletonLandmarks) -> bool {
 /// the shoulders. Garbage bone data fails it; a crouch, a lean, a fall, a skydive, or a look
 /// straight down does not. Lengths are in the landmarks' metres.
 ///
-/// The head is held loosely: a look down hangs the head forward on the neck and the body IK's head
-/// target pulls the head bone toward the eyes, which a steep look down carries below the line
-/// through the shoulder joints, so the head may be anywhere within reach of the chest, below the
-/// shoulders included.
+/// The head is held loosely, anywhere within reach of the chest, below the shoulders included: the
+/// body IK keeps the head bone on the player's neck pivot, but a clip, a fold over the hips, or a
+/// head the solve cannot reach can still hang it forward of and below the shoulder joints.
 pub fn implausibility(landmarks: &SkeletonLandmarks) -> Option<Implausible> {
     if !landmarks.is_finite() {
         return Some(Implausible::NotFinite);
@@ -264,6 +263,7 @@ mod tests {
     use super::*;
     use crate::controllers::body::{
         BodyDimensions,
+        procedural::head::head_bone_target,
         rig::torso::{EYES_TO_NECK_PIVOT, HIP_SPACING_FRACTION},
     };
 
@@ -441,26 +441,20 @@ mod tests {
     }
 
     /// The reference skeleton looking down by `look` radians as the posing leaves it: the upper
-    /// back pitched forward by the procedural torso's share of the look, the neck bent by its
-    /// share, and the head bone pulled onto the eyes by the body IK's head target, which a look
-    /// down swings down and forward about the neck pivot.
+    /// back pitched forward by the procedural torso's share of the look, and the head bone placed
+    /// on the body IK's head target, for an eye point the player's look down swings down and
+    /// forward about the neck pivot.
     fn looking_down(look: f32) -> SkeletonLandmarks {
         let reference = reference_skeleton();
         let upper_back = Vec3::new(0.0, 1.3096, 0.0082);
-        let neck = Vec3::new(0.0, 1.5459, 0.0267);
         let pitch =
             |angle: f32, pivot: Vec3, p: Vec3| pivot + Quat::from_rotation_x(-angle) * (p - pivot);
         let chest_pitch = (look * 0.35).min(0.44);
-        let neck = pitch(chest_pitch, upper_back, neck);
-        let head = pitch(
-            look * 0.3,
-            neck,
-            pitch(chest_pitch, upper_back, reference.head),
-        );
+        let head_rotation = Quat::from_rotation_x(-look);
         let eyes = -EYES_TO_NECK_PIVOT;
-        let eye_travel = Quat::from_rotation_x(-look) * eyes - eyes;
+        let eye = reference.head + head_rotation * eyes - eyes;
         SkeletonLandmarks {
-            head: head + eye_travel,
+            head: head_bone_target(eye, head_rotation, 1.0),
             shoulders: reference
                 .shoulders
                 .map(|s| pitch(chest_pitch, upper_back, s)),
@@ -475,26 +469,27 @@ mod tests {
     }
 
     #[test]
-    fn a_look_down_carries_the_head_below_the_shoulders_and_stays_plausible() {
+    fn a_look_down_keeps_the_head_above_the_shoulders() {
         assert!(plausible(&reference_skeleton()));
-        // From about 55 degrees down, the head bone hangs within a few centimetres of the line
-        // through the shoulder joints, and past 75 below it, where a floor under the head's height
-        // up the spine threw the skeleton out and the body's volumes with it.
-        let steep = looking_down(deg(60.0));
-        assert!(
-            head_up_the_spine(&steep) < 0.05,
-            "{}",
-            head_up_the_spine(&steep)
-        );
+        // The head target stays on the neck pivot, so the head bone holds its height while the
+        // eyes swing down and forward: more than a hunch's 5 cm up the spine from the shoulders
+        // at every pitch, where aiming it at the eye point sank it below them past 75 degrees.
+        let reference = reference_skeleton();
         for look in [0.0, 30.0, 60.0, 75.0, 90.0] {
             let landmarks = looking_down(deg(look));
+            assert!(
+                landmarks.head.distance(reference.head) < 1e-4,
+                "looking {look} degrees down: {}",
+                landmarks.head
+            );
+            let up = head_up_the_spine(&landmarks);
+            assert!(up > 0.05, "looking {look} degrees down: {up}");
             assert_eq!(
                 implausibility(&landmarks),
                 None,
                 "looking {look} degrees down"
             );
         }
-        assert!(head_up_the_spine(&looking_down(deg(90.0))) < 0.0);
     }
 
     #[test]
