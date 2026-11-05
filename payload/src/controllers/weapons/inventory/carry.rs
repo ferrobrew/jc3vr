@@ -59,6 +59,7 @@ use crate::controllers::{
     loadout::{ObjectAddress, Place, Socket, live},
     weapons::{
         dual_wield::single,
+        engine::slot_of,
         hold::{armed, refs::Strong},
         inventory::{
             engine::{self as inventory_engine, ObjectKey, Seen, kind_of, strong_to},
@@ -225,9 +226,7 @@ pub(crate) unsafe fn carry_loose(
     let pointer = inventory_engine::weapon_of(&strong);
     // SAFETY: the strong reference keeps the weapon alive.
     let weapon = unsafe { &mut *pointer };
-    if unsafe { inventory_engine::slot_of(weapon) }
-        .is_none_or(|slot| !inventory_engine::tracks(slot))
-    {
+    if unsafe { slot_of(weapon) }.is_none_or(|slot| !inventory_engine::tracks(slot)) {
         return Err(CarryRefusal::Unsupported);
     }
     let holder = inventory_engine::player_object(owner) as *mut GameObject;
@@ -505,7 +504,7 @@ unsafe fn refresh_hud() {
 /// single pistol, whose first gun is all it shows ([`single`]), is the game's on that hip alone,
 /// while the game's pair takes both.
 unsafe fn at_own_dock(weapon: &WeaponBase, socket: Socket) -> bool {
-    let Some(slot) = (unsafe { inventory_engine::slot_of(weapon) }) else {
+    let Some(slot) = (unsafe { slot_of(weapon) }) else {
         return false;
     };
     match socket {

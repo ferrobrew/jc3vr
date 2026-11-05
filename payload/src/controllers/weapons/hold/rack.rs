@@ -50,7 +50,7 @@ use crate::controllers::{
     loadout::slot_label,
     weapons::{
         dual_wield,
-        engine::{self, slot_from_raw},
+        engine::{self, slot_of, takeable_gun_slot},
         hold::{
             self, Cause, act,
             pickup::{self, Refusal, TakeOptions},
@@ -58,7 +58,7 @@ use crate::controllers::{
             steal,
             world::{TargetKind, WorldTarget},
         },
-        inventory::engine::{self as inventory_engine, slot_of},
+        inventory::engine as inventory_engine,
     },
 };
 
@@ -443,13 +443,5 @@ unsafe fn weapon_of<'a>(object: *mut GameObject) -> Option<&'a WeaponBase> {
 
 /// The slot a rack weapon goes into, for the slots a hand holds.
 fn rack_slot(weapon: &WeaponBase) -> Option<WeaponSlot> {
-    // Read as the raw value: an unset slot is out of the enum's range.
-    let slot = slot_from_raw(unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() })?;
-    matches!(
-        slot,
-        WeaponSlot::E_SLOT_DUAL_WIELD
-            | WeaponSlot::E_SLOT_TWO_HANDED
-            | WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL
-    )
-    .then_some(slot)
+    unsafe { slot_of(weapon) }.filter(|&slot| takeable_gun_slot(slot))
 }

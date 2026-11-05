@@ -93,7 +93,7 @@ use crate::controllers::{
     frame::Hand,
     hands::{grip, late},
     loadout::{ObjectAddress, TakeSource, live},
-    weapons::{engine::slot_from_raw, inventory},
+    weapons::{engine::slot_of, inventory},
 };
 
 pub(crate) fn hook_library() -> HookLibrary {
@@ -235,10 +235,8 @@ pub fn status() -> HoldStatus {
 pub(crate) unsafe fn wielded(owner: &Character) -> Option<usize> {
     unsafe { gun::held_weapon(owner) }
         .filter(|w| {
-            // Read as the raw value: an unset slot is out of the enum's range.
-            let slot = unsafe { (&raw const w.m_EquipSlot).cast::<i32>().read() };
             !matches!(
-                slot_from_raw(slot),
+                unsafe { slot_of(w) },
                 Some(
                     WeaponSlot::E_SLOT_HAND_GRENADE
                         | WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE

@@ -19,7 +19,7 @@ use std::{
 use detours_macro::detour;
 use glam::{Mat4, Vec3};
 use jc3gi::{
-    character::{character::Character, inventory::WeaponSlot},
+    character::character::Character,
     equipment::weapon::{ThrownGrenadeWeapon, WeaponBase, WeaponData, WeaponState},
     graphics_engine::model_instance::ModelInstanceFlags,
     interaction::InteractionGraphEntry,
@@ -481,9 +481,9 @@ unsafe fn weapon_displays(
 }
 
 fn world_grenade(weapon: &WeaponBase) -> bool {
-    let slot = unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() };
     let state = unsafe { (&raw const weapon.m_State).cast::<i32>().read() };
-    slot == WeaponSlot::E_SLOT_HAND_GRENADE as i32
+    let grenade = unsafe { engine::is_hand_grenade(weapon) };
+    grenade
         && (state == WeaponState::E_WS_WEAPON_RACK as i32
             || state == WeaponState::E_WS_DROPPED as i32)
 }
@@ -552,8 +552,8 @@ mod tests {
     use std::{cell::Cell, mem::MaybeUninit, num::NonZeroU64, sync::Arc};
 
     use jc3gi::{
-        equipment::weapon::WeaponClass, graphics_engine::model_instance::ModelInstance,
-        types::math::Matrix4,
+        character::inventory::WeaponSlot, equipment::weapon::WeaponClass,
+        graphics_engine::model_instance::ModelInstance, types::math::Matrix4,
     };
 
     use super::*;

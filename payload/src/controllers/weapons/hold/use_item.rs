@@ -39,6 +39,7 @@ use crate::{
         loadout::{TakeSource, live, take::TakeRoute},
         weapons::{
             dual_wield::single,
+            engine::slot_of,
             hold::{
                 self, Cause, SNAP_S,
                 pickup::{self, TakeOptions},
@@ -46,7 +47,7 @@ use crate::{
                 refs::Strong,
             },
             inventory::{
-                engine::{self as inventory_engine, slot_of, strong_to, weapon_of},
+                engine::{self as inventory_engine, strong_to, weapon_of},
                 gives, reconcile,
             },
         },

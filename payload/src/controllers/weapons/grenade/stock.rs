@@ -338,9 +338,7 @@ unsafe fn held_back(weapon: &WeaponBase, activator: *mut GameObject) -> bool {
     if PERMIT.get() {
         return false;
     }
-    // Read as the raw value: an unset slot is out of the enum's range.
-    let slot = unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() };
-    if slot != WeaponSlot::E_SLOT_HAND_GRENADE as i32 {
+    if !unsafe { engine::is_hand_grenade(weapon) } {
         return false;
     }
     let player = unsafe { Character::GetLocalPlayerCharacter() };

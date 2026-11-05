@@ -46,10 +46,10 @@ use crate::controllers::{
     hands::ik,
     weapons::{
         dual_wield::single,
-        engine::{self, HeldWeapon, Wielded},
+        engine::{self, HeldWeapon, Wielded, slot_of},
         heft::HeftClass,
         hold::layout,
-        inventory::{carry, engine as inventory_engine, engine::slot_of},
+        inventory::{carry, engine as inventory_engine},
     },
 };
 

@@ -69,7 +69,7 @@ pub mod config;
 pub mod docks;
 pub mod dual_wield;
 pub mod empty;
-mod engine;
+pub(crate) mod engine;
 mod finish;
 pub(crate) mod fire;
 pub mod foregrip;

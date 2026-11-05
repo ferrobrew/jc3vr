@@ -12,7 +12,7 @@ use crate::controllers::{
     weapons::{
         docks,
         dual_wield::single,
-        engine,
+        engine::{self, slot_of},
         hold::{
             equip::{self, DockRefusal},
             release_diagnostics::{ReleaseMotion, WorldMotion},
@@ -20,7 +20,7 @@ use crate::controllers::{
         },
         inventory::{
             carry,
-            engine::{slot_of, strong_to, weapon_of},
+            engine::{strong_to, weapon_of},
             reconcile,
         },
     },

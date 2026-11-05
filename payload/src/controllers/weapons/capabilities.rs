@@ -10,9 +10,7 @@ use crate::controllers::{
     hands::tiers::{self, HandTier, TierState},
     loadout::live,
     mode::{AirborneVariant, Mode, OnFootVariant},
-    weapons::{
-        dual_wield::single, foregrip, hold::armed, inventory::engine::slot_of, permission, reload,
-    },
+    weapons::{dual_wield::single, engine::slot_of, foregrip, hold::armed, permission, reload},
 };
 
 /// The held-gun operations available in a control mode. Tracking and input ownership gate each hand.

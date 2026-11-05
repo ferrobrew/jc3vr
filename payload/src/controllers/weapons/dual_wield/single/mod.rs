@@ -64,7 +64,7 @@ use crate::{
                 grant::{Grant, GrantTick, Grants, OneWhy, TwinState},
                 magazine::Dealt,
             },
-            engine::slot_from_raw,
+            engine::slot_of,
             hold::{self, rack::paired, refs::Strong},
             inventory::{
                 carry, config::InventoryConfig, engine as inventory_engine, engine::ObjectKey,
@@ -797,11 +797,6 @@ unsafe fn slot_weapon(owner: &Character) -> Option<&WeaponBase> {
             .px
             .as_ref()
     }
-}
-
-/// `weapon`'s slot, read as the raw value: an unset slot is out of the enum's range.
-unsafe fn slot_of(weapon: &WeaponBase) -> Option<WeaponSlot> {
-    slot_from_raw(unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() })
 }
 
 /// How many guns `weapon` has, all of them.

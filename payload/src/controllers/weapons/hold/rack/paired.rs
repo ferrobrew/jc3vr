@@ -21,6 +21,7 @@ use crate::controllers::{
     loadout::{TakeSource, live, take::TakeRoute},
     weapons::{
         dual_wield::single::{self, magazine},
+        engine::slot_of,
         hold::{
             Cause,
             pickup::{self, Refusal, TakeOptions},
@@ -435,7 +436,7 @@ unsafe fn qualifies(weapon: &WeaponBase) -> bool {
         || live::mission_holds()
         || weapon.m_State != WeaponState::E_WS_WEAPON_RACK
         || !offered_state(weapon)
-        || unsafe { engine::slot_of(weapon) } != Some(WeaponSlot::E_SLOT_DUAL_WIELD)
+        || unsafe { slot_of(weapon) } != Some(WeaponSlot::E_SLOT_DUAL_WIELD)
     {
         return false;
     }

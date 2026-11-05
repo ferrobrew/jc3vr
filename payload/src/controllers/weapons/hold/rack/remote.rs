@@ -20,7 +20,6 @@ use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3gi::{
-    character::inventory::WeaponSlot,
     equipment::weapon::{WeaponBase, WeaponState},
     graphics_engine::model_instance::ModelInstanceFlags,
 };
@@ -30,7 +29,7 @@ use crate::controllers::{
     aim::gun,
     frame::Hand,
     weapons::{
-        engine,
+        engine::{self, long_slot, slot_of, takeable_gun_slot},
         hold::{
             pickup::{self, Refusal},
             rack::RackRefusal,
@@ -185,11 +184,11 @@ static REGISTRY: Mutex<Vec<Seen>> = Mutex::new(Vec::new());
 ///
 /// `weapon` must be live.
 unsafe fn waiting(weapon: &WeaponBase) -> bool {
-    // Read as raw values: an unset slot or a state the enum does not name is out of its range.
-    let slot = unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() };
+    // Read as the raw value: a state the enum does not name is out of its range.
     let state = unsafe { (&raw const weapon.m_State).cast::<i32>().read() };
-    let long_gun = slot == WeaponSlot::E_SLOT_TWO_HANDED as i32
-        || slot == WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL as i32;
+    // The two-handed and special slots: the long guns a hand takes, not the heavy slot's.
+    let long_gun =
+        unsafe { slot_of(weapon) }.is_some_and(|slot| long_slot(slot) && takeable_gun_slot(slot));
     let racked = state == WeaponState::E_WS_WEAPON_RACK as i32 && !weapon.m_InfinitePickup;
     let set_down = state == WeaponState::E_WS_DROPPED as i32
         && !weapon.m_SpawnedFromRule.pn.is_null()

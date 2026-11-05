@@ -57,7 +57,7 @@ use crate::controllers::{
     hands::ik,
     loadout::slot_label,
     weapons::{
-        engine::{self, slot_from_raw},
+        engine::{self, slot_of, takeable_gun_slot},
         hold::{
             pickup::{self, Refusal, TakeOptions},
             refs::{Strong, Weak},
@@ -426,17 +426,8 @@ unsafe fn wielded(character: &Character) -> Option<(*mut WeaponBase, WeaponSlot)
     ) {
         return None;
     }
-    // Read as the raw value: an unset slot is out of the enum's range.
-    let slot = slot_from_raw(unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() })?;
-    // A mounted gun is held at its mount, and the grenade, the explosive, and the beacon are not
-    // guns to take.
-    matches!(
-        slot,
-        WeaponSlot::E_SLOT_DUAL_WIELD
-            | WeaponSlot::E_SLOT_TWO_HANDED
-            | WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL
-    )
-    .then_some((pointer, slot))
+    let slot = unsafe { slot_of(weapon) }?;
+    takeable_gun_slot(slot).then_some((pointer, slot))
 }
 
 /// The guns `character` carries holstered and visible on its body, by [`HOLSTER_SLOTS`], each

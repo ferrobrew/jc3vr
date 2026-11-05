@@ -21,7 +21,6 @@ use std::{cell::Cell, num::NonZeroUsize, time::Duration};
 use detours_macro::detour;
 use glam::{Mat4, Vec3};
 use jc3gi::{
-    character::inventory::WeaponSlot,
     equipment::{
         explosive::{Explosive, Grenade},
         weapon::{ThrownGrenadeWeapon, WeaponBase, WeaponInputs, WeaponState},
@@ -237,12 +236,10 @@ pub(crate) fn snatched_from_world(hand: Hand, weapon: Weak) {
 /// grenade on a display ([`WeaponBase::m_InfinitePickup`]), which stays where it is until a hand
 /// takes it.
 pub(crate) fn finite_world_pickup(weapon: &WeaponBase) -> bool {
-    // Read as raw values: an unset slot or a state the enums do not name is neither.
-    let slot = unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() };
+    // Read as the raw value: a state the enum does not name is not dropped.
     let state = unsafe { (&raw const weapon.m_State).cast::<i32>().read() };
-    slot == WeaponSlot::E_SLOT_HAND_GRENADE as i32
-        && state == WeaponState::E_WS_DROPPED as i32
-        && !weapon.m_InfinitePickup
+    let grenade = unsafe { engine::is_hand_grenade(weapon) };
+    grenade && state == WeaponState::E_WS_DROPPED as i32 && !weapon.m_InfinitePickup
 }
 
 /// Take the finite native hand grenade `weapon` lying in the world into `hand` as one grenade: a

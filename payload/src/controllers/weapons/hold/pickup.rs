@@ -49,7 +49,7 @@ use crate::{
         },
         weapons::{
             dual_wield::single,
-            engine::{self, slot_from_raw},
+            engine::{self, slot_of},
             hold::{self, Cause, act, equip, use_item},
             inventory::{self, carry, engine as inventory_engine},
         },
@@ -381,9 +381,7 @@ pub(crate) unsafe fn takeable(
     _owner: &Character,
     weapon: &WeaponBase,
 ) -> Result<WeaponSlot, Refusal> {
-    // Read as the raw value: an unset slot is out of the enum's range.
-    let slot = unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() };
-    let slot = slot_from_raw(slot).ok_or(Refusal::UnknownSlot)?;
+    let slot = unsafe { slot_of(weapon) }.ok_or(Refusal::UnknownSlot)?;
     if slot == WeaponSlot::E_SLOT_HAND_GRENADE {
         return Err(Refusal::Grenade);
     }

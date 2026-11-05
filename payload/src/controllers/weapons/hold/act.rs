@@ -41,7 +41,8 @@ use crate::{
         motion,
         roomscale::teleport,
         weapons::{
-            docks, engine,
+            docks,
+            engine::{self, slot_of},
             hold::{
                 self, armed,
                 dock::{ReleaseWatch, Snap, SnapFrom, SnapKind},
@@ -54,7 +55,7 @@ use crate::{
                 },
                 steal,
             },
-            inventory::{self, carry, engine::slot_of, reconcile, sockets},
+            inventory::{self, carry, reconcile, sockets},
         },
     },
     headpose,

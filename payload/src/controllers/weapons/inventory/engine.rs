@@ -22,7 +22,7 @@ use crate::controllers::{
     aim::gun,
     loadout::{ObjectAddress, WeaponType},
     weapons::{
-        engine::slot_from_raw,
+        engine::slot_of,
         hold::refs::{Strong, Weak},
     },
 };
@@ -124,15 +124,6 @@ pub(crate) fn shared_view(strong: &Strong) -> SharedPtr<WeaponBase> {
         px: weapon_of(strong),
         pn: strong.control_block(),
     }
-}
-
-/// `weapon`'s slot, read as the raw value: an unset slot is out of the enum's range.
-///
-/// # Safety
-///
-/// `weapon` must be live.
-pub(crate) unsafe fn slot_of(weapon: &WeaponBase) -> Option<WeaponSlot> {
-    slot_from_raw(unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() })
 }
 
 /// `weapon`'s kind: its spawn tag's hash (zero without the spawn system) and its slot.

@@ -50,6 +50,7 @@ use crate::{
         hands::ik,
         loadout::{GiveSource, Place, live, slot_label},
         weapons::{
+            engine::slot_of,
             hold::{
                 equip,
                 rack::{
@@ -486,7 +487,7 @@ unsafe fn queue(inventory: *mut Inventory, weapon: *mut SharedPtr<WeaponBase>) -
     let Some(w) = (unsafe { shared.px.as_ref() }) else {
         return false;
     };
-    let Some(slot) = (unsafe { engine::slot_of(w) }).filter(|&slot| tracked(slot)) else {
+    let Some(slot) = (unsafe { slot_of(w) }).filter(|&slot| tracked(slot)) else {
         return false;
     };
     let tag_index = unsafe {

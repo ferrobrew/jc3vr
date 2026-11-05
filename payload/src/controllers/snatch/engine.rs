@@ -5,7 +5,7 @@ use std::{mem::MaybeUninit, num::NonZeroUsize, ptr};
 
 use glam::Vec3;
 use jc3gi::{
-    character::{character::Character, inventory::WeaponSlot},
+    character::character::Character,
     equipment::{
         grappling_hook::{GrapplingHook, GrapplingHookState, GrapplingHookWire, WireState},
         weapon::{WeaponBase, WeaponState},
@@ -18,7 +18,7 @@ use jc3gi::{
 use crate::controllers::{
     aim::gun,
     snatch::{Refusal, sling_hooks},
-    weapons::grenade,
+    weapons::{engine, grenade},
 };
 
 /// The local player's grappling hook.
@@ -204,9 +204,7 @@ pub(super) unsafe fn dropped(
 /// `address` must be a weapon held alive, on the game thread.
 pub(super) unsafe fn hand_grenade(address: NonZeroUsize) -> Option<bool> {
     let weapon = unsafe { &*(address.get() as *const WeaponBase) };
-    // Read as the raw value: an unset slot is out of the enum's range.
-    let slot = unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() };
-    (slot == WeaponSlot::E_SLOT_HAND_GRENADE as i32).then(|| grenade::finite_world_pickup(weapon))
+    unsafe { engine::is_hand_grenade(weapon) }.then(|| grenade::finite_world_pickup(weapon))
 }
 
 /// Where the local player stands, world space.

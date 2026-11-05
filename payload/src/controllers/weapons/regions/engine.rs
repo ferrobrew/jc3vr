@@ -3,7 +3,7 @@
 
 use glam::{Mat4, Vec3};
 use jc3gi::{
-    character::{character::Character, inventory::WeaponSlot},
+    character::character::Character,
     equipment::weapon::{WeaponBase, WeaponGripHand},
     types::math::{Matrix4, Vector3},
 };
@@ -14,7 +14,7 @@ use crate::controllers::{
     loadout::{LoadoutSnapshot, Socket},
     weapons::{
         docks,
-        engine::slot_from_raw,
+        engine::{long_slot, slot_of},
         hold::pickup::gun_pose,
         regions::shape::{GunShape, MagazineWell},
         reload::wells,
@@ -55,9 +55,7 @@ pub(crate) unsafe fn shape(weapon: &WeaponBase, hand: Hand) -> Option<GunShape> 
         })
     });
     let action = entry.and_then(|e| e.handle_m);
-    // Read as the raw value: an unset slot is out of the enum's range.
-    let slot = unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() };
-    let long = slot_from_raw(slot).is_some_and(is_long);
+    let long = unsafe { slot_of(weapon) }.is_some_and(long_slot);
     let shape = GunShape {
         min: Vec3::from_array(min.data),
         max: Vec3::from_array(max.data),
@@ -68,16 +66,6 @@ pub(crate) unsafe fn shape(weapon: &WeaponBase, hand: Hand) -> Option<GunShape> 
         long,
     };
     shape.is_usable().then_some(shape)
-}
-
-/// Whether a weapon of `slot` is a long gun, held by its stock and handguard as well as its grip.
-pub(crate) fn is_long(slot: WeaponSlot) -> bool {
-    matches!(
-        slot,
-        WeaponSlot::E_SLOT_TWO_HANDED
-            | WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL
-            | WeaponSlot::E_SLOT_HEAVY
-    )
 }
 
 /// A long gun docked on a socket of the body.
@@ -102,9 +90,7 @@ pub(crate) unsafe fn docked_long_guns(
 ) -> Vec<DockedLongGun> {
     let mut out = Vec::new();
     for (site, weapon) in unsafe { docks::socket_weapons(owner, snapshot) } {
-        // Read as the raw value: an unset slot is out of the enum's range.
-        let slot = unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() };
-        if !slot_from_raw(slot).is_some_and(is_long) {
+        if !unsafe { slot_of(weapon) }.is_some_and(long_slot) {
             continue;
         }
         // A docked gun is taken by the hand that draws it, with its other hand's grip opposite.

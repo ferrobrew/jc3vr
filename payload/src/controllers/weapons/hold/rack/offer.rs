@@ -28,7 +28,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::weapons::{
     dual_wield::single,
-    engine::slot_from_raw,
+    engine::slot_of,
     hold::rack::{offered, weapon_of},
 };
 
@@ -104,8 +104,7 @@ unsafe fn first_offered_slot(user: &InteractionUserProxy) -> Option<WeaponSlot> 
             continue;
         };
         let weapon = unsafe { weapon_of(strong.object()) }?;
-        // Read as the raw value: an unset slot is out of the enum's range.
-        return slot_from_raw(unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() });
+        return unsafe { slot_of(weapon) };
     }
     None
 }

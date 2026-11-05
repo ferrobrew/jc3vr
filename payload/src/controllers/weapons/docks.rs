@@ -41,11 +41,12 @@ use crate::{
         },
         weapons::{
             docks::attachments::{Attachment, Missing, Occupancy, Placement, PoseSource, Sample},
+            engine::slot_of,
             grenade,
             hold::{act, armed, steal},
             inventory::{
                 carry,
-                engine::{ObjectKey, slot_of},
+                engine::ObjectKey,
                 sockets::{self, Offsets},
             },
         },

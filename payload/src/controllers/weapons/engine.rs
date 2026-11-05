@@ -15,6 +15,7 @@ use crate::controllers::{
     config::AimConfig,
     frame::{Hand, Pose},
     hands::{ik::TickTarget, late, pose as hand_pose},
+    loadout::SLOTS,
     weapons::{
         foregrip::{FOREGRIP, GripGeometry},
         heft::HeftClass,
@@ -69,8 +70,8 @@ pub fn lone_gun(guns: [Option<HeldWeapon>; 2], free: [bool; 2]) -> Option<HeldWe
         .find_map(|hand| guns[hand.index()].filter(|_| free[hand.other().index()]))
 }
 
-/// Whether a weapon of `slot` is a long gun, held in both hands' reach: the two-handed, the
-/// special, and the heavy slots.
+/// Whether a weapon of `slot` is a long gun, held in both hands' reach and by its stock and
+/// handguard as well as its grip: the two-handed, the special, and the heavy slots.
 pub fn long_slot(slot: WeaponSlot) -> bool {
     matches!(
         slot,
@@ -78,6 +79,36 @@ pub fn long_slot(slot: WeaponSlot) -> bool {
             | WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL
             | WeaponSlot::E_SLOT_HEAVY
     )
+}
+
+/// Whether a weapon of `slot` is a gun a hand takes from a character or a rack: a pistol, a
+/// two-handed, or a special weapon. A heavy weapon is held at a mount or by the game's own carry,
+/// and the grenade, the planted explosive, and the beacon are not guns.
+pub(crate) fn takeable_gun_slot(slot: WeaponSlot) -> bool {
+    matches!(
+        slot,
+        WeaponSlot::E_SLOT_DUAL_WIELD
+            | WeaponSlot::E_SLOT_TWO_HANDED
+            | WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL
+    )
+}
+
+/// `weapon`'s slot, read as the raw value: an unset slot is out of the enum's range.
+///
+/// # Safety
+///
+/// `weapon` must be live.
+pub(crate) unsafe fn slot_of(weapon: &WeaponBase) -> Option<WeaponSlot> {
+    slot_from_raw(unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() })
+}
+
+/// Whether `weapon` is a hand grenade.
+///
+/// # Safety
+///
+/// `weapon` must be live.
+pub(crate) unsafe fn is_hand_grenade(weapon: &WeaponBase) -> bool {
+    (unsafe { slot_of(weapon) }) == Some(WeaponSlot::E_SLOT_HAND_GRENADE)
 }
 
 /// The local player character.
@@ -216,17 +247,7 @@ pub unsafe fn holster(owner: &mut Character) {
 }
 
 /// The inventory slot of a raw slot value, or `None` for one out of the enum's range.
-pub(super) fn slot_from_raw(slot: i32) -> Option<WeaponSlot> {
-    const SLOTS: [WeaponSlot; 8] = [
-        WeaponSlot::E_SLOT_DUAL_WIELD,
-        WeaponSlot::E_SLOT_TWO_HANDED,
-        WeaponSlot::E_SLOT_HEAVY,
-        WeaponSlot::E_SLOT_HAND_GRENADE,
-        WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE,
-        WeaponSlot::E_SLOT_FOW,
-        WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL,
-        WeaponSlot::E_SLOT_BEACON,
-    ];
+pub(crate) fn slot_from_raw(slot: i32) -> Option<WeaponSlot> {
     SLOTS.into_iter().find(|&s| s as i32 == slot)
 }
 
@@ -318,4 +339,24 @@ mod tests {
         assert!(!long_slot(WeaponSlot::E_SLOT_DUAL_WIELD));
         assert!(!long_slot(WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE));
     }
+
+    #[test]
+    fn a_hand_takes_pistols_and_long_guns_but_not_heavy_weapons() {
+        assert!(takeable_gun_slot(WeaponSlot::E_SLOT_DUAL_WIELD));
+        assert!(takeable_gun_slot(WeaponSlot::E_SLOT_TWO_HANDED));
+        assert!(takeable_gun_slot(WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL));
+        assert!(!takeable_gun_slot(WeaponSlot::E_SLOT_HEAVY));
+        assert!(!takeable_gun_slot(WeaponSlot::E_SLOT_HAND_GRENADE));
+        assert!(!takeable_gun_slot(WeaponSlot::E_SLOT_BEACON));
+    }
+
+    #[test]
+    fn every_slot_reads_back_from_its_raw_value() {
+        for slot in SLOTS {
+            assert_eq!(slot_from_raw(slot as i32), Some(slot));
+        }
+        assert_eq!(slot_from_raw(-1), None);
+        assert_eq!(slot_from_raw(WeaponSlot::E_NONE as i32), None);
+    }
+
 }

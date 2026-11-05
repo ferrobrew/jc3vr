@@ -32,7 +32,7 @@ use crate::controllers::{
     physical_hands,
     weapons::{
         dual_wield::single,
-        engine::slot_from_raw,
+        engine::slot_of,
         hold::release_diagnostics::{DropObservation, NativeWrite, ReleaseMotion, SampleStage},
         inventory::engine::strong_to,
     },
@@ -310,11 +310,6 @@ unsafe fn wielded_mut(owner: &Character) -> Option<NonNull<WeaponBase>> {
 /// The weapon in `slot`.
 fn slot_weapon(inventory: &Inventory, slot: WeaponSlot) -> Option<NonNull<WeaponBase>> {
     NonNull::new(inventory.m_Weapons.get(slot as usize)?.px)
-}
-
-/// The weapon's slot, read as the raw value: an unset slot is out of the enum's range.
-unsafe fn slot_of(weapon: &WeaponBase) -> Option<WeaponSlot> {
-    slot_from_raw(unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() })
 }
 
 /// The gun's body id.
