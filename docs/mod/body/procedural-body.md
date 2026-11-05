@@ -56,7 +56,7 @@ The predicates the table calls at the gate walk the character's own rule system 
 
 `solver::anchored` poses the torso from the clip's own pose, so the clip's posture is the base the player's head moves from: a walk's stride, a bike's lean into a turn, a driver's reach for the wheel. In order:
 
-1. The chest twists toward the player's torso, by the body rig's heading against Rico's facing, within `chest_turn_limit_deg`, about the clip's own spine and shared out up it (more of it higher). A spine far from upright (lying in a swim) takes less of the twist, none lying flat.
+1. The chest twists toward the player's torso, by the body rig's chest heading against Rico's facing, within `chest_turn_limit_deg`, about the clip's own spine and shared out up it (more of it higher). A spine far from upright (lying in a swim) takes less of the twist, none lying flat.
 2. The spine swings so the neck reaches the neck pivot under the player's head, shared out along the four spine bones and repeated to converge, never past `lean_limit_deg` from the clip's own spine. A lean the body rig reads as a bend therefore bends Rico's back, and the hips stay where the clip has them.
 3. A look down pitches the chest forward by a share of it, again by how upright the spine is, and the spine turns back onto the neck's line about its base.
 4. The neck takes a share of the head's turn; the head override sets the head itself after the solve.

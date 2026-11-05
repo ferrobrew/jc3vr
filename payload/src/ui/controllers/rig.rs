@@ -52,10 +52,11 @@ pub(super) fn rig_readout(ui: &mut Ui, status: &RootStatus) {
                 yes_no(solve.hands_reaching),
             ));
             ui.label(format!(
-                "Body yaw {:+.1}° · target {:+.1}° · turning {}",
+                "Legs {:+.1}° · chest {:+.1}° · head {:+.1}° · turning {}",
                 o.body_yaw.to_degrees(),
+                o.chest_yaw.to_degrees(),
                 o.yaw_target.to_degrees(),
-                yes_no(o.turning),
+                o.turn_cause.map_or("no", |cause| cause.label()),
             ));
             ui.label(format!(
                 "Neck {:.3} m over the floor · standing {:.3} m ({} samples) · spine {:.3} m",
@@ -122,7 +123,7 @@ pub(super) fn rig_settings(ui: &mut Ui, body: &mut BodyRemapConfig) {
     ui.checkbox(&mut r.steps.enabled, "Step after the head")
         .on_hover_text("Walk Rico under the player's neck once the head is out past a lean.");
     ui.checkbox(&mut r.follow.enabled, "Body follows the head's yaw")
-        .on_hover_text("Turn the body under the view once the head turns past the deadzone.");
+        .on_hover_text("Turn the legs under the view for a large or sustained turn of the head.");
     ui.checkbox(
         &mut r.follow.turn_animation,
         "Turn in place with the game's animation",
@@ -158,13 +159,19 @@ pub(super) fn rig_settings(ui: &mut Ui, body: &mut BodyRemapConfig) {
     });
     ui.collapsing("Yaw", |ui| {
         let y = &mut r.yaw;
-        ui.add(egui::Slider::new(&mut y.deadzone_deg, 0.0..=90.0).text("Deadzone (°)"));
+        ui.add(egui::Slider::new(&mut y.chest_clamp_deg, 0.0..=90.0).text("Chest clamp (°)"))
+            .on_hover_text("The furthest the chest turns from the legs.");
+        ui.add(egui::Slider::new(&mut y.chest_follow_s, 0.0..=1.0).text("Chest follow (s)"));
+        ui.add(egui::Slider::new(&mut y.turn_deg, 0.0..=120.0).text("Legs turn past (°)"));
+        ui.add(egui::Slider::new(&mut y.sustain_deg, 0.0..=120.0).text("Sustained past (°)"))
+            .on_hover_text("The head held this far for the sustain time turns the legs.");
+        ui.add(egui::Slider::new(&mut y.sustain_s, 0.0..=5.0).text("Sustain time (s)"));
         ui.add(
-            egui::Slider::new(&mut y.moving_deadzone_deg, 0.0..=90.0).text("Deadzone moving (°)"),
+            egui::Slider::new(&mut y.moving_deadzone_deg, 0.0..=90.0).text("Legs turn moving (°)"),
         );
         ui.add(egui::Slider::new(&mut y.settle_deg, 0.0..=30.0).text("Settle (°)"));
         ui.add(egui::Slider::new(&mut y.slew_deg_s, 10.0..=720.0).text("Turn rate (°/s)"));
-        ui.add(egui::Slider::new(&mut y.hand_bias, 0.0..=1.0).text("Hands' pull"));
+        ui.add(egui::Slider::new(&mut y.hand_bias, 0.0..=1.0).text("Hands' pull on the chest"));
         ui.add(egui::Slider::new(&mut y.hand_min_m, 0.0..=0.6).text("Hands count past (m)"));
     });
 }

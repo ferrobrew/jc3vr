@@ -78,8 +78,14 @@ pub struct EvalSummary {
     pub driving_s: f64,
     /// Body turns started.
     pub turns: u64,
+    /// The median size of a body turn, from where it started to where it settled, degrees.
+    pub median_turn_deg: f32,
+    /// The size nine in ten body turns are below, degrees.
+    pub p90_turn_deg: f32,
     /// The mean absolute angle between the head and the body, degrees.
     pub mean_yaw_error_deg: f64,
+    /// The mean absolute angle between the head and the chest, degrees.
+    pub mean_chest_error_deg: f64,
     /// The largest neck offset over the pelvis, metres.
     pub max_offset_m: f32,
     /// The mean neck offset over the pelvis, metres.
@@ -170,7 +176,9 @@ pub fn evaluate(
     let mut last_time: Option<u64> = None;
     let mut yaw_error_sum = 0.0f64;
     let mut offset_sum = 0.0f64;
-    let mut was_turning = false;
+    let mut chest_error_sum = 0.0f64;
+    let mut turn_start: Option<f32> = None;
+    let mut turn_sizes: Vec<f32> = Vec::new();
     let mut last_grounded: Option<u64> = None;
     for frame in &recording.frames {
         let dt = last_time.map_or(0.0, |last| {
@@ -244,11 +252,20 @@ pub fn evaluate(
         if output.phase.drives() {
             summary.driving_s += f64::from(dt);
         }
-        if output.turning && !was_turning {
-            summary.turns += 1;
+        match (output.turning, turn_start) {
+            (true, None) => {
+                summary.turns += 1;
+                turn_start = Some(output.body_yaw);
+            }
+            (false, Some(start)) => {
+                turn_sizes.push(angle::wrap(output.body_yaw - start).abs().to_degrees());
+                turn_start = None;
+            }
+            _ => {}
         }
-        was_turning = output.turning;
         yaw_error_sum += f64::from(yaw_error.to_degrees() * dt);
+        chest_error_sum +=
+            f64::from(angle::wrap(head_yaw - output.chest_yaw).abs().to_degrees() * dt);
         let offset = output.solve.offset.length();
         offset_sum += f64::from(offset * dt);
         summary.max_offset_m = summary.max_offset_m.max(offset);
@@ -265,9 +282,21 @@ pub fn evaluate(
     }
     if summary.grounded_s > 0.0 {
         summary.mean_yaw_error_deg = yaw_error_sum / summary.grounded_s;
+        summary.mean_chest_error_deg = chest_error_sum / summary.grounded_s;
         summary.mean_offset_m = offset_sum / summary.grounded_s;
     }
+    turn_sizes.sort_by(f32::total_cmp);
+    summary.median_turn_deg = percentile(&turn_sizes, 0.5);
+    summary.p90_turn_deg = percentile(&turn_sizes, 0.9);
     (rows, summary)
+}
+
+/// The value a share `p` of the sorted `values` lie below, or zero for none.
+fn percentile(values: &[f32], p: f32) -> f32 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    values[((values.len() - 1) as f32 * p).round() as usize]
 }
 
 /// Write `rows` as CSV.
@@ -276,7 +305,7 @@ pub fn write_csv(rows: &[EvalRow], out: &mut impl Write) -> io::Result<()> {
         out,
         "time_s,video_s,phase,steps,demand_m,offset_m,lean_reach_m,bend_deg,pitch_deg,roll_deg,\
          crouch_m,neck_y_m,standing_neck_m,head_yaw_deg,body_yaw_deg,yaw_target_deg,yaw_error_deg,\
-         turning,pelvis_x,pelvis_z,neck_x,neck_z,speed_mps,moving,hands_reaching"
+         chest_yaw_deg,turning,pelvis_x,pelvis_z,neck_x,neck_z,speed_mps,moving,hands_reaching"
     )?;
     for row in rows {
         let o = &row.output;
@@ -284,7 +313,7 @@ pub fn write_csv(rows: &[EvalRow], out: &mut impl Write) -> io::Result<()> {
         writeln!(
             out,
             "{:.4},{},{},{},{:.4},{:.4},{:.4},{:.2},{:.2},{:.2},{:.4},{:.4},{:.4},{:.2},{:.2},{:.2},\
-             {:.2},{},{:.4},{:.4},{:.4},{:.4},{:.3},{},{}",
+             {:.2},{:.2},{},{:.4},{:.4},{:.4},{:.4},{:.3},{},{}",
             row.time_s,
             row.video_s.map_or(String::new(), |v| format!("{v:.3}")),
             phase_code(o.phase),
@@ -302,6 +331,7 @@ pub fn write_csv(rows: &[EvalRow], out: &mut impl Write) -> io::Result<()> {
             o.body_yaw.to_degrees(),
             o.yaw_target.to_degrees(),
             angle::wrap(row.head_yaw - o.body_yaw).to_degrees(),
+            o.chest_yaw.to_degrees(),
             u8::from(o.turning),
             row.pelvis.x,
             row.pelvis.y,

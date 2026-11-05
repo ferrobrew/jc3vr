@@ -9,8 +9,9 @@
 //!
 //! - the step phase and the gap to the floor point under the neck, which the root's simulation
 //!   half closes through the game's movement;
-//! - the body's heading, which the yaw follow steers Rico to ([`body_yaw`]);
-//! - the player's torso as the hands' shoulders and the divergence readout read it ([`torso`]);
+//! - the body's heading (the legs'), which the yaw follow steers Rico to ([`body_yaw`]);
+//! - the player's torso as the hands' shoulders, the chest's twist, and the divergence readout read
+//!   it, facing the chest's heading ([`torso`]);
 //! - the neck pivot, the waist pivot, and the lean's ring, for the in-world diagnostics
 //!   ([`diagnostics`]).
 //!
@@ -194,7 +195,7 @@ pub fn body_yaw() -> Option<f32> {
 }
 
 /// The player's torso in the cockpit frame, as the rig places it: the neck pivot, the spine down to
-/// the waist pivot, and the girdles across it by the body's heading.
+/// the waist pivot, the shoulders across it by the chest's heading, and the hips by the legs'.
 pub fn torso() -> Option<TorsoEstimate> {
     let published = fresh(Instant::now())?;
     let output = published.frame.output;
@@ -206,22 +207,25 @@ pub fn torso() -> Option<TorsoEstimate> {
     let d = published.dimensions;
     let below_neck = (d.eye_height + EYES_TO_NECK.y - d.shoulder_height).max(0.0);
     let chest = neck - up * below_neck;
-    let side = right(output.body_yaw);
-    let side = Vec3::new(side.x, 0.0, side.y);
+    let across = |yaw: f32| {
+        let side = right(yaw);
+        Vec3::new(side.x, 0.0, side.y)
+    };
+    let (shoulder_side, hip_side) = (across(output.chest_yaw), across(output.body_yaw));
     let half = d.shoulder_width * 0.5;
     let hip_half = half * HIP_SPACING_FRACTION;
-    let head_yaw = head_heading(published.head).unwrap_or(output.body_yaw);
+    let head_yaw = head_heading(published.head).unwrap_or(output.chest_yaw);
     Some(TorsoEstimate {
-        yaw: output.body_yaw,
+        yaw: output.chest_yaw,
         head_yaw,
-        neck_twist: wrap(head_yaw - output.body_yaw),
+        neck_twist: wrap(head_yaw - output.chest_yaw),
         hands_yaw: None,
         hands_weight: 0.0,
         neck,
-        shoulders: [chest - side * half, chest + side * half],
+        shoulders: [chest - shoulder_side * half, chest + shoulder_side * half],
         chest,
         pelvis: waist,
-        hips: [waist - side * hip_half, waist + side * hip_half],
+        hips: [waist - hip_side * hip_half, waist + hip_side * hip_half],
     })
 }
 

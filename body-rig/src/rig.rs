@@ -1,4 +1,4 @@
-//! The grounded rig: the pelvis solver, the step commit, the yaw follow, and the standing height,
+//! The grounded rig: the pelvis solver, the step commit, the yaw, and the standing height,
 //! advanced together once per frame.
 
 use glam::{Quat, Vec2, Vec3};
@@ -9,7 +9,7 @@ use crate::{
     height::StandingHeight,
     pelvis::{PelvisInput, PelvisSolve, PelvisTuning, solve},
     step::{StepCommit, StepInput, StepPhase, StepTuning},
-    yaw::{YawFollow, YawInput, YawTuning, hands_heading},
+    yaw::{TurnCause, YawFollow, YawInput, YawTuning, hands_heading},
 };
 
 /// All of the rig's tuning.
@@ -66,12 +66,16 @@ pub struct RigOutput {
     pub phase: StepPhase,
     /// The pelvis's gap to the floor point under the neck, `(x, z)`: what the drive closes.
     pub gap: Vec2,
-    /// The body's heading.
+    /// The body's heading: the legs', which Rico faces.
     pub body_yaw: f32,
-    /// The heading the body turns toward.
+    /// The chest's heading, within its clamp of the body's.
+    pub chest_yaw: f32,
+    /// The heading the body turns toward: the head's.
     pub yaw_target: f32,
     /// Whether a body turn is under way.
     pub turning: bool,
+    /// What started the body turn under way.
+    pub turn_cause: Option<TurnCause>,
     /// The standing neck height, metres over the floor.
     pub standing_neck_m: f32,
     /// Steps committed so far.
@@ -195,8 +199,10 @@ impl GroundedRig {
             phase,
             gap: solve.offset,
             body_yaw,
+            chest_yaw: self.yaw.chest().unwrap_or(body_yaw),
             yaw_target: self.yaw.target(),
             turning: self.yaw.turning(),
+            turn_cause: self.yaw.turn_cause(),
             standing_neck_m: standing_neck,
             steps: self.step.steps(),
         }

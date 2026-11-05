@@ -9,11 +9,11 @@ use glam::{Quat, Vec2, Vec3};
 /// The estimated torso, in the cockpit frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct TorsoEstimate {
-    /// The torso's heading, radians.
+    /// The torso's heading at the chest, radians.
     pub yaw: f32,
     /// The head's heading, radians.
     pub head_yaw: f32,
-    /// How far the head is turned from the torso, radians, positive turning left.
+    /// How far the head is turned from the chest, radians, positive turning left.
     pub neck_twist: f32,
     /// The hands' own heading, when they say anything.
     pub hands_yaw: Option<f32>,

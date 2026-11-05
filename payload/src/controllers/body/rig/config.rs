@@ -20,7 +20,8 @@ pub struct RigConfig {
     pub pelvis: PelvisTuning,
     /// The step commit's tuning: the threshold, the arrival, and the drive.
     pub step: StepTuning,
-    /// The yaw follow's tuning: the deadzones, the slew, and the hands' bias.
+    /// The yaw's tuning: the chest's clamp and follow, when the legs turn, the slew, and the
+    /// hands' pull on the chest.
     pub yaw: YawTuning,
 }
 
@@ -66,7 +67,11 @@ impl RigConfig {
             ("step.settle_done_m", s.settle_done_m, 0.0, 0.5),
             ("step.settle_s", s.settle_s, 0.0, 10.0),
             ("step.give_up_s", s.give_up_s, 0.1, 30.0),
-            ("yaw.deadzone_deg", y.deadzone_deg, 0.0, 120.0),
+            ("yaw.chest_clamp_deg", y.chest_clamp_deg, 0.0, 120.0),
+            ("yaw.chest_follow_s", y.chest_follow_s, 0.0, 5.0),
+            ("yaw.turn_deg", y.turn_deg, 0.0, 180.0),
+            ("yaw.sustain_deg", y.sustain_deg, 0.0, 180.0),
+            ("yaw.sustain_s", y.sustain_s, 0.0, 30.0),
             ("yaw.moving_deadzone_deg", y.moving_deadzone_deg, 0.0, 120.0),
             ("yaw.settle_deg", y.settle_deg, 0.0, 60.0),
             ("yaw.slew_deg_s", y.slew_deg_s, 1.0, 2000.0),

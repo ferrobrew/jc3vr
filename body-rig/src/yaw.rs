@@ -1,16 +1,20 @@
-//! The body's yaw follow: Rico's facing follows the player's head through a deadzone.
+//! The body's yaw, in two layers: the chest follows the player's head continuously within a clamp,
+//! and the legs (Rico's facing) turn only for a large or sustained turn of the head, or while the
+//! body moves.
 //!
-//! A glance to the side twists the neck only. Turning the head past the deadzone starts a body
-//! turn, which runs at a slew rate until the body faces the target again, within a small settle
-//! angle: the turn is a discrete act, as a person turns the body once the head has gone far enough,
-//! not a constant drag after every look. The hands bias the target: held out toward one side, they
-//! pull it their way, so aiming to one side turns the torso before the head gets there.
+//! A glance to the side turns the chest toward it at once and twists the neck for the rest, with no
+//! visible turn of the body. The chest is critically damped toward the head's heading, held within
+//! the clamp of the legs' heading. The legs turn as a discrete act: when the head goes past the
+//! turn angle, or stays past the sustain angle for the sustain time, or goes past the moving
+//! deadzone while the body moves, a turn starts and runs at a slew rate until the legs face the
+//! head again, within a small settle angle. The hands pull the chest their way, held out toward one
+//! side, but never the legs: aiming or reaching to one side turns the torso, not the stance.
 
 use glam::{Vec2, Vec3};
 
 use crate::angle::{wrap, yaw_of_flat};
 
-/// The yaw follow's tuning.
+/// The yaw's tuning.
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -18,16 +22,26 @@ use crate::angle::{wrap, yaw_of_flat};
 )]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct YawTuning {
-    /// How far the target may be from the body before the body turns, degrees.
-    pub deadzone_deg: f32,
-    /// The deadzone while the body moves, degrees: a walking body faces where it looks sooner.
+    /// The furthest the chest turns from the legs, degrees.
+    pub chest_clamp_deg: f32,
+    /// How quickly the chest follows the head, seconds: the smoothing time of a critically damped
+    /// spring.
+    pub chest_follow_s: f32,
+    /// The head this far from the legs turns them at once, degrees.
+    pub turn_deg: f32,
+    /// The head held this far from the legs for [`sustain_s`](Self::sustain_s) turns them, degrees.
+    pub sustain_deg: f32,
+    /// How long the head must stay past [`sustain_deg`](Self::sustain_deg), seconds.
+    pub sustain_s: f32,
+    /// The head this far from the legs turns them while the body moves, degrees: a walking body
+    /// faces where it looks sooner.
     pub moving_deadzone_deg: f32,
-    /// A turn stops once the body is this close to the target, degrees.
+    /// A turn of the legs stops once they are this close to the head, degrees.
     pub settle_deg: f32,
-    /// The fastest the body turns, degrees per second.
+    /// The fastest the legs turn, degrees per second.
     pub slew_deg_s: f32,
-    /// How far the hands, held out, pull the target from the head toward their own heading, as a
-    /// share of the angle between them.
+    /// How far the hands, held out, pull the chest's target from the head toward their own heading,
+    /// as a share of the angle between them.
     pub hand_bias: f32,
     /// How far out from the neck a hand must be held to count at all, metres; it counts fully a
     /// further [`HAND_FULL_M`] out.
@@ -37,8 +51,12 @@ pub struct YawTuning {
 impl YawTuning {
     pub const fn new() -> Self {
         Self {
-            deadzone_deg: 30.0,
-            moving_deadzone_deg: 15.0,
+            chest_clamp_deg: 45.0,
+            chest_follow_s: 0.15,
+            turn_deg: 60.0,
+            sustain_deg: 40.0,
+            sustain_s: 1.0,
+            moving_deadzone_deg: 25.0,
             settle_deg: 5.0,
             slew_deg_s: 200.0,
             hand_bias: 0.5,
@@ -56,7 +74,7 @@ impl Default for YawTuning {
 /// How much further out than [`YawTuning::hand_min_m`] the hands must be to count fully, metres.
 pub const HAND_FULL_M: f32 = 0.25;
 
-/// The hands' pull on the target.
+/// The hands' pull on the chest.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct HandsHeading {
     /// The heading of the hands' mean horizontal offset from the neck.
@@ -90,12 +108,12 @@ pub fn hands_heading(
     (weight > 0.0).then_some(HandsHeading { yaw, weight })
 }
 
-/// One frame's inputs to the yaw follow.
+/// One frame's inputs to the yaw.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct YawInput {
     /// The head's heading.
     pub head_yaw: f32,
-    /// The hands' pull, when they have one.
+    /// The hands' pull on the chest, when they have one.
     pub hands: Option<HandsHeading>,
     /// Whether the body moves (a step, or the stick).
     pub moving: bool,
@@ -103,14 +121,42 @@ pub struct YawInput {
     pub dt: f32,
 }
 
-/// The yaw follow's state.
+/// What started a turn of the legs.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum TurnCause {
+    /// The head went past the turn angle.
+    Large,
+    /// The head stayed past the sustain angle for the sustain time.
+    Sustained,
+    /// The head went past the moving deadzone while the body moved.
+    Moving,
+}
+
+impl TurnCause {
+    pub fn label(self) -> &'static str {
+        match self {
+            TurnCause::Large => "large",
+            TurnCause::Sustained => "sustained",
+            TurnCause::Moving => "moving",
+        }
+    }
+}
+
+/// The yaw's state.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct YawFollow {
-    /// The body's heading, once known.
+    /// The legs' heading, once known.
     yaw: Option<f32>,
-    /// Whether a turn is under way.
-    turning: bool,
-    /// The target on the last frame.
+    /// The chest's heading, once known.
+    chest: Option<f32>,
+    /// The chest's turn rate, radians per second.
+    chest_rate: f32,
+    /// The turn of the legs under way, and what started it.
+    turning: Option<TurnCause>,
+    /// How long the head has stayed past the sustain angle, seconds.
+    sustained: f32,
+    /// The head's heading on the last frame.
     target: f32,
 }
 
@@ -118,35 +164,47 @@ impl YawFollow {
     pub const fn new() -> Self {
         Self {
             yaw: None,
-            turning: false,
+            chest: None,
+            chest_rate: 0.0,
+            turning: None,
+            sustained: 0.0,
             target: 0.0,
         }
     }
 
-    /// The body's heading, once known.
+    /// The legs' heading, once known.
     pub fn yaw(&self) -> Option<f32> {
         self.yaw
     }
 
-    /// The target the body turns toward.
+    /// The chest's heading, once known.
+    pub fn chest(&self) -> Option<f32> {
+        self.chest
+    }
+
+    /// The heading the legs turn toward: the head's.
     pub fn target(&self) -> f32 {
         self.target
     }
 
-    /// Whether a turn is under way.
+    /// Whether a turn of the legs is under way.
     pub fn turning(&self) -> bool {
+        self.turning.is_some()
+    }
+
+    /// What started the turn of the legs under way.
+    pub fn turn_cause(&self) -> Option<TurnCause> {
         self.turning
     }
 
-    /// Face `yaw` at once, as a recenter does.
+    /// Face `yaw` at once, legs and chest, as a recenter does.
     pub fn snap(&mut self, yaw: f32) {
+        *self = Self::new();
         if yaw.is_finite() {
             self.yaw = Some(wrap(yaw));
+            self.chest = Some(wrap(yaw));
             self.target = wrap(yaw);
-        } else {
-            self.yaw = None;
         }
-        self.turning = false;
     }
 
     /// Turn the frame the headings are measured in by `turn` radians about +Y (new frame from old),
@@ -156,55 +214,102 @@ impl YawFollow {
             return;
         }
         self.yaw = self.yaw.map(|yaw| wrap(yaw + turn));
+        self.chest = self.chest.map(|chest| wrap(chest + turn));
         self.target = wrap(self.target + turn);
     }
 
-    /// Advance one frame and return the body's heading.
+    /// Advance one frame and return the legs' heading.
     pub fn update(&mut self, input: &YawInput, tuning: &YawTuning) -> f32 {
         if !input.head_yaw.is_finite() {
             return self.yaw.unwrap_or(0.0);
-        }
-        let target = match input.hands {
-            Some(hands) if hands.yaw.is_finite() && hands.weight.is_finite() => wrap(
-                input.head_yaw
-                    + wrap(hands.yaw - input.head_yaw)
-                        * tuning.hand_bias.clamp(0.0, 1.0)
-                        * hands.weight.clamp(0.0, 1.0),
-            ),
-            _ => input.head_yaw,
-        };
-        self.target = target;
-        let Some(yaw) = self.yaw else {
-            self.yaw = Some(target);
-            return target;
-        };
-        let error = wrap(target - yaw);
-        let deadzone = if input.moving {
-            tuning.moving_deadzone_deg
-        } else {
-            tuning.deadzone_deg
-        }
-        .max(0.0)
-        .to_radians();
-        if error.abs() > deadzone {
-            self.turning = true;
-        }
-        if !self.turning {
-            return yaw;
         }
         let dt = if input.dt.is_finite() {
             input.dt.max(0.0)
         } else {
             0.0
         };
-        let step = tuning.slew_deg_s.max(0.0).to_radians() * dt;
-        let yaw = wrap(yaw + error.clamp(-step, step));
-        if wrap(target - yaw).abs() <= tuning.settle_deg.max(0.0).to_radians() {
-            self.turning = false;
+        let head = wrap(input.head_yaw);
+        self.target = head;
+        let Some(yaw) = self.yaw else {
+            self.snap(head);
+            return head;
+        };
+
+        let error = wrap(head - yaw);
+        let past = |deg: f32| error.abs() > deg.max(0.0).to_radians();
+        if past(tuning.sustain_deg) {
+            self.sustained += dt;
+        } else {
+            self.sustained = 0.0;
         }
+        if self.turning.is_none() {
+            self.turning = if past(tuning.turn_deg) {
+                Some(TurnCause::Large)
+            } else if self.sustained >= tuning.sustain_s.max(0.0) && past(tuning.sustain_deg) {
+                Some(TurnCause::Sustained)
+            } else if input.moving && past(tuning.moving_deadzone_deg) {
+                Some(TurnCause::Moving)
+            } else {
+                None
+            };
+        }
+        let yaw = if self.turning.is_some() {
+            let step = tuning.slew_deg_s.max(0.0).to_radians() * dt;
+            let yaw = wrap(yaw + error.clamp(-step, step));
+            if wrap(head - yaw).abs() <= tuning.settle_deg.max(0.0).to_radians() {
+                self.turning = None;
+                self.sustained = 0.0;
+            }
+            yaw
+        } else {
+            yaw
+        };
         self.yaw = Some(yaw);
+        self.update_chest(yaw, head, input, dt, tuning);
         yaw
     }
+
+    /// Move the chest toward the head, pulled by the hands, within the clamp of the legs.
+    fn update_chest(&mut self, yaw: f32, head: f32, input: &YawInput, dt: f32, tuning: &YawTuning) {
+        let wanted = match input.hands {
+            Some(hands) if hands.yaw.is_finite() && hands.weight.is_finite() => wrap(
+                head + wrap(hands.yaw - head)
+                    * tuning.hand_bias.clamp(0.0, 1.0)
+                    * hands.weight.clamp(0.0, 1.0),
+            ),
+            _ => head,
+        };
+        let clamp = tuning.chest_clamp_deg.clamp(0.0, 180.0).to_radians();
+        let goal = wrap(yaw + wrap(wanted - yaw).clamp(-clamp, clamp));
+        let chest = self.chest.unwrap_or(goal);
+        let (moved, rate) = smooth_damp(chest, goal, self.chest_rate, tuning.chest_follow_s, dt);
+        // The clamp holds however fast the legs turn under the chest.
+        let chest = wrap(yaw + wrap(moved - yaw).clamp(-clamp, clamp));
+        self.chest = Some(chest);
+        self.chest_rate = if rate.is_finite() { rate } else { 0.0 };
+    }
+}
+
+/// A critically damped spring from the heading `from`, turning at `rate`, toward `to`, over `dt`
+/// seconds with a smoothing time of `smooth_s`: the new heading and rate. It never overshoots.
+fn smooth_damp(from: f32, to: f32, rate: f32, smooth_s: f32, dt: f32) -> (f32, f32) {
+    if smooth_s <= 1.0e-4 || dt <= 0.0 {
+        return if dt <= 0.0 { (from, rate) } else { (to, 0.0) };
+    }
+    let omega = 2.0 / smooth_s;
+    let x = omega * dt;
+    let decay = 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x);
+    let change = wrap(from - to);
+    let temp = (rate + omega * change) * dt;
+    let rate_out = (rate - omega * temp) * decay;
+    let mut offset = (change + temp) * decay;
+    let mut rate_out = rate_out;
+    // Arriving past the goal from either side lands on it.
+    if (change > 0.0) != (offset > 0.0) && change != 0.0 {
+        offset = 0.0;
+        rate_out = 0.0;
+    }
+    (wrap(to + offset), rate_out)
 }
 
 #[cfg(test)]
@@ -226,7 +331,7 @@ mod tests {
     }
 
     fn run(follow: &mut YawFollow, input: YawInput, seconds: f32) -> f32 {
-        let mut yaw = 0.0;
+        let mut yaw = follow.yaw().unwrap_or(0.0);
         for _ in 0..(seconds / DT) as usize {
             yaw = follow.update(&input, &TUNING);
         }
@@ -234,22 +339,56 @@ mod tests {
     }
 
     #[test]
-    fn a_glance_inside_the_deadzone_turns_nothing() {
+    fn a_glance_turns_the_chest_and_not_the_legs() {
         let mut follow = YawFollow::new();
         follow.update(&look(0.0), &TUNING);
-        for deg in [10.0, -25.0, 29.0, 0.0] {
-            assert_eq!(run(&mut follow, look(deg), 0.5), 0.0);
-        }
+        assert_eq!(run(&mut follow, look(30.0), 0.5), 0.0);
         assert!(!follow.turning());
+        assert!((follow.chest().unwrap().to_degrees() - 30.0).abs() < 1.0);
     }
 
     #[test]
-    fn a_turn_past_the_deadzone_brings_the_body_round() {
+    fn the_chest_stays_within_its_clamp() {
+        let mut follow = YawFollow::new();
+        follow.update(&look(0.0), &TUNING);
+        // Inside the turn angle and for less than the sustain time: the legs stay.
+        assert_eq!(run(&mut follow, look(55.0), 0.8), 0.0);
+        assert!((follow.chest().unwrap().to_degrees() - TUNING.chest_clamp_deg).abs() < 0.1);
+    }
+
+    #[test]
+    fn a_large_turn_brings_the_legs_round() {
         let mut follow = YawFollow::new();
         follow.update(&look(0.0), &TUNING);
         let yaw = run(&mut follow, look(90.0), 2.0);
         assert!((yaw.to_degrees() - 90.0).abs() <= TUNING.settle_deg + 0.1);
         assert!(!follow.turning());
+    }
+
+    #[test]
+    fn a_sustained_turn_brings_the_legs_round() {
+        let mut follow = YawFollow::new();
+        follow.update(&look(0.0), &TUNING);
+        follow.update(&look(50.0), &TUNING);
+        assert_eq!(follow.turn_cause(), None);
+        run(&mut follow, look(50.0), TUNING.sustain_s * 0.9);
+        assert!(!follow.turning());
+        run(&mut follow, look(50.0), TUNING.sustain_s * 0.2);
+        assert_eq!(follow.turn_cause(), Some(TurnCause::Sustained));
+        let yaw = run(&mut follow, look(50.0), 1.0);
+        assert!((yaw.to_degrees() - 50.0).abs() <= TUNING.settle_deg + 0.1);
+    }
+
+    #[test]
+    fn looking_back_resets_the_sustain() {
+        let mut follow = YawFollow::new();
+        follow.update(&look(0.0), &TUNING);
+        for _ in 0..4 {
+            run(&mut follow, look(50.0), TUNING.sustain_s * 0.6);
+            run(&mut follow, look(0.0), 0.1);
+        }
+        assert!(!follow.turning());
+        assert_eq!(follow.yaw(), Some(0.0));
     }
 
     #[test]
@@ -261,16 +400,17 @@ mod tests {
     }
 
     #[test]
-    fn moving_narrows_the_deadzone() {
+    fn moving_narrows_the_turn() {
         let mut follow = YawFollow::new();
         follow.update(&look(0.0), &TUNING);
-        let mut moving = look(20.0);
+        let mut moving = look(TUNING.moving_deadzone_deg + 5.0);
         moving.moving = true;
         assert!(run(&mut follow, moving, 1.0) > 0.2);
+        assert!(!follow.turning());
     }
 
     #[test]
-    fn hands_held_out_pull_the_target() {
+    fn hands_held_out_pull_the_chest_and_not_the_legs() {
         let neck = Vec3::new(0.0, 1.6, 0.0);
         // Both hands out to the left (-X), at chest height.
         let hands = [
@@ -283,8 +423,9 @@ mod tests {
         follow.update(&look(0.0), &TUNING);
         let mut input = look(0.0);
         input.hands = Some(heading);
-        follow.update(&input, &TUNING);
-        assert!(follow.target() > 0.6);
+        let yaw = run(&mut follow, input, 3.0);
+        assert_eq!(yaw, 0.0);
+        assert!(follow.chest().unwrap() > 0.6);
         // Hands down at the sides say nothing.
         let down = [
             Some(Vec3::new(-0.2, 0.9, 0.0)),
@@ -299,11 +440,24 @@ mod tests {
         follow.snap(0.3);
         follow.rotate(0.5);
         assert!((follow.yaw().unwrap() - 0.8).abs() < 1e-6);
+        assert!((follow.chest().unwrap() - 0.8).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_spring_settles_without_overshooting() {
+        let (mut heading, mut rate) = (0.0f32, 0.0f32);
+        let mut furthest = 0.0f32;
+        for _ in 0..200 {
+            (heading, rate) = smooth_damp(heading, 1.0, rate, 0.15, DT);
+            furthest = furthest.max(heading);
+        }
+        assert!(furthest <= 1.0 + 1e-5);
+        assert!((heading - 1.0).abs() < 1e-3);
     }
 
     proptest! {
         #[test]
-        fn a_frame_never_turns_further_than_the_slew(
+        fn a_frame_never_turns_the_legs_further_than_the_slew(
             heads in proptest::collection::vec(-180.0f32..180.0, 1..200),
         ) {
             let mut follow = YawFollow::new();
@@ -312,6 +466,10 @@ mod tests {
             for head in heads {
                 let yaw = follow.update(&look(head), &TUNING);
                 prop_assert!(wrap(yaw - last).abs() <= TUNING.slew_deg_s.to_radians() * DT + 1e-4);
+                let chest = follow.chest().unwrap();
+                prop_assert!(
+                    wrap(chest - yaw).abs() <= TUNING.chest_clamp_deg.to_radians() + 1e-4
+                );
                 last = yaw;
             }
         }

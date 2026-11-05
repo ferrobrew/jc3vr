@@ -37,9 +37,10 @@ pub fn estimate() -> Option<TorsoEstimate> {
     grounded::torso()
 }
 
-/// How Rico's yaw follows the player on this input tick: toward the grounded rig's body heading,
-/// whose own deadzone and slew already decide when the body turns, so the follow adds none. With
-/// no fresh rig (off the ground, or before the first frame) the body does not follow.
+/// How Rico's yaw follows the player on this input tick: toward the grounded rig's body heading
+/// (the legs'), whose own rules and slew already decide when the body turns, so the follow adds no
+/// deadband. With no fresh rig (off the ground, or before the first frame) the body does not
+/// follow.
 pub fn follow_settings() -> FollowSettings {
     let follow = Config::lock_query(|c| c.controllers.body.rig.follow.enabled);
     if !follow || headpose::source() != headpose::Source::Vr || !hooks::in_gameplay() {

@@ -5,7 +5,8 @@
 //! - [`pelvis`]: whether the head is out over Rico's pelvis because the player leans or because the
 //!   player stepped, from one spine segment between the waist and the neck pivots.
 //! - [`step`]: when a step commits, and the velocity that drives the pelvis back under the neck.
-//! - [`yaw`]: Rico's facing following the head through a deadzone, biased by the hands.
+//! - [`yaw`]: the chest following the head within a clamp, and Rico's facing (the legs) turning
+//!   only for a large or sustained turn of the head, or while he moves.
 //! - [`height`]: the standing neck height, measured rather than assumed.
 //! - [`rig`]: all of them advanced together.
 //!
@@ -25,5 +26,5 @@ pub use crate::{
     pelvis::{Bend, PelvisSolve, PelvisTuning},
     rig::{GroundedRig, RigFrame, RigOutput, RigTuning},
     step::{StepPhase, StepTuning, drive_velocity},
-    yaw::YawTuning,
+    yaw::{TurnCause, YawTuning},
 };
