@@ -22,7 +22,7 @@ use crate::{
         grab::latch::GripLatch,
         hands::ik,
         haptics::{self, Sustain},
-        loadout::{Delivery, TakeSource},
+        loadout::TakeSource,
         physical_hands::{
             self,
             doors::{DoorTarget, engine::vehicle_frame},
@@ -45,10 +45,9 @@ use crate::{
             grenade,
             hold::{
                 SNAP_S,
-                pickup::{self, TakeOptions},
-                rack,
                 refs::{Strong, Weak},
-                steal,
+                source::{self as hold_source, WeaponSource},
+                steal::CharacterGun,
             },
             inventory::engine::weapon_of,
         },
@@ -120,24 +119,13 @@ pub(super) enum Fired {
 ///
 /// The game thread, before the world update.
 pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal> {
-    let freed = match offer.kind {
-        OfferKind::Ground { weapon, weak, .. } => {
-            let grabbed = Grabbed {
-                object: weapon,
-                kind: Pulled::Weapon {
-                    source: TakeSource::World,
-                },
-                _alive: weak.lock().ok_or(Refusal::Gone)?,
-            };
-            let (dropped, _) = unsafe { engine::dropped(weapon) }?;
-            // What the hand could not take is refused before the hook flies.
-            let player = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
-                .ok_or(Refusal::NoPlayer)?;
-            unsafe { pickup::takeable(player, dropped) }.map_err(Refusal::Take)?;
-            unsafe { pickup::route(dropped, Some(hand)) }.map_err(Refusal::Take)?;
-            let wire = unsafe { fire_hook(&grabbed) }?;
-            return Ok(Fired::HookOut(grabbed, wire));
+    let source = match offer.kind {
+        OfferKind::Ground { weak, .. } => WeaponSource::Ground { weak },
+        OfferKind::Held(target) => {
+            WeaponSource::Character(CharacterGun::held(&target).ok_or(Refusal::Gone)?)
         }
+        OfferKind::Holstered(target) => WeaponSource::Character(CharacterGun::holstered(&target)),
+        OfferKind::Rack { weapon, weak } => WeaponSource::Rack { weapon, weak },
         OfferKind::Prop {
             object,
             body,
@@ -211,25 +199,24 @@ pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal>
             let wire = unsafe { fire_hook(&grabbed) }?;
             return Ok(Fired::HookOut(grabbed, wire));
         }
-        OfferKind::Held(target) => {
-            unsafe { steal::release(hand, &target) }.map_err(Refusal::Free)?
-        }
-        OfferKind::Holstered(target) => {
-            unsafe { steal::release_holstered(hand, &target) }.map_err(Refusal::Free)?
-        }
-        OfferKind::Rack { weapon, weak } => {
-            unsafe { rack::remote::release(hand, weapon, &weak) }.map_err(Refusal::Rack)?
-        }
     };
+    let ground = matches!(source, WeaponSource::Ground { .. });
+    let freed = unsafe { hold_source::free(hand, &source) }.map_err(Refusal::Source)?;
     let object = NonZeroUsize::new(freed.weapon as usize).ok_or(Refusal::Gone)?;
-    tracing::info!(target: "controllers", hand = hand.label(), "snatch: the gun is free of its holder");
-    Ok(Fired::Freeing(Grabbed {
+    let grabbed = Grabbed {
         object,
         kind: Pulled::Weapon {
             source: freed.source,
         },
         _alive: freed.alive,
-    }))
+    };
+    if ground {
+        // A weapon lying in the world has its bodies already: the hook flies at once.
+        let wire = unsafe { fire_hook(&grabbed) }?;
+        return Ok(Fired::HookOut(grabbed, wire));
+    }
+    tracing::info!(target: "controllers", hand = hand.label(), "snatch: the gun is free of its holder");
+    Ok(Fired::Freeing(grabbed))
 }
 
 /// Fire the hook at what `grabbed` holds.
@@ -772,12 +759,7 @@ unsafe fn arrive(
         Pulled::Weapon { source } => {
             let (weapon, _) = unsafe { engine::dropped(grabbed.object) }?;
             let address = weapon as *mut WeaponBase as usize;
-            let options = TakeOptions {
-                slide_s,
-                source,
-                delivery: Delivery::Remote,
-            };
-            unsafe { pickup::take(hand, weapon, options) }
+            unsafe { hold_source::deliver(hand, weapon, source, slide_s) }
                 .map(|slot| Arrival::Weapon {
                     slot,
                     weapon: address,

@@ -23,8 +23,9 @@ use crate::controllers::{
         engine::{character_object, slot_of},
         hold::{
             pickup::{self, Refusal, TakeOptions},
-            rack::{RackRefusal, offered_state},
+            rack::offered_state,
             refs::Strong,
+            source::SourceRefusal,
             world::{TargetKind, WorldTarget},
         },
         inventory::{engine, gives},
@@ -239,15 +240,15 @@ pub(crate) unsafe fn take(
     hand: Hand,
     member: Member,
     options: TakeOptions,
-) -> Result<WeaponSlot, RackRefusal> {
+) -> Result<WeaponSlot, SourceRefusal> {
     if finite::owns(member) {
         return unsafe { finite::take(owner, hand, member, options) };
     }
     let actor = {
         let mut state = STATE.lock();
-        let source = find_mut(&mut state, member).ok_or(RackRefusal::Gone)?;
+        let source = find_mut(&mut state, member).ok_or(SourceRefusal::Gone)?;
         let stage = &mut source.members[member.index as usize];
-        stage.take().ok_or(RackRefusal::CopyPending)?
+        stage.take().ok_or(SourceRefusal::CopyPending)?
     };
     let weapon = unsafe { &mut *engine::weapon_of(&actor) };
     // A staged actor is not in the single-pistol inventory watch until the take makes it owned.
@@ -288,7 +289,7 @@ pub(crate) unsafe fn take(
         source.members[member.index as usize].complete(actor, result.is_ok());
     }
     drop(state);
-    result.map_err(RackRefusal::Pickup)?;
+    result.map_err(SourceRefusal::Take)?;
     Ok(WeaponSlot::E_SLOT_DUAL_WIELD)
 }
 

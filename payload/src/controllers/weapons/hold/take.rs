@@ -21,18 +21,16 @@ use crate::controllers::{
     frame::{Hand, Pose},
     grab::Candidate,
     hands::{ActiveHands, CockpitHand},
-    loadout::{Delivery, TakeSource},
     physical_hands::grab_view,
     weapons::{
         config::HoldConfig,
         docks, engine,
         hold::{
-            self, SNAP_S, STEAL_RADIUS_M, TAKE_RADIUS_M,
-            pickup::TakeOptions,
-            rack::{self, RackRefusal},
-            steal::{self, StealRefusal},
+            self, STEAL_RADIUS_M, TAKE_RADIUS_M, rack,
+            source::{self, SourceRefusal, WeaponSource},
+            steal,
             take::placement::{Identity, Records, Sample},
-            world::{self, TakeRadii, TargetKind, WorldTarget},
+            world::{self, TakeRadii, WorldTarget},
         },
     },
 };
@@ -218,22 +216,9 @@ pub(crate) unsafe fn finish_grab(hand: Hand, inputs: &TakeInputs) -> bool {
     let point = inputs.active.hands[hand.index()].map(|h| h.grip.position);
     let target = STATE.lock().offered.take(hand, point, TAKE_RADII);
     let result = world::complete_offer(target, |target| {
-        let options = TakeOptions {
-            slide_s: SNAP_S,
-            source: match target.kind {
-                TargetKind::Held { .. } => TakeSource::Character,
-                TargetKind::Rack { .. } | TargetKind::RackMember { .. } => TakeSource::Rack,
-            },
-            delivery: Delivery::Local,
-        };
-        match target.kind {
-            TargetKind::Held { .. } => {
-                unsafe { steal::take(hand, &target, options) }.map_err(TakeRefusal::Steal)
-            }
-            TargetKind::Rack { .. } | TargetKind::RackMember { .. } => {
-                unsafe { rack::take(hand, &target, options) }.map_err(TakeRefusal::Rack)
-            }
-        }
+        unsafe { WeaponSource::of_target(&target) }
+            .and_then(|source| unsafe { source::take(hand, &source) })
+            .map_err(TakeRefusal::Source)
     });
     match result {
         Ok(Some(_)) => {
@@ -289,16 +274,14 @@ fn report_refusal(hand: Hand, refusal: TakeRefusal) {
 enum TakeRefusal {
     /// No target was within reach of the grabbing hand.
     NothingInReach,
-    Steal(StealRefusal),
-    Rack(RackRefusal),
+    Source(SourceRefusal),
 }
 
 impl fmt::Display for TakeRefusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TakeRefusal::NothingInReach => write!(f, "take: no weapon is within the hand's reach"),
-            TakeRefusal::Steal(refusal) => write!(f, "take: {refusal}"),
-            TakeRefusal::Rack(refusal) => write!(f, "take: {refusal}"),
+            TakeRefusal::Source(refusal) => write!(f, "take: {refusal}"),
         }
     }
 }

@@ -33,9 +33,8 @@ use crate::controllers::{
         engine::{self, character_object, long_slot, object_of, slot_of, takeable_gun_slot},
         hold::{
             pickup::{self, Refusal},
-            rack::RackRefusal,
             refs::Weak,
-            steal::Freed,
+            source::{Freed, SourceRefusal},
         },
     },
 };
@@ -132,16 +131,16 @@ pub(crate) unsafe fn release(
     hand: Hand,
     weapon: NonZeroUsize,
     weak: &Weak,
-) -> Result<Freed, RackRefusal> {
-    let alive = weak.lock().ok_or(RackRefusal::Gone)?;
+) -> Result<Freed, SourceRefusal> {
+    let alive = weak.lock().ok_or(SourceRefusal::Gone)?;
     // SAFETY: the strong reference keeps the weapon alive.
     let weapon = unsafe { &mut *(weapon.get() as *mut WeaponBase) };
     if !unsafe { waiting(weapon) } {
-        return Err(RackRefusal::Gone);
+        return Err(SourceRefusal::Gone);
     }
     let owner =
-        unsafe { engine::local_player() }.ok_or(RackRefusal::Pickup(Refusal::NoCharacter))?;
-    unsafe { pickup::preflight(owner, weapon, hand) }.map_err(RackRefusal::Pickup)?;
+        unsafe { engine::local_player() }.ok_or(SourceRefusal::Take(Refusal::NoCharacter))?;
+    unsafe { pickup::preflight(owner, weapon, hand) }.map_err(SourceRefusal::Take)?;
     let from_rack = weapon.m_State == WeaponState::E_WS_WEAPON_RACK;
     if from_rack {
         unsafe { weapon.PickupStart(character_object(owner)) };

@@ -15,7 +15,9 @@
 //! presumably set down at a spot by its placement rule); one a character holds, one already being
 //! picked up, and a mounted gun, which a placement rule also spawns, are left out.
 //!
-//! A grab of one takes it ([`take`]), found again among the entries so that it is known alive:
+//! A grab of one takes it through the hands' take from a source
+//! ([`crate::controllers::weapons::hold::source`]), found again among the entries ([`find`]) so
+//! that it is known alive, and then ([`take`]):
 //!
 //! - a weapon the rack hands over goes straight into the grabbing hand, as a weapon off the ground
 //!   does, after the call that starts the game's own pickup of it ([`WeaponBase::PickupStart`]);
@@ -31,10 +33,7 @@ pub(crate) mod offer;
 pub(crate) mod paired;
 pub(crate) mod remote;
 
-use std::{
-    fmt,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use glam::Vec3;
 use jc3gi::{
@@ -53,37 +52,13 @@ use crate::controllers::{
             self, act,
             pickup::{self, Refusal, TakeOptions},
             refs::Strong,
+            source::SourceRefusal,
             steal,
             world::{TargetKind, WorldTarget},
         },
         inventory::engine as inventory_engine,
     },
 };
-
-/// Why a take off a rack did not happen.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum RackRefusal {
-    /// The weapon is no longer offered on its rack.
-    Gone,
-    /// A copy is already on its way to a hand.
-    CopyPending,
-    /// The pickup that puts the weapon in the hand refused it.
-    Pickup(Refusal),
-}
-
-impl fmt::Display for RackRefusal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RackRefusal::Gone => write!(f, "take off a rack: the weapon is no longer on its rack"),
-            RackRefusal::CopyPending => {
-                write!(f, "take off a rack: a copy is already on its way to a hand")
-            }
-            RackRefusal::Pickup(refusal) => write!(f, "take off a rack: {refusal}"),
-        }
-    }
-}
-
-impl std::error::Error for RackRefusal {}
 
 /// The rack weapons the player's interaction entries offer now, with their points carried into the
 /// cockpit frame by `to_cockpit`.
@@ -124,63 +99,53 @@ pub(crate) unsafe fn targets(
     out
 }
 
-/// Take `target`'s weapon off its rack into `hand`.
+/// The weapon at `weapon` while the local player's interaction entries still offer it, held alive.
 ///
 /// # Safety
 ///
 /// The game thread, before the world update.
-pub(crate) unsafe fn take(
-    hand: Hand,
-    target: &WorldTarget,
-    options: TakeOptions,
-) -> Result<WeaponSlot, RackRefusal> {
-    let owner =
-        unsafe { engine::local_player() }.ok_or(RackRefusal::Pickup(Refusal::NoCharacter))?;
-    // Find the weapon again among the entries, and hold it alive through the take.
+pub(crate) unsafe fn find(weapon: usize) -> Option<Strong> {
+    let owner = unsafe { engine::local_player() }?;
     let mut found = None;
     unsafe {
-        walk(owner, |weapon, strong| {
-            if weapon as *const WeaponBase as usize == target.weapon {
+        walk(owner, |offered, strong| {
+            if offered as *const WeaponBase as usize == weapon {
                 found = Some(strong);
                 return true;
             }
             false
         })
     };
-    let Some(alive) = found else {
-        return Err(RackRefusal::Gone);
-    };
+    found
+}
+
+/// Whether the weapon `alive` holds is in the rack state.
+pub(crate) fn racked(alive: &Strong) -> bool {
     // SAFETY: the strong reference keeps the weapon alive.
-    let weapon = unsafe { &mut *inventory_engine::weapon_of(&alive) };
+    unsafe { (*inventory_engine::weapon_of(alive)).m_State == WeaponState::E_WS_WEAPON_RACK }
+}
+
+/// Take the offered weapon `alive` holds off its rack, or out of its locker, into `hand`.
+///
+/// # Safety
+///
+/// The game thread, before the world update.
+pub(crate) unsafe fn take(
+    hand: Hand,
+    alive: &Strong,
+    options: TakeOptions,
+) -> Result<WeaponSlot, SourceRefusal> {
+    let owner =
+        unsafe { engine::local_player() }.ok_or(SourceRefusal::Take(Refusal::NoCharacter))?;
+    // SAFETY: the strong reference keeps the weapon alive.
+    let weapon = unsafe { &mut *inventory_engine::weapon_of(alive) };
     if !offered_state(weapon) {
-        return Err(RackRefusal::Gone);
-    }
-    if let TargetKind::RackMember {
-        weapon: source,
-        generation,
-        member,
-    } = target.kind
-    {
-        if source != target.weapon || weapon.m_State != WeaponState::E_WS_WEAPON_RACK {
-            return Err(RackRefusal::Gone);
-        }
-        return unsafe {
-            paired::take(
-                owner,
-                hand,
-                paired::Member {
-                    source,
-                    generation,
-                    index: member,
-                },
-                options,
-            )
-        };
+        return Err(SourceRefusal::Gone);
     }
     // A copy is asked of a rack with unlimited stock; anything else hands its own weapon over.
     let restocks = weapon.m_InfinitePickup && weapon.m_State == WeaponState::E_WS_WEAPON_RACK;
     if !restocks {
-        let slot = unsafe { pickup::take(hand, weapon, options) }.map_err(RackRefusal::Pickup)?;
+        let slot = unsafe { pickup::take(hand, weapon, options) }.map_err(SourceRefusal::Take)?;
         RACK_TAKES.lock().takes += 1;
         tracing::info!(
             target: "controllers",
@@ -192,13 +157,14 @@ pub(crate) unsafe fn take(
         return Ok(slot);
     }
     if COPY.lock().is_some() {
-        return Err(RackRefusal::CopyPending);
+        return Err(SourceRefusal::CopyPending);
     }
-    let slot = rack_slot(weapon).ok_or(RackRefusal::Pickup(Refusal::UnknownSlot))?;
+    let slot = rack_slot(weapon).ok_or(SourceRefusal::Take(Refusal::UnknownSlot))?;
     if !unsafe { owner.m_Inventory.GetAnimationAllowsPickup() } {
-        return Err(RackRefusal::Pickup(Refusal::AnimationForbids));
+        return Err(SourceRefusal::Take(Refusal::AnimationForbids));
     }
     let from = unsafe { engine::gun_pose(weapon) };
+    let display = unsafe { inventory_engine::strong_to(weapon) }.ok_or(SourceRefusal::Gone)?;
     // The copy is a give, which the table takes into the hand left expecting it
     // ([`crate::controllers::weapons::inventory::gives`]); the slot's weapon keeps its place.
     hold::begin(
@@ -209,7 +175,7 @@ pub(crate) unsafe fn take(
     unsafe { weapon.PickupStart(character_object(owner)) };
     unsafe { weapon.SetVisible(false, false, false) };
     *COPY.lock() = Some(Copy {
-        display: alive,
+        display,
         hand,
         from,
         slide_s: options.slide_s,

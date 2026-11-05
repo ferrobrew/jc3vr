@@ -64,6 +64,7 @@ pub mod pickup;
 pub mod rack;
 pub(crate) mod refs;
 pub mod release_diagnostics;
+pub(crate) mod source;
 pub mod steal;
 pub(crate) mod swap;
 pub mod take;

@@ -16,13 +16,11 @@ use crate::controllers::{
         engine::object_of,
         hold::{
             pickup::{self, Refusal, TakeOptions},
-            rack::{
-                RackRefusal,
-                paired::{
-                    self, COPY_WAIT, MAX_SOURCES, Member, SOURCE_GRACE, Stage, gun, gun_target,
-                },
+            rack::paired::{
+                self, COPY_WAIT, MAX_SOURCES, Member, SOURCE_GRACE, Stage, gun, gun_target,
             },
             refs::{Strong, Weak},
+            source::SourceRefusal,
             world::{TargetKind, WorldTarget},
         },
         inventory::{engine, gives},
@@ -183,23 +181,23 @@ pub(super) unsafe fn take(
     hand: Hand,
     member: Member,
     options: TakeOptions,
-) -> Result<WeaponSlot, RackRefusal> {
+) -> Result<WeaponSlot, SourceRefusal> {
     let (actor, first, pickup_started) = {
         let mut state = STATE.lock();
         let source = state
             .iter_mut()
             .find(|s| s.matches(member))
-            .ok_or(RackRefusal::Gone)?;
+            .ok_or(SourceRefusal::Gone)?;
         if !source.claims.available(member.index as usize)
             || (source.claims.first.is_some() && !single::is(source.address))
         {
-            return Err(RackRefusal::Gone);
+            return Err(SourceRefusal::Gone);
         }
         let first = source.claims.first.is_none();
         let actor = if first {
-            source.copy.take().ok_or(RackRefusal::CopyPending)?
+            source.copy.take().ok_or(SourceRefusal::CopyPending)?
         } else {
-            source.weak.lock().ok_or(RackRefusal::Gone)?
+            source.weak.lock().ok_or(SourceRefusal::Gone)?
         };
         (actor, first, source.pickup_started)
     };
@@ -267,7 +265,7 @@ pub(super) unsafe fn take(
             unsafe { single::hide_extra(weapon) };
         }
     }
-    result.map_err(RackRefusal::Pickup)?;
+    result.map_err(SourceRefusal::Take)?;
     tracing::info!(target: "controllers", source = member.source, generation = member.generation,
         member = member.index, original = !first, "rack: took a finite native member");
     Ok(WeaponSlot::E_SLOT_DUAL_WIELD)

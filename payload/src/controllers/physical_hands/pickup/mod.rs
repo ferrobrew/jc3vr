@@ -57,13 +57,12 @@ use crate::controllers::{
     bindings::hold::{Desired, MapKind, Target, Want},
     frame::Hand,
     haptics::{self, Event},
-    loadout::{Delivery, TakeSource},
     physical_hands::{STATE, bodies, grab_view, grasp::Reach},
     weapons::{
         self, FinishInputs,
         hold::{
-            SNAP_S,
-            pickup::{Refusal, TakeOptions},
+            pickup::Refusal,
+            source::{self, SourceRefusal, WeaponSource},
         },
     },
 };
@@ -144,13 +143,8 @@ pub(crate) fn finish_tick(
     drop(state);
     for (hand, reach) in weapons {
         let refusal = {
-            let options = TakeOptions {
-                slide_s: SNAP_S,
-                source: TakeSource::World,
-                delivery: Delivery::Local,
-            };
             // SAFETY: the game stage runs on the game thread before the world update.
-            let refusal = unsafe { take_weapon(hand, reach, options) }.err();
+            let refusal = unsafe { take_weapon(hand, reach) }.err();
             weapons::hold::record_pickup(refusal.map(|r| r.to_string()));
             if let Some(refusal) = refusal {
                 tracing::debug!(target: "controllers", ?hand, %refusal, "physical hands: direct weapon pickup refused");
@@ -175,20 +169,25 @@ pub(crate) fn finish_tick(
     }
 }
 
-/// Take the weapon `reach` found straight into `hand` ([`weapons::hold::pickup::take`]), once its
+/// Take the weapon `reach` found straight into `hand` ([`weapons::hold::source::take`]), once its
 /// body is checked to still belong to it.
 ///
 /// # Safety
 ///
 /// Game thread, before the world update.
-unsafe fn take_weapon(hand: Hand, reach: Reach, options: TakeOptions) -> Result<(), Refusal> {
+unsafe fn take_weapon(hand: Hand, reach: Reach) -> Result<(), Refusal> {
     // A weapon's body leaves the world when it is picked up or despawned, so a body that still
     // belongs to the reached object proves the object is alive.
     if unsafe { bodies::read(reach.body, reach.object) }.is_err() {
         return Err(Refusal::NotDropped);
     }
-    let weapon = unsafe { &mut *(reach.object.get() as *mut WeaponBase) };
-    unsafe { weapons::hold::pickup::take(hand, weapon, options) }.map(|_| ())
+    let weapon = unsafe { &*(reach.object.get() as *const WeaponBase) };
+    let source = unsafe { WeaponSource::ground(weapon) };
+    match unsafe { source::take(hand, &source) } {
+        Ok(_) => Ok(()),
+        Err(SourceRefusal::Take(refusal)) => Err(refusal),
+        Err(SourceRefusal::Gone | SourceRefusal::CopyPending) => Err(Refusal::NotDropped),
+    }
 }
 
 /// Keep what the hands hold through a game menu: the grips are not read there, and a release is

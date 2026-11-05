@@ -9,7 +9,9 @@
 //! input tick whether it still lives without keeping it alive. The weapon handling places grab
 //! volumes along those guns for a free hand ([`crate::controllers::weapons::hold::world`]).
 //!
-//! A grab of one takes the gun ([`take`]), with the character locked alive for the whole take:
+//! A grab of one takes the gun through the hands' take from a source
+//! ([`crate::controllers::weapons::hold::source`]), which frees it here ([`release`]), with the
+//! character locked alive for the whole release:
 //!
 //! 1. the character's inventory still holds the gun in the slot noted, and the gun is still in its
 //!    hands, and the player's animation allows a pickup;
@@ -21,9 +23,9 @@
 //!    second drop since the gun is already dropped;
 //! 4. the character staggers ([`Character::HitReaction`], an impulse between its stumble and its
 //!    knockdown thresholds, toward the player);
-//! 5. the gun goes straight into the grabbing hand as a weapon off the ground does
-//!    ([`crate::controllers::weapons::hold::pickup::take`]): through the loadout table, so the other
-//!    hand keeps what it holds, sliding there from where it was in the character's hands.
+//! 5. the gun goes into the grabbing hand as a weapon off the ground does: through the loadout
+//!    table, so the other hand keeps what it holds, sliding there from where it was in the
+//!    character's hands, or the grapple's snatch pulls it in on the line.
 //!
 //! Whether the hand can take it is checked before the character lets go, so a refused take leaves
 //! the gun in the character's hands.
@@ -33,7 +35,6 @@
 //! reach.
 
 use std::{
-    fmt,
     sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
     time::{Duration, Instant},
 };
@@ -53,41 +54,19 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     aim::gun,
-    frame::{Hand, Pose},
+    frame::Pose,
     hands::ik,
-    loadout::{TakeSource, slot_label},
+    loadout::TakeSource,
     weapons::{
         engine::{self, slot_of, takeable_gun_slot},
         hold::{
-            pickup::{self, Refusal, TakeOptions},
-            refs::{Strong, Weak},
+            pickup::Refusal,
+            refs::Weak,
+            source::{Freed, SourceRefusal},
             world::{self, TargetKind, WorldTarget},
         },
     },
 };
-
-/// Why a take from a character's hands did not happen.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum StealRefusal {
-    /// The character is gone, or no longer holds the gun.
-    Gone,
-    /// The pickup that puts the gun in the hand refused it.
-    Pickup(Refusal),
-}
-
-impl fmt::Display for StealRefusal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            StealRefusal::Gone => write!(
-                f,
-                "take from the hands: the character no longer holds the gun"
-            ),
-            StealRefusal::Pickup(refusal) => write!(f, "take from the hands: {refusal}"),
-        }
-    }
-}
-
-impl std::error::Error for StealRefusal {}
 
 /// Note characters' guns out to `range_m` from the player rather than within reach: the grapple's
 /// snatch takes them from range ([`crate::controllers::snatch`]). Zero keeps the notice to reach.
@@ -230,87 +209,96 @@ pub(crate) fn holstered_targets() -> Vec<HolsteredTarget> {
         .collect()
 }
 
-/// Take `target`'s gun out of its character's hands into `hand`.
+/// A gun on a character: in its hands, or holstered on its body.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct CharacterGun {
+    pub character: usize,
+    pub weapon: usize,
+    pub slot: WeaponSlot,
+    /// Whether the gun is holstered on the character's body rather than in its hands.
+    pub holstered: bool,
+}
+
+impl CharacterGun {
+    /// The gun in the hands that `target` (a [`TargetKind::Held`] target) stands for.
+    pub(crate) fn held(target: &WorldTarget) -> Option<CharacterGun> {
+        let TargetKind::Held { character } = target.kind else {
+            return None;
+        };
+        Some(CharacterGun {
+            character,
+            weapon: target.weapon,
+            slot: target.slot,
+            holstered: false,
+        })
+    }
+
+    /// The holstered gun `target` stands for.
+    pub(crate) fn holstered(target: &HolsteredTarget) -> CharacterGun {
+        CharacterGun {
+            character: target.character,
+            weapon: target.weapon,
+            slot: target.slot,
+            holstered: true,
+        }
+    }
+}
+
+/// Make `gun`'s character let go of it and stagger, leaving the gun lying in the world. A gun in
+/// its hands goes through its inventory's selection, as its death's drop does; a holstered gun is
+/// dropped without a selection change, so the character keeps what it wields. `admit` runs once
+/// the gun is known still to be the character's, and a refusal there leaves the gun where it is.
 ///
 /// # Safety
 ///
 /// The game thread, before the world update.
-pub(crate) unsafe fn take(
-    hand: Hand,
-    target: &WorldTarget,
-    options: TakeOptions,
-) -> Result<WeaponSlot, StealRefusal> {
-    let freed = unsafe { release(hand, target) }?;
-    // SAFETY: the strong reference keeps the dropped gun alive.
-    let weapon = unsafe { &mut *freed.weapon };
-    let taken = unsafe { pickup::take(hand, weapon, options) }.map_err(StealRefusal::Pickup)?;
-    STEALS.fetch_add(1, Ordering::Relaxed);
-    tracing::info!(
-        target: "controllers",
-        hand = hand.label(),
-        slot = slot_label(taken),
-        "hold: took the gun out of a character's hands into the {} hand",
-        hand.label()
-    );
-    Ok(taken)
-}
-
-/// A gun a character let go of, or a rack or locker gave up: dropped into the world with its
-/// bodies, held alive.
-pub(crate) struct Freed {
-    pub weapon: *mut WeaponBase,
-    /// Keeps the gun alive while held.
-    pub alive: Strong,
-    /// Where it was taken from.
-    pub source: TakeSource,
-}
-
-/// Make `target`'s character let go of its gun and stagger, leaving the gun lying in the world, for
-/// a take into `hand` that follows: the grab's take, or the grapple's snatch, which pulls it in
-/// first. A take the hand could not make is refused before the character lets go.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn release(hand: Hand, target: &WorldTarget) -> Result<Freed, StealRefusal> {
-    let TargetKind::Held { character } = target.kind else {
-        return Err(StealRefusal::Gone);
-    };
+pub(crate) unsafe fn release(
+    gun: &CharacterGun,
+    admit: impl FnOnce(&Character, &WeaponBase) -> Result<(), SourceRefusal>,
+) -> Result<Freed, SourceRefusal> {
     // Hold the character alive through the release.
     let alive = {
         let seen = SEEN.lock();
         seen.iter()
-            .find(|s| s.character == character)
+            .find(|s| s.character == gun.character)
             .and_then(|s| s.weak.lock())
     };
     let Some(_alive) = alive else {
-        return Err(StealRefusal::Gone);
+        return Err(SourceRefusal::Gone);
     };
-    if character == ik::local_character() {
-        return Err(StealRefusal::Gone);
+    if gun.character == ik::local_character() {
+        return Err(SourceRefusal::Gone);
     }
     // SAFETY: the strong reference keeps the character alive.
-    let victim = unsafe { &mut *(character as *mut Character) };
-    let Some((weapon, slot)) = (unsafe { wielded(victim) }) else {
-        return Err(StealRefusal::Gone);
+    let victim = unsafe { &mut *(gun.character as *mut Character) };
+    let still = if gun.holstered {
+        unsafe { holstered(victim) }
+            .iter()
+            .flatten()
+            .any(|h| h.weapon == gun.weapon && h.slot == gun.slot)
+    } else {
+        unsafe { wielded(victim) }
+            .is_some_and(|(weapon, slot)| weapon as usize == gun.weapon && slot == gun.slot)
     };
-    if weapon as usize != target.weapon || slot != target.slot {
-        return Err(StealRefusal::Gone);
+    if !still {
+        return Err(SourceRefusal::Gone);
     }
     // SAFETY: the character's inventory holds the weapon, and the character is held alive.
-    let weapon = unsafe { &mut *weapon };
+    let weapon = unsafe { &mut *(gun.weapon as *mut WeaponBase) };
     let player =
-        unsafe { engine::local_player() }.ok_or(StealRefusal::Pickup(Refusal::NoCharacter))?;
-    unsafe { pickup::preflight(player, weapon, hand) }.map_err(StealRefusal::Pickup)?;
+        unsafe { engine::local_player() }.ok_or(SourceRefusal::Take(Refusal::NoCharacter))?;
+    admit(player, weapon)?;
     // SAFETY: the weapon's own weak reference to itself, live while it is.
     let alive = unsafe { Weak::of(&weapon.m_WeakThis) }
         .lock()
-        .ok_or(StealRefusal::Gone)?;
+        .ok_or(SourceRefusal::Gone)?;
     let player_at = Mat4::from(player.m_WorldMatrixT1).w_axis.truncate();
     unsafe { weapon.OnDrop() };
-    unsafe { victim.m_Inventory.DropWeapon(slot, true) };
+    unsafe { victim.m_Inventory.DropWeapon(gun.slot, !gun.holstered) };
     unsafe { stagger(victim, player_at) };
-    SEEN.lock().retain(|s| s.character != character);
+    if !gun.holstered {
+        SEEN.lock().retain(|s| s.character != gun.character);
+    }
     Ok(Freed {
         weapon,
         alive,
@@ -318,57 +306,9 @@ pub(crate) unsafe fn release(hand: Hand, target: &WorldTarget) -> Result<Freed, 
     })
 }
 
-/// Make `target`'s character drop the gun holstered on its body and stagger, leaving the gun lying
-/// in the world, for the grapple's snatch into `hand`. The character keeps what it wields, and its
-/// selection is left alone. A take the hand could not make is refused before the gun leaves.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn release_holstered(
-    hand: Hand,
-    target: &HolsteredTarget,
-) -> Result<Freed, StealRefusal> {
-    let alive = {
-        let seen = SEEN.lock();
-        seen.iter()
-            .find(|s| s.character == target.character)
-            .and_then(|s| s.weak.lock())
-    };
-    let Some(_alive) = alive else {
-        return Err(StealRefusal::Gone);
-    };
-    if target.character == ik::local_character() {
-        return Err(StealRefusal::Gone);
-    }
-    // SAFETY: the strong reference keeps the character alive.
-    let victim = unsafe { &mut *(target.character as *mut Character) };
-    let held = unsafe { holstered(victim) };
-    if !held
-        .iter()
-        .flatten()
-        .any(|h| h.weapon == target.weapon && h.slot == target.slot)
-    {
-        return Err(StealRefusal::Gone);
-    }
-    // SAFETY: the character's inventory holds the weapon, and the character is held alive.
-    let weapon = unsafe { &mut *(target.weapon as *mut WeaponBase) };
-    let player =
-        unsafe { engine::local_player() }.ok_or(StealRefusal::Pickup(Refusal::NoCharacter))?;
-    unsafe { pickup::preflight(player, weapon, hand) }.map_err(StealRefusal::Pickup)?;
-    // SAFETY: the weapon's own weak reference to itself, live while it is.
-    let alive = unsafe { Weak::of(&weapon.m_WeakThis) }
-        .lock()
-        .ok_or(StealRefusal::Gone)?;
-    let player_at = Mat4::from(player.m_WorldMatrixT1).w_axis.truncate();
-    unsafe { weapon.OnDrop() };
-    unsafe { victim.m_Inventory.DropWeapon(target.slot, false) };
-    unsafe { stagger(victim, player_at) };
-    Ok(Freed {
-        weapon,
-        alive,
-        source: TakeSource::Character,
-    })
+/// Count a take from a character's hands.
+pub(crate) fn note_steal() {
+    STEALS.fetch_add(1, Ordering::Relaxed);
 }
 
 /// The takes from characters' hands since the payload loaded.
