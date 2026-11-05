@@ -85,8 +85,30 @@ impl TearGrip {
         self.intent = Intent::default();
     }
 
-    pub fn gesture(&mut self, input: Gesture, config: &TearTuning) -> bool {
+    /// Step the grip's tear intent, returning the gesture that asks for a tear this tick.
+    pub fn gesture(&mut self, input: Gesture, config: &TearTuning) -> Option<TearGesture> {
         self.intent.step(input, config)
+    }
+}
+
+/// The gestures that tear a door off once its grip has settled.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum TearGesture {
+    /// The lag grew sharply above the settled lag with the hand pulling away.
+    Yank,
+    /// The lag held far above the settled lag: a pull the door would not follow.
+    HardPull,
+    /// A sustained, loaded push past the hinge's opening limit.
+    LimitPush,
+}
+
+impl TearGesture {
+    pub const fn label(self) -> &'static str {
+        match self {
+            TearGesture::Yank => "a yank",
+            TearGesture::HardPull => "a hard pull",
+            TearGesture::LimitPush => "a push past the opening limit",
+        }
     }
 }
 
@@ -98,6 +120,9 @@ pub(crate) struct Gesture {
     pub opening_push_m: f32,
     pub load: f32,
     pub at_limit: bool,
+    /// Whether the lag runs mostly along a swing the hinge leaves free: the door would follow the
+    /// hand there.
+    pub free_swing: bool,
 }
 
 /// A native request's outcome, without retaining any native pointer across a tick.
@@ -330,16 +355,22 @@ impl OpeningMotion {
     }
 }
 
+/// A grip's tear intent: whether its lag has settled, at what lag, and how long a hard pull or a
+/// push at the limit has lasted.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 struct Intent {
-    settled_s: f32,
-    push_s: f32,
+    /// How long the lag has held steady, seconds.
+    steady_s: f32,
     previous_lag: Option<f32>,
-    armed: bool,
+    /// The lag the grip settled at, once it has: the gestures measure from it.
+    settled_lag: Option<f32>,
+    /// How long a hard pull has held its lag, seconds.
+    wrench_s: f32,
+    push_s: f32,
 }
 
 impl Intent {
-    fn step(&mut self, input: Gesture, c: &TearTuning) -> bool {
+    fn step(&mut self, input: Gesture, c: &TearTuning) -> Option<TearGesture> {
         let Gesture {
             dt,
             lag_m,
@@ -347,6 +378,7 @@ impl Intent {
             opening_push_m,
             load,
             at_limit,
+            free_swing,
         } = input;
         if !c.enabled
             || !dt.is_finite()
@@ -358,37 +390,54 @@ impl Intent {
             || !load.is_finite()
         {
             *self = Self::default();
-            return false;
+            return None;
         }
-        let previous = self.previous_lag.replace(lag_m);
-        if lag_m <= c.reset_lag_m.max(0.0) {
-            self.settled_s += dt;
-            self.armed |= self.settled_s >= c.settle_s.max(0.05);
-        } else if !self.armed {
-            self.settled_s = 0.0;
+        let rate = self.previous_lag.replace(lag_m).map(|p| (lag_m - p) / dt);
+        if rate.is_some_and(|r| r.abs() <= c.settle_speed_mps.max(0.01)) {
+            self.steady_s += dt;
+        } else {
+            self.steady_s = 0.0;
         }
-        if !self.armed {
-            return false;
+        // A grip that holds steady settles, or settles again, at its lag; one that eases off
+        // settles lower at once, so a gesture is measured from the hand's resting lag.
+        if self.steady_s >= c.settle_s.max(0.05) {
+            self.settled_lag = Some(lag_m);
         }
-        let yank = lag_m >= c.yank_lag_m.max(c.reset_lag_m + 0.05)
-            && separating_speed_mps >= c.yank_speed_mps.max(0.5)
-            && previous.is_some_and(|p| (lag_m - p) / dt >= c.yank_speed_mps.max(0.5));
+        let settled = self.settled_lag.as_mut()?;
+        *settled = settled.min(lag_m);
+        let above = lag_m - *settled;
+        let yank_speed = c.yank_speed_mps.max(0.3);
+        let yank = !free_swing
+            && above >= c.yank_lag_m.max(0.05)
+            && separating_speed_mps >= yank_speed
+            && rate.is_some_and(|r| r >= yank_speed);
+        if !free_swing && above >= c.wrench_lag_m.max(c.yank_lag_m) {
+            self.wrench_s += dt;
+        } else {
+            self.wrench_s = 0.0;
+        }
         if at_limit
             && load >= c.push_load.clamp(0.1, 1.0)
-            && opening_push_m >= c.push_lag_m.max(c.reset_lag_m + 0.05)
+            && opening_push_m >= c.push_lag_m.max(0.05)
         {
             self.push_s += dt;
         } else {
             self.push_s = 0.0;
         }
-        if yank || self.push_s >= c.push_hold_s.max(0.05) {
-            self.armed = false;
-            self.settled_s = 0.0;
-            self.push_s = 0.0;
-            true
+        let gesture = if yank {
+            Some(TearGesture::Yank)
+        } else if self.wrench_s >= c.wrench_s.max(0.0) && self.wrench_s > 0.0 {
+            Some(TearGesture::HardPull)
+        } else if self.push_s >= c.push_hold_s.max(0.05) {
+            Some(TearGesture::LimitPush)
         } else {
-            false
+            None
+        };
+        if gesture.is_some() {
+            // Each attempt asks the grip to settle again.
+            *self = Self::default();
         }
+        gesture
     }
 }
 
@@ -641,13 +690,18 @@ mod tests {
             opening_push_m: 0.0,
             load: 0.0,
             at_limit: false,
+            free_swing: false,
         }
+    }
+
+    fn tears(intent: &mut Intent, gesture: Gesture, c: &TearTuning) -> bool {
+        intent.step(gesture, c).is_some()
     }
 
     fn armed() -> Intent {
         let mut intent = Intent::default();
         for _ in 0..15 {
-            assert!(!intent.step(quiet(), &TEARING));
+            assert!(!tears(&mut intent, quiet(), &TEARING));
         }
         intent
     }
@@ -675,7 +729,8 @@ mod tests {
     fn opening_pull_and_unsettled_handoff_never_tear() {
         let mut intent = Intent::default();
         for lag in [0.06, 0.10, 0.18, 0.25] {
-            assert!(!intent.step(
+            assert!(!tears(
+                &mut intent,
                 Gesture {
                     lag_m: lag,
                     separating_speed_mps: 4.0,
@@ -694,9 +749,10 @@ mod tests {
             separating_speed_mps: 3.0,
             ..quiet()
         };
-        assert!(intent.step(yank, &TEARING));
-        assert!(!intent.step(yank, &TEARING));
-        assert!(!armed().step(
+        assert!(tears(&mut intent, yank, &TEARING));
+        assert!(!tears(&mut intent, yank, &TEARING));
+        assert!(!tears(
+            &mut armed(),
             Gesture {
                 separating_speed_mps: 0.5,
                 ..yank
@@ -717,9 +773,9 @@ mod tests {
         let c = TEARING;
         let mut intent = armed();
         for _ in 0..8 {
-            assert!(!intent.step(push, &c));
+            assert!(!tears(&mut intent, push, &c));
         }
-        assert!(intent.step(Gesture { dt: 0.03, ..push }, &c));
+        assert!(tears(&mut intent, Gesture { dt: 0.03, ..push }, &c));
         for bad in [
             Gesture { load: 0.2, ..push },
             Gesture {
@@ -737,7 +793,7 @@ mod tests {
         ] {
             let mut intent = armed();
             for _ in 0..30 {
-                assert!(!intent.step(bad, &c));
+                assert!(!tears(&mut intent, bad, &c));
             }
         }
     }
@@ -745,13 +801,122 @@ mod tests {
     #[test]
     fn disabled_or_stale_tracking_resets_intent() {
         let mut intent = armed();
-        assert!(!intent.step(Gesture { dt: 0.5, ..quiet() }, &TEARING));
-        assert!(!intent.armed);
+        assert!(!tears(
+            &mut intent,
+            Gesture { dt: 0.5, ..quiet() },
+            &TEARING
+        ));
+        assert!(intent.settled_lag.is_none());
         let mut c = TEARING;
         c.enabled = false;
         let mut intent = armed();
-        assert!(!intent.step(quiet(), &c));
-        assert!(!intent.armed);
+        assert!(!tears(&mut intent, quiet(), &c));
+        assert!(intent.settled_lag.is_none());
+    }
+
+    /// The session's attempt: a door at rest, held through a joint, pulled at under a metre per
+    /// second. The pull grows the lag as fast as the hand moves, so it is a yank.
+    #[test]
+    fn a_firm_pull_on_a_door_that_does_not_give_tears_it() {
+        let mut intent = armed();
+        let mut lag = 0.01;
+        let mut torn = None;
+        for _ in 0..40 {
+            lag += 0.8 * 0.02;
+            let gesture = Gesture {
+                lag_m: lag,
+                separating_speed_mps: 0.8,
+                ..quiet()
+            };
+            if let Some(kind) = intent.step(gesture, &TEARING) {
+                torn = Some((kind, lag));
+                break;
+            }
+        }
+        let (kind, lag) = torn.expect("the pull tears the door");
+        assert_eq!(kind, TearGesture::Yank);
+        assert!(lag < 0.25, "{lag}");
+    }
+
+    /// A heavy door hanging well off the hand settles at that lag, and the gestures measure from it.
+    #[test]
+    fn a_grip_settled_far_off_the_hand_measures_from_its_settled_lag() {
+        let mut intent = Intent::default();
+        let hanging = Gesture {
+            lag_m: 0.12,
+            ..quiet()
+        };
+        for _ in 0..15 {
+            assert!(!tears(&mut intent, hanging, &TEARING));
+        }
+        assert_eq!(intent.settled_lag, Some(0.12));
+        // The old absolute threshold would read this as a yank already; above the settled lag it
+        // is not.
+        let small = Gesture {
+            lag_m: 0.2,
+            separating_speed_mps: 3.0,
+            ..quiet()
+        };
+        assert!(!tears(&mut intent, small, &TEARING));
+        let mut intent = Intent::default();
+        for _ in 0..15 {
+            tears(&mut intent, hanging, &TEARING);
+        }
+        assert!(tears(
+            &mut intent,
+            Gesture {
+                lag_m: 0.32,
+                ..small
+            },
+            &TEARING
+        ));
+    }
+
+    /// A slow pull the door will not follow tears once its lag has held far enough above the
+    /// settled lag, short of where the hand's body lets go of a joined door.
+    #[test]
+    fn a_slow_hard_pull_tears_and_a_slower_creep_settles_instead() {
+        let pull = |speed: f32| {
+            let mut intent = armed();
+            let mut lag = 0.01;
+            for tick in 0..200 {
+                lag += speed * 0.02;
+                let gesture = Gesture {
+                    lag_m: lag,
+                    separating_speed_mps: speed,
+                    ..quiet()
+                };
+                if let Some(kind) = intent.step(gesture, &TEARING) {
+                    return Some((kind, lag, tick));
+                }
+            }
+            None
+        };
+        let (kind, lag, _) = pull(0.3).expect("a slow hard pull tears");
+        assert_eq!(kind, TearGesture::HardPull);
+        assert!(lag < 0.4, "{lag}");
+        assert_eq!(
+            pull(0.1),
+            None,
+            "a creep under the settling speed resettles"
+        );
+    }
+
+    /// A pull the door would swing with does not tear it, unless the hinge holds it there.
+    #[test]
+    fn a_pull_along_a_free_swing_never_tears() {
+        let mut intent = armed();
+        let mut lag: f32 = 0.01;
+        for _ in 0..60 {
+            lag += 1.5 * 0.02;
+            let gesture = Gesture {
+                lag_m: lag.min(0.5),
+                separating_speed_mps: 1.5,
+                free_swing: true,
+                ..quiet()
+            };
+            assert!(!tears(&mut intent, gesture, &TEARING));
+        }
     }
 
     #[test]

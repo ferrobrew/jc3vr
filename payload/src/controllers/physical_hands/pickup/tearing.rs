@@ -152,12 +152,16 @@ fn step_with(
                 .dot(lag.normalize_or_zero())
                 / scale;
             let hinge = engine.hinge(&mut grip, report.anchor);
-            let (at_limit, opening_push_m) =
-                hinge.map_or((false, 0.0), |(angle, range, tangent)| {
-                    (
-                        angle >= range - config.limit_margin_rad.clamp(0.0, 0.2),
-                        lag.dot(tangent) / scale,
-                    )
+            let margin = config.limit_margin_rad.clamp(0.0, 0.2);
+            let (at_limit, opening_push_m, free_swing) =
+                hinge.map_or((false, 0.0, false), |(angle, range, tangent)| {
+                    let at_open = angle >= range - margin;
+                    let at_shut = angle <= margin;
+                    // How much of the lag runs along the swing, opening positive.
+                    let along = lag.normalize_or_zero().dot(tangent.normalize_or_zero());
+                    let free = along.abs() >= config.free_swing_share.clamp(0.0, 1.0)
+                        && if along > 0.0 { !at_open } else { !at_shut };
+                    (at_open, lag.dot(tangent) / scale, free)
                 });
             let gesture = Gesture {
                 dt,
@@ -166,12 +170,14 @@ fn step_with(
                 opening_push_m,
                 load: report.load,
                 at_limit,
+                free_swing,
             };
-            if grip.gesture(gesture, config) {
+            if let Some(kind) = grip.gesture(gesture, config) {
                 requested = true;
                 tracing::info!(
                     target: "controllers",
                     hand = k,
+                    gesture = kind.label(),
                     lag_m = gesture.lag_m,
                     separating_speed_mps = gesture.separating_speed_mps,
                     opening_push_m = gesture.opening_push_m,
@@ -430,7 +436,13 @@ mod tests {
             (solution.velocities.linear.x - 1.4).abs() < 0.001,
             "{solution:?}"
         );
-        assert!((3.0 - solution.velocities.linear.x) < TEARING.yank_speed_mps);
+        // A yank faster than the hand's motion relative to the commanded body, so that only the
+        // observation before the drive sees it.
+        let tuning = TearTuning {
+            yank_speed_mps: 1.8,
+            ..TEARING
+        };
+        assert!((3.0 - solution.velocities.linear.x) < tuning.yank_speed_mps);
         let commanded = bodies::BodyState {
             velocities: solution.velocities,
             ..body
@@ -470,7 +482,7 @@ mod tests {
                             dt,
                             world_scale: 1.0,
                         },
-                        &TEARING,
+                        &tuning,
                         &mut out,
                         &mut engine,
                     );
@@ -488,7 +500,7 @@ mod tests {
                         dt,
                         world_scale: 1.0,
                     },
-                    &TEARING,
+                    &tuning,
                     &mut out,
                     &mut engine,
                 );
