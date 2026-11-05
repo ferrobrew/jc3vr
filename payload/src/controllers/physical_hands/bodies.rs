@@ -95,8 +95,7 @@ impl BodyState {
 ///
 /// Main thread, outside the physics step; `object` and `body` must come from a cast this tick.
 pub(super) unsafe fn classify(object: NonZeroUsize, body: u32) -> Result<TargetKind, Unclassified> {
-    let game_object =
-        (object.get() + PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize) as *const GameObject;
+    let game_object = game_object_of(object);
     if unsafe { (*game_object).IsType(WeaponBase::TYPE_ID()) } {
         let weapon = object.get() as *const WeaponBase;
         // Read as the raw value, so that a state the enum does not name is still reported.
@@ -161,8 +160,7 @@ impl fmt::Display for Unclassified {
 ///
 /// `object` must be a live physics game object.
 pub(super) unsafe fn describe(object: NonZeroUsize) -> String {
-    let game_object =
-        (object.get() + PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize) as *const GameObject;
+    let game_object = game_object_of(object);
     let is = |type_id: *const u32| unsafe { (*game_object).IsType(type_id) };
     let kind = if is(unsafe { WeaponBase::TYPE_ID() }) {
         "weapon"
@@ -378,9 +376,13 @@ pub(super) unsafe fn mass_kg(body: u32) -> Option<f32> {
 ///
 /// `object` must be a live physics game object.
 pub(super) unsafe fn is_type(object: NonZeroUsize, type_id: *const u32) -> bool {
-    let game_object =
-        (object.get() + PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize) as *const GameObject;
-    unsafe { (*game_object).IsType(type_id) }
+    unsafe { (*game_object_of(object)).IsType(type_id) }
+}
+
+/// The `CGameObject` subobject of the physics game object at `object`, as a physics query reports
+/// it.
+pub(crate) fn game_object_of(object: NonZeroUsize) -> *mut GameObject {
+    (object.get() + PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize) as *mut GameObject
 }
 
 /// A body's owner, mass, and velocities before a force, for the recording.

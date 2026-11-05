@@ -10,15 +10,17 @@ use std::{fmt, num::NonZeroUsize};
 use glam::Vec3;
 use jc3gi::{
     character::{character::Character, player::Player},
-    game::GameObject,
-    physics::{PfxCharacterInstance, PhysicsGameObject, PhysicsSystem},
+    physics::{PfxCharacterInstance, PhysicsSystem},
     types::vector_math::AlignedVector3,
 };
 
 use crate::controllers::{
     aim::raycast::RayHit,
     diagnostics::{Applied, note_force},
-    physical_hands::contact::{Surface, SurfaceHit},
+    physical_hands::{
+        bodies::is_type,
+        contact::{Surface, SurfaceHit},
+    },
 };
 
 /// Why an engine call did not run.
@@ -132,9 +134,7 @@ unsafe fn player_of(character: &Character) -> Option<&Player> {
 
 /// Whether the physics game object at `object` is a character.
 pub(super) unsafe fn is_character(object: NonZeroUsize) -> bool {
-    let game_object =
-        (object.get() + PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize) as *const GameObject;
-    unsafe { (*game_object).IsType(Character::TYPE_ID()) }
+    unsafe { is_type(object, Character::TYPE_ID()) }
 }
 
 fn aligned(v: Vec3) -> AlignedVector3 {

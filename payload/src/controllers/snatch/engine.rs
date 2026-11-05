@@ -11,13 +11,13 @@ use jc3gi::{
         weapon::{WeaponBase, WeaponState},
         wire_end::{HookTargetInfo, WireEnd, WireEndState},
     },
-    physics::PhysicsGameObject,
     types::{math::Vector3, shared_ptr::WeakPtrGameObject},
 };
 
 use crate::{
     controllers::{
         aim::gun,
+        physical_hands::game_object_of,
         snatch::{Refusal, sling_hooks},
         weapons::{engine, grenade},
     },
@@ -56,8 +56,7 @@ pub(super) unsafe fn fire(
     info.m_TargetPosition = vector(at);
     info.m_WasInRange = true;
     info.m_BoneIndex = NO_BONE;
-    let game_object =
-        (object.get() + PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize) as *mut _;
+    let game_object = game_object_of(object).cast();
     unsafe {
         info.SetupTargetFromGameObject(game_object, &vector(local));
         hook.FireHookCustom(&mut info, ptr::null_mut(), true);

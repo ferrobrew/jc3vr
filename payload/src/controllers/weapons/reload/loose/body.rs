@@ -1,7 +1,6 @@
 //! Current body reads and writes, with committed-generation observations before further access.
 
 use glam::{Quat, Vec3};
-use jc3gi::{game::GameObject, physics::PhysicsGameObject};
 
 use crate::controllers::{
     physical_hands::{self, BodyError},
@@ -35,9 +34,7 @@ impl Bodies for NativeBodies {
         }
     }
     fn disable(&mut self, magazine: Loose) {
-        let object = (magazine.object.get() + PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize)
-            as *mut GameObject;
-        unsafe { (*object).Enable(false) };
+        unsafe { (*physical_hands::game_object_of(magazine.object)).Enable(false) };
     }
 }
 

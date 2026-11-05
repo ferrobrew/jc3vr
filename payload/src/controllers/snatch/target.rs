@@ -4,7 +4,6 @@
 use std::num::NonZeroUsize;
 
 use glam::Vec3;
-use jc3gi::{game::GameObject, physics::PhysicsGameObject};
 
 use crate::controllers::{
     aim::{
@@ -19,6 +18,7 @@ use crate::controllers::{
         self,
         collider_view::model::Aabb,
         doors::DoorTarget,
+        game_object_of,
         remote::{self, DroppedWeapon, RagdollTarget},
     },
     snatch::{
@@ -727,9 +727,7 @@ unsafe fn prop_handling(
 ///
 /// `object` must be a live physics game object.
 pub(super) unsafe fn weak_of(object: NonZeroUsize) -> Weak {
-    let game_object =
-        (object.get() + PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize) as *const GameObject;
-    unsafe { Weak::of(&(*game_object).m_WeakThis) }
+    unsafe { Weak::of(&(*game_object_of(object)).m_WeakThis) }
 }
 
 /// Whether `point` on `object` (the gun's holder, or the dropped gun itself) is in sight from

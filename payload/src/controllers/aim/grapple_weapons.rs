@@ -26,8 +26,7 @@ use glam::Vec3;
 use jc3gi::{
     aim::aim::{PlayerAimControl, PlayerAimRaycastCollector},
     equipment::weapon::{WeaponBase, WeaponState},
-    game::GameObject,
-    physics::{CastRayInfo, PfxLayer, PhysicsGameObject},
+    physics::{CastRayInfo, PfxLayer},
     types::math::Vector3,
 };
 use parking_lot::Mutex;
@@ -38,7 +37,7 @@ use crate::controllers::{
         ray::Ray,
         raycast::{self, CastOptions, RayHit},
     },
-    physical_hands,
+    physical_hands::{self, game_object_of},
     weapons::hold::refs::{Strong, Weak},
 };
 
@@ -98,8 +97,7 @@ pub(super) fn in_grapple_pass<R>(f: impl FnOnce() -> R) -> R {
 ///
 /// `object` must be a live physics game object.
 pub(crate) unsafe fn is_dropped_weapon(object: NonZeroUsize) -> bool {
-    let game_object =
-        (object.get() + PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize) as *const GameObject;
+    let game_object = game_object_of(object);
     if !unsafe { (*game_object).IsType(WeaponBase::TYPE_ID()) } {
         return false;
     }
@@ -217,8 +215,7 @@ unsafe fn aimed_hit(
     let start = Vec3::from_array(unsafe { ray_start.as_ref() }?.data);
     let direction = Vec3::from_array(unsafe { ray_dir.as_ref() }?.data);
     let distance = fraction * length;
-    let game_object =
-        (object.get() + PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize) as *const GameObject;
+    let game_object = game_object_of(object);
     // SAFETY: the hit object is live during its cast, and so is its weak reference to itself.
     let weak = unsafe { Weak::of(&(*game_object).m_WeakThis) };
     Some((
