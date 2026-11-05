@@ -8,7 +8,7 @@ use crate::{
     controllers::bindings::yank::{HandLine, reach_along},
     grapple::{
         physical::config::LockConfig,
-        rope::{GRAVITY_MPS2, Rope, RopeEnd, RopeFault, RopeStep, RopeTuning},
+        rope::{GRAVITY_MPS2, Rope, RopeEnd, RopeFault, RopeStep, RopeTuning, held_floor},
     },
 };
 
@@ -29,16 +29,14 @@ impl Held {
             return None;
         }
         Some(Self {
-            rope: Rope::new(distance.max(min_length(config)))?,
+            rope: Rope::new(distance.max(held_floor(config.min_length_m)))?,
             brake_left_s: config.brake_s.max(0.0),
         })
     }
 
     /// Take `taken_m` of line in, down to `config`'s least length.
     pub(crate) fn take_in(&mut self, taken_m: f32, config: &LockConfig) {
-        if taken_m.is_finite() && taken_m > 0.0 {
-            self.rope.length_m = (self.rope.length_m - taken_m).max(min_length(config));
-        }
+        self.rope.shorten(taken_m, config.min_length_m);
     }
 
     /// Whether the brake still runs.
@@ -108,7 +106,8 @@ pub(crate) fn swing(
             }
             let distance = offset.length();
             if distance.is_finite() {
-                held.rope.length_m = held.rope.length_m.min(distance).max(min_length(config));
+                held.rope
+                    .shorten(held.rope.length_m - distance, config.min_length_m);
             }
         }
         held.brake_left_s = (held.brake_left_s - dt).max(0.0);
@@ -180,15 +179,3 @@ impl TakeIn {
         }
     }
 }
-
-/// The lock's least held length, metres.
-fn min_length(config: &LockConfig) -> f32 {
-    if config.min_length_m.is_finite() {
-        config.min_length_m.max(MIN_LENGTH_FLOOR_M)
-    } else {
-        MIN_LENGTH_FLOOR_M
-    }
-}
-
-/// The shortest the least held length may be set to, metres: the rope needs a length.
-const MIN_LENGTH_FLOOR_M: f32 = 0.5;

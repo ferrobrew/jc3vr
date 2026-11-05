@@ -44,7 +44,7 @@ Rico's mass is his proxy body's, read from its motion when the lock takes hold; 
 
 ## Shortening the line
 
-Pulling the grapple hand back along the aim it had when the lock took hold takes line in, as far as the hand comes back and no faster than `lock.reel_in_mps`, down to `lock.min_length_m` (`lock::model::TakeIn`). Reaching out pays nothing out, so hand over hand keeps taking line in. An untracked hand takes nothing in: the lock holds on the button alone.
+Pulling the grapple hand back along the aim it had when the lock took hold takes line in, as far as the hand comes back and no faster than `lock.reel_in_mps`, down to `lock.min_length_m` (`lock::model::TakeIn`). The least length is never below the floor every held line shares with the snatch (`grapple::rope::held_floor`), and taking line in never pays it out (`Rope::shorten`), so raising `lock.min_length_m` while the line is held leaves a shorter line as it is. Reaching out pays nothing out, so hand over hand keeps taking line in. An untracked hand takes nothing in: the lock holds on the button alone.
 
 ## The target
 

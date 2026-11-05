@@ -90,7 +90,18 @@ pub struct Rope {
 impl Rope {
     /// A rope held at `length_m`, or `None` for a length that is not finite and positive.
     pub fn new(length_m: f32) -> Option<Self> {
-        (length_m.is_finite() && length_m > MIN_LENGTH_M).then_some(Self { length_m })
+        (length_m.is_finite() && length_m > MIN_VALID_LENGTH_M).then_some(Self { length_m })
+    }
+
+    /// Take up to `by_m` of line in, holding it no shorter than `floor_m` raised to
+    /// [`held_floor`]. It never pays line out, and a take that is not finite and positive takes
+    /// nothing.
+    pub fn shorten(&mut self, by_m: f32, floor_m: f32) {
+        if by_m.is_finite() && by_m > 0.0 {
+            self.length_m = (self.length_m - by_m)
+                .max(held_floor(floor_m))
+                .min(self.length_m);
+        }
     }
 
     /// Pull the ends together along the rope: preserve their motion across it, never push them
@@ -156,6 +167,12 @@ impl Rope {
     }
 }
 
+/// A line's least held length `floor_m`, raised to [`MIN_HELD_LENGTH_M`]; a floor that is not
+/// finite is that least length.
+pub fn held_floor(floor_m: f32) -> f32 {
+    floor_m.max(MIN_HELD_LENGTH_M)
+}
+
 /// Standard gravity, metres per second squared: what the lines, and the throws and holds beside
 /// them, work against.
 pub const GRAVITY_MPS2: f32 = 9.81;
@@ -173,8 +190,13 @@ pub fn tension_share(tension_n: f32, max_tension_n: f32) -> f32 {
 /// The longest step the rope takes, seconds: a longer one is a hitch, not a tick.
 const MAX_DT_S: f32 = 0.1;
 
-/// The shortest held length, metres.
-const MIN_LENGTH_M: f32 = 0.01;
+/// The shortest any line is held at by taking line in, metres, whatever its own least length is
+/// set to.
+const MIN_HELD_LENGTH_M: f32 = 0.5;
+
+/// The shortest length a rope can be held at all, metres: a rope needs a direction between its
+/// ends.
+const MIN_VALID_LENGTH_M: f32 = 0.01;
 
 #[cfg(test)]
 mod tests {
@@ -326,6 +348,31 @@ mod tests {
             .step(step(fixed, end(Vec3::ZERO, Vec3::Y, 1.0)))
             .unwrap();
         assert_eq!(coincident.b_velocity, Vec3::Y);
+    }
+
+    #[test]
+    fn shortening_stops_at_the_floor_and_never_pays_out() {
+        let mut rope = Rope::new(3.0).unwrap();
+        rope.shorten(1.0, 1.5);
+        assert_eq!(rope.length_m, 2.0);
+        rope.shorten(5.0, 1.5);
+        assert_eq!(rope.length_m, 1.5);
+        rope.shorten(f32::NAN, 0.0);
+        rope.shorten(-2.0, 0.0);
+        assert_eq!(rope.length_m, 1.5);
+        rope.shorten(5.0, 0.0);
+        assert_eq!(
+            rope.length_m, MIN_HELD_LENGTH_M,
+            "the floor is never below the least"
+        );
+        rope.shorten(5.0, f32::NAN);
+        assert_eq!(rope.length_m, MIN_HELD_LENGTH_M);
+        let mut short = Rope::new(1.0).unwrap();
+        short.shorten(0.5, 2.0);
+        assert_eq!(
+            short.length_m, 1.0,
+            "a floor above the length pays nothing out"
+        );
     }
 
     #[test]

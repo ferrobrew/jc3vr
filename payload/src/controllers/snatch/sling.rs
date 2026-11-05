@@ -87,24 +87,17 @@ pub(super) fn braced_strength_n(single_n: f32, factor: f32, braced: bool) -> f32
     }
 }
 
-/// The held length after one tick of `dt` reeling in at `reel_mps` toward `floor_m`, from
-/// `length_m` with the target `distance_m` from the hand. The reel takes in line no faster than
-/// the target comes, keeping it at most [`REEL_LEAD_M`] inside the target, so a heavy target that
-/// lags is pulled hard rather than left far beyond the line. It never pays line out.
-pub(super) fn reeled_length(
-    length_m: f32,
-    distance_m: f32,
-    floor_m: f32,
-    reel_mps: f32,
-    dt: f32,
-) -> f32 {
-    if !(reel_mps.is_finite() && floor_m.is_finite() && distance_m.is_finite()) {
-        return length_m;
+/// Reel `rope` in for one tick of `dt` at `reel_mps` toward `floor_m`, with the target
+/// `distance_m` from the hand. The reel takes in line no faster than the target comes, keeping it
+/// at most [`REEL_LEAD_M`] inside the target, so a heavy target that lags is pulled hard rather
+/// than left far beyond the line. It never pays line out ([`Rope::shorten`]).
+pub(super) fn reel_in(rope: &mut Rope, distance_m: f32, floor_m: f32, reel_mps: f32, dt: f32) {
+    if reel_mps.is_finite() && floor_m.is_finite() && distance_m.is_finite() {
+        rope.shorten(
+            reel_mps.max(0.0) * dt,
+            floor_m.max(distance_m - REEL_LEAD_M),
+        );
     }
-    (length_m - reel_mps.max(0.0) * dt)
-        .max(floor_m.max(MIN_LENGTH_M))
-        .max(distance_m - REEL_LEAD_M)
-        .min(length_m)
 }
 
 /// How far inside the target the reel may take the line in, metres: at the default stiffness, a
@@ -203,8 +196,8 @@ impl Sling {
         if anchor_velocity.length() > 30.0 {
             return Err(RopeFault::Invalid);
         }
-        self.rope.length_m = reeled_length(
-            self.rope.length_m,
+        reel_in(
+            &mut self.rope,
             centre.distance(anchor),
             line.swing_length_m,
             line.reel_mps,
@@ -231,9 +224,6 @@ impl Sling {
         })
     }
 }
-
-/// The shortest held length, metres, whatever the swing's length is set to.
-const MIN_LENGTH_M: f32 = 0.5;
 
 #[cfg(test)]
 mod tests {
@@ -330,6 +320,12 @@ mod tests {
         assert_eq!(braced_strength_n(1000.0, f32::NAN, true), 1000.0);
     }
 
+    fn reeled_length(length_m: f32, distance_m: f32, floor_m: f32, reel_mps: f32, dt: f32) -> f32 {
+        let mut rope = Rope { length_m };
+        reel_in(&mut rope, distance_m, floor_m, reel_mps, dt);
+        rope.length_m
+    }
+
     #[test]
     fn the_reel_takes_in_line_toward_the_swing_length_no_faster_than_the_target_comes() {
         assert!((reeled_length(10.0, 10.0, 3.0, 8.0, 0.02) - 9.84).abs() < 1e-4);
@@ -345,7 +341,10 @@ mod tests {
             10.0,
             "never pays out"
         );
-        assert_eq!(reeled_length(1.0, 0.2, 0.0, 8.0, 0.1), MIN_LENGTH_M);
+        assert_eq!(
+            reeled_length(1.0, 0.2, 0.0, 8.0, 0.1),
+            rope::held_floor(0.0)
+        );
     }
 
     fn line(max_tension_n: f32) -> LineTuning {
