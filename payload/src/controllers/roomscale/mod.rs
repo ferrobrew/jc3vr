@@ -49,6 +49,7 @@ use crate::{
             self, BodyDimensions,
             rig::{
                 collision::probe::{self, ProbeResult},
+                grounded,
                 root::{self as rig_root, FrameSourceSnapshot, RootStatus, capsule_enabled},
             },
         },
@@ -173,6 +174,13 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     // keeps its state for when he is back on foot.
     let seated_crouch = frame.seated_crouch && on_foot && frame.seat.phase() == SeatPhase::Out;
 
+    // Standing, the remap measures the player's eyes from the standing eye height the rig has
+    // measured rather than the calibration's, which stood this player's eyes several centimetres
+    // under Rico's.
+    let remap_player = BodyDimensions {
+        eye_height: measured_eye_height(&player, posture),
+        ..player
+    };
     let head_height = remap_head.then(|| {
         posture::head_height(
             &HeadHeightInput {
@@ -185,7 +193,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
                 seated_crouch,
                 seated_drop_m: SEATED_CROUCH_DROP_M,
             },
-            &player,
+            &remap_player,
             &BodyDimensions::CHARACTER_ESTIMATE,
         )
     });
@@ -332,6 +340,17 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
         prev: prev + driving_view,
         cur: cur + driving_view,
         source: root.source,
+    }
+}
+
+/// The standing eye height the head remap measures the player's eyes from: the grounded rig's
+/// measure standing, and the calibration's otherwise (seated, the seated reference carries the
+/// height instead).
+fn measured_eye_height(player: &BodyDimensions, posture: EffectivePosture) -> f32 {
+    let measured = grounded::standing_eye_height();
+    match posture {
+        EffectivePosture::Standing if measured.is_finite() && measured > 0.0 => measured,
+        _ => player.eye_height,
     }
 }
 

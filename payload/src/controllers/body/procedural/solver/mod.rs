@@ -34,6 +34,8 @@ pub struct SolveInput {
     pub animated: RigPose,
     /// Where the head bone should be: the player's head, at the neck pivot.
     pub head: Vec3,
+    /// Where the camera's eyes are.
+    pub eye: Vec3,
     /// The player's head rotation relative to the body (identity faces forward).
     pub head_rotation: Quat,
     /// The player's torso heading relative to Rico's facing, radians about +Y, when estimated.

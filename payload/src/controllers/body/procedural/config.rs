@@ -20,6 +20,11 @@ pub struct ProceduralBodyConfig {
     pub chest_turn_limit_deg: f32,
     /// How far the spine leans from upright, at most, degrees.
     pub lean_limit_deg: f32,
+    /// A point of the chest higher than this below the camera's eyes is kept out of the near
+    /// field, metres.
+    pub chest_clear_below_m: f32,
+    /// How far behind the eyes, along the view's level forward, the chest is kept, metres.
+    pub chest_clear_back_m: f32,
     /// Zero the reach and pull of the game's own HumanIK targets on the bones the procedural body
     /// owns (the hips, waist, chest, shoulders, and legs), so the solve after the gate cannot move
     /// them.
@@ -59,6 +64,8 @@ impl ProceduralBodyConfig {
             blend_out_s: 0.2,
             chest_turn_limit_deg: 70.0,
             lean_limit_deg: 60.0,
+            chest_clear_below_m: 0.25,
+            chest_clear_back_m: 0.05,
             neutralize_targets: true,
             chest_radius_m: 0.14,
             abdomen_radius_m: 0.13,
@@ -86,6 +93,8 @@ impl ProceduralBodyConfig {
                 180.0,
             ),
             ("lean_limit_deg", self.lean_limit_deg, 0.0, 90.0),
+            ("chest_clear_below_m", self.chest_clear_below_m, 0.0, 1.0),
+            ("chest_clear_back_m", self.chest_clear_back_m, 0.0, 0.5),
             ("chest_radius_m", self.chest_radius_m, 0.0, 0.4),
             ("abdomen_radius_m", self.abdomen_radius_m, 0.0, 0.4),
             ("hand_margin_m", self.hand_margin_m, 0.0, 0.2),

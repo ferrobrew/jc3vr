@@ -143,6 +143,14 @@ pub fn frame(input: &GroundedInput) -> Option<GroundedFrame> {
     Some(result)
 }
 
+/// The player's standing eye height as the rig measures it, metres over the floor: the
+/// calibration's until the rig has sampled enough of the player standing, and kept while Rico is
+/// off the ground. The head-height remap stands the player's eyes at Rico's from it, so a player
+/// who stands a few centimetres below the calibration still sees from Rico's eyes.
+pub fn standing_eye_height() -> f32 {
+    STATE.lock().rig.standing_eye_height()
+}
+
 /// Snap on the next grounded frame: face the head, measure the standing height afresh, and put the
 /// pelvis under the neck. The recenter's, and the debug UI's button.
 pub fn request_snap() {

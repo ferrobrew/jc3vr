@@ -122,6 +122,12 @@ impl GroundedRig {
         }
     }
 
+    /// The standing eye height the rig has measured, metres over the floor: the standing neck
+    /// height with a level head's eyes over it. The calibration's until enough samples are in.
+    pub fn standing_eye_height(&self) -> f32 {
+        self.height.reference() - crate::body::EYES_TO_NECK.y
+    }
+
     /// The standing height's sample count.
     pub fn height_samples(&self) -> usize {
         self.height.samples()

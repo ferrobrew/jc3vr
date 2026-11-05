@@ -85,7 +85,7 @@ use crate::{
         locomotion::{anchor::JUMP_GRACE_S, status as locomotion_status},
         mode::{AirborneVariant, Mode, current as current_mode},
     },
-    headpose::body_relative_rotation,
+    headpose::{body_relative_rotation, eye_arm},
 };
 
 /// What the procedural body did at its last gate.
@@ -424,10 +424,13 @@ fn solve_input(character: &Character, animated: &RigPose, scale: f32) -> Option<
     let world = Mat4::from(character.m_WorldMatrixT1);
     let (_, rotation, _) = world.to_scale_rotation_translation();
     let head = head::read(&world, scale);
-    head.is_finite().then(|| SolveInput {
+    let head_rotation = body_relative_rotation();
+    let eye = head + head_rotation * eye_arm();
+    (head.is_finite() && eye.is_finite()).then(|| SolveInput {
         animated: *animated,
         head,
-        head_rotation: body_relative_rotation(),
+        eye,
+        head_rotation,
         torso_yaw: torso_turn(rotation),
     })
 }

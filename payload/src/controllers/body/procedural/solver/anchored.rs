@@ -16,7 +16,11 @@
 //!    spine, so a lean in the seat bends the back and the hips stay put.
 //! 3. A look down pitches the chest forward by a share of it, as on foot, again by how upright the
 //!    spine is, and the spine turns back onto the neck's line about its base.
-//! 4. The neck takes a share of the head's turn: the head's rotation against the body is a turn on
+//! 4. The chest is kept out of the camera's near field: a chest within `chest_clear_below_m` below
+//!    the eyes is swung back about the spine's base until it is `chest_clear_back_m` behind them,
+//!    along the view's level forward, so a camera that sits low, or a spine bent back, never puts
+//!    the chest in front of the eyes. A look down at a chest further below is left alone.
+//! 5. The neck takes a share of the head's turn: the head's rotation against the body is a turn on
 //!    top of the clip's head, so the neck's share is a share of it.
 //!
 //! The legs are not touched.
@@ -102,6 +106,8 @@ pub fn solve_anchored(input: &SolveInput, config: &ProceduralBodyConfig) -> RigP
         }
     }
 
+    keep_chest_clear(&mut pose, input, base, config);
+
     let look = Quat::IDENTITY.slerp(input.head_rotation.normalize(), NECK_SHARE);
     if look.is_finite() {
         let pivot = pose.position(RigBone::Neck);
@@ -110,6 +116,61 @@ pub fn solve_anchored(input: &SolveInput, config: &ProceduralBodyConfig) -> RigP
 
     if pose.is_finite() { pose } else { animated }
 }
+
+/// Swing the spine back about its base `base` until none of the chest's points within
+/// `chest_clear_below_m` below the eyes is less than `chest_clear_back_m` behind them, along the
+/// view's level forward.
+fn keep_chest_clear(
+    pose: &mut RigPose,
+    input: &SolveInput,
+    base: Vec3,
+    config: &ProceduralBodyConfig,
+) {
+    let look = input.head_rotation.normalize() * Vec3::NEG_Z;
+    let Some(forward) = Vec3::new(look.x, 0.0, look.z).try_normalize() else {
+        return;
+    };
+    let Some(axis) = Vec3::Y.cross(forward).try_normalize() else {
+        return;
+    };
+    let (below, back) = (
+        config.chest_clear_below_m.max(0.0),
+        config.chest_clear_back_m.max(0.0),
+    );
+    for _ in 0..CLEAR_ITERATIONS {
+        let worst = chest_points(pose)
+            .into_iter()
+            .filter(|p| p.y > input.eye.y - below)
+            .map(|p| ((p - input.eye).dot(forward) + back, (p - base).length()))
+            .filter(|(over, _)| *over > 1e-4)
+            .max_by(|a, b| a.0.total_cmp(&b.0));
+        let Some((over, radius)) = worst else {
+            return;
+        };
+        if radius < 1e-3 {
+            return;
+        }
+        // Turning about `axis` (up crossed with forward) carries up toward forward, so a negative
+        // angle carries the chest back.
+        let angle = -(over / radius).clamp(0.0, 1.0).asin();
+        pose.rotate_about(RigBone::Spine, Quat::from_axis_angle(axis, angle), base);
+    }
+}
+
+/// The points of the chest that must stay out of the near field: the upper spine, the sternum, and
+/// the shoulders.
+fn chest_points(pose: &RigPose) -> [Vec3; 4] {
+    [
+        pose.position(RigBone::Spine2),
+        pose.position(RigBone::Sternum),
+        pose.position(RigBone::LeftShoulder),
+        pose.position(RigBone::RightShoulder),
+    ]
+}
+
+/// How many times the chest clearance swings: the radius changes with the swing, so a second pass
+/// takes up what the first left.
+const CLEAR_ITERATIONS: usize = 3;
 
 /// How much of the torso's turn and of the look down a spine pointing along `upright` takes: all
 /// of it within [`UPRIGHT_FULL`] of the vertical, none past [`UPRIGHT_NONE`], eased between.
@@ -148,6 +209,7 @@ mod tests {
         let input = SolveInput {
             animated,
             head: animated.position(RigBone::Head),
+            eye: animated.position(RigBone::Head) + Vec3::new(0.0, 0.08, -0.1),
             head_rotation: Quat::IDENTITY,
             torso_yaw: Some(0.0),
         };
@@ -161,6 +223,32 @@ mod tests {
             .animated
             .rotate_about(RigBone::Hips, Quat::from_rotation_z(angle), hips);
         input.head = input.animated.position(RigBone::Head);
+        input.eye = input.head + Vec3::new(0.0, 0.08, -0.1);
+    }
+
+    #[test]
+    fn a_low_camera_keeps_the_chest_behind_the_eyes() {
+        let (mut input, config) = setup();
+        let shoulders = (input.animated.position(RigBone::LeftShoulder)
+            + input.animated.position(RigBone::RightShoulder))
+            * 0.5;
+        // The eyes straight over the shoulders and only a little above them.
+        input.eye = shoulders + Vec3::new(0.0, 0.1, 0.0);
+        let pose = solve_anchored(&input, &config);
+        for p in chest_points(&pose) {
+            if p.y > input.eye.y - config.chest_clear_below_m {
+                assert!(
+                    (p - input.eye).dot(Vec3::NEG_Z) <= -config.chest_clear_back_m + 2e-3,
+                    "{p:?} in front of {:?}",
+                    input.eye
+                );
+            }
+        }
+        // The hips stay the clip's.
+        assert!(
+            pose.position(RigBone::Hips)
+                .abs_diff_eq(input.animated.position(RigBone::Hips), 1e-5)
+        );
     }
 
     #[test]

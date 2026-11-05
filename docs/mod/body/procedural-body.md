@@ -59,7 +59,8 @@ The predicates the table calls at the gate walk the character's own rule system 
 1. The chest twists toward the player's torso, by the body rig's chest heading against Rico's facing, within `chest_turn_limit_deg`, about the clip's own spine and shared out up it (more of it higher). A spine far from upright (lying in a swim) takes less of the twist, none lying flat.
 2. The spine swings so the neck reaches the neck pivot under the player's head, shared out along the four spine bones and repeated to converge, never past `lean_limit_deg` from the clip's own spine. A lean the body rig reads as a bend therefore bends Rico's back, and the hips stay where the clip has them.
 3. A look down pitches the chest forward by a share of it, again by how upright the spine is, and the spine turns back onto the neck's line about its base.
-4. The neck takes a share of the head's turn; the head override sets the head itself after the solve.
+4. The chest is kept out of the camera's near field: a point of the chest (the upper spine, the sternum, or a shoulder) less than `chest_clear_below_m` below the camera's eyes is swung back with the whole spine about its base until it is at least `chest_clear_back_m` behind the eyes along the view's level forward. The rule holds whatever the clip and the rig do, so a camera that sits low or a spine bent back never puts the chest in front of the eyes, and a look down at a chest further below is left alone.
+5. The neck takes a share of the head's turn; the head override sets the head itself after the solve.
 
 The player's head is read at the neck pivot, below and behind the eyes in the head's frame (`procedural::head`): looking down turns the eyes about the neck, so the eye point drops and comes forward although nothing below the neck moved. The head is measured against the root at the height the steady view hangs it from, so a staircase does not read as a crouch.
 
@@ -86,7 +87,7 @@ The debug UI's Body/tracking > Body fit live status shows the mode, the weight, 
 
 ## What needs confirming in the headset
 
-1. Standing still: the readout's weight reaches one, the game's idle plays in the legs, and a hand on the hip lands on Rico's. Leaning over a table bends Rico's back toward the head while the legs and the hips stay the game's.
+1. Standing still: the readout's weight reaches one, the game's idle plays in the legs, and a hand on the hip lands on Rico's. Leaning over a table bends Rico's back toward the head while the legs and the hips stay the game's. Standing relaxed, the camera sits at Rico's eyes (the camera height readout's difference within a few centimetres), and neither the scarf nor the shoulders come into the lower view unless the player looks down.
 2. The weapon stays in the hand, and shooting Rico's body (from an NPC) hits where it is drawn.
 3. Walking with the stick and stepping in the room: the legs play the game's walk without the torso tearing from the hips.
 4. With hands on: a hand on the belly or the chest rests on Rico's body, an arm folded across the chest goes around it, and the elbows hang naturally.
