@@ -9,7 +9,7 @@
 
 use std::{sync::OnceLock, time::Instant};
 
-use jc3gi::{character::character::Character, hash::hashlittle, state::StateBitFlag};
+use jc3gi::{character::character::Character, state::StateBitFlag};
 
 use crate::{
     config::Config,
@@ -24,6 +24,7 @@ use crate::{
         mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
         physical_hands::climb,
     },
+    hash::hashlittle,
     headpose::{Source, source},
     hooks::{animation::active_state_type_id, in_gameplay},
 };
@@ -157,7 +158,7 @@ impl StateTracker {
 /// `character` must be live, on the thread running its update.
 unsafe fn grapple_attached(character: &Character) -> bool {
     static ATTACH: OnceLock<u32> = OnceLock::new();
-    let attach = *ATTACH.get_or_init(|| hashlittle(GRAPPLE_ATTACH_STATE.as_bytes()) as u32);
+    let attach = *ATTACH.get_or_init(|| hashlittle(GRAPPLE_ATTACH_STATE.as_bytes()));
     (unsafe { active_state_type_id(character) }) == Some(attach)
 }
 

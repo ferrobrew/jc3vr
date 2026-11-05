@@ -2,13 +2,15 @@
 
 use jc3gi::{
     graphics_engine::model_instance::{ModelCollection, ModelInstance, ModelManager},
-    hash::hashlittle,
     location::{GameLocationSystemContext, Location, LocationInfo, LocationType},
 };
 
-use crate::controllers::weapons::grenade::locker::{
-    collection::{MAX_PATH_BYTES, Observation, capture, path, visible},
-    format::{Dictionary, grenade_model, loaded_location},
+use crate::{
+    controllers::weapons::grenade::locker::{
+        collection::{MAX_PATH_BYTES, Observation, capture, path, visible},
+        format::{Dictionary, grenade_model, loaded_location},
+    },
+    hash::hashlittle,
 };
 
 /// Copy qualifying sources while the game thread owns a stable loaded-location list.
@@ -27,7 +29,7 @@ pub(super) unsafe fn observe() -> Vec<Observation> {
     let Some(manager) = (unsafe { ModelManager::get() }) else {
         return Vec::new();
     };
-    let grenade_hash = hashlittle(grenade_model()) as u32;
+    let grenade_hash = hashlittle(grenade_model());
     (0..count)
         .filter_map(|index| {
             let info = unsafe { (*locations.begin.add(index)).as_ref() }?;

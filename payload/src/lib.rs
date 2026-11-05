@@ -30,6 +30,7 @@ mod far_field;
 mod frame_timing;
 mod fsr;
 mod grapple;
+mod hash;
 mod headpose;
 mod hooks;
 mod hud;

@@ -13,6 +13,8 @@
 
 use jc3gi::ui::pause_ui::SettingsUI;
 
+use crate::hash::hashlittle;
+
 /// The most tabs the tab bar holds ([`SettingsUI::TAB_COUNT`]).
 pub(crate) const TAB_LIMIT: usize = SettingsUI::TAB_COUNT as usize;
 
@@ -107,11 +109,11 @@ pub(crate) struct TabCommands {
 }
 
 impl TabCommands {
-    /// The commands, hashing each tab index's command name with `hash` (the engine's command hash,
-    /// [`tab_command_name`] of the index).
-    pub(crate) fn new(hash: impl Fn(&str) -> u32) -> Self {
+    /// The commands, hashing each tab index's command name ([`tab_command_name`]) with the
+    /// engine's command hash.
+    pub(crate) fn new() -> Self {
         Self {
-            hashes: std::array::from_fn(|index| hash(&tab_command_name(index))),
+            hashes: std::array::from_fn(|index| hashlittle(tab_command_name(index).as_bytes())),
         }
     }
 
@@ -262,13 +264,16 @@ mod tests {
 
     #[test]
     fn tab_commands_map_back_to_their_index() {
-        // A stand-in hash; the runtime uses the engine's.
-        let commands = TabCommands::new(|name| 1000 + name.parse::<u32>().unwrap());
+        let commands = TabCommands::new();
         for index in 0..TAB_LIMIT {
-            assert_eq!(commands.tab_of(1000 + index as u32), Some(index));
+            let command = hashlittle(index.to_string().as_bytes());
+            assert_eq!(commands.tab_of(command), Some(index));
         }
-        assert_eq!(commands.tab_of(999), None);
-        assert_eq!(commands.tab_of(1000 + TAB_LIMIT as u32), None);
+        assert_eq!(commands.tab_of(hashlittle(b"tab")), None);
+        assert_eq!(
+            commands.tab_of(hashlittle(TAB_LIMIT.to_string().as_bytes())),
+            None
+        );
     }
 
     #[test]

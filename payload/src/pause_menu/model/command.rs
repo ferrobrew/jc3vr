@@ -209,7 +209,7 @@ pub(crate) fn route(command: Command, state: MenuState) -> Route {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pause_menu::model::tabs::TAB_LIMIT;
+    use crate::{hash::hashlittle, pause_menu::model::tabs::TAB_LIMIT};
 
     fn id(page: usize, item: usize) -> i32 {
         RowId::new(page, item).encode().unwrap()
@@ -218,14 +218,9 @@ mod tests {
     const SHOWN_1: MenuState = MenuState::Shown { pages: 3, page: 1 };
     const ENTRIES: MenuState = MenuState::EntryAdded { pages: 3 };
 
-    /// Stand-in tab command hashes, clear of every command hash the tests use.
-    fn tabs() -> TabCommands {
-        TabCommands::new(|name| 0x7000_0000 + name.parse::<u32>().unwrap())
-    }
-
-    /// [`super::parse`] with the stand-in tab commands.
+    /// [`super::parse`] with the tab commands.
     fn parse(hash: u32, args: &[Arg]) -> Command {
-        super::parse(hash, args, &tabs())
+        super::parse(hash, args, &TabCommands::new())
     }
 
     #[test]
@@ -401,8 +396,11 @@ mod tests {
 
     #[test]
     fn tab_commands_are_parsed_before_anything_else() {
-        assert_eq!(parse(0x7000_0002, &[]), Command::SelectTab { tab: 2 });
-        assert_eq!(parse(0x7000_0000 + TAB_LIMIT as u32, &[]), Command::Other);
+        assert_eq!(parse(hashlittle(b"2"), &[]), Command::SelectTab { tab: 2 });
+        assert_eq!(
+            parse(hashlittle(TAB_LIMIT.to_string().as_bytes()), &[]),
+            Command::Other
+        );
     }
 
     #[test]

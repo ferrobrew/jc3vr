@@ -51,7 +51,6 @@ use jc3gi::{
     character::character::{
         AnimationController, Character, CharacterLodFlags, SafeBoneIndex, get_Character_EnableHIK,
     },
-    hash::hashlittle,
     types::math::Vector3,
 };
 use parking_lot::Mutex;
@@ -74,6 +73,7 @@ use crate::{
             tiers,
         },
     },
+    hash::hashlittle,
     headpose,
     hooks::{self, character::body_ik},
 };
@@ -939,7 +939,7 @@ unsafe fn joint(controller: &mut AnimationController, bone: u32) -> Option<(Vec3
 /// A bone's skeleton index by name, or `None` when the lookup fails (the root index, which a
 /// failed lookup can resolve to, or an implausible index).
 pub(crate) unsafe fn bone_index(controller: &AnimationController, name: &str) -> Option<u32> {
-    let index = unsafe { controller.GetBoneIndex(hashlittle(name.as_bytes()) as u32) };
+    let index = unsafe { controller.GetBoneIndex(hashlittle(name.as_bytes())) };
     (index != 0 && index <= late::MAX_BONE_INDEX).then_some(index)
 }
 

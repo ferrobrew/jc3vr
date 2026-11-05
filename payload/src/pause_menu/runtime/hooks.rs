@@ -26,13 +26,10 @@ use std::{
 };
 
 use detours_macro::detour;
-use jc3gi::{
-    hash::hashlittle,
-    ui::{
-        pause_ui::{PauseMenuType, PauseUI, SettingsUI},
-        scaleform::{MovieImpl, Value},
-        ui_base::UIBase,
-    },
+use jc3gi::ui::{
+    pause_ui::{PauseMenuType, PauseUI, SettingsUI},
+    scaleform::{MovieImpl, Value},
+    ui_base::UIBase,
 };
 use re_utilities::hook_library::HookLibrary;
 
@@ -66,9 +63,8 @@ pub(crate) fn hook_library() -> HookLibrary {
 /// The most command arguments decoded; the commands the menu handles take at most two.
 const MAX_ARGS: usize = 4;
 
-/// The tab commands, hashed with the engine's command hash ([`hashlittle`]) on first use.
-static TAB_COMMANDS: LazyLock<TabCommands> =
-    LazyLock::new(|| TabCommands::new(|name| hashlittle(name.as_bytes()) as u32));
+/// The tab commands, hashed on first use.
+static TAB_COMMANDS: LazyLock<TabCommands> = LazyLock::new(TabCommands::new);
 
 /// The pause screen whose [`PauseUI::OnActiveImpl`] is running, so H6 recognises that
 /// activation's `InitMenu` call. Null outside an activation.

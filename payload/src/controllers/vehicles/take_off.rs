@@ -9,12 +9,13 @@
 //! The game's own turn then brings the body around during the wind-up, under the view, so the view
 //! does not move.
 
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
-use jc3gi::{character::character::Character, hash::hashlittle};
+use jc3gi::character::character::Character;
 use parking_lot::Mutex;
 
 use crate::{
+    hash::StateSet,
     headpose::{self, sim::body_yaw_of},
     hooks::animation::active_state_type_id,
 };
@@ -73,27 +74,21 @@ impl Tracker {
 static TRACKER: Mutex<Tracker> = Mutex::new(Tracker { taking_off: false });
 
 /// The rule states of the take-off from the ground.
-const TAKE_OFF_STATES: [&str; 2] = [
+pub(crate) const TAKE_OFF_STATES: [&str; 2] = [
     "S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND_INTO",
     "S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND",
 ];
 
 /// Whether the rule state `state` is the take-off from the ground.
 fn is_take_off_state(state: u32) -> bool {
-    static HASHES: OnceLock<[u32; 2]> = OnceLock::new();
-    HASHES
-        .get_or_init(|| take_off_hashes(|name| hashlittle(name.as_bytes()) as u32))
-        .contains(&state)
-}
-
-/// The take-off's state ids, by `hash` of their names (the game's hash in play).
-fn take_off_hashes(hash: impl Fn(&str) -> u32) -> [u32; 2] {
-    TAKE_OFF_STATES.map(hash)
+    static STATES: LazyLock<StateSet> = LazyLock::new(|| StateSet::new(TAKE_OFF_STATES));
+    STATES.contains(state)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hash::hashlittle;
 
     #[test]
     fn the_take_off_turns_once_on_entry_and_lets_go_on_exit() {
@@ -105,18 +100,14 @@ mod tests {
         assert_eq!(tracker.step(false), Some(Edge::Left));
     }
 
-    /// A stand-in for the game's name hash, which lives in the game's code.
-    fn hash(name: &str) -> u32 {
-        name.bytes().fold(0x811C_9DC5, |h, b| {
-            (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
-        })
-    }
-
     #[test]
     fn both_take_off_states_count_and_others_do_not() {
-        let hashes = take_off_hashes(hash);
-        assert!(hashes.contains(&hash("S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND_INTO")));
-        assert!(hashes.contains(&hash("S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND")));
-        assert!(!hashes.contains(&hash("S_IDLE")));
+        assert!(is_take_off_state(hashlittle(
+            b"S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND_INTO"
+        )));
+        assert!(is_take_off_state(hashlittle(
+            b"S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND"
+        )));
+        assert!(!is_take_off_state(hashlittle(b"S_IDLE")));
     }
 }

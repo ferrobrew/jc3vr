@@ -4,8 +4,8 @@
 //! The game stores its data in `gameN.tab`/`gameN.arc` pairs under `archives_win64` (the base game)
 //! and `patch_win64` (replacements loaded in preference to the base copies). A `.tab` is a `TAB\0`
 //! header (a version pair and an alignment) followed by entries of a name hash, an offset, and a
-//! size into its `.arc`, which stores each file uncompressed. The name hash is Bob Jenkins' lookup3
-//! `hashlittle` of the file's path. The format and the precedence are those of the offline tooling
+//! size into its `.arc`, which stores each file uncompressed. The name hash is
+//! [`hashlittle`] of the file's path. The format and the precedence are those of the offline tooling
 //! in `tools/sights/archives.py`, documented in `docs/engine/gameplay/weapon-data.md`.
 
 use std::{
@@ -14,6 +14,8 @@ use std::{
     io::{self, Read as _, Seek as _, SeekFrom},
     path::{Path, PathBuf},
 };
+
+use crate::hash::hashlittle;
 
 /// Every file in the base and patch archives, by name hash.
 pub(crate) struct ArchiveIndex {
@@ -183,29 +185,6 @@ pub(crate) fn parse_tab(bytes: &[u8]) -> Result<impl Iterator<Item = TabEntry> +
     }))
 }
 
-/// Bob Jenkins' lookup3 `hashlittle` with a zero seed, which the game uses for file names.
-pub(crate) fn hashlittle(data: &[u8]) -> u32 {
-    let mut a = 0xdead_beef_u32.wrapping_add(data.len() as u32);
-    let (mut b, mut c) = (a, a);
-    let mut rest = data;
-    while rest.len() > 12 {
-        a = a.wrapping_add(u32_at(rest, 0));
-        b = b.wrapping_add(u32_at(rest, 4));
-        c = c.wrapping_add(u32_at(rest, 8));
-        (a, b, c) = mix(a, b, c);
-        rest = &rest[12..];
-    }
-    if rest.is_empty() {
-        return c;
-    }
-    let mut tail = [0u8; 12];
-    tail[..rest.len()].copy_from_slice(rest);
-    a = a.wrapping_add(u32_at(&tail, 0));
-    b = b.wrapping_add(u32_at(&tail, 4));
-    c = c.wrapping_add(u32_at(&tail, 8));
-    finalize(a, b, c)
-}
-
 /// The archive trees, in ascending precedence.
 const TREES: [&str; 2] = ["archives_win64", "patch_win64"];
 
@@ -243,70 +222,9 @@ fn u32_at(bytes: &[u8], at: usize) -> u32 {
     u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]])
 }
 
-fn mix(mut a: u32, mut b: u32, mut c: u32) -> (u32, u32, u32) {
-    a = a.wrapping_sub(c);
-    a ^= c.rotate_left(4);
-    c = c.wrapping_add(b);
-    b = b.wrapping_sub(a);
-    b ^= a.rotate_left(6);
-    a = a.wrapping_add(c);
-    c = c.wrapping_sub(b);
-    c ^= b.rotate_left(8);
-    b = b.wrapping_add(a);
-    a = a.wrapping_sub(c);
-    a ^= c.rotate_left(16);
-    c = c.wrapping_add(b);
-    b = b.wrapping_sub(a);
-    b ^= a.rotate_left(19);
-    a = a.wrapping_add(c);
-    c = c.wrapping_sub(b);
-    c ^= b.rotate_left(4);
-    b = b.wrapping_add(a);
-    (a, b, c)
-}
-
-fn finalize(mut a: u32, mut b: u32, mut c: u32) -> u32 {
-    c ^= b;
-    c = c.wrapping_sub(b.rotate_left(14));
-    a ^= c;
-    a = a.wrapping_sub(c.rotate_left(11));
-    b ^= a;
-    b = b.wrapping_sub(a.rotate_left(25));
-    c ^= b;
-    c = c.wrapping_sub(b.rotate_left(16));
-    a ^= c;
-    a = a.wrapping_sub(c.rotate_left(4));
-    b ^= a;
-    b = b.wrapping_sub(a.rotate_left(14));
-    c ^= b;
-    c.wrapping_sub(b.rotate_left(24))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn hashlittle_matches_the_reference_values() {
-        // The reference implementation's published test vectors (seed 0).
-        assert_eq!(hashlittle(b""), 0xdead_beef);
-        assert_eq!(hashlittle(b"Four score and seven years ago"), 0x1777_0551);
-        // A path the archives index, as the offline tooling hashes it.
-        assert_eq!(
-            hashlittle(b"textures/ui/weapon_icons/301.ddsc"),
-            0xad9e_c3bf
-        );
-    }
-
-    #[test]
-    fn hashlittle_covers_every_tail_length() {
-        let text = b"textures/ui/weapon_icons/301.ddsc";
-        let hashes: Vec<u32> = (0..=text.len()).map(|n| hashlittle(&text[..n])).collect();
-        let mut unique = hashes.clone();
-        unique.sort_unstable();
-        unique.dedup();
-        assert_eq!(unique.len(), hashes.len());
-    }
 
     #[test]
     fn a_tab_lists_its_entries_and_ignores_a_partial_one() {

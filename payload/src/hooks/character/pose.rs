@@ -6,10 +6,9 @@ use jc3gi::{
         AnimationController, Character, CharacterInitializationFlags, CharacterPauseFlags,
         DamageStateFlags, Joint,
     },
-    hash::hashlittle,
 };
 
-use crate::controllers::body::procedural::skeleton::SkeletonKey;
+use crate::{controllers::body::procedural::skeleton::SkeletonKey, hash::hashlittle};
 
 #[cfg(test)]
 mod tests;
@@ -97,7 +96,7 @@ impl<'a> LivePose<'a> {
 
     /// Resolve an optional named bone without accepting the native missing-name root fallback.
     pub(crate) fn named(&self, name: &[u8]) -> Option<u32> {
-        self.named_hash(hashlittle(name) as u32)
+        self.named_hash(hashlittle(name))
     }
 
     fn named_hash(&self, hash: u32) -> Option<u32> {

@@ -14,16 +14,18 @@ use jc3gi::{
     graphics_engine::model_instance::{
         ModelCollection, ModelInstance, ModelInstanceFlags, ModelManager,
     },
-    hash::hashlittle,
     location::Location,
     types::math::Matrix4,
 };
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::weapons::grenade::locker::{
-    Identity, Provider, Source,
-    format::{Dictionary, MAX_BYTES, dictionary, grenade_model},
+use crate::{
+    controllers::weapons::grenade::locker::{
+        Identity, Provider, Source,
+        format::{Dictionary, MAX_BYTES, dictionary, grenade_model},
+    },
+    hash::hashlittle,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -358,7 +360,7 @@ unsafe fn capture(
     {
         return Vec::new();
     }
-    let grenade_hash = hashlittle(grenade_model()) as u32;
+    let grenade_hash = hashlittle(grenade_model());
     metadata
         .grenades
         .iter()

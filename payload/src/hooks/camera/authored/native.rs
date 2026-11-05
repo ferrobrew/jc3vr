@@ -1,5 +1,7 @@
 //! Native reads at the camera-tree seam, before the tracked contexts replace the engine output.
 
+use std::sync::LazyLock;
+
 use glam::Mat4;
 use jc3gi::{
     animation::{
@@ -7,15 +9,17 @@ use jc3gi::{
         skeleton::HkArray,
     },
     character::character::{AnimationController, Character},
-    hash::hashlittle,
     types::{math::Matrix4, shared_ptr::SharedPtr},
 };
 
-use crate::hooks::camera::authored::{
-    Refusal,
-    composition::Trs,
-    evidence::{self, Animation, Clip, ClipSource},
-    policy::{GraphState, HangingState},
+use crate::{
+    hash::{StateTable, hashlittle},
+    hooks::camera::authored::{
+        Refusal,
+        composition::Trs,
+        evidence::{self, Animation, Clip, ClipSource},
+        policy::{GraphState, HangingState},
+    },
 };
 
 /// All native pointers are used only during capture; publication contains owned values.
@@ -75,7 +79,7 @@ pub(super) unsafe fn read(character: &Character) -> Result<NativeSample, Refusal
         }
         // The safe CAMERA slot names an absent unnumbered bone on the checked skeleton.
         // Resolve the actual named channel and reject GetBoneIndex's root fallback.
-        let hash = hashlittle(b"CharacterCam1") as u32;
+        let hash = hashlittle(b"CharacterCam1");
         let index = controller.GetBoneIndex(hash);
         let count = havok.m_Bones.size as u32;
         if index == 0
@@ -158,7 +162,7 @@ pub(crate) unsafe fn animation_update(
             if controller.m_SkeletonResourceHandle.is_null() || controller.m_Skeleton.is_null() {
                 return Err(Refusal::MissingChannel);
             }
-            let index = controller.GetBoneIndex(hashlittle(b"CharacterCam1") as u32);
+            let index = controller.GetBoneIndex(hashlittle(b"CharacterCam1"));
             let skeleton = controller
                 .m_Skeleton
                 .as_ref()
@@ -170,8 +174,7 @@ pub(crate) unsafe fn animation_update(
             if index == 0
                 || index >= havok.m_Bones.size.max(0) as u32
                 || skeleton.m_BoneNameHashes.is_null()
-                || *skeleton.m_BoneNameHashes.add(index as usize)
-                    != hashlittle(b"CharacterCam1") as u32
+                || *skeleton.m_BoneNameHashes.add(index as usize) != hashlittle(b"CharacterCam1")
             {
                 return Err(Refusal::MissingChannel);
             }
@@ -390,18 +393,18 @@ unsafe fn hk_slice<T>(array: &HkArray<T>) -> Result<&[T], Refusal> {
 const MAX_NATIVE_ITEMS: usize = 4096;
 
 fn classify(hash: Option<u32>) -> Result<GraphState, Refusal> {
-    classify_with(hash, |name| hashlittle(name) as u32)
-}
-
-fn classify_with(hash: Option<u32>, name_id: impl Fn(&[u8]) -> u32) -> Result<GraphState, Refusal> {
+    static STATES: LazyLock<StateTable<Result<GraphState, Refusal>>> = LazyLock::new(|| {
+        StateTable::new(
+            EXACT_STATES
+                .iter()
+                .map(|&(name, state)| (name, Ok(state)))
+                .chain([(IDLE_TAIL_STATE, Err(Refusal::IdleTailWeightNotBound))]),
+        )
+    });
     let hash = hash.ok_or(Refusal::MissingState)?;
-    if hash == name_id(b"S_JC_WINGSUIT_IDLE") {
-        return Err(Refusal::IdleTailWeightNotBound);
-    }
-    EXACT_STATES
-        .iter()
-        .find_map(|(name, state)| (hash == name_id(name)).then_some(*state))
-        .ok_or(Refusal::OrdinaryOrUnsupportedState)
+    STATES
+        .get(hash)
+        .unwrap_or(Err(Refusal::OrdinaryOrUnsupportedState))
 }
 
 pub(super) fn trs(matrix: Mat4) -> Result<Trs, Refusal> {
@@ -436,20 +439,23 @@ pub(super) fn trs(matrix: Mat4) -> Result<Trs, Refusal> {
 // sequence, not the native S_GRAPPLE_HANG name: rico_grpl_newhang_land pitches and raises the
 // marker with no root motion, and rico_grpl_newhang_idle (also bound by S_IDLE_HANG_STUNT) holds
 // its endpoint, so the verified handoff retains the entry-relative correction.
-const EXACT_STATES: &[(&[u8], GraphState)] = &[
+const EXACT_STATES: &[(&str, GraphState)] = &[
     (
-        b"S_GRAPPLE_PRE_UPSIDEDOWN",
+        "S_GRAPPLE_PRE_UPSIDEDOWN",
         GraphState::Hanging(HangingState::GrapplePreUpsideDown),
     ),
     (
-        b"S_GRAPPLE_ATTACH_UPSIDE_DOWN",
+        "S_GRAPPLE_ATTACH_UPSIDE_DOWN",
         GraphState::Hanging(HangingState::GrappleUpsideDown),
     ),
     (
-        b"S_IDLE_HANG_STUNT",
+        "S_IDLE_HANG_STUNT",
         GraphState::Hanging(HangingState::StuntIdle),
     ),
 ];
+
+/// The wingsuit idle, refused because the weight of its idle tail is not bound.
+const IDLE_TAIL_STATE: &str = "S_JC_WINGSUIT_IDLE";
 
 #[cfg(test)]
 mod tests {
@@ -522,13 +528,8 @@ mod tests {
                 let count = if exchanged { 8 } else { 9 };
                 let (evaluation, after, source, mut animation) =
                     evaluation_fixture(920 + offset as u64, count);
-                let id = |name: &[u8]| {
-                    name.iter().fold(0_u32, |id, byte| {
-                        id.wrapping_mul(31).wrapping_add(u32::from(*byte))
-                    })
-                };
-                animation.state = Some(id(name));
-                assert!(classify_with(animation.state, id).is_ok());
+                animation.state = Some(hashlittle(name));
+                assert!(classify(animation.state).is_ok());
                 let after = if exchanged { after } else { evaluation.before };
                 evidence::publish(source, after.current, animation.clone());
                 let result = evaluation
@@ -604,11 +605,6 @@ mod tests {
 
     #[test]
     fn classifier_rejects_ordinary_and_root_motion_only_states() {
-        let id = |name: &[u8]| {
-            name.iter().fold(0_u32, |id, byte| {
-                id.wrapping_mul(31).wrapping_add(u32::from(*byte))
-            })
-        };
         for name in [
             // The marker only cancels the clip's root motion, or holds identity.
             b"S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND_INTO".as_slice(),
@@ -639,37 +635,27 @@ mod tests {
             b"S_GETUP_UNKNOWN".as_slice(),
         ] {
             assert_eq!(
-                classify_with(Some(id(name)), id),
+                classify(Some(hashlittle(name))),
                 Err(Refusal::OrdinaryOrUnsupportedState)
             );
         }
         assert_eq!(
-            classify_with(Some(id(b"S_JC_WINGSUIT_IDLE")), id),
+            classify(Some(hashlittle(b"S_JC_WINGSUIT_IDLE"))),
             Err(Refusal::IdleTailWeightNotBound)
         );
-        assert_eq!(classify_with(None, id), Err(Refusal::MissingState));
+        assert_eq!(classify(None), Err(Refusal::MissingState));
     }
 
     #[test]
     fn legacy_grapple_hang_predicate_name_does_not_supply_a_shipped_camera_state() {
-        let id = |name: &[u8]| {
-            name.iter().fold(0_u32, |id, byte| {
-                id.wrapping_mul(31).wrapping_add(u32::from(*byte))
-            })
-        };
         assert_eq!(
-            classify_with(Some(id(b"S_GRAPPLE_HANG")), id),
+            classify(Some(hashlittle(b"S_GRAPPLE_HANG"))),
             Err(Refusal::OrdinaryOrUnsupportedState)
         );
     }
 
     #[test]
     fn classifier_admits_the_states_whose_marker_moves() {
-        let id = |name: &[u8]| {
-            name.iter().fold(0_u32, |id, byte| {
-                id.wrapping_mul(31).wrapping_add(u32::from(*byte))
-            })
-        };
         for (name, expected) in [
             (
                 b"S_GRAPPLE_PRE_UPSIDEDOWN".as_slice(),
@@ -684,7 +670,7 @@ mod tests {
                 GraphState::Hanging(HangingState::StuntIdle),
             ),
         ] {
-            assert_eq!(classify_with(Some(id(name)), id), Ok(expected));
+            assert_eq!(classify(Some(hashlittle(name))), Ok(expected));
         }
     }
 }

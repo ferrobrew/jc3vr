@@ -8,12 +8,12 @@
 
 use std::ffi::{CStr, c_char};
 
-use jc3gi::{
-    hash::hashlittle,
-    ui::locator::{Locale, Locator},
-};
+use jc3gi::ui::locator::{Locale, Locator};
 
-use crate::controllers::summary::labels::{ModText, Text};
+use crate::{
+    controllers::summary::labels::{ModText, Text},
+    hash::hashlittle,
+};
 
 /// The game's current language, or `None` before the localisation store exists.
 ///
@@ -46,8 +46,7 @@ pub fn resolve(
 ///
 /// Call from a game thread past startup. The store takes its own reader lock.
 pub unsafe fn game_string(key: &str) -> Option<String> {
-    // The store keys strings by the low 32 bits of the key's hash.
-    let hash = hashlittle(key.as_bytes()) as u32;
+    let hash = hashlittle(key.as_bytes());
     // SAFETY: per the contract.
     unsafe { game_string_by_hash(hash) }
 }

@@ -13,11 +13,9 @@
 //! player had standing is wrong once seated. A shuffle between seats inside the vehicle stays
 //! locked and does not re-base.
 
-use std::{collections::HashSet, sync::OnceLock};
+use std::sync::LazyLock;
 
-use jc3gi::hash::hashlittle;
-
-use crate::{controllers::config::SeatTransition, vr::RecenterKind};
+use crate::{controllers::config::SeatTransition, hash::StateTable, vr::RecenterKind};
 
 /// Under [`SeatTransition::Fade`], how long the view stays dark after the seat locks, so that the
 /// re-based view settles before it clears, seconds.
@@ -60,56 +58,19 @@ pub enum SeatEvent {
     ExitDone,
 }
 
-/// Classify a body rule state by its name hash, with the game's state-name hash. `None` (no
-/// readable rule state) is out.
+/// Classify a body rule state by its name hash. `None` (no readable rule state) and a state in no
+/// table are out.
 pub fn classify(state: Option<u32>) -> SeatPhase {
-    static TABLES: OnceLock<SeatTables> = OnceLock::new();
-    TABLES
-        .get_or_init(|| SeatTables::new(|name| hashlittle(name.as_bytes()) as u32))
-        .classify(state)
-}
-
-/// The seat phases' state-name hashes.
-pub struct SeatTables {
-    locked: HashSet<u32>,
-    shuffle: HashSet<u32>,
-    entering: HashSet<u32>,
-    exiting: HashSet<u32>,
-}
-
-impl SeatTables {
-    /// Hash the phases' state names with `hash`.
-    pub fn new(hash: impl Fn(&str) -> u32) -> Self {
-        let set = |names: &[&str]| names.iter().map(|name| hash(name)).collect();
-        Self {
-            locked: set(LOCKED),
-            shuffle: set(SHUFFLE),
-            entering: set(ENTERING),
-            exiting: set(EXITING),
-        }
-    }
-
-    /// Classify a state hash; `None` and a state in no table are out.
-    pub fn classify(&self, state: Option<u32>) -> SeatPhase {
-        let Some(state) = state else {
-            return SeatPhase::Out;
-        };
-        self.phase_of(state)
-    }
-
-    fn phase_of(&self, state: u32) -> SeatPhase {
-        if self.locked.contains(&state) {
-            SeatPhase::Locked
-        } else if self.shuffle.contains(&state) {
-            SeatPhase::Shuffle
-        } else if self.entering.contains(&state) {
-            SeatPhase::Entering
-        } else if self.exiting.contains(&state) {
-            SeatPhase::Exiting
-        } else {
-            SeatPhase::Out
-        }
-    }
+    static TABLE: LazyLock<StateTable<SeatPhase>> = LazyLock::new(|| {
+        StateTable::new(
+            PHASE_STATES
+                .iter()
+                .flat_map(|&(phase, names)| names.iter().map(move |&name| (name, phase))),
+        )
+    });
+    state
+        .and_then(|state| TABLE.get(state))
+        .unwrap_or(SeatPhase::Out)
 }
 
 /// The phase across frames, reporting its edges.
@@ -213,7 +174,14 @@ pub fn action(mode: SeatTransition, event: SeatEvent, hold_s: f32) -> SeatAction
     }
 }
 
-/// The state names of each phase, from the game's animation state names.
+/// The state names of each phase, from the game's animation state names. No name is in two phases.
+pub(crate) const PHASE_STATES: [(SeatPhase, &[&str]); 4] = [
+    (SeatPhase::Locked, LOCKED),
+    (SeatPhase::Shuffle, SHUFFLE),
+    (SeatPhase::Entering, ENTERING),
+    (SeatPhase::Exiting, EXITING),
+];
+
 const LOCKED: &[&str] = &[
     "S_IDLE_VEHICLE",
     "S_IDLE_DRIVER_VEHICLE",
@@ -269,23 +237,17 @@ const EXITING: &[&str] = &[
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::collections::HashSet;
 
-    /// A stand-in for the game's hash, which lives in the game binary: FNV-1a.
-    fn hash(name: &str) -> u32 {
-        name.bytes().fold(0x811C_9DC5, |h, b| {
-            (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
-        })
-    }
+    use super::*;
+    use crate::hash::hashlittle;
 
     fn state(name: &str) -> Option<u32> {
-        Some(hash(name))
+        Some(hashlittle(name.as_bytes()))
     }
 
     #[test]
     fn states_classify_by_name() {
-        let tables = SeatTables::new(hash);
-        let classify = |state| tables.classify(state);
         assert_eq!(
             classify(state("S_ENTER_VEHICLE_FROM_GROUND")),
             SeatPhase::Entering
@@ -299,6 +261,19 @@ mod tests {
         assert_eq!(classify(state("S_EXITING_VEHICLE")), SeatPhase::Exiting);
         assert_eq!(classify(state("S_IDLE")), SeatPhase::Out);
         assert_eq!(classify(None), SeatPhase::Out);
+    }
+
+    #[test]
+    fn no_state_is_in_two_phases() {
+        let names: Vec<&str> = PHASE_STATES
+            .iter()
+            .flat_map(|(_, names)| names.iter().copied())
+            .collect();
+        let hashes: HashSet<u32> = names
+            .iter()
+            .map(|name| hashlittle(name.as_bytes()))
+            .collect();
+        assert_eq!(hashes.len(), names.len());
     }
 
     #[test]
