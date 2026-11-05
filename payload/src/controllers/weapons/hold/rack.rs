@@ -7,8 +7,9 @@
 //! the interaction system instead: among the player's valid interaction entries
 //! ([`InteractionUserProxy::m_ValidEntries`]), either the weapon's own pickup interaction (a rack
 //! that uses the ordinary pickup), or a node standing for the rack's placement rule
-//! ([`WeaponPlacementRule`]), whose spawned weapon it is. [`targets`] walks those entries as a
-//! swimming character's pickup does, and the weapon handling offers each weapon to a free hand
+//! ([`WeaponPlacementRule`](jc3gi::weapon_placement_rule::WeaponPlacementRule)), whose spawned
+//! weapon it is. [`targets`] walks those entries as a swimming character's pickup does
+//! ([`entries`]), and the weapon handling offers each weapon to a free hand
 //! ([`crate::controllers::weapons::hold::world`]). A weapon an entry offers is taken in the rack
 //! state or lying in the world (a locker's weapon is offered the same way out of the rack state,
 //! presumably set down at a spot by its placement rule); one a character holds, one already being
@@ -25,6 +26,7 @@
 //!   in the hand; the copy then slides into the hand from where the rack's weapon was, so it is
 //!   seen to leave the rack, and the rack's weapon fades back in a moment later, restocked.
 
+pub(crate) mod entries;
 pub(crate) mod offer;
 pub(crate) mod paired;
 pub(crate) mod remote;
@@ -38,8 +40,6 @@ use glam::Vec3;
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{WeaponBase, WeaponState},
-    interaction::InteractionGraphEntry,
-    weapon_placement_rule::WeaponPlacementRule,
 };
 use parking_lot::Mutex;
 
@@ -337,30 +337,16 @@ static RACK_TAKES: Mutex<Counts> = Mutex::new(Counts {
 });
 
 /// Walk the weapons `owner`'s valid interaction entries offer that sit on a rack, with a strong
-/// reference holding each alive, until `visit` returns true. A weapon whose own pickup interaction
-/// is the entry is offered directly, and a rack's placement rule offers the weapon it spawned.
+/// reference holding each alive, until `visit` returns true.
 unsafe fn walk(owner: &Character, mut visit: impl FnMut(&WeaponBase, Strong) -> bool) {
-    let entries = &owner.m_InteractionUserProxy.m_ValidEntries;
-    let (mut at, end) = (entries.m_Begin, entries.m_End);
-    if at.is_null() || end < at {
-        return;
-    }
-    let mut seen = 0;
-    while at < end && seen < MAX_ENTRIES {
-        // SAFETY: the pointer is inside the proxy's live entry array.
-        let entry = unsafe { *at };
-        at = unsafe { at.add(1) };
-        seen += 1;
-        let Some(strong) = (unsafe { offered(entry) }) else {
-            continue;
-        };
-        let weapon = unsafe { weapon_at(strong.object()).as_ref() };
-        if let Some(weapon) = weapon.filter(|w| offered_state(w))
-            && visit(weapon, strong)
-        {
-            return;
-        }
-    }
+    unsafe {
+        entries::walk(&owner.m_InteractionUserProxy.m_ValidEntries, |strong| {
+            let weapon = weapon_at(strong.object()).as_ref();
+            weapon
+                .filter(|w| offered_state(w))
+                .is_some_and(|w| visit(w, strong))
+        })
+    };
 }
 
 /// The slot of the first weapon `owner`'s valid interaction entries offer, as a swimming
@@ -383,9 +369,6 @@ pub(crate) unsafe fn first_offered(
     found
 }
 
-/// The most entries a walk visits, a bound against a corrupt array.
-const MAX_ENTRIES: usize = 256;
-
 /// Whether an offered weapon in `weapon`'s state may be taken: any but one a character holds,
 /// wields, or carries, and one already being picked up.
 fn offered_state(weapon: &WeaponBase) -> bool {
@@ -404,32 +387,6 @@ fn offered_state(weapon: &WeaponBase) -> bool {
     ]
     .into_iter()
     .any(|s| s as i32 == state)
-}
-
-/// The weapon `entry` offers, held alive: its context's own weapon, or the weapon its entry node's
-/// placement rule spawned.
-unsafe fn offered(entry: *mut InteractionGraphEntry) -> Option<Strong> {
-    let entry = unsafe { entry.as_ref() }?;
-    let graph = unsafe { entry.m_Graph.as_mut() }?;
-    if let Some(context) = unsafe { graph.m_Context.as_ref() }
-        && let Some(parent) = unsafe { Strong::lock(&context.m_Parent) }
-        && unsafe { (*parent.object()).IsType(WeaponBase::TYPE_ID()) }
-    {
-        return Some(parent);
-    }
-    let node = unsafe { graph.GetNodeByIndex(entry.m_EntryNodeIndex).as_ref() }?;
-    let object = unsafe { Strong::lock(&node.m_GameObject) }?;
-    if !unsafe { (*object.object()).IsType(WeaponPlacementRule::TYPE_ID()) } {
-        return None;
-    }
-    // A rule's `CGameObject` subobject is at its start.
-    let rule = object.object() as *const WeaponPlacementRule;
-    let spawned = unsafe {
-        Strong::filled(|out| {
-            (*rule).GetSpawnedObject(out, WeaponBase::TYPE_ID(), 0);
-        })
-    }?;
-    unsafe { (*spawned.object()).IsType(WeaponBase::TYPE_ID()) }.then_some(spawned)
 }
 
 /// The slot a rack weapon goes into, for the slots a hand holds.

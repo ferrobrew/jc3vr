@@ -22,8 +22,6 @@ use jc3gi::{
     character::character::Character,
     equipment::weapon::{ThrownGrenadeWeapon, WeaponBase, WeaponData, WeaponState},
     graphics_engine::model_instance::ModelInstanceFlags,
-    interaction::InteractionGraphEntry,
-    weapon_placement_rule::WeaponPlacementRule,
 };
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -34,7 +32,10 @@ use crate::controllers::{
     weapons::{
         engine,
         grenade::{self, safe, stock, tuning::GrenadeTuning},
-        hold::refs::{Strong, Weak},
+        hold::{
+            rack::entries,
+            refs::{Strong, Weak},
+        },
         inventory::engine::weapon_of,
     },
 };
@@ -203,7 +204,6 @@ pub(super) fn clear() {
     *OFFERS.lock() = [None; 2];
 }
 
-const MAX_ENTRIES: usize = 256;
 const MAX_SOURCES: usize = 64;
 const MAX_DISPLAYS: usize = MAX_SOURCES * MAX_MODELS_PER_WEAPON;
 const MAX_MODELS_PER_WEAPON: usize = 8;
@@ -383,49 +383,12 @@ fn grenade_placement(weapon: *mut ThrownGrenadeWeapon, snow: f32, water: f32, tr
 }
 
 unsafe fn seed_interactions(owner: &Character) {
-    let entries = &owner.m_InteractionUserProxy.m_ValidEntries;
-    let begin = entries.m_Begin as usize;
-    let end = entries.m_End as usize;
-    let stride = std::mem::size_of::<*mut InteractionGraphEntry>();
-    let Some(bytes) = end.checked_sub(begin).filter(|_| begin != 0) else {
-        return;
-    };
-    if !bytes.is_multiple_of(stride) || bytes / stride > MAX_ENTRIES {
-        return;
-    }
-    for index in 0..bytes / stride {
-        let entry = unsafe { *entries.m_Begin.add(index) };
-        let Some(alive) = (unsafe { offered(entry) }) else {
-            continue;
-        };
-        unsafe { observe(&*weapon_of(&alive)) };
-    }
-}
-
-unsafe fn offered(entry: *mut InteractionGraphEntry) -> Option<Strong> {
-    let entry = unsafe { entry.as_ref() }?;
-    let graph = unsafe { entry.m_Graph.as_mut() }?;
-    if let Some(context) = unsafe { graph.m_Context.as_ref() }
-        && let Some(parent) = unsafe { Strong::lock(&context.m_Parent) }
-        && unsafe { (*parent.object()).IsType(WeaponBase::TYPE_ID()) }
-    {
-        return Some(parent);
-    }
-    let node = unsafe { graph.GetNodeByIndex(entry.m_EntryNodeIndex).as_ref() }?;
-    let rule = unsafe { Strong::lock(&node.m_GameObject) }?;
-    if !unsafe { (*rule.object()).IsType(WeaponPlacementRule::TYPE_ID()) } {
-        return None;
-    }
-    let spawned = unsafe {
-        Strong::filled(|out| {
-            (*rule.object().cast::<WeaponPlacementRule>()).GetSpawnedObject(
-                out,
-                WeaponBase::TYPE_ID(),
-                0,
-            );
+    unsafe {
+        entries::walk(&owner.m_InteractionUserProxy.m_ValidEntries, |alive| {
+            observe(&*weapon_of(&alive));
+            false
         })
-    }?;
-    unsafe { (*spawned.object()).IsType(WeaponBase::TYPE_ID()) }.then_some(spawned)
+    };
 }
 
 unsafe fn weapon_displays(

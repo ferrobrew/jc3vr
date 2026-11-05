@@ -29,7 +29,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::controllers::weapons::{
     dual_wield::single,
     engine::{slot_of, weapon_at},
-    hold::rack::offered,
+    hold::rack::entries,
 };
 
 pub(crate) fn hook_library() -> HookLibrary {
@@ -90,27 +90,15 @@ unsafe fn first_offered_slot(user: &InteractionUserProxy) -> Option<WeaponSlot> 
     } else {
         &user.m_ValidEntries
     };
-    let (mut at, end) = (entries.m_Begin, entries.m_End);
-    if at.is_null() || end < at {
-        return None;
-    }
-    let mut seen = 0;
-    while at < end && seen < MAX_ENTRIES {
-        // SAFETY: the pointer is inside the proxy's live entry array.
-        let entry = unsafe { *at };
-        at = unsafe { at.add(1) };
-        seen += 1;
-        let Some(strong) = (unsafe { offered(entry) }) else {
-            continue;
-        };
-        let weapon = unsafe { weapon_at(strong.object()).as_ref() }?;
-        return unsafe { slot_of(weapon) };
-    }
-    None
+    let mut slot = None;
+    unsafe {
+        entries::walk(entries, |strong| {
+            slot = weapon_at(strong.object()).as_ref().and_then(|w| slot_of(w));
+            true
+        })
+    };
+    slot
 }
-
-/// The most entries the walk visits, a bound against a corrupt array.
-const MAX_ENTRIES: usize = 256;
 
 #[cfg(test)]
 mod tests {
