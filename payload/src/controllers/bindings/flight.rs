@@ -163,7 +163,6 @@ enum Suspension {
     ModeChanging,
     Ragdoll,
     Stashed,
-    FireBlocked,
 }
 
 impl fmt::Display for Suspension {
@@ -174,7 +173,6 @@ impl fmt::Display for Suspension {
             Self::ModeChanging => "the mode is changing",
             Self::Ragdoll => "the player is ragdolling",
             Self::Stashed => "the inventory is stashed",
-            Self::FireBlocked => "weapon actions are blocked",
         })
     }
 }
@@ -375,8 +373,6 @@ fn suspension(tick: &Tick<'_>) -> Option<Suspension> {
         Some(Suspension::Ragdoll)
     } else if weapons::inventory::status().stashed {
         Some(Suspension::Stashed)
-    } else if weapons::status().fire_blocked {
-        Some(Suspension::FireBlocked)
     } else {
         None
     }
