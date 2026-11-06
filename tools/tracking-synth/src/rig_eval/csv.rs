@@ -47,7 +47,7 @@ pub fn write_compared_csv(rows: &[ComparedRow], out: &mut impl Write) -> io::Res
 const HEADER: &str = "time_s,video_s,phase,steps,demand_m,offset_m,lean_reach_m,bend_deg,pitch_deg,\
                       roll_deg,crouch_m,neck_y_m,standing_neck_m,head_yaw_deg,body_yaw_deg,\
                       yaw_target_deg,yaw_error_deg,chest_yaw_deg,turning,pelvis_x,pelvis_z,neck_x,\
-                      neck_z,speed_mps,moving,hands_reaching";
+                      neck_z,speed_mps,moving,hands_reaching,head_pitch_deg";
 
 const RECORDED_HEADER: &str = "recorded_body_yaw_deg,recorded_phase,recorded_offset_m,\
                                body_yaw_diff_deg,phase_match,offset_diff_m";
@@ -59,7 +59,7 @@ fn write_row(row: &EvalRow, out: &mut impl Write) -> io::Result<()> {
     write!(
         out,
         "{:.4},{},{},{},{:.4},{:.4},{:.4},{:.2},{:.2},{:.2},{:.4},{:.4},{:.4},{:.2},{:.2},{:.2},\
-         {:.2},{:.2},{},{:.4},{:.4},{:.4},{:.4},{:.3},{},{}",
+         {:.2},{:.2},{},{:.4},{:.4},{:.4},{:.4},{:.3},{},{},{:.2}",
         row.time_s,
         row.video_s.map_or(String::new(), |v| format!("{v:.3}")),
         phase_code(o.phase),
@@ -86,6 +86,7 @@ fn write_row(row: &EvalRow, out: &mut impl Write) -> io::Result<()> {
         row.speed_mps,
         u8::from(row.moving),
         u8::from(s.hands_reaching),
+        row.head_pitch.to_degrees(),
     )
 }
 

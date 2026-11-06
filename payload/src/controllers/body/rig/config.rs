@@ -81,6 +81,12 @@ impl RigConfig {
             ("yaw.moving_sustain_s", y.moving_sustain_s, 0.0, 10.0),
             ("yaw.settle_deg", y.settle_deg, 0.0, 60.0),
             ("yaw.slew_deg_s", y.slew_deg_s, 1.0, 2000.0),
+            ("yaw.steady_deg", y.steady_deg, 0.0, 90.0),
+            ("yaw.steady_s", y.steady_s, 0.0, 60.0),
+            ("yaw.steady_settle_deg", y.steady_settle_deg, 0.0, 180.0),
+            ("yaw.steady_slew_deg_s", y.steady_slew_deg_s, 1.0, 2000.0),
+            ("yaw.look_down_deg", y.look_down_deg, 0.0, 90.0),
+            ("yaw.look_down_full_deg", y.look_down_full_deg, 0.0, 90.0),
             ("yaw.hand_bias", y.hand_bias, 0.0, 1.0),
             ("yaw.hand_min_m", y.hand_min_m, 0.0, 1.5),
         ];
@@ -90,6 +96,12 @@ impl RigConfig {
                     "body.rig.{name} must be finite and in [{min}, {max}], got {value}"
                 )));
             }
+        }
+        if y.look_down_full_deg < y.look_down_deg {
+            return Err(Invalid(format!(
+                "body.rig.yaw.look_down_full_deg ({}) is below look_down_deg ({})",
+                y.look_down_full_deg, y.look_down_deg
+            )));
         }
         if s.settle_done_m > s.arrive_m {
             return Err(Invalid(format!(

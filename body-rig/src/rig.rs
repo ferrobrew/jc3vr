@@ -229,6 +229,7 @@ impl GroundedRig {
             Some(head_yaw) => self.yaw.update(
                 &YawInput {
                     head_yaw,
+                    head_pitch: head_pitch(frame.head),
                     hands: hands_heading(neck, &frame.hands, &tuning.yaw),
                     moving: frame.moving || phase.steps(),
                     dt: frame.dt,

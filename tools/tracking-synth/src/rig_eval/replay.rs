@@ -94,6 +94,7 @@ pub(crate) fn run_recorded(
                 video_s,
                 output,
                 head_yaw,
+                head_pitch: angle::head_pitch(input.head),
                 pelvis: input.pelvis,
                 speed_mps,
                 moving: input.moving,

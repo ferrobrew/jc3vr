@@ -157,6 +157,7 @@ pub(crate) fn run_frames(
                 video_s: run.clock.and_then(|c| c.video_s(frame.display_time_ns)),
                 output,
                 head_yaw,
+                head_pitch: angle::head_pitch(head.orientation),
                 pelvis: moved,
                 speed_mps: velocity.length(),
                 moving,

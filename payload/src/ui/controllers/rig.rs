@@ -186,6 +186,16 @@ pub(super) fn rig_settings(ui: &mut Ui, body: &mut BodyRemapConfig) {
             );
         ui.add(egui::Slider::new(&mut y.settle_deg, 0.0..=30.0).text("Settle (°)"));
         ui.add(egui::Slider::new(&mut y.slew_deg_s, 10.0..=720.0).text("Turn rate (°/s)"));
+        ui.add(egui::Slider::new(&mut y.steady_deg, 0.0..=20.0).text("Head steady within (°)"));
+        ui.add(egui::Slider::new(&mut y.steady_s, 0.0..=10.0).text("Steady for (s)"))
+            .on_hover_text("A head held steady this long settles the legs under it slowly.");
+        ui.add(egui::Slider::new(&mut y.steady_settle_deg, 0.0..=40.0).text("Steady settle past (°)"));
+        ui.add(egui::Slider::new(&mut y.steady_slew_deg_s, 1.0..=200.0).text("Steady settle rate (°/s)"));
+        ui.add(egui::Slider::new(&mut y.look_down_deg, 0.0..=90.0).text("Looking down past (°)"))
+            .on_hover_text(
+                "Looking further down than this starts only the large turn, and fades the chest's follow.",
+            );
+        ui.add(egui::Slider::new(&mut y.look_down_full_deg, 0.0..=90.0).text("Chest holds past (°)"));
         ui.add(egui::Slider::new(&mut y.hand_bias, 0.0..=1.0).text("Hands' pull on the chest"));
         ui.add(egui::Slider::new(&mut y.hand_min_m, 0.0..=0.6).text("Hands count past (m)"));
     });

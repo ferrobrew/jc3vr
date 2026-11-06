@@ -92,6 +92,8 @@ pub struct EvalRow {
     pub video_s: Option<f64>,
     pub output: RigOutput,
     pub head_yaw: f32,
+    /// The head's pitch from level, positive looking up.
+    pub head_pitch: f32,
     pub pelvis: Vec2,
     pub speed_mps: f32,
     /// Whether the off hand's stick moves the body.
