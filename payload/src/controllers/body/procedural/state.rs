@@ -92,9 +92,17 @@ impl StateTracker {
         let off_support = unsafe { character.IsInAir() };
         self.in_air_s = if off_support { self.in_air_s + dt } else { 0.0 };
         let falling = detection.mode == Mode::Airborne(AirborneVariant::Falling);
+        // While the movement task still runs, Rico is on foot to the game, and a lift off the
+        // support is a stair, a bump, or the proxy settling as a walk stops; once it stops, the
+        // body has left the ground.
+        let debounce_s = if movement_task {
+            IN_AIR_DEBOUNCE_ON_FOOT_S
+        } else {
+            IN_AIR_DEBOUNCE_S
+        };
         let airborne = has(StateBitFlag::SB_IS_JUMPING)
             || falling
-            || (off_support && self.in_air_s >= IN_AIR_DEBOUNCE_S);
+            || (off_support && self.in_air_s >= debounce_s);
         let on_ground = detection.mode == Mode::OnFoot(OnFootVariant::Ground);
         let stunt_position = unsafe { character.IsInStuntPosition() };
         let stunt_traversing = unsafe { character.IsStuntTraversing() };
@@ -168,6 +176,11 @@ const GRAPPLE_ATTACH_STATE: &str = "S_GRAPPLE_ATTACH_0";
 /// How long the proxy must be off its support, with no jump and no fall detected, before the
 /// body counts as in the air, seconds: a stair or a bump lifts it for a tick without a fall.
 const IN_AIR_DEBOUNCE_S: f32 = 0.06;
+
+/// How long the proxy must be off its support while the movement task still runs, seconds: the
+/// proxy loses its support for a few ticks as a walk comes to a stop, and drops a few centimetres
+/// onto the ground, without leaving it.
+const IN_AIR_DEBOUNCE_ON_FOOT_S: f32 = 0.15;
 
 /// The state bits of an authored motion: the animation carries the body through it.
 const AUTHORED_MOTION: [StateBitFlag; 7] = [

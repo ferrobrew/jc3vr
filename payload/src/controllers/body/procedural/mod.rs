@@ -261,7 +261,8 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         classify(&read)
     };
     let weight = state.blend.step(case, dt, &config);
-    state.log_case(case, weight);
+    let target = state.blend.target();
+    state.log_case(case, target, weight);
     state.status.case = case;
     state.status.weight = weight;
     let world = Mat4::from(character.m_WorldMatrixT1);

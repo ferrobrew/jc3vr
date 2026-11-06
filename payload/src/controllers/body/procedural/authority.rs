@@ -18,21 +18,26 @@
 //! | standing in a vehicle's stunt area (a roof, a deck) | procedural on the stunt idle's hips |
 //! | in or on a vehicle otherwise (entering, leaving, a mounted gun, a helicopter's hang, a stunt traversal) | animation |
 //! | attached to a wall at the end of a grapple, a hang | procedural on the attach's hips |
-//! | grapple traversal, hanging, stunt traversal, grapple struggle | animation |
+//! | grapple traversal, hanging, stunt traversal, grapple struggle | animation, after a flight's hold |
 //! | the grapple's ledge climb | animation |
 //! | swimming | procedural on the swim's hips |
 //! | the wingsuit (the arms follow the player's) | animation |
 //! | the parachute | procedural on the harness's hips |
-//! | a fall past the jump's grace | animation |
+//! | a fall past the jump's grace | animation, after a flight's hold |
 //! | a hit reaction (a stumble or a knock-back), for a hold after its act | animation |
 //! | climbing with the hands | procedural |
 //! | a jump, within the grace | procedural |
 //! | an authored one-off (a locomotion one-off, a hard landing, a context action, a full-body pickup, cover) | animation |
-//! | on foot without the movement task running | animation |
+//! | on foot without the movement task running | animation, after a flight's hold |
 //! | on foot on the ground | procedural |
 //!
 //! [`TorsoBlend`] eases the torso's weight toward its case's with a critically damped spring,
-//! quicker toward the animation than back, and at once where the case says so.
+//! quicker toward the animation than back, and at once where the case says so. A flight keeps the
+//! torso for a while: a fall, a grapple traversal, or a takeoff not yet classified that follows a
+//! jump or the parachute leaves it procedural for [`FLIGHT_HOLD_S`] of the simulation's time, which
+//! each jump or spell under the parachute renews. A jump that outlasts its grace, and the canopy
+//! closed and opened again around a grapple's reel, then never hand the torso to the animation and
+//! back within a second; a flight that outlasts the hold hands it over once.
 
 use body_rig::smooth::critically_damped;
 
@@ -146,6 +151,17 @@ impl Case {
         matches!(self, Self::Dead | Self::Ragdoll)
     }
 
+    /// Whether the case renews the torso's hold through a flight: the procedural cases in the air.
+    const fn renews_flight_hold(self) -> bool {
+        matches!(self, Self::Jump | Self::Parachute)
+    }
+
+    /// Whether the torso's hold through a flight keeps the torso procedural in the case: the
+    /// animation's cases a flight passes through between a jump or the parachute and the next.
+    const fn within_flight_hold(self) -> bool {
+        matches!(self, Self::Flight | Self::Traversal | Self::NoMovementTask)
+    }
+
     /// Whether the player's own movement carries the body on foot: the stick on the ground, a jump
     /// within its grace, or the hands climbing. In every other case a clip, a script, or physics
     /// moves the head against the root (a get-up, a stumble, a hard landing, a context action, a
@@ -244,22 +260,34 @@ pub fn classify(state: &CharacterState) -> Case {
     }
 }
 
+/// How long a flight keeps the torso procedural after a jump or the parachute, seconds of the
+/// simulation's time.
+pub const FLIGHT_HOLD_S: f32 = 1.5;
+
 /// The torso's weight, eased toward its case's.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct TorsoBlend {
     spring: Spring,
+    /// What is left of the torso's hold through a flight, seconds.
+    hold_s: f32,
+    /// The weight the blend last eased toward.
+    target: f32,
 }
 
 impl TorsoBlend {
     pub const fn new() -> Self {
         Self {
             spring: Spring::new(),
+            hold_s: 0.0,
+            target: 0.0,
         }
     }
 
-    /// Ease toward `case`'s weight over `dt` seconds.
+    /// Ease toward `case`'s weight over `dt` seconds, or toward the procedural pose while a flight
+    /// holds the torso.
     pub fn step(&mut self, case: Case, dt: f32, config: &ProceduralBodyConfig) -> f32 {
-        let target = case.target();
+        let target = self.hold(case, dt);
+        self.target = target;
         if case.snaps() {
             self.spring = Spring {
                 value: target,
@@ -278,6 +306,26 @@ impl TorsoBlend {
 
     pub fn weight(&self) -> f32 {
         self.spring.value
+    }
+
+    /// The weight the blend last eased toward: its case's, or one while a flight holds the torso.
+    pub fn target(&self) -> f32 {
+        self.target
+    }
+
+    /// The weight `case` asks for, through the hold: a jump or the parachute renews it, and the
+    /// cases a flight passes through spend it on the procedural pose until it runs out. Any other
+    /// case ends it.
+    fn hold(&mut self, case: Case, dt: f32) -> f32 {
+        if case.renews_flight_hold() {
+            self.hold_s = FLIGHT_HOLD_S;
+        } else if case.within_flight_hold() && self.hold_s > 0.0 {
+            self.hold_s = (self.hold_s - dt).max(0.0);
+            return 1.0;
+        } else {
+            self.hold_s = 0.0;
+        }
+        case.target()
     }
 
     /// Drop the torso to the animation at once.
@@ -622,6 +670,59 @@ mod tests {
             blend.step(Case::SwitchedOff, 1.0 / 30.0, &config);
         }
         assert_eq!(blend.weight(), 0.0);
+    }
+
+    /// The weights over `seconds` of `case` at 60 Hz.
+    fn ease(blend: &mut TorsoBlend, case: Case, seconds: f32) -> Vec<f32> {
+        let config = ProceduralBodyConfig::new();
+        (0..(seconds * 60.0) as usize)
+            .map(|_| blend.step(case, 1.0 / 60.0, &config))
+            .collect()
+    }
+
+    #[test]
+    fn a_jump_past_its_grace_keeps_the_torso_until_the_hold_runs_out() {
+        let mut blend = TorsoBlend::new();
+        ease(&mut blend, Case::OnFoot, 2.0);
+        ease(&mut blend, Case::Jump, 1.0);
+        let held = ease(&mut blend, Case::Flight, FLIGHT_HOLD_S * 0.9);
+        assert!(held.iter().all(|&w| w == 1.0), "{held:?}");
+        assert_eq!(ease(&mut blend, Case::OnFoot, 0.5).last(), Some(&1.0));
+
+        ease(&mut blend, Case::Jump, 1.0);
+        let fall = ease(&mut blend, Case::Flight, FLIGHT_HOLD_S + 1.0);
+        assert_eq!(fall.last(), Some(&0.0));
+        assert_eq!(blend.target(), 0.0);
+    }
+
+    #[test]
+    fn toggling_the_canopy_around_a_reel_keeps_the_torso() {
+        let mut blend = TorsoBlend::new();
+        ease(&mut blend, Case::Parachute, 2.0);
+        for _ in 0..4 {
+            for (case, seconds) in [
+                (Case::Traversal, 0.8),
+                (Case::Parachute, 0.9),
+                (Case::Flight, 0.5),
+                (Case::Traversal, 0.4),
+                (Case::Flight, 0.3),
+                (Case::Parachute, 0.9),
+            ] {
+                let weights = ease(&mut blend, case, seconds);
+                assert!(weights.iter().all(|&w| w == 1.0), "{case:?}: {weights:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_reel_from_the_ground_hands_over_at_once() {
+        let mut blend = TorsoBlend::new();
+        ease(&mut blend, Case::OnFoot, 2.0);
+        ease(&mut blend, Case::Jump, 0.2);
+        ease(&mut blend, Case::OnFoot, 0.5);
+        ease(&mut blend, Case::NoMovementTask, 0.05);
+        let reel = ease(&mut blend, Case::Traversal, 0.5);
+        assert!(reel.last().is_some_and(|&w| w < 0.1), "{reel:?}");
     }
 
     #[test]

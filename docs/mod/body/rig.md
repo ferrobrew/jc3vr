@@ -12,7 +12,7 @@ Grounded: Rico is on foot on the ground with the headset driving the view, stand
 
 Game-decoupled: the wingsuit, the parachute, a vehicle seat, swimming, a grapple traversal or hang, a stunt position, a ragdoll, and getting up from one. The game owns the root and the yaw. The mod poses only the head, the neck, and the arms, plus a spine bend where the clip's pose allows one (a seat, the parachute's harness, the swim). The hand-over table that classifies the game's states is in [procedural-body.md](procedural-body.md#the-hand-over-table).
 
-A jump, a short fall, an authored motion (a locomotion one-off, a hard landing, cover, a hit reaction), and climbing with the hands keep the game's legs and pelvis as well; the rig stops stepping while they play and picks up again when Rico is back on foot.
+A jump, a short fall, an authored motion (a locomotion one-off, a hard landing, cover, a hit reaction), and climbing with the hands keep the game's legs and pelvis as well; the rig stops stepping while they play and picks up again when Rico is back on foot. The torso stays the player's through a jump and a short flight after it, and through the canopy closed and opened again around a grapple's reel, so it is not handed to the animation and back within a second; a flight that outlasts that hold hands it over once ([procedural-body.md](procedural-body.md#the-hand-over-table)).
 
 ## The pelvis solver
 
@@ -171,6 +171,7 @@ The drift and the back radius come from the same take. Before them the body idle
 ## What needs confirming in the headset
 
 - Walking with the stick and looking about: the legs no longer flip left and right about once a second; a look held to one side for about a third of a second turns them.
+- A jump that outlasts its grace, and closing and reopening the canopy around grapple reels: the torso stays the player's, with no pop to the animation and back; a long fall hands it to the animation once.
 - Standing still and looking about: the readout's phase stays idle, the neck pivot marker stays over the pelvis, the chest follows a glance at once, and the legs turn only for a large turn of the head or one held for a second.
 - Holding a gun out to one side or reaching across: the chest turns toward the hands and the legs stay.
 - Leaning over a table and reaching for the floor: no step, and the spine marker bends.
