@@ -6,12 +6,12 @@ Under the controller scheme the game's timed reload is replaced by one done with
 
 A weapon is reloaded by hand when it is wielded in the hands, has a magazine limit, is not one of the weapons whose reload has no animation, and is of a class with something to load: the pistols, revolvers, SMGs, rifles, shotguns, sniper rifles, grenade and rocket launchers, and the mortar (`plan.rs`). The minigun, the mounted and vehicle guns, and the special weapons keep the game's reload, as does every weapon with the reload off (`enabled`).
 
-What a weapon loads and how its action is worked come from the wells table (see "Wells"), or from its class when the table has no entry for it:
+Every weapon in the game is listed with its reload in [weapon-reloads.md](weapon-reloads.md). What a weapon loads and how its action is worked come from the wells table (see "Wells"), or from its class when the table has no entry for it:
 
 | Load | Weapons | Eject | Load | Action |
 |---|---|---|---|---|
-| Magazine | pistols, SMGs, rifles, sniper rifles, grenade launchers, the Hydra's rocket pod | yes | a whole magazine | slide, charging handle, bolt, or none |
-| Shell | shotguns | no | one shell per push | the pump of the pump-action shotgun, otherwise none |
+| Magazine | pistols, SMGs, rifles, sniper rifles, grenade launchers, the Automat 12 shotgun, the Hydra's rocket pod | yes | a whole magazine | slide, charging handle, bolt, or none |
+| Shell | the pump and break-action shotguns | no | one shell per push | the pump of the pump-action shotgun, otherwise none |
 | Rocket | rocket launchers, the mortar | no | one round into the muzzle | none |
 | Cylinder | revolvers | yes (the spent cylinder) | a whole cylinder | none |
 
