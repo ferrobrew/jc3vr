@@ -23,7 +23,7 @@ use crate::{
 #[test]
 fn the_defaults_round_trip() {
     let text = toml::to_string(&Config::new()).unwrap();
-    let Loaded { config, report } = parse(&text).unwrap();
+    let Loaded { config, report, .. } = parse(&text).unwrap();
     assert_eq!(report, LoadReport::default());
     assert_eq!(toml::to_string(&config).unwrap(), text);
 }
@@ -61,7 +61,7 @@ fn changed_settings_round_trip() {
     original.exposure.forced_value = f32::NAN;
 
     let text = toml::to_string(&original).unwrap();
-    let Loaded { config, report } = parse(&text).unwrap();
+    let Loaded { config, report, .. } = parse(&text).unwrap();
     assert_eq!(report, LoadReport::default());
     assert_eq!(toml::to_string(&config).unwrap(), text);
     assert_eq!(config.director.keymap.bindings.len(), 1);
@@ -74,7 +74,7 @@ fn a_missing_optional_setting_loads_as_none() {
     let mut table = defaults_table();
     assert!(lookup(&table, &["body", "seated_eye_height"]).is_none());
     remove(&mut table, &["director", "heat_cap"]);
-    let Loaded { config, report } = load(table);
+    let Loaded { config, report, .. } = load(table);
     assert_eq!(config.body.seated_eye_height, None);
     assert_eq!(config.director.heat_cap, None);
     assert!(report.defaulted.is_empty(), "{report:?}");
@@ -86,7 +86,7 @@ fn a_missing_setting_takes_its_default() {
     remove(&mut table, &["fsr", "sharpness"]);
     remove(&mut table, &["recorder"]);
     set(&mut table, &["controllers", "dominant_hand"], "Left".into());
-    let Loaded { config, report } = load(table);
+    let Loaded { config, report, .. } = load(table);
     assert_eq!(config.fsr.sharpness, Config::new().fsr.sharpness);
     assert_eq!(config.recorder.port, Config::new().recorder.port);
     assert_eq!(config.controllers.dominant_hand, Hand::Left);
@@ -101,7 +101,7 @@ fn an_unknown_setting_is_skipped_and_reported() {
     set(&mut table, &["obsolete"], true.into());
     // A setting that is not saved, written by hand, is skipped like an unknown one.
     set(&mut table, &["director", "paused"], true.into());
-    let Loaded { config, report } = load(table);
+    let Loaded { config, report, .. } = load(table);
     assert!(!config.director.paused);
     assert_eq!(
         report.ignored,
@@ -115,14 +115,14 @@ fn the_mirror_view_loads_and_the_retired_mirror_eye_is_skipped() {
     let mut table = defaults_table();
     set(&mut table, &["vr", "mirror_eye"], 1.into());
     set(&mut table, &["vr", "mirror_view"], "StereoPair".into());
-    let Loaded { config, report } = load(table);
+    let Loaded { config, report, .. } = load(table);
     assert_eq!(config.vr.mirror_view, MirrorView::StereoPair);
     assert_eq!(report.ignored, ["vr.mirror_eye"]);
     assert!(report.reset.is_empty());
 
     let mut table = defaults_table();
     set(&mut table, &["vr", "mirror_view"], "Both".into());
-    let Loaded { config, report } = load(table);
+    let Loaded { config, report, .. } = load(table);
     assert_eq!(config.vr.mirror_view, MirrorView::Left);
     assert_eq!(reset_paths(&report), ["vr.mirror_view"]);
 }
@@ -133,13 +133,13 @@ fn the_clean_view_and_its_scope_are_not_loaded() {
     // with the overlay hidden.
     let mut table = defaults_table();
     set(&mut table, &["director", "clean_view"], false.into());
-    let Loaded { config, report } = load(table);
+    let Loaded { config, report, .. } = load(table);
     assert!(config.director.clean_view);
     assert_eq!(report.ignored, ["director.clean_view"]);
 
     let mut table = defaults_table();
     set(&mut table, &["hud", "flat_overlay_visible"], true.into());
-    let Loaded { config, report } = load(table);
+    let Loaded { config, report, .. } = load(table);
     assert!(config.director.clean_view);
     assert_eq!(report.ignored, ["hud.flat_overlay_visible"]);
 
@@ -151,7 +151,7 @@ fn the_clean_view_and_its_scope_are_not_loaded() {
         &["director", "clean_view_scope"],
         "Everything".into(),
     );
-    let Loaded { config, report } = load(table);
+    let Loaded { config, report, .. } = load(table);
     assert_eq!(config.director.clean_view_scope, CleanViewScope::Desktop);
     assert_eq!(report.ignored, ["director.clean_view_scope"]);
 }
@@ -204,7 +204,7 @@ fn a_file_from_before_the_rig_loads_its_posture_and_skips_the_retired_settings()
         &["controllers", "body", "procedural", "gait"],
         false.into(),
     );
-    let Loaded { config, report } = load(table);
+    let Loaded { config, report, .. } = load(table);
     assert_eq!(config.controllers.roomscale.posture, Posture::Standing);
     assert!(config.controllers.body.rig.steps.enabled);
     assert_eq!(
@@ -247,7 +247,7 @@ fn a_file_from_before_the_two_handed_inventory_skips_the_retired_weapon_settings
         &["controllers", "weapons", "hold", "dock_attraction"],
         false.into(),
     );
-    let Loaded { config, report } = load(table);
+    let Loaded { config, report, .. } = load(table);
     assert!(!config.controllers.weapons.hold.dock_attraction);
     assert_eq!(
         report.ignored,
@@ -275,7 +275,7 @@ fn a_mistyped_setting_is_reset_alone() {
     );
     set(&mut table, &["fsr", "sharpness"], 0.07.into());
     set(&mut table, &["controllers", "dominant_hand"], "Left".into());
-    let Loaded { config, report } = load(table);
+    let Loaded { config, report, .. } = load(table);
     assert_eq!(
         config.controllers.aim.assist_strength,
         Config::new().controllers.aim.assist_strength
@@ -294,7 +294,7 @@ fn an_unknown_enum_variant_is_reset_alone() {
         "Telepathy".into(),
     );
     set(&mut table, &["controllers", "dominant_hand"], "Left".into());
-    let Loaded { config, report } = load(table);
+    let Loaded { config, report, .. } = load(table);
     assert_eq!(
         config.controllers.locomotion.direction,
         LocomotionDirection::Head
@@ -316,7 +316,7 @@ fn a_list_of_the_wrong_length_is_reset_alone() {
         &["controllers", "hands", "grip", "rotation_deg"],
         Value::Array(vec![5.0.into(), 0.0.into(), 0.0.into()]),
     );
-    let Loaded { config, report } = load(table);
+    let Loaded { config, report, .. } = load(table);
     assert_eq!(
         config.controllers.hands.grip.position_m,
         Config::new().controllers.hands.grip.position_m
@@ -338,7 +338,7 @@ fn several_bad_settings_are_each_reset() {
     );
     set(&mut table, &["vr", "mirror"], "yes".into());
     set(&mut table, &["hud", "distance"], "far".into());
-    let Loaded { config, report } = load(table);
+    let Loaded { config, report, .. } = load(table);
     assert!(config.vr.mirror);
     assert_eq!(config.hud.distance, Config::new().hud.distance);
     let mut paths = reset_paths(&report);
@@ -365,7 +365,7 @@ fn an_invalid_controller_setting_is_reset_alone() {
     config.controllers.aim.assist_strength = 5.0;
     config.controllers.aim.gun = false;
     config.headpose.vr_turn.snap_angle_deg = 45.0;
-    let Loaded { config, report } = parse(&toml::to_string(&config).unwrap()).unwrap();
+    let Loaded { config, report, .. } = parse(&toml::to_string(&config).unwrap()).unwrap();
     assert_eq!(config.controllers.dominant_hand, Hand::Left);
     assert_eq!(
         config.controllers.aim.assist_strength,
@@ -382,7 +382,7 @@ fn an_invalid_vector_component_resets_the_vector() {
     let mut config = Config::new();
     config.controllers.hands.grip.position_m = Vec3::new(0.0, 99.0, 0.0);
     config.controllers.hands.grip.rotation_deg = Vec3::new(5.0, 0.0, 0.0);
-    let Loaded { config, report } = parse(&toml::to_string(&config).unwrap()).unwrap();
+    let Loaded { config, report, .. } = parse(&toml::to_string(&config).unwrap()).unwrap();
     assert_eq!(
         config.controllers.hands.grip.position_m,
         Config::new().controllers.hands.grip.position_m
@@ -401,7 +401,7 @@ fn an_inconsistency_the_default_does_not_fix_resets_the_group() {
     // The release keeps its default, which is above this press: resetting the setting the check
     // names does not help, so the group around it is reset.
     config.controllers.input.trigger_press.press = 0.05;
-    let Loaded { config, report } = parse(&toml::to_string(&config).unwrap()).unwrap();
+    let Loaded { config, report, .. } = parse(&toml::to_string(&config).unwrap()).unwrap();
     assert_eq!(
         config.controllers.input.trigger_press,
         Config::new().controllers.input.trigger_press
@@ -415,7 +415,7 @@ fn several_invalid_controller_settings_are_each_reset() {
     let mut config = Config::new();
     config.controllers.aim.assist_strength = 5.0;
     config.controllers.bindings.move_deadzone = -1.0;
-    let Loaded { config, report } = parse(&toml::to_string(&config).unwrap()).unwrap();
+    let Loaded { config, report, .. } = parse(&toml::to_string(&config).unwrap()).unwrap();
     assert_eq!(
         config.controllers.bindings.move_deadzone,
         Config::new().controllers.bindings.move_deadzone
@@ -442,7 +442,7 @@ fn invalid_sights_turn_and_body_reset_alone() {
     config.controllers.dominant_hand = Hand::Left;
     config.headpose.vr_turn.deadzone = 2.0;
     config.body.eye_height = 2.5;
-    let Loaded { config, report } = parse(&toml::to_string(&config).unwrap()).unwrap();
+    let Loaded { config, report, .. } = parse(&toml::to_string(&config).unwrap()).unwrap();
     assert!(config.controllers.aim.sights.get(7).is_none());
     assert_eq!(config.controllers.dominant_hand, Hand::Left);
     assert_eq!(
@@ -470,7 +470,7 @@ fn a_shorter_key_map_loads_as_written() {
             toml::from_str("action = \"Spawn\"\n[chord]\nkey = 0x61\n").unwrap(),
         )]),
     );
-    let Loaded { config, report } = load(table);
+    let Loaded { config, report, .. } = load(table);
     assert_eq!(
         config.director.keymap.bindings.as_ref(),
         [Binding {

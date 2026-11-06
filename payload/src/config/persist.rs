@@ -11,6 +11,10 @@
 //! that grows with each failure, without waiting for another change. [`shutdown`] flushes a
 //! pending save, and one that failed.
 //!
+//! A file of format zero is rewritten in the current format on the first tick, without waiting for
+//! a change, so that its upgrade runs once and a default changed later reaches every setting the
+//! player left alone. A copy of it is kept beside it first.
+//!
 //! Locks: the saver state is taken outermost, then the configuration lock, then the edit marks and
 //! the automatic overrides, which are leaves. Nothing takes the saver state with the configuration
 //! locked.
@@ -25,7 +29,9 @@ use std::{
 use parking_lot::Mutex;
 
 use crate::config::{
-    CONFIG, Config, automatic, format, load, paths,
+    CONFIG, Config, automatic,
+    format::{self, Format},
+    load, paths,
     write::{self, WriteError},
 };
 
@@ -45,27 +51,24 @@ pub(crate) enum SaveStatus {
 /// Load the settings file into the configuration. Called once at startup, before anything reads
 /// the configuration for initialization. Every failure falls back to the defaults: a missing file
 /// is the first run, and an unreadable or unparseable one is left as it is until a setting changes,
-/// when the first save moves it aside before writing.
+/// when the first save moves it aside before writing. A file of format zero is rewritten on the
+/// first tick, after a copy of it is kept.
 pub(crate) fn init() {
     let Some(path) = paths::settings_file() else {
         return;
     };
     tracing::info!(path = %path.display(), "settings: using this settings file");
-    let Loaded { config, unreadable } = load_from(&path);
-    if unreadable {
-        // The first save replaces the file, so the user's version is moved aside first rather
-        // than lost to the defaults.
-        WRITTEN.lock().set_aside = Some(set_aside_path(&path, &crate::session::stamp()));
-    }
-    // The baseline the first save compares against: what the configuration was loaded as, so that
-    // nothing is written (and a broken file is not replaced) until a setting changes.
-    let baseline = format::to_text(&config)
-        .inspect_err(|error| {
-            tracing::warn!("settings: could not serialize the loaded settings: {error}")
-        })
-        .ok();
-    *CONFIG.lock() = config;
-    SAVER.lock().last_text = baseline;
+    let loaded = load_from(&path);
+    let Startup {
+        baseline,
+        set_aside,
+        rewrite,
+    } = startup(&path, &loaded, &crate::session::stamp());
+    WRITTEN.lock().set_aside = set_aside;
+    *CONFIG.lock() = loaded.config;
+    let mut saver = SAVER.lock();
+    saver.last_text = baseline;
+    saver.rewrite = rewrite;
 }
 
 /// Mark the configuration changed by the user. Called by the edit guard with the configuration
@@ -88,7 +91,8 @@ pub(crate) fn tick() {
         (edits.pending(), edits.take_if_due(now))
     };
     let retry = saver.retry.take_if_due(now);
-    if !due && !retry && !(pending && saver.comparison_due(now)) {
+    let rewrite = mem::take(&mut saver.rewrite);
+    if !due && !retry && !rewrite && !(pending && saver.comparison_due(now)) {
         return;
     }
     let Some(text) = serialize_snapshot(&mut saver) else {
@@ -102,7 +106,7 @@ pub(crate) fn tick() {
     if due && !saver.unchanged {
         note_settings();
     }
-    if due || retry {
+    if due || retry || rewrite {
         saver.hand_off(text, now);
     }
 }
@@ -221,6 +225,87 @@ impl Drop for TestFixture {
     }
 }
 
+/// What the first save does, from what the load found.
+#[derive(Debug, PartialEq, Eq)]
+struct Startup {
+    /// The text the first save compares against.
+    baseline: Option<String>,
+    /// Where the file is kept before the first write replaces it.
+    set_aside: Option<SetAside>,
+    /// The first tick writes the file whether or not a setting changes.
+    rewrite: bool,
+}
+
+/// The first save's plan for the settings file at `path`, loaded as `loaded`, with `stamp` naming
+/// a copy kept of it. A file of the current format, or a missing one, is compared against the text
+/// it was loaded as, so that nothing is written (and a broken file is not replaced) until a
+/// setting changes. A file of format zero has no baseline and is rewritten on the first tick: left
+/// as it is, its settings at the defaults of its day would stick when a later build changes them,
+/// since only the current format leaves the defaults out.
+fn startup(path: &Path, loaded: &Loaded, stamp: &str) -> Startup {
+    let set_aside = loaded.keep.map(|keep| SetAside {
+        to: keep.path(path, stamp),
+        keep,
+    });
+    let rewrite = loaded.keep == Some(Keep::FormatZero);
+    let baseline = if rewrite {
+        None
+    } else {
+        format::to_text(&loaded.config)
+            .inspect_err(|error| {
+                tracing::warn!("settings: could not serialize the loaded settings: {error}")
+            })
+            .ok()
+    };
+    Startup {
+        baseline,
+        set_aside,
+        rewrite,
+    }
+}
+
+/// Why the file is kept beside itself before the first write replaces it.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum Keep {
+    /// It could not be read or parsed, so it is moved aside rather than lost to the defaults.
+    Unreadable,
+    /// It is of format zero, so a copy is kept: it holds the defaults of its day, which the
+    /// upgraded file leaves out.
+    FormatZero,
+}
+
+impl Keep {
+    /// Where the settings file at `path` is kept: beside it, named after it with a suffix for why
+    /// and `stamp`.
+    fn path(self, path: &Path, stamp: &str) -> PathBuf {
+        let suffix = match self {
+            Self::Unreadable => "bad",
+            Self::FormatZero => "v0",
+        };
+        let mut name = path.file_name().unwrap_or_default().to_owned();
+        name.push(format!(".{suffix}-{stamp}"));
+        path.with_file_name(name)
+    }
+}
+
+/// Where the settings file is kept before the first write, and why.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SetAside {
+    to: PathBuf,
+    keep: Keep,
+}
+
+impl SetAside {
+    /// Keep the file at `path`: move an unreadable one, and copy one of format zero, so that the
+    /// settings file stays in place should the write that upgrades it fail.
+    fn apply(&self, path: &Path) -> io::Result<()> {
+        match self.keep {
+            Keep::Unreadable => fs::rename(path, &self.to),
+            Keep::FormatZero => fs::copy(path, &self.to).map(drop),
+        }
+    }
+}
+
 /// The file's state. Held for each whole write, which serializes the writers.
 static WRITTEN: Mutex<FileState> = Mutex::new(FileState {
     generation: 0,
@@ -231,8 +316,8 @@ static WRITTEN: Mutex<FileState> = Mutex::new(FileState {
 struct FileState {
     /// The generation the file holds.
     generation: u64,
-    /// Where the file that could not be loaded is moved before the first write replaces it.
-    set_aside: Option<PathBuf>,
+    /// Where the file is kept before the first write replaces it.
+    set_aside: Option<SetAside>,
 }
 
 /// What [`status`] reads.
@@ -359,6 +444,8 @@ struct Saver {
     compared: Option<Instant>,
     /// The last comparison found the settings as the file has them.
     unchanged: bool,
+    /// The next tick writes the file whether or not a setting changed: it is of format zero.
+    rewrite: bool,
 }
 
 struct Writer {
@@ -385,6 +472,7 @@ impl Saver {
             retry: Retry::new(),
             compared: None,
             unchanged: false,
+            rewrite: false,
         }
     }
 
@@ -488,7 +576,7 @@ enum SaveError {
     WriterPanicked,
     /// The file could not be written.
     Write(WriteError),
-    /// The file that could not be loaded could not be moved aside, so it was not replaced.
+    /// The file could not be kept beside itself, so it was not replaced.
     SetAside {
         from: PathBuf,
         to: PathBuf,
@@ -506,7 +594,7 @@ impl fmt::Display for SaveError {
             Self::Write(source) => write!(f, "{source}"),
             Self::SetAside { from, to, source } => write!(
                 f,
-                "could not move the unreadable {} to {}, so it was not replaced: {source}",
+                "could not keep {} as {}, so it was not replaced: {source}",
                 from.display(),
                 to.display()
             ),
@@ -553,15 +641,15 @@ impl std::error::Error for ReadError {
 /// What [`load_from`] read.
 struct Loaded {
     config: Config,
-    /// The file exists but could not be read or parsed, so the defaults stand in for it.
-    unreadable: bool,
+    /// Why the file is kept before the first write replaces it, if it is.
+    keep: Option<Keep>,
 }
 
 /// Read and load the settings file at `path`, falling back to the defaults and logging why.
 fn load_from(path: &Path) -> Loaded {
     let unreadable = |config| Loaded {
         config,
-        unreadable: true,
+        keep: Some(Keep::Unreadable),
     };
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
@@ -569,7 +657,7 @@ fn load_from(path: &Path) -> Loaded {
             tracing::info!("settings: no settings file yet; using the defaults");
             return Loaded {
                 config: Config::new(),
-                unreadable: false,
+                keep: None,
             };
         }
         Err(source) => {
@@ -590,9 +678,15 @@ fn load_from(path: &Path) -> Loaded {
             if loaded.report.is_empty() {
                 tracing::info!("settings: loaded");
             }
+            let keep = (loaded.format == Format::Zero).then(|| {
+                tracing::info!(
+                    "settings: the file is of format zero; it is rewritten in the current format"
+                );
+                Keep::FormatZero
+            });
             Loaded {
                 config: loaded.config,
-                unreadable: false,
+                keep,
             }
         }
         Err(error) => {
@@ -603,14 +697,6 @@ fn load_from(path: &Path) -> Loaded {
             unreadable(Config::new())
         }
     }
-}
-
-/// Where the settings file at `path`, which could not be loaded, is kept: beside it, named after
-/// it with a `.bad-<stamp>` suffix.
-fn set_aside_path(path: &Path, stamp: &str) -> PathBuf {
-    let mut name = path.file_name().unwrap_or_default().to_owned();
-    name.push(format!(".bad-{stamp}"));
-    path.with_file_name(name)
 }
 
 /// Serialize the configuration as a save writes it: with the user's values for the switches the
@@ -645,28 +731,34 @@ fn note_settings() {
 }
 
 /// Write `text` as save number `generation`, unless a newer save is already written. The first
-/// write after a file that could not be loaded moves that file aside first, and writes nothing if
-/// it cannot.
+/// write after a file that could not be loaded, or one of format zero, keeps that file beside
+/// itself first, and writes nothing if it cannot.
 fn write_generation(generation: u64, path: &Path, text: &str) -> Result<Written, SaveError> {
     let mut written = WRITTEN.lock();
     if written.generation > generation {
         return Ok(Written::Superseded);
     }
-    if let Some(to) = written.set_aside.take() {
-        match fs::rename(path, &to) {
-            Ok(()) => tracing::warn!(
-                path = %to.display(),
-                "settings: kept the settings file that could not be loaded"
-            ),
+    if let Some(set_aside) = written.set_aside.take() {
+        match set_aside.apply(path) {
+            Ok(()) => match set_aside.keep {
+                Keep::Unreadable => tracing::warn!(
+                    path = %set_aside.to.display(),
+                    "settings: kept the settings file that could not be loaded"
+                ),
+                Keep::FormatZero => tracing::info!(
+                    path = %set_aside.to.display(),
+                    "settings: kept the settings file of format zero before its upgrade"
+                ),
+            },
             // Nothing is left to keep: the file went away after the load.
             Err(source) if source.kind() == io::ErrorKind::NotFound => {}
             Err(source) => {
                 let error = SaveError::SetAside {
                     from: path.to_owned(),
-                    to: to.clone(),
+                    to: set_aside.to.clone(),
                     source,
                 };
-                written.set_aside = Some(to);
+                written.set_aside = Some(set_aside);
                 return Err(error);
             }
         }
@@ -772,9 +864,77 @@ mod tests {
     fn an_unreadable_file_is_kept_beside_itself() {
         let path = Path::new("config").join("settings.toml");
         assert_eq!(
-            set_aside_path(&path, "2026-01-02_03-04-05_678"),
+            Keep::Unreadable.path(&path, "2026-01-02_03-04-05_678"),
             Path::new("config").join("settings.toml.bad-2026-01-02_03-04-05_678")
         );
+        assert_eq!(
+            Keep::FormatZero.path(&path, "2026-01-02_03-04-05_678"),
+            Path::new("config").join("settings.toml.v0-2026-01-02_03-04-05_678")
+        );
+    }
+
+    const STAMP: &str = "2026-01-02_03-04-05_678";
+
+    fn loaded(text: &str) -> Loaded {
+        let loaded = load::parse(text).unwrap();
+        Loaded {
+            config: loaded.config,
+            keep: (loaded.format == Format::Zero).then_some(Keep::FormatZero),
+        }
+    }
+
+    #[test]
+    fn a_format_zero_file_is_rewritten_on_the_first_tick_after_a_copy_is_kept() {
+        let path = Path::new("config").join("settings.toml");
+        let full = toml::to_string(&Config::new()).unwrap();
+        let startup = startup(&path, &loaded(&full), STAMP);
+        assert!(startup.rewrite);
+        assert_eq!(startup.baseline, None);
+        assert_eq!(
+            startup.set_aside,
+            Some(SetAside {
+                to: Keep::FormatZero.path(&path, STAMP),
+                keep: Keep::FormatZero,
+            })
+        );
+    }
+
+    #[test]
+    fn a_current_file_is_left_alone_until_a_setting_changes() {
+        let path = Path::new("config").join("settings.toml");
+        let mut config = Config::new();
+        config.body.height = 1.9;
+        let text = format::to_text(&config).unwrap();
+        let startup = startup(&path, &loaded(&text), STAMP);
+        assert_eq!(
+            startup,
+            Startup {
+                baseline: Some(text),
+                set_aside: None,
+                rewrite: false,
+            }
+        );
+    }
+
+    #[test]
+    fn a_format_zero_file_is_copied_and_an_unreadable_one_moved() {
+        let dir = std::env::temp_dir().join(format!(
+            "jc3vr-settings-keep-{}-{STAMP}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.toml");
+        for keep in [Keep::FormatZero, Keep::Unreadable] {
+            fs::write(&path, "old").unwrap();
+            let set_aside = SetAside {
+                to: keep.path(&path, STAMP),
+                keep,
+            };
+            set_aside.apply(&path).unwrap();
+            assert_eq!(fs::read_to_string(&set_aside.to).unwrap(), "old");
+            assert_eq!(path.exists(), keep == Keep::FormatZero, "{keep:?}");
+        }
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -42,6 +42,8 @@ use crate::{
 pub(crate) struct Loaded {
     pub config: Config,
     pub report: LoadReport,
+    /// The format the file was written in.
+    pub format: Format,
 }
 
 /// The settings a load defaulted, migrated, skipped, or reset, by path (`controllers.hands.grip`).
@@ -199,7 +201,11 @@ pub(crate) fn parse(text: &str) -> Result<Loaded, LoadError> {
         Config::new()
     });
     validate_subtrees(&mut config, &mut report);
-    Ok(Loaded { config, report })
+    Ok(Loaded {
+        config,
+        report,
+        format: upgrade.format,
+    })
 }
 
 /// How many values a load resets before it gives up on the file.
