@@ -19,8 +19,8 @@ fn _CastRayInfo_size_check() {
 }
 impl CastRayInfo {
     /// Clears the result for reuse: a unit normal and fraction, a null object, an invalid body,
-    /// then the virtual hit-object setter with null. It calls through the virtual table, which must
-    /// already be set.
+    /// then a second virtual setter with null, which is empty in the base class and which
+    /// [`CastRayInfo`](crate::physics::CastRayInfo) overrides. It calls through the virtual table, which must already be set.
     pub unsafe fn Reset(&mut self) {
         unsafe { self.base.Reset() }
     }
@@ -71,6 +71,11 @@ impl std::convert::AsMut<CastRayInfo> for CastRayInfo {
 /// fraction to one and clears the object. Engine callers construct it on the stack: the
 /// [`VFTABLE`](crate::physics::CastRayInfoBase::VFTABLE) pointer, a null [`m_HitObjectId`](crate::physics::CastRayInfoBase::m_HitObjectId), then
 /// [`Reset`](crate::physics::CastRayInfoBase::Reset).
+///
+/// The class is abstract: its virtual hit-object setter is the runtime's pure-call stub, and
+/// [`PhysicsSystem::CastRay`](crate::physics::PhysicsSystem::CastRay) calls that setter with null on a miss, so a query given an info
+/// that still carries the base table aborts the process on its first miss. Callers pass a derived
+/// info such as [`CastRayInfo`](crate::physics::CastRayInfo), switching the table after [`Reset`](crate::physics::CastRayInfoBase::Reset).
 pub struct CastRayInfoBase {
     pub __vftable: u64,
     /// The surface normal at the hit.
@@ -94,8 +99,8 @@ fn _CastRayInfoBase_size_check() {
 impl CastRayInfoBase {
     pub const Reset_ADDRESS: usize = 0x1402558C0;
     /// Clears the result for reuse: a unit normal and fraction, a null object, an invalid body,
-    /// then the virtual hit-object setter with null. It calls through the virtual table, which must
-    /// already be set.
+    /// then a second virtual setter with null, which is empty in the base class and which
+    /// [`CastRayInfo`](crate::physics::CastRayInfo) overrides. It calls through the virtual table, which must already be set.
     pub unsafe fn Reset(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
