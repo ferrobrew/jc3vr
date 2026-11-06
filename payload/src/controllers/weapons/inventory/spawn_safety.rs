@@ -149,6 +149,7 @@ impl SpawnSafety {
                     admission: Admission::Uninstalled,
                     first_exposure: None,
                     submissions_in_flight: 0,
+                    retirement_warned: false,
                 }),
                 active_callbacks: AtomicUsize::new(0),
                 callback_entered: AtomicBool::new(false),
@@ -233,7 +234,7 @@ impl ShutdownParticipant for SpawnSafety {
             return PrepareOutcome::Deferred(DeferReason::SpawnCallbackActive);
         }
         let callback_entered = self.owner.callback_entered.load(Ordering::Acquire);
-        if state.first_exposure.is_some() || callback_entered {
+        if state.warn_unproven_retirement(callback_entered) {
             tracing::warn!(
                 first_exposure = ?state.first_exposure,
                 callback_entered,
@@ -269,6 +270,21 @@ struct State {
     admission: Admission,
     first_exposure: Option<RequestKind>,
     submissions_in_flight: usize,
+    /// Whether a shutdown attempt already warned that callback retirement is unproven. The
+    /// lifecycle retries a deferred eject every few frames while another participant waits, and
+    /// the exposure cannot change once admission closes, so one warning says it all.
+    retirement_warned: bool,
+}
+
+impl State {
+    /// Whether this shutdown attempt should warn that a callback the engine holds may outlive the
+    /// unload: once, for the first attempt that finds the exposure.
+    fn warn_unproven_retirement(&mut self, callback_entered: bool) -> bool {
+        let exposed = self.first_exposure.is_some() || callback_entered;
+        let warn = exposed && !self.retirement_warned;
+        self.retirement_warned |= exposed;
+        warn
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

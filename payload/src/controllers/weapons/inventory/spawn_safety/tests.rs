@@ -166,3 +166,15 @@ fn ready(outcome: PrepareOutcome<Box<dyn PreparedParticipant>>) -> Box<dyn Prepa
         _ => panic!("expected ready preparation"),
     }
 }
+
+#[test]
+fn unproven_callback_retirement_warns_once_across_deferred_attempts() {
+    let safety = SpawnSafety::new();
+    let mut state = safety.owner.state.lock();
+    assert!(!state.warn_unproven_retirement(false));
+    state.first_exposure = Some(RequestKind::Twin);
+    assert!(state.warn_unproven_retirement(true));
+    for _ in 0..8 {
+        assert!(!state.warn_unproven_retirement(true));
+    }
+}
