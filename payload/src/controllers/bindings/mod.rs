@@ -250,7 +250,8 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         unsafe { weapons::inventory::stand_down() };
         vehicles::stand_down();
         grapple::physical::stand_down();
-        grapple::seat::stand_down();
+        // SAFETY: as above.
+        unsafe { grapple::seat::stand_down() };
         snatch::stand_down();
         grab::tick::stand_down();
         return None;
@@ -366,10 +367,12 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         if matches!(idle, Some(Idle::Disabled | Idle::GamepadScheme)) {
             // SAFETY: the game stage runs on the game thread before the world update.
             unsafe { weapons::inventory::stand_down() };
+            // A hook flying from the seat is kept through a pause, for the next tick to tether.
+            // SAFETY: as above.
+            unsafe { grapple::seat::stand_down() };
         }
         vehicles::stand_down();
         grapple::physical::stand_down();
-        grapple::seat::stand_down();
         snatch::stand_down();
         grab::tick::stand_down();
         state.report = TickReport {
@@ -1064,7 +1067,7 @@ fn cancel_capture_routes(poll: DevicePoll, sink: &mut Vec<Segment>) {
     weapons::reload::cancel_extraction_on_standdown();
     vehicles::stand_down();
     grapple::physical::stand_down();
-    grapple::seat::stand_down();
+    // A hook flying from the seat is kept through the panel, for the next tick to tether.
     snatch::stand_down();
     grab::tick::stand_down();
 }

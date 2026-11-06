@@ -143,11 +143,25 @@ pub(crate) unsafe fn tick(input: &SeatTickInput) {
     }
 }
 
-/// Forget the hook in flight without touching it: the bindings stand down.
-pub(crate) fn stand_down() {
-    let mut state = STATE.lock();
-    state.phase = Phase::Idle;
-    state.status.flying = false;
+/// Call back a hook still flying from the seat, and forget it: the controllers are left, so no
+/// later tick would tether or cancel it, and a wire left flying keeps the hook busy for every
+/// later fire. A pause of the controllers (the debug panel, a lost frame) does not call this: the
+/// phase is kept, and the next tick tethers the hook if it holds and the character is still
+/// seated, or calls it back otherwise.
+///
+/// # Safety
+///
+/// The game thread, before the world update.
+pub(crate) unsafe fn stand_down() {
+    let phase = {
+        let mut state = STATE.lock();
+        state.status.flying = false;
+        std::mem::take(&mut state.phase)
+    };
+    if let Some(wire) = phase.wire() {
+        unsafe { engine::cancel(wire) };
+        tracing::info!(target: "grapple", "seat grapple: the hook was called back on leaving the controllers");
+    }
 }
 
 /// How long the hook may fly from the seat before it is called back, game seconds. The hook flies

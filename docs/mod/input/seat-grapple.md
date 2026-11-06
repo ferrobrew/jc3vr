@@ -27,7 +27,7 @@ A press while the hook flies does nothing. A press with nothing valid under the 
 
 The fire is the game's vehicle grapple's: [`GrapplingHook::FireHookCustom`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-FireHookCustom) at the aim's point, ignoring the vehicle, with no game object and no bone, not a ghost wire, so the hook flies to the point and holds whatever it meets there. When its far end holds, [`GrapplingHook::TetherActiveWireToVehicleCOM`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-TetherActiveWireToVehicleCOM) moves the wire's near end from Rico's gauntlet to the vehicle's centre of mass and makes it a tether. From there it is the game's own tether: the car drags the object or is held by the wall, the double tap releases it, and tightening squeezes it.
 
-A hook still flying after two seconds, or one still out when Rico leaves the seat, is called back ([`GrapplingHook::CancelActiveWire`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-CancelActiveWire)). The fire is refused while a line is out or a fire is under way, and when the hook does not take it.
+A hook still flying after two seconds, or one still out when Rico leaves the seat, is called back ([`GrapplingHook::CancelActiveWire`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-CancelActiveWire)). A pause of the controllers (the mod's panel, a lost controller frame) keeps the flying hook: the next tick tethers it if it holds and Rico is still seated, or calls it back otherwise, and the two seconds count only ticks that run. Leaving the controllers (the bindings switched off, or the gamepad scheme) calls it back at once, since no later tick would. The fire is refused while a line is out or a fire is under way, and when the hook does not take it.
 
 The tether plays `Event::LineLock` on the grapple hand.
 
@@ -35,7 +35,7 @@ The tether plays `Event::LineLock` on the grapple hand.
 
 The switch is in the debug UI's Grapple feature, under Movement/vehicles: grapple from a seat (`controllers.grapple.seat`, on by default). The Status page's `GRAPPLE` section has a `SEAT GRAPPLE` row: whether the hook is flying, the counts of fires, tethers, and misses, and why the last press was refused. The debug UI's aim readout names where the grapple's point comes from: `game`, `seat`, or `stale`.
 
-The log has, at info level under the `grapple` target, `seat grapple: fired` with the point, `seat grapple: tethered to the vehicle`, `seat grapple: missed`, `seat grapple: the hook was called back`, `seat grapple: the tether was refused`, and `seat grapple: refused` with why.
+The log has, at info level under the `grapple` target, `seat grapple: fired` with the point, `seat grapple: tethered to the vehicle`, `seat grapple: missed`, `seat grapple: the hook was called back` (and `... on leaving the controllers`), `seat grapple: the tether was refused`, and `seat grapple: refused` with why.
 
 ## Headset checklist
 
@@ -45,8 +45,9 @@ The log has, at info level under the `grapple` target, `seat grapple: fired` wit
 4. Fire at nothing in range: the press is refused (`nothing in range`), nothing flies.
 5. Fire, and leave the seat while the hook flies: the hook is called back.
 6. Do the same from a passenger seat, a motorcycle, a boat, and a helicopter's seat.
-7. Switch the seat grapple off: in a seat the highlight and beam disappear, and the button fires nothing.
-8. On foot, fire the grapple: the highlight and beam vanish during the fire and come back with the game's target after it.
+7. Fire, and open the mod's panel while the hook flies, then close it: the hook tethers if it held, or is called back, and the next press fires again rather than being refused as `hook busy`. Fire and switch to the gamepad scheme while it flies: the hook is called back.
+8. Switch the seat grapple off: in a seat the highlight and beam disappear, and the button fires nothing.
+9. On foot, fire the grapple: the highlight and beam vanish during the fire and come back with the game's target after it.
 
 ## Unverified in the headset
 
