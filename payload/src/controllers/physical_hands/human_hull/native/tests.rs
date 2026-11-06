@@ -1,8 +1,7 @@
 use std::mem::MaybeUninit;
 
-use crate::controllers::physical_hands::human_hull::{geometry::Bounds, query};
-
 use super::*;
+use crate::controllers::physical_hands::human_hull::{geometry::Bounds, query};
 
 #[test]
 fn shutdown_request_preserves_the_enabled_setting_and_requires_native_restoration() {

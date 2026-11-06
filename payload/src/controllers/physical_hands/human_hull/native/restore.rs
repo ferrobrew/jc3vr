@@ -17,7 +17,11 @@ use jc3gi::{
 use crate::controllers::physical_hands::human_hull::{
     ClearanceUnavailableReason,
     geometry::Bounds,
-    native::{SlotKind, scan::Lookup, scan::Migrated, slot_kind},
+    native::{
+        SlotKind,
+        scan::{Lookup, Migrated},
+        slot_kind,
+    },
     query::{self, Budget},
 };
 
