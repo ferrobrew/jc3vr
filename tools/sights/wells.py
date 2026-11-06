@@ -96,6 +96,19 @@ DEFAULT_SHELL_MOUTH = (0.075, -0.15)
 DEFAULT_CYLINDER_MOUTH = (-0.012, -0.055)
 
 
+# The class words of the entity names that ``derive`` knows, and the word a weapon whose name has
+# none of them takes from its class (``WeaponClass``): the Bavarium Splitter is
+# ``w119_molten_bavarium_spitter``, an assault rifle.
+FAMILIES = ("pistol", "handgun", "smg", "assault", "machine", "shotgun", "sniper", "grenade", "rpg", "stupka")
+CLASS_FAMILIES = {1001: "pistol", 1002: "smg", 1003: "assault", 1004: "shotgun", 1005: "sniper", 1006: "grenade", 1007: "rpg", 1013: "handgun"}
+
+
+def family(name: str, category: int | None) -> str:
+    """The class word for the weapon entity ``name`` of class ``category``."""
+    word = name.split("_")[1]
+    return word if word in FAMILIES else CLASS_FAMILIES.get(category, word)
+
+
 @dataclass
 class Well:
     kind: str

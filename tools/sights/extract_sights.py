@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Derive the player weapons' sight lines from the game's models and write a sight override table.
 
-For every player weapon entity (``editor/entities/jc_weapons/01_one_handed`` and ``02_two_handed``),
+For every player weapon entity (``editor/entities/jc_weapons/01_one_handed`` and ``02_two_handed``,
+and the DLC weapons in ``DLC_PLAYER_WEAPONS``),
 this reads the entity archive from the game's archives, takes the patch archive's standalone
 ``.epe`` over the embedded one where one exists, loads the fire point and the closest-LOD models, and
 derives the sight line in the fire point's frame (see ``sightline.py``). The weapon list comes from
@@ -34,7 +35,12 @@ log = logging.getLogger("sights")
 
 DEFAULT_GAME_DIR = Path.home() / ".local/share/Steam/steamapps/common/Just Cause 3"
 FILE_LISTS = Path("bin/projects/Just Cause 3/files")
-PLAYER_WEAPON = re.compile(r"^editor/entities/jc_weapons/(0[12]_[a-z_]+)/[^/]+/([^/]+)\.ee$")
+PLAYER_WEAPON = re.compile(r"^(?:dlc/[a-z0-9_]+/)?editor/entities/jc_weapons/(0[12]_[a-z_]+)/(?:[^/]+/)?([^/]+)\.ee$")
+# The DLC player weapons, which the file lists do not cover; the paths are the ones the DLC
+# archives name. The Bavarium Splitter ships in two DLCs under the same weapon name; the Sky Fortress
+# copy is used. The Lightning Gun (``w180_lightninggun``) is left out: it has no magazine limit, and
+# its entity name differs from its weapon name, so the table's key for it would be in doubt.
+DLC_PLAYER_WEAPONS = ("dlc/sky_fortress/editor/entities/jc_weapons/02_two_handed/w119_molten_bavarium_spitter.ee",)
 ONE_HANDED = "01_one_handed"
 
 # The confidence grades, from most to least trustworthy:
@@ -55,8 +61,8 @@ def main() -> int:
         return 2
 
     try:
-        entities = _player_weapon_entities(args.gibbed_tools / FILE_LISTS)
         archives = GameArchives(args.game)
+        entities = _player_weapon_entities(args.gibbed_tools / FILE_LISTS, archives)
     except (OSError, ValueError) as e:
         log.error("%s", e)
         return 1
@@ -112,7 +118,9 @@ def _path(text: str) -> Path:
     return Path(os.path.expanduser(os.path.expandvars(text)))
 
 
-def _player_weapon_entities(file_lists: Path) -> list[str]:
+def _player_weapon_entities(file_lists: Path, archives: GameArchives) -> list[str]:
+    """The base game's player weapon entities from the file lists, and the DLC ones the install
+    has."""
     lists = sorted(file_lists.glob("**/*.filelist"))
     if not lists:
         raise FileNotFoundError(f"file lists: no *.filelist under {file_lists}")
@@ -123,7 +131,12 @@ def _player_weapon_entities(file_lists: Path) -> list[str]:
             # The magazine entities sit beside the weapons and are not weapons.
             if PLAYER_WEAPON.match(name) and not name.endswith("_mag.ee"):
                 names.add(name)
-    return sorted(names)
+    for name in DLC_PLAYER_WEAPONS:
+        if archives.locate(name) is None:
+            log.info("%s: not installed; skipped", name)
+        else:
+            names.add(name)
+    return sorted(names, key=lambda n: PLAYER_WEAPON.match(n).group(2))
 
 
 def _derive(path: str, archives: GameArchives):

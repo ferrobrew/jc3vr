@@ -67,6 +67,9 @@ class Weapon:
     # The spawn tag of the weapon's spare magazine prop (its ``magazine_tag`` property), or ``None``
     # for a weapon without one.
     magazine_tag: str | None = None
+    # The weapon's class (its ``weapon_category`` property, a ``WeaponClass`` value), or ``None``
+    # when the property is absent.
+    category: int | None = None
     fire_points: list[FirePoint] = field(default_factory=list)
     parts: list[Part] = field(default_factory=list)
 
@@ -94,6 +97,7 @@ def load(entity_path: str, archives: GameArchives, skipped_part_names: tuple[str
         stored_name_hash=top.get("name_hash", 0) & 0xFFFFFFFF,
         epe_source=epe_source,
         magazine_tag=top.get("magazine_tag") or None,
+        category=top.get("weapon_category"),
     )
     models = [(weapon.name, top.get(MODEL_KEY), None, weapon.class_name)]
     for child in top.children:

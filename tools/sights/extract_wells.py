@@ -49,8 +49,8 @@ def main() -> int:
         return 2
 
     try:
-        entities = _player_weapon_entities(args.gibbed_tools / FILE_LISTS)
         archives = GameArchives(args.game)
+        entities = _player_weapon_entities(args.gibbed_tools / FILE_LISTS, archives)
         spare_magazines = spares.SpareMagazines(archives)
     except (OSError, ValueError, LookupError) as e:
         log.error("%s", e)
@@ -89,7 +89,6 @@ def _parse_args():
 def _derive(path: str, archives: GameArchives, spare_magazines: spares.SpareMagazines):
     """The table entry for one entity, with the loaded weapon and well when they exist."""
     name = PLAYER_WEAPON.match(path).group(2)
-    family = name.split("_")[1]
     try:
         # Every part, the magazine included: the magazine is what this tool measures.
         loaded = weapon.load(path, archives, skipped_part_names=())
@@ -98,7 +97,7 @@ def _derive(path: str, archives: GameArchives, spare_magazines: spares.SpareMaga
         loaded = None
     else:
         try:
-            well = wells.derive(loaded, family)
+            well = wells.derive(loaded, wells.family(name, loaded.category))
         except ValueError as e:
             # A heuristic that finds nothing to measure (an empty profile or cluster) fails this
             # weapon only.

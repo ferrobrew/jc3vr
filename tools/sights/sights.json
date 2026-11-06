@@ -11,6 +11,7 @@
   {"weapon": "w112_assault_rifle_cs_predator", "weapon_hash": 2621157955, "offset_m": [0.0, 0.0876, 0.0], "angles_deg": [0.149, 0.0], "grade": "iron_uncertain"},
   {"weapon": "w117_assault_rifle_csv", "weapon_hash": 1394636892, "offset_m": [0.0, 0.0094, 0.0], "angles_deg": [-16.198, 0.0], "grade": "iron_uncertain"},
   {"weapon": "w118_assault_rifle_up_61", "weapon_hash": 3681410946, "offset_m": [0.0, 0.0248, 0.0], "angles_deg": [-2.385, 0.0], "grade": "iron_uncertain"},
+  {"weapon": "w119_molten_bavarium_spitter", "weapon_hash": 2845703626, "offset_m": [0.0, 0.0343, 0.0], "angles_deg": [0.056, 0.0], "grade": "scoped"},
   {"weapon": "w121_grenade_launcher_cs_bildt_negotiator", "weapon_hash": 2042423840, "offset_m": [0.0, 0.0583, 0.0], "angles_deg": [-4.941, 0.0], "grade": "iron_uncertain"},
   {"weapon": "w123_grenade_launcher_upu_210", "weapon_hash": 3759082339, "offset_m": [0.0, 0.1602, 0.0], "angles_deg": [8.601, 0.0], "grade": "iron_uncertain"},
   {"weapon": "w131_machine_gun_urga_vdova_89", "weapon_hash": 3413507878, "offset_m": [0.0, -0.0437, 0.0], "angles_deg": [-11.015, 0.0], "grade": "iron_uncertain"},

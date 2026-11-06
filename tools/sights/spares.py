@@ -1,7 +1,8 @@
 """Resolve a weapon's spare magazine prop to its model.
 
 A gun's spare magazine is a rigid object the game spawns by the weapon's ``magazine_tag``. The tag
-names a definition in the prop spawn table (``settings/spawn_prop_defs.bin``): the definition
+names a definition in the prop spawn table (``settings/spawn_prop_defs.bin``, and each DLC's own
+``dlc/<name>/settings/spawn_prop_defs.bin`` for its weapons): the definition
 object whose name hash is ``hashlittle`` of the tag, and whose ``entity`` property is the magazine
 entity (``..._mag.ee``). That entity embeds exactly one model LOD list, whose first entry is the
 closest LOD's ``.rbm``. Its vertices are in the prop's own frame, which is where the game places
@@ -16,6 +17,7 @@ from archives import GameArchives, hashlittle, read_entity
 from weapon import Vec3, Weapon
 
 SPAWN_PROP_DEFS = "settings/spawn_prop_defs.bin"
+DLC_SPAWN_PROP_DEFS = tuple(f"dlc/{dlc}/settings/spawn_prop_defs.bin" for dlc in ("sky_fortress", "mech_land_assault", "bavarium_sea_heist"))
 
 
 @dataclass
@@ -34,7 +36,12 @@ class SpareMagazines:
         data = archives.read(SPAWN_PROP_DEFS)
         if data is None:
             raise LookupError(f"spare magazines: {SPAWN_PROP_DEFS} is not in the archives")
-        self._entities = {node.name_hash: node.get("entity") for node in _walk(rtpc.parse(data)) if node.get("entity")}
+        self._entities = {}
+        # A DLC's table, where the install has the DLC, adds that DLC's weapons' magazines.
+        for table in [data] + [d for d in map(archives.read, DLC_SPAWN_PROP_DEFS) if d is not None]:
+            for node in _walk(rtpc.parse(table)):
+                if node.get("entity"):
+                    self._entities.setdefault(node.name_hash, node.get("entity"))
 
     def model(self, weapon: Weapon) -> SpareModel | None:
         """The weapon's spare magazine model, or ``None`` for a weapon without a magazine tag.

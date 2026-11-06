@@ -7,7 +7,7 @@ The tool reads the archives directly and uses only the Python standard library. 
 ## Prerequisites
 
 - Python 3.10 or newer.
-- The game install. The tool reads `archives_win64/` and `patch_win64/` under it.
+- The game install. The tool reads `archives_win64/`, `dlc_win64/`, and `patch_win64/` under it.
 - A checkout of the Gibbed Just Cause 3 tools. The tool reads only its file lists, `bin/projects/Just Cause 3/files/**/*.filelist`, to find the weapon entity paths; nothing needs building, and mono is not needed.
 - matplotlib, only for `--plots`. On NixOS: `nix-shell -p "python3.withPackages (p: [p.matplotlib])"`.
 
@@ -60,8 +60,8 @@ The payload's sight tuning tool, in the Controllers tab's aiming settings, captu
 
 ## Pipeline
 
-1. Collect the entity paths from the file lists: every `editor/entities/jc_weapons/{01_one_handed,02_two_handed}/*/*.ee` except the `_mag.ee` magazine entities.
-2. Index every `.tab` under `archives_win64/` and `patch_win64/` by name hash. A file present in a patch archive is read from the patch.
+1. Collect the entity paths from the file lists: every `editor/entities/jc_weapons/{01_one_handed,02_two_handed}/*/*.ee` except the `_mag.ee` magazine entities. The file lists do not cover the DLC archives, so the DLC weapons are named in `DLC_PLAYER_WEAPONS` in `extract_sights.py`, and each is read when the install has it. The Bavarium Splitter (`w119_molten_bavarium_spitter`) is the one DLC weapon there; the Lightning Gun has no magazine limit, and its entity name differs from its weapon name, so it is left out.
+2. Index every `.tab` under `archives_win64/`, `dlc_win64/` (each DLC's directory and its `arc/`), and `patch_win64/` by name hash. A file present in a patch archive is read from the patch.
 3. Unpack each entity archive (AAF around a SARC). Take the standalone `.epe` from the archives when one exists (`patch_win64/game1` has one for every hand weapon), and the embedded one otherwise.
 4. Parse the `.epe` (RTPC). Find the weapon object, its first type 2 `SWeaponPoint` (the fire position), and the model paths of the weapon and its components, skipping magazines and ammo belts.
 5. Resolve each model path to its `.lod` list and read the closest LOD's `.rbm` vertex positions, transformed by the part's `world` matrix into weapon space.
@@ -86,7 +86,7 @@ From the line's two points it computes the height at the muzzle and the pitch, p
 - `w144` has one fire position per tube; the tool uses the first.
 - `w177_typhoon` fails: its model has a second block of a type the reader does not support.
 - `w703_sungun` fails: it has no type 2 fire position.
-- DLC weapons under `dlc_win64` are not read.
+- Only the DLC weapons in `DLC_PLAYER_WEAPONS` are read.
 
 Two refinements would help the iron-sight cases: take the front sight as the tallest centreline point in the front 40% of the gun and the rear sight as the tallest in the next 30%, instead of the hull; and detect red-dot and holographic sight windows (vertices at both the top and bottom of a slice with a gap between) and use the window centre.
 
@@ -119,7 +119,7 @@ A JSON array with one object per weapon entity, sorted by name, one object per l
 ```
 
 - `weapon_hash` is `hashlittle` of the entity name, as in `sights.json`, and is the table's key.
-- `kind` is how the weapon is loaded: `magazine`, `shell` (a shell at a time, through a port or into the breech), `rocket` (a round into the muzzle, or the Hydra's pod into the rear), `cylinder` (revolvers), or `none` (specials with nothing to load).
+- `kind` is how the weapon is loaded: `magazine` (the Hydra's pod among them, which enters the rear of its housing), `shell` (a shell at a time, through a port or into the breech), `rocket` (a round into the muzzle), `cylinder` (revolvers), or `none` (specials with nothing to load).
 - `mouth_m` is the point on the gun's outer surface where the magazine or round enters. With a magazine part, it is where the part's feed end crosses into the body. Without one, the magazine is modelled into the body and cannot be hidden, so the mouth is the base of the visible magazine: the grip base on a pistol, the bottom of the magazine on an SMG. For shells it is the loading port or the breech, for rockets the front of the tube, and for revolvers the centre of the cylinder's rear face.
 - `insert_axis` is the unit direction the magazine or round travels as it goes in.
 - `magazine_part` and `part_name` name the separate part that carries the magazine or round (`model.magazine`, `model.cartridge_full`, `model.rocket_pod`, or `model.rpg`), when there is one. The part's offset matrix is on the component at runtime, so the payload can hide or move it.
@@ -127,13 +127,13 @@ A JSON array with one object per weapon entity, sorted by name, one object per l
 - `action` is what chambers a round: `slide`, `charging_handle`, `bolt`, `pump`, or `none`. `handle_m` is its grab point and `travel_m` its travel along the barrel.
 - `grade` is the confidence in the mouth and axis: `part` (measured against a magazine part), `mesh` (measured from the body mesh), `default` (a class default, or nothing to load), or `failed`.
 - `notes` names the fields that hold class defaults rather than measurements (every `travel_m`, and the handles that are not measured), says what the mouth is for that weapon, and repeats any doubt from the log.
-- `spare_top_m` is the feed end of the weapon's spare magazine prop, the loose magazine the game drops on a reload: the centre of the prop model's bounding box moved along the insertion axis to the model's furthest extent, in the prop model's own frame. The insertion axis is taken into the magazine part's frame first, which is the prop's frame when the prop is the part's model. It is set only for a `magazine` weapon whose prop shows the magazine a hand loads, which is when the prop's model is the weapon's `model.magazine` part or when the weapon has no round part at all (the pistols and submachine guns), and null otherwise. `spares.py` resolves the prop: the weapon's `magazine_tag` property names a definition in the prop spawn table, `settings/spawn_prop_defs.bin`, whose entity embeds the prop's model.
+- `spare_top_m` is the feed end of the weapon's spare magazine prop, the loose magazine the game drops on a reload: the centre of the prop model's bounding box moved along the insertion axis to the model's furthest extent, in the prop model's own frame. The insertion axis is taken into the magazine part's frame first, which is the prop's frame when the prop is the part's model. It is set only for a `magazine` weapon whose prop shows the magazine a hand loads, which is when the prop's model is the weapon's `model.magazine` part or when the weapon has no round part at all (the pistols and submachine guns), and null otherwise. `spares.py` resolves the prop: the weapon's `magazine_tag` property names a definition in the prop spawn table, `settings/spawn_prop_defs.bin` (and, for a DLC weapon, its DLC's `dlc/<name>/settings/spawn_prop_defs.bin`), whose entity embeds the prop's model.
 
 ### Algorithm
 
 `wells.py` reads the triangles of every part as well as the positions (`rbm.mesh`) and measures by casting lines through them. A projection along an axis buckets the triangles by their footprint, and a line parallel to the axis reports the coordinates along the axis where it crosses a triangle.
 
-The weapon's family, the class word of its name, picks the method, with the weapon's class for the launchers.
+The weapon's family, the class word of its name, picks the method, with the weapon's class for the launchers. A name without a known class word takes its family from the weapon's class (its `weapon_category` property): `w119_molten_bavarium_spitter` is an assault rifle.
 
 - Magazine part (assault rifles, machine guns, snipers, grenade launchers): the insertion axis is the part's +Y. The feed end is the part's vertices within 1.5 cm of its top along the axis. Lines on a 3 mm grid over the feed end's footprint, widened by 6 mm to catch a well's rim, run along the axis, and each keeps its first crossing of the body within 15 cm below to 5 cm above the feed end. The mouth is at the first quartile of those crossings, centred on the lines inside the footprint that crossed. When nothing crosses inside the feed end's footprint, the whole part's footprint is used.
 - Magazine in the body (pistols, SMGs, and `w153`): the base is the body's lowest vertices. Lines along the barrel at heights from 2.8 to 6 cm above it find the column's front and rear faces, each starting from the previous centre so that a slanted column is followed, and a line fitted through the centres is the axis. The mouth is where that line leaves the base. A base more than 5 cm from the origin along the barrel is a magazine apart from the grip, and its visible length is how far the column rises before it widens by half into the receiver.
@@ -154,4 +154,5 @@ When a mouth cannot be measured, the entry takes a class default placed from the
 - Every `travel_m` is a class default: the slide recoil component's properties are not named, and nothing in the model gives the travel.
 - The grenade launchers get no action: their drums and barrel clamps dominate the side profile.
 - `w155`'s fire position sits 14 cm behind its muzzle, so the breech search starts from the front of the model. `w176` and `w704` are treated as rockets because they carry a `model.rpg` round. `w147`, `w173`, `w178`, `w179`, and the `w7xx` specials other than `w704` have nothing to load.
-- `w177_typhoon` fails, as for the sight lines. DLC weapons are not read.
+- `w177_typhoon` fails, as for the sight lines.
+- `w119`'s body model has a `Window` block (the glass vial on top), which the model reader skips; the well and handle come from the rest of the body.

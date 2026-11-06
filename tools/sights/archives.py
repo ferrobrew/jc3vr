@@ -4,7 +4,9 @@ The game stores its data in ``gameN.tab``/``gameN.arc`` pairs. A ``.tab`` is a `
 (``u16 2``, ``u16 1``, ``u32`` alignment) followed by 12-byte entries of ``u32`` name hash, ``u32``
 offset, and ``u32`` size into the ``.arc``, which stores each file uncompressed. The name hash is
 Jenkins lookup3 ``hashlittle`` of the file's path. The archive trees are ``archives_win64`` (the base
-game) and ``patch_win64`` (replacements that the game loads in preference to the base copies).
+game), ``dlc_win64`` (one directory per DLC, with its archives either at its top or under ``arc/``,
+and its own files under paths that start ``dlc/<name>/``), and ``patch_win64`` (replacements that the
+game loads in preference to the base copies).
 
 An entity archive (``.ee``) is an AAF container of zlib chunks around a SARC. The SARC lists named
 entries; an entry at offset 0 is a reference to a file stored elsewhere, not embedded data.
@@ -18,8 +20,9 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-# The archive trees, in ascending precedence: a later tree's copy of a file replaces an earlier one.
-ARCHIVE_TREES = ("archives_win64", "patch_win64")
+# The archive trees as ``.tab`` globs, in ascending precedence: a later tree's copy of a file
+# replaces an earlier one.
+ARCHIVE_TREES = ("archives_win64/game*.tab", "dlc_win64/*/game*.tab", "dlc_win64/*/arc/game*.tab", "patch_win64/game*.tab")
 
 
 def hashlittle(data: bytes | str, initval: int = 0) -> int:
@@ -91,18 +94,18 @@ class Location:
 
 
 class GameArchives:
-    """Every file in the base and patch archives, indexed by name hash."""
+    """Every file in the base, DLC, and patch archives, indexed by name hash."""
 
     def __init__(self, game_dir: Path):
         self._files: dict[int, list[Location]] = {}
         tabs = 0
         for tree in ARCHIVE_TREES:
-            for tab in sorted((game_dir / tree).glob("game*.tab"), key=_archive_number):
+            for tab in sorted(game_dir.glob(tree), key=lambda t: (t.parent, _archive_number(t))):
                 for name_hash, offset, size in _read_tab(tab):
                     self._files.setdefault(name_hash, []).append(Location(tab.with_suffix(".arc"), offset, size))
                 tabs += 1
         if not tabs:
-            raise FileNotFoundError(f"archives: no game*.tab under {game_dir}/{{{','.join(ARCHIVE_TREES)}}}")
+            raise FileNotFoundError(f"archives: no archive under {game_dir} matches {', '.join(ARCHIVE_TREES)}")
         log.info("indexed %d archives, %d file hashes", tabs, len(self._files))
 
     def locate(self, name: str) -> Location | None:
