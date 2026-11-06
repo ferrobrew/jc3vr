@@ -12,7 +12,7 @@ and a stack scan -- tagging any address that falls in the exe (engine) or the pa
 DLL band, since a dangling detour (e.g. a COM-vtable hook left enabled at eject) jumps
 into the former payload band.
 
-Auto-resolves the JustCause3.exe PID (the one with jc3vrs_payload mapped) and the
+Auto-resolves the JustCause3.exe PID (the one with jc3vr_payload mapped) and the
 payload/exe address bands from /proc/<pid>/maps. Override the PID with JC3_PID=<pid>.
 
 Usage:
@@ -20,7 +20,7 @@ Usage:
     JC3_PID=12345 gdb --batch -x catch_crash.py
 
 Afterwards, symbolize a payload RVA with
-    llvm-symbolizer --obj=target/x86_64-pc-windows-msvc/debug/jc3vrs_payload.dll <0x180000000 + RVA>
+    llvm-symbolizer --obj=target/x86_64-pc-windows-msvc/release/jc3vr_payload_loaded.dll --relative-address --inlines <RVA>
 and an exe address against $JC3_RELEASE_IDB (the exe loads at its preferred base, 1:1).
 """
 
@@ -43,7 +43,7 @@ def find_pid():
     ).stdout
     for pid in out.split():
         try:
-            if "jc3vrs_payload" in open("/proc/%s/maps" % pid).read():
+            if "jc3vr_payload" in open("/proc/%s/maps" % pid).read():
                 return int(pid)
         except OSError:
             pass
@@ -62,10 +62,10 @@ def module_band(pid, needle):
 
 pid = find_pid()
 if pid is None:
-    print("catch_crash: no JustCause3.exe with jc3vrs_payload mapped -- is the game running?")
+    print("catch_crash: no JustCause3.exe with jc3vr_payload mapped -- is the game running?")
     raise SystemExit(1)
 
-payload = module_band(pid, "jc3vrs_payload")
+payload = module_band(pid, "jc3vr_payload")
 exe = module_band(pid, "JustCause3.exe")
 
 gdb.execute("set pagination off")
