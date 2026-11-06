@@ -270,11 +270,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     } else {
         classify(&read)
     };
-    if case == Case::OnFoot {
-        state.hips.observe(&animated, dt, now);
-    } else {
-        state.hips.reset();
-    }
+    state.hips.track(case, &animated, dt, now);
     let standing = config.stance.enabled
         && case == Case::OnFoot
         && locomotion.fresh(now)

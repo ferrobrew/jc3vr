@@ -5,14 +5,17 @@
 //!
 //! The gate measures the heading of the line across the clip's upper legs in Rico's model space,
 //! before the IK solves, while Rico is on foot, and follows it slowly enough to take out a walk's
-//! swing of the hips from stride to stride.
+//! swing of the hips from stride to stride. A case the gate passes through briefly on the ground (a
+//! hit reaction, a one-off move, a jump within its grace, or a tick without the movement task)
+//! holds the follower without measuring, so its published heading lapses only after [`FRESH`] and a
+//! return to on foot carries on from it rather than taking the next measurement whole.
 
 use std::time::{Duration, Instant};
 
 use body_rig::angle::{line_yaw, wrap};
 use parking_lot::Mutex;
 
-use crate::controllers::body::procedural::{rig::RigBone, solver::pose::RigPose};
+use crate::controllers::body::procedural::{authority::Case, rig::RigBone, solver::pose::RigPose};
 
 /// The clip's hips' heading against Rico's facing, radians, positive turned to his left, while the
 /// gate measured it recently on foot.
@@ -22,6 +25,47 @@ pub fn hip_yaw() -> Option<f32> {
         .lock()
         .filter(|(_, at)| now.saturating_duration_since(*at) <= FRESH)
         .map(|(yaw, _)| yaw)
+}
+
+/// What the hips' follower does in a hand-over case.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(super) enum Track {
+    /// Measure the clip's hips and follow them: on foot.
+    Observe,
+    /// Keep the followed heading without measuring, and let its publication lapse after
+    /// [`FRESH`]: a case passed through briefly on the ground.
+    Hold,
+    /// Stop following: switched off, or off the ground.
+    Reset,
+}
+
+impl Track {
+    pub(super) const fn of(case: Case) -> Self {
+        match case {
+            Case::OnFoot => Self::Observe,
+            Case::HitReaction | Case::Jump | Case::AuthoredMotion | Case::NoMovementTask => {
+                Self::Hold
+            }
+            Case::NotInHeadset
+            | Case::SwitchedOff
+            | Case::NotInGameplay
+            | Case::Sequence
+            | Case::Dead
+            | Case::Ragdoll
+            | Case::GettingUp
+            | Case::Seated
+            | Case::StuntStanding
+            | Case::Vehicle
+            | Case::GrappleAttach
+            | Case::Traversal
+            | Case::LedgeClimb
+            | Case::Swimming
+            | Case::Wingsuit
+            | Case::Parachute
+            | Case::Flight
+            | Case::HandClimb => Self::Reset,
+        }
+    }
 }
 
 /// The followed heading of the clip's hips.
@@ -40,8 +84,17 @@ impl HipFollower {
         self.yaw
     }
 
+    /// Measure, hold, or stop following, as the hand-over case `case` calls for ([`Track`]).
+    pub(super) fn track(&mut self, case: Case, animated: &RigPose, dt: f32, now: Instant) {
+        match Track::of(case) {
+            Track::Observe => self.observe(animated, dt, now),
+            Track::Hold => {}
+            Track::Reset => self.reset(),
+        }
+    }
+
     /// Fold in the hips of the animated pose `animated` over `dt` seconds, and publish the result.
-    pub(super) fn observe(&mut self, animated: &RigPose, dt: f32, now: Instant) {
+    fn observe(&mut self, animated: &RigPose, dt: f32, now: Instant) {
         let measured = line_yaw(
             animated.position(RigBone::LeftUpLeg),
             animated.position(RigBone::RightUpLeg),
@@ -51,7 +104,7 @@ impl HipFollower {
     }
 
     /// Stop following, off the ground or with the follow switched off.
-    pub(super) fn reset(&mut self) {
+    fn reset(&mut self) {
         self.yaw = None;
         *PUBLISHED.lock() = None;
     }
@@ -117,6 +170,33 @@ mod tests {
             yaw = follower.step(Some(idle), DT).unwrap();
         }
         assert!((yaw - idle).abs() < 1.0f32.to_radians());
+    }
+
+    #[test]
+    fn a_brief_case_on_the_ground_holds_the_heading_and_leaving_it_resets() {
+        assert_eq!(Track::of(Case::OnFoot), Track::Observe);
+        for case in [
+            Case::HitReaction,
+            Case::Jump,
+            Case::AuthoredMotion,
+            Case::NoMovementTask,
+        ] {
+            assert_eq!(Track::of(case), Track::Hold, "{case:?}");
+        }
+        for case in [
+            Case::SwitchedOff,
+            Case::Flight,
+            Case::Swimming,
+            Case::Vehicle,
+            Case::Ragdoll,
+        ] {
+            assert_eq!(Track::of(case), Track::Reset, "{case:?}");
+        }
+        // A held heading carries on smoothly when the follower measures again.
+        let mut follower = HipFollower::new();
+        follower.step(Some(-0.4), DT);
+        let yaw = follower.step(Some(0.0), DT).unwrap();
+        assert!((yaw + 0.4).abs() < 0.01, "{yaw}");
     }
 
     #[test]
