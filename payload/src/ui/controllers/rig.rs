@@ -180,6 +180,10 @@ pub(super) fn rig_settings(ui: &mut Ui, body: &mut BodyRemapConfig) {
         ui.add(
             egui::Slider::new(&mut y.moving_deadzone_deg, 0.0..=90.0).text("Legs turn moving (°)"),
         );
+        ui.add(egui::Slider::new(&mut y.moving_sustain_s, 0.0..=2.0).text("Moving sustain (s)"))
+            .on_hover_text(
+                "While moving, the head held past the moving angle this long turns the legs.",
+            );
         ui.add(egui::Slider::new(&mut y.settle_deg, 0.0..=30.0).text("Settle (°)"));
         ui.add(egui::Slider::new(&mut y.slew_deg_s, 10.0..=720.0).text("Turn rate (°/s)"));
         ui.add(egui::Slider::new(&mut y.hand_bias, 0.0..=1.0).text("Hands' pull on the chest"));

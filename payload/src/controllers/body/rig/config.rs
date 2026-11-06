@@ -78,6 +78,7 @@ impl RigConfig {
             ("yaw.sustain_deg", y.sustain_deg, 0.0, 180.0),
             ("yaw.sustain_s", y.sustain_s, 0.0, 30.0),
             ("yaw.moving_deadzone_deg", y.moving_deadzone_deg, 0.0, 120.0),
+            ("yaw.moving_sustain_s", y.moving_sustain_s, 0.0, 10.0),
             ("yaw.settle_deg", y.settle_deg, 0.0, 60.0),
             ("yaw.slew_deg_s", y.slew_deg_s, 1.0, 2000.0),
             ("yaw.hand_bias", y.hand_bias, 0.0, 1.0),

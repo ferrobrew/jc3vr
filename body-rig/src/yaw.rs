@@ -5,8 +5,8 @@
 //! A glance to the side turns the chest toward it at once and twists the neck for the rest, with no
 //! visible turn of the body. The chest is critically damped toward the head's heading, held within
 //! the clamp of the legs' heading. The legs turn as a discrete act: when the head goes past the
-//! turn angle, or stays past the sustain angle for the sustain time, or goes past the moving
-//! deadzone while the body moves, a turn starts and runs at a slew rate until the legs face the
+//! turn angle, or stays past the sustain angle for the sustain time, or stays past the moving
+//! deadzone for the moving sustain time while the body moves, a turn starts and runs at a slew rate until the legs face the
 //! head again, within a small settle angle. The hands pull the chest their way, held out toward one
 //! side, but never the legs: aiming or reaching to one side turns the torso, not the stance.
 
@@ -36,9 +36,13 @@ pub struct YawTuning {
     pub sustain_deg: f32,
     /// How long the head must stay past [`sustain_deg`](Self::sustain_deg), seconds.
     pub sustain_s: f32,
-    /// The head this far from the legs turns them while the body moves, degrees: a walking body
-    /// faces where it looks sooner.
+    /// The head held this far from the legs for [`moving_sustain_s`](Self::moving_sustain_s)
+    /// turns them while the body moves, degrees: a walking body faces where it looks sooner.
     pub moving_deadzone_deg: f32,
+    /// How long the head must stay past [`moving_deadzone_deg`](Self::moving_deadzone_deg) while
+    /// the body moves, seconds: the head's sway in a walk, and a look to one side and back, pass
+    /// the deadzone only briefly, and would otherwise turn the legs to and fro.
+    pub moving_sustain_s: f32,
     /// A turn of the legs stops once they are this close to the head, degrees.
     pub settle_deg: f32,
     /// The fastest the legs turn, degrees per second.
@@ -60,6 +64,7 @@ impl YawTuning {
             sustain_deg: 40.0,
             sustain_s: 1.0,
             moving_deadzone_deg: 25.0,
+            moving_sustain_s: 0.35,
             settle_deg: 5.0,
             slew_deg_s: 200.0,
             hand_bias: 0.5,
@@ -159,6 +164,11 @@ pub struct YawFollow {
     turning: Option<TurnCause>,
     /// How long the head has stayed past the sustain angle, seconds.
     sustained: f32,
+    /// How long the head has stayed past the moving deadzone on one side while the body moves,
+    /// seconds.
+    moving_sustained: f32,
+    /// The side of the legs the head was on last frame, as the sign of its angle from them.
+    moving_side: f32,
     /// The head's heading on the last frame.
     target: f32,
 }
@@ -171,6 +181,8 @@ impl YawFollow {
             chest_rate: 0.0,
             turning: None,
             sustained: 0.0,
+            moving_sustained: 0.0,
+            moving_side: 0.0,
             target: 0.0,
         }
     }
@@ -245,12 +257,26 @@ impl YawFollow {
         } else {
             self.sustained = 0.0;
         }
+        // The head must stay past the deadzone on one side: a sway from one side to the other
+        // starts the clock again.
+        let side = error.signum();
+        self.moving_sustained = if !(input.moving && past(tuning.moving_deadzone_deg)) {
+            0.0
+        } else if side == self.moving_side {
+            self.moving_sustained + dt
+        } else {
+            dt
+        };
+        self.moving_side = side;
         if self.turning.is_none() {
             self.turning = if past(tuning.turn_deg) {
                 Some(TurnCause::Large)
             } else if self.sustained >= tuning.sustain_s.max(0.0) && past(tuning.sustain_deg) {
                 Some(TurnCause::Sustained)
-            } else if input.moving && past(tuning.moving_deadzone_deg) {
+            } else if input.moving
+                && past(tuning.moving_deadzone_deg)
+                && self.moving_sustained >= tuning.moving_sustain_s.max(0.0)
+            {
                 Some(TurnCause::Moving)
             } else {
                 None
@@ -262,6 +288,7 @@ impl YawFollow {
             if wrap(head - yaw).abs() <= tuning.settle_deg.max(0.0).to_radians() {
                 self.turning = None;
                 self.sustained = 0.0;
+                self.moving_sustained = 0.0;
             }
             yaw
         } else {
@@ -402,6 +429,21 @@ mod tests {
         moving.moving = true;
         assert!(run(&mut follow, moving, 1.0) > 0.2);
         assert!(!follow.turning());
+    }
+
+    #[test]
+    fn a_walk_that_sways_past_the_moving_deadzone_keeps_the_legs() {
+        let mut follow = YawFollow::new();
+        follow.update(&look(0.0), &TUNING);
+        let sway = TUNING.moving_deadzone_deg + 5.0;
+        let brief = TUNING.moving_sustain_s * 0.6;
+        for side in [1.0, -1.0, 1.0, -1.0, 1.0, -1.0] {
+            let mut moving = look(sway * side);
+            moving.moving = true;
+            run(&mut follow, moving, brief);
+            assert!(!follow.turning(), "{side}");
+        }
+        assert_eq!(follow.yaw(), Some(0.0));
     }
 
     #[test]
