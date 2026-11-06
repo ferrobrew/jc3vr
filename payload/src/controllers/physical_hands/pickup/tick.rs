@@ -624,6 +624,7 @@ unsafe fn tick_with(
                 anchor: hold.anchor,
                 target: hold.target.point,
                 velocity: moving.point_velocity(hold.anchor),
+                hand_velocity: hold.velocity,
                 liftable,
             };
             if strain.torn(&sample, dt, time_scale, config) {

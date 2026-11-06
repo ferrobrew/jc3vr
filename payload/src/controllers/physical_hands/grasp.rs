@@ -113,9 +113,11 @@ impl Grip {
 /// How far a hold's grab point strains from the hand across ticks, which decides when the hold is
 /// torn away. A heavy object drags behind the hand, slowly, and stays held while it follows; a
 /// hold is let go when its grab point is caught, past [`PickupTuning::break_distance_m`] and not
-/// coming toward the hand for [`PickupTuning::stuck_s`] (a crate snagged on a wall, a door at its
+/// closing on the hand for [`PickupTuning::stuck_s`] (a crate snagged on a wall, a door at its
 /// hinge's limit), or at once past [`PickupTuning::tear_distance_m`], further than the hand
-/// could reach. An object the hands cannot lift is measured across the ground only: its sag
+/// could reach. Closing is judged against the hand's own motion, from both velocities, so a door
+/// held while riding a fast car follows the hand however fast the two move together. An object
+/// the hands cannot lift is measured across the ground only: its sag
 /// below the hand is its weight resting on what supports it, not a snag.
 ///
 /// The watch runs in real time, as the hold does: the palm moves in real time, so in slow motion
@@ -136,6 +138,8 @@ pub struct StrainSample {
     pub target: Vec3,
     /// The grab point's velocity, metres per second of game time.
     pub velocity: Vec3,
+    /// The velocity of where the hand would have the grab point, metres per second of game time.
+    pub hand_velocity: Vec3,
     /// Whether the hands holding the body can lift it.
     pub liftable: bool,
 }
@@ -163,12 +167,9 @@ impl Strain {
             return true;
         }
         let scale = TimeScale::new(time_scale);
-        let velocity = if sample.velocity.is_finite() {
-            sample.velocity
-        } else {
-            Vec3::ZERO
-        };
-        let approach = across(velocity).dot(lag.normalize_or_zero()) * scale.get();
+        let finite = |v: Vec3| if v.is_finite() { v } else { Vec3::ZERO };
+        let closing = finite(sample.velocity) - finite(sample.hand_velocity);
+        let approach = across(closing).dot(lag.normalize_or_zero()) * scale.get();
         let caught = distance > config.break_distance_m.max(0.0)
             && approach < config.stuck_speed_mps.max(0.0);
         self.stuck_s = if caught {
@@ -416,6 +417,7 @@ mod tests {
             anchor: Vec3::ZERO,
             target: lag,
             velocity,
+            hand_velocity: Vec3::ZERO,
             liftable,
         }
     }
@@ -467,6 +469,34 @@ mod tests {
             }
             assert!(!strain.torn(&following, TICK, 1.0, &PICKUP));
         }
+    }
+
+    #[test]
+    fn following_is_judged_against_the_hands_motion() {
+        // A door held while riding a car at 40 m/s: the hand and the door both move fast across
+        // the lag's line, and the door closes on the hand at half a metre a second.
+        let lag = Vec3::new(PICKUP.break_distance_m + 0.2, 0.0, 0.0);
+        let ride = Vec3::new(-40.0, 0.0, 15.0);
+        let riding = StrainSample {
+            velocity: ride + lag.normalize() * 0.5,
+            hand_velocity: ride,
+            ..sample(lag, Vec3::ZERO, true)
+        };
+        assert_eq!(ticks_held(&riding, 1.0, 300), 300);
+        // Moving with the hand at the same speed, it is not closing on it: caught.
+        let caught = StrainSample {
+            velocity: ride,
+            ..riding
+        };
+        let expected = (PICKUP.stuck_s / TICK).ceil() as usize;
+        assert!(ticks_held(&caught, 1.0, 300).abs_diff(expected) <= 1);
+        // Coming toward a hand that pulls away faster still falls behind: caught.
+        let outrun = StrainSample {
+            velocity: lag.normalize() * 0.5,
+            hand_velocity: lag.normalize() * 1.5,
+            ..riding
+        };
+        assert!(ticks_held(&outrun, 1.0, 300).abs_diff(expected) <= 1);
     }
 
     #[test]
