@@ -46,13 +46,20 @@ pub enum Input {
     /// A long press of a semantic action: held for the one tick at which the press reaches the
     /// long-press time, a tap however long the press goes on ([`PressTimer`]).
     Long(ActionId),
+    /// A long press of a semantic action, held: from the tick at which the press reaches the
+    /// long-press time until it is released ([`PressTimer`]).
+    LongHeld(ActionId),
 }
 
 impl Input {
     /// The semantic action the input reads, for the inputs that read one.
     pub const fn action(self) -> Option<ActionId> {
         match self {
-            Input::Action(a) | Input::Zone(a, _) | Input::Short(a) | Input::Long(a) => Some(a),
+            Input::Action(a)
+            | Input::Zone(a, _)
+            | Input::Short(a)
+            | Input::Long(a)
+            | Input::LongHeld(a) => Some(a),
             Input::MenuStick(_) => None,
         }
     }
@@ -255,7 +262,8 @@ pub struct Latches {
 pub const MAX_TIMED: usize = 4;
 
 /// One hand's presses of the timed actions as of this tick: for each, whether a short press ended
-/// this tick and whether a press reached the long-press time this tick.
+/// this tick, whether a press reached the long-press time this tick, and whether a press past it is
+/// held.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct TimedLatch {
     pub presses: [Option<(ActionId, TimedPress)>; MAX_TIMED],
@@ -279,6 +287,8 @@ pub struct TimedPress {
     pub short: bool,
     /// The press reached the long-press time this tick.
     pub long: bool,
+    /// A press that has reached the long-press time is held this tick.
+    pub long_held: bool,
 }
 
 /// Times one hand's presses of one action, to tell a short press from a long one.
@@ -300,12 +310,14 @@ impl PressTimer {
             TimedPress {
                 short: false,
                 long: seconds >= long_press_s && before.is_none_or(|s| s < long_press_s),
+                long_held: seconds >= long_press_s,
             }
         } else {
             let ended = self.held.take();
             TimedPress {
                 short: ended.is_some_and(|s| s < long_press_s),
                 long: false,
+                long_held: false,
             }
         }
     }
@@ -414,6 +426,7 @@ impl<'a> EvalSink<'a> {
                 .is_some_and(|(latched, _)| latched == direction),
             Input::Short(action) => self.latches.timed[hand.index()].of(action).short,
             Input::Long(action) => self.latches.timed[hand.index()].of(action).long,
+            Input::LongHeld(action) => self.latches.timed[hand.index()].of(action).long_held,
         }
     }
 
@@ -426,7 +439,10 @@ impl<'a> EvalSink<'a> {
             }
             // A short or a long press is held for one tick, so its tick is its press.
             Input::Short(action) => self.latches.timed[hand.index()].of(action).short,
-            Input::Long(action) => self.latches.timed[hand.index()].of(action).long,
+            // A held long press begins at the tick the press becomes long.
+            Input::Long(action) | Input::LongHeld(action) => {
+                self.latches.timed[hand.index()].of(action).long
+            }
             Input::MenuStick(_) => false,
         }
     }

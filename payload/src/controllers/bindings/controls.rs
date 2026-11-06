@@ -126,6 +126,10 @@ pub struct Controls {
     /// Each hand holds a gun (any part of one), by [`Hand::index`]. In a vehicle the hand's
     /// vehicle weapon action fires the gun rather than the vehicle's weapon.
     pub armed: [bool; 2],
+    /// The speed of the vehicle the character rides, metres per second, while it can be read.
+    pub vehicle_speed_mps: Option<f32>,
+    /// Whether the character mans a mounted gun.
+    pub mounted_gun: bool,
 }
 
 impl Controls {
@@ -176,6 +180,8 @@ impl Controls {
             masked_hands: [false; 2],
             masked_inputs: [PhysicalSet::EMPTY; 2],
             armed: [false; 2],
+            vehicle_speed_mps: None,
+            mounted_gun: false,
             trackpad_paging: Hand::BOTH.into_iter().any(|which| {
                 provides(
                     frame.hand(which).profile,

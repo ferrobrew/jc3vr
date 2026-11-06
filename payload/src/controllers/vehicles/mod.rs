@@ -71,6 +71,7 @@ pub mod passenger;
 pub mod physical;
 pub mod ripcord;
 mod ripcord_tick;
+mod speed;
 mod state;
 pub mod steering;
 pub(crate) mod take_off;
@@ -96,6 +97,7 @@ pub(crate) use self::{
     begin::begin_tick,
     finish::finish_tick,
     ripcord_tick::finish as ripcord_finish,
+    speed::seat_vehicle_speed_mps,
     state::{parachute_holds, stand_down},
 };
 

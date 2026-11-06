@@ -484,7 +484,7 @@ impl DescribeSink<'_> {
         if press.gate == Gate::HandArmed {
             return Vec::new();
         }
-        let long = matches!(press.input, Input::Long(_));
+        let long = matches!(press.input, Input::Long(_) | Input::LongHeld(_));
         let gate = |gesture| match press.gate {
             Gate::Gripped => Gesture::WithGrip,
             _ if long => Gesture::Hold,
@@ -508,7 +508,10 @@ impl DescribeSink<'_> {
             effect: Effect::Actions(actions.to_vec()),
         };
         match press.input {
-            Input::Action(action) | Input::Short(action) | Input::Long(action) => {
+            Input::Action(action)
+            | Input::Short(action)
+            | Input::Long(action)
+            | Input::LongHeld(action) => {
                 match self.bound(action) {
                     Some(inputs) => {
                         for input in inputs {

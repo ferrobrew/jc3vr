@@ -137,6 +137,117 @@ fn the_right_a_taps_for_the_stunt_and_holds_to_exit() {
     }
 }
 
+/// Holds the right A for four long-press times in `mode` with the vehicle at `speed`, then lets
+/// go, returning for each tick whether `OPEN_PARACHUTE` and whether `EXIT_VEHICLE` were held.
+fn long_exit(mode: Mode, speed: Option<f32>, mounted_gun: bool) -> Vec<(f32, bool, bool)> {
+    let mut c = Controls {
+        vehicle_speed_mps: speed,
+        mounted_gun,
+        ..Default::default()
+    };
+    c.hands[Hand::Right.index()].a = down();
+    let mut b = Bindings::default();
+    let mut ticks = Vec::new();
+    let mut t = 0.0;
+    while t < CONFIG.long_press_s * 4.0 {
+        let step = b.sim_step(mode, &c, DT, &CONFIG);
+        ticks.push((
+            t,
+            player(&step, OPEN_PARACHUTE).is_some(),
+            player(&step, EXIT_VEHICLE).is_some() || player(&step, BTN_Y).is_some(),
+        ));
+        t += DT;
+    }
+    c.hands[Hand::Right.index()].a = up();
+    let step = b.sim_step(mode, &c, DT, &CONFIG);
+    ticks.push((
+        t,
+        player(&step, OPEN_PARACHUTE).is_some(),
+        player(&step, EXIT_VEHICLE).is_some(),
+    ));
+    ticks
+}
+
+/// At speed in the car's driver's seat, on the motorcycle, and on a car's mounted gun, the long
+/// right A holds `OPEN_PARACHUTE` from the moment the press becomes long until it is let go, the
+/// game's parachute bail, and never taps the gamepad's Y, whose exit the game would queue first.
+#[test]
+fn a_long_right_a_at_speed_bails_out_by_parachute() {
+    let speed = Some(declare::PARACHUTE_BAIL_MIN_SPEED_MPS);
+    for (class, driver, mounted_gun) in [
+        (VehicleClass::Car, true, false),
+        (VehicleClass::Motorcycle, true, false),
+        (VehicleClass::Car, false, true),
+    ] {
+        let mode = Mode::Vehicle(VehicleSeat { class, driver });
+        let ticks = long_exit(mode, speed, mounted_gun);
+        let (last, held) = ticks.split_last().expect("ticks");
+        for &(t, parachute, exit) in held {
+            assert!(!exit, "{mode:?} exits at {t} s");
+            assert_eq!(parachute, t >= CONFIG.long_press_s, "{mode:?} at {t} s");
+        }
+        assert_eq!(*last, (last.0, false, false), "{mode:?} on the release");
+    }
+}
+
+/// Below the bail speed, in a passenger seat, and in a seat whose states have no bail, the long
+/// right A taps the gamepad's Y as ever, and holds no `OPEN_PARACHUTE`.
+#[test]
+fn a_long_right_a_exits_below_the_bail_speed_and_where_there_is_no_bail() {
+    let fast = Some(declare::PARACHUTE_BAIL_MIN_SPEED_MPS * 3.0);
+    let slow = Some(declare::PARACHUTE_BAIL_MIN_SPEED_MPS - 0.1);
+    for (class, driver, speed) in [
+        (VehicleClass::Car, true, slow),
+        (VehicleClass::Car, true, None),
+        (VehicleClass::Motorcycle, true, slow),
+        (VehicleClass::Car, false, fast),
+        (VehicleClass::Sea, true, fast),
+        (VehicleClass::Helicopter, true, fast),
+        (VehicleClass::Plane, true, fast),
+    ] {
+        let mode = Mode::Vehicle(VehicleSeat { class, driver });
+        let ticks = long_exit(mode, speed, false);
+        assert!(
+            ticks.iter().all(|&(_, parachute, _)| !parachute),
+            "{mode:?}"
+        );
+        assert_eq!(
+            ticks.iter().filter(|&&(_, _, exit)| exit).count(),
+            1,
+            "{mode:?} at {speed:?}"
+        );
+    }
+}
+
+#[test]
+fn the_bail_seats_are_the_drivers_riders_and_gunners_of_land_vehicles() {
+    let seat = |class, driver| VehicleSeat { class, driver };
+    assert!(declare::bails_by_parachute(
+        seat(VehicleClass::Car, true),
+        false
+    ));
+    assert!(declare::bails_by_parachute(
+        seat(VehicleClass::Motorcycle, true),
+        false
+    ));
+    assert!(declare::bails_by_parachute(
+        seat(VehicleClass::Car, false),
+        true
+    ));
+    assert!(!declare::bails_by_parachute(
+        seat(VehicleClass::Car, false),
+        false
+    ));
+    assert!(!declare::bails_by_parachute(
+        seat(VehicleClass::Sea, true),
+        false
+    ));
+    assert!(!declare::bails_by_parachute(
+        seat(VehicleClass::Mech, true),
+        false
+    ));
+}
+
 /// However long the right A is held, the game sees the exit as a tap: the press edge on the tick
 /// the press becomes long, and the release on the next, after one tick's hold.
 #[test]

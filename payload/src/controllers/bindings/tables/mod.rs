@@ -132,8 +132,8 @@ pub struct Bindings {
     /// Accepted action and hand participants in derived gesture episodes.
     grapple_routes: Vec<(ActionId, Hand)>,
     system_routes: Vec<(ActionId, Hand)>,
-    /// The press timers of the current mode's timed actions ([`Input::Short`] and
-    /// [`Input::Long`]), each hand's by [`Hand::index`].
+    /// The press timers of the current mode's timed actions ([`Input::Short`], [`Input::Long`], and
+    /// [`Input::LongHeld`]), each hand's by [`Hand::index`].
     timers: Vec<(ActionId, [PressTimer; 2])>,
 }
 
@@ -503,7 +503,7 @@ struct TimedInputs(Vec<ActionId>);
 impl Sink for TimedInputs {
     fn hold(&mut self, presses: &[Press], _: &[Action]) {
         for press in presses {
-            if let Input::Short(id) | Input::Long(id) = press.input
+            if let Input::Short(id) | Input::Long(id) | Input::LongHeld(id) = press.input
                 && !self.0.contains(&id)
             {
                 self.0.push(id);

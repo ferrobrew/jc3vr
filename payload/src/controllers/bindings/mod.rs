@@ -246,7 +246,6 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         unsafe { weapons::inventory::stand_down() };
         vehicles::stand_down();
         grapple::physical::stand_down();
-        grapple::seat::stand_down();
         snatch::stand_down();
         grab::tick::stand_down();
         return None;
@@ -365,7 +364,6 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         }
         vehicles::stand_down();
         grapple::physical::stand_down();
-        grapple::seat::stand_down();
         snatch::stand_down();
         grab::tick::stand_down();
         state.report = TickReport {
@@ -530,6 +528,11 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         HANDS_CLOSED[i].store(controls.hands[i].hold.down, Ordering::Relaxed);
     }
     controls.masked_hands = Hand::BOTH.map(|hand| !state.recovery.ready(hand));
+    if matches!(detection.mode, Mode::Vehicle(_)) {
+        // SAFETY: the game stage runs on the game thread before the world update.
+        controls.vehicle_speed_mps = unsafe { vehicles::seat_vehicle_speed_mps() };
+        controls.mounted_gun = vehicles::summary().mounted;
+    }
     let gun_triggers = config.weapons.hold.either_hand;
     let gun_owners = weapons::capabilities::gun_owners_now();
     controls.armed = gun_owners.map(|gun| gun.is_some() && !in_menu);
@@ -617,7 +620,6 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         line: yank_armed_in(line, &detection),
         aim_target: aim::status().grapple.is_some_and(|g| g.valid),
         reeling: physical_grapple.lockable && !snatch_button_owned,
-        seated: matches!(detection.mode, Mode::Vehicle(_)) && config.grapple.seat,
     };
     controls.lock_yank = physical_grapple.lock_yank;
     let mut step = state.bindings.step(
@@ -637,19 +639,6 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             real_dt,
             hand: grapple_hand,
             config: &config.grapple.lock,
-        })
-    };
-    // SAFETY: as above.
-    unsafe {
-        grapple::seat::tick(&grapple::seat::SeatTickInput {
-            seated: controls.grapple.seated,
-            fire: step.grapple_seat_fire,
-            target: aim::status()
-                .grapple
-                .filter(|g| g.seat && g.valid)
-                .map(|g| g.point),
-            dt,
-            hand: grapple_hand,
         })
     };
     let summary_masks = state
@@ -1020,7 +1009,6 @@ fn cancel_capture_routes(poll: DevicePoll, sink: &mut Vec<Segment>) {
     weapons::reload::cancel_extraction_on_standdown();
     vehicles::stand_down();
     grapple::physical::stand_down();
-    grapple::seat::stand_down();
     snatch::stand_down();
     grab::tick::stand_down();
 }
