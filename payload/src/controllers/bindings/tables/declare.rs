@@ -36,11 +36,8 @@ pub struct TableCtx {
     pub pointer_hand: Option<Hand>,
     /// See [`Controls::trackpad_paging`].
     pub trackpad_paging: bool,
-    /// The vehicle is moving fast enough for the game to take a seat's exit as the parachute bail
-    /// ([`PARACHUTE_BAIL_MIN_SPEED_MPS`]).
-    pub bail_speed: bool,
-    /// See [`Controls::mounted_gun`].
-    pub mounted_gun: bool,
+    /// See [`Controls::bail`].
+    pub bail: bool,
 }
 
 impl TableCtx {
@@ -50,22 +47,10 @@ impl TableCtx {
             weapon_cycle: controls.weapon_cycle,
             pointer_hand: controls.pointer_hand,
             trackpad_paging: controls.trackpad_paging,
-            bail_speed: controls
-                .vehicle_speed_mps
-                .is_some_and(|speed| speed >= PARACHUTE_BAIL_MIN_SPEED_MPS),
-            mounted_gun: controls.mounted_gun,
+            bail: controls.bail,
         }
     }
 }
-
-/// The vehicle speed, metres per second, from which the game's driver, rider, and spinning mounted
-/// gun states take a long `OPEN_PARACHUTE` hold as the parachute bail: the minimum of the animation
-/// graph's `C_VEHICLE_IS_FAST_ENOUGH_FOR_PARA_TRANSITION` condition (a
-/// `CGraphParentVehicleSpeedCondition`), which gates the `INPUTHOLD` of `OPEN_PARACHUTE` into
-/// `ACT_TRIGGER_PARACHUTE` and on to `S_EXIT_VEHICLE_PARA`. The value is the graph asset's, not
-/// code's, so no binding holds it. The condition compares the squared speed of the parent vehicle
-/// against its squared bounds; the unit is unverified, and taken to be metres per second.
-pub const PARACHUTE_BAIL_MIN_SPEED_MPS: f32 = 6.0;
 
 /// Declare the table for `mode` to `sink`.
 pub fn declare<S: Sink>(sink: &mut S, mode: Mode, ctx: &TableCtx) {
@@ -95,7 +80,8 @@ pub const KEEP_RAGDOLLING: &[Action] = &[CANCEL];
 pub const PAD_Y_VEHICLE: &[Action] = &[EXIT_VEHICLE, ENTER_VEHICLE, BTN_Y];
 /// The parachute bail from a moving vehicle: the game's driver, rider, and spinning mounted gun
 /// states open the parachute out of the seat once `OPEN_PARACHUTE` (the gamepad's A) has been held
-/// past the graph's hold time, at speed ([`PARACHUTE_BAIL_MIN_SPEED_MPS`]).
+/// past the graph's hold time, at speed
+/// ([`PARACHUTE_BAIL_MIN_SPEED_MPS`](crate::controllers::bindings::bail::PARACHUTE_BAIL_MIN_SPEED_MPS)).
 pub const PARACHUTE_BAIL: &[Action] = &[OPEN_PARACHUTE];
 /// The detonation of the placed charges alone, which the game starts once the action has been
 /// held past its hold time. The gamepad's RB also throws a grenade and plants C4; the controllers
@@ -268,6 +254,11 @@ pub fn vehicle_weapon_actions(class: VehicleClass) -> [ActionId; 2] {
     [v.fire_primary, v.fire_secondary]
 }
 
+/// The exit action of `class`'s set, whose long press exits or bails out ([`vehicle`]).
+pub fn exit_action(class: VehicleClass) -> ActionId {
+    VehicleActions::of(class).exit
+}
+
 /// The vehicle weapon action `action`, on a hand holding no gun.
 fn vehicle_weapon(action: ActionId) -> Press {
     Press::new(Input::Action(action)).gated(Gate::HandUnarmed)
@@ -283,14 +274,14 @@ fn vehicle_weapon(action: ActionId) -> Press {
 /// then on until the press ends would exit only from a hold let go at once, and otherwise reach
 /// the game's own Y hold (the seat change) where there is a seat to change to, or nothing.
 ///
-/// In a seat that bails out by parachute ([`bails_by_parachute`]), with the vehicle at speed, the
-/// long press holds the gamepad's A's `OPEN_PARACHUTE` instead, from the moment the press becomes
-/// long until it ends, which the game takes as the bail once held past its hold time. Never both:
-/// a Y tap alongside queues the plain exit first.
+/// Where the long press bails out by parachute ([`TableCtx::bail`]), it holds the gamepad's A's
+/// `OPEN_PARACHUTE` instead, from the moment the press becomes long until it ends, which the game
+/// takes as the bail once held past its hold time. Never both: a Y tap alongside queues the plain
+/// exit first.
 fn vehicle<S: Sink>(s: &mut S, ctx: &TableCtx, seat: VehicleSeat) {
     let v = VehicleActions::of(seat.class);
     s.hold(&[short(v.stunt)], PAD_A);
-    if ctx.bail_speed && bails_by_parachute(seat, ctx.mounted_gun) {
+    if ctx.bail {
         s.hold(&[long_held(v.exit)], PARACHUTE_BAIL);
     } else {
         s.hold(&[long(v.exit)], PAD_Y_VEHICLE);
@@ -376,20 +367,6 @@ fn vehicle<S: Sink>(s: &mut S, ctx: &TableCtx, seat: VehicleSeat) {
         }
         presses.extend([v.fire_primary, v.fire_secondary].map(|a| p(a).gated(Gate::HandArmed)));
         s.hold(&presses, &[FIRE_RIGHT, R2]);
-    }
-}
-
-/// Whether the game's states for `seat` bail out by parachute at speed: the car's driver, the
-/// motorcycle's rider, and a spinning mounted gun's gunner (`mounted_gun`). A passenger seat, the
-/// boats, the aircraft, and the mech have no bail.
-pub const fn bails_by_parachute(seat: VehicleSeat, mounted_gun: bool) -> bool {
-    match seat.class {
-        VehicleClass::Car | VehicleClass::Motorcycle | VehicleClass::Unknown => {
-            seat.driver || mounted_gun
-        }
-        VehicleClass::Sea | VehicleClass::Helicopter | VehicleClass::Plane | VehicleClass::Mech => {
-            false
-        }
     }
 }
 

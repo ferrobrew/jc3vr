@@ -421,6 +421,7 @@ mod tests {
             trigger_ownership: Default::default(),
             flight: Default::default(),
             yank: LineYank::new(),
+            bail: Default::default(),
             report: TickReport::default(),
         };
         let samples = [

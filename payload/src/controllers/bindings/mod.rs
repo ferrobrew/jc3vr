@@ -5,6 +5,8 @@
 //!   take);
 //! - [`intents`] reads the tick's semantic actions and masks what the mod claims of each hand;
 //! - [`tables`] maps the semantic actions to the wanted game actions per mode;
+//! - `bail` chooses, once per press, between the vehicle exit and the parachute bail for the
+//!   exit's long press;
 //! - [`hold`] turns the wanted actions into effector writes with the game's hold timing;
 //! - the grip model ([`crate::controllers::grab`]) gathers the targets the weapon handling, the
 //!   vehicle handling, and the physical hands provide, resolves each hand among them, and hands
@@ -38,6 +40,7 @@
 //! poll ([`HoldTracker::release_all`]): the poll does not run while the device manager is disabled,
 //! and an effector left clicked there reads as a fresh click on every frame.
 
+pub(crate) mod bail;
 mod buttons;
 pub mod controls;
 mod flight;
@@ -78,6 +81,7 @@ use crate::{
     controllers::{
         aim::{self, sights},
         bindings::{
+            bail::{BailLatch, BailTick, bails_by_parachute},
             buttons::{grapple_button, grapple_button_held, reload_button},
             controls::{ButtonControl, ClosedHand, Controls, holds_unseen},
             grapple_button::GrappleContext,
@@ -530,11 +534,26 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         HANDS_CLOSED[i].store(controls.hands[i].hold.down, Ordering::Relaxed);
     }
     controls.masked_hands = Hand::BOTH.map(|hand| !state.recovery.ready(hand));
-    if matches!(detection.mode, Mode::Vehicle(_)) {
-        // SAFETY: the game stage runs on the game thread before the world update.
-        controls.vehicle_speed_mps = unsafe { vehicles::seat_vehicle_speed_mps() };
-        controls.mounted_gun = vehicles::summary().mounted;
-    }
+    controls.bail = match detection.mode {
+        Mode::Vehicle(seat) => {
+            let seat_bails = bails_by_parachute(seat, vehicles::summary().mounted);
+            let press_long = state
+                .bindings
+                .exit_press_long(seat, config.bindings.long_press_s);
+            state.bail.step(BailTick {
+                seat_bails,
+                // SAFETY: the game stage runs on the game thread before the world update.
+                speed_mps: seat_bails
+                    .then(|| unsafe { vehicles::seat_vehicle_speed_mps() })
+                    .flatten(),
+                press_long,
+            })
+        }
+        _ => {
+            state.bail.reset();
+            false
+        }
+    };
     let gun_triggers = config.weapons.hold.either_hand;
     let gun_owners = weapons::capabilities::gun_owners_now();
     controls.armed = gun_owners.map(|gun| gun.is_some() && !in_menu);
@@ -1066,6 +1085,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     tracker: HoldTracker::new(),
     flight: None,
     yank: LineYank::new(),
+    bail: BailLatch::new(),
     report: TickReport {
         detection: Detection {
             mode: mode::Mode::OnFoot(mode::OnFootVariant::Ground),
@@ -1090,6 +1110,8 @@ struct State {
     tracker: HoldTracker,
     flight: Option<flight::FlightState>,
     yank: LineYank,
+    /// The bail's choice for the vehicle exit's long press.
+    bail: BailLatch,
     report: TickReport,
 }
 
@@ -1108,6 +1130,7 @@ impl State {
             flight.reset();
         }
         self.yank = LineYank::new();
+        self.bail.reset();
         self.tracker.release_all(poll)
     }
 

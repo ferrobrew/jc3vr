@@ -1,7 +1,10 @@
 //! Vehicle, wingsuit, and parachute bindings.
 
 use super::*;
-use crate::controllers::bindings::hold::{ActionWrite, HoldTracker, Phase};
+use crate::controllers::bindings::{
+    bail::{self, BailLatch, BailTick},
+    hold::{ActionWrite, HoldTracker, Phase},
+};
 
 #[test]
 fn vehicle_stunt_routes_physical_right_a_in_land_helicopter_and_plane_modes() {
@@ -137,50 +140,49 @@ fn the_right_a_taps_for_the_stunt_and_holds_to_exit() {
     }
 }
 
-/// Holds the right A for four long-press times in `mode` with the vehicle at `speed`, then lets
-/// go, returning for each tick whether `OPEN_PARACHUTE` and whether `EXIT_VEHICLE` were held.
-fn long_exit(mode: Mode, speed: Option<f32>, mounted_gun: bool) -> Vec<(f32, bool, bool)> {
-    let mut c = Controls {
-        vehicle_speed_mps: speed,
-        mounted_gun,
-        ..Default::default()
+/// Holds the right A for four long-press times in `mode`, the bail's choice for each tick coming
+/// from `bail` given the elapsed time and whether the press had become long by the last tick, then
+/// lets go, returning for each tick whether `OPEN_PARACHUTE` and whether the exit (`EXIT_VEHICLE`
+/// or the gamepad's Y) were held.
+fn long_exit(mode: Mode, mut bail: impl FnMut(f32, bool) -> bool) -> Vec<(f32, bool, bool)> {
+    let Mode::Vehicle(seat) = mode else {
+        panic!("{mode:?} is not a seat");
     };
+    let mut c = Controls::default();
     c.hands[Hand::Right.index()].a = down();
     let mut b = Bindings::default();
     let mut ticks = Vec::new();
     let mut t = 0.0;
-    while t < CONFIG.long_press_s * 4.0 {
-        let step = b.sim_step(mode, &c, DT, &CONFIG);
-        ticks.push((
+    let mut step = |b: &mut Bindings, c: &mut Controls, t: f32| {
+        c.bail = bail(t, b.exit_press_long(seat, CONFIG.long_press_s));
+        let step = b.sim_step(mode, c, DT, &CONFIG);
+        (
             t,
             player(&step, OPEN_PARACHUTE).is_some(),
             player(&step, EXIT_VEHICLE).is_some() || player(&step, BTN_Y).is_some(),
-        ));
+        )
+    };
+    while t < CONFIG.long_press_s * 4.0 {
+        ticks.push(step(&mut b, &mut c, t));
         t += DT;
     }
     c.hands[Hand::Right.index()].a = up();
-    let step = b.sim_step(mode, &c, DT, &CONFIG);
-    ticks.push((
-        t,
-        player(&step, OPEN_PARACHUTE).is_some(),
-        player(&step, EXIT_VEHICLE).is_some(),
-    ));
+    ticks.push(step(&mut b, &mut c, t));
     ticks
 }
 
-/// At speed in the car's driver's seat, on the motorcycle, and on a car's mounted gun, the long
-/// right A holds `OPEN_PARACHUTE` from the moment the press becomes long until it is let go, the
-/// game's parachute bail, and never taps the gamepad's Y, whose exit the game would queue first.
+/// Where the long press bails, the long right A holds `OPEN_PARACHUTE` from the moment the press
+/// becomes long until it is let go, the game's parachute bail, and never taps the gamepad's Y,
+/// whose exit the game would queue first.
 #[test]
-fn a_long_right_a_at_speed_bails_out_by_parachute() {
-    let speed = Some(declare::PARACHUTE_BAIL_MIN_SPEED_MPS);
-    for (class, driver, mounted_gun) in [
-        (VehicleClass::Car, true, false),
-        (VehicleClass::Motorcycle, true, false),
-        (VehicleClass::Car, false, true),
+fn a_long_right_a_that_bails_holds_open_parachute() {
+    for (class, driver) in [
+        (VehicleClass::Car, true),
+        (VehicleClass::Motorcycle, true),
+        (VehicleClass::Car, false),
     ] {
         let mode = Mode::Vehicle(VehicleSeat { class, driver });
-        let ticks = long_exit(mode, speed, mounted_gun);
+        let ticks = long_exit(mode, |_, _| true);
         let (last, held) = ticks.split_last().expect("ticks");
         for &(t, parachute, exit) in held {
             assert!(!exit, "{mode:?} exits at {t} s");
@@ -190,59 +192,110 @@ fn a_long_right_a_at_speed_bails_out_by_parachute() {
     }
 }
 
-/// Below the bail speed, in a passenger seat, and in a seat whose states have no bail, the long
-/// right A taps the gamepad's Y as ever, and holds no `OPEN_PARACHUTE`.
+/// Where it does not, the long right A taps the gamepad's Y as ever, and holds no
+/// `OPEN_PARACHUTE`.
 #[test]
-fn a_long_right_a_exits_below_the_bail_speed_and_where_there_is_no_bail() {
-    let fast = Some(declare::PARACHUTE_BAIL_MIN_SPEED_MPS * 3.0);
-    let slow = Some(declare::PARACHUTE_BAIL_MIN_SPEED_MPS - 0.1);
-    for (class, driver, speed) in [
-        (VehicleClass::Car, true, slow),
-        (VehicleClass::Car, true, None),
-        (VehicleClass::Motorcycle, true, slow),
-        (VehicleClass::Car, false, fast),
-        (VehicleClass::Sea, true, fast),
-        (VehicleClass::Helicopter, true, fast),
-        (VehicleClass::Plane, true, fast),
+fn a_long_right_a_that_does_not_bail_exits() {
+    let mode = Mode::Vehicle(VehicleSeat {
+        class: VehicleClass::Car,
+        driver: true,
+    });
+    let ticks = long_exit(mode, |_, _| false);
+    assert!(ticks.iter().all(|&(_, parachute, _)| !parachute));
+    assert_eq!(ticks.iter().filter(|&&(_, _, exit)| exit).count(), 1);
+}
+
+/// The speed the vehicle has `t` seconds into the press, for a press that crosses the bail speed
+/// on the way from `from` to `to` just after it becomes long.
+fn crossing(from: f32, to: f32) -> impl Fn(f32) -> f32 {
+    move |t| {
+        if t < CONFIG.long_press_s + DT * 1.5 {
+            from
+        } else {
+            to
+        }
+    }
+}
+
+/// The bail's choice is the one made when the press became long: braking below the bail speed
+/// through the hold keeps holding `OPEN_PARACHUTE` and never taps Y, and speeding up past it after
+/// the exit's tap never holds `OPEN_PARACHUTE`. A vehicle hovering about the bail speed neither
+/// restarts the game's hold nor taps Y.
+#[test]
+fn the_bail_or_the_exit_is_chosen_once_per_press() {
+    let seat = VehicleSeat {
+        class: VehicleClass::Car,
+        driver: true,
+    };
+    let mode = Mode::Vehicle(seat);
+    let fast = bail::PARACHUTE_BAIL_MIN_SPEED_MPS + bail::BAIL_ENTER_MARGIN_MPS + 1.0;
+    let slow = bail::PARACHUTE_BAIL_MIN_SPEED_MPS - 1.0;
+    // Inside the hysteresis band, a vehicle that was fast stays fast.
+    let near = bail::PARACHUTE_BAIL_MIN_SPEED_MPS + bail::BAIL_LEAVE_MARGIN_MPS + 0.1;
+    let hover = move |t: f32| {
+        if ((t / DT) as u32).is_multiple_of(2) {
+            fast
+        } else {
+            near
+        }
+    };
+    let run = |speed: &dyn Fn(f32) -> f32| {
+        let mut latch = BailLatch::new();
+        long_exit(mode, |t, press_long| {
+            latch.step(BailTick {
+                seat_bails: true,
+                speed_mps: Some(speed(t)),
+                press_long,
+            })
+        })
+    };
+    for (name, speed, bails) in [
+        (
+            "braking",
+            &crossing(fast, slow) as &dyn Fn(f32) -> f32,
+            true,
+        ),
+        ("speeding up", &crossing(slow, fast), false),
+        ("hovering", &hover, true),
     ] {
-        let mode = Mode::Vehicle(VehicleSeat { class, driver });
-        let ticks = long_exit(mode, speed, false);
-        assert!(
-            ticks.iter().all(|&(_, parachute, _)| !parachute),
-            "{mode:?}"
-        );
-        assert_eq!(
-            ticks.iter().filter(|&&(_, _, exit)| exit).count(),
-            1,
-            "{mode:?} at {speed:?}"
-        );
+        let ticks = run(speed);
+        let (_, held) = ticks.split_last().expect("ticks");
+        for &(t, parachute, exit) in held {
+            let long = t >= CONFIG.long_press_s;
+            assert_eq!(parachute, bails && long, "{name}: the parachute at {t} s");
+            if bails {
+                assert!(!exit, "{name}: an exit at {t} s");
+            }
+        }
+        let exits = ticks.iter().filter(|&&(_, _, exit)| exit).count();
+        assert_eq!(exits, usize::from(!bails), "{name}: the exits");
     }
 }
 
 #[test]
 fn the_bail_seats_are_the_drivers_riders_and_gunners_of_land_vehicles() {
     let seat = |class, driver| VehicleSeat { class, driver };
-    assert!(declare::bails_by_parachute(
+    assert!(bail::bails_by_parachute(
         seat(VehicleClass::Car, true),
         false
     ));
-    assert!(declare::bails_by_parachute(
+    assert!(bail::bails_by_parachute(
         seat(VehicleClass::Motorcycle, true),
         false
     ));
-    assert!(declare::bails_by_parachute(
+    assert!(bail::bails_by_parachute(
         seat(VehicleClass::Car, false),
         true
     ));
-    assert!(!declare::bails_by_parachute(
+    assert!(!bail::bails_by_parachute(
         seat(VehicleClass::Car, false),
         false
     ));
-    assert!(!declare::bails_by_parachute(
+    assert!(!bail::bails_by_parachute(
         seat(VehicleClass::Sea, true),
         false
     ));
-    assert!(!declare::bails_by_parachute(
+    assert!(!bail::bails_by_parachute(
         seat(VehicleClass::Mech, true),
         false
     ));

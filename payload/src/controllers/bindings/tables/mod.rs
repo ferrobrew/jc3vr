@@ -58,7 +58,7 @@ use crate::{
             intents::{Gestures, Intents, Mask, MaskScope, SemanticInput},
             policy_a::runtime::Tick,
             tables::{
-                declare::{TableCtx, declare},
+                declare::{TableCtx, declare, exit_action},
                 sink::{
                     Axis, EvalSink, Input, Latches, MAX_TIMED, MenuLatch, PadLatch, Press,
                     PressTimer, Sink, TimedLatch,
@@ -71,7 +71,7 @@ use crate::{
             GrabVolume,
             latch::{GripLatch, LatchTick},
         },
-        mode::{AirborneVariant, Mode, VehicleClass},
+        mode::{AirborneVariant, Mode, VehicleClass, VehicleSeat},
         weapons::wheel::select::WheelPress,
     },
     vr::input::semantic::{
@@ -162,6 +162,18 @@ impl Bindings {
     /// What each hand's grip press is doing, by [`Hand::index`].
     pub fn grip_latches(&self) -> [GripLatch; 2] {
         self.grips
+    }
+
+    /// Whether the long press of `seat`'s exit action, on either hand, had reached `long_press_s`
+    /// by the last step: the press the bail's choice is latched for
+    /// ([`crate::controllers::bindings::bail`]).
+    pub(crate) fn exit_press_long(&self, seat: VehicleSeat, long_press_s: f32) -> bool {
+        let exit = exit_action(seat.class);
+        self.timers
+            .iter()
+            .filter(|(id, _)| *id == exit)
+            .flat_map(|(_, timers)| timers)
+            .any(|timer| timer.long(long_press_s))
     }
 
     /// The snatch's target came into `hand`, whose grip was closed on nothing: from now on its grip

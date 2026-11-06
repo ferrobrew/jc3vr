@@ -61,10 +61,8 @@ pub fn all_contexts() -> Vec<(Hand, TableCtx)> {
                                 weapon_cycle,
                                 pointer_hand,
                                 trackpad_paging,
-                                // The parachute bail at speed has its own tests
-                                // (`tests::vehicles`).
-                                bail_speed: false,
-                                mounted_gun: false,
+                                // The parachute bail has its own tests (`tests::vehicles`).
+                                bail: false,
                             },
                         ));
                     }

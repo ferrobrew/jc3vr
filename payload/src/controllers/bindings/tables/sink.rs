@@ -299,6 +299,11 @@ pub struct PressTimer {
 }
 
 impl PressTimer {
+    /// Whether the current press has been held at least `long_press_s`.
+    pub fn long(&self, long_press_s: f32) -> bool {
+        self.held.is_some_and(|seconds| seconds >= long_press_s)
+    }
+
     /// Advance by `dt` seconds with the action's `button` this tick. A press and release between
     /// two ticks counts as held for one tick, so a quick tap ends as a short press on the next.
     pub fn step(&mut self, button: ButtonControl, dt: f32, long_press_s: f32) -> TimedPress {
