@@ -44,7 +44,7 @@ pub(crate) fn finish_tick(
     let config = active.config;
     let grips = active.hands.map(|h| h.map(|h| h.grip.position));
     let orientations = active.hands.map(|h| h.map(|h| h.grip.orientation));
-    let held = Hand::BOTH.map(|hand| controls.hand(hand).grip.held());
+    let held = Hand::BOTH.map(|hand| controls.hand(hand).hold.held());
     let handle_grabs = grabs.map(|g| matches!(g, Some(GrabVolume::ParachuteHandle(_))));
     let mounted_grabs = grabs.map(|g| matches!(g, Some(GrabVolume::MountedHandle(_))));
     let grabs = grabs.map(|g| match g {

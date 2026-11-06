@@ -417,6 +417,7 @@ mod tests {
             mask_log: MaskLog::new(),
             tracker: HoldTracker::new(),
             bindings: Bindings::new(),
+            closed: Default::default(),
             trigger_ownership: Default::default(),
             flight: Default::default(),
             yank: LineYank::new(),

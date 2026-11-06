@@ -4,11 +4,12 @@
 //! Every control lives in the cockpit frame, placed relative to the seated character's eyes (see
 //! [`crate::controllers::vehicles::config`]); the wheel and the handlebars are placed where the
 //! vehicle's own are where they are found ([`crate::controllers::vehicles::wheel`]), so they arrive
-//! here as frames already in the cockpit frame. A control is held only while the grip is: a grip
-//! press with the hand's grip near the control takes it, and only releasing the grip lets go. A
-//! holding hand that drifts off the control keeps working it from its position and rotation however
-//! far it goes. A hand that merely passes through a control, or rests there with the grip open,
-//! takes nothing. While held:
+//! here as frames already in the cockpit frame. A control is held only while the hand stays closed
+//! ([`ClosedHand`](crate::controllers::bindings::controls::ClosedHand)): a grip press with the
+//! hand's grip near the control takes it, and only the hand opening lets go. A holding hand that
+//! drifts off the control keeps working it from its position and rotation however far it goes. A
+//! hand that merely passes through a control, or rests there with the grip open, takes nothing.
+//! While held:
 //!
 //! - the wheel turns by the holding hands' turns ([`crate::controllers::vehicles::steering`]), and
 //!   its angle over the lock is the steering; let go, it returns to centre, steering as it goes,

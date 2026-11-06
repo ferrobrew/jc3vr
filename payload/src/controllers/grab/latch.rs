@@ -8,8 +8,9 @@
 //! which the hand bodies deal as a blow instead, and a fist swung past the hip draws nothing. A
 //! press with nothing in reach on a grip a game action reads (a vehicle's weapon, the wingsuit's
 //! secondary weapon) drives that action for the whole press. A fist never takes a remote target:
-//! only a press aimed at it does. Whatever the press took, it holds
-//! until the grip opens.
+//! only a press aimed at it does. Whatever the press took, it holds until the hand opens
+//! ([`ClosedHand`](crate::controllers::bindings::controls::ClosedHand)), which on a force-sensing
+//! grip can be after the press itself ends. A fist or a game action ends with the press.
 
 use crate::controllers::{
     bindings::controls::ButtonControl,
@@ -36,6 +37,9 @@ pub enum GripLatch {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct LatchTick {
     pub grip: ButtonControl,
+    /// Whether the hand is still closed since the press
+    /// ([`HandControls::hold`](crate::controllers::bindings::controls::HandControls::hold)).
+    pub closed: bool,
     /// What the hand would take this tick.
     pub target: Option<GrabVolume>,
     /// Whether a game action of the mode reads this hand's grip.
@@ -55,13 +59,16 @@ impl GripLatch {
     pub fn step(&mut self, tick: LatchTick) -> Option<GrabVolume> {
         let LatchTick {
             grip,
+            closed,
             target,
             bound,
             slow,
             dt,
         } = tick;
         if !grip.held() {
-            *self = GripLatch::Open;
+            if !(closed && self.grabbing()) {
+                *self = GripLatch::Open;
+            }
             return None;
         }
         // A tap between two ticks is a fresh press even while the last one is latched.

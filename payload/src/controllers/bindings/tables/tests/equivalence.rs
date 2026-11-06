@@ -424,6 +424,7 @@ fn sequences(mode: Mode, dominant: Hand, ctx: &TableCtx) -> Vec<Sequence> {
                 trigger: 1.0,
                 trigger_press: HELD,
                 grip,
+                hold: grip,
                 a: HELD,
                 b: HELD,
                 stick_click: UP,

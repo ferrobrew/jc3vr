@@ -1,6 +1,6 @@
 //! The controller frame and its edges, reduced to the logical controls the binding tables read:
-//! per-hand buttons with their edges, deadzoned sticks and triggers, and what each hand's grip would
-//! take. Pure.
+//! per-hand buttons with their edges, deadzoned sticks and triggers, what each hand's grip would
+//! take, and whether a hand that closed on a hold is still closed ([`ClosedHand`]). Pure.
 
 use glam::Vec2;
 
@@ -53,6 +53,9 @@ pub struct HandControls {
     pub trigger_press: ButtonControl,
     /// The grip squeezed past the press threshold (with hysteresis).
     pub grip: ButtonControl,
+    /// The grip as a hold reads it: down from a press for as long as the hand stays closed
+    /// ([`ClosedHand`]). Every hold that ends when the grip is let go ends when this is up.
+    pub hold: ButtonControl,
     /// The lower face button (A; X on the left Touch controller).
     pub a: ButtonControl,
     /// The upper face button (B; Y on the left Touch controller).
@@ -143,6 +146,7 @@ impl Controls {
                 trigger: scalar_deadzone(hand.inputs.trigger, config.trigger_deadzone),
                 trigger_press: button(Button::TriggerPress),
                 grip: button(Button::SqueezePress),
+                hold: button(Button::SqueezePress),
                 a: button(Button::AClick),
                 b: button(Button::BClick),
                 stick_click: button(Button::ThumbstickClick),
@@ -194,6 +198,47 @@ impl Controls {
     /// The hand in the layout's "left" role.
     pub fn off(&self) -> &HandControls {
         self.hand(self.dominant.other())
+    }
+}
+
+/// Whether a hand that closed its grip is still closed, across ticks: the one rule every hold's
+/// release reads.
+///
+/// A hand counts as closed from a grip press until the hand opens. On most grips the hand opens
+/// when the press ends. A force-sensing grip (the Index's) presses on a deliberate squeeze, and its
+/// force sags toward nothing while the hand stays wrapped round the handle, so there the hand is
+/// still closed while the grip's squeeze value, the capacitive sense of the fingers round the
+/// handle, stays at or above the value grips release at
+/// ([`InputConfig::squeeze_press`](crate::controllers::config::InputConfig::squeeze_press)), and
+/// opens when the fingers come off. Only a press closes the hand: fingers resting round the handle
+/// keep a hold, but never start one.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub struct ClosedHand {
+    closed: bool,
+}
+
+impl ClosedHand {
+    pub const fn new() -> Self {
+        Self { closed: false }
+    }
+
+    /// Advance one tick with the hand's grip press and, on a force-sensing grip, its squeeze value
+    /// (`None` on any other grip), and return the grip as a hold reads it: down while the hand is
+    /// closed, with the press's press edge, and released only when the hand opened.
+    pub fn step(
+        &mut self,
+        grip: ButtonControl,
+        squeeze: Option<f32>,
+        value_release: f32,
+    ) -> ButtonControl {
+        let fingers_round = squeeze.is_some_and(|v| v.is_finite() && v >= value_release);
+        let down = grip.down || ((self.closed || grip.pressed) && fingers_round);
+        self.closed = down;
+        ButtonControl {
+            down,
+            pressed: grip.pressed,
+            released: grip.released && !down,
+        }
     }
 }
 
@@ -272,6 +317,77 @@ mod tests {
             rotate_stick(Vec2::new(0.3, 0.4), 0.0),
             Vec2::new(0.3, 0.4)
         ));
+    }
+
+    const PRESS: ButtonControl = ButtonControl {
+        down: true,
+        pressed: true,
+        released: false,
+    };
+    const DOWN: ButtonControl = ButtonControl {
+        down: true,
+        pressed: false,
+        released: false,
+    };
+    const LET_GO: ButtonControl = ButtonControl {
+        down: false,
+        pressed: false,
+        released: true,
+    };
+    const UP: ButtonControl = ButtonControl {
+        down: false,
+        pressed: false,
+        released: false,
+    };
+    const VALUE_RELEASE: f32 = 0.5;
+
+    #[test]
+    fn a_closed_hand_keeps_its_hold_while_a_force_grip_sags() {
+        let mut hand = ClosedHand::new();
+        assert!(hand.step(PRESS, Some(1.0), VALUE_RELEASE).held());
+        assert!(hand.step(DOWN, Some(1.0), VALUE_RELEASE).held());
+        // The force falls under its release with the fingers still round the handle.
+        let sagged = hand.step(LET_GO, Some(1.0), VALUE_RELEASE);
+        assert!(sagged.down && !sagged.released, "{sagged:?}");
+        assert!(hand.step(UP, Some(VALUE_RELEASE), VALUE_RELEASE).held());
+        // The fingers coming off open the hand, with a release edge.
+        let opened = hand.step(UP, Some(0.3), VALUE_RELEASE);
+        assert!(!opened.held(), "{opened:?}");
+        assert!(!hand.step(UP, Some(1.0), VALUE_RELEASE).held());
+    }
+
+    #[test]
+    fn a_closed_hand_opens_with_its_release_edge_on_the_tick_the_fingers_come_off() {
+        let mut hand = ClosedHand::new();
+        hand.step(PRESS, Some(1.0), VALUE_RELEASE);
+        let opened = hand.step(LET_GO, Some(0.2), VALUE_RELEASE);
+        assert_eq!(opened, LET_GO);
+    }
+
+    #[test]
+    fn fingers_resting_round_the_handle_never_close_the_hand() {
+        let mut hand = ClosedHand::new();
+        for _ in 0..3 {
+            assert!(!hand.step(UP, Some(1.0), VALUE_RELEASE).held());
+        }
+        // A tap between two ticks with the fingers round the handle closes it.
+        let tap = ButtonControl {
+            down: false,
+            pressed: true,
+            released: true,
+        };
+        assert!(hand.step(tap, Some(1.0), VALUE_RELEASE).down);
+        assert!(hand.step(UP, Some(1.0), VALUE_RELEASE).held());
+        assert!(!hand.step(UP, Some(f32::NAN), VALUE_RELEASE).held());
+    }
+
+    #[test]
+    fn a_grip_without_a_force_sense_opens_with_its_press() {
+        let mut hand = ClosedHand::new();
+        assert!(hand.step(PRESS, None, VALUE_RELEASE).held());
+        let let_go = hand.step(LET_GO, None, VALUE_RELEASE);
+        assert_eq!(let_go, LET_GO);
+        assert!(!let_go.held());
     }
 
     #[test]

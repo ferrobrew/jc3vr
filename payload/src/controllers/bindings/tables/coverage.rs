@@ -104,6 +104,7 @@ pub fn injected_with(
                 trigger: 1.0,
                 trigger_press: DOWN,
                 grip: if grip { DOWN } else { ButtonControl::default() },
+                hold: if grip { DOWN } else { ButtonControl::default() },
                 a: DOWN,
                 b: DOWN,
                 stick_click: ButtonControl::default(),

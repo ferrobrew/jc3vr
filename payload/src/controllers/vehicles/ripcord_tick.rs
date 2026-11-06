@@ -92,7 +92,7 @@ pub(crate) fn finish(
     let inputs = StepInputs {
         side,
         grips: active.hands.map(|h| h.map(|h| h.grip.position)),
-        held: Hand::BOTH.map(|hand| controls.hand(hand).grip.held()),
+        held: Hand::BOTH.map(|hand| controls.hand(hand).hold.held()),
         grabs: grabs.map(|g| g == Some(GrabVolume::Ripcord)),
         pull_m: active.config.vehicles.ripcord.pull_m,
     };

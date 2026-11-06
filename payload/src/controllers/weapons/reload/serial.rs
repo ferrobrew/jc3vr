@@ -17,6 +17,7 @@ use crate::{
     config::Config,
     controllers::{
         aim::gun,
+        bindings,
         frame::{self, Button, Hand},
         hands::late,
         loadout::live,
@@ -308,7 +309,8 @@ fn permitted(request: DetachRequest, retain: bool) -> bool {
                 || frame
                     .hand(request.id.holder.other())
                     .buttons
-                    .contains(Button::SqueezePress))
+                    .contains(Button::SqueezePress)
+                || bindings::hand_closed(request.id.holder.other()))
             && [request.id.holder, request.id.holder.other()]
                 .into_iter()
                 .all(|hand| {

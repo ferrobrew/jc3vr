@@ -57,7 +57,8 @@ use crate::{
 pub(crate) struct FinishInputs {
     /// The grab volume each hand grabbed this tick, indexed by [`Hand::index`].
     pub grabs: [Option<GrabVolume>; 2],
-    /// Each hand's grip over the tick.
+    /// Each hand's grip over the tick, as a hold reads it
+    /// ([`HandControls::hold`](crate::controllers::bindings::controls::HandControls::hold)).
     pub grips: [ButtonControl; 2],
     /// Each hand's trigger press over the tick.
     pub triggers: [ButtonControl; 2],

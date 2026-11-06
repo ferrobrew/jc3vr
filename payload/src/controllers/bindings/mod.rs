@@ -56,7 +56,13 @@ pub mod tables;
 mod trigger_ownership;
 pub mod yank;
 
-use std::{sync::LazyLock, time::Instant};
+use std::{
+    sync::{
+        LazyLock,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Instant,
+};
 
 use body_rig::angle::{head_heading, yaw_of};
 use glam::Vec3;
@@ -73,7 +79,7 @@ use crate::{
         aim::{self, sights},
         bindings::{
             buttons::{grapple_button, grapple_button_held, reload_button},
-            controls::{ButtonControl, Controls},
+            controls::{ButtonControl, ClosedHand, Controls},
             grapple_button::GrappleContext,
             hold::{ActionWrite, Desired, DevicePoll, HoldTracker, MapKind, Target, Want},
             intents::SemanticInput,
@@ -93,7 +99,7 @@ use crate::{
         clock::TimeScale,
         cockpit::CockpitTransform,
         config::LocomotionDirection,
-        frame::{self, Button, ControllerFrame, Hand},
+        frame::{self, Button, ControllerFrame, GripPress, Hand},
         grab::{self, Consumer, Provided, grabs_for, markers::MarkerFrame},
         hands::{self, tiers},
         haptics::{self, Event},
@@ -506,8 +512,20 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         snatch::reserved_hands()
     };
     for hand in Hand::BOTH {
-        controls.hands[hand.index()].grab_slow = targets.slow[hand.index()];
-        controls.hands[hand.index()].catch_reserved = catch_reserved[hand.index()];
+        let i = hand.index();
+        controls.hands[i].grab_slow = targets.slow[i];
+        controls.hands[i].catch_reserved = catch_reserved[i];
+        let source = frame.hand(hand);
+        let force = matches!(
+            config.input.grip_press(source.profile, hand),
+            GripPress::Force(_)
+        );
+        controls.hands[i].hold = state.closed[i].step(
+            controls.hands[i].grip,
+            (force && source.active).then_some(source.inputs.squeeze),
+            config.input.squeeze_press.release,
+        );
+        HANDS_CLOSED[i].store(controls.hands[i].hold.down, Ordering::Relaxed);
     }
     controls.masked_hands = Hand::BOTH.map(|hand| !state.recovery.ready(hand));
     let gun_triggers = config.weapons.hold.either_hand;
@@ -692,7 +710,9 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     if !in_menu {
         let finish = weapons::FinishInputs {
             grabs: grabs_for(step.grabs, Consumer::Weapons),
-            grips: controls.hands.map(|h| h.grip),
+            // Every hold the hands keep (a gun, a part of one, a pickup, a climb, the snatch's
+            // catch) lets go when the hand opens, not when a force-sensing grip's press sags.
+            grips: controls.hands.map(|h| h.hold),
             triggers: controls.hands.map(|h| h.trigger_press),
             fire_presses: gun_fire::presses(
                 detection.mode,
@@ -911,6 +931,12 @@ fn marker_frame(active: &hands::ActiveHands) -> MarkerFrame {
     }
 }
 
+/// Whether `hand` was still closed on what its grip took as of the last input tick
+/// ([`ClosedHand`]), for the holds checked outside the tick.
+pub(crate) fn hand_closed(hand: Hand) -> bool {
+    HANDS_CLOSED[hand.index()].load(Ordering::Relaxed)
+}
+
 /// The last input tick's report.
 pub fn last_report() -> TickReport {
     STATE.lock().report.clone()
@@ -984,12 +1010,15 @@ fn cancel_capture_routes(poll: DevicePoll, sink: &mut Vec<Segment>) {
 /// System ownership survives gameplay stand-down and editor open/close transitions.
 static INPUT_POLICY: LazyLock<Mutex<Runtime>> = LazyLock::new(|| Mutex::new(Runtime::default()));
 static PANEL_RECOVERY: Mutex<Recovery> = Mutex::new(Recovery::new());
+/// [`hand_closed`]'s copy of each hand's [`ClosedHand`], by [`Hand::index`].
+static HANDS_CLOSED: [AtomicBool; 2] = [AtomicBool::new(false), AtomicBool::new(false)];
 
 static STATE: Mutex<State> = Mutex::new(State {
     poll: DevicePoll::Running,
     recovery: Recovery::new(),
     mask_log: MaskLog::new(),
     bindings: Bindings::new(),
+    closed: [ClosedHand::new(); 2],
     trigger_ownership: TriggerOwnership::new(),
     tracker: HoldTracker::new(),
     flight: None,
@@ -1012,6 +1041,8 @@ struct State {
     recovery: Recovery,
     mask_log: MaskLog,
     bindings: Bindings,
+    /// Whether each hand is still closed on what its grip took, by [`Hand::index`].
+    closed: [ClosedHand; 2],
     trigger_ownership: TriggerOwnership,
     tracker: HoldTracker,
     flight: Option<flight::FlightState>,
@@ -1025,6 +1056,10 @@ impl State {
     fn reset(&mut self, poll: DevicePoll) -> Vec<ActionWrite> {
         self.recovery.disarm();
         self.bindings.reset_preserving_snatch();
+        self.closed = [ClosedHand::new(); 2];
+        for closed in &HANDS_CLOSED {
+            closed.store(false, Ordering::Relaxed);
+        }
         self.trigger_ownership.suspend();
         if let Some(flight) = &mut self.flight {
             flight.reset();

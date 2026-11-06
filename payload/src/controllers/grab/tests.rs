@@ -285,6 +285,7 @@ fn every_kind() -> Vec<GrabVolume> {
         GrabVolume::MagazineWell,
         GrabVolume::C4Pouch,
         GrabVolume::ChargeSurface,
+        GrabVolume::PlacedCharge,
         GrabVolume::VehicleControl(ControlKind::Wheel),
         GrabVolume::CockpitButton(Button::Horn),
         GrabVolume::ParachuteHandle(Hand::Left),
@@ -323,6 +324,7 @@ fn every_kind() -> Vec<GrabVolume> {
             | GrabVolume::MagazineWell
             | GrabVolume::C4Pouch
             | GrabVolume::ChargeSurface
+            | GrabVolume::PlacedCharge
             | GrabVolume::VehicleControl(_)
             | GrabVolume::CockpitButton(_)
             | GrabVolume::ParachuteHandle(_)
@@ -462,6 +464,7 @@ const DT: f32 = 1.0 / 30.0;
 fn tick(grip: ButtonControl, target: Option<GrabVolume>) -> LatchTick {
     LatchTick {
         grip,
+        closed: grip.held(),
         target,
         bound: false,
         slow: true,
@@ -483,6 +486,28 @@ fn a_press_in_reach_takes_the_target_once_and_holds_it() {
     assert_eq!(latch.step(tick(HELD, None)), None);
     assert_eq!(latch, GripLatch::Grab(HIP));
     assert_eq!(latch.step(tick(UP, Some(HIP))), None);
+    assert_eq!(latch, GripLatch::Open);
+}
+
+#[test]
+fn a_grab_keeps_its_hold_while_the_hand_stays_closed_after_the_press() {
+    let mut latch = GripLatch::default();
+    latch.step(tick(PRESS, Some(HIP)));
+    // The force sags under the press threshold with the fingers still round the handle.
+    let closed = LatchTick {
+        closed: true,
+        ..tick(UP, None)
+    };
+    assert_eq!(latch.step(closed), None);
+    assert_eq!(latch, GripLatch::Grab(HIP));
+    assert!(latch.grabbing());
+    // The fingers opening lets go.
+    assert_eq!(latch.step(tick(UP, None)), None);
+    assert_eq!(latch, GripLatch::Open);
+    // A fist that closed on nothing does not outlast its press.
+    latch.step(tick(PRESS, None));
+    assert!(is_fist(latch));
+    latch.step(closed);
     assert_eq!(latch, GripLatch::Open);
 }
 

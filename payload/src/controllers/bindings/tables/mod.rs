@@ -321,6 +321,7 @@ impl Bindings {
             let reserved = controls.hand(hand).catch_reserved;
             self.grips[hand.index()].step(LatchTick {
                 grip: controls.hand(hand).grip,
+                closed: controls.hand(hand).hold.held(),
                 target: volume.filter(|_| !reserved),
                 bound: !reserved && grip_bound(input, hand),
                 slow: controls.hand(hand).grab_slow,
@@ -773,6 +774,7 @@ mod grapple_permission_tests {
             line: false,
             aim_target: false,
             reeling: false,
+            seated: false,
         };
         for button in [
             ButtonControl {
