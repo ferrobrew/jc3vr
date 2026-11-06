@@ -101,8 +101,8 @@ pub(crate) use begin::begin_tick;
 use begin::{gameplay, weighted_hands};
 pub(crate) use finish::{FinishInputs, finish_tick};
 use re_utilities::hook_library::HookLibrary;
-pub(crate) use state::{pause, stand_down};
 pub use state::status;
+pub(crate) use state::{pause, stand_down};
 pub use types::{TickStart, WeaponsStatus};
 
 /// The weapon handling's hooks, aggregated by [`crate::controllers::hook_library`].
