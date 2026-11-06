@@ -66,6 +66,7 @@ impl Capture {
             &self.before,
             [Vec3::ZERO; 2],
             [Some(Vec3::ZERO); 2],
+            parachute::HandleRadii::of([None; 2]),
         )[hand.index()];
         let target = candidate.target(Mark::ring(MarkAt::Cockpit(candidate.centre), 0.1));
         vec![if self.before.holds[hand.index()].is_some() {
