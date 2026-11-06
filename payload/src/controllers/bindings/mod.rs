@@ -811,7 +811,6 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             active.as_ref(),
             controls.armed,
             &config.locomotion.strokes,
-            &mut step.desired,
             real_dt,
         );
     } else {

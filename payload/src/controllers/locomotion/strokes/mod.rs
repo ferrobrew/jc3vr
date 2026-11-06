@@ -6,12 +6,16 @@
 //! Each stroking hand is a paddle. Its velocity relative to the body (the cockpit frame rides the
 //! body, so a hand's motion there is its motion relative to the swimmer) pushes the water, and the
 //! water pushes the swimmer the other way, as far as the palm faces the way the hand moves: a palm
-//! slicing edge-on through its recovery pushes nothing. The game moves a swimmer only the way it
-//! faces, so the push is split in two:
+//! slicing edge-on through its recovery pushes nothing. The hands are the player's own, where the
+//! controllers hold them, not the drawn hands the arm remap and the reach limit place, which stop
+//! short at full reach, where a stroke catches. The game moves a swimmer only the way it faces, so
+//! the push is split in two:
 //!
-//! - its share along the body's forward feeds a forward drive that decays over a second or so,
-//!   written to the move stick's forward with the larger of it and the stick winning, so the game's
-//!   own swim cores swim the body at the speed the strokes keep up ([`model::StrokeModel`]);
+//! - its share along the body's forward feeds a swim speed that decays over a second or so
+//!   ([`model::StrokeModel`]). The game's swim speed is the animation's root speed, whatever the
+//!   stick's magnitude, so the speed is not written to the stick: the swim cores' detours raise the
+//!   velocity the cores wrote to it along the way the swimmer faces ([`propulsion`],
+//!   [`model::propel`]), and the left stick's own crawl still wins when it is faster;
 //! - its turn about the head, the hands' offsets crossed with their pushes, is smoothed over about
 //!   half a second, so the alternate arms of a crawl cancel while a stroke on one side alone turns
 //!   the body away from it, and the turn is added to the heading the right stick owns
@@ -27,22 +31,19 @@ mod tests;
 
 use std::time::{Duration, Instant};
 
-use glam::Vec2;
 use jc3gi::state::StateBitFlag;
 use parking_lot::Mutex;
 
 use crate::{
     controllers::{
-        bindings::hold::Desired,
         frame::Hand,
-        hands::ActiveHands,
+        hands::{ActiveHands, controller_grips},
         haptics::{self, Event},
         locomotion::{
             config::SwimStrokeConfig,
             strokes::model::{StrokeHand, StrokeInput, StrokeModel, StrokeStep},
         },
         mode,
-        vehicles::axis_output::{read_move, write_move},
     },
     headpose,
     hooks::input::swim,
@@ -55,9 +56,10 @@ pub struct StrokeStatus {
     pub at: Option<Instant>,
     /// The last tick's step.
     pub step: StrokeStep,
-    /// The move stick's forward the tables wrote, and the forward written over it.
-    pub stick_forward: f32,
-    pub written_forward: f32,
+    /// The speed along the swimmer's facing the swim core wrote, and the speed written in its
+    /// place, metres per second, on the core's last run with the strokes swimming.
+    pub core_mps: f32,
+    pub written_mps: f32,
     /// How many strokes have caught the water, per hand.
     pub strokes: [u64; 2],
 }
@@ -75,20 +77,36 @@ pub fn status() -> StrokeStatus {
     STATE.lock().status
 }
 
-/// Run the strokes for this input tick while the local player swims, and write their forward over
-/// the move stick's in `desired`. `armed` is whether each hand holds a gun, and `dt` the real
-/// tick's length, seconds. Out of the water, switched off, or without tracked hands, the strokes
-/// forget their motion and write nothing.
+/// The swim speed the strokes keep up, metres per second along the way the swimmer faces, for the
+/// swim cores' detours to join to the velocity the cores wrote. `None` while the strokes are not
+/// swimming: out of the water, switched off, without tracked hands, gliding to a stop, or with no
+/// stroke tick recent enough to trust.
+pub fn propulsion(now: Instant) -> Option<f32> {
+    let state = STATE.lock();
+    (state.status.fresh(now) && state.status.step.speed > 0.0).then_some(state.status.step.speed)
+}
+
+/// Note what the swim core's detour did with [`propulsion`]: the speed along the facing the core
+/// wrote and the speed written in its place, for the debug UI.
+pub fn record_applied(core_mps: f32, written_mps: f32) {
+    let mut state = STATE.lock();
+    state.status.core_mps = core_mps;
+    state.status.written_mps = written_mps;
+}
+
+/// Run the strokes for this input tick while the local player swims. `armed` is whether each hand
+/// holds a gun, and `dt` the real tick's length, seconds. Out of the water, switched off, or
+/// without tracked hands, the strokes forget their motion and ask for nothing.
 pub(crate) fn tick(
     active: Option<&ActiveHands>,
     armed: [bool; 2],
     config: &SwimStrokeConfig,
-    desired: &mut Vec<Desired>,
     dt: f32,
 ) {
     let mut state = STATE.lock();
     let Some(active) = active.filter(|_| config.enabled && swim::swimming()) else {
         state.model = StrokeModel::new();
+        state.status.step = StrokeStep::NONE;
         return;
     };
     // A pause in the ticks (a menu, a hitch, the panel) forgets the hands' motion, so the first
@@ -99,13 +117,14 @@ pub(crate) fn tick(
     let underwater = mode::last_snapshot()
         .and_then(|snapshot| snapshot.character)
         .is_some_and(|character| character.has(StateBitFlag::SB_IS_UW_SWIMMING));
+    let grips = controller_grips(active);
     let hands = Hand::BOTH.map(|hand| {
-        active.hands[hand.index()]
-            .filter(|_| !armed[hand.index()])
-            .map(|h| StrokeHand {
-                position: h.grip.position,
-                palm: h.wrist.orientation * model::WRIST_PALM,
-            })
+        let i = hand.index();
+        let (hand, grip) = (active.hands[i]?, grips[i]?);
+        (!armed[i]).then(|| StrokeHand {
+            position: grip,
+            palm: hand.wrist.orientation * model::WRIST_PALM,
+        })
     });
     let step = state.model.step(
         &StrokeInput {
@@ -116,11 +135,6 @@ pub(crate) fn tick(
         },
         config,
     );
-    let stick = read_move(desired);
-    let forward = stick.y.max(step.forward);
-    if forward > stick.y {
-        write_move(desired, Vec2::new(stick.x, forward));
-    }
     if step.turn_right != 0.0 {
         headpose::xr::add_swim_turn(step.turn_right);
     }
@@ -132,8 +146,6 @@ pub(crate) fn tick(
     }
     state.status.at = Some(Instant::now());
     state.status.step = step;
-    state.status.stick_forward = stick.y;
-    state.status.written_forward = forward;
 }
 
 /// How long the strokes may go without a tick before they forget the hands' motion.
@@ -149,8 +161,8 @@ static STATE: Mutex<State> = Mutex::new(State {
     status: StrokeStatus {
         at: None,
         step: StrokeStep::NONE,
-        stick_forward: 0.0,
-        written_forward: 0.0,
+        core_mps: 0.0,
+        written_mps: 0.0,
         strokes: [0; 2],
     },
 });

@@ -1,6 +1,7 @@
-//! The strokes' pure model: the hands as paddles pushing the swimmer, the forward drive they keep
-//! up, and the turn an uneven stroke makes. Everything is in the cockpit frame (+X right, +Y up,
-//! +Z back, metres), which rides the body.
+//! The strokes' pure model: the hands as paddles pushing the swimmer, the swim speed they keep up,
+//! the turn an uneven stroke makes, and how that speed joins the velocity the game's swim cores
+//! wrote ([`propel`]). The hands are in the cockpit frame (+X right, +Y up, +Z back, metres),
+//! which rides the body.
 
 use body_rig::smooth::follow_factor;
 use glam::{Vec2, Vec3};
@@ -38,8 +39,8 @@ pub struct StrokeInput {
 /// What one tick of strokes asks of the swimmer.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct StrokeStep {
-    /// The move stick's forward the strokes ask for, `0..=1`.
-    pub forward: f32,
+    /// The swim speed the strokes keep up, metres per second along the way the swimmer faces.
+    pub speed: f32,
     /// How far to turn the heading this tick, radians, positive to the right.
     pub turn_right: f32,
     /// Each hand's push on the swimmer this tick (+X right, +Z back), metres per second of paddle
@@ -49,8 +50,6 @@ pub struct StrokeStep {
     pub in_water: [bool; 2],
     /// The strength, `0..=1`, of each hand's stroke that caught the water this tick.
     pub caught: [Option<f32>; 2],
-    /// The forward drive, before it is limited to a full stick.
-    pub drive: f32,
     /// The smoothed turn the hands make about the head, positive turning left (counter-clockwise
     /// from above), square metres per second.
     pub torque: f32,
@@ -58,12 +57,11 @@ pub struct StrokeStep {
 
 impl StrokeStep {
     pub const NONE: StrokeStep = StrokeStep {
-        forward: 0.0,
+        speed: 0.0,
         turn_right: 0.0,
         push: [Vec2::ZERO; 2],
         in_water: [false; 2],
         caught: [None; 2],
-        drive: 0.0,
         torque: 0.0,
     };
 }
@@ -77,7 +75,7 @@ pub struct StrokeModel {
     velocity: [Vec3; 2],
     /// Whether each hand's stroke is pushing, for the catch cue's hysteresis.
     stroking: [bool; 2],
-    drive: f32,
+    speed: f32,
     torque: f32,
 }
 
@@ -93,7 +91,7 @@ impl StrokeModel {
             last: [None; 2],
             velocity: [Vec3::ZERO; 2],
             stroking: [false; 2],
-            drive: 0.0,
+            speed: 0.0,
             torque: 0.0,
         }
     }
@@ -107,13 +105,12 @@ impl StrokeModel {
         };
         let mut step = StrokeStep::NONE;
         if dt <= 0.0 {
-            step.drive = self.drive;
-            step.forward = self.drive.min(1.0);
+            step.speed = self.speed;
             step.torque = self.torque;
             return step;
         }
         let min_speed = config.min_speed_mps.max(0.0);
-        let facing = config.palm_facing_deg.clamp(0.0, 89.0).to_radians().cos();
+        let facing = config.palm_cone_deg.clamp(0.0, 89.0).to_radians().cos();
         let mut thrust = 0.0;
         let mut torque = 0.0;
         for (i, hand) in input.hands.iter().enumerate() {
@@ -143,7 +140,12 @@ impl StrokeModel {
             let push = -velocity.normalize_or_zero() * paddle;
             let flat = Vec2::new(push.x, push.z);
             step.push[i] = flat;
-            thrust += -push.z;
+            let forward = -push.z;
+            thrust += if forward < 0.0 {
+                forward * BRAKE_SHARE
+            } else {
+                forward
+            };
             let arm = hand.position - input.head;
             torque += arm.z * push.x - arm.x * push.z;
             let backward = -push.z;
@@ -159,17 +161,39 @@ impl StrokeModel {
             }
         }
         let decay = (-dt / config.decay_s.max(0.05)).exp();
-        self.drive =
-            ((self.drive + config.gain.max(0.0) * thrust * dt) * decay).clamp(0.0, MAX_DRIVE);
+        let speed = (self.speed + config.speed_per_metre.max(0.0) * thrust * dt) * decay;
+        self.speed = if speed.is_finite() {
+            speed.clamp(0.0, config.max_speed_mps.max(0.0))
+        } else {
+            0.0
+        };
         let smoothing = follow_factor(dt, config.turn_smoothing_s.max(0.01));
         self.torque += (torque - self.torque) * smoothing;
         let max_turn = config.max_turn_deg_s.max(0.0).to_radians();
         let rate = (-config.turn_gain * self.torque).clamp(-max_turn, max_turn);
         step.turn_right = if rate.is_finite() { rate * dt } else { 0.0 };
-        step.drive = self.drive;
-        step.forward = self.drive.min(1.0);
+        step.speed = self.speed;
         step.torque = self.torque;
         step
+    }
+}
+
+/// The velocity the swimmer moves at with the strokes' `speed` joined to `velocity`, the one the
+/// game's swim core wrote, world space. `direction` is the way the swimmer faces, a unit vector:
+/// level at the surface, so buoyancy keeps the vertical, and pitched underwater, where the swimmer
+/// moves where it faces. The strokes raise the velocity's share along `direction` to `speed` and
+/// leave everything else the core wrote (the drift across, the buoyancy, the waves' push); a core
+/// already swimming faster along it, the left stick's crawl, keeps its own speed.
+pub fn propel(velocity: Vec3, direction: Vec3, speed: f32) -> Vec3 {
+    let direction = direction.normalize_or_zero();
+    if !velocity.is_finite() || !speed.is_finite() || speed <= 0.0 || direction == Vec3::ZERO {
+        return velocity;
+    }
+    let along = velocity.dot(direction);
+    if along >= speed {
+        velocity
+    } else {
+        velocity + direction * (speed - along)
     }
 }
 
@@ -181,6 +205,8 @@ const MAX_DT: f32 = 0.1;
 /// tracker's jitter, short enough to keep a stroke's catch crisp.
 const VELOCITY_SMOOTHING_S: f32 = 0.04;
 
-/// The forward drive's ceiling: past a full stick, so a strong rhythm holds full speed through the
-/// recovery between strokes, and short of piling up a long glide.
-const MAX_DRIVE: f32 = 1.5;
+/// The share of a palm-first push forward that brakes the swimmer. A recovery swept forward with
+/// the palm half facing the way it moves reads as a push forward, and at full strength it took
+/// back about half of what real strokes gave; real water resists a slower recovery less
+/// than the faster pull, which this stands in for.
+const BRAKE_SHARE: f32 = 0.5;

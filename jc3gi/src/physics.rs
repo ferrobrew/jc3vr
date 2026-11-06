@@ -466,6 +466,22 @@ impl PfxCharacterInstance {
             f(self as *mut Self as _, m)
         }
     }
+    pub const GetTransform_ADDRESS: usize = 0x14024D6A0;
+    /// Writes the physics body's transform to `out`, read from the world's body array: the body's
+    /// rotation in the rows and its Havok-space position plus
+    /// [`PhysicsSystem::m_AccumulatedShift`](crate::physics::PhysicsSystem::m_AccumulatedShift) in the translation. A rotation set through
+    /// [`SetOrientation`](crate::physics::PfxCharacterInstance::SetOrientation) reads back at once.
+    /// [`Character::SetWantedWorldVelocity`](crate::character::character::Character::SetWantedWorldVelocity)
+    /// converts a world velocity into the proxy's local frame with this rotation's transpose.
+    pub unsafe fn GetTransform(&self, out: *mut crate::types::math::Matrix4) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                out: *mut crate::types::math::Matrix4,
+            ) = ::std::mem::transmute(Self::GetTransform_ADDRESS);
+            f(self as *const Self as _, out)
+        }
+    }
     pub const GetVelocity_ADDRESS: usize = 0x14024D820;
     /// Returns the physics body's current linear velocity (world space, 3 floats) via the body's
     /// Havok transform/velocity chain.

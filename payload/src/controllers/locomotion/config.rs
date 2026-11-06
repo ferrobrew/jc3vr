@@ -99,17 +99,21 @@ pub struct SwimStrokeConfig {
     /// Swim by the arms: a hand sweeping back through the water, palm first, swims forward, and
     /// an uneven stroke turns. The left stick still swims.
     pub enabled: bool,
-    /// The forward drive a metre of palm-first paddle travel back through the water adds, in full
-    /// sticks per metre.
-    pub gain: f32,
-    /// The time constant the forward drive decays over between strokes, seconds: the glide.
+    /// The swim speed a metre of palm-first paddle travel back through the water adds, metres per
+    /// second per metre.
+    pub speed_per_metre: f32,
+    /// The time constant the swim speed decays over between strokes, seconds: the glide.
     pub decay_s: f32,
+    /// The fastest the strokes swim, metres per second.
+    pub max_speed_mps: f32,
     /// A hand slower than this through the water pushes nothing, metres per second, so a hand held
     /// still or drifting does not swim.
     pub min_speed_mps: f32,
     /// How far the palm may face away from the way the hand moves and still push, degrees; the push
-    /// fades to nothing there, so a palm slicing edge-on through its recovery pushes nothing.
-    pub palm_facing_deg: f32,
+    /// fades to nothing there, so a palm slicing edge-on through its recovery pushes nothing. A
+    /// hand closed round a controller rarely holds its palm square to the stroke, so the cone is
+    /// wide.
+    pub palm_cone_deg: f32,
     /// The backward push that counts as a stroke catching the water, for the haptic knock, metres
     /// per second of paddle speed.
     pub catch_mps: f32,
@@ -130,10 +134,11 @@ impl SwimStrokeConfig {
     pub const fn new() -> Self {
         Self {
             enabled: true,
-            gain: 1.0,
+            speed_per_metre: 4.5,
             decay_s: 1.5,
+            max_speed_mps: 5.0,
             min_speed_mps: 0.3,
-            palm_facing_deg: 50.0,
+            palm_cone_deg: 75.0,
             catch_mps: 0.6,
             turn_gain: 3.0,
             turn_smoothing_s: 0.5,

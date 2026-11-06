@@ -85,6 +85,12 @@ impl std::convert::AsMut<CharacterOnFootSettings> for CharacterOnFootSettings {
 /// `SCharacterSwimSettings`: the swim block of [`CharacterMovementSettings`](crate::input::locomotion::CharacterMovementSettings). The offsets of the
 /// two turn-rate fields within the movement settings are confirmed.
 pub struct CharacterSwimSettings {
+    /// The move-stick magnitude, `0..=1`, at or above which
+    /// [`NStateTask_InputSurfaceSwimTask::Update`](crate::input::swim::NStateTask_InputSurfaceSwimTask::Update)
+    /// queues a swim-start act from a state that is not already starting or crawling. Below it
+    /// the task queues only the crawl act (or the idle act once the stick has rested for
+    /// [`m_SurfaceSwimNoInputToStopTime`](crate::input::locomotion::CharacterSwimSettings::m_SurfaceSwimNoInputToStopTime)). The stick's
+    /// magnitude sets nothing else: the swim speed is the animation's root speed.
     pub m_SurfaceSwimFullDeflection: f32,
     /// The surface-swim velocity turn rate; `UpdateSurfaceMovement` scales it by [`SWIM_TURN_RATE_SCALE`](crate::input::swim::SWIM_TURN_RATE_SCALE) degrees per second.
     pub m_SurfaceSwimDirSlerpSpeed: f32,
@@ -98,6 +104,10 @@ pub struct CharacterSwimSettings {
     pub m_ShallowDepthBobDepth: f32,
     pub m_ShallowDepthMaxBobVelocity: f32,
     pub m_SpeedNoRotationControl: f32,
+    /// How long, seconds, the move stick must stay below a tenth of full deflection before
+    /// [`NStateTask_InputSurfaceSwimTask::Update`](crate::input::swim::NStateTask_InputSurfaceSwimTask::Update)
+    /// queues the surface idle act instead of the crawl act. The task keeps the running time in
+    /// its instance data.
     pub m_SurfaceSwimNoInputToStopTime: f32,
 }
 fn _CharacterSwimSettings_size_check() {

@@ -21,17 +21,24 @@
 //!   `MOVE_LEFT` and `MOVE_RIGHT`, since the right stick turns and nothing strafes.
 //!
 //! [`process_motion`] only marks its window, so [`do_rotate`] can tell the heading rotation from the
-//! velocity slerp nested inside it. `CPfxCharacterInstance::SetOrientation` is deliberately not
+//! velocity slerp nested inside it.
+//!
+//! After each core runs, [`propel_strokes`] joins the arm strokes' swim speed
+//! ([`strokes::propulsion`]) to the velocity the core wrote, along the way the swimmer faces. The
+//! cores take their speed from the animation's root motion and only the direction from the stick,
+//! so a stick written smaller than full does not swim slower; the strokes set the velocity
+//! instead. `CPfxCharacterInstance::SetOrientation` is deliberately not
 //! hooked: it receives the orientation composed with the frame's swimming capsule offset, which for
 //! the surface crawl pose is a quarter turn about X, so a yaw rewrite there is at gimbal lock.
 
 use std::{
     cell::Cell,
     sync::atomic::{AtomicU64, Ordering},
+    time::Instant,
 };
 
 use detours_macro::detour;
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 use jc3gi::{
     character::character::Character,
     input::{
@@ -39,12 +46,19 @@ use jc3gi::{
         input_action_map::{Action, EffectorState, LocalPlayerActionMap},
     },
     physics,
-    types::math::{Vector2, Vector3},
+    types::math::{Matrix4, Vector2, Vector3},
 };
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{config::Config, controllers::mode::CharacterSnapshot, headpose::body_yaw_target};
+use crate::{
+    config::Config,
+    controllers::{
+        locomotion::strokes::{self, model::propel},
+        mode::CharacterSnapshot,
+    },
+    headpose::body_yaw_target,
+};
 
 mod telemetry;
 
@@ -257,7 +271,11 @@ fn do_rotate(from: *const Vector3, to: *const Vector3, rate: f32, out: *mut Vect
         .with(Cell::get)
         .filter(|_| !IN_PROCESS_MOTION.with(Cell::get));
     let (Some(window), Some(target)) = (window, engaged_target()) else {
-        return call.call(from, to, rate, out);
+        call.call(from, to, rate, out);
+        if window.is_some() {
+            record_facing(out);
+        }
+        return;
     };
     SWIM_ROTATE_OVERRIDES.fetch_add(1, Ordering::Relaxed);
     // SAFETY: the core passes a live vector or null.
@@ -279,6 +297,7 @@ fn do_rotate(from: *const Vector3, to: *const Vector3, rate: f32, out: *mut Vect
         data: target.to_array(),
     };
     call.call(from, &target, rate, out);
+    record_facing(out);
     // SAFETY: the core passes live vectors, and the original has written `out`.
     let read = |v: *const Vector3| unsafe { v.as_ref() }.map(|v| Vec3::from_array(v.data));
     if let (Some(from), Some(game_to), Some(out)) = (read(from), game_to, read(out)) {
@@ -289,6 +308,14 @@ fn do_rotate(from: *const Vector3, to: *const Vector3, rate: f32, out: *mut Vect
 /// The angle below which [`physics::DoRotate`] eases its step out, and the largest step that cannot
 /// overshoot the target. Radians.
 const DO_ROTATE_EASE_ANGLE: f32 = 0.261_799_4;
+
+/// Keep the heading the core's rotation just produced, which the core builds the swimmer's
+/// orientation from, for [`propel_strokes`].
+fn record_facing(out: *const Vector3) {
+    // SAFETY: the core passes a live vector or null, and the original has written it.
+    let facing = unsafe { out.as_ref() }.map(|v| Vec3::from_array(v.data));
+    FACING.with(|f| f.set(facing.filter(|v| v.is_finite())));
+}
 
 /// Report the turn angle as zero so the input tasks stay below their act threshold and never queue a
 /// 120-degree turn clip. That matters beyond the animation: while such an act runs, the core replaces
@@ -377,8 +404,59 @@ fn with_swim_window(character: *mut Character, core: SwimCore, dt: f32, call: im
         SWIM_UNTARGETED.fetch_add(1, Ordering::Relaxed);
     }
     SWIM_WINDOW.with(|w| w.set(Some(SwimWindow { core, dt })));
+    FACING.with(|f| f.set(None));
     call();
     SWIM_WINDOW.with(|w| w.set(None));
+    // SAFETY: the core has returned; the local character is live for the rest of its update.
+    if let Some(character) = unsafe { character.as_mut() } {
+        unsafe { propel_strokes(character, core) };
+    }
+}
+
+/// Join the arm strokes' swim speed to the velocity the core just wrote to the proxy, along the way
+/// the swimmer faces: level at the surface, so the core's buoyancy keeps the vertical, and as the
+/// core pitched it underwater, where the swimmer moves where it faces.
+///
+/// The core writes the proxy's wanted velocity in the frame of the orientation it then hands to
+/// `SetOrientation`, the capsule frame, so the velocity is read back through the proxy's transform
+/// and written through [`Character::SetWantedWorldVelocity`], which converts with the same one.
+///
+/// # Safety
+///
+/// `character` must be the live local character, right after its swim core ran.
+unsafe fn propel_strokes(character: &mut Character, core: SwimCore) {
+    let Some(speed) = strokes::propulsion(Instant::now()) else {
+        return;
+    };
+    let Some(proxy) = (unsafe { character.m_PfxCharacter.px.as_ref() }) else {
+        return;
+    };
+    let facing = FACING
+        .with(Cell::get)
+        .unwrap_or_else(|| -Mat4::from(character.m_WorldMatrixT1).z_axis.truncate());
+    let direction = match core {
+        SwimCore::Surface => Vec3::new(facing.x, 0.0, facing.z),
+        SwimCore::Underwater => facing,
+    }
+    .normalize_or_zero();
+    if direction == Vec3::ZERO {
+        return;
+    }
+    let mut transform = Matrix4::IDENTITY;
+    unsafe { proxy.GetTransform(&mut transform) };
+    let local = Vec3::from_array(proxy.m_Input.wantedVelocity.data);
+    let wrote = Mat4::from(transform).transform_vector3(local);
+    if !wrote.is_finite() {
+        return;
+    }
+    let velocity = propel(wrote, direction, speed);
+    strokes::record_applied(wrote.dot(direction), velocity.dot(direction));
+    if velocity != wrote {
+        let world = Vector3 {
+            data: velocity.to_array(),
+        };
+        unsafe { character.SetWantedWorldVelocity(&world) };
+    }
 }
 
 thread_local! {
@@ -389,6 +467,11 @@ thread_local! {
     /// Whether this thread is inside [`physics::ProcessMotion`], whose nested [`physics::DoRotate`]
     /// rotates the velocity direction rather than the heading.
     static IN_PROCESS_MOTION: Cell<bool> = const { Cell::new(false) };
+
+    /// The heading the running core's rotation produced this run, world space; `None` until it
+    /// rotates (a core playing an animated turn, or outside its steering segment, keeps its
+    /// forward without rotating).
+    static FACING: Cell<Option<Vec3>> = const { Cell::new(None) };
 }
 
 /// The head pitch, in degrees, within which the underwater dive control does nothing, so a resting

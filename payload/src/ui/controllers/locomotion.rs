@@ -89,10 +89,10 @@ pub(super) fn strokes_readout(ui: &mut Ui, strokes: &StrokeStatus) {
         strokes.strokes[1],
     ));
     ui.label(format!(
-        "Drive {:.2} · forward written {:.2} (stick {:.2}) · turning push {:+.3} m²/s · turn {:+.0}°/tick",
-        s.drive,
-        strokes.written_forward,
-        strokes.stick_forward,
+        "Stroke speed {:.2} m/s · swim core {:.2} m/s, written {:.2} m/s · turning push {:+.3} m²/s · turn {:+.0}°/tick",
+        s.speed,
+        strokes.core_mps,
+        strokes.written_mps,
         s.torque,
         s.turn_right.to_degrees(),
     ));
@@ -136,8 +136,8 @@ fn strokes_settings(ui: &mut Ui, s: &mut SwimStrokeConfig) {
         );
     ui.add_enabled_ui(s.enabled, |ui| {
         ui.add(
-            egui::Slider::new(&mut s.gain, 0.2..=3.0)
-                .text("Stroke drive (full sticks per metre of stroke)")
+            egui::Slider::new(&mut s.speed_per_metre, 0.5..=12.0)
+                .text("Stroke speed (m/s per metre of stroke)")
                 .fixed_decimals(2),
         );
         ui.add(
@@ -146,12 +146,17 @@ fn strokes_settings(ui: &mut Ui, s: &mut SwimStrokeConfig) {
                 .fixed_decimals(2),
         );
         ui.add(
+            egui::Slider::new(&mut s.max_speed_mps, 0.5..=10.0)
+                .text("Fastest stroke swim (m/s)")
+                .fixed_decimals(1),
+        );
+        ui.add(
             egui::Slider::new(&mut s.min_speed_mps, 0.0..=1.0)
                 .text("Slowest stroke (m/s)")
                 .fixed_decimals(2),
         );
         ui.add(
-            egui::Slider::new(&mut s.palm_facing_deg, 10.0..=85.0)
+            egui::Slider::new(&mut s.palm_cone_deg, 10.0..=89.0)
                 .text("Palm facing the stroke within (°)")
                 .fixed_decimals(0),
         );
