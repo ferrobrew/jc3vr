@@ -55,10 +55,15 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         Mode::Vehicle(seat) => Some(seat),
         _ => None,
     };
-    let physical_config = PhysicalControlsTuning::of(&config.vehicles.physical);
+    let mut physical_config = PhysicalControlsTuning::of(&config.vehicles.physical);
     let xf = CockpitTransform::current(active.head.position, active.world_scale);
     // SAFETY: the game stage runs on the game thread before the world update.
     let entry = seat.and_then(|_| unsafe { VehicleEntry::read() });
+    // The nitrous button is only on a vehicle with nitrous, where the game's own nitrous meter
+    // shows: elsewhere it would be a marker and a press that do nothing.
+    if !entry.as_ref().is_some_and(VehicleEntry::has_nitrous) {
+        physical_config.buttons.nitrous_button = false;
+    }
     let mut events = Vec::new();
     let mut state = STATE.lock();
     let mut latch = prepare_entry(
@@ -169,10 +174,11 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         let pressed_by = Hand::BOTH
             .into_iter()
             .find(|&h| state.controls.buttons.phase(button, h) == PushPhase::Pressed);
-        // The horn is the wheel's drawn hub, so it is marked only once a hand is at it.
-        let shown = match button {
-            Button::Horn => Shown::InReach,
-            Button::Nitrous => Shown::Always,
+        // Each button is marked only once a hand is at it: the horn is the wheel's drawn hub, and
+        // the nitrous button is named by its label then.
+        let label = match button {
+            Button::Horn => None,
+            Button::Nitrous => Some(NITROUS_LABEL),
         };
         // A button is pressed by a free hand, or by the one already pressing it.
         let pressers: Vec<Hand> = Hand::BOTH
@@ -184,15 +190,19 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
             [hand] => Some(*hand),
             _ => None,
         };
+        let mark = Mark::ring(MarkAt::Cockpit(at.centre), at.radius * 2.0)
+            .on_surface(at.normal)
+            .styled(MarkStyle::Button)
+            .showing(Shown::InReach);
         let target = GripTarget::sphere(
             GrabVolume::CockpitButton(button),
             only,
             at.centre,
             at.radius,
-            Mark::ring(MarkAt::Cockpit(at.centre), at.radius * 2.0)
-                .on_surface(at.normal)
-                .styled(MarkStyle::Button)
-                .showing(shown),
+            match label {
+                Some(label) => mark.labelled(label),
+                None => mark,
+            },
         );
         targets.push(match pressed_by {
             Some(hand) => GripTarget {
@@ -322,6 +332,9 @@ fn handle_target(volume: GrabVolume, point: Vec3, radius: f32, hand: Hand) -> Gr
 
 /// The marker on a vehicle control's grab point, metres.
 const CONTROL_MARK_M: f32 = 0.05;
+
+/// The nitrous button's label.
+const NITROUS_LABEL: &str = "Nitrous";
 
 /// Declare each hand the mounted gun's handles anchor, for its finger pose, at the anchor's share
 /// times the hand's hold on its handle, `shares`.

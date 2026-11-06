@@ -206,7 +206,7 @@ static DRAW_ERROR_LOGGED: AtomicBool = AtomicBool::new(false);
 
 /// Each hand's world poses as it is drawn at the camera's interpolation fraction, so what is
 /// anchored to a hand stays on the hand the late update and the presentation layer draw.
-fn render_poses() -> [Option<HandPoses>; 2] {
+pub(crate) fn render_poses() -> [Option<HandPoses>; 2] {
     late::drawn_hands(hooks::camera::last_dtf()).map(|hand| {
         hand.map(|h| HandPoses {
             wrist: h.wrist,

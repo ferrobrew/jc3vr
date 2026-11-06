@@ -32,7 +32,8 @@
 //! [`atlas`]: the [`world_markers`] at their world points, the [`anchored`] readouts at the
 //! gun hand and the off-hand's wrist, and the reticles at the aim point ([`reticle`]).
 //! The [`grab_hint`] draws the game's icons ([`game_icons`]) on the panel's plane, and
-//! [`lost_weapons`] over the weapons the player let go of.
+//! [`lost_weapons`] over the weapons the player let go of; [`mark_labels`] names the grip markers
+//! that carry a label, such as the nitrous button.
 
 pub mod aim;
 pub(crate) mod anchored;
@@ -47,6 +48,7 @@ pub(crate) mod grab_hint;
 mod label;
 mod log_once;
 pub(crate) mod lost_weapons;
+pub(crate) mod mark_labels;
 pub(crate) mod mirror_overlay;
 mod offscreen_egui;
 mod palette;
@@ -423,6 +425,7 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
     hud.draw_quad(context, device, target, eye);
     reticle::draw(context, device, target);
     anchored::draw(context, device, target, eye);
+    mark_labels::draw(context, device, target, eye);
     grab_hint::draw(context, device, target, eye, hud.panel_corners());
     hud.clear(context);
 }

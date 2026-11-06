@@ -438,6 +438,27 @@ fn a_marker_shows_as_its_target_says() {
     ));
 }
 
+/// A labelled marker's label shows only while a hand is at it, even on a marker shown always, and
+/// an unlabelled marker has none.
+#[test]
+fn a_label_shows_while_a_hand_is_at_its_marker() {
+    let frame = test_frame();
+    let pouch = sphere(GrabVolume::GrenadePouch, 0.0, 0.1, None);
+    let labelled = GripTarget {
+        mark: pouch.mark.showing(Shown::Always).labelled("Pouch"),
+        ..pouch
+    };
+    let away = resolve(&[labelled], [at(1.0), None]);
+    assert!(markers::labels(&[labelled], &away, &frame).is_empty());
+    let near = resolve(&[labelled], [at(0.05), None]);
+    let labels = markers::labels(&[labelled], &near, &frame);
+    assert_eq!(labels.len(), 1);
+    assert_eq!(labels[0].text, "Pouch");
+    assert!(labels[0].clearance > 0.0);
+    let near_plain = resolve(&[pouch], [at(0.05), None]);
+    assert!(markers::labels(&[pouch], &near_plain, &frame).is_empty());
+}
+
 const UP: ButtonControl = ButtonControl {
     down: false,
     pressed: false,

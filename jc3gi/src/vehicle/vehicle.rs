@@ -692,6 +692,23 @@ impl Vehicle {
             f(self as *const Self as _)
         }
     }
+    pub const GetCurrentEffectiveNitrousUpgradeLevel_ADDRESS: usize = 0x140F25AA0;
+    /// The vehicle's effective nitrous upgrade level (`NVehicle::EVehicleModUpgradeLevel`): `-1`
+    /// when it has no nitrous, `0` for the base nitrous, and `1` for the improved one. A vehicle
+    /// that can use mods and whose physics body has the nitrous physical action takes its level
+    /// from the player profile's upgrades for its class (land for cars, motorcycles, and trains;
+    /// sea for boats and submarines; air for helicopters and planes): the unlock upgrade gives the
+    /// base level and the better upgrade the improved one. The vehicle's own minimum nitrous
+    /// upgrade raises the result. The HUD shows the nitrous meter only above `-1`, and the
+    /// vehicle's nitrous update burns nitrous only then.
+    pub unsafe fn GetCurrentEffectiveNitrousUpgradeLevel(&self) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> i32 = ::std::mem::transmute(
+                Self::GetCurrentEffectiveNitrousUpgradeLevel_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
     pub const UpdateLandingGearVariables_ADDRESS: usize = 0x140F6F1D0;
     /// Moves the landing gear and its hatches toward
     /// [`m_DesiredLandingGearState`](crate::vehicle::vehicle::Vehicle::m_DesiredLandingGearState), and plays the gear's attached

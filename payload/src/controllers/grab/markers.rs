@@ -4,7 +4,9 @@
 //! Each target's marker takes its kind's colour ([`colour`]) and its own style ([`MarkStyle`]),
 //! and shows as its [`Shown`] says: faint while no hand is within reach of it, brighter once one
 //! is, brightest and a little larger on the target a squeeze would take, and solid while a hand
-//! holds it. A marker on a surface lies on it ([`Mark::normal`]).
+//! holds it. A marker on a surface lies on it ([`Mark::normal`]). A marker with a label
+//! ([`Mark::label`]) has it drawn above it by the HUD ([`crate::hud::mark_labels`]) while a hand
+//! is at it.
 //!
 //! Every marker is anchored at render time (`docs/mod/rendering/render-time-anchoring.md`): a point
 //! that rides with the player to the render-time head, one on a held gun to its hand's render-time
@@ -12,15 +14,20 @@
 
 use std::time::Duration;
 
-use crate::controllers::{
-    cockpit::CockpitTransform,
-    frame::Hand,
-    grab::{Category, GripTarget, MarkAt, MarkStyle, Resolved, Shown},
-    hands::CockpitHand,
-    overlay::{
-        primitive::{Anchor, DepthMode, Facing, HandPose, Primitive, Shape, Source, SpriteSize},
-        store,
+use crate::{
+    controllers::{
+        cockpit::CockpitTransform,
+        frame::Hand,
+        grab::{Category, GripTarget, MarkAt, MarkStyle, Resolved, Shown},
+        hands::CockpitHand,
+        overlay::{
+            primitive::{
+                Anchor, DepthMode, Facing, HandPose, Primitive, Shape, Source, SpriteSize,
+            },
+            store,
+        },
     },
+    hud::mark_labels::{self, MarkLabel},
 };
 
 /// Where the tick's cockpit-frame points are placed for the overlay, and the hands that reach for
@@ -33,15 +40,43 @@ pub struct MarkerFrame {
     pub drawn: [Option<CockpitHand>; 2],
 }
 
-/// Submit the markers of `targets`, resolved for the hands as `resolved` says.
+/// Submit the markers of `targets`, resolved for the hands as `resolved` says, and their labels.
 pub fn submit(targets: &[GripTarget], resolved: &[Resolved; 2], frame: &MarkerFrame) {
     let mut prims = primitives(targets, resolved, frame);
     store::submit(Source::GrabMarkers, &mut prims, MARKER_TTL);
+    mark_labels::publish(labels(targets, resolved, frame));
 }
 
 /// Take the markers down.
 pub fn clear() {
     store::clear(Source::GrabMarkers);
+    mark_labels::publish(Vec::new());
+}
+
+/// The labels of `targets`' labelled markers that a hand is within reach of, takes, or holds:
+/// a label names what a hand has come to, so it shows only then, even on a marker shown always.
+pub(crate) fn labels(
+    targets: &[GripTarget],
+    resolved: &[Resolved; 2],
+    frame: &MarkerFrame,
+) -> Vec<MarkLabel> {
+    targets
+        .iter()
+        .enumerate()
+        .filter_map(|(index, target)| {
+            let text = target.mark.label?;
+            let state = state_of(index, target, resolved);
+            let near = state.reacher.is_some() || state.chosen || state.held;
+            if !near || alpha(target.mark.shown, state).is_none() {
+                return None;
+            }
+            Some(MarkLabel {
+                text,
+                at: anchor(target, frame)?,
+                clearance: target.mark.size.max(MIN_SIZE_M) * frame.xf.world_scale * 0.5,
+            })
+        })
+        .collect()
 }
 
 /// The primitives that draw `targets`' markers.

@@ -43,7 +43,18 @@ impl VehicleEntry {
         // SAFETY: GetVehicle supplies the typed vehicle and the retained owner keeps it alive.
         unsafe { &*self.owner.object().cast::<Vehicle>() }
     }
+
+    /// Whether the vehicle has nitrous: the game's effective nitrous upgrade level
+    /// ([`Vehicle::GetCurrentEffectiveNitrousUpgradeLevel`]) is above none, as for the HUD's
+    /// nitrous meter.
+    pub(super) fn has_nitrous(&self) -> bool {
+        // SAFETY: the retained owner keeps the vehicle alive; read on the game thread.
+        unsafe { self.vehicle().GetCurrentEffectiveNitrousUpgradeLevel() > NO_NITROUS }
+    }
 }
+
+/// The nitrous upgrade level of a vehicle without nitrous (`NVehicle::EVehicleModUpgradeLevel`).
+const NO_NITROUS: i32 = -1;
 
 #[cfg(test)]
 impl VehicleEntryIdentity {

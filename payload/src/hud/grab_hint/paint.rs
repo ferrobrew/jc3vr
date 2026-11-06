@@ -71,6 +71,18 @@ pub(crate) fn swap(incoming: &Image, outgoing: &Image, label: &str) -> Vec<u8> {
     canvas.haloed().into_texels()
 }
 
+/// The tag texture's size, texels: one label and room for its halo.
+pub(crate) const TAG_TEXELS: (u32, u32) = (192, LABEL_ROW + PAD);
+
+/// Paint a tag: `label` alone, centred and haloed, for a marker's name
+/// ([`crate::hud::mark_labels`]). Premultiplied RGBA texels of [`TAG_TEXELS`], row by row.
+pub(crate) fn tag(label: &str) -> Vec<u8> {
+    let (width, height) = TAG_TEXELS;
+    let mut canvas = Canvas::clear(width, height);
+    canvas.label(label, width / 2);
+    canvas.haloed().into_texels()
+}
+
 /// The padding around the icons, texels: room for the halo.
 const PAD: u32 = 12;
 
@@ -418,6 +430,20 @@ mod tests {
         );
         assert_eq!(texel(&texels, width, 0, 0), [0; 4]);
         assert!(alpha(&texels, width, PAD + 97, height / 2) > 64);
+    }
+
+    #[test]
+    fn a_tag_is_its_label_alone_haloed() {
+        let texels = tag("Nitrous");
+        let (width, height) = TAG_TEXELS;
+        assert_eq!(texels.len(), (width * height * 4) as usize);
+        let lit = (0..height)
+            .flat_map(|y| (0..width).map(move |x| (x, y)))
+            .filter(|&(x, y)| texel(&texels, width, x, y)[0] > 200)
+            .count();
+        assert!(lit > 50, "{lit}");
+        assert_eq!(texel(&texels, width, 0, height - 1), [0; 4]);
+        assert!(tag("").iter().all(|&c| c == 0));
     }
 
     #[test]

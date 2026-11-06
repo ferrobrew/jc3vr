@@ -26,7 +26,7 @@ use std::{
 use anyhow::Context as _;
 use glam::Vec4;
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
-pub(crate) use paint::{MARKER_TEXELS, marker as paint_marker};
+pub(crate) use paint::{MARKER_TEXELS, TAG_TEXELS, marker as paint_marker, tag as paint_tag};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 

@@ -144,6 +144,8 @@ pub struct Mark {
     pub size: f32,
     pub style: MarkStyle,
     pub shown: Shown,
+    /// A short name drawn above the marker while it shows ([`crate::hud::mark_labels`]).
+    pub label: Option<&'static str>,
 }
 
 impl Mark {
@@ -158,6 +160,7 @@ impl Mark {
             size,
             style: MarkStyle::Ring,
             shown: Shown::InReach,
+            label: None,
         }
     }
 
@@ -175,6 +178,14 @@ impl Mark {
 
     pub const fn showing(self, shown: Shown) -> Self {
         Self { shown, ..self }
+    }
+
+    /// The same marker with `label` drawn above it.
+    pub const fn labelled(self, label: &'static str) -> Self {
+        Self {
+            label: Some(label),
+            ..self
+        }
     }
 }
 
