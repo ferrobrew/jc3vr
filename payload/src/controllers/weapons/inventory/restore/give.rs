@@ -42,7 +42,8 @@ use parking_lot::Mutex;
 
 use crate::{
     controllers::{
-        frame::{self, Button, Hand},
+        bindings,
+        frame::Hand,
         loadout::{Socket, live},
         summary::localise,
         weapons::{
@@ -406,7 +407,7 @@ unsafe fn draw_given() {
     let draws = std::mem::take(&mut *DRAWS.lock());
     for (hand, socket, name) in draws {
         let empty = live::snapshot_now().is_some_and(|table| table.held(hand).is_none());
-        let line = if !grip_closed(hand) {
+        let line = if bindings::grip_holds_now(hand) != Some(true) {
             format!(
                 "give: {name} stays on the {}: the {} hand's grip is open",
                 socket.label(),
@@ -427,15 +428,6 @@ unsafe fn draw_given() {
         tracing::info!(target: "controllers", "{line}");
         *LAST.lock() = Some(line);
     }
-}
-
-/// Whether `hand`'s grip is closed on the latest controller frame.
-fn grip_closed(hand: Hand) -> bool {
-    frame::with_latest(|f| {
-        let state = f.hand(hand);
-        f.focused && state.active && state.buttons.contains(Button::SqueezePress)
-    })
-    .unwrap_or(false)
 }
 
 /// Look the giveable definitions' display names up again when the game's language has changed.

@@ -33,9 +33,10 @@ use crate::{
     config::Config,
     controllers::{
         aim::gun,
+        bindings,
         clock::TimeScale,
         diagnostics,
-        frame::{self, Button, Hand, Pose},
+        frame::{self, Hand, Pose},
         hands::grip,
         loadout::{ObjectAddress, Socket, grab, live},
         motion,
@@ -341,16 +342,11 @@ pub(crate) fn cancel_releases() {
     STATE.lock().watches.iter_mut().for_each(Watch::stand_down);
 }
 
-/// Whether each controller's grip is squeezed on the latest frame, by [`Hand::index`], unmasked by
-/// the bindings' wait for a returning hand's controls to rest.
-fn physical_grips() -> [bool; 2] {
-    frame::with_latest(|f| {
-        Hand::BOTH.map(|hand| {
-            let state = f.hand(hand);
-            f.focused && state.active && state.buttons.contains(Button::SqueezePress)
-        })
-    })
-    .unwrap_or([false; 2])
+/// Whether each controller's grip holds its hand's gun on the latest frame, by [`Hand::index`],
+/// unmasked by the bindings' wait for a returning hand's controls to rest
+/// ([`bindings::grip_holds_now`]); `None` for a grip not known.
+fn physical_grips() -> [Option<bool>; 2] {
+    Hand::BOTH.map(bindings::grip_holds_now)
 }
 
 /// One tick's grips, by [`Hand::index`].
@@ -358,8 +354,8 @@ fn physical_grips() -> [bool; 2] {
 struct GripReading {
     /// The grips as a hold reads them, masked for a returning hand until its controls rest.
     grips: [bool; 2],
-    /// The controllers' grips as they are ([`physical_grips`]).
-    physical: [bool; 2],
+    /// The controllers' grips as they are, `None` where not known ([`physical_grips`]).
+    physical: [Option<bool>; 2],
 }
 
 /// Put the gun `hand` holds back on a socket of the body that takes it: the one it was last drawn
@@ -534,8 +530,8 @@ impl Watch {
     }
 
     /// Fold in one input tick ([`release_tick`]): [`Self::observe_release`], after the first tick
-    /// back from a stand-down has read the controller's grip as it is: a gun under a closed grip is
-    /// kept until that grip opens, and one under an open grip is stowed.
+    /// back from a stand-down has read the controller's grip as it is: a gun under a closed grip, or
+    /// one not known, is kept until that grip reads open, and one under an open grip is stowed.
     fn observe(
         &mut self,
         hand: Hand,
@@ -547,7 +543,8 @@ impl Watch {
         let GripReading { grips, physical } = reading;
         let i = hand.index();
         if std::mem::take(&mut self.resumed) && weapon.is_some() {
-            if physical[i] {
+            // A grip not known keeps the gun until it reads open.
+            if physical[i] != Some(false) {
                 self.held_through = weapon;
             } else {
                 self.weapon = weapon;
@@ -564,7 +561,7 @@ impl Watch {
                 // The masked grip reads the hand again: the ordinary watch takes over.
                 self.held_through = None;
                 self.pending = true;
-            } else if !physical[i] {
+            } else if physical[i] == Some(false) {
                 self.held_through = None;
                 self.weapon = weapon;
                 self.release.unarm();

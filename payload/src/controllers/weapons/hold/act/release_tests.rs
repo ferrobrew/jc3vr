@@ -177,7 +177,7 @@ fn a_stand_down_ends_with_the_grip_as_it_is_then() {
 fn masked(physical: [bool; 2]) -> GripReading {
     GripReading {
         grips: [false; 2],
-        physical,
+        physical: physical.map(Some),
     }
 }
 
@@ -185,7 +185,29 @@ fn masked(physical: [bool; 2]) -> GripReading {
 fn unmasked(grips: [bool; 2]) -> GripReading {
     GripReading {
         grips,
-        physical: grips,
+        physical: grips.map(Some),
+    }
+}
+
+#[test]
+fn a_grip_not_known_after_a_stand_down_keeps_the_gun_until_it_reads_open() {
+    for hand in Hand::BOTH {
+        let mut watch = arm(hand);
+        watch.stand_down();
+        let unknown = GripReading {
+            grips: [false; 2],
+            physical: [None; 2],
+        };
+        for _ in 0..2 {
+            assert_eq!(
+                watch.observe(hand, Some(1), unknown, [false; 2], None),
+                GripRelease::Kept
+            );
+        }
+        assert_eq!(
+            watch.observe(hand, Some(1), masked([false; 2]), [false; 2], None),
+            GripRelease::LetGo
+        );
     }
 }
 

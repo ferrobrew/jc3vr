@@ -79,7 +79,7 @@ use crate::{
         aim::{self, sights},
         bindings::{
             buttons::{grapple_button, grapple_button_held, reload_button},
-            controls::{ButtonControl, ClosedHand, Controls},
+            controls::{ButtonControl, ClosedHand, Controls, holds_unseen},
             grapple_button::GrappleContext,
             hold::{ActionWrite, Desired, DevicePoll, HoldTracker, MapKind, Target, Want},
             intents::SemanticInput,
@@ -957,6 +957,26 @@ fn marker_frame(active: &hands::ActiveHands) -> MarkerFrame {
 /// ([`ClosedHand`]), for the holds checked outside the tick.
 pub(crate) fn hand_closed(hand: Hand) -> bool {
     HANDS_CLOSED[hand.index()].load(Ordering::Relaxed)
+}
+
+/// Whether `hand`'s grip holds what the hand has on the latest controller frame, read as the
+/// controller is, unmasked by the wait for a returning hand's controls to rest
+/// ([`holds_unseen`]), for a hold resumed with no tick's history of the hand. `None`
+/// while the frame is unfocused or the hand is not tracked, when the grip is not known.
+pub(crate) fn grip_holds_now(hand: Hand) -> Option<bool> {
+    let input = Config::lock_query(|config| config.controllers.input);
+    frame::with_latest(|f| {
+        let source = f.hand(hand);
+        (f.focused && source.active).then(|| {
+            let force = matches!(input.grip_press(source.profile, hand), GripPress::Force(_));
+            holds_unseen(
+                source.buttons.contains(Button::SqueezePress),
+                force.then_some(source.inputs.squeeze),
+                input.squeeze_press.release,
+            )
+        })
+    })
+    .flatten()
 }
 
 /// The last input tick's report.

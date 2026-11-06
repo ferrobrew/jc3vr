@@ -18,7 +18,7 @@ use crate::{
     controllers::{
         aim::gun,
         bindings,
-        frame::{self, Button, Hand},
+        frame::{self, Hand},
         hands::late,
         loadout::live,
         mode, scheme,
@@ -302,15 +302,13 @@ fn permitted(request: DetachRequest, retain: bool) -> bool {
     {
         return false;
     }
+    let puller_closed = !pull
+        || bindings::grip_holds_now(request.id.holder.other()) == Some(true)
+        || bindings::hand_closed(request.id.holder.other());
     let tracked = frame::with_latest(|frame| {
         frame.focused
             && frame.is_fresh_at(Instant::now())
-            && (!pull
-                || frame
-                    .hand(request.id.holder.other())
-                    .buttons
-                    .contains(Button::SqueezePress)
-                || bindings::hand_closed(request.id.holder.other()))
+            && puller_closed
             && [request.id.holder, request.id.holder.other()]
                 .into_iter()
                 .all(|hand| {

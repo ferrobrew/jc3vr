@@ -248,6 +248,15 @@ impl ClosedHand {
     }
 }
 
+/// Whether a grip read on its own, with no history of the hand's ticks, holds what the hand has:
+/// pressed, or on a force-sensing grip (`squeeze` is its squeeze value, `None` on any other grip)
+/// with the fingers round the handle at or above the value grips release at, as a [`ClosedHand`]
+/// that is closed reads it. A read with no history cannot tell a sagged hold from fingers resting
+/// round the handle, so it errs toward the hold: fingers resting there read as holding.
+pub fn holds_unseen(pressed: bool, squeeze: Option<f32>, value_release: f32) -> bool {
+    pressed || squeeze.is_some_and(|v| v.is_finite() && v >= value_release)
+}
+
 /// A stick with a radial deadzone: zero inside `deadzone`, and outside it rescaled so that the
 /// magnitude runs from zero at the deadzone's edge to one at full deflection, keeping the
 /// direction.
@@ -394,6 +403,17 @@ mod tests {
         let let_go = hand.step(LET_GO, None, VALUE_RELEASE);
         assert_eq!(let_go, LET_GO);
         assert!(!let_go.held());
+    }
+
+    #[test]
+    fn a_grip_read_on_its_own_holds_through_a_force_grip_sag() {
+        assert!(holds_unseen(true, None, VALUE_RELEASE));
+        assert!(!holds_unseen(false, None, VALUE_RELEASE));
+        // A sagged force grip still wrapped round the handle holds; fingers off it do not.
+        assert!(holds_unseen(false, Some(VALUE_RELEASE), VALUE_RELEASE));
+        assert!(!holds_unseen(false, Some(0.3), VALUE_RELEASE));
+        assert!(!holds_unseen(false, Some(f32::NAN), VALUE_RELEASE));
+        assert!(holds_unseen(true, Some(0.0), VALUE_RELEASE));
     }
 
     #[test]
