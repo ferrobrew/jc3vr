@@ -1,11 +1,11 @@
 use glam::Vec3;
 
 use crate::{
-    controllers::bindings::yank::HandLine,
+    controllers::bindings::{grapple_button::LockButton, yank::HandLine},
     grapple::{
         physical::{
             config::LockConfig,
-            lock::model::{Held, SwingInput, TakeIn, swing},
+            lock::model::{Held, SwingInput, TakeIn, armed, swing},
         },
         rope::{GRAVITY_MPS2, RopeFault},
     },
@@ -207,4 +207,27 @@ fn bad_samples_are_refused() {
     bad.hook = Vec3::NAN;
     assert_eq!(swing(&mut held, bad, &CONFIG), Err(RopeFault::Invalid));
     assert!(Held::new(Vec3::NAN, Vec3::ZERO, &CONFIG).is_none());
+}
+
+#[test]
+fn a_press_in_the_wind_up_stays_armed_while_held_and_disarms_on_release() {
+    let held = [
+        Some(LockButton::Pressed),
+        Some(LockButton::Held),
+        Some(LockButton::Held),
+    ];
+    let mut state = false;
+    for button in held {
+        state = armed(state, button);
+        assert!(state, "a held press stays armed until the reel carries");
+    }
+    for up in [Some(LockButton::Tapped), Some(LockButton::LetGo), None] {
+        assert!(!armed(true, up));
+    }
+}
+
+#[test]
+fn a_held_button_never_rearms_after_the_lock_took_hold_or_refused() {
+    // The tick clears the arming when it takes hold or refuses; a held button does not undo that.
+    assert!(!armed(false, Some(LockButton::Held)));
 }

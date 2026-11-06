@@ -82,8 +82,9 @@ pub(crate) struct TickOutput {
     pub retract: Option<f32>,
     /// The dual tethers the hook holds.
     pub tethers: u32,
-    /// The lock could take hold now: the reel task carries the character
-    /// ([`Traversal::ReelingIn`]) along a line [`lock::lockable`] accepts. Or it holds already.
+    /// The lock owns the grapple button: the hook reels in along a line [`lock::lockable`]
+    /// accepts, from the reel's wind-up on, or the lock holds already. A press in the wind-up arms
+    /// the lock, which takes hold once the reel task carries the character.
     pub lockable: bool,
     /// The yank fired this tick while the lock held the line: it resumes the reel.
     pub lock_yank: bool,
@@ -369,9 +370,7 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
     TickOutput {
         retract,
         tethers,
-        lockable: locked
-            || (input.detection.traversal == Some(Traversal::ReelingIn)
-                && unsafe { lock::lockable(&input.config.grapple.lock) }),
+        lockable: locked || unsafe { lock::lockable(&input.config.grapple.lock) },
         lock_yank,
     }
 }

@@ -5,12 +5,27 @@
 use glam::Vec3;
 
 use crate::{
-    controllers::bindings::yank::{ArmedLine, HandLine},
+    controllers::bindings::{
+        grapple_button::LockButton,
+        yank::{ArmedLine, HandLine},
+    },
     grapple::{
         physical::config::LockConfig,
         rope::{GRAVITY_MPS2, Rope, RopeEnd, RopeFault, RopeStep, RopeTuning, held_floor},
     },
 };
+
+/// Whether a press asks the lock to take hold, given whether it asked last tick (`armed`, cleared
+/// when the lock takes hold or refuses) and what the button asks now: a press arms the lock, and
+/// the press held keeps it armed, so a press in the reel's wind-up locks the line once the reel
+/// carries the character; the button coming up disarms it.
+pub(crate) fn armed(armed: bool, button: Option<LockButton>) -> bool {
+    match button {
+        Some(LockButton::Pressed) => true,
+        Some(LockButton::Held) => armed,
+        Some(LockButton::Tapped | LockButton::LetGo) | None => false,
+    }
+}
 
 /// The held line between ticks.
 #[derive(Debug, Copy, Clone, PartialEq)]

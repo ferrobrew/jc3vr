@@ -22,7 +22,9 @@
 //!
 //! - a press locks the line at the distance it is at; for [`LockConfig::brake_s`] the lock brakes
 //!   the reel's rush toward the hook, keeping the speed across the line, and the held length
-//!   follows the character in;
+//!   follows the character in. A press in the reel's wind-up, before the reel task carries the
+//!   character, arms the lock, and the lock takes hold as the reel starts if the button is still
+//!   held;
 //! - pulling the grapple hand back takes line in ([`model::TakeIn`]);
 //! - a quick release unlocks and resumes the reel, the tap going on to the game, which fires again
 //!   from the reel when its upgrade is bought;
@@ -195,6 +197,9 @@ pub(crate) unsafe fn lockable(config: &LockConfig) -> bool {
 pub(crate) struct LockTickInput<'a> {
     /// What the grapple button asks of the lock this tick.
     pub button: Option<LockButton>,
+    /// The reel task carries the character toward the hook: the lock may take hold. Before it, in
+    /// the reel's wind-up, nothing drives the character, and a press only arms the lock.
+    pub carries: bool,
     /// The physical grapple's yank fired this tick: the lock's one source of it, whatever the
     /// button's gesture is doing.
     pub yank: bool,
@@ -227,12 +232,14 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
     {
         tracing::debug!(target: "grapple", %error, "grapple lock: the reaction found no body");
     }
+    let wants = arm(input.button);
     let Some((character, hook)) = (unsafe { hook::local() }) else {
         end(None, LockEnd::ReelEnded, input.hand);
         return;
     };
     if !holds() {
-        if input.button == Some(LockButton::Pressed) && input.config.enabled {
+        if wants && input.carries && input.config.enabled {
+            SHARED.lock().armed = false;
             unsafe { start(character, hook, input) };
         }
         return;
@@ -263,6 +270,7 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
 /// Let go of the lock without touching the line: the bindings stand down.
 pub(crate) fn stand_down() {
     let mut shared = SHARED.lock();
+    shared.armed = false;
     if shared.active.take().is_some() {
         shared.status.locked = false;
         shared.status.last_end = Some(LockEnd::ReelEnded);
@@ -369,6 +377,13 @@ pub(crate) unsafe fn drive(
     status.hook_speed_mps = hook_velocity.length();
     status.rider = rider;
     true
+}
+
+/// Whether the button asks the lock to take hold this tick ([`model::armed`]).
+fn arm(button: Option<LockButton>) -> bool {
+    let mut shared = SHARED.lock();
+    shared.armed = model::armed(shared.armed, button);
+    shared.armed
 }
 
 /// The lock's last velocity for the character, for a reel tick that skipped its motion.
@@ -590,6 +605,8 @@ struct Shared {
     pending: Option<Reaction>,
     fault: Option<BreakCause>,
     last_velocity: Option<Vec3>,
+    /// A press is held that has not yet taken the lock or been refused.
+    armed: bool,
 }
 
 /// A leaf lock: nothing else is taken while it is held. The input tick and the reel task both run
@@ -614,6 +631,7 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     pending: None,
     fault: None,
     last_velocity: None,
+    armed: false,
 });
 
 /// Whether the lock holds the line, for the detours, which must not wait on [`SHARED`].

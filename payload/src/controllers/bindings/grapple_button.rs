@@ -21,12 +21,13 @@
 //! The pulls act only while the button is held, so a pull of the hand never zips or tightens by
 //! itself.
 //!
-//! While the reel carries the character toward a target the lock can hold
-//! ([`GrappleContext::reeling`]), the button is the lock's ([`crate::grapple::physical::lock`]):
-//! a press locks the line's length at once; a release within [`TAP_S`] unlocks it and passes the
-//! tap to the game, which keeps its fire from the reel; a release after a longer hold lets go of
-//! the line; and a yank of the grapple hand while it is held unlocks it and resumes the reel. The
-//! game sees no held fire input through any of it.
+//! While the hook reels in along a line to a target the lock can hold
+//! ([`GrappleContext::reeling`]), from the reel's wind-up on, the button is the lock's
+//! ([`crate::grapple::physical::lock`]): a press locks the line's length at once, or, in the
+//! wind-up, as soon as the reel carries the character; a release within [`TAP_S`] unlocks it and
+//! passes the tap to the game, which keeps its fire from the reel; a release after a longer hold
+//! lets go of the line; and a yank of the grapple hand while it is held unlocks it and resumes the
+//! reel. The game sees no held fire input through any of it.
 
 use jc3gi::input::input_action_map::Action;
 
@@ -44,7 +45,9 @@ pub struct GrappleContext {
     pub line: bool,
     /// The game holds a grapple target in range under the grapple's aim.
     pub aim_target: bool,
-    /// The reel carries the character toward a target the lock can hold.
+    /// The hook reels in along a line to a target the lock can hold, from the reel's wind-up on:
+    /// the button is the lock's. Were the wind-up's presses the game's, a press held into the reel
+    /// would be the game's dual tether hold, whose release replaces the reel's line.
     pub reeling: bool,
 }
 
@@ -823,6 +826,34 @@ mod tests {
         let out = run(&mut g, GrappleContext::default(), &buttons);
         assert_eq!(locks(&out).last(), Some(&LockButton::LetGo));
         assert!(fires(&out).is_empty());
+    }
+
+    #[test]
+    fn a_hold_begun_after_the_fire_tap_is_the_locks_and_lets_go_on_release() {
+        // The recorded sequence: a tap fires with nothing attached and reaches the game; the hook
+        // then reels in (the wind-up first), and a second press held through the reel is the
+        // lock's, never the game's dual tether hold, and its release lets go of the line.
+        let mut g = GrappleButton::new();
+        let fire = run(
+            &mut g,
+            GrappleContext::default(),
+            &[PRESS, HELD, RELEASE, UP],
+        );
+        assert!(fire.iter().all(|o| !o.gestures));
+        let mut buttons = vec![UP, UP, PRESS];
+        buttons.extend(vec![HELD; (TAP_S / DT).ceil() as usize + 10]);
+        buttons.extend([RELEASE, UP]);
+        let out = run(&mut g, REELING, &buttons);
+        assert!(out.iter().all(|o| o.gestures));
+        assert!(fires(&out).is_empty(), "the game never sees the held press");
+        let locks = locks(&out);
+        assert_eq!(locks.first(), Some(&LockButton::Pressed));
+        assert_eq!(locks.last(), Some(&LockButton::LetGo));
+        assert!(
+            locks[1..locks.len() - 1]
+                .iter()
+                .all(|l| *l == LockButton::Held)
+        );
     }
 
     #[test]

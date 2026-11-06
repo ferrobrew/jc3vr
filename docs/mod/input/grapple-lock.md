@@ -6,16 +6,16 @@ The implementation is `payload/src/grapple/physical/lock/`, with the rope shared
 
 ## The button
 
-The lock owns the grapple button while the reel task carries Rico (the mode detector's reeling-in traversal, not the wind-up before it) along a line whose far end is attached to anything but a character, on the controller scheme with the lock switched on. The button's gestures, read before the game sees the button:
+The lock owns the grapple button while the hook reels in along a line whose far end is attached to anything but a character, on the controller scheme with the lock switched on. It owns it from the hook's reeling-in state on, which takes in the reel's wind-up (the mode detector's pre-reel traversal, and in the parachute a stretch before it) as well as the reel itself. The lock takes hold only once the reel task carries Rico (the reeling-in traversal); a press in the wind-up arms it, and it takes hold as the reel starts if the button is still held. The button's gestures, read before the game sees the button:
 
 | Press | Effect |
 |---|---|
-| Press | Locks the line at once, at the distance Rico is at, so the tap window does not cost several metres at reel speed |
+| Press | Locks the line at once, at the distance Rico is at, so the tap window does not cost several metres at reel speed; in the wind-up, as soon as the reel carries Rico |
 | Release within 0.25 s | Unlocks and resumes the reel, and passes the tap on to the game, which fires again from the reel when its upgrade is bought |
 | Release after a longer hold | Lets go of the line: Rico flies on |
 | A yank while held | Unlocks and resumes the reel, and the yank boosts it as during any reel |
 
-The yank is the reel's boost yank ([physical-grapple.md](physical-grapple.md#the-reel)), so it resumes the reel only while pull to reel is on; without it, the button's release is the way out. The lock hears the yank directly from the physical grapple, whatever the button's gesture is doing, and the button only spends its press so that the release afterwards does nothing. The game never sees a held fire input during the reel, so the hold cannot start a dual tether. The game's re-fire reads the fire input's press edge, so the passed tap still fires; it fires at the release rather than the press, and aims where the grapple's aim points then. A quick tap whose reel ended under it (a landing or a break) passes nothing on, so it cannot fire a fresh line. A double tap still releases tethers and does nothing to the reel's line. With the far end on a character, or the lock switched off, the button reaches the game as before.
+The yank is the reel's boost yank ([physical-grapple.md](physical-grapple.md#the-reel)), so it resumes the reel only while pull to reel is on; without it, the button's release is the way out. The lock hears the yank directly from the physical grapple, whatever the button's gesture is doing, and the button only spends its press so that the release afterwards does nothing. The game never sees a held fire input during the wind-up or the reel, so the hold cannot start a dual tether: a fire held past the game's hold time with the reel's line attached arms the dual tether, whose release fires the tether's second end and ends the reel. The game's re-fire reads the fire input's press edge, so the passed tap still fires; it fires at the release rather than the press, and aims where the grapple's aim points then. A quick tap whose reel ended under it (a landing or a break) passes nothing on, so it cannot fire a fresh line. A double tap still releases tethers and does nothing to the reel's line. With the far end on a character, or the lock switched off, the button reaches the game as before.
 
 ## The swing
 
@@ -92,7 +92,7 @@ The lock follows the prescan's first design, inside the reel task, after the eng
 - The reel task survives a velocity that does not close the distance: it has no timeout and no progress check of its own. The reel's arrival test and the hook's stuck check are the only endings a held line meets, and the lock holds both off rather than avoiding them by distance.
 - The reel's velocity is the character's whole motion, so the lock adds gravity itself. The reel's inherited velocity is the attach point's own, so the lock measures the rope against the same point velocity.
 - Letting go is a retract alone: the game's reel task answers a detached far end with its own cancel, the same path the game's cancel click takes during a reel.
-- The lock waits for the reel task rather than taking hold in the wind-up, where nothing yet drives Rico and a lock would pin him to the ground.
+- The lock waits for the reel task rather than taking hold in the wind-up, where nothing yet drives Rico and a lock would pin him to the ground. It owns the button through the wind-up all the same: a hold that follows the fire's tap lands there, a fraction of a second after it, and were the button the game's in the wind-up, the hold would never lock and the game would read it as a dual tether hold, whose release cuts the reel.
 - The game's hang was not taken as the base. It is the game's one rope swing with a body, a free capsule joined to the far end by the wire's native spring, but it is entered only through the reel's arrival, at the hook, with the short line its animations expect, and shortening it would mean rebuilding the native constraint as the tether squeeze does.
 - No in-world overlay: the game draws the wire itself, and the tension is in the hand.
 
@@ -100,18 +100,19 @@ The lock follows the prescan's first design, inside the reel task, after the eng
 
 With the lock on (the default):
 
-1. Zip toward a high wall and hold the grapple button mid-reel: Rico stops rushing in within a quarter of a second and swings below the hook; `the line locks` is logged with a plausible length, the lock pulse is felt, and `LINE LOCK` shows `BRAKING` briefly and then the held length.
-2. Let the swing settle: Rico hangs at the held length plus a small stretch, and the grapple hand's hum follows the tension through the swing.
-3. Still holding, pull the grapple hand back repeatedly, hand over hand: the line shortens, no faster than about 3 m/s, and stops at 1.5 m. Reach out: nothing pays out.
-4. Swing, and let go at the bottom of the arc going forward: Rico flies on with his speed into the fall, the release pulse is felt, `the lock ends` with `released`, and the parachute opens from the flight.
-5. Lock, then tap-release within a quarter of a second, with the re-reel upgrade bought: the reel resumes and fires again from the reel at the aim. Without the upgrade, the reel simply resumes.
-6. Lock, then yank the grapple hand: the reel resumes to the hook and its arrival (a perch or a hang), boosted if the upgrade is bought; `the lock ends` with `yanked`.
-7. Lock low over the ground and let Rico swing down onto it: the line is let go of on touching down, with `landed`, and Rico lands on foot.
-8. Lock onto a parked car from above: the car barely moves while Rico swings. Lock onto a light object hung or lying on a ledge: it is dragged toward Rico. Lock onto a flying helicopter: Rico keeps his offset under it as it flies, the helicopter sways, and `LINE LOCK` shows its speed.
-9. Swing hard into a long arc on a short line: if Rico is flung past the break stretch the line snaps with the snap pulse and `broke: overstretched`. Shoot down a helicopter while locked under it: the line breaks with `broke: target gone`.
-10. Grapple a character and hold the button during the reel: nothing locks, and the game's own reel and grab behave as before.
-11. Brush a wall mid-swing: the swing carries on rather than the reel dropping or reattaching.
-12. Switch the lock off: holding the button mid-reel does what it did before.
+1. Zip toward a high wall, tapping the grapple button, then press it again at once and hold it, before Rico starts moving: nothing locks in the wind-up, and the line locks as the reel carries Rico. Release: Rico flies on (`released`), and no dual tether fires.
+2. Zip toward a high wall and hold the grapple button mid-reel: Rico stops rushing in within a quarter of a second and swings below the hook; `the line locks` is logged with a plausible length, the lock pulse is felt, and `LINE LOCK` shows `BRAKING` briefly and then the held length.
+3. Let the swing settle: Rico hangs at the held length plus a small stretch, and the grapple hand's hum follows the tension through the swing.
+4. Still holding, pull the grapple hand back repeatedly, hand over hand: the line shortens, no faster than about 3 m/s, and stops at 1.5 m. Reach out: nothing pays out.
+5. Swing, and let go at the bottom of the arc going forward: Rico flies on with his speed into the fall, the release pulse is felt, `the lock ends` with `released`, and the parachute opens from the flight.
+6. Lock, then tap-release within a quarter of a second, with the re-reel upgrade bought: the reel resumes and fires again from the reel at the aim. Without the upgrade, the reel simply resumes.
+7. Lock, then yank the grapple hand: the reel resumes to the hook and its arrival (a perch or a hang), boosted if the upgrade is bought; `the lock ends` with `yanked`.
+8. Lock low over the ground and let Rico swing down onto it: the line is let go of on touching down, with `landed`, and Rico lands on foot.
+9. Lock onto a parked car from above: the car barely moves while Rico swings. Lock onto a light object hung or lying on a ledge: it is dragged toward Rico. Lock onto a flying helicopter: Rico keeps his offset under it as it flies, the helicopter sways, and `LINE LOCK` shows its speed.
+10. Swing hard into a long arc on a short line: if Rico is flung past the break stretch the line snaps with the snap pulse and `broke: overstretched`. Shoot down a helicopter while locked under it: the line breaks with `broke: target gone`.
+11. Grapple a character and hold the button during the reel: nothing locks, and the game's own reel and grab behave as before.
+12. Brush a wall mid-swing: the swing carries on rather than the reel dropping or reattaching.
+13. Switch the lock off: holding the button mid-reel does what it did before.
 
 ## Unverified in the headset
 

@@ -98,7 +98,7 @@ use crate::{
         hands::{self, tiers},
         haptics::{self, Event},
         locomotion,
-        mode::{self, Detection, Mode},
+        mode::{self, Detection, Mode, Traversal},
         physical_hands, roomscale, scheme, snatch, vehicles, weapons,
     },
     grapple, headpose,
@@ -610,6 +610,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     unsafe {
         grapple::physical::lock::lock_tick(&grapple::physical::lock::LockTickInput {
             button: step.grapple_lock,
+            carries: detection.traversal == Some(Traversal::ReelingIn),
             yank: physical_grapple.lock_yank,
             line: grapple_line,
             real_dt,
