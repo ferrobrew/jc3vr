@@ -106,9 +106,10 @@ pub(crate) unsafe fn is_vehicle_part(object: NonZeroUsize) -> bool {
 }
 
 /// Whether the physics game object at `object`, owning its body `body`, is a vehicle part that has
-/// come off its vehicle: a loosened part whose body is no longer that of any door still on the
-/// vehicle, such as a door torn off, or one whose vehicle is gone. A door hanging open on its hinge
-/// is not one.
+/// come off its vehicle: no part of the vehicle still hangs from it by that body, such as a door or
+/// hood torn off, or the vehicle is gone. A part hanging by its own constraint is still on the
+/// vehicle, whatever it is: a door open on its hinge, a turret, or a hood or trunk lid loosened in
+/// an explosion.
 ///
 /// # Safety
 ///
@@ -120,9 +121,23 @@ pub(crate) unsafe fn broken_off(object: NonZeroUsize, body: u32) -> bool {
     let Some(vehicle) = (unsafe { vehicle_of(object) }) else {
         return true;
     };
-    !unsafe { doors(vehicle) }
-        .iter()
-        .any(|door| door.body.is_some_and(|(_, door_body)| door_body == body))
+    let vehicle = unsafe { &mut *(vehicle.get() as *mut Vehicle) };
+    let Some(pfx) = (unsafe { vehicle.m_PfxVehicle.as_mut() }) else {
+        return true;
+    };
+    if pfx.m_PartInstances.is_null() || pfx.m_ValidPartIndices.is_null() {
+        return true;
+    }
+    let parts = (0..pfx.m_NumberOfValidParts as usize).map(|k| {
+        let index = unsafe { *pfx.m_ValidPartIndices.add(k) };
+        let part = unsafe { &mut *pfx.m_PartInstances.add(index as usize) };
+        let part_body = unsafe { part.GetPfxVehiclePartIfAny().as_ref() }.map(|pfx| pfx.m_BodyId);
+        PartAttachment {
+            body: part_body,
+            hangs: unsafe { part.IsConstraintActive() && !part.BrokeOffOrAncestorBrokeOff() },
+        }
+    });
+    detached(parts, body)
 }
 
 /// The vehicle's world transform at the end of the current simulation step.
@@ -430,6 +445,22 @@ unsafe fn each_door(
     }
 }
 
+/// A vehicle part's own body, if it has one, and whether it still hangs from the vehicle.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct PartAttachment {
+    body: Option<u32>,
+    hangs: bool,
+}
+
+/// Whether `body` is off its vehicle, given each of the vehicle's parts: the part that owns it
+/// decides, and a body no part owns any more has left with its part.
+fn detached(parts: impl IntoIterator<Item = PartAttachment>, body: u32) -> bool {
+    parts
+        .into_iter()
+        .find(|part| part.body == Some(body))
+        .is_none_or(|part| !part.hangs)
+}
+
 /// A door state's raw value, read without assuming the engine wrote a known one.
 fn state_of(state: *const DoorState) -> i32 {
     // SAFETY: the field of a live door entry, read as the integer it is stored as.
@@ -491,6 +522,33 @@ unsafe fn loose_body(part: &mut PartInstance) -> Option<(NonZeroUsize, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_hanging_part_is_on_its_vehicle_whether_or_not_it_is_a_door() {
+        // A hood loosened onto its hinge in an explosion: no door owns its body, but it hangs.
+        let parts = [
+            PartAttachment {
+                body: None,
+                hangs: false,
+            },
+            PartAttachment {
+                body: Some(7),
+                hangs: true,
+            },
+        ];
+        assert!(!detached(parts, 7));
+    }
+
+    #[test]
+    fn a_part_off_its_constraint_or_owned_by_no_part_is_detached() {
+        let torn = [PartAttachment {
+            body: Some(7),
+            hangs: false,
+        }];
+        assert!(detached(torn, 7));
+        assert!(detached(torn, 9));
+        assert!(detached([], 7));
+    }
 
     #[test]
     fn every_slot_is_listed_once() {
