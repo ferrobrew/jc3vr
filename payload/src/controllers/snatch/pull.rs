@@ -42,6 +42,7 @@ use crate::{
             target::{Offer, OfferKind, weak_of},
         },
         weapons::{
+            c4,
             engine::character_frame,
             grenade,
             hold::{
@@ -113,10 +114,12 @@ pub(super) enum Fired {
     Freeing(Freeing),
     /// The hook flies.
     HookOut(Grabbed, NonZeroUsize),
+    /// A placed C4 charge went to the hand at once, as a grip on it takes it.
+    Charge,
 }
 
-/// Fire at the armed target: free a gun from a character's hands or holster first, or fire the
-/// hook at a weapon, an object, or a door.
+/// Fire at the armed target: free a gun from a character's hands or holster first, fire the hook at
+/// a weapon, an object, or a door, or take a placed C4 charge into the hand.
 ///
 /// # Safety
 ///
@@ -185,6 +188,15 @@ pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal>
             };
             let wire = unsafe { fire_hook(&grabbed) }?;
             return Ok(Fired::HookOut(grabbed, wire));
+        }
+        OfferKind::PlacedCharge { charge } => {
+            // The C4 throw swaps the placed charge for a primed one in the hand at the weapon's
+            // next update, as a grip on the charge does.
+            return if c4::placed::take(hand, charge) {
+                Ok(Fired::Charge)
+            } else {
+                Err(Refusal::Gone)
+            };
         }
         OfferKind::Door { door, handle, weak } => {
             let alive = weak.lock().ok_or(Refusal::Gone)?;

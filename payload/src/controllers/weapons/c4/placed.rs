@@ -64,10 +64,6 @@ pub struct PlacedCharge {
 }
 
 /// The placed charges at the C4 weapon's last update, in the order they were placed.
-#[expect(
-    dead_code,
-    reason = "the grapple's snatch is its caller, and is not wired yet"
-)]
 pub fn charges() -> Vec<PlacedCharge> {
     STATE.lock().placed.charges.clone()
 }
@@ -77,10 +73,6 @@ pub fn charges() -> Vec<PlacedCharge> {
 /// `false`, with nothing changed, while a throw holds a charge or waits for one, or when `charge`
 /// was not placed at the weapon's last update. A take accepted here can still be refused by the
 /// weapon's update, which then buzzes `hand`.
-#[expect(
-    dead_code,
-    reason = "the grapple's snatch is its caller, and is not wired yet"
-)]
 pub(crate) fn take(hand: Hand, charge: usize) -> bool {
     STATE.lock().take_placed(hand, charge)
 }

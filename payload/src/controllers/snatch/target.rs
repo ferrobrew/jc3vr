@@ -26,6 +26,7 @@ use crate::controllers::{
         rules::{self, Candidate, PropHandling},
     },
     weapons::{
+        c4::placed::{self as placed_charges, PlacedCharge},
         grenade,
         hold::{
             rack::{self, remote::RemoteRack},
@@ -178,6 +179,18 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
             }
             point
         }
+        OfferKind::PlacedCharge { charge } => {
+            let Some(current) = placed_charges::charges()
+                .into_iter()
+                .find(|c| c.charge == *charge)
+            else {
+                return false;
+            };
+            if !unsafe { in_sight(ray, current.position, *charge) } {
+                return false;
+            }
+            current.position
+        }
         OfferKind::Door { door, handle, weak } => {
             let Some(_alive) = weak.lock() else {
                 return false;
@@ -215,7 +228,10 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
     };
     let ground = matches!(
         offer.kind,
-        OfferKind::Ground { .. } | OfferKind::WorldGrenade { .. } | OfferKind::Rack { .. }
+        OfferKind::Ground { .. }
+            | OfferKind::WorldGrenade { .. }
+            | OfferKind::Rack { .. }
+            | OfferKind::PlacedCharge { .. }
     );
     let chosen = rules::choose(
         ray,
@@ -293,6 +309,8 @@ pub(super) enum OfferKind {
         body: u32,
         weak: Weak,
     },
+    /// A C4 charge the player placed (its address), taken into the hand as a grip on it takes it.
+    PlacedCharge { charge: usize },
     /// A vehicle's closed door, pulled at its handle, world space.
     Door {
         door: DoorTarget,
@@ -312,7 +330,8 @@ impl OfferKind {
             OfferKind::Prop { .. }
             | OfferKind::Ragdoll { .. }
             | OfferKind::Grenade { .. }
-            | OfferKind::WorldGrenade { .. } => RemoteKind::Object,
+            | OfferKind::WorldGrenade { .. }
+            | OfferKind::PlacedCharge { .. } => RemoteKind::Object,
             OfferKind::Door { .. } => RemoteKind::Door,
         }
     }
@@ -333,6 +352,7 @@ impl OfferKind {
             } => "HEAVY OBJECT",
             OfferKind::Ragdoll { .. } => "BODY",
             OfferKind::Grenade { .. } | OfferKind::WorldGrenade { .. } => "GRENADE",
+            OfferKind::PlacedCharge { .. } => "C4 CHARGE",
             OfferKind::Door { .. } => "CAR DOOR",
         }
     }
@@ -363,8 +383,8 @@ pub(super) unsafe fn offerable(input: &OfferInput) -> Result<(), &'static str> {
 }
 
 /// The target the grapple's aim picks along `ray`: the weapon, object, or car door under it, or a
-/// weapon, a loose object, or an inert grenade lying in the world or a gun in a character's hands
-/// or holster near its line, within the range, in sight. A loose object is the player's other
+/// weapon, a loose object, an inert grenade, or a placed C4 charge lying in the world or a gun in a
+/// character's hands or holster near its line, within the range, in sight. A loose object is the player's other
 /// hand's own only while that hand does not hold it.
 ///
 /// # Safety
@@ -376,6 +396,7 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
         Aimed,
         Floor(usize),
         Prop(usize),
+        Charge(usize),
         Loose(usize),
         Held(usize),
         Holstered(usize),
@@ -417,6 +438,11 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
         .into_iter()
         .filter(|(object, _, _)| Some(*object) != aimed_object)
         .collect();
+    // A placed charge is small and stuck to a surface, so it is offered within the floor's cone.
+    let charges: Vec<PlacedCharge> = placed_charges::charges()
+        .into_iter()
+        .filter(|c| near_point(ray, c.position))
+        .collect();
     // A weapon its rule set down that lies in the world with its body is the floor's already.
     let mut racks: Vec<RemoteRack> = unsafe { rack::remote::near(|point| near_point(ray, point)) }
         .into_iter()
@@ -454,6 +480,10 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
             kind: Kind::Prop(i),
             point: near.centre,
         }))
+        .chain(charges.iter().enumerate().map(|(i, c)| Candidate {
+            kind: Kind::Charge(i),
+            point: c.position,
+        }))
         .chain(
             loose
                 .iter()
@@ -482,7 +512,11 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
             cone(
                 matches!(
                     kind,
-                    Kind::Floor(_) | Kind::Prop(_) | Kind::Loose(_) | Kind::Rack(_)
+                    Kind::Floor(_)
+                        | Kind::Prop(_)
+                        | Kind::Charge(_)
+                        | Kind::Loose(_)
+                        | Kind::Rack(_)
                 ),
                 distance,
             )
@@ -527,6 +561,13 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
                 // SAFETY: its body was read as its own on this thread this tick.
                 weak: unsafe { weak_of(near.object) },
             }
+        }
+        Kind::Charge(i) => {
+            let charge = charges[i].charge;
+            if !unsafe { in_sight(ray, point, charge) } {
+                return None;
+            }
+            OfferKind::PlacedCharge { charge }
         }
         Kind::Loose(i) => {
             let (object, body, _) = loose[i];

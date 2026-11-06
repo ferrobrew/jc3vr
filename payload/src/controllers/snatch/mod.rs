@@ -625,6 +625,16 @@ impl State {
                                 waited_s: 0.0,
                             }
                         }
+                        Ok(Fired::Charge) => {
+                            haptics::play(hand, Event::SnatchCatch);
+                            self.status.taken += 1;
+                            tracing::info!(target: "controllers", hand = hand.label(), "snatch: a placed C4 charge came to the {} hand", hand.label());
+                            self.moment.ended(
+                                "taken",
+                                format!("a placed C4 charge came to the {} hand", hand.label()),
+                            );
+                            Phase::Idle
+                        }
                         Err(refusal) => self.failed(hand, refusal),
                     }
                 }
