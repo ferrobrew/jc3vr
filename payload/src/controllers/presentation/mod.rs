@@ -15,7 +15,8 @@
 //! - [`draw_edit`], called for every draw of the local player's body, interpolates the two ticks'
 //!   joints by the frame's interpolation fraction (as the skinning does), measures the head's motion
 //!   since them and takes each hand's correction from the late update
-//!   ([`late::hand_correction`]), and solves the upper body again ([`solve::solve`]). The result
+//!   ([`late::hand_correction`]), and solves the upper body again ([`solve::solve`]), bending each
+//!   controller-driven arm toward its elbow pole ([`elbow`]), smoothed across frames. The result
 //!   is a rigid edit per bone group that the draw pre-multiplies onto its copy of the palette, so
 //!   the simulation's pose, the hit shapes, and every other reader of the skeleton stay as the
 //!   tick left them, and other characters are never touched.
@@ -32,6 +33,7 @@
 
 mod config;
 mod edit;
+pub mod elbow;
 pub mod rig;
 pub mod solve;
 
@@ -41,7 +43,7 @@ use std::{
 };
 
 use body_rig::body::EYES_TO_NECK;
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Quat, Vec3};
 use jc3gi::character::character::{AnimationController, Character, Joint};
 use parking_lot::Mutex;
 use smol_str::{SmolStr, ToSmolStr};
@@ -58,11 +60,13 @@ use crate::{
             skeleton::{self, SkeletonKey},
         },
         frame::{Hand, Pose},
-        hands::{late, pose as hand_pose, reach::REACH},
+        hands::{ik, late, pose as hand_pose, reach::REACH},
+        mode::{self, Mode},
         presentation::{
             rig::{Group, GroupMap, PresentationRig},
-            solve::{ArmJoints, Motion, UpperBody, head_motion, solve},
+            solve::{ArmDrive, ArmJoints, ElbowDrive, Motion, UpperBody, head_motion, solve},
         },
+        roomscale::teleport,
     },
     frame_timing::{self, Slot},
     headpose, hooks,
@@ -124,6 +128,19 @@ pub struct PresentationStatus {
     pub ticks: u64,
     /// Why the skeleton has no rig, when it has none.
     pub rig_error: Option<SmolStr>,
+    /// Each arm's elbow pole in the last solve, left then right; `None` where the arm bent toward
+    /// its drawn elbow (the pole is off, or the controllers do not drive the arm).
+    pub elbows: [Option<ElbowReadout>; 2],
+}
+
+/// One arm's elbow pole in the last solve.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct ElbowReadout {
+    /// How much of the pole the arm bent toward, `0..=1`.
+    pub weight: f32,
+    /// The turn about the shoulder-to-wrist line from HumanIK's elbow to the pole, degrees; `None`
+    /// for a straight drawn arm.
+    pub swivel_deg: Option<f32>,
 }
 
 /// The layer's readout. A leaf lock and atomics, so any thread may read it.
@@ -143,6 +160,7 @@ pub fn status() -> PresentationStatus {
             .lock()
             .as_ref()
             .and_then(|(_, rig)| rig.as_ref().err().cloned()),
+        elbows: *ELBOWS.lock(),
     }
 }
 
@@ -175,8 +193,12 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         return;
     };
     let head = headpose::query();
+    let drive = ik::tick_records()
+        .current
+        .map(|target| target.map_or(0.0, |t| t.weight));
     let pose = TickPose {
         body,
+        drive,
         head: Pose {
             position: head.position,
             orientation: head.orientation,
@@ -225,6 +247,16 @@ pub(crate) fn begin_frame() {
         };
         let frame = Frame {
             config,
+            up: [
+                headpose::xr::body_rotation_prev(),
+                headpose::xr::body_rotation(),
+            ]
+            .map(|body| body * Vec3::Y),
+            poles: PoleContext {
+                teleport: teleport::epoch(),
+                mode: mode::current().mode,
+            },
+            at: start,
             stretch_forearm: REACH.detach && REACH.stretch_forearm,
             pivot_offset: EYES_TO_NECK * scale,
             head: [head(headpose::query_prev()), head(headpose::query())],
@@ -265,6 +297,9 @@ struct TickPose {
     head: Pose,
     /// The procedural torso's weight at the tick.
     torso: f32,
+    /// How much the controllers drove each arm at the tick, left then right: the hand IK's weight,
+    /// none for a hand it did not drive.
+    drive: [f32; 2],
     key: SkeletonKey,
     groups: GroupMap,
     at: Instant,
@@ -280,6 +315,12 @@ struct Ticks {
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct Frame {
     config: PresentationConfig,
+    /// The player's up in the world, from the previous and the current ticks' body frames.
+    up: [Vec3; 2],
+    /// What the smoothed elbow poles belong to.
+    poles: PoleContext,
+    /// When the frame was snapshot.
+    at: Instant,
     stretch_forearm: bool,
     /// The neck pivot from the eyes, in the head's frame, at the world scale.
     pivot_offset: Vec3,
@@ -336,21 +377,24 @@ unsafe fn read_body(
     rig: &PresentationRig,
     key: SkeletonKey,
 ) -> Option<UpperBody> {
-    let read = |group: Group| {
+    let joint = |group: Group| {
         let bone = rig.roots[group.index()];
         (bone < key.bones()).then(|| {
             let mut joint = Joint::default();
             // SAFETY: forwarded from the caller; the index is within the skeleton.
             unsafe { controller.GetJoint(bone as u32, &mut joint) };
-            Vec3::from_array(joint.m_Translation.data)
+            joint
         })
     };
+    let read = |group: Group| joint(group).map(|j| Vec3::from_array(j.m_Translation.data));
     let arm = |side: usize| {
         let [upper, fore, hand] = Group::arm(side);
+        let hand = joint(hand)?;
         Some(ArmJoints {
             shoulder: read(upper)?,
             elbow: read(fore)?,
-            wrist: read(hand)?,
+            wrist: Vec3::from_array(hand.m_Translation.data),
+            hand: Quat::from_array(hand.m_Orientation.data).normalize(),
         })
     };
     Some(UpperBody {
@@ -410,19 +454,101 @@ fn solve_frame(frame: &Frame, instance: Mat4, dtf: f32) -> Option<BodyEdit> {
             ))
         })
     };
+    let elbow = frame.config.elbow;
+    let up = to_model
+        .transform_vector3(frame.up[0].lerp(frame.up[1], t))
+        .try_normalize();
+    let memory = elbow.enabled.then(|| POLES.lock().begin(frame));
+    let drive = memory.zip(up).map(|((last, dt), up)| ElbowDrive {
+        up,
+        palm_weight: elbow.palm_weight,
+        smoothing_s: elbow.smoothing_s,
+        dt,
+        arms: std::array::from_fn(|i| ArmDrive {
+            weight: previous.drive[i] + (current.drive[i] - previous.drive[i]) * t,
+            previous: last[i],
+        }),
+    });
     let motion = Motion {
         head,
         torso: previous.torso + (current.torso - previous.torso) * t,
         hands: Hand::BOTH.map(|hand| late::hand_correction(hand, t).map(model)),
         arms: true,
         stretch_forearm: frame.stretch_forearm,
+        elbow: drive,
     };
-    let edits = solve(&body, &motion);
+    let solved = solve(&body, &motion);
+    let poles = solved.elbows.map(|e| e.map(|e| e.pole));
+    POLES.lock().finish(frame, poles);
+    *ELBOWS.lock() = solved.elbows.map(|e| {
+        e.map(|e| ElbowReadout {
+            weight: e.weight,
+            swivel_deg: e.swivel_deg,
+        })
+    });
+    let edits = solved.edits;
     edits
         .iter()
         .all(|e| e.is_finite())
         .then(|| BodyEdit::new(current.groups, edits))
         .flatten()
+}
+
+/// What the smoothed elbow poles belong to: a teleport or a change of mode starts the smoothing
+/// again.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct PoleContext {
+    teleport: u64,
+    mode: Mode,
+}
+
+/// The smoothed elbow poles across frames. A frame's draws each smooth from the poles the last
+/// frame solved, so every draw of a frame agrees and the smoothing advances once a frame.
+#[derive(Debug, Copy, Clone)]
+struct PoleMemory {
+    /// The poles the latest draw solved.
+    latest: Option<SolvedPoles>,
+    /// The poles the current frame's draws smooth from: the latest of an earlier frame.
+    settled: Option<SolvedPoles>,
+}
+
+#[derive(Debug, Copy, Clone)]
+struct SolvedPoles {
+    sequence: u64,
+    at: Instant,
+    context: PoleContext,
+    /// Each arm's smoothed pole, model space; `None` for an arm with none.
+    poles: [Option<Vec3>; 2],
+}
+
+impl PoleMemory {
+    /// The poles a draw of `frame` smooths from, and the time since they were solved, seconds.
+    fn begin(&mut self, frame: &Frame) -> ([Option<Vec3>; 2], f32) {
+        if self
+            .latest
+            .is_some_and(|latest| latest.sequence != frame.sequence)
+        {
+            self.settled = self.latest.take();
+        }
+        self.settled
+            .filter(|settled| settled.context == frame.poles && frame.at >= settled.at)
+            .map_or(([None; 2], 0.0), |settled| {
+                (
+                    settled.poles,
+                    frame.at.duration_since(settled.at).as_secs_f32(),
+                )
+            })
+    }
+
+    /// Keep the poles a draw of `frame` solved.
+    fn finish(&mut self, frame: &Frame, poles: [Option<Vec3>; 2]) {
+        self.latest = Some(SolvedPoles {
+            sequence: frame.sequence,
+            at: frame.at,
+            context: frame.poles,
+            poles,
+        });
+    }
 }
 
 /// What a draw's cached edit was solved for.
@@ -477,6 +603,11 @@ static TICKS: Mutex<Ticks> = Mutex::new(Ticks {
 static RIG: Mutex<Option<(SkeletonKey, Result<PresentationRig, SmolStr>)>> = Mutex::new(None);
 static FRAME: Mutex<Option<Frame>> = Mutex::new(None);
 static CACHE: Mutex<Option<(DrawKey, Option<BodyEdit>)>> = Mutex::new(None);
+static POLES: Mutex<PoleMemory> = Mutex::new(PoleMemory {
+    latest: None,
+    settled: None,
+});
+static ELBOWS: Mutex<[Option<ElbowReadout>; 2]> = Mutex::new([None; 2]);
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static IDLE: AtomicU8 = AtomicU8::new(Idle::NoTick as u8);
 static TICK_COUNT: AtomicU64 = AtomicU64::new(0);

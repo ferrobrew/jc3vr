@@ -12,14 +12,17 @@
 //!   own joint, and whatever of the head's travel the spine's bend did not cover moves it, up to
 //!   [`MAX_HEAD_RESIDUAL_M`].
 //! - Each arm is solved again from its shoulder, carried by the torso's bend, to its hand: two-bone
-//!   IK ([`two_bone_elbow`]) with the upper arm's and the forearm's lengths as drawn, the elbow
-//!   bending toward where the drawn elbow is (the solve's own elbow, which its hint shaped), or
-//!   toward the elbow hint ([`elbow_hint`]) when the drawn arm is straight. The hand takes the hand's
-//!   correction as the late update computes it, so the gun, the held items, and the fingers on it
-//!   stay where they are drawn, and the forearm swings, stretched if allowed, to meet it.
+//!   IK ([`two_bone_elbow`]) with the upper arm's and the forearm's lengths as drawn. An arm the
+//!   controllers drive bends toward the elbow pole ([`crate::controllers::presentation::elbow`]),
+//!   smoothed across frames, by how much the controllers drive it; any other arm bends toward
+//!   where the drawn elbow is (the solve's own elbow, which its hint shaped), or toward the elbow
+//!   hint ([`elbow_hint`]) when the drawn arm is straight. The hand takes the hand's correction as
+//!   the late update computes it, so the gun, the held items, and the fingers on it stay where they
+//!   are drawn, and the forearm swings, stretched if allowed, to meet it.
 //!
-//! With no motion since the ticks every edit is the identity, so the layer cannot move a pose the
-//! simulation already agrees with.
+//! With no motion since the ticks and no elbow pole every edit is the identity, so the layer cannot
+//! move a pose the simulation already agrees with; the pole turns only a driven arm's elbow about
+//! the line from its shoulder to its hand.
 
 use body_rig::geometry::within_sphere;
 use glam::{Mat4, Quat, Vec3};
@@ -27,7 +30,10 @@ use glam::{Mat4, Quat, Vec3};
 use crate::controllers::{
     body::procedural::solver::arms::{Side, elbow_hint},
     hands::palette::{MAX_FOREARM_STRETCH, forearm_reach},
-    presentation::rig::Group,
+    presentation::{
+        elbow::{self, PoleInput},
+        rig::Group,
+    },
 };
 
 /// The upper body's joints as the skinning draws them, model space.
@@ -42,12 +48,13 @@ pub struct UpperBody {
 }
 
 /// One arm's joints: the origins of the upper arm (the shoulder joint), the forearm (the elbow),
-/// and the hand (the wrist).
+/// and the hand (the wrist), and the hand bone's orientation.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct ArmJoints {
     pub shoulder: Vec3,
     pub elbow: Vec3,
     pub wrist: Vec3,
+    pub hand: Quat,
 }
 
 impl UpperBody {
@@ -57,6 +64,7 @@ impl UpperBody {
             shoulder: a.shoulder.lerp(b.shoulder, t),
             elbow: a.elbow.lerp(b.elbow, t),
             wrist: a.wrist.lerp(b.wrist, t),
+            hand: a.hand.normalize().slerp(b.hand.normalize(), t),
         };
         Self {
             spine: std::array::from_fn(|i| self.spine[i].lerp(to.spine[i], t)),
@@ -71,10 +79,12 @@ impl UpperBody {
     pub fn is_finite(&self) -> bool {
         self.spine.iter().all(|p| p.is_finite())
             && self.head.is_finite()
-            && self
-                .arms
-                .iter()
-                .all(|a| a.shoulder.is_finite() && a.elbow.is_finite() && a.wrist.is_finite())
+            && self.arms.iter().all(|a| {
+                a.shoulder.is_finite()
+                    && a.elbow.is_finite()
+                    && a.wrist.is_finite()
+                    && a.hand.is_finite()
+            })
     }
 }
 
@@ -93,10 +103,59 @@ pub struct Motion {
     pub arms: bool,
     /// Whether the forearm stretches along its length to meet a hand moved off the end of the arm.
     pub stretch_forearm: bool,
+    /// The elbow pole's inputs; `None` bends every arm toward its drawn elbow.
+    pub elbow: Option<ElbowDrive>,
+}
+
+/// The elbow pole's inputs ([`crate::controllers::presentation::elbow`]), model space.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ElbowDrive {
+    /// The player's up, a unit vector.
+    pub up: Vec3,
+    /// The little finger's pull ([`elbow::ElbowPoleConfig::palm_weight`]).
+    pub palm_weight: f32,
+    /// The smoothing's time constant, seconds.
+    pub smoothing_s: f32,
+    /// The time since the smoothed poles in [`arms`](Self::arms) were solved, seconds.
+    pub dt: f32,
+    /// Each arm, left then right.
+    pub arms: [ArmDrive; 2],
+}
+
+/// How the controllers drive one arm, and its smoothed pole from the last frame.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct ArmDrive {
+    /// How much the controllers drive the arm, `0..=1`: the hand IK's weight. At none the arm bends
+    /// toward its drawn elbow, and its smoothing starts again.
+    pub weight: f32,
+    /// The smoothed pole the last frame solved, a unit vector; `None` starts the smoothing from the
+    /// rule's pole.
+    pub previous: Option<Vec3>,
 }
 
 /// Each group's edit, by [`Group::index`].
 pub type Edits = [Mat4; Group::COUNT];
+
+/// The solve's result: the groups' edits, and each arm's elbow pole, left then right, where the
+/// controllers drive the arm.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Solved {
+    pub edits: Edits,
+    pub elbows: [Option<ElbowSolve>; 2],
+}
+
+/// One arm's elbow pole as a frame solved it.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ElbowSolve {
+    /// The smoothed pole, a unit vector square to the shoulder-to-wrist line, which the next frame
+    /// smooths from.
+    pub pole: Vec3,
+    /// How much of it the arm bent toward, `0..=1`.
+    pub weight: f32,
+    /// The turn about the shoulder-to-wrist line from the drawn elbow to the pole, degrees; `None`
+    /// for a straight drawn arm.
+    pub swivel_deg: Option<f32>,
+}
 
 /// Each spine joint's share of the bend, base first: more of it higher, as the procedural spine
 /// shares its own swing.
@@ -108,8 +167,9 @@ pub const SPINE_SHARES: [f32; 4] = [0.15, 0.25, 0.3, 0.3];
 pub const MAX_HEAD_RESIDUAL_M: f32 = 0.05;
 
 /// The groups' edits for `body` as drawn, after `motion`.
-pub fn solve(body: &UpperBody, motion: &Motion) -> Edits {
+pub fn solve(body: &UpperBody, motion: &Motion) -> Solved {
     let mut edits = [Mat4::IDENTITY; Group::COUNT];
+    let mut elbows = [None; 2];
     if let Some(head) = motion.head {
         let wanted = head.transform_point3(body.head);
         let torso = if motion.torso.is_finite() {
@@ -140,7 +200,17 @@ pub fn solve(body: &UpperBody, motion: &Motion) -> Edits {
         let hand = motion.hands[i].unwrap_or(Mat4::IDENTITY);
         let arm = &body.arms[i];
         let [upper, fore, palm] = if motion.arms {
-            arm_edits(torso, arm, hand, motion.stretch_forearm, side)
+            let rule = motion.elbow.as_ref().and_then(|drive| {
+                let arm = drive.arms[i];
+                (arm.weight.is_finite() && arm.weight > 0.0).then(|| ElbowRule {
+                    drive,
+                    arm,
+                    other_shoulder: torso.transform_point3(body.arms[1 - i].shoulder),
+                })
+            });
+            let (edits, elbow) = arm_edits(torso, arm, hand, motion.stretch_forearm, side, rule);
+            elbows[i] = elbow;
+            edits
         } else {
             let carried_wrist = torso.transform_point3(arm.wrist);
             let elbow = torso.transform_point3(arm.elbow);
@@ -156,7 +226,7 @@ pub fn solve(body: &UpperBody, motion: &Motion) -> Edits {
         edits[g_fore.index()] = fore;
         edits[g_hand.index()] = palm;
     }
-    edits
+    Solved { edits, elbows }
 }
 
 /// The rigid transform that takes a head whose neck pivot was at `pivot_before` turned
@@ -258,12 +328,19 @@ pub fn two_bone_elbow(
 }
 
 /// The upper arm's, the forearm's, and the hand's edits of one arm whose shoulder rides `torso`,
-/// solved to the hand moved by `hand`. A hand further from the shoulder than the arm reaches, with
+/// solved to the hand moved by `hand`, and its elbow pole where `rule` gives one. A hand further from the shoulder than the arm reaches, with
 /// the forearm stretched as far as it may, is drawn at that reach along the line to it: within one
 /// tick the body can move against the hands further than the arm covers (a throw and a fall at
 /// once), and the hand falling short keeps it on the end of the forearm rather than leaving the
 /// forearm behind.
-fn arm_edits(torso: Mat4, arm: &ArmJoints, hand: Mat4, stretch: bool, side: Side) -> [Mat4; 3] {
+fn arm_edits(
+    torso: Mat4,
+    arm: &ArmJoints,
+    hand: Mat4,
+    stretch: bool,
+    side: Side,
+    rule: Option<ElbowRule>,
+) -> ([Mat4; 3], Option<ElbowSolve>) {
     let shoulder = torso.transform_point3(arm.shoulder);
     let carried_elbow = torso.transform_point3(arm.elbow);
     let upper = arm.shoulder.distance(arm.elbow);
@@ -275,7 +352,18 @@ fn arm_edits(torso: Mat4, arm: &ArmJoints, hand: Mat4, stretch: bool, side: Side
         upper + fore * stretch_limit(stretch),
     );
     let wrist = hand.transform_point3(arm.wrist);
-    let elbow = two_bone_elbow(shoulder, wrist, upper, fore, carried_elbow - shoulder)
+    let drawn_pole = carried_elbow - shoulder;
+    let ruled = rule.and_then(|rule| {
+        rule.pole(
+            shoulder,
+            wrist,
+            rotation_of(&hand) * arm.hand,
+            side,
+            drawn_pole,
+        )
+    });
+    let pole = ruled.map_or(drawn_pole, |(pole, _)| pole);
+    let elbow = two_bone_elbow(shoulder, wrist, upper, fore, pole)
         .or_else(|| {
             let hint = elbow_hint(shoulder, wrist, upper + fore, side, 0.0)?;
             two_bone_elbow(shoulder, wrist, upper, fore, hint - shoulder)
@@ -292,7 +380,70 @@ fn arm_edits(torso: Mat4, arm: &ArmJoints, hand: Mat4, stretch: bool, side: Side
     let upper_edit = about(shoulder, swing) * torso;
     let carried_wrist = upper_edit.transform_point3(arm.wrist);
     let fore_edit = forearm_reach(elbow, carried_wrist, wrist, stretch) * upper_edit;
-    [upper_edit, fore_edit, hand]
+    ([upper_edit, fore_edit, hand], ruled.map(|(_, solve)| solve))
+}
+
+/// One controller-driven arm's share of the elbow pole's inputs.
+#[derive(Debug, Copy, Clone)]
+struct ElbowRule<'a> {
+    drive: &'a ElbowDrive,
+    arm: ArmDrive,
+    /// The other arm's shoulder, carried by the torso's edit.
+    other_shoulder: Vec3,
+}
+
+impl ElbowRule<'_> {
+    /// The pole the arm on `side` from `shoulder` to `wrist`, its hand bone turned `hand`, bends
+    /// toward: the rule's pole smoothed from the last frame's, blended from the drawn elbow's
+    /// direction `drawn_pole` (from the shoulder) by the arm's weight. `None` for a degenerate arm.
+    fn pole(
+        &self,
+        shoulder: Vec3,
+        wrist: Vec3,
+        hand: Quat,
+        side: Side,
+        drawn_pole: Vec3,
+    ) -> Option<(Vec3, ElbowSolve)> {
+        let axis = (wrist - shoulder).try_normalize()?;
+        let input = PoleInput {
+            shoulder,
+            other_shoulder: self.other_shoulder,
+            wrist,
+            up: self.drive.up,
+            little_finger: elbow::little_finger(hand, side),
+        };
+        let target = elbow::pole(&input, side, self.drive.palm_weight)?;
+        let smoothed = self.arm.previous.map_or(target, |previous| {
+            elbow::smooth(
+                previous,
+                target,
+                axis,
+                self.drive.dt,
+                self.drive.smoothing_s,
+            )
+        });
+        let weight = self.arm.weight.clamp(0.0, 1.0);
+        let drawn = Some(drawn_pole - axis * drawn_pole.dot(axis))
+            .filter(|across| across.length() >= POLE_EPSILON_M)
+            .and_then(Vec3::try_normalize);
+        let pole = drawn.map_or(smoothed, |drawn| {
+            let blend = drawn * (1.0 - weight) + smoothed * weight;
+            // Directions nearly opposite cancel halfway; the larger share decides.
+            if blend.length() > BLEND_EPSILON {
+                blend.normalize()
+            } else if weight >= 0.5 {
+                smoothed
+            } else {
+                drawn
+            }
+        });
+        let solve = ElbowSolve {
+            pole: smoothed,
+            weight,
+            swivel_deg: drawn.map(|drawn| drawn.angle_between(smoothed).to_degrees()),
+        };
+        Some((pole, solve))
+    }
 }
 
 /// How far the forearm may reach as a share of its length: its stretch's cap, or its own length.
@@ -343,6 +494,10 @@ const MIN_CHAIN_GAIN: f32 = 0.25;
 /// How far the pole must stand off the reach for its side to count, metres.
 const POLE_EPSILON_M: f32 = 1e-3;
 
+/// The least length of the blend between the drawn elbow's direction and the pole for its
+/// direction to count.
+const BLEND_EPSILON: f32 = 1e-3;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -352,6 +507,7 @@ mod tests {
             shoulder: Vec3::new(0.18 * side, 1.45, 0.0),
             elbow: Vec3::new(0.22 * side, 1.18, 0.05),
             wrist: Vec3::new(0.22 * side, 1.0, -0.15),
+            hand: Quat::IDENTITY,
         }
     }
 
@@ -375,6 +531,7 @@ mod tests {
             hands: [None; 2],
             arms: true,
             stretch_forearm: true,
+            elbow: None,
         }
     }
 
@@ -385,14 +542,14 @@ mod tests {
 
     #[test]
     fn with_nothing_moved_every_edit_is_the_identity() {
-        for edit in solve(&body(), &still()) {
+        for edit in solve(&body(), &still()).edits {
             assert!(edit.abs_diff_eq(Mat4::IDENTITY, 1e-5), "{edit:?}");
         }
         let unmoved_head = Motion {
             head: Some(Mat4::IDENTITY),
             ..still()
         };
-        for edit in solve(&body(), &unmoved_head) {
+        for edit in solve(&body(), &unmoved_head).edits {
             assert!(edit.abs_diff_eq(Mat4::IDENTITY, 1e-5), "{edit:?}");
         }
     }
@@ -446,7 +603,7 @@ mod tests {
             head: Some(head),
             ..still()
         };
-        let edits = solve(&b, &motion);
+        let edits = solve(&b, &motion).edits;
         let wanted = head.transform_point3(b.head);
         let drawn = edits[Group::Head.index()].transform_point3(b.head);
         assert!(drawn.abs_diff_eq(wanted, 1e-4), "{drawn:?} {wanted:?}");
@@ -474,7 +631,7 @@ mod tests {
             torso: 0.0,
             ..still()
         };
-        let edits = solve(&b, &motion);
+        let edits = solve(&b, &motion).edits;
         for group in Group::SPINE {
             assert!(edits[group.index()].abs_diff_eq(Mat4::IDENTITY, 1e-6));
         }
@@ -513,7 +670,7 @@ mod tests {
             hands: [None, Some(hand)],
             ..still()
         };
-        let edits = solve(&b, &motion);
+        let edits = solve(&b, &motion).edits;
         let a = &b.arms[1];
         let [upper, fore, palm] = Group::arm(1).map(|g| edits[g.index()]);
         assert_eq!(palm, hand);
@@ -547,7 +704,7 @@ mod tests {
             hands: [None, Some(hand)],
             ..still()
         };
-        let edits = solve(&b, &motion);
+        let edits = solve(&b, &motion).edits;
         let [up, fo, palm] = Group::arm(1).map(|g| edits[g.index()]);
         let shoulder = up.transform_point3(a.shoulder);
         let wrist = palm.transform_point3(a.wrist);
@@ -566,7 +723,7 @@ mod tests {
             head: Some(Mat4::from_translation(Vec3::new(0.0, 0.0, -0.04))),
             ..still()
         };
-        let edits = solve(&b, &motion);
+        let edits = solve(&b, &motion).edits;
         let a = &b.arms[0];
         let [upper, fore, palm] = Group::arm(0).map(|g| edits[g.index()]);
         assert_eq!(palm, Mat4::IDENTITY);
@@ -595,7 +752,7 @@ mod tests {
             stretch_forearm: false,
             ..still()
         };
-        let edits = solve(&b, &motion);
+        let edits = solve(&b, &motion).edits;
         let a = &b.arms[0];
         assert!(edits[Group::LeftArm.index()].abs_diff_eq(Mat4::IDENTITY, 1e-6));
         let fore = edits[Group::LeftForeArm.index()];
@@ -603,6 +760,95 @@ mod tests {
         let swung = fore.transform_point3(a.wrist) - a.elbow;
         let toward = (hand.transform_point3(a.wrist) - a.elbow).normalize();
         assert!(swung.normalize().abs_diff_eq(toward, 1e-5));
+    }
+
+    fn driven(weight: f32) -> Motion {
+        Motion {
+            elbow: Some(ElbowDrive {
+                up: Vec3::Y,
+                palm_weight: elbow::DEFAULT_PALM_WEIGHT,
+                smoothing_s: elbow::DEFAULT_SMOOTHING_S,
+                dt: 1.0 / 90.0,
+                arms: [
+                    ArmDrive {
+                        weight,
+                        previous: None,
+                    },
+                    ArmDrive::default(),
+                ],
+            }),
+            ..still()
+        }
+    }
+
+    /// The left arm's elbow, shoulder, and wrist as `edits` draw them.
+    fn left_arm(b: &UpperBody, edits: &Edits) -> (Vec3, Vec3, Vec3) {
+        let a = &b.arms[0];
+        let [upper, _, palm] = Group::arm(0).map(|g| edits[g.index()]);
+        (
+            upper.transform_point3(a.elbow),
+            upper.transform_point3(a.shoulder),
+            palm.transform_point3(a.wrist),
+        )
+    }
+
+    #[test]
+    fn a_driven_arm_bends_toward_the_pole_and_an_undriven_one_is_left_alone() {
+        let b = body();
+        let solved = solve(&b, &driven(1.0));
+        let (elbow, shoulder, wrist) = left_arm(&b, &solved.edits);
+        let a = &b.arms[0];
+        assert!((elbow.distance(shoulder) - a.shoulder.distance(a.elbow)).abs() < 1e-5);
+        assert!(wrist.abs_diff_eq(a.wrist, 1e-6), "the hand stays");
+        let reported = solved.elbows[0].expect("the left arm is driven");
+        let axis = (wrist - shoulder).normalize();
+        let bent = (elbow - shoulder) - axis * (elbow - shoulder).dot(axis);
+        assert!(bent.normalize().abs_diff_eq(reported.pole, 1e-4));
+        assert_eq!(reported.weight, 1.0);
+        assert!(reported.swivel_deg.is_some());
+        // The undriven right arm keeps its drawn elbow.
+        assert!(solved.elbows[1].is_none());
+        for group in Group::arm(1) {
+            assert!(solved.edits[group.index()].abs_diff_eq(Mat4::IDENTITY, 1e-5));
+        }
+    }
+
+    #[test]
+    fn the_pole_blends_in_with_the_arm_s_weight() {
+        let b = body();
+        let angle = |weight: f32| {
+            let solved = solve(&b, &driven(weight));
+            let (elbow, _, _) = left_arm(&b, &solved.edits);
+            elbow.distance(b.arms[0].elbow)
+        };
+        let (none, half, full) = (angle(0.0), angle(0.5), angle(1.0));
+        assert!(none < 1e-5, "{none}");
+        assert!(half > 1e-3 && half < full, "{half} {full}");
+        // A weight of none reports no pole, so the smoothing starts again.
+        assert!(solve(&b, &driven(0.0)).elbows[0].is_none());
+    }
+
+    #[test]
+    fn the_smoothed_pole_carries_from_the_last_frame() {
+        let b = body();
+        let target = solve(&b, &driven(1.0)).elbows[0].unwrap().pole;
+        let axis = (b.arms[0].wrist - b.arms[0].shoulder).normalize();
+        let previous = Quat::from_axis_angle(axis, 1.0) * target;
+        let mut motion = driven(1.0);
+        motion.elbow.as_mut().unwrap().arms[0].previous = Some(previous);
+        let smoothed = solve(&b, &motion).elbows[0].unwrap().pole;
+        let expected = elbow::smooth(
+            previous,
+            target,
+            axis,
+            1.0 / 90.0,
+            elbow::DEFAULT_SMOOTHING_S,
+        );
+        assert!(
+            smoothed.abs_diff_eq(expected, 1e-4),
+            "{smoothed:?} {expected:?}"
+        );
+        assert!(smoothed.angle_between(target) > 0.5);
     }
 
     #[test]

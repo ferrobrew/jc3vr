@@ -13,7 +13,7 @@ use crate::{
             procedural::{self, ProceduralStatus, authority::Case, config::ProceduralMode},
         },
         menu::read_config,
-        presentation::{self, PresentationStatus},
+        presentation::{self, ElbowReadout, PresentationStatus},
     },
     status::{Line, Row, prose, text},
 };
@@ -178,12 +178,27 @@ fn presentation_line(status: &PresentationStatus) -> Line {
         " ms"
     ))
     .with_note(format!(
-        "now {}, last frame {:.3} ms, peak {:.3} ms, {} ticks",
+        "now {}, last frame {:.3} ms, peak {:.3} ms, {} ticks; elbow pole {}",
         status.idle.label(),
         status.frame_cost_us / 1000.0,
         status.peak_cost_us / 1000.0,
-        status.ticks
+        status.ticks,
+        elbow_note(&status.elbows)
     ))
+}
+
+/// Each arm's elbow pole: how much the arm bent toward it, and how far it turned the elbow from
+/// HumanIK's, or that the arm bent toward HumanIK's elbow.
+fn elbow_note(elbows: &[Option<ElbowReadout>; 2]) -> String {
+    let arm = |name: &str, elbow: Option<ElbowReadout>| match elbow {
+        None => format!("{name} off"),
+        Some(ElbowReadout {
+            weight,
+            swivel_deg: Some(swivel),
+        }) => format!("{name} {:.0}%, {swivel:.0}° from HumanIK", weight * 100.0),
+        Some(ElbowReadout { weight, .. }) => format!("{name} {:.0}%", weight * 100.0),
+    };
+    format!("{}, {}", arm("left", elbows[0]), arm("right", elbows[1]))
 }
 
 #[cfg(test)]
@@ -292,6 +307,21 @@ mod tests {
             ..active
         };
         assert_eq!(presentation_line(&unrigged).text(), "FAILED, NO RIG");
+    }
+
+    #[test]
+    fn the_elbow_note_names_each_arm_s_pole() {
+        let elbows = [
+            None,
+            Some(ElbowReadout {
+                weight: 1.0,
+                swivel_deg: Some(12.4),
+            }),
+        ];
+        assert_eq!(
+            elbow_note(&elbows),
+            "left off, right 100%, 12° from HumanIK"
+        );
     }
 
     #[test]
