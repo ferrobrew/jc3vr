@@ -151,6 +151,9 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         && let Some(base) = unsafe { (w.address as *const WeaponBase).as_ref() }
     {
         unsafe { grip_watch::observe(base, w.class) };
+    } else {
+        // With no gun held the hold has ended, and the next one starts its own grab.
+        grip_watch::clear();
     }
     let guns = ticked.guns;
     heft::observe(Hand::BOTH.map(|hand| {

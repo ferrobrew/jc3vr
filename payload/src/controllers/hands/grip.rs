@@ -101,6 +101,9 @@ pub struct HandGrip {
     pub wrist_miss_m: Option<f32>,
     /// The tick's IK weight for the hand, when it had a target.
     pub weight: Option<f32>,
+    /// Whether the gun was still on its way into the hand's grip: a draw or take sliding it from
+    /// where it was, or a slide through the hand from another part of it ([`sliding`]).
+    pub sliding: bool,
 }
 
 /// The rigid grip's readout.
@@ -353,6 +356,7 @@ pub(crate) unsafe fn after_placement(character: *const Character, placement: Pla
                 .map(|(t, _)| (t.orientation.inverse() * wrist_world_rotation).normalize()),
             wrist_miss_m: target.map(|(t, _)| t.position.distance(wrist_world_position)),
             weight: target.map(|(_, w)| w),
+            sliding: placed.read.sliding,
         });
     }
 }
@@ -439,6 +443,13 @@ pub fn slide_grip(start: Pose, held: Pose, toward_hand: f32) -> Pose {
     hand_pose::interp(start, held, toward_hand)
 }
 
+/// Whether a gun is still on its way into the hand's grip: a snap moving it from where it was (a
+/// snap lasts only while it moves), or a slide through the hand that has not turned it fully onto
+/// the grip.
+pub fn sliding(snap: Option<SnapView>, slide: Option<GripSlide>) -> bool {
+    snap.is_some() || slide.is_some_and(|slide| slide.aligned < 1.0)
+}
+
 /// The rigid part of `attach` relative to `wrist`, both model-space matrices, or `None` for a
 /// degenerate matrix.
 pub fn relative_pose(wrist: Mat4, attach: Mat4) -> Option<Pose> {
@@ -481,6 +492,7 @@ struct PlacedGun {
 struct PinRead {
     wrist_index: u32,
     pinned: bool,
+    sliding: bool,
     animated_deviation_deg: f32,
     animated_in_wrist: Quat,
 }
@@ -599,6 +611,7 @@ unsafe fn pin(
     Some(PinRead {
         wrist_index,
         pinned,
+        sliding: sliding(snap, slide),
         animated_deviation_deg,
         animated_in_wrist,
     })
@@ -836,6 +849,29 @@ mod tests {
             position,
             orientation,
         }
+    }
+
+    #[test]
+    fn a_gun_slides_until_its_snap_ends_or_its_slide_turns_it_onto_the_grip() {
+        assert!(!sliding(None, None));
+        let snap = SnapView {
+            start: SnapStart::World(pose(Vec3::ZERO, Quat::IDENTITY)),
+            toward_hand: 1.0,
+        };
+        assert!(
+            sliding(Some(snap), None),
+            "a snap lasts only while it moves"
+        );
+        let slide = |aligned| GripSlide {
+            anchor: Vec3::ZERO,
+            turn: Quat::IDENTITY,
+            aligned,
+        };
+        assert!(sliding(None, Some(slide(0.6))));
+        assert!(
+            !sliding(None, Some(slide(1.0))),
+            "a slide that has ended stays with the gun at rest on its grip"
+        );
     }
 
     #[test]

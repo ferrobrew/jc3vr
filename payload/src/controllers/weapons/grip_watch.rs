@@ -8,10 +8,11 @@
 //! change:
 //!
 //! - the previous tick's: a change past [`FLIP_DEG`] is a snap;
-//! - the rotation the gun had when the hand took it (a grab, started afresh when the gun moves to
-//!   another attach bone or the pin takes hold or lets go, across which the rotation is expected to
-//!   change): a departure past [`SWEEP_DEG`] held for [`SWEEP_HOLD`] is a sweep, which catches a
-//!   turn the animation blends over several ticks.
+//! - the rotation the gun had when the hand took it (a grab, taken once the gun's slide into the
+//!   grip has ended, since the slide turns it on the wrist by design, started afresh when the gun
+//!   moves to another attach bone or the pin takes hold or lets go, across which the rotation is
+//!   expected to change, and forgotten when the hold ends): a departure past [`SWEEP_DEG`] held for
+//!   [`SWEEP_HOLD`] is a sweep, which catches a turn the animation blends over several ticks.
 //!
 //! A move to another attach bone is logged too. Each warning carries what tells the causes apart:
 //! the attach bone and the weapon state, whether the bone was pinned, how far the animation had put
@@ -155,7 +156,8 @@ pub(super) unsafe fn observe(weapon: &WeaponBase, class: HeftClass) {
     }
 }
 
-/// Forget the measurements, for when the weapon handling stands down.
+/// Forget the measurements, for when the weapon handling stands down or no gun is held: the next
+/// hold, of the same gun or another, starts a grab of its own.
 pub(super) fn clear() {
     let mut state = STATE.lock();
     state.hands = [HandWatch::new(), HandWatch::new()];
@@ -206,6 +208,21 @@ impl HandWatch {
             return Events::default();
         };
         let same_gun = |g: &HandGrip| g.weapon == record.weapon && g.gun == record.gun;
+        if record.sliding {
+            // The gun turns on the wrist by design while it slides into the grip, so the grab is
+            // taken where the slide leaves it.
+            let bone_change = self
+                .previous
+                .filter(|p| same_gun(p) && p.bone != record.bone)
+                .map(|p| p.bone);
+            self.grab = None;
+            self.previous = Some(record);
+            self.away_since = None;
+            return Events {
+                bone_change,
+                ..Events::default()
+            };
+        }
         // A new gun, a move to another attach bone, or the pin taking hold or letting go each
         // start a new baseline: the gun's rotation on the wrist is expected to change across them.
         let grab = match self.grab.filter(|g| {
@@ -424,6 +441,7 @@ mod tests {
             wrist_in_target: Some(Quat::IDENTITY),
             wrist_miss_m: Some(0.0),
             weight: Some(1.0),
+            sliding: false,
         }
     }
 
@@ -520,6 +538,65 @@ mod tests {
         }
         assert_eq!(events.iter().filter(|e| e.sweep.is_some()).count(), 1);
         assert!(events.iter().all(|e| e.snap.is_none()));
+    }
+
+    #[test]
+    fn the_slide_into_the_grip_is_not_a_sweep_and_the_grab_is_taken_where_it_ends() {
+        let mut watch = HandWatch::new();
+        let start = Instant::now();
+        // A snatch's slide turns the gun 120 degrees onto the grip over eight ticks, and the gun
+        // then rests there.
+        let mut events = Vec::new();
+        for tick in 0..20u32 {
+            let at = start + TICK * tick;
+            let angle = (15.0 * tick.min(8) as f32).to_radians();
+            let r = HandGrip {
+                sliding: tick < 8,
+                ..record(at, Quat::from_rotation_x(angle), 1)
+            };
+            events.push(watch.observe(Some(r), at));
+        }
+        assert!(
+            events.iter().all(|e| e.sweep.is_none() && e.snap.is_none()),
+            "{events:?}"
+        );
+        assert!(events[..8].iter().all(|e| e.from_grab_deg.is_none()));
+        assert!(
+            events[9..]
+                .iter()
+                .all(|e| e.from_grab_deg.is_some_and(|d| d < 1e-3))
+        );
+        // A turn after the slide is still caught.
+        let mut sweeps = 0;
+        for tick in 20..30u32 {
+            let at = start + TICK * tick;
+            let angle = (120.0 + 20.0 * (tick - 19).min(5) as f32).to_radians();
+            let e = watch.observe(Some(record(at, Quat::from_rotation_x(angle), 1)), at);
+            sweeps += usize::from(e.sweep.is_some());
+        }
+        assert_eq!(sweeps, 1);
+    }
+
+    #[test]
+    fn a_hold_ending_forgets_the_grab_of_a_gun_held_again() {
+        let start = Instant::now();
+        STATE.lock().hands[Hand::Left.index()]
+            .observe(Some(record(start, Quat::IDENTITY, 1)), start);
+        // The gun is thrown and snatched back: with no gun held in between, the watch is cleared,
+        // and the same gun at a new rotation on the wrist is a new grab rather than a sweep.
+        clear();
+        let mut state = STATE.lock();
+        let watch = &mut state.hands[Hand::Left.index()];
+        assert!(watch.grab.is_none());
+        let turned = Quat::from_rotation_x(90.0f32.to_radians());
+        let mut sweeps = 0;
+        for tick in 1..10u32 {
+            let at = start + Duration::from_secs(7) + TICK * tick;
+            let e = watch.observe(Some(record(at, turned, 1)), at);
+            sweeps += usize::from(e.sweep.is_some());
+            assert!(e.from_grab_deg.is_some_and(|d| d < 1e-3));
+        }
+        assert_eq!(sweeps, 0);
     }
 
     #[test]

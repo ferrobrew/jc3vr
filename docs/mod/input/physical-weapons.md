@@ -329,6 +329,7 @@ The debug UI's Weapons > Hold, transfer, and grab regions live status opens with
 23. Set `ads.eye` to left and aim with the left eye. With the default, hold the rifle in the left hand: the left eye aims.
 24. Draw the sniper rifle and put the scope to the eye: `ads: the scope is on the eye`, and the lens's picture is centred, not cut off at an edge. Its aim does not turn as it welds.
 25. Hold a rifle and walk up to a wall with it raised: as the muzzle reaches the wall, `collide: the held gun met a wall`, and the rifle stops there; keep walking and it turns along the wall rather than passing through. Point it straight at the wall and push: it slides back into the hands. Both hands stay on the rifle, and `GUN AGAINST WALLS` shows the turn and the pull-back. Step back: it returns to the hands as they are. Try it on a car, a crate, and a soldier; and against a chain-link fence, through which it passes.
+26. Snatch a gun with the grapple, draw one off the back, and catch a dropped one: none gives `a held gun turned in its hand` as it slides into the grip. Throw a rifle, snatch the same rifle back, and hold it still: no warning either.
 
 ## In the headset: swapping on the back
 
