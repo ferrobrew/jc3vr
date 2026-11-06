@@ -36,9 +36,13 @@ impl HandPoses {
 pub struct Frame {
     /// The world position the packed positions are relative to.
     pub origin: Vec3,
-    /// The head's world pose: the centre between the eyes, which the sprites face, the
-    /// primitives are sorted from, and [`Anchor::Head`] offsets are taken from.
+    /// The head's world pose: the centre between the eyes, which the sprites face and the
+    /// primitives are sorted from.
     pub head: Pose,
+    /// The published head position at render time, which [`Anchor::Head`] offsets are taken from:
+    /// the input tick measures them from the published head ([`crate::headpose::query`]), which
+    /// follows Rico's head joint, not from the eyes the camera hangs from it.
+    pub rides: Vec3,
     /// Each hand's render-time poses, indexed by [`Hand::index`].
     pub hands: [Option<HandPoses>; 2],
 }
@@ -96,7 +100,7 @@ pub fn anchor_position(anchor: Anchor, hands: &[Option<HandPoses>; 2]) -> Option
 /// The world position of any anchor in `frame`, or `None` when its hand has no pose.
 fn place(anchor: Anchor, frame: &Frame) -> Option<Vec3> {
     match anchor {
-        Anchor::Head(offset) => Some(frame.head.position + offset),
+        Anchor::Head(offset) => Some(frame.rides + offset),
         anchor => anchor_position(anchor, &frame.hands),
     }
 }
@@ -198,6 +202,7 @@ mod tests {
                 position: Vec3::new(10.0, 1.6, -20.0),
                 orientation: Quat::IDENTITY,
             },
+            rides: Vec3::new(10.0, 1.5, -19.9),
             hands: [None, Some(right)],
         }
     }
@@ -228,11 +233,14 @@ mod tests {
     }
 
     #[test]
-    fn a_head_anchor_rides_the_eyes() {
+    fn a_head_anchor_rides_the_published_head_not_the_eyes() {
         let f = frame();
         let offset = Vec3::new(0.3, -0.2, 0.1);
         let p = place(Anchor::Head(offset), &f).unwrap();
-        assert!(p.distance(f.head.position + offset) < 1e-6);
+        assert!(p.distance(f.rides + offset) < 1e-6);
+        // The eyes sit ahead of and above the head joint; a marker taken from the eyes would be
+        // off its target by that arm.
+        assert!(p.distance(f.head.position + offset) > 0.1);
         assert_eq!(anchor_position(Anchor::Head(offset), &f.hands), None);
     }
 

@@ -82,7 +82,7 @@ A lone hand that takes a free gun takes it by its grip, wherever on the gun it c
 - a long gun docked on a shoulder has a volume on whatever part a free hand touches, as both are drawn, which draws it as the shoulder's holster does, and the gun slides into the hand by its grip;
 - a handover takes the gun by its grip, as does a gun taken out of a character's hands, off a rack, or caught from the snatch ([grapple-snatch.md](grapple-snatch.md)).
 
-A trigger press on a gun the hand braces, or one the mod's fire path holds back (the controller untracked, a dock's slide, a reload, a draw, or a holster playing, or the reload holding the gun), gives the dead click of a dry fire (`DryFire`, [haptics.md](haptics.md)) and one info line, `trigger: the trigger fired nothing: ...` with the reason and the hand as a field, so a press that does nothing is felt and can be read from the log.
+A trigger press on a gun the hand braces, or one the mod's fire path holds back (the controller untracked, a dock's slide, a reload, a draw, or a holster playing, or the true reload holding the gun), gives the dead click of a dry fire (`DryFire`, [haptics.md](haptics.md)) and one info line, `trigger: the trigger fired nothing: ...` with the reason and the hand as a field, so a press that does nothing is felt and can be read from the log. That refusal (`weapons::finish::refused_fire`) is the one place that decides the click for a gun the mod fires. For a gun the true reload holds, the reason is what the reload checked (`weapons::reload::fire_hold`): `the chamber and the magazine are empty` for ordinary dry fire, `the chamber is empty, with rounds in the magazine`, `the action is open`, `the magazine is out`, or a reload step under way (the belt pouch, an eject, the other hand pulling the magazine, a round going in).
 
 The action's region is also where the reload places the action's handle while the chamber waits on it (`regions::action_volume`): a grip press there works the action, and anywhere else on the action it braces the gun.
 
@@ -138,6 +138,7 @@ With `weapons.regions.enabled` on, once with the hand bodies off and once with t
 27. Holster and drop a rifle during the slide onto the grip: the slide ends with the gun leaving the hand, and the next draw is at the grip.
 28. Empty a rifle that needs its charging handle worked, then grab the handle with the free hand while the chamber waits: the action is worked as before, not braced. Grab the same handle with the chamber loaded: `braced the gun at its action`, with a pinch.
 29. Pump a shotgun braced on its handguard: the pump moves with the hand as before, and the brace does not slide while the pump is out.
+30. Empty a pistol and pull its trigger: one dead click per pull, not two, and `trigger: the trigger fired nothing: the action is open` while the slide is locked back. Work the slide forward on the empty magazine and pull again: `the chamber and the magazine are empty`. Drop the magazine: `the magazine is out`.
 30. Hold a pistol: `GRIP, FIRING`, and no part of it but the grip takes it.
 31. Switch `weapons.regions.enabled` off while bracing a rifle on its barrel: the foregrip braces only at its own point again.
 

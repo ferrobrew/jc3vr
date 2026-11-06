@@ -12,6 +12,7 @@ use crate::{
             belt::PushStage,
             chamber::{Chamber, WorkStage},
             config::ReloadConfig,
+            fire_hold::FireHold,
             insert::InsertStage,
             loose, wells,
         },
@@ -29,14 +30,13 @@ pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
     let c = &r.counts;
     ui.label(format!(
         "True reload: {} · ejects {} · knocks {} · seats {} · belt reloads {} · slides locked back \
-         {} · dry fires {} · empty pouch {} · game reloads stopped {}",
+         {} · empty pouch {} · game reloads stopped {}",
         if r.active { "acting" } else { "inactive" },
         c.ejects,
         c.knocks,
         c.seats,
         c.belt_reloads,
         c.lock_backs,
-        c.dry_fires,
         c.empty_pouch,
         c.refused
     ));
@@ -76,7 +76,7 @@ pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
                     PushStage::Pushing => "pushing",
                     PushStage::Spent => "in the pouch",
                 },
-                if r.fire_held[i] { "held" } else { "free" },
+                r.fire_held[i].map_or("free", FireHold::label),
                 r.flick_dps[i]
             ));
         }

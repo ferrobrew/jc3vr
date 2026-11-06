@@ -400,7 +400,7 @@ fn claims(tick: &Tick<'_>, now: Instant) -> [HandClaims; 2] {
                 || tick.grabs[i].is_some()
                 || foregrip.is_some_and(|hold| hold.holder.other() == hand),
             slot: tick.reaches[i].iter().copied().any(GrabVolume::on_body),
-            mechanical: reload.fire_held[i]
+            mechanical: reload.fire_held[i].is_some()
                 || reload
                     .insert_hands
                     .is_some_and(|(a, b)| a == hand || b == hand),

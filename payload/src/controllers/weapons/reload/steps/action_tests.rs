@@ -127,7 +127,6 @@ fn step_with(
     let mut inputs = FinishInputs {
         grabs: [None; 2],
         grips: [ButtonControl::default(); 2],
-        triggers: [ButtonControl::default(); 2],
         reload_button: ButtonControl::default(),
         dt: 1.0,
         game_dt: 1.0,
@@ -245,7 +244,10 @@ fn runtime_ready_slide_discards_once_at_the_rear_and_feeds_without_adding_ammo()
         );
         assert_eq!(engine.rounds, 4);
         assert_eq!(chamber(&mut state, &tick, hand), Chamber::Empty);
-        assert!(state.fire_hold(&tick, hand, &Reload::of(&config.weapons.reload)));
+        assert_eq!(
+            state.fire_hold(&tick, hand, &Reload::of(&config.weapons.reload)),
+            Some(FireHold::ActionOpen)
+        );
         for _ in 0..4 {
             step(
                 &mut state,
@@ -269,7 +271,10 @@ fn runtime_ready_slide_discards_once_at_the_rear_and_feeds_without_adding_ammo()
         assert_eq!(engine.cycles, 1);
         assert_eq!(engine.rounds, 4);
         assert_eq!(chamber(&mut state, &tick, hand), Chamber::Chambered);
-        assert!(!state.fire_hold(&tick, hand, &Reload::of(&config.weapons.reload)));
+        assert_eq!(
+            state.fire_hold(&tick, hand, &Reload::of(&config.weapons.reload)),
+            None
+        );
         assert_eq!(state.status.counts.racks, 1);
         assert!(engine.reads > 0);
     }
@@ -545,7 +550,10 @@ fn a_magazine_out_cycle_neither_discards_refunds_nor_feeds() {
     );
     assert_eq!(engine.discarded, 0);
     assert_eq!(chamber(&mut state, &tick, Hand::Right), Chamber::Empty);
-    assert!(state.fire_hold(&tick, Hand::Right, &Reload::of(&config.weapons.reload)));
+    assert_eq!(
+        state.fire_hold(&tick, Hand::Right, &Reload::of(&config.weapons.reload)),
+        Some(FireHold::MagazineOut)
+    );
 }
 
 #[test]

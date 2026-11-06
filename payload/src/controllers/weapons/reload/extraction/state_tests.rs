@@ -183,7 +183,6 @@ fn inputs(claim: bool, held: bool) -> FinishInputs {
             },
             ButtonControl::default(),
         ],
-        triggers: [ButtonControl::default(); 2],
         reload_button: ButtonControl::default(),
         dt: 0.01,
         game_dt: 0.01,

@@ -31,7 +31,6 @@ use crate::{
         physical_hands::{DrawTime, physics},
     },
     headpose,
-    hooks::camera::eye_points,
 };
 
 /// A pose composed with both sides of the render-time head pose pair: `previous` with the
@@ -578,16 +577,27 @@ fn matches_local_character(current: usize, recorded: usize) -> bool {
     current != 0 && current == recorded
 }
 
-/// Each hand's render-time poses, composed on both sides of the head pose pair from the eye
-/// midpoint the camera renders from on that side, so that the hand rides the camera across its
-/// interpolation and lands where the player sees it.
 fn compose_render_hands(active: &ActiveHands) -> [Option<RenderHand>; 2] {
-    let heads = [headpose::query_prev(), headpose::query()];
-    let views = render_views(heads, eye_points(heads), active.head, active.world_scale);
-    let pair = |pose: Pose| PosePair {
-        previous: views[0].cockpit.pose_to_world(pose),
-        current: views[1].cockpit.pose_to_world(pose),
-        transport: Some([views[0].transport, views[1].transport]),
+    let (previous_head, current_head) = (headpose::query_prev(), headpose::query());
+    let cockpit_head = active.head;
+    let pair = |pose: Pose| {
+        let side = |head: headpose::HeadPose| {
+            CockpitTransform {
+                head_world: head.position,
+                head_cockpit: cockpit_head.position,
+                body: hand_pose::body_of_head(head.orientation, cockpit_head.orientation),
+                world_scale: active.world_scale,
+            }
+            .pose_to_world(pose)
+        };
+        PosePair {
+            previous: side(previous_head),
+            current: side(current_head),
+            transport: Some([
+                Mat4::from_rotation_translation(previous_head.orientation, previous_head.position),
+                Mat4::from_rotation_translation(current_head.orientation, current_head.position),
+            ]),
+        }
     };
     active.hands.map(|hand| {
         hand.map(|h| RenderHand {
@@ -595,35 +605,6 @@ fn compose_render_hands(active: &ActiveHands) -> [Option<RenderHand>; 2] {
             grip: pair(h.grip),
             aim: pair(h.aim),
         })
-    })
-}
-
-/// One side of the head pose pair as the hands are composed on it.
-#[derive(Debug, Copy, Clone, PartialEq)]
-struct RenderView {
-    /// The cockpit frame's map into the world on this side.
-    cockpit: CockpitTransform,
-    /// The camera's pose on this side, which the hands interpolate attached to.
-    transport: Mat4,
-}
-
-/// Both sides of the head pose pair `heads` as the hands are composed on them: the cockpit head
-/// `cockpit_head` at the eye midpoint `eyes` the camera renders from on that side, with the body
-/// frame recovered from the head's orientation.
-fn render_views(
-    heads: [headpose::HeadPose; 2],
-    eyes: [Vec3; 2],
-    cockpit_head: Pose,
-    world_scale: f32,
-) -> [RenderView; 2] {
-    [0, 1].map(|i| RenderView {
-        cockpit: CockpitTransform {
-            head_world: eyes[i],
-            head_cockpit: cockpit_head.position,
-            body: hand_pose::body_of_head(heads[i].orientation, cockpit_head.orientation),
-            world_scale,
-        },
-        transport: Mat4::from_rotation_translation(heads[i].orientation, eyes[i]),
     })
 }
 
@@ -965,49 +946,5 @@ mod tests {
         assert!(edit.touches(38));
         assert!(!edit.touches(20));
         assert!(!edit.touches(0));
-    }
-
-    /// The render-time hand lands at the eye midpoint the camera renders from plus the
-    /// controller's offset from the cockpit head, on both sides of the pair, and rides the camera
-    /// rigidly across the interpolation: the player sees it where their hand is.
-    #[test]
-    fn a_render_hand_lands_at_the_rendered_eyes_plus_the_controller_offset() {
-        let cockpit_head = Pose {
-            position: Vec3::new(0.05, 1.7, -0.1),
-            orientation: Quat::from_rotation_x(-0.2),
-        };
-        let bodies = [Quat::from_rotation_y(0.4), Quat::from_rotation_y(0.5)];
-        let heads = bodies.map(|body| headpose::HeadPose {
-            position: Vec3::new(10.0, 2.0, -3.0),
-            orientation: body * cockpit_head.orientation,
-        });
-        // The camera hangs the eyes ahead of and above the published head on each side.
-        let eyes = [0, 1].map(|i| heads[i].position + bodies[i] * Vec3::new(0.03, 0.06, -0.1));
-        let views = render_views(heads, eyes, cockpit_head, 1.0);
-        let controller = Pose {
-            position: cockpit_head.position + Vec3::new(0.2, -0.4, -0.35),
-            orientation: Quat::IDENTITY,
-        };
-        for i in 0..2 {
-            let world = views[i].cockpit.pose_to_world(controller);
-            let expected = eyes[i] + bodies[i] * (controller.position - cockpit_head.position);
-            assert!(world.position.distance(expected) < 1e-5, "side {i}");
-            assert!(
-                views[i]
-                    .cockpit
-                    .point_to_world(cockpit_head.position)
-                    .distance(eyes[i])
-                    < 1e-5
-            );
-        }
-        let pair = PosePair {
-            previous: views[0].cockpit.pose_to_world(controller),
-            current: views[1].cockpit.pose_to_world(controller),
-            transport: Some([views[0].transport, views[1].transport]),
-        };
-        let camera = lerp_transform(views[0].transport, views[1].transport, 0.5);
-        let local = camera.inverse() * pose_matrix(pair.at(0.5));
-        let expected = views[1].transport.inverse() * pose_matrix(pair.current);
-        assert!(local.abs_diff_eq(expected, 1e-4));
     }
 }

@@ -39,7 +39,7 @@ use crate::{
             wing_guide,
         },
     },
-    headpose, hooks,
+    headpose,
 };
 
 /// The first half of the vehicle handling's input tick: read the mounted gun, place the physical
@@ -76,7 +76,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
             view_enabled: config.vehicles.driving_view.enabled,
             seat,
             xf: &xf,
-            eyes: headpose::anchor().map(|anchor| anchor + hooks::camera::eye_arm()),
+            anchor: headpose::anchor(),
         },
         entry.as_ref(),
         &mut latch,

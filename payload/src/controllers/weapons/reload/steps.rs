@@ -28,6 +28,7 @@ use crate::controllers::{
             eject::{self, FlickDetector},
             engine,
             extraction::{DetachKind, MagazineId},
+            fire_hold::{FireFacts, FireHold, fire_hold},
             frames::{self, GunFrame},
             gate, infinite,
             insert::{self, InsertEvent, InsertInputs, InsertStage, InsertionSource, Well},
@@ -268,13 +269,13 @@ impl State {
         ))
     }
 
-    /// The tick's steps; returns the hands whose guns may not fire.
+    /// The tick's steps; returns why each hand's gun may not fire, by [`Hand::index`].
     pub(super) fn step(
         &mut self,
         tick: &Tick,
         inputs: &FinishInputs,
         config: &ControllersConfig,
-    ) -> [bool; 2] {
+    ) -> [Option<FireHold>; 2] {
         let reload = &Reload::of(&config.weapons.reload);
         let dt = if inputs.dt.is_finite() {
             inputs.dt.max(0.0)
@@ -315,14 +316,7 @@ impl State {
         self.last_grips = tick.hands.map(|h| h.map(|h| h.grip.position));
         self.status.weapons = Hand::BOTH.map(|hand| self.readout(tick, hand, reload));
         self.status.belt = self.belts.map(|b| b.stage);
-        let held = Hand::BOTH.map(|hand| self.fire_hold(tick, hand, reload));
-        for hand in Hand::BOTH {
-            if held[hand.index()] && inputs.triggers[hand.index()].pressed {
-                self.status.counts.dry_fires += 1;
-                haptics::play(hand, Event::DryFire);
-            }
-        }
-        held
+        Hand::BOTH.map(|hand| self.fire_hold(tick, hand, reload))
     }
 
     /// `hand`'s gun and its weapon, for the readout.
@@ -346,29 +340,27 @@ impl State {
         })
     }
 
-    /// Whether `hand`'s gun may not fire: it sits in the belt pouch, its chamber is empty, its
-    /// action is out of battery, or its magazine is out.
-    fn fire_hold(&mut self, tick: &Tick, hand: Hand, reload: &Reload) -> bool {
-        let Some((weapon, gun)) = tick.gun(hand) else {
-            return false;
-        };
+    /// Why `hand`'s gun may not fire ([`fire_hold`]), or `None` when it may.
+    fn fire_hold(&mut self, tick: &Tick, hand: Hand, reload: &Reload) -> Option<FireHold> {
+        let (weapon, gun) = tick.gun(hand)?;
         let record = *self.records.get(weapon.key);
         let e = gun.entry();
-        let chambering = chambering(&weapon.plan);
-        self.belts[hand.index()].holds_fire()
-            || self.pending_ejects[hand.index()].is_some()
-            || self.extraction_hand() == Some(hand.other())
-            || (self
+        fire_hold(&FireFacts {
+            belt: self.belts[hand.index()].holds_fire(),
+            ejecting: self.pending_ejects[hand.index()].is_some(),
+            extracting: self.extraction_hand() == Some(hand.other()),
+            inserting: self
                 .status
                 .insert_hands
                 .is_some_and(|(_, target)| target == hand)
                 && matches!(self.status.insertion.stage, InsertStage::Captured { .. })
-                && loose::held().is_some())
-            || (chambering && record.chambers[e] == Chamber::Empty)
-            || (chambering
-                && reload.action.physical
-                && !record.travels[e].in_battery(&reload.action))
-            || (weapon.reading.out && (!chambering || record.chambers[e] == Chamber::Empty))
+                && loose::held().is_some(),
+            chambering: chambering(&weapon.plan),
+            chamber_empty: record.chambers[e] == Chamber::Empty,
+            out_of_battery: reload.action.physical && !record.travels[e].in_battery(&reload.action),
+            magazine_out: weapon.reading.out,
+            magazine_empty: weapon.reading.magazine <= 0,
+        })
     }
 
     /// Apply queued shot effects, deriving readiness only for weapons without an active partition.
@@ -911,7 +903,7 @@ impl State {
         self.status.work.reset();
         self.release_actions();
         set_pump_slide(None);
-        self.status.fire_held = [false; 2];
+        self.status.fire_held = [None; 2];
         self.belts = [BeltPush::new(); 2];
         self.flicks.iter_mut().for_each(FlickDetector::reset);
         self.last_grips = [None; 2];

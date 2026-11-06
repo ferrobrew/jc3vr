@@ -48,6 +48,7 @@ mod engine;
 #[cfg(test)]
 mod engine_tests;
 mod extraction;
+pub mod fire_hold;
 pub mod frames;
 pub(super) mod gate;
 mod infinite;
@@ -96,6 +97,7 @@ use crate::controllers::{
             eject::{FlickDetector, TapDetector},
             engine::Reading,
             extraction::{DetachRequest, PendingDetach, Pull},
+            fire_hold::FireHold,
             frames::GunFrame,
             insert::{Insertion, InsertionSource, ReadyCue, Well},
             knock::Knocks,
@@ -131,8 +133,8 @@ pub struct ReloadStatus {
     pub work: ActionWork,
     /// The angular speed of each hand over the last tick, degrees per second.
     pub flick_dps: [f32; 2],
-    /// The hands whose guns may not fire, by [`Hand::index`].
-    pub fire_held: [bool; 2],
+    /// Why each hand's gun may not fire, by [`Hand::index`].
+    pub fire_held: [Option<FireHold>; 2],
     pub counts: ReloadCounts,
     /// Native serial magazine execution and the most recent refusal.
     pub serial: serial::SerialStatus,
@@ -172,7 +174,6 @@ pub struct ReloadCounts {
     pub racks: u64,
     /// Slides caught at the rear.
     pub lock_backs: u64,
-    pub dry_fires: u64,
     pub empty_pouch: u64,
     /// Reload starts of the game's that the stop refused.
     pub refused: u64,
@@ -435,7 +436,6 @@ pub(super) struct FinishInputs {
     /// The grab volume each hand grabbed this tick, by [`Hand::index`].
     pub grabs: [Option<GrabVolume>; 2],
     pub grips: [ButtonControl; 2],
-    pub triggers: [ButtonControl; 2],
     /// The reload action's press over the tick.
     pub reload_button: ButtonControl,
     /// The tick's length, real seconds: the player's taps, flicks, grips, and the rounds and the
@@ -454,7 +454,7 @@ pub(super) fn finish_tick(inputs: &FinishInputs, config: &ControllersConfig) -> 
         drop(state);
         gate::publish(None);
         return FinishResult {
-            held: [false; 2],
+            held: [None; 2],
             belt: None,
         };
     };
@@ -468,7 +468,7 @@ pub(super) fn finish_tick(inputs: &FinishInputs, config: &ControllersConfig) -> 
         weapons: weapons.map(|w| w.map_or(0, |w| w.address)),
         manual_action: weapons
             .map(|w| w.is_some_and(|w| w.plan.action.manual() && steps::chambering(&w.plan))),
-        held,
+        held: held.map(|h| h.is_some()),
     }));
     FinishResult {
         held,
@@ -478,7 +478,8 @@ pub(super) fn finish_tick(inputs: &FinishInputs, config: &ControllersConfig) -> 
 
 /// The reload's fire hold and copied post-step belt facts, not its persistent debug readout.
 pub(super) struct FinishResult {
-    pub held: [bool; 2],
+    /// Why the reload keeps each hand's gun from firing, by [`Hand::index`].
+    pub held: [Option<FireHold>; 2],
     belt: Option<BeltFinish>,
 }
 
@@ -900,7 +901,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         belt: [PushStage::Outside; 2],
         work: ActionWork::new(),
         flick_dps: [0.0; 2],
-        fire_held: [false; 2],
+        fire_held: [None; 2],
         counts: ReloadCounts {
             ejects: 0,
             seats: 0,
@@ -908,7 +909,6 @@ static STATE: Mutex<State> = Mutex::new(State {
             belt_reloads: 0,
             racks: 0,
             lock_backs: 0,
-            dry_fires: 0,
             empty_pouch: 0,
             refused: 0,
         },

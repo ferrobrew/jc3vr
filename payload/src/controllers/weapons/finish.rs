@@ -45,7 +45,7 @@ use crate::{
             grenade,
             hold::{self, armed, tick},
             regions::{self, GunRegion},
-            reload,
+            reload::{self, fire_hold::FireHold},
             state::STATE,
             types::{GrabEvent, GrabOutcome, SocketOutcome},
             weighted_hands,
@@ -334,7 +334,6 @@ pub(crate) fn finish_tick(
         &reload::FinishInputs {
             grabs,
             grips,
-            triggers,
             reload_button,
             dt: real_dt,
             game_dt: dt,
@@ -378,7 +377,7 @@ pub(crate) fn finish_tick(
     let reload_blocks = gun_hands.contains(&true)
         && Hand::BOTH
             .iter()
-            .all(|h| !gun_hands[h.index()] || reload_finish.held[h.index()]);
+            .all(|h| !gun_hands[h.index()] || reload_finish.held[h.index()].is_some());
 
     // Only a hand on the grip fires the gun.
     let holder = current.and_then(|weapon| weapon.holder);
@@ -596,8 +595,8 @@ pub(super) enum FireRefusal {
     Docking,
     /// A reload, a draw, or a holster plays with the hand.
     Action,
-    /// The reload holds the gun.
-    Reload,
+    /// The reload holds the gun, for its reason.
+    Reload(FireHold),
     /// The hand holds a gun the mod's fire path does not fire.
     Other,
 }
@@ -610,7 +609,7 @@ impl FireRefusal {
             FireRefusal::Mode => "firing is not allowed here",
             FireRefusal::Docking => "the gun is moving onto its socket",
             FireRefusal::Action => "a reload, draw, or holster is playing",
-            FireRefusal::Reload => "the reload holds the gun",
+            FireRefusal::Reload(hold) => hold.label(),
             FireRefusal::Other => "the hand's gun is not fired from its trigger",
         }
     }
@@ -627,22 +626,28 @@ pub(super) struct RefusedFire<'a> {
     pub ready: [bool; 2],
     /// Whether the mode allows firing at all.
     pub may_fire: bool,
-    /// Each hand whose gun the reload holds.
-    pub reload_held: [bool; 2],
+    /// Why the reload holds each hand's gun, when it does.
+    pub reload_held: [Option<FireHold>; 2],
 }
 
 /// Each hand whose trigger was pressed this tick, on a gun it holds or braces, without firing it,
-/// with the reason, by [`Hand::index`]. A press on an empty hand, a hand holding something other
-/// than a gun, or the native pair's shared trigger is not refused here.
+/// with the reason, by [`Hand::index`]: the one decision of the dead click. A press on an empty
+/// hand, a hand holding something other than a gun, or the native pair's shared trigger on a gun
+/// the reload does not hold is not refused here.
 pub(super) fn refused_fire(r: &RefusedFire) -> [Option<FireRefusal>; 2] {
     Hand::BOTH.map(|hand| {
         let i = hand.index();
         let pressed = r.fire.triggers[i].pressed;
-        if !pressed || !r.reserved[i] || matches!(r.roles[i], GunHand::NativePair(_)) {
+        if !pressed || !r.reserved[i] {
             return None;
         }
-        if r.reload_held[i] && r.roles[i] == GunHand::Grip {
-            return Some(FireRefusal::Reload);
+        if let Some(hold) = r.reload_held[i]
+            && matches!(r.roles[i], GunHand::Grip | GunHand::NativePair(_))
+        {
+            return Some(FireRefusal::Reload(hold));
+        }
+        if matches!(r.roles[i], GunHand::NativePair(_)) {
+            return None;
         }
         if r.fired[i] {
             return None;
@@ -938,6 +943,7 @@ pub(super) fn cues_grab(outcome: GrabOutcome) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::weapons::capabilities::NativePair;
 
     #[test]
     fn a_holder_opening_while_the_other_hand_holds_the_action_passes_the_gun_at_once() {
@@ -1020,7 +1026,7 @@ mod tests {
             roles: [GunHand::Support, GunHand::Grip],
             ready: [true; 2],
             may_fire: true,
-            reload_held: [false; 2],
+            reload_held: [None; 2],
         };
         assert_eq!(refused_fire(&refused), [Some(FireRefusal::Bracing), None]);
         // A trigger held down from an earlier tick is not refused again.
@@ -1074,10 +1080,31 @@ mod tests {
         );
         assert_eq!(
             refused_fire(&RefusedFire {
-                reload_held: [false, true],
+                reload_held: [None, Some(FireHold::Empty)],
                 ..refused
             })[Hand::Right.index()],
-            Some(FireRefusal::Reload)
+            Some(FireRefusal::Reload(FireHold::Empty))
+        );
+        assert_eq!(
+            FireRefusal::Reload(FireHold::ActionOpen).label(),
+            FireHold::ActionOpen.label(),
+            "the click's line says what the reload checked"
+        );
+        // The native pair's shared trigger is the game's, unless the reload holds the gun.
+        let pair = GunHand::NativePair(NativePair {
+            first_hand: Hand::Right,
+        });
+        let native = RefusedFire {
+            roles: [pair; 2],
+            ..refused
+        };
+        assert_eq!(refused_fire(&native), [None, None]);
+        assert_eq!(
+            refused_fire(&RefusedFire {
+                reload_held: [Some(FireHold::MagazineOut); 2],
+                ..native
+            }),
+            [Some(FireRefusal::Reload(FireHold::MagazineOut)); 2]
         );
     }
 

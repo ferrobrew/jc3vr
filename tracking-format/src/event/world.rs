@@ -15,10 +15,7 @@ use crate::{
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ViewState {
-    /// The head pose the mod composes the cockpit through, world space: the head's orientation at
-    /// the eye midpoint the camera renders from. Recordings from builds that composed the hands
-    /// from the published head (which follows Rico's head joint, behind and below the eyes) hold
-    /// that position here instead, which is what those builds composed through.
+    /// The published head pose, world space: what the mod composes the cockpit through.
     pub head_world: Pose,
     /// The head's position in the cockpit frame at the same moment.
     pub head_cockpit: Vec3,
