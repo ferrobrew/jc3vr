@@ -5,8 +5,8 @@
 //! would take, and holds, is marked by the grip model's markers
 //! ([`crate::controllers::grab::markers`]).
 //!
-//! The palms and what they hold ride with the player, so they are anchored to the render-time head
-//! at their offset from the tick's head (`docs/mod/rendering/render-time-anchoring.md`).
+//! The palms and what they hold ride with the player, so they are anchored to the render-time eyes
+//! at their offset from the tick's eyes (`docs/mod/rendering/render-time-anchoring.md`).
 
 use std::time::Duration;
 
@@ -21,7 +21,7 @@ use crate::{
         },
         physical_hands::{HandStatus, PhysicalHandsConfig, palm::EDGES},
     },
-    headpose,
+    hooks::camera::eye_point,
 };
 
 /// Submit the palms of the last tick, or clear them when they are not shown.
@@ -31,7 +31,7 @@ pub(super) fn submit(hands: &[HandStatus; 2], config: &PhysicalHandsConfig) {
         clear();
         return;
     }
-    let rides = Rides(headpose::query().position);
+    let rides = Rides(eye_point());
     let mut prims = Vec::new();
     for status in hands {
         hold_line(status, rides, &mut prims);
@@ -99,12 +99,12 @@ fn hold_line(status: &HandStatus, rides: Rides, prims: &mut Vec<Primitive>) {
     }
 }
 
-/// The tick's head position, against which a point that rides with the player is anchored.
+/// The tick's eye point, against which a point that rides with the player is anchored.
 #[derive(Copy, Clone)]
 struct Rides(Vec3);
 
 impl Rides {
-    /// `world`, a point the tick placed, as an offset from the head.
+    /// `world`, a point the tick placed, as an offset from the eyes.
     fn at(self, world: Vec3) -> Anchor {
         Anchor::Head(world - self.0)
     }

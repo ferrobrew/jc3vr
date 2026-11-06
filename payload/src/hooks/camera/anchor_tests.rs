@@ -195,3 +195,55 @@ fn reused_receipt_changed_root_cannot_reach_publication_or_movement_then_fresh_r
     assert_eq!(pair.current.root, r1);
     assert_eq!(context().source, Source::Sim);
 }
+
+/// The eye points the cockpit composes from are the camera's own placement on each side of the
+/// pair, so a hand composed from them lands where the camera renders it from.
+#[test]
+fn eye_points_are_the_camera_placement_on_each_side() {
+    let geometry = capture_pair(false).geometry();
+    let follow = [Quat::from_rotation_y(0.3), Quat::from_rotation_y(-0.5)];
+    let poses = std::array::from_fn::<_, 2, _>(|i| {
+        let (_, body, _) = geometry[i].root.to_scale_rotation_translation();
+        compose(
+            Vec3::new(0.1, -0.03, 0.02),
+            Quat::from_rotation_x(0.2),
+            body * follow[i],
+            geometry[i].head,
+            1.0,
+        )
+    });
+    let eyes = eye_points_from(poses, Some(geometry), follow, Source::Vr);
+    for i in 0..2 {
+        let camera = camera_position(&poses[i], follow[i], geometry[i], Source::Vr);
+        assert!(eyes[i].abs_diff_eq(camera, 1.0e-6), "side {i}");
+        // The eyes hang ahead of and away from the published head by the rig's arm.
+        assert!(eyes[i].distance(poses[i].position) > 0.01, "side {i}");
+    }
+}
+
+/// A collapsed pair hangs both sides' eyes with the current side's view turn, as the camera
+/// writes its T0.
+#[test]
+fn collapsed_eye_points_share_the_current_view_turn() {
+    let geometry = capture_pair(true).geometry();
+    assert!(geometry[0].collapsed);
+    let follow = [Quat::from_rotation_y(0.9), Quat::from_rotation_y(-0.2)];
+    let pose = HeadPose {
+        position: Vec3::new(1.0, 2.0, 3.0),
+        orientation: Quat::IDENTITY,
+    };
+    let eyes = eye_points_from([pose; 2], Some(geometry), follow, Source::Vr);
+    let expected = camera_position(&pose, follow[1], geometry[0], Source::Vr);
+    assert!(eyes[0].abs_diff_eq(expected, 1.0e-6));
+}
+
+/// Before any anchors are published there is no arm to hang the eyes by.
+#[test]
+fn without_anchors_the_eye_points_are_the_head_positions() {
+    let poses = [Vec3::X, Vec3::Y].map(|position| HeadPose {
+        position,
+        orientation: Quat::IDENTITY,
+    });
+    let eyes = eye_points_from(poses, None, [Quat::IDENTITY; 2], Source::Vr);
+    assert_eq!(eyes, [Vec3::X, Vec3::Y]);
+}

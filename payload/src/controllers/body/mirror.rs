@@ -40,7 +40,7 @@ use crate::{
             pouch_models::attachments::{RenderSample as PouchRenderSample, SampleId},
         },
     },
-    headpose,
+    hooks::camera::eye_point,
 };
 
 /// What the mirror drew on its last pass.
@@ -177,7 +177,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     let found = indices.iter().filter(|i| i.is_some()).count();
     let bones =
         indices.map(|index| index.map(|i| unsafe { joint_in_world(controller, i, &world) }));
-    let head = headpose::query().position;
+    let head = eye_point();
     let (_, rotation, _) = world.to_scale_rotation_translation();
     let head_target = head_bone_world(rotation, Config::lock_query(|c| c.vr.world_scale));
     let targets = tick_records()

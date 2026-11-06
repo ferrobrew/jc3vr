@@ -4,8 +4,8 @@
 //!
 //! The probe casts from the player aim control's post-simulation update, where the game casts its
 //! own aim ray, for the local player, while the headset drives the view in gameplay. The eyes are
-//! the camera's: the head pose's position carried to the eyes as the camera hangs them, through
-//! the neck and the eye arm. The vehicle Rico rides in is ignored along with Rico himself, since
+//! the camera's ([`hooks::camera::eye_point`]): the head pose's position carried to the eyes as
+//! the camera hangs them, through the neck and the eye arm. The vehicle Rico rides in is ignored along with Rico himself, since
 //! between two ticks of a fast car the head's path runs through its cabin.
 
 pub mod probe;
@@ -45,8 +45,7 @@ pub(crate) unsafe fn tick(character: &Character) {
         return;
     }
     let pose = headpose::query();
-    let body = headpose::xr::body_rotation();
-    let eyes = pose.position + headpose::neck_delta() + body * headpose::eye_arm();
+    let eyes = hooks::camera::eye_point();
     let anchor = headpose::anchor().unwrap_or(pose.position);
     let right = pose.orientation * Vec3::X;
     let right = Vec3::new(right.x, 0.0, right.z).normalize_or_zero();

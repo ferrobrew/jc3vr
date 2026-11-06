@@ -57,7 +57,7 @@ use crate::{
             inventory::{self, reconcile, sockets},
         },
     },
-    headpose,
+    headpose, hooks,
     recorder::tracking::events::{self, EventKind},
     vr::recenter_count,
 };
@@ -569,7 +569,7 @@ static STATE: Mutex<State> = Mutex::new(State {
 fn sample_release_transport(dt: f32) {
     let scale = Config::lock_query(|config| config.vr.world_scale);
     let frame = headpose::xr::cockpit_pose().map(|head_cockpit| {
-        let head_world = headpose::query().position;
+        let head_world = hooks::camera::eye_point();
         ReleaseFrame {
             origin: head_world,
             rotation: headpose::xr::body_rotation(),
