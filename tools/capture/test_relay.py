@@ -6,6 +6,7 @@
 import json
 import os
 import tempfile
+import time
 import unittest
 
 import relay
@@ -260,6 +261,43 @@ class Takes(unittest.TestCase):
             with open(path, "a") as f:
                 f.write("705275364165\t1793503069411417\n")
             self.assertEqual(relay.read_first_frame_ts(path), 1793503069411.417)
+
+    def test_the_take_end_program_runs_with_the_take_folder(self):
+        with tempfile.TemporaryDirectory() as folder:
+            marker = os.path.join(folder, "ran")
+            program = os.path.join(folder, "on_end.sh")
+            with open(program, "w") as f:
+                f.write(f'#!/bin/sh\nprintf %s "$1" > "{marker}.tmp" && mv "{marker}.tmp" "{marker}"\n')
+            os.chmod(program, 0o755)
+            take = os.path.join(folder, "take")
+            config = relay.Config(
+                fallback_dir=folder,
+                fps=60,
+                encoding=relay.Encoding(codec="hevc", bitrate_kbps=None, quality="high"),
+                audio="none",
+                extra=[],
+                window_id=None,
+                region=None,
+                on_take_end=program,
+            )
+            relay.after_take(config, take)
+            deadline = time.monotonic() + 5
+            while not os.path.exists(marker) and time.monotonic() < deadline:
+                time.sleep(0.05)
+            with open(marker) as f:
+                self.assertEqual(f.read(), take)
+
+    def test_without_a_take_end_program_nothing_runs(self):
+        config = relay.Config(
+            fallback_dir="/nonexistent",
+            fps=60,
+            encoding=relay.Encoding(codec="hevc", bitrate_kbps=None, quality="high"),
+            audio="none",
+            extra=[],
+            window_id=None,
+            region=None,
+        )
+        relay.after_take(config, "/nonexistent/take")
 
 
 if __name__ == "__main__":

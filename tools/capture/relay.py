@@ -4,7 +4,7 @@ the payload starts, into the take's own folder, and go back to listening when th
 
     relay.py [--host 127.0.0.1] [--port 47172] [--fallback-dir captures]
              [--fps 60] [--codec hevc] [--bitrate-kbps 10000] [--quality high]
-             [--audio default_output]
+             [--audio default_output] [--on-take-end PROGRAM]
              [--window-id ID | --region WxH+X+Y] [-- EXTRA GSR ARGS...]
 
 The payload connects over TCP and speaks the control protocol below. For each take the relay finds
@@ -14,7 +14,9 @@ output, writing `video.mkv` into the take's folder beside the payload's `frames.
 `stream.json` there with the region, the output, the window, and the wall-clock time of the video's
 first frame, so `video_time = unix_ms - video_start_unix_ms` lines the payload's sidecar up with the
 video. When the take ends it sends gpu-screen-recorder SIGINT, waits for it to finalize the file,
-and listens again, so one relay serves every take of a session.
+and listens again, so one relay serves every take of a session. With `--on-take-end` it then runs
+that program detached with the take's folder (the capture host script passes
+`scripts/rerun_take.sh`, which exports the take to Rerun).
 
 The video is HEVC at a constant 10 Mbps by default, about 1.1 GB for fifteen minutes at 1080p60.
 gpu-screen-recorder's own default, constant quality, ran to about 36 Mbps of H.264 on the game,
@@ -413,6 +415,8 @@ class Config:
     window_id: int | None
     region: Region | None
     gsr: str = GSR
+    # A program run detached with the take's folder once the take ends, or None.
+    on_take_end: str | None = None
 
 
 def niri_json(*args: str):
@@ -580,7 +584,28 @@ def run_take(connection: Connection, config: Config) -> None:
     except KeyboardInterrupt:
         log.info("capture: interrupted; finalizing the take")
         finish(recorder, stream, metadata)
+        after_take(config, folder)
         raise
+    after_take(config, folder)
+
+
+def after_take(config: Config, folder: str) -> None:
+    """Run the take-end program on the take's folder in its own session, so it neither holds up the
+    next take nor stops with the relay."""
+    if config.on_take_end is None:
+        return
+    try:
+        subprocess.Popen(
+            [config.on_take_end, folder],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError as error:
+        log.error("capture: could not run %s on %s: %s", config.on_take_end, folder, error)
+        return
+    log.info("capture: running %s on %s", os.path.basename(config.on_take_end), folder)
 
 
 def recorder_env() -> dict:
@@ -693,6 +718,9 @@ def main() -> int:
         "--quality", default="high", help="the constant-quality preset, with --bitrate-kbps 0"
     )
     parser.add_argument("--audio", default="default_output", help='a gsr audio input, or "none"')
+    parser.add_argument(
+        "--on-take-end", help="a program to run detached with the take's folder when a take ends"
+    )
     target = parser.add_mutually_exclusive_group()
     target.add_argument("--window-id", type=int, help="record this niri window")
     target.add_argument("--region", help="record this WxH+X+Y region without asking niri")
@@ -717,6 +745,7 @@ def main() -> int:
         extra=extra,
         window_id=args.window_id,
         region=region,
+        on_take_end=args.on_take_end,
     )
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)

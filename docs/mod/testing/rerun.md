@@ -12,6 +12,8 @@ cargo run --release -p tracking-synth --target x86_64-unknown-linux-gnu -- \
 rerun take.rrd
 ```
 
+The capture host exports every take whole, with its video, when the take ends: `scripts/rerun_take.sh <take folder>` writes `take.rrd` into the take's folder, and can be run by hand on any take ([capture.md](../capture.md#the-capture-host)).
+
 `--from` and `--to` take the same times as `dump`: seconds on the recording's clock, or `xr:<ns>` for a predicted display time. Without them the whole recording is exported; an hour-long take writes about half a gigabyte without its video, so a stretch of a few minutes is the usual way. `--video` adds the take's video, which needs the take's `frames.jsonl` and `stream.json` beside the recording to place it on the recording's clock. `--video-height <px>` sets the cut's height (720 by default, never above the source's). `--height`, `--eye-height`, and `--tuning` are `rig-eval`'s, for the offline rig ([body/rig.md](../body/rig.md#offline-evaluation)).
 
 A two-minute stretch of an hour's take, with its video, takes about 25 seconds and writes about 90 MB, most of it video; decoding the recording takes about 2.5 GB of memory whatever the stretch.

@@ -16,6 +16,9 @@
 # The window must stay where it is and uncovered for the whole take: the region is fixed when the
 # take starts, and whatever is on screen there is what is recorded.
 #
+# When a take ends, scripts/rerun_take.sh exports it to Rerun (`take.rrd` in the take's folder, with
+# its log in `rerun.log`) in the background, so the next take can start at once.
+#
 # Environment overrides:
 #   JC3VR_CAPTURE_PORT    the listen port (default 47172, the payload's default).
 #   JC3VR_CAPTURE_FPS     the recording frame rate (default 60).
@@ -28,6 +31,7 @@
 #                         to record video only.
 #   JC3VR_CAPTURE_WINDOW  a niri window id to record instead of looking the game's window up.
 #   JC3VR_CAPTURE_REGION  a WxH+X+Y region to record without asking niri, for other compositors.
+#   JC3VR_CAPTURE_RERUN   0 to skip the Rerun export when a take ends (default 1).
 
 set -euo pipefail
 
@@ -47,6 +51,9 @@ args=(
     --quality "${JC3VR_CAPTURE_QUALITY:-high}"
     --audio "${JC3VR_CAPTURE_AUDIO:-default_output}"
 )
+if [ "${JC3VR_CAPTURE_RERUN:-1}" != 0 ]; then
+    args+=(--on-take-end "$DIR/scripts/rerun_take.sh")
+fi
 if [ -n "${JC3VR_CAPTURE_WINDOW:-}" ]; then
     args+=(--window-id "$JC3VR_CAPTURE_WINDOW")
 elif [ -n "${JC3VR_CAPTURE_REGION:-}" ]; then
