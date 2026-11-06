@@ -298,7 +298,8 @@ pub(crate) unsafe fn before_placement(
     Some(placement)
 }
 
-/// Record how each pinned or watched gun sits on its wrist after the placement.
+/// Record how each pinned or watched gun sits on its wrist after the placement, and forget the
+/// record of a hand the placement put no gun in.
 ///
 /// # Safety
 ///
@@ -316,7 +317,10 @@ pub(crate) unsafe fn after_placement(character: *const Character, placement: Pla
     let now = Instant::now();
     let mut last = LAST.lock();
     for hand in Hand::BOTH {
+        // A hand this placement put no gun in holds none now: a record left from before would name
+        // a gun that has left it, perhaps for the other hand.
         let Some(placed) = placement.guns[hand.index()] else {
+            last[hand.index()] = None;
             continue;
         };
         let data = unsafe { &*placed.data };

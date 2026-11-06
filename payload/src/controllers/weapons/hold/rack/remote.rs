@@ -31,13 +31,12 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     frame::Hand,
-    loadout::TakeSource,
     weapons::{
         dual_wield::single,
         engine::{self, character_object, object_of, slot_of, takeable_gun_slot},
         hold::{
             pickup::{self, Refusal},
-            rack::paired,
+            rack::{offered_source, paired},
             refs::Weak,
             source::{Freed, SourceRefusal},
         },
@@ -153,6 +152,7 @@ pub(crate) unsafe fn release(
         unsafe { engine::local_player() }.ok_or(SourceRefusal::Take(Refusal::NoCharacter))?;
     unsafe { pickup::preflight(owner, weapon, hand, false) }.map_err(SourceRefusal::Take)?;
     let from_rack = weapon.m_State == WeaponState::E_WS_WEAPON_RACK;
+    let source = offered_source(weapon);
     if from_rack {
         unsafe { weapon.PickupStart(character_object(owner)) };
     }
@@ -162,19 +162,14 @@ pub(crate) unsafe fn release(
     tracing::info!(
         target: "controllers",
         hand = hand.label(),
-        from_rack,
-        "snatch: freed the weapon from its {} for the {} hand",
-        if from_rack { "rack" } else { "locker" },
+        source = source.label(),
+        "snatch: freed the weapon for the {} hand",
         hand.label()
     );
     Ok(Freed {
         weapon,
         alive,
-        source: if from_rack {
-            TakeSource::Rack
-        } else {
-            TakeSource::Locker
-        },
+        source,
     })
 }
 
