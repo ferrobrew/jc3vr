@@ -459,3 +459,48 @@ fn a_hold_that_ends_takes_its_strain_with_it() {
         assert_eq!(state.strains[0], None);
     }
 }
+
+#[test]
+fn a_tear_judges_the_other_hand_with_the_strength_left() {
+    // Two hands can lift this, one cannot. The left hand is torn away at once; the right holds it
+    // up from straight above, which is a sag for one hand alone and no snag.
+    let heavy = Held {
+        mass_kg: 50.0,
+        ..held(false, HeldKind::Prop)
+    };
+    assert!(
+        grasp::can_lift(heavy.mass_kg, 2, &PICKUP) && !grasp::can_lift(heavy.mass_kg, 1, &PICKUP)
+    );
+    let mut state = PickupState::new();
+    state.held = [Some(heavy); 2];
+    let mut fake = FakeBodies {
+        body: bodies::BodyState {
+            mass_kg: Some(heavy.mass_kg),
+            ..body()
+        },
+        calls: Vec::new(),
+        driven: None,
+    };
+    let at = |position| {
+        Some(PalmMotion {
+            pose: Pose {
+                position,
+                ..palm().pose
+            },
+            ..palm()
+        })
+    };
+    state.input_at = Some(Instant::now());
+    let inputs = TickInputs {
+        palms: [
+            at(Vec3::new(PICKUP.tear_distance_m + 0.1, 0.0, 0.0)),
+            at(Vec3::new(0.0, PICKUP.break_distance_m + 0.1, 0.0)),
+        ],
+        ..inputs(false)
+    };
+    let outcome = unsafe { tick_with(&mut state, inputs, &PICKUP, &mut fake) };
+    assert_eq!(outcome.losses[0], Some(HoldLoss::TornAway));
+    assert_eq!(state.held[1], Some(heavy));
+    assert_eq!(state.strain(Hand::Right, &heavy), grasp::Strain::default());
+    assert!(!outcome.reports[1].unwrap().liftable);
+}

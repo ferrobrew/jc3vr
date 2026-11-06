@@ -613,11 +613,15 @@ unsafe fn tick_with(
             });
         }
         // Every hold, carried or joined, is torn away by the same strain, against the same lift.
-        let liftable = lifts(
-            &held,
-            &holds,
-            &carry_tuning(&held, &holds, config).in_real_time(time_scale),
-        );
+        // A tear leaves the hand judged after it with only its own strength.
+        let lift = |holds: &[Option<HandHold>; 2]| {
+            lifts(
+                &held,
+                holds,
+                &carry_tuning(&held, holds, config).in_real_time(time_scale),
+            )
+        };
+        let mut liftable = lift(&holds);
         let moving = body.rigid();
         for (k, hand) in Hand::BOTH.into_iter().enumerate() {
             let Some(hold) = holds[k] else {
@@ -634,6 +638,7 @@ unsafe fn tick_with(
             if strain.torn(&sample, dt, time_scale, config) {
                 holds[k] = None;
                 state.set_held(k, None);
+                liftable = lift(&holds);
                 outcome.released[k] = true;
                 outcome.lost += 1;
                 outcome.losses[k] = Some(HoldLoss::TornAway);
@@ -642,9 +647,10 @@ unsafe fn tick_with(
             }
             state.set_strain(hand, &held, strain);
         }
+        // The holds the strain left, solved in real time; a joint takes the game-time strength.
+        let game_tuning = carry_tuning(&held, &holds, config);
+        let tuning = game_tuning.in_real_time(time_scale);
         if joined {
-            let tuning = carry_tuning(&held, &holds, config);
-            let liftable = lifts(&held, &holds, &tuning.in_real_time(time_scale));
             let shared = holds.iter().flatten().count() > 1;
             for (k, hold) in holds.iter().enumerate() {
                 let Some(hold) = hold else {
@@ -657,7 +663,7 @@ unsafe fn tick_with(
                     body: held.body,
                     keep_out: keep_outs[k],
                     shared,
-                    hand_force_n: tuning.hand_force_n,
+                    hand_force_n: game_tuning.hand_force_n,
                 });
                 let (load, twist) = joints.loads[k];
                 outcome.reports[k] = Some(HeldReport {
@@ -692,7 +698,6 @@ unsafe fn tick_with(
         if hands == 0 {
             continue;
         }
-        let tuning = carry_tuning(&held, &holds, config).in_real_time(time_scale);
         let mut rigid = body.rigid();
         // A ragdoll's body drags the rest of the ragdoll, so the hands' strength moves it as the
         // whole ragdoll's weight.
@@ -703,7 +708,7 @@ unsafe fn tick_with(
         // character's own change of velocity outright, and the hands' strength works only on
         // their motion relative to the body: a jump carries the object along instead of tearing
         // it from the hands.
-        if held.kind == HeldKind::Prop && lifts(&held, &holds, &tuning) {
+        if held.kind == HeldKind::Prop && liftable {
             rigid.velocities.linear += carried;
         }
         let solution = hold::solve(&rigid, holds, dt, &tuning);
@@ -746,7 +751,7 @@ unsafe fn tick_with(
             }
             outcome.reports[k] = Some(HeldReport {
                 mass_kg: held.mass_kg,
-                liftable: lifts(&held, &holds, &tuning),
+                liftable,
                 shared: hands > 1,
                 centre: body.pose.centre,
                 anchor: hold.anchor,
