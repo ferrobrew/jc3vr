@@ -23,7 +23,7 @@ The grenade launchers, the rocket launchers, and the mortar are launchers (`Relo
 - A rocket launcher takes one rocket into the front of its tube, pushed back toward the shooter, the rocket's rear end first. The rocket (`model.rpg`) is drawn in the hand while it is held; let go before it seats, it goes back to whatever the launcher shows on its own, which is nothing while the launcher is empty.
 - The Hydra's pod goes into the rear of its housing, pushed forward. The game reloads the Hydra as a magazine of rockets whose spare prop is the pod, so the wells table loads it as a magazine (`kind: magazine`): the pod is ejected and seated whole.
 
-A launcher's spent round (the UPU-210's empty cartridge, the Hydra's empty pod) does not hold the well: a fresh round taken from the pouch is drawn in the hand from the launcher's own round part, catches the well, and seats in its place, so a dry launcher reloads with one push and no eject (`WeaponTick::occupied`). A launcher with rounds left still has to drop its round first, as a gun does. A rocket or a shell is offered by the pouch while the launcher has space or its round is out (`State::can_take`), so a launcher whose count reads full with its round out is not refused.
+The spent round of a launcher of one round (the UPU-210's empty cartridge, the Hydra's empty pod) does not hold the well (`ReloadPlan::spent_round_replaced`): a fresh round taken from the pouch is drawn in the hand from the launcher's own round part, catches the well, and seats in its place, so a dry launcher reloads with one push and no eject (`WeaponTick::occupied`). A launcher with rounds left still has to drop its round first, as a gun does. The Bildt Negotiator holds three grenades in a box magazine, which the game's reload swaps as it swaps a rifle's, so its empty magazine holds the well and is knocked out, ejected, or pulled first, as a gun's is. A rocket or a shell is offered by the pouch while the launcher has space or its round is out (`State::can_take`), so a launcher whose count reads full with its round out is not refused.
 
 A seated round that leaves the launcher able to fire plays the ready cue (see "Haptics"); there is no other step.
 
@@ -216,6 +216,7 @@ With `reload.action.physical` on, `RIGHT ACTION` on the debug UI's Status page o
 3. Push it up into the ring, roughly upright: a click on both hands, the cartridge slides up in the gun's orientation, a bump as it seats, and a click on the gun hand a moment later. The HUD shows the cartridge's rounds, and the launcher fires at once.
 4. Draw the UVK-13 (or any `w14x` launcher) and fire it. Take a rocket from the pouch: the rocket is in the hand, rear end out of the fist. Push it back into the front of the tube: it seats, the ready click plays, and it fires. Let go of a rocket before it seats: it vanishes, and the empty launcher shows no rocket.
 5. Do 3 and 4 with the round turned well off the axis and a hand's width beside the mouth: it still catches. A pistol's magazine must still come within a few centimetres.
+6. Fire the Bildt Negotiator dry: its empty box magazine stays in the gun. A fresh magazine from the pouch offers striking the old one out or ejecting it, and does not seat until the old one has left.
 
 ## In the headset: the 6 November round
 

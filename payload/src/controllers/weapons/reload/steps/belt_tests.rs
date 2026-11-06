@@ -407,7 +407,11 @@ fn a_launchers_spent_round_is_replaced_but_a_guns_empty_magazine_is_not() {
     weapon.reading.magazine = 0;
     assert!(weapon.occupied());
     assert!(weapon.part_shown());
+    // A launcher with a magazine of several rounds swaps its empty magazine as a gun does.
     weapon.plan.launcher = true;
+    assert!(weapon.occupied());
+    assert!(weapon.part_shown());
+    weapon.plan.spent_round_replaced = true;
     assert!(!weapon.occupied());
     assert!(!weapon.part_shown());
     weapon.reading.magazine = 1;

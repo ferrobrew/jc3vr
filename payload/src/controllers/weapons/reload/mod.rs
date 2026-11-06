@@ -900,19 +900,19 @@ impl WeaponTick {
     }
 
     /// Whether the gun's well holds a round that has to leave before a fresh one seats: a magazine
-    /// or a cylinder still in, but for a launcher's spent round (the UPU-210's empty cartridge, the
-    /// Hydra's empty pod), which the fresh one replaces as it seats.
+    /// or a cylinder still in, but for a one-round launcher's spent round (the UPU-210's empty
+    /// cartridge, the Hydra's empty pod), which the fresh one replaces as it seats.
     fn occupied(&self) -> bool {
         self.plan.load.well_occupied(self.reading.out)
-            && !(self.plan.launcher && self.reading.magazine_rounds() <= 0)
+            && !(self.plan.spent_round_replaced && self.reading.magazine_rounds() <= 0)
     }
 
     /// Whether the gun shows its round part on its own with no round in the hand: as its load
-    /// does ([`LoadKind::part_shown`]), and for a launcher only while it holds a round.
+    /// does ([`LoadKind::part_shown`]), and for a one-round launcher only while it holds a round.
     ///
     /// [`LoadKind::part_shown`]: crate::controllers::weapons::reload::plan::LoadKind::part_shown
     fn part_shown(&self) -> bool {
-        if self.plan.launcher {
+        if self.plan.spent_round_replaced {
             !self.reading.out && self.reading.magazine_rounds() > 0
         } else {
             self.plan

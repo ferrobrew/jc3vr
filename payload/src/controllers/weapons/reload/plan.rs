@@ -101,6 +101,12 @@ pub struct ReloadPlan {
     /// the well at the launcher capture radius and angle, since a launcher's well is large and
     /// awkward to reach with the other hand.
     pub launcher: bool,
+    /// A launcher of one round (the UPU-210's cartridge, the Hydra's pod, a rocket launcher, or
+    /// the mortar), whose spent round does not hold the well: a fresh one seats in its place. A
+    /// launcher with a magazine of several rounds, the Bildt Negotiator, has its empty magazine
+    /// knocked out, ejected, or pulled first, as a gun's is, which is how the game's own reload of
+    /// it swaps its magazine.
+    pub spent_round_replaced: bool,
 }
 
 impl ReloadPlan {
@@ -185,6 +191,7 @@ pub fn plan(
             .and_then(|e| e.spare_top_m)
             .filter(|t| t.is_finite()),
         launcher: is_launcher(facts.class),
+        spent_round_replaced: is_launcher(facts.class) && facts.capacity == 1,
     })
 }
 
@@ -256,6 +263,14 @@ fn class_defaults(class: i32) -> Option<(LoadKind, ActionKind)> {
 
 #[cfg(test)]
 mod tests {
+    use TableAction::{Bolt, ChargingHandle, None as NoAction, Pump, Slide};
+    use WellKind::{Cylinder, Magazine, None as Nothing, Rocket, Shell};
+    use jc3gi::equipment::weapon::WeaponClass::{
+        E_WEAPON_CLASS_ASSAULT_RIFLE, E_WEAPON_CLASS_GRENADE_LAUNCHER, E_WEAPON_CLASS_MORTAR,
+        E_WEAPON_CLASS_PISTOL, E_WEAPON_CLASS_RPG, E_WEAPON_CLASS_SHOTGUN, E_WEAPON_CLASS_SMG,
+        E_WEAPON_CLASS_SNIPER, E_WEAPON_CLASS_SPECIAL,
+    };
+
     use super::*;
     use crate::controllers::weapons::reload::wells::{self, TableAction, WellGrade};
 
@@ -488,21 +503,419 @@ mod tests {
         assert_eq!(p.part_axis, Vec3::NEG_Z);
     }
 
+    /// Every weapon in the wells table, with what the game says about its reload: its class, its
+    /// magazine size, and whether its reload is exempt (untimed, or of the unlimited ammunition
+    /// kind). The reload audit in `docs/mod/input/weapon-reloads.md` lists the same weapons.
+    struct Audited {
+        weapon: &'static str,
+        class: WeaponClass,
+        capacity: i32,
+        exempt: bool,
+        kind: WellKind,
+        action: TableAction,
+    }
+
+    const fn audited(
+        weapon: &'static str,
+        class: WeaponClass,
+        capacity: i32,
+        exempt: bool,
+        kind: WellKind,
+        action: TableAction,
+    ) -> Audited {
+        Audited {
+            weapon,
+            class,
+            capacity,
+            exempt,
+            kind,
+            action,
+        }
+    }
+
+    const AUDIT: &[Audited] = &[
+        audited(
+            "w011_pistol_u_pozhar_98",
+            E_WEAPON_CLASS_PISTOL,
+            16,
+            false,
+            Magazine,
+            Slide,
+        ),
+        audited(
+            "w012_pistol_cs_spectre_mark_v",
+            E_WEAPON_CLASS_PISTOL,
+            14,
+            false,
+            Magazine,
+            Slide,
+        ),
+        audited(
+            "w013_pistol_balloon_head",
+            E_WEAPON_CLASS_PISTOL,
+            16,
+            true,
+            Magazine,
+            Slide,
+        ),
+        audited(
+            "w014_handgun_little_general",
+            E_WEAPON_CLASS_PISTOL,
+            12,
+            false,
+            Cylinder,
+            NoAction,
+        ),
+        audited(
+            "w021_handgun_peacekeeper",
+            E_WEAPON_CLASS_PISTOL,
+            12,
+            false,
+            Cylinder,
+            NoAction,
+        ),
+        audited(
+            "w031_smg_prizrak_u4",
+            E_WEAPON_CLASS_SMG,
+            40,
+            false,
+            Magazine,
+            ChargingHandle,
+        ),
+        audited(
+            "w032_smg_cs_wraith_2000",
+            E_WEAPON_CLASS_SMG,
+            60,
+            false,
+            Magazine,
+            ChargingHandle,
+        ),
+        audited(
+            "w033_smg_cs_9",
+            E_WEAPON_CLASS_SMG,
+            36,
+            false,
+            Magazine,
+            ChargingHandle,
+        ),
+        audited(
+            "w111_assault_rifle_up_39",
+            E_WEAPON_CLASS_ASSAULT_RIFLE,
+            35,
+            false,
+            Magazine,
+            ChargingHandle,
+        ),
+        audited(
+            "w112_assault_rifle_cs_predator",
+            E_WEAPON_CLASS_ASSAULT_RIFLE,
+            30,
+            false,
+            Magazine,
+            ChargingHandle,
+        ),
+        audited(
+            "w117_assault_rifle_csv",
+            E_WEAPON_CLASS_ASSAULT_RIFLE,
+            40,
+            false,
+            Magazine,
+            ChargingHandle,
+        ),
+        audited(
+            "w118_assault_rifle_up_61",
+            E_WEAPON_CLASS_ASSAULT_RIFLE,
+            25,
+            false,
+            Magazine,
+            ChargingHandle,
+        ),
+        audited(
+            "w119_molten_bavarium_spitter",
+            E_WEAPON_CLASS_ASSAULT_RIFLE,
+            60,
+            false,
+            Magazine,
+            ChargingHandle,
+        ),
+        audited(
+            "w121_grenade_launcher_cs_bildt_negotiator",
+            E_WEAPON_CLASS_GRENADE_LAUNCHER,
+            3,
+            false,
+            Magazine,
+            NoAction,
+        ),
+        audited(
+            "w123_grenade_launcher_upu_210",
+            E_WEAPON_CLASS_GRENADE_LAUNCHER,
+            1,
+            false,
+            Magazine,
+            NoAction,
+        ),
+        audited(
+            "w131_machine_gun_urga_vdova_89",
+            E_WEAPON_CLASS_ASSAULT_RIFLE,
+            80,
+            false,
+            Magazine,
+            ChargingHandle,
+        ),
+        audited(
+            "w132_machine_gun_capstone_a_92",
+            E_WEAPON_CLASS_ASSAULT_RIFLE,
+            60,
+            false,
+            Magazine,
+            ChargingHandle,
+        ),
+        audited(
+            "w141_rpg_uvk_13",
+            E_WEAPON_CLASS_RPG,
+            1,
+            false,
+            Rocket,
+            NoAction,
+        ),
+        audited(
+            "w141_rpg_uvk_13_mm110",
+            E_WEAPON_CLASS_RPG,
+            1,
+            false,
+            Rocket,
+            NoAction,
+        ),
+        audited(
+            "w142_rpg_capstone_bloodhound",
+            E_WEAPON_CLASS_RPG,
+            1,
+            false,
+            Rocket,
+            NoAction,
+        ),
+        audited(
+            "w143_rpg_fire_leach",
+            E_WEAPON_CLASS_RPG,
+            1,
+            false,
+            Rocket,
+            NoAction,
+        ),
+        audited(
+            "w144_rpg_capstone_hydra",
+            E_WEAPON_CLASS_RPG,
+            1,
+            false,
+            Magazine,
+            NoAction,
+        ),
+        audited(
+            "w146_rpg_javelin",
+            E_WEAPON_CLASS_RPG,
+            1,
+            false,
+            Rocket,
+            NoAction,
+        ),
+        audited(
+            "w147_rpg_guitar_case",
+            E_WEAPON_CLASS_RPG,
+            1,
+            true,
+            Nothing,
+            NoAction,
+        ),
+        audited(
+            "w151_shotgun_u_rys_96",
+            E_WEAPON_CLASS_SHOTGUN,
+            6,
+            false,
+            Shell,
+            Pump,
+        ),
+        audited(
+            "w153_shotgun_automat_12",
+            E_WEAPON_CLASS_SHOTGUN,
+            14,
+            false,
+            Magazine,
+            NoAction,
+        ),
+        audited(
+            "w155_shotgun_u_rys_12",
+            E_WEAPON_CLASS_SHOTGUN,
+            4,
+            false,
+            Shell,
+            NoAction,
+        ),
+        audited(
+            "w161_sniper_rifle_u_sv_45",
+            E_WEAPON_CLASS_SNIPER,
+            4,
+            false,
+            Magazine,
+            Bolt,
+        ),
+        audited(
+            "w162_sniper_rifle_cs111_archangel",
+            E_WEAPON_CLASS_SNIPER,
+            6,
+            false,
+            Magazine,
+            Bolt,
+        ),
+        audited(
+            "w163_sniper_rifle_final_argument",
+            E_WEAPON_CLASS_SNIPER,
+            6,
+            false,
+            Magazine,
+            Bolt,
+        ),
+        audited(
+            "w173_ragnarok",
+            E_WEAPON_CLASS_SPECIAL,
+            10,
+            false,
+            Nothing,
+            NoAction,
+        ),
+        audited(
+            "w176_stupka_210",
+            E_WEAPON_CLASS_MORTAR,
+            1,
+            false,
+            Rocket,
+            NoAction,
+        ),
+        audited(
+            "w177_typhoon",
+            E_WEAPON_CLASS_SPECIAL,
+            -1,
+            true,
+            Nothing,
+            NoAction,
+        ),
+        audited(
+            "w178_balloon",
+            E_WEAPON_CLASS_SPECIAL,
+            0,
+            true,
+            Nothing,
+            NoAction,
+        ),
+        audited(
+            "w179_namaste",
+            E_WEAPON_CLASS_SPECIAL,
+            0,
+            true,
+            Nothing,
+            NoAction,
+        ),
+        audited(
+            "w701_missile_strike",
+            E_WEAPON_CLASS_SPECIAL,
+            1,
+            true,
+            Nothing,
+            NoAction,
+        ),
+        audited(
+            "w701_missile_strike_ai",
+            E_WEAPON_CLASS_SPECIAL,
+            1,
+            true,
+            Nothing,
+            NoAction,
+        ),
+        audited(
+            "w702_emp",
+            E_WEAPON_CLASS_SPECIAL,
+            1,
+            true,
+            Nothing,
+            NoAction,
+        ),
+        audited(
+            "w703_sungun",
+            E_WEAPON_CLASS_SPECIAL,
+            -1,
+            false,
+            Nothing,
+            NoAction,
+        ),
+        audited("w704_m488", E_WEAPON_CLASS_RPG, 1, false, Rocket, NoAction),
+    ];
+
     #[test]
-    fn every_launcher_in_the_table_loads_what_the_game_reloads() {
-        for e in wells::entries()
-            .iter()
-            .filter(|e| e.grade.trusted() && e.kind != WellKind::None)
-        {
-            let expected = if e.weapon.starts_with("w12") || e.weapon == "w144_rpg_capstone_hydra" {
-                WellKind::Magazine
-            } else if e.weapon.starts_with("w14") || e.weapon == "w176_stupka_210" {
-                WellKind::Rocket
-            } else {
+    fn every_weapon_in_the_table_loads_what_the_audit_says() {
+        let entries = wells::entries();
+        for e in entries {
+            assert!(
+                AUDIT.iter().any(|a| a.weapon == e.weapon),
+                "{} is in the wells table but not in the audit",
+                e.weapon
+            );
+        }
+        for a in AUDIT {
+            let e = entries
+                .iter()
+                .find(|e| e.weapon == a.weapon)
+                .unwrap_or_else(|| {
+                    panic!("{} is in the audit but not in the wells table", a.weapon)
+                });
+            assert_eq!(e.kind, a.kind, "{}", a.weapon);
+            assert_eq!(e.action, a.action, "{}", a.weapon);
+            let facts = WeaponFacts {
+                class: a.class as i32,
+                capacity: a.capacity,
+                exempt: a.exempt,
+            };
+            let Some(p) = plan(facts, Some(e), WRIST, 0.06) else {
+                assert!(
+                    a.exempt
+                        || a.capacity <= 0
+                        || a.kind == WellKind::None
+                        || class_defaults(facts.class).is_none(),
+                    "{}: no plan",
+                    a.weapon
+                );
                 continue;
             };
-            assert_eq!(e.kind, expected, "{}", e.weapon);
-            assert_eq!(e.action, TableAction::None, "{}", e.weapon);
+            assert!(
+                !a.exempt && a.kind != WellKind::None,
+                "{}: planned",
+                a.weapon
+            );
+            // Every reloaded weapon's well sits on the gun, not at the wrist.
+            assert!(matches!(p.well, WellFrame::Gun { .. }), "{}", a.weapon);
+            let launcher = matches!(
+                a.class,
+                WeaponClass::E_WEAPON_CLASS_GRENADE_LAUNCHER
+                    | WeaponClass::E_WEAPON_CLASS_RPG
+                    | WeaponClass::E_WEAPON_CLASS_MORTAR
+            );
+            assert_eq!(p.launcher, launcher, "{}", a.weapon);
+            assert_eq!(
+                p.spent_round_replaced,
+                launcher && a.capacity == 1,
+                "{}",
+                a.weapon
+            );
+            // A round the hand carries is drawn from the gun's spare magazine model or its own
+            // round part, except where the game has neither (see the audit).
+            let drawn = p.spare_top_m.is_some() || p.part_top_m.is_some();
+            let undrawn = matches!(
+                a.weapon,
+                "w014_handgun_little_general"
+                    | "w021_handgun_peacekeeper"
+                    | "w151_shotgun_u_rys_96"
+                    | "w153_shotgun_automat_12"
+                    | "w155_shotgun_u_rys_12"
+            );
+            assert_eq!(drawn, !undrawn, "{}", a.weapon);
         }
     }
 
