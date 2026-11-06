@@ -9,13 +9,19 @@
 //! in the gun's model frame, and how its action is worked; a weapon it lacks takes its class's
 //! defaults and a well at the configured offset from the holding wrist.
 
-use glam::Vec3;
+use glam::{Quat, Vec3};
 use jc3gi::equipment::weapon::WeaponClass;
 
-use crate::controllers::weapons::reload::{
-    chamber::ActionKind,
-    wells::{WellEntry, WellKind},
+use crate::{
+    controllers::weapons::reload::{
+        chamber::ActionKind,
+        wells::{RoundEntry, WellEntry, WellKind},
+    },
+    hash::hashlittle,
 };
+
+/// The most rounds a hand holds at once: a revolver's cylinder.
+pub const MAX_HELD_ROUNDS: usize = 6;
 
 /// What a weapon loads.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -97,6 +103,9 @@ pub struct ReloadPlan {
     /// centred across it, in the model's own frame, metres: what the magazine in the hand is
     /// drawn with.
     pub spare_top_m: Option<Vec3>,
+    /// For a shell or a cylinder, which the game has no model of a loose round for, the stand-in
+    /// model the round in the hand is drawn with.
+    pub round: Option<RoundModel>,
     /// A launcher: a grenade launcher, a rocket launcher, or the mortar. Its round is caught by
     /// the well at the launcher capture radius and angle, since a launcher's well is large and
     /// awkward to reach with the other hand.
@@ -110,6 +119,27 @@ pub struct ReloadPlan {
 }
 
 impl ReloadPlan {
+    /// The model a round taken from the pouch is drawn with in the hand, and how it lies: the
+    /// gun's spare magazine model for a magazine that has one, the stand-in round model for a
+    /// shell or a cylinder, or `None`, which leaves the round to the gun's own part, if any.
+    pub fn hand_round(&self) -> Option<HandRound> {
+        match (self.spare_top_m, self.round) {
+            (Some(top), _) => Some(HandRound {
+                model: HandModel::Spare,
+                top,
+                axis: self.part_axis,
+                in_gun: Quat::IDENTITY,
+            }),
+            (None, Some(round)) => Some(HandRound {
+                model: HandModel::Round(round),
+                top: round.top,
+                axis: round.axis,
+                in_gun: Quat::from_rotation_arc(round.axis, self.part_axis),
+            }),
+            (None, None) => None,
+        }
+    }
+
     /// The plan with its action worked by hand only while `manual_action` is on. Off, every action
     /// is [`ActionKind::None`], so the gun chambers its first round as its magazine seats, as a
     /// launcher or a revolver does, and nothing waits on a slide, a charging handle, a bolt, or a
@@ -124,6 +154,82 @@ impl ReloadPlan {
             }
         }
     }
+}
+
+/// The stand-in model of a loose round, from the wells table ([`RoundEntry`]): a casing, or a
+/// ring of them for a revolver's cylinder.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct RoundModel {
+    /// The compiled-name hash the game's model cache holds the model under.
+    pub name_hash: u32,
+    /// The round's feed end, centred across it, in the model's own frame, metres.
+    pub top: Vec3,
+    /// The direction the round travels into the gun, in the model's own frame, unit length.
+    pub axis: Vec3,
+    pub radius_m: f32,
+    /// How many rounds the hand holds, `1..=MAX_HELD_ROUNDS`.
+    pub count: usize,
+    /// The ring the rounds stand on around the group's axis, metres; zero for one round.
+    pub ring_m: f32,
+}
+
+impl RoundModel {
+    /// The model from a table entry, or `None` when the entry has no complete, finite model.
+    pub fn from_entry(entry: &RoundEntry) -> Option<Self> {
+        let axis = entry.round_axis?.try_normalize()?;
+        let top = entry.round_top_m.filter(|t| t.is_finite())?;
+        let radius_m = entry.round_radius_m.filter(|r| r.is_finite() && *r > 0.0)?;
+        let ring_m = entry.round_ring_m.filter(|r| r.is_finite() && *r >= 0.0)?;
+        let count = usize::try_from(entry.round_count?).ok()?;
+        Some(Self {
+            name_hash: hashlittle(entry.round_model.as_ref()?.as_bytes()),
+            top,
+            axis,
+            radius_m,
+            count: count.clamp(1, MAX_HELD_ROUNDS),
+            ring_m,
+        })
+    }
+
+    /// How far the group reaches from its axis: from the palm to the group's axis, for a group
+    /// whose side lies in the palm.
+    pub fn half_width_m(&self) -> f32 {
+        self.ring_m + self.radius_m
+    }
+
+    /// Each round's offset from the group's axis, in the model's own frame: evenly round the ring,
+    /// square to the axis.
+    pub fn offsets(&self) -> impl Iterator<Item = Vec3> + use<> {
+        let across = self.axis.any_orthonormal_vector();
+        let (axis, ring, count) = (self.axis, self.ring_m, self.count);
+        (0..count).map(move |i| {
+            let turn = std::f32::consts::TAU * i as f32 / count as f32;
+            Quat::from_axis_angle(axis, turn) * across * ring
+        })
+    }
+}
+
+/// What draws a round in the hand.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum HandModel {
+    /// The gun's spare magazine model.
+    Spare,
+    /// The stand-in round model.
+    Round(RoundModel),
+}
+
+/// A round in the hand drawn by an instance of a model separate from the gun.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct HandRound {
+    pub model: HandModel,
+    /// The round's feed end, centred across it, in the model's own frame, metres.
+    pub top: Vec3,
+    /// The direction the round travels into the gun, in the model's own frame, unit length.
+    pub axis: Vec3,
+    /// The model's turn into the gun's model frame as it lies in the well: none for a spare
+    /// magazine, whose frame is the gun's magazine part's, and for a stand-in round, its axis onto
+    /// the well's.
+    pub in_gun: Quat,
 }
 
 /// The facts about a weapon the plan is made from.
@@ -190,6 +296,9 @@ pub fn plan(
             .filter(|_| load == LoadKind::Magazine)
             .and_then(|e| e.spare_top_m)
             .filter(|t| t.is_finite()),
+        round: entry
+            .filter(|_| matches!(load, LoadKind::Shell | LoadKind::Cylinder))
+            .and_then(|e| RoundModel::from_entry(&e.round)),
         launcher: is_launcher(facts.class),
         spent_round_replaced: is_launcher(facts.class) && facts.capacity == 1,
     })
@@ -272,7 +381,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::controllers::weapons::reload::wells::{self, TableAction, WellGrade};
+    use crate::controllers::weapons::reload::wells::{self, RoundEntry, TableAction, WellGrade};
 
     const WRIST: Vec3 = Vec3::new(0.0, -0.08, -0.06);
 
@@ -295,6 +404,7 @@ mod tests {
             part_top_m: Some(0.05),
             part_length_m: Some(0.1),
             spare_top_m: Some(Vec3::new(0.0, 0.06, 0.01)),
+            round: RoundEntry::default(),
             action,
             handle_m: Some(Vec3::new(0.0, 0.06, 0.1)),
             travel_m: Some(0.07),
@@ -447,6 +557,107 @@ mod tests {
         }
         assert_eq!(spare("w123_grenade_launcher_upu_210"), None);
         assert_eq!(spare("w141_rpg_uvk_13"), None);
+    }
+
+    fn round_entry(count: u32, ring_m: f32) -> RoundEntry {
+        RoundEntry {
+            round_model: Some("models/test/casing.lod".to_owned()),
+            round_top_m: Some(Vec3::Z * 0.035),
+            round_axis: Some(Vec3::Z),
+            round_radius_m: Some(0.009),
+            round_count: Some(count),
+            round_ring_m: Some(ring_m),
+        }
+    }
+
+    #[test]
+    fn a_shell_is_drawn_with_the_stand_in_round_turned_onto_the_well() {
+        let e = WellEntry {
+            spare_top_m: None,
+            magazine_part: false,
+            round: round_entry(1, 0.0),
+            ..entry(WellKind::Shell, TableAction::Pump, WellGrade::Mesh)
+        };
+        let p = plan(
+            facts(WeaponClass::E_WEAPON_CLASS_SHOTGUN),
+            Some(&e),
+            WRIST,
+            0.06,
+        )
+        .unwrap();
+        let round = p.round.unwrap();
+        assert_eq!(round.name_hash, hashlittle(b"models/test/casing.lod"));
+        assert_eq!(round.count, 1);
+        assert_eq!(round.offsets().collect::<Vec<_>>(), [Vec3::ZERO]);
+        assert!((round.half_width_m() - 0.009).abs() < 1e-6);
+        let hand = p.hand_round().unwrap();
+        assert_eq!(hand.model, HandModel::Round(round));
+        assert_eq!(hand.top, Vec3::Z * 0.035);
+        // The casing goes in along its own +Z, which lies along the well's +Y in the gun.
+        assert!((hand.in_gun * hand.axis - p.part_axis).length() < 1e-6);
+    }
+
+    #[test]
+    fn a_revolvers_rounds_stand_side_by_side_round_the_cylinders_axis() {
+        let e = WellEntry {
+            spare_top_m: None,
+            magazine_part: false,
+            insert_axis: Some(Vec3::NEG_Z),
+            round: round_entry(6, 0.013),
+            ..entry(WellKind::Cylinder, TableAction::None, WellGrade::Mesh)
+        };
+        let p = plan(
+            facts(WeaponClass::E_WEAPON_CLASS_REVOLVER),
+            Some(&e),
+            WRIST,
+            0.06,
+        )
+        .unwrap();
+        let round = p.round.unwrap();
+        let offsets: Vec<Vec3> = round.offsets().collect();
+        assert_eq!(offsets.len(), 6);
+        for (i, offset) in offsets.iter().enumerate() {
+            // Each round's axis is on the ring, square to the group's axis.
+            assert!((offset.length() - 0.013).abs() < 1e-6, "{i}");
+            assert!(offset.dot(round.axis).abs() < 1e-6, "{i}");
+            // Neighbours are a sixth of a turn apart, so the ring's chord equals its radius.
+            let next = offsets[(i + 1) % 6];
+            assert!((offset.distance(next) - 0.013).abs() < 1e-5, "{i}");
+        }
+        assert!((round.half_width_m() - 0.022).abs() < 1e-6);
+        let hand = p.hand_round().unwrap();
+        assert!((hand.in_gun * hand.axis - Vec3::NEG_Z).length() < 1e-6);
+    }
+
+    #[test]
+    fn a_round_entry_without_a_whole_model_draws_nothing() {
+        let mut partial = round_entry(1, 0.0);
+        partial.round_top_m = None;
+        assert_eq!(RoundModel::from_entry(&partial), None);
+        assert_eq!(RoundModel::from_entry(&RoundEntry::default()), None);
+        let mut many = round_entry(40, 0.0);
+        many.round_axis = Some(Vec3::Z * 3.0);
+        let many = RoundModel::from_entry(&many).unwrap();
+        assert_eq!(many.count, MAX_HELD_ROUNDS);
+        assert_eq!(many.axis, Vec3::Z);
+        // A magazine is never drawn with a stand-in round, nor a shell with a spare magazine.
+        let rifle = WellEntry {
+            round: round_entry(1, 0.0),
+            ..entry(
+                WellKind::Magazine,
+                TableAction::ChargingHandle,
+                WellGrade::Part,
+            )
+        };
+        let p = plan(
+            facts(WeaponClass::E_WEAPON_CLASS_ASSAULT_RIFLE),
+            Some(&rifle),
+            WRIST,
+            0.06,
+        )
+        .unwrap();
+        assert_eq!(p.round, None);
+        assert_eq!(p.hand_round().unwrap().model, HandModel::Spare);
     }
 
     #[test]
@@ -904,18 +1115,20 @@ mod tests {
                 "{}",
                 a.weapon
             );
-            // A round the hand carries is drawn from the gun's spare magazine model or its own
-            // round part, except where the game has neither (see the audit).
-            let drawn = p.spare_top_m.is_some() || p.part_top_m.is_some();
-            let undrawn = matches!(
-                a.weapon,
-                "w014_handgun_little_general"
-                    | "w021_handgun_peacekeeper"
-                    | "w151_shotgun_u_rys_96"
-                    | "w153_shotgun_automat_12"
-                    | "w155_shotgun_u_rys_12"
-            );
+            // A round the hand carries is drawn from the gun's spare magazine model, its own
+            // round part, or for a shell or a cylinder the casing the gun ejects, except where the
+            // game has none of these (see the audit).
+            let drawn = p.hand_round().is_some() || p.part_top_m.is_some();
+            let undrawn = a.weapon == "w153_shotgun_automat_12";
             assert_eq!(drawn, !undrawn, "{}", a.weapon);
+            // One push loads one shell, or a revolver's whole cylinder, and the hand shows as many.
+            let rounds = p.round.map(|r| r.count);
+            let expected = match a.kind {
+                Shell => Some(1),
+                Cylinder => Some(MAX_HELD_ROUNDS),
+                _ => None,
+            };
+            assert_eq!(rounds, expected, "{}", a.weapon);
         }
     }
 

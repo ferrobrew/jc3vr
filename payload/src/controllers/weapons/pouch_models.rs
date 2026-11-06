@@ -1,13 +1,17 @@
 //! The game's models of what the body's pouches hold, drawn on the pouches: a grenade on the grenade
 //! pouch, a C4 charge on the C4 pouch, and the held gun's magazine on the magazine pouch, so the
 //! player sees on Rico's body what a hand reaching there takes. The magazine a hand takes from the
-//! pouch is drawn in that hand the same way ([`hand_tick`]).
+//! pouch is drawn in that hand the same way ([`hand_tick`]), and so is a shell or a revolver's
+//! cylinder of rounds, which the game has no model of, with the casing the gun's ejection effect
+//! throws out as a stand-in.
 //!
 //! Each model is an instance the payload owns, made from a model the game already holds for the
 //! item's lifetime ([`ModelInstanceManager::CreateInstanceFromModel`]): the grenade weapon's
 //! projectile model ([`ThrownGrenadeWeapon::m_PhysicalProjectileModel`]), the C4 weapon's in-hand
-//! model ([`PlantedExplosiveWeapon::m_InactiveModelInstance`]), and the gun's spare magazine prop's
-//! model ([`WeaponData::m_MagazineObject`], [`RigidObject::m_Model`]). The instance keeps its own
+//! model ([`PlantedExplosiveWeapon::m_InactiveModelInstance`]), the gun's spare magazine prop's
+//! model ([`WeaponData::m_MagazineObject`], [`RigidObject::m_Model`]), and the casing model, which
+//! the gun's effects keep in the game's model cache while the gun is loaded
+//! ([`ModelInstanceManager::CreateInstanceFromHash`]). The instance keeps its own
 //! reference to the model, and the engine's cull draws it once it is in the world, with no physics
 //! and no game object behind it ([`owned`]). A gun's magazine on the belt and in the hand are both
 //! such instances of its spare magazine's model, and either one keeps that model for the weapon
@@ -56,7 +60,10 @@ use crate::{
                 attachments::{RenderSample, Sample, SampleId, placement},
                 owned::{OwnedModel, magazine_source, without_magazine_prop},
             },
-            reload,
+            reload::{
+                self,
+                plan::{HandModel, MAX_HELD_ROUNDS, RoundModel},
+            },
         },
     },
     hooks,
@@ -146,13 +153,23 @@ pub struct ShownPouch {
     pub weapon: Option<usize>,
 }
 
+/// The round in the hand to draw this tick: the weapon it is for, and the model that draws it.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct HandRequest {
+    /// The weapon whose round the hand holds (a `WeaponBase` address).
+    pub weapon: usize,
+    pub model: HandModel,
+}
+
 /// The pouches' models' readout.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct PouchModelsStatus {
     /// Whether each prop's model is drawn, by [`Prop::ALL`]'s order.
     pub shown: [bool; 3],
-    /// Whether a magazine is drawn in a hand.
+    /// Whether a magazine or a stand-in round is drawn in a hand.
     pub hand: bool,
+    /// Whether the round in the hand is the stand-in round model, and how many are drawn.
+    pub hand_rounds: usize,
     /// Instances created since the payload loaded.
     pub created: u64,
     /// Render frames that drew at least one model.
@@ -243,8 +260,7 @@ pub(crate) unsafe fn input_tick(
     // The reload asks for the magazine in the hand on every tick it holds one, after this one; a
     // tick it did not ask on (the reload stood down) hides it.
     if state.hand_sequence != state.input_sequence {
-        unsafe { state.hand.hide() };
-        state.status.hand = false;
+        unsafe { state.hide_hand() };
     }
     state.input_sequence = state.input_sequence.wrapping_add(1);
     let mut attachments = Sample {
@@ -257,7 +273,7 @@ pub(crate) unsafe fn input_tick(
         character: frames.character,
         attachments: Vec::new(),
     };
-    let hand = state.hand;
+    let hand = *state.hand_spare();
     for prop in Prop::ALL {
         let wanted = shown.iter().find(|s| s.prop == prop);
         let slot = &mut state.slots[prop.index()];
@@ -303,46 +319,70 @@ pub(crate) unsafe fn input_tick(
     state.attachments = Some(attachments);
 }
 
-/// Draw the magazine of the gun at `weapon` in the hand holding a magazine from its pouch, or with
-/// `None`, in no hand. Returns whether the instance draws it; when it does not (the pouches'
-/// models off, or no magazine model for the gun), the reload draws the round in the hand with the
-/// gun's own part, if it has one. The reload places it each frame ([`reload::held_round_matrix`]).
+/// Draw the round `request` asks for in the hand holding a round from its pouch, or with `None`,
+/// in no hand: the gun's spare magazine model, or the stand-in round model, one instance per round
+/// the hand holds. Returns whether the instances draw it; when they do not (the pouches' models
+/// off, no magazine model for the gun, or the stand-in not in the game's model cache), the reload
+/// draws the round in the hand with the gun's own part, if it has one. The reload places it each
+/// frame ([`reload::held_round_matrix`]).
 ///
 /// # Safety
 ///
-/// The game thread, before the world update; `weapon` is a live weapon of the local player.
-pub(crate) unsafe fn hand_tick(weapon: Option<usize>) -> bool {
+/// The game thread, before the world update; the request's weapon is a live weapon of the local
+/// player.
+pub(crate) unsafe fn hand_tick(request: Option<HandRequest>) -> bool {
     let mut state = STATE.lock();
     let owner = state
         .owner
         .and_then(|_| unsafe { engine::local_player() })
         .filter(|owner| state.owner == Some(*owner as *const Character as usize));
-    let (Some(owner), Some(weapon)) = (owner, weapon) else {
-        unsafe { state.hand.hide() };
-        state.status.hand = false;
+    let (Some(owner), Some(request)) = (owner, request) else {
+        unsafe { state.hide_hand() };
         return false;
     };
     state.hand_sequence = state.input_sequence;
-    unsafe { state.hand.retarget(Some(weapon)) };
-    let belt = state.slots[Prop::Magazine.index()].owned;
-    let Some(model) = (unsafe { magazine_source(weapon, [&state.hand, &belt]) }) else {
-        unsafe { state.hand.hide() };
-        state.status.hand = false;
-        if let Some(name_hash) = unsafe { without_magazine_prop(weapon) }
-            && state.without_prop.insert(name_hash)
-        {
+    let world = Mat4::from(owner.m_WorldMatrixT1);
+    let weapon = request.weapon;
+    let round = match request.model {
+        HandModel::Spare => None,
+        HandModel::Round(round) => Some(round),
+    };
+    // A spare magazine's instance and a stand-in round's are never the same model, so a change
+    // between them starts the hand afresh.
+    if state.hand_round != round.is_some() {
+        unsafe { state.release_hand() };
+        state.hand_round = round.is_some();
+    }
+    for owned in &mut state.hand {
+        unsafe { owned.retarget(Some(weapon)) };
+    }
+    let shown = match round {
+        None => unsafe { state.show_spare(weapon, world) },
+        Some(round) => unsafe { state.show_rounds(weapon, round, world) },
+    };
+    if shown.is_none() {
+        unsafe { state.hide_hand() };
+        let unlogged = match round {
+            None => unsafe { without_magazine_prop(weapon) }
+                .filter(|name_hash| state.without_prop.insert(*name_hash))
+                .map(|name_hash| (name_hash, "the held gun has no spare magazine model")),
+            Some(round) => state.uncached_rounds.insert(round.name_hash).then_some((
+                round.name_hash,
+                "the stand-in round model is not in the model cache",
+            )),
+        };
+        if let Some((hash, why)) = unlogged {
             tracing::info!(
                 target: "controllers",
-                weapon = format_args!("{name_hash:#010x}"),
-                "pouch models: the held gun has no spare magazine model to draw in the hand"
+                hash = format_args!("{hash:#010x}"),
+                "pouch models: {why} to draw in the hand"
             );
         }
         return false;
-    };
-    let created = unsafe { state.hand.show(model, Mat4::from(owner.m_WorldMatrixT1)) };
-    state.status.created += u64::from(created == Some(true));
-    state.status.hand = created.is_some();
-    state.status.hand
+    }
+    state.status.hand = true;
+    state.status.hand_rounds = round.map_or(0, |r| r.count);
+    true
 }
 
 /// Whether a magazine of the gun at `weapon` would be drawn in the hand by an instance of its
@@ -357,7 +397,10 @@ pub(crate) unsafe fn hand_draws(weapon: usize) -> bool {
         && unsafe {
             magazine_source(
                 weapon,
-                [&state.hand, &state.slots[Prop::Magazine.index()].owned],
+                [
+                    state.hand_spare(),
+                    &state.slots[Prop::Magazine.index()].owned,
+                ],
             )
         }
         .is_some()
@@ -424,12 +467,15 @@ pub(crate) unsafe fn render_frame(dtf: f32) {
         }
         drew = true;
     }
-    // The magazine in the hand rides the hand as it is drawn, where the reload draws its round.
-    if let Some(weapon) = state.hand.weapon().filter(|_| state.hand.visible())
+    // The round in the hand rides the hand as it is drawn, where the reload draws its round, each
+    // of a group at its own place round the group's axis.
+    if let Some(weapon) = state.hand[0].weapon().filter(|_| state.hand[0].visible())
         && let Some(matrix) = reload::held_round_matrix(weapon, dtf)
     {
-        // SAFETY: the game thread, outside the world update.
-        drew |= unsafe { state.hand.push(matrix) };
+        for (owned, offset) in state.hand.iter().zip(state.hand_offsets) {
+            // SAFETY: the game thread, outside the world update.
+            drew |= unsafe { owned.push(matrix * Mat4::from_translation(offset)) };
+        }
     }
     state.status.drawn += u64::from(drew);
     drop(state);
@@ -524,12 +570,19 @@ impl Slot {
 
 struct State {
     slots: [Slot; 3],
-    /// The magazine in the hand ([`hand_tick`]).
-    hand: OwnedModel,
+    /// The round in the hand ([`hand_tick`]): the spare magazine in the first, or the stand-in
+    /// rounds of a group, one per instance.
+    hand: [OwnedModel; MAX_HELD_ROUNDS],
+    /// Each hand instance's offset from the group's axis, in the model's own frame.
+    hand_offsets: [Vec3; MAX_HELD_ROUNDS],
+    /// Whether the hand's instances are of the stand-in round model rather than a spare magazine.
+    hand_round: bool,
     /// The input tick [`hand_tick`] last showed the magazine in the hand on.
     hand_sequence: u64,
     /// The weapons, by name hash, already logged as having no spare magazine model.
     without_prop: BTreeSet<u32>,
+    /// The stand-in round models, by name hash, already logged as not in the model cache.
+    uncached_rounds: BTreeSet<u32>,
     status: PouchModelsStatus,
     attachments: Option<Sample>,
     owner: Option<usize>,
@@ -546,24 +599,114 @@ impl State {
         for slot in &mut self.slots {
             unsafe { slot.release() };
         }
-        unsafe { self.hand.release() };
+        unsafe { self.release_hand() };
         self.status.shown = [false; 3];
-        self.status.hand = false;
         self.attachments = None;
         self.owner = None;
         self.epoch = self.epoch.wrapping_add(1);
         mirror::clear_pouch_render();
     }
+
+    /// The hand's instance a spare magazine model can be kept from: the first, while it is a spare
+    /// magazine's.
+    fn hand_spare(&self) -> &OwnedModel {
+        if self.hand_round {
+            &OwnedModel::EMPTY
+        } else {
+            &self.hand[0]
+        }
+    }
+
+    /// Show the spare magazine of the gun at `weapon` in the hand, in the first instance. Returns
+    /// whether it made an instance, or `None` without a model to draw.
+    ///
+    /// # Safety
+    ///
+    /// The game thread, before the world update; `weapon` is a live weapon of the local player.
+    unsafe fn show_spare(&mut self, weapon: usize, world: Mat4) -> Option<bool> {
+        let belt = self.slots[Prop::Magazine.index()].owned;
+        let model = unsafe { magazine_source(weapon, [&self.hand[0], &belt]) }?;
+        let created = unsafe { self.hand[0].show(model, world) }?;
+        for owned in &mut self.hand[1..] {
+            unsafe { owned.hide() };
+        }
+        self.hand_offsets = [Vec3::ZERO; MAX_HELD_ROUNDS];
+        self.status.created += u64::from(created);
+        Some(created)
+    }
+
+    /// Show `round`'s group in the hand: the first instance from the game's model cache, and the
+    /// rest from its reference. Returns whether it made an instance, or `None` while the model is
+    /// not cached.
+    ///
+    /// # Safety
+    ///
+    /// The game thread, before the world update; `weapon` is a live weapon of the local player.
+    unsafe fn show_rounds(
+        &mut self,
+        weapon: usize,
+        round: RoundModel,
+        world: Mat4,
+    ) -> Option<bool> {
+        let mut created = unsafe { self.hand[0].show_cached(round.name_hash, world) }?;
+        let model = self.hand[0].kept_for(Some(weapon))?;
+        let mut offsets = [Vec3::ZERO; MAX_HELD_ROUNDS];
+        for (offset, place) in offsets.iter_mut().zip(round.offsets()) {
+            *offset = place;
+        }
+        for (i, owned) in self.hand.iter_mut().enumerate().skip(1) {
+            if i < round.count {
+                created |= unsafe { owned.show(model, world) } == Some(true);
+            } else {
+                unsafe { owned.hide() };
+            }
+        }
+        self.hand_offsets = offsets;
+        self.status.created += u64::from(created);
+        Some(created)
+    }
+
+    /// Hide every instance in the hand, keeping them.
+    ///
+    /// # Safety
+    ///
+    /// The game thread, before the world update.
+    unsafe fn hide_hand(&mut self) {
+        for owned in &mut self.hand {
+            unsafe { owned.hide() };
+        }
+        self.status.hand = false;
+        self.status.hand_rounds = 0;
+    }
+
+    /// Release every instance in the hand.
+    ///
+    /// # Safety
+    ///
+    /// The game thread, before the world update.
+    unsafe fn release_hand(&mut self) {
+        for owned in &mut self.hand {
+            unsafe { owned.release() };
+        }
+        self.hand_offsets = [Vec3::ZERO; MAX_HELD_ROUNDS];
+        self.hand_round = false;
+        self.status.hand = false;
+        self.status.hand_rounds = 0;
+    }
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
     slots: [Slot::EMPTY; 3],
-    hand: OwnedModel::EMPTY,
+    hand: [OwnedModel::EMPTY; MAX_HELD_ROUNDS],
+    hand_offsets: [Vec3::ZERO; MAX_HELD_ROUNDS],
+    hand_round: false,
     hand_sequence: 0,
     without_prop: BTreeSet::new(),
+    uncached_rounds: BTreeSet::new(),
     status: PouchModelsStatus {
         shown: [false; 3],
         hand: false,
+        hand_rounds: 0,
         created: 0,
         drawn: 0,
     },

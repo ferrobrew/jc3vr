@@ -160,6 +160,7 @@ pub(super) fn tick(seating: bool) -> Tick {
                     part_top_m: None,
                     part_axis: Vec3::Y,
                     spare_top_m: None,
+                    round: None,
                     launcher: false,
                     spent_round_replaced: false,
                 },
@@ -488,6 +489,7 @@ fn a_seat_readies_a_launcher_at_once_and_a_dry_gun_only_after_its_action() {
         part_top_m: Some(0.05),
         part_axis: Vec3::Y,
         spare_top_m: None,
+        round: None,
         launcher: true,
         spent_round_replaced: true,
     };

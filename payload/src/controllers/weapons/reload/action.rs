@@ -397,21 +397,32 @@ impl State {
                 magazine_empty: weapon.reading.magazine <= 0,
             })
         });
-        // A pouch magazine in the hand is drawn with the gun's spare magazine model where it has
-        // one; a magazine from the world is its own object in the hand.
-        let modelled = self
+        // A pouch round in the hand is drawn with the gun's spare magazine model, or for a shell
+        // or a cylinder, the stand-in round model, where the gun has one; a magazine from the world
+        // is its own object in the hand.
+        let request = self
             .status
             .insert_hands
             .filter(|_| self.insertion_source == InsertionSource::Pouch)
             .and_then(|(_, gun_hand)| tick.gun(gun_hand))
-            .filter(|(weapon, _)| weapon.plan.spare_top_m.is_some())
-            .map(|(weapon, _)| weapon.address);
+            .and_then(|(weapon, _)| {
+                Some(pouch_models::HandRequest {
+                    weapon: weapon.address,
+                    model: weapon.plan.hand_round()?.model,
+                })
+            });
         // SAFETY: game thread before the world update; the weapon was read this tick.
-        let modelled = unsafe { pouch_models::hand_tick(modelled) };
+        let modelled = unsafe { pouch_models::hand_tick(request) };
         let held = self.status.insert_hands.and_then(|(hand, gun_hand)| {
             let (weapon, gun) = tick.gun(gun_hand)?;
-            let (drawn, part_top) = if modelled {
-                (render::HeldDraw::Instance, weapon.plan.spare_top_m?)
+            let (drawn, part_top, part_axis, in_gun) = if modelled {
+                let round = weapon.plan.hand_round()?;
+                (
+                    render::HeldDraw::Instance,
+                    round.top,
+                    round.axis,
+                    round.in_gun,
+                )
             } else if weapon.occupied() {
                 // The gun's round part is the magazine still in it until that one is knocked
                 // out, ejected, or pulled, so the hand shows no part meanwhile.
@@ -420,17 +431,19 @@ impl State {
                 (
                     render::HeldDraw::Part,
                     weapon.plan.part_axis * weapon.plan.part_top_m?,
+                    weapon.plan.part_axis,
+                    Quat::IDENTITY,
                 )
             };
             let captured = match self.status.insertion.stage {
                 InsertStage::Captured { .. } => gun.well.and_then(|well| {
                     let top = self.status.insertion.captured_top(well)?;
                     let inverse = gun.wrist.orientation.inverse();
-                    // The part keeps the gun's orientation as it slides along the well, as it
-                    // does seated; without a measured gun frame, it lines up with the well.
+                    // The round keeps its turn in the gun as it slides along the well, as it
+                    // lies seated; without a measured gun frame, it lines up with the well.
                     let orientation = gun.frame.map_or_else(
-                        || Quat::from_rotation_arc(weapon.plan.part_axis, inverse * well.axis),
-                        |frame| (inverse * frame.pose.orientation).normalize(),
+                        || Quat::from_rotation_arc(part_axis, inverse * well.axis),
+                        |frame| (inverse * frame.pose.orientation * in_gun).normalize(),
                     );
                     Some((
                         gun_hand,
@@ -446,9 +459,9 @@ impl State {
                 weapon: weapon.address,
                 hand,
                 top_world_m: reload.held_top_m * tick.world_scale,
-                palm_gap_world_m: reload.held_palm_gap_m * tick.world_scale,
+                palm_gap_world_m: reload.for_plan(&weapon.plan).held_palm_gap_m * tick.world_scale,
                 part_top,
-                part_axis: weapon.plan.part_axis,
+                part_axis,
                 drawn,
                 captured,
             })

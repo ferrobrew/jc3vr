@@ -3,7 +3,7 @@ use glam::{Quat, Vec3};
 use super::*;
 use crate::controllers::{
     physical_hands::rigid::BodyPose,
-    weapons::reload::wells::{TableAction, WellGrade, WellKind},
+    weapons::reload::wells::{RoundEntry, TableAction, WellGrade, WellKind},
 };
 
 /// A rifle's magazine hanging 12 cm out of a well pushed up (+Y) into the gun at the origin.
@@ -186,6 +186,7 @@ fn a_magazine_part_hangs_its_length_and_a_grip_magazine_none() {
         part_top_m: part.then_some(0.07),
         part_length_m: length,
         spare_top_m: None,
+        round: RoundEntry::default(),
         action: TableAction::Slide,
         handle_m: None,
         travel_m: None,

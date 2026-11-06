@@ -5,7 +5,9 @@ For every player weapon entity, the same set as ``extract_sights.py`` covers, th
 LOD of every model part, the magazine included, and derives where the magazine, shell, or round goes
 in and where the hand grabs to chamber, in weapon space (see ``wells.py``). For a magazine-fed
 weapon whose spare magazine prop depicts the magazine a hand loads, it also measures the top of that
-prop's model in the prop's own frame (see ``spares.py``).
+prop's model in the prop's own frame (see ``spares.py``). For a shell-fed weapon or a revolver, which
+have no model of a loose round, it names the casing model their ejection effect throws out and
+measures it, as the stand-in a round in the hand is drawn with (see ``rounds.py``).
 
 Usage::
 
@@ -25,6 +27,7 @@ import os
 import sys
 from pathlib import Path
 
+import rounds
 import spares
 import weapon
 import wells
@@ -122,6 +125,9 @@ def _derive(path: str, archives: GameArchives, spare_magazines: spares.SpareMaga
     if remarks:
         entry["notes"] = "; ".join(remarks)
     entry["spare_top_m"] = _vec(_spare_top(name, loaded, well, spare_magazines))
+    entry.update(_round(name, path, well, archives))
+    if entry["round_count"] is not None and well.kind == wells.CYLINDER:
+        entry["notes"] = "; ".join(filter(None, (entry.get("notes"), "round_count: class default")))
 
     log.log(
         logging.WARNING if well.doubts or well.grade == wells.FAILED else logging.INFO,
@@ -164,6 +170,29 @@ def _spare_top(name: str, loaded: weapon.Weapon | None, well: wells.Well, spare_
         m = round_part.matrix
         axis = tuple(sum(axis[j] * m[4 * i + j] for j in range(3)) for i in range(3))
     return spares.top_centre(spare.positions, axis)
+
+
+def _round(name: str, path: str, well: wells.Well, archives: GameArchives) -> dict:
+    """The stand-in round model's fields: the casing a shell-fed weapon or a revolver ejects, one
+    for a shell and a cylinder's worth for a revolver; all null for any other weapon."""
+    fields = dict.fromkeys(("round_model", "round_top_m", "round_axis", "round_radius_m", "round_count", "round_ring_m"))
+    count = {wells.SHELL: 1, wells.CYLINDER: rounds.REVOLVER_CHAMBERS}.get(well.kind)
+    if count is None:
+        return fields
+    try:
+        found = rounds.resolve(path, archives, count)
+    except (LookupError, ValueError) as e:
+        log.warning("%s: %s", name, e)
+        return fields
+    fields.update(
+        round_model=found.model,
+        round_top_m=_vec(found.top),
+        round_axis=_vec(found.axis),
+        round_radius_m=_num(found.radius),
+        round_count=found.count,
+        round_ring_m=_num(found.ring),
+    )
+    return fields
 
 
 def _vec(v) -> list[float] | None:

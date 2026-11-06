@@ -6,7 +6,9 @@
 //! keeps a gun's magazine drawn across the gap after each magazine the gun drops, while the game
 //! respawns the gun's spare magazine prop ([`WeaponData::m_MagazineObject`]): the instance made
 //! from the spare's model ([`RigidObject::m_Model`]) is kept for that weapon, and another
-//! instance of the same magazine can be made from its reference ([`magazine_source`]).
+//! instance of the same magazine can be made from its reference ([`magazine_source`]). A model
+//! that only the game's model cache holds by name is instanced from the cache
+//! ([`OwnedModel::show_cached`]).
 
 use glam::Mat4;
 use jc3gi::{
@@ -102,17 +104,57 @@ impl OwnedModel {
             let made = unsafe {
                 manager.CreateInstanceFromModel(model, &Matrix4::from(world), true, false, true)
             };
-            let made = unsafe { made.as_mut() }?;
-            // The engine's own owners of a model held on a character keep it drawn whatever the
-            // camera's distance, as the explosives do.
-            made.m_Flags.remove(ModelInstanceFlags::FLAG_CLIPONDISTANCE);
-            self.instance = Some(made as *mut ModelInstance as usize);
-            self.model = Some(source);
-            self.visible = false;
+            unsafe { self.adopt(made) }?;
             created = true;
         }
         unsafe { self.unhide() };
         Some(created)
+    }
+
+    /// Show an instance of the model the game's model cache holds under `name_hash`, making it
+    /// first (at `world`) or remaking it when the instance is of another model. Returns whether
+    /// it made an instance; `None` when the model is not cached or the engine gave no instance.
+    ///
+    /// # Safety
+    ///
+    /// The game thread, before the world update.
+    pub(crate) unsafe fn show_cached(&mut self, name_hash: u32, world: Mat4) -> Option<bool> {
+        if let Some(instance) = self.instance {
+            // SAFETY: the instance is the payload's own, live until it is released on this thread,
+            // and it holds its model.
+            let model = unsafe { (*(instance as *const ModelInstance)).m_spModel.px.as_ref() };
+            if model.is_some_and(|m| m.m_Id.m_Hash == name_hash) {
+                unsafe { self.unhide() };
+                return Some(false);
+            }
+            let weapon = self.weapon;
+            unsafe { self.release() };
+            self.weapon = weapon;
+        }
+        let manager = unsafe { ModelInstanceManager::get() }?;
+        // The cache lookup loads nothing: a model the game has not loaded gives no instance.
+        let made = unsafe {
+            manager.CreateInstanceFromHash(name_hash, &Matrix4::from(world), true, false, true)
+        };
+        unsafe { self.adopt(made) }?;
+        unsafe { self.unhide() };
+        Some(true)
+    }
+
+    /// Take `made`, a fresh instance from the engine, as this one, hidden. `None` for null.
+    ///
+    /// # Safety
+    ///
+    /// The game thread, before the world update; `made` is null or a fresh instance.
+    unsafe fn adopt(&mut self, made: *mut ModelInstance) -> Option<()> {
+        let made = unsafe { made.as_mut() }?;
+        // The engine's own owners of a model held on a character keep it drawn whatever the
+        // camera's distance, as the explosives do.
+        made.m_Flags.remove(ModelInstanceFlags::FLAG_CLIPONDISTANCE);
+        self.model = Some(made.m_spModel.px as usize);
+        self.instance = Some(made as *mut ModelInstance as usize);
+        self.visible = false;
+        Some(())
     }
 
     /// Show the instance already made, if it is hidden. Returns whether one is shown.

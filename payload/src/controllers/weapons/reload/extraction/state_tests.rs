@@ -124,6 +124,7 @@ fn tick(pull: f32, rounds: i32) -> Tick {
                     part_top_m: None,
                     part_axis: Vec3::Y,
                     spare_top_m: None,
+                    round: None,
                     launcher: false,
                     spent_round_replaced: false,
                 },

@@ -379,6 +379,39 @@ mod tests {
     }
 
     #[test]
+    fn a_held_shell_lies_in_the_fingers_crimp_first() {
+        // The stand-in shell casing goes in along its own +Z; its top is its crimp end.
+        let top = Vec3::Z * 0.035;
+        for hand in Hand::BOTH {
+            let held = HeldPart {
+                weapon: 1,
+                hand,
+                top_world_m: 0.07,
+                palm_gap_world_m: 0.009,
+                part_top: top,
+                part_axis: Vec3::Z,
+                drawn: HeldDraw::Instance,
+                captured: None,
+            };
+            let grip = Pose {
+                position: Vec3::new(-0.2, 1.1, -0.3),
+                orientation: Quat::from_rotation_x(0.4),
+            };
+            let m = held_matrix(grip, held);
+            let pointing = grip.orientation * Vec3::NEG_Z;
+            assert!((m.transform_vector3(Vec3::Z) - pointing).length() < 1e-5);
+            // The crimp is ahead of the grip, and the casing's side lies against the palm: its
+            // axis is its radius out of it.
+            let away = grip.orientation * away_from_palm(hand);
+            let expected = grip.position + away * 0.009 + pointing * 0.07;
+            assert!((m.transform_point3(top) - expected).length() < 1e-5);
+            // The head, a shell's length behind the crimp, stays within the closed hand.
+            let head = m.transform_point3(Vec3::Z * -0.037);
+            assert!((head - grip.position).dot(pointing) > -0.01);
+        }
+    }
+
+    #[test]
     fn every_round_part_the_reload_shows_is_one_it_draws_in_the_hand() {
         for hash in [
             ModelAttachementWeaponComponent::MAGAZINE_NAME_HASH,

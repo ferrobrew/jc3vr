@@ -26,6 +26,8 @@ While a hand holds a magazine taken from the pouch, the true reload asks for it 
 
 The model's own frame is the frame the game drops the spare from: the gun's magazine part's, for a gun that has one (the spare is the same model as the part), and the gun's own, for the pistols and SMGs. The wells table gives the top of each spare model, centred across it, in that frame (`spare_top_m`, from `tools/sights/extract_wells.py`), and leaves it out where the spare does not depict the magazine a hand loads (the UPU-210, whose spare is the empty cartridge) or the gun has none. Those guns, and every gun with the setting off, keep the reload's old drawing of the round in the hand with the gun's own part. A held gun whose first gun has no magazine prop at all ([`WeaponData::NO_MAGAZINE_UNIQUE_TAG`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##func-NO_MAGAZINE_UNIQUE_TAG)) logs one line per weapon type when a magazine is taken for it.
 
+The shotguns and the revolvers have no spare magazine prop and no round part, so their rounds in the hand are drawn with a stand-in, the casing model the gun's casing-ejection effect throws out ([reload.md, "Load"](reload.md#load)): one shell for a shotgun, and six pistol casings in a ring for a revolver's cylinder, one instance per casing, each pushed at its own offset round the group's axis. The wells table names the model by its `.lod` path (`round_model`), and the instances are made from the game's model cache under that path's hash ([`ModelInstanceManager::CreateInstanceFromHash`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::model_instance::ModelInstanceManager##func-CreateInstanceFromHash)), which loads nothing: the gun's entity carries the model for its effect, so it is cached while the gun is loaded. The first casing comes from the cache and the rest from its reference. A model not in the cache draws nothing and logs one line per model. These instances are never the belt's: the magazine pouch draws no shell.
+
 From the game's data, the guns without a spare magazine prop are the Balloon Head pistol, the revolvers, the shotguns, and every launcher but the CS Bildt Negotiator and the UPU-210 (and the Hydra, whose spare is its rocket pod). The CS9 SMG shares the Wraith 2000's magazine model, and the Capstone A-92 the Urga Vdova's.
 
 ## Riding the body
@@ -45,9 +47,11 @@ The instances are made, shown, hidden, and released in the input tick's game sta
 5. Check that each model sits naturally on its pouch, and note the offset and turn any model needs.
 6. Load a save and quit to the menu and back: the models come back, and the log has no errors.
 7. Take a magazine from the pouch for a rifle with its magazine still in, then for a pistol and an SMG: a magazine shows in the hand each time while the belt's stays drawn, and the gun keeps its own. Eject and take one at once, before the gun's spare respawns: both the belt's and the hand's are still drawn. The full list is in [reload.md, "In the headset: the magazine in the hand"](reload.md#in-the-headset-the-magazine-in-the-hand).
+8. Take a shell for a shotgun and a cylinder for a revolver: a shell, and a ring of six casings, show in the hand, and the belt draws nothing for either.
 
 ## Unverified
 
 - Whether the instances are safe across a save load beyond being released outside gameplay, and whether texture streaming covers them.
 - Whether the models' own origins put them on the pouches with a zero placement, or need a default offset and turn per model.
+- Whether the casing models are in the model cache under their `.lod` paths' hashes while their guns are held.
 - Whether pushing the matrix before the engine's render update is late enough in every frame for the cull to see it.

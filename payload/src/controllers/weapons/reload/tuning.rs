@@ -126,12 +126,20 @@ impl Reload {
     }
 
     /// The tuning a round for `plan`'s weapon is inserted with: a launcher's catches at the
-    /// launcher capture radius and angle.
+    /// launcher capture radius and angle, and a stand-in round (a shell, or a revolver's ring of
+    /// rounds) is held with its side in the palm, its axis as far out of the palm as the group's
+    /// half width rather than a rifle magazine's.
     pub fn for_plan(self, plan: &ReloadPlan) -> Self {
-        if plan.launcher {
+        let tuning = if plan.launcher {
             self.launcher_capture()
         } else {
             self
+        };
+        Self {
+            held_palm_gap_m: plan
+                .round
+                .map_or(tuning.held_palm_gap_m, |round| round.half_width_m()),
+            ..tuning
         }
     }
 
