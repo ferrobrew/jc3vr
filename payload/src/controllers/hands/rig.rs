@@ -10,6 +10,7 @@
 
 use std::time::{Duration, Instant};
 
+use body_rig::angle::line_yaw;
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::{
     animation::ik::Effector,
@@ -152,6 +153,14 @@ pub(crate) unsafe fn measure(
     let (_, character_rotation, _) =
         Mat4::from(character.m_WorldMatrixT1).to_scale_rotation_translation();
     let to_body = Quat::IDENTITY;
+    let shoulder = |effector: Effector| {
+        unsafe { body_ik::bone_for_effector(&character.m_HIK, effector as i32) }.and_then(point)
+    };
+    // The clip's chest faces square to the line across its shoulders.
+    let to_chest = shoulder(Effector::LEFT_SHOULDER)
+        .zip(shoulder(Effector::RIGHT_SHOULDER))
+        .and_then(|(left, right)| line_yaw(left, right))
+        .map_or(Quat::IDENTITY, |yaw| Quat::from_rotation_y(-yaw));
 
     let now = Instant::now();
     let mut state = STATE.lock();
@@ -194,6 +203,7 @@ pub(crate) unsafe fn measure(
             wrist,
             eyes,
             to_body,
+            to_chest,
         };
         state.resolved[hand.index()] = sample.plausible();
         let tracker = &mut state.trackers[hand.index()];
@@ -281,6 +291,7 @@ pub(crate) fn seed_test_measurement() {
                 wrist: Vec3::new(0.8, 1.4, 0.0),
                 eyes: Vec3::new(0.0, 1.7, 0.0),
                 to_body: Quat::IDENTITY,
+                to_chest: Quat::IDENTITY,
             },
             0.0,
             0.1,

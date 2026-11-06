@@ -52,6 +52,7 @@ fn replacement_failure_expiry_and_view_changes_do_not_reuse_authoritative_old_ar
         wrist: Vec3::new(0.8, 1.4, 0.0),
         eyes: Vec3::new(0.0, 1.7, 0.0),
         to_body: Quat::IDENTITY,
+        to_chest: Quat::IDENTITY,
     };
     let mut state = State::EMPTY;
     state.prepare((initial_key, 1), Quat::IDENTITY);

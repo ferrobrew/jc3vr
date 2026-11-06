@@ -182,6 +182,7 @@ The drift and the back radius come from the same take. Before them the body idle
 - A jump that outlasts its grace, and closing and reopening the canopy around grapple reels: the torso stays the player's, with no pop to the animation and back; a long fall hands it to the animation once.
 - Standing still with the head held 15 to 30 degrees off the body for a couple of seconds: Rico's legs turn slowly under the head, with no visible turn event, and stop as soon as the head moves; a look about does not start it.
 - Standing still, turn the body a quarter turn or more away from where the session started, without recentering, and hold still: within a couple of seconds Rico shuffles a few centimetres under the camera (no walk), and the camera itself does not move. Looking down, Rico's shoulders sit symmetrically under the view rather than off to one side.
+- Running with a rifle held in both hands: the rifle stays in the hands rather than pumping in and out with each stride.
 - Looking down at the holsters and the belt, and turning the head while looking down: the chest and the legs stay put, so the holsters do not move away; looking up again does not start a turn at once.
 - Standing still and looking about: the readout's phase stays idle, the neck pivot marker stays over the pelvis, the chest follows a glance at once, and the legs turn only for a large turn of the head or one held for a second.
 - Holding a gun out to one side or reaching across: the chest turns toward the hands and the legs stay.

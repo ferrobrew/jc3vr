@@ -255,10 +255,13 @@ fn arm_remaps(config: &ControllersConfig, head: Pose, world_scale: f32) -> [Opti
         return [None; 2];
     }
     let player = body::player();
-    let torso = reach::torso_heading(head, shoulder_heading());
+    let chest = shoulder_heading();
+    let torso = reach::torso_heading(head, chest);
     Hand::BOTH.map(|hand| {
         measured[hand.index()]
-            .and_then(|arm| ArmRemap::measured(hand, head, torso, &player, &arm, world_scale))
+            .and_then(|arm| {
+                ArmRemap::measured(hand, head, torso, chest, &player, &arm, world_scale)
+            })
             .or_else(|| {
                 config.body.remap_hands.then(|| {
                     ArmRemap::estimated(
