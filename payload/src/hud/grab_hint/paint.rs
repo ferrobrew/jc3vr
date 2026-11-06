@@ -1,50 +1,84 @@
-//! The hint's textures, painted on the CPU from the game's icons: one icon on a backing for a take,
-//! and for a swap the weapon going in, an arrow, and the weapon coming out, dimmed, as the game's
-//! own pickup panel pairs a pickup with the weapon it replaces.
+//! The hint's textures, painted on the CPU from the game's icons: for a take the item's icon, and
+//! for a swap the weapon going in, an arrow, and the weapon coming out, dimmed, as the game's own
+//! pickup panel pairs a pickup with the weapon it replaces. Above the middle of either (the icon
+//! of a take, the arrow of a swap) a small label names the socket or pouch involved.
+//!
+//! There is no backing or frame: the icons, the arrow, and the label stand on their own, with a
+//! soft dark halo around them so the game's white icons read against a bright sky or sand. The
+//! lost-weapon markers ([`crate::hud::lost_weapons`]) use the same icon, alone ([`marker`]).
 
 use crate::hud::{
     game_icons::Image,
+    label::{self, Coverage},
     palette::{self, premultiply_linear as premultiply},
 };
 
 /// The cell an icon is fitted into, texels: the size of the game's weapon icons.
 pub(crate) const ICON_TEXELS: (u32, u32) = (232, 80);
 
-/// The take texture's size, texels: one icon cell and its padding.
-pub(crate) const TAKE_TEXELS: (u32, u32) = (ICON_TEXELS.0 + 2 * PAD, ICON_TEXELS.1 + 2 * PAD);
+/// The marker texture's size, texels: one icon cell and its padding.
+pub(crate) const MARKER_TEXELS: (u32, u32) = (ICON_TEXELS.0 + 2 * PAD, ICON_TEXELS.1 + 2 * PAD);
 
-/// The swap texture's size, texels: two icon cells, the arrow between them, and the padding.
+/// The take texture's size, texels: the label's row over one icon cell, and the padding.
+pub(crate) const TAKE_TEXELS: (u32, u32) =
+    (ICON_TEXELS.0 + 2 * PAD, LABEL_ROW + ICON_TEXELS.1 + 2 * PAD);
+
+/// The swap texture's size, texels: the label's row over two icon cells and the arrow between
+/// them, and the padding.
 pub(crate) const SWAP_TEXELS: (u32, u32) = (
     2 * ICON_TEXELS.0 + ARROW_W + 2 * PAD,
-    ICON_TEXELS.1 + 2 * PAD,
+    LABEL_ROW + ICON_TEXELS.1 + 2 * PAD,
 );
 
-/// Paint a take: `icon` on the backing. Premultiplied RGBA texels of [`TAKE_TEXELS`], row by row.
-pub(crate) fn take(icon: &Image) -> Vec<u8> {
-    let (width, height) = TAKE_TEXELS;
-    let mut canvas = Canvas::backed(width, height);
+/// The height of the icons' row and its padding, texels: what every texture here has below its
+/// label, so the layout can size the textures alike.
+pub(crate) const ICON_ROW_TEXELS: u32 = ICON_TEXELS.1 + 2 * PAD;
+
+/// Paint a lost-weapon marker: `icon` alone, haloed. Premultiplied RGBA texels of
+/// [`MARKER_TEXELS`], row by row.
+pub(crate) fn marker(icon: &Image) -> Vec<u8> {
+    let (width, height) = MARKER_TEXELS;
+    let mut canvas = Canvas::clear(width, height);
     canvas.icon(icon, PAD, PAD, 1.0);
-    canvas.into_texels()
+    canvas.haloed().into_texels()
+}
+
+/// Paint a take: `icon` with `label` above it, haloed. Premultiplied RGBA texels of
+/// [`TAKE_TEXELS`], row by row.
+pub(crate) fn take(icon: &Image, label: &str) -> Vec<u8> {
+    let (width, height) = TAKE_TEXELS;
+    let mut canvas = Canvas::clear(width, height);
+    canvas.label(label, width / 2);
+    canvas.icon(icon, PAD, LABEL_ROW + PAD, 1.0);
+    canvas.haloed().into_texels()
 }
 
 /// Paint a swap: `incoming` (the weapon the hand docks), an arrow, and `outgoing` (the weapon that
-/// falls clear), dimmed. Premultiplied RGBA texels of [`SWAP_TEXELS`], row by row.
-pub(crate) fn swap(incoming: &Image, outgoing: &Image) -> Vec<u8> {
+/// falls clear), dimmed, with `label` above the arrow, haloed. Premultiplied RGBA texels of
+/// [`SWAP_TEXELS`], row by row.
+pub(crate) fn swap(incoming: &Image, outgoing: &Image, label: &str) -> Vec<u8> {
     let (width, height) = SWAP_TEXELS;
-    let mut canvas = Canvas::backed(width, height);
-    canvas.icon(incoming, PAD, PAD, 1.0);
-    canvas.arrow(PAD + ICON_TEXELS.0, height / 2);
+    let mut canvas = Canvas::clear(width, height);
+    canvas.label(label, width / 2);
+    canvas.icon(incoming, PAD, LABEL_ROW + PAD, 1.0);
+    canvas.arrow(PAD + ICON_TEXELS.0, LABEL_ROW + PAD + ICON_TEXELS.1 / 2);
     canvas.icon(
         outgoing,
         PAD + ICON_TEXELS.0 + ARROW_W,
-        PAD,
+        LABEL_ROW + PAD,
         OUTGOING_OPACITY,
     );
-    canvas.into_texels()
+    canvas.haloed().into_texels()
 }
 
-/// The padding around the icons, texels.
+/// The padding around the icons, texels: room for the halo.
 const PAD: u32 = 12;
+
+/// The label's row above the icons, texels.
+const LABEL_ROW: u32 = 34;
+
+/// The label's size, texels per em.
+pub(crate) const LABEL_PX: f32 = 26.0;
 
 /// The arrow's cell width, texels.
 const ARROW_W: u32 = 64;
@@ -52,13 +86,17 @@ const ARROW_W: u32 = 64;
 /// The outgoing weapon's opacity in a swap.
 const OUTGOING_OPACITY: f32 = 0.5;
 
-/// The frame's width, texels.
-const BORDER: u32 = 2;
-
 /// Straight RGBA colours in 0 to 1, premultiplied when painted.
-const FRAME: [f32; 4] = palette::linear(palette::FRAME);
-const BACKING: [f32; 4] = palette::linear(palette::BACKING);
 const ARROW: [f32; 4] = palette::linear(palette::TEXT);
+const LABEL: [f32; 4] = palette::linear(palette::TEXT);
+const HALO: [f32; 4] = palette::linear(palette::HALO);
+
+/// The halo's reach around what it surrounds, texels: the radius of each of its box blurs.
+const HALO_RADIUS: u32 = 4;
+
+/// How much stronger than the blurred coverage the halo is, so it is dense next to the marks and
+/// fades out over its reach.
+const HALO_GAIN: f32 = 2.5;
 
 /// The arrow's shape, texels: the shaft's half thickness, the head's length and half height, and
 /// the margin to the arrow cell's edges.
@@ -78,21 +116,54 @@ struct Canvas {
 }
 
 impl Canvas {
-    /// A canvas filled with the backing inside the frame.
-    fn backed(width: u32, height: u32) -> Self {
-        let mut texels = Vec::with_capacity((width * height) as usize);
-        for y in 0..height {
-            for x in 0..width {
-                let border =
-                    x < BORDER || y < BORDER || x >= width - BORDER || y >= height - BORDER;
-                texels.push(premultiply(if border { FRAME } else { BACKING }));
-            }
-        }
+    /// A transparent canvas.
+    fn clear(width: u32, height: u32) -> Self {
         Self {
             width,
             height,
-            texels,
+            texels: vec![[0.0; 4]; (width * height) as usize],
         }
+    }
+
+    /// Draw `text` in the label's row, centred on `centre_x`, clipped to the canvas.
+    fn label(&mut self, text: &str, centre_x: u32) {
+        if text.is_empty() {
+            return;
+        }
+        let mask: Coverage = label::rasterise(text, LABEL_PX);
+        let left = i64::from(centre_x) - i64::from(mask.width / 2);
+        let top = i64::from(LABEL_ROW.saturating_sub(mask.height) / 2 + PAD / 2);
+        let colour = premultiply(LABEL);
+        for y in 0..mask.height {
+            for x in 0..mask.width {
+                let coverage = mask.at(x, y);
+                let (cx, cy) = (left + i64::from(x), top + i64::from(y));
+                if coverage <= 0.0 || cx < 0 || cy < 0 {
+                    continue;
+                }
+                self.over(cx as u32, cy as u32, colour.map(|c| c * coverage));
+            }
+        }
+    }
+
+    /// The canvas over a soft dark halo of its own coverage: the alpha blurred by two box blurs,
+    /// strengthened, and composited under every texel.
+    fn haloed(self) -> Self {
+        let alpha = self.texels.iter().map(|t| t[3]).collect::<Vec<_>>();
+        let mut blurred = box_blur(&alpha, self.width, self.height, HALO_RADIUS);
+        blurred = box_blur(&blurred, self.width, self.height, HALO_RADIUS);
+        let halo = premultiply(HALO);
+        let texels = self
+            .texels
+            .iter()
+            .zip(blurred)
+            .map(|(texel, strength)| {
+                let under = halo.map(|c| c * (strength * HALO_GAIN).min(1.0));
+                let keep = 1.0 - texel[3];
+                std::array::from_fn(|i| texel[i] + under[i] * keep)
+            })
+            .collect();
+        Self { texels, ..self }
     }
 
     /// Draw `image` fitted into the icon cell at (`left`, `top`), centred and keeping its aspect,
@@ -182,6 +253,43 @@ impl Canvas {
     }
 }
 
+/// `values` (a `width` by `height` grid, row by row) averaged over a square `2 * radius + 1` texels
+/// across, horizontally then vertically, with zero outside the grid.
+fn box_blur(values: &[f32], width: u32, height: u32, radius: u32) -> Vec<f32> {
+    let (w, h, r) = (width as usize, height as usize, radius as usize);
+    let span = (2 * r + 1) as f32;
+    let pass = |source: &[f32], along_rows: bool| {
+        let (lines, length) = if along_rows { (h, w) } else { (w, h) };
+        let index = |line: usize, i: usize| {
+            if along_rows {
+                line * w + i
+            } else {
+                i * w + line
+            }
+        };
+        let mut out = vec![0.0; source.len()];
+        for line in 0..lines {
+            let mut sum = (0..=r.min(length - 1))
+                .map(|i| source[index(line, i)])
+                .sum::<f32>();
+            for i in 0..length {
+                out[index(line, i)] = sum / span;
+                if i + r + 1 < length {
+                    sum += source[index(line, i + r + 1)];
+                }
+                if i >= r {
+                    sum -= source[index(line, i - r)];
+                }
+            }
+        }
+        out
+    };
+    if w == 0 || h == 0 {
+        return values.to_vec();
+    }
+    pass(&pass(values, true), false)
+}
+
 /// The premultiplied colour of `image` at texel coordinates (`u`, `v`), bilinearly filtered with
 /// the edges clamped.
 fn sample(image: &Image, u: f32, v: f32) -> [f32; 4] {
@@ -227,28 +335,59 @@ mod tests {
         [texels[at], texels[at + 1], texels[at + 2], texels[at + 3]]
     }
 
+    fn alpha(texels: &[u8], width: u32, x: u32, y: u32) -> u8 {
+        texel(texels, width, x, y)[3]
+    }
+
     #[test]
-    fn a_take_draws_the_icon_over_the_backing() {
-        let texels = take(&icon(100..140));
+    fn a_take_draws_the_icon_with_a_halo_and_no_backing() {
+        let texels = take(&icon(100..140), "Right hip");
         let (width, height) = TAKE_TEXELS;
         assert_eq!(texels.len(), (width * height * 4) as usize);
-        let mid = height / 2;
+        let mid = LABEL_ROW + PAD + ICON_TEXELS.1 / 2;
         assert_eq!(texel(&texels, width, PAD + 120, mid), [255, 255, 255, 255]);
-        // A transparent texel of the icon leaves the backing as it was: its white colour is not
-        // added, since the icon is premultiplied before compositing.
-        let backing = premultiply(BACKING).map(|c| (c * 255.0).round() as u8);
-        assert_eq!(texel(&texels, width, PAD + 10, mid), backing);
-        let frame = premultiply(FRAME).map(|c| (c * 255.0).round() as u8);
-        assert_eq!(texel(&texels, width, 0, 0), frame);
+        // No backing or frame: the corners and the icon's clear texels far from its marks are
+        // transparent.
+        assert_eq!(texel(&texels, width, 0, 0), [0; 4]);
+        assert_eq!(texel(&texels, width, width - 1, height - 1), [0; 4]);
+        assert_eq!(texel(&texels, width, PAD + 20, mid), [0; 4]);
+        // Beside the icon's marks, a dark halo.
+        let halo = texel(&texels, width, PAD + 97, mid);
+        assert!(halo[3] > 64, "{halo:?}");
+        assert!(halo[0] < 32, "{halo:?}");
+        assert!(alpha(&texels, width, PAD + 92, mid) < halo[3]);
+    }
+
+    #[test]
+    fn a_take_names_its_place_above_the_icon() {
+        let blank = icon(0..0);
+        let named = take(&blank, "Left back");
+        let unnamed = take(&blank, "");
+        let (width, _) = TAKE_TEXELS;
+        let lit_in_label = |texels: &[u8]| {
+            (0..LABEL_ROW + PAD / 2)
+                .flat_map(|y| (0..width).map(move |x| (x, y)))
+                .filter(|&(x, y)| texel(texels, width, x, y)[0] > 200)
+                .collect::<Vec<_>>()
+        };
+        let lit = lit_in_label(&named);
+        assert!(lit.len() > 50, "{}", lit.len());
+        assert!(lit_in_label(&unnamed).is_empty());
+        // Centred across the texture, over the icon.
+        let (min, max) = lit
+            .iter()
+            .fold((u32::MAX, 0), |(lo, hi), &(x, _)| (lo.min(x), hi.max(x)));
+        let centre = (min + max) as i64 / 2;
+        assert!((centre - i64::from(width / 2)).abs() <= 3, "{min} {max}");
     }
 
     #[test]
     fn a_swap_draws_both_icons_and_an_arrow_and_dims_the_outgoing_one() {
         let whole = icon(0..ICON_TEXELS.0);
-        let texels = swap(&whole, &whole);
+        let texels = swap(&whole, &whole, "Left back");
         let (width, height) = SWAP_TEXELS;
         assert_eq!(texels.len(), (width * height * 4) as usize);
-        let mid = height / 2;
+        let mid = LABEL_ROW + PAD + ICON_TEXELS.1 / 2;
         let incoming = texel(&texels, width, PAD + ICON_TEXELS.0 / 2, mid);
         let outgoing = texel(&texels, width, PAD + ICON_TEXELS.0 + ARROW_W + 100, mid);
         assert_eq!(incoming, [255, 255, 255, 255]);
@@ -258,8 +397,39 @@ mod tests {
         );
         let arrow = texel(&texels, width, PAD + ICON_TEXELS.0 + ARROW_W / 2, mid);
         assert!(arrow[3] > 250, "{arrow:?}");
+        // Above the shaft, between the icons, only the dark halo.
         let above_shaft = texel(&texels, width, PAD + ICON_TEXELS.0 + 12, mid - 10);
         assert!(above_shaft[0] < 64, "{above_shaft:?}");
+        // The label sits over the arrow, in the middle of the texture.
+        let label_lit = (0..LABEL_ROW).any(|y| {
+            (width / 2 - 20..width / 2 + 20).any(|x| texel(&texels, width, x, y)[0] > 200)
+        });
+        assert!(label_lit);
+    }
+
+    #[test]
+    fn a_marker_is_the_icon_alone() {
+        let texels = marker(&icon(100..140));
+        let (width, height) = MARKER_TEXELS;
+        assert_eq!(texels.len(), (width * height * 4) as usize);
+        assert_eq!(
+            texel(&texels, width, PAD + 120, height / 2),
+            [255, 255, 255, 255]
+        );
+        assert_eq!(texel(&texels, width, 0, 0), [0; 4]);
+        assert!(alpha(&texels, width, PAD + 97, height / 2) > 64);
+    }
+
+    #[test]
+    fn the_box_blur_spreads_and_keeps_the_mass_inside() {
+        let mut values = vec![0.0; 9 * 9];
+        values[4 * 9 + 4] = 1.0;
+        let blurred = box_blur(&values, 9, 9, 1);
+        assert!((blurred[4 * 9 + 4] - 1.0 / 9.0).abs() < 1e-6);
+        assert!((blurred[3 * 9 + 3] - 1.0 / 9.0).abs() < 1e-6);
+        assert_eq!(blurred[2 * 9 + 2], 0.0);
+        assert!((blurred.iter().sum::<f32>() - 1.0).abs() < 1e-5);
+        assert!(box_blur(&[], 0, 0, 2).is_empty());
     }
 
     #[test]
@@ -269,8 +439,8 @@ mod tests {
             height: 4,
             rgba: vec![255; 64],
         };
-        let texels = take(&small);
-        let (width, height) = TAKE_TEXELS;
+        let texels = marker(&small);
+        let (width, height) = MARKER_TEXELS;
         // Fitted by height: an 80-texel square centred in the cell.
         let centre = width / 2;
         assert_eq!(

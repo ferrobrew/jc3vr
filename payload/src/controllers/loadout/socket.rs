@@ -81,6 +81,19 @@ impl Socket {
         }
     }
 
+    /// The socket's name as the HUD shows it, in sentence case. The shoulder sockets dock across
+    /// the back, so they read as the back's sides.
+    pub const fn display_name(self) -> &'static str {
+        match self {
+            Socket::Hip(Hand::Left) => "Left hip",
+            Socket::Hip(Hand::Right) => "Right hip",
+            Socket::Shoulder(Hand::Left) => "Left back",
+            Socket::Shoulder(Hand::Right) => "Right back",
+            Socket::BackOuter => "Outer back",
+            Socket::Chest => "Chest",
+        }
+    }
+
     pub const fn label(self) -> &'static str {
         match self {
             Socket::Hip(Hand::Left) => "left hip",

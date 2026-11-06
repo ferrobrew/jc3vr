@@ -5,8 +5,8 @@
 //!
 //! The game's own pickup hints are no help here: they mark only the nearest useful weapon per slot,
 //! and only while that slot is low on ammunition (`docs/engine/rendering/ui-rendering.md`). The
-//! marker is the icon those hints show ([`crate::hud::game_icons`]), on the grab hint's backing
-//! ([`crate::hud::grab_hint`]), drawn by the mod as an upright billboard at the weapon's own world
+//! marker is the icon those hints show ([`crate::hud::game_icons`]), with no backing, only the grab
+//! hint's soft dark halo ([`crate::hud::grab_hint`]), drawn by the mod as an upright billboard at the weapon's own world
 //! point. Like every HUD quad it is drawn without a depth test, at a stereo-correct depth, so it
 //! shows through what is in front of the weapon and still reads as being where the weapon is.
 //!
@@ -32,7 +32,7 @@ use crate::{
     hud::{
         anchored::place::upright_corners,
         game_icons::{self, IconId, Lookup},
-        grab_hint::{TAKE_TEXELS, paint_take},
+        grab_hint::{MARKER_TEXELS, paint_marker},
         log_once::LogOnce,
         quad::HudQuad,
         target::HudTarget,
@@ -91,7 +91,7 @@ pub(crate) fn place(head: Vec3, head_up: Vec3, weapons: &[LostWeapon]) -> Vec<Pl
         .take(MAX_DRAWN)
         .filter_map(|(distance, weapon)| {
             let height = distance * ANGULAR_HEIGHT;
-            let width = height * TAKE_TEXELS.0 as f32 / TAKE_TEXELS.1 as f32;
+            let width = height * MARKER_TEXELS.0 as f32 / MARKER_TEXELS.1 as f32;
             let centre = weapon.position + Vec3::Y * (RAISE_M + height * 0.5);
             Some(Placed {
                 icon: weapon.icon,
@@ -194,7 +194,7 @@ impl State {
                 if gpu.textures.len() >= MAX_TEXTURES {
                     continue;
                 }
-                match paint(context, device, &paint_take(&image)) {
+                match paint(context, device, &paint_marker(&image)) {
                     Ok(texture) => {
                         gpu.textures.insert(marker.icon, texture);
                     }
@@ -230,13 +230,13 @@ impl State {
     }
 }
 
-/// A texture of [`TAKE_TEXELS`] holding `texels`.
+/// A texture of [`MARKER_TEXELS`] holding `texels`.
 fn paint(
     context: &ID3D11DeviceContext,
     device: &Device,
     texels: &[u8],
 ) -> anyhow::Result<HudTarget> {
-    let (width, height) = TAKE_TEXELS;
+    let (width, height) = MARKER_TEXELS;
     let target =
         HudTarget::new(device, width, height).context("creating a lost weapon marker's texture")?;
     target.upload(context, texels);

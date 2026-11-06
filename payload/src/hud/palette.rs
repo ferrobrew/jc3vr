@@ -14,6 +14,10 @@ pub(crate) const FRAME: Rgba8 = [235, 235, 235, 220];
 /// A readout's dark translucent backing.
 pub(crate) const BACKING: Rgba8 = [10, 12, 15, 190];
 
+/// The soft dark halo around marks drawn without a backing (the grab hint, the lost-weapon
+/// markers, a cockpit button's label), so white marks read against a bright sky or sand.
+pub(crate) const HALO: Rgba8 = [0, 0, 0, 200];
+
 /// A readout's text, fill, and marks.
 pub(crate) const TEXT: Rgba8 = [240, 240, 240, 255];
 

@@ -5,8 +5,10 @@
 //! A take shows the item's icon: the weapon docked on a socket, the grenade or the C4 charge from
 //! its pouch, or the gun a magazine from the belt pouch is for. Letting a held weapon go over a
 //! taken socket on the back swaps it for the one docked there, which shows the weapon going in, an
-//! arrow, and the weapon coming out, dimmed ([`paint`]). Each hand has its own hint; two sit side
-//! by side, the left hand's on the left ([`layout`]).
+//! arrow, and the weapon coming out, dimmed ([`paint`]). Above the middle of either, a small label
+//! names the socket or pouch. The hint has no backing, only a soft dark halo. Each hand has its
+//! own hint; two at once (each hand armed its own) sit apart toward their own hands' sides, the
+//! left hand's on the left ([`layout`]).
 //!
 //! The weapon handling's input tick publishes each hand's hint ([`publish`]), with the icons named
 //! by weapon id. The draw reads the icons from the archives ([`crate::hud::game_icons`]), paints a
@@ -24,18 +26,18 @@ use std::{
 use anyhow::Context as _;
 use glam::Vec4;
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
-pub(crate) use paint::{TAKE_TEXELS, take as paint_take};
+pub(crate) use paint::{MARKER_TEXELS, marker as paint_marker};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
 use crate::{
     config::Config,
-    controllers::{frame::Hand, scheme, summary::glance::fade},
+    controllers::{frame::Hand, loadout::Socket, scheme, summary::glance::fade},
     hud::{
         game_icons::{self, IconId, Image, Lookup},
         grab_hint::{
             layout::{hint_corners, panel_frame},
-            paint::SWAP_TEXELS,
+            paint::{SWAP_TEXELS, TAKE_TEXELS},
         },
         log_once::LogOnce,
         quad::HudQuad,
@@ -44,23 +46,57 @@ use crate::{
     },
 };
 
-/// What one hand's grip would take, or swap.
+/// What one hand's grip would take, or swap, and where on the body.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum Hint {
-    /// The grip takes the item with this icon.
-    Take(IconId),
-    /// Letting go docks the held weapon (`incoming`) and the weapon docked there (`outgoing`) falls
-    /// clear.
-    Swap { incoming: IconId, outgoing: IconId },
+    /// The grip takes the item with this icon from `place`.
+    Take { icon: IconId, place: Place },
+    /// Letting go docks the held weapon (`incoming`) on `place`, and the weapon docked there
+    /// (`outgoing`) falls clear.
+    Swap {
+        incoming: IconId,
+        outgoing: IconId,
+        place: Place,
+    },
 }
 
 impl Hint {
     fn icons(self) -> impl Iterator<Item = IconId> {
         let (first, second) = match self {
-            Hint::Take(icon) => (icon, None),
-            Hint::Swap { incoming, outgoing } => (incoming, Some(outgoing)),
+            Hint::Take { icon, .. } => (icon, None),
+            Hint::Swap {
+                incoming, outgoing, ..
+            } => (incoming, Some(outgoing)),
         };
         std::iter::once(first).chain(second)
+    }
+
+    /// The name of the place the hint is about, drawn above it.
+    fn label(self) -> &'static str {
+        match self {
+            Hint::Take { place, .. } | Hint::Swap { place, .. } => place.name(),
+        }
+    }
+}
+
+/// A place on the body a hand takes from or docks on.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum Place {
+    Socket(Socket),
+    GrenadePouch,
+    C4Pouch,
+    MagazinePouch,
+}
+
+impl Place {
+    /// The place's name as the hint shows it, in sentence case.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Place::Socket(socket) => socket.display_name(),
+            Place::GrenadePouch => "Grenade pouch",
+            Place::C4Pouch => "C4 pouch",
+            Place::MagazinePouch => "Magazine pouch",
+        }
     }
 }
 
@@ -163,7 +199,7 @@ impl HintTextures {
     /// The texture `hint` is drawn from.
     fn target(&self, hint: Hint) -> &HudTarget {
         match hint {
-            Hint::Take(_) => self.take.target(),
+            Hint::Take { .. } => self.take.target(),
             Hint::Swap { .. } => self.swap.target(),
         }
     }
@@ -171,10 +207,12 @@ impl HintTextures {
     /// Paint `hint` from its loaded `icons`, if its texture does not show it already.
     fn paint(&mut self, context: &ID3D11DeviceContext, hint: Hint, icons: &[Arc<Image>]) {
         match (hint, icons) {
-            (Hint::Take(_), [icon]) => self.take.update(context, hint, |_| paint::take(icon)),
-            (Hint::Swap { .. }, [incoming, outgoing]) => self
-                .swap
-                .update(context, hint, |_| paint::swap(incoming, outgoing)),
+            (Hint::Take { .. }, [icon]) => self
+                .take
+                .update(context, hint, |_| paint::take(icon, hint.label())),
+            (Hint::Swap { .. }, [incoming, outgoing]) => self.swap.update(context, hint, |_| {
+                paint::swap(incoming, outgoing, hint.label())
+            }),
             _ => {}
         }
     }
@@ -249,16 +287,13 @@ impl State {
                 state.shown = None;
             }
         }
-        let aspects = self.hands.map(|state| {
-            state.shown.map(|hint| {
-                let (width, height) = match hint {
-                    Hint::Take(_) => TAKE_TEXELS,
-                    Hint::Swap { .. } => SWAP_TEXELS,
-                };
-                width as f32 / height as f32
+        let sizes = self.hands.map(|state| {
+            state.shown.map(|hint| match hint {
+                Hint::Take { .. } => TAKE_TEXELS,
+                Hint::Swap { .. } => SWAP_TEXELS,
             })
         });
-        let corners = hint_corners(&frame, aspects);
+        let corners = hint_corners(&frame, sizes);
         for (state, corners) in self.hands.iter_mut().zip(corners) {
             state.corners = corners;
         }
@@ -287,3 +322,26 @@ impl State {
 }
 
 static FAILURES: LogOnce = LogOnce::new("hud grab hint");
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hud::label;
+
+    /// Every place's name fits across a take's texture, the narrower of the two, with room for its
+    /// halo.
+    #[test]
+    fn every_place_name_fits_its_texture() {
+        let places = Socket::ALL.map(Place::Socket).into_iter().chain([
+            Place::GrenadePouch,
+            Place::C4Pouch,
+            Place::MagazinePouch,
+        ]);
+        for place in places {
+            let name = place.name();
+            assert!(name.starts_with(|c: char| c.is_uppercase()), "{name}");
+            let width = label::rasterise(name, paint::LABEL_PX).width;
+            assert!(width + 16 <= TAKE_TEXELS.0, "{name}: {width}");
+        }
+    }
+}

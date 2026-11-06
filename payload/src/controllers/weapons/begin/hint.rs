@@ -1,6 +1,6 @@
 //! Each hand's grab hint ([`crate::hud::grab_hint`]) from the input tick's grip resolution: the
 //! icon of what a grip on a body slot would take, or the swap a release over a taken socket would
-//! make.
+//! make, with the socket or pouch it is at.
 
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
@@ -15,7 +15,7 @@ use crate::{
     },
     hud::{
         game_icons::IconId,
-        grab_hint::{self, Hint},
+        grab_hint::{self, Hint, Place},
     },
 };
 
@@ -70,21 +70,33 @@ unsafe fn hint(
             Some(Hint::Swap {
                 incoming: item_icon(held?)?,
                 outgoing: item_icon(outgoing)?,
+                place: Place::Socket(socket),
             })
         };
     }
     // SAFETY: forwarded from the caller.
-    let icon = unsafe {
+    let (icon, place) = unsafe {
         match inputs.chosen[hand.index()]? {
-            GrabVolume::Socket(socket) if held.is_none() => item_icon(snapshot.docked(socket)?),
-            GrabVolume::GrenadePouch => slot_icon(owner?, WeaponSlot::E_SLOT_HAND_GRENADE),
-            GrabVolume::C4Pouch => slot_icon(owner?, WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE),
+            GrabVolume::Socket(socket) if held.is_none() => {
+                (item_icon(snapshot.docked(socket)?), Place::Socket(socket))
+            }
+            GrabVolume::GrenadePouch => (
+                slot_icon(owner?, WeaponSlot::E_SLOT_HAND_GRENADE),
+                Place::GrenadePouch,
+            ),
+            GrabVolume::C4Pouch => (
+                slot_icon(owner?, WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE),
+                Place::C4Pouch,
+            ),
             // The belt's magazine is for the gun in the other hand.
-            GrabVolume::MagazinePouch => item_icon(snapshot.held(hand.other())?),
-            _ => None,
+            GrabVolume::MagazinePouch => (
+                item_icon(snapshot.held(hand.other())?),
+                Place::MagazinePouch,
+            ),
+            _ => return None,
         }
-    }?;
-    Some(Hint::Take(icon))
+    };
+    Some(Hint::Take { icon: icon?, place })
 }
 
 /// The icon of `item`'s weapon, while it is bound to a live one.

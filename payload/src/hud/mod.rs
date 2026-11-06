@@ -44,6 +44,7 @@ pub mod depth;
 pub(crate) mod egui_panel;
 pub(crate) mod game_icons;
 pub(crate) mod grab_hint;
+mod label;
 mod log_once;
 pub(crate) mod lost_weapons;
 pub(crate) mod mirror_overlay;

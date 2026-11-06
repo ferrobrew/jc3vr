@@ -1,8 +1,10 @@
 //! Where the hints sit: on the floating panel's plane, below its centre, where the flat game shows
 //! its weapon selection, so they are in front of the player at the HUD's distance wherever the
-//! hovering hand is. Two hints sit side by side, the left hand's on the left.
+//! hovering hand is. Two hints sit apart, each toward its own hand's side.
 
 use glam::{Vec3, Vec4};
+
+use crate::hud::grab_hint::paint::ICON_ROW_TEXELS;
 
 /// The panel's plane, from its world corners.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -31,31 +33,41 @@ pub(crate) fn panel_frame(corners: &[Vec4; 4]) -> Option<PanelFrame> {
     (height > 0.0 && centre.is_finite()).then_some(frame)
 }
 
-/// The corners of each hand's hint, by hand index (left first), from each hint's aspect (its
-/// texture's width over its height; `None` for a hand without a hint). The hints are
-/// [`HEIGHT`] of the panel's height tall, centred [`DROP`] of it below the panel's centre, and a
-/// lone hint is centred across the panel.
+/// The corners of each hand's hint, by hand index (left first), from each hint's texture size in
+/// texels (`None` for a hand without a hint). The icons' row of every hint is [`HEIGHT`] of the
+/// panel's height tall, so the textures share one scale, and is centred [`DROP`] of it below the
+/// panel's centre, a label's row rising above it. A lone hint is centred across the panel; two sit
+/// apart toward their hands' sides, each centred [`SPREAD`] of the panel's height from the middle,
+/// or farther when they are too wide for that, so it is plain which hand's each is.
 pub(crate) fn hint_corners(
     frame: &PanelFrame,
-    aspects: [Option<f32>; 2],
+    sizes: [Option<(u32, u32)>; 2],
 ) -> [Option<[Vec4; 4]>; 2] {
-    let height = frame.height * HEIGHT;
-    let widths = aspects.map(|aspect| aspect.filter(|a| *a > 0.0).map(|a| a * height));
+    let texel = frame.height * HEIGHT / ICON_ROW_TEXELS as f32;
+    let extents = sizes.map(|size| {
+        size.filter(|(w, h)| *w > 0 && *h > 0)
+            .map(|(w, h)| (w as f32 * texel, h as f32 * texel))
+    });
     let gap = frame.height * GAP;
-    let total = widths.iter().flatten().sum::<f32>()
-        + if widths.iter().all(Option::is_some) {
-            gap
-        } else {
-            0.0
-        };
+    let offsets = match extents {
+        [Some((left, _)), Some((right, _))] => {
+            let apart = (left + right) * 0.5 + gap;
+            let half = (frame.height * SPREAD).max(apart * 0.5);
+            [-half, half]
+        }
+        _ => [0.0; 2],
+    };
+    let icon_row = frame.height * HEIGHT;
     let row = frame.centre - frame.up * (frame.height * DROP);
-    let mut left = -total * 0.5;
-    widths.map(|width| {
-        let width = width?;
-        let centre = row + frame.right * (left + width * 0.5);
-        left += width + gap;
+    let mut corners = [None; 2];
+    for (slot, (extent, offset)) in corners.iter_mut().zip(extents.into_iter().zip(offsets)) {
+        let Some((width, height)) = extent else {
+            continue;
+        };
+        // The icons' row stays on the row; whatever the texture has above it rises.
+        let centre = row + frame.right * offset + frame.up * ((height - icon_row) * 0.5);
         let (r, u) = (frame.right * (width * 0.5), frame.up * (height * 0.5));
-        Some(
+        *slot = Some(
             [
                 centre - r + u,
                 centre + r + u,
@@ -63,19 +75,24 @@ pub(crate) fn hint_corners(
                 centre + r - u,
             ]
             .map(|c| c.extend(1.0)),
-        )
-    })
+        );
+    }
+    corners
 }
 
-/// A hint's height, as a share of the panel's height.
+/// The height of a hint's icons' row, as a share of the panel's height.
 const HEIGHT: f32 = 0.11;
 
-/// How far below the panel's centre the hints' centres sit, as a share of the panel's height,
-/// clear of the reticle.
+/// How far below the panel's centre the icons' row sits, as a share of the panel's height, clear
+/// of the reticle.
 const DROP: f32 = 0.2;
 
-/// The gap between two hints, as a share of the panel's height.
+/// The least gap between two hints, as a share of the panel's height.
 const GAP: f32 = 0.03;
+
+/// How far from the panel's middle each of two hints is centred, as a share of the panel's height:
+/// about a quarter of a 16:9 panel's width.
+const SPREAD: f32 = 0.45;
 
 #[cfg(test)]
 mod tests {
@@ -106,10 +123,19 @@ mod tests {
         assert!(panel_frame(&[Vec4::ZERO; 4]).is_none());
     }
 
+    /// A texture whose icons' row is `aspect` times as wide as it is tall, with `label` texels
+    /// above it.
+    fn size(aspect: f32, label: u32) -> Option<(u32, u32)> {
+        Some((
+            (aspect * ICON_ROW_TEXELS as f32).round() as u32,
+            ICON_ROW_TEXELS + label,
+        ))
+    }
+
     #[test]
     fn a_lone_hint_is_centred_below_the_middle() {
         let frame = frame();
-        for hands in [[Some(2.0), None], [None, Some(2.0)]] {
+        for hands in [[size(2.0, 0), None], [None, size(2.0, 0)]] {
             let corners = hint_corners(&frame, hands);
             let quad = corners.iter().flatten().next().unwrap();
             let c = centre(quad);
@@ -119,24 +145,49 @@ mod tests {
             let height = (quad[0] - quad[2]).length();
             let width = (quad[1] - quad[0]).length();
             assert!((height - 2.0 * HEIGHT).abs() < 1e-6);
-            assert!((width - 2.0 * height).abs() < 1e-5);
+            assert!((width - 2.0 * height).abs() < 1e-2);
         }
     }
 
+    /// A label above the icons makes the quad taller upward: the icons' row keeps its height and
+    /// its place.
     #[test]
-    fn two_hints_sit_side_by_side_with_the_left_hand_on_the_left() {
+    fn a_label_rises_above_the_icons_row() {
         let frame = frame();
-        let [left, right] = hint_corners(&frame, [Some(2.0), Some(5.0)]);
+        let label = ICON_ROW_TEXELS / 2;
+        let [quad, _] = hint_corners(&frame, [size(2.0, label), None]);
+        let quad = quad.unwrap();
+        let bottom = quad[2].y;
+        let top = quad[0].y;
+        let row_height = 2.0 * HEIGHT;
+        assert!((bottom - (-2.0 * DROP - row_height * 0.5)).abs() < 1e-5);
+        assert!((top - bottom - row_height * 1.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn two_hints_sit_apart_toward_their_hands() {
+        let frame = frame();
+        let [left, right] = hint_corners(&frame, [size(2.0, 0), size(2.4, 0)]);
+        let (left, right) = (left.unwrap(), right.unwrap());
+        assert!((centre(&left).x + 2.0 * SPREAD).abs() < 1e-5);
+        assert!((centre(&right).x - 2.0 * SPREAD).abs() < 1e-5);
+        assert!(right[0].x - left[1].x >= 2.0 * GAP - 1e-5);
+    }
+
+    #[test]
+    fn two_wide_hints_keep_the_gap_between_them() {
+        let frame = frame();
+        let [left, right] = hint_corners(&frame, [size(9.0, 0), size(9.0, 0)]);
         let (left, right) = (left.unwrap(), right.unwrap());
         assert!(centre(&left).x < 0.0 && centre(&right).x > 0.0);
         let gap = right[0].x - left[1].x;
-        assert!((gap - 2.0 * GAP).abs() < 1e-5);
-        // The pair is centred across the panel.
-        assert!((left[0].x + right[1].x).abs() < 1e-5);
+        assert!((gap - 2.0 * GAP).abs() < 1e-4, "{gap}");
+        assert!((left[0].x + right[1].x).abs() < 1e-4);
     }
 
     #[test]
     fn no_hint_has_no_corners() {
         assert_eq!(hint_corners(&frame(), [None, None]), [None, None]);
+        assert_eq!(hint_corners(&frame(), [Some((0, 10)), None]), [None, None]);
     }
 }
