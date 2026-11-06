@@ -33,6 +33,14 @@ pub fn status() -> WeaponsStatus {
     STATE.lock().status.clone()
 }
 
+/// Pause for a game menu or the map, which skips the weapon handling's tick halves but keeps what
+/// the hands hold: physical magazine work is cancelled, and the grip release stands down, so that
+/// the first tick back ends a gun's hold with the grip as it is then.
+pub(crate) fn pause() {
+    reload::cancel_extraction_on_standdown();
+    hold::act::cancel_releases();
+}
+
 /// Stop acting: drop the foregrip hold and forget the tick's weapon. Called whenever the bindings
 /// do not inject.
 pub(crate) fn stand_down() {

@@ -276,7 +276,7 @@ pub(crate) fn arm(hand: Hand) {
 /// grip opened on the weapon the table has in it: one it took by a grab, or one it closed on after
 /// it came into the hand some other way ([`ReleaseWatch::latch_press`]).
 ///
-/// On the first tick after the release stood down ([`cancel_releases`]), a hand still holding a gun
+/// On the first tick after the release stood down ([`cancel_releases`], [`clear`]), a hand still holding a gun
 /// reads its controller's grip as it is ([`physical_grips`]), since `grips` stays open for a grip
 /// held through the stand-down until the hand opens: closed, the hand keeps the gun until the grip
 /// opens, and then lets go of it; open, it puts the gun back on a socket of the body ([`stow`]), or
@@ -338,15 +338,7 @@ pub(crate) unsafe fn release_tick(grips: [bool; 2], action_hands: [bool; 2]) -> 
 /// Cancel grip-release intent while its input route is inactive, without stopping snap motion.
 /// The next [`release_tick`] reads each hand's grip afresh.
 pub(crate) fn cancel_releases() {
-    let mut state = STATE.lock();
-    for watch in &mut state.watches {
-        watch.release.disarm();
-        watch.pending = false;
-        watch.weapon = None;
-        watch.since_s = None;
-        watch.resumed = true;
-        watch.held_through = None;
-    }
+    STATE.lock().watches.iter_mut().for_each(Watch::stand_down);
 }
 
 /// Whether each controller's grip is squeezed on the latest frame, by [`Hand::index`], unmasked by
@@ -471,18 +463,14 @@ pub(crate) unsafe fn tick(dt: f32) {
     }
 }
 
-/// Stop the snaps and the grip watches.
+/// Stop the snaps and the grip watches. The next [`release_tick`] reads each hand's grip afresh,
+/// as after [`cancel_releases`].
 pub(crate) fn clear() {
     let mut state = STATE.lock();
     state.snaps = [None; 2];
     state.transport = ReleaseTransport::new();
     state.rig = None;
-    for watch in &mut state.watches {
-        watch.release.disarm();
-        watch.pending = false;
-        watch.weapon = None;
-        watch.since_s = None;
-    }
+    state.watches.iter_mut().for_each(Watch::stand_down);
 }
 
 /// The most weapons' poses on their sockets kept.
@@ -516,7 +504,7 @@ struct Watch {
     /// for the weapon to reach the table's hand.
     pending: bool,
     since_s: Option<f64>,
-    /// The release stood down since the last tick ([`cancel_releases`]).
+    /// The release stood down since the last tick ([`Self::stand_down`]).
     resumed: bool,
     /// The weapon a grip held through a stand-down keeps, until the controller's grip opens.
     held_through: Option<usize>,
@@ -532,6 +520,17 @@ impl Watch {
             resumed: false,
             held_through: None,
         }
+    }
+
+    /// Stand the release down: forget the intent and the weapon, and read the controller's grip
+    /// afresh on the next tick ([`Self::observe`]).
+    fn stand_down(&mut self) {
+        self.release.disarm();
+        self.pending = false;
+        self.weapon = None;
+        self.since_s = None;
+        self.resumed = true;
+        self.held_through = None;
     }
 
     /// Fold in one input tick ([`release_tick`]): [`Self::observe_release`], after the first tick

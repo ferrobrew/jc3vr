@@ -101,7 +101,7 @@ pub(crate) use begin::begin_tick;
 use begin::{gameplay, weighted_hands};
 pub(crate) use finish::{FinishInputs, finish_tick};
 use re_utilities::hook_library::HookLibrary;
-pub(crate) use state::stand_down;
+pub(crate) use state::{pause, stand_down};
 pub use state::status;
 pub use types::{TickStart, WeaponsStatus};
 

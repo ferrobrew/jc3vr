@@ -431,7 +431,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     // when gameplay resumes.
     let in_menu = detection.mode == Mode::Ui;
     let (start, vehicle) = if in_menu {
-        weapons::reload::cancel_extraction_on_standdown();
+        weapons::pause();
         (
             weapons::TickStart::default(),
             vehicles::TickVolumes::default(),

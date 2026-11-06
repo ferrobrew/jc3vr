@@ -1,7 +1,10 @@
 use super::*;
-use crate::controllers::weapons::reload::{
-    chamber::ActionKind,
-    travel::{ActionTravel, TravelGrip},
+use crate::controllers::weapons::{
+    pause,
+    reload::{
+        chamber::ActionKind,
+        travel::{ActionTravel, TravelGrip},
+    },
 };
 
 fn grips(hand: Hand, gun: bool, off: bool) -> [bool; 2] {
@@ -109,65 +112,64 @@ fn ready_pump_foregrip_at_home_uses_normal_brace_or_drop_release() {
 
 #[test]
 fn a_stand_down_ends_with_the_grip_as_it_is_then() {
-    for hand in Hand::BOTH {
-        // Held through the stand-down: the hold's grip reads open until the hand opens, so the
-        // controller's grip keeps the gun, and its opening lets go of it, once.
-        let mut watch = arm(hand);
-        stand_down(&mut watch);
-        let closed = grips(hand, true, false);
-        assert_eq!(
-            watch.observe(hand, Some(1), masked(closed), [false; 2], None),
-            GripRelease::Kept
-        );
-        assert_eq!(
-            watch.observe(hand, Some(1), masked(closed), [false; 2], None),
-            GripRelease::Kept
-        );
-        assert_eq!(
-            watch.observe(hand, Some(1), masked([false; 2]), [false; 2], None),
-            GripRelease::LetGo
-        );
-        assert_eq!(
-            watch.observe(hand, Some(1), masked([false; 2]), [false; 2], None),
-            GripRelease::Kept
-        );
-        // Held through, and the hold's grip reads the hand again: the ordinary watch takes over.
-        let mut watch = arm(hand);
-        stand_down(&mut watch);
-        assert_eq!(
-            watch.observe(hand, Some(1), masked(closed), [false; 2], None),
-            GripRelease::Kept
-        );
-        assert_eq!(
-            watch.observe(hand, Some(1), unmasked(closed), [false; 2], None),
-            GripRelease::Kept
-        );
-        assert_eq!(
-            watch.observe(hand, Some(1), unmasked([false; 2]), [false; 2], None),
-            GripRelease::LetGo
-        );
-        // Opened during the stand-down: the gun goes back on the body, once.
-        let mut watch = arm(hand);
-        stand_down(&mut watch);
-        assert_eq!(
-            watch.observe(hand, Some(1), masked([false; 2]), [false; 2], None),
-            GripRelease::Stow
-        );
-        assert_eq!(
-            watch.observe(hand, Some(1), masked([false; 2]), [false; 2], None),
-            GripRelease::Kept
-        );
-        // A stand-down with nothing in the hand changes nothing.
-        let mut watch = Watch::new();
-        stand_down(&mut watch);
-        assert_eq!(
-            watch.observe(hand, None, masked([false; 2]), [false; 2], None),
-            GripRelease::Kept
-        );
-        assert_eq!(
-            watch.observe(hand, Some(1), masked([false; 2]), [false; 2], None),
-            GripRelease::Kept
-        );
+    // One test drives every stand-down route, since each goes through the shared release state.
+    for route in StandDown::ALL {
+        for hand in Hand::BOTH {
+            // Held through the stand-down: the hold's grip reads open until the hand opens, so the
+            // controller's grip keeps the gun, and its opening lets go of it, once.
+            let mut watch = route.through(hand, arm(hand));
+            let closed = grips(hand, true, false);
+            assert_eq!(
+                watch.observe(hand, Some(1), masked(closed), [false; 2], None),
+                GripRelease::Kept
+            );
+            assert_eq!(
+                watch.observe(hand, Some(1), masked(closed), [false; 2], None),
+                GripRelease::Kept
+            );
+            assert_eq!(
+                watch.observe(hand, Some(1), masked([false; 2]), [false; 2], None),
+                GripRelease::LetGo
+            );
+            assert_eq!(
+                watch.observe(hand, Some(1), masked([false; 2]), [false; 2], None),
+                GripRelease::Kept
+            );
+            // Held through, and the hold's grip reads the hand again: the ordinary watch takes over.
+            let mut watch = route.through(hand, arm(hand));
+            assert_eq!(
+                watch.observe(hand, Some(1), masked(closed), [false; 2], None),
+                GripRelease::Kept
+            );
+            assert_eq!(
+                watch.observe(hand, Some(1), unmasked(closed), [false; 2], None),
+                GripRelease::Kept
+            );
+            assert_eq!(
+                watch.observe(hand, Some(1), unmasked([false; 2]), [false; 2], None),
+                GripRelease::LetGo
+            );
+            // Opened during the stand-down: the gun goes back on the body, once.
+            let mut watch = route.through(hand, arm(hand));
+            assert_eq!(
+                watch.observe(hand, Some(1), masked([false; 2]), [false; 2], None),
+                GripRelease::Stow
+            );
+            assert_eq!(
+                watch.observe(hand, Some(1), masked([false; 2]), [false; 2], None),
+                GripRelease::Kept
+            );
+            // A stand-down with nothing in the hand changes nothing.
+            let mut watch = route.through(hand, Watch::new());
+            assert_eq!(
+                watch.observe(hand, None, masked([false; 2]), [false; 2], None),
+                GripRelease::Kept
+            );
+            assert_eq!(
+                watch.observe(hand, Some(1), masked([false; 2]), [false; 2], None),
+                GripRelease::Kept
+            );
+        }
     }
 }
 
@@ -208,12 +210,29 @@ fn a_stowed_gun_goes_back_where_it_was_drawn_from_when_free() {
     assert_eq!(stow_socket(Some(left), |_| false), None);
 }
 
-/// What [`cancel_releases`] does to one watch.
-fn stand_down(watch: &mut Watch) {
-    watch.release.disarm();
-    watch.pending = false;
-    watch.weapon = None;
-    watch.since_s = None;
-    watch.resumed = true;
-    watch.held_through = None;
+/// A way the grip release stands down.
+#[derive(Debug, Copy, Clone)]
+enum StandDown {
+    /// The input route stands the release down ([`cancel_releases`]).
+    Cancelled,
+    /// The weapon handling stands down: the debug panel, a focus loss, the controllers lost
+    /// ([`crate::controllers::weapons::stand_down`], which runs [`clear`]).
+    Cleared,
+    /// A game menu pauses the weapon handling ([`pause`]).
+    Paused,
+}
+
+impl StandDown {
+    const ALL: [Self; 3] = [Self::Cancelled, Self::Cleared, Self::Paused];
+
+    /// `watch` as `hand`'s watch after this stand-down.
+    fn through(self, hand: Hand, watch: Watch) -> Watch {
+        STATE.lock().watches[hand.index()] = watch;
+        match self {
+            Self::Cancelled => cancel_releases(),
+            Self::Cleared => clear(),
+            Self::Paused => pause(),
+        }
+        STATE.lock().watches[hand.index()]
+    }
 }
