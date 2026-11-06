@@ -6,9 +6,10 @@
 //! volumes, a grip press with the hand inside a handle's volume takes it, and it is held only while
 //! the grip is: only releasing the grip lets go ([`step`]), however far the hand goes from the
 //! handle, so a pull that runs down and back toward the body keeps it. The volumes are generous,
-//! shrunk only so that the two handles' volumes do not overlap ([`HandleRadii`]); where a handle's
-//! volume overlaps a body volume, the nearer one takes the press, so a press right at a shoulder
-//! socket still draws its weapon. Around each handle a wider reach ([`reach_candidates`]) takes the
+//! and at the usual spacing the two handles' volumes overlap. That is harmless: each handle is a
+//! target for its own side's hand alone, so no hand can take the wrong one. Where a handle's volume
+//! overlaps a body volume, the nearer one takes the press, so a press right at a shoulder socket
+//! still draws its weapon. Around each handle a wider reach ([`reach_candidates`]) takes the
 //! handle for a press that no other volume claims, so that a hand that misses the handle by a
 //! little takes it rather than firing the grapple.
 //!
@@ -78,45 +79,15 @@ pub struct StepInputs {
     pub grabs: [bool; 2],
 }
 
-/// How far from a handle's centre a hand's grip may be for a grip press to take it, metres, where the
-/// handles are far enough apart ([`HandleRadii`]). Within it, the handle and any other target in
-/// reach go to the nearer, so a press right at a shoulder socket takes the socket.
+/// How far from a handle's centre a hand's grip may be for a grip press to take it, metres. Within
+/// it, the handle and any other target in reach go to the nearer, so a press right at a shoulder
+/// socket takes the socket.
 pub const RADIUS_M: f32 = 0.20;
 
 /// How far from a handle's centre a grip press outside every other volume still takes it rather
-/// than firing the grapple, metres, where the handles are far enough apart. At least [`RADIUS_M`].
+/// than firing the grapple, metres. At least [`RADIUS_M`]. It reaches past the other handle's
+/// volume at the usual spacing, which only that handle's own hand can take.
 pub const REACH_M: f32 = 0.43;
-
-/// The smallest a handle's volume shrinks to for handles resting close together, metres.
-pub const MIN_RADIUS_M: f32 = 0.10;
-
-/// The free handles' radii: [`RADIUS_M`] and [`REACH_M`], each shrunk to half the handles' spacing
-/// while both rest where they can be taken, so that neither handle's volume reaches over the
-/// other's, but no smaller than [`MIN_RADIUS_M`].
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct HandleRadii {
-    pub radius: f32,
-    pub reach: f32,
-}
-
-impl HandleRadii {
-    /// The radii for free handles resting at `centres`, `None` for a side whose rest is not known.
-    pub fn of(centres: [Option<Vec3>; 2]) -> Self {
-        let half_spacing = match centres {
-            [Some(left), Some(right)] => left.distance(right) * 0.5,
-            _ => f32::INFINITY,
-        };
-        let cap = if half_spacing.is_nan() {
-            f32::INFINITY
-        } else {
-            half_spacing.max(MIN_RADIUS_M)
-        };
-        Self {
-            radius: RADIUS_M.min(cap),
-            reach: REACH_M.min(cap),
-        }
-    }
-}
 
 /// Pulls shorter than this act on nothing, metres.
 pub const DEADZONE_M: f32 = 0.03;
@@ -128,7 +99,6 @@ pub fn candidates(
     state: &HandleState,
     centres: [Vec3; 2],
     grips: [Option<Vec3>; 2],
-    radii: HandleRadii,
 ) -> [Candidate; 2] {
     Hand::BOTH.map(|hand| {
         let i = hand.index();
@@ -136,7 +106,7 @@ pub fn candidates(
         Candidate {
             volume: GrabVolume::ParachuteHandle(hand),
             centre: held.unwrap_or(centres[i]),
-            radius: radii.radius,
+            radius: RADIUS_M,
             hand: Some(hand),
         }
     })
@@ -147,7 +117,6 @@ pub fn candidates(
 pub fn reach_candidates(
     state: &HandleState,
     centres: [Vec3; 2],
-    radii: HandleRadii,
 ) -> impl Iterator<Item = Candidate> {
     Hand::BOTH
         .into_iter()
@@ -155,7 +124,7 @@ pub fn reach_candidates(
         .map(move |hand| Candidate {
             volume: GrabVolume::ParachuteHandle(hand),
             centre: centres[hand.index()],
-            radius: radii.reach,
+            radius: REACH_M,
             hand: Some(hand),
         })
 }
@@ -291,54 +260,40 @@ mod tests {
         (state, centres)
     }
 
-    fn radii() -> HandleRadii {
-        HandleRadii::of(centres().map(Some))
-    }
-
     #[test]
     fn each_handle_is_for_its_own_hand() {
         let centres = centres();
-        let c = candidates(&CONFIG, &HandleState::new(), centres, [None; 2], radii());
+        let c = candidates(&CONFIG, &HandleState::new(), centres, [None; 2]);
         assert_eq!(
             grab_volume(centres[1], Hand::Right, &c),
             Some(GrabVolume::ParachuteHandle(Hand::Right))
         );
         assert_eq!(grab_volume(centres[1], Hand::Left, &c), None);
         // A hand reaching across the body to the other side's handle takes nothing.
-        let reach: Vec<_> = reach_candidates(&HandleState::new(), centres, radii()).collect();
+        let reach: Vec<_> = reach_candidates(&HandleState::new(), centres).collect();
         assert_eq!(grab_volume(centres[0], Hand::Right, &reach), None);
         assert_eq!(grab_volume(centres[1], Hand::Left, &reach), None);
     }
 
+    /// The handles keep their full size however close together they rest, and their volumes
+    /// overlap at the usual spacing: each is its own hand's alone, so a hand anywhere in the
+    /// overlap takes only its own side's handle.
     #[test]
-    fn the_handles_are_generous_without_overlapping_each_other() {
-        // Far apart, the volumes are their full size, well past a hand's width.
-        let wide = HandleRadii::of([Some(Vec3::X * -1.0), Some(Vec3::X)]);
+    fn the_handles_overlap_harmlessly_at_full_size() {
+        let centres = centres();
+        let c = candidates(&CONFIG, &HandleState::new(), centres, [None; 2]);
+        let reach: Vec<_> = reach_candidates(&HandleState::new(), centres).collect();
+        assert!(c.iter().all(|c| c.radius == RADIUS_M));
+        assert!(reach.iter().all(|c| c.radius == REACH_M));
+        assert!(REACH_M * 2.0 > centres[0].distance(centres[1]));
+        let middle = (centres[0] + centres[1]) * 0.5;
         assert_eq!(
-            wide,
-            HandleRadii {
-                radius: RADIUS_M,
-                reach: REACH_M
-            }
+            grab_volume(middle, Hand::Left, &reach),
+            Some(GrabVolume::ParachuteHandle(Hand::Left))
         );
-        // At the usual spacing, the reach shrinks to meet the other handle's, and no further.
-        let spacing = centres()[0].distance(centres()[1]);
-        let usual = radii();
-        assert_eq!(usual.radius, RADIUS_M);
-        assert!(usual.reach * 2.0 <= spacing + 1e-6, "{usual:?}");
-        assert!((usual.reach * 2.0 - spacing).abs() < 1e-5, "{usual:?}");
-        // Handles resting nearly together keep a usable volume.
-        let close = HandleRadii::of([Some(Vec3::ZERO), Some(Vec3::X * 0.02)]);
-        assert_eq!(close.radius, MIN_RADIUS_M);
-        assert_eq!(close.reach, MIN_RADIUS_M);
-        // With one side's rest unknown, nothing shrinks the other.
-        let one = HandleRadii::of([None, Some(Vec3::X)]);
         assert_eq!(
-            one,
-            HandleRadii {
-                radius: RADIUS_M,
-                reach: REACH_M
-            }
+            grab_volume(middle, Hand::Right, &reach),
+            Some(GrabVolume::ParachuteHandle(Hand::Right))
         );
     }
 
@@ -352,7 +307,7 @@ mod tests {
             hand: Some(Hand::Right),
         };
         assert!(socket.centre.distance(centres[1]) < RADIUS_M);
-        let mut c = candidates(&CONFIG, &HandleState::new(), centres, [None; 2], radii()).to_vec();
+        let mut c = candidates(&CONFIG, &HandleState::new(), centres, [None; 2]).to_vec();
         c.push(socket);
         assert_eq!(
             grab_volume(socket.centre, Hand::Right, &c),
@@ -368,21 +323,20 @@ mod tests {
     fn a_press_near_a_free_handle_reaches_it_but_not_over_the_body() {
         let centres = centres();
         let state = HandleState::new();
-        let radii = radii();
-        let near = centres[1] + Vec3::X * (radii.radius + radii.reach) * 0.5;
-        let placed = candidates(&CONFIG, &state, centres, [None; 2], radii);
+        let near = centres[1] + Vec3::X * (RADIUS_M + REACH_M) * 0.5;
+        let placed = candidates(&CONFIG, &state, centres, [None; 2]);
         assert_eq!(grab_volume(near, Hand::Right, &placed), None);
-        let reach: Vec<_> = reach_candidates(&state, centres, radii).collect();
+        let reach: Vec<_> = reach_candidates(&state, centres).collect();
         assert_eq!(
             grab_volume(near, Hand::Right, &reach),
             Some(GrabVolume::ParachuteHandle(Hand::Right))
         );
         assert_eq!(grab_volume(near, Hand::Left, &reach), None);
-        let far = centres[1] + Vec3::X * radii.reach * 1.1;
+        let far = centres[1] + Vec3::X * REACH_M * 1.1;
         assert_eq!(grab_volume(far, Hand::Right, &reach), None);
         // A held handle has no reach of its own: its hand is in its volume already.
         let (state, _) = both_taken();
-        assert_eq!(reach_candidates(&state, centres, radii).count(), 0);
+        assert_eq!(reach_candidates(&state, centres).count(), 0);
     }
 
     #[test]

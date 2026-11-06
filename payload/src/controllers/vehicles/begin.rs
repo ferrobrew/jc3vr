@@ -214,8 +214,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     }
     if handles_on {
         let centres = native_centres.map(|point| point.unwrap_or(Vec3::ZERO));
-        let radii = parachute::HandleRadii::of(native_centres);
-        let placed = parachute::candidates(&handles_config, &state.handles, centres, grips, radii);
+        let placed = parachute::candidates(&handles_config, &state.handles, centres, grips);
         for (hand, c) in Hand::BOTH.into_iter().zip(placed) {
             if state.handles.holds[hand.index()].is_none() && native_centres[hand.index()].is_none()
             {
@@ -236,7 +235,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         // A hand that misses a free handle by a little still takes it when nothing else is in
         // reach.
         targets.extend(
-            parachute::reach_candidates(&state.handles, centres, radii)
+            parachute::reach_candidates(&state.handles, centres)
                 .filter(|c| {
                     c.hand.is_some_and(|hand| {
                         !holding[hand.index()] && native_centres[hand.index()].is_some()
