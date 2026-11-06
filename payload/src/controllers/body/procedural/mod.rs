@@ -26,6 +26,7 @@
 //!   keep.
 //! - [`targets`]: the fade of the HumanIK targets on the owned bones.
 //! - [`wings`]: Rico's arms in the wingsuit, carried over from the player's.
+//! - [`hips`]: the clip's hips against Rico's facing, which the yaw follow squares.
 //! - [`twist`]: the arms' twist bones.
 //! - [`config`]: the mode and the tuning.
 //!
@@ -38,6 +39,7 @@ pub mod authority;
 pub mod config;
 mod gate_state;
 pub mod head;
+pub mod hips;
 pub mod joints;
 pub mod rig;
 pub mod signals;
@@ -260,6 +262,11 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     } else {
         classify(&read)
     };
+    if case == Case::OnFoot {
+        state.hips.observe(&animated, dt, now);
+    } else {
+        state.hips.reset();
+    }
     let weight = state.blend.step(case, dt, &config);
     let target = state.blend.target();
     state.log_case(case, target, weight);

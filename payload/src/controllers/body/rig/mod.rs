@@ -28,7 +28,10 @@ use parking_lot::Mutex;
 pub use crate::controllers::body::rig::config::RigConfig;
 use crate::{
     config::Config,
-    controllers::body::rig::torso::{CHEST_LIMIT_DEG, TorsoEstimate},
+    controllers::body::{
+        procedural::hips::hip_yaw,
+        rig::torso::{CHEST_LIMIT_DEG, TorsoEstimate},
+    },
     headpose::{self, xr::FollowSettings},
     hooks,
 };
@@ -42,17 +45,22 @@ pub fn estimate() -> Option<TorsoEstimate> {
 /// (the legs'), whose own rules and slew already decide when the body turns, so the follow adds no
 /// deadband. With no fresh rig (off the ground, or before the first frame) the body does not
 /// follow.
+///
+/// The idle clip stands bladed, its hips turned from the root, so with `follow.square_hips` the
+/// root is steered by the clip's followed hip heading the other way ([`hip_yaw`]), and the hips
+/// face the legs' heading instead of the root.
 pub fn follow_settings() -> FollowSettings {
-    let follow = Config::lock_query(|c| c.controllers.body.rig.follow.enabled);
-    if !follow || headpose::source() != headpose::Source::Vr || !hooks::in_gameplay() {
+    let follow = Config::lock_query(|c| c.controllers.body.rig.follow);
+    if !follow.enabled || headpose::source() != headpose::Source::Vr || !hooks::in_gameplay() {
         return FollowSettings::OFF;
     }
     let Some(yaw) = grounded::body_yaw() else {
         return FollowSettings::OFF;
     };
+    let hips = follow.square_hips.then(hip_yaw).flatten().unwrap_or(0.0);
     FollowSettings {
         enabled: true,
-        torso: Some(yaw),
+        torso: Some(wrap(yaw - hips)),
         deadband_deg: 0.0,
     }
 }

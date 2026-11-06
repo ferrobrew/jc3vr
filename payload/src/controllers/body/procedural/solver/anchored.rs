@@ -7,10 +7,12 @@
 //! hips where the clip has them and the clip's shape of the spine, and changes the spine only by
 //! the player's own motion:
 //!
-//! 1. The chest twists toward the player's torso, by the torso's turn against Rico's facing,
-//!    within `chest_turn_limit_deg`, about the clip's own spine and shared out up it as on foot. A
-//!    spine far from upright (lying in a swim) takes less of the twist, none lying flat, since the
-//!    torso's heading is a turn about the vertical.
+//! 1. The chest twists to face the player's torso: the torso's turn against Rico's facing, less the
+//!    heading the clip's own shoulder line already faces, so a clip that stands with its shoulders
+//!    turned (the bladed idle) is squared to the player rather than turned further. The twist is
+//!    held within `chest_turn_limit_deg`, about the clip's own spine and shared out up it as on
+//!    foot. A spine far from upright (lying in a swim) takes less of the twist, none lying flat,
+//!    since the torso's heading is a turn about the vertical.
 //! 2. The spine swings so the neck reaches the point under the player's head, shared out along the
 //!    four spine bones and repeated to converge, never past `lean_limit_deg` from the clip's own
 //!    spine, so a lean in the seat bends the back and the hips stay put.
@@ -28,7 +30,7 @@
 //! The legs are not touched.
 
 use body_rig::{
-    angle::{direction, head_heading},
+    angle::{direction, head_heading, line_yaw, wrap},
     smooth::smoothstep_between,
 };
 use glam::{Quat, Vec3};
@@ -60,10 +62,15 @@ pub fn solve_anchored(input: &SolveInput, config: &ProceduralBodyConfig) -> RigP
             * (animated.position(RigBone::Neck) - animated.position(RigBone::Head));
 
     let limit = config.chest_turn_limit_deg.max(0.0).to_radians();
+    let clip_chest = line_yaw(
+        animated.position(RigBone::LeftShoulder),
+        animated.position(RigBone::RightShoulder),
+    )
+    .unwrap_or(0.0);
     let yaw = input
         .torso_yaw
         .filter(|y| y.is_finite())
-        .unwrap_or(0.0)
+        .map_or(0.0, |torso| wrap(torso - clip_chest))
         .clamp(-limit, limit)
         * share;
     if yaw.abs() > 1e-5 {
@@ -393,6 +400,35 @@ mod tests {
             pose.position(RigBone::LeftShoulder)
                 .abs_diff_eq(lying.animated.position(RigBone::LeftShoulder), 1e-4)
         );
+    }
+
+    #[test]
+    fn a_bladed_clip_chest_is_squared_to_the_torso() {
+        let (mut input, config) = setup();
+        // The clip turns the spine a fifth of a radian to the right from the hips up.
+        let spine = input.animated.position(RigBone::Spine);
+        input
+            .animated
+            .rotate_about(RigBone::Spine, Quat::from_rotation_y(-0.2), spine);
+        input.head = input.animated.position(RigBone::Head);
+        input.eye = input.head + Vec3::new(0.0, 0.08, -0.1);
+        let chest = |pose: &RigPose| {
+            line_yaw(
+                pose.position(RigBone::LeftShoulder),
+                pose.position(RigBone::RightShoulder),
+            )
+            .unwrap()
+        };
+        assert!((chest(&input.animated) + 0.2).abs() < 0.02);
+        for torso in [0.0, 0.3] {
+            input.torso_yaw = Some(torso);
+            let pose = solve_anchored(&input, &config);
+            assert!(
+                (chest(&pose) - torso).abs() < 0.03,
+                "{torso}: {}",
+                chest(&pose)
+            );
+        }
     }
 
     #[test]

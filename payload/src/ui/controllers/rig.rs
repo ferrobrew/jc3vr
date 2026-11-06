@@ -129,6 +129,11 @@ pub(super) fn rig_settings(ui: &mut Ui, body: &mut BodyRemapConfig) {
         "Turn in place with the game's animation",
     )
     .on_hover_text("Let the game's turn-in-place acts play while Rico stands.");
+    ui.checkbox(
+        &mut r.follow.square_hips,
+        "Square the clip's hips to the legs",
+    )
+    .on_hover_text("Steer the root so the animation's hips, not its root, face the legs' heading.");
     ui.checkbox(&mut r.pushback.enabled, "Stop at walls")
         .on_hover_text(
             "Hold the view at a wall the body cannot pass; off, only the fade answers it.",

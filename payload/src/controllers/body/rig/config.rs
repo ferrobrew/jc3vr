@@ -152,6 +152,9 @@ pub struct FollowConfig {
     /// Whether a body turn while Rico stands plays the game's turn-in-place animation rather than
     /// turning the root alone.
     pub turn_animation: bool,
+    /// Whether the follow steers Rico's root so that the clip's hips, rather than the root, face
+    /// the legs' heading: the idle clip stands with its hips turned from the root.
+    pub square_hips: bool,
 }
 
 impl FollowConfig {
@@ -159,6 +162,7 @@ impl FollowConfig {
         Self {
             enabled: true,
             turn_animation: true,
+            square_hips: true,
         }
     }
 }

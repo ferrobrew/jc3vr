@@ -10,6 +10,7 @@ use crate::controllers::{
         ArmContext, INITIAL_STATUS, ProceduralStatus,
         authority::{Case, TorsoBlend, WeightFollower},
         config::ProceduralBodyConfig,
+        hips::HipFollower,
         joints::{LiveRig, RigCache},
         rig::Rig,
         solver::{
@@ -51,6 +52,8 @@ pub(super) struct State {
     pub(super) wing_logged: bool,
     /// This tick's arm context, for the hand IK the gate runs next.
     pub(super) arms: Option<ArmContext>,
+    /// The clip's hips' heading against Rico's facing, followed on foot.
+    pub(super) hips: HipFollower,
     pub(super) status: ProceduralStatus,
 }
 
@@ -127,5 +130,6 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     wing_queue: None,
     wing_logged: false,
     arms: None,
+    hips: HipFollower::new(),
     status: INITIAL_STATUS,
 });
