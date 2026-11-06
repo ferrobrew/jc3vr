@@ -13,6 +13,10 @@
 //! The same probes, reaching [`StickTuning::preview_m`], find the surface the charge is coming
 //! to, which is marked where the charge would stick ([`c4::preview`]).
 //!
+//! A charge taken off the surface it was placed on ([`c4::placed`]) sticks to nothing until the
+//! probes have once found every surface clear of it, so that the surface it came off does not take
+//! it straight back.
+//!
 //! [`StickTuning::contact_m`]: crate::controllers::weapons::c4::tuning::StickTuning::contact_m
 //! [`StickTuning::standoff_m`]: crate::controllers::weapons::c4::tuning::StickTuning::standoff_m
 //! [`StickTuning::push_mps`]: crate::controllers::weapons::c4::tuning::StickTuning::push_mps
@@ -92,6 +96,7 @@ pub(crate) unsafe fn probe(config: &ControllersConfig) {
         .collect();
     let near = nearest_contact(centre, hits.iter().copied(), preview);
     c4::publish_preview(near.map(|contact| (hand, contact)));
+    c4::note_clearance(near.is_none_or(|c| c.distance > reach));
     let Some(contact) = near.filter(|c| c.distance <= reach) else {
         return;
     };

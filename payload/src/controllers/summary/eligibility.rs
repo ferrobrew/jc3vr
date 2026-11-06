@@ -121,7 +121,7 @@ pub(crate) fn resolve(rows: &[Row], snapshot: &Eligibility) -> EligibilityReport
             Some(GrabVolume::MagazinePouch | GrabVolume::MagazineWell) => Some(ModAction::Magazine),
             Some(GrabVolume::WeaponAction) => Some(ModAction::WorkAction),
             Some(GrabVolume::GrenadePouch) => Some(ModAction::Grenade),
-            Some(GrabVolume::C4Pouch) => Some(ModAction::C4),
+            Some(GrabVolume::C4Pouch | GrabVolume::PlacedCharge) => Some(ModAction::C4),
             _ => None,
         };
         if let Some(action) = action {

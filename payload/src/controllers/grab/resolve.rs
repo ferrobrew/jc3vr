@@ -102,12 +102,12 @@ pub fn choose(reaches: impl IntoIterator<Item = Reach>) -> Option<Reach> {
 /// A character the physical hands' reach found.
 const CHARACTER: GrabVolume = GrabVolume::Pickup(PickupKind::Character);
 
-/// Let each hand reach the things lying on the floor among `targets` (a grenade or a magazine,
-/// offered to that hand alone) from its controller's grip, `controllers`, where the hand as it is
-/// drawn, `drawn`, stays well above it: the character's crouch does not go as low as the player's,
-/// so the drawn hand of a player crouched to the floor hangs short of it. Such a target the
-/// controller's grip is within reach of, and the drawn grip is not, is offered at the controller's
-/// distance. Both grips are in the cockpit frame, whose +Y is up.
+/// Let each hand reach the things lying on the floor among `targets` (a grenade, a magazine, or a
+/// placed charge, offered to that hand alone) from its controller's grip, `controllers`, where the
+/// hand as it is drawn, `drawn`, stays well above it: the character's crouch does not go as low as
+/// the player's, so the drawn hand of a player crouched to the floor hangs short of it. Such a
+/// target the controller's grip is within reach of, and the drawn grip is not, is offered at the
+/// controller's distance. Both grips are in the cockpit frame, whose +Y is up.
 pub fn reach_low(
     targets: &mut [GripTarget],
     drawn: [Option<Vec3>; 2],
@@ -116,7 +116,7 @@ pub fn reach_low(
     for target in targets.iter_mut() {
         if !matches!(
             target.volume,
-            GrabVolume::LiveGrenade | GrabVolume::WorldMagazine
+            GrabVolume::LiveGrenade | GrabVolume::WorldMagazine | GrabVolume::PlacedCharge
         ) {
             continue;
         }
@@ -275,6 +275,7 @@ mod vehicle_grip_tests {
             on_floor(GrabVolume::WorldMagazine, Hand::Left),
             on_floor(GrabVolume::LiveGrenade, Hand::Right),
             on_floor(GrabVolume::Climb, Hand::Left),
+            on_floor(GrabVolume::PlacedCharge, Hand::Left),
         ];
         reach_low(&mut targets, [Some(drawn), None], [Some(controller), None]);
         let left = resolve(&targets, [Some(drawn), None]);
@@ -284,6 +285,7 @@ mod vehicle_grip_tests {
         );
         assert!((left[0].chosen.unwrap().distance - 0.03).abs() < 1e-4);
         assert!(matches!(targets[1].reach, TargetReach::Measured { .. }));
+        assert!(matches!(targets[4].reach, TargetReach::Measured { .. }));
         // The other hand's target and a target that is not a floor pickup keep their spheres.
         assert!(matches!(targets[2].reach, TargetReach::Sphere { .. }));
         assert!(matches!(targets[3].reach, TargetReach::Sphere { .. }));

@@ -90,6 +90,8 @@ pub enum Refusal {
     /// The game's own planting holds the weapon: it is in its planting mode or holds a primed
     /// charge of its own.
     Busy,
+    /// The placed charge a hand reached for is no longer placed: it went off or was removed.
+    NotPlaced,
 }
 
 impl Refusal {
@@ -98,6 +100,7 @@ impl Refusal {
             Refusal::NoRoom => "as many charges are placed as may be",
             Refusal::NotAllowed => "planting is not allowed now",
             Refusal::Busy => "the game's own planting is under way",
+            Refusal::NotPlaced => "the placed charge is gone",
         }
     }
 }

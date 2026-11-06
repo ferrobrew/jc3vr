@@ -55,7 +55,10 @@ pub(super) fn explosives_readout(ui: &mut Ui, readout: &ExplosivesReadout) {
         yes_no(c.may_detonate),
         yes_no(c.planting_mode)
     ));
-    ui.label(format!("  put back into the pouch {}", c.returned));
+    ui.label(format!(
+        "  put back into the pouch {} · taken back from where they were placed {}",
+        c.returned, c.taken
+    ));
     if let Some(v) = c.last_release {
         ui.label(format!(
             "  last release {} ({:.1} m/s)",

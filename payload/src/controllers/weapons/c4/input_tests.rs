@@ -19,6 +19,7 @@ fn state() -> State {
         stick: None,
         preview: None,
         wheel: None,
+        placed: PlacedState::NEW,
     }
 }
 

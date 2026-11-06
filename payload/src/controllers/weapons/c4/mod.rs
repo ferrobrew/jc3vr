@@ -32,6 +32,9 @@
 //! not yet among the placed ones, so it holds no place against the limit, the detonator does not
 //! count it, and once removed nothing can detonate it.
 //!
+//! A charge already placed is taken back by closing a free hand on it ([`placed`]): it is swapped
+//! for a primed charge in that hand, which is then held as one from the pouch is.
+//!
 //! Detonation goes through the game's own detonate input
 //! ([`WeaponInput::E_INPUT_DETONATE_EXPLOSIVES`]): a request ([`request_detonation`], from the
 //! wrist button in [`wrist`]) raises it for the weapon's serial update, which detonates every
@@ -57,6 +60,7 @@
 //! [`Inventory::GetAnimationAllowsPlantingExplosives`]: jc3gi::character::inventory::Inventory::GetAnimationAllowsPlantingExplosives
 //! [`Character::HolsterWeapon`]: jc3gi::character::character::Character::HolsterWeapon
 
+pub mod placed;
 pub mod press;
 pub mod stage;
 pub mod stick;
@@ -93,6 +97,7 @@ use crate::{
         motion, physical_hands, scheme,
         weapons::{
             c4::{
+                placed::{PlacedState, TakeStep},
                 stage::{InputEvent, Outcome, Refusal, Stage, WeaponAction, WeaponView},
                 stick::{self as stick_by_hand, StickAt},
                 tuning::{C4, C4Tuning},
@@ -170,6 +175,8 @@ pub struct C4Status {
     pub stuck_on_objects: u64,
     /// Charges pressed back onto the pouch.
     pub returned: u64,
+    /// Placed charges taken back into a hand.
+    pub taken: u64,
     /// The most recent throw steps, newest last.
     pub events: Vec<C4Event>,
     /// Whether a detonation request waits for the weapon.
@@ -308,6 +315,14 @@ pub(crate) fn preview() -> Option<(Hand, stick_by_hand::Contact)> {
     STATE.lock().preview
 }
 
+/// Note whether the held charge is clear of every surface: a charge taken off a surface sticks to
+/// none until it has been.
+pub(crate) fn note_clearance(clear: bool) {
+    if clear {
+        STATE.lock().placed.from_surface = false;
+    }
+}
+
 /// Note the surface the held charge is coming to.
 pub(crate) fn publish_preview(preview: Option<(Hand, stick_by_hand::Contact)>) {
     STATE.lock().preview = preview;
@@ -315,7 +330,8 @@ pub(crate) fn publish_preview(preview: Option<(Hand, stick_by_hand::Contact)>) {
 
 /// Press the charge `hand` holds onto a surface: the next weapon update places it at `at` and
 /// pushes it on, as a release that throws it would. Nothing happens if the hand no longer holds a
-/// charge it has not let go of.
+/// charge it has not let go of, or holds one taken off a surface that has not yet been clear of
+/// every surface.
 pub(crate) fn press(hand: Hand, at: StickAt) {
     let mut state = STATE.lock();
     if state.stage
@@ -323,6 +339,7 @@ pub(crate) fn press(hand: Hand, at: StickAt) {
             hand,
             release: None,
         })
+        || state.placed.from_surface
     {
         return;
     }
@@ -357,6 +374,8 @@ pub(super) struct TickInputs {
     pub acting: bool,
     /// The hand that grabbed the C4 pouch this tick.
     pub pouch_grab: Option<Hand>,
+    /// The hand that grabbed a placed charge this tick.
+    pub placed_grab: Option<Hand>,
     /// The hands whose fingers opened this tick, indexed by [`Hand::index`].
     pub opened: [bool; 2],
     /// The hands holding nothing, by [`Hand::index`], for a charge from the weapon wheel.
@@ -374,6 +393,16 @@ pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Tuning) {
     let mut state = STATE.lock();
     if let Some(hand) = inputs.pouch_grab {
         state.stage = stage::on_input(state.stage, InputEvent::Grab(hand));
+    }
+    if let Some(hand) = inputs.placed_grab
+        && !state.grab_placed(hand)
+    {
+        tracing::info!(
+            target: "controllers",
+            hand = hand.label(),
+            stage = state.stage.label(),
+            "c4: the placed charge is not taken: the throw is busy, or the charge was not offered"
+        );
     }
     let mut returned = None;
     for (hand, pressed) in Hand::BOTH.into_iter().zip(pouch_return::take_charges()) {
@@ -544,6 +573,8 @@ struct State {
     preview: Option<(Hand, stick_by_hand::Contact)>,
     /// The hand a charge from the weapon wheel is for, and when the planting mode was left for it.
     wheel: Option<WheelRequest>,
+    /// The placed charges, and a take of one into a hand.
+    placed: PlacedState,
 }
 
 #[derive(Clone, Copy)]
@@ -624,6 +655,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         stuck: 0,
         stuck_on_objects: 0,
         returned: 0,
+        taken: 0,
         events: Vec::new(),
         detonation_pending: false,
         detonation_in_flight: false,
@@ -639,6 +671,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     stick: None,
     preview: None,
     wheel: None,
+    placed: PlacedState::NEW,
 });
 
 /// The held charge's in-hand model in `hand`'s grip frame.
@@ -697,14 +730,21 @@ fn update_from_user_serial(
     // references end before the original update runs.
     let (reading, pulses, raised, previous) = unsafe {
         let (w, user) = (&mut *weapon, &mut *user);
-        let reading = read_weapon(w, user);
         let mut state = STATE.lock();
+        // A placed charge taken back leaves the live list before the weapon is read, so that the
+        // charge primed in its place has the room it left.
+        let take = placed::before_update(&mut state, w, user);
+        let reading = read_weapon(w, user);
         state.status.weapon_seen = true;
         state.status.charges = Some((reading.live, reading.max));
         state.status.may_plant = reading.may_plant;
         state.status.may_detonate = reading.may_detonate;
         state.status.planting_mode = reading.view.planting;
         let mut pulses = Vec::new();
+        if let TakeStep::Refused(hand, refusal) = take {
+            report(&mut state, Some(hand), Outcome::Refused(refusal));
+            pulses.extend(outcome_pulse(Some(hand), Outcome::Refused(refusal)));
+        }
         if acting || state.stage != Stage::Idle {
             let hand = state.stage.hand();
             let (next, action, outcome) = stage::before_update(state.stage, reading.view);
@@ -738,6 +778,7 @@ fn update_from_user_serial(
                 if outcome == Outcome::Primed {
                     state.held_since = Some(Instant::now());
                     state.held_since_s = motion::latest_time();
+                    state.placed.from_surface = take == TakeStep::Took;
                 }
                 if let (Outcome::Thrown(_), Some(at)) = (outcome, stick) {
                     state.status.stuck += 1;
@@ -774,6 +815,8 @@ fn update_from_user_serial(
         (*weapon).m_AlreadyDetonatedOnThisInput
     };
     let mut state = STATE.lock();
+    // SAFETY: as above, after the original update.
+    state.placed.charges = unsafe { placed::read(&*weapon) };
     let started = detonating && !state.was_detonating;
     state.was_detonating = detonating;
     if started || state.detonation.is_some() {

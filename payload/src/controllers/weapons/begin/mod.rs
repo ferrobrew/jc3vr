@@ -378,6 +378,17 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         };
         targets.extend(grenades.iter().map(|c| place.world(c)));
     }
+    if config.weapons.c4_throw {
+        // SAFETY: the game stage runs on the game thread before the world update.
+        let placed = unsafe {
+            c4::placed::begin_tick(&c4::placed::BeginInputs {
+                active: &active,
+                free: Hand::BOTH.map(|h| free[h.index()] && !grenade::holds(h)),
+                acting: gameplay,
+            })
+        };
+        targets.extend(placed.iter().map(|c| place.world(c)));
+    }
     // SAFETY: the game stage runs on the game thread before the world update.
     let taken = unsafe {
         hold::take::begin_tick(&hold::take::TakeInputs {

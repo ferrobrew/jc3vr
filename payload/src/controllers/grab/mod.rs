@@ -75,6 +75,9 @@ pub enum GrabVolume {
     /// The surface a held charge is coming to, where it sticks when pressed on: marked, never taken
     /// by a squeeze (see [`crate::controllers::weapons::c4::stick`]).
     ChargeSurface,
+    /// A charge the player placed, within reach of a free hand, to take back into the hand (see
+    /// [`crate::controllers::weapons::c4::placed`]).
+    PlacedCharge,
     /// A physical vehicle control of the driver's seat (see
     /// [`crate::controllers::vehicles::physical`]).
     VehicleControl(ControlKind),
@@ -140,6 +143,7 @@ impl GrabVolume {
             GrabVolume::MagazineWell => "magazine well",
             GrabVolume::C4Pouch => "C4 pouch",
             GrabVolume::ChargeSurface => "surface for the charge",
+            GrabVolume::PlacedCharge => "placed charge",
             GrabVolume::VehicleControl(kind) => kind.label(),
             GrabVolume::CockpitButton(button) => button.label(),
             GrabVolume::ParachuteHandle(Hand::Left) => "left parachute handle",
@@ -184,9 +188,10 @@ impl GrabVolume {
             | GrabVolume::Snatch(RemoteKind::Door)
             | GrabVolume::Pickup(PickupKind::Door) => Category::Vehicle,
             GrabVolume::Pickup(PickupKind::Character) => Category::Character,
-            GrabVolume::GrenadeLocker | GrabVolume::LiveGrenade | GrabVolume::ChargeSurface => {
-                Category::Explosive
-            }
+            GrabVolume::GrenadeLocker
+            | GrabVolume::LiveGrenade
+            | GrabVolume::ChargeSurface
+            | GrabVolume::PlacedCharge => Category::Explosive,
             GrabVolume::Climb => Category::Climb,
             GrabVolume::Pickup(PickupKind::Prop | PickupKind::Hinged)
             | GrabVolume::Snatch(RemoteKind::Object)
@@ -207,6 +212,7 @@ impl GrabVolume {
             | GrabVolume::MagazineWell
             | GrabVolume::C4Pouch
             | GrabVolume::ChargeSurface
+            | GrabVolume::PlacedCharge
             | GrabVolume::WorldWeapon
             | GrabVolume::LiveGrenade
             | GrabVolume::WorldMagazine

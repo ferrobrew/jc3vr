@@ -210,7 +210,7 @@ pub(crate) fn finish_tick(
             | GrabVolume::WorldMagazine
             | GrabVolume::InsertedMagazine => GrabOutcome::Magazine,
             GrabVolume::WeaponAction => GrabOutcome::Action,
-            GrabVolume::C4Pouch => GrabOutcome::C4,
+            GrabVolume::C4Pouch | GrabVolume::PlacedCharge => GrabOutcome::C4,
             GrabVolume::WorldWeapon => {
                 let Some(active) = active.as_ref() else {
                     continue;
@@ -315,6 +315,9 @@ pub(crate) fn finish_tick(
             pouch_grab: Hand::BOTH
                 .into_iter()
                 .find(|h| grabs[h.index()] == Some(GrabVolume::C4Pouch)),
+            placed_grab: Hand::BOTH
+                .into_iter()
+                .find(|h| grabs[h.index()] == Some(GrabVolume::PlacedCharge)),
             opened,
             free: c4::wheel::WheelHands::available(free, unavailable, config.acting_hand()).free,
             dominant: config.acting_hand(),
