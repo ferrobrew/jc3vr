@@ -126,6 +126,7 @@ pub(crate) fn run_frames(
                 head: head.orientation,
                 hands: hands(frame),
                 pelvis: start,
+                slip: Vec2::ZERO,
                 moving,
                 sample_height: true,
                 dt,

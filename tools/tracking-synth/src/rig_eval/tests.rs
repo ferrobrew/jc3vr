@@ -66,6 +66,7 @@ fn rig_frames() -> Vec<RigFrame> {
                 head: Quat::from_rotation_y((t * 0.6).min(2.0)),
                 hands: [Some(Vec3::new(-0.3, 1.0, -0.3)), None],
                 pelvis: Vec2::new(0.0, -(t * 0.3).min(0.4)),
+                slip: Vec2::ZERO,
                 moving: i > 200,
                 sample_height: true,
                 dt: DT,

@@ -4,7 +4,7 @@
 use glam::{Quat, Vec2, Vec3};
 
 use crate::{
-    angle::{head_heading, head_pitch},
+    angle::{forward, head_heading, head_pitch},
     body::{PlayerBody, neck_pivot},
     height::StandingHeight,
     pelvis::{PelvisInput, PelvisSolve, PelvisTuning, solve},
@@ -54,6 +54,12 @@ pub struct RigFrame {
     pub hands: [Option<Vec3>; 2],
     /// The floor point under Rico's pelvis, `(x, z)`.
     pub pelvis: Vec2,
+    /// How far, `(x, z)`, the view's eye rig has carried Rico's pelvis from under the eyes it is
+    /// read from, already in [`pelvis`](Self::pelvis): the view hangs the eyes from Rico's head in
+    /// its own frame rather than the body's, so as the body turns under the view, Rico slides under
+    /// the camera. The idle drift takes out each change of it whole, wherever it points, where it
+    /// would leave a forward offset as a lean.
+    pub slip: Vec2,
     /// Whether something else moves the body (the stick), which narrows the yaw's deadzone.
     pub moving: bool,
     /// Whether the frame may sample the standing height: on foot, in the standing posture.
@@ -96,6 +102,10 @@ pub struct GroundedRig {
     /// The neck's last position and its smoothed horizontal speed, metres per second.
     neck: Option<Vec3>,
     head_speed_mps: f32,
+    /// The slip last seen, or `None` when the next frame's is the baseline.
+    slip_seen: Option<Vec2>,
+    /// The part of the neck's offset the slip's changes put there and no drift has taken out yet.
+    slip_gap: Vec2,
 }
 
 impl GroundedRig {
@@ -107,6 +117,8 @@ impl GroundedRig {
             yaw: YawFollow::new(),
             neck: None,
             head_speed_mps: 0.0,
+            slip_seen: Some(Vec2::ZERO),
+            slip_gap: Vec2::ZERO,
         }
     }
 
@@ -144,18 +156,24 @@ impl GroundedRig {
     }
 
     /// Forget the body's heading and any step, as after a teleport or a long gap: the next frame
-    /// starts facing the head.
+    /// starts facing the head, and the whole of its slip is still to be taken out, since the
+    /// caller stood the eyes over the root without it.
     pub fn forget(&mut self) {
         self.step.stand();
         self.yaw = YawFollow::new();
         self.neck = None;
         self.head_speed_mps = 0.0;
+        self.slip_seen = Some(Vec2::ZERO);
+        self.slip_gap = Vec2::ZERO;
     }
 
     /// Turn the room frame by `turn` radians about +Y (new frame from old), leaving the body where
-    /// it faces in the world.
+    /// it faces in the world. A turn of the frame re-bases the view's turn under the body, which
+    /// changes the slip with the camera, so the next frame's slip is the baseline.
     pub fn rotate(&mut self, turn: f32) {
         self.yaw.rotate(turn);
+        self.slip_seen = None;
+        self.slip_gap = Vec2::ZERO;
     }
 
     /// Recenter on the head: the body faces the head's heading, the standing height starts again
@@ -164,6 +182,8 @@ impl GroundedRig {
         let neck = neck_pivot(eyes, head);
         self.height.restart_at(neck.y);
         self.step.stand();
+        self.slip_seen = None;
+        self.slip_gap = Vec2::ZERO;
         match head_heading(head) {
             Some(yaw) => self.yaw.snap(yaw),
             None => self.yaw = YawFollow::new(),
@@ -188,6 +208,27 @@ impl GroundedRig {
         self.neck = Some(neck);
     }
 
+    /// The idle drift of the neck's offset `offset` from the pelvis, for a body facing `body_yaw`,
+    /// with the slip `slip`: the side and back of the offset the player made, as the solve gives
+    /// it, and the whole of what the slip's changes added and nothing has taken out yet. That part
+    /// shrinks as the offset along it does, whoever closes it.
+    fn drift_with_slip(&mut self, slip: Vec2, offset: Vec2, body_yaw: f32) -> Vec2 {
+        let slip = if slip.is_finite() { slip } else { Vec2::ZERO };
+        let seen = self.slip_seen.unwrap_or(slip);
+        self.slip_seen = Some(slip);
+        // The pelvis moved by the change, so the offset to the neck changed by the opposite.
+        self.slip_gap -= slip - seen;
+        self.slip_gap = match self.slip_gap.try_normalize() {
+            Some(along) if offset.is_finite() => {
+                along * offset.dot(along).clamp(0.0, self.slip_gap.length())
+            }
+            _ => Vec2::ZERO,
+        };
+        let own = offset - self.slip_gap;
+        let body_forward = forward(body_yaw);
+        own - body_forward * own.dot(body_forward).max(0.0) + self.slip_gap
+    }
+
     /// Advance one frame.
     pub fn update(&mut self, frame: &RigFrame, tuning: &RigTuning) -> RigOutput {
         let neck = neck_pivot(frame.eyes, frame.head);
@@ -198,7 +239,7 @@ impl GroundedRig {
             .observe(neck.y, frame.sample_height && level, frame.dt);
         let head_yaw = head_heading(frame.head);
         let body_yaw = self.yaw.yaw().or(head_yaw).unwrap_or(0.0);
-        let solve = solve(
+        let mut solve = solve(
             &PelvisInput {
                 eyes: frame.eyes,
                 head: frame.head,
@@ -210,6 +251,7 @@ impl GroundedRig {
             },
             &tuning.pelvis,
         );
+        solve.drift = self.drift_with_slip(frame.slip, solve.offset, body_yaw);
         let phase = self.step.update(
             &StepInput {
                 demand_m: solve.demand_m(),
@@ -270,6 +312,7 @@ mod tests {
             head: Quat::IDENTITY,
             hands: [None, None],
             pelvis,
+            slip: Vec2::ZERO,
             moving: false,
             sample_height: true,
             dt: DT,
@@ -337,6 +380,67 @@ mod tests {
         );
         assert_eq!(out.steps, 0);
         assert!(out.solve.offset.length() < 0.03);
+    }
+
+    /// Run the rig with a pelvis that follows the drive perfectly, standing with the neck at
+    /// `neck`, while the view's eye rig carries the drawn pelvis `slip(t)` from the driven one.
+    /// Returns the drawn pelvis and the last output.
+    fn stand_with_slip(
+        rig: &mut GroundedRig,
+        seconds: f32,
+        neck: Vec3,
+        slip: impl Fn(f32) -> Vec2,
+    ) -> (Vec2, RigOutput) {
+        let tuning = RigTuning::new();
+        let mut driven = Vec2::new(neck.x, neck.z);
+        let mut out = RigOutput::default();
+        for i in 0..(seconds / DT) as usize {
+            let slip = slip(i as f32 * DT);
+            let mut input = frame(neck, driven + slip);
+            input.slip = slip;
+            out = rig.update(&input, &tuning);
+            driven += crate::step::drive_velocity(out.phase, out.gap, DT, &tuning.step) * DT;
+        }
+        (driven + slip(seconds), out)
+    }
+
+    #[test]
+    fn a_slip_ahead_of_the_body_drifts_out_whole() {
+        let mut rig = GroundedRig::new(body());
+        let neck = Vec3::new(0.0, body().standing_neck(), 0.0);
+        // The body faces -Z; the slip carries the pelvis 10 cm back over a second, which leaves the
+        // neck ahead of it, as a lean would.
+        let (pelvis, out) =
+            stand_with_slip(&mut rig, 6.0, neck, |t| Vec2::new(0.0, 0.1 * t.min(1.0)));
+        assert!(pelvis.length() < 0.03, "{pelvis:?}");
+        assert_eq!(out.steps, 0);
+    }
+
+    #[test]
+    fn a_lean_under_a_slip_keeps_the_lean() {
+        let mut rig = GroundedRig::new(body());
+        let lean = Vec3::new(0.0, body().standing_neck() - 0.01, -0.1);
+        let (pelvis, _) = stand_with_slip(&mut rig, 3.0, lean, |_| Vec2::ZERO);
+        let leaning = Vec2::new(lean.x, lean.z) - pelvis;
+        let mut rig = GroundedRig::new(body());
+        stand_with_slip(&mut rig, 3.0, lean, |_| Vec2::ZERO);
+        let (pelvis, _) = stand_with_slip(&mut rig, 6.0, lean, |t| {
+            Vec2::new(0.06 * t.min(1.0), 0.1 * t.min(1.0))
+        });
+        // Only the slip is taken out: the lean the player holds stays.
+        let left = Vec2::new(lean.x, lean.z) - pelvis;
+        assert!(
+            (left - leaning).length() < 0.03,
+            "{left:?} against {leaning:?}"
+        );
+    }
+
+    #[test]
+    fn a_slip_present_from_the_start_drifts_out() {
+        let mut rig = GroundedRig::new(body());
+        let neck = Vec3::new(0.0, body().standing_neck(), 0.0);
+        let (pelvis, _) = stand_with_slip(&mut rig, 6.0, neck, |_| Vec2::new(-0.08, 0.08));
+        assert!(pelvis.length() < 0.03, "{pelvis:?}");
     }
 
     #[test]

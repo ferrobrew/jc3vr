@@ -5,7 +5,9 @@
 //! own metres. The frame half hands it the eyes and the hands in that frame, and the floor point
 //! under Rico's pelvis, which is the root's cockpit point (the cockpit shift: the view stands the
 //! eyes of a neutral head over the root) carried back from the eyes to the neck by the body's
-//! heading. It publishes:
+//! heading, and over by the slip: the camera hangs the eyes from Rico's head in the view's frame,
+//! so as the body turns under the view Rico stands off the camera, and the rig drifts him back
+//! under it. It publishes:
 //!
 //! - the step phase and the gap to the floor point under the neck, which the root's simulation
 //!   half closes through the game's movement;
@@ -50,6 +52,10 @@ pub struct GroundedInput {
     pub hands: [Option<Vec3>; 2],
     /// The root's cockpit point, `(x, z)`: the horizontal part of the cockpit shift.
     pub root: Vec2,
+    /// How far the view's eye rig carries Rico from under the eyes the root's cockpit point stands
+    /// for, `(x, z)`, room metres: the camera hangs the eyes from Rico's head in the view's frame,
+    /// not the body's, so a body turned under the view stands off the camera by the difference.
+    pub slip: Vec2,
     /// The cockpit height of the room's floor: a room height is the cockpit height less this.
     pub floor: f32,
     /// Whether the stick moves the body.
@@ -101,7 +107,7 @@ pub fn frame(input: &GroundedInput) -> Option<GroundedFrame> {
         state.snaps += 1;
         let yaw = state.rig.body_yaw().unwrap_or(0.0);
         let neck = body_rig::body::neck_pivot(input.eyes, input.head);
-        let upright = Vec2::new(neck.x, neck.z) - arm(yaw);
+        let upright = Vec2::new(neck.x, neck.z) - arm(yaw) - input.slip;
         Some(upright)
     } else {
         None
@@ -112,12 +118,13 @@ pub fn frame(input: &GroundedInput) -> Option<GroundedFrame> {
         .or_else(|| head_heading(input.head))
         .unwrap_or(0.0);
     let root = snap_to.unwrap_or(input.root);
-    let pelvis = root + arm(yaw);
+    let pelvis = root + input.slip + arm(yaw);
     let rig_frame = RigFrame {
         eyes: input.eyes,
         head: input.head,
         hands: input.hands,
         pelvis,
+        slip: input.slip,
         moving: input.moving,
         sample_height: input.sample_height,
         dt: input.dt,

@@ -159,6 +159,12 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
         body: inputs.view,
         world_scale: inputs.world_scale,
     };
+    // Read before the frame's lock: the follow's turn takes the headpose's.
+    let slip = eye_rig_slip(
+        headpose::eye_arm(),
+        headpose::xr::follow_turn(true),
+        inputs.world_scale,
+    );
     let mut frame = FRAME.lock();
     if epoch != frame.seen_epoch {
         frame.seen_epoch = epoch;
@@ -179,6 +185,7 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
         head: inputs.head,
         hands: inputs.hands,
         root: Vec2::new(shift.x, shift.z),
+        slip,
         floor: inputs.floor,
         moving: inputs.moving,
         sample_height: inputs.posture == EffectivePosture::Standing,
@@ -256,6 +263,24 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
         cur,
         source: movement.compose(basis, &state.shift),
     }
+}
+
+/// How far the camera's eye rig carries Rico from under the eyes, cockpit `(x, z)` in room metres,
+/// for the body-frame neck-to-eyes arm `arm` (world metres), the turn `view_turn` from the body's
+/// frame to the view's ([`headpose::xr::follow_turn`]), and the world scale `world_scale`.
+///
+/// The tracked neck model holds the arm in the view's frame (`hooks::camera`), and the cockpit
+/// frame is the view's, so the eyes the cockpit stands over the root sit the arm as the view turns
+/// it from Rico's head. Rico's own eyes sit the arm as his body turns it, which is the view's arm
+/// turned by the body's heading under the view. The difference is where Rico stands from where the
+/// root's cockpit point says.
+fn eye_rig_slip(arm: Vec3, view_turn: Quat, world_scale: f32) -> Vec2 {
+    if !arm.is_finite() || !view_turn.is_finite() || !world_scale.is_finite() || world_scale <= 0.0
+    {
+        return Vec2::ZERO;
+    }
+    let slip = (view_turn.inverse() * arm - arm) / world_scale;
+    Vec2::new(slip.x, slip.z)
 }
 
 /// Re-base the cockpit shift after the recenter baseline was re-based, for a recenter or a follow

@@ -62,6 +62,7 @@ pub(crate) fn run_recorded(
                 head: input.head,
                 hands: input.hands,
                 pelvis: input.pelvis,
+                slip: Vec2::ZERO,
                 moving: input.moving,
                 sample_height: input.sample_height,
                 dt: input.dt_s,
