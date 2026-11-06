@@ -156,14 +156,21 @@ pub(crate) unsafe fn step(world: *mut hknpWorld) {
     if SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
         state.request_shutdown();
     }
-    if let Err(reason) = unsafe { state.discover(&*world) } {
+    let bodies = match unsafe { native::inventory(&*world) } {
+        Ok(bodies) => bodies,
+        Err(reason) => {
+            state.clearance = reason;
+            return;
+        }
+    };
+    if let Err(reason) = unsafe { state.discover(&*world, &bodies) } {
         state.clearance = reason;
         return;
     }
     let result = if state.shutdown_requested {
-        unsafe { state.restore_for_shutdown(&mut *world) }
+        unsafe { state.restore_for_shutdown(&mut *world, &bodies) }
     } else {
-        unsafe { state.synchronize(&mut *world) }
+        unsafe { state.synchronize(&mut *world, &bodies) }
     };
     if let Err(reason) = result {
         state.clearance = reason;
