@@ -1,4 +1,33 @@
 #![cfg_attr(any(), rustfmt::skip)]
+#[derive(Copy, Clone)]
+#[repr(C, align(8))]
+/// One placed charge on a [`PlantedExplosiveWeapon`](crate::equipment::weapon::PlantedExplosiveWeapon)'s live list
+/// ([`m_ActiveExplosives`](crate::equipment::weapon::PlantedExplosiveWeapon::m_ActiveExplosives)): the charge and the index of
+/// the weapon light component that lights it, or -1 for none.
+pub struct ActiveExplosiveEntry {
+    /// The placed charge, at the start of the object (not its `CGameObject` subobject).
+    pub m_Explosive: *mut crate::equipment::explosive::PlantedExplosive,
+    /// The index of the charge's light among the weapon's light components, or -1.
+    pub m_LightIndex: i32,
+    _field_c: [u8; 4],
+}
+fn _ActiveExplosiveEntry_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x10], ActiveExplosiveEntry>([0u8; 0x10]);
+    }
+    unreachable!()
+}
+impl ActiveExplosiveEntry {}
+impl std::convert::AsRef<ActiveExplosiveEntry> for ActiveExplosiveEntry {
+    fn as_ref(&self) -> &ActiveExplosiveEntry {
+        self
+    }
+}
+impl std::convert::AsMut<ActiveExplosiveEntry> for ActiveExplosiveEntry {
+    fn as_mut(&mut self) -> &mut ActiveExplosiveEntry {
+        self
+    }
+}
 #[repr(i32)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
 /// A kind of ammunition (`CAmmunition::EAmmunitionType`). A weapon's kind is
@@ -956,7 +985,16 @@ pub struct PlantedExplosiveWeapon {
     >,
     /// The compiled-name hash of [`m_InactiveModelInstance`](crate::equipment::weapon::PlantedExplosiveWeapon::m_InactiveModelInstance).
     pub m_InactiveModelHash: u32,
-    _field_714: [u8; 36],
+    _field_714: [u8; 4],
+    /// The placed charges, in the order they were made live: the live list that
+    /// [`Fire_Projectile`](crate::equipment::weapon::PlantedExplosiveWeapon::Fire_Projectile) appends to (up to
+    /// [`MaxActiveExplosives`](crate::equipment::weapon::PlantedExplosiveWeapon::MaxActiveExplosives)),
+    /// [`NumActiveExplosives`](crate::equipment::weapon::PlantedExplosiveWeapon::NumActiveExplosives) counts, the detonation walks, and
+    /// [`RemoveFromActiveList`](crate::equipment::weapon::PlantedExplosiveWeapon::RemoveFromActiveList) and
+    /// [`RemoveAllExplosives`](crate::equipment::weapon::PlantedExplosiveWeapon::RemoveAllExplosives) erase from.
+    pub m_ActiveExplosives: crate::types::std_vector::Vector<
+        crate::equipment::weapon::ActiveExplosiveEntry,
+    >,
     /// The primed charge: the live [`PlantedExplosive`](crate::equipment::explosive::PlantedExplosive)
     /// spawned by [`PrimeExplosive`](crate::equipment::weapon::PlantedExplosiveWeapon::PrimeExplosive) and not yet placed, or null. `px` is
     /// the charge's `CGameObject` subobject
@@ -1118,6 +1156,26 @@ impl PlantedExplosiveWeapon {
                 Self::RemoveAllExplosives_ADDRESS,
             );
             f(self as *mut Self as _)
+        }
+    }
+    pub const RemoveFromActiveList_ADDRESS: usize = 0x140990590;
+    /// Takes one placed charge off the live list without detonating or removing it: unregisters
+    /// the HUD's charge hint for `explosive` (when it is not null), and when the charge is on
+    /// [`m_ActiveExplosives`](crate::equipment::weapon::PlantedExplosiveWeapon::m_ActiveExplosives), turns off its light component, erases its
+    /// entry, and refreshes the HUD's charge count. A charge not on the list changes nothing else.
+    /// The charge's destructor calls it unless the charge was removed with
+    /// [`Explosive::RemoveSelf`](crate::equipment::explosive::Explosive::RemoveSelf) first, and so does a
+    /// charge's detonation.
+    pub unsafe fn RemoveFromActiveList(
+        &mut self,
+        explosive: *mut crate::equipment::explosive::PlantedExplosive,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                explosive: *mut crate::equipment::explosive::PlantedExplosive,
+            ) = ::std::mem::transmute(Self::RemoveFromActiveList_ADDRESS);
+            f(self as *mut Self as _, explosive)
         }
     }
     pub const UpdateAttachmentTransforms_ADDRESS: usize = 0x14099FF80;
