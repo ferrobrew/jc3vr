@@ -144,14 +144,22 @@ pub(crate) unsafe fn draw(hand: Hand, socket: Socket, snap_s: f32) -> Result<(),
 ///
 /// The game thread, before the world update.
 pub(crate) unsafe fn dock(hand: Hand, socket: Socket, snap_s: f32) -> Result<(), DockRefusal> {
-    let result = unsafe { start_dock(hand, socket) };
-    let object = match result {
-        Ok(object) => object,
-        Err(refusal) => {
-            hold::refused(refusal);
-            return Err(refusal);
-        }
-    };
+    let object =
+        unsafe { start_dock(hand, socket) }.inspect_err(|&refusal| hold::refused(refusal))?;
+    unsafe { dock_started(hand, socket, object, snap_s) }
+}
+
+/// [`dock`] the weapon at `object`, which [`start_dock`] found `hand` can dock on `socket`.
+///
+/// # Safety
+///
+/// The game thread, before the world update.
+unsafe fn dock_started(
+    hand: Hand,
+    socket: Socket,
+    object: usize,
+    snap_s: f32,
+) -> Result<(), DockRefusal> {
     let mut state = STATE.lock();
     state.watches[hand.index()].release.disarm();
     state.watches[hand.index()].since_s = None;
@@ -277,12 +285,13 @@ pub(crate) fn arm(hand: Hand) {
 /// grip opened on the weapon the table has in it: one it took by a grab, or one it closed on after
 /// it came into the hand some other way ([`ReleaseWatch::latch_press`]).
 ///
-/// On the first tick after the release stood down ([`cancel_releases`], [`clear`]), a hand still holding a gun
-/// reads its controller's grip as it is ([`physical_grips`]), since `grips` stays open for a grip
-/// held through the stand-down until the hand opens: closed, the hand keeps the gun until the grip
-/// opens, and then lets go of it; open, it puts the gun back on a socket of the body ([`stow`]), or
-/// lets it fall when none takes it. The hold ends with the grip, even when the grip opened while
-/// the release stood down (the debug panel, the pause menu, a tracking loss).
+/// On the first tick after the release stood down ([`cancel_releases`], [`clear`]), a hand still
+/// holding a gun reads its controller's grip as it is ([`physical_grips`]), since `grips` stays
+/// open for a grip held through the stand-down until the hand opens: closed, the hand keeps the
+/// gun until the grip opens, and then lets go of it; open, it puts the gun back on a socket of the
+/// body ([`stow`]), lets it fall when none takes it, and keeps it when one would but cannot now
+/// ([`StowFallback`]). The hold ends with the grip, even when the grip opened while the release
+/// stood down (the debug panel, the pause menu, a tracking loss).
 ///
 /// # Safety
 ///
@@ -308,7 +317,8 @@ pub(crate) unsafe fn release_tick(grips: [bool; 2], action_hands: [bool; 2]) -> 
         GripRelease::LetGo => true,
         GripRelease::Stow => {
             // SAFETY: forwarded from the caller.
-            match unsafe { stow(hand) } {
+            let stowed = unsafe { stow(hand) };
+            match stowed.map_err(stow_fallback) {
                 Ok(socket) => tracing::info!(
                     target: "controllers",
                     hand = hand.label(),
@@ -317,7 +327,7 @@ pub(crate) unsafe fn release_tick(grips: [bool; 2], action_hands: [bool; 2]) -> 
                     hand.label(),
                     socket.label()
                 ),
-                Err(refusal) => {
+                Err((refusal, StowFallback::Fall)) => {
                     tracing::info!(
                         target: "controllers",
                         hand = hand.label(),
@@ -325,11 +335,16 @@ pub(crate) unsafe fn release_tick(grips: [bool; 2], action_hands: [bool; 2]) -> 
                         "hold: the {} hand's grip opened while the release stood down, and no socket takes its weapon; it falls",
                         hand.label()
                     );
-                    // SAFETY: forwarded from the caller.
-                    if let Err(refusal) = unsafe { let_go(hand, hold::MAX_THROW_MPS) } {
-                        hold::refused(refusal);
-                    }
+                    // SAFETY: forwarded from the caller. A refusal is logged by the let-go.
+                    let _ = unsafe { let_go(hand, hold::MAX_THROW_MPS) };
                 }
+                Err((refusal, StowFallback::Keep)) => tracing::info!(
+                    target: "controllers",
+                    hand = hand.label(),
+                    %refusal,
+                    "hold: the {} hand's grip opened while the release stood down, and its weapon cannot go back on the body now; the hand keeps it until the grip closes on it again",
+                    hand.label()
+                ),
             }
             false
         }
@@ -376,8 +391,9 @@ unsafe fn stow(hand: Hand) -> Result<Socket, DockRefusal> {
         .map(|&(_, socket, _)| socket);
     let socket = stow_socket(remembered, |socket| grab::fits(&snapshot, hand, socket))
         .ok_or(DockRefusal::DoesNotFit)?;
-    // SAFETY: forwarded from the caller.
-    unsafe { dock(hand, socket, hold::SNAP_S) }?;
+    // SAFETY: forwarded from the caller. The refusals are the caller's to log.
+    let object = unsafe { start_dock(hand, socket) }?;
+    unsafe { dock_started(hand, socket, object, hold::SNAP_S) }?;
     Ok(socket)
 }
 
@@ -387,6 +403,26 @@ fn stow_socket(remembered: Option<Socket>, fits: impl Fn(Socket) -> bool) -> Opt
     remembered
         .filter(|&socket| fits(socket))
         .or_else(|| Socket::ALL.into_iter().find(|&socket| fits(socket)))
+}
+
+/// What becomes of a gun whose stow was refused for `refusal`.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum StowFallback {
+    /// No socket of the body takes it: it falls.
+    Fall,
+    /// A socket would take it but cannot now (the animation forbids holstering, on a motorcycle
+    /// for one), or there is nothing to stow: the hand keeps it, and the grip holds it again once
+    /// it closes on it ([`ReleaseWatch::latch_press`]).
+    Keep,
+}
+
+/// How a refused stow ends ([`StowFallback`]), with the refusal.
+fn stow_fallback(refusal: DockRefusal) -> (DockRefusal, StowFallback) {
+    let fallback = match refusal {
+        DockRefusal::DoesNotFit => StowFallback::Fall,
+        _ => StowFallback::Keep,
+    };
+    (refusal, fallback)
 }
 
 /// What one tick of a hand's grip does to the gun the hand holds.

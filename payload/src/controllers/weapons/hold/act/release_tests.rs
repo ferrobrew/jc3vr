@@ -258,3 +258,20 @@ impl StandDown {
         STATE.lock().watches[hand.index()]
     }
 }
+
+#[test]
+fn a_refused_stow_lets_the_gun_fall_only_when_no_socket_takes_it() {
+    assert_eq!(
+        stow_fallback(DockRefusal::DoesNotFit),
+        (DockRefusal::DoesNotFit, StowFallback::Fall)
+    );
+    for refusal in [
+        DockRefusal::AnimationForbids,
+        DockRefusal::NoTable,
+        DockRefusal::NothingHeld,
+        DockRefusal::Unsupported,
+        DockRefusal::NoCharacter,
+    ] {
+        assert_eq!(stow_fallback(refusal), (refusal, StowFallback::Keep));
+    }
+}
