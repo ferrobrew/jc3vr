@@ -58,7 +58,7 @@ fn right_action() -> Line {
 fn action(hand: Hand) -> Line {
     if !read_config(|c| {
         let reload = c.controllers.weapons.reload;
-        reload.enabled && reload.action.physical
+        reload.enabled && reload.manual_action && reload.action.physical
     }) {
         return Line::off("");
     }

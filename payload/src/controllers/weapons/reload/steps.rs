@@ -956,7 +956,8 @@ unsafe fn weapon_tick(
         entry,
         reload.well_offset_m,
         reload.action.default_travel_m,
-    )?;
+    )?
+    .with_manual_action(reload.manual_action);
     Some(WeaponTick {
         address: weapon.address,
         ammo_owned: false,

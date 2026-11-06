@@ -156,7 +156,7 @@ pub(crate) fn refresh(
             magazine: weapons.reload.enabled,
             belt_reload: weapons.reload.enabled && weapons.reload.belt.enabled,
             flick_eject: weapons.reload.enabled && weapons.reload.flick_eject,
-            work_action: weapons.reload.enabled,
+            work_action: weapons.reload.enabled && weapons.reload.manual_action,
             grenade_throw: weapons.grenade_throw,
             c4_throw: weapons.c4_throw,
             wrist_detonator: weapons.wrist_detonator,

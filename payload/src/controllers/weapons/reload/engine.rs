@@ -9,7 +9,9 @@
 //! - [`SniperWeapon::UpdateFromUserPostSim_Parallel`]: the bolt rifle's update, run with its
 //!   bolt-action setting cleared while the bolt is worked by hand, so it never queues the bolt act;
 //!   the rifle's own bolt lock ([`SniperWeapon::m_HasFiredThisInput`]) keeps it from firing until
-//!   the worked bolt clears it.
+//!   the worked bolt clears it. With the manual action off, the setting is cleared the same way and
+//!   the lock is cleared once the trigger is let go ([`trigger_released`]), so the rifle fires
+//!   once per pull with no bolt act.
 //! - [`DoActWeaponComponent::Fire_Start`]: the pump's per-shot act, skipped while the pump is
 //!   worked by hand.
 
@@ -601,7 +603,9 @@ fn sniper_update_from_user_post_sim_parallel(
     };
     let local =
         unsafe { sniper.cast::<WeaponBase>().as_ref() }.is_some_and(|w| w.m_IsUserLocalPlayer);
-    if !local || !gate::manual_action(sniper as usize) {
+    let by_hand = local && gate::manual_action(sniper as usize);
+    let on_release = local && !by_hand && gate::self_cycling(sniper as usize);
+    if !(by_hand || on_release) {
         return original();
     }
     let Some(s) = (unsafe { sniper.as_mut() }) else {
@@ -609,9 +613,34 @@ fn sniper_update_from_user_post_sim_parallel(
     };
     let bolt_action = std::mem::replace(&mut s.m_BoltAction, false);
     original();
-    if let Some(s) = unsafe { sniper.as_mut() } {
-        s.m_BoltAction = bolt_action;
+    let Some(s) = (unsafe { sniper.as_mut() }) else {
+        return;
+    };
+    s.m_BoltAction = bolt_action;
+    if on_release {
+        // SAFETY: the update's own input and its weapon's tuning, live for the call.
+        let released = unsafe { input.as_ref() }.is_some_and(|input| {
+            let tuning = unsafe { sniper.cast::<WeaponBase>().as_ref() }
+                .and_then(|w| unsafe { w.m_Tuning.as_ref() });
+            trigger_released(
+                input.m_PrimaryFireInput,
+                tuning.map(|t| t.m_trigger_sensitivity),
+            )
+        });
+        if released {
+            s.m_HasFiredThisInput = false;
+        }
     }
+}
+
+/// Whether a primary trigger reading of `input` counts as let go against the weapon's thresholds
+/// ([`WeaponTuning::m_trigger_sensitivity`]): at or below the value a pulled trigger must stay
+/// above, or at rest without thresholds.
+///
+/// [`WeaponTuning::m_trigger_sensitivity`]: jc3gi::equipment::weapon::WeaponTuning::m_trigger_sensitivity
+fn trigger_released(input: f32, sensitivity: Option<[f32; 2]>) -> bool {
+    let hold = sensitivity.map_or(0.0, |[_, hold]| hold);
+    input.is_finite() && input <= hold.max(0.0)
 }
 
 /// The do-act component's per-shot act, skipped for the local player's weapon while its pump is
@@ -703,4 +732,21 @@ fn cached(cell: &OnceLock<i32>, name: &std::ffi::CStr) -> Option<i32> {
     }
     let id = resolve_act_id(name)?;
     Some(*cell.get_or_init(|| id))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_bolt_lock_clears_once_the_trigger_falls_below_its_hold() {
+        let thresholds = Some([0.5, 0.2]);
+        assert!(!trigger_released(1.0, thresholds));
+        assert!(!trigger_released(0.3, thresholds));
+        assert!(trigger_released(0.2, thresholds));
+        assert!(trigger_released(0.0, thresholds));
+        assert!(trigger_released(0.0, None));
+        assert!(!trigger_released(0.1, None));
+        assert!(!trigger_released(f32::NAN, thresholds));
+    }
 }

@@ -158,6 +158,12 @@ pub(super) fn reload_settings(ui: &mut Ui, r: &mut ReloadConfig) {
         );
     ui.checkbox(&mut r.belt.enabled, "Belt reload")
         .on_hover_text("Push the gun's well down onto the belt pouch to reload it one-handed.");
+    ui.checkbox(&mut r.manual_action, "Work the action by hand")
+        .on_hover_text(
+            "A gun that ran dry fires again only once its slide, charging handle, bolt, or pump \
+             is worked by hand, and a bolt or a pump after every shot. Off, a seated magazine \
+             chambers its first round, and the bolt and the pump cycle themselves.",
+        );
     ui.checkbox(&mut r.action.physical, "Physical action").on_hover_text(
         "The slide, charging handle, bolt, or pump follows the hand through its travel. Off, the \
          action is a pull-and-release gesture.",

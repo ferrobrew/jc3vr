@@ -14,6 +14,11 @@ pub struct ReloadConfig {
     pub enabled: bool,
     /// Eject a gun's magazine with a sharp flick of the hand holding it.
     pub flick_eject: bool,
+    /// Work the slide, charging handle, bolt, or pump by hand: a gun that ran dry fires again only
+    /// once its action is worked, and a bolt or a pump after every shot. Off, a seated magazine
+    /// chambers its first round, the bolt rifle cycles itself once the trigger is let go, and the
+    /// pump-action shotgun pumps itself after each shot, as the game's own guns do.
+    pub manual_action: bool,
     /// The one-handed belt reload: push the gun's well down onto the pouch.
     pub belt: BeltConfig,
     /// The slide, charging handle, bolt, and pump.
@@ -31,6 +36,7 @@ impl ReloadConfig {
         Self {
             enabled: true,
             flick_eject: false,
+            manual_action: false,
             belt: BeltConfig::new(),
             action: ActionConfig::new(),
             loose: LooseMagazineConfig::new(),

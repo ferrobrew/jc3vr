@@ -362,7 +362,8 @@ pub(super) fn prioritize_extraction(targets: &mut Vec<GripTarget>, grips: [Optio
         state.tick.map_or([false; 2], |tick| {
             Hand::BOTH.map(|worker| {
                 tick.gun(worker.other()).is_some_and(|(weapon, gun)| {
-                    weapon.plan.action != chamber::ActionKind::Pump
+                    steps::chambering(&weapon.plan)
+                        && weapon.plan.action != chamber::ActionKind::Pump
                         && !weapon.reading.out
                         && weapon.reading.magazine_rounds() > 0
                         && state.records.get(weapon.key).chambers[gun.entry()] == Chamber::Empty
@@ -468,6 +469,7 @@ pub(super) fn finish_tick(inputs: &FinishInputs, config: &ControllersConfig) -> 
         weapons: weapons.map(|w| w.map_or(0, |w| w.address)),
         manual_action: weapons
             .map(|w| w.is_some_and(|w| w.plan.action.manual() && steps::chambering(&w.plan))),
+        self_cycling: weapons.map(|w| w.is_some() && !config.weapons.reload.manual_action),
         held: held.map(|h| h.is_some()),
     }));
     FinishResult {

@@ -23,6 +23,9 @@ pub struct Reload {
     pub tap_s: f32,
     /// Eject a gun's magazine with a sharp flick of the hand holding it.
     pub flick_eject: bool,
+    /// Work the slide, charging handle, bolt, or pump by hand
+    /// ([`ReloadConfig::manual_action`]).
+    pub manual_action: bool,
     /// The angular speed of the gun hand that counts as a flick, degrees per second.
     pub flick_speed_dps: f32,
     /// The shortest time between two flick ejects, seconds.
@@ -75,6 +78,7 @@ impl Reload {
             enabled: true,
             tap_s: 0.3,
             flick_eject: false,
+            manual_action: false,
             flick_speed_dps: 900.0,
             flick_cooldown_s: 0.6,
             well_offset_m: Vec3::new(0.0, -0.08, -0.06),
@@ -99,6 +103,7 @@ impl Reload {
         Self {
             enabled: config.enabled,
             flick_eject: config.flick_eject,
+            manual_action: config.manual_action,
             belt: BeltTuning {
                 enabled: config.belt.enabled,
                 ..RELOAD.belt

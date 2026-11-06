@@ -103,6 +103,23 @@ pub struct ReloadPlan {
     pub launcher: bool,
 }
 
+impl ReloadPlan {
+    /// The plan with its action worked by hand only while `manual_action` is on. Off, every action
+    /// is [`ActionKind::None`], so the gun chambers its first round as its magazine seats, as a
+    /// launcher or a revolver does, and nothing waits on a slide, a charging handle, a bolt, or a
+    /// pump.
+    pub fn with_manual_action(self, manual_action: bool) -> Self {
+        if manual_action {
+            self
+        } else {
+            Self {
+                action: ActionKind::None,
+                ..self
+            }
+        }
+    }
+}
+
 /// The facts about a weapon the plan is made from.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct WeaponFacts {

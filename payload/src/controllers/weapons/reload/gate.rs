@@ -36,6 +36,9 @@ pub(super) struct Published {
     /// Each hand's weapon's bolt or pump is worked by hand after every shot, in place of the game's
     /// cycling, by [`Hand::index`].
     pub manual_action: [bool; 2],
+    /// Each hand's weapon cycles its own bolt once the trigger is let go, with the manual action
+    /// off, by [`Hand::index`].
+    pub self_cycling: [bool; 2],
     /// The hands whose guns may not fire, by [`Hand::index`].
     pub held: [bool; 2],
 }
@@ -114,6 +117,15 @@ pub(super) fn manual_action(weapon: usize) -> bool {
         .is_some_and(|p| cycles_by_hand(&p, weapon))
 }
 
+/// Whether the bolt of `weapon` is cycled on the trigger's release, in place of the game's bolt
+/// act, while the manual action is off.
+pub(super) fn self_cycling(weapon: usize) -> bool {
+    SHARED
+        .lock()
+        .fresh()
+        .is_some_and(|p| cycles_on_release(&p, weapon))
+}
+
 /// Record a shot of `weapon` from `hand`, when it is a weapon reloaded by hand.
 pub(super) fn on_shot(weapon: usize, hand: Hand, magazine: i32) {
     let mut shared = SHARED.lock();
@@ -137,6 +149,14 @@ fn cycles_by_hand(published: &Published, weapon: usize) -> bool {
     weapon != 0
         && Hand::BOTH.into_iter().any(|hand| {
             published.weapons[hand.index()] == weapon && published.manual_action[hand.index()]
+        })
+}
+
+/// Whether `published` has `weapon`'s bolt cycled on the trigger's release.
+fn cycles_on_release(published: &Published, weapon: usize) -> bool {
+    weapon != 0
+        && Hand::BOTH.into_iter().any(|hand| {
+            published.weapons[hand.index()] == weapon && published.self_cycling[hand.index()]
         })
 }
 
@@ -170,6 +190,7 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     published: Published {
         weapons: [0; 2],
         manual_action: [false; 2],
+        self_cycling: [false; 2],
         held: [false; 2],
     },
     at: None,
@@ -188,6 +209,7 @@ mod tests {
         Published {
             weapons: [SECOND, WIELDED],
             manual_action: [true, false],
+            self_cycling: [false, false],
             held: [false, true],
         }
     }
@@ -207,6 +229,18 @@ mod tests {
         assert!(cycles_by_hand(&p, SECOND));
         assert!(!cycles_by_hand(&p, WIELDED));
         assert!(!cycles_by_hand(&Published::default(), 0));
+    }
+
+    #[test]
+    fn a_self_cycling_bolt_is_its_own_weapons() {
+        let p = Published {
+            self_cycling: [false, true],
+            ..two_weapons()
+        };
+        assert!(cycles_on_release(&p, WIELDED));
+        assert!(!cycles_on_release(&p, SECOND));
+        assert!(!cycles_on_release(&p, 0));
+        assert!(!cycles_on_release(&Published::default(), WIELDED));
     }
 
     #[test]
