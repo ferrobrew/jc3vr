@@ -54,7 +54,7 @@ use crate::{
                     RigMotion, SampleStage, estimate_release,
                 },
             },
-            inventory::{self, reconcile, sockets},
+            inventory::{self, reconcile, sockets, traversal},
         },
     },
     headpose, hooks,
@@ -649,7 +649,12 @@ fn estimate(
 /// out at once. Returns where it sat.
 unsafe fn draw_off(hand: Hand, socket: Socket) -> Result<Seat, DockRefusal> {
     let owner = unsafe { engine::local_player() }.ok_or(DockRefusal::NoCharacter)?;
-    if !unsafe { owner.m_Inventory.GetAnimationAllowsDrawing() } {
+    let gate = DrawGate {
+        // SAFETY: the game thread, on the live local player.
+        wield_skipped: unsafe { traversal::wield_skipped(owner) },
+        animation_allows: unsafe { owner.m_Inventory.GetAnimationAllowsDrawing() },
+    };
+    if !gate.allows() {
         return Err(DockRefusal::AnimationForbids);
     }
     let snapshot = live::snapshot_now().ok_or(DockRefusal::NoTable)?;
@@ -671,6 +676,25 @@ unsafe fn draw_off(hand: Hand, socket: Socket) -> Result<Seat, DockRefusal> {
         socket,
         offset,
     })
+}
+
+/// What decides whether a draw off a socket may start.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct DrawGate {
+    /// Whether the game's weapon updates skip the wielded weapon here
+    /// ([`traversal::wield_skipped`]): a car's seat, or the boost wingsuit.
+    wield_skipped: bool,
+    /// [`Inventory::GetAnimationAllowsDrawing`](jc3gi::character::inventory::Inventory::GetAnimationAllowsDrawing).
+    animation_allows: bool,
+}
+
+impl DrawGate {
+    /// Where the game wields the drawn weapon, its animation must allow a draw. Where its updates
+    /// skip the wielded weapon, the reconcile arms the weapon in the hand instead and the game never
+    /// wields it, so the seat's animation, which forbids the game's own draw, has no say.
+    fn allows(self) -> bool {
+        self.wield_skipped || self.animation_allows
+    }
 }
 
 /// Where the gun of `weapon` would sit on `socket`'s bone with its grip at `toward` (world) and the
@@ -844,5 +868,28 @@ mod attract_tests {
         assert_eq!(moved.orientation, on_bone.orientation);
         assert_eq!(shift_on_bone(on_bone, bone, Mat4::ZERO, shift), None);
         assert_eq!(shift_on_bone(on_bone, bone, character, Vec3::NAN), None);
+    }
+}
+
+#[cfg(test)]
+mod draw_gate_tests {
+    use test_case::test_case;
+
+    use super::*;
+
+    #[test_case(false, true, true; "on foot the animation allows it")]
+    #[test_case(false, false, false; "on foot the animation forbids it")]
+    #[test_case(true, false, true; "a car's seat arms the gun whatever its animation says")]
+    #[test_case(true, true, true; "a seat whose animation allows it")]
+    fn a_draw_starts_where_the_game_would_wield_it_or_never_wields(
+        wield_skipped: bool,
+        animation_allows: bool,
+        allowed: bool,
+    ) {
+        let gate = DrawGate {
+            wield_skipped,
+            animation_allows,
+        };
+        assert_eq!(gate.allows(), allowed);
     }
 }

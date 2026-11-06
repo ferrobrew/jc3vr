@@ -430,9 +430,12 @@ pub(crate) fn record_pickup(refusal: Option<String>) {
 }
 
 /// Note why the last thing the hands tried with a weapon (a pickup, a take, a draw, a dock, or a
-/// drop) did not happen, for the readout.
+/// drop) did not happen, for the readout and the log. Each call answers one attempt by the player,
+/// so it logs at info, where the log explains a grab that did nothing.
 pub(crate) fn refused(why: impl ToString) {
-    *LAST_REFUSAL.lock() = Some(why.to_string());
+    let why = why.to_string();
+    tracing::info!(target: "controllers", why = %why, "hold: refused: {why}");
+    *LAST_REFUSAL.lock() = Some(why);
 }
 
 /// Why the last thing the hands tried with a weapon did not happen.

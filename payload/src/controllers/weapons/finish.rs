@@ -726,7 +726,6 @@ fn grab_socket(hand: Hand, socket: Socket, config: &ControllersConfig) -> Option
         }
         Err(SocketRefusal::Empty(_)) => return None,
         Err(refusal) => {
-            tracing::debug!(target: "controllers", %refusal, "hold: the socket grab did nothing");
             hold::refused(refusal);
             SocketOutcome::Refused(refusal)
         }
