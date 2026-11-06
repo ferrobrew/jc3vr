@@ -12,6 +12,7 @@ fn fresh() -> State {
         grips: [None; 2],
         detonation: None,
         was_detonating: false,
+        in_flight: None,
         held_since: None,
         held_since_s: None,
         stick: None,
@@ -67,6 +68,35 @@ fn an_unanswered_request_times_out() {
         })
     );
     assert_eq!(state.status.detonations, 0);
+}
+
+#[test]
+fn a_detonation_stays_in_flight_until_its_charges_go_off() {
+    assert_eq!(InFlight::start(0), None);
+    let started = InFlight::start(2).unwrap();
+    // The act has not scheduled them yet, so both still count as placed.
+    let held = started.step(2, 0.3).unwrap();
+    let one_left = held.step(1, 0.3).unwrap();
+    assert_eq!(one_left.lowest, 1);
+    assert_eq!(one_left.step(0, 0.1), None);
+}
+
+#[test]
+fn a_charge_placed_mid_detonation_ends_it() {
+    let one_left = InFlight::start(2).unwrap().step(1, 0.2).unwrap();
+    assert_eq!(one_left.step(2, 0.1), None);
+}
+
+#[test]
+fn a_detonation_whose_charges_outlast_the_limit_is_over() {
+    let mut flight = InFlight::start(1);
+    let mut steps = 0;
+    while let Some(f) = flight {
+        flight = f.step(1, 0.1);
+        steps += 1;
+        assert!(steps < 100);
+    }
+    assert!((steps as f32 * 0.1 - DETONATION_IN_FLIGHT_S).abs() < 0.15);
 }
 
 #[test]

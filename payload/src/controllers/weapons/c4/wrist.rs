@@ -24,8 +24,12 @@
 //!
 //! A press with charges placed asks the C4 weapon to detonate them ([`request_detonation`]) and
 //! clicks both hands; a press with none buzzes the pressing hand and flashes the button grey. The
+//! charges of a detonation that has started stay placed until they go off
+//! ([`c4::detonation_in_flight`]), and a press then has nothing new to detonate, so it counts as a
+//! press with none rather than queueing a second request that could catch a charge placed just
+//! after. The
 //! button is drawn on the wrist through the world-space overlay, lying on the wrist facing out of
-//! it: dim with no charges placed, lit with a pip beside it for each placed charge, filling as a
+//! it: dim with no charges to detonate, lit with a pip beside it for each placed charge, filling as a
 //! slow touch dwells, and flashing on a press. A ring around it marks the touch sphere. While the
 //! fingertip is within the approach radius, a dot marks the point that is tested and a second ring
 //! closes from the approach radius onto the touch sphere as it nears, and the pressing hand ticks
@@ -105,10 +109,10 @@ pub struct WristStatus {
     /// The press detector's last reading.
     pub reading: PressReading,
     pub fingertip: Option<FingertipSourceKind>,
-    /// Whether the button was lit: charges were placed.
+    /// Whether the button was lit: charges were placed and not already detonating.
     pub lit: bool,
     pub presses: u64,
-    /// Presses with no charges placed, which detonate nothing.
+    /// Presses with no charges to detonate, which detonate nothing.
     pub idle_presses: u64,
 }
 
@@ -150,7 +154,8 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
         .then(|| sample.fingertip(presser, tuning))
         .flatten();
     let charges = c4::charges().unwrap_or(0).max(0);
-    let lit = charges > 0;
+    let in_flight = c4::detonation_in_flight();
+    let lit = charges > 0 && !in_flight;
 
     let now = Instant::now();
     let mut state = STATE.lock();
@@ -203,6 +208,9 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
             tracing::info!(target: "controllers", charges, "wrist detonator: detonating");
             c4::request_detonation(DetonationSource::WristButton);
             haptics::play_hands(Hand::BOTH, Event::DetonatorPress);
+        } else if in_flight {
+            tracing::info!(target: "controllers", charges, "wrist detonator: pressed while the last detonation's charges are going off");
+            haptics::play(presser, Event::DetonatorEmpty);
         } else {
             tracing::info!(target: "controllers", "wrist detonator: pressed with no charges placed");
             haptics::play(presser, Event::DetonatorEmpty);

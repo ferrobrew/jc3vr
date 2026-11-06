@@ -13,6 +13,7 @@ fn state() -> State {
         grips: [None; 2],
         detonation: None,
         was_detonating: false,
+        in_flight: None,
         held_since: None,
         held_since_s: None,
         stick: None,

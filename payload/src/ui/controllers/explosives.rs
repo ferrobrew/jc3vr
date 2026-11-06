@@ -73,9 +73,10 @@ pub(super) fn explosives_readout(ui: &mut Ui, readout: &ExplosivesReadout) {
         ));
     }
     ui.label(format!(
-        "  detonations {} · request pending {} · last: {}",
+        "  detonations {} · request pending {} · in flight {} · last: {}",
         c.detonations,
         yes_no(c.detonation_pending),
+        yes_no(c.detonation_in_flight),
         c.last_detonation.map_or("none".to_owned(), |d| format!(
             "{} with {} placed{}",
             d.source.label(),

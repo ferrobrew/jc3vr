@@ -174,6 +174,9 @@ pub struct C4Status {
     pub events: Vec<C4Event>,
     /// Whether a detonation request waits for the weapon.
     pub detonation_pending: bool,
+    /// Whether the last detonation's charges are still live: it started, and they have neither all
+    /// gone off nor outlasted [`DETONATION_IN_FLIGHT_S`].
+    pub detonation_in_flight: bool,
     pub detonations: u64,
     pub last_detonation: Option<Detonation>,
 }
@@ -195,6 +198,14 @@ pub(crate) fn in_stock() -> bool {
 /// The placed charges at the weapon's last update, or `None` before it ran.
 pub fn charges() -> Option<i32> {
     STATE.lock().status.charges.map(|(live, _)| live)
+}
+
+/// Whether a started detonation's charges are still on their way to going off. The detonate act
+/// schedules them partway through its animation and each then runs down its own timer, so the
+/// weapon counts them as placed for a while after the detonation started; another press in that
+/// time has nothing new to detonate.
+pub fn detonation_in_flight() -> bool {
+    STATE.lock().in_flight.is_some()
 }
 
 /// The placed charges and the most that may be placed at once, at the weapon's last update, or
@@ -463,8 +474,44 @@ pub(crate) fn observe_hands(grips: [Option<Pose>; 2]) {
 /// enough for the character to finish an act that keeps the detonate act out.
 const DETONATION_TIMEOUT_S: f32 = 0.5;
 
+/// The longest a started detonation's charges count as on their way to going off, seconds: the
+/// detonate act's lead-in and the charges' own timers. A charge still live after this did not go
+/// off, and a press may detonate it again.
+const DETONATION_IN_FLIGHT_S: f32 = 3.0;
+
 /// How many throw steps the readout keeps.
 const MAX_EVENTS: usize = 6;
+
+/// A started detonation whose charges are still live.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct InFlight {
+    /// The fewest charges live since it started: its own charges that have not gone off yet.
+    lowest: i32,
+    /// How long it has been in flight, seconds.
+    elapsed_s: f32,
+}
+
+impl InFlight {
+    /// A detonation that started with `live` charges placed, or `None` when there were none to set
+    /// off.
+    fn start(live: i32) -> Option<Self> {
+        (live > 0).then_some(Self {
+            lowest: live,
+            elapsed_s: 0.0,
+        })
+    }
+
+    /// The detonation after a weapon update that read `live` charges, `dt` seconds on: over once
+    /// they have all gone off, once the count rises (a charge placed since is not part of it, and
+    /// a press should set it off), or once it has outlasted [`DETONATION_IN_FLIGHT_S`].
+    fn step(self, live: i32, dt: f32) -> Option<Self> {
+        let elapsed_s = self.elapsed_s + if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+        (live > 0 && live <= self.lowest && elapsed_s < DETONATION_IN_FLIGHT_S).then_some(Self {
+            lowest: live,
+            elapsed_s,
+        })
+    }
+}
 
 /// A detonation request waiting for the weapon.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -485,6 +532,8 @@ struct State {
     detonation: Option<PendingDetonation>,
     /// Whether the weapon had started a detonation on its last update.
     was_detonating: bool,
+    /// The started detonation whose charges are still live.
+    in_flight: Option<InFlight>,
     /// When the held charge came out of the pouch.
     held_since: Option<Instant>,
     /// The same moment in display time, from which its throw reads the hand's motion.
@@ -577,12 +626,14 @@ static STATE: Mutex<State> = Mutex::new(State {
         returned: 0,
         events: Vec::new(),
         detonation_pending: false,
+        detonation_in_flight: false,
         detonations: 0,
         last_detonation: None,
     },
     grips: [None; 2],
     detonation: None,
     was_detonating: false,
+    in_flight: None,
     held_since: None,
     held_since_s: None,
     stick: None,
@@ -728,6 +779,12 @@ fn update_from_user_serial(
     if started || state.detonation.is_some() {
         settle_detonation(&mut state, started, reading.live, dt);
     }
+    let in_flight = started
+        .then(|| InFlight::start(reading.live))
+        .flatten()
+        .or(state.in_flight);
+    state.in_flight = in_flight.and_then(|f| f.step(reading.live, dt));
+    state.status.detonation_in_flight = state.in_flight.is_some();
     drop(state);
     for (hand, event) in pulses {
         haptics::play(hand, event);
