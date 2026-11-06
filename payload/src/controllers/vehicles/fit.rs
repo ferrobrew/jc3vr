@@ -73,9 +73,10 @@ pub struct FitInputs<'a> {
     pub seat: Option<VehicleSeat>,
     pub xf: &'a CockpitTransform,
     /// The character's eyes, world space: the head pose's anchor (his animated head) with the
-    /// camera's eye arm hung off it ([`crate::hooks::camera::eye_arm`]), where the view puts the
-    /// eyes before the player's posture or the driving view's correction moves them. `None` until
-    /// the anchor is published.
+    /// camera's offset to the eye point hung off it
+    /// ([`crate::hooks::camera::head_to_eye_point`]), where the view puts the eyes before the
+    /// player's posture or the driving view's correction moves them. `None` until the anchor is
+    /// published.
     pub eyes: Option<Vec3>,
 }
 

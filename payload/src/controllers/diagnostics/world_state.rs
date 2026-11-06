@@ -22,7 +22,7 @@ use crate::{
     frame_timing,
     grapple::{hook, physical::lock},
     headpose,
-    hooks::camera::{eye_points, last_dtf},
+    hooks::camera::{eye_point, last_dtf},
     recorder::tracking::format::debug_label,
 };
 
@@ -45,7 +45,7 @@ pub(super) fn view_state() -> Option<ViewState> {
         });
     Some(ViewState {
         head_world: Pose {
-            position: eye_points([headpose::query_prev(), head])[1],
+            position: eye_point(),
             orientation: head.orientation,
         },
         head_cockpit: cockpit.position,

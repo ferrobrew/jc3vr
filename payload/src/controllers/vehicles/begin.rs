@@ -81,7 +81,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
             view_enabled: config.vehicles.driving_view.enabled,
             seat,
             xf: &xf,
-            eyes: headpose::anchor().map(|anchor| anchor + hooks::camera::eye_arm()),
+            eyes: headpose::anchor().map(|anchor| anchor + hooks::camera::head_to_eye_point()),
         },
         entry.as_ref(),
         &mut latch,

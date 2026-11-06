@@ -78,9 +78,11 @@ pub fn eye_point() -> glam::Vec3 {
     eye_points([query_prev(), query()])[1]
 }
 
-/// The eye rig's arm now: the eye point less the published head position ([`eye_point`]), world
-/// space. Added to the head anchor, it is where the character's eyes are before the HMD's travel.
-pub fn eye_arm() -> glam::Vec3 {
+/// The offset from the published head position to the eye point now ([`eye_point`]), world space:
+/// the eye rig's arm with the neck's offset and the view's turn applied, unlike the body-frame
+/// neck-to-eyes arm [`crate::headpose::eye_arm`]. Added to the head anchor, it is where the
+/// character's eyes are before the HMD's travel.
+pub fn head_to_eye_point() -> glam::Vec3 {
     let current = query();
     eye_points([query_prev(), current])[1] - current.position
 }
