@@ -133,6 +133,8 @@ impl State {
             let Some(mut weapon_tick) = (unsafe { weapon_tick(weapon, base, config) }) else {
                 continue;
             };
+            // SAFETY: tick construction runs on the input thread with this weapon read this tick.
+            unsafe { engine::borrow_spare(weapon.address, weapon_tick.reading.name_hash) };
             // Before the partition adopts the native total, so a gun first seen short, such as one
             // taken from a character, is adopted full with its chamber loaded.
             // SAFETY: tick construction runs on the input thread with this weapon read this tick.

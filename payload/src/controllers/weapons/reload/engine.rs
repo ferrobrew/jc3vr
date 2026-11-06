@@ -15,10 +15,10 @@
 //! - [`DoActWeaponComponent::Fire_Start`]: the pump's per-shot act, skipped while the pump is
 //!   worked by hand.
 
-use std::{ptr::NonNull, sync::OnceLock};
+use std::{ffi::CString, ptr::NonNull, sync::OnceLock};
 
 use detours_macro::detour;
-use glam::Mat4;
+use glam::{Mat4, Vec3};
 use jc3gi::{
     animation::symbol_table::EventIdSymbolTable,
     character::character::Character,
@@ -27,8 +27,10 @@ use jc3gi::{
         WeaponBase, WeaponComponentType, WeaponData, WeaponInputs,
     },
     physics::GameMaterialId,
-    types::math::Vector3,
+    spawn_system::SpawnSystem,
+    types::math::{Matrix4, Vector3},
 };
+use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
@@ -42,14 +44,16 @@ use crate::{
         weapons::{
             dual_wield::single,
             empty,
-            engine::{FULL_WEIGHT, credit_reserve, gun_at, gun_ptr, limited_ammo, reserve},
+            engine::{
+                FULL_WEIGHT, credit_reserve, gun_at, gun_count, gun_ptr, limited_ammo, reserve,
+            },
             inventory::{carry, engine as inventory_engine},
             reload::{
                 ammo::{self, Ammo, NativeAmmo},
                 chamber::{ActionKind, Chamber},
                 frames, gate,
                 loose::{self, EjectRounds, Loose, Retention},
-                render,
+                render, wells,
             },
         },
     },
@@ -240,6 +244,10 @@ unsafe fn detach_magazine(
     else {
         return DetachOutcome::NoThrow;
     };
+    let origin = unsafe { weapon.as_ref() }
+        .and_then(|w| wells::lookup(w.m_WeaponNameHash))
+        .and_then(|e| e.spare_origin_m)
+        .filter(|o| o.is_finite());
     let partition = ammo::change(address, |ammo| {
         ammo.reconcile(NativeAmmo {
             total: rounds,
@@ -255,7 +263,7 @@ unsafe fn detach_magazine(
             return DetachOutcome::NoThrow;
         }
         // No owner borrow crosses either engine call: both can re-enter the owner through old pointers.
-        let throw = || unsafe { (*gun).ThrowAwayMagazineObject(character, part) };
+        let throw = || unsafe { throw_spare(gun, character, part, origin) };
         let (thrown, retained) = if let Some(retention) = retention {
             EjectRounds::with(retention, magazine_rounds, throw)
         } else {
@@ -306,6 +314,104 @@ unsafe fn detach_inputs(
     let gun = unsafe { gun_ptr(weapon.as_ref()?, index) }?.as_ptr();
     let spare = unsafe { (*gun).m_MagazineObject.px as usize };
     Some((character, part, rounds, gun, spare))
+}
+
+/// Drop `gun`'s spare magazine for `character` from the part `part`. A gun with no magazine part
+/// drops it from its own transform; one that borrows another weapon's spare
+/// ([`wells::WellEntry::spare_from`]) drops it from its transform moved to where the borrowed
+/// model's origin sits seated, `origin`, so it leaves from the built-in magazine. The transform is
+/// moved only for the call and put back after.
+///
+/// # Safety
+///
+/// As [`WeaponData::ThrowAwayMagazineObject`]: the gun is live, on the thread the drop runs on.
+unsafe fn throw_spare(
+    gun: *mut WeaponData,
+    character: *mut Character,
+    part: u32,
+    origin: Option<Vec3>,
+) -> bool {
+    let Some(origin) = origin.filter(|_| part == WeaponData::NO_MAGAZINE_MODEL_NAME_HASH) else {
+        return unsafe { (*gun).ThrowAwayMagazineObject(character, part) };
+    };
+    let world = unsafe { &raw mut (*gun).m_WorldMatrixT1 };
+    let saved = unsafe { world.read() };
+    let moved = Mat4::from(saved) * Mat4::from_translation(origin);
+    unsafe { world.write(Matrix4::from(moved)) };
+    let thrown = unsafe { (*gun).ThrowAwayMagazineObject(character, part) };
+    unsafe { world.write(saved) };
+    thrown
+}
+
+/// Give each gun of the weapon at `address` that has no magazine prop the spare magazine prop the
+/// wells table borrows for it ([`wells::WellEntry::spare_from`]), and request its first spare, so
+/// the game spawns, drops, and respawns the borrowed prop as it does a gun's own. Returns whether
+/// a gun took the borrowed tag this call. `name_hash` is the weapon's, as read this tick.
+///
+/// # Safety
+///
+/// The game thread, before the world update; the weapon is the local player's, read this tick.
+pub(super) unsafe fn borrow_spare(address: usize, name_hash: u32) -> bool {
+    let Some(tag) = wells::lookup(name_hash).and_then(|e| e.spare_from.as_deref()) else {
+        return false;
+    };
+    let Some(mut source) = (unsafe { owned_handle(address) }) else {
+        return false;
+    };
+    let weapon = unsafe { source.as_mut() };
+    let mut unique = None;
+    let mut borrowed = false;
+    for index in 0..unsafe { gun_count(weapon) } {
+        let Some(gun) = (unsafe { gun_ptr(weapon, index) }) else {
+            continue;
+        };
+        let gun = gun.as_ptr();
+        if unsafe { (*gun).m_MagazineUniqueTag } != WeaponData::NO_MAGAZINE_UNIQUE_TAG {
+            continue;
+        }
+        let Some(resolved) = *unique.get_or_insert_with(|| unsafe { unique_tag(tag) }) else {
+            return borrowed;
+        };
+        unsafe {
+            (*gun).m_MagazineUniqueTag = resolved;
+            (*gun).SpawnMagazineObject();
+        }
+        borrowed = true;
+    }
+    if borrowed {
+        tracing::info!(
+            target: "controllers",
+            weapon = format_args!("{:#010x}", weapon.m_WeaponNameHash),
+            tag,
+            "reload: the gun borrows another weapon's spare magazine"
+        );
+    }
+    borrowed
+}
+
+/// The spawn system's unique tag for the tag string `tag`, or `None` when it names no definition.
+/// The definitions are built once when the system initializes, so each tag is resolved once.
+///
+/// # Safety
+///
+/// The game thread.
+unsafe fn unique_tag(tag: &str) -> Option<i32> {
+    static RESOLVED: Mutex<Vec<(String, Option<i32>)>> = Mutex::new(Vec::new());
+    if let Some((_, unique)) = RESOLVED.lock().iter().find(|(t, _)| t == tag) {
+        return *unique;
+    }
+    let tags = CString::new(tag).ok()?;
+    let system = unsafe { SpawnSystem::get() }?;
+    let unique = Some(unsafe { system.GetUniqueTag(tags.as_ptr().cast()) }).filter(|&u| u != 0);
+    if unique.is_none() {
+        tracing::warn!(
+            target: "controllers",
+            tag,
+            "reload: the borrowed spare magazine's tag names no spawn definition"
+        );
+    }
+    RESOLVED.lock().push((tag.to_owned(), unique));
+    unique
 }
 
 /// The rounds a dropped magazine carries into the world, of the `magazine` rounds it held. With

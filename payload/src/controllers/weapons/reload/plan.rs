@@ -404,6 +404,8 @@ mod tests {
             part_top_m: Some(0.05),
             part_length_m: Some(0.1),
             spare_top_m: Some(Vec3::new(0.0, 0.06, 0.01)),
+            spare_from: None,
+            spare_origin_m: None,
             round: RoundEntry::default(),
             action,
             handle_m: Some(Vec3::new(0.0, 0.06, 0.1)),
@@ -1115,12 +1117,11 @@ mod tests {
                 "{}",
                 a.weapon
             );
-            // A round the hand carries is drawn from the gun's spare magazine model, its own
-            // round part, or for a shell or a cylinder the casing the gun ejects, except where the
-            // game has none of these (see the audit).
+            // A round the hand carries is drawn from the gun's spare magazine model (borrowed
+            // for the Automat 12), its own round part, or for a shell or a cylinder the casing the
+            // gun ejects.
             let drawn = p.hand_round().is_some() || p.part_top_m.is_some();
-            let undrawn = a.weapon == "w153_shotgun_automat_12";
-            assert_eq!(drawn, !undrawn, "{}", a.weapon);
+            assert!(drawn, "{}: nothing is drawn in the hand", a.weapon);
             // One push loads one shell, or a revolver's whole cylinder, and the hand shows as many.
             let rounds = p.round.map(|r| r.count);
             let expected = match a.kind {

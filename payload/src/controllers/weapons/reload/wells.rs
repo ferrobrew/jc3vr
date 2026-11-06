@@ -113,6 +113,15 @@ pub struct WellEntry {
     /// magazine a hand loads.
     #[serde(default)]
     pub spare_top_m: Option<Vec3>,
+    /// For a gun whose magazine is modelled into its body with no spare magazine prop, the spawn tag
+    /// of the spare magazine prop it borrows from another weapon, whose model matches the built-in
+    /// magazine best; [`spare_top_m`](Self::spare_top_m) is then that prop's.
+    #[serde(default)]
+    pub spare_from: Option<String>,
+    /// Where the borrowed prop's model origin sits in the gun's frame with the magazine seated:
+    /// where a borrowed magazine is dropped from.
+    #[serde(default)]
+    pub spare_origin_m: Option<Vec3>,
     /// The stand-in model a round in the hand is drawn with, for a gun with no model of its own
     /// for a loose round.
     #[serde(flatten)]
@@ -223,6 +232,32 @@ mod tests {
         assert_eq!(entries[1].handle_m, None);
         assert_eq!(entries[1].grade, WellGrade::Default);
         assert_eq!(entries[1].round, RoundEntry::default());
+        assert_eq!(entries[1].spare_from, None);
+    }
+
+    #[test]
+    fn only_the_automat_12_borrows_a_spare_magazine_lined_up_with_its_own() {
+        let entries = parse(WELLS_JSON).unwrap();
+        let borrowers: Vec<&WellEntry> =
+            entries.iter().filter(|e| e.spare_from.is_some()).collect();
+        assert_eq!(borrowers.len(), 1);
+        let automat = borrowers[0];
+        assert_eq!(automat.weapon, "w153_shotgun_automat_12");
+        // The UP-61's magazine is the closest in size to the Automat's built-in box.
+        assert_eq!(
+            automat.spare_from.as_deref(),
+            Some("w118_assault_rifle_up_61_magazine")
+        );
+        let (mouth, axis) = (automat.mouth_m.unwrap(), automat.insert_axis.unwrap());
+        let (origin, top) = (
+            automat.spare_origin_m.unwrap(),
+            automat.spare_top_m.unwrap(),
+        );
+        // Seated, the borrowed magazine stands on the well's axis with its base at the mouth, so
+        // it lines up with the built-in magazine as it drops.
+        assert!((origin - mouth).reject_from(axis).length() < 0.005);
+        assert!((origin - mouth).dot(axis) > 0.0);
+        assert!(top.dot(Vec3::Y) > 0.0);
     }
 
     #[test]

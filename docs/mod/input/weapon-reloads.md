@@ -43,7 +43,7 @@ The game reloads by magazine (the whole magazine at once) unless noted. The game
 | `w704` M488 | 1 | rocket clip | rocket | as the UVK-13 | |
 | `w176` Stupka 210 | 1 | mortar clip; moves no part | rocket (the shell into the muzzle) | push a shell into the muzzle | |
 | `w151` U-Rys 96 | 6 | shotgun start, loop, and end; one round per loop (bullet reload) | shell through the loading port, pump | push shells one at a time up into the port | the hand draws the gun's ejected shell casing as a stand-in; the pump is worked by hand only with the manual action on |
-| `w153` Automat 12 | 14 | rifle-back clip; no magazine part and no prop | magazine modelled into the body behind the grip, no action | eject (nothing drops), push a magazine up into the base of the magazine | nothing is drawn in the hand, and the old magazine stays drawn |
+| `w153` Automat 12 | 14 | rifle-back clip; no magazine part and no prop | magazine modelled into the body behind the grip, no action | eject (a borrowed magazine drops), push a magazine up into the base of the magazine | borrows the UP-61's spare magazine, the closest in size, which the hand draws and an eject drops from the built-in one; the built-in magazine cannot be hidden, so the gun always shows one |
 | `w155` U-Rys 12 | 4 | its own clip; the gun's own act breaks it open; refills all four at once | shell into the breech, no action | push shells one at a time into the breech | the game loads all four in one step, the mod one per push; the hand draws the gun's ejected shell casing as a stand-in |
 | `w161` U-SV 45 | 4 | rifle clip | magazine part, bolt | as the U-39 | the bolt is the `ejection_port` part on the right of the receiver |
 | `w162` CS111 Archangel | 6 | its own sniper clip | magazine part, bolt | as the U-39 | |
@@ -64,7 +64,7 @@ These keep the game's reload, or never reload:
 
 ## Recommendations
 
-The game has no model for the rounds of the revolvers, the U-Rys 96, and the U-Rys 12, so the hand draws the casing their ejection effect throws out as a stand-in ([reload.md, "Load"](reload.md#load)): a shell, or a revolver's six casings in a ring. The Automat 12 still draws nothing in the hand: its magazine is part of its body and can neither leave nor be seen to arrive. If that reads as broken in the headset, it could fall back to the game's reload.
+The game has no model for the rounds of the revolvers, the U-Rys 96, and the U-Rys 12, so the hand draws the casing their ejection effect throws out as a stand-in ([reload.md, "Load"](reload.md#load)): a shell, or a revolver's six casings in a ring. The Automat 12 has no magazine prop of its own, and its magazine is part of its body, so it borrows the spare magazine prop of the UP-61, whose magazine is the closest to its built-in one in size ([reload.md, "Load"](reload.md#load)). The hand draws the borrowed magazine, and an eject or a knock drops one from where the built-in magazine is. The built-in magazine cannot be hidden, so the gun always shows one, loaded or not. A borrowed magazine dropped in the world shares the UP-61's tag, so it fits either gun.
 
 ## In the headset
 
@@ -80,5 +80,5 @@ Tick each weapon: draw it, fire it dry, reload it as the table says, and fire ag
 8. UPU-210, Hydra: a fresh round seats over a spent one in one push.
 9. UVK-13, Bloodhound, Fire Leach, Javelin, M488, Stupka 210: the round into the muzzle.
 10. U-Rys 96, U-Rys 12: shells one at a time, until the pouch stops offering them at full; a shell casing shows in the hand for each, crimp first, and goes as it seats.
-11. Automat 12: the invisible magazine seats; note whether it reads as broken.
+11. Automat 12: a UP-61 magazine shows in the hand on a pouch take and slides up into the base of the built-in magazine, gone as it seats; an eject or a knock drops one from the built-in magazine, lined up with it. Note whether the borrowed magazine's size reads as the Automat's.
 12. Balloon Head, guitar case, Ragnarok, missile strike, EMP: the game's own reload (or none) runs, and the hands are not asked for anything.

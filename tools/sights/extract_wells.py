@@ -7,7 +7,9 @@ in and where the hand grabs to chamber, in weapon space (see ``wells.py``). For 
 weapon whose spare magazine prop depicts the magazine a hand loads, it also measures the top of that
 prop's model in the prop's own frame (see ``spares.py``). For a shell-fed weapon or a revolver, which
 have no model of a loose round, it names the casing model their ejection effect throws out and
-measures it, as the stand-in a round in the hand is drawn with (see ``rounds.py``).
+measures it, as the stand-in a round in the hand is drawn with (see ``rounds.py``). A gun whose
+magazine is modelled into its body with no prop borrows the spare magazine of the weapon whose
+prop matches it best (see ``borrowed.py``).
 
 Usage::
 
@@ -27,6 +29,7 @@ import os
 import sys
 from pathlib import Path
 
+import borrowed
 import rounds
 import spares
 import weapon
@@ -61,13 +64,18 @@ def main() -> int:
     log.info("found %d player weapon entities", len(entities))
 
     table = []
+    derived = []
     for path in entities:
-        entry, loaded, well = _derive(path, archives, spare_magazines)
+        entry, loaded, well, spare = _derive(path, archives, spare_magazines)
         table.append(entry)
+        derived.append((entry, loaded, well, spare))
         if args.dump:
             _dump(path, archives, args.dump / entry["weapon"])
         if args.plots and loaded is not None:
             wells_plot.views(loaded, well, args.plots / f"{entry['weapon']}.png")
+    donors = [spare for *_, spare in derived if spare is not None]
+    for entry, loaded, well, spare in derived:
+        _borrow(entry, loaded, well, donors)
 
     table.sort(key=lambda e: e["weapon"])
     # One entry per line, so that a regenerated table diffs by weapon.
@@ -124,7 +132,10 @@ def _derive(path: str, archives: GameArchives, spare_magazines: spares.SpareMaga
     remarks = well.notes + [f"doubt: {d}" for d in well.doubts]
     if remarks:
         entry["notes"] = "; ".join(remarks)
-    entry["spare_top_m"] = _vec(_spare_top(name, loaded, well, spare_magazines))
+    spare = _spare(name, loaded, well, spare_magazines)
+    entry["spare_top_m"] = _vec(spare and spares.top_centre(spare.positions, spare.axis))
+    entry["spare_from"] = None
+    entry["spare_origin_m"] = None
     entry.update(_round(name, path, well, archives))
     if entry["round_count"] is not None and well.kind == wells.CYLINDER:
         entry["notes"] = "; ".join(filter(None, (entry.get("notes"), "round_count: class default")))
@@ -143,13 +154,46 @@ def _derive(path: str, archives: GameArchives, spare_magazines: spares.SpareMaga
         entry["handle_m"],
         f"; doubtful: {', '.join(well.doubts)}" if well.doubts else "",
     )
-    return entry, loaded, well
+    return entry, loaded, well, spare
 
 
-def _spare_top(name: str, loaded: weapon.Weapon | None, well: wells.Well, spare_magazines: spares.SpareMagazines):
-    """The top centre of the spare magazine's model along the insertion axis (taken into the
-    magazine part's frame when the weapon has one), in the model's own frame, when the spare depicts the magazine a hand loads: the spare's model is the weapon's
-    magazine part, or the weapon has no round part and its magazine is modelled into the body."""
+def _borrow(entry: dict, loaded: weapon.Weapon | None, well: wells.Well, donors: list[borrowed.Donor]):
+    """Give a gun whose magazine is modelled below its receiver, with no spare magazine prop of its
+    own, the best matching donor's spare: its tag, its top, and where its origin sits seated."""
+    if (
+        loaded is None
+        or well.kind != wells.MAGAZINE
+        or well.part is not None
+        or well.part_length is None
+        or loaded.magazine_tag is not None
+        or well.mouth is None
+        or well.axis is None
+    ):
+        return
+    extents = borrowed.built_in_extents(loaded, well.mouth, well.axis, well.part_length)
+    choice = extents and borrowed.choose(extents, well.axis, well.mouth, donors)
+    if not choice:
+        log.warning("%s: no spare magazine to borrow", entry["weapon"])
+        return
+    entry["spare_top_m"] = _vec(spares.top_centre(choice.donor.positions, choice.donor.axis))
+    entry["spare_from"] = choice.donor.tag
+    entry["spare_origin_m"] = _vec(choice.origin)
+    note = f"spare: borrowed from {choice.donor.weapon}, the best match by size"
+    entry["notes"] = "; ".join(filter(None, (entry.get("notes"), note)))
+    log.info(
+        "%s: borrows %s's spare magazine (built in %s m, mismatch %.3f m)",
+        entry["weapon"],
+        choice.donor.weapon,
+        [round(e, 3) for e in extents],
+        choice.mismatch,
+    )
+
+
+def _spare(name: str, loaded: weapon.Weapon | None, well: wells.Well, spare_magazines: spares.SpareMagazines) -> borrowed.Donor | None:
+    """The spare magazine's model and the insertion axis in its frame (taken into the magazine
+    part's frame when the weapon has one), when the spare depicts the magazine a hand loads: the
+    spare's model is the weapon's magazine part, or the weapon has no round part and its magazine is
+    modelled into the body."""
     if loaded is None or well.kind != wells.MAGAZINE or well.axis is None:
         return None
     try:
@@ -169,7 +213,7 @@ def _spare_top(name: str, loaded: weapon.Weapon | None, well: wells.Well, spare_
         # axis's coordinates in the part's (and the spare model's) frame are its projections on them.
         m = round_part.matrix
         axis = tuple(sum(axis[j] * m[4 * i + j] for j in range(3)) for i in range(3))
-    return spares.top_centre(spare.positions, axis)
+    return borrowed.Donor(name, loaded.magazine_tag, spare.positions, axis)
 
 
 def _round(name: str, path: str, well: wells.Well, archives: GameArchives) -> dict:
