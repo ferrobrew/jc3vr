@@ -241,8 +241,15 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     });
     let loading_hand = insert::loading_hand(gun_hands, free, tick.dominant);
     let pouch_side = loading_hand.map_or(gun_side.other(), Hand::other);
+    // With one gun or none the pouch is at the middle of the belt, where both the free hand and the
+    // gun's push reach it without crossing the body; with a gun in each hand, it is on the side
+    // away from the gun being loaded.
     let pouch = body.map(|b| {
-        let pouch = volumes::magazine_pouch(b, &POUCHES, pouch_side, Some(pouch_side));
+        let pouch = if gun_hands == [true; 2] {
+            volumes::magazine_pouch(b, &POUCHES, pouch_side, Some(pouch_side))
+        } else {
+            volumes::centre_magazine_pouch(b, &POUCHES, Some(pouch_side))
+        };
         Candidate {
             hand: free,
             ..pouch

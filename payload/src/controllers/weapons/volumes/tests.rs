@@ -72,10 +72,9 @@ fn every_volume_for(frame: &BodyFrame, pouches: &PouchTuning, dominant: Hand) ->
         ChestGrabbers::Either,
     ));
     c.extend(c4_pouch(frame, pouches, dominant, ChestGrabbers::Either));
-    c.push(magazine_pouch(
+    c.push(centre_magazine_pouch(
         frame,
         pouches,
-        dominant.other(),
         Some(dominant.other()),
     ));
     c
@@ -138,8 +137,11 @@ fn the_pouches_sit_on_the_front_of_the_body_by_handedness() {
         let shoulders = skeleton.shoulders[Hand::Right.index()];
         let hip = skeleton.hips[Hand::Left.index()];
         // A right-handed player: the grenades on the dominant side of the chest, the C4 on the
-        // other, and the magazines at the front of the off-hand's hip.
-        assert!(grenade.x > 0.0 && c4.x < 0.0 && magazine.x < 0.0);
+        // other, and the magazines at the middle of the belt's front.
+        assert!(
+            grenade.x > 0.0 && c4.x < 0.0 && magazine.x.abs() < 1e-5,
+            "{magazine}"
+        );
         assert!((grenade.x + c4.x).abs() < 1e-5 && (grenade.y - c4.y).abs() < 1e-5);
         // The chest pouches on the upper chest, below the shoulders and above the belt; the
         // magazine pouch at the waist, above the hip joints.
@@ -202,6 +204,42 @@ fn the_magazine_pouch_is_laid_out_around_the_gun_hand_not_the_dominant_hand() {
         gun_side(Some(Hand::Left), Some(Hand::Right), Hand::Right),
         Hand::Left
     );
+}
+
+#[test]
+fn one_gun_s_pouch_is_on_the_midline_and_two_guns_pouches_are_apart_on_their_sides() {
+    for dims in BODIES {
+        for yaw in [0.0, -0.6] {
+            let frame = frame_of(ideal_skeleton(&dims, yaw));
+            let skeleton = frame.skeleton;
+            let midline = skeleton.hip_centre();
+            let right = frame.pelvis * Vec3::X;
+            for grabber in Hand::BOTH {
+                let centred = centre_magazine_pouch(&frame, &POUCHES, Some(grabber));
+                assert!((centred.centre - midline).dot(right).abs() < 1e-5);
+                assert_eq!(centred.hand, Some(grabber));
+                // The centred pouch keeps clear of the chest pouches above it.
+                let mut c: Vec<Candidate> = every_volume_for(&frame, &POUCHES, grabber)
+                    .into_iter()
+                    .filter(|c| c.volume != GrabVolume::MagazinePouch)
+                    .collect();
+                c.push(centred);
+                assert_apart(&c, &format!("height {}, yaw {yaw}", dims.height));
+                // At the waist above the hip joints, and further from either hip's socket than
+                // a side pouch on that hip's side.
+                let up = frame.pelvis * Vec3::Y;
+                assert!((centred.centre - midline).dot(up) > 0.0);
+                for hand in Hand::BOTH {
+                    let hip = skeleton.hips[hand.index()];
+                    let side = magazine_pouch(&frame, &POUCHES, hand, None);
+                    assert!(centred.centre.distance(hip) > side.centre.distance(hip));
+                }
+            }
+            let sides = Hand::BOTH.map(|hand| magazine_pouch(&frame, &POUCHES, hand, None));
+            assert!((sides[0].centre - midline).dot(right) < 0.0);
+            assert!((sides[1].centre - midline).dot(right) > 0.0);
+        }
+    }
 }
 
 #[test]

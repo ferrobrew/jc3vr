@@ -13,8 +13,8 @@
 //!
 //! - the chest's front on each side, below and inside the shoulder joint, for the grenade and C4
 //!   pouches ([`chest_sides`] says which pouch takes which side);
-//! - the belt's front on the side of the hand without a gun, for the magazine pouch: above the hip
-//!   joints, a few centimetres from the midline, in front of the belly.
+//! - the belt's front, for the magazine pouch: above the hip joints, in front of the belly, on the
+//!   midline with one gun or none, and a few centimetres to each side with a gun in each hand.
 //!
 //! The pouches' sides are laid out around the hand that holds the guns ([`gun_side`]), not the
 //! dominant hand, because the gun can ride the other hand.
@@ -66,8 +66,7 @@ pub struct SocketTuning {
     pub chest_radius_m: f32,
 }
 
-/// The pouches on the front of the body: the magazine pouch at the front of the belt on the free
-/// hand's side, and the grenade and C4 pouches on either side of the chest. Each is placed only
+/// The pouches on the front of the body: the magazine pouch at the front of the belt, and the grenade and C4 pouches on either side of the chest. Each is placed only
 /// while its feature is on: the grenade pouch with the grenade throw, the C4 pouch with the C4
 /// throw, and the magazine pouch while the true reload reloads the held weapon. Offsets are given
 /// for the right side and mirrored for the left.
@@ -77,8 +76,9 @@ pub struct PouchTuning {
     pub grenade: VolumeSpec,
     /// The C4 pouch, offset from the chest's front on its side.
     pub c4: VolumeSpec,
-    /// The universal reload pouch, offset from the belt's front on the free hand's side. It hands
-    /// out what the held weapon takes: a magazine, a shell, a rocket, or a pod.
+    /// The universal reload pouch, offset from the belt's front, at its middle or on one side
+    /// ([`centre_magazine_pouch`], [`magazine_pouch`]). It hands out what the held weapon takes: a
+    /// magazine, a shell, a rocket, or a pod.
     pub magazine: VolumeSpec,
     /// How far outside a pouch's surface a grip press still takes from it, metres, when the hand
     /// is in no other volume: a hand feeling for a pouch lands a little off it, and a press there
@@ -323,11 +323,35 @@ pub fn c4_pouch(
     grabbers.hand().map(|hand| Candidate { hand, ..pouch })
 }
 
+/// The universal reload pouch at the middle of the belt's front, a volume for `grabber`: where the
+/// reload ([`crate::controllers::weapons::reload`]) puts it with one gun or none, so that the free
+/// hand's take and the gun hand's push onto it ([`magazine_pouch`]'s one-handed reload) both reach
+/// it without crossing the body.
+pub fn centre_magazine_pouch(
+    frame: &BodyFrame,
+    pouches: &PouchTuning,
+    grabber: Option<Hand>,
+) -> Candidate {
+    let landmark = belt_at(frame, 0.0);
+    // The offset is mirrored for the left side, so a pouch spec with a sideways offset would leave
+    // the midline; the shipped one has none.
+    place(
+        GrabVolume::MagazinePouch,
+        landmark,
+        frame.pelvis,
+        &VolumeSpec {
+            offset_m: pouches.magazine.offset_m * Vec3::new(0.0, 1.0, 1.0),
+            ..pouches.magazine
+        },
+        Hand::Right,
+        grabber,
+    )
+}
+
 /// The universal reload pouch at the front of the belt on `side` of the body, a volume for
-/// `grabber`. The reload ([`crate::controllers::weapons::reload`]) picks the side: the free hand's,
-/// or with no hand free the side away from the guns, and with a gun in each hand, one pouch on each
-/// gun's own side. A gun's well pushed onto it reloads in one hand, so it is placed whether or not
-/// a hand is free.
+/// `grabber`: with a gun in each hand, the reload places one on each gun's own side, so neither gun
+/// is pushed across the body onto the one pouch. A gun's well pushed onto it reloads in one hand,
+/// so it is placed whether or not a hand is free.
 pub fn magazine_pouch(
     frame: &BodyFrame,
     pouches: &PouchTuning,
@@ -425,8 +449,8 @@ const BEND_NONE: f32 = 0.87;
 /// of the torso: the waist.
 const BELT_RISE_FRACTION: f32 = 0.17;
 
-/// How far out from the midline the belt's front landmark sits, as a fraction of the shoulder
-/// width: toward the middle of the belt, well inside the hip socket on that side, so that a hand
+/// How far out from the midline the belt's front landmark on a side sits, as a fraction of the
+/// shoulder width: toward the middle of the belt, well inside the hip socket on that side, so that a hand
 /// feeling for the pouch does not land in the socket.
 const BELT_OUT_FRACTION: f32 = 0.12;
 
@@ -448,7 +472,14 @@ const CHEST_FRONT_M: f32 = 0.02 + body::EYES_FORWARD_OF_SHOULDERS;
 /// The belt's front landmark on `side`: on the belly's surface at the belt's height, at the front
 /// of the hip on that side.
 fn belt(frame: &BodyFrame, side: Hand) -> Vec3 {
-    let out = frame.shoulder_width() * BELT_OUT_FRACTION * side_sign(side);
+    belt_at(
+        frame,
+        frame.shoulder_width() * BELT_OUT_FRACTION * side_sign(side),
+    )
+}
+
+/// The point on the belly's surface at the belt's height, `out` metres to the right of the midline.
+fn belt_at(frame: &BodyFrame, out: f32) -> Vec3 {
     let rise = frame.torso() * BELT_RISE_FRACTION;
     frame.skeleton.hip_centre() + frame.pelvis * Vec3::new(out, rise, -BELLY_FRONT_M)
 }
