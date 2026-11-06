@@ -25,8 +25,8 @@
 //!   afterburner gate at the top of its travel.
 //!
 //! The cockpit's buttons ([`buttons`]) are worked by hand too: the horn pressed on the wheel's hub,
-//! a nitrous button on the dash, the handlebars' right grip twisted back for the throttle and the
-//! left for the brake, and the collective twisted for the nitrous.
+//! a nitrous button on the dash, the handlebars' right grip twisted forward for the throttle and
+//! the left for the brake, and the collective twisted for the nitrous.
 //!
 //! The sticks and levers give the holding hand a haptic cue at the ends of their travel, the
 //! levers at neutral, and the throttle going into and out of its gate ([`cues`]).

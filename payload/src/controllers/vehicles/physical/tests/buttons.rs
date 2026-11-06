@@ -171,17 +171,23 @@ fn the_throttle_opens_with_the_twist_past_a_deadzone() {
 }
 
 #[test]
-fn twisting_the_bars_grips_back_opens_the_throttle_or_brakes_and_burns_no_nitrous() {
+fn twisting_the_bars_grips_forward_opens_the_throttle_or_brakes_and_burns_no_nitrous() {
     let config = PHYSICAL.buttons;
     let grab = Quat::from_rotation_y(0.2);
-    // Rolling the grip's top back toward the rider is a positive turn about the bars' line.
-    let back = Quat::from_rotation_x((config.throttle_twist_deg + 5.0).to_radians()) * grab;
+    // Rolling the grip's top forward, away from the rider, is a negative turn about the bars' line
+    // (+X, with +Z toward the rider), and opens the grip.
+    let forward = Quat::from_rotation_x(-(config.throttle_twist_deg + 5.0).to_radians()) * grab;
     assert!(
-        grip_twist(TwistGrip::Throttle, grab, back, Vec3::X)
+        grip_twist(TwistGrip::Throttle, grab, forward, Vec3::X)
             > config.throttle_twist_deg.to_radians()
     );
-    let forward = Quat::from_rotation_x(-0.6) * grab;
-    assert!(grip_twist(TwistGrip::Throttle, grab, forward, Vec3::X) < 0.0);
+    assert!(
+        grip_twist(TwistGrip::Brake, grab, forward, Vec3::X)
+            > config.throttle_twist_deg.to_radians()
+    );
+    let back = Quat::from_rotation_x(0.6) * grab;
+    assert!(grip_twist(TwistGrip::Throttle, grab, back, Vec3::X) < 0.0);
+    assert!(grip_twist(TwistGrip::Brake, grab, back, Vec3::X) < 0.0);
     // The collective's grip works either way.
     let either = Quat::from_rotation_z(-0.7) * grab;
     assert!(grip_twist(TwistGrip::Collective, grab, either, Vec3::X) > 0.6);
@@ -205,8 +211,8 @@ fn twisting_the_bars_grips_back_opens_the_throttle_or_brakes_and_burns_no_nitrou
     let out = step(&mut state, &p, &inputs, &mut events);
     assert_eq!(out.bike_throttle, Some(0.0));
     inputs.grabs = [None; 2];
-    // The left grip twisted back the same way brakes, and opens no throttle.
-    inputs.orientations = [Some(back), Some(grab)];
+    // The left grip twisted forward the same way brakes, and opens no throttle.
+    inputs.orientations = [Some(forward), Some(grab)];
     let out = step(&mut state, &p, &inputs, &mut events);
     assert_eq!(out.bike_throttle, Some(0.0));
     assert_eq!(out.bike_brake, Some(1.0));
@@ -229,7 +235,7 @@ fn twisting_the_bars_grips_back_opens_the_throttle_or_brakes_and_burns_no_nitrou
             .iter()
             .all(|d| d.target.action != Action::ACCELERATE)
     );
-    inputs.orientations = [Some(Quat::IDENTITY), Some(back)];
+    inputs.orientations = [Some(Quat::IDENTITY), Some(forward)];
     let out = step(&mut state, &p, &inputs, &mut events);
     assert_eq!(out.bike_throttle, Some(1.0));
     assert_eq!(out.bike_brake, Some(0.0));

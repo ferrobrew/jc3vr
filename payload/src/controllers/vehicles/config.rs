@@ -134,8 +134,8 @@ pub struct PhysicalControlsConfig {
     pub levers: bool,
     /// A nitrous button on the dash beside the wheel, pushed with a free hand.
     pub nitrous_button: bool,
-    /// Open the throttle by twisting the handlebars' right grip back, as a motorcycle's throttle
-    /// is twisted, and brake by twisting the left grip back the same way. The triggers still
+    /// Open the throttle by twisting the handlebars' right grip forward, rolling its top away from
+    /// the rider, and brake by twisting the left grip forward the same way. The triggers still
     /// accelerate and brake; on each, the larger of the grip and the trigger wins. Read from the
     /// key that saved the throttle twist alone.
     #[serde(alias = "twist_throttle")]

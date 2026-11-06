@@ -227,7 +227,7 @@ Every vehicle class shares one scheme. The grips carry nothing binary: they grip
 | Look back, vehicle camera, recenter camera | removed; the neck replaces them, and F7 recenters |
 | Motorcycle personal weapon (`MC_FIRE`) | B, aimed by the right hand |
 | Motorcycle lean and tilt | L stick; handlebar lean |
-| Motorcycle throttle | R trigger; twisting the handlebars' right grip back |
+| Motorcycle throttle | R trigger; twisting the handlebars' right grip forward |
 
 A gun takes over its hand's vehicle weapon action, not a button: rebinding `fire_primary` or `fire_secondary` in the runtime moves the vehicle weapon and the held gun together. In the driver's seat the triggers stay the pedals with a gun in either hand. The exit is a tap of the gamepad's Y at the moment the press becomes long (`controllers.bindings.long_press_s`), however long the press goes on, since the game exits only on a release of Y that was held briefly ([input.md, "Leaving and changing seats"](../../engine/gameplay/input.md#leaving-and-changing-seats)). The game's hold of Y, which moves to the gunner seat or the cargo bay where there is one, is not offered: it would have to be told apart from the exit before the exit is sent, and a player holding the button to exit holds it well past the game's hold time.
 

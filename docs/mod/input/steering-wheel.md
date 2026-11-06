@@ -85,7 +85,7 @@ The grips measure the bars' turn in the horizontal plane from the line between t
 
 The bars only turn. Their turn within 3° of centre steers nothing, so a resting hand's tremor and the small turns a wrist makes while it twists a grip do not weave the bike, and past that the share of the 30° lock is raised to the response exponent (1.6), so the bars steer gently around centre and fully at the lock. The steering is written to `TURN_LEFT`/`TURN_RIGHT` and the same value to `BIKE_LEAN_LEFT`/`BIKE_LEAN_RIGHT`, because the gamepad's one stick writes both and the game's bikes are tuned for them moving together. The grips' heights work nothing: the bars do not roll, so the grip that drops as two hands turn the bars neither leans nor steers on its own.
 
-The right grip twisted back is the throttle and the left the brake ([cockpit-controls.md, "The cockpit's buttons"](cockpit-controls.md#cockpit-buttons)).
+The right grip twisted forward is the throttle and the left the brake ([cockpit-controls.md, "The cockpit's buttons"](cockpit-controls.md#cockpit-buttons)).
 
 ## Turning the rendered wheel
 

@@ -208,7 +208,7 @@ pub struct StickSpec {
 /// The horn, the nitrous, and the bars' twist grips worked by hand (see
 /// [`crate::controllers::vehicles::physical::buttons`]): the horn pressed on the wheel's hub, a
 /// nitrous button on the dash beside the wheel, the collective twisted for the nitrous, and the
-/// handlebars' right grip twisted back for the throttle and the left for the brake. The plane's
+/// handlebars' right grip twisted forward for the throttle and the left for the brake. The plane's
 /// afterburner is its throttle's gate
 /// ([`FlightControlsTuning::afterburner_gate`]). The buttons stay alongside the controller's.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -232,7 +232,7 @@ pub struct CockpitButtonsTuning {
     pub twist_deg: f32,
     /// [`PhysicalControlsConfig::bars_twist`].
     pub bars_twist: bool,
-    /// How far a handlebars' grip is twisted back for full throttle or full brake, degrees.
+    /// How far a handlebars' grip is twisted forward for full throttle or full brake, degrees.
     pub throttle_twist_deg: f32,
 }
 

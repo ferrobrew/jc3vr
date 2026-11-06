@@ -1,7 +1,7 @@
 //! The cockpit's buttons, worked by hand: the horn on the wheel's hub and a nitrous button on the
 //! dash beside the wheel, pressed by pushing a free hand into them, and the twist grips: the
-//! handlebars' right grip twisted back opens the throttle and the left brakes, and the collective
-//! twisted burns the nitrous. Pure.
+//! handlebars' right grip twisted forward opens the throttle and the left brakes, and the
+//! collective twisted burns the nitrous. Pure.
 //!
 //! A push button is a disc facing the driver. A hand arms it by coming to it from the front, within
 //! its radius, and presses it by pushing on past its face by the press depth; it stays pressed,
@@ -128,9 +128,9 @@ pub fn push_step(phase: PushPhase, button: &PushButton, point: Option<Vec3>) -> 
 /// The twist grips' place: the handlebars' two grips and the collective.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TwistGrip {
-    /// The handlebars' right grip, the throttle, twisted back as a motorcycle's throttle is.
+    /// The handlebars' right grip, the throttle, twisted forward.
     Throttle,
-    /// The handlebars' left grip, the brake, twisted back as the throttle is.
+    /// The handlebars' left grip, the brake, twisted forward as the throttle is.
     Brake,
     /// The collective's grip, twisted either way for the nitrous.
     Collective,
@@ -148,21 +148,21 @@ impl TwistGrip {
 
 /// How far a hand that took a control at orientation `grab` and holds it at `now` has twisted
 /// it, radians: for either bars' grip, about the line from the left grip to the right (`across`),
-/// positive rolling the grip's top back toward the driver; for the collective, about the fore-aft
-/// axis, either way.
+/// positive rolling the grip's top forward, away from the driver (clockwise, seen from the right
+/// end of the bars); for the collective, about the fore-aft axis, either way.
 pub fn grip_twist(grip: TwistGrip, grab: Quat, now: Quat, across: Vec3) -> f32 {
     let delta = now * grab.inverse();
     match grip {
         TwistGrip::Throttle | TwistGrip::Brake => {
-            twist_angle(delta, across.try_normalize().unwrap_or(Vec3::X))
+            -twist_angle(delta, across.try_normalize().unwrap_or(Vec3::X))
         }
         TwistGrip::Collective => twist_angle(delta, Vec3::Z).abs(),
     }
 }
 
-/// The throttle or the brake a handlebars' grip twisted back by `twist` radians applies, `0..=1`:
+/// The throttle or the brake a handlebars' grip twisted forward by `twist` radians applies, `0..=1`:
 /// nothing within [`THROTTLE_DEADZONE_DEG`], so a hand that settles on the grip does not creep, and
-/// full at [`CockpitButtonsTuning::throttle_twist_deg`]. A grip rolled forward is closed.
+/// full at [`CockpitButtonsTuning::throttle_twist_deg`]. A grip rolled back is closed.
 pub fn twist_throttle(twist: f32, config: &CockpitButtonsTuning) -> f32 {
     let deadzone = THROTTLE_DEADZONE_DEG.to_radians();
     let full = config
