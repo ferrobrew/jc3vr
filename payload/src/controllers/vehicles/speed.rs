@@ -1,14 +1,16 @@
-//! The speed of the vehicle the local character rides, from its world transform across the last
-//! world step: what the bindings' parachute bail compares against the animation graph's speed gate
+//! The speed of the vehicle the local character rides, as the animation graph's parachute bail
+//! condition measures it: what the bindings' bail compares against the graph's speed gate
 //! ([`PARACHUTE_BAIL_MIN_SPEED_MPS`](crate::controllers::bindings::bail::PARACHUTE_BAIL_MIN_SPEED_MPS)).
 
-use glam::Mat4;
-use jc3gi::character::character::Character;
-
-use crate::controllers::physical_hands::physics;
+use glam::{Mat4, Vec3};
+use jc3gi::{character::character::Character, types::math::Vector3};
 
 /// The speed of the vehicle the local character is in, metres per second, or `None` outside a
-/// vehicle or while it cannot be read.
+/// vehicle or while it cannot be read: the length of the vehicle's ground-relative velocity at the
+/// character's position ([`Vehicle::GetGroundRelativePointVelocity`]), which is what the graph's
+/// parent-vehicle speed condition compares against its bounds.
+///
+/// [`Vehicle::GetGroundRelativePointVelocity`]: jc3gi::vehicle::vehicle::Vehicle::GetGroundRelativePointVelocity
 ///
 /// # Safety
 ///
@@ -16,9 +18,18 @@ use crate::controllers::physical_hands::physics;
 pub(crate) unsafe fn seat_vehicle_speed_mps() -> Option<f32> {
     let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
     let vehicle = unsafe { character.GetVehiclePtr().as_ref() }?;
-    let from = Mat4::from(vehicle.m_WorldMatrixT0).w_axis.truncate();
-    let to = Mat4::from(vehicle.m_WorldMatrixT1).w_axis.truncate();
-    // The two transforms are a world step apart.
-    let speed = from.distance(to) / physics::step_seconds();
+    // The game reads the velocity through the physics body without checking it.
+    if vehicle.m_PfxVehicle.is_null() {
+        return None;
+    }
+    let point = Vector3 {
+        data: Mat4::from(character.m_WorldMatrixT1)
+            .w_axis
+            .truncate()
+            .to_array(),
+    };
+    let mut velocity = Vector3 { data: [0.0; 3] };
+    unsafe { vehicle.GetGroundRelativePointVelocity(&point, &mut velocity) };
+    let speed = Vec3::from_array(velocity.data).length();
     speed.is_finite().then_some(speed)
 }

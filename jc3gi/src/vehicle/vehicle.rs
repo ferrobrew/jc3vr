@@ -615,6 +615,32 @@ impl Vehicle {
             f(self as *const Self as _, character)
         }
     }
+    pub const GetGroundRelativePointVelocity_ADDRESS: usize = 0x140F26270;
+    /// Writes to `velocity` the world velocity of the vehicle's physics body
+    /// ([`m_PfxVehicle`](crate::vehicle::vehicle::Vehicle::m_PfxVehicle)) at the world point `point`, less the velocity of
+    /// what its wheels stand on at that point, so a vehicle carried on a moving body reads its
+    /// speed over that body. With no wheel on the ground, a physics body that keeps its last
+    /// ground velocity (behind a flag of the body that is not mapped) takes that off instead. Always returns `true`. The animation graph's parent-vehicle
+    /// speed condition (`CGraphParentVehicleSpeedCondition`) compares the squared length of the
+    /// result at the seated character's position (the translation of
+    /// [`Character::m_WorldMatrixT1`](crate::character::character::Character::m_WorldMatrixT1)) against
+    /// its squared minimum and maximum speeds.
+    pub unsafe fn GetGroundRelativePointVelocity(
+        &self,
+        point: *const crate::types::math::Vector3,
+        velocity: *mut crate::types::math::Vector3,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                point: *const crate::types::math::Vector3,
+                velocity: *mut crate::types::math::Vector3,
+            ) -> bool = ::std::mem::transmute(
+                Self::GetGroundRelativePointVelocity_ADDRESS,
+            );
+            f(self as *const Self as _, point, velocity)
+        }
+    }
     pub const IsMech_ADDRESS: usize = 0x140F23990;
     /// Whether the vehicle is a mech: its physics body has a strafing wheel-steering controller.
     pub unsafe fn IsMech(&self) -> bool {
