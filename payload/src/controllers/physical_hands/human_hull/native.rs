@@ -18,6 +18,7 @@ use crate::controllers::physical_hands::{
     human_hull::{
         ClearanceUnavailableReason,
         geometry::{self, Bounds, GeometryError},
+        kept::{self, KeptPair},
         query::{self, Budget},
     },
 };
@@ -38,6 +39,8 @@ pub(super) struct NativeState {
     mutation_fault: bool,
     /// Whether the local player's body last had a narrowed shape, reported on each change.
     player_narrowed: Option<bool>,
+    /// The shape pairs earlier payloads in this process left in place, read on first use.
+    kept: Option<Vec<KeptPair>>,
 }
 
 // SAFETY: STATE serializes access. Shape mutations run in settings hooks or the native phase;
@@ -59,6 +62,7 @@ impl NativeState {
             generation: 0,
             mutation_fault: false,
             player_narrowed: None,
+            kept: None,
         }
     }
 
@@ -110,9 +114,15 @@ impl NativeState {
     /// names can be freed: the shapes are the engine's own convex shapes on its own heap, with no
     /// pointer into the payload, and a settings table's destructor releases its slots' own
     /// references as for any shape. Pending construction hooks see the commit and keep the
-    /// authored geometry.
+    /// authored geometry. The pairs are recorded for the next payload ([`kept`]), which would
+    /// otherwise read a replacement still in a slot as authored geometry and narrow it again.
     pub(super) fn commit_in_place(&mut self) {
         self.committed = true;
+        let kept = self.kept.get_or_insert_with(kept::load);
+        let pairs = self.tables.iter().flat_map(|table| &table.pairs);
+        if kept::merge(kept, pairs.map(Pair::kept)) {
+            kept::store(kept);
+        }
         // Dropping the tables drops the retained pointers without releasing them.
         self.tables.clear();
     }
@@ -120,6 +130,23 @@ impl NativeState {
     pub(super) unsafe fn adopt(
         &mut self,
         settings: NonNull<SharedPfxCharacterSettings>,
+    ) -> Result<(), GeometryError> {
+        unsafe {
+            self.adopt_with(settings, |shape| {
+                geometry::narrow(shape).map(|(replacement, _)| replacement)
+            })
+        }
+    }
+
+    /// Adopt `settings`, narrowing each human slot's authored shape with `narrow`.
+    ///
+    /// A slot that holds either shape of a pair an earlier payload left in place ([`kept`]) takes
+    /// that pair instead: its replacement is never authored geometry, and narrowing it again would
+    /// halve the width on every reinjection.
+    unsafe fn adopt_with(
+        &mut self,
+        settings: NonNull<SharedPfxCharacterSettings>,
+        mut narrow: impl FnMut(NonNull<hknpShape>) -> Result<NonNull<hknpShape>, GeometryError>,
     ) -> Result<(), GeometryError> {
         if self.committed
             || self
@@ -139,29 +166,41 @@ impl NativeState {
             self.advance_generation();
             return Ok(());
         }
+        let kept = self.kept.get_or_insert_with(kept::load);
         for state in HUMAN_STATES {
             let index = state as usize;
-            let Some(original) = NonNull::new(unsafe { settings.as_ref() }.m_CapsuleShape[index])
+            let Some(slot) = NonNull::new(unsafe { settings.as_ref() }.m_CapsuleShape[index])
             else {
                 unsafe { table.release_pairs() };
                 return Err(GeometryError::InvalidGeometry);
             };
-            let (replacement, _) = match unsafe { geometry::narrow(original) } {
-                Ok(result) => result,
+            let kept_pair = kept::find(kept, index, slot.as_ptr() as usize);
+            let pair = match kept_pair {
+                Some(pair) => Pair::from_kept(pair),
+                None => narrow(slot).map(|replacement| Pair {
+                    index,
+                    original: slot,
+                    replacement,
+                }),
+            };
+            let pair = match pair {
+                Ok(pair) => pair,
                 Err(error) => {
                     unsafe { table.release_pairs() };
                     return Err(error);
                 }
             };
-            unsafe { retain(original) };
-            table.pairs.push(Pair {
-                index,
-                original,
-                replacement,
-            });
+            // Every pair holds one reference to each of its shapes. A narrowed replacement arrives
+            // with its creation reference; a kept one is shared with the references left behind.
+            unsafe { retain(pair.original) };
+            if kept_pair.is_some() {
+                unsafe { retain(pair.replacement) };
+            }
+            table.pairs.push(pair);
         }
+        // Whatever the slots held, they now hold what the enabled setting asks for.
+        unsafe { table.set_installed(self.enabled) };
         if self.enabled {
-            unsafe { table.set_installed(true) };
             self.original_active = false;
         }
         self.tables.push(table);
@@ -439,10 +478,9 @@ impl Table {
         Ok(())
     }
 
+    /// Point every slot at its pair's replacement or original. Each slot is checked on its own,
+    /// so a table adopted with a mix of the two ends up consistent.
     unsafe fn set_installed(&mut self, install: bool) {
-        if self.installed == install {
-            return;
-        }
         let Some(mut settings) = self.settings else {
             return;
         };
@@ -452,6 +490,9 @@ impl Table {
             } else {
                 pair.original
             };
+            if unsafe { settings.as_ref() }.m_CapsuleShape[pair.index] == next.as_ptr() {
+                continue;
+            }
             unsafe { retain(next) };
             let old = unsafe { settings.as_mut() }.m_CapsuleShape[pair.index];
             unsafe { settings.as_mut() }.m_CapsuleShape[pair.index] = next.as_ptr();
@@ -482,6 +523,28 @@ struct Pair {
     index: usize,
     original: NonNull<hknpShape>,
     replacement: NonNull<hknpShape>,
+}
+
+impl Pair {
+    fn kept(&self) -> KeptPair {
+        KeptPair {
+            index: self.index,
+            original: self.original.as_ptr() as usize,
+            replacement: self.replacement.as_ptr() as usize,
+        }
+    }
+
+    /// The references an earlier payload left keep both shapes alive for the life of the process.
+    fn from_kept(pair: KeptPair) -> Result<Self, GeometryError> {
+        let shape = |address: usize| {
+            NonNull::new(address as *mut hknpShape).ok_or(GeometryError::InvalidGeometry)
+        };
+        Ok(Self {
+            index: pair.index,
+            original: shape(pair.original)?,
+            replacement: shape(pair.replacement)?,
+        })
+    }
 }
 
 struct Change {
@@ -625,6 +688,8 @@ const MAXIMUM_RESTORE_COMPARISONS: usize = 1_000_000;
 
 #[cfg(test)]
 mod tests {
+    use std::mem::MaybeUninit;
+
     use super::*;
 
     #[test]
@@ -810,6 +875,153 @@ mod tests {
         // Construction after the commit keeps the authored geometry and records nothing.
         unsafe { state.adopt(settings) }.unwrap();
         assert!(state.tables.is_empty());
+    }
+
+    /// Fake heap shapes with live reference counts, which retain and release adjust in place.
+    struct FakeShapes(Vec<MaybeUninit<hknpShape>>);
+
+    impl FakeShapes {
+        fn new(count: usize, references: u32) -> Self {
+            let mut shapes: Vec<MaybeUninit<hknpShape>> =
+                (0..count).map(|_| MaybeUninit::zeroed()).collect();
+            for shape in &mut shapes {
+                let object = shape.as_mut_ptr().cast::<hkReferencedObject>();
+                // SAFETY: the zeroed storage is large enough for the shape's referenced header.
+                unsafe {
+                    (*object).m_memSizeAndRefCount =
+                        (1 << hkReferencedObject::MEMORY_SIZE_SHIFT) | references
+                };
+            }
+            Self(shapes)
+        }
+
+        fn get(&mut self, index: usize) -> NonNull<hknpShape> {
+            NonNull::new(self.0[index].as_mut_ptr()).unwrap()
+        }
+
+        fn references(&mut self, index: usize) -> u32 {
+            let object = self.get(index).as_ptr().cast::<hkReferencedObject>();
+            // SAFETY: the header was initialized in `new`.
+            unsafe { (*object).m_memSizeAndRefCount & hkReferencedObject::REFERENCE_COUNT_MASK }
+        }
+    }
+
+    /// A settings table whose human slots hold `slot(state)`, and the pairs an earlier payload
+    /// left in place for those slots.
+    fn kept_table(
+        originals: &mut FakeShapes,
+        replacements: &mut FakeShapes,
+        slot_holds_replacement: bool,
+    ) -> (Box<MaybeUninit<SharedPfxCharacterSettings>>, Vec<KeptPair>) {
+        let mut settings = Box::new(MaybeUninit::<SharedPfxCharacterSettings>::zeroed());
+        let mut kept = Vec::new();
+        for (slot, state) in HUMAN_STATES.into_iter().enumerate() {
+            let index = state as usize;
+            let (original, replacement) = (originals.get(slot), replacements.get(slot));
+            // SAFETY: the zeroed table is a valid table of null slots.
+            unsafe { settings.assume_init_mut() }.m_CapsuleShape[index] = if slot_holds_replacement
+            {
+                replacement.as_ptr()
+            } else {
+                original.as_ptr()
+            };
+            kept.push(KeptPair {
+                index,
+                original: original.as_ptr() as usize,
+                replacement: replacement.as_ptr() as usize,
+            });
+        }
+        (settings, kept)
+    }
+
+    #[test]
+    fn a_replacement_left_in_place_is_adopted_and_never_narrowed_again() {
+        // Left in place: each slot and the leaked payload reference hold the replacement, and the
+        // leaked reference holds the original.
+        let mut originals = FakeShapes::new(HUMAN_STATES.len(), 1);
+        let mut replacements = FakeShapes::new(HUMAN_STATES.len(), 2);
+        let (mut settings, kept) = kept_table(&mut originals, &mut replacements, true);
+        let mut state = NativeState::new();
+        state.kept = Some(kept);
+        let table = NonNull::new(settings.as_mut_ptr()).unwrap();
+        unsafe { state.adopt_with(table, |_| panic!("narrowed a kept replacement")) }.unwrap();
+        assert_eq!(state.tables.len(), 1);
+        assert!(state.tables[0].installed);
+        for (slot, state_kind) in HUMAN_STATES.into_iter().enumerate() {
+            let pair = &state.tables[0].pairs[slot];
+            assert_eq!(pair.original, originals.get(slot));
+            assert_eq!(pair.replacement, replacements.get(slot));
+            let held = unsafe { settings.assume_init_ref() }.m_CapsuleShape[state_kind as usize];
+            assert_eq!(held, replacements.get(slot).as_ptr());
+            assert_eq!(originals.references(slot), 2);
+            assert_eq!(replacements.references(slot), 3);
+        }
+        assert_eq!(unsafe { state.tables[0].validate_slots() }, Ok(()));
+    }
+
+    #[test]
+    fn a_disabled_hull_puts_the_authored_shape_back_in_a_kept_slot() {
+        let mut originals = FakeShapes::new(HUMAN_STATES.len(), 1);
+        let mut replacements = FakeShapes::new(HUMAN_STATES.len(), 2);
+        let (mut settings, kept) = kept_table(&mut originals, &mut replacements, true);
+        let mut state = NativeState::new();
+        state.enabled = false;
+        state.kept = Some(kept);
+        let table = NonNull::new(settings.as_mut_ptr()).unwrap();
+        unsafe { state.adopt_with(table, |_| panic!("narrowed a kept replacement")) }.unwrap();
+        assert!(!state.tables[0].installed);
+        for (slot, state_kind) in HUMAN_STATES.into_iter().enumerate() {
+            let held = unsafe { settings.assume_init_ref() }.m_CapsuleShape[state_kind as usize];
+            assert_eq!(held, originals.get(slot).as_ptr());
+            // The pair's and the slot's references to the original; the slot's to the replacement
+            // went back.
+            assert_eq!(originals.references(slot), 3);
+            assert_eq!(replacements.references(slot), 2);
+        }
+        assert_eq!(unsafe { state.tables[0].validate_slots() }, Ok(()));
+    }
+
+    #[test]
+    fn a_kept_original_in_a_slot_takes_its_kept_replacement() {
+        // Restored before the eject left the pair: the slot holds the original again.
+        let mut originals = FakeShapes::new(HUMAN_STATES.len(), 2);
+        let mut replacements = FakeShapes::new(HUMAN_STATES.len(), 1);
+        let (mut settings, kept) = kept_table(&mut originals, &mut replacements, false);
+        let mut state = NativeState::new();
+        state.kept = Some(kept);
+        let table = NonNull::new(settings.as_mut_ptr()).unwrap();
+        unsafe { state.adopt_with(table, |_| panic!("narrowed a kept original")) }.unwrap();
+        for (slot, state_kind) in HUMAN_STATES.into_iter().enumerate() {
+            let held = unsafe { settings.assume_init_ref() }.m_CapsuleShape[state_kind as usize];
+            assert_eq!(held, replacements.get(slot).as_ptr());
+            assert_eq!(originals.references(slot), 2);
+            assert_eq!(replacements.references(slot), 3);
+        }
+    }
+
+    #[test]
+    fn an_authored_table_is_narrowed_once_per_human_slot() {
+        let mut originals = FakeShapes::new(HUMAN_STATES.len(), 1);
+        let mut replacements = FakeShapes::new(HUMAN_STATES.len(), 1);
+        let (mut settings, _) = kept_table(&mut originals, &mut replacements, false);
+        let mut state = NativeState::new();
+        state.kept = Some(Vec::new());
+        let table = NonNull::new(settings.as_mut_ptr()).unwrap();
+        let mut narrowed = 0;
+        unsafe {
+            state.adopt_with(table, |_| {
+                narrowed += 1;
+                Ok(replacements.get(narrowed - 1))
+            })
+        }
+        .unwrap();
+        assert_eq!(narrowed, HUMAN_STATES.len());
+        for slot in 0..HUMAN_STATES.len() {
+            // The pair's reference to the original, the slot's having gone back; the creation's
+            // and the slot's to the replacement.
+            assert_eq!(originals.references(slot), 1);
+            assert_eq!(replacements.references(slot), 2);
+        }
     }
 
     #[test]

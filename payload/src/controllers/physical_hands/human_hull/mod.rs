@@ -7,6 +7,7 @@
 #[cfg(test)]
 mod clearance;
 mod geometry;
+mod kept;
 mod native;
 mod query;
 
