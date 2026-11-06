@@ -38,17 +38,17 @@ pub(super) fn read(world: &Mat4, scale: f32) -> Vec3 {
 /// the published head would drop it below the shoulders; the pivot does not move, and the head bone's
 /// orientation, which follows the HMD, is what puts the drawn eyes back in front of it.
 pub fn head_bone_world(character_rotation: Quat, scale: f32) -> Vec3 {
-    let eye = character_rotation.inverse() * query().position;
-    character_rotation * head_bone_target(eye, body_relative_rotation(), scale)
+    let head = character_rotation.inverse() * query().position;
+    character_rotation * head_bone_target(head, body_relative_rotation(), scale)
 }
 
 /// [`head_bone_world`] in the character's body axes: the head bone's place for the published head
-/// `eye`, with the head turned `head_rotation` against the body, at the world scale `scale`.
-pub fn head_bone_target(eye: Vec3, head_rotation: Quat, scale: f32) -> Vec3 {
-    eye + neck_pivot_offset(head_rotation, scale)
+/// `head`, turned `head_rotation` against the body, at the world scale `scale`.
+pub fn head_bone_target(head: Vec3, head_rotation: Quat, scale: f32) -> Vec3 {
+    head + neck_pivot_offset(head_rotation, scale)
 }
 
-/// The neck pivot's place relative to the eye point, model space, for a head turned
+/// The neck pivot's place relative to the published head, model space, for a head turned
 /// `head_rotation` from neutral against the body, at the world scale `scale`: what to add to the
 /// published head to have the pivot. Zero for a neutral head, since the anchor already is the
 /// pivot then.
@@ -83,7 +83,8 @@ mod tests {
         let arm = -EYES_TO_NECK;
         let eye_travel = down * arm - arm;
         assert!(eye_travel.y < -0.05, "{eye_travel}");
-        // The eye-derived head plus the offset is the pivot, which did not move.
+        // The published head, which travels with the eyes, plus the offset is the pivot, which did
+        // not move.
         let pivot_travel = eye_travel + neck_pivot_offset(down, 1.0);
         assert!(pivot_travel.length() < 1e-5, "{pivot_travel}");
         // At twice the world scale, the arm is twice as long.

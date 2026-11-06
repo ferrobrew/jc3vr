@@ -426,7 +426,7 @@ mod tests {
 
     /// The reference skeleton looking down by `look` radians as the posing leaves it: the upper
     /// back pitched forward by the procedural torso's share of the look, and the head bone placed
-    /// on the body IK's head target, for an eye point the player's look down swings down and
+    /// on the body IK's head target, for a published head the player's look down swings down and
     /// forward about the neck pivot.
     fn looking_down(look: f32) -> SkeletonLandmarks {
         let reference = reference_skeleton();
@@ -436,9 +436,9 @@ mod tests {
         let chest_pitch = (look * 0.35).min(0.44);
         let head_rotation = Quat::from_rotation_x(-look);
         let eyes = -EYES_TO_NECK;
-        let eye = reference.head + head_rotation * eyes - eyes;
+        let head = reference.head + head_rotation * eyes - eyes;
         SkeletonLandmarks {
-            head: head_bone_target(eye, head_rotation, 1.0),
+            head: head_bone_target(head, head_rotation, 1.0),
             shoulders: reference
                 .shoulders
                 .map(|s| pitch(chest_pitch, upper_back, s)),
@@ -457,7 +457,8 @@ mod tests {
         assert!(plausible(&reference_skeleton()));
         // The head target stays on the neck pivot, so the head bone holds its height while the
         // eyes swing down and forward: more than a hunch's 5 cm up the spine from the shoulders
-        // at every pitch, where aiming it at the eye point sank it below them past 75 degrees.
+        // at every pitch, where aiming it at the published head sank it below them past 75
+        // degrees.
         let reference = reference_skeleton();
         for look in [0.0, 30.0, 60.0, 75.0, 90.0] {
             let landmarks = looking_down(deg(look));
