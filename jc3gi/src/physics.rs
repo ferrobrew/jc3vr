@@ -852,6 +852,21 @@ fn _PfxLayer_size_check() {
     }
     unreachable!()
 }
+#[repr(u32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// A body's motion type as the engine wrapper sees it (`CPfxRigidBody::GetMotionType` and
+/// [`SetMotionType`](crate::physics::PfxRigidBody::SetMotionType)).
+pub enum PfxMotionType {
+    STATIC = 0isize as _,
+    DYNAMIC = 1isize as _,
+    KEYFRAMED = 2isize as _,
+}
+fn _PfxMotionType_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], PfxMotionType>([0u8; 0x4]);
+    }
+    unreachable!()
+}
 #[repr(C, align(8))]
 /// A pre-simulation callback (`CPfxPreSimulationCallback`), an object the physics system calls
 /// before each step ([`PhysicsSystem::AddPreSimulationCallback`](crate::physics::PhysicsSystem::AddPreSimulationCallback)). The engine never deletes one;
@@ -972,7 +987,14 @@ pub struct PfxRigidBody {
     _field_8: [u8; 56],
     /// The body's id in the physics system's world.
     pub m_BodyId: u32,
-    _field_44: [u8; 124],
+    /// The motion the body had before [`SetMotionType`](crate::physics::PfxRigidBody::SetMotionType) made it static or
+    /// keyframed, or [`hknpBody::INVALID_MOTION_ID`](crate::physics::hknpBody::INVALID_MOTION_ID) when there is none. It is a motion of its own
+    /// in [`hknpWorld::m_motions`](crate::physics::hknpWorld::m_motions) that no body uses, made from the body's motion at the change, so
+    /// it keeps the body's mass and inertia while the body itself has the world's static motion or
+    /// an infinite-mass keyframed one. [`SetMotionType`](crate::physics::PfxRigidBody::SetMotionType) rebuilds the dynamic
+    /// motion from it and destroys it.
+    pub m_SavedMotionId: u32,
+    _field_48: [u8; 120],
 }
 fn _PfxRigidBody_size_check() {
     unsafe {
@@ -983,6 +1005,60 @@ fn _PfxRigidBody_size_check() {
 impl PfxRigidBody {
     pub fn vftable(&self) -> *const crate::physics::PfxRigidBodyVftable {
         self.vftable as *const crate::physics::PfxRigidBodyVftable
+    }
+    pub const GetMotionType_ADDRESS: usize = 0x14024EFB0;
+    /// `CPfxRigidBody::GetMotionType`: the body's [`PfxMotionType`](crate::physics::PfxMotionType), from its flags:
+    /// [`KEYFRAMED`](crate::physics::PfxMotionType::KEYFRAMED) when it has
+    /// [`IS_KEYFRAMED`](crate::physics::hknpBody::IS_KEYFRAMED), [`STATIC`](crate::physics::PfxMotionType::STATIC) when it has
+    /// [`IS_STATIC`](crate::physics::hknpBody::IS_STATIC), and [`DYNAMIC`](crate::physics::PfxMotionType::DYNAMIC) otherwise. It
+    /// does not check the body id. The disassembler mislabels it `CSoundInstance::IsActive`.
+    pub unsafe fn GetMotionType(&self) -> crate::physics::PfxMotionType {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+            ) -> crate::physics::PfxMotionType = ::std::mem::transmute(
+                Self::GetMotionType_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const SetMotionType_ADDRESS: usize = 0x140294D90;
+    /// `CPfxRigidBody::SetMotionType`: changes the body's motion type to `motion_type` (a
+    /// [`PfxMotionType`](crate::physics::PfxMotionType)) and returns the type it had; it does nothing for a type out of range or
+    /// equal to the current one. The body keeps its id throughout; only its motion is replaced
+    /// ([`hknpBody::m_motionId`](crate::physics::hknpBody::m_motionId)), at once, through `hknpWorld::setBodyMotion`, so it needs the world
+    /// open for writing, outside the simulation step.
+    ///
+    /// To static, it saves a copy of the body's motion in
+    /// [`m_SavedMotionId`](crate::physics::PfxRigidBody::m_SavedMotionId) and gives the body the world's static motion. To
+    /// keyframed, it saves a copy the same way, gives the body a second copy, and sets that one's
+    /// mass to infinite. To dynamic, it reads the mass from the saved motion's inverse mass
+    /// ([`hknpMotion::m_inverseInertia`](crate::physics::hknpMotion::m_inverseInertia)): a positive mass initializes a new motion with that mass,
+    /// a negative one with its magnitude as a density, and zero as keyframed; the new motion then
+    /// takes the saved motion's inverse inertia, so the body gets back the mass properties it had.
+    /// It gives the body the new motion, destroys the saved one, clears
+    /// [`m_SavedMotionId`](crate::physics::PfxRigidBody::m_SavedMotionId), and pushes the wrapper's motion properties to the
+    /// new motion.
+    ///
+    /// A body with the static motion and no saved motion (a body created without mass) cannot leave
+    /// the static type, and the call does nothing. A keyframed body without a saved motion is not
+    /// guarded: the change to dynamic reads the saved motion at the invalid id. `activate` is passed
+    /// by every caller as `true`; the function does not read it.
+    pub unsafe fn SetMotionType(
+        &mut self,
+        motion_type: crate::physics::PfxMotionType,
+        activate: bool,
+    ) -> crate::physics::PfxMotionType {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                motion_type: crate::physics::PfxMotionType,
+                activate: bool,
+            ) -> crate::physics::PfxMotionType = ::std::mem::transmute(
+                Self::SetMotionType_ADDRESS,
+            );
+            f(self as *mut Self as _, motion_type, activate)
+        }
     }
     pub const Construct_ADDRESS: usize = 0x1402940D0;
     /// `CPfxRigidBody::CPfxRigidBody`: wraps the existing body `*body_id` of the physics system's
@@ -1144,6 +1220,15 @@ impl PfxRigidBody {
             f(self as *mut Self as _, active)
         }
     }
+    /// Wakes the body ([`hknpWorld::activateBody`](crate::physics::hknpWorld::activateBody)) when it is valid, in the broad phase, and a
+    /// virtual of the wrapper's own does not veto it, then notifies the wrapper's activation
+    /// listener, if it has one.
+    pub unsafe fn ForceActivate(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).ForceActivate).read();
+            f(self as *mut Self as _)
+        }
+    }
 }
 impl PfxRigidBody {
     /// The [`Destruct`](crate::physics::PfxRigidBody::Destruct) flag that frees the wrapper's memory.
@@ -1242,7 +1327,12 @@ pub struct PfxRigidBodyVftable {
     _vfunc_31: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
     _vfunc_32: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
     _vfunc_33: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
-    _vfunc_34: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    /// Wakes the body ([`hknpWorld::activateBody`](crate::physics::hknpWorld::activateBody)) when it is valid, in the broad phase, and a
+    /// virtual of the wrapper's own does not veto it, then notifies the wrapper's activation
+    /// listener, if it has one.
+    pub ForceActivate: unsafe extern "system" fn(
+        this: *mut crate::physics::PfxRigidBody,
+    ),
     _vfunc_35: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
     _vfunc_36: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
     _vfunc_37: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
@@ -1884,11 +1974,27 @@ impl std::convert::AsMut<RaycastFilter> for RaycastFilter {
 }
 #[repr(C, align(8))]
 /// A rigid object (`CRigidObject`): a [`PhysicsGameObject`](crate::physics::PhysicsGameObject) with one rigid body, such as a crate,
-/// a barrel, a gas canister, or a piece of debris. Its body may be static, fixed, keyframed, or
-/// dynamic. Characters, vehicles, and weapons are not rigid objects. Only some members are
-/// mapped.
+/// a barrel, a gas canister, or a piece of debris. Its type ([`RigidObjectType`](crate::physics::RigidObjectType), in
+/// [`m_Flags`](crate::physics::RigidObject::m_Flags)) says whether its body is static, fixed, keyframed, or dynamic.
+/// Characters, vehicles, and weapons are not rigid objects. Only some members are mapped.
+///
+/// The body is created from the object's collision resource with the mass that resource gives it,
+/// and `CRigidObject::CreatePhysics` then sets its motion by the type: a static or fixed object's
+/// body is made static and a keyframed object's keyframed
+/// ([`PfxRigidBody::SetMotionType`](crate::physics::PfxRigidBody::SetMotionType)), which keeps the mass in the wrapper's saved motion
+/// ([`PfxRigidBody::m_SavedMotionId`](crate::physics::PfxRigidBody::m_SavedMotionId)); a dynamic object's body is left as created. A fixed or
+/// keyframed object becomes dynamic through [`MakeDynamic`](crate::physics::RigidObject::MakeDynamic). Damage does not do
+/// it: `CRigidObject::OnDamage` applies the hit's impulse only to a dynamic object, and the force
+/// pulse of an explosion skips static and fixed objects. What makes one dynamic is its events (its
+/// own make-dynamic and stop-keyframe receive events, wired in its data to other objects' send
+/// events, such as its damage controller's), a script call (`CRigidObjectModule::MakeDynamic`), or
+/// the code that drops a held or attached object.
 pub struct RigidObject {
-    _field_0: [u8; 1048],
+    _field_0: [u8; 864],
+    /// The object's body wrapper, or null while its physics is not created. It is what
+    /// [`PhysicsGameObject::GetIPfxInstance`](crate::physics::PhysicsGameObject::GetIPfxInstance) returns for a rigid object.
+    pub m_PfxInstance: crate::types::shared_ptr::SharedPtr<crate::physics::PfxRigidBody>,
+    _field_370: [u8; 168],
     /// The object's model instance, or null while its graphics are not loaded. Created from
     /// [`m_Model`](crate::physics::RigidObject::m_Model) (`CRigidObject::CreateModelInstance`); `UnloadGraphics` releases
     /// it with a deferred
@@ -1901,14 +2007,51 @@ pub struct RigidObject {
     pub m_Model: crate::types::shared_ptr::SharedPtr<
         crate::graphics_engine::model_instance::Model,
     >,
+    _field_430: [u8; 192],
+    /// The body's collision layer as the object last set it (a [`PfxLayer`](crate::physics::PfxLayer)): the static layer for
+    /// a static or fixed object at setup, and the dynamic layer once it is dynamic.
+    pub m_CollisionLayer: u32,
+    /// The object's packed settings: its [`RigidObjectType`](crate::physics::RigidObjectType) under
+    /// [`TYPE_MASK`](crate::physics::RigidObject::TYPE_MASK), then its enabled, cast-shadow, daytime-emissive,
+    /// clip-on-distance, and reflect-in-water switches,
+    /// [`INHERIT_PARENT_TRANSFORM`](crate::physics::RigidObject::INHERIT_PARENT_TRANSFORM), and its grappling mode in the
+    /// next two bits.
+    pub m_Flags: u16,
+    _field_4f6: [u8; 2],
 }
 fn _RigidObject_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x430], RigidObject>([0u8; 0x430]);
+        ::std::mem::transmute::<[u8; 0x4F8], RigidObject>([0u8; 0x4F8]);
     }
     unreachable!()
 }
 impl RigidObject {
+    pub const MakeDynamic_ADDRESS: usize = 0x140CDD5B0;
+    /// `CRigidObject::MakeDynamic`: makes the object dynamic as the game does when it is shaken
+    /// loose. With a body wrapper, it sets the object's type to
+    /// [`DYNAMIC_RIGIDOBJECT`](crate::physics::RigidObjectType::DYNAMIC_RIGIDOBJECT), and when the body is not yet
+    /// dynamic it moves the body to the [`DYNAMIC`](crate::physics::PfxLayer::DYNAMIC) collision layer, with
+    /// `new_system_group` also into a new collision system group of its own, and changes its motion
+    /// to dynamic ([`PfxRigidBody::SetMotionType`](crate::physics::PfxRigidBody::SetMotionType)), which restores the mass and inertia kept in the
+    /// wrapper's saved motion. With
+    /// [`INHERIT_PARENT_TRANSFORM`](crate::physics::RigidObject::INHERIT_PARENT_TRANSFORM) and a parent whose physics
+    /// instance is a rigid body, the body takes the parent's velocity at the body's centre of mass
+    /// and the parent's angular velocity. It then wakes the body
+    /// ([`PfxRigidBody::ForceActivate`](crate::physics::PfxRigidBody::ForceActivate)) and runs the object's activation handler, which turns off
+    /// its model's static shadow. The body keeps its id. The changes are made at once, on the world,
+    /// so the call belongs on the game thread outside the simulation step, as the object's event
+    /// handler and the script call make it. The disassembler mislabels it
+    /// `CPhysicsSystem::CreateMaterialFromTemplate`, and gives the name `CRigidObject::MakeDynamic`
+    /// to the magnet weapon's gravity-field body creation
+    /// (`CMagnetWeaponComponent::CreateGravityFieldBody`).
+    pub unsafe fn MakeDynamic(&mut self, new_system_group: bool) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, new_system_group: bool) = ::std::mem::transmute(
+                Self::MakeDynamic_ADDRESS,
+            );
+            f(self as *mut Self as _, new_system_group)
+        }
+    }
     pub const TYPE_ID_ADDRESS: usize = 0x14060F1F0;
     /// `CRigidObject::TYPE_ID`: the run-time type id of `CRigidObject`, for
     /// [`GameObject::IsType`](crate::game::GameObject::IsType). Registers it on first use.
@@ -1921,6 +2064,13 @@ impl RigidObject {
         }
     }
 }
+impl RigidObject {
+    /// The bit of [`m_Flags`](crate::physics::RigidObject::m_Flags) that has the object inherit its parent's transform,
+    /// and on [`MakeDynamic`](crate::physics::RigidObject::MakeDynamic) its parent's velocity at its centre of mass.
+    pub const INHERIT_PARENT_TRANSFORM: u16 = 128;
+    /// The mask of the object's [`RigidObjectType`](crate::physics::RigidObjectType) in [`m_Flags`](crate::physics::RigidObject::m_Flags).
+    pub const TYPE_MASK: u16 = 3;
+}
 impl std::convert::AsRef<RigidObject> for RigidObject {
     fn as_ref(&self) -> &RigidObject {
         self
@@ -1930,6 +2080,22 @@ impl std::convert::AsMut<RigidObject> for RigidObject {
     fn as_mut(&mut self) -> &mut RigidObject {
         self
     }
+}
+#[repr(u16)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// A rigid object's type (`CRigidObject::RigidObject_Type`), the low bits of
+/// [`RigidObject::m_Flags`](crate::physics::RigidObject::m_Flags).
+pub enum RigidObjectType {
+    STATIC_RIGIDOBJECT = 0isize as _,
+    FIXED_RIGIDOBJECT = 1isize as _,
+    KEYFRAMED_RIGIDOBJECT = 2isize as _,
+    DYNAMIC_RIGIDOBJECT = 3isize as _,
+}
+fn _RigidObjectType_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x2], RigidObjectType>([0u8; 0x2]);
+    }
+    unreachable!()
 }
 #[repr(C, align(8))]
 /// The character proxy's shared shape settings (`CPfxCharacterSettings`): a shape for each
@@ -2531,6 +2697,20 @@ impl hknpWorld {
                 activation_mode: i32,
             ) = ::std::mem::transmute(Self::destroyBodies_ADDRESS);
             f(self as *mut Self as _, ids, count, activation_mode)
+        }
+    }
+    pub const activateBody_ADDRESS: usize = 0x1414E4650;
+    /// Wakes the body `body_id` and the bodies around it through the world's deactivation
+    /// manager, when the body is in the broad phase. It changes no body's motion type, so a static
+    /// or keyframed body stays as it is. [`PfxRigidBody::ForceActivate`](crate::physics::PfxRigidBody::ForceActivate) and
+    /// [`WireEnd::SetupProxyForAttachment`](crate::equipment::wire_end::WireEnd::SetupProxyForAttachment)
+    /// call it. The disassembler mislabels it `hknpWorld::activateBodiesInAabb`.
+    pub unsafe fn activateBody(&mut self, body_id: u32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, body_id: u32) = ::std::mem::transmute(
+                Self::activateBody_ADDRESS,
+            );
+            f(self as *mut Self as _, body_id)
         }
     }
     pub const createConstraint_ADDRESS: usize = 0x1414E7200;

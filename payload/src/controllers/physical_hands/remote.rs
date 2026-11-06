@@ -22,23 +22,48 @@ use crate::controllers::{
     },
 };
 
-/// The mass of `object`'s body `body`, when it is a loose object: not a character, a vehicle or its
-/// part, a weapon, or a grenade, and dynamic with a finite mass.
+/// The mass of `object`'s body `body`, when it is a loose object by the reach's own classification
+/// ([`bodies::classify`]): not a character, a vehicle or a part still on it, a weapon, or a
+/// grenade, with a finite mass. A part that has come off its vehicle, such as a door torn off, is a
+/// loose object.
 ///
 /// # Safety
 ///
 /// The main thread, outside the physics step; `object` and `body` must be held alive or come from
 /// a cast this tick.
 pub(crate) unsafe fn loose_mass(object: NonZeroUsize, body: u32) -> Option<f32> {
-    if unsafe { engine::is_character(object) }
-        || unsafe { door_engine::vehicle_of(object) }.is_some()
-    {
+    if unsafe { engine::is_character(object) } {
         return None;
     }
     let TargetKind::Prop { mass_kg } = (unsafe { bodies::classify(object, body) }).ok()? else {
         return None;
     };
     Some(mass_kg)
+}
+
+/// Where `object`'s body `body` is, world space: its centre while it is dynamic, or where a placed
+/// object at rest stands ([`bodies::position`]).
+///
+/// # Safety
+///
+/// The main thread, outside the physics step; `object` must be held alive or come from a cast this
+/// tick.
+pub(crate) unsafe fn position(object: NonZeroUsize, body: u32) -> Result<Vec3, BodyError> {
+    unsafe { bodies::position(body, object) }
+}
+
+/// Turn a placed object at rest loose, so the line can pull it: its body becomes dynamic with the
+/// mass it was placed with ([`bodies::loosen`]). A body already dynamic is left as it is.
+///
+/// # Safety
+///
+/// The main thread, outside the physics step; `object` must be held alive.
+pub(crate) unsafe fn loosen(object: NonZeroUsize, body: u32) -> Result<(), BodyError> {
+    let loosened = unsafe { bodies::loosen(object, body) }?;
+    if loosened {
+        tracing::info!(target: "controllers", body, "physical hands: a placed object was turned loose for the snatch");
+    }
+    Ok(())
 }
 
 /// A ragdolling character under the grapple's aim: the bone of its ragdoll the line pulls, and

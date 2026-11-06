@@ -105,6 +105,26 @@ pub(crate) unsafe fn is_vehicle_part(object: NonZeroUsize) -> bool {
     unsafe { is_type(object, VehiclePartGameObject::TYPE_ID()) }
 }
 
+/// Whether the physics game object at `object`, owning its body `body`, is a vehicle part that has
+/// come off its vehicle: a loosened part whose body is no longer that of any door still on the
+/// vehicle, such as a door torn off, or one whose vehicle is gone. A door hanging open on its hinge
+/// is not one.
+///
+/// # Safety
+///
+/// `object` must be a live physics game object, on the game thread outside the physics step.
+pub(crate) unsafe fn broken_off(object: NonZeroUsize, body: u32) -> bool {
+    if !unsafe { is_vehicle_part(object) } {
+        return false;
+    }
+    let Some(vehicle) = (unsafe { vehicle_of(object) }) else {
+        return true;
+    };
+    !unsafe { doors(vehicle) }
+        .iter()
+        .any(|door| door.body.is_some_and(|(_, door_body)| door_body == body))
+}
+
 /// The vehicle's world transform at the end of the current simulation step.
 ///
 /// # Safety

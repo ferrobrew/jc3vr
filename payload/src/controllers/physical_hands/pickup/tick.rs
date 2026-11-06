@@ -439,6 +439,10 @@ unsafe fn tick_with(
                     }
                     break 'grab;
                 }
+                // A placed object at rest turns loose as the hand takes it.
+                if matches!(reach.kind, TargetKind::Prop { .. }) {
+                    engine.loosen(reach.body, reach.object);
+                }
                 // SAFETY: forwarded from the caller.
                 let body = engine.read(reach.body, reach.object);
                 let mut result = take_body(
@@ -796,6 +800,8 @@ trait BodyEngine {
     ) -> Result<bodies::BodyState, bodies::BodyError>;
     fn release_joints(&mut self, held: &Held);
     fn drive(&mut self, held: &Held, velocity: Velocities) -> Result<(), bodies::BodyError>;
+    /// Turn a placed object at rest loose ([`bodies::loosen`]); a dynamic body is left as it is.
+    fn loosen(&mut self, _body: u32, _object: NonZeroUsize) {}
 }
 
 struct NativeBodies;
@@ -813,6 +819,18 @@ impl BodyEngine for NativeBodies {
     }
     fn drive(&mut self, held: &Held, velocity: Velocities) -> Result<(), bodies::BodyError> {
         unsafe { bodies::drive(held.body, held.object, velocity) }
+    }
+    fn loosen(&mut self, body: u32, object: NonZeroUsize) {
+        match unsafe { bodies::loosen(object, body) } {
+            Ok(true) => tracing::info!(
+                body,
+                "physical hands: pickup: a hand turned a placed object loose"
+            ),
+            Ok(false) => {}
+            Err(e) => {
+                tracing::info!(body, %e, "physical hands: pickup: a placed object could not be turned loose")
+            }
+        }
     }
 }
 

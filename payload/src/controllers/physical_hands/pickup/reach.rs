@@ -504,8 +504,9 @@ unsafe fn judge(
 
 /// What the object at `object`, reached on its dynamic body `body`, is when the body is joined to
 /// the world or another body by an enabled constraint: an articulated object, light enough for
-/// its constraint to carry. `None` for a vehicle, which its doors' reach handles, and for a body
-/// that is not joined.
+/// its constraint to carry. `None` for a vehicle or a part still on it, which its doors' reach
+/// handles, and for a body that is not joined. A part that has come off its vehicle is judged as
+/// any other object.
 ///
 /// # Safety
 ///
@@ -515,7 +516,9 @@ unsafe fn articulated_kind(
     body: u32,
     tuning: &ReachTuning,
 ) -> Option<TargetKind> {
-    if unsafe { doors::engine::vehicle_of(object) }.is_some() {
+    if unsafe { doors::engine::vehicle_of(object) }.is_some()
+        && !unsafe { doors::engine::broken_off(object, body) }
+    {
         return None;
     }
     let mass_kg = unsafe { bodies::read(body, object) }.ok()?.mass_kg?;

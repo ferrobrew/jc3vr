@@ -132,7 +132,7 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
             if unsafe { prop_handling(*object, *body, config) }.map(|(_, h)| h) != Some(*handling) {
                 return false;
             }
-            let Ok((point, _)) = (unsafe { physical_hands::body_pose(*body, *object) }) else {
+            let Ok(point) = (unsafe { remote::position(*object, *body) }) else {
                 return false;
             };
             if !unsafe { in_sight(ray, point, object.get()) } {

@@ -12,7 +12,7 @@ use crate::controllers::{
     physical_hands::{
         bodies,
         collider_view::{self, ScanError, model::BodyKind},
-        doors::engine::vehicle_of,
+        doors::engine::{broken_off, vehicle_of},
         grab_view::model::{Candidate, CandidateKind},
         grasp::{self, TargetKind},
         pickup::PICKUP,
@@ -100,7 +100,7 @@ unsafe fn kind_of(
     body: u32,
     standing_on: Option<u32>,
 ) -> Option<CandidateKind> {
-    if unsafe { vehicle_of(object) }.is_some() {
+    if unsafe { vehicle_of(object) }.is_some() && !unsafe { broken_off(object, body) } {
         return Some(CandidateKind::Vehicle);
     }
     if standing_on == Some(body) {

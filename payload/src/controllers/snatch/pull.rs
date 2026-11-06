@@ -276,7 +276,12 @@ pub(super) unsafe fn fire_hook(grabbed: &Grabbed) -> Result<NonZeroUsize, Refusa
             let at = unsafe { body_centre(body, grabbed.object) }?;
             unsafe { engine::fire(grabbed.object, Vec3::ZERO, at) }
         }
-        Pulled::Prop { body, .. } | Pulled::Grenade { body } | Pulled::WorldGrenade { body } => {
+        Pulled::Prop { body, .. } => {
+            // A placed object at rest stays where it was placed until the hook bites.
+            let at = unsafe { remote::position(grabbed.object, body) }.map_err(Refusal::Body)?;
+            unsafe { engine::fire(grabbed.object, Vec3::ZERO, at) }
+        }
+        Pulled::Grenade { body } | Pulled::WorldGrenade { body } => {
             let at = unsafe { body_centre(body, grabbed.object) }?;
             unsafe { engine::fire(grabbed.object, Vec3::ZERO, at) }
         }
@@ -371,8 +376,9 @@ pub(super) enum Step {
     Caught(Hand, Arrival),
 }
 
-/// The hook bit `grabbed`: note where, take the native rope off the line so that the line's pull
-/// is the one force on the target, and play the hook's impact.
+/// The hook bit `grabbed`: turn a placed object at rest loose, note where the hook bit, take the
+/// native rope off the line so that the line's pull is the one force on the target, and play the
+/// hook's impact.
 ///
 /// # Safety
 ///
@@ -383,6 +389,9 @@ pub(super) unsafe fn bite(
     wire: NonZeroUsize,
 ) -> Result<Flight, Refusal> {
     let (body, owner) = unsafe { target_body(grabbed) }?;
+    if matches!(grabbed.kind, Pulled::Prop { .. }) {
+        unsafe { remote::loosen(owner, body) }.map_err(Refusal::Body)?;
+    }
     let state = unsafe { physical_hands::body_state(body, owner) }.map_err(Refusal::Body)?;
     let hook_local = unsafe { engine::hook_end(wire) }
         .map(|end| Vec3::from_array(end.m_WorldPositionT1.data))

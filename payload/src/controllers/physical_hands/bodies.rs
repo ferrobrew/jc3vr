@@ -1,6 +1,10 @@
 //! The engine side of holding and shoving objects: what a reached object is, a body's place,
 //! motion, and mass properties, the velocities that drive it, and the impulses that shove it.
 //!
+//! A placed rigid object rests with a body that is not dynamic until something turns it loose; it
+//! is still a loose object to a hand ([`placed_mass`]), and [`loosen`] turns it dynamic when it is
+//! taken.
+//!
 //! A body is named by its Havok id, which is reused once the body is freed, so every read checks
 //! that the id still belongs to the object it was taken from: the id has a slot, the slot has a
 //! motion, the body is dynamic, and the body's engine instance
@@ -19,8 +23,8 @@ use jc3gi::{
     },
     game::GameObject,
     physics::{
-        PfxCharacterInstance, PfxInstance, PhysicsGameObject, RigidObject, hknpBody, hknpMotion,
-        hknpWorld,
+        PfxCharacterInstance, PfxInstance, PhysicsGameObject, RigidObject, RigidObjectType,
+        hknpBody, hknpMotion, hknpWorld,
     },
     vehicle::{parts::VehiclePartGameObject, vehicle::Vehicle},
 };
@@ -28,6 +32,7 @@ use jc3gi::{
 use crate::controllers::{
     diagnostics::{Applied, BodyBefore, note_force},
     physical_hands::{
+        doors::engine as door_engine,
         grasp::{TargetKind, mass_of},
         physics::havok_vector,
         rigid::{BodyPose, RigidBody, Velocities},
@@ -88,8 +93,9 @@ impl BodyState {
 }
 
 /// What the object at `object`, reached on its body `body`, is to a hand: a weapon lying in the
-/// world, or a loose object (a rigid object, or any other object but a vehicle whose reached body
-/// is dynamic and has a mass, such as a barrel), or why it is neither.
+/// world, or a loose object (a rigid object, or any other object but a vehicle or a part still on
+/// it whose reached body is dynamic and has a mass, such as a barrel or a door torn off), or why it
+/// is neither.
 ///
 /// # Safety
 ///
@@ -116,11 +122,102 @@ pub(super) unsafe fn classify(object: NonZeroUsize, body: u32) -> Result<TargetK
     if unsafe { (*game_object).IsType(Grenade::TYPE_ID()) } {
         return Err(Unclassified::Grenade);
     }
-    let state = unsafe { read(body, object) }.map_err(Unclassified::Body)?;
-    state
-        .mass_kg
-        .map(|mass_kg| TargetKind::Prop { mass_kg })
-        .ok_or(Unclassified::NoMass)
+    // A part still on its vehicle, such as a door hanging on its hinge, is the doors' to take; one
+    // that has come off, such as a door torn off, is a loose object like any other.
+    if unsafe { door_engine::is_vehicle_part(object) }
+        && !unsafe { door_engine::broken_off(object, body) }
+    {
+        return Err(Unclassified::VehiclePart);
+    }
+    match unsafe { read(body, object) } {
+        Ok(state) => state
+            .mass_kg
+            .map(|mass_kg| TargetKind::Prop { mass_kg })
+            .ok_or(Unclassified::NoMass),
+        // A placed object at rest is as loose as a dynamic one: the game keeps its mass, and
+        // [`loosen`] turns it dynamic when a hand or the snatch takes it.
+        Err(BodyError::NotDynamic) => unsafe { placed_mass(object, body) }
+            .map(|mass_kg| TargetKind::Prop { mass_kg })
+            .ok_or(Unclassified::Body(BodyError::NotDynamic)),
+        Err(e) => Err(Unclassified::Body(e)),
+    }
+}
+
+/// The mass of the placed rigid object `object` whose body `body` is still at rest where it was
+/// placed: a [`RigidObject`] whose type is fixed or keyframed ([`RigidObjectType`]), whose body
+/// wrapper's body is `body` and not yet dynamic, and whose wrapper keeps the motion the body had
+/// before it was placed
+/// ([`PfxRigidBody::m_SavedMotionId`](jc3gi::physics::PfxRigidBody::m_SavedMotionId)), from which
+/// this reads the mass. `None` for anything else, a static rigid object, which is part of the
+/// world, among them.
+///
+/// # Safety
+///
+/// Main thread, outside the physics step; `object` and `body` must come from a cast this tick or be
+/// held alive.
+pub(super) unsafe fn placed_mass(object: NonZeroUsize, body: u32) -> Option<f32> {
+    let saved = unsafe { placed_motion(object, body) }?;
+    let world = unsafe { World::get() }?;
+    let world = world.world();
+    if world.m_motions.is_null() {
+        return None;
+    }
+    // SAFETY: a saved motion is one of the world's, which the wrapper owns until the body turns
+    // dynamic.
+    let motion = unsafe { &*world.m_motions.add(saved as usize) };
+    mass_of(half_to_f32(motion.m_inverseInertia[3])).filter(|m| m.is_finite())
+}
+
+/// Turn the placed rigid object `object` loose, as the game does when its data or a script makes it
+/// dynamic ([`RigidObject::MakeDynamic`]): its body `body` keeps its id and takes back the mass and
+/// inertia it was placed with, at once. Returns whether it changed anything: a body that is
+/// already dynamic is left as it is. Fails for a body that is neither dynamic nor a placed object's
+/// ([`placed_mass`]), or one the change left not dynamic.
+///
+/// # Safety
+///
+/// Main thread, outside the physics step; `object` and `body` must come from a cast this tick or be
+/// held alive.
+pub(super) unsafe fn loosen(object: NonZeroUsize, body: u32) -> Result<bool, BodyError> {
+    {
+        let world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
+        let slot = unsafe { slot(world.world(), body) }.ok_or(BodyError::NoBody)?;
+        if slot.m_flags & hknpBody::IS_DYNAMIC != 0 {
+            return Ok(false);
+        }
+    }
+    if unsafe { placed_mass(object, body) }.is_none() {
+        return Err(BodyError::NotDynamic);
+    }
+    let rigid = object.get() as *mut RigidObject;
+    // SAFETY: checked a live rigid object above. Every call the game makes passes false, which
+    // keeps the body in its collision system group.
+    unsafe { (*rigid).MakeDynamic(false) };
+    unsafe { read(body, object) }?;
+    Ok(true)
+}
+
+/// Where the body `body` of `owner` is, world space: its centre of mass while it is dynamic, or for
+/// a placed object at rest ([`placed_mass`]), the origin of its transform.
+///
+/// # Safety
+///
+/// Main thread, outside the physics step.
+pub(super) unsafe fn position(body: u32, owner: NonZeroUsize) -> Result<Vec3, BodyError> {
+    match unsafe { read(body, owner) } {
+        Ok(state) => Ok(state.pose.centre),
+        Err(BodyError::NotDynamic) if unsafe { placed_motion(owner, body) }.is_some() => {
+            let world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
+            let slot = unsafe { slot(world.world(), body) }.ok_or(BodyError::NoBody)?;
+            let at = Vec3::from_array(slot.m_transform.m_translation.data) + world.shift;
+            if at.is_finite() {
+                Ok(at)
+            } else {
+                Err(BodyError::BadMotion)
+            }
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Why a reached object is no loose object for a hand.
@@ -134,6 +231,8 @@ pub(crate) enum Unclassified {
     NoMass,
     /// A vehicle's own body.
     Vehicle,
+    /// A part still on its vehicle.
+    VehiclePart,
     /// A grenade, which the weapon handling takes.
     Grenade,
 }
@@ -147,6 +246,7 @@ impl fmt::Display for Unclassified {
             Unclassified::Body(e) => write!(f, "{e}"),
             Unclassified::NoMass => write!(f, "its body's mass is infinite"),
             Unclassified::Vehicle => write!(f, "a vehicle is never carried"),
+            Unclassified::VehiclePart => write!(f, "a part still on its vehicle is never carried"),
             Unclassified::Grenade => write!(f, "a grenade is taken by the weapon handling"),
         }
     }
@@ -418,6 +518,31 @@ unsafe fn owned_motion(
         return Err(BodyError::Reowned);
     }
     Ok(unsafe { &*world.m_motions.add(slot.m_motionId as usize) })
+}
+
+/// The saved motion of the placed rigid object `object`, when its body `body` is still at rest
+/// where it was placed ([`placed_mass`]).
+unsafe fn placed_motion(object: NonZeroUsize, body: u32) -> Option<u32> {
+    if !unsafe { is_type(object, RigidObject::TYPE_ID()) } {
+        return None;
+    }
+    let rigid = unsafe { &*(object.get() as *const RigidObject) };
+    let kind = rigid.m_Flags & RigidObject::TYPE_MASK;
+    if kind != RigidObjectType::FIXED_RIGIDOBJECT as u16
+        && kind != RigidObjectType::KEYFRAMED_RIGIDOBJECT as u16
+    {
+        return None;
+    }
+    let pfx = unsafe { rigid.m_PfxInstance.px.as_ref() }?;
+    let saved = pfx.m_SavedMotionId;
+    if pfx.m_BodyId != body || saved == hknpBody::INVALID_MOTION_ID || saved == 0 {
+        return None;
+    }
+    let world = unsafe { World::get() }?;
+    let slot = unsafe { slot(world.world(), body) }?;
+    (slot.m_flags & hknpBody::IS_DYNAMIC == 0
+        && unsafe { body_owner(world.world(), body) } == Some(object))
+    .then_some(saved)
 }
 
 /// A Havok `hkHalf`: the upper 16 bits of an `f32`.
