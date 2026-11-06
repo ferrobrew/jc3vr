@@ -196,6 +196,10 @@ pub fn grapple_highlight(g: &GrappleAim, off_hit: Option<RayHit>, out: &mut Vec<
 /// The gauntlet beam from the grapple's origin on the off-hand's wrist to the grapple's point: in
 /// the highlight's colour while the target is valid, and faint otherwise.
 pub fn grapple_beam(g: &GrappleAim, off: Hand, origin_offset: Vec3, out: &mut Vec<Primitive>) {
+    // A point that is not current is not refreshed, so a beam to it would freeze.
+    if !g.current {
+        return;
+    }
     let color = match (g.valid, g.tetherable) {
         (true, true) => with_alpha(TETHER, 0.7),
         (true, false) => with_alpha(GRAPPLE, 0.7),
@@ -447,8 +451,24 @@ mod tests {
             hit: true,
             valid,
             tetherable,
+            current: true,
+            seat: false,
             assist: None,
         }
+    }
+
+    #[test]
+    fn no_beam_is_drawn_to_a_point_that_is_not_current() {
+        let mut out = Vec::new();
+        grapple_beam(&grapple(false, false), Hand::Left, Vec3::ZERO, &mut out);
+        assert_eq!(out.len(), 1, "an invalid aim still shows the faint beam");
+        out.clear();
+        let seated = GrappleAim {
+            current: false,
+            ..grapple(false, false)
+        };
+        grapple_beam(&seated, Hand::Left, Vec3::ZERO, &mut out);
+        assert!(out.is_empty());
     }
 
     fn poses(position: Vec3) -> HandPoses {

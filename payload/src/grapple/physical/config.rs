@@ -19,6 +19,9 @@ pub struct PhysicalGrappleConfig {
     /// The lock: holding the grapple button during the reel holds the line's length to swing from
     /// ([`crate::grapple::physical::lock`]).
     pub lock: LockConfig,
+    /// The seat grapple: the grapple button fires the hook from a vehicle seat and tethers what it
+    /// hits to the vehicle ([`crate::grapple::seat`]).
+    pub seat: bool,
 }
 
 impl PhysicalGrappleConfig {
@@ -27,6 +30,7 @@ impl PhysicalGrappleConfig {
             pull_to_reel: true,
             pump: true,
             lock: LockConfig::new(),
+            seat: true,
         }
     }
 }

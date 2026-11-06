@@ -134,6 +134,7 @@ impl Bindings {
             wheel: Default::default(),
             grapple_held: false,
             grapple_lock: None,
+            grapple_seat_fire: false,
         }
     }
 }

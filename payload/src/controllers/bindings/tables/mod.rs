@@ -109,6 +109,8 @@ pub struct Step {
     pub grapple_held: bool,
     /// What the grapple's button asks of the lock this tick ([`crate::grapple::physical::lock`]).
     pub grapple_lock: Option<LockButton>,
+    /// The grapple's button fired the seat grapple this tick ([`crate::grapple::seat`]).
+    pub grapple_seat_fire: bool,
 }
 
 /// The tables and their cross-tick state.
@@ -361,6 +363,7 @@ impl Bindings {
         declare(&mut out, mode, &ctx);
         let mut grapple_held = false;
         let mut grapple_lock = None;
+        let mut grapple_seat_fire = false;
         if let Some((inputs, actions)) = grapple_press(mode) {
             let button = inputs
                 .iter()
@@ -386,20 +389,19 @@ impl Bindings {
                     }
                 }
             }
-            grapple_lock = self
-                .grapple
-                .apply(
-                    GrappleTick {
-                        button,
-                        context: controls.grapple,
-                        yank: controls.yank,
-                        lock_yank: controls.lock_yank,
-                        dt,
-                    },
-                    actions,
-                    &mut out.desired,
-                )
-                .lock;
+            let grapple = self.grapple.apply(
+                GrappleTick {
+                    button,
+                    context: controls.grapple,
+                    yank: controls.yank,
+                    lock_yank: controls.lock_yank,
+                    dt,
+                },
+                actions,
+                &mut out.desired,
+            );
+            grapple_lock = grapple.lock;
+            grapple_seat_fire = grapple.seat_fire;
             if !self.grapple.pending() {
                 self.grapple_triggers = [false; 2];
                 self.grapple_routes.clear();
@@ -456,6 +458,7 @@ impl Bindings {
             wheel,
             grapple_held,
             grapple_lock,
+            grapple_seat_fire,
         }
     }
 }

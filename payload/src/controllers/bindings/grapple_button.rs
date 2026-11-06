@@ -28,6 +28,11 @@
 //! passes the tap to the game, which keeps its fire from the reel; a release after a longer hold
 //! lets go of the line; and a yank of the grapple hand while it is held unlocks it and resumes the
 //! reel. The game sees no held fire input through any of it.
+//!
+//! In a vehicle seat ([`GrappleContext::seated`]), where the game takes no grapple fire, the
+//! button's fire is the seat grapple's ([`crate::grapple::seat`]): a press with nothing attached,
+//! and a tap read as a fire with tethers attached, fire it ([`GrappleOutput::seat_fire`]), and the
+//! game sees no fire input; the double tap and the tightening hold stay as they are.
 
 use jc3gi::input::input_action_map::Action;
 
@@ -49,6 +54,8 @@ pub struct GrappleContext {
     /// the button is the lock's. Were the wind-up's presses the game's, a press held into the reel
     /// would be the game's dual tether hold, whose release replaces the reel's line.
     pub reeling: bool,
+    /// The character sits in a vehicle seat: the button's fire is the seat grapple's.
+    pub seated: bool,
 }
 
 impl GrappleContext {
@@ -94,6 +101,8 @@ pub struct GrappleOutput {
     pub tighten: Option<f32>,
     /// What the button asks of the lock this tick.
     pub lock: Option<LockButton>,
+    /// Fire the seat grapple: the button's fire in a vehicle seat, in place of [`fire`](Self::fire).
+    pub seat_fire: bool,
 }
 
 /// What the grapple button asks of the lock.
@@ -227,6 +236,10 @@ impl GrappleButton {
             gestures: true,
             ..GrappleOutput::default()
         };
+        if context.seated {
+            self.phase = self.seated(button, context, dt, &mut out);
+            return out;
+        }
         self.phase = match self.phase {
             Phase::Idle | Phase::TapWaiting { .. } if fresh && context.reeling => {
                 // A tap still waiting fires first; the reel's press is the lock's.
@@ -337,6 +350,48 @@ impl GrappleButton {
             Phase::Firing | Phase::Tightening { .. } | Phase::Spent => Phase::Idle,
         };
         out
+    }
+
+    /// Advance one tick in a vehicle seat: the ordinary gestures, with every fire they ask of the
+    /// game turned into the seat grapple's, and a press with nothing attached firing it at once
+    /// rather than reaching the game.
+    fn seated(
+        &mut self,
+        button: ButtonControl,
+        context: GrappleContext,
+        dt: f32,
+        out: &mut GrappleOutput,
+    ) -> Phase {
+        let phase = match self.phase {
+            Phase::Idle | Phase::TapWaiting { .. } if button.pressed && !context.gestures() => {
+                // A tap still waiting is taken up by the new press's fire.
+                out.seat_fire = true;
+                Phase::Spent
+            }
+            Phase::Passing => Phase::Spent,
+            _ => {
+                let unseated = GrappleContext {
+                    seated: false,
+                    ..context
+                };
+                let mut inner = *self;
+                let step = inner.step(GrappleTick {
+                    button,
+                    context: unseated,
+                    yank: false,
+                    lock_yank: false,
+                    dt,
+                });
+                *out = step;
+                inner.phase
+            }
+        };
+        if let Some(want) = out.fire.take() {
+            out.seat_fire |= want == Want::Click;
+        }
+        out.gestures = true;
+        out.lock = None;
+        phase
     }
 
     /// Whether the button is held into a gesture.
@@ -479,6 +534,7 @@ mod tests {
         line: false,
         aim_target: false,
         reeling: false,
+        seated: false,
     };
 
     fn tick(button: ButtonControl, context: GrappleContext) -> GrappleTick {
@@ -539,6 +595,7 @@ mod tests {
                         tethers,
                         aim_target,
                         reeling: false,
+                        seated: false,
                         line: false,
                     };
                     let expected = GrapplePermissions {
@@ -584,6 +641,7 @@ mod tests {
                 tethers,
                 aim_target: true,
                 reeling: false,
+                seated: false,
                 line: false,
             };
             assert_eq!(
@@ -643,6 +701,7 @@ mod tests {
                         line: true,
                         aim_target: true,
                         reeling: false,
+                        seated: false,
                     })
                     .release,
                     tethers
@@ -662,6 +721,7 @@ mod tests {
                 tethers,
                 aim_target: true,
                 reeling: false,
+                seated: false,
                 line: false,
             };
             let permissions = g.current_permissions(context);
@@ -764,6 +824,7 @@ mod tests {
         line: false,
         aim_target: false,
         reeling: true,
+        seated: false,
     };
 
     fn locks(out: &[GrappleOutput]) -> Vec<LockButton> {
@@ -854,6 +915,58 @@ mod tests {
                 .iter()
                 .all(|l| *l == LockButton::Held)
         );
+    }
+
+    const SEATED: GrappleContext = GrappleContext {
+        tethers: false,
+        line: false,
+        aim_target: false,
+        reeling: false,
+        seated: true,
+    };
+
+    fn seat_fires(out: &[GrappleOutput]) -> usize {
+        out.iter().filter(|o| o.seat_fire).count()
+    }
+
+    #[test]
+    fn in_a_seat_a_press_fires_the_seat_grapple_and_the_game_sees_nothing() {
+        let mut g = GrappleButton::new();
+        let out = run(&mut g, SEATED, &[PRESS, HELD, HELD, RELEASE, UP]);
+        assert_eq!(seat_fires(&out), 1);
+        assert!(out[0].seat_fire, "the press fires at once");
+        assert!(out.iter().all(|o| o.gestures && o.fire.is_none()));
+        assert!(!g.holding());
+    }
+
+    #[test]
+    fn in_a_seat_with_tethers_the_double_tap_still_releases_and_a_tap_fires_the_seat_grapple() {
+        let tethered = GrappleContext {
+            tethers: true,
+            ..SEATED
+        };
+        let mut g = GrappleButton::new();
+        let out = run(&mut g, tethered, &[PRESS, RELEASE, PRESS, RELEASE, UP]);
+        assert!(out.iter().any(|o| o.release));
+        assert_eq!(seat_fires(&out), 0);
+        let mut g = GrappleButton::new();
+        let mut buttons = vec![PRESS, RELEASE];
+        buttons.extend(vec![UP; (DOUBLE_TAP_S / DT).ceil() as usize + 1]);
+        let out = run(&mut g, tethered, &buttons);
+        assert_eq!(seat_fires(&out), 1);
+        assert!(out.iter().all(|o| o.fire.is_none()));
+    }
+
+    #[test]
+    fn in_a_seat_a_hold_on_tethers_still_tightens() {
+        let tethered = GrappleContext {
+            tethers: true,
+            ..SEATED
+        };
+        let mut g = GrappleButton::new();
+        let out = hold(&mut g, tethered);
+        assert!(out.tighten.is_some());
+        assert!(!out.seat_fire && out.fire.is_none());
     }
 
     #[test]

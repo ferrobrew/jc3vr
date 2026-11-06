@@ -1,6 +1,6 @@
 //! The status rows for the physical grapple: where the grapple is, what its line holds, the
-//! reel and the tethers the hand works, the lock, the hang swing, the snatch, and the grapple
-//! hand's vibration.
+//! reel and the tethers the hand works, the lock, the seat grapple, the hang swing, the snatch, and
+//! the grapple hand's vibration.
 
 use smol_str::format_smolstr;
 
@@ -10,9 +10,12 @@ use crate::{
         menu::read_config,
         snatch::{self, SnatchStatus},
     },
-    grapple::physical::{
-        self, GrapplePhase, GrappleStatus,
-        lock::{self, LockStatus},
+    grapple::{
+        physical::{
+            self, GrapplePhase, GrappleStatus,
+            lock::{self, LockStatus},
+        },
+        seat::{self, SeatStatus},
     },
     status::{Line, Row, Text, prose, text},
 };
@@ -22,6 +25,7 @@ pub(crate) const TARGET: Row = Row::new("ATTACHED TARGET", "Attached target", ta
 pub(crate) const REEL: Row = Row::new("REEL FROM HAND", "Reel from hand", reel);
 pub(crate) const TETHERS: Row = Row::new("TETHERS", "Tethers", tethers);
 pub(crate) const LOCK: Row = Row::new("LINE LOCK", "Line lock", lock);
+pub(crate) const SEAT: Row = Row::new("SEAT GRAPPLE", "Seat grapple", seat_row);
 pub(crate) const SWING: Row = Row::new("HANG SWING", "Hang swing", swing);
 pub(crate) const SNATCH: Row = Row::new("SNATCH", "Snatch", snatch);
 pub(crate) const HAPTICS: Row = Row::new("LINE HAPTICS", "Line haptics", haptics);
@@ -47,6 +51,11 @@ fn tethers() -> Line {
 fn lock() -> Line {
     let enabled = read_config(|c| c.controllers.grapple.lock.enabled);
     lock_line(enabled, &lock::status())
+}
+
+fn seat_row() -> Line {
+    let enabled = read_config(|c| c.controllers.grapple.seat);
+    seat_line(enabled, &seat::status())
 }
 
 fn swing() -> Line {
@@ -246,6 +255,30 @@ fn lock_line(enabled: bool, status: &LockStatus) -> Line {
     ))
 }
 
+fn seat_line(enabled: bool, status: &SeatStatus) -> Line {
+    if !enabled {
+        return Line::off("");
+    }
+    let counts = text!(
+        status.fires.to_string(),
+        " fired, ",
+        status.tethers.to_string(),
+        " tethered, ",
+        status.misses.to_string(),
+        " missed"
+    );
+    let refused = status.refused.map_or_else(Text::default, |why| {
+        text!(", refused: ", prose(why.label()))
+    });
+    if status.flying {
+        Line::ok(text!(prose("flying, "), counts))
+    } else if status.fires == 0 {
+        Line::waiting(text!(counts, refused))
+    } else {
+        Line::ok(text!(counts, refused))
+    }
+}
+
 /// A held line's length, for the snatch's and the lock's rows.
 fn held_length(length_m: f32) -> Text {
     text!("held ", format!("{length_m:.1}"), " m")
@@ -329,6 +362,28 @@ mod tests {
 
     use super::*;
     use crate::grapple::physical::TargetReadout;
+
+    #[test]
+    fn the_seat_row_reads_the_seat_grapple() {
+        assert_eq!(seat_line(false, &SeatStatus::default()).text(), "OFF");
+        let refused = SeatStatus {
+            refused: Some(seat::Refusal::NoTarget),
+            ..SeatStatus::default()
+        };
+        assert_eq!(
+            seat_line(true, &refused).text(),
+            "WAITING, 0 FIRED, 0 TETHERED, 0 MISSED, REFUSED: NOTHING IN RANGE"
+        );
+        let flying = SeatStatus {
+            flying: true,
+            fires: 1,
+            ..SeatStatus::default()
+        };
+        assert_eq!(
+            seat_line(true, &flying).text(),
+            "OK, FLYING, 1 FIRED, 0 TETHERED, 0 MISSED"
+        );
+    }
 
     #[test]
     fn the_lock_row_reads_the_lock() {

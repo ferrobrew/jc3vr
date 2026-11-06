@@ -133,6 +133,12 @@ pub struct GrappleAim {
     /// Whether the target is an object rather than world geometry, so that a tether pulls it. A
     /// best guess at the plan's "targets that support tethering", not yet checked in play.
     pub tetherable: bool,
+    /// Whether [`point`](Self::point) is current: the game's targeting ran (the game takes the
+    /// grapple's fire), or the seat grapple cast its own ray. While it is not, the point may be
+    /// stale, and nothing is drawn at it.
+    pub current: bool,
+    /// The aim is the seat grapple's ([`crate::grapple::seat`]), cast by the mod in a vehicle seat.
+    pub seat: bool,
     /// The aim assist's turn of the ray onto a grapple target, when it made one.
     pub assist: Option<GrappleAssist>,
 }
@@ -447,9 +453,27 @@ unsafe fn finish(
         };
     }
 
+    // SAFETY: the live local player's hook, on the thread updating it; the calls only read.
+    let hook = unsafe { crate::grapple::hook::of(owner) };
+    let fire_enabled = hook.is_some_and(|hook| unsafe { hook.GetFireInputEnabled() });
     // SAFETY: as above.
-    let grapple = grapple_ray.and_then(|ray| {
-        unsafe { aim.as_ref() }.map(|aim| grapple_readout(aim, ray, grapple_assist))
+    let seat_range_m = hook
+        .filter(|_| !fire_enabled && tick.config.grapple.seat && unsafe { seated(owner) })
+        .and_then(|hook| unsafe { hook.GetTuning().as_ref() })
+        .map(|tuning| tuning.m_GrappleDistance)
+        .filter(|range| range.is_finite() && *range > 0.0);
+    let grapple = grapple_ray.and_then(|ray| match seat_range_m {
+        Some(range_m) => {
+            // SAFETY: the simulation phase outside the physics step, as for the hands' casts.
+            let hit = unsafe { raycast::cast(&ray, range_m, &options) }.unwrap_or_else(|error| {
+                raycast_error = Some(error);
+                None
+            });
+            Some(seat_readout(ray, hit, range_m))
+        }
+        // SAFETY: as above.
+        None => unsafe { aim.as_ref() }
+            .map(|aim| grapple_readout(aim, ray, grapple_assist, fire_enabled)),
     });
     let mut status = STATUS.lock();
     let corrections = assist.iter().flatten().count() as u64;
@@ -466,19 +490,83 @@ unsafe fn finish(
     };
 }
 
-/// The grapple slot after the game's targeting, as the grapple's readout.
-fn grapple_readout(aim: &PlayerAimControl, ray: Ray, assist: Option<GrappleAssist>) -> GrappleAim {
+/// The grapple slot after the game's targeting, as the grapple's readout. While the game takes no
+/// fire (`fire_enabled` false: a vehicle seat, a fire under way, and the other states
+/// [`GrapplingHook::GetFireInputEnabled`] refuses), nothing is hit or valid and the point is not
+/// current: the game may leave the slot as it was when the fire was last allowed, which in a seat
+/// is the boarding point.
+///
+/// [`GrapplingHook::GetFireInputEnabled`]: jc3gi::equipment::grappling_hook::GrapplingHook::GetFireInputEnabled
+fn grapple_readout(
+    aim: &PlayerAimControl,
+    ray: Ray,
+    assist: Option<GrappleAssist>,
+    fire_enabled: bool,
+) -> GrappleAim {
     const GRAPPLE: usize = TargetType::TARGET_GRAPPLE as usize;
-    let has_target = !aim.m_Target[GRAPPLE].is_null();
-    let valid = aim.m_HasLastValidGrapple && aim.m_IsInRange[GRAPPLE];
+    let (hit, valid, tetherable) = slot_flags(
+        SlotFlags {
+            hit: aim.m_DirectHits[GRAPPLE] || !aim.m_Target[GRAPPLE].is_null(),
+            valid: aim.m_HasLastValidGrapple && aim.m_IsInRange[GRAPPLE],
+            object: NonZeroUsize::new(aim.m_LastHitGrappleTargetGO[0] as usize).is_some(),
+        },
+        fire_enabled,
+    );
     GrappleAim {
         ray,
         point: Vec3::from_array(aim.m_AimPos[GRAPPLE].data),
-        hit: aim.m_DirectHits[GRAPPLE] || has_target,
+        hit,
         valid,
-        tetherable: valid && NonZeroUsize::new(aim.m_LastHitGrappleTargetGO[0] as usize).is_some(),
+        tetherable,
+        current: fire_enabled,
+        seat: false,
         assist,
     }
+}
+
+/// The seat grapple's readout ([`crate::grapple::seat`]): the off-hand's ray cast by the mod, the
+/// game's targeting not running in a seat, valid while it hits something within the grapple's
+/// range `range_m`.
+fn seat_readout(ray: Ray, hit: Option<RayHit>, range_m: f32) -> GrappleAim {
+    let in_range = hit.filter(|hit| hit.distance <= range_m);
+    GrappleAim {
+        ray,
+        point: in_range.map_or_else(|| ray.at(range_m), |hit| hit.position),
+        hit: hit.is_some(),
+        valid: in_range.is_some(),
+        tetherable: in_range.is_some_and(|hit| hit.object.is_some()),
+        current: true,
+        seat: true,
+        assist: None,
+    }
+}
+
+/// Whether `character` rides in a vehicle seat, as the game's own vehicle grapple tests it.
+///
+/// # Safety
+///
+/// `character` must be live, on the game thread.
+unsafe fn seated(character: &Character) -> bool {
+    !unsafe { character.GetVehiclePtr() }.is_null()
+        && unsafe { character.IsInRidingInVehicleState() }
+}
+
+/// What the grapple slot says of its target, before the fire gate.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct SlotFlags {
+    /// The ray hit something, or a target is selected.
+    hit: bool,
+    /// The game holds a valid grapple target in range.
+    valid: bool,
+    /// The cached grapple target is an object.
+    object: bool,
+}
+
+/// The readout's hit, valid, and tetherable flags from the slot's, none of them while the game
+/// takes no fire.
+const fn slot_flags(slot: SlotFlags, fire_enabled: bool) -> (bool, bool, bool) {
+    let valid = fire_enabled && slot.valid;
+    (fire_enabled && slot.hit, valid, valid && slot.object)
 }
 
 /// Record an update that aimed nothing, and withdraw the guns' aim points.
@@ -505,3 +593,54 @@ static STATUS: Mutex<AimStatus> = Mutex::new(AimStatus {
     assist_corrections: 0,
     updates: 0,
 });
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SLOT: SlotFlags = SlotFlags {
+        hit: true,
+        valid: true,
+        object: true,
+    };
+
+    #[test]
+    fn the_slot_reads_through_while_the_game_takes_the_fire() {
+        assert_eq!(slot_flags(SLOT, true), (true, true, true));
+        let wall = SlotFlags {
+            object: false,
+            ..SLOT
+        };
+        assert_eq!(slot_flags(wall, true), (true, true, false));
+    }
+
+    fn hit_at(distance: f32, object: bool) -> RayHit {
+        RayHit {
+            position: Vec3::new(0.0, 0.0, -distance),
+            normal: Vec3::Z,
+            distance,
+            object: object.then(|| NonZeroUsize::new(0x1000).unwrap()),
+            body: 0,
+            material: None,
+        }
+    }
+
+    #[test]
+    fn the_seat_aim_is_its_own_casts_hit_within_the_grapples_range() {
+        let ray = Ray::new(Vec3::ZERO, Vec3::NEG_Z).unwrap();
+        let near = seat_readout(ray, Some(hit_at(20.0, true)), 80.0);
+        assert!(near.current && near.seat && near.valid && near.tetherable);
+        assert_eq!(near.point, Vec3::new(0.0, 0.0, -20.0));
+        let far = seat_readout(ray, Some(hit_at(120.0, false)), 80.0);
+        assert!(far.current && far.hit && !far.valid);
+        assert_eq!(far.point, Vec3::new(0.0, 0.0, -80.0));
+        let miss = seat_readout(ray, None, 80.0);
+        assert!(miss.current && !miss.hit && !miss.valid);
+    }
+
+    #[test]
+    fn nothing_is_hit_or_valid_while_the_game_takes_no_fire() {
+        // In a seat the slot keeps the boarding point's target; the readout must not report it.
+        assert_eq!(slot_flags(SLOT, false), (false, false, false));
+    }
+}

@@ -57,9 +57,14 @@ pub(super) fn aim_readout(
     });
     ui.label(match &status.grapple {
         Some(g) => format!(
-            "Grapple: from {} · point {} · hit {} · valid {} · tetherable {} · assist {}",
+            "Grapple: from {} · point {} ({}) · hit {} · valid {} · tetherable {} · assist {}",
             vec3(g.ray.origin),
             vec3(g.point),
+            match (g.seat, g.current) {
+                (true, _) => "seat",
+                (false, true) => "game",
+                (false, false) => "stale",
+            },
             yes_no(g.hit),
             yes_no(g.valid),
             yes_no(g.tetherable),

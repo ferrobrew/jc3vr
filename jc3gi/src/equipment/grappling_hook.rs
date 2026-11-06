@@ -198,7 +198,15 @@ pub struct GrapplingHook {
     _field_1e0: [u8; 64],
     /// The character holding the hook (a `boost::weak_ptr<CCharacter>`).
     pub m_Holder: crate::types::shared_ptr::WeakPtrGameObject,
-    _field_230: [u8; 2],
+    _field_230: [u8; 1],
+    /// Whether the animation graph lets the fire input reach the hook. The graph's disable
+    /// grapple use task (`NStateTask_DisableGrappleUseTask`) clears it on entering a state that
+    /// carries it (every vehicle seat, the grapple fires, landings, stumbles, and many traversal
+    /// transitions), optionally retracting the active wire and detaching a reeled-in attachment
+    /// first, sets it again while the state's animation is within the task's named segment, and
+    /// sets it on leaving the state. [`GetFireInputEnabled`](crate::equipment::grappling_hook::GrapplingHook::GetFireInputEnabled) combines
+    /// it with the hook's other fire gates.
+    pub m_GrappleFireInputEnabled: bool,
     /// Whether the fire input has been held past [`GrappleTuning::m_HoldTime`](crate::equipment::grappling_hook::GrappleTuning::m_HoldTime) with an attached
     /// active wire, so that its release fires a tether rather than reel in.
     pub m_CachedDualTetherFire: bool,
@@ -497,6 +505,23 @@ impl GrapplingHook {
             f(self as *mut Self as _, target_info, ignore_object, ghost_wire)
         }
     }
+    pub const GetFireInputEnabled_ADDRESS: usize = 0x140923750;
+    /// Whether the fire input fires the hook now: [`m_GrappleFireInputEnabled`](crate::equipment::grappling_hook::GrapplingHook::m_GrappleFireInputEnabled),
+    /// cleared further when the holder is not the player, while the player aims down a sniper
+    /// rifle's scope, without the grappling hook ability, under the parachute without the parachute
+    /// slingshot ability, in cinematic mode, in the wingsuit while the grapple's aim point lies
+    /// too far behind the character's facing, when the inventory's animation does not allow a
+    /// grapple fire, or while a character state bit blocks it. The hook's readiness to fire and its
+    /// pre-simulation input dispatch ([`OnPreSimUpdate`](crate::equipment::grappling_hook::GrapplingHook::OnPreSimUpdate)) test it before a
+    /// fire. Reads only.
+    pub unsafe fn GetFireInputEnabled(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::GetFireInputEnabled_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
     pub const FireHookCustomAtTarget_ADDRESS: usize = 0x14094DD60;
     /// Builds a target info on `target` at `local_position` in its space (in range, no bone),
     /// fires it as [`FireHookCustom`](crate::equipment::grappling_hook::GrapplingHook::FireHookCustom), and releases the info.
@@ -630,6 +655,35 @@ impl GrapplingHook {
                 Self::RetractActiveWire_ADDRESS,
             );
             f(self as *mut Self as _)
+        }
+    }
+    pub const TetherActiveWireToVehicleCOM_ADDRESS: usize = 0x140943420;
+    /// Turns the active wire into a tether between its far end and `vehicle`. While the far end is
+    /// attached and the near end is still on the holder's bone
+    /// ([`AOI_Character`](crate::equipment::grapple_point_proxy::AttachmentObjectInfo::AOI_Character)), it
+    /// destroys the wire's constraint, detaches the near end, returns the wire to
+    /// [`GHWS_ACTIVE_VIRTUAL`](crate::equipment::grappling_hook::WireState::GHWS_ACTIVE_VIRTUAL), attaches the near end to a new
+    /// vehicle point proxy (`CVehicleGrapplePointProxy`, built for `holder` at `vehicle`'s centre
+    /// of mass), marks the wire as no longer the active wire, moves it to the tether list
+    /// ([`m_Wires`](crate::equipment::grappling_hook::GrapplingHook::m_Wires)), clears [`m_ActiveWire`](crate::equipment::grappling_hook::GrapplingHook::m_ActiveWire), enters
+    /// [`GHS_INACTIVE`](crate::equipment::grappling_hook::GrapplingHookState::GHS_INACTIVE), and notifies the HUD. Otherwise it does
+    /// nothing. Its one caller is the vehicle grapple ([`VehicleGrappleHook::PreSimUpdate`](crate::equipment::grappling_hook::VehicleGrappleHook::PreSimUpdate)).
+    pub unsafe fn TetherActiveWireToVehicleCOM(
+        &mut self,
+        holder: *const crate::types::shared_ptr::SharedPtr<
+            crate::character::character::Character,
+        >,
+        vehicle: *mut crate::vehicle::vehicle::Vehicle,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                holder: *const crate::types::shared_ptr::SharedPtr<
+                    crate::character::character::Character,
+                >,
+                vehicle: *mut crate::vehicle::vehicle::Vehicle,
+            ) = ::std::mem::transmute(Self::TetherActiveWireToVehicleCOM_ADDRESS);
+            f(self as *mut Self as _, holder, vehicle)
         }
     }
     pub const IsHookAimingState_ADDRESS: usize = 0x1408C8EA0;
@@ -1396,15 +1450,24 @@ for NStateTask_ReeledInLedgeClimbMotionTask {
     }
 }
 #[repr(C, align(8))]
-/// The vehicle grapple (`CVehicleGrappleHook`): a vehicle's grapple, which fires the holder's hook
-/// at a stored target and tethers it to the vehicle.
+/// The vehicle grapple (`CVehicleGrappleHook`): a grapple fired from a vehicle seat, which fires
+/// the holder's hook at the player aim's target and tethers what it hits to the vehicle. The hook
+/// embeds one. Nothing calls its update: the hook's pre-simulation update
+/// ([`GrapplingHook::OnPreSimUpdate`](crate::equipment::grappling_hook::GrapplingHook::OnPreSimUpdate)) calls it only under a static switch
+/// (`CGrapplingHook::s_VehicleHookEnabled`) that this build compiles out, so the feature is
+/// present but unreachable.
 pub struct VehicleGrappleHook {}
 impl VehicleGrappleHook {
     pub const PreSimUpdate_ADDRESS: usize = 0x14094D910;
-    /// The vehicle grapple's state machine: fires through
-    /// [`GrapplingHook::FireHookCustom`](crate::equipment::grappling_hook::GrapplingHook::FireHookCustom), waits for the far end to attach (the active wire not
-    /// [`GHWS_INVALID`](crate::equipment::grappling_hook::WireState::GHWS_INVALID) and its far end holding a proxy), tethers it to the
-    /// vehicle's centre of mass, and ends the wire with [`GrapplingHook::CancelActiveWire`](crate::equipment::grappling_hook::GrapplingHook::CancelActiveWire).
+    /// The vehicle grapple's state machine, run while the holder rides in a vehicle
+    /// ([`Character::IsInRidingInVehicleState`](crate::character::character::Character::IsInRidingInVehicleState)):
+    /// a press of [`FIRE_GRAPPLE`](crate::input::input_action_map::Action::FIRE_GRAPPLE) fires through
+    /// [`GrapplingHook::FireHookCustom`](crate::equipment::grappling_hook::GrapplingHook::FireHookCustom) at the player aim's target position, ignoring the
+    /// vehicle, with no game object and no bone; once the press is released and the far end is
+    /// attached (the active wire not [`GHWS_INVALID`](crate::equipment::grappling_hook::WireState::GHWS_INVALID) and its far end
+    /// holding a proxy), it tethers the wire to the vehicle
+    /// ([`GrapplingHook::TetherActiveWireToVehicleCOM`](crate::equipment::grappling_hook::GrapplingHook::TetherActiveWireToVehicleCOM)). With no active wire left it cancels and
+    /// starts over ([`GrapplingHook::CancelActiveWire`](crate::equipment::grappling_hook::GrapplingHook::CancelActiveWire)).
     pub unsafe fn PreSimUpdate(
         &mut self,
         holder: *const crate::types::shared_ptr::SharedPtr<

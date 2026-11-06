@@ -56,6 +56,7 @@ pub mod config;
 pub(crate) mod hook;
 pub mod physical;
 pub mod rope;
+pub mod seat;
 pub mod telemetry;
 
 pub use config::{GrappleComfortConfig, GrappleComfortMode};

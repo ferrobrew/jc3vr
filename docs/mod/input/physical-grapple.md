@@ -71,7 +71,7 @@ The input tick's game stage (the game thread, before the world update; [controll
 
 ## Settings and readouts
 
-The switches are in the debug UI's Grapple feature, under Movement/vehicles: yank to zip (`bindings.yank.enabled`), pull to reel (`controllers.grapple.pull_to_reel`, which drives both the reel and the tether retract), the pump (`controllers.grapple.pump`), the lock and its tuning (`controllers.grapple.lock`, [grapple-lock.md](grapple-lock.md)), and the anchor hand (`hands.anchor.enabled`, which carries the hang swing's hold); the line's vibration is behind the haptics' master switch ([haptics.md](haptics.md)). Everything defaults on. The tuning is fixed in `GRAPPLE` (`PhysicalGrappleTuning`) and the yank's in `GRAPPLE_YANK`, and the Grapple feature's live status opens with the `GRAPPLE` section's rows, then adds the attach point, the hang's hand motion, impulse, and pump, the hand's pull speed and depth, the yanks, and the snatches failed and the tosses.
+The switches are in the debug UI's Grapple feature, under Movement/vehicles: yank to zip (`bindings.yank.enabled`), pull to reel (`controllers.grapple.pull_to_reel`, which drives both the reel and the tether retract), the pump (`controllers.grapple.pump`), the lock and its tuning (`controllers.grapple.lock`, [grapple-lock.md](grapple-lock.md)), the seat grapple (`controllers.grapple.seat`, [seat-grapple.md](seat-grapple.md)), and the anchor hand (`hands.anchor.enabled`, which carries the hang swing's hold); the line's vibration is behind the haptics' master switch ([haptics.md](haptics.md)). Everything defaults on. The tuning is fixed in `GRAPPLE` (`PhysicalGrappleTuning`) and the yank's in `GRAPPLE_YANK`, and the Grapple feature's live status opens with the `GRAPPLE` section's rows, then adds the attach point, the hang's hand motion, impulse, and pump, the hand's pull speed and depth, the yanks, and the snatches failed and the tosses.
 
 The debug UI's Status page has a `GRAPPLE` section:
 
@@ -80,6 +80,7 @@ The debug UI's Status page has a `GRAPPLE` section:
 - `REEL FROM HAND`: the scale while the hand drives a reel, `BOOSTED` during a boost, and the counts of reels and boosts.
 - `TETHERS`: how many are attached, the retract value while the pull drives it, the tension while the game squeezes, and the count of pulls.
 - `LINE LOCK`: the lock on the reel's line ([grapple-lock.md](grapple-lock.md#settings-and-readouts)).
+- `SEAT GRAPPLE`: the seat grapple's fires, tethers, and misses, whether its hook is flying, and why the last press was refused ([seat-grapple.md](seat-grapple.md#settings-and-readouts)).
 - `HANG SWING`: the hang ticks that swung, and how many the pump added to.
 - `LINE HAPTICS`: the grapple hand's line level, the stronger of the tension's and the reel's.
 

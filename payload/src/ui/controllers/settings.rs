@@ -73,6 +73,10 @@ pub(super) fn grapple_settings(ui: &mut Ui, cfg: &mut config::Config) {
              tightens attached tethers.",
         );
     ui.checkbox(&mut c.grapple.pump, "Pump the hang swing");
+    ui.checkbox(&mut c.grapple.seat, "Grapple from a seat").on_hover_text(
+        "In a vehicle seat, the grapple button fires the hook along the off-hand's aim and tethers \
+         what it hits to the vehicle.",
+    );
     let l = &mut c.grapple.lock;
     ui.checkbox(&mut l.enabled, "Lock the reel's line").on_hover_text(
         "Holding the grapple button during the reel holds the line's length to swing from. A quick \

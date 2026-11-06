@@ -351,6 +351,7 @@ const SECTIONS: &[Section] = &[
             grapple::REEL,
             grapple::TETHERS,
             grapple::LOCK,
+            grapple::SEAT,
             grapple::SWING,
             grapple::SNATCH,
             grapple::HAPTICS,
