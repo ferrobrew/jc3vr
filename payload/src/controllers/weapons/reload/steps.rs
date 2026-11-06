@@ -19,11 +19,11 @@ use crate::controllers::{
         pouch_models,
         regions::{action_back, action_volume},
         reload::{
-            BeltFinish, BeltGate, FinishInputs, GunTick, MAX_EVENTS, State, Tick, WeaponReadout,
-            WeaponTick,
+            BeltFinish, BeltGate, FinishInputs, GunTick, HandBelt, MAX_EVENTS, State, Tick,
+            WeaponReadout, WeaponTick,
             action::locks_back,
             ammo::{self, NativeAmmo, Observation},
-            belt::{BeltPush, PushInputs},
+            belt::{self, BeltPush, PushInputs},
             chamber::{self, ActionKind, Chamber},
             eject::{self, FlickDetector},
             engine,
@@ -32,7 +32,7 @@ use crate::controllers::{
             frames::{self, GunFrame},
             gate, infinite,
             insert::{self, InsertEvent, InsertInputs, InsertStage, InsertionSource, Well},
-            loose,
+            knock, loose,
             plan::{self, LoadKind, ReloadPlan, WeaponFacts},
             records::RecordKey,
             retained::{self, SeatOutcome},
@@ -56,6 +56,8 @@ trait MagazineInsertion {
     ) -> loose::Operation<()>;
     fn seat(&mut self, weapon: usize) -> SeatOutcome;
     fn release(&mut self);
+    /// Play the magazine-in sound on gun `gun` of the weapon at `weapon`, where a round seated.
+    fn seat_sound(&mut self, weapon: usize, gun: usize);
 }
 
 struct NativeMagazine;
@@ -94,6 +96,11 @@ impl MagazineInsertion for NativeMagazine {
     }
     fn release(&mut self) {
         loose::let_go();
+    }
+    fn seat_sound(&mut self, weapon: usize, gun: usize) {
+        // SAFETY: the insertion's seat runs on the game thread before the world update, with the
+        // weapon read this tick.
+        unsafe { seat_sound(weapon, gun) };
     }
 }
 
@@ -304,12 +311,12 @@ impl State {
 
         self.extraction_blocks_belt = [false; 2];
         self.finish_ejects(tick, config);
-        self.push_knocked();
+        self.push_knocked(tick);
         self.ejects(tick, inputs, config);
         self.insert(tick, inputs, config);
         self.knock(tick, inputs, config);
         self.extract(tick, inputs, reload);
-        self.belt(tick, config, dt);
+        self.belt(tick, config);
         self.work(tick, inputs, config);
         self.sync_owned(tick);
 
@@ -334,6 +341,7 @@ impl State {
             reserve: weapon.reserve,
             unlimited: weapon.reading.unlimited,
             out: weapon.reading.out,
+            occupied: weapon.occupied(),
             chamber: record.chambers[e],
             action: (chambering(&weapon.plan) && reload.action.physical)
                 .then_some(record.travels[e]),
@@ -505,7 +513,7 @@ impl State {
     ) {
         let reload = &Reload::of(&config.weapons.reload);
         if let Some(hand) = self.ready_cue.step(inputs.dt) {
-            haptics::play(hand, Event::Chambered);
+            haptics::play(hand, Event::ReadyToFire);
         }
         if !reload.loose.enabled && adapter.held() {
             adapter.release();
@@ -563,8 +571,7 @@ impl State {
         let can_take = target.is_some_and(|(weapon, _)| self.can_take(weapon));
         let grip = self.grip_motion(tick, hand, inputs.dt);
         let well = target.and_then(|(_, gun)| gun.well).filter(|_| can_take);
-        let occupied =
-            target.is_some_and(|(weapon, _)| weapon.plan.load.well_occupied(weapon.reading.out));
+        let occupied = target.is_some_and(|(weapon, _)| weapon.occupied());
         let prior = self.status.insertion;
         let before_hands = self.status.insert_hands;
         let capture = target.map_or(*reload, |(weapon, _)| reload.for_plan(&weapon.plan));
@@ -654,13 +661,7 @@ impl State {
                     engine::show_magazine_part(weapon.address, true)
                 },
                 Some(InsertEvent::Dropped) => unsafe {
-                    engine::show_magazine_part(
-                        weapon.address,
-                        weapon
-                            .plan
-                            .load
-                            .part_shown(weapon.reading.out, weapon.reading.magazine),
-                    )
+                    engine::show_magazine_part(weapon.address, weapon.part_shown())
                 },
                 _ => {}
             }
@@ -722,26 +723,13 @@ impl State {
                 if loaded {
                     self.status.counts.seats += 1;
                     self.event(format!("{gun_hand:?} seated"));
-                    haptics::play_hands(Hand::BOTH, Event::MagazineSeat);
-                    if let Some((weapon, gun)) = target
-                        && ready_after_seat(
-                            &weapon.plan,
-                            self.records.get(weapon.key).chambers[gun.entry()],
-                        )
-                    {
-                        self.ready_cue.arm(gun_hand, reload.ready_cue_delay_s);
+                    if let Some((weapon, gun)) = target {
+                        adapter.seat_sound(weapon.address, gun.index);
+                        self.seated(weapon, gun, gun_hand, Event::MagazineSeat, reload);
                     }
                 } else if !world_magazine && let Some((weapon, _)) = target {
                     // SAFETY: the weapon is this tick's verified target; failed seating transfers no round.
-                    unsafe {
-                        engine::show_magazine_part(
-                            weapon.address,
-                            weapon
-                                .plan
-                                .load
-                                .part_shown(weapon.reading.out, weapon.reading.magazine),
-                        )
-                    };
+                    unsafe { engine::show_magazine_part(weapon.address, weapon.part_shown()) };
                 }
             }
             Some(InsertEvent::Dropped) => {
@@ -752,18 +740,18 @@ impl State {
         }
     }
 
-    /// The belt pushes of each hand's gun.
-    pub(super) fn belt(&mut self, tick: &Tick, config: &ControllersConfig, dt: f32) {
+    /// The belt pushes of each hand's gun, and the pouches shown as ready for one.
+    pub(super) fn belt(&mut self, tick: &Tick, config: &ControllersConfig) {
         let reload = &Reload::of(&config.weapons.reload);
+        let belt = &reload.belt;
+        self.belt_rings = [None; 2];
         for hand in Hand::BOTH {
             let i = hand.index();
             let target = tick.gun(hand);
-            let well = target.and_then(|(_, gun)| gun.well);
-            let velocity = match (well, self.last_mouths[i]) {
-                (Some(w), Some(last)) if dt > 1e-4 => (w.mouth - last) / dt,
-                _ => Vec3::ZERO,
-            };
-            self.last_mouths[i] = well.map(|w| w.mouth);
+            let pushed = target.and_then(|(weapon, gun)| {
+                let well = gun.well?;
+                Some((belt_point(weapon, well, tick.world_scale), well.axis))
+            });
             if self.extraction_hand() == Some(hand.other())
                 || self.pending_ejects[i].is_some()
                 || self.extraction_blocks_belt[i]
@@ -772,17 +760,21 @@ impl State {
                 continue;
             }
             let eligible = self.belt_gate(tick, hand).allows(reload);
-            let inputs = well
-                .zip(self.pouch)
-                .map(|(w, (centre, radius))| PushInputs {
-                    mouth: w.mouth,
-                    axis: w.axis,
-                    velocity,
-                    pouch_centre: centre,
-                    pouch_radius: radius,
-                    eligible,
-                });
-            if !self.belts[i].step(inputs, &reload.belt) {
+            let pouch = self.pouches[i];
+            if eligible
+                && let (Some((point, axis)), Some(centre)) = (pushed, pouch)
+                && belt::approaching(point, axis, centre, belt.radius_m, belt.approach_m, belt)
+            {
+                self.belt_rings[i] = Some(centre);
+            }
+            let inputs = pushed.zip(pouch).map(|((point, axis), centre)| PushInputs {
+                point,
+                axis,
+                pouch_centre: centre,
+                pouch_radius: belt.radius_m,
+                eligible,
+            });
+            if !self.belts[i].step(inputs, belt) {
                 continue;
             }
             let Some((weapon, gun)) = target else {
@@ -790,7 +782,7 @@ impl State {
             };
             // A magazine still in drops as the fresh one goes in, and the game's reload returns
             // its rounds.
-            if weapon.plan.load.well_occupied(weapon.reading.out) {
+            if weapon.occupied() {
                 self.queue_eject(weapon, gun, hand, DetachKind::Belt, reload.loose.enabled);
                 continue;
             }
@@ -801,20 +793,24 @@ impl State {
                 record.chambers[gun.entry()] =
                     engine::feed_chamber(weapon.address, gun.entry()).unwrap_or(Chamber::Chambered);
                 record.travels[gun.entry()].close();
-                haptics::play(hand, Event::BeltSeat);
+                // SAFETY: game thread before the world update; the weapon was read this tick.
+                unsafe { seat_sound(weapon.address, gun.index) };
+                self.seated(weapon, gun, hand, Event::BeltSeat, reload);
             }
         }
     }
 
     pub(super) fn belt_finish(&self, tick: &Tick) -> BeltFinish {
-        let hand = tick.dominant;
         BeltFinish {
             sequence: tick.sequence,
-            hand,
-            weapon: tick.gun(hand).map(|(weapon, _)| weapon.address),
-            gate: self.belt_gate(tick, hand),
-            well: tick.gun(hand).is_some_and(|(_, gun)| gun.well.is_some()),
-            pouch: self.pouch.is_some(),
+            dominant: tick.dominant,
+            dual: tick.gun_hands() == [true; 2],
+            hands: Hand::BOTH.map(|hand| HandBelt {
+                weapon: tick.gun(hand).map(|(weapon, _)| weapon.address),
+                gate: self.belt_gate(tick, hand),
+                well: tick.gun(hand).is_some_and(|(_, gun)| gun.well.is_some()),
+                pouch: self.pouches[hand.index()].is_some(),
+            }),
         }
     }
 
@@ -834,11 +830,11 @@ impl State {
 
     /// Whether `weapon`'s gun in `gun_hand` can take a round from the hand now: a magazine or a
     /// cylinder at any time, held until the one still in leaves ([`State::knock`]), and a shell or
-    /// a rocket while it has space.
+    /// a rocket while it has space or its round is out.
     pub(super) fn can_take(&self, weapon: &WeaponTick) -> bool {
         match weapon.plan.load {
             LoadKind::Magazine | LoadKind::Cylinder => true,
-            LoadKind::Shell | LoadKind::Rocket => weapon.reading.has_space(),
+            LoadKind::Shell | LoadKind::Rocket => weapon.reading.out || weapon.reading.has_space(),
         }
     }
 
@@ -847,6 +843,26 @@ impl State {
     fn can_belt(&self, weapon: &WeaponTick) -> bool {
         let reading = &weapon.reading;
         reading.out || reading.has_space()
+    }
+
+    /// A round seated in `gun` of `weapon`, in `gun_hand`: the seat's thud (`cue`) on the gun hand,
+    /// and the ready cue to follow once the gun can fire.
+    pub(super) fn seated(
+        &mut self,
+        weapon: &WeaponTick,
+        gun: &GunTick,
+        gun_hand: Hand,
+        cue: Event,
+        reload: &Reload,
+    ) {
+        haptics::play(gun_hand, cue);
+        if ready_after_seat(
+            &weapon.plan,
+            self.records.get(weapon.key).chambers[gun.entry()],
+        ) {
+            self.ready_cue
+                .arm(gun_hand, reload.ready_cue_delay_s, reload.ready_cue_pulses);
+        }
     }
 
     /// Load `gun` of `weapon`: a whole magazine or one shell. Returns whether anything loaded.
@@ -883,7 +899,8 @@ impl State {
 
     pub(super) fn clear_tick(&mut self) {
         self.tick = None;
-        self.pouch = None;
+        self.pouches = [None; 2];
+        self.belt_rings = [None; 2];
         self.stocked_pouch = None;
         self.pouch_refusal = None;
         self.free = None;
@@ -907,7 +924,6 @@ impl State {
         self.belts = [BeltPush::new(); 2];
         self.flicks.iter_mut().for_each(FlickDetector::reset);
         self.last_grips = [None; 2];
-        self.last_mouths = [None; 2];
         self.drawn = None;
     }
 }
@@ -930,6 +946,27 @@ pub(super) fn chambering(plan: &ReloadPlan) -> bool {
 /// with an action waits on it.
 pub(super) fn ready_after_seat(plan: &ReloadPlan, chamber: Chamber) -> bool {
     !chambering(plan) || chamber != Chamber::Empty
+}
+
+/// Play the magazine-in sound where a round seated in gun `gun` of the weapon at `weapon`.
+///
+/// # Safety
+///
+/// As [`engine::play_seat_sound`].
+pub(super) unsafe fn seat_sound(weapon: usize, gun: usize) {
+    let sound = unsafe { engine::play_seat_sound(weapon, gun) };
+    tracing::debug!(target: "controllers", ?sound, "reload: played the seat's sound");
+}
+
+/// The point of `weapon`'s gun pushed onto the belt pouch, its well at `well`: the base of a
+/// magazine still in, its visible length below the mouth from the wells table, or the mouth.
+fn belt_point(weapon: &WeaponTick, well: Well, world_scale: f32) -> Vec3 {
+    let below = if weapon.occupied() && world_scale.is_finite() && world_scale > 0.0 {
+        knock::below_m(wells::lookup(weapon.reading.name_hash)) / world_scale
+    } else {
+        0.0
+    };
+    belt::push_point(well.mouth, well.axis, below)
 }
 
 /// The tick's view of `weapon`, which `base` is, and its plan. `None` for a weapon the reload

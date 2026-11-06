@@ -50,6 +50,12 @@ impl Place {
         c.target(Mark::ring(MarkAt::Cockpit(c.centre), mark_size(c.radius)).showing(Shown::Always))
     }
 
+    /// A belt pouch the gun in the hand is being brought down onto for the belt reload: marked,
+    /// never taken, since the gun's push reloads, not a squeeze.
+    pub(super) fn belt_push(&self, c: &Candidate) -> GripTarget {
+        self.body(c).ranked(Tier::Touch)
+    }
+
     /// A socket that does not take what the hand holds: marked while the hand is near, never taken.
     pub(super) fn no_fit(&self, c: &Candidate) -> GripTarget {
         c.target(

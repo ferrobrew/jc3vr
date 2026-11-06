@@ -193,6 +193,9 @@ pub enum ModAction {
     Magazine,
     /// Push the round in the hand into the gun's well, marked by a gold ring on the gun.
     InsertRound,
+    /// Knock the gun's old magazine out with the one in the hand, or eject it, before the fresh one
+    /// goes in.
+    ClearWell,
     /// Push the gun's well down onto the belt pouch to reload it in one hand.
     BeltReload,
     /// Flick the gun to eject its magazine.

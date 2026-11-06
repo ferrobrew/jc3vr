@@ -490,7 +490,17 @@ pub fn loading_hand(gun_hands: [bool; 2], taker: Option<Hand>, dominant: Hand) -
 /// tell a gun that fires now from one whose action still waits.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub(super) struct ReadyCue {
-    pending: Option<(Hand, f32)>,
+    /// The hand, the seconds to the next pulse, the pulses left after it, and the seconds between
+    /// pulses.
+    pending: Option<ReadyPulse>,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct ReadyPulse {
+    hand: Hand,
+    left_s: f32,
+    after: u32,
+    gap_s: f32,
 }
 
 impl ReadyCue {
@@ -498,26 +508,44 @@ impl ReadyCue {
         Self { pending: None }
     }
 
-    /// Play the cue on `hand` once `delay_s` has passed, replacing any cue still waiting.
-    pub fn arm(&mut self, hand: Hand, delay_s: f32) {
-        self.pending = Some((hand, delay_s.max(0.0)));
+    /// Play the cue on `hand` once `delay_s` has passed, `pulses.0` times `pulses.1` seconds apart,
+    /// replacing any cue still waiting.
+    pub fn arm(&mut self, hand: Hand, delay_s: f32, pulses: (u32, f32)) {
+        let (count, gap_s) = pulses;
+        self.pending = count.checked_sub(1).map(|after| ReadyPulse {
+            hand,
+            left_s: finite_or_zero(delay_s),
+            after,
+            gap_s: finite_or_zero(gap_s),
+        });
     }
 
-    /// Advance by `dt` seconds: the hand to play the cue on, on the tick its delay runs out.
+    /// Advance by `dt` seconds: the hand to play a pulse on, on each tick a pulse falls due.
     pub fn step(&mut self, dt: f32) -> Option<Hand> {
-        let (hand, left) = self.pending?;
-        let left = left - if dt.is_finite() { dt.max(0.0) } else { 0.0 };
-        if left <= 0.0 {
-            self.pending = None;
-            Some(hand)
-        } else {
-            self.pending = Some((hand, left));
-            None
+        let mut pulse = self.pending?;
+        pulse.left_s -= finite_or_zero(dt);
+        if pulse.left_s > 0.0 {
+            self.pending = Some(pulse);
+            return None;
         }
+        self.pending = pulse.after.checked_sub(1).map(|after| ReadyPulse {
+            left_s: pulse.gap_s,
+            after,
+            ..pulse
+        });
+        Some(pulse.hand)
     }
 
     pub fn cancel(&mut self) {
         self.pending = None;
+    }
+}
+
+fn finite_or_zero(seconds: f32) -> f32 {
+    if seconds.is_finite() {
+        seconds.max(0.0)
+    } else {
+        0.0
     }
 }
 
@@ -965,13 +993,18 @@ mod tests {
     fn the_ready_cue_plays_once_after_its_delay() {
         let mut cue = ReadyCue::new();
         assert_eq!(cue.step(1.0), None);
-        cue.arm(Hand::Right, 0.15);
+        cue.arm(Hand::Right, 0.15, (2, 0.1));
         assert_eq!(cue.step(0.1), None);
         assert_eq!(cue.step(f32::NAN), None);
         assert_eq!(cue.step(0.1), Some(Hand::Right));
+        // The second pulse follows after the gap, and then nothing more.
+        assert_eq!(cue.step(0.05), None);
+        assert_eq!(cue.step(0.06), Some(Hand::Right));
         assert_eq!(cue.step(1.0), None);
-        cue.arm(Hand::Left, 0.15);
+        cue.arm(Hand::Left, 0.15, (2, 0.1));
         cue.cancel();
+        assert_eq!(cue.step(1.0), None);
+        cue.arm(Hand::Left, 0.0, (0, 0.1));
         assert_eq!(cue.step(1.0), None);
     }
 

@@ -9,7 +9,7 @@ use crate::controllers::{
     frame::Hand,
     haptics::{self, Event},
     weapons::reload::{
-        FinishInputs, State, Tick,
+        FinishInputs, State, Tick, engine,
         extraction::DetachKind,
         frames,
         insert::{self, InsertStage, InsertionSource},
@@ -38,10 +38,11 @@ impl State {
             knock::publish(None);
             return;
         };
+        // A launcher's spent round is replaced, not knocked out.
         let zone = knock::zone_for(
             weapon.plan.load,
             weapon.plan.well,
-            weapon.reading.out,
+            !weapon.occupied(),
             gun.well.map(|well| (well.mouth, well.axis)),
             knock::below_m(wells::lookup(weapon.reading.name_hash)),
             tick.world_scale,
@@ -103,8 +104,31 @@ impl State {
         knock::publish(Some(view(fast, self.knocks.knocked_at)));
     }
 
-    /// Give the knocked magazine's body its impulse, once its body is readable.
-    pub(super) fn push_knocked(&mut self) {
+    /// Give the knocked magazine's body its impulse, once its body is readable, and hide the gun's
+    /// magazine part a few ticks after it lands.
+    pub(super) fn push_knocked(&mut self, tick: &Tick) {
+        self.push_impulse();
+        let pending = self.knocks.impulse.is_some();
+        let Some(mut linger) = self.knocks.linger else {
+            return;
+        };
+        // A magazine seated meanwhile owns the part; a gun gone from the hands has its part hidden
+        // at once, as its magazine is still out.
+        let weapon = tick.weapon(linger.weapon);
+        if weapon.is_some_and(|w| !w.reading.out) {
+            self.knocks.linger = None;
+            return;
+        }
+        if weapon.is_none() || linger.step(pending) {
+            self.knocks.linger = None;
+            // SAFETY: game thread before the world update; the weapon was read this tick.
+            unsafe { engine::show_magazine_part(linger.weapon, false) };
+        } else {
+            self.knocks.linger = Some(linger);
+        }
+    }
+
+    fn push_impulse(&mut self) {
         let Some(mut pending) = self.knocks.impulse.take() else {
             return;
         };

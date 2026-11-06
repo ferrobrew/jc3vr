@@ -10,13 +10,17 @@ use crate::controllers::{
     config::ControllersConfig,
     frame::Hand,
     haptics::{self, Event},
-    weapons::reload::{
-        GunTick, State, Tick, WeaponTick,
-        chamber::Chamber,
-        engine::{self, DetachOutcome},
-        extraction::{DetachKind, DetachRequest, MagazineId},
-        knock::{KNOCK, PendingImpulse},
-        serial,
+    weapons::{
+        pouch_models,
+        reload::{
+            GunTick, State, Tick, WeaponTick,
+            chamber::Chamber,
+            engine::{self, DetachOutcome},
+            extraction::{DetachKind, DetachRequest, MagazineId},
+            knock::{KNOCK, Linger, PendingImpulse},
+            serial, steps,
+            tuning::Reload,
+        },
     },
 };
 
@@ -88,7 +92,7 @@ impl State {
             self.status.counts.ejects += 1;
             self.extraction_blocks_belt[hand.index()] = true;
             if request.kind == DetachKind::Knock {
-                self.finish_knock(hand, outcome);
+                self.finish_knock(hand, outcome, weapon);
             } else if request.kind == DetachKind::Belt
                 && config.weapons.reload.belt.enabled
                 && self.load(weapon, gun)
@@ -99,7 +103,15 @@ impl State {
                     engine::feed_chamber(weapon.address, gun.entry()).unwrap_or(Chamber::Chambered);
                 record.travels[gun.entry()].close();
                 self.event(format!("{hand:?} belt reload"));
-                haptics::play(hand, Event::BeltSeat);
+                // SAFETY: game thread before the world update; the weapon was read this tick.
+                unsafe { steps::seat_sound(weapon.address, gun.index) };
+                self.seated(
+                    weapon,
+                    gun,
+                    hand,
+                    Event::BeltSeat,
+                    &Reload::of(&config.weapons.reload),
+                );
             } else {
                 self.event(format!("{hand:?} ejected"));
                 haptics::play(hand, Event::Eject);
@@ -108,10 +120,21 @@ impl State {
     }
 
     /// The knocked magazine is out: give its body the strike's impulse, world space. An unretained
-    /// prop is not the mod's to move, so it flies with the gun's velocity alone.
-    fn finish_knock(&mut self, hand: Hand, outcome: DetachOutcome) {
+    /// prop is not the mod's to move, so it flies with the gun's velocity alone. The gun's own
+    /// magazine part stays drawn in the well while the prop appears, where the gun's spare magazine
+    /// model draws the one in the hand, leaving the part free.
+    fn finish_knock(&mut self, hand: Hand, outcome: DetachOutcome, weapon: &WeaponTick) {
         let strike = self.knocks.strikes[hand.index()].take();
         self.event(format!("{hand:?} magazine knocked out"));
+        // SAFETY (both): game thread before the world update; the weapon was read this tick.
+        if weapon.plan.spare_top_m.is_some() && unsafe { pouch_models::hand_draws(weapon.address) }
+        {
+            unsafe { engine::show_magazine_part(weapon.address, true) };
+            self.knocks.linger = Some(Linger {
+                weapon: weapon.address,
+                ticks_left: KNOCK.linger_ticks,
+            });
+        }
         if let (DetachOutcome::Retained(magazine), Some(strike), Some(frames)) =
             (outcome, strike, self.frames)
         {

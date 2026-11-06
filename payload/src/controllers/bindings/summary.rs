@@ -220,15 +220,12 @@ fn capture_current(
         ]);
     }
     let mut mechanics = tables::describe::flight_mechanics(input.flight);
-    if let Some(row) = input.belt_reload.and_then(|belt| {
-        belt.row(
-            input.sequence,
-            input.config.acting_hand(),
-            guns,
-            input.ready,
-        )
-    }) {
-        mechanics.push(row);
+    if let Some(belt) = input.belt_reload {
+        mechanics.extend(
+            Hand::BOTH
+                .into_iter()
+                .filter_map(|hand| belt.row(input.sequence, hand, guns, input.ready)),
+        );
     }
     if let Some(row) = insert_row(&reload, input.ready) {
         mechanics.push(row);
@@ -427,18 +424,25 @@ fn refresh_magazine_out(
             && let Some(out) = read(weapon.address)
         {
             weapon.out = out;
+            weapon.occupied &= !out;
         }
     }
 }
 
 /// The push of the round already in a hand into its gun's well, while the reload holds one there
-/// and the hand is ready: the gold ring on the gun marks the well.
+/// and the hand is ready: the gold ring on the gun marks the well. While the gun's old round is
+/// still in, the round in the hand knocks it out first, or waits on its eject.
 fn insert_row(reload: &ReloadStatus, ready: [bool; 2]) -> Option<Row> {
-    let (hand, _) = reload.insert_hands?;
+    let (hand, gun_hand) = reload.insert_hands?;
+    let action = if reload.weapons[gun_hand.index()].is_some_and(|weapon| weapon.occupied) {
+        ModAction::ClearWell
+    } else {
+        ModAction::InsertRound
+    };
     (reload.insertion.holding() && ready[hand.index()]).then_some(Row {
         control: Control::Motion(hand),
         gesture: Gesture::Press,
-        effect: Effect::Mod(ModAction::InsertRound),
+        effect: Effect::Mod(action),
     })
 }
 
@@ -712,6 +716,49 @@ mod tests {
     }
 
     #[test]
+    fn a_round_held_for_a_gun_with_its_old_round_in_offers_clearing_the_well() {
+        let mut reload = ReloadStatus {
+            insert_hands: Some((Hand::Left, Hand::Right)),
+            ..ReloadStatus::default()
+        };
+        reload.insertion.stage = InsertStage::Holding { elapsed_s: 0.0 };
+        let readout = |occupied: bool| WeaponReadout {
+            address: 1,
+            name_hash: 0,
+            plan: ReloadPlan {
+                load: LoadKind::Magazine,
+                action: ActionKind::None,
+                well: WellFrame::Wrist { offset: Vec3::ZERO },
+                handle: None,
+                travel_m: 0.0,
+                part_top_m: None,
+                part_axis: Vec3::Y,
+                spare_top_m: None,
+                launcher: false,
+            },
+            from_table: false,
+            magazine: 1,
+            capacity: 2,
+            reserve: 1,
+            unlimited: false,
+            out: !occupied,
+            occupied,
+            chamber: Chamber::Chambered,
+            action: None,
+        };
+        for (occupied, action) in [
+            (true, ModAction::ClearWell),
+            (false, ModAction::InsertRound),
+        ] {
+            reload.weapons[Hand::Right.index()] = Some(readout(occupied));
+            assert_eq!(
+                insert_row(&reload, [true; 2]).map(|row| row.effect),
+                Some(Effect::Mod(action))
+            );
+        }
+    }
+
+    #[test]
     fn post_finish_magazine_reader_removes_successful_but_not_refused_ejects() {
         let hand = Hand::Right;
         let i = hand.index();
@@ -736,6 +783,7 @@ mod tests {
             reserve: 1,
             unlimited: false,
             out: false,
+            occupied: true,
             chamber: Chamber::Chambered,
             action: None,
         });

@@ -18,7 +18,7 @@ fn fixture() -> (ControllersConfig, State, Tick, [Option<GunOwner>; 2]) {
     let config = ControllersConfig::default();
     let mut state = insertion_tests::state(InsertStage::Idle);
     state.status.insert_hands = None;
-    state.pouch = Some((Vec3::ZERO, 0.1));
+    state.pouches = [Some(Vec3::ZERO); 2];
     let mut tick = insertion_tests::tick(false);
     let hand = config.acting_hand();
     if hand != tick.dominant {
@@ -231,12 +231,12 @@ fn absent_stale_or_noncurrent_guns_never_authorize_an_engine_read() {
         let mut tick = tick;
         let mut state = insertion_tests::state(InsertStage::Idle);
         state.status.insert_hands = None;
-        state.pouch = Some((Vec3::ZERO, 0.1));
+        state.pouches = [Some(Vec3::ZERO); 2];
         match missing {
             0 => tick.sequence = None,
             1 => tick.guns[tick.dominant.index()] = None,
             2 => tick.guns[tick.dominant.index()].as_mut().unwrap().well = None,
-            3 => state.pouch = None,
+            3 => state.pouches = [None; 2],
             _ => tick.dominant = tick.dominant.other(),
         }
         assert!(
@@ -286,7 +286,7 @@ fn final_claims_readiness_and_sequence_revoke_the_exact_physical_row() {
 
 #[test]
 fn hint_eligibility_does_not_require_an_already_completed_push() {
-    let (config, mut state, mut tick, guns) = fixture();
+    let (config, state, mut tick, guns) = fixture();
     let hand = tick.dominant;
     tick.guns[hand.index()]
         .as_mut()
@@ -295,7 +295,125 @@ fn hint_eligibility_does_not_require_an_already_completed_push() {
         .as_mut()
         .unwrap()
         .axis = Vec3::Z;
-    state.last_mouths[hand.index()] = None;
     assert!(offer(&state, &tick, &config, guns).is_some());
     assert_eq!(state.belts[hand.index()].stage, PushStage::Outside);
+}
+
+/// The fixture with a second gun of the same weapon in the other hand.
+fn dual(tick: &mut Tick, guns: &mut [Option<GunOwner>; 2]) {
+    let hand = tick.dominant;
+    tick.guns[hand.other().index()] = tick.guns[hand.index()];
+    guns[hand.other().index()] = guns[hand.index()];
+}
+
+#[test]
+fn with_a_gun_in_each_hand_each_is_offered_its_own_push() {
+    let (config, state, mut tick, mut guns) = fixture();
+    let hand = tick.dominant;
+    let lone = offer(&state, &tick, &config, guns).unwrap();
+    assert!(lone.row(SEQUENCE, hand, guns, [true; 2]).is_some());
+    // A lone gun in the dominant hand is the only one offered.
+    assert!(lone.row(SEQUENCE, hand.other(), guns, [true; 2]).is_none());
+
+    dual(&mut tick, &mut guns);
+    let both = offer(&state, &tick, &config, guns).unwrap();
+    for h in Hand::BOTH {
+        assert_eq!(
+            both.row(SEQUENCE, h, guns, [true; 2]),
+            Some(Row {
+                control: Control::Motion(h),
+                gesture: Gesture::Press,
+                effect: Effect::Mod(ModAction::BeltReload),
+            })
+        );
+    }
+    // Each gun's pouch must be placed for its own offer.
+    let mut state = state;
+    state.pouches[hand.other().index()] = None;
+    let one = offer(&state, &tick, &config, guns).unwrap();
+    assert!(one.row(SEQUENCE, hand, guns, [true; 2]).is_some());
+    assert!(one.row(SEQUENCE, hand.other(), guns, [true; 2]).is_none());
+}
+
+#[test]
+fn each_dual_wielded_gun_is_pushed_onto_its_own_pouch() {
+    let (config, mut state, mut tick, mut guns) = fixture();
+    dual(&mut tick, &mut guns);
+    let hand = tick.dominant;
+    let other = hand.other();
+    let mouth = |tick: &Tick, h: Hand| tick.guns[h.index()].unwrap().well.unwrap().mouth;
+    // Each pouch is its own gun's: one gun enters its pouch's push sphere, short of the depth that
+    // reloads (which would call the engine), and the other's pouch is far off.
+    let entering = RELOAD.belt.radius_m - RELOAD.belt.depth_m * 0.5;
+    state.pouches[hand.index()] = Some(mouth(&tick, hand) - Vec3::Y * entering);
+    state.pouches[other.index()] = Some(mouth(&tick, other) + Vec3::X * 1.0);
+    for g in tick.guns.iter_mut().flatten() {
+        g.well.as_mut().unwrap().axis = Vec3::Y;
+    }
+    state.belt(&tick, &config);
+    assert_eq!(state.belts[hand.index()].stage, PushStage::Pushing);
+    assert_eq!(state.belts[other.index()].stage, PushStage::Outside);
+    assert_eq!(state.status.counts.belt_reloads, 0);
+}
+
+#[test]
+fn an_eligible_gun_near_its_pouch_marks_it() {
+    let (config, mut state, mut tick, _) = fixture();
+    let hand = tick.dominant;
+    let well = tick.guns[hand.index()]
+        .as_mut()
+        .unwrap()
+        .well
+        .as_mut()
+        .unwrap();
+    well.axis = Vec3::Y;
+    let mouth = well.mouth;
+    // Near enough to show, outside the push sphere.
+    let centre = mouth - Vec3::Y * (RELOAD.belt.radius_m + RELOAD.belt.approach_m * 0.5);
+    state.pouches = [Some(centre); 2];
+    state.belt(&tick, &config);
+    assert_eq!(state.belt_rings[hand.index()], Some(centre));
+    assert_eq!(state.status.counts.belt_reloads, 0);
+    // A full gun is not offered the push, so its pouch is not marked.
+    let slot = tick.guns[hand.index()].unwrap().weapon;
+    let weapon = tick.weapons[slot].as_mut().unwrap();
+    weapon.reading.out = false;
+    weapon.reading.magazine = weapon.reading.capacity;
+    state.belt(&tick, &config);
+    assert_eq!(state.belt_rings, [None; 2]);
+}
+
+#[test]
+fn a_launcher_with_its_round_out_takes_one_whatever_its_count() {
+    let (_, state, mut tick, _) = fixture();
+    let slot = tick.guns[tick.dominant.index()].unwrap().weapon;
+    let weapon = tick.weapons[slot].as_mut().unwrap();
+    weapon.plan.load = LoadKind::Rocket;
+    weapon.plan.launcher = true;
+    weapon.reading.magazine = weapon.reading.capacity;
+    weapon.reading.out = false;
+    assert!(!state.can_take(weapon));
+    weapon.reading.out = true;
+    assert!(state.can_take(weapon));
+}
+
+#[test]
+fn a_launchers_spent_round_is_replaced_but_a_guns_empty_magazine_is_not() {
+    let (_, _, mut tick, _) = fixture();
+    let slot = tick.guns[tick.dominant.index()].unwrap().weapon;
+    let weapon = tick.weapons[slot].as_mut().unwrap();
+    weapon.plan.load = LoadKind::Magazine;
+    weapon.reading.out = false;
+    weapon.reading.magazine = 0;
+    assert!(weapon.occupied());
+    assert!(weapon.part_shown());
+    weapon.plan.launcher = true;
+    assert!(!weapon.occupied());
+    assert!(!weapon.part_shown());
+    weapon.reading.magazine = 1;
+    assert!(weapon.occupied());
+    assert!(weapon.part_shown());
+    weapon.reading.out = true;
+    assert!(!weapon.occupied());
+    assert!(!weapon.part_shown());
 }

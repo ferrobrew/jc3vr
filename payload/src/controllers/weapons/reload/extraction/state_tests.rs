@@ -65,7 +65,8 @@ fn state() -> State {
     State {
         status: ReloadStatus::default(),
         tick: None,
-        pouch: None,
+        pouches: [None; 2],
+        belt_rings: [None; 2],
         stocked_pouch: None,
         pouch_refusal: None,
         free: Some(Hand::Left),
@@ -93,7 +94,6 @@ fn state() -> State {
         flicks: [FlickDetector::new(); 2],
         belts: [BeltPush::new(); 2],
         last_grips: [None; 2],
-        last_mouths: [None; 2],
         drawn: None,
         since_draw_s: 10.0,
         knocks: Knocks::new(),
@@ -404,9 +404,9 @@ fn state_active_pull_cancels_fresh_and_already_pushing_belt_without_engine_work(
             &mut engine,
         );
         let record = *state.records.get(RecordKey::Object(1));
-        state.pouch = Some((Vec3::ZERO, 0.1));
+        state.pouches = [Some(Vec3::ZERO); 2];
         state.belts[Hand::Right.index()].stage = stage;
-        state.belt(&tick, &config, 0.01);
+        state.belt(&tick, &config);
         assert_eq!(state.belts[Hand::Right.index()].stage, PushStage::Outside);
         assert_eq!(state.status.counts.belt_reloads, 0);
         assert_eq!(*state.records.get(RecordKey::Object(1)), record);

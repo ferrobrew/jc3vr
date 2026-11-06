@@ -471,6 +471,60 @@ mod tests {
     }
 
     #[test]
+    fn the_hydras_pod_is_a_launcher_magazine_drawn_from_its_own_part() {
+        let hydra = wells::lookup(3_070_823_687).expect("the Hydra is in the wells table");
+        let p = plan(
+            facts(WeaponClass::E_WEAPON_CLASS_RPG),
+            Some(hydra),
+            WRIST,
+            0.06,
+        )
+        .unwrap();
+        assert!(p.launcher);
+        assert_eq!(p.load, LoadKind::Magazine);
+        assert!(p.load.ejects());
+        assert_eq!(p.action, ActionKind::None);
+        assert!(p.part_top_m.is_some());
+        assert_eq!(p.part_axis, Vec3::NEG_Z);
+    }
+
+    #[test]
+    fn every_launcher_in_the_table_loads_what_the_game_reloads() {
+        for e in wells::entries()
+            .iter()
+            .filter(|e| e.grade.trusted() && e.kind != WellKind::None)
+        {
+            let expected = if e.weapon.starts_with("w12") || e.weapon == "w144_rpg_capstone_hydra" {
+                WellKind::Magazine
+            } else if e.weapon.starts_with("w14") || e.weapon == "w176_stupka_210" {
+                WellKind::Rocket
+            } else {
+                continue;
+            };
+            assert_eq!(e.kind, expected, "{}", e.weapon);
+            assert_eq!(e.action, TableAction::None, "{}", e.weapon);
+        }
+    }
+
+    #[test]
+    fn without_the_manual_action_no_action_is_worked_by_hand() {
+        for (class, action) in [
+            (WeaponClass::E_WEAPON_CLASS_PISTOL, TableAction::Slide),
+            (WeaponClass::E_WEAPON_CLASS_SNIPER, TableAction::Bolt),
+            (WeaponClass::E_WEAPON_CLASS_SHOTGUN, TableAction::Pump),
+        ] {
+            let e = entry(WellKind::Magazine, action, WellGrade::Mesh);
+            let p = plan(facts(class), Some(&e), WRIST, 0.06).unwrap();
+            assert_ne!(p.action, ActionKind::None, "{class:?}");
+            assert_eq!(p.with_manual_action(true), p);
+            let cocked = p.with_manual_action(false);
+            assert_eq!(cocked.action, ActionKind::None, "{class:?}");
+            assert_eq!(cocked.load, p.load);
+            assert_eq!(cocked.well, p.well);
+        }
+    }
+
+    #[test]
     fn only_a_magazine_or_a_cylinder_still_in_occupies_the_well() {
         for load in [LoadKind::Magazine, LoadKind::Cylinder] {
             assert!(load.well_occupied(false), "{load:?}");

@@ -412,7 +412,7 @@ impl State {
             let (weapon, gun) = tick.gun(gun_hand)?;
             let (drawn, part_top) = if modelled {
                 (render::HeldDraw::Instance, weapon.plan.spare_top_m?)
-            } else if weapon.plan.load.well_occupied(weapon.reading.out) {
+            } else if weapon.occupied() {
                 // The gun's round part is the magazine still in it until that one is knocked
                 // out, ejected, or pulled, so the hand shows no part meanwhile.
                 return None;

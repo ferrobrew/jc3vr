@@ -147,6 +147,9 @@ pub enum Event {
     ActionDetent,
     /// A round chambered.
     Chambered,
+    /// A seated round leaving the gun ready to fire: a double pulse, told apart from the seat's
+    /// thud before it.
+    ReadyToFire,
     /// A grenade drawn into the hand, its pin still in.
     GrenadePrime,
     /// A held grenade's pin pulled: its fuse runs from now.
@@ -241,7 +244,7 @@ pub enum Event {
 
 impl Event {
     #[cfg(test)]
-    pub const ALL: [Event; 64] = [
+    pub const ALL: [Event; 65] = [
         Event::PalmTouch,
         Event::HandStrike,
         Event::Take,
@@ -264,6 +267,7 @@ impl Event {
         Event::Rack,
         Event::ActionDetent,
         Event::Chambered,
+        Event::ReadyToFire,
         Event::GrenadePrime,
         Event::GrenadePin,
         Event::GrenadeWarning,
@@ -330,12 +334,16 @@ impl Event {
             Event::PouchTake => Cue::new(Primitive::Click, 0.25, Category::Weapons),
             Event::PouchEmpty => Cue::new(Primitive::Tick, 0.75, Category::Weapons),
             Event::WellCatch => Cue::new(Primitive::Click, 0.4, Category::Weapons),
-            Event::MagazineSeat => Cue::new(Primitive::Bump, 0.9, Category::Weapons),
+            // The heaviest cue on the gun hand, as the magazine's seat is the knock the gun takes.
+            Event::MagazineSeat => Cue::new(Primitive::Thud, 1.0, Category::Weapons),
             Event::MagazineKnock => Cue::new(Primitive::Thud, 1.0, Category::Weapons),
-            Event::BeltSeat => Cue::new(Primitive::Thud, 0.75, Category::Weapons),
+            Event::BeltSeat => Cue::new(Primitive::Thud, 1.0, Category::Weapons),
             Event::Rack => Cue::new(Primitive::Click, 0.9, Category::Weapons),
             Event::ActionDetent => Cue::new(Primitive::Click, 0.35, Category::Weapons),
             Event::Chambered => Cue::new(Primitive::Click, 0.5, Category::Weapons),
+            // Played twice in quick succession by the reload's ready cue, so it is not taken for
+            // the seat's thud or a chambering click.
+            Event::ReadyToFire => Cue::new(Primitive::Bump, 0.8, Category::Weapons),
             Event::GrenadePrime => Cue::new(Primitive::Click, 0.4, Category::Weapons),
             Event::GrenadePin => Cue::new(Primitive::Bump, 0.8, Category::Weapons),
             Event::GrenadeWarning => Cue::new(Primitive::Click, 0.75, Category::Weapons),
@@ -407,6 +415,7 @@ impl Event {
             Event::Rack => "rack",
             Event::ActionDetent => "action detent",
             Event::Chambered => "chambered",
+            Event::ReadyToFire => "ready to fire",
             Event::GrenadePrime => "grenade prime",
             Event::GrenadePin => "grenade pin",
             Event::GrenadeWarning => "grenade warning",

@@ -144,9 +144,9 @@ def derive(weapon: Weapon, family: str) -> Well:
         else:
             _side_handle(well, gun, CHARGING_HANDLE, DEFAULT_TRAVEL[CHARGING_HANDLE])
     elif round_part is not None and round_part.name == "model.rocket_pod":
-        # The pod slides in from the rear, so its feed end is its front.
+        # The pod slides in from the rear, so its feed end is its front. The game reloads it as a
+        # magazine of rockets, its spare prop being the pod, so it loads, ejects, and seats as one.
         well = _part_magazine(gun, round_part, (0.0, 0.0, -1.0))
-        well.kind = ROCKET
         well.notes.append("the pod enters from the rear; the mouth is the rear of its housing")
     elif round_part is not None and (weapon.class_name.startswith("CRPG") or weapon.class_name == "CMortarWeapon"):
         well = _rocket(gun, round_part)

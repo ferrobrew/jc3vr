@@ -420,6 +420,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             _ => targets.push(place.world(c)),
         }
     }
+    targets.extend(reload::belt_marks().iter().map(|c| place.belt_push(c)));
     let frames = ticked
         .character
         .and_then(|c| docks::cockpit_frames(&active, c));

@@ -119,6 +119,28 @@ pub(super) struct Knocks {
     pub impulse: Option<PendingImpulse>,
     /// When a magazine was last knocked out.
     pub knocked_at: Option<Instant>,
+    /// The gun whose magazine part stays drawn while its knocked prop appears.
+    pub linger: Option<Linger>,
+}
+
+/// A knocked magazine's part kept drawn in the well of the weapon at `weapon` for `ticks_left` more
+/// input ticks once the prop's impulse has landed.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(super) struct Linger {
+    pub weapon: usize,
+    pub ticks_left: u32,
+}
+
+impl Linger {
+    /// Count one input tick, the prop's impulse still `pending` or not. True on the tick the part
+    /// is to be hidden.
+    pub(super) fn step(&mut self, pending: bool) -> bool {
+        if pending {
+            return false;
+        }
+        self.ticks_left = self.ticks_left.saturating_sub(1);
+        self.ticks_left == 0
+    }
 }
 
 impl Knocks {
@@ -128,6 +150,7 @@ impl Knocks {
             strikes: [None; 2],
             impulse: None,
             knocked_at: None,
+            linger: None,
         }
     }
 
@@ -162,15 +185,20 @@ pub(super) struct KnockTuning {
     /// How far into the well above the mouth the zone reaches, so a strike at the joint of the
     /// magazine and the gun counts.
     pub lip_m: f32,
-    /// How much of the closing speed the struck point keeps the other way, as a collision with a
-    /// hand-driven body: zero sends it on at the tip's speed, one at twice that.
-    pub restitution: f32,
+    /// The share of the tip's speed the struck point is sent on at. A collision with a hand-driven
+    /// body would send it on faster than the tip, but a magazine knocked at that speed leaves the
+    /// view before the eye finds it; at about half, a strike of two to four metres per second
+    /// drops it clear of the gun where it can be seen falling.
+    pub share: f32,
     /// The most a knock adds to the magazine's speed, metres per second.
     pub max_knock_mps: f32,
     /// The most a knock adds to the magazine's spin, radians per second.
     pub max_spin_radps: f32,
     /// How many input ticks a knocked magazine's impulse waits on its body becoming readable.
     pub impulse_ticks: u32,
+    /// How many input ticks the gun's magazine part stays drawn in the well after the knocked
+    /// prop's impulse lands, so the magazine does not vanish while its prop is not yet drawn.
+    pub linger_ticks: u32,
     /// How long the grab view shows a knock.
     pub flash: Duration,
 }
@@ -178,10 +206,11 @@ pub(super) struct KnockTuning {
 pub(super) const KNOCK: KnockTuning = KnockTuning {
     radius_m: 0.035,
     lip_m: 0.015,
-    restitution: 0.3,
-    max_knock_mps: 6.0,
+    share: 0.5,
+    max_knock_mps: 2.5,
     max_spin_radps: 25.0,
     impulse_ticks: 10,
+    linger_ticks: 4,
     flash: Duration::from_millis(400),
 };
 
@@ -262,9 +291,9 @@ pub(super) fn strike(
 }
 
 /// The velocities of `body` after a strike at the world point `contact` by a tip moving at
-/// `strike` relative to it: the impulse a hand-driven body gives the struck point along the
-/// strike, with the restitution, which changes its linear velocity by the impulse over the mass and
-/// its spin by the impulse's moment about the centre. The change is capped.
+/// `strike` relative to it: the impulse along the strike that sends the struck point on at the
+/// tuning's share of the tip's speed, which changes its linear velocity by the impulse over the mass
+/// and its spin by the impulse's moment about the centre. The change is capped.
 pub(super) fn knocked(
     body: RigidBody,
     contact: Vec3,
@@ -281,7 +310,7 @@ pub(super) fn knocked(
     }
     let mut after = body;
     after.apply_impulse(
-        direction * ((1.0 + tuning.restitution.max(0.0)) * mass * strike.length()),
+        direction * (tuning.share.max(0.0) * mass * strike.length()),
         contact,
     );
     Velocities {

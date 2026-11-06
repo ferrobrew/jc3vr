@@ -104,7 +104,7 @@ use crate::controllers::{
             plan::ReloadPlan,
             records::{RecordKey, Records, gun_entry},
             travel::ActionTravel,
-            tuning::Reload,
+            tuning::{RELOAD, Reload},
         },
         volumes::{self, BodyFrame, POUCHES},
     },
@@ -157,6 +157,8 @@ pub struct WeaponReadout {
     pub unlimited: bool,
     /// The game's magazine-out flag.
     pub out: bool,
+    /// Whether the gun's well holds a round that has to leave before a fresh one seats.
+    pub occupied: bool,
     /// The hand's gun's chamber.
     pub chamber: Chamber,
     /// The hand's gun's action on its travel, with the physical action on.
@@ -252,7 +254,8 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
         .map(|(weapon, _)| weapon);
     // A pouch with nothing to give is not offered: no round comes out of it.
     let stocked = loaded.is_some_and(WeaponTick::has_ammo);
-    let target_pouch = pouch.map(|mut pouch| {
+    // The pouch where its model is drawn, on `side` of the body.
+    let displayed = |mut pouch: Candidate, side: Hand| {
         if config.weapons.pouches.models.enabled
             && let Some(body) = body
         {
@@ -262,12 +265,28 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
                     orientation: body.pelvis,
                 },
                 &MODEL_PLACEMENT,
-                pouch_side,
+                side,
                 tick.world_scale,
             );
         }
         pouch
-    });
+    };
+    let target_pouch = pouch.map(|pouch| displayed(pouch, pouch_side));
+    // With a gun in each hand, each is pushed onto a pouch on its own side of the belt, so neither
+    // reaches across the body for the one pouch.
+    let belt_pouches = if gun_hands == [true; 2] {
+        Hand::BOTH.map(|hand| {
+            body.map(|b| {
+                displayed(
+                    volumes::magazine_pouch(b, &POUCHES, hand.other(), None),
+                    hand,
+                )
+            })
+            .map(|pouch| pouch.centre)
+        })
+    } else {
+        [target_pouch.map(|pouch| pouch.centre); 2]
+    };
     let pouch_refusal = pouch::refusal(pouch::PouchFacts {
         placed: target_pouch.is_some(),
         free: free.is_some(),
@@ -306,7 +325,7 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
         ));
     }
     state.tick = Some(tick);
-    state.pouch = target_pouch.map(|p| (p.centre, p.radius));
+    state.pouches = belt_pouches;
     state.stocked_pouch = pouch
         .zip(loaded)
         .filter(|_| stocked)
@@ -417,6 +436,28 @@ pub(super) struct StockedPouch {
     pub weapon: usize,
 }
 
+/// The belt pouches a gun is being brought down onto for the belt reload, as of the last tick: the
+/// gun's push is eligible and the point it pushes is near. Each is a volume for the gun's hand, to
+/// mark the pouch; the push reloads, not a squeeze.
+pub(super) fn belt_marks() -> Vec<Candidate> {
+    let state = STATE.lock();
+    if state.tick.is_none() {
+        return Vec::new();
+    }
+    Hand::BOTH
+        .into_iter()
+        .filter_map(|hand| {
+            let centre = state.belt_rings[hand.index()]?;
+            Some(Candidate {
+                volume: GrabVolume::MagazinePouch,
+                centre,
+                radius: RELOAD.belt.radius_m,
+                hand: Some(hand),
+            })
+        })
+        .collect()
+}
+
 /// The magazine pouch on this tick, while it has a round to give.
 pub(super) fn stocked_pouch() -> Option<StockedPouch> {
     STATE.lock().stocked_pouch
@@ -485,29 +526,32 @@ pub(super) struct FinishResult {
     belt: Option<BeltFinish>,
 }
 
-/// A same-input-tick offer for the dominant hand's exact belt reload motion.
+/// A same-input-tick offer of the belt reload motion: the dominant hand's gun, and with a gun in
+/// each hand, each.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct BeltEligibility {
     sequence: u64,
-    hand: Hand,
+    /// The hands offered the push, by [`Hand::index`].
+    hands: [bool; 2],
     guns: [Option<GunOwner>; 2],
 }
 
 impl BeltEligibility {
-    /// Final claims and hand readiness can revoke the offer without another engine query.
+    /// The row of `hand`'s push. Final claims and hand readiness can revoke the offer without
+    /// another engine query.
     pub(crate) fn row(
         self,
         sequence: u64,
-        dominant: Hand,
+        hand: Hand,
         guns: [Option<GunOwner>; 2],
         ready: [bool; 2],
     ) -> Option<Row> {
         (self.sequence == sequence
-            && self.hand == dominant
+            && self.hands[hand.index()]
             && self.guns == guns
-            && ready[self.hand.index()])
+            && ready[hand.index()])
         .then_some(Row {
-            control: Control::Motion(self.hand),
+            control: Control::Motion(hand),
             gesture: Gesture::Press,
             effect: Effect::Mod(ModAction::BeltReload),
         })
@@ -540,7 +584,16 @@ impl FinishResult {
 #[derive(Debug, Copy, Clone)]
 struct BeltFinish {
     sequence: Option<u64>,
-    hand: Hand,
+    dominant: Hand,
+    /// Whether both hands hold guns of the tick, which offers each its own push.
+    dual: bool,
+    /// Each hand's gun, by [`Hand::index`].
+    hands: [HandBelt; 2],
+}
+
+/// One hand's gun as the belt's offer reads it.
+#[derive(Debug, Copy, Clone)]
+struct HandBelt {
     weapon: Option<usize>,
     gate: BeltGate,
     well: bool,
@@ -556,33 +609,52 @@ impl BeltFinish {
         guns: [Option<GunOwner>; 2],
         mut read: impl FnMut(usize) -> Option<(Reading, i32)>,
     ) -> Option<BeltEligibility> {
-        if source_guns != guns {
-            return None;
-        }
-        let address = self.weapon?;
-        let current = guns[self.hand.index()]?;
-        if !config.weapons.reload.enabled
+        if source_guns != guns
+            || !config.weapons.reload.enabled
             || self.sequence != Some(sequence)
-            || self.hand != config.acting_hand()
-            || current.weapon != address
-            || !matches!(current.role, GunHand::Grip | GunHand::NativePair(_))
-            || !self.well
-            || !self.pouch
+            || self.dominant != config.acting_hand()
         {
             return None;
         }
-        let (reading, reserve) = read(address)?;
-        let gate = BeltGate {
+        let reload = Reload::of(&config.weapons.reload);
+        let hands = Hand::BOTH.map(|hand| {
+            (hand == self.dominant || self.dual)
+                && self.hand_eligible(hand, &reload, guns, &mut read)
+        });
+        hands.contains(&true).then_some(BeltEligibility {
+            sequence,
+            hands,
+            guns,
+        })
+    }
+
+    fn hand_eligible(
+        &self,
+        hand: Hand,
+        reload: &Reload,
+        guns: [Option<GunOwner>; 2],
+        read: &mut impl FnMut(usize) -> Option<(Reading, i32)>,
+    ) -> bool {
+        let belt = self.hands[hand.index()];
+        let (Some(address), Some(current)) = (belt.weapon, guns[hand.index()]) else {
+            return false;
+        };
+        if current.weapon != address
+            || !matches!(current.role, GunHand::Grip | GunHand::NativePair(_))
+            || !belt.well
+            || !belt.pouch
+        {
+            return false;
+        }
+        let Some((reading, reserve)) = read(address) else {
+            return false;
+        };
+        BeltGate {
             has_ammo: reading.unlimited || reserve > 0,
             can_belt: reading.out || reading.has_space(),
-            ..self.gate
-        };
-        gate.allows(&Reload::of(&config.weapons.reload))
-            .then_some(BeltEligibility {
-                sequence,
-                hand: self.hand,
-                guns,
-            })
+            ..belt.gate
+        }
+        .allows(reload)
     }
 }
 
@@ -831,6 +903,28 @@ impl WeaponTick {
     fn has_ammo(&self) -> bool {
         self.reading.unlimited || self.reserve > 0
     }
+
+    /// Whether the gun's well holds a round that has to leave before a fresh one seats: a magazine
+    /// or a cylinder still in, but for a launcher's spent round (the UPU-210's empty cartridge, the
+    /// Hydra's empty pod), which the fresh one replaces as it seats.
+    fn occupied(&self) -> bool {
+        self.plan.load.well_occupied(self.reading.out)
+            && !(self.plan.launcher && self.reading.magazine_rounds() <= 0)
+    }
+
+    /// Whether the gun shows its round part on its own with no round in the hand: as its load
+    /// does ([`LoadKind::part_shown`]), and for a launcher only while it holds a round.
+    ///
+    /// [`LoadKind::part_shown`]: crate::controllers::weapons::reload::plan::LoadKind::part_shown
+    fn part_shown(&self) -> bool {
+        if self.plan.launcher {
+            !self.reading.out && self.reading.magazine_rounds() > 0
+        } else {
+            self.plan
+                .load
+                .part_shown(self.reading.out, self.reading.magazine)
+        }
+    }
 }
 
 /// One gun of the tick.
@@ -858,7 +952,10 @@ impl GunTick {
 struct State {
     status: ReloadStatus,
     tick: Option<Tick>,
-    pouch: Option<(Vec3, f32)>,
+    /// The belt pouch each gun hand's gun is pushed onto, by [`Hand::index`], cockpit frame.
+    pouches: [Option<Vec3>; 2],
+    /// The belt pouches marked as ready for a push on the last tick, by gun hand.
+    belt_rings: [Option<Vec3>; 2],
     /// The pouch on the tick it has a round to give.
     stocked_pouch: Option<StockedPouch>,
     /// Why the pouch is not a grab target this tick.
@@ -883,9 +980,8 @@ struct State {
     tap: TapDetector,
     flicks: [FlickDetector; 2],
     belts: [BeltPush; 2],
-    /// Each hand's grip and each gun's mouth on the last tick, for their velocities.
+    /// Each hand's grip on the last tick, for its velocity.
     last_grips: [Option<Vec3>; 2],
-    last_mouths: [Option<Vec3>; 2],
     /// The weapon of each hand's gun as of the last tick, by [`Hand::index`], and the seconds since
     /// either changed.
     drawn: Option<[Option<usize>; 2]>,
@@ -918,7 +1014,8 @@ static STATE: Mutex<State> = Mutex::new(State {
         events: Vec::new(),
     },
     tick: None,
-    pouch: None,
+    pouches: [None; 2],
+    belt_rings: [None; 2],
     stocked_pouch: None,
     pouch_refusal: None,
     free: None,
@@ -938,7 +1035,6 @@ static STATE: Mutex<State> = Mutex::new(State {
     flicks: [FlickDetector::new(); 2],
     belts: [BeltPush::new(); 2],
     last_grips: [None; 2],
-    last_mouths: [None; 2],
     drawn: None,
     since_draw_s: 0.0,
     knocks: Knocks::new(),

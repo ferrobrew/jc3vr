@@ -72,12 +72,13 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | `Event::PouchTake` | a round or a magazine comes out of the pouch | click | 0.25 | weapons | `weapons::reload::steps` |
 | `Event::PouchEmpty` | a grab at an empty ammunition pouch | tick | 0.75 | weapons | `weapons::reload::steps` |
 | `Event::WellCatch` | the well catches a round or a magazine, on both hands | click | 0.4 | weapons | `weapons::reload::steps` |
-| `Event::MagazineSeat` | a magazine seats, on both hands | bump | 0.9 | weapons | `weapons::reload::steps` |
+| `Event::MagazineSeat` | a magazine seats, on the gun hand | thud | 1.0 | weapons | `weapons::reload::steps` |
 | `Event::MagazineKnock` | a held magazine knocks the inserted one out, on both hands | thud | 1.0 | weapons | `weapons::reload::knocking` |
-| `Event::BeltSeat` | a belt seats | thud | 0.75 | weapons | `weapons::reload::steps` |
+| `Event::BeltSeat` | a belt seats, on the gun hand | thud | 1.0 | weapons | `weapons::reload::steps` |
 | `Event::Rack` | a full pull of the action, on the working hand | click | 0.9 | weapons | `weapons::reload::steps` |
 | `Event::ActionDetent` | the action's part meeting a stop of its travel (home, a bolt turned all the way up or down, a slide caught at the rear), on the working hand | click | 0.35 | weapons | `weapons::reload::steps` |
-| `Event::Chambered` | a round is chambered, or a seat leaves the gun ready to fire with nothing to work (after the seat's bump), on the gun hand | click | 0.5 | weapons | `weapons::reload::steps` |
+| `Event::Chambered` | a worked action chambers a round, on the gun hand | click | 0.5 | weapons | `weapons::reload::action` |
+| `Event::ReadyToFire` | a seat leaves the gun ready to fire with nothing to work, played twice shortly after the seat's thud, on the gun hand | bump | 0.8 | weapons | `weapons::reload::steps` |
 | `Event::GrenadePrime` | a grenade is drawn into the hand, its pin in | click | 0.4 | weapons | `weapons::grenade` |
 | `Event::GrenadePin` | a held grenade's pin is pulled with the trigger, starting its fuse | bump | 0.8 | weapons | `weapons::grenade` |
 | `Event::GrenadeWarning` | a cooking grenade's fuse warning, faster toward the end | click | 0.75 | weapons | `weapons::grenade` |

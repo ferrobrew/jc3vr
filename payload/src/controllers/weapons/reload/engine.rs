@@ -26,6 +26,7 @@ use jc3gi::{
         DoActWeaponComponent, ModelAttachementWeaponComponent, ReloadType, SniperWeapon,
         WeaponBase, WeaponComponentType, WeaponData, WeaponInputs,
     },
+    physics::GameMaterialId,
     types::math::Vector3,
 };
 use re_utilities::hook_library::HookLibrary;
@@ -561,6 +562,34 @@ pub unsafe fn cycled(address: usize, kind: ActionKind, clip: bool) {
         }
     }
 }
+
+/// Play the magazine-in sound on gun `index` of the weapon at `address`, where the round seats: the
+/// gun's own insert sound where its effects have one, the end of a reload otherwise, or failing
+/// both the dry-fire click, borrowed as a click of the magazine catching. Returns the usage played.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub(super) unsafe fn play_seat_sound(address: usize, index: usize) -> Option<u32> {
+    let source = unsafe { owned_handle(address) }?;
+    let mut gun = unsafe { gun_ptr(source.as_ref(), index) }?;
+    let effects = unsafe { &mut gun.as_mut().m_AttachedEffects };
+    let material = GameMaterialId::EGameMaterialId_Default;
+    SEAT_SOUNDS.into_iter().find(|&hash| {
+        let usage = unsafe { effects.FindAttachedEffectUsage(hash) };
+        !usage.is_null()
+            && !unsafe { effects.IsAttachedEffectLooping(usage, material) }
+            && unsafe { effects.ActivateAttachedEffect(usage, true, material) }
+    })
+}
+
+/// The usages a seat plays, the first a gun has: the insert sound, the reload's end, and the
+/// dry-fire click.
+const SEAT_SOUNDS: [u32; 3] = [
+    WeaponData::RELOAD_INSERT_AMMO_USAGE,
+    WeaponData::RELOAD_END_USAGE,
+    WeaponData::OUT_OF_AMMO_FIRE_USAGE,
+];
 
 /// The address of gun `index` of the weapon at `address`, whose skeleton the action's bone rides.
 ///

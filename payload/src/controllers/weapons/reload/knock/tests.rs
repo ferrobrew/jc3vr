@@ -218,9 +218,33 @@ fn a_base_strike_through_the_centre_sends_the_magazine_on_without_spin() {
     let body = magazine_body();
     let contact = body.pose.centre - Vec3::Y * 0.06;
     let after = knocked(body, contact, Vec3::Y * 2.0, &KNOCK);
-    let expected = Vec3::new(0.5, 2.0 * (1.0 + KNOCK.restitution), 0.0);
+    let expected = Vec3::new(0.5, 2.0 * KNOCK.share, 0.0);
     assert!((after.linear - expected).length() < 1e-3, "{after:?}");
     assert!(after.angular.length() < 1e-4, "{after:?}");
+}
+
+#[test]
+fn a_hard_strike_drops_the_magazine_clear_without_launching_it() {
+    // The session's knocks closed at three to four metres per second.
+    let body = magazine_body();
+    let contact = body.pose.centre - Vec3::Y * 0.06;
+    for (strike, added) in [(3.0, 1.5), (4.0, 2.0), (6.0, KNOCK.max_knock_mps)] {
+        let after = knocked(body, contact, Vec3::Y * strike, &KNOCK);
+        let change = (after.linear - body.velocities.linear).length();
+        assert!((change - added).abs() < 1e-3, "{strike}: {change}");
+    }
+}
+
+#[test]
+fn the_knocked_part_lingers_until_the_impulse_lands_and_a_few_ticks_after() {
+    let mut linger = Linger {
+        weapon: 1,
+        ticks_left: 2,
+    };
+    assert!(!linger.step(true));
+    assert!(!linger.step(true));
+    assert!(!linger.step(false));
+    assert!(linger.step(false));
 }
 
 #[test]

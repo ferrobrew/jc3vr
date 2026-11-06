@@ -62,6 +62,9 @@ pub struct Reload {
     /// How long after a seat's bump the gun hand's ready cue plays, seconds, for a seat that leaves
     /// the gun able to fire.
     pub ready_cue_delay_s: f32,
+    /// How many pulses the ready cue plays, and the seconds between their starts: longer than the
+    /// pulse itself, so the pulses stay apart.
+    pub ready_cue_pulses: (u32, f32),
     /// The one-handed belt reload: push the gun's well down onto the pouch.
     pub belt: BeltTuning,
     /// The slide, charging handle, bolt, and pump.
@@ -91,6 +94,7 @@ impl Reload {
             seat_depth_m: 0.025,
             timeout_s: 8.0,
             ready_cue_delay_s: 0.15,
+            ready_cue_pulses: (2, 0.1),
             belt: BeltTuning::new(),
             action: ActionTuning::new(),
             loose: LooseTuning::new(),
@@ -177,14 +181,19 @@ impl LooseTuning {
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct BeltTuning {
     pub enabled: bool,
-    /// How far the gun's insertion axis may lean from straight up, degrees: the well must face the
-    /// belt.
+    /// How far the gun's insertion axis may lean from straight up, degrees: the magazine must point
+    /// down at the belt, give or take a gun held at an angle in a hand lowered to the hip.
     pub max_tilt_deg: f32,
-    /// How fast the well must be moving down as it enters the pouch, metres per second: a push,
-    /// not a hover.
-    pub min_push_speed_mps: f32,
-    /// How far into the pouch the well must be pushed, metres.
+    /// The push sphere's radius around the pouch's centre, metres: wider than the pouch's grab
+    /// volume, since the gun hand cannot see the magazine's base beneath the gun. In the 6 November
+    /// 2026 session the closest a dual-wielded gun's well came to the one pouch then placed was about
+    /// 9 cm.
+    pub radius_m: f32,
+    /// How far into the push sphere the point must go, metres.
     pub depth_m: f32,
+    /// How far outside the push sphere an upright gun's point may be for the push to be shown, with
+    /// the ring on the pouch, metres.
+    pub approach_m: f32,
     /// How long after a draw the belt reload waits, seconds, so that drawing from a hip holster
     /// beside the pouch does not reload.
     pub after_draw_s: f32,
@@ -194,9 +203,10 @@ impl BeltTuning {
     const fn new() -> Self {
         Self {
             enabled: true,
-            max_tilt_deg: 45.0,
-            min_push_speed_mps: 0.3,
-            depth_m: 0.03,
+            max_tilt_deg: 60.0,
+            radius_m: 0.12,
+            depth_m: 0.02,
+            approach_m: 0.25,
             after_draw_s: 0.8,
         }
     }

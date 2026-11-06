@@ -73,6 +73,7 @@ impl MagazineInsertion for FakeMagazine {
         self.held = false;
         self.releases += 1;
     }
+    fn seat_sound(&mut self, _: usize, _: usize) {}
 }
 
 pub(super) fn state(stage: InsertStage) -> State {
@@ -87,7 +88,8 @@ pub(super) fn state(stage: InsertStage) -> State {
     State {
         status,
         tick: None,
-        pouch: None,
+        pouches: [None; 2],
+        belt_rings: [None; 2],
         stocked_pouch: None,
         pouch_refusal: None,
         free: Some(Hand::Left),
@@ -115,7 +117,6 @@ pub(super) fn state(stage: InsertStage) -> State {
         flicks: [FlickDetector::new(); 2],
         belts: [BeltPush::new(); 2],
         last_grips: [None; 2],
-        last_mouths: [None; 2],
         drawn: None,
         since_draw_s: 10.0,
         knocks: Knocks::new(),
