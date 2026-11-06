@@ -22,11 +22,13 @@ use crate::{
     frame_timing,
     grapple::{hook, physical::lock},
     headpose,
-    hooks::camera::last_dtf,
+    hooks::camera::{eye_points, last_dtf},
     recorder::tracking::format::debug_label,
 };
 
-/// The cockpit's placement in the world and the active camera, while the cockpit is placed.
+/// The cockpit's placement in the world, from the rendered eye midpoint the hands compose from
+/// ([`crate::controllers::cockpit::CockpitTransform::current`]), and the active camera, while the
+/// cockpit is placed.
 pub(super) fn view_state() -> Option<ViewState> {
     let cockpit = headpose::xr::cockpit_pose()?;
     let head = headpose::query();
@@ -43,7 +45,7 @@ pub(super) fn view_state() -> Option<ViewState> {
         });
     Some(ViewState {
         head_world: Pose {
-            position: head.position,
+            position: eye_points([headpose::query_prev(), head])[1],
             orientation: head.orientation,
         },
         head_cockpit: cockpit.position,

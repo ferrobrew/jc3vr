@@ -1,16 +1,19 @@
 //! The map between the cockpit frame and the world. Pure, but for [`CockpitTransform::current`],
-//! which reads the published head pose.
+//! which reads where the camera puts the eyes.
 //!
-//! The cockpit frame holds the player's tracked body at the player's own scale. The head pose
-//! composes it into the world (`headpose::xr::compose`): a cockpit point lands at its offset from
-//! the head, turned by the body frame and scaled by the world scale, from the head's world
-//! position. [`CockpitTransform`] is that composition and its inverse for points, displacements,
-//! directions, orientations, and poses, so that the hands, the body, the vehicles' controls, and
-//! everything else placed from the cockpit agree with the view.
+//! The cockpit frame holds the player's tracked body at the player's own scale, about the HMD's
+//! eye midpoint. A cockpit point lands at its offset from the cockpit head, turned by the body
+//! frame and scaled by the world scale, from the eye midpoint the camera renders from
+//! ([`hooks::camera::eye_point`]). That is the published head (`headpose::xr::compose`, which
+//! follows Rico's head joint) with the eye rig's arm hung off it, so a controller lands where the
+//! player sees their hand through the rendered eyes. [`CockpitTransform`] is that composition and
+//! its inverse for points, displacements, directions, orientations, and poses, so that the hands,
+//! the body, the vehicles' controls, and everything else placed from the cockpit agree with the
+//! view.
 
 use glam::{Quat, Vec3};
 
-use crate::{controllers::frame::Pose, headpose};
+use crate::{controllers::frame::Pose, headpose, hooks};
 
 /// The map between the world and the cockpit frame at one moment: the cockpit frame's
 /// `head_cockpit` sits at the world's `head_world`, turned by `body` and scaled by `world_scale`.
@@ -19,7 +22,8 @@ use crate::{controllers::frame::Pose, headpose};
 /// other's inverse and a degenerate scale (zero, negative, or NaN) cannot divide by zero.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct CockpitTransform {
-    /// The head in the world: the published head pose's position.
+    /// The head in the world: for [`current`](Self::current), the eye midpoint the camera renders
+    /// from, not the published head position it hangs from.
     pub head_world: Vec3,
     /// The head in the cockpit frame.
     pub head_cockpit: Vec3,
@@ -30,11 +34,12 @@ pub struct CockpitTransform {
 }
 
 impl CockpitTransform {
-    /// The transform the head pose composes now, with the head at `head_cockpit` in the cockpit
-    /// frame: the published head position, the body frame, and `world_scale`.
+    /// The transform the view composes now, with the head at `head_cockpit` in the cockpit frame:
+    /// the rendered eye midpoint ([`hooks::camera::eye_point`]), the body frame, and
+    /// `world_scale`.
     pub fn current(head_cockpit: Vec3, world_scale: f32) -> Self {
         Self {
-            head_world: headpose::query().position,
+            head_world: hooks::camera::eye_point(),
             head_cockpit,
             body: headpose::xr::body_rotation(),
             world_scale,

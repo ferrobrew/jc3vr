@@ -72,8 +72,11 @@ pub struct FitInputs<'a> {
     pub view_enabled: bool,
     pub seat: Option<VehicleSeat>,
     pub xf: &'a CockpitTransform,
-    /// The head pose's anchor, the character's animated head, world space; `None` until published.
-    pub anchor: Option<Vec3>,
+    /// The character's eyes, world space: the head pose's anchor (his animated head) with the
+    /// camera's eye arm hung off it ([`crate::hooks::camera::eye_arm`]), where the view puts the
+    /// eyes before the player's posture or the driving view's correction moves them. `None` until
+    /// the anchor is published.
+    pub eyes: Option<Vec3>,
 }
 
 /// What the fit found, for the debug UI.
@@ -228,8 +231,8 @@ unsafe fn fit_vehicle(
     });
 
     let hub_from_eyes = inputs
-        .anchor
-        .map(|anchor| xf.offset_to_cockpit(xf.point_to_world(wheel.centre) - anchor))
+        .eyes
+        .map(|eyes| xf.offset_to_cockpit(xf.point_to_world(wheel.centre) - eyes))
         .filter(|h| h.is_finite());
     let measured = matches!(source, WheelSource::Part | WheelSource::Override);
     let class_corrected = inputs.seat.is_some_and(|s| s.class == VehicleClass::Car);

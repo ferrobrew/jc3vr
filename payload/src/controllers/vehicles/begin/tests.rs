@@ -82,7 +82,7 @@ fn begin_adapter_missing_observation_clears_old_entry_and_reentry_is_fresh() {
             view_enabled: config.vehicles.driving_view.enabled,
             seat: driver(),
             xf: &xf,
-            anchor: None,
+            eyes: None,
         },
         None,
         &mut state.latch,

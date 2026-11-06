@@ -3,9 +3,10 @@
 //!
 //! Where the hub sits from the seated character's eyes is a property of the seat: the driver
 //! animation and the wheel part decide it, and it differs by a tenth of a metre or more from car
-//! to car. The fit measures it on the input tick from the head pose's anchor (the animated head,
-//! before the head pose or this correction moves it), so neither the player's posture nor a
-//! correction already applied enters the measurement. Once the driver has settled into the seat,
+//! to car. The fit measures it on the input tick from the character's eyes: the head pose's anchor
+//! (the animated head, before the head pose or this correction moves it) with the camera's eye arm
+//! hung off it, so neither the player's posture nor a correction already applied enters the
+//! measurement. Once the driver has settled into the seat,
 //! [`Entry`] averages it over a short window and keeps the mean for the rest of the entry, so the
 //! driving animation's sway does not move the view. [`derive`] turns the mean into the correction:
 //! the hub's offset from the standard place, limited in length, or a [`SEAT_OVERRIDES`] entry's.
@@ -15,7 +16,7 @@
 //! to nothing through a seat transition ([`advance`]), and adds it to the composed cockpit
 //! position after the posture, the seated reference, and the crouch have been resolved, so it
 //! neither feeds them nor is undone by them. The view, the hands, and the grab volumes are all
-//! composed from the head pose, so they move together, and the correction is in the body frame,
+//! composed from the eye point the head pose places, so they move together, and the correction is in the body frame,
 //! which rides the seat and so the vehicle.
 //!
 //! Only a wheel fitted from the vehicle's own part, or the part's override, is measured: the

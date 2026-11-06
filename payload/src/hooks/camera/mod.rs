@@ -56,23 +56,33 @@ pub fn last_dtf() -> f32 {
     f32::from_bits(LAST_DTF.load(Ordering::Relaxed))
 }
 
-/// How far the camera's eye point is from the published head position
-/// ([`crate::headpose::query`]) at the interpolation fraction `dtf`, in world axes: the arm from
-/// Rico's head joint, which the published position follows, to the eye midpoint the camera hangs
-/// from it ([`camera_position`]). `None` while the camera is not placed from the headpose (an
-/// authored view, no tracked head, outside gameplay).
-///
-/// The input tick places the hands, the body's grab volumes, and the overlay's head-anchored
-/// markers relative to the published head, so the render-time head they ride is the render
-/// camera's position less this.
-pub fn eye_offset(dtf: f32) -> Option<glam::Vec3> {
-    let [previous, current] = (*EYE_OFFSETS.lock())?;
-    let t = if dtf.is_finite() {
-        dtf.clamp(0.0, 1.0)
-    } else {
-        1.0
-    };
-    Some(previous.lerp(current, t))
+/// The eye midpoint the camera renders from for each side of the head pose pair `poses`
+/// (previous tick, then current), world space: each published head position with the eye rig's
+/// arm hung off it ([`camera_position`]), from the anchors and view turns published for that side.
+/// The headpose path writes these into the camera's T0/T1 pair, so this is where the player's eyes
+/// are in the world. Without published anchors there is no arm, and each is the head position.
+pub fn eye_points(poses: [HeadPose; 2]) -> [glam::Vec3; 2] {
+    eye_points_from(
+        poses,
+        crate::headpose::anchor_pair(),
+        [follow_turn(false), follow_turn(true)],
+        source(),
+    )
+}
+
+/// The eye midpoint the camera renders from for the published head pose now ([`eye_points`]):
+/// the origin the cockpit frame composes the hands, the body's grab volumes, and every other
+/// cockpit-frame point through ([`CockpitTransform::current`]), so that each lands where the
+/// player sees it.
+pub fn eye_point() -> glam::Vec3 {
+    eye_points([query_prev(), query()])[1]
+}
+
+/// The eye rig's arm now: the eye point less the published head position ([`eye_point`]), world
+/// space. Added to the head anchor, it is where the character's eyes are before the HMD's travel.
+pub fn eye_arm() -> glam::Vec3 {
+    let current = query();
+    eye_points([query_prev(), current])[1] - current.position
 }
 
 /// The interpupillary distance, in metres, of the flatscreen stereo per-eye camera offset. A VR
@@ -306,7 +316,6 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
             && cm.m_ActiveCamera == camera
         {
             LAST_DTF.store(dtf.to_bits(), Ordering::Relaxed);
-            *EYE_OFFSETS.lock() = None;
 
             // Publish the engine's own near/far for the active camera so the reconstruction override
             // can recognize the main-view depth passes by their planes. The engine sets a runtime far
@@ -362,29 +371,18 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
                 // interpolates via the skinning-palette pose pair.
                 let cur = query();
                 let prev = query_prev();
-                let [previous_geometry, current_geometry] =
-                    crate::headpose::anchor_pair().unwrap_or_default();
+                let [previous_position, position] = eye_points([prev, cur]);
                 let character_t1_matrix = glam::Mat4::from(local_character.m_WorldMatrixT1);
-                let position = camera_position(&cur, follow_turn(true), current_geometry, source());
                 write_camera_transform(&mut camera.m_TransformT1, cur.orientation, position);
                 height::record(character_t1_matrix, position);
                 // Republish the transform for the sim-phase readers (see the GetCameraMatrix
                 // hook below).
                 *LAST_CAMERA_WORLD.lock() = Some(camera.m_TransformT1);
-
-                let previous_position = camera_position(
-                    &prev,
-                    previous_geometry.previous_endpoint(follow_turn(false), follow_turn(true)),
-                    previous_geometry,
-                    source(),
-                );
                 write_camera_transform(
                     &mut camera.m_TransformT0,
                     prev.orientation,
                     previous_position,
                 );
-                *EYE_OFFSETS.lock() =
-                    Some([previous_position - prev.position, position - cur.position]);
             } else {
                 let (left_eye_matrix, right_eye_matrix) = eye_matrices(local_character);
                 let character_t1_matrix = glam::Mat4::from(local_character.m_WorldMatrixT1);
@@ -449,6 +447,30 @@ fn camera_position(
         &rig,
         NeckModel::for_source(pose_source),
     )
+}
+
+/// [`eye_points`] from its inputs: the pose pair, the anchors published for each side (`None`
+/// before any are), the view turn on each side ([`follow_turn`]), and the pose source. A collapsed
+/// pair shares the current side's view turn.
+fn eye_points_from(
+    poses: [HeadPose; 2],
+    geometry: Option<[crate::headpose::anchors::Geometry; 2]>,
+    view_turns: [glam::Quat; 2],
+    pose_source: Source,
+) -> [glam::Vec3; 2] {
+    let Some([previous_geometry, current_geometry]) = geometry else {
+        return poses.map(|pose| pose.position);
+    };
+    let [previous, current] = poses;
+    [
+        camera_position(
+            &previous,
+            previous_geometry.previous_endpoint(view_turns[0], view_turns[1]),
+            previous_geometry,
+            pose_source,
+        ),
+        camera_position(&current, view_turns[1], current_geometry, pose_source),
+    ]
 }
 
 /// The geometry the camera's eye point hangs from the published head position by.
@@ -628,10 +650,6 @@ fn game_camera_manager_get_camera_matrix(manager: *const GameCameraManager, matr
 /// The last `dtf` seen by the active camera's `UpdateRender`, as bits (see [`last_dtf`]).
 static LAST_DTF: AtomicU32 = AtomicU32::new(0);
 
-/// The camera's eye point less the published head position on each side of the T0/T1 pair, while
-/// the headpose places the camera (see [`eye_offset`]).
-static EYE_OFFSETS: Mutex<Option<[glam::Vec3; 2]>> = Mutex::new(None);
-
 /// The camera world transform last written to the active camera's `m_TransformT1` with the
 /// headpose active, republished by [`game_camera_manager_get_camera_matrix`] so sim-phase readers
 /// see the headpose camera. `None` until the camera hook first runs with the headpose active.
@@ -704,16 +722,10 @@ fn camera_tree_update_render_contexts(
             if headpose_active {
                 let cur = query();
                 let prev = query_prev();
-                let [previous_geometry, current_geometry] =
-                    crate::headpose::anchor_pair().unwrap_or_default();
+                let [previous_position, next_position] = eye_points([prev, cur]);
                 (
-                    camera_position(
-                        &prev,
-                        previous_geometry.previous_endpoint(follow_turn(false), follow_turn(true)),
-                        previous_geometry,
-                        source(),
-                    ),
-                    camera_position(&cur, follow_turn(true), current_geometry, source()),
+                    previous_position,
+                    next_position,
                     Some(prev.orientation),
                     Some(cur.orientation),
                 )
