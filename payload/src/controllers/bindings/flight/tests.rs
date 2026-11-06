@@ -6,6 +6,7 @@ use super::*;
 use crate::controllers::{
     bindings::hold::{Target, Want},
     frame::ActionSetKind,
+    loadout::Socket,
     mode::AirborneVariant,
     vehicles::{
         config::WingsuitGesturesConfig,
@@ -372,6 +373,50 @@ fn missing_packet_still_resets_the_wrapper_without_a_default_frame_fixture() {
         GestureCommands::default()
     );
     assert_eq!(h.repeat(BRAKE), GestureCommands::default());
+}
+
+/// A hand at a hip socket with its grip open is a lowered arm, which the neutral and the closure
+/// are made of; only the grip squeezed there, a draw starting, claims the hand.
+#[test]
+fn a_body_slot_claims_the_hand_only_while_its_grip_is_squeezed() {
+    let _guard = flight_pose::test_guard();
+    let config = ControllersConfig::default();
+    let dimensions = BodyDimensions::default();
+    let hips = [
+        GrabVolume::Socket(Socket::Hip(Hand::Left)),
+        GrabVolume::Socket(Socket::Hip(Hand::Right)),
+    ];
+    for squeezed in [false, true] {
+        let mut frame = ControllerFrame {
+            sequence: 1,
+            display_time_ns: 1,
+            published_at: Instant::now(),
+            focused: true,
+            action_set: ActionSetKind::OnFoot,
+            hands: Default::default(),
+        };
+        frame.hands[Hand::Right.index()]
+            .buttons
+            .set(Button::SqueezePress, squeezed);
+        let tick = Tick {
+            frame: &frame,
+            config: &config,
+            dimensions: &dimensions,
+            detection: Detection {
+                mode: Mode::Airborne(AirborneVariant::Falling),
+                ..Default::default()
+            },
+            ready: true,
+            ragdoll: false,
+            grapple: false,
+            grabs: [None; 2],
+            reaches: [&hips[..1], &hips[1..]],
+            dt: 0.01,
+        };
+        let claims = claims(&tick, Instant::now());
+        assert!(!claims[Hand::Left.index()].slot, "the left grip is open");
+        assert_eq!(claims[Hand::Right.index()].slot, squeezed);
+    }
 }
 
 #[test]

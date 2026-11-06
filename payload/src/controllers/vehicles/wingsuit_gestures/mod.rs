@@ -118,7 +118,7 @@ impl fmt::Display for Claim {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Grip => "grips something",
-            Self::Slot => "is within reach of a slot on the body",
+            Self::Slot => "squeezes its grip at a slot on the body",
             Self::Mechanical => "works a mechanism",
             Self::Grapple => "has the grapple",
         })
@@ -135,8 +135,10 @@ pub(crate) struct HandClaims {
     /// The grip works something other than a held item: a grab this tick, a support hold on the
     /// other hand's gun, or a hold on the world or a vehicle.
     pub grip: bool,
-    /// The hand is within reach of a slot on the body (a socket or pouch), so an arm drawn in is a
-    /// reach for it, not a closure.
+    /// The hand squeezes its grip within reach of a slot on the body (a socket or pouch): a draw
+    /// is starting, so the arm drawn in is not a gesture. A hand that only rests within reach,
+    /// with its grip open, claims nothing, since the lowered arms of the gestures' own neutral and
+    /// closure put the hands at the hip sockets.
     pub slot: bool,
     pub mechanical: bool,
     pub grapple: bool,

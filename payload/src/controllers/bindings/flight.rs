@@ -15,7 +15,7 @@ use crate::{
         body::BodyDimensions,
         config::{ControllersConfig, GripOffset},
         fingers::grip::{self, GripSource},
-        frame::{ControllerFrame, Hand},
+        frame::{Button, ControllerFrame, Hand},
         grab::GrabVolume,
         mode::{AirborneVariant, Detection, Mode},
         vehicles::{
@@ -399,7 +399,8 @@ fn claims(tick: &Tick<'_>, now: Instant) -> [HandClaims; 2] {
             grip: grip
                 || tick.grabs[i].is_some()
                 || foregrip.is_some_and(|hold| hold.holder.other() == hand),
-            slot: tick.reaches[i].iter().copied().any(GrabVolume::on_body),
+            slot: tick.frame.hand(hand).buttons.contains(Button::SqueezePress)
+                && tick.reaches[i].iter().copied().any(GrabVolume::on_body),
             mechanical: reload.fire_held[i].is_some()
                 || reload
                     .insert_hands
