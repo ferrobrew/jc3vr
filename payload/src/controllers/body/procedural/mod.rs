@@ -27,6 +27,7 @@
 //! - [`targets`]: the fade of the HumanIK targets on the owned bones.
 //! - [`wings`]: Rico's arms in the wingsuit, carried over from the player's.
 //! - [`hips`]: the clip's hips against Rico's facing, which the yaw follow squares.
+//! - [`stance`]: the feet squared under the hips while Rico stands idle.
 //! - [`twist`]: the arms' twist bones.
 //! - [`config`]: the mode and the tuning.
 //!
@@ -45,6 +46,7 @@ pub mod rig;
 pub mod signals;
 pub mod skeleton;
 pub mod solver;
+pub mod stance;
 pub mod state;
 pub mod targets;
 pub mod twist;
@@ -79,6 +81,7 @@ use crate::{
                     clavicles::{self, ClavicleTurn},
                     pose::RigPose,
                 },
+                stance::{place_feet, square_stance},
                 targets::{Fade, Slot, TargetFade},
                 wings::{WingRequest, read_player_arms},
             },
@@ -107,6 +110,10 @@ pub struct ProceduralStatus {
     pub clavicles: [ClavicleTurn; 2],
     /// The wingsuit's arms' weight against the animation.
     pub wing_weight: f32,
+    /// The square stance's weight against the clip's feet.
+    pub stance_weight: f32,
+    /// How many foot targets the square stance moved or queued at the last gate.
+    pub stance_targets: usize,
     /// Which hands the wingsuit's arms placed a target for, left then right.
     pub wing_hands: [bool; 2],
     /// Which hands the wingsuit's arms queued a target for, left then right.
@@ -180,6 +187,7 @@ pub(crate) fn gate_skipped() {
     publish_torso_weight(0.0);
     let mut state = STATE.lock();
     state.blend.reset();
+    state.stance.reset();
     state.status.weight = 0.0;
 }
 
@@ -267,6 +275,19 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     } else {
         state.hips.reset();
     }
+    let standing = config.stance.enabled
+        && case == Case::OnFoot
+        && locomotion.fresh(now)
+        && locomotion.standing_still();
+    let stance_weight = state.stance.step(standing, dt, config.stance.blend_s);
+    state.status.stance_weight = stance_weight;
+    state.status.stance_targets = match state.hips.yaw() {
+        Some(heading) if stance_weight > 0.0 => {
+            let feet = square_stance(&animated, heading, &config.stance);
+            unsafe { place_feet(&mut character.m_HIK, rig, &animated, &feet, stance_weight) }
+        }
+        _ => 0,
+    };
     let weight = state.blend.step(case, dt, &config);
     let target = state.blend.target();
     state.log_case(case, target, weight);
@@ -434,6 +455,8 @@ const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
     neck_error_m: 0.0,
     clavicles: [ClavicleTurn::ZERO; 2],
     wing_weight: 0.0,
+    stance_weight: 0.0,
+    stance_targets: 0,
     wing_hands: [false; 2],
     wing_queued: [false; 2],
 };

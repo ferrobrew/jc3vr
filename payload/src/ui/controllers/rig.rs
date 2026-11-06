@@ -138,6 +138,15 @@ pub(super) fn rig_settings(ui: &mut Ui, body: &mut BodyRemapConfig) {
         .on_hover_text(
             "Hold the view at a wall the body cannot pass; off, only the fade answers it.",
         );
+    ui.collapsing("Stance", |ui| {
+        let s = &mut body.procedural.stance;
+        ui.checkbox(&mut s.enabled, "Square the feet standing idle")
+            .on_hover_text("Move the game's foot targets to a square stance under the hips.");
+        ui.add(egui::Slider::new(&mut s.width_m, 0.1..=0.6).text("Feet apart (m)"));
+        ui.add(egui::Slider::new(&mut s.toe_out_deg, -10.0..=40.0).text("Toes out (°)"));
+        ui.add(egui::Slider::new(&mut s.blend_s, 0.0..=1.5).text("Blend (s)"))
+            .on_hover_text("How quickly the stance comes in standing still and goes out moving.");
+    });
     ui.collapsing("Lean and steps", |ui| {
         let p = &mut r.pelvis;
         ui.add(egui::Slider::new(&mut p.lean_radius_m, 0.0..=0.5).text("Lean radius (m)"))

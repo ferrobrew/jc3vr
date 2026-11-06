@@ -328,8 +328,34 @@ pub unsafe fn NLookAtIKTask_Update(
     }
 }
 pub const NLocoIKTask_Update_ADDRESS: usize = 0x140826480;
-/// The per-frame update of the locomotion IK task (`NLocoIKTask::Update`), which queues positional
-/// effector targets through [`HumanIK::AddEffectorTargetPosition`](crate::animation::ik::HumanIK::AddEffectorTargetPosition).
+/// The per-frame update of the locomotion IK task (`NLocoIKTask::Update`). Registered in
+/// [`Character::FINALIZE_POSE_STATE_TASK_RANGE`](crate::character::character::Character::FINALIZE_POSE_STATE_TASK_RANGE), so it runs at the start of
+/// [`Character::UpdatePassFinalizePose_Parallel`](crate::character::character::Character::UpdatePassFinalizePose_Parallel), before the `MAIN` solve's
+/// [`HumanIK::HasTargets`](crate::animation::ik::HumanIK::HasTargets) gate. Nothing runs for a character attached to a vehicle.
+///
+/// While the character moves fast enough, it leans the hips into a turn with a rotation target, and
+/// while the task's head-tracking setting is on it turns the head and the chest's end toward a look
+/// target.
+///
+/// While the task's feet setting is on (and the feet's global switch, which is on), it keeps the
+/// feet on the ground. It casts a short ray down at each foot's IK target bone
+/// ([`SafeBoneIndex::LEFT_FOOT_IK_TARGET`](crate::character::character::SafeBoneIndex::LEFT_FOOT_IK_TARGET),
+/// [`SafeBoneIndex::RIGHT_FOOT_IK_TARGET`](crate::character::character::SafeBoneIndex::RIGHT_FOOT_IK_TARGET))
+/// and takes the ground's height under each against the foot, clamped, blended by the clip's
+/// swing-cycle float tracks (`float_LeftFoot_swing_cycle`, `float_RightFoot_swing_cycle`) so a
+/// swinging foot keeps the clip's height, and eased toward over time; the hips drop by the lower
+/// foot's offset (scaled) when either foot is below, or rise by the higher one's when both are
+/// above. It then queues, on [`Pass::MAIN`](crate::animation::ik::Pass::MAIN) with
+/// [`SolveStep::SPINE_HEAD_LOWER_BODY`](crate::animation::ik::SolveStep::SPINE_HEAD_LOWER_BODY), no
+/// interpolation and no blend-out, a position target on the effectors of the
+/// [`SafeBoneIndex::LEFT_FOOT`](crate::character::character::SafeBoneIndex::LEFT_FOOT),
+/// [`SafeBoneIndex::RIGHT_FOOT`](crate::character::character::SafeBoneIndex::RIGHT_FOOT),
+/// [`SafeBoneIndex::LEFT_TOE`](crate::character::character::SafeBoneIndex::LEFT_TOE),
+/// [`SafeBoneIndex::RIGHT_TOE`](crate::character::character::SafeBoneIndex::RIGHT_TOE), and
+/// [`SafeBoneIndex::HIPS`](crate::character::character::SafeBoneIndex::HIPS) bones: each at the clip's own
+/// joint, in character-model space, raised or lowered by its offset. Each of the five gets full
+/// [`HumanIK::m_TargetReachT`](crate::animation::ik::HumanIK::m_TargetReachT) and no [`HumanIK::m_TargetPull`](crate::animation::ik::HumanIK::m_TargetPull). So the targets move the feet only
+/// vertically: across the ground they stay where the clip puts them.
 pub unsafe fn NLocoIKTask_Update(
     ctx: *mut crate::state::StateContext,
     p1: *mut ::std::ffi::c_void,

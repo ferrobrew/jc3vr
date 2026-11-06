@@ -19,6 +19,7 @@ use crate::controllers::{
             pose::RigPose,
             wings::WingTarget,
         },
+        stance::StanceBlend,
         state::StateTracker,
         targets::TargetFade,
         wings::WingQueue,
@@ -54,6 +55,8 @@ pub(super) struct State {
     pub(super) arms: Option<ArmContext>,
     /// The clip's hips' heading against Rico's facing, followed on foot.
     pub(super) hips: HipFollower,
+    /// The square stance's blend against the clip's feet.
+    pub(super) stance: StanceBlend,
     pub(super) status: ProceduralStatus,
 }
 
@@ -131,5 +134,6 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     wing_logged: false,
     arms: None,
     hips: HipFollower::new(),
+    stance: StanceBlend::new(),
     status: INITIAL_STATUS,
 });

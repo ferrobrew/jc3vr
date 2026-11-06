@@ -50,5 +50,9 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
             "Wingsuit arm targets placed: L {} R {}",
             status.wing_hands[0], status.wing_hands[1],
         ));
+        ui.label(format!(
+            "Square stance {:.2} · foot targets moved {}",
+            status.stance_weight, status.stance_targets,
+        ));
     }
 }

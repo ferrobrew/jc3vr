@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::validate::Invalid;
+use crate::{config::validate::Invalid, controllers::body::procedural::stance::StanceConfig};
 
 /// The procedural body (see [`crate::controllers::body::procedural`]).
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
@@ -54,6 +54,8 @@ pub struct ProceduralBodyConfig {
     /// How long a hit reaction (a stumble or a knock-back) holds the body on the animation after
     /// its act, seconds: the game keeps no state for the reaction's length.
     pub hit_reaction_hold_s: f32,
+    /// Rico's feet squared under him while he stands idle on foot.
+    pub stance: StanceConfig,
 }
 
 impl ProceduralBodyConfig {
@@ -78,6 +80,7 @@ impl ProceduralBodyConfig {
             clavicle_reach_start: 0.8,
             clavicle_follow_s: 0.1,
             hit_reaction_hold_s: 1.2,
+            stance: StanceConfig::new(),
         }
     }
 
@@ -120,6 +123,9 @@ impl ProceduralBodyConfig {
             ("clavicle_reach_start", self.clavicle_reach_start, 0.3, 0.99),
             ("clavicle_follow_s", self.clavicle_follow_s, 0.0, 1.0),
             ("hit_reaction_hold_s", self.hit_reaction_hold_s, 0.0, 5.0),
+            ("stance.width_m", self.stance.width_m, 0.0, 0.8),
+            ("stance.toe_out_deg", self.stance.toe_out_deg, -30.0, 60.0),
+            ("stance.blend_s", self.stance.blend_s, 0.0, 5.0),
         ];
         for (name, value, min, max) in checks {
             if !(min..=max).contains(&value) {

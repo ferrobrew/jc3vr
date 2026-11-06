@@ -35,6 +35,11 @@ impl HipFollower {
         Self { yaw: None }
     }
 
+    /// The followed heading, while it follows.
+    pub(super) fn yaw(&self) -> Option<f32> {
+        self.yaw
+    }
+
     /// Fold in the hips of the animated pose `animated` over `dt` seconds, and publish the result.
     pub(super) fn observe(&mut self, animated: &RigPose, dt: f32, now: Instant) {
         let measured = line_yaw(
