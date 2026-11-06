@@ -7,12 +7,8 @@
 //! ([`publish`]); the draw places them at render time from the same anchors the overlay resolves,
 //! so a label rides with its marker.
 
-use std::{
-    collections::HashMap,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
-use anyhow::Context as _;
 use glam::{Quat, Vec3, Vec4};
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use parking_lot::Mutex;
@@ -30,10 +26,10 @@ use crate::{
     },
     hud::{
         anchored::place::upright_corners,
-        grab_hint::{TAG_TEXELS, paint_tag},
+        grab_hint::{TAG_TEXELS, paint_tag, tag_fits},
         log_once::LogOnce,
         quad::HudQuad,
-        target::HudTarget,
+        target::{HudTarget, TextureCache},
         world_quads_active,
     },
 };
@@ -96,7 +92,7 @@ const GAP_M: f32 = 0.01;
 /// How long a published list stays current without a newer one.
 const STALE: Duration = Duration::from_millis(250);
 
-/// The most distinct labels kept as textures.
+/// The most distinct labels kept as textures; a new one replaces one no longer shown.
 const MAX_TEXTURES: usize = 8;
 
 static SAMPLE: Mutex<Option<(Vec<MarkLabel>, Instant)>> = Mutex::new(None);
@@ -114,7 +110,7 @@ struct State {
 /// The quad pass and a painted texture per label, created on the first frame with a label.
 struct Gpu {
     quad: HudQuad,
-    textures: HashMap<&'static str, HudTarget>,
+    textures: TextureCache<&'static str>,
 }
 
 impl State {
@@ -144,7 +140,7 @@ impl State {
                 Ok(quad) => {
                     self.gpu = Some(Gpu {
                         quad,
-                        textures: HashMap::new(),
+                        textures: TextureCache::new(MAX_TEXTURES),
                     })
                 }
                 Err(e) => {
@@ -161,11 +157,22 @@ impl State {
             let Some(corners) = place(label, head, rotation * Vec3::Y, &hands) else {
                 continue;
             };
-            if !gpu.textures.contains_key(label.text) {
-                if gpu.textures.len() >= MAX_TEXTURES {
+            if !gpu.textures.contains(&label.text) {
+                if !gpu
+                    .textures
+                    .make_room(|text| labels.iter().any(|l| l.text == *text))
+                {
                     continue;
                 }
-                match paint(context, device, &paint_tag(label.text)) {
+                if !tag_fits(label.text) {
+                    FAILURES.error(&anyhow::anyhow!(
+                        "the label {:?} is wider than its texture",
+                        label.text
+                    ));
+                }
+                let texels = paint_tag(label.text);
+                match HudTarget::with_texels(device, context, TAG_TEXELS, &texels, "a marker label")
+                {
                     Ok(texture) => {
                         gpu.textures.insert(label.text, texture);
                     }
@@ -192,19 +199,6 @@ impl State {
                 .draw_faded(context, device, target, texture.color_srv(), &corners, 1.0);
         }
     }
-}
-
-/// A texture of [`TAG_TEXELS`] holding `texels`.
-fn paint(
-    context: &ID3D11DeviceContext,
-    device: &Device,
-    texels: &[u8],
-) -> anyhow::Result<HudTarget> {
-    let (width, height) = TAG_TEXELS;
-    let target =
-        HudTarget::new(device, width, height).context("creating a marker label's texture")?;
-    target.upload(context, texels);
-    Ok(target)
 }
 
 static FAILURES: LogOnce = LogOnce::new("hud marker labels");
@@ -238,6 +232,14 @@ mod tests {
         let [tl, tr, bl, _] = corners;
         assert!((tl.y - tr.y).abs() < 1e-6, "level");
         assert!(((tl - bl).length() - HEIGHT_M).abs() < 1e-5);
+    }
+
+    /// Every label a marker is given fits its texture: the cockpit's nitrous button's, named in
+    /// the vehicles' begin tick, is the only one.
+    #[test]
+    fn every_mark_label_fits_its_texture() {
+        assert!(tag_fits("Nitrous"));
+        assert!(!tag_fits("A label far too long for a marker's tag"));
     }
 
     #[test]

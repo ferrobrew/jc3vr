@@ -68,12 +68,6 @@ impl RenderOffset {
         self.shift == Vec3::ZERO && self.turn == Quat::IDENTITY
     }
 
-    /// Carry the hand's poses about the palm centre, which sits in the wrist frame.
-    #[cfg(test)]
-    pub fn apply(&self, hand: &mut CockpitHand, palm_offset: Vec3) {
-        self.apply_about(hand, palm_centre(hand, palm_offset));
-    }
-
     /// Carry the hand's poses about `pivot`: another hand's palm centre, for a hand that rides
     /// that hand's correction.
     pub fn apply_about(&self, hand: &mut CockpitHand, pivot: Vec3) {
@@ -206,7 +200,8 @@ mod tests {
             shift: Vec3::X * 0.1,
             turn: Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
         };
-        offset.apply(&mut hand, palm_offset);
+        let pivot = palm_centre(&hand, palm_offset);
+        offset.apply_about(&mut hand, pivot);
         let pivot = hand.wrist.position + hand.wrist.orientation * palm_offset;
         assert!(pivot.abs_diff_eq(Vec3::new(0.1, 0.0, -0.06), 1e-5));
         assert!(hand.aim.orientation.angle_between(offset.turn) < 1e-5);
@@ -222,7 +217,8 @@ mod tests {
             grip: weighted,
             aim: weighted,
         };
-        offset.apply(&mut hand, Vec3::Z * -0.06);
+        let pivot = palm_centre(&hand, Vec3::Z * -0.06);
+        offset.apply_about(&mut hand, pivot);
         assert_eq!(hand.wrist.position, weighted.position);
         assert!(hand.wrist.orientation.angle_between(weighted.orientation) < 1e-4);
     }

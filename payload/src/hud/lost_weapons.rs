@@ -1,26 +1,23 @@
 //! Markers over the weapons the player let go of: each weapon the loadout table has lying in the
 //! world (dropped, thrown, knocked from a hand, ejected by a swap, or brought back to the feet)
-//! gets the game's own icon for it above where it lies, so a weapon thrown or dropped in the heat of
-//! a fight can be found again.
+//! gets the game's own icon for it above where it lies, so a weapon thrown or dropped in the heat
+//! of a fight can be found again.
 //!
 //! The game's own pickup hints are no help here: they mark only the nearest useful weapon per slot,
 //! and only while that slot is low on ammunition (`docs/engine/rendering/ui-rendering.md`). The
 //! marker is the icon those hints show ([`crate::hud::game_icons`]), with no backing, only the grab
-//! hint's soft dark halo ([`crate::hud::grab_hint`]), drawn by the mod as an upright billboard at the weapon's own world
-//! point. Like every HUD quad it is drawn without a depth test, at a stereo-correct depth, so it
-//! shows through what is in front of the weapon and still reads as being where the weapon is.
+//! hint's soft dark halo ([`crate::hud::grab_hint`]), drawn by the mod as an upright billboard at
+//! the weapon's own world point. Like every HUD quad it is drawn without a depth test, at a
+//! stereo-correct depth, so it shows through what is in front of the weapon and still reads as
+//! being where the weapon is.
 //!
 //! The inventory's input tick publishes the weapons and their places ([`publish`]); the marker is
 //! kept for as long as the table keeps the weapon, which forgets one left far away (the pins'
 //! forget distance). It fades in past arm's length, where the grip's own markers take over, keeps
 //! a constant angular size, and only the nearest few are drawn.
 
-use std::{
-    collections::HashMap,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
-use anyhow::Context as _;
 use glam::{Vec3, Vec4};
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use parking_lot::Mutex;
@@ -35,7 +32,7 @@ use crate::{
         grab_hint::{MARKER_TEXELS, paint_marker},
         log_once::LogOnce,
         quad::HudQuad,
-        target::HudTarget,
+        target::{HudTarget, TextureCache},
         world_quads_active,
     },
 };
@@ -118,7 +115,7 @@ const ANGULAR_HEIGHT: f32 = 0.03;
 /// How far above the weapon a marker's lower edge sits, metres.
 const RAISE_M: f32 = 0.3;
 
-/// The most distinct icons kept as textures.
+/// The most distinct icons kept as textures; a new one replaces one no longer shown.
 const MAX_TEXTURES: usize = 16;
 
 /// How long a published list stays current without a newer one.
@@ -139,7 +136,7 @@ struct State {
 /// The quad pass and a painted texture per icon, created on the first frame with a marker.
 struct Gpu {
     quad: HudQuad,
-    textures: HashMap<IconId, HudTarget>,
+    textures: TextureCache<IconId>,
 }
 
 impl State {
@@ -173,7 +170,7 @@ impl State {
                 Ok(quad) => {
                     self.gpu = Some(Gpu {
                         quad,
-                        textures: HashMap::new(),
+                        textures: TextureCache::new(MAX_TEXTURES),
                     })
                 }
                 Err(e) => {
@@ -185,16 +182,24 @@ impl State {
         let Some(gpu) = self.gpu.as_mut() else {
             return;
         };
+        let in_use: Vec<IconId> = placed.iter().map(|marker| marker.icon).collect();
         for marker in placed {
-            if !gpu.textures.contains_key(&marker.icon) {
+            if !gpu.textures.contains(&marker.icon) {
                 // An icon still loading, or missing, has no marker: never a stand-in.
                 let Lookup::Ready(image) = game_icons::lookup(marker.icon) else {
                     continue;
                 };
-                if gpu.textures.len() >= MAX_TEXTURES {
+                if !gpu.textures.make_room(|icon| in_use.contains(icon)) {
                     continue;
                 }
-                match paint(context, device, &paint_marker(&image)) {
+                let texels = paint_marker(&image);
+                match HudTarget::with_texels(
+                    device,
+                    context,
+                    MARKER_TEXELS,
+                    &texels,
+                    "a lost weapon marker",
+                ) {
                     Ok(texture) => {
                         gpu.textures.insert(marker.icon, texture);
                     }
@@ -228,19 +233,6 @@ impl State {
             );
         }
     }
-}
-
-/// A texture of [`MARKER_TEXELS`] holding `texels`.
-fn paint(
-    context: &ID3D11DeviceContext,
-    device: &Device,
-    texels: &[u8],
-) -> anyhow::Result<HudTarget> {
-    let (width, height) = MARKER_TEXELS;
-    let target =
-        HudTarget::new(device, width, height).context("creating a lost weapon marker's texture")?;
-    target.upload(context, texels);
-    Ok(target)
 }
 
 static FAILURES: LogOnce = LogOnce::new("hud lost weapons");

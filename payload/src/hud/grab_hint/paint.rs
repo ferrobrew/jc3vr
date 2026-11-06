@@ -83,6 +83,11 @@ pub(crate) fn tag(label: &str) -> Vec<u8> {
     canvas.haloed().into_texels()
 }
 
+/// Whether `text` fits across a tag ([`tag`]) with room for its halo either side.
+pub(crate) fn tag_fits(text: &str) -> bool {
+    label::rasterise(text, LABEL_PX).width + 2 * PAD <= TAG_TEXELS.0
+}
+
 /// The padding around the icons, texels: room for the halo.
 const PAD: u32 = 12;
 

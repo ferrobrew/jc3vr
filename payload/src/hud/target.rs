@@ -1,6 +1,8 @@
 //! The GPU resources the redirected HUD renders into, and the textures the mod paints on the CPU
 //! for its own HUD quads.
 
+use std::{collections::HashMap, hash::Hash};
+
 use anyhow::Context as _;
 use jc3gi::graphics_engine::device::Device;
 use windows::Win32::Graphics::{
@@ -124,6 +126,23 @@ impl HudTarget {
         &self.depth_dsv
     }
 
+    /// A texture of `width` x `height` texels holding `texels` ([`Self::upload`]), for `what`, a
+    /// name for the error's context.
+    ///
+    /// The caller holds the engine context mutex.
+    pub(crate) fn with_texels(
+        device: &Device,
+        context: &ID3D11DeviceContext,
+        (width, height): (u32, u32),
+        texels: &[u8],
+        what: &str,
+    ) -> anyhow::Result<Self> {
+        let target = Self::new(device, width, height)
+            .with_context(|| format!("creating {what}'s texture"))?;
+        target.upload(context, texels);
+        Ok(target)
+    }
+
     /// Replace the colour texture's texels with `texels`: straight rows of RGBA, top first, one
     /// texel per texel of the target. A buffer of any other length is not uploaded.
     ///
@@ -177,5 +196,70 @@ impl<K: Copy + PartialEq> KeyedTexture<K> {
         }
         self.target.upload(context, &paint(key));
         self.key = Some(key);
+    }
+}
+
+/// Painted textures kept by what they show, at most a fixed number: a full cache makes room for a
+/// new one by dropping one no longer in use.
+pub(crate) struct TextureCache<K, V = HudTarget> {
+    textures: HashMap<K, V>,
+    capacity: usize,
+}
+
+impl<K: Copy + Eq + Hash, V> TextureCache<K, V> {
+    /// An empty cache of at most `capacity` textures.
+    pub(crate) fn new(capacity: usize) -> Self {
+        Self {
+            textures: HashMap::new(),
+            capacity,
+        }
+    }
+
+    pub(crate) fn get(&self, key: &K) -> Option<&V> {
+        self.textures.get(key)
+    }
+
+    pub(crate) fn contains(&self, key: &K) -> bool {
+        self.textures.contains_key(key)
+    }
+
+    /// Make room for one more texture, dropping one whose key `in_use` rejects when the cache is
+    /// full. `false` when it is full of textures in use.
+    pub(crate) fn make_room(&mut self, in_use: impl Fn(&K) -> bool) -> bool {
+        if self.textures.len() < self.capacity {
+            return true;
+        }
+        let Some(unused) = self.textures.keys().copied().find(|key| !in_use(key)) else {
+            return false;
+        };
+        self.textures.remove(&unused);
+        true
+    }
+
+    /// Keep `texture` for `key`; the caller made room for it first ([`Self::make_room`]).
+    pub(crate) fn insert(&mut self, key: K, texture: V) {
+        debug_assert!(self.textures.len() < self.capacity || self.contains(&key));
+        self.textures.insert(key, texture);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_full_cache_drops_a_texture_no_longer_in_use() {
+        let mut cache = TextureCache::<&str, u32>::new(2);
+        for (key, texture) in [("a", 1), ("b", 2)] {
+            assert!(cache.make_room(|_| true));
+            cache.insert(key, texture);
+        }
+        assert!(!cache.make_room(|_| true), "every texture is in use");
+        assert!(cache.make_room(|&key| key == "b"));
+        cache.insert("c", 3);
+        assert_eq!(
+            ["a", "b", "c"].map(|key| cache.get(&key).copied()),
+            [None, Some(2), Some(3)]
+        );
     }
 }
